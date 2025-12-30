@@ -1,0 +1,12 @@
+Purpose: insert initial/default data into tables.
+
+Examples for your ERP:
+
+      default branches (or demo branches)
+      default role templates (Storekeeper, Accounts, Sales)
+      default permissions list (module/screen/voucher/report permissions)
+      default departments (Admin, Stitching, Printing, etc.)
+      default reason codes (Stock Count reasons, Loss reasons)
+      default return reasons (Defected etc.)
+
+Seeds are not schema; they’re starter data.
