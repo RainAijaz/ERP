@@ -606,6 +606,29 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql STABLE;
 
+-- Block inserts/updates for vouchers in LOCKED/FROZEN periods.
+CREATE OR REPLACE FUNCTION erp.trg_block_locked_period()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF erp.is_period_locked(NEW.branch_id, NEW.voucher_date) THEN
+    RAISE EXCEPTION
+      'Voucher date % is in a locked/frozen period for branch %.',
+      NEW.voucher_date, NEW.branch_id;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_block_locked_period ON erp.voucher_header;
+CREATE TRIGGER trg_block_locked_period
+BEFORE INSERT OR UPDATE OF voucher_date, branch_id ON erp.voucher_header
+FOR EACH ROW
+EXECUTE FUNCTION erp.trg_block_locked_period();
+
+
 /* ==================================== APPROVAL DECISIONS BY ADMIN-ONLY (DB-LEVEL ENFORCEMENT) ================================== */
 
 -- PURPOSE - It returns true/false based on -> “Is this user an active Admin?”

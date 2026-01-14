@@ -7,6 +7,9 @@ BEGIN;
 \i database/ddl/050_bom_production.sql
 \i database/ddl/060_sales_ar.sql
 \i database/ddl/070_purchase_ap.sql
-\i database/ddl/080_inventory_stockcount.sql
+\i database/ddl/080_inventory.sql
+\i database/ddl/051_production_completion_planning_loss.sql
 \i database/ddl/090_rgp_assets.sql
+\i database/ddl/091_integrity_checks.sql
+\i database/ddl/092_seeds.sql
 COMMIT;

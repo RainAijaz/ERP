@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS voucher_line (
   amount      numeric(18,2) NOT NULL DEFAULT 0,
   meta        jsonb NOT NULL DEFAULT '{}'::jsonb,
 
-  UNIQUE(voucher_id,line_no),
+  UNIQUE(voucher_header_id, line_no),
   CHECK (line_no > 0),
   CHECK (num_nonnulls(item_id, sku_id, account_id, party_id, labour_id, employee_id) = 1),
   CHECK (

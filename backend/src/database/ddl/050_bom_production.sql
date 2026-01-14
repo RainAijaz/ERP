@@ -21,7 +21,9 @@ DO $$ BEGIN
   CREATE TYPE erp.bom_rule_action_type AS ENUM ('ADD_RM','REMOVE_RM','REPLACE_RM','ADJUST_QTY','CHANGE_LOSS');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
-
+DO $$ BEGIN
+  CREATE TYPE erp.bom_status AS ENUM ('DRAFT','PENDING','APPROVED','REJECTED');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 -- -----------------------------------------------------------------------------
 -- bom_header
@@ -37,7 +39,7 @@ CREATE TABLE IF NOT EXISTS erp.bom_header (
   output_uom_id  bigint NOT NULL REFERENCES erp.uom(id),
 
   -- Using approval_status enum, but BOM should not be POSTED
-  status         erp.approval_status NOT NULL DEFAULT 'approval_status',
+  status         erp.bom_status NOT NULL DEFAULT 'DRAFT',
   version_no     int NOT NULL DEFAULT 1,
 
   created_by     bigint NOT NULL REFERENCES erp.users(id),
@@ -50,14 +52,10 @@ CREATE TABLE IF NOT EXISTS erp.bom_header (
   CHECK (approved_by IS NULL OR approved_by <> created_by),
 
   -- Limit statuses for BOM (no POSTED)
-  CHECK (status IN ('approval_status','PENDING','APPROVED','REJECTED')),
-
-  -- Approval consistency:
-  -- - approval_status/Pending => no approver fields
-  -- - Approved/Rejected => approver fields must exist
+  CHECK (status IN ('DRAFT','PENDING','APPROVED','REJECTED')),
   CHECK (
-    (status IN ('approval_status','PENDING') AND approved_by IS NULL AND approved_at IS NULL)
-    OR
+    (status IN ('DRAFT','PENDING') AND approved_by IS NULL AND approved_at IS NULL)
+        OR
     (status IN ('APPROVED','REJECTED') AND approved_by IS NOT NULL AND approved_at IS NOT NULL)
   ),
 
@@ -76,6 +74,7 @@ CREATE TABLE IF NOT EXISTS erp.bom_rm_line (
   bom_id          bigint NOT NULL REFERENCES erp.bom_header(id) ON DELETE CASCADE,
 
   rm_item_id      bigint NOT NULL REFERENCES erp.items(id) ON DELETE RESTRICT,
+  color_id        bigint REFERENCES erp.colors(id),
   dept_id         bigint NOT NULL REFERENCES erp.departments(id),
 
   qty             numeric(18,3) NOT NULL,
@@ -87,8 +86,9 @@ CREATE TABLE IF NOT EXISTS erp.bom_rm_line (
   CHECK (normal_loss_pct >= 0 AND normal_loss_pct <= 100),
 
   -- avoid duplicate same RM in same dept for same BOM (adjust if you need duplicates)
-  UNIQUE (bom_id, rm_item_id, dept_id)
+  UNIQUE (bom_id, rm_item_id, dept_id, color_id)  
 );
+
 -- IF AN ARTICLE HAS MULTIPLE COLORS THEN DOES ITS SEMI FINISHED ITEM HAS MULTIPLE COLORS AS WELL? 
 -- (WHY IMPORTANT - TO KNOW HOW MUCH STOCK IS AVAILABLE IN EACH COLOR, AND PRICE DIFFERENCE IF ANY)
 -- SFG consumption lines that can vary by Finished size

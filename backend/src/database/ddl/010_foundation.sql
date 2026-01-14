@@ -75,6 +75,32 @@ DO $$ BEGIN
   CREATE TYPE erp.stock_state AS ENUM ('ON_HAND','IN_TRANSIT');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+DO $$ BEGIN
+  -- Packed/Loose rule for pair-based goods (UI entry mode).
+  CREATE TYPE erp.stock_type AS ENUM ('PACKED','LOOSE');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE erp.loss_type AS ENUM ('RM_LOSS','SFG_LOSS','FG_LOSS','DVC_ABANDON');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE erp.production_kind AS ENUM ('FG','SFG');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE erp.account_group AS ENUM ('ASSET','LIABILITY','EQUITY','REVENUE','EXPENSE');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- Party type: only two allowed values
+DO $$ BEGIN
+  CREATE TYPE erp.party_type AS ENUM ('CUSTOMER','SUPPLIER');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+DO $$ BEGIN
+  CREATE TYPE erp.payroll_type AS ENUM ('MONTHLY','DAILY','PIECE_RATE','MULTIPLE');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 
 /* ============================================================================
    2) FOUNDATION TABLES (multi-branch + security + approvals)

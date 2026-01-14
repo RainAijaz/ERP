@@ -96,7 +96,7 @@ CREATE TABLE IF NOT EXISTS erp.stock_balance_sku (
   branch_id   bigint NOT NULL REFERENCES erp.branches(id),
   stock_state erp.stock_state NOT NULL DEFAULT 'ON_HAND',
   category    erp.stock_category NOT NULL CHECK (category IN ('SFG','FG')),
-  status      erp.stock_type NOT NULL DEFAULT LOOSE ,
+  stock_type  erp.stock_type NOT NULL DEFAULT 'LOOSE',
   sku_id      bigint NOT NULL REFERENCES erp.skus(id),
   qty_pairs   int NOT NULL DEFAULT 0,
   wac         numeric(18,6) NOT NULL DEFAULT 0,

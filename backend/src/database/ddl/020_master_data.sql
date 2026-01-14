@@ -89,15 +89,6 @@ CREATE TABLE IF NOT EXISTS packing_types (
 -- =============================================================================
 -- 3.2 ACCOUNTS & PARTIES
 -- =============================================================================
-DO $$ BEGIN
-  CREATE TYPE erp.account_group AS ENUM ('ASSET','LIABILITY','EQUITY','REVENUE','EXPENSE');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
--- Party type: only two allowed values
-DO $$ BEGIN
-  CREATE TYPE erp.party_type AS ENUM ('CUSTOMER','SUPPLIER');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
 
 CREATE TABLE IF NOT EXISTS erp.account_subgroups(
   id bigserial PRIMARY KEY,
@@ -226,7 +217,7 @@ CREATE TABLE IF NOT EXISTS erp.rm_sizes (
 CREATE TABLE IF NOT EXISTS erp.rm_purchase_rates (
   id bigserial PRIMARY KEY,
   rm_item_id bigint NOT NULL REFERENCES erp.items(id) ON DELETE CASCADE,
-
+  color_id bigint REFERENCES erp.colors(id),
   purchase_rate     numeric(18,4) NOT NULL,
   avg_purchase_rate numeric(18,4) NOT NULL, -- keep in sync via triggers/app later
 
@@ -241,8 +232,36 @@ CREATE TABLE IF NOT EXISTS erp.rm_purchase_rates (
   CHECK (avg_purchase_rate >= 0),
   CHECK (approved_by IS NULL OR approved_by <> created_by),
 
-  UNIQUE (rm_item_id)
+  UNIQUE (rm_item_id, color_id)
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_rm_purchase_rates_item_color
+ON erp.rm_purchase_rates (rm_item_id, COALESCE(color_id, 0));
+
+-- ---------------------------------------------------------------------------
+-- employees (master)
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS erp.employees (
+  id            bigserial PRIMARY KEY,
+  code          text NOT NULL UNIQUE,
+  name          text NOT NULL,
+  cnic          text,
+  phone         text,
+  department_id bigint REFERENCES erp.departments(id),
+  designation   text,
+  payroll_type  erp.payroll_type NOT NULL DEFAULT 'MONTHLY',
+  basic_salary  numeric(18,2) NOT NULL DEFAULT 0,
+  status        text NOT NULL DEFAULT 'active',
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  CHECK (basic_salary >= 0),
+  CHECK (lower(trim(status)) IN ('active','inactive'))
+);
+
+CREATE TABLE IF NOT EXISTS erp.employee_branch (
+  employee_id bigint NOT NULL REFERENCES erp.employees(id) ON DELETE CASCADE,
+  branch_id   bigint NOT NULL REFERENCES erp.branches(id) ON DELETE CASCADE,
+  PRIMARY KEY (employee_id, branch_id));
 
 
 -- -----------------------------------------------------------------------------
@@ -260,6 +279,13 @@ CREATE TABLE IF NOT EXISTS erp.labours (
   CHECK (lower(trim(status)) IN ('active','inactive'))
 );
 
+CREATE TABLE IF NOT EXISTS erp.labour_branch (
+  labour_id bigint NOT NULL REFERENCES erp.labours(id) ON DELETE CASCADE,
+  branch_id bigint NOT NULL REFERENCES erp.branches(id) ON DELETE CASCADE,
+  PRIMARY KEY (labour_id, branch_id)
+);
+
+
 -- =============================================================================
 -- 3.7 GLOBAL PACKED/LOOSE STOCK RULE
 -- =============================================================================
@@ -276,5 +302,3 @@ CREATE TABLE IF NOT EXISTS stock_type_rule (
   packed_qty_step    numeric(18,3) NOT NULL DEFAULT 0.5,
   enforced           boolean NOT NULL DEFAULT true
 );
-
-

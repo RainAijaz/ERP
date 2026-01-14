@@ -6,24 +6,6 @@
 SET search_path = erp;
 
 -- ---------------------------------------------------------------------
--- 0) ENUMS (create-if-missing)
--- ---------------------------------------------------------------------
-
-DO $$ BEGIN
-  -- Packed/Loose rule for pair-based goods (UI entry mode).
-  CREATE TYPE erp.stock_type AS ENUM ('PACKED','LOOSE');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-DO $$ BEGIN
-  CREATE TYPE erp.loss_type AS ENUM ('RM_LOSS','SFG_LOSS','FG_LOSS','DVC_ABANDON');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-DO $$ BEGIN
-  CREATE TYPE erp.production_kind AS ENUM ('FG','SFG');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-
--- ---------------------------------------------------------------------
 -- 1) CORE: WIP department pool (fast balance + audit ledger)
 -- ---------------------------------------------------------------------
 -- Purpose:
@@ -127,7 +109,7 @@ CREATE TABLE IF NOT EXISTS erp.production_plan_header (
 
 CREATE TABLE IF NOT EXISTS erp.production_plan_line (
   voucher_line_id bigint PRIMARY KEY REFERENCES erp.voucher_line(id) ON DELETE CASCADE,
-  stock_status    erp.stock_status NOT NULL,
+  stock_type      erp.stock_type NOT NULL,
   total_pairs     int NOT NULL CHECK (total_pairs > 0)
 );
 
