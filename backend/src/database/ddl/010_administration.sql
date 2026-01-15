@@ -443,6 +443,6 @@ CREATE TABLE IF NOT EXISTS erp.approval_request (
   CHECK (
     (status = 'PENDING' AND decided_by IS NULL AND decided_at IS NULL)
     OR
-    (status <> 'PENDING' AND decided_by IS NOT NULL)
+  (status <> 'PENDING' AND decided_by IS NOT NULL AND decided_at IS NOT NULL)
   )
 );

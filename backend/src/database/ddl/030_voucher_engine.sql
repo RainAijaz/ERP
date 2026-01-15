@@ -20,7 +20,7 @@ SET search_path = erp;
 -- Flags tell the app how to treat each voucher type:
 --   requires_approval = should it go through maker-checker?
 --   affects_stock     = should it create inventory movement/valuation?
---   affects_gl        = should it create GL postings when posted?
+--   affects_gl        = should it create GL postings when approved?
 CREATE TABLE IF NOT EXISTS erp.voucher_type (
   code              text PRIMARY KEY, -- short stable key: SV, PV, JV, etc.
   name              text NOT NULL,    -- display name shown in UI
@@ -48,7 +48,6 @@ CREATE TABLE IF NOT EXISTS erp.voucher_header (
 
   -- Approval status for maker-checker stage.
   -- If you later introduce posting as a separate finalization step,
-  -- add posted_by/posted_at or a separate voucher_status enum.
   status             erp.approval_status NOT NULL DEFAULT 'PENDING',
 
   created_by         bigint NOT NULL REFERENCES erp.users(id) ON DELETE RESTRICT,

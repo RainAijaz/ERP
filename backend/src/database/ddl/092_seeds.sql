@@ -31,9 +31,6 @@
 --   - This file is idempotent:
 --       * ON CONFLICT DO NOTHING for dictionaries
 --       * ON CONFLICT DO UPDATE for voucher_type + admin permissions
---   - Approval vs Posting:
---       * Per your rule: simple vouchers save as APPROVED (NOT POSTED).
---       * POSTED is a separate operational action (GL/stock finalization).
 -- =====================================================================
 
 SET search_path = erp;
@@ -79,7 +76,6 @@ VALUES
   ('SUBMIT',  'Submit',  'Submitted for approval'),
   ('APPROVE', 'Approve', 'Approved by checker'),
   ('REJECT',  'Reject',  'Rejected by checker'),
-  ('POST',    'Post',    'Posted/finalized'),
   ('CANCEL',  'Cancel',  'Cancelled/voided')
 ON CONFLICT (code) DO NOTHING;
 

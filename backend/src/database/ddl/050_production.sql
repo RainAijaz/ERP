@@ -64,7 +64,6 @@ CREATE TABLE IF NOT EXISTS erp.wip_dept_balance (
 --   - This table intentionally does NOT enforce "no duplicate rows" because
 --     a single voucher can contain multiple lines for the same SKU + dept + direction.
 --   - Duplicate-prevention (for accidental re-posting) must be handled by posting logic
---     using "already-posted" guards (e.g., posting status, gl_batch existence, etc.).
 CREATE TABLE IF NOT EXISTS erp.wip_dept_ledger (
   id                bigserial PRIMARY KEY,
   branch_id         bigint NOT NULL REFERENCES erp.branches(id) ON DELETE RESTRICT,
@@ -108,10 +107,6 @@ CREATE TABLE IF NOT EXISTS erp.dcv_header (
 -- Production Completion line extension (FG/SFG completion vouchers)
 -- ---------------------------------------------------------------------
 -- total_pairs is the physical completed quantity.
--- is_packed is ONLY a UI/entry mode flag:
---   false = LOOSE (pair/integer entry)
---   true  = PACKED (dozen/step entry)
--- It does NOT represent a different stock identity.
 CREATE TABLE IF NOT EXISTS erp.production_line (
   voucher_line_id bigint PRIMARY KEY REFERENCES erp.voucher_line(id) ON DELETE CASCADE,
   is_packed       boolean NOT NULL DEFAULT false,  -- false=LOOSE, true=PACKED (entry mode)
@@ -121,7 +116,7 @@ CREATE TABLE IF NOT EXISTS erp.production_line (
 -- ---------------------------------------------------------------------
 -- Links: Production voucher -> auto-generated vouchers
 -- ---------------------------------------------------------------------
--- When a production completion is posted, backend generates:
+-- When a production completion is approved, backend generates:
 --   - consumption voucher (RM/SFG consumption from BOM)
 --   - labour voucher (labour cost per SKU/dept)
 -- This table keeps the linkage for audit and reporting.

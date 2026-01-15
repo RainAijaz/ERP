@@ -80,9 +80,6 @@ CREATE TABLE IF NOT EXISTS erp.stock_transfer_out_header (
   received_at          timestamptz,
 
   -- Source branch is voucher_header.branch_id; prevent self-transfer
-  CHECK (dest_branch_id <> (SELECT vh.branch_id FROM erp.voucher_header vh WHERE vh.id = voucher_id))
-  -- NOTE: This CHECK uses a subquery; Postgres allows it, but some teams avoid it.
-  -- If you prefer, remove this CHECK and enforce "source != dest" in integrity_checks.sql.
 );
 
 -- Index for "pending incoming transfers" at destination
@@ -111,7 +108,7 @@ CREATE INDEX IF NOT EXISTS idx_grn_in_against_stn
 -- Requirement:
 --   - Workers enter physical quantities + selling_rate_display
 --   - System captures system_qty_snapshot (RM) OR system_qty_pairs_snapshot (SFG/FG)
---   - NO ledger impact until voucher is approved + posted (posting engine)
+--   - NO ledger impact until voucher is approved
 --
 -- IMPORTANT:
 --   - This table stores only extra fields for the stock count screen.

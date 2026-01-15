@@ -16,6 +16,7 @@
 --      - grn_in_header must attach to 'GRN_IN' and against_stn_out_id must be 'STN_OUT'
 --      - GRN_IN branch must equal STN_OUT.dest_branch_id
 --      - Receive-once guard: one STN_OUT can be received by only one GRN_IN
+--      - You cannot create a “Stock Transfer Out” voucher where the destination branch is the same as the source branch.
 --
 --   C) Production / Auto-child vouchers
 --      - dcv_header must attach to 'DCV'
@@ -222,6 +223,34 @@ EXECUTE FUNCTION erp.trg_stn_out_type_guard();
 -- Helps Pending Incoming Transfers list (destination branch worklist)
 CREATE INDEX IF NOT EXISTS ix_transfer_dest_status_date
   ON erp.stock_transfer_out_header(dest_branch_id, status, dispatch_date);
+
+CREATE OR REPLACE FUNCTION erp.trg_stock_transfer_out_no_self_transfer()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE v_source_branch bigint;
+BEGIN
+  SELECT branch_id INTO v_source_branch
+  FROM erp.voucher_header
+  WHERE id = NEW.voucher_id;
+
+  IF v_source_branch IS NULL THEN
+    RAISE EXCEPTION 'voucher_header % not found', NEW.voucher_id;
+  END IF;
+
+  IF NEW.dest_branch_id = v_source_branch THEN
+    RAISE EXCEPTION 'Cannot transfer to same branch (branch_id=%).', v_source_branch;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_stock_transfer_out_no_self_transfer ON erp.stock_transfer_out_header;
+CREATE TRIGGER trg_stock_transfer_out_no_self_transfer
+BEFORE INSERT OR UPDATE ON erp.stock_transfer_out_header
+FOR EACH ROW
+EXECUTE FUNCTION erp.trg_stock_transfer_out_no_self_transfer();  
 
 -- C1/C2) GRN_IN must be GRN_IN; against STN_OUT must be STN_OUT; GRN_IN branch must equal STN_OUT.dest_branch_id
 DO $$
