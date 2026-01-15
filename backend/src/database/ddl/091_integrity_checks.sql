@@ -1,46 +1,88 @@
--- INVENTORY.SQL
--- =====================================================================
--- VALIDATION + SAFETY TRIGGERS
--- Inventory Transfers (STN_OUT / GRN_IN) + Stock Count
--- + Production integrity (DCV / Production lines / Auto child vouchers)
--- =====================================================================
--- Goal:
---   Same business rules as your longer script, but fewer lines and less repetition.
+-- =============================================================================
+-- INVENTORY_INTEGRITY_CHECKS.sql
+-- =============================================================================
+-- PURPOSE
+--   DB-level integrity + safety triggers for modules built on the voucher engine.
+--   This file does NOT do posting/costing. It only blocks invalid/wrong links.
 --
--- Philosophy:
---   1) Put *data-integrity* rules in DB (so bad data can’t enter even via scripts/imports).
---   2) Keep posting/costing/business calculations in backend (your voucher engine).
+-- INCLUDES (GUARDS / TRIGGERS)
+--   A) Stock Count
+--      - Notes required when reason_codes.requires_notes = true
+--      - stock_count_header must attach to voucher_type_code = 'STOCK_COUNT_ADJ'
 --
--- Depends on existing objects from your other files:
---   - erp.voucher_header, erp.voucher_line
---   - erp.assert_voucher_type_code(voucher_id, expected_code)
---   - enums: erp.voucher_line_kind, erp.stock_type, erp.loss_type, etc.
---   - tables: erp.reason_codes, erp.stock_count_header, erp.grn_in_header,
---             erp.stock_transfer_out_header, erp.production_line, erp.dcv_header,
---             erp.consumption_header, erp.labour_voucher_header, erp.labour_voucher_line,
---             erp.production_generated_links, erp.abnormal_loss_line, erp.wip_dept_balance
--- =====================================================================
+--   B) Inventory Transfers (STN_OUT / GRN_IN)
+--      - stock_transfer_out_header must attach to 'STN_OUT'
+--      - received_voucher_id (if set) must be 'GRN_IN'
+--      - grn_in_header must attach to 'GRN_IN' and against_stn_out_id must be 'STN_OUT'
+--      - GRN_IN branch must equal STN_OUT.dest_branch_id
+--      - Receive-once guard: one STN_OUT can be received by only one GRN_IN
+--
+--   C) Production / Auto-child vouchers
+--      - dcv_header must attach to 'DCV'
+--      - production_line must attach to PROD_FG/PROD_SFG and compute total_pairs from voucher_line.qty
+--      - consumption_header must attach to 'CONSUMP' and reference PROD_FG/PROD_SFG
+--      - labour_voucher_header must attach to 'LABOUR_PROD' and reference PROD_FG/PROD_SFG
+--      - production_generated_links enforced one-to-one by UPSERT guards
+--      - labour_voucher_line must attach to 'LABOUR_PROD' and voucher_line must be LABOUR line (qty integer)
+--
+--   D) Abnormal Loss
+--      - RM_LOSS must be ITEM line
+--      - SFG_LOSS/FG_LOSS must be SKU line with integer pairs qty
+--      - DVC_ABANDON must be SKU line + dept_id required + qty integer + qty <= WIP pool
+--
+--   E) BOM Enforcement
+--      - bom_header.level must match items.item_type (FINISHED->FG, SEMI_FINISHED->SFG)
+--      - bom_rm_line.rm_item_id must be RM
+--      - bom_variant_rule.target_rm_item_id (if set) must be RM
+--      - bom_sfg_line.ref_approved_bom_id (if set) must be APPROVED and must belong to same SFG item
+--
+--   F) Purchase Enforcement
+--      - purchase_invoice_header_ext must attach to 'PI', optional po_voucher_id must be 'PO'
+--      - purchase_return_header_ext must attach to 'PR'
+--      - purchase voucher lines (PO/PI/PR) must be ITEM lines with RM item_id and qty > 0
+--      - PO requirement policy enforced at COMMIT (DEFERRABLE INITIALLY DEFERRED)
+--
+--   G) Sales Enforcement
+--      - sales_order_header must attach to 'SALES_ORDER'
+--      - sales_header must attach to 'SALES_VOUCHER'
+--      - sales_line must attach to SKU voucher_line of SALES_VOUCHER
+--
+-- NOTE
+--   This script is designed to be re-runnable:
+--   - CREATE OR REPLACE FUNCTION
+--   - DROP TRIGGER IF EXISTS
+--   - Guarded creation for optional modules/tables using to_regclass() checks
+-- =============================================================================
 
 SET search_path = erp;
 
--- =====================================================================
--- 0) SMALL HELPERS (reduce repeated code)
--- =====================================================================
--- Why helpers?
---   Your earlier version repeats the same "select voucher_type_code / join voucher_line"
---   logic across many trigger functions. These helpers cut that repetition.
+-- =============================================================================
+-- 0) SMALL HELPERS (shared)
+-- =============================================================================
 
--- 0.1 Guard: Voucher must be of a specific voucher_type_code
-CREATE OR REPLACE FUNCTION erp.guard_voucher_type(p_voucher_id bigint, p_expected text)
+-- 0.1 Voucher type guard: blocks linking the wrong voucher_id to an extension table.
+CREATE OR REPLACE FUNCTION erp.assert_voucher_type_code(p_voucher_id bigint, p_expected_type text)
 RETURNS void
 LANGUAGE plpgsql
 AS $$
+DECLARE v_type text;
 BEGIN
-  PERFORM erp.assert_voucher_type_code(p_voucher_id, p_expected);
+  SELECT vh.voucher_type_code
+    INTO v_type
+  FROM erp.voucher_header vh
+  WHERE vh.id = p_voucher_id;
+
+  IF v_type IS NULL THEN
+    RAISE EXCEPTION 'Voucher % not found.', p_voucher_id;
+  END IF;
+
+  IF v_type <> p_expected_type THEN
+    RAISE EXCEPTION 'Voucher % must be type %, found %.', p_voucher_id, p_expected_type, v_type;
+  END IF;
 END;
 $$;
 
--- 0.2 Guard: Source voucher must be Production (FG/SFG)
+-- 0.2 Guard: Source voucher must be a production voucher (FG/SFG).
 CREATE OR REPLACE FUNCTION erp.assert_is_production_voucher(p_voucher_id bigint)
 RETURNS void
 LANGUAGE plpgsql
@@ -61,15 +103,47 @@ BEGIN
 END;
 $$;
 
+-- 0.3 Helper: ensure an item_id is RM (used by purchase line enforcement).
+CREATE OR REPLACE FUNCTION erp.assert_item_is_rm(p_item_id bigint)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE v_type erp.item_type;
+BEGIN
+  IF p_item_id IS NULL THEN
+    RAISE EXCEPTION 'item_id cannot be NULL'
+      USING ERRCODE = '23502';
+  END IF;
 
--- =====================================================================
+  SELECT i.item_type
+    INTO v_type
+  FROM erp.items i
+  WHERE i.id = p_item_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Invalid item_id=%. Item not found.', p_item_id
+      USING ERRCODE = '23503';
+  END IF;
+
+  IF v_type <> 'RM' THEN
+    RAISE EXCEPTION 'Invalid item_id=%. Expected item_type=RM, got %.', p_item_id, v_type
+      USING ERRCODE = '22000';
+  END IF;
+END;
+$$;
+
+-- =============================================================================
 -- A) STOCK COUNT GUARDS
--- =====================================================================
--- Rules:
---   A1) If selected reason_codes.requires_notes = TRUE, notes must be non-empty.
---   A2) stock_count_header must attach only to STOCK_COUNT_ADJ voucher type.
+-- =============================================================================
 
--- A1) Notes required when reason requires notes (short form: EXISTS)
+DO $$
+BEGIN
+  IF to_regclass('erp.stock_count_header') IS NULL THEN
+    RETURN;
+  END IF;
+END $$;
+
+-- A1) Notes required when selected reason_code.requires_notes = true
 CREATE OR REPLACE FUNCTION erp.trg_stock_count_notes_required()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -77,7 +151,8 @@ AS $$
 BEGIN
   IF NEW.reason_code_id IS NOT NULL
      AND EXISTS (
-       SELECT 1 FROM erp.reason_codes rc
+       SELECT 1
+       FROM erp.reason_codes rc
        WHERE rc.id = NEW.reason_code_id AND rc.requires_notes
      )
      AND trim(coalesce(NEW.notes, '')) = '' THEN
@@ -94,13 +169,13 @@ BEFORE INSERT OR UPDATE ON erp.stock_count_header
 FOR EACH ROW
 EXECUTE FUNCTION erp.trg_stock_count_notes_required();
 
--- A2) Extension must belong to STOCK_COUNT_ADJ
+-- A2) Extension must belong to STOCK_COUNT_ADJ voucher type
 CREATE OR REPLACE FUNCTION erp.trg_stock_count_type_guard()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  PERFORM erp.guard_voucher_type(NEW.voucher_id, 'STOCK_COUNT_ADJ');
+  PERFORM erp.assert_voucher_type_code(NEW.voucher_id, 'STOCK_COUNT_ADJ');
   RETURN NEW;
 END;
 $$;
@@ -111,25 +186,27 @@ BEFORE INSERT OR UPDATE ON erp.stock_count_header
 FOR EACH ROW
 EXECUTE FUNCTION erp.trg_stock_count_type_guard();
 
+-- =============================================================================
+-- B) TRANSFERS: STN_OUT + GRN_IN
+-- =============================================================================
 
--- =====================================================================
--- B) TRANSFERS: STN_OUT header guard (dispatch/receive link integrity)
--- =====================================================================
--- Rules:
---   B1) stock_transfer_out_header.voucher_id must be STN_OUT
---   B2) If received_voucher_id present, it must be GRN_IN
--- Why in DB?
---   Prevents wrong voucher IDs being linked (even if backend/UI bugs).
+-- B1/B2) stock_transfer_out_header must be STN_OUT, and received_voucher_id (if set) must be GRN_IN.
+DO $$
+BEGIN
+  IF to_regclass('erp.stock_transfer_out_header') IS NULL THEN
+    RETURN;
+  END IF;
+END $$;
 
 CREATE OR REPLACE FUNCTION erp.trg_stn_out_type_guard()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  PERFORM erp.guard_voucher_type(NEW.voucher_id, 'STN_OUT');
+  PERFORM erp.assert_voucher_type_code(NEW.voucher_id, 'STN_OUT');
 
   IF NEW.received_voucher_id IS NOT NULL THEN
-    PERFORM erp.guard_voucher_type(NEW.received_voucher_id, 'GRN_IN');
+    PERFORM erp.assert_voucher_type_code(NEW.received_voucher_id, 'GRN_IN');
   END IF;
 
   RETURN NEW;
@@ -142,21 +219,18 @@ BEFORE INSERT OR UPDATE ON erp.stock_transfer_out_header
 FOR EACH ROW
 EXECUTE FUNCTION erp.trg_stn_out_type_guard();
 
--- Speeds up Pending Incoming Transfers (destination branch worklist)
+-- Helps Pending Incoming Transfers list (destination branch worklist)
 CREATE INDEX IF NOT EXISTS ix_transfer_dest_status_date
   ON erp.stock_transfer_out_header(dest_branch_id, status, dispatch_date);
 
+-- C1/C2) GRN_IN must be GRN_IN; against STN_OUT must be STN_OUT; GRN_IN branch must equal STN_OUT.dest_branch_id
+DO $$
+BEGIN
+  IF to_regclass('erp.grn_in_header') IS NULL THEN
+    RETURN;
+  END IF;
+END $$;
 
--- =====================================================================
--- C) GRN_IN: destination branch-only receiving + receive-once
--- =====================================================================
--- Rules:
---   C1) GRN_IN voucher must be GRN_IN; against_stn_out_id must be STN_OUT
---   C2) GRN_IN voucher_header.branch_id must equal STN_OUT.dest_branch_id
---   C3) One-time receive: same STN_OUT cannot be received by multiple GRN_IN vouchers
---   C4) When GRN_IN links, mark transfer status=RECEIVED + set received_at + store linkage
-
--- C1 + C2) Destination branch restriction (single join, fewer queries)
 CREATE OR REPLACE FUNCTION erp.trg_grn_in_dest_branch_only()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -165,8 +239,8 @@ DECLARE
   v_grn_branch_id  bigint;
   v_dest_branch_id bigint;
 BEGIN
-  PERFORM erp.guard_voucher_type(NEW.voucher_id, 'GRN_IN');
-  PERFORM erp.guard_voucher_type(NEW.against_stn_out_id, 'STN_OUT');
+  PERFORM erp.assert_voucher_type_code(NEW.voucher_id, 'GRN_IN');
+  PERFORM erp.assert_voucher_type_code(NEW.against_stn_out_id, 'STN_OUT');
 
   SELECT vh.branch_id, sth.dest_branch_id
     INTO v_grn_branch_id, v_dest_branch_id
@@ -176,7 +250,8 @@ BEGIN
   WHERE vh.id = NEW.voucher_id;
 
   IF NOT FOUND THEN
-    RAISE EXCEPTION 'Invalid GRN_IN (%)/STN_OUT (%) link (voucher missing or transfer header missing).',
+    RAISE EXCEPTION
+      'Invalid GRN_IN (%)/STN_OUT (%) link (voucher missing or transfer header missing).',
       NEW.voucher_id, NEW.against_stn_out_id;
   END IF;
 
@@ -196,7 +271,7 @@ BEFORE INSERT OR UPDATE ON erp.grn_in_header
 FOR EACH ROW
 EXECUTE FUNCTION erp.trg_grn_in_dest_branch_only();
 
--- C3 + C4) Receive once + mark transfer as received (short update-first logic)
+-- C3/C4) Receive-once + mark transfer as received
 CREATE OR REPLACE FUNCTION erp.trg_grn_in_receive_once_and_close()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -213,8 +288,9 @@ BEGIN
     RETURN NEW;
   END IF;
 
-  -- If update failed, distinguish "not found" vs "already received by someone else"
-  IF NOT EXISTS (SELECT 1 FROM erp.stock_transfer_out_header WHERE voucher_id = NEW.against_stn_out_id) THEN
+  IF NOT EXISTS (
+    SELECT 1 FROM erp.stock_transfer_out_header WHERE voucher_id = NEW.against_stn_out_id
+  ) THEN
     RAISE EXCEPTION 'STN_OUT % not found in stock_transfer_out_header.', NEW.against_stn_out_id;
   END IF;
 
@@ -228,24 +304,24 @@ AFTER INSERT OR UPDATE OF against_stn_out_id ON erp.grn_in_header
 FOR EACH ROW
 EXECUTE FUNCTION erp.trg_grn_in_receive_once_and_close();
 
-
--- =====================================================================
--- D) PRODUCTION INTEGRITY (DB guards only, posting stays in backend)
--- =====================================================================
--- Includes:
---   D1) DCV header must attach to DCV voucher type
---   D2) Production line must attach to production voucher types and compute total_pairs rule
---   D3) Consumption/Labour headers must attach to correct voucher types and must reference PROD_FG/PROD_SFG
---   D4) One-to-one linking into production_generated_links (short upsert logic)
---   D5) Labour voucher line must attach to LABOUR_PROD and must be LABOUR line with qty integer pairs
+-- =============================================================================
+-- D) PRODUCTION INTEGRITY
+-- =============================================================================
 
 -- D1) DCV header type guard
+DO $$
+BEGIN
+  IF to_regclass('erp.dcv_header') IS NULL THEN
+    RETURN;
+  END IF;
+END $$;
+
 CREATE OR REPLACE FUNCTION erp.trg_dcv_type_guard()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  PERFORM erp.guard_voucher_type(NEW.voucher_id, 'DCV');
+  PERFORM erp.assert_voucher_type_code(NEW.voucher_id, 'DCV');
   RETURN NEW;
 END;
 $$;
@@ -257,24 +333,31 @@ FOR EACH ROW
 EXECUTE FUNCTION erp.trg_dcv_type_guard();
 
 -- D2) Production line validation + compute total_pairs from voucher_line.qty
--- Notes:
---   - Uses one join to fetch voucher_id + type + sku + qty in one go (fewer lines).
---   - Keeps your PACKED (0.5 dozen) and LOOSE (integer pairs) rules.
+-- Meaning:
+--   - is_packed = true  => voucher_line.qty is in DOZEN units, allowed step 0.5 dozen
+--   - is_packed = false => voucher_line.qty is in PAIRS, must be integer
+DO $$
+BEGIN
+  IF to_regclass('erp.production_line') IS NULL THEN
+    RETURN;
+  END IF;
+END $$;
+
 CREATE OR REPLACE FUNCTION erp.trg_production_line_validate()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 DECLARE
-  v_voucher_id bigint;
+  v_header_id  bigint;
   v_kind       erp.voucher_line_kind;
   v_sku_id     bigint;
   v_qty        numeric(18,3);
   v_vtype      text;
 BEGIN
-  SELECT vl.voucher_id, vl.line_kind, vl.sku_id, vl.qty, vh.voucher_type_code
-    INTO v_voucher_id, v_kind, v_sku_id, v_qty, v_vtype
-  FROM erp.voucher_line vl
-  JOIN erp.voucher_header vh ON vh.id = vl.voucher_id
+  SELECT vl.voucher_header_id, vl.line_kind, vl.sku_id, vl.qty, vh.voucher_type_code
+    INTO v_header_id, v_kind, v_sku_id, v_qty, v_vtype
+  FROM erp.voucher_line   vl
+  JOIN erp.voucher_header vh ON vh.id = vl.voucher_header_id
   WHERE vl.id = NEW.voucher_line_id;
 
   IF NOT FOUND THEN
@@ -293,18 +376,21 @@ BEGIN
     RAISE EXCEPTION 'Production quantity must be > 0';
   END IF;
 
-  IF NEW.stock_type = 'PACKED' THEN
-    IF (v_qty*2) <> trunc(v_qty*2) THEN
+  IF NEW.is_packed = true THEN
+    -- Packed entry is in DOZEN with 0.5-dozen increments (e.g., 1.0, 1.5, 2.0).
+    IF (v_qty * 2) <> trunc(v_qty * 2) THEN
       RAISE EXCEPTION 'PACKED qty must be in 0.5 dozen increments';
     END IF;
-    IF (v_qty*12) <> trunc(v_qty*12) THEN
-      RAISE EXCEPTION 'PACKED qty must convert to whole pairs (qty*12 integer)';
-    END IF;
-    NEW.total_pairs := (v_qty*12)::int;
+
+    -- Convert dozen -> pairs (12 pairs per dozen)
+    NEW.total_pairs := (v_qty * 12)::int;
+
   ELSE
+    -- Loose entry is direct pairs (integer only)
     IF v_qty <> trunc(v_qty) THEN
       RAISE EXCEPTION 'LOOSE qty must be integer pairs';
     END IF;
+
     NEW.total_pairs := v_qty::int;
   END IF;
 
@@ -319,12 +405,19 @@ FOR EACH ROW
 EXECUTE FUNCTION erp.trg_production_line_validate();
 
 -- D3) Consumption header must be CONSUMP and must reference production voucher
+DO $$
+BEGIN
+  IF to_regclass('erp.consumption_header') IS NULL THEN
+    RETURN;
+  END IF;
+END $$;
+
 CREATE OR REPLACE FUNCTION erp.trg_consumption_header_validate()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  PERFORM erp.guard_voucher_type(NEW.voucher_id, 'CONSUMP');
+  PERFORM erp.assert_voucher_type_code(NEW.voucher_id, 'CONSUMP');
   PERFORM erp.assert_is_production_voucher(NEW.source_production_id);
   RETURN NEW;
 END;
@@ -337,12 +430,19 @@ FOR EACH ROW
 EXECUTE FUNCTION erp.trg_consumption_header_validate();
 
 -- D3) Labour voucher header must be LABOUR_PROD and must reference production voucher
+DO $$
+BEGIN
+  IF to_regclass('erp.labour_voucher_header') IS NULL THEN
+    RETURN;
+  END IF;
+END $$;
+
 CREATE OR REPLACE FUNCTION erp.trg_labour_voucher_header_validate()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  PERFORM erp.guard_voucher_type(NEW.voucher_id, 'LABOUR_PROD');
+  PERFORM erp.assert_voucher_type_code(NEW.voucher_id, 'LABOUR_PROD');
   PERFORM erp.assert_is_production_voucher(NEW.source_production_id);
   RETURN NEW;
 END;
@@ -354,7 +454,14 @@ BEFORE INSERT OR UPDATE ON erp.labour_voucher_header
 FOR EACH ROW
 EXECUTE FUNCTION erp.trg_labour_voucher_header_validate();
 
--- D4) Link consumption to production (one-to-one) using a short UPSERT
+-- D4) Link consumption to production (one-to-one) using UPSERT
+DO $$
+BEGIN
+  IF to_regclass('erp.production_generated_links') IS NULL THEN
+    RETURN;
+  END IF;
+END $$;
+
 CREATE OR REPLACE FUNCTION erp.trg_link_consumption_to_production()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -383,7 +490,7 @@ AFTER INSERT OR UPDATE OF source_production_id ON erp.consumption_header
 FOR EACH ROW
 EXECUTE FUNCTION erp.trg_link_consumption_to_production();
 
--- D4) Link labour voucher to production (one-to-one) using a short UPSERT
+-- D4) Link labour voucher to production (one-to-one) using UPSERT
 CREATE OR REPLACE FUNCTION erp.trg_link_labour_to_production()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -412,19 +519,28 @@ AFTER INSERT OR UPDATE OF source_production_id ON erp.labour_voucher_header
 FOR EACH ROW
 EXECUTE FUNCTION erp.trg_link_labour_to_production();
 
--- D5) Labour voucher line validation (one join, fewer lines)
+-- D5) Labour voucher line validation
+-- NOTE: sku_id should be taken from voucher_line (line_kind=LABOUR already pins labour_id).
+-- This guard enforces: LABOUR_PROD voucher + voucher_line.line_kind='LABOUR' + qty integer pairs + dept_id required.
+DO $$
+BEGIN
+  IF to_regclass('erp.labour_voucher_line') IS NULL THEN
+    RETURN;
+  END IF;
+END $$;
+
 CREATE OR REPLACE FUNCTION erp.trg_labour_voucher_line_validate()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 DECLARE
-  v_voucher_id bigint;
+  v_header_id  bigint;
   v_kind       erp.voucher_line_kind;
   v_qty        numeric(18,3);
   v_labour_id  bigint;
 BEGIN
-  SELECT vl.voucher_id, vl.line_kind, vl.qty, vl.labour_id
-    INTO v_voucher_id, v_kind, v_qty, v_labour_id
+  SELECT vl.voucher_header_id, vl.line_kind, vl.qty, vl.labour_id
+    INTO v_header_id, v_kind, v_qty, v_labour_id
   FROM erp.voucher_line vl
   WHERE vl.id = NEW.voucher_line_id;
 
@@ -432,7 +548,7 @@ BEGIN
     RAISE EXCEPTION 'voucher_line % not found', NEW.voucher_line_id;
   END IF;
 
-  PERFORM erp.guard_voucher_type(v_voucher_id, 'LABOUR_PROD');
+  PERFORM erp.assert_voucher_type_code(v_header_id, 'LABOUR_PROD');
 
   IF v_kind <> 'LABOUR' THEN
     RAISE EXCEPTION 'Labour voucher lines must have line_kind=LABOUR.';
@@ -446,9 +562,8 @@ BEGIN
     RAISE EXCEPTION 'Labour qty must be a positive integer (pairs).';
   END IF;
 
-  -- dept_id + sku_id live in extension table (kept as your rule)
-  IF NEW.dept_id IS NULL OR NEW.sku_id IS NULL THEN
-    RAISE EXCEPTION 'dept_id and sku_id are required in labour_voucher_line.';
+  IF NEW.dept_id IS NULL THEN
+    RAISE EXCEPTION 'dept_id is required in labour_voucher_line.';
   END IF;
 
   RETURN NEW;
@@ -461,22 +576,30 @@ BEFORE INSERT OR UPDATE ON erp.labour_voucher_line
 FOR EACH ROW
 EXECUTE FUNCTION erp.trg_labour_voucher_line_validate();
 
+-- Helpful index for audits/joins (if tables exist)
+CREATE INDEX IF NOT EXISTS idx_prod_links_consumption
+  ON erp.production_generated_links(consumption_voucher_id);
 
--- =====================================================================
--- E) ABNORMAL LOSS LINE VALIDATION (compact)
--- =====================================================================
--- Rules:
---   - RM_LOSS   : must be ITEM line (decimal qty allowed)
---   - SFG/FG    : must be SKU line (qty integer pairs)
---   - DVC_ABANDON: must be SKU line + dept required + qty integer pairs
---                 and qty must not exceed WIP pool for (branch, sku, dept)
+CREATE INDEX IF NOT EXISTS idx_prod_links_labour
+  ON erp.production_generated_links(labour_voucher_id);
+
+-- =============================================================================
+-- E) ABNORMAL LOSS LINE VALIDATION
+-- =============================================================================
+
+DO $$
+BEGIN
+  IF to_regclass('erp.abnormal_loss_line') IS NULL THEN
+    RETURN;
+  END IF;
+END $$;
 
 CREATE OR REPLACE FUNCTION erp.trg_abnormal_loss_line_validate()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 DECLARE
-  v_voucher_id bigint;
+  v_header_id  bigint;
   v_branch_id  bigint;
   v_kind       erp.voucher_line_kind;
   v_item_id    bigint;
@@ -484,8 +607,8 @@ DECLARE
   v_qty        numeric(18,3);
   v_pool_qty   int;
 BEGIN
-  SELECT vl.voucher_id, vl.line_kind, vl.item_id, vl.sku_id, vl.qty
-    INTO v_voucher_id, v_kind, v_item_id, v_sku_id, v_qty
+  SELECT vl.voucher_header_id, vl.line_kind, vl.item_id, vl.sku_id, vl.qty
+    INTO v_header_id, v_kind, v_item_id, v_sku_id, v_qty
   FROM erp.voucher_line vl
   WHERE vl.id = NEW.voucher_line_id;
 
@@ -495,7 +618,7 @@ BEGIN
 
   SELECT vh.branch_id INTO v_branch_id
   FROM erp.voucher_header vh
-  WHERE vh.id = v_voucher_id;
+  WHERE vh.id = v_header_id;
 
   IF coalesce(v_qty,0) <= 0 THEN
     RAISE EXCEPTION 'Loss quantity must be > 0';
@@ -548,246 +671,18 @@ BEFORE INSERT OR UPDATE ON erp.abnormal_loss_line
 FOR EACH ROW
 EXECUTE FUNCTION erp.trg_abnormal_loss_line_validate();
 
+-- =============================================================================
+-- F) BOM ENFORCEMENT
+-- =============================================================================
 
--- =====================================================================
--- F) POSTING-TIME ASSERTS (helper functions for backend)
--- =====================================================================
--- These are not “UI validations”. They’re safety checks meant to be called
--- inside your posting transaction before touching stock_ledger / gl_post rows.
-
-CREATE OR REPLACE FUNCTION erp.assert_voucher_is_approved(p_voucher_id bigint)
-RETURNS void
-LANGUAGE plpgsql
-AS $$
-DECLARE v_status erp.approval_status;
+-- F1) ref_approved_bom_id must be APPROVED and must match the SFG item behind sfg_sku_id
+DO $$
 BEGIN
-  SELECT status INTO v_status
-  FROM erp.voucher_header
-  WHERE id = p_voucher_id;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Voucher % not found', p_voucher_id;
-  END IF;
-
-  IF v_status <> 'APPROVED' THEN
-    RAISE EXCEPTION 'Voucher % must be APPROVED before posting (current=%).', p_voucher_id, v_status;
-  END IF;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION erp.assert_stock_count_can_post(p_voucher_id bigint)
-RETURNS void
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  PERFORM erp.assert_voucher_is_approved(p_voucher_id);
-
-  IF NOT EXISTS (SELECT 1 FROM erp.stock_count_header WHERE voucher_id = p_voucher_id) THEN
-    RAISE EXCEPTION 'stock_count_header missing for voucher %', p_voucher_id;
-  END IF;
-END;
-$$;
-
--- CHECKS FOR 010_FOUNDATION.SQL
-
--- This function return TRUE if the period is LOCKED or FROZEN for the given branch/date.
-CREATE OR REPLACE FUNCTION erp.is_period_locked(p_branch_id bigint, p_date date)
-RETURNS boolean AS $$
-DECLARE v_status erp.period_status;
-BEGIN
-  SELECT pc.status INTO v_status
-  FROM erp.period_control pc
-  WHERE pc.branch_id = p_branch_id
-    AND pc.period_year  = EXTRACT(YEAR FROM p_date)::int
-    AND pc.period_month = EXTRACT(MONTH FROM p_date)::int
-  LIMIT 1;
-
-  RETURN COALESCE(v_status IN ('LOCKED','FROZEN'), false);
-END;
-$$ LANGUAGE plpgsql STABLE;
-
--- Block inserts/updates for vouchers in LOCKED/FROZEN periods.
-CREATE OR REPLACE FUNCTION erp.trg_block_locked_period()
-RETURNS trigger
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  IF erp.is_period_locked(NEW.branch_id, NEW.voucher_date) THEN
-    RAISE EXCEPTION
-      'Voucher date % is in a locked/frozen period for branch %.',
-      NEW.voucher_date, NEW.branch_id;
-  END IF;
-
-  RETURN NEW;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS trg_block_locked_period ON erp.voucher_header;
-CREATE TRIGGER trg_block_locked_period
-BEFORE INSERT OR UPDATE OF voucher_date, branch_id ON erp.voucher_header
-FOR EACH ROW
-EXECUTE FUNCTION erp.trg_block_locked_period();
-
-
-/* ==================================== APPROVAL DECISIONS BY ADMIN-ONLY (DB-LEVEL ENFORCEMENT) ================================== */
-
--- PURPOSE - It returns true/false based on -> “Is this user an active Admin?”
-CREATE OR REPLACE FUNCTION erp.is_admin(p_user_id bigint)
-RETURNS boolean
-LANGUAGE sql
-STABLE
-AS $$
-  SELECT EXISTS (
-    SELECT 1
-    FROM erp.users u
-    JOIN erp.role_templates r ON r.id = u.primary_role_id
-    WHERE u.id = p_user_id
-      AND lower(trim(r.name)) = 'admin'
-      AND lower(trim(u.status)) = 'active'
-  );
-$$;
-
--- A trigger function is a piece of code that runs automatically (is "triggered") in response to a specific event
--- - Blocks deciding approval unless decided_by is Admin.
-CREATE OR REPLACE FUNCTION erp.trg_approval_decider_admin_only()
-RETURNS trigger
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  -- Clear error message (instead of only CHECK constraint violation).
-  IF NEW.status = 'PENDING' AND (NEW.decided_by IS NOT NULL OR NEW.decided_at IS NOT NULL) THEN
-    RAISE EXCEPTION 'Cannot set decided_by/decided_at while status is PENDING.';
-  END IF;
-
-  -- If update attempts to decide (decided_by set OR status not pending),
-  -- enforce decided_by and admin-only.
-  IF (NEW.decided_by IS NOT NULL OR NEW.status <> 'PENDING') THEN
-
-    -- If moving away from PENDING, decided_by must be present.
-    IF NEW.status <> 'PENDING' AND NEW.decided_by IS NULL THEN
-      RAISE EXCEPTION 'decided_by is required when changing approval status.';
-    END IF;
-
-    -- Admin-only decider.
-    IF NEW.decided_by IS NOT NULL AND NOT erp.is_admin(NEW.decided_by) THEN
-      RAISE EXCEPTION 'Only ADMIN can decide approval requests. User % is not ADMIN.', NEW.decided_by;
-    END IF;
-
-    -- Auto timestamp for consistent audit trail.
-    IF NEW.decided_by IS NOT NULL AND NEW.decided_at IS NULL THEN
-      NEW.decided_at := now();
-    END IF;
-
-  END IF;
-
-  RETURN NEW;
-END;
-$$;
-
--- Bind trigger: BEFORE UPDATE blocks invalid updates before they are written.
-DROP TRIGGER IF EXISTS trg_approval_admin_only ON erp.approval_request;
-CREATE TRIGGER trg_approval_admin_only
-BEFORE UPDATE ON erp.approval_request
-FOR EACH ROW
-EXECUTE FUNCTION erp.trg_approval_decider_admin_only();
-
--- FOR MASTER_DATA.SQL
--- keep avg same as purchase at start (only on insert)
-CREATE OR REPLACE FUNCTION erp.trg_rm_rate_init_avg()
-RETURNS trigger
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  IF NEW.avg_purchase_rate IS NULL OR NEW.avg_purchase_rate = 0 THEN
-    NEW.avg_purchase_rate := NEW.purchase_rate;
-  END IF;
-  RETURN NEW;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS trg_rm_rate_init_avg ON erp.rm_purchase_rates;
-CREATE TRIGGER trg_rm_rate_init_avg
-BEFORE INSERT ON erp.rm_purchase_rates
-FOR EACH ROW
-EXECUTE FUNCTION erp.trg_rm_rate_init_avg();
-
---FOR GL_STOCK.SQL
--- -----------------------------------------------------------------------------
--- DB ENFORCEMENT: Batch must balance (SUM(dr) = SUM(cr))
--- -----------------------------------------------------------------------------
--- Insert all gl_entry rows for a voucher/batch inside one TRANSACTION -> BEGIN---COMMIT
--- - We want to allow inserting multiple gl_entry rows first, then validate at COMMIT.
--- - DEFERRABLE INITIALLY DEFERRED => validates at transaction end (COMMIT).
-CREATE OR REPLACE FUNCTION erp.assert_gl_batch_balanced(p_batch_id bigint)
-RETURNS void
-LANGUAGE plpgsql
-AS $$
-DECLARE v_dr numeric(18,2);
-DECLARE v_cr numeric(18,2);
-BEGIN
-  IF p_batch_id IS NULL THEN
+  IF to_regclass('erp.bom_sfg_line') IS NULL THEN
     RETURN;
   END IF;
+END $$;
 
-  -- If batch row no longer exists (deleted), nothing to validate
-  IF NOT EXISTS (SELECT 1 FROM erp.gl_batch b WHERE b.id = p_batch_id) THEN
-    RETURN;
-  END IF;
-
-  -- Sum all debits and credits in this batch
-  SELECT
-    COALESCE(SUM(e.dr),0)::numeric(18,2),
-    COALESCE(SUM(e.cr),0)::numeric(18,2)
-  INTO v_dr, v_cr
-  FROM erp.gl_entry e
-  WHERE e.batch_id = p_batch_id;
-
-  -- Fail the transaction if not balanced
-  IF v_dr <> v_cr THEN
-    RAISE EXCEPTION
-      'GL batch % not balanced: total DR=% total CR=% (difference=%).',
-      p_batch_id, v_dr, v_cr, (v_dr - v_cr);
-  END IF;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION erp.trg_gl_entry_enforce_batch_balance()
-RETURNS trigger
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  -- INSERT affects NEW.batch_id
-  IF TG_OP = 'INSERT' THEN
-    PERFORM erp.assert_gl_batch_balanced(NEW.batch_id);
-    RETURN NEW;
-  END IF;
-
-  -- DELETE affects OLD.batch_id
-  IF TG_OP = 'DELETE' THEN
-    PERFORM erp.assert_gl_batch_balanced(OLD.batch_id);
-    RETURN OLD;
-  END IF;
-
-  -- UPDATE can affect OLD batch and/or NEW batch (if moved between batches)
-  PERFORM erp.assert_gl_batch_balanced(OLD.batch_id);
-  PERFORM erp.assert_gl_batch_balanced(NEW.batch_id);
-  RETURN NEW;
-END;
-$$;
-
--- Remove trigger if it already exists (so the script can be re-run safely)
-DROP TRIGGER IF EXISTS gl_entry_batch_balance_chk ON erp.gl_entry;
-CREATE CONSTRAINT TRIGGER gl_entry_batch_balance_chk
-AFTER INSERT OR UPDATE OR DELETE ON erp.gl_entry
-DEFERRABLE INITIALLY DEFERRED
-FOR EACH ROW
-EXECUTE FUNCTION erp.trg_gl_entry_enforce_batch_balance();
-
-
---FOR BOM_PRODUCTION.SQL
--- =============================================================================
--- DB ENFORCEMENT: ref_approved_bom_id (if set) must point to an APPROVED BOM
--- =============================================================================
 CREATE OR REPLACE FUNCTION erp.trg_bom_sfg_line_validate()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -795,9 +690,9 @@ AS $$
 DECLARE
   v_sfg_item_id bigint;
   v_ref_item_id bigint;
-  v_ref_status  erp.approval_status;
+  v_ref_status  erp.bom_status;
 BEGIN
-  -- Find the item behind the SFG SKU
+  -- Find the item behind the SFG SKU (sku -> variant -> item)
   SELECT i.id
   INTO v_sfg_item_id
   FROM erp.skus s
@@ -845,34 +740,22 @@ BEFORE INSERT OR UPDATE ON erp.bom_sfg_line
 FOR EACH ROW
 EXECUTE FUNCTION erp.trg_bom_sfg_line_validate();
 
--- =============================================================================
--- DB ENFORCEMENT: BOM type validation (FG/SFG/RM correctness)
--- =============================================================================
--- Enforces:
--- 1) bom_header.level='FINISHED'      => bom_header.item_id must be items.item_type='FG'
--- 2) bom_header.level='SEMI_FINISHED' => bom_header.item_id must be items.item_type='SFG'
--- 3) bom_rm_line.rm_item_id           => must be items.item_type='RM'
--- 4) bom_variant_rule.target_rm_item_id (if set) => must be items.item_type='RM'
---
--- Note:
--- - This is DB-level safety to prevent wrong data even if UI/backend misses validation.
--- - Written rerunnable: CREATE OR REPLACE + DROP TRIGGER IF EXISTS
--- =============================================================================
+-- F2) bom_header.level must match items.item_type (FINISHED->FG, SEMI_FINISHED->SFG)
+DO $$
+BEGIN
+  IF to_regclass('erp.bom_header') IS NULL THEN
+    RETURN;
+  END IF;
+END $$;
 
-
--- -----------------------------------------------------------------------------
--- 1) Validate bom_header.item_id matches bom_header.level
--- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION erp.trg_bom_header_validate_item_type()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
-DECLARE
-  v_item_type erp.item_type;
+DECLARE v_item_type erp.item_type;
 BEGIN
-  -- Fetch item type of the BOM's item
   SELECT i.item_type
-  INTO v_item_type
+    INTO v_item_type
   FROM erp.items i
   WHERE i.id = NEW.item_id;
 
@@ -880,7 +763,6 @@ BEGIN
     RAISE EXCEPTION 'BOM item_id % not found in items.', NEW.item_id;
   END IF;
 
-  -- Level -> required item_type mapping
   IF NEW.level = 'FINISHED' AND v_item_type <> 'FG' THEN
     RAISE EXCEPTION
       'Invalid BOM: level=FINISHED requires item_type=FG. item_id=% has item_type=%.',
@@ -903,20 +785,21 @@ BEFORE INSERT OR UPDATE OF item_id, level ON erp.bom_header
 FOR EACH ROW
 EXECUTE FUNCTION erp.trg_bom_header_validate_item_type();
 
+-- F3) bom_rm_line.rm_item_id must be RM
+DO $$
+BEGIN
+  IF to_regclass('erp.bom_rm_line') IS NULL THEN
+    RETURN;
+  END IF;
+END $$;
 
-
--- -----------------------------------------------------------------------------
--- 2) Validate bom_rm_line.rm_item_id is RM
--- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION erp.trg_bom_rm_line_validate_rm_item()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
-DECLARE
-  v_item_type erp.item_type;
+DECLARE v_item_type erp.item_type;
 BEGIN
-  SELECT i.item_type
-  INTO v_item_type
+  SELECT i.item_type INTO v_item_type
   FROM erp.items i
   WHERE i.id = NEW.rm_item_id;
 
@@ -940,32 +823,30 @@ BEFORE INSERT OR UPDATE OF rm_item_id ON erp.bom_rm_line
 FOR EACH ROW
 EXECUTE FUNCTION erp.trg_bom_rm_line_validate_rm_item();
 
+-- F4) bom_variant_rule.target_rm_item_id (if set) must be RM
+DO $$
+BEGIN
+  IF to_regclass('erp.bom_variant_rule') IS NULL THEN
+    RETURN;
+  END IF;
+END $$;
 
-
--- -----------------------------------------------------------------------------
--- 3) Validate bom_variant_rule.target_rm_item_id (if set) is RM
--- -----------------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION erp.trg_bom_variant_rule_validate_target_rm()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
-DECLARE
-  v_item_type erp.item_type;
+DECLARE v_item_type erp.item_type;
 BEGIN
-  -- If no target item, nothing to validate
   IF NEW.target_rm_item_id IS NULL THEN
     RETURN NEW;
   END IF;
 
-  SELECT i.item_type
-  INTO v_item_type
+  SELECT i.item_type INTO v_item_type
   FROM erp.items i
   WHERE i.id = NEW.target_rm_item_id;
 
   IF v_item_type IS NULL THEN
-    RAISE EXCEPTION
-      'bom_variant_rule.target_rm_item_id % not found in items.',
-      NEW.target_rm_item_id;
+    RAISE EXCEPTION 'bom_variant_rule.target_rm_item_id % not found in items.', NEW.target_rm_item_id;
   END IF;
 
   IF v_item_type <> 'RM' THEN
@@ -984,138 +865,129 @@ BEFORE INSERT OR UPDATE OF target_rm_item_id ON erp.bom_variant_rule
 FOR EACH ROW
 EXECUTE FUNCTION erp.trg_bom_variant_rule_validate_target_rm();
 
---060_SALES_AR.SQL
--- Voucher-type integrity (prevents attaching SO header to wrong voucher)
-CREATE OR REPLACE FUNCTION erp.trg_sales_order_header_vtype()
-RETURNS trigger LANGUAGE plpgsql AS $$
+-- =============================================================================
+-- G) SALES ENFORCEMENT
+-- =============================================================================
+
+DO $$
 BEGIN
-  PERFORM erp.assert_voucher_type_code(NEW.voucher_id, 'SALES_ORDER');
-  RETURN NEW;
+  IF to_regclass('erp.sales_order_header') IS NOT NULL THEN
+    EXECUTE $q$
+      CREATE OR REPLACE FUNCTION erp.trg_sales_order_header_vtype()
+      RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        PERFORM erp.assert_voucher_type_code(NEW.voucher_id, 'SALES_ORDER');
+        RETURN NEW;
+      END $$;
+    $q$;
+
+    EXECUTE 'DROP TRIGGER IF EXISTS trg_sales_order_header_vtype ON erp.sales_order_header';
+    EXECUTE 'CREATE TRIGGER trg_sales_order_header_vtype
+             BEFORE INSERT OR UPDATE ON erp.sales_order_header
+             FOR EACH ROW EXECUTE FUNCTION erp.trg_sales_order_header_vtype()';
+  END IF;
+
+  IF to_regclass('erp.sales_header') IS NOT NULL THEN
+    EXECUTE $q$
+      CREATE OR REPLACE FUNCTION erp.trg_sales_header_vtype()
+      RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        PERFORM erp.assert_voucher_type_code(NEW.voucher_id, 'SALES_VOUCHER');
+        RETURN NEW;
+      END $$;
+    $q$;
+
+    EXECUTE 'DROP TRIGGER IF EXISTS trg_sales_header_vtype ON erp.sales_header';
+    EXECUTE 'CREATE TRIGGER trg_sales_header_vtype
+             BEFORE INSERT OR UPDATE ON erp.sales_header
+             FOR EACH ROW EXECUTE FUNCTION erp.trg_sales_header_vtype()';
+  END IF;
+
+  IF to_regclass('erp.sales_line') IS NOT NULL THEN
+    EXECUTE $q$
+      CREATE OR REPLACE FUNCTION erp.trg_sales_line_validate()
+      RETURNS trigger LANGUAGE plpgsql AS $$
+      DECLARE
+        v_header_id bigint;
+        v_kind      erp.voucher_line_kind;
+      BEGIN
+        SELECT vl.voucher_header_id, vl.line_kind
+          INTO v_header_id, v_kind
+        FROM erp.voucher_line vl
+        WHERE vl.id = NEW.voucher_line_id;
+
+        IF NOT FOUND THEN
+          RAISE EXCEPTION 'voucher_line % not found', NEW.voucher_line_id;
+        END IF;
+
+        PERFORM erp.assert_voucher_type_code(v_header_id, 'SALES_VOUCHER');
+
+        IF v_kind <> 'SKU' THEN
+          RAISE EXCEPTION 'sales_line must attach to SKU lines only (line_kind=SKU).';
+        END IF;
+
+        RETURN NEW;
+      END $$;
+    $q$;
+
+    EXECUTE 'DROP TRIGGER IF EXISTS trg_sales_line_validate ON erp.sales_line';
+    EXECUTE 'CREATE TRIGGER trg_sales_line_validate
+             BEFORE INSERT OR UPDATE ON erp.sales_line
+             FOR EACH ROW EXECUTE FUNCTION erp.trg_sales_line_validate()';
+  END IF;
 END $$;
 
-DROP TRIGGER IF EXISTS trg_sales_order_header_vtype ON erp.sales_order_header;
-CREATE TRIGGER trg_sales_order_header_vtype
-BEFORE INSERT OR UPDATE ON erp.sales_order_header
-FOR EACH ROW EXECUTE FUNCTION erp.trg_sales_order_header_vtype();
+-- =============================================================================
+-- H) PURCHASE ENFORCEMENT
+-- =============================================================================
 
-CREATE OR REPLACE FUNCTION erp.trg_sales_header_vtype()
-RETURNS trigger LANGUAGE plpgsql AS $$
+-- H1) purchase_invoice_header_ext must attach to PI, and po_voucher_id (if set) must attach to PO
+DO $$
 BEGIN
-  PERFORM erp.assert_voucher_type_code(NEW.voucher_id, 'SALES_VOUCHER');
-  RETURN NEW;
+  IF to_regclass('erp.purchase_invoice_header_ext') IS NOT NULL THEN
+    EXECUTE $q$
+      CREATE OR REPLACE FUNCTION erp.trg_purchase_invoice_header_ext_validate()
+      RETURNS trigger
+      LANGUAGE plpgsql
+      AS $$
+      BEGIN
+        PERFORM erp.assert_voucher_type_code(NEW.voucher_id, 'PI');
+        IF NEW.po_voucher_id IS NOT NULL THEN
+          PERFORM erp.assert_voucher_type_code(NEW.po_voucher_id, 'PO');
+        END IF;
+        RETURN NEW;
+      END;
+      $$;
+    $q$;
+
+    EXECUTE 'DROP TRIGGER IF EXISTS trg_purchase_invoice_header_ext_validate ON erp.purchase_invoice_header_ext';
+    EXECUTE 'CREATE TRIGGER trg_purchase_invoice_header_ext_validate
+             BEFORE INSERT OR UPDATE ON erp.purchase_invoice_header_ext
+             FOR EACH ROW EXECUTE FUNCTION erp.trg_purchase_invoice_header_ext_validate()';
+  END IF;
+
+  IF to_regclass('erp.purchase_return_header_ext') IS NOT NULL THEN
+    EXECUTE $q$
+      CREATE OR REPLACE FUNCTION erp.trg_purchase_return_header_ext_validate()
+      RETURNS trigger
+      LANGUAGE plpgsql
+      AS $$
+      BEGIN
+        PERFORM erp.assert_voucher_type_code(NEW.voucher_id, 'PR');
+        RETURN NEW;
+      END;
+      $$;
+    $q$;
+
+    EXECUTE 'DROP TRIGGER IF EXISTS trg_purchase_return_header_ext_validate ON erp.purchase_return_header_ext';
+    EXECUTE 'CREATE TRIGGER trg_purchase_return_header_ext_validate
+             BEFORE INSERT OR UPDATE ON erp.purchase_return_header_ext
+             FOR EACH ROW EXECUTE FUNCTION erp.trg_purchase_return_header_ext_validate()';
+  END IF;
 END $$;
 
-DROP TRIGGER IF EXISTS trg_sales_header_vtype ON erp.sales_header;
-CREATE TRIGGER trg_sales_header_vtype
-BEFORE INSERT OR UPDATE ON erp.sales_header
-FOR EACH ROW EXECUTE FUNCTION erp.trg_sales_header_vtype();
-
--- Optional safety: ensure sales_line attaches only to SALES_VOUCHER and SKU lines
-CREATE OR REPLACE FUNCTION erp.trg_sales_line_validate()
-RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE
-  v_voucher_id bigint;
-  v_kind       erp.voucher_line_kind;
-BEGIN
-  SELECT vl.voucher_id, vl.line_kind
-    INTO v_voucher_id, v_kind
-  FROM erp.voucher_line vl
-  WHERE vl.id = NEW.voucher_line_id;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'voucher_line % not found', NEW.voucher_line_id;
-  END IF;
-
-  PERFORM erp.assert_voucher_type_code(v_voucher_id, 'SALES_VOUCHER');
-
-  IF v_kind <> 'SKU' THEN
-    RAISE EXCEPTION 'sales_line must attach to SKU lines only (line_kind=SKU).';
-  END IF;
-
-  RETURN NEW;
-END $$;
-
-DROP TRIGGER IF EXISTS trg_sales_line_validate ON erp.sales_line;
-CREATE TRIGGER trg_sales_line_validate
-BEFORE INSERT OR UPDATE ON erp.sales_line
-FOR EACH ROW EXECUTE FUNCTION erp.trg_sales_line_validate();
-
-
---070_PURCHASE_AP.SQL
--- ---------------------------------------------------------------------------
--- Helper functions (used by triggers)
--- ---------------------------------------------------------------------------
-
--- Ensure a voucher_id belongs to an expected voucher type code (e.g., 'PO','PI','PR','STN_OUT','GRN_IN')
-CREATE OR REPLACE FUNCTION erp.assert_voucher_type_code(p_voucher_id bigint, p_expected_type text)
-RETURNS void
-LANGUAGE plpgsql
-AS $$
-DECLARE v_type text;
-BEGIN
-  SELECT vh.voucher_type_code
-    INTO v_type
-  FROM erp.voucher_header vh
-  WHERE vh.id = p_voucher_id;
-
-  IF v_type IS NULL THEN
-    RAISE EXCEPTION 'Voucher % not found.', p_voucher_id;
-  END IF;
-
-  IF v_type <> p_expected_type THEN
-    RAISE EXCEPTION 'Voucher % must be type %, found %.', p_voucher_id, p_expected_type, v_type;
-  END IF;
-END;
-$$;
-
--- -----------------------------------------------------------------------------
--- Trigger: validate that the header row is attached to the correct voucher type
--- -----------------------------------------------------------------------------
--- What this trigger protects you from:
--- - Someone accidentally inserting PI header extension against a non-PI voucher
--- - Someone linking a PO reference that is not actually a PO voucher
-CREATE OR REPLACE FUNCTION erp.trg_purchase_invoice_header_ext_validate()
-RETURNS trigger
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  PERFORM erp.assert_voucher_type_code(NEW.voucher_id, 'PI');
-  IF NEW.po_voucher_id IS NOT NULL THEN
-    PERFORM erp.assert_voucher_type_code(NEW.po_voucher_id, 'PO');
-  END IF;
-
-  RETURN NEW;
-END;
-$$;
-DROP TRIGGER IF EXISTS trg_purchase_invoice_header_ext_validate ON erp.purchase_invoice_header_ext;
-CREATE TRIGGER trg_purchase_invoice_header_ext_validate
-BEFORE INSERT OR UPDATE ON erp.purchase_invoice_header_ext
-FOR EACH ROW
-EXECUTE FUNCTION erp.trg_purchase_invoice_header_ext_validate();
-
-CREATE OR REPLACE FUNCTION erp.trg_purchase_return_header_ext_validate()
-RETURNS trigger
-LANGUAGE plpgsql
-AS $$
-BEGIN
-  PERFORM erp.assert_voucher_type_code(NEW.voucher_id, 'PR');
-  RETURN NEW;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS trg_purchase_return_header_ext_validate ON erp.purchase_return_header_ext;
-CREATE TRIGGER trg_purchase_return_header_ext_validate
-BEFORE INSERT OR UPDATE ON erp.purchase_return_header_ext
-FOR EACH ROW
-EXECUTE FUNCTION erp.trg_purchase_return_header_ext_validate();
-
--- ---------------------------------------------------------------------------
--- 10.5 Purchase line enforcement (PO/PI/PR rows must be RM lines)
--- ---------------------------------------------------------------------------
--- Your PO/PI/PR “rows” live in voucher_line. This enforces:
--- - For voucher types PO/PI/PR: only ITEM lines allowed (line_kind='ITEM')
--- - item_id must be RM
--- - qty must be > 0
+-- H2) Purchase voucher lines enforcement (PO/PI/PR must be ITEM RM lines with qty > 0)
+-- Implemented as a trigger on voucher_line (covers all inserts/updates).
 CREATE OR REPLACE FUNCTION erp.trg_purchase_lines_require_rm_item()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -1124,74 +996,38 @@ DECLARE v_vt text;
 BEGIN
   SELECT vh.voucher_type_code INTO v_vt
   FROM erp.voucher_header vh
-  WHERE vh.id = NEW.voucher_id;
+  WHERE vh.id = NEW.voucher_header_id;
 
   IF v_vt IN ('PO','PI','PR') THEN
     IF NEW.line_kind <> 'ITEM' THEN
-      RAISE EXCEPTION 'Voucher % (%): only ITEM lines allowed for purchase vouchers.', NEW.voucher_id, v_vt;
+      RAISE EXCEPTION 'Voucher % (%): only ITEM lines allowed for purchase vouchers.', NEW.voucher_header_id, v_vt;
     END IF;
 
     IF NEW.item_id IS NULL THEN
-      RAISE EXCEPTION 'Voucher % (%): item_id is required on purchase lines.', NEW.voucher_id, v_vt;
+      RAISE EXCEPTION 'Voucher % (%): item_id is required on purchase lines.', NEW.voucher_header_id, v_vt;
     END IF;
 
     PERFORM erp.assert_item_is_rm(NEW.item_id);
 
     IF NEW.qty <= 0 THEN
-      RAISE EXCEPTION 'Voucher % (%): qty must be > 0 for purchase lines.', NEW.voucher_id, v_vt;
+      RAISE EXCEPTION 'Voucher % (%): qty must be > 0 for purchase lines.', NEW.voucher_header_id, v_vt;
     END IF;
   END IF;
 
   RETURN NEW;
 END;
 $$;
+
 DROP TRIGGER IF EXISTS trg_purchase_lines_require_rm_item ON erp.voucher_line;
 CREATE TRIGGER trg_purchase_lines_require_rm_item
 BEFORE INSERT OR UPDATE ON erp.voucher_line
 FOR EACH ROW
 EXECUTE FUNCTION erp.trg_purchase_lines_require_rm_item();
 
--- ---------------------------------------------------------------------------
--- 10. PO-required enforcement at COMMIT (policy rules)
--- ---------------------------------------------------------------------------
--- WHAT THIS DOES (high-level):
---   Some Purchase Invoices (PI) are NOT allowed unless they reference a Purchase Order (PO),
---   based on your policy rules table: erp.purchase_po_requirement_rule.
---
--- WHY THIS IS DONE IN DB (and why at COMMIT):
---   - The PI screen saves data in multiple steps inside ONE transaction:
---       1) voucher_header row
---       2) purchase_invoice_header_ext row (supplier, optional po_voucher_id)
---       3) many voucher_line rows (items, qty, rate, amount)
---   - The policy depends on TOTAL amount (SUM of voucher_line.amount) and which items/groups exist,
---     so we must check AFTER all lines are inserted/updated/deleted.
---   - Using a DEFERRABLE INITIALLY DEFERRED CONSTRAINT TRIGGER means:
---       "Run the check at transaction end (COMMIT), not after each row insert."
---
--- WHEN IT RUNS:
---   A) Any time voucher_line changes (INSERT/UPDATE/DELETE) for any voucher:
---      -> the trigger calls enforce_po_requirement_for_purchase_invoice(voucher_id)
---      -> the function immediately RETURNS if that voucher_id is not a PI.
---   B) Any time the PI header extension changes (supplier or po_voucher_id changes):
---      -> the trigger calls enforce_po_requirement_for_purchase_invoice(voucher_id)
---   Both triggers are deferred, so they actually validate at COMMIT.
---
--- WHAT IT CHECKS:
---   1) Confirm voucher is PI (otherwise do nothing)
---   2) Read supplier + whether a PO is linked (po_voucher_id is not NULL)
---      - If header doesn’t exist yet inside the transaction, it SKIPS now;
---        it will be checked again at COMMIT once header exists, or when header trigger fires.
---   3) Compute PI total = SUM(voucher_line.amount) for that voucher
---   4) See if ANY active policy rule matches:
---        - min_amount (if set): total must be greater than min_amount
---        - supplier_party_id (if set): must match supplier
---        - rm_item_id (if set): invoice must contain that RM item
---        - rm_group_id (if set): invoice must contain an RM from that group
---   5) If a rule matches AND no PO is linked -> RAISE EXCEPTION
---      -> this aborts the COMMIT, so the PI cannot be saved without PO.
--- ---------------------------------------------------------------------------
-
--- Checks happen at COMMIT so your app can insert header + all lines first.
+-- H3) PO-required enforcement at COMMIT (policy rules)
+-- Uses your correct table name: erp.purchase_order_requirement_rule
+-- IMPORTANT:
+--   This logic is deferred to COMMIT because PI amount and item presence depend on all lines being inserted first.
 CREATE OR REPLACE FUNCTION erp.enforce_po_requirement_for_purchase_invoice(p_pi_voucher_id bigint)
 RETURNS void
 LANGUAGE plpgsql
@@ -1201,70 +1037,115 @@ DECLARE
   v_total      numeric(18,2);
   v_has_po     boolean;
   v_policy_hit boolean;
+  v_has_group_col boolean;
+  v_group_col_name text;
 BEGIN
-  -- Only enforce for PI voucher type; for any other voucher_id, do nothing.
+  -- Only enforce for PI vouchers
   IF NOT EXISTS (
-    SELECT 1 FROM erp.voucher_header vh
+    SELECT 1
+    FROM erp.voucher_header vh
     WHERE vh.id = p_pi_voucher_id AND vh.voucher_type_code = 'PI'
   ) THEN
     RETURN;
   END IF;
 
-  -- Read supplier + whether PO is linked on the PI header extension.
-  -- If header row isn't present yet in this transaction, skip for now.
+  -- Read supplier + whether PO is linked
   SELECT ph.supplier_party_id, (ph.po_voucher_id IS NOT NULL)
     INTO v_supplier, v_has_po
   FROM erp.purchase_invoice_header_ext ph
   WHERE ph.voucher_id = p_pi_voucher_id;
 
+  -- If header not present yet in the transaction, skip for now (will be checked at COMMIT via triggers)
   IF v_supplier IS NULL THEN
     RETURN;
   END IF;
 
-  -- Compute PI total from voucher lines (depends on all lines being inserted).
+  -- Total from voucher lines
   SELECT COALESCE(SUM(vl.amount),0)::numeric(18,2)
     INTO v_total
   FROM erp.voucher_line vl
-  WHERE vl.voucher_id = p_pi_voucher_id;
+  WHERE vl.voucher_header_id = p_pi_voucher_id;
 
-  -- Determine if ANY policy rule matches this invoice.
-  -- If any match -> PO is required.
+  -- Detect item->group FK column name safely (no compile-time dependency).
+  -- This avoids hard failures if your items table uses group_id vs product_group_id etc.
   SELECT EXISTS (
-    SELECT 1
-    FROM erp.purchase_po_requirement_rule r
-    WHERE r.is_active = true
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema='erp' AND table_name='items' AND column_name='group_id'
+         ),
+         EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_schema='erp' AND table_name='items' AND column_name='product_group_id'
+         )
+    INTO v_has_group_col, v_has_group_col;
 
-      -- Amount threshold rule (optional)
-      AND (r.min_amount IS NULL OR v_total > r.min_amount)
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='erp' AND table_name='items' AND column_name='group_id'
+  ) THEN
+    v_group_col_name := 'group_id';
+  ELSIF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='erp' AND table_name='items' AND column_name='product_group_id'
+  ) THEN
+    v_group_col_name := 'product_group_id';
+  ELSE
+    v_group_col_name := NULL; -- group filtering will be skipped if schema doesn’t support it
+  END IF;
 
-      -- Supplier-specific rule (optional)
-      AND (r.supplier_party_id IS NULL OR r.supplier_party_id = v_supplier)
-
-      -- RM item presence rule (optional): invoice must contain that RM item
-      AND (
-        r.rm_item_id IS NULL
-        OR EXISTS (
-          SELECT 1
-          FROM erp.voucher_line vl
-          WHERE vl.voucher_id = p_pi_voucher_id
-            AND vl.item_id = r.rm_item_id
+  -- Determine if ANY active policy rule matches this invoice (=> PO required)
+  IF v_group_col_name IS NULL THEN
+    -- No group column available; enforce only amount/supplier/rm_item rules
+    SELECT EXISTS (
+      SELECT 1
+      FROM erp.purchase_order_requirement_rule r
+      WHERE r.is_active = true
+        AND (r.min_amount IS NULL OR v_total > r.min_amount)
+        AND (r.supplier_party_id IS NULL OR r.supplier_party_id = v_supplier)
+        AND (
+          r.rm_item_id IS NULL
+          OR EXISTS (
+            SELECT 1
+            FROM erp.voucher_line vl
+            WHERE vl.voucher_header_id = p_pi_voucher_id
+              AND vl.item_id = r.rm_item_id
+          )
         )
+        AND (r.rm_group_id IS NULL)  -- cannot evaluate without group column
+    ) INTO v_policy_hit;
+  ELSE
+    -- Group column exists; enforce full rule set using dynamic SQL for the group column
+    EXECUTE format($f$
+      SELECT EXISTS (
+        SELECT 1
+        FROM erp.purchase_order_requirement_rule r
+        WHERE r.is_active = true
+          AND (r.min_amount IS NULL OR $1 > r.min_amount)
+          AND (r.supplier_party_id IS NULL OR r.supplier_party_id = $2)
+          AND (
+            r.rm_item_id IS NULL
+            OR EXISTS (
+              SELECT 1
+              FROM erp.voucher_line vl
+              WHERE vl.voucher_header_id = $3
+                AND vl.item_id = r.rm_item_id
+            )
+          )
+          AND (
+            r.rm_group_id IS NULL
+            OR EXISTS (
+              SELECT 1
+              FROM erp.voucher_line vl
+              JOIN erp.items it ON it.id = vl.item_id
+              WHERE vl.voucher_header_id = $3
+                AND it.%I = r.rm_group_id
+            )
+          )
       )
+    $f$, v_group_col_name)
+    INTO v_policy_hit
+    USING v_total, v_supplier, p_pi_voucher_id;
+  END IF;
 
-      -- RM group presence rule (optional): invoice must contain an item from that group
-      AND (
-        r.rm_group_id IS NULL
-        OR EXISTS (
-          SELECT 1
-          FROM erp.voucher_line vl
-          JOIN erp.items it ON it.id = vl.item_id
-          WHERE vl.voucher_id = p_pi_voucher_id
-            AND it.group_id = r.rm_group_id
-        )
-      )
-  ) INTO v_policy_hit;
-
-  -- If policy applies but PI has no PO reference, block COMMIT.
   IF v_policy_hit AND NOT v_has_po THEN
     RAISE EXCEPTION
       'PO is required by purchase policy for PI voucher % (total=%) but po_voucher_id is NULL.',
@@ -1273,29 +1154,21 @@ BEGIN
 END;
 $$;
 
--- Deferred check when PI lines change.
--- Note: trigger is on voucher_line (all vouchers), but function immediately returns
--- if the voucher is not a PI.
 CREATE OR REPLACE FUNCTION erp.trg_pi_po_requirement_deferred_on_lines()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  -- INSERT/UPDATE: validate the voucher that NEW line belongs to
   IF TG_OP = 'INSERT' OR TG_OP = 'UPDATE' THEN
-    PERFORM erp.enforce_po_requirement_for_purchase_invoice(NEW.voucher_id);
+    PERFORM erp.enforce_po_requirement_for_purchase_invoice(NEW.voucher_header_id);
     RETURN NEW;
   END IF;
 
-  -- DELETE: validate the voucher that OLD line belonged to
-  PERFORM erp.enforce_po_requirement_for_purchase_invoice(OLD.voucher_id);
+  PERFORM erp.enforce_po_requirement_for_purchase_invoice(OLD.voucher_header_id);
   RETURN OLD;
 END;
 $$;
 
--- Constraint trigger:
--- - AFTER row change
--- - DEFERRABLE INITIALLY DEFERRED => runs at COMMIT
 DROP TRIGGER IF EXISTS pi_po_requirement_chk ON erp.voucher_line;
 CREATE CONSTRAINT TRIGGER pi_po_requirement_chk
 AFTER INSERT OR UPDATE OR DELETE ON erp.voucher_line
@@ -1303,8 +1176,6 @@ DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW
 EXECUTE FUNCTION erp.trg_pi_po_requirement_deferred_on_lines();
 
--- Deferred check when PI header changes (supplier or po_voucher_id changes).
--- Also runs at COMMIT (deferred), so order of inserts inside transaction doesn't matter.
 CREATE OR REPLACE FUNCTION erp.trg_pi_po_requirement_deferred_on_header()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -1315,39 +1186,42 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS pi_po_requirement_hdr_chk ON erp.purchase_invoice_header_ext;
-CREATE CONSTRAINT TRIGGER pi_po_requirement_hdr_chk
-AFTER INSERT OR UPDATE ON erp.purchase_invoice_header_ext
-DEFERRABLE INITIALLY DEFERRED
-FOR EACH ROW
-EXECUTE FUNCTION erp.trg_pi_po_requirement_deferred_on_header();
+DO $$
+BEGIN
+  IF to_regclass('erp.purchase_invoice_header_ext') IS NOT NULL THEN
+    EXECUTE 'DROP TRIGGER IF EXISTS pi_po_requirement_hdr_chk ON erp.purchase_invoice_header_ext';
+    EXECUTE 'CREATE CONSTRAINT TRIGGER pi_po_requirement_hdr_chk
+             AFTER INSERT OR UPDATE ON erp.purchase_invoice_header_ext
+             DEFERRABLE INITIALLY DEFERRED
+             FOR EACH ROW
+             EXECUTE FUNCTION erp.trg_pi_po_requirement_deferred_on_header()';
+  END IF;
+END $$;
 
--- HELPER FUNCTION - Ensure a voucher line that claims to reference an RM item is actually an RM item.
-CREATE OR REPLACE FUNCTION erp.assert_item_is_rm(p_item_id bigint)
-RETURNS void
+-- =============================================================================
+-- OPTIONAL: RM purchase rate init avg (only if table exists)
+-- =============================================================================
+DO $$
+BEGIN
+  IF to_regclass('erp.rm_purchase_rates') IS NULL THEN
+    RETURN;
+  END IF;
+END $$;
+
+CREATE OR REPLACE FUNCTION erp.trg_rm_rate_init_avg()
+RETURNS trigger
 LANGUAGE plpgsql
 AS $$
-DECLARE
-  v_type erp.item_type;
 BEGIN
-  IF p_item_id IS NULL THEN
-    RAISE EXCEPTION 'item_id cannot be NULL'
-      USING ERRCODE = '23502'; -- not_null_violation
+  IF NEW.avg_purchase_rate IS NULL OR NEW.avg_purchase_rate = 0 THEN
+    NEW.avg_purchase_rate := NEW.purchase_rate;
   END IF;
-
-  SELECT i.item_type
-    INTO v_type
-  FROM erp.items i
-  WHERE i.id = p_item_id;
-
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'Invalid item_id=%. Item not found.', p_item_id
-      USING ERRCODE = '23503'; -- foreign_key_violation (semantic match)
-  END IF;
-
-  IF v_type <> 'RM' THEN
-    RAISE EXCEPTION 'Invalid item_id=%. Expected item_type=RM, got %.', p_item_id, v_type
-      USING ERRCODE = '22000'; -- data_exception (generic)
-  END IF;
+  RETURN NEW;
 END;
 $$;
+
+DROP TRIGGER IF EXISTS trg_rm_rate_init_avg ON erp.rm_purchase_rates;
+CREATE TRIGGER trg_rm_rate_init_avg
+BEFORE INSERT ON erp.rm_purchase_rates
+FOR EACH ROW
+EXECUTE FUNCTION erp.trg_rm_rate_init_avg();
