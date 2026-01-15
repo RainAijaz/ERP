@@ -224,6 +224,14 @@ EXECUTE FUNCTION erp.trg_stn_out_type_guard();
 CREATE INDEX IF NOT EXISTS ix_transfer_dest_status_date
   ON erp.stock_transfer_out_header(dest_branch_id, status, dispatch_date);
 
+-- Optional guard: prevent self-transfer even when CHECK is removed.
+DO $$
+BEGIN
+  IF to_regclass('erp.stock_transfer_out_header') IS NULL THEN
+    RETURN;
+  END IF;
+END $$;
+
 CREATE OR REPLACE FUNCTION erp.trg_stock_transfer_out_no_self_transfer()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -250,7 +258,7 @@ DROP TRIGGER IF EXISTS trg_stock_transfer_out_no_self_transfer ON erp.stock_tran
 CREATE TRIGGER trg_stock_transfer_out_no_self_transfer
 BEFORE INSERT OR UPDATE ON erp.stock_transfer_out_header
 FOR EACH ROW
-EXECUTE FUNCTION erp.trg_stock_transfer_out_no_self_transfer();  
+EXECUTE FUNCTION erp.trg_stock_transfer_out_no_self_transfer();
 
 -- C1/C2) GRN_IN must be GRN_IN; against STN_OUT must be STN_OUT; GRN_IN branch must equal STN_OUT.dest_branch_id
 DO $$
@@ -898,18 +906,58 @@ EXECUTE FUNCTION erp.trg_bom_variant_rule_validate_target_rm();
 -- G) SALES ENFORCEMENT
 -- =============================================================================
 
-DO $$
+-- Sales Order header vtype
+CREATE OR REPLACE FUNCTION erp.trg_sales_order_header_vtype()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $fn$
+BEGIN
+  PERFORM erp.assert_voucher_type_code(NEW.voucher_id, 'SALES_ORDER');
+  RETURN NEW;
+END;
+$fn$;
+
+-- Sales voucher header vtype
+CREATE OR REPLACE FUNCTION erp.trg_sales_header_vtype()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $fn$
+BEGIN
+  PERFORM erp.assert_voucher_type_code(NEW.voucher_id, 'SALES_VOUCHER');
+  RETURN NEW;
+END;
+$fn$;
+
+-- Sales line validate
+CREATE OR REPLACE FUNCTION erp.trg_sales_line_validate()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $fn$
+DECLARE
+  v_header_id bigint;
+  v_kind      erp.voucher_line_kind;
+BEGIN
+  SELECT vl.voucher_header_id, vl.line_kind
+    INTO v_header_id, v_kind
+  FROM erp.voucher_line vl
+  WHERE vl.id = NEW.voucher_line_id;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'voucher_line % not found', NEW.voucher_line_id;
+  END IF;
+
+  PERFORM erp.assert_voucher_type_code(v_header_id, 'SALES_VOUCHER');
+
+  IF v_kind <> 'SKU' THEN
+    RAISE EXCEPTION 'sales_line must attach to SKU lines only (line_kind=SKU).';
+  END IF;
+
+  RETURN NEW;
+END;
+$fn$;
+DO $do$
 BEGIN
   IF to_regclass('erp.sales_order_header') IS NOT NULL THEN
-    EXECUTE $q$
-      CREATE OR REPLACE FUNCTION erp.trg_sales_order_header_vtype()
-      RETURNS trigger LANGUAGE plpgsql AS $$
-      BEGIN
-        PERFORM erp.assert_voucher_type_code(NEW.voucher_id, 'SALES_ORDER');
-        RETURN NEW;
-      END $$;
-    $q$;
-
     EXECUTE 'DROP TRIGGER IF EXISTS trg_sales_order_header_vtype ON erp.sales_order_header';
     EXECUTE 'CREATE TRIGGER trg_sales_order_header_vtype
              BEFORE INSERT OR UPDATE ON erp.sales_order_header
@@ -917,15 +965,6 @@ BEGIN
   END IF;
 
   IF to_regclass('erp.sales_header') IS NOT NULL THEN
-    EXECUTE $q$
-      CREATE OR REPLACE FUNCTION erp.trg_sales_header_vtype()
-      RETURNS trigger LANGUAGE plpgsql AS $$
-      BEGIN
-        PERFORM erp.assert_voucher_type_code(NEW.voucher_id, 'SALES_VOUCHER');
-        RETURN NEW;
-      END $$;
-    $q$;
-
     EXECUTE 'DROP TRIGGER IF EXISTS trg_sales_header_vtype ON erp.sales_header';
     EXECUTE 'CREATE TRIGGER trg_sales_header_vtype
              BEFORE INSERT OR UPDATE ON erp.sales_header
@@ -933,62 +972,46 @@ BEGIN
   END IF;
 
   IF to_regclass('erp.sales_line') IS NOT NULL THEN
-    EXECUTE $q$
-      CREATE OR REPLACE FUNCTION erp.trg_sales_line_validate()
-      RETURNS trigger LANGUAGE plpgsql AS $$
-      DECLARE
-        v_header_id bigint;
-        v_kind      erp.voucher_line_kind;
-      BEGIN
-        SELECT vl.voucher_header_id, vl.line_kind
-          INTO v_header_id, v_kind
-        FROM erp.voucher_line vl
-        WHERE vl.id = NEW.voucher_line_id;
-
-        IF NOT FOUND THEN
-          RAISE EXCEPTION 'voucher_line % not found', NEW.voucher_line_id;
-        END IF;
-
-        PERFORM erp.assert_voucher_type_code(v_header_id, 'SALES_VOUCHER');
-
-        IF v_kind <> 'SKU' THEN
-          RAISE EXCEPTION 'sales_line must attach to SKU lines only (line_kind=SKU).';
-        END IF;
-
-        RETURN NEW;
-      END $$;
-    $q$;
-
     EXECUTE 'DROP TRIGGER IF EXISTS trg_sales_line_validate ON erp.sales_line';
     EXECUTE 'CREATE TRIGGER trg_sales_line_validate
              BEFORE INSERT OR UPDATE ON erp.sales_line
              FOR EACH ROW EXECUTE FUNCTION erp.trg_sales_line_validate()';
   END IF;
-END $$;
-
+END
+$do$;
 -- =============================================================================
 -- H) PURCHASE ENFORCEMENT
 -- =============================================================================
 
 -- H1) purchase_invoice_header_ext must attach to PI, and po_voucher_id (if set) must attach to PO
-DO $$
+CREATE OR REPLACE FUNCTION erp.trg_purchase_invoice_header_ext_validate()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $fn$
+BEGIN
+  PERFORM erp.assert_voucher_type_code(NEW.voucher_id, 'PI');
+
+  IF NEW.po_voucher_id IS NOT NULL THEN
+    PERFORM erp.assert_voucher_type_code(NEW.po_voucher_id, 'PO');
+  END IF;
+
+  RETURN NEW;
+END;
+$fn$;
+
+-- Purchase return header ext must attach to PR
+CREATE OR REPLACE FUNCTION erp.trg_purchase_return_header_ext_validate()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $fn$
+BEGIN
+  PERFORM erp.assert_voucher_type_code(NEW.voucher_id, 'PR');
+  RETURN NEW;
+END;
+$fn$;
+DO $do$
 BEGIN
   IF to_regclass('erp.purchase_invoice_header_ext') IS NOT NULL THEN
-    EXECUTE $q$
-      CREATE OR REPLACE FUNCTION erp.trg_purchase_invoice_header_ext_validate()
-      RETURNS trigger
-      LANGUAGE plpgsql
-      AS $$
-      BEGIN
-        PERFORM erp.assert_voucher_type_code(NEW.voucher_id, 'PI');
-        IF NEW.po_voucher_id IS NOT NULL THEN
-          PERFORM erp.assert_voucher_type_code(NEW.po_voucher_id, 'PO');
-        END IF;
-        RETURN NEW;
-      END;
-      $$;
-    $q$;
-
     EXECUTE 'DROP TRIGGER IF EXISTS trg_purchase_invoice_header_ext_validate ON erp.purchase_invoice_header_ext';
     EXECUTE 'CREATE TRIGGER trg_purchase_invoice_header_ext_validate
              BEFORE INSERT OR UPDATE ON erp.purchase_invoice_header_ext
@@ -996,24 +1019,13 @@ BEGIN
   END IF;
 
   IF to_regclass('erp.purchase_return_header_ext') IS NOT NULL THEN
-    EXECUTE $q$
-      CREATE OR REPLACE FUNCTION erp.trg_purchase_return_header_ext_validate()
-      RETURNS trigger
-      LANGUAGE plpgsql
-      AS $$
-      BEGIN
-        PERFORM erp.assert_voucher_type_code(NEW.voucher_id, 'PR');
-        RETURN NEW;
-      END;
-      $$;
-    $q$;
-
     EXECUTE 'DROP TRIGGER IF EXISTS trg_purchase_return_header_ext_validate ON erp.purchase_return_header_ext';
     EXECUTE 'CREATE TRIGGER trg_purchase_return_header_ext_validate
              BEFORE INSERT OR UPDATE ON erp.purchase_return_header_ext
              FOR EACH ROW EXECUTE FUNCTION erp.trg_purchase_return_header_ext_validate()';
   END IF;
-END $$;
+END
+$do$;
 
 -- H2) Purchase voucher lines enforcement (PO/PI/PR must be ITEM RM lines with qty > 0)
 -- Implemented as a trigger on voucher_line (covers all inserts/updates).
@@ -1094,18 +1106,6 @@ BEGIN
     INTO v_total
   FROM erp.voucher_line vl
   WHERE vl.voucher_header_id = p_pi_voucher_id;
-
-  -- Detect item->group FK column name safely (no compile-time dependency).
-  -- This avoids hard failures if your items table uses group_id vs product_group_id etc.
-  SELECT EXISTS (
-           SELECT 1 FROM information_schema.columns
-           WHERE table_schema='erp' AND table_name='items' AND column_name='group_id'
-         ),
-         EXISTS (
-           SELECT 1 FROM information_schema.columns
-           WHERE table_schema='erp' AND table_name='items' AND column_name='product_group_id'
-         )
-    INTO v_has_group_col, v_has_group_col;
 
   IF EXISTS (
     SELECT 1 FROM information_schema.columns

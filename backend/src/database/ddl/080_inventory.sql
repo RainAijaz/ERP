@@ -77,9 +77,7 @@ CREATE TABLE IF NOT EXISTS erp.stock_transfer_out_header (
 
   -- When received: link to GRN_IN voucher (one receive per dispatch)
   received_voucher_id  bigint UNIQUE REFERENCES erp.voucher_header(id) ON DELETE RESTRICT,
-  received_at          timestamptz,
-
-  -- Source branch is voucher_header.branch_id; prevent self-transfer
+  received_at          timestamptz
 );
 
 -- Index for "pending incoming transfers" at destination

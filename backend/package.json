@@ -7,7 +7,7 @@
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
     "migrate:rollback": "knex migrate:rollback",
-    "db:ddl": "psql -U postgres -d erp -v ON_ERROR_STOP=1 -f src/database/ddl/999_all.sql"
+    "db:ddl": "psql -U postgres -d erp -v ON_ERROR_STOP=1 -f src/999_all.sql"
   },
   "keywords": [],
   "author": "",

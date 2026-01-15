@@ -29,6 +29,13 @@ CREATE TABLE IF NOT EXISTS erp.voucher_type (
   affects_gl        boolean NOT NULL DEFAULT true
 );
 
+ALTER TABLE erp.activity_log
+  ADD CONSTRAINT fk_activity_log_voucher_type
+  FOREIGN KEY (voucher_type_code)
+  REFERENCES erp.voucher_type(code)
+  ON UPDATE CASCADE
+  ON DELETE RESTRICT;
+
 -- -----------------------------------------------------------------------------
 -- voucher_header
 -- -----------------------------------------------------------------------------
@@ -123,3 +130,4 @@ CREATE TABLE IF NOT EXISTS erp.voucher_line (
 -- Helpful index for fetching voucher lines quickly
 CREATE INDEX IF NOT EXISTS idx_voucher_line_header
 ON erp.voucher_line (voucher_header_id);
+

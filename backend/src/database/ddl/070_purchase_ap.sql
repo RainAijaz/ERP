@@ -2,14 +2,14 @@
    FILE: 070_purchase_module.sql
    PURPOSE
    - Purchase vouchers + related guardrails built on top of the Universal Voucher Engine:
-     • Purchase Order (PO)          -> header extension table
-     • Purchase Invoice (PI)        -> header extension + CASH/CREDIT rule + optional PO link
-     • Purchase Return (PR)         -> header extension + controlled reason list
-     • PO-required policy rules     -> configuration table (enforced by backend/commit checks)
-     • AP invoice summary (optional)-> cached summary row for faster reports
+     â€¢ Purchase Order (PO)          -> header extension table
+     â€¢ Purchase Invoice (PI)        -> header extension + CASH/CREDIT rule + optional PO link
+     â€¢ Purchase Return (PR)         -> header extension + controlled reason list
+     â€¢ PO-required policy rules     -> configuration table (enforced by backend/commit checks)
+     â€¢ AP invoice summary (optional)-> cached summary row for faster reports
 
    HOW THIS MODULE FITS YOUR DESIGN
-   - voucher_header is the “document header” for numbering, branch, date, maker/checker.
+   - voucher_header is the â€œdocument headerâ€� for numbering, branch, date, maker/checker.
    - voucher_line holds the grid lines.
    - These *_header_ext tables add module-specific fields without duplicating voucher engine.
 
@@ -45,7 +45,7 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 -- If any ACTIVE rule matches a Purchase Invoice (PI), then PI MUST reference a PO.
 --
 -- Matching semantics:
---   - NULL means “do not filter by this field”
+--   - NULL means â€œdo not filter by this fieldâ€�
 --   - A rule matches when ALL non-NULL filters match
 --   - min_amount (if provided) should be evaluated against the PI total (define gross/net in backend)
 --
@@ -100,12 +100,12 @@ CREATE INDEX IF NOT EXISTS idx_po_header_supplier
 -- supplier_party_id must be SUPPLIER (enforced in integrity_checks.sql/backend).
 --
 -- CASH vs CREDIT rule:
---   • CREDIT: cash_paid_account_id must be NULL (nothing paid now; AP carries payable)
---   • CASH:   cash_paid_account_id must be NOT NULL (paid now; specify cash/bank account)
+--   â€¢ CREDIT: cash_paid_account_id must be NULL (nothing paid now; AP carries payable)
+--   â€¢ CASH:   cash_paid_account_id must be NOT NULL (paid now; specify cash/bank account)
 --
 -- po_voucher_id (optional):
---   • used when PO is required by policy or when user wants linking
---   • must reference a PO, and should match supplier + branch (enforced in integrity_checks.sql/backend)
+--   â€¢ used when PO is required by policy or when user wants linking
+--   â€¢ must reference a PO, and should match supplier + branch (enforced in integrity_checks.sql/backend)
 CREATE TABLE IF NOT EXISTS erp.purchase_invoice_header_ext (
   voucher_id           bigint PRIMARY KEY REFERENCES erp.voucher_header(id) ON DELETE CASCADE,
   supplier_party_id    bigint NOT NULL REFERENCES erp.parties(id),

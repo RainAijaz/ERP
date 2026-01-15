@@ -382,11 +382,7 @@ CREATE TABLE IF NOT EXISTS erp.activity_log (
   -- Optional voucher subtype:
   -- This FK requires erp.voucher_type(code) to exist BEFORE this file runs.
   -- If voucher_type is created later, keep the column but add FK in a later migration.
-  voucher_type_code  text NULL
-                      REFERENCES erp.voucher_type(code)
-                      ON DELETE RESTRICT
-                      ON UPDATE CASCADE,
-
+  voucher_type_code  text NULL,
   -- Action restricted to known codes in audit_action_registry.
   action             text NOT NULL
                       REFERENCES erp.audit_action_registry(code)
