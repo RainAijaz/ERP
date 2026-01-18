@@ -43,6 +43,10 @@ SET search_path = erp;
 -- ---------------------------------------------------------
 -- A1) Role templates (baseline)
 -- ---------------------------------------------------------
+INSERT INTO erp.branches (code, name, is_active)
+VALUES ('LHR01', 'Lahore', true)
+ON CONFLICT (code) DO NOTHING;
+
 INSERT INTO erp.role_templates (name, description)
 VALUES ('Admin', 'System administrator (full approval authority)')
 ON CONFLICT (name) DO NOTHING;

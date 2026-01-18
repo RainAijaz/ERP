@@ -29,12 +29,21 @@ CREATE TABLE IF NOT EXISTS erp.voucher_type (
   affects_gl        boolean NOT NULL DEFAULT true
 );
 
-ALTER TABLE erp.activity_log
-  ADD CONSTRAINT fk_activity_log_voucher_type
-  FOREIGN KEY (voucher_type_code)
-  REFERENCES erp.voucher_type(code)
-  ON UPDATE CASCADE
-  ON DELETE RESTRICT;
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'fk_activity_log_voucher_type'
+      AND conrelid = 'erp.activity_log'::regclass
+  ) THEN
+    ALTER TABLE erp.activity_log
+      ADD CONSTRAINT fk_activity_log_voucher_type
+      FOREIGN KEY (voucher_type_code)
+      REFERENCES erp.voucher_type(code)
+      ON UPDATE CASCADE
+      ON DELETE RESTRICT;
+  END IF;
+END $$;
 
 -- -----------------------------------------------------------------------------
 -- voucher_header

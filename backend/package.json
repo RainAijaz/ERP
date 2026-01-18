@@ -6,19 +6,30 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
+    "seed:admin": "node src/scripts/seed-admin.js",
+    "test:email": "node src/scripts/test-email.js",
+    "test:voucher-engine": "node src/scripts/test-voucher-engine.js",
+    "build:css": "npx tailwindcss -i ./src/styles.css -o ./public/styles.css",
+    "dev:css": "npx tailwindcss -i ./src/styles.css -o ./public/styles.css --watch",
     "migrate:rollback": "knex migrate:rollback",
-    "db:ddl": "psql -U postgres -d erp -v ON_ERROR_STOP=1 -f src/999_all.sql"
+    "db:ddl": "psql -U postgres -d erp -v ON_ERROR_STOP=1 -f src/database/ddl/999_all.sql"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
     "dotenv": "^17.2.3",
+    "ejs": "^3.1.10",
     "express": "^5.2.1",
     "knex": "^3.1.0",
+    "nodemailer": "^6.10.1",
     "pg": "^8.16.3"
   },
   "devDependencies": {
-    "nodemon": "^3.1.11"
+    "@tailwindcss/cli": "^4.1.18",
+    "autoprefixer": "^10.4.23",
+    "nodemon": "^3.1.11",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.18"
   }
 }

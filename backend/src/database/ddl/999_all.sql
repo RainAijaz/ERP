@@ -12,4 +12,5 @@ BEGIN;
 \ir 090_rgp_assets.sql
 \ir 091_integrity_checks.sql
 \ir 092_seeds.sql
+\ir 093_seed_admin_user.sql
 COMMIT;

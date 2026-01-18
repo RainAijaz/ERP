@@ -1,0 +1,7 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Nastaliq+Urdu:wght@400;600&display=swap");
+
+@config "../tailwind.config.js";
+@source "./views/**/*.ejs";
+@source "./**/*.js";
+
+@import "tailwindcss";

@@ -159,6 +159,7 @@ CREATE TABLE IF NOT EXISTS users (
   id              bigserial PRIMARY KEY,
   username        text NOT NULL UNIQUE,         -- login username (consider case-insensitive via citext later)
   password_hash   text NOT NULL,                -- store hash only (bcrypt/argon2/etc.), never plaintext
+  email           text,                         -- optional but recommended for notifications
   primary_role_id bigint NOT NULL REFERENCES erp.role_templates(id) ON DELETE RESTRICT,
   status          text NOT NULL DEFAULT 'Active',-- active/inactive login control
   created_at      timestamptz NOT NULL DEFAULT now(),
@@ -172,6 +173,24 @@ CREATE TABLE IF NOT EXISTS users (
   CHECK (lower(trim(status)) IN ('active','inactive'))
 );
 
+-- Add unique constraint for email (case-insensitive) when present.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_users_email_lower
+ON erp.users (lower(email))
+WHERE email IS NOT NULL;
+
+-- Basic email shape validation when email is provided.
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'users_email_format'
+      AND conrelid = 'erp.users'::regclass
+  ) THEN
+    ALTER TABLE erp.users
+    ADD CONSTRAINT users_email_format
+    CHECK (email IS NULL OR (position('@' in email) > 1 AND position('.' in email) > position('@' in email)));
+  END IF;
+END $$;
+
 -- User-branch mapping: which branches a user is allowed to operate.
 -- Rule enforced in application: user can only view/operate assigned branches.
 CREATE TABLE IF NOT EXISTS user_branch (
@@ -179,6 +198,25 @@ CREATE TABLE IF NOT EXISTS user_branch (
   branch_id bigint NOT NULL REFERENCES erp.branches(id) ON DELETE CASCADE,
   PRIMARY KEY (user_id, branch_id)
 );
+
+-- Enforce: every user must have at least one branch assignment.
+CREATE OR REPLACE FUNCTION erp.enforce_user_branch_assignment()
+RETURNS trigger AS $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM erp.user_branch ub WHERE ub.user_id = NEW.id
+  ) THEN
+    RAISE EXCEPTION 'User % must be assigned to at least one branch', NEW.id;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_users_require_branch ON erp.users;
+CREATE CONSTRAINT TRIGGER trg_users_require_branch
+AFTER INSERT OR UPDATE ON erp.users
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION erp.enforce_user_branch_assignment();
 
 
 /* ============================================================================

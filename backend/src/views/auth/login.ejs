@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="<%= locale || 'en' %>" dir="<%= locale === 'ur' ? 'rtl' : 'ltr' %>">
+  <head>
+    <%- include("../base/partials/head", { title: t("sign_in") }) %>
+  </head>
+  <body class="<%= locale === 'ur' ? 'font-urdu' : 'font-sans' %> min-h-screen overflow-x-hidden bg-gradient-to-br from-slate-50 via-white to-amber-50 text-ink">
+    <div class="relative min-h-screen">
+      <div class="pointer-events-none absolute inset-0 overflow-hidden">
+        <div class="absolute -top-24 right-10 h-60 w-60 rounded-full bg-amber-200/50 blur-3xl"></div>
+        <div class="absolute bottom-10 left-10 h-56 w-56 rounded-full bg-slate-200/60 blur-3xl"></div>
+      </div>
+      <div class="mx-auto flex min-h-screen w-full max-w-6xl items-center px-4 py-10">
+        <div class="grid w-full gap-6 lg:grid-cols-[1.05fr,0.95fr]">
+          <section class="rounded-3xl border border-slate-200 bg-white/95 p-8 shadow-2xl">
+            <div class="mb-6 space-y-2">
+              <div class="text-[11px] uppercase tracking-[0.4em] text-muted"><%= t("sign_in") %></div>
+              <h2 class="text-2xl font-display text-ink"><%= t("use_credentials") %></h2>
+            </div>
+            <% if (error) { %>
+              <div class="mb-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                <%= error %>
+              </div>
+            <% } %>
+            <form method="post" action="/auth/login" class="space-y-4">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <div class="space-y-1">
+                <label class="text-xs uppercase tracking-[0.2em] text-muted" for="username"><%= t("username") %></label>
+                <input id="username" name="username" autocomplete="username" required class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" />
+              </div>
+              <div class="space-y-1">
+                <label class="text-xs uppercase tracking-[0.2em] text-muted" for="password"><%= t("password") %></label>
+                <input id="password" name="password" type="password" autocomplete="current-password" required class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" />
+              </div>
+              <button type="submit" class="w-full rounded-2xl bg-accent px-4 py-3 text-sm font-semibold uppercase tracking-[0.2em] text-white shadow-lg transition hover:bg-[#0f3f52] focus:outline-none focus:ring-2 focus:ring-accent/40">
+                <%= t("login") %>
+              </button>
+            </form>
+          </section>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

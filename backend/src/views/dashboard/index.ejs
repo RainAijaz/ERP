@@ -1,0 +1,24 @@
+<div class="mx-auto w-full max-w-6xl space-y-6">
+  <section class="rounded-3xl border border-slate-200 bg-white/95 p-8 shadow-xl">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div class="space-y-2">
+        <h1 class="text-3xl font-display text-ink"><%= t("dashboard") %></h1>
+        <p class="text-sm text-muted"><%= t("welcome") %></p>
+      </div>
+    </div>
+    <section class="grid gap-4 md:grid-cols-3">
+      <div class="rounded-2xl border border-amber-100 bg-amber-50 p-5">
+        <div class="text-[11px] uppercase tracking-[0.3em] text-amber-700"><%= t("approvals") %></div>
+        <div class="mt-2 text-3xl font-semibold text-amber-900">0</div>
+      </div>
+      <div class="rounded-2xl border border-blue-100 bg-blue-50 p-5">
+        <div class="text-[11px] uppercase tracking-[0.3em] text-blue-700"><%= t("vouchers") %></div>
+        <div class="mt-2 text-3xl font-semibold text-blue-900">0</div>
+      </div>
+      <div class="rounded-2xl border border-emerald-100 bg-emerald-50 p-5">
+        <div class="text-[11px] uppercase tracking-[0.3em] text-emerald-700"><%= t("inventory") %></div>
+        <div class="mt-2 text-3xl font-semibold text-emerald-900">0</div>
+      </div>
+    </section>
+  </section>
+</div>
