@@ -10,7 +10,7 @@
           <input id="nav-toggle" type="checkbox" class="peer sr-only" />
           <div class="flex flex-wrap items-center justify-between gap-4 py-4 lg:py-5">
             <div class="flex items-center gap-4">
-              <div class="text-2xl font-display text-accent"><%= t("brand") %></div>
+              <a class="text-2xl font-display text-accent transition hover:text-accent/80" href="/"><%= t("brand") %></a>
               <span class="hidden h-5 w-px bg-slate-200 lg:inline-flex"></span>
               <span class="hidden text-xs uppercase tracking-[0.4em] text-muted lg:inline-flex">ERP</span>
             </div>
@@ -32,7 +32,7 @@
                   <path d="M5 7l5 6 5-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
               </button>
-              <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-md group-focus-within/menu:block lg:absolute lg:left-0 lg:mt-3 lg:w-72 lg:shadow-xl lg:opacity-0 lg:pointer-events-none lg:translate-y-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/menu:opacity-100 lg:group-hover/menu:pointer-events-auto lg:group-hover/menu:translate-y-0 lg:group-focus-within/menu:opacity-100 lg:group-focus-within/menu:pointer-events-auto lg:group-focus-within/menu:translate-y-0">
+              <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-md nav-dropdown group-focus-within/menu:block lg:absolute lg:left-0 lg:mt-2 lg:w-72 lg:shadow-xl lg:opacity-0 lg:pointer-events-none lg:translate-y-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/menu:opacity-100 lg:group-hover/menu:pointer-events-auto lg:group-hover/menu:translate-y-0 lg:group-focus-within/menu:opacity-100 lg:group-focus-within/menu:pointer-events-auto lg:group-focus-within/menu:translate-y-0">
                 <div class="space-y-3">
                   <div class="relative group/sub">
                     <button class="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600 lg:text-[9px] lg:tracking-[0.1em]" type="button">
@@ -41,7 +41,7 @@
                         <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
                     </button>
-                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-3 lg:w-60 lg:opacity-0 lg:pointer-events-none lg:translate-x-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
+                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-2 lg:w-60 lg:opacity-0 lg:pointer-events-none lg:translate-x-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/administration/branches"><%= t("branches") %></a>
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/administration/users"><%= t("users") %></a>
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/administration/roles"><%= t("roles") %></a>
@@ -55,7 +55,7 @@
                         <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
                     </button>
-                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-3 lg:w-60 lg:opacity-0 lg:pointer-events-none lg:translate-x-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
+                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-2 lg:w-60 lg:opacity-0 lg:pointer-events-none lg:translate-x-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/administration/approvals"><%= t("approvals") %></a>
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/administration/audit-logs"><%= t("audit_logs") %></a>
                     </div>
@@ -70,8 +70,52 @@
                   <path d="M5 7l5 6 5-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
               </button>
-              <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-md group-focus-within/menu:block lg:absolute lg:left-0 lg:mt-3 lg:w-72 lg:shadow-xl lg:opacity-0 lg:pointer-events-none lg:translate-y-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/menu:opacity-100 lg:group-hover/menu:pointer-events-auto lg:group-hover/menu:translate-y-0 lg:group-focus-within/menu:opacity-100 lg:group-focus-within/menu:pointer-events-auto lg:group-focus-within/menu:translate-y-0">
+              <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-md nav-dropdown group-focus-within/menu:block lg:absolute lg:left-0 lg:mt-2 lg:w-72 lg:shadow-xl lg:opacity-0 lg:pointer-events-none lg:translate-y-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/menu:opacity-100 lg:group-hover/menu:pointer-events-auto lg:group-hover/menu:translate-y-0 lg:group-focus-within/menu:opacity-100 lg:group-focus-within/menu:pointer-events-auto lg:group-focus-within/menu:translate-y-0">
                 <div class="space-y-3">
+                      <div class="relative group/sub">
+                        <button class="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600 lg:text-[9px] lg:tracking-[0.1em]" type="button">
+                          <span><%= t("basic_information") %></span>
+                          <svg class="h-3 w-3 opacity-70" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                            <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                          </svg>
+                        </button>
+                      <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-2 lg:w-60 lg:opacity-0 lg:pointer-events-none lg:translate-x-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
+                          <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/basic-information/units"><%= t("units") %></a>
+                          <div class="relative" data-submenu-wrap>
+                            <span class="hidden lg:block absolute -right-4 top-0 h-full w-4"></span>
+                            <button class="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" type="button" data-submenu-toggle="basic-info-groups">
+                              <span><%= t("groups") %></span>
+                              <svg class="h-3 w-3 opacity-70" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                                <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                              </svg>
+                            </button>
+                            <div class="mt-1 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-2 lg:w-64" data-submenu="basic-info-groups">
+                              <div class="relative" data-submenu-wrap>
+                                <span class="hidden lg:block absolute -right-4 top-0 h-full w-4"></span>
+                                <button class="flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" type="button" data-submenu-toggle="basic-info-groups-products">
+                                  <span><%= t("products") %></span>
+                                  <svg class="h-3 w-3 opacity-70" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                                    <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                                  </svg>
+                                </button>
+                            <div class="mt-1 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-2 lg:w-64 lg:before:absolute lg:before:-left-4 lg:before:top-0 lg:before:h-full lg:before:w-4 lg:before:content-['']" data-submenu="basic-info-groups-products">
+                                  <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/basic-info/groups/products/product-groups"><%= t("product_groups") %></a>
+                                  <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/basic-info/product-subgroups"><%= t("product_subgroups") %></a>
+                                  <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/basic-info/groups/products/product-types"><%= t("product_types") %></a>
+                                </div>
+                              </div>
+                              <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/basic-info/groups/party-groups"><%= t("party_groups") %></a>
+                              <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/basic-info/groups/account-groups"><%= t("account_groups") %></a>
+                              <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/basic-info/groups/departments"><%= t("departments") %></a>
+                            </div>
+                          </div>
+                          <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/basic-information/sizes"><%= t("sizes") %></a>
+                          <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/basic-information/colors"><%= t("colors") %></a>
+                          <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/basic-information/grades"><%= t("grades") %></a>
+                          <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/basic-information/packing-types"><%= t("packing_types") %></a>
+                          <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/basic-information/uom-conversions"><%= t("uom_conversions") %></a>
+                        </div>
+                      </div>
                   <div class="relative group/sub">
                     <button class="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600 lg:text-[9px] lg:tracking-[0.1em]" type="button">
                       <span><%= t("accounts_parties") %></span>
@@ -79,7 +123,7 @@
                         <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
                     </button>
-                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-3 lg:w-60 lg:opacity-0 lg:pointer-events-none lg:translate-x-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
+                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-2 lg:w-60 lg:opacity-0 lg:pointer-events-none lg:translate-x-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/accounts"><%= t("accounts") %></a>
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/parties"><%= t("parties") %></a>
                     </div>
@@ -91,23 +135,7 @@
                         <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
                     </button>
-                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-3 lg:w-64 lg:opacity-0 lg:pointer-events-none lg:translate-x-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
-                      <div class="relative group/subchild">
-                        <button class="flex w-full items-center justify-between rounded-lg border border-dashed border-slate-300 bg-slate-100 px-2 py-1.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-slate-600" type="button">
-                          <span><%= t("basic_information") %></span>
-                          <svg class="h-3 w-3 opacity-70" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-                            <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-                          </svg>
-                        </button>
-                        <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm group-focus-within/subchild:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-3 lg:w-60 lg:opacity-0 lg:pointer-events-none lg:translate-x-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/subchild:opacity-100 lg:group-hover/subchild:pointer-events-auto lg:group-hover/subchild:translate-x-0 lg:group-focus-within/subchild:opacity-100 lg:group-focus-within/subchild:pointer-events-auto lg:group-focus-within/subchild:translate-x-0">
-                          <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/products/units"><%= t("units") %></a>
-                          <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/products/groups"><%= t("groups") %></a>
-                          <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/products/sizes"><%= t("sizes") %></a>
-                          <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/products/colors"><%= t("colors") %></a>
-                          <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/products/grades"><%= t("grades") %></a>
-                          <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/products/packing-types"><%= t("packing_types") %></a>
-                        </div>
-                      </div>
+                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-2 lg:w-64 lg:opacity-0 lg:pointer-events-none lg:translate-x-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
                       <a class="mt-2 block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/products/finished"><%= t("finished") %></a>
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/products/semi-finished"><%= t("semi_finished") %></a>
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/products/raw-materials"><%= t("raw_materials") %></a>
@@ -121,7 +149,7 @@
                         <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
                     </button>
-                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-3 lg:w-60 lg:opacity-0 lg:pointer-events-none lg:translate-x-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
+                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-2 lg:w-60 lg:opacity-0 lg:pointer-events-none lg:translate-x-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/bom"><%= t("bom_list") %></a>
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/bom/versions"><%= t("bom_versions") %></a>
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/bom/approval"><%= t("bom_approval") %></a>
@@ -137,7 +165,7 @@
                   <path d="M5 7l5 6 5-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
               </button>
-              <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-md group-focus-within/menu:block lg:absolute lg:left-0 lg:mt-3 lg:w-72 lg:shadow-xl lg:opacity-0 lg:pointer-events-none lg:translate-y-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/menu:opacity-100 lg:group-hover/menu:pointer-events-auto lg:group-hover/menu:translate-y-0 lg:group-focus-within/menu:opacity-100 lg:group-focus-within/menu:pointer-events-auto lg:group-focus-within/menu:translate-y-0">
+              <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-md nav-dropdown group-focus-within/menu:block lg:absolute lg:left-0 lg:mt-2 lg:w-72 lg:shadow-xl lg:opacity-0 lg:pointer-events-none lg:translate-y-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/menu:opacity-100 lg:group-hover/menu:pointer-events-auto lg:group-hover/menu:translate-y-0 lg:group-focus-within/menu:opacity-100 lg:group-focus-within/menu:pointer-events-auto lg:group-focus-within/menu:translate-y-0">
                 <div class="space-y-2">
                   <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/hr-payroll/employees"><%= t("employees") %></a>
                   <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/hr-payroll/commission"><%= t("sales_commission") %></a>
@@ -149,7 +177,7 @@
                         <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
                     </button>
-                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-3 lg:w-60 lg:opacity-0 lg:pointer-events-none lg:translate-x-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
+                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-2 lg:w-60 lg:opacity-0 lg:pointer-events-none lg:translate-x-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/hr-payroll/labours"><%= t("labours") %></a>
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/master-data/hr-payroll/labour-rates"><%= t("labour_rates") %></a>
                     </div>
@@ -164,7 +192,7 @@
                   <path d="M5 7l5 6 5-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
               </button>
-              <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-md group-focus-within/menu:block lg:absolute lg:left-0 lg:mt-3 lg:w-72 lg:shadow-xl lg:opacity-0 lg:pointer-events-none lg:translate-y-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/menu:opacity-100 lg:group-hover/menu:pointer-events-auto lg:group-hover/menu:translate-y-0 lg:group-focus-within/menu:opacity-100 lg:group-focus-within/menu:pointer-events-auto lg:group-focus-within/menu:translate-y-0">
+              <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-md nav-dropdown group-focus-within/menu:block lg:absolute lg:left-0 lg:mt-2 lg:w-72 lg:shadow-xl lg:opacity-0 lg:pointer-events-none lg:translate-y-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/menu:opacity-100 lg:group-hover/menu:pointer-events-auto lg:group-hover/menu:translate-y-0 lg:group-focus-within/menu:opacity-100 lg:group-focus-within/menu:pointer-events-auto lg:group-focus-within/menu:translate-y-0">
                 <div class="space-y-3">
                   <div class="relative group/sub">
                     <button class="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600 lg:text-[9px] lg:tracking-[0.1em]" type="button">
@@ -173,7 +201,7 @@
                         <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
                     </button>
-                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-3 lg:w-56 lg:opacity-0 lg:pointer-events-none lg:translate-x-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
+                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-2 lg:w-56 lg:opacity-0 lg:pointer-events-none lg:translate-x-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/vouchers/cash"><%= t("cash_voucher") %></a>
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/vouchers/bank"><%= t("bank_voucher") %></a>
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/vouchers/journal"><%= t("journal_voucher") %></a>
@@ -186,7 +214,7 @@
                         <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
                     </button>
-                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-3 lg:w-56 lg:opacity-0 lg:pointer-events-none lg:translate-x-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
+                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-2 lg:w-56 lg:opacity-0 lg:pointer-events-none lg:translate-x-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/reports/financial"><%= t("financial_reports") %></a>
                     </div>
                   </div>
@@ -200,7 +228,7 @@
                   <path d="M5 7l5 6 5-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
               </button>
-              <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-md group-focus-within/menu:block lg:absolute lg:left-0 lg:mt-3 lg:w-72 lg:shadow-xl lg:opacity-0 lg:pointer-events-none lg:translate-y-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/menu:opacity-100 lg:group-hover/menu:pointer-events-auto lg:group-hover/menu:translate-y-0 lg:group-focus-within/menu:opacity-100 lg:group-focus-within/menu:pointer-events-auto lg:group-focus-within/menu:translate-y-0">
+              <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-md nav-dropdown group-focus-within/menu:block lg:absolute lg:left-0 lg:mt-2 lg:w-72 lg:shadow-xl lg:opacity-0 lg:pointer-events-none lg:translate-y-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/menu:opacity-100 lg:group-hover/menu:pointer-events-auto lg:group-hover/menu:translate-y-0 lg:group-focus-within/menu:opacity-100 lg:group-focus-within/menu:pointer-events-auto lg:group-focus-within/menu:translate-y-0">
                 <div class="space-y-3">
                   <div class="relative group/sub">
                     <button class="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600 lg:text-[9px] lg:tracking-[0.1em]" type="button">
@@ -209,7 +237,7 @@
                         <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
                     </button>
-                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-3 lg:w-60 lg:opacity-0 lg:pointer-events-none lg:translate-x-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
+                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-2 lg:w-60 lg:opacity-0 lg:pointer-events-none lg:translate-x-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/vouchers/purchase"><%= t("purchase_invoice") %></a>
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/vouchers/purchase-order"><%= t("purchase_order") %></a>
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/vouchers/purchase-return"><%= t("purchase_return") %></a>
@@ -222,7 +250,7 @@
                         <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
                     </button>
-                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-3 lg:w-56 lg:opacity-0 lg:pointer-events-none lg:translate-x-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
+                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-2 lg:w-56 lg:opacity-0 lg:pointer-events-none lg:translate-x-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/reports/purchases"><%= t("purchase_reports") %></a>
                     </div>
                   </div>
@@ -236,7 +264,7 @@
                   <path d="M5 7l5 6 5-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
               </button>
-              <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-md group-focus-within/menu:block lg:absolute lg:left-0 lg:mt-3 lg:w-72 lg:shadow-xl lg:opacity-0 lg:pointer-events-none lg:translate-y-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/menu:opacity-100 lg:group-hover/menu:pointer-events-auto lg:group-hover/menu:translate-y-0 lg:group-focus-within/menu:opacity-100 lg:group-focus-within/menu:pointer-events-auto lg:group-focus-within/menu:translate-y-0">
+              <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-md nav-dropdown group-focus-within/menu:block lg:absolute lg:left-0 lg:mt-2 lg:w-72 lg:shadow-xl lg:opacity-0 lg:pointer-events-none lg:translate-y-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/menu:opacity-100 lg:group-hover/menu:pointer-events-auto lg:group-hover/menu:translate-y-0 lg:group-focus-within/menu:opacity-100 lg:group-focus-within/menu:pointer-events-auto lg:group-focus-within/menu:translate-y-0">
                 <div class="space-y-3">
                   <div class="relative group/sub">
                     <button class="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600 lg:text-[9px] lg:tracking-[0.1em]" type="button">
@@ -245,7 +273,7 @@
                         <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
                     </button>
-                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-3 lg:w-56 lg:opacity-0 lg:pointer-events-none lg:translate-x-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
+                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-2 lg:w-56 lg:opacity-0 lg:pointer-events-none lg:translate-x-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/vouchers/production"><%= t("production") %></a>
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/vouchers/abnormal-loss"><%= t("abnormal_loss") %></a>
                     </div>
@@ -257,7 +285,7 @@
                         <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
                     </button>
-                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-3 lg:w-56 lg:opacity-0 lg:pointer-events-none lg:translate-x-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
+                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-2 lg:w-56 lg:opacity-0 lg:pointer-events-none lg:translate-x-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/reports/production"><%= t("production_reports") %></a>
                     </div>
                   </div>
@@ -271,7 +299,7 @@
                   <path d="M5 7l5 6 5-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
               </button>
-              <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-md group-focus-within/menu:block lg:absolute lg:left-0 lg:mt-3 lg:w-72 lg:shadow-xl lg:opacity-0 lg:pointer-events-none lg:translate-y-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/menu:opacity-100 lg:group-hover/menu:pointer-events-auto lg:group-hover/menu:translate-y-0 lg:group-focus-within/menu:opacity-100 lg:group-focus-within/menu:pointer-events-auto lg:group-focus-within/menu:translate-y-0">
+              <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-md nav-dropdown group-focus-within/menu:block lg:absolute lg:left-0 lg:mt-2 lg:w-72 lg:shadow-xl lg:opacity-0 lg:pointer-events-none lg:translate-y-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/menu:opacity-100 lg:group-hover/menu:pointer-events-auto lg:group-hover/menu:translate-y-0 lg:group-focus-within/menu:opacity-100 lg:group-focus-within/menu:pointer-events-auto lg:group-focus-within/menu:translate-y-0">
                 <div class="space-y-3">
                   <div class="relative group/sub">
                     <button class="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600 lg:text-[9px] lg:tracking-[0.1em]" type="button">
@@ -280,7 +308,7 @@
                         <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
                     </button>
-                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-3 lg:w-56 lg:opacity-0 lg:pointer-events-none lg:translate-x-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
+                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-2 lg:w-56 lg:opacity-0 lg:pointer-events-none lg:translate-x-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/vouchers/inventory"><%= t("inventory_voucher") %></a>
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/vouchers/stock-count"><%= t("stock_count") %></a>
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/vouchers/stn"><%= t("stock_transfer") %></a>
@@ -293,7 +321,7 @@
                         <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
                     </button>
-                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-3 lg:w-56 lg:opacity-0 lg:pointer-events-none lg:translate-x-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
+                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu group-focus-within/sub:block lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-2 lg:w-56 lg:opacity-0 lg:pointer-events-none lg:translate-x-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/reports/inventory"><%= t("inventory_reports") %></a>
                     </div>
                   </div>
@@ -307,7 +335,7 @@
                   <path d="M5 7l5 6 5-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
               </button>
-              <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-md group-focus-within/menu:block lg:absolute lg:left-auto lg:right-0 lg:mt-3 lg:w-72 lg:shadow-xl lg:opacity-0 lg:pointer-events-none lg:translate-y-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/menu:opacity-100 lg:group-hover/menu:pointer-events-auto lg:group-hover/menu:translate-y-0 lg:group-focus-within/menu:opacity-100 lg:group-focus-within/menu:pointer-events-auto lg:group-focus-within/menu:translate-y-0">
+              <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-md nav-dropdown group-focus-within/menu:block lg:absolute lg:left-auto lg:right-0 lg:mt-2 lg:w-72 lg:shadow-xl lg:opacity-0 lg:pointer-events-none lg:translate-y-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/menu:opacity-100 lg:group-hover/menu:pointer-events-auto lg:group-hover/menu:translate-y-0 lg:group-focus-within/menu:opacity-100 lg:group-focus-within/menu:pointer-events-auto lg:group-focus-within/menu:translate-y-0">
                 <div class="space-y-3">
                   <div class="relative group/sub">
                     <button class="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600 lg:text-[9px] lg:tracking-[0.1em]" type="button">
@@ -316,7 +344,7 @@
                         <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
                     </button>
-                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm group-focus-within/sub:block lg:absolute lg:right-full lg:top-0 lg:mt-0 lg:mr-3 lg:w-56 lg:opacity-0 lg:pointer-events-none lg:-translate-x-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
+                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu group-focus-within/sub:block lg:absolute lg:right-full lg:top-0 lg:mt-0 lg:mr-2 lg:w-56 lg:opacity-0 lg:pointer-events-none lg:-translate-x-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/vouchers/returnables"><%= t("returnables") %></a>
                     </div>
                   </div>
@@ -327,7 +355,7 @@
                         <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
                     </button>
-                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm group-focus-within/sub:block lg:absolute lg:right-full lg:top-0 lg:mt-0 lg:mr-3 lg:w-56 lg:opacity-0 lg:pointer-events-none lg:-translate-x-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
+                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu group-focus-within/sub:block lg:absolute lg:right-full lg:top-0 lg:mt-0 lg:mr-2 lg:w-56 lg:opacity-0 lg:pointer-events-none lg:-translate-x-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/reports/returnables"><%= t("returnable_reports") %></a>
                     </div>
                   </div>
@@ -341,7 +369,7 @@
                   <path d="M5 7l5 6 5-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                 </svg>
               </button>
-              <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-md group-focus-within/menu:block lg:absolute lg:left-auto lg:right-0 lg:mt-3 lg:w-72 lg:shadow-xl lg:opacity-0 lg:pointer-events-none lg:translate-y-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/menu:opacity-100 lg:group-hover/menu:pointer-events-auto lg:group-hover/menu:translate-y-0 lg:group-focus-within/menu:opacity-100 lg:group-focus-within/menu:pointer-events-auto lg:group-focus-within/menu:translate-y-0">
+              <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-md nav-dropdown group-focus-within/menu:block lg:absolute lg:left-auto lg:right-0 lg:mt-2 lg:w-72 lg:shadow-xl lg:opacity-0 lg:pointer-events-none lg:translate-y-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/menu:opacity-100 lg:group-hover/menu:pointer-events-auto lg:group-hover/menu:translate-y-0 lg:group-focus-within/menu:opacity-100 lg:group-focus-within/menu:pointer-events-auto lg:group-focus-within/menu:translate-y-0">
                 <div class="space-y-3">
                   <div class="relative group/sub">
                     <button class="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600 lg:text-[9px] lg:tracking-[0.1em]" type="button">
@@ -350,7 +378,7 @@
                         <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
                     </button>
-                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm group-focus-within/sub:block lg:absolute lg:right-full lg:top-0 lg:mt-0 lg:mr-3 lg:w-56 lg:opacity-0 lg:pointer-events-none lg:-translate-x-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
+                    <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu group-focus-within/sub:block lg:absolute lg:right-full lg:top-0 lg:mt-0 lg:mr-2 lg:w-56 lg:opacity-0 lg:pointer-events-none lg:-translate-x-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/vouchers/sales"><%= t("sales_voucher") %></a>
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/vouchers/sales-order"><%= t("sales_order") %></a>
                     </div>
@@ -362,7 +390,7 @@
                         <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                       </svg>
                     </button>
-                    <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-sm group-focus-within/sub:block lg:absolute lg:right-full lg:top-0 lg:mt-0 lg:mr-3 lg:w-56 lg:opacity-0 lg:pointer-events-none lg:-translate-x-2 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
+                    <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-sm group-focus-within/sub:block lg:absolute lg:right-full lg:top-0 lg:mt-0 lg:mr-2 lg:w-56 lg:opacity-0 lg:pointer-events-none lg:-translate-x-0 lg:transition lg:duration-150 lg:ease-out lg:group-hover/sub:opacity-100 lg:group-hover/sub:pointer-events-auto lg:group-hover/sub:translate-x-0 lg:group-focus-within/sub:opacity-100 lg:group-focus-within/sub:pointer-events-auto lg:group-focus-within/sub:translate-x-0">
                       <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="/reports/sales"><%= t("sales_reports") %></a>
                     </div>
                   </div>
@@ -377,5 +405,96 @@
         <%- include("../partials/footer") %>
       </main>
     </div>
+    <script>
+      (function () {
+        const toggles = document.querySelectorAll("[data-submenu-toggle]");
+        const wraps = document.querySelectorAll("[data-submenu-wrap]");
+        const mediaQuery = window.matchMedia("(min-width: 1024px)");
+        const closeDelayMs = 600;
+
+        const closeAll = (except) => {
+          document.querySelectorAll("[data-submenu]").forEach((menu) => {
+            if (menu === except) return;
+            menu.classList.add("hidden");
+          });
+        };
+
+        const setMenuState = (menu, open) => {
+          if (!menu) return;
+          if (open) {
+            menu.classList.remove("hidden");
+          } else {
+            menu.classList.add("hidden");
+          }
+        };
+
+        toggles.forEach((toggle) => {
+          toggle.addEventListener("click", (event) => {
+            if (mediaQuery.matches) return;
+            event.stopPropagation();
+            const key = toggle.getAttribute("data-submenu-toggle");
+            const menu = document.querySelector(`[data-submenu="${key}"]`);
+            if (!menu) return;
+            const willOpen = menu.classList.contains("hidden");
+            closeAll(menu);
+            setMenuState(menu, willOpen);
+          });
+        });
+
+        wraps.forEach((wrap) => {
+          const toggle = wrap.querySelector("[data-submenu-toggle]");
+          if (!toggle) return;
+          const key = toggle.getAttribute("data-submenu-toggle");
+          const menu = document.querySelector(`[data-submenu="${key}"]`);
+          let closeTimer = null;
+          const isNested = Boolean(wrap.closest("[data-submenu]"));
+          const openMenu = () => {
+            if (!mediaQuery.matches) return;
+            if (!isNested) {
+              closeAll(menu);
+            }
+            setMenuState(menu, true);
+          };
+          const scheduleClose = () => {
+            if (!mediaQuery.matches) return;
+            if (closeTimer) clearTimeout(closeTimer);
+            closeTimer = setTimeout(() => setMenuState(menu, false), closeDelayMs);
+          };
+          const cancelClose = () => {
+            if (closeTimer) {
+              clearTimeout(closeTimer);
+              closeTimer = null;
+            }
+          };
+
+          wrap.addEventListener("mouseenter", () => {
+            cancelClose();
+            openMenu();
+          });
+          wrap.addEventListener("mouseleave", scheduleClose);
+          if (menu) {
+            const menuElements = [menu, ...menu.querySelectorAll("[data-submenu]")];
+            menuElements.forEach((element) => {
+              element.addEventListener("mouseenter", () => {
+                cancelClose();
+                openMenu();
+              });
+              element.addEventListener("mouseleave", scheduleClose);
+            });
+          }
+        });
+
+        document.addEventListener("click", () => {
+          if (!mediaQuery.matches) {
+            closeAll();
+          }
+        });
+
+        mediaQuery.addEventListener("change", () => closeAll());
+      })();
+    </script>
+    <%- include("../partials/urdu-translate-utils") %>
   </body>
 </html>
+
+

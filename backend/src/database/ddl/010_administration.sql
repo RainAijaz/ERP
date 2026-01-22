@@ -113,15 +113,15 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
-  -- Standard accounting group used for chart of accounts grouping.
-  CREATE TYPE erp.account_group AS ENUM ('ASSET','LIABILITY','EQUITY','REVENUE','EXPENSE');
+  -- Standard accounting type used for chart of accounts grouping.
+  CREATE TYPE erp.account_type AS ENUM ('ASSET','LIABILITY','EQUITY','REVENUE','EXPENSE');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
   -- Party type categorizes a party record.
   -- NOTE: If your business requires BOTH (same party is customer + supplier),
   -- add 'BOTH' here (or model roles differently). For now it is restricted to two.
-  CREATE TYPE erp.party_type AS ENUM ('CUSTOMER','SUPPLIER');
+  CREATE TYPE erp.party_type AS ENUM ('CUSTOMER','SUPPLIER','BOTH');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN

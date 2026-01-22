@@ -4,8 +4,8 @@
 --   Single consolidated seed file (CORE + COA) for ERP.
 --
 -- IMPORTANT SAFETY NOTES (READ THIS)
---   1) account_subgroups must have a UNIQUE constraint for ON CONFLICT to work:
---        - REQUIRED: UNIQUE (group_code, code)   (or make it a composite PK)
+--   1) account_groups must have a UNIQUE constraint for ON CONFLICT to work:
+--        - REQUIRED: UNIQUE (account_type, code)   (or make it a composite PK)
 --      Otherwise: INSERT ... ON CONFLICT DO NOTHING will FAIL at runtime.
 --
 --   2) voucher_type seed MUST match your current DDL in 030_voucher_engine.sql.
@@ -44,7 +44,9 @@ SET search_path = erp;
 -- A1) Role templates (baseline)
 -- ---------------------------------------------------------
 INSERT INTO erp.branches (code, name, is_active)
-VALUES ('LHR01', 'Lahore', true)
+VALUES
+  ('124', '124', true),
+    ('207', '207', true)
 ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO erp.role_templates (name, description)
@@ -214,11 +216,11 @@ ON CONFLICT (role_id, scope_id) DO UPDATE SET
 -- =====================================================================
 -- D) COA SEEDS — ACCOUNT SUBGROUPS
 -- IMPORTANT:
---   This requires UNIQUE (group_code, code) on erp.account_subgroups
+--   This requires UNIQUE (account_type, code) on erp.account_groups
 --   (or a composite primary key), otherwise ON CONFLICT will fail.
 -- =====================================================================
 
-INSERT INTO erp.account_subgroups (group_code, code, name, is_contra) VALUES
+INSERT INTO erp.account_groups (account_type, code, name, is_contra) VALUES
 ('ASSET','cash_in_hand','Office Cash (Cash-in-Hand)',false),
 ('ASSET','bank','Bank',false),
 ('ASSET','bank_clearing','Bank Clearing / Undeposited Funds',false),

@@ -38,15 +38,15 @@ const getCookie = (setCookieHeaders, name) => {
 };
 
 const resolveAccountSubgroup = async () => {
-  const preferred = await knex("erp.account_subgroups")
+  const preferred = await knex("erp.account_groups")
     .select("id")
     .where({ code: "cash_in_hand" })
     .first();
   if (preferred) return preferred.id;
 
-  const any = await knex("erp.account_subgroups").select("id").first();
+  const any = await knex("erp.account_groups").select("id").first();
   if (!any) {
-    throw new Error("No account_subgroups found. Run seeds first.");
+    throw new Error("No account_groups found. Run seeds first.");
   }
   return any.id;
 };

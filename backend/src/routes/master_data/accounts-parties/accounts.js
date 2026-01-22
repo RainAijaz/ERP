@@ -14,11 +14,11 @@ const renderPage = (req, res, view, title) =>
   });
 
 router.get("/", (req, res) => {
-  renderPage(req, res, "../../master_data/products/skus/index", res.locals.t("skus"));
+  renderPage(req, res, "../../master_data/accounts/index", res.locals.t("accounts"));
 });
 
 router.get("/new", (req, res) => {
-  renderPage(req, res, "../../master_data/products/skus/form", `New ${res.locals.t("skus")}`);
+  renderPage(req, res, "../../master_data/accounts/form", `New ${res.locals.t("accounts")}`);
 });
 
 module.exports = router;

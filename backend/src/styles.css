@@ -5,3 +5,25 @@
 @source "./**/*.js";
 
 @import "tailwindcss";
+
+@layer base {
+  button,
+  [role="button"],
+  input[type="button"],
+  input[type="submit"],
+  input[type="reset"] {
+    cursor: pointer;
+  }
+}
+
+[dir="rtl"] .nav-dropdown {
+  left: auto !important;
+  right: 0 !important;
+  max-width: calc(100vw - 2rem);
+}
+
+[dir="rtl"] .nav-submenu {
+  left: auto !important;
+  right: 100% !important;
+  max-width: calc(100vw - 2rem);
+}

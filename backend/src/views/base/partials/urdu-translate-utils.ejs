@@ -1,0 +1,75 @@
+<script>
+  (function () {
+    const endpoint = "/translate";
+    const buttonLabel = "<%= t("auto_translate") %>";
+
+    const wireForm = (form) => {
+      const source = form.querySelector('input[name="name"]');
+      const target = form.querySelector('input[name="name_ur"]');
+      if (!source || !target || source.dataset.translateAttached === "true") {
+        return;
+      }
+
+      source.dataset.translateAttached = "true";
+      const existingButton = target.parentElement.querySelector("[data-translate-button]");
+      if (!existingButton) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = buttonLabel;
+        button.className =
+          "mt-2 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-800";
+        button.setAttribute("data-translate-button", "true");
+        const wrapper = document.createElement("div");
+        wrapper.className = "mt-2 flex items-center gap-2";
+        target.classList.add("flex-1");
+        target.parentElement.insertBefore(wrapper, target);
+        wrapper.appendChild(target);
+        wrapper.appendChild(button);
+        button.addEventListener("click", () => translate());
+      }
+
+      const translate = async () => {
+        const value = source.value.trim();
+        if (!value) {
+          return;
+        }
+        const mode = form.dataset.translateMode || target.dataset.translateMode || "translate";
+
+        const csrfInput = form.querySelector('input[name="_csrf"]');
+        const csrfToken = csrfInput ? csrfInput.value : null;
+
+        try {
+          const response = await fetch(endpoint, {
+            method: "POST",
+            credentials: "same-origin",
+            headers: {
+              "Content-Type": "application/json",
+              ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+            },
+            body: JSON.stringify({ text: value, mode }),
+          });
+          if (!response.ok) {
+            return;
+          }
+          const payload = await response.json();
+          if (!payload || !payload.translated) {
+            return;
+          }
+          target.value = payload.translated;
+        } catch (err) {
+          return;
+        }
+      };
+    };
+
+    const wireAll = () => {
+      document.querySelectorAll("form").forEach(wireForm);
+    };
+
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", wireAll);
+    } else {
+      wireAll();
+    }
+  })();
+</script>

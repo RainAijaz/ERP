@@ -26,7 +26,30 @@ SET search_path = erp;
 CREATE TABLE IF NOT EXISTS erp.uom (
   id   bigserial PRIMARY KEY,
   code text NOT NULL UNIQUE,
-  name text NOT NULL
+  name text NOT NULL UNIQUE,
+  name_ur text,
+  is_active boolean NOT NULL DEFAULT true,
+  created_by bigint REFERENCES erp.users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_by bigint REFERENCES erp.users(id),
+  updated_at timestamptz
+);
+
+-- Unit conversions (e.g., 1 BOX = 10 PCS)
+CREATE TABLE IF NOT EXISTS erp.uom_conversions (
+  id           bigserial PRIMARY KEY,
+  from_uom_id  bigint NOT NULL REFERENCES erp.uom(id) ON DELETE RESTRICT,
+  to_uom_id    bigint NOT NULL REFERENCES erp.uom(id) ON DELETE RESTRICT,
+  factor       numeric(18,6) NOT NULL,
+  created_by   bigint REFERENCES erp.users(id),
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  is_active    boolean NOT NULL DEFAULT true,
+  updated_by   bigint REFERENCES erp.users(id),
+  updated_at   timestamptz,
+
+  CHECK (factor > 0),
+  CHECK (from_uom_id <> to_uom_id),
+  UNIQUE (from_uom_id, to_uom_id)
 );
 
 -- =============================================================================
@@ -38,21 +61,41 @@ CREATE TABLE IF NOT EXISTS erp.uom (
 CREATE TABLE IF NOT EXISTS erp.product_groups (
   id            bigserial PRIMARY KEY,
   name          text NOT NULL UNIQUE,
-  applies_rm    boolean NOT NULL DEFAULT true,
-  applies_sfg   boolean NOT NULL DEFAULT true,
-  applies_fg    boolean NOT NULL DEFAULT true,
+  name_ur       text,
   is_active     boolean NOT NULL DEFAULT true,
-  CHECK (applies_rm OR applies_sfg OR applies_fg)
+  created_by    bigint REFERENCES erp.users(id),
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_by    bigint REFERENCES erp.users(id),
+  updated_at    timestamptz
 );
 
--- Product subgroup within a group (e.g., Boots, Kids, Sports, etc.)
+-- Mapping table for product group applicability (RM/SFG/FG).
+CREATE TABLE IF NOT EXISTS erp.product_group_item_types (
+  group_id  bigint NOT NULL REFERENCES erp.product_groups(id) ON DELETE CASCADE,
+  item_type erp.item_type NOT NULL,
+  PRIMARY KEY (group_id, item_type)
+);
+
+-- Mapping table for product sub-group applicability (RM/SFG/FG).
+CREATE TABLE IF NOT EXISTS erp.product_subgroup_item_types (
+  subgroup_id bigint NOT NULL REFERENCES erp.product_subgroups(id) ON DELETE CASCADE,
+  item_type   erp.item_type NOT NULL,
+  PRIMARY KEY (subgroup_id, item_type)
+);
+
+-- Product subgroup within a group 
 -- code is a stable snake_case key to prevent drift/typos across UI and backend.
 CREATE TABLE IF NOT EXISTS erp.product_subgroups (
   id        bigserial PRIMARY KEY,
-  group_id  bigint NOT NULL REFERENCES erp.product_groups(id) ON DELETE RESTRICT,
+  group_id  bigint REFERENCES erp.product_groups(id) ON DELETE RESTRICT,
   code      text NOT NULL,          -- stable key (snake_case)
-  name      text NOT NULL,          -- display name
+  name      text NOT NULL UNIQUE,          -- display name
+  name_ur   text,
   is_active boolean NOT NULL DEFAULT true,
+  created_by bigint REFERENCES erp.users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_by bigint REFERENCES erp.users(id),
+  updated_at timestamptz,
 
   UNIQUE (group_id, code),
   UNIQUE (group_id, name),
@@ -62,11 +105,16 @@ CREATE TABLE IF NOT EXISTS erp.product_subgroups (
 
 -- Shoe category / audience segmentation (men, women, boys, girls, unisex).
 -- code is a stable snake_case key for consistent filtering and reporting.
-CREATE TABLE IF NOT EXISTS erp.shoe_category (
+CREATE TABLE IF NOT EXISTS erp.product_types (
   id        bigserial PRIMARY KEY,
   code      text NOT NULL UNIQUE,
-  name      text NOT NULL,
+  name      text NOT NULL UNIQUE,
+  name_ur   text,
   is_active boolean NOT NULL DEFAULT true,
+  created_by bigint REFERENCES erp.users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_by bigint REFERENCES erp.users(id),
+  updated_at timestamptz,
   CHECK (code = lower(trim(code)) AND code ~ '^[a-z0-9_]{2,40}$')
 );
 
@@ -77,40 +125,69 @@ CREATE TABLE IF NOT EXISTS erp.shoe_category (
 -- NOTE: storing size as text supports values like "7/10", "9/10", "40", "41", etc.
 CREATE TABLE IF NOT EXISTS erp.sizes (
   id   bigserial PRIMARY KEY,
-  name text NOT NULL UNIQUE
+  name text NOT NULL UNIQUE,
+  name_ur text,
+  is_active  boolean NOT NULL DEFAULT true,
+  created_by bigint REFERENCES erp.users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_by bigint REFERENCES erp.users(id),
+  updated_at timestamptz
 );
 
 CREATE TABLE IF NOT EXISTS erp.colors (
   id   bigserial PRIMARY KEY,
-  name text NOT NULL UNIQUE
+  name text NOT NULL UNIQUE,
+  name_ur text,
+  is_active  boolean NOT NULL DEFAULT true,
+  created_by bigint REFERENCES erp.users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_by bigint REFERENCES erp.users(id),
+  updated_at timestamptz
 );
 
 CREATE TABLE IF NOT EXISTS erp.grades (
   id   bigserial PRIMARY KEY,
-  name text NOT NULL UNIQUE
+  name text NOT NULL UNIQUE,
+  name_ur text,
+  is_active  boolean NOT NULL DEFAULT true,
+  created_by bigint REFERENCES erp.users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_by bigint REFERENCES erp.users(id),
+  updated_at timestamptz
 );
 
 CREATE TABLE IF NOT EXISTS erp.packing_types (
   id   bigserial PRIMARY KEY,
-  name text NOT NULL UNIQUE
+  name text NOT NULL UNIQUE,
+  name_ur text,
+  is_active  boolean NOT NULL DEFAULT true,
+  created_by bigint REFERENCES erp.users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_by bigint REFERENCES erp.users(id),
+  updated_at timestamptz
 );
 
 -- =============================================================================
 -- ACCOUNTS (COA STRUCTURE) + ACCOUNT-BRANCH MAPPING
 -- =============================================================================
 
--- Account subgroups: a flexible layer under the fixed erp.account_group enum.
+-- Account groups: a flexible layer under the fixed erp.account_type enum.
 -- Example: ASSET -> cash_bank, receivables, inventory; EXPENSE -> salaries, utilities, etc.
-CREATE TABLE IF NOT EXISTS erp.account_subgroups (
+CREATE TABLE IF NOT EXISTS erp.account_groups (
   id         bigserial PRIMARY KEY,
-  group_code erp.account_group NOT NULL,
+  account_type erp.account_type NOT NULL,
   code       text NOT NULL,               -- stable key (snake_case)
   name       text NOT NULL,
+  name_ur    text,
   is_contra  boolean NOT NULL DEFAULT false,
   is_active  boolean NOT NULL DEFAULT true,
+  created_by bigint REFERENCES erp.users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_by bigint REFERENCES erp.users(id),
+  updated_at timestamptz,
 
-  UNIQUE (group_code, code),
-  UNIQUE (group_code, name),
+  UNIQUE (account_type, code),
+  UNIQUE (account_type, name),
 
   CHECK (code = lower(trim(code)) AND code ~ '^[a-z0-9_]{2,80}$')
 );
@@ -120,8 +197,9 @@ CREATE TABLE IF NOT EXISTS erp.account_subgroups (
 CREATE TABLE IF NOT EXISTS erp.accounts (
   id            bigserial PRIMARY KEY,
   code          text NOT NULL UNIQUE,
-  name          text NOT NULL,
-  subgroup_id   bigint NOT NULL REFERENCES erp.account_subgroups(id) ON DELETE RESTRICT,
+  name          text NOT NULL UNIQUE,
+  name_ur       text,
+  subgroup_id   bigint NOT NULL REFERENCES erp.account_groups(id) ON DELETE RESTRICT,
 
   is_active     boolean NOT NULL DEFAULT true,
   lock_posting  boolean NOT NULL DEFAULT false, -- if true, app should block postings to this account
@@ -148,8 +226,15 @@ CREATE TABLE IF NOT EXISTS erp.account_branch (
 
 -- Party groups (e.g., Wholesale, Retail, Suppliers - Leather, etc.)
 CREATE TABLE IF NOT EXISTS erp.party_groups (
-  id   bigserial PRIMARY KEY,
-  name text NOT NULL UNIQUE
+  id         bigserial PRIMARY KEY,
+  party_type erp.party_type NOT NULL DEFAULT 'BOTH',
+  name       text NOT NULL UNIQUE,
+  name_ur    text,
+  is_active  boolean NOT NULL DEFAULT true,
+  created_by bigint REFERENCES erp.users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_by bigint REFERENCES erp.users(id),
+  updated_at timestamptz
 );
 
 -- Parties master.
@@ -158,7 +243,8 @@ CREATE TABLE IF NOT EXISTS erp.party_groups (
 CREATE TABLE IF NOT EXISTS erp.parties (
   id             bigserial PRIMARY KEY,
   code           text NOT NULL UNIQUE,
-  name           text NOT NULL,
+  name           text NOT NULL UNIQUE,
+  name_ur        text,
 
   party_type     erp.party_type NOT NULL, -- CUSTOMER / SUPPLIER (or BOTH if you later add it)
   branch_id      bigint NOT NULL REFERENCES erp.branches(id) ON DELETE CASCADE,
@@ -204,9 +290,36 @@ CREATE TABLE IF NOT EXISTS erp.parties (
 CREATE TABLE IF NOT EXISTS erp.departments (
   id            bigserial PRIMARY KEY,
   name          text NOT NULL UNIQUE,
+  name_ur       text,
   is_production boolean NOT NULL DEFAULT false,
-  is_active     boolean NOT NULL DEFAULT true
+  is_active     boolean NOT NULL DEFAULT true,
+  created_by    bigint REFERENCES erp.users(id),
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_by    bigint REFERENCES erp.users(id),
+  updated_at    timestamptz
 );
+
+-- =============================================================================
+-- CASE-INSENSITIVE UNIQUENESS (DISPLAY NAMES + CODES)
+-- =============================================================================
+-- Enforce case-insensitive uniqueness for names/codes (e.g., "BALLMAN" vs "ballman").
+CREATE UNIQUE INDEX IF NOT EXISTS uom_code_lower_uidx ON erp.uom (lower(code));
+CREATE UNIQUE INDEX IF NOT EXISTS uom_name_lower_uidx ON erp.uom (lower(name));
+CREATE UNIQUE INDEX IF NOT EXISTS product_groups_name_lower_uidx ON erp.product_groups (lower(name));
+CREATE UNIQUE INDEX IF NOT EXISTS product_subgroups_name_lower_uidx
+ON erp.product_subgroups (COALESCE(group_id, 0), lower(name));
+CREATE UNIQUE INDEX IF NOT EXISTS product_subgroups_code_lower_uidx
+ON erp.product_subgroups (COALESCE(group_id, 0), lower(code));
+CREATE UNIQUE INDEX IF NOT EXISTS product_types_code_lower_uidx ON erp.product_types (lower(code));
+CREATE UNIQUE INDEX IF NOT EXISTS product_types_name_lower_uidx ON erp.product_types (lower(name));
+CREATE UNIQUE INDEX IF NOT EXISTS sizes_name_lower_uidx ON erp.sizes (lower(name));
+CREATE UNIQUE INDEX IF NOT EXISTS colors_name_lower_uidx ON erp.colors (lower(name));
+CREATE UNIQUE INDEX IF NOT EXISTS grades_name_lower_uidx ON erp.grades (lower(name));
+CREATE UNIQUE INDEX IF NOT EXISTS packing_types_name_lower_uidx ON erp.packing_types (lower(name));
+CREATE UNIQUE INDEX IF NOT EXISTS account_groups_code_lower_uidx ON erp.account_groups (account_type, lower(code));
+CREATE UNIQUE INDEX IF NOT EXISTS account_groups_name_lower_uidx ON erp.account_groups (account_type, lower(name));
+CREATE UNIQUE INDEX IF NOT EXISTS party_groups_name_lower_uidx ON erp.party_groups (lower(name));
+CREATE UNIQUE INDEX IF NOT EXISTS departments_name_lower_uidx ON erp.departments (lower(name));
 
 -- =============================================================================
 -- ITEMS MASTER (RM / SFG / FG)
@@ -220,11 +333,12 @@ CREATE TABLE IF NOT EXISTS erp.items (
   id               bigserial PRIMARY KEY,
   item_type        erp.item_type NOT NULL, -- RM / SFG / FG
   code             text NOT NULL UNIQUE,
-  name             text NOT NULL,
+  name             text NOT NULL UNIQUE,
+  name_ur          text,
 
   group_id         bigint NOT NULL REFERENCES erp.product_groups(id),
   subgroup_id      bigint REFERENCES erp.product_subgroups(id),
-  shoe_category_id bigint REFERENCES erp.shoe_category(id),
+  product_type_id  bigint REFERENCES erp.product_types(id),
 
   base_uom_id      bigint NOT NULL REFERENCES erp.uom(id),
 
@@ -297,7 +411,8 @@ CREATE TABLE IF NOT EXISTS erp.skus (
 -- If you don't need RM sizes, you can remove this table later.
 CREATE TABLE IF NOT EXISTS erp.rm_sizes (
   id   bigserial PRIMARY KEY,
-  name text NOT NULL UNIQUE
+  name text NOT NULL UNIQUE,
+  name_ur text
 );
 
 -- RM purchase rates (as agreed: keep simple for now):
@@ -335,7 +450,8 @@ CREATE TABLE IF NOT EXISTS erp.rm_purchase_rates (
 CREATE TABLE IF NOT EXISTS erp.employees (
   id            bigserial PRIMARY KEY,
   code          text NOT NULL UNIQUE,
-  name          text NOT NULL,
+  name          text NOT NULL UNIQUE,
+  name_ur       text,
 
   cnic          text,
   phone         text,
@@ -369,7 +485,8 @@ CREATE TABLE IF NOT EXISTS erp.employee_branch (
 CREATE TABLE IF NOT EXISTS erp.labours (
   id       bigserial PRIMARY KEY,
   code     text NOT NULL UNIQUE,
-  name     text NOT NULL,
+  name     text NOT NULL UNIQUE,
+  name_ur  text,
 
   cnic     text,
   phone    text,
@@ -407,9 +524,10 @@ ON erp.variants (item_id);
 CREATE INDEX IF NOT EXISTS idx_rm_purchase_rates_item_id
 ON erp.rm_purchase_rates (rm_item_id);
 
--- Optional “active only” filtering support for master lists.
+-- Optional active-only filtering support for master lists.
 CREATE INDEX IF NOT EXISTS idx_items_is_active
 ON erp.items (is_active);
 
 CREATE INDEX IF NOT EXISTS idx_skus_is_active
 ON erp.skus (is_active);
+

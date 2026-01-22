@@ -1,3 +1,4 @@
+const knex = require("../../db/knex");
 const { HttpError } = require("../errors/http-error");
 const { setCookie } = require("../utils/cookies");
 
@@ -8,7 +9,7 @@ const toNumber = (value) => {
 };
 
 // Enforces branch-level access control so users can only see/act on assigned branches.
-module.exports = (req, res, next) => {
+module.exports = async (req, res, next) => {
   if (!req.user) return next();
   if (req.path.startsWith("/auth")) return next();
 
@@ -29,10 +30,27 @@ module.exports = (req, res, next) => {
     return next(new HttpError(403, "Branch not assigned"));
   }
 
-  req.branchId = activeBranch;
-  req.branchScope = branchIds;
-  res.locals.branchId = activeBranch;
-  res.locals.branchScope = branchIds;
+  try {
+    const branchRows = await knex("erp.branches")
+      .select("id", "code", "name")
+      .whereIn("id", branchIds)
+      .orderBy("name", "asc");
+
+    const branchById = branchRows.reduce((acc, row) => {
+      acc[Number(row.id)] = row;
+      return acc;
+    }, {});
+
+    req.branchId = activeBranch;
+    req.branchScope = branchIds;
+    req.branchOptions = branchRows;
+    res.locals.branchId = activeBranch;
+    res.locals.branchScope = branchIds;
+    res.locals.branchOptions = branchRows;
+    res.locals.branchName = branchById[activeBranch]?.name || null;
+  } catch (err) {
+    return next(err);
+  }
 
   req.applyBranchScope = (qb, column = "branch_id") => {
     if (!qb || typeof qb.whereIn !== "function") return qb;

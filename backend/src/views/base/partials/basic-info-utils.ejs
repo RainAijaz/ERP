@@ -1,0 +1,541 @@
+<style>
+  [data-print-header] {
+    display: none;
+  }
+
+  @media print {
+    body * {
+      visibility: hidden;
+    }
+    [data-print-area],
+    [data-print-area] * {
+      visibility: visible;
+    }
+    [data-print-area] {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      color: #111827;
+    }
+    [data-print-header] {
+      display: block;
+      margin-bottom: 12px;
+      color: #111827;
+    }
+    [data-print-area] table {
+      border-collapse: collapse;
+      width: 100%;
+    }
+    [data-print-area] th,
+    [data-print-area] td {
+      color: #111827;
+      border-bottom: 1px solid #e5e7eb;
+    }
+  }
+</style>
+
+<script>
+  (function () {
+    const modal = document.querySelector("[data-modal]");
+    const modalForm = document.querySelector("[data-modal-form]");
+    const modalTitle = document.querySelector("[data-modal-title]");
+    const openButtons = document.querySelectorAll("[data-modal-open]");
+    const closeButtons = document.querySelectorAll("[data-modal-close]");
+    const editButtons = document.querySelectorAll("[data-edit]");
+    const searchInput = document.querySelector("[data-search-input]");
+    const pageSizeSelect = document.querySelector("[data-page-size]");
+    const prevButton = document.querySelector("[data-prev-page]");
+    const nextButton = document.querySelector("[data-next-page]");
+    const pageIndicator = document.querySelector("[data-page-indicator]");
+    const downloadButton = document.querySelector("[data-download-button]");
+    const printButton = document.querySelector("[data-print-button]");
+    const sortButtons = Array.from(document.querySelectorAll("[data-sort-key]"));
+    const tableBody = document.querySelector("[data-table-body]");
+    const statusFilter = document.querySelector("[data-status-filter]");
+    const confirmModal = document.querySelector("[data-confirm-modal]");
+    const confirmForm = document.querySelector("[data-confirm-form]");
+    const confirmTitle = document.querySelector("[data-confirm-title]");
+    const confirmMessage = document.querySelector("[data-confirm-message]");
+    const confirmClose = document.querySelectorAll("[data-confirm-close]");
+    const toggleButtons = document.querySelectorAll("[data-toggle]");
+    const deleteButtons = document.querySelectorAll("[data-delete]");
+    const modalError = document.querySelector("[data-modal-error]");
+    const auditPanel = document.querySelector("[data-audit-panel]");
+    const auditCreated = document.querySelector("[data-audit-created]");
+    const auditUpdated = document.querySelector("[data-audit-updated]");
+    const i18n = {
+      add: "<%= t("add") %>",
+      edit: "<%= t("edit") %>",
+      confirm: "<%= t("confirm") %>",
+      proceedChange: "<%= t("proceed_change") %>",
+      permanentDelete: "<%= t("permanent_delete") %>",
+      permanentDeleteMessage: "<%= t("permanent_delete_message") %>",
+      showing: "<%= t("showing") %>",
+      to: "<%= t("to") %>",
+      of: "<%= t("of") %>",
+      entries: "<%= t("entries") %>",
+      unitCodeExists: "<%= t("unit_code_exists") %>",
+      conversionSame: "<%= t("conversion_same_units") %>",
+      conversionFactor: "<%= t("conversion_factor") %>",
+      conversionExists: "<%= t("conversion_exists") %>"
+    };
+
+    const openModal = (mode, data) => {
+      const payload = data || {};
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+      modal.dataset.mode = mode;
+      modalTitle.textContent = mode === "edit"
+        ? i18n.edit + " <%= t(page.titleKey) %>"
+        : i18n.add + " <%= t(page.titleKey) %>";
+      modalForm.setAttribute("action", payload.action || "<%= basePath %>");
+      modal.dataset.currentId = payload.id || "";
+      modalForm.querySelectorAll("[data-field]").forEach((input) => {
+        const name = input.getAttribute("data-field");
+        if (input.type === "checkbox") {
+          if (input.dataset.multi === "true") {
+            const selected = (payload[name] || "")
+              .split(",")
+              .map((value) => value.trim())
+              .filter(Boolean);
+            input.checked = selected.includes(input.value);
+          } else {
+            input.checked = payload[name] === "true" || payload[name] === true;
+          }
+        } else if (input.tagName === "SELECT" && input.multiple) {
+          const selected = (payload[name] || "")
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean);
+          Array.from(input.options).forEach((option) => {
+            option.selected = selected.includes(option.value);
+          });
+        } else {
+          input.value = payload[name] || "";
+        }
+      });
+      if (modalError) {
+        modalError.textContent = "";
+        modalError.hidden = true;
+      }
+      if (auditPanel && mode === "edit") {
+        auditPanel.hidden = false;
+        if (auditCreated) {
+          auditCreated.textContent = payload.created_at
+            ? payload.created_at + (payload.created_by ? " by " + payload.created_by : "")
+            : "-";
+        }
+        if (auditUpdated) {
+          auditUpdated.textContent = payload.updated_at
+            ? payload.updated_at + (payload.updated_by ? " by " + payload.updated_by : "")
+            : "-";
+        }
+      } else if (auditPanel) {
+        auditPanel.hidden = true;
+      }
+      if (mode === "create" && "<%= page.titleKey %>" === "account_groups") {
+        const codeInput = modalForm.querySelector("[data-field=\"code\"]");
+        if (codeInput) {
+          codeInput.dataset.userEdited = "false";
+        }
+      }
+    };
+
+    const closeModal = () => {
+      modal.classList.add("hidden");
+      modal.classList.remove("flex");
+    };
+
+    const openConfirm = (title, message, action) => {
+      if (!confirmModal || !confirmForm) return;
+      confirmTitle.textContent = title || i18n.confirm;
+      confirmMessage.textContent = message || "<%= t("are_you_sure") %>";
+      confirmForm.setAttribute("action", action || "");
+      confirmModal.classList.remove("hidden");
+      confirmModal.classList.add("flex");
+    };
+
+    const closeConfirm = () => {
+      if (!confirmModal) return;
+      confirmModal.classList.add("hidden");
+      confirmModal.classList.remove("flex");
+    };
+
+    let currentPage = 1;
+    let pageSizeRaw = (pageSizeSelect && pageSizeSelect.value) || "10";
+    let pageSize = pageSizeRaw === "all" ? Number.POSITIVE_INFINITY : Number(pageSizeRaw);
+    let sortIndex = null;
+    let sortDir = "asc";
+    let sortType = "text";
+
+    const getRows = () => Array.from(document.querySelectorAll("[data-row]"));
+
+    const initializeRows = () => {
+      getRows().forEach((row, index) => {
+        if (!row.dataset.origIndex) {
+          row.dataset.origIndex = String(index);
+        }
+      });
+    };
+
+    const normalizeValue = (value, type) => {
+      const trimmed = (value || "").trim();
+      if (!trimmed) return type === "number" ? 0 : "";
+      if (type === "number") {
+        const numberValue = Number(trimmed.replace(/[^0-9.-]+/g, ""));
+        return Number.isNaN(numberValue) ? 0 : numberValue;
+      }
+      if (type === "date") {
+        const dateValue = Date.parse(trimmed);
+        return Number.isNaN(dateValue) ? 0 : dateValue;
+      }
+      return trimmed.toLowerCase();
+    };
+
+    const sortRows = (rows) => {
+      if (sortIndex === null) {
+        return rows.slice().sort((a, b) => {
+          const aIndex = Number(a.dataset.origIndex || 0);
+          const bIndex = Number(b.dataset.origIndex || 0);
+          return aIndex - bIndex;
+        });
+      }
+
+      const sorted = rows.slice().sort((a, b) => {
+        const aCells = a.querySelectorAll("td");
+        const bCells = b.querySelectorAll("td");
+        const aCell = aCells[sortIndex];
+        const bCell = bCells[sortIndex];
+        const aRaw = aCell ? (aCell.getAttribute("data-sort-value") || aCell.textContent) : "";
+        const bRaw = bCell ? (bCell.getAttribute("data-sort-value") || bCell.textContent) : "";
+        const aValue = normalizeValue(aRaw, sortType);
+        const bValue = normalizeValue(bRaw, sortType);
+        if (aValue < bValue) return sortDir === "asc" ? -1 : 1;
+        if (aValue > bValue) return sortDir === "asc" ? 1 : -1;
+        const aIndex = Number(a.dataset.origIndex || 0);
+        const bIndex = Number(b.dataset.origIndex || 0);
+        return aIndex - bIndex;
+      });
+
+      if (tableBody) {
+        sorted.forEach((row) => tableBody.appendChild(row));
+      }
+      return sorted;
+    };
+
+    const updateSortIndicators = () => {
+      sortButtons.forEach((btn) => {
+        const indicator = btn.querySelector("[data-sort-indicator]");
+        if (!indicator) return;
+        if (Number(btn.dataset.sortIndex) === sortIndex) {
+          indicator.textContent = sortDir === "asc" ? "^" : "v";
+        } else {
+          indicator.textContent = "-";
+        }
+      });
+    };
+
+    const applyFilters = () => {
+      const query = ((searchInput && searchInput.value) || "").trim().toLowerCase();
+      const status = (statusFilter && statusFilter.value) || "all";
+      const rows = getRows();
+      const sorted = sortRows(rows);
+      const filtered = sorted.filter((row) => {
+        const matchesText = !query || row.textContent.toLowerCase().includes(query);
+        if (!matchesText) return false;
+        if (status === "all") return true;
+        const isActive = row.dataset.active === "true";
+        return status === "active" ? isActive : !isActive;
+      });
+
+      const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+      currentPage = Math.min(currentPage, totalPages);
+      const start = (currentPage - 1) * pageSize;
+      const end = start + pageSize;
+
+      rows.forEach((row) => row.classList.add("hidden"));
+      const visibleRows = filtered.slice(start, end);
+      visibleRows.forEach((row) => row.classList.remove("hidden"));
+
+      if (pageIndicator) {
+        pageIndicator.textContent = String(currentPage);
+      }
+      if (prevButton) {
+        prevButton.disabled = currentPage <= 1;
+        prevButton.classList.toggle("opacity-40", currentPage <= 1);
+      }
+      if (nextButton) {
+        nextButton.disabled = currentPage >= totalPages;
+        nextButton.classList.toggle("opacity-40", currentPage >= totalPages);
+      }
+
+      const showing = document.querySelector("[data-showing-count]");
+      if (showing) {
+        const startLabel = filtered.length === 0 ? 0 : start + 1;
+        const endLabel = Math.min(start + visibleRows.length, filtered.length);
+        showing.textContent =
+          i18n.showing +
+          " " +
+          startLabel +
+          " " +
+          i18n.to +
+          " " +
+          endLabel +
+          " " +
+          i18n.of +
+          " " +
+          filtered.length +
+          " " +
+          i18n.entries;
+      }
+    };
+
+    const cleanText = (value) =>
+      (value || "")
+        .replace(/[^\x20-\x7E]/g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const downloadCsv = () => {
+      const headers = Array.from(document.querySelectorAll("thead th"))
+        .map((th) => cleanText(th.textContent))
+        .filter((label) => label && label.toLowerCase() !== "actions");
+      const rows = getRows().filter((row) => !row.classList.contains("hidden"));
+      const csvRows = [headers.join(",")];
+      rows.forEach((row) => {
+        const cells = Array.from(row.querySelectorAll("td"))
+          .slice(0, headers.length)
+          .map((cell) => `"${cleanText(cell.textContent).replace(/"/g, '""')}"`);
+        csvRows.push(cells.join(","));
+      });
+
+      const csvContent = "\uFEFF" + csvRows.join("\r\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "<%= t(page.titleKey).replace(/\s+/g, "_") %>_export.csv";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    };
+
+    if (downloadButton) {
+      downloadButton.addEventListener("click", downloadCsv);
+    }
+    if (printButton) {
+      printButton.addEventListener("click", () => window.print());
+    }
+    if (searchInput) {
+      searchInput.addEventListener("input", () => {
+        currentPage = 1;
+        applyFilters();
+      });
+    }
+    if (statusFilter) {
+      statusFilter.addEventListener("change", () => {
+        currentPage = 1;
+        applyFilters();
+      });
+    }
+    if (pageSizeSelect) {
+      pageSizeSelect.addEventListener("change", () => {
+        pageSizeRaw = pageSizeSelect.value || "10";
+        pageSize = pageSizeRaw === "all" ? Number.POSITIVE_INFINITY : Number(pageSizeRaw);
+        currentPage = 1;
+        applyFilters();
+      });
+    }
+    if (prevButton) {
+      prevButton.addEventListener("click", () => {
+        if (currentPage > 1) {
+          currentPage -= 1;
+          applyFilters();
+        }
+      });
+    }
+    if (nextButton) {
+      nextButton.addEventListener("click", () => {
+        currentPage += 1;
+        applyFilters();
+      });
+    }
+
+    toggleButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        openConfirm(btn.dataset.toggleLabel || i18n.confirm, i18n.proceedChange, btn.dataset.toggleAction);
+      });
+    });
+
+    deleteButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        openConfirm(i18n.permanentDelete, i18n.permanentDeleteMessage, btn.dataset.deleteAction);
+      });
+    });
+
+    confirmClose.forEach((btn) => {
+      btn.addEventListener("click", closeConfirm);
+    });
+
+    if (confirmModal) {
+      confirmModal.addEventListener("click", (event) => {
+        if (event.target === confirmModal) {
+          closeConfirm();
+        }
+      });
+    }
+
+    sortButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const index = Number(btn.dataset.sortIndex);
+        sortType = btn.dataset.sortType || "text";
+        if (sortIndex === index) {
+          sortDir = sortDir === "asc" ? "desc" : "asc";
+        } else {
+          sortIndex = index;
+          sortDir = "asc";
+        }
+        updateSortIndicators();
+        currentPage = 1;
+        applyFilters();
+      });
+    });
+
+    openButtons.forEach((btn) => {
+      btn.addEventListener("click", () => openModal("create", { id: "" }));
+    });
+
+    editButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const data = {
+          id: btn.dataset.id,
+          action: "<%= basePath %>/" + btn.dataset.id,
+          created_at: btn.dataset.createdAt || "",
+          created_by: btn.dataset.createdBy || "",
+          updated_at: btn.dataset.updatedAt || "",
+          updated_by: btn.dataset.updatedBy || "",
+        };
+        Object.keys(btn.dataset).forEach((key) => {
+          if (key !== "id") {
+            data[key] = btn.dataset[key];
+          }
+        });
+        openModal("edit", data);
+      });
+    });
+
+    closeButtons.forEach((btn) => {
+      btn.addEventListener("click", closeModal);
+    });
+
+    modal.addEventListener("click", (event) => {
+      if (event.target === modal) {
+        closeModal();
+      }
+    });
+
+    initializeRows();
+    updateSortIndicators();
+    if (modalForm) {
+      const pageKey = "<%= page.titleKey %>";
+      if (pageKey === "account_groups") {
+        const nameInput = modalForm.querySelector("[data-field=\"name\"]");
+        const codeInput = modalForm.querySelector("[data-field=\"code\"]");
+        const toCode = (value) =>
+          (value || "")
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, "_")
+            .replace(/^_+|_+$/g, "")
+            .slice(0, 50);
+
+        if (codeInput) {
+          codeInput.dataset.userEdited = "false";
+          codeInput.addEventListener("input", () => {
+            const trimmed = (codeInput.value || "").trim();
+            codeInput.dataset.userEdited = trimmed ? "true" : "false";
+          });
+        }
+
+        if (nameInput && codeInput) {
+          nameInput.addEventListener("input", () => {
+            if (modal.dataset.mode !== "create") return;
+            if (codeInput.dataset.userEdited === "true") return;
+            codeInput.value = toCode(nameInput.value);
+          });
+        }
+      }
+
+      modalForm.addEventListener("submit", (event) => {
+        if (!modal) return;
+        const pageKey = "<%= page.titleKey %>";
+        const currentId = modal.dataset.currentId || "";
+
+        if (pageKey === "units") {
+          const codeInput = modalForm.querySelector("[data-field=\"code\"]");
+          const codeValue = codeInput ? codeInput.value.trim().toLowerCase() : "";
+          if (codeValue) {
+            const exists = getRows().some((row) => {
+              const rowCode = (row.dataset.code || "").trim().toLowerCase();
+              const rowId = row.querySelector("[data-edit]")?.dataset.id || "";
+              return rowCode === codeValue && rowId !== currentId;
+            });
+            if (exists) {
+              event.preventDefault();
+              if (modalError) {
+                modalError.textContent = i18n.unitCodeExists;
+                modalError.hidden = false;
+              }
+              return;
+            }
+          }
+        }
+
+        if (pageKey === "uom_conversions") {
+          const fromInput = modalForm.querySelector("[data-field=\"from_uom_id\"]");
+          const toInput = modalForm.querySelector("[data-field=\"to_uom_id\"]");
+          const factorInput = modalForm.querySelector("[data-field=\"factor\"]");
+          const fromValue = fromInput ? fromInput.value : "";
+          const toValue = toInput ? toInput.value : "";
+          const factorValue = factorInput ? Number(factorInput.value) : 0;
+          if (fromValue && toValue && fromValue === toValue) {
+            event.preventDefault();
+            if (modalError) {
+              modalError.textContent = i18n.conversionSame;
+              modalError.hidden = false;
+            }
+            return;
+          }
+          if (!factorValue || factorValue <= 0) {
+            event.preventDefault();
+            if (modalError) {
+              modalError.textContent = i18n.conversionFactor;
+              modalError.hidden = false;
+            }
+            return;
+          }
+          const exists = getRows().some((row) => {
+            const rowFrom = row.dataset.from || "";
+            const rowTo = row.dataset.to || "";
+            const rowId = row.querySelector("[data-edit]")?.dataset.id || "";
+            return rowFrom === fromValue && rowTo === toValue && rowId !== currentId;
+          });
+          if (exists) {
+            event.preventDefault();
+            if (modalError) {
+              modalError.textContent = i18n.conversionExists;
+              modalError.hidden = false;
+            }
+          }
+        }
+      });
+    }
+
+    applyFilters();
+
+    const autoOpen = modal && modal.dataset.autoOpen === "true";
+    const autoMode = modal && modal.dataset.modalMode ? modal.dataset.modalMode : "create";
+    if (autoOpen) {
+      openModal(autoMode);
+    }
+  })();
+</script>

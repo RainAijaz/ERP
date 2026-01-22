@@ -1,0 +1,70 @@
+<div class="mx-auto w-full max-w-5xl space-y-6">
+  <section class="rounded-3xl border border-slate-200 bg-white/95 p-8 shadow-xl">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div class="space-y-2">
+        <h1 class="text-3xl font-display text-ink"><%= t("new") %> <%= t(page.titleKey) %></h1>
+        <p class="text-sm text-muted"><%= t(page.description) %></p>
+      </div>
+      <a class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-accent/40 hover:text-accent" href="<%= basePath %>">
+        <%= t("back_to_list") %>
+      </a>
+    </div>
+  </section>
+
+  <section class="rounded-3xl border border-slate-200 bg-white/95 p-8 shadow-lg">
+    <% if (error) { %>
+      <div class="mb-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+        <%= error %>
+      </div>
+    <% } %>
+    <form method="post" action="<%= basePath %>" class="space-y-6">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <div class="grid gap-4 md:grid-cols-2">
+        <% page.fields.forEach(function(field) { %>
+          <% if (field.type === "checkbox") { %>
+            <label class="flex items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600">
+              <input class="h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent/40" type="checkbox" name="<%= field.name %>" <%= values && values[field.name] ? "checked" : "" %> />
+              <span><%= t(field.label) %></span>
+            </label>
+          <% } else if (field.type === "select") { %>
+            <label class="space-y-2 text-sm font-semibold text-slate-600">
+              <span><%= t(field.label) %></span>
+              <select
+                class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+                name="<%= field.name %>"
+                <%= field.required ? "required" : "" %>
+              >
+                <option value=""><%= t("select") %></option>
+                <% (field.options || []).forEach(function(option) { %>
+                  <option value="<%= option.value %>" <%= values && values[field.name] === option.value ? "selected" : "" %>>
+                    <%= t(option.label) %>
+                  </option>
+                <% }) %>
+              </select>
+            </label>
+          <% } else { %>
+            <label class="space-y-2 text-sm font-semibold text-slate-600">
+              <span><%= t(field.label) %></span>
+              <input
+                class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+                type="text"
+                name="<%= field.name %>"
+                placeholder="<%= field.placeholder ? t(field.placeholder) : "" %>"
+                value="<%= values && values[field.name] ? values[field.name] : "" %>"
+                <%= field.required ? "required" : "" %>
+              />
+            </label>
+          <% } %>
+        <% }) %>
+      </div>
+      <div class="flex flex-wrap items-center gap-3">
+        <button class="inline-flex items-center gap-2 rounded-full border border-accent/40 bg-accent px-5 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-accent/90" type="submit">
+          <%= t("save") %>
+        </button>
+        <a class="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500 transition hover:text-accent" href="<%= basePath %>">
+          <%= t("cancel") %>
+        </a>
+      </div>
+    </form>
+  </section>
+</div>
