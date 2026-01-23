@@ -9,6 +9,8 @@ const bomRoutes = require("./bom");
 const router = express.Router();
 
 router.use("/products", productsRoutes);
+router.use("/basic-info/accounts", accountsRoutes);
+router.use("/basic-info/parties", partiesRoutes);
 router.use("/basic-info/uom-conversions", uomConversionsRoutes);
 router.use("/basic-info", basicInfoRoutes);
 router.use("/basic-information", (req, res) => {

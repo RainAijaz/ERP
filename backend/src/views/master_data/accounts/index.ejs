@@ -1,6 +1,159 @@
-<div class="mx-auto w-full max-w-5xl space-y-6">
-  <section class="rounded-3xl border border-slate-200 bg-white/95 p-8 shadow-xl">
-    <h1 class="text-3xl font-display text-ink"><%= t("accounts") %></h1>
-    <p class="mt-2 text-sm text-muted">Accounts setup page will be wired here.</p>
+<div class="mx-auto w-full max-w-7xl space-y-6">
+  <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div class="space-y-1">
+        <h1 class="text-2xl font-display text-ink"><%= t(page.titleKey) %></h1>
+        <p class="text-sm text-muted"><%= t(page.description) %></p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-download-button>
+          <%= t("download") %>
+        </button>
+        <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-print-button>
+          <%= t("print") %>
+        </button>
+        <% if (["accounts", "parties"].includes(page.titleKey)) { %>
+          <button class="group cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-800" type="button" data-filter-toggle>
+            <span class="inline-flex items-center gap-2">
+              <svg class="h-4 w-4 text-slate-400 transition group-hover:text-slate-700" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 6h16M7 12h10M9 18h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+              </svg>
+              <span><%= t("filters") %></span>
+              <span class="hidden rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-white" data-filter-count>0</span>
+            </span>
+          </button>
+        <% } %>
+        <button class="cursor-pointer rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800" type="button" data-modal-open style="color: #fff;">
+          <%= t("add") %> <%= t(page.titleKey) %>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <%- include("../../base/partials/error-banner", { error, modalOpen }) %>
+
+  <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md" data-print-area>
+    <% const hideCode = ["accounts", "parties"].includes(page.titleKey); %>
+    <div class="px-5 pt-4 text-center text-xl font-display font-semibold uppercase tracking-[0.35em] text-slate-900" data-print-header>
+      <%= t("brand") %>
+    </div>
+    <div class="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div class="text-sm font-semibold text-slate-700"><%= t("list") %> <%= t(page.titleKey) %></div>
+      <%- include("../../base/partials/table-controls", { t, showStatus: true }) %>
+    </div>
+    <%- include("../../base/partials/filter-modal", { t, bodyPartial: "../../master_data/accounts/filter-fields.ejs" }) %>
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm <%= ["accounts", "parties"].includes(page.titleKey) ? "table-fixed" : "" %>" data-table <%= ["accounts", "parties"].includes(page.titleKey) ? "data-compact-table" : "" %>>
+        <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+          <% // Tooltip labels for headers that need extra context. %>
+          <% const columnTooltips = {
+            account_type: t("tooltip_account_type"),
+            code: t("tooltip_code"),
+            is_contra: t("tooltip_contra")
+          }; 
+          // Human-readable labels for item type abbreviations.
+          const itemTypeLabels = {
+            RM: t("raw_materials"),
+            SFG: t("semi_finished_goods"),
+            FG: t("finished_goods")
+          };
+          // Format comma-separated item types for display.
+          const formatItemTypes = function(value) {
+            return (value || "")
+              .split(",")
+              .map(function(entry) { return entry.trim(); })
+              .filter(Boolean)
+              .map(function(entry) { return itemTypeLabels[entry] || entry; })
+              .join(", ");
+          };
+          %>
+          <% // Hide the opposite-language name column in the table. %>
+          <% const displayColumns = page.columns.filter(function(column) { return column.key !== "id" && !(column.key === "name_ur" && locale !== "ur") && !(column.key === "name" && locale === "ur") && !(hideCode && column.key === "code") && !(column.adminOnly && !isAdmin); }); %>
+          <%- include("../../base/partials/table-header", { t, displayColumns, columnTooltips, sortStartIndex: 1 }) %>
+        </thead>
+        <tbody class="divide-y divide-slate-100" data-table-body>
+          <% if (!rows || rows.length === 0) { %>
+            <%- include("../../base/partials/table-empty", { t, colspan: displayColumns.length + 2 }) %>
+          <% } else { %>
+            <% rows.forEach(function(row, idx) { %>
+              <tr
+                class="hover:bg-amber-50/40"
+                data-row
+                <% if (!hideCode) { %>data-code="<%= row.code || "" %>"<% } %>
+                data-active="<%= row.is_active ? "true" : "false" %>"
+                data-branch="<%= row.branch_names || "" %>"
+                data-account-type="<%= row.account_type || "" %>"
+                data-account-group="<%= row.group_name || "" %>"
+                data-party-type="<%= row.party_type || "" %>"
+                data-party-group="<%= row.group_name || "" %>"
+              >
+                <td class="px-4 py-3 text-slate-700"><%= idx + 1 %></td>
+                <% displayColumns.forEach(function(column) { %>
+                  <td class="px-4 py-3 text-slate-700 <%= column.cellClass || "" %>" <%= column.key === "created_at" && row[column.key] ? "data-sort-value=\"" + new Date(row[column.key]).toISOString() + "\"" : "" %>>
+                    <% if (column.key === "account_type" && row[column.key]) { %>
+                      <span class="inline-flex items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                        <%= row[column.key] %>
+                      </span>
+                    <% } else if (column.key === "party_type" && row[column.key]) { %>
+                      <span class="inline-flex items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                        <%= t(row[column.key] === "CUSTOMER" ? "customer" : "supplier") %>
+                      </span>
+                    <% } else if (column.key === "credit_allowed") { %>
+                      <span class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700">
+                        <%= row[column.key] ? t("yes") : t("no") %>
+                      </span>
+                    <% } else if (column.key === "is_active") { %>
+                      <span class="inline-flex items-center whitespace-nowrap rounded-full border <%= row[column.key] ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700" %> px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em]">
+                        <%= row[column.key] ? t("active") : t("inactive") %>
+                      </span>
+                    <% } else if (column.type === "boolean") { %>
+                      <span class="inline-flex items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-600">
+                        <%= row[column.key] ? t("yes") : t("no") %>
+                      </span>
+                    <% } else if (column.key === "group_name") { %>
+                      <%= row[column.key] ? row[column.key] : t("none") %>
+                    <% } else if (column.key === "item_types") { %>
+                      <%= formatItemTypes(row[column.key]) %>
+                    <% } else if (column.key === "branch_names") { %>
+                      <%= row[column.key] ? row[column.key] : t("none") %>
+                    <% } else if (column.key === "created_at") { %>
+                      <%= row[column.key] ? new Date(row[column.key]).toISOString().slice(0, 10) : "" %>
+                    <% } else { %>
+                      <%= row[column.key] %>
+                    <% } %>
+                  </td>
+                <% }) %>
+                <td class="px-4 py-3">
+                  <%- include("../../base/partials/table-actions", { t, row, basePath, editFields: page.fields.map(function(field) { return field.name; }), withMenu: true }) %>
+                </td>
+              </tr>
+            <% }) %>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+    <%- include("../../base/partials/table-footer", { t }) %>
   </section>
 </div>
+
+<%- include("../../base/partials/modal-shell", {
+  t,
+  modalOpen,
+  modalMode,
+  modalTitle: t("add") + " " + t(page.titleKey),
+  modalDescription: t("enter_details_save"),
+  formAction: basePath,
+  formClass: "flex-1 space-y-5 overflow-y-auto px-6 py-5",
+  modalContainerClass: "w-full max-w-lg max-h-[90vh] rounded-2xl border border-slate-200 bg-white shadow-xl flex flex-col",
+  modalHeaderClass: "sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4",
+  translateMode: page.translateMode || "translate",
+  modalError: modalOpen ? error : null,
+  modalValues: modalOpen ? values : null,
+  csrfToken,
+  bodyPartial: "../../master_data/accounts/form-fields.ejs"
+}) %>
+
+<%- include("../../base/partials/confirm-modal", { t, csrfToken }) %>
+
+<%- include("../../base/partials/basic-info-utils", { t, page, basePath, modalOpen, modalMode }) %>
+

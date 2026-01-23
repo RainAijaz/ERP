@@ -1,0 +1,159 @@
+<% const hideCode = ["accounts", "parties"].includes(page.titleKey); %>
+<% page.fields.forEach(function(field) { %>
+        <% const hideOnCreate = page.titleKey === "parties" && (field.name === "credit_allowed" || field.name === "credit_limit"); %>
+        <% if (field.adminOnly && !isAdmin) { return; } %>
+        <% if (hideCode && field.name === "code") { return; } %>
+        <% if (field.type === "checkbox") { %>
+          <label class="flex flex-1 items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>
+            <input class="mt-0.5 h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent/40" type="checkbox" name="<%= field.name %>" data-field="<%= field.name %>" />
+            <span class="flex flex-col gap-1">
+              <span><%= t(field.label) %></span>
+              <% if (field.helpText) { %>
+                <span class="text-xs font-normal text-slate-500"><%= t(field.helpText) %></span>
+              <% } %>
+            </span>
+          </label>
+        <% } else if (field.type === "select") { %>
+          <% const quickAddHref =
+            (page.titleKey === "parties" && field.name === "group_id") ? "/master-data/basic-info/party-groups" :
+            (page.titleKey === "parties" && field.name === "city_id") ? "/master-data/basic-info/cities" :
+            (page.titleKey === "accounts" && field.name === "subgroup_id") ? "/master-data/basic-info/account-groups" :
+            ""; %>
+          <label class="block text-sm font-semibold text-slate-600" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>
+            <span class="flex items-center justify-between gap-2">
+              <span><%= t(field.label) %></span>
+              <% if (quickAddHref) { %>
+                <a class="text-[10px] font-semibold uppercase tracking-[0.18em] text-accent transition hover:text-accent/80" href="<%= quickAddHref %>" target="_blank" rel="noopener">
+                  + <%= t("add") %> <%= t(field.label) %>
+                </a>
+              <% } %>
+            </span>
+            <% if (field.helpText) { %>
+              <span class="mt-1 block text-xs font-normal text-slate-500"><%= t(field.helpText) %></span>
+            <% } %>
+            <select
+              class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+              name="<%= field.name %>"
+              data-field="<%= field.name %>"
+              <%= field.required ? "required" : "" %>
+            >
+              <option value=""><%= t("select") %></option>
+              <% (field.options || []).forEach(function(option) { %>
+                <option value="<%= option.value %>"><%= t(option.label) %></option>
+              <% }) %>
+            </select>
+          </label>
+        <% } else if (field.type === "textarea") { %>
+          <label class="block text-sm font-semibold text-slate-600" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>
+            <span><%= t(field.label) %></span>
+            <% if (field.helpText) { %>
+              <span class="mt-1 block text-xs font-normal text-slate-500"><%= t(field.helpText) %></span>
+            <% } %>
+            <textarea
+              class="mt-2 w-full min-h-[96px] resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+              name="<%= field.name %>"
+              data-field="<%= field.name %>"
+              placeholder="<%= field.placeholder ? t(field.placeholder) : "" %>"
+              rows="3"
+              <%= field.required ? "required" : "" %>
+              data-auto-resize="true"
+            ></textarea>
+          </label>
+        <% } else if (field.type === "number") { %>
+          <label class="block text-sm font-semibold text-slate-600" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>
+            <span><%= t(field.label) %></span>
+            <% if (field.helpText) { %>
+              <span class="mt-1 block text-xs font-normal text-slate-500"><%= t(field.helpText) %></span>
+            <% } %>
+            <input
+              class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+              type="number"
+              name="<%= field.name %>"
+              placeholder="<%= field.placeholder ? t(field.placeholder) : "" %>"
+              data-field="<%= field.name %>"
+              <%= field.step ? "step=\"" + field.step + "\"" : "" %>
+              <%= field.min ? "min=\"" + field.min + "\"" : "" %>
+              <%= field.required ? "required" : "" %>
+            />
+          </label>
+        <% } else if (field.type === "multi-select") { %>
+          <label class="block text-sm font-semibold text-slate-600" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>
+            <span><%= t(field.label) %></span>
+            <% if (field.helpText) { %>
+              <span class="mt-1 block text-xs font-normal text-slate-500"><%= t(field.helpText) %></span>
+            <% } %>
+            <div class="mt-2 space-y-2" data-multi-select>
+              <button
+                class="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-accent/30"
+                type="button"
+                data-multi-trigger
+              >
+                <span data-multi-placeholder><%= t("select") %></span>
+                <svg class="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                  <path d="M5 7l5 6 5-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+              <div class="flex flex-wrap gap-2" data-multi-tags></div>
+              <div class="hidden max-h-48 w-full overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-md" data-multi-menu></div>
+              <select
+                class="sr-only"
+                name="<%= field.name %>"
+                data-field="<%= field.name %>"
+                multiple
+                <%= field.required ? "data-required=\"true\"" : "" %>
+              >
+                <% (field.options || []).forEach(function(option) { %>
+                  <option value="<%= option.value %>"><%= t(option.label) %></option>
+                <% }) %>
+              </select>
+            </div>
+          </label>
+        <% } else if (field.type === "multi-checkbox") { %>
+          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>
+            <div class="flex flex-col gap-1">
+              <span><%= t(field.label) %></span>
+              <% if (field.helpText) { %>
+                <span class="text-xs font-normal text-slate-500"><%= t(field.helpText) %></span>
+              <% } %>
+            </div>
+            <div class="mt-3 flex flex-wrap gap-3">
+              <% (field.options || []).forEach(function(option) { %>
+                <label class="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+                  <input
+                    class="h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent/40"
+                    type="checkbox"
+                    name="<%= field.name %>"
+                    value="<%= option.value %>"
+                    data-field="<%= field.name %>"
+                    data-multi="true"
+                  />
+                  <span><%= t(option.label) %></span>
+                </label>
+              <% }) %>
+            </div>
+          </div>
+        <% } else { %>
+          <label class="block text-sm font-semibold text-slate-600" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>
+            <span><%= t(field.label) %></span>
+            <% if (page.titleKey === "units" && field.name === "code") { %>
+              <span class="mt-1 block text-xs font-normal text-slate-500"><%= t("help_unit_code") %></span>
+            <% } %>
+            <% if (page.titleKey === "units" && field.name === "name") { %>
+              <span class="mt-1 block text-xs font-normal text-slate-500"><%= t("help_unit_name") %></span>
+            <% } %>
+            <% if (field.helpText) { %>
+              <span class="mt-1 block text-xs font-normal text-slate-500"><%= t(field.helpText) %></span>
+            <% } %>
+            <input
+              class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+              type="text"
+              name="<%= field.name %>"
+              placeholder="<%= field.placeholder ? t(field.placeholder) : "" %>"
+              data-field="<%= field.name %>"
+              <%= field.required ? "required" : "" %>
+              <%= field.name === "name_ur" ? "autocomplete=\"off\"" : "" %>
+            />
+          </label>
+        <% } %>
+      <% }) %>
+      

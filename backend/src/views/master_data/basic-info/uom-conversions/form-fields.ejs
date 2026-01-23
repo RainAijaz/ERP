@@ -1,0 +1,23 @@
+<label class="block text-sm font-semibold text-slate-600">
+        <span>From Unit</span>
+        <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" name="from_uom_id" data-field="from_uom_id" required>
+          <option value="">Select unit</option>
+          <% uoms.forEach(function(uom) { %>
+            <option value="<%= uom.id %>"><%= uom.code %> — <%= uom.name %></option>
+          <% }) %>
+        </select>
+      </label>
+      <label class="block text-sm font-semibold text-slate-600">
+        <span>To Unit</span>
+        <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" name="to_uom_id" data-field="to_uom_id" required>
+          <option value="">Select unit</option>
+          <% uoms.forEach(function(uom) { %>
+            <option value="<%= uom.id %>"><%= uom.code %> — <%= uom.name %></option>
+          <% }) %>
+        </select>
+      </label>
+      <label class="block text-sm font-semibold text-slate-600">
+        <span>Factor</span>
+        <input class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" type="number" step="0.000001" min="0" name="factor" data-field="factor" required />
+      </label>
+      

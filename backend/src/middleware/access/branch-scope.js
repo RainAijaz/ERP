@@ -13,28 +13,42 @@ module.exports = async (req, res, next) => {
   if (!req.user) return next();
   if (req.path.startsWith("/auth")) return next();
 
-  const branchIds = (req.user.branchIds || []).filter((id) => id != null);
-  if (!branchIds.length) {
+  const isAdmin = Boolean(req.user.isAdmin);
+  let branchIds = (req.user.branchIds || []).filter((id) => id != null);
+  if (!branchIds.length && !isAdmin) {
     return next(new HttpError(403, "No branches assigned"));
   }
 
   const requested = toNumber(req.branchContext?.requestedBranchId);
-  const activeBranch = requested || branchIds[0];
-
-  if (!branchIds.includes(activeBranch)) {
-    return next(new HttpError(403, "Branch not assigned"));
-  }
+  let activeBranch = requested || branchIds[0];
 
   const submittedBranch = toNumber(req.body?.branch_id || req.query?.branch_id);
-  if (submittedBranch && !branchIds.includes(submittedBranch)) {
+  if (submittedBranch && !isAdmin && !branchIds.includes(submittedBranch)) {
     return next(new HttpError(403, "Branch not assigned"));
   }
 
   try {
-    const branchRows = await knex("erp.branches")
+    const branchRowsQuery = knex("erp.branches")
       .select("id", "code", "name")
-      .whereIn("id", branchIds)
       .orderBy("name", "asc");
+    const branchRows = isAdmin
+      ? await branchRowsQuery
+      : await branchRowsQuery.whereIn("id", branchIds);
+
+    if (isAdmin) {
+      branchIds = branchRows.map((row) => Number(row.id));
+      if (requested && branchIds.length && !branchIds.includes(requested)) {
+        return next(new HttpError(403, "Branch not assigned"));
+      }
+      if (!activeBranch && branchIds.length) {
+        activeBranch = branchIds[0];
+      }
+    }
+
+    if (!isAdmin && activeBranch && !branchIds.includes(activeBranch)) {
+      // Ignore stale branch cookie/query and fall back to first allowed branch.
+      activeBranch = branchIds[0];
+    }
 
     const branchById = branchRows.reduce((acc, row) => {
       acc[Number(row.id)] = row;
@@ -44,6 +58,7 @@ module.exports = async (req, res, next) => {
     req.branchId = activeBranch;
     req.branchScope = branchIds;
     req.branchOptions = branchRows;
+    req.isAdmin = isAdmin;
     res.locals.branchId = activeBranch;
     res.locals.branchScope = branchIds;
     res.locals.branchOptions = branchRows;
@@ -54,6 +69,7 @@ module.exports = async (req, res, next) => {
 
   req.applyBranchScope = (qb, column = "branch_id") => {
     if (!qb || typeof qb.whereIn !== "function") return qb;
+    if (isAdmin) return qb;
     return qb.whereIn(column, branchIds);
   };
 

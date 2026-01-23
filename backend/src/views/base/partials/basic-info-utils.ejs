@@ -17,6 +17,8 @@
       top: 0;
       width: 100%;
       color: #111827;
+      direction: <%= locale === "ur" ? "rtl" : "ltr" %>;
+      unicode-bidi: plaintext;
     }
     [data-print-header] {
       display: block;
@@ -32,6 +34,144 @@
       color: #111827;
       border-bottom: 1px solid #e5e7eb;
     }
+    [data-print-area] {
+      overflow: visible !important;
+      max-height: none !important;
+    }
+    [data-print-area] .overflow-x-auto {
+      overflow: visible !important;
+    }
+    [data-print-area] .sticky-col-1,
+    [data-print-area] .sticky-col-2,
+    [data-print-area] .sticky-col-3 {
+      position: static !important;
+      left: auto !important;
+      z-index: auto !important;
+      min-width: auto !important;
+      width: auto !important;
+    }
+    [data-print-area] table {
+      table-layout: auto;
+    }
+    [data-print-area] th,
+    [data-print-area] td {
+      white-space: normal;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+    @page {
+      margin: 12mm;
+      size: auto;
+    }
+  }
+
+  .multi-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid #e2e8f0;
+    border-radius: 9999px;
+    padding: 4px 10px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #475569;
+    background: #fff;
+  }
+
+  .multi-tag button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 9999px;
+    border: 1px solid #e2e8f0;
+    color: #64748b;
+    transition: color 0.2s ease, border-color 0.2s ease;
+  }
+
+  .multi-tag button:hover {
+    color: #0f172a;
+    border-color: #cbd5f5;
+  }
+
+  [data-multi-select] [data-multi-menu] {
+    width: 100%;
+    max-width: 100%;
+  }
+
+  @media (max-width: 640px) {
+    [data-multi-select] [data-multi-menu] {
+      max-width: calc(100vw - 2rem);
+    }
+  }
+
+  .sticky-col-1,
+  .sticky-col-2,
+  .sticky-col-3 {
+    position: sticky;
+    background: #fff;
+  }
+
+  thead .sticky-col-1,
+  thead .sticky-col-2,
+  thead .sticky-col-3 {
+    background: #f8fafc;
+    z-index: 3;
+  }
+
+  .sticky-col-1 {
+    left: 0;
+    min-width: 180px;
+    z-index: 2;
+  }
+
+  .sticky-col-2 {
+    left: 180px;
+    min-width: 160px;
+    z-index: 1;
+  }
+
+  .sticky-col-3 {
+    left: 340px;
+    min-width: 200px;
+    z-index: 1;
+  }
+
+  @media (max-width: 640px) {
+    [data-modal] {
+      align-items: flex-end;
+    }
+
+    [data-modal] > div {
+      width: 100%;
+      max-width: 100%;
+      border-radius: 18px 18px 0 0;
+      margin: 0;
+    }
+
+    [data-modal] select {
+      max-width: 100%;
+    }
+
+    .sticky-col-1,
+    .sticky-col-2,
+    .sticky-col-3 {
+      position: static;
+      left: auto;
+      min-width: auto;
+      z-index: auto;
+    }
+  }
+
+  [data-compact-table] th,
+  [data-compact-table] td {
+    padding-left: 0.5rem;
+    padding-right: 0.5rem;
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
   }
 </style>
 
@@ -54,6 +194,19 @@
     const sortButtons = Array.from(document.querySelectorAll("[data-sort-key]"));
     const tableBody = document.querySelector("[data-table-body]");
     const statusFilter = document.querySelector("[data-status-filter]");
+    const filterToggle = document.querySelector("[data-filter-toggle]");
+    const filterPanel = document.querySelector("[data-filter-panel]");
+    const filterAccountType = document.querySelector("[data-filter-account-type]");
+    const filterAccountGroup = document.querySelector("[data-filter-account-group]");
+    const filterPartyType = document.querySelector("[data-filter-party-type]");
+    const filterPartyGroup = document.querySelector("[data-filter-party-group]");
+    const filterBranch = document.querySelector("[data-filter-branch]");
+    const filterCity = document.querySelector("[data-filter-city]");
+    const filterAddButtons = document.querySelectorAll("[data-filter-add]");
+    const filterClose = document.querySelector("[data-filter-close]");
+    const filterApply = document.querySelector("[data-filter-apply]");
+    const filterClear = document.querySelector("[data-filter-clear]");
+    const filterCountBadge = document.querySelector("[data-filter-count]");
     const confirmModal = document.querySelector("[data-confirm-modal]");
     const confirmForm = document.querySelector("[data-confirm-form]");
     const confirmTitle = document.querySelector("[data-confirm-title]");
@@ -61,37 +214,73 @@
     const confirmClose = document.querySelectorAll("[data-confirm-close]");
     const toggleButtons = document.querySelectorAll("[data-toggle]");
     const deleteButtons = document.querySelectorAll("[data-delete]");
+    const rowMenuButtons = document.querySelectorAll("[data-row-menu]");
+    const rowMenuPanels = document.querySelectorAll("[data-row-menu-panel]");
     const modalError = document.querySelector("[data-modal-error]");
     const auditPanel = document.querySelector("[data-audit-panel]");
     const auditCreated = document.querySelector("[data-audit-created]");
     const auditUpdated = document.querySelector("[data-audit-updated]");
     const i18n = {
-      add: "<%= t("add") %>",
-      edit: "<%= t("edit") %>",
-      confirm: "<%= t("confirm") %>",
-      proceedChange: "<%= t("proceed_change") %>",
-      permanentDelete: "<%= t("permanent_delete") %>",
-      permanentDeleteMessage: "<%= t("permanent_delete_message") %>",
-      showing: "<%= t("showing") %>",
-      to: "<%= t("to") %>",
-      of: "<%= t("of") %>",
-      entries: "<%= t("entries") %>",
-      unitCodeExists: "<%= t("unit_code_exists") %>",
-      conversionSame: "<%= t("conversion_same_units") %>",
-      conversionFactor: "<%= t("conversion_factor") %>",
-      conversionExists: "<%= t("conversion_exists") %>"
+      add: '<%= t("add") %>',
+      edit: '<%= t("edit") %>',
+      confirm: '<%= t("confirm") %>',
+      proceedChange: '<%= t("proceed_change") %>',
+      permanentDelete: '<%= t("permanent_delete") %>',
+      permanentDeleteMessage: '<%= t("permanent_delete_message") %>',
+      showing: '<%= t("showing") %>',
+      to: '<%= t("to") %>',
+      of: '<%= t("of") %>',
+      entries: '<%= t("entries") %>',
+      unitCodeExists: '<%= t("unit_code_exists") %>',
+      conversionSame: '<%= t("conversion_same_units") %>',
+      conversionFactor: '<%= t("conversion_factor") %>',
+      conversionExists: '<%= t("conversion_exists") %>',
+      selectBranch: '<%= t("error_select_branch") %>',
+      selectPhone: '<%= t("error_select_phone") %>'
+    };
+    let filterPartyGroups = null;
+
+    const getFilterValues = (selector) =>
+      Array.from(document.querySelectorAll(selector))
+        .map((el) => (el.value || "").trim())
+        .filter(Boolean);
+
+    const updateFilterCount = () => {
+      if (!filterCountBadge) return;
+      const activeFilters = [
+        ...getFilterValues("[data-filter-account-type]"),
+        ...getFilterValues("[data-filter-account-group]"),
+        ...getFilterValues("[data-filter-party-type]"),
+        ...getFilterValues("[data-filter-party-group]"),
+        ...getFilterValues("[data-filter-branch]"),
+        ...getFilterValues("[data-filter-city]")
+      ].length;
+      if (activeFilters > 0) {
+        filterCountBadge.textContent = String(activeFilters);
+        filterCountBadge.classList.remove("hidden");
+      } else {
+        filterCountBadge.classList.add("hidden");
+      }
     };
 
+    const autoCodeEnabled = <%= page.autoCodeFromName ? "true" : "false" %>;
+    const pageTitle = '<%= t(page.titleKey) %>';
+    const basePath = '<%= basePath %>';
+    const i18nSelect = '<%= t("select") %>';
+    const i18nSelected = '<%= t("selected") %>';
+    const i18nAll = '<%= t("all") %>';
+
     const openModal = (mode, data) => {
+      if (!modal || !modalForm) return;
       const payload = data || {};
       // Populate modal fields from row data (or defaults on create).
       modal.classList.remove("hidden");
       modal.classList.add("flex");
       modal.dataset.mode = mode;
       modalTitle.textContent = mode === "edit"
-        ? i18n.edit + " <%= t(page.titleKey) %>"
-        : i18n.add + " <%= t(page.titleKey) %>";
-      modalForm.setAttribute("action", payload.action || "<%= basePath %>");
+        ? i18n.edit + " " + pageTitle
+        : i18n.add + " " + pageTitle;
+      modalForm.setAttribute("action", payload.action || basePath);
       modal.dataset.currentId = payload.id || "";
       modalForm.querySelectorAll("[data-field]").forEach((input) => {
         const name = input.getAttribute("data-field");
@@ -117,6 +306,13 @@
           input.value = payload[name] || "";
         }
       });
+      modalForm.querySelectorAll("[data-hide-on-create]").forEach((node) => {
+        if (mode === "create") {
+          node.classList.add("hidden");
+        } else {
+          node.classList.remove("hidden");
+        }
+      });
       if (modalError) {
         modalError.textContent = "";
         modalError.hidden = true;
@@ -136,15 +332,17 @@
       } else if (auditPanel) {
         auditPanel.hidden = true;
       }
-      if (mode === "create" && "<%= page.titleKey %>" === "account_groups") {
+      if (mode === "create" && autoCodeEnabled) {
         const codeInput = modalForm.querySelector("[data-field=\"code\"]");
         if (codeInput) {
           codeInput.dataset.userEdited = "false";
         }
       }
+      refreshMultiSelects();
     };
 
     const closeModal = () => {
+      if (!modal) return;
       modal.classList.add("hidden");
       modal.classList.remove("flex");
     };
@@ -152,7 +350,7 @@
     const openConfirm = (title, message, action) => {
       if (!confirmModal || !confirmForm) return;
       confirmTitle.textContent = title || i18n.confirm;
-      confirmMessage.textContent = message || "<%= t("are_you_sure") %>";
+      confirmMessage.textContent = message || '<%= t("are_you_sure") %>';
       confirmForm.setAttribute("action", action || "");
       confirmModal.classList.remove("hidden");
       confirmModal.classList.add("flex");
@@ -242,14 +440,101 @@
       // Filter, sort, and paginate rows in-memory for fast UI updates.
       const query = ((searchInput && searchInput.value) || "").trim().toLowerCase();
       const status = (statusFilter && statusFilter.value) || "all";
+      const accountTypeFilters = getFilterValues("[data-filter-account-type]");
+      const accountGroupFilters = getFilterValues("[data-filter-account-group]");
+      const partyTypeFilters = getFilterValues("[data-filter-party-type]");
+      const partyGroupFilters = getFilterValues("[data-filter-party-group]");
+      const branchFilters = getFilterValues("[data-filter-branch]");
+      const cityFilters = getFilterValues("[data-filter-city]");
+      const readFilterRows = (key) => {
+        const rows = Array.from(
+          document.querySelectorAll(`[data-filter-list="${key}"] [data-filter-${key}], [data-filter-list="${key}"] [data-filter-${key.replace("-", "_")}]`)
+        );
+        const list = document.querySelector(`[data-filter-list="${key}"]`);
+        if (!list) return { include: [], exclude: [] };
+        const selects = Array.from(list.querySelectorAll(`[data-filter-${key}]`));
+        const modes = Array.from(list.querySelectorAll(`[data-filter-${key}-mode]`));
+        const include = [];
+        const exclude = [];
+        selects.forEach((select, idx) => {
+          const value = (select.value || "").trim();
+          if (!value) return;
+          const mode = (modes[idx] && modes[idx].value) || "include";
+          if (mode === "exclude") {
+            exclude.push(value);
+          } else {
+            include.push(value);
+          }
+        });
+        return { include, exclude };
+      };
+      const accountTypeModes = readFilterRows("account-type");
+      const accountGroupModes = readFilterRows("account-group");
+      const partyTypeModes = readFilterRows("party-type");
+      const partyGroupModes = readFilterRows("party-group");
+      const branchModes = readFilterRows("branch");
+      const cityModes = readFilterRows("city");
       const rows = getRows();
       const sorted = sortRows(rows);
       const filtered = sorted.filter((row) => {
         const matchesText = !query || row.textContent.toLowerCase().includes(query);
         if (!matchesText) return false;
-        if (status === "all") return true;
-        const isActive = row.dataset.active === "true";
-        return status === "active" ? isActive : !isActive;
+        if (status !== "all") {
+          const isActive = row.dataset.active === "true";
+          if (status === "active" ? !isActive : isActive) return false;
+        }
+        if (accountTypeModes.include.length) {
+          const matches = accountTypeModes.include.includes(row.dataset.accountType || "");
+          if (!matches) return false;
+        }
+        if (accountTypeModes.exclude.length) {
+          const matches = accountTypeModes.exclude.includes(row.dataset.accountType || "");
+          if (matches) return false;
+        }
+        if (accountGroupModes.include.length) {
+          const matches = accountGroupModes.include.includes(row.dataset.accountGroup || "");
+          if (!matches) return false;
+        }
+        if (accountGroupModes.exclude.length) {
+          const matches = accountGroupModes.exclude.includes(row.dataset.accountGroup || "");
+          if (matches) return false;
+        }
+        if (partyTypeModes.include.length) {
+          const matches = partyTypeModes.include.includes(row.dataset.partyType || "");
+          if (!matches) return false;
+        }
+        if (partyTypeModes.exclude.length) {
+          const matches = partyTypeModes.exclude.includes(row.dataset.partyType || "");
+          if (matches) return false;
+        }
+        if (partyGroupModes.include.length) {
+          const matches = partyGroupModes.include.includes(row.dataset.partyGroup || "");
+          if (!matches) return false;
+        }
+        if (partyGroupModes.exclude.length) {
+          const matches = partyGroupModes.exclude.includes(row.dataset.partyGroup || "");
+          if (matches) return false;
+        }
+        if (cityModes.include.length) {
+          const matches = cityModes.include.includes(row.dataset.city || "");
+          if (!matches) return false;
+        }
+        if (cityModes.exclude.length) {
+          const matches = cityModes.exclude.includes(row.dataset.city || "");
+          if (matches) return false;
+        }
+        if (branchModes.include.length || branchModes.exclude.length) {
+          const branches = (row.dataset.branch || "").split(",").map((value) => value.trim()).filter(Boolean);
+          if (branchModes.include.length) {
+            const matches = branchModes.include.some((value) => branches.includes(value));
+            if (!matches) return false;
+          }
+          if (branchModes.exclude.length) {
+            const matches = branchModes.exclude.some((value) => branches.includes(value));
+            if (matches) return false;
+          }
+        }
+        return true;
       });
 
       const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -296,7 +581,6 @@
 
     const cleanText = (value) =>
       (value || "")
-        .replace(/[^\x20-\x7E]/g, "")
         .replace(/\s+/g, " ")
         .trim();
 
@@ -318,7 +602,7 @@
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const link = document.createElement("a");
       link.href = URL.createObjectURL(blob);
-      link.download = "<%= t(page.titleKey).replace(/\s+/g, "_") %>_export.csv";
+      link.download = '<%= t(page.titleKey).replace(/\\s+/g, "_") %>_export.csv';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -342,6 +626,40 @@
         applyFilters();
       });
     }
+    const hookFilter = (element) => {
+      if (!element) return;
+      element.addEventListener("change", () => {
+        currentPage = 1;
+        updateFilterCount();
+      });
+    };
+    const hookFilterAll = (selector) => {
+      document.querySelectorAll(selector).forEach((el) => hookFilter(el));
+    };
+    hookFilterAll("[data-filter-account-type]");
+    hookFilterAll("[data-filter-account-group]");
+    hookFilterAll("[data-filter-party-type]");
+    hookFilterAll("[data-filter-party-group]");
+    hookFilterAll("[data-filter-branch]");
+    hookFilterAll("[data-filter-city]");
+    document.querySelectorAll("[data-filter-account-type-mode]").forEach((el) => hookFilter(el));
+    document.querySelectorAll("[data-filter-account-group-mode]").forEach((el) => hookFilter(el));
+    document.querySelectorAll("[data-filter-party-type-mode]").forEach((el) => hookFilter(el));
+    document.querySelectorAll("[data-filter-party-group-mode]").forEach((el) => hookFilter(el));
+    document.querySelectorAll("[data-filter-branch-mode]").forEach((el) => hookFilter(el));
+    document.querySelectorAll("[data-filter-city-mode]").forEach((el) => hookFilter(el));
+    [
+      "[data-filter-account-type]",
+      "[data-filter-account-group]",
+      "[data-filter-party-type]",
+      "[data-filter-party-group]",
+      "[data-filter-branch]",
+      "[data-filter-city]"
+    ].forEach((selector) => {
+      document.querySelectorAll(selector).forEach((el) => {
+        el.addEventListener("change", updateFilterCount);
+      });
+    });
     if (pageSizeSelect) {
       pageSizeSelect.addEventListener("change", () => {
         pageSizeRaw = pageSizeSelect.value || "10";
@@ -377,6 +695,32 @@
       });
     });
 
+    const closeRowMenus = (except) => {
+      rowMenuPanels.forEach((panel) => {
+        if (panel === except) return;
+        panel.classList.add("hidden");
+      });
+    };
+
+    rowMenuButtons.forEach((btn) => {
+      btn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        const panel = btn.parentElement.querySelector("[data-row-menu-panel]");
+        if (!panel) return;
+        const willOpen = panel.classList.contains("hidden");
+        closeRowMenus();
+        if (willOpen) {
+          panel.classList.remove("hidden");
+        }
+      });
+    });
+
+    rowMenuPanels.forEach((panel) => {
+      panel.addEventListener("click", (event) => {
+        event.stopPropagation();
+      });
+    });
+
     confirmClose.forEach((btn) => {
       btn.addEventListener("click", closeConfirm);
     });
@@ -389,21 +733,35 @@
       });
     }
 
-    sortButtons.forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const index = Number(btn.dataset.sortIndex);
-        sortType = btn.dataset.sortType || "text";
-        if (sortIndex === index) {
-          sortDir = sortDir === "asc" ? "desc" : "asc";
-        } else {
-          sortIndex = index;
-          sortDir = "asc";
-        }
-        updateSortIndicators();
-        currentPage = 1;
-        applyFilters();
-      });
+    document.addEventListener("click", () => {
+      closeRowMenus();
     });
+
+    const handleSortClick = (btn) => {
+      if (!btn) return;
+      const index = Number(btn.dataset.sortIndex);
+      if (!Number.isFinite(index)) return;
+      sortType = btn.dataset.sortType || "text";
+      if (sortIndex === index) {
+        sortDir = sortDir === "asc" ? "desc" : "asc";
+      } else {
+        sortIndex = index;
+        sortDir = "asc";
+      }
+      updateSortIndicators();
+      currentPage = 1;
+      applyFilters();
+    };
+
+      const table = document.querySelector("[data-table]");
+      if (table) {
+        table.addEventListener("click", (event) => {
+        const btn = event.target.closest("[data-sort-key]");
+        if (!btn) return;
+        event.preventDefault();
+        handleSortClick(btn);
+      });
+    }
 
     openButtons.forEach((btn) => {
       btn.addEventListener("click", () => openModal("create", { id: "" }));
@@ -413,7 +771,7 @@
       btn.addEventListener("click", () => {
         const data = {
           id: btn.dataset.id,
-          action: "<%= basePath %>/" + btn.dataset.id,
+          action: basePath + "/" + btn.dataset.id,
           created_at: btn.dataset.createdAt || "",
           created_by: btn.dataset.createdBy || "",
           updated_at: btn.dataset.updatedAt || "",
@@ -432,17 +790,66 @@
       btn.addEventListener("click", closeModal);
     });
 
-    modal.addEventListener("click", (event) => {
-      if (event.target === modal) {
-        closeModal();
-      }
-    });
+    if (modal) {
+      modal.addEventListener("click", (event) => {
+        if (event.target === modal) {
+          closeModal();
+        }
+      });
+    }
 
     initializeRows();
     updateSortIndicators();
     if (modalForm) {
-      const pageKey = "<%= page.titleKey %>";
-      if (pageKey === "account_groups") {
+      const pageKey = '<%= page.titleKey %>';
+      // Parties: filter party groups to match the selected party type (customer/supplier/both).
+      if (pageKey === "parties") {
+        // Locate the party type and group selects inside the modal form.
+        const partyType = modalForm.querySelector("[data-field=\"party_type\"]");
+        const groupSelect = modalForm.querySelector("[data-field=\"group_id\"]");
+        // Cache the full list of group options for rebuilding on each change.
+        const allGroupOptions = groupSelect ? Array.from(groupSelect.options) : [];
+        const filterGroups = () => {
+          if (!partyType || !groupSelect) return;
+          // Normalize the selected type for case-insensitive matching.
+          const selectedType = (partyType.value || "").toUpperCase();
+          // Remember current selection to restore it if it still matches.
+          const previous = groupSelect.value;
+          // Rebuild the dropdown options based on the selected party type.
+          groupSelect.innerHTML = "";
+          allGroupOptions.forEach((opt) => {
+            const optValue = opt.value || "";
+            // Always keep the empty "Select" option.
+            if (!optValue) {
+              groupSelect.appendChild(opt.cloneNode(true));
+              return;
+            }
+            // Match against the party type stored on each option.
+            const optType = (opt.getAttribute("data-party-type") || "")
+              .replace(/["']/g, "")
+              .toUpperCase();
+            if (!selectedType || optType === "BOTH" || optType === selectedType) {
+              groupSelect.appendChild(opt.cloneNode(true));
+            }
+          });
+          // Restore previous selection if it still exists after filtering.
+          if (previous) {
+            groupSelect.value = previous;
+            if (groupSelect.value !== previous) {
+              groupSelect.value = "";
+            }
+          }
+        };
+        if (partyType && groupSelect) {
+          // Re-filter whenever the party type changes.
+          partyType.addEventListener("change", filterGroups);
+          // Expose for re-use when the modal opens.
+          filterPartyGroups = filterGroups;
+          // Apply once on load so the list matches the current selection.
+          filterGroups();
+        }
+      }
+      if (autoCodeEnabled) {
         const nameInput = modalForm.querySelector("[data-field=\"name\"]");
         const codeInput = modalForm.querySelector("[data-field=\"code\"]");
         const toCode = (value) =>
@@ -471,8 +878,38 @@
 
       modalForm.addEventListener("submit", (event) => {
         if (!modal) return;
-        const pageKey = "<%= page.titleKey %>";
+        const pageKey = '<%= page.titleKey %>';
         const currentId = modal.dataset.currentId || "";
+
+        if (pageKey === "accounts" || pageKey === "parties") {
+          const branchSelect = modalForm.querySelector("[data-field=\"branch_ids\"]");
+          if (branchSelect && branchSelect.multiple) {
+            const selected = Array.from(branchSelect.options).filter((opt) => opt.selected);
+            if (!selected.length) {
+              event.preventDefault();
+              if (modalError) {
+                modalError.textContent = i18n.selectBranch;
+                modalError.hidden = false;
+              }
+              return;
+            }
+          }
+        }
+        if (pageKey === "parties") {
+          const phone1 = modalForm.querySelector("[data-field=\"phone1\"]");
+          const phone2 = modalForm.querySelector("[data-field=\"phone2\"]");
+          if (phone1) {
+            const phone1Value = phone1.value.trim();
+            if (!phone1Value) {
+              event.preventDefault();
+              if (modalError) {
+                modalError.textContent = i18n.selectPhone;
+                modalError.hidden = false;
+              }
+              return;
+            }
+          }
+        }
 
         if (pageKey === "units") {
           const codeInput = modalForm.querySelector("[data-field=\"code\"]");
@@ -534,13 +971,284 @@
       });
     }
 
+    const initMultiSelect = (wrap) => {
+      if (wrap.dataset.multiReady === "true") return;
+      wrap.dataset.multiReady = "true";
+      const select = wrap.querySelector("select[multiple]");
+      const tags = wrap.querySelector("[data-multi-tags]");
+      const trigger = wrap.querySelector("[data-multi-trigger]");
+      const menu = wrap.querySelector("[data-multi-menu]");
+      const placeholder = wrap.querySelector("[data-multi-placeholder]");
+      if (!select || !tags || !trigger || !menu || !placeholder) return;
+
+      const closeMenu = () => {
+        menu.classList.add("hidden");
+      };
+
+      const openMenu = () => {
+        menu.classList.remove("hidden");
+      };
+
+      const toggleMenu = () => {
+        menu.classList.contains("hidden") ? openMenu() : closeMenu();
+      };
+
+      const updateTags = () => {
+        const selected = Array.from(select.options).filter((opt) => opt.selected);
+        tags.innerHTML = "";
+        if (!selected.length) {
+          placeholder.textContent = i18nSelect;
+          return;
+        }
+        placeholder.textContent = i18nSelected;
+        selected.forEach((opt) => {
+          const tag = document.createElement("span");
+          tag.className = "multi-tag";
+          tag.textContent = opt.textContent.trim();
+          const remove = document.createElement("button");
+          remove.type = "button";
+          remove.innerHTML = "&times;";
+          remove.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            opt.selected = false;
+            select.dispatchEvent(new Event("change", { bubbles: true }));
+            updateTags();
+            updateMenu();
+          });
+          tag.appendChild(remove);
+          tags.appendChild(tag);
+        });
+      };
+
+      const updateMenu = () => {
+        menu.innerHTML = "";
+        Array.from(select.options).forEach((opt) => {
+          const option = document.createElement("button");
+          option.type = "button";
+          option.className =
+            "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-amber-50/60";
+          const label = document.createElement("span");
+          label.textContent = opt.textContent.trim();
+          const check = document.createElement("span");
+          check.className = "text-xs text-slate-400";
+          check.textContent = opt.selected ? "*" : "";
+          option.appendChild(label);
+          option.appendChild(check);
+          option.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            opt.selected = !opt.selected;
+            select.dispatchEvent(new Event("change", { bubbles: true }));
+            updateTags();
+            updateMenu();
+            closeMenu();
+          });
+          menu.appendChild(option);
+        });
+      };
+
+      updateMenu();
+      updateTags();
+      wrap._multiUpdate = updateTags;
+      wrap._multiMenu = updateMenu;
+
+      trigger.addEventListener("click", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        toggleMenu();
+      });
+      menu.addEventListener("click", (event) => {
+        event.stopPropagation();
+      });
+      select.addEventListener("change", updateTags);
+      document.addEventListener("click", (event) => {
+        if (!wrap.contains(event.target)) {
+          closeMenu();
+        }
+      });
+    };
+
+    const refreshMultiSelects = () => {
+      document.querySelectorAll("[data-multi-select]").forEach((wrap) => {
+        initMultiSelect(wrap);
+        const select = wrap.querySelector("select[multiple]");
+        const tags = wrap.querySelector("[data-multi-tags]");
+        const placeholder = wrap.querySelector("[data-multi-placeholder]");
+        if (!select || !tags || !placeholder) return;
+        if (typeof wrap._multiMenu === "function") {
+          wrap._multiMenu();
+        }
+        if (typeof wrap._multiUpdate === "function") {
+          wrap._multiUpdate();
+        }
+      });
+    };
+
+    const buildFilterOptions = () => {
+      if (!filterPanel) return;
+      const rows = getRows();
+      const collect = (key) =>
+        Array.from(new Set(rows.map((row) => (row.dataset[key] || "").trim()).filter(Boolean))).sort();
+      const accountTypes = collect("accountType");
+      const accountGroups = collect("accountGroup");
+      const partyTypes = collect("partyType");
+      const partyGroups = collect("partyGroup");
+      const branches = Array.from(
+        new Set(
+          rows
+            .flatMap((row) => (row.dataset.branch || "").split(","))
+            .map((value) => value.trim())
+            .filter(Boolean)
+        )
+      ).sort();
+      const cities = collect("city");
+
+      const fillSelectAll = (selector, values) => {
+        const options = [""].concat(values);
+        document.querySelectorAll(selector).forEach((select) => {
+          const current = select.value;
+          select.innerHTML = "";
+          options.forEach((value) => {
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = value || i18nAll;
+            select.appendChild(option);
+          });
+          select.value = current;
+        });
+      };
+
+      fillSelectAll("[data-filter-account-type]", accountTypes);
+      fillSelectAll("[data-filter-account-group]", accountGroups);
+      fillSelectAll("[data-filter-party-type]", partyTypes);
+      fillSelectAll("[data-filter-party-group]", partyGroups);
+      fillSelectAll("[data-filter-branch]", branches);
+      fillSelectAll("[data-filter-city]", cities);
+    };
+
+      if (typeof filterPartyGroups === "function") {
+        filterPartyGroups();
+      }
+      refreshMultiSelects();
+    buildFilterOptions();
+    updateFilterCount();
+
+    const autoResizeTextareas = () => {
+      document.querySelectorAll("textarea[data-auto-resize]").forEach((area) => {
+        const resize = () => {
+          area.style.height = "auto";
+          area.style.height = `${area.scrollHeight}px`;
+        };
+        area.addEventListener("input", resize);
+        resize();
+      });
+    };
+
+    autoResizeTextareas();
+
+    if (filterToggle && filterPanel) {
+      const openFilters = () => filterPanel.classList.remove("hidden");
+      const closeFilters = () => filterPanel.classList.add("hidden");
+      filterToggle.addEventListener("click", openFilters);
+      if (filterClose) {
+        filterClose.addEventListener("click", closeFilters);
+      }
+      if (filterApply) {
+        filterApply.addEventListener("click", () => {
+          applyFilters();
+          updateFilterCount();
+          closeFilters();
+        });
+      }
+      if (filterClear) {
+        filterClear.addEventListener("click", () => {
+          [
+            "account-type",
+            "account-group",
+            "party-type",
+            "party-group",
+            "branch",
+            "city"
+          ].forEach((key) => {
+            const list = filterPanel?.querySelector(`[data-filter-list="${key}"]`);
+            if (!list) return;
+            const rows = Array.from(list.querySelectorAll("div"));
+            rows.forEach((row, index) => {
+              const select = row.querySelector(`[data-filter-${key}]`);
+              const mode = row.querySelector(`[data-filter-${key}-mode]`);
+              if (select) select.value = "";
+              if (mode) mode.value = "include";
+              if (index > 0) row.remove();
+            });
+          });
+          applyFilters();
+          updateFilterCount();
+          closeFilters();
+        });
+      }
+      filterPanel.addEventListener("click", (event) => {
+        if (event.target === filterPanel) {
+          closeFilters();
+        }
+      });
+    }
+
+      const addFilterSelect = (type) => {
+        const list = filterPanel?.querySelector(`[data-filter-list="${type}"]`);
+        if (!list) return;
+        const firstSelect = list.querySelector(`[data-filter-${type}]`);
+        const firstMode = list.querySelector(`[data-filter-${type}-mode]`);
+        if (!firstSelect || !firstMode) return;
+        const wrapper = document.createElement("div");
+        wrapper.className = "flex items-center gap-2";
+        const mode = firstMode.cloneNode(true);
+        mode.value = "include";
+        const select = firstSelect.cloneNode(true);
+        select.value = "";
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500";
+        remove.textContent = "x";
+        remove.addEventListener("click", () => {
+          wrapper.remove();
+          updateFilterCount();
+          applyFilters();
+        });
+        wrapper.appendChild(mode);
+        wrapper.appendChild(select);
+        wrapper.appendChild(remove);
+        list.appendChild(wrapper);
+        hookFilter(mode);
+        hookFilter(select);
+        select.addEventListener("change", updateFilterCount);
+        mode.addEventListener("change", updateFilterCount);
+        updateFilterCount();
+      };
+
+    filterAddButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const type = btn.getAttribute("data-filter-add");
+        if (!type) return;
+        addFilterSelect(type);
+      });
+    });
+
     applyFilters();
 
     const autoOpen = modal && modal.dataset.autoOpen === "true";
     // Re-open modal after server-side validation errors.
     const autoMode = modal && modal.dataset.modalMode ? modal.dataset.modalMode : "create";
     if (autoOpen) {
-      openModal(autoMode);
+      let payload = {};
+      if (modal && modal.dataset.modalValues) {
+        try {
+          payload = JSON.parse(modal.dataset.modalValues);
+        } catch (err) {
+          payload = {};
+        }
+      }
+      openModal(autoMode, payload);
     }
   })();
 </script>

@@ -19,11 +19,7 @@
     </div>
   </section>
 
-  <% if (error) { %>
-    <div class="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-      <%= error %>
-    </div>
-  <% } %>
+  <%- include("../../../base/partials/error-banner", { error, modalOpen }) %>
 
   <%# UOM conversions list + export/print area. %>
   <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md" data-print-area>
@@ -31,79 +27,26 @@
       <%= t("brand") %>
     </div>
     <div class="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-      <div class="text-sm font-semibold text-slate-700">List <%= t("uom_conversions") %></div>
-      <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500">
-        <label class="flex items-center gap-2">
-          <span>Show</span>
-          <select class="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700" data-page-size>
-            <option>10</option>
-            <option>25</option>
-            <option>50</option>
-            <option value="all">All</option>
-          </select>
-          <span>records</span>
-        </label>
-        <label class="flex items-center gap-2">
-          <span>Search:</span>
-          <input class="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700" type="text" data-search-input />
-        </label>
-      </div>
+      <div class="text-sm font-semibold text-slate-700"><%= t("list") %> <%= t("uom_conversions") %></div>
+      <%- include("../../base/partials/table-controls", { t, showStatus: false }) %>
     </div>
     <div class="overflow-x-auto">
       <table class="min-w-full text-sm" data-table>
         <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
-          <tr>
-            <th class="px-4 py-3 text-left">Sr.No</th>
-            <th class="px-4 py-3 text-left">
-              <button class="group inline-flex items-center gap-1 text-left text-xs font-semibold uppercase tracking-[0.1em] text-slate-500 transition hover:text-slate-700" type="button" data-sort-key="id" data-sort-index="1" data-sort-type="number">
-                <span>ID</span>
-                <span class="text-[10px] opacity-60" data-sort-indicator>↕</span>
-              </button>
-            </th>
-            <th class="px-4 py-3 text-left">
-              <button class="group inline-flex items-center gap-1 text-left text-xs font-semibold uppercase tracking-[0.1em] text-slate-500 transition hover:text-slate-700" type="button" data-sort-key="from" data-sort-index="2" data-sort-type="text">
-                <span>From UOM</span>
-                <span class="text-[10px] opacity-60" data-sort-indicator>↕</span>
-              </button>
-            </th>
-            <th class="px-4 py-3 text-left">
-              <button class="group inline-flex items-center gap-1 text-left text-xs font-semibold uppercase tracking-[0.1em] text-slate-500 transition hover:text-slate-700" type="button" data-sort-key="to" data-sort-index="3" data-sort-type="text">
-                <span>To UOM</span>
-                <span class="text-[10px] opacity-60" data-sort-indicator>↕</span>
-              </button>
-            </th>
-            <th class="px-4 py-3 text-left">
-              <button class="group inline-flex items-center gap-1 text-left text-xs font-semibold uppercase tracking-[0.1em] text-slate-500 transition hover:text-slate-700" type="button" data-sort-key="factor" data-sort-index="4" data-sort-type="number">
-                <span>Factor</span>
-                <span class="text-[10px] opacity-60" data-sort-indicator>↕</span>
-              </button>
-            </th>
-            <th class="px-4 py-3 text-left">
-              <button class="group inline-flex items-center gap-1 text-left text-xs font-semibold uppercase tracking-[0.1em] text-slate-500 transition hover:text-slate-700" type="button" data-sort-key="active" data-sort-index="5" data-sort-type="text">
-                <span>Active</span>
-                <span class="text-[10px] opacity-60" data-sort-indicator>↕</span>
-              </button>
-            </th>
-            <th class="px-4 py-3 text-left">
-              <button class="group inline-flex items-center gap-1 text-left text-xs font-semibold uppercase tracking-[0.1em] text-slate-500 transition hover:text-slate-700" type="button" data-sort-key="created_by" data-sort-index="6" data-sort-type="text">
-                <span>Created By</span>
-                <span class="text-[10px] opacity-60" data-sort-indicator>↕</span>
-              </button>
-            </th>
-            <th class="px-4 py-3 text-left">
-              <button class="group inline-flex items-center gap-1 text-left text-xs font-semibold uppercase tracking-[0.1em] text-slate-500 transition hover:text-slate-700" type="button" data-sort-key="created_at" data-sort-index="7" data-sort-type="date">
-                <span>Created At</span>
-                <span class="text-[10px] opacity-60" data-sort-indicator>↕</span>
-              </button>
-            </th>
-            <th class="px-4 py-3 text-left">Actions</th>
-          </tr>
+          <% const displayColumns = [
+            { key: "id", labelRaw: "ID", sortType: "number" },
+            { key: "from", labelRaw: "From UOM" },
+            { key: "to", labelRaw: "To UOM" },
+            { key: "factor", labelRaw: "Factor", sortType: "number" },
+            { key: "active", labelRaw: "Active" },
+            { key: "created_by", labelRaw: "Created By" },
+            { key: "created_at", labelRaw: "Created At", sortType: "date" }
+          ]; %>
+          <%- include("../../base/partials/table-header", { t, displayColumns, columnTooltips: {}, sortStartIndex: 1 }) %>
         </thead>
         <tbody class="divide-y divide-slate-100" data-table-body>
           <% if (!rows || rows.length === 0) { %>
-            <tr>
-              <td class="px-4 py-4 text-slate-500" colspan="9">No entries yet.</td>
-            </tr>
+            <%- include("../../base/partials/table-empty", { t, colspan: displayColumns.length + 2 }) %>
           <% } else { %>
             <% rows.forEach(function(row, idx) { %>
               <tr
@@ -114,8 +57,8 @@
               >
                 <td class="px-4 py-3 text-slate-700"><%= idx + 1 %></td>
                 <td class="px-4 py-3 text-slate-700"><%= row.id %></td>
-                <td class="px-4 py-3 text-slate-700"><%= row.from_code %> — <%= row.from_name %></td>
-                <td class="px-4 py-3 text-slate-700"><%= row.to_code %> — <%= row.to_name %></td>
+                <td class="px-4 py-3 text-slate-700"><%= row.from_code %> &mdash; <%= row.from_name %></td>
+                <td class="px-4 py-3 text-slate-700"><%= row.to_code %> &mdash; <%= row.to_name %></td>
                 <td class="px-4 py-3 text-slate-700"><%= row.factor %></td>
                 <td class="px-4 py-3 text-slate-700"><%= row.is_active ? "Yes" : "No" %></td>
                 <td class="px-4 py-3 text-slate-700"><%= row.created_by_name || "" %></td>
@@ -123,59 +66,7 @@
                   <%= row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : "" %>
                 </td>
                 <td class="px-4 py-3">
-                  <div class="flex items-center gap-2">
-                    <button
-                      class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
-                      type="button"
-                      data-edit
-                      data-id="<%= row.id %>"
-                      data-from_uom_id="<%= row.from_uom_id %>"
-                      data-to_uom_id="<%= row.to_uom_id %>"
-                      data-factor="<%= row.factor %>"
-                      data-created-at="<%= row.created_at ? new Date(row.created_at).toISOString() : "" %>"
-                      data-created-by="<%= row.created_by_name || "" %>"
-                      data-updated-at="<%= row.updated_at ? new Date(row.updated_at).toISOString() : "" %>"
-                      data-updated-by="<%= row.updated_by_name || "" %>"
-                    >
-                      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <path d="M12 20h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-                        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-                      </svg>
-                    </button>
-                    <button
-                      class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
-                      type="button"
-                      data-toggle
-                      data-toggle-action="<%= basePath %>/<%= row.id %>/toggle"
-                      data-toggle-label="<%= row.is_active ? "Deactivate" : "Activate" %>"
-                      title="<%= row.is_active ? "Deactivate" : "Activate" %>"
-                    >
-                      <% if (row.is_active) { %>
-                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                          <path d="M6 12h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-                        </svg>
-                      <% } else { %>
-                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                          <path d="M12 5v14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-                          <path d="M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-                        </svg>
-                      <% } %>
-                    </button>
-                    <button
-                      class="inline-flex items-center justify-center rounded-md border border-rose-200 bg-rose-50 p-2 text-rose-600 transition hover:border-rose-300 hover:text-rose-700 cursor-pointer"
-                      type="button"
-                      data-delete
-                      data-delete-action="<%= basePath %>/<%= row.id %>/delete"
-                      title="Permanent Delete"
-                    >
-                      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                        <path d="M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-                        <path d="M9 7V5h6v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-                        <path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-                        <path d="M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-                      </svg>
-                    </button>
-                  </div>
+                  <%- include("../../base/partials/table-actions", { t, row, basePath, editFields: ["from_uom_id", "to_uom_id", "factor"], withMenu: false }) %>
                 </td>
               </tr>
             <% }) %>
@@ -183,93 +74,27 @@
         </tbody>
       </table>
     </div>
-    <div class="flex flex-col gap-3 border-t border-slate-200 px-5 py-3 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-      <span data-showing-count>Showing 0 entries</span>
-      <div class="flex items-center gap-2">
-        <button class="rounded border border-slate-200 px-2 py-1 text-slate-500" type="button" data-prev-page>Prev</button>
-        <button class="rounded bg-slate-900 px-2 py-1 text-white" type="button" data-page-indicator>1</button>
-        <button class="rounded border border-slate-200 px-2 py-1 text-slate-500" type="button" data-next-page>Next</button>
-      </div>
-    </div>
+    <%- include("../../../base/partials/table-footer", { t }) %>
   </section>
 </div>
 
-<div
-  class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 p-4"
-  data-modal
-  data-auto-open="<%= modalOpen ? "true" : "false" %>"
-  data-modal-mode="<%= modalMode || "create" %>"
->
-  <%# Conversion modal for create/edit. %>
-  <div class="w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-xl">
-    <div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-      <div>
-        <div class="text-sm font-semibold text-slate-700" data-modal-title>Add Conversion</div>
-        <p class="text-xs text-slate-500">Define the factor between two units.</p>
-      </div>
-      <button class="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:text-slate-700" type="button" data-modal-close>
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M6 6l12 12M6 18L18 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-        </svg>
-      </button>
-    </div>
-    <form method="post" action="<%= basePath %>" class="space-y-5 px-6 py-5" data-modal-form>
-      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-      <label class="block text-sm font-semibold text-slate-600">
-        <span>From Unit</span>
-        <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" name="from_uom_id" data-field="from_uom_id" required>
-          <option value="">Select unit</option>
-          <% uoms.forEach(function(uom) { %>
-            <option value="<%= uom.id %>"><%= uom.code %> — <%= uom.name %></option>
-          <% }) %>
-        </select>
-      </label>
-      <label class="block text-sm font-semibold text-slate-600">
-        <span>To Unit</span>
-        <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" name="to_uom_id" data-field="to_uom_id" required>
-          <option value="">Select unit</option>
-          <% uoms.forEach(function(uom) { %>
-            <option value="<%= uom.id %>"><%= uom.code %> — <%= uom.name %></option>
-          <% }) %>
-        </select>
-      </label>
-      <label class="block text-sm font-semibold text-slate-600">
-        <span>Factor</span>
-        <input class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" type="number" step="0.000001" min="0" name="factor" data-field="factor" required />
-      </label>
-      <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600" data-audit-panel hidden>
-        <div class="font-semibold text-slate-700">Audit</div>
-        <div class="mt-1">Created: <span data-audit-created>—</span></div>
-        <div>Updated: <span data-audit-updated>—</span></div>
-      </div>
-      <div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700" data-modal-error hidden></div>
-      <div class="flex items-center gap-2">
-        <button class="flex-1 rounded-xl bg-slate-900 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-slate-800" type="submit">
-          Save
-        </button>
-      </div>
-    </form>
-  </div>
-</div>
+<%- include("../../base/partials/modal-shell", {
+  t,
+  modalOpen,
+  modalMode,
+  modalTitle: t("add") + " " + t("uom_conversions"),
+  modalDescription: "Define the factor between two units.",
+  formAction: basePath,
+  formClass: "space-y-5 px-6 py-5",
+  modalContainerClass: "w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-xl",
+  modalHeaderClass: "flex items-center justify-between border-b border-slate-200 px-6 py-4",
+  modalError: modalOpen ? error : null,
+  modalValues: modalOpen ? values : null,
+  csrfToken,
+  bodyPartial: "../../master_data/basic-info/uom-conversions/form-fields.ejs"
+}) %>
 
-<div class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 p-4" data-confirm-modal>
-  <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl">
-    <div class="border-b border-slate-200 px-6 py-4">
-      <div class="text-sm font-semibold text-slate-700" data-confirm-title>Confirm</div>
-      <p class="mt-1 text-xs text-slate-500" data-confirm-message>Are you sure?</p>
-    </div>
-    <form method="post" action="" class="space-y-4 px-6 py-5" data-confirm-form>
-      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-      <div class="flex items-center gap-2">
-        <button class="flex-1 rounded-xl bg-slate-900 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-slate-800" type="submit">
-          Continue
-        </button>
-        <button class="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-confirm-close>
-          Cancel
-        </button>
-      </div>
-    </form>
-  </div>
-</div>
+<%- include("../../../base/partials/confirm-modal", { t, csrfToken }) %>
 
 <%- include("../../../base/partials/basic-info-utils", { t, page: { titleKey: "uom_conversions" }, basePath, modalOpen, modalMode }) %>
+

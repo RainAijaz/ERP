@@ -10,12 +10,15 @@ const routes = [
   "/master-data/basic-info/colors",
   "/master-data/basic-info/grades",
   "/master-data/basic-info/packing-types",
+  "/master-data/basic-info/cities",
   "/master-data/basic-info/uom-conversions",
   "/master-data/basic-info/product-groups",
   "/master-data/basic-info/product-subgroups",
   "/master-data/basic-info/product-types",
   "/master-data/basic-info/party-groups",
   "/master-data/basic-info/account-groups",
+  "/master-data/basic-info/parties",
+  "/master-data/basic-info/accounts",
   "/master-data/basic-info/departments",
 ];
 
@@ -43,6 +46,17 @@ const routeChecks = {
   "/master-data/basic-info/account-groups": [
     { name: "account_type", needle: "account_type" },
     { name: "code", needle: "data-field=\"code\"" },
+  ],
+  "/master-data/basic-info/accounts": [
+    { name: "account_group", needle: "subgroup_id" },
+  ],
+  "/master-data/basic-info/parties": [
+    { name: "party_type", needle: "party_type" },
+    { name: "branches", needle: "branch_ids" },
+    { name: "city", needle: "city_id" },
+  ],
+  "/master-data/basic-info/cities": [
+    { name: "name", needle: "data-field=\"name\"" },
   ],
 };
 
@@ -402,6 +416,135 @@ const buildPostPayload = (route, html) => {
     };
   }
 
+  if (route.endsWith("/accounts")) {
+    const groups = extractOptions(html, "subgroup_id");
+    if (!groups.length) {
+      return { error: "No account groups available" };
+    }
+    const branches = extractOptions(html, "branch_ids");
+    return {
+      csrf,
+      keyField: "name",
+      keyValue: `Test Account ${suffix}`,
+      payload: new URLSearchParams({
+        _csrf: csrf,
+        subgroup_id: groups[0].value,
+        ...(branches[0] ? { branch_ids: branches[0].value } : {}),
+        name: `Test Account ${suffix}`,
+        name_ur: `Test Account Urdu ${suffix}`,
+        lock_posting: "",
+      }),
+      negativeTests: [
+        {
+          label: "invalid_group_id",
+          keyField: "name",
+          keyValue: `Test Account ${suffix} Bad`,
+          payload: new URLSearchParams({
+            _csrf: csrf,
+            subgroup_id: "999999",
+            name: `Test Account ${suffix} Bad`,
+            name_ur: `Test Account Urdu ${suffix} Bad`,
+          }),
+          expectMax: 0,
+        },
+        {
+          label: "duplicate_name",
+          keyField: "name",
+          keyValue: `Test Account ${suffix}`,
+          payload: new URLSearchParams({
+            _csrf: csrf,
+            subgroup_id: groups[0].value,
+            name: `Test Account ${suffix} Dup`,
+            name_ur: `Test Account Urdu ${suffix} Dup`,
+          }),
+          expectMax: 1,
+        },
+        {
+          label: "duplicate_case",
+          keyField: "name",
+          keyValue: `test account ${suffix}`,
+          caseInsensitive: true,
+          payload: new URLSearchParams({
+            _csrf: csrf,
+            subgroup_id: groups[0].value,
+            name: `test account ${suffix}`,
+            name_ur: `Test Account Urdu ${suffix} Case`,
+          }),
+          expectMax: 1,
+        },
+      ],
+    };
+  }
+
+  if (route.endsWith("/parties")) {
+    const groups = extractOptions(html, "group_id");
+    const branches = extractOptions(html, "branch_ids");
+    const cities = extractOptions(html, "city_id");
+    return {
+      csrf,
+      keyField: "name",
+      keyValue: `Test Party ${suffix}`,
+      payload: new URLSearchParams({
+        _csrf: csrf,
+        party_type: "CUSTOMER",
+        group_id: groups[0] ? groups[0].value : "",
+        ...(branches[0] ? { branch_ids: branches[0].value } : {}),
+        name: `Test Party ${suffix}`,
+        name_ur: `Test Party Urdu ${suffix}`,
+        ...(cities[0] ? { city_id: cities[0].value } : {}),
+        address: `Street ${suffix}`,
+        phone1: "0300-0000000",
+        phone2: "",
+        credit_allowed: "on",
+        credit_limit: "5000",
+      }),
+      negativeTests: [
+        {
+          label: "invalid_type",
+          keyField: "name",
+          keyValue: `Test Party ${suffix} Bad`,
+          payload: new URLSearchParams({
+            _csrf: csrf,
+            party_type: "INVALID",
+            group_id: groups[0] ? groups[0].value : "",
+            name: `Test Party ${suffix} Bad`,
+            name_ur: `Test Party Urdu ${suffix} Bad`,
+          }),
+          expectMax: 0,
+        },
+        {
+          label: "credit_not_customer",
+          keyField: "name",
+          keyValue: `Test Party ${suffix} Credit`,
+          payload: new URLSearchParams({
+            _csrf: csrf,
+            party_type: "SUPPLIER",
+            group_id: groups[0] ? groups[0].value : "",
+            name: `Test Party ${suffix} Credit`,
+            name_ur: `Test Party Urdu ${suffix} Credit`,
+            credit_allowed: "on",
+            credit_limit: "1000",
+          }),
+          expectMax: 0,
+        },
+        {
+          label: "duplicate_case",
+          keyField: "name",
+          keyValue: `test party ${suffix}`,
+          caseInsensitive: true,
+          payload: new URLSearchParams({
+            _csrf: csrf,
+            party_type: "CUSTOMER",
+            group_id: groups[0] ? groups[0].value : "",
+            name: `test party ${suffix}`,
+            name_ur: `Test Party Urdu ${suffix} Case`,
+          }),
+          expectMax: 1,
+        },
+      ],
+    };
+  }
+
   if (route.endsWith("/departments")) {
     return {
       csrf,
@@ -640,6 +783,33 @@ const buildPostPayload = (route, html) => {
             _csrf: csrf,
             name: `test pack ${suffix}`,
             name_ur: `Test Pack Urdu ${suffix} Case`,
+          }),
+          expectMax: 1,
+        },
+      ],
+    };
+  }
+
+  if (route.endsWith("/cities")) {
+    return {
+      csrf,
+      keyField: "name",
+      keyValue: `Test City ${suffix}`,
+      payload: new URLSearchParams({
+        _csrf: csrf,
+        name: `Test City ${suffix}`,
+        name_ur: `Test City Urdu ${suffix}`,
+      }),
+      negativeTests: [
+        {
+          label: "duplicate_case",
+          keyField: "name",
+          keyValue: `test city ${suffix}`,
+          caseInsensitive: true,
+          payload: new URLSearchParams({
+            _csrf: csrf,
+            name: `test city ${suffix}`,
+            name_ur: `Test City Urdu ${suffix} Case`,
           }),
           expectMax: 1,
         },

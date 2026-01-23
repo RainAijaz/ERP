@@ -1,0 +1,46 @@
+<div
+  class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 p-4"
+  data-modal
+  data-auto-open="<%= modalOpen ? "true" : "false" %>"
+  data-modal-mode="<%= modalMode || "create" %>"
+  <%= modalValues ? "data-modal-values='" + JSON.stringify(modalValues).replace(/'/g, "&#39;") + "'" : "" %>
+>
+  <div class="<%= modalContainerClass || "w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-xl" %>">
+    <div class="<%= modalHeaderClass || "flex items-center justify-between border-b border-slate-200 px-6 py-4" %>">
+      <div>
+        <div class="text-sm font-semibold text-slate-700" data-modal-title><%= modalTitle %></div>
+        <% if (modalDescription) { %>
+          <p class="text-xs text-slate-500"><%= modalDescription %></p>
+        <% } %>
+      </div>
+      <button class="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:text-slate-700" type="button" data-modal-close>
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M6 6l12 12M6 18L18 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+        </svg>
+      </button>
+    </div>
+    <form
+      method="post"
+      action="<%= formAction %>"
+      class="<%= formClass || "space-y-5 px-6 py-5" %>"
+      data-modal-form
+      <%= translateMode ? "data-translate-mode=\"" + translateMode + "\"" : "" %>
+    >
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+      <%- include(bodyPartial) %>
+      <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600" data-audit-panel hidden>
+        <div class="font-semibold text-slate-700">Audit</div>
+        <div class="mt-1">Created: <span data-audit-created>—</span></div>
+        <div>Updated: <span data-audit-updated>—</span></div>
+      </div>
+      <div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700" data-modal-error <%= modalError ? "" : "hidden" %>>
+        <%= modalError || "" %>
+      </div>
+      <div class="flex items-center gap-2">
+        <button class="flex-1 rounded-xl bg-slate-900 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-slate-800" type="submit">
+          <%= t("save") || "Save" %>
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

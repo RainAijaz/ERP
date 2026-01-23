@@ -43,6 +43,31 @@
                 <% }) %>
               </select>
             </label>
+          <% } else if (field.type === "textarea") { %>
+            <label class="space-y-2 text-sm font-semibold text-slate-600">
+              <span><%= t(field.label) %></span>
+              <textarea
+                class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+                name="<%= field.name %>"
+                placeholder="<%= field.placeholder ? t(field.placeholder) : "" %>"
+                rows="3"
+                <%= field.required ? "required" : "" %>
+              ><%= values && values[field.name] ? values[field.name] : "" %></textarea>
+            </label>
+          <% } else if (field.type === "number") { %>
+            <label class="space-y-2 text-sm font-semibold text-slate-600">
+              <span><%= t(field.label) %></span>
+              <input
+                class="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+                type="number"
+                name="<%= field.name %>"
+                placeholder="<%= field.placeholder ? t(field.placeholder) : "" %>"
+                value="<%= values && values[field.name] !== undefined && values[field.name] !== null ? values[field.name] : "" %>"
+                <%= field.step ? "step=\"" + field.step + "\"" : "" %>
+                <%= field.min ? "min=\"" + field.min + "\"" : "" %>
+                <%= field.required ? "required" : "" %>
+              />
+            </label>
           <% } else { %>
             <label class="space-y-2 text-sm font-semibold text-slate-600">
               <span><%= t(field.label) %></span>

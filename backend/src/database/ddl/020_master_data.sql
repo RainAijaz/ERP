@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS erp.uom_conversions (
 CREATE TABLE IF NOT EXISTS erp.product_groups (
   id            bigserial PRIMARY KEY,
   name          text NOT NULL UNIQUE,
-  name_ur       text,
+  name_ur       text NOT NULL UNIQUE,
   is_active     boolean NOT NULL DEFAULT true,
   created_by    bigint REFERENCES erp.users(id),
   created_at    timestamptz NOT NULL DEFAULT now(),
@@ -206,6 +206,8 @@ CREATE TABLE IF NOT EXISTS erp.accounts (
 
   created_by    bigint REFERENCES erp.users(id),
   created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_by    bigint REFERENCES erp.users(id),
+  updated_at    timestamptz,
   approved_by   bigint REFERENCES erp.users(id),
   approved_at   timestamptz,
 
@@ -223,6 +225,18 @@ CREATE TABLE IF NOT EXISTS erp.account_branch (
 -- =============================================================================
 -- PARTIES (CUSTOMERS / SUPPLIERS) + PARTY GROUPS
 -- =============================================================================
+
+-- City master (for party addresses + filters).
+CREATE TABLE IF NOT EXISTS erp.cities (
+  id         bigserial PRIMARY KEY,
+  name       text NOT NULL UNIQUE,
+  name_ur    text,
+  is_active  boolean NOT NULL DEFAULT true,
+  created_by bigint REFERENCES erp.users(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_by bigint REFERENCES erp.users(id),
+  updated_at timestamptz
+);
 
 -- Party groups (e.g., Wholesale, Retail, Suppliers - Leather, etc.)
 CREATE TABLE IF NOT EXISTS erp.party_groups (
@@ -247,10 +261,11 @@ CREATE TABLE IF NOT EXISTS erp.parties (
   name_ur        text,
 
   party_type     erp.party_type NOT NULL, -- CUSTOMER / SUPPLIER (or BOTH if you later add it)
-  branch_id      bigint NOT NULL REFERENCES erp.branches(id) ON DELETE CASCADE,
+  branch_id      bigint REFERENCES erp.branches(id) ON DELETE CASCADE,
 
   group_id       bigint REFERENCES erp.party_groups(id),
 
+  city_id        bigint REFERENCES erp.cities(id),
   address        text,
   phone1         text,
   phone2         text,
@@ -263,23 +278,45 @@ CREATE TABLE IF NOT EXISTS erp.parties (
 
   created_by     bigint NOT NULL REFERENCES erp.users(id),
   created_at     timestamptz NOT NULL DEFAULT now(),
+  updated_by     bigint REFERENCES erp.users(id),
+  updated_at     timestamptz,
   approved_by    bigint REFERENCES erp.users(id),
   approved_at    timestamptz,
 
   -- Maker-checker: approver cannot be the creator.
   CHECK (approved_by IS NULL OR approved_by <> created_by),
 
-  -- Credit rules:
-  -- - Only customers can have credit.
-  -- - If credit is not allowed => limit must be 0.
-  -- - If credit is allowed => limit must be > 0.
-  CHECK (party_type = 'CUSTOMER' OR (credit_allowed = false AND credit_limit = 0)),
-  CHECK (
-    (credit_allowed = false AND credit_limit = 0)
-    OR
-    (credit_allowed = true AND credit_limit > 0)
-  )
+  -- Credit rules removed to allow credit for suppliers if needed.
 );
+
+-- Ensure audit fields exist for existing databases.
+ALTER TABLE IF EXISTS erp.accounts
+  ADD COLUMN IF NOT EXISTS updated_by bigint REFERENCES erp.users(id),
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz;
+
+ALTER TABLE IF EXISTS erp.parties
+  ADD COLUMN IF NOT EXISTS updated_by bigint REFERENCES erp.users(id),
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz;
+
+-- Update party credit defaults (for new records).
+ALTER TABLE IF EXISTS erp.parties
+  ALTER COLUMN credit_allowed SET DEFAULT true,
+  ALTER COLUMN credit_limit SET DEFAULT 500000;
+
+-- Drop legacy credit check constraints (if present).
+DO $$ DECLARE
+  _constraint text;
+BEGIN
+  FOR _constraint IN
+    SELECT conname
+    FROM pg_constraint
+    WHERE conrelid = 'erp.parties'::regclass
+      AND contype = 'c'
+      AND pg_get_constraintdef(oid) ~* '(credit_allowed|credit_limit|party_type)'
+  LOOP
+    EXECUTE format('ALTER TABLE erp.parties DROP CONSTRAINT IF EXISTS %I', _constraint);
+  END LOOP;
+END $$;
 
 -- =============================================================================
 -- DEPARTMENTS (FOR HR + COST ALLOCATION)
@@ -316,6 +353,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS sizes_name_lower_uidx ON erp.sizes (lower(name
 CREATE UNIQUE INDEX IF NOT EXISTS colors_name_lower_uidx ON erp.colors (lower(name));
 CREATE UNIQUE INDEX IF NOT EXISTS grades_name_lower_uidx ON erp.grades (lower(name));
 CREATE UNIQUE INDEX IF NOT EXISTS packing_types_name_lower_uidx ON erp.packing_types (lower(name));
+CREATE UNIQUE INDEX IF NOT EXISTS cities_name_lower_uidx ON erp.cities (lower(name));
 CREATE UNIQUE INDEX IF NOT EXISTS account_groups_code_lower_uidx ON erp.account_groups (account_type, lower(code));
 CREATE UNIQUE INDEX IF NOT EXISTS account_groups_name_lower_uidx ON erp.account_groups (account_type, lower(name));
 CREATE UNIQUE INDEX IF NOT EXISTS party_groups_name_lower_uidx ON erp.party_groups (lower(name));
@@ -413,6 +451,13 @@ CREATE TABLE IF NOT EXISTS erp.rm_sizes (
   id   bigserial PRIMARY KEY,
   name text NOT NULL UNIQUE,
   name_ur text
+);
+
+-- Optional: allow parties to be available in multiple branches.
+CREATE TABLE IF NOT EXISTS erp.party_branch (
+  party_id  bigint NOT NULL REFERENCES erp.parties(id) ON DELETE CASCADE,
+  branch_id bigint NOT NULL REFERENCES erp.branches(id) ON DELETE CASCADE,
+  PRIMARY KEY (party_id, branch_id)
 );
 
 -- RM purchase rates (as agreed: keep simple for now):
@@ -515,6 +560,14 @@ ON erp.account_branch (branch_id);
 -- Speeds up branch isolation queries: "parties for this branch".
 CREATE INDEX IF NOT EXISTS idx_parties_branch_id
 ON erp.parties (branch_id);
+
+-- Speeds up city-based filters on parties.
+CREATE INDEX IF NOT EXISTS idx_parties_city_id
+ON erp.parties (city_id);
+
+-- Speeds up "parties available in branch" joins/filters.
+CREATE INDEX IF NOT EXISTS idx_party_branch_branch_id
+ON erp.party_branch (branch_id);
 
 -- Speeds up common joins: items -> variants -> skus.
 CREATE INDEX IF NOT EXISTS idx_variants_item_id

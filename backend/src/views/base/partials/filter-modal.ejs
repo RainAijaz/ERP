@@ -1,0 +1,23 @@
+<div class="fixed inset-0 z-40 hidden flex items-center justify-center bg-slate-900/40 p-4" data-filter-panel>
+  <div class="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl max-h-[85vh] flex flex-col">
+    <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+      <div class="text-sm font-semibold text-slate-700"><%= t("filters") %></div>
+      <button class="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:text-slate-700" type="button" data-filter-close>
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M6 6l12 12M6 18L18 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+        </svg>
+      </button>
+    </div>
+    <div class="grid grid-cols-1 gap-3 border-b border-slate-200 bg-slate-50 px-5 py-4 text-xs text-slate-600 sm:grid-cols-2 overflow-y-auto">
+      <%- include(bodyPartial) %>
+    </div>
+    <div class="flex items-center justify-end gap-2 px-5 py-4 text-xs">
+      <button class="rounded-full border border-slate-200 bg-white px-4 py-2 font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-filter-clear>
+        <%= t("clear") %>
+      </button>
+      <button class="rounded-full bg-slate-900 px-4 py-2 font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-slate-800" type="button" data-filter-apply>
+        <%= t("apply") %>
+      </button>
+    </div>
+  </div>
+</div>
