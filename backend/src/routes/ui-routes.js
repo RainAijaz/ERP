@@ -4,7 +4,7 @@ const approvalRoutes = require("./administration/approvals");
 const voucherEngineRoutes = require("./vouchers/voucher-engine");
 const masterDataRoutes = require("./master_data");
 const { requirePermission } = require("../middleware/access/role-permissions");
-const { translateToUrdu, transliterateToUrdu } = require("../middleware/utils/translate");
+const { translateToUrdu, transliterateToUrdu } = require("../utils/translate");
 
 const router = express.Router();
 

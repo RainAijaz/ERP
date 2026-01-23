@@ -3,7 +3,6 @@ const finishedRoutes = require("./finished");
 const rawMaterialsRoutes = require("./raw-materials");
 const semiFinishedRoutes = require("./semi-finished");
 const skusRoutes = require("./skus");
-const uomConversionsRoutes = require("./uom-conversions");
 
 const router = express.Router();
 
@@ -11,6 +10,5 @@ router.use("/finished", finishedRoutes);
 router.use("/raw-materials", rawMaterialsRoutes);
 router.use("/semi-finished", semiFinishedRoutes);
 router.use("/skus", skusRoutes);
-router.use("/uom-conversions", uomConversionsRoutes);
 
 module.exports = router;

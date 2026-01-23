@@ -1,7 +1,7 @@
 const express = require("express");
-const knex = require("../../db/knex");
-const { HttpError } = require("../../middleware/errors/http-error");
-const { parseCookies, setCookie } = require("../../middleware/utils/cookies");
+const knex = require("../../../db/knex");
+const { HttpError } = require("../../../middleware/errors/http-error");
+const { parseCookies, setCookie } = require("../../../middleware/utils/cookies");
 
 const router = express.Router();
 
@@ -12,7 +12,155 @@ const toCode = (value) =>
     .replace(/^_+|_+$/g, "")
     .slice(0, 50);
 
+// Page metadata drives form fields, table columns, and DB mapping.
 const BASIC_INFO_PAGES = {
+  units: {
+    titleKey: "units",
+    description: "Define the units of measure used across items, vouchers, and stock.",
+    table: "erp.uom",
+    translateMode: "translate",
+    columns: [
+      { key: "id", label: "ID" },
+      { key: "code", label: "Code" },
+      { key: "name", label: "Name" },
+      { key: "name_ur", label: "Name (Urdu)" },
+      { key: "is_active", label: "Active", type: "boolean" },
+      { key: "created_by_name", label: "Created By" },
+      { key: "created_at", label: "Created At" },
+    ],
+    fields: [
+      {
+        name: "code",
+        label: "Code",
+        placeholder: "PCS, DOZEN, KG",
+        required: true,
+      },
+      {
+        name: "name",
+        label: "Name",
+        placeholder: "Pieces, Dozen, Kilogram",
+        required: true,
+      },
+      {
+        name: "name_ur",
+        label: "Name (Urdu)",
+        placeholder: "Urdu name",
+        required: true,
+      },
+    ],
+  },
+  sizes: {
+    titleKey: "sizes",
+    description: "Size labels used in variants (e.g., 7/10, 9/10).",
+    table: "erp.sizes",
+    translateMode: "translate",
+    columns: [
+      { key: "id", label: "ID" },
+      { key: "name", label: "Name" },
+      { key: "name_ur", label: "Name (Urdu)" },
+      { key: "is_active", label: "Active", type: "boolean" },
+      { key: "created_by_name", label: "Created By" },
+      { key: "created_at", label: "Created At" },
+    ],
+    fields: [
+      {
+        name: "name",
+        label: "Size",
+        placeholder: "7/10, 40, 41",
+        required: true,
+      },
+      {
+        name: "name_ur",
+        label: "Name (Urdu)",
+        placeholder: "Urdu name",
+        required: true,
+      },
+    ],
+  },
+  colors: {
+    titleKey: "colors",
+    description: "Color options for raw materials and finished variants.",
+    table: "erp.colors",
+    translateMode: "translate",
+    columns: [
+      { key: "id", label: "ID" },
+      { key: "name", label: "Name" },
+      { key: "name_ur", label: "Name (Urdu)" },
+      { key: "is_active", label: "Active", type: "boolean" },
+      { key: "created_by_name", label: "Created By" },
+      { key: "created_at", label: "Created At" },
+    ],
+    fields: [
+      {
+        name: "name",
+        label: "Color",
+        placeholder: "Black, White, Mix",
+        required: true,
+      },
+      {
+        name: "name_ur",
+        label: "Name (Urdu)",
+        placeholder: "Urdu name",
+        required: true,
+      },
+    ],
+  },
+  grades: {
+    titleKey: "grades",
+    description: "Quality grades for product variants.",
+    table: "erp.grades",
+    translateMode: "transliterate",
+    columns: [
+      { key: "id", label: "ID" },
+      { key: "name", label: "Name" },
+      { key: "name_ur", label: "Name (Urdu)" },
+      { key: "is_active", label: "Active", type: "boolean" },
+      { key: "created_by_name", label: "Created By" },
+      { key: "created_at", label: "Created At" },
+    ],
+    fields: [
+      {
+        name: "name",
+        label: "Grade",
+        placeholder: "A, B, C",
+        required: true,
+      },
+      {
+        name: "name_ur",
+        label: "Name (Urdu)",
+        placeholder: "Urdu name",
+        required: true,
+      },
+    ],
+  },
+  "packing-types": {
+    titleKey: "packing_types",
+    description: "Packaging types for packed stock and variant rules.",
+    table: "erp.packing_types",
+    translateMode: "transliterate",
+    columns: [
+      { key: "id", label: "ID" },
+      { key: "name", label: "Name" },
+      { key: "name_ur", label: "Name (Urdu)" },
+      { key: "is_active", label: "Active", type: "boolean" },
+      { key: "created_by_name", label: "Created By" },
+      { key: "created_at", label: "Created At" },
+    ],
+    fields: [
+      {
+        name: "name",
+        label: "Packing Type",
+        placeholder: "Thaili, Box, Carton",
+        required: true,
+      },
+      {
+        name: "name_ur",
+        label: "Name (Urdu)",
+        placeholder: "Urdu name",
+        required: true,
+      },
+    ],
+  },
   groups: {
     titleKey: "groups",
     description: "Product group visibility for raw, semi-finished, and finished items.",
@@ -294,6 +442,7 @@ const BASIC_INFO_PAGES = {
 
 const getPageConfig = (key) => BASIC_INFO_PAGES[key];
 
+// Resolve dynamic select options (e.g., group lists) before rendering.
 const hydratePage = async (page) => {
   const fields = [];
   for (const field of page.fields) {
@@ -328,6 +477,7 @@ const renderPage = (req, res, view, page, extra = {}) =>
     ...extra,
   });
 
+// Build the list query with optional joins and item-type aggregation.
 const fetchRows = (page) => {
   let query = knex({ t: page.table }).leftJoin({ u: "erp.users" }, "t.created_by", "u.id").leftJoin({ uu: "erp.users" }, "t.updated_by", "uu.id");
   if (page.joins) {
@@ -360,12 +510,17 @@ const fetchRows = (page) => {
 };
 
 const ROUTE_MAP = {
-  groups: "/groups/products/product-groups",
+  units: "/units",
+  sizes: "/sizes",
+  colors: "/colors",
+  grades: "/grades",
+  "packing-types": "/packing-types",
+  groups: "/product-groups",
   "product-subgroups": "/product-subgroups",
-  "product-types": "/groups/products/product-types",
-  "party-groups": "/groups/party-groups",
-  "account-groups": "/groups/account-groups",
-  departments: "/groups/departments",
+  "product-types": "/product-types",
+  "party-groups": "/party-groups",
+  "account-groups": "/account-groups",
+  departments: "/departments",
 };
 
 const listHandler = (type) => async (req, res, next) => {
@@ -414,6 +569,7 @@ const newHandler = (type) => async (req, res, next) => {
   }
 };
 
+// Normalize form payloads to consistent shapes for inserts/updates.
 const buildValues = (page, body) =>
   page.fields.reduce((acc, field) => {
     if (field.type === "checkbox") {
@@ -459,6 +615,7 @@ const readFlash = (req, res, path) => {
   return payload;
 };
 
+// Store a short-lived flash so modal + errors re-open after redirect.
 const renderIndexError = async (req, res, page, values, error, modalMode, basePath, type) => {
   const payload = { type, values, error, modalMode };
   setCookie(res, FLASH_COOKIE, JSON.stringify(payload), {
@@ -493,6 +650,26 @@ const createHandler = (type) => async (req, res, next) => {
   }
 
   try {
+    if (page.table === "erp.uom") {
+      const codeValue = (values.code || "").trim();
+      if (codeValue) {
+        const existing = await knex(page.table)
+          .whereRaw("lower(code) = ?", [codeValue.toLowerCase()])
+          .first();
+        if (existing) {
+          return renderIndexError(
+            req,
+            res,
+            page,
+            values,
+            res.locals.t("unit_code_exists"),
+            "create",
+            basePath,
+            type
+          );
+        }
+      }
+    }
     if (page.itemTypeMap) {
       const { item_types: itemTypes = [], ...rest } = values;
       if (!itemTypes.length) {
@@ -508,6 +685,7 @@ const createHandler = (type) => async (req, res, next) => {
         );
       }
       await knex.transaction(async (trx) => {
+        // Insert the main record, then map each selected item type.
         const [row] = await trx(page.table)
           .insert({
             ...rest,
@@ -575,6 +753,28 @@ const updateHandler = (type) => async (req, res, next) => {
   }
 
   try {
+    if (page.table === "erp.uom") {
+      const existing = await knex(page.table).select("code").where({ id }).first();
+      if (existing && existing.code !== values.code) {
+        const usedInItems = await knex("erp.items").where({ base_uom_id: id }).first();
+        const usedInConversions = await knex("erp.uom_conversions")
+          .where({ from_uom_id: id })
+          .orWhere({ to_uom_id: id })
+          .first();
+        if (usedInItems || usedInConversions) {
+          return renderIndexError(
+            req,
+            res,
+            page,
+            values,
+            res.locals.t("error_unit_code_locked"),
+            "edit",
+            basePath,
+            type
+          );
+        }
+      }
+    }
     if (page.itemTypeMap) {
       const { item_types: itemTypes = [], ...rest } = values;
       if (!itemTypes.length) {
@@ -590,6 +790,7 @@ const updateHandler = (type) => async (req, res, next) => {
         );
       }
       await knex.transaction(async (trx) => {
+        // Update the main row, then replace item type mappings.
         await trx(page.table)
           .where({ id })
           .update({
@@ -703,8 +904,23 @@ Object.entries(ROUTE_MAP).forEach(([type, path]) => {
   router.post(`${path}/:id/delete`, deleteHandler(type));
 });
 
+router.get("/groups/products/product-groups", (req, res) => {
+  res.redirect(`${req.baseUrl}${ROUTE_MAP.groups}`);
+});
 router.get("/groups/products/product-subgroups", (req, res) => {
   res.redirect(`${req.baseUrl}${ROUTE_MAP["product-subgroups"]}`);
+});
+router.get("/groups/products/product-types", (req, res) => {
+  res.redirect(`${req.baseUrl}${ROUTE_MAP["product-types"]}`);
+});
+router.get("/groups/party-groups", (req, res) => {
+  res.redirect(`${req.baseUrl}${ROUTE_MAP["party-groups"]}`);
+});
+router.get("/groups/account-groups", (req, res) => {
+  res.redirect(`${req.baseUrl}${ROUTE_MAP["account-groups"]}`);
+});
+router.get("/groups/departments", (req, res) => {
+  res.redirect(`${req.baseUrl}${ROUTE_MAP.departments}`);
 });
 
 router.get("/:type", (req, res, next) => {

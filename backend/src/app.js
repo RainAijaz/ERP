@@ -2,7 +2,7 @@ const path = require("path");
 const express = require("express");
 require("dotenv").config();
 
-const uiRoutes = require("./routes/ui");
+const uiRoutes = require("./routes/ui-routes");
 
 const requestId = require("./middleware/core/request-id");
 const locale = require("./middleware/core/locale");

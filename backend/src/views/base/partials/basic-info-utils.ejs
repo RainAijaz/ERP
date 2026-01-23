@@ -37,6 +37,7 @@
 
 <script>
   (function () {
+    // Wire up modal, filters, sorting, export, and table actions.
     const modal = document.querySelector("[data-modal]");
     const modalForm = document.querySelector("[data-modal-form]");
     const modalTitle = document.querySelector("[data-modal-title]");
@@ -83,6 +84,7 @@
 
     const openModal = (mode, data) => {
       const payload = data || {};
+      // Populate modal fields from row data (or defaults on create).
       modal.classList.remove("hidden");
       modal.classList.add("flex");
       modal.dataset.mode = mode;
@@ -237,6 +239,7 @@
     };
 
     const applyFilters = () => {
+      // Filter, sort, and paginate rows in-memory for fast UI updates.
       const query = ((searchInput && searchInput.value) || "").trim().toLowerCase();
       const status = (statusFilter && statusFilter.value) || "all";
       const rows = getRows();
@@ -298,6 +301,7 @@
         .trim();
 
     const downloadCsv = () => {
+      // Export only the currently visible rows (respects filters).
       const headers = Array.from(document.querySelectorAll("thead th"))
         .map((th) => cleanText(th.textContent))
         .filter((label) => label && label.toLowerCase() !== "actions");
@@ -533,6 +537,7 @@
     applyFilters();
 
     const autoOpen = modal && modal.dataset.autoOpen === "true";
+    // Re-open modal after server-side validation errors.
     const autoMode = modal && modal.dataset.modalMode ? modal.dataset.modalMode : "create";
     if (autoOpen) {
       openModal(autoMode);

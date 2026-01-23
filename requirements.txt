@@ -1,0 +1,1005 @@
+ERP FOR A SHOE MANUFACTURING COMPANY
+(MULTIPLE BRANCHES)
+TECHNOLOGIES:
+NODE.JS
+EXPRESS
+EJS
+POSTGRESQL (KNEX)
+TAILWIND
+SPECIFICATIONS
+IMPORTANT:
+1.	UI should be branch specific
+2.	User should be able to use the website on phones along with laptop / desktop without compromise on usability and user-interface 
+3.	The website could be translated into URDU - FULLY LOCALIZE ALL PAGES
+4.	If audit freeze is used, no voucher could be edited/created/deleted before that time period!
+5.	There should be an option for date range for all reports
+1. ADMINISTRATION
+1.0 Branches (add/edit a branch)
+1.1 User Management
+•	Add / Edit / Disable User
+o	Username
+o	Password (encrypted)
+o	User Type (Admin, Manager, Storekeeper, Salesman, Accounts, Production)
+o	Assigned Branch(es) (single or multiple)
+o	Status (Active / Inactive)
+Rule:
+User can only view & operate data of assigned branches.
+1.2 User Rights 
+•	Permission control at:
+o	Module level
+o	Screen level
+o	Voucher level
+o	Report level
+•	Rights:
+o	View
+o	Create
+o	Edit
+o	Delete
+o	Approve (for addition/editing of products, party, account, labour rates information)
+1.3	Pending Approvals
+Shows the list of pending approvals along with option to accept or reject.
+1.4	Activity Log 
+•	Logs:
+o	User
+o	VOUCHER TYPE/ INFORMATION TYPE
+o	IF VOUCHER THEN VOUCHER NO
+o	Action
+o	Date / Time
+o	IP (optional)
+This applies to:
+•	Rate changes
+•	Stock adjustments
+•	Voucher edits/deletes/creates
+•	Permissions changes
+NOTE: FOR ALL DATA ENTRIES, CREATED BY AND CREATED ON WILL BE ADDED BY DEFAULT IN VOUCHERS EG PRODUCT ENTRIES OR VOUCHER ENTRIES. ALSO, 
+•	Add role templates (prebuilt roles: Storekeeper, Sales, Accounts…) so rights are not assigned manually every time.
+•	Add 2FA / password policy (min length, expiry optional), and session timeout.
+•	Add maker-checker rules (e.g., “creator can’t approve own change” for rates/stock adjustments).
+
+2. MASTER DATA ( BASE SETUP)
+2.1 Accounts & Parties
+Account Information
+•	Code
+•	Account Name
+•	Account Type (Expense / Income / Asset / Liability / Capital)
+•	Group (Electricity, Rent, Tax, Salary, Fuel etc.)
+•	Branch/es (Accounts could be allocated to multiple branches or a single branch as decided by the user on time of creation. )
+Party Information
+•	Code
+•	Name
+•	Party Type (Customer / Supplier )
+•	Address
+•	Phone 1 / Phone 2
+•	City
+•	Party Group
+•	Credit Allowed (yes/no)
+•	Credit Limit
+NOTE: A CUSTOMER MUST EXIST HERE TO CREATE A SALES VOUCHER (LOAN SALE) AND SALES ORDER (PENDING PAYMENT)
+ 2.2 Products
+•	BASIC INFORMATION 
+o	Units (FINISHED/SEMI-FINISHED/RAW-MATERIAL)
+o	Groups (FINISHED/SEMI-FINISHED/RAW-MATERIAL)
+o	Sizes 
+o	Colors 
+o	Grades
+o	Packing Types
+o	Global UOM + Packing Status Rule (one-time definition): Global Rule: Unit and Quantity by Stock Status -> For finished/semi-finished SKUs, stock status determines unit: PACKED ⇒ Unit = DOZEN (locked), LOOSE ⇒ Unit = PAIR (locked). Quantity validation: If PACKED: Quantity must be in increments of 0.5 and Quantity × 12 must be an integer. If LOOSE: Quantity must be an integer. System stores TotalPairs as an integer for all postings, calculated as: PACKED: TotalPairs = Quantity × 12, LOOSE: TotalPairs = Quantity - This makes it global and reusable.
+•	Raw Materials
+Field	Description
+Code	Unique raw material code
+Name	Material name (Leather, EVA, Thread, etc.)
+Group	Category of material
+Unit	Unit of measurement (Meter / Pair / Kg)
+Colors	Black/Mix (for EVA dana – different colors have different rates)
+Purchase Rate	Rate for each color per unit (must ask for approval from admin before changing it by specifying new and old value)(use it for purchase vouchers only)
+Average Purchase Rate	System-calculated weighted average (USE WEIGHTED AVERAGE COST - FREEZE)
+Minimum Stock Level	Stock alert threshold
+
+•	Semi-Finished Products
+Field	Description
+Code	Unique semi-finished item code
+Name	700 EVA SLIPPER 
+Sizes	7/10,9/10 etc
+Group	Category of semi-finished item (eg UPPER/STEP) 
+Unit	Unit of measurement (Pair / Dozen)
+Usage	Can be used in multiple finished products
+
+•	Finished Products
+Article Information
+Field	Description
+Article Code	Unique article code (e.g., 700)
+Article Name	Product name (e.g., EVA Slipper)
+Group	Category (EVA/PU)
+Sub Group	Eg Ballman, Boots etc
+Base Unit	Pair / Dozen
+Category	Males/Females/Kids
+Variant Information
+Field	Description
+Variant ID	Unique ID for size/grade/color combination
+Article Code	Parent article
+Size	Size or size range
+Grade	A / B / C etc.
+Color	Optional
+Packing Type	Thaili / Box / etc.
+Sale Rate	Sale price for this variant (must ask for approval from admin before changing/editing by specifying new and old value)
+Active	Enable / disable variant
+
+•	SKU Table
+•	Field	Description
+SKU Code	System-generated unique SKU for variant (e.g., 700-EVA-KIDZ-1/3-A)
+Variant ID	Linked variant
+Barcode	Optional, can be added later
+Active	Enable / disable SKU
+             PS- Barcode scanning can be integrated later — no need to block ERP now. 
+NOTE: Audit Trail log. If a user changes a "Sale Rate" from 500 to 450, the system must log User X changed Rate on [Date/Time] 
+ALSO, global SKUs but branch stock is separate. 
+2.3 BOM (for finished + semi finished)
+2.3.1 CREATE / MAINTAIN BOM
+A. BOM HEADER (System-Controlled + User Inputs)
+Field	Behavior
+BOM No	Auto-generated, system-controlled, locked
+Article Name	User selects
+Level	User selects: Finished / Semi-Finished
+Output Quantity	User enters numeric value
+Output Unit	System / dropdown (PCS / Dozen / Kg etc.)
+Status	System-controlled: Draft / Pending / Approved
+Version	System-generated (V1, V2, V3…), locked
+Created By	System-controlled
+Creation Date	System-controlled
+Approved By	System-controlled
+Approval Date	System-controlled
+
+B. LOAD / VERSION BEHAVIOR (VERY IMPORTANT)
+At the top of the screen, after Article + Level selection, show these buttons:
+1️⃣ LOAD
+When user clicks LOAD, system behaves as follows:
+Existing BOM State	What LOAD Does
+Draft exists	Load Draft in EDIT MODE
+Pending exists (no draft)	Load Pending in VIEW MODE 
+Only Approved exists	Load Approved in VIEW MODE
+⚠️ LOAD never edits an Approved BOM
+2️⃣ CREATE NEW VERSION
+Visible only when an Approved BOM exists.
+•	Copies latest Approved BOM
+•	Creates new Draft version (V+1)
+•	Opens in EDIT MODE
+•	Old Approved version remains locked forever
+C. ACTION BUTTONS (TOP-RIGHT OF HEADER)
+Button	Visibility	Action
+Save Draft	Draft only	Saves without locking
+Send for Approval	Draft only	Status → Pending
+Approve / Reject	Admin only	Locks BOM
+
+D. HORIZONTAL NAV BAR (BOM DETAILS)
+Tabs appear only when BOM is in Draft or View mode.
+1️⃣ RAW MATERIALS TAB
+Rows contain:
+•	Code (auto)
+•	Raw Material (dropdown)
+•	Color (eg. EVA Dana – black/mix)
+•	Department ( Dropdown – Select One - Mandatory)
+•	Quantity
+•	Unit (auto from material master, locked)
+•	Normal Loss %
+📌 Quantity = Base quantity (loss applied during costing)
+2️⃣ SEMI-FINISHED PRODUCTS TAB
+Rules enforced:
+•	Only items with Approved BOM appear in dropdown
+•	Semi-finished BOM version reference is stored automatically
+Rows contain:
+•	Code (auto)
+•	Semi-Finished Item (dropdown)
+•	Required Quantity
+•	Unit (locked)
+•	Referenced BOM Version (hidden/system)
+🚫 Cannot save BOM if selected semi-finished item has no approved BOM
+3️⃣ LABOURS TAB
+Rows contain:
+•	Size applicability (All / Specific - Dropdown)
+•	Department ( Dropdown – Select One - Mandatory)
+•	Labour Name (dropdown)
+•	Rate (per dozen / per piece)
+•	Total (auto-calculated based on output quantity in header)
+🚫 Total is never user-editable
+4️⃣ VARIANT RULES TAB
+
+Variant dimensions (dropdowns):
+•	Size: All / Specific
+•	Packing: All/ Carton / Thaili / etc.
+•	Color: All / Specific
+Rule actions (one row per rule):
+•	Action Type:
+o	Add Raw Material
+o	Remove Raw Material
+o	Replace Raw Material
+o	Adjust Quantity (% / Fixed)
+o	Change Loss %
+•	Material Scope:
+o	All Materials
+o	Material Group
+o	Single Material
+•	New Quantity / % / Loss value
+2.3.2 BOM Reports
+1)	BOM COST AND MARGIN REGISTER
+Column Name	Explanation / Source
+Article Code	Auto-fetched from Item Master
+Article Name	Finished Product Name from Item Master
+Product Level	Finished/Semi-Finished
+Size if any	All sizes variants for the article
+Color if any	All color variants for the article
+Packaging if any	All packaging variants for the article
+BOM Version 	Latest Approved BOM version only (V1/V2/V3 etc)
+Labour Cost per Unit	Auto-calculated; labour component extracted from BOM
+Raw Material Cost / Unit	Raw material consumption cost from BOM
+Semi-Finished Cost / Unit	Cost of semi-finished inputs used
+Total Manufacturing Cost / Unit 	As per selected BOM - Raw + Semi-Finished + Labour (includes packaging cost implicitly when packaging-specific BOM exists)
+Selling Price / Unit	Fetched from Price List / Product Information (if semi-finished then same as manufacturing cost)
+Profit per Unit	Selling Price − Total Manufacturing Cost
+Profit Margin %	(Profit ÷ Selling Price) × 100
+
+📌 Only APPROVED BOMs appear in this report
+Filters (very important)
+•	Article (single / group/ category/ all by default)
+•	Product Level (finished/semi-finished)
+•	Packing 
+•	Sizes
+•	Profit Range (min–max)
+•	Profit Margin %
+
+2)	Pending BOM Approval & Change Log — Structure
+Column	Explanation
+Article Code	From Item Master
+Article Name	Product Name
+Product Level	Finished / Semi-Finished
+Old BOM Version	Last Approved Version Number
+New BOM Version	Pending Version Number
+Change Type	Material / Labour / Semi-Finished
+Change Summary	Auto-generated text (e.g. “Raw Cotton Qty +5%”)
+Old BOM Cost / Unit	From last approved BOM
+New BOM Cost / Unit	From pending BOM
+Cost Difference	New − Old
+Cost Impact %	(Difference ÷ Old Cost) × 100
+Requested By	User
+Requested Date	Date
+Approval Status	Pending
+Approval Action	Approve / Reject
+
+Filter:  Level (finished/semi-finished)
+3)	BOM VERSION HISTORY REPORT (AUDIT REPORT) “What changed, when, and who approved it?”
+Column Name	Explanation / Source
+Article Code	From Item Master
+Article Name	From Item Master
+Product Level	Finished / Semi-Finished
+Variant – Size	Size variant (if applicable)
+Variant – Color	Color variant (if applicable)
+Variant – Packaging	Packaging variant (if applicable)
+BOM Version	Version number (V1, V2, V3…)
+Previous BOM Version	Immediate previous version (for reference)
+Change Summary	Auto-generated aggregated summary for this version
+Old BOM Cost / Unit	Cost per unit from previous approved version
+New BOM Cost / Unit	Cost per unit for this version
+Cost Difference	New − Old
+Cost Impact %	(Difference ÷ Old Cost) × 100
+Created By	User who created this version
+Approved By	Approving authority
+Approval Date	Approval timestamp
+
+🎯 Filters
+•	Article (All / Single / Group / Sub-Group)
+•	Product Level
+•	Date Range
+•	Status (optional, admin-only)
+4)	SEMI-FINISHED DEPENDENCY REPORT “Where is this semi-finished item used?”
+Shows:
+•	Semi-finished item
+•	All finished BOMs using it
+•	Referenced BOM version
+Note: All products must be approved from admin before showing the changes to everybody else. Keep the changes in pending approval list!
+
+3. HR & PAYROLL
+3.1 Employees
+3.1.1 Add Employee
+•	Code
+•	Name
+•	CNIC
+•	Phone Number
+•	Department
+•	Designation/Role
+•	Payroll Type (monthly/daily/piece-rate/multiple)
+•	Basic Salary
+•	Branch/Branches 
+•	Status (Active/Inactive)
+3.1.2	Add Sales Commission
+A) Commission Rule Header
+•	Salesman (select through employees dropdown)
+•	Creation Date
+B) Commission Rule Lines (per row)
+Fields per row:
+•	Apply On (dropdown):
+o	Article (SKU) ✅
+o	Product Sub-Group
+o	Product Group
+o	All Products (Flat)
+•	Item Selector (dropdown/search)
+(Shows SKU / Sub-group / Group based on “Apply On”; blank if Flat)
+•	Commission Basis (dropdown):
+o	% of Net Sales ✅ (recommended default)
+o	% of Gross Margin (advanced)
+o	Fixed Amount per Unit (per invoice line)
+o	Fixed Amount per Invoice
+•	Value Type (dropdown): % / Fixed
+•	Value (e.g., 2.5% or Rs 80)
+•	Reverse on returns? (Yes/No – By Default yes)”
+BY DEFAULT, FOR EACH SALESMAN, THE MORE SPECIFIC COMMISSION WOULD BE APPLIED EG PRODUCT PRIORITY>SUB-GROUP>GROUP>FLAT-RATE. NEW VOUCHERS OVERRIDES OLDER ONES!
+3.1.3 Add Allowances
+Fields per row:
+•	Allowance Type (dropdown)
+(House, Conveyance, Mobile, Food, Attendance, Shift, etc.)
+•	Amount Type (Fixed / % of Basic)
+•	Amount (e.g., 8000 or 10%)
+•	Frequency (Monthly / Daily) (optional but useful)
+•	Taxable? (Yes/No) (optional for now, but recommended)
+3.2 Labours
+3.2.1 Add Labour
+•	Code
+•	Name 
+•	CNIC
+•	Production category (finished/semi-finished) 
+•	Department
+•	Phone Number
+•	Branch/Branches
+•	Status (Active/Inactive)
+3.2.2 Labour Rates Setup
+Header 
+•	Labour Selection Dropdown (name/all)
+•	Department (cutting/stitching etc)
+•	Created on
+•	Created By
+Fields per rate rule:
+•	Apply On (Product / Sub-Group / Group / Flat)
+•	Item Selector (SKU / Sub-Group / Group; blank if Flat)
+•	Rate Type (Per Dozen / Per Pair)(
+•	Rate Value (e.g., Rs 30 per pair)
+4. FINANCIAL
+Account Group = WHAT type of cost
+Department = WHERE / WHY the cost happened
+DEPARTMENTS: 
+1)	Admin (salaries, rent, electricity, stationary)
+2)	SALES (sales salaries, commissions, travel) 
+3)	Marketing (video, ads, banners, influencers, customers food)
+4)	DISTRIBUTION/LOGISTICS (Couriers Charger, Freight to customers)
+5)	IT/SYSTEMS (Internet bill/ ERP subscription, Cameras etc)
+6)	HR/WELFARE (staff welfare, HR staff salaries, attendance system maintenance, medical expenses, staff lunches, washroom supplies, office tea & water - HR expenses are the cost of managing people)
+PRODUCTION-RELATED DEPARTMENTS:
+1)	STITCHING
+2)	EMBROIDERY
+3)	PRINTING
+4)	LASTING/MACHINE
+5)	Upper
+6)	Sole 
+7)	PACKAGING
+8)	FACTORY/MACHINE MAINTENANCE
+9)	PRODUCTION SUPERVISION
+1)	Activity
+•	Cash Voucher (in Header – add VR No, date, account name, any description) (in rows account/party/labor/employee name, description, cash receipt, cash payment, department)
+•	Journal Voucher  (in Header – add VR No, date, any description) ( in each row - account name, VR Type (opening/accrual/adjustment/closing) description, department, debit, credit)
+•	Bank Voucher ( in each row – account name, reference no/ID, description, bank payment, bank receipt, status (pending/cleared/failed) ,clearing date (auto-filled when admin confirms))
+2)	Reports
+•	Daily Control and Cash Flow: 
+o	Cash Book (Day by Day cash receipts and payments, Know exact cash on hand)
+o	Cash Voucher Register (find who paid whom, when and why)
+o	Bank Transactions Report (showing confirmed/pending/failed transactions for each/all accounts and for each/some/all branches within a specific date range)
+•	Expenses and Cost Control - “Where is money being spent, and why?”
+o	Expense Analysis Report (Expenses broken by department/account groups (Admin, Stitching, Cutting, etc.) )( OPTIONS – Accounts Group View/ Department View/ Detailed - Department->Account Group -> Amount)
+o	Production Over-Head Cost Analysis (Maintenance, supervision, utilities by department – Identifies inefficient departments)( OPTIONS – Accounts Group View/ Department View/ Detailed - Department->Account Group -> Amount)
+o	Non-Production (Period) Expense  Analysis(“What costs did we incur this month that are NOT part of product cost?” – it includes expenses from non-production departments – SHOWS TRUE BUSINESS OVERHEAD)(OPTIONS – Accounts Group View/ Department View/ Detailed - Department->Account Group -> Amount)
+o	Accrued Expenses Report (Expenses incurred but not yet paid – Account Group as the primary grouping – option to expend/detail view)
+•	Profitability Reports
+o	Profit-Wise Profitability Analysis (report gives option to deduct only BOM cost or Labour cost or commission or production-overhead or all or multiple)
+o	Profit and Loss Statement (monthly/weekly/daily – use supplier balances, finished stock cost, raw material stock cost, semi-finished stock cost, capital, sale, expenses )
+•	Accounting & Audit
+o	Journal Voucher Register (All journal voucher types)
+o	Account Activity Ledger (Full movement of one account)  (SELECT ACCOUNT NAME, BRANCH OR ALL, DATE RANGE, TYPE(DETAIL/SUMMARY) -> ON LOAD -> TABLE-> DATE, VR TYPE (CASH SALE/CV ETC), DEBIT, CREDIT, BALANCE (enable to lock certain accounts
+o	Trial Balance Summary  (credit must equal debit, asks “Is my accounting equation balanced?)
+o	Payroll & Wage Balance Report (what is each employee/labors current balance – salary given/ not given – option to select employees/labors/both)
+3)	Audit Freeze
+A simple screen:
+Period Control
+•	Branch: (Current / All)
+•	Period: (Month/Year)
+•	Status:
+o	Open ✅
+o	Period Locked 🔒
+o	Audit Frozen 🧊 (strong lock)
+Buttons:
+•	Lock Period
+•	Freeze Period
+•	(Unfreeze only by super-admin + reason)
+
+5. PURCHASE
+1)	Activity
+•	Purchase Order 
+•	Purchase Invoice (option to select purchase by cash/loan – if cash purchase then which account paid the price selection)(reference the purchase order if any) (in each row-> raw material, unit, quantity, rate, total)
+•	Requirement for Purchase Order (require PO for invoices > a certain amount, for certain suppliers, for certain raw materials etc. )
+•	Purchase Return (date/VR No./ Book No./Reason/Select-Party)(Per-Row -> product, unit, quantity, rate, and amount)
+2)	Reports
+•	Supplier Balances Report
+•	Supplier Ledger Report
+•	Purchase Report (options: date range,  select supplier/all dropdown, select raw-material/all/some, select raw material group/all, branch, report type (detail/summary), order by(invoice/product/ party)
+•	Purchase Return Report  (options: date range,  select supplier/all dropdown, select raw-material/all/some, select raw material group/all, branch, report type (detail/summary), order by(invoice/product/ party)
+6. PRODUCTION - Completion-based production model 
+1)	Activity
+•	Semi-Finished Production (once production is completed) (when production is added in system both consumption and general labor vouchers should be automatically created using BOM)
+•	Finished Production (once production is completed (when production is added in system both consumption and general labor vouchers should be automatically created using BOM)
+Fields
+•	Article / SKU
+•	Status: PACKED / LOOSE
+•	Unit (PAIR/DOZEN – AUTO – IF PACKED THEN DOZEN OTHERWISE PAIR)
+•	Quantity
+o	If PACKED: allow only multiples of 0.5 (…, 0.5, 1.0, 1.5, 2.0 …)
+o	If LOOSE: allow integers only
+•	Total Pairs (system-calculated, stored as integer). If PACKED:
+	TotalPairs = Quantity × 12 (must result in whole number, validation required)
+	If LOOSE:
+	TotalPairs = Quantity
+•	Department Completion Voucher (DCV): 
+A) wip_dept_balance (fast current balance)
+•	Key: (branch_id, sku_id, dept_id)
+Fields:
+•	qty_pairs (how many pairs are completed for this dept and waiting to become FG)
+•	cost_value (confidential; stored but not shown to workers)
+•	last_activity_date
+B) wip_dept_ledger (audit trail)
+Every WIP completion adds “IN”. Every FG posting consumes “OUT”.
+•	This is your proof + history, without needing batches.
+3) How WIP Voucher works in your model (completion-only)
+WIP Voucher = “Department Completion Voucher”
+•	Worker enters:
+•	SKU
+•	Department
+•	Completed Qty (pairs)
+•	Labour
+System does (backend):
+•	Consumes only that department’s BOM RM for that qty
+Cr Inventory (RM/SFG) at WAC
+Dr Production Clearing
+•	Books only that department’s labour
+Cr Wages Payable
+Dr Production Clearing
+•	Adds to WIP dept pool
+o	wip_dept_balance.qty_pairs += completed_qty
+o	wip_dept_balance.cost_value += dept_cost_for_that_qty
+ledger “IN” row created
+Workers never see cost. Cost stays in DB.
+4) How Finished Production works later (the “skip and subtract” you want)
+When FG is posted for FG_qty (pairs), system loops each BOM department. For each dept:
+•	available = wip_dept_balance.qty_pairs
+•	use = min(FG_qty, available)
+•	If use > 0 (already completed earlier)
+✅ Don’t deduct RM/labour again.
+Just reduce the pool:
+•	wip_dept_balance.qty_pairs -= use
+•	wip_dept_balance.cost_value -= allocated_cost(use) (FIFO or weighted avg behind the scenes)
+•	ledger “OUT” row created
+          If FG_qty > available (shortfall), for the remaining quantity (FG_qty - available):
+•	do normal BOM consumption + labour posting for that dept (because it wasn’t completed earlier)
+Finally
+•	Capitalize FG:
+•	Dr Inventory – FG
+•	Cr Production Clearing
+(total cost = costs newly incurred + costs pulled from pools)
+That’s exactly your rule:
+o	If FG < stitched qty → stitched balance remains
+o	If FG > stitched qty → you’ll consume all stitched balance and do extra stitching cost for remaining
+•	General Labour Production (Header- VR No., Date, Labour, Department)(Row:  Article Code, Name, unit, quantity, rate, amount)  (when the production is added – this voucher should be created automatically so all the Labour related costs for the production show in labor’s ledgers – no option to add manually)
+•	Production Planning (plan production for future in advance – both finished and semi-finished – all the raw material required will be shown in pending consumption report)
+•	Consumption Voucher (should be automatically added for each production voucher – show automatic or added manually)
+•	Abnormal Loss Voucher 
+o	Keep one voucher type for losses, but make “Loss Type” a required dropdown at line-level: RM_LOSS / SFG_LOSS / FG_LOSS / DVC_ABANDON (work completed earlier but will not convert to FG). This avoids “complete voucher write-off” confusion because every line is its own target.
+o	 Voucher header (same style as other vouchers): VR No (auto), Date, Branch, Status (Draft/Pending/Approved), Created By/On, Approved By/On (only if you use approvals), Reason Code (header), Notes (header). Also, decide loss type -> Loss Type (RM_LOSS / SFG_LOSS / FG_LOSS / DVC_ABANDON)
+o	 Voucher lines (each line is independent):
+•	SKU / Item (RM/SFG/FG or Finished SKU depending on line type)
+•	Department (only required for DVC_ABANDON;)
+•	Qty (pairs / kg / meter as per item UOM rules)
+o	Very important: DVC_ABANDON is ALWAYS “per SKU and per department ”, and a single voucher can contain multiple SKUs/lines. No “write-off the whole voucher” concept.
+o	 Hidden backend pool (not shown to workers) to support delayed finishing without any Batch ID:
+•	Maintain a table like dvc_pending_pool per (branch_id, sku_id, department_id) with:
+o	pending_qty_pairs
+o	pending_cost_amount
+o	last_updated_at
+•	This pool increases when you post the DVC/WIP completion voucher for that department, and decreases when Finished Production consumes it later.
+o	Validation rules:
+•	For DVC_ABANDON lines: abandon_qty_pairs <= pending_qty_pairs in dvc_pending_pool for that exact (branch, sku, department).
+•	For RM/SFG/FG loss: loss_qty <= current_stock_qty (unless you allow negative stock, but you shouldn’t).
+•	No cost fields are visible on screen for any worker role; costs are calculated + posted in backend only.
+o	Costing rule (backend only):
+•	Always use cost (WAC or your chosen method) for GL + stock value. Never selling rate.
+•	For DVC_ABANDON, calculate a unit cost from the pool:
+o	unit_cost = pending_cost_amount / pending_qty_pairs (guard against divide-by-zero)
+o	cost_to_clear = unit_cost * abandon_qty_pairs
+o	Reduce the pool by the same qty and cost.
+o	Accounting postings (summed from lines, but computed line-wise):
+•	RM_LOSS / SFG_LOSS / FG_LOSS:
+o	Dr Abnormal Loss Expense
+o	Cr Inventory (RM/SFG/FG) (at cost/WAC)
+o	Stock ledger decreases.
+•	DVC_ABANDON (work already completed earlier, never becomes FG):
+o	Dr Abnormal Loss Expense
+o	Cr Production Clearing (WIP Control) (for cost_to_clear)
+o	NO stock ledger movement (because RM/SFG was already consumed when DVC/WIP completion was posted).
+o	Only the pending pool is reduced.
+o	Reporting impact:
+•	Your “Loss report (normal loss, abnormal loss)” should include DVC_ABANDON lines separately so management can see “completed but scrapped before FG” by SKU and by department, with qty + cost impact (cost visible only to permitted roles).
+•	NOTE: Alert notification when production without raw material. When work is done (DCV voucher / production completion), accrue the cost:
+o	Dr Production Clearing
+o	Cr Wages Payable
+•	When you actually pay labour later (or earlier), you post:
+o	Dr Wages Payable
+o	Cr Cash/Bank
+So payment timing doesn’t break costing.
+2)	Reports
+•	Production Report  (finished/semi-finished)
+•	DVC REPORT (shows which articles along with their department eg stitching still not gone into production along with their creation date and which are gone into production)
+•	Consumption Report (option to filter automatic or manual consumption)
+•	Pending Consumption Report
+•	Labour Ledger Report
+•	Labour Balances Report
+•	Lose report (normal loss, abnormal loss)
+NOTE: Labour vouchers and consumption vouchers are created ONLY when production is COMPLETED.
+Production planning does NOT create consumption or labour.
+7. INVENTORY
+1)	Activity 
+•	Opening Stock Voucher 
+•	Stock Transfer Voucher: (stn_gl_mode = NONE)
+•	Action: Select Destination Branch -> Select Items (FINISHED/SEMI-FINISHED/RAW MATERIAL)
+•	Effect: Deduct stock from Source Branch. Add stock to "Virtual Transit Location."
+•	Accounting: No financial impact on PL, strictly asset movement.
+•	Stock Receive Voucher 
+o	Make a voucher type like GRN_IN (Internal Receive) that has a field:
+o	Against STN_OUT (dropdown/search)
+o	User opens GRN_IN, selects STN_OUT → system auto-fills lines → user posts.
+•	Stock Count Adjustment Voucher (finished/semi-finished/raw-material – system vs actual stock quantity– difference – amount difference) IT SHOULD ADJUST STOCK ONLY AFTER APPROVAL FROM ADMIN ... ONLY SHOW AFFECT AFTER APPROVED, VOUCHER SHOW OPTION TO APPROVE/REJECT TO ADMIN! (on approval, voucher becomes locked & non-editable, adjustment appears in stock ledger , Accounting entries auto-posted )  -  ADD A REASON CODE AND REASON INPUT NOTES
+Column	Explanation
+Item Code	From item master
+Item Name	Auto
+Unit	Base unit only
+System Stock Quantity	Auto-fetched (locked)
+Physical Stock Quantity	User input
+Difference Qty	Auto (Physical − System)
+Selling Rate	Selling Rate Auto fetched from system 
+Amount Difference	Auto (Difference Qty * Selling Rate)
+•  In the Stock Count Adjustment screen, workers see:
+•	Stock Count lines store selling_rate_display (optional) + physical_qty
+•	Posting uses wac_cost_rate pulled internally
+•	Only accounts/admin reports can see “value impact”
+•	System Qty, Physical Qty, Difference Qty
+•	Selling rate based on difference quantity
+•	NO cost fields shown
+•  In the database (and backend posting):
+•	store unit_cost_used (WAC) in stock ledger / GL posting rows
+•	but do not return it in the API for users without permission
+NOTE: STOCK TRANSFER NOTE SHOULD HAVE A BUTTON TO DOWNLOAD GATE PASS.
+2)	Reports
+•	Stock Quantity Report (option to see separately for each branch or all branches – for each or all three finished/semi-finished/raw-material/scrap) (show the stock for all articles for which stock is not equal to 0)
+•	Stock Amount Report (it will show stock for all articles, cost price – it uses WAC for the date loaded, selling price) (Store month-end snapshots (closing qty/value/WAC) and optionally keep daily snapshots for a limited recent window – 30 DAYS)
+•	Stock Ledger Report (Just ensure it includes: voucher reference (type + number + date), In/Out qty, unit cost used and value, running balance (qty + value) per SKU bucket, branch/warehouse + user/audit stamps)
+•	Stock/Item Activity Report (opening, production, sale, adjustment, closing for a selected date range – for product-group, single product, all products option – both semi-finished and finished option – for all branches or few)
+•	Pending Outgoing Transfers Report (Source view): So, the source can track what they sent that hasn’t been received (SKU No, Destination, Dispatch date, Items + qty, type finished/semi-finished/ raw-material)(option to select status received /pending, also the option to select finished/semi-finished/raw-materials/all/some, destination-branch-selection - all/few/one)
+•	Pending Incoming Transfers Report (Destination view)- This is your operational report( includes SKU No, Source branch, Dispatch date, Items + qty, Transit days (age)) )(option to select status received, also the option to select finished/semi-finished/raw-materials/all/some, source-branch-selection - all/few/one)
+•	Stock Count Register (main report): Purpose: audit + control — “what stock counts were done, when, by who, and what was the impact?”
+Columns (header-level):
+•	Voucher No, Date
+•	Branch, Warehouse/Location (if you have)
+•	Item Type (RM / SFG / FG)
+•	Status (Draft / Pending / Approved / Rejected)
+•	Total Items Counted
+•	Total Qty Difference (sum abs diff, optional)
+•	Total Value Impact (Cost/WAC) (approved only)
+•	Total Sale Value Impact
+•	Reason Code (header) + Notes (header)
+•	Counted By, Approved By, Approved Date
+Filters:
+•	Date range
+•	Branch
+•	Status
+•	Item Type
+•	Reason Code
+•	Counted By / Approved By
+•	Demand Gap Report  (“Based on the last 3 months’ sales average, do we have enough stock to cover one month from current date?”_(shows sales for last 3 months in 3 columns for all finished article variants and then average sales per month and then compare it with current stock and check based on this if stock is low – color red if low stock) (need to check if the sales trend is declining or not) (if declining, required stock = average monthly sales * 0.8 and gap = required stock - current stock )  (Add Status categories : Low, Watch, OK, New SKU ) (for new articles -> use daily average × 30 (proration) once launch>20 days)
+
+8. Outward & Returnable 
+“What left the factory, why, where is it now, and has it returned?”
+Vouchers:
+•	Returnable Dispatch Voucher (Moulds sent for repair/ Knives/tools for sharpening/ Fixtures, gauges, dies/ any non-stock company asset leaving premises)
+Header Fields
+•	RGP No (auto)
+•	Date
+•	Branch
+•	Vendor / Repair Party
+•	Reason (Repair / Sharpening / Calibration / Trial)
+•	Expected Return Date
+•	Issued By
+•	Approved By
+•	Gate Pass PDF download
+Line Fields
+•	Item Type (Mould / Tool / Knife / Fixture / Other)
+•	Item Description
+•	Asset Code / Serial No (optional but recommended)
+•	Quantity
+•	Condition at Dispatch (Good / Worn / Damaged)
+•	Remarks
+              System Rules
+•	❌ No inventory deduction
+•	❌ No accounting entry
+•	✅ Approval mandatory
+•	✅ Gate pass printable
+
+•	Returnable Receipt Voucher 
+Linked To
+•	Original RGP-Outward (mandatory)
+Header Fields
+•	RGP-Outward Reference
+•	Return Date
+•	Received By
+Line Fields
+•	Returned Quantity
+•	Condition on Return (OK / Repaired / Damaged / Scrap)
+•	Short/Excess Qty (auto-calculated)
+•	Remarks
+System Rules
+•	Partial returns allowed
+•	Multiple inward entries allowed against one outward
+•	Status auto-updated (Pending / Partially Returned / Closed)
+     REPORTS:
+2.1 Pending Returnables Report (MOST IMPORTANT)
+Purpose
+Daily operational control.
+Shows
+•	RGP No
+•	Item Description
+•	Vendor
+•	Qty Sent
+•	Qty Returned
+•	Balance Pending
+•	Expected Return Date
+•	Days Out
+•	Status
+Filters
+•	Branch
+•	Vendor
+•	Item Type
+•	Status
+•	Date Range
+2.2 Overdue Returnables Report
+Purpose
+Exception control & follow-up.
+Shows
+•	All pending fields
+•	Overdue Days
+•	Highlight overdue entries (red flag)
+Optional
+•	Email / notification trigger of admin/s (future enhancement)
+2.3 Asset Movement History
+Purpose
+Audit & lifecycle tracking.
+Shows (per asset / item)
+•	Date Out
+•	Vendor
+•	Reason
+•	Date In
+•	Condition Out vs In
+•	Total Days Outside
+•	No. of times sent
+Useful for:
+•	Asset abuse detection
+•	Replacement decisions
+•	Vendor performance
+
+9. SALES
+1)	Activity 
+•	Sales Order Voucher (those bills added whose deliveries are pending)(give option to receive partial/complete payment if any) (option to add claim, pairs, amount, issue) (gate pass for all sale vouchers) (select account name for sale amount accumulation and one salesman) (must create customer party to add the voucher)
+•	Sales Voucher  
+✅ Sales Voucher – Header Fields (Final) – CASH SALE MEANS FULL PAYMENT RIGHT AWAY AND CREDIT MEANS PARTIAL/NO PAYMENT
+1.	Voucher No (auto-generated, system-controlled)
+2.	Voucher Date (required; must be in an open period)
+3.	Sale Mode: Direct / From Sales Order
+4.	Payment Type: Cash / Credit
+5.	Customer Name (selectable from party information – if Credit/Delivery) (otherwise manual if cash sale)
+6.	Customer (Party ID) (auto)
+7.	Phone Number (auto-fetched from party if credit/delivery otherwise manual - mandatory)
+8.	Sales Order Link if delivery (based on customer ID – let user choose the items to deliver from pending articles through a dropdown and their quantity)
+9.	Salesman (mandatory – auto fetched from sales order if delivery)
+10.	Payment Due Date (mandatory if credit)
+11.	Receive Into Account (Cash/Bank - mandatory if payment received)
+12.	Delivery Method - Customer Pickup/ Our Delivery
+✅ Row fields (approved)
+•	SKU / Article
+•	Article Name (auto)
+•	Status (Packed/Loose) – packed dozen, loose pair
+•	Sale Qty
+•	Return Qty
+•	Return Reason (dropdown only if Return Qty > 0)
+•	Pair Rate 
+•	Amount (auto) – total pairs * pair rate
+•	Pair Discount
+•	Total Discount
+•	Total (auto) – total pairs * (pair rate - pair discount)
+✅ Final fields 
+•	Total sales amount
+•	Total Returns amount
+•	Extra Discount (if any)
+•	Final amount
+•	Payment Received Amount (If Cash: auto-fills Final Amount (editable only by permission), If Credit: defaults to 0 (user may enter partial/advance))
+Must-have rules (so it doesn’t break)
+1.	Mutual exclusivity per row
+o	In one row, allow either Sale Qty OR Return Qty, not both.
+o	If user needs both, they add two rows (same SKU allowed).
+2.	Return Reason validation
+o	If Return Qty > 0 → Return Reason is mandatory
+o	If Return Qty = 0 → Return Reason disabled/blank
+3.	Rate source and locking
+o	Rate auto-fills from SKU price list / last sale rate (your choice)
+o	Only users with permission can override rate/discount.
+4.	Discount calculation clarity
+o	Define whether Pair Discount/Total Discount apply to:
+	Sales and returns both ✅ (recommended)
+o	Most ERPs: returns credit at original net rate (auto from original invoice if linked; otherwise current rate).
+5.	Posting behavior on save (internal model)
+o	Sale Qty → creates a SALE movement
+o	Return Qty → creates a RETURN movement
+(even if UI is one table)
+NOTE: SALES VOUCHERS SHOULD HAVE AN OPTION TO PRINT A GATE PASS
+2)	Customers Report
+•	Customer Listings (filters – party based/ cash sales based, date range)(cash sales-> name + phone numbers)(Party based – all the information taken)
+•	Customer Balances Report: Shows customer-level receivable status, derived from invoice-level outstanding balances after applying payments and credit notes.
+Columns
+•	Customer Name
+•	Group
+•	Days Since Last Payment
+•	Days Since Last Sale
+•	Overdue Amount (sum of outstanding where due date < report date)
+•	Number of Overdue Invoices (number of latest invoices whose sum >= overdue amount)
+•	Highest Overdue Invoice Age (max days overdue) (max(report date) among overdue invoices with outstanding > 0)
+•	Total Balance (Overdue + Not-Yet-Overdue)
+•	Follow-up Status (None / Called / Promised / Disputed / Partial / Collected)
+•	Promise-to-Pay Date (required only if Status = Promised)
+•	Promise Amount (required only if Status = Promised)
+Allocation Rules (mandatory)
+1.	Sales Return / Credit Note allocation policy:
+A sales return creates a Credit Note that reduces receivables. The system must allocate the credit note to invoices as follows:
+o	Auto-allocated by FIFO to the customer’s oldest open invoice(s), skipping disputed/hold invoices unless overridden.
+2.	Period Lock / Audit Freeze enforcement:
+Posting or editing receipts, credit notes, or allocations is blocked if the voucher date falls in a Locked/Frozen period for the relevant branch (super-admin override only if allowed, with reason).
+•	Customer Ledger Report
+3)	SALES REPORT
+•	Claim Report (HOW MANY PAIRS, PRICE, ISSUE, CUSTOMER NAME)
+•	Sales Report  (give option to search based on customer name) (option to check cash, credit or both report)
+•	Sale Return Report
+•	Sales Order Report
+•	Sale Discount Report
+•	Net Sale Report
+•	Monthly Product Profitability Report (tells which article made the most money this month, which product contributes most to total profit, which high-selling item is silently hurting profit)
+Column	Definition
+Rank	By Gross Profit
+Parent Article	Base product
+SKU Code	Unique variant
+Variant Attributes	Color / Size / Grade / Packaging
+Sales Qty	Total quantity sold
+Sales Value	Selling price * sales Qty
+Cost Value	Cost price * sales Qty
+Gross Profit	Sales – Cost Value
+Margin %	GP ÷ Sales
+Profit Contribution %	Variant GP ÷ Total GP
+GL POSTINGS
+These are the standard accounts your postings will reference:
+Assets (Current)
+•	Office Cash (Cash-in-Hand)
+•	Bank – [each bank account]
+•	Bank Clearing / Undeposited Funds (for pending/cleared/failed bank voucher)
+•	Cash with Salesman (current asset; ideally salesman-wise sub-ledger)
+•	Accounts Receivable (AR Control)
+•	Inventory – Raw Materials (RM)
+•	Inventory – Semi-Finished (SFG)
+•	Inventory – Finished Goods (FG)
+•	Inventory – Transit (for STN transit location, optional GL)
+•	Advances to Suppliers (optional)
+•	Employee Advances (optional)
+Liabilities
+•	Accounts Payable (AP Control)
+•	Wages Payable (labour)
+•	Salaries Payable (employees)
+•	Accrued Expenses Payable (optional but recommended)
+Income / Contra / Expense
+•	Sales Revenue
+•	Sales Returns (contra income)
+•	Sales Discounts (contra income or expense—choose one; I recommend contra)
+•	COGS – Finished Goods
+•	Stock Adjustment Gain / Loss
+•	Abnormal Loss Expense
+•	Commission Expense (sales)
+•	Other Expenses (Electricity, Rent, Fuel, etc.)
+
+1️⃣ SALES MODULE — SALES VOUCHER (Sale + Return )
+1.1 CASH SALE (FULL PAYMENT ONLY)
+Revenue / Cash
+Dr (Asset)	Cr (Income)
+Receiving Account (Office Cash / Bank / Cash with Salesman)	Sales Revenue
+Inventory / COGS
+Dr (Expense)	Cr (Asset)
+COGS – Finished Goods	Inventory – Finished Goods
+📌 Rules
+PaymentReceived = NetInvoice (mandatory)
+No AR allowed
+1.2 CREDIT SALE (NO PAYMENT AT SALE)
+Revenue / Receivable
+Dr (Asset)	Cr (Income)
+Accounts Receivable (AR Control)	Sales Revenue
+Inventory / COGS
+Dr	Cr
+COGS – Finished Goods	Inventory – Finished Goods
+
+1.3 CREDIT SALE (PARTIAL PAYMENT AT SALE)
+Revenue / Cash / AR
+Dr	Cr
+Receiving Account	Sales Revenue
+Accounts Receivable (AR Control)	— (NetInvoice − PaymentReceived)
+Inventory / COGS
+Dr	Cr
+COGS – Finished Goods	Inventory – Finished Goods
+
+1.4 SALES RETURN (ROW-LEVEL)
+Revenue Reversal (ALL return reasons)
+Dr (Contra Income)	Cr
+Sales Returns	AR Control or Receiving Account
+
+Inventory Impact (CONDITIONAL)
+✅ Return Reason ≠ “DEFECTED”
+Dr	Cr
+Inventory – Finished Goods	COGS – Finished Goods
+❌ Return Reason = “DEFECTED”
+Dr (Expense)	Cr (Expense)
+Defected Return Expense 	COGS – Finished Goods
+🚫 Stock does NOT increase
+
+2️⃣ CASH / BANK / JOURNAL (NO SEPARATE RECEIPT OR PAYMENT VOUCHERS)
+2.1 CUSTOMER RECEIPT (via Cash / Bank / JV)
+Dr (Asset)	Cr (Asset)
+Office Cash / Bank / Cash with Salesman	Accounts Receivable (AR Control)
+
+2.2 SUPPLIER PAYMENT (via Cash / Bank / JV)
+Dr (Liability)	Cr (Asset)
+Accounts Payable (AP Control)	Office Cash / Bank
+
+3️⃣ PURCHASE MODULE
+3.1 PURCHASE ORDER
+❌ NO G
+3.2 PURCHASE INVOICE – CREDIT
+Dr (Asset)	Cr (Liability)
+Inventory – Raw Material	Accounts Payable (AP Control)
+
+3.3 PURCHASE INVOICE – CASH
+Dr (Asset)	Cr (Asset)
+Inventory – Raw Material	Office Cash / Bank
+
+3.4 PURCHASE RETURN
+Credit Return
+Dr	Cr
+Accounts Payable	Inventory – Raw Material
+Cash Purchase Refund
+Dr	Cr
+Office Cash / Bank	Inventory – Raw Material
+NOTE: NOTHING ADDED TO ACCOUNT PAYABLE AS THE ITEM WAS BOUGHT ON CASH.
+4️⃣ INVENTORY MODULE
+4.1 STOCK TRANSFER NOTE (STN)
+Recommended
+❌ NO GL (stock ledger only)
+Optional (asset-only)
+Dr	Cr
+Inventory – Transit	Inventory – RM / FG / SFG
+
+4.2 OPENING STOCK
+Dr (Asset)	Cr (Equity)
+Inventory – RM / SFG / FG	Opening Balance Equity
+
+4.3 Stock Count Adjustment Voucher (AFTER APPROVAL)
+Stock Gain
+Dr	Cr
+Inventory	Stock Adjustment Gain
+Stock Loss
+Dr	Cr
+Stock Adjustment Loss	Inventory
+📌 GL uses COST, not selling rate
+5️⃣ PRODUCTION 
+5.1 FINISHED PRODUCTION
+Material / SFG Consumption
+Dr	Cr
+Production Clearing	Inventory – RM / SFG
+Labour
+Dr	Cr
+Production Clearing	Wages Payable
+Capitalize FG
+Dr	Cr
+Inventory – Finished Goods	Production Clearing
+
+5.2 SEMI-FINISHED PRODUCTION
+Dr	Cr
+Inventory – Semi-Finished	Production Clearing
+
+5.3 ABNORMAL LOSS
+Dr (Expense)	Cr (Asset)
+Abnormal Loss Expense	Inventory – RM / SFG / FG
+
+6️⃣ FINANCIAL VOUCHERS
+6.1 CASH VOUCHER
+Payment
+Dr	Cr
+Expense / AP / Advances / Payables	Office Cash
+Receipt
+Dr	Cr
+Office Cash	Income / AR / AP Refund
+
+6.2 BANK VOUCHER (WITH CLEARING)
+Pending
+Dr	Cr
+Bank Clearing	AR / Income
+Expense / AP	Bank Clearing
+Cleared
+Dr	Cr
+Bank	Bank Clearing
+Bank Clearing	Bank
+Failed
+➡ Reverse pending entry
+6.3 JOURNAL VOUCHER
+Balanced free-form entries for:
+Accruals
+Adjustments
+Period close
+7️⃣ HR & PAYROLL
+Salary Accrual
+Dr	Cr
+Salary Expense	Salaries Payable
+Salary Payment
+Dr	Cr
+Salaries Payable	Office Cash / Bank
+Commission Accrual
+Dr	Cr
+Commission Expense	Commission Payable
+Commission / Wage Payment
+Dr	Cr
+Commission / Wages Payable	Cash / Bank
+
+DCV Voucher posting (per department):
+•	Dr Production Clearing 
+•	Cr Inventory – RM / SFG (for dept RM lines)
+•	Cr Wages Payable / Labour Payable (for dept labour)
+Case: Customer pays  100,000 online (not cleared yet)
+Step 1 — Pending
+•	Dr Bank Clearing 100,000
+•	Cr AR 100,000 (or Cr Sales Revenue if it’s a direct receipt)
+At this point:
+•	Bank (real) didn’t increase yet ✅
+•	Bank Clearing increased ✅
+Total assets increased by 100,000 once (which is correct, because you now have a cheque/claim to cash).
+Step 2 — When bank clears
+•	Dr Bank 100,000
+•	Cr Bank Clearing 100,000
+Now:
+•	Bank goes up ✅
+•	Clearing goes down ✅
+Net effect on assets = 0 at clearance time (you’re just moving value from “pending” to “actual bank”).
+So nothing gets counted twice; it’s a transfer between two asset accounts.
+UNIVERSAL RULES
+A) One universal “Voucher Engine” (non-negotiable)
+All vouchers (Sales, Purchase, Cash/Bank/JV, Stock Count, STN, Production, DCV, Abnormal Loss, RGP) must follow the same pattern:
+•	voucher_header: voucher_no, voucher_type, branch_id, voucher_date, status (Draft/Pending/Approved/Rejected/Posted), created_by/on, approved_by/on, remarks
+•	voucher_lines: item/account/labour reference + qty/rate/amount + department + extra JSON/meta
+•	posting tables (system-generated):
+o	gl_entry_header + gl_entry_lines
+o	stock_ledger
+Not all vouchers need status so keep status fields for every voucher, but allow “simple vouchers” to skip the workflow
+•	status always exists, but voucher types can be configured as:
+o	requires_approval = false
+o	default_status_on_save = POSTED
+•	Then for simple vouchers (like many cash vouchers), you save → it becomes POSTED immediately.
+•	approved_by, approved_on can be NULL unless requires_approval = true.
+

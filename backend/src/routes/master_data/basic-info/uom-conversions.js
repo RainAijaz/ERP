@@ -4,6 +4,7 @@ const { HttpError } = require("../../../middleware/errors/http-error");
 
 const router = express.Router();
 
+// Pull conversion rows with human-friendly UOM labels.
 const fetchRows = () =>
   knex({ c: "erp.uom_conversions" })
     .leftJoin({ uf: "erp.uom" }, "c.from_uom_id", "uf.id")
@@ -27,6 +28,7 @@ const fetchRows = () =>
     )
     .orderBy("c.id", "desc");
 
+// Only active UOMs are selectable for new conversions.
 const fetchUoms = () =>
   knex("erp.uom")
     .select("id", "code", "name")
@@ -40,9 +42,9 @@ const renderPage = (req, res, data) =>
     branchId: req.branchId,
     branchScope: req.branchScope,
     csrfToken: res.locals.csrfToken,
-    view: "../../master_data/uom-conversions/index",
+    view: "../../master_data/basic-info/uom-conversions/index",
     t: res.locals.t,
-    basePath: "/master-data/basic-information/uom-conversions",
+    basePath: "/master-data/basic-info/uom-conversions",
     ...data,
   });
 
@@ -61,6 +63,7 @@ router.get("/", async (req, res, next) => {
   }
 });
 
+// Normalize POST payloads and ensure numeric types.
 const normalizePayload = (body) => {
   const from_uom_id = Number(body.from_uom_id || 0);
   const to_uom_id = Number(body.to_uom_id || 0);
@@ -90,7 +93,7 @@ router.post("/", async (req, res, next) => {
       ...payload,
       created_by: req.user ? req.user.id : null,
     });
-    return res.redirect("/master-data/basic-information/uom-conversions");
+    return res.redirect("/master-data/basic-info/uom-conversions");
   } catch (err) {
     return renderError(req, res, "Unable to save conversion. Check for duplicates.", "create");
   }
@@ -113,7 +116,7 @@ router.post("/:id", async (req, res, next) => {
       updated_by: req.user ? req.user.id : null,
       updated_at: knex.fn.now(),
     });
-    return res.redirect("/master-data/basic-information/uom-conversions");
+    return res.redirect("/master-data/basic-info/uom-conversions");
   } catch (err) {
     return renderError(req, res, "Unable to update conversion. Check for duplicates.", "edit");
   }
@@ -135,9 +138,23 @@ router.post("/:id/toggle", async (req, res, next) => {
       updated_by: req.user ? req.user.id : null,
       updated_at: knex.fn.now(),
     });
-    return res.redirect("/master-data/basic-information/uom-conversions");
+    return res.redirect("/master-data/basic-info/uom-conversions");
   } catch (err) {
     return renderError(req, res, "Unable to update conversion. It may be in use.", "delete");
+  }
+});
+
+router.post("/:id/delete", async (req, res, next) => {
+  const id = Number(req.params.id);
+  if (!id) {
+    return next(new HttpError(404, "Conversion not found"));
+  }
+
+  try {
+    await knex("erp.uom_conversions").where({ id }).del();
+    return res.redirect("/master-data/basic-info/uom-conversions");
+  } catch (err) {
+    return renderError(req, res, "Unable to delete conversion.", "delete");
   }
 });
 

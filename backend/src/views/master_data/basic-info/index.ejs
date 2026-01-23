@@ -61,16 +61,19 @@
     <div class="overflow-x-auto">
       <table class="min-w-full text-sm" data-table>
         <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+          <% // Tooltip labels for headers that need extra context. %>
           <% const columnTooltips = {
             account_type: t("tooltip_account_type"),
             code: t("tooltip_code"),
             is_contra: t("tooltip_contra")
           }; 
+          // Human-readable labels for item type abbreviations.
           const itemTypeLabels = {
             RM: t("raw_materials"),
             SFG: t("semi_finished_goods"),
             FG: t("finished_goods")
           };
+          // Format comma-separated item types for display.
           const formatItemTypes = function(value) {
             return (value || "")
               .split(",")
@@ -82,6 +85,7 @@
           %>
           <tr>
             <th class="px-4 py-3 text-left"><%= t("sr_no") %></th>
+            <% // Hide the opposite-language name column in the table. %>
             <% const displayColumns = page.columns.filter(function(column) { return column.key !== "id" && !(column.key === "name_ur" && locale !== "ur") && !(column.key === "name" && locale === "ur"); }); %>
             <% displayColumns.forEach(function(column, idx) { %>
               <% const sortType = (column.key.includes("date") || column.key.includes("time")) ? "date" : "text"; %>
@@ -219,6 +223,7 @@
         </svg>
       </button>
     </div>
+    <% // Form uses translate-mode to decide translate vs transliterate. %>
     <form method="post" action="<%= basePath %>" class="space-y-5 px-6 py-5" data-modal-form data-translate-mode="<%= page.translateMode || "translate" %>">
       <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
       <% page.fields.forEach(function(field) { %>
