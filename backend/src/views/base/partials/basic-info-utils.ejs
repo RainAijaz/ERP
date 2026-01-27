@@ -17,7 +17,7 @@
       top: 0;
       width: 100%;
       color: #111827;
-      direction: <%= locale === "ur" ? "rtl" : "ltr" %>;
+      direction: var(--print-direction, ltr);
       unicode-bidi: plaintext;
     }
     [data-print-header] {
@@ -88,7 +88,9 @@
     border-radius: 9999px;
     border: 1px solid #e2e8f0;
     color: #64748b;
-    transition: color 0.2s ease, border-color 0.2s ease;
+    transition:
+      color 0.2s ease,
+      border-color 0.2s ease;
   }
 
   .multi-tag button:hover {
@@ -202,6 +204,9 @@
     const filterPartyGroup = document.querySelector("[data-filter-party-group]");
     const filterBranch = document.querySelector("[data-filter-branch]");
     const filterCity = document.querySelector("[data-filter-city]");
+    const filterCreatedBy = document.querySelector("[data-filter-created-by]");
+    const filterCreatedAtStart = document.querySelector("[data-filter-created-at-start]");
+    const filterCreatedAtEnd = document.querySelector("[data-filter-created-at-end]");
     const filterAddButtons = document.querySelectorAll("[data-filter-add]");
     const filterClose = document.querySelector("[data-filter-close]");
     const filterApply = document.querySelector("[data-filter-apply]");
@@ -236,8 +241,12 @@
       conversionFactor: '<%= t("conversion_factor") %>',
       conversionExists: '<%= t("conversion_exists") %>',
       selectBranch: '<%= t("error_select_branch") %>',
-      selectPhone: '<%= t("error_select_phone") %>'
+      selectPhone: '<%= t("error_select_phone") %>',
     };
+    const printDirection = '<%= locale === "ur" ? "rtl" : "ltr" %>';
+    if (typeof document !== "undefined" && document.documentElement) {
+      document.documentElement.style.setProperty("--print-direction", printDirection);
+    }
     let filterPartyGroups = null;
 
     const getFilterValues = (selector) =>
@@ -247,14 +256,9 @@
 
     const updateFilterCount = () => {
       if (!filterCountBadge) return;
-      const activeFilters = [
-        ...getFilterValues("[data-filter-account-type]"),
-        ...getFilterValues("[data-filter-account-group]"),
-        ...getFilterValues("[data-filter-party-type]"),
-        ...getFilterValues("[data-filter-party-group]"),
-        ...getFilterValues("[data-filter-branch]"),
-        ...getFilterValues("[data-filter-city]")
-      ].length;
+      const createdByActive = filterCreatedBy && (filterCreatedBy.value || "").trim() ? 1 : 0;
+      const createdAtActive = (filterCreatedAtStart && filterCreatedAtStart.value) || (filterCreatedAtEnd && filterCreatedAtEnd.value) ? 1 : 0;
+      const activeFilters = [...getFilterValues("[data-filter-account-type]"), ...getFilterValues("[data-filter-account-group]"), ...getFilterValues("[data-filter-party-type]"), ...getFilterValues("[data-filter-party-group]"), ...getFilterValues("[data-filter-branch]"), ...getFilterValues("[data-filter-city]")].length + createdByActive + createdAtActive;
       if (activeFilters > 0) {
         filterCountBadge.textContent = String(activeFilters);
         filterCountBadge.classList.remove("hidden");
@@ -263,23 +267,35 @@
       }
     };
 
-    const autoCodeEnabled = <%= page.autoCodeFromName ? "true" : "false" %>;
-    const pageTitle = '<%= t(page.titleKey) %>';
-    const basePath = '<%= basePath %>';
+    const autoCodeEnabled = "<%= page.autoCodeFromName ? 'true' : 'false' %>" === "true";
+    const pageTitle = "<%= t(page.titleKey) %>";
+    const basePath = "<%= basePath %>";
     const i18nSelect = '<%= t("select") %>';
     const i18nSelected = '<%= t("selected") %>';
     const i18nAll = '<%= t("all") %>';
+    const i18nSearchInput = '<%= t("search") %>';
+
+    const cleanModalPath = () => {
+      if (typeof window === "undefined" || !window.history || !window.location || !basePath) return;
+      const currentPath = window.location.pathname || "";
+      if (!currentPath.startsWith(basePath)) return;
+      const suffix = currentPath.slice(basePath.length);
+      if (!suffix) return;
+      if (/^\/\d+(\/.*)?$/.test(suffix)) {
+        window.history.replaceState(null, "", basePath);
+      }
+    };
+    cleanModalPath();
 
     const openModal = (mode, data) => {
+      cleanModalPath();
       if (!modal || !modalForm) return;
       const payload = data || {};
       // Populate modal fields from row data (or defaults on create).
       modal.classList.remove("hidden");
       modal.classList.add("flex");
       modal.dataset.mode = mode;
-      modalTitle.textContent = mode === "edit"
-        ? i18n.edit + " " + pageTitle
-        : i18n.add + " " + pageTitle;
+      modalTitle.textContent = mode === "edit" ? i18n.edit + " " + pageTitle : i18n.add + " " + pageTitle;
       modalForm.setAttribute("action", payload.action || basePath);
       modal.dataset.currentId = payload.id || "";
       modalForm.querySelectorAll("[data-field]").forEach((input) => {
@@ -320,31 +336,29 @@
       if (auditPanel && mode === "edit") {
         auditPanel.hidden = false;
         if (auditCreated) {
-          auditCreated.textContent = payload.created_at
-            ? payload.created_at + (payload.created_by ? " by " + payload.created_by : "")
-            : "-";
+          auditCreated.textContent = payload.created_at ? payload.created_at + (payload.created_by ? " by " + payload.created_by : "") : "-";
         }
         if (auditUpdated) {
-          auditUpdated.textContent = payload.updated_at
-            ? payload.updated_at + (payload.updated_by ? " by " + payload.updated_by : "")
-            : "-";
+          auditUpdated.textContent = payload.updated_at ? payload.updated_at + (payload.updated_by ? " by " + payload.updated_by : "") : "-";
         }
       } else if (auditPanel) {
         auditPanel.hidden = true;
       }
       if (mode === "create" && autoCodeEnabled) {
-        const codeInput = modalForm.querySelector("[data-field=\"code\"]");
+        const codeInput = modalForm.querySelector('[data-field="code"]');
         if (codeInput) {
           codeInput.dataset.userEdited = "false";
         }
       }
       refreshMultiSelects();
+      document.dispatchEvent(new CustomEvent("modal:opened", { detail: { mode } }));
     };
 
     const closeModal = () => {
       if (!modal) return;
       modal.classList.add("hidden");
       modal.classList.remove("flex");
+      cleanModalPath();
     };
 
     const openConfirm = (title, message, action) => {
@@ -407,8 +421,8 @@
         const bCells = b.querySelectorAll("td");
         const aCell = aCells[sortIndex];
         const bCell = bCells[sortIndex];
-        const aRaw = aCell ? (aCell.getAttribute("data-sort-value") || aCell.textContent) : "";
-        const bRaw = bCell ? (bCell.getAttribute("data-sort-value") || bCell.textContent) : "";
+        const aRaw = aCell ? aCell.getAttribute("data-sort-value") || aCell.textContent : "";
+        const bRaw = bCell ? bCell.getAttribute("data-sort-value") || bCell.textContent : "";
         const aValue = normalizeValue(aRaw, sortType);
         const bValue = normalizeValue(bRaw, sortType);
         if (aValue < bValue) return sortDir === "asc" ? -1 : 1;
@@ -446,10 +460,11 @@
       const partyGroupFilters = getFilterValues("[data-filter-party-group]");
       const branchFilters = getFilterValues("[data-filter-branch]");
       const cityFilters = getFilterValues("[data-filter-city]");
+      const createdByValue = (filterCreatedBy && filterCreatedBy.value ? filterCreatedBy.value : "").trim();
+      const createdAtStart = filterCreatedAtStart ? filterCreatedAtStart.value : "";
+      const createdAtEnd = filterCreatedAtEnd ? filterCreatedAtEnd.value : "";
       const readFilterRows = (key) => {
-        const rows = Array.from(
-          document.querySelectorAll(`[data-filter-list="${key}"] [data-filter-${key}], [data-filter-list="${key}"] [data-filter-${key.replace("-", "_")}]`)
-        );
+        const rows = Array.from(document.querySelectorAll(`[data-filter-list="${key}"] [data-filter-${key}], [data-filter-list="${key}"] [data-filter-${key.replace("-", "_")}]`));
         const list = document.querySelector(`[data-filter-list="${key}"]`);
         if (!list) return { include: [], exclude: [] };
         const selects = Array.from(list.querySelectorAll(`[data-filter-${key}]`));
@@ -524,7 +539,10 @@
           if (matches) return false;
         }
         if (branchModes.include.length || branchModes.exclude.length) {
-          const branches = (row.dataset.branch || "").split(",").map((value) => value.trim()).filter(Boolean);
+          const branches = (row.dataset.branch || "")
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean);
           if (branchModes.include.length) {
             const matches = branchModes.include.some((value) => branches.includes(value));
             if (!matches) return false;
@@ -532,6 +550,23 @@
           if (branchModes.exclude.length) {
             const matches = branchModes.exclude.some((value) => branches.includes(value));
             if (matches) return false;
+          }
+        }
+        if (createdByValue) {
+          const matches = (row.dataset.createdBy || "") === createdByValue;
+          if (!matches) return false;
+        }
+        if (createdAtStart || createdAtEnd) {
+          const rowDateValue = row.dataset.createdAt || "";
+          const rowTime = Date.parse(rowDateValue);
+          if (Number.isNaN(rowTime)) return false;
+          if (createdAtStart) {
+            const startTime = Date.parse(createdAtStart);
+            if (!Number.isNaN(startTime) && rowTime < startTime) return false;
+          }
+          if (createdAtEnd) {
+            const endTime = Date.parse(createdAtEnd);
+            if (!Number.isNaN(endTime) && rowTime > endTime) return false;
           }
         }
         return true;
@@ -562,27 +597,11 @@
       if (showing) {
         const startLabel = filtered.length === 0 ? 0 : start + 1;
         const endLabel = Math.min(start + visibleRows.length, filtered.length);
-        showing.textContent =
-          i18n.showing +
-          " " +
-          startLabel +
-          " " +
-          i18n.to +
-          " " +
-          endLabel +
-          " " +
-          i18n.of +
-          " " +
-          filtered.length +
-          " " +
-          i18n.entries;
+        showing.textContent = i18n.showing + " " + startLabel + " " + i18n.to + " " + endLabel + " " + i18n.of + " " + filtered.length + " " + i18n.entries;
       }
     };
 
-    const cleanText = (value) =>
-      (value || "")
-        .replace(/\s+/g, " ")
-        .trim();
+    const cleanText = (value) => (value || "").replace(/\s+/g, " ").trim();
 
     const downloadCsv = () => {
       // Export only the currently visible rows (respects filters).
@@ -642,20 +661,16 @@
     hookFilterAll("[data-filter-party-group]");
     hookFilterAll("[data-filter-branch]");
     hookFilterAll("[data-filter-city]");
+    if (filterCreatedBy) filterCreatedBy.addEventListener("change", updateFilterCount);
+    if (filterCreatedAtStart) filterCreatedAtStart.addEventListener("change", updateFilterCount);
+    if (filterCreatedAtEnd) filterCreatedAtEnd.addEventListener("change", updateFilterCount);
     document.querySelectorAll("[data-filter-account-type-mode]").forEach((el) => hookFilter(el));
     document.querySelectorAll("[data-filter-account-group-mode]").forEach((el) => hookFilter(el));
     document.querySelectorAll("[data-filter-party-type-mode]").forEach((el) => hookFilter(el));
     document.querySelectorAll("[data-filter-party-group-mode]").forEach((el) => hookFilter(el));
     document.querySelectorAll("[data-filter-branch-mode]").forEach((el) => hookFilter(el));
     document.querySelectorAll("[data-filter-city-mode]").forEach((el) => hookFilter(el));
-    [
-      "[data-filter-account-type]",
-      "[data-filter-account-group]",
-      "[data-filter-party-type]",
-      "[data-filter-party-group]",
-      "[data-filter-branch]",
-      "[data-filter-city]"
-    ].forEach((selector) => {
+    ["[data-filter-account-type]", "[data-filter-account-group]", "[data-filter-party-type]", "[data-filter-party-group]", "[data-filter-branch]", "[data-filter-city]"].forEach((selector) => {
       document.querySelectorAll(selector).forEach((el) => {
         el.addEventListener("change", updateFilterCount);
       });
@@ -753,9 +768,9 @@
       applyFilters();
     };
 
-      const table = document.querySelector("[data-table]");
-      if (table) {
-        table.addEventListener("click", (event) => {
+    const table = document.querySelector("[data-table]");
+    if (table) {
+      table.addEventListener("click", (event) => {
         const btn = event.target.closest("[data-sort-key]");
         if (!btn) return;
         event.preventDefault();
@@ -801,12 +816,12 @@
     initializeRows();
     updateSortIndicators();
     if (modalForm) {
-      const pageKey = '<%= page.titleKey %>';
+      const pageKey = "<%= page.titleKey %>";
       // Parties: filter party groups to match the selected party type (customer/supplier/both).
       if (pageKey === "parties") {
         // Locate the party type and group selects inside the modal form.
-        const partyType = modalForm.querySelector("[data-field=\"party_type\"]");
-        const groupSelect = modalForm.querySelector("[data-field=\"group_id\"]");
+        const partyType = modalForm.querySelector('[data-field="party_type"]');
+        const groupSelect = modalForm.querySelector('[data-field="group_id"]');
         // Cache the full list of group options for rebuilding on each change.
         const allGroupOptions = groupSelect ? Array.from(groupSelect.options) : [];
         const filterGroups = () => {
@@ -820,14 +835,12 @@
           allGroupOptions.forEach((opt) => {
             const optValue = opt.value || "";
             // Always keep the empty "Select" option.
-            if (!optValue) {
-              groupSelect.appendChild(opt.cloneNode(true));
-              return;
-            }
+            // if (!optValue) {
+            //   groupSelect.appendChild(opt.cloneNode(true));
+            //   return;
+            // }
             // Match against the party type stored on each option.
-            const optType = (opt.getAttribute("data-party-type") || "")
-              .replace(/["']/g, "")
-              .toUpperCase();
+            const optType = (opt.getAttribute("data-party-type") || "").replace(/["']/g, "").toUpperCase();
             if (!selectedType || optType === "BOTH" || optType === selectedType) {
               groupSelect.appendChild(opt.cloneNode(true));
             }
@@ -850,8 +863,8 @@
         }
       }
       if (autoCodeEnabled) {
-        const nameInput = modalForm.querySelector("[data-field=\"name\"]");
-        const codeInput = modalForm.querySelector("[data-field=\"code\"]");
+        const nameInput = modalForm.querySelector('[data-field="name"]');
+        const codeInput = modalForm.querySelector('[data-field="code"]');
         const toCode = (value) =>
           (value || "")
             .toLowerCase()
@@ -878,11 +891,11 @@
 
       modalForm.addEventListener("submit", (event) => {
         if (!modal) return;
-        const pageKey = '<%= page.titleKey %>';
+        const pageKey = "<%= page.titleKey %>";
         const currentId = modal.dataset.currentId || "";
 
         if (pageKey === "accounts" || pageKey === "parties") {
-          const branchSelect = modalForm.querySelector("[data-field=\"branch_ids\"]");
+          const branchSelect = modalForm.querySelector('[data-field="branch_ids"]');
           if (branchSelect && branchSelect.multiple) {
             const selected = Array.from(branchSelect.options).filter((opt) => opt.selected);
             if (!selected.length) {
@@ -896,8 +909,8 @@
           }
         }
         if (pageKey === "parties") {
-          const phone1 = modalForm.querySelector("[data-field=\"phone1\"]");
-          const phone2 = modalForm.querySelector("[data-field=\"phone2\"]");
+          const phone1 = modalForm.querySelector('[data-field="phone1"]');
+          const phone2 = modalForm.querySelector('[data-field="phone2"]');
           if (phone1) {
             const phone1Value = phone1.value.trim();
             if (!phone1Value) {
@@ -912,7 +925,7 @@
         }
 
         if (pageKey === "units") {
-          const codeInput = modalForm.querySelector("[data-field=\"code\"]");
+          const codeInput = modalForm.querySelector('[data-field="code"]');
           const codeValue = codeInput ? codeInput.value.trim().toLowerCase() : "";
           if (codeValue) {
             const exists = getRows().some((row) => {
@@ -932,9 +945,9 @@
         }
 
         if (pageKey === "uom_conversions") {
-          const fromInput = modalForm.querySelector("[data-field=\"from_uom_id\"]");
-          const toInput = modalForm.querySelector("[data-field=\"to_uom_id\"]");
-          const factorInput = modalForm.querySelector("[data-field=\"factor\"]");
+          const fromInput = modalForm.querySelector('[data-field="from_uom_id"]');
+          const toInput = modalForm.querySelector('[data-field="to_uom_id"]');
+          const factorInput = modalForm.querySelector('[data-field="factor"]');
           const fromValue = fromInput ? fromInput.value : "";
           const toValue = toInput ? toInput.value : "";
           const factorValue = factorInput ? Number(factorInput.value) : 0;
@@ -1014,22 +1027,38 @@
             opt.selected = false;
             select.dispatchEvent(new Event("change", { bubbles: true }));
             updateTags();
-            updateMenu();
+            renderMenu();
           });
           tag.appendChild(remove);
           tags.appendChild(tag);
         });
       };
 
-      const updateMenu = () => {
-        menu.innerHTML = "";
+      const searchInput = document.createElement("input");
+      searchInput.type = "search";
+      searchInput.autocomplete = "off";
+      searchInput.placeholder = i18nSearchInput;
+      searchInput.className = "mb-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 shadow-sm focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-accent/30";
+      const optionsWrapper = document.createElement("div");
+      optionsWrapper.className = "space-y-1";
+      menu.innerHTML = "";
+      menu.appendChild(searchInput);
+      menu.appendChild(optionsWrapper);
+
+      const renderMenu = () => {
+        const filter = (searchInput.value || "").trim().toLowerCase();
+        optionsWrapper.innerHTML = "";
         Array.from(select.options).forEach((opt) => {
+          const labelText = opt.textContent.trim();
+          const matches = !filter || labelText.toLowerCase().includes(filter);
+          if (filter && !matches && !opt.selected) {
+            return;
+          }
           const option = document.createElement("button");
           option.type = "button";
-          option.className =
-            "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-amber-50/60";
+          option.className = "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-amber-50/60";
           const label = document.createElement("span");
-          label.textContent = opt.textContent.trim();
+          label.textContent = labelText;
           const check = document.createElement("span");
           check.className = "text-xs text-slate-400";
           check.textContent = opt.selected ? "*" : "";
@@ -1041,17 +1070,22 @@
             opt.selected = !opt.selected;
             select.dispatchEvent(new Event("change", { bubbles: true }));
             updateTags();
-            updateMenu();
+            renderMenu();
             closeMenu();
           });
-          menu.appendChild(option);
+          optionsWrapper.appendChild(option);
         });
       };
 
-      updateMenu();
+      searchInput.addEventListener("input", () => {
+        renderMenu();
+      });
+
       updateTags();
+      renderMenu();
       wrap._multiUpdate = updateTags;
-      wrap._multiMenu = updateMenu;
+      wrap._multiMenu = renderMenu;
+      wrap._multiSearchInput = searchInput;
 
       trigger.addEventListener("click", (event) => {
         event.preventDefault();
@@ -1061,7 +1095,12 @@
       menu.addEventListener("click", (event) => {
         event.stopPropagation();
       });
-      select.addEventListener("change", updateTags);
+      select.addEventListener("change", () => {
+        updateTags();
+        if (typeof wrap._multiMenu === "function") {
+          wrap._multiMenu();
+        }
+      });
       document.addEventListener("click", (event) => {
         if (!wrap.contains(event.target)) {
           closeMenu();
@@ -1076,6 +1115,9 @@
         const tags = wrap.querySelector("[data-multi-tags]");
         const placeholder = wrap.querySelector("[data-multi-placeholder]");
         if (!select || !tags || !placeholder) return;
+        if (wrap._multiSearchInput) {
+          wrap._multiSearchInput.value = "";
+        }
         if (typeof wrap._multiMenu === "function") {
           wrap._multiMenu();
         }
@@ -1088,8 +1130,7 @@
     const buildFilterOptions = () => {
       if (!filterPanel) return;
       const rows = getRows();
-      const collect = (key) =>
-        Array.from(new Set(rows.map((row) => (row.dataset[key] || "").trim()).filter(Boolean))).sort();
+      const collect = (key) => Array.from(new Set(rows.map((row) => (row.dataset[key] || "").trim()).filter(Boolean))).sort();
       const accountTypes = collect("accountType");
       const accountGroups = collect("accountGroup");
       const partyTypes = collect("partyType");
@@ -1099,8 +1140,8 @@
           rows
             .flatMap((row) => (row.dataset.branch || "").split(","))
             .map((value) => value.trim())
-            .filter(Boolean)
-        )
+            .filter(Boolean),
+        ),
       ).sort();
       const cities = collect("city");
 
@@ -1127,10 +1168,10 @@
       fillSelectAll("[data-filter-city]", cities);
     };
 
-      if (typeof filterPartyGroups === "function") {
-        filterPartyGroups();
-      }
-      refreshMultiSelects();
+    if (typeof filterPartyGroups === "function") {
+      filterPartyGroups();
+    }
+    refreshMultiSelects();
     buildFilterOptions();
     updateFilterCount();
 
@@ -1163,14 +1204,7 @@
       }
       if (filterClear) {
         filterClear.addEventListener("click", () => {
-          [
-            "account-type",
-            "account-group",
-            "party-type",
-            "party-group",
-            "branch",
-            "city"
-          ].forEach((key) => {
+          ["account-type", "account-group", "party-type", "party-group", "branch", "city"].forEach((key) => {
             const list = filterPanel?.querySelector(`[data-filter-list="${key}"]`);
             if (!list) return;
             const rows = Array.from(list.querySelectorAll("div"));
@@ -1182,6 +1216,9 @@
               if (index > 0) row.remove();
             });
           });
+          if (filterCreatedBy) filterCreatedBy.value = "";
+          if (filterCreatedAtStart) filterCreatedAtStart.value = "";
+          if (filterCreatedAtEnd) filterCreatedAtEnd.value = "";
           applyFilters();
           updateFilterCount();
           closeFilters();
@@ -1194,37 +1231,37 @@
       });
     }
 
-      const addFilterSelect = (type) => {
-        const list = filterPanel?.querySelector(`[data-filter-list="${type}"]`);
-        if (!list) return;
-        const firstSelect = list.querySelector(`[data-filter-${type}]`);
-        const firstMode = list.querySelector(`[data-filter-${type}-mode]`);
-        if (!firstSelect || !firstMode) return;
-        const wrapper = document.createElement("div");
-        wrapper.className = "flex items-center gap-2";
-        const mode = firstMode.cloneNode(true);
-        mode.value = "include";
-        const select = firstSelect.cloneNode(true);
-        select.value = "";
-        const remove = document.createElement("button");
-        remove.type = "button";
-        remove.className = "rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500";
-        remove.textContent = "x";
-        remove.addEventListener("click", () => {
-          wrapper.remove();
-          updateFilterCount();
-          applyFilters();
-        });
-        wrapper.appendChild(mode);
-        wrapper.appendChild(select);
-        wrapper.appendChild(remove);
-        list.appendChild(wrapper);
-        hookFilter(mode);
-        hookFilter(select);
-        select.addEventListener("change", updateFilterCount);
-        mode.addEventListener("change", updateFilterCount);
+    const addFilterSelect = (type) => {
+      const list = filterPanel?.querySelector(`[data-filter-list="${type}"]`);
+      if (!list) return;
+      const firstSelect = list.querySelector(`[data-filter-${type}]`);
+      const firstMode = list.querySelector(`[data-filter-${type}-mode]`);
+      if (!firstSelect || !firstMode) return;
+      const wrapper = document.createElement("div");
+      wrapper.className = "flex items-center gap-2";
+      const mode = firstMode.cloneNode(true);
+      mode.value = "include";
+      const select = firstSelect.cloneNode(true);
+      select.value = "";
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500";
+      remove.textContent = "x";
+      remove.addEventListener("click", () => {
+        wrapper.remove();
         updateFilterCount();
-      };
+        applyFilters();
+      });
+      wrapper.appendChild(mode);
+      wrapper.appendChild(select);
+      wrapper.appendChild(remove);
+      list.appendChild(wrapper);
+      hookFilter(mode);
+      hookFilter(select);
+      select.addEventListener("change", updateFilterCount);
+      mode.addEventListener("change", updateFilterCount);
+      updateFilterCount();
+    };
 
     filterAddButtons.forEach((btn) => {
       btn.addEventListener("click", () => {
@@ -1250,5 +1287,118 @@
       }
       openModal(autoMode, payload);
     }
+  })();
+</script>
+<script>
+  (function () {
+    const i18nSearch = '<%= t("search") %>';
+    const i18nSelect = '<%= t("select") %>';
+    const isWithinModal = (select) => !!select.closest("[data-modal-form]");
+    const isMultiSelectWrapper = (select) => !!select.closest("[data-multi-select]");
+
+    const makePlaceholder = (select) => {
+      const label = select.closest("label")?.querySelector("span");
+      const labelText = label ? label.textContent.trim() : "";
+      return labelText ? `${i18nSearch} ${labelText}` : i18nSearch;
+    };
+
+    const createSearchableSelect = (select) => {
+      if (!select || select.multiple) return;
+      if (!isWithinModal(select) || isMultiSelectWrapper(select)) return;
+      if (select.dataset.searchableReady === "true") return;
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "relative";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30";
+      const buttonText = document.createElement("span");
+      const menu = document.createElement("div");
+      menu.className = "absolute left-0 right-0 z-20 mt-1 hidden max-h-64 overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg";
+      const search = document.createElement("input");
+      search.type = "search";
+      search.autocomplete = "off";
+      search.placeholder = makePlaceholder(select);
+      search.className = "mb-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 shadow-sm focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-accent/30";
+      const list = document.createElement("div");
+      list.className = "space-y-1";
+
+      const syncButton = () => {
+        const selected = select.options[select.selectedIndex];
+        buttonText.textContent = selected && selected.value ? selected.textContent.trim() : i18nSelect;
+      };
+
+      const renderOptions = () => {
+        const query = (search.value || "").trim().toLowerCase();
+        list.innerHTML = "";
+        Array.from(select.options).forEach((opt) => {
+          const label = (opt.textContent || "").trim();
+          const matches = !query || label.toLowerCase().includes(query);
+          if (!matches && !opt.selected) return;
+          const item = document.createElement("button");
+          item.type = "button";
+          item.className = "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-amber-50/60";
+          item.innerHTML = `<span>${label}</span><span class="text-xs text-slate-400">${opt.selected ? "*" : ""}</span>`;
+          item.addEventListener("click", (event) => {
+            event.preventDefault();
+            opt.selected = true;
+            select.dispatchEvent(new Event("change", { bubbles: true }));
+            syncButton();
+            renderOptions();
+            menu.classList.add("hidden");
+          });
+          list.appendChild(item);
+        });
+      };
+
+      button.appendChild(buttonText);
+      menu.appendChild(search);
+      menu.appendChild(list);
+
+      select.classList.add("sr-only");
+      select.dataset.searchableReady = "true";
+
+      select.parentNode.insertBefore(wrapper, select);
+      wrapper.appendChild(button);
+      wrapper.appendChild(menu);
+      wrapper.appendChild(select);
+
+      const toggleMenu = () => {
+        menu.classList.toggle("hidden");
+        if (!menu.classList.contains("hidden")) {
+          search.focus();
+          renderOptions();
+        }
+      };
+
+      button.addEventListener("click", (event) => {
+        event.preventDefault();
+        toggleMenu();
+      });
+      search.addEventListener("input", renderOptions);
+      select.addEventListener("change", () => {
+        syncButton();
+        renderOptions();
+      });
+      document.addEventListener("click", (event) => {
+        if (!wrapper.contains(event.target)) {
+          menu.classList.add("hidden");
+        }
+      });
+
+      syncButton();
+      renderOptions();
+    };
+
+    const initSearchableSelects = () => {
+      document.querySelectorAll("select").forEach((select) => {
+        if (!select || select.multiple) return;
+        if (select.dataset.searchableSkip === "true") return;
+        createSearchableSelect(select);
+      });
+    };
+
+    document.addEventListener("DOMContentLoaded", initSearchableSelects);
+    window.initSearchableSelects = initSearchableSelects;
   })();
 </script>

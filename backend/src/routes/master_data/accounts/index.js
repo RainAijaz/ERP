@@ -53,9 +53,6 @@ const page = {
     { key: "group_name", label: "account_group" },
     { key: "branch_names", label: "branches" },
     { key: "lock_posting", label: "lock_posting", type: "boolean" },
-    { key: "is_active", label: "Active", type: "boolean" },
-    { key: "created_by_name", label: "Created By" },
-    { key: "created_at", label: "Created At" },
   ],
   fields: [
     {
@@ -105,6 +102,15 @@ const page = {
     },
   ],
 };
+
+page.columns = (page.columns || [])
+  .filter((column) => column.key !== "is_active")
+  .map((column) => {
+    if (column.key === "created_by_name" || column.key === "created_at") {
+      return { ...column, cellClass: "col-export-only" };
+    }
+    return column;
+  });
 
 const ACTIVE_OPTION_TABLES = new Set([
   "erp.party_groups",

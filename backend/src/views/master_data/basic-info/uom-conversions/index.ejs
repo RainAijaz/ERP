@@ -37,10 +37,7 @@
             { key: "id", labelRaw: "ID", sortType: "number" },
             { key: "from", labelRaw: "From UOM" },
             { key: "to", labelRaw: "To UOM" },
-            { key: "factor", labelRaw: "Factor", sortType: "number" },
-            { key: "active", labelRaw: "Active" },
-            { key: "created_by", labelRaw: "Created By" },
-            { key: "created_at", labelRaw: "Created At", sortType: "date" }
+            { key: "factor", labelRaw: "Factor", sortType: "number" }
           ]; %>
           <%- include("../../base/partials/table-header", { t, displayColumns, columnTooltips: {}, sortStartIndex: 1 }) %>
         </thead>
@@ -54,17 +51,14 @@
                 data-row
                 data-from="<%= row.from_uom_id %>"
                 data-to="<%= row.to_uom_id %>"
+                data-created-by="<%= row.created_by_name || "" %>"
+                data-created-at="<%= row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : "" %>"
               >
                 <td class="px-4 py-3 text-slate-700"><%= idx + 1 %></td>
                 <td class="px-4 py-3 text-slate-700"><%= row.id %></td>
                 <td class="px-4 py-3 text-slate-700"><%= row.from_code %> &mdash; <%= row.from_name %></td>
                 <td class="px-4 py-3 text-slate-700"><%= row.to_code %> &mdash; <%= row.to_name %></td>
                 <td class="px-4 py-3 text-slate-700"><%= row.factor %></td>
-                <td class="px-4 py-3 text-slate-700"><%= row.is_active ? "Yes" : "No" %></td>
-                <td class="px-4 py-3 text-slate-700"><%= row.created_by_name || "" %></td>
-                <td class="px-4 py-3 text-slate-700" <%= row.created_at ? "data-sort-value=\"" + new Date(row.created_at).toISOString() + "\"" : "" %>>
-                  <%= row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : "" %>
-                </td>
                 <td class="px-4 py-3">
                   <%- include("../../base/partials/table-actions", { t, row, basePath, editFields: ["from_uom_id", "to_uom_id", "factor"], withMenu: false }) %>
                 </td>

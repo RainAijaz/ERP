@@ -89,7 +89,7 @@ CREATE TABLE IF NOT EXISTS erp.product_subgroups (
   id        bigserial PRIMARY KEY,
   group_id  bigint REFERENCES erp.product_groups(id) ON DELETE RESTRICT,
   code      text NOT NULL,          -- stable key (snake_case)
-  name      text NOT NULL UNIQUE,          -- display name
+  name      text NOT NULL,          -- display name
   name_ur   text,
   is_active boolean NOT NULL DEFAULT true,
   created_by bigint REFERENCES erp.users(id),
@@ -132,6 +132,13 @@ CREATE TABLE IF NOT EXISTS erp.sizes (
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_by bigint REFERENCES erp.users(id),
   updated_at timestamptz
+);
+
+-- Size applicability (RM/SFG/FG). Allows one size to be used in multiple item types.
+CREATE TABLE IF NOT EXISTS erp.size_item_types (
+  size_id  bigint NOT NULL REFERENCES erp.sizes(id) ON DELETE CASCADE,
+  item_type erp.item_type NOT NULL,
+  PRIMARY KEY (size_id, item_type)
 );
 
 CREATE TABLE IF NOT EXISTS erp.colors (
@@ -370,8 +377,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS departments_name_lower_uidx ON erp.departments
 CREATE TABLE IF NOT EXISTS erp.items (
   id               bigserial PRIMARY KEY,
   item_type        erp.item_type NOT NULL, -- RM / SFG / FG
-  code             text NOT NULL UNIQUE,
-  name             text NOT NULL UNIQUE,
+  code             text NOT NULL,
+  name             text NOT NULL,
   name_ur          text,
 
   group_id         bigint NOT NULL REFERENCES erp.product_groups(id),
@@ -380,15 +387,33 @@ CREATE TABLE IF NOT EXISTS erp.items (
 
   base_uom_id      bigint NOT NULL REFERENCES erp.uom(id),
 
+  uses_sfg         boolean NOT NULL DEFAULT false,
+  sfg_part_type    text,
+
   is_active        boolean NOT NULL DEFAULT true,
   min_stock_level  numeric(18,3) NOT NULL DEFAULT -1,
 
   created_by       bigint REFERENCES erp.users(id),
   created_at       timestamptz NOT NULL DEFAULT now(),
+  updated_by       bigint REFERENCES erp.users(id),
+  updated_at       timestamptz,
   approved_by      bigint REFERENCES erp.users(id),
   approved_at      timestamptz,
 
-  CHECK (approved_by IS NULL OR approved_by <> created_by)
+  CHECK (approved_by IS NULL OR approved_by <> created_by),
+  CHECK (item_type = 'FG' OR (uses_sfg = false AND sfg_part_type IS NULL)),
+  CHECK (sfg_part_type IS NULL OR sfg_part_type IN ('UPPER', 'STEP'))
+);
+
+ALTER TABLE IF EXISTS erp.items
+  ADD COLUMN IF NOT EXISTS updated_by bigint REFERENCES erp.users(id),
+  ADD COLUMN IF NOT EXISTS updated_at timestamptz;
+
+-- Finished product usage of semi-finished items.
+CREATE TABLE IF NOT EXISTS erp.item_usage (
+  fg_item_id  bigint NOT NULL REFERENCES erp.items(id) ON DELETE RESTRICT,
+  sfg_item_id bigint NOT NULL REFERENCES erp.items(id) ON DELETE RESTRICT,
+  PRIMARY KEY (fg_item_id, sfg_item_id)
 );
 
 -- =============================================================================
@@ -467,7 +492,8 @@ CREATE TABLE IF NOT EXISTS erp.party_branch (
 CREATE TABLE IF NOT EXISTS erp.rm_purchase_rates (
   id               bigserial PRIMARY KEY,
   rm_item_id       bigint NOT NULL REFERENCES erp.items(id) ON DELETE CASCADE,
-  color_id         bigint NOT NULL REFERENCES erp.colors(id),
+  color_id         bigint REFERENCES erp.colors(id),
+  size_id          bigint REFERENCES erp.sizes(id),
 
   purchase_rate     numeric(18,4) NOT NULL,
   avg_purchase_rate numeric(18,4) NOT NULL, -- keep in sync via triggers/app later
@@ -481,9 +507,21 @@ CREATE TABLE IF NOT EXISTS erp.rm_purchase_rates (
 
   CHECK (purchase_rate >= 0),
   CHECK (avg_purchase_rate >= 0),
-  CHECK (approved_by IS NULL OR approved_by <> created_by),
+  CHECK (approved_by IS NULL OR approved_by <> created_by)
+);
 
-  UNIQUE (rm_item_id, color_id)
+ALTER TABLE IF EXISTS erp.rm_purchase_rates
+  ADD COLUMN IF NOT EXISTS size_id bigint REFERENCES erp.sizes(id);
+
+ALTER TABLE IF EXISTS erp.rm_purchase_rates
+  DROP CONSTRAINT IF EXISTS rm_purchase_rates_rm_item_id_color_id_key;
+
+-- Uniqueness across RM + color + size (NULL treated as 0 for "one color/one size").
+CREATE UNIQUE INDEX IF NOT EXISTS ux_rm_purchase_rates_identity
+ON erp.rm_purchase_rates (
+  rm_item_id,
+  COALESCE(color_id, 0),
+  COALESCE(size_id, 0)
 );
 
 -- =============================================================================
@@ -583,4 +621,25 @@ ON erp.items (is_active);
 
 CREATE INDEX IF NOT EXISTS idx_skus_is_active
 ON erp.skus (is_active);
+
+-- =============================================================================
+-- ITEM UNIQUENESS (RM PER GROUP, OTHERS GLOBAL)
+-- =============================================================================
+-- RM: allow same name/code across groups, but unique within group (case-insensitive).
+CREATE UNIQUE INDEX IF NOT EXISTS ux_items_rm_code_per_group
+ON erp.items (group_id, lower(code))
+WHERE item_type = 'RM';
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_items_rm_name_per_group
+ON erp.items (group_id, lower(name))
+WHERE item_type = 'RM';
+
+-- Non-RM: keep global uniqueness (case-insensitive).
+CREATE UNIQUE INDEX IF NOT EXISTS ux_items_non_rm_code_global
+ON erp.items (lower(code))
+WHERE item_type <> 'RM';
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_items_non_rm_name_global
+ON erp.items (lower(name))
+WHERE item_type <> 'RM';
 

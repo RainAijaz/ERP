@@ -1,0 +1,181 @@
+<div class="mx-auto w-full max-w-7xl space-y-6">
+  <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div class="space-y-1">
+        <h1 class="text-2xl font-display text-ink"><%= t("skus") %></h1>
+        <p class="text-sm text-muted"><%= t("skus_description") %></p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-download-button>
+          <%= t("download") %>
+        </button>
+        <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-print-button>
+          <%= t("print") %>
+        </button>
+        <button class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800" type="button" data-modal-open>
+          <%= t("add") %> <%= t("skus") %>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <%- include("../../../base/partials/error-banner", { error, modalOpen }) %>
+
+  <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md" data-print-area>
+    <div class="px-5 pt-4 text-center text-xl font-display font-semibold uppercase tracking-[0.35em] text-slate-900" data-print-header>
+      <%= t("brand") %>
+    </div>
+    <div class="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div class="text-sm font-semibold text-slate-700"><%= t("list") %> <%= t("skus") %></div>
+      <%- include("../../../base/partials/table-controls", { t, showStatus: true, showFilters: true }) %>
+    </div>
+    <div class="overflow-x-auto lg:overflow-visible">
+      <table class="w-full text-sm table-wrap" data-table>
+        <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+          <% const displayColumns = [
+            { key: "variant_id", label: "variant_id", sortType: "number" },
+            { key: "article", label: "article" },
+            { key: "size", label: "sizes_label" },
+            { key: "grade", label: "grades" },
+            { key: "color", label: "colors" },
+            { key: "packing", label: "packing_types" },
+            { key: "sale_rate", label: "sale_rate", sortType: "number" },
+            { key: "sku", label: "sku_code" },
+            { key: "barcode", label: "barcode" }
+          ]; %>
+          <%- include("../../../base/partials/table-header", { t, displayColumns, columnTooltips: {}, sortStartIndex: 1 }) %>
+        </thead>
+        <tbody class="divide-y divide-slate-100" data-table-body>
+          <% if (!rows || rows.length === 0) { %>
+            <%- include("../../../base/partials/table-empty", { t, colspan: displayColumns.length + 2 }) %>
+          <% } else { %>
+            <% rows.forEach(function(row, idx) { %>
+              <% row.size_ids = row.size_id ? String(row.size_id) : ""; %>
+              <% row.grade_ids = row.grade_id ? String(row.grade_id) : ""; %>
+              <% row.color_ids = row.color_id ? String(row.color_id) : ""; %>
+              <% row.packing_type_ids = row.packing_type_id ? String(row.packing_type_id) : ""; %>
+              <tr class="hover:bg-amber-50/40" data-row data-active="<%= row.is_active ? "true" : "false" %>" data-created-by="<%= row.created_by_name || "" %>" data-created-at="<%= row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : "" %>">
+                <td class="px-4 py-3 text-slate-700"><%= idx + 1 %></td>
+                <td class="px-4 py-3 text-slate-700"><%= row.id %></td>
+                <td class="px-4 py-3 text-slate-700"><%= row.item_code %> - <%= locale === "ur" ? (row.item_name_ur || row.item_name) : row.item_name %></td>
+                <td class="px-4 py-3 text-slate-700"><%= locale === "ur" ? (row.size_name_ur || row.size_name) : row.size_name || "" %></td>
+                <td class="px-4 py-3 text-slate-700"><%= locale === "ur" ? (row.grade_name_ur || row.grade_name) : row.grade_name || "" %></td>
+                <td class="px-4 py-3 text-slate-700"><%= locale === "ur" ? (row.color_name_ur || row.color_name) : row.color_name || "" %></td>
+                <td class="px-4 py-3 text-slate-700"><%= locale === "ur" ? (row.packing_name_ur || row.packing_name) : row.packing_name || "" %></td>
+                <td class="px-4 py-3 text-slate-700"><%= row.sale_rate || "" %></td>
+                <td class="px-4 py-3 text-slate-700"><%= row.sku_code || "" %></td>
+                <td class="px-4 py-3 text-slate-700"><%= row.barcode || "" %></td>
+                <td class="px-4 py-3 whitespace-nowrap col-actions min-w-[110px]">
+                  <%- include("../../../base/partials/table-actions", { t, row, basePath, withMenu: true, editFields: [
+                    "item_id",
+                    "size_ids",
+                    "grade_ids",
+                    "color_ids",
+                    "packing_type_ids",
+                    "sale_rate",
+                    "barcode",
+                    "is_active"
+                  ] }) %>
+                </td>
+              </tr>
+            <% }) %>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+    <%- include("../../../base/partials/table-footer", { t }) %>
+  </section>
+</div>
+
+<%- include("../../../base/partials/modal-shell", {
+  t,
+  modalOpen,
+  modalMode,
+  modalTitle: t("add") + " " + t("skus"),
+  modalDescription: t("skus_description"),
+  translateMode: "transliterate",
+  formAction: basePath,
+  formClass: "space-y-5 px-6 py-5",
+  modalContainerClass: "w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl",
+  modalHeaderClass: "flex items-center justify-between border-b border-slate-200 px-6 py-4",
+  modalError: modalOpen ? error : null,
+  modalValues: modalOpen ? values : null,
+  csrfToken,
+  bodyPartial: "../../master_data/products/skus/form-fields.ejs"
+}) %>
+
+<%- include("../../../base/partials/confirm-modal", { t, csrfToken }) %>
+<%- include("../../../base/partials/filter-modal", { t, bodyPartial: "../../master_data/products/filters.ejs", users }) %>
+
+<%- include("../../../base/partials/basic-info-utils", { t, page: { titleKey: "skus" }, basePath, modalOpen, modalMode }) %>
+
+<script>
+  (function () {
+    const modalForm = document.querySelector("[data-modal-form]");
+    if (!modalForm) return;
+    const rateList = modalForm.querySelector("[data-sku-rate-list]");
+    if (!rateList) return;
+
+    const readSelected = (name) => {
+      const select = modalForm.querySelector(`select[name="${name}"]`);
+      if (!select) return [];
+      return Array.from(select.options).filter((opt) => opt.selected).map((opt) => ({
+        value: opt.value,
+        label: opt.textContent.trim(),
+      }));
+    };
+
+    const buildKey = (sizeId, gradeId, colorId, packingId) =>
+      [sizeId || "0", gradeId || "0", colorId || "0", packingId || "0"].join("|");
+
+    const buildLabel = (size, grade, color, packing) => {
+      const parts = [size, grade];
+      if (color) parts.push(color);
+      if (packing) parts.push(packing);
+      return parts.join(" / ");
+    };
+
+    const refreshRates = () => {
+      const sizes = readSelected("size_ids");
+      const grades = readSelected("grade_ids");
+      const colors = readSelected("color_ids");
+      const packings = readSelected("packing_type_ids");
+      rateList.innerHTML = "";
+
+      if (!sizes.length || !grades.length) {
+        return;
+      }
+
+      const colorList = colors.length ? colors : [{ value: "", label: "" }];
+      const packingList = packings.length ? packings : [{ value: "", label: "" }];
+
+      sizes.forEach((size) => {
+        grades.forEach((grade) => {
+          colorList.forEach((color) => {
+            packingList.forEach((packing) => {
+              const key = buildKey(size.value, grade.value, color.value, packing.value);
+              const label = buildLabel(size.label, grade.label, color.label, packing.label);
+              const row = document.createElement("div");
+              row.className = "flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center";
+              row.innerHTML = `
+                <div class="text-xs font-semibold text-slate-600 sm:w-1/2">${label}</div>
+                <input type="hidden" name="combo_keys" value="${key}" />
+                <input class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 sm:w-1/2" type="number" min="0" step="1" name="combo_rates" placeholder="${t("sale_rate")}" required />
+              `;
+              rateList.appendChild(row);
+            });
+          });
+        });
+      });
+    };
+
+    ["size_ids", "grade_ids", "color_ids", "packing_type_ids"].forEach((name) => {
+      const select = modalForm.querySelector(`select[name="${name}"]`);
+      if (select) {
+        select.addEventListener("change", refreshRates);
+      }
+    });
+
+    document.addEventListener("DOMContentLoaded", refreshRates);
+  })();
+</script>

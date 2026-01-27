@@ -1,8 +1,7 @@
 <script>
   (function () {
     const endpoint = "/translate";
-    const buttonLabel = "<%= t("auto_translate") %>";
-
+    const buttonLabel = '<%= t("auto_translate") %>';
     const wireForm = (form) => {
       const source = form.querySelector('input[name="name"]');
       const target = form.querySelector('input[name="name_ur"]');
@@ -16,8 +15,7 @@
         const button = document.createElement("button");
         button.type = "button";
         button.textContent = buttonLabel;
-        button.className =
-          "mt-2 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-800";
+        button.className = "mt-2 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-800";
         button.setAttribute("data-translate-button", "true");
         const wrapper = document.createElement("div");
         wrapper.className = "mt-2 flex items-center gap-2";

@@ -5,7 +5,7 @@
   data-modal-mode="<%= modalMode || "create" %>"
   <%= modalValues ? "data-modal-values='" + JSON.stringify(modalValues).replace(/'/g, "&#39;") + "'" : "" %>
 >
-  <div class="<%= modalContainerClass || "w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-xl" %>">
+  <div class="<%= modalContainerClass || "w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-xl" %> flex max-h-[90vh] flex-col">
     <div class="<%= modalHeaderClass || "flex items-center justify-between border-b border-slate-200 px-6 py-4" %>">
       <div>
         <div class="text-sm font-semibold text-slate-700" data-modal-title><%= modalTitle %></div>
@@ -19,6 +19,7 @@
         </svg>
       </button>
     </div>
+    <div class="min-h-0 flex-1 overflow-y-auto">
     <form
       method="post"
       action="<%= formAction %>"
@@ -42,5 +43,6 @@
         </button>
       </div>
     </form>
+    </div>
   </div>
 </div>

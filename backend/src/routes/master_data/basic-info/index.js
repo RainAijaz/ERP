@@ -26,7 +26,7 @@ const BASIC_INFO_PAGES = {
     titleKey: "units",
     description: "Define the units of measure used across items, vouchers, and stock.",
     table: "erp.uom",
-    translateMode: "translate",
+    translateMode: "transliterate",
     columns: [
       { key: "id", label: "ID" },
       { key: "code", label: "Code" },
@@ -61,11 +61,16 @@ const BASIC_INFO_PAGES = {
     titleKey: "sizes",
     description: "Size labels used in variants (e.g., 7/10, 9/10).",
     table: "erp.sizes",
-    translateMode: "translate",
+    translateMode: "transliterate",
+    itemTypeMap: {
+      table: "erp.size_item_types",
+      key: "size_id",
+    },
     columns: [
       { key: "id", label: "ID" },
       { key: "name", label: "Name" },
       { key: "name_ur", label: "Name (Urdu)" },
+      { key: "item_types", label: "Applies To" },
       { key: "is_active", label: "Active", type: "boolean" },
       { key: "created_by_name", label: "Created By" },
       { key: "created_at", label: "Created At" },
@@ -83,13 +88,24 @@ const BASIC_INFO_PAGES = {
         placeholder: "Urdu name",
         required: true,
       },
+      {
+        name: "item_types",
+        label: "Applies To",
+        type: "multi-checkbox",
+        required: true,
+        options: [
+          { value: "RM", label: "raw_materials" },
+          { value: "SFG", label: "semi_finished_goods" },
+          { value: "FG", label: "finished_goods" },
+        ],
+      },
     ],
   },
   colors: {
     titleKey: "colors",
     description: "Color options for raw materials and finished variants.",
     table: "erp.colors",
-    translateMode: "translate",
+    translateMode: "transliterate",
     columns: [
       { key: "id", label: "ID" },
       { key: "name", label: "Name" },
@@ -256,11 +272,7 @@ const BASIC_INFO_PAGES = {
       key: "subgroup_id",
     },
     joins: [{ table: { pg: "erp.product_groups" }, on: ["t.group_id", "pg.id"] }],
-    extraSelect: (locale) => [
-      locale === "ur"
-        ? knex.raw("COALESCE(pg.name_ur, pg.name) as group_name")
-        : "pg.name as group_name",
-    ],
+    extraSelect: (locale) => [locale === "ur" ? knex.raw("COALESCE(pg.name_ur, pg.name) as group_name") : "pg.name as group_name"],
     columns: [
       { key: "id", label: "ID" },
       { key: "group_name", label: "Group" },
@@ -446,7 +458,7 @@ const BASIC_INFO_PAGES = {
     titleKey: "departments",
     description: "Department master for production and non-production cost centers.",
     table: "erp.departments",
-    translateMode: "translate",
+    translateMode: "transliterate",
     columns: [
       { key: "id", label: "ID" },
       { key: "name", label: "Name" },
@@ -483,20 +495,7 @@ const BASIC_INFO_PAGES = {
 const getPageConfig = (key) => BASIC_INFO_PAGES[key];
 
 // Resolve dynamic select options (e.g., group lists) before rendering.
-const ACTIVE_OPTION_TABLES = new Set([
-  "erp.party_groups",
-  "erp.account_groups",
-  "erp.product_groups",
-  "erp.product_subgroups",
-  "erp.cities",
-  "erp.branches",
-  "erp.departments",
-  "erp.grades",
-  "erp.packing_types",
-  "erp.sizes",
-  "erp.colors",
-  "erp.uom",
-]);
+const ACTIVE_OPTION_TABLES = new Set(["erp.party_groups", "erp.account_groups", "erp.product_groups", "erp.product_subgroups", "erp.cities", "erp.branches", "erp.departments", "erp.grades", "erp.packing_types", "erp.sizes", "erp.colors", "erp.uom"]);
 
 const hydratePage = async (page, locale) => {
   const fields = [];
@@ -505,15 +504,9 @@ const hydratePage = async (page, locale) => {
       fields.push(field);
       continue;
     }
-    const selectFields = field.optionsQuery.select || [
-      field.optionsQuery.valueKey,
-      field.optionsQuery.labelKey,
-    ];
+    const selectFields = field.optionsQuery.select || [field.optionsQuery.valueKey, field.optionsQuery.labelKey];
     let query = knex(field.optionsQuery.table).select(selectFields);
-    if (
-      field.optionsQuery.activeOnly !== false &&
-      ACTIVE_OPTION_TABLES.has(field.optionsQuery.table)
-    ) {
+    if (field.optionsQuery.activeOnly !== false && ACTIVE_OPTION_TABLES.has(field.optionsQuery.table)) {
       query = query.where({ is_active: true });
     }
     if (field.optionsQuery.where) {
@@ -523,11 +516,8 @@ const hydratePage = async (page, locale) => {
     fields.push({
       ...field,
       options: rows.map((row) => {
-        const labelRaw = field.labelFormat
-          ? field.labelFormat(row, locale)
-          : row[field.optionsQuery.labelKey];
-        const labelUr =
-          !field.labelFormat && locale === "ur" && row.name_ur ? row.name_ur : null;
+        const labelRaw = field.labelFormat ? field.labelFormat(row, locale) : row[field.optionsQuery.labelKey];
+        const labelUr = !field.labelFormat && locale === "ur" && row.name_ur ? row.name_ur : null;
         return {
           value: row[field.optionsQuery.valueKey],
           label: labelUr || labelRaw,
@@ -537,6 +527,10 @@ const hydratePage = async (page, locale) => {
   }
   return { ...page, fields };
 };
+
+Object.values(BASIC_INFO_PAGES).forEach((page) => {
+  page.columns = (page.columns || []).filter((column) => column.key !== "is_active").filter((column) => column.key !== "created_by_name" && column.key !== "created_at");
+});
 
 const renderPage = (req, res, view, page, extra = {}) =>
   res.render("base/layouts/main", {
@@ -566,12 +560,11 @@ const fetchRows = (page, options = {}) => {
   if (page.branchScoped && options.branchId) {
     if (page.branchMap) {
       query = query.where((builder) => {
-        builder.whereExists(function () {
-          this.select(1)
-            .from(page.branchMap.table)
-            .whereRaw(`${page.branchMap.table}.${page.branchMap.key} = t.id`)
-            .andWhere(`${page.branchMap.table}.${page.branchMap.branchKey}`, options.branchId);
-        }).orWhere("t.branch_id", options.branchId);
+        builder
+          .whereExists(function () {
+            this.select(1).from(page.branchMap.table).whereRaw(`${page.branchMap.table}.${page.branchMap.key} = t.id`).andWhere(`${page.branchMap.table}.${page.branchMap.branchKey}`, options.branchId);
+          })
+          .orWhere("t.branch_id", options.branchId);
       });
     } else {
       query = query.where("t.branch_id", options.branchId);
@@ -584,12 +577,7 @@ const fetchRows = (page, options = {}) => {
   if (page.hasUpdatedFields !== false) {
     selects.push("uu.username as updated_by_name");
   }
-  let extraSelect =
-    page.extraSelect
-      ? typeof page.extraSelect === "function"
-        ? page.extraSelect(options.locale || "en")
-        : page.extraSelect
-      : [];
+  let extraSelect = page.extraSelect ? (typeof page.extraSelect === "function" ? page.extraSelect(options.locale || "en") : page.extraSelect) : [];
   if (!Array.isArray(extraSelect)) {
     extraSelect = [extraSelect];
   }
@@ -718,6 +706,9 @@ const FLASH_COOKIE = "basic_info_flash";
 
 const clearFlash = (res, path) => {
   setCookie(res, FLASH_COOKIE, "", { path, maxAge: 0, sameSite: "Lax" });
+  if (path && !path.endsWith("/")) {
+    setCookie(res, FLASH_COOKIE, "", { path: `${path}/`, maxAge: 0, sameSite: "Lax" });
+  }
 };
 
 const readFlash = (req, res, path) => {
@@ -761,52 +752,23 @@ const createHandler = (type) => async (req, res, next) => {
   const basePath = `${req.baseUrl}${ROUTE_MAP[type]}`;
 
   if (missing.length) {
-    return renderIndexError(
-      req,
-      res,
-      page,
-      values,
-      res.locals.t("error_required_fields"),
-      "create",
-      basePath,
-      type
-    );
+    return renderIndexError(req, res, page, values, res.locals.t("error_required_fields"), "create", basePath, type);
   }
 
   try {
     if (page.table === "erp.uom") {
       const codeValue = (values.code || "").trim();
       if (codeValue) {
-        const existing = await knex(page.table)
-          .whereRaw("lower(code) = ?", [codeValue.toLowerCase()])
-          .first();
+        const existing = await knex(page.table).whereRaw("lower(code) = ?", [codeValue.toLowerCase()]).first();
         if (existing) {
-          return renderIndexError(
-            req,
-            res,
-            page,
-            values,
-            res.locals.t("unit_code_exists"),
-            "create",
-            basePath,
-            type
-          );
+          return renderIndexError(req, res, page, values, res.locals.t("unit_code_exists"), "create", basePath, type);
         }
       }
     }
     if (page.itemTypeMap) {
       const { item_types: itemTypes = [], ...rest } = values;
       if (!itemTypes.length) {
-        return renderIndexError(
-          req,
-          res,
-          page,
-          values,
-          res.locals.t("error_required_fields"),
-          "create",
-          basePath,
-          type
-        );
+        return renderIndexError(req, res, page, values, res.locals.t("error_required_fields"), "create", basePath, type);
       }
       await knex.transaction(async (trx) => {
         // Insert the main record, then map each selected item type.
@@ -844,7 +806,7 @@ const createHandler = (type) => async (req, res, next) => {
               branchIds.map((branchId) => ({
                 [page.branchMap.key]: accountId,
                 [page.branchMap.branchKey]: branchId,
-              }))
+              })),
             );
           }
         });
@@ -860,16 +822,7 @@ const createHandler = (type) => async (req, res, next) => {
     return res.redirect(basePath);
   } catch (err) {
     console.error("[basic-info:create]", { type, error: err });
-    return renderIndexError(
-      req,
-      res,
-      page,
-      values,
-      res.locals.t("error_unable_save"),
-      "create",
-      basePath,
-      type
-    );
+    return renderIndexError(req, res, page, values, res.locals.t("error_unable_save"), "create", basePath, type);
   }
 };
 
@@ -892,16 +845,7 @@ const updateHandler = (type) => async (req, res, next) => {
   const basePath = `${req.baseUrl}${ROUTE_MAP[type]}`;
 
   if (missing.length) {
-    return renderIndexError(
-      req,
-      res,
-      page,
-      values,
-      res.locals.t("error_required_fields"),
-      "edit",
-      basePath,
-      type
-    );
+    return renderIndexError(req, res, page, values, res.locals.t("error_required_fields"), "edit", basePath, type);
   }
 
   try {
@@ -909,41 +853,18 @@ const updateHandler = (type) => async (req, res, next) => {
       const existing = await knex(page.table).select("code").where({ id }).first();
       if (existing && existing.code !== values.code) {
         const usedInItems = await knex("erp.items").where({ base_uom_id: id }).first();
-        const usedInConversions = await knex("erp.uom_conversions")
-          .where({ from_uom_id: id })
-          .orWhere({ to_uom_id: id })
-          .first();
+        const usedInConversions = await knex("erp.uom_conversions").where({ from_uom_id: id }).orWhere({ to_uom_id: id }).first();
         if (usedInItems || usedInConversions) {
-          return renderIndexError(
-            req,
-            res,
-            page,
-            values,
-            res.locals.t("error_unit_code_locked"),
-            "edit",
-            basePath,
-            type
-          );
+          return renderIndexError(req, res, page, values, res.locals.t("error_unit_code_locked"), "edit", basePath, type);
         }
       }
     }
     if (page.itemTypeMap) {
       const { item_types: itemTypes = [], ...rest } = values;
       if (!itemTypes.length) {
-        return renderIndexError(
-          req,
-          res,
-          page,
-          values,
-          res.locals.t("error_required_fields"),
-          "edit",
-          basePath,
-          type
-        );
+        return renderIndexError(req, res, page, values, res.locals.t("error_required_fields"), "edit", basePath, type);
       }
-      const auditFields = page.hasUpdatedFields === false
-        ? {}
-        : { updated_by: req.user ? req.user.id : null, updated_at: knex.fn.now() };
+      const auditFields = page.hasUpdatedFields === false ? {} : { updated_by: req.user ? req.user.id : null, updated_at: knex.fn.now() };
       await knex.transaction(async (trx) => {
         // Update the main row, then replace item type mappings.
         await trx(page.table)
@@ -965,9 +886,7 @@ const updateHandler = (type) => async (req, res, next) => {
         }
       });
     } else {
-      const auditFields = page.hasUpdatedFields === false
-        ? {}
-        : { updated_by: req.user ? req.user.id : null, updated_at: knex.fn.now() };
+      const auditFields = page.hasUpdatedFields === false ? {} : { updated_by: req.user ? req.user.id : null, updated_at: knex.fn.now() };
       if (page.branchMap) {
         const { branch_ids: branchIds = [], ...rest } = values;
         await knex.transaction(async (trx) => {
@@ -985,7 +904,7 @@ const updateHandler = (type) => async (req, res, next) => {
               branchIds.map((branchId) => ({
                 [page.branchMap.key]: id,
                 [page.branchMap.branchKey]: branchId,
-              }))
+              })),
             );
           }
         });
@@ -1001,16 +920,7 @@ const updateHandler = (type) => async (req, res, next) => {
     return res.redirect(basePath);
   } catch (err) {
     console.error("[basic-info:update]", { type, id, error: err });
-    return renderIndexError(
-      req,
-      res,
-      page,
-      values,
-      res.locals.t("error_unable_save"),
-      "edit",
-      basePath,
-      type
-    );
+    return renderIndexError(req, res, page, values, res.locals.t("error_unable_save"), "edit", basePath, type);
   }
 };
 
@@ -1027,9 +937,7 @@ const toggleHandler = (type) => async (req, res, next) => {
     if (!current) {
       return next(new HttpError(404, "Record not found"));
     }
-    const auditFields = page.hasUpdatedFields === false
-      ? {}
-      : { updated_by: req.user ? req.user.id : null, updated_at: knex.fn.now() };
+    const auditFields = page.hasUpdatedFields === false ? {} : { updated_by: req.user ? req.user.id : null, updated_at: knex.fn.now() };
     await knex(page.table)
       .where({ id })
       .update({
@@ -1038,16 +946,7 @@ const toggleHandler = (type) => async (req, res, next) => {
       });
     return res.redirect(basePath);
   } catch (err) {
-    return renderIndexError(
-      req,
-      res,
-      page,
-      {},
-      res.locals.t("error_update_status"),
-      "delete",
-      basePath,
-      type
-    );
+    return renderIndexError(req, res, page, {}, res.locals.t("error_update_status"), "delete", basePath, type);
   }
 };
 
@@ -1063,16 +962,7 @@ const deleteHandler = (type) => async (req, res, next) => {
     await knex(page.table).where({ id }).del();
     return res.redirect(basePath);
   } catch (err) {
-    return renderIndexError(
-      req,
-      res,
-      page,
-      {},
-      res.locals.t("error_delete"),
-      "delete",
-      basePath,
-      type
-    );
+    return renderIndexError(req, res, page, {}, res.locals.t("error_delete"), "delete", basePath, type);
   }
 };
 

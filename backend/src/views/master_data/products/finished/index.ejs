@@ -1,0 +1,130 @@
+<div class="mx-auto w-full max-w-7xl space-y-6">
+  <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div class="space-y-1">
+        <h1 class="text-2xl font-display text-ink"><%= t("finished") %></h1>
+        <p class="text-sm text-muted"><%= t("finished_description") %></p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-download-button>
+          <%= t("download") %>
+        </button>
+        <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-print-button>
+          <%= t("print") %>
+        </button>
+        <button class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800" type="button" data-modal-open>
+          <%= t("add") %> <%= t("finished") %>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <%- include("../../../base/partials/error-banner", { error, modalOpen }) %>
+
+  <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md" data-print-area>
+    <div class="px-5 pt-4 text-center text-xl font-display font-semibold uppercase tracking-[0.35em] text-slate-900" data-print-header>
+      <%= t("brand") %>
+    </div>
+    <div class="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div class="text-sm font-semibold text-slate-700"><%= t("list") %> <%= t("finished") %></div>
+      <%- include("../../../base/partials/table-controls", { t, showStatus: true, showFilters: true }) %>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm table-wrap" data-table>
+        <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+          <% const displayColumns = [
+            { key: "name", label: "article_name" },
+            { key: "group", label: "group" },
+            { key: "subgroup", label: "sub_group" },
+            { key: "unit", label: "base_unit" },
+            { key: "category", label: "category" },
+            { key: "uses_sfg", label: "uses_sfg" },
+            { key: "sfg_part_type", label: "sfg_part" }
+          ]; %>
+          <%- include("../../../base/partials/table-header", { t, displayColumns, columnTooltips: {}, sortStartIndex: 1 }) %>
+        </thead>
+        <tbody class="divide-y divide-slate-100" data-table-body>
+          <% if (!rows || rows.length === 0) { %>
+            <%- include("../../../base/partials/table-empty", { t, colspan: displayColumns.length + 2 }) %>
+          <% } else { %>
+            <% rows.forEach(function(row, idx) { %>
+              <% const displayName = locale === "ur" ? (row.name_ur || row.name) : row.name; %>
+              <% const displayGroup = locale === "ur" ? (row.group_name_ur || row.group_name) : row.group_name; %>
+              <% const displaySubgroup = locale === "ur" ? (row.subgroup_name_ur || row.subgroup_name) : row.subgroup_name; %>
+              <% const displayType = locale === "ur" ? (row.type_name_ur || row.type_name) : row.type_name; %>
+              <% const displayUomName = locale === "ur" ? (row.uom_name_ur || row.uom_name) : row.uom_name; %>
+              <% const displaySfgPart = row.sfg_part_type ? (row.sfg_part_type.toUpperCase() === "UPPER" ? t("upper") : row.sfg_part_type.toUpperCase() === "STEP" ? t("step") : row.sfg_part_type) : ""; %>
+              <tr class="hover:bg-amber-50/40" data-row data-active="<%= row.is_active ? "true" : "false" %>" data-created-by="<%= row.created_by_name || "" %>" data-created-at="<%= row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : "" %>">
+                <td class="px-4 py-3 text-slate-700"><%= idx + 1 %></td>
+                <td class="px-4 py-3 text-slate-700"><%= displayName %></td>
+                <td class="px-4 py-3 text-slate-700"><%= displayGroup || "" %></td>
+                <td class="px-4 py-3 text-slate-700"><%= displaySubgroup || "" %></td>
+                <td class="px-4 py-3 text-slate-700"><%= row.uom_code || "" %></td>
+                <td class="px-4 py-3 text-slate-700"><%= displayType || "" %></td>
+                <td class="px-4 py-3 text-slate-700"><%= row.uses_sfg ? t("yes") : t("no") %></td>
+                <td class="px-4 py-3 text-slate-700"><%= displaySfgPart %></td>
+                <td class="px-4 py-3 whitespace-nowrap col-actions">
+                  <%- include("../../../base/partials/table-actions", { t, row, basePath, withMenu: true, editFields: [
+                    "name",
+                    "name_ur",
+                    "group_id",
+                    "subgroup_id",
+                    "base_uom_id",
+                    "product_type_id",
+                    "uses_sfg",
+                    "sfg_part_type"
+                  ] }) %>
+                </td>
+              </tr>
+            <% }) %>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+    <%- include("../../../base/partials/table-footer", { t }) %>
+  </section>
+</div>
+
+<%- include("../../../base/partials/modal-shell", {
+  t,
+  modalOpen,
+  modalMode,
+  modalTitle: t("add") + " " + t("finished"),
+  modalDescription: t("finished_description"),
+  translateMode: "transliterate",
+  formAction: basePath,
+  formClass: "space-y-5 px-6 py-5",
+  modalContainerClass: "w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl",
+  modalHeaderClass: "flex items-center justify-between border-b border-slate-200 px-6 py-4",
+  modalError: modalOpen ? error : null,
+  modalValues: modalOpen ? values : null,
+  csrfToken,
+  bodyPartial: "../../master_data/products/finished/form-fields.ejs"
+}) %>
+
+<%- include("../../../base/partials/confirm-modal", { t, csrfToken }) %>
+<%- include("../../../base/partials/filter-modal", { t, bodyPartial: "../../master_data/products/filters.ejs", users }) %>
+
+<%- include("../../../base/partials/basic-info-utils", { t, page: { titleKey: "finished" }, basePath, modalOpen, modalMode }) %>
+
+<script>
+  (function () {
+    const modalForm = document.querySelector("[data-modal-form]");
+    if (!modalForm) return;
+    const usesSfg = modalForm.querySelector("[data-field=\"uses_sfg\"]");
+    const partField = modalForm.querySelector("[data-field=\"sfg_part_type\"]");
+    const partWrap = partField ? partField.closest("[data-sfg-part]") : null;
+    const togglePart = () => {
+      if (!usesSfg || !partWrap) return;
+      const enabled = usesSfg.checked || usesSfg.value === "true";
+      partWrap.classList.toggle("hidden", !enabled);
+      if (!enabled && partField) {
+        partField.value = "";
+      }
+    };
+    if (usesSfg && partField) {
+      usesSfg.addEventListener("change", togglePart);
+      togglePart();
+    }
+  })();
+</script>

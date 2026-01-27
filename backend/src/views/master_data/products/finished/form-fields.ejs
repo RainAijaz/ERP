@@ -1,0 +1,69 @@
+<label class="block text-sm font-semibold text-slate-600">
+  <span><%= t("article_name") %></span>
+  <input class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" type="text" name="name" data-field="name" placeholder="<%= t('article_name') %>" required />
+</label>
+
+<label class="block text-sm font-semibold text-slate-600">
+  <span><%= t("name_ur") %></span>
+  <input class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" type="text" name="name_ur" data-field="name_ur" placeholder="<%= t('name_ur') %>" />
+</label>
+
+<div class="grid gap-4 lg:grid-cols-2">
+  <label class="block text-sm font-semibold text-slate-600">
+    <span><%= t("group") %></span>
+    <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" name="group_id" data-field="group_id" required>
+      <option value=""><%= t("select") %> <%= t("group") %></option>
+      <% groups.forEach(function(group) { %>
+        <option value="<%= group.id %>"><%= locale === "ur" ? (group.name_ur || group.name) : group.name %></option>
+      <% }) %>
+    </select>
+  </label>
+  <label class="block text-sm font-semibold text-slate-600">
+    <span><%= t("sub_group") %></span>
+    <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" name="subgroup_id" data-field="subgroup_id">
+      <option value=""><%= t("select") %> <%= t("sub_group") %></option>
+      <% subgroups.forEach(function(subgroup) { %>
+        <option value="<%= subgroup.id %>"><%= locale === "ur" ? (subgroup.name_ur || subgroup.name) : subgroup.name %></option>
+      <% }) %>
+    </select>
+  </label>
+</div>
+
+<div class="grid gap-4 lg:grid-cols-2">
+  <label class="block text-sm font-semibold text-slate-600">
+    <span><%= t("base_unit") %></span>
+    <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" name="base_uom_id" data-field="base_uom_id" required>
+      <option value=""><%= t("select") %> <%= t("base_unit") %></option>
+      <% uoms.forEach(function(uom) { %>
+        <% const isPair = String(uom.code || "").toUpperCase() === "PAIR" || String(uom.name || "").toUpperCase() === "PAIR"; %>
+        <option value="<%= uom.id %>" <%= isPair ? "selected" : "" %>><%= uom.code %></option>
+      <% }) %>
+    </select>
+  </label>
+  <label class="block text-sm font-semibold text-slate-600">
+    <span><%= t("category") %></span>
+    <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" name="product_type_id" data-field="product_type_id" required>
+      <option value=""><%= t("select") %> <%= t("category") %></option>
+      <% types.forEach(function(type) { %>
+        <option value="<%= type.id %>"><%= locale === "ur" ? (type.name_ur || type.name) : type.name %></option>
+      <% }) %>
+    </select>
+  </label>
+</div>
+
+<label class="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600">
+  <input class="h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent/40" type="checkbox" name="uses_sfg" data-field="uses_sfg" />
+  <span><%= t("uses_sfg") %></span>
+</label>
+
+<div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3" data-sfg-part>
+  <label class="block text-sm font-semibold text-slate-600">
+    <span><%= t("sfg_part_type") %></span>
+    <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" name="sfg_part_type" data-field="sfg_part_type">
+      <option value=""><%= t("select") %> <%= t("sfg_part") %></option>
+      <option value="UPPER"><%= t("upper") %></option>
+      <option value="STEP"><%= t("step") %></option>
+    </select>
+  </label>
+  <p class="mt-2 text-xs text-slate-500"><%= t("finished_description") %></p>
+</div>

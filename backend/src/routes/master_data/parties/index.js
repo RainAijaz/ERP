@@ -70,8 +70,6 @@ const page = {
     { key: "branch_names", label: "branches" },
     { key: "city_name", label: "city" },
     { key: "phone_primary", label: "phone_primary", adminOnly: true },
-    { key: "is_active", label: "Active", type: "boolean" },
-    { key: "created_by_name", label: "Created By" },
   ],
   fields: [
     {
@@ -168,6 +166,19 @@ const page = {
     },
   ],
 };
+
+page.columns = (page.columns || [])
+  .filter((column) => column.key !== "is_active")
+  .map((column) => {
+    if (column.key === "created_by_name") {
+      return { ...column, cellClass: "col-export-only" };
+    }
+    return column;
+  });
+
+if (!page.columns.some((column) => column.key === "created_at")) {
+  page.columns.push({ key: "created_at", label: "Created At", cellClass: "col-export-only" });
+}
 
 const ACTIVE_OPTION_TABLES = new Set([
   "erp.party_groups",

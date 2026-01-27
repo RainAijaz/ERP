@@ -1,0 +1,368 @@
+<div class="mx-auto w-full max-w-7xl space-y-6">
+  <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div class="space-y-1">
+        <h1 class="text-2xl font-display text-ink"><%= t("raw_materials") %></h1>
+        <p class="text-sm text-muted"><%= t("raw_materials_description") %></p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-download-button>
+          <%= t("download") %>
+        </button>
+        <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-print-button>
+          <%= t("print") %>
+        </button>
+        <button class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800" type="button" data-modal-open>
+          <%= t("add") %> <%= t("raw_materials") %>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <%- include("../../../base/partials/error-banner", { error, modalOpen }) %>
+
+  <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md" data-print-area>
+    <div class="px-5 pt-4 text-center text-xl font-display font-semibold uppercase tracking-[0.35em] text-slate-900" data-print-header>
+      <%= t("brand") %>
+    </div>
+    <div class="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div class="text-sm font-semibold text-slate-700"><%= t("list") %> <%= t("raw_materials") %></div>
+      <div class="flex flex-wrap items-center gap-3">
+        <%- include("../../../base/partials/table-controls", { t, showStatus: true, showFilters: true }) %>
+        <label class="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-600 shadow-sm">
+          <span><%= t("rates") %></span>
+          <select class="bg-transparent text-[10px] font-semibold text-slate-700 focus:outline-none" data-rm-view>
+            <option value="summary"><%= t("summary") %></option>
+            <option value="expanded" selected><%= t("expanded") %></option>
+          </select>
+        </label>
+      </div>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm table-wrap" data-table>
+        <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+          <% const displayColumns = [
+            { key: "name", label: "name" },
+            { key: "sub_group", label: "sub_group" },
+            { key: "unit", label: "base_unit" },
+            { key: "colors", label: "colors" },
+            { key: "sizes", label: "sizes_label" },
+            { key: "purchase_rates", label: "purchase_rate" },
+            { key: "avg_purchase_rates", label: "avg_purchase_rate" },
+            { key: "min_stock_level", label: "min_stock", sortType: "number" }
+          ]; %>
+          <%- include("../../../base/partials/table-header", { t, displayColumns, columnTooltips: {}, sortStartIndex: 1 }) %>
+        </thead>
+        <tbody class="divide-y divide-slate-100" data-table-body>
+          <% if (!rows || rows.length === 0) { %>
+            <%- include("../../../base/partials/table-empty", { t, colspan: displayColumns.length + 2 }) %>
+          <% } else { %>
+            <% rows.forEach(function(row, idx) { %>
+              <% const displayName = locale === "ur" ? (row.name_ur || row.name) : row.name; %>
+              <% const displaySubgroup = locale === "ur" ? (row.subgroup_name_ur || row.subgroup_name) : row.subgroup_name; %>
+              <% const displayUomName = locale === "ur" ? (row.uom_name_ur || row.uom_name) : row.uom_name; %>
+              <% const displayPurchaseRates = row.purchase_rates || ""; %>
+              <% const displayAvgRates = row.avg_purchase_rates || ""; %>
+              <% const displayColors = locale === "ur" ? (row.color_names_ur || row.color_names) : row.color_names; %>
+              <% const displaySizes = locale === "ur" ? (row.size_names_ur || row.size_names) : row.size_names; %>
+              <% const displayMinStock = row.min_stock_level === null || row.min_stock_level === undefined || row.min_stock_level === "" ? "" : Math.trunc(Number(row.min_stock_level)); %>
+              <% const rateDetails = rateDetailsByItem && rateDetailsByItem[row.id] ? rateDetailsByItem[row.id] : []; %>
+              <tr class="hover:bg-amber-50/40" data-row data-rm-parent data-id="<%= row.id %>" data-active="<%= row.is_active ? "true" : "false" %>" data-created-by="<%= row.created_by_name || "" %>" data-created-at="<%= row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : "" %>">
+                <td class="px-4 py-3 text-slate-700"><%= idx + 1 %></td>
+                <td class="px-4 py-3 text-slate-700 whitespace-normal break-words max-w-[220px]" data-rm-parent-primary><%= displayName %></td>
+                <td class="px-4 py-3 text-slate-700 whitespace-normal break-words max-w-[200px]" data-rm-parent-primary><%= displaySubgroup || "" %></td>
+                <td class="px-4 py-3 text-slate-700 truncate" data-rm-parent-primary><%= row.uom_code || "" %></td>
+                <td class="px-4 py-3 text-slate-700 whitespace-normal break-words max-w-[180px]" data-rm-parent-secondary><%= displayColors || "" %></td>
+                <td class="px-4 py-3 text-slate-700 whitespace-normal break-words max-w-[160px]" data-rm-parent-secondary><%= displaySizes || "" %></td>
+                <td class="px-4 py-3 text-slate-700 whitespace-normal break-words max-w-[200px]" data-summary-rates="<%= displayPurchaseRates || "" %>" data-rm-parent-secondary><%= displayPurchaseRates || "" %></td>
+                <td class="px-4 py-3 text-slate-700 whitespace-normal break-words max-w-[200px]" data-summary-avg="<%= displayAvgRates || "" %>" data-rm-parent-secondary><%= displayAvgRates || "" %></td>
+                <td class="px-4 py-3 text-slate-700 text-right" data-rm-parent-primary><%= displayMinStock %></td>
+                <td class="px-4 py-3 whitespace-nowrap col-actions">
+                  <%- include("../../../base/partials/table-actions", { t, row, basePath, withMenu: true, editFields: [
+                    "name",
+                    "name_ur",
+                    "subgroup_id",
+                    "base_uom_id",
+                    "min_stock_level",
+                    "color_rate_pairs"
+                  ] }) %>
+                </td>
+              </tr>
+              <% if (rateDetails.length) { %>
+                <% rateDetails.forEach(function(detail) { %>
+                  <% const detailColor = locale === "ur" ? (detail.color_name_ur || detail.color_name) : detail.color_name; %>
+                  <% const detailSize = locale === "ur" ? (detail.size_name_ur || detail.size_name) : detail.size_name; %>
+                  <% const colorLabel = detailColor || t("one_color"); %>
+                  <% const sizeLabel = detailSize || t("one_size"); %>
+                  <% const displayPurchaseRate = detail.purchase_rate === null || detail.purchase_rate === undefined ? "" : Math.trunc(Number(detail.purchase_rate)); %>
+                  <% const displayAvgRate = detail.avg_purchase_rate === null || detail.avg_purchase_rate === undefined ? "" : Math.trunc(Number(detail.avg_purchase_rate)); %>
+                  <tr class="hidden bg-amber-50/40" data-rm-detail data-parent-id="<%= row.id %>">
+                    <td class="px-4 py-2 text-slate-500 text-xs">*</td>
+                    <td class="px-4 py-2 text-slate-600 text-xs"></td>
+                    <td class="px-4 py-2"></td>
+                    <td class="px-4 py-2 text-slate-600 text-xs"></td>
+                    <td class="px-4 py-2 text-slate-600 text-xs"><%= colorLabel %></td>
+                    <td class="px-4 py-2 text-slate-600 text-xs"><%= sizeLabel %></td>
+                    <td class="px-4 py-2 text-slate-600 text-xs"><%= displayPurchaseRate %></td>
+                    <td class="px-4 py-2 text-slate-600 text-xs"><%= displayAvgRate %></td>
+                    <td class="px-4 py-2 text-slate-600 text-xs text-right"></td>
+                    <td class="px-4 py-2"></td>
+                  </tr>
+                <% }) %>
+              <% } %>
+            <% }) %>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+    <%- include("../../../base/partials/table-footer", { t }) %>
+  </section>
+</div>
+
+<%- include("../../../base/partials/modal-shell", {
+  t,
+  modalOpen,
+  modalMode,
+  modalTitle: t("add") + " " + t("raw_materials"),
+  modalDescription: t("raw_materials_description"),
+  translateMode: "transliterate",
+  formAction: basePath,
+  formClass: "space-y-5 px-6 py-5",
+  modalContainerClass: "w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl",
+  modalHeaderClass: "flex items-center justify-between border-b border-slate-200 px-6 py-4",
+  modalError: modalOpen ? error : null,
+  modalValues: modalOpen ? values : null,
+  csrfToken,
+  bodyPartial: "../../master_data/products/raw-materials/form-fields.ejs"
+}) %>
+
+<%- include("../../../base/partials/confirm-modal", { t, csrfToken }) %>
+<%- include("../../../base/partials/filter-modal", { t, bodyPartial: "../../master_data/products/filters.ejs", users }) %>
+
+<%- include("../../../base/partials/basic-info-utils", { t, page: { titleKey: "raw_materials" }, basePath, modalOpen, modalMode }) %>
+
+<script>
+  (function () {
+    const modal = document.querySelector("[data-modal]");
+    const modalForm = document.querySelector("[data-modal-form]");
+    if (!modal || !modalForm) return;
+
+    const subgroupSelect = modalForm.querySelector("[data-field=\"subgroup_id\"]");
+
+    const rateList = modalForm.querySelector("[data-rate-list]");
+    const template = modalForm.querySelector("[data-rate-template]");
+    const modeSelect = modalForm.querySelector("[data-rate-mode]");
+    if (!rateList || !template) return;
+
+    const addRateRow = (colorId = "", sizeId = "", rateValue = "") => {
+      const row = template.content.cloneNode(true);
+      const select = row.querySelector("[data-rate-color]");
+      const sizeSelect = row.querySelector("[data-rate-size]");
+      const input = row.querySelector("[data-rate-value]");
+      if (select) select.value = colorId;
+      if (sizeSelect) sizeSelect.value = sizeId;
+      if (input) input.value = rateValue;
+      rateList.appendChild(row);
+    };
+
+    modalForm.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      const target = event.target;
+      if (!target || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+      event.preventDefault();
+    });
+
+    rateList.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      const input = event.target.closest("[data-rate-value]");
+      if (!input) return;
+      event.preventDefault();
+      if (String(input.value || "").trim() === "") return;
+      addRateRow();
+      applyRateMode();
+      const inputs = rateList.querySelectorAll("[data-rate-value]");
+      const last = inputs[inputs.length - 1];
+      if (last) last.focus();
+    });
+
+    const resetRates = () => {
+      rateList.innerHTML = "";
+    };
+
+    const applyRateMode = () => {
+      const mode = modeSelect ? modeSelect.value : "both";
+      rateList.querySelectorAll("[data-rate-row]").forEach((row) => {
+        const colorSelect = row.querySelector("[data-rate-color]");
+        const sizeSelect = row.querySelector("[data-rate-size]");
+        if (colorSelect) {
+          const hideColor = mode === "size";
+          colorSelect.classList.toggle("hidden", hideColor);
+          colorSelect.disabled = hideColor;
+          if (hideColor) colorSelect.value = "";
+        }
+        if (sizeSelect) {
+          const hideSize = mode === "color";
+          sizeSelect.classList.toggle("hidden", hideSize);
+          sizeSelect.disabled = hideSize;
+          if (hideSize) sizeSelect.value = "";
+        }
+      });
+    };
+
+    const fillRatesFromPairs = (pairs) => {
+      resetRates();
+      if (!pairs) {
+        addRateRow();
+        return;
+      }
+      const list = pairs.split(",").map((pair) => pair.trim()).filter(Boolean);
+      if (!list.length) {
+        addRateRow();
+        applyRateMode();
+        return;
+      }
+      list.forEach((pair) => {
+        const [colorId, sizeId, rateValue] = pair.split(":");
+        addRateRow(colorId || "", sizeId || "", rateValue || "");
+      });
+      applyRateMode();
+    };
+
+    const openForCreate = () => {
+      setTimeout(() => fillRatesFromPairs(""), 0);
+    };
+
+    const openForEdit = (button) => {
+      const pairs = button.dataset.color_rate_pairs || "";
+      setTimeout(() => fillRatesFromPairs(pairs), 0);
+    };
+
+    document.querySelectorAll("[data-modal-open]").forEach((btn) => {
+      btn.addEventListener("click", openForCreate);
+    });
+    document.querySelectorAll("[data-edit]").forEach((btn) => {
+      btn.addEventListener("click", () => openForEdit(btn));
+    });
+
+    rateList.addEventListener("click", (event) => {
+      const target = event.target.closest("[data-rate-add-row]");
+      if (!target) return;
+      addRateRow();
+      applyRateMode();
+    });
+
+    if (modeSelect) {
+      modeSelect.addEventListener("change", applyRateMode);
+    }
+    if (modal.dataset.autoOpen === "true") {
+      if (modal.dataset.modalMode === "edit") {
+        const editButton = document.querySelector("[data-edit][data-id=\"" + modal.dataset.currentId + "\"]");
+        if (editButton) {
+          openForEdit(editButton);
+        }
+      } else {
+        openForCreate();
+      }
+      if (modeSelect) {
+        setTimeout(applyRateMode, 0);
+      }
+    }
+  })();
+</script>
+<script>
+  (function () {
+    const table = document.querySelector("[data-table]");
+    const viewSelect = document.querySelector("[data-rm-view]");
+    if (!table || !viewSelect) return;
+
+    const relinkDetails = () => {
+      const body = document.querySelector("[data-table-body]");
+      if (!body) return;
+      const detailRows = Array.from(body.querySelectorAll("[data-rm-detail]"));
+      const byParent = new Map();
+      detailRows.forEach((row) => {
+        const parentId = row.getAttribute("data-parent-id");
+        if (!parentId) return;
+        if (!byParent.has(parentId)) byParent.set(parentId, []);
+        byParent.get(parentId).push(row);
+      });
+      Array.from(body.querySelectorAll("[data-rm-parent]")).forEach((parent) => {
+        const parentId = parent.getAttribute("data-id");
+        const rows = byParent.get(parentId) || [];
+        let insertAfter = parent;
+        rows.forEach((row) => {
+          if (row.previousElementSibling !== insertAfter) {
+            insertAfter.after(row);
+          }
+          insertAfter = row;
+        });
+      });
+    };
+
+    const syncDetailVisibility = () => {
+      const expanded = table.dataset.rmExpanded === "true";
+      document.querySelectorAll("[data-rm-detail]").forEach((row) => {
+        const parentId = row.getAttribute("data-parent-id");
+        const parent = parentId ? document.querySelector(`[data-rm-parent][data-row][data-id="${parentId}"]`) : null;
+        const parentHidden = parent ? parent.classList.contains("hidden") : false;
+        row.classList.toggle("hidden", !expanded || parentHidden);
+      });
+    };
+
+    const setExpanded = (expanded) => {
+      table.dataset.rmExpanded = expanded ? "true" : "false";
+      document.querySelectorAll("[data-rm-detail]").forEach((row) => {
+        row.classList.toggle("hidden", !expanded);
+      });
+      document.querySelectorAll("[data-rm-parent]").forEach((row) => {
+        row.classList.toggle("bg-amber-50/40", expanded);
+      });
+      document.querySelectorAll("[data-rm-parent-secondary]").forEach((cell) => {
+        cell.classList.toggle("invisible", expanded);
+      });
+      document.querySelectorAll("[data-summary-rates]").forEach((cell) => {
+        const value = cell.dataset.summaryRates || "";
+        cell.textContent = expanded ? "" : value;
+      });
+      document.querySelectorAll("[data-summary-avg]").forEach((cell) => {
+        const value = cell.dataset.summaryAvg || "";
+        cell.textContent = expanded ? "" : value;
+      });
+      if (expanded) {
+        syncDetailVisibility();
+      }
+    };
+
+    viewSelect.addEventListener("change", () => {
+      setExpanded(viewSelect.value === "expanded");
+    });
+
+    setExpanded(viewSelect.value === "expanded");
+
+    const body = document.querySelector("[data-table-body]");
+    if (body) {
+      let isRelinking = false;
+      const safeRelink = () => {
+        if (isRelinking) return;
+        isRelinking = true;
+        try {
+          relinkDetails();
+        } finally {
+          isRelinking = false;
+        }
+      };
+      const observer = new MutationObserver((mutations) => {
+        const hasChildList = mutations.some((m) => m.type === "childList");
+        const hasClassChange = mutations.some((m) => m.type === "attributes");
+        if (hasClassChange && table.dataset.rmExpanded === "true") {
+          syncDetailVisibility();
+        }
+        if (hasChildList) {
+          safeRelink();
+        }
+      });
+      observer.observe(body, { attributes: true, childList: true, subtree: true, attributeFilter: ["class"] });
+      safeRelink();
+    }
+  })();
+</script>

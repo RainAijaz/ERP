@@ -1,0 +1,76 @@
+<label class="block text-sm font-semibold text-slate-600">
+  <span><%= t("name") %></span>
+  <input class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" type="text" name="name" data-field="name" placeholder="<%= t('name') %>" required />
+</label>
+
+<label class="block text-sm font-semibold text-slate-600">
+  <span><%= t("name_ur") %></span>
+  <input class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" type="text" name="name_ur" data-field="name_ur" placeholder="<%= t('name_ur') %>" />
+</label>
+
+<div class="grid gap-4 lg:grid-cols-2">
+  <label class="block text-sm font-semibold text-slate-600">
+    <span><%= t("sub_group") %></span>
+    <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" name="subgroup_id" data-field="subgroup_id" required>
+      <option value=""><%= t("select") %> <%= t("sub_group") %></option>
+      <% subgroups.forEach(function(subgroup) { %>
+        <option value="<%= subgroup.id %>"><%= locale === "ur" ? (subgroup.name_ur || subgroup.name) : subgroup.name %></option>
+      <% }) %>
+    </select>
+  </label>
+  <label class="block text-sm font-semibold text-slate-600">
+    <span><%= t("base_unit") %></span>
+    <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" name="base_uom_id" data-field="base_uom_id" required>
+      <option value=""><%= t("select") %> <%= t("base_unit") %></option>
+      <% uoms.forEach(function(uom) { %>
+        <option value="<%= uom.id %>"><%= uom.code %></option>
+      <% }) %>
+    </select>
+  </label>
+</div>
+
+<label class="block text-sm font-semibold text-slate-600">
+  <span><%= t("min_stock") %></span>
+  <input class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" type="number" name="min_stock_level" data-field="min_stock_level" min="0" step="1" placeholder="0" />
+</label>
+
+<div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+  <div class="flex flex-wrap items-center justify-between gap-3">
+    <div class="text-sm font-semibold text-slate-800"><%= t("rates") %></div>
+    <div class="flex flex-wrap items-center gap-2">
+      <label class="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+        <span><%= t("type") %></span>
+        <select class="bg-transparent text-[10px] font-semibold text-slate-700 focus:outline-none" data-rate-mode>
+          <option value="both"><%= t("colors") %> + <%= t("sizes_label") %></option>
+          <option value="color"><%= t("colors") %> <%= t("only") %></option>
+          <option value="size"><%= t("sizes_label") %> <%= t("only") %></option>
+        </select>
+      </label>
+    </div>
+  </div>
+  <div class="mt-4 space-y-3" data-rate-list></div>
+</div>
+
+<template data-rate-template>
+  <div class="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center" data-rate-row>
+    <select class="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm" name="color_ids" data-rate-color>
+      <option value=""><%= t("select") %> <%= t("colors") %></option>
+      <% colors.forEach(function(color) { %>
+        <option value="<%= color.id %>"><%= locale === "ur" ? (color.name_ur || color.name) : color.name %></option>
+      <% }) %>
+    </select>
+    <select class="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm" name="size_ids" data-rate-size>
+      <option value=""><%= t("select") %> <%= t("sizes_label") %></option>
+      <% sizes.forEach(function(size) { %>
+        <option value="<%= size.id %>"><%= locale === "ur" ? (size.name_ur || size.name) : size.name %></option>
+      <% }) %>
+    </select>
+    <input class="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm tabular-nums" type="number" min="0" step="1" name="purchase_rates" placeholder="<%= t('purchase_rate') %>" data-rate-value data-rate-input />
+    <button class="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:border-slate-300 hover:text-slate-800" type="button" data-rate-add-row aria-label="Add row">
+      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M12 5v14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+        <path d="M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+      </svg>
+    </button>
+  </div>
+</template>

@@ -20,8 +20,7 @@ const verifyPassword = (password, stored) => {
   return crypto.timingSafeEqual(Buffer.from(hash, "hex"), Buffer.from(derived, "hex"));
 };
 
-const hashToken = (token) =>
-  crypto.createHash("sha256").update(token).digest("hex");
+const hashToken = (token) => crypto.createHash("sha256").update(token).digest("hex");
 
 const createSession = async ({ userId, ipAddress, userAgent }) => {
   const token = crypto.randomBytes(32).toString("hex");
@@ -43,16 +42,11 @@ const createSession = async ({ userId, ipAddress, userAgent }) => {
 
 const revokeSession = async (tokenHash) => {
   if (!tokenHash) return;
-  await knex("erp.user_sessions")
-    .where({ token_hash: tokenHash })
-    .update({ is_revoked: true, revoked_at: knex.fn.now() });
+  await knex("erp.user_sessions").where({ token_hash: tokenHash }).update({ is_revoked: true, revoked_at: knex.fn.now() });
 };
 
 const loadUserContext = async (userId) => {
-  const user = await knex("erp.users")
-    .select("id", "username", "status", "primary_role_id")
-    .where({ id: userId })
-    .first();
+  const user = await knex("erp.users").select("id", "username", "status", "primary_role_id").where({ id: userId }).first();
 
   if (!user) {
     throw new HttpError(401, "Invalid session");
@@ -62,50 +56,20 @@ const loadUserContext = async (userId) => {
     throw new HttpError(403, "User inactive");
   }
 
+  // Corrected
   const role = await knex("erp.role_templates")
-    .select("id", "name")
+    .select("id", "name") // <--- Added .select
     .where({ id: user.primary_role_id })
     .first();
-
-  const branchRows = await knex("erp.user_branch")
-    .select("branch_id")
-    .where({ user_id: userId });
+  const branchRows = await knex("erp.user_branch").select("branch_id").where({ user_id: userId });
   const branchIds = branchRows.map((row) => Number(row.branch_id));
 
   const rolePermissionRows = await knex("erp.role_permissions")
-    .join(
-      "erp.permission_scope_registry",
-      "erp.permission_scope_registry.id",
-      "erp.role_permissions.scope_id"
-    )
-    .select(
-      "erp.role_permissions.scope_id",
-      "erp.permission_scope_registry.scope_type",
-      "erp.permission_scope_registry.scope_key",
-      "erp.role_permissions.can_view",
-      "erp.role_permissions.can_create",
-      "erp.role_permissions.can_edit",
-      "erp.role_permissions.can_delete",
-      "erp.role_permissions.can_print",
-      "erp.role_permissions.can_approve",
-      "erp.role_permissions.can_post",
-      "erp.role_permissions.can_unpost"
-    )
+    .join("erp.permission_scope_registry", "erp.permission_scope_registry.id", "erp.role_permissions.scope_id")
+    .select("erp.role_permissions.scope_id", "erp.permission_scope_registry.scope_type", "erp.permission_scope_registry.scope_key", "erp.role_permissions.can_view", "erp.role_permissions.can_create", "erp.role_permissions.can_edit", "erp.role_permissions.can_delete", "erp.role_permissions.can_print", "erp.role_permissions.can_approve", "erp.role_permissions.can_post", "erp.role_permissions.can_unpost")
     .where({ role_id: user.primary_role_id });
 
-  const overrideRows = await knex("erp.user_permissions_override")
-    .select(
-      "scope_id",
-      "can_view",
-      "can_create",
-      "can_edit",
-      "can_delete",
-      "can_print",
-      "can_approve",
-      "can_post",
-      "can_unpost"
-    )
-    .where({ user_id: userId });
+  const overrideRows = await knex("erp.user_permissions_override").select("scope_id", "can_view", "can_create", "can_edit", "can_delete", "can_print", "can_approve", "can_post", "can_unpost").where({ user_id: userId });
 
   const overridesByScope = overrideRows.reduce((acc, row) => {
     acc[row.scope_id] = row;
@@ -156,16 +120,7 @@ const auth = async (req, res, next) => {
 
   try {
     const tokenHash = hashToken(token);
-    const session = await knex("erp.user_sessions")
-      .select(
-        "id",
-        "user_id",
-        "last_seen_at",
-        "expires_at",
-        "is_revoked"
-      )
-      .where({ token_hash: tokenHash })
-      .first();
+    const session = await knex("erp.user_sessions").select("id", "user_id", "last_seen_at", "expires_at", "is_revoked").where({ token_hash: tokenHash }).first();
 
     if (!session || session.is_revoked) {
       throw new HttpError(401, "Invalid session");
@@ -176,9 +131,7 @@ const auth = async (req, res, next) => {
       throw new HttpError(401, "Session expired");
     }
 
-    await knex("erp.user_sessions")
-      .where({ token_hash: tokenHash })
-      .update({ last_seen_at: knex.fn.now() });
+    await knex("erp.user_sessions").where({ token_hash: tokenHash }).update({ last_seen_at: knex.fn.now() });
 
     req.authSession = {
       id: session.id,
@@ -209,4 +162,3 @@ module.exports.createSession = createSession;
 module.exports.revokeSession = revokeSession;
 module.exports.hashToken = hashToken;
 module.exports.SESSION_COOKIE_NAME = SESSION_COOKIE_NAME;
-
