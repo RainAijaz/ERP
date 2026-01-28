@@ -48,13 +48,13 @@
             <% rows.forEach(function(row, idx) { %>
               <% const displayName = locale === "ur" ? (row.name_ur || row.name) : row.name; %>
               <% const displayGroup = locale === "ur" ? (row.group_name_ur || row.group_name) : row.group_name; %>
-              <% const displaySubgroups = locale === "ur" ? (row.subgroup_names_ur || row.subgroup_names) : row.subgroup_names; %>
+              <% const displaySubgroups = locale === "ur" ? (row.subgroup_name_ur || row.subgroup_name) : row.subgroup_name; %>
               <% const displayUomName = locale === "ur" ? (row.uom_name_ur || row.uom_name) : row.uom_name; %>
               <% const displayUsage = locale === "ur" ? (row.usage_articles_ur || row.usage_articles) : row.usage_articles; %>
               <% row.fg_ids = row.usage_article_ids || ""; %>
               <% const usageNames = displayUsage ? displayUsage.split(",").map((value) => value.trim()).filter(Boolean) : []; %>
               <% const usageIds = row.usage_article_ids ? row.usage_article_ids.split(",").map((value) => value.trim()).filter(Boolean) : []; %>
-              <tr class="hover:bg-amber-50/40" data-row data-active="<%= row.is_active ? "true" : "false" %>" data-created-by="<%= row.created_by_name || "" %>" data-created-at="<%= row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : "" %>">
+              <tr class="hover:bg-amber-50/40" data-row data-subgroup-id="<%= row.subgroup_id || "" %>" data-active="<%= row.is_active ? "true" : "false" %>" data-created-by="<%= row.created_by_name || "" %>" data-created-at="<%= row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : "" %>">
                 <td class="px-4 py-3 text-slate-700"><%= idx + 1 %></td>
                                 <td class="px-4 py-3 text-slate-700"><%= displayName %></td>
                 <td class="px-4 py-3 text-slate-700"><%= displayGroup || "" %></td>
@@ -81,7 +81,9 @@
                     "name",
                     "name_ur",
                     "group_id",
+                    "subgroup_id",
                     "base_uom_id",
+                    "min_stock_level",
                     "fg_ids"
                   ] }) %>
                 </td>
@@ -113,6 +115,6 @@
 }) %>
 
 <%- include("../../../base/partials/confirm-modal", { t, csrfToken }) %>
-<%- include("../../../base/partials/filter-modal", { t, bodyPartial: "../../master_data/products/filters.ejs", users }) %>
+<%- include("../../../base/partials/filter-modal", { t, bodyPartial: "../../master_data/products/filters.ejs", users, subgroups, filters: typeof filters !== 'undefined' ? filters : {}, serverFilters: true }) %>
 
 <%- include("../../../base/partials/basic-info-utils", { t, page: { titleKey: "semi_finished" }, basePath, modalOpen, modalMode }) %>

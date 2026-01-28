@@ -13,42 +13,74 @@ const toCode = (value) =>
     .slice(0, 80);
 
 const loadOptions = async () => {
-  const [groups, uoms, finished] = await Promise.all([
+  const [groups, uoms, finished, subgroups, colors, sizes] = await Promise.all([
     knex("erp.product_groups as g").select("g.id", "g.name", "g.name_ur").join("erp.product_group_item_types as gt", "gt.group_id", "g.id").where("gt.item_type", ITEM_TYPE).andWhere("g.is_active", true).orderBy("g.name"),
     knex("erp.uom").select("id", "code", "name", "name_ur").where("is_active", true).orderBy("code"),
     knex("erp.items as i").select("i.id", "i.name", "i.name_ur", "i.subgroup_id", "sg.name as subgroup_name", "sg.name_ur as subgroup_name_ur").leftJoin("erp.product_subgroups as sg", "sg.id", "i.subgroup_id").where({ "i.item_type": "FG", "i.is_active": true }).orderBy("i.name"),
+    knex("erp.product_subgroups as s").select("s.id", "s.name", "s.name_ur").join("erp.product_subgroup_item_types as st", "st.subgroup_id", "s.id").where("st.item_type", ITEM_TYPE).andWhere("s.is_active", true).orderBy("s.name"),
+    knex("erp.colors").select("id", "name", "name_ur").where("is_active", true).orderBy("name"),
+    knex("erp.sizes as s").select("s.id", "s.name", "s.name_ur").join("erp.size_item_types as sit", "sit.size_id", "s.id").where("sit.item_type", ITEM_TYPE).andWhere("s.is_active", true).orderBy("s.name"),
   ]);
-  return { groups, uoms, finished };
+  return { groups, uoms, finished, subgroups, colors, sizes };
 };
 
 const loadUsers = async () => knex("erp.users").select("id", "username").orderBy("username");
 
-const loadRows = async () =>
-  knex("erp.items as i")
+const loadRows = async (filters = {}) => {
+  let query = knex("erp.items as i")
     .select(
       "i.*",
       "g.name as group_name",
       "g.name_ur as group_name_ur",
+      "sg_item.name as subgroup_name",
+      "sg_item.name_ur as subgroup_name_ur",
       "u.code as uom_code",
       "u.name as uom_name",
       "u.name_ur as uom_name_ur",
       "cu.username as created_by_name",
-      knex.raw(`COALESCE(string_agg(DISTINCT COALESCE(sg.name, ''), ', ' ORDER BY COALESCE(sg.name, '')), '') as subgroup_names`),
-      knex.raw(`COALESCE(string_agg(DISTINCT COALESCE(sg.name_ur, sg.name), ', ' ORDER BY COALESCE(sg.name_ur, sg.name)), '') as subgroup_names_ur`),
-      knex.raw(`COALESCE(string_agg(DISTINCT sg.id::text, ', ' ORDER BY sg.id::text), '') as subgroup_ids`),
+      knex.raw(`COALESCE(string_agg(DISTINCT COALESCE(sg_usage.name, ''), ', ' ORDER BY COALESCE(sg_usage.name, '')), '') as subgroup_names`),
+      knex.raw(`COALESCE(string_agg(DISTINCT COALESCE(sg_usage.name_ur, sg_usage.name), ', ' ORDER BY COALESCE(sg_usage.name_ur, sg_usage.name)), '') as subgroup_names_ur`),
+      knex.raw(`COALESCE(string_agg(DISTINCT sg_usage.id::text, ', ' ORDER BY sg_usage.id::text), '') as subgroup_ids`),
       knex.raw(`COALESCE(string_agg(fg.name, ', ' ORDER BY fg.name), '') as usage_articles`),
       knex.raw(`COALESCE(string_agg(COALESCE(fg.name_ur, fg.name), ', ' ORDER BY fg.name), '') as usage_articles_ur`),
       knex.raw(`COALESCE(string_agg(fg.id::text, ', ' ORDER BY fg.name), '') as usage_article_ids`),
     )
     .leftJoin("erp.product_groups as g", "i.group_id", "g.id")
     .leftJoin("erp.uom as u", "i.base_uom_id", "u.id")
+    .leftJoin("erp.product_subgroups as sg_item", "sg_item.id", "i.subgroup_id")
     .leftJoin("erp.item_usage as iu", "iu.sfg_item_id", "i.id")
     .leftJoin("erp.items as fg", "fg.id", "iu.fg_item_id")
-    .leftJoin("erp.product_subgroups as sg", "sg.id", "fg.subgroup_id")
+    .leftJoin("erp.product_subgroups as sg_usage", "sg_usage.id", "fg.subgroup_id")
     .leftJoin("erp.users as cu", "i.created_by", "cu.id")
-    .where("i.item_type", ITEM_TYPE)
-    .groupBy("i.id", "g.name", "g.name_ur", "u.code", "u.name", "u.name_ur", "cu.username")
+    .where("i.item_type", ITEM_TYPE);
+
+  if (filters.subgroup_id) {
+    const subgroupId = Number(filters.subgroup_id);
+    if (Number.isFinite(subgroupId)) {
+      query = query.where(function () {
+        this.where("i.subgroup_id", subgroupId).orWhere("sg_usage.id", subgroupId);
+      });
+    }
+  }
+  if (filters.created_by) {
+    query = query.where("cu.username", filters.created_by);
+  }
+  if (filters.created_at_start) {
+    query = query.where("i.created_at", ">=", filters.created_at_start);
+  }
+  if (filters.created_at_end) {
+    query = query.where("i.created_at", "<=", filters.created_at_end + " 23:59:59");
+  }
+  if (filters.low_stock_only === "true") {
+    query = query.whereRaw("COALESCE(i.min_stock_level, 0) > 0");
+  }
+
+  query = query
+    .groupBy("i.id", "g.name", "g.name_ur", "sg_item.name", "sg_item.name_ur", "u.code", "u.name", "u.name_ur", "cu.username")
     .orderBy("i.id", "desc");
+
+  return query;
+};
 
 const resolveSubgroupId = async (trx, usageIds) => {
   if (!usageIds.length) return null;
@@ -74,8 +106,15 @@ const renderIndex = (req, res, payload) => {
 
 router.get("/", async (req, res, next) => {
   try {
-    const [rows, options, users] = await Promise.all([loadRows(), loadOptions(), loadUsers()]);
-    renderIndex(req, res, { rows, ...options, users, error: null, modalOpen: false, modalMode: "create" });
+    const filters = {
+      subgroup_id: req.query.subgroup_id || "",
+      created_by: req.query.created_by || "",
+      created_at_start: req.query.created_at_start || "",
+      created_at_end: req.query.created_at_end || "",
+      low_stock_only: req.query.low_stock_only || "",
+    };
+    const [rows, options, users] = await Promise.all([loadRows(filters), loadOptions(), loadUsers()]);
+    renderIndex(req, res, { rows, ...options, users, filters, error: null, modalOpen: false, modalMode: "create" });
   } catch (err) {
     next(err);
   }
@@ -101,12 +140,19 @@ router.post("/", async (req, res) => {
     const name = (values.name || "").trim();
     const code = toCode(name);
     const group_id = values.group_id ? Number(values.group_id) : null;
+    // FIX: Read user's subgroup selection
+    const user_subgroup_id = values.subgroup_id ? Number(values.subgroup_id) : null;
     const base_uom_id = values.base_uom_id ? Number(values.base_uom_id) : null;
+    // FIX: Read min stock
+    const min_stock_level = values.min_stock_level ? Number(values.min_stock_level) : 0;
+
     const usageIds = normalizeUsageIds(values.fg_ids)
       .map((id) => Number(id))
       .filter((id) => Number.isFinite(id));
     const uniqueUsageIds = Array.from(new Set(usageIds));
-    if (!code || !name || !group_id || !base_uom_id) {
+
+    // FIX: Add name_ur and subgroup_id validation
+    if (!code || !name || !values.name_ur || !group_id || !base_uom_id || !user_subgroup_id) {
       const [rows, options, users] = await Promise.all([loadRows(), loadOptions(), loadUsers()]);
       return renderIndex(req, res, {
         rows,
@@ -120,7 +166,7 @@ router.post("/", async (req, res) => {
     }
 
     await knex.transaction(async (trx) => {
-      const subgroup_id = await resolveSubgroupId(trx, uniqueUsageIds);
+      // FIX: Use user's subgroup choice. Only use resolve if you want to override (removed overwrite here).
       const [item] = await trx("erp.items")
         .insert({
           item_type: ITEM_TYPE,
@@ -128,9 +174,9 @@ router.post("/", async (req, res) => {
           name,
           name_ur: values.name_ur || null,
           group_id,
-          subgroup_id,
+          subgroup_id: user_subgroup_id, // FIX: Use the variable
           base_uom_id,
-          min_stock_level: 0,
+          min_stock_level, // FIX: Use the variable
           created_by: req.user ? req.user.id : null,
           created_at: trx.fn.now(),
         })
@@ -160,7 +206,6 @@ router.post("/", async (req, res) => {
     });
   }
 });
-
 router.post("/:id", async (req, res, next) => {
   const id = Number(req.params.id);
   const values = { ...req.body };
@@ -171,12 +216,17 @@ router.post("/:id", async (req, res, next) => {
     const name = (values.name || "").trim();
     const code = toCode(name);
     const group_id = values.group_id ? Number(values.group_id) : null;
+    const user_subgroup_id = values.subgroup_id ? Number(values.subgroup_id) : null;
     const base_uom_id = values.base_uom_id ? Number(values.base_uom_id) : null;
+    const min_stock_level = values.min_stock_level ? Number(values.min_stock_level) : 0;
+
     const usageIds = normalizeUsageIds(values.fg_ids)
       .map((id) => Number(id))
       .filter((id) => Number.isFinite(id));
     const uniqueUsageIds = Array.from(new Set(usageIds));
-    if (!code || !name || !group_id || !base_uom_id) {
+
+    // FIX: Add name_ur and subgroup_id to validation
+    if (!code || !name || !values.name_ur || !group_id || !base_uom_id || !user_subgroup_id) {
       const [rows, options, users] = await Promise.all([loadRows(), loadOptions(), loadUsers()]);
       return renderIndex(req, res, {
         rows,
@@ -190,7 +240,6 @@ router.post("/:id", async (req, res, next) => {
     }
 
     await knex.transaction(async (trx) => {
-      const subgroup_id = await resolveSubgroupId(trx, uniqueUsageIds);
       await trx("erp.items")
         .where({ id })
         .update({
@@ -198,8 +247,9 @@ router.post("/:id", async (req, res, next) => {
           name,
           name_ur: values.name_ur || null,
           group_id,
-          subgroup_id,
+          subgroup_id: user_subgroup_id, // FIX: Use user input
           base_uom_id,
+          min_stock_level, // FIX: Save min stock
           updated_by: req.user ? req.user.id : null,
           updated_at: trx.fn.now(),
         });
@@ -228,7 +278,6 @@ router.post("/:id", async (req, res, next) => {
     });
   }
 });
-
 router.post("/:id/toggle", async (req, res, next) => {
   const id = Number(req.params.id);
   if (!id) return next(new HttpError(404, "Semi-finished item not found"));

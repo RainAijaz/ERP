@@ -205,6 +205,7 @@
     const filterBranch = document.querySelector("[data-filter-branch]");
     const filterCity = document.querySelector("[data-filter-city]");
     const filterCreatedBy = document.querySelector("[data-filter-created-by]");
+    const filterSubgroup = document.querySelector("[data-filter-subgroup]");
     const filterCreatedAtStart = document.querySelector("[data-filter-created-at-start]");
     const filterCreatedAtEnd = document.querySelector("[data-filter-created-at-end]");
     const filterAddButtons = document.querySelectorAll("[data-filter-add]");
@@ -257,8 +258,9 @@
     const updateFilterCount = () => {
       if (!filterCountBadge) return;
       const createdByActive = filterCreatedBy && (filterCreatedBy.value || "").trim() ? 1 : 0;
+      const subgroupActive = filterSubgroup && (filterSubgroup.value || "").trim() ? 1 : 0;
       const createdAtActive = (filterCreatedAtStart && filterCreatedAtStart.value) || (filterCreatedAtEnd && filterCreatedAtEnd.value) ? 1 : 0;
-      const activeFilters = [...getFilterValues("[data-filter-account-type]"), ...getFilterValues("[data-filter-account-group]"), ...getFilterValues("[data-filter-party-type]"), ...getFilterValues("[data-filter-party-group]"), ...getFilterValues("[data-filter-branch]"), ...getFilterValues("[data-filter-city]")].length + createdByActive + createdAtActive;
+      const activeFilters = [...getFilterValues("[data-filter-account-type]"), ...getFilterValues("[data-filter-account-group]"), ...getFilterValues("[data-filter-party-type]"), ...getFilterValues("[data-filter-party-group]"), ...getFilterValues("[data-filter-branch]"), ...getFilterValues("[data-filter-city]")].length + createdByActive + createdAtActive + subgroupActive;
       if (activeFilters > 0) {
         filterCountBadge.textContent = String(activeFilters);
         filterCountBadge.classList.remove("hidden");
@@ -461,6 +463,7 @@
       const branchFilters = getFilterValues("[data-filter-branch]");
       const cityFilters = getFilterValues("[data-filter-city]");
       const createdByValue = (filterCreatedBy && filterCreatedBy.value ? filterCreatedBy.value : "").trim();
+      const subgroupValue = (filterSubgroup && filterSubgroup.value ? filterSubgroup.value : "").trim();
       const createdAtStart = filterCreatedAtStart ? filterCreatedAtStart.value : "";
       const createdAtEnd = filterCreatedAtEnd ? filterCreatedAtEnd.value : "";
       const readFilterRows = (key) => {
@@ -556,6 +559,10 @@
           const matches = (row.dataset.createdBy || "") === createdByValue;
           if (!matches) return false;
         }
+        if (subgroupValue) {
+          const matches = (row.dataset.subgroupId || "") === subgroupValue;
+          if (!matches) return false;
+        }
         if (createdAtStart || createdAtEnd) {
           const rowDateValue = row.dataset.createdAt || "";
           const rowTime = Date.parse(rowDateValue);
@@ -613,7 +620,11 @@
       rows.forEach((row) => {
         const cells = Array.from(row.querySelectorAll("td"))
           .slice(0, headers.length)
-          .map((cell) => `"${cleanText(cell.textContent).replace(/"/g, '""')}"`);
+          .map((cell) => {
+            const datasetValue = cell.dataset.summaryRates || cell.dataset.summaryAvg || "";
+            const value = datasetValue || cell.textContent;
+            return `"${cleanText(value).replace(/"/g, '""')}"`;
+          });
         csvRows.push(cells.join(","));
       });
 
@@ -661,7 +672,9 @@
     hookFilterAll("[data-filter-party-group]");
     hookFilterAll("[data-filter-branch]");
     hookFilterAll("[data-filter-city]");
+    hookFilterAll("[data-filter-subgroup]");
     if (filterCreatedBy) filterCreatedBy.addEventListener("change", updateFilterCount);
+    if (filterSubgroup) filterSubgroup.addEventListener("change", updateFilterCount);
     if (filterCreatedAtStart) filterCreatedAtStart.addEventListener("change", updateFilterCount);
     if (filterCreatedAtEnd) filterCreatedAtEnd.addEventListener("change", updateFilterCount);
     document.querySelectorAll("[data-filter-account-type-mode]").forEach((el) => hookFilter(el));
@@ -1197,6 +1210,47 @@
       }
       if (filterApply) {
         filterApply.addEventListener("click", () => {
+          const useServerFilters = filterPanel && filterPanel.dataset.filterServer === "true";
+          if (useServerFilters) {
+            const url = new URL(window.location.href);
+            const params = new URLSearchParams(url.search);
+            const subgroupValue = (filterSubgroup && filterSubgroup.value ? filterSubgroup.value : "").trim();
+            const createdByValue = (filterCreatedBy && filterCreatedBy.value ? filterCreatedBy.value : "").trim();
+            const createdAtStartValue = filterCreatedAtStart ? filterCreatedAtStart.value : "";
+            const createdAtEndValue = filterCreatedAtEnd ? filterCreatedAtEnd.value : "";
+            const lowStockOnly = filterPanel.querySelector('[name="low_stock_only"]');
+
+            if (subgroupValue) {
+              params.set("subgroup_id", subgroupValue);
+            } else {
+              params.delete("subgroup_id");
+            }
+            if (createdByValue) {
+              params.set("created_by", createdByValue);
+            } else {
+              params.delete("created_by");
+            }
+            if (createdAtStartValue) {
+              params.set("created_at_start", createdAtStartValue);
+            } else {
+              params.delete("created_at_start");
+            }
+            if (createdAtEndValue) {
+              params.set("created_at_end", createdAtEndValue);
+            } else {
+              params.delete("created_at_end");
+            }
+            if (lowStockOnly && lowStockOnly.checked) {
+              params.set("low_stock_only", "true");
+            } else {
+              params.delete("low_stock_only");
+            }
+
+            url.search = params.toString();
+            window.location.href = url.toString();
+            return;
+          }
+
           applyFilters();
           updateFilterCount();
           closeFilters();
@@ -1204,6 +1258,15 @@
       }
       if (filterClear) {
         filterClear.addEventListener("click", () => {
+          const useServerFilters = filterPanel && filterPanel.dataset.filterServer === "true";
+          if (useServerFilters) {
+            const url = new URL(window.location.href);
+            const params = new URLSearchParams(url.search);
+            ["subgroup_id", "created_by", "created_at_start", "created_at_end", "low_stock_only"].forEach((key) => params.delete(key));
+            url.search = params.toString();
+            window.location.href = url.toString();
+            return;
+          }
           ["account-type", "account-group", "party-type", "party-group", "branch", "city"].forEach((key) => {
             const list = filterPanel?.querySelector(`[data-filter-list="${key}"]`);
             if (!list) return;
@@ -1303,91 +1366,156 @@
     };
 
     const createSearchableSelect = (select) => {
+      // 1. Validation & Setup
       if (!select || select.multiple) return;
       if (!isWithinModal(select) || isMultiSelectWrapper(select)) return;
       if (select.dataset.searchableReady === "true") return;
 
-      const wrapper = document.createElement("div");
-      wrapper.className = "relative";
-      const button = document.createElement("button");
-      button.type = "button";
-      button.className = "mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30";
-      const buttonText = document.createElement("span");
-      const menu = document.createElement("div");
-      menu.className = "absolute left-0 right-0 z-20 mt-1 hidden max-h-64 overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-lg";
-      const search = document.createElement("input");
-      search.type = "search";
-      search.autocomplete = "off";
-      search.placeholder = makePlaceholder(select);
-      search.className = "mb-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700 shadow-sm focus:border-slate-300 focus:outline-none focus:ring-2 focus:ring-accent/30";
-      const list = document.createElement("div");
-      list.className = "space-y-1";
+      // 2. Identify Placeholder
+      let placeholderText = makePlaceholder(select);
+      const emptyOption = Array.from(select.options).find((opt) => !opt.value);
+      if (emptyOption && emptyOption.textContent.trim()) {
+        placeholderText = emptyOption.textContent.trim();
+      }
 
-      const syncButton = () => {
+      // 3. Create Wrapper
+      // FIX: Added 'w-full' so it stretches to fill the grid column like the original select
+      const wrapper = document.createElement("div");
+      wrapper.className = "relative w-full group";
+
+      // 4. Create the "Combobox" Input
+      const input = document.createElement("input");
+      input.type = "text";
+
+      // FIX: We copy the EXACT classes from the original select to maintain consistency
+      // We also ensure 'bg-white' is applied so the text doesn't sit on a transparent input if the select had one
+      // We explicitly remove 'appearance-none' if present, as it's not needed for text inputs
+      input.className = select.className.replace("appearance-none", "") + " pr-10"; // Add padding-right for icon
+
+      // Fallback styling if the select had no classes (safety net)
+      if (!input.className.includes("border")) {
+        input.className += " w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm text-slate-800 transition focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-slate-100";
+      }
+
+      input.placeholder = placeholderText;
+      input.autocomplete = "off";
+
+      // Transfer 'required' attribute to the visible input so validation bubbles appear correctly
+      if (select.hasAttribute("required")) {
+        input.required = true;
+        select.removeAttribute("required");
+      }
+
+      // 5. Add a Chevron Icon
+      const icon = document.createElement("div");
+      icon.className = "pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 transition-transform duration-200 group-focus-within:rotate-180";
+      icon.innerHTML = '<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>';
+
+      // 6. Create the Dropdown Menu
+      const menu = document.createElement("div");
+      menu.className = "absolute left-0 right-0 z-50 mt-1 hidden max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl ring-1 ring-black/5";
+
+      // --- HELPER: Sync Visible Input with Hidden Select ---
+      const syncToInput = () => {
         const selected = select.options[select.selectedIndex];
-        buttonText.textContent = selected && selected.value ? selected.textContent.trim() : i18nSelect;
+        if (selected && selected.value) {
+          input.value = selected.textContent.trim();
+        } else {
+          input.value = "";
+        }
       };
 
-      const renderOptions = () => {
-        const query = (search.value || "").trim().toLowerCase();
-        list.innerHTML = "";
+      // --- HELPER: Render the List ---
+      const renderMenu = () => {
+        menu.innerHTML = "";
+        const filter = input.value.trim().toLowerCase();
+        let count = 0;
+
         Array.from(select.options).forEach((opt) => {
-          const label = (opt.textContent || "").trim();
-          const matches = !query || label.toLowerCase().includes(query);
-          if (!matches && !opt.selected) return;
-          const item = document.createElement("button");
-          item.type = "button";
-          item.className = "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-amber-50/60";
-          item.innerHTML = `<span>${label}</span><span class="text-xs text-slate-400">${opt.selected ? "*" : ""}</span>`;
-          item.addEventListener("click", (event) => {
-            event.preventDefault();
-            opt.selected = true;
+          if (!opt.value) return; // Skip placeholder
+
+          const label = opt.textContent.trim();
+          const isMatch = !filter || label.toLowerCase().includes(filter);
+          const isExactMatch = input.value.trim() === label;
+
+          if (!isMatch && !isExactMatch) return;
+
+          count++;
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = `flex w-full items-center justify-between px-4 py-2.5 text-left text-sm transition hover:bg-slate-50 ${opt.selected ? "bg-slate-50 text-slate-900 font-medium" : "text-slate-600"}`;
+          btn.innerHTML = `<span>${label}</span>${opt.selected ? '<svg class="h-4 w-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>' : ""}`;
+
+          btn.addEventListener("mousedown", (e) => {
+            e.preventDefault();
+            select.value = opt.value;
             select.dispatchEvent(new Event("change", { bubbles: true }));
-            syncButton();
-            renderOptions();
+            syncToInput();
             menu.classList.add("hidden");
           });
-          list.appendChild(item);
+
+          menu.appendChild(btn);
         });
+
+        if (count === 0) {
+          const empty = document.createElement("div");
+          empty.className = "px-4 py-3 text-xs text-slate-400 text-center italic select-none";
+          empty.textContent = "No matches found";
+          menu.appendChild(empty);
+        }
       };
 
-      button.appendChild(buttonText);
-      menu.appendChild(search);
-      menu.appendChild(list);
+      // 7. Event Listeners
+      input.addEventListener("focus", () => {
+        input.select();
+        renderMenu();
+        menu.classList.remove("hidden");
+      });
 
+      input.addEventListener("input", () => {
+        renderMenu();
+        menu.classList.remove("hidden");
+      });
+
+      input.addEventListener("blur", () => {
+        setTimeout(() => {
+          menu.classList.add("hidden");
+          const val = input.value.trim().toLowerCase();
+          const match = Array.from(select.options).find((opt) => opt.value && opt.textContent.trim().toLowerCase() === val);
+
+          if (match) {
+            if (select.value !== match.value) {
+              select.value = match.value;
+              select.dispatchEvent(new Event("change", { bubbles: true }));
+            }
+          } else {
+            if (val === "") {
+              select.value = "";
+              select.dispatchEvent(new Event("change", { bubbles: true }));
+            } else {
+              syncToInput();
+            }
+          }
+        }, 150);
+      });
+
+      select.addEventListener("change", syncToInput);
+
+      // 8. DOM Assembly
       select.classList.add("sr-only");
       select.dataset.searchableReady = "true";
 
+      // If the select was inside a 'relative' wrapper (like your manual form-fields.ejs),
+      // we might need to be careful not to double-wrap.
+      // But typically replacing the select in-place is safest.
       select.parentNode.insertBefore(wrapper, select);
-      wrapper.appendChild(button);
+
+      wrapper.appendChild(input);
+      wrapper.appendChild(icon);
       wrapper.appendChild(menu);
       wrapper.appendChild(select);
 
-      const toggleMenu = () => {
-        menu.classList.toggle("hidden");
-        if (!menu.classList.contains("hidden")) {
-          search.focus();
-          renderOptions();
-        }
-      };
-
-      button.addEventListener("click", (event) => {
-        event.preventDefault();
-        toggleMenu();
-      });
-      search.addEventListener("input", renderOptions);
-      select.addEventListener("change", () => {
-        syncButton();
-        renderOptions();
-      });
-      document.addEventListener("click", (event) => {
-        if (!wrapper.contains(event.target)) {
-          menu.classList.add("hidden");
-        }
-      });
-
-      syncButton();
-      renderOptions();
+      syncToInput();
     };
 
     const initSearchableSelects = () => {
@@ -1400,5 +1528,65 @@
 
     document.addEventListener("DOMContentLoaded", initSearchableSelects);
     window.initSearchableSelects = initSearchableSelects;
+  })();
+</script>
+<script>
+  (function () {
+    // GENERIC EDIT LOADER (Fixes Dropdowns & Inputs for all Modals)
+    const modalForm = document.querySelector("[data-modal-form]");
+
+    if (modalForm) {
+      const fillFormFromButton = (button) => {
+        // Loop through every input/select in the form
+        Array.from(modalForm.elements).forEach((input) => {
+          if (!input.name) return;
+
+          // Try to find matching data on the button (e.g. name="group_id" -> data-group_id)
+          // We use getAttribute to avoid dataset camelCase issues (groupId vs group_id)
+          const val = button.getAttribute(`data-${input.name}`);
+
+          if (val !== null && val !== undefined) {
+            // Handle Checkboxes
+            if (input.type === "checkbox") {
+              input.checked = val === "true" || val === "1" || val === "on";
+            }
+            // Handle Radios (only check if value matches)
+            else if (input.type === "radio") {
+              if (input.value === val) input.checked = true;
+            }
+            // Handle Inputs & Selects
+            else {
+              input.value = val;
+            }
+
+            // CRITICAL FIX: Trigger 'change' event manually.
+            // This tells the Combobox (and other listeners) that the value updated.
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+        });
+      };
+
+      // Attach listener to document to catch all Edit buttons (even dynamically added ones)
+      document.addEventListener("click", (event) => {
+        const editBtn = event.target.closest("[data-edit]");
+        if (editBtn) {
+          // Reset form first to clear old errors/values
+          modalForm.reset();
+
+          // Small delay to ensure modal is visible/ready before filling
+          setTimeout(() => {
+            fillFormFromButton(editBtn);
+          }, 10);
+        }
+      });
+
+      // Auto-open logic (for Server-Side errors)
+      const modal = document.querySelector("[data-modal]");
+      if (modal && modal.dataset.autoOpen === "true" && modal.dataset.modalMode === "edit") {
+        const currentId = modal.dataset.currentId;
+        const targetBtn = document.querySelector(`[data-edit][data-id="${currentId}"]`);
+        if (targetBtn) setTimeout(() => fillFormFromButton(targetBtn), 50);
+      }
+    }
   })();
 </script>

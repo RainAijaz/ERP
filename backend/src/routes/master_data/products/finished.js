@@ -22,19 +22,37 @@ const loadOptions = async () => {
   return { groups, subgroups, uoms, types };
 };
 
-const loadUsers = async () =>
-  knex("erp.users").select("id", "username").orderBy("username");
+const loadUsers = async () => knex("erp.users").select("id", "username").orderBy("username");
 
-const loadRows = async () =>
-  knex("erp.items as i")
+const loadRows = async (filters = {}) => {
+  let query = knex("erp.items as i")
     .select("i.*", "g.name as group_name", "g.name_ur as group_name_ur", "sg.name as subgroup_name", "sg.name_ur as subgroup_name_ur", "u.code as uom_code", "u.name as uom_name", "u.name_ur as uom_name_ur", "pt.name as type_name", "pt.name_ur as type_name_ur", "cu.username as created_by_name")
     .leftJoin("erp.product_groups as g", "i.group_id", "g.id")
     .leftJoin("erp.product_subgroups as sg", "i.subgroup_id", "sg.id")
     .leftJoin("erp.uom as u", "i.base_uom_id", "u.id")
     .leftJoin("erp.product_types as pt", "i.product_type_id", "pt.id")
     .leftJoin("erp.users as cu", "i.created_by", "cu.id")
-    .where("i.item_type", ITEM_TYPE)
-    .orderBy("i.id", "desc");
+    .where("i.item_type", ITEM_TYPE);
+
+  if (filters.subgroup_id) {
+    query = query.where("i.subgroup_id", filters.subgroup_id);
+  }
+  if (filters.created_by) {
+    query = query.where("cu.username", filters.created_by);
+  }
+  if (filters.created_at_start) {
+    query = query.where("i.created_at", ">=", filters.created_at_start);
+  }
+  if (filters.created_at_end) {
+    query = query.where("i.created_at", "<=", filters.created_at_end + " 23:59:59");
+  }
+  if (filters.low_stock_only === "true") {
+    query = query.whereRaw("COALESCE(i.min_stock_level, 0) > 0");
+  }
+
+  query = query.orderBy("i.id", "desc");
+  return query;
+};
 
 const renderIndex = (req, res, payload) => {
   const basePath = `${req.baseUrl}`;
@@ -61,20 +79,12 @@ const ensureSfgForFinished = async (trx, finishedItem, sfgPartType, userId) => {
   const sfgName = `${finishedItem.name} - ${suffix}`;
   const sfgCode = toCode(`${finishedItem.code}_${suffix}`);
   const linked = await getLinkedSfgIds(trx, finishedItem.id);
-  const existingByCode = await trx("erp.items")
-    .select("id")
-    .where({ code: sfgCode, item_type: "SFG" })
-    .first();
+  const existingByCode = await trx("erp.items").select("id").where({ code: sfgCode, item_type: "SFG" }).first();
   if (linked.length) {
     let primaryId = linked[0];
     if (existingByCode && existingByCode.id !== primaryId) {
-      await trx("erp.item_usage")
-        .where({ fg_item_id: finishedItem.id, sfg_item_id: primaryId })
-        .del();
-      await trx("erp.item_usage")
-        .insert({ fg_item_id: finishedItem.id, sfg_item_id: existingByCode.id })
-        .onConflict(["fg_item_id", "sfg_item_id"])
-        .ignore();
+      await trx("erp.item_usage").where({ fg_item_id: finishedItem.id, sfg_item_id: primaryId }).del();
+      await trx("erp.item_usage").insert({ fg_item_id: finishedItem.id, sfg_item_id: existingByCode.id }).onConflict(["fg_item_id", "sfg_item_id"]).ignore();
       primaryId = existingByCode.id;
     }
     await trx("erp.items")
@@ -116,10 +126,7 @@ const ensureSfgForFinished = async (trx, finishedItem, sfgPartType, userId) => {
         updated_by: userId,
         updated_at: trx.fn.now(),
       });
-    await trx("erp.item_usage")
-      .insert({ fg_item_id: finishedItem.id, sfg_item_id: existingByCode.id })
-      .onConflict(["fg_item_id", "sfg_item_id"])
-      .ignore();
+    await trx("erp.item_usage").insert({ fg_item_id: finishedItem.id, sfg_item_id: existingByCode.id }).onConflict(["fg_item_id", "sfg_item_id"]).ignore();
     return;
   }
 
@@ -145,8 +152,15 @@ const ensureSfgForFinished = async (trx, finishedItem, sfgPartType, userId) => {
 
 router.get("/", async (req, res, next) => {
   try {
-    const [rows, options, users] = await Promise.all([loadRows(), loadOptions(), loadUsers()]);
-    renderIndex(req, res, { rows, ...options, users, error: null, modalOpen: false, modalMode: "create" });
+    const filters = {
+      subgroup_id: req.query.subgroup_id || "",
+      created_by: req.query.created_by || "",
+      created_at_start: req.query.created_at_start || "",
+      created_at_end: req.query.created_at_end || "",
+      low_stock_only: req.query.low_stock_only || "",
+    };
+    const [rows, options, users] = await Promise.all([loadRows(filters), loadOptions(), loadUsers()]);
+    renderIndex(req, res, { rows, ...options, users, filters, error: null, modalOpen: false, modalMode: "create" });
   } catch (err) {
     next(err);
   }
@@ -165,7 +179,7 @@ router.post("/", async (req, res) => {
     const uses_sfg = values.uses_sfg === "true" || values.uses_sfg === "on";
     const sfg_part_type = uses_sfg ? (values.sfg_part_type || "").toUpperCase() : null;
 
-    if (!code || !name || !group_id || !base_uom_id || !product_type_id || (uses_sfg && !sfg_part_type)) {
+    if (!code || !name || !values.name_ur || !group_id || !base_uom_id || !product_type_id || (uses_sfg && !sfg_part_type)) {
       const [rows, options, users] = await Promise.all([loadRows(), loadOptions(), loadUsers()]);
       return renderIndex(req, res, {
         rows,
@@ -173,8 +187,8 @@ router.post("/", async (req, res) => {
         users,
         error: res.locals.t("error_required_fields"),
         modalOpen: true,
-        modalMode: "create",
-        values,
+        modalMode: "edit",
+        values: { ...values, id },
       });
     }
 

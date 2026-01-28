@@ -1,9 +1,25 @@
 <label class="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
+  <span class="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500"><%= t("sub_group") %></span>
+  <select class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700" name="subgroup_id" data-filter-subgroup>
+    <option value=""><%= t("all") %></option>
+    <% if (typeof subgroups !== 'undefined') { %>
+      <% subgroups.forEach(function(subgroup) { %>
+        <% const isSelected = (typeof filters !== 'undefined' && String(filters.subgroup_id) === String(subgroup.id)); %>
+        <option value="<%= subgroup.id %>" <%= isSelected ? "selected" : "" %>>
+          <%= locale === "ur" ? (subgroup.name_ur || subgroup.name) : subgroup.name %>
+        </option>
+      <% }) %>
+    <% } %>
+  </select>
+</label>
+
+<label class="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
   <span class="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500"><%= t("created_by") %></span>
-  <select class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700" data-filter-created-by>
+  <select class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700" name="created_by" data-filter-created-by>
     <option value=""><%= t("all") %></option>
     <% users.forEach(function(user) { %>
-      <option value="<%= user.username %>"><%= user.username %></option>
+      <% const isSelected = (typeof filters !== 'undefined' && filters.created_by === user.username); %>
+      <option value="<%= user.username %>" <%= isSelected ? "selected" : "" %>><%= user.username %></option>
     <% }) %>
   </select>
 </label>
@@ -11,7 +27,19 @@
 <label class="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
   <span class="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500"><%= t("created_at") %></span>
   <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
-    <input class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700" type="date" data-filter-created-at-start />
-    <input class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700" type="date" data-filter-created-at-end />
+    <input 
+      class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700" 
+      type="date" 
+      name="created_at_start" 
+      data-filter-created-at-start 
+      value="<%= (typeof filters !== 'undefined') ? filters.created_at_start : '' %>" 
+    />
+    <input 
+      class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700" 
+      type="date" 
+      name="created_at_end" 
+      data-filter-created-at-end 
+      value="<%= (typeof filters !== 'undefined') ? filters.created_at_end : '' %>"
+    />
   </div>
 </label>

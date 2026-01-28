@@ -54,7 +54,7 @@
               <% const displayType = locale === "ur" ? (row.type_name_ur || row.type_name) : row.type_name; %>
               <% const displayUomName = locale === "ur" ? (row.uom_name_ur || row.uom_name) : row.uom_name; %>
               <% const displaySfgPart = row.sfg_part_type ? (row.sfg_part_type.toUpperCase() === "UPPER" ? t("upper") : row.sfg_part_type.toUpperCase() === "STEP" ? t("step") : row.sfg_part_type) : ""; %>
-              <tr class="hover:bg-amber-50/40" data-row data-active="<%= row.is_active ? "true" : "false" %>" data-created-by="<%= row.created_by_name || "" %>" data-created-at="<%= row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : "" %>">
+              <tr class="hover:bg-amber-50/40" data-row data-subgroup-id="<%= row.subgroup_id || "" %>" data-active="<%= row.is_active ? "true" : "false" %>" data-created-by="<%= row.created_by_name || "" %>" data-created-at="<%= row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : "" %>">
                 <td class="px-4 py-3 text-slate-700"><%= idx + 1 %></td>
                 <td class="px-4 py-3 text-slate-700"><%= displayName %></td>
                 <td class="px-4 py-3 text-slate-700"><%= displayGroup || "" %></td>
@@ -103,7 +103,7 @@
 }) %>
 
 <%- include("../../../base/partials/confirm-modal", { t, csrfToken }) %>
-<%- include("../../../base/partials/filter-modal", { t, bodyPartial: "../../master_data/products/filters.ejs", users }) %>
+<%- include("../../../base/partials/filter-modal", { t, bodyPartial: "../../master_data/products/filters.ejs", users, subgroups, filters: typeof filters !== 'undefined' ? filters : {}, serverFilters: true }) %>
 
 <%- include("../../../base/partials/basic-info-utils", { t, page: { titleKey: "finished" }, basePath, modalOpen, modalMode }) %>
 

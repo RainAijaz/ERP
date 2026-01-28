@@ -25,20 +25,13 @@ const toArray = (value) => {
   return [value];
 };
 
-const parseId = (value) => {
-  const raw = value === undefined || value === null ? "" : String(value).trim();
-  if (!raw) return null;
-  const numberValue = Number(raw);
-  return Number.isNaN(numberValue) ? null : numberValue;
-};
-
 const buildRateRows = ({ itemId, colorIds, sizeIds, rates, userId, now }) => {
   const maxLen = Math.max(colorIds.length, sizeIds.length, rates.length);
   const rows = [];
   const keys = new Set();
   for (let idx = 0; idx < maxLen; idx += 1) {
-    const color_id = parseId(colorIds[idx]);
-    const size_id = parseId(sizeIds[idx]);
+    const color_id = colorIds[idx] ? Number(colorIds[idx]) : null;
+    const size_id = sizeIds[idx] ? Number(sizeIds[idx]) : null;
     const purchase_rate = parseNumber(rates[idx]);
     if (purchase_rate === null) continue;
     const key = `${color_id || 0}:${size_id || 0}`;
@@ -46,8 +39,8 @@ const buildRateRows = ({ itemId, colorIds, sizeIds, rates, userId, now }) => {
     keys.add(key);
     rows.push({
       rm_item_id: itemId,
-      color_id,
-      size_id,
+      color_id: Number.isNaN(color_id) ? null : color_id,
+      size_id: Number.isNaN(size_id) ? null : size_id,
       purchase_rate,
       avg_purchase_rate: purchase_rate,
       created_by: userId,
@@ -67,8 +60,9 @@ const loadOptions = async () => {
   return { subgroups, uoms, colors, sizes };
 };
 
-const loadRows = async () =>
-  knex("erp.items as i")
+// --- UPDATED: loadRows with Filter Logic ---
+const loadRows = async (filters = {}) => {
+  let query = knex("erp.items as i")
     .select(
       "i.*",
       "g.name as group_name",
@@ -94,10 +88,33 @@ const loadRows = async () =>
     .leftJoin("erp.colors as c", "c.id", "r.color_id")
     .leftJoin("erp.sizes as rs", "rs.id", "r.size_id")
     .leftJoin("erp.users as cu", "i.created_by", "cu.id")
-    .where("i.item_type", ITEM_TYPE)
-    .groupBy("i.id", "g.name", "g.name_ur", "sg.name", "sg.name_ur", "u.code", "u.name", "u.name_ur", "cu.username")
-    .orderBy("i.id", "desc");
+    .where("i.item_type", ITEM_TYPE);
 
+  // --- FILTERS ---
+  if (filters.subgroup_id) {
+    // Force simple equality (Postgres handles string-to-int usually, but this is safer)
+    query = query.where("i.subgroup_id", filters.subgroup_id);
+  }
+  if (filters.created_by) {
+    query = query.where("cu.username", filters.created_by);
+  }
+  if (filters.created_at_start) {
+    query = query.where("i.created_at", ">=", filters.created_at_start);
+  }
+  if (filters.created_at_end) {
+    query = query.where("i.created_at", "<=", filters.created_at_end + " 23:59:59");
+  }
+  if (filters.low_stock_only === "true") {
+    query = query.whereRaw("COALESCE(i.min_stock_level, 0) > 0"); // Placeholder logic for "Low Stock"
+  }
+  // ----------------
+
+  query = query.groupBy("i.id", "g.name", "g.name_ur", "sg.name", "sg.name_ur", "u.code", "u.name", "u.name_ur", "cu.username").orderBy("i.id", "desc");
+
+  return query;
+};
+
+// --- RESTORED: loadRateDetails (This was missing!) ---
 const loadRateDetails = async () => {
   const rows = await knex("erp.rm_purchase_rates as r").select("r.rm_item_id", "r.purchase_rate", "r.avg_purchase_rate", "c.name as color_name", "c.name_ur as color_name_ur", "s.name as size_name", "s.name_ur as size_name_ur").leftJoin("erp.colors as c", "c.id", "r.color_id").leftJoin("erp.sizes as s", "s.id", "r.size_id").orderBy("r.rm_item_id", "asc").orderByRaw("COALESCE(c.name, '') asc");
 
@@ -127,7 +144,9 @@ const renderIndex = (req, res, payload) => {
 
 router.get("/", async (req, res, next) => {
   try {
-    const [rows, options, rateDetailsByItem, users] = await Promise.all([loadRows(), loadOptions(), loadRateDetails(), loadUsers()]);
+    // --- UPDATED: Pass req.query to loadRows ---
+    const [rows, options, rateDetailsByItem, users] = await Promise.all([loadRows(req.query), loadOptions(), loadRateDetails(), loadUsers()]);
+
     renderIndex(req, res, {
       rows,
       rateDetailsByItem,
@@ -136,6 +155,7 @@ router.get("/", async (req, res, next) => {
       error: null,
       modalOpen: false,
       modalMode: "create",
+      filters: req.query, // Pass filters back to UI
     });
   } catch (err) {
     next(err);
@@ -216,7 +236,7 @@ router.post("/", async (req, res, next) => {
         sizeIds,
         rates,
         userId: req.user ? req.user.id : null,
-        now: trx.fn.now,
+        now: () => trx.fn.now(),
       });
       if (process.env.DEBUG_RM_RATES === "1") {
         console.log("[raw-materials:create] rateRows", rateRows);
@@ -320,7 +340,7 @@ router.post("/:id", async (req, res, next) => {
         sizeIds,
         rates,
         userId: req.user ? req.user.id : null,
-        now: trx.fn.now,
+        now: () => trx.fn.now(),
       });
       if (process.env.DEBUG_RM_RATES === "1") {
         console.log("[raw-materials:update] rateRows", rateRows);

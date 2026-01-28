@@ -49,7 +49,7 @@
             { key: "sizes", label: "sizes_label" },
             { key: "purchase_rates", label: "purchase_rate" },
             { key: "avg_purchase_rates", label: "avg_purchase_rate" },
-            { key: "min_stock_level", label: "min_stock", sortType: "number" }
+            { key: "min_stock_level", label: "min_stock", sortType: "number", cellClass: "text-right" }
           ]; %>
           <%- include("../../../base/partials/table-header", { t, displayColumns, columnTooltips: {}, sortStartIndex: 1 }) %>
         </thead>
@@ -60,53 +60,84 @@
             <% rows.forEach(function(row, idx) { %>
               <% const displayName = locale === "ur" ? (row.name_ur || row.name) : row.name; %>
               <% const displaySubgroup = locale === "ur" ? (row.subgroup_name_ur || row.subgroup_name) : row.subgroup_name; %>
-              <% const displayUomName = locale === "ur" ? (row.uom_name_ur || row.uom_name) : row.uom_name; %>
-              <% const displayPurchaseRates = row.purchase_rates || ""; %>
-              <% const displayAvgRates = row.avg_purchase_rates || ""; %>
-              <% const displayColors = locale === "ur" ? (row.color_names_ur || row.color_names) : row.color_names; %>
-              <% const displaySizes = locale === "ur" ? (row.size_names_ur || row.size_names) : row.size_names; %>
+              
+              <% /* --- NEW LOGIC: Use rateDetails for perfect alignment --- */ %>
+              <% const details = rateDetailsByItem && rateDetailsByItem[row.id] ? rateDetailsByItem[row.id] : []; %>
+              
+              <% const colorBadges = details.map(d => {
+                   const val = locale === "ur" ? (d.color_name_ur || d.color_name) : d.color_name;
+                   return val || t("none"); 
+                 }); %>
+                 
+              <% const sizeBadges = details.map(d => {
+                   const val = locale === "ur" ? (d.size_name_ur || d.size_name) : d.size_name;
+                   return val || t("none");
+                 }); %>
+
+              <% const rateBadges = details.map(d => d.purchase_rate ? Math.trunc(Number(d.purchase_rate)) : "0"); %>
+              <% const avgBadges = details.map(d => d.avg_purchase_rate ? Math.trunc(Number(d.avg_purchase_rate)) : "0"); %>
+
+              <% /* Helper to render badges with VISIBLE COMMAS for copy/export */ %>
+              <% const renderBadgeList = (items, bgClass, textClass) => { 
+                   if(!items.length) return "";
+                   return items.map(val => 
+                     `<span class="inline-flex items-center rounded-md ${bgClass} px-1.5 py-0.5 text-xs font-medium ${textClass} ring-1 ring-inset ring-${textClass}/10 whitespace-nowrap">${val}</span>`
+                   ).join("<span class='text-slate-300 mx-0.5 select-none'>,</span>");
+                 }; 
+              %>
+
               <% const displayMinStock = row.min_stock_level === null || row.min_stock_level === undefined || row.min_stock_level === "" ? "" : Math.trunc(Number(row.min_stock_level)); %>
-              <% const rateDetails = rateDetailsByItem && rateDetailsByItem[row.id] ? rateDetailsByItem[row.id] : []; %>
-              <tr class="hover:bg-amber-50/40" data-row data-rm-parent data-id="<%= row.id %>" data-active="<%= row.is_active ? "true" : "false" %>" data-created-by="<%= row.created_by_name || "" %>" data-created-at="<%= row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : "" %>">
-                <td class="px-4 py-3 text-slate-700"><%= idx + 1 %></td>
-                <td class="px-4 py-3 text-slate-700 whitespace-normal break-words max-w-[220px]" data-rm-parent-primary><%= displayName %></td>
-                <td class="px-4 py-3 text-slate-700 whitespace-normal break-words max-w-[200px]" data-rm-parent-primary><%= displaySubgroup || "" %></td>
-                <td class="px-4 py-3 text-slate-700 truncate" data-rm-parent-primary><%= row.uom_code || "" %></td>
-                <td class="px-4 py-3 text-slate-700 whitespace-normal break-words max-w-[180px]" data-rm-parent-secondary><%= displayColors || "" %></td>
-                <td class="px-4 py-3 text-slate-700 whitespace-normal break-words max-w-[160px]" data-rm-parent-secondary><%= displaySizes || "" %></td>
-                <td class="px-4 py-3 text-slate-700 whitespace-normal break-words max-w-[200px]" data-summary-rates="<%= displayPurchaseRates || "" %>" data-rm-parent-secondary><%= displayPurchaseRates || "" %></td>
-                <td class="px-4 py-3 text-slate-700 whitespace-normal break-words max-w-[200px]" data-summary-avg="<%= displayAvgRates || "" %>" data-rm-parent-secondary><%= displayAvgRates || "" %></td>
-                <td class="px-4 py-3 text-slate-700 text-right" data-rm-parent-primary><%= displayMinStock %></td>
-                <td class="px-4 py-3 whitespace-nowrap col-actions">
+
+              <tr class="hover:bg-amber-50/40" data-row data-rm-parent data-id="<%= row.id %>" data-subgroup-id="<%= row.subgroup_id || "" %>" data-active="<%= row.is_active ? "true" : "false" %>" data-created-by="<%= row.created_by_name || "" %>" data-created-at="<%= row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : "" %>">
+                <td class="px-3 py-3 text-slate-700 w-px whitespace-nowrap"><%= idx + 1 %></td>
+                <td class="px-3 py-3 text-slate-700 whitespace-normal max-w-[180px]"><%= displayName %></td>
+                <td class="px-3 py-3 text-slate-700 whitespace-normal max-w-[120px]"><%= displaySubgroup || "" %></td>
+                <td class="px-3 py-3 text-slate-700 truncate w-px whitespace-nowrap"><%= row.uom_code || "" %></td>
+                
+                <td class="px-3 py-3 text-slate-700 whitespace-normal" data-rm-parent-secondary>
+                  <div class="flex flex-wrap gap-1 leading-snug">
+                    <%- renderBadgeList(colorBadges, "bg-purple-50", "text-purple-700") %>
+                  </div>
+                </td>
+
+                <td class="px-3 py-3 text-slate-700 whitespace-normal" data-rm-parent-secondary>
+                  <div class="flex flex-wrap gap-1 leading-snug">
+                    <%- renderBadgeList(sizeBadges, "bg-blue-50", "text-blue-700") %>
+                  </div>
+                </td>
+
+                <td class="px-3 py-3 text-slate-700 whitespace-normal" data-summary-rates="<%= rateBadges.join(", ") %>" data-rm-parent-secondary>
+                   <div class="flex flex-wrap gap-1 leading-snug">
+                    <%- renderBadgeList(rateBadges, "bg-emerald-50", "text-emerald-700") %>
+                  </div>
+                </td>
+                
+                <td class="px-3 py-3 text-slate-700 whitespace-normal" data-summary-avg="<%= avgBadges.join(", ") %>" data-rm-parent-secondary>
+                   <div class="flex flex-wrap gap-1 leading-snug">
+                    <%- renderBadgeList(avgBadges, "bg-slate-50", "text-slate-600") %>
+                  </div>
+                </td>
+
+                <td class="px-3 py-3 text-slate-700 text-right"><%= displayMinStock %></td>
+                
+                <td class="px-3 py-3 whitespace-nowrap col-actions w-px">
                   <%- include("../../../base/partials/table-actions", { t, row, basePath, withMenu: true, editFields: [
-                    "name",
-                    "name_ur",
-                    "subgroup_id",
-                    "base_uom_id",
-                    "min_stock_level",
-                    "color_rate_pairs"
+                    "name", "name_ur", "subgroup_id", "base_uom_id", "min_stock_level", "color_rate_pairs"
                   ] }) %>
                 </td>
               </tr>
-              <% if (rateDetails.length) { %>
-                <% rateDetails.forEach(function(detail) { %>
+              
+              <% if (details.length) { %>
+                <% details.forEach(function(detail) { %>
                   <% const detailColor = locale === "ur" ? (detail.color_name_ur || detail.color_name) : detail.color_name; %>
                   <% const detailSize = locale === "ur" ? (detail.size_name_ur || detail.size_name) : detail.size_name; %>
-                  <% const colorLabel = detailColor || t("one_color"); %>
-                  <% const sizeLabel = detailSize || t("one_size"); %>
-                  <% const displayPurchaseRate = detail.purchase_rate === null || detail.purchase_rate === undefined ? "" : Math.trunc(Number(detail.purchase_rate)); %>
-                  <% const displayAvgRate = detail.avg_purchase_rate === null || detail.avg_purchase_rate === undefined ? "" : Math.trunc(Number(detail.avg_purchase_rate)); %>
                   <tr class="hidden bg-amber-50/40" data-rm-detail data-parent-id="<%= row.id %>">
-                    <td class="px-4 py-2 text-slate-500 text-xs">*</td>
-                    <td class="px-4 py-2 text-slate-600 text-xs"></td>
-                    <td class="px-4 py-2"></td>
-                    <td class="px-4 py-2 text-slate-600 text-xs"></td>
-                    <td class="px-4 py-2 text-slate-600 text-xs"><%= colorLabel %></td>
-                    <td class="px-4 py-2 text-slate-600 text-xs"><%= sizeLabel %></td>
-                    <td class="px-4 py-2 text-slate-600 text-xs"><%= displayPurchaseRate %></td>
-                    <td class="px-4 py-2 text-slate-600 text-xs"><%= displayAvgRate %></td>
-                    <td class="px-4 py-2 text-slate-600 text-xs text-right"></td>
-                    <td class="px-4 py-2"></td>
+                    <td class="px-3 py-2 text-slate-400 text-xs text-right" colspan="4">↳</td>
+                    <td class="px-3 py-2 text-slate-600 text-xs font-medium"><%= detailColor || t("none") %></td>
+                    <td class="px-3 py-2 text-slate-600 text-xs font-medium"><%= detailSize || t("none") %></td>
+                    <td class="px-3 py-2 text-slate-600 text-xs"><%= detail.purchase_rate ? Math.trunc(Number(detail.purchase_rate)) : "0" %></td>
+                    <td class="px-3 py-2 text-slate-600 text-xs"><%= detail.avg_purchase_rate ? Math.trunc(Number(detail.avg_purchase_rate)) : "0" %></td>
+                    <td class="px-3 py-2" colspan="2"></td>
                   </tr>
                 <% }) %>
               <% } %>
@@ -137,8 +168,13 @@
 }) %>
 
 <%- include("../../../base/partials/confirm-modal", { t, csrfToken }) %>
-<%- include("../../../base/partials/filter-modal", { t, bodyPartial: "../../master_data/products/filters.ejs", users }) %>
-
+<%- include("../../../base/partials/filter-modal", { 
+  t, 
+  bodyPartial: "../../master_data/products/filters.ejs", 
+  users, 
+  subgroups,
+  filters: typeof filters !== 'undefined' ? filters : {}  // <--- ADD THIS LINE
+}) %>
 <%- include("../../../base/partials/basic-info-utils", { t, page: { titleKey: "raw_materials" }, basePath, modalOpen, modalMode }) %>
 
 <script>
@@ -146,8 +182,6 @@
     const modal = document.querySelector("[data-modal]");
     const modalForm = document.querySelector("[data-modal-form]");
     if (!modal || !modalForm) return;
-
-    const subgroupSelect = modalForm.querySelector("[data-field=\"subgroup_id\"]");
 
     const rateList = modalForm.querySelector("[data-rate-list]");
     const template = modalForm.querySelector("[data-rate-template]");
@@ -195,16 +229,12 @@
         const colorSelect = row.querySelector("[data-rate-color]");
         const sizeSelect = row.querySelector("[data-rate-size]");
         if (colorSelect) {
-          const hideColor = mode === "size";
-          colorSelect.classList.toggle("hidden", hideColor);
-          colorSelect.disabled = hideColor;
-          if (hideColor) colorSelect.value = "";
+          colorSelect.classList.toggle("hidden", mode === "size");
+          if (mode === "size") colorSelect.value = "";
         }
         if (sizeSelect) {
-          const hideSize = mode === "color";
-          sizeSelect.classList.toggle("hidden", hideSize);
-          sizeSelect.disabled = hideSize;
-          if (hideSize) sizeSelect.value = "";
+          sizeSelect.classList.toggle("hidden", mode === "color");
+          if (mode === "color") sizeSelect.value = "";
         }
       });
     };
@@ -233,7 +263,19 @@
     };
 
     const openForEdit = (button) => {
-      const pairs = button.dataset.color_rate_pairs || "";
+      // 1. POPULATE BASIC FIELDS (This fixes the empty dropdowns issue)
+      const fields = ["name", "name_ur", "subgroup_id", "base_uom_id", "min_stock_level"];
+      fields.forEach(f => {
+         const input = modalForm.querySelector(`[name="${f}"]`);
+         if(input) {
+             // We get the ID from the button's data attribute and set the input value
+             const val = button.getAttribute(`data-${f}`) || ""; 
+             input.value = val;
+         }
+      });
+
+      // 2. POPULATE RATES
+      const pairs = button.getAttribute("data-color_rate_pairs") || "";
       setTimeout(() => fillRatesFromPairs(pairs), 0);
     };
 
@@ -244,11 +286,13 @@
       btn.addEventListener("click", () => openForEdit(btn));
     });
 
-    rateList.addEventListener("click", (event) => {
-      const target = event.target.closest("[data-rate-add-row]");
-      if (!target) return;
-      addRateRow();
-      applyRateMode();
+    modalForm.addEventListener("click", (event) => {
+      const addBtn = event.target.closest("[data-rate-add-row]");
+      if (addBtn) {
+        addRateRow();
+        applyRateMode();
+        return;
+      }
     });
 
     if (modeSelect) {
@@ -365,4 +409,28 @@
       safeRelink();
     }
   })();
+  modalForm.addEventListener("submit", (event) => {
+      // 1. Check Rates
+      const rateInputs = modalForm.querySelectorAll("[data-rate-value]");
+      let hasValidRate = false;
+      
+      rateInputs.forEach(input => {
+        if (input.value && parseFloat(input.value) > 0) {
+          hasValidRate = true;
+        }
+      });
+
+      if (!hasValidRate) {
+        event.preventDefault();
+        // Show error message
+        const errorBanner = document.querySelector("[data-modal-error]");
+        if (errorBanner) {
+          errorBanner.textContent = "Please add at least one valid purchase rate.";
+          errorBanner.hidden = false;
+          // Scroll to top of modal to see error
+          modalForm.closest(".overflow-y-auto").scrollTop = 0;
+        }
+        return;
+      }
+    });
 </script>

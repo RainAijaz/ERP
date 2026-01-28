@@ -470,14 +470,6 @@ CREATE TABLE IF NOT EXISTS erp.skus (
 -- RAW MATERIAL PURCHASE RATES (COLOR-SPECIFIC)
 -- =============================================================================
 
--- Optional RM-specific size dimension (kept separate in case RM needs a different size scheme).
--- If you don't need RM sizes, you can remove this table later.
-CREATE TABLE IF NOT EXISTS erp.rm_sizes (
-  id   bigserial PRIMARY KEY,
-  name text NOT NULL UNIQUE,
-  name_ur text
-);
-
 -- Optional: allow parties to be available in multiple branches.
 CREATE TABLE IF NOT EXISTS erp.party_branch (
   party_id  bigint NOT NULL REFERENCES erp.parties(id) ON DELETE CASCADE,

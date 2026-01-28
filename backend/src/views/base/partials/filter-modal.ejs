@@ -1,5 +1,4 @@
-<div class="fixed inset-0 z-40 hidden flex items-center justify-center bg-slate-900/40 p-4" data-filter-panel>
-  <div class="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl max-h-[85vh] flex flex-col">
+<div class="fixed inset-0 z-40 hidden flex items-center justify-center bg-slate-900/40 p-4" data-filter-panel data-filter-server="<%= (typeof serverFilters !== 'undefined' && serverFilters) ? "true" : "false" %>">  <div class="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl max-h-[85vh] flex flex-col">
     <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
       <div class="text-sm font-semibold text-slate-700"><%= t("filters") %></div>
       <button class="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:text-slate-700" type="button" data-filter-close>

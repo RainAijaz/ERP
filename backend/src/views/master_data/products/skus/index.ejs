@@ -105,7 +105,15 @@
 }) %>
 
 <%- include("../../../base/partials/confirm-modal", { t, csrfToken }) %>
-<%- include("../../../base/partials/filter-modal", { t, bodyPartial: "../../master_data/products/filters.ejs", users }) %>
+
+<%- include("../../../base/partials/filter-modal", { 
+  t, 
+  bodyPartial: "../../master_data/products/filters.ejs", 
+  users, 
+  subgroups, 
+  filters: typeof filters !== 'undefined' ? filters : {},
+  serverFilters: true // <--- ADD THIS LINE to enable Subgroup filtering
+}) %>
 
 <%- include("../../../base/partials/basic-info-utils", { t, page: { titleKey: "skus" }, basePath, modalOpen, modalMode }) %>
 
@@ -141,7 +149,6 @@
       const colors = readSelected("color_ids");
       const packings = readSelected("packing_type_ids");
       rateList.innerHTML = "";
-
       if (!sizes.length || !grades.length) {
         return;
       }
@@ -176,6 +183,12 @@
       }
     });
 
-    document.addEventListener("DOMContentLoaded", refreshRates);
+    // Auto-fill form if opening for edit (handled by basic-info-utils, but we might need to trigger refreshRates)
+    // We can listen for the generic 'change' event on the form which basic-info-utils triggers
+    modalForm.addEventListener("change", (e) => {
+        if(["size_ids", "grade_ids", "color_ids", "packing_type_ids"].includes(e.target.name)) {
+            refreshRates();
+        }
+    });
   })();
 </script>

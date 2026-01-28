@@ -1,76 +1,180 @@
-<label class="block text-sm font-semibold text-slate-600">
-  <span><%= t("name") %></span>
-  <input class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" type="text" name="name" data-field="name" placeholder="<%= t('name') %>" required />
+<div class="space-y-4">
+  <div class="flex items-center gap-2 pb-2 border-b border-slate-100">
+    <div class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+      <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    </div>
+    <h3 class="text-sm font-bold uppercase tracking-wider text-slate-900"><%= t("basic_info") %></h3>
+  </div>
+
+  <div class="grid gap-5 md:grid-cols-2">
+    <label class="block">
+      <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500"><%= t("name") %> <span class="text-rose-500">*</span></span>
+      <input 
+        class="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 transition focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-slate-100" 
+        type="text" 
+        name="name" 
+        data-field="name" 
+        placeholder="e.g. Synthetic Leather Sheet" 
+        required 
+      />
+    </label>
+
+<label class="block">
+  <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
+    <%= t("name_ur") %> <span class="text-rose-500">*</span> </span>
+  <input 
+    class="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 transition focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-slate-100" 
+    type="text" 
+    name="name_ur" 
+    data-field="name_ur" 
+    placeholder="e.g. مصنوعی چمڑا" 
+    required  />
 </label>
-
-<label class="block text-sm font-semibold text-slate-600">
-  <span><%= t("name_ur") %></span>
-  <input class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" type="text" name="name_ur" data-field="name_ur" placeholder="<%= t('name_ur') %>" />
-</label>
-
-<div class="grid gap-4 lg:grid-cols-2">
-  <label class="block text-sm font-semibold text-slate-600">
-    <span><%= t("sub_group") %></span>
-    <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" name="subgroup_id" data-field="subgroup_id" required>
-      <option value=""><%= t("select") %> <%= t("sub_group") %></option>
-      <% subgroups.forEach(function(subgroup) { %>
-        <option value="<%= subgroup.id %>"><%= locale === "ur" ? (subgroup.name_ur || subgroup.name) : subgroup.name %></option>
-      <% }) %>
-    </select>
-  </label>
-  <label class="block text-sm font-semibold text-slate-600">
-    <span><%= t("base_unit") %></span>
-    <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" name="base_uom_id" data-field="base_uom_id" required>
-      <option value=""><%= t("select") %> <%= t("base_unit") %></option>
-      <% uoms.forEach(function(uom) { %>
-        <option value="<%= uom.id %>"><%= uom.code %></option>
-      <% }) %>
-    </select>
-  </label>
-</div>
-
-<label class="block text-sm font-semibold text-slate-600">
-  <span><%= t("min_stock") %></span>
-  <input class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" type="number" name="min_stock_level" data-field="min_stock_level" min="0" step="1" placeholder="0" />
-</label>
-
-<div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
-  <div class="flex flex-wrap items-center justify-between gap-3">
-    <div class="text-sm font-semibold text-slate-800"><%= t("rates") %></div>
-    <div class="flex flex-wrap items-center gap-2">
-      <label class="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
-        <span><%= t("type") %></span>
-        <select class="bg-transparent text-[10px] font-semibold text-slate-700 focus:outline-none" data-rate-mode>
-          <option value="both"><%= t("colors") %> + <%= t("sizes_label") %></option>
-          <option value="color"><%= t("colors") %> <%= t("only") %></option>
-          <option value="size"><%= t("sizes_label") %> <%= t("only") %></option>
+    <label class="block">
+      <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500"><%= t("sub_group") %> <span class="text-rose-500">*</span></span>
+      <div class="relative">
+        <select 
+          class="w-full appearance-none rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm text-slate-800 transition focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-slate-100" 
+          name="subgroup_id" 
+          data-field="subgroup_id" 
+          required
+        >
+          <option value=""><%= t("select") %>...</option>
+          <% subgroups.forEach(function(subgroup) { %>
+            <option value="<%= subgroup.id %>"><%= locale === "ur" ? (subgroup.name_ur || subgroup.name) : subgroup.name %></option>
+          <% }) %>
         </select>
+        <div class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+        </div>
+      </div>
+    </label>
+
+    <div class="grid grid-cols-2 gap-4">
+      <label class="block">
+        <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500"><%= t("base_unit") %> <span class="text-rose-500">*</span></span>
+        <div class="relative">
+          <select 
+            class="w-full appearance-none rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm text-slate-800 transition focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-slate-100" 
+            name="base_uom_id" 
+            data-field="base_uom_id" 
+            required
+          >
+            <option value=""><%= t("select") %>...</option>
+            <% uoms.forEach(function(uom) { %>
+              <option value="<%= uom.id %>"><%= uom.code %></option>
+            <% }) %>
+          </select>
+          <div class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+          </div>
+        </div>
+      </label>
+
+      <label class="block">
+        <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500"><%= t("min_stock") %></span>
+        <input 
+          class="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm text-slate-800 text-right tabular-nums placeholder-slate-400 transition focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-slate-100" 
+          type="number" 
+          name="min_stock_level" 
+          data-field="min_stock_level" 
+          min="0" 
+          step="1" 
+          placeholder="0" 
+        />
       </label>
     </div>
   </div>
-  <div class="mt-4 space-y-3" data-rate-list></div>
+</div>
+
+<div class="mt-8 space-y-4">
+  <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+    <div class="flex items-center gap-2">
+      <div class="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      </div>
+      <h3 class="text-sm font-bold uppercase tracking-wider text-slate-900"><%= t("rates") %></h3>
+    </div>
+    
+  <div class="flex items-center gap-2">
+    <span class="text-[10px] font-bold uppercase tracking-widest text-slate-400"><%= t("config") %>:</span>
+    <select class="cursor-pointer rounded border-none bg-slate-100 py-1 pl-2 pr-8 text-xs font-semibold text-slate-700 focus:ring-0" data-rate-mode>
+      <option value="both"><%= t("colors") %> + <%= t("sizes_label") %></option>
+      <option value="color"><%= t("colors") %> <%= t("only") %></option>
+      <option value="size"><%= t("sizes_label") %> <%= t("only") %></option>
+    </select>
+  </div>
+  
+</div>
+
+  <div class="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+    <div class="grid grid-cols-[1.5fr_1.5fr_1fr_40px] gap-0 border-b border-slate-100 bg-slate-50 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+      <div class="px-4 py-2 border-r border-slate-100"><%= t("colors") %></div>
+      <div class="px-4 py-2 border-r border-slate-100"><%= t("sizes_label") %></div>
+      <div class="px-4 py-2"><%= t("purchase_rate") %></div>
+      <div class="px-2 py-2 text-center"></div>
+    </div>
+
+    <div class="divide-y divide-slate-50" data-rate-list>
+      </div>
+
+    <div 
+      class="cursor-pointer border-t border-dashed border-slate-200 bg-slate-50/50 hover:bg-slate-50 transition p-2 text-center"
+      data-rate-add-row
+    >
+      <button type="button" class="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-500 hover:text-slate-800">
+        <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+        </svg>
+        <span><%= t("add_row") || "Add Row" %></span>
+      </button>
+    </div>
+  </div>
 </div>
 
 <template data-rate-template>
-  <div class="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center" data-rate-row>
-    <select class="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm" name="color_ids" data-rate-color>
-      <option value=""><%= t("select") %> <%= t("colors") %></option>
-      <% colors.forEach(function(color) { %>
-        <option value="<%= color.id %>"><%= locale === "ur" ? (color.name_ur || color.name) : color.name %></option>
-      <% }) %>
-    </select>
-    <select class="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm" name="size_ids" data-rate-size>
-      <option value=""><%= t("select") %> <%= t("sizes_label") %></option>
-      <% sizes.forEach(function(size) { %>
-        <option value="<%= size.id %>"><%= locale === "ur" ? (size.name_ur || size.name) : size.name %></option>
-      <% }) %>
-    </select>
-    <input class="flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm tabular-nums" type="number" min="0" step="1" name="purchase_rates" placeholder="<%= t('purchase_rate') %>" data-rate-value data-rate-input />
-    <button class="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:border-slate-300 hover:text-slate-800" type="button" data-rate-add-row aria-label="Add row">
-      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path d="M12 5v14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-        <path d="M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-      </svg>
-    </button>
+  <div class="group grid grid-cols-[1.5fr_1.5fr_1fr_40px] items-center gap-0 hover:bg-amber-50/30 transition-colors" data-rate-row>
+    <div class="p-2 border-r border-slate-50">
+      <select class="w-full rounded border border-transparent bg-transparent px-2 py-1.5 text-xs text-slate-700 focus:border-slate-300 focus:bg-white focus:ring-0" name="color_ids" data-rate-color>
+        <option value=""><%= t("select") %></option>
+        <% colors.forEach(function(color) { %>
+          <option value="<%= color.id %>"><%= locale === "ur" ? (color.name_ur || color.name) : color.name %></option>
+        <% }) %>
+      </select>
+    </div>
+
+    <div class="p-2 border-r border-slate-50">
+      <select class="w-full rounded border border-transparent bg-transparent px-2 py-1.5 text-xs text-slate-700 focus:border-slate-300 focus:bg-white focus:ring-0" name="size_ids" data-rate-size>
+        <option value=""><%= t("select") %></option>
+        <% sizes.forEach(function(size) { %>
+          <option value="<%= size.id %>"><%= locale === "ur" ? (size.name_ur || size.name) : size.name %></option>
+        <% }) %>
+      </select>
+    </div>
+
+    <div class="p-2">
+      <input 
+        class="w-full rounded border border-transparent bg-transparent px-2 py-1.5 text-xs text-right font-medium tabular-nums text-slate-700 placeholder-slate-300 focus:border-slate-300 focus:bg-white focus:ring-0" 
+        type="number" 
+        min="0" 
+        step="0.01" 
+        name="purchase_rates" 
+        placeholder="0.00" 
+        data-rate-value 
+        data-rate-input 
+      />
+    </div>
+
+    <div class="flex justify-center p-2">
+      <button class="invisible group-hover:visible rounded p-1 text-rose-400 hover:bg-rose-50 hover:text-rose-600 transition" type="button" onclick="this.closest('[data-rate-row]').remove()" aria-label="Remove row">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+        </svg>
+      </button>
+    </div>
   </div>
 </template>
