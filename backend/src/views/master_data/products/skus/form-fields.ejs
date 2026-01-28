@@ -1,83 +1,83 @@
-<div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
-  <div class="sm:col-span-2">
-    <label class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">
-      <%= t("article") %> <span class="text-rose-500">*</span>
-    </label>
-    <div class="relative">
-      <select name="item_id" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none" required>
-        <option value=""><%= t("select") %> <%= t("article") %></option>
-        <% items.forEach(function(item) { %>
-          <option value="<%= item.id %>" <%= values && String(values.item_id) === String(item.id) ? "selected" : "" %>>
-            <%= item.code %> - <%= locale === 'ur' ? (item.name_ur || item.name) : item.name %>
-          </option>
+<div id="create-mode-container">
+  <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+    <div class="sm:col-span-2">
+      <label class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">
+        <%= t("article") %> <span class="text-rose-500">*</span>
+      </label>
+      <div class="relative">
+        <select name="item_id" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none" required>
+          <option value=""><%= t("select") %> <%= t("article") %></option>
+          <% items.forEach(function(item) { %>
+            <option value="<%= item.id %>"><%= item.code %> - <%= locale === 'ur' ? (item.name_ur || item.name) : item.name %></option>
+          <% }) %>
+        </select>
+      </div>
+    </div>
+
+    <div>
+      <label class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">
+        <%= t("sizes") %> <span class="text-rose-500">*</span>
+      </label>
+      <select name="size_ids" multiple class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none" required>
+        <% sizes.forEach(function(size) { %>
+          <option value="<%= size.id %>"><%= locale === 'ur' ? (size.name_ur || size.name) : size.name %></option>
+        <% }) %>
+      </select>
+    </div>
+
+    <div>
+      <label class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">
+        <%= t("grades") %> <span class="text-rose-500">*</span>
+      </label>
+      <select name="grade_ids" multiple class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none" required>
+        <% grades.forEach(function(grade) { %>
+          <option value="<%= grade.id %>"><%= locale === 'ur' ? (grade.name_ur || grade.name) : grade.name %></option>
+        <% }) %>
+      </select>
+    </div>
+
+    <div>
+      <label class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">
+        <%= t("colors") %>
+      </label>
+      <select name="color_ids" multiple class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none">
+        <% colors.forEach(function(color) { %>
+          <option value="<%= color.id %>"><%= locale === 'ur' ? (color.name_ur || color.name) : color.name %></option>
+        <% }) %>
+      </select>
+    </div>
+
+    <div>
+      <label class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">
+        <%= t("packing_types") %> <span class="text-rose-500">*</span>
+      </label>
+      <select name="packing_type_ids" multiple class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none" required>
+        <% packings.forEach(function(pkg) { %>
+          <option value="<%= pkg.id %>"><%= locale === 'ur' ? (pkg.name_ur || pkg.name) : pkg.name %></option>
         <% }) %>
       </select>
     </div>
   </div>
 
-  <div>
-    <label class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">
-      <%= t("sizes") %> <span class="text-rose-500">*</span>
+  <div class="mt-6 border-t border-slate-100 pt-4">
+    <label class="mb-3 block text-xs font-bold uppercase tracking-wide text-slate-500">
+      <%= t("generated_combinations") || "Generated Rates" %>
     </label>
-    <select name="size_ids" multiple class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none" required>
-      <% sizes.forEach(function(size) { %>
-        <option value="<%= size.id %>"><%= locale === 'ur' ? (size.name_ur || size.name) : size.name %></option>
-      <% }) %>
-    </select>
-    <p class="mt-1 text-[10px] text-slate-400"><%= t("sku_rate_help") %></p>
-  </div>
-
-  <div>
-    <label class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">
-      <%= t("grades") %> <span class="text-rose-500">*</span>
-    </label>
-    <select name="grade_ids" multiple class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none" required>
-      <% grades.forEach(function(grade) { %>
-        <option value="<%= grade.id %>"><%= locale === 'ur' ? (grade.name_ur || grade.name) : grade.name %></option>
-      <% }) %>
-    </select>
-  </div>
-
-  <div>
-    <label class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">
-      <%= t("colors") %>
-    </label>
-    <select name="color_ids" multiple class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none">
-      <% colors.forEach(function(color) { %>
-        <option value="<%= color.id %>"><%= locale === 'ur' ? (color.name_ur || color.name) : color.name %></option>
-      <% }) %>
-    </select>
-  </div>
-
-  <div>
-    <label class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">
-      <%= t("packing_types") %> <span class="text-rose-500">*</span>
-    </label>
-    <select name="packing_type_ids" multiple class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none" required>
-      <% packings.forEach(function(pkg) { %>
-        <option value="<%= pkg.id %>"><%= locale === 'ur' ? (pkg.name_ur || pkg.name) : pkg.name %></option>
-      <% }) %>
-    </select>
-  </div>
-
-  <div class="sm:col-span-2">
-    <label class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">
-      <%= t("barcode") %> <span class="text-xs font-normal text-slate-400">(<%= t("optional") || "Optional" %>)</span>
-    </label>
-    <input type="text" name="barcode" value="<%= values && values.barcode %>" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none" placeholder="<%= t("barcode") %>" />
+    <div class="rounded-xl border border-slate-200 bg-slate-50/50 p-4" id="rate-list-container">
+      <div data-sku-rate-list class="space-y-3"></div>
+      <div data-rate-list-empty class="text-center py-4 text-sm text-slate-400 italic">
+        <%= t("select_options_to_generate") || "Select options to generate combinations." %>
+      </div>
+    </div>
   </div>
 </div>
 
-<div class="mt-6 border-t border-slate-100 pt-4">
-  <label class="mb-3 block text-xs font-bold uppercase tracking-wide text-slate-500">
-    <%= t("generated_combinations") || "Generated Rates" %>
-  </label>
-  
-  <div class="rounded-xl border border-slate-200 bg-slate-50/50 p-4" id="rate-list-container">
-    <div data-sku-rate-list class="space-y-3"></div>
-    
-    <div data-rate-list-empty class="text-center py-4 text-sm text-slate-400 italic">
-      <%= t("select_options_to_generate") || "Select Sizes, Grades, and Packing to generate combinations." %>
-    </div>
+<div id="edit-rates-container" class="hidden">
+  <div class="mb-4 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+    <strong>Editing Rates:</strong> Update the Pair Sale Rate for existing variants below.
   </div>
+  <div class="mb-4 text-lg font-bold text-slate-800" id="edit-rates-article-title"></div>
+  
+  <div id="bulk-edit-list" class="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
+    </div>
 </div>

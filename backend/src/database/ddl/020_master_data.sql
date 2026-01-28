@@ -440,6 +440,8 @@ CREATE TABLE IF NOT EXISTS erp.variants (
 
   created_by      bigint REFERENCES erp.users(id),
   created_at      timestamptz NOT NULL DEFAULT now(),
+  updated_by      bigint REFERENCES erp.users(id),
+  updated_at      timestamptz DEFAULT CURRENT_TIMESTAMP, 
   approved_by     bigint REFERENCES erp.users(id),
   approved_at     timestamptz,
 

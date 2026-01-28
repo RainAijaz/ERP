@@ -1,22 +1,52 @@
 <%- include("../../../base/partials/matrix-utils-script") %>
 
+<%
+  const viewType = typeof itemType !== "undefined" ? itemType : "FG";
+  const isFinishedView = viewType === "FG";
+  const viewQuery = "?item_type=" + viewType;
+  const i18n = (key, fallback) => {
+    const value = t(key);
+    return value && value !== key ? value : fallback;
+  };
+  const groupedRows = {};
+  if (rows && rows.length) {
+    rows.forEach(row => {
+      const key = row.item_id + "___" + (locale === "ur" ? (row.item_name_ur || row.item_name) : row.item_name) + "___" + row.item_code;
+      if (!groupedRows[key]) groupedRows[key] = [];
+      groupedRows[key].push(row);
+    });
+  }
+%>
+
 <div class="mx-auto w-full max-w-7xl space-y-6">
   <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
     <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
       <div class="space-y-1">
-        <h1 class="text-2xl font-display text-ink"><%= t("skus") %></h1>
-        <p class="text-sm text-muted"><%= t("skus_description") %></p>
+        <h1 class="text-2xl font-display text-ink"><%= isFinishedView ? i18n("skus", "SKUs") : i18n("semi_finished", "Semi-Finished") %></h1>
+        <p class="text-sm text-muted">
+          <%= isFinishedView ? i18n("skus_description", "Manage finished product variants.") : i18n("semi_finished_variants_hint", "View variants for semi-finished items. Rates, grades and packing are not applicable here.") %>
+        </p>
       </div>
       <div class="flex flex-wrap gap-2">
+        <div class="flex items-center rounded-full border border-slate-200 bg-white p-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-600 shadow-sm">
+          <a class="rounded-full px-4 py-2 transition <%= isFinishedView ? 'bg-slate-900 text-white shadow' : 'text-slate-600 hover:text-slate-900' %>" href="<%= basePath %>?item_type=FG">
+            <%= i18n("finished_products", "Finished") %>
+          </a>
+          <a class="rounded-full px-4 py-2 transition <%= !isFinishedView ? 'bg-slate-900 text-white shadow' : 'text-slate-600 hover:text-slate-900' %>" href="<%= basePath %>?item_type=SFG">
+            <%= i18n("semi_finished", "Semi-Finished") %>
+          </a>
+        </div>
         <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-download-button>
           <%= t("download") %>
         </button>
         <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-print-button>
           <%= t("print") %>
         </button>
-        <button class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800" type="button" data-modal-open>
-          <%= t("add") %> <%= t("skus") %>
-        </button>
+        <% if (isFinishedView) { %>
+          <button class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800" type="button" data-modal-open data-mode="create">
+            <%= t("add") %> <%= t("skus") %>
+          </button>
+        <% } %>
       </div>
     </div>
   </section>
@@ -31,64 +61,133 @@
       <div class="text-sm font-semibold text-slate-700"><%= t("list") %> <%= t("skus") %></div>
       <%- include("../../../base/partials/table-controls", { t, showStatus: true, showFilters: true }) %>
     </div>
-    <div class="overflow-x-auto lg:overflow-visible">
-      <table class="w-full text-sm table-wrap" data-table>
-        <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
-          <% const displayColumns = [
-            { key: "variant_id", label: "variant_id", sortType: "number" },
-            { key: "article", label: "article" },
-            { key: "size", label: "sizes_label" },
-            { key: "grade", label: "grades" },
-            { key: "color", label: "colors" },
-            { key: "packing", label: "packing_types" },
-            { key: "sale_rate", label: "sale_rate", sortType: "number" },
-            { key: "sku", label: "sku_code" },
-            { key: "barcode", label: "barcode" }
-          ]; %>
-          <%- include("../../../base/partials/table-header", { t, displayColumns, columnTooltips: {}, sortStartIndex: 1 }) %>
-        </thead>
-        <tbody class="divide-y divide-slate-100" data-table-body>
-          <% if (!rows || rows.length === 0) { %>
-            <%- include("../../../base/partials/table-empty", { t, colspan: displayColumns.length + 2 }) %>
-          <% } else { %>
-            <% rows.forEach(function(row, idx) { %>
-              <tr class="hover:bg-amber-50/40" data-row data-active="<%= row.is_active ? "true" : "false" %>" data-created-by="<%= row.created_by_name || "" %>" data-created-at="<%= row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : "" %>">
-                <td class="px-4 py-3 text-slate-700"><%= idx + 1 %></td>
-                <td class="px-4 py-3 text-slate-700"><%= row.id %></td>
-                <td class="px-4 py-3 text-slate-700"><%= row.item_code %> - <%= locale === "ur" ? (row.item_name_ur || row.item_name) : row.item_name %></td>
-                <td class="px-4 py-3 text-slate-700"><%= locale === "ur" ? (row.size_name_ur || row.size_name) : row.size_name || "" %></td>
-                <td class="px-4 py-3 text-slate-700"><%= locale === "ur" ? (row.grade_name_ur || row.grade_name) : row.grade_name || "" %></td>
-                <td class="px-4 py-3 text-slate-700"><%= locale === "ur" ? (row.color_name_ur || row.color_name) : row.color_name || "" %></td>
-                <td class="px-4 py-3 text-slate-700"><%= locale === "ur" ? (row.packing_name_ur || row.packing_name) : row.packing_name || "" %></td>
-                
-                <td class="px-4 py-3 text-slate-700">
-                  <%= row.sale_rate || "" %>
-                  <% if (row.pending_approval_status === 'PENDING') { %>
-                    <div class="mt-1">
-                      <%- include("../../../base/partials/approval-badge", { status: "PENDING" }) %>
-                    </div>
-                  <% } %>
-                </td>
 
-                <td class="px-4 py-3 text-slate-700"><%= row.sku_code || "" %></td>
-                <td class="px-4 py-3 text-slate-700"><%= row.barcode || "" %></td>
-                <td class="px-4 py-3 whitespace-nowrap col-actions min-w-[110px]">
-                  <%- include("../../../base/partials/table-actions", { t, row, basePath, withMenu: true, editFields: [
-                    "item_id",
-                    "size_ids",
-                    "grade_ids",
-                    "color_ids",
-                    "packing_type_ids",
-                    "sale_rate",
-                    "barcode",
-                    "is_active"
-                  ] }) %>
-                </td>
-              </tr>
-            <% }) %>
-          <% } %>
-        </tbody>
-      </table>
+    <div class="overflow-x-auto lg:overflow-visible">
+      <% if (Object.keys(groupedRows).length === 0) { %>
+         <div class="p-8 text-center text-slate-400 italic"><%= t("no_entries") %></div>
+      <% } else { %>
+        
+        <div class="divide-y divide-slate-200" data-table-body>
+          <% Object.keys(groupedRows).forEach(groupKey => { 
+             const [itemId, itemName, itemCode] = groupKey.split("___");
+             const variants = groupedRows[groupKey];
+          %>
+            <div class="sku-group-block">
+              <div class="bg-slate-50 p-4 border-l-4 border-indigo-500">
+                <div class="flex items-center gap-3">
+                  <div class="flex h-10 w-10 items-center justify-center rounded-full bg-white border border-slate-200 text-slate-500 font-bold shadow-sm text-xs">
+                    <%= itemCode.substring(0, 3) %>
+                  </div>
+                  <div>
+                    <h3 class="text-base font-bold text-slate-800"><%= itemName %> <span class="text-xs font-normal text-slate-500 ml-2">(<%= itemCode %>)</span></h3>
+                    <p class="text-xs text-slate-500"><%= variants.length %> <%= t("variants") %></p>
+                  </div>
+                  <% if (isFinishedView) { %>
+                    <button 
+                      type="button"
+                      data-modal-open
+                      data-mode="edit_rates"
+                      data-item-id="<%= itemId %>"
+                      data-item-label="<%= itemCode %> - <%= itemName %>"
+                      class="ml-auto rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 hover:text-indigo-600 transition flex items-center gap-2"
+                    >
+                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                      <%= t("edit_rates") || "Edit Rates" %>
+                    </button>
+                  <% } %>
+                </div>
+              </div>
+              <table class="w-full text-sm text-left">
+                <thead class="bg-white text-xs font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-100">
+                  <tr>
+                    <th class="px-6 py-2 w-16">#</th>
+                    <th class="px-6 py-2"><%= t("size") %></th>
+                    <% if (isFinishedView) { %>
+                      <th class="px-6 py-2"><%= t("grade") %></th>
+                    <% } %>
+                    <th class="px-6 py-2"><%= t("color") %></th>
+                    <% if (isFinishedView) { %>
+                      <th class="px-6 py-2"><%= t("packing") %></th>
+                      <th class="px-6 py-2 text-right"><%= t("pair_rate") %></th>
+                      <th class="px-6 py-2 text-right text-indigo-600"><%= t("dozen_rate") %></th>
+                    <% } %>
+                    <th class="px-6 py-2"><%= t("sku_code") %></th>
+                    <th class="px-6 py-2 text-right"><%= t("actions") %></th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-50 bg-white">
+                  <% variants.forEach((row, idx) => { %>
+                    <% const searchParts = isFinishedView ? [row.id, row.size_name, row.grade_name, row.color_name, row.packing_name, row.sku_code, row.sale_rate] : [row.id, row.size_name, row.color_name, row.sku_code]; %>
+                    <tr class="hover:bg-slate-50/50 transition" data-row data-active="<%= row.is_active ? 'true' : 'false' %>" data-search="<%= searchParts.join(' ').toLowerCase() %>" data-item-type="<%= isFinishedView ? 'FG' : 'SFG' %>" data-subgroup-id="<%= row.subgroup_id || '' %>" data-created-by="<%= row.created_by_name || '' %>" data-created-at="<%= row.created_at || '' %>">
+                      <td class="px-6 py-3 text-slate-400 text-xs"><%= row.id %></td>
+                      <td class="px-6 py-3 font-medium text-slate-700"><%= locale === "ur" ? (row.size_name_ur || row.size_name) : row.size_name %></td>
+                      <% if (isFinishedView) { %>
+                        <td class="px-6 py-3 text-slate-600"><%= locale === "ur" ? (row.grade_name_ur || row.grade_name) : row.grade_name %></td>
+                      <% } %>
+                      <td class="px-6 py-3 text-slate-600"><%= locale === "ur" ? (row.color_name_ur || row.color_name) : row.color_name %></td>
+                      <% if (isFinishedView) { %>
+                        <td class="px-6 py-3 text-slate-600"><%= locale === "ur" ? (row.packing_name_ur || row.packing_name) : row.packing_name %></td>
+                        
+                        <td class="px-6 py-3 text-right font-bold text-slate-700">
+                          <%= row.sale_rate %>
+                          <% if (row.pending_approval_status === 'PENDING') { %>
+                            <div class="inline-block ml-1"><%- include("../../../base/partials/approval-badge", { status: "PENDING" }) %></div>
+                          <% } %>
+                        </td>
+                        <td class="px-6 py-3 text-right font-bold text-indigo-600 bg-indigo-50/30">
+                          <%= (row.sale_rate * 12).toFixed(0) %>
+                        </td>
+                      <% } %>
+
+                      <td class="px-6 py-3 font-mono text-xs text-slate-500"><%= row.sku_code || "-" %></td>
+                      
+                      <td class="px-6 py-3 text-right whitespace-nowrap text-sm font-medium">
+                        <div class="flex items-center justify-end gap-2">
+                          <button
+                            class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 cursor-pointer"
+                            type="button"
+                            data-toggle
+                            data-toggle-action="<%= basePath %>/<%= row.id %>/toggle<%= viewQuery %>"
+                            data-toggle-label="<%= row.is_active ? t('deactivate') : t('activate') %>"
+                            title="<%= row.is_active ? t('deactivate') : t('activate') %>"
+                          >
+                            <% if (row.is_active) { %>
+                              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <path d="M6 12h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                              </svg>
+                            <% } else { %>
+                              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <path d="M12 5v14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                                <path d="M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                              </svg>
+                            <% } %>
+                          </button>
+                          <button
+                            class="inline-flex items-center justify-center rounded-md border border-rose-200 bg-rose-50 p-2 text-rose-600 transition hover:border-rose-300 hover:text-rose-700 cursor-pointer"
+                            type="button"
+                            data-delete
+                            data-delete-action="<%= basePath %>/<%= row.id %>/delete<%= viewQuery %>"
+                            title="<%= t('permanent_delete') %>"
+                          >
+                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                              <path d="M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                              <path d="M9 7V5h6v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                              <path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                              <path d="M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                            </svg>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  <% }) %>
+                </tbody>
+              </table>
+              <div class="h-6 bg-slate-50 border-t border-slate-200"></div>
+            </div>
+          <% }); %>
+        </div>
+        <script>console.log('[SKU PAGE DEBUG] Rendered <%= rows ? rows.length : 0 %> rows, <%= Object.keys(groupedRows).length %> groups');</script>
+      <% } %>
     </div>
     <%- include("../../../base/partials/table-footer", { t }) %>
   </section>
@@ -101,7 +200,7 @@
   modalTitle: t("add") + " " + t("skus"),
   modalDescription: t("skus_description"),
   translateMode: "transliterate",
-  formAction: basePath,
+  formAction: basePath + viewQuery,
   formClass: "space-y-5 px-6 py-5",
   modalContainerClass: "w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl",
   modalHeaderClass: "flex items-center justify-between border-b border-slate-200 px-6 py-4",
@@ -109,27 +208,11 @@
   modalValues: modalOpen ? values : null,
   csrfToken,
   bodyPartial: "../../master_data/products/skus/form-fields.ejs",
-  // CRITICAL FIX: Explicitly pass these variables so form-fields.ejs can see them
-  items,
-  sizes,
-  grades,
-  colors,
-  packings,
-  locale,
-  values: typeof values !== 'undefined' ? values : {} 
+  items, sizes, grades, colors, packings, locale, values: typeof values !== 'undefined' ? values : {} 
 }) %>
 
 <%- include("../../../base/partials/confirm-modal", { t, csrfToken }) %>
-
-<%- include("../../../base/partials/filter-modal", { 
-  t, 
-  bodyPartial: "../../master_data/products/filters.ejs", 
-  users, 
-  subgroups, 
-  filters: typeof filters !== 'undefined' ? filters : {},
-  serverFilters: true
-}) %>
-
+<%- include("../../../base/partials/filter-modal", { t, bodyPartial: "../../master_data/products/filters.ejs", users, subgroups, filters: typeof filters !== 'undefined' ? filters : {}, serverFilters: true }) %>
 <%- include("../../../base/partials/basic-info-utils", { t, page: { titleKey: "skus" }, basePath, modalOpen, modalMode }) %>
 
 <script>
@@ -137,85 +220,104 @@
     const modalForm = document.querySelector("[data-modal-form]");
     if (!modalForm) return;
     
+    // Elements
     const rateList = modalForm.querySelector("[data-sku-rate-list]");
     const emptyMsg = modalForm.querySelector("[data-rate-list-empty]");
+    const itemSelect = modalForm.querySelector('select[name="item_id"]');
     
-    const isCreateMode = !modalForm.querySelector('input[name="_method"][value="PUT"]') && 
-                         !modalForm.action.endsWith("/edit");
+    const createContainer = document.getElementById("create-mode-container");
+    const editContainer = document.getElementById("edit-rates-container");
+    const editList = document.getElementById("bulk-edit-list");
+    const editTitle = document.getElementById("edit-rates-article-title");
+    
+    let existingCombinationsSet = new Set();
 
-    if (!rateList || !isCreateMode) return;
+    // 1. SMART ADD LOGIC (Matrix)
+    if (itemSelect) {
+      itemSelect.addEventListener("change", async (e) => {
+        const itemId = e.target.value;
+        if (!itemId) return;
 
-    // ... [readSelected, buildKey, buildLabel functions remain the same] ...
-    const readSelected = (name) => {
-      const select = modalForm.querySelector(`select[name="${name}"]`);
-      if (!select) return [];
-      return Array.from(select.options)
-        .filter((opt) => opt.selected && opt.value)
-        .map((opt) => ({ value: opt.value, label: opt.textContent.trim() }));
-    };
-
-    const buildKey = (sizeId, gradeId, colorId, packingId) =>
-      [sizeId || "0", gradeId || "0", colorId || "0", packingId || "0"].join("|");
-
-    const buildLabel = (size, grade, color, packing) => {
-      const parts = [size, grade];
-      if (color) parts.push(color);
-      if (packing) parts.push(packing);
-      return parts.join(" / ");
-    };
+        // Reset
+        ["size_ids", "grade_ids", "color_ids", "packing_type_ids"].forEach(name => {
+           const select = modalForm.querySelector(`select[name="${name}"]`);
+           if(select) {
+             Array.from(select.options).forEach(opt => { opt.selected = false; opt.disabled = false; });
+             select.dispatchEvent(new Event("change", { bubbles: true }));
+           }
+        });
+        
+        try {
+          const res = await fetch(`<%= basePath %>/config/${itemId}`);
+          const config = await res.json();
+          if (config) {
+            const lockOptions = (name, ids) => {
+              const select = modalForm.querySelector(`select[name="${name}"]`);
+              if (select && ids && ids.length) {
+                const safeIds = ids.map(String);
+                Array.from(select.options).forEach(opt => {
+                  if (safeIds.includes(String(opt.value))) {
+                    opt.selected = true; opt.disabled = true;
+                  }
+                });
+                select.dispatchEvent(new Event("change", { bubbles: true })); 
+              }
+            };
+            lockOptions("size_ids", config.size_ids);
+            lockOptions("grade_ids", config.grade_ids);
+            lockOptions("color_ids", config.color_ids);
+            lockOptions("packing_type_ids", config.packing_type_ids);
+            existingCombinationsSet = new Set(config.existing_combinations || []);
+            refreshRates();
+          }
+        } catch (err) { console.error(err); }
+      });
+    }
 
     const refreshRates = () => {
+      // Only run in create mode
+      if (editContainer && !editContainer.classList.contains("hidden")) return;
+
+      const readSelected = (name) => {
+        const select = modalForm.querySelector(`select[name="${name}"]`);
+        if (!select) return [];
+        return Array.from(select.options).filter(o => o.selected).map(o => ({ value: o.value, label: o.textContent.trim() }));
+      };
+      const buildKey = (s, g, c, p) => [s||0, g||0, c||0, p||0].join("|");
+      const buildLabel = (s, g, c, p) => [s, g, c, p].join(", ");
+
       const sizes = readSelected("size_ids");
       const grades = readSelected("grade_ids");
       const colors = readSelected("color_ids");
       const packings = readSelected("packing_type_ids");
       
-      // Store current values to preserve them during regeneration (optional nice-to-have)
-      // For now, we clear to keep logic simple as requested.
       rateList.innerHTML = "";
-      
-      if (!sizes.length || !grades.length) {
-        if (emptyMsg) emptyMsg.style.display = "block";
+      if (!sizes.length || !grades.length || !packings.length) {
+        if(emptyMsg) emptyMsg.style.display = "block";
         return;
       }
-      
-      if (emptyMsg) emptyMsg.style.display = "none";
+      if(emptyMsg) emptyMsg.style.display = "none";
 
       const colorList = colors.length ? colors : [{ value: "", label: "" }];
-      const packingList = packings.length ? packings : [{ value: "", label: "" }];
+      const packingList = packings; 
 
       sizes.forEach((size) => {
         grades.forEach((grade) => {
           colorList.forEach((color) => {
             packingList.forEach((packing) => {
               const key = buildKey(size.value, grade.value, color.value, packing.value);
+              if (existingCombinationsSet.has(key)) return; 
+
               const label = buildLabel(size.label, grade.label, color.label, packing.label);
-              
               const row = document.createElement("div");
-              row.className = "group flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center shadow-sm transition hover:border-slate-300 hover:shadow-md";
-              
+              row.className = "group flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center shadow-sm";
               row.innerHTML = `
-                <div class="flex-1 text-xs font-semibold text-slate-600">
-                  ${label}
-                </div>
+                <div class="flex-1 text-xs font-semibold text-slate-600">${label}</div>
                 <input type="hidden" name="combo_keys" value="${key}" />
                 <div class="flex w-full items-center gap-2 sm:w-auto">
-                  <input 
-                    class="w-full sm:w-32 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-slate-400 focus:bg-white focus:outline-none" 
-                    type="number" 
-                    min="0" 
-                    step="0.01" 
-                    name="combo_rates" 
-                    placeholder="<%= t("sale_rate") %>" 
-                    required 
-                  />
-                  <button type="button" class="ml-1 rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition" title="<%= t("remove") || "Remove" %>" onclick="this.closest('.group').remove()">
-                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              `;
+                  <input class="w-full sm:w-32 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:outline-none" type="number" min="0" step="0.01" name="combo_rates" placeholder="Pair Sale Rate" required />
+                  <button type="button" class="ml-1 rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-500" onclick="this.closest('.group').remove()"><svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
+                </div>`;
               rateList.appendChild(row);
             });
           });
@@ -223,70 +325,126 @@
       });
     };
 
-    const triggers = ["size_ids", "grade_ids", "color_ids", "packing_type_ids"];
-    triggers.forEach((name) => {
-      const select = modalForm.querySelector(`select[name="${name}"]`);
-      if (select) {
-        select.addEventListener("change", refreshRates);
-      }
+    ["size_ids", "grade_ids", "color_ids", "packing_type_ids"].forEach(name => {
+      const el = modalForm.querySelector(`select[name="${name}"]`);
+      if (el) el.addEventListener("change", refreshRates);
     });
 
-    refreshRates();
-  })();
-</script>
-<script>
-  const existingRows = <%- JSON.stringify(rows || []).replace(/</g, '\\u003c') %>; 
-  
-  document.addEventListener("DOMContentLoaded", () => {
+    // 2. TOGGLE MODES (Add vs Edit Rates)
     const modal = document.querySelector("[data-modal]");
-    if (!modal) return;
+    const modalTitleEl = modal ? modal.querySelector("[data-modal-title]") : null;
+    const modalDescriptionEl = modal ? modal.querySelector("[data-modal-description]") : null;
     
-    // Check Availability Logic
-    const checkBtn = document.createElement("button");
-    checkBtn.type = "button";
-    checkBtn.className = "rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition mr-2";
-    checkBtn.textContent = "<%= t("check_availability") || "Check Availability" %>";
-    
-    const submitBtn = modal.querySelector('button[type="submit"]');
-    if(submitBtn && submitBtn.parentNode) {
-      submitBtn.parentNode.insertBefore(checkBtn, submitBtn);
-    }
-
-    checkBtn.addEventListener("click", () => {
-      const form = document.querySelector("[data-modal-form]");
-      if (!form || !window.MatrixUtils) return;
-
-      const selected = {
-        size_ids: Array.from(form.querySelectorAll("select[name='size_ids'] option:checked")).map(o => o.value),
-        grade_ids: Array.from(form.querySelectorAll("select[name='grade_ids'] option:checked")).map(o => o.value),
-        color_ids: Array.from(form.querySelectorAll("select[name='color_ids'] option:checked")).map(o => o.value),
-        packing_type_ids: Array.from(form.querySelectorAll("select[name='packing_type_ids'] option:checked")).map(o => o.value),
-      };
-
-      const newCombos = window.MatrixUtils.getNewCombinations(selected, existingRows);
-      
-      if (newCombos.length === 0) {
-        alert("<%= t("no_new_combinations") %>");
-      } else {
-        alert(newCombos.length + " " + "<%= t("new_combinations_found") %>");
-      }
+    // Global Add Button
+    document.querySelectorAll('[data-modal-open][data-mode="create"]').forEach(btn => {
+       btn.addEventListener("click", () => {
+          resetFormState();
+          modalForm.action = "<%= basePath %><%= viewQuery %>";
+          createContainer.classList.remove("hidden");
+          editContainer.classList.add("hidden");
+          if (modalTitleEl) modalTitleEl.textContent = "<%= t('add') %> <%= t('skus') %>";
+          if (modalDescriptionEl) modalDescriptionEl.textContent = "<%= t('skus_description') %>";
+          
+          createContainer.querySelectorAll("[required]").forEach(el => el.disabled = false);
+       });
     });
 
-    // Disable Immutable Fields in Edit Mode
-    if (modal.dataset.modalMode === "edit") {
-       const immutables = ["item_id", "size_ids", "grade_ids", "color_ids", "packing_type_ids"];
-       immutables.forEach(name => {
-          const el = modal.querySelector(`[name="${name}"]`);
-          if(el) {
-             el.setAttribute("disabled", "true");
-             el.classList.add("bg-slate-100", "text-slate-400", "cursor-not-allowed");
+    // Edit Rates Button
+    document.querySelectorAll('[data-modal-open][data-mode="edit_rates"]').forEach(btn => {
+       btn.addEventListener("click", async () => {
+          resetFormState();
+          const itemId = btn.dataset.itemId;
+          const itemName = btn.dataset.itemLabel;
+          
+          modal.classList.remove("hidden");
+          modal.classList.add("flex");
+          
+          createContainer.classList.add("hidden");
+          editContainer.classList.remove("hidden");
+          
+          if (modalTitleEl) modalTitleEl.textContent = "<%= t('edit') %> <%= t('skus') %>";
+          if (modalDescriptionEl) modalDescriptionEl.textContent = "<%= t('skus_description') %>";
+          
+          editTitle.textContent = itemName;
+          modalForm.action = "<%= basePath %>/bulk-update<%= viewQuery %>";
+          
+          createContainer.querySelectorAll("[required]").forEach(el => el.disabled = true);
+
+          editList.innerHTML = '<div class="text-center p-4 text-slate-400">Loading...</div>';
+          try {
+             const res = await fetch(`<%= basePath %>/item-variants/${itemId}`);
+             const variants = await res.json();
+             editList.innerHTML = "";
+             
+             if(variants.length === 0) {
+                 editList.innerHTML = '<div class="text-center p-4 text-slate-400">No variants found.</div>';
+                 return;
+             }
+
+             variants.forEach(v => {
+                 const label = `${v.size || ""} ${v.packing || ""} ${v.grade || ""} ${v.color || ""}`;
+                 const row = document.createElement("div");
+                 row.className = "flex items-center justify-between p-3 bg-white border border-slate-200 rounded-lg shadow-sm";
+                 row.innerHTML = `
+                    <div class="flex flex-col">
+                        <span class="text-xs font-bold text-slate-700">${label}</span>
+                        <span class="text-[10px] text-slate-400 font-mono">${v.sku_code}</span>
+                    </div>
+                    <input type="hidden" name="variant_ids" value="${v.id}" />
+                    <input class="w-32 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-right font-bold text-slate-700 focus:outline-none focus:border-indigo-500" 
+                           type="number" min="0" step="0.01" name="new_rates" value="${v.sale_rate}" placeholder="Rate" required />
+                 `;
+                 editList.appendChild(row);
+             });
+
+          } catch(err) {
+             console.error(err);
+             editList.innerHTML = '<div class="text-rose-500 p-4">Error loading data. Check console.</div>';
           }
        });
-       // Hide the Generated Rates section entirely in edit mode
-       const rateContainer = modal.querySelector("#rate-list-container");
-       if(rateContainer && rateContainer.parentElement) {
-          rateContainer.parentElement.style.display = "none";
+    });
+
+    // 3. Reset Handler
+    const closeBtns = modal.querySelectorAll('[data-modal-close], .modal-backdrop');
+    const resetFormState = () => {
+       modalForm.reset();
+       rateList.innerHTML = "";
+       if (emptyMsg) emptyMsg.style.display = "block";
+       
+       ["size_ids", "grade_ids", "color_ids", "packing_type_ids"].forEach(name => {
+           const select = modalForm.querySelector(`select[name="${name}"]`);
+           if(select) {
+             Array.from(select.options).forEach(opt => { opt.selected = false; opt.disabled = false; });
+             select.dispatchEvent(new Event("change", { bubbles: true }));
+           }
+       });
+       
+       if (itemSelect) {
+           itemSelect.value = "";
+           itemSelect.classList.remove("bg-slate-100", "pointer-events-none");
+           itemSelect.dispatchEvent(new Event("change", { bubbles: true }));
        }
-    }
-  });
+       existingCombinationsSet.clear();
+    };
+    closeBtns.forEach(btn => btn.addEventListener("click", resetFormState));
+
+    // 4. Submit Handler
+    modalForm.addEventListener("submit", () => {
+       const disabledOptions = modalForm.querySelectorAll("option:disabled");
+       disabledOptions.forEach(opt => opt.disabled = false);
+    });
+
+    // Debugging hooks for SKU actions
+    document.querySelectorAll("[data-delete]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        console.debug("[SKU DELETE CLICK]", btn.dataset.deleteAction);
+      });
+    });
+    document.querySelectorAll("[data-toggle]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        console.debug("[SKU TOGGLE CLICK]", btn.dataset.toggleAction);
+      });
+    });
+
+  })();
 </script>

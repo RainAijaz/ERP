@@ -5,30 +5,35 @@ const { sendMail } = require("../../../utils/email");
 
 const router = express.Router();
 
-// Helper to check permission
+const canManageMasterData = (user) => {
+  return user && (user.isAdmin || (user.permissions && user.permissions.can_create_master_data));
+};
+
 const canApproveRates = (user) => {
   return user && (user.isAdmin || (user.permissions && user.permissions.can_approve_rates));
 };
 
-const normalizeSkuPart = (value) =>
-  (value || "")
-    .toString()
-    .trim()
-    .replace(/\s+/g, "-")
-    .replace(/[^\w\-\/]+/g, "")
-    .replace(/\//g, "-")
-    .toUpperCase();
+const normalizeSkuPart = (value) => (value || "").toString().trim().toUpperCase();
 
-const buildSkuCode = (itemCode, parts) => {
+const buildSkuCode = (itemName, parts) => {
   const cleanParts = parts.filter(Boolean).map(normalizeSkuPart);
-  return [normalizeSkuPart(itemCode), ...cleanParts].filter(Boolean).join("-");
+  return [normalizeSkuPart(itemName), ...cleanParts].join(" ");
+};
+
+const parseSfgNameParts = (name, code) => {
+  if (name && name.includes(" - ")) {
+    const [base, ...rest] = name.split(" - ");
+    return { base: (base || "").trim(), suffix: rest.join(" - ").trim() };
+  }
+  const fallback = (code || name || "SFG").replace(/_/g, " ").trim();
+  return { base: fallback, suffix: "" };
 };
 
 const ensureUniqueSku = async (trx, baseCode) => {
   let candidate = baseCode;
   let counter = 2;
   while (await trx("erp.skus").where({ sku_code: candidate }).first()) {
-    candidate = `${baseCode}-${counter}`;
+    candidate = `${baseCode} ${counter}`;
     counter += 1;
   }
   return candidate;
@@ -49,23 +54,75 @@ const parseNumber = (value) => {
 
 const buildComboKey = (sizeId, gradeId, colorId, packingId) => [sizeId || 0, gradeId || 0, colorId || 0, packingId || 0].join("|");
 
-const loadOptions = async () => {
+const buildSfgComboKey = (itemId, sizeId, colorId) => [itemId || 0, sizeId || 0, colorId || 0].join("|");
+
+const loadOptions = async (itemType = "FG") => {
   const [items, sizes, grades, colors, packings, subgroups] = await Promise.all([
-    knex("erp.items").select("id", "code", "name", "name_ur").where({ item_type: "FG", is_active: true }).orderBy("name"),
-    knex("erp.sizes as s").select("s.id", "s.name", "s.name_ur").join("erp.size_item_types as sit", "sit.size_id", "s.id").where("sit.item_type", "FG").andWhere("s.is_active", true).orderBy("s.name"),
-    knex("erp.grades").select("id", "name", "name_ur").where("is_active", true).orderBy("name"),
+    knex("erp.items").select("id", "code", "name", "name_ur").where({ item_type: itemType, is_active: true }).orderBy("name"),
+    knex("erp.sizes as s").select("s.id", "s.name", "s.name_ur").join("erp.size_item_types as sit", "sit.size_id", "s.id").where("sit.item_type", itemType).andWhere("s.is_active", true).orderBy("s.name"),
+    itemType === "FG" ? knex("erp.grades").select("id", "name", "name_ur").where("is_active", true).orderBy("name") : Promise.resolve([]),
     knex("erp.colors").select("id", "name", "name_ur").where("is_active", true).orderBy("name"),
-    knex("erp.packing_types").select("id", "name", "name_ur").where("is_active", true).orderBy("name"),
-    knex("erp.product_subgroups").select("id", "name", "name_ur").where("is_active", true).orderBy("name"),
+    itemType === "FG" ? knex("erp.packing_types").select("id", "name", "name_ur").where("is_active", true).orderBy("name") : Promise.resolve([]),
+    // UPDATED: Only fetch subgroups that have active SKUs/Variants
+    knex("erp.product_subgroups as sg").distinct("sg.id", "sg.name", "sg.name_ur").join("erp.items as i", "sg.id", "i.subgroup_id").join("erp.variants as v", "i.id", "v.item_id").where("sg.is_active", true).andWhere("i.item_type", itemType).orderBy("sg.name"),
   ]);
   return { items, sizes, grades, colors, packings, subgroups };
 };
 
 const loadUsers = async () => knex("erp.users").select("id", "username").orderBy("username");
 
-const loadRows = async (filters = {}) => {
+const syncSfgVariantsFromFinished = async (userId) => {
+  await knex.transaction(async (trx) => {
+    const usageRows = await trx("erp.item_usage as iu").select("iu.sfg_item_id", "v.size_id", "v.color_id").join("erp.variants as v", "v.item_id", "iu.fg_item_id").groupBy("iu.sfg_item_id", "v.size_id", "v.color_id");
+
+    if (!usageRows.length) return;
+
+    const sfgIds = [...new Set(usageRows.map((row) => row.sfg_item_id))];
+    const sfgItems = await trx("erp.items").select("id", "name", "code").whereIn("id", sfgIds);
+    const sfgNameMap = new Map(sfgItems.map((x) => [x.id, x.name]));
+    const sfgCodeMap = new Map(sfgItems.map((x) => [x.id, x.code]));
+
+    const existingRows = await trx("erp.variants").select("item_id", "size_id", "color_id").whereIn("item_id", sfgIds).whereNull("grade_id").whereNull("packing_type_id");
+    const existingSet = new Set(existingRows.map((row) => buildSfgComboKey(row.item_id, row.size_id, row.color_id)));
+
+    const sizeIds = [...new Set(usageRows.map((row) => row.size_id).filter(Boolean))];
+    const colorIds = [...new Set(usageRows.map((row) => row.color_id).filter(Boolean))];
+    const sizes = sizeIds.length ? await trx("erp.sizes").select("id", "name").whereIn("id", sizeIds) : [];
+    const colors = colorIds.length ? await trx("erp.colors").select("id", "name").whereIn("id", colorIds) : [];
+    const sizeMap = new Map(sizes.map((x) => [x.id, x.name]));
+    const colorMap = new Map(colors.map((x) => [x.id, x.name]));
+
+    for (const row of usageRows) {
+      const comboKey = buildSfgComboKey(row.sfg_item_id, row.size_id, row.color_id);
+      if (existingSet.has(comboKey)) continue;
+
+      const [variant] = await trx("erp.variants")
+        .insert({
+          item_id: row.sfg_item_id,
+          size_id: row.size_id || null,
+          grade_id: null,
+          color_id: row.color_id || null,
+          packing_type_id: null,
+          sale_rate: 0,
+          is_active: true,
+          created_by: userId || null,
+          created_at: trx.fn.now(),
+        })
+        .returning("id");
+
+      const sfgName = sfgNameMap.get(row.sfg_item_id) || "SFG";
+      const sfgCode = sfgCodeMap.get(row.sfg_item_id) || "";
+      const { base, suffix } = parseSfgNameParts(sfgName, sfgCode);
+      const baseSku = buildSkuCode(base, [sizeMap.get(row.size_id), row.color_id ? colorMap.get(row.color_id) : null, suffix]);
+      const sku_code = await ensureUniqueSku(trx, baseSku);
+      await trx("erp.skus").insert({ variant_id: variant.id, sku_code, is_active: true });
+    }
+  });
+};
+
+const loadRows = async (filters = {}, itemType = "FG") => {
   let query = knex("erp.variants as v")
-    .select("v.*", "i.code as item_code", "i.name as item_name", "i.name_ur as item_name_ur", "s.name as size_name", "s.name_ur as size_name_ur", "g.name as grade_name", "g.name_ur as grade_name_ur", "c.name as color_name", "c.name_ur as color_name_ur", "p.name as packing_name", "p.name_ur as packing_name_ur", "k.sku_code", "k.barcode", "k.is_active as sku_active", "u.username as created_by_name", "uu.username as updated_by_name", "ar.status as pending_approval_status")
+    .select("v.*", "i.code as item_code", "i.name as item_name", "i.name_ur as item_name_ur", "i.subgroup_id", "s.name as size_name", "s.name_ur as size_name_ur", "g.name as grade_name", "g.name_ur as grade_name_ur", "c.name as color_name", "c.name_ur as color_name_ur", "p.name as packing_name", "p.name_ur as packing_name_ur", "k.sku_code", "k.barcode", "k.is_active as sku_active", "ar.status as pending_approval_status", "u.username as created_by_name")
     .leftJoin("erp.items as i", "v.item_id", "i.id")
     .leftJoin("erp.sizes as s", "v.size_id", "s.id")
     .leftJoin("erp.grades as g", "v.grade_id", "g.id")
@@ -73,18 +130,34 @@ const loadRows = async (filters = {}) => {
     .leftJoin("erp.packing_types as p", "v.packing_type_id", "p.id")
     .leftJoin("erp.skus as k", "k.variant_id", "v.id")
     .leftJoin("erp.users as u", "v.created_by", "u.id")
-    .leftJoin("erp.users as uu", "v.approved_by", "uu.id")
     .leftJoin("erp.approval_request as ar", function () {
       this.on("ar.entity_id", "=", knex.raw("CAST(v.id AS TEXT)")).andOn("ar.entity_type", "=", knex.raw("'SKU'")).andOn("ar.status", "=", knex.raw("'PENDING'")).andOn("ar.request_type", "=", knex.raw("'MASTER_DATA_CHANGE'"));
     });
 
+  query.where("i.item_type", itemType);
+
+  // Status filter
+  if (filters.status && filters.status !== "all") {
+    query.where("k.is_active", filters.status === "active");
+  }
+  // Search filter
+  if (filters.search && filters.search.trim()) {
+    const search = `%${filters.search.trim().toLowerCase()}%`;
+    query.where(function () {
+      this.whereRaw("LOWER(k.sku_code) LIKE ?", [search]).orWhereRaw("LOWER(i.name) LIKE ?", [search]).orWhereRaw("LOWER(s.name) LIKE ?", [search]).orWhereRaw("LOWER(g.name) LIKE ?", [search]).orWhereRaw("LOWER(c.name) LIKE ?", [search]).orWhereRaw("LOWER(p.name) LIKE ?", [search]);
+    });
+  }
+  if (filters.item_id) query.where("v.item_id", filters.item_id);
   if (filters.subgroup_id) query.where("i.subgroup_id", filters.subgroup_id);
   if (filters.created_by) query.where("u.username", filters.created_by);
   if (filters.created_at_start) query.where("v.created_at", ">=", filters.created_at_start);
   if (filters.created_at_end) query.where("v.created_at", "<=", filters.created_at_end + " 23:59:59");
 
+  query.orderBy("i.name", "asc");
   query.orderBy("v.id", "desc");
-  return query;
+  const result = await query;
+  console.log(`[SKU SERVER DEBUG] Filters:`, filters, `Returned rows:`, result.length);
+  return result;
 };
 
 const renderIndex = (req, res, payload) => {
@@ -102,13 +175,62 @@ const renderIndex = (req, res, payload) => {
   });
 };
 
+router.get("/config/:itemId", async (req, res, next) => {
+  try {
+    const itemId = req.params.itemId;
+    if (!itemId) return res.json({ size_ids: [], grade_ids: [], color_ids: [], packing_type_ids: [], existing_combinations: [] });
+
+    const variants = await knex("erp.variants").select("size_id", "grade_id", "color_id", "packing_type_id").where("item_id", itemId);
+
+    const config = {
+      size_ids: [...new Set(variants.map((v) => v.size_id).filter(Boolean))],
+      grade_ids: [...new Set(variants.map((v) => v.grade_id).filter(Boolean))],
+      color_ids: [...new Set(variants.map((v) => v.color_id).filter(Boolean))],
+      packing_type_ids: [...new Set(variants.map((v) => v.packing_type_id).filter(Boolean))],
+      existing_combinations: variants.map((v) => buildComboKey(v.size_id, v.grade_id, v.color_id, v.packing_type_id)),
+    };
+
+    res.json(config);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/item-variants/:itemId", async (req, res, next) => {
+  try {
+    const itemId = req.params.itemId;
+    const variants = await knex("erp.variants as v").select("v.id", "v.sale_rate", "s.name as size", "g.name as grade", "c.name as color", "p.name as packing", "k.sku_code").leftJoin("erp.sizes as s", "v.size_id", "s.id").leftJoin("erp.grades as g", "v.grade_id", "g.id").leftJoin("erp.colors as c", "v.color_id", "c.id").leftJoin("erp.packing_types as p", "v.packing_type_id", "p.id").leftJoin("erp.skus as k", "k.variant_id", "v.id").where("v.item_id", itemId).orderBy("v.id", "asc");
+
+    res.json(variants);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/", async (req, res, next) => {
   try {
-    const [rows, options, users] = await Promise.all([loadRows(req.query), loadOptions(), loadUsers()]);
+    const itemType = req.query.item_type === "SFG" ? "SFG" : "FG";
+    if (itemType === "SFG") {
+      await syncSfgVariantsFromFinished(req.user ? req.user.id : null);
+    }
+    const [rows, options, users] = await Promise.all([loadRows(req.query, itemType), loadOptions(itemType), loadUsers()]);
+
+    // ADDED: Pagination object generation to fix "0 of 0 entries"
+    const pagination = {
+      total: rows.length,
+      from: rows.length > 0 ? 1 : 0,
+      to: rows.length,
+      per_page: rows.length, // Showing all on one page for now
+      current_page: 1,
+      last_page: 1,
+    };
+
     renderIndex(req, res, {
       rows,
+      pagination, // Pass to view
       ...options,
       users,
+      itemType,
       error: null,
       modalOpen: false,
       modalMode: "create",
@@ -120,12 +242,10 @@ router.get("/", async (req, res, next) => {
   }
 });
 
-// ... [Imports and helpers remain same] ...
-// ... [loadOptions, loadUsers, loadRows, renderIndex remain same] ...
-
-// CREATE (Bulk Generator)
 router.post("/", async (req, res) => {
   const values = { ...req.body };
+  const itemType = req.query.item_type === "SFG" ? "SFG" : "FG";
+  const viewQuery = `?item_type=${itemType}`;
   const basePath = `${req.baseUrl}`;
 
   try {
@@ -142,39 +262,40 @@ router.post("/", async (req, res) => {
     const packingIds = toArray(values.packing_type_ids)
       .map(Number)
       .filter((v) => !Number.isNaN(v));
-
-    // Combo Data (The separate rates)
     const comboKeys = toArray(values.combo_keys);
     const comboRates = toArray(values.combo_rates);
 
-    // FIXED: Added packingIds.length check
     if (!item_id || !sizeIds.length || !gradeIds.length || !packingIds.length) {
-      throw new Error("Missing required fields (Article, Size, Grade, or Packing Type)");
+      throw new Error("Missing required fields");
     }
 
-    // Map combo keys to rates
     let rateMap = new Map();
     if (comboKeys.length) {
       comboKeys.forEach((key, idx) => {
         const rate = parseNumber(comboRates[idx]);
-        // We only map keys that were actually submitted.
-        // If a user deleted a row, its key won't be in values.combo_keys array.
         if (rate !== null) rateMap.set(key, rate);
       });
     }
 
-    // Check if we actually have any combinations to process
-    if (rateMap.size === 0) {
-      throw new Error("No valid combinations generated. Please ensure you selected options and provided rates.");
-    }
+    if (rateMap.size === 0) throw new Error("No valid combinations generated.");
 
     await knex.transaction(async (trx) => {
-      const item = await trx("erp.items").select("code").where({ id: item_id }).first();
-      // ... [Fetching names for sizes/grades/etc - Keep this block] ...
+      const isAuthorized = canManageMasterData(req.user);
+      const item = await trx("erp.items").select("code", "name", "item_type").where({ id: item_id }).first();
+      if (!item || item.item_type !== "FG") {
+        throw new Error("Only finished products can be added from this screen.");
+      }
+
       const sizes = await trx("erp.sizes").select("id", "name").whereIn("id", sizeIds);
       const grades = await trx("erp.grades").select("id", "name").whereIn("id", gradeIds);
       const colors = colorIds.length ? await trx("erp.colors").select("id", "name").whereIn("id", colorIds) : [];
       const packings = packingIds.length ? await trx("erp.packing_types").select("id", "name").whereIn("id", packingIds) : [];
+
+      const linkedSfgRows = await trx("erp.item_usage").select("sfg_item_id").where({ fg_item_id: item_id });
+      const linkedSfgIds = linkedSfgRows.map((row) => row.sfg_item_id);
+      const linkedSfgItems = linkedSfgIds.length ? await trx("erp.items").select("id", "name", "code").whereIn("id", linkedSfgIds) : [];
+      const sfgNameMap = new Map(linkedSfgItems.map((x) => [x.id, x.name]));
+      const sfgCodeMap = new Map(linkedSfgItems.map((x) => [x.id, x.code]));
 
       const sizeMap = new Map(sizes.map((x) => [x.id, x.name]));
       const gradeMap = new Map(grades.map((x) => [x.id, x.name]));
@@ -182,34 +303,25 @@ router.post("/", async (req, res) => {
       const packingMap = new Map(packings.map((x) => [x.id, x.name]));
 
       const colorList = colorIds.length ? colorIds : [null];
-
-      // FIXED: Packing list is now strictly from selection
       const packingList = packingIds;
 
       let createdCount = 0;
+      let pendingCount = 0;
+
+      const createdSfgCombos = new Set();
 
       for (const size_id of sizeIds) {
         for (const grade_id of gradeIds) {
           for (const color_id of colorList) {
             for (const packing_type_id of packingList) {
-              // 1. GENERATE KEY
               const key = buildComboKey(size_id, grade_id, color_id, packing_type_id);
-
-              // 2. CHECK IF USER KEPT THIS COMBINATION
-              // If the user clicked "X" on the frontend, this key will NOT be in the rateMap.
-              // We MUST skip it.
-              if (!rateMap.has(key)) {
-                continue;
-              }
+              if (!rateMap.has(key)) continue;
 
               const appliedRate = rateMap.get(key);
-
               const existing = await trx("erp.variants").where({ item_id, size_id, grade_id, color_id, packing_type_id }).first();
+              if (existing) continue;
 
-              let variantId;
-              if (existing) {
-                variantId = existing.id;
-              } else {
+              if (isAuthorized) {
                 const [variant] = await trx("erp.variants")
                   .insert({
                     item_id,
@@ -219,170 +331,205 @@ router.post("/", async (req, res) => {
                     packing_type_id,
                     sale_rate: appliedRate,
                     is_active: true,
-                    created_by: req.user ? req.user.id : null,
+                    created_by: req.user.id,
                     created_at: trx.fn.now(),
                   })
                   .returning("id");
-                variantId = variant.id || variant;
-                createdCount++;
-              }
 
-              // Ensure SKU Entry
-              const baseSku = buildSkuCode(item.code, [sizeMap.get(size_id), gradeMap.get(grade_id), color_id ? colorMap.get(color_id) : null, packing_type_id ? packingMap.get(packing_type_id) : null]);
-
-              const existingSku = await trx("erp.skus").where({ variant_id: variantId }).first();
-              if (!existingSku) {
+                const baseSku = buildSkuCode(item.name, [sizeMap.get(size_id), packingMap.get(packing_type_id), gradeMap.get(grade_id), color_id ? colorMap.get(color_id) : null]);
                 const sku_code = await ensureUniqueSku(trx, baseSku);
-                await trx("erp.skus").insert({ variant_id: variantId, sku_code, is_active: true });
-              }
-            }
-          }
-        }
-      }
-
-      // FIXED: Throw error if nothing happened (fixes "silent failure")
-      if (createdCount === 0) {
-        throw new Error("No new SKUs were created. They may already exist.");
-      }
-    });
-    return res.redirect(basePath + "?success=true");
-  } catch (err) {
-    const [rows, options, users] = await Promise.all([loadRows(), loadOptions(), loadUsers()]);
-    return renderIndex(req, res, { rows, ...options, users, error: res.locals.t("error_unable_save") + ": " + err.message, modalOpen: true, modalMode: "create", values });
-  }
-});
-
-// ... [Update/Toggle/Delete Routes remain the same] ...
-// UPDATE (Single SKU - Restricted)
-router.post("/:id", async (req, res, next) => {
-  const id = Number(req.params.id);
-  const values = { ...req.body };
-  const basePath = `${req.baseUrl}`;
-
-  if (!id) return next(new HttpError(404, "Variant not found"));
-
-  try {
-    const current = await knex("erp.variants").join("erp.skus", "erp.variants.id", "erp.skus.variant_id").select("erp.variants.*", "erp.skus.sku_code", "erp.skus.barcode").where("erp.variants.id", id).first();
-
-    if (!current) return next(new HttpError(404, "Variant not found"));
-
-    // 1. IMMUTABILITY CHECK
-    if (Number(values.item_id) !== current.item_id || Number(values.size_id) !== current.size_id || Number(values.grade_id) !== current.grade_id || (values.color_id && Number(values.color_id) !== (current.color_id || 0)) || (values.packing_type_id && Number(values.packing_type_id) !== (current.packing_type_id || 0))) {
-      throw new HttpError(400, res.locals.t("error_immutable_field") || "Cannot edit physical variant properties. Create a new SKU instead.");
-    }
-
-    const newRate = Number(values.sale_rate);
-    const oldRate = Number(current.sale_rate);
-    const barcode = (values.barcode || "").trim() || null;
-    const is_active = values.is_active !== "false";
-
-    await knex.transaction(async (trx) => {
-      // 2. RATE CHANGE APPROVAL LOGIC
-      if (newRate !== oldRate) {
-        if (canApproveRates(req.user)) {
-          // Authorized: Update immediately
-          await trx("erp.variants").where({ id }).update({
-            sale_rate: newRate,
-            updated_at: trx.fn.now(),
-          });
-
-          await trx("erp.activity_log").insert({
-            branch_id: req.branchId,
-            user_id: req.user.id,
-            entity_type: "SKU",
-            entity_id: String(id),
-            action: "UPDATE",
-            voucher_type_code: null,
-          });
-        } else {
-          // Unauthorized: Create Approval Request
-          await trx("erp.approval_request").insert({
-            branch_id: req.branchId,
-            request_type: "MASTER_DATA_CHANGE",
-            entity_type: "SKU",
-            entity_id: String(id),
-            summary: `Rate Change for SKU: ${current.sku_code}`,
-            old_value: { sale_rate: oldRate },
-            new_value: { sale_rate: newRate },
-            status: "PENDING",
-            requested_by: req.user.id,
-            requested_at: trx.fn.now(),
-          });
-
-          // Send Email to Admins
-          try {
-            const admins = await trx("erp.users").join("erp.role_templates", "erp.users.primary_role_id", "erp.role_templates.id").where("erp.role_templates.name", "Admin").select("email");
-
-            for (const admin of admins) {
-              if (admin.email) {
-                await sendMail({
-                  to: admin.email,
-                  subject: "Pending Rate Approval",
-                  text: `User ${req.user.username} requested a rate change for SKU ${current.sku_code} from ${oldRate} to ${newRate}.`,
+                await trx("erp.skus").insert({ variant_id: variant.id, sku_code, is_active: true });
+                createdCount++;
+              } else {
+                const plannedVariant = {
+                  item_id,
+                  size_id,
+                  grade_id,
+                  color_id,
+                  packing_type_id,
+                  sale_rate: appliedRate,
+                  _summary: `${item.name} ${sizeMap.get(size_id)} ${packingMap.get(packing_type_id)} ${gradeMap.get(grade_id)}`,
+                };
+                await trx("erp.approval_request").insert({
+                  branch_id: req.branchId,
+                  request_type: "MASTER_DATA_CHANGE",
+                  entity_type: "SKU",
+                  entity_id: "NEW",
+                  summary: `New Variant: ${plannedVariant._summary}`,
+                  new_value: plannedVariant,
+                  status: "PENDING",
+                  requested_by: req.user.id,
+                  requested_at: trx.fn.now(),
                 });
+                pendingCount++;
+              }
+
+              if (linkedSfgIds.length) {
+                for (const sfgItemId of linkedSfgIds) {
+                  const sfgKey = [sfgItemId, size_id || 0, color_id || 0].join("|");
+                  if (createdSfgCombos.has(sfgKey)) continue;
+                  createdSfgCombos.add(sfgKey);
+
+                  const existingSfg = await trx("erp.variants").where({ item_id: sfgItemId, size_id, color_id, grade_id: null, packing_type_id: null }).first();
+                  if (existingSfg) continue;
+
+                  if (isAuthorized) {
+                    const [sfgVariant] = await trx("erp.variants")
+                      .insert({
+                        item_id: sfgItemId,
+                        size_id,
+                        grade_id: null,
+                        color_id,
+                        packing_type_id: null,
+                        sale_rate: 0,
+                        is_active: true,
+                        created_by: req.user.id,
+                        created_at: trx.fn.now(),
+                      })
+                      .returning("id");
+
+                    const sfgName = sfgNameMap.get(sfgItemId) || "SFG";
+                    const sfgCode = sfgCodeMap.get(sfgItemId) || "";
+                    const { base, suffix } = parseSfgNameParts(sfgName, sfgCode);
+                    const baseSfgSku = buildSkuCode(base, [sizeMap.get(size_id), color_id ? colorMap.get(color_id) : null, suffix]);
+                    const sfgSkuCode = await ensureUniqueSku(trx, baseSfgSku);
+                    await trx("erp.skus").insert({ variant_id: sfgVariant.id, sku_code: sfgSkuCode, is_active: true });
+                  } else {
+                    const sfgName = sfgNameMap.get(sfgItemId) || "SFG";
+                    const sfgCode = sfgCodeMap.get(sfgItemId) || "";
+                    const { base, suffix } = parseSfgNameParts(sfgName, sfgCode);
+                    const plannedSfg = {
+                      item_id: sfgItemId,
+                      size_id,
+                      grade_id: null,
+                      color_id,
+                      packing_type_id: null,
+                      sale_rate: 0,
+                      _summary: buildSkuCode(base, [sizeMap.get(size_id), color_id ? colorMap.get(color_id) : null, suffix]),
+                    };
+                    await trx("erp.approval_request").insert({
+                      branch_id: req.branchId,
+                      request_type: "MASTER_DATA_CHANGE",
+                      entity_type: "SKU",
+                      entity_id: "NEW",
+                      summary: `New Variant: ${plannedSfg._summary}`,
+                      new_value: plannedSfg,
+                      status: "PENDING",
+                      requested_by: req.user.id,
+                      requested_at: trx.fn.now(),
+                    });
+                  }
+                }
               }
             }
-          } catch (emailErr) {
-            console.error("Failed to send email:", emailErr);
           }
         }
       }
-
-      // 3. STANDARD UPDATES
-      await trx("erp.skus").where({ variant_id: id }).update({
-        barcode: barcode,
-        is_active: is_active,
-      });
-
-      if (is_active !== current.is_active) {
-        await trx("erp.variants").where({ id }).update({ is_active });
-      }
+      if (createdCount === 0 && pendingCount === 0) throw new Error("No new SKUs were created.");
     });
 
-    const pendingCreated = newRate !== oldRate && !canApproveRates(req.user);
-    const successMsg = pendingCreated ? res.locals.t("rate_change_submitted") || "Rate change submitted for approval." : res.locals.t("saved_successfully") || "Saved successfully";
-
-    return res.redirect(basePath + "?success=true&msg=" + encodeURIComponent(successMsg));
+    const msg = canManageMasterData(req.user) ? res.locals.t("saved_successfully") : res.locals.t("variants_sent_approval");
+    return res.redirect(basePath + viewQuery + "&success=true&msg=" + encodeURIComponent(msg));
   } catch (err) {
-    const [rows, options, users] = await Promise.all([loadRows(), loadOptions(), loadUsers()]);
+    const [rows, options, users] = await Promise.all([loadRows({}, itemType), loadOptions(itemType), loadUsers()]);
     return renderIndex(req, res, {
       rows,
       ...options,
       users,
-      error: err.message || res.locals.t("error_unable_save"),
+      itemType,
+      error: res.locals.t("error_unable_save") + ": " + err.message,
       modalOpen: true,
-      modalMode: "edit",
-      values: { ...values, id },
+      modalMode: "create",
+      values,
     });
+  }
+});
+
+router.post("/bulk-update", async (req, res) => {
+  const { variant_ids, new_rates } = req.body;
+  const itemType = req.query.item_type === "SFG" ? "SFG" : "FG";
+  const viewQuery = `?item_type=${itemType}`;
+  const basePath = `${req.baseUrl}`;
+
+  const ids = toArray(variant_ids);
+  const rates = toArray(new_rates);
+
+  if (!ids.length) return res.redirect(basePath + viewQuery);
+
+  try {
+    await knex.transaction(async (trx) => {
+      for (let i = 0; i < ids.length; i++) {
+        const id = Number(ids[i]);
+        const rate = Number(rates[i]);
+        if (id && !isNaN(rate)) {
+          if (canManageMasterData(req.user)) {
+            await trx("erp.variants").where({ id }).update({
+              sale_rate: rate,
+              updated_at: trx.fn.now(),
+              updated_by: req.user.id,
+            });
+          }
+        }
+      }
+    });
+    return res.redirect(basePath + viewQuery + "&success=true&msg=Rates%20Updated");
+  } catch (err) {
+    const [rows, options, users] = await Promise.all([loadRows({}, itemType), loadOptions(itemType), loadUsers()]);
+    return renderIndex(req, res, { rows, ...options, users, itemType, error: "Bulk Update Failed: " + err.message, modalOpen: false, modalMode: "create", values: {} });
+  }
+});
+
+router.post("/:id", async (req, res, next) => {
+  const id = Number(req.params.id);
+  if (!id) return next(new HttpError(404, "Variant not found"));
+  const itemType = req.query.item_type === "SFG" ? "SFG" : "FG";
+  const viewQuery = `?item_type=${itemType}`;
+  const basePath = `${req.baseUrl}`;
+  try {
+    await knex("erp.variants").where({ id }).update({
+      sale_rate: req.body.sale_rate,
+      updated_at: knex.fn.now(),
+      updated_by: req.user.id,
+    });
+    return res.redirect(basePath + viewQuery + "&success=true");
+  } catch (e) {
+    next(e);
   }
 });
 
 router.post("/:id/toggle", async (req, res, next) => {
   const id = Number(req.params.id);
-  if (!id) return next(new HttpError(404, "Variant not found"));
+  const itemType = req.query.item_type === "SFG" ? "SFG" : "FG";
+  const viewQuery = `?item_type=${itemType}`;
   const basePath = `${req.baseUrl}`;
   try {
     const current = await knex("erp.variants").select("is_active").where({ id }).first();
-    if (!current) return next(new HttpError(404, "Variant not found"));
-    await knex("erp.variants").where({ id }).update({ is_active: !current.is_active });
+    await knex("erp.variants").where({ id }).update({
+      is_active: !current.is_active,
+      updated_at: knex.fn.now(),
+      updated_by: req.user.id,
+    });
     await knex("erp.skus").where({ variant_id: id }).update({ is_active: !current.is_active });
-    return res.redirect(basePath);
+    return res.redirect(basePath + viewQuery);
   } catch (err) {
-    const [rows, options, users] = await Promise.all([loadRows(), loadOptions(), loadUsers()]);
-    return renderIndex(req, res, { rows, ...options, users, error: res.locals.t("error_update_status"), modalOpen: false, modalMode: "create" });
+    next(err);
   }
 });
 
 router.post("/:id/delete", async (req, res, next) => {
   const id = Number(req.params.id);
-  if (!id) return next(new HttpError(404, "Variant not found"));
+  const itemType = req.query.item_type === "SFG" ? "SFG" : "FG";
+  const viewQuery = `?item_type=${itemType}`;
   const basePath = `${req.baseUrl}`;
+  console.log(`[SKU DELETE] Request received for Variant ID: ${id}`);
   try {
+    await knex("erp.skus").where({ variant_id: id }).del();
     await knex("erp.variants").where({ id }).del();
-    return res.redirect(basePath);
+    console.log(`[SKU DELETE] Successfully deleted Variant ID: ${id}`);
+    return res.redirect(basePath + viewQuery);
   } catch (err) {
-    const [rows, options, users] = await Promise.all([loadRows(), loadOptions(), loadUsers()]);
-    return renderIndex(req, res, { rows, ...options, users, error: res.locals.t("error_delete"), modalOpen: false, modalMode: "create" });
+    console.error(`[SKU DELETE ERROR] Variant ID: ${id}`, err);
+    next(err);
   }
 });
 

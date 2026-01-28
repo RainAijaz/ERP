@@ -193,7 +193,6 @@ const translations = {
     finished_description: "Maintain finished articles, categories, and SFG usage flags.",
     semi_finished_description: "Maintain semi-finished items and their applicable sizes.",
     raw_materials_description: "Maintain raw materials with per-color purchase rates.",
-    sku_rate_help: "Select sizes and grades (plus optional colors/packing) to add a rate for each combination.",
     bom: "BOM",
     bom_list: "BOM List",
     bom_versions: "Versions",
@@ -234,6 +233,11 @@ const translations = {
     language: "Language",
     english: "English",
     urdu: "Urdu",
+    pair_rate: "Pair Rate",
+    dozen_rate: "Dozen Rate",
+    variants: "Variants",
+    add_new_combinations: "Add Variants",
+    variants_sent_approval: "Variants will be added once approved.",
   },
   ur: {
     // --- BRAND & AUTH ---
@@ -352,6 +356,11 @@ const translations = {
     rate_change_submitted: "ریٹ میں تبدیلی منظوری کے لیے جمع کر دی گئی ہے۔",
     request_approved: "درخواست منظور ہو گئی۔",
     request_rejected: "درخواست مسترد ہو گئی۔",
+    pair_rate: "جوڑی ریٹ",
+    dozen_rate: "درجن ریٹ",
+    variants: "اقسام",
+    add_new_combinations: "نئی اقسام شامل کریں",
+    variants_sent_approval: "اقسام منظوری کے بعد شامل کی جائیں گی۔",
 
     // --- ERRORS & MESSAGES ---
     saved_successfully: "کامیابی سے محفوظ ہو گیا۔",
@@ -425,7 +434,6 @@ const translations = {
     finished_description: "فنشڈ آرٹیکلز، کیٹیگریز، اور SFG استعمال کی سیٹنگز۔",
     semi_finished_description: "سیمی فِنشڈ آئٹمز اور متعلقہ سائزز کا انتظام۔",
     raw_materials_description: "خام مال کے لیے رنگ وار خریداری ریٹس کے ساتھ اندراج۔",
-    sku_rate_help: "سائز اور گریڈ (اور اختیاری رنگ/پیکنگ) منتخب کریں تاکہ ہر کمبی نیشن کے لیے ریٹ درج ہو سکے۔",
     bom: "بی او ایم",
     bom_list: "بی او ایم فہرست",
     bom_versions: "ورژنز",

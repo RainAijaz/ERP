@@ -579,14 +579,32 @@
         return true;
       });
 
-      const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
-      currentPage = Math.min(currentPage, totalPages);
-      const start = (currentPage - 1) * pageSize;
-      const end = start + pageSize;
+      let totalPages;
+      let start;
+      let end;
+      if (!Number.isFinite(pageSize)) {
+        // 'All' selected: show all rows, avoid arithmetic with Infinity which yields NaN
+        totalPages = 1;
+        currentPage = 1;
+        start = 0;
+        end = filtered.length;
+      } else {
+        totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+        currentPage = Math.min(currentPage, totalPages);
+        start = (currentPage - 1) * pageSize;
+        end = start + pageSize;
+      }
 
       rows.forEach((row) => row.classList.add("hidden"));
       const visibleRows = filtered.slice(start, end);
       visibleRows.forEach((row) => row.classList.remove("hidden"));
+
+      // --- HIDE EMPTY GROUPS (SKU PAGE) ---
+      document.querySelectorAll(".sku-group-block").forEach((group) => {
+        const groupRows = group.querySelectorAll("tr[data-row]");
+        const anyVisible = Array.from(groupRows).some((r) => !r.classList.contains("hidden"));
+        group.style.display = anyVisible ? "" : "none";
+      });
 
       if (pageIndicator) {
         pageIndicator.textContent = String(currentPage);
@@ -620,9 +638,16 @@
       rows.forEach((row) => {
         const cells = Array.from(row.querySelectorAll("td"))
           .slice(0, headers.length)
-          .map((cell) => {
-            const datasetValue = cell.dataset.summaryRates || cell.dataset.summaryAvg || "";
-            const value = datasetValue || cell.textContent;
+          .map((cell, idx) => {
+            let datasetValue = cell.dataset.summaryRates || cell.dataset.summaryAvg || "";
+            let value = datasetValue || cell.textContent;
+            // If this is the Size column, format to prevent Excel date conversion
+            if (headers[idx] && headers[idx].toLowerCase().includes("size")) {
+              // If value matches N/N or N-N, prefix with S-
+              if (/^\d{1,2}[\/\-]\d{1,2}$/.test(value.trim())) {
+                value = `S-${value.trim()}`;
+              }
+            }
             return `"${cleanText(value).replace(/"/g, '""')}"`;
           });
         csvRows.push(cells.join(","));
