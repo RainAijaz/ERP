@@ -1,126 +1,83 @@
-<label class="block text-sm font-semibold text-slate-600">
-  <span><%= t("article_name") %></span>
-  <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" name="item_id" data-field="item_id" required>
-    <option value=""><%= t("select") %> <%= t("article") %></option>
-    <% items.forEach(function(item) { %>
-      <% const displayItemName = locale === "ur" ? (item.name_ur || item.name) : item.name; %>
-      <option value="<%= item.id %>"><%= item.code %> - <%= displayItemName %></option>
-    <% }) %>
-  </select>
-</label>
-
-<div class="grid gap-4 lg:grid-cols-2">
-  <label class="block text-sm font-semibold text-slate-600">
-    <span><%= t("sizes_label") %></span>
-    <div class="mt-2 space-y-2" data-multi-select>
-      <button
-        class="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-accent/30"
-        type="button"
-        data-multi-trigger
-      >
-        <span data-multi-placeholder><%= t("select") %></span>
-        <svg class="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-          <path d="M5 7l5 6 5-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-      </button>
-      <div class="flex flex-wrap gap-2" data-multi-tags></div>
-      <div class="hidden max-h-48 w-full overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-md" data-multi-menu></div>
-      <select class="sr-only" name="size_ids" data-field="size_ids" multiple data-required="true">
-        <% sizes.forEach(function(size) { %>
-          <option value="<%= size.id %>"><%= locale === "ur" ? (size.name_ur || size.name) : size.name %></option>
+<div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+  <div class="sm:col-span-2">
+    <label class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">
+      <%= t("article") %> <span class="text-rose-500">*</span>
+    </label>
+    <div class="relative">
+      <select name="item_id" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none" required>
+        <option value=""><%= t("select") %> <%= t("article") %></option>
+        <% items.forEach(function(item) { %>
+          <option value="<%= item.id %>" <%= values && String(values.item_id) === String(item.id) ? "selected" : "" %>>
+            <%= item.code %> - <%= locale === 'ur' ? (item.name_ur || item.name) : item.name %>
+          </option>
         <% }) %>
       </select>
     </div>
+  </div>
+
+  <div>
+    <label class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">
+      <%= t("sizes") %> <span class="text-rose-500">*</span>
+    </label>
+    <select name="size_ids" multiple class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none" required>
+      <% sizes.forEach(function(size) { %>
+        <option value="<%= size.id %>"><%= locale === 'ur' ? (size.name_ur || size.name) : size.name %></option>
+      <% }) %>
+    </select>
+    <p class="mt-1 text-[10px] text-slate-400"><%= t("sku_rate_help") %></p>
+  </div>
+
+  <div>
+    <label class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">
+      <%= t("grades") %> <span class="text-rose-500">*</span>
+    </label>
+    <select name="grade_ids" multiple class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none" required>
+      <% grades.forEach(function(grade) { %>
+        <option value="<%= grade.id %>"><%= locale === 'ur' ? (grade.name_ur || grade.name) : grade.name %></option>
+      <% }) %>
+    </select>
+  </div>
+
+  <div>
+    <label class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">
+      <%= t("colors") %>
+    </label>
+    <select name="color_ids" multiple class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none">
+      <% colors.forEach(function(color) { %>
+        <option value="<%= color.id %>"><%= locale === 'ur' ? (color.name_ur || color.name) : color.name %></option>
+      <% }) %>
+    </select>
+  </div>
+
+  <div>
+    <label class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">
+      <%= t("packing_types") %> <span class="text-rose-500">*</span>
+    </label>
+    <select name="packing_type_ids" multiple class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none" required>
+      <% packings.forEach(function(pkg) { %>
+        <option value="<%= pkg.id %>"><%= locale === 'ur' ? (pkg.name_ur || pkg.name) : pkg.name %></option>
+      <% }) %>
+    </select>
+  </div>
+
+  <div class="sm:col-span-2">
+    <label class="mb-2 block text-xs font-bold uppercase tracking-wide text-slate-500">
+      <%= t("barcode") %> <span class="text-xs font-normal text-slate-400">(<%= t("optional") || "Optional" %>)</span>
+    </label>
+    <input type="text" name="barcode" value="<%= values && values.barcode %>" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:border-slate-400 focus:outline-none" placeholder="<%= t("barcode") %>" />
+  </div>
+</div>
+
+<div class="mt-6 border-t border-slate-100 pt-4">
+  <label class="mb-3 block text-xs font-bold uppercase tracking-wide text-slate-500">
+    <%= t("generated_combinations") || "Generated Rates" %>
   </label>
-  <label class="block text-sm font-semibold text-slate-600">
-    <span><%= t("grades") %></span>
-    <div class="mt-2 space-y-2" data-multi-select>
-      <button
-        class="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-accent/30"
-        type="button"
-        data-multi-trigger
-      >
-        <span data-multi-placeholder><%= t("select") %></span>
-        <svg class="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-          <path d="M5 7l5 6 5-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-      </button>
-      <div class="flex flex-wrap gap-2" data-multi-tags></div>
-      <div class="hidden max-h-48 w-full overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-md" data-multi-menu></div>
-      <select class="sr-only" name="grade_ids" data-field="grade_ids" multiple data-required="true">
-        <% grades.forEach(function(grade) { %>
-          <option value="<%= grade.id %>"><%= locale === "ur" ? (grade.name_ur || grade.name) : grade.name %></option>
-        <% }) %>
-      </select>
+  
+  <div class="rounded-xl border border-slate-200 bg-slate-50/50 p-4" id="rate-list-container">
+    <div data-sku-rate-list class="space-y-3"></div>
+    
+    <div data-rate-list-empty class="text-center py-4 text-sm text-slate-400 italic">
+      <%= t("select_options_to_generate") || "Select Sizes, Grades, and Packing to generate combinations." %>
     </div>
-  </label>
+  </div>
 </div>
-
-<div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4" data-sku-rate-panel>
-  <div class="text-sm font-semibold text-slate-700"><%= t("rates") %></div>
-  <p class="mt-1 text-xs text-slate-500"><%= t("sku_rate_help") %></p>
-  <div class="mt-3 space-y-2" data-sku-rate-list></div>
-</div>
-
-<div class="grid gap-4 lg:grid-cols-2">
-  <label class="block text-sm font-semibold text-slate-600">
-    <span><%= t("colors") %></span>
-    <div class="mt-2 space-y-2" data-multi-select>
-      <button
-        class="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-accent/30"
-        type="button"
-        data-multi-trigger
-      >
-        <span data-multi-placeholder><%= t("select") %></span>
-        <svg class="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-          <path d="M5 7l5 6 5-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-      </button>
-      <div class="flex flex-wrap gap-2" data-multi-tags></div>
-      <div class="hidden max-h-48 w-full overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-md" data-multi-menu></div>
-      <select class="sr-only" name="color_ids" data-field="color_ids" multiple>
-        <% colors.forEach(function(color) { %>
-          <option value="<%= color.id %>"><%= locale === "ur" ? (color.name_ur || color.name) : color.name %></option>
-        <% }) %>
-      </select>
-    </div>
-  </label>
-  <label class="block text-sm font-semibold text-slate-600">
-    <span><%= t("packing_types") %></span>
-    <div class="mt-2 space-y-2" data-multi-select>
-      <button
-        class="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-accent/30"
-        type="button"
-        data-multi-trigger
-      >
-        <span data-multi-placeholder><%= t("select") %></span>
-        <svg class="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-          <path d="M5 7l5 6 5-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-        </svg>
-      </button>
-      <div class="flex flex-wrap gap-2" data-multi-tags></div>
-      <div class="hidden max-h-48 w-full overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-md" data-multi-menu></div>
-      <select class="sr-only" name="packing_type_ids" data-field="packing_type_ids" multiple>
-        <% packings.forEach(function(packing) { %>
-          <option value="<%= packing.id %>"><%= locale === "ur" ? (packing.name_ur || packing.name) : packing.name %></option>
-        <% }) %>
-      </select>
-    </div>
-  </label>
-</div>
-
-<div class="grid gap-4 lg:grid-cols-2">
-  <label class="block text-sm font-semibold text-slate-600">
-    <span><%= t("sale_rate") %></span>
-    <input class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" type="number" name="sale_rate" data-field="sale_rate" min="0" step="0.01" required />
-  </label>
-  <label class="block text-sm font-semibold text-slate-600">
-    <span><%= t("barcode") %></span>
-    <input class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" type="text" name="barcode" data-field="barcode" />
-  </label>
-</div>
-
-<label class="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600">
-  <input class="h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent/40" type="checkbox" name="is_active" data-field="is_active" checked />
-  <span><%= t("active") %></span>
-</label>

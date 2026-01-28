@@ -1,0 +1,49 @@
+<script>
+  // Global Matrix Utils Namespace
+  window.MatrixUtils = {
+    /**
+     * Generates all combinations from selected arrays and filters out those that already exist.
+     * @param {Object} selected - Object containing arrays of selected IDs { size_ids, grade_ids, ... }
+     * @param {Array} existingRows - Array of existing row objects from DB
+     * @returns {Array} - Array of new, unique combinations
+     */
+    getNewCombinations: (selected, existingRows) => {
+      const { size_ids, grade_ids, color_ids, packing_type_ids } = selected;
+      const newCombos = [];
+
+      // Helper to build a composite key for comparison
+      const buildKey = (s, g, c, p) => `${s || ""}-${g || ""}-${c || ""}-${p || ""}`;
+
+      // Create a Set of existing keys for O(1) lookup
+      const existingSet = new Set(existingRows.map((r) => buildKey(r.size_id, r.grade_id, r.color_id, r.packing_type_id)));
+
+      // Normalize inputs (handle empty arrays as [null] for iteration)
+      const sizes = size_ids.length ? size_ids : [];
+      const grades = grade_ids.length ? grade_ids : [];
+      const colors = color_ids.length ? color_ids : [null]; // Optional
+      const packings = packing_type_ids.length ? packing_type_ids : [null]; // Optional
+
+      sizes.forEach((sizeId) => {
+        grades.forEach((gradeId) => {
+          colors.forEach((colorId) => {
+            packings.forEach((packingId) => {
+              const key = buildKey(sizeId, gradeId, colorId, packingId);
+
+              if (!existingSet.has(key)) {
+                newCombos.push({
+                  size_id: sizeId,
+                  grade_id: gradeId,
+                  color_id: colorId,
+                  packing_type_id: packingId,
+                  key: key,
+                });
+              }
+            });
+          });
+        });
+      });
+
+      return newCombos;
+    },
+  };
+</script>

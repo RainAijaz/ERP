@@ -1367,9 +1367,12 @@
 
     const createSearchableSelect = (select) => {
       // 1. Validation & Setup
-      if (!select || select.multiple) return;
+      // MODIFIED: Removed the check for select.multiple so this runs for multi-selects too
+      if (!select) return;
       if (!isWithinModal(select) || isMultiSelectWrapper(select)) return;
       if (select.dataset.searchableReady === "true") return;
+
+      const isMulti = select.multiple; // Check if multi-select
 
       // 2. Identify Placeholder
       let placeholderText = makePlaceholder(select);
@@ -1379,20 +1382,14 @@
       }
 
       // 3. Create Wrapper
-      // FIX: Added 'w-full' so it stretches to fill the grid column like the original select
       const wrapper = document.createElement("div");
       wrapper.className = "relative w-full group";
 
       // 4. Create the "Combobox" Input
       const input = document.createElement("input");
       input.type = "text";
+      input.className = select.className.replace("appearance-none", "") + " pr-10";
 
-      // FIX: We copy the EXACT classes from the original select to maintain consistency
-      // We also ensure 'bg-white' is applied so the text doesn't sit on a transparent input if the select had one
-      // We explicitly remove 'appearance-none' if present, as it's not needed for text inputs
-      input.className = select.className.replace("appearance-none", "") + " pr-10"; // Add padding-right for icon
-
-      // Fallback styling if the select had no classes (safety net)
       if (!input.className.includes("border")) {
         input.className += " w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm text-slate-800 transition focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-slate-100";
       }
@@ -1400,10 +1397,11 @@
       input.placeholder = placeholderText;
       input.autocomplete = "off";
 
-      // Transfer 'required' attribute to the visible input so validation bubbles appear correctly
       if (select.hasAttribute("required")) {
         input.required = true;
-        select.removeAttribute("required");
+        // For multi-select, we don't remove required from select immediately as browser validation might vary,
+        // but typically we rely on the input's required state.
+        if (!isMulti) select.removeAttribute("required");
       }
 
       // 5. Add a Chevron Icon
@@ -1417,18 +1415,36 @@
 
       // --- HELPER: Sync Visible Input with Hidden Select ---
       const syncToInput = () => {
-        const selected = select.options[select.selectedIndex];
-        if (selected && selected.value) {
-          input.value = selected.textContent.trim();
+        if (isMulti) {
+          // For multi-select, join selected labels with commas
+          const labels = Array.from(select.selectedOptions).map((opt) => opt.textContent.trim());
+          input.value = labels.length ? labels.join(", ") : "";
         } else {
-          input.value = "";
+          const selected = select.options[select.selectedIndex];
+          if (selected && selected.value) {
+            input.value = selected.textContent.trim();
+          } else {
+            input.value = "";
+          }
         }
       };
 
       // --- HELPER: Render the List ---
       const renderMenu = () => {
         menu.innerHTML = "";
-        const filter = input.value.trim().toLowerCase();
+
+        // Determine filter term
+        let filter = input.value.trim().toLowerCase();
+
+        // If Multi-Select: Don't filter if the input matches the full selected list (user hasn't typed a new search)
+        if (isMulti) {
+          const currentString = Array.from(select.selectedOptions)
+            .map((opt) => opt.textContent.trim())
+            .join(", ")
+            .toLowerCase();
+          if (filter === currentString) filter = "";
+        }
+
         let count = 0;
 
         Array.from(select.options).forEach((opt) => {
@@ -1436,7 +1452,9 @@
 
           const label = opt.textContent.trim();
           const isMatch = !filter || label.toLowerCase().includes(filter);
-          const isExactMatch = input.value.trim() === label;
+
+          // For single select, exact match logic. For multi, we rely on includes.
+          const isExactMatch = !isMulti && input.value.trim() === label;
 
           if (!isMatch && !isExactMatch) return;
 
@@ -1444,14 +1462,38 @@
           const btn = document.createElement("button");
           btn.type = "button";
           btn.className = `flex w-full items-center justify-between px-4 py-2.5 text-left text-sm transition hover:bg-slate-50 ${opt.selected ? "bg-slate-50 text-slate-900 font-medium" : "text-slate-600"}`;
-          btn.innerHTML = `<span>${label}</span>${opt.selected ? '<svg class="h-4 w-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>' : ""}`;
+
+          // MODIFIED: Checkbox UI for Multi, Tick for Single
+          let iconHtml = "";
+          if (isMulti) {
+            iconHtml = opt.selected
+              ? '<svg class="h-4 w-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>' // Checked
+              : '<span class="h-4 w-4 block border border-slate-300 rounded-sm"></span>'; // Unchecked box placeholder
+          } else {
+            iconHtml = opt.selected ? '<svg class="h-4 w-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>' : "";
+          }
+
+          btn.innerHTML = `<span>${label}</span>${iconHtml}`;
 
           btn.addEventListener("mousedown", (e) => {
             e.preventDefault();
-            select.value = opt.value;
-            select.dispatchEvent(new Event("change", { bubbles: true }));
-            syncToInput();
-            menu.classList.add("hidden");
+
+            if (isMulti) {
+              // MODIFIED: Toggle selection for multi
+              opt.selected = !opt.selected;
+              select.dispatchEvent(new Event("change", { bubbles: true }));
+              syncToInput();
+              // Re-render menu to update checkboxes, keep menu open
+              renderMenu();
+              // Keep focus on input so user can keep searching/selecting
+              input.focus();
+            } else {
+              // Original Single Select Logic
+              select.value = opt.value;
+              select.dispatchEvent(new Event("change", { bubbles: true }));
+              syncToInput();
+              menu.classList.add("hidden");
+            }
           });
 
           menu.appendChild(btn);
@@ -1467,7 +1509,7 @@
 
       // 7. Event Listeners
       input.addEventListener("focus", () => {
-        input.select();
+        input.select(); // Select all text so user can easily overwrite
         renderMenu();
         menu.classList.remove("hidden");
       });
@@ -1480,20 +1522,27 @@
       input.addEventListener("blur", () => {
         setTimeout(() => {
           menu.classList.add("hidden");
-          const val = input.value.trim().toLowerCase();
-          const match = Array.from(select.options).find((opt) => opt.value && opt.textContent.trim().toLowerCase() === val);
 
-          if (match) {
-            if (select.value !== match.value) {
-              select.value = match.value;
-              select.dispatchEvent(new Event("change", { bubbles: true }));
-            }
+          if (isMulti) {
+            // For multi, always re-sync to show full selection list on blur (clearing any partial search text)
+            syncToInput();
           } else {
-            if (val === "") {
-              select.value = "";
-              select.dispatchEvent(new Event("change", { bubbles: true }));
+            // Original Single Select Validation Logic
+            const val = input.value.trim().toLowerCase();
+            const match = Array.from(select.options).find((opt) => opt.value && opt.textContent.trim().toLowerCase() === val);
+
+            if (match) {
+              if (select.value !== match.value) {
+                select.value = match.value;
+                select.dispatchEvent(new Event("change", { bubbles: true }));
+              }
             } else {
-              syncToInput();
+              if (val === "") {
+                select.value = "";
+                select.dispatchEvent(new Event("change", { bubbles: true }));
+              } else {
+                syncToInput();
+              }
             }
           }
         }, 150);
@@ -1505,9 +1554,6 @@
       select.classList.add("sr-only");
       select.dataset.searchableReady = "true";
 
-      // If the select was inside a 'relative' wrapper (like your manual form-fields.ejs),
-      // we might need to be careful not to double-wrap.
-      // But typically replacing the select in-place is safest.
       select.parentNode.insertBefore(wrapper, select);
 
       wrapper.appendChild(input);
@@ -1520,7 +1566,8 @@
 
     const initSearchableSelects = () => {
       document.querySelectorAll("select").forEach((select) => {
-        if (!select || select.multiple) return;
+        // MODIFIED: Removed the check for select.multiple
+        if (!select) return;
         if (select.dataset.searchableSkip === "true") return;
         createSearchableSelect(select);
       });
@@ -1530,6 +1577,7 @@
     window.initSearchableSelects = initSearchableSelects;
   })();
 </script>
+
 <script>
   (function () {
     // GENERIC EDIT LOADER (Fixes Dropdowns & Inputs for all Modals)
@@ -1542,7 +1590,6 @@
           if (!input.name) return;
 
           // Try to find matching data on the button (e.g. name="group_id" -> data-group_id)
-          // We use getAttribute to avoid dataset camelCase issues (groupId vs group_id)
           const val = button.getAttribute(`data-${input.name}`);
 
           if (val !== null && val !== undefined) {
@@ -1554,13 +1601,22 @@
             else if (input.type === "radio") {
               if (input.value === val) input.checked = true;
             }
-            // Handle Inputs & Selects
+            // Handle Multi-Selects (MODIFIED)
+            else if (input.tagName === "SELECT" && input.multiple) {
+              // Assume values are comma-separated in the data attribute
+              const values = String(val)
+                .split(",")
+                .map((v) => v.trim());
+              Array.from(input.options).forEach((opt) => {
+                opt.selected = values.includes(opt.value);
+              });
+            }
+            // Handle Standard Inputs & Selects
             else {
               input.value = val;
             }
 
             // CRITICAL FIX: Trigger 'change' event manually.
-            // This tells the Combobox (and other listeners) that the value updated.
             input.dispatchEvent(new Event("change", { bubbles: true }));
           }
         });
@@ -1572,6 +1628,9 @@
         if (editBtn) {
           // Reset form first to clear old errors/values
           modalForm.reset();
+
+          // Clear multi-selects explicitly as reset() might not handle visual sync immediately
+          modalForm.querySelectorAll("select[multiple] option").forEach((opt) => (opt.selected = false));
 
           // Small delay to ensure modal is visible/ready before filling
           setTimeout(() => {

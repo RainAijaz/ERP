@@ -1,0 +1,16 @@
+<%
+  // Logic to determine color based on status
+  let colorClass = "bg-slate-100 text-slate-600"; // Default
+  const s = (status || "").toUpperCase();
+  
+  if (s === "PENDING") {
+    colorClass = "bg-amber-100 text-amber-700";
+  } else if (s === "APPROVED") {
+    colorClass = "bg-emerald-100 text-emerald-700";
+  } else if (s === "REJECTED") {
+    colorClass = "bg-rose-100 text-rose-700";
+  }
+%>
+<span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= colorClass %>">
+  <%= t(status ? status.toLowerCase() : "unknown") %>
+</span>

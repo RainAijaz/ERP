@@ -1,3 +1,5 @@
+<%- include("../../../base/partials/matrix-utils-script") %>
+
 <div class="mx-auto w-full max-w-7xl space-y-6">
   <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
     <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -50,10 +52,6 @@
             <%- include("../../../base/partials/table-empty", { t, colspan: displayColumns.length + 2 }) %>
           <% } else { %>
             <% rows.forEach(function(row, idx) { %>
-              <% row.size_ids = row.size_id ? String(row.size_id) : ""; %>
-              <% row.grade_ids = row.grade_id ? String(row.grade_id) : ""; %>
-              <% row.color_ids = row.color_id ? String(row.color_id) : ""; %>
-              <% row.packing_type_ids = row.packing_type_id ? String(row.packing_type_id) : ""; %>
               <tr class="hover:bg-amber-50/40" data-row data-active="<%= row.is_active ? "true" : "false" %>" data-created-by="<%= row.created_by_name || "" %>" data-created-at="<%= row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : "" %>">
                 <td class="px-4 py-3 text-slate-700"><%= idx + 1 %></td>
                 <td class="px-4 py-3 text-slate-700"><%= row.id %></td>
@@ -62,7 +60,16 @@
                 <td class="px-4 py-3 text-slate-700"><%= locale === "ur" ? (row.grade_name_ur || row.grade_name) : row.grade_name || "" %></td>
                 <td class="px-4 py-3 text-slate-700"><%= locale === "ur" ? (row.color_name_ur || row.color_name) : row.color_name || "" %></td>
                 <td class="px-4 py-3 text-slate-700"><%= locale === "ur" ? (row.packing_name_ur || row.packing_name) : row.packing_name || "" %></td>
-                <td class="px-4 py-3 text-slate-700"><%= row.sale_rate || "" %></td>
+                
+                <td class="px-4 py-3 text-slate-700">
+                  <%= row.sale_rate || "" %>
+                  <% if (row.pending_approval_status === 'PENDING') { %>
+                    <div class="mt-1">
+                      <%- include("../../../base/partials/approval-badge", { status: "PENDING" }) %>
+                    </div>
+                  <% } %>
+                </td>
+
                 <td class="px-4 py-3 text-slate-700"><%= row.sku_code || "" %></td>
                 <td class="px-4 py-3 text-slate-700"><%= row.barcode || "" %></td>
                 <td class="px-4 py-3 whitespace-nowrap col-actions min-w-[110px]">
@@ -101,7 +108,15 @@
   modalError: modalOpen ? error : null,
   modalValues: modalOpen ? values : null,
   csrfToken,
-  bodyPartial: "../../master_data/products/skus/form-fields.ejs"
+  bodyPartial: "../../master_data/products/skus/form-fields.ejs",
+  // CRITICAL FIX: Explicitly pass these variables so form-fields.ejs can see them
+  items,
+  sizes,
+  grades,
+  colors,
+  packings,
+  locale,
+  values: typeof values !== 'undefined' ? values : {} 
 }) %>
 
 <%- include("../../../base/partials/confirm-modal", { t, csrfToken }) %>
@@ -112,7 +127,7 @@
   users, 
   subgroups, 
   filters: typeof filters !== 'undefined' ? filters : {},
-  serverFilters: true // <--- ADD THIS LINE to enable Subgroup filtering
+  serverFilters: true
 }) %>
 
 <%- include("../../../base/partials/basic-info-utils", { t, page: { titleKey: "skus" }, basePath, modalOpen, modalMode }) %>
@@ -121,16 +136,22 @@
   (function () {
     const modalForm = document.querySelector("[data-modal-form]");
     if (!modalForm) return;
+    
     const rateList = modalForm.querySelector("[data-sku-rate-list]");
-    if (!rateList) return;
+    const emptyMsg = modalForm.querySelector("[data-rate-list-empty]");
+    
+    const isCreateMode = !modalForm.querySelector('input[name="_method"][value="PUT"]') && 
+                         !modalForm.action.endsWith("/edit");
 
+    if (!rateList || !isCreateMode) return;
+
+    // ... [readSelected, buildKey, buildLabel functions remain the same] ...
     const readSelected = (name) => {
       const select = modalForm.querySelector(`select[name="${name}"]`);
       if (!select) return [];
-      return Array.from(select.options).filter((opt) => opt.selected).map((opt) => ({
-        value: opt.value,
-        label: opt.textContent.trim(),
-      }));
+      return Array.from(select.options)
+        .filter((opt) => opt.selected && opt.value)
+        .map((opt) => ({ value: opt.value, label: opt.textContent.trim() }));
     };
 
     const buildKey = (sizeId, gradeId, colorId, packingId) =>
@@ -148,10 +169,17 @@
       const grades = readSelected("grade_ids");
       const colors = readSelected("color_ids");
       const packings = readSelected("packing_type_ids");
+      
+      // Store current values to preserve them during regeneration (optional nice-to-have)
+      // For now, we clear to keep logic simple as requested.
       rateList.innerHTML = "";
+      
       if (!sizes.length || !grades.length) {
+        if (emptyMsg) emptyMsg.style.display = "block";
         return;
       }
+      
+      if (emptyMsg) emptyMsg.style.display = "none";
 
       const colorList = colors.length ? colors : [{ value: "", label: "" }];
       const packingList = packings.length ? packings : [{ value: "", label: "" }];
@@ -162,12 +190,31 @@
             packingList.forEach((packing) => {
               const key = buildKey(size.value, grade.value, color.value, packing.value);
               const label = buildLabel(size.label, grade.label, color.label, packing.label);
+              
               const row = document.createElement("div");
-              row.className = "flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center";
+              row.className = "group flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center shadow-sm transition hover:border-slate-300 hover:shadow-md";
+              
               row.innerHTML = `
-                <div class="text-xs font-semibold text-slate-600 sm:w-1/2">${label}</div>
+                <div class="flex-1 text-xs font-semibold text-slate-600">
+                  ${label}
+                </div>
                 <input type="hidden" name="combo_keys" value="${key}" />
-                <input class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 sm:w-1/2" type="number" min="0" step="1" name="combo_rates" placeholder="${t("sale_rate")}" required />
+                <div class="flex w-full items-center gap-2 sm:w-auto">
+                  <input 
+                    class="w-full sm:w-32 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 placeholder-slate-400 focus:border-slate-400 focus:bg-white focus:outline-none" 
+                    type="number" 
+                    min="0" 
+                    step="0.01" 
+                    name="combo_rates" 
+                    placeholder="<%= t("sale_rate") %>" 
+                    required 
+                  />
+                  <button type="button" class="ml-1 rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-500 transition" title="<%= t("remove") || "Remove" %>" onclick="this.closest('.group').remove()">
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
               `;
               rateList.appendChild(row);
             });
@@ -176,19 +223,70 @@
       });
     };
 
-    ["size_ids", "grade_ids", "color_ids", "packing_type_ids"].forEach((name) => {
+    const triggers = ["size_ids", "grade_ids", "color_ids", "packing_type_ids"];
+    triggers.forEach((name) => {
       const select = modalForm.querySelector(`select[name="${name}"]`);
       if (select) {
         select.addEventListener("change", refreshRates);
       }
     });
 
-    // Auto-fill form if opening for edit (handled by basic-info-utils, but we might need to trigger refreshRates)
-    // We can listen for the generic 'change' event on the form which basic-info-utils triggers
-    modalForm.addEventListener("change", (e) => {
-        if(["size_ids", "grade_ids", "color_ids", "packing_type_ids"].includes(e.target.name)) {
-            refreshRates();
-        }
-    });
+    refreshRates();
   })();
+</script>
+<script>
+  const existingRows = <%- JSON.stringify(rows || []).replace(/</g, '\\u003c') %>; 
+  
+  document.addEventListener("DOMContentLoaded", () => {
+    const modal = document.querySelector("[data-modal]");
+    if (!modal) return;
+    
+    // Check Availability Logic
+    const checkBtn = document.createElement("button");
+    checkBtn.type = "button";
+    checkBtn.className = "rounded-lg border border-slate-300 px-3 py-2 text-xs font-bold text-slate-700 hover:bg-slate-50 transition mr-2";
+    checkBtn.textContent = "<%= t("check_availability") || "Check Availability" %>";
+    
+    const submitBtn = modal.querySelector('button[type="submit"]');
+    if(submitBtn && submitBtn.parentNode) {
+      submitBtn.parentNode.insertBefore(checkBtn, submitBtn);
+    }
+
+    checkBtn.addEventListener("click", () => {
+      const form = document.querySelector("[data-modal-form]");
+      if (!form || !window.MatrixUtils) return;
+
+      const selected = {
+        size_ids: Array.from(form.querySelectorAll("select[name='size_ids'] option:checked")).map(o => o.value),
+        grade_ids: Array.from(form.querySelectorAll("select[name='grade_ids'] option:checked")).map(o => o.value),
+        color_ids: Array.from(form.querySelectorAll("select[name='color_ids'] option:checked")).map(o => o.value),
+        packing_type_ids: Array.from(form.querySelectorAll("select[name='packing_type_ids'] option:checked")).map(o => o.value),
+      };
+
+      const newCombos = window.MatrixUtils.getNewCombinations(selected, existingRows);
+      
+      if (newCombos.length === 0) {
+        alert("<%= t("no_new_combinations") %>");
+      } else {
+        alert(newCombos.length + " " + "<%= t("new_combinations_found") %>");
+      }
+    });
+
+    // Disable Immutable Fields in Edit Mode
+    if (modal.dataset.modalMode === "edit") {
+       const immutables = ["item_id", "size_ids", "grade_ids", "color_ids", "packing_type_ids"];
+       immutables.forEach(name => {
+          const el = modal.querySelector(`[name="${name}"]`);
+          if(el) {
+             el.setAttribute("disabled", "true");
+             el.classList.add("bg-slate-100", "text-slate-400", "cursor-not-allowed");
+          }
+       });
+       // Hide the Generated Rates section entirely in edit mode
+       const rateContainer = modal.querySelector("#rate-list-container");
+       if(rateContainer && rateContainer.parentElement) {
+          rateContainer.parentElement.style.display = "none";
+       }
+    }
+  });
 </script>
