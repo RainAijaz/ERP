@@ -12,9 +12,15 @@
         <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-print-button>
           <%= t("print") %>
         </button>
-        <button class="cursor-pointer rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800" type="button" data-modal-open style="color: #fff;">
-          <%= t("add") %> <%= t(page.titleKey) %>
-        </button>
+        <% const canCreate = scopeKey ? can('SCREEN', scopeKey, 'create') : true; %>
+        <% const canEdit = scopeKey ? can('SCREEN', scopeKey, 'edit') : true; %>
+        <% const canDelete = scopeKey ? can('SCREEN', scopeKey, 'delete') : true; %>
+        <% const canHardDelete = scopeKey ? can('SCREEN', scopeKey, 'hard_delete') : false; %>
+        <% if (canCreate) { %>
+          <button class="cursor-pointer rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800" type="button" data-modal-open style="color: #fff;">
+            <%= t("add") %> <%= t(page.titleKey) %>
+          </button>
+        <% } %>
       </div>
     </div>
   </section>
@@ -32,7 +38,7 @@
     </div>
     <div class="overflow-x-auto">
       <table class="min-w-full text-sm <%= ["accounts", "parties"].includes(page.titleKey) ? "table-fixed" : "" %>" data-table <%= ["accounts", "parties"].includes(page.titleKey) ? "data-compact-table" : "" %>>
-        <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+        <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
           <% // Tooltip labels for headers that need extra context. %>
           <% const columnTooltips = {
             account_type: t("tooltip_account_type"),
@@ -112,7 +118,7 @@
                   </td>
                 <% }) %>
                 <td class="px-4 py-3">
-                  <%- include("../../base/partials/table-actions", { t, row, basePath, editFields: page.fields.map(function(field) { return field.name; }), withMenu: true }) %>
+                  <%- include("../../base/partials/table-actions", { t, row, basePath, editFields: page.fields.map(function(field) { return field.name; }), withMenu: true, canEdit, canDelete, canHardDelete }) %>
                 </td>
               </tr>
             <% }) %>
@@ -144,4 +150,3 @@
 <%- include("../../base/partials/confirm-modal", { t, csrfToken }) %>
 
 <%- include("../../base/partials/basic-info-utils", { t, page, basePath, modalOpen, modalMode }) %>
-

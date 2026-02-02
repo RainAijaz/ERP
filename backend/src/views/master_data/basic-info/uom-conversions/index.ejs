@@ -23,6 +23,9 @@
 
   <%# UOM conversions list + export/print area. %>
   <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md" data-print-area>
+    <% const canEdit = can('SCREEN', 'master_data.basic_info.uom_conversions', 'edit'); %>
+    <% const canDelete = can('SCREEN', 'master_data.basic_info.uom_conversions', 'delete'); %>
+    <% const canHardDelete = can('SCREEN', 'master_data.basic_info.uom_conversions', 'hard_delete'); %>
     <div class="px-5 pt-4 text-center text-xl font-display font-semibold uppercase tracking-[0.35em] text-slate-900" data-print-header>
       <%= t("brand") %>
     </div>
@@ -60,7 +63,7 @@
                 <td class="px-4 py-3 text-slate-700"><%= row.to_code %> &mdash; <%= row.to_name %></td>
                 <td class="px-4 py-3 text-slate-700"><%= row.factor %></td>
                 <td class="px-4 py-3">
-                  <%- include("../../base/partials/table-actions", { t, row, basePath, editFields: ["from_uom_id", "to_uom_id", "factor"], withMenu: false }) %>
+                  <%- include("../../base/partials/table-actions", { t, row, basePath, editFields: ["from_uom_id", "to_uom_id", "factor"], withMenu: false, canEdit, canDelete, canHardDelete }) %>
                 </td>
               </tr>
             <% }) %>

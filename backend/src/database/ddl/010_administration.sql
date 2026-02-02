@@ -238,21 +238,28 @@ CREATE TABLE IF NOT EXISTS erp.permission_scope_registry (
   UNIQUE (scope_type, scope_key)
 );
 
+-- Fix missing column for Permissions Grouping
+ALTER TABLE erp.permission_scope_registry 
+ADD COLUMN IF NOT EXISTS module_group text DEFAULT 'Other';
+
+-- Update the type to ensure it includes REPORT if not already present (optional safety)
+ALTER TYPE erp.permission_scope_type ADD VALUE IF NOT EXISTS 'REPORT';
+
 -- Role permissions: defines what a role can do per scope.
 -- UI mapping:
---   can_view   => open/navigation
+--   can_navigate => open/navigation
+--   can_view     => view data
 --   can_create => add/new
 --   can_edit   => edit
 --   can_delete => delete
 --   can_print  => print
 -- Workflow:
 --   can_approve => checker decision (approve/reject)
---   can_post    => finalize/post into ledgers
---   can_unpost  => reverse posting (should be admin-only at application level)
 CREATE TABLE IF NOT EXISTS erp.role_permissions (
   role_id     bigint NOT NULL REFERENCES erp.role_templates(id) ON DELETE CASCADE,
   scope_id    bigint NOT NULL REFERENCES erp.permission_scope_registry(id) ON DELETE RESTRICT,
 
+  can_navigate boolean NOT NULL DEFAULT false,
   can_view    boolean NOT NULL DEFAULT false,
   can_create  boolean NOT NULL DEFAULT false,
   can_edit    boolean NOT NULL DEFAULT false,
@@ -260,8 +267,6 @@ CREATE TABLE IF NOT EXISTS erp.role_permissions (
   can_print   boolean NOT NULL DEFAULT false,
 
   can_approve boolean NOT NULL DEFAULT false,
-  can_post    boolean NOT NULL DEFAULT false,
-  can_unpost  boolean NOT NULL DEFAULT false,
 
   PRIMARY KEY (role_id, scope_id)
 );
@@ -273,6 +278,7 @@ CREATE TABLE IF NOT EXISTS erp.user_permissions_override (
   user_id     bigint NOT NULL REFERENCES erp.users(id) ON DELETE CASCADE,
   scope_id    bigint NOT NULL REFERENCES erp.permission_scope_registry(id) ON DELETE RESTRICT,
 
+  can_navigate boolean,
   can_view    boolean,
   can_create  boolean,
   can_edit    boolean,
@@ -280,8 +286,6 @@ CREATE TABLE IF NOT EXISTS erp.user_permissions_override (
   can_print   boolean,
 
   can_approve boolean,
-  can_post    boolean,
-  can_unpost  boolean,
 
   PRIMARY KEY (user_id, scope_id)
 );
@@ -322,6 +326,20 @@ CREATE TABLE IF NOT EXISTS erp.approval_request_type_registry (
   description text,
   is_active   boolean NOT NULL DEFAULT true,
   created_at  timestamptz NOT NULL DEFAULT now()
+);
+
+-- Approval policies: define which entities/actions require approval.
+-- Example: entity_type='VOUCHER_TYPE', entity_key='PI', action='create'
+CREATE TABLE IF NOT EXISTS erp.approval_policy (
+  id                bigserial PRIMARY KEY,
+  entity_type       text NOT NULL,
+  entity_key        text NOT NULL,
+  action            text NOT NULL,
+  requires_approval boolean NOT NULL DEFAULT false,
+  updated_by        bigint REFERENCES erp.users(id),
+  updated_at        timestamptz NOT NULL DEFAULT now(),
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (entity_type, entity_key, action)
 );
 
 

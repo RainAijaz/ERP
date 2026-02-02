@@ -1,0 +1,515 @@
+<% 
+  // EXTRACT SIDEBAR ITEMS:
+  // We want any row that is a "container" (has children) OR is a top-level module.
+  const sidebarRows = navRows.filter(r => r.hasChildren || r.depth === 0);
+%>
+
+<div class="permissions-shell flex flex-col min-h-0 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+  
+  <div class="shrink-0 px-6 py-4 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4 bg-white z-20">
+    <div class="flex items-center gap-4 w-full md:w-auto">
+      <div class="p-2 bg-accent/5 rounded-lg text-accent">
+        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"></path></svg>
+      </div>
+      <div>
+        <h1 class="text-lg font-bold text-slate-800"><%= t('permissions') %></h1>
+        <p class="text-xs text-slate-500">Manage user and role access levels</p>
+      </div>
+      
+      <div class="flex bg-slate-100 p-1 rounded-lg ml-2">
+        <a href="?type=role" class="px-3 py-1 text-xs font-bold uppercase tracking-wide rounded shadow-sm transition-all <%= !isUserMode ? 'bg-white text-accent' : 'text-slate-500 hover:text-slate-700' %>">
+          <%= t('roles') %>
+        </a>
+        <a href="?type=user" class="px-3 py-1 text-xs font-bold uppercase tracking-wide rounded shadow-sm transition-all <%= isUserMode ? 'bg-white text-accent' : 'text-slate-500 hover:text-slate-700' %>">
+          <%= t('users') %>
+        </a>
+      </div>
+    </div>
+
+    <form method="GET" class="flex items-center gap-3 w-full md:w-auto">
+      <input type="hidden" name="type" value="<%= isUserMode ? 'user' : 'role' %>">
+      <select name="target_id" onchange="this.form.submit()" class="w-full md:w-64 rounded-lg border-slate-200 text-sm font-medium text-slate-700 focus:ring-accent focus:border-accent bg-slate-50 hover:bg-white transition-colors cursor-pointer">
+        <% if (isUserMode) { %>
+          <option value=""><%= t('select_user') %>...</option>
+          <% users.forEach(u => { %>
+            <option value="<%= u.id %>" <%= targetId == u.id ? 'selected' : '' %>><%= u.username %></option>
+          <% }) %>
+        <% } else { %>
+          <option value=""><%= t('select_role') %>...</option>
+          <% roles.forEach(r => { %>
+            <option value="<%= r.id %>" <%= targetId == r.id ? 'selected' : '' %>><%= r.name %></option>
+          <% }) %>
+        <% } %>
+      </select>
+    </form>
+  </div>
+
+  <% if (flash && flash.message) { %>
+    <div class="shrink-0 px-6 py-2 bg-slate-50 border-b border-slate-100 flex items-center justify-center">
+      <div class="text-sm px-4 py-1.5 rounded-full flex items-center gap-2 <%= flash.type === 'success' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800' %>">
+        <span class="font-bold"><%= flash.type === 'success' ? '✓' : '!' %></span>
+        <%= flash.message %>
+      </div>
+    </div>
+  <% } %>
+
+  <% if (targetId) { %>
+    <% const canEditPermissions = can('SCREEN', 'administration.permissions', 'edit'); %>
+    <form action="/administration/permissions/update" method="POST" class="flex-1 flex min-h-0 overflow-hidden">
+      <input type="hidden" name="type" value="<%= isUserMode ? 'user' : 'role' %>">
+      <input type="hidden" name="target_id" value="<%= targetId %>">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+
+      <aside class="w-72 bg-slate-50 border-r border-slate-200 flex flex-col shrink-0 overflow-hidden min-h-0 group">
+        <div class="p-3 border-b border-slate-200/60 flex items-center justify-between">
+           <span class="text-xs font-bold text-slate-400 uppercase tracking-wider"><%= t('modules') %></span>
+           <span class="text-[10px] bg-white border border-slate-200 px-2 rounded-full text-slate-400"><%= sidebarRows.length %></span>
+        </div>
+        
+        <div class="overflow-y-auto flex-1 min-h-0 p-2 space-y-0.5 custom-scrollbar">
+          <button type="button" onclick="filterCategory('all')" class="category-btn w-full text-left px-3 py-2 rounded-md text-xs font-bold transition-colors bg-white shadow-sm text-accent ring-1 ring-slate-200 mb-2 hover:ring-accent/50" data-cat="all">
+            All Modules
+          </button>
+
+          <% const labelForRow = (row) => {
+             if (!row.description) return row.scopeKey || row.key || 'Unknown';
+             return /^[a-z0-9_.]+$/.test(row.description) ? t(row.description) : row.description;
+          }; %>
+          
+          <% sidebarRows.forEach(row => { %>
+            <button type="button" 
+              onclick="filterCategory('<%= row.path %>')" 
+              class="category-btn w-full text-left py-1.5 px-2 rounded-md text-xs transition-all text-slate-600 hover:bg-white hover:text-slate-900 border border-transparent hover:border-slate-200 flex items-center gap-2 truncate"
+              style="padding-left: <%= (row.depth * 12) + 8 %>px" 
+              data-cat="<%= row.path %>"
+              title="<%= labelForRow(row) %>">
+              
+              <% if (row.depth === 0) { %>
+                 <span class="opacity-70">📂</span>
+                 <span class="font-bold"><%= labelForRow(row) %></span>
+              <% } else { %>
+                 <span class="text-slate-300">└</span>
+                 <span><%= labelForRow(row) %></span>
+              <% } %>
+            </button>
+          <% }) %>
+        </div>
+      </aside>
+
+      <div class="flex-1 flex flex-col min-w-0 min-h-0 bg-white relative">
+        
+        <div id="module-empty-state" class="absolute inset-0 z-30 bg-slate-50/50 flex flex-col items-center justify-center text-center p-6">
+            <div class="w-16 h-16 bg-white rounded-full shadow-sm flex items-center justify-center mb-4 border border-slate-100">
+                <svg class="w-8 h-8 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
+            </div>
+            <h3 class="text-sm font-bold text-slate-700">Select a Module</h3>
+            <p class="text-xs text-slate-500 mt-1 max-w-xs">Select a module from the sidebar to view and edit its permissions.</p>
+        </div>
+
+        <div id="permission-toolbar" class="p-3 border-b border-slate-100 flex items-center justify-between gap-3 shrink-0 hidden">
+            <div class="relative w-full max-w-md group">
+              <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                <svg class="h-4 w-4 text-slate-400 group-focus-within:text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+              </div>
+              <input id="permission-search" type="text" placeholder="<%= t('search_permissions') %>..." 
+                class="w-full rounded-lg border-slate-200 bg-slate-50 text-sm pl-10 pr-8 focus:ring-2 focus:ring-accent focus:bg-white transition-all shadow-sm">
+              <button type="button" id="permission-search-clear" class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-rose-500 cursor-pointer hidden">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button type="button" id="expand-all" class="p-2 text-slate-500 hover:text-accent hover:bg-accent/10 rounded-lg transition-colors" title="<%= t('expand_all') %>"> 
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7"/></svg>
+              </button>
+              <button type="button" id="collapse-all" class="p-2 text-slate-500 hover:text-accent hover:bg-accent/10 rounded-lg transition-colors" title="<%= t('collapse_all') %>"> 
+                <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 11l7-7 7 7M5 19l7-7 7 7"/></svg>
+              </button>
+            </div>
+        </div>
+
+        <% if (!canEditPermissions) { %>
+          <div class="px-4 py-2 bg-amber-50 border-b border-amber-100 text-xs text-amber-700 flex items-center gap-2">
+            <span class="font-bold">Read-only</span>
+            <span>You have access to view permissions, but you cannot edit them.</span>
+          </div>
+        <% } %>
+
+        <div id="permission-table-container" class="flex-1 min-h-0 overflow-x-auto overflow-y-auto bg-slate-50/30 relative custom-scrollbar hidden">
+          <table class="w-full text-left border-collapse table-fixed">
+            <thead class="bg-white sticky top-0 z-20 shadow-sm ring-1 ring-slate-200">
+              <tr>
+                <th class="p-3 pl-6 text-xs font-bold uppercase text-slate-500 border-b border-r w-auto min-w-[200px]">
+                  <%= t('module') %> / <%= t('screen') %>
+                </th>
+                
+                <% const actions = [
+                     { key: 'can_navigate', icon: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z', label: 'Browse', color: 'text-blue-600', tooltip: 'Allows viewing the table of existing records. Required to find a record to Edit or Deactivate.' },
+                     { key: 'can_view', icon: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z', label: 'Access', color: 'text-indigo-600', tooltip: 'Grants permission to open this module. Required for any other action.' },
+                     { key: 'can_create', icon: 'M12 4v16m8-8H4', label: t('create'), color: 'text-emerald-600', tooltip: 'Enables the \"Add New\" form to save new entries.' },
+                     { key: 'can_edit', icon: 'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z', label: t('edit'), color: 'text-amber-600', tooltip: 'Unlocks the ability to change data in existing records.' },
+                     { key: 'can_delete', icon: 'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16', label: 'Deactivate', color: 'text-rose-600', tooltip: 'Enables the option to deactivate records.' },
+                     { key: 'can_hard_delete', icon: 'M4 7h16M9 7V5h6v2M10 11v6M14 11v6M6 7l1 13h10l1-13', label: 'Delete', color: 'text-rose-700', tooltip: 'Permanently removes records.' },
+                     { key: 'can_approve', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z', label: t('approve'), color: 'text-purple-600', tooltip: 'Grants authority to finalize a record status.' },
+                     { key: 'can_print', icon: 'M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z', label: t('print'), color: 'text-slate-600', tooltip: 'Enables the Print and Export to Excel/PDF buttons.' }
+                   ] %>
+                
+                <% actions.forEach(act => { %>
+                  <th class="py-3 border-b text-center w-24 group cursor-help hover:bg-slate-50 transition-colors" title="<%= act.tooltip %>">
+                    <div class="flex flex-col items-center gap-1">
+                      <span class="text-[10px] font-bold uppercase text-slate-500 group-hover:<%= act.color %> tracking-wide"><%= act.label %></span>
+                    </div>
+                  </th>
+                <% }) %>
+                <th class="py-3 border-b text-center w-12 text-[10px] text-slate-400 uppercase bg-slate-50/50"><%= t('all') %></th>
+              </tr>
+            </thead>
+            
+            <tbody class="divide-y divide-slate-100 bg-white">
+              <% navRows.forEach(row => { %>
+                <tr class="hover:bg-amber-50/60 group transition-colors permission-row" 
+                    data-path="<%= row.path %>" 
+                    data-parent="<%= row.parentPath || '' %>" 
+                    data-depth="<%= row.depth %>" 
+                    data-has-children="<%= row.hasChildren ? 'true' : 'false' %>" 
+                    data-search="<%= (labelForRow(row) || '') + ' ' + (row.scopeKey || '') %>">
+                  
+                  <td class="px-4 py-2 border-r text-sm font-medium text-slate-700 truncate">
+                    <div class="flex items-center gap-2" style="padding-left: <%= (row.depth * 16) + 'px' %>">
+                      <% if (row.hasChildren) { %>
+                        <button type="button" class="w-4 h-4 flex items-center justify-center rounded bg-slate-100 hover:bg-slate-200 text-slate-500 text-[9px] group-toggle transition-colors border border-slate-200" data-toggle="<%= row.path %>">−</button>
+                        <span class="text-amber-400/80">📂</span>
+                      <% } else { %>
+                        <span class="w-4 h-4 flex items-center justify-center text-[8px] text-slate-300">•</span>
+                      <% } %>
+                      <div class="flex flex-col truncate">
+                        <span class="<%= row.hasChildren ? 'font-bold text-slate-800' : '' %> truncate" title="<%= labelForRow(row) %>">
+                          <%= labelForRow(row) %>
+                        </span>
+                      </div>
+                    </div>
+                  </td>
+
+                  <% actions.forEach(act => { %>
+                    <td class="text-center border-r last:border-r-0 relative p-0 h-10 w-24">
+                      <% if (row.scopeType === 'SCREEN' && row.scopeId) { %>
+                        <label class="w-full h-full flex items-center justify-center cursor-pointer hover:bg-black/5 transition-colors relative">
+                          <% if (isUserMode) { %>
+                            <input type="hidden" name="<%= row.scopeId %>:<%= act.key %>" value="false">
+                          <% } %>
+                          <input type="checkbox" name="<%= row.scopeId %>:<%= act.key %>" value="true"
+                            <%= row.rights[act.key] ? 'checked' : '' %>
+                            <%= !canEditPermissions ? 'disabled' : '' %>
+                            class="rounded text-accent focus:ring-accent w-4 h-4 cursor-pointer transition permission-check-<%= row.scopeId %> permission-action <%= !canEditPermissions ? 'opacity-40 cursor-not-allowed' : '' %>" 
+                            data-action="<%= act.key %>">
+                            
+                          <% 
+                             // Visual dot for user overrides
+                             const baseValue = isUserMode ? Boolean(row.baseRights && row.baseRights[act.key]) : false;
+                             const overrideValue = isUserMode && row.overrideRights ? row.overrideRights[act.key] : null;
+                             const hasOverride = isUserMode && overrideValue !== null && overrideValue !== undefined;
+                             const overrideDiff = hasOverride && Boolean(overrideValue) !== baseValue;
+                          %>
+                          <% if (overrideDiff) { %>
+                             <span class="absolute top-1.5 right-6 w-1.5 h-1.5 rounded-full bg-blue-400" title="User Override"></span>
+                          <% } %>
+                        </label>
+                      <% } %>
+                    </td>
+                  <% }) %>
+
+                  <td class="text-center p-0 h-10 w-12">
+                    <% if (row.scopeType === 'SCREEN' && row.scopeId) { %>
+                      <div class="w-full h-full flex items-center justify-center hover:bg-slate-100">
+                        <input type="checkbox" onchange="toggleRow(this, '<%= row.scopeId %>')" <%= !canEditPermissions ? 'disabled' : '' %> class="rounded-full text-slate-300 focus:ring-slate-400 w-4 h-4 cursor-pointer hover:text-accent <%= !canEditPermissions ? 'opacity-40 cursor-not-allowed' : '' %>" title="<%= t('select_all') %>">
+                      </div>
+                    <% } %>
+                  </td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+        
+        <div id="permission-footer" class="p-3 border-t border-slate-200 bg-white flex justify-between items-center shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.02)] z-20 shrink-0 hidden">
+          <div class="text-xs text-slate-500 flex items-center gap-3">
+             <% if (isUserMode) { %>
+               <span class="px-2 py-1 bg-amber-50 text-amber-700 rounded border border-amber-100 font-medium">⚠️ Override Mode</span>
+             <% } %>
+          </div>
+          <button type="submit" <%= !canEditPermissions ? 'disabled' : '' %> class="bg-accent text-white px-6 py-2 rounded-lg text-sm font-bold shadow-lg shadow-accent/20 hover:bg-accent/90 hover:-translate-y-0.5 transition-all flex items-center gap-2 <%= !canEditPermissions ? 'opacity-50 cursor-not-allowed hover:bg-accent' : '' %>">
+            <span><%= t('save_changes') %></span>
+          </button>
+        </div>
+      </div>
+    </form>
+  <% } else { %>
+    <div class="flex-1 flex flex-col items-center justify-center text-slate-400 bg-slate-50/50 m-4 border-2 border-dashed border-slate-200 rounded-xl">
+      <div class="w-16 h-16 mb-4 rounded-full bg-slate-100 flex items-center justify-center text-3xl">👋</div>
+      <p class="text-lg font-bold text-slate-600"><%= isUserMode ? t('select_user_to_configure') : t('select_role_to_configure') %></p>
+      <p class="text-sm"><%= t('choose_option_top_right') %></p>
+    </div>
+  <% } %>
+</div>
+
+<script>
+  // --- 1. SIDEBAR & VISIBILITY LOGIC ---
+  let currentCategory = '';
+  const collapsedPaths = new Set();
+
+  function filterCategory(path) {
+    currentCategory = path;
+    const btns = document.querySelectorAll('.category-btn');
+    const searchInput = document.getElementById('permission-search');
+    
+    // Toggle UI Components (Show table only if category selected)
+    if (!path || path === '' || path === 'none') {
+        document.getElementById('module-empty-state').classList.remove('hidden');
+        document.getElementById('permission-toolbar').classList.add('hidden');
+        document.getElementById('permission-table-container').classList.add('hidden');
+        document.getElementById('permission-footer').classList.add('hidden');
+        return;
+    } else {
+        document.getElementById('module-empty-state').classList.add('hidden');
+        document.getElementById('permission-toolbar').classList.remove('hidden');
+        document.getElementById('permission-table-container').classList.remove('hidden');
+        document.getElementById('permission-footer').classList.remove('hidden');
+    }
+
+    // Sidebar Active State
+    btns.forEach(btn => {
+        if(btn.dataset.cat === path) {
+            btn.classList.add('bg-white', 'shadow-sm', 'text-accent', 'ring-1', 'ring-accent/30', 'border-l-4', 'border-l-accent');
+            btn.classList.remove('text-slate-600', 'hover:bg-white', 'border-transparent');
+        } else {
+            btn.classList.remove('bg-white', 'shadow-sm', 'text-accent', 'ring-1', 'ring-accent/30', 'border-l-4', 'border-l-accent');
+            btn.classList.add('text-slate-600', 'hover:bg-white', 'border-transparent');
+        }
+    });
+
+    if(searchInput && searchInput.value === '') {
+        document.getElementById('permission-search-clear').classList.add('hidden');
+    }
+
+    // AUTO-EXPAND LOGIC:
+    // If a specific module is clicked, we ensure its immediate children are visible.
+    // We achieve this by removing the clicked path from 'collapsedPaths'.
+    if (path !== 'all') {
+        collapsedPaths.delete(path); // Uncollapse the container itself
+        
+        // Also uncollapse the row in the DOM so 'applyFilters' sees it as open
+        const rows = document.querySelectorAll('.permission-row');
+        rows.forEach(row => {
+            const rowPath = row.getAttribute('data-path');
+            // If the row matches the category, ensure it is NOT in collapsedPaths
+            if (rowPath === path) {
+                collapsedPaths.delete(rowPath);
+            }
+        });
+    }
+
+    applyFilters();
+  }
+
+  function applyFilters() {
+      const searchInput = document.getElementById('permission-search');
+      const q = (searchInput?.value || '').trim().toLowerCase();
+      const isSearch = q.length > 0;
+      
+      const rows = document.querySelectorAll('.permission-row');
+      const matched = new Set();
+
+      rows.forEach(row => {
+          const rowPath = row.getAttribute('data-path');
+
+          // 1. Sidebar Category Filter
+          if (!isSearch) {
+              // Show if row is the category itself OR inside the category
+              if (currentCategory === 'all' || rowPath === currentCategory || rowPath.startsWith(currentCategory + '.')) {
+                  row.classList.remove('hidden-by-category');
+              } else {
+                  row.classList.add('hidden-by-category');
+                  return; 
+              }
+          } else {
+              row.classList.remove('hidden-by-category');
+          }
+
+          // 2. Search OR Tree Collapse Logic
+          if (isSearch) {
+              const hay = row.getAttribute('data-search').toLowerCase();
+              if (hay.includes(q)) matched.add(row);
+          } else {
+              // Hierarchy Check
+              let parentPath = row.getAttribute('data-parent');
+              let isHidden = false;
+              
+              // Walk up the tree
+              while(parentPath) {
+                  if (collapsedPaths.has(parentPath)) { isHidden = true; break; }
+                  
+                  const parts = parentPath.split('.');
+                  if(parts.length > 1) {
+                      parts.pop();
+                      parentPath = parts.join('.');
+                  } else {
+                      parentPath = '';
+                  }
+              }
+              if (!isHidden) matched.add(row);
+          }
+      });
+
+      // Apply Visibility
+      rows.forEach(row => {
+          if (row.classList.contains('hidden-by-category') && !isSearch) {
+              row.classList.add('hidden');
+          } else {
+              row.classList.toggle('hidden', !matched.has(row));
+          }
+      });
+
+      // Update +/- Icons
+      document.querySelectorAll('.group-toggle').forEach(btn => {
+          const path = btn.getAttribute('data-toggle');
+          btn.textContent = collapsedPaths.has(path) ? '+' : '−';
+      });
+  }
+
+  // --- 2. PERMISSION DEPENDENCY LOGIC (AUTO-CHECK) ---
+  const dependencies = {
+        'can_edit':   ['can_navigate', 'can_view'],
+        'can_delete': ['can_navigate', 'can_view'],
+        'can_hard_delete': ['can_navigate', 'can_view'],
+        'can_create': ['can_view'],
+        'can_approve': ['can_navigate', 'can_view'],
+        'can_print':   ['can_navigate', 'can_view'],
+        'can_navigate': ['can_view']
+  };
+
+  function checkDependencies(sourceCheckbox) {
+        if (!sourceCheckbox.checked) return;
+        
+        const parts = sourceCheckbox.name.split(':');
+        const scopeId = parts[0];
+        const action = parts[1];
+        
+        const required = dependencies[action];
+        if (required) {
+            required.forEach(reqAction => {
+                checkAndFlash(scopeId, reqAction);
+            });
+        }
+        
+        // Always ensure View is checked if anything else is checked
+        if (action !== 'can_view') checkAndFlash(scopeId, 'can_view');
+  }
+
+  function checkAndFlash(scopeId, reqAction) {
+      const target = document.querySelector(`input[type='checkbox'][name='${scopeId}:${reqAction}']`);
+      if (target && !target.checked) {
+          target.checked = true;
+          target.dispatchEvent(new Event('change', { bubbles: true }));
+          // Pulse Animation
+          const parent = target.closest('label');
+          if(parent) {
+              parent.classList.add('bg-blue-100', 'ring-2', 'ring-blue-100');
+              setTimeout(() => parent.classList.remove('bg-blue-100', 'ring-2', 'ring-blue-100'), 400);
+          }
+      }
+  }
+
+  // --- 3. EVENT LISTENERS ---
+  document.addEventListener('DOMContentLoaded', function() {
+    document.body.classList.add('permissions-no-scroll');
+    const adjustPermissionsHeight = () => {
+      const shell = document.querySelector('.permissions-shell');
+      if (!shell) return;
+      const top = shell.getBoundingClientRect().top;
+      const available = Math.max(320, window.innerHeight - top - 8);
+      shell.style.height = `${available}px`;
+      shell.style.maxHeight = `${available}px`;
+    };
+    adjustPermissionsHeight();
+    window.addEventListener('resize', adjustPermissionsHeight);
+    
+    // Initial Collapse: Collapse everything that is NOT a root node
+    const rows = document.querySelectorAll('.permission-row');
+    rows.forEach(row => {
+        const path = row.getAttribute('data-path');
+        const depth = parseInt(row.getAttribute('data-depth') || '0');
+        
+        // If it has children and is deeper than root, collapse it by default.
+        if (row.getAttribute('data-has-children') === 'true' && depth > 0) {
+            collapsedPaths.add(path);
+        }
+        
+        // +/- Click Handler
+        const btn = row.querySelector('.group-toggle');
+        if(btn) {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                if(collapsedPaths.has(path)) collapsedPaths.delete(path);
+                else collapsedPaths.add(path);
+                applyFilters();
+            });
+        }
+    });
+
+    // Search Logic
+    const searchInput = document.getElementById('permission-search');
+    if(searchInput) {
+        searchInput.addEventListener('input', () => {
+            const clearBtn = document.getElementById('permission-search-clear');
+            if(searchInput.value.trim().length > 0) clearBtn.classList.remove('hidden');
+            else clearBtn.classList.add('hidden');
+            applyFilters();
+        });
+        document.getElementById('permission-search-clear')?.addEventListener('click', () => {
+            searchInput.value = '';
+            document.getElementById('permission-search-clear').classList.add('hidden');
+            applyFilters();
+        });
+    }
+
+    // Expand/Collapse All
+    document.getElementById('expand-all')?.addEventListener('click', () => {
+        collapsedPaths.clear();
+        applyFilters();
+    });
+    document.getElementById('collapse-all')?.addEventListener('click', () => {
+        rows.forEach(r => {
+            if(r.getAttribute('data-has-children')==='true') collapsedPaths.add(r.getAttribute('data-path'));
+        });
+        applyFilters();
+    });
+
+    // Permission Checkboxes
+    document.querySelectorAll('input.permission-action').forEach(box => {
+        box.addEventListener('change', function() { checkDependencies(this); });
+    });
+
+    // Initial State: Empty
+    filterCategory('');
+  });
+
+  function toggleRow(source, scopeId) {
+      document.querySelectorAll(`.permission-check-${scopeId}`).forEach(cb => {
+          if (cb.checked !== source.checked) {
+              cb.checked = source.checked;
+              // Trigger manually to ensure dependencies run and form state updates
+              cb.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+      });
+  }
+</script>
+
+<style>
+  .permissions-no-scroll { overflow: hidden; }
+  .permissions-shell { height: calc(100vh - 6rem); }
+  .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+  .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+  .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 3px; }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
+</style>

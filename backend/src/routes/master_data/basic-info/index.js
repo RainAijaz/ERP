@@ -1,7 +1,10 @@
 const express = require("express");
 const knex = require("../../../db/knex");
 const { HttpError } = require("../../../middleware/errors/http-error");
+const { requirePermission } = require("../../../middleware/access/role-permissions");
 const { parseCookies, setCookie } = require("../../../middleware/utils/cookies");
+const { handleScreenApproval } = require("../../../middleware/approvals/screen-approval");
+const { getBasicInfoEntityType } = require("../../../utils/approval-entity-map");
 
 const router = express.Router();
 
@@ -620,6 +623,22 @@ const ROUTE_MAP = {
   departments: "/departments",
 };
 
+const BASIC_INFO_SCOPE_KEYS = {
+  units: "master_data.basic_info.units",
+  sizes: "master_data.basic_info.sizes",
+  colors: "master_data.basic_info.colors",
+  grades: "master_data.basic_info.grades",
+  "packing-types": "master_data.basic_info.packing_types",
+  cities: "master_data.basic_info.cities",
+  groups: "master_data.basic_info.product_groups",
+  "product-subgroups": "master_data.basic_info.product_subgroups",
+  "product-types": "master_data.basic_info.product_types",
+  "party-groups": "master_data.basic_info.party_groups",
+  "account-groups": "master_data.basic_info.account_groups",
+  departments: "master_data.basic_info.departments",
+  "uom-conversions": "master_data.basic_info.uom_conversions",
+};
+
 const listHandler = (type) => async (req, res, next) => {
   const page = getPageConfig(type);
   if (!page) {
@@ -638,9 +657,11 @@ const listHandler = (type) => async (req, res, next) => {
     });
     const basePath = `${req.baseUrl}${ROUTE_MAP[type]}`;
     const defaults = { ...(hydrated.defaults || {}) };
+    const scopeKey = BASIC_INFO_SCOPE_KEYS[type] || `master_data.basic_info.${type}`;
     return renderPage(req, res, "../../master_data/basic-info/index", hydrated, {
       rows,
       basePath,
+      scopeKey,
       values: flashMatch ? flashMatch.values : defaults,
       error: flashMatch ? flashMatch.error : null,
       modalOpen,
@@ -770,6 +791,22 @@ const createHandler = (type) => async (req, res, next) => {
       if (!itemTypes.length) {
         return renderIndexError(req, res, page, values, res.locals.t("error_required_fields"), "create", basePath, type);
       }
+      const approval = await handleScreenApproval({
+        req,
+        scopeKey: BASIC_INFO_SCOPE_KEYS[type] || `master_data.basic_info.${type}`,
+        action: "create",
+        entityType: getBasicInfoEntityType(type),
+        entityId: "NEW",
+        summary: `${res.locals.t("create")} ${res.locals.t(page.titleKey)}`,
+        oldValue: null,
+        newValue: values,
+        t: res.locals.t,
+      });
+
+      if (approval.queued) {
+        return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+      }
+
       await knex.transaction(async (trx) => {
         // Insert the main record, then map each selected item type.
         const [row] = await trx(page.table)
@@ -792,6 +829,22 @@ const createHandler = (type) => async (req, res, next) => {
     } else {
       if (page.branchMap) {
         const { branch_ids: branchIds = [], ...rest } = values;
+        const approval = await handleScreenApproval({
+          req,
+          scopeKey: BASIC_INFO_SCOPE_KEYS[type] || `master_data.basic_info.${type}`,
+          action: "create",
+          entityType: getBasicInfoEntityType(type),
+          entityId: "NEW",
+          summary: `${res.locals.t("create")} ${res.locals.t(page.titleKey)}`,
+          oldValue: null,
+          newValue: values,
+          t: res.locals.t,
+        });
+
+        if (approval.queued) {
+          return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+        }
+
         await knex.transaction(async (trx) => {
           const [row] = await trx(page.table)
             .insert({
@@ -811,6 +864,22 @@ const createHandler = (type) => async (req, res, next) => {
           }
         });
       } else {
+        const approval = await handleScreenApproval({
+          req,
+          scopeKey: BASIC_INFO_SCOPE_KEYS[type] || `master_data.basic_info.${type}`,
+          action: "create",
+          entityType: getBasicInfoEntityType(type),
+          entityId: "NEW",
+          summary: `${res.locals.t("create")} ${res.locals.t(page.titleKey)}`,
+          oldValue: null,
+          newValue: values,
+          t: res.locals.t,
+        });
+
+        if (approval.queued) {
+          return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+        }
+
         const insertValues = {
           ...values,
           ...(page.autoCodeFromName ? { code: toCode(values.name) } : {}),
@@ -822,7 +891,7 @@ const createHandler = (type) => async (req, res, next) => {
     return res.redirect(basePath);
   } catch (err) {
     console.error("[basic-info:create]", { type, error: err });
-    return renderIndexError(req, res, page, values, res.locals.t("error_unable_save"), "create", basePath, type);
+    return renderIndexError(req, res, page, values, err?.message || res.locals.t("error_unable_save"), "create", basePath, type);
   }
 };
 
@@ -849,6 +918,11 @@ const updateHandler = (type) => async (req, res, next) => {
   }
 
   try {
+    const existingRow = await knex(page.table).where({ id }).first();
+    if (!existingRow) {
+      return renderIndexError(req, res, page, values, res.locals.t("error_not_found"), "edit", basePath, type);
+    }
+
     if (page.table === "erp.uom") {
       const existing = await knex(page.table).select("code").where({ id }).first();
       if (existing && existing.code !== values.code) {
@@ -863,6 +937,21 @@ const updateHandler = (type) => async (req, res, next) => {
       const { item_types: itemTypes = [], ...rest } = values;
       if (!itemTypes.length) {
         return renderIndexError(req, res, page, values, res.locals.t("error_required_fields"), "edit", basePath, type);
+      }
+      const approval = await handleScreenApproval({
+        req,
+        scopeKey: BASIC_INFO_SCOPE_KEYS[type] || `master_data.basic_info.${type}`,
+        action: "edit",
+        entityType: getBasicInfoEntityType(type),
+        entityId: id,
+        summary: `${res.locals.t("edit")} ${res.locals.t(page.titleKey)}`,
+        oldValue: existingRow,
+        newValue: values,
+        t: res.locals.t,
+      });
+
+      if (approval.queued) {
+        return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
       }
       const auditFields = page.hasUpdatedFields === false ? {} : { updated_by: req.user ? req.user.id : null, updated_at: knex.fn.now() };
       await knex.transaction(async (trx) => {
@@ -889,6 +978,21 @@ const updateHandler = (type) => async (req, res, next) => {
       const auditFields = page.hasUpdatedFields === false ? {} : { updated_by: req.user ? req.user.id : null, updated_at: knex.fn.now() };
       if (page.branchMap) {
         const { branch_ids: branchIds = [], ...rest } = values;
+        const approval = await handleScreenApproval({
+          req,
+          scopeKey: BASIC_INFO_SCOPE_KEYS[type] || `master_data.basic_info.${type}`,
+          action: "edit",
+          entityType: getBasicInfoEntityType(type),
+          entityId: id,
+          summary: `${res.locals.t("edit")} ${res.locals.t(page.titleKey)}`,
+          oldValue: existingRow,
+          newValue: values,
+          t: res.locals.t,
+        });
+
+        if (approval.queued) {
+          return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+        }
         await knex.transaction(async (trx) => {
           await trx(page.table)
             .where({ id })
@@ -909,6 +1013,21 @@ const updateHandler = (type) => async (req, res, next) => {
           }
         });
       } else {
+        const approval = await handleScreenApproval({
+          req,
+          scopeKey: BASIC_INFO_SCOPE_KEYS[type] || `master_data.basic_info.${type}`,
+          action: "edit",
+          entityType: getBasicInfoEntityType(type),
+          entityId: id,
+          summary: `${res.locals.t("edit")} ${res.locals.t(page.titleKey)}`,
+          oldValue: existingRow,
+          newValue: values,
+          t: res.locals.t,
+        });
+
+        if (approval.queued) {
+          return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+        }
         await knex(page.table)
           .where({ id })
           .update({
@@ -920,7 +1039,7 @@ const updateHandler = (type) => async (req, res, next) => {
     return res.redirect(basePath);
   } catch (err) {
     console.error("[basic-info:update]", { type, id, error: err });
-    return renderIndexError(req, res, page, values, res.locals.t("error_unable_save"), "edit", basePath, type);
+    return renderIndexError(req, res, page, values, err?.message || res.locals.t("error_unable_save"), "edit", basePath, type);
   }
 };
 
@@ -937,6 +1056,24 @@ const toggleHandler = (type) => async (req, res, next) => {
     if (!current) {
       return next(new HttpError(404, "Record not found"));
     }
+    const scopeKey = BASIC_INFO_SCOPE_KEYS[type] || `master_data.basic_info.${type}`;
+    const entityType = getBasicInfoEntityType(type);
+    const summary = `${res.locals.t("edit")} ${res.locals.t(page.titleKey)}`;
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey,
+      action: "edit",
+      entityType,
+      entityId: id,
+      summary,
+      oldValue: current,
+      newValue: { is_active: !current.is_active },
+      t: res.locals.t,
+    });
+
+    if (approval.queued) {
+      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+    }
     const auditFields = page.hasUpdatedFields === false ? {} : { updated_by: req.user ? req.user.id : null, updated_at: knex.fn.now() };
     await knex(page.table)
       .where({ id })
@@ -946,7 +1083,7 @@ const toggleHandler = (type) => async (req, res, next) => {
       });
     return res.redirect(basePath);
   } catch (err) {
-    return renderIndexError(req, res, page, {}, res.locals.t("error_update_status"), "delete", basePath, type);
+    return renderIndexError(req, res, page, {}, err?.message || res.locals.t("error_update_status"), "delete", basePath, type);
   }
 };
 
@@ -959,20 +1096,43 @@ const deleteHandler = (type) => async (req, res, next) => {
   const basePath = `${req.baseUrl}${ROUTE_MAP[type]}`;
 
   try {
+    const existing = await knex(page.table).where({ id }).first();
+    if (!existing) {
+      return renderIndexError(req, res, page, {}, res.locals.t("error_not_found"), "delete", basePath, type);
+    }
+    const scopeKey = BASIC_INFO_SCOPE_KEYS[type] || `master_data.basic_info.${type}`;
+    const entityType = getBasicInfoEntityType(type);
+    const summary = `${res.locals.t("delete")} ${res.locals.t(page.titleKey)}`;
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey,
+      action: "delete",
+      entityType,
+      entityId: id,
+      summary,
+      oldValue: existing,
+      newValue: null,
+      t: res.locals.t,
+    });
+
+    if (approval.queued) {
+      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+    }
     await knex(page.table).where({ id }).del();
     return res.redirect(basePath);
   } catch (err) {
-    return renderIndexError(req, res, page, {}, res.locals.t("error_delete"), "delete", basePath, type);
+    return renderIndexError(req, res, page, {}, err?.message || res.locals.t("error_delete"), "delete", basePath, type);
   }
 };
 
 Object.entries(ROUTE_MAP).forEach(([type, path]) => {
-  router.get(path, listHandler(type));
-  router.get(`${path}/new`, newHandler(type));
-  router.post(path, createHandler(type));
-  router.post(`${path}/:id`, updateHandler(type));
-  router.post(`${path}/:id/toggle`, toggleHandler(type));
-  router.post(`${path}/:id/delete`, deleteHandler(type));
+  const scopeKey = BASIC_INFO_SCOPE_KEYS[type] || `master_data.basic_info.${type}`;
+  router.get(path, requirePermission("SCREEN", scopeKey, "navigate"), listHandler(type));
+  router.get(`${path}/new`, requirePermission("SCREEN", scopeKey, "create"), newHandler(type));
+  router.post(path, requirePermission("SCREEN", scopeKey, "create"), createHandler(type));
+  router.post(`${path}/:id`, requirePermission("SCREEN", scopeKey, "edit"), updateHandler(type));
+  router.post(`${path}/:id/toggle`, requirePermission("SCREEN", scopeKey, "delete"), toggleHandler(type));
+  router.post(`${path}/:id/delete`, requirePermission("SCREEN", scopeKey, "hard_delete"), deleteHandler(type));
 });
 
 router.get("/groups/products/product-groups", (req, res) => {

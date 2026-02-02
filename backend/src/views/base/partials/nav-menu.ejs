@@ -1,0 +1,68 @@
+<% const renderChildren = (items, level = 0, parentKey = "") => { %>
+  <% items.forEach((item) => { %>
+    <% const itemKey = parentKey ? `${parentKey}-${item.key}` : item.key; %>
+    <% const isLink = item.scopeType && item.scopeKey && item.route; %>
+    <% const hasChildren = Array.isArray(item.children) && item.children.length > 0; %>
+    <% const isVisibleLink = isLink ? can(item.scopeType, item.scopeKey, "view") : false; %>
+    <% const isVisibleGroup = hasChildren ? item.children.some((child) => {
+      if (child.scopeType && child.scopeKey && child.route) return can(child.scopeType, child.scopeKey, "view");
+      if (child.children && child.children.length) {
+        return child.children.some((grand) => {
+          if (grand.scopeType && grand.scopeKey && grand.route) return can(grand.scopeType, grand.scopeKey, "view");
+          if (grand.children && grand.children.length) {
+            return grand.children.some((deep) => deep.scopeType && deep.scopeKey && deep.route && can(deep.scopeType, deep.scopeKey, "view"));
+          }
+          return false;
+        });
+      }
+      return false;
+    }) : false; %>
+
+    <% if (isLink && isVisibleLink) { %>
+      <a class="block rounded-lg px-2.5 py-2 text-sm text-slate-700 transition hover:bg-accent/10 hover:text-accent" href="<%= item.route %>"><%= t(item.labelKey) %></a>
+    <% } else if (hasChildren && isVisibleGroup) { %>
+      <div class="relative group/sub" data-submenu-wrap>
+        <span class="hidden lg:block absolute -right-4 top-0 h-full w-4"></span>
+        <button class="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600 lg:text-[9px] lg:tracking-widest" type="button" data-submenu-toggle="<%= itemKey %>">
+          <span><%= t(item.labelKey) %></span>
+          <svg class="h-3 w-3 opacity-70" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+        <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-2 lg:w-64" data-submenu="<%= itemKey %>">
+          <% renderChildren(item.children, level + 1, itemKey); %>
+        </div>
+      </div>
+    <% } %>
+  <% }) %>
+<% }; %>
+
+<% (navConfig || []).forEach((module) => { %>
+  <% const moduleVisible = Array.isArray(module.children) && module.children.some((child) => {
+    if (child.scopeType && child.scopeKey && child.route) return can(child.scopeType, child.scopeKey, "view");
+    if (child.children && child.children.length) {
+      return child.children.some((grand) => {
+        if (grand.scopeType && grand.scopeKey && grand.route) return can(grand.scopeType, grand.scopeKey, "view");
+        if (grand.children && grand.children.length) {
+          return grand.children.some((deep) => deep.scopeType && deep.scopeKey && deep.route && can(deep.scopeType, deep.scopeKey, "view"));
+        }
+        return false;
+      });
+    }
+    return false;
+  }); %>
+  <% if (!moduleVisible) return; %>
+  <div class="relative w-full group/menu lg:w-auto" data-submenu-wrap>
+    <button class="flex w-full items-center justify-between gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600 shadow-sm transition hover:border-accent/40 hover:text-accent focus:outline-none focus:ring-2 focus:ring-accent/30 lg:w-auto lg:px-2.5 lg:py-1 lg:text-[10px] lg:tracking-widest" type="button" data-submenu-toggle="<%= module.key %>">
+      <span><%= t(module.labelKey) %></span>
+      <svg class="h-3 w-3 opacity-70" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <path d="M5 7l5 6 5-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </button>
+    <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-md nav-dropdown lg:absolute lg:left-0 lg:mt-2 lg:w-72 lg:shadow-xl" data-submenu="<%= module.key %>">
+      <div class="space-y-3">
+        <% renderChildren(module.children || [], 0, module.key); %>
+      </div>
+    </div>
+  </div>
+<% }) %>

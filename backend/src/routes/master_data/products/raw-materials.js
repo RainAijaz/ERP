@@ -1,6 +1,9 @@
 const express = require("express");
 const knex = require("../../../db/knex");
 const { HttpError } = require("../../../middleware/errors/http-error");
+const { requirePermission } = require("../../../middleware/access/role-permissions");
+const { handleScreenApproval } = require("../../../middleware/approvals/screen-approval");
+const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
 
 const router = express.Router();
 const ITEM_TYPE = "RM";
@@ -142,7 +145,7 @@ const renderIndex = (req, res, payload) => {
   });
 };
 
-router.get("/", async (req, res, next) => {
+router.get("/", requirePermission("SCREEN", "master_data.products.raw_materials", "navigate"), async (req, res, next) => {
   try {
     // --- UPDATED: Pass req.query to loadRows ---
     const [rows, options, rateDetailsByItem, users] = await Promise.all([loadRows(req.query), loadOptions(), loadRateDetails(), loadUsers()]);
@@ -162,7 +165,7 @@ router.get("/", async (req, res, next) => {
   }
 });
 
-router.post("/", async (req, res, next) => {
+router.post("/", requirePermission("SCREEN", "master_data.products.raw_materials", "navigate"), async (req, res, next) => {
   const values = { ...req.body };
   const basePath = `${req.baseUrl}`;
 
@@ -211,9 +214,51 @@ router.post("/", async (req, res, next) => {
       });
     }
 
+    const group = await knex("erp.product_groups").select("name").where({ id: subgroupMatch.group_id }).first();
+    const code = toCode(`${group ? group.name : subgroupMatch.group_id}_${name}`);
+    const rateRows = buildRateRows({
+      itemId: null,
+      colorIds,
+      sizeIds,
+      rates,
+      userId: req.user ? req.user.id : null,
+      now: () => knex.fn.now(),
+    });
+    const approvalRates = rateRows.map((row) => ({
+      color_id: row.color_id,
+      size_id: row.size_id,
+      purchase_rate: row.purchase_rate,
+      avg_purchase_rate: row.avg_purchase_rate,
+    }));
+
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey: "master_data.products.raw_materials",
+      action: "create",
+      entityType: SCREEN_ENTITY_TYPES["master_data.products.raw_materials"],
+      entityId: "NEW",
+      summary: `${res.locals.t("create")} ${res.locals.t("raw_materials")}`,
+      oldValue: null,
+      newValue: {
+        _action: "create",
+        item_type: ITEM_TYPE,
+        code,
+        name,
+        name_ur: values.name_ur || null,
+        group_id: subgroupMatch.group_id,
+        subgroup_id,
+        base_uom_id,
+        min_stock_level: min_stock_level === null ? 0 : min_stock_level,
+        rates: approvalRates,
+      },
+      t: res.locals.t,
+    });
+
+    if (approval.queued) {
+      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+    }
+
     await knex.transaction(async (trx) => {
-      const group = await trx("erp.product_groups").select("name").where({ id: subgroupMatch.group_id }).first();
-      const code = toCode(`${group ? group.name : subgroupMatch.group_id}_${name}`);
       const [item] = await trx("erp.items")
         .insert({
           item_type: ITEM_TYPE,
@@ -265,11 +310,11 @@ router.post("/", async (req, res, next) => {
   }
 });
 
-router.post("/:id", async (req, res, next) => {
+router.post("/:id", requirePermission("SCREEN", "master_data.products.raw_materials", "navigate"), async (req, res, next) => {
   const id = Number(req.params.id);
   const values = { ...req.body };
   const basePath = `${req.baseUrl}`;
-  if (!id) return next(new HttpError(404, "Raw material not found"));
+  if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
 
   try {
     const name = (values.name || "").trim();
@@ -317,9 +362,51 @@ router.post("/:id", async (req, res, next) => {
       });
     }
 
+    const group = await knex("erp.product_groups").select("name").where({ id: subgroupMatch.group_id }).first();
+    const code = toCode(`${group ? group.name : subgroupMatch.group_id}_${name}`);
+    const rateRows = buildRateRows({
+      itemId: id,
+      colorIds,
+      sizeIds,
+      rates,
+      userId: req.user ? req.user.id : null,
+      now: () => knex.fn.now(),
+    });
+    const approvalRates = rateRows.map((row) => ({
+      color_id: row.color_id,
+      size_id: row.size_id,
+      purchase_rate: row.purchase_rate,
+      avg_purchase_rate: row.avg_purchase_rate,
+    }));
+
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey: "master_data.products.raw_materials",
+      action: "edit",
+      entityType: SCREEN_ENTITY_TYPES["master_data.products.raw_materials"],
+      entityId: id,
+      summary: `${res.locals.t("edit")} ${res.locals.t("raw_materials")}`,
+      oldValue: null,
+      newValue: {
+        _action: "update",
+        item_type: ITEM_TYPE,
+        code,
+        name,
+        name_ur: values.name_ur || null,
+        group_id: subgroupMatch.group_id,
+        subgroup_id,
+        base_uom_id,
+        min_stock_level: min_stock_level === null ? 0 : min_stock_level,
+        rates: approvalRates,
+      },
+      t: res.locals.t,
+    });
+
+    if (approval.queued) {
+      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+    }
+
     await knex.transaction(async (trx) => {
-      const group = await trx("erp.product_groups").select("name").where({ id: subgroupMatch.group_id }).first();
-      const code = toCode(`${group ? group.name : subgroupMatch.group_id}_${name}`);
       await trx("erp.items")
         .where({ id })
         .update({
@@ -369,14 +456,31 @@ router.post("/:id", async (req, res, next) => {
   }
 });
 
-router.post("/:id/toggle", async (req, res, next) => {
+router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.raw_materials", "delete"), async (req, res, next) => {
   const id = Number(req.params.id);
-  if (!id) return next(new HttpError(404, "Raw material not found"));
+  if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
   const basePath = `${req.baseUrl}`;
 
   try {
     const current = await knex("erp.items").select("is_active").where({ id }).first();
-    if (!current) return next(new HttpError(404, "Raw material not found"));
+    if (!current) return next(new HttpError(404, res.locals.t("error_not_found")));
+
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey: "master_data.products.raw_materials",
+      action: "edit",
+      entityType: SCREEN_ENTITY_TYPES["master_data.products.raw_materials"],
+      entityId: id,
+      summary: `${res.locals.t("edit")} ${res.locals.t("raw_materials")}`,
+      oldValue: current,
+      newValue: { _action: "toggle", is_active: !current.is_active, item_type: ITEM_TYPE },
+      t: res.locals.t,
+    });
+
+    if (approval.queued) {
+      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+    }
+
     await knex("erp.items")
       .where({ id })
       .update({
@@ -399,11 +503,30 @@ router.post("/:id/toggle", async (req, res, next) => {
   }
 });
 
-router.post("/:id/delete", async (req, res, next) => {
+router.post("/:id/delete", requirePermission("SCREEN", "master_data.products.raw_materials", "hard_delete"), async (req, res, next) => {
   const id = Number(req.params.id);
-  if (!id) return next(new HttpError(404, "Raw material not found"));
+  if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
   const basePath = `${req.baseUrl}`;
   try {
+    const existing = await knex("erp.items").select("id", "name", "is_active").where({ id }).first();
+    if (!existing) return next(new HttpError(404, res.locals.t("error_not_found")));
+
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey: "master_data.products.raw_materials",
+      action: "delete",
+      entityType: SCREEN_ENTITY_TYPES["master_data.products.raw_materials"],
+      entityId: id,
+      summary: `${res.locals.t("delete")} ${res.locals.t("raw_materials")}`,
+      oldValue: existing,
+      newValue: { _action: "delete", item_type: ITEM_TYPE },
+      t: res.locals.t,
+    });
+
+    if (approval.queued) {
+      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+    }
+
     await knex("erp.items").where({ id }).del();
     return res.redirect(basePath);
   } catch (err) {

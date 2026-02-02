@@ -1,0 +1,136 @@
+<div class="flex flex-col gap-6">
+  <div class="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white/90 px-6 py-5 shadow-sm">
+    <div class="space-y-1">
+      <h1 class="text-2xl font-bold text-slate-800"><%= t('roles') %></h1>
+      <p class="text-sm text-slate-500"><%= t('manage_user_roles') %></p>
+    </div>
+    <% if (can('SCREEN', 'administration.roles', 'create')) { %>
+      <button onclick="openModal('/administration/roles/new')" class="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-accent/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+        <%= t('add_role') %>
+      </button>
+    <% } %>
+  </div>
+
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-sm">
+        <thead class="bg-slate-50 border-b border-slate-100">
+          <tr>
+            <th class="px-6 py-4 font-semibold text-slate-600"><%= t('role_name') %></th>
+            <th class="px-6 py-4 font-semibold text-slate-600"><%= t('description') %></th>
+            <th class="px-6 py-4 font-semibold text-slate-600 text-right"><%= t('actions') %></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          <% if (roles.length === 0) { %>
+            <tr>
+              <td colspan="3" class="px-6 py-12 text-center text-slate-400">
+                <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
+                  <svg class="h-6 w-6 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 6v12"></path>
+                    <path d="M6 12h12"></path>
+                  </svg>
+                </div>
+                <p class="mt-3 text-sm font-medium text-slate-500"><%= t('no_records_found') %></p>
+              </td>
+            </tr>
+          <% } %>
+          <% roles.forEach(role => { %>
+            <tr class="hover:bg-slate-50/50 transition-colors">
+              <td class="px-6 py-4 font-medium text-slate-900"><%= role.name %></td>
+              <td class="px-6 py-4 text-slate-600"><%= role.description || '-' %></td>
+              <td class="px-6 py-4 text-right">
+                <% if (can('SCREEN', 'administration.roles', 'edit')) { %>
+                  <button onclick="openModal('/administration/roles/<%= role.id %>/edit')" class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30">
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                    <span class="sr-only"><%= t('edit') %></span>
+                  </button>
+                <% } %>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<%- include('../../base/partials/modal-shell') %>
+
+<script>
+  // Unified Modal Script
+  const i18nSave = "<%= t('save') %>";
+  const i18nSaving = "<%= t('saving') %>";
+  const i18nUnexpectedResponse = "<%= t('unexpected_response') %>";
+  const i18nErrorSaving = "<%= t('error_saving') %>";
+  const i18nErrorGeneric = "<%= t('error_generic') %>";
+  const i18nLoadFailed = "<%= t('load_failed') %>";
+
+  function openModal(url) {
+    const shell = document.getElementById('modal-shell');
+    const backdrop = document.getElementById('modal-backdrop');
+    const content = document.getElementById('modal-content');
+
+    shell.classList.remove('hidden');
+    shell.classList.add('flex');
+    backdrop.classList.remove('hidden');
+    content.innerHTML = '<div class="flex h-40 items-center justify-center"><svg class="h-6 w-6 animate-spin text-slate-300" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>';
+
+    fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(res => res.text())
+      .then(html => {
+        content.innerHTML = html;
+        const form = content.querySelector('form');
+        if (form) form.addEventListener('submit', handleFormSubmit);
+      })
+        .catch(err => content.innerHTML = `<div class="p-6 text-red-600 text-center">${i18nLoadFailed}</div>`);
+  }
+
+  function handleFormSubmit(e) {
+    e.preventDefault();
+    const form = e.target;
+    const btn = form.querySelector('button[type="submit"]');
+    const originalText = btn ? btn.innerText : i18nSave;
+    if (btn) { btn.disabled = true; btn.innerText = i18nSaving; }
+
+    const formData = new URLSearchParams(new FormData(form));
+
+    const csrfToken = form.querySelector('input[name="_csrf"]')?.value;
+
+    fetch(form.action, {
+      method: form.method,
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Requested-With': 'XMLHttpRequest',
+        'Accept': 'application/json',
+        ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
+      },
+      body: formData
+    })
+    .then(async r => {
+      const contentType = r.headers.get('content-type') || '';
+      let body;
+      if (contentType.includes('application/json')) {
+        body = await r.json();
+      } else {
+        const text = await r.text();
+        body = { error: text || i18nUnexpectedResponse };
+      }
+      return { status: r.status, body };
+    })
+    .then(({ status, body }) => {
+      if (status >= 400 || body.error) {
+        alert(body.error || i18nErrorSaving);
+        if (btn) { btn.disabled = false; btn.innerText = originalText; }
+      } else if (body.redirect) {
+        window.location.href = body.redirect;
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      alert(i18nErrorGeneric);
+      if (btn) { btn.disabled = false; btn.innerText = originalText; }
+    });
+  }
+</script>

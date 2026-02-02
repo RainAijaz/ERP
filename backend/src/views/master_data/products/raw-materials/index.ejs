@@ -22,6 +22,9 @@
   <%- include("../../../base/partials/error-banner", { error, modalOpen }) %>
 
   <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md" data-print-area>
+    <% const canEdit = can('SCREEN', 'master_data.products.raw_materials', 'edit'); %>
+    <% const canDelete = can('SCREEN', 'master_data.products.raw_materials', 'delete'); %>
+    <% const canHardDelete = can('SCREEN', 'master_data.products.raw_materials', 'hard_delete'); %>
     <div class="px-5 pt-4 text-center text-xl font-display font-semibold uppercase tracking-[0.35em] text-slate-900" data-print-header>
       <%= t("brand") %>
     </div>
@@ -123,7 +126,7 @@
                 <td class="px-3 py-3 whitespace-nowrap col-actions w-px">
                   <%- include("../../../base/partials/table-actions", { t, row, basePath, withMenu: true, editFields: [
                     "name", "name_ur", "subgroup_id", "base_uom_id", "min_stock_level", "color_rate_pairs"
-                  ] }) %>
+                  ], canEdit, canDelete, canHardDelete }) %>
                 </td>
               </tr>
               

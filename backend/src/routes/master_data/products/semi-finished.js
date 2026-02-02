@@ -1,6 +1,9 @@
 const express = require("express");
 const knex = require("../../../db/knex");
 const { HttpError } = require("../../../middleware/errors/http-error");
+const { requirePermission } = require("../../../middleware/access/role-permissions");
+const { handleScreenApproval } = require("../../../middleware/approvals/screen-approval");
+const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
 
 const router = express.Router();
 const ITEM_TYPE = "SFG";
@@ -75,9 +78,7 @@ const loadRows = async (filters = {}) => {
     query = query.whereRaw("COALESCE(i.min_stock_level, 0) > 0");
   }
 
-  query = query
-    .groupBy("i.id", "g.name", "g.name_ur", "sg_item.name", "sg_item.name_ur", "u.code", "u.name", "u.name_ur", "cu.username")
-    .orderBy("i.id", "desc");
+  query = query.groupBy("i.id", "g.name", "g.name_ur", "sg_item.name", "sg_item.name_ur", "u.code", "u.name", "u.name_ur", "cu.username").orderBy("i.id", "desc");
 
   return query;
 };
@@ -104,7 +105,7 @@ const renderIndex = (req, res, payload) => {
   });
 };
 
-router.get("/", async (req, res, next) => {
+router.get("/", requirePermission("SCREEN", "master_data.products.semi_finished", "navigate"), async (req, res, next) => {
   try {
     const filters = {
       subgroup_id: req.query.subgroup_id || "",
@@ -133,7 +134,7 @@ const normalizeUsageIds = (value) => {
   return [value];
 };
 
-router.post("/", async (req, res) => {
+router.post("/", requirePermission("SCREEN", "master_data.products.semi_finished", "navigate"), async (req, res) => {
   const values = { ...req.body };
   const basePath = `${req.baseUrl}`;
   try {
@@ -163,6 +164,33 @@ router.post("/", async (req, res) => {
         modalMode: "create",
         values,
       });
+    }
+
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey: "master_data.products.semi_finished",
+      action: "create",
+      entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
+      entityId: "NEW",
+      summary: `${res.locals.t("create")} ${res.locals.t("semi_finished")}`,
+      oldValue: null,
+      newValue: {
+        _action: "create",
+        item_type: ITEM_TYPE,
+        code,
+        name,
+        name_ur: values.name_ur || null,
+        group_id,
+        subgroup_id: user_subgroup_id,
+        base_uom_id,
+        min_stock_level,
+        usage_ids: uniqueUsageIds,
+      },
+      t: res.locals.t,
+    });
+
+    if (approval.queued) {
+      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
     }
 
     await knex.transaction(async (trx) => {
@@ -206,11 +234,11 @@ router.post("/", async (req, res) => {
     });
   }
 });
-router.post("/:id", async (req, res, next) => {
+router.post("/:id", requirePermission("SCREEN", "master_data.products.semi_finished", "navigate"), async (req, res, next) => {
   const id = Number(req.params.id);
   const values = { ...req.body };
   const basePath = `${req.baseUrl}`;
-  if (!id) return next(new HttpError(404, "Semi-finished item not found"));
+  if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
 
   try {
     const name = (values.name || "").trim();
@@ -237,6 +265,33 @@ router.post("/:id", async (req, res, next) => {
         modalMode: "edit",
         values: { ...values, id },
       });
+    }
+
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey: "master_data.products.semi_finished",
+      action: "edit",
+      entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
+      entityId: id,
+      summary: `${res.locals.t("edit")} ${res.locals.t("semi_finished")}`,
+      oldValue: null,
+      newValue: {
+        _action: "update",
+        item_type: ITEM_TYPE,
+        code,
+        name,
+        name_ur: values.name_ur || null,
+        group_id,
+        subgroup_id: user_subgroup_id,
+        base_uom_id,
+        min_stock_level,
+        usage_ids: uniqueUsageIds,
+      },
+      t: res.locals.t,
+    });
+
+    if (approval.queued) {
+      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
     }
 
     await knex.transaction(async (trx) => {
@@ -278,13 +333,30 @@ router.post("/:id", async (req, res, next) => {
     });
   }
 });
-router.post("/:id/toggle", async (req, res, next) => {
+router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.semi_finished", "delete"), async (req, res, next) => {
   const id = Number(req.params.id);
-  if (!id) return next(new HttpError(404, "Semi-finished item not found"));
+  if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
   const basePath = `${req.baseUrl}`;
   try {
     const current = await knex("erp.items").select("is_active").where({ id }).first();
-    if (!current) return next(new HttpError(404, "Semi-finished item not found"));
+    if (!current) return next(new HttpError(404, res.locals.t("error_not_found")));
+
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey: "master_data.products.semi_finished",
+      action: "edit",
+      entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
+      entityId: id,
+      summary: `${res.locals.t("edit")} ${res.locals.t("semi_finished")}`,
+      oldValue: current,
+      newValue: { _action: "toggle", is_active: !current.is_active, item_type: ITEM_TYPE },
+      t: res.locals.t,
+    });
+
+    if (approval.queued) {
+      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+    }
+
     await knex("erp.items")
       .where({ id })
       .update({
@@ -306,11 +378,30 @@ router.post("/:id/toggle", async (req, res, next) => {
   }
 });
 
-router.post("/:id/delete", async (req, res, next) => {
+router.post("/:id/delete", requirePermission("SCREEN", "master_data.products.semi_finished", "hard_delete"), async (req, res, next) => {
   const id = Number(req.params.id);
-  if (!id) return next(new HttpError(404, "Semi-finished item not found"));
+  if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
   const basePath = `${req.baseUrl}`;
   try {
+    const existing = await knex("erp.items").select("id", "name", "is_active").where({ id }).first();
+    if (!existing) return next(new HttpError(404, res.locals.t("error_not_found")));
+
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey: "master_data.products.semi_finished",
+      action: "delete",
+      entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
+      entityId: id,
+      summary: `${res.locals.t("delete")} ${res.locals.t("semi_finished")}`,
+      oldValue: existing,
+      newValue: { _action: "delete", item_type: ITEM_TYPE },
+      t: res.locals.t,
+    });
+
+    if (approval.queued) {
+      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+    }
+
     await knex("erp.items").where({ id }).del();
     return res.redirect(basePath);
   } catch (err) {

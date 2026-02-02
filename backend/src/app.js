@@ -20,6 +20,8 @@ const activityLog = require("./middleware/audit/activity-log");
 const csrf = require("./middleware/security/csrf");
 const notFound = require("./middleware/errors/not-found");
 const errorHandler = require("./middleware/errors/error-handler");
+const knex = require("./db/knex");
+const { navConfig, syncNavScopes } = require("./utils/nav-config");
 
 const app = express();
 
@@ -33,6 +35,10 @@ app.set("view engine", "ejs");
 app.use(requestId);
 app.use(locale);
 app.use(branchContext);
+app.use((req, res, next) => {
+  res.locals.navConfig = navConfig;
+  next();
+});
 
 app.use(auth);
 app.use(sessionTimeout);
@@ -55,3 +61,7 @@ app.use(errorHandler);
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`Server running on port ${port}`));
+
+syncNavScopes(knex).catch((err) => {
+  console.error("Failed to sync nav permission scopes:", err.message || err);
+});

@@ -67,7 +67,20 @@ VALUES
   ('ACCOUNT',               'Account',     'Chart of accounts record'),
   ('EMPLOYEE',              'Employee',    'Employee master record'),
   ('LABOUR',                'Labour',      'Labour master record'),
-  ('STOCKCOUNTADJUSTMENT',  'Stock Count', 'Stock count session/document')
+  ('STOCKCOUNTADJUSTMENT',  'Stock Count', 'Stock count session/document'),
+  ('UOM',                   'Unit of Measure', 'Basic info: units'),
+  ('SIZE',                  'Size',        'Basic info: sizes'),
+  ('COLOR',                 'Color',       'Basic info: colors'),
+  ('GRADE',                 'Grade',       'Basic info: grades'),
+  ('PACKING_TYPE',          'Packing Type','Basic info: packing types'),
+  ('CITY',                  'City',        'Basic info: cities'),
+  ('PRODUCT_GROUP',         'Product Group','Basic info: product groups'),
+  ('PRODUCT_SUBGROUP',      'Product Subgroup','Basic info: product subgroups'),
+  ('PRODUCT_TYPE',          'Product Type','Basic info: product types'),
+  ('PARTY_GROUP',           'Party Group', 'Basic info: party groups'),
+  ('ACCOUNT_GROUP',         'Account Group','Basic info: account groups'),
+  ('DEPARTMENT',            'Department',  'Basic info: departments'),
+  ('UOM_CONVERSION',        'UOM Conversion','Basic info: unit conversions')
 ON CONFLICT (code) DO NOTHING;
 
 
@@ -149,6 +162,16 @@ ON CONFLICT (code) DO UPDATE SET
   affects_stock     = EXCLUDED.affects_stock,
   affects_gl        = EXCLUDED.affects_gl;
 
+-- ---------------------------------------------------------
+-- A5b) Approval policy for voucher creation
+-- ---------------------------------------------------------
+INSERT INTO erp.approval_policy (entity_type, entity_key, action, requires_approval)
+SELECT 'VOUCHER_TYPE', code, 'create', requires_approval
+FROM erp.voucher_type
+ON CONFLICT (entity_type, entity_key, action) DO UPDATE SET
+  requires_approval = EXCLUDED.requires_approval,
+  updated_at = now();
+
 
 -- ---------------------------------------------------------
 -- A6) Return reasons
@@ -185,7 +208,182 @@ VALUES
   ('MODULE','production','Production'),
   ('MODULE','inventory','Inventory'),
   ('MODULE','outward_returnable','Outward & returnable'),
-  ('MODULE','sales','Sales')
+  ('MODULE','sales','Sales'),
+  ('MODULE','reports','Reports')
+ON CONFLICT (scope_type, scope_key) DO NOTHING;
+
+-- Ensure module grouping for module-level entries
+UPDATE erp.permission_scope_registry
+SET module_group = 'Modules'
+WHERE scope_type = 'MODULE' AND (module_group IS NULL OR module_group = 'Other');
+
+-- =====================================================================
+-- B1) SCREEN SCOPES — ADMINISTRATION + MASTER DATA (CODE-DRIVEN)
+-- =====================================================================
+INSERT INTO erp.permission_scope_registry (scope_type, scope_key, description, module_group)
+VALUES
+  -- Administration
+  ('SCREEN','administration.branches','Branches', 'Administration'),
+  ('SCREEN','administration.users','Users', 'Administration'),
+  ('SCREEN','administration.roles','Roles', 'Administration'),
+  ('SCREEN','administration.permissions','Permissions', 'Administration'),
+  ('SCREEN','administration.approvals','Approvals', 'Administration'),
+  ('SCREEN','administration.approval_settings','Approval Settings', 'Administration'),
+  ('SCREEN','administration.audit_logs','Activity Log', 'Administration'),
+
+  -- Master Data > Basic Info
+  ('SCREEN','master_data.basic_info.units','Units', 'Master Data'),
+  ('SCREEN','master_data.basic_info.sizes','Sizes', 'Master Data'),
+  ('SCREEN','master_data.basic_info.colors','Colors', 'Master Data'),
+  ('SCREEN','master_data.basic_info.grades','Grades', 'Master Data'),
+  ('SCREEN','master_data.basic_info.packing_types','Packing Types', 'Master Data'),
+  ('SCREEN','master_data.basic_info.cities','Cities', 'Master Data'),
+  ('SCREEN','master_data.basic_info.product_groups','Product Groups', 'Master Data'),
+  ('SCREEN','master_data.basic_info.product_subgroups','Product Subgroups', 'Master Data'),
+  ('SCREEN','master_data.basic_info.product_types','Product Types', 'Master Data'),
+  ('SCREEN','master_data.basic_info.party_groups','Party Groups', 'Master Data'),
+  ('SCREEN','master_data.basic_info.account_groups','Account Groups', 'Master Data'),
+  ('SCREEN','master_data.basic_info.departments','Departments', 'Master Data'),
+  ('SCREEN','master_data.basic_info.uom_conversions','UOM Conversions', 'Master Data'),
+
+  -- Master Data > Accounts/Parties
+  ('SCREEN','master_data.accounts','Accounts', 'Master Data'),
+  ('SCREEN','master_data.parties','Parties', 'Master Data'),
+
+  -- Master Data > Products
+  ('SCREEN','master_data.products.raw_materials','Raw Materials', 'Master Data'),
+  ('SCREEN','master_data.products.semi_finished','Semi-Finished Products', 'Master Data'),
+  ('SCREEN','master_data.products.finished','Finished Products', 'Master Data'),
+  ('SCREEN','master_data.products.skus','SKU / Variants', 'Master Data'),
+
+  -- Master Data > BOM
+  ('SCREEN','master_data.bom','BOM', 'Master Data'),
+  ('SCREEN','master_data.bom.approval','BOM Approval', 'Master Data'),
+  ('SCREEN','master_data.bom.versions','BOM Versions', 'Master Data')
+ON CONFLICT (scope_type, scope_key) DO NOTHING;
+
+-- =====================================================================
+-- B2) SCREEN SCOPES — REQUIREMENTS-DRIVEN (NOT YET IMPLEMENTED)
+-- =====================================================================
+INSERT INTO erp.permission_scope_registry (scope_type, scope_key, description, module_group)
+VALUES
+  -- HR & Payroll
+  ('SCREEN','hr_payroll.employees','Employees', 'HR & Payroll'),
+  ('SCREEN','hr_payroll.labours','Labours', 'HR & Payroll'),
+  ('SCREEN','hr_payroll.labour_rates','Labour Rates', 'HR & Payroll'),
+  ('SCREEN','hr_payroll.commissions','Sales Commissions', 'HR & Payroll'),
+  ('SCREEN','hr_payroll.allowances','Allowances', 'HR & Payroll'),
+
+  -- Financial
+  ('SCREEN','financial.period_control','Audit Freeze / Period Control', 'Financial')
+ON CONFLICT (scope_type, scope_key) DO NOTHING;
+
+-- =====================================================================
+-- B3) VOUCHER SCOPES — REQUIREMENTS + VOUCHER TYPES
+-- =====================================================================
+INSERT INTO erp.permission_scope_registry (scope_type, scope_key, description, module_group)
+VALUES
+  -- Financial
+  ('VOUCHER','CASH_VOUCHER','Cash Voucher', 'Financial'),
+  ('VOUCHER','BANK_VOUCHER','Bank Voucher', 'Financial'),
+  ('VOUCHER','JOURNAL_VOUCHER','Journal Voucher', 'Financial'),
+
+  -- Purchase
+  ('VOUCHER','PO','Purchase Order', 'Purchase'),
+  ('VOUCHER','PI','Purchase Invoice', 'Purchase'),
+  ('VOUCHER','PR','Purchase Return', 'Purchase'),
+
+  -- Inventory
+  ('VOUCHER','STN_OUT','Stock Transfer Note (Outward)', 'Inventory'),
+  ('VOUCHER','GRN_IN','Internal GRN (Incoming Transfer)', 'Inventory'),
+  ('VOUCHER','OPENING_STOCK','Opening Stock Voucher', 'Inventory'),
+  ('VOUCHER','STOCK_COUNT_ADJ','Stock Count Adjustment Voucher', 'Inventory'),
+
+  -- Production
+  ('VOUCHER','PROD_SFG','Semi-Finished Production Voucher', 'Production'),
+  ('VOUCHER','PROD_FG','Finished Production Voucher', 'Production'),
+  ('VOUCHER','DCV','Department Completion Voucher (DCV)', 'Production'),
+  ('VOUCHER','LABOUR_PROD','General Labour Production Voucher', 'Production'),
+  ('VOUCHER','CONSUMP','Consumption Voucher', 'Production'),
+  ('VOUCHER','PROD_PLAN','Production Planning', 'Production'),
+  ('VOUCHER','LOSS','Abnormal Loss Voucher', 'Production'),
+
+  -- Sales
+  ('VOUCHER','SALES_ORDER','Sales Order Voucher', 'Sales'),
+  ('VOUCHER','SALES_VOUCHER','Sales Voucher', 'Sales'),
+
+  -- Outward & Returnable
+  ('VOUCHER','RDV','Returnable Dispatch Voucher', 'Outward & Returnable'),
+  ('VOUCHER','RRV','Returnable Receipt Voucher', 'Outward & Returnable')
+ON CONFLICT (scope_type, scope_key) DO NOTHING;
+
+-- =====================================================================
+-- B4) REPORT SCOPES — REQUIREMENTS-DRIVEN
+-- =====================================================================
+INSERT INTO erp.permission_scope_registry (scope_type, scope_key, description, module_group)
+VALUES
+  -- Master Data / BOM Reports
+  ('REPORT','bom_cost_margin','BOM Cost & Margin Register', 'Reports'),
+  ('REPORT','bom_pending_approval','Pending BOM Approval & Change Log', 'Reports'),
+  ('REPORT','bom_version_history','BOM Version History', 'Reports'),
+  ('REPORT','semi_finished_dependency','Semi-Finished Dependency Report', 'Reports'),
+
+  -- Financial Reports
+  ('REPORT','cash_book','Cash Book', 'Financial'),
+  ('REPORT','cash_voucher_register','Cash Voucher Register', 'Financial'),
+  ('REPORT','bank_transactions','Bank Transactions Report', 'Financial'),
+  ('REPORT','expense_analysis','Expense Analysis Report', 'Financial'),
+  ('REPORT','production_overhead','Production Over-Head Cost Analysis', 'Financial'),
+  ('REPORT','non_production_expense','Non-Production Expense Analysis', 'Financial'),
+  ('REPORT','accrued_expenses','Accrued Expenses Report', 'Financial'),
+  ('REPORT','profitability_analysis','Profitability Analysis Report', 'Financial'),
+  ('REPORT','profit_and_loss','Profit and Loss Statement', 'Financial'),
+  ('REPORT','journal_voucher_register','Journal Voucher Register', 'Financial'),
+  ('REPORT','account_activity_ledger','Account Activity Ledger', 'Financial'),
+  ('REPORT','trial_balance','Trial Balance Summary', 'Financial'),
+  ('REPORT','payroll_wage_balance','Payroll & Wage Balance Report', 'Financial'),
+
+  -- Purchase Reports
+  ('REPORT','supplier_balances','Supplier Balances Report', 'Purchase'),
+  ('REPORT','supplier_ledger','Supplier Ledger Report', 'Purchase'),
+  ('REPORT','purchase_report','Purchase Report', 'Purchase'),
+  ('REPORT','purchase_return_report','Purchase Return Report', 'Purchase'),
+
+  -- Production Reports
+  ('REPORT','production_report','Production Report', 'Production'),
+  ('REPORT','dvc_report','DVC Report', 'Production'),
+  ('REPORT','consumption_report','Consumption Report', 'Production'),
+  ('REPORT','pending_consumption_report','Pending Consumption Report', 'Production'),
+  ('REPORT','labour_ledger','Labour Ledger Report', 'Production'),
+  ('REPORT','labour_balances','Labour Balances Report', 'Production'),
+  ('REPORT','loss_report','Loss Report (Normal/Abnormal)', 'Production'),
+
+  -- Inventory Reports
+  ('REPORT','stock_quantity','Stock Quantity Report', 'Inventory'),
+  ('REPORT','stock_amount','Stock Amount Report', 'Inventory'),
+  ('REPORT','stock_ledger','Stock Ledger Report', 'Inventory'),
+  ('REPORT','stock_item_activity','Stock/Item Activity Report', 'Inventory'),
+  ('REPORT','pending_outgoing_transfers','Pending Outgoing Transfers Report', 'Inventory'),
+  ('REPORT','pending_incoming_transfers','Pending Incoming Transfers Report', 'Inventory'),
+  ('REPORT','stock_count_register','Stock Count Register', 'Inventory'),
+  ('REPORT','demand_gap','Demand Gap Report', 'Inventory'),
+
+  -- Outward & Returnable Reports
+  ('REPORT','pending_returnables','Pending Returnables Report', 'Outward & Returnable'),
+  ('REPORT','overdue_returnables','Overdue Returnables Report', 'Outward & Returnable'),
+  ('REPORT','asset_movement_history','Asset Movement History', 'Outward & Returnable'),
+
+  -- Sales Reports
+  ('REPORT','claim_report','Claim Report', 'Sales'),
+  ('REPORT','sales_report','Sales Report', 'Sales'),
+  ('REPORT','sales_return_report','Sales Return Report', 'Sales'),
+  ('REPORT','sales_order_report','Sales Order Report', 'Sales'),
+  ('REPORT','sale_discount_report','Sale Discount Report', 'Sales'),
+  ('REPORT','net_sale_report','Net Sale Report', 'Sales'),
+  ('REPORT','monthly_product_profitability','Monthly Product Profitability Report', 'Sales'),
+  ('REPORT','customer_listings','Customer Listings Report', 'Sales'),
+  ('REPORT','customer_balances','Customer Balances Report', 'Sales'),
+  ('REPORT','customer_ledger','Customer Ledger Report', 'Sales')
 ON CONFLICT (scope_type, scope_key) DO NOTHING;
 
 
@@ -194,23 +392,22 @@ ON CONFLICT (scope_type, scope_key) DO NOTHING;
 -- =====================================================================
 
 INSERT INTO erp.role_permissions
-  (role_id, scope_id, can_view, can_create, can_edit, can_delete, can_print, can_approve, can_post, can_unpost)
+  (role_id, scope_id, can_navigate, can_view, can_create, can_edit, can_delete, can_print, can_approve)
 SELECT
   r.id,
   s.id,
-  true, true, true, true, true, true, true, true
+  true, true, true, true, true, true, true
 FROM erp.role_templates r
 CROSS JOIN erp.permission_scope_registry s
 WHERE lower(trim(r.name)) = 'admin'
 ON CONFLICT (role_id, scope_id) DO UPDATE SET
+  can_navigate = EXCLUDED.can_navigate,
   can_view    = EXCLUDED.can_view,
   can_create  = EXCLUDED.can_create,
   can_edit    = EXCLUDED.can_edit,
   can_delete  = EXCLUDED.can_delete,
   can_print   = EXCLUDED.can_print,
-  can_approve = EXCLUDED.can_approve,
-  can_post    = EXCLUDED.can_post,
-  can_unpost  = EXCLUDED.can_unpost;
+  can_approve = EXCLUDED.can_approve;
 
 
 -- =====================================================================

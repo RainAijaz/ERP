@@ -1,17 +1,11 @@
 const express = require("express");
 const knex = require("../../../db/knex");
 const { HttpError } = require("../../../middleware/errors/http-error");
+const { requirePermission } = require("../../../middleware/access/role-permissions");
+const { hasPermission, requiresApproval } = require("../../../middleware/approvals/screen-approval");
 const { sendMail } = require("../../../utils/email");
 
 const router = express.Router();
-
-const canManageMasterData = (user) => {
-  return user && (user.isAdmin || (user.permissions && user.permissions.can_create_master_data));
-};
-
-const canApproveRates = (user) => {
-  return user && (user.isAdmin || (user.permissions && user.permissions.can_approve_rates));
-};
 
 const normalizeSkuPart = (value) => (value || "").toString().trim().toUpperCase();
 
@@ -175,7 +169,7 @@ const renderIndex = (req, res, payload) => {
   });
 };
 
-router.get("/config/:itemId", async (req, res, next) => {
+router.get("/config/:itemId", requirePermission("SCREEN", "master_data.products.skus", "navigate"), async (req, res, next) => {
   try {
     const itemId = req.params.itemId;
     if (!itemId) return res.json({ size_ids: [], grade_ids: [], color_ids: [], packing_type_ids: [], existing_combinations: [] });
@@ -196,7 +190,7 @@ router.get("/config/:itemId", async (req, res, next) => {
   }
 });
 
-router.get("/item-variants/:itemId", async (req, res, next) => {
+router.get("/item-variants/:itemId", requirePermission("SCREEN", "master_data.products.skus", "navigate"), async (req, res, next) => {
   try {
     const itemId = req.params.itemId;
     const variants = await knex("erp.variants as v").select("v.id", "v.sale_rate", "s.name as size", "g.name as grade", "c.name as color", "p.name as packing", "k.sku_code").leftJoin("erp.sizes as s", "v.size_id", "s.id").leftJoin("erp.grades as g", "v.grade_id", "g.id").leftJoin("erp.colors as c", "v.color_id", "c.id").leftJoin("erp.packing_types as p", "v.packing_type_id", "p.id").leftJoin("erp.skus as k", "k.variant_id", "v.id").where("v.item_id", itemId).orderBy("v.id", "asc");
@@ -207,7 +201,7 @@ router.get("/item-variants/:itemId", async (req, res, next) => {
   }
 });
 
-router.get("/", async (req, res, next) => {
+router.get("/", requirePermission("SCREEN", "master_data.products.skus", "navigate"), async (req, res, next) => {
   try {
     const itemType = req.query.item_type === "SFG" ? "SFG" : "FG";
     if (itemType === "SFG") {
@@ -242,7 +236,7 @@ router.get("/", async (req, res, next) => {
   }
 });
 
-router.post("/", async (req, res) => {
+router.post("/", requirePermission("SCREEN", "master_data.products.skus", "navigate"), async (req, res) => {
   const values = { ...req.body };
   const itemType = req.query.item_type === "SFG" ? "SFG" : "FG";
   const viewQuery = `?item_type=${itemType}`;
@@ -266,7 +260,7 @@ router.post("/", async (req, res) => {
     const comboRates = toArray(values.combo_rates);
 
     if (!item_id || !sizeIds.length || !gradeIds.length || !packingIds.length) {
-      throw new Error("Missing required fields");
+      throw new Error(res.locals.t("error_required_fields"));
     }
 
     let rateMap = new Map();
@@ -277,13 +271,18 @@ router.post("/", async (req, res) => {
       });
     }
 
-    if (rateMap.size === 0) throw new Error("No valid combinations generated.");
+    if (rateMap.size === 0) throw new Error(res.locals.t("error_required_fields"));
+
+    const approvalRequired = await requiresApproval("master_data.products.skus", "create");
+    const allowed = hasPermission(req.user, "master_data.products.skus", "create");
+    if (!allowed && !approvalRequired) {
+      throw new HttpError(403, res.locals.t("permission_denied"));
+    }
 
     await knex.transaction(async (trx) => {
-      const isAuthorized = canManageMasterData(req.user);
       const item = await trx("erp.items").select("code", "name", "item_type").where({ id: item_id }).first();
       if (!item || item.item_type !== "FG") {
-        throw new Error("Only finished products can be added from this screen.");
+        throw new Error(res.locals.t("error_required_fields"));
       }
 
       const sizes = await trx("erp.sizes").select("id", "name").whereIn("id", sizeIds);
@@ -321,7 +320,7 @@ router.post("/", async (req, res) => {
               const existing = await trx("erp.variants").where({ item_id, size_id, grade_id, color_id, packing_type_id }).first();
               if (existing) continue;
 
-              if (isAuthorized) {
+              if (!approvalRequired) {
                 const [variant] = await trx("erp.variants")
                   .insert({
                     item_id,
@@ -342,6 +341,7 @@ router.post("/", async (req, res) => {
                 createdCount++;
               } else {
                 const plannedVariant = {
+                  _action: "create",
                   item_id,
                   size_id,
                   grade_id,
@@ -373,7 +373,7 @@ router.post("/", async (req, res) => {
                   const existingSfg = await trx("erp.variants").where({ item_id: sfgItemId, size_id, color_id, grade_id: null, packing_type_id: null }).first();
                   if (existingSfg) continue;
 
-                  if (isAuthorized) {
+                  if (!approvalRequired) {
                     const [sfgVariant] = await trx("erp.variants")
                       .insert({
                         item_id: sfgItemId,
@@ -399,6 +399,7 @@ router.post("/", async (req, res) => {
                     const sfgCode = sfgCodeMap.get(sfgItemId) || "";
                     const { base, suffix } = parseSfgNameParts(sfgName, sfgCode);
                     const plannedSfg = {
+                      _action: "create",
                       item_id: sfgItemId,
                       size_id,
                       grade_id: null,
@@ -425,10 +426,10 @@ router.post("/", async (req, res) => {
           }
         }
       }
-      if (createdCount === 0 && pendingCount === 0) throw new Error("No new SKUs were created.");
+      if (createdCount === 0 && pendingCount === 0) throw new Error(res.locals.t("error_required_fields"));
     });
 
-    const msg = canManageMasterData(req.user) ? res.locals.t("saved_successfully") : res.locals.t("variants_sent_approval");
+    const msg = approvalRequired ? res.locals.t("variants_sent_approval") : res.locals.t("saved_successfully");
     return res.redirect(basePath + viewQuery + "&success=true&msg=" + encodeURIComponent(msg));
   } catch (err) {
     const [rows, options, users] = await Promise.all([loadRows({}, itemType), loadOptions(itemType), loadUsers()]);
@@ -445,7 +446,7 @@ router.post("/", async (req, res) => {
   }
 });
 
-router.post("/bulk-update", async (req, res) => {
+router.post("/bulk-update", requirePermission("SCREEN", "master_data.products.skus", "navigate"), async (req, res) => {
   const { variant_ids, new_rates } = req.body;
   const itemType = req.query.item_type === "SFG" ? "SFG" : "FG";
   const viewQuery = `?item_type=${itemType}`;
@@ -457,12 +458,30 @@ router.post("/bulk-update", async (req, res) => {
   if (!ids.length) return res.redirect(basePath + viewQuery);
 
   try {
+    const approvalRequired = await requiresApproval("master_data.products.skus", "edit");
+    const allowed = hasPermission(req.user, "master_data.products.skus", "edit");
+    if (!allowed && !approvalRequired) {
+      throw new HttpError(403, res.locals.t("permission_denied"));
+    }
+
     await knex.transaction(async (trx) => {
       for (let i = 0; i < ids.length; i++) {
         const id = Number(ids[i]);
         const rate = Number(rates[i]);
         if (id && !isNaN(rate)) {
-          if (canManageMasterData(req.user)) {
+          if (approvalRequired) {
+            await trx("erp.approval_request").insert({
+              branch_id: req.branchId,
+              request_type: "MASTER_DATA_CHANGE",
+              entity_type: "SKU",
+              entity_id: String(id),
+              summary: `${res.locals.t("edit")} ${res.locals.t("skus")}`,
+              new_value: { _action: "update", sale_rate: rate },
+              status: "PENDING",
+              requested_by: req.user.id,
+              requested_at: trx.fn.now(),
+            });
+          } else {
             await trx("erp.variants").where({ id }).update({
               sale_rate: rate,
               updated_at: trx.fn.now(),
@@ -472,20 +491,42 @@ router.post("/bulk-update", async (req, res) => {
         }
       }
     });
-    return res.redirect(basePath + viewQuery + "&success=true&msg=Rates%20Updated");
+    const msg = approvalRequired ? res.locals.t("approval_submitted") : res.locals.t("saved_successfully");
+    return res.redirect(basePath + viewQuery + "&success=true&msg=" + encodeURIComponent(msg));
   } catch (err) {
     const [rows, options, users] = await Promise.all([loadRows({}, itemType), loadOptions(itemType), loadUsers()]);
-    return renderIndex(req, res, { rows, ...options, users, itemType, error: "Bulk Update Failed: " + err.message, modalOpen: false, modalMode: "create", values: {} });
+    return renderIndex(req, res, { rows, ...options, users, itemType, error: res.locals.t("error_unable_save"), modalOpen: false, modalMode: "create", values: {} });
   }
 });
 
-router.post("/:id", async (req, res, next) => {
+router.post("/:id", requirePermission("SCREEN", "master_data.products.skus", "navigate"), async (req, res, next) => {
   const id = Number(req.params.id);
-  if (!id) return next(new HttpError(404, "Variant not found"));
+  if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
   const itemType = req.query.item_type === "SFG" ? "SFG" : "FG";
   const viewQuery = `?item_type=${itemType}`;
   const basePath = `${req.baseUrl}`;
   try {
+    const approvalRequired = await requiresApproval("master_data.products.skus", "edit");
+    const allowed = hasPermission(req.user, "master_data.products.skus", "edit");
+    if (!allowed && !approvalRequired) {
+      throw new HttpError(403, res.locals.t("permission_denied"));
+    }
+
+    if (approvalRequired) {
+      await knex("erp.approval_request").insert({
+        branch_id: req.branchId,
+        request_type: "MASTER_DATA_CHANGE",
+        entity_type: "SKU",
+        entity_id: String(id),
+        summary: `${res.locals.t("edit")} ${res.locals.t("skus")}`,
+        new_value: { _action: "update", sale_rate: req.body.sale_rate },
+        status: "PENDING",
+        requested_by: req.user.id,
+        requested_at: knex.fn.now(),
+      });
+      return res.redirect(basePath + viewQuery + "&success=true&msg=" + encodeURIComponent(res.locals.t("approval_submitted")));
+    }
+
     await knex("erp.variants").where({ id }).update({
       sale_rate: req.body.sale_rate,
       updated_at: knex.fn.now(),
@@ -497,13 +538,34 @@ router.post("/:id", async (req, res, next) => {
   }
 });
 
-router.post("/:id/toggle", async (req, res, next) => {
+router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.skus", "delete"), async (req, res, next) => {
   const id = Number(req.params.id);
   const itemType = req.query.item_type === "SFG" ? "SFG" : "FG";
   const viewQuery = `?item_type=${itemType}`;
   const basePath = `${req.baseUrl}`;
   try {
     const current = await knex("erp.variants").select("is_active").where({ id }).first();
+    const approvalRequired = await requiresApproval("master_data.products.skus", "edit");
+    const allowed = hasPermission(req.user, "master_data.products.skus", "edit");
+    if (!allowed && !approvalRequired) {
+      throw new HttpError(403, res.locals.t("permission_denied"));
+    }
+
+    if (approvalRequired) {
+      await knex("erp.approval_request").insert({
+        branch_id: req.branchId,
+        request_type: "MASTER_DATA_CHANGE",
+        entity_type: "SKU",
+        entity_id: String(id),
+        summary: `${res.locals.t("edit")} ${res.locals.t("skus")}`,
+        new_value: { _action: "toggle", is_active: !current.is_active },
+        status: "PENDING",
+        requested_by: req.user.id,
+        requested_at: knex.fn.now(),
+      });
+      return res.redirect(basePath + viewQuery + "&success=true&msg=" + encodeURIComponent(res.locals.t("approval_submitted")));
+    }
+
     await knex("erp.variants").where({ id }).update({
       is_active: !current.is_active,
       updated_at: knex.fn.now(),
@@ -516,13 +578,34 @@ router.post("/:id/toggle", async (req, res, next) => {
   }
 });
 
-router.post("/:id/delete", async (req, res, next) => {
+router.post("/:id/delete", requirePermission("SCREEN", "master_data.products.skus", "hard_delete"), async (req, res, next) => {
   const id = Number(req.params.id);
   const itemType = req.query.item_type === "SFG" ? "SFG" : "FG";
   const viewQuery = `?item_type=${itemType}`;
   const basePath = `${req.baseUrl}`;
   console.log(`[SKU DELETE] Request received for Variant ID: ${id}`);
   try {
+    const approvalRequired = await requiresApproval("master_data.products.skus", "hard_delete");
+    const allowed = hasPermission(req.user, "master_data.products.skus", "hard_delete");
+    if (!allowed && !approvalRequired) {
+      throw new HttpError(403, res.locals.t("permission_denied"));
+    }
+
+    if (approvalRequired) {
+      await knex("erp.approval_request").insert({
+        branch_id: req.branchId,
+        request_type: "MASTER_DATA_CHANGE",
+        entity_type: "SKU",
+        entity_id: String(id),
+        summary: `${res.locals.t("delete")} ${res.locals.t("skus")}`,
+        new_value: { _action: "delete" },
+        status: "PENDING",
+        requested_by: req.user.id,
+        requested_at: knex.fn.now(),
+      });
+      return res.redirect(basePath + viewQuery + "&success=true&msg=" + encodeURIComponent(res.locals.t("approval_submitted")));
+    }
+
     await knex("erp.skus").where({ variant_id: id }).del();
     await knex("erp.variants").where({ id }).del();
     console.log(`[SKU DELETE] Successfully deleted Variant ID: ${id}`);

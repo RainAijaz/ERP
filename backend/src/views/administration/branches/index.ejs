@@ -1,0 +1,247 @@
+<div class="flex flex-col gap-6">
+  <div class="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white/90 px-6 py-5 shadow-sm">
+    <div class="space-y-1">
+      <h1 class="text-2xl font-bold text-slate-800 font-display"><%= t('branches') %></h1>
+      <p class="text-sm text-slate-500"><%= t('manage_company_locations') %></p>
+    </div>
+
+    <% if (can('SCREEN', 'administration.branches', 'create')) { %>
+      <button onclick="openModal('/administration/branches/new')" class="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-accent/90 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+        <span><%= t('add_new_branch') %></span>
+      </button>
+    <% } %>
+  </div>
+
+  <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+    <div class="overflow-x-auto">
+      <table class="w-full text-left text-sm">
+        <thead class="bg-slate-50 border-b border-slate-100">
+          <tr>
+            <th class="px-6 py-4 font-semibold text-slate-600"><%= t('code') %></th>
+            <th class="px-6 py-4 font-semibold text-slate-600"><%= t('branch_name') %></th>
+            <th class="px-6 py-4 font-semibold text-slate-600"><%= t('city') %></th>
+            <th class="px-6 py-4 font-semibold text-slate-600 text-center"><%= t('status') %></th>
+            <th class="px-6 py-4 font-semibold text-slate-600 text-right"><%= t('actions') %></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          <% const canNavigate = can('SCREEN', 'administration.branches', 'navigate'); %>
+          <% const canDeactivate = can('SCREEN', 'administration.branches', 'delete'); %>
+          <% const canHardDelete = can('SCREEN', 'administration.branches', 'hard_delete'); %>
+          <% if (branches.length === 0) { %>
+            <tr>
+              <td colspan="5" class="px-6 py-12 text-center text-slate-400">
+                <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
+                  <svg class="h-6 w-6 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M8 6h13"></path>
+                    <path d="M8 12h13"></path>
+                    <path d="M8 18h13"></path>
+                    <path d="M3 6h.01"></path>
+                    <path d="M3 12h.01"></path>
+                    <path d="M3 18h.01"></path>
+                  </svg>
+                </div>
+                <p class="mt-3 text-sm font-medium text-slate-500"><%= canNavigate ? t('no_records_found') : t('no_navigate_access_message') %></p>
+              </td>
+            </tr>
+          <% } %>
+          <% branches.forEach(branch => { %>
+            <tr class="hover:bg-slate-50/80 transition-colors group">
+              <td class="px-6 py-4 font-mono text-slate-600"><%= branch.code %></td>
+              <td class="px-6 py-4 font-medium text-slate-900"><%= branch.name %></td>
+              <td class="px-6 py-4 text-slate-600"><%= branch.city || '-' %></td>
+              <td class="px-6 py-4 text-center">
+                <% if (branch.is_active) { %>
+                  <span class="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium bg-green-50 text-green-700 ring-1 ring-inset ring-green-600/20">
+                    <%= t('active') %>
+                  </span>
+                <% } else { %>
+                  <span class="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium bg-slate-50 text-slate-600 ring-1 ring-inset ring-slate-500/10">
+                    <%= t('inactive') %>
+                  </span>
+                <% } %>
+              </td>
+              <td class="px-6 py-4 text-right">
+                <% if (can('SCREEN', 'administration.branches', 'edit')) { %>
+                  <button onclick="openModal('/administration/branches/<%= branch.id %>/edit')" class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30" title="<%= t('edit') %>">
+                    <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                    <span class="sr-only"><%= t('edit') %></span>
+                  </button>
+                <% } %>
+                <% if (canDeactivate) { %>
+                  <button
+                    type="button"
+                    class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-200"
+                    data-toggle
+                    data-toggle-action="/administration/branches/<%= branch.id %>/toggle"
+                    data-toggle-label="<%= branch.is_active ? t('deactivate') : t('activate') %>"
+                    title="<%= branch.is_active ? t('deactivate') : t('activate') %>"
+                  >
+                    <% if (branch.is_active) { %>
+                      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 12h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+                    <% } else { %>
+                      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /><path d="M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+                    <% } %>
+                  </button>
+                <% } %>
+                <% if (canHardDelete) { %>
+                  <button
+                    type="button"
+                    class="inline-flex items-center justify-center rounded-md border border-rose-200 bg-rose-50 p-2 text-rose-600 transition hover:border-rose-300 hover:text-rose-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-200"
+                    data-delete
+                    data-delete-action="/administration/branches/<%= branch.id %>/delete"
+                    data-delete-label="<%= t('permanent_delete') %>"
+                    title="<%= t('permanent_delete') %>"
+                  >
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                      <path d="M9 7V5h6v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                      <path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                      <path d="M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                    </svg>
+                  </button>
+                <% } %>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<%- include('../../base/partials/modal-shell') %>
+<%- include('../../base/partials/confirm-modal', { t, csrfToken }) %>
+
+<script>
+  const csrfToken = "<%= csrfToken %>";
+  const i18nSave = "<%= t('save') %>";
+  const i18nConfirm = "<%= t('confirm') %>";
+  const i18nAreYouSure = "<%= t('are_you_sure') %>";
+  const i18nSaving = "<%= t('saving') %>";
+  const i18nUnexpectedResponse = "<%= t('unexpected_response') %>";
+  const i18nErrorGeneric = "<%= t('error_generic') %>";
+  const i18nNetworkError = "<%= t('network_error') %>";
+  const i18nLoadFailed = "<%= t('load_failed') %>";
+
+  function openModal(url) {
+    const shell = document.getElementById('modal-shell');
+    const backdrop = document.getElementById('modal-backdrop');
+    const content = document.getElementById('modal-content');
+
+    // 1. Show Modal
+    shell.classList.remove('hidden');
+    shell.classList.add('flex');
+    backdrop.classList.remove('hidden');
+    
+    // 2. Load Content
+    content.innerHTML = '<div class="flex h-40 items-center justify-center"><svg class="h-6 w-6 animate-spin text-slate-300" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg></div>';
+
+    fetch(url, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+      .then(res => res.text())
+      .then(html => {
+        content.innerHTML = html;
+        const form = content.querySelector('form');
+        if (form) {
+          form.addEventListener('submit', handleFormSubmit);
+        }
+      })
+      .catch(err => {
+        console.error(err);
+        content.innerHTML = `<div class="p-6 text-red-600 text-center">${i18nLoadFailed}</div>`;
+      });
+  }
+
+  function handleFormSubmit(e) {
+    e.preventDefault();
+    const form = e.target;
+    const btn = form.querySelector('button[type="submit"]');
+    const originalText = btn ? btn.innerText : i18nSave;
+
+    if (btn) { btn.disabled = true; btn.innerText = i18nSaving; }
+
+    const formData = new URLSearchParams(new FormData(form));
+
+    const csrfToken = form.querySelector('input[name="_csrf"]')?.value;
+
+    fetch(form.action, {
+      method: form.method,
+      headers: { 
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-Requested-With': 'XMLHttpRequest',
+        'Accept': 'application/json',
+        ...(csrfToken ? { 'X-CSRF-Token': csrfToken } : {})
+      },
+      body: formData
+    })
+    .then(async r => {
+      const contentType = r.headers.get('content-type') || '';
+      let body;
+      if (contentType.includes('application/json')) {
+        body = await r.json();
+      } else {
+        const text = await r.text();
+        body = { error: text || i18nUnexpectedResponse };
+      }
+      return { status: r.status, body };
+    })
+    .then(({ status, body }) => {
+      if (status >= 400 || body.error) {
+        alert(body.error || i18nErrorGeneric);
+        if (btn) { btn.disabled = false; btn.innerText = originalText; }
+      } else if (body.redirect) {
+        window.location.href = body.redirect;
+      }
+    })
+    .catch(err => {
+      console.error(err);
+      alert(i18nNetworkError);
+      if (btn) { btn.disabled = false; btn.innerText = originalText; }
+    });
+  }
+
+  const confirmModal = document.querySelector('[data-confirm-modal]');
+  const confirmForm = document.querySelector('[data-confirm-form]');
+  const confirmTitle = document.querySelector('[data-confirm-title]');
+  const confirmMessage = document.querySelector('[data-confirm-message]');
+  const confirmClose = document.querySelectorAll('[data-confirm-close]');
+
+  const openConfirm = (title, message, action) => {
+    if (!confirmModal || !confirmForm) return;
+    confirmTitle.textContent = title || i18nConfirm;
+    confirmMessage.textContent = message || i18nAreYouSure;
+    confirmForm.setAttribute('action', action || '');
+    confirmModal.classList.remove('hidden');
+    confirmModal.classList.add('flex');
+  };
+
+  const closeConfirm = () => {
+    if (!confirmModal) return;
+    confirmModal.classList.add('hidden');
+    confirmModal.classList.remove('flex');
+  };
+
+  confirmClose.forEach((btn) => btn.addEventListener('click', closeConfirm));
+  confirmModal?.addEventListener('click', (event) => {
+    if (event.target === confirmModal) closeConfirm();
+  });
+
+  document.addEventListener('click', (event) => {
+    const toggleBtn = event.target.closest('[data-toggle]');
+    if (toggleBtn) {
+      event.preventDefault();
+      const action = toggleBtn.getAttribute('data-toggle-action');
+      const label = toggleBtn.getAttribute('data-toggle-label') || i18nAreYouSure;
+      if (action) openConfirm(i18nConfirm, label, action);
+      return;
+    }
+    const deleteBtn = event.target.closest('[data-delete]');
+    if (deleteBtn) {
+      event.preventDefault();
+      const action = deleteBtn.getAttribute('data-delete-action');
+      const label = deleteBtn.getAttribute('data-delete-label') || "<%= t('permanent_delete') %>";
+      if (action) openConfirm(i18nConfirm, label, action);
+    }
+  });
+</script>

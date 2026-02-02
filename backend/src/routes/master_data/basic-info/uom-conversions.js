@@ -1,6 +1,9 @@
 const express = require("express");
 const knex = require("../../../db/knex");
 const { HttpError } = require("../../../middleware/errors/http-error");
+const { requirePermission } = require("../../../middleware/access/role-permissions");
+const { handleScreenApproval } = require("../../../middleware/approvals/screen-approval");
+const { getBasicInfoEntityType } = require("../../../utils/approval-entity-map");
 
 const router = express.Router();
 
@@ -11,33 +14,15 @@ const fetchRows = () =>
     .leftJoin({ ut: "erp.uom" }, "c.to_uom_id", "ut.id")
     .leftJoin({ u: "erp.users" }, "c.created_by", "u.id")
     .leftJoin({ uu: "erp.users" }, "c.updated_by", "uu.id")
-    .select(
-      "c.id",
-      "c.from_uom_id",
-      "c.to_uom_id",
-      "c.factor",
-      "c.is_active",
-      "c.created_at",
-      "c.updated_at",
-      "uf.code as from_code",
-      "uf.name as from_name",
-      "ut.code as to_code",
-      "ut.name as to_name",
-      "u.username as created_by_name",
-      "uu.username as updated_by_name"
-    )
+    .select("c.id", "c.from_uom_id", "c.to_uom_id", "c.factor", "c.is_active", "c.created_at", "c.updated_at", "uf.code as from_code", "uf.name as from_name", "ut.code as to_code", "ut.name as to_name", "u.username as created_by_name", "uu.username as updated_by_name")
     .orderBy("c.id", "desc");
 
 // Only active UOMs are selectable for new conversions.
-const fetchUoms = () =>
-  knex("erp.uom")
-    .select("id", "code", "name")
-    .where({ is_active: true })
-    .orderBy("code", "asc");
+const fetchUoms = () => knex("erp.uom").select("id", "code", "name").where({ is_active: true }).orderBy("code", "asc");
 
 const renderPage = (req, res, data) =>
   res.render("base/layouts/main", {
-    title: `${res.locals.t("uom_conversions")} - Basic Info`,
+    title: `${res.locals.t("uom_conversions")} - ${res.locals.t("basic_information")}`,
     user: req.user,
     branchId: req.branchId,
     branchScope: req.branchScope,
@@ -48,7 +33,7 @@ const renderPage = (req, res, data) =>
     ...data,
   });
 
-router.get("/", async (req, res, next) => {
+router.get("/", requirePermission("SCREEN", "master_data.basic_info.uom_conversions", "navigate"), async (req, res, next) => {
   try {
     const [rows, uoms] = await Promise.all([fetchRows(), fetchUoms()]);
     return renderPage(req, res, {
@@ -82,79 +67,151 @@ const renderError = async (req, res, error, modalMode) => {
   });
 };
 
-router.post("/", async (req, res, next) => {
+router.post("/", requirePermission("SCREEN", "master_data.basic_info.uom_conversions", "navigate"), async (req, res, next) => {
   const payload = normalizePayload(req.body || {});
   if (!payload.from_uom_id || !payload.to_uom_id || payload.factor <= 0) {
-    return renderError(req, res, "Please select both units and enter a valid factor.", "create");
+    return renderError(req, res, res.locals.t("error_required_fields"), "create");
   }
 
   try {
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey: "master_data.basic_info.uom_conversions",
+      action: "create",
+      entityType: getBasicInfoEntityType("uom-conversions"),
+      entityId: "NEW",
+      summary: `${res.locals.t("create")} ${res.locals.t("uom_conversions")}`,
+      oldValue: null,
+      newValue: payload,
+      t: res.locals.t,
+    });
+
+    if (approval.queued) {
+      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+    }
     await knex("erp.uom_conversions").insert({
       ...payload,
       created_by: req.user ? req.user.id : null,
     });
     return res.redirect("/master-data/basic-info/uom-conversions");
   } catch (err) {
-    return renderError(req, res, "Unable to save conversion. Check for duplicates.", "create");
+    return renderError(req, res, err?.message || res.locals.t("error_unable_save"), "create");
   }
 });
 
-router.post("/:id", async (req, res, next) => {
+router.post("/:id", requirePermission("SCREEN", "master_data.basic_info.uom_conversions", "navigate"), async (req, res, next) => {
   const id = Number(req.params.id);
   if (!id) {
-    return next(new HttpError(404, "Conversion not found"));
+    return next(new HttpError(404, res.locals.t("error_not_found")));
   }
 
   const payload = normalizePayload(req.body || {});
   if (!payload.from_uom_id || !payload.to_uom_id || payload.factor <= 0) {
-    return renderError(req, res, "Please select both units and enter a valid factor.", "edit");
+    return renderError(req, res, res.locals.t("error_required_fields"), "edit");
   }
 
   try {
-    await knex("erp.uom_conversions").where({ id }).update({
-      ...payload,
-      updated_by: req.user ? req.user.id : null,
-      updated_at: knex.fn.now(),
+    const existing = await knex("erp.uom_conversions").where({ id }).first();
+    if (!existing) {
+      return renderError(req, res, res.locals.t("error_not_found"), "edit");
+    }
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey: "master_data.basic_info.uom_conversions",
+      action: "edit",
+      entityType: getBasicInfoEntityType("uom-conversions"),
+      entityId: id,
+      summary: `${res.locals.t("edit")} ${res.locals.t("uom_conversions")}`,
+      oldValue: existing,
+      newValue: payload,
+      t: res.locals.t,
     });
+
+    if (approval.queued) {
+      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+    }
+    await knex("erp.uom_conversions")
+      .where({ id })
+      .update({
+        ...payload,
+        updated_by: req.user ? req.user.id : null,
+        updated_at: knex.fn.now(),
+      });
     return res.redirect("/master-data/basic-info/uom-conversions");
   } catch (err) {
-    return renderError(req, res, "Unable to update conversion. Check for duplicates.", "edit");
+    return renderError(req, res, err?.message || res.locals.t("error_unable_save"), "edit");
   }
 });
 
-router.post("/:id/toggle", async (req, res, next) => {
+router.post("/:id/toggle", requirePermission("SCREEN", "master_data.basic_info.uom_conversions", "delete"), async (req, res, next) => {
   const id = Number(req.params.id);
   if (!id) {
-    return next(new HttpError(404, "Conversion not found"));
+    return next(new HttpError(404, res.locals.t("error_not_found")));
   }
 
   try {
     const current = await knex("erp.uom_conversions").select("is_active").where({ id }).first();
     if (!current) {
-      return next(new HttpError(404, "Conversion not found"));
+      return next(new HttpError(404, res.locals.t("error_not_found")));
     }
-    await knex("erp.uom_conversions").where({ id }).update({
-      is_active: !current.is_active,
-      updated_by: req.user ? req.user.id : null,
-      updated_at: knex.fn.now(),
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey: "master_data.basic_info.uom_conversions",
+      action: "edit",
+      entityType: getBasicInfoEntityType("uom-conversions"),
+      entityId: id,
+      summary: `${res.locals.t("edit")} ${res.locals.t("uom_conversions")}`,
+      oldValue: current,
+      newValue: { is_active: !current.is_active },
+      t: res.locals.t,
     });
+
+    if (approval.queued) {
+      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+    }
+    await knex("erp.uom_conversions")
+      .where({ id })
+      .update({
+        is_active: !current.is_active,
+        updated_by: req.user ? req.user.id : null,
+        updated_at: knex.fn.now(),
+      });
     return res.redirect("/master-data/basic-info/uom-conversions");
   } catch (err) {
-    return renderError(req, res, "Unable to update conversion. It may be in use.", "delete");
+    return renderError(req, res, err?.message || res.locals.t("error_update_status"), "delete");
   }
 });
 
-router.post("/:id/delete", async (req, res, next) => {
+router.post("/:id/delete", requirePermission("SCREEN", "master_data.basic_info.uom_conversions", "hard_delete"), async (req, res, next) => {
   const id = Number(req.params.id);
   if (!id) {
-    return next(new HttpError(404, "Conversion not found"));
+    return next(new HttpError(404, res.locals.t("error_not_found")));
   }
 
   try {
+    const existing = await knex("erp.uom_conversions").where({ id }).first();
+    if (!existing) {
+      return renderError(req, res, res.locals.t("error_not_found"), "delete");
+    }
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey: "master_data.basic_info.uom_conversions",
+      action: "delete",
+      entityType: getBasicInfoEntityType("uom-conversions"),
+      entityId: id,
+      summary: `${res.locals.t("delete")} ${res.locals.t("uom_conversions")}`,
+      oldValue: existing,
+      newValue: null,
+      t: res.locals.t,
+    });
+
+    if (approval.queued) {
+      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+    }
     await knex("erp.uom_conversions").where({ id }).del();
     return res.redirect("/master-data/basic-info/uom-conversions");
   } catch (err) {
-    return renderError(req, res, "Unable to delete conversion.", "delete");
+    return renderError(req, res, err?.message || res.locals.t("error_delete"), "delete");
   }
 });
 

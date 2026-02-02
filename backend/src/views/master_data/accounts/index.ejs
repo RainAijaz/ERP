@@ -32,7 +32,10 @@
 
   <%- include("../../base/partials/error-banner", { error, modalOpen }) %>
 
-  <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md" data-print-area>
+<section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md" data-print-area>
+    <% const canEdit = can('SCREEN', 'master_data.accounts', 'edit'); %>
+    <% const canDelete = can('SCREEN', 'master_data.accounts', 'delete'); %>
+    <% const canHardDelete = can('SCREEN', 'master_data.accounts', 'hard_delete'); %>
     <% const hideCode = ["accounts", "parties"].includes(page.titleKey); %>
     <div class="px-5 pt-4 text-center text-xl font-display font-semibold uppercase tracking-[0.35em] text-slate-900" data-print-header>
       <%= t("brand") %>
@@ -124,7 +127,7 @@
                   </td>
                 <% }) %>
                 <td class="px-4 py-3">
-                  <%- include("../../base/partials/table-actions", { t, row, basePath, editFields: page.fields.map(function(field) { return field.name; }), withMenu: true }) %>
+                  <%- include("../../base/partials/table-actions", { t, row, basePath, editFields: page.fields.map(function(field) { return field.name; }), withMenu: true, canEdit, canDelete, canHardDelete }) %>
                 </td>
               </tr>
             <% }) %>

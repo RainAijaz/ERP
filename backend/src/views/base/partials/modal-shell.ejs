@@ -1,48 +1,73 @@
-<div
-  class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 p-4"
+<div 
+  id="modal-shell" 
+  class="fixed inset-0 z-50 hidden items-center justify-center p-4 overflow-x-hidden"
+  style="z-index: 100;"
+  role="dialog"
+  aria-modal="true"
   data-modal
-  data-auto-open="<%= modalOpen ? "true" : "false" %>"
-  data-modal-mode="<%= modalMode || "create" %>"
-  <%= modalValues ? "data-modal-values='" + JSON.stringify(modalValues).replace(/'/g, "&#39;") + "'" : "" %>
 >
-  <div class="<%= modalContainerClass || "w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-xl" %> flex max-h-[90vh] flex-col">
-    <div class="<%= modalHeaderClass || "flex items-center justify-between border-b border-slate-200 px-6 py-4" %>">
+  <div class="<%= typeof modalContainerClass !== 'undefined' && modalContainerClass ? modalContainerClass : "w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-xl relative z-50 flex max-h-[90vh] flex-col overflow-hidden" %>">
+    
+    <div class="<%= typeof modalHeaderClass !== 'undefined' && modalHeaderClass ? modalHeaderClass : "flex items-center justify-between border-b border-slate-200 px-6 py-4" %>">
       <div>
-        <div class="text-sm font-semibold text-slate-700" data-modal-title><%= modalTitle %></div>
-        <% if (modalDescription) { %>
-          <p class="text-xs text-slate-500" data-modal-description><%= modalDescription %></p>
+        <div class="text-sm font-semibold text-slate-700" data-modal-title>
+          <%= typeof modalTitle !== 'undefined' ? modalTitle : '' %>
+        </div>
+        <% if (typeof modalDescription !== 'undefined' && modalDescription) { %>
+          <div class="mt-1 text-xs text-slate-500"><%= modalDescription %></div>
         <% } %>
       </div>
-      <button class="rounded-full border border-slate-200 p-2 text-slate-500 transition hover:text-slate-700" type="button" data-modal-close>
-        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M6 6l12 12M6 18L18 6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
-        </svg>
+      <button type="button" onclick="closeModal()" class="rounded-lg p-1 text-slate-400 hover:bg-slate-50 hover:text-slate-600 transition-colors" data-modal-close>
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
       </button>
     </div>
-    <div class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
-      <form
-      method="post"
-      action="<%= formAction %>"
-      class="<%= formClass || "space-y-5 px-6 py-5" %>"
-      data-modal-form
-      <%= translateMode ? "data-translate-mode=\"" + translateMode + "\"" : "" %>
-    >
-      <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
-      <%- include(bodyPartial) %>
-      <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600" data-audit-panel hidden>
-        <div class="font-semibold text-slate-700">Audit</div>
-        <div class="mt-1">Created: <span data-audit-created>—</span></div>
-        <div>Updated: <span data-audit-updated>—</span></div>
+
+    <% if (typeof formAction !== 'undefined' && formAction) { %>
+      <form class="<%= typeof formClass !== 'undefined' && formClass ? formClass : "px-6 py-5" %>" action="<%= formAction %>" method="POST" data-modal-form>
+        <% if (typeof csrfToken !== 'undefined' && csrfToken) { %>
+          <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+        <% } %>
+        <% if (typeof modalError !== 'undefined' && modalError) { %>
+          <div class="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700" data-modal-error>
+            <%= modalError %>
+          </div>
+        <% } else { %>
+          <div class="mb-4 hidden" data-modal-error></div>
+        <% } %>
+        <div class="flex-1 overflow-y-auto overflow-x-hidden" id="modal-content">
+          <% if (typeof bodyPartial !== 'undefined' && bodyPartial) { %>
+            <%- include(bodyPartial) %>
+          <% } %>
+        </div>
+        <div class="mt-6 flex items-center justify-end gap-3">
+          <button type="button" class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 hover:text-slate-800" data-modal-close><%= typeof cancelLabel !== 'undefined' ? cancelLabel : (typeof t !== 'undefined' ? t("cancel") : "Cancel") %></button>
+          <button type="submit" class="rounded-lg bg-accent px-5 py-2 text-sm font-semibold text-white"><%= typeof saveLabel !== 'undefined' ? saveLabel : (typeof t !== 'undefined' ? t("save_changes") : "Save") %></button>
+        </div>
+      </form>
+    <% } else { %>
+      <div class="flex-1 overflow-y-auto overflow-x-hidden" id="modal-content">
+        <% if (typeof bodyPartial !== 'undefined' && bodyPartial) { %>
+          <%- include(bodyPartial) %>
+        <% } else { %>
+          <div class="flex h-40 items-center justify-center">
+            <svg class="h-6 w-6 animate-spin text-slate-300" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+          </div>
+        <% } %>
       </div>
-      <div class="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700" data-modal-error <%= modalError ? "" : "hidden" %>>
-        <%= modalError || "" %>
-      </div>
-      <div class="flex items-center gap-2">
-        <button class="flex-1 rounded-xl bg-slate-900 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-slate-800" type="submit">
-          <%= t("save") || "Save" %>
-        </button>
-      </div>
-    </form>
-    </div>
+    <% } %>
   </div>
 </div>
+
+<div id="modal-backdrop" onclick="closeModal()" class="fixed inset-0 z-40 hidden bg-slate-900/40 backdrop-blur-sm transition-opacity"></div>
+
+<script>
+  function closeModal() {
+    const shell = document.getElementById('modal-shell');
+    const backdrop = document.getElementById('modal-backdrop');
+    if(shell) {
+        shell.classList.add('hidden');
+        shell.classList.remove('flex');
+    }
+    if(backdrop) backdrop.classList.add('hidden');
+  }
+</script>

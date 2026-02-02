@@ -1,6 +1,9 @@
 const express = require("express");
 const knex = require("../../../db/knex");
 const { HttpError } = require("../../../middleware/errors/http-error");
+const { requirePermission } = require("../../../middleware/access/role-permissions");
+const { handleScreenApproval } = require("../../../middleware/approvals/screen-approval");
+const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
 const { parseCookies, setCookie } = require("../../../middleware/utils/cookies");
 
 const router = express.Router();
@@ -29,20 +32,18 @@ const page = {
   },
   joins: [{ table: { ag: "erp.account_groups" }, on: ["t.subgroup_id", "ag.id"] }],
   extraSelect: (locale) => [
-    locale === "ur"
-      ? knex.raw("COALESCE(ag.name_ur, ag.name) as group_name")
-      : "ag.name as group_name",
+    locale === "ur" ? knex.raw("COALESCE(ag.name_ur, ag.name) as group_name") : "ag.name as group_name",
     "ag.account_type as account_type",
     knex.raw(
       `(SELECT COALESCE(string_agg(b.name, ', ' ORDER BY b.name), '')
         FROM erp.account_branch ab
         JOIN erp.branches b ON b.id = ab.branch_id
-        WHERE ab.account_id = t.id) as branch_names`
+        WHERE ab.account_id = t.id) as branch_names`,
     ),
     knex.raw(
       `(SELECT COALESCE(string_agg(ab.branch_id::text, ',' ORDER BY ab.branch_id), '')
         FROM erp.account_branch ab
-        WHERE ab.account_id = t.id) as branch_ids`
+        WHERE ab.account_id = t.id) as branch_ids`,
     ),
   ],
   columns: [
@@ -79,8 +80,7 @@ const page = {
         select: ["id", "name", "name_ur", "account_type"],
         orderBy: ["account_type", "name"],
       },
-      labelFormat: (row, locale) =>
-        `${row.account_type} - ${locale === "ur" && row.name_ur ? row.name_ur : row.name}`,
+      labelFormat: (row, locale) => `${row.account_type} - ${locale === "ur" && row.name_ur ? row.name_ur : row.name}`,
     },
     {
       name: "branch_ids",
@@ -112,20 +112,7 @@ page.columns = (page.columns || [])
     return column;
   });
 
-const ACTIVE_OPTION_TABLES = new Set([
-  "erp.party_groups",
-  "erp.account_groups",
-  "erp.product_groups",
-  "erp.product_subgroups",
-  "erp.cities",
-  "erp.branches",
-  "erp.departments",
-  "erp.grades",
-  "erp.packing_types",
-  "erp.sizes",
-  "erp.colors",
-  "erp.uom",
-]);
+const ACTIVE_OPTION_TABLES = new Set(["erp.party_groups", "erp.account_groups", "erp.product_groups", "erp.product_subgroups", "erp.cities", "erp.branches", "erp.departments", "erp.grades", "erp.packing_types", "erp.sizes", "erp.colors", "erp.uom"]);
 
 const hydratePage = async (pageConfig, locale) => {
   const fields = [];
@@ -134,15 +121,9 @@ const hydratePage = async (pageConfig, locale) => {
       fields.push(field);
       continue;
     }
-    const selectFields = field.optionsQuery.select || [
-      field.optionsQuery.valueKey,
-      field.optionsQuery.labelKey,
-    ];
+    const selectFields = field.optionsQuery.select || [field.optionsQuery.valueKey, field.optionsQuery.labelKey];
     let query = knex(field.optionsQuery.table).select(selectFields);
-    if (
-      field.optionsQuery.activeOnly !== false &&
-      ACTIVE_OPTION_TABLES.has(field.optionsQuery.table)
-    ) {
+    if (field.optionsQuery.activeOnly !== false && ACTIVE_OPTION_TABLES.has(field.optionsQuery.table)) {
       query = query.where({ is_active: true });
     }
     if (field.optionsQuery.where) {
@@ -152,11 +133,8 @@ const hydratePage = async (pageConfig, locale) => {
     fields.push({
       ...field,
       options: rows.map((row) => {
-        const labelRaw = field.labelFormat
-          ? field.labelFormat(row, locale)
-          : row[field.optionsQuery.labelKey];
-        const labelUr =
-          !field.labelFormat && locale === "ur" && row.name_ur ? row.name_ur : null;
+        const labelRaw = field.labelFormat ? field.labelFormat(row, locale) : row[field.optionsQuery.labelKey];
+        const labelUr = !field.labelFormat && locale === "ur" && row.name_ur ? row.name_ur : null;
         return {
           value: row[field.optionsQuery.valueKey],
           label: labelUr || labelRaw,
@@ -194,10 +172,7 @@ const fetchRows = (pageConfig, options = {}) => {
   if (pageConfig.branchScoped && options.branchId) {
     query = query.where((builder) => {
       builder.whereExists(function () {
-        this.select(1)
-          .from(pageConfig.branchMap.table)
-          .whereRaw(`${pageConfig.branchMap.table}.${pageConfig.branchMap.key} = t.id`)
-          .andWhere(`${pageConfig.branchMap.table}.${pageConfig.branchMap.branchKey}`, options.branchId);
+        this.select(1).from(pageConfig.branchMap.table).whereRaw(`${pageConfig.branchMap.table}.${pageConfig.branchMap.key} = t.id`).andWhere(`${pageConfig.branchMap.table}.${pageConfig.branchMap.branchKey}`, options.branchId);
       });
     });
   }
@@ -205,12 +180,7 @@ const fetchRows = (pageConfig, options = {}) => {
   if (pageConfig.hasUpdatedFields !== false) {
     selects.push("uu.username as updated_by_name");
   }
-  let extraSelect =
-    pageConfig.extraSelect
-      ? typeof pageConfig.extraSelect === "function"
-        ? pageConfig.extraSelect(options.locale || "en")
-        : pageConfig.extraSelect
-      : [];
+  let extraSelect = pageConfig.extraSelect ? (typeof pageConfig.extraSelect === "function" ? pageConfig.extraSelect(options.locale || "en") : pageConfig.extraSelect) : [];
   if (!Array.isArray(extraSelect)) {
     extraSelect = [extraSelect];
   }
@@ -275,7 +245,7 @@ const renderIndexError = async (req, res, values, error, modalMode, basePath) =>
   return res.redirect(basePath);
 };
 
-router.get("/", async (req, res, next) => {
+router.get("/", requirePermission("SCREEN", "master_data.accounts", "navigate"), async (req, res, next) => {
   try {
     const hydrated = await hydratePage(page, req.locale);
     const flash = readFlash(req, res, req.baseUrl);
@@ -303,7 +273,7 @@ router.get("/", async (req, res, next) => {
   }
 });
 
-router.post("/", async (req, res, next) => {
+router.post("/", requirePermission("SCREEN", "master_data.accounts", "navigate"), async (req, res, next) => {
   const values = buildValues(page, req.body);
   if (page.autoCodeFromName && !values.code) {
     values.code = toCode(values.name);
@@ -319,6 +289,22 @@ router.post("/", async (req, res, next) => {
   }
 
   try {
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey: "master_data.accounts",
+      action: "create",
+      entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
+      entityId: "NEW",
+      summary: `${res.locals.t("create")} ${res.locals.t(page.titleKey)}`,
+      oldValue: null,
+      newValue: values,
+      t: res.locals.t,
+    });
+
+    if (approval.queued) {
+      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+    }
+
     const branchIds = Array.isArray(values.branch_ids) ? values.branch_ids : [];
     if (!branchIds.length) {
       return renderIndexError(req, res, values, res.locals.t("error_select_branch"), "create", basePath);
@@ -346,21 +332,21 @@ router.post("/", async (req, res, next) => {
           branchIdsInsert.map((branchId) => ({
             [page.branchMap.key]: accountId,
             [page.branchMap.branchKey]: branchId,
-          }))
+          })),
         );
       }
     });
     return res.redirect(basePath);
   } catch (err) {
     console.error("[accounts:create]", { error: err });
-    return renderIndexError(req, res, values, res.locals.t("error_unable_save"), "create", basePath);
+    return renderIndexError(req, res, values, err?.message || res.locals.t("error_unable_save"), "create", basePath);
   }
 });
 
-router.post("/:id", async (req, res, next) => {
+router.post("/:id", requirePermission("SCREEN", "master_data.accounts", "navigate"), async (req, res, next) => {
   const id = Number(req.params.id);
   if (!id) {
-    return next(new HttpError(404, "Account not found"));
+    return next(new HttpError(404, res.locals.t("error_not_found")));
   }
   const values = buildValues(page, req.body);
   if (page.autoCodeFromName && !values.code) {
@@ -377,6 +363,26 @@ router.post("/:id", async (req, res, next) => {
   }
 
   try {
+    const existing = await knex(page.table).where({ id }).first();
+    if (!existing) {
+      return renderIndexError(req, res, values, res.locals.t("error_not_found"), "edit", basePath);
+    }
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey: "master_data.accounts",
+      action: "edit",
+      entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
+      entityId: id,
+      summary: `${res.locals.t("edit")} ${res.locals.t(page.titleKey)}`,
+      oldValue: existing,
+      newValue: values,
+      t: res.locals.t,
+    });
+
+    if (approval.queued) {
+      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+    }
+
     const branchIds = Array.isArray(values.branch_ids) ? values.branch_ids : [];
     if (!branchIds.length) {
       return renderIndexError(req, res, values, res.locals.t("error_select_branch"), "edit", basePath);
@@ -384,19 +390,13 @@ router.post("/:id", async (req, res, next) => {
     const codeValue = values.code || (page.autoCodeFromName ? toCode(values.name) : "");
     const nameValue = values.name || "";
     if (codeValue) {
-      const existing = await knex(page.table)
-        .whereRaw("lower(code) = ?", [codeValue.toLowerCase()])
-        .andWhereNot({ id })
-        .first();
+      const existing = await knex(page.table).whereRaw("lower(code) = ?", [codeValue.toLowerCase()]).andWhereNot({ id }).first();
       if (existing) {
         return renderIndexError(req, res, values, res.locals.t("error_duplicate_code"), "edit", basePath);
       }
     }
     if (nameValue) {
-      const existing = await knex(page.table)
-        .whereRaw("lower(name) = ?", [nameValue.toLowerCase()])
-        .andWhereNot({ id })
-        .first();
+      const existing = await knex(page.table).whereRaw("lower(name) = ?", [nameValue.toLowerCase()]).andWhereNot({ id }).first();
       if (existing) {
         return renderIndexError(req, res, values, res.locals.t("error_duplicate_name"), "edit", basePath);
       }
@@ -418,28 +418,43 @@ router.post("/:id", async (req, res, next) => {
           branchIdsUpdate.map((branchId) => ({
             [page.branchMap.key]: id,
             [page.branchMap.branchKey]: branchId,
-          }))
+          })),
         );
       }
     });
     return res.redirect(basePath);
   } catch (err) {
     console.error("[accounts:update]", { id, error: err });
-    return renderIndexError(req, res, values, res.locals.t("error_unable_save"), "edit", basePath);
+    return renderIndexError(req, res, values, err?.message || res.locals.t("error_unable_save"), "edit", basePath);
   }
 });
 
-router.post("/:id/toggle", async (req, res, next) => {
+router.post("/:id/toggle", requirePermission("SCREEN", "master_data.accounts", "delete"), async (req, res, next) => {
   const id = Number(req.params.id);
   if (!id) {
-    return next(new HttpError(404, "Account not found"));
+    return next(new HttpError(404, res.locals.t("error_not_found")));
   }
   const basePath = req.baseUrl;
 
   try {
     const current = await knex(page.table).select("is_active").where({ id }).first();
     if (!current) {
-      return next(new HttpError(404, "Account not found"));
+      return next(new HttpError(404, res.locals.t("error_not_found")));
+    }
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey: "master_data.accounts",
+      action: "edit",
+      entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
+      entityId: id,
+      summary: `${res.locals.t("edit")} ${res.locals.t(page.titleKey)}`,
+      oldValue: current,
+      newValue: { is_active: !current.is_active },
+      t: res.locals.t,
+    });
+
+    if (approval.queued) {
+      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
     }
     await knex(page.table)
       .where({ id })
@@ -454,18 +469,37 @@ router.post("/:id/toggle", async (req, res, next) => {
   }
 });
 
-router.post("/:id/delete", async (req, res, next) => {
+router.post("/:id/delete", requirePermission("SCREEN", "master_data.accounts", "hard_delete"), async (req, res, next) => {
   const id = Number(req.params.id);
   if (!id) {
-    return next(new HttpError(404, "Account not found"));
+    return next(new HttpError(404, res.locals.t("error_not_found")));
   }
   const basePath = req.baseUrl;
 
   try {
+    const existing = await knex(page.table).where({ id }).first();
+    if (!existing) {
+      return renderIndexError(req, res, {}, res.locals.t("error_not_found"), "delete", basePath);
+    }
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey: "master_data.accounts",
+      action: "delete",
+      entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
+      entityId: id,
+      summary: `${res.locals.t("delete")} ${res.locals.t(page.titleKey)}`,
+      oldValue: existing,
+      newValue: null,
+      t: res.locals.t,
+    });
+
+    if (approval.queued) {
+      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+    }
     await knex(page.table).where({ id }).del();
     return res.redirect(basePath);
   } catch (err) {
-    return renderIndexError(req, res, {}, res.locals.t("error_delete"), "delete", basePath);
+    return renderIndexError(req, res, {}, err?.message || res.locals.t("error_delete"), "delete", basePath);
   }
 });
 

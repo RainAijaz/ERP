@@ -1,6 +1,7 @@
 const express = require("express");
 const authRoutes = require("./administration/auth");
 const approvalRoutes = require("./administration/approvals");
+const administrationRoutes = require("./administration");
 const voucherEngineRoutes = require("./vouchers/voucher-engine");
 const masterDataRoutes = require("./master_data");
 const { requirePermission } = require("../middleware/access/role-permissions");
@@ -9,7 +10,8 @@ const { translateToUrdu, transliterateToUrdu } = require("../utils/translate");
 const router = express.Router();
 
 router.use("/auth", authRoutes);
-router.use("/administration/approvals", approvalRoutes);
+router.use("/administration", administrationRoutes);
+router.use("/administration/approvals", approvalRoutes); // keep for direct/legacy links
 router.use("/master-data", masterDataRoutes);
 router.use("/vouchers", voucherEngineRoutes);
 
@@ -26,8 +28,8 @@ router.get("/whoami", (req, res) => {
   });
 });
 
-router.get("/test-permission", requirePermission("MODULE", "administration", "view"), (req, res) => {
-  res.json({ ok: true, permission: "MODULE:administration:view" });
+router.get("/test-permission", requirePermission("MODULE", "administration", "navigate"), (req, res) => {
+  res.json({ ok: true, permission: "MODULE:administration:navigate" });
 });
 
 router.post("/translate", async (req, res) => {

@@ -1,6 +1,9 @@
 const express = require("express");
 const knex = require("../../../db/knex");
 const { HttpError } = require("../../../middleware/errors/http-error");
+const { requirePermission } = require("../../../middleware/access/role-permissions");
+const { handleScreenApproval } = require("../../../middleware/approvals/screen-approval");
+const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
 
 const router = express.Router();
 const ITEM_TYPE = "FG";
@@ -150,7 +153,7 @@ const ensureSfgForFinished = async (trx, finishedItem, sfgPartType, userId) => {
   await trx("erp.item_usage").insert({ fg_item_id: finishedItem.id, sfg_item_id: sfgItemId }).onConflict(["fg_item_id", "sfg_item_id"]).ignore();
 };
 
-router.get("/", async (req, res, next) => {
+router.get("/", requirePermission("SCREEN", "master_data.products.finished", "navigate"), async (req, res, next) => {
   try {
     const filters = {
       subgroup_id: req.query.subgroup_id || "",
@@ -166,7 +169,7 @@ router.get("/", async (req, res, next) => {
   }
 });
 
-router.post("/", async (req, res) => {
+router.post("/", requirePermission("SCREEN", "master_data.products.finished", "navigate"), async (req, res) => {
   const values = { ...req.body };
   const basePath = `${req.baseUrl}`;
   try {
@@ -190,6 +193,35 @@ router.post("/", async (req, res) => {
         modalMode: "edit",
         values: { ...values, id },
       });
+    }
+
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey: "master_data.products.finished",
+      action: "create",
+      entityType: SCREEN_ENTITY_TYPES["master_data.products.finished"],
+      entityId: "NEW",
+      summary: `${res.locals.t("create")} ${res.locals.t("finished")}`,
+      oldValue: null,
+      newValue: {
+        _action: "create",
+        item_type: ITEM_TYPE,
+        code,
+        name,
+        name_ur: values.name_ur || null,
+        group_id,
+        subgroup_id,
+        product_type_id,
+        base_uom_id,
+        uses_sfg,
+        sfg_part_type: sfg_part_type || null,
+        min_stock_level: 0,
+      },
+      t: res.locals.t,
+    });
+
+    if (approval.queued) {
+      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
     }
 
     await knex.transaction(async (trx) => {
@@ -231,11 +263,11 @@ router.post("/", async (req, res) => {
   }
 });
 
-router.post("/:id", async (req, res, next) => {
+router.post("/:id", requirePermission("SCREEN", "master_data.products.finished", "navigate"), async (req, res, next) => {
   const id = Number(req.params.id);
   const values = { ...req.body };
   const basePath = `${req.baseUrl}`;
-  if (!id) return next(new HttpError(404, "Finished product not found"));
+  if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
 
   try {
     console.log("[finished:update] raw body", values);
@@ -271,6 +303,34 @@ router.post("/:id", async (req, res, next) => {
         modalMode: "edit",
         values: { ...values, id },
       });
+    }
+
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey: "master_data.products.finished",
+      action: "edit",
+      entityType: SCREEN_ENTITY_TYPES["master_data.products.finished"],
+      entityId: id,
+      summary: `${res.locals.t("edit")} ${res.locals.t("finished")}`,
+      oldValue: null,
+      newValue: {
+        _action: "update",
+        item_type: ITEM_TYPE,
+        code,
+        name,
+        name_ur: values.name_ur || null,
+        group_id,
+        subgroup_id,
+        product_type_id,
+        base_uom_id,
+        uses_sfg,
+        sfg_part_type: sfg_part_type || null,
+      },
+      t: res.locals.t,
+    });
+
+    if (approval.queued) {
+      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
     }
 
     await knex.transaction(async (trx) => {
@@ -328,13 +388,29 @@ router.post("/:id", async (req, res, next) => {
   }
 });
 
-router.post("/:id/toggle", async (req, res, next) => {
+router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.finished", "delete"), async (req, res, next) => {
   const id = Number(req.params.id);
-  if (!id) return next(new HttpError(404, "Finished product not found"));
+  if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
   const basePath = `${req.baseUrl}`;
   try {
     const current = await knex("erp.items").select("is_active").where({ id }).first();
-    if (!current) return next(new HttpError(404, "Finished product not found"));
+    if (!current) return next(new HttpError(404, res.locals.t("error_not_found")));
+
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey: "master_data.products.finished",
+      action: "edit",
+      entityType: SCREEN_ENTITY_TYPES["master_data.products.finished"],
+      entityId: id,
+      summary: `${res.locals.t("edit")} ${res.locals.t("finished")}`,
+      oldValue: current,
+      newValue: { _action: "toggle", is_active: !current.is_active, item_type: ITEM_TYPE },
+      t: res.locals.t,
+    });
+
+    if (approval.queued) {
+      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+    }
     await knex.transaction(async (trx) => {
       await trx("erp.items")
         .where({ id })
@@ -368,11 +444,30 @@ router.post("/:id/toggle", async (req, res, next) => {
   }
 });
 
-router.post("/:id/delete", async (req, res, next) => {
+router.post("/:id/delete", requirePermission("SCREEN", "master_data.products.finished", "hard_delete"), async (req, res, next) => {
   const id = Number(req.params.id);
-  if (!id) return next(new HttpError(404, "Finished product not found"));
+  if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
   const basePath = `${req.baseUrl}`;
   try {
+    const existing = await knex("erp.items").select("id", "name", "is_active").where({ id }).first();
+    if (!existing) return next(new HttpError(404, res.locals.t("error_not_found")));
+
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey: "master_data.products.finished",
+      action: "delete",
+      entityType: SCREEN_ENTITY_TYPES["master_data.products.finished"],
+      entityId: id,
+      summary: `${res.locals.t("delete")} ${res.locals.t("finished")}`,
+      oldValue: existing,
+      newValue: { _action: "delete", item_type: ITEM_TYPE },
+      t: res.locals.t,
+    });
+
+    if (approval.queued) {
+      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+    }
+
     await knex.transaction(async (trx) => {
       const linked = await getLinkedSfgIds(trx, id);
       await trx("erp.item_usage").where({ fg_item_id: id }).del();
