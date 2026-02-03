@@ -6,6 +6,7 @@
         <p class="text-sm text-muted"><%= t("finished_description") %></p>
       </div>
       <div class="flex flex-wrap gap-2">
+        <% const canCreate = can('SCREEN', 'master_data.products.finished', 'create'); %>
         <% const canDownload = can('SCREEN', 'master_data.products.finished', 'print'); %>
         <% if (canDownload) { %>
           <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-download-button>
@@ -15,9 +16,11 @@
             <%= t("print") %>
           </button>
         <% } %>
-        <button class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800" type="button" data-modal-open>
-          <%= t("add") %> <%= t("finished") %>
-        </button>
+        <% if (canCreate) { %>
+          <button class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800" type="button" data-modal-open>
+            <%= t("add") %> <%= t("finished") %>
+          </button>
+        <% } %>
       </div>
     </div>
   </section>

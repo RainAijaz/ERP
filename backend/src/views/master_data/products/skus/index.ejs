@@ -1,12 +1,13 @@
 <%- include("../../../base/partials/matrix-utils-script") %>
 
-<%
-  const viewType = typeof itemType !== "undefined" ? itemType : "FG";
-  const isFinishedView = viewType === "FG";
-  const viewQuery = "?item_type=" + viewType;
-  const canDelete = can("SCREEN", "master_data.products.skus", "delete");
-  const canHardDelete = can("SCREEN", "master_data.products.skus", "hard_delete");
-  const i18n = (key, fallback) => {
+  <%
+    const viewType = typeof itemType !== "undefined" ? itemType : "FG";
+    const isFinishedView = viewType === "FG";
+    const viewQuery = "?item_type=" + viewType;
+    const canCreate = can("SCREEN", "master_data.products.skus", "create");
+    const canDelete = can("SCREEN", "master_data.products.skus", "delete");
+    const canHardDelete = can("SCREEN", "master_data.products.skus", "hard_delete");
+    const i18n = (key, fallback) => {
     const value = t(key);
     return value && value !== key ? value : fallback;
   };
@@ -47,11 +48,11 @@
             <%= t("print") %>
           </button>
         <% } %>
-        <% if (isFinishedView) { %>
-          <button class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800" type="button" data-modal-open data-mode="create">
-            <%= t("add") %> <%= t("skus") %>
-          </button>
-        <% } %>
+          <% if (isFinishedView && canCreate) { %>
+            <button class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800" type="button" data-modal-open data-mode="create">
+              <%= t("add") %> <%= t("skus") %>
+            </button>
+          <% } %>
       </div>
     </div>
   </section>

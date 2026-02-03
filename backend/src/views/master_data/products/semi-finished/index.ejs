@@ -5,8 +5,9 @@
         <h1 class="text-2xl font-display text-ink"><%= t("semi_finished") %></h1>
         <p class="text-sm text-muted"><%= t("semi_finished_description") %></p>
       </div>
-      <div class="flex flex-wrap gap-2">
-        <% const canDownload = can('SCREEN', 'master_data.products.semi_finished', 'print'); %>
+        <div class="flex flex-wrap gap-2">
+          <% const canCreate = can('SCREEN', 'master_data.products.semi_finished', 'create'); %>
+          <% const canDownload = can('SCREEN', 'master_data.products.semi_finished', 'print'); %>
         <% if (canDownload) { %>
           <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-download-button>
             <%= t("download") %>
@@ -15,10 +16,12 @@
             <%= t("print") %>
           </button>
         <% } %>
-        <button class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800" type="button" data-modal-open>
-          <%= t("add") %> <%= t("semi_finished") %>
-        </button>
-      </div>
+          <% if (canCreate) { %>
+            <button class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800" type="button" data-modal-open>
+              <%= t("add") %> <%= t("semi_finished") %>
+            </button>
+          <% } %>
+        </div>
     </div>
   </section>
 

@@ -91,8 +91,9 @@ const rolePermissions = (req, res, next) => {
   const permissions = req.user.permissions?.[key];
   if (!hasRequiredAccess(permissions, required.action)) {
     const legacyKey = getLegacyScopeKey(required.scopeKey);
+    let legacyPermissions = null;
     if (legacyKey) {
-      const legacyPermissions = req.user.permissions?.[`${required.scopeType}:${legacyKey}`];
+      legacyPermissions = req.user.permissions?.[`${required.scopeType}:${legacyKey}`];
       if (hasRequiredAccess(legacyPermissions, required.action)) return next();
     }
 
@@ -153,7 +154,7 @@ const requirePermission =
     } else {
       req.requiredPermission = { scopeType, scopeKey, action };
     }
-    next();
+    return rolePermissions(req, res, next);
   };
 
 module.exports = rolePermissions;

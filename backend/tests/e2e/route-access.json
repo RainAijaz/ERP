@@ -1,0 +1,10 @@
+{
+  "routes": [
+    {
+      "name": "Parties list",
+      "path": "/master-data/parties",
+      "userPrefix": "E2E_LIMITED",
+      "expectedStatus": 200
+    }
+  ]
+}

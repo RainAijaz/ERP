@@ -9,6 +9,9 @@
     "seed:admin": "node src/scripts/seed-admin.js",
     "test:email": "node src/scripts/test-email.js",
     "test:voucher-engine": "node src/scripts/test-voucher-engine.js",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:install": "playwright install --with-deps",
     "build:css": "npx tailwindcss -i ./src/styles.css -o ./public/styles.css",
     "dev:css": "npx tailwindcss -i ./src/styles.css -o ./public/styles.css --watch",
     "migrate:rollback": "knex migrate:rollback",
@@ -27,9 +30,11 @@
     "pg": "^8.16.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.1",
     "@tailwindcss/cli": "^4.1.18",
     "autoprefixer": "^10.4.23",
     "nodemon": "^3.1.11",
+    "playwright": "^1.58.1",
     "postcss": "^8.5.6",
     "tailwindcss": "^4.1.18"
   }
