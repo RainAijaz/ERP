@@ -201,13 +201,15 @@ router.get("/item-variants/:itemId", requirePermission("SCREEN", "master_data.pr
   }
 });
 
-router.get("/", requirePermission("SCREEN", "master_data.products.skus", "navigate"), async (req, res, next) => {
+router.get("/", requirePermission("SCREEN", "master_data.products.skus", "view"), async (req, res, next) => {
   try {
     const itemType = req.query.item_type === "SFG" ? "SFG" : "FG";
     if (itemType === "SFG") {
       await syncSfgVariantsFromFinished(req.user ? req.user.id : null);
     }
-    const [rows, options, users] = await Promise.all([loadRows(req.query, itemType), loadOptions(itemType), loadUsers()]);
+    const canBrowse = res.locals.can("SCREEN", "master_data.products.skus", "navigate");
+    const [options, users] = await Promise.all([loadOptions(itemType), loadUsers()]);
+    const rows = canBrowse ? await loadRows(req.query, itemType) : [];
 
     // ADDED: Pagination object generation to fix "0 of 0 entries"
     const pagination = {
@@ -458,8 +460,8 @@ router.post("/bulk-update", requirePermission("SCREEN", "master_data.products.sk
   if (!ids.length) return res.redirect(basePath + viewQuery);
 
   try {
-    const approvalRequired = await requiresApproval("master_data.products.skus", "edit");
-    const allowed = hasPermission(req.user, "master_data.products.skus", "edit");
+    const approvalRequired = await requiresApproval("master_data.products.skus", "delete");
+    const allowed = hasPermission(req.user, "master_data.products.skus", "delete");
     if (!allowed && !approvalRequired) {
       throw new HttpError(403, res.locals.t("permission_denied"));
     }
@@ -506,8 +508,17 @@ router.post("/:id", requirePermission("SCREEN", "master_data.products.skus", "na
   const viewQuery = `?item_type=${itemType}`;
   const basePath = `${req.baseUrl}`;
   try {
-    const approvalRequired = await requiresApproval("master_data.products.skus", "edit");
-    const allowed = hasPermission(req.user, "master_data.products.skus", "edit");
+    const approvalRequired = await requiresApproval("master_data.products.skus", "delete");
+    const allowed = hasPermission(req.user, "master_data.products.skus", "delete");
+    if (process.env.DEBUG_SKU_PERMS === "1") {
+      console.log("[SKU PERM DEBUG]", {
+        user: req.user?.username,
+        isAdmin: req.user?.isAdmin,
+        approvalRequired,
+        allowed,
+        scopePerms: req.user?.permissions?.["SCREEN:master_data.products.skus"] || null,
+      });
+    }
     if (!allowed && !approvalRequired) {
       throw new HttpError(403, res.locals.t("permission_denied"));
     }
@@ -518,7 +529,7 @@ router.post("/:id", requirePermission("SCREEN", "master_data.products.skus", "na
         request_type: "MASTER_DATA_CHANGE",
         entity_type: "SKU",
         entity_id: String(id),
-        summary: `${res.locals.t("edit")} ${res.locals.t("skus")}`,
+        summary: `${res.locals.t("deactivate")} ${res.locals.t("skus")}`,
         new_value: { _action: "update", sale_rate: req.body.sale_rate },
         status: "PENDING",
         requested_by: req.user.id,
@@ -545,8 +556,8 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.sku
   const basePath = `${req.baseUrl}`;
   try {
     const current = await knex("erp.variants").select("is_active").where({ id }).first();
-    const approvalRequired = await requiresApproval("master_data.products.skus", "edit");
-    const allowed = hasPermission(req.user, "master_data.products.skus", "edit");
+    const approvalRequired = await requiresApproval("master_data.products.skus", "delete");
+    const allowed = hasPermission(req.user, "master_data.products.skus", "delete");
     if (!allowed && !approvalRequired) {
       throw new HttpError(403, res.locals.t("permission_denied"));
     }
@@ -557,7 +568,7 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.sku
         request_type: "MASTER_DATA_CHANGE",
         entity_type: "SKU",
         entity_id: String(id),
-        summary: `${res.locals.t("edit")} ${res.locals.t("skus")}`,
+        summary: `${res.locals.t("deactivate")} ${res.locals.t("skus")}`,
         new_value: { _action: "toggle", is_active: !current.is_active },
         status: "PENDING",
         requested_by: req.user.id,

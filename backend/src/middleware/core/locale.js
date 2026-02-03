@@ -165,6 +165,10 @@ const translations = {
     load_failed: "Failed to load content.",
     error_saving: "Error saving.",
     error_generic: "Error.",
+    error_record_in_use: "This record is linked to other data and cannot be deleted.",
+    error_duplicate_record: "A record with the same details already exists.",
+    error_invalid_value: "One or more values are invalid.",
+    ok: "OK",
     unexpected_response: "Unexpected response",
     network_error: "Network error. Please try again.",
 
@@ -482,6 +486,10 @@ const translations = {
     load_failed: "مواد لوڈ نہیں ہو سکا۔",
     error_saving: "محفوظ کرنے میں خرابی۔",
     error_generic: "خرابی۔",
+    error_record_in_use: "یہ ریکارڈ دوسرے ڈیٹا سے منسلک ہے اور حذف نہیں کیا جا سکتا۔",
+    error_duplicate_record: "اسی تفصیل کے ساتھ ریکارڈ پہلے سے موجود ہے۔",
+    error_invalid_value: "ایک یا زیادہ قدریں درست نہیں ہیں۔",
+    ok: "ٹھیک ہے",
     unexpected_response: "غیر متوقع جواب",
     network_error: "نیٹ ورک خرابی۔ دوبارہ کوشش کریں۔",
 

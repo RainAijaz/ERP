@@ -14,7 +14,7 @@ const renderPage = (req, res, view, title) =>
     t: res.locals.t,
   });
 
-router.get("/", requirePermission("SCREEN", "master_data.bom", "navigate"), (req, res) => {
+router.get("/", requirePermission("SCREEN", "master_data.bom", "view"), (req, res) => {
   renderPage(req, res, "../../master_data/bom/index", res.locals.t("bom_list"));
 });
 
@@ -22,11 +22,11 @@ router.get("/new", requirePermission("SCREEN", "master_data.bom", "create"), (re
   renderPage(req, res, "../../master_data/bom/form", `New ${res.locals.t("bom")}`);
 });
 
-router.get("/approval", requirePermission("SCREEN", "master_data.bom.approval", "navigate"), (req, res) => {
+router.get("/approval", requirePermission("SCREEN", "master_data.bom.approval", "view"), (req, res) => {
   renderPage(req, res, "../../master_data/bom/approval", res.locals.t("bom_approval"));
 });
 
-router.get("/versions", requirePermission("SCREEN", "master_data.bom.versions", "navigate"), (req, res) => {
+router.get("/versions", requirePermission("SCREEN", "master_data.bom.versions", "view"), (req, res) => {
   renderPage(req, res, "../../master_data/bom/versions", res.locals.t("bom_versions"));
 });
 

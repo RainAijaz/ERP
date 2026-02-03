@@ -5,6 +5,7 @@ const { requirePermission } = require("../../../middleware/access/role-permissio
 const { handleScreenApproval } = require("../../../middleware/approvals/screen-approval");
 const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
 const { parseCookies, setCookie } = require("../../../middleware/utils/cookies");
+const { friendlyErrorMessage } = require("../../../middleware/errors/friendly-error");
 
 const router = express.Router();
 
@@ -236,25 +237,36 @@ const readFlash = (req, res, path) => {
 };
 
 const renderIndexError = async (req, res, values, error, modalMode, basePath) => {
-  const payload = { values, error, modalMode };
+  const message = friendlyErrorMessage(error, res.locals.t);
+  const payload = { values, error: message, modalMode };
   setCookie(res, FLASH_COOKIE, JSON.stringify(payload), {
     path: req.baseUrl,
     maxAge: 60,
     sameSite: "Lax",
   });
+  if (modalMode === "delete") {
+    setCookie(res, "ui_error", JSON.stringify({ message }), {
+      path: "/",
+      maxAge: 30,
+      sameSite: "Lax",
+    });
+  }
   return res.redirect(basePath);
 };
 
-router.get("/", requirePermission("SCREEN", "master_data.accounts", "navigate"), async (req, res, next) => {
+router.get("/", requirePermission("SCREEN", "master_data.accounts", "view"), async (req, res, next) => {
   try {
     const hydrated = await hydratePage(page, req.locale);
     const flash = readFlash(req, res, req.baseUrl);
     const modalMode = flash ? flash.modalMode : "create";
     const modalOpen = flash ? ["create", "edit"].includes(modalMode) : false;
-    const rows = await fetchRows(hydrated, {
-      branchId: req.user?.isAdmin ? null : req.branchId,
-      locale: req.locale,
-    });
+    const canBrowse = res.locals.can("SCREEN", "master_data.accounts", "navigate");
+    const rows = canBrowse
+      ? await fetchRows(hydrated, {
+          branchId: req.user?.isAdmin ? null : req.branchId,
+          locale: req.locale,
+        })
+      : [];
     const basePath = req.baseUrl;
     const defaults = { ...(hydrated.defaults || {}) };
     if (!flash && req.branchId) {
@@ -444,10 +456,10 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.accounts", "
     const approval = await handleScreenApproval({
       req,
       scopeKey: "master_data.accounts",
-      action: "edit",
+      action: "delete",
       entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
       entityId: id,
-      summary: `${res.locals.t("edit")} ${res.locals.t(page.titleKey)}`,
+      summary: `${res.locals.t("deactivate")} ${res.locals.t(page.titleKey)}`,
       oldValue: current,
       newValue: { is_active: !current.is_active },
       t: res.locals.t,

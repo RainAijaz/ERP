@@ -91,4 +91,37 @@ router.post("/:id", requirePermission("SCREEN", "administration.roles", "edit"),
   }
 });
 
+router.post("/:id/toggle", requirePermission("SCREEN", "administration.roles", "delete"), async (req, res, next) => {
+  try {
+    const role = await knex("erp.role_templates").where({ id: req.params.id }).first();
+    if (!role) throw new HttpError(404, "Role not found");
+    const nextValue = !role.is_active;
+    await knex("erp.role_templates").where({ id: req.params.id }).update({ is_active: nextValue });
+    if (req.xhr) return res.json({ success: true, is_active: nextValue });
+    res.redirect("/administration/roles");
+  } catch (err) {
+    if (req.xhr) return res.status(err.status || 500).json({ error: err.message });
+    next(err);
+  }
+});
+
+router.post("/:id/delete", requirePermission("SCREEN", "administration.roles", "hard_delete"), async (req, res, next) => {
+  const trx = await knex.transaction();
+  try {
+    const role = await trx("erp.role_templates").where({ id: req.params.id }).first();
+    if (!role) throw new HttpError(404, "Role not found");
+    const userCountRow = await trx("erp.users").where({ primary_role_id: req.params.id }).count({ count: "*" }).first();
+    const userCount = Number(userCountRow?.count || 0);
+    if (userCount > 0) throw new HttpError(400, "Role is assigned to users");
+    await trx("erp.role_templates").where({ id: req.params.id }).del();
+    await trx.commit();
+    if (req.xhr) return res.json({ success: true });
+    res.redirect("/administration/roles");
+  } catch (err) {
+    await trx.rollback();
+    if (req.xhr) return res.status(err.status || 500).json({ error: err.message });
+    next(err);
+  }
+});
+
 module.exports = router;

@@ -820,24 +820,25 @@
       btn.addEventListener("click", () => openModal("create", { id: "" }));
     });
 
-    editButtons.forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const data = {
-          id: btn.dataset.id,
-          action: basePath + "/" + btn.dataset.id,
-          created_at: btn.dataset.createdAt || "",
-          created_by: btn.dataset.createdBy || "",
-          updated_at: btn.dataset.updatedAt || "",
-          updated_by: btn.dataset.updatedBy || "",
-        };
-        Object.keys(btn.dataset).forEach((key) => {
-          if (key !== "id") {
-            data[key] = btn.dataset[key];
-          }
+      editButtons.forEach((btn) => {
+        btn.addEventListener("click", () => {
+          const data = {
+            id: btn.dataset.id,
+            action: basePath + "/" + btn.dataset.id,
+            created_at: btn.dataset.createdAt || "",
+            created_by: btn.dataset.createdBy || "",
+            updated_at: btn.dataset.updatedAt || "",
+            updated_by: btn.dataset.updatedBy || "",
+          };
+          btn.getAttributeNames().forEach((attr) => {
+            if (!attr.startsWith("data-")) return;
+            const rawKey = attr.slice(5);
+            const key = rawKey.replace(/-+/g, "_");
+            data[key] = btn.getAttribute(attr);
+          });
+          openModal("edit", data);
         });
-        openModal("edit", data);
       });
-    });
 
     closeButtons.forEach((btn) => {
       btn.addEventListener("click", closeModal);
@@ -1620,7 +1621,15 @@
           if (val !== null && val !== undefined) {
             // Handle Checkboxes
             if (input.type === "checkbox") {
-              input.checked = val === "true" || val === "1" || val === "on";
+              if (input.dataset.multi === "true") {
+                const selected = String(val)
+                  .split(",")
+                  .map((value) => value.trim())
+                  .filter(Boolean);
+                input.checked = selected.includes(input.value);
+              } else {
+                input.checked = val === "true" || val === "1" || val === "on";
+              }
             }
             // Handle Radios (only check if value matches)
             else if (input.type === "radio") {

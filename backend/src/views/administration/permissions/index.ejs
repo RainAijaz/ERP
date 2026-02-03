@@ -151,8 +151,9 @@
                      { key: 'can_delete', icon: 'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16', label: 'Deactivate', color: 'text-rose-600', tooltip: 'Enables the option to deactivate records.' },
                      { key: 'can_hard_delete', icon: 'M4 7h16M9 7V5h6v2M10 11v6M14 11v6M6 7l1 13h10l1-13', label: 'Delete', color: 'text-rose-700', tooltip: 'Permanently removes records.' },
                      { key: 'can_approve', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z', label: t('approve'), color: 'text-purple-600', tooltip: 'Grants authority to finalize a record status.' },
-                     { key: 'can_print', icon: 'M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z', label: t('print'), color: 'text-slate-600', tooltip: 'Enables the Print and Export to Excel/PDF buttons.' }
+                     { key: 'can_print', icon: 'M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z', label: t('download'), color: 'text-slate-600', tooltip: 'Enables the Download and Export buttons.' }
                    ] %>
+                <% const permissionsRestrictedActions = ['can_create', 'can_delete', 'can_hard_delete', 'can_print']; %>
                 
                 <% actions.forEach(act => { %>
                   <th class="py-3 border-b text-center w-24 group cursor-help hover:bg-slate-50 transition-colors" title="<%= act.tooltip %>">
@@ -190,9 +191,12 @@
                     </div>
                   </td>
 
+                  <% const isPermissionsScreen = row.scopeType === 'SCREEN' && row.scopeKey === 'administration.permissions'; %>
+                  <% const isAdministrationScope = row.moduleGroup === 'Administration' || (row.scopeType === 'MODULE' && row.scopeKey === 'administration') || (row.scopeKey && row.scopeKey.startsWith('administration.')); %>
                   <% actions.forEach(act => { %>
                     <td class="text-center border-r last:border-r-0 relative p-0 h-10 w-24">
-                      <% if (row.scopeType === 'SCREEN' && row.scopeId) { %>
+                      <% const hideAction = (isPermissionsScreen && permissionsRestrictedActions.includes(act.key)) || (isAdministrationScope && act.key === 'can_print'); %>
+                      <% if (!hideAction && row.scopeType === 'SCREEN' && row.scopeId) { %>
                         <label class="w-full h-full flex items-center justify-center cursor-pointer hover:bg-black/5 transition-colors relative">
                           <% if (isUserMode) { %>
                             <input type="hidden" name="<%= row.scopeId %>:<%= act.key %>" value="false">
@@ -295,13 +299,17 @@
     // If a specific module is clicked, we ensure its immediate children are visible.
     // We achieve this by removing the clicked path from 'collapsedPaths'.
     if (path !== 'all') {
-        collapsedPaths.delete(path); // Uncollapse the container itself
-        
+        // Uncollapse the container itself and its ancestors so nested groups show immediately.
+        const parts = path.split('.');
+        parts.forEach((_, idx) => {
+            const ancestor = parts.slice(0, idx + 1).join('.');
+            collapsedPaths.delete(ancestor);
+        });
+
         // Also uncollapse the row in the DOM so 'applyFilters' sees it as open
         const rows = document.querySelectorAll('.permission-row');
         rows.forEach(row => {
             const rowPath = row.getAttribute('data-path');
-            // If the row matches the category, ensure it is NOT in collapsedPaths
             if (rowPath === path) {
                 collapsedPaths.delete(rowPath);
             }

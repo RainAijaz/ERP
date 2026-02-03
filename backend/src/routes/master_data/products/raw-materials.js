@@ -145,10 +145,12 @@ const renderIndex = (req, res, payload) => {
   });
 };
 
-router.get("/", requirePermission("SCREEN", "master_data.products.raw_materials", "navigate"), async (req, res, next) => {
+router.get("/", requirePermission("SCREEN", "master_data.products.raw_materials", "view"), async (req, res, next) => {
   try {
     // --- UPDATED: Pass req.query to loadRows ---
-    const [rows, options, rateDetailsByItem, users] = await Promise.all([loadRows(req.query), loadOptions(), loadRateDetails(), loadUsers()]);
+    const canBrowse = res.locals.can("SCREEN", "master_data.products.raw_materials", "navigate");
+    const [options, rateDetailsByItem, users] = await Promise.all([loadOptions(), loadRateDetails(), loadUsers()]);
+    const rows = canBrowse ? await loadRows(req.query) : [];
 
     renderIndex(req, res, {
       rows,
@@ -468,10 +470,10 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.raw
     const approval = await handleScreenApproval({
       req,
       scopeKey: "master_data.products.raw_materials",
-      action: "edit",
+      action: "delete",
       entityType: SCREEN_ENTITY_TYPES["master_data.products.raw_materials"],
       entityId: id,
-      summary: `${res.locals.t("edit")} ${res.locals.t("raw_materials")}`,
+      summary: `${res.locals.t("deactivate")} ${res.locals.t("raw_materials")}`,
       oldValue: current,
       newValue: { _action: "toggle", is_active: !current.is_active, item_type: ITEM_TYPE },
       t: res.locals.t,

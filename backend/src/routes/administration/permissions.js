@@ -35,12 +35,13 @@ const writeFlash = (res, path, payload) => {
 // -------------------------------------------------------------------------
 // PERMISSION MATRIX
 // -------------------------------------------------------------------------
-router.get("/", requirePermission("SCREEN", "administration.permissions", "navigate"), async (req, res, next) => {
+router.get("/", requirePermission("SCREEN", "administration.permissions", "view"), async (req, res, next) => {
   try {
     const { type } = req.query; // type = 'role' or 'user'
     const isUserMode = type === "user";
     const actionKeys = ["can_navigate", "can_view", "can_create", "can_edit", "can_delete", "can_hard_delete", "can_print", "can_approve"];
     const flash = readFlash(req, res, req.baseUrl);
+    const canBrowsePermissions = res.locals.can("SCREEN", "administration.permissions", "navigate");
 
     // 1. Determine Target ID (User or Role)
     // We do NOT default to the first user/role anymore.
@@ -56,11 +57,18 @@ router.get("/", requirePermission("SCREEN", "administration.permissions", "navig
       } else {
         const r = await knex("erp.role_templates").where({ id: target_id }).first();
         if (r) targetName = r.name;
+        if (r && String(r.name || "").toLowerCase() === "admin") {
+          writeFlash(res, req.baseUrl, {
+            type: "error",
+            message: "Admin role permissions cannot be modified.",
+          });
+          return res.redirect("/administration/permissions?type=role");
+        }
       }
     }
 
     // Fetch lists for the dropdowns
-    const roles = await knex("erp.role_templates").select("id", "name").orderBy("name");
+    const roles = (await knex("erp.role_templates").select("id", "name").orderBy("name")).filter((role) => String(role.name || "").toLowerCase() !== "admin");
     const users = await knex("erp.users").select("id", "username").orderBy("username");
 
     // 2. Fetch All Scopes
@@ -85,7 +93,7 @@ router.get("/", requirePermission("SCREEN", "administration.permissions", "navig
     let basePermissionsMap = {};
     let overridePermissionsMap = {};
 
-    if (target_id) {
+    if (target_id && canBrowsePermissions) {
       if (isUserMode) {
         const userRow = await knex("erp.users").select("primary_role_id").where({ id: target_id }).first();
         const roleId = userRow?.primary_role_id;
@@ -145,10 +153,10 @@ router.get("/", requirePermission("SCREEN", "administration.permissions", "navig
         }, {});
       }
 
-      if (!isUserMode) {
-        basePermissionsMap = {};
-        overridePermissionsMap = {};
-      }
+    if (target_id && canBrowsePermissions && !isUserMode) {
+      basePermissionsMap = {};
+      overridePermissionsMap = {};
+    }
     }
 
     // 4. Structure Data for View (nav-driven)
@@ -197,7 +205,7 @@ router.get("/", requirePermission("SCREEN", "administration.permissions", "navig
       modalOpen: false,
       modalMode: null,
       modalValues: null,
-      permissions: target_id ? permissionsMap : {}, // Send empty object if no target
+      permissions: target_id && canBrowsePermissions ? permissionsMap : {}, // Send empty object if no target or no browse access
     });
   } catch (err) {
     next(err);
@@ -216,6 +224,17 @@ router.post("/update", requirePermission("SCREEN", "administration.permissions",
     const isUserMode = type === "user";
 
     if (!target_id) throw new Error("Target ID is required");
+
+    if (!isUserMode) {
+      const roleRow = await trx("erp.role_templates").select("name").where({ id: target_id }).first();
+      if (roleRow && String(roleRow.name || "").toLowerCase() === "admin") {
+        writeFlash(res, req.baseUrl, {
+          type: "error",
+          message: "Admin role permissions cannot be modified.",
+        });
+        return res.redirect("/administration/permissions?type=role");
+      }
+    }
 
     const actionKeys = ["can_navigate", "can_view", "can_create", "can_edit", "can_delete", "can_hard_delete", "can_print", "can_approve"];
 

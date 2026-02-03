@@ -3,6 +3,7 @@ const knex = require("../../../db/knex");
 const { HttpError } = require("../../../middleware/errors/http-error");
 const { requirePermission } = require("../../../middleware/access/role-permissions");
 const { parseCookies, setCookie } = require("../../../middleware/utils/cookies");
+const { friendlyErrorMessage } = require("../../../middleware/errors/friendly-error");
 const { handleScreenApproval } = require("../../../middleware/approvals/screen-approval");
 const { getBasicInfoEntityType } = require("../../../utils/approval-entity-map");
 
@@ -651,13 +652,16 @@ const listHandler = (type) => async (req, res, next) => {
     const flashMatch = flash && flash.type === type ? flash : null;
     const modalMode = flashMatch ? flashMatch.modalMode : "create";
     const modalOpen = flashMatch ? ["create", "edit"].includes(modalMode) : false;
-    const rows = await fetchRows(hydrated, {
-      branchId: req.user?.isAdmin ? null : req.branchId,
-      locale: req.locale,
-    });
     const basePath = `${req.baseUrl}${ROUTE_MAP[type]}`;
     const defaults = { ...(hydrated.defaults || {}) };
     const scopeKey = BASIC_INFO_SCOPE_KEYS[type] || `master_data.basic_info.${type}`;
+    const canBrowse = res.locals.can("SCREEN", scopeKey, "navigate");
+    const rows = canBrowse
+      ? await fetchRows(hydrated, {
+          branchId: req.user?.isAdmin ? null : req.branchId,
+          locale: req.locale,
+        })
+      : [];
     return renderPage(req, res, "../../master_data/basic-info/index", hydrated, {
       rows,
       basePath,
@@ -747,12 +751,20 @@ const readFlash = (req, res, path) => {
 
 // Store a short-lived flash so modal + errors re-open after redirect.
 const renderIndexError = async (req, res, page, values, error, modalMode, basePath, type) => {
-  const payload = { type, values, error, modalMode };
+  const message = friendlyErrorMessage(error, res.locals.t);
+  const payload = { type, values, error: message, modalMode };
   setCookie(res, FLASH_COOKIE, JSON.stringify(payload), {
     path: req.baseUrl,
     maxAge: 60,
     sameSite: "Lax",
   });
+  if (modalMode === "delete") {
+    setCookie(res, "ui_error", JSON.stringify({ message }), {
+      path: "/",
+      maxAge: 30,
+      sameSite: "Lax",
+    });
+  }
   return res.redirect(basePath);
 };
 
@@ -1058,11 +1070,11 @@ const toggleHandler = (type) => async (req, res, next) => {
     }
     const scopeKey = BASIC_INFO_SCOPE_KEYS[type] || `master_data.basic_info.${type}`;
     const entityType = getBasicInfoEntityType(type);
-    const summary = `${res.locals.t("edit")} ${res.locals.t(page.titleKey)}`;
+    const summary = `${res.locals.t("deactivate")} ${res.locals.t(page.titleKey)}`;
     const approval = await handleScreenApproval({
       req,
       scopeKey,
-      action: "edit",
+      action: "delete",
       entityType,
       entityId: id,
       summary,
@@ -1127,7 +1139,7 @@ const deleteHandler = (type) => async (req, res, next) => {
 
 Object.entries(ROUTE_MAP).forEach(([type, path]) => {
   const scopeKey = BASIC_INFO_SCOPE_KEYS[type] || `master_data.basic_info.${type}`;
-  router.get(path, requirePermission("SCREEN", scopeKey, "navigate"), listHandler(type));
+  router.get(path, requirePermission("SCREEN", scopeKey, "view"), listHandler(type));
   router.get(`${path}/new`, requirePermission("SCREEN", scopeKey, "create"), newHandler(type));
   router.post(path, requirePermission("SCREEN", scopeKey, "create"), createHandler(type));
   router.post(`${path}/:id`, requirePermission("SCREEN", scopeKey, "edit"), updateHandler(type));

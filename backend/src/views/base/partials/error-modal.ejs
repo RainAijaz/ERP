@@ -1,0 +1,33 @@
+<% const uiErrorMessage = uiError && uiError.message ? uiError.message : null; %>
+<% if (uiErrorMessage) { %>
+  <div class="fixed inset-0 z-[90] hidden items-center justify-center bg-slate-900/40 p-4" data-ui-error-modal>
+    <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl">
+      <div class="border-b border-slate-200 px-6 py-4">
+        <div class="text-sm font-semibold text-slate-700"><%= t("error_generic") %></div>
+        <p class="mt-1 text-xs text-slate-500"><%= uiErrorMessage %></p>
+      </div>
+      <div class="px-6 py-5">
+        <button class="w-full rounded-xl bg-slate-900 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-slate-800" type="button" data-ui-error-close>
+          <%= t("ok") || "OK" %>
+        </button>
+      </div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      const modal = document.querySelector("[data-ui-error-modal]");
+      const close = document.querySelector("[data-ui-error-close]");
+      if (!modal) return;
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+      const closeModal = () => {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+      };
+      close?.addEventListener("click", closeModal);
+      modal.addEventListener("click", (event) => {
+        if (event.target === modal) closeModal();
+      });
+    })();
+  </script>
+<% } %>

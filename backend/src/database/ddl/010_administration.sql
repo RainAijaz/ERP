@@ -151,7 +151,8 @@ CREATE TABLE IF NOT EXISTS branches (
 CREATE TABLE IF NOT EXISTS role_templates (
   id          bigserial PRIMARY KEY,
   name        text NOT NULL UNIQUE,             -- e.g., Admin, Accounts, Storekeeper, Sales, Production
-  description text
+  description text,
+  is_active   boolean NOT NULL DEFAULT true
 );
 
 -- Users master: authentication identity + primary role assignment.

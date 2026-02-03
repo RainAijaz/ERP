@@ -19,13 +19,14 @@
           <tr>
             <th class="px-6 py-4 font-semibold text-slate-600"><%= t('role_name') %></th>
             <th class="px-6 py-4 font-semibold text-slate-600"><%= t('description') %></th>
+            <th class="px-6 py-4 font-semibold text-slate-600 text-center"><%= t('status') %></th>
             <th class="px-6 py-4 font-semibold text-slate-600 text-right"><%= t('actions') %></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
           <% if (roles.length === 0) { %>
             <tr>
-              <td colspan="3" class="px-6 py-12 text-center text-slate-400">
+              <td colspan="4" class="px-6 py-12 text-center text-slate-400">
                 <div class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
                   <svg class="h-6 w-6 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M12 6v12"></path>
@@ -36,15 +37,61 @@
               </td>
             </tr>
           <% } %>
+          <% const canDeactivate = can('SCREEN', 'administration.roles', 'delete'); %>
+          <% const canHardDelete = can('SCREEN', 'administration.roles', 'hard_delete'); %>
           <% roles.forEach(role => { %>
             <tr class="hover:bg-slate-50/50 transition-colors">
               <td class="px-6 py-4 font-medium text-slate-900"><%= role.name %></td>
               <td class="px-6 py-4 text-slate-600"><%= role.description || '-' %></td>
+              <td class="px-6 py-4 text-center">
+                <% if (role.is_active) { %>
+                  <span class="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium bg-green-50 text-green-700 ring-1 ring-inset ring-green-600/20">
+                    <%= t('active') %>
+                  </span>
+                <% } else { %>
+                  <span class="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium bg-slate-50 text-slate-600 ring-1 ring-inset ring-slate-500/10">
+                    <%= t('inactive') %>
+                  </span>
+                <% } %>
+              </td>
               <td class="px-6 py-4 text-right">
                 <% if (can('SCREEN', 'administration.roles', 'edit')) { %>
                   <button onclick="openModal('/administration/roles/<%= role.id %>/edit')" class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/30">
                     <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                     <span class="sr-only"><%= t('edit') %></span>
+                  </button>
+                <% } %>
+                <% if (canDeactivate) { %>
+                  <button
+                    type="button"
+                    class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-200"
+                    data-toggle
+                    data-toggle-action="/administration/roles/<%= role.id %>/toggle"
+                    data-toggle-label="<%= role.is_active ? t('deactivate') : t('activate') %>"
+                    title="<%= role.is_active ? t('deactivate') : t('activate') %>"
+                  >
+                    <% if (role.is_active) { %>
+                      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 12h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+                    <% } else { %>
+                      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /><path d="M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+                    <% } %>
+                  </button>
+                <% } %>
+                <% if (canHardDelete) { %>
+                  <button
+                    type="button"
+                    class="inline-flex items-center justify-center rounded-md border border-rose-200 bg-rose-50 p-2 text-rose-600 transition hover:border-rose-300 hover:text-rose-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-200"
+                    data-delete
+                    data-delete-action="/administration/roles/<%= role.id %>/delete"
+                    data-delete-label="<%= t('permanent_delete') %>"
+                    title="<%= t('permanent_delete') %>"
+                  >
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                      <path d="M9 7V5h6v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                      <path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                      <path d="M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                    </svg>
                   </button>
                 <% } %>
               </td>
@@ -57,10 +104,13 @@
 </div>
 
 <%- include('../../base/partials/modal-shell') %>
+<%- include('../../base/partials/confirm-modal', { t, csrfToken }) %>
 
 <script>
   // Unified Modal Script
   const i18nSave = "<%= t('save') %>";
+  const i18nConfirm = "<%= t('confirm') %>";
+  const i18nAreYouSure = "<%= t('are_you_sure') %>";
   const i18nSaving = "<%= t('saving') %>";
   const i18nUnexpectedResponse = "<%= t('unexpected_response') %>";
   const i18nErrorSaving = "<%= t('error_saving') %>";
@@ -133,4 +183,48 @@
       if (btn) { btn.disabled = false; btn.innerText = originalText; }
     });
   }
+
+  const confirmModal = document.querySelector('[data-confirm-modal]');
+  const confirmForm = document.querySelector('[data-confirm-form]');
+  const confirmTitle = document.querySelector('[data-confirm-title]');
+  const confirmMessage = document.querySelector('[data-confirm-message]');
+  const confirmClose = document.querySelectorAll('[data-confirm-close]');
+
+  const openConfirm = (title, message, action) => {
+    if (!confirmModal || !confirmForm) return;
+    confirmTitle.textContent = title || i18nConfirm;
+    confirmMessage.textContent = message || i18nAreYouSure;
+    confirmForm.setAttribute('action', action || '');
+    confirmModal.classList.remove('hidden');
+    confirmModal.classList.add('flex');
+  };
+
+  const closeConfirm = () => {
+    if (!confirmModal) return;
+    confirmModal.classList.add('hidden');
+    confirmModal.classList.remove('flex');
+  };
+
+  confirmClose.forEach((btn) => btn.addEventListener('click', closeConfirm));
+  confirmModal?.addEventListener('click', (event) => {
+    if (event.target === confirmModal) closeConfirm();
+  });
+
+  document.addEventListener('click', (event) => {
+    const toggleBtn = event.target.closest('[data-toggle]');
+    if (toggleBtn) {
+      event.preventDefault();
+      const action = toggleBtn.getAttribute('data-toggle-action');
+      const label = toggleBtn.getAttribute('data-toggle-label') || i18nAreYouSure;
+      if (action) openConfirm(i18nConfirm, label, action);
+      return;
+    }
+    const deleteBtn = event.target.closest('[data-delete]');
+    if (deleteBtn) {
+      event.preventDefault();
+      const action = deleteBtn.getAttribute('data-delete-action');
+      const label = deleteBtn.getAttribute('data-delete-label') || "<%= t('permanent_delete') %>";
+      if (action) openConfirm(i18nConfirm, label, action);
+    }
+  });
 </script>

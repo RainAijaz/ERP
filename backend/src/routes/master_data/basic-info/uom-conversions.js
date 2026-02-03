@@ -4,6 +4,8 @@ const { HttpError } = require("../../../middleware/errors/http-error");
 const { requirePermission } = require("../../../middleware/access/role-permissions");
 const { handleScreenApproval } = require("../../../middleware/approvals/screen-approval");
 const { getBasicInfoEntityType } = require("../../../utils/approval-entity-map");
+const { setCookie } = require("../../../middleware/utils/cookies");
+const { friendlyErrorMessage } = require("../../../middleware/errors/friendly-error");
 
 const router = express.Router();
 
@@ -33,9 +35,10 @@ const renderPage = (req, res, data) =>
     ...data,
   });
 
-router.get("/", requirePermission("SCREEN", "master_data.basic_info.uom_conversions", "navigate"), async (req, res, next) => {
+router.get("/", requirePermission("SCREEN", "master_data.basic_info.uom_conversions", "view"), async (req, res, next) => {
   try {
-    const [rows, uoms] = await Promise.all([fetchRows(), fetchUoms()]);
+    const canBrowse = res.locals.can("SCREEN", "master_data.basic_info.uom_conversions", "navigate");
+    const [rows, uoms] = await Promise.all([canBrowse ? fetchRows() : [], fetchUoms()]);
     return renderPage(req, res, {
       rows,
       uoms,
@@ -57,13 +60,22 @@ const normalizePayload = (body) => {
 };
 
 const renderError = async (req, res, error, modalMode) => {
+  const message = friendlyErrorMessage(error, res.locals.t);
+  const shouldOpenModal = modalMode !== "delete";
+  if (modalMode === "delete") {
+    setCookie(res, "ui_error", JSON.stringify({ message }), {
+      path: "/",
+      maxAge: 30,
+      sameSite: "Lax",
+    });
+  }
   const [rows, uoms] = await Promise.all([fetchRows(), fetchUoms()]);
   return renderPage(req, res, {
     rows,
     uoms,
-    error,
-    modalOpen: true,
-    modalMode,
+    error: message,
+    modalOpen: shouldOpenModal,
+    modalMode: shouldOpenModal ? modalMode : "create",
   });
 };
 
@@ -157,10 +169,10 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.basic_info.u
     const approval = await handleScreenApproval({
       req,
       scopeKey: "master_data.basic_info.uom_conversions",
-      action: "edit",
+      action: "delete",
       entityType: getBasicInfoEntityType("uom-conversions"),
       entityId: id,
-      summary: `${res.locals.t("edit")} ${res.locals.t("uom_conversions")}`,
+      summary: `${res.locals.t("deactivate")} ${res.locals.t("uom_conversions")}`,
       oldValue: current,
       newValue: { is_active: !current.is_active },
       t: res.locals.t,

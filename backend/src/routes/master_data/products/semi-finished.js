@@ -105,7 +105,7 @@ const renderIndex = (req, res, payload) => {
   });
 };
 
-router.get("/", requirePermission("SCREEN", "master_data.products.semi_finished", "navigate"), async (req, res, next) => {
+router.get("/", requirePermission("SCREEN", "master_data.products.semi_finished", "view"), async (req, res, next) => {
   try {
     const filters = {
       subgroup_id: req.query.subgroup_id || "",
@@ -114,7 +114,9 @@ router.get("/", requirePermission("SCREEN", "master_data.products.semi_finished"
       created_at_end: req.query.created_at_end || "",
       low_stock_only: req.query.low_stock_only || "",
     };
-    const [rows, options, users] = await Promise.all([loadRows(filters), loadOptions(), loadUsers()]);
+    const canBrowse = res.locals.can("SCREEN", "master_data.products.semi_finished", "navigate");
+    const [options, users] = await Promise.all([loadOptions(), loadUsers()]);
+    const rows = canBrowse ? await loadRows(filters) : [];
     renderIndex(req, res, { rows, ...options, users, filters, error: null, modalOpen: false, modalMode: "create" });
   } catch (err) {
     next(err);
@@ -344,10 +346,10 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.sem
     const approval = await handleScreenApproval({
       req,
       scopeKey: "master_data.products.semi_finished",
-      action: "edit",
+      action: "delete",
       entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
       entityId: id,
-      summary: `${res.locals.t("edit")} ${res.locals.t("semi_finished")}`,
+      summary: `${res.locals.t("deactivate")} ${res.locals.t("semi_finished")}`,
       oldValue: current,
       newValue: { _action: "toggle", is_active: !current.is_active, item_type: ITEM_TYPE },
       t: res.locals.t,

@@ -103,9 +103,41 @@ const rolePermissions = (req, res, next) => {
       const moduleKey = getModuleKey(required.scopeKey) || required.scopeKey;
       const modulePermissions = moduleKey ? req.user.permissions?.[`MODULE:${moduleKey}`] : null;
       if (!hasRequiredAccess(modulePermissions, required.action)) {
+        if (process.env.DEBUG_PERMS === "1") {
+          // eslint-disable-next-line no-console
+          console.warn("[PERM DEBUG] deny", {
+            userId: req.user?.id,
+            roleId: req.user?.role_id,
+            required,
+            key,
+            permissions,
+            legacyKey,
+            legacyPermissions,
+            inheritedModule,
+            moduleKey,
+            modulePermissions,
+            path: req.originalUrl,
+            method: req.method,
+          });
+        }
         return next(new HttpError(403, "Permission denied", { required }));
       }
     } else {
+      if (process.env.DEBUG_PERMS === "1") {
+        // eslint-disable-next-line no-console
+        console.warn("[PERM DEBUG] deny", {
+          userId: req.user?.id,
+          roleId: req.user?.role_id,
+          required,
+          key,
+          permissions,
+          legacyKey,
+          legacyPermissions,
+          inheritedModule,
+          path: req.originalUrl,
+          method: req.method,
+        });
+      }
       return next(new HttpError(403, "Permission denied", { required }));
     }
   }

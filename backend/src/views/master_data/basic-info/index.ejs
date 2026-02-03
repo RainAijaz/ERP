@@ -6,12 +6,15 @@
         <p class="text-sm text-muted"><%= t(page.description) %></p>
       </div>
       <div class="flex flex-wrap gap-2">
-        <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-download-button>
-          <%= t("download") %>
-        </button>
-        <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-print-button>
-          <%= t("print") %>
-        </button>
+        <% const canDownload = scopeKey ? can('SCREEN', scopeKey, 'print') : true; %>
+        <% if (canDownload) { %>
+          <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-download-button>
+            <%= t("download") %>
+          </button>
+          <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-print-button>
+            <%= t("print") %>
+          </button>
+        <% } %>
         <% const canCreate = scopeKey ? can('SCREEN', scopeKey, 'create') : true; %>
         <% const canEdit = scopeKey ? can('SCREEN', scopeKey, 'edit') : true; %>
         <% const canDelete = scopeKey ? can('SCREEN', scopeKey, 'delete') : true; %>

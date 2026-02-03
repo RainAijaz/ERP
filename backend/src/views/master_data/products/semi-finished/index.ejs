@@ -6,12 +6,15 @@
         <p class="text-sm text-muted"><%= t("semi_finished_description") %></p>
       </div>
       <div class="flex flex-wrap gap-2">
-        <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-download-button>
-          <%= t("download") %>
-        </button>
-        <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-print-button>
-          <%= t("print") %>
-        </button>
+        <% const canDownload = can('SCREEN', 'master_data.products.semi_finished', 'print'); %>
+        <% if (canDownload) { %>
+          <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-download-button>
+            <%= t("download") %>
+          </button>
+          <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-print-button>
+            <%= t("print") %>
+          </button>
+        <% } %>
         <button class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800" type="button" data-modal-open>
           <%= t("add") %> <%= t("semi_finished") %>
         </button>
