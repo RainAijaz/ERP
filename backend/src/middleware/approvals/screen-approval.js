@@ -1,6 +1,8 @@
 const knex = require("../../db/knex");
 const { HttpError } = require("../errors/http-error");
 const { navConfig } = require("../../utils/nav-config");
+const { setCookie } = require("../utils/cookies");
+const { UI_NOTICE_COOKIE } = require("../core/ui-notice");
 
 const actionToPermission = (action) => (action && action.startsWith("can_") ? action : `can_${action}`);
 
@@ -106,6 +108,17 @@ const handleScreenApproval = async ({ req, scopeKey, action, entityType, entityI
 
   if (approvalRequired) {
     const requestId = await queueApproval({ req, entityType, entityId, summary, oldValue, newValue });
+    const res = req.res;
+    if (res && typeof t === "function") {
+      setCookie(
+        res,
+        UI_NOTICE_COOKIE,
+        JSON.stringify({
+          message: t("approval_sent") || t("approval_submitted") || "Change request sent for approval. It will be applied once reviewed.",
+        }),
+        { path: "/", maxAge: 30, sameSite: "Lax" },
+      );
+    }
     return { queued: true, requestId };
   }
 

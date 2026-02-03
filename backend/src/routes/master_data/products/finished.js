@@ -223,7 +223,7 @@ router.post("/", requirePermission("SCREEN", "master_data.products.finished", "n
     });
 
     if (approval.queued) {
-      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+      return res.redirect(req.get("referer") || basePath);
     }
 
     await knex.transaction(async (trx) => {
@@ -332,7 +332,7 @@ router.post("/:id", requirePermission("SCREEN", "master_data.products.finished",
     });
 
     if (approval.queued) {
-      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+      return res.redirect(req.get("referer") || basePath);
     }
 
     await knex.transaction(async (trx) => {
@@ -411,7 +411,7 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.fin
     });
 
     if (approval.queued) {
-      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+      return res.redirect(req.get("referer") || basePath);
     }
     await knex.transaction(async (trx) => {
       await trx("erp.items")
@@ -467,7 +467,7 @@ router.post("/:id/delete", requirePermission("SCREEN", "master_data.products.fin
     });
 
     if (approval.queued) {
-      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+      return res.redirect(req.get("referer") || basePath);
     }
 
     await knex.transaction(async (trx) => {

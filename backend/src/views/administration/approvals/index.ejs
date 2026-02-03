@@ -1,3 +1,19 @@
+<%
+  const escapeAttr = (value) =>
+    String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  const jsonAttr = (value) => escapeAttr(JSON.stringify(value ?? null));
+  const getAction = (row) => {
+    if (row?.new_value?._action) return row.new_value._action;
+    if (row?.new_value && row?.entity_id === "NEW") return "create";
+    if (!row?.new_value && row?.old_value) return "delete";
+    return "update";
+  };
+%>
 <div class="mx-auto w-full max-w-7xl space-y-6">
   <div class="flex items-center justify-between">
     <h1 class="text-2xl font-display text-slate-800"><%= t("approvals") %></h1>
@@ -21,7 +37,7 @@
           <th class="px-6 py-3"><%= t("date") %></th>
           <th class="px-6 py-3"><%= t("requester") %></th>
           <th class="px-6 py-3"><%= t("summary") %></th>
-          <th class="px-6 py-3"><%= t("old_rate") %> / <%= t("new_rate") %></th>
+          <th class="px-6 py-3"><%= t("details") || "Details" %></th>
           <th class="px-6 py-3"><%= t("status") %></th>
           <th class="px-6 py-3 text-right"><%= t("actions") %></th>
         </tr>
@@ -32,6 +48,7 @@
         <% } %>
         
         <% rows.forEach(row => { %>
+          <% const actionType = getAction(row); %>
           <tr class="hover:bg-slate-50">
             <td class="px-6 py-4 text-slate-600">
               <%= new Date(row.requested_at).toLocaleDateString() %>
@@ -43,11 +60,16 @@
               <%= row.summary %>
             </td>
             <td class="px-6 py-4">
-              <div class="flex items-center gap-2">
-                <span class="line-through text-rose-400"><%= row.old_value?.sale_rate %></span>
-                <svg class="w-4 h-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
-                <span class="font-bold text-emerald-600"><%= row.new_value?.sale_rate %></span>
-              </div>
+              <button
+                type="button"
+                class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
+                data-approval-view
+                data-action="<%= actionType %>"
+                data-old="<%= jsonAttr(row.old_value) %>"
+                data-new="<%= jsonAttr(row.new_value) %>"
+              >
+                <%= t("view") || "View" %>
+              </button>
             </td>
             <td class="px-6 py-4">
                <%- include("../../base/partials/approval-badge", { status: row.status }) %>
@@ -80,3 +102,156 @@
     </table>
   </div>
 </div>
+
+<div class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 p-4" data-approval-detail-modal>
+  <div class="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-xl">
+    <div class="flex items-start justify-between border-b border-slate-200 px-6 py-4">
+      <div>
+        <div class="text-sm font-semibold text-slate-700"><%= t("details") || "Details" %></div>
+        <p class="mt-1 text-xs text-slate-500" data-approval-detail-subtitle></p>
+      </div>
+      <button type="button" class="text-slate-400 hover:text-slate-600" data-approval-detail-close>
+        ✕
+      </button>
+    </div>
+    <div class="grid gap-4 px-6 py-5 md:grid-cols-2">
+      <div data-approval-detail-before>
+        <div class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 mb-2"><%= t("before") || "Before" %></div>
+        <div class="space-y-3" data-approval-before></div>
+      </div>
+      <div data-approval-detail-after>
+        <div class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 mb-2"><%= t("after") || "After" %></div>
+        <div class="space-y-3" data-approval-after></div>
+      </div>
+      <div class="md:col-span-2" data-approval-detail-single>
+        <div class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 mb-2"><%= t("details") || "Details" %></div>
+        <div class="space-y-3" data-approval-single></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const modal = document.querySelector("[data-approval-detail-modal]");
+    const closeBtn = document.querySelector("[data-approval-detail-close]");
+    const beforeWrap = document.querySelector("[data-approval-detail-before]");
+    const afterWrap = document.querySelector("[data-approval-detail-after]");
+    const singleWrap = document.querySelector("[data-approval-detail-single]");
+    const beforeBox = document.querySelector("[data-approval-before]");
+    const afterBox = document.querySelector("[data-approval-after]");
+    const singleBox = document.querySelector("[data-approval-single]");
+    const subtitle = document.querySelector("[data-approval-detail-subtitle]");
+
+    const decodeHtml = (raw) => {
+      if (!raw) return "";
+      const textarea = document.createElement("textarea");
+      textarea.innerHTML = raw;
+      return textarea.value;
+    };
+
+    const safeParse = (raw) => {
+      if (!raw) return null;
+      try {
+        return JSON.parse(decodeHtml(raw));
+      } catch (err) {
+        return decodeHtml(raw);
+      }
+    };
+
+    const formatKey = (key) =>
+      String(key || "")
+        .replace(/_/g, " ")
+        .replace(/\b\w/g, (m) => m.toUpperCase());
+
+    const formatValue = (value) => {
+      if (value === null || typeof value === "undefined") return "-";
+      if (typeof value === "object") {
+        try {
+          return JSON.stringify(value, null, 2);
+        } catch (err) {
+          return String(value);
+        }
+      }
+      return String(value);
+    };
+
+    const buildFields = (value) => {
+      if (!value || typeof value !== "object") return [];
+      const skip = new Set(["_action", "_summary", "created_at", "created_by", "updated_at", "updated_by"]);
+      return Object.keys(value)
+        .filter((key) => !skip.has(key))
+        .map((key) => ({ key, label: formatKey(key), value: formatValue(value[key]) }));
+    };
+
+    const renderFields = (container, fields) => {
+      if (!container) return;
+      container.innerHTML = "";
+      if (!fields.length) {
+        const empty = document.createElement("div");
+        empty.className = "text-xs text-slate-400";
+        empty.textContent = "<%= t('no_entries') || 'No entries yet.' %>";
+        container.appendChild(empty);
+        return;
+      }
+      fields.forEach((field) => {
+        const row = document.createElement("div");
+        row.className = "rounded-xl border border-slate-200 bg-white p-3";
+        const label = document.createElement("div");
+        label.className = "text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500";
+        label.textContent = field.label;
+        const value = document.createElement("pre");
+        value.className = "mt-1 whitespace-pre-wrap text-xs text-slate-700";
+        value.textContent = field.value;
+        row.appendChild(label);
+        row.appendChild(value);
+        container.appendChild(row);
+      });
+    };
+
+    const open = (payload) => {
+      if (!modal) return;
+      const { action, oldValue, newValue } = payload;
+      const isUpdate = action === "update";
+      beforeWrap.classList.toggle("hidden", !isUpdate);
+      afterWrap.classList.toggle("hidden", !isUpdate);
+      singleWrap.classList.toggle("hidden", isUpdate);
+
+      if (isUpdate) {
+        renderFields(beforeBox, buildFields(oldValue));
+        renderFields(afterBox, buildFields(newValue));
+      } else {
+        const single = action === "delete" ? oldValue : newValue;
+        renderFields(singleBox, buildFields(single));
+      }
+
+      subtitle.textContent = action === "delete"
+        ? "<%= t('delete') || 'Delete' %>"
+        : action === "create"
+          ? "<%= t('create') || 'Create' %>"
+          : "<%= t('edit') || 'Edit' %>";
+
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+    };
+
+    const close = () => {
+      modal.classList.add("hidden");
+      modal.classList.remove("flex");
+    };
+
+    closeBtn?.addEventListener("click", close);
+    modal?.addEventListener("click", (event) => {
+      if (event.target === modal) close();
+    });
+
+    document.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-approval-view]");
+      if (!btn) return;
+      const action = btn.getAttribute("data-action");
+      const oldValue = safeParse(btn.getAttribute("data-old"));
+      const newValue = safeParse(btn.getAttribute("data-new"));
+      open({ action, oldValue, newValue });
+    });
+  })();
+</script>

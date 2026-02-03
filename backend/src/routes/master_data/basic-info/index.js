@@ -816,7 +816,7 @@ const createHandler = (type) => async (req, res, next) => {
       });
 
       if (approval.queued) {
-        return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+        return res.redirect(req.get("referer") || basePath);
       }
 
       await knex.transaction(async (trx) => {
@@ -854,7 +854,7 @@ const createHandler = (type) => async (req, res, next) => {
         });
 
         if (approval.queued) {
-          return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+          return res.redirect(req.get("referer") || basePath);
         }
 
         await knex.transaction(async (trx) => {
@@ -889,7 +889,7 @@ const createHandler = (type) => async (req, res, next) => {
         });
 
         if (approval.queued) {
-          return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+          return res.redirect(req.get("referer") || basePath);
         }
 
         const insertValues = {
@@ -963,7 +963,7 @@ const updateHandler = (type) => async (req, res, next) => {
       });
 
       if (approval.queued) {
-        return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+        return res.redirect(req.get("referer") || basePath);
       }
       const auditFields = page.hasUpdatedFields === false ? {} : { updated_by: req.user ? req.user.id : null, updated_at: knex.fn.now() };
       await knex.transaction(async (trx) => {
@@ -1003,7 +1003,7 @@ const updateHandler = (type) => async (req, res, next) => {
         });
 
         if (approval.queued) {
-          return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+          return res.redirect(req.get("referer") || basePath);
         }
         await knex.transaction(async (trx) => {
           await trx(page.table)
@@ -1038,7 +1038,7 @@ const updateHandler = (type) => async (req, res, next) => {
         });
 
         if (approval.queued) {
-          return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+          return res.redirect(req.get("referer") || basePath);
         }
         await knex(page.table)
           .where({ id })
@@ -1084,7 +1084,7 @@ const toggleHandler = (type) => async (req, res, next) => {
     });
 
     if (approval.queued) {
-      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+      return res.redirect(req.get("referer") || basePath);
     }
     const auditFields = page.hasUpdatedFields === false ? {} : { updated_by: req.user ? req.user.id : null, updated_at: knex.fn.now() };
     await knex(page.table)
@@ -1128,7 +1128,7 @@ const deleteHandler = (type) => async (req, res, next) => {
     });
 
     if (approval.queued) {
-      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+      return res.redirect(req.get("referer") || basePath);
     }
     await knex(page.table).where({ id }).del();
     return res.redirect(basePath);

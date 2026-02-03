@@ -1,0 +1,33 @@
+<% const uiNoticeMessage = uiNotice && uiNotice.message ? uiNotice.message : null; %>
+<% if (uiNoticeMessage) { %>
+  <div class="fixed inset-0 z-[85] hidden items-center justify-center bg-slate-900/30 p-4" data-ui-notice-modal>
+    <div class="w-full max-w-md rounded-2xl border border-emerald-200 bg-white shadow-xl">
+      <div class="border-b border-emerald-100 px-6 py-4">
+        <div class="text-sm font-semibold text-emerald-700"><%= t("notice") || "Notice" %></div>
+        <p class="mt-1 text-xs text-slate-500"><%= uiNoticeMessage %></p>
+      </div>
+      <div class="px-6 py-5">
+        <button class="w-full rounded-xl bg-emerald-600 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-emerald-700" type="button" data-ui-notice-close>
+          <%= t("ok") || "OK" %>
+        </button>
+      </div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      const modal = document.querySelector("[data-ui-notice-modal]");
+      const close = document.querySelector("[data-ui-notice-close]");
+      if (!modal) return;
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+      const closeModal = () => {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+      };
+      close?.addEventListener("click", closeModal);
+      modal.addEventListener("click", (event) => {
+        if (event.target === modal) closeModal();
+      });
+    })();
+  </script>
+<% } %>

@@ -389,7 +389,7 @@ router.post("/", requirePermission("SCREEN", "master_data.parties", "navigate"),
     });
 
     if (approval.queued) {
-      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+      return res.redirect(req.get("referer") || basePath);
     }
 
     const branchIds = Array.isArray(values.branch_ids) ? values.branch_ids : [];
@@ -495,7 +495,7 @@ router.post("/:id", requirePermission("SCREEN", "master_data.parties", "navigate
     });
 
     if (approval.queued) {
-      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+      return res.redirect(req.get("referer") || basePath);
     }
 
     const branchIds = Array.isArray(values.branch_ids) ? values.branch_ids : [];
@@ -599,7 +599,7 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.parties", "d
     });
 
     if (approval.queued) {
-      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+      return res.redirect(req.get("referer") || basePath);
     }
     await knex(page.table)
       .where({ id })
@@ -639,7 +639,7 @@ router.post("/:id/delete", requirePermission("SCREEN", "master_data.parties", "h
     });
 
     if (approval.queued) {
-      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+      return res.redirect(req.get("referer") || basePath);
     }
     await knex(page.table).where({ id }).del();
     return res.redirect(basePath);

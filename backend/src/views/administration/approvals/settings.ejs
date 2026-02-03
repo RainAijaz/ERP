@@ -1,162 +1,313 @@
-<div class="flex flex-col h-[calc(100vh-8rem)] gap-4">
-  <div class="bg-white p-4 border border-slate-200 rounded-xl shadow-sm flex items-center justify-between">
-    <div>
-      <h1 class="text-xl font-bold text-slate-800"><%= t('approval_settings') %></h1>
-      <p class="text-sm text-slate-500"><%= t('approval_rules') %></p>
+<% 
+  const sidebarRows = screenRows.filter(r => r.hasChildren || r.depth === 0);
+  const labelForScreen = (row) => {
+    if (!row.description) return row.scopeKey || '';
+    if (row.scopeType === "VOUCHER") {
+      return row.voucherName || (row.labelKey && /^[a-z0-9_]+$/.test(row.labelKey) ? t(row.labelKey) : row.labelKey) || row.scopeKey;
+    }
+    return /^[a-z0-9_]+$/.test(row.description) ? t(row.description) : row.description;
+  };
+  const actions = [
+    { key: 'create', label: t('create') },
+    { key: 'edit', label: t('edit') },
+    { key: 'delete', label: t('deactivate') || t('delete') },
+    { key: 'hard_delete', label: t('permanent_delete') }
+  ];
+%>
+
+<div class="permissions-shell flex flex-col min-h-0 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+  <div class="shrink-0 px-6 py-4 border-b border-slate-100 flex flex-col md:flex-row items-center justify-between gap-4 bg-white z-20">
+    <div class="flex items-center gap-4 w-full md:w-auto">
+      <div class="p-2 bg-accent/5 rounded-lg text-accent">
+        <svg class="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+      </div>
+      <div>
+        <h1 class="text-lg font-bold text-slate-800"><%= t('approval_settings') %></h1>
+        <p class="text-xs text-slate-500"><%= t('approval_rules') %></p>
+      </div>
     </div>
   </div>
 
-  <form action="/administration/approvals/settings" method="POST" class="flex-1 flex flex-col bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+  <form action="/administration/approvals/settings" method="POST" class="flex-1 flex min-h-0 overflow-hidden">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
 
-    <div class="flex-1 overflow-auto relative">
-      <% const labelForVoucher = (row) => {
-        if (row.labelKey && /^[a-z0-9_]+$/.test(row.labelKey)) return t(row.labelKey);
-        return row.name || row.code;
-      }; %>
-      <% const labelForScreen = (row) => {
-        if (!row.description) return row.scopeKey || '';
-        return /^[a-z0-9_]+$/.test(row.description) ? t(row.description) : row.description;
-      }; %>
-      <table class="w-full text-left border-collapse">
-        <thead class="bg-slate-50 sticky top-0 z-20 shadow-sm">
-          <tr>
-            <th class="p-4 text-xs font-bold uppercase text-slate-500 border-b border-r sticky left-0 bg-slate-50 min-w-50 z-30">
-              <%= t('voucher') %>
-            </th>
-            <% const actions = [
-                 { key: 'create', label: t('create') },
-                 { key: 'edit', label: t('edit') },
-                 { key: 'delete', label: t('deactivate') || t('delete') },
-                 { key: 'hard_delete', label: t('permanent_delete') }
-               ]; %>
-            <% actions.forEach(act => { %>
-              <th class="p-2 border-b text-center min-w-20">
-                <span class="text-xs font-bold uppercase text-slate-500"><%= act.label %></span>
+    <aside class="w-72 bg-slate-50 border-r border-slate-200 flex flex-col shrink-0 overflow-hidden min-h-0 group">
+      <div class="p-3 border-b border-slate-200/60 flex items-center justify-between">
+        <span class="text-xs font-bold text-slate-400 uppercase tracking-wider"><%= t('modules') %></span>
+        <span class="text-[10px] bg-white border border-slate-200 px-2 rounded-full text-slate-400"><%= sidebarRows.length %></span>
+      </div>
+      <div class="overflow-y-auto flex-1 min-h-0 p-2 space-y-0.5 custom-scrollbar">
+        <button type="button" onclick="filterCategory('all')" class="category-btn w-full text-left px-3 py-2 rounded-md text-xs font-bold transition-colors bg-white shadow-sm text-accent ring-1 ring-slate-200 mb-2 hover:ring-accent/50" data-cat="all">
+          All Modules
+        </button>
+        <% sidebarRows.forEach(row => { %>
+          <button type="button" 
+            onclick="filterCategory('<%= row.path %>')" 
+            class="category-btn w-full text-left py-1.5 px-2 rounded-md text-xs transition-all text-slate-600 hover:bg-white hover:text-slate-900 border border-transparent hover:border-slate-200 flex items-center gap-2 truncate"
+            style="padding-left: <%= (row.depth * 12) + 8 %>px" 
+            data-cat="<%= row.path %>"
+            title="<%= labelForScreen(row) %>">
+            <% if (row.depth === 0) { %>
+              <span class="opacity-70">📂</span>
+              <span class="font-bold"><%= labelForScreen(row) %></span>
+            <% } else { %>
+              <span class="text-slate-300">└</span>
+              <span><%= labelForScreen(row) %></span>
+            <% } %>
+          </button>
+        <% }) %>
+      </div>
+    </aside>
+
+    <div class="flex-1 flex flex-col min-w-0 min-h-0 bg-white relative">
+      <div id="module-empty-state" class="absolute inset-0 z-30 bg-slate-50/50 flex flex-col items-center justify-center text-center p-6">
+        <div class="w-16 h-16 bg-white rounded-full shadow-sm flex items-center justify-center mb-4 border border-slate-100">
+          <svg class="w-8 h-8 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
+        </div>
+        <h3 class="text-sm font-bold text-slate-700">Select a Module</h3>
+        <p class="text-xs text-slate-500 mt-1 max-w-xs">Select a module from the sidebar to view approval rules.</p>
+      </div>
+
+      <div id="approval-toolbar" class="p-3 border-b border-slate-100 flex items-center justify-between gap-3 shrink-0 hidden">
+        <div class="relative w-full max-w-md group">
+          <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+            <svg class="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+          </div>
+          <input id="approval-search" type="text" placeholder="<%= t('search_permissions') %>..." class="w-full rounded-lg border-slate-200 bg-slate-50 text-sm pl-10 pr-8 focus:ring-2 focus:ring-accent focus:bg-white transition-all shadow-sm">
+          <button type="button" id="approval-search-clear" class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-rose-500 cursor-pointer hidden">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" id="expand-all" class="p-2 text-slate-500 hover:text-accent hover:bg-accent/10 rounded-lg transition-colors" title="<%= t('expand_all') %>"> 
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 13l-7 7-7-7m14-8l-7 7-7-7"/></svg>
+          </button>
+          <button type="button" id="collapse-all" class="p-2 text-slate-500 hover:text-accent hover:bg-accent/10 rounded-lg transition-colors" title="<%= t('collapse_all') %>"> 
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 11l7-7 7 7M5 19l7-7 7 7"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div id="approval-table-container" class="flex-1 min-h-0 overflow-x-auto overflow-y-auto bg-slate-50/30 relative custom-scrollbar hidden">
+        <table class="w-full text-left border-collapse table-fixed">
+          <thead class="bg-white sticky top-0 z-20 shadow-sm ring-1 ring-slate-200">
+            <tr>
+              <th class="p-3 pl-6 text-xs font-bold uppercase text-slate-500 border-b border-r w-auto min-w-[220px]">
+                <%= t('module') %> / <%= t('screen') %>
               </th>
-            <% }) %>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-slate-100">
-          <% voucherRows.forEach(vt => { %>
-            <tr class="hover:bg-amber-50/50 transition-colors">
-              <td class="px-4 py-3 border-r text-sm font-medium text-slate-700 sticky left-0 bg-white">
-                <div class="flex flex-col">
-                  <span><%= labelForVoucher(vt) %></span>
-                  <span class="text-[10px] text-slate-400 font-mono font-normal"><%= vt.code %></span>
-                </div>
-              </td>
               <% actions.forEach(act => { %>
-                <td class="text-center border-r last:border-r-0">
-                  <input type="checkbox" name="VOUCHER_TYPE:<%= vt.code %>:<%= act.key %>" <%= policyMap?.VOUCHER_TYPE?.[vt.code]?.[act.key] ? 'checked' : '' %> class="rounded text-accent focus:ring-accent w-4 h-4">
-                </td>
-              <% }) %>
-            </tr>
-          <% }) %>
-        </tbody>
-      </table>
-
-      <div class="h-px bg-slate-200 my-6"></div>
-
-      <table class="w-full text-left border-collapse">
-        <thead class="bg-slate-50 sticky top-0 z-20 shadow-sm">
-          <tr>
-            <th class="p-4 text-xs font-bold uppercase text-slate-500 border-b border-r sticky left-0 bg-slate-50 min-w-50 z-30">
-              <%= t('screen') %>
-            </th>
-            <% actions.forEach(act => { %>
-              <th class="p-2 border-b text-center min-w-20">
-                <span class="text-xs font-bold uppercase text-slate-500"><%= act.label %></span>
-              </th>
-            <% }) %>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-slate-100">
-          <% screenRows.forEach(row => { %>
-            <% const isGroupRow = !row.scopeKey; %>
-            <tr class="transition-colors approval-screen-row <%= isGroupRow ? 'bg-slate-50/60' : 'hover:bg-amber-50/50' %>" data-path="<%= row.path %>" data-parent="<%= row.parentPath || '' %>" data-depth="<%= row.depth %>" data-has-children="<%= row.hasChildren ? 'true' : 'false' %>">
-              <td class="px-4 py-3 border-r text-sm font-medium text-slate-700 sticky left-0 bg-white">
-                <div class="flex items-start gap-2 approval-indent" data-depth="<%= row.depth %>">
-                  <% if (row.hasChildren) { %>
-                    <button type="button" class="inline-flex w-5 h-5 items-center justify-center rounded-full border border-slate-300 text-slate-500 text-[10px] approval-group-toggle" data-toggle="<%= row.path %>">−</button>
-                  <% } else { %>
-                    <span class="inline-flex w-5 h-5 items-center justify-center text-[10px] text-transparent">•</span>
-                  <% } %>
-                  <div class="flex flex-col">
-                    <% if (isGroupRow) { %>
-                      <span class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-600">
-                        <%= labelForScreen(row) %>
-                      </span>
-                    <% } else { %>
-                      <span class="block rounded-lg px-2.5 py-2 text-sm text-slate-700">
-                        <%= labelForScreen(row) %>
-                      </span>
-                    <% } %>
-                    <% if (row.scopeKey) { %>
-                      <span class="text-[10px] text-slate-400 font-mono font-normal"><%= row.scopeKey %></span>
-                    <% } %>
+                <th class="py-3 border-b text-center w-24 group cursor-help hover:bg-slate-50 transition-colors">
+                  <div class="flex flex-col items-center gap-1">
+                    <span class="text-[10px] font-bold uppercase text-slate-500 tracking-wide"><%= act.label %></span>
                   </div>
-                </div>
-              </td>
-              <% actions.forEach(act => { %>
-                <td class="text-center border-r last:border-r-0">
-                  <% if (row.scopeKey) { %>
-                    <input type="checkbox" name="SCREEN:<%= row.scopeKey %>:<%= act.key %>" <%= policyMap?.SCREEN?.[row.scopeKey]?.[act.key] ? 'checked' : '' %> class="rounded text-accent focus:ring-accent w-4 h-4">
-                  <% } else { %>
-                    <span class="text-xs text-slate-300">—</span>
-                  <% } %>
-                </td>
+                </th>
               <% }) %>
             </tr>
-          <% }) %>
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody class="divide-y divide-slate-100 bg-white">
+            <% screenRows.forEach(row => { %>
+              <tr class="hover:bg-amber-50/60 group transition-colors approval-row" 
+                  data-path="<%= row.path %>" 
+                  data-parent="<%= row.parentPath || '' %>" 
+                  data-depth="<%= row.depth %>" 
+                  data-has-children="<%= row.hasChildren ? 'true' : 'false' %>" 
+                  data-search="<%= (labelForScreen(row) || '') + ' ' + (row.scopeKey || '') %>">
+                <td class="px-4 py-2 border-r text-sm font-medium text-slate-700 truncate">
+                  <div class="flex items-center gap-2" style="padding-left: <%= (row.depth * 16) + 'px' %>">
+                    <% if (row.hasChildren) { %>
+                      <button type="button" class="w-4 h-4 flex items-center justify-center rounded bg-slate-100 hover:bg-slate-200 text-slate-500 text-[9px] approval-toggle transition-colors border border-slate-200" data-toggle="<%= row.path %>">−</button>
+                      <span class="text-amber-400/80">📂</span>
+                    <% } else { %>
+                      <span class="w-4 h-4 flex items-center justify-center text-[8px] text-slate-300">•</span>
+                    <% } %>
+                    <div class="flex flex-col truncate">
+                      <span class="<%= row.hasChildren ? 'font-bold text-slate-800' : '' %> truncate" title="<%= labelForScreen(row) %>">
+                        <%= labelForScreen(row) %>
+                      </span>
+                      <% if (row.scopeKey) { %>
+                        <span class="text-[10px] text-slate-400 font-mono font-normal"><%= row.scopeKey %></span>
+                      <% } %>
+                    </div>
+                  </div>
+                </td>
+                <% actions.forEach(act => { %>
+                  <td class="text-center border-r last:border-r-0">
+                    <% if (row.scopeKey) { %>
+                      <% const entityType = row.scopeType === "VOUCHER" ? "VOUCHER_TYPE" : "SCREEN"; %>
+                      <input type="checkbox" name="<%= entityType %>:<%= row.scopeKey %>:<%= act.key %>" <%= policyMap?.[entityType]?.[row.scopeKey]?.[act.key] ? 'checked' : '' %> class="rounded text-accent focus:ring-accent w-4 h-4">
+                    <% } else { %>
+                      <span class="text-xs text-slate-300">-</span>
+                    <% } %>
+                  </td>
+                <% }) %>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
 
-    <div class="p-4 border-t border-slate-100 bg-slate-50 flex justify-between items-center sticky bottom-0 z-30">
-      <div class="text-xs text-slate-500"><%= t('requires_approval') %></div>
-      <button type="submit" class="bg-accent text-white px-8 py-2.5 rounded-lg text-sm font-bold shadow-sm hover:bg-accent/90 transition-transform active:scale-95">
-        <%= t('save_changes') %>
-      </button>
+      <div id="approval-footer" class="p-3 border-t border-slate-200 bg-white flex justify-between items-center shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.02)] z-20 shrink-0">
+        <div class="text-xs text-slate-500"><%= t('requires_approval') %></div>
+        <button type="submit" class="bg-accent text-white px-6 py-2 rounded-lg text-sm font-bold shadow-lg shadow-accent/20 hover:bg-accent/90 hover:-translate-y-0.5 transition-all">
+          <%= t('save_changes') %>
+        </button>
+      </div>
     </div>
   </form>
 </div>
 
 <script>
-  document.addEventListener('DOMContentLoaded', function() {
-    const rows = Array.from(document.querySelectorAll('.approval-screen-row'));
-    const collapsedPaths = new Set();
+  let currentCategory = '';
+  const collapsedPaths = new Set();
 
-    const setCollapsed = (path, collapsed, remember = true) => {
-      rows.forEach(row => {
-        if (row.getAttribute('data-path').startsWith(`${path}.`)) {
-          row.classList.toggle('hidden', collapsed);
-        }
-      });
-      const toggle = document.querySelector(`.approval-group-toggle[data-toggle='${path}']`);
-      if (toggle) toggle.textContent = collapsed ? '+' : '−';
-      if (remember) {
-        if (collapsed) collapsedPaths.add(path);
-        else collapsedPaths.delete(path);
+  function filterCategory(path) {
+    currentCategory = path;
+    const btns = document.querySelectorAll('.category-btn');
+    const searchInput = document.getElementById('approval-search');
+
+    if (!path || path === '' || path === 'none') {
+      document.getElementById('module-empty-state').classList.remove('hidden');
+      document.getElementById('approval-toolbar').classList.add('hidden');
+      document.getElementById('approval-table-container').classList.add('hidden');
+      return;
+    } else {
+      document.getElementById('module-empty-state').classList.add('hidden');
+      document.getElementById('approval-toolbar').classList.remove('hidden');
+      document.getElementById('approval-table-container').classList.remove('hidden');
+    }
+
+    btns.forEach(btn => {
+      if (btn.dataset.cat === path) {
+        btn.classList.add('bg-white', 'shadow-sm', 'text-accent', 'ring-1', 'ring-accent/30', 'border-l-4', 'border-l-accent');
+        btn.classList.remove('text-slate-600', 'hover:bg-white', 'border-transparent');
+      } else {
+        btn.classList.remove('bg-white', 'shadow-sm', 'text-accent', 'ring-1', 'ring-accent/30', 'border-l-4', 'border-l-accent');
+        btn.classList.add('text-slate-600', 'hover:bg-white', 'border-transparent');
       }
-    };
+    });
+
+    if (searchInput && searchInput.value === '') {
+      document.getElementById('approval-search-clear').classList.add('hidden');
+    }
+
+    if (path !== 'all') {
+      const parts = path.split('.');
+      parts.forEach((_, idx) => {
+        const ancestor = parts.slice(0, idx + 1).join('.');
+        collapsedPaths.delete(ancestor);
+      });
+    }
+
+    applyFilters();
+  }
+
+  function applyFilters() {
+    const searchInput = document.getElementById('approval-search');
+    const q = (searchInput?.value || '').trim().toLowerCase();
+    const isSearch = q.length > 0;
+    const rows = document.querySelectorAll('.approval-row');
+    const matched = new Set();
 
     rows.forEach(row => {
-      const depth = Number(row.getAttribute('data-depth') || 0);
-      const indent = row.querySelector('.approval-indent');
-      if (indent) indent.style.paddingLeft = `${depth * 16}px`;
+      const rowPath = row.getAttribute('data-path');
+      if (!isSearch) {
+        if (currentCategory === 'all' || rowPath === currentCategory || rowPath.startsWith(currentCategory + '.')) {
+          row.classList.remove('hidden-by-category');
+        } else {
+          row.classList.add('hidden-by-category');
+          return;
+        }
+      } else {
+        row.classList.remove('hidden-by-category');
+      }
 
-      if (row.getAttribute('data-has-children') === 'true') {
-        const path = row.getAttribute('data-path');
-        const depth = Number(row.getAttribute('data-depth') || 0);
-        const defaultCollapsed = depth >= 1;
-        setCollapsed(path, defaultCollapsed, true);
-        const btn = row.querySelector(`.approval-group-toggle[data-toggle='${path}']`);
-        if (btn) btn.addEventListener('click', () => {
-          const isCollapsed = collapsedPaths.has(path);
-          setCollapsed(path, !isCollapsed, true);
+      if (isSearch) {
+        const hay = row.getAttribute('data-search').toLowerCase();
+        if (hay.includes(q)) matched.add(row);
+      } else {
+        let parentPath = row.getAttribute('data-parent');
+        let isHidden = false;
+        while (parentPath) {
+          if (collapsedPaths.has(parentPath)) { isHidden = true; break; }
+          const parts = parentPath.split('.');
+          if (parts.length > 1) {
+            parts.pop();
+            parentPath = parts.join('.');
+          } else {
+            parentPath = '';
+          }
+        }
+        if (!isHidden) matched.add(row);
+      }
+    });
+
+    rows.forEach(row => {
+      if (row.classList.contains('hidden-by-category') && !isSearch) {
+        row.classList.add('hidden');
+      } else {
+        row.classList.toggle('hidden', !matched.has(row));
+      }
+    });
+
+    document.querySelectorAll('.approval-toggle').forEach(btn => {
+      const path = btn.getAttribute('data-toggle');
+      btn.textContent = collapsedPaths.has(path) ? '+' : '−';
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', function() {
+    const rows = document.querySelectorAll('.approval-row');
+    rows.forEach(row => {
+      const path = row.getAttribute('data-path');
+      const depth = parseInt(row.getAttribute('data-depth') || '0');
+      if (row.getAttribute('data-has-children') === 'true' && depth > 0) {
+        collapsedPaths.add(path);
+      }
+      const btn = row.querySelector('.approval-toggle');
+      if (btn) {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (collapsedPaths.has(path)) collapsedPaths.delete(path);
+          else collapsedPaths.add(path);
+          applyFilters();
         });
       }
     });
+
+    const searchInput = document.getElementById('approval-search');
+    if (searchInput) {
+      searchInput.addEventListener('input', () => {
+        const clearBtn = document.getElementById('approval-search-clear');
+        if (searchInput.value.trim().length > 0) clearBtn.classList.remove('hidden');
+        else clearBtn.classList.add('hidden');
+        applyFilters();
+      });
+      document.getElementById('approval-search-clear')?.addEventListener('click', () => {
+        searchInput.value = '';
+        document.getElementById('approval-search-clear').classList.add('hidden');
+        applyFilters();
+      });
+    }
+
+    document.getElementById('expand-all')?.addEventListener('click', () => {
+      collapsedPaths.clear();
+      applyFilters();
+    });
+    document.getElementById('collapse-all')?.addEventListener('click', () => {
+      rows.forEach(r => {
+        if (r.getAttribute('data-has-children') === 'true') collapsedPaths.add(r.getAttribute('data-path'));
+      });
+      applyFilters();
+    });
+
+    filterCategory('');
   });
 </script>
+
+<style>
+  .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+  .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+  .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 3px; }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover { background-color: #94a3b8; }
+</style>

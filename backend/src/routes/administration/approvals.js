@@ -41,6 +41,7 @@ router.get("/", requirePermission("SCREEN", "administration.approvals", "navigat
       rows,
       currentStatus: status,
       notice,
+      basePath: req.baseUrl,
     });
   } catch (err) {
     next(err);
@@ -50,7 +51,10 @@ router.get("/", requirePermission("SCREEN", "administration.approvals", "navigat
 // GET /settings - Approval policy settings (voucher types + screens)
 router.get("/settings", requirePermission("SCREEN", "administration.approval_settings", "navigate"), async (req, res, next) => {
   try {
-    const [voucherTypes, policyRows] = await Promise.all([knex("erp.voucher_type").select("code", "name").orderBy("name"), knex("erp.approval_policy").select("entity_type", "entity_key", "action", "requires_approval")]);
+    const [voucherTypes, policyRows] = await Promise.all([
+      knex("erp.voucher_type").select("code", "name").orderBy("name"),
+      knex("erp.approval_policy").select("entity_type", "entity_key", "action", "requires_approval"),
+    ]);
 
     const excludedScreens = new Set(["administration.audit_logs", "administration.approvals", "administration.approval_settings", "administration.permissions", "administration.branches"]);
 
@@ -61,6 +65,9 @@ router.get("/settings", requirePermission("SCREEN", "administration.approval_set
       if (scopeKey.includes(".approval") || scopeKey.includes(".versions")) return false;
       if (route && route.startsWith("/reports")) return false;
       if (scopeKey.includes("report")) return false;
+      if (!route) return false;
+      // Only data-entry screens (create/edit/delete flows) live under master-data in this app.
+      if (!route.startsWith("/master-data")) return false;
       return true;
     };
 
@@ -72,25 +79,6 @@ router.get("/settings", requirePermission("SCREEN", "administration.approval_set
     }, {});
 
     const voucherTypeMap = new Map(voucherTypes.map((vt) => [vt.code, vt.name]));
-    const navScopes = getNavScopes();
-
-    const voucherRows = navScopes
-      .filter((scope) => scope.scopeType === "VOUCHER")
-      .map((scope) => ({
-        code: scope.scopeKey,
-        labelKey: scope.description,
-        name: voucherTypeMap.get(scope.scopeKey) || null,
-      }));
-
-    const navVoucherCodes = new Set(voucherRows.map((row) => row.code));
-    voucherTypes.forEach((vt) => {
-      if (navVoucherCodes.has(vt.code)) return;
-      voucherRows.push({
-        code: vt.code,
-        labelKey: null,
-        name: vt.name,
-      });
-    });
 
     const buildScreenRows = (nodes, parentPath = "", depth = 0) => {
       let rows = [];
@@ -99,18 +87,21 @@ router.get("/settings", requirePermission("SCREEN", "administration.approval_set
         const hasChildren = Array.isArray(node.children) && node.children.length > 0;
         const childRows = hasChildren ? buildScreenRows(node.children, path, depth + 1) : [];
         const isScreen = node.scopeType === "SCREEN" && node.route && shouldIncludeScreen(node.scopeKey, node.route);
+        const isVoucher = node.scopeType === "VOUCHER";
         const includeGroup = childRows.length > 0;
 
-        if (isScreen || includeGroup) {
+        if (isScreen || isVoucher || includeGroup) {
           rows.push({
             key: node.key,
             path,
             parentPath: parentPath || null,
             depth,
             hasChildren: childRows.length > 0,
-            scopeKey: isScreen ? node.scopeKey : null,
+            scopeKey: isScreen || isVoucher ? node.scopeKey : null,
+            scopeType: isVoucher ? "VOUCHER" : "SCREEN",
             labelKey: node.labelKey,
             description: node.labelKey,
+            voucherName: isVoucher ? voucherTypeMap.get(node.scopeKey) || null : null,
           });
           rows = rows.concat(childRows);
         }
@@ -121,7 +112,6 @@ router.get("/settings", requirePermission("SCREEN", "administration.approval_set
     let screenRows = buildScreenRows(navConfig);
 
     renderPage(req, res, "../../administration/approvals/settings", res.locals.t("approval_settings"), {
-      voucherRows,
       screenRows,
       policyMap,
     });
@@ -170,6 +160,7 @@ router.post("/:id/approve", requirePermission("SCREEN", "administration.approval
   if (!id) return next(new HttpError(400, res.locals.t("error_invalid_id")));
 
   try {
+    let applyError = null;
     await knex.transaction(async (trx) => {
       const request = await trx("erp.approval_request").where({ id }).first();
       if (!request || request.status !== "PENDING") {
@@ -178,9 +169,13 @@ router.post("/:id/approve", requirePermission("SCREEN", "administration.approval
 
       // EXECUTE CHANGE
       if (request.request_type === "MASTER_DATA_CHANGE") {
-        const applied = await applyMasterDataChange(trx, request, req.user.id);
-        if (!applied) {
-          throw new Error(res.locals.t("approval_apply_failed"));
+        try {
+          const applied = await applyMasterDataChange(trx, request, req.user.id);
+          if (!applied) {
+            throw new Error(res.locals.t("approval_apply_failed"));
+          }
+        } catch (err) {
+          applyError = err;
         }
       }
 
@@ -196,13 +191,17 @@ router.post("/:id/approve", requirePermission("SCREEN", "administration.approval
 
       // UPDATE STATUS
       await trx("erp.approval_request").where({ id }).update({
-        status: "APPROVED",
+        status: applyError ? "FAILED" : "APPROVED",
         decided_by: req.user.id,
         decided_at: trx.fn.now(),
+        decision_notes: applyError ? String(applyError.message || applyError) : null,
       });
     });
 
-    res.redirect(`${req.baseUrl}?status=PENDING&notice=approval_approved`);
+    if (applyError) {
+      return res.redirect(`${req.baseUrl}?status=PENDING&notice=approval_apply_failed`);
+    }
+    return res.redirect(`${req.baseUrl}?status=PENDING&notice=approval_approved`);
   } catch (err) {
     next(err);
   }

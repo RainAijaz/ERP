@@ -99,7 +99,7 @@ router.post("/", requirePermission("SCREEN", "master_data.basic_info.uom_convers
     });
 
     if (approval.queued) {
-      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+      return res.redirect(req.get("referer") || basePath);
     }
     await knex("erp.uom_conversions").insert({
       ...payload,
@@ -140,7 +140,7 @@ router.post("/:id", requirePermission("SCREEN", "master_data.basic_info.uom_conv
     });
 
     if (approval.queued) {
-      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+      return res.redirect(req.get("referer") || basePath);
     }
     await knex("erp.uom_conversions")
       .where({ id })
@@ -179,7 +179,7 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.basic_info.u
     });
 
     if (approval.queued) {
-      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+      return res.redirect(req.get("referer") || basePath);
     }
     await knex("erp.uom_conversions")
       .where({ id })
@@ -218,7 +218,7 @@ router.post("/:id/delete", requirePermission("SCREEN", "master_data.basic_info.u
     });
 
     if (approval.queued) {
-      return res.redirect("/administration/approvals?status=PENDING&notice=approval_submitted");
+      return res.redirect(req.get("referer") || basePath);
     }
     await knex("erp.uom_conversions").where({ id }).del();
     return res.redirect("/master-data/basic-info/uom-conversions");

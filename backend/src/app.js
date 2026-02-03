@@ -18,6 +18,7 @@ const rateChangeApproval = require("./middleware/approvals/rate-change-approval"
 const stockAdjustmentApproval = require("./middleware/approvals/stock-adjustment-approval");
 const activityLog = require("./middleware/audit/activity-log");
 const csrf = require("./middleware/security/csrf");
+const uiNotice = require("./middleware/core/ui-notice");
 const uiFlash = require("./middleware/core/ui-flash");
 const notFound = require("./middleware/errors/not-found");
 const errorHandler = require("./middleware/errors/error-handler");
@@ -54,6 +55,7 @@ app.use(stockAdjustmentApproval);
 app.use(activityLog);
 
 app.use(csrf);
+app.use(uiNotice);
 app.use(uiFlash);
 
 app.use("/", uiRoutes);

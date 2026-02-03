@@ -1,6 +1,8 @@
 const knex = require("../../db/knex");
 const { HttpError } = require("../errors/http-error");
 const { sendMail } = require("../../utils/email");
+const { setCookie } = require("../utils/cookies");
+const { UI_NOTICE_COOKIE } = require("../core/ui-notice");
 
 const notifyAdmins = async ({ subject, html, text }) => {
   const adminRows = await knex("erp.users")
@@ -63,6 +65,17 @@ module.exports = async (req, res, next) => {
       text: `Approval request pending for ${entityType} ${entityId}.`,
       html: `<p>Approval request pending for <strong>${entityType}</strong> ${entityId}.</p>`,
     });
+
+    if (res?.locals?.t) {
+      setCookie(
+        res,
+        UI_NOTICE_COOKIE,
+        JSON.stringify({
+          message: res.locals.t("approval_sent") || res.locals.t("approval_submitted"),
+        }),
+        { path: "/", maxAge: 30, sameSite: "Lax" },
+      );
+    }
 
     if (request.block === true) {
       return res.status(202).json({
