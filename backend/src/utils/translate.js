@@ -1,3 +1,13 @@
+// translate.js
+// Purpose: Provides translation and transliteration utilities for Urdu and other languages.
+// Integrates with Azure Translator and DeepL APIs for text translation and script conversion.
+// Used by the UI and backend to support multilingual features and transliteration in forms.
+//
+// Exports:
+// - transliterateToUrdu: Transliterates Latin text to Urdu script using Azure.
+// - translateToUrdu: Translates text to Urdu using DeepL.
+// - resolveBaseUrl: Helper to determine the correct API endpoint for DeepL.
+
 const resolveBaseUrl = (apiKey) => {
   if (process.env.DEEPL_API_URL) {
     return process.env.DEEPL_API_URL;
@@ -5,9 +15,7 @@ const resolveBaseUrl = (apiKey) => {
   if (!apiKey) {
     return null;
   }
-  return apiKey.endsWith(":fx")
-    ? "https://api-free.deepl.com/v2/translate"
-    : "https://api.deepl.com/v2/translate";
+  return apiKey.endsWith(":fx") ? "https://api-free.deepl.com/v2/translate" : "https://api.deepl.com/v2/translate";
 };
 
 const transliterateToUrdu = async (text) => {
@@ -17,12 +25,9 @@ const transliterateToUrdu = async (text) => {
     throw new Error("Azure transliteration not configured");
   }
 
-  const endpoint =
-    process.env.AZURE_TRANSLATOR_ENDPOINT || "https://api.cognitive.microsofttranslator.com";
+  const endpoint = process.env.AZURE_TRANSLATOR_ENDPOINT || "https://api.cognitive.microsofttranslator.com";
   const normalizedEndpoint = endpoint.replace(/\/+$/, "");
-  const url =
-    `${normalizedEndpoint}/transliterate` +
-    "?api-version=3.0&language=ur&fromScript=Latn&toScript=Arab";
+  const url = `${normalizedEndpoint}/transliterate` + "?api-version=3.0&language=ur&fromScript=Latn&toScript=Arab";
 
   const response = await fetch(url, {
     method: "POST",
@@ -46,8 +51,7 @@ const transliterateToUrdu = async (text) => {
     throw new Error(`Azure invalid JSON: ${raw}`);
   }
 
-  const transliteration =
-    data && data[0] && data[0].text ? data[0].text : null;
+  const transliteration = data && data[0] && data[0].text ? data[0].text : null;
   if (!transliteration) {
     throw new Error(`Azure empty transliteration: ${raw}`);
   }

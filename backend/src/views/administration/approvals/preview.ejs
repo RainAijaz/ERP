@@ -1,0 +1,26 @@
+<%
+  const escapeAttr = (value) =>
+    String(value)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  const valuesAttr = escapeAttr(JSON.stringify(previewValues ?? {}));
+%>
+<div
+  class="space-y-4"
+  data-approval-preview
+  data-preview-type="<%= previewType || '' %>"
+  data-preview-action="<%= previewAction || '' %>"
+  data-preview-values="<%= valuesAttr %>"
+>
+  <div class="flex flex-col border-b border-slate-200 pb-3">
+    <span class="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400"><%= previewLabel %></span>
+    <span class="text-sm font-semibold text-slate-700"><%= previewTitle %></span>
+  </div>
+  <div class="space-y-5" data-preview-body>
+    <%- include(formPartial) %>
+    <div class="hidden space-y-3" data-preview-fallback></div>
+  </div>
+</div>

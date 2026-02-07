@@ -6,6 +6,7 @@ const { handleScreenApproval } = require("../../../middleware/approvals/screen-a
 const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
 const { parseCookies, setCookie } = require("../../../middleware/utils/cookies");
 const { friendlyErrorMessage } = require("../../../middleware/errors/friendly-error");
+const { queueAuditLog } = require("../../../utils/audit-log");
 
 const router = express.Router();
 
@@ -347,6 +348,11 @@ router.post("/", requirePermission("SCREEN", "master_data.accounts", "navigate")
           })),
         );
       }
+      queueAuditLog(req, {
+        entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
+        entityId: accountId,
+        action: "CREATE",
+      });
     });
     return res.redirect(basePath);
   } catch (err) {
@@ -378,6 +384,9 @@ router.post("/:id", requirePermission("SCREEN", "master_data.accounts", "navigat
     const existing = await knex(page.table).where({ id }).first();
     if (!existing) {
       return renderIndexError(req, res, values, res.locals.t("error_not_found"), "edit", basePath);
+    }
+    if (hasField(page, "code") && existing.code) {
+      values.code = existing.code;
     }
     const approval = await handleScreenApproval({
       req,
@@ -434,6 +443,11 @@ router.post("/:id", requirePermission("SCREEN", "master_data.accounts", "navigat
         );
       }
     });
+    queueAuditLog(req, {
+      entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
+      entityId: id,
+      action: "UPDATE",
+    });
     return res.redirect(basePath);
   } catch (err) {
     console.error("[accounts:update]", { id, error: err });
@@ -475,6 +489,11 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.accounts", "
         updated_by: req.user ? req.user.id : null,
         updated_at: knex.fn.now(),
       });
+    queueAuditLog(req, {
+      entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
+      entityId: id,
+      action: "DELETE",
+    });
     return res.redirect(basePath);
   } catch (err) {
     return renderIndexError(req, res, {}, res.locals.t("error_update_status"), "delete", basePath);
@@ -509,10 +528,20 @@ router.post("/:id/delete", requirePermission("SCREEN", "master_data.accounts", "
       return res.redirect(req.get("referer") || basePath);
     }
     await knex(page.table).where({ id }).del();
+    queueAuditLog(req, {
+      entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
+      entityId: id,
+      action: "DELETE",
+    });
     return res.redirect(basePath);
   } catch (err) {
     return renderIndexError(req, res, {}, err?.message || res.locals.t("error_delete"), "delete", basePath);
   }
 });
+
+router.preview = {
+  page,
+  hydratePage,
+};
 
 module.exports = router;

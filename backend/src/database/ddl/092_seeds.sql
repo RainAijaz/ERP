@@ -80,7 +80,11 @@ VALUES
   ('PARTY_GROUP',           'Party Group', 'Basic info: party groups'),
   ('ACCOUNT_GROUP',         'Account Group','Basic info: account groups'),
   ('DEPARTMENT',            'Department',  'Basic info: departments'),
-  ('UOM_CONVERSION',        'UOM Conversion','Basic info: unit conversions')
+  ('UOM_CONVERSION',        'UOM Conversion','Basic info: unit conversions'),
+  ('BRANCH',                'Branch',      'Administration: branches'),
+  ('USER',                  'User',        'Administration: users'),
+  ('ROLE',                  'Role',        'Administration: roles'),
+  ('PERMISSION',            'Permission',  'Administration: permissions')
 ON CONFLICT (code) DO NOTHING;
 
 

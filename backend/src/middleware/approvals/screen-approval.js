@@ -96,25 +96,68 @@ const queueApproval = async ({ req, entityType, entityId, summary, oldValue, new
 };
 
 const handleScreenApproval = async ({ req, scopeKey, action, entityType, entityId, summary, oldValue, newValue, t }) => {
+  // --- DEBUG LOGGING START ---
+  try {
+    console.log("[screen-approval] handleScreenApproval called", {
+      user: req.user && { id: req.user.id, username: req.user.username, isAdmin: req.user.isAdmin },
+      scopeKey,
+      action,
+      entityType,
+      entityId,
+      summary,
+      oldValue,
+      newValue,
+      path: req.path,
+      method: req.method,
+    });
+  } catch (e) {}
   if (req.user?.isAdmin) {
+    console.log("[screen-approval] user is admin, bypassing approval queue");
     return { queued: false };
   }
   const allowed = hasPermission(req.user, scopeKey, action);
-  const approvalRequired = await requiresApproval(scopeKey, action);
+  console.log("[screen-approval] hasPermission result", { allowed });
+  let approvalRequired;
+  try {
+    approvalRequired = await requiresApproval(scopeKey, action);
+    console.log("[screen-approval] requiresApproval result", { approvalRequired });
+  } catch (err) {
+    console.error("[screen-approval] requiresApproval threw error", err);
+    throw err;
+  }
 
   if (!allowed && !approvalRequired) {
+    console.log("[screen-approval] neither allowed nor approval required, throwing 403");
     throw new HttpError(403, t("permission_denied"));
   }
 
   if (approvalRequired) {
-    const requestId = await queueApproval({ req, entityType, entityId, summary, oldValue, newValue });
+    let requestId = null;
+    try {
+      requestId = await queueApproval({ req, entityType, entityId, summary, oldValue, newValue });
+      console.log("[screen-approval] approval queued", { requestId });
+    } catch (err) {
+      console.error("[screen-approval] queueApproval threw error", err);
+      throw err;
+    }
     const res = req.res;
-    if (res && typeof t === "function") {
+    const translator = typeof t === "function" ? t : res?.locals?.t;
+    if (res && typeof translator === "function") {
+      if (process.env.DEBUG_UI_NOTICE === "1") {
+        console.log("[UI NOTICE] set from screen-approval", {
+          path: req.path,
+          scopeKey,
+          action,
+          entityType,
+          entityId,
+        });
+      }
       setCookie(
         res,
         UI_NOTICE_COOKIE,
         JSON.stringify({
-          message: t("approval_sent") || t("approval_submitted") || "Change request sent for approval. It will be applied once reviewed.",
+          message: translator("approval_sent") || translator("approval_submitted") || "Change request sent for approval. It will be applied once reviewed.",
+          autoClose: true,
         }),
         { path: "/", maxAge: 30, sameSite: "Lax" },
       );
@@ -122,6 +165,7 @@ const handleScreenApproval = async ({ req, scopeKey, action, entityType, entityI
     return { queued: true, requestId };
   }
 
+  console.log("[screen-approval] approval not required, proceeding without queue");
   return { queued: false };
 };
 

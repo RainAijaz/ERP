@@ -4,6 +4,7 @@ const { hashPassword } = require("../../middleware/core/auth");
 const { requirePermission } = require("../../middleware/access/role-permissions");
 const { normalizeFields } = require("../../middleware/utils/validation");
 const { HttpError } = require("../../middleware/errors/http-error");
+const { queueAuditLog } = require("../../utils/audit-log");
 
 const router = express.Router();
 
@@ -61,12 +62,13 @@ router.get(["/form", "/form/:id"], requirePermission("SCREEN", "administration.u
   }
 });
 
-router.post("/save", requirePermission("SCREEN", "administration.users", "edit"), normalizeFields(["username", "email"]), async (req, res, next) => {
+router.post("/save", requirePermission("SCREEN", "administration.users", "edit"), normalizeFields(["name", "name_ur", "username", "email"]), async (req, res, next) => {
   const trx = await knex.transaction();
   try {
     console.log(`[${req.id}] [users:save] xhr=${req.xhr} body=`, req.body);
-    const { id, username, password, email, primary_role_id, branch_ids, status } = req.body;
+    const { id, name, name_ur, username, password, email, primary_role_id, branch_ids, status } = req.body;
 
+    if (!name) throw new HttpError(400, "Name required");
     if (!username) throw new HttpError(400, "Username required");
     if (!primary_role_id) throw new HttpError(400, "Role required");
     if (!id && !password) throw new HttpError(400, "Password required for new users");
@@ -79,6 +81,8 @@ router.post("/save", requirePermission("SCREEN", "administration.users", "edit")
     if (existing) throw new HttpError(400, "Username taken");
 
     const userData = {
+      name,
+      name_ur: name_ur || null,
       username,
       email: email || null,
       primary_role_id,
@@ -134,6 +138,11 @@ router.post("/save", requirePermission("SCREEN", "administration.users", "edit")
       await trx("erp.user_branch").insert(branches.map((bid) => ({ user_id: targetId, branch_id: bid })));
     }
 
+    queueAuditLog(req, {
+      entityType: "USER",
+      entityId: targetId,
+      action: id ? "UPDATE" : "CREATE",
+    });
     await trx.commit();
     if (req.xhr) return res.json({ success: true, redirect: "/administration/users" });
     res.redirect("/administration/users");
@@ -145,13 +154,13 @@ router.post("/save", requirePermission("SCREEN", "administration.users", "edit")
   }
 });
 
-
 router.post("/:id/toggle", requirePermission("SCREEN", "administration.users", "delete"), async (req, res, next) => {
   try {
     const user = await knex("erp.users").select("status").where({ id: req.params.id }).first();
     if (!user) throw new HttpError(404, "User not found");
     const nextStatus = String(user.status || "").toLowerCase() === "active" ? "Inactive" : "Active";
     await knex("erp.users").where({ id: req.params.id }).update({ status: nextStatus });
+    queueAuditLog(req, { entityType: "USER", entityId: req.params.id, action: "DELETE" });
     if (req.xhr) return res.json({ success: true, status: nextStatus });
     res.redirect("/administration/users");
   } catch (err) {
@@ -169,6 +178,7 @@ router.post("/:id/delete", requirePermission("SCREEN", "administration.users", "
     await trx("erp.user_sessions").where({ user_id: req.params.id }).del();
     await trx("erp.user_permissions_override").where({ user_id: req.params.id }).del();
     await trx("erp.users").where({ id: req.params.id }).del();
+    queueAuditLog(req, { entityType: "USER", entityId: req.params.id, action: "DELETE" });
     await trx.commit();
     if (req.xhr) return res.json({ success: true });
     res.redirect("/administration/users");

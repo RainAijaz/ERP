@@ -331,6 +331,17 @@
           node.classList.remove("hidden");
         }
       });
+      modalForm.querySelectorAll('[data-field="code"]').forEach((input) => {
+        if (mode === "edit") {
+          input.disabled = true;
+          input.readOnly = true;
+          input.classList.add("cursor-not-allowed");
+        } else {
+          input.disabled = false;
+          input.readOnly = false;
+          input.classList.remove("cursor-not-allowed");
+        }
+      });
       if (modalError) {
         modalError.textContent = "";
         modalError.hidden = true;
@@ -820,25 +831,25 @@
       btn.addEventListener("click", () => openModal("create", { id: "" }));
     });
 
-      editButtons.forEach((btn) => {
-        btn.addEventListener("click", () => {
-          const data = {
-            id: btn.dataset.id,
-            action: basePath + "/" + btn.dataset.id,
-            created_at: btn.dataset.createdAt || "",
-            created_by: btn.dataset.createdBy || "",
-            updated_at: btn.dataset.updatedAt || "",
-            updated_by: btn.dataset.updatedBy || "",
-          };
-          btn.getAttributeNames().forEach((attr) => {
-            if (!attr.startsWith("data-")) return;
-            const rawKey = attr.slice(5);
-            const key = rawKey.replace(/-+/g, "_");
-            data[key] = btn.getAttribute(attr);
-          });
-          openModal("edit", data);
+    editButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const data = {
+          id: btn.dataset.id,
+          action: basePath + "/" + btn.dataset.id,
+          created_at: btn.dataset.createdAt || "",
+          created_by: btn.dataset.createdBy || "",
+          updated_at: btn.dataset.updatedAt || "",
+          updated_by: btn.dataset.updatedBy || "",
+        };
+        btn.getAttributeNames().forEach((attr) => {
+          if (!attr.startsWith("data-")) return;
+          const rawKey = attr.slice(5);
+          const key = rawKey.replace(/-+/g, "_");
+          data[key] = btn.getAttribute(attr);
         });
+        openModal("edit", data);
       });
+    });
 
     closeButtons.forEach((btn) => {
       btn.addEventListener("click", closeModal);
@@ -1020,6 +1031,16 @@
             }
           }
         }
+
+        // UNIVERSAL ERROR ALERT: Intercept the form submit to show alert on backend/DB error
+        // This runs after the above client-side validation, so only for actual submits
+        setTimeout(() => {
+          // Look for a server-side error message in the modal error element after submit
+          if (modalError && !modalError.hidden && modalError.textContent) {
+            // Show a JS alert for any error message (universal debug)
+            alert("Error: " + modalError.textContent);
+          }
+        }, 300);
       });
     }
 

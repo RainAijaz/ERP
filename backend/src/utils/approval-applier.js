@@ -1,5 +1,17 @@
+// approval-applier.js
+// Purpose: Contains logic for applying approval actions to ERP entities (items, SKUs, accounts, parties, etc).
+// Used by the approval engine to process approved requests and update the database accordingly.
+// Handles entity-specific logic for creation, update, deletion, and linking of related records.
+//
+// Key functions:
+// - applySkuChange: Handles SKU creation, update, toggle, and deletion.
+// - applyItemChange: Handles item (product, SFG, FG, RM) creation, update, and deletion.
+// - ensureSfgForFinished: Ensures SFG (semi-finished good) is linked to a finished item.
+// - Utility functions for code normalization, uniqueness, and mapping.
+
 const { BASIC_INFO_ENTITY_TYPES } = require("./approval-entity-map");
 
+// Mapping of basic info entity types to their DB tables
 const BASIC_INFO_TABLES = {
   UOM: "erp.uom",
   SIZE: "erp.sizes",
@@ -16,12 +28,14 @@ const BASIC_INFO_TABLES = {
   UOM_CONVERSION: "erp.uom_conversions",
 };
 
+// Mapping of item types to their DB tables
 const ITEM_TYPE_MAPS = {
   SIZE: { table: "erp.size_item_types", key: "size_id" },
   PRODUCT_GROUP: { table: "erp.product_group_item_types", key: "group_id" },
   PRODUCT_SUBGROUP: { table: "erp.product_subgroup_item_types", key: "subgroup_id" },
 };
 
+// Mapping of branch types to their DB tables
 const BRANCH_MAPS = {
   ACCOUNT: { table: "erp.account_branch", key: "account_id", branchKey: "branch_id" },
   PARTY: { table: "erp.party_branch", key: "party_id", branchKey: "branch_id" },
@@ -486,6 +500,18 @@ const applyBasicInfoChange = async (trx, entityType, entityId, newValue, userId)
   const isCreate = !entityId || entityId === "NEW";
 
   if (isCreate) {
+    // Duplicate check for SIZE (case-sensitive) and COLOR (case-insensitive)
+    let duplicate = null;
+    if (entityType === "SIZE") {
+      duplicate = await trx(table).where({ name: values.name }).first();
+    } else if (entityType === "COLOR") {
+      duplicate = await trx(table).whereRaw("lower(name) = lower(?)", [values.name]).first();
+    }
+    if (duplicate) {
+      const err = new Error("DUPLICATE_NAME");
+      err.code = "DUPLICATE_NAME";
+      throw err;
+    }
     const [created] = await trx(table)
       .insert({
         ...values,

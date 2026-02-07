@@ -227,4 +227,8 @@ router.post("/:id/delete", requirePermission("SCREEN", "master_data.basic_info.u
   }
 });
 
+router.preview = {
+  fetchUoms,
+};
+
 module.exports = router;

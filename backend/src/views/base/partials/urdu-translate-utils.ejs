@@ -68,6 +68,10 @@
       document.querySelectorAll("form").forEach(wireForm);
     };
 
+    if (typeof window !== "undefined") {
+      window.wireUrduTranslateForms = wireAll;
+    }
+
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", wireAll);
     } else {

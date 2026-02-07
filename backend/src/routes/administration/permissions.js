@@ -3,6 +3,7 @@ const knex = require("../../db/knex");
 const { requirePermission } = require("../../middleware/access/role-permissions");
 const { navConfig } = require("../../utils/nav-config");
 const { parseCookies, setCookie } = require("../../middleware/utils/cookies");
+const { queueAuditLog } = require("../../utils/audit-log");
 const router = express.Router();
 
 const FLASH_COOKIE = "permissions_flash";
@@ -153,10 +154,10 @@ router.get("/", requirePermission("SCREEN", "administration.permissions", "view"
         }, {});
       }
 
-    if (target_id && canBrowsePermissions && !isUserMode) {
-      basePermissionsMap = {};
-      overridePermissionsMap = {};
-    }
+      if (target_id && canBrowsePermissions && !isUserMode) {
+        basePermissionsMap = {};
+        overridePermissionsMap = {};
+      }
     }
 
     // 4. Structure Data for View (nav-driven)
@@ -349,6 +350,12 @@ router.post("/update", requirePermission("SCREEN", "administration.permissions",
       const table = isUserMode ? "erp.user_permissions_override" : "erp.role_permissions";
       await trx(table).insert(inserts);
     }
+
+    queueAuditLog(req, {
+      entityType: "PERMISSION",
+      entityId: `${type}:${target_id}`,
+      action: "UPDATE",
+    });
 
     await trx.commit();
     committed = true;

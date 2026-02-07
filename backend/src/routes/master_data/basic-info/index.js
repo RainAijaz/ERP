@@ -6,6 +6,7 @@ const { parseCookies, setCookie } = require("../../../middleware/utils/cookies")
 const { friendlyErrorMessage } = require("../../../middleware/errors/friendly-error");
 const { handleScreenApproval } = require("../../../middleware/approvals/screen-approval");
 const { getBasicInfoEntityType } = require("../../../utils/approval-entity-map");
+const { queueAuditLog } = require("../../../utils/audit-log");
 
 const router = express.Router();
 
@@ -837,6 +838,11 @@ const createHandler = (type) => async (req, res, next) => {
             })),
           );
         }
+        queueAuditLog(req, {
+          entityType: getBasicInfoEntityType(type),
+          entityId: groupId,
+          action: "CREATE",
+        });
       });
     } else {
       if (page.branchMap) {
@@ -874,6 +880,11 @@ const createHandler = (type) => async (req, res, next) => {
               })),
             );
           }
+          queueAuditLog(req, {
+            entityType: getBasicInfoEntityType(type),
+            entityId: accountId,
+            action: "CREATE",
+          });
         });
       } else {
         const approval = await handleScreenApproval({
@@ -897,7 +908,13 @@ const createHandler = (type) => async (req, res, next) => {
           ...(page.autoCodeFromName ? { code: toCode(values.name) } : {}),
           created_by: req.user ? req.user.id : null,
         };
-        await knex(page.table).insert(insertValues);
+        const [row] = await knex(page.table).insert(insertValues).returning("id");
+        const createdId = row && row.id ? row.id : row;
+        queueAuditLog(req, {
+          entityType: getBasicInfoEntityType(type),
+          entityId: createdId,
+          action: "CREATE",
+        });
       }
     }
     return res.redirect(basePath);
@@ -933,6 +950,9 @@ const updateHandler = (type) => async (req, res, next) => {
     const existingRow = await knex(page.table).where({ id }).first();
     if (!existingRow) {
       return renderIndexError(req, res, page, values, res.locals.t("error_not_found"), "edit", basePath, type);
+    }
+    if (hasField(page, "code") && existingRow.code) {
+      values.code = existingRow.code;
     }
 
     if (page.table === "erp.uom") {
@@ -985,6 +1005,11 @@ const updateHandler = (type) => async (req, res, next) => {
             })),
           );
         }
+        queueAuditLog(req, {
+          entityType: getBasicInfoEntityType(type),
+          entityId: id,
+          action: "UPDATE",
+        });
       });
     } else {
       const auditFields = page.hasUpdatedFields === false ? {} : { updated_by: req.user ? req.user.id : null, updated_at: knex.fn.now() };
@@ -1023,6 +1048,11 @@ const updateHandler = (type) => async (req, res, next) => {
               })),
             );
           }
+          queueAuditLog(req, {
+            entityType: getBasicInfoEntityType(type),
+            entityId: id,
+            action: "UPDATE",
+          });
         });
       } else {
         const approval = await handleScreenApproval({
@@ -1046,6 +1076,11 @@ const updateHandler = (type) => async (req, res, next) => {
             ...values,
             ...auditFields,
           });
+        queueAuditLog(req, {
+          entityType: getBasicInfoEntityType(type),
+          entityId: id,
+          action: "UPDATE",
+        });
       }
     }
     return res.redirect(basePath);
@@ -1093,6 +1128,11 @@ const toggleHandler = (type) => async (req, res, next) => {
         is_active: !current.is_active,
         ...auditFields,
       });
+    queueAuditLog(req, {
+      entityType: getBasicInfoEntityType(type),
+      entityId: id,
+      action: "DELETE",
+    });
     return res.redirect(basePath);
   } catch (err) {
     return renderIndexError(req, res, page, {}, err?.message || res.locals.t("error_update_status"), "delete", basePath, type);
@@ -1131,6 +1171,11 @@ const deleteHandler = (type) => async (req, res, next) => {
       return res.redirect(req.get("referer") || basePath);
     }
     await knex(page.table).where({ id }).del();
+    queueAuditLog(req, {
+      entityType: getBasicInfoEntityType(type),
+      entityId: id,
+      action: "DELETE",
+    });
     return res.redirect(basePath);
   } catch (err) {
     return renderIndexError(req, res, page, {}, err?.message || res.locals.t("error_delete"), "delete", basePath, type);
@@ -1173,5 +1218,10 @@ router.get("/:type", (req, res, next) => {
   }
   return next(new HttpError(404, "Basic information page not found"));
 });
+
+router.preview = {
+  getPageConfig,
+  hydratePage,
+};
 
 module.exports = router;

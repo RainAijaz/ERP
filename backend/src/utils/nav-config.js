@@ -1,3 +1,11 @@
+// nav-config.js
+// Purpose: Defines the navigation structure and permissions for the ERP application's sidebar and menus.
+// Used by the UI to render navigation, check access, and organize modules/screens by group and scope.
+//
+// Exports:
+// - navConfig: Array of navigation groups, screens, and their metadata (route, label, scope, etc).
+// - syncNavScopes: (if present) Utility to sync navigation scopes with permissions.
+
 const navConfig = [
   {
     key: "administration",
@@ -109,16 +117,23 @@ const navConfig = [
     scopeKey: "hr_payroll",
     moduleGroup: "HR & Payroll",
     children: [
-      { key: "employees", labelKey: "employees", scopeType: "SCREEN", scopeKey: "hr_payroll.employees", moduleGroup: "HR & Payroll", route: "/master-data/hr-payroll/employees" },
-      { key: "sales_commission", labelKey: "sales_commission", scopeType: "SCREEN", scopeKey: "hr_payroll.commissions", moduleGroup: "HR & Payroll", route: "/master-data/hr-payroll/commission" },
-      { key: "allowances", labelKey: "allowances", scopeType: "SCREEN", scopeKey: "hr_payroll.allowances", moduleGroup: "HR & Payroll", route: "/master-data/hr-payroll/allowances" },
+      {
+        key: "employees",
+        labelKey: "employees",
+        type: "group",
+        children: [
+          { key: "employees_list", labelKey: "employees", scopeType: "SCREEN", scopeKey: "hr_payroll.employees", moduleGroup: "HR & Payroll", route: "/hr-payroll/employees" },
+          { key: "sales_commission", labelKey: "sales_commission", scopeType: "SCREEN", scopeKey: "hr_payroll.commissions", moduleGroup: "HR & Payroll", route: "/hr-payroll/employees/commissions" },
+          { key: "allowances", labelKey: "allowances", scopeType: "SCREEN", scopeKey: "hr_payroll.allowances", moduleGroup: "HR & Payroll", route: "/hr-payroll/employees/allowances" },
+        ],
+      },
       {
         key: "labours",
         labelKey: "labours",
         type: "group",
         children: [
-          { key: "labours_list", labelKey: "labours", scopeType: "SCREEN", scopeKey: "hr_payroll.labours", moduleGroup: "HR & Payroll", route: "/master-data/hr-payroll/labours" },
-          { key: "labour_rates", labelKey: "labour_rates", scopeType: "SCREEN", scopeKey: "hr_payroll.labour_rates", moduleGroup: "HR & Payroll", route: "/master-data/hr-payroll/labour-rates" },
+          { key: "labours_list", labelKey: "labours", scopeType: "SCREEN", scopeKey: "hr_payroll.labours", moduleGroup: "HR & Payroll", route: "/hr-payroll/labours" },
+          { key: "labour_rates", labelKey: "labour_rates", scopeType: "SCREEN", scopeKey: "hr_payroll.labour_rates", moduleGroup: "HR & Payroll", route: "/hr-payroll/labours/rates" },
         ],
       },
     ],

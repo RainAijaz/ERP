@@ -1,33 +1,83 @@
 <% const uiNoticeMessage = uiNotice && uiNotice.message ? uiNotice.message : null; %>
+<% const uiNoticeSticky = uiNotice && uiNotice.sticky === true; %>
+<% const uiNoticeAutoClose = uiNotice && uiNotice.autoClose; %>
+<% const debugUiNoticeFlag = typeof debugUiNotice !== "undefined" ? debugUiNotice : false; %>
 <% if (uiNoticeMessage) { %>
-  <div class="fixed inset-0 z-[85] hidden items-center justify-center bg-slate-900/30 p-4" data-ui-notice-modal>
-    <div class="w-full max-w-md rounded-2xl border border-emerald-200 bg-white shadow-xl">
-      <div class="border-b border-emerald-100 px-6 py-4">
-        <div class="text-sm font-semibold text-emerald-700"><%= t("notice") || "Notice" %></div>
-        <p class="mt-1 text-xs text-slate-500"><%= uiNoticeMessage %></p>
+  <% const isError = uiNoticeMessage && (/error|could not|failed|invalid|duplicate|not found|unable/i).test(uiNoticeMessage); %>
+  <div class="fixed right-4 top-4 z-50 hidden w-[92vw] max-w-sm" data-ui-notice-toast>
+    <div class="flex items-start gap-3 rounded-2xl border <%= isError ? 'border-rose-300 bg-rose-50' : 'border-emerald-200 bg-white' %> p-4 shadow-xl">
+      <div class="mt-0.5 rounded-full <%= isError ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700' %> p-2">
+        <% if (isError) { %>
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        <% } else { %>
+          <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+          </svg>
+        <% } %>
       </div>
-      <div class="px-6 py-5">
-        <button class="w-full rounded-xl bg-emerald-600 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-emerald-700" type="button" data-ui-notice-close>
-          <%= t("ok") || "OK" %>
-        </button>
+      <div class="flex-1">
+        <div class="text-xs font-semibold uppercase tracking-[0.18em] <%= isError ? 'text-rose-700' : 'text-emerald-700' %>"><%= isError ? (t("error_generic") || "Error") : (t("notice") || "Notice") %></div>
+        <p class="mt-1 text-sm <%= isError ? 'text-rose-700' : 'text-slate-700' %>"><%= uiNoticeMessage %></p>
+        <% if (uiNoticeSticky) { %>
+          <button class="mt-1 text-[10px] uppercase tracking-[0.18em] text-slate-400 hover:text-slate-600" type="button" data-ui-notice-dismiss>
+            <%= t("dismiss") || "Dismiss" %>
+          </button>
+        <% } %>
       </div>
+      <button class="text-slate-400 hover:text-slate-600" type="button" data-ui-notice-close aria-label="Close">
+        <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
     </div>
   </div>
   <script>
     (function () {
-      const modal = document.querySelector("[data-ui-notice-modal]");
+      const toast = document.querySelector("[data-ui-notice-toast]");
       const close = document.querySelector("[data-ui-notice-close]");
-      if (!modal) return;
-      modal.classList.remove("hidden");
-      modal.classList.add("flex");
-      const closeModal = () => {
-        modal.classList.add("hidden");
-        modal.classList.remove("flex");
+      if (!toast) return;
+      if (<%= debugUiNoticeFlag ? "true" : "false" %>) {
+        console.log("[UI NOTICE] render", {
+          message: "<%= String(uiNoticeMessage || '').replace(/\"/g, '\\"') %>",
+          sticky: <%= uiNoticeSticky ? "true" : "false" %>,
+          autoClose: <%= uiNoticeAutoClose ? "true" : "false" %>
+        });
+      }
+      toast.classList.remove("hidden");
+      const broadcastDismiss = () => {
+        try {
+          localStorage.setItem("ui_notice_dismissed", String(Date.now()));
+        } catch (err) {
+          // ignore
+        }
       };
-      close?.addEventListener("click", closeModal);
-      modal.addEventListener("click", (event) => {
-        if (event.target === modal) closeModal();
+      const clearNoticeCookie = () => {
+        document.cookie = "ui_notice=; Max-Age=0; Path=/; SameSite=Lax";
+      };
+      const hide = () => {
+        toast.classList.add("hidden");
+      };
+      const dismiss = () => {
+        clearNoticeCookie();
+        broadcastDismiss();
+        hide();
+      };
+      close?.addEventListener("click", dismiss);
+      toast.querySelector("[data-ui-notice-dismiss]")?.addEventListener("click", dismiss);
+      window.addEventListener("storage", (event) => {
+        if (event.key === "ui_notice_dismissed") {
+          hide();
+        }
       });
+      const autoClose = <%= uiNoticeAutoClose ? "true" : "false" %>;
+      if (autoClose === true) {
+        clearNoticeCookie();
+        setTimeout(() => {
+          dismiss();
+        }, 4000);
+      }
     })();
   </script>
 <% } %>

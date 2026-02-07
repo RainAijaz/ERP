@@ -1,21 +1,32 @@
+<!--
+  main.ejs - Main Application Layout
+  Purpose: This is the universal layout template for all pages in the ERP web application.
+  It defines the global HTML structure, header, navigation, main content area, modals, and global scripts.
+  All page views are rendered inside this layout.
+-->
 <!DOCTYPE html>
 <html lang="<%= locale || 'en' %>" dir="<%= locale === 'ur' ? 'rtl' : 'ltr' %>">
   <head>
+    <!-- Head includes meta, title, and global styles/scripts -->
     <%- include("../partials/head", { title }) %>
   </head>
   <body class="<%= locale === 'ur' ? 'font-urdu' : 'font-sans' %> min-h-screen overflow-x-hidden bg-linear-to-br from-amber-50 via-slate-50 to-amber-50 text-ink">
     <div class="flex min-h-screen flex-col">
+      <!-- HEADER: Top navigation bar and brand -->
       <header class="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
         <div class="mx-auto w-full px-4 lg:px-8">
           <input id="nav-toggle" type="checkbox" class="peer sr-only" />
           <div class="flex flex-wrap items-center justify-between gap-4 py-4 lg:py-5">
             <div class="flex items-center gap-4">
+              <!-- Brand and ERP label -->
               <a class="text-2xl font-display text-accent transition hover:text-accent/80" href="/"><%= t("brand") %></a>
               <span class="hidden h-5 w-px bg-slate-200 lg:inline-flex"></span>
               <span class="hidden text-xs uppercase tracking-[0.4em] text-muted lg:inline-flex">ERP</span>
             </div>
             <div class="flex flex-wrap items-center gap-3">
+              <!-- Main navigation links -->
               <%- include("../partials/navbar") %>
+              <!-- Mobile menu toggle -->
               <label for="nav-toggle" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 shadow-sm transition hover:border-accent/40 hover:text-accent lg:hidden">
                 <span>Menu</span>
                 <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -24,23 +35,141 @@
               </label>
             </div>
           </div>
+          <!-- NAVIGATION: Main and submenu navigation -->
           <nav class="hidden w-full flex-col gap-2 pb-4 peer-checked:flex lg:flex lg:flex-row lg:flex-nowrap lg:items-center lg:gap-1 lg:pb-6">
             <%- include("../partials/nav-menu", { navConfig, can, t }) %>
           </nav>
         </div>
       </header>
+      <!-- MAIN CONTENT: Page-specific content and footer -->
       <main class="w-full flex-1 px-4 pb-10 pt-6 lg:px-8 lg:pt-8">
         <%- include(view) %>
         <%- include("../partials/footer") %>
       </main>
     </div>
+    <!-- GLOBAL MODALS: Notice and error modals -->
     <%- include("../partials/notice-modal") %>
     <%- include("../partials/error-modal") %>
+    <!-- LIVE APPROVAL TOASTS: Real-time approval notifications -->
+    <script>
+      (function () {
+        // Live approval event stream and toast notifications
+        if (!window.EventSource) return;
+        const csrfToken = "<%= csrfToken %>";
+        const ackApproval = () => {
+          try {
+            fetch("/events/approvals/ack", {
+              method: "POST",
+              headers: { "x-csrf-token": csrfToken },
+            }).catch(() => {});
+          } catch (err) {
+            // ignore
+          }
+        };
+        const source = new EventSource("/events/approvals");
+        const getDecisionCount = () => Number(sessionStorage.getItem("approval_decision_count") || "0");
+        const setDecisionCount = (value) => sessionStorage.setItem("approval_decision_count", String(value));
+        const resetDecisionCount = () => setDecisionCount(0);
+
+        const broadcastLiveDismiss = () => {
+          try {
+            localStorage.setItem("approval_live_dismissed", String(Date.now()));
+          } catch (err) {
+            // ignore
+          }
+        };
+        window.addEventListener("storage", (event) => {
+          if (event.key === "approval_live_dismissed") {
+            document.querySelector("[data-live-approval-toast]")?.remove();
+          }
+        });
+
+        const renderToast = (payload) => {
+          if (!payload || !payload.message) return;
+          const existing = document.querySelector("[data-live-approval-toast]");
+          if (existing) existing.remove();
+          const wrap = document.createElement("div");
+          wrap.className = "fixed right-4 top-4 z-[90] w-[92vw] max-w-sm";
+          wrap.setAttribute("data-live-approval-toast", "true");
+          const status = String(payload.status || "").toUpperCase();
+          const badgeClass = status === "APPROVED" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700";
+          const badgeText = status || "<%= t('status') || 'Status' %>";
+          const count = getDecisionCount();
+          const extraCount = count > 1 ? count - 1 : 0;
+          const summaryLine = payload.summary ? `<p class="mt-1 text-xs text-slate-500">${payload.summary}</p>` : "";
+          const moreLine = extraCount > 0
+            ? `<p class="mt-1 text-[10px] uppercase tracking-[0.18em] text-slate-400">+${extraCount} more</p>`
+            : "";
+          const link = payload.link ? `<a class="mt-2 inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-accent hover:text-accent/80" href="${payload.link}"><%= t('view') || 'View' %> →</a>` : "";
+          const requestId = payload.requestId ? `<div class="text-[10px] uppercase tracking-[0.18em] text-slate-400">#${payload.requestId}</div>` : "";
+          wrap.innerHTML = `
+            <div class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
+              <div class="mt-0.5 rounded-full bg-slate-100 p-2 text-slate-700">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <div class="flex-1">
+                <div class="flex items-center justify-between gap-2">
+                  <div class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("notice") || "Notice" %></div>
+                  <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${badgeClass}">${badgeText}</span>
+                </div>
+                ${requestId}
+                <p class="mt-1 text-sm text-slate-700"></p>
+                ${summaryLine}
+                ${moreLine}
+                ${link}
+                <p class="mt-1 text-[10px] uppercase tracking-[0.18em] text-slate-400"><%= t("dismiss") || "Dismiss" %></p>
+              </div>
+              <button class="text-slate-400 hover:text-slate-600" type="button" aria-label="Close">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>`;
+          wrap.querySelector("p.text-sm").textContent = payload.message;
+          const closeBtn = wrap.querySelector("button");
+          const viewLink = wrap.querySelector("a");
+          closeBtn.addEventListener("click", () => {
+            resetDecisionCount();
+            broadcastLiveDismiss();
+            ackApproval();
+            wrap.remove();
+          });
+          viewLink?.addEventListener("click", () => {
+            resetDecisionCount();
+            ackApproval();
+          });
+          document.body.appendChild(wrap);
+        };
+
+        source.addEventListener("approval_decision", (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            const nextCount = getDecisionCount() + 1;
+            setDecisionCount(nextCount);
+            renderToast(payload);
+          } catch (err) {
+            // ignore
+          }
+        });
+
+        source.addEventListener("error", () => {
+          // Leave the connection; browser will retry automatically.
+        });
+
+        if (window.location.pathname.startsWith("/administration/approvals")) {
+          ackApproval();
+        }
+      })();
+    </script>
+    <!-- NAVIGATION DROPDOWNS: Submenu open/close logic -->
     <script>
       (function () {
         const toggles = document.querySelectorAll("[data-submenu-toggle]");
         const wraps = document.querySelectorAll("[data-submenu-wrap]");
         const mediaQuery = window.matchMedia("(min-width: 1024px)");
+        const submenuTimeouts = new WeakMap();
 
         const closeAll = (except) => {
           document.querySelectorAll("[data-submenu]").forEach((menu) => {
@@ -88,6 +217,24 @@
           menu.addEventListener("click", (event) => event.stopPropagation());
         });
 
+        // --- Dropdown hover/focus logic for robust close on mouse leave ---
+        wraps.forEach((wrap) => {
+          const key = wrap.querySelector("[data-submenu-toggle]")?.getAttribute("data-submenu-toggle");
+          if (!key) return;
+          const menu = document.querySelector(`[data-submenu="${key}"]`);
+          if (!menu) return;
+          let closeTimer = null;
+          const clear = () => { if (closeTimer) { clearTimeout(closeTimer); closeTimer = null; } };
+          const scheduleClose = () => {
+            clear();
+            closeTimer = setTimeout(() => { setMenuState(menu, false); }, 200);
+          };
+          wrap.addEventListener("mouseenter", clear);
+          wrap.addEventListener("mouseleave", scheduleClose);
+          menu.addEventListener("mouseenter", clear);
+          menu.addEventListener("mouseleave", scheduleClose);
+        });
+
         document.addEventListener("click", () => {
           closeAll();
         });
@@ -95,8 +242,11 @@
         mediaQuery.addEventListener("change", () => closeAll());
       })();
     </script>
+    <!-- Urdu translation utilities for multilingual support -->
     <%- include("../partials/urdu-translate-utils") %>
   </body>
 </html>
+
+
 
 

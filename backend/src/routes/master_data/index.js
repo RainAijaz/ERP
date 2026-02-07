@@ -9,6 +9,10 @@ const bomRoutes = require("./bom");
 const router = express.Router();
 
 router.use("/products", productsRoutes);
+router.use("/hr-payroll", (req, res) => {
+  const suffix = req.originalUrl.replace(/^\/master-data\/hr-payroll/, "");
+  return res.redirect(`/hr-payroll${suffix || ""}`);
+});
 router.use("/basic-info/accounts", accountsRoutes);
 router.use("/basic-info/parties", partiesRoutes);
 router.use("/basic-info/uom-conversions", uomConversionsRoutes);

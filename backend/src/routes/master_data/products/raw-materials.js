@@ -4,6 +4,7 @@ const { HttpError } = require("../../../middleware/errors/http-error");
 const { requirePermission } = require("../../../middleware/access/role-permissions");
 const { handleScreenApproval } = require("../../../middleware/approvals/screen-approval");
 const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
+const { queueAuditLog } = require("../../../utils/audit-log");
 
 const router = express.Router();
 const ITEM_TYPE = "RM";
@@ -260,6 +261,7 @@ router.post("/", requirePermission("SCREEN", "master_data.products.raw_materials
       return res.redirect(req.get("referer") || basePath);
     }
 
+    let createdId = null;
     await knex.transaction(async (trx) => {
       const [item] = await trx("erp.items")
         .insert({
@@ -276,6 +278,7 @@ router.post("/", requirePermission("SCREEN", "master_data.products.raw_materials
         })
         .returning("id");
       const itemId = item.id || item;
+      createdId = itemId;
 
       const rateRows = buildRateRows({
         itemId,
@@ -292,6 +295,13 @@ router.post("/", requirePermission("SCREEN", "master_data.products.raw_materials
         await trx("erp.rm_purchase_rates").insert(rateRows);
       }
     });
+    if (createdId) {
+      queueAuditLog(req, {
+        entityType: SCREEN_ENTITY_TYPES["master_data.products.raw_materials"],
+        entityId: createdId,
+        action: "CREATE",
+      });
+    }
 
     return res.redirect(basePath);
   } catch (err) {
@@ -439,6 +449,12 @@ router.post("/:id", requirePermission("SCREEN", "master_data.products.raw_materi
       }
     });
 
+    queueAuditLog(req, {
+      entityType: SCREEN_ENTITY_TYPES["master_data.products.raw_materials"],
+      entityId: id,
+      action: "UPDATE",
+    });
+
     return res.redirect(basePath);
   } catch (err) {
     console.error("[raw-materials:update] error", err);
@@ -490,6 +506,11 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.raw
         updated_by: req.user ? req.user.id : null,
         updated_at: knex.fn.now(),
       });
+    queueAuditLog(req, {
+      entityType: SCREEN_ENTITY_TYPES["master_data.products.raw_materials"],
+      entityId: id,
+      action: "DELETE",
+    });
     return res.redirect(basePath);
   } catch (err) {
     const [rows, options, rateDetailsByItem, users] = await Promise.all([loadRows(), loadOptions(), loadRateDetails(), loadUsers()]);
@@ -530,6 +551,11 @@ router.post("/:id/delete", requirePermission("SCREEN", "master_data.products.raw
     }
 
     await knex("erp.items").where({ id }).del();
+    queueAuditLog(req, {
+      entityType: SCREEN_ENTITY_TYPES["master_data.products.raw_materials"],
+      entityId: id,
+      action: "DELETE",
+    });
     return res.redirect(basePath);
   } catch (err) {
     const [rows, options, rateDetailsByItem, users] = await Promise.all([loadRows(), loadOptions(), loadRateDetails(), loadUsers()]);
@@ -544,5 +570,10 @@ router.post("/:id/delete", requirePermission("SCREEN", "master_data.products.raw
     });
   }
 });
+
+router.preview = {
+  loadOptions,
+  ITEM_TYPE,
+};
 
 module.exports = router;

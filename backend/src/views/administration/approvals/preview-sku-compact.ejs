@@ -1,0 +1,55 @@
+<%
+  const normalizeArray = (value) => {
+    if (!value) return [];
+    if (Array.isArray(value)) return value.map(String);
+    if (typeof value === "object") return Object.values(value).map(String);
+    return String(value)
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  };
+
+  const pickLabels = (list, ids) => {
+    const idSet = new Set(normalizeArray(ids));
+    return (list || [])
+      .filter((row) => idSet.has(String(row.id)))
+      .map((row) => (locale === "ur" ? row.name_ur || row.name : row.name))
+      .filter(Boolean);
+  };
+
+  const pickLabel = (list, id) => pickLabels(list, id)[0] || "-";
+
+  const itemLabel = pickLabel(items, previewValues?.item_id);
+  const sizeLabels = pickLabels(sizes, previewValues?.size_ids || previewValues?.size_id);
+  const gradeLabels = pickLabels(grades, previewValues?.grade_ids || previewValues?.grade_id);
+  const colorLabels = pickLabels(colors, previewValues?.color_ids || previewValues?.color_id);
+  const packingLabels = pickLabels(packings, previewValues?.packing_type_ids || previewValues?.packing_type_id);
+  const rateValue = previewValues?.sale_rate ?? "-";
+%>
+
+<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+  <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+    <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"><%= t("article") %></div>
+    <div class="mt-1 text-sm font-semibold text-slate-800"><%= itemLabel %></div>
+  </div>
+  <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+    <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"><%= t("rate") || "Rate" %></div>
+    <div class="mt-1 text-sm font-semibold text-slate-800"><%= rateValue %></div>
+  </div>
+  <div class="rounded-xl border border-slate-200 bg-white p-3">
+    <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"><%= t("sizes") %></div>
+    <div class="mt-1 text-xs text-slate-700"><%= sizeLabels.length ? sizeLabels.join(", ") : "-" %></div>
+  </div>
+  <div class="rounded-xl border border-slate-200 bg-white p-3">
+    <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"><%= t("grades") %></div>
+    <div class="mt-1 text-xs text-slate-700"><%= gradeLabels.length ? gradeLabels.join(", ") : "-" %></div>
+  </div>
+  <div class="rounded-xl border border-slate-200 bg-white p-3">
+    <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"><%= t("colors") %></div>
+    <div class="mt-1 text-xs text-slate-700"><%= colorLabels.length ? colorLabels.join(", ") : "-" %></div>
+  </div>
+  <div class="rounded-xl border border-slate-200 bg-white p-3">
+    <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"><%= t("packing_types") %></div>
+    <div class="mt-1 text-xs text-slate-700"><%= packingLabels.length ? packingLabels.join(", ") : "-" %></div>
+  </div>
+</div>

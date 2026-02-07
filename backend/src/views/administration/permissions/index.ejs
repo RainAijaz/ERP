@@ -192,10 +192,18 @@
                   </td>
 
                   <% const isPermissionsScreen = row.scopeType === 'SCREEN' && row.scopeKey === 'administration.permissions'; %>
+                  <% const isApprovalSettingsScreen = row.scopeType === 'SCREEN' && row.scopeKey === 'administration.approval_settings'; %>
+                  <% const isApprovalsScreen = row.scopeType === 'SCREEN' && row.scopeKey === 'administration.approvals'; %>
+                  <% const isActivityLogScreen = row.scopeType === 'SCREEN' && row.scopeKey === 'administration.audit_logs'; %>
                   <% const isAdministrationScope = row.moduleGroup === 'Administration' || (row.scopeType === 'MODULE' && row.scopeKey === 'administration') || (row.scopeKey && row.scopeKey.startsWith('administration.')); %>
                   <% actions.forEach(act => { %>
                     <td class="text-center border-r last:border-r-0 relative p-0 h-10 w-24">
-                      <% const hideAction = (isPermissionsScreen && permissionsRestrictedActions.includes(act.key)) || (isAdministrationScope && act.key === 'can_print'); %>
+                      <% const hideAction =
+                        (isPermissionsScreen && permissionsRestrictedActions.includes(act.key)) ||
+                        (isAdministrationScope && act.key === 'can_print') ||
+                        (isApprovalsScreen && ['can_create','can_edit','can_delete','can_hard_delete','can_approve'].includes(act.key)) ||
+                        (isActivityLogScreen && ['can_create','can_edit','can_delete','can_hard_delete','can_approve'].includes(act.key)) ||
+                        (isApprovalSettingsScreen && ['can_create','can_delete','can_hard_delete','can_approve'].includes(act.key)); %>
                       <% if (!hideAction && row.scopeType === 'SCREEN' && row.scopeId) { %>
                         <label class="w-full h-full flex items-center justify-center cursor-pointer hover:bg-black/5 transition-colors relative">
                           <% if (isUserMode) { %>

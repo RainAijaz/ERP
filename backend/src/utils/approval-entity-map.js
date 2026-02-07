@@ -1,3 +1,12 @@
+// approval-entity-map.js
+// Purpose: Maps logical entity types (used in approval flows) to their canonical string keys and DB types.
+// Used by the approval engine and UI to resolve entity types for basic info and screen-level entities.
+//
+// Exports:
+// - BASIC_INFO_ENTITY_TYPES: Maps basic info route keys to entity type strings.
+// - SCREEN_ENTITY_TYPES: Maps screen keys to entity type strings.
+// - getBasicInfoEntityType: Helper to resolve a type string from a route key.
+
 const BASIC_INFO_ENTITY_TYPES = {
   units: "UOM",
   sizes: "SIZE",

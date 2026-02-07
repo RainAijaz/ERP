@@ -4,6 +4,7 @@ const authMiddleware = require("../../middleware/core/auth");
 const { requireFields, normalizeFields } = require("../../middleware/utils/validation");
 const { HttpError } = require("../../middleware/errors/http-error");
 const { parseCookies, setCookie } = require("../../middleware/utils/cookies");
+const { UI_NOTICE_COOKIE } = require("../../middleware/core/ui-notice");
 
 const router = express.Router();
 
@@ -25,7 +26,7 @@ router.post(
     try {
       const { username, password } = req.body;
       const user = await knex("erp.users")
-        .select("id", "username", "password_hash", "status")
+        .select("id", "username", "password_hash", "status", "last_login_at")
         .whereRaw("LOWER(username) = ?", [username.toLowerCase()])
         .first();
 
@@ -47,6 +48,8 @@ router.post(
         throw new HttpError(403, "User inactive");
       }
 
+      const previousLoginAt = user.last_login_at;
+
       await knex("erp.users")
         .where({ id: user.id })
         .update({ last_login_at: knex.fn.now() });
@@ -64,6 +67,33 @@ router.post(
         secure: process.env.NODE_ENV === "production",
         maxAge: Number(process.env.SESSION_TTL_HOURS || 12) * 60 * 60,
       });
+
+      if (previousLoginAt) {
+        const counts = await knex("erp.approval_request")
+          .select("status")
+          .count("* as count")
+          .where({ requested_by: user.id })
+          .whereIn("status", ["APPROVED", "REJECTED"])
+          .andWhere("decided_at", ">", previousLoginAt)
+          .groupBy("status");
+
+        const summary = counts.reduce(
+          (acc, row) => {
+            if (row.status === "APPROVED") acc.approved = Number(row.count) || 0;
+            if (row.status === "REJECTED") acc.rejected = Number(row.count) || 0;
+            return acc;
+          },
+          { approved: 0, rejected: 0 },
+        );
+
+        if (summary.approved || summary.rejected) {
+          const template = res.locals.t("approval_updates") || "Since your last login: {approved} approved, {rejected} rejected.";
+          const message = template
+            .replace("{approved}", String(summary.approved))
+            .replace("{rejected}", String(summary.rejected));
+          setCookie(res, UI_NOTICE_COOKIE, JSON.stringify({ message, sticky: true }), { path: "/", maxAge: 30, sameSite: "Lax" });
+        }
+      }
 
       if (req.accepts("html")) {
         return res.redirect("/");

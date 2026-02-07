@@ -142,6 +142,7 @@ CREATE TABLE IF NOT EXISTS branches (
   id          bigserial PRIMARY KEY,
   code        text NOT NULL UNIQUE,             -- stable short code (e.g., LHR01)
   name        text NOT NULL,                    -- display name (e.g., Lahore Factory)
+  name_ur     text,                             -- Urdu display name
   city        text,                             -- free text unless you build a lookup table later
   is_active   boolean NOT NULL DEFAULT true,
   created_at  timestamptz NOT NULL DEFAULT now()
@@ -151,6 +152,7 @@ CREATE TABLE IF NOT EXISTS branches (
 CREATE TABLE IF NOT EXISTS role_templates (
   id          bigserial PRIMARY KEY,
   name        text NOT NULL UNIQUE,             -- e.g., Admin, Accounts, Storekeeper, Sales, Production
+  name_ur     text,                             -- Urdu display name
   description text,
   is_active   boolean NOT NULL DEFAULT true
 );
@@ -158,6 +160,8 @@ CREATE TABLE IF NOT EXISTS role_templates (
 -- Users master: authentication identity + primary role assignment.
 CREATE TABLE IF NOT EXISTS users (
   id              bigserial PRIMARY KEY,
+  name            text,                         -- display name
+  name_ur         text,                         -- Urdu display name
   username        text NOT NULL UNIQUE,         -- login username (consider case-insensitive via citext later)
   password_hash   text NOT NULL,                -- store hash only (bcrypt/argon2/etc.), never plaintext
   email           text,                         -- optional but recommended for notifications

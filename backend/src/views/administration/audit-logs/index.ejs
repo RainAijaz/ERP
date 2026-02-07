@@ -1,0 +1,92 @@
+<%
+	const groupedRows = (rows || []).reduce((acc, row) => {
+		const dateKey = new Date(row.created_at).toLocaleDateString();
+		if (!acc[dateKey]) acc[dateKey] = [];
+		acc[dateKey].push(row);
+		return acc;
+	}, {});
+	const actionStyles = {
+		CREATE: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+		UPDATE: "bg-blue-50 text-blue-700 ring-blue-200",
+		DELETE: "bg-rose-50 text-rose-700 ring-rose-200",
+		APPROVE: "bg-amber-50 text-amber-700 ring-amber-200",
+		REJECT: "bg-slate-100 text-slate-700 ring-slate-200",
+		POST: "bg-indigo-50 text-indigo-700 ring-indigo-200",
+		CANCEL: "bg-orange-50 text-orange-700 ring-orange-200",
+	};
+	const getActionClass = (action) => actionStyles[action] || "bg-slate-50 text-slate-600 ring-slate-200";
+%>
+
+<div class="mx-auto w-full max-w-7xl space-y-6">
+  <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div class="space-y-1">
+        <h1 class="text-2xl font-display text-ink"><%= t("audit_logs") || "Audit Logs" %></h1>
+        <p class="text-sm text-muted"><%= t("audit_logs_description") || "Track who did what and when across the ERP." %></p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+			<button class="rounded-full border border-slate-200 bg-white px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500 transition hover:border-slate-300 hover:text-slate-800" type="button" data-filter-quick data-days="0">
+				<%= t("today") || "Today" %>
+			</button>
+			<button class="rounded-full border border-slate-200 bg-white px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500 transition hover:border-slate-300 hover:text-slate-800" type="button" data-filter-quick data-days="7">
+				<%= t("last_7_days") || "7 Days" %>
+			</button>
+			<button class="rounded-full border border-slate-200 bg-white px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500 transition hover:border-slate-300 hover:text-slate-800" type="button" data-filter-quick data-days="30">
+				<%= t("last_30_days") || "30 Days" %>
+			</button>
+        <button class="group cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-800" type="button" data-filter-toggle>
+          <span class="inline-flex items-center gap-2">
+            <svg class="h-4 w-4 text-slate-400 transition group-hover:text-slate-700" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 6h16M7 12h10M9 18h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+            </svg>
+            <span><%= t("filters") %></span>
+            <span class="hidden rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-white" data-filter-count>0</span>
+          </span>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <form method="GET" action="" data-filter-form>
+    <%- include("../../base/partials/filter-modal", { t, bodyPartial: "../../administration/audit-logs/filter-fields.ejs", serverFilters: true }) %>
+  </form>
+
+  <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+		<table class="w-full text-sm text-left">
+			<thead class="bg-slate-50 text-xs font-semibold uppercase text-slate-500">
+				<tr>
+					<th class="px-6 py-3"><%= t("date") %></th>
+					<th class="px-6 py-3"><%= t("user") || t("requester") || "User" %></th>
+					<th class="px-6 py-3"><%= t("branch") || "Branch" %></th>
+					<th class="px-6 py-3"><%= t("entity") || "Entity" %></th>
+					<th class="px-6 py-3"><%= t("sr_no") || "Sr No" %></th>
+					<th class="px-6 py-3"><%= t("action") || "Action" %></th>
+				</tr>
+			</thead>
+			<tbody class="divide-y divide-slate-100">
+				<% if (!rows || rows.length === 0) { %>
+					<tr><td colspan="6" class="p-6 text-center text-slate-400"><%= t("no_entries") %></td></tr>
+				<% } %>
+				<% Object.keys(groupedRows).forEach((dateKey) => { %>
+					<tr class="bg-slate-50">
+						<td class="px-6 py-3 text-xs font-semibold uppercase text-slate-500" colspan="6"><%= dateKey %></td>
+					</tr>
+					<% groupedRows[dateKey].forEach((row) => { %>
+						<tr class="hover:bg-amber-50/40">
+							<td class="px-6 py-4 text-slate-600"><%= new Date(row.created_at).toLocaleTimeString() %></td>
+							<td class="px-6 py-4 font-medium text-slate-900"><%= row.user_name || "-" %></td>
+							<td class="px-6 py-4 text-slate-600"><%= row.branch_name || row.branch_code || "-" %></td>
+							<td class="px-6 py-4 text-slate-600"><%= row.entity_type %></td>
+							<td class="px-6 py-4 text-slate-600"><%= row.entity_id %></td>
+							<td class="px-6 py-4">
+								<span class="inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] ring-1 <%= getActionClass(row.action) %>"><%= row.action %></span>
+							</td>
+						</tr>
+					<% }) %>
+				<% }) %>
+			</tbody>
+		</table>
+	</div>
+</div>
+
+<%- include("../../base/partials/filter-utils-server") %>

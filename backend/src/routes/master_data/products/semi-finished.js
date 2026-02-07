@@ -4,6 +4,7 @@ const { HttpError } = require("../../../middleware/errors/http-error");
 const { requirePermission } = require("../../../middleware/access/role-permissions");
 const { handleScreenApproval } = require("../../../middleware/approvals/screen-approval");
 const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
+const { queueAuditLog } = require("../../../utils/audit-log");
 
 const router = express.Router();
 const ITEM_TYPE = "SFG";
@@ -195,6 +196,7 @@ router.post("/", requirePermission("SCREEN", "master_data.products.semi_finished
       return res.redirect(req.get("referer") || basePath);
     }
 
+    let createdId = null;
     await knex.transaction(async (trx) => {
       // FIX: Use user's subgroup choice. Only use resolve if you want to override (removed overwrite here).
       const [item] = await trx("erp.items")
@@ -212,6 +214,7 @@ router.post("/", requirePermission("SCREEN", "master_data.products.semi_finished
         })
         .returning("id");
       const itemId = item.id || item;
+      createdId = itemId;
       if (uniqueUsageIds.length) {
         await trx("erp.item_usage").insert(
           uniqueUsageIds.map((fgId) => ({
@@ -221,6 +224,14 @@ router.post("/", requirePermission("SCREEN", "master_data.products.semi_finished
         );
       }
     });
+
+    if (createdId) {
+      queueAuditLog(req, {
+        entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
+        entityId: createdId,
+        action: "CREATE",
+      });
+    }
 
     return res.redirect(basePath);
   } catch (err) {
@@ -321,6 +332,12 @@ router.post("/:id", requirePermission("SCREEN", "master_data.products.semi_finis
       }
     });
 
+    queueAuditLog(req, {
+      entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
+      entityId: id,
+      action: "UPDATE",
+    });
+
     return res.redirect(basePath);
   } catch (err) {
     const [rows, options, users] = await Promise.all([loadRows(), loadOptions(), loadUsers()]);
@@ -366,6 +383,11 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.sem
         updated_by: req.user ? req.user.id : null,
         updated_at: knex.fn.now(),
       });
+    queueAuditLog(req, {
+      entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
+      entityId: id,
+      action: "DELETE",
+    });
     return res.redirect(basePath);
   } catch (err) {
     const [rows, options, users] = await Promise.all([loadRows(), loadOptions(), loadUsers()]);
@@ -405,6 +427,11 @@ router.post("/:id/delete", requirePermission("SCREEN", "master_data.products.sem
     }
 
     await knex("erp.items").where({ id }).del();
+    queueAuditLog(req, {
+      entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
+      entityId: id,
+      action: "DELETE",
+    });
     return res.redirect(basePath);
   } catch (err) {
     const [rows, options, users] = await Promise.all([loadRows(), loadOptions(), loadUsers()]);
@@ -418,5 +445,10 @@ router.post("/:id/delete", requirePermission("SCREEN", "master_data.products.sem
     });
   }
 });
+
+router.preview = {
+  loadOptions,
+  ITEM_TYPE,
+};
 
 module.exports = router;

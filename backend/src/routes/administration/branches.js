@@ -3,6 +3,7 @@ const knex = require("../../db/knex");
 const { requirePermission } = require("../../middleware/access/role-permissions");
 const { normalizeFields } = require("../../middleware/utils/validation");
 const { HttpError } = require("../../middleware/errors/http-error");
+const { queueAuditLog } = require("../../utils/audit-log");
 
 const router = express.Router();
 
@@ -36,22 +37,29 @@ router.get("/new", requirePermission("SCREEN", "administration.branches", "creat
   }
 });
 
-router.post("/", requirePermission("SCREEN", "administration.branches", "create"), normalizeFields(["code", "name", "city"]), async (req, res, next) => {
+router.post("/", requirePermission("SCREEN", "administration.branches", "create"), normalizeFields(["code", "name", "name_ur", "city"]), async (req, res, next) => {
   try {
     console.log(`[${req.id}] [branches:create] xhr=${req.xhr} body=`, req.body);
-    const { code, name, city } = req.body;
+    const { code, name, name_ur, city } = req.body;
 
     if (!code || !name) throw new HttpError(400, res.locals.t("field_required") || "Code and Name required");
 
     const existing = await knex("erp.branches").whereRaw("LOWER(code) = ?", [code.toLowerCase()]).first();
     if (existing) throw new HttpError(400, res.locals.t("error_branch_code_exists"));
 
-    await knex("erp.branches").insert({
-      code: code.toUpperCase(),
-      name,
-      city,
-      is_active: true,
-    });
+    const [row] = await knex("erp.branches")
+      .insert({
+        code: code.toUpperCase(),
+        name,
+        name_ur: name_ur || null,
+        city,
+        is_active: true,
+      })
+      .returning("id");
+    const branchId = row?.id || row;
+    if (branchId) {
+      queueAuditLog(req, { entityType: "BRANCH", entityId: branchId, action: "CREATE" });
+    }
 
     if (req.xhr) return res.json({ success: true, redirect: "/administration/branches" });
     res.redirect("/administration/branches");
@@ -77,24 +85,26 @@ router.get("/:id/edit", requirePermission("SCREEN", "administration.branches", "
   }
 });
 
-router.post("/:id", requirePermission("SCREEN", "administration.branches", "edit"), normalizeFields(["code", "name", "city"]), async (req, res, next) => {
+router.post("/:id", requirePermission("SCREEN", "administration.branches", "edit"), normalizeFields(["code", "name", "name_ur", "city"]), async (req, res, next) => {
   try {
     console.log(`[${req.id}] [branches:update] xhr=${req.xhr} id=${req.params.id} body=`, req.body);
-    const { code, name, city } = req.body;
     const id = req.params.id;
+    const { name, name_ur, city } = req.body;
 
-    if (!code || !name) throw new HttpError(400, res.locals.t("field_required"));
+    const current = await knex("erp.branches").where({ id }).first();
+    if (!current) throw new HttpError(404, res.locals.t("branch_not_found"));
 
-    const existing = await knex("erp.branches").whereRaw("LOWER(code) = ?", [code.toLowerCase()]).andWhereNot({ id }).first();
-    if (existing) throw new HttpError(400, res.locals.t("error_branch_code_exists"));
+    if (!name) throw new HttpError(400, res.locals.t("field_required"));
 
     await knex("erp.branches")
       .where({ id })
       .update({
-        code: code.toUpperCase(),
+        code: current.code,
         name,
+        name_ur: name_ur || null,
         city,
       });
+    queueAuditLog(req, { entityType: "BRANCH", entityId: id, action: "UPDATE" });
 
     if (req.xhr) return res.json({ success: true, redirect: "/administration/branches" });
     res.redirect("/administration/branches");
@@ -105,13 +115,13 @@ router.post("/:id", requirePermission("SCREEN", "administration.branches", "edit
   }
 });
 
-
 router.post("/:id/toggle", requirePermission("SCREEN", "administration.branches", "delete"), async (req, res, next) => {
   try {
     const branch = await knex("erp.branches").where({ id: req.params.id }).first();
     if (!branch) throw new HttpError(404, res.locals.t("branch_not_found"));
     const nextValue = !branch.is_active;
     await knex("erp.branches").where({ id: req.params.id }).update({ is_active: nextValue });
+    queueAuditLog(req, { entityType: "BRANCH", entityId: req.params.id, action: "DELETE" });
     if (req.xhr) return res.json({ success: true, is_active: nextValue });
     res.redirect("/administration/branches");
   } catch (err) {
@@ -127,6 +137,7 @@ router.post("/:id/delete", requirePermission("SCREEN", "administration.branches"
     if (!branch) throw new HttpError(404, res.locals.t("branch_not_found"));
     await trx("erp.user_branch").where({ branch_id: req.params.id }).del();
     await trx("erp.branches").where({ id: req.params.id }).del();
+    queueAuditLog(req, { entityType: "BRANCH", entityId: req.params.id, action: "DELETE" });
     await trx.commit();
     if (req.xhr) return res.json({ success: true });
     res.redirect("/administration/branches");

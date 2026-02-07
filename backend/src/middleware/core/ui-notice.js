@@ -11,7 +11,13 @@ const readUiNotice = (req, res) => {
   } catch (err) {
     payload = null;
   }
-  setCookie(res, UI_NOTICE_COOKIE, "", { path: "/", maxAge: 0, sameSite: "Lax" });
+  if (process.env.DEBUG_UI_NOTICE === "1") {
+    console.log("[UI NOTICE] read", {
+      path: req.path,
+      user: req.user?.username || null,
+      payload,
+    });
+  }
   return payload;
 };
 

@@ -28,8 +28,6 @@
     </div>
   </div>
 
-  <%- include("../../base/partials/error-banner", { error: notice, modalOpen: false }) %>
-
   <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
     <table class="w-full text-sm text-left">
       <thead class="bg-slate-50 text-xs font-semibold uppercase text-slate-500">
@@ -64,6 +62,7 @@
                 type="button"
                 class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
                 data-approval-view
+                data-approval-id="<%= row.id %>"
                 data-action="<%= actionType %>"
                 data-old="<%= jsonAttr(row.old_value) %>"
                 data-new="<%= jsonAttr(row.new_value) %>"
@@ -104,33 +103,32 @@
 </div>
 
 <div class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 p-4" data-approval-detail-modal>
-  <div class="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-xl">
+  <div class="w-full max-w-6xl max-h-[85vh] rounded-2xl border border-slate-200 bg-white shadow-xl flex flex-col overflow-hidden" data-approval-detail-panel>
     <div class="flex items-start justify-between border-b border-slate-200 px-6 py-4">
       <div>
         <div class="text-sm font-semibold text-slate-700"><%= t("details") || "Details" %></div>
         <p class="mt-1 text-xs text-slate-500" data-approval-detail-subtitle></p>
       </div>
       <button type="button" class="text-slate-400 hover:text-slate-600" data-approval-detail-close>
-        ✕
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
       </button>
     </div>
-    <div class="grid gap-4 px-6 py-5 md:grid-cols-2">
+    <div class="grid gap-4 px-6 py-5 md:grid-cols-2 overflow-y-auto">
       <div data-approval-detail-before>
-        <div class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 mb-2"><%= t("before") || "Before" %></div>
-        <div class="space-y-3" data-approval-before></div>
+        <div class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 mb-3"><%= t("before") || "Before" %></div>
+        <div class="space-y-4" data-approval-preview-before></div>
       </div>
       <div data-approval-detail-after>
-        <div class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 mb-2"><%= t("after") || "After" %></div>
-        <div class="space-y-3" data-approval-after></div>
+        <div class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 mb-3"><%= t("after") || "After" %></div>
+        <div class="space-y-4" data-approval-preview-after></div>
       </div>
       <div class="md:col-span-2" data-approval-detail-single>
-        <div class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 mb-2"><%= t("details") || "Details" %></div>
-        <div class="space-y-3" data-approval-single></div>
+        <div class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 mb-3"><%= t("details") || "Details" %></div>
+        <div class="space-y-4" data-approval-preview-single></div>
       </div>
     </div>
   </div>
 </div>
-
 <script>
   (function () {
     const modal = document.querySelector("[data-approval-detail-modal]");
@@ -138,10 +136,13 @@
     const beforeWrap = document.querySelector("[data-approval-detail-before]");
     const afterWrap = document.querySelector("[data-approval-detail-after]");
     const singleWrap = document.querySelector("[data-approval-detail-single]");
-    const beforeBox = document.querySelector("[data-approval-before]");
-    const afterBox = document.querySelector("[data-approval-after]");
-    const singleBox = document.querySelector("[data-approval-single]");
+    const modalPanel = document.querySelector("[data-approval-detail-panel]");
+    const beforeBox = document.querySelector("[data-approval-preview-before]");
+    const afterBox = document.querySelector("[data-approval-preview-after]");
+    const singleBox = document.querySelector("[data-approval-preview-single]");
     const subtitle = document.querySelector("[data-approval-detail-subtitle]");
+    const previewBase = "<%= basePath %>";
+    const debugPreview = true;
 
     const decodeHtml = (raw) => {
       if (!raw) return "";
@@ -162,7 +163,7 @@
     const formatKey = (key) =>
       String(key || "")
         .replace(/_/g, " ")
-        .replace(/\b\w/g, (m) => m.toUpperCase());
+        .replace(/(^|\\s)\\S/g, (m) => m.toUpperCase());
 
     const formatValue = (value) => {
       if (value === null || typeof value === "undefined") return "-";
@@ -209,27 +210,359 @@
       });
     };
 
-    const open = (payload) => {
+    const normalizeArray = (value) => {
+      if (!value) return [];
+      if (Array.isArray(value)) return value.map(String);
+      if (typeof value === "object") return Object.values(value).map(String);
+      return String(value)
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+    };
+
+    const applyValuesToFields = (panel, values) => {
+      if (!panel) return;
+      const payload = values || {};
+      if (debugPreview) {
+        console.log("[APPROVAL PREVIEW DEBUG] applyValues", {
+          previewType: panel.getAttribute("data-preview-type"),
+          previewAction: panel.getAttribute("data-preview-action"),
+          payloadType: typeof payload,
+          payloadKeys: payload && typeof payload === "object" ? Object.keys(payload) : null,
+        });
+      }
+      panel.querySelectorAll("[data-field]").forEach((input) => {
+        const name = input.getAttribute("data-field");
+        if (!name) return;
+        const value = Object.prototype.hasOwnProperty.call(payload, name) ? payload[name] : "";
+
+        if (input.type === "checkbox") {
+          if (input.dataset.multi === "true") {
+            const selected = normalizeArray(value);
+            input.checked = selected.includes(String(input.value));
+          } else {
+            input.checked = value === true || value === "true" || value === "1" || value === "on";
+          }
+          return;
+        }
+
+        if (input.tagName === "SELECT" && input.multiple) {
+          const selected = normalizeArray(value);
+          Array.from(input.options).forEach((option) => {
+            option.selected = selected.includes(String(option.value));
+          });
+          return;
+        }
+
+        if (Array.isArray(value)) {
+          input.value = value[0] ?? "";
+        } else {
+          input.value = value ?? "";
+        }
+      });
+
+      panel.querySelectorAll("[data-hide-on-create]").forEach((node) => {
+        if (payload && payload._previewAction === "create") {
+          node.classList.add("hidden");
+        } else {
+          node.classList.remove("hidden");
+        }
+      });
+
+      panel.querySelectorAll("[data-multi-select]").forEach((wrap) => {
+        const select = wrap.querySelector("select[multiple]");
+        const tags = wrap.querySelector("[data-multi-tags]");
+        const placeholder = wrap.querySelector("[data-multi-placeholder]");
+        if (!select || !tags) return;
+        tags.innerHTML = "";
+        const selectedLabels = Array.from(select.selectedOptions).map((opt) => opt.textContent.trim()).filter(Boolean);
+        if (placeholder) {
+          placeholder.textContent = selectedLabels.length ? `${selectedLabels.length} selected` : "<%= t('select') %>";
+        }
+        selectedLabels.forEach((label) => {
+          const tag = document.createElement("span");
+          tag.className = "inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600";
+          tag.textContent = label;
+          tags.appendChild(tag);
+        });
+      });
+    };
+
+    const disableInputs = (panel) => {
+      if (!panel) return;
+      panel.querySelectorAll("input, select, textarea, button").forEach((el) => {
+        if (el.hasAttribute("data-approval-view")) return;
+        if (el.tagName === "BUTTON") {
+          el.disabled = true;
+          el.classList.add("pointer-events-none");
+          return;
+        }
+        el.disabled = true;
+        el.readOnly = true;
+        el.classList.add("cursor-not-allowed");
+      });
+    };
+
+    const applyRawMaterialRates = (panel, values) => {
+      const rateList = panel.querySelector("[data-rate-list]");
+      const template = panel.querySelector("[data-rate-template]");
+      if (!rateList || !template) return;
+
+      const rates = Array.isArray(values?.rates) ? values.rates : [];
+      rateList.innerHTML = "";
+      if (!rates.length) {
+        const row = template.content.cloneNode(true);
+        rateList.appendChild(row);
+      } else {
+        rates.forEach((rate) => {
+          const row = template.content.cloneNode(true);
+          const colorSelect = row.querySelector("[data-rate-color]");
+          const sizeSelect = row.querySelector("[data-rate-size]");
+          const input = row.querySelector("[data-rate-value]");
+          if (colorSelect) colorSelect.value = rate.color_id ?? "";
+          if (sizeSelect) sizeSelect.value = rate.size_id ?? "";
+          if (input) input.value = rate.purchase_rate ?? "";
+          rateList.appendChild(row);
+        });
+      }
+
+      const addRow = panel.querySelector("[data-rate-add-row]");
+      if (addRow) addRow.classList.add("hidden");
+      const modeSelect = panel.querySelector("[data-rate-mode]");
+      if (modeSelect) modeSelect.disabled = true;
+    };
+
+    const applySkuPreview = (panel, values) => {
+      const createContainer = panel.querySelector("#create-mode-container");
+      const editContainer = panel.querySelector("#edit-rates-container");
+      if (editContainer) editContainer.classList.add("hidden");
+      if (createContainer) createContainer.classList.remove("hidden");
+
+      const rateList = panel.querySelector("[data-sku-rate-list]");
+      const emptyMsg = panel.querySelector("[data-rate-list-empty]");
+      if (!rateList) return;
+
+      rateList.innerHTML = "";
+      if (emptyMsg) emptyMsg.style.display = "none";
+
+      const setSelect = (name, value) => {
+        const select = panel.querySelector(`select[name="${name}"]`);
+        if (!select) return;
+        const selected = normalizeArray(value);
+        if (select.multiple) {
+          Array.from(select.options).forEach((option) => {
+            option.selected = selected.includes(String(option.value));
+          });
+        } else {
+          select.value = selected[0] || value || "";
+        }
+      };
+
+      setSelect("item_id", values?.item_id);
+      setSelect("size_ids", values?.size_ids || values?.size_id);
+      setSelect("grade_ids", values?.grade_ids || values?.grade_id);
+      setSelect("color_ids", values?.color_ids || values?.color_id);
+      setSelect("packing_type_ids", values?.packing_type_ids || values?.packing_type_id);
+
+      const pickLabel = (name) => {
+        const select = panel.querySelector(`select[name="${name}"]`);
+        if (!select) return [];
+        return Array.from(select.selectedOptions).map((opt) => opt.textContent.trim()).filter(Boolean);
+      };
+
+      const sizeLabels = pickLabel("size_ids");
+      const gradeLabels = pickLabel("grade_ids");
+      const colorLabels = pickLabel("color_ids");
+      const packingLabels = pickLabel("packing_type_ids");
+
+      const sizeLabel = sizeLabels[0] || "";
+      const gradeLabel = gradeLabels[0] || "";
+      const colorLabel = colorLabels[0] || "";
+      const packingLabel = packingLabels[0] || "";
+
+      const labelParts = [sizeLabel, packingLabel, gradeLabel, colorLabel].filter(Boolean);
+      const label = labelParts.join(", ") || "<%= t('details') || 'Details' %>";
+
+      const row = document.createElement("div");
+      row.className = "group flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center shadow-sm";
+      row.innerHTML = `
+        <div class="flex-1 text-xs font-semibold text-slate-600">${label}</div>
+        <div class="flex w-full items-center gap-2 sm:w-auto">
+          <input class="w-full sm:w-32 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700" type="number" value="${values?.sale_rate ?? ""}" readonly />
+        </div>`;
+      rateList.appendChild(row);
+    };
+
+    const hydratePreviewPanel = (panel) => {
+      if (!panel) return;
+      const raw = panel.getAttribute("data-preview-values");
+      const previewType = panel.getAttribute("data-preview-type");
+      const previewAction = panel.getAttribute("data-preview-action") || "update";
+      if (debugPreview) {
+        console.log("[APPROVAL PREVIEW DEBUG] raw", {
+          previewType,
+          previewAction,
+          rawType: typeof raw,
+          rawSnippet: typeof raw === "string" ? raw.slice(0, 200) : raw,
+        });
+      }
+      let values = {};
+      try {
+        values = raw ? JSON.parse(raw) : {};
+      } catch (err) {
+        values = {};
+      }
+      // Some queued payloads are stored as a JSON string inside JSON; parse one more time.
+      if (typeof values === "string") {
+        try {
+          values = JSON.parse(values);
+        } catch (err) {
+          values = {};
+        }
+      }
+      if (!values || typeof values !== "object") {
+        values = {};
+      }
+      if (debugPreview) {
+        console.log("[APPROVAL PREVIEW DEBUG] parsed", {
+          previewType,
+          valuesType: typeof values,
+          keys: values && typeof values === "object" ? Object.keys(values) : null,
+        });
+      }
+      values._previewAction = previewAction;
+      applyValuesToFields(panel, values);
+      if (previewType === "raw-materials") {
+        applyRawMaterialRates(panel, values);
+      }
+      if (previewType === "skus") {
+        applySkuPreview(panel, values);
+      }
+      const fieldCount = panel.querySelectorAll("[data-field]").length;
+      const fallbackBox = panel.querySelector("[data-preview-fallback]");
+      if (fallbackBox) {
+        if (fieldCount === 0) {
+          fallbackBox.classList.remove("hidden");
+          const displayValues = values && typeof values === "object" ? values : {};
+          renderFields(fallbackBox, buildFields(displayValues));
+        } else {
+          fallbackBox.classList.add("hidden");
+          fallbackBox.innerHTML = "";
+        }
+      }
+      disableInputs(panel);
+    };
+
+    const forceHydrateWith = (container, values, action) => {
+      if (!container) return;
+      container.querySelectorAll("[data-approval-preview]").forEach((panel) => {
+        const previewType = panel.getAttribute("data-preview-type");
+        const payload = values && typeof values === "object" ? { ...values } : {};
+        payload._previewAction = action || panel.getAttribute("data-preview-action") || "update";
+        applyValuesToFields(panel, payload);
+        if (previewType === "raw-materials") {
+          applyRawMaterialRates(panel, payload);
+        }
+        if (previewType === "skus") {
+          applySkuPreview(panel, payload);
+        }
+        disableInputs(panel);
+      });
+    };
+
+    const injectFallback = (container, values) => {
+      const fields = buildFields(values);
+      renderFields(container, fields);
+    };
+
+    const loadPreview = async (id, side, container) => {
+      if (!container) return false;
+      container.innerHTML = "";
+      try {
+        const res = await fetch(`${previewBase}/${id}/preview?side=${side}`);
+        if (!res.ok) return false;
+        const html = await res.text();
+        if (!html) return false;
+        container.innerHTML = html;
+        container.querySelectorAll("[data-approval-preview]").forEach((panel) => {
+          hydratePreviewPanel(panel);
+        });
+        return true;
+      } catch (err) {
+        return false;
+      }
+    };
+
+    const setModalSize = (previewType) => {
+      if (!modalPanel) return;
+      if (previewType === "skus") {
+        modalPanel.classList.remove("max-w-6xl");
+        modalPanel.classList.add("max-w-3xl");
+      } else {
+        modalPanel.classList.remove("max-w-3xl");
+        modalPanel.classList.add("max-w-6xl");
+      }
+    };
+
+    const open = async (payload) => {
       if (!modal) return;
-      const { action, oldValue, newValue } = payload;
+      const { action, oldValue, newValue, id } = payload;
       const isUpdate = action === "update";
       beforeWrap.classList.toggle("hidden", !isUpdate);
       afterWrap.classList.toggle("hidden", !isUpdate);
       singleWrap.classList.toggle("hidden", isUpdate);
-
-      if (isUpdate) {
-        renderFields(beforeBox, buildFields(oldValue));
-        renderFields(afterBox, buildFields(newValue));
-      } else {
-        const single = action === "delete" ? oldValue : newValue;
-        renderFields(singleBox, buildFields(single));
-      }
 
       subtitle.textContent = action === "delete"
         ? "<%= t('delete') || 'Delete' %>"
         : action === "create"
           ? "<%= t('create') || 'Create' %>"
           : "<%= t('edit') || 'Edit' %>";
+
+      const fillFallback = () => {
+        if (isUpdate) {
+          injectFallback(beforeBox, oldValue);
+          injectFallback(afterBox, newValue);
+        } else {
+          const single = action === "delete" ? oldValue : newValue;
+          injectFallback(singleBox, single);
+        }
+      };
+
+      if (id) {
+        if (isUpdate) {
+          const beforeOk = await loadPreview(id, "old", beforeBox);
+          if (!beforeOk) {
+            injectFallback(beforeBox, oldValue);
+          } else {
+            forceHydrateWith(beforeBox, oldValue, "update");
+          }
+          const afterOk = await loadPreview(id, "new", afterBox);
+          if (!afterOk) {
+            injectFallback(afterBox, newValue);
+          } else {
+            forceHydrateWith(afterBox, newValue, "update");
+          }
+          const panel = afterBox.querySelector("[data-approval-preview]") || beforeBox.querySelector("[data-approval-preview]");
+          const previewType = panel?.getAttribute("data-preview-type") || "";
+          setModalSize(previewType);
+        } else {
+          const side = action === "delete" ? "old" : "new";
+          const singleOk = await loadPreview(id, side, singleBox);
+          if (!singleOk) {
+            const single = action === "delete" ? oldValue : newValue;
+            injectFallback(singleBox, single);
+          } else {
+            const single = action === "delete" ? oldValue : newValue;
+            forceHydrateWith(singleBox, single, action);
+          }
+          const panel = singleBox.querySelector("[data-approval-preview]");
+          const previewType = panel?.getAttribute("data-preview-type") || "";
+          setModalSize(previewType);
+        }
+      } else {
+        fillFallback();
+        setModalSize("");
+      }
 
       modal.classList.remove("hidden");
       modal.classList.add("flex");
@@ -251,7 +584,8 @@
       const action = btn.getAttribute("data-action");
       const oldValue = safeParse(btn.getAttribute("data-old"));
       const newValue = safeParse(btn.getAttribute("data-new"));
-      open({ action, oldValue, newValue });
+      const id = btn.getAttribute("data-approval-id");
+      open({ action, oldValue, newValue, id });
     });
   })();
 </script>

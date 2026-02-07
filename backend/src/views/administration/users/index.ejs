@@ -288,6 +288,7 @@
         const form = content.querySelector('form');
         if (form) form.addEventListener('submit', handleFormSubmit);
         initMultiSelects(content);
+        if (window.wireUrduTranslateForms) window.wireUrduTranslateForms();
       })
         .catch(err => content.innerHTML = `<div class="p-6 text-red-600 text-center">${i18nLoadFailed}</div>`);
   }

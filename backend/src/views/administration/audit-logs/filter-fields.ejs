@@ -1,0 +1,130 @@
+<%
+  const tSafe = typeof t === "function" ? t : ((key) => key);
+  const userMode = typeof filters !== "undefined" && filters && typeof filters.user_mode !== "undefined" ? filters.user_mode : "include";
+  const startDate = typeof filters !== "undefined" && filters && typeof filters.start_date !== "undefined" ? filters.start_date : "";
+  const endDate = typeof filters !== "undefined" && filters && typeof filters.end_date !== "undefined" ? filters.end_date : "";
+  const branchIds = typeof filters !== "undefined" && filters && typeof filters.branch_id !== "undefined"
+    ? (Array.isArray(filters.branch_id) ? (filters.branch_id.length ? filters.branch_id : [""]) : [filters.branch_id])
+    : [""];
+  const branchMode = typeof filters !== "undefined" && filters && typeof filters.branch_mode !== "undefined" ? filters.branch_mode : "include";
+  const selectedEntityTypes = typeof filters !== "undefined" && filters && typeof filters.entity_type !== "undefined"
+    ? (Array.isArray(filters.entity_type) ? (filters.entity_type.length ? filters.entity_type : [""]) : [filters.entity_type])
+    : [""];
+  const entityMode = typeof filters !== "undefined" && filters && typeof filters.entity_mode !== "undefined" ? filters.entity_mode : "include";
+  const selectedActionTypes = typeof filters !== "undefined" && filters && typeof filters.action !== "undefined"
+    ? (Array.isArray(filters.action) ? (filters.action.length ? filters.action : [""]) : [filters.action])
+    : [""];
+  const actionMode = typeof filters !== "undefined" && filters && typeof filters.action_mode !== "undefined" ? filters.action_mode : "include";
+  const entityTypeOptions = Array.isArray(entityTypes) ? entityTypes : [];
+  const actionTypeOptions = Array.isArray(actionTypes) ? actionTypes : [];
+%>
+<label class="flex w-full flex-col gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+  <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= tSafe("branch") || "Branch" %></span>
+  <div class="flex flex-col gap-2" data-filter-list="branch">
+    <% branchIds.forEach((selectedId, idx) => { %>
+      <div class="flex items-center gap-2">
+        <select <%= idx === 0 ? 'name="branch_mode"' : '' %> class="w-20 bg-transparent text-[10px] font-semibold text-slate-500 focus:outline-none cursor-pointer" data-filter-branch-mode data-filter-ignore="true">
+          <option value="include" <%= branchMode === "include" ? "selected" : "" %>><%= tSafe("include") %></option>
+          <option value="exclude" <%= branchMode === "exclude" ? "selected" : "" %>><%= tSafe("exclude") %></option>
+        </select>
+        <select name="branch_id" class="flex-1 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer" data-filter-branch>
+          <option value=""><%= tSafe("all_branches") || "All branches" %></option>
+          <% (branches || []).forEach((branch) => { %>
+            <option value="<%= branch.id %>" <%= String(branch.id) === String(selectedId) ? "selected" : "" %>><%= branch.name %></option>
+          <% }) %>
+        </select>
+        <% if (idx === 0) { %>
+          <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-add="branch">+</button>
+        <% } else { %>
+          <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-remove="branch">x</button>
+        <% } %>
+      </div>
+    <% }) %>
+  </div>
+</label>
+<label class="flex w-full flex-col gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+  <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= tSafe("entity_type") || "Page" %></span>
+  <div class="flex flex-col gap-2" data-filter-list="entity">
+    <% selectedEntityTypes.forEach((selectedId, idx) => { %>
+      <div class="flex items-center gap-2">
+        <select <%= idx === 0 ? 'name="entity_mode"' : '' %> class="w-20 bg-transparent text-[10px] font-semibold text-slate-500 focus:outline-none cursor-pointer" data-filter-entity-mode data-filter-ignore="true">
+          <option value="include" <%= entityMode === "include" ? "selected" : "" %>><%= tSafe("include") %></option>
+          <option value="exclude" <%= entityMode === "exclude" ? "selected" : "" %>><%= tSafe("exclude") %></option>
+        </select>
+        <select name="entity_type" class="flex-1 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer" data-filter-entity>
+          <option value=""><%= tSafe("all") %></option>
+          <% entityTypeOptions.forEach((type) => { %>
+            <option value="<%= type.code %>" <%= String(type.code) === String(selectedId) ? "selected" : "" %>><%= type.name %></option>
+          <% }) %>
+        </select>
+        <% if (idx === 0) { %>
+          <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-add="entity">+</button>
+        <% } else { %>
+          <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-remove="entity">x</button>
+        <% } %>
+      </div>
+    <% }) %>
+  </div>
+</label>
+<label class="flex w-full flex-col gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+  <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= tSafe("action") || "Action" %></span>
+  <div class="flex flex-col gap-2" data-filter-list="action">
+    <% selectedActionTypes.forEach((selectedId, idx) => { %>
+      <div class="flex items-center gap-2">
+        <select <%= idx === 0 ? 'name="action_mode"' : '' %> class="w-20 bg-transparent text-[10px] font-semibold text-slate-500 focus:outline-none cursor-pointer" data-filter-action-mode data-filter-ignore="true">
+          <option value="include" <%= actionMode === "include" ? "selected" : "" %>><%= tSafe("include") %></option>
+          <option value="exclude" <%= actionMode === "exclude" ? "selected" : "" %>><%= tSafe("exclude") %></option>
+        </select>
+        <select name="action" class="flex-1 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer" data-filter-action>
+          <option value=""><%= tSafe("all") %></option>
+          <% actionTypeOptions.forEach((action) => { %>
+            <option value="<%= action.code %>" <%= String(action.code) === String(selectedId) ? "selected" : "" %>><%= action.name %></option>
+          <% }) %>
+        </select>
+        <% if (idx === 0) { %>
+          <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-add="action">+</button>
+        <% } else { %>
+          <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-remove="action">x</button>
+        <% } %>
+      </div>
+    <% }) %>
+  </div>
+</label>
+<label class="flex w-full flex-col gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+  <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= tSafe("users") || "Users" %></span>
+  <div class="flex flex-col gap-2" data-filter-list="user">
+    <% 
+      const userIds = (typeof filters !== "undefined" && filters && typeof filters.user_ids !== "undefined")
+        ? (Array.isArray(filters.user_ids) ? filters.user_ids : [filters.user_ids])
+        : [""];
+      const selectedUsers = userIds.length ? userIds : [""];
+    %>
+    <% selectedUsers.forEach((selectedId, idx) => { %>
+      <div class="flex items-center gap-2">
+        <select <%= idx === 0 ? 'name="user_mode"' : '' %> class="w-20 bg-transparent text-[10px] font-semibold text-slate-500 focus:outline-none cursor-pointer" data-filter-user-mode data-filter-ignore="true">
+          <option value="include" <%= userMode === "include" ? "selected" : "" %>><%= tSafe("include") %></option>
+          <option value="exclude" <%= userMode === "exclude" ? "selected" : "" %>><%= tSafe("exclude") %></option>
+        </select>
+        <select name="user_ids" class="flex-1 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer" data-filter-user>
+          <option value=""><%= tSafe("all") %></option>
+          <% (users || []).forEach((user) => { %>
+            <option value="<%= user.id %>" <%= String(user.id) === String(selectedId) ? "selected" : "" %>><%= user.username %></option>
+          <% }) %>
+        </select>
+        <% if (idx === 0) { %>
+          <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-add="user">+</button>
+        <% } else { %>
+          <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-remove="user">x</button>
+        <% } %>
+      </div>
+    <% }) %>
+  </div>
+</label>
+<label class="flex w-full flex-col gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+  <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= tSafe("date_range") || "Date Range" %></span>
+  <div class="flex items-center gap-2">
+    <input type="date" name="start_date" value="<%= startDate %>" class="flex-1 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none" data-filter-date-from data-filter-default="today" />
+    <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= tSafe("to") || "to" %></span>
+    <input type="date" name="end_date" value="<%= endDate %>" class="flex-1 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none" data-filter-date-to data-filter-default="today" />
+  </div>
+</label>

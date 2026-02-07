@@ -67,11 +67,19 @@ module.exports = async (req, res, next) => {
     });
 
     if (res?.locals?.t) {
+      if (process.env.DEBUG_UI_NOTICE === "1") {
+        console.log("[UI NOTICE] set from approval-required", {
+          path: req.path,
+          entityType,
+          entityId,
+        });
+      }
       setCookie(
         res,
         UI_NOTICE_COOKIE,
         JSON.stringify({
           message: res.locals.t("approval_sent") || res.locals.t("approval_submitted"),
+          autoClose: true,
         }),
         { path: "/", maxAge: 30, sameSite: "Lax" },
       );

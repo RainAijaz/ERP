@@ -13,7 +13,11 @@ module.exports = {
       user: process.env.DB_USER || "postgres",
       password: process.env.DB_PASSWORD || "",
     },
-    pool: { min: 2, max: 10 },
+    pool: {
+      min: Number(process.env.DB_POOL_MIN || 2),
+      max: Number(process.env.DB_POOL_MAX || 10),
+      acquireTimeoutMillis: Number(process.env.DB_POOL_TIMEOUT_MS || 60000),
+    },
     migrations: {
       directory: "./src/database/migrations",
       tableName: "knex_migrations",
@@ -24,7 +28,11 @@ seeds: { directory: "./src/database/seeds" },
   staging: {
     client: "pg",
     connection: process.env.DATABASE_URL, // optional later
-    pool: { min: 2, max: 10 },
+    pool: {
+      min: Number(process.env.DB_POOL_MIN || 2),
+      max: Number(process.env.DB_POOL_MAX || 10),
+      acquireTimeoutMillis: Number(process.env.DB_POOL_TIMEOUT_MS || 60000),
+    },
     migrations: {
       directory: "./src/database/migrations",
       tableName: "knex_migrations",
@@ -35,7 +43,11 @@ seeds: { directory: "./src/database/seeds" },
   production: {
     client: "pg",
     connection: process.env.DATABASE_URL, // optional later
-    pool: { min: 2, max: 10 },
+    pool: {
+      min: Number(process.env.DB_POOL_MIN || 2),
+      max: Number(process.env.DB_POOL_MAX || 10),
+      acquireTimeoutMillis: Number(process.env.DB_POOL_TIMEOUT_MS || 60000),
+    },
     migrations: {
       directory: "./src/database/migrations",
       tableName: "knex_migrations",

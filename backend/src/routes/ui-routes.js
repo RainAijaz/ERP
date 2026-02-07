@@ -4,8 +4,10 @@ const approvalRoutes = require("./administration/approvals");
 const administrationRoutes = require("./administration");
 const voucherEngineRoutes = require("./vouchers/voucher-engine");
 const masterDataRoutes = require("./master_data");
+const hrPayrollRoutes = require("./hr-payroll");
 const { requirePermission } = require("../middleware/access/role-permissions");
 const { translateToUrdu, transliterateToUrdu } = require("../utils/translate");
+const { registerApprovalStream, ackApprovalDecisions } = require("../utils/approval-events");
 
 const router = express.Router();
 
@@ -13,7 +15,23 @@ router.use("/auth", authRoutes);
 router.use("/administration", administrationRoutes);
 router.use("/administration/approvals", approvalRoutes); // keep for direct/legacy links
 router.use("/master-data", masterDataRoutes);
+router.use("/hr-payroll", hrPayrollRoutes);
 router.use("/vouchers", voucherEngineRoutes);
+
+router.get("/events/approvals", (req, res) => {
+  if (!req.user) {
+    return res.status(401).end();
+  }
+  registerApprovalStream(req, res);
+});
+
+router.post("/events/approvals/ack", (req, res) => {
+  if (!req.user) {
+    return res.status(401).end();
+  }
+  ackApprovalDecisions(req.user.id);
+  res.json({ ok: true });
+});
 
 router.get("/whoami", (req, res) => {
   if (!req.user) {

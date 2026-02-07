@@ -4,6 +4,9 @@ const { HttpError } = require("../../../middleware/errors/http-error");
 const { requirePermission } = require("../../../middleware/access/role-permissions");
 const { hasPermission, requiresApproval } = require("../../../middleware/approvals/screen-approval");
 const { sendMail } = require("../../../utils/email");
+const { queueAuditLog } = require("../../../utils/audit-log");
+const { setCookie } = require("../../../middleware/utils/cookies");
+const { UI_NOTICE_COOKIE } = require("../../../middleware/core/ui-notice");
 
 const router = express.Router();
 
@@ -46,6 +49,14 @@ const parseNumber = (value) => {
   return Number.isNaN(numberValue) ? null : numberValue;
 };
 
+const setApprovalNotice = (res, message, options = {}) => {
+  if (!message) return;
+  if (process.env.DEBUG_UI_NOTICE === "1") {
+    console.log("[UI NOTICE] set from skus", { message, options });
+  }
+  setCookie(res, UI_NOTICE_COOKIE, JSON.stringify({ message, ...options }), { path: "/", maxAge: 30, sameSite: "Lax" });
+};
+
 const buildComboKey = (sizeId, gradeId, colorId, packingId) => [sizeId || 0, gradeId || 0, colorId || 0, packingId || 0].join("|");
 
 const buildSfgComboKey = (itemId, sizeId, colorId) => [itemId || 0, sizeId || 0, colorId || 0].join("|");
@@ -85,7 +96,6 @@ const syncSfgVariantsFromFinished = async (userId) => {
     const colors = colorIds.length ? await trx("erp.colors").select("id", "name").whereIn("id", colorIds) : [];
     const sizeMap = new Map(sizes.map((x) => [x.id, x.name]));
     const colorMap = new Map(colors.map((x) => [x.id, x.name]));
-
     for (const row of usageRows) {
       const comboKey = buildSfgComboKey(row.sfg_item_id, row.size_id, row.color_id);
       if (existingSet.has(comboKey)) continue;
@@ -281,6 +291,7 @@ router.post("/", requirePermission("SCREEN", "master_data.products.skus", "navig
       throw new HttpError(403, res.locals.t("permission_denied"));
     }
 
+    let queuedCount = 0;
     await knex.transaction(async (trx) => {
       const item = await trx("erp.items").select("code", "name", "item_type").where({ id: item_id }).first();
       if (!item || item.item_type !== "FG") {
@@ -298,11 +309,10 @@ router.post("/", requirePermission("SCREEN", "master_data.products.skus", "navig
       const sfgNameMap = new Map(linkedSfgItems.map((x) => [x.id, x.name]));
       const sfgCodeMap = new Map(linkedSfgItems.map((x) => [x.id, x.code]));
 
-      const sizeMap = new Map(sizes.map((x) => [x.id, x.name]));
-      const gradeMap = new Map(grades.map((x) => [x.id, x.name]));
-      const colorMap = new Map(colors.map((x) => [x.id, x.name]));
-      const packingMap = new Map(packings.map((x) => [x.id, x.name]));
-
+      const sizeMap = new Map(sizes.map((x) => [Number(x.id), x.name]));
+      const gradeMap = new Map(grades.map((x) => [Number(x.id), x.name]));
+      const colorMap = new Map(colors.map((x) => [Number(x.id), x.name]));
+      const packingMap = new Map(packings.map((x) => [Number(x.id), x.name]));
       const colorList = colorIds.length ? colorIds : [null];
       const packingList = packingIds;
 
@@ -340,8 +350,41 @@ router.post("/", requirePermission("SCREEN", "master_data.products.skus", "navig
                 const baseSku = buildSkuCode(item.name, [sizeMap.get(size_id), packingMap.get(packing_type_id), gradeMap.get(grade_id), color_id ? colorMap.get(color_id) : null]);
                 const sku_code = await ensureUniqueSku(trx, baseSku);
                 await trx("erp.skus").insert({ variant_id: variant.id, sku_code, is_active: true });
+                queueAuditLog(req, {
+                  entityType: "SKU",
+                  entityId: variant.id || variant,
+                  action: "CREATE",
+                });
                 createdCount++;
               } else {
+                if (process.env.DEBUG_SKU_APPROVAL === "1") {
+                  console.log("[SKU APPROVAL DEBUG] DB arrays:", {
+                    sizes,
+                    grades,
+                    colors,
+                    packings,
+                  });
+                  console.log("[SKU APPROVAL DEBUG] Map keys:", {
+                    sizeMap: Array.from(sizeMap.keys()),
+                    gradeMap: Array.from(gradeMap.keys()),
+                    colorMap: Array.from(colorMap.keys()),
+                    packingMap: Array.from(packingMap.keys()),
+                  });
+                }
+                if (process.env.DEBUG_SKU_APPROVAL === "1") {
+                  console.log("[SKU APPROVAL DEBUG] pending create", {
+                    item_id,
+                    size_id,
+                    grade_id,
+                    color_id,
+                    packing_type_id,
+                    item_name: item?.name,
+                    size_name: sizeMap.get(size_id),
+                    grade_name: gradeMap.get(grade_id),
+                    color_name: colorMap.get(color_id),
+                    packing_name: packingMap.get(packing_type_id),
+                  });
+                }
                 const plannedVariant = {
                   _action: "create",
                   item_id,
@@ -363,6 +406,7 @@ router.post("/", requirePermission("SCREEN", "master_data.products.skus", "navig
                   requested_by: req.user.id,
                   requested_at: trx.fn.now(),
                 });
+                queuedCount++;
                 pendingCount++;
               }
 
@@ -396,7 +440,23 @@ router.post("/", requirePermission("SCREEN", "master_data.products.skus", "navig
                     const baseSfgSku = buildSkuCode(base, [sizeMap.get(size_id), color_id ? colorMap.get(color_id) : null, suffix]);
                     const sfgSkuCode = await ensureUniqueSku(trx, baseSfgSku);
                     await trx("erp.skus").insert({ variant_id: sfgVariant.id, sku_code: sfgSkuCode, is_active: true });
+                    queueAuditLog(req, {
+                      entityType: "SKU",
+                      entityId: sfgVariant.id || sfgVariant,
+                      action: "CREATE",
+                    });
                   } else {
+                    if (process.env.DEBUG_SKU_APPROVAL === "1") {
+                      console.log("[SKU APPROVAL DEBUG] pending SFG create", {
+                        item_id: sfgItemId,
+                        size_id,
+                        color_id,
+                        item_name: sfgNameMap.get(sfgItemId),
+                        item_code: sfgCodeMap.get(sfgItemId),
+                        size_name: sizeMap.get(size_id),
+                        color_name: colorMap.get(color_id),
+                      });
+                    }
                     const sfgName = sfgNameMap.get(sfgItemId) || "SFG";
                     const sfgCode = sfgCodeMap.get(sfgItemId) || "";
                     const { base, suffix } = parseSfgNameParts(sfgName, sfgCode);
@@ -421,6 +481,7 @@ router.post("/", requirePermission("SCREEN", "master_data.products.skus", "navig
                       requested_by: req.user.id,
                       requested_at: trx.fn.now(),
                     });
+                    queuedCount++;
                   }
                 }
               }
@@ -431,6 +492,9 @@ router.post("/", requirePermission("SCREEN", "master_data.products.skus", "navig
       if (createdCount === 0 && pendingCount === 0) throw new Error(res.locals.t("error_required_fields"));
     });
 
+    if (approvalRequired && queuedCount > 0) {
+      setApprovalNotice(res, res.locals.t("variants_sent_approval") || res.locals.t("approval_submitted"), { autoClose: true });
+    }
     const msg = approvalRequired ? res.locals.t("variants_sent_approval") : res.locals.t("saved_successfully");
     return res.redirect(basePath + viewQuery + "&success=true&msg=" + encodeURIComponent(msg));
   } catch (err) {
@@ -467,30 +531,58 @@ router.post("/bulk-update", requirePermission("SCREEN", "master_data.products.sk
     }
 
     await knex.transaction(async (trx) => {
+      let rateMap = new Map();
+      let queuedCount = 0;
+
+      if (approvalRequired && ids.length) {
+        const rows = await trx("erp.variants")
+          .select("id", "sale_rate")
+          .whereIn(
+            "id",
+            ids.map(Number).filter((v) => !Number.isNaN(v)),
+          );
+        rateMap = new Map(rows.map((row) => [row.id, Number(row.sale_rate)]));
+      }
+
       for (let i = 0; i < ids.length; i++) {
         const id = Number(ids[i]);
-        const rate = Number(rates[i]);
-        if (id && !isNaN(rate)) {
-          if (approvalRequired) {
-            await trx("erp.approval_request").insert({
-              branch_id: req.branchId,
-              request_type: "MASTER_DATA_CHANGE",
-              entity_type: "SKU",
-              entity_id: String(id),
-              summary: `${res.locals.t("edit")} ${res.locals.t("skus")}`,
-              new_value: { _action: "update", sale_rate: rate },
-              status: "PENDING",
-              requested_by: req.user.id,
-              requested_at: trx.fn.now(),
-            });
-          } else {
-            await trx("erp.variants").where({ id }).update({
-              sale_rate: rate,
-              updated_at: trx.fn.now(),
-              updated_by: req.user.id,
-            });
-          }
+        const rate = parseNumber(rates[i]);
+        if (!id || rate === null) {
+          continue;
         }
+        if (approvalRequired) {
+          const currentRate = rateMap.get(id);
+          if (currentRate != null && Math.abs(currentRate - rate) < 0.0001) {
+            continue;
+          }
+          await trx("erp.approval_request").insert({
+            branch_id: req.branchId,
+            request_type: "MASTER_DATA_CHANGE",
+            entity_type: "SKU",
+            entity_id: String(id),
+            summary: `${res.locals.t("edit")} ${res.locals.t("skus")}`,
+            new_value: { _action: "update", sale_rate: rate },
+            status: "PENDING",
+            requested_by: req.user.id,
+            requested_at: trx.fn.now(),
+          });
+          queuedCount++;
+        } else {
+          await trx("erp.variants").where({ id }).update({
+            sale_rate: rate,
+            updated_at: trx.fn.now(),
+            updated_by: req.user.id,
+          });
+          queueAuditLog(req, {
+            entityType: "SKU",
+            entityId: id,
+            action: "UPDATE",
+          });
+        }
+      }
+
+      if (approvalRequired && queuedCount > 0) {
+        setApprovalNotice(res, res.locals.t("approval_submitted") || res.locals.t("approval_sent"), { autoClose: true });
       }
     });
     const msg = approvalRequired ? res.locals.t("approval_submitted") : res.locals.t("saved_successfully");
@@ -535,6 +627,7 @@ router.post("/:id", requirePermission("SCREEN", "master_data.products.skus", "na
         requested_by: req.user.id,
         requested_at: knex.fn.now(),
       });
+      setApprovalNotice(res, res.locals.t("approval_submitted") || res.locals.t("approval_sent"), { autoClose: true });
       return res.redirect(basePath + viewQuery + "&success=true&msg=" + encodeURIComponent(res.locals.t("approval_submitted")));
     }
 
@@ -542,6 +635,11 @@ router.post("/:id", requirePermission("SCREEN", "master_data.products.skus", "na
       sale_rate: req.body.sale_rate,
       updated_at: knex.fn.now(),
       updated_by: req.user.id,
+    });
+    queueAuditLog(req, {
+      entityType: "SKU",
+      entityId: id,
+      action: "UPDATE",
     });
     return res.redirect(basePath + viewQuery + "&success=true");
   } catch (e) {
@@ -574,6 +672,7 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.sku
         requested_by: req.user.id,
         requested_at: knex.fn.now(),
       });
+      setApprovalNotice(res, res.locals.t("approval_submitted") || res.locals.t("approval_sent"), { autoClose: true });
       return res.redirect(basePath + viewQuery + "&success=true&msg=" + encodeURIComponent(res.locals.t("approval_submitted")));
     }
 
@@ -583,6 +682,11 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.sku
       updated_by: req.user.id,
     });
     await knex("erp.skus").where({ variant_id: id }).update({ is_active: !current.is_active });
+    queueAuditLog(req, {
+      entityType: "SKU",
+      entityId: id,
+      action: "DELETE",
+    });
     return res.redirect(basePath + viewQuery);
   } catch (err) {
     next(err);
@@ -614,11 +718,17 @@ router.post("/:id/delete", requirePermission("SCREEN", "master_data.products.sku
         requested_by: req.user.id,
         requested_at: knex.fn.now(),
       });
+      setApprovalNotice(res, res.locals.t("approval_submitted") || res.locals.t("approval_sent"), { autoClose: true });
       return res.redirect(basePath + viewQuery + "&success=true&msg=" + encodeURIComponent(res.locals.t("approval_submitted")));
     }
 
     await knex("erp.skus").where({ variant_id: id }).del();
     await knex("erp.variants").where({ id }).del();
+    queueAuditLog(req, {
+      entityType: "SKU",
+      entityId: id,
+      action: "DELETE",
+    });
     console.log(`[SKU DELETE] Successfully deleted Variant ID: ${id}`);
     return res.redirect(basePath + viewQuery);
   } catch (err) {
@@ -626,5 +736,9 @@ router.post("/:id/delete", requirePermission("SCREEN", "master_data.products.sku
     next(err);
   }
 });
+
+router.preview = {
+  loadOptions,
+};
 
 module.exports = router;

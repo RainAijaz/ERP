@@ -3,6 +3,7 @@ const knex = require("../../db/knex");
 const { requirePermission } = require("../../middleware/access/role-permissions");
 const { normalizeFields } = require("../../middleware/utils/validation");
 const { HttpError } = require("../../middleware/errors/http-error");
+const { queueAuditLog } = require("../../utils/audit-log");
 
 const router = express.Router();
 
@@ -35,16 +36,22 @@ router.get("/new", requirePermission("SCREEN", "administration.roles", "create")
   }
 });
 
-router.post("/", requirePermission("SCREEN", "administration.roles", "create"), normalizeFields(["name", "description"]), async (req, res, next) => {
+router.post("/", requirePermission("SCREEN", "administration.roles", "create"), normalizeFields(["name", "name_ur", "description"]), async (req, res, next) => {
   try {
     console.log(`[${req.id}] [roles:create] xhr=${req.xhr} body=`, req.body);
-    const { name, description } = req.body;
+    const { name, name_ur, description } = req.body;
     if (!name) throw new HttpError(400, "Name is required");
 
     const existing = await knex("erp.role_templates").whereRaw("LOWER(name) = ?", [name.toLowerCase()]).first();
     if (existing) throw new HttpError(400, "Role exists");
 
-    await knex("erp.role_templates").insert({ name, description });
+    const [row] = await knex("erp.role_templates")
+      .insert({ name, name_ur: name_ur || null, description })
+      .returning("id");
+    const roleId = row?.id || row;
+    if (roleId) {
+      queueAuditLog(req, { entityType: "ROLE", entityId: roleId, action: "CREATE" });
+    }
 
     if (req.xhr) return res.json({ success: true, redirect: "/administration/roles" });
     res.redirect("/administration/roles");
@@ -69,10 +76,10 @@ router.get("/:id/edit", requirePermission("SCREEN", "administration.roles", "edi
   }
 });
 
-router.post("/:id", requirePermission("SCREEN", "administration.roles", "edit"), normalizeFields(["name", "description"]), async (req, res, next) => {
+router.post("/:id", requirePermission("SCREEN", "administration.roles", "edit"), normalizeFields(["name", "name_ur", "description"]), async (req, res, next) => {
   try {
     console.log(`[${req.id}] [roles:update] xhr=${req.xhr} id=${req.params.id} body=`, req.body);
-    const { name, description } = req.body;
+    const { name, name_ur, description } = req.body;
     const id = req.params.id;
 
     if (!name) throw new HttpError(400, "Name is required");
@@ -80,7 +87,10 @@ router.post("/:id", requirePermission("SCREEN", "administration.roles", "edit"),
     const existing = await knex("erp.role_templates").whereRaw("LOWER(name) = ?", [name.toLowerCase()]).andWhereNot({ id }).first();
     if (existing) throw new HttpError(400, "Role exists");
 
-    await knex("erp.role_templates").where({ id }).update({ name, description });
+    await knex("erp.role_templates")
+      .where({ id })
+      .update({ name, name_ur: name_ur || null, description });
+    queueAuditLog(req, { entityType: "ROLE", entityId: id, action: "UPDATE" });
 
     if (req.xhr) return res.json({ success: true, redirect: "/administration/roles" });
     res.redirect("/administration/roles");
@@ -97,6 +107,7 @@ router.post("/:id/toggle", requirePermission("SCREEN", "administration.roles", "
     if (!role) throw new HttpError(404, "Role not found");
     const nextValue = !role.is_active;
     await knex("erp.role_templates").where({ id: req.params.id }).update({ is_active: nextValue });
+    queueAuditLog(req, { entityType: "ROLE", entityId: req.params.id, action: "DELETE" });
     if (req.xhr) return res.json({ success: true, is_active: nextValue });
     res.redirect("/administration/roles");
   } catch (err) {
@@ -114,6 +125,7 @@ router.post("/:id/delete", requirePermission("SCREEN", "administration.roles", "
     const userCount = Number(userCountRow?.count || 0);
     if (userCount > 0) throw new HttpError(400, "Role is assigned to users");
     await trx("erp.role_templates").where({ id: req.params.id }).del();
+    queueAuditLog(req, { entityType: "ROLE", entityId: req.params.id, action: "DELETE" });
     await trx.commit();
     if (req.xhr) return res.json({ success: true });
     res.redirect("/administration/roles");

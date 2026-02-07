@@ -47,6 +47,9 @@ const translations = {
     approval_rejected: "Approval request rejected.",
     approval_request_not_found: "Approval request not found or already decided.",
     approval_apply_failed: "Approval applied, but change could not be executed.",
+    approval_updates: "Since your last login: {approved} approved, {rejected} rejected.",
+    approval_approved_detail: "Your approval request was approved: {summary}",
+    approval_rejected_detail: "Your approval request was rejected: {summary}",
     permission_denied: "Permission denied.",
     error_invalid_id: "Invalid ID.",
     error_not_found: "Record not found.",
@@ -212,7 +215,7 @@ const translations = {
     error_update_status: "Unable to update status. This item may be in use.",
     error_delete: "Unable to delete. This item may be in use.",
     error_duplicate_code: "Code already exists.",
-    error_duplicate_name: "Name already exists.",
+    error_duplicate_name: "Request could not be approved because the name already exists.",
 
     // --- EXISTING KEYS (Preserved) ---
     units: "Units",
@@ -370,6 +373,9 @@ const translations = {
     approval_rejected: "منظوری کی درخواست مسترد کر دی گئی ہے۔",
     approval_request_not_found: "منظوری کی درخواست موجود نہیں یا پہلے ہی فیصلہ ہو چکا ہے۔",
     approval_apply_failed: "منظوری ہوگئی لیکن تبدیلی نافذ نہیں ہو سکی۔",
+    approval_updates: "آخری لاگ اِن کے بعد: {approved} منظور، {rejected} مسترد۔",
+    approval_approved_detail: "آپ کی منظوری کی درخواست منظور ہو گئی: {summary}",
+    approval_rejected_detail: "آپ کی منظوری کی درخواست مسترد ہو گئی: {summary}",
     permission_denied: "اجازت نہیں ہے۔",
     error_invalid_id: "غلط شناخت۔",
     error_not_found: "ریکارڈ موجود نہیں۔",

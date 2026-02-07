@@ -1,0 +1,185 @@
+<script>
+  (function () {
+    const filterToggle = document.querySelector("[data-filter-toggle]");
+    const filterPanel = document.querySelector("[data-filter-panel]");
+    const filterClose = document.querySelector("[data-filter-close]");
+    const filterApply = document.querySelector("[data-filter-apply]");
+    const filterClear = document.querySelector("[data-filter-clear]");
+    const filterForm = document.querySelector("[data-filter-form]");
+    const filterCountBadge = document.querySelector("[data-filter-count]");
+    const isServerFilters = filterPanel?.dataset.filterServer === "true";
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const quickActiveClasses = ["bg-slate-900", "text-white", "border-slate-900"];
+    const quickInactiveClasses = ["bg-white", "text-slate-500", "border-slate-200"];
+    const quickButtons = document.querySelectorAll("[data-filter-quick]");
+
+    const openFilters = () => filterPanel?.classList.remove("hidden");
+    const closeFilters = () => filterPanel?.classList.add("hidden");
+
+    if (filterToggle) filterToggle.addEventListener("click", openFilters);
+    if (filterClose) filterClose.addEventListener("click", closeFilters);
+
+    const updateFilterCount = () => {
+      if (!filterCountBadge || !filterForm) return;
+      const inputs = Array.from(filterForm.querySelectorAll("input, select"));
+      const count = inputs.reduce((acc, el) => {
+        if (el.dataset && el.dataset.filterIgnore === "true") return acc;
+        if (el.dataset && el.dataset.filterDefault === "today" && el.value === todayStr) return acc;
+        if (el.type === "checkbox") return el.checked ? acc + 1 : acc;
+        if (el.type === "radio") return el.checked && el.value ? acc + 1 : acc;
+        return el.value ? acc + 1 : acc;
+      }, 0);
+      if (count > 0) {
+        filterCountBadge.textContent = String(count);
+        filterCountBadge.classList.remove("hidden");
+      } else {
+        filterCountBadge.textContent = "";
+        filterCountBadge.classList.add("hidden");
+      }
+    };
+
+    const applyQuickHighlight = () => {
+      if (!filterForm || !quickButtons.length) return;
+      const startInput = filterForm.querySelector("[data-filter-date-from]");
+      const endInput = filterForm.querySelector("[data-filter-date-to]");
+      const startValue = startInput?.value || "";
+      const endValue = endInput?.value || "";
+      if (!startValue || !endValue) {
+        quickButtons.forEach((btn) => {
+          btn.classList.remove(...quickActiveClasses);
+          btn.classList.add(...quickInactiveClasses);
+        });
+        return;
+      }
+      quickButtons.forEach((btn) => {
+        const daysValue = Number(btn.getAttribute("data-days"));
+        if (Number.isNaN(daysValue)) return;
+        const end = new Date(endValue);
+        if (Number.isNaN(end.getTime())) return;
+        const start = new Date(end);
+        if (daysValue > 0) {
+          start.setDate(end.getDate() - (daysValue - 1));
+        }
+        const startStr = start.toISOString().slice(0, 10);
+        const endStr = end.toISOString().slice(0, 10);
+        const isMatch = startValue === startStr && endValue === endStr;
+        if (isMatch) {
+          btn.classList.add(...quickActiveClasses);
+          btn.classList.remove(...quickInactiveClasses);
+        } else {
+          btn.classList.remove(...quickActiveClasses);
+          btn.classList.add(...quickInactiveClasses);
+        }
+      });
+    };
+
+    if (filterForm) {
+      filterForm.addEventListener("change", () => {
+        updateFilterCount();
+        applyQuickHighlight();
+      });
+      updateFilterCount();
+      applyQuickHighlight();
+    }
+
+    if (filterApply) {
+      filterApply.addEventListener("click", () => {
+        if (filterForm) {
+          filterForm.querySelectorAll("[data-filter-default]").forEach((el) => {
+            if (el.dataset.filterDefault === "today" && !el.value) {
+              el.value = todayStr;
+            }
+          });
+          filterForm.submit();
+        } else {
+          closeFilters();
+        }
+      });
+    }
+
+    if (filterClear) {
+      filterClear.addEventListener("click", () => {
+        if (!filterForm) return;
+        filterForm.querySelectorAll("input, select").forEach((el) => {
+          if (el.type === "checkbox" || el.type === "radio") {
+            el.checked = false;
+          } else {
+            if (el.dataset && el.dataset.filterDefault === "today") {
+              el.value = todayStr;
+            } else {
+              el.value = "";
+            }
+          }
+        });
+        applyQuickHighlight();
+        filterForm.submit();
+      });
+    }
+    quickButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (!filterForm) return;
+        const daysValue = Number(btn.getAttribute("data-days"));
+        const end = new Date();
+        const start = new Date();
+        if (!Number.isNaN(daysValue) && daysValue > 0) {
+          start.setDate(end.getDate() - (daysValue - 1));
+        }
+        const startInput = filterForm.querySelector("[data-filter-date-from]");
+        const endInput = filterForm.querySelector("[data-filter-date-to]");
+        if (startInput) startInput.value = start.toISOString().slice(0, 10);
+        if (endInput) endInput.value = end.toISOString().slice(0, 10);
+        applyQuickHighlight();
+        filterForm.submit();
+      });
+    });
+
+    if (isServerFilters && window.location.search) {
+      window.history.replaceState({}, "", window.location.pathname);
+    }
+
+    const addButtons = document.querySelectorAll("[data-filter-add]");
+    const removeButtons = document.querySelectorAll("[data-filter-remove]");
+    const addRow = (type) => {
+      const list = filterPanel?.querySelector(`[data-filter-list="${type}"]`);
+      if (!list) return;
+      const firstSelect = list.querySelector(`[data-filter-${type}]`);
+      const firstMode = list.querySelector(`[data-filter-${type}-mode]`);
+      if (!firstSelect || !firstMode) return;
+      const wrapper = document.createElement("div");
+      wrapper.className = "flex items-center gap-2";
+      const mode = firstMode.cloneNode(true);
+      mode.value = firstMode.value || "include";
+      mode.removeAttribute("name");
+      const select = firstSelect.cloneNode(true);
+      select.value = "";
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500";
+      remove.textContent = "x";
+      remove.addEventListener("click", () => {
+        wrapper.remove();
+        updateFilterCount();
+      });
+      wrapper.appendChild(mode);
+      wrapper.appendChild(select);
+      wrapper.appendChild(remove);
+      list.appendChild(wrapper);
+    };
+
+    addButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const type = btn.getAttribute("data-filter-add");
+        if (!type) return;
+        addRow(type);
+      });
+    });
+
+    removeButtons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const row = btn.closest(".flex.items-center.gap-2");
+        if (row) row.remove();
+        updateFilterCount();
+      });
+    });
+  })();
+</script>

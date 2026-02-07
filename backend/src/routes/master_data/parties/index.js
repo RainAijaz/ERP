@@ -6,6 +6,7 @@ const { handleScreenApproval } = require("../../../middleware/approvals/screen-a
 const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
 const { parseCookies, setCookie } = require("../../../middleware/utils/cookies");
 const { friendlyErrorMessage } = require("../../../middleware/errors/friendly-error");
+const { queueAuditLog } = require("../../../utils/audit-log");
 
 const router = express.Router();
 
@@ -69,7 +70,7 @@ const page = {
     { key: "group_name", label: "party_group" },
     { key: "branch_names", label: "branches" },
     { key: "city_name", label: "city" },
-    { key: "phone_primary", label: "phone_primary", adminOnly: true },
+    { key: "phone_primary", label: "phone_primary", adminOnlyTable: true },
   ],
   fields: [
     {
@@ -98,7 +99,7 @@ const page = {
       name: "group_id",
       label: "party_group",
       type: "select",
-      required: true,
+      required: false,
       optionsQuery: {
         table: "erp.party_groups",
         valueKey: "id",
@@ -136,14 +137,13 @@ const page = {
       name: "phone1",
       label: "phone_primary",
       placeholder: "0300-0000000",
-      adminOnly: true,
       required: true,
     },
     {
       name: "phone2",
       label: "phone_secondary",
       placeholder: "Optional",
-      adminOnly: true,
+      // adminOnly: true, // Only show in table for admin, not in modal
     },
     {
       name: "address",
@@ -361,6 +361,12 @@ router.get("/", requirePermission("SCREEN", "master_data.parties", "view"), asyn
 });
 
 router.post("/", requirePermission("SCREEN", "master_data.parties", "navigate"), async (req, res, next) => {
+  console.log("[parties:POST /] route hit", {
+    user: req.user && { id: req.user.id, username: req.user.username, isAdmin: req.user.isAdmin },
+    body: req.body,
+    path: req.path,
+    method: req.method,
+  });
   const values = buildValues(page, req.body);
   if (page.autoCodeFromName && !values.code) {
     values.code = toCode(values.name);
@@ -372,10 +378,15 @@ router.post("/", requirePermission("SCREEN", "master_data.parties", "navigate"),
   const basePath = req.baseUrl;
 
   if (missing.length) {
+    console.log("[parties:POST /] missing required fields", { missing });
     return renderIndexError(req, res, values, res.locals.t("error_required_fields"), "create", basePath);
   }
 
   try {
+    console.log("[parties:POST /] calling handleScreenApproval", {
+      user: req.user && { id: req.user.id, username: req.user.username, isAdmin: req.user.isAdmin },
+      values,
+    });
     const approval = await handleScreenApproval({
       req,
       scopeKey: "master_data.parties",
@@ -387,21 +398,22 @@ router.post("/", requirePermission("SCREEN", "master_data.parties", "navigate"),
       newValue: values,
       t: res.locals.t,
     });
+    console.log("[parties:POST /] handleScreenApproval result", approval);
 
     if (approval.queued) {
+      console.log("[parties:POST /] approval was queued, redirecting");
       return res.redirect(req.get("referer") || basePath);
     }
 
     const branchIds = Array.isArray(values.branch_ids) ? values.branch_ids : [];
-    if (!values.group_id) {
-      return renderIndexError(req, res, values, res.locals.t("error_select_party_group"), "create", basePath);
-    }
-    const groupRow = await knex("erp.party_groups").select("party_type", "is_active").where({ id: values.group_id }).first();
-    if (!groupRow || groupRow.is_active === false) {
-      return renderIndexError(req, res, values, res.locals.t("error_select_party_group"), "create", basePath);
-    }
-    if (groupRow.party_type && groupRow.party_type !== "BOTH" && groupRow.party_type !== values.party_type) {
-      return renderIndexError(req, res, values, res.locals.t("error_party_group_type"), "create", basePath);
+    if (values.group_id) {
+      const groupRow = await knex("erp.party_groups").select("party_type", "is_active").where({ id: values.group_id }).first();
+      if (!groupRow || groupRow.is_active === false) {
+        return renderIndexError(req, res, values, res.locals.t("error_select_party_group"), "create", basePath);
+      }
+      if (groupRow.party_type && groupRow.party_type !== "BOTH" && groupRow.party_type !== values.party_type) {
+        return renderIndexError(req, res, values, res.locals.t("error_party_group_type"), "create", basePath);
+      }
     }
     if (!branchIds.length) {
       return renderIndexError(req, res, values, res.locals.t("error_select_branch"), "create", basePath);
@@ -450,6 +462,11 @@ router.post("/", requirePermission("SCREEN", "master_data.parties", "navigate"),
           })),
         );
       }
+      queueAuditLog(req, {
+        entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
+        entityId: partyId,
+        action: "CREATE",
+      });
     });
     return res.redirect(basePath);
   } catch (err) {
@@ -482,6 +499,9 @@ router.post("/:id", requirePermission("SCREEN", "master_data.parties", "navigate
     if (!existing) {
       return renderIndexError(req, res, values, res.locals.t("error_not_found"), "edit", basePath);
     }
+    if (hasField(page, "code") && existing.code) {
+      values.code = existing.code;
+    }
     const approval = await handleScreenApproval({
       req,
       scopeKey: "master_data.parties",
@@ -499,15 +519,14 @@ router.post("/:id", requirePermission("SCREEN", "master_data.parties", "navigate
     }
 
     const branchIds = Array.isArray(values.branch_ids) ? values.branch_ids : [];
-    if (!values.group_id) {
-      return renderIndexError(req, res, values, res.locals.t("error_select_party_group"), "edit", basePath);
-    }
-    const groupRow = await knex("erp.party_groups").select("party_type", "is_active").where({ id: values.group_id }).first();
-    if (!groupRow || groupRow.is_active === false) {
-      return renderIndexError(req, res, values, res.locals.t("error_select_party_group"), "edit", basePath);
-    }
-    if (groupRow.party_type && groupRow.party_type !== "BOTH" && groupRow.party_type !== values.party_type) {
-      return renderIndexError(req, res, values, res.locals.t("error_party_group_type"), "edit", basePath);
+    if (values.group_id) {
+      const groupRow = await knex("erp.party_groups").select("party_type", "is_active").where({ id: values.group_id }).first();
+      if (!groupRow || groupRow.is_active === false) {
+        return renderIndexError(req, res, values, res.locals.t("error_select_party_group"), "edit", basePath);
+      }
+      if (groupRow.party_type && groupRow.party_type !== "BOTH" && groupRow.party_type !== values.party_type) {
+        return renderIndexError(req, res, values, res.locals.t("error_party_group_type"), "edit", basePath);
+      }
     }
     if (!branchIds.length) {
       return renderIndexError(req, res, values, res.locals.t("error_select_branch"), "edit", basePath);
@@ -567,6 +586,11 @@ router.post("/:id", requirePermission("SCREEN", "master_data.parties", "navigate
         );
       }
     });
+    queueAuditLog(req, {
+      entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
+      entityId: id,
+      action: "UPDATE",
+    });
     return res.redirect(basePath);
   } catch (err) {
     console.error("[parties:update]", { id, error: err });
@@ -608,6 +632,11 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.parties", "d
         updated_by: req.user ? req.user.id : null,
         updated_at: knex.fn.now(),
       });
+    queueAuditLog(req, {
+      entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
+      entityId: id,
+      action: "DELETE",
+    });
     return res.redirect(basePath);
   } catch (err) {
     return renderIndexError(req, res, {}, res.locals.t("error_update_status"), "delete", basePath);
@@ -642,10 +671,20 @@ router.post("/:id/delete", requirePermission("SCREEN", "master_data.parties", "h
       return res.redirect(req.get("referer") || basePath);
     }
     await knex(page.table).where({ id }).del();
+    queueAuditLog(req, {
+      entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
+      entityId: id,
+      action: "DELETE",
+    });
     return res.redirect(basePath);
   } catch (err) {
     return renderIndexError(req, res, {}, err?.message || res.locals.t("error_delete"), "delete", basePath);
   }
 });
+
+router.preview = {
+  page,
+  hydratePage,
+};
 
 module.exports = router;

@@ -17,7 +17,7 @@ test.describe("Security and UX scenarios", () => {
     expect(branchesRes.status()).toBe(403);
   });
 
-  test("admin god mode can access core admin routes", async ({ page }) => {
+  test("admin mode can access core admin routes", async ({ page }) => {
     await login(page, "E2E_ADMIN");
     const permsRes = await page.goto("/administration/permissions", { waitUntil: "domcontentloaded" });
     expect(permsRes.status()).toBe(200);

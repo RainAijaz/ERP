@@ -146,6 +146,7 @@
         if (form) {
           form.addEventListener('submit', handleFormSubmit);
         }
+        if (window.wireUrduTranslateForms) window.wireUrduTranslateForms();
       })
       .catch(err => {
         console.error(err);

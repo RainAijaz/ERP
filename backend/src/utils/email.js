@@ -1,3 +1,10 @@
+// email.js
+// Purpose: Provides email sending utilities using nodemailer and Gmail credentials from environment variables.
+// Used for sending notifications, alerts, and approval emails from the ERP system.
+//
+// Exports:
+// - sendMail: Sends an email with the given parameters (to, subject, html, text).
+
 const nodemailer = require("nodemailer");
 
 const getTransporter = () => {

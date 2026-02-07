@@ -1,7 +1,7 @@
 <% const hideCode = ["accounts", "parties"].includes(page.titleKey); %>
 <% page.fields.forEach(function(field) { %>
         <% const hideOnCreate = page.titleKey === "parties" && (field.name === "credit_allowed" || field.name === "credit_limit"); %>
-        <% if (field.adminOnly && !isAdmin) { return; } %>
+        <% /* adminOnly is ignored for modal fields; all users see all fields except those hidden by other logic */ %>
         <% if (hideCode && field.name === "code") { return; } %>
         <% if (field.type === "checkbox") { %>
           <label class="flex flex-1 items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>

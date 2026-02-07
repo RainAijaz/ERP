@@ -1,10 +1,14 @@
 <div class="bg-white px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
   <h3 class="text-lg font-semibold leading-6 text-slate-900 mb-4"><%= title %></h3>
-  <form action="<%= role ? '/administration/roles/' + role.id : '/administration/roles' %>" method="POST" class="space-y-4">
+  <form action="<%= role ? '/administration/roles/' + role.id : '/administration/roles' %>" method="POST" class="space-y-4" data-translate-mode="transliterate">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
     <div>
       <label class="block text-sm font-medium text-slate-700 mb-1"><%= t('role_name') %> *</label>
       <input type="text" name="name" value="<%= role ? role.name : '' %>" required class="w-full rounded-lg border-slate-300 focus:ring-accent focus:border-accent" />
+    </div>
+    <div>
+      <label class="block text-sm font-medium text-slate-700 mb-1"><%= t('role_name_ur') || t('name_ur') %></label>
+      <input type="text" name="name_ur" value="<%= role ? role.name_ur : '' %>" class="w-full rounded-lg border-slate-300 focus:ring-accent focus:border-accent" />
     </div>
     <div>
       <label class="block text-sm font-medium text-slate-700 mb-1"><%= t('description') %></label>
@@ -25,3 +29,4 @@
     </div>
   </form>
 </div>
+<%- include("../../base/partials/urdu-translate-utils") %>

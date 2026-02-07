@@ -211,8 +211,8 @@
   modalDescription: t("skus_description"),
   translateMode: "transliterate",
   formAction: basePath + viewQuery,
-  formClass: "space-y-5 px-6 py-5",
-  modalContainerClass: "w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-xl",
+  formClass: "flex-1 overflow-y-auto space-y-5 px-6 py-5",
+  modalContainerClass: "w-full max-w-2xl max-h-[90vh] rounded-2xl border border-slate-200 bg-white shadow-xl flex flex-col",
   modalHeaderClass: "flex items-center justify-between border-b border-slate-200 px-6 py-4",
   modalError: modalOpen ? error : null,
   modalValues: modalOpen ? values : null,
@@ -402,7 +402,7 @@
                     </div>
                     <input type="hidden" name="variant_ids" value="${v.id}" />
                     <input class="w-32 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-right font-bold text-slate-700 focus:outline-none focus:border-indigo-500" 
-                           type="number" min="0" step="0.01" name="new_rates" value="${v.sale_rate}" placeholder="Rate" required />
+                           type="number" min="0" step="0.01" name="new_rates" value="${v.sale_rate}" data-original-rate="${v.sale_rate}" placeholder="Rate" required />
                  `;
                  editList.appendChild(row);
              });
@@ -442,6 +442,26 @@
     modalForm.addEventListener("submit", () => {
        const disabledOptions = modalForm.querySelectorAll("option:disabled");
        disabledOptions.forEach(opt => opt.disabled = false);
+
+       if (editContainer && !editContainer.classList.contains("hidden")) {
+         const rows = editList.querySelectorAll("div");
+         rows.forEach((row) => {
+           const rateInput = row.querySelector('input[name="new_rates"]');
+           const idInput = row.querySelector('input[name="variant_ids"]');
+           if (!rateInput || !idInput) return;
+           const original = parseFloat(rateInput.dataset.originalRate || "");
+           const current = parseFloat(rateInput.value || "");
+           if (!Number.isFinite(current)) {
+             idInput.remove();
+             rateInput.remove();
+             return;
+           }
+           if (Number.isFinite(original) && Math.abs(original - current) < 0.0001) {
+             idInput.remove();
+             rateInput.remove();
+           }
+         });
+       }
     });
 
     // Debugging hooks for SKU actions
