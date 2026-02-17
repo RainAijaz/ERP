@@ -2,16 +2,21 @@
   (function () {
     const endpoint = "/translate";
     const buttonLabel = '<%= t("auto_translate") %>';
+    const fetchingLabel = '<%= t("translation_fetching") || "Fetching translation..." %>';
+    const failedLabel = '<%= t("translation_failed") || "Translation unavailable" %>';
+    const readyLabel = '<%= t("translation_ready") || "Translated" %>';
+    const cache = new Map();
 
     const wireForm = (form) => {
       const source = form.querySelector('input[name="name"]');
       const target = form.querySelector('input[name="name_ur"]');
-      if (!source || !target || source.dataset.translateAttached === "true") {
+      if (!source || !target) {
         return;
       }
 
       source.dataset.translateAttached = "true";
-      const existingButton = target.parentElement.querySelector("[data-translate-button]");
+      const existingWrapper = target.closest("[data-translate-wrap]");
+      const existingButton = existingWrapper ? existingWrapper.querySelector("[data-translate-button]") : null;
       if (!existingButton) {
         const button = document.createElement("button");
         button.type = "button";
@@ -20,14 +25,22 @@
         button.setAttribute("data-translate-button", "true");
 
         const wrapper = document.createElement("div");
-        wrapper.className = "mt-1.5 flex items-center";
+        wrapper.setAttribute("data-translate-wrap", "true");
+        wrapper.className = "mt-1.5 flex flex-col gap-1";
+        const actionRow = document.createElement("div");
+        actionRow.className = "flex items-center gap-2";
+        const status = document.createElement("span");
+        status.className = "text-xs text-slate-500";
+        status.setAttribute("data-translate-status", "true");
+        status.hidden = true;
+        status.textContent = "";
 
         target.classList.add("flex-1");
         target.parentElement.insertBefore(wrapper, target);
-        wrapper.appendChild(target);
-        wrapper.appendChild(button);
-
-        button.addEventListener("click", () => translate());
+        wrapper.appendChild(actionRow);
+        actionRow.appendChild(target);
+        actionRow.appendChild(button);
+        wrapper.appendChild(status);
       }
 
       const translate = async () => {
@@ -36,14 +49,36 @@
           return;
         }
         const mode = form.dataset.translateMode || target.dataset.translateMode || "translate";
+        const cacheKey = `${mode}:${value}`;
+        const wrap = target.closest("[data-translate-wrap]");
+        const button = wrap ? wrap.querySelector("[data-translate-button]") : null;
+        const status = wrap ? wrap.querySelector("[data-translate-status]") : null;
+
+        if (cache.has(cacheKey)) {
+          target.value = cache.get(cacheKey);
+          if (status) {
+            status.textContent = readyLabel;
+            status.hidden = false;
+          }
+          return;
+        }
 
         const csrfInput = form.querySelector('input[name="_csrf"]');
         const csrfToken = csrfInput ? csrfInput.value : null;
 
+        let timer = null;
         try {
+          if (button) button.disabled = true;
+          if (status) {
+            status.textContent = fetchingLabel;
+            status.hidden = false;
+          }
+          const controller = new AbortController();
+          timer = setTimeout(() => controller.abort(), 13000);
           const response = await fetch(endpoint, {
             method: "POST",
             credentials: "same-origin",
+            signal: controller.signal,
             headers: {
               "Content-Type": "application/json",
               ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
@@ -51,17 +86,31 @@
             body: JSON.stringify({ text: value, mode }),
           });
           if (!response.ok) {
+            if (status) status.textContent = failedLabel;
             return;
           }
           const payload = await response.json();
           if (!payload || !payload.translated) {
+            if (status) status.textContent = failedLabel;
             return;
           }
+          cache.set(cacheKey, payload.translated);
           target.value = payload.translated;
+          if (status) status.textContent = readyLabel;
         } catch (err) {
+          if (status) status.textContent = failedLabel;
           return;
+        } finally {
+          if (timer) clearTimeout(timer);
+          if (button) button.disabled = false;
         }
       };
+
+      const button = (target.closest("[data-translate-wrap]") || target.parentElement).querySelector("[data-translate-button]");
+      if (button && button.dataset.translateBound !== "true") {
+        button.dataset.translateBound = "true";
+        button.addEventListener("click", () => translate());
+      }
     };
 
     const wireAll = () => {
@@ -77,5 +126,6 @@
     } else {
       wireAll();
     }
+    document.addEventListener("modal:opened", wireAll);
   })();
 </script>

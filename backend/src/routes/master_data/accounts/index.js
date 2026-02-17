@@ -7,15 +7,10 @@ const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
 const { parseCookies, setCookie } = require("../../../middleware/utils/cookies");
 const { friendlyErrorMessage } = require("../../../middleware/errors/friendly-error");
 const { queueAuditLog } = require("../../../utils/audit-log");
+const { generateUniqueCode } = require("../../../utils/entity-code");
+const { buildAuditChangeSet } = require("../../../utils/audit-diff");
 
 const router = express.Router();
-
-const toCode = (value) =>
-  (value || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 50);
 
 const hasField = (page, name) => page.fields.some((field) => field.name === name);
 
@@ -288,9 +283,6 @@ router.get("/", requirePermission("SCREEN", "master_data.accounts", "view"), asy
 
 router.post("/", requirePermission("SCREEN", "master_data.accounts", "navigate"), async (req, res, next) => {
   const values = buildValues(page, req.body);
-  if (page.autoCodeFromName && !values.code) {
-    values.code = toCode(values.name);
-  }
   if (!hasField(page, "code") && !page.autoCodeFromName) {
     delete values.code;
   }
@@ -302,6 +294,27 @@ router.post("/", requirePermission("SCREEN", "master_data.accounts", "navigate")
   }
 
   try {
+    const branchIds = Array.isArray(values.branch_ids) ? values.branch_ids : [];
+    if (!branchIds.length) {
+      return renderIndexError(req, res, values, res.locals.t("error_select_branch"), "create", basePath);
+    }
+    values.branch_ids = branchIds.map(String);
+    values.code = await generateUniqueCode({
+      name: values.name,
+      prefix: "account",
+      maxLen: 50,
+      knex,
+      table: page.table,
+    });
+    const codeValue = values.code || "";
+    const nameValue = values.name || "";
+    if (codeValue && (await knex(page.table).whereRaw("lower(code) = ?", [codeValue.toLowerCase()]).first())) {
+      return renderIndexError(req, res, values, res.locals.t("error_duplicate_code"), "create", basePath);
+    }
+    if (nameValue && (await knex(page.table).whereRaw("lower(name) = ?", [nameValue.toLowerCase()]).first())) {
+      return renderIndexError(req, res, values, res.locals.t("error_duplicate_name"), "create", basePath);
+    }
+
     const approval = await handleScreenApproval({
       req,
       scopeKey: "master_data.accounts",
@@ -318,24 +331,11 @@ router.post("/", requirePermission("SCREEN", "master_data.accounts", "navigate")
       return res.redirect(req.get("referer") || basePath);
     }
 
-    const branchIds = Array.isArray(values.branch_ids) ? values.branch_ids : [];
-    if (!branchIds.length) {
-      return renderIndexError(req, res, values, res.locals.t("error_select_branch"), "create", basePath);
-    }
-    const codeValue = values.code || (page.autoCodeFromName ? toCode(values.name) : "");
-    const nameValue = values.name || "";
-    if (codeValue && (await knex(page.table).whereRaw("lower(code) = ?", [codeValue.toLowerCase()]).first())) {
-      return renderIndexError(req, res, values, res.locals.t("error_duplicate_code"), "create", basePath);
-    }
-    if (nameValue && (await knex(page.table).whereRaw("lower(name) = ?", [nameValue.toLowerCase()]).first())) {
-      return renderIndexError(req, res, values, res.locals.t("error_duplicate_name"), "create", basePath);
-    }
     const { branch_ids: branchIdsInsert = [], ...rest } = values;
     await knex.transaction(async (trx) => {
       const [row] = await trx(page.table)
         .insert({
           ...rest,
-          ...(page.autoCodeFromName ? { code: toCode(rest.name) } : {}),
           created_by: req.user ? req.user.id : null,
         })
         .returning("id");
@@ -367,9 +367,6 @@ router.post("/:id", requirePermission("SCREEN", "master_data.accounts", "navigat
     return next(new HttpError(404, res.locals.t("error_not_found")));
   }
   const values = buildValues(page, req.body);
-  if (page.autoCodeFromName && !values.code) {
-    values.code = toCode(values.name);
-  }
   if (!hasField(page, "code") && !page.autoCodeFromName) {
     delete values.code;
   }
@@ -387,6 +384,34 @@ router.post("/:id", requirePermission("SCREEN", "master_data.accounts", "navigat
     }
     if (hasField(page, "code") && existing.code) {
       values.code = existing.code;
+    } else {
+      values.code = await generateUniqueCode({
+        name: values.name,
+        prefix: "account",
+        maxLen: 50,
+        knex,
+        table: page.table,
+        excludeId: id,
+      });
+    }
+    const branchIds = Array.isArray(values.branch_ids) ? values.branch_ids : [];
+    if (!branchIds.length) {
+      return renderIndexError(req, res, values, res.locals.t("error_select_branch"), "edit", basePath);
+    }
+    values.branch_ids = branchIds.map(String);
+    const codeValue = values.code || "";
+    const nameValue = values.name || "";
+    if (codeValue) {
+      const existing = await knex(page.table).whereRaw("lower(code) = ?", [codeValue.toLowerCase()]).andWhereNot({ id }).first();
+      if (existing) {
+        return renderIndexError(req, res, values, res.locals.t("error_duplicate_code"), "edit", basePath);
+      }
+    }
+    if (nameValue) {
+      const existing = await knex(page.table).whereRaw("lower(name) = ?", [nameValue.toLowerCase()]).andWhereNot({ id }).first();
+      if (existing) {
+        return renderIndexError(req, res, values, res.locals.t("error_duplicate_name"), "edit", basePath);
+      }
     }
     const approval = await handleScreenApproval({
       req,
@@ -404,25 +429,12 @@ router.post("/:id", requirePermission("SCREEN", "master_data.accounts", "navigat
       return res.redirect(req.get("referer") || basePath);
     }
 
-    const branchIds = Array.isArray(values.branch_ids) ? values.branch_ids : [];
-    if (!branchIds.length) {
-      return renderIndexError(req, res, values, res.locals.t("error_select_branch"), "edit", basePath);
-    }
-    const codeValue = values.code || (page.autoCodeFromName ? toCode(values.name) : "");
-    const nameValue = values.name || "";
-    if (codeValue) {
-      const existing = await knex(page.table).whereRaw("lower(code) = ?", [codeValue.toLowerCase()]).andWhereNot({ id }).first();
-      if (existing) {
-        return renderIndexError(req, res, values, res.locals.t("error_duplicate_code"), "edit", basePath);
-      }
-    }
-    if (nameValue) {
-      const existing = await knex(page.table).whereRaw("lower(name) = ?", [nameValue.toLowerCase()]).andWhereNot({ id }).first();
-      if (existing) {
-        return renderIndexError(req, res, values, res.locals.t("error_duplicate_name"), "edit", basePath);
-      }
-    }
     const auditFields = { updated_by: req.user ? req.user.id : null, updated_at: knex.fn.now() };
+    const changeSet = buildAuditChangeSet({
+      before: existing,
+      after: values,
+      includeKeys: page.fields.map((field) => field.name),
+    });
     const { branch_ids: branchIdsUpdate = [], ...rest } = values;
     await knex.transaction(async (trx) => {
       await trx(page.table)
@@ -447,6 +459,10 @@ router.post("/:id", requirePermission("SCREEN", "master_data.accounts", "navigat
       entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
       entityId: id,
       action: "UPDATE",
+      context: {
+        source: "accounts-update",
+        ...changeSet,
+      },
     });
     return res.redirect(basePath);
   } catch (err) {
@@ -455,7 +471,7 @@ router.post("/:id", requirePermission("SCREEN", "master_data.accounts", "navigat
   }
 });
 
-router.post("/:id/toggle", requirePermission("SCREEN", "master_data.accounts", "delete"), async (req, res, next) => {
+router.post("/:id/toggle", requirePermission("SCREEN", "master_data.accounts", "navigate"), async (req, res, next) => {
   const id = Number(req.params.id);
   if (!id) {
     return next(new HttpError(404, res.locals.t("error_not_found")));
@@ -500,7 +516,7 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.accounts", "
   }
 });
 
-router.post("/:id/delete", requirePermission("SCREEN", "master_data.accounts", "hard_delete"), async (req, res, next) => {
+router.post("/:id/delete", requirePermission("SCREEN", "master_data.accounts", "navigate"), async (req, res, next) => {
   const id = Number(req.params.id);
   if (!id) {
     return next(new HttpError(404, res.locals.t("error_not_found")));

@@ -6,7 +6,7 @@ const voucherEngineRoutes = require("./vouchers/voucher-engine");
 const masterDataRoutes = require("./master_data");
 const hrPayrollRoutes = require("./hr-payroll");
 const { requirePermission } = require("../middleware/access/role-permissions");
-const { translateToUrdu, transliterateToUrdu } = require("../utils/translate");
+const { translateUrduWithFallback } = require("../utils/translate");
 const { registerApprovalStream, ackApprovalDecisions } = require("../utils/approval-events");
 
 const router = express.Router();
@@ -61,25 +61,47 @@ router.post("/translate", async (req, res) => {
     return res.json({ translated: "" });
   }
 
+  const startedAt = Date.now();
+  const requestId = `tr-${startedAt}-${Math.random().toString(36).slice(2, 8)}`;
+  const textPreview = text.length > 64 ? `${text.slice(0, 64)}...` : text;
+  const routeLogger = {
+    error: (message, details = {}) => {
+      console.error(message, {
+        request_id: requestId,
+        mode,
+        user_id: req.user?.id || null,
+        text_length: text.length,
+        text_preview: textPreview,
+        ...details,
+      });
+    },
+  };
+
   try {
-    let translated = "";
-    let provider = "deepl";
-    let azureError = null;
-    if (mode === "transliterate") {
-      try {
-        translated = await transliterateToUrdu(text);
-        provider = "azure";
-      } catch (err) {
-        azureError = err.message;
-        translated = await translateToUrdu(text);
-        provider = "deepl";
-      }
-    } else {
-      translated = await translateToUrdu(text);
-      provider = "deepl";
-    }
+    const translatePromise = translateUrduWithFallback({ text, mode, logger: routeLogger });
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("Translation request timed out")), 12000);
+    });
+    const { translated, provider, azure_error: azureError } = await Promise.race([translatePromise, timeoutPromise]);
+    console.log("[translate-route] success", {
+      request_id: requestId,
+      mode,
+      provider,
+      duration_ms: Date.now() - startedAt,
+      text_length: text.length,
+    });
     return res.json({ translated, provider, azure_error: azureError });
   } catch (err) {
+    console.error("[translate-route] translation failed", {
+      request_id: requestId,
+      mode,
+      user_id: req.user?.id || null,
+      duration_ms: Date.now() - startedAt,
+      text_length: text.length,
+      text_preview: textPreview,
+      error: err?.message || err,
+      stack: err?.stack || null,
+    });
     return res.status(502).json({ error: "Translation unavailable", detail: err.message });
   }
 });

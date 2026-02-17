@@ -75,6 +75,10 @@ const loadOptions = async (itemType = "FG") => {
 };
 
 const loadUsers = async () => knex("erp.users").select("id", "username").orderBy("username");
+const shouldRequireApproval = async (req, scopeKey, action) => {
+  if (req?.user?.isAdmin) return false;
+  return requiresApproval(scopeKey, action);
+};
 
 const syncSfgVariantsFromFinished = async (userId) => {
   await knex.transaction(async (trx) => {
@@ -285,13 +289,15 @@ router.post("/", requirePermission("SCREEN", "master_data.products.skus", "navig
 
     if (rateMap.size === 0) throw new Error(res.locals.t("error_required_fields"));
 
-    const approvalRequired = await requiresApproval("master_data.products.skus", "create");
+    const approvalRequired = await shouldRequireApproval(req, "master_data.products.skus", "create");
     const allowed = hasPermission(req.user, "master_data.products.skus", "create");
     if (!allowed && !approvalRequired) {
       throw new HttpError(403, res.locals.t("permission_denied"));
     }
 
     let queuedCount = 0;
+    let createdCountTotal = 0;
+    let pendingCountTotal = 0;
     await knex.transaction(async (trx) => {
       const item = await trx("erp.items").select("code", "name", "item_type").where({ id: item_id }).first();
       if (!item || item.item_type !== "FG") {
@@ -489,8 +495,14 @@ router.post("/", requirePermission("SCREEN", "master_data.products.skus", "navig
           }
         }
       }
-      if (createdCount === 0 && pendingCount === 0) throw new Error(res.locals.t("error_required_fields"));
+      createdCountTotal = createdCount;
+      pendingCountTotal = pendingCount;
     });
+
+    if (createdCountTotal === 0 && pendingCountTotal === 0) {
+      const noChangesMsg = res.locals.t("approval_no_changes") || "No changes found.";
+      return res.redirect(basePath + viewQuery + "&success=true&msg=" + encodeURIComponent(noChangesMsg));
+    }
 
     if (approvalRequired && queuedCount > 0) {
       setApprovalNotice(res, res.locals.t("variants_sent_approval") || res.locals.t("approval_submitted"), { autoClose: true });
@@ -524,7 +536,7 @@ router.post("/bulk-update", requirePermission("SCREEN", "master_data.products.sk
   if (!ids.length) return res.redirect(basePath + viewQuery);
 
   try {
-    const approvalRequired = await requiresApproval("master_data.products.skus", "delete");
+    const approvalRequired = await shouldRequireApproval(req, "master_data.products.skus", "delete");
     const allowed = hasPermission(req.user, "master_data.products.skus", "delete");
     if (!allowed && !approvalRequired) {
       throw new HttpError(403, res.locals.t("permission_denied"));
@@ -600,7 +612,7 @@ router.post("/:id", requirePermission("SCREEN", "master_data.products.skus", "na
   const viewQuery = `?item_type=${itemType}`;
   const basePath = `${req.baseUrl}`;
   try {
-    const approvalRequired = await requiresApproval("master_data.products.skus", "delete");
+    const approvalRequired = await shouldRequireApproval(req, "master_data.products.skus", "delete");
     const allowed = hasPermission(req.user, "master_data.products.skus", "delete");
     if (process.env.DEBUG_SKU_PERMS === "1") {
       console.log("[SKU PERM DEBUG]", {
@@ -654,7 +666,7 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.sku
   const basePath = `${req.baseUrl}`;
   try {
     const current = await knex("erp.variants").select("is_active").where({ id }).first();
-    const approvalRequired = await requiresApproval("master_data.products.skus", "delete");
+    const approvalRequired = await shouldRequireApproval(req, "master_data.products.skus", "delete");
     const allowed = hasPermission(req.user, "master_data.products.skus", "delete");
     if (!allowed && !approvalRequired) {
       throw new HttpError(403, res.locals.t("permission_denied"));
@@ -700,7 +712,7 @@ router.post("/:id/delete", requirePermission("SCREEN", "master_data.products.sku
   const basePath = `${req.baseUrl}`;
   console.log(`[SKU DELETE] Request received for Variant ID: ${id}`);
   try {
-    const approvalRequired = await requiresApproval("master_data.products.skus", "hard_delete");
+    const approvalRequired = await shouldRequireApproval(req, "master_data.products.skus", "hard_delete");
     const allowed = hasPermission(req.user, "master_data.products.skus", "hard_delete");
     if (!allowed && !approvalRequired) {
       throw new HttpError(403, res.locals.t("permission_denied"));

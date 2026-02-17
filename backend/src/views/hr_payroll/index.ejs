@@ -1,0 +1,1522 @@
+<div class="mx-auto w-full max-w-7xl space-y-6">
+  <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div class="space-y-1">
+        <h1 class="text-2xl font-display text-ink"><%= t(page.titleKey) %></h1>
+        <p class="text-sm text-muted"><%= t(page.descriptionKey) || t("hr_screen_description") %></p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <% const canCreate = can("SCREEN", page.scopeKey, "create"); %>
+        <% const canDownload = can("SCREEN", page.scopeKey, "print"); %>
+        <% if (canDownload) { %>
+          <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-download-button>
+            <%= t("download") %>
+          </button>
+          <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-print-button>
+            <%= t("print") %>
+          </button>
+        <% } %>
+        <% if (canCreate) { %>
+          <button class="cursor-pointer rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800" type="button" data-modal-open style="color: #fff;">
+            <%= t("add") %> <%= t(page.titleKey) %>
+          </button>
+        <% } %>
+      </div>
+    </div>
+  </section>
+
+  <%- include("../base/partials/error-banner", { error, modalOpen }) %>
+  <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md overflow-hidden" data-print-area>
+    <% const canEdit = can("SCREEN", page.scopeKey, "edit"); %>
+    <% const canDelete = can("SCREEN", page.scopeKey, "delete"); %>
+    <% const canHardDelete = can("SCREEN", page.scopeKey, "hard_delete"); %>
+    <div class="px-5 pt-4 text-center text-xl font-display font-semibold uppercase tracking-[0.35em] text-slate-900" data-print-header>
+      <%= t("brand") %>
+    </div>
+    <div class="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div class="text-sm font-semibold text-slate-700"><%= t("list") %> <%= t(page.titleKey) %></div>
+      <%- include("../base/partials/table-controls", { t, showStatus: page.scopeKey !== "hr_payroll.labour_rates", showFilters: true }) %>
+    </div>
+    <form method="GET" action="" data-filter-form>
+      <%- include("../base/partials/filter-modal", { t, bodyPartial: "../../hr_payroll/filter-fields.ejs", serverFilters: true }) %>
+    </form>
+    <div class="overflow-x-auto bg-white">
+      <table class="min-w-full text-sm" data-table>
+        <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
+          <% const displayColumns = page.columns.filter(function(column) {
+               if (column.key === "id") return false;
+               if (column.key === "code") return false;
+               if (column.key === "name_ur" && locale !== "ur") return false;
+               if (column.key === "name" && locale === "ur") return false;
+               return true;
+             }); %>
+          <%- include("../base/partials/table-header", { t, displayColumns, columnTooltips: {}, sortStartIndex: 1 }) %>
+        </thead>
+        <tbody class="divide-y divide-slate-100" data-table-body>
+          <% if (!rows || rows.length === 0) { %>
+            <%- include("../base/partials/table-empty", { t, colspan: displayColumns.length + 2 }) %>
+          <% } else { %>
+            <% rows.forEach(function(row, idx) { %>
+              <tr
+                class="hover:bg-amber-50/40 odd:bg-white even:bg-slate-50/40"
+                data-row
+                data-active="<%= row.is_active ? "true" : "false" %>"
+                data-account-type="<%= row.payroll_type || row.apply_on || row.amount_type || row.rate_type || "" %>"
+                data-account-group="<%= row.department_name || row.commission_basis || row.frequency || "" %>"
+                data-branch="<%= row.branch_names || "" %>"
+                data-rule-id="<%= row.id || '' %>"
+                data-labour-id="<%= row.labour_id || '' %>"
+                data-dept-id="<%= row.dept_id || '' %>"
+                data-apply-on="<%= row.apply_on || '' %>"
+                data-selector-id="<%= row.selector_id || '' %>"
+                data-article-type="<%= row.article_type || row.coverage_scope || 'BOTH' %>"
+              >
+                <td class="px-4 py-3 text-slate-700"><%= idx + 1 %></td>
+                <% displayColumns.forEach(function(column) { %>
+                  <td class="px-4 py-3 text-slate-700">
+                    <% if (column.key === "status") { %>
+                      <span class="inline-flex items-center whitespace-nowrap rounded-full border <%= (row[column.key] || "").toLowerCase() === "active" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700" %> px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em]">
+                        <%= t((row[column.key] || "").toLowerCase() === "active" ? "active" : "inactive") %>
+                      </span>
+                    <% } else if (column.key === "payroll_type") { %>
+                      <span class="inline-flex items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                        <%= t(`payroll_${String(row[column.key] || "").toLowerCase()}`) || row[column.key] %>
+                      </span>
+                    <% } else if (column.key === "apply_on") { %>
+                      <span class="inline-flex items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                        <%= t(`apply_on_${String(row[column.key] || "").toLowerCase()}`) || row[column.key] %>
+                      </span>
+                    <% } else if (column.key === "coverage_scope") { %>
+                      <span class="inline-flex items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                        <%= t(`coverage_scope_${String(row[column.key] || "").toLowerCase()}`) || row[column.key] %>
+                      </span>
+                    <% } else if (column.key === "article_type") { %>
+                      <span class="inline-flex items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                        <%= row[column.key] === "FG" ? (t("article_type_fg") || row[column.key]) : row[column.key] === "SFG" ? (t("article_type_sfg") || row[column.key]) : (t("coverage_scope_both") || row[column.key]) %>
+                      </span>
+                    <% } else if (column.key === "commission_basis") { %>
+                      <%= t(`commission_basis_${String(row[column.key] || "").toLowerCase()}`) || row[column.key] %>
+                    <% } else if (column.key === "value_type") { %>
+                      <%= t(`value_type_${String(row[column.key] || "").toLowerCase()}`) || row[column.key] %>
+                    <% } else if (column.key === "amount_type") { %>
+                      <%= t(`amount_type_${String(row[column.key] || "").toLowerCase()}`) || row[column.key] %>
+                    <% } else if (column.key === "frequency") { %>
+                      <%= t(`frequency_${String(row[column.key] || "").toLowerCase()}`) || row[column.key] %>
+                    <% } else if (column.key === "rate_type") { %>
+                      <%= t(`rate_type_${String(row[column.key] || "").toLowerCase()}`) || row[column.key] %>
+                    <% } else if (column.key === "reverse_on_returns" || column.key === "taxable" || column.key === "applies_to_all_labours") { %>
+                      <span class="inline-flex items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                        <%= row[column.key] ? t("yes") : t("no") %>
+                      </span>
+                    <% } else if (column.key === "production_category") { %>
+                      <span class="inline-flex items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                        <%= t(`production_category_${row[column.key]}`) || row[column.key] %>
+                      </span>
+                    <% } else { %>
+                      <%= row[column.key] === null || row[column.key] === undefined || row[column.key] === "" ? t("none") : row[column.key] %>
+                    <% } %>
+                  </td>
+                <% }) %>
+                <td class="px-4 py-3">
+                  <%- include("../base/partials/table-actions", {
+                    t,
+                    row,
+                    basePath,
+                    editFields: page.fields.map(function(field) { return field.name; }),
+                    withMenu: true,
+                    canEdit: (page.scopeKey === "hr_payroll.labour_rates") ? (canEdit && !!row.sku_id) : canEdit,
+                    canDelete,
+                    canHardDelete
+                  }) %>
+                </td>
+              </tr>
+            <% }) %>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+    <%- include("../base/partials/table-footer", { t }) %>
+  </section>
+</div>
+
+<%- include("../base/partials/modal-shell", {
+  t,
+  modalOpen,
+  modalMode,
+  modalTitle: t("add") + " " + t(page.titleKey),
+  modalDescription: t("enter_details_save"),
+  formAction: basePath,
+  formClass: "flex-1 space-y-5 overflow-y-auto px-6 py-5",
+  modalContainerClass: page.scopeKey === "hr_payroll.commissions" || page.scopeKey === "hr_payroll.labour_rates"
+    ? "w-full max-w-5xl max-h-[90vh] rounded-2xl border border-slate-200 bg-white shadow-xl flex flex-col"
+    : "w-full max-w-lg max-h-[90vh] rounded-2xl border border-slate-200 bg-white shadow-xl flex flex-col",
+  modalHeaderClass: "sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4",
+  translateMode: page.translateMode || "transliterate",
+  modalError: modalOpen ? error : null,
+  modalFieldErrors: modalOpen ? (fieldErrors || {}) : {},
+  modalValues: modalOpen ? values : null,
+  csrfToken,
+  bodyPartial: "../../hr_payroll/form-fields.ejs"
+}) %>
+
+
+<%- include("../base/partials/confirm-modal", { t, csrfToken }) %>
+<%- include("../base/partials/basic-info-utils", { t, page, basePath, modalOpen, modalMode }) %>
+<script>
+  (function () {
+    const form = document.querySelector("[data-modal-form]");
+    if (!form) return;
+
+    const getControllerValue = (name) => {
+      const input = form.querySelector(`[data-field="${name}"]`);
+      if (!input) return "";
+      if (input.type === "checkbox") return input.checked ? "true" : "false";
+      return (input.value || "").toString();
+    };
+
+    const refreshConditionalFields = () => {
+      const nodes = form.querySelectorAll("[data-show-when-field], [data-show-when-not-field]");
+      nodes.forEach((node) => {
+        let shouldShow = true;
+        const whenField = node.getAttribute("data-show-when-field");
+        const whenValues = (node.getAttribute("data-show-when-values") || "")
+          .split(",")
+          .map((v) => v.trim())
+          .filter(Boolean);
+        if (whenField && whenValues.length) {
+          const current = getControllerValue(whenField);
+          shouldShow = whenValues.includes(current);
+        }
+
+        const whenNotField = node.getAttribute("data-show-when-not-field");
+        const whenNotValues = (node.getAttribute("data-show-when-not-values") || "")
+          .split(",")
+          .map((v) => v.trim())
+          .filter(Boolean);
+        if (whenNotField && whenNotValues.length) {
+          const current = getControllerValue(whenNotField);
+          if (whenNotValues.includes(current)) shouldShow = false;
+        }
+
+        const controls = node.querySelectorAll("[data-field]");
+        if (shouldShow) {
+          node.classList.remove("hidden");
+          controls.forEach((ctrl) => {
+            ctrl.disabled = false;
+            if (ctrl.hasAttribute("data-required")) ctrl.setAttribute("required", "required");
+          });
+        } else {
+          node.classList.add("hidden");
+          controls.forEach((ctrl) => {
+            ctrl.disabled = true;
+            ctrl.removeAttribute("required");
+            if (ctrl.type === "checkbox") {
+              if (ctrl.checked) {
+                ctrl.checked = false;
+                ctrl.dispatchEvent(new Event("change", { bubbles: true }));
+              }
+            } else if (ctrl.tagName === "SELECT") {
+              if (String(ctrl.value || "") !== "") {
+                ctrl.value = "";
+                ctrl.dispatchEvent(new Event("change", { bubbles: true }));
+              }
+            } else if (String(ctrl.value || "") !== "") {
+              ctrl.value = "";
+            }
+          });
+        }
+      });
+    };
+
+    form.addEventListener("change", (e) => {
+      if (e.target && e.target.matches("[data-field]")) refreshConditionalFields();
+    });
+    document.addEventListener("modal:opened", refreshConditionalFields);
+    setTimeout(refreshConditionalFields, 0);
+  })();
+</script>
+<% if (page.scopeKey === "hr_payroll.commissions") { %>
+<script>
+  (function () {
+    const form = document.querySelector("[data-modal-form]");
+    const modal = document.querySelector("[data-modal]");
+    const modalError = document.querySelector("[data-modal-error]");
+    const modalNotice = document.querySelector("[data-modal-notice]");
+    const panel = document.querySelector("[data-commission-bulk-panel]");
+    const summary = document.querySelector("[data-commission-bulk-summary]");
+    const tbody = document.querySelector("[data-commission-bulk-body]");
+    if (!form || !modal || !panel || !summary || !tbody) return;
+
+    const basePath = "<%= basePath %>";
+    const csrfToken = "<%= csrfToken %>";
+    const tNoEntries = "<%= t('no_entries') %>";
+    const tSelectTarget = "<%= t('select_target_to_preview_impact') %>";
+    const tAffected = "<%= t('affected_skus') %>";
+    const tNoPrevious = "<%= t('none') %>";
+    const tInvalidApplyOn = "<%= t('error_group_subgroup_only_for_bulk_commission') %>";
+    const tSaved = "<%= t('success_bulk_commission_saved') %>";
+    const tLoading = "<%= t('loading') %>";
+    const tLoadFailed = "<%= t('load_failed') %>";
+    const tNetworkError = "<%= t('network_error') %>";
+    const tUnableSave = "<%= t('error_unable_save') %>";
+    const tRequiredFields = "<%= t('error_required_fields') %>";
+    const tSelectCommissionBasis = "<%= t('error_select_commission_basis') %>";
+    const tViewPendingApproval = "<%= t('view_pending_approval') %>";
+    const tSaveSummaryTemplate = "<%= t('success_bulk_commission_saved_counts') %>";
+
+    const fields = {
+      employeeId: form.querySelector('[data-field="employee_id"]'),
+      applyOn: form.querySelector('[data-field="apply_on"]'),
+      subgroupId: form.querySelector('[data-field="subgroup_id"]'),
+      groupId: form.querySelector('[data-field="group_id"]'),
+      commissionBasis: form.querySelector('[data-field="commission_basis"]'),
+      value: form.querySelector('[data-field="value"]'),
+      reverseOnReturns: form.querySelector('[data-field="reverse_on_returns"]'),
+      status: form.querySelector('[data-field="status"]'),
+    };
+
+    const state = {
+      rows: [],
+      requestSeq: 0,
+      debounceTimer: null,
+      loading: false,
+    };
+
+    const getErrorMessage = (payload, fallback) => {
+      if (!payload || typeof payload !== "object") return fallback;
+      const message = payload.message || payload.error || payload.detail;
+      if (typeof message === "string" && message.trim()) return message.trim();
+      return fallback;
+    };
+
+    const hideModalNotice = () => {
+      if (!modalNotice) return;
+      modalNotice.textContent = "";
+      modalNotice.hidden = true;
+    };
+
+    const showModalError = (message) => {
+      hideModalNotice();
+      if (!modalError) return;
+      modalError.textContent = message;
+      modalError.hidden = false;
+    };
+
+    const hideModalError = () => {
+      if (!modalError) return;
+      modalError.textContent = "";
+      modalError.hidden = true;
+    };
+
+    const showModalNotice = ({ message, linkHref = "", linkLabel = "" }) => {
+      if (!modalNotice) return;
+      hideModalError();
+      modalNotice.textContent = "";
+      const textNode = document.createTextNode(message || "");
+      modalNotice.appendChild(textNode);
+      if (linkHref && linkLabel) {
+        const spacer = document.createTextNode(" ");
+        modalNotice.appendChild(spacer);
+        const anchor = document.createElement("a");
+        anchor.href = linkHref;
+        anchor.className = "font-semibold underline";
+        anchor.textContent = linkLabel;
+        modalNotice.appendChild(anchor);
+      }
+      modalNotice.hidden = false;
+    };
+
+    const formatSaveSummary = (created, updated) =>
+      tSaveSummaryTemplate
+        .replace("{created}", String(created))
+        .replace("{updated}", String(updated));
+
+    const resetSelections = () => {
+      if (fields.employeeId) {
+        fields.employeeId.value = "";
+        fields.employeeId.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (fields.applyOn) {
+        fields.applyOn.value = "";
+        fields.applyOn.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (fields.subgroupId) {
+        fields.subgroupId.value = "";
+        fields.subgroupId.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (fields.groupId) {
+        fields.groupId.value = "";
+        fields.groupId.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (fields.commissionBasis) {
+        fields.commissionBasis.value = "";
+        fields.commissionBasis.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (fields.value) fields.value.value = "";
+      if (fields.reverseOnReturns) fields.reverseOnReturns.checked = true;
+      if (fields.status) {
+        fields.status.value = "active";
+        fields.status.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      hideModalError();
+      hideModalNotice();
+      clearRows(tSelectTarget);
+      setPanelVisibility();
+    };
+
+    const normalizeApplyOn = () => String(fields.applyOn?.value || "").trim().toUpperCase();
+    const isBulkMode = () => {
+      const applyOn = normalizeApplyOn();
+      return applyOn === "SUBGROUP" || applyOn === "GROUP";
+    };
+
+    const setPanelVisibility = () => {
+      if (modal.dataset.mode !== "create" || !isBulkMode()) {
+        panel.classList.add("hidden");
+        return;
+      }
+      panel.classList.remove("hidden");
+    };
+
+    const renderEmpty = (message) => {
+      tbody.innerHTML = `<tr><td class="px-2 py-2 text-slate-500" colspan="4">${message || tNoEntries}</td></tr>`;
+    };
+
+    const renderRows = () => {
+      if (!state.rows.length) {
+        renderEmpty(tNoEntries);
+        summary.textContent = "0";
+        return;
+      }
+      tbody.innerHTML = state.rows
+        .map((row, idx) => {
+          const previous = row.previous_rate == null ? tNoPrevious : Number(row.previous_rate).toFixed(2);
+          const newRate = row.new_rate == null ? "" : Number(row.new_rate).toFixed(2);
+          return `
+            <tr>
+              <td class="px-2 py-1.5 text-slate-700">${row.sku_code || ""}</td>
+              <td class="px-2 py-1.5 text-slate-700">${row.item_name || ""}</td>
+              <td class="px-2 py-1.5 text-slate-700">${previous}</td>
+              <td class="px-2 py-1.5 text-slate-700">
+                <input
+                  class="w-28 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-accent/30"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  data-commission-row-rate
+                  data-commission-row-index="${idx}"
+                  value="${newRate}"
+                />
+              </td>
+            </tr>
+          `;
+        })
+        .join("");
+      summary.textContent = String(state.rows.length);
+    };
+
+    const applyHeaderRateToRows = () => {
+      const headerRate = String(fields.value?.value || "").trim();
+      if (!state.rows.length) return;
+      state.rows.forEach((row) => {
+        row.new_rate = headerRate;
+      });
+      const inputs = tbody.querySelectorAll("[data-commission-row-rate]");
+      inputs.forEach((input) => {
+        input.value = headerRate;
+      });
+    };
+
+    const clearRows = (message = tSelectTarget) => {
+      state.rows = [];
+      renderEmpty(message);
+      summary.textContent = "0";
+    };
+
+    const getPreviewQuery = () => {
+      const applyOn = normalizeApplyOn();
+      const employeeId = String(fields.employeeId?.value || "").trim();
+      const commissionBasis = String(fields.commissionBasis?.value || "").trim();
+      const subgroupId = String(fields.subgroupId?.value || "").trim();
+      const groupId = String(fields.groupId?.value || "").trim();
+
+      if (!applyOn) return null;
+      if (applyOn === "SUBGROUP" && !subgroupId) return null;
+      if (applyOn === "GROUP" && !groupId) return null;
+
+      const params = new URLSearchParams({
+        apply_on: applyOn,
+      });
+      if (employeeId) params.set("employee_id", employeeId);
+      if (commissionBasis) params.set("commission_basis", commissionBasis);
+      if (subgroupId) params.set("subgroup_id", subgroupId);
+      if (groupId) params.set("group_id", groupId);
+      return params;
+    };
+
+    const loadPreview = async () => {
+      setPanelVisibility();
+      if (!isBulkMode()) {
+        clearRows(tSelectTarget);
+        return;
+      }
+      hideModalError();
+      hideModalNotice();
+
+      const commissionBasis = String(fields.commissionBasis?.value || "").trim();
+      if (!commissionBasis) {
+        clearRows(tSelectCommissionBasis);
+        return;
+      }
+
+      const params = getPreviewQuery();
+      if (!params) {
+        clearRows(tSelectTarget);
+        return;
+      }
+
+      const currentSeq = ++state.requestSeq;
+      state.loading = true;
+      if (!state.rows.length) {
+        renderEmpty(tLoading);
+      }
+      summary.textContent = tLoading;
+
+      try {
+        const response = await fetch(`${basePath}/bulk-preview?${params.toString()}`, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          credentials: "same-origin",
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (currentSeq !== state.requestSeq) return;
+        state.loading = false;
+        if (response.status === 401) {
+          window.location.href = "/auth/login";
+          return;
+        }
+        if (!response.ok) {
+          clearRows(getErrorMessage(payload, tLoadFailed));
+          return;
+        }
+        state.rows = Array.isArray(payload.rows) ? payload.rows : [];
+        applyHeaderRateToRows();
+        renderRows();
+      } catch (err) {
+        state.loading = false;
+        clearRows(tNetworkError);
+      }
+    };
+
+    const schedulePreview = () => {
+      if (state.debounceTimer) window.clearTimeout(state.debounceTimer);
+      state.debounceTimer = window.setTimeout(loadPreview, 200);
+    };
+
+    form.addEventListener("input", (event) => {
+      const target = event.target;
+      if (!target) return;
+      if (target.hasAttribute("data-commission-row-rate")) {
+        const index = Number(target.getAttribute("data-commission-row-index"));
+        if (!Number.isInteger(index) || !state.rows[index]) return;
+        state.rows[index].new_rate = target.value;
+        return;
+      }
+      if (target.matches("[data-field='value']")) {
+        applyHeaderRateToRows();
+      }
+    });
+
+    form.addEventListener(
+      "wheel",
+      (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        if (target.type !== "number") return;
+        if (document.activeElement !== target) return;
+        event.preventDefault();
+      },
+      { passive: false },
+    );
+
+    form.addEventListener("change", (event) => {
+      const target = event.target;
+      if (!target) return;
+      if (target.matches("[data-field='employee_id'], [data-field='apply_on'], [data-field='subgroup_id'], [data-field='group_id'], [data-field='commission_basis']")) {
+        schedulePreview();
+      }
+    });
+
+    document.addEventListener("modal:opened", () => {
+      state.requestSeq += 1;
+      setPanelVisibility();
+      schedulePreview();
+    });
+
+    const modalObserver = new MutationObserver(() => {
+      if (modal.classList.contains("hidden")) {
+        resetSelections();
+      }
+    });
+    modalObserver.observe(modal, { attributes: true, attributeFilter: ["class"] });
+
+    form.addEventListener(
+      "submit",
+      async (event) => {
+        if (modal.dataset.mode !== "create") return;
+        if (!isBulkMode()) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        hideModalError();
+        hideModalNotice();
+
+        const commissionBasis = String(fields.commissionBasis?.value || "").trim();
+        if (!commissionBasis) {
+          showModalError(tSelectCommissionBasis);
+          return;
+        }
+
+        if (!state.rows.length) {
+          showModalError(tSelectTarget);
+          return;
+        }
+
+        const payload = {
+          _csrf: csrfToken,
+          employee_id: fields.employeeId?.value || "",
+          apply_on: normalizeApplyOn(),
+          subgroup_id: fields.subgroupId?.value || null,
+          group_id: fields.groupId?.value || null,
+          commission_basis: fields.commissionBasis?.value || "",
+          reverse_on_returns: Boolean(fields.reverseOnReturns?.checked),
+          status: fields.status?.value || "active",
+          rows: state.rows.map((row) => ({
+            sku_id: row.sku_id,
+            new_rate: row.new_rate,
+          })),
+        };
+
+        if (!payload.employee_id) {
+          showModalError(tRequiredFields);
+          return;
+        }
+        if (payload.apply_on !== "SUBGROUP" && payload.apply_on !== "GROUP") {
+          showModalError(tInvalidApplyOn);
+          return;
+        }
+
+        try {
+          const response = await fetch(`${basePath}/bulk-upsert`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-csrf-token": csrfToken,
+              Accept: "application/json",
+            },
+            credentials: "same-origin",
+            body: JSON.stringify(payload),
+          });
+
+          const result = await response.json().catch(() => ({}));
+          if (response.status === 401) {
+            window.location.href = "/auth/login";
+            return;
+          }
+          if (!response.ok) {
+            showModalError(getErrorMessage(result, tUnableSave));
+            return;
+          }
+
+          if (result.queued) {
+            showModalNotice({
+              message: result.message || tSaved,
+              linkHref: result.approvals_url || "",
+              linkLabel: result.approvals_url ? tViewPendingApproval : "",
+            });
+            return;
+          }
+
+          const createdCount = Number(result.created || 0);
+          const updatedCount = Number(result.updated || 0);
+          showModalNotice({
+            message: `${result.message || tSaved} ${formatSaveSummary(createdCount, updatedCount)}`,
+          });
+          window.setTimeout(() => {
+            window.location.href = basePath;
+          }, 1200);
+        } catch (err) {
+          showModalError(tNetworkError);
+        }
+      },
+      true,
+    );
+
+    setPanelVisibility();
+    clearRows(tSelectTarget);
+  })();
+</script>
+<% } %>
+
+<% if (page.scopeKey === "hr_payroll.labour_rates") { %>
+<script>
+  (function () {
+    const form = document.querySelector("[data-modal-form]");
+    const modal = document.querySelector("[data-modal]");
+    const modalError = document.querySelector("[data-modal-error]");
+    const modalNotice = document.querySelector("[data-modal-notice]");
+    const labourScopePanel = document.querySelector("[data-labour-rate-labour-scope-panel]");
+    const labourScopeSummary = document.querySelector("[data-labour-rate-labour-scope-summary]");
+    const labourScopeList = document.querySelector("[data-labour-rate-labour-scope-list]");
+    const labourScopeBody = document.querySelector("[data-labour-rate-scope-body]");
+    const labourScopeToggle = document.querySelector("[data-labour-rate-scope-toggle]");
+    const panel = document.querySelector("[data-labour-rate-bulk-panel]");
+    const summary = document.querySelector("[data-labour-rate-bulk-summary]");
+    const tbody = document.querySelector("[data-labour-rate-bulk-body]");
+    const skuBody = document.querySelector("[data-labour-rate-skus-body]");
+    const skuToggle = document.querySelector("[data-labour-rate-skus-toggle]");
+    if (!form || !modal || !panel || !summary || !tbody || !labourScopePanel || !labourScopeSummary || !labourScopeList || !labourScopeBody || !labourScopeToggle || !skuBody || !skuToggle) return;
+
+    const basePath = "<%= basePath %>";
+    const csrfToken = "<%= csrfToken %>";
+    const tNoEntries = "<%= t('no_entries') %>";
+    const tSelectTarget = "<%= t('select_target_to_preview_impact') %>";
+    const tAffected = "<%= t('affected_skus') %>";
+    const tNoPrevious = "<%= t('none') %>";
+    const tSaved = "<%= t('success_bulk_labour_rate_saved') %>";
+    const tLoading = "<%= t('loading') %>";
+    const tLoadFailed = "<%= t('load_failed') %>";
+    const tNetworkError = "<%= t('network_error') %>";
+    const tUnableSave = "<%= t('error_unable_save') %>";
+    const tRequiredFields = "<%= t('error_required_fields') %>";
+    const tSelectLabour = "<%= t('error_select_labour') %>";
+    const tSelectDepartment = "<%= t('error_select_department') %>";
+    const tSelectSku = "<%= t('error_select_sku') %>";
+    const tSelectSubgroup = "<%= t('error_select_subgroup') %>";
+    const tSelectGroup = "<%= t('error_select_group') %>";
+    const tSelectArticleType = "<%= t('error_select_article_type') %>";
+    const tSelectRateType = "<%= t('error_select_rate_type') %>";
+    const tViewPendingApproval = "<%= t('view_pending_approval') %>";
+    const tSaveSummaryTemplate = "<%= t('success_bulk_labour_rate_saved_counts') %>";
+    const tAppliesToLabours = "<%= t('applies_to_labours') %>";
+    const tNoLaboursInDepartment = "<%= t('no_labours_found_for_department') %>";
+    const tSelect = "<%= t('select') %>";
+    const tExpand = "<%= t('expand') %>";
+    const tCollapse = "<%= t('collapse') %>";
+    const departmentOptionsPath = `${basePath}/department-options`;
+    const resolvedLaboursPath = `${basePath}/resolved-labours`;
+    const skuOptionsPath = `${basePath}/sku-options`;
+
+    const fields = {
+      labourId: form.querySelector('[data-field="labour_id"]'),
+      deptId: form.querySelector('[data-field="dept_id"]'),
+      applyOn: form.querySelector('[data-field="apply_on"]'),
+      skuId: form.querySelector('[data-field="sku_id"]'),
+      subgroupId: form.querySelector('[data-field="subgroup_id"]'),
+      groupId: form.querySelector('[data-field="group_id"]'),
+      articleType: form.querySelector('[data-field="article_type"]'),
+      rateType: form.querySelector('[data-field="rate_type"]'),
+      rateValue: form.querySelector('[data-field="rate_value"]'),
+    };
+    const fieldsByName = {
+      labour_id: fields.labourId,
+      dept_id: fields.deptId,
+      apply_on: fields.applyOn,
+      sku_id: fields.skuId,
+      subgroup_id: fields.subgroupId,
+      group_id: fields.groupId,
+      article_type: fields.articleType,
+      rate_type: fields.rateType,
+      rate_value: fields.rateValue,
+    };
+
+    const state = {
+      rows: [],
+      requestSeq: 0,
+      deptOptionsSeq: 0,
+      skuOptionsSeq: 0,
+      debounceTimer: null,
+      loading: false,
+      lockedEditValues: {},
+    };
+    const editLockedFields = new Set(["labour_id", "dept_id", "apply_on", "sku_id", "subgroup_id", "group_id", "article_type"]);
+    const editVisibleFields = new Set(["sku_id", "rate_type", "rate_value"]);
+    let skuReadonlyText = null;
+
+    const hideLabourScope = () => {
+      labourScopePanel.classList.add("hidden");
+      labourScopeSummary.textContent = tSelectTarget;
+      labourScopeList.innerHTML = "";
+    };
+
+    const setCollapsedState = (toggleEl, bodyEl, collapsed) => {
+      toggleEl.dataset.collapsed = collapsed ? "true" : "false";
+      toggleEl.textContent = collapsed ? tExpand : tCollapse;
+      bodyEl.classList.toggle("hidden", collapsed);
+    };
+
+    const normalizeApplyOn = () => String(fields.applyOn?.value || "").trim().toUpperCase();
+    const isBulkApplyOn = () => {
+      const applyOn = normalizeApplyOn();
+      return applyOn === "SUBGROUP" || applyOn === "GROUP";
+    };
+
+    const renderLabourScope = (rows) => {
+      const safeRows = Array.isArray(rows) ? rows : [];
+      if (!safeRows.length) {
+        labourScopePanel.classList.remove("hidden");
+        labourScopeSummary.innerHTML = `<span class="text-red-600">0</span>`;
+        labourScopeList.innerHTML = "";
+        return;
+      }
+      labourScopePanel.classList.remove("hidden");
+      labourScopeSummary.textContent = String(safeRows.length);
+      labourScopeList.innerHTML = safeRows
+        .map(
+          (row) =>
+            `<span class="inline-flex max-w-full items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-700">${row.labour_name || row.labour_id}</span>`,
+        )
+        .join("");
+    };
+
+    const loadResolvedLabours = async () => {
+      const labourIdRaw = String(fields.labourId?.value || "").trim();
+      const deptIdRaw = String(fields.deptId?.value || "").trim();
+      if (labourIdRaw.toUpperCase() !== "ALL") {
+        hideLabourScope();
+        return;
+      }
+      if (!deptIdRaw) {
+        renderLabourScope([]);
+        return;
+      }
+      try {
+        const params = new URLSearchParams({
+          labour_id: labourIdRaw,
+          dept_id: deptIdRaw,
+        });
+        const response = await fetch(`${resolvedLaboursPath}?${params.toString()}`, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          credentials: "same-origin",
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (response.status === 401) {
+          window.location.href = "/auth/login";
+          return;
+        }
+        if (!response.ok) {
+          renderLabourScope([]);
+          return;
+        }
+        renderLabourScope(payload.rows);
+      } catch (err) {
+        renderLabourScope([]);
+      }
+    };
+
+    labourScopeToggle.addEventListener("click", () => {
+      const isCollapsed = labourScopeToggle.dataset.collapsed === "true";
+      setCollapsedState(labourScopeToggle, labourScopeBody, !isCollapsed);
+    });
+
+    skuToggle.addEventListener("click", () => {
+      const isCollapsed = skuToggle.dataset.collapsed === "true";
+      setCollapsedState(skuToggle, skuBody, !isCollapsed);
+    });
+
+    const resetDepartmentOptions = () => {
+      if (!fields.deptId) return;
+      fields.deptId.innerHTML = `<option value="">${tSelect}</option>`;
+      fields.deptId.value = "";
+      fields.deptId.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+
+    const applyDepartmentOptions = (options, selectedValue = "") => {
+      if (!fields.deptId) return;
+      const safeOptions = Array.isArray(options) ? options : [];
+      const optionHtml = safeOptions
+        .map((option) => `<option value="${String(option.value)}">${String(option.label || option.value)}</option>`)
+        .join("");
+      fields.deptId.innerHTML = `<option value="">${tSelect}</option>${optionHtml}`;
+      if (selectedValue && safeOptions.some((opt) => String(opt.value) === String(selectedValue))) {
+        fields.deptId.value = String(selectedValue);
+      } else {
+        fields.deptId.value = "";
+      }
+    };
+
+    const syncDepartmentOptions = async ({ preserveSelection = true } = {}) => {
+      const labourId = String(fields.labourId?.value || "").trim();
+      const currentDept = preserveSelection ? String(fields.deptId?.value || "").trim() : "";
+      const requestSeq = ++state.deptOptionsSeq;
+      if (!labourId) {
+        resetDepartmentOptions();
+        return;
+      }
+      try {
+        const params = new URLSearchParams({ labour_id: labourId });
+        const response = await fetch(`${departmentOptionsPath}?${params.toString()}`, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          credentials: "same-origin",
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (response.status === 401) {
+          window.location.href = "/auth/login";
+          return;
+        }
+        if (requestSeq !== state.deptOptionsSeq) return;
+        if (modal.classList.contains("hidden")) return;
+        if (String(fields.labourId?.value || "").trim() !== labourId) return;
+        if (!response.ok) {
+          resetDepartmentOptions();
+          return;
+        }
+        applyDepartmentOptions(payload.options, currentDept);
+      } catch (err) {
+        resetDepartmentOptions();
+      }
+    };
+
+    const resetSkuOptions = () => {
+      if (!fields.skuId) return;
+      fields.skuId.innerHTML = `<option value="">${tSelect}</option>`;
+      fields.skuId.value = "";
+      fields.skuId.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+
+    const applySkuOptions = (options, selectedValue = "", selectedLabel = "") => {
+      if (!fields.skuId) return;
+      const safeOptions = Array.isArray(options) ? options : [];
+      const exists = selectedValue && safeOptions.some((opt) => String(opt.value) === String(selectedValue));
+      const allOptions = [...safeOptions];
+      if (selectedValue && !exists) {
+        allOptions.unshift({
+          value: selectedValue,
+          label: selectedLabel || selectedValue,
+        });
+      }
+      const optionHtml = allOptions
+        .map((option) => `<option value="${String(option.value)}">${String(option.label || option.value)}</option>`)
+        .join("");
+      fields.skuId.innerHTML = `<option value="">${tSelect}</option>${optionHtml}`;
+      if (selectedValue && allOptions.some((opt) => String(opt.value) === String(selectedValue))) {
+        fields.skuId.value = String(selectedValue);
+      } else {
+        fields.skuId.value = "";
+      }
+      fields.skuId.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+
+    const syncSkuOptions = async ({ preserveSelection = true, selectedValue = "", selectedLabel = "" } = {}) => {
+      const applyOn = String(fields.applyOn?.value || "").trim().toUpperCase();
+      const articleType = String(fields.articleType?.value || "").trim().toUpperCase();
+      const requestSeq = ++state.skuOptionsSeq;
+      const currentSku = preserveSelection ? String(fields.skuId?.value || "").trim() : "";
+      const targetSku = selectedValue || currentSku;
+      if (applyOn !== "SKU" || !articleType) {
+        resetSkuOptions();
+        return;
+      }
+      try {
+        const params = new URLSearchParams({ article_type: articleType });
+        const response = await fetch(`${skuOptionsPath}?${params.toString()}`, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          credentials: "same-origin",
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (response.status === 401) {
+          window.location.href = "/auth/login";
+          return;
+        }
+        if (requestSeq !== state.skuOptionsSeq) return;
+        if (modal.classList.contains("hidden")) return;
+        if (!response.ok) {
+          resetSkuOptions();
+          return;
+        }
+        applySkuOptions(payload.options, targetSku, selectedLabel);
+      } catch (err) {
+        resetSkuOptions();
+      }
+    };
+
+    const getErrorMessage = (payload, fallback) => {
+      if (!payload || typeof payload !== "object") return fallback;
+      const message = payload.message || payload.error || payload.detail;
+      if (typeof message === "string" && message.trim()) return message.trim();
+      return fallback;
+    };
+
+    const setFieldLocked = (fieldEl, locked) => {
+      if (!fieldEl) return;
+      fieldEl.classList.toggle("bg-slate-100", locked);
+      fieldEl.classList.toggle("text-slate-500", locked);
+      fieldEl.classList.toggle("cursor-not-allowed", locked);
+      if (locked) {
+        fieldEl.setAttribute("aria-readonly", "true");
+        fieldEl.tabIndex = -1;
+      } else {
+        fieldEl.removeAttribute("aria-readonly");
+        fieldEl.removeAttribute("tabindex");
+      }
+    };
+
+    const applyEditLocks = (mode) => {
+      const isEdit = mode === "edit";
+      Object.entries(fieldsByName).forEach(([name, fieldEl]) => {
+        if (!fieldEl) return;
+        setFieldLocked(fieldEl, isEdit && editLockedFields.has(name));
+      });
+      if (isEdit) {
+        state.lockedEditValues = {};
+        editLockedFields.forEach((name) => {
+          const fieldEl = fieldsByName[name];
+          if (!fieldEl) return;
+          state.lockedEditValues[name] = String(fieldEl.value || "");
+        });
+      } else {
+        state.lockedEditValues = {};
+      }
+    };
+
+    const applyEditVisibility = (mode) => {
+      const isEdit = mode === "edit";
+      Object.keys(fieldsByName).forEach((name) => {
+        const wrapper = form.querySelector(`[data-field-wrapper="${name}"]`);
+        if (!wrapper) return;
+        if (!isEdit) {
+          wrapper.classList.remove("hidden");
+          return;
+        }
+        wrapper.classList.toggle("hidden", !editVisibleFields.has(name));
+      });
+
+      const skuWrapper = form.querySelector('[data-field-wrapper="sku_id"]');
+      const skuSelect = fieldsByName.sku_id;
+      if (skuWrapper && skuSelect) {
+        const searchableWrapper = skuSelect.closest("[data-searchable-wrapper]");
+        if (!skuReadonlyText) {
+          skuReadonlyText = document.createElement("div");
+          skuReadonlyText.className =
+            "mt-2 w-full rounded-xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm text-slate-700";
+          skuReadonlyText.setAttribute("data-sku-readonly", "true");
+          skuWrapper.appendChild(skuReadonlyText);
+        }
+        if (isEdit) {
+          const selectedOption = skuSelect.options[skuSelect.selectedIndex];
+          const label = selectedOption && selectedOption.textContent ? selectedOption.textContent.trim() : "";
+          skuReadonlyText.textContent = label || String(skuSelect.value || "");
+          skuReadonlyText.classList.remove("hidden");
+          skuSelect.classList.add("hidden");
+          skuSelect.disabled = true;
+          if (searchableWrapper) searchableWrapper.classList.add("hidden");
+        } else {
+          skuReadonlyText.classList.add("hidden");
+          skuSelect.classList.remove("hidden");
+          skuSelect.disabled = false;
+          if (searchableWrapper) searchableWrapper.classList.remove("hidden");
+        }
+      }
+    };
+
+    const hideModalNotice = () => {
+      if (!modalNotice) return;
+      modalNotice.textContent = "";
+      modalNotice.hidden = true;
+    };
+
+    const showModalError = (message) => {
+      hideModalNotice();
+      if (!modalError) return;
+      modalError.textContent = message;
+      modalError.hidden = false;
+    };
+
+    const hideModalError = () => {
+      if (!modalError) return;
+      modalError.textContent = "";
+      modalError.hidden = true;
+    };
+
+    const showModalNotice = ({ message, linkHref = "", linkLabel = "" }) => {
+      if (!modalNotice) return;
+      hideModalError();
+      modalNotice.textContent = "";
+      const textNode = document.createTextNode(message || "");
+      modalNotice.appendChild(textNode);
+      if (linkHref && linkLabel) {
+        modalNotice.appendChild(document.createTextNode(" "));
+        const anchor = document.createElement("a");
+        anchor.href = linkHref;
+        anchor.className = "font-semibold underline";
+        anchor.textContent = linkLabel;
+        modalNotice.appendChild(anchor);
+      }
+      modalNotice.hidden = false;
+    };
+
+    const formatSaveSummary = (created, updated) =>
+      tSaveSummaryTemplate
+        .replace("{created}", String(created))
+        .replace("{updated}", String(updated));
+
+    const setPanelVisibility = () => {
+      if (modal.dataset.mode !== "create" || !isBulkApplyOn()) {
+        panel.classList.add("hidden");
+        return;
+      }
+      panel.classList.remove("hidden");
+    };
+
+    const renderEmpty = (message) => {
+      tbody.innerHTML = `<tr><td class="px-2 py-2 text-slate-500" colspan="4">${message || tNoEntries}</td></tr>`;
+    };
+
+    const renderRows = () => {
+      if (!state.rows.length) {
+        renderEmpty(tNoEntries);
+        summary.textContent = "0";
+        return;
+      }
+      tbody.innerHTML = state.rows
+        .map((row, idx) => {
+          const previous = row.previous_rate == null ? tNoPrevious : Number(row.previous_rate).toFixed(2);
+          const newRate = row.new_rate == null ? "" : Number(row.new_rate).toFixed(2);
+          return `
+            <tr>
+              <td class="px-2 py-1.5 text-slate-700">${row.sku_code || ""}</td>
+              <td class="px-2 py-1.5 text-slate-700">${row.item_name || ""}</td>
+              <td class="px-2 py-1.5 text-slate-700">${previous}</td>
+              <td class="px-2 py-1.5 text-slate-700">
+                <input
+                  class="w-28 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-accent/30"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  data-labour-rate-row-rate
+                  data-labour-rate-row-index="${idx}"
+                  value="${newRate}"
+                />
+              </td>
+            </tr>
+          `;
+        })
+        .join("");
+      summary.textContent = String(state.rows.length);
+    };
+
+    const applyHeaderRateToRows = () => {
+      const headerRate = String(fields.rateValue?.value || "").trim();
+      if (!state.rows.length) return;
+      state.rows.forEach((row) => {
+        row.new_rate = headerRate;
+      });
+      const inputs = tbody.querySelectorAll("[data-labour-rate-row-rate]");
+      inputs.forEach((input) => {
+        input.value = headerRate;
+      });
+    };
+
+    const clearRows = (message = tSelectTarget) => {
+      state.rows = [];
+      renderEmpty(message);
+      summary.textContent = "0";
+    };
+
+    const getPreviewQuery = () => {
+      const labourId = String(fields.labourId?.value || "").trim();
+      const deptId = String(fields.deptId?.value || "").trim();
+      const applyOn = String(fields.applyOn?.value || "").trim().toUpperCase();
+      const skuId = String(fields.skuId?.value || "").trim();
+      const subgroupId = String(fields.subgroupId?.value || "").trim();
+      const groupId = String(fields.groupId?.value || "").trim();
+      const articleType = String(fields.articleType?.value || "").trim();
+      const rateType = String(fields.rateType?.value || "").trim();
+
+      if (!labourId || !deptId || !applyOn || !articleType || !rateType) return null;
+      if (applyOn === "SKU" && !skuId) return null;
+      if (applyOn === "SUBGROUP" && !subgroupId) return null;
+      if (applyOn === "GROUP" && !groupId) return null;
+
+      const params = new URLSearchParams({
+        labour_id: labourId,
+        dept_id: deptId,
+        apply_on: applyOn,
+        article_type: articleType,
+        rate_type: rateType,
+      });
+      if (skuId) params.set("sku_id", skuId);
+      if (subgroupId) params.set("subgroup_id", subgroupId);
+      if (groupId) params.set("group_id", groupId);
+      return params;
+    };
+
+    const loadPreview = async () => {
+      setPanelVisibility();
+      if (modal.dataset.mode !== "create") {
+        clearRows(tSelectTarget);
+        return;
+      }
+      hideModalError();
+      hideModalNotice();
+
+      if (!fields.labourId?.value) {
+        clearRows(tSelectLabour);
+        return;
+      }
+      if (!fields.deptId?.value) {
+        clearRows(tSelectDepartment);
+        return;
+      }
+      const applyOn = String(fields.applyOn?.value || "").trim().toUpperCase();
+      if (!applyOn) {
+        clearRows(tSelectTarget);
+        return;
+      }
+      if (applyOn === "SKU" && !fields.skuId?.value) {
+        clearRows(tSelectSku);
+        return;
+      }
+      if (applyOn === "SUBGROUP" && !fields.subgroupId?.value) {
+        clearRows(tSelectSubgroup);
+        return;
+      }
+      if (applyOn === "GROUP" && !fields.groupId?.value) {
+        clearRows(tSelectGroup);
+        return;
+      }
+      if (!fields.articleType?.value) {
+        clearRows(tSelectArticleType);
+        return;
+      }
+      if (!fields.rateType?.value) {
+        clearRows(tSelectRateType);
+        return;
+      }
+
+      const params = getPreviewQuery();
+      if (!params) {
+        clearRows(tSelectTarget);
+        return;
+      }
+
+      const currentSeq = ++state.requestSeq;
+      state.loading = true;
+      if (!state.rows.length) {
+        renderEmpty(tLoading);
+      }
+      summary.textContent = tLoading;
+
+      try {
+        const response = await fetch(`${basePath}/bulk-preview?${params.toString()}`, {
+          method: "GET",
+          headers: { Accept: "application/json" },
+          credentials: "same-origin",
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (currentSeq !== state.requestSeq) return;
+        state.loading = false;
+        if (response.status === 401) {
+          window.location.href = "/auth/login";
+          return;
+        }
+        if (!response.ok) {
+          clearRows(getErrorMessage(payload, tLoadFailed));
+          return;
+        }
+        state.rows = Array.isArray(payload.rows) ? payload.rows : [];
+        applyHeaderRateToRows();
+        renderRows();
+      } catch (err) {
+        state.loading = false;
+        clearRows(tNetworkError);
+      }
+    };
+
+    const schedulePreview = () => {
+      if (state.debounceTimer) window.clearTimeout(state.debounceTimer);
+      state.debounceTimer = window.setTimeout(loadPreview, 200);
+    };
+
+    const resetSelections = () => {
+      state.deptOptionsSeq += 1;
+      state.skuOptionsSeq += 1;
+      if (fields.labourId) {
+        fields.labourId.value = "";
+        fields.labourId.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      resetDepartmentOptions();
+      resetSkuOptions();
+      if (fields.articleType) {
+        fields.articleType.value = "";
+        fields.articleType.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (fields.applyOn) {
+        fields.applyOn.value = "";
+        fields.applyOn.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (fields.skuId) {
+        fields.skuId.value = "";
+        fields.skuId.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (fields.subgroupId) {
+        fields.subgroupId.value = "";
+        fields.subgroupId.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (fields.groupId) {
+        fields.groupId.value = "";
+        fields.groupId.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (fields.rateType) {
+        fields.rateType.value = "";
+        fields.rateType.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (fields.rateValue) fields.rateValue.value = "";
+      hideModalError();
+      hideModalNotice();
+      hideLabourScope();
+      setCollapsedState(labourScopeToggle, labourScopeBody, true);
+      setCollapsedState(skuToggle, skuBody, true);
+      clearRows(tSelectTarget);
+      setPanelVisibility();
+    };
+
+    form.addEventListener("input", (event) => {
+      const target = event.target;
+      if (!target) return;
+      if (target.hasAttribute("data-labour-rate-row-rate")) {
+        const index = Number(target.getAttribute("data-labour-rate-row-index"));
+        if (!Number.isInteger(index) || !state.rows[index]) return;
+        state.rows[index].new_rate = target.value;
+        return;
+      }
+      if (target.matches("[data-field='rate_value']")) {
+        applyHeaderRateToRows();
+      }
+    });
+
+    form.addEventListener(
+      "wheel",
+      (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        if (target.type !== "number") return;
+        if (document.activeElement !== target) return;
+        event.preventDefault();
+      },
+      { passive: false },
+    );
+
+    form.addEventListener("change", (event) => {
+      const target = event.target;
+      if (!target) return;
+      const fieldName = target.getAttribute("data-field");
+      if (modal.dataset.mode === "edit" && fieldName && editLockedFields.has(fieldName)) {
+        const lockedValue = state.lockedEditValues[fieldName];
+        if (typeof lockedValue !== "undefined" && String(target.value || "") !== String(lockedValue)) {
+          target.value = lockedValue;
+        }
+        return;
+      }
+      if (target.matches("[data-field='labour_id']")) {
+        syncDepartmentOptions({ preserveSelection: false }).then(() => {
+          loadResolvedLabours();
+          schedulePreview();
+        });
+        return;
+      }
+      if (target.matches("[data-field='apply_on'], [data-field='article_type']")) {
+        syncSkuOptions({ preserveSelection: false }).then(() => {
+          schedulePreview();
+        });
+        return;
+      }
+      if (
+        target.matches(
+          "[data-field='dept_id'], [data-field='apply_on'], [data-field='sku_id'], [data-field='subgroup_id'], [data-field='group_id'], [data-field='article_type'], [data-field='rate_type']",
+        )
+      ) {
+        if (target.matches("[data-field='dept_id']")) {
+          loadResolvedLabours();
+        }
+        schedulePreview();
+      }
+    });
+
+    document.addEventListener("modal:opened", (event) => {
+      state.requestSeq += 1;
+      const modalMode = event?.detail?.mode || modal.dataset.mode || "create";
+      let editSkuValue = "";
+      let editSkuLabel = "";
+      const currentId = String(modal.dataset.currentId || "").trim();
+      const editBtn = currentId ? document.querySelector(`[data-edit][data-id="${currentId}"]`) : null;
+      if (modalMode === "edit") {
+        editSkuValue = String(editBtn?.getAttribute("data-sku_id") || "").trim();
+        editSkuLabel = String(editBtn?.getAttribute("data-sku_code") || "").trim();
+      }
+      if (modalMode === "edit" && fields.applyOn) {
+        fieldsByName.apply_on.value = "SKU";
+        fieldsByName.apply_on.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      applyEditLocks(modalMode);
+      applyEditVisibility(modalMode);
+      setPanelVisibility();
+      if (modalMode === "create" && fields.deptId) {
+        fields.deptId.value = "";
+        fields.deptId.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (modalMode === "create") {
+        syncSkuOptions({ preserveSelection: false });
+        syncDepartmentOptions({ preserveSelection: false }).then(() => {
+          loadResolvedLabours();
+          schedulePreview();
+        });
+      } else if (modalMode === "edit") {
+        syncSkuOptions({
+          preserveSelection: false,
+          selectedValue: editSkuValue,
+          selectedLabel: editSkuLabel,
+        });
+      }
+      setCollapsedState(labourScopeToggle, labourScopeBody, true);
+      setCollapsedState(skuToggle, skuBody, true);
+    });
+
+    const modalObserver = new MutationObserver(() => {
+      if (modal.classList.contains("hidden")) {
+        resetSelections();
+      }
+    });
+    modalObserver.observe(modal, { attributes: true, attributeFilter: ["class"] });
+
+    form.addEventListener(
+      "submit",
+      async (event) => {
+        if (modal.dataset.mode !== "create") return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        hideModalError();
+        hideModalNotice();
+
+        const labourId = String(fields.labourId?.value || "").trim();
+        const deptId = String(fields.deptId?.value || "").trim();
+        const applyOn = String(fields.applyOn?.value || "").trim().toUpperCase();
+        const skuId = String(fields.skuId?.value || "").trim();
+        const subgroupId = String(fields.subgroupId?.value || "").trim();
+        const groupId = String(fields.groupId?.value || "").trim();
+        const articleType = String(fields.articleType?.value || "").trim();
+        const rateType = String(fields.rateType?.value || "").trim();
+        if (!labourId) {
+          showModalError(tSelectLabour);
+          return;
+        }
+        if (!fields.deptId?.value) {
+          showModalError(tSelectDepartment);
+          return;
+        }
+        if (!applyOn) {
+          showModalError(tSelectTarget);
+          return;
+        }
+        if (applyOn === "SKU" && !skuId) {
+          showModalError(tSelectSku);
+          return;
+        }
+        if (applyOn === "SUBGROUP" && !subgroupId) {
+          showModalError(tSelectSubgroup);
+          return;
+        }
+        if (applyOn === "GROUP" && !groupId) {
+          showModalError(tSelectGroup);
+          return;
+        }
+        if (!articleType) {
+          showModalError(tSelectArticleType);
+          return;
+        }
+        if (!fields.rateType?.value) {
+          showModalError(tSelectRateType);
+          return;
+        }
+        if (!state.rows.length) {
+          showModalError(tSelectTarget);
+          return;
+        }
+
+        const payload = {
+          _csrf: csrfToken,
+          labour_id: labourId,
+          dept_id: deptId,
+          apply_on: applyOn,
+          sku_id: skuId || null,
+          subgroup_id: subgroupId || null,
+          group_id: groupId || null,
+          article_type: articleType,
+          rate_type: rateType,
+          rows: state.rows.map((row) => ({
+            sku_id: row.sku_id,
+            new_rate: row.new_rate,
+          })),
+        };
+
+        if (!payload.labour_id || !payload.dept_id || !payload.apply_on || !payload.article_type || !payload.rate_type) {
+          showModalError(tRequiredFields);
+          return;
+        }
+
+        try {
+          const response = await fetch(`${basePath}/bulk-upsert`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "x-csrf-token": csrfToken,
+              Accept: "application/json",
+            },
+            credentials: "same-origin",
+            body: JSON.stringify(payload),
+          });
+
+          const result = await response.json().catch(() => ({}));
+          if (response.status === 401) {
+            window.location.href = "/auth/login";
+            return;
+          }
+          if (!response.ok) {
+            showModalError(getErrorMessage(result, tUnableSave));
+            return;
+          }
+
+          if (result.queued) {
+            showModalNotice({
+              message: result.message || tSaved,
+              linkHref: result.approvals_url || "",
+              linkLabel: result.approvals_url ? tViewPendingApproval : "",
+            });
+            return;
+          }
+
+          const createdCount = Number(result.created || 0);
+          const updatedCount = Number(result.updated || 0);
+          showModalNotice({
+            message: `${result.message || tSaved} ${formatSaveSummary(createdCount, updatedCount)}`,
+          });
+          window.setTimeout(() => {
+            window.location.href = basePath;
+          }, 1200);
+        } catch (err) {
+          showModalError(tNetworkError);
+        }
+      },
+      true,
+    );
+
+    setPanelVisibility();
+    hideLabourScope();
+    setCollapsedState(labourScopeToggle, labourScopeBody, true);
+    setCollapsedState(skuToggle, skuBody, true);
+    clearRows(tSelectTarget);
+  })();
+</script>
+<% } %>

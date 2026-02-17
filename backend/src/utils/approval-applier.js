@@ -10,6 +10,7 @@
 // - Utility functions for code normalization, uniqueness, and mapping.
 
 const { BASIC_INFO_ENTITY_TYPES } = require("./approval-entity-map");
+const { applyApprovedBomChange } = require("../services/bom/service");
 
 // Mapping of basic info entity types to their DB tables
 const BASIC_INFO_TABLES = {
@@ -53,6 +54,29 @@ const stripMeta = (value = {}) => {
   delete clone.rates;
   delete clone.usage_ids;
   return clone;
+};
+
+const toArray = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === "object") return Object.values(value);
+  return String(value)
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+};
+
+const toNumberOr = (value, fallback = 0) => {
+  if (value === null || typeof value === "undefined" || value === "") return fallback;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : fallback;
+};
+
+const toBoolean = (value) => {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value === 1;
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "on" || normalized === "yes";
 };
 
 const toCode = (value) =>
@@ -249,7 +273,7 @@ const applySkuChange = async (trx, request, userId) => {
 
     const sku_code = await ensureUniqueSku(trx, baseSku);
     await trx("erp.skus").insert({ variant_id: variant.id || variant, sku_code, is_active: true });
-    return true;
+    return { applied: true, entityId: String(variant.id || variant) };
   }
 
   return false;
@@ -392,7 +416,7 @@ const applyItemChange = async (trx, request, userId) => {
       await ensureSfgForFinished(trx, itemRow, newValue.sfg_part_type, userId || null);
     }
 
-    return true;
+    return { applied: true, entityId: String(newId) };
   }
 
   if (action === "update") {
@@ -519,7 +543,8 @@ const applyBasicInfoChange = async (trx, entityType, entityId, newValue, userId)
         created_at: trx.fn.now(),
       })
       .returning(["id"]);
-    const newId = created?.id;
+    const newId = created && typeof created === "object" ? created.id : created;
+    if (!newId) return false;
 
     const map = ITEM_TYPE_MAPS[entityType];
     if (map && Array.isArray(newValue?.item_types) && newId) {
@@ -528,7 +553,7 @@ const applyBasicInfoChange = async (trx, entityType, entityId, newValue, userId)
         .del();
       await trx(map.table).insert(newValue.item_types.map((itemType) => ({ [map.key]: newId, item_type: itemType })));
     }
-    return true;
+    return { applied: true, entityId: String(newId) };
   }
 
   await trx(table)
@@ -567,6 +592,12 @@ const applyAccountPartyChange = async (trx, entityType, entityId, newValue, user
   }
 
   const values = stripMeta(newValue);
+  const branchIds = toArray(newValue?.branch_ids).map((branchId) => Number(branchId)).filter((branchId) => Number.isFinite(branchId));
+  if (isParty) {
+    const creditAllowed = toBoolean(values.credit_allowed);
+    values.credit_allowed = creditAllowed;
+    values.credit_limit = creditAllowed ? toNumberOr(values.credit_limit, 0) : 0;
+  }
   const isCreate = !entityId || entityId === "NEW";
 
   if (isCreate) {
@@ -577,20 +608,21 @@ const applyAccountPartyChange = async (trx, entityType, entityId, newValue, user
         created_at: trx.fn.now(),
       })
       .returning(["id"]);
-    const newId = created?.id;
+    const newId = created && typeof created === "object" ? created.id : created;
+    if (!newId) return false;
 
-    if (branchMap && Array.isArray(newValue?.branch_ids) && newId) {
+    if (branchMap && branchIds.length && newId) {
       await trx(branchMap.table)
         .where({ [branchMap.key]: newId })
         .del();
       await trx(branchMap.table).insert(
-        newValue.branch_ids.map((branchId) => ({
+        branchIds.map((branchId) => ({
           [branchMap.key]: newId,
           [branchMap.branchKey]: branchId,
         })),
       );
     }
-    return true;
+    return { applied: true, entityId: String(newId) };
   }
 
   await trx(table)
@@ -601,16 +633,18 @@ const applyAccountPartyChange = async (trx, entityType, entityId, newValue, user
       updated_at: trx.fn.now(),
     });
 
-  if (branchMap && Array.isArray(newValue?.branch_ids)) {
+  if (branchMap) {
     await trx(branchMap.table)
       .where({ [branchMap.key]: Number(entityId) })
       .del();
-    await trx(branchMap.table).insert(
-      newValue.branch_ids.map((branchId) => ({
-        [branchMap.key]: Number(entityId),
-        [branchMap.branchKey]: branchId,
-      })),
-    );
+    if (branchIds.length) {
+      await trx(branchMap.table).insert(
+        branchIds.map((branchId) => ({
+          [branchMap.key]: Number(entityId),
+          [branchMap.branchKey]: branchId,
+        })),
+      );
+    }
   }
   return true;
 };
@@ -622,6 +656,9 @@ const applyMasterDataChange = async (trx, request, userId) => {
   }
   if (entityType === "ACCOUNT" || entityType === "PARTY") {
     return applyAccountPartyChange(trx, entityType, entityId, newValue, userId);
+  }
+  if (entityType === "BOM") {
+    return applyApprovedBomChange(trx, request, userId);
   }
   if (entityType === "ITEM") {
     return applyItemChange(trx, request, userId);

@@ -104,8 +104,7 @@ const navConfig = [
         type: "group",
         children: [
           { key: "bom_list", labelKey: "bom_list", scopeType: "SCREEN", scopeKey: "master_data.bom", moduleGroup: "Master Data", route: "/master-data/bom" },
-          { key: "bom_versions", labelKey: "bom_versions", scopeType: "SCREEN", scopeKey: "master_data.bom", moduleGroup: "Master Data", route: "/master-data/bom/versions" },
-          { key: "bom_approval", labelKey: "bom_approval", scopeType: "SCREEN", scopeKey: "master_data.bom.approval", moduleGroup: "Master Data", route: "/master-data/bom/approval" },
+          { key: "bom_versions", labelKey: "bom_versions", scopeType: "SCREEN", scopeKey: "master_data.bom.versions", moduleGroup: "Master Data", route: "/master-data/bom/versions" },
         ],
       },
     ],
@@ -123,6 +122,7 @@ const navConfig = [
         type: "group",
         children: [
           { key: "employees_list", labelKey: "employees", scopeType: "SCREEN", scopeKey: "hr_payroll.employees", moduleGroup: "HR & Payroll", route: "/hr-payroll/employees" },
+          { key: "hr_departments", labelKey: "departments", scopeType: "SCREEN", scopeKey: "master_data.basic_info.departments", moduleGroup: "HR & Payroll", route: "/master-data/basic-info/departments" },
           { key: "sales_commission", labelKey: "sales_commission", scopeType: "SCREEN", scopeKey: "hr_payroll.commissions", moduleGroup: "HR & Payroll", route: "/hr-payroll/employees/commissions" },
           { key: "allowances", labelKey: "allowances", scopeType: "SCREEN", scopeKey: "hr_payroll.allowances", moduleGroup: "HR & Payroll", route: "/hr-payroll/employees/allowances" },
         ],

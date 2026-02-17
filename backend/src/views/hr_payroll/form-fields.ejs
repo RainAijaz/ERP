@@ -1,0 +1,178 @@
+<% page.fields.forEach(function(field) { %>
+  <% const fieldError = fieldErrors && fieldErrors[field.name] ? fieldErrors[field.name] : null; %>
+  <% const showWhen = field.showWhen || null; %>
+  <% const showWhenNot = field.showWhenNot || null; %>
+  <% const showAttrs = [] ; %>
+  <% if (showWhen && showWhen.field) { showAttrs.push(`data-show-when-field="${showWhen.field}"`); showAttrs.push(`data-show-when-values="${(showWhen.values || []).join(",")}"`); } %>
+  <% if (showWhenNot && showWhenNot.field) { showAttrs.push(`data-show-when-not-field="${showWhenNot.field}"`); showAttrs.push(`data-show-when-not-values="${(showWhenNot.values || []).join(",")}"`); } %>
+  <% const wrapperAttrs = showAttrs.join(" "); %>
+  <% const hideOnCreateAttr = field.name === "status" ? "data-hide-on-create" : ""; %>
+  <% if (field.type === "checkbox") { %>
+    <label data-field-wrapper="<%= field.name %>" class="flex flex-1 items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600" <%- wrapperAttrs %> <%- hideOnCreateAttr %>>
+      <input class="mt-0.5 h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent/40" type="checkbox" name="<%= field.name %>" data-field="<%= field.name %>" />
+      <span class="flex flex-col gap-1">
+        <span><%= t(field.label) || field.label %></span>
+      </span>
+      <% if (fieldError) { %>
+        <span class="mt-1 block text-xs font-medium text-rose-600"><%= fieldError %></span>
+      <% } %>
+    </label>
+  <% } else if (field.type === "select") { %>
+    <label data-field-wrapper="<%= field.name %>" class="block text-sm font-semibold text-slate-600" <%- wrapperAttrs %> <%- hideOnCreateAttr %>>
+      <span><%= t(field.label) || field.label %></span>
+      <select
+        class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+        name="<%= field.name %>"
+        data-field="<%= field.name %>"
+        <%= field.required ? "required data-required='true'" : "" %>
+      >
+        <option value=""><%= t("select") %></option>
+        <% (field.options || []).forEach(function(option) { %>
+          <option value="<%= option.value %>"><%= t(option.label) || option.label %></option>
+        <% }) %>
+      </select>
+      <% if (fieldError) { %>
+        <span class="mt-1 block text-xs font-medium text-rose-600"><%= fieldError %></span>
+      <% } %>
+    </label>
+  <% } else if (field.type === "number") { %>
+    <label data-field-wrapper="<%= field.name %>" class="block text-sm font-semibold text-slate-600" <%- wrapperAttrs %> <%- hideOnCreateAttr %>>
+      <span><%= t(field.label) || field.label %></span>
+      <input
+        class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+        type="number"
+        name="<%= field.name %>"
+        placeholder="<%= field.placeholder ? (t(field.placeholder) || field.placeholder) : "" %>"
+        data-field="<%= field.name %>"
+        <%= field.step ? "step=\"" + field.step + "\"" : "" %>
+        <%= field.min ? "min=\"" + field.min + "\"" : "" %>
+        <%= field.required ? "required data-required='true'" : "" %>
+      />
+      <% if (fieldError) { %>
+        <span class="mt-1 block text-xs font-medium text-rose-600"><%= fieldError %></span>
+      <% } %>
+    </label>
+  <% } else if (field.type === "multi-select") { %>
+    <label data-field-wrapper="<%= field.name %>" class="block text-sm font-semibold text-slate-600" <%- wrapperAttrs %> <%- hideOnCreateAttr %>>
+      <span><%= t(field.label) || field.label %></span>
+      <div class="relative mt-2 space-y-2" data-multi-select>
+        <button
+          class="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-accent/30"
+          type="button"
+          data-multi-trigger
+        >
+          <span data-multi-placeholder><%= t("select") %></span>
+          <svg class="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <path d="M5 7l5 6 5-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+        </button>
+        <div class="flex flex-wrap gap-2" data-multi-tags></div>
+        <div class="absolute left-0 right-0 top-full z-50 mt-1 hidden max-h-48 w-full overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-md" data-multi-menu></div>
+        <select
+          class="sr-only"
+          name="<%= field.name %>"
+          data-field="<%= field.name %>"
+          multiple
+          <%= field.required ? "data-required='true'" : "" %>
+        >
+          <% (field.options || []).forEach(function(option) { %>
+            <option value="<%= option.value %>"><%= t(option.label) || option.label %></option>
+          <% }) %>
+        </select>
+      </div>
+      <% if (fieldError) { %>
+        <span class="mt-1 block text-xs font-medium text-rose-600"><%= fieldError %></span>
+      <% } %>
+    </label>
+  <% } else { %>
+    <label data-field-wrapper="<%= field.name %>" class="block text-sm font-semibold text-slate-600" <%- wrapperAttrs %> <%- hideOnCreateAttr %>>
+      <span><%= t(field.label) || field.label %></span>
+      <input
+        class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+        type="text"
+        name="<%= field.name %>"
+        placeholder="<%= field.placeholder ? (t(field.placeholder) || field.placeholder) : "" %>"
+        data-field="<%= field.name %>"
+        <%= field.required ? "required data-required='true'" : "" %>
+      />
+      <% if (fieldError) { %>
+        <span class="mt-1 block text-xs font-medium text-rose-600"><%= fieldError %></span>
+      <% } %>
+    </label>
+  <% } %>
+<% }) %>
+
+<% if (page.scopeKey === "hr_payroll.commissions") { %>
+  <div class="hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" data-commission-bulk-panel>
+    <div class="border-b border-slate-200 bg-slate-50/80 px-4 py-3">
+      <div class="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700"><%= t("affected_skus") %></div>
+      <div class="mt-1 text-xs text-slate-500" data-commission-bulk-summary><%= t("select_target_to_preview_impact") %></div>
+    </div>
+    <div class="max-h-72 overflow-auto">
+      <table class="min-w-full text-xs">
+        <thead class="sticky top-0 z-10 bg-slate-100 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+          <tr>
+            <th class="px-3 py-2 text-left"><%= t("sku") %></th>
+            <th class="px-3 py-2 text-left"><%= t("article_name") %></th>
+            <th class="px-3 py-2 text-left"><%= t("previous_dozen_rate") %></th>
+            <th class="px-3 py-2 text-left"><%= t("new_dozen_rate") %></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100" data-commission-bulk-body>
+          <tr>
+            <td class="px-3 py-3 text-slate-500" colspan="4"><%= t("select_target_to_preview_impact") %></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+<% } %>
+
+<% if (page.scopeKey === "hr_payroll.labour_rates") { %>
+  <div class="mt-4 hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" data-labour-rate-labour-scope-panel>
+    <div class="border-b border-slate-200 bg-slate-50/80 px-4 py-3">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <div class="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700"><%= t("applies_to_labours") %></div>
+          <div class="mt-1 text-xs text-slate-500" data-labour-rate-labour-scope-summary><%= t("select_target_to_preview_impact") %></div>
+        </div>
+        <button class="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-labour-rate-scope-toggle data-collapsed="false">
+          <%= t("collapse") %>
+        </button>
+      </div>
+    </div>
+    <div class="max-h-28 overflow-auto px-4 py-3" data-labour-rate-scope-body>
+      <div class="flex flex-wrap gap-1.5" data-labour-rate-labour-scope-list></div>
+    </div>
+  </div>
+  <div class="mt-4 hidden overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" data-labour-rate-bulk-panel>
+    <div class="border-b border-slate-200 bg-slate-50/80 px-4 py-3">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <div class="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700"><%= t("affected_skus") %></div>
+          <div class="mt-1 text-xs text-slate-500" data-labour-rate-bulk-summary><%= t("select_target_to_preview_impact") %></div>
+        </div>
+        <button class="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-labour-rate-skus-toggle data-collapsed="false">
+          <%= t("collapse") %>
+        </button>
+      </div>
+    </div>
+    <div class="max-h-72 overflow-auto" data-labour-rate-skus-body>
+      <table class="min-w-full text-xs">
+        <thead class="sticky top-0 z-10 bg-slate-100 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+          <tr>
+            <th class="px-3 py-2 text-left"><%= t("sku") %></th>
+            <th class="px-3 py-2 text-left"><%= t("article_name") %></th>
+            <th class="px-3 py-2 text-left"><%= t("previous_rate") %></th>
+            <th class="px-3 py-2 text-left"><%= t("new_rate") %></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100" data-labour-rate-bulk-body>
+          <tr>
+            <td class="px-3 py-3 text-slate-500" colspan="4"><%= t("select_target_to_preview_impact") %></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+<% } %>

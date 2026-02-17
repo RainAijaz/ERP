@@ -7,15 +7,10 @@ const { friendlyErrorMessage } = require("../../../middleware/errors/friendly-er
 const { handleScreenApproval } = require("../../../middleware/approvals/screen-approval");
 const { getBasicInfoEntityType } = require("../../../utils/approval-entity-map");
 const { queueAuditLog } = require("../../../utils/audit-log");
+const { generateUniqueCode } = require("../../../utils/entity-code");
+const { buildAuditChangeSet } = require("../../../utils/audit-diff");
 
 const router = express.Router();
-
-const toCode = (value) =>
-  (value || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 50);
 
 const normalizeCredit = (value) => {
   if (value === null || value === undefined || value === "") return null;
@@ -32,6 +27,7 @@ const BASIC_INFO_PAGES = {
     description: "Define the units of measure used across items, vouchers, and stock.",
     table: "erp.uom",
     translateMode: "transliterate",
+    autoCodeFromName: true,
     columns: [
       { key: "id", label: "ID" },
       { key: "code", label: "Code" },
@@ -42,12 +38,6 @@ const BASIC_INFO_PAGES = {
       { key: "created_at", label: "Created At" },
     ],
     fields: [
-      {
-        name: "code",
-        label: "Code",
-        placeholder: "PCS, DOZEN, KG",
-        required: true,
-      },
       {
         name: "name",
         label: "Name",
@@ -402,6 +392,7 @@ const BASIC_INFO_PAGES = {
     description: "Define chart of account groups under standard account types.",
     table: "erp.account_groups",
     translateMode: "transliterate",
+    autoCodeFromName: true,
     columns: [
       { key: "id", label: "ID" },
       { key: "account_type", label: "Type" },
@@ -442,13 +433,6 @@ const BASIC_INFO_PAGES = {
         label: "Name (Urdu)",
         helpText: "Urdu display name for reports and screens.",
         placeholder: "Urdu name",
-        required: true,
-      },
-      {
-        name: "code",
-        label: "Code",
-        helpText: "Short code used in reports and filtering (e.g., cash_bank).",
-        placeholder: "cash_bank, receivables",
         required: true,
       },
       {
@@ -776,9 +760,6 @@ const createHandler = (type) => async (req, res, next) => {
   }
 
   const values = buildValues(page, req.body);
-  if (page.autoCodeFromName && !values.code) {
-    values.code = toCode(values.name);
-  }
   if (!hasField(page, "code") && !page.autoCodeFromName) {
     delete values.code;
   }
@@ -790,6 +771,15 @@ const createHandler = (type) => async (req, res, next) => {
   }
 
   try {
+    if (hasField(page, "code") || page.autoCodeFromName) {
+      values.code = await generateUniqueCode({
+        name: values.name,
+        prefix: type,
+        maxLen: 50,
+        knex,
+        table: page.table,
+      });
+    }
     if (page.table === "erp.uom") {
       const codeValue = (values.code || "").trim();
       if (codeValue) {
@@ -825,7 +815,6 @@ const createHandler = (type) => async (req, res, next) => {
         const [row] = await trx(page.table)
           .insert({
             ...rest,
-            ...(page.autoCodeFromName ? { code: toCode(rest.name) } : {}),
             created_by: req.user ? req.user.id : null,
           })
           .returning("id");
@@ -867,7 +856,6 @@ const createHandler = (type) => async (req, res, next) => {
           const [row] = await trx(page.table)
             .insert({
               ...rest,
-              ...(page.autoCodeFromName ? { code: toCode(rest.name) } : {}),
               created_by: req.user ? req.user.id : null,
             })
             .returning("id");
@@ -905,7 +893,6 @@ const createHandler = (type) => async (req, res, next) => {
 
         const insertValues = {
           ...values,
-          ...(page.autoCodeFromName ? { code: toCode(values.name) } : {}),
           created_by: req.user ? req.user.id : null,
         };
         const [row] = await knex(page.table).insert(insertValues).returning("id");
@@ -932,9 +919,6 @@ const updateHandler = (type) => async (req, res, next) => {
   }
 
   const values = buildValues(page, req.body);
-  if (page.autoCodeFromName && !values.code) {
-    values.code = toCode(values.name);
-  }
   if (!hasField(page, "code") && !page.autoCodeFromName) {
     delete values.code;
   }
@@ -953,6 +937,15 @@ const updateHandler = (type) => async (req, res, next) => {
     }
     if (hasField(page, "code") && existingRow.code) {
       values.code = existingRow.code;
+    } else if (hasField(page, "code") || page.autoCodeFromName) {
+      values.code = await generateUniqueCode({
+        name: values.name,
+        prefix: type,
+        maxLen: 50,
+        knex,
+        table: page.table,
+        excludeId: id,
+      });
     }
 
     if (page.table === "erp.uom") {
@@ -985,6 +978,11 @@ const updateHandler = (type) => async (req, res, next) => {
       if (approval.queued) {
         return res.redirect(req.get("referer") || basePath);
       }
+      const changeSet = buildAuditChangeSet({
+        before: existingRow,
+        after: values,
+        includeKeys: page.fields.map((field) => field.name),
+      });
       const auditFields = page.hasUpdatedFields === false ? {} : { updated_by: req.user ? req.user.id : null, updated_at: knex.fn.now() };
       await knex.transaction(async (trx) => {
         // Update the main row, then replace item type mappings.
@@ -1009,6 +1007,10 @@ const updateHandler = (type) => async (req, res, next) => {
           entityType: getBasicInfoEntityType(type),
           entityId: id,
           action: "UPDATE",
+          context: {
+            source: "basic-info-update",
+            ...changeSet,
+          },
         });
       });
     } else {
@@ -1030,6 +1032,11 @@ const updateHandler = (type) => async (req, res, next) => {
         if (approval.queued) {
           return res.redirect(req.get("referer") || basePath);
         }
+        const changeSet = buildAuditChangeSet({
+          before: existingRow,
+          after: values,
+          includeKeys: page.fields.map((field) => field.name),
+        });
         await knex.transaction(async (trx) => {
           await trx(page.table)
             .where({ id })
@@ -1052,6 +1059,10 @@ const updateHandler = (type) => async (req, res, next) => {
             entityType: getBasicInfoEntityType(type),
             entityId: id,
             action: "UPDATE",
+            context: {
+              source: "basic-info-update",
+              ...changeSet,
+            },
           });
         });
       } else {
@@ -1070,6 +1081,11 @@ const updateHandler = (type) => async (req, res, next) => {
         if (approval.queued) {
           return res.redirect(req.get("referer") || basePath);
         }
+        const changeSet = buildAuditChangeSet({
+          before: existingRow,
+          after: values,
+          includeKeys: page.fields.map((field) => field.name),
+        });
         await knex(page.table)
           .where({ id })
           .update({
@@ -1080,6 +1096,10 @@ const updateHandler = (type) => async (req, res, next) => {
           entityType: getBasicInfoEntityType(type),
           entityId: id,
           action: "UPDATE",
+          context: {
+            source: "basic-info-update",
+            ...changeSet,
+          },
         });
       }
     }
@@ -1186,10 +1206,10 @@ Object.entries(ROUTE_MAP).forEach(([type, path]) => {
   const scopeKey = BASIC_INFO_SCOPE_KEYS[type] || `master_data.basic_info.${type}`;
   router.get(path, requirePermission("SCREEN", scopeKey, "view"), listHandler(type));
   router.get(`${path}/new`, requirePermission("SCREEN", scopeKey, "create"), newHandler(type));
-  router.post(path, requirePermission("SCREEN", scopeKey, "create"), createHandler(type));
-  router.post(`${path}/:id`, requirePermission("SCREEN", scopeKey, "edit"), updateHandler(type));
-  router.post(`${path}/:id/toggle`, requirePermission("SCREEN", scopeKey, "delete"), toggleHandler(type));
-  router.post(`${path}/:id/delete`, requirePermission("SCREEN", scopeKey, "hard_delete"), deleteHandler(type));
+  router.post(path, requirePermission("SCREEN", scopeKey, "navigate"), createHandler(type));
+  router.post(`${path}/:id`, requirePermission("SCREEN", scopeKey, "navigate"), updateHandler(type));
+  router.post(`${path}/:id/toggle`, requirePermission("SCREEN", scopeKey, "navigate"), toggleHandler(type));
+  router.post(`${path}/:id/delete`, requirePermission("SCREEN", scopeKey, "navigate"), deleteHandler(type));
 });
 
 router.get("/groups/products/product-groups", (req, res) => {

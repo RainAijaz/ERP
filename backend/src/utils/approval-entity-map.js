@@ -31,6 +31,11 @@ const SCREEN_ENTITY_TYPES = {
   "master_data.products.finished": "ITEM",
   "master_data.products.skus": "SKU",
   "master_data.bom": "BOM",
+  "hr_payroll.employees": "EMPLOYEE",
+  "hr_payroll.labours": "LABOUR",
+  "hr_payroll.commissions": "EMPLOYEE",
+  "hr_payroll.allowances": "EMPLOYEE",
+  "hr_payroll.labour_rates": "LABOUR",
 };
 
 const getBasicInfoEntityType = (type) => BASIC_INFO_ENTITY_TYPES[type] || "GENERIC";

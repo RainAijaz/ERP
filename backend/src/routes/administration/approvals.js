@@ -9,6 +9,8 @@ const { resolveApprovalPreview } = require("../../utils/approval-preview-registr
 const { notifyApprovalDecision } = require("../../utils/approval-events");
 const { setCookie } = require("../../middleware/utils/cookies");
 const { UI_NOTICE_COOKIE } = require("../../middleware/core/ui-notice");
+const { insertActivityLog } = require("../../utils/audit-log");
+const { inferAction, parseEditedPayload, sanitizeEditedValues, getEditableKeys } = require("../../utils/approval-request-edit");
 const basicInfoRoutes = require("../master_data/basic-info");
 const uomConversionsRoutes = require("../master_data/basic-info/uom-conversions");
 const accountsRoutes = require("../master_data/accounts");
@@ -17,6 +19,7 @@ const finishedRoutes = require("../master_data/products/finished");
 const rawMaterialsRoutes = require("../master_data/products/raw-materials");
 const semiFinishedRoutes = require("../master_data/products/semi-finished");
 const skuRoutes = require("../master_data/products/skus");
+const bomService = require("../../services/bom/service");
 
 const router = express.Router();
 
@@ -38,19 +41,6 @@ const setUiNotice = (res, message, options = {}) => {
   setCookie(res, UI_NOTICE_COOKIE, JSON.stringify({ message, ...options }), { path: "/", maxAge: 30, sameSite: "Lax" });
 };
 
-const insertActivityLog = async (trx, payload) => {
-  if (!payload?.entity_type || !payload?.entity_id || !payload?.action) return;
-  await trx("erp.activity_log").insert({
-    branch_id: payload.branch_id || null,
-    user_id: payload.user_id || null,
-    entity_type: payload.entity_type,
-    entity_id: String(payload.entity_id),
-    voucher_type_code: payload.voucher_type_code || null,
-    action: payload.action,
-    ip_address: payload.ip_address || null,
-  });
-};
-
 const ACTION_LABELS = {
   create: "create",
   update: "edit",
@@ -66,16 +56,6 @@ const ENTITY_TO_SCREEN = Object.entries(SCREEN_ENTITY_TYPES).reduce((acc, [scree
   acc[entity] = screen;
   return acc;
 }, {});
-
-const inferAction = (request) => {
-  if (request?.new_value?._action) {
-    if (request.new_value._action === "toggle") return "delete";
-    return request.new_value._action === "update" ? "update" : request.new_value._action;
-  }
-  if (request?.new_value && request?.entity_id === "NEW") return "create";
-  if (!request?.new_value && request?.old_value) return "delete";
-  return "update";
-};
 
 const getPreviewValues = (request, side) => {
   if (side === "old") return request?.old_value || null;
@@ -461,6 +441,101 @@ router.get("/:id/preview", requirePermission("SCREEN", "administration.approvals
   }
 });
 
+router.post("/:id/edit", requirePermission("SCREEN", "administration.approvals", "approve"), async (req, res, next) => {
+  const id = Number(req.params.id);
+  if (!id) return next(new HttpError(400, res.locals.t("error_invalid_id")));
+  if (!req.user?.isAdmin) return next(new HttpError(403, res.locals.t("permission_denied")));
+
+  try {
+    const submitted = parseEditedPayload(req.body?.edited_payload);
+    if (!submitted || typeof submitted !== "object" || Array.isArray(submitted)) {
+      return res.status(400).json({ ok: false, message: res.locals.t("approval_edit_invalid_payload") });
+    }
+
+    let changedFields = [];
+    let requestSnapshot = null;
+    await knex.transaction(async (trx) => {
+      const request = await trx("erp.approval_request").where({ id }).first();
+      if (!request || request.status !== "PENDING") {
+        throw new HttpError(404, res.locals.t("approval_request_not_found"));
+      }
+      requestSnapshot = request;
+
+      const sanitized = sanitizeEditedValues(request, submitted);
+      if (sanitized.error) {
+        throw new HttpError(400, res.locals.t(sanitized.error));
+      }
+      if (!sanitized.changedFields.length) {
+        throw new HttpError(400, res.locals.t("approval_no_changes"));
+      }
+
+      changedFields = sanitized.changedFields;
+      await trx("erp.approval_request")
+        .where({ id })
+        .update({
+          new_value: sanitized.nextValue,
+          decided_by: null,
+          decided_at: null,
+          decision_notes: null,
+        });
+
+      await insertActivityLog(trx, {
+        branch_id: request.branch_id,
+        user_id: req.user.id,
+        entity_type: request.entity_type,
+        entity_id: request.entity_id,
+        action: "UPDATE",
+        ip_address: req.ip,
+        context: {
+          source: "approval-request-edit",
+          approval_request_id: request.id,
+          request_status: request.status,
+          request_action: inferAction(request),
+          editable_keys: getEditableKeys(request),
+          changed_fields: changedFields,
+          old_value: request.new_value || null,
+          new_value: sanitized.nextValue || null,
+        },
+      });
+    });
+
+    if (process.env.DEBUG_APPROVAL_PREVIEW === "1") {
+      console.log("[APPROVAL EDIT DEBUG] approval request updated", {
+        id,
+        editorUserId: req.user.id,
+        changedCount: changedFields.length,
+        changedFields: changedFields.map((entry) => entry.field),
+      });
+    }
+
+    if (requestSnapshot?.requested_by) {
+      notifyApprovalDecision({
+        userId: requestSnapshot.requested_by,
+        payload: {
+          status: "PENDING",
+          requestId: requestSnapshot.id,
+          summary: requestSnapshot.summary || "",
+          link: "/administration/approvals?status=PENDING",
+          message: (res.locals.t("approval_request_updated_detail") || "Your pending approval request was updated: {summary}").replace("{summary}", requestSnapshot.summary || ""),
+          sticky: true,
+        },
+      });
+    }
+
+    return res.json({
+      ok: true,
+      message: res.locals.t("approval_request_updated"),
+      changed_fields: changedFields,
+    });
+  } catch (err) {
+    console.error("[approvals:edit]", { id, userId: req.user?.id, error: err?.message || err });
+    if (err instanceof HttpError) {
+      return res.status(err.status).json({ ok: false, message: err.message });
+    }
+    return next(err);
+  }
+});
+
 // GET /settings - Approval policy settings (voucher types + screens)
 router.get("/settings", requirePermission("SCREEN", "administration.approval_settings", "navigate"), async (req, res, next) => {
   try {
@@ -570,8 +645,8 @@ router.post("/:id/approve", requirePermission("SCREEN", "administration.approval
   if (!id) return next(new HttpError(400, res.locals.t("error_invalid_id")));
 
   try {
-    let applyError = null;
     let requestSnapshot = null;
+    let appliedEntityId = null;
     await knex.transaction(async (trx) => {
       const request = await trx("erp.approval_request").where({ id }).first();
       if (!request || request.status !== "PENDING") {
@@ -579,61 +654,46 @@ router.post("/:id/approve", requirePermission("SCREEN", "administration.approval
       }
       requestSnapshot = request;
 
-      // EXECUTE CHANGE
       if (request.request_type === "MASTER_DATA_CHANGE") {
-        try {
-          const applied = await applyMasterDataChange(trx, request, req.user.id);
-          console.log("[DEBUG][Approval] applyMasterDataChange result:", applied);
-          if (!applied) {
-            throw new Error(res.locals.t("approval_apply_failed"));
-          }
-        } catch (err) {
-          // Custom error for duplicate name
-          if (err && err.code === "DUPLICATE_NAME") {
-            applyError = { message: res.locals.t("error_duplicate_name") };
-          } else {
-            applyError = err;
-          }
-          console.error("[ERROR][Approval] Error in applyMasterDataChange:", err);
+        const applyResult = await applyMasterDataChange(trx, request, req.user.id);
+        const applied = typeof applyResult === "object" ? applyResult.applied !== false : Boolean(applyResult);
+        appliedEntityId = typeof applyResult === "object" && applyResult.entityId ? String(applyResult.entityId) : null;
+        console.log("[DEBUG][Approval] applyMasterDataChange result:", applyResult);
+        if (!applied) {
+          const err = new Error(res.locals.t("approval_apply_failed"));
+          err.code = "APPROVAL_APPLY_FAILED";
+          throw err;
         }
       }
-      await trx("erp.approval_request");
-      if (!applyError) {
-        await trx("erp.approval_request").where({ id }).update({
-          status: "APPROVED",
-          decided_by: req.user.id,
-          decided_at: trx.fn.now(),
-          decision_notes: null,
-        });
-      }
+      await trx("erp.approval_request").where({ id }).update({
+        status: "APPROVED",
+        decided_by: req.user.id,
+        decided_at: trx.fn.now(),
+        decision_notes: null,
+      });
 
-      if (!applyError) {
-        await insertActivityLog(trx, {
-          branch_id: request.branch_id,
-          user_id: req.user.id,
-          entity_type: request.entity_type,
-          entity_id: request.entity_id,
-          voucher_type_code: request.voucher_type_code || null,
-          action: "APPROVE",
-          ip_address: req.ip,
-        });
-      }
+      await insertActivityLog(trx, {
+        branch_id: request.branch_id,
+        user_id: req.user.id,
+        entity_type: request.entity_type,
+        entity_id: request.entity_id === "NEW" && appliedEntityId ? appliedEntityId : request.entity_id,
+        voucher_type_code: request.voucher_type_code || null,
+        action: "APPROVE",
+        ip_address: req.ip,
+        context: {
+          source: "approval-decision",
+          approval_request_id: request.id,
+          requested_entity_id: request.entity_id,
+          applied_entity_id: appliedEntityId,
+          decision: "APPROVED",
+          request_type: request.request_type,
+          summary: request.summary || null,
+          old_value: request.old_value || null,
+          new_value: request.new_value || null,
+        },
+      });
     });
 
-    if (applyError) {
-      // Always show the most specific error, prefer duplicate name, and log it
-      let msg;
-      if (applyError && applyError.code === "DUPLICATE_NAME") {
-        msg = res.locals.t("error_duplicate_name");
-      } else if (applyError && applyError.message) {
-        msg = applyError.message;
-      } else {
-        msg = res.locals.t("approval_apply_failed");
-      }
-      console.log("[DEBUG][Approval] UI Notice message:", msg);
-      setUiNotice(res, msg, { autoClose: true });
-      return res.redirect(`${req.baseUrl}?status=PENDING`);
-    }
     if (requestSnapshot?.requested_by) {
       notifyApprovalDecision({
         userId: requestSnapshot.requested_by,
@@ -650,7 +710,17 @@ router.post("/:id/approve", requirePermission("SCREEN", "administration.approval
     setUiNotice(res, res.locals.t("approval_approved"), { autoClose: true });
     return res.redirect(`${req.baseUrl}?status=PENDING`);
   } catch (err) {
-    next(err);
+    console.error("[ERROR][Approval] Error in applyMasterDataChange:", err);
+    let msg = res.locals.t("approval_apply_failed");
+    if (err && err.code === "DUPLICATE_NAME") {
+      msg = res.locals.t("error_duplicate_name");
+    } else if (err && err.code === "BOM_SNAPSHOT_MISMATCH") {
+      msg = res.locals.t("bom_error_snapshot_mismatch") || "BOM snapshot mismatch while approving. Please reopen and resubmit approval.";
+    } else if (err && err.message) {
+      msg = err.message;
+    }
+    setUiNotice(res, msg, { autoClose: true });
+    return res.redirect(`${req.baseUrl}?status=PENDING`);
   }
 });
 
@@ -667,6 +737,10 @@ router.post("/:id/reject", requirePermission("SCREEN", "administration.approvals
       }
       requestSnapshot = request;
 
+      if (request.entity_type === "BOM") {
+        await bomService.resetPendingBomAfterRejectTx(trx, request);
+      }
+
       await trx("erp.approval_request").where({ id }).update({
         status: "REJECTED",
         decided_by: req.user.id,
@@ -681,6 +755,16 @@ router.post("/:id/reject", requirePermission("SCREEN", "administration.approvals
         voucher_type_code: request.voucher_type_code || null,
         action: "REJECT",
         ip_address: req.ip,
+        context: {
+          source: "approval-decision",
+          approval_request_id: request.id,
+          requested_entity_id: request.entity_id,
+          decision: "REJECTED",
+          request_type: request.request_type,
+          summary: request.summary || null,
+          old_value: request.old_value || null,
+          new_value: request.new_value || null,
+        },
       });
     });
     if (requestSnapshot?.requested_by) {

@@ -3,6 +3,14 @@ const { HttpError } = require("../errors/http-error");
 const { navConfig } = require("../../utils/nav-config");
 const { setCookie } = require("../utils/cookies");
 const { UI_NOTICE_COOKIE } = require("../core/ui-notice");
+const { insertActivityLog } = require("../../utils/audit-log");
+const { notifyPendingApprovalAdmins } = require("../../utils/approval-notifications");
+
+const debugApproval = (...args) => {
+  if (process.env.DEBUG_SCREEN_APPROVAL === "1") {
+    console.log(...args);
+  }
+};
 
 const actionToPermission = (action) => (action && action.startsWith("can_") ? action : `can_${action}`);
 
@@ -74,7 +82,7 @@ const requiresApproval = async (scopeKey, action) => {
   }
 };
 
-const queueApproval = async ({ req, entityType, entityId, summary, oldValue, newValue }) => {
+const queueApproval = async ({ req, entityType, entityId, summary, oldValue, newValue, reason, t }) => {
   try {
     const [created] = await knex("erp.approval_request")
       .insert({
@@ -88,7 +96,43 @@ const queueApproval = async ({ req, entityType, entityId, summary, oldValue, new
         requested_by: req.user?.id || null,
       })
       .returning(["id"]);
-    return created?.id || null;
+    const requestId = created?.id || null;
+    await insertActivityLog(knex, {
+      branch_id: req.branchId,
+      user_id: req.user?.id || null,
+      entity_type: entityType,
+      entity_id: String(entityId || "NEW"),
+      action: "SUBMIT",
+      ip_address: req.ip,
+      context: {
+        approval_request_id: requestId,
+        summary: summary || null,
+        old_value: oldValue || null,
+        new_value: newValue || null,
+        source: "screen-approval",
+        reason: reason || null,
+      },
+    });
+    notifyPendingApprovalAdmins({
+      knex,
+      approvalRequestId: requestId,
+      requestType: "MASTER_DATA_CHANGE",
+      entityType,
+      entityId: String(entityId || "NEW"),
+      summary,
+      oldValue,
+      newValue,
+      requestedByName: req.user?.username || null,
+      branchId: req.branchId,
+      t,
+    }).catch((err) => {
+      console.error("[screen-approval] admin email notify failed", {
+        requestId,
+        entityType,
+        error: err?.message || err,
+      });
+    });
+    return requestId;
   } catch (err) {
     console.error("[screen-approval] enqueue failed", { entityType, entityId, error: err.message });
     throw err;
@@ -96,9 +140,8 @@ const queueApproval = async ({ req, entityType, entityId, summary, oldValue, new
 };
 
 const handleScreenApproval = async ({ req, scopeKey, action, entityType, entityId, summary, oldValue, newValue, t }) => {
-  // --- DEBUG LOGGING START ---
   try {
-    console.log("[screen-approval] handleScreenApproval called", {
+    debugApproval("[screen-approval] handleScreenApproval called", {
       user: req.user && { id: req.user.id, username: req.user.username, isAdmin: req.user.isAdmin },
       scopeKey,
       action,
@@ -112,36 +155,45 @@ const handleScreenApproval = async ({ req, scopeKey, action, entityType, entityI
     });
   } catch (e) {}
   if (req.user?.isAdmin) {
-    console.log("[screen-approval] user is admin, bypassing approval queue");
+    debugApproval("[screen-approval] user is admin, bypassing approval queue");
     return { queued: false };
   }
   const allowed = hasPermission(req.user, scopeKey, action);
-  console.log("[screen-approval] hasPermission result", { allowed });
+  debugApproval("[screen-approval] hasPermission result", { allowed });
   let approvalRequired;
   try {
     approvalRequired = await requiresApproval(scopeKey, action);
-    console.log("[screen-approval] requiresApproval result", { approvalRequired });
+    debugApproval("[screen-approval] requiresApproval result", { approvalRequired });
   } catch (err) {
     console.error("[screen-approval] requiresApproval threw error", err);
     throw err;
   }
 
   if (!allowed && !approvalRequired) {
-    console.log("[screen-approval] neither allowed nor approval required, throwing 403");
-    throw new HttpError(403, t("permission_denied"));
+    debugApproval("[screen-approval] permission missing; routing action to approval queue");
+    approvalRequired = true;
   }
 
   if (approvalRequired) {
     let requestId = null;
+    const res = req.res;
+    const translator = typeof t === "function" ? t : res?.locals?.t;
     try {
-      requestId = await queueApproval({ req, entityType, entityId, summary, oldValue, newValue });
-      console.log("[screen-approval] approval queued", { requestId });
+      requestId = await queueApproval({
+        req,
+        entityType,
+        entityId,
+        summary,
+        oldValue,
+        newValue,
+        reason: allowed ? "policy_requires_approval" : "permission_reroute",
+        t: translator,
+      });
+      debugApproval("[screen-approval] approval queued", { requestId });
     } catch (err) {
       console.error("[screen-approval] queueApproval threw error", err);
       throw err;
     }
-    const res = req.res;
-    const translator = typeof t === "function" ? t : res?.locals?.t;
     if (res && typeof translator === "function") {
       if (process.env.DEBUG_UI_NOTICE === "1") {
         console.log("[UI NOTICE] set from screen-approval", {
@@ -157,7 +209,8 @@ const handleScreenApproval = async ({ req, scopeKey, action, entityType, entityI
         UI_NOTICE_COOKIE,
         JSON.stringify({
           message: translator("approval_sent") || translator("approval_submitted") || "Change request sent for approval. It will be applied once reviewed.",
-          autoClose: true,
+          autoClose: false,
+          sticky: true,
         }),
         { path: "/", maxAge: 30, sameSite: "Lax" },
       );
@@ -165,7 +218,7 @@ const handleScreenApproval = async ({ req, scopeKey, action, entityType, entityI
     return { queued: true, requestId };
   }
 
-  console.log("[screen-approval] approval not required, proceeding without queue");
+  debugApproval("[screen-approval] approval not required, proceeding without queue");
   return { queued: false };
 };
 

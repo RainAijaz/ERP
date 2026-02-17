@@ -62,7 +62,6 @@ CREATE TABLE IF NOT EXISTS erp.bom_header (
 
   CHECK (output_qty > 0),
   CHECK (version_no > 0),
-  CHECK (approved_by IS NULL OR approved_by <> created_by),
 
   -- Maker-checker consistency:
   CHECK (
@@ -77,6 +76,11 @@ CREATE TABLE IF NOT EXISTS erp.bom_header (
 CREATE INDEX IF NOT EXISTS ix_bom_header_item_status
 ON erp.bom_header(item_id, status);
 
+-- One active draft per item+level across the system.
+CREATE UNIQUE INDEX IF NOT EXISTS ux_bom_header_single_draft
+ON erp.bom_header (item_id, level)
+WHERE status = 'DRAFT';
+
 -- -----------------------------------------------------------------------------
 -- bom_rm_line (RM consumption lines)
 -- -----------------------------------------------------------------------------
@@ -89,6 +93,7 @@ CREATE TABLE IF NOT EXISTS erp.bom_rm_line (
 
   rm_item_id      bigint NOT NULL REFERENCES erp.items(id) ON DELETE RESTRICT,
   color_id        bigint REFERENCES erp.colors(id),
+  size_id         bigint REFERENCES erp.sizes(id),
   dept_id         bigint NOT NULL REFERENCES erp.departments(id),
 
   qty             numeric(18,3) NOT NULL,
@@ -100,7 +105,7 @@ CREATE TABLE IF NOT EXISTS erp.bom_rm_line (
   CHECK (normal_loss_pct >= 0 AND normal_loss_pct <= 100),
 
   -- Avoid duplicates for same RM+dept within one BOM (color-specific if provided).
-  UNIQUE (bom_id, rm_item_id, dept_id, color_id)
+  UNIQUE (bom_id, rm_item_id, dept_id, color_id, size_id)
 );
 
 -- -----------------------------------------------------------------------------
@@ -216,3 +221,24 @@ ON erp.bom_variant_rule (
   action_type,
   material_scope,    COALESCE(target_rm_item_id, 0)
 );
+
+-- -----------------------------------------------------------------------------
+-- bom_change_log (immutable line-level audit trail)
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS erp.bom_change_log (
+  id          bigserial PRIMARY KEY,
+  bom_id      bigint NOT NULL REFERENCES erp.bom_header(id) ON DELETE CASCADE,
+  version_no  int NOT NULL,
+  request_id  bigint REFERENCES erp.approval_request(id) ON DELETE SET NULL,
+  section     text NOT NULL,
+  entity_key  text NOT NULL,
+  change_type text NOT NULL,
+  old_value   jsonb,
+  new_value   jsonb,
+  changed_by  bigint REFERENCES erp.users(id) ON DELETE SET NULL,
+  changed_at  timestamptz NOT NULL DEFAULT now(),
+  CHECK (change_type IN ('ADDED', 'UPDATED', 'REMOVED'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_bom_change_log_bom_version
+ON erp.bom_change_log (bom_id, version_no, changed_at DESC);

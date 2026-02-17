@@ -2,6 +2,7 @@ const express = require("express");
 const knex = require("../../db/knex");
 const approvalRequired = require("../../middleware/approvals/approval-required");
 const { HttpError } = require("../../middleware/errors/http-error");
+const { prepareSalesVoucherData, SALES_VOUCHER_CODE } = require("../../services/sales/commission-service");
 
 const router = express.Router();
 
@@ -47,6 +48,14 @@ router.post("/", async (req, res, next) => {
     const status = requiresApproval ? "PENDING" : "APPROVED";
 
     const result = await knex.transaction(async (trx) => {
+      const preparedSales = await prepareSalesVoucherData({
+        trx,
+        voucherTypeCode: voucher_type_code,
+        body: req.body || {},
+        lines,
+        t: res.locals.t,
+      });
+
       const [header] = await trx("erp.voucher_header")
         .insert({
           voucher_type_code,
@@ -62,13 +71,40 @@ router.post("/", async (req, res, next) => {
         })
         .returning(["id", "status"]);
 
-      const lineRows = lines.map((line) => ({
+      const lineRows = preparedSales.lines.map((line) => ({
         ...line,
         voucher_header_id: header.id,
       }));
-      await trx("erp.voucher_line").insert(lineRows);
+      const insertedLines = await trx("erp.voucher_line").insert(lineRows).returning(["id", "line_no"]);
 
-      return header;
+      if (String(voucher_type_code || "").toUpperCase() === SALES_VOUCHER_CODE && preparedSales.salesHeader) {
+        await trx("erp.sales_header").insert({
+          voucher_id: header.id,
+          ...preparedSales.salesHeader,
+        });
+
+        if (preparedSales.salesLines.length) {
+          const lineIdByNo = new Map(insertedLines.map((row) => [Number(row.line_no), Number(row.id)]));
+          const salesLineRows = preparedSales.salesLines
+            .map((row) => {
+              const voucherLineId = lineIdByNo.get(Number(row.line_no));
+              if (!voucherLineId) return null;
+              return {
+                voucher_line_id: voucherLineId,
+                ...row.payload,
+              };
+            })
+            .filter(Boolean);
+          if (salesLineRows.length) {
+            await trx("erp.sales_line").insert(salesLineRows);
+          }
+        }
+      }
+
+      return {
+        ...header,
+        total_commission: preparedSales.totalCommission || 0,
+      };
     });
 
     req.setAuditContext({
@@ -78,8 +114,9 @@ router.post("/", async (req, res, next) => {
       voucherTypeCode: voucher_type_code,
     });
 
-    res.status(201).json({ id: result.id, status: result.status });
+    res.status(201).json({ id: result.id, status: result.status, total_commission: result.total_commission || 0 });
   } catch (err) {
+    console.error("Error in VoucherEngineService:", err);
     next(err);
   }
 });

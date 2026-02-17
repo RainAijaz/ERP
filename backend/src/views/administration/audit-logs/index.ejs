@@ -15,6 +15,35 @@
 		CANCEL: "bg-orange-50 text-orange-700 ring-orange-200",
 	};
 	const getActionClass = (action) => actionStyles[action] || "bg-slate-50 text-slate-600 ring-slate-200";
+	const escapeAttr = (value) =>
+		String(value)
+			.replace(/&/g, "&amp;")
+			.replace(/</g, "&lt;")
+			.replace(/>/g, "&gt;")
+			.replace(/"/g, "&quot;")
+			.replace(/'/g, "&#39;");
+	const jsonAttr = (value) => escapeAttr(JSON.stringify(value ?? null));
+	const parseContext = (value) => {
+		if (!value) return null;
+		if (typeof value === "object") return value;
+		try {
+			return JSON.parse(String(value));
+		} catch (err) {
+			return null;
+		}
+	};
+	const getEntityIdLabel = (row) => {
+		if (!row || row.entity_id !== "NEW") return row?.entity_id || "-";
+		const context = parseContext(row.context_json);
+		if (row.action === "APPROVE" && context && context.applied_entity_id) {
+			return String(context.applied_entity_id);
+		}
+		return "Pending Create";
+	};
+	const branchLookup = (branches || []).reduce((acc, branch) => {
+		acc[String(branch.id)] = branch.name || branch.code || String(branch.id);
+		return acc;
+	}, {});
 %>
 
 <div class="mx-auto w-full max-w-7xl space-y-6">
@@ -61,15 +90,18 @@
 					<th class="px-6 py-3"><%= t("entity") || "Entity" %></th>
 					<th class="px-6 py-3"><%= t("sr_no") || "Sr No" %></th>
 					<th class="px-6 py-3"><%= t("action") || "Action" %></th>
+					<% if (canViewDetails) { %>
+						<th class="px-6 py-3"><%= t("details") || "Details" %></th>
+					<% } %>
 				</tr>
 			</thead>
 			<tbody class="divide-y divide-slate-100">
 				<% if (!rows || rows.length === 0) { %>
-					<tr><td colspan="6" class="p-6 text-center text-slate-400"><%= t("no_entries") %></td></tr>
+					<tr><td colspan="<%= canViewDetails ? 7 : 6 %>" class="p-6 text-center text-slate-400"><%= t("no_entries") %></td></tr>
 				<% } %>
 				<% Object.keys(groupedRows).forEach((dateKey) => { %>
 					<tr class="bg-slate-50">
-						<td class="px-6 py-3 text-xs font-semibold uppercase text-slate-500" colspan="6"><%= dateKey %></td>
+						<td class="px-6 py-3 text-xs font-semibold uppercase text-slate-500" colspan="<%= canViewDetails ? 7 : 6 %>"><%= dateKey %></td>
 					</tr>
 					<% groupedRows[dateKey].forEach((row) => { %>
 						<tr class="hover:bg-amber-50/40">
@@ -77,10 +109,22 @@
 							<td class="px-6 py-4 font-medium text-slate-900"><%= row.user_name || "-" %></td>
 							<td class="px-6 py-4 text-slate-600"><%= row.branch_name || row.branch_code || "-" %></td>
 							<td class="px-6 py-4 text-slate-600"><%= row.entity_type %></td>
-							<td class="px-6 py-4 text-slate-600"><%= row.entity_id %></td>
+							<td class="px-6 py-4 text-slate-600"><%= getEntityIdLabel(row) %></td>
 							<td class="px-6 py-4">
 								<span class="inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] ring-1 <%= getActionClass(row.action) %>"><%= row.action %></span>
 							</td>
+							<% if (canViewDetails) { %>
+								<td class="px-6 py-4">
+									<button
+										type="button"
+										class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
+										data-audit-details-btn
+										data-audit-details="<%= jsonAttr(row.context_json) %>"
+									>
+										<%= t("view") || "View" %>
+									</button>
+								</td>
+							<% } %>
 						</tr>
 					<% }) %>
 				<% }) %>
@@ -89,4 +133,259 @@
 	</div>
 </div>
 
+<% if (pagination && pagination.total > 0) { %>
+  <div class="mx-auto mt-4 flex w-full max-w-7xl items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600 shadow-sm">
+    <div>
+      <%= t("showing") || "Showing" %>
+      <%= ((pagination.page - 1) * pagination.pageSize) + 1 %>
+      <%= t("to") || "to" %>
+      <%= Math.min(pagination.page * pagination.pageSize, pagination.total) %>
+      <%= t("of") || "of" %>
+      <%= pagination.total %>
+      <%= t("entries") || "entries" %>
+    </div>
+    <div class="flex items-center gap-2">
+      <span><%= t("page") || "Page" %> <%= pagination.page %>/<%= pagination.totalPages %></span>
+      <% if (pagination.hasPrev) { %>
+        <a href="<%= pagination.prevUrl %>" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-600 hover:border-slate-300 hover:text-slate-800"><%= t("prev") || "Prev" %></a>
+      <% } %>
+      <% if (pagination.hasNext) { %>
+        <a href="<%= pagination.nextUrl %>" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-600 hover:border-slate-300 hover:text-slate-800"><%= t("next") || "Next" %></a>
+      <% } %>
+    </div>
+  </div>
+<% } %>
+
+<% if (canViewDetails) { %>
+	<div class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 p-4" data-audit-details-modal>
+		<div class="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden">
+			<div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+				<div class="text-sm font-semibold text-slate-700"><%= t("audit_context_details") || "Audit Context Details" %></div>
+				<button type="button" class="text-slate-400 hover:text-slate-600" data-audit-details-close>
+					<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+				</button>
+			</div>
+			<div class="max-h-[70vh] overflow-auto px-6 py-4">
+				<div class="space-y-4" data-audit-details-content></div>
+			</div>
+		</div>
+	</div>
+<% } %>
+
 <%- include("../../base/partials/filter-utils-server") %>
+<% if (canViewDetails) { %>
+<script>
+	(function () {
+		const modal = document.querySelector("[data-audit-details-modal]");
+		const closeBtn = document.querySelector("[data-audit-details-close]");
+		const content = document.querySelector("[data-audit-details-content]");
+		const branchLookup = <%- JSON.stringify(branchLookup) %>;
+		let bodyScrollLocked = false;
+
+		const setBodyScrollLock = (locked) => {
+			const body = document.body;
+			if (!body) return;
+			if (locked && !bodyScrollLocked) {
+				body.classList.add("overflow-hidden");
+				bodyScrollLocked = true;
+				return;
+			}
+			if (!locked && bodyScrollLocked) {
+				body.classList.remove("overflow-hidden");
+				bodyScrollLocked = false;
+			}
+		};
+
+		const decodeHtml = (raw) => {
+			if (!raw) return "";
+			const textarea = document.createElement("textarea");
+			textarea.innerHTML = raw;
+			return textarea.value;
+		};
+
+		const closeModal = () => {
+			if (!modal) return;
+			modal.classList.add("hidden");
+			modal.classList.remove("flex");
+			setBodyScrollLock(false);
+		};
+
+		const humanizeKey = (value) =>
+			String(value || "")
+				.replace(/_/g, " ")
+				.replace(/\bid\b/gi, "ID")
+				.replace(/\s+/g, " ")
+				.trim();
+
+		const toIdList = (value) => {
+			if (Array.isArray(value)) {
+				return value.map((entry) => String(entry).trim()).filter(Boolean);
+			}
+			if (value && typeof value === "object") {
+				return Object.values(value).map((entry) => String(entry).trim()).filter(Boolean);
+			}
+			return String(value || "")
+				.split(",")
+				.map((entry) => entry.trim())
+				.filter(Boolean);
+		};
+
+		const mapBranchValue = (value) => {
+			const ids = toIdList(value);
+			if (!ids.length) return value;
+			return ids.map((id) => branchLookup[id] || id);
+		};
+
+		const normalizeDisplayValue = (field, value) => {
+			const key = String(field || "").toLowerCase();
+			if (key === "branch_id" || key === "branch_ids") {
+				return mapBranchValue(value);
+			}
+			return value;
+		};
+
+		const normalizeContext = (context) => {
+			if (!context || typeof context !== "object") return context;
+			const copy = JSON.parse(JSON.stringify(context));
+			if (copy.branch_id !== undefined) copy.branch_id = normalizeDisplayValue("branch_id", copy.branch_id);
+			if (copy.branch_ids !== undefined) copy.branch_ids = normalizeDisplayValue("branch_ids", copy.branch_ids);
+			if (copy.request_body && typeof copy.request_body === "object") {
+				if (copy.request_body.branch_id !== undefined) {
+					copy.request_body.branch_id = normalizeDisplayValue("branch_id", copy.request_body.branch_id);
+				}
+				if (copy.request_body.branch_ids !== undefined) {
+					copy.request_body.branch_ids = normalizeDisplayValue("branch_ids", copy.request_body.branch_ids);
+				}
+			}
+			return copy;
+		};
+
+		const valueText = (value) => {
+			if (value === null || typeof value === "undefined" || value === "") return "-";
+			if (Array.isArray(value)) return value.join(", ") || "-";
+			if (typeof value === "object") return Object.entries(value).map(([k, v]) => `${humanizeKey(k)}: ${valueText(v)}`).join(" | ");
+			return String(value);
+		};
+
+		const makeSection = (title, rows) => {
+			if (!rows || !rows.length) return null;
+			const card = document.createElement("div");
+			card.className = "rounded-xl border border-slate-200 bg-white p-4";
+			const heading = document.createElement("div");
+			heading.className = "text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500";
+			heading.textContent = title;
+			card.appendChild(heading);
+			const list = document.createElement("div");
+			list.className = "mt-3 space-y-2";
+			rows.forEach((row) => {
+				const line = document.createElement("div");
+				line.className = "grid grid-cols-12 gap-3 text-xs";
+				const key = document.createElement("div");
+				key.className = "col-span-4 font-semibold text-slate-600";
+				key.textContent = row.label;
+				const val = document.createElement("div");
+				val.className = "col-span-8 text-slate-700";
+				val.textContent = row.value;
+				line.appendChild(key);
+				line.appendChild(val);
+				list.appendChild(line);
+			});
+			card.appendChild(list);
+			return card;
+		};
+
+		const renderDetails = (parsed) => {
+			if (!content) return;
+			content.innerHTML = "";
+			if (!parsed || typeof parsed !== "object") {
+				const empty = document.createElement("div");
+				empty.className = "rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600";
+				empty.textContent = parsed ? String(parsed) : "<%= t('no_entries') || 'No entries yet.' %>";
+				content.appendChild(empty);
+				return;
+			}
+			const normalized = normalizeContext(parsed);
+			const metaRows = [
+				{ label: "<%= t('source') || 'Source' %>", value: valueText(normalized.source) },
+				{ label: "<%= t('decision') || 'Decision' %>", value: valueText(normalized.decision) },
+				{ label: "<%= t('request_type') || 'Request Type' %>", value: valueText(normalized.request_type) },
+				{ label: "<%= t('summary') || 'Summary' %>", value: valueText(normalized.summary) },
+				{ label: "<%= t('requested_entity') || 'Requested Entity' %>", value: valueText(normalized.requested_entity_id) },
+				{ label: "<%= t('applied_entity') || 'Applied Entity' %>", value: valueText(normalized.applied_entity_id) },
+			].filter((row) => row.value !== "-");
+			const metaSection = makeSection("<%= t('overview') || 'Overview' %>", metaRows);
+			if (metaSection) content.appendChild(metaSection);
+			const reservedKeys = new Set([
+				"source",
+				"decision",
+				"request_type",
+				"summary",
+				"requested_entity_id",
+				"applied_entity_id",
+				"changed_fields",
+				"old_value",
+				"new_value",
+			]);
+			const contextRows = Object.entries(normalized)
+				.filter(([key]) => !reservedKeys.has(key))
+				.map(([key, value]) => ({ label: humanizeKey(key), value: valueText(normalizeDisplayValue(key, value)) }))
+				.filter((row) => row.value !== "-");
+			const contextSection = makeSection("<%= t('context') || 'Context' %>", contextRows);
+			if (contextSection) content.appendChild(contextSection);
+
+			const changed = Array.isArray(normalized.changed_fields) ? normalized.changed_fields : [];
+			if (changed.length) {
+				const changedRows = changed.map((entry) => {
+					const field = entry && entry.field ? entry.field : "unknown";
+					const oldValue = entry ? normalizeDisplayValue(field, entry.old_value) : null;
+					const newValue = entry ? normalizeDisplayValue(field, entry.new_value) : null;
+					return {
+						label: humanizeKey(field),
+						value: `${"<%= t('old_value') || 'Old' %>"}: ${valueText(oldValue)} | ${"<%= t('new_value') || 'New' %>"}: ${valueText(newValue)}`,
+					};
+				});
+				const changedSection = makeSection("<%= t('changed_fields') || 'Changed Fields' %>", changedRows);
+				if (changedSection) content.appendChild(changedSection);
+			}
+
+			const oldValueObj = normalized.old_value && typeof normalized.old_value === "object" ? normalized.old_value : null;
+			const newValueObj = normalized.new_value && typeof normalized.new_value === "object" ? normalized.new_value : null;
+			if (oldValueObj || newValueObj) {
+				const keys = Array.from(
+					new Set([
+						...Object.keys(oldValueObj || {}),
+						...Object.keys(newValueObj || {}),
+					]),
+				).filter((key) => !String(key).startsWith("_"));
+				const detailRows = keys.map((key) => ({
+					label: humanizeKey(key),
+					value: `${"<%= t('old_value') || 'Old' %>"}: ${valueText(normalizeDisplayValue(key, oldValueObj ? oldValueObj[key] : null))} | ${"<%= t('new_value') || 'New' %>"}: ${valueText(normalizeDisplayValue(key, newValueObj ? newValueObj[key] : null))}`,
+				}));
+				const valuesSection = makeSection("<%= t('approved_values') || 'Approved Values' %>", detailRows);
+				if (valuesSection) content.appendChild(valuesSection);
+			}
+		};
+
+		closeBtn?.addEventListener("click", closeModal);
+		modal?.addEventListener("click", (event) => {
+			if (event.target === modal) closeModal();
+		});
+
+		document.addEventListener("click", (event) => {
+			const btn = event.target.closest("[data-audit-details-btn]");
+			if (!btn || !modal || !content) return;
+			const raw = decodeHtml(btn.getAttribute("data-audit-details"));
+			let parsed = null;
+			try {
+				parsed = raw ? JSON.parse(raw) : null;
+			} catch (err) {
+				parsed = raw || null;
+			}
+			renderDetails(parsed);
+			modal.classList.remove("hidden");
+			modal.classList.add("flex");
+			setBodyScrollLock(true);
+		});
+	})();
+</script>
+<% } %>

@@ -449,9 +449,18 @@ CREATE TABLE IF NOT EXISTS erp.activity_log (
                       REFERENCES erp.audit_action_registry(code)
                       ON DELETE RESTRICT,
 
+  -- Detailed context for old/new values and request metadata.
+  context_json       jsonb,
+
   created_at         timestamptz NOT NULL DEFAULT now(),
   ip_address         inet
 );
+
+CREATE INDEX IF NOT EXISTS idx_activity_log_created_at ON erp.activity_log (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_log_user_created_at ON erp.activity_log (user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_log_branch_created_at ON erp.activity_log (branch_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_log_entity_created_at ON erp.activity_log (entity_type, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_activity_log_action_created_at ON erp.activity_log (action, created_at DESC);
 
 
 /* ============================================================================

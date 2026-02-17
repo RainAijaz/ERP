@@ -260,7 +260,19 @@
       const createdByActive = filterCreatedBy && (filterCreatedBy.value || "").trim() ? 1 : 0;
       const subgroupActive = filterSubgroup && (filterSubgroup.value || "").trim() ? 1 : 0;
       const createdAtActive = (filterCreatedAtStart && filterCreatedAtStart.value) || (filterCreatedAtEnd && filterCreatedAtEnd.value) ? 1 : 0;
-      const activeFilters = [...getFilterValues("[data-filter-account-type]"), ...getFilterValues("[data-filter-account-group]"), ...getFilterValues("[data-filter-party-type]"), ...getFilterValues("[data-filter-party-group]"), ...getFilterValues("[data-filter-branch]"), ...getFilterValues("[data-filter-city]")].length + createdByActive + createdAtActive + subgroupActive;
+      const activeFilters =
+        [
+          ...getFilterValues("[data-filter-account-type]"),
+          ...getFilterValues("[data-filter-account-group]"),
+          ...getFilterValues("[data-filter-party-type]"),
+          ...getFilterValues("[data-filter-party-group]"),
+          ...getFilterValues("[data-filter-branch]"),
+          ...getFilterValues("[data-filter-city]"),
+          ...getFilterValues("[data-filter-apply-on]"),
+          ...getFilterValues("[data-filter-subgroup]"),
+          ...getFilterValues("[data-filter-group]"),
+          ...getFilterValues("[data-filter-article-type]"),
+        ].length + createdByActive + createdAtActive + subgroupActive;
       if (activeFilters > 0) {
         filterCountBadge.textContent = String(activeFilters);
         filterCountBadge.classList.remove("hidden");
@@ -708,7 +720,13 @@
     hookFilterAll("[data-filter-party-group]");
     hookFilterAll("[data-filter-branch]");
     hookFilterAll("[data-filter-city]");
+    hookFilterAll("[data-filter-primary]");
+    hookFilterAll("[data-filter-secondary]");
+    hookFilterAll("[data-filter-tertiary]");
+    hookFilterAll("[data-filter-apply-on]");
     hookFilterAll("[data-filter-subgroup]");
+    hookFilterAll("[data-filter-group]");
+    hookFilterAll("[data-filter-article-type]");
     if (filterCreatedBy) filterCreatedBy.addEventListener("change", updateFilterCount);
     if (filterSubgroup) filterSubgroup.addEventListener("change", updateFilterCount);
     if (filterCreatedAtStart) filterCreatedAtStart.addEventListener("change", updateFilterCount);
@@ -719,7 +737,28 @@
     document.querySelectorAll("[data-filter-party-group-mode]").forEach((el) => hookFilter(el));
     document.querySelectorAll("[data-filter-branch-mode]").forEach((el) => hookFilter(el));
     document.querySelectorAll("[data-filter-city-mode]").forEach((el) => hookFilter(el));
-    ["[data-filter-account-type]", "[data-filter-account-group]", "[data-filter-party-type]", "[data-filter-party-group]", "[data-filter-branch]", "[data-filter-city]"].forEach((selector) => {
+    document.querySelectorAll("[data-filter-primary-mode]").forEach((el) => hookFilter(el));
+    document.querySelectorAll("[data-filter-secondary-mode]").forEach((el) => hookFilter(el));
+    document.querySelectorAll("[data-filter-tertiary-mode]").forEach((el) => hookFilter(el));
+    document.querySelectorAll("[data-filter-apply-on-mode]").forEach((el) => hookFilter(el));
+    document.querySelectorAll("[data-filter-subgroup-mode]").forEach((el) => hookFilter(el));
+    document.querySelectorAll("[data-filter-group-mode]").forEach((el) => hookFilter(el));
+    document.querySelectorAll("[data-filter-article-type-mode]").forEach((el) => hookFilter(el));
+    [
+      "[data-filter-account-type]",
+      "[data-filter-account-group]",
+      "[data-filter-party-type]",
+      "[data-filter-party-group]",
+      "[data-filter-branch]",
+      "[data-filter-city]",
+      "[data-filter-primary]",
+      "[data-filter-secondary]",
+      "[data-filter-tertiary]",
+      "[data-filter-apply-on]",
+      "[data-filter-subgroup]",
+      "[data-filter-group]",
+      "[data-filter-article-type]",
+    ].forEach((selector) => {
       document.querySelectorAll(selector).forEach((el) => {
         el.addEventListener("change", updateFilterCount);
       });
@@ -1261,37 +1300,40 @@
           if (useServerFilters) {
             const url = new URL(window.location.href);
             const params = new URLSearchParams(url.search);
-            const subgroupValue = (filterSubgroup && filterSubgroup.value ? filterSubgroup.value : "").trim();
+            const collectServerList = (key, valueParam, modeParam) => {
+              params.delete(valueParam);
+              if (modeParam) params.delete(modeParam);
+              const list = filterPanel?.querySelector(`[data-filter-list="${key}"]`);
+              if (!list) return;
+              const selects = Array.from(list.querySelectorAll(`[data-filter-${key}]`));
+              const modes = Array.from(list.querySelectorAll(`[data-filter-${key}-mode]`));
+              const mode = ((modes[0] && modes[0].value) || "include").trim();
+              const values = selects.map((el) => (el.value || "").trim()).filter(Boolean);
+              if (modeParam) params.set(modeParam, mode);
+              values.forEach((value) => params.append(valueParam, value));
+            };
+
+            collectServerList("primary", "primary_value", "primary_mode");
+            collectServerList("secondary", "secondary_value", "secondary_mode");
+            collectServerList("tertiary", "tertiary_value", "tertiary_mode");
+            collectServerList("branch", "branch_id", "branch_mode");
+            collectServerList("apply-on", "apply_on", "apply_on_mode");
+            collectServerList("subgroup", "subgroup_id", "subgroup_mode");
+            collectServerList("group", "group_id", "group_mode");
+            collectServerList("article-type", "article_type", "article_type_mode");
+
             const createdByValue = (filterCreatedBy && filterCreatedBy.value ? filterCreatedBy.value : "").trim();
             const createdAtStartValue = filterCreatedAtStart ? filterCreatedAtStart.value : "";
             const createdAtEndValue = filterCreatedAtEnd ? filterCreatedAtEnd.value : "";
             const lowStockOnly = filterPanel.querySelector('[name="low_stock_only"]');
-
-            if (subgroupValue) {
-              params.set("subgroup_id", subgroupValue);
-            } else {
-              params.delete("subgroup_id");
-            }
-            if (createdByValue) {
-              params.set("created_by", createdByValue);
-            } else {
-              params.delete("created_by");
-            }
-            if (createdAtStartValue) {
-              params.set("created_at_start", createdAtStartValue);
-            } else {
-              params.delete("created_at_start");
-            }
-            if (createdAtEndValue) {
-              params.set("created_at_end", createdAtEndValue);
-            } else {
-              params.delete("created_at_end");
-            }
-            if (lowStockOnly && lowStockOnly.checked) {
-              params.set("low_stock_only", "true");
-            } else {
-              params.delete("low_stock_only");
-            }
+            if (createdByValue) params.set("created_by", createdByValue);
+            else params.delete("created_by");
+            if (createdAtStartValue) params.set("created_at_start", createdAtStartValue);
+            else params.delete("created_at_start");
+            if (createdAtEndValue) params.set("created_at_end", createdAtEndValue);
+            else params.delete("created_at_end");
+            if (lowStockOnly && lowStockOnly.checked) params.set("low_stock_only", "true");
+            else params.delete("low_stock_only");
 
             url.search = params.toString();
             window.location.href = url.toString();
@@ -1309,7 +1351,28 @@
           if (useServerFilters) {
             const url = new URL(window.location.href);
             const params = new URLSearchParams(url.search);
-            ["subgroup_id", "created_by", "created_at_start", "created_at_end", "low_stock_only"].forEach((key) => params.delete(key));
+            [
+              "primary_value",
+              "primary_mode",
+              "secondary_value",
+              "secondary_mode",
+              "tertiary_value",
+              "tertiary_mode",
+              "branch_id",
+              "branch_mode",
+              "apply_on",
+              "apply_on_mode",
+              "subgroup_id",
+              "subgroup_mode",
+              "group_id",
+              "group_mode",
+              "article_type",
+              "article_type_mode",
+              "created_by",
+              "created_at_start",
+              "created_at_end",
+              "low_stock_only",
+            ].forEach((key) => params.delete(key));
             url.search = params.toString();
             window.location.href = url.toString();
             return;
@@ -1348,7 +1411,7 @@
       const firstMode = list.querySelector(`[data-filter-${type}-mode]`);
       if (!firstSelect || !firstMode) return;
       const wrapper = document.createElement("div");
-      wrapper.className = "flex items-center gap-2";
+      wrapper.className = "flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5";
       const mode = firstMode.cloneNode(true);
       mode.value = "include";
       const select = firstSelect.cloneNode(true);
@@ -1378,6 +1441,15 @@
         const type = btn.getAttribute("data-filter-add");
         if (!type) return;
         addFilterSelect(type);
+      });
+    });
+    document.querySelectorAll("[data-filter-remove]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const row = btn.closest("div");
+        if (!row) return;
+        row.remove();
+        updateFilterCount();
+        applyFilters();
       });
     });
 
@@ -1431,6 +1503,7 @@
       // 3. Create Wrapper
       const wrapper = document.createElement("div");
       wrapper.className = "relative w-full group";
+      wrapper.setAttribute("data-searchable-wrapper", "true");
 
       // 4. Create the "Combobox" Input
       const input = document.createElement("input");

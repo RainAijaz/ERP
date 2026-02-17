@@ -1,0 +1,773 @@
+<%
+  const isEdit = formMode === "edit";
+  const header = formState?.header || {};
+  const selectedLevel = String(header.level || "").toUpperCase();
+  const selectedItemType = selectedLevel === "SEMI_FINISHED" ? "SFG" : selectedLevel === "FINISHED" ? "FG" : null;
+  const isDraft = !header.status || header.status === "DRAFT";
+  const isEditable = !isEdit || isDraft;
+  const submitPath = isEdit ? `${basePath}/${header.id}/save-draft` : `${basePath}/save-draft`;
+%>
+
+<div class="mx-auto w-full max-w-7xl space-y-6">
+  <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div class="space-y-1">
+        <h1 class="text-2xl font-display text-ink">
+          <%= isEdit ? (t("bom_edit_title") || "Edit BOM") : (t("bom_new_title") || "Add BOM") %>
+        </h1>
+        <p class="text-sm text-muted"><%= t("bom_header_required_message") || "Complete BOM Header first. Other sections depend on it." %></p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <% if (isEdit && header.status === "APPROVED" && can('SCREEN', 'master_data.bom', 'create')) { %>
+          <form method="POST" action="<%= basePath %>/<%= header.id %>/create-new-version">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button type="submit" class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800">
+              <%= t("bom_create_new_version") || "Create New Version" %>
+            </button>
+          </form>
+        <% } %>
+        <% if (isEdit && isDraft) { %>
+          <form method="POST" action="<%= basePath %>/<%= header.id %>/send-for-approval">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button type="submit" class="rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-emerald-500">
+              <%= user?.isAdmin ? (t("approve") || "Approve") : (t("send_for_approval") || "Send for Approval") %>
+            </button>
+          </form>
+        <% } %>
+      </div>
+    </div>
+  </section>
+
+  <% if (errorMessage) { %>
+    <section class="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
+      <div class="font-semibold"><%= errorMessage %></div>
+      <% if (errors && errors.length) { %>
+        <ul class="mt-2 list-disc space-y-1 ps-5">
+          <% errors.forEach(function(err) { %>
+            <li><%= err.message %></li>
+          <% }) %>
+        </ul>
+      <% } %>
+    </section>
+  <% } %>
+
+  <form id="bom-form" method="POST" action="<%= submitPath %>" class="space-y-6">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input type="hidden" name="rm_lines_json" value="<%- JSON.stringify(formState?.rm_lines || []) %>" data-lines-json="rm_lines">
+    <input type="hidden" name="sfg_lines_json" value="<%- JSON.stringify(formState?.sfg_lines || []) %>" data-lines-json="sfg_lines">
+    <input type="hidden" name="labour_lines_json" value="<%- JSON.stringify(formState?.labour_lines || []) %>" data-lines-json="labour_lines">
+    <input type="hidden" name="variant_rules_json" value="<%- JSON.stringify(formState?.variant_rules || []) %>" data-lines-json="variant_rules">
+
+    <section id="bom-header" class="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm scroll-mt-24">
+      <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_header") || "BOM Header" %></div>
+        <% if (header.bom_no) { %>
+          <div class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500"><%= t("code") || "Code" %>: <%= header.bom_no %></div>
+        <% } %>
+      </div>
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <label class="block text-sm font-semibold text-slate-600">
+          <span><%= t("level") || "Level" %></span>
+          <select name="level" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" <%= isEditable ? "" : "disabled" %> required>
+            <option value=""><%= t("select") %></option>
+            <% (options?.levelOptions || []).forEach(function(levelOpt) { %>
+              <option value="<%= levelOpt.value %>" <%= selectedLevel === levelOpt.value ? "selected" : "" %>>
+                <%= t(levelOpt.label) || levelOpt.value %>
+              </option>
+            <% }) %>
+          </select>
+        </label>
+        <label class="block text-sm font-semibold text-slate-600">
+          <span><%= t("article_name") || "Article Name" %></span>
+          <select name="item_id" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" <%= isEditable ? "" : "disabled" %> required>
+            <option value=""><%= t("select") %></option>
+            <% (options?.items || []).filter(function(item) { return !selectedItemType || item.item_type === selectedItemType; }).forEach(function(item) { %>
+              <option value="<%= item.id %>" <%= Number(header.item_id) === Number(item.id) ? "selected" : "" %>>
+                <%= item.name %>
+              </option>
+            <% }) %>
+          </select>
+        </label>
+        <label class="block text-sm font-semibold text-slate-600">
+          <span><%= t("bom_output_qty") || "Output Quantity" %></span>
+          <input type="number" step="0.001" min="0.001" name="output_qty" value="<%= header.output_qty ?? 1 %>" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" <%= isEditable ? "" : "readonly" %> required>
+        </label>
+        <label class="block text-sm font-semibold text-slate-600">
+          <span><%= t("base_unit") || "Output Unit" %></span>
+          <select name="output_uom_id" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" <%= isEditable ? "" : "disabled" %> required>
+            <option value=""><%= t("select") %></option>
+            <% (options?.uoms || []).forEach(function(uom) { %>
+              <option value="<%= uom.id %>" <%= Number(header.output_uom_id) === Number(uom.id) ? "selected" : "" %>><%= uom.name %></option>
+            <% }) %>
+          </select>
+        </label>
+      </div>
+      <% if (isEdit) { %>
+        <div class="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div class="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+            <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"><%= t("version") || "Version" %></div>
+            <div class="mt-1 text-sm font-semibold text-slate-800">V<%= header.version_no %></div>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+            <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"><%= t("status") %></div>
+            <div class="mt-1">
+              <span class="inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold uppercase tracking-[0.08em] <%= (String(header.status || '').toUpperCase() === 'APPROVED') ? 'bg-emerald-100 text-emerald-700' : (String(header.status || '').toUpperCase() === 'PENDING') ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700' %>">
+                <%= t((header.status || '').toLowerCase()) || header.status %>
+              </span>
+            </div>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+            <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"><%= t("created") || "Created" %></div>
+            <div class="mt-1 text-sm font-semibold text-slate-800"><%= header.created_at ? new Date(header.created_at).toISOString().slice(0, 10) : "-" %></div>
+          </div>
+          <div class="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+            <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"><%= t("approved") || "Approved" %></div>
+            <div class="mt-1 text-sm font-semibold text-slate-800"><%= header.approved_at ? new Date(header.approved_at).toISOString().slice(0, 10) : "-" %></div>
+          </div>
+        </div>
+      <% } %>
+    </section>
+
+    <section class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 <%= (header.item_id && header.level && Number(header.output_qty || 0) > 0 && header.output_uom_id) ? 'hidden' : '' %>" data-header-lock-notice>
+      <span class="font-semibold"><%= t("notice") || "Notice" %>:</span>
+      <%= t("bom_header_required_message") || "Complete BOM Header first. Other sections depend on it." %>
+    </section>
+
+    <section id="bom-rm" class="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm scroll-mt-24 space-y-5">
+      <div class="mb-3 flex items-center justify-between">
+        <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_tab_rm") || "Raw Materials" %></h2>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+            <tr>
+              <th class="px-3 py-2 text-left"><%= t("raw_materials") || "Raw Material" %></th>
+              <th class="px-3 py-2 text-left"><%= t("color") || "Color" %></th>
+              <th class="px-3 py-2 text-left"><%= t("size") || "Size" %></th>
+              <th class="px-3 py-2 text-left"><%= t("department") || "Department" %></th>
+              <th class="px-3 py-2 text-right"><%= t("actions") %></th>
+            </tr>
+          </thead>
+          <tbody data-lines-body="rm"></tbody>
+        </table>
+      </div>
+      <div class="space-y-3 border-t border-slate-100 pt-4">
+        <div class="mb-1 flex items-center justify-between">
+          <h3 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_rm_rules_size_wise") || "Raw Material Rules Size Wise" %></h3>
+        </div>
+        <div class="space-y-3" data-rule-size-sections></div>
+        <div class="hidden overflow-x-auto rounded-xl border border-slate-200" data-rule-size-grid-template>
+          <table class="min-w-full text-sm">
+            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+              <tr>
+                <th class="px-3 py-2 text-left"><%= t("raw_materials") || "Raw Materials" %></th>
+                <th class="px-3 py-2 text-left"><%= t("quantity") || "Quantity" %></th>
+                <th class="px-3 py-2 text-left"><%= t("base_unit") || "Unit" %></th>
+                <th class="px-3 py-2 text-right"><%= t("actions") %></th>
+              </tr>
+            </thead>
+            <tbody data-lines-body="rule"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section id="bom-sfg" class="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm scroll-mt-24">
+      <div class="mb-3 flex items-center justify-between">
+        <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_tab_sfg") || "Semi-Finished Products" %></h2>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+            <tr>
+              <th class="px-3 py-2 text-left"><%= t("size") || "Size" %></th>
+              <th class="px-3 py-2 text-left"><%= t("semi_finished") || "Semi Finished" %></th>
+              <th class="px-3 py-2 text-left"><%= t("value") || "Required Qty" %></th>
+              <th class="px-3 py-2 text-left"><%= t("base_unit") || "UOM" %></th>
+              <th class="px-3 py-2 text-right"><%= t("actions") %></th>
+            </tr>
+          </thead>
+          <tbody data-lines-body="sfg"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="bom-labour" class="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm scroll-mt-24">
+      <div class="mb-3 flex items-center justify-between">
+        <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_tab_labour") || "Labours" %></h2>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+            <tr>
+              <th class="px-3 py-2 text-left"><%= t("size") || "Size" %></th>
+              <th class="px-3 py-2 text-left"><%= t("labours") || "Labour" %></th>
+              <th class="px-3 py-2 text-left"><%= t("department") || "Department" %></th>
+              <th class="px-3 py-2 text-left"><%= t("rate_type") || "Rate Type" %></th>
+              <th class="px-3 py-2 text-left"><%= t("rate_value") || "Rate Value" %></th>
+              <th class="px-3 py-2 text-right"><%= t("actions") %></th>
+            </tr>
+          </thead>
+          <tbody data-lines-body="labour"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <% if (isEditable) { %>
+      <div class="flex justify-center">
+        <button type="submit" class="rounded-full bg-slate-900 px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800">
+          <%= t("save_draft") || "Save Draft" %>
+        </button>
+      </div>
+    <% } %>
+  </form>
+</div>
+
+<script>
+  (function () {
+    const editable = <%- JSON.stringify(Boolean(isEditable)) %>;
+    const options = <%- JSON.stringify(options || {}) %>;
+    const state = {
+      rm: <%- JSON.stringify(formState?.rm_lines || []) %>,
+      sfg: <%- JSON.stringify(formState?.sfg_lines || []) %>,
+      labour: <%- JSON.stringify(formState?.labour_lines || []) %>,
+      rule: <%- JSON.stringify(formState?.variant_rules || []) %>,
+      ruleOpenSizeId: null,
+      ruleRemovedKeys: new Set(),
+    };
+    const labels = {
+      select: "<%= t('select') || 'Select' %>",
+      all: "<%= t('all') || 'All' %>",
+      specific: "<%= t('bom_specific') || 'Specific' %>",
+      add: "<%= t('add') || 'Add' %>",
+      remove: "<%= t('delete') || 'Delete' %>",
+    };
+    const esc = (value) =>
+      String(value ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/"/g, "&quot;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+
+    const makeOptions = (rows, selected, textFn) =>
+      rows
+        .map((row) => {
+          const optionValue = row.id || row.value;
+          const optionText = textFn ? textFn(row) : row.name || row.label || row.value;
+          return `<option value="${esc(optionValue)}" ${String(selected || "") === String(optionValue) ? "selected" : ""}>${esc(optionText)}</option>`;
+        })
+        .join("");
+
+    const rmItemUomById = new Map((options.rmItems || []).map((item) => [String(item.id), String(item.base_uom_id || "")]));
+    const sfgSkuUomById = new Map((options.sfgSkus || []).map((sku) => [String(sku.id), String(sku.base_uom_id || "")]));
+    const uomNameById = new Map((options.uoms || []).map((uom) => [String(uom.id), String(uom.name || "")]));
+    const rmItemColorMap = options.rmItemColorMap || {};
+    const rmItemSizeMap = options.rmItemSizeMap || {};
+    const labourDeptMap = options.labourDeptMap || {};
+    const headerLevelToItemType = { FINISHED: "FG", SEMI_FINISHED: "SFG" };
+    const headerItemSelect = document.querySelector('select[name="item_id"]');
+    const headerLevelSelect = document.querySelector('select[name="level"]');
+    const allHeaderItems = Array.isArray(options.items) ? options.items : [];
+    const plusIcon = '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /><path d="M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>';
+    const deleteIcon = '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 12h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>';
+    const resolveRmUomId = (row) => rmItemUomById.get(String(row?.rm_item_id || "")) || String(row?.uom_id || "");
+    const resolveSfgUomId = (row) => sfgSkuUomById.get(String(row?.sfg_sku_id || "")) || String(row?.uom_id || "");
+    const getUomName = (uomId) => uomNameById.get(String(uomId || "")) || "";
+    const getRmColorsForItem = (rmItemId) => {
+      const rows = rmItemColorMap[String(rmItemId || "")];
+      return Array.isArray(rows) ? rows : [];
+    };
+    const getRmSizesForItem = (rmItemId) => {
+      const rows = rmItemSizeMap[String(rmItemId || "")];
+      return Array.isArray(rows) ? rows : [];
+    };
+    const getLabourDepartmentsForLabour = (labourId) => {
+      const allowedDeptIds = Array.isArray(labourDeptMap[String(labourId || "")]) ? labourDeptMap[String(labourId || "")] : [];
+      if (!allowedDeptIds.length) return [];
+      return (options.departments || []).filter((dept) => allowedDeptIds.includes(String(dept.id)));
+    };
+    const actionButtons = (type) =>
+      `<div class="inline-flex items-center gap-2">
+        <button type="button" data-add-after="${type}" title="${labels.add}" aria-label="${labels.add}" class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900">${plusIcon}</button>
+        <button type="button" data-remove-row="${type}" title="${labels.remove}" aria-label="${labels.remove}" class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900">${deleteIcon}</button>
+      </div>`;
+
+    const rateTypeLabel = {
+      PER_PAIR: "<%= t('rate_type_per_pair') || 'Per Pair' %>",
+      PER_DOZEN: "<%= t('rate_type_per_dozen') || 'Per Dozen' %>",
+    };
+    const allSizesLabel = "<%= t('all_sizes') || 'All Sizes' %>";
+    const ruleSectionsHost = document.querySelector("[data-rule-size-sections]");
+    const nonHeaderSections = Array.from(document.querySelectorAll("#bom-rm, #bom-sfg, #bom-labour"));
+    const headerLockNotice = document.querySelector("[data-header-lock-notice]");
+
+    const setSelectOptions = (selectEl, rows, selectedValue, textFn) => {
+      if (!selectEl) return;
+      const selected = String(selectedValue || "");
+      selectEl.innerHTML = `<option value="">${esc(labels.select)}</option>${makeOptions(rows || [], selected, textFn)}`;
+      const hasSelected = Array.from(selectEl.options).some((opt) => String(opt.value) === selected);
+      selectEl.value = hasSelected ? selected : "";
+    };
+
+    const refreshRmVariantSelectors = (row, rmItemId) => {
+      if (!row) return;
+      const colorSelect = row.querySelector('[data-col="color_id"]');
+      const sizeSelect = row.querySelector('[data-col="size_id"]');
+      setSelectOptions(colorSelect, getRmColorsForItem(rmItemId), colorSelect?.value || "");
+      setSelectOptions(sizeSelect, getRmSizesForItem(rmItemId), sizeSelect?.value || "");
+    };
+
+    const refreshLabourDepartmentSelector = (row, labourId) => {
+      if (!row) return;
+      const deptSelect = row.querySelector('[data-col="dept_id"]');
+      setSelectOptions(deptSelect, getLabourDepartmentsForLabour(labourId), deptSelect?.value || "");
+    };
+
+    const renderHeaderItemsByLevel = (preserveSelectedItem = true) => {
+      if (!headerItemSelect || !headerLevelSelect) return;
+      const currentValue = preserveSelectedItem ? String(headerItemSelect.value || "") : "";
+      const level = String(headerLevelSelect.value || "").toUpperCase();
+      const requiredItemType = headerLevelToItemType[level] || null;
+      const filteredItems = requiredItemType
+        ? allHeaderItems.filter((item) => String(item.item_type || "").toUpperCase() === requiredItemType)
+        : [];
+      headerItemSelect.innerHTML =
+        `<option value="">${esc(labels.select)}</option>` + makeOptions(filteredItems, currentValue, (item) => item.name || item.code || item.id);
+      const hasCurrent = filteredItems.some((item) => String(item.id) === currentValue);
+      headerItemSelect.value = hasCurrent ? currentValue : "";
+      headerItemSelect.disabled = !editable || !requiredItemType;
+    };
+
+    const getHeaderSizeOptions = () => {
+      const itemId = String(headerItemSelect?.value || "");
+      const rows = options.itemSizeMap && Array.isArray(options.itemSizeMap[itemId]) ? options.itemSizeMap[itemId] : [];
+      return rows;
+    };
+
+    const getRelevantSfgSkus = () => {
+      const headerItemId = String(headerItemSelect?.value || "");
+      const linkedSfgItemIds = Array.isArray(options.fgToSfgMap?.[headerItemId]) ? options.fgToSfgMap[headerItemId] : [];
+      if (linkedSfgItemIds.length) {
+        const itemIdSet = new Set(linkedSfgItemIds.map((id) => String(id)));
+        return (options.sfgSkus || []).filter((sku) => itemIdSet.has(String(sku.item_id || "")));
+      }
+      return options.sfgSkus || [];
+    };
+
+    const isHeaderReady = () => {
+      const level = String(headerLevelSelect?.value || "").trim();
+      const itemId = String(headerItemSelect?.value || "").trim();
+      const outputQty = Number(document.querySelector('input[name="output_qty"]')?.value || 0);
+      const outputUom = String(document.querySelector('select[name="output_uom_id"]')?.value || "").trim();
+      return Boolean(level && itemId && outputQty > 0 && outputUom);
+    };
+
+    const updateHeaderSectionState = () => {
+      const ready = isHeaderReady();
+      nonHeaderSections.forEach((section) => {
+        section.classList.toggle("hidden", !ready);
+      });
+      if (headerLockNotice) headerLockNotice.classList.toggle("hidden", ready);
+    };
+
+    const renderRm = () => {
+      const body = document.querySelector('[data-lines-body="rm"]');
+      if (!body) return;
+      body.innerHTML = state.rm
+        .map((row, idx) => {
+          const fixedUomId = resolveRmUomId(row);
+          const rmColorOptions = getRmColorsForItem(row.rm_item_id);
+          const rmSizeOptions = getRmSizesForItem(row.rm_item_id);
+          return `
+          <tr data-row-index="${idx}" class="border-b border-slate-100">
+            <td class="px-3 py-2"><select data-col="rm_item_id" data-searchable-outside-modal="true" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(options.rmItems || [], row.rm_item_id, (r) => r.name || r.code || r.id)}</select></td>
+            <td class="px-3 py-2"><select data-col="color_id" data-searchable-outside-modal="true" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(rmColorOptions, row.color_id)}</select></td>
+            <td class="px-3 py-2"><select data-col="size_id" data-searchable-outside-modal="true" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(rmSizeOptions, row.size_id)}</select></td>
+            <td class="px-3 py-2"><select data-col="dept_id" data-searchable-outside-modal="true" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(options.departments || [], row.dept_id)}</select></td>
+            <input type="hidden" data-col="qty" value="${esc(row.qty || 1)}" />
+            <input type="hidden" data-col="uom_id" value="${esc(fixedUomId)}" />
+            <input type="hidden" data-col="normal_loss_pct" value="${esc(row.normal_loss_pct ?? 0)}" />
+            <td class="px-3 py-2 text-right">${editable ? actionButtons("rm") : ""}</td>
+          </tr>`;
+        })
+        .join("");
+    };
+
+    const renderSfg = () => {
+      const body = document.querySelector('[data-lines-body="sfg"]');
+      if (!body) return;
+      const sizeOptions = getHeaderSizeOptions();
+      const sfgOptions = getRelevantSfgSkus();
+      body.innerHTML = state.sfg
+        .map((row, idx) => {
+          const fixedUomId = resolveSfgUomId(row);
+          const fixedUomName = getUomName(fixedUomId);
+          return `
+          <tr data-row-index="${idx}" class="border-b border-slate-100">
+            <td class="px-3 py-2"><select data-col="fg_size_id" data-searchable-outside-modal="true" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(sizeOptions, row.fg_size_id)}</select></td>
+            <td class="px-3 py-2"><select data-col="sfg_sku_id" data-searchable-outside-modal="true" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(sfgOptions, row.sfg_sku_id, (r) => r.item_name || r.sku_code || r.id)}</select></td>
+            <td class="px-3 py-2"><input data-col="required_qty" type="number" min="0.001" step="0.001" value="${esc(row.required_qty ?? "")}" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "readonly"}></td>
+            <td class="px-3 py-2">
+              <input type="hidden" data-col="uom_id" value="${esc(fixedUomId)}">
+              <input type="text" data-col-display="uom_id" value="${esc(fixedUomName)}" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm text-slate-600" readonly>
+            </td>
+            <td class="px-3 py-2 text-right">${editable ? actionButtons("sfg") : ""}</td>
+          </tr>`;
+        })
+        .join("");
+    };
+
+    const renderLabour = () => {
+      const body = document.querySelector('[data-lines-body="labour"]');
+      if (!body) return;
+      const sizeOptions = getHeaderSizeOptions();
+      body.innerHTML = state.labour
+        .map((row, idx) => {
+          const selectedSize = String(row.size_scope || "").toUpperCase() === "ALL" ? "ALL" : String(row.size_id || "");
+          const sizeSelectOptions = `<option value="ALL" ${selectedSize === "ALL" ? "selected" : ""}>${esc(allSizesLabel)}</option>${makeOptions(sizeOptions, selectedSize)}`;
+          return `
+          <tr data-row-index="${idx}" class="border-b border-slate-100">
+            <td class="px-3 py-2"><select data-col="size_selector" data-searchable-outside-modal="true" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}>${sizeSelectOptions}</select></td>
+            <td class="px-3 py-2"><select data-col="labour_id" data-searchable-outside-modal="true" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(options.labours || [], row.labour_id, (r) => r.name || r.code || r.id)}</select></td>
+            <td class="px-3 py-2"><select data-col="dept_id" data-searchable-outside-modal="true" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(getLabourDepartmentsForLabour(row.labour_id), row.dept_id)}</select></td>
+            <td class="px-3 py-2"><select data-col="rate_type" data-searchable-outside-modal="true" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions((options.labourRateTypeOptions || []).map((r) => ({ value: r.value, id: r.value })), row.rate_type, (r) => rateTypeLabel[r.value] || r.value)}</select></td>
+            <td class="px-3 py-2"><input data-col="rate_value" type="number" min="0" step="0.0001" value="${esc(row.rate_value ?? "")}" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "readonly"}></td>
+            <td class="px-3 py-2 text-right">${editable ? actionButtons("labour") : ""}</td>
+          </tr>`;
+        })
+        .join("");
+    };
+
+    const normalizeRuleRows = (rows) => {
+      return (Array.isArray(rows) ? rows : [])
+        .map((entry) => {
+          const sizeId = Number(entry?.size_id || 0);
+          const rmItemId = Number(entry?.target_rm_item_id || 0);
+          if (!sizeId || !rmItemId) return null;
+          const nextValue = entry?.new_value && typeof entry.new_value === "object" ? entry.new_value : {};
+          const qty = Number(nextValue.qty || 0) > 0 ? Number(nextValue.qty) : 1;
+          const uomId = Number(nextValue.uom_id || 0) || Number(resolveRmUomId({ rm_item_id: rmItemId })) || null;
+          return {
+            size_id: sizeId,
+            target_rm_item_id: rmItemId,
+            new_value: {
+              qty,
+              uom_id: uomId,
+            },
+          };
+        })
+        .filter(Boolean);
+    };
+
+    const renderRules = () => {
+      if (!ruleSectionsHost) return;
+      const sizeOptions = getHeaderSizeOptions();
+      const rmRows = (state.rm || []).filter((row) => Number(row.rm_item_id));
+      const rmRowMap = new Map(rmRows.map((row) => [Number(row.rm_item_id), row]));
+      const normalizedRules = normalizeRuleRows(state.rule);
+      const existingMap = new Map(
+        normalizedRules.map((row) => [`${row.size_id}:${row.target_rm_item_id}`, row]),
+      );
+      const merged = [];
+      (sizeOptions || []).forEach((size) => {
+        const sizeId = Number(size.id);
+        rmRows.forEach((rmRow) => {
+          const rmItemId = Number(rmRow.rm_item_id);
+          const key = `${sizeId}:${rmItemId}`;
+          if (state.ruleRemovedKeys.has(key)) return;
+          const existing = existingMap.get(key);
+          const fallbackUomId = Number(resolveRmUomId(rmRow)) || null;
+          merged.push({
+            size_id: sizeId,
+            target_rm_item_id: rmItemId,
+            new_value: {
+              qty: Number(existing?.new_value?.qty || 0) > 0 ? Number(existing.new_value.qty) : 1,
+              uom_id: Number(existing?.new_value?.uom_id || 0) || fallbackUomId,
+            },
+          });
+        });
+      });
+      state.rule = merged;
+
+      const grouped = new Map();
+      merged.forEach((row) => {
+        const key = String(row.size_id);
+        if (!grouped.has(key)) grouped.set(key, []);
+        grouped.get(key).push(row);
+      });
+      if (sizeOptions.length && !state.ruleOpenSizeId) state.ruleOpenSizeId = String(sizeOptions[0].id);
+      if (state.ruleOpenSizeId && !sizeOptions.some((row) => String(row.id) === String(state.ruleOpenSizeId))) {
+        state.ruleOpenSizeId = sizeOptions.length ? String(sizeOptions[0].id) : null;
+      }
+
+      if (!sizeOptions.length) {
+        ruleSectionsHost.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600"><%= t("no_entries") %></div>`;
+        return;
+      }
+
+      const activeSizeId = String(state.ruleOpenSizeId || sizeOptions[0].id);
+      const activeSize = sizeOptions.find((size) => String(size.id) === activeSizeId) || sizeOptions[0];
+      const activeRows = grouped.get(String(activeSize.id)) || [];
+
+      ruleSectionsHost.innerHTML = `
+        <div class="overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 p-2">
+          <div class="flex min-w-max items-center gap-2">
+            ${sizeOptions
+              .map((size) => {
+                const sizeId = String(size.id);
+                const isActive = sizeId === String(activeSize.id);
+                const count = (grouped.get(sizeId) || []).length;
+                return `
+                  <button
+                    type="button"
+                    data-rule-toggle-size="${sizeId}"
+                    class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] transition ${isActive ? "border-slate-800 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}"
+                  >
+                    <span>${esc(size.name || size.id)}</span>
+                    <span class="rounded-full ${isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"} px-2 py-0.5 text-[10px]">${count}</span>
+                  </button>
+                `;
+              })
+              .join("")}
+          </div>
+        </div>
+        <section class="rounded-xl border border-slate-200 bg-white p-3">
+          <div class="mb-3 text-sm font-semibold text-slate-700">${esc(activeSize.name || activeSize.id)}</div>
+          <div class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+              <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
+                <tr>
+                  <th class="px-3 py-2 text-left"><%= t("raw_materials") || "Raw Materials" %></th>
+                  <th class="px-3 py-2 text-left"><%= t("quantity") || "Quantity" %></th>
+                  <th class="px-3 py-2 text-left"><%= t("base_unit") || "Unit" %></th>
+                  <th class="px-3 py-2 text-right"><%= t("actions") %></th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100">
+                ${activeRows
+                  .map((row) => {
+                    const rm = rmRowMap.get(Number(row.target_rm_item_id));
+                    const rmItem = (options.rmItems || []).find((item) => Number(item.id) === Number(row.target_rm_item_id));
+                    const rmLabel = rmItem ? (rmItem.name || rmItem.code || row.target_rm_item_id) : row.target_rm_item_id;
+                    const uomId = Number(row.new_value?.uom_id || 0) || Number(resolveRmUomId(rm)) || "";
+                    return `
+                      <tr data-rule-entry data-size-id="${activeSize.id}" data-rm-item-id="${row.target_rm_item_id}">
+                        <td class="px-3 py-2 font-medium text-slate-700">${esc(rmLabel)}</td>
+                        <td class="px-3 py-2"><input data-rule-qty type="number" min="0.001" step="0.001" value="${esc(row.new_value?.qty || 1)}" class="w-32 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" ${editable ? "" : "readonly"} /></td>
+                        <td class="px-3 py-2"><select data-rule-uom data-searchable-outside-modal="true" class="w-40 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}>${makeOptions(options.uoms || [], uomId)}</select></td>
+                        <td class="px-3 py-2 text-right">
+                          ${editable ? `<button type="button" data-rule-remove-entry="${activeSize.id}:${row.target_rm_item_id}" class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900">${deleteIcon}</button>` : ""}
+                        </td>
+                      </tr>
+                    `;
+                  })
+                  .join("")}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      `;
+    };
+
+    const renderAll = () => {
+      renderRm();
+      renderSfg();
+      renderLabour();
+      renderRules();
+      if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+    };
+
+    const addDefaults = {
+      rm: () => ({ rm_item_id: "", color_id: "", size_id: "", dept_id: "", qty: 1, uom_id: "", normal_loss_pct: 0 }),
+      sfg: () => ({ fg_size_id: "", sfg_sku_id: "", required_qty: "", uom_id: "" }),
+      labour: () => ({ size_scope: "ALL", size_id: "", dept_id: "", labour_id: "", rate_type: "PER_PAIR", rate_value: "" }),
+      rule: () => ({ size_scope: "SPECIFIC", size_id: "", packing_scope: "ALL", packing_type_id: null, color_scope: "ALL", color_id: null, action_type: "ADJUST_QTY", material_scope: "SPECIFIC", target_rm_item_id: "", new_value: { qty: 1, uom_id: "" } }),
+    };
+
+    const addRow = (type, insertAtIndex = null) => {
+      if (!editable || !addDefaults[type]) return;
+      syncStateFromDom();
+      if (Number.isInteger(insertAtIndex) && insertAtIndex >= 0 && insertAtIndex <= state[type].length) {
+        state[type].splice(insertAtIndex, 0, addDefaults[type]());
+      } else {
+        state[type].push(addDefaults[type]());
+      }
+      renderAll();
+    };
+
+    const ensureMinimumRows = () => {
+      if (!editable) return;
+      Object.keys(addDefaults).forEach((type) => {
+        if (!Array.isArray(state[type]) || state[type].length === 0) {
+          state[type] = [addDefaults[type]()];
+        }
+      });
+    };
+
+    document.addEventListener("click", (event) => {
+      const inlineAddBtn = event.target.closest("[data-add-after]");
+      if (inlineAddBtn) {
+        const type = inlineAddBtn.getAttribute("data-add-after");
+        if (type === "rule") return;
+        const row = inlineAddBtn.closest("tr");
+        const idx = Number(row?.getAttribute("data-row-index"));
+        if (Number.isFinite(idx)) addRow(type, idx + 1);
+        return;
+      }
+      const ruleToggleBtn = event.target.closest("[data-rule-toggle-size]");
+      if (ruleToggleBtn) {
+        state.ruleOpenSizeId = String(ruleToggleBtn.getAttribute("data-rule-toggle-size") || "");
+        renderRules();
+        return;
+      }
+      const ruleRemoveBtn = event.target.closest("[data-rule-remove-entry]");
+      if (ruleRemoveBtn) {
+        const key = String(ruleRemoveBtn.getAttribute("data-rule-remove-entry") || "");
+        state.ruleRemovedKeys.add(key);
+        state.rule = normalizeRuleRows(state.rule).filter((row) => `${row.size_id}:${row.target_rm_item_id}` !== key);
+        renderRules();
+        return;
+      }
+      const removeBtn = event.target.closest("[data-remove-row]");
+      if (!removeBtn) return;
+      const type = removeBtn.getAttribute("data-remove-row");
+      const row = removeBtn.closest("tr");
+      const idx = Number(row?.getAttribute("data-row-index"));
+      if (!Number.isFinite(idx)) return;
+      syncStateFromDom();
+      state[type].splice(idx, 1);
+      if (!state[type].length && addDefaults[type]) state[type].push(addDefaults[type]());
+      renderAll();
+    });
+
+    document.addEventListener("change", (event) => {
+      if (event.target && event.target.matches('select[name="level"]')) {
+        renderHeaderItemsByLevel(false);
+        updateHeaderSectionState();
+        renderAll();
+      }
+      if (event.target && event.target.matches('select[name="item_id"], input[name="output_qty"], select[name="output_uom_id"]')) {
+        updateHeaderSectionState();
+        renderAll();
+      }
+      const rmItemControl = event.target.closest('[data-col="rm_item_id"]');
+      if (rmItemControl) {
+        const row = rmItemControl.closest("tr");
+        refreshRmVariantSelectors(row, rmItemControl.value);
+        const uomId = rmItemUomById.get(String(rmItemControl.value || "")) || "";
+        const hidden = row?.querySelector('[data-col="uom_id"]');
+        if (hidden) hidden.value = uomId;
+        renderRules();
+      }
+      const labourControl = event.target.closest('[data-col="labour_id"]');
+      if (labourControl) {
+        const row = labourControl.closest("tr");
+        refreshLabourDepartmentSelector(row, labourControl.value);
+      }
+      const sfgSkuControl = event.target.closest('[data-col="sfg_sku_id"]');
+      if (sfgSkuControl) {
+        const row = sfgSkuControl.closest("tr");
+        const uomId = sfgSkuUomById.get(String(sfgSkuControl.value || "")) || "";
+        const hidden = row?.querySelector('[data-col="uom_id"]');
+        if (hidden) hidden.value = uomId;
+      }
+    });
+
+    document.addEventListener("keydown", (event) => {
+      if (!editable || event.key !== "Enter") return;
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const row = target.closest("tr[data-row-index]");
+      const body = target.closest("[data-lines-body]");
+      if (!row || !body) return;
+      if (!target.matches("input, select, textarea")) return;
+
+      event.preventDefault();
+      const controls = Array.from(row.querySelectorAll("select[data-col], input[data-col], textarea[data-col]")).filter(
+        (node) => node instanceof HTMLElement && node.getAttribute("type") !== "hidden",
+      );
+      const currentIndex = controls.indexOf(target);
+      if (currentIndex >= 0 && currentIndex < controls.length - 1) {
+        const nextControl = controls[currentIndex + 1];
+        if (nextControl && typeof nextControl.focus === "function") nextControl.focus();
+        return;
+      }
+
+      const type = body.getAttribute("data-lines-body");
+      const rowIndex = Number(row.getAttribute("data-row-index"));
+      if (!type || !Number.isFinite(rowIndex)) return;
+      addRow(type, rowIndex + 1);
+      setTimeout(() => {
+        const insertedRow = document.querySelector(`[data-lines-body="${type}"] tr[data-row-index="${rowIndex + 1}"]`);
+        const firstInput = insertedRow?.querySelector("select[data-col], input[data-col], textarea[data-col]");
+        if (firstInput && typeof firstInput.focus === "function") firstInput.focus();
+      }, 0);
+    });
+
+    const collectRows = (type, mapFn) => {
+      return Array.from(document.querySelectorAll(`[data-lines-body="${type}"] tr`)).map((row) => mapFn(row));
+    };
+
+    const getValue = (row, col) => row.querySelector(`[data-col="${col}"]`)?.value ?? "";
+
+    const syncStateFromDom = () => {
+      state.rm = collectRows("rm", (row) => ({
+        rm_item_id: getValue(row, "rm_item_id"),
+        color_id: getValue(row, "color_id"),
+        size_id: getValue(row, "size_id"),
+        dept_id: getValue(row, "dept_id"),
+        qty: getValue(row, "qty"),
+        uom_id: getValue(row, "uom_id"),
+        normal_loss_pct: getValue(row, "normal_loss_pct"),
+      }));
+      state.sfg = collectRows("sfg", (row) => ({
+        fg_size_id: getValue(row, "fg_size_id"),
+        sfg_sku_id: getValue(row, "sfg_sku_id"),
+        required_qty: getValue(row, "required_qty"),
+        uom_id: getValue(row, "uom_id"),
+      }));
+      state.labour = collectRows("labour", (row) => {
+        const sizeSelector = getValue(row, "size_selector");
+        return {
+          size_scope: sizeSelector === "ALL" ? "ALL" : "SPECIFIC",
+          size_id: sizeSelector === "ALL" ? null : sizeSelector,
+          dept_id: getValue(row, "dept_id"),
+          labour_id: getValue(row, "labour_id"),
+          rate_type: getValue(row, "rate_type"),
+          rate_value: getValue(row, "rate_value"),
+        };
+      });
+      state.rule = Array.from(document.querySelectorAll("[data-rule-entry]")).map((row) => ({
+        size_scope: "SPECIFIC",
+        size_id: Number(row.getAttribute("data-size-id") || 0),
+        packing_scope: "ALL",
+        packing_type_id: null,
+        color_scope: "ALL",
+        color_id: null,
+        action_type: "ADJUST_QTY",
+        material_scope: "SPECIFIC",
+        target_rm_item_id: Number(row.getAttribute("data-rm-item-id") || 0),
+        new_value: {
+          qty: Number(row.querySelector("[data-rule-qty]")?.value || 0),
+          uom_id: Number(row.querySelector("[data-rule-uom]")?.value || 0) || null,
+        },
+      }))
+        .filter((row) => row.size_id && row.target_rm_item_id && row.new_value.qty > 0);
+    };
+
+    document.getElementById("bom-form")?.addEventListener("submit", () => {
+      syncStateFromDom();
+
+      document.querySelector('[data-lines-json="rm_lines"]').value = JSON.stringify(state.rm);
+      document.querySelector('[data-lines-json="sfg_lines"]').value = JSON.stringify(state.sfg);
+      document.querySelector('[data-lines-json="labour_lines"]').value = JSON.stringify(state.labour);
+      document.querySelector('[data-lines-json="variant_rules"]').value = JSON.stringify(state.rule);
+    });
+
+    ensureMinimumRows();
+    state.rule = normalizeRuleRows(state.rule);
+    renderHeaderItemsByLevel(true);
+    updateHeaderSectionState();
+    renderAll();
+  })();
+</script>

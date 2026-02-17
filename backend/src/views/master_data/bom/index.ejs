@@ -1,0 +1,124 @@
+<div class="mx-auto w-full max-w-7xl space-y-6">
+  <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div class="space-y-1">
+        <h1 class="text-2xl font-display text-ink"><%= t("bom_list") || "BOM List" %></h1>
+        <p class="text-sm text-muted"><%= t("bom_description") || "Manage global BOM drafts, approvals, and versions." %></p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <a href="<%= basePath %>" class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800">
+          <%= t("bom_list") || "BOM List" %>
+        </a>
+        <% const canCreateBom = can('SCREEN', 'master_data.bom', 'create'); %>
+        <% if (canCreateBom) { %>
+          <a href="<%= basePath %>/new" class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800">
+            <%= t("add") %> <%= t("bom") || "BOM" %>
+          </a>
+        <% } %>
+        <a href="<%= basePath %>/versions" class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800">
+          <%= t("bom_versions") || "Versions" %>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md">
+    <form method="GET" class="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+      <div class="text-sm font-semibold text-slate-700"><%= t("list") %> <%= t("bom") || "BOM" %></div>
+      <div class="flex flex-wrap gap-2">
+        <input
+          type="text"
+          name="q"
+          value="<%= filters?.q || '' %>"
+          placeholder="<%= t('search') || 'Search' %>"
+          class="min-w-[180px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
+        />
+        <select name="status" data-searchable-outside-modal="true" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+          <option value=""><%= t("status") %></option>
+          <% ["DRAFT", "PENDING", "APPROVED", "REJECTED"].forEach(function(status) { %>
+            <option value="<%= status %>" <%= (filters?.status || '').toUpperCase() === status ? 'selected' : '' %>><%= t(status.toLowerCase()) || status %></option>
+          <% }) %>
+        </select>
+        <select name="level" data-searchable-outside-modal="true" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+          <option value=""><%= t("all") %></option>
+          <option value="FINISHED" <%= (filters?.level || '').toUpperCase() === 'FINISHED' ? 'selected' : '' %>><%= t("finished") || "Finished" %></option>
+          <option value="SEMI_FINISHED" <%= (filters?.level || '').toUpperCase() === 'SEMI_FINISHED' ? 'selected' : '' %>><%= t("semi_finished") || "Semi Finished" %></option>
+        </select>
+        <button type="submit" class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white">
+          <%= t("apply") %>
+        </button>
+        <a href="<%= basePath %>" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600">
+          <%= t("clear") %>
+        </a>
+      </div>
+    </form>
+
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+          <tr>
+            <th class="px-4 py-3 text-left"><%= t("sr_no") || "Sr No" %></th>
+            <th class="px-4 py-3 text-left"><%= t("code") || "Code" %></th>
+            <th class="px-4 py-3 text-left"><%= t("article_name") || "Article Name" %></th>
+            <th class="px-4 py-3 text-left"><%= t("level") || "Level" %></th>
+            <th class="px-4 py-3 text-left"><%= t("version") || "Version" %></th>
+            <th class="px-4 py-3 text-left"><%= t("status") %></th>
+            <th class="px-4 py-3 text-left"><%= t("date") %></th>
+            <th class="px-4 py-3 text-right"><%= t("actions") %></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100">
+          <% if (!rows || rows.length === 0) { %>
+            <tr>
+              <td colspan="8" class="px-4 py-8 text-center text-slate-400"><%= t("no_entries") %></td>
+            </tr>
+          <% } %>
+          <% (rows || []).forEach(function(row, idx) { %>
+            <tr class="hover:bg-amber-50/40">
+              <td class="px-4 py-3 text-slate-700"><%= idx + 1 %></td>
+              <td class="px-4 py-3 text-slate-700"><%= row.bom_no %></td>
+              <td class="px-4 py-3 text-slate-700"><%= row.item_name || "-" %></td>
+              <td class="px-4 py-3 text-slate-700"><%= t((row.level || '').toLowerCase()) || row.level %></td>
+              <td class="px-4 py-3 text-slate-700">V<%= row.version_no %></td>
+              <td class="px-4 py-3">
+                <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] <%= row.status === 'APPROVED' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : row.status === 'DRAFT' ? 'border-amber-200 bg-amber-50 text-amber-700' : row.status === 'PENDING' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-rose-200 bg-rose-50 text-rose-700' %>">
+                  <%= t((row.status || '').toLowerCase()) || row.status %>
+                </span>
+                <% if (Number(row.pending_approval_count || 0) > 0) { %>
+                  <div class="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-600"><%= t("pending") %>: <%= row.pending_approval_count %></div>
+                <% } %>
+              </td>
+              <td class="px-4 py-3 text-slate-700"><%= row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : "-" %></td>
+              <td class="px-4 py-3">
+                <div class="flex justify-end gap-2">
+                  <a href="<%= basePath %>/<%= row.id %>" class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900" title="<%= t('view') || 'View' %>" aria-label="<%= t('view') || 'View' %>">
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                      <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6" />
+                    </svg>
+                  </a>
+                  <% if (row.status === 'APPROVED' && can('SCREEN', 'master_data.bom', 'create')) { %>
+                    <form method="POST" action="<%= basePath %>/<%= row.id %>/create-new-version" class="inline">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                      <button type="submit" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-800">
+                        <%= t("bom_create_new_version") || "New Version" %>
+                      </button>
+                    </form>
+                  <% } %>
+                  <% if (row.status === 'DRAFT') { %>
+                    <form method="POST" action="<%= basePath %>/<%= row.id %>/send-for-approval" class="inline">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                      <button type="submit" class="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800">
+                        <%= user?.isAdmin ? (t("approve") || "Approve") : (t("send_for_approval") || "Send for Approval") %>
+                      </button>
+                    </form>
+                  <% } %>
+                </div>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>

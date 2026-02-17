@@ -32,6 +32,16 @@ module.exports = (req, res, next) => {
     "";
 
   if (!provided || provided !== token) {
+    console.error("[csrf] token mismatch", {
+      request_id: req.id || null,
+      method: req.method,
+      path: req.originalUrl || req.path,
+      user_id: req.user?.id || null,
+      has_cookie_token: Boolean(token),
+      has_provided_token: Boolean(provided),
+      provided_len: provided ? String(provided).length : 0,
+      cookie_len: token ? String(token).length : 0,
+    });
     return next(new HttpError(403, "Invalid CSRF token"));
   }
 

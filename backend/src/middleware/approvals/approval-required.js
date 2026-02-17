@@ -1,27 +1,9 @@
 const knex = require("../../db/knex");
 const { HttpError } = require("../errors/http-error");
-const { sendMail } = require("../../utils/email");
 const { setCookie } = require("../utils/cookies");
 const { UI_NOTICE_COOKIE } = require("../core/ui-notice");
-
-const notifyAdmins = async ({ subject, html, text }) => {
-  const adminRows = await knex("erp.users")
-    .join("erp.role_templates", "erp.role_templates.id", "erp.users.primary_role_id")
-    .select("erp.users.email")
-    .whereRaw("lower(trim(erp.role_templates.name)) = 'admin'")
-    .andWhereRaw("lower(trim(erp.users.status)) = 'active'")
-    .whereNotNull("erp.users.email");
-
-  const emails = adminRows.map((row) => row.email).filter(Boolean);
-  if (!emails.length) return;
-
-  await sendMail({
-    to: emails,
-    subject,
-    html,
-    text,
-  });
-};
+const { insertActivityLog } = require("../../utils/audit-log");
+const { notifyPendingApprovalAdmins } = require("../../utils/approval-notifications");
 
 // Routes actions through pending approval where configured.
 module.exports = async (req, res, next) => {
@@ -60,10 +42,41 @@ module.exports = async (req, res, next) => {
 
     req.approvalRequestId = created?.id || null;
 
-    await notifyAdmins({
-      subject: `ERP approval pending: ${entityType}`,
-      text: `Approval request pending for ${entityType} ${entityId}.`,
-      html: `<p>Approval request pending for <strong>${entityType}</strong> ${entityId}.</p>`,
+    await insertActivityLog(knex, {
+      branch_id: branchId,
+      user_id: req.user.id,
+      entity_type: entityType,
+      entity_id: String(entityId),
+      action: "SUBMIT",
+      ip_address: req.ip,
+      context: {
+        approval_request_id: req.approvalRequestId,
+        request_type: requestType,
+        summary: summary || null,
+        old_value: oldValue || null,
+        new_value: newValue || null,
+        source: "approval-required",
+      },
+    });
+
+    notifyPendingApprovalAdmins({
+      knex,
+      approvalRequestId: req.approvalRequestId,
+      requestType,
+      entityType,
+      entityId: String(entityId),
+      summary,
+      oldValue,
+      newValue,
+      requestedByName: req.user?.username || null,
+      branchId,
+      t: res.locals.t,
+    }).catch((err) => {
+      console.error("[approval-required] admin email notify failed", {
+        approvalRequestId: req.approvalRequestId,
+        entityType,
+        error: err?.message || err,
+      });
     });
 
     if (res?.locals?.t) {

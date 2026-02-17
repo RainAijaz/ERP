@@ -19,16 +19,34 @@
     if (filterToggle) filterToggle.addEventListener("click", openFilters);
     if (filterClose) filterClose.addEventListener("click", closeFilters);
 
+    const getAppliedFilterCount = () => {
+      if (!filterForm || typeof window === "undefined") return 0;
+      const params = new URLSearchParams(window.location.search || "");
+      const controls = Array.from(filterForm.querySelectorAll("input[name], select[name]"));
+      const allowedNames = new Set();
+      const ignoreNames = new Set();
+      const todayDefaultNames = new Set();
+      controls.forEach((el) => {
+        const name = (el.getAttribute("name") || "").trim();
+        if (!name) return;
+        allowedNames.add(name);
+        if (el.dataset && el.dataset.filterIgnore === "true") ignoreNames.add(name);
+        if (el.dataset && el.dataset.filterDefault === "today") todayDefaultNames.add(name);
+      });
+      let count = 0;
+      params.forEach((value, key) => {
+        if (!allowedNames.has(key)) return;
+        if (ignoreNames.has(key)) return;
+        if (!value) return;
+        if (todayDefaultNames.has(key) && value === todayStr) return;
+        count += 1;
+      });
+      return count;
+    };
+
     const updateFilterCount = () => {
-      if (!filterCountBadge || !filterForm) return;
-      const inputs = Array.from(filterForm.querySelectorAll("input, select"));
-      const count = inputs.reduce((acc, el) => {
-        if (el.dataset && el.dataset.filterIgnore === "true") return acc;
-        if (el.dataset && el.dataset.filterDefault === "today" && el.value === todayStr) return acc;
-        if (el.type === "checkbox") return el.checked ? acc + 1 : acc;
-        if (el.type === "radio") return el.checked && el.value ? acc + 1 : acc;
-        return el.value ? acc + 1 : acc;
-      }, 0);
+      if (!filterCountBadge) return;
+      const count = getAppliedFilterCount();
       if (count > 0) {
         filterCountBadge.textContent = String(count);
         filterCountBadge.classList.remove("hidden");
@@ -75,7 +93,6 @@
 
     if (filterForm) {
       filterForm.addEventListener("change", () => {
-        updateFilterCount();
         applyQuickHighlight();
       });
       updateFilterCount();
@@ -133,10 +150,6 @@
       });
     });
 
-    if (isServerFilters && window.location.search) {
-      window.history.replaceState({}, "", window.location.pathname);
-    }
-
     const addButtons = document.querySelectorAll("[data-filter-add]");
     const removeButtons = document.querySelectorAll("[data-filter-remove]");
     const addRow = (type) => {
@@ -145,24 +158,28 @@
       const firstSelect = list.querySelector(`[data-filter-${type}]`);
       const firstMode = list.querySelector(`[data-filter-${type}-mode]`);
       if (!firstSelect || !firstMode) return;
-      const wrapper = document.createElement("div");
-      wrapper.className = "flex items-center gap-2";
-      const mode = firstMode.cloneNode(true);
+      const firstRow = firstSelect.closest("div");
+      const wrapper = firstRow ? firstRow.cloneNode(true) : document.createElement("div");
+      if (!firstRow) wrapper.className = "flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5";
+      const mode = wrapper.querySelector(`[data-filter-${type}-mode]`) || firstMode.cloneNode(true);
       mode.value = firstMode.value || "include";
       mode.removeAttribute("name");
-      const select = firstSelect.cloneNode(true);
+      mode.setAttribute("data-filter-ignore", "true");
+      const select = wrapper.querySelector(`[data-filter-${type}]`) || firstSelect.cloneNode(true);
       select.value = "";
-      const remove = document.createElement("button");
+      const remove = wrapper.querySelector("[data-filter-add], [data-filter-remove]") || document.createElement("button");
       remove.type = "button";
-      remove.className = "rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500";
+      remove.className = "w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500";
       remove.textContent = "x";
+      remove.removeAttribute("data-filter-add");
+      remove.setAttribute("data-filter-remove", type);
       remove.addEventListener("click", () => {
         wrapper.remove();
         updateFilterCount();
       });
-      wrapper.appendChild(mode);
-      wrapper.appendChild(select);
-      wrapper.appendChild(remove);
+      if (!wrapper.contains(mode)) wrapper.appendChild(mode);
+      if (!wrapper.contains(select)) wrapper.appendChild(select);
+      if (!wrapper.contains(remove)) wrapper.appendChild(remove);
       list.appendChild(wrapper);
     };
 

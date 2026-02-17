@@ -158,6 +158,14 @@
           // Leave the connection; browser will retry automatically.
         });
 
+        window.addEventListener("beforeunload", () => {
+          try {
+            source.close();
+          } catch (err) {
+            // ignore
+          }
+        });
+
         if (window.location.pathname.startsWith("/administration/approvals")) {
           ackApproval();
         }
@@ -246,7 +254,6 @@
     <%- include("../partials/urdu-translate-utils") %>
   </body>
 </html>
-
 
 
 

@@ -7,15 +7,15 @@ const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
 const { parseCookies, setCookie } = require("../../../middleware/utils/cookies");
 const { friendlyErrorMessage } = require("../../../middleware/errors/friendly-error");
 const { queueAuditLog } = require("../../../utils/audit-log");
+const { generateUniqueCode } = require("../../../utils/entity-code");
+const { buildAuditChangeSet } = require("../../../utils/audit-diff");
 
 const router = express.Router();
-
-const toCode = (value) =>
-  (value || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "_")
-    .replace(/^_+|_+$/g, "")
-    .slice(0, 50);
+const debugParties = (...args) => {
+  if (process.env.DEBUG_PARTIES === "1") {
+    console.log(...args);
+  }
+};
 
 const normalizeCredit = (value) => {
   if (value === null || value === undefined || value === "") return null;
@@ -361,16 +361,13 @@ router.get("/", requirePermission("SCREEN", "master_data.parties", "view"), asyn
 });
 
 router.post("/", requirePermission("SCREEN", "master_data.parties", "navigate"), async (req, res, next) => {
-  console.log("[parties:POST /] route hit", {
+  debugParties("[parties:POST /] route hit", {
     user: req.user && { id: req.user.id, username: req.user.username, isAdmin: req.user.isAdmin },
     body: req.body,
     path: req.path,
     method: req.method,
   });
   const values = buildValues(page, req.body);
-  if (page.autoCodeFromName && !values.code) {
-    values.code = toCode(values.name);
-  }
   if (!hasField(page, "code") && !page.autoCodeFromName) {
     delete values.code;
   }
@@ -378,33 +375,11 @@ router.post("/", requirePermission("SCREEN", "master_data.parties", "navigate"),
   const basePath = req.baseUrl;
 
   if (missing.length) {
-    console.log("[parties:POST /] missing required fields", { missing });
+    debugParties("[parties:POST /] missing required fields", { missing });
     return renderIndexError(req, res, values, res.locals.t("error_required_fields"), "create", basePath);
   }
 
   try {
-    console.log("[parties:POST /] calling handleScreenApproval", {
-      user: req.user && { id: req.user.id, username: req.user.username, isAdmin: req.user.isAdmin },
-      values,
-    });
-    const approval = await handleScreenApproval({
-      req,
-      scopeKey: "master_data.parties",
-      action: "create",
-      entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
-      entityId: "NEW",
-      summary: `${res.locals.t("create")} ${res.locals.t(page.titleKey)}`,
-      oldValue: null,
-      newValue: values,
-      t: res.locals.t,
-    });
-    console.log("[parties:POST /] handleScreenApproval result", approval);
-
-    if (approval.queued) {
-      console.log("[parties:POST /] approval was queued, redirecting");
-      return res.redirect(req.get("referer") || basePath);
-    }
-
     const branchIds = Array.isArray(values.branch_ids) ? values.branch_ids : [];
     if (values.group_id) {
       const groupRow = await knex("erp.party_groups").select("party_type", "is_active").where({ id: values.group_id }).first();
@@ -432,7 +407,14 @@ router.post("/", requirePermission("SCREEN", "master_data.parties", "navigate"),
     }
     const creditAllowed = values.credit_allowed === true;
     const creditLimit = normalizeCredit(values.credit_limit);
-    const codeValue = values.code || (page.autoCodeFromName ? toCode(values.name) : "");
+    values.code = await generateUniqueCode({
+      name: values.name,
+      prefix: "party",
+      maxLen: 50,
+      knex,
+      table: page.table,
+    });
+    const codeValue = values.code || "";
     const nameValue = values.name || "";
     if (codeValue && (await knex(page.table).whereRaw("lower(code) = ?", [codeValue.toLowerCase()]).first())) {
       return renderIndexError(req, res, values, res.locals.t("error_duplicate_code"), "create", basePath);
@@ -444,12 +426,33 @@ router.post("/", requirePermission("SCREEN", "master_data.parties", "navigate"),
     values.branch_id = req.branchId;
     values.branch_ids = (branchIds.length ? branchIds : [req.branchId]).map(String);
 
+    debugParties("[parties:POST /] calling handleScreenApproval", {
+      user: req.user && { id: req.user.id, username: req.user.username, isAdmin: req.user.isAdmin },
+      values,
+    });
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey: "master_data.parties",
+      action: "create",
+      entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
+      entityId: "NEW",
+      summary: `${res.locals.t("create")} ${res.locals.t(page.titleKey)}`,
+      oldValue: null,
+      newValue: values,
+      t: res.locals.t,
+    });
+    debugParties("[parties:POST /] handleScreenApproval result", approval);
+
+    if (approval.queued) {
+      debugParties("[parties:POST /] approval was queued, redirecting");
+      return res.redirect(req.get("referer") || basePath);
+    }
+
     const { branch_ids: branchIdsInsert = [], ...rest } = values;
     await knex.transaction(async (trx) => {
       const [row] = await trx(page.table)
         .insert({
           ...rest,
-          ...(page.autoCodeFromName ? { code: toCode(rest.name) } : {}),
           created_by: req.user ? req.user.id : null,
         })
         .returning("id");
@@ -481,9 +484,6 @@ router.post("/:id", requirePermission("SCREEN", "master_data.parties", "navigate
     return next(new HttpError(404, res.locals.t("error_not_found")));
   }
   const values = buildValues(page, req.body);
-  if (page.autoCodeFromName && !values.code) {
-    values.code = toCode(values.name);
-  }
   if (!hasField(page, "code") && !page.autoCodeFromName) {
     delete values.code;
   }
@@ -501,23 +501,16 @@ router.post("/:id", requirePermission("SCREEN", "master_data.parties", "navigate
     }
     if (hasField(page, "code") && existing.code) {
       values.code = existing.code;
+    } else {
+      values.code = await generateUniqueCode({
+        name: values.name,
+        prefix: "party",
+        maxLen: 50,
+        knex,
+        table: page.table,
+        excludeId: id,
+      });
     }
-    const approval = await handleScreenApproval({
-      req,
-      scopeKey: "master_data.parties",
-      action: "edit",
-      entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
-      entityId: id,
-      summary: `${res.locals.t("edit")} ${res.locals.t(page.titleKey)}`,
-      oldValue: existing,
-      newValue: values,
-      t: res.locals.t,
-    });
-
-    if (approval.queued) {
-      return res.redirect(req.get("referer") || basePath);
-    }
-
     const branchIds = Array.isArray(values.branch_ids) ? values.branch_ids : [];
     if (values.group_id) {
       const groupRow = await knex("erp.party_groups").select("party_type", "is_active").where({ id: values.group_id }).first();
@@ -545,7 +538,7 @@ router.post("/:id", requirePermission("SCREEN", "master_data.parties", "navigate
       delete values.credit_allowed;
       delete values.credit_limit;
     }
-    const codeValue = values.code || (page.autoCodeFromName ? toCode(values.name) : "");
+    const codeValue = values.code || "";
     const nameValue = values.name || "";
     if (codeValue) {
       const existing = await knex(page.table).whereRaw("lower(code) = ?", [codeValue.toLowerCase()]).andWhereNot({ id }).first();
@@ -565,7 +558,28 @@ router.post("/:id", requirePermission("SCREEN", "master_data.parties", "navigate
     values.branch_id = req.branchId;
     values.branch_ids = (branchIds.length ? branchIds : [req.branchId]).map(String);
 
+    const approval = await handleScreenApproval({
+      req,
+      scopeKey: "master_data.parties",
+      action: "edit",
+      entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
+      entityId: id,
+      summary: `${res.locals.t("edit")} ${res.locals.t(page.titleKey)}`,
+      oldValue: existing,
+      newValue: values,
+      t: res.locals.t,
+    });
+
+    if (approval.queued) {
+      return res.redirect(req.get("referer") || basePath);
+    }
+
     const auditFields = { updated_by: req.user ? req.user.id : null, updated_at: knex.fn.now() };
+    const changeSet = buildAuditChangeSet({
+      before: existing,
+      after: values,
+      includeKeys: page.fields.map((field) => field.name),
+    });
     const { branch_ids: branchIdsUpdate = [], ...rest } = values;
     await knex.transaction(async (trx) => {
       await trx(page.table)
@@ -590,6 +604,10 @@ router.post("/:id", requirePermission("SCREEN", "master_data.parties", "navigate
       entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
       entityId: id,
       action: "UPDATE",
+      context: {
+        source: "parties-update",
+        ...changeSet,
+      },
     });
     return res.redirect(basePath);
   } catch (err) {
@@ -598,7 +616,7 @@ router.post("/:id", requirePermission("SCREEN", "master_data.parties", "navigate
   }
 });
 
-router.post("/:id/toggle", requirePermission("SCREEN", "master_data.parties", "delete"), async (req, res, next) => {
+router.post("/:id/toggle", requirePermission("SCREEN", "master_data.parties", "navigate"), async (req, res, next) => {
   const id = Number(req.params.id);
   if (!id) {
     return next(new HttpError(404, res.locals.t("error_not_found")));
@@ -643,7 +661,7 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.parties", "d
   }
 });
 
-router.post("/:id/delete", requirePermission("SCREEN", "master_data.parties", "hard_delete"), async (req, res, next) => {
+router.post("/:id/delete", requirePermission("SCREEN", "master_data.parties", "navigate"), async (req, res, next) => {
   const id = Number(req.params.id);
   if (!id) {
     return next(new HttpError(404, res.locals.t("error_not_found")));

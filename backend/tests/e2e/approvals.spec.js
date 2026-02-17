@@ -1,6 +1,6 @@
 const { test, expect } = require("@playwright/test");
 const { login } = require("./utils/auth");
-const { getBranch, getTwoDistinctUsers, getVariantForSkuApproval, createApprovalRequest, deleteApprovalRequests, setVariantSaleRate, upsertUserWithPermissions, clearUserPermissionsOverride, closeDb } = require("./utils/db");
+const { getBranch, getApprovalEditFixtureData, getTwoDistinctUsers, getVariantForSkuApproval, createApprovalRequest, deleteApprovalRequests, setVariantSaleRate, upsertUserWithPermissions, clearUserPermissionsOverride, closeDb } = require("./utils/db");
 
 // --- Helper Functions ---
 const compactJoin = (parts) =>
@@ -55,6 +55,7 @@ test.describe("Approvals page scenarios", () => {
     },
     basicApprovals: [],
     masterApprovals: masterApprovalSpecs,
+    fixture: null,
   };
 
   test.beforeAll(async () => {
@@ -77,6 +78,7 @@ test.describe("Approvals page scenarios", () => {
     ctx.variant = variant;
     ctx.skuLabel = buildSkuLabel(variant);
     ctx.originalRate = variant.sale_rate;
+    ctx.fixture = await getApprovalEditFixtureData();
 
     const managerUsername = process.env.E2E_MANAGER_USER || "manager1";
     const managerPassword = process.env.E2E_MANAGER_PASS || "Manager@123";
@@ -403,6 +405,104 @@ test.describe("Approvals page scenarios", () => {
     return null;
   };
 
+  const withNextDialogAccepted = async (page, action) => {
+    let message = "";
+    const promise = new Promise((resolve) => {
+      page.once("dialog", async (dialog) => {
+        message = dialog.message();
+        await dialog.accept();
+        resolve();
+      });
+    });
+    await action();
+    await promise;
+    return message;
+  };
+
+  const chooseFirstNonEmptyOption = async (selectLocator) => {
+    return selectLocator.evaluate((el) => {
+      const options = Array.from(el.options || []).filter((opt) => String(opt.value || "").trim() !== "");
+      if (!options.length) return "";
+      const target = options[0];
+      el.value = target.value;
+      target.selected = true;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+      return String(target.value);
+    });
+  };
+
+  const mutateApprovalPanelFields = async (panel, token) => {
+    const textInputs = panel.locator('input[data-field][type="text"], input[data-field]:not([type]), textarea[data-field]');
+    const textCount = await textInputs.count();
+    for (let i = 0; i < textCount; i += 1) {
+      const input = textInputs.nth(i);
+      if (!(await input.isVisible()) || (await input.isDisabled())) continue;
+      const fieldName = (await input.getAttribute("data-field")) || "value";
+      if (fieldName === "phone1" || fieldName === "phone2" || fieldName === "phone") {
+        await input.fill("0300-0000000");
+        continue;
+      }
+      if (fieldName === "code") {
+        await input.fill(`e2e_${token}_${i}`);
+        continue;
+      }
+      await input.fill(`E2E ${fieldName} ${token}`);
+    }
+
+    const numberInputs = panel.locator('input[data-field][type="number"]');
+    const numberCount = await numberInputs.count();
+    for (let i = 0; i < numberCount; i += 1) {
+      const input = numberInputs.nth(i);
+      if (!(await input.isVisible()) || (await input.isDisabled())) continue;
+      const current = await input.inputValue();
+      const next = Number(current || 0);
+      await input.fill(String(Number.isFinite(next) ? next + 1 : 1));
+    }
+
+    const singleSelects = panel.locator("select[data-field]:not([multiple])");
+    const singleCount = await singleSelects.count();
+    for (let i = 0; i < singleCount; i += 1) {
+      const select = singleSelects.nth(i);
+      if (!(await select.isVisible()) || (await select.isDisabled())) continue;
+      await chooseFirstNonEmptyOption(select);
+    }
+
+    const singleChecks = panel.locator('input[data-field][type="checkbox"]:not([data-multi="true"])');
+    const checkCount = await singleChecks.count();
+    for (let i = 0; i < checkCount; i += 1) {
+      const checkbox = singleChecks.nth(i);
+      if (!(await checkbox.isVisible()) || (await checkbox.isDisabled())) continue;
+      await checkbox.click();
+    }
+  };
+
+  const ensureBranchMultiSelectInteractive = async (panel) => {
+    const branchSelect = panel.locator('select[data-field="branch_ids"]');
+    if ((await branchSelect.count()) === 0) return;
+    const trigger = panel.locator("[data-multi-select] [data-multi-trigger]").first();
+    if ((await trigger.count()) === 0) return;
+    await trigger.click();
+    const menu = panel.locator("[data-multi-select] [data-multi-menu]").first();
+    await expect(menu).toBeVisible();
+    const firstMenuOption = menu.locator("button").first();
+    await expect(firstMenuOption).toBeVisible();
+    await firstMenuOption.click();
+    const selectedAfter = await branchSelect.evaluate((el) => Array.from(el.selectedOptions).map((o) => o.value));
+    if (!selectedAfter.length) {
+      await branchSelect.evaluate((el) => {
+        const options = Array.from(el.options || []).filter((opt) => String(opt.value || "").trim() !== "");
+        if (!options.length) return;
+        options.forEach((option, idx) => {
+          option.selected = idx === 0;
+        });
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    }
+    const selectedFinal = await branchSelect.evaluate((el) => Array.from(el.selectedOptions).map((o) => o.value));
+    expect(selectedFinal.length).toBeGreaterThan(0);
+  };
+
   // --- STANDARD TESTS ---
   test("loads approvals page with table headers", async ({ page }) => {
     await gotoApprovals(page);
@@ -674,6 +774,299 @@ test.describe("Approvals page scenarios", () => {
     const row = page.locator("tbody tr", { hasText: ctx.skuLabel }).first();
     await expect(row).toBeVisible();
     await expect(row.locator("td").last()).toContainText(/\d{1,2}\/\d{1,2}\/\d{2,4}/);
+  });
+
+  test("account approval: edit modal updates fields (including branches) then approve succeeds", async ({ page }) => {
+    test.setTimeout(90000);
+    test.skip(!ctx.fixture?.accountSubgroupId || !ctx.fixture?.branchIds?.length, "Missing fixture data for account approval edit test.");
+    const suffix = Date.now();
+    const requestId = await createApprovalRequest({
+      branch_id: ctx.branchId,
+      request_type: "MASTER_DATA_CHANGE",
+      entity_type: "ACCOUNT",
+      entity_id: "NEW",
+      summary: `Create Accounts EditFlow ${suffix}`,
+      new_value: {
+        _action: "create",
+        code: `e2e_account_${suffix}`,
+        name: `E2E Account ${suffix}`,
+        name_ur: `E2E Account ${suffix}`,
+        subgroup_id: String(ctx.fixture.accountSubgroupId),
+        branch_ids: [String(ctx.fixture.branchIds[0])],
+        lock_posting: false,
+      },
+      status: "PENDING",
+      requested_by: ctx.otherUser.id,
+      requested_at: new Date(),
+    });
+    createdApprovalIds.push(requestId);
+
+    await gotoApprovals(page, "PENDING");
+    const row = page.locator(`tbody tr:has(form[action$="/${requestId}/approve"])`).first();
+    await expect(row).toBeVisible();
+    await row.locator("[data-approval-view]").click();
+
+    const modal = page.locator("[data-approval-detail-modal]");
+    await expect(modal).toBeVisible();
+    await modal.locator("[data-approval-edit-btn]").click();
+    await expect(modal.locator("[data-approval-edit-save]")).toBeVisible();
+
+    const panel = modal.locator("[data-approval-preview]").first();
+    await panel.locator('[data-field="name"]').fill(`E2E Account Edited ${suffix}`);
+
+    const branchSelect = panel.locator('select[data-field="branch_ids"]');
+    const branchOptionCount = await branchSelect.evaluate((el) => Array.from(el.options || []).filter((opt) => String(opt.value || "").trim() !== "").length);
+    const selectedBefore = await branchSelect.evaluate((el) => Array.from(el.selectedOptions).map((o) => o.value));
+    const trigger = panel.locator("[data-multi-select] [data-multi-trigger]").first();
+    await trigger.click();
+    const menu = panel.locator("[data-multi-select] [data-multi-menu]").first();
+    await expect(menu).toBeVisible();
+    const firstMenuOption = panel.locator("[data-multi-select] [data-multi-menu] button").first();
+    await expect(firstMenuOption).toBeVisible();
+    await firstMenuOption.click();
+    let selectedAfter = await branchSelect.evaluate((el) => Array.from(el.selectedOptions).map((o) => o.value));
+    if (!selectedAfter.length) {
+      await branchSelect.evaluate((el) => {
+        const options = Array.from(el.options || []);
+        if (options[0]) {
+          options.forEach((option, idx) => {
+            option.selected = idx === 0;
+          });
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      });
+      selectedAfter = await branchSelect.evaluate((el) => Array.from(el.selectedOptions).map((o) => o.value));
+    }
+    expect(selectedAfter.length).toBeGreaterThan(0);
+    if (branchOptionCount > 1) {
+      expect(selectedAfter.length).toBeGreaterThan(0);
+    }
+
+    const dialogMessage = await withNextDialogAccepted(page, async () => {
+      await modal.locator("[data-approval-edit-save]").click();
+    });
+    expect(dialogMessage.toLowerCase()).toContain("approval");
+
+    await gotoApprovals(page, "PENDING");
+    const updatedRow = page.locator(`tbody tr:has(form[action$="/${requestId}/approve"])`).first();
+    await expect(updatedRow).toBeVisible();
+    await updatedRow.locator(`form[action$="/${requestId}/approve"] button`).click();
+
+    const toast = page.locator("[data-ui-notice-toast]").first();
+    await expect(toast).toBeVisible();
+    await expect(toast).toContainText(/approved/i);
+  });
+
+  test("party approval: edit modal updates fields (including branches) then approve succeeds", async ({ page }) => {
+    test.setTimeout(90000);
+    test.skip(!ctx.fixture?.cityId || !ctx.fixture?.branchIds?.length, "Missing fixture data for party approval edit test.");
+    const suffix = Date.now();
+    const requestId = await createApprovalRequest({
+      branch_id: ctx.branchId,
+      request_type: "MASTER_DATA_CHANGE",
+      entity_type: "PARTY",
+      entity_id: "NEW",
+      summary: `Create Parties EditFlow ${suffix}`,
+      new_value: {
+        _action: "create",
+        code: `e2e_party_${suffix}`,
+        name: `E2E Party ${suffix}`,
+        name_ur: `E2E Party ${suffix}`,
+        party_type: "CUSTOMER",
+        group_id: ctx.fixture.partyGroupId ? String(ctx.fixture.partyGroupId) : null,
+        city_id: String(ctx.fixture.cityId),
+        phone1: "0300-0000000",
+        credit_allowed: true,
+        credit_limit: 1000,
+        branch_ids: [String(ctx.fixture.branchIds[0])],
+      },
+      status: "PENDING",
+      requested_by: ctx.otherUser.id,
+      requested_at: new Date(),
+    });
+    createdApprovalIds.push(requestId);
+
+    await gotoApprovals(page, "PENDING");
+    const row = page.locator(`tbody tr:has(form[action$="/${requestId}/approve"])`).first();
+    await expect(row).toBeVisible();
+    await row.locator("[data-approval-view]").click();
+
+    const modal = page.locator("[data-approval-detail-modal]");
+    await expect(modal).toBeVisible();
+    await modal.locator("[data-approval-edit-btn]").click();
+    await expect(modal.locator("[data-approval-edit-save]")).toBeVisible();
+
+    const panel = modal.locator("[data-approval-preview]").first();
+    await panel.locator('[data-field="name"]').fill(`E2E Party Edited ${suffix}`);
+
+    const branchSelect = panel.locator('select[data-field="branch_ids"]');
+    const branchOptionCount = await branchSelect.evaluate((el) => Array.from(el.options || []).filter((opt) => String(opt.value || "").trim() !== "").length);
+    const selectedBefore = await branchSelect.evaluate((el) => Array.from(el.selectedOptions).map((o) => o.value));
+    const trigger = panel.locator("[data-multi-select] [data-multi-trigger]").first();
+    await trigger.click();
+    const menu = panel.locator("[data-multi-select] [data-multi-menu]").first();
+    await expect(menu).toBeVisible();
+    const firstMenuOption = panel.locator("[data-multi-select] [data-multi-menu] button").first();
+    await expect(firstMenuOption).toBeVisible();
+    await firstMenuOption.click();
+    let selectedAfter = await branchSelect.evaluate((el) => Array.from(el.selectedOptions).map((o) => o.value));
+    if (!selectedAfter.length) {
+      await branchSelect.evaluate((el) => {
+        const options = Array.from(el.options || []);
+        if (options[0]) {
+          options.forEach((option, idx) => {
+            option.selected = idx === 0;
+          });
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      });
+      selectedAfter = await branchSelect.evaluate((el) => Array.from(el.selectedOptions).map((o) => o.value));
+    }
+    expect(selectedAfter.length).toBeGreaterThan(0);
+    if (branchOptionCount > 1) {
+      expect(selectedAfter.length).toBeGreaterThan(0);
+    }
+
+    const dialogMessage = await withNextDialogAccepted(page, async () => {
+      await modal.locator("[data-approval-edit-save]").click();
+    });
+    expect(dialogMessage.toLowerCase()).toContain("approval");
+
+    await gotoApprovals(page, "PENDING");
+    const updatedRow = page.locator(`tbody tr:has(form[action$="/${requestId}/approve"])`).first();
+    await expect(updatedRow).toBeVisible();
+    await updatedRow.locator(`form[action$="/${requestId}/approve"] button`).click();
+
+    const toast = page.locator("[data-ui-notice-toast]").first();
+    await expect(toast).toBeVisible();
+    await expect(toast).toContainText(/approved/i);
+  });
+
+  test("matrix: approval edit/save/approve works across current master-data request types", async ({ page }) => {
+    test.setTimeout(300000);
+    test.skip(!ctx.fixture?.branchIds?.length, "Missing branch fixture data for approval matrix test.");
+
+    const baseToken = Date.now();
+    const primaryBranchId = String(ctx.fixture.branchIds[0] || ctx.branchId);
+    const matrixSpecs = [
+      {
+        summary: `Create Sizes Matrix ${baseToken}`,
+        entity_type: "SIZE",
+        new_value: { _action: "create", name: `E2E Size Matrix ${baseToken}` },
+      },
+      {
+        summary: `Create Colors Matrix ${baseToken}`,
+        entity_type: "COLOR",
+        new_value: { _action: "create", name: `E2E Color Matrix ${baseToken}` },
+      },
+      {
+        summary: `Create Grades Matrix ${baseToken}`,
+        entity_type: "GRADE",
+        new_value: { _action: "create", name: `E2E Grade Matrix ${baseToken}` },
+      },
+      {
+        summary: `Create Packing Matrix ${baseToken}`,
+        entity_type: "PACKING_TYPE",
+        new_value: { _action: "create", name: `E2E Packing Matrix ${baseToken}` },
+      },
+      {
+        summary: `Create Cities Matrix ${baseToken}`,
+        entity_type: "CITY",
+        new_value: { _action: "create", name: `E2E City Matrix ${baseToken}` },
+      },
+      {
+        summary: `Create Departments Matrix ${baseToken}`,
+        entity_type: "DEPARTMENT",
+        new_value: { _action: "create", name: `E2E Department Matrix ${baseToken}` },
+      },
+      {
+        summary: `Create Accounts Matrix ${baseToken}`,
+        entity_type: "ACCOUNT",
+        skip: !ctx.fixture.accountSubgroupId,
+        new_value: {
+          _action: "create",
+          code: `e2e_account_matrix_${baseToken}`,
+          name: `E2E Account Matrix ${baseToken}`,
+          name_ur: `E2E Account Matrix ${baseToken}`,
+          subgroup_id: String(ctx.fixture.accountSubgroupId || ""),
+          branch_ids: [primaryBranchId],
+          lock_posting: false,
+        },
+      },
+      {
+        summary: `Create Parties Matrix ${baseToken}`,
+        entity_type: "PARTY",
+        skip: !ctx.fixture.cityId,
+        new_value: {
+          _action: "create",
+          code: `e2e_party_matrix_${baseToken}`,
+          name: `E2E Party Matrix ${baseToken}`,
+          name_ur: `E2E Party Matrix ${baseToken}`,
+          party_type: "CUSTOMER",
+          group_id: ctx.fixture.partyGroupId ? String(ctx.fixture.partyGroupId) : null,
+          city_id: String(ctx.fixture.cityId || ""),
+          phone1: "0300-0000000",
+          credit_allowed: true,
+          credit_limit: 1000,
+          branch_ids: [primaryBranchId],
+        },
+      },
+    ].filter((spec) => !spec.skip);
+
+    const matrixRequests = [];
+    for (let i = 0; i < matrixSpecs.length; i += 1) {
+      const spec = matrixSpecs[i];
+      const requestId = await createApprovalRequest({
+        branch_id: ctx.branchId,
+        request_type: "MASTER_DATA_CHANGE",
+        entity_type: spec.entity_type,
+        entity_id: "NEW",
+        summary: spec.summary,
+        new_value: spec.new_value,
+        status: "PENDING",
+        requested_by: ctx.otherUser.id,
+        requested_at: new Date(),
+      });
+      matrixRequests.push({ id: requestId, spec });
+      createdApprovalIds.push(requestId);
+    }
+
+    await gotoApprovals(page, "PENDING");
+    for (let i = 0; i < matrixRequests.length; i += 1) {
+      const item = matrixRequests[i];
+      const row = page.locator(`tbody tr:has(form[action$="/${item.id}/approve"])`).first();
+      await expect(row).toBeVisible();
+      await row.locator("[data-approval-view]").click();
+
+      const modal = page.locator("[data-approval-detail-modal]");
+      await expect(modal).toBeVisible();
+      await modal.locator("[data-approval-edit-btn]").click();
+      await expect(modal.locator("[data-approval-edit-save]")).toBeVisible();
+
+      const panel = modal.locator("[data-approval-preview]").first();
+      await mutateApprovalPanelFields(panel, `${baseToken}_${i}`);
+      await ensureBranchMultiSelectInteractive(panel);
+
+      const editResponse = page.waitForResponse((res) => {
+        return res.request().method() === "POST" && res.url().includes(`/administration/approvals/${item.id}/edit`);
+      });
+      const saveDialogText = await withNextDialogAccepted(page, async () => {
+        await modal.locator("[data-approval-edit-save]").click();
+      });
+      const response = await editResponse;
+      expect(response.status()).toBe(200);
+      expect((saveDialogText || "").trim().length).toBeGreaterThan(0);
+      expect((saveDialogText || "").toLowerCase()).not.toMatch(/unable|failed|error/);
+
+      await page.waitForLoadState("domcontentloaded");
+      const approveBtn = page.locator(`form[action$="/${item.id}/approve"] button`).first();
+      await expect(approveBtn).toBeVisible();
+      await approveBtn.click();
+      const toast = page.locator("[data-ui-notice-toast]").first();
+      await expect(toast).toBeVisible();
+      await expect(toast).toContainText(/approved/i);
+      await gotoApprovals(page, "PENDING");
+    }
   });
 
   test.describe("Approval settings and source pages", () => {

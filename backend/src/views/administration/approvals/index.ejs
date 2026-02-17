@@ -64,6 +64,7 @@
                 data-approval-view
                 data-approval-id="<%= row.id %>"
                 data-action="<%= actionType %>"
+                data-status="<%= row.status %>"
                 data-old="<%= jsonAttr(row.old_value) %>"
                 data-new="<%= jsonAttr(row.new_value) %>"
               >
@@ -109,9 +110,22 @@
         <div class="text-sm font-semibold text-slate-700"><%= t("details") || "Details" %></div>
         <p class="mt-1 text-xs text-slate-500" data-approval-detail-subtitle></p>
       </div>
-      <button type="button" class="text-slate-400 hover:text-slate-600" data-approval-detail-close>
-        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
-      </button>
+      <div class="flex items-center gap-2">
+        <% if (user && user.isAdmin) { %>
+          <button type="button" class="hidden rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" data-approval-edit-btn>
+            <%= t("edit") || "Edit" %>
+          </button>
+          <button type="button" class="hidden rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" data-approval-edit-cancel>
+            <%= t("cancel") || "Cancel" %>
+          </button>
+          <button type="button" class="hidden rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:opacity-90" data-approval-edit-save>
+            <%= t("save_changes") || "Save Changes" %>
+          </button>
+        <% } %>
+        <button type="button" class="text-slate-400 hover:text-slate-600" data-approval-detail-close>
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
     </div>
     <div class="grid gap-4 px-6 py-5 md:grid-cols-2 overflow-y-auto">
       <div data-approval-detail-before>
@@ -133,6 +147,9 @@
   (function () {
     const modal = document.querySelector("[data-approval-detail-modal]");
     const closeBtn = document.querySelector("[data-approval-detail-close]");
+    const editBtn = document.querySelector("[data-approval-edit-btn]");
+    const editCancelBtn = document.querySelector("[data-approval-edit-cancel]");
+    const editSaveBtn = document.querySelector("[data-approval-edit-save]");
     const beforeWrap = document.querySelector("[data-approval-detail-before]");
     const afterWrap = document.querySelector("[data-approval-detail-after]");
     const singleWrap = document.querySelector("[data-approval-detail-single]");
@@ -142,7 +159,33 @@
     const singleBox = document.querySelector("[data-approval-preview-single]");
     const subtitle = document.querySelector("[data-approval-detail-subtitle]");
     const previewBase = "<%= basePath %>";
+    const csrfToken = "<%= csrfToken %>";
+    const isAdmin = <%= user && user.isAdmin ? "true" : "false" %>;
+    const labels = {
+      approvalNoChanges: "<%= t('approval_no_changes') || 'No changes found.' %>",
+      approvalEditFailed: "<%= t('approval_edit_failed') || 'Unable to update approval request.' %>",
+      approvalEditSaved: "<%= t('approval_request_updated') || 'Approval request updated.' %>",
+      saveChanges: "<%= t('save_changes') || 'Save Changes' %>",
+      saving: "<%= t('saving') || 'Saving...' %>",
+    };
     const debugPreview = true;
+    let currentModalState = null;
+    let editMode = false;
+    let bodyScrollLocked = false;
+
+    const setBodyScrollLock = (locked) => {
+      const body = document.body;
+      if (!body) return;
+      if (locked && !bodyScrollLocked) {
+        body.classList.add("overflow-hidden");
+        bodyScrollLocked = true;
+        return;
+      }
+      if (!locked && bodyScrollLocked) {
+        body.classList.remove("overflow-hidden");
+        bodyScrollLocked = false;
+      }
+    };
 
     const decodeHtml = (raw) => {
       if (!raw) return "";
@@ -175,6 +218,80 @@
         }
       }
       return String(value);
+    };
+
+    const initMultiSelects = (panel) => {
+      if (!panel) return;
+      const wraps = panel.querySelectorAll("[data-multi-select]");
+      wraps.forEach((wrap) => {
+        if (wrap.dataset.multiReady === "true") return;
+        wrap.dataset.multiReady = "true";
+
+        const select = wrap.querySelector("select[multiple]");
+        const trigger = wrap.querySelector("[data-multi-trigger]");
+        const menu = wrap.querySelector("[data-multi-menu]");
+        const placeholder = wrap.querySelector("[data-multi-placeholder]");
+        const tags = wrap.querySelector("[data-multi-tags]");
+        if (!select || !trigger || !menu || !placeholder) return;
+
+        const optionsWrap = document.createElement("div");
+        optionsWrap.className = "space-y-1";
+        menu.innerHTML = "";
+        menu.appendChild(optionsWrap);
+
+        const updateVisuals = () => {
+          const selected = Array.from(select.selectedOptions).map((opt) => (opt.textContent || "").trim()).filter(Boolean);
+          placeholder.textContent = selected.length ? `${selected.length} selected` : "<%= t('select') %>";
+          if (tags) {
+            tags.innerHTML = "";
+            selected.forEach((labelText) => {
+              const tag = document.createElement("span");
+              tag.className = "inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-600";
+              tag.textContent = labelText;
+              tags.appendChild(tag);
+            });
+          }
+        };
+
+        const closeMenu = () => menu.classList.add("hidden");
+        const renderMenu = () => {
+          optionsWrap.innerHTML = "";
+          Array.from(select.options).forEach((opt) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-slate-700 transition hover:bg-amber-50/60";
+            const label = document.createElement("span");
+            label.textContent = (opt.textContent || "").trim();
+            const check = document.createElement("span");
+            check.className = "text-xs text-slate-400";
+            check.textContent = opt.selected ? "*" : "";
+            button.appendChild(label);
+            button.appendChild(check);
+            button.addEventListener("click", (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              opt.selected = !opt.selected;
+              select.dispatchEvent(new Event("change", { bubbles: true }));
+              renderMenu();
+            });
+            optionsWrap.appendChild(button);
+          });
+          updateVisuals();
+        };
+
+        trigger.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          menu.classList.toggle("hidden");
+        });
+
+        document.addEventListener("click", (event) => {
+          if (!wrap.contains(event.target)) closeMenu();
+        });
+
+        select.addEventListener("change", renderMenu);
+        renderMenu();
+      });
     };
 
     const buildFields = (value) => {
@@ -222,6 +339,7 @@
 
     const applyValuesToFields = (panel, values) => {
       if (!panel) return;
+      initMultiSelects(panel);
       const payload = values || {};
       if (debugPreview) {
         console.log("[APPROVAL PREVIEW DEBUG] applyValues", {
@@ -301,6 +419,148 @@
         el.readOnly = true;
         el.classList.add("cursor-not-allowed");
       });
+    };
+
+    const enableInputs = (panel) => {
+      if (!panel) return;
+      panel.querySelectorAll("input, select, textarea").forEach((el) => {
+        if (!el.hasAttribute("data-field")) return;
+        el.disabled = false;
+        el.readOnly = false;
+        el.classList.remove("cursor-not-allowed");
+      });
+      panel.querySelectorAll("[data-multi-select] button").forEach((button) => {
+        button.disabled = false;
+        button.classList.remove("pointer-events-none");
+      });
+    };
+
+    const getEditPanel = () => {
+      if (!currentModalState) return null;
+      if (currentModalState.action === "update") {
+        return afterBox.querySelector("[data-approval-preview]");
+      }
+      if (currentModalState.action === "create") {
+        return singleBox.querySelector("[data-approval-preview]");
+      }
+      return null;
+    };
+
+    const setEditButtons = () => {
+      const eligible = Boolean(
+        isAdmin &&
+          currentModalState &&
+          currentModalState.status === "PENDING" &&
+          (currentModalState.action === "update" || currentModalState.action === "create") &&
+          getEditPanel() &&
+          getEditPanel().querySelectorAll("[data-field]").length > 0,
+      );
+      if (editBtn) editBtn.classList.toggle("hidden", !eligible || editMode);
+      if (editCancelBtn) editCancelBtn.classList.toggle("hidden", !eligible || !editMode);
+      if (editSaveBtn) editSaveBtn.classList.toggle("hidden", !eligible || !editMode);
+    };
+
+    const setEditMode = (nextMode) => {
+      editMode = Boolean(nextMode);
+      const panel = getEditPanel();
+      if (panel) {
+        if (editMode) {
+          initMultiSelects(panel);
+          enableInputs(panel);
+        } else {
+          disableInputs(panel);
+          panel.querySelectorAll("[data-multi-menu]").forEach((menu) => menu.classList.add("hidden"));
+        }
+      }
+      setEditButtons();
+    };
+
+    const collectEditedValues = (panel) => {
+      const values = {};
+      const multiCheckboxMap = new Map();
+      panel.querySelectorAll("[data-field]").forEach((input) => {
+        const name = input.getAttribute("data-field");
+        if (!name) return;
+
+        if (input.type === "checkbox") {
+          if (input.dataset.multi === "true") {
+            if (!multiCheckboxMap.has(name)) multiCheckboxMap.set(name, []);
+            if (input.checked) multiCheckboxMap.get(name).push(input.value);
+            return;
+          }
+          values[name] = Boolean(input.checked);
+          return;
+        }
+
+        if (input.tagName === "SELECT" && input.multiple) {
+          values[name] = Array.from(input.selectedOptions).map((option) => option.value);
+          return;
+        }
+
+        if (input.type === "number") {
+          const numeric = String(input.value || "").trim();
+          if (numeric === "") {
+            values[name] = null;
+            return;
+          }
+          const cast = Number(numeric);
+          values[name] = Number.isNaN(cast) ? numeric : cast;
+          return;
+        }
+
+        values[name] = input.value;
+      });
+      multiCheckboxMap.forEach((items, key) => {
+        values[key] = items;
+      });
+      return values;
+    };
+
+    const saveEdit = async () => {
+      if (!currentModalState || !currentModalState.id) return;
+      const panel = getEditPanel();
+      if (!panel) return;
+      const payload = collectEditedValues(panel);
+      if (!payload || Object.keys(payload).length === 0) {
+        window.alert(labels.approvalNoChanges);
+        return;
+      }
+
+      if (editSaveBtn) {
+        editSaveBtn.disabled = true;
+        editSaveBtn.textContent = labels.saving;
+      }
+
+      try {
+        const body = new URLSearchParams();
+        body.set("_csrf", csrfToken);
+        body.set("edited_payload", JSON.stringify(payload));
+
+        const response = await fetch(`${previewBase}/${currentModalState.id}/edit`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+            Accept: "application/json",
+          },
+          body: body.toString(),
+        });
+
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok || !data.ok) {
+          window.alert((data && data.message) || labels.approvalEditFailed);
+          return;
+        }
+        window.alert(data.message || labels.approvalEditSaved);
+        window.location.reload();
+      } catch (err) {
+        console.error("[APPROVAL EDIT ERROR]", err);
+        window.alert(labels.approvalEditFailed);
+      } finally {
+        if (editSaveBtn) {
+          editSaveBtn.disabled = false;
+          editSaveBtn.textContent = labels.saveChanges;
+        }
+      }
     };
 
     const applyRawMaterialRates = (panel, values) => {
@@ -506,7 +766,9 @@
 
     const open = async (payload) => {
       if (!modal) return;
-      const { action, oldValue, newValue, id } = payload;
+      const { action, oldValue, newValue, id, status } = payload;
+      currentModalState = { action, oldValue, newValue, id, status };
+      editMode = false;
       const isUpdate = action === "update";
       beforeWrap.classList.toggle("hidden", !isUpdate);
       afterWrap.classList.toggle("hidden", !isUpdate);
@@ -566,14 +828,23 @@
 
       modal.classList.remove("hidden");
       modal.classList.add("flex");
+      setBodyScrollLock(true);
+      setEditButtons();
     };
 
     const close = () => {
       modal.classList.add("hidden");
       modal.classList.remove("flex");
+      setBodyScrollLock(false);
+      editMode = false;
+      currentModalState = null;
+      setEditButtons();
     };
 
     closeBtn?.addEventListener("click", close);
+    editBtn?.addEventListener("click", () => setEditMode(true));
+    editCancelBtn?.addEventListener("click", () => setEditMode(false));
+    editSaveBtn?.addEventListener("click", saveEdit);
     modal?.addEventListener("click", (event) => {
       if (event.target === modal) close();
     });
@@ -582,10 +853,11 @@
       const btn = event.target.closest("[data-approval-view]");
       if (!btn) return;
       const action = btn.getAttribute("data-action");
+      const status = btn.getAttribute("data-status");
       const oldValue = safeParse(btn.getAttribute("data-old"));
       const newValue = safeParse(btn.getAttribute("data-new"));
       const id = btn.getAttribute("data-approval-id");
-      open({ action, oldValue, newValue, id });
+      open({ action, oldValue, newValue, id, status });
     });
   })();
 </script>

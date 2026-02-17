@@ -1,10 +1,14 @@
 <div 
   id="modal-shell" 
-  class="fixed inset-0 z-50 hidden items-center justify-center p-4 overflow-x-hidden"
+  class="fixed inset-0 z-50 <%= typeof modalOpen !== 'undefined' && modalOpen ? 'flex' : 'hidden' %> items-center justify-center p-4 overflow-x-hidden"
   style="z-index: 100;"
   role="dialog"
   aria-modal="true"
   data-modal
+  data-auto-open="<%= typeof modalOpen !== 'undefined' && modalOpen ? 'true' : 'false' %>"
+  data-modal-mode="<%= typeof modalMode !== 'undefined' && modalMode ? modalMode : 'create' %>"
+  data-modal-values="<%= JSON.stringify(typeof modalValues !== 'undefined' && modalValues ? modalValues : {}) %>"
+  data-modal-field-errors="<%= JSON.stringify(typeof modalFieldErrors !== 'undefined' && modalFieldErrors ? modalFieldErrors : {}) %>"
 >
   <div class="<%= typeof modalContainerClass !== 'undefined' && modalContainerClass ? modalContainerClass : "w-full max-w-lg rounded-2xl border border-slate-200 bg-white shadow-xl relative z-50 flex max-h-[90vh] flex-col overflow-hidden" %>">
     
@@ -23,7 +27,13 @@
     </div>
 
     <% if (typeof formAction !== 'undefined' && formAction) { %>
-      <form class="<%= typeof formClass !== 'undefined' && formClass ? formClass : "px-6 py-5" %>" action="<%= formAction %>" method="POST" data-modal-form>
+      <form
+        class="<%= typeof formClass !== 'undefined' && formClass ? formClass : "px-6 py-5" %>"
+        action="<%= formAction %>"
+        method="POST"
+        data-modal-form
+        data-translate-mode="<%= typeof translateMode !== 'undefined' && translateMode ? translateMode : 'translate' %>"
+      >
         <% if (typeof csrfToken !== 'undefined' && csrfToken) { %>
           <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
         <% } %>
@@ -32,11 +42,12 @@
             <%= modalError %>
           </div>
         <% } else { %>
-          <div class="mb-4 hidden" data-modal-error></div>
+          <div class="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700" data-modal-error hidden></div>
         <% } %>
+        <div class="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700" data-modal-notice hidden></div>
         <div class="flex-1 overflow-y-auto overflow-x-hidden" id="modal-content">
           <% if (typeof bodyPartial !== 'undefined' && bodyPartial) { %>
-            <%- include(bodyPartial) %>
+            <%- include(bodyPartial, { fieldErrors: (typeof modalFieldErrors !== 'undefined' && modalFieldErrors ? modalFieldErrors : {}) }) %>
           <% } %>
         </div>
         <div class="mt-6 flex items-center justify-end gap-3">
@@ -58,9 +69,18 @@
   </div>
 </div>
 
-<div id="modal-backdrop" onclick="closeModal()" class="fixed inset-0 z-40 hidden bg-slate-900/40 backdrop-blur-sm transition-opacity"></div>
+<div id="modal-backdrop" onclick="closeModal()" class="fixed inset-0 z-40 <%= typeof modalOpen !== 'undefined' && modalOpen ? '' : 'hidden' %> bg-slate-900/40 backdrop-blur-sm transition-opacity"></div>
 
 <script>
+  function setBodyScrollLock(locked) {
+    if (!document || !document.body) return;
+    if (locked) {
+      document.body.classList.add("overflow-hidden");
+    } else {
+      document.body.classList.remove("overflow-hidden");
+    }
+  }
+
   function closeModal() {
     const shell = document.getElementById('modal-shell');
     const backdrop = document.getElementById('modal-backdrop');
@@ -69,5 +89,13 @@
         shell.classList.remove('flex');
     }
     if(backdrop) backdrop.classList.add('hidden');
+    setBodyScrollLock(false);
   }
+
+  (function(){
+    const shell = document.getElementById("modal-shell");
+    if (shell && !shell.classList.contains("hidden")) {
+      setBodyScrollLock(true);
+    }
+  })();
 </script>

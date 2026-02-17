@@ -574,6 +574,14 @@ CREATE TABLE IF NOT EXISTS erp.labours (
   CHECK (lower(trim(status)) IN ('active','inactive'))
 );
 
+-- Labour-to-department mapping (supports labour assignment to multiple production departments).
+-- dept_id on erp.labours remains as backward-compatible primary/default department.
+CREATE TABLE IF NOT EXISTS erp.labour_department (
+  labour_id bigint NOT NULL REFERENCES erp.labours(id) ON DELETE CASCADE,
+  dept_id   bigint NOT NULL REFERENCES erp.departments(id) ON DELETE RESTRICT,
+  PRIMARY KEY (labour_id, dept_id)
+);
+
 -- Labour-to-branch mapping.
 CREATE TABLE IF NOT EXISTS erp.labour_branch (
   labour_id bigint NOT NULL REFERENCES erp.labours(id) ON DELETE CASCADE,
@@ -608,6 +616,9 @@ ON erp.variants (item_id);
 -- Speeds up rate lookups: "latest rates for this RM item".
 CREATE INDEX IF NOT EXISTS idx_rm_purchase_rates_item_id
 ON erp.rm_purchase_rates (rm_item_id);
+
+CREATE INDEX IF NOT EXISTS idx_labour_department_dept_id
+ON erp.labour_department (dept_id);
 
 -- Optional active-only filtering support for master lists.
 CREATE INDEX IF NOT EXISTS idx_items_is_active

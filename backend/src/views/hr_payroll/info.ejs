@@ -1,0 +1,22 @@
+<div class="mx-auto w-full max-w-5xl space-y-6">
+  <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
+    <div class="space-y-2">
+      <h1 class="text-2xl font-display text-ink"><%= t(info.titleKey) %></h1>
+      <p class="text-sm text-muted"><%= t(info.subtitleKey) || t("hr_screen_description") %></p>
+    </div>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white/95 p-6 shadow-md">
+    <div class="space-y-3 text-sm text-slate-700">
+      <div class="flex flex-wrap gap-2">
+        <span class="rounded-full bg-slate-100 px-3 py-1 font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("screen") || "Screen" %></span>
+        <code class="rounded bg-slate-100 px-2 py-1 text-xs text-slate-700"><%= info.routePath %></code>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <span class="rounded-full bg-slate-100 px-3 py-1 font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("requirement_ref") || "Requirement Ref" %></span>
+        <code class="rounded bg-slate-100 px-2 py-1 text-xs text-slate-700"><%= info.requirementRef %></code>
+      </div>
+      <p class="text-slate-600"><%= t("hr_screen_planned_note") || "This screen path is active and connected to permissions. Detailed workflow implementation is scheduled in the next phase." %></p>
+    </div>
+  </section>
+</div>
