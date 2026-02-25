@@ -1,6 +1,6 @@
 const express = require("express");
 const knex = require("../../db/knex");
-const { createHrMasterRouter } = require("./master-router");
+const { createHrMasterRouter, hydratePage } = require("./master-router");
 const { normalizePhone, normalizeCnic, isValidPhone, isValidCnic, toMoney, hasTwoDecimalsOrLess } = require("./validation");
 const { requirePermission } = require("../../middleware/access/role-permissions");
 const { handleScreenApproval } = require("../../middleware/approvals/screen-approval");
@@ -14,6 +14,29 @@ const {
   buildBulkPreviewRows,
   applyBulkSkuRateUpsert,
 } = require("../../services/hr-payroll/labour-rates-service");
+
+let hasLabourRateArticleTypeColumnPromise = null;
+const hasLabourRateArticleTypeColumn = async (db = knex) => {
+  if (!hasLabourRateArticleTypeColumnPromise) {
+    hasLabourRateArticleTypeColumnPromise = db.schema
+      .withSchema("erp")
+      .hasColumn("labour_rate_rules", "article_type")
+      .catch((err) => {
+        console.error("Error in LabourRateRulesService:", err);
+        return false;
+      });
+  }
+  return hasLabourRateArticleTypeColumnPromise;
+};
+const LABOUR_RATE_ARTICLE_TYPE_SQL = `
+  COALESCE(
+    NULLIF(UPPER(COALESCE(to_jsonb(t)->>'article_type', '')), ''),
+    UPPER(COALESCE(i.item_type::text, '')),
+    UPPER(COALESCE((SELECT psit.item_type::text FROM erp.product_subgroup_item_types psit WHERE psit.subgroup_id = t.subgroup_id ORDER BY psit.item_type LIMIT 1), '')),
+    UPPER(COALESCE((SELECT pgit.item_type::text FROM erp.product_group_item_types pgit WHERE pgit.group_id = t.group_id ORDER BY pgit.item_type LIMIT 1), '')),
+    ''
+  )
+`;
 
 const page = {
   titleKey: "labours",
@@ -177,6 +200,7 @@ const labourRatesPage = {
   branchScoped: false,
   autoCodeFromName: false,
   defaults: {},
+  maxRows: 500,
   filterConfig: {
     primary: {
       key: "labour_id",
@@ -210,9 +234,6 @@ const labourRatesPage = {
     },
   },
   applyExtraFilters: (query, { filters = {} } = {}) => {
-    const applyOnValues = Array.isArray(filters.applyOnValues)
-      ? filters.applyOnValues.map((value) => String(value || "").trim().toUpperCase()).filter((value) => value === "SKU" || value === "SUBGROUP" || value === "GROUP")
-      : [];
     const subgroupIds = Array.isArray(filters.subgroupValues)
       ? filters.subgroupValues.map((value) => Number(value)).filter((value) => Number.isInteger(value) && value > 0)
       : [];
@@ -222,22 +243,48 @@ const labourRatesPage = {
     const articleTypes = Array.isArray(filters.articleTypeValues)
       ? filters.articleTypeValues.map((value) => String(value || "").trim().toUpperCase()).filter((value) => value === "FG" || value === "SFG")
       : [];
-    const applyOnMode = String(filters.applyOnMode || "include").toLowerCase() === "exclude" ? "exclude" : "include";
     const subgroupMode = String(filters.subgroupMode || "include").toLowerCase() === "exclude" ? "exclude" : "include";
     const groupMode = String(filters.groupMode || "include").toLowerCase() === "exclude" ? "exclude" : "include";
     const articleTypeMode = String(filters.articleTypeMode || "include").toLowerCase() === "exclude" ? "exclude" : "include";
 
-    if (applyOnValues.length) {
-      query = applyOnMode === "exclude" ? query.whereNotIn("t.apply_on", applyOnValues) : query.whereIn("t.apply_on", applyOnValues);
-    }
     if (subgroupIds.length) {
-      query = subgroupMode === "exclude" ? query.whereNotIn("t.subgroup_id", subgroupIds) : query.whereIn("t.subgroup_id", subgroupIds);
+      const subgroupMatch = function subgroupMatch() {
+        this.where(function skuSubgroupMatch() {
+          this.where("t.apply_on", "SKU").whereIn("i.subgroup_id", subgroupIds);
+        }).orWhere(function subgroupRuleMatch() {
+          this.where("t.apply_on", "SUBGROUP").whereIn("t.subgroup_id", subgroupIds);
+        }).orWhere(function groupRuleFromSubgroupMatch() {
+          this.where("t.apply_on", "GROUP").whereIn("t.group_id", function subgroupGroupIds() {
+            this.select("sg_filter.group_id").from("erp.product_subgroups as sg_filter").whereIn("sg_filter.id", subgroupIds);
+          });
+        });
+      };
+      query = subgroupMode === "exclude" ? query.whereNot(subgroupMatch) : query.where(subgroupMatch);
     }
     if (groupIds.length) {
-      query = groupMode === "exclude" ? query.whereNotIn("t.group_id", groupIds) : query.whereIn("t.group_id", groupIds);
+      const groupMatch = function groupMatch() {
+        this.where(function skuGroupMatch() {
+          this.where("t.apply_on", "SKU").whereIn("i.group_id", groupIds);
+        })
+          .orWhere(function subgroupGroupMatch() {
+            this.where("t.apply_on", "SUBGROUP").whereIn("sg_rule.group_id", groupIds);
+          })
+          .orWhere(function groupRuleMatch() {
+            this.where("t.apply_on", "GROUP").whereIn("t.group_id", groupIds);
+          });
+      };
+      query = groupMode === "exclude" ? query.whereNot(groupMatch) : query.where(groupMatch);
     }
     if (articleTypes.length) {
-      query = articleTypeMode === "exclude" ? query.whereNotIn("i.item_type", articleTypes) : query.whereIn("i.item_type", articleTypes);
+      const ARTICLE_TYPE_BOTH = "BOTH";
+      query =
+        articleTypeMode === "exclude"
+          ? query
+              .whereNotIn(knex.raw(LABOUR_RATE_ARTICLE_TYPE_SQL), articleTypes)
+              .whereRaw(`${LABOUR_RATE_ARTICLE_TYPE_SQL} <> ?`, [ARTICLE_TYPE_BOTH])
+          : query.where(function includeArticleTypeFilter() {
+              this.whereIn(knex.raw(LABOUR_RATE_ARTICLE_TYPE_SQL), articleTypes).orWhereRaw(`${LABOUR_RATE_ARTICLE_TYPE_SQL} = ?`, [ARTICLE_TYPE_BOTH]);
+            });
     }
 
     return query;
@@ -249,12 +296,13 @@ const labourRatesPage = {
     { table: { s: "erp.skus" }, on: ["t.sku_id", "s.id"] },
     { table: { v: "erp.variants" }, on: ["s.variant_id", "v.id"] },
     { table: { i: "erp.items" }, on: ["v.item_id", "i.id"] },
+    { table: { sg_rule: "erp.product_subgroups" }, on: ["t.subgroup_id", "sg_rule.id"] },
   ],
   extraSelect: (locale) => [
     locale === "ur" ? knex.raw("COALESCE(l.name_ur, l.name) as labour_name") : "l.name as labour_name",
     locale === "ur" ? knex.raw("COALESCE(d.name_ur, d.name) as department_name") : "d.name as department_name",
     "s.sku_code as sku_code",
-    knex.raw("COALESCE(i.item_type::text, '') as article_type"),
+    knex.raw(`${LABOUR_RATE_ARTICLE_TYPE_SQL} as article_type`),
     knex.raw("CASE WHEN lower(trim(t.status)) = 'active' THEN true ELSE false END as is_active"),
   ],
   columns: [
@@ -331,10 +379,33 @@ const labourRatesPage = {
   sanitizeValues: (values) => ({
     ...values,
     apply_on: String(values.apply_on || "").trim().toUpperCase(),
+    article_type: values.article_type == null ? null : String(values.article_type).trim().toUpperCase(),
     rate_type: String(values.rate_type || "").trim().toUpperCase(),
     rate_value: values.rate_value == null ? null : String(values.rate_value).trim(),
   }),
   validateValues: async ({ values, req, isUpdate, id, knex }) => {
+    const hasArticleTypeColumn = await hasLabourRateArticleTypeColumn(knex);
+
+    if (isUpdate && id) {
+      const selectCols = ["labour_id", "dept_id", "apply_on", "sku_id", "subgroup_id", "group_id"];
+      if (hasArticleTypeColumn) {
+        selectCols.push("article_type");
+      }
+      const existing = await knex("erp.labour_rate_rules")
+        .where({ id: Number(id) })
+        .first(...selectCols);
+      if (!existing) return req.res.locals.t("error_not_found");
+      values.labour_id = existing.labour_id;
+      values.dept_id = existing.dept_id;
+      values.apply_on = existing.apply_on;
+      values.sku_id = existing.sku_id;
+      values.subgroup_id = existing.subgroup_id;
+      values.group_id = existing.group_id;
+      if (hasArticleTypeColumn) {
+        values.article_type = existing.article_type;
+      }
+    }
+
     const applyOnSet = new Set(["SKU", "SUBGROUP", "GROUP"]);
     const rateTypeSet = new Set(["PER_DOZEN", "PER_PAIR"]);
     if (!values.dept_id) return { field: "dept_id", message: req.res.locals.t("error_select_department") };
@@ -348,7 +419,7 @@ const labourRatesPage = {
       return { field: "rate_value", message: req.res.locals.t("error_invalid_rate_value") };
     }
 
-    if (values.apply_on !== "SKU") {
+    if (!isUpdate && values.apply_on !== "SKU") {
       values.sku_id = null;
     }
     if (values.apply_on !== "SUBGROUP") {
@@ -376,12 +447,25 @@ const labourRatesPage = {
 
     values.rate_value = toMoney(values.rate_value);
     values.status = "active";
+    if (!hasArticleTypeColumn) {
+      delete values.article_type;
+    }
     return null;
   },
 };
 
 const router = express.Router();
 const ratesRouter = express.Router();
+const logLabourRateSaveDebug = (req, event, payload = {}) => {
+  console.log("[hr-labour-rates-save-debug]", {
+    event,
+    path: req?.originalUrl || req?.url || "",
+    method: req?.method || "",
+    userId: req?.user?.id || null,
+    username: req?.user?.username || null,
+    ...payload,
+  });
+};
 
 ratesRouter.get("/department-options", requirePermission("SCREEN", labourRatesPage.scopeKey, "view"), async (req, res) => {
   try {
@@ -519,15 +603,41 @@ ratesRouter.get("/bulk-preview", requirePermission("SCREEN", labourRatesPage.sco
   }
 });
 
-ratesRouter.post("/bulk-upsert", requirePermission("SCREEN", labourRatesPage.scopeKey, "navigate"), async (req, res) => {
+ratesRouter.post("/bulk-upsert", requirePermission("SCREEN", labourRatesPage.scopeKey, "create"), async (req, res) => {
+  const traceId = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const startedAt = Date.now();
+  logLabourRateSaveDebug(req, "bulk_upsert:request_received", {
+    traceId,
+    bodyKeys: Object.keys(req.body || {}),
+    rowsCount: Array.isArray(req.body?.rows) ? req.body.rows.length : 0,
+  });
   try {
     const normalized = normalizeBulkInput({ payload: req.body || {}, t: res.locals.t });
+    logLabourRateSaveDebug(req, "bulk_upsert:normalized", {
+      traceId,
+      labourSelection: normalized.labourSelection?.all ? "ALL" : normalized.labourSelection?.labourId || null,
+      deptId: normalized.deptId,
+      applyOn: normalized.applyOn,
+      articleType: normalized.articleType,
+      rateType: normalized.rateType,
+      rowsCount: normalized.rows.length,
+    });
     const labourIds = await resolveLabourIds({
       deptId: normalized.deptId,
       labourSelection: normalized.labourSelection,
       t: res.locals.t,
     });
+    logLabourRateSaveDebug(req, "bulk_upsert:labours_resolved", {
+      traceId,
+      labourIdsCount: labourIds.length,
+      elapsedMs: Date.now() - startedAt,
+    });
 
+    const expectedRowsStart = Date.now();
+    logLabourRateSaveDebug(req, "bulk_upsert:expected_rows_start", {
+      traceId,
+      elapsedMs: expectedRowsStart - startedAt,
+    });
     const expectedRows = await buildBulkPreviewRows({
       labourIds,
       deptId: normalized.deptId,
@@ -539,13 +649,46 @@ ratesRouter.post("/bulk-upsert", requirePermission("SCREEN", labourRatesPage.sco
       rateType: normalized.rateType,
       baseRate: null,
     });
+    const requestedRateBySku = new Map(
+      normalized.rows
+        .map((row) => [Number(row.skuId), row.rate])
+        .filter(([skuId]) => Number.isInteger(skuId) && skuId > 0),
+    );
+    const queuedRows = expectedRows.map((row) => {
+      const skuId = Number(row.sku_id || 0);
+      const nextRate = requestedRateBySku.has(skuId) ? requestedRateBySku.get(skuId) : row.new_rate;
+      return {
+        sku_id: skuId,
+        sku_code: row.sku_code || "",
+        item_name: row.item_name || "",
+        previous_rate: row.previous_rate ?? null,
+        new_rate: nextRate ?? null,
+      };
+    });
+    logLabourRateSaveDebug(req, "bulk_upsert:expected_rows_done", {
+      traceId,
+      expectedRowsCount: expectedRows.length,
+      durationMs: Date.now() - expectedRowsStart,
+      elapsedMs: Date.now() - startedAt,
+    });
 
     const allowedSkuIds = new Set(expectedRows.map((row) => Number(row.sku_id)));
     const invalidSku = normalized.rows.find((row) => !allowedSkuIds.has(Number(row.skuId)));
     if (invalidSku || normalized.rows.length !== expectedRows.length) {
+      logLabourRateSaveDebug(req, "bulk_upsert:payload_mismatch", {
+        traceId,
+        expectedRowsCount: expectedRows.length,
+        receivedRowsCount: normalized.rows.length,
+        invalidSkuId: invalidSku ? Number(invalidSku.skuId) : null,
+      });
       return res.status(400).json({ message: res.locals.t("error_invalid_bulk_labour_rate_payload") });
     }
 
+    const approvalStart = Date.now();
+    logLabourRateSaveDebug(req, "bulk_upsert:approval_check_start", {
+      traceId,
+      elapsedMs: approvalStart - startedAt,
+    });
     const approval = await handleScreenApproval({
       req,
       scopeKey: labourRatesPage.scopeKey,
@@ -565,12 +708,22 @@ ratesRouter.post("/bulk-upsert", requirePermission("SCREEN", labourRatesPage.sco
         article_type: normalized.articleType,
         rate_type: normalized.rateType,
         status: normalized.status,
-        rows: normalized.rows,
+        rows: queuedRows,
       },
       t: res.locals.t,
     });
+    logLabourRateSaveDebug(req, "bulk_upsert:approval_check_done", {
+      traceId,
+      queued: Boolean(approval?.queued),
+      durationMs: Date.now() - approvalStart,
+      elapsedMs: Date.now() - startedAt,
+    });
 
     if (approval.queued) {
+      logLabourRateSaveDebug(req, "bulk_upsert:queued_for_approval", {
+        traceId,
+        requestId: approval.requestId || null,
+      });
       const canViewApprovals = typeof res.locals.can === "function" ? res.locals.can("SCREEN", "administration.approvals", "navigate") : false;
       return res.status(202).json({
         queued: true,
@@ -580,7 +733,15 @@ ratesRouter.post("/bulk-upsert", requirePermission("SCREEN", labourRatesPage.sco
       });
     }
 
+    const writeStart = Date.now();
+    logLabourRateSaveDebug(req, "bulk_upsert:db_write_start", {
+      traceId,
+      elapsedMs: writeStart - startedAt,
+    });
     const result = await knex.transaction(async (trx) => {
+      await trx.raw("SET LOCAL lock_timeout = '5s'");
+      await trx.raw("SET LOCAL statement_timeout = '15s'");
+
       return applyBulkSkuRateUpsert({
         trx,
         labourIds,
@@ -591,7 +752,20 @@ ratesRouter.post("/bulk-upsert", requirePermission("SCREEN", labourRatesPage.sco
         rateType: normalized.rateType,
         status: normalized.status,
         rows: normalized.rows,
+        debugLog: (stage, details = {}) =>
+          logLabourRateSaveDebug(req, `bulk_upsert:service_${stage}`, {
+            traceId,
+            ...details,
+          }),
       });
+    });
+    logLabourRateSaveDebug(req, "bulk_upsert:db_write_success", {
+      traceId,
+      created: result.created,
+      updated: result.updated,
+      rowsCount: normalized.rows.length,
+      durationMs: Date.now() - writeStart,
+      elapsedMs: Date.now() - startedAt,
     });
 
     queueAuditLog(req, {
@@ -614,6 +788,11 @@ ratesRouter.post("/bulk-upsert", requirePermission("SCREEN", labourRatesPage.sco
       updated: result.updated,
     });
   } catch (err) {
+    logLabourRateSaveDebug(req, "bulk_upsert:exception", {
+      traceId,
+      error: err?.message || String(err),
+      elapsedMs: Date.now() - startedAt,
+    });
     console.error("Error in LabourRateRulesService:", err);
     return res.status(400).json({ message: err?.message || res.locals.t("generic_error") });
   }
@@ -622,5 +801,11 @@ ratesRouter.post("/bulk-upsert", requirePermission("SCREEN", labourRatesPage.sco
 ratesRouter.use("/", createHrMasterRouter(labourRatesPage));
 router.use("/rates", ratesRouter);
 router.use("/", createHrMasterRouter(page));
+
+router.preview = {
+  page,
+  labourRatesPage,
+  hydratePage,
+};
 
 module.exports = router;

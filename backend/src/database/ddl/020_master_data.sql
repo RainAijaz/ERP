@@ -199,6 +199,19 @@ CREATE TABLE IF NOT EXISTS erp.account_groups (
   CHECK (code = lower(trim(code)) AND code ~ '^[a-z0-9_]{2,80}$')
 );
 
+-- Posting classes drive system behavior (auto-posting/voucher routing), separate from report grouping.
+CREATE TABLE IF NOT EXISTS erp.account_posting_classes (
+  id         bigserial PRIMARY KEY,
+  code       text NOT NULL UNIQUE,
+  name       text NOT NULL UNIQUE,
+  name_ur    text,
+  is_system  boolean NOT NULL DEFAULT true,
+  is_active  boolean NOT NULL DEFAULT true,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz,
+  CHECK (code = lower(trim(code)) AND code ~ '^[a-z0-9_]{2,80}$')
+);
+
 -- Accounts master (Chart of Accounts).
 -- created_by/approved_by fields support maker-checker for master data.
 CREATE TABLE IF NOT EXISTS erp.accounts (
@@ -207,6 +220,7 @@ CREATE TABLE IF NOT EXISTS erp.accounts (
   name          text NOT NULL UNIQUE,
   name_ur       text,
   subgroup_id   bigint NOT NULL REFERENCES erp.account_groups(id) ON DELETE RESTRICT,
+  posting_class_id bigint REFERENCES erp.account_posting_classes(id) ON DELETE RESTRICT,
 
   is_active     boolean NOT NULL DEFAULT true,
   lock_posting  boolean NOT NULL DEFAULT false, -- if true, app should block postings to this account
@@ -363,6 +377,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS packing_types_name_lower_uidx ON erp.packing_t
 CREATE UNIQUE INDEX IF NOT EXISTS cities_name_lower_uidx ON erp.cities (lower(name));
 CREATE UNIQUE INDEX IF NOT EXISTS account_groups_code_lower_uidx ON erp.account_groups (account_type, lower(code));
 CREATE UNIQUE INDEX IF NOT EXISTS account_groups_name_lower_uidx ON erp.account_groups (account_type, lower(name));
+CREATE UNIQUE INDEX IF NOT EXISTS account_posting_classes_code_lower_uidx ON erp.account_posting_classes (lower(code));
+CREATE UNIQUE INDEX IF NOT EXISTS account_posting_classes_name_lower_uidx ON erp.account_posting_classes (lower(name));
 CREATE UNIQUE INDEX IF NOT EXISTS party_groups_name_lower_uidx ON erp.party_groups (lower(name));
 CREATE UNIQUE INDEX IF NOT EXISTS departments_name_lower_uidx ON erp.departments (lower(name));
 

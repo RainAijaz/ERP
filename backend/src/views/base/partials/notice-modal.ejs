@@ -1,3 +1,12 @@
+<% /*
+  notice-modal.ejs
+  ----------------
+  Renders a UI toast/modal for displaying transient or sticky user notices (success, error, info) in the ERP frontend.
+  - Reads notice data (message, type, sticky, autoClose) from the server or cookies.
+  - Supports localization for all labels/messages.
+  - Handles auto-dismissal, manual dismissal, and cross-tab notice synchronization.
+  - Ensures consistent, accessible feedback for all user actions, including approval submissions and errors.
+*/ %>
 <% const uiNoticeMessage = uiNotice && uiNotice.message ? uiNotice.message : null; %>
 <% const uiNoticeSticky = uiNotice && uiNotice.sticky === true; %>
 <% const uiNoticeAutoClose = uiNotice && uiNotice.autoClose; %>
@@ -72,7 +81,8 @@
         }
       });
       const autoClose = <%= uiNoticeAutoClose ? "true" : "false" %>;
-      if (autoClose === true) {
+      // Keep notice toasts transient for consistent UX across screens.
+      if (autoClose === true || <%= uiNoticeSticky ? "true" : "false" %>) {
         clearNoticeCookie();
         setTimeout(() => {
           dismiss();

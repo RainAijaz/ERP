@@ -84,6 +84,8 @@
           }
         });
 
+        const AUTO_DISMISS_MS = 4000;
+
         const renderToast = (payload) => {
           if (!payload || !payload.message) return;
           const existing = document.querySelector("[data-live-approval-toast]");
@@ -130,16 +132,36 @@
           wrap.querySelector("p.text-sm").textContent = payload.message;
           const closeBtn = wrap.querySelector("button");
           const viewLink = wrap.querySelector("a");
-          closeBtn.addEventListener("click", () => {
+          let dismissed = false;
+          let autoDismissTimer = null;
+          const dismissToast = ({ acknowledge = true, broadcast = true } = {}) => {
+            if (dismissed) return;
+            dismissed = true;
+            if (autoDismissTimer) {
+              clearTimeout(autoDismissTimer);
+              autoDismissTimer = null;
+            }
             resetDecisionCount();
-            broadcastLiveDismiss();
-            ackApproval();
+            if (broadcast) {
+              broadcastLiveDismiss();
+            }
+            if (acknowledge) {
+              ackApproval();
+            }
             wrap.remove();
+          };
+
+          closeBtn.addEventListener("click", () => {
+            dismissToast({ acknowledge: true, broadcast: true });
           });
           viewLink?.addEventListener("click", () => {
-            resetDecisionCount();
-            ackApproval();
+            dismissToast({ acknowledge: true, broadcast: false });
           });
+
+          autoDismissTimer = setTimeout(() => {
+            dismissToast({ acknowledge: true, broadcast: true });
+          }, AUTO_DISMISS_MS);
+
           document.body.appendChild(wrap);
         };
 
@@ -178,16 +200,39 @@
         const wraps = document.querySelectorAll("[data-submenu-wrap]");
         const mediaQuery = window.matchMedia("(min-width: 1024px)");
         const submenuTimeouts = new WeakMap();
+        const clearMenuViewportConstraint = (menu) => {
+          if (!menu) return;
+          menu.classList.remove("nav-scrollable");
+          menu.style.maxHeight = "";
+          menu.style.overflowY = "";
+          menu.style.overscrollBehavior = "";
+        };
+        const applyMenuViewportConstraint = (menu) => {
+          if (!menu || !mediaQuery.matches) return;
+          clearMenuViewportConstraint(menu);
+          // Keep nested flyout menus unclipped; only constrain leaf menus that can overflow viewport.
+          if (menu.querySelector("[data-submenu-toggle]")) return;
+          const rect = menu.getBoundingClientRect();
+          const viewportBottom = window.innerHeight - 12;
+          if (rect.bottom <= viewportBottom) return;
+          const maxHeight = Math.max(180, Math.floor(viewportBottom - rect.top));
+          menu.classList.add("nav-scrollable");
+          menu.style.maxHeight = `${maxHeight}px`;
+          menu.style.overflowY = "auto";
+          menu.style.overscrollBehavior = "contain";
+        };
 
         const closeAll = (except) => {
           document.querySelectorAll("[data-submenu]").forEach((menu) => {
             if (!except) {
+              clearMenuViewportConstraint(menu);
               menu.classList.add("hidden");
               return;
             }
             if (menu === except) return;
             if (menu.contains(except)) return;
             if (except.contains(menu)) return;
+            clearMenuViewportConstraint(menu);
             menu.classList.add("hidden");
           });
         };
@@ -196,7 +241,9 @@
           if (!menu) return;
           if (open) {
             menu.classList.remove("hidden");
+            requestAnimationFrame(() => applyMenuViewportConstraint(menu));
           } else {
+            clearMenuViewportConstraint(menu);
             menu.classList.add("hidden");
           }
         };
@@ -254,6 +301,3 @@
     <%- include("../partials/urdu-translate-utils") %>
   </body>
 </html>
-
-
-

@@ -1,3 +1,13 @@
+/**
+ * screen-approval.js
+ * ------------------
+ * Middleware and utilities for handling screen-level approval workflows in the ERP system.
+ *
+ * - Checks user permissions for screen actions (create, update, delete, etc.) using a robust permission model.
+ * - If the user lacks direct permission or if policy requires approval, serializes the intended change and queues it in the approval system.
+ * - Notifies administrators of pending approvals and logs all actions for audit purposes.
+ * - Ensures all business logic is separated from route handlers, enforcing security and maintainability.
+ */
 const knex = require("../../db/knex");
 const { HttpError } = require("../errors/http-error");
 const { navConfig } = require("../../utils/nav-config");
@@ -82,8 +92,16 @@ const requiresApproval = async (scopeKey, action) => {
   }
 };
 
-const queueApproval = async ({ req, entityType, entityId, summary, oldValue, newValue, reason, t }) => {
+const queueApproval = async ({ req, scopeKey, action, entityType, entityId, summary, oldValue, newValue, reason, t }) => {
   try {
+    const enrichedNewValue =
+      newValue && typeof newValue === "object" && !Array.isArray(newValue)
+        ? {
+            ...newValue,
+            _scope_key: scopeKey || null,
+            _approval_action: action || null,
+          }
+        : newValue;
     const [created] = await knex("erp.approval_request")
       .insert({
         branch_id: req.branchId,
@@ -92,7 +110,7 @@ const queueApproval = async ({ req, entityType, entityId, summary, oldValue, new
         entity_id: String(entityId || "NEW"),
         summary: summary || null,
         old_value: oldValue || null,
-        new_value: newValue || null,
+        new_value: enrichedNewValue || null,
         requested_by: req.user?.id || null,
       })
       .returning(["id"]);
@@ -108,7 +126,7 @@ const queueApproval = async ({ req, entityType, entityId, summary, oldValue, new
         approval_request_id: requestId,
         summary: summary || null,
         old_value: oldValue || null,
-        new_value: newValue || null,
+        new_value: enrichedNewValue || null,
         source: "screen-approval",
         reason: reason || null,
       },
@@ -181,6 +199,8 @@ const handleScreenApproval = async ({ req, scopeKey, action, entityType, entityI
     try {
       requestId = await queueApproval({
         req,
+        scopeKey,
+        action,
         entityType,
         entityId,
         summary,
@@ -209,8 +229,8 @@ const handleScreenApproval = async ({ req, scopeKey, action, entityType, entityI
         UI_NOTICE_COOKIE,
         JSON.stringify({
           message: translator("approval_sent") || translator("approval_submitted") || "Change request sent for approval. It will be applied once reviewed.",
-          autoClose: false,
-          sticky: true,
+          autoClose: true,
+          sticky: false,
         }),
         { path: "/", maxAge: 30, sameSite: "Lax" },
       );

@@ -1,6 +1,6 @@
 const express = require("express");
 const knex = require("../../db/knex");
-const { createHrMasterRouter } = require("./master-router");
+const { createHrMasterRouter, hydratePage } = require("./master-router");
 const { normalizePhone, normalizeCnic, isValidPhone, isValidCnic, toMoney, hasTwoDecimalsOrLess } = require("./validation");
 const commissionsRoutes = require("./commissions");
 const allowancesRoutes = require("./allowances");
@@ -30,21 +30,14 @@ const page = {
         { value: "MULTIPLE", label: "payroll_multiple" },
       ],
     },
-    secondary: {
-      key: "department_id",
-      label: "departments",
-      dbColumn: "t.department_id",
-      fieldName: "department_id",
-    },
   },
   branchMap: {
     table: "erp.employee_branch",
     key: "employee_id",
     branchKey: "branch_id",
   },
-  joins: [{ table: { d: "erp.departments" }, on: ["t.department_id", "d.id"] }],
+  joins: [],
   extraSelect: (locale) => [
-    locale === "ur" ? knex.raw("COALESCE(d.name_ur, d.name) as department_name") : "d.name as department_name",
     knex.raw(
       `(SELECT COALESCE(string_agg(b.name, ', ' ORDER BY b.name), '')
         FROM erp.employee_branch eb
@@ -64,7 +57,6 @@ const page = {
     { key: "name_ur", label: "name_ur" },
     { key: "cnic", label: "cnic" },
     { key: "phone", label: "phone_number" },
-    { key: "department_name", label: "departments" },
     { key: "payroll_type", label: "payroll_type" },
     { key: "basic_salary", label: "basic_salary" },
     { key: "branch_names", label: "branches" },
@@ -75,18 +67,6 @@ const page = {
     { name: "name_ur", label: "name_ur", placeholder: "name_ur" },
     { name: "cnic", label: "cnic", placeholder: "placeholder_employee_cnic", required: true },
     { name: "phone", label: "phone_number", placeholder: "placeholder_phone_number", required: true },
-    {
-      name: "department_id",
-      label: "departments",
-      type: "select",
-      required: true,
-      optionsQuery: {
-        table: "erp.departments",
-        valueKey: "id",
-        labelKey: "name",
-        orderBy: "name",
-      },
-    },
     { name: "designation", label: "designation_role", placeholder: "placeholder_designation_role", required: true },
     {
       name: "payroll_type",
@@ -146,7 +126,6 @@ const page = {
     if (!values.cnic) return { field: "cnic", message: req.res.locals.t("error_required_fields") };
     if (!values.phone) return { field: "phone", message: req.res.locals.t("error_required_fields") };
     if (!values.designation) return { field: "designation", message: req.res.locals.t("error_required_fields") };
-    if (!values.department_id) return { field: "department_id", message: req.res.locals.t("error_select_department") };
     if (values.status !== "active" && values.status !== "inactive") return req.res.locals.t("error_invalid_status");
     if (values.cnic && !isValidCnic(values.cnic)) return { field: "cnic", message: req.res.locals.t("error_invalid_cnic") };
     if (values.phone && !isValidPhone(values.phone)) return { field: "phone", message: req.res.locals.t("error_invalid_phone_number") };
@@ -185,5 +164,10 @@ const router = express.Router();
 router.use("/", createHrMasterRouter(page));
 router.use("/commissions", commissionsRoutes);
 router.use("/allowances", allowancesRoutes);
+
+router.preview = {
+  page,
+  hydratePage,
+};
 
 module.exports = router;

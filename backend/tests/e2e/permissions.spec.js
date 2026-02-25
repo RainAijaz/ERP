@@ -1,18 +1,22 @@
 const { test, expect } = require("@playwright/test");
 const { login } = require("./utils/auth");
+const { getBranch, upsertUserWithPermissions } = require("./utils/db");
 
 const ROLE_MANAGER = process.env.E2E_ROLE_MANAGER || "Manager";
 const ROLE_SALESMAN = process.env.E2E_ROLE_SALESMAN || "Salesman";
 const USER_MANAGER = process.env.E2E_USER_MANAGER || "manager1";
 const USER_SALESMAN = process.env.E2E_USER_SALESMAN || "ahsan";
+const MANAGER_PASS = process.env.E2E_MANAGER_PASS || "Manager@123";
+const LIMITED_PASS = process.env.E2E_LIMITED_PASS || "Salesman@123";
 
 const openPermissions = async (page, mode, targetLabel) => {
   await page.goto(`/administration/permissions?type=${mode}`, { waitUntil: "domcontentloaded" });
   const selector = page.locator('select[name="target_id"]');
   await selector.selectOption({ label: targetLabel });
-  await page.waitForLoadState("networkidle");
+  await expect(page.locator("tr.permission-row").first()).toBeAttached();
   await page.getByRole("button", { name: /all modules/i }).click();
   await page.locator("#expand-all").click();
+  await expect(page.locator("tr.permission-row").first()).toBeVisible();
 };
 
 const findScopeRow = (page, scopeKey) =>
@@ -51,6 +55,32 @@ const setScopePermissions = async (page, scopeKey, permissions) => {
 };
 
 test.describe.serial("Permissions UI - roles and users", () => {
+  test.beforeAll(async () => {
+    const branch = await getBranch();
+    const branchId = Number(branch?.id || 0) || null;
+
+    process.env.E2E_MANAGER_USER = USER_MANAGER;
+    process.env.E2E_MANAGER_PASS = MANAGER_PASS;
+    process.env.E2E_LIMITED_USER = USER_SALESMAN;
+    process.env.E2E_LIMITED_PASS = LIMITED_PASS;
+
+    await upsertUserWithPermissions({
+      username: USER_MANAGER,
+      password: MANAGER_PASS,
+      roleName: ROLE_MANAGER,
+      branchId,
+      scopeKeys: [],
+    });
+
+    await upsertUserWithPermissions({
+      username: USER_SALESMAN,
+      password: LIMITED_PASS,
+      roleName: ROLE_SALESMAN,
+      branchId,
+      scopeKeys: [],
+    });
+  });
+
   test("configure Manager/Salesman roles and ahsan override", async ({ page }) => {
     await login(page, "E2E_ADMIN");
 
@@ -122,8 +152,10 @@ test.describe.serial("Permissions UI - roles and users", () => {
       edit: true,
     });
 
-    await page.getByRole("button", { name: /save changes/i }).click();
-    await page.waitForLoadState("networkidle");
+    await Promise.all([
+      page.waitForURL(/\/administration\/permissions\?/i, { timeout: 30000 }),
+      page.getByRole("button", { name: /save changes/i }).click(),
+    ]);
 
     await openPermissions(page, "role", ROLE_SALESMAN);
 
@@ -193,8 +225,10 @@ test.describe.serial("Permissions UI - roles and users", () => {
       edit: true,
     });
 
-    await page.getByRole("button", { name: /save changes/i }).click();
-    await page.waitForLoadState("networkidle");
+    await Promise.all([
+      page.waitForURL(/\/administration\/permissions\?/i, { timeout: 30000 }),
+      page.getByRole("button", { name: /save changes/i }).click(),
+    ]);
 
     await openPermissions(page, "user", USER_SALESMAN);
 
@@ -211,8 +245,10 @@ test.describe.serial("Permissions UI - roles and users", () => {
       edit: true,
     });
 
-    await page.getByRole("button", { name: /save changes/i }).click();
-    await page.waitForLoadState("networkidle");
+    await Promise.all([
+      page.waitForURL(/\/administration\/permissions\?/i, { timeout: 30000 }),
+      page.getByRole("button", { name: /save changes/i }).click(),
+    ]);
   });
 
   test("dependency auto-checks view/browse for edit", async ({ page }) => {
@@ -285,8 +321,10 @@ test.describe.serial("Permissions UI - roles and users", () => {
       print: false,
     });
 
-    await page.getByRole("button", { name: /save changes/i }).click();
-    await page.waitForLoadState("networkidle");
+    await Promise.all([
+      page.waitForURL(/\/administration\/permissions\?/i, { timeout: 30000 }),
+      page.getByRole("button", { name: /save changes/i }).click(),
+    ]);
 
     await openPermissions(page, "user", USER_SALESMAN);
     await setScopePermissions(page, "master_data.products.finished", {
@@ -299,8 +337,10 @@ test.describe.serial("Permissions UI - roles and users", () => {
       approve: false,
       print: false,
     });
-    await page.getByRole("button", { name: /save changes/i }).click();
-    await page.waitForLoadState("networkidle");
+    await Promise.all([
+      page.waitForURL(/\/administration\/permissions\?/i, { timeout: 30000 }),
+      page.getByRole("button", { name: /save changes/i }).click(),
+    ]);
 
     await login(page, "E2E_LIMITED");
     const response = await page.goto("/master-data/products/finished", { waitUntil: "domcontentloaded" });

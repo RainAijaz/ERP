@@ -2,7 +2,8 @@ const express = require("express");
 const authRoutes = require("./administration/auth");
 const approvalRoutes = require("./administration/approvals");
 const administrationRoutes = require("./administration");
-const voucherEngineRoutes = require("./vouchers/voucher-engine");
+const voucherRoutes = require("./vouchers");
+const reportRoutes = require("./reports");
 const masterDataRoutes = require("./master_data");
 const hrPayrollRoutes = require("./hr-payroll");
 const { requirePermission } = require("../middleware/access/role-permissions");
@@ -16,7 +17,8 @@ router.use("/administration", administrationRoutes);
 router.use("/administration/approvals", approvalRoutes); // keep for direct/legacy links
 router.use("/master-data", masterDataRoutes);
 router.use("/hr-payroll", hrPayrollRoutes);
-router.use("/vouchers", voucherEngineRoutes);
+router.use("/vouchers", voucherRoutes);
+router.use("/reports", reportRoutes);
 
 router.get("/events/approvals", (req, res) => {
   if (!req.user) {

@@ -1,6 +1,6 @@
 const express = require("express");
 const knex = require("../../db/knex");
-const { createHrMasterRouter } = require("./master-router");
+const { createHrMasterRouter, hydratePage } = require("./master-router");
 const { toMoney, hasTwoDecimalsOrLess } = require("./validation");
 const { requirePermission } = require("../../middleware/access/role-permissions");
 const { handleScreenApproval } = require("../../middleware/approvals/screen-approval");
@@ -13,6 +13,7 @@ const {
   buildBulkPreviewRows,
   applyBulkSkuRateUpsert,
 } = require("../../services/hr-payroll/commission-rules-service");
+const COMMISSION_BASIS_FIXED_PER_UNIT = "FIXED_PER_UNIT";
 
 const page = {
   titleKey: "sales_commission",
@@ -32,17 +33,6 @@ const page = {
       label: "employees",
       dbColumn: "t.employee_id",
       fieldName: "employee_id",
-    },
-    secondary: {
-      key: "commission_basis",
-      label: "commission_basis",
-      dbColumn: "t.commission_basis",
-      options: [
-        { value: "NET_SALES_PERCENT", label: "commission_basis_net_sales_percent" },
-        { value: "GROSS_MARGIN_PERCENT", label: "commission_basis_gross_margin_percent" },
-        { value: "FIXED_PER_UNIT", label: "commission_basis_fixed_per_unit" },
-        { value: "FIXED_PER_INVOICE", label: "commission_basis_fixed_per_invoice" },
-      ],
     },
     tertiary: {
       key: "reverse_on_returns",
@@ -80,7 +70,6 @@ const page = {
     { key: "id", label: "id" },
     { key: "employee_name", label: "employees" },
     { key: "sku_code", label: "skus" },
-    { key: "commission_basis", label: "commission_basis" },
     { key: "value", label: "dozen_rate" },
     { key: "reverse_on_returns", label: "reverse_on_returns" },
   ],
@@ -153,18 +142,6 @@ const page = {
         orderBy: "name",
       },
     },
-    {
-      name: "commission_basis",
-      label: "commission_basis",
-      type: "select",
-      required: true,
-      options: [
-        { value: "NET_SALES_PERCENT", label: "commission_basis_net_sales_percent" },
-        { value: "GROSS_MARGIN_PERCENT", label: "commission_basis_gross_margin_percent" },
-        { value: "FIXED_PER_UNIT", label: "commission_basis_fixed_per_unit" },
-        { value: "FIXED_PER_INVOICE", label: "commission_basis_fixed_per_invoice" },
-      ],
-    },
     { name: "value", label: "dozen_rate", type: "number", min: 0, step: "0.01", required: true },
     {
       name: "status",
@@ -181,18 +158,18 @@ const page = {
   sanitizeValues: (values) => ({
     ...values,
     value: values.value == null ? null : String(values.value).trim(),
-    value_type: deriveValueTypeFromBasis(values.commission_basis),
+    commission_basis: COMMISSION_BASIS_FIXED_PER_UNIT,
+    value_type: deriveValueTypeFromBasis(COMMISSION_BASIS_FIXED_PER_UNIT),
     reverse_on_returns: values.reverse_on_returns !== false,
   }),
   validateValues: async ({ values, req, isUpdate, id }) => {
     const applyOn = new Set(["SKU", "SUBGROUP", "GROUP"]);
-    const bases = new Set(["NET_SALES_PERCENT", "GROSS_MARGIN_PERCENT", "FIXED_PER_UNIT", "FIXED_PER_INVOICE"]);
     if (!applyOn.has(values.apply_on)) return req.res.locals.t("error_invalid_apply_on");
     if (!isUpdate && ALLOWED_SCOPE_FOR_BULK.has(values.apply_on)) {
       return req.res.locals.t("error_group_subgroup_only_for_bulk_commission");
     }
-    if (!bases.has(values.commission_basis)) return req.res.locals.t("error_invalid_commission_basis");
-    const derivedValueType = deriveValueTypeFromBasis(values.commission_basis);
+    values.commission_basis = COMMISSION_BASIS_FIXED_PER_UNIT;
+    const derivedValueType = deriveValueTypeFromBasis(COMMISSION_BASIS_FIXED_PER_UNIT);
     if (!derivedValueType) return req.res.locals.t("error_invalid_value_type");
     values.value_type = derivedValueType;
     if (values.status !== "active" && values.status !== "inactive") return req.res.locals.t("error_invalid_status");
@@ -278,7 +255,7 @@ const renderIndexError = (req, res, values, error, modalMode, fieldErrors = {}) 
   return res.redirect(req.baseUrl);
 };
 
-router.post("/", requirePermission("SCREEN", page.scopeKey, "navigate"), async (req, res, next) => {
+router.post("/", requirePermission("SCREEN", page.scopeKey, "create"), async (req, res, next) => {
   const values = buildValues(req.body);
   const sanitizedValues = page.sanitizeValues ? page.sanitizeValues(values, req) : values;
 
@@ -307,6 +284,8 @@ router.post("/", requirePermission("SCREEN", page.scopeKey, "navigate"), async (
         employee_id: sanitizedValues.employee_id,
         apply_on: "SKU",
         sku_id: sanitizedValues.sku_id,
+        commission_basis: sanitizedValues.commission_basis,
+        value_type: sanitizedValues.value_type,
       })
       .orderBy("id", "desc");
     const existing = existingRows[0] || null;
@@ -383,7 +362,6 @@ router.get("/bulk-preview", requirePermission("SCREEN", page.scopeKey, "view"), 
     query: {
       apply_on: req.query.apply_on || null,
       employee_id: req.query.employee_id || null,
-      commission_basis: req.query.commission_basis || null,
       subgroup_id: req.query.subgroup_id || null,
       group_id: req.query.group_id || null,
       value: req.query.value || null,
@@ -393,7 +371,6 @@ router.get("/bulk-preview", requirePermission("SCREEN", page.scopeKey, "view"), 
   try {
     const applyOn = String(req.query.apply_on || "").trim().toUpperCase();
     const employeeId = Number(req.query.employee_id || 0) || null;
-    const commissionBasis = String(req.query.commission_basis || "").trim().toUpperCase();
     const subgroupId = Number(req.query.subgroup_id || 0) || null;
     const groupId = Number(req.query.group_id || 0) || null;
     const baseRate = req.query.value;
@@ -425,7 +402,6 @@ router.get("/bulk-preview", requirePermission("SCREEN", page.scopeKey, "view"), 
       applyOn,
       subgroupId,
       groupId,
-      commissionBasis,
       baseRate,
     });
 
@@ -441,7 +417,7 @@ router.get("/bulk-preview", requirePermission("SCREEN", page.scopeKey, "view"), 
   }
 });
 
-router.post("/bulk-upsert", requirePermission("SCREEN", page.scopeKey, "navigate"), async (req, res) => {
+router.post("/bulk-upsert", requirePermission("SCREEN", page.scopeKey, "create"), async (req, res) => {
   try {
     const normalized = normalizeBulkInput({ payload: req.body || {}, t: res.locals.t });
 
@@ -452,6 +428,22 @@ router.post("/bulk-upsert", requirePermission("SCREEN", page.scopeKey, "navigate
       groupId: normalized.groupId,
       commissionBasis: normalized.commissionBasis,
       baseRate: null,
+    });
+    const requestedRateBySku = new Map(
+      normalized.rows
+        .map((row) => [Number(row.skuId), row.rate])
+        .filter(([skuId]) => Number.isInteger(skuId) && skuId > 0),
+    );
+    const queuedRows = expectedRows.map((row) => {
+      const skuId = Number(row.sku_id || 0);
+      const nextRate = requestedRateBySku.has(skuId) ? requestedRateBySku.get(skuId) : row.new_rate;
+      return {
+        sku_id: skuId,
+        sku_code: row.sku_code || "",
+        item_name: row.item_name || "",
+        previous_rate: row.previous_rate ?? null,
+        new_rate: nextRate ?? null,
+      };
     });
     const allowedSkuIds = new Set(expectedRows.map((row) => Number(row.sku_id)));
     const invalidSku = normalized.rows.find((row) => !allowedSkuIds.has(Number(row.skuId)));
@@ -471,10 +463,9 @@ router.post("/bulk-upsert", requirePermission("SCREEN", page.scopeKey, "navigate
         mode: "BULK_COMMISSION_SKU_UPSERT",
         apply_on: normalized.applyOn,
         employee_id: normalized.employeeId,
-        commission_basis: normalized.commissionBasis,
         reverse_on_returns: normalized.reverseOnReturns,
         status: normalized.status,
-        rows: normalized.rows,
+        rows: queuedRows,
       },
       t: res.locals.t,
     });
@@ -495,7 +486,6 @@ router.post("/bulk-upsert", requirePermission("SCREEN", page.scopeKey, "navigate
       return applyBulkSkuRateUpsert({
         trx,
         employeeId: normalized.employeeId,
-        commissionBasis: normalized.commissionBasis,
         valueType: normalized.valueType,
         reverseOnReturns: normalized.reverseOnReturns,
         status: normalized.status,
@@ -510,7 +500,6 @@ router.post("/bulk-upsert", requirePermission("SCREEN", page.scopeKey, "navigate
       context: {
         source: "commission-bulk-upsert",
         apply_on: normalized.applyOn,
-        commission_basis: normalized.commissionBasis,
         created: result.created,
         updated: result.updated,
         row_count: normalized.rows.length,
@@ -530,5 +519,10 @@ router.post("/bulk-upsert", requirePermission("SCREEN", page.scopeKey, "navigate
 });
 
 router.use("/", createHrMasterRouter(page));
+
+router.preview = {
+  page,
+  hydratePage,
+};
 
 module.exports = router;

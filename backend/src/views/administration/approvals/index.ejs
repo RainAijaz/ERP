@@ -13,6 +13,12 @@
     if (!row?.new_value && row?.old_value) return "delete";
     return "update";
   };
+  const canApproveRequests = Boolean(
+    user &&
+      user.isAdmin &&
+      typeof can === "function" &&
+      can("SCREEN", "administration.approvals", "approve"),
+  );
 %>
 <div class="mx-auto w-full max-w-7xl space-y-6">
   <div class="flex items-center justify-between">
@@ -37,12 +43,14 @@
           <th class="px-6 py-3"><%= t("summary") %></th>
           <th class="px-6 py-3"><%= t("details") || "Details" %></th>
           <th class="px-6 py-3"><%= t("status") %></th>
-          <th class="px-6 py-3 text-right"><%= t("actions") %></th>
+          <% if (canApproveRequests) { %>
+            <th class="px-6 py-3 text-right"><%= t("actions") %></th>
+          <% } %>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
         <% if (rows.length === 0) { %>
-           <tr><td colspan="6" class="p-6 text-center text-slate-400"><%= t("no_entries") %></td></tr>
+           <tr><td colspan="<%= canApproveRequests ? 6 : 5 %>" class="p-6 text-center text-slate-400"><%= t("no_entries") %></td></tr>
         <% } %>
         
         <% rows.forEach(row => { %>
@@ -74,28 +82,30 @@
             <td class="px-6 py-4">
                <%- include("../../base/partials/approval-badge", { status: row.status }) %>
             </td>
-            <td class="px-6 py-4 text-right">
-              <% if (row.status === 'PENDING') { %>
-                <div class="flex justify-end gap-2">
-                  <form action="<%= basePath %>/<%= row.id %>/approve" method="POST" class="inline">
-                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                    <button type="submit" class="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition">
-                      <%= t("approve") || "Approve" %>
-                    </button>
-                  </form>
-                  <form action="<%= basePath %>/<%= row.id %>/reject" method="POST" class="inline">
-                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                    <button type="submit" class="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 transition">
-                      <%= t("reject") || "Reject" %>
-                    </button>
-                  </form>
-                </div>
-              <% } else { %>
-                 <span class="text-xs text-slate-400">
-                   <%= row.decided_at ? new Date(row.decided_at).toLocaleDateString() : '' %>
-                 </span>
-              <% } %>
-            </td>
+            <% if (canApproveRequests) { %>
+              <td class="px-6 py-4 text-right">
+                <% if (row.status === 'PENDING') { %>
+                  <div class="flex justify-end gap-2">
+                    <form action="<%= basePath %>/<%= row.id %>/approve" method="POST" class="inline">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                      <button type="submit" class="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition">
+                        <%= t("approve") || "Approve" %>
+                      </button>
+                    </form>
+                    <form action="<%= basePath %>/<%= row.id %>/reject" method="POST" class="inline">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                      <button type="submit" class="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 transition">
+                        <%= t("reject") || "Reject" %>
+                      </button>
+                    </form>
+                  </div>
+                <% } else { %>
+                   <span class="text-xs text-slate-400">
+                     <%= row.decided_at ? new Date(row.decided_at).toLocaleDateString() : '' %>
+                   </span>
+                <% } %>
+              </td>
+            <% } %>
           </tr>
         <% }) %>
       </tbody>
@@ -167,6 +177,11 @@
       approvalEditSaved: "<%= t('approval_request_updated') || 'Approval request updated.' %>",
       saveChanges: "<%= t('save_changes') || 'Save Changes' %>",
       saving: "<%= t('saving') || 'Saving...' %>",
+    };
+    const previewText = {
+      noEntries: "<%= t('no_entries') || 'No entries yet.' %>",
+      selectTarget: "<%= t('select_target_to_preview_impact') || 'Select target to preview impact.' %>",
+      none: "<%= t('none') || 'None' %>",
     };
     const debugPreview = true;
     let currentModalState = null;
@@ -294,6 +309,35 @@
       });
     };
 
+    const refreshConditionalFields = (panel) => {
+      if (!panel) return;
+      const nodes = panel.querySelectorAll("[data-show-when-field], [data-show-when-not-field]");
+      nodes.forEach((node) => {
+        let shouldShow = true;
+        const showField = node.getAttribute("data-show-when-field");
+        const showValues = (node.getAttribute("data-show-when-values") || "")
+          .split(",")
+          .map((entry) => entry.trim())
+          .filter(Boolean);
+        if (showField && showValues.length) {
+          const controller = panel.querySelector(`[data-field="${showField}"]`);
+          const current = controller && controller.type === "checkbox" ? (controller.checked ? "true" : "false") : String(controller?.value || "").trim();
+          shouldShow = showValues.includes(current);
+        }
+        const hideField = node.getAttribute("data-show-when-not-field");
+        const hideValues = (node.getAttribute("data-show-when-not-values") || "")
+          .split(",")
+          .map((entry) => entry.trim())
+          .filter(Boolean);
+        if (hideField && hideValues.length) {
+          const controller = panel.querySelector(`[data-field="${hideField}"]`);
+          const current = controller && controller.type === "checkbox" ? (controller.checked ? "true" : "false") : String(controller?.value || "").trim();
+          if (hideValues.includes(current)) shouldShow = false;
+        }
+        node.classList.toggle("hidden", !shouldShow);
+      });
+    };
+
     const buildFields = (value) => {
       if (!value || typeof value !== "object") return [];
       const skip = new Set(["_action", "_summary", "created_at", "created_by", "updated_at", "updated_by"]);
@@ -404,6 +448,7 @@
           tags.appendChild(tag);
         });
       });
+      refreshConditionalFields(panel);
     };
 
     const disableInputs = (panel) => {
@@ -437,6 +482,9 @@
 
     const getEditPanel = () => {
       if (!currentModalState) return null;
+      if (currentModalState.forceSingleMode) {
+        return singleBox.querySelector("[data-approval-preview]");
+      }
       if (currentModalState.action === "update") {
         return afterBox.querySelector("[data-approval-preview]");
       }
@@ -513,6 +561,26 @@
       multiCheckboxMap.forEach((items, key) => {
         values[key] = items;
       });
+      const hrBulkMode = String(panel?.dataset?.hrBulkMode || "").trim().toUpperCase();
+      if (hrBulkMode === "BULK_COMMISSION_SKU_UPSERT" || hrBulkMode === "BULK_LABOUR_RATE_SKU_UPSERT") {
+        let rows = [];
+        try {
+          rows = JSON.parse(panel?.dataset?.hrBulkRows || "[]");
+        } catch (err) {
+          rows = [];
+        }
+        if (Array.isArray(rows) && rows.length) {
+          const headerRateRaw = values.rate_value ?? values.value;
+          const hasHeaderRate = headerRateRaw !== null && typeof headerRateRaw !== "undefined" && String(headerRateRaw).trim() !== "";
+          values.rows = rows.map((row) => {
+            const nextRate = hasHeaderRate ? headerRateRaw : row.new_rate ?? row.newRate ?? row.rate ?? row.value ?? null;
+            return {
+              sku_id: row.sku_id ?? row.skuId ?? null,
+              new_rate: nextRate,
+            };
+          });
+        }
+      }
       return values;
     };
 
@@ -653,6 +721,97 @@
       rateList.appendChild(row);
     };
 
+    const toRateText = (value) => {
+      if (value == null || value === "") return previewText.none;
+      const cast = Number(value);
+      if (!Number.isFinite(cast)) return String(value);
+      return cast.toFixed(2);
+    };
+
+    const asText = (value) => {
+      if (value == null) return "";
+      return String(value).trim();
+    };
+
+    const resolveSkuText = (row) => {
+      const skuText = asText(row?.sku_code || row?.skuCode || row?.sku);
+      if (skuText) return skuText;
+      const skuId = row?.sku_id ?? row?.skuId ?? null;
+      if (skuId == null || skuId === "") return previewText.none;
+      return `#${skuId}`;
+    };
+
+    const resolveArticleText = (row) => {
+      const text = asText(row?.item_name || row?.itemName || row?.article_name || row?.articleName);
+      return text || previewText.none;
+    };
+
+    const applyHrBulkPanels = (panel, values) => {
+      if (!panel || !values || typeof values !== "object") return;
+      const mode = String(values.mode || "").toUpperCase();
+      const rows = Array.isArray(values.rows) ? values.rows : [];
+      panel.dataset.hrBulkMode = mode;
+      panel.dataset.hrBulkRows = JSON.stringify(rows);
+
+      const commissionPanel = panel.querySelector("[data-commission-bulk-panel]");
+      const commissionBody = panel.querySelector("[data-commission-bulk-body]");
+      const commissionSummary = panel.querySelector("[data-commission-bulk-summary]");
+      const labourPanel = panel.querySelector("[data-labour-rate-bulk-panel]");
+      const labourBody = panel.querySelector("[data-labour-rate-bulk-body]");
+      const labourSummary = panel.querySelector("[data-labour-rate-bulk-summary]");
+      const labourScopePanel = panel.querySelector("[data-labour-rate-labour-scope-panel]");
+
+      if (commissionPanel) commissionPanel.classList.add("hidden");
+      if (labourPanel) labourPanel.classList.add("hidden");
+      if (labourScopePanel) labourScopePanel.classList.add("hidden");
+
+      if (mode === "BULK_COMMISSION_SKU_UPSERT" && commissionPanel && commissionBody && commissionSummary) {
+        commissionPanel.classList.remove("hidden");
+        commissionSummary.textContent = rows.length ? String(rows.length) : previewText.noEntries;
+        if (!rows.length) {
+          commissionBody.innerHTML = `<tr><td class="px-3 py-3 text-slate-500" colspan="4">${previewText.selectTarget}</td></tr>`;
+          return;
+        }
+        commissionBody.innerHTML = rows
+          .map((row) => {
+            const previous = row?.previous_rate ?? row?.previousRate ?? row?.old_rate ?? row?.current_rate ?? row?.rate_before ?? null;
+            const nextRate = row?.new_rate ?? row?.newRate ?? row?.rate ?? row?.value ?? null;
+            return `
+              <tr>
+                <td class="px-3 py-1.5 text-slate-700">${resolveSkuText(row)}</td>
+                <td class="px-3 py-1.5 text-slate-700">${resolveArticleText(row)}</td>
+                <td class="px-3 py-1.5 text-slate-700">${toRateText(previous)}</td>
+                <td class="px-3 py-1.5 text-slate-700">${toRateText(nextRate)}</td>
+              </tr>
+            `;
+          })
+          .join("");
+      }
+
+      if (mode === "BULK_LABOUR_RATE_SKU_UPSERT" && labourPanel && labourBody && labourSummary) {
+        labourPanel.classList.remove("hidden");
+        labourSummary.textContent = rows.length ? String(rows.length) : previewText.noEntries;
+        if (!rows.length) {
+          labourBody.innerHTML = `<tr><td class="px-3 py-3 text-slate-500" colspan="4">${previewText.selectTarget}</td></tr>`;
+          return;
+        }
+        labourBody.innerHTML = rows
+          .map((row) => {
+            const previous = row?.previous_rate ?? row?.previousRate ?? row?.old_rate ?? row?.current_rate ?? row?.rate_before ?? null;
+            const nextRate = row?.new_rate ?? row?.newRate ?? row?.rate ?? row?.value ?? null;
+            return `
+              <tr>
+                <td class="px-3 py-1.5 text-slate-700">${resolveSkuText(row)}</td>
+                <td class="px-3 py-1.5 text-slate-700">${resolveArticleText(row)}</td>
+                <td class="px-3 py-1.5 text-slate-700">${toRateText(previous)}</td>
+                <td class="px-3 py-1.5 text-slate-700">${toRateText(nextRate)}</td>
+              </tr>
+            `;
+          })
+          .join("");
+      }
+    };
+
     const hydratePreviewPanel = (panel) => {
       if (!panel) return;
       const raw = panel.getAttribute("data-preview-values");
@@ -698,6 +857,9 @@
       if (previewType === "skus") {
         applySkuPreview(panel, values);
       }
+      if (previewType === "hr-payroll") {
+        applyHrBulkPanels(panel, values);
+      }
       const fieldCount = panel.querySelectorAll("[data-field]").length;
       const fallbackBox = panel.querySelector("[data-preview-fallback]");
       if (fallbackBox) {
@@ -725,6 +887,9 @@
         }
         if (previewType === "skus") {
           applySkuPreview(panel, payload);
+        }
+        if (previewType === "hr-payroll") {
+          applyHrBulkPanels(panel, payload);
         }
         disableInputs(panel);
       });
@@ -764,15 +929,27 @@
       }
     };
 
+    const getBulkMode = (value) => {
+      if (!value || typeof value !== "object") return "";
+      return String(value.mode || "").trim().toUpperCase();
+    };
+
+    const isHrBulkMode = (mode) => mode === "BULK_COMMISSION_SKU_UPSERT" || mode === "BULK_LABOUR_RATE_SKU_UPSERT";
+
     const open = async (payload) => {
       if (!modal) return;
       const { action, oldValue, newValue, id, status } = payload;
-      currentModalState = { action, oldValue, newValue, id, status };
+      const bulkMode = getBulkMode(newValue) || getBulkMode(oldValue);
+      const forceSingleMode = (action === "update" || action === "create") && isHrBulkMode(bulkMode);
+      currentModalState = { action, oldValue, newValue, id, status, forceSingleMode };
       editMode = false;
       const isUpdate = action === "update";
-      beforeWrap.classList.toggle("hidden", !isUpdate);
-      afterWrap.classList.toggle("hidden", !isUpdate);
-      singleWrap.classList.toggle("hidden", isUpdate);
+      const useSplitLayout = isUpdate && !forceSingleMode;
+      beforeWrap.classList.toggle("hidden", !useSplitLayout);
+      afterWrap.classList.toggle("hidden", !useSplitLayout);
+      singleWrap.classList.toggle("hidden", useSplitLayout);
+      afterWrap.classList.toggle("md:col-span-2", forceSingleMode);
+      singleWrap.classList.toggle("md:col-span-2", !useSplitLayout);
 
       subtitle.textContent = action === "delete"
         ? "<%= t('delete') || 'Delete' %>"
@@ -781,7 +958,7 @@
           : "<%= t('edit') || 'Edit' %>";
 
       const fillFallback = () => {
-        if (isUpdate) {
+        if (useSplitLayout) {
           injectFallback(beforeBox, oldValue);
           injectFallback(afterBox, newValue);
         } else {
@@ -791,7 +968,7 @@
       };
 
       if (id) {
-        if (isUpdate) {
+        if (useSplitLayout) {
           const beforeOk = await loadPreview(id, "old", beforeBox);
           if (!beforeOk) {
             injectFallback(beforeBox, oldValue);

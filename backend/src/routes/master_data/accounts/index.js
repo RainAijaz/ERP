@@ -13,6 +13,7 @@ const { buildAuditChangeSet } = require("../../../utils/audit-diff");
 const router = express.Router();
 
 const hasField = (page, name) => page.fields.some((field) => field.name === name);
+const ACCOUNT_TYPES = ["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"];
 
 const page = {
   titleKey: "accounts",
@@ -27,10 +28,17 @@ const page = {
     key: "account_id",
     branchKey: "branch_id",
   },
-  joins: [{ table: { ag: "erp.account_groups" }, on: ["t.subgroup_id", "ag.id"] }],
+  joins: [
+    { table: { ag: "erp.account_groups" }, on: ["t.subgroup_id", "ag.id"] },
+    { table: { apc: "erp.account_posting_classes" }, on: ["t.posting_class_id", "apc.id"] },
+  ],
   extraSelect: (locale) => [
     locale === "ur" ? knex.raw("COALESCE(ag.name_ur, ag.name) as group_name") : "ag.name as group_name",
     "ag.account_type as account_type",
+    locale === "ur"
+      ? knex.raw("COALESCE(apc.name_ur, apc.name, '') as posting_class_name")
+      : knex.raw("COALESCE(apc.name, '') as posting_class_name"),
+    knex.raw("COALESCE(apc.code, '') as posting_class_code"),
     knex.raw(
       `(SELECT COALESCE(string_agg(b.name, ', ' ORDER BY b.name), '')
         FROM erp.account_branch ab
@@ -49,6 +57,7 @@ const page = {
     { key: "name_ur", label: "Name (Urdu)" },
     { key: "account_type", label: "account_type" },
     { key: "group_name", label: "account_group" },
+    { key: "posting_class_name", label: "posting_class" },
     { key: "branch_names", label: "branches" },
     { key: "lock_posting", label: "lock_posting", type: "boolean" },
   ],
@@ -66,6 +75,13 @@ const page = {
       required: true,
     },
     {
+      name: "account_type",
+      label: "account_type",
+      type: "select",
+      required: true,
+      options: ACCOUNT_TYPES.map((type) => ({ value: type, label: type })),
+    },
+    {
       name: "subgroup_id",
       label: "account_group",
       type: "select",
@@ -78,6 +94,23 @@ const page = {
         orderBy: ["account_type", "name"],
       },
       labelFormat: (row, locale) => `${row.account_type} - ${locale === "ur" && row.name_ur ? row.name_ur : row.name}`,
+    },
+    {
+      name: "posting_class_id",
+      label: "posting_class",
+      type: "select",
+      required: false,
+      helpText: "help_posting_class",
+      optionsQuery: {
+        table: "erp.account_posting_classes",
+        valueKey: "id",
+        labelKey: "name",
+        select: ["id", "code", "name", "name_ur", "is_active"],
+        where: { is_active: true },
+        orderBy: "name",
+      },
+      labelFormat: (row, locale) =>
+        `${String(row.code || "").toUpperCase()} - ${locale === "ur" && row.name_ur ? row.name_ur : row.name}`,
     },
     {
       name: "branch_ids",
@@ -111,7 +144,26 @@ page.columns = (page.columns || [])
 
 const ACTIVE_OPTION_TABLES = new Set(["erp.party_groups", "erp.account_groups", "erp.product_groups", "erp.product_subgroups", "erp.cities", "erp.branches", "erp.departments", "erp.grades", "erp.packing_types", "erp.sizes", "erp.colors", "erp.uom"]);
 
-const hydratePage = async (pageConfig, locale) => {
+const getAllowedBranchIds = (req) => {
+  if (req?.user?.isAdmin) return [];
+  return Array.isArray(req?.branchScope) ? req.branchScope.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0) : [];
+};
+
+const getAccountGroupById = async (subgroupId) => {
+  const id = Number(subgroupId || 0);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  return knex("erp.account_groups").select("id", "account_type", "is_active").where({ id }).first();
+};
+
+const getPostingClassById = async (postingClassId) => {
+  const id = Number(postingClassId || 0);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  return knex("erp.account_posting_classes").select("id", "code", "is_active").where({ id }).first();
+};
+
+const normalizeAccountType = (value) => String(value || "").trim().toUpperCase();
+
+const hydratePage = async (pageConfig, locale, req = null) => {
   const fields = [];
   for (const field of pageConfig.fields) {
     if (!field.optionsQuery) {
@@ -127,6 +179,10 @@ const hydratePage = async (pageConfig, locale) => {
       query = query.where(field.optionsQuery.where);
     }
     const rows = await query.orderBy(field.optionsQuery.orderBy || field.optionsQuery.labelKey);
+    const allowedBranchSet =
+      field.optionsQuery.table === "erp.branches" && !req?.user?.isAdmin
+        ? new Set(getAllowedBranchIds(req))
+        : null;
     fields.push({
       ...field,
       options: rows.map((row) => {
@@ -135,8 +191,9 @@ const hydratePage = async (pageConfig, locale) => {
         return {
           value: row[field.optionsQuery.valueKey],
           label: labelUr || labelRaw,
+          accountType: row.account_type || "",
         };
-      }),
+      }).filter((opt) => (allowedBranchSet ? allowedBranchSet.has(Number(opt.value)) : true)),
     });
   }
   return { ...pageConfig, fields };
@@ -252,7 +309,7 @@ const renderIndexError = async (req, res, values, error, modalMode, basePath) =>
 
 router.get("/", requirePermission("SCREEN", "master_data.accounts", "view"), async (req, res, next) => {
   try {
-    const hydrated = await hydratePage(page, req.locale);
+    const hydrated = await hydratePage(page, req.locale, req);
     const flash = readFlash(req, res, req.baseUrl);
     const modalMode = flash ? flash.modalMode : "create";
     const modalOpen = flash ? ["create", "edit"].includes(modalMode) : false;
@@ -281,7 +338,7 @@ router.get("/", requirePermission("SCREEN", "master_data.accounts", "view"), asy
   }
 });
 
-router.post("/", requirePermission("SCREEN", "master_data.accounts", "navigate"), async (req, res, next) => {
+router.post("/", requirePermission("SCREEN", "master_data.accounts", "create"), async (req, res, next) => {
   const values = buildValues(page, req.body);
   if (!hasField(page, "code") && !page.autoCodeFromName) {
     delete values.code;
@@ -294,7 +351,37 @@ router.post("/", requirePermission("SCREEN", "master_data.accounts", "navigate")
   }
 
   try {
+    const selectedType = normalizeAccountType(values.account_type);
+    if (!ACCOUNT_TYPES.includes(selectedType)) {
+      return renderIndexError(req, res, values, res.locals.t("error_invalid_value"), "create", basePath);
+    }
+    const selectedGroup = await getAccountGroupById(values.subgroup_id);
+    if (!selectedGroup || selectedGroup.is_active !== true) {
+      return renderIndexError(req, res, values, res.locals.t("error_invalid_account_group"), "create", basePath);
+    }
+    if (normalizeAccountType(selectedGroup.account_type) !== selectedType) {
+      return renderIndexError(req, res, values, res.locals.t("error_invalid_account_group"), "create", basePath);
+    }
+    values.account_type = selectedType;
+    values.subgroup_id = Number(selectedGroup.id);
+    if (values.posting_class_id) {
+      const postingClass = await getPostingClassById(values.posting_class_id);
+      if (!postingClass || postingClass.is_active !== true) {
+        return renderIndexError(req, res, values, res.locals.t("error_invalid_posting_class"), "create", basePath);
+      }
+      values.posting_class_id = Number(postingClass.id);
+    } else {
+      values.posting_class_id = null;
+    }
+
     const branchIds = Array.isArray(values.branch_ids) ? values.branch_ids : [];
+    if (!req.user?.isAdmin) {
+      const allowed = new Set(getAllowedBranchIds(req).map(String));
+      const invalid = branchIds.map(String).some((id) => !allowed.has(id));
+      if (invalid) {
+        return renderIndexError(req, res, values, res.locals.t("error_branch_out_of_scope"), "create", basePath);
+      }
+    }
     if (!branchIds.length) {
       return renderIndexError(req, res, values, res.locals.t("error_select_branch"), "create", basePath);
     }
@@ -331,7 +418,7 @@ router.post("/", requirePermission("SCREEN", "master_data.accounts", "navigate")
       return res.redirect(req.get("referer") || basePath);
     }
 
-    const { branch_ids: branchIdsInsert = [], ...rest } = values;
+    const { branch_ids: branchIdsInsert = [], account_type: _accountType, ...rest } = values;
     await knex.transaction(async (trx) => {
       const [row] = await trx(page.table)
         .insert({
@@ -361,7 +448,7 @@ router.post("/", requirePermission("SCREEN", "master_data.accounts", "navigate")
   }
 });
 
-router.post("/:id", requirePermission("SCREEN", "master_data.accounts", "navigate"), async (req, res, next) => {
+router.post("/:id", requirePermission("SCREEN", "master_data.accounts", "edit"), async (req, res, next) => {
   const id = Number(req.params.id);
   if (!id) {
     return next(new HttpError(404, res.locals.t("error_not_found")));
@@ -382,6 +469,29 @@ router.post("/:id", requirePermission("SCREEN", "master_data.accounts", "navigat
     if (!existing) {
       return renderIndexError(req, res, values, res.locals.t("error_not_found"), "edit", basePath);
     }
+    const selectedType = normalizeAccountType(values.account_type);
+    if (!ACCOUNT_TYPES.includes(selectedType)) {
+      return renderIndexError(req, res, values, res.locals.t("error_invalid_value"), "edit", basePath);
+    }
+    const selectedGroup = await getAccountGroupById(values.subgroup_id);
+    if (!selectedGroup || selectedGroup.is_active !== true) {
+      return renderIndexError(req, res, values, res.locals.t("error_invalid_account_group"), "edit", basePath);
+    }
+    if (normalizeAccountType(selectedGroup.account_type) !== selectedType) {
+      return renderIndexError(req, res, values, res.locals.t("error_invalid_account_group"), "edit", basePath);
+    }
+    values.account_type = selectedType;
+    values.subgroup_id = Number(selectedGroup.id);
+    if (values.posting_class_id) {
+      const postingClass = await getPostingClassById(values.posting_class_id);
+      if (!postingClass || postingClass.is_active !== true) {
+        return renderIndexError(req, res, values, res.locals.t("error_invalid_posting_class"), "edit", basePath);
+      }
+      values.posting_class_id = Number(postingClass.id);
+    } else {
+      values.posting_class_id = null;
+    }
+
     if (hasField(page, "code") && existing.code) {
       values.code = existing.code;
     } else {
@@ -395,6 +505,13 @@ router.post("/:id", requirePermission("SCREEN", "master_data.accounts", "navigat
       });
     }
     const branchIds = Array.isArray(values.branch_ids) ? values.branch_ids : [];
+    if (!req.user?.isAdmin) {
+      const allowed = new Set(getAllowedBranchIds(req).map(String));
+      const invalid = branchIds.map(String).some((id) => !allowed.has(id));
+      if (invalid) {
+        return renderIndexError(req, res, values, res.locals.t("error_branch_out_of_scope"), "edit", basePath);
+      }
+    }
     if (!branchIds.length) {
       return renderIndexError(req, res, values, res.locals.t("error_select_branch"), "edit", basePath);
     }
@@ -435,7 +552,7 @@ router.post("/:id", requirePermission("SCREEN", "master_data.accounts", "navigat
       after: values,
       includeKeys: page.fields.map((field) => field.name),
     });
-    const { branch_ids: branchIdsUpdate = [], ...rest } = values;
+    const { branch_ids: branchIdsUpdate = [], account_type: _accountType, ...rest } = values;
     await knex.transaction(async (trx) => {
       await trx(page.table)
         .where({ id })
@@ -471,7 +588,7 @@ router.post("/:id", requirePermission("SCREEN", "master_data.accounts", "navigat
   }
 });
 
-router.post("/:id/toggle", requirePermission("SCREEN", "master_data.accounts", "navigate"), async (req, res, next) => {
+router.post("/:id/toggle", requirePermission("SCREEN", "master_data.accounts", "delete"), async (req, res, next) => {
   const id = Number(req.params.id);
   if (!id) {
     return next(new HttpError(404, res.locals.t("error_not_found")));
@@ -516,7 +633,7 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.accounts", "
   }
 });
 
-router.post("/:id/delete", requirePermission("SCREEN", "master_data.accounts", "navigate"), async (req, res, next) => {
+router.post("/:id/delete", requirePermission("SCREEN", "master_data.accounts", "hard_delete"), async (req, res, next) => {
   const id = Number(req.params.id);
   if (!id) {
     return next(new HttpError(404, res.locals.t("error_not_found")));

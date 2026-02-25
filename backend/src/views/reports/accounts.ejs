@@ -1,0 +1,2254 @@
+<%
+  const voucherRegisterKeys = new Set(["voucher_register", "cash_voucher_register", "bank_transactions", "journal_voucher_register"]);
+  const isVoucherRegister = voucherRegisterKeys.has(String(reportKey || ""));
+  const isAccountActivityLedger = String(reportKey || "") === "account_activity_ledger";
+  const isExpenseAnalysis = String(reportKey || "") === "expense_analysis";
+  const isExpenseTrends = String(reportKey || "") === "expense_trends";
+  const voucherTypeFilter = String(filters?.voucherType || "").trim().toLowerCase();
+  const reportModeFilter = String(filters?.reportMode || "details").trim().toLowerCase();
+  const trendGranularityFilter = String(filters?.trendGranularity || "daily").trim().toLowerCase();
+  const isDepartmentBreakdown = isExpenseAnalysis;
+  const expenseReportLoaded = !(isExpenseAnalysis || isExpenseTrends) || Boolean(filters?.reportLoaded);
+  const isBankVoucherRegisterDetails = isVoucherRegister && voucherTypeFilter === "bank" && reportModeFilter === "details";
+  const isCashVoucherRegisterDetails = isVoucherRegister && voucherTypeFilter === "cash" && reportModeFilter === "details";
+  const isCashBook = String(reportKey || "") === "cash_book";
+  const expenseDepartments = Array.isArray(expenseFilterOptions?.departments) ? expenseFilterOptions.departments : [];
+  const expenseCashierAccounts = Array.isArray(expenseFilterOptions?.cashierAccounts) ? expenseFilterOptions.cashierAccounts : [];
+  const trendAccountGroups = Array.isArray(expenseFilterOptions?.accountGroups) ? expenseFilterOptions.accountGroups : [];
+  const trendAccounts = Array.isArray(expenseFilterOptions?.accounts) ? expenseFilterOptions.accounts : [];
+  const selectedBranchIds = Array.isArray(filters?.branchIds)
+    ? filters.branchIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
+    : (Number(filters?.branchId || 0) > 0 ? [Number(filters.branchId)] : []);
+  const selectedDepartmentIds = Array.isArray(filters?.departmentIds)
+    ? filters.departmentIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
+    : [];
+  const breakdownStartFilter = String(filters?.breakdownStart || "department").trim().toLowerCase();
+  const selectedCashierAccountId = Number(filters?.cashierAccountId || 0) || null;
+  const selectedTrendAccountGroupId = Number(filters?.trendAccountGroupId || 0) || null;
+  const selectedTrendAccountId = Number(filters?.trendAccountId || 0) || null;
+  const departmentBreakdown = isDepartmentBreakdown ? (reportMeta?.departmentBreakdown || null) : null;
+  const expenseTrends = isExpenseTrends ? (reportMeta?.expenseTrends || null) : null;
+  const trendGranularityAdjusted = isExpenseTrends && Boolean(expenseTrends?.granularityAdjusted);
+  const trendRequestedGranularity = String(expenseTrends?.requestedGranularity || trendGranularityFilter || "daily").trim().toLowerCase();
+  const trendGranularityAdjustedHintKey = trendRequestedGranularity === "weekly"
+    ? "weekly_short_range_daily_hint"
+    : "monthly_short_range_daily_hint";
+  const hasExpenseTrends = isExpenseTrends && Array.isArray(expenseTrends?.buckets) && expenseTrends.buckets.length > 0;
+  const hasDepartmentBreakdown =
+    isDepartmentBreakdown &&
+    expenseReportLoaded &&
+    Array.isArray(departmentBreakdown?.departments) &&
+    departmentBreakdown.departments.length > 0;
+  const showAccountFilter = isAccountActivityLedger || isCashBook;
+  const selectedAccount = showAccountFilter
+    ? ((accounts || []).find((a) => Number(a.id) === Number(filters.accountId || 0)) || null)
+    : null;
+  const ledgerLoaded = !isAccountActivityLedger || Number(filters.accountId || 0) > 0;
+  const visibleRows = (!expenseReportLoaded && isExpenseAnalysis)
+    ? []
+    : (isAccountActivityLedger && !ledgerLoaded ? [] : (reportRows || []));
+  const canExportRows = isDepartmentBreakdown ? hasDepartmentBreakdown : (isExpenseTrends ? hasExpenseTrends : visibleRows.length > 0);
+  const hiddenCols = new Set(["_voucher_id", "_line_id", "_line_no", "_row_type"]);
+  if (isExpenseTrends) hiddenCols.add("bucket_start");
+  if (isCashBook && reportModeFilter !== "details") hiddenCols.add("description");
+  const tableCols = (() => {
+    if (!visibleRows.length) return [];
+    const cols = Object.keys(visibleRows[0]).filter((col) => !hiddenCols.has(String(col || "").toLowerCase()));
+    const nonBranch = cols.filter((col) => String(col || "").toLowerCase() !== "branch");
+    const branchCols = cols.filter((col) => String(col || "").toLowerCase() === "branch");
+    return [...nonBranch, ...branchCols];
+  })();
+  const showReportMode = (isAccountActivityLedger || isVoucherRegister || isCashBook) && !isDepartmentBreakdown;
+  const emptyMessage = isAccountActivityLedger && !ledgerLoaded
+    ? t('select_account_name')
+    : t('no_entries');
+  const dateRangeLabel = (() => {
+    const value = typeof t === "function" ? t("date_range") : "";
+    if (!value) return "date_range";
+    return value;
+  })();
+  const weekdayShortLabels = [
+    t("weekday_sun_short"),
+    t("weekday_mon_short"),
+    t("weekday_tue_short"),
+    t("weekday_wed_short"),
+    t("weekday_thu_short"),
+    t("weekday_fri_short"),
+    t("weekday_sat_short"),
+  ];
+
+  const formatDate = (value) => {
+    if (!value) return "-";
+    const text = String(value);
+    const m = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+    const dt = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(dt.getTime())) return String(value);
+    const dd = String(dt.getDate()).padStart(2, "0");
+    const mm = String(dt.getMonth() + 1).padStart(2, "0");
+    const yyyy = dt.getFullYear();
+    return `${dd}-${mm}-${yyyy}`;
+  };
+
+  const prettyCol = (col) => {
+    const key = String(col || "").toLowerCase();
+    if (key === "entry_date") return t('date');
+    if (key === "voucher_type_code") return t('voucher');
+    if (key === "voucher_subtype") return t('voucher_type');
+    if (key === "voucher_no") return t('voucher_no');
+    if (key === "reference_no") return t('reference_no');
+    if (key === "note") return t('note');
+    if (key === "cash_account") return t('cash_account');
+    if (key === "bank_account") return t('bank_account');
+    if (key === "entity") return t('entity');
+    if (key === "against_account" || key === "counterparty") return t('entity');
+    if (key === "account_name") return t('name');
+    if (key === "description") return t('description');
+    if (key === "period") return t('period');
+    if (key === "department") return t('department');
+    if (key === "amount") return t('amount');
+    if (key === "gross_expense") return t('gross_expense');
+    if (key === "credits_adjustments") return t('credits_adjustments');
+    if (key === "net_expense") return t('net_expense');
+    if (key === "previous_net_expense") return t('net_expense_previous_period');
+    if (key === "change_percentage") return t('change_percentage');
+    if (key === "total_debit") return t('total_debit');
+    if (key === "total_credit") return t('total_credit');
+    if (key === "opening_balance") return t('opening_balance');
+    if (key === "period_debit") return t('debit');
+    if (key === "period_credit") return t('credit');
+    if (key === "closing_balance") return t('closing_balance');
+    if (key === "created_by") return t('created_by');
+    if (key === "branch") return t('branch');
+    if (key === "dr") return t('debit');
+    if (key === "cr") return t('credit');
+    if (key === "running_balance") return t('balance');
+    if (key === "status") return t('status');
+    return col;
+  };
+
+  const prettyVoucherType = (value) => {
+    const code = String(value || "").toUpperCase();
+    if (code === "CASH_VOUCHER") return t('cash_voucher');
+    if (code === "CASH_RECEIPT") return t('cash_receipt');
+    if (code === "CASH_PAYMENT") return t('cash_payment');
+    if (code === "BANK_VOUCHER") return t('bank_voucher');
+    if (code === "JOURNAL_VOUCHER") return t('journal_voucher');
+    if (code === "PERIOD_TOTALS") return t('shown_rows_totals');
+    if (code === "OPENING_BALANCE") return t('opening_balance');
+    if (code === "CLOSING_BALANCE") return t('closing_balance');
+    return value;
+  };
+
+  const prettyDescription = (value) => {
+    const code = String(value || "").toUpperCase();
+    if (code === "PERIOD_TOTALS") return t('shown_rows_totals');
+    if (code === "OPENING_BALANCE") return t('opening_balance');
+    if (code === "CLOSING_BALANCE") return t('closing_balance');
+    return value == null ? '-' : value;
+  };
+
+  const formatAmount = (value) => {
+    if (value == null || value === "") return "-";
+    const num = Number(value);
+    if (!Number.isFinite(num)) return String(value);
+    return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+  const isNumericCol = (col) => {
+    const key = String(col || "").toLowerCase();
+    return (
+      key === "dr" ||
+      key === "cr" ||
+      key === "running_balance" ||
+      key === "amount" ||
+      key === "total_debit" ||
+      key === "total_credit" ||
+      key === "gross_expense" ||
+      key === "credits_adjustments" ||
+      key === "net_expense" ||
+      key === "previous_net_expense" ||
+      key === "change_percentage"
+    );
+  };
+%>
+
+<style>
+  @media print {
+    body * {
+      visibility: hidden !important;
+    }
+
+    [data-report-print-area],
+    [data-report-print-area] * {
+      visibility: visible !important;
+    }
+
+    [data-report-print-area] {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      border: 0;
+      box-shadow: none;
+      background: #fff;
+    }
+
+    [data-report-print-controls] {
+      display: none !important;
+    }
+
+    [data-report-table] {
+      min-width: 0 !important;
+      width: 100% !important;
+    }
+  }
+</style>
+
+<div class="mx-auto w-full max-w-none space-y-4 px-2">
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <div class="flex flex-col gap-1">
+      <h1 class="text-xl font-display font-semibold tracking-tight text-ink sm:text-2xl"><%= t(reportTitleKey) %></h1>
+    </div>
+    <% if (filters?.invalidFilterInput) { %>
+      <div class="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800" data-date-filter-warning><%= t('date_filters_auto_corrected') %></div>
+    <% } %>
+
+    <form method="post" action="<%= reportPath %>" class="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-6" data-ledger-filter-form>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <% if (isExpenseAnalysis || isExpenseTrends) { %>
+        <input type="hidden" name="load_report" value="1">
+      <% } %>
+      <% if (showAccountFilter) { %>
+        <label class="text-sm">
+          <span class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('code') %></span>
+          <input type="text" value="<%= selectedAccount?.code || '' %>" readonly data-account-code-display class="h-10 w-full rounded-xl border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700">
+        </label>
+
+        <label class="text-sm xl:col-span-2">
+          <span class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t(isCashBook ? 'cash_account' : 'account_name') %></span>
+          <select name="account_id" data-account-select data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" <%= isAccountActivityLedger ? 'required' : '' %>>
+            <option value=""><%= isAccountActivityLedger ? t('select_account_name') : t('all') %></option>
+            <% (accounts || []).forEach((a) => { %>
+              <option value="<%= a.id %>" data-code="<%= a.code %>" <%= Number(filters.accountId || 0) === Number(a.id) ? 'selected' : '' %>><%= a.name %></option>
+            <% }) %>
+          </select>
+        </label>
+      <% } %>
+
+      <% if (isVoucherRegister) { %>
+        <label class="text-sm">
+          <span class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('voucher_type') %></span>
+          <select name="voucher_type" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm">
+            <option value="cash" <%= String(filters.voucherType || 'cash') === 'cash' ? 'selected' : '' %>><%= t('cash_voucher') %></option>
+            <option value="bank" <%= String(filters.voucherType || 'cash') === 'bank' ? 'selected' : '' %>><%= t('bank_voucher') %></option>
+            <option value="journal" <%= String(filters.voucherType || 'cash') === 'journal' ? 'selected' : '' %>><%= t('journal_voucher') %></option>
+          </select>
+        </label>
+      <% } %>
+      <% if (isExpenseTrends) { %>
+        <label class="text-sm">
+          <span class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('time_granularity') %></span>
+          <select name="time_granularity" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm">
+            <option value="daily" <%= trendGranularityFilter === 'daily' ? 'selected' : '' %>><%= t('daily') %></option>
+            <option value="weekly" <%= trendGranularityFilter === 'weekly' ? 'selected' : '' %>><%= t('weekly') %></option>
+            <option value="monthly" <%= trendGranularityFilter !== 'daily' && trendGranularityFilter !== 'weekly' ? 'selected' : '' %>><%= t('monthly') %></option>
+          </select>
+          <% if (trendGranularityAdjusted) { %>
+            <p class="mt-1 text-xs font-semibold text-amber-700"><%= t(trendGranularityAdjustedHintKey) %></p>
+          <% } %>
+        </label>
+        <label class="text-sm">
+          <span class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('account_group') %></span>
+          <select name="account_group_id" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm">
+            <option value=""><%= t('all') %></option>
+            <% trendAccountGroups.forEach((g) => { %>
+              <option value="<%= g.id %>" <%= selectedTrendAccountGroupId === Number(g.id) ? 'selected' : '' %>><%= g.name %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label class="text-sm">
+          <span class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('account_name') %></span>
+          <select name="trend_account_id" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm">
+            <option value=""><%= t('all') %></option>
+            <% trendAccounts.forEach((a) => { %>
+              <option value="<%= a.id %>" <%= selectedTrendAccountId === Number(a.id) ? 'selected' : '' %>><%= `${a.name}${a.code ? ` (${a.code})` : ''}` %></option>
+            <% }) %>
+          </select>
+        </label>
+      <% } %>
+      <label class="text-sm xl:col-span-2">
+        <span class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= dateRangeLabel %></span>
+        <div class="relative" data-date-range-wrap>
+          <input
+            type="text"
+            readonly
+            value="<%= `${filters.from || ''} - ${filters.to || ''}` %>"
+            data-date-range-input
+            class="h-10 w-full cursor-pointer rounded-xl border border-slate-300 bg-white px-3 pr-10 text-sm"
+          >
+          <button type="button" class="absolute inset-y-0 right-2 inline-flex items-center text-slate-500 hover:text-slate-700" data-date-range-toggle aria-label="<%= t('open_date_range_picker') %>">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+            </svg>
+          </button>
+          <div class="absolute left-0 z-50 mt-2 hidden max-h-[62vh] overflow-auto rounded-xl border border-slate-200 bg-white p-2.5 shadow-lg" style="width:min(700px,calc(100vw - 1rem));" data-date-range-panel>
+            <div class="grid grid-cols-1 gap-2 lg:grid-cols-[156px_1fr]">
+              <div class="space-y-1.5">
+                <div>
+                  <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('from_date') %></div>
+                  <div class="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700" data-date-range-from-display>-</div>
+                </div>
+                <div>
+                  <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('to_date') %></div>
+                  <div class="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700" data-date-range-to-display>-</div>
+                </div>
+              </div>
+              <div>
+                <div class="mb-1.5 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600" data-date-range-caption><%= t('select') %> <%= t('from_date') %></div>
+                <div class="grid grid-cols-1 gap-3 xl:grid-cols-[1fr_auto_1fr]">
+                  <div class="min-w-[210px] rounded-lg border border-slate-200 bg-slate-50/40 p-2">
+                    <div class="mb-1 flex items-center justify-between gap-2">
+                      <button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-prev>&larr;</button>
+                      <div class="text-center text-xs font-semibold text-slate-700" data-date-range-month-1-label></div>
+                      <button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-next>&rarr;</button>
+                    </div>
+                    <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-500">
+                      <% weekdayShortLabels.forEach((weekdayLabel) => { %>
+                        <span><%= weekdayLabel %></span>
+                      <% }) %>
+                    </div>
+                    <div class="mt-1 grid grid-cols-7 gap-1" data-date-range-month-1-grid></div>
+                  </div>
+                  <div class="hidden xl:block w-px bg-slate-200 self-stretch"></div>
+                  <div class="min-w-[210px] rounded-lg border border-slate-200 bg-slate-50/40 p-2">
+                    <div class="mb-1 flex items-center justify-between gap-2">
+                      <button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-2-prev>&larr;</button>
+                      <div class="text-center text-xs font-semibold text-slate-700" data-date-range-month-2-label></div>
+                      <button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-2-next>&rarr;</button>
+                    </div>
+                    <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-500">
+                      <% weekdayShortLabels.forEach((weekdayLabel) => { %>
+                        <span><%= weekdayLabel %></span>
+                      <% }) %>
+                    </div>
+                    <div class="mt-1 grid grid-cols-7 gap-1" data-date-range-month-2-grid></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="mt-1.5 flex items-center justify-end gap-2">
+              <button type="button" class="rounded-lg border border-slate-300 bg-white px-3 py-1.25 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700" data-date-range-cancel><%= t('cancel') %></button>
+              <button type="button" class="rounded-lg bg-accent px-3 py-1.25 text-xs font-semibold uppercase tracking-[0.08em] text-white" data-date-range-apply><%= t('apply') %></button>
+            </div>
+          </div>
+        </div>
+        <input type="hidden" name="from_date" value="<%= filters.from %>" data-from-date-hidden>
+        <input type="hidden" name="to_date" value="<%= filters.to %>" data-to-date-hidden>
+      </label>
+      <% if (isDepartmentBreakdown) { %>
+        <label class="text-sm">
+          <span class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('branches') %></span>
+          <% if (user?.isAdmin) { %>
+            <div class="relative" data-multi-select data-name="branch_ids" data-placeholder="<%= t('all_branches') %>">
+              <button type="button" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 pr-10 text-left text-sm text-slate-700" data-multi-trigger></button>
+              <span class="pointer-events-none absolute inset-y-0 right-3 inline-flex items-center text-slate-500">
+                <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M6 8l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"></path>
+                </svg>
+              </span>
+              <div class="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-50 hidden rounded-xl border border-slate-200 bg-white p-2 shadow-xl" data-multi-panel>
+                <div class="max-h-52 overflow-auto pr-1" data-multi-options>
+                  <% (branches || []).forEach((b) => { %>
+                    <label class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+                      <input type="checkbox" value="<%= b.id %>" <%= selectedBranchIds.includes(Number(b.id)) ? 'checked' : '' %>>
+                      <span><%= b.name %></span>
+                    </label>
+                  <% }) %>
+                </div>
+              </div>
+              <input type="hidden" name="branch_ids" value="<%= selectedBranchIds.join(',') %>" data-multi-hidden>
+            </div>
+          <% } else { %>
+            <input type="text" readonly class="h-10 w-full rounded-xl border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700" value="<%= (branches || []).find((b) => Number(b.id) === Number(filters.branchId || 0))?.name || (filters.branchId || '') %>">
+            <input type="hidden" name="branch_ids" value="<%= filters.branchId || '' %>">
+          <% } %>
+        </label>
+      <% } else { %>
+        <label class="text-sm">
+          <span class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= isExpenseTrends ? t('branches') : t('branch') %></span>
+          <select name="branch_id" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" <%= user?.isAdmin ? '' : 'disabled' %>>
+            <option value=""><%= t('all_branches') %></option>
+            <% (branches || []).forEach((b) => { %>
+              <option value="<%= b.id %>" <%= Number(filters.branchId || 0) === Number(b.id) ? 'selected' : '' %>><%= b.name %></option>
+            <% }) %>
+          </select>
+          <% if (!user?.isAdmin) { %>
+            <input type="hidden" name="branch_id" value="<%= filters.branchId || '' %>">
+          <% } %>
+        </label>
+      <% } %>
+      <% if (isDepartmentBreakdown) { %>
+        <label class="text-sm">
+          <span class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('departments') %></span>
+          <div
+            class="relative"
+            data-multi-select
+            data-name="department_ids"
+            data-placeholder="<%= `${t('all')} ${t('departments')}` %>"
+            data-multi-all-value="__ALL__"
+            data-multi-auto-all="1"
+          >
+            <button type="button" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 pr-10 text-left text-sm text-slate-700" data-multi-trigger></button>
+            <span class="pointer-events-none absolute inset-y-0 right-3 inline-flex items-center text-slate-500">
+              <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M6 8l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"></path>
+              </svg>
+            </span>
+            <div class="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-50 hidden rounded-xl border border-slate-200 bg-white p-2 shadow-xl" data-multi-panel>
+              <div class="max-h-52 overflow-auto pr-1" data-multi-options>
+                <label class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                  <input type="checkbox" value="__ALL__" <%= selectedDepartmentIds.length ? '' : 'checked' %>>
+                  <span><%= `${t('all')} ${t('departments')}` %></span>
+                </label>
+                <% (expenseDepartments || []).forEach((d) => { %>
+                  <label class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+                    <input type="checkbox" value="<%= d.id %>" <%= selectedDepartmentIds.includes(Number(d.id)) ? 'checked' : '' %>>
+                    <span><%= d.name %></span>
+                  </label>
+                <% }) %>
+              </div>
+            </div>
+            <input type="hidden" name="department_ids" value="<%= selectedDepartmentIds.join(',') %>" data-multi-hidden>
+          </div>
+        </label>
+        <label class="text-sm">
+          <span class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('cashier') %></span>
+          <select name="cashier_account_id" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm">
+            <option value=""><%= t('any_cashier') %></option>
+            <% (expenseCashierAccounts || []).forEach((a) => { %>
+              <option value="<%= a.id %>" <%= selectedCashierAccountId === Number(a.id) ? 'selected' : '' %>><%= a.name %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label class="text-sm">
+          <span class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('drilldown_starts_at') %></span>
+          <select name="breakdown_start" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm">
+            <option value="department" <%= breakdownStartFilter === 'department' ? 'selected' : '' %>><%= t('level_department') %></option>
+            <option value="group" <%= breakdownStartFilter === 'group' ? 'selected' : '' %>><%= t('level_group') %></option>
+            <option value="account" <%= breakdownStartFilter === 'account' ? 'selected' : '' %>><%= t('level_account') %></option>
+          </select>
+        </label>
+      <% } %>
+
+      <% if (showReportMode) { %>
+        <div class="text-sm xl:col-span-2">
+          <span class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('report') %></span>
+          <div class="mt-2 flex items-center gap-4">
+            <label class="inline-flex items-center gap-1.5 text-sm text-slate-700">
+              <input type="radio" name="report_mode" value="details" <%= filters.reportMode !== 'summary' ? 'checked' : '' %>>
+              <span><%= t('details') %></span>
+            </label>
+            <label class="inline-flex items-center gap-1.5 text-sm text-slate-700">
+              <input type="radio" name="report_mode" value="summary" <%= filters.reportMode === 'summary' ? 'checked' : '' %>>
+              <span><%= t('summary') %></span>
+            </label>
+          </div>
+        </div>
+      <% } %>
+
+      <div class="xl:col-span-6 flex items-center gap-2">
+        <button type="submit" class="inline-flex items-center gap-1.5 rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm" data-load-report><%= t('load') %></button>
+        <a href="<%= reportPath %>" class="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= t('cancel') %></a>
+      </div>
+    </form>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm" data-report-print-area>
+    <div class="flex flex-wrap items-center justify-end gap-2" data-report-print-controls>
+      <button type="button" class="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700 disabled:cursor-not-allowed disabled:opacity-40" data-print-report <%= canExportRows ? '' : 'disabled' %>><%= t('print') %></button>
+      <button type="button" class="inline-flex items-center gap-1.5 rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40" data-download-report <%= canExportRows ? '' : 'disabled' %>><%= t('download') %></button>
+    </div>
+    <div class="mt-3 h-px bg-slate-200" data-report-print-controls></div>
+
+    <% if (isExpenseTrends) { %>
+      <% if (!expenseReportLoaded) { %>
+        <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500">
+          <%= t('no_entries') %>
+        </div>
+      <% } else { %>
+      <div class="mt-4 space-y-4" data-expense-trend-root>
+        <div class="grid grid-cols-1 gap-3 xl:grid-cols-5">
+          <div class="rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+            <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('net_expense_this_period') %></div>
+            <div class="mt-1 text-xl font-display text-slate-800" data-trend-summary-current>-</div>
+            <div class="mt-1 text-[10px] font-semibold text-slate-600" data-trend-summary-current-breakdown></div>
+          </div>
+          <div class="rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+            <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('net_expense_previous_period') %></div>
+            <div class="mt-1 text-xl font-display text-slate-800" data-trend-summary-previous>-</div>
+            <div class="mt-1 text-[10px] font-semibold text-slate-600"><%= t('previous_period') %>: <span data-trend-summary-previous-range>-</span></div>
+          </div>
+          <div class="rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+            <div class="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+              <span><%= t('change_vs_previous') %></span>
+              <span
+                class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 bg-white text-[9px] font-bold text-slate-600 cursor-help"
+                title="<%= t('change_vs_previous_help') %>"
+                aria-label="<%= t('change_vs_previous_help') %>"
+              >i</span>
+            </div>
+            <div class="mt-1 text-xl font-display text-slate-800" data-trend-summary-change>-</div>
+          </div>
+          <div class="rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+            <div class="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+              <span><%= t('average_per_bucket') %></span>
+              <span
+                class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 bg-white text-[9px] font-bold text-slate-600 cursor-help"
+                title="<%= t('average_per_bucket_help') %>"
+                aria-label="<%= t('average_per_bucket_help') %>"
+              >i</span>
+            </div>
+            <div class="mt-1 text-xl font-display text-slate-800" data-trend-summary-average>-</div>
+          </div>
+          <div class="rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+            <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('highest_bucket') %></div>
+            <div class="mt-1 text-sm font-semibold text-slate-800" data-trend-summary-highest>-</div>
+          </div>
+        </div>
+        <div class="hidden rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-800" data-trend-credit-warning></div>
+        <div class="rounded-2xl border border-slate-200 p-3">
+          <div class="flex items-center justify-between gap-2">
+            <h3 class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('trend_chart') %></h3>
+            <div class="flex flex-wrap items-center gap-3 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-600">
+              <span class="inline-flex items-center gap-1"><span class="inline-block h-2.5 w-2.5 rounded-sm border border-sky-300 bg-sky-200"></span><%= t('gross_expense') %></span>
+              <span class="inline-flex items-center gap-1"><span class="inline-block h-2 w-2 rounded-full bg-accent"></span><%= t('net_expense') %></span>
+              <span class="inline-flex items-center gap-1"><span class="inline-block h-2 w-2 rounded-full bg-amber-500"></span><%= t('credits_adjustments') %></span>
+              <span class="inline-flex items-center gap-1"><span class="inline-block h-2 w-2 rounded-full bg-slate-500"></span><%= t('previous_period') %></span>
+            </div>
+          </div>
+          <div class="mt-2 text-[11px] font-semibold text-slate-600"><%= t('trend_chart_click_hint') %></div>
+          <div class="mt-3 overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 p-2">
+            <canvas class="min-w-[780px] w-full h-[280px] hidden" data-expense-trend-chart-canvas aria-label="<%= t('trend_chart') %>"></canvas>
+            <svg viewBox="0 0 960 280" class="min-w-[780px] w-full h-[280px]" data-expense-trend-chart aria-label="<%= t('trend_chart') %>"></svg>
+          </div>
+          <div class="hidden mt-2 flex flex-wrap gap-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-600" data-expense-trend-labels></div>
+        </div>
+        <div class="rounded-2xl border border-slate-200 p-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h3 class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('variance_drivers') %></h3>
+            <div class="text-[11px] font-semibold text-slate-500"><%= t('variance_drivers_help') %></div>
+          </div>
+          <div class="mt-3 overflow-x-auto rounded-xl border border-slate-200 bg-slate-50/30">
+            <table class="min-w-[860px] w-full text-sm tabular-nums" data-trend-drivers-table>
+              <thead class="bg-slate-100 text-slate-700">
+                <tr>
+                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('account_group') %></th>
+                  <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('previous_period_total') %></th>
+                  <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('current_period_total') %></th>
+                  <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" title="<%= t('delta_tooltip') %>" aria-label="<%= t('delta_tooltip') %>"><%= t('delta') %></th>
+                  <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('change_percentage') %></th>
+                  <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" title="<%= t('contribution_to_delta_tooltip') %>" aria-label="<%= t('contribution_to_delta_tooltip') %>"><%= t('contribution_to_driver_movement') %></th>
+                </tr>
+              </thead>
+              <tbody data-trend-drivers-body>
+                <tr>
+                  <td colspan="6" class="px-3 py-3 text-center text-slate-500"><%= t('no_entries') %></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <% } %>
+    <% } %>
+
+    <% if (isDepartmentBreakdown) { %>
+      <% if (!hasDepartmentBreakdown) { %>
+        <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500">
+          <%= t('no_entries') %>
+        </div>
+      <% } else { %>
+        <div class="mt-4 space-y-4" data-dept-breakdown-root>
+          <div class="grid grid-cols-1 gap-3 xl:grid-cols-4">
+            <div class="rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+              <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('gross_expense') %></div>
+              <div class="mt-1 text-xl font-display text-slate-800" data-breakdown-summary-gross></div>
+            </div>
+            <div class="rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+              <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('credits_adjustments') %></div>
+              <div class="mt-1 text-xl font-display text-slate-800" data-breakdown-summary-credits></div>
+            </div>
+            <div class="rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+              <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('net_expense') %></div>
+              <div class="mt-1 text-xl font-display text-slate-800" data-breakdown-summary-net></div>
+            </div>
+            <div class="rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+              <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('biggest_increase_vs_previous') %></div>
+              <div class="mt-1 text-sm font-semibold text-slate-800" data-breakdown-summary-increase></div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 gap-3 xl:grid-cols-2">
+            <div class="rounded-2xl border border-slate-200 p-3">
+              <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500" data-breakdown-summary-top-left-title><%= t('top_departments') %></div>
+              <div class="mt-2 space-y-1 text-sm text-slate-700" data-breakdown-summary-top-departments></div>
+            </div>
+            <div class="rounded-2xl border border-slate-200 p-3">
+              <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500" data-breakdown-summary-top-right-title><%= t('top_account_groups') %></div>
+              <div class="mt-2 space-y-1 text-sm text-slate-700" data-breakdown-summary-top-groups></div>
+            </div>
+          </div>
+
+          <div class="rounded-2xl border border-slate-200 p-3">
+            <h3 class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('expense_breakdown') %></h3>
+            <div class="mt-3 space-y-2" data-breakdown-tree></div>
+          </div>
+        </div>
+      <% } %>
+    <% } else if (!isExpenseTrends && (!visibleRows || !visibleRows.length)) { %>
+      <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500">
+        <%= emptyMessage %>
+      </div>
+    <% } else { %>
+      <div class="relative mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+        <table class="min-w-[900px] w-full text-sm tabular-nums" data-report-table>
+          <thead class="bg-slate-100 text-slate-700">
+            <tr>
+              <% tableCols.forEach((col) => { %>
+                <th class="sticky top-0 z-30 bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] shadow-[0_1px_0_0_rgba(148,163,184,0.45)] <%= isNumericCol(col) ? 'text-right' : 'text-left' %>"><%= prettyCol(col) %></th>
+              <% }) %>
+            </tr>
+          </thead>
+          <tbody>
+            <% visibleRows.forEach((row, rowIndex) => { %>
+              <% const voucherTypeCode = String(row.voucher_type_code || '').toUpperCase(); %>
+              <% const isOpeningOrClosingRow = voucherTypeCode === 'OPENING_BALANCE' || voucherTypeCode === 'CLOSING_BALANCE'; %>
+              <% const isTotalsRow = voucherTypeCode === 'PERIOD_TOTALS' || String(row._row_type || '').toUpperCase() === 'TOTAL'; %>
+              <% const prevRow = rowIndex > 0 ? visibleRows[rowIndex - 1] : null; %>
+              <% const sameVoucherAsPrev = reportModeFilter === 'details'
+                && !isCashBook
+                && prevRow
+                && Number(prevRow.voucher_no || 0) > 0
+                && Number(prevRow.voucher_no || 0) === Number(row.voucher_no || 0)
+                && String(prevRow.entry_date || '') === String(row.entry_date || ''); %>
+              <tr class="border-t border-slate-100 <%= isOpeningOrClosingRow ? 'bg-slate-50 text-slate-800' : (isTotalsRow ? 'bg-slate-100 text-slate-900' : (rowIndex % 2 === 0 ? 'bg-white' : 'bg-slate-50/30')) %> hover:bg-slate-50/70">
+                <% tableCols.forEach((col) => { %>
+                  <% const key = String(col || '').toLowerCase(); %>
+                  <% const compactCell = sameVoucherAsPrev && (
+                    key === 'entry_date' ||
+                    key === 'voucher_type_code' ||
+                    key === 'voucher_no' ||
+                    key === 'cash_account' ||
+                    key === 'bank_account' ||
+                    key === 'branch'
+                  ); %>
+                  <% if (compactCell) { %>
+                    <td class="px-3 py-2 text-slate-300">&nbsp;</td>
+                  <% } else if (key === 'status' && isBankVoucherRegisterDetails) { %>
+                    <% const isApprovedStatus = String(row[col] || 'PENDING').toUpperCase() === 'APPROVED'; %>
+                    <td class="px-3 py-2">
+                      <select
+                        class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs font-semibold text-slate-700"
+                        data-bank-status-select
+                        data-voucher-id="<%= row._voucher_id || '' %>"
+                        data-line-id="<%= row._line_id || '' %>"
+                        data-prev-status="<%= String(row[col] || 'PENDING').toUpperCase() %>"
+                        <%= row._voucher_id && row._line_id && !isApprovedStatus ? '' : 'disabled' %>
+                      >
+                        <% ['PENDING', 'APPROVED', 'REJECTED'].forEach((statusCode) => { %>
+                          <% const statusLabel = statusCode === 'APPROVED' ? t('approved') : (statusCode === 'REJECTED' ? t('rejected') : t('pending')); %>
+                          <option value="<%= statusCode %>" <%= String(row[col] || 'PENDING').toUpperCase() === statusCode ? 'selected' : '' %>><%= statusLabel %></option>
+                        <% }) %>
+                      </select>
+                    </td>
+                  <% } else if (key === 'entry_date') { %>
+                    <td class="px-3 py-2"><%= formatDate(row[col]) %></td>
+                  <% } else if (key === 'voucher_type_code' || key === 'voucher_subtype') { %>
+                    <td class="px-3 py-2"><%= prettyVoucherType(row[col]) %></td>
+                  <% } else if (key === 'dr' || key === 'cr' || key === 'running_balance' || key === 'amount' || key === 'total_debit' || key === 'total_credit' || key === 'gross_expense' || key === 'credits_adjustments' || key === 'net_expense' || key === 'previous_net_expense') { %>
+                    <td class="px-3 py-2 text-right font-semibold whitespace-nowrap <%= (isOpeningOrClosingRow || isTotalsRow) ? 'text-slate-900' : '' %>"><%= formatAmount(row[col]) %></td>
+                  <% } else if (key === 'change_percentage') { %>
+                    <% const currentNet = Number(row.net_expense || 0); %>
+                    <% const previousNet = Number(row.previous_net_expense || 0); %>
+                    <% const rawPct = Number(row[col]); %>
+                    <% const displayPct = (() => {
+                      if (!isExpenseTrends) {
+                        return row[col] == null || row[col] === '' || !Number.isFinite(rawPct) ? '-' : `${rawPct.toFixed(2)}%`;
+                      }
+                      if (previousNet === 0 && currentNet === 0) return '0.00%';
+                      if (previousNet === 0 && currentNet !== 0) return t('new_expense');
+                      if (previousNet !== 0 && currentNet === 0) return t('dropped_to_zero');
+                      return Number.isFinite(rawPct) ? `${rawPct.toFixed(2)}%` : '-';
+                    })(); %>
+                    <% const pctTone = Number.isFinite(rawPct) ? (rawPct > 0 ? 'text-rose-700' : (rawPct < 0 ? 'text-emerald-700' : 'text-slate-700')) : 'text-slate-700'; %>
+                    <td class="px-3 py-2 text-right font-semibold whitespace-nowrap <%= pctTone %>"><%= displayPct %></td>
+                  <% } else if (key === 'description') { %>
+                    <td class="px-3 py-2 break-words"><%= prettyDescription(row[col]) %></td>
+                  <% } else { %>
+                    <% if (isTotalsRow && key === 'account_name') { %>
+                      <td class="px-3 py-2 font-semibold"><%= t('shown_rows_totals') %></td>
+                    <% } else { %>
+                      <td class="px-3 py-2"><%= row[col] == null ? '-' : row[col] %></td>
+                    <% } %>
+                  <% } %>
+                <% }) %>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </section>
+</div>
+
+<script><%- include("../base/partials/date-range-picker.js") %></script>
+<script><%- include("../base/partials/searchable-select.js") %></script>
+<script>
+  (function () {
+    const form = document.querySelector('[data-ledger-filter-form]');
+    const accountSelect = document.querySelector('[data-account-select]');
+    const accountCodeDisplay = document.querySelector('[data-account-code-display]');
+    const printBtn = document.querySelector('[data-print-report]');
+    const downloadBtn = document.querySelector('[data-download-report]');
+    const table = document.querySelector('[data-report-table]');
+    const fromDateHidden = document.querySelector('[data-from-date-hidden]');
+    const toDateHidden = document.querySelector('[data-to-date-hidden]');
+    const isAccountActivityLedger = <%- JSON.stringify(isAccountActivityLedger) %>;
+    const isBankVoucherRegisterDetails = <%- JSON.stringify(isBankVoucherRegisterDetails) %>;
+    const isExpenseAnalysis = <%- JSON.stringify(isExpenseAnalysis) %>;
+    const isExpenseTrends = <%- JSON.stringify(isExpenseTrends) %>;
+    const isExpenseReportLoaded = <%- JSON.stringify(expenseReportLoaded) %>;
+    const isDepartmentBreakdown = <%- JSON.stringify(isDepartmentBreakdown) %>;
+    const departmentBreakdownData = <%- JSON.stringify(departmentBreakdown || null) %>;
+    const expenseTrendData = <%- JSON.stringify(expenseTrends || null) %>;
+    const trendGranularityMode = <%- JSON.stringify((expenseTrends?.granularity || trendGranularityFilter || "daily")) %>;
+    const breakdownStartMode = <%- JSON.stringify((breakdownStartFilter === 'group' || breakdownStartFilter === 'account') ? breakdownStartFilter : 'department') %>;
+    const notApplicableText = <%- JSON.stringify(t('not_applicable')) %>;
+    const allLabelText = <%- JSON.stringify(t('all') || 'All') %>;
+    const selectedSuffixText = <%- JSON.stringify(t('selected') || 'selected') %>;
+    const currentReportPath = <%- JSON.stringify(reportPath) %>;
+    const csrfToken = <%- JSON.stringify(csrfToken || "") %>;
+    const departmentsLabel = <%- JSON.stringify(t('departments')) %>;
+    const accountGroupsLabel = <%- JSON.stringify(t('account_groups')) %>;
+    const accountsLabel = <%- JSON.stringify(t('accounts')) %>;
+    const voucherLinesLabel = <%- JSON.stringify(t('voucher_lines')) %>;
+    const noEntriesLabel = <%- JSON.stringify(t('no_entries')) %>;
+    const backLabel = <%- JSON.stringify(t('back')) %>;
+    const transactionsCountLabel = <%- JSON.stringify(t('transactions_count')) %>;
+    const topGroupsLabel = <%- JSON.stringify(t('top_groups')) %>;
+    const topAccountsLabel = <%- JSON.stringify(t('top_accounts')) %>;
+    const othersLabel = <%- JSON.stringify(t('others')) %>;
+    const groupsLabel = <%- JSON.stringify(t('groups')) %>;
+    const percentOfTotalLabel = <%- JSON.stringify(t('percent_of_total')) %>;
+    const percentOfDepartmentLabel = <%- JSON.stringify(t('percent_of_department')) %>;
+    const invalidDateRangeText = <%- JSON.stringify(t('invalid_date_range')) %>;
+    const newExpenseLabel = <%- JSON.stringify(t('new_expense')) %>;
+    const droppedToZeroLabel = <%- JSON.stringify(t('dropped_to_zero')) %>;
+
+    if (typeof window.initSearchableSelects === 'function') {
+      window.initSearchableSelects();
+    }
+
+    const initCheckboxMultiSelects = () => {
+      const roots = Array.from(document.querySelectorAll('[data-multi-select]'));
+      if (!roots.length) return;
+      let openRoot = null;
+      const closeAll = () => {
+        roots.forEach((root) => {
+          root.querySelector('[data-multi-panel]')?.classList.add('hidden');
+        });
+        openRoot = null;
+      };
+
+      roots.forEach((root) => {
+        const trigger = root.querySelector('[data-multi-trigger]');
+        const panel = root.querySelector('[data-multi-panel]');
+        const hidden = root.querySelector('[data-multi-hidden]');
+        const checkboxes = Array.from(root.querySelectorAll('input[type="checkbox"]'));
+        const allValue = String(root.dataset.multiAllValue || '').trim();
+        const autoAll = String(root.dataset.multiAutoAll || '').trim() === '1';
+        if (!trigger || !panel || !hidden) return;
+
+        const getAllCheckbox = () => {
+          if (!allValue) return null;
+          return checkboxes.find((cb) => String(cb.value || '').trim() === allValue) || null;
+        };
+
+        const normalizeSelection = (changedCheckbox) => {
+          const allCheckbox = getAllCheckbox();
+          if (!allCheckbox) return;
+
+          const nonAllCheckboxes = checkboxes.filter((cb) => cb !== allCheckbox);
+          if (changedCheckbox === allCheckbox && allCheckbox.checked) {
+            nonAllCheckboxes.forEach((cb) => {
+              cb.checked = false;
+            });
+            return;
+          }
+
+          if (changedCheckbox && changedCheckbox !== allCheckbox && changedCheckbox.checked) {
+            allCheckbox.checked = false;
+          }
+
+          const checkedNonAll = nonAllCheckboxes.filter((cb) => cb.checked);
+          if (!checkedNonAll.length && autoAll) {
+            allCheckbox.checked = true;
+            return;
+          }
+
+          if (checkedNonAll.length && allCheckbox.checked) {
+            allCheckbox.checked = false;
+          }
+        };
+
+        const refresh = () => {
+          const selected = checkboxes.filter((cb) => cb.checked);
+          const selectedValues = selected
+            .map((cb) => String(cb.value || '').trim())
+            .filter((value) => Boolean(value) && value !== allValue);
+          hidden.value = selectedValues.join(',');
+          if (!selectedValues.length) {
+            trigger.textContent = String(root.dataset.placeholder || allLabelText);
+            return;
+          }
+          if (selectedValues.length === 1) {
+            const selectedCheckbox = selected.find((cb) => String(cb.value || '').trim() === selectedValues[0]);
+            const label = selectedCheckbox?.closest('label')?.querySelector('span')?.textContent || selectedValues[0];
+            trigger.textContent = label;
+            return;
+          }
+          trigger.textContent = `${selectedValues.length} ${selectedSuffixText}`;
+        };
+
+        normalizeSelection(null);
+        refresh();
+        checkboxes.forEach((cb) => {
+          cb.addEventListener('change', () => {
+            normalizeSelection(cb);
+            refresh();
+          });
+        });
+
+        trigger.addEventListener('click', (event) => {
+          event.preventDefault();
+          const wasHidden = panel.classList.contains('hidden');
+          closeAll();
+          if (wasHidden) {
+            panel.classList.remove('hidden');
+            openRoot = root;
+          }
+        });
+      });
+
+      document.addEventListener('click', (event) => {
+        if (!openRoot) return;
+        if (openRoot.contains(event.target)) return;
+        closeAll();
+      });
+
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') closeAll();
+      });
+    };
+    initCheckboxMultiSelects();
+
+    const stripFilterQueryFromUrl = () => {
+      if (isExpenseAnalysis || isExpenseTrends) return;
+      const url = new URL(window.location.href);
+      const expectedPath = String(currentReportPath || url.pathname);
+      const next = expectedPath;
+      const current = `${url.pathname}${url.search}`;
+      if (next !== current) {
+        window.history.replaceState({}, '', next);
+      }
+    };
+
+    stripFilterQueryFromUrl();
+
+    const refreshAccountCode = () => {
+      if (!accountSelect || !accountCodeDisplay) return;
+      const selected = accountSelect.options[accountSelect.selectedIndex];
+      accountCodeDisplay.value = selected?.dataset?.code || '';
+    };
+
+    if (accountSelect) {
+      refreshAccountCode();
+      accountSelect.addEventListener('change', refreshAccountCode);
+    }
+
+    const dateRangeApi = (typeof window.initReportDateRangePicker === 'function')
+      ? window.initReportDateRangePicker({
+          root: document,
+          invalidDateRangeMessage: <%- JSON.stringify(t('invalid_date_range')) %>,
+          selectDateRangeText: <%- JSON.stringify(t('select_date_range')) %>,
+          showError: (message) => {
+            if (typeof window.showUiErrorModal === 'function') {
+              window.showUiErrorModal(message);
+              return;
+            }
+            window.alert(message);
+          },
+        })
+      : null;
+    const isIsoDate = (value) => {
+      if (dateRangeApi && typeof dateRangeApi.isIsoDate === 'function') {
+        return dateRangeApi.isIsoDate(value);
+      }
+      return /^\d{4}-\d{2}-\d{2}$/.test(String(value || '').trim());
+    };
+    const asMoney = (value) => {
+      const n = Number(value || 0);
+      return Number.isFinite(n)
+        ? n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+        : '0.00';
+    };
+    const asSignedMoney = (value) => {
+      const n = Number(value || 0);
+      if (!Number.isFinite(n)) return '0.00';
+      const prefix = n > 0 ? '+' : '';
+      return `${prefix}${asMoney(n)}`;
+    };
+    const asPercent = (value) => {
+      const n = Number(value);
+      if (!Number.isFinite(n)) return '-';
+      return `${n.toFixed(2)}%`;
+    };
+    const toTrendChangeLabel = ({ current, previous, percentValue }) => {
+      const curr = Number(current || 0);
+      const prev = Number(previous || 0);
+      if (prev === 0 && curr === 0) return '0.00%';
+      if (prev === 0 && curr !== 0) return newExpenseLabel;
+      if (prev !== 0 && curr === 0) return droppedToZeroLabel;
+      const pct = Number(percentValue);
+      if (!Number.isFinite(pct)) return '-';
+      return `${pct.toFixed(2)}%`;
+    };
+    const roundMoney = (value) => {
+      const n = Number(value || 0);
+      if (!Number.isFinite(n)) return 0;
+      return Number(n.toFixed(2));
+    };
+    const normalizeDateDisplay = (value) => {
+      const text = String(value || '').trim();
+      const m = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!m) return text || '-';
+      return `${m[3]}-${m[2]}-${m[1]}`;
+    };
+
+    const getVoucherLabel = (value) => {
+      const key = String(value || '').toUpperCase();
+      if (key === 'CASH_VOUCHER') return '<%= t('cash_voucher') %>';
+      if (key === 'BANK_VOUCHER') return '<%= t('bank_voucher') %>';
+      if (key === 'JOURNAL_VOUCHER') return '<%= t('journal_voucher') %>';
+      return key || '-';
+    };
+
+    const mountExpenseTrends = () => {
+      if (!isExpenseTrends) return;
+      if (!isExpenseReportLoaded) return;
+      const root = document.querySelector('[data-expense-trend-root]');
+      if (!root) return;
+
+      const summaryCurrent = root.querySelector('[data-trend-summary-current]');
+      const summaryCurrentBreakdown = root.querySelector('[data-trend-summary-current-breakdown]');
+      const summaryPrevious = root.querySelector('[data-trend-summary-previous]');
+      const summaryPreviousRange = root.querySelector('[data-trend-summary-previous-range]');
+      const summaryChange = root.querySelector('[data-trend-summary-change]');
+      const summaryAverage = root.querySelector('[data-trend-summary-average]');
+      const summaryHighest = root.querySelector('[data-trend-summary-highest]');
+      const summaryCreditWarning = root.querySelector('[data-trend-credit-warning]');
+      const chartCanvas = root.querySelector('[data-expense-trend-chart-canvas]');
+      const chart = root.querySelector('[data-expense-trend-chart]');
+      const labelsWrap = root.querySelector('[data-expense-trend-labels]');
+      const driversBody = root.querySelector('[data-trend-drivers-body]');
+      if (!summaryCurrent || !summaryPrevious || !summaryChange || !summaryAverage || !summaryHighest || !chart || !driversBody) return;
+
+      const summary = expenseTrendData?.summary || {};
+      const buckets = Array.isArray(expenseTrendData?.buckets) ? expenseTrendData.buckets : [];
+      const topDrivers = Array.isArray(summary.topDrivers) ? summary.topDrivers : [];
+      const hasCreditHeavyPeriods = Boolean(summary.hasCreditHeavyPeriods);
+
+      const currentTotal = Number(summary.currentTotal || 0);
+      const grossTotal = Number(summary.grossTotal || 0);
+      const creditsTotal = Number(summary.creditsTotal || 0);
+      const previousTotal = Number(summary.previousTotal || 0);
+      const changeAmount = Number(summary.changeAmount || 0);
+      const changePercent = Number.isFinite(Number(summary.changePercent)) ? Number(summary.changePercent) : null;
+      const avgPerBucket = Number(summary.avgPerBucket || 0);
+      const highestBucket = summary.highestBucket || null;
+
+      summaryCurrent.textContent = asMoney(currentTotal);
+      if (summaryCurrentBreakdown) {
+        summaryCurrentBreakdown.textContent = `<%= t('gross_expense') %>: ${asMoney(grossTotal)} | <%= t('credits_adjustments') %>: ${asMoney(creditsTotal)}`;
+      }
+      summaryPrevious.textContent = asMoney(previousTotal);
+      if (summaryPreviousRange) {
+        const previousFrom = String(expenseTrendData?.previousFrom || '').trim();
+        const previousTo = String(expenseTrendData?.previousTo || '').trim();
+        summaryPreviousRange.textContent = previousFrom && previousTo
+          ? `${normalizeDateDisplay(previousFrom)} - ${normalizeDateDisplay(previousTo)}`
+          : '-';
+      }
+      summaryAverage.textContent = asMoney(avgPerBucket);
+      summaryHighest.textContent = highestBucket ? `${highestBucket.period || '-'}: ${asMoney(highestBucket.netExpense || 0)}` : '-';
+      const changePercentText = (() => {
+        return toTrendChangeLabel({ current: currentTotal, previous: previousTotal, percentValue: changePercent });
+      })();
+      summaryChange.textContent = `${asSignedMoney(changeAmount)} (${changePercentText})`;
+      summaryChange.className = `mt-1 text-xl font-display ${changeAmount > 0 ? 'text-rose-700' : (changeAmount < 0 ? 'text-emerald-700' : 'text-slate-700')}`;
+      if (summaryCreditWarning) {
+        if (hasCreditHeavyPeriods) {
+          summaryCreditWarning.textContent = '<%= t('expense_credit_dominant_warning') %>';
+          summaryCreditWarning.classList.remove('hidden');
+        } else {
+          summaryCreditWarning.textContent = '';
+          summaryCreditWarning.classList.add('hidden');
+        }
+      }
+
+      driversBody.innerHTML = '';
+      const escHtml = (value) =>
+        String(value == null ? '' : value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      if (!topDrivers.length) {
+        const row = document.createElement('tr');
+        row.innerHTML = `<td colspan="6" class="px-3 py-3 text-center text-slate-500">${noEntriesLabel}</td>`;
+        driversBody.appendChild(row);
+      } else {
+        const totalDriverMovement = topDrivers.reduce((sum, row) => sum + Math.abs(Number(row?.deltaAmount || 0)), 0);
+        topDrivers.forEach((driver, index) => {
+          const delta = Number(driver.deltaAmount || 0);
+          const isOthersRow = Boolean(driver?.isOthers);
+          const deltaPct = toTrendChangeLabel({
+            current: driver.currentNetExpense,
+            previous: driver.previousNetExpense,
+            percentValue: driver.deltaPercentage,
+          });
+          const contributionValue = totalDriverMovement > 0 ? ((Math.abs(delta) / totalDriverMovement) * 100) : null;
+          const contribution = contributionValue == null ? '-' : `${contributionValue.toFixed(2)}%`;
+          const contributionBarWidth = contributionValue == null ? 0 : Math.min(100, Math.max(4, Number(contributionValue.toFixed(2))));
+          const deltaToneClass = delta > 0 ? 'text-rose-700' : (delta < 0 ? 'text-emerald-700' : 'text-slate-700');
+          const deltaPctToneClass = Number(driver.deltaPercentage || 0) > 0 ? 'text-rose-700' : (Number(driver.deltaPercentage || 0) < 0 ? 'text-emerald-700' : 'text-slate-700');
+          const driverName = isOthersRow
+            ? `${othersLabel}${Number(driver?.contributorsCount || 0) > 0 ? ` (${Number(driver.contributorsCount)} ${groupsLabel})` : ''}`
+            : String(driver.accountGroupName || '-');
+          const row = document.createElement('tr');
+          row.className = `border-t border-slate-100 ${index % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'} hover:bg-slate-50`;
+          row.innerHTML = `
+            <td class="px-3 py-2 text-slate-800">
+              <div class="flex items-center gap-2">
+                <span class="inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded-full border border-slate-300 bg-white px-1 text-[10px] font-semibold text-slate-600">${isOthersRow ? '...' : String(index + 1)}</span>
+                <span class="truncate font-semibold">${escHtml(driverName)}</span>
+              </div>
+            </td>
+            <td class="px-3 py-2 text-right font-semibold whitespace-nowrap text-slate-700">${asMoney(driver.previousNetExpense || 0)}</td>
+            <td class="px-3 py-2 text-right font-semibold whitespace-nowrap text-slate-800">${asMoney(driver.currentNetExpense || 0)}</td>
+            <td class="px-3 py-2 text-right font-semibold whitespace-nowrap ${deltaToneClass}">${asSignedMoney(delta)}</td>
+            <td class="px-3 py-2 text-right font-semibold whitespace-nowrap ${deltaPctToneClass}">${deltaPct}</td>
+            <td class="px-3 py-2 text-right font-semibold text-slate-700">
+              ${
+                contributionValue == null
+                  ? '-'
+                  : `<div class="inline-flex items-center justify-end gap-2">
+                      <span class="whitespace-nowrap">${contribution}</span>
+                      <span class="inline-flex h-1.5 w-16 overflow-hidden rounded-full bg-slate-200">
+                        <span class="h-full rounded-full bg-slate-500" style="width:${contributionBarWidth}%"></span>
+                      </span>
+                    </div>`
+              }
+            </td>
+          `;
+          driversBody.appendChild(row);
+        });
+      }
+
+      const parseIsoDate = (value) => {
+        const text = String(value || '').trim();
+        const m = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (!m) return null;
+        const dt = new Date(`${m[1]}-${m[2]}-${m[3]}T00:00:00`);
+        return Number.isNaN(dt.getTime()) ? null : dt;
+      };
+      const toIsoDate = (date) => {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      };
+      const addBucketStep = (startDate, granularity) => {
+        const next = new Date(startDate.getTime());
+        if (granularity === 'daily') {
+          next.setDate(next.getDate() + 1);
+          return next;
+        }
+        if (granularity === 'weekly') {
+          next.setDate(next.getDate() + 7);
+          return next;
+        }
+        next.setMonth(next.getMonth() + 1, 1);
+        return next;
+      };
+      const toBucketRange = (bucketStart, granularity) => {
+        const startDate = parseIsoDate(bucketStart);
+        if (!startDate) return null;
+        const next = addBucketStep(startDate, granularity);
+        next.setDate(next.getDate() - 1);
+        return {
+          from: toIsoDate(startDate),
+          to: toIsoDate(next),
+        };
+      };
+      const submitDrillFilter = (bucket) => {
+        if (!form || !fromDateHidden || !toDateHidden || !bucket) return;
+        const currentAmount = Number(bucket.netExpense || 0);
+        const previousAmount = Number(bucket.previousNetExpense || 0);
+        if (currentAmount === 0 && previousAmount === 0) {
+          if (typeof window.showUiErrorModal === 'function') {
+            window.showUiErrorModal('<%= t('no_data_for_selected_period') %>');
+            return;
+          }
+          window.alert('<%= t('no_data_for_selected_period') %>');
+          return;
+        }
+        const range = toBucketRange(bucket.bucketStart, trendGranularityMode);
+        if (!range) return;
+        const branchId = String(form.querySelector('select[name="branch_id"]')?.value || '').trim();
+        const breakdownPath = String(currentReportPath || '').replace(/expense_trends$/i, 'expense_analysis');
+        const targetName = `expense_analysis_${Date.now()}`;
+        const popup = window.open('', targetName);
+        try {
+          if (popup) popup.opener = null;
+        } catch (_) {
+          // no-op
+        }
+        const drillForm = document.createElement('form');
+        drillForm.method = 'post';
+        drillForm.action = breakdownPath;
+        drillForm.target = popup ? targetName : '_blank';
+        drillForm.style.display = 'none';
+        const payload = {
+          _csrf: csrfToken,
+          from_date: range.from,
+          to_date: range.to,
+          load_report: '1',
+          breakdown_start: 'account',
+        };
+        if (branchId) payload.branch_id = branchId;
+        Object.entries(payload).forEach(([key, value]) => {
+          const hidden = document.createElement('input');
+          hidden.type = 'hidden';
+          hidden.name = key;
+          hidden.value = String(value == null ? '' : value);
+          drillForm.appendChild(hidden);
+        });
+        document.body.appendChild(drillForm);
+        drillForm.submit();
+        document.body.removeChild(drillForm);
+      };
+      const renderNoData = () => {
+        if (chartCanvas) {
+          if (chartCanvas._expenseTrendChart && typeof chartCanvas._expenseTrendChart.destroy === 'function') {
+            chartCanvas._expenseTrendChart.destroy();
+          }
+          chartCanvas._expenseTrendChart = null;
+          chartCanvas.classList.add('hidden');
+        }
+        chart.classList.remove('hidden');
+        chart.innerHTML = `<text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" fill="#64748b" font-size="13">${noEntriesLabel}</text>`;
+        if (labelsWrap) labelsWrap.innerHTML = '';
+        return;
+      };
+      const renderBucketLabels = () => {
+        if (!labelsWrap) return;
+        labelsWrap.innerHTML = buckets
+          .slice(0, 10)
+          .map((row) => `<span class="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1">${row.period || '-'}</span>`)
+          .join('');
+        if (buckets.length > 10) {
+          const extra = document.createElement('span');
+          extra.className = 'rounded-lg border border-slate-200 bg-slate-50 px-2 py-1';
+          extra.textContent = `+${buckets.length - 10}`;
+          labelsWrap.appendChild(extra);
+        }
+      };
+      const renderSvgFallback = () => {
+        if (chartCanvas) {
+          if (chartCanvas._expenseTrendChart && typeof chartCanvas._expenseTrendChart.destroy === 'function') {
+            chartCanvas._expenseTrendChart.destroy();
+          }
+          chartCanvas._expenseTrendChart = null;
+          chartCanvas.classList.add('hidden');
+        }
+        chart.classList.remove('hidden');
+
+        const values = buckets.flatMap((row) => [Number(row.netExpense || 0), Number(row.previousNetExpense || 0)]);
+        let minValue = Math.min(...values, 0);
+        let maxValue = Math.max(...values, 0);
+        if (minValue === maxValue) {
+          minValue -= 1;
+          maxValue += 1;
+        }
+
+        const width = 960;
+        const height = 280;
+        const padX = 50;
+        const padY = 26;
+        const plotWidth = width - (padX * 2);
+        const plotHeight = height - (padY * 2);
+        const step = buckets.length > 1 ? plotWidth / (buckets.length - 1) : 0;
+        const xAt = (idx) => padX + (idx * step);
+        const yAt = (value) => height - padY - ((Number(value || 0) - minValue) / (maxValue - minValue)) * plotHeight;
+        const buildPath = (field) => buckets
+          .map((row, idx) => `${idx === 0 ? 'M' : 'L'} ${xAt(idx).toFixed(2)} ${yAt(row?.[field] || 0).toFixed(2)}`)
+          .join(' ');
+
+        const yTicks = 5;
+        const grid = [];
+        for (let i = 0; i <= yTicks; i += 1) {
+          const y = padY + (i * plotHeight / yTicks);
+          const tickValue = maxValue - ((maxValue - minValue) * i / yTicks);
+          grid.push(`<line x1="${padX}" y1="${y.toFixed(2)}" x2="${(width - padX).toFixed(2)}" y2="${y.toFixed(2)}" stroke="#e2e8f0" stroke-width="1"/>`);
+          grid.push(`<text x="${(padX - 8).toFixed(2)}" y="${(y + 4).toFixed(2)}" text-anchor="end" fill="#64748b" font-size="10">${asMoney(tickValue)}</text>`);
+        }
+
+        const zeroY = yAt(0);
+        const currentPath = buildPath('netExpense');
+        const previousPath = buildPath('previousNetExpense');
+        const currentDots = buckets
+          .map((row, idx) => `<circle data-trend-drill-index="${idx}" cx="${xAt(idx).toFixed(2)}" cy="${yAt(row.netExpense || 0).toFixed(2)}" r="3" fill="#0f766e" style="cursor:pointer"></circle>`)
+          .join('');
+        const previousDots = buckets
+          .map((row, idx) => `<circle data-trend-drill-index="${idx}" cx="${xAt(idx).toFixed(2)}" cy="${yAt(row.previousNetExpense || 0).toFixed(2)}" r="2.5" fill="#64748b" style="cursor:pointer"></circle>`)
+          .join('');
+
+        chart.innerHTML = `
+          <rect x="0" y="0" width="${width}" height="${height}" fill="#f8fafc"></rect>
+          ${grid.join('')}
+          <line x1="${padX}" y1="${zeroY.toFixed(2)}" x2="${(width - padX).toFixed(2)}" y2="${zeroY.toFixed(2)}" stroke="#cbd5e1" stroke-width="1.5"></line>
+          <path d="${previousPath}" fill="none" stroke="#64748b" stroke-width="2" stroke-dasharray="6 5"></path>
+          <path d="${currentPath}" fill="none" stroke="#0f766e" stroke-width="2.5"></path>
+          ${previousDots}
+          ${currentDots}
+        `;
+        chart.querySelectorAll('[data-trend-drill-index]').forEach((node) => {
+          node.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            const pointIndex = Number(node.getAttribute('data-trend-drill-index'));
+            if (!Number.isInteger(pointIndex) || pointIndex < 0 || pointIndex >= buckets.length) return;
+            submitDrillFilter(buckets[pointIndex]);
+          });
+        });
+      };
+      const loadChartJs = () => {
+        if (window.Chart) return Promise.resolve(window.Chart);
+        if (window.__expenseTrendChartJsPromise) return window.__expenseTrendChartJsPromise;
+        window.__expenseTrendChartJsPromise = new Promise((resolve, reject) => {
+          const script = document.createElement('script');
+          script.src = '/vendor/chart.umd.min.js';
+          script.async = true;
+          script.onload = () => {
+            if (window.Chart) resolve(window.Chart);
+            else reject(new Error('Chart.js loaded without Chart object'));
+          };
+          script.onerror = () => reject(new Error('Failed to load Chart.js'));
+          document.head.appendChild(script);
+        });
+        return window.__expenseTrendChartJsPromise;
+      };
+      const renderChartJs = async () => {
+        if (!chartCanvas) {
+          renderSvgFallback();
+          return;
+        }
+        const ChartJs = await loadChartJs();
+        if (!ChartJs) {
+          renderSvgFallback();
+          return;
+        }
+
+        const labels = buckets.map((row) => row.period || '-');
+        const grossSeries = buckets.map((row) => Number(row.grossExpense || 0));
+        const creditsSeries = buckets.map((row) => Number(row.creditsAdjustments || 0));
+        const currentSeries = buckets.map((row) => Number(row.netExpense || 0));
+        const previousSeries = buckets.map((row) => Number(row.previousNetExpense || 0));
+        if (chartCanvas._expenseTrendChart && typeof chartCanvas._expenseTrendChart.destroy === 'function') {
+          chartCanvas._expenseTrendChart.destroy();
+        }
+
+        chart.classList.add('hidden');
+        chartCanvas.classList.remove('hidden');
+        const ctx = chartCanvas.getContext('2d');
+        chartCanvas._expenseTrendChart = new ChartJs(ctx, {
+          type: 'bar',
+          data: {
+            labels,
+            datasets: [
+              {
+                type: 'bar',
+                label: '<%= t('gross_expense') %>',
+                data: grossSeries,
+                backgroundColor: 'rgba(56, 189, 248, 0.28)',
+                borderColor: 'rgba(14, 116, 144, 0.45)',
+                borderWidth: 1,
+                barPercentage: 0.7,
+                categoryPercentage: 0.72,
+                order: 1,
+              },
+              {
+                type: 'line',
+                label: '<%= t('net_expense') %>',
+                data: currentSeries,
+                borderColor: '#0f766e',
+                borderWidth: 2.5,
+                pointBackgroundColor: '#0f766e',
+                pointRadius: 3,
+                pointHoverRadius: 5,
+                tension: 0.25,
+                order: 2,
+              },
+              {
+                type: 'line',
+                label: '<%= t('credits_adjustments') %>',
+                data: creditsSeries,
+                borderColor: '#d97706',
+                borderWidth: 2,
+                borderDash: [4, 4],
+                pointBackgroundColor: '#d97706',
+                pointRadius: 2.5,
+                tension: 0.25,
+                order: 3,
+              },
+              {
+                type: 'line',
+                label: '<%= t('previous_period') %>',
+                data: previousSeries,
+                borderColor: '#64748b',
+                borderWidth: 2,
+                borderDash: [6, 5],
+                pointBackgroundColor: '#64748b',
+                pointRadius: 2.5,
+                tension: 0.25,
+                order: 4,
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'nearest', intersect: false },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  title: (ctxItems) => {
+                    const idx = Number(ctxItems?.[0]?.dataIndex ?? -1);
+                    if (idx < 0 || idx >= buckets.length) return '';
+                    return String(buckets[idx].period || '-');
+                  },
+                  label: (ctxLabel) => `${ctxLabel.dataset.label}: ${asMoney(ctxLabel.parsed.y)}`,
+                  afterBody: (ctxItems) => {
+                    const idx = Number(ctxItems?.[0]?.dataIndex ?? -1);
+                    if (idx < 0 || idx >= buckets.length) return [];
+                    const net = Number(buckets[idx].netExpense || 0);
+                    const prev = Number(buckets[idx].previousNetExpense || 0);
+                    const delta = net - prev;
+                    const pct = prev === 0 ? (net === 0 ? '0.00%' : '<%= t('new_expense') %>') : `${((delta / Math.abs(prev)) * 100).toFixed(2)}%`;
+                    return [`<%= t('change_vs_previous') %>: ${asSignedMoney(delta)} (${pct})`];
+                  },
+                },
+              },
+            },
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: {
+                  callback: (value) => asMoney(value),
+                },
+              },
+            },
+            onClick: (_, elements) => {
+              if (!elements || !elements.length) return;
+              const pointIndex = Number(elements[0].index);
+              if (!Number.isInteger(pointIndex) || pointIndex < 0 || pointIndex >= buckets.length) return;
+              submitDrillFilter(buckets[pointIndex]);
+            },
+          },
+        });
+      };
+
+      if (!buckets.length) {
+        renderNoData();
+        return;
+      }
+
+      renderBucketLabels();
+      renderChartJs().catch(() => {
+        renderSvgFallback();
+      });
+    };
+
+    const mountDepartmentBreakdown = () => {
+      if (!isDepartmentBreakdown) return;
+      const root = document.querySelector('[data-dept-breakdown-root]');
+      const summaryGross = root?.querySelector('[data-breakdown-summary-gross]');
+      const summaryCredits = root?.querySelector('[data-breakdown-summary-credits]');
+      const summaryNet = root?.querySelector('[data-breakdown-summary-net]');
+      const summaryIncrease = root?.querySelector('[data-breakdown-summary-increase]');
+      const summaryTopLeftTitle = root?.querySelector('[data-breakdown-summary-top-left-title]');
+      const summaryTopRightTitle = root?.querySelector('[data-breakdown-summary-top-right-title]');
+      const summaryTopDepartments = root?.querySelector('[data-breakdown-summary-top-departments]');
+      const summaryTopGroups = root?.querySelector('[data-breakdown-summary-top-groups]');
+      const treeRoot = root?.querySelector('[data-breakdown-tree]');
+      if (
+        !root ||
+        !summaryGross ||
+        !summaryCredits ||
+        !summaryNet ||
+        !summaryIncrease ||
+        !summaryTopLeftTitle ||
+        !summaryTopRightTitle ||
+        !summaryTopDepartments ||
+        !summaryTopGroups ||
+        !treeRoot
+      ) return;
+
+      const departments = Array.isArray(departmentBreakdownData?.departments) ? departmentBreakdownData.departments : [];
+      const summary = departmentBreakdownData?.summary || {};
+      if (!departments.length) return;
+
+      const toDepartmentName = (row) => (row?.isNaDepartment ? notApplicableText : (row?.departmentName || notApplicableText));
+      const toTrend = (value) => {
+        const trend = Number(value);
+        if (!Number.isFinite(trend)) return '-';
+        if (trend === 0) return '0.00%';
+        const arrow = trend > 0 ? '\u25B2' : '\u25BC';
+        return `${arrow} ${Math.abs(trend).toFixed(2)}%`;
+      };
+      const esc = (value) =>
+        String(value == null ? '' : value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      const toneClass = (value) => (Number(value || 0) < 0 ? 'text-rose-700' : 'text-slate-900');
+      const metricCard = (label, value, valueClass = 'text-slate-900') => `
+        <div class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-2">
+          <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${esc(label)}</div>
+          <div class="mt-1 text-sm font-semibold ${valueClass}">${esc(value)}</div>
+        </div>
+      `;
+      const summaryListItem = (rank, label, amount) => `
+        <div class="grid grid-cols-[1.8rem_minmax(0,1fr)_auto] items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5">
+          <span class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-300 bg-white text-xs font-semibold text-slate-600">${rank}</span>
+          <span class="truncate text-sm text-slate-700">${esc(label)}</span>
+          <span class="text-sm font-semibold ${toneClass(amount)}">${esc(asMoney(amount))}</span>
+        </div>
+      `;
+
+      const renderSummary = () => {
+        summaryGross.textContent = asMoney(summary.grossExpense || 0);
+        summaryCredits.textContent = asMoney(summary.creditsAdjustments || 0);
+        summaryNet.textContent = asMoney(summary.netExpense || 0);
+        summaryNet.className = `mt-1 text-xl font-display ${toneClass(summary.netExpense || 0)}`;
+
+        const biggest = summary.biggestIncrease || null;
+        if (!biggest) {
+          summaryIncrease.textContent = '-';
+        } else {
+          const dept = biggest.isNaDepartment ? notApplicableText : (biggest.departmentName || notApplicableText);
+          summaryIncrease.textContent = `${dept} / ${biggest.accountGroupName || '-'} (${toTrend(biggest.trendPercentage)})`;
+        }
+
+        const topDeptRows = (Array.isArray(summary.topDepartments) ? summary.topDepartments : [])
+          .slice(0, 5)
+          .map((row) => ({
+            label: row.isNaDepartment ? notApplicableText : (row.departmentName || notApplicableText),
+            amount: Number(row.netExpense || 0),
+          }));
+        const topGroupRows = (Array.isArray(globalGroupRows) ? globalGroupRows : [])
+          .slice(0, 5)
+          .map((row) => ({
+            label: row.accountGroupName || '-',
+            amount: Number(row.netExpense || 0),
+          }));
+        const topAccountRows = (Array.isArray(globalAccountRows) ? globalAccountRows : [])
+          .slice(0, 5)
+          .map((row) => ({
+            label: row.accountName || '-',
+            amount: Number(row.netExpense || 0),
+          }));
+
+        const renderList = (container, rows) => {
+          container.innerHTML = rows.length
+            ? rows.map((row, idx) => summaryListItem(idx + 1, row.label, row.amount)).join('')
+            : `<div class="text-slate-500">${noEntriesLabel}</div>`;
+        };
+
+        if (breakdownStartMode === 'group') {
+          summaryTopLeftTitle.textContent = '<%= t('top_account_groups') %>';
+          summaryTopRightTitle.textContent = topAccountsLabel;
+          renderList(summaryTopDepartments, topGroupRows);
+          renderList(summaryTopGroups, topAccountRows);
+          return;
+        }
+
+        if (breakdownStartMode === 'account') {
+          summaryTopLeftTitle.textContent = topAccountsLabel;
+          summaryTopRightTitle.textContent = '<%= t('top_account_groups') %>';
+          renderList(summaryTopDepartments, topAccountRows);
+          renderList(summaryTopGroups, topGroupRows);
+          return;
+        }
+
+        summaryTopLeftTitle.textContent = '<%= t('top_departments') %>';
+        summaryTopRightTitle.textContent = '<%= t('top_account_groups') %>';
+        renderList(summaryTopDepartments, topDeptRows);
+        renderList(summaryTopGroups, topGroupRows);
+      };
+
+      const expandedDepartments = new Set();
+      const expandedGroups = new Set();
+      const expandedAccounts = new Set();
+      let activeDepartmentKey = null;
+      let activeGroupKey = null;
+      let activeAccountKey = null;
+
+      const updateBreadcrumb = () => {};
+
+      const renderNoEntries = () => {
+        const item = document.createElement('div');
+        item.className = 'rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-500';
+        item.textContent = noEntriesLabel;
+        return item;
+      };
+
+      const buildLinesTable = (lines = []) => {
+        const wrap = document.createElement('div');
+        wrap.className = 'max-h-[26rem] overflow-auto rounded-xl border border-slate-200 bg-white';
+        if (!Array.isArray(lines) || !lines.length) {
+          wrap.appendChild(renderNoEntries());
+          return wrap;
+        }
+        const table = document.createElement('table');
+        table.className = 'min-w-[980px] w-full text-xs';
+        table.innerHTML = `
+          <thead class="bg-slate-100 text-slate-700">
+            <tr>
+              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-left font-semibold uppercase tracking-[0.08em]"><%= t('date') %></th>
+              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-left font-semibold uppercase tracking-[0.08em]"><%= t('voucher_no') %></th>
+              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-left font-semibold uppercase tracking-[0.08em]"><%= t('voucher_type') %></th>
+              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-left font-semibold uppercase tracking-[0.08em]"><%= t('account_group') %></th>
+              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-left font-semibold uppercase tracking-[0.08em]"><%= t('account_name') %></th>
+              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-left font-semibold uppercase tracking-[0.08em]"><%= t('department') %></th>
+              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-left font-semibold uppercase tracking-[0.08em]"><%= t('description') %></th>
+              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-right font-semibold uppercase tracking-[0.08em]"><%= t('amount') %></th>
+              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-left font-semibold uppercase tracking-[0.08em]"><%= t('created_by') %></th>
+              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-left font-semibold uppercase tracking-[0.08em]"><%= t('cashier') %></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${lines.map((line, idx) => `
+              <tr class="border-t border-slate-100 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/40'}">
+                <td class="px-2 py-2">${esc(normalizeDateDisplay(line?.entry_date))}</td>
+                <td class="px-2 py-2">${line?.voucher_no == null ? '-' : Number(line.voucher_no)}</td>
+                <td class="px-2 py-2">${esc(getVoucherLabel(line?.voucher_type_code))}</td>
+                <td class="px-2 py-2">${esc(line?.account_group_name || '-')}</td>
+                <td class="px-2 py-2">${esc(line?.account_name || '-')}</td>
+                <td class="px-2 py-2">${esc(line?.department_name || notApplicableText)}</td>
+                <td class="px-2 py-2">${esc(line?.narration || '-')}</td>
+                <td class="px-2 py-2 text-right font-semibold ${toneClass(line?.amount || 0)}">${esc(asMoney(line?.amount))}</td>
+                <td class="px-2 py-2">${esc(line?.created_by || '-')}</td>
+                <td class="px-2 py-2">${esc(line?.cashier || '-')}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        `;
+        wrap.appendChild(table);
+        return wrap;
+      };
+
+      const collapseDepartmentChildren = (departmentKey) => {
+        [...expandedGroups].forEach((groupKey) => {
+          if (String(groupKey || '').startsWith(`${departmentKey}|`)) expandedGroups.delete(groupKey);
+        });
+        [...expandedAccounts].forEach((accountKey) => {
+          if (String(accountKey || '').startsWith(`${departmentKey}|`)) expandedAccounts.delete(accountKey);
+        });
+      };
+
+      const collapseGroupChildren = (groupKey) => {
+        [...expandedAccounts].forEach((accountKey) => {
+          if (String(accountKey || '').startsWith(`${groupKey}|`)) expandedAccounts.delete(accountKey);
+        });
+      };
+
+      const groupedRows = departments.flatMap((department) =>
+        (department.groups || []).map((group) => ({ department, group })),
+      );
+      const accountRows = groupedRows.flatMap(({ department, group }) =>
+        (group.accounts || []).map((account) => ({ department, group, account })),
+      );
+      const globalGroupRows = (() => {
+        const map = new Map();
+        groupedRows.forEach(({ department, group }) => {
+          const groupId = Number(group?.accountGroupId || 0) || 0;
+          const name = String(group?.accountGroupName || '-');
+          const key = `GG:${groupId || name}`;
+          if (!map.has(key)) {
+            map.set(key, {
+              key,
+              accountGroupId: groupId || null,
+              accountGroupName: name,
+              netExpense: 0,
+              transactionsCount: 0,
+              previousNetExpense: 0,
+              accountsMap: new Map(),
+            });
+          }
+          const agg = map.get(key);
+          agg.netExpense = roundMoney(Number(agg.netExpense || 0) + Number(group?.netExpense || 0));
+          agg.transactionsCount = Number(agg.transactionsCount || 0) + Number(group?.transactionsCount || 0);
+          agg.previousNetExpense = roundMoney(Number(agg.previousNetExpense || 0) + Number(group?.previousNetExpense || 0));
+
+          (group.accounts || []).forEach((account) => {
+            const accountId = Number(account?.accountId || 0) || 0;
+            const accountName = String(account?.accountName || '-');
+            const accountKey = `${key}|A:${accountId || accountName}`;
+            if (!agg.accountsMap.has(accountKey)) {
+              agg.accountsMap.set(accountKey, {
+                key: accountKey,
+                accountId: accountId || null,
+                accountName,
+                netExpense: 0,
+                transactionsCount: 0,
+                lines: [],
+              });
+            }
+            const accountAgg = agg.accountsMap.get(accountKey);
+            accountAgg.netExpense = roundMoney(Number(accountAgg.netExpense || 0) + Number(account?.netExpense || 0));
+            accountAgg.transactionsCount = Number(accountAgg.transactionsCount || 0) + Number(account?.transactionsCount || 0);
+            accountAgg.lines = accountAgg.lines.concat(Array.isArray(account?.lines) ? account.lines : []);
+          });
+        });
+
+        const totalNet = roundMoney(
+          [...map.values()].reduce((sum, row) => sum + Number(row?.netExpense || 0), 0),
+        );
+        return [...map.values()]
+          .map((row) => {
+            const previous = roundMoney(Number(row.previousNetExpense || 0));
+            const current = roundMoney(Number(row.netExpense || 0));
+            const trend = previous !== 0
+              ? roundMoney(((current - previous) / Math.abs(previous)) * 100)
+              : (current === 0 ? 0 : null);
+            const accounts = [...row.accountsMap.values()]
+              .map((account) => ({
+                ...account,
+                lines: [...(account.lines || [])].sort((a, b) => {
+                  const dateA = String(a?.entry_date || '');
+                  const dateB = String(b?.entry_date || '');
+                  if (dateA !== dateB) return dateB.localeCompare(dateA);
+                  return Number(b?.voucher_no || 0) - Number(a?.voucher_no || 0);
+                }),
+              }))
+              .sort((a, b) => Number(b?.netExpense || 0) - Number(a?.netExpense || 0));
+            return {
+              key: row.key,
+              accountGroupId: row.accountGroupId,
+              accountGroupName: row.accountGroupName,
+              netExpense: current,
+              transactionsCount: Number(row.transactionsCount || 0),
+              previousNetExpense: previous,
+              trendPercentage: trend,
+              percentageOfTotal: totalNet !== 0 ? roundMoney((current / totalNet) * 100) : 0,
+              accounts,
+            };
+          })
+          .sort((a, b) => Number(b?.netExpense || 0) - Number(a?.netExpense || 0));
+      })();
+
+      const globalAccountRows = (() => {
+        const map = new Map();
+        accountRows.forEach(({ account }) => {
+          const accountId = Number(account?.accountId || 0) || 0;
+          const accountName = String(account?.accountName || '-');
+          const key = `GA:${accountId || accountName}`;
+          if (!map.has(key)) {
+            map.set(key, {
+              key,
+              accountId: accountId || null,
+              accountName,
+              netExpense: 0,
+              transactionsCount: 0,
+              lines: [],
+            });
+          }
+          const agg = map.get(key);
+          agg.netExpense = roundMoney(Number(agg.netExpense || 0) + Number(account?.netExpense || 0));
+          agg.transactionsCount = Number(agg.transactionsCount || 0) + Number(account?.transactionsCount || 0);
+          agg.lines = agg.lines.concat(Array.isArray(account?.lines) ? account.lines : []);
+        });
+
+        return [...map.values()]
+          .map((row) => ({
+            ...row,
+            lines: [...(row.lines || [])].sort((a, b) => {
+              const dateA = String(a?.entry_date || '');
+              const dateB = String(b?.entry_date || '');
+              if (dateA !== dateB) return dateB.localeCompare(dateA);
+              return Number(b?.voucher_no || 0) - Number(a?.voucher_no || 0);
+            }),
+          }))
+          .sort((a, b) => Number(b?.netExpense || 0) - Number(a?.netExpense || 0));
+      })();
+
+      const findAccountByKey = (key) => {
+        if (!key) return null;
+        for (const department of departments) {
+          for (const group of (department.groups || [])) {
+            for (const account of (group.accounts || [])) {
+              if (account.key === key) {
+                return { department, group, account };
+              }
+            }
+          }
+        }
+        for (const group of globalGroupRows) {
+          for (const account of (group.accounts || [])) {
+            if (account.key === key) {
+              return { department: null, group, account };
+            }
+          }
+        }
+        for (const account of globalAccountRows) {
+          if (account.key === key) {
+            return { department: null, group: null, account };
+          }
+        }
+        return null;
+      };
+
+      const createAccountNode = ({ department, group, account, showParent = false, nested = false }) => {
+        const accountExpanded = expandedAccounts.has(account.key);
+        const accountAmount = Number(account.netExpense || 0);
+        const accountNode = document.createElement('div');
+        accountNode.className = `overflow-hidden rounded-lg border border-slate-200 bg-white ${nested ? 'ml-1' : ''}`.trim();
+        const title = showParent
+          ? `${department ? (department?.isNaDepartment ? notApplicableText : (department?.departmentName || notApplicableText)) + ' / ' : ''}${group?.accountGroupName || '-'} / ${account.accountName || '-'}`
+          : `${account.accountName || '-'}`;
+        accountNode.innerHTML = `
+          <div class="flex flex-wrap items-center gap-2 px-3 py-2">
+            <button
+              type="button"
+              class="inline-flex h-7 w-7 flex-none items-center justify-center rounded border border-slate-300 bg-slate-100 text-sm font-bold text-slate-700"
+              data-toggle-account="${esc(account.key)}"
+              data-parent-department="${esc(department?.key || '')}"
+              data-parent-group="${esc(group?.key || '')}"
+            >
+              ${accountExpanded ? '-' : '+'}
+            </button>
+            <div class="min-w-[11rem] flex-1">
+              <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('account_name') %></div>
+              <div class="truncate text-sm font-semibold text-slate-800" title="${esc(title)}">${esc(title)}</div>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 min-w-[9rem]">
+              <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('net_expense') %></div>
+              <div class="mt-0.5 text-sm font-semibold ${toneClass(accountAmount)}">${esc(asMoney(accountAmount))}</div>
+            </div>
+            <div class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 min-w-[7rem]">
+              <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${esc(transactionsCountLabel)}</div>
+              <div class="mt-0.5 text-sm font-semibold text-slate-900">${Number(account.transactionsCount || 0)}</div>
+            </div>
+          </div>
+        `;
+        if (accountExpanded) {
+          const linesWrap = document.createElement('div');
+          linesWrap.className = 'border-t border-slate-200 bg-slate-50 p-2';
+          linesWrap.innerHTML = `
+            <div class="ml-4 space-y-2 border-l-2 border-slate-200 pl-3">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">|- ${esc(voucherLinesLabel)}</div>
+                <div class="text-xs font-semibold text-slate-700">${Number((account.lines || []).length)}</div>
+              </div>
+            </div>
+          `;
+          const nestedTableWrap = linesWrap.querySelector('div.ml-4');
+          if (nestedTableWrap) {
+            nestedTableWrap.appendChild(buildLinesTable(account.lines || []));
+          } else {
+            linesWrap.appendChild(buildLinesTable(account.lines || []));
+          }
+          accountNode.appendChild(linesWrap);
+        }
+        return accountNode;
+      };
+
+      const renderTree = () => {
+        treeRoot.innerHTML = '';
+        if (breakdownStartMode === 'account') {
+          if (!globalAccountRows.length) {
+            treeRoot.appendChild(renderNoEntries());
+          } else {
+            globalAccountRows.forEach((account) => {
+              treeRoot.appendChild(createAccountNode({ department: null, group: null, account, showParent: false }));
+            });
+          }
+        } else if (breakdownStartMode === 'group') {
+          if (!globalGroupRows.length) {
+            treeRoot.appendChild(renderNoEntries());
+          } else {
+            globalGroupRows.forEach((group) => {
+              const groupExpanded = expandedGroups.has(group.key);
+              const groupAmount = Number(group.netExpense || 0);
+              const groupNode = document.createElement('div');
+              groupNode.className = 'overflow-hidden rounded-lg border border-slate-200 bg-white';
+              groupNode.innerHTML = `
+                <div class="flex flex-wrap items-center gap-2 px-3 py-2">
+                  <button
+                    type="button"
+                    class="inline-flex h-7 w-7 flex-none items-center justify-center rounded border border-slate-300 bg-slate-100 text-sm font-bold text-slate-700"
+                    data-toggle-group="${esc(group.key)}"
+                    data-parent-department=""
+                  >
+                    ${groupExpanded ? '-' : '+'}
+                  </button>
+                  <div class="min-w-[11rem] flex-1">
+                    <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('account_group') %></div>
+                    <div class="truncate text-sm font-semibold text-slate-800" title="${esc(group.accountGroupName || '-')}">${esc(group.accountGroupName || '-')}</div>
+                  </div>
+                  <div class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 min-w-[9rem]">
+                    <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('net_expense') %></div>
+                    <div class="mt-0.5 text-sm font-semibold ${toneClass(groupAmount)}">${esc(asMoney(groupAmount))}</div>
+                  </div>
+                  <div class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 min-w-[7rem]">
+                    <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${esc(transactionsCountLabel)}</div>
+                    <div class="mt-0.5 text-sm font-semibold text-slate-900">${Number(group.transactionsCount || 0)}</div>
+                  </div>
+                  <div class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 min-w-[8rem]">
+                    <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${esc(percentOfTotalLabel)}</div>
+                    <div class="mt-0.5 text-sm font-semibold ${toneClass(group.percentageOfTotal || 0)}">${esc(asPercent(group.percentageOfTotal || 0))}</div>
+                  </div>
+                  <div class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 min-w-[10rem]">
+                    <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('trend_vs_previous_period') %></div>
+                    <div class="mt-0.5 text-sm font-semibold ${toneClass(group.trendPercentage || 0)}">${esc(toTrend(group.trendPercentage))}</div>
+                  </div>
+                </div>
+              `;
+              if (groupExpanded) {
+                const accountsWrap = document.createElement('div');
+                accountsWrap.className = 'ml-4 space-y-2 border-l-2 border-t border-slate-200 bg-slate-50/60 p-2 pl-3';
+                const accountsHeader = document.createElement('div');
+                accountsHeader.className = 'px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500';
+                accountsHeader.textContent = `|- ${accountsLabel}`;
+                accountsWrap.appendChild(accountsHeader);
+                const accounts = Array.isArray(group.accounts) ? group.accounts : [];
+                if (!accounts.length) {
+                  accountsWrap.appendChild(renderNoEntries());
+                } else {
+                  accounts.forEach((account) => {
+                    accountsWrap.appendChild(createAccountNode({ department: null, group, account, showParent: false, nested: true }));
+                  });
+                }
+                groupNode.appendChild(accountsWrap);
+              }
+              treeRoot.appendChild(groupNode);
+            });
+          }
+        } else {
+          departments.forEach((department) => {
+            const departmentExpanded = expandedDepartments.has(department.key);
+            const departmentAmount = Number(department.netExpense || 0);
+            const departmentNode = document.createElement('div');
+            departmentNode.className = 'overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm';
+            departmentNode.innerHTML = `
+              <div class="flex flex-wrap items-center gap-2 px-3 py-2">
+                <button
+                  type="button"
+                  class="inline-flex h-7 w-7 flex-none items-center justify-center rounded border border-slate-300 bg-slate-100 text-sm font-bold text-slate-700"
+                  data-toggle-department="${esc(department.key)}"
+                  data-parent-department="${esc(department.key)}"
+                >
+                  ${departmentExpanded ? '-' : '+'}
+                </button>
+                <div class="min-w-[11rem] flex-1">
+                  <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('department') %></div>
+                  <div class="truncate text-sm font-semibold text-slate-800">${esc(toDepartmentName(department))}</div>
+                </div>
+                <div class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 min-w-[9rem]">
+                  <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('net_expense') %></div>
+                  <div class="mt-0.5 text-sm font-semibold ${toneClass(departmentAmount)}">${esc(asMoney(departmentAmount))}</div>
+                </div>
+                <div class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 min-w-[7rem]">
+                  <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${esc(transactionsCountLabel)}</div>
+                  <div class="mt-0.5 text-sm font-semibold text-slate-900">${Number(department.transactionsCount || 0)}</div>
+                </div>
+              </div>
+            `;
+
+            if (departmentExpanded) {
+              const groupsWrap = document.createElement('div');
+              groupsWrap.className = 'ml-4 space-y-2 border-l-2 border-t border-slate-200 bg-slate-50/60 p-2 pl-3';
+              const groups = Array.isArray(department.groups) ? department.groups : [];
+              if (!groups.length) {
+                groupsWrap.appendChild(renderNoEntries());
+              } else {
+                groups.forEach((group) => {
+                  const groupExpanded = expandedGroups.has(group.key);
+                  const groupAmount = Number(group.netExpense || 0);
+                  const groupNode = document.createElement('div');
+                  groupNode.className = 'overflow-hidden rounded-lg border border-slate-200 bg-white';
+                  groupNode.innerHTML = `
+                    <div class="flex flex-wrap items-center gap-2 px-3 py-2">
+                      <button
+                        type="button"
+                        class="inline-flex h-7 w-7 flex-none items-center justify-center rounded border border-slate-300 bg-slate-100 text-sm font-bold text-slate-700"
+                        data-toggle-group="${esc(group.key)}"
+                        data-parent-department="${esc(department.key)}"
+                      >
+                        ${groupExpanded ? '-' : '+'}
+                      </button>
+                      <div class="min-w-[11rem] flex-1">
+                        <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('account_group') %></div>
+                        <div class="truncate text-sm font-semibold text-slate-800">${esc(group.accountGroupName || '-')}</div>
+                      </div>
+                      <div class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 min-w-[9rem]">
+                        <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('net_expense') %></div>
+                        <div class="mt-0.5 text-sm font-semibold ${toneClass(groupAmount)}">${esc(asMoney(groupAmount))}</div>
+                      </div>
+                      <div class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 min-w-[7rem]">
+                        <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${esc(transactionsCountLabel)}</div>
+                        <div class="mt-0.5 text-sm font-semibold text-slate-900">${Number(group.transactionsCount || 0)}</div>
+                      </div>
+                      <div class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 min-w-[8rem]">
+                        <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${esc(percentOfDepartmentLabel)}</div>
+                        <div class="mt-0.5 text-sm font-semibold ${toneClass(group.percentageOfDepartment || 0)}">${esc(asPercent(group.percentageOfDepartment || 0))}</div>
+                      </div>
+                      <div class="rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 min-w-[10rem]">
+                        <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('trend_vs_previous_period') %></div>
+                        <div class="mt-0.5 text-sm font-semibold ${toneClass(group.trendPercentage || 0)}">${esc(toTrend(group.trendPercentage))}</div>
+                      </div>
+                    </div>
+                  `;
+
+                  if (groupExpanded) {
+                    const accountsWrap = document.createElement('div');
+                    accountsWrap.className = 'ml-4 space-y-2 border-l-2 border-t border-slate-200 bg-slate-50/60 p-2 pl-3';
+                    const accountsHeader = document.createElement('div');
+                    accountsHeader.className = 'px-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500';
+                    accountsHeader.textContent = `|- ${accountsLabel}`;
+                    accountsWrap.appendChild(accountsHeader);
+                    const accounts = Array.isArray(group.accounts) ? group.accounts : [];
+                    if (!accounts.length) {
+                      accountsWrap.appendChild(renderNoEntries());
+                    } else {
+                      accounts.forEach((account) => {
+                        accountsWrap.appendChild(createAccountNode({ department, group, account, showParent: false, nested: true }));
+                      });
+                    }
+                    groupNode.appendChild(accountsWrap);
+                  }
+                  groupsWrap.appendChild(groupNode);
+                });
+              }
+              departmentNode.appendChild(groupsWrap);
+            }
+            treeRoot.appendChild(departmentNode);
+          });
+        }
+
+        treeRoot.querySelectorAll('[data-toggle-department]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const key = String(btn.getAttribute('data-toggle-department') || '');
+            if (!key) return;
+            if (expandedDepartments.has(key)) {
+              expandedDepartments.delete(key);
+              collapseDepartmentChildren(key);
+              if (activeDepartmentKey === key) {
+                activeDepartmentKey = null;
+                activeGroupKey = null;
+                activeAccountKey = null;
+              }
+            } else {
+              expandedDepartments.add(key);
+              activeDepartmentKey = key;
+              activeGroupKey = null;
+              activeAccountKey = null;
+            }
+            renderTree();
+          });
+        });
+        treeRoot.querySelectorAll('[data-toggle-group]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const key = String(btn.getAttribute('data-toggle-group') || '');
+            const parentDepartment = String(btn.getAttribute('data-parent-department') || '');
+            if (!key) return;
+            if (expandedGroups.has(key)) {
+              expandedGroups.delete(key);
+              collapseGroupChildren(key);
+              if (activeGroupKey === key) {
+                activeGroupKey = null;
+                activeAccountKey = null;
+              }
+            } else {
+              expandedGroups.add(key);
+              activeDepartmentKey = parentDepartment || null;
+              activeGroupKey = key;
+              activeAccountKey = null;
+            }
+            renderTree();
+          });
+        });
+        treeRoot.querySelectorAll('[data-toggle-account]').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const key = String(btn.getAttribute('data-toggle-account') || '');
+            const parentDepartment = String(btn.getAttribute('data-parent-department') || '');
+            const parentGroup = String(btn.getAttribute('data-parent-group') || '');
+            if (!key) return;
+            if (expandedAccounts.has(key)) {
+              expandedAccounts.delete(key);
+              if (activeAccountKey === key) activeAccountKey = null;
+            } else {
+              expandedAccounts.add(key);
+              activeDepartmentKey = parentDepartment || null;
+              activeGroupKey = parentGroup || activeGroupKey || null;
+              activeAccountKey = key;
+            }
+            renderTree();
+          });
+        });
+        updateBreadcrumb();
+      };
+
+      renderSummary();
+      renderTree();
+    };
+
+    mountExpenseTrends();
+    mountDepartmentBreakdown();
+
+    if (form && isAccountActivityLedger) {
+      form.addEventListener('submit', (event) => {
+        const selectedId = Number(accountSelect?.value || 0);
+        if (selectedId > 0) return;
+        event.preventDefault();
+        if (typeof window.showUiErrorModal === 'function') {
+          window.showUiErrorModal('<%= t('select_account_name') %>');
+        }
+      });
+    }
+
+    if (form) {
+      const trendAccountGroupSelect = form.querySelector('select[name="account_group_id"]');
+      const trendAccountSelect = form.querySelector('select[name="trend_account_id"]');
+      if (isExpenseTrends && trendAccountGroupSelect) {
+        trendAccountGroupSelect.addEventListener('change', () => {
+          if (trendAccountSelect) trendAccountSelect.value = '';
+        });
+      }
+
+      form.addEventListener('submit', (event) => {
+        const from = String(fromDateHidden?.value || '').trim();
+        const to = String(toDateHidden?.value || '').trim();
+        const valid = (!from && !to) || (isIsoDate(from) && isIsoDate(to) && from <= to);
+        if (valid) return;
+        event.preventDefault();
+        const message = invalidDateRangeText;
+        if (typeof window.showUiErrorModal === 'function') {
+          window.showUiErrorModal(message);
+          return;
+        }
+        window.alert(message);
+      });
+    }
+
+    if (printBtn) {
+      printBtn.addEventListener('click', () => {
+        window.print();
+      });
+    }
+
+    if (downloadBtn && isDepartmentBreakdown) {
+      downloadBtn.addEventListener('click', () => {
+        const departments = Array.isArray(departmentBreakdownData?.departments) ? departmentBreakdownData.departments : [];
+        const rows = [[
+          '<%= t('department') %>',
+          '<%= t('account_group') %>',
+          '<%= t('account_name') %>',
+          '<%= t('date') %>',
+          '<%= t('voucher_no') %>',
+          '<%= t('voucher_type') %>',
+          '<%= t('payee') %>',
+          '<%= t('created_by') %>',
+          '<%= t('cashier') %>',
+          '<%= t('description') %>',
+          '<%= t('amount') %>',
+        ]];
+
+        departments.forEach((department) => {
+          const departmentName = department?.isNaDepartment ? notApplicableText : (department?.departmentName || notApplicableText);
+          (department?.groups || []).forEach((group) => {
+            const groupName = group?.accountGroupName || '';
+            (group?.accounts || []).forEach((account) => {
+              const accountName = account?.accountName || '';
+              (account?.lines || []).forEach((line) => {
+                rows.push([
+                  departmentName,
+                  groupName,
+                  accountName,
+                  normalizeDateDisplay(line?.entry_date),
+                  line?.voucher_no == null ? '' : String(line.voucher_no),
+                  getVoucherLabel(line?.voucher_type_code),
+                  line?.payee || '',
+                  line?.created_by || '',
+                  line?.cashier || '',
+                  line?.narration || '',
+                  asMoney(line?.amount),
+                ]);
+              });
+            });
+          });
+        });
+
+        const csv = rows
+          .map((row) => row.map((cell) => `"${String(cell || '').replace(/"/g, '""')}"`).join(','))
+          .join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'expense_breakdown.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      });
+    } else if (downloadBtn && table) {
+      downloadBtn.addEventListener('click', () => {
+        const rows = Array.from(table.querySelectorAll('tr')).map((tr) =>
+          Array.from(tr.querySelectorAll('th,td')).map((cell) => {
+            const raw = (cell.textContent || '').replace(/\s+/g, ' ').trim();
+            const escaped = raw.replace(/"/g, '""');
+            return `"${escaped}"`;
+          }).join(',')
+        );
+
+        const csv = rows.join('\n');
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'financial_report.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      });
+    }
+
+    const showUiToast = (message) => {
+      if (!message) return;
+      const existing = document.querySelector('[data-inline-report-toast]');
+      if (existing) existing.remove();
+      const wrap = document.createElement('div');
+      wrap.className = 'fixed right-4 top-4 z-[220] w-[92vw] max-w-sm';
+      wrap.setAttribute('data-inline-report-toast', 'true');
+      wrap.innerHTML = `
+        <div class="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-white p-4 shadow-xl">
+          <div class="mt-0.5 rounded-full bg-emerald-100 p-2 text-emerald-700">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <div class="flex-1">
+            <div class="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700"><%= t('notice') || 'Notice' %></div>
+            <p class="mt-1 text-sm text-slate-700"></p>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600" type="button" data-inline-report-toast-close aria-label="Close">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      `;
+      wrap.querySelector('p').textContent = String(message || '').trim();
+      const dismiss = () => wrap.remove();
+      wrap.querySelector('[data-inline-report-toast-close]')?.addEventListener('click', dismiss);
+      document.body.appendChild(wrap);
+      window.setTimeout(dismiss, 3500);
+    };
+
+    const showUiError = (message) => {
+      if (!message) return;
+      if (typeof window.showUiErrorModal === 'function') {
+        window.showUiErrorModal(message);
+        return;
+      }
+      window.alert(message);
+    };
+
+    const updateBankLineStatus = async (selectEl) => {
+      const voucherId = Number(selectEl?.dataset?.voucherId || 0);
+      const lineId = Number(selectEl?.dataset?.lineId || 0);
+      const previous = String(selectEl?.dataset?.prevStatus || 'PENDING').toUpperCase();
+      const selected = String(selectEl?.value || 'PENDING').toUpperCase();
+
+      if (!voucherId || !lineId || selected === previous) return;
+      selectEl.disabled = true;
+      try {
+        const body = new URLSearchParams();
+        body.set('_csrf', csrfToken);
+        body.set('voucher_type', 'bank');
+        body.set('voucher_id', String(voucherId));
+        body.set('line_id', String(lineId));
+        body.set('status', selected);
+
+        const response = await fetch(`${currentReportPath}/bank-line-status`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          body: body.toString(),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok || !result?.ok) {
+          throw new Error(result?.message || '<%= t('generic_error') %>');
+        }
+
+        if (result.queuedForApproval) {
+          selectEl.value = previous;
+        } else {
+          selectEl.dataset.prevStatus = selected;
+          if (selected === 'APPROVED') {
+            selectEl.disabled = true;
+          }
+        }
+        if (result?.message) showUiToast(result.message);
+      } catch (err) {
+        selectEl.value = previous;
+        showUiError(err?.message || '<%= t('generic_error') %>');
+      } finally {
+        const nowStatus = String(selectEl?.value || selectEl?.dataset?.prevStatus || 'PENDING').toUpperCase();
+        if (nowStatus !== 'APPROVED') {
+          selectEl.disabled = false;
+        }
+      }
+    };
+
+    if (table && isBankVoucherRegisterDetails) {
+      table.querySelectorAll('[data-bank-status-select]').forEach((selectEl) => {
+        selectEl.addEventListener('change', () => {
+          updateBankLineStatus(selectEl);
+        });
+      });
+    }
+  })();
+</script>

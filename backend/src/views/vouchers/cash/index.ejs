@@ -1,0 +1,1005 @@
+<%
+  const formatDateInput = (value) => {
+    if (!value) return "";
+    const asText = String(value);
+    const textMatch = asText.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (textMatch) return textMatch[1];
+    const dt = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(dt.getTime())) return "";
+    const yyyy = dt.getFullYear();
+    const mm = String(dt.getMonth() + 1).padStart(2, "0");
+    const dd = String(dt.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  };
+  const sortedSeriesNos = (seriesNos || []).map((n) => Number(n)).filter((n) => Number.isInteger(n) && n > 0).sort((a, b) => b - a);
+  const latestVoucherNo = sortedSeriesNos.length ? Number(sortedSeriesNos[0] || 0) : 0;
+  const selectedVoucherNo = selectedVoucher ? Number(selectedVoucher.voucher_no || 0) : null;
+  const suggestedVoucherNo = selectedVoucherNo || (latestVoucherNo + 1);
+  const selectedDate = selectedVoucher && selectedVoucher.voucher_date
+    ? formatDateInput(selectedVoucher.voucher_date)
+    : formatDateInput(new Date());
+  const selectedRemarks = selectedVoucher?.remarks || "";
+  const selectedHeaderAccountId = selectedVoucher?.header_account_id || "";
+  const isDeletedVoucher = String(selectedVoucher?.status || "").toUpperCase() === "REJECTED";
+  const selectedStatus = String(selectedVoucher?.status || "").toUpperCase();
+  const selectedStatusLabel =
+    selectedStatus === "APPROVED"
+      ? t("approved")
+      : selectedStatus === "REJECTED"
+        ? t("rejected")
+        : selectedStatus === "PENDING"
+          ? t("pending")
+          : selectedStatus;
+  const selectedStatusToneClass =
+    selectedStatus === "APPROVED"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+      : selectedStatus === "REJECTED"
+        ? "border-rose-200 bg-rose-50 text-rose-800"
+        : "border-amber-200 bg-amber-50 text-amber-800";
+%>
+
+<style>
+  [data-voucher-form] [data-lines-table] thead th {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+  }
+  [data-voucher-form] [data-lines-table] td {
+    padding: 0.2rem 0.35rem;
+  }
+  [data-voucher-form] [data-lines-table] tbody tr:nth-child(even) td {
+    background-color: #f8fafc;
+  }
+  [data-voucher-form] [data-lines-table] tbody tr:hover td {
+    background-color: #f1f5f9;
+  }
+  [data-voucher-form] [data-lines-table] input,
+  [data-voucher-form] [data-lines-table] select,
+  [data-voucher-form] [data-lines-table] button[data-enhanced-select-trigger="1"] {
+    height: 1.95rem !important;
+    font-size: 0.76rem !important;
+  }
+  [data-voucher-form] [data-lines-table] input[data-field$="receipt"],
+  [data-voucher-form] [data-lines-table] input[data-field$="payment"] {
+    font-variant-numeric: tabular-nums;
+  }
+  [data-prev-voucher],
+  [data-next-voucher],
+  [data-load-voucher] {
+    min-width: 4.4rem;
+    text-align: center;
+  }
+  [data-voucher-form] > div:first-of-type label {
+    font-size: 0.9rem;
+  }
+  [data-voucher-form] input[readonly],
+  [data-voucher-form] input:disabled,
+  [data-voucher-form] select:disabled,
+  [data-voucher-form] textarea[readonly] {
+    background-color: #f1f5f9 !important;
+    border-color: #cbd5e1 !important;
+    color: #475569 !important;
+    cursor: not-allowed;
+  }
+  [data-voucher-form] input[readonly]:focus,
+  [data-voucher-form] input:disabled:focus,
+  [data-voucher-form] select:disabled:focus,
+  [data-voucher-form] textarea[readonly]:focus {
+    border-color: #cbd5e1 !important;
+    box-shadow: none !important;
+    outline: none !important;
+  }
+  [data-voucher-form] input:focus,
+  [data-voucher-form] select:focus,
+  [data-voucher-form] textarea:focus,
+  [data-voucher-form] [data-searchable-wrapper] > input:focus,
+  [data-voucher-form] [data-lines-table] button[data-enhanced-select-trigger="1"]:focus {
+    border-color: #111827 !important;
+    box-shadow: 0 0 0 1px #111827 !important;
+    outline: none !important;
+  }
+</style>
+
+<div class="mx-auto w-full max-w-none space-y-3 px-2">
+  <section class="rounded-2xl border border-slate-200 bg-white/95 px-4 py-4 shadow-sm">
+    <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+      <div>
+        <h1 class="text-2xl font-display font-semibold tracking-tight text-ink"><%= t(titleKey) %></h1>
+        <p class="text-sm text-muted"><%= t('financial') %></p>
+      </div>
+      <% if (selectedVoucher) { %>
+        <div class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] <%= selectedStatusToneClass %>">
+          <span><%= t('status') %></span>
+          <span class="rounded-full bg-white/80 px-2 py-0.5 text-slate-800"><%= selectedStatusLabel %></span>
+        </div>
+      <% } %>
+    </div>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <form method="post" action="<%= basePath || '' %>" class="space-y-4" data-voucher-form>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="voucher_id" value="<%= selectedVoucher?.id || '' %>">
+      <input type="hidden" name="header_account_id" value="<%= selectedHeaderAccountId %>" data-header-account-id>
+      <input type="hidden" name="lines_json" value="[]" data-lines-json>
+
+      <div class="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t('voucher_no') %></label>
+          <div class="lg:col-span-2">
+            <input type="text" value="<%= suggestedVoucherNo %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700" data-voucher-no-input>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 lg:col-span-8">
+            <a href="<%= prevVoucherNo ? ((basePath || '') + '?voucher_no=' + prevVoucherNo + '&view=1') : '#' %>" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700 <%= prevVoucherNo ? '' : 'pointer-events-none opacity-40' %>" data-prev-voucher><%= t('prev') %></a>
+            <a href="<%= nextVoucherNo ? ((basePath || '') + '?voucher_no=' + nextVoucherNo + '&view=1') : ((basePath || '') + '?new=1') %>" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700" data-next-voucher><%= t('next') %></a>
+            <button type="button" class="rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-white shadow-sm" data-load-voucher><%= t('load') %></button>
+            <div class="ml-auto flex items-center gap-2">
+              <button type="button" class="rounded-xl border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-rose-700 disabled:opacity-40" data-delete-voucher <%= selectedVoucher && !isDeletedVoucher ? '' : 'disabled' %>><%= t('delete') %></button>
+              <button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700" onclick="window.print()"><%= t('print') %></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t('date') %></label>
+          <div class="lg:col-span-2">
+            <input type="date" name="voucher_date" value="<%= selectedDate %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" required>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t(accountLabelKey) %></label>
+          <div class="lg:col-span-2">
+            <input type="text" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700" value="" data-header-account-code readonly>
+          </div>
+          <div class="lg:col-span-8">
+            <select class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-header-account data-searchable-select="true" data-searchable-variant="unified">
+              <option value=""><%= t('select_account_name') %></option>
+              <% (options.headerAccounts || options.accounts || []).forEach((a) => { %>
+                <option value="<%= a.id %>" <%= Number(selectedHeaderAccountId || 0) === Number(a.id) ? 'selected' : '' %>><%= a.name %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t('note') %></label>
+          <div class="lg:col-span-10">
+            <input type="text" name="remarks" maxlength="1000" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" placeholder="<%= t('enter_note') %>" value="<%= selectedRemarks %>">
+          </div>
+        </div>
+        <% if (isDeletedVoucher) { %>
+          <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+            <%= t('voucher_deleted_read_only') %>
+          </div>
+        <% } %>
+      </div>
+
+      <div class="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div class="overflow-x-auto lg:overflow-visible overflow-y-visible">
+        <table class="w-full table-fixed text-xs" data-lines-table>
+          <colgroup>
+            <col class="w-[13%]">
+            <col class="w-[24%]">
+            <col class="w-[16%]">
+            <col class="w-[15%]">
+            <col class="w-[12%]">
+            <col class="w-[12%]">
+            <col class="w-[8%]">
+          </colgroup>
+          <thead class="bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
+            <tr>
+              <th class="border-b border-slate-200 px-2 py-2 text-left"><%= t('code') %></th>
+              <th class="border-b border-slate-200 px-2 py-2 text-left"><%= t('name') %></th>
+              <th class="border-b border-slate-200 px-2 py-2 text-left"><%= t('description') %></th>
+              <th class="border-b border-slate-200 px-2 py-2 text-left"><%= t('department') %></th>
+              <th class="border-b border-slate-200 px-2 py-2 text-right"><%= t(receiptLabelKey) %></th>
+              <th class="border-b border-slate-200 px-2 py-2 text-right"><%= t(paymentLabelKey) %></th>
+              <th class="border-b border-slate-200 px-2 py-2 text-center"><%= t('actions') %></th>
+            </tr>
+          </thead>
+          <tbody data-lines-body></tbody>
+          <tfoot>
+            <tr class="bg-slate-50">
+              <td class="border-t border-slate-200 px-2 py-2 text-xs font-semibold text-slate-700" colspan="4"><%= t('total') %></td>
+              <td class="border-t border-slate-200 px-2 py-2">
+                <input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.00" data-total-receipt>
+              </td>
+              <td class="border-t border-slate-200 px-2 py-2">
+                <input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.00" data-total-payment>
+              </td>
+              <td class="border-t border-slate-200 px-2 py-2"></td>
+            </tr>
+          </tfoot>
+        </table>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-center gap-2 pt-1">
+        <button type="submit" class="rounded-xl bg-accent px-5 py-2 text-sm font-semibold uppercase tracking-[0.1em] text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40" <%= isDeletedVoucher ? 'disabled' : '' %>><%= t('confirm') %></button>
+      </div>
+    </form>
+    <form method="post" action="<%= (basePath || '') + '/delete' %>" class="hidden" data-delete-voucher-form>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="voucher_id" value="<%= selectedVoucher?.id || '' %>">
+    </form>
+  </section>
+</div>
+
+<script><%- include("../../base/partials/searchable-select.js") %></script>
+<script>
+  (function () {
+    const form = document.querySelector('[data-voucher-form]');
+    if (!form) return;
+
+    const accounts = <%- JSON.stringify(options.accounts || []) %>;
+    const headerAccounts = <%- JSON.stringify(options.headerAccounts || options.accounts || []) %>;
+    const parties = <%- JSON.stringify(options.parties || []) %>;
+    const labours = <%- JSON.stringify(options.labours || []) %>;
+    const employees = <%- JSON.stringify(options.employees || []) %>;
+    const departments = <%- JSON.stringify(options.departments || []) %>;
+
+    const selectedVoucher = <%- JSON.stringify(selectedVoucher || null) %>;
+    const isDeletedVoucher = String(selectedVoucher?.status || '').toUpperCase() === 'REJECTED';
+    const voucherTypeCode = '<%= voucherTypeCode %>';
+    const seriesNos = <%- JSON.stringify(seriesNos || []) %>;
+    const prevVoucherNo = <%- JSON.stringify(prevVoucherNo || null) %>;
+    const nextVoucherNo = <%- JSON.stringify(nextVoucherNo || null) %>;
+    const isViewMode = new URLSearchParams(window.location.search).get('view') === '1';
+
+    if (isViewMode && window.history && typeof window.history.replaceState === 'function') {
+      const hash = window.location.hash || '';
+      window.history.replaceState({}, document.title, `${window.location.pathname}${hash}`);
+    }
+
+    const receiptKey = '<%= receiptKey %>';
+    const paymentKey = '<%= paymentKey %>';
+    const selectNameLabel = <%- JSON.stringify(t('select') + ' ' + t('name')) %>;
+    const selectDepartmentLabel = <%- JSON.stringify(t('select') + ' ' + t('department')) %>;
+    const notApplicableDepartmentLabel = <%- JSON.stringify(t('not_applicable') || 'N/A') %>;
+    const naDepartmentValue = '__NA__';
+    const singleDirectionError = <%- JSON.stringify(t('error_cash_voucher_single_direction')) %>;
+
+    const body = form.querySelector('[data-lines-body]');
+    const jsonInput = form.querySelector('[data-lines-json]');
+
+    const totalReceiptEl = form.querySelector('[data-total-receipt]');
+    const totalPaymentEl = form.querySelector('[data-total-payment]');
+
+    let selectedRow = null;
+
+    const parseNum = (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const showError = (message) => {
+      if (typeof window.showUiErrorModal === 'function') {
+        window.showUiErrorModal(message);
+      }
+    };
+
+    const isVisibleElement = (el) => {
+      if (!el) return false;
+      if (el.disabled) return false;
+      if (el.type === 'hidden') return false;
+      return el.offsetParent !== null;
+    };
+
+    const focusNextField = (currentEl) => {
+      const ordered = Array.from(
+        form.querySelectorAll(
+          'input:not([type="hidden"]), select:not(.hidden):not(.sr-only), textarea, [data-searchable-wrapper] input, button[data-enhanced-select-trigger="1"], button[data-load-voucher], button[type="submit"]',
+        ),
+      ).filter(isVisibleElement);
+      const idx = ordered.indexOf(currentEl);
+      if (idx < 0) return;
+      const next = ordered[idx + 1];
+      if (!next) return;
+      next.focus();
+      if (next.matches('[data-searchable-wrapper] input')) {
+        next.click();
+        return;
+      }
+      if (next.matches('button[data-enhanced-select-trigger="1"]')) {
+        next.click();
+        return;
+      }
+      if (next.tagName === 'INPUT' && typeof next.select === 'function') {
+        next.select();
+      }
+    };
+    const focusRowFirstField = (row) => {
+      if (!row) return;
+      const entitySelect = row.querySelector('[data-field="entity_ref"]');
+      if (!entitySelect) return;
+      const searchableInput = entitySelect.parentElement?.querySelector('[data-searchable-wrapper] input');
+      if (searchableInput) {
+        searchableInput.focus();
+        searchableInput.click();
+        return;
+      }
+      const trigger = entitySelect.parentElement?.querySelector('[data-enhanced-select-trigger="1"]');
+      if (trigger) {
+        trigger.focus();
+        trigger.click();
+        return;
+      }
+      entitySelect.focus();
+    };
+
+    const attachSelectEnhancer = (selectEl) => {
+      if (!selectEl) return;
+      selectEl.dataset.searchableSelect = 'true';
+      selectEl.dataset.searchableVariant = 'unified';
+      if (typeof window.initSearchableSelects === 'function') {
+        window.initSearchableSelects();
+      }
+      return;
+      if (typeof selectEl._voucherEnhancerRefresh === 'function') {
+        selectEl._voucherEnhancerRefresh();
+        return;
+      }
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'relative w-full';
+      wrapper.setAttribute('data-enhanced-select-wrapper', '1');
+      const trigger = document.createElement('button');
+      trigger.type = 'button';
+      trigger.setAttribute('data-enhanced-select-trigger', '1');
+      trigger.className = 'h-8 w-full rounded-lg border border-slate-300 bg-white pl-2 pr-8 text-left text-xs text-slate-700';
+      const label = document.createElement('span');
+      label.className = 'block truncate';
+      const icon = document.createElement('span');
+      icon.className = 'pointer-events-none absolute inset-y-0 right-3 inline-flex items-center text-slate-400';
+      icon.innerHTML = '<svg viewBox="0 0 20 20" class="h-4 w-4" fill="none" aria-hidden="true"><path d="m5 8 5 5 5-5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
+      const menu = document.createElement('div');
+      menu.className = 'absolute left-0 right-0 top-full z-[60] mt-1 hidden rounded-xl border border-slate-200 bg-white shadow-xl';
+      const searchWrap = document.createElement('div');
+      searchWrap.className = 'border-b border-slate-100 p-2';
+      const search = document.createElement('input');
+      search.type = 'text';
+      search.placeholder = '<%= t("search") %>';
+      search.className = 'h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs';
+      const list = document.createElement('div');
+      list.className = 'max-h-44 overflow-auto p-1';
+      let activeIndex = 0;
+      let advanceOnSelect = false;
+
+      searchWrap.appendChild(search);
+      menu.appendChild(searchWrap);
+      menu.appendChild(list);
+      wrapper.appendChild(trigger);
+      wrapper.appendChild(icon);
+      wrapper.appendChild(menu);
+
+      selectEl.classList.add('hidden');
+      selectEl.insertAdjacentElement('afterend', wrapper);
+
+      const getOptions = () => Array.from(selectEl.options || []).map((opt) => ({ value: opt.value, label: opt.textContent || '' }));
+      const currentLabel = () => {
+        const selected = selectEl.options[selectEl.selectedIndex];
+        return selected ? selected.textContent : (selectEl.options[0]?.textContent || '<%= t("select") %>');
+      };
+
+      const closeMenu = () => {
+        menu.classList.add('hidden');
+      };
+      const setMenuDirection = () => {
+        menu.classList.remove('top-full', 'mt-1', 'bottom-full', 'mb-1');
+        const triggerRect = trigger.getBoundingClientRect();
+        const estimatedHeight = 220;
+        const spaceBelow = window.innerHeight - triggerRect.bottom;
+        const spaceAbove = triggerRect.top;
+        const openUpward = spaceBelow < estimatedHeight && spaceAbove > spaceBelow;
+        if (openUpward) {
+          menu.classList.add('bottom-full', 'mb-1');
+        } else {
+          menu.classList.add('top-full', 'mt-1');
+        }
+      };
+      const openMenu = () => {
+        setMenuDirection();
+        menu.classList.remove('hidden');
+        search.value = '';
+        renderList('');
+        setTimeout(() => search.focus(), 0);
+      };
+
+      const renderList = (filterText = '') => {
+        const term = String(filterText || '').trim().toLowerCase();
+        const options = getOptions().filter((opt) => !term || String(opt.label).toLowerCase().includes(term));
+        list.innerHTML = '';
+        activeIndex = 0;
+        if (!options.length) {
+          const empty = document.createElement('div');
+          empty.className = 'px-2 py-2 text-xs text-slate-500';
+          empty.textContent = '<%= t("no_records_found") %>';
+          list.appendChild(empty);
+          return;
+        }
+        options.forEach((opt) => {
+          const item = document.createElement('button');
+          item.type = 'button';
+          item.className = 'flex w-full items-center rounded-lg px-2 py-2 text-left text-xs text-slate-700 hover:bg-slate-100';
+          item.textContent = opt.label;
+          item.addEventListener('click', () => {
+            selectEl.value = opt.value;
+            label.textContent = currentLabel();
+            selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+            selectEl.dispatchEvent(new Event('input', { bubbles: true }));
+            closeMenu();
+            trigger.focus();
+            if (advanceOnSelect) {
+              advanceOnSelect = false;
+              setTimeout(() => focusNextField(trigger), 0);
+            }
+          });
+          list.appendChild(item);
+        });
+        const first = list.querySelector('button');
+        if (first) first.classList.add('bg-slate-100');
+      };
+
+      const refresh = () => {
+        label.textContent = currentLabel();
+        renderList(search.value || '');
+      };
+
+      trigger.appendChild(label);
+      trigger.addEventListener('click', () => {
+        if (menu.classList.contains('hidden')) {
+          openMenu();
+        } else {
+          closeMenu();
+        }
+      });
+      trigger.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          event.stopPropagation();
+          focusNextField(trigger);
+          return;
+        }
+        if (event.key === ' ') {
+          event.preventDefault();
+          event.stopPropagation();
+          if (menu.classList.contains('hidden')) openMenu();
+          else closeMenu();
+        }
+      });
+      search.addEventListener('input', () => renderList(search.value));
+      search.addEventListener('keydown', (event) => {
+        const items = Array.from(list.querySelectorAll('button'));
+        if (!items.length) return;
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          event.stopPropagation();
+          advanceOnSelect = true;
+          const target = items[Math.max(0, Math.min(activeIndex, items.length - 1))] || items[0];
+          target?.click();
+          return;
+        }
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          event.stopPropagation();
+          const step = event.key === 'ArrowDown' ? 1 : -1;
+          activeIndex = (activeIndex + step + items.length) % items.length;
+          items.forEach((btn, idx) => btn.classList.toggle('bg-slate-100', idx === activeIndex));
+          items[activeIndex]?.scrollIntoView({ block: 'nearest' });
+        }
+      });
+      document.addEventListener('click', (event) => {
+        if (!wrapper.contains(event.target)) closeMenu();
+      });
+      selectEl.addEventListener('change', refresh);
+
+      selectEl._voucherEnhancerRefresh = refresh;
+      refresh();
+    };
+
+    const entityOptions = [];
+    const departmentsById = new Map((departments || []).map((d) => [Number(d.id), d]));
+    accounts.forEach((a) => entityOptions.push({
+      value: `ACCOUNT:${a.id}`,
+      code: a.code || '',
+      name: a.name || '',
+      postingClassCode: String(a.posting_class_code || '').toLowerCase(),
+      accountType: String(a.account_type || '').toLowerCase(),
+    }));
+    parties.forEach((p) => entityOptions.push({ value: `PARTY:${p.id}`, code: p.code || '', name: p.name || '' }));
+    labours.forEach((l) => {
+      const deptIds = String(l.dept_ids_csv || '')
+        .split(',')
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0);
+      if (Number(l.dept_id || 0) > 0) deptIds.push(Number(l.dept_id));
+      const uniqueDeptIds = [...new Set(deptIds)];
+      entityOptions.push({ value: `LABOUR:${l.id}`, code: l.code || '', name: l.name || '', deptIds: uniqueDeptIds });
+    });
+    employees.forEach((e) => {
+      entityOptions.push({ value: `EMPLOYEE:${e.id}`, code: e.code || '', name: e.name || '' });
+    });
+
+    const entityOptionHtml = (selectedRef = '') => {
+      const selectedHeaderAccountId = Number(form.querySelector('[data-header-account]')?.value || 0);
+      const options = entityOptions.filter((row) => {
+        if (!row.value.startsWith('ACCOUNT:')) return true;
+        const accountId = Number(String(row.value).split(':')[1] || 0);
+        if (selectedRef && row.value === selectedRef) return true;
+        if (voucherTypeCode === 'CASH_VOUCHER' && String(row.postingClassCode || '') === 'cash') return false;
+        return !(selectedHeaderAccountId > 0 && accountId === selectedHeaderAccountId);
+      });
+      return [`<option value="">${selectNameLabel}</option>`].concat(options.map((row) => `<option value="${row.value}">${row.name}</option>`)).join('');
+    };
+    const getEntityByRef = (ref) => entityOptions.find((opt) => opt.value === ref) || null;
+    const doesEntityRequireDepartment = (ref) => {
+      const [kind] = String(ref || '').split(':');
+      if (kind !== 'ACCOUNT') return false;
+      const entity = getEntityByRef(ref);
+      const postingClassCode = String(entity?.postingClassCode || '').toLowerCase();
+      const accountType = String(entity?.accountType || '').toLowerCase();
+      return postingClassCode === 'expense' || accountType === 'expense';
+    };
+    const isNaDepartmentEntityRef = (ref) => !doesEntityRequireDepartment(ref);
+    const deptOptionHtml = (allowedDeptIds = [], naOnly = false) => {
+      if (naOnly) {
+        return `<option value="${naDepartmentValue}">${notApplicableDepartmentLabel}</option>`;
+      }
+      const allowed = new Set((allowedDeptIds || []).map((id) => Number(id)).filter((id) => Number.isInteger(id) && departmentsById.has(id)));
+      const scopedDepartments = allowed.size ? [...allowed].map((id) => departmentsById.get(id)).filter(Boolean) : departments;
+      return [`<option value="">${selectDepartmentLabel}</option>`].concat(scopedDepartments.map((row) => `<option value="${row.id}">${row.name}</option>`)).join('');
+    };
+
+    const getEntityRefFromSeed = (seed = null) => {
+      if (!seed) return '';
+      if (Number(seed.account_id || 0) > 0) return `ACCOUNT:${seed.account_id}`;
+      if (Number(seed.party_id || 0) > 0) return `PARTY:${seed.party_id}`;
+      if (Number(seed.labour_id || 0) > 0) return `LABOUR:${seed.labour_id}`;
+      if (Number(seed.employee_id || 0) > 0) return `EMPLOYEE:${seed.employee_id}`;
+      return '';
+    };
+
+    const updateCodeByEntity = (tr) => {
+      const ref = tr.querySelector('[data-field="entity_ref"]').value;
+      const codeInput = tr.querySelector('[data-field="code"]');
+      const match = entityOptions.find((opt) => opt.value === ref);
+      codeInput.value = match?.code || '';
+    };
+
+    const updateHeaderAccountCode = () => {
+      const accountSelect = form.querySelector('[data-header-account]');
+      const codeInput = form.querySelector('[data-header-account-code]');
+      const hiddenInput = form.querySelector('[data-header-account-id]');
+      if (!accountSelect || !codeInput) return;
+      const accountId = Number(accountSelect.value || 0);
+      const account = headerAccounts.find((a) => Number(a.id) === accountId) || accounts.find((a) => Number(a.id) === accountId);
+      codeInput.value = account?.code || '<%= t("code") %>';
+      if (hiddenInput) hiddenInput.value = accountId > 0 ? String(accountId) : '';
+    };
+
+    const getEntityDeptIds = (ref) => {
+      const match = entityOptions.find((opt) => opt.value === ref);
+      return Array.isArray(match?.deptIds) ? match.deptIds : [];
+    };
+
+    const refreshDepartmentOptions = (tr, keepCurrent = true, autoPickFirst = false) => {
+      const deptSelect = tr.querySelector('[data-field="department_id"]');
+      if (!deptSelect) return;
+      const current = deptSelect.value;
+      const ref = tr.querySelector('[data-field="entity_ref"]')?.value || '';
+      const naOnly = isNaDepartmentEntityRef(ref);
+      deptSelect.disabled = false;
+      deptSelect.classList.remove('bg-slate-100', 'text-slate-500', 'cursor-not-allowed');
+      deptSelect.innerHTML = deptOptionHtml(getEntityDeptIds(ref), naOnly);
+      attachSelectEnhancer(deptSelect);
+      if (naOnly) {
+        deptSelect.value = naDepartmentValue;
+        if (typeof deptSelect._voucherEnhancerRefresh === 'function') deptSelect._voucherEnhancerRefresh();
+        deptSelect.disabled = true;
+        deptSelect.classList.add('bg-slate-100', 'text-slate-500', 'cursor-not-allowed');
+        return;
+      }
+      if (keepCurrent && current && Array.from(deptSelect.options).some((opt) => opt.value === current)) {
+        deptSelect.value = current;
+        if (typeof deptSelect._voucherEnhancerRefresh === 'function') deptSelect._voucherEnhancerRefresh();
+        return;
+      }
+      if (autoPickFirst && doesEntityRequireDepartment(ref)) {
+        const firstValid = Array.from(deptSelect.options).find((opt) => String(opt.value || '').trim() !== '');
+        if (firstValid) {
+          deptSelect.value = firstValid.value;
+          if (typeof deptSelect._voucherEnhancerRefresh === 'function') deptSelect._voucherEnhancerRefresh();
+        }
+      }
+    };
+
+    const recalcTotals = () => {
+      const rows = Array.from(body.querySelectorAll('tr'));
+      let receipt = 0;
+      let payment = 0;
+      rows.forEach((tr) => {
+        receipt += parseNum(tr.querySelector(`[data-field="${receiptKey}"]`)?.value || 0);
+        payment += parseNum(tr.querySelector(`[data-field="${paymentKey}"]`)?.value || 0);
+      });
+
+      totalReceiptEl.value = receipt.toFixed(2);
+      totalPaymentEl.value = payment.toFixed(2);
+      applyCashDirectionLock();
+    };
+
+    const getCashDirection = () => {
+      if (voucherTypeCode !== 'CASH_VOUCHER') return null;
+      const rows = Array.from(body.querySelectorAll('tr'));
+      let hasReceipt = false;
+      let hasPayment = false;
+      rows.forEach((tr) => {
+        const receiptVal = parseNum(tr.querySelector(`[data-field="${receiptKey}"]`)?.value || 0);
+        const paymentVal = parseNum(tr.querySelector(`[data-field="${paymentKey}"]`)?.value || 0);
+        if (receiptVal > 0) hasReceipt = true;
+        if (paymentVal > 0) hasPayment = true;
+      });
+      if (hasReceipt && hasPayment) return 'mixed';
+      if (hasReceipt) return 'receipt';
+      if (hasPayment) return 'payment';
+      return null;
+    };
+
+    const applyCashDirectionLock = () => {
+      if (voucherTypeCode !== 'CASH_VOUCHER') return;
+      const direction = getCashDirection();
+      const rows = Array.from(body.querySelectorAll('tr'));
+      rows.forEach((tr) => {
+        const receiptInput = tr.querySelector(`[data-field="${receiptKey}"]`);
+        const paymentInput = tr.querySelector(`[data-field="${paymentKey}"]`);
+        if (!receiptInput || !paymentInput) return;
+
+        receiptInput.classList.remove('bg-slate-50', 'cursor-not-allowed');
+        paymentInput.classList.remove('bg-slate-50', 'cursor-not-allowed');
+        receiptInput.disabled = false;
+        paymentInput.disabled = false;
+
+        if (direction === 'receipt') {
+          paymentInput.disabled = true;
+          paymentInput.classList.add('bg-slate-50', 'cursor-not-allowed');
+        } else if (direction === 'payment') {
+          receiptInput.disabled = true;
+          receiptInput.classList.add('bg-slate-50', 'cursor-not-allowed');
+        }
+      });
+    };
+
+    const onAmountInput = (tr, changedKey) => {
+      const receiptInput = tr?.querySelector(`[data-field="${receiptKey}"]`);
+      const paymentInput = tr?.querySelector(`[data-field="${paymentKey}"]`);
+      if (!receiptInput || !paymentInput) return;
+
+      const receiptVal = parseNum(receiptInput.value || 0);
+      const paymentVal = parseNum(paymentInput.value || 0);
+
+      if (changedKey === receiptKey && receiptVal > 0 && paymentVal > 0) {
+        paymentInput.value = '';
+      }
+      if (changedKey === paymentKey && paymentVal > 0 && receiptVal > 0) {
+        receiptInput.value = '';
+      }
+
+      if (voucherTypeCode === 'CASH_VOUCHER') {
+        const activeDirection = changedKey === receiptKey ? 'receipt' : 'payment';
+        const activeVal = activeDirection === 'receipt' ? parseNum(receiptInput.value || 0) : parseNum(paymentInput.value || 0);
+        if (activeVal > 0) {
+          const rows = Array.from(body.querySelectorAll('tr'));
+          rows.forEach((row) => {
+            if (row === tr) return;
+            const oppositeFieldKey = activeDirection === 'receipt' ? paymentKey : receiptKey;
+            const oppositeInput = row.querySelector(`[data-field="${oppositeFieldKey}"]`);
+            if (!oppositeInput) return;
+            if (parseNum(oppositeInput.value || 0) > 0) oppositeInput.value = '';
+          });
+        }
+      }
+      recalcTotals();
+    };
+
+    const onAmountEnter = (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      const currentRow = event.target.closest('tr');
+      const receiptInput = currentRow?.querySelector(`[data-field="${receiptKey}"]`);
+      const paymentInput = currentRow?.querySelector(`[data-field="${paymentKey}"]`);
+      const isReceiptField = event.target === receiptInput;
+      if (isReceiptField) {
+        const receiptVal = parseNum(receiptInput?.value || 0);
+        const paymentVal = parseNum(paymentInput?.value || 0);
+        if (receiptVal > 0 && paymentVal <= 0) {
+          const currentDept = String(currentRow?.querySelector('[data-field="department_id"]')?.value || '').trim();
+          const currentRef = String(currentRow?.querySelector('[data-field="entity_ref"]')?.value || '').trim();
+          if (!isNaDepartmentEntityRef(currentRef) && !currentDept) {
+            showError('<%= t("error_required_fields") %>: <%= t("department") %>');
+            currentRow?.querySelector('[data-field="department_id"]')?.focus();
+            return;
+          }
+          const rows = Array.from(body.querySelectorAll('tr'));
+          const isLast = rows.length && rows[rows.length - 1] === currentRow;
+          if (isLast) {
+            renderRow();
+          }
+          const nextRows = Array.from(body.querySelectorAll('tr'));
+          const idx = nextRows.indexOf(currentRow);
+          const targetRow = nextRows[idx + 1] || nextRows[idx];
+          focusRowFirstField(targetRow);
+          return;
+        }
+        if (paymentInput && !paymentInput.disabled) {
+          paymentInput.focus();
+          if (typeof paymentInput.select === 'function') paymentInput.select();
+        } else {
+          const rows = Array.from(body.querySelectorAll('tr'));
+          const idx = rows.indexOf(currentRow);
+          const targetRow = rows[idx + 1] || rows[idx];
+          focusRowFirstField(targetRow);
+        }
+        return;
+      }
+
+      const receiptVal = parseNum(receiptInput?.value || 0);
+      const paymentVal = parseNum(paymentInput?.value || 0);
+      if (receiptVal <= 0 && paymentVal <= 0) {
+        showError('<%= t("error_required_fields") %>: <%= t(receiptLabelKey) %>/<%= t(paymentLabelKey) %>');
+        if (receiptInput) {
+          receiptInput.focus();
+          if (typeof receiptInput.select === 'function') receiptInput.select();
+        }
+        return;
+      }
+
+      const currentDept = String(currentRow?.querySelector('[data-field="department_id"]')?.value || '').trim();
+      const currentRef = String(currentRow?.querySelector('[data-field="entity_ref"]')?.value || '').trim();
+      if (!isNaDepartmentEntityRef(currentRef) && !currentDept) {
+        showError('<%= t("error_required_fields") %>: <%= t("department") %>');
+        currentRow?.querySelector('[data-field="department_id"]')?.focus();
+        return;
+      }
+      const rows = Array.from(body.querySelectorAll('tr'));
+      const isLast = rows.length && rows[rows.length - 1] === currentRow;
+      if (isLast) {
+        renderRow();
+      }
+      const nextRows = Array.from(body.querySelectorAll('tr'));
+      const idx = nextRows.indexOf(currentRow);
+      const targetRow = nextRows[idx + 1] || nextRows[idx];
+      focusRowFirstField(targetRow);
+    };
+
+    const renderRow = (seed = null) => {
+      const tr = document.createElement('tr');
+      tr.className = 'border-t border-slate-100';
+      const directionVersion = Number(seed?.direction_version || 1);
+      const isDirectionV2 = directionVersion >= 2;
+      const lineReceipt = seed ? parseNum(isDirectionV2 ? (seed.credit || 0) : (seed.debit || 0)) : '';
+      const linePayment = seed ? parseNum(isDirectionV2 ? (seed.debit || 0) : (seed.credit || 0)) : '';
+
+      const seedRef = getEntityRefFromSeed(seed);
+      tr.innerHTML = `
+        <td class="px-1.5 py-1"><input class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="code" placeholder="<%= t('code') %>" readonly></td>
+        <td class="px-1.5 py-1"><select class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="entity_ref" data-searchable-select="true" data-searchable-variant="unified">${entityOptionHtml(seedRef)}</select></td>
+        <td class="px-1.5 py-1"><input class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="description" maxlength="500" value="${seed?.description || ''}"></td>
+        <td class="px-1.5 py-1"><select class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="department_id" data-searchable-select="true" data-searchable-variant="unified">${deptOptionHtml()}</select></td>
+        <td class="px-1.5 py-1"><input type="number" min="0" step="0.01" class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs" data-field="${receiptKey}" value="${lineReceipt}"></td>
+        <td class="px-1.5 py-1"><input type="number" min="0" step="0.01" class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs" data-field="${paymentKey}" value="${linePayment}"></td>
+        <td class="px-1.5 py-1 text-center align-middle">
+          <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-rose-50 p-2 text-rose-600 transition hover:border-rose-300 hover:text-rose-700" data-remove-row aria-label="<%= t('delete') %>" title="<%= t('delete') %>">
+            <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" aria-hidden="true">
+              <path d="M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+              <path d="M9 7V5h6v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+              <path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+              <path d="M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+            </svg>
+          </button>
+        </td>
+      `;
+
+      tr.addEventListener('click', () => {
+        body.querySelectorAll('tr').forEach((row) => row.classList.remove('bg-amber-50'));
+        tr.classList.add('bg-amber-50');
+        selectedRow = tr;
+      });
+
+      const entityRef = seedRef;
+      if (entityRef) {
+        tr.querySelector('[data-field="entity_ref"]').value = entityRef;
+      }
+      body.appendChild(tr);
+      attachSelectEnhancer(tr.querySelector('[data-field="entity_ref"]'));
+      attachSelectEnhancer(tr.querySelector('[data-field="department_id"]'));
+      refreshDepartmentOptions(tr, true, false);
+      if (seed?.department_id) {
+        const deptSelect = tr.querySelector('[data-field="department_id"]');
+        const deptValue = String(seed.department_id);
+        if (Array.from(deptSelect.options).some((opt) => opt.value === deptValue)) {
+          deptSelect.value = deptValue;
+          if (typeof deptSelect._voucherEnhancerRefresh === 'function') deptSelect._voucherEnhancerRefresh();
+        }
+      }
+      updateCodeByEntity(tr);
+
+      tr.querySelector('[data-field="entity_ref"]').addEventListener('change', () => {
+        updateCodeByEntity(tr);
+        refreshDepartmentOptions(tr, true, true);
+        recalcTotals();
+      });
+
+      tr.querySelectorAll('input,select').forEach((el) => {
+        if (el.matches(`[data-field="${receiptKey}"], [data-field="${paymentKey}"]`)) return;
+        el.addEventListener('input', recalcTotals);
+      });
+      tr.querySelector(`[data-field="${receiptKey}"]`)?.addEventListener('input', () => onAmountInput(tr, receiptKey));
+      tr.querySelector(`[data-field="${paymentKey}"]`)?.addEventListener('input', () => onAmountInput(tr, paymentKey));
+      tr.querySelector(`[data-field="${receiptKey}"]`)?.addEventListener('keydown', onAmountEnter);
+      tr.querySelector(`[data-field="${paymentKey}"]`)?.addEventListener('keydown', onAmountEnter);
+      tr.querySelector('[data-remove-row]').addEventListener('click', () => {
+        tr.remove();
+        if (selectedRow === tr) selectedRow = null;
+        recalcTotals();
+      });
+
+      recalcTotals();
+      return tr;
+    };
+
+    const loadVoucherByNo = (voucherNo) => {
+      const n = Number(voucherNo || 0);
+      if (!Number.isInteger(n) || n <= 0) return;
+      window.location.href = `${window.location.pathname}?voucher_no=${n}&view=1`;
+    };
+
+    form.querySelector('[data-load-voucher]')?.addEventListener('click', () => {
+      const input = form.querySelector('[data-voucher-no-input]');
+      loadVoucherByNo(input?.value);
+    });
+    form.querySelector('[data-voucher-no-input]')?.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      loadVoucherByNo(event.target?.value);
+    });
+    form.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      const target = event.target;
+      if (!target || !(target instanceof HTMLElement)) return;
+      if (target.matches('[data-voucher-no-input]')) return;
+      if (target.matches(`[data-field="${receiptKey}"], [data-field="${paymentKey}"]`)) return;
+      if (target.matches('textarea')) return;
+      if (target.closest('[data-enhanced-select-wrapper]')) return;
+      if (!target.matches('input, select')) return;
+      event.preventDefault();
+      if (target.closest('[data-searchable-wrapper]')) {
+        const searchableWrapper = target.closest('[data-searchable-wrapper]');
+        const linkedSelect = searchableWrapper?.querySelector('select');
+        const linkedValue = String(linkedSelect?.value || '').trim();
+        const dropdownMenu = searchableWrapper?.querySelector('div.z-50');
+        const isDropdownOpen = Boolean(dropdownMenu && !dropdownMenu.classList.contains('hidden'));
+        if (!linkedValue) {
+          if (!isDropdownOpen && typeof target.click === 'function') target.click();
+          return;
+        }
+        setTimeout(() => focusNextField(target), 0);
+        return;
+      }
+      if (target.matches('select')) {
+        const selectValue = String(target.value || '').trim();
+        if (!selectValue) return;
+      }
+      focusNextField(target);
+    });
+    form.querySelector('[data-header-account]')?.addEventListener('change', updateHeaderAccountCode);
+    form.querySelector('[data-header-account]')?.addEventListener('change', () => {
+      body.querySelectorAll('tr').forEach((tr) => {
+        const entitySelect = tr.querySelector('[data-field="entity_ref"]');
+        const current = entitySelect?.value || '';
+        if (!entitySelect) return;
+        entitySelect.innerHTML = entityOptionHtml(current);
+        attachSelectEnhancer(entitySelect);
+        if (current && Array.from(entitySelect.options).some((opt) => opt.value === current)) {
+          entitySelect.value = current;
+        } else {
+          entitySelect.value = '';
+          updateCodeByEntity(tr);
+        }
+      });
+    });
+
+    form.querySelector('[data-delete-voucher]')?.addEventListener('click', () => {
+      const deleteForm = document.querySelector('[data-delete-voucher-form]');
+      if (!deleteForm) return;
+      if (!window.confirm('<%= t("are_you_sure") %>')) return;
+      deleteForm.submit();
+    });
+
+    if (selectedVoucher?.lines?.length) {
+      selectedVoucher.lines.forEach((line) => renderRow(line));
+    } else {
+      renderRow();
+    }
+
+    form.addEventListener('submit', (event) => {
+      if (isDeletedVoucher) {
+        event.preventDefault();
+        showError('<%= t("voucher_deleted_read_only") %>');
+        return;
+      }
+      const selectedHeaderAccountId = Number(form.querySelector('[data-header-account]')?.value || 0);
+      if ((voucherTypeCode === 'CASH_VOUCHER' || voucherTypeCode === 'BANK_VOUCHER') && selectedHeaderAccountId <= 0) {
+        event.preventDefault();
+        showError('<%= t("error_required_fields") %>: <%= t(accountLabelKey) %>');
+        return;
+      }
+
+      const issues = [];
+      const rows = Array.from(body.querySelectorAll('tr')).map((tr, index) => {
+        const pick = (k) => String(tr.querySelector(`[data-field="${k}"]`)?.value || '').trim();
+        const [kind, id] = String(pick('entity_ref') || '').split(':');
+        const receiptVal = Number(pick(receiptKey) || 0);
+        const paymentVal = Number(pick(paymentKey) || 0);
+        const hasAmount = receiptVal > 0 || paymentVal > 0;
+        const hasAnyData = Boolean(pick('entity_ref') || pick('description') || pick('department_id') || hasAmount);
+
+        if (!hasAnyData) return null;
+
+        if (!pick('entity_ref')) {
+          issues.push(`Row ${index + 1}: <%= t('name') %> is required.`);
+        }
+        const deptRequired = doesEntityRequireDepartment(pick('entity_ref'));
+        if (deptRequired && !pick('department_id')) {
+          issues.push(`Row ${index + 1}: <%= t('department') %> is required.`);
+        }
+        if (kind === 'ACCOUNT' && selectedHeaderAccountId > 0 && Number(id || 0) === selectedHeaderAccountId) {
+          issues.push(`Row ${index + 1}: line account cannot be same as selected cash/bank account.`);
+        }
+        if (voucherTypeCode === 'CASH_VOUCHER' && kind === 'ACCOUNT') {
+          const refValue = `ACCOUNT:${Number(id || 0)}`;
+          const selectedEntity = entityOptions.find((opt) => opt.value === refValue);
+          if (String(selectedEntity?.postingClassCode || '') === 'cash') {
+            issues.push(`Row ${index + 1}: cash account is not allowed in cash voucher rows. Use Cash Transfer Voucher.`);
+          }
+        }
+        if (!hasAmount) {
+          issues.push(`Row ${index + 1}: <%= t(receiptLabelKey) %>/<%= t(paymentLabelKey) %> is required.`);
+        } else if (receiptVal > 0 && paymentVal > 0) {
+          issues.push(`Row ${index + 1}: enter only one side amount.`);
+        }
+
+        const row = {
+          description: pick('description'),
+          department_id: deptRequired ? pick('department_id') : null,
+        };
+        if (kind === 'ACCOUNT') row.account_id = id || '';
+        if (kind === 'PARTY') row.party_id = id || '';
+        if (kind === 'LABOUR') row.labour_id = id || '';
+        if (kind === 'EMPLOYEE') row.employee_id = id || '';
+        row[receiptKey] = pick(receiptKey);
+        row[paymentKey] = pick(paymentKey);
+        return row;
+      }).filter(Boolean);
+
+      if (!rows.length) {
+        event.preventDefault();
+        showError('<%= t("error_required_fields") %>');
+        return;
+      }
+      if (voucherTypeCode === 'CASH_VOUCHER') {
+        const totalReceipt = rows.reduce((sum, row) => sum + Number(row[receiptKey] || 0), 0);
+        const totalPayment = rows.reduce((sum, row) => sum + Number(row[paymentKey] || 0), 0);
+        if (totalReceipt > 0 && totalPayment > 0) {
+          issues.push(singleDirectionError || 'Cash voucher must be single-direction: use either receipt or payment');
+        }
+      }
+      if (issues.length) {
+        event.preventDefault();
+        showError(issues.join('\n'));
+        return;
+      }
+
+      jsonInput.value = JSON.stringify(rows);
+    });
+
+    updateHeaderAccountCode();
+    attachSelectEnhancer(form.querySelector('[data-header-account]'));
+  })();
+</script>

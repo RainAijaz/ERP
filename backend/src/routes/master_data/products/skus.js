@@ -252,7 +252,7 @@ router.get("/", requirePermission("SCREEN", "master_data.products.skus", "view")
   }
 });
 
-router.post("/", requirePermission("SCREEN", "master_data.products.skus", "navigate"), async (req, res) => {
+router.post("/", requirePermission("SCREEN", "master_data.products.skus", "create"), async (req, res) => {
   const values = { ...req.body };
   const itemType = req.query.item_type === "SFG" ? "SFG" : "FG";
   const viewQuery = `?item_type=${itemType}`;
@@ -524,7 +524,7 @@ router.post("/", requirePermission("SCREEN", "master_data.products.skus", "navig
   }
 });
 
-router.post("/bulk-update", requirePermission("SCREEN", "master_data.products.skus", "navigate"), async (req, res) => {
+router.post("/bulk-update", requirePermission("SCREEN", "master_data.products.skus", "edit"), async (req, res) => {
   const { variant_ids, new_rates } = req.body;
   const itemType = req.query.item_type === "SFG" ? "SFG" : "FG";
   const viewQuery = `?item_type=${itemType}`;
@@ -605,7 +605,7 @@ router.post("/bulk-update", requirePermission("SCREEN", "master_data.products.sk
   }
 });
 
-router.post("/:id", requirePermission("SCREEN", "master_data.products.skus", "navigate"), async (req, res, next) => {
+router.post("/:id", requirePermission("SCREEN", "master_data.products.skus", "edit"), async (req, res, next) => {
   const id = Number(req.params.id);
   if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
   const itemType = req.query.item_type === "SFG" ? "SFG" : "FG";

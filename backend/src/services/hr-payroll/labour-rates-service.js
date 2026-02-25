@@ -322,7 +322,20 @@ const applyBulkSkuRateUpsert = async ({
   rateType,
   status,
   rows,
+  debugLog,
 }) => {
+  const stage = async (name, fn) => {
+    const startedAt = Date.now();
+    if (typeof debugLog === "function") {
+      debugLog(`${name}:start`);
+    }
+    const result = await fn();
+    if (typeof debugLog === "function") {
+      debugLog(`${name}:done`, { durationMs: Date.now() - startedAt });
+    }
+    return result;
+  };
+
   const labourList = Array.isArray(labourIds)
     ? [...new Set(labourIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))]
     : [];
@@ -334,41 +347,39 @@ const applyBulkSkuRateUpsert = async ({
     return { created: 0, updated: 0 };
   }
 
-  await trx("erp.labour_rate_rules")
-    .where({
-      applies_to_all_labours: true,
-      dept_id: deptId,
-    })
-    .whereNull("labour_id")
-    .whereIn("sku_id", skuIds)
-    .del();
+  await stage("delete_all_labours_rules", async () => {
+    await trx("erp.labour_rate_rules")
+      .where({
+        applies_to_all_labours: true,
+        dept_id: deptId,
+      })
+      .whereNull("labour_id")
+      .whereIn("sku_id", skuIds)
+      .timeout(10000, { cancel: true })
+      .del();
+  });
 
-  const existing = await trx("erp.labour_rate_rules")
-    .select("id", "labour_id", "sku_id")
-    .where({
-      applies_to_all_labours: false,
-      dept_id: deptId,
-    })
-    .whereIn("labour_id", labourList)
-    .whereIn("sku_id", skuIds)
-    .orderBy("id", "desc");
+  const existing = await stage("select_existing_rules", async () =>
+    trx("erp.labour_rate_rules")
+      .select("id", "labour_id", "sku_id")
+      .where({
+        applies_to_all_labours: false,
+        dept_id: deptId,
+      })
+      .whereIn("labour_id", labourList)
+      .whereIn("sku_id", skuIds)
+      .orderBy("id", "desc")
+      .timeout(10000, { cancel: true }),
+  );
 
   const existingByLabourSku = new Map();
-  const duplicateIdsToDelete = [];
   existing.forEach((row) => {
     const key = `${Number(row.labour_id)}:${Number(row.sku_id)}`;
     if (!existingByLabourSku.has(key)) {
       existingByLabourSku.set(key, Number(row.id));
       return;
     }
-    duplicateIdsToDelete.push(Number(row.id));
   });
-
-  if (duplicateIdsToDelete.length) {
-    await trx("erp.labour_rate_rules")
-      .whereIn("id", duplicateIdsToDelete)
-      .del();
-  }
 
   let updated = 0;
   let created = 0;
@@ -380,6 +391,7 @@ const applyBulkSkuRateUpsert = async ({
       if (existingId) {
         await trx("erp.labour_rate_rules")
           .where({ id: existingId })
+          .timeout(10000, { cancel: true })
           .update({
             applies_to_all_labours: false,
             labour_id: labourId,
@@ -394,18 +406,20 @@ const applyBulkSkuRateUpsert = async ({
         continue;
       }
 
-      await trx("erp.labour_rate_rules").insert({
-        applies_to_all_labours: false,
-        labour_id: labourId,
-        dept_id: deptId,
-        apply_on: applyOn || APPLY_ON.SKU,
-        sku_id: row.skuId,
-        subgroup_id: (applyOn || APPLY_ON.SKU) === APPLY_ON.SUBGROUP ? subgroupId || null : null,
-        group_id: (applyOn || APPLY_ON.SKU) === APPLY_ON.GROUP ? groupId || null : null,
-        rate_type: rateType,
-        rate_value: row.rate,
-        status,
-      });
+      await trx("erp.labour_rate_rules")
+        .timeout(10000, { cancel: true })
+        .insert({
+          applies_to_all_labours: false,
+          labour_id: labourId,
+          dept_id: deptId,
+          apply_on: applyOn || APPLY_ON.SKU,
+          sku_id: row.skuId,
+          subgroup_id: (applyOn || APPLY_ON.SKU) === APPLY_ON.SUBGROUP ? subgroupId || null : null,
+          group_id: (applyOn || APPLY_ON.SKU) === APPLY_ON.GROUP ? groupId || null : null,
+          rate_type: rateType,
+          rate_value: row.rate,
+          status,
+        });
       created += 1;
     }
   }

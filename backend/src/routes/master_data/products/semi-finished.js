@@ -137,7 +137,7 @@ const normalizeUsageIds = (value) => {
   return [value];
 };
 
-router.post("/", requirePermission("SCREEN", "master_data.products.semi_finished", "navigate"), async (req, res) => {
+router.post("/", requirePermission("SCREEN", "master_data.products.semi_finished", "create"), async (req, res) => {
   const values = { ...req.body };
   const basePath = `${req.baseUrl}`;
   try {
@@ -247,7 +247,7 @@ router.post("/", requirePermission("SCREEN", "master_data.products.semi_finished
     });
   }
 });
-router.post("/:id", requirePermission("SCREEN", "master_data.products.semi_finished", "navigate"), async (req, res, next) => {
+router.post("/:id", requirePermission("SCREEN", "master_data.products.semi_finished", "edit"), async (req, res, next) => {
   const id = Number(req.params.id);
   const values = { ...req.body };
   const basePath = `${req.baseUrl}`;
@@ -352,7 +352,7 @@ router.post("/:id", requirePermission("SCREEN", "master_data.products.semi_finis
     });
   }
 });
-router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.semi_finished", "navigate"), async (req, res, next) => {
+router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.semi_finished", "delete"), async (req, res, next) => {
   const id = Number(req.params.id);
   if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
   const basePath = `${req.baseUrl}`;
@@ -402,7 +402,7 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.sem
   }
 });
 
-router.post("/:id/delete", requirePermission("SCREEN", "master_data.products.semi_finished", "navigate"), async (req, res, next) => {
+router.post("/:id/delete", requirePermission("SCREEN", "master_data.products.semi_finished", "hard_delete"), async (req, res, next) => {
   const id = Number(req.params.id);
   if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
   const basePath = `${req.baseUrl}`;

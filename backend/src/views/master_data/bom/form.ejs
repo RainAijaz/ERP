@@ -118,11 +118,11 @@
           </div>
           <div class="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
             <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"><%= t("created") || "Created" %></div>
-            <div class="mt-1 text-sm font-semibold text-slate-800"><%= header.created_at ? new Date(header.created_at).toISOString().slice(0, 10) : "-" %></div>
+            <div class="mt-1 text-sm font-semibold text-slate-800"><%= formatDateDisplay(header.created_at) %></div>
           </div>
           <div class="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
             <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"><%= t("approved") || "Approved" %></div>
-            <div class="mt-1 text-sm font-semibold text-slate-800"><%= header.approved_at ? new Date(header.approved_at).toISOString().slice(0, 10) : "-" %></div>
+            <div class="mt-1 text-sm font-semibold text-slate-800"><%= formatDateDisplay(header.approved_at) %></div>
           </div>
         </div>
       <% } %>

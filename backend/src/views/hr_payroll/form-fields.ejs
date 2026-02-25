@@ -1,5 +1,8 @@
+<%
+  const safeFieldErrors = typeof fieldErrors !== "undefined" && fieldErrors ? fieldErrors : {};
+%>
 <% page.fields.forEach(function(field) { %>
-  <% const fieldError = fieldErrors && fieldErrors[field.name] ? fieldErrors[field.name] : null; %>
+  <% const fieldError = safeFieldErrors[field.name] ? safeFieldErrors[field.name] : null; %>
   <% const showWhen = field.showWhen || null; %>
   <% const showWhenNot = field.showWhenNot || null; %>
   <% const showAttrs = [] ; %>
@@ -44,8 +47,8 @@
         name="<%= field.name %>"
         placeholder="<%= field.placeholder ? (t(field.placeholder) || field.placeholder) : "" %>"
         data-field="<%= field.name %>"
-        <%= field.step ? "step=\"" + field.step + "\"" : "" %>
-        <%= field.min ? "min=\"" + field.min + "\"" : "" %>
+        <%- (field.step !== undefined && field.step !== null && field.step !== "") ? ("step=\"" + field.step + "\"") : "" %>
+        <%- (field.min !== undefined && field.min !== null && field.min !== "") ? ("min=\"" + field.min + "\"") : "" %>
         <%= field.required ? "required data-required='true'" : "" %>
       />
       <% if (fieldError) { %>

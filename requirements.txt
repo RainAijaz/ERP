@@ -418,9 +418,8 @@ Buttons:
 
 5. PURCHASE
 1)	Activity
-•	Purchase Order 
-•	Purchase Invoice (option to select purchase by cash/loan – if cash purchase then which account paid the price selection)(reference the purchase order if any) (in each row-> raw material, unit, quantity, rate, total)
-•	Requirement for Purchase Order (require PO for invoices > a certain amount, for certain suppliers, for certain raw materials etc. )
+•	GRN  (voucher for raw material recieved but rate not confirmed yet – in header: VR No., Date, Select Supplier, Reference No. (optional), Description (optional) (in rows: raw material, color, unit, quantity)
+•	Purchase Invoice (option to select purchase by cash/loan – if cash purchase then which account paid the price selection)(reference the GRN if any) (in each row-> raw material, unit, quantity, rate, total)
 •	Purchase Return (date/VR No./ Book No./Reason/Select-Party)(Per-Row -> product, unit, quantity, rate, and amount)
 2)	Reports
 •	Supplier Balances Report

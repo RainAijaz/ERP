@@ -115,6 +115,7 @@ CREATE TABLE IF NOT EXISTS erp.voucher_line (
   qty               numeric(18,3) NOT NULL DEFAULT 0,
   rate              numeric(18,4) NOT NULL DEFAULT 0,
   amount            numeric(18,2) NOT NULL DEFAULT 0,
+  reference_no      varchar(120),
 
   -- Extra per-line metadata (batch, narration, etc.)
   meta              jsonb NOT NULL DEFAULT '{}'::jsonb,

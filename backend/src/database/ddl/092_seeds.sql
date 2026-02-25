@@ -337,6 +337,7 @@ VALUES
   ('REPORT','cash_voucher_register','Cash Voucher Register', 'Financial'),
   ('REPORT','bank_transactions','Bank Transactions Report', 'Financial'),
   ('REPORT','expense_analysis','Expense Analysis Report', 'Financial'),
+  ('REPORT','expense_trends','Expense Trends Report', 'Financial'),
   ('REPORT','production_overhead','Production Over-Head Cost Analysis', 'Financial'),
   ('REPORT','non_production_expense','Non-Production Expense Analysis', 'Financial'),
   ('REPORT','accrued_expenses','Accrued Expenses Report', 'Financial'),
@@ -420,6 +421,14 @@ ON CONFLICT (role_id, scope_id) DO UPDATE SET
 --   This requires UNIQUE (account_type, code) on erp.account_groups
 --   (or a composite primary key), otherwise ON CONFLICT will fail.
 -- =====================================================================
+
+INSERT INTO erp.account_posting_classes (code, name, is_system, is_active) VALUES
+('bank', 'Bank', true, true),
+('cash', 'Cash', true, true)
+ON CONFLICT (code) DO UPDATE SET
+  name = EXCLUDED.name,
+  is_system = EXCLUDED.is_system,
+  is_active = EXCLUDED.is_active;
 
 INSERT INTO erp.account_groups (account_type, code, name, is_contra) VALUES
 ('ASSET','cash_in_hand','Office Cash (Cash-in-Hand)',false),

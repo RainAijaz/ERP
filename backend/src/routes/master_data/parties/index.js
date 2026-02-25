@@ -182,7 +182,12 @@ if (!page.columns.some((column) => column.key === "created_at")) {
 
 const ACTIVE_OPTION_TABLES = new Set(["erp.party_groups", "erp.account_groups", "erp.product_groups", "erp.product_subgroups", "erp.cities", "erp.branches", "erp.departments", "erp.grades", "erp.packing_types", "erp.sizes", "erp.colors", "erp.uom"]);
 
-const hydratePage = async (pageConfig, locale) => {
+const getAllowedBranchIds = (req) => {
+  if (req?.user?.isAdmin) return [];
+  return Array.isArray(req?.branchScope) ? req.branchScope.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0) : [];
+};
+
+const hydratePage = async (pageConfig, locale, req = null) => {
   const fields = [];
   for (const field of pageConfig.fields) {
     if (!field.optionsQuery) {
@@ -198,6 +203,10 @@ const hydratePage = async (pageConfig, locale) => {
       query = query.where(field.optionsQuery.where);
     }
     const rows = await query.orderBy(field.optionsQuery.orderBy || field.optionsQuery.labelKey);
+    const allowedBranchSet =
+      field.optionsQuery.table === "erp.branches" && !req?.user?.isAdmin
+        ? new Set(getAllowedBranchIds(req))
+        : null;
     fields.push({
       ...field,
       options: rows.map((row) => {
@@ -208,7 +217,7 @@ const hydratePage = async (pageConfig, locale) => {
           label: labelUr || labelRaw,
           partyType: row.party_type || "",
         };
-      }),
+      }).filter((opt) => (allowedBranchSet ? allowedBranchSet.has(Number(opt.value)) : true)),
     });
   }
   return { ...pageConfig, fields };
@@ -331,7 +340,7 @@ const renderIndexError = async (req, res, values, error, modalMode, basePath) =>
 
 router.get("/", requirePermission("SCREEN", "master_data.parties", "view"), async (req, res, next) => {
   try {
-    const hydrated = await hydratePage(page, req.locale);
+    const hydrated = await hydratePage(page, req.locale, req);
     const flash = readFlash(req, res, req.baseUrl);
     const modalMode = flash ? flash.modalMode : "create";
     const modalOpen = flash ? ["create", "edit"].includes(modalMode) : false;
@@ -360,7 +369,7 @@ router.get("/", requirePermission("SCREEN", "master_data.parties", "view"), asyn
   }
 });
 
-router.post("/", requirePermission("SCREEN", "master_data.parties", "navigate"), async (req, res, next) => {
+router.post("/", requirePermission("SCREEN", "master_data.parties", "create"), async (req, res, next) => {
   debugParties("[parties:POST /] route hit", {
     user: req.user && { id: req.user.id, username: req.user.username, isAdmin: req.user.isAdmin },
     body: req.body,
@@ -381,6 +390,13 @@ router.post("/", requirePermission("SCREEN", "master_data.parties", "navigate"),
 
   try {
     const branchIds = Array.isArray(values.branch_ids) ? values.branch_ids : [];
+    if (!req.user?.isAdmin) {
+      const allowed = new Set(getAllowedBranchIds(req).map(String));
+      const invalid = branchIds.map(String).some((id) => !allowed.has(id));
+      if (invalid) {
+        return renderIndexError(req, res, values, res.locals.t("error_branch_out_of_scope"), "create", basePath);
+      }
+    }
     if (values.group_id) {
       const groupRow = await knex("erp.party_groups").select("party_type", "is_active").where({ id: values.group_id }).first();
       if (!groupRow || groupRow.is_active === false) {
@@ -478,7 +494,7 @@ router.post("/", requirePermission("SCREEN", "master_data.parties", "navigate"),
   }
 });
 
-router.post("/:id", requirePermission("SCREEN", "master_data.parties", "navigate"), async (req, res, next) => {
+router.post("/:id", requirePermission("SCREEN", "master_data.parties", "edit"), async (req, res, next) => {
   const id = Number(req.params.id);
   if (!id) {
     return next(new HttpError(404, res.locals.t("error_not_found")));
@@ -512,6 +528,13 @@ router.post("/:id", requirePermission("SCREEN", "master_data.parties", "navigate
       });
     }
     const branchIds = Array.isArray(values.branch_ids) ? values.branch_ids : [];
+    if (!req.user?.isAdmin) {
+      const allowed = new Set(getAllowedBranchIds(req).map(String));
+      const invalid = branchIds.map(String).some((id) => !allowed.has(id));
+      if (invalid) {
+        return renderIndexError(req, res, values, res.locals.t("error_branch_out_of_scope"), "edit", basePath);
+      }
+    }
     if (values.group_id) {
       const groupRow = await knex("erp.party_groups").select("party_type", "is_active").where({ id: values.group_id }).first();
       if (!groupRow || groupRow.is_active === false) {
@@ -616,7 +639,7 @@ router.post("/:id", requirePermission("SCREEN", "master_data.parties", "navigate
   }
 });
 
-router.post("/:id/toggle", requirePermission("SCREEN", "master_data.parties", "navigate"), async (req, res, next) => {
+router.post("/:id/toggle", requirePermission("SCREEN", "master_data.parties", "delete"), async (req, res, next) => {
   const id = Number(req.params.id);
   if (!id) {
     return next(new HttpError(404, res.locals.t("error_not_found")));
@@ -661,7 +684,7 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.parties", "n
   }
 });
 
-router.post("/:id/delete", requirePermission("SCREEN", "master_data.parties", "navigate"), async (req, res, next) => {
+router.post("/:id/delete", requirePermission("SCREEN", "master_data.parties", "hard_delete"), async (req, res, next) => {
   const id = Number(req.params.id);
   if (!id) {
     return next(new HttpError(404, res.locals.t("error_not_found")));

@@ -1206,10 +1206,10 @@ Object.entries(ROUTE_MAP).forEach(([type, path]) => {
   const scopeKey = BASIC_INFO_SCOPE_KEYS[type] || `master_data.basic_info.${type}`;
   router.get(path, requirePermission("SCREEN", scopeKey, "view"), listHandler(type));
   router.get(`${path}/new`, requirePermission("SCREEN", scopeKey, "create"), newHandler(type));
-  router.post(path, requirePermission("SCREEN", scopeKey, "navigate"), createHandler(type));
-  router.post(`${path}/:id`, requirePermission("SCREEN", scopeKey, "navigate"), updateHandler(type));
-  router.post(`${path}/:id/toggle`, requirePermission("SCREEN", scopeKey, "navigate"), toggleHandler(type));
-  router.post(`${path}/:id/delete`, requirePermission("SCREEN", scopeKey, "navigate"), deleteHandler(type));
+  router.post(path, requirePermission("SCREEN", scopeKey, "create"), createHandler(type));
+  router.post(`${path}/:id`, requirePermission("SCREEN", scopeKey, "edit"), updateHandler(type));
+  router.post(`${path}/:id/toggle`, requirePermission("SCREEN", scopeKey, "delete"), toggleHandler(type));
+  router.post(`${path}/:id/delete`, requirePermission("SCREEN", scopeKey, "hard_delete"), deleteHandler(type));
 });
 
 router.get("/groups/products/product-groups", (req, res) => {

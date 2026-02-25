@@ -11,6 +11,15 @@
 
 const { BASIC_INFO_ENTITY_TYPES } = require("./approval-entity-map");
 const { applyApprovedBomChange } = require("../services/bom/service");
+const {
+  applyBulkSkuRateUpsert: applyCommissionBulkSkuRateUpsert,
+  deriveValueTypeFromBasis,
+} = require("../services/hr-payroll/commission-rules-service");
+const {
+  applyBulkSkuRateUpsert: applyLabourBulkSkuRateUpsert,
+  resolveLabourIds,
+  ALL_LABOURS_VALUE,
+} = require("../services/hr-payroll/labour-rates-service");
 
 // Mapping of basic info entity types to their DB tables
 const BASIC_INFO_TABLES = {
@@ -44,6 +53,15 @@ const BRANCH_MAPS = {
 
 const ACCOUNT_TABLE = "erp.accounts";
 const PARTY_TABLE = "erp.parties";
+const EMPLOYEE_TABLE = "erp.employees";
+const LABOUR_TABLE = "erp.labours";
+const EMPLOYEE_BRANCH_TABLE = "erp.employee_branch";
+const LABOUR_BRANCH_TABLE = "erp.labour_branch";
+const LABOUR_DEPARTMENT_TABLE = "erp.labour_department";
+const EMPLOYEE_COMMISSION_TABLE = "erp.employee_commission_rules";
+const EMPLOYEE_ALLOWANCE_TABLE = "erp.employee_allowance_rules";
+const LABOUR_RATE_TABLE = "erp.labour_rate_rules";
+const COMMISSION_BASIS_FIXED_PER_UNIT = "FIXED_PER_UNIT";
 
 const stripMeta = (value = {}) => {
   const clone = { ...value };
@@ -77,6 +95,21 @@ const toBoolean = (value) => {
   if (typeof value === "number") return value === 1;
   const normalized = String(value || "").trim().toLowerCase();
   return normalized === "1" || normalized === "true" || normalized === "on" || normalized === "yes";
+};
+const toNullableInt = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
+const toMoneyOrNull = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Number(n.toFixed(2));
+};
+const normalizeStatus = (value, fallback = "active") => {
+  const raw = String(value || fallback).trim().toLowerCase();
+  return raw === "inactive" ? "inactive" : "active";
 };
 
 const toCode = (value) =>
@@ -649,6 +682,370 @@ const applyAccountPartyChange = async (trx, entityType, entityId, newValue, user
   return true;
 };
 
+const upsertBranchMap = async (trx, mapTable, keyColumn, entityId, branchIds = []) => {
+  const entity = Number(entityId || 0);
+  if (!Number.isInteger(entity) || entity <= 0) return;
+  const normalized = [...new Set(toArray(branchIds).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
+  await trx(mapTable).where({ [keyColumn]: entity }).del();
+  if (!normalized.length) return;
+  await trx(mapTable).insert(
+    normalized.map((branchId) => ({
+      [keyColumn]: entity,
+      branch_id: branchId,
+    })),
+  );
+};
+
+const upsertLabourDepartments = async (trx, labourId, deptIds = []) => {
+  const labour = Number(labourId || 0);
+  if (!Number.isInteger(labour) || labour <= 0) return;
+  const normalized = [...new Set(toArray(deptIds).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
+  await trx(LABOUR_DEPARTMENT_TABLE).where({ labour_id: labour }).del();
+  if (!normalized.length) return;
+  await trx(LABOUR_DEPARTMENT_TABLE).insert(
+    normalized.map((deptId) => ({
+      labour_id: labour,
+      dept_id: deptId,
+    })),
+  );
+};
+
+const inferHrTarget = ({ entityType, request, newValue, oldValue }) => {
+  const summary = String(request?.summary || "").toLowerCase();
+  const mode = String(newValue?.mode || "").toUpperCase();
+  const scopeKey = String(newValue?._scope_key || "").toLowerCase();
+  const keys = new Set([
+    ...Object.keys(newValue && typeof newValue === "object" ? newValue : {}),
+    ...Object.keys(oldValue && typeof oldValue === "object" ? oldValue : {}),
+  ]);
+
+  if (mode === "BULK_COMMISSION_SKU_UPSERT") return "bulk_commission";
+  if (mode === "BULK_LABOUR_RATE_SKU_UPSERT") return "bulk_labour_rate";
+  if (scopeKey === "hr_payroll.commissions") return "employee_commission_rule";
+  if (scopeKey === "hr_payroll.allowances") return "employee_allowance_rule";
+  if (scopeKey === "hr_payroll.labour_rates") return "labour_rate_rule";
+  if (scopeKey === "hr_payroll.employees") return "employee_master";
+  if (scopeKey === "hr_payroll.labours") return "labour_master";
+  if (keys.has("allowance_type") || keys.has("amount_type") || keys.has("frequency")) return "employee_allowance_rule";
+  if (keys.has("commission_basis") || keys.has("reverse_on_returns") || (keys.has("apply_on") && keys.has("value"))) return "employee_commission_rule";
+  if (keys.has("rate_type") || keys.has("rate_value") || keys.has("article_type")) return "labour_rate_rule";
+  if (keys.has("payroll_type") || keys.has("designation") || keys.has("department_id") || keys.has("basic_salary")) return "employee_master";
+  if (keys.has("production_category") || keys.has("dept_ids") || keys.has("dept_id")) return "labour_master";
+  if (summary.includes("commission")) return "employee_commission_rule";
+  if (summary.includes("allowance")) return "employee_allowance_rule";
+  if (summary.includes("labour rate")) return "labour_rate_rule";
+  if (summary.includes("employee")) return "employee_master";
+  if (summary.includes("labour")) return "labour_master";
+  return entityType === "EMPLOYEE" ? "employee_master" : "labour_master";
+};
+
+const applyEmployeeMasterApproval = async (trx, request) => {
+  const entityId = request?.entity_id;
+  const newValue = request?.new_value && typeof request.new_value === "object" ? request.new_value : null;
+  const action = newValue?._action || (!newValue ? "delete" : (entityId === "NEW" ? "create" : "update"));
+
+  if (action === "delete") {
+    const id = Number(entityId || 0);
+    if (!Number.isInteger(id) || id <= 0) return false;
+    await trx(EMPLOYEE_BRANCH_TABLE).where({ employee_id: id }).del();
+    await trx(EMPLOYEE_TABLE).where({ id }).del();
+    return true;
+  }
+
+  const payload = newValue || {};
+  const row = {
+    code: payload.code || null,
+    name: payload.name || null,
+    name_ur: payload.name_ur || null,
+    cnic: payload.cnic || null,
+    phone: payload.phone || null,
+    department_id: toNullableInt(payload.department_id),
+    designation: payload.designation || null,
+    payroll_type: payload.payroll_type || null,
+    basic_salary: toMoneyOrNull(payload.basic_salary),
+    status: normalizeStatus(payload.status, "active"),
+  };
+
+  if (action === "create") {
+    const [created] = await trx(EMPLOYEE_TABLE).insert(row).returning(["id"]);
+    const newId = created && typeof created === "object" ? created.id : created;
+    await upsertBranchMap(trx, EMPLOYEE_BRANCH_TABLE, "employee_id", newId, payload.branch_ids);
+    return { applied: true, entityId: String(newId) };
+  }
+
+  const id = Number(entityId || 0);
+  if (!Number.isInteger(id) || id <= 0) return false;
+
+  if (!newValue || Object.keys(newValue).length === 1 && Object.prototype.hasOwnProperty.call(newValue, "status")) {
+    await trx(EMPLOYEE_TABLE).where({ id }).update({ status: normalizeStatus(newValue?.status, "inactive") });
+    return true;
+  }
+
+  await trx(EMPLOYEE_TABLE).where({ id }).update(row);
+  if (Object.prototype.hasOwnProperty.call(payload, "branch_ids")) {
+    await upsertBranchMap(trx, EMPLOYEE_BRANCH_TABLE, "employee_id", id, payload.branch_ids);
+  }
+  return true;
+};
+
+const applyLabourMasterApproval = async (trx, request) => {
+  const entityId = request?.entity_id;
+  const newValue = request?.new_value && typeof request.new_value === "object" ? request.new_value : null;
+  const action = newValue?._action || (!newValue ? "delete" : (entityId === "NEW" ? "create" : "update"));
+
+  if (action === "delete") {
+    const id = Number(entityId || 0);
+    if (!Number.isInteger(id) || id <= 0) return false;
+    await trx(LABOUR_BRANCH_TABLE).where({ labour_id: id }).del();
+    await trx(LABOUR_DEPARTMENT_TABLE).where({ labour_id: id }).del();
+    await trx(LABOUR_TABLE).where({ id }).del();
+    return true;
+  }
+
+  const payload = newValue || {};
+  const deptIds = toArray(payload.dept_ids).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0);
+  const deptId = toNullableInt(payload.dept_id) || (deptIds.length ? deptIds[0] : null);
+  const row = {
+    code: payload.code || null,
+    name: payload.name || null,
+    name_ur: payload.name_ur || null,
+    cnic: payload.cnic || null,
+    phone: payload.phone || null,
+    dept_id: deptId,
+    status: normalizeStatus(payload.status, "active"),
+    production_category: payload.production_category || null,
+  };
+
+  if (action === "create") {
+    const [created] = await trx(LABOUR_TABLE).insert(row).returning(["id"]);
+    const newId = created && typeof created === "object" ? created.id : created;
+    await upsertBranchMap(trx, LABOUR_BRANCH_TABLE, "labour_id", newId, payload.branch_ids);
+    await upsertLabourDepartments(trx, newId, deptIds);
+    return { applied: true, entityId: String(newId) };
+  }
+
+  const id = Number(entityId || 0);
+  if (!Number.isInteger(id) || id <= 0) return false;
+
+  if (!newValue || (Object.keys(newValue).length === 1 && Object.prototype.hasOwnProperty.call(newValue, "status"))) {
+    await trx(LABOUR_TABLE).where({ id }).update({ status: normalizeStatus(newValue?.status, "inactive") });
+    return true;
+  }
+
+  await trx(LABOUR_TABLE).where({ id }).update(row);
+  if (Object.prototype.hasOwnProperty.call(payload, "branch_ids")) {
+    await upsertBranchMap(trx, LABOUR_BRANCH_TABLE, "labour_id", id, payload.branch_ids);
+  }
+  if (Object.prototype.hasOwnProperty.call(payload, "dept_ids")) {
+    await upsertLabourDepartments(trx, id, deptIds);
+  }
+  return true;
+};
+
+const applyEmployeeAllowanceApproval = async (trx, request) => {
+  const entityId = request?.entity_id;
+  const payload = request?.new_value && typeof request.new_value === "object" ? request.new_value : null;
+  const action = payload?._action || (!payload ? "delete" : (entityId === "NEW" ? "create" : "update"));
+
+  if (action === "delete") {
+    const id = Number(entityId || 0);
+    if (!Number.isInteger(id) || id <= 0) return false;
+    await trx(EMPLOYEE_ALLOWANCE_TABLE).where({ id }).del();
+    return true;
+  }
+
+  const row = {
+    employee_id: toNullableInt(payload.employee_id),
+    allowance_type: payload.allowance_type || null,
+    amount_type: payload.amount_type || null,
+    amount: toMoneyOrNull(payload.amount),
+    frequency: payload.frequency || null,
+    taxable: toBoolean(payload.taxable),
+    status: normalizeStatus(payload.status, "active"),
+  };
+
+  if (action === "create") {
+    const [created] = await trx(EMPLOYEE_ALLOWANCE_TABLE).insert(row).returning(["id"]);
+    const newId = created && typeof created === "object" ? created.id : created;
+    return { applied: true, entityId: String(newId) };
+  }
+
+  const id = Number(entityId || 0);
+  if (!Number.isInteger(id) || id <= 0) return false;
+  await trx(EMPLOYEE_ALLOWANCE_TABLE).where({ id }).update(row);
+  return true;
+};
+
+const applyEmployeeCommissionApproval = async (trx, request) => {
+  const entityId = request?.entity_id;
+  const payload = request?.new_value && typeof request.new_value === "object" ? request.new_value : null;
+  const action = payload?._action || (!payload ? "delete" : (entityId === "NEW" ? "create" : "update"));
+
+  if (action === "delete") {
+    const id = Number(entityId || 0);
+    if (!Number.isInteger(id) || id <= 0) return false;
+    await trx(EMPLOYEE_COMMISSION_TABLE).where({ id }).del();
+    return true;
+  }
+
+  const basis = COMMISSION_BASIS_FIXED_PER_UNIT;
+  const row = {
+    employee_id: toNullableInt(payload.employee_id),
+    apply_on: payload.apply_on || null,
+    sku_id: toNullableInt(payload.sku_id),
+    subgroup_id: toNullableInt(payload.subgroup_id),
+    group_id: toNullableInt(payload.group_id),
+    commission_basis: basis,
+    value_type: deriveValueTypeFromBasis(basis),
+    value: toMoneyOrNull(payload.value),
+    reverse_on_returns: toBoolean(payload.reverse_on_returns),
+    status: normalizeStatus(payload.status, "active"),
+  };
+
+  if (action === "create") {
+    const [created] = await trx(EMPLOYEE_COMMISSION_TABLE).insert(row).returning(["id"]);
+    const newId = created && typeof created === "object" ? created.id : created;
+    return { applied: true, entityId: String(newId) };
+  }
+
+  const id = Number(entityId || 0);
+  if (!Number.isInteger(id) || id <= 0) return false;
+  await trx(EMPLOYEE_COMMISSION_TABLE).where({ id }).update(row);
+  return true;
+};
+
+const applyLabourRateApproval = async (trx, request) => {
+  const entityId = request?.entity_id;
+  const payload = request?.new_value && typeof request.new_value === "object" ? request.new_value : null;
+  const action = payload?._action || (!payload ? "delete" : (entityId === "NEW" ? "create" : "update"));
+
+  if (action === "delete") {
+    const id = Number(entityId || 0);
+    if (!Number.isInteger(id) || id <= 0) return false;
+    await trx(LABOUR_RATE_TABLE).where({ id }).del();
+    return true;
+  }
+
+  const applyOn = String(payload.apply_on || "SKU").trim().toUpperCase();
+  const row = {
+    applies_to_all_labours: false,
+    labour_id: toNullableInt(payload.labour_id),
+    dept_id: toNullableInt(payload.dept_id),
+    apply_on: applyOn,
+    sku_id: toNullableInt(payload.sku_id),
+    subgroup_id: applyOn === "SUBGROUP" ? toNullableInt(payload.subgroup_id) : null,
+    group_id: applyOn === "GROUP" ? toNullableInt(payload.group_id) : null,
+    rate_type: payload.rate_type || null,
+    rate_value: toMoneyOrNull(payload.rate_value),
+    status: normalizeStatus(payload.status, "active"),
+    target_item_type: payload.article_type || payload.target_item_type || null,
+  };
+
+  if (action === "create") {
+    const [created] = await trx(LABOUR_RATE_TABLE).insert(row).returning(["id"]);
+    const newId = created && typeof created === "object" ? created.id : created;
+    return { applied: true, entityId: String(newId) };
+  }
+
+  const id = Number(entityId || 0);
+  if (!Number.isInteger(id) || id <= 0) return false;
+  await trx(LABOUR_RATE_TABLE).where({ id }).update(row);
+  return true;
+};
+
+const applyBulkCommissionApproval = async (trx, request) => {
+  const payload = request?.new_value && typeof request.new_value === "object" ? request.new_value : {};
+  const employeeId = toNullableInt(payload.employee_id) || toNullableInt(request?.entity_id);
+  if (!employeeId) return false;
+  const status = normalizeStatus(payload.status, "active");
+  const reverseOnReturns = toBoolean(payload.reverse_on_returns);
+  const valueType = deriveValueTypeFromBasis(COMMISSION_BASIS_FIXED_PER_UNIT);
+  const rows = toArray(payload.rows)
+    .map((row) => {
+      const data = row && typeof row === "object" ? row : {};
+      const skuId = toNullableInt(data.sku_id || data.skuId);
+      const rate = toMoneyOrNull(Object.prototype.hasOwnProperty.call(data, "new_rate") ? data.new_rate : data.rate);
+      if (!skuId || rate === null) return null;
+      return { skuId, rate };
+    })
+    .filter(Boolean);
+  if (!rows.length) return false;
+
+  await applyCommissionBulkSkuRateUpsert({
+    trx,
+    employeeId,
+    commissionBasis: COMMISSION_BASIS_FIXED_PER_UNIT,
+    valueType,
+    reverseOnReturns,
+    status,
+    rows,
+  });
+  return { applied: true, entityId: String(employeeId) };
+};
+
+const applyBulkLabourRateApproval = async (trx, request) => {
+  const payload = request?.new_value && typeof request.new_value === "object" ? request.new_value : {};
+  const deptId = toNullableInt(payload.dept_id);
+  if (!deptId) return false;
+  const labourRaw = String(payload.labour_id || request?.entity_id || "").trim();
+  const labourSelection =
+    labourRaw.toUpperCase() === ALL_LABOURS_VALUE
+      ? { all: true, labourId: null, raw: ALL_LABOURS_VALUE }
+      : { all: false, labourId: toNullableInt(labourRaw), raw: labourRaw };
+  const labourIds = await resolveLabourIds({
+    db: trx,
+    deptId,
+    labourSelection,
+    t: (key) => key,
+  });
+  if (!Array.isArray(labourIds) || !labourIds.length) return false;
+
+  const applyOn = String(payload.apply_on || "SKU").trim().toUpperCase();
+  const subgroupId = applyOn === "SUBGROUP" ? toNullableInt(payload.subgroup_id) : null;
+  const groupId = applyOn === "GROUP" ? toNullableInt(payload.group_id) : null;
+  const rateType = String(payload.rate_type || "PER_DOZEN").trim().toUpperCase();
+  const status = normalizeStatus(payload.status, "active");
+  const rows = toArray(payload.rows)
+    .map((row) => {
+      const data = row && typeof row === "object" ? row : {};
+      const skuId = toNullableInt(data.sku_id || data.skuId);
+      const rate = toMoneyOrNull(Object.prototype.hasOwnProperty.call(data, "new_rate") ? data.new_rate : data.rate);
+      if (!skuId || rate === null) return null;
+      return { skuId, rate };
+    })
+    .filter(Boolean);
+  if (!rows.length) return false;
+
+  await applyLabourBulkSkuRateUpsert({
+    trx,
+    labourIds,
+    deptId,
+    applyOn,
+    subgroupId,
+    groupId,
+    rateType,
+    status,
+    rows,
+  });
+  return { applied: true, entityId: String(labourIds[0]) };
+};
+
+const applyHrApprovalChange = async (trx, request) => {
+  const entityType = request?.entity_type;
+  const newValue = request?.new_value && typeof request.new_value === "object" ? request.new_value : null;
+  const oldValue = request?.old_value && typeof request.old_value === "object" ? request.old_value : null;
+  const target = inferHrTarget({ entityType, request, newValue, oldValue });
+
+  if (target === "bulk_commission") return applyBulkCommissionApproval(trx, request);
+  if (target === "bulk_labour_rate") return applyBulkLabourRateApproval(trx, request);
+  if (target === "employee_allowance_rule") return applyEmployeeAllowanceApproval(trx, request);
+  if (target === "employee_commission_rule") return applyEmployeeCommissionApproval(trx, request);
+  if (target === "labour_rate_rule") return applyLabourRateApproval(trx, request);
+  if (target === "employee_master") return applyEmployeeMasterApproval(trx, request);
+  if (target === "labour_master") return applyLabourMasterApproval(trx, request);
+  return false;
+};
+
 const applyMasterDataChange = async (trx, request, userId) => {
   const { entity_type: entityType, entity_id: entityId, new_value: newValue } = request;
   if (BASIC_INFO_TABLES[entityType]) {
@@ -665,6 +1062,9 @@ const applyMasterDataChange = async (trx, request, userId) => {
   }
   if (entityType === "SKU") {
     return applySkuChange(trx, request, userId);
+  }
+  if (entityType === "EMPLOYEE" || entityType === "LABOUR") {
+    return applyHrApprovalChange(trx, request);
   }
   return false;
 };

@@ -79,7 +79,7 @@ const renderError = async (req, res, error, modalMode) => {
   });
 };
 
-router.post("/", requirePermission("SCREEN", "master_data.basic_info.uom_conversions", "navigate"), async (req, res, next) => {
+router.post("/", requirePermission("SCREEN", "master_data.basic_info.uom_conversions", "create"), async (req, res, next) => {
   const payload = normalizePayload(req.body || {});
   if (!payload.from_uom_id || !payload.to_uom_id || payload.factor <= 0) {
     return renderError(req, res, res.locals.t("error_required_fields"), "create");
@@ -111,7 +111,7 @@ router.post("/", requirePermission("SCREEN", "master_data.basic_info.uom_convers
   }
 });
 
-router.post("/:id", requirePermission("SCREEN", "master_data.basic_info.uom_conversions", "navigate"), async (req, res, next) => {
+router.post("/:id", requirePermission("SCREEN", "master_data.basic_info.uom_conversions", "edit"), async (req, res, next) => {
   const id = Number(req.params.id);
   if (!id) {
     return next(new HttpError(404, res.locals.t("error_not_found")));

@@ -9,7 +9,7 @@ const APPLY_ON = {
 
 const PRECEDENCE = [APPLY_ON.SKU, APPLY_ON.SUBGROUP, APPLY_ON.GROUP, APPLY_ON.ALL];
 const ALLOWED_SCOPE_FOR_BULK = new Set([APPLY_ON.SUBGROUP, APPLY_ON.GROUP]);
-const ALLOWED_BASIS = new Set(["NET_SALES_PERCENT", "GROSS_MARGIN_PERCENT", "FIXED_PER_UNIT", "FIXED_PER_INVOICE"]);
+const COMMISSION_BASIS_FIXED_PER_UNIT = "FIXED_PER_UNIT";
 
 const deriveValueTypeFromBasis = (commissionBasis) => {
   if (commissionBasis === "NET_SALES_PERCENT" || commissionBasis === "GROSS_MARGIN_PERCENT") return "PERCENT";
@@ -47,10 +47,7 @@ const normalizeBulkInput = ({ payload, t }) => {
     throw new Error(t("error_group_subgroup_only_for_bulk_commission") || "Only Product Group or Product Sub-Group can be used for bulk commission update.");
   }
 
-  const commissionBasis = String(payload.commission_basis || "").trim().toUpperCase();
-  if (!ALLOWED_BASIS.has(commissionBasis)) {
-    throw new Error(t("error_invalid_commission_basis") || "Invalid commission basis selected.");
-  }
+  const commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT;
 
   const subgroupId = applyOn === APPLY_ON.SUBGROUP ? toPositiveIntOrNull(payload.subgroup_id) : null;
   const groupId = applyOn === APPLY_ON.GROUP ? toPositiveIntOrNull(payload.group_id) : null;
@@ -122,7 +119,7 @@ const fetchTargetSkus = async ({ db = knex, applyOn, subgroupId, groupId }) => {
   return query;
 };
 
-const fetchExistingRules = async ({ db = knex, employeeId, commissionBasis }) => {
+const fetchExistingRules = async ({ db = knex, employeeId, commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT }) => {
   const employee = Number(employeeId || 0);
   if (!Number.isInteger(employee) || employee <= 0) return [];
 
@@ -168,7 +165,7 @@ const buildBulkPreviewRows = async ({
   applyOn,
   subgroupId = null,
   groupId = null,
-  commissionBasis,
+  commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT,
   baseRate,
 }) => {
   const targetSkus = await fetchTargetSkus({ db, applyOn, subgroupId, groupId });
@@ -199,7 +196,7 @@ const buildBulkPreviewRows = async ({
 const applyBulkSkuRateUpsert = async ({
   trx,
   employeeId,
-  commissionBasis,
+  commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT,
   valueType,
   reverseOnReturns,
   status,
@@ -211,6 +208,8 @@ const applyBulkSkuRateUpsert = async ({
     .where({
       employee_id: employeeId,
       apply_on: APPLY_ON.SKU,
+      commission_basis: commissionBasis,
+      value_type: valueType,
     })
     .whereIn("sku_id", skuIds)
     .orderBy("id", "desc");

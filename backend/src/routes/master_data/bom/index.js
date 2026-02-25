@@ -247,10 +247,10 @@ const handleSaveDraft = async (req, res, next, bomId = null) => {
   }
 };
 
-router.post("/save-draft", requirePermission("SCREEN", BOM_SCOPE, "navigate"), async (req, res, next) => handleSaveDraft(req, res, next, null));
-router.post("/:id/save-draft", requirePermission("SCREEN", BOM_SCOPE, "navigate"), async (req, res, next) => handleSaveDraft(req, res, next, Number(req.params.id)));
+router.post("/save-draft", requirePermission("SCREEN", BOM_SCOPE, "create"), async (req, res, next) => handleSaveDraft(req, res, next, null));
+router.post("/:id/save-draft", requirePermission("SCREEN", BOM_SCOPE, "edit"), async (req, res, next) => handleSaveDraft(req, res, next, Number(req.params.id)));
 
-router.post("/:id/send-for-approval", requirePermission("SCREEN", BOM_SCOPE, "navigate"), async (req, res, next) => {
+router.post("/:id/send-for-approval", requirePermission("SCREEN", BOM_SCOPE, "approve"), async (req, res, next) => {
   const bomId = Number(req.params.id);
   if (!bomId) return res.redirect(req.baseUrl);
   try {
@@ -318,7 +318,7 @@ router.post("/:id/send-for-approval", requirePermission("SCREEN", BOM_SCOPE, "na
   }
 });
 
-router.post("/:id/create-new-version", requirePermission("SCREEN", BOM_SCOPE, "navigate"), async (req, res, next) => {
+router.post("/:id/create-new-version", requirePermission("SCREEN", BOM_SCOPE, "create"), async (req, res, next) => {
   const sourceId = Number(req.params.id);
   if (!sourceId) return res.redirect(req.baseUrl);
   try {

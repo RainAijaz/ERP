@@ -23,9 +23,6 @@
   const branchMode = typeof filters !== "undefined" && filters && typeof filters.branch_mode !== "undefined" ? filters.branch_mode : "include";
   const tertiaryMode = typeof filters !== "undefined" && filters && typeof filters.tertiary_mode !== "undefined" ? filters.tertiary_mode : "include";
   const showBranchFilter = !(page && page.hideBranchFilter === true);
-  const selectedApplyOn = typeof filters !== "undefined" && filters && typeof filters.apply_on !== "undefined"
-    ? (Array.isArray(filters.apply_on) ? (filters.apply_on.length ? filters.apply_on : [""]) : [filters.apply_on])
-    : [""];
   const selectedSubgroup = typeof filters !== "undefined" && filters && typeof filters.subgroup_id !== "undefined"
     ? (Array.isArray(filters.subgroup_id) ? (filters.subgroup_id.length ? filters.subgroup_id : [""]) : [filters.subgroup_id])
     : [""];
@@ -35,7 +32,6 @@
   const selectedArticleType = typeof filters !== "undefined" && filters && typeof filters.article_type !== "undefined"
     ? (Array.isArray(filters.article_type) ? (filters.article_type.length ? filters.article_type : [""]) : [filters.article_type])
     : [""];
-  const applyOnMode = typeof filters !== "undefined" && filters && typeof filters.apply_on_mode !== "undefined" ? filters.apply_on_mode : "include";
   const subgroupMode = typeof filters !== "undefined" && filters && typeof filters.subgroup_mode !== "undefined" ? filters.subgroup_mode : "include";
   const groupMode = typeof filters !== "undefined" && filters && typeof filters.group_mode !== "undefined" ? filters.group_mode : "include";
   const articleTypeMode = typeof filters !== "undefined" && filters && typeof filters.article_type_mode !== "undefined" ? filters.article_type_mode : "include";
@@ -135,30 +131,6 @@
 
 <% if (page && page.scopeKey === "hr_payroll.labour_rates") { %>
   <div class="space-y-4">
-    <div class="space-y-2">
-      <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= t("apply_on") %></span>
-      <div class="flex flex-col gap-2" data-filter-list="apply-on">
-        <% selectedApplyOn.forEach((value, idx) => { %>
-          <div class="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
-            <select name="apply_on_mode" class="w-20 bg-transparent text-[10px] font-semibold text-slate-500 focus:outline-none cursor-pointer" data-filter-apply-on-mode data-filter-ignore="true" data-searchable-skip="true">
-              <option value="include" <%= applyOnMode === "include" ? "selected" : "" %>><%= t("include") %></option>
-              <option value="exclude" <%= applyOnMode === "exclude" ? "selected" : "" %>><%= t("exclude") %></option>
-            </select>
-            <select name="apply_on" class="flex-1 min-w-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer" data-filter-apply-on data-searchable-skip="true">
-              <option value=""><%= t("all") %></option>
-              <option value="SKU" <%= String(value).toUpperCase() === "SKU" ? "selected" : "" %>><%= t("apply_on_sku") %></option>
-              <option value="SUBGROUP" <%= String(value).toUpperCase() === "SUBGROUP" ? "selected" : "" %>><%= t("apply_on_subgroup") %></option>
-              <option value="GROUP" <%= String(value).toUpperCase() === "GROUP" ? "selected" : "" %>><%= t("apply_on_group") %></option>
-            </select>
-            <% if (idx === 0) { %>
-              <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-add="apply-on">+</button>
-            <% } else { %>
-              <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-remove="apply-on">x</button>
-            <% } %>
-          </div>
-        <% }) %>
-      </div>
-    </div>
     <div class="space-y-2">
       <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= t("product_subgroups") %></span>
       <div class="flex flex-col gap-2" data-filter-list="subgroup">

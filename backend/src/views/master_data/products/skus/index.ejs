@@ -124,7 +124,7 @@
                 <tbody class="divide-y divide-slate-50 bg-white">
                   <% variants.forEach((row, idx) => { %>
                     <% const searchParts = isFinishedView ? [row.id, row.size_name, row.grade_name, row.color_name, row.packing_name, row.sku_code, row.sale_rate] : [row.id, row.size_name, row.color_name, row.sku_code]; %>
-                    <tr class="hover:bg-slate-50/50 transition" data-row data-active="<%= row.is_active ? 'true' : 'false' %>" data-search="<%= searchParts.join(' ').toLowerCase() %>" data-item-type="<%= isFinishedView ? 'FG' : 'SFG' %>" data-subgroup-id="<%= row.subgroup_id || '' %>" data-created-by="<%= row.created_by_name || '' %>" data-created-at="<%= row.created_at || '' %>">
+                    <tr class="hover:bg-slate-50/50 transition" data-row data-active="<%= row.is_active ? 'true' : 'false' %>" data-search="<%= searchParts.join(' ').toLowerCase() %>" data-item-type="<%= isFinishedView ? 'FG' : 'SFG' %>" data-subgroup-id="<%= row.subgroup_id || '' %>" data-created-by="<%= row.created_by_name || '' %>" data-created-at="<%= row.created_at ? String(row.created_at).slice(0, 10) : '' %>">
                       <td class="px-6 py-3 text-slate-400 text-xs"><%= row.id %></td>
                       <td class="px-6 py-3 font-medium text-slate-700"><%= locale === "ur" ? (row.size_name_ur || row.size_name) : row.size_name %></td>
                       <% if (isFinishedView) { %>
@@ -325,7 +325,7 @@
                 <div class="flex-1 text-xs font-semibold text-slate-600">${label}</div>
                 <input type="hidden" name="combo_keys" value="${key}" />
                 <div class="flex w-full items-center gap-2 sm:w-auto">
-                  <input class="w-full sm:w-32 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:outline-none" type="number" min="0" step="0.01" name="combo_rates" placeholder="Pair Sale Rate" required />
+                  <input class="w-full sm:w-32 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:outline-none" type="number" min="0" step="0.01" name="combo_rates" placeholder="<%= t('pair_rate') %>" required />
                   <button type="button" class="ml-1 rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-500" onclick="this.closest('.group').remove()"><svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
                 </div>`;
               rateList.appendChild(row);
@@ -380,14 +380,14 @@
           
           createContainer.querySelectorAll("[required]").forEach(el => el.disabled = true);
 
-          editList.innerHTML = '<div class="text-center p-4 text-slate-400">Loading...</div>';
+          editList.innerHTML = '<div class="text-center p-4 text-slate-400"><%= t("loading") %>...</div>';
           try {
              const res = await fetch(`<%= basePath %>/item-variants/${itemId}`);
              const variants = await res.json();
              editList.innerHTML = "";
              
              if(variants.length === 0) {
-                 editList.innerHTML = '<div class="text-center p-4 text-slate-400">No variants found.</div>';
+                 editList.innerHTML = '<div class="text-center p-4 text-slate-400"><%= t("no_records_found") %></div>';
                  return;
              }
 
@@ -402,14 +402,14 @@
                     </div>
                     <input type="hidden" name="variant_ids" value="${v.id}" />
                     <input class="w-32 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-right font-bold text-slate-700 focus:outline-none focus:border-indigo-500" 
-                           type="number" min="0" step="0.01" name="new_rates" value="${v.sale_rate}" data-original-rate="${v.sale_rate}" placeholder="Rate" required />
+                           type="number" min="0" step="0.01" name="new_rates" value="${v.sale_rate}" data-original-rate="${v.sale_rate}" placeholder="<%= t('rate') %>" required />
                  `;
                  editList.appendChild(row);
              });
 
           } catch(err) {
              console.error(err);
-             editList.innerHTML = '<div class="text-rose-500 p-4">Error loading data. Check console.</div>';
+             editList.innerHTML = '<div class="text-rose-500 p-4"><%= t("load_failed") %></div>';
           }
        });
     });

@@ -23,10 +23,18 @@ const normalizeLines = (lines = []) =>
     meta: line.meta || {},
   }));
 
+const getNextVoucherNoTx = async (trx, branchId, voucherTypeCode) => {
+  const latest = await trx("erp.voucher_header")
+    .where({ branch_id: branchId, voucher_type_code: voucherTypeCode })
+    .max({ value: "voucher_no" })
+    .first();
+  return Number(latest?.value || 0) + 1;
+};
+
 router.post("/", async (req, res, next) => {
   const { voucher_type_code, voucher_no, voucher_date, book_no, remarks } = req.body || {};
 
-  if (!voucher_type_code || !voucher_no || !voucher_date) {
+  if (!voucher_type_code || !voucher_date) {
     return next(new HttpError(400, "Missing required voucher fields"));
   }
 
@@ -48,6 +56,8 @@ router.post("/", async (req, res, next) => {
     const status = requiresApproval ? "PENDING" : "APPROVED";
 
     const result = await knex.transaction(async (trx) => {
+      const nextVoucherNo = await getNextVoucherNoTx(trx, req.branchId, voucher_type_code);
+
       const preparedSales = await prepareSalesVoucherData({
         trx,
         voucherTypeCode: voucher_type_code,
@@ -59,7 +69,7 @@ router.post("/", async (req, res, next) => {
       const [header] = await trx("erp.voucher_header")
         .insert({
           voucher_type_code,
-          voucher_no,
+          voucher_no: nextVoucherNo,
           branch_id: req.branchId,
           voucher_date,
           book_no: book_no || null,
@@ -130,7 +140,10 @@ router.post(
     }
 
     try {
-      const voucher = await knex("erp.voucher_header").select("id", "voucher_type_code", "status", "created_by", "branch_id").where({ id: voucherId }).first();
+      const voucher = await knex("erp.voucher_header")
+        .select("id", "voucher_type_code", "status", "created_by", "branch_id")
+        .where({ id: voucherId, branch_id: req.branchId })
+        .first();
 
       if (!voucher) {
         return next(new HttpError(404, "Voucher not found"));

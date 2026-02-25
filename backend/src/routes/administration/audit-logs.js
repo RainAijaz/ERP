@@ -70,6 +70,7 @@ router.get("/", requirePermission("SCREEN", "administration.audit_logs", "view")
         "al.created_at",
         "al.entity_type",
         "al.entity_id",
+        "al.voucher_type_code",
         "al.action",
         canViewDetails ? "al.context_json" : knex.raw("NULL::jsonb as context_json"),
         "u.username as user_name",

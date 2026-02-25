@@ -126,7 +126,7 @@
                     <% } else if (column.key === "branch_names") { %>
                       <%= row[column.key] ? row[column.key] : t("none") %>
                     <% } else if (column.key === "created_at") { %>
-                      <%= row[column.key] ? new Date(row[column.key]).toISOString().slice(0, 10) : "" %>
+                      <%= formatDateDisplay(row[column.key], "") %>
                     <% } else { %>
                       <%= row[column.key] %>
                     <% } %>

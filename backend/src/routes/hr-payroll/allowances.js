@@ -1,6 +1,6 @@
 const express = require("express");
 const knex = require("../../db/knex");
-const { createHrMasterRouter } = require("./master-router");
+const { createHrMasterRouter, hydratePage } = require("./master-router");
 const { toMoney, hasTwoDecimalsOrLess } = require("./validation");
 
 const page = {
@@ -137,5 +137,10 @@ const page = {
 
 const router = express.Router();
 router.use("/", createHrMasterRouter(page));
+
+router.preview = {
+  page,
+  hydratePage,
+};
 
 module.exports = router;

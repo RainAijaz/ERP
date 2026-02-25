@@ -255,24 +255,31 @@
         .map((el) => (el.value || "").trim())
         .filter(Boolean);
 
+    const formatDisplayDate = (value) => {
+      const text = String(value || "").trim();
+      if (!text) return "-";
+      const ymd = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (ymd) return `${ymd[3]}-${ymd[2]}-${ymd[1]}`;
+      const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})[T\s].*$/);
+      if (iso) return `${iso[3]}-${iso[2]}-${iso[1]}`;
+      const dt = new Date(text);
+      if (Number.isNaN(dt.getTime())) return text;
+      const dd = String(dt.getDate()).padStart(2, "0");
+      const mm = String(dt.getMonth() + 1).padStart(2, "0");
+      const yyyy = String(dt.getFullYear());
+      return `${dd}-${mm}-${yyyy}`;
+    };
+
     const updateFilterCount = () => {
       if (!filterCountBadge) return;
       const createdByActive = filterCreatedBy && (filterCreatedBy.value || "").trim() ? 1 : 0;
       const subgroupActive = filterSubgroup && (filterSubgroup.value || "").trim() ? 1 : 0;
       const createdAtActive = (filterCreatedAtStart && filterCreatedAtStart.value) || (filterCreatedAtEnd && filterCreatedAtEnd.value) ? 1 : 0;
       const activeFilters =
-        [
-          ...getFilterValues("[data-filter-account-type]"),
-          ...getFilterValues("[data-filter-account-group]"),
-          ...getFilterValues("[data-filter-party-type]"),
-          ...getFilterValues("[data-filter-party-group]"),
-          ...getFilterValues("[data-filter-branch]"),
-          ...getFilterValues("[data-filter-city]"),
-          ...getFilterValues("[data-filter-apply-on]"),
-          ...getFilterValues("[data-filter-subgroup]"),
-          ...getFilterValues("[data-filter-group]"),
-          ...getFilterValues("[data-filter-article-type]"),
-        ].length + createdByActive + createdAtActive + subgroupActive;
+        [...getFilterValues("[data-filter-account-type]"), ...getFilterValues("[data-filter-account-group]"), ...getFilterValues("[data-filter-party-type]"), ...getFilterValues("[data-filter-party-group]"), ...getFilterValues("[data-filter-branch]"), ...getFilterValues("[data-filter-city]"), ...getFilterValues("[data-filter-apply-on]"), ...getFilterValues("[data-filter-subgroup]"), ...getFilterValues("[data-filter-group]"), ...getFilterValues("[data-filter-article-type]")].length +
+        createdByActive +
+        createdAtActive +
+        subgroupActive;
       if (activeFilters > 0) {
         filterCountBadge.textContent = String(activeFilters);
         filterCountBadge.classList.remove("hidden");
@@ -361,10 +368,10 @@
       if (auditPanel && mode === "edit") {
         auditPanel.hidden = false;
         if (auditCreated) {
-          auditCreated.textContent = payload.created_at ? payload.created_at + (payload.created_by ? " by " + payload.created_by : "") : "-";
+          auditCreated.textContent = payload.created_at ? formatDisplayDate(payload.created_at) + (payload.created_by ? " by " + payload.created_by : "") : "-";
         }
         if (auditUpdated) {
-          auditUpdated.textContent = payload.updated_at ? payload.updated_at + (payload.updated_by ? " by " + payload.updated_by : "") : "-";
+          auditUpdated.textContent = payload.updated_at ? formatDisplayDate(payload.updated_at) + (payload.updated_by ? " by " + payload.updated_by : "") : "-";
         }
       } else if (auditPanel) {
         auditPanel.hidden = true;
@@ -744,21 +751,7 @@
     document.querySelectorAll("[data-filter-subgroup-mode]").forEach((el) => hookFilter(el));
     document.querySelectorAll("[data-filter-group-mode]").forEach((el) => hookFilter(el));
     document.querySelectorAll("[data-filter-article-type-mode]").forEach((el) => hookFilter(el));
-    [
-      "[data-filter-account-type]",
-      "[data-filter-account-group]",
-      "[data-filter-party-type]",
-      "[data-filter-party-group]",
-      "[data-filter-branch]",
-      "[data-filter-city]",
-      "[data-filter-primary]",
-      "[data-filter-secondary]",
-      "[data-filter-tertiary]",
-      "[data-filter-apply-on]",
-      "[data-filter-subgroup]",
-      "[data-filter-group]",
-      "[data-filter-article-type]",
-    ].forEach((selector) => {
+    ["[data-filter-account-type]", "[data-filter-account-group]", "[data-filter-party-type]", "[data-filter-party-group]", "[data-filter-branch]", "[data-filter-city]", "[data-filter-primary]", "[data-filter-secondary]", "[data-filter-tertiary]", "[data-filter-apply-on]", "[data-filter-subgroup]", "[data-filter-group]", "[data-filter-article-type]"].forEach((selector) => {
       document.querySelectorAll(selector).forEach((el) => {
         el.addEventListener("change", updateFilterCount);
       });
@@ -949,6 +942,48 @@
           filterPartyGroups = filterGroups;
           // Apply once on load so the list matches the current selection.
           filterGroups();
+        }
+      }
+      if (pageKey === "accounts") {
+        const accountTypeSelect = modalForm.querySelector('[data-field="account_type"]');
+        const groupSelect = modalForm.querySelector('[data-field="subgroup_id"]');
+        const groupSourceSelect = modalForm.querySelector("[data-account-group-source]");
+        const allGroupOptions = groupSourceSelect ? Array.from(groupSourceSelect.options) : groupSelect ? Array.from(groupSelect.options) : [];
+
+        const filterGroupsByType = () => {
+          if (!accountTypeSelect || !groupSelect) return;
+          const selectedType = String(accountTypeSelect.value || "")
+            .trim()
+            .toUpperCase();
+          const previous = groupSelect.value;
+          groupSelect.innerHTML = "";
+          allGroupOptions.forEach((opt) => {
+            const value = String(opt.value || "").trim();
+            if (!value) {
+              groupSelect.appendChild(opt.cloneNode(true));
+              return;
+            }
+            const optType = String(opt.getAttribute("data-account-type") || "")
+              .trim()
+              .toUpperCase();
+            if (selectedType && optType === selectedType) {
+              groupSelect.appendChild(opt.cloneNode(true));
+            }
+          });
+          if (previous) {
+            groupSelect.value = previous;
+            if (groupSelect.value !== previous) {
+              groupSelect.value = "";
+            }
+          }
+          // Ensure searchable-select UI re-syncs after option list rebuild.
+          groupSelect.dispatchEvent(new Event("change", { bubbles: true }));
+        };
+
+        if (accountTypeSelect && groupSelect) {
+          accountTypeSelect.addEventListener("change", filterGroupsByType);
+          document.addEventListener("modal:opened", filterGroupsByType);
+          filterGroupsByType();
         }
       }
       if (autoCodeEnabled) {
@@ -1351,28 +1386,7 @@
           if (useServerFilters) {
             const url = new URL(window.location.href);
             const params = new URLSearchParams(url.search);
-            [
-              "primary_value",
-              "primary_mode",
-              "secondary_value",
-              "secondary_mode",
-              "tertiary_value",
-              "tertiary_mode",
-              "branch_id",
-              "branch_mode",
-              "apply_on",
-              "apply_on_mode",
-              "subgroup_id",
-              "subgroup_mode",
-              "group_id",
-              "group_mode",
-              "article_type",
-              "article_type_mode",
-              "created_by",
-              "created_at_start",
-              "created_at_end",
-              "low_stock_only",
-            ].forEach((key) => params.delete(key));
+            ["primary_value", "primary_mode", "secondary_value", "secondary_mode", "tertiary_value", "tertiary_mode", "branch_id", "branch_mode", "apply_on", "apply_on_mode", "subgroup_id", "subgroup_mode", "group_id", "group_mode", "article_type", "article_type_mode", "created_by", "created_at_start", "created_at_end", "low_stock_only"].forEach((key) => params.delete(key));
             url.search = params.toString();
             window.location.href = url.toString();
             return;
@@ -1476,7 +1490,9 @@
     const i18nSearch = '<%= t("search") %>';
     const i18nSelect = '<%= t("select") %>';
     const isWithinModal = (select) => !!select.closest("[data-modal-form]");
+    const isSearchableOptIn = (select) => String(select?.dataset?.searchableSelect || "").toLowerCase() === "true";
     const isMultiSelectWrapper = (select) => !!select.closest("[data-multi-select]");
+    const unifiedVariantClass = "w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm transition focus:outline-none focus:ring-2 focus:ring-accent/30";
 
     const makePlaceholder = (select) => {
       const label = select.closest("label")?.querySelector("span");
@@ -1488,7 +1504,7 @@
       // 1. Validation & Setup
       // MODIFIED: Removed the check for select.multiple so this runs for multi-selects too
       if (!select) return;
-      if (!isWithinModal(select) || isMultiSelectWrapper(select)) return;
+      if ((!isWithinModal(select) && !isSearchableOptIn(select)) || isMultiSelectWrapper(select)) return;
       if (select.dataset.searchableReady === "true") return;
 
       const isMulti = select.multiple; // Check if multi-select
@@ -1508,10 +1524,16 @@
       // 4. Create the "Combobox" Input
       const input = document.createElement("input");
       input.type = "text";
-      input.className = select.className.replace("appearance-none", "") + " pr-10";
-
-      if (!input.className.includes("border")) {
-        input.className += " w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm text-slate-800 transition focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-slate-100";
+      const variant = String(select.dataset.searchableVariant || "")
+        .trim()
+        .toLowerCase();
+      if (variant === "unified") {
+        input.className = `${unifiedVariantClass} pr-10`;
+      } else {
+        input.className = select.className.replace("appearance-none", "") + " pr-10";
+        if (!input.className.includes("border")) {
+          input.className += " w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm text-slate-800 transition focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-slate-100";
+        }
       }
 
       input.placeholder = placeholderText;
@@ -1622,7 +1644,7 @@
         if (count === 0) {
           const empty = document.createElement("div");
           empty.className = "px-4 py-3 text-xs text-slate-400 text-center italic select-none";
-          empty.textContent = "No matches found";
+          empty.textContent = "<%= t('no_records_found') %>";
           menu.appendChild(empty);
         }
       };

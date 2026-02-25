@@ -1146,64 +1146,28 @@ test.describe("Approvals page scenarios", () => {
     });
 
     test("parties edit queues approval via source page", async ({ page }) => {
-      // 1. Create a party directly in the DB so we have something to edit
-      // (This bypasses approval logic to ensure test data exists)
-      const knex = require("./utils/db").knex; // Assuming access to knex or create helper
-      const partyName = `Pre-Existing Party ${Date.now()}`;
-
-      // We need to login as ADMIN to ensure we can create data if approval is on,
-      // OR we just insert into DB directly.
-      // Inserting into DB is safer/faster for test setup.
-      await page.context().clearCookies(); // Ensure clean slate if needed, or just insert
-
-      // NOTE: Direct DB insert is complex due to relations (branch_ids, etc.)
-      // So we will try to find an existing one first, or assume one exists from seeds.
-      // If the list is empty, we must fail gracefully or create one.
-
       await login(page, "E2E_MANAGER");
       await page.goto("/master-data/parties", { waitUntil: "domcontentloaded" });
-
-      // Check if table is empty
-      const emptyState = page.locator("#module-empty-state");
-      if (await emptyState.isVisible()) {
-        // Create one via UI (expecting approval) - but we need it APPROVED to edit it.
-        // Since we can't easily approve mid-test without complexity, let's skip if empty
-        // OR better: Assume seeds ran.
-        console.warn("Parties table empty, cannot test Edit Flow properly without seeding.");
-        // Ideally, we'd insert a party via SQL here.
-      }
-
-      // Try to find an edit button
-      const editBtn = page.locator("tbody tr a[href*='/edit']").first();
-
-      // If we can't find direct link, try action menu
+      const editBtn = page.locator("[data-edit]").first();
       if ((await editBtn.count()) === 0) {
-        const menuBtn = page.locator("tbody tr button[data-action-menu]").first();
-        if ((await menuBtn.count()) > 0) {
-          await menuBtn.click();
-          await page.locator("a[data-edit-action]").first().click();
-        } else {
-          // Fallback: If absolutely no rows, we can't test edit.
-          // In a real E2E env, we should seed a "Permanent Party" in beforeAll.
-          test.skip(true, "No parties available to edit");
-          return;
-        }
-      } else {
-        await editBtn.click();
+        test.skip(true, "No parties available to edit");
+        return;
       }
 
-      await page.waitForLoadState("domcontentloaded");
+      await editBtn.click();
+      const modal = page.locator("#modal-shell");
+      await expect(modal).toBeVisible();
 
-      const nameInput = page.locator('[name="name"]');
-      await nameInput.fill(`E2E Party Updated ${Date.now()}`);
-      await page.locator('button[type="submit"]').click();
+      const updatedName = `E2E Party Updated ${Date.now()}`;
+      await modal.locator('[data-field="name"]').fill(updatedName);
+      await modal.locator('form[data-modal-form] button[type="submit"]').click();
 
       const toast = page.locator("[data-ui-notice-toast]").first();
       await expect(toast).toBeVisible();
       await expect(toast).toContainText(/approval/i);
 
       await gotoApprovals(page, "PENDING");
-      await expect(page.locator("tbody tr", { hasText: "Update Parties" }).first()).toBeVisible();
+      await expect(page.locator("tbody tr", { hasText: /Edit Parties|Update Parties/i }).first()).toBeVisible();
     });
 
     test("finished items create queues approval via source page", async ({ page }) => {

@@ -40,6 +40,18 @@ const sanitizeFilterValues = (filterConfig, values) => {
     .map((value) => String(value || "").trim())
     .filter(Boolean);
 };
+const getAllowedBranchIds = (req) => {
+  if (req?.user?.isAdmin) return [];
+  return Array.isArray(req?.branchScope) ? req.branchScope.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0) : [];
+};
+const filterBranchOptionsByScope = (field, options, req) => {
+  if (!Array.isArray(options)) return [];
+  if (req?.user?.isAdmin) return options;
+  const isBranchField = field?.optionsQuery?.table === "erp.branches" || field?.name === "branch_id" || field?.name === "branch_ids";
+  if (!isBranchField) return options;
+  const allowed = new Set(getAllowedBranchIds(req));
+  return options.filter((option) => allowed.has(Number(option?.value)));
+};
 const normalizeValidationError = (validationError) => {
   if (!validationError) return null;
   if (typeof validationError === "string") {
@@ -66,6 +78,45 @@ const logEmployeeDebug = (pageConfig, req, event, payload = {}) => {
     ...payload,
   });
 };
+const isLabourRatesSaveDebugEnabled = (pageConfig) => pageConfig?.scopeKey === "hr_payroll.labour_rates";
+const logLabourRatesSaveDebug = (pageConfig, req, event, payload = {}) => {
+  if (!isLabourRatesSaveDebugEnabled(pageConfig)) return;
+  console.log("[hr-labour-rates-save-debug]", {
+    event,
+    path: req?.originalUrl || req?.url || "",
+    method: req?.method || "",
+    userId: req?.user?.id || null,
+    username: req?.user?.username || null,
+    ...payload,
+  });
+};
+const isHrValidationDebugEnabled = () => process.env.DEBUG_HR_VALIDATION === "1";
+const summarizeValueForLog = (value) => {
+  if (Array.isArray(value)) return { type: "array", count: value.length };
+  if (value === null || value === undefined || value === "") return { type: "empty" };
+  if (typeof value === "string") return { type: "string", length: value.length };
+  if (typeof value === "number") return { type: "number", value };
+  if (typeof value === "boolean") return { type: "boolean", value };
+  if (typeof value === "object") return { type: "object", keys: Object.keys(value) };
+  return { type: typeof value };
+};
+const summarizeFieldsForLog = (values, fieldNames = []) =>
+  fieldNames.reduce((acc, name) => {
+    acc[name] = summarizeValueForLog(values ? values[name] : undefined);
+    return acc;
+  }, {});
+const logHrValidationDebug = (pageConfig, req, event, payload = {}) => {
+  if (!isHrValidationDebugEnabled()) return;
+  console.error("[hr-validation-debug]", {
+    scopeKey: pageConfig?.scopeKey || null,
+    event,
+    path: req?.originalUrl || req?.url || "",
+    method: req?.method || "",
+    userId: req?.user?.id || null,
+    username: req?.user?.username || null,
+    ...payload,
+  });
+};
 
 const hydratePage = async (pageConfig, locale, req = null) => {
   const fields = await Promise.all(
@@ -79,7 +130,7 @@ const hydratePage = async (pageConfig, locale, req = null) => {
         });
         return {
           ...field,
-          options: Array.isArray(resolved) ? resolved : [],
+          options: filterBranchOptionsByScope(field, Array.isArray(resolved) ? resolved : [], req),
         };
       }
       if (!field.optionsQuery) {
@@ -108,18 +159,44 @@ const hydratePage = async (pageConfig, locale, req = null) => {
       const rows = await query.orderBy(field.optionsQuery.orderBy || field.optionsQuery.labelKey);
       return {
         ...field,
-        options: rows.map((row) => {
-          const labelRaw = field.labelFormat ? field.labelFormat(row, locale) : row[field.optionsQuery.labelKey];
-          const labelUr = !field.labelFormat && locale === "ur" && row.name_ur ? row.name_ur : null;
-          return {
-            value: row[field.optionsQuery.valueKey],
-            label: labelUr || labelRaw,
-          };
-        }),
+        options: filterBranchOptionsByScope(
+          field,
+          rows.map((row) => {
+            const labelRaw = field.labelFormat ? field.labelFormat(row, locale) : row[field.optionsQuery.labelKey];
+            const labelUr = !field.labelFormat && locale === "ur" && row.name_ur ? row.name_ur : null;
+            return {
+              value: row[field.optionsQuery.valueKey],
+              label: labelUr || labelRaw,
+            };
+          }),
+          req,
+        ),
       };
     }),
   );
   return { ...pageConfig, fields };
+};
+
+const applyAllowedBranchScopeToQuery = (query, pageConfig, allowedBranchIds) => {
+  if (!Array.isArray(allowedBranchIds) || !allowedBranchIds.length) return query;
+  if (pageConfig.branchScoped && pageConfig.branchMap) {
+    return query.whereExists(function allowedBranchScope() {
+      this.select(1)
+        .from(pageConfig.branchMap.table)
+        .whereRaw(`${pageConfig.branchMap.table}.${pageConfig.branchMap.key} = t.id`)
+        .whereIn(`${pageConfig.branchMap.table}.${pageConfig.branchMap.branchKey}`, allowedBranchIds);
+    });
+  }
+  if (pageConfig.branchFilter?.mapTable && pageConfig.branchFilter?.mapKey && pageConfig.branchFilter?.entityKey) {
+    const { mapTable, mapKey, entityKey, branchKey = "branch_id" } = pageConfig.branchFilter;
+    return query.whereExists(function allowedBranchScope() {
+      this.select(1)
+        .from(mapTable)
+        .whereRaw(`${mapTable}.${mapKey} = t.${entityKey}`)
+        .whereIn(`${mapTable}.${branchKey}`, allowedBranchIds);
+    });
+  }
+  return query;
 };
 
 const fetchRows = (pageConfig, options = {}) => {
@@ -129,6 +206,9 @@ const fetchRows = (pageConfig, options = {}) => {
       query = query.leftJoin(join.table, join.on[0], join.on[1]);
     });
   }
+
+  const allowedBranchIds = Array.isArray(options.allowedBranchIds) ? options.allowedBranchIds : [];
+  query = applyAllowedBranchScopeToQuery(query, pageConfig, allowedBranchIds);
 
   if (pageConfig.branchScoped && options.branchId) {
     query = query.whereExists(function () {
@@ -143,7 +223,9 @@ const fetchRows = (pageConfig, options = {}) => {
   const primaryValues = sanitizeFilterValues(primary, filters.primaryValues);
   const secondaryValues = sanitizeFilterValues(secondary, filters.secondaryValues);
   const tertiaryValues = sanitizeFilterValues(tertiary, filters.tertiaryValues);
-  const branchIds = Array.isArray(filters.branchValues) ? filters.branchValues.map((value) => Number(value)).filter((value) => Number.isFinite(value)) : [];
+  const rawBranchIds = Array.isArray(filters.branchValues) ? filters.branchValues.map((value) => Number(value)).filter((value) => Number.isFinite(value)) : [];
+  const allowedSet = allowedBranchIds.length ? new Set(allowedBranchIds) : null;
+  const branchIds = allowedSet ? rawBranchIds.filter((id) => allowedSet.has(id)) : rawBranchIds;
   if (primary && primaryValues.length) {
     if (filters.primaryMode === "exclude") {
       query = query.whereNotIn(primary.dbColumn, primaryValues);
@@ -207,7 +289,12 @@ const fetchRows = (pageConfig, options = {}) => {
   if (extraSelect.length) {
     selects.push(...extraSelect);
   }
-  return query.select(selects).orderBy("t.id", "desc");
+  const limitedQuery = query.select(selects).orderBy("t.id", "desc");
+  const maxRows = Number(options.maxRows || 0);
+  if (Number.isInteger(maxRows) && maxRows > 0) {
+    return limitedQuery.limit(maxRows);
+  }
+  return limitedQuery;
 };
 
 const buildValues = (pageConfig, body) =>
@@ -274,6 +361,20 @@ const readFlash = (req, res, cookieName, path) => {
 
 const renderIndexError = async (req, res, values, error, modalMode, basePath, cookieName, fieldErrors = {}) => {
   const message = friendlyErrorMessage(error, res.locals.t);
+  if (process.env.DEBUG_HR_VALIDATION === "1") {
+    console.error("[hr-validation-debug]", {
+      scopeKey: req.baseUrl || null,
+      event: "render_index_error",
+      path: req?.originalUrl || req?.url || "",
+      method: req?.method || "",
+      userId: req?.user?.id || null,
+      username: req?.user?.username || null,
+      modalMode,
+      message,
+      fieldErrorKeys: Object.keys(fieldErrors || {}),
+      valueKeys: Object.keys(values || {}),
+    });
+  }
   const payload = { values, error: message, modalMode, fieldErrors };
   setCookie(res, cookieName, JSON.stringify(payload), {
     path: req.baseUrl,
@@ -334,10 +435,15 @@ const createHrMasterRouter = (pageConfig) => {
       const flash = readFlash(req, res, flashCookie, req.baseUrl);
       const modalMode = flash ? flash.modalMode : "create";
       const modalOpen = flash ? ["create", "edit"].includes(modalMode) : false;
+      const allowedBranchIds = getAllowedBranchIds(req);
+      const allowedBranchSet = allowedBranchIds.length ? new Set(allowedBranchIds) : null;
       const fieldErrors = flash?.fieldErrors || {};
       const primaryValues = parseList(req.query.primary_value);
       const secondaryValues = parseList(req.query.secondary_value);
-      const branchValues = parseList(req.query.branch_id);
+      const branchValues = parseList(req.query.branch_id).filter((value) => {
+        if (!allowedBranchSet) return true;
+        return allowedBranchSet.has(Number(value));
+      });
       const tertiaryValues = parseList(req.query.tertiary_value);
       const applyOnValues = parseList(req.query.apply_on).map((value) => String(value || "").trim().toUpperCase()).filter(Boolean);
       const subgroupValues = parseList(req.query.subgroup_id);
@@ -407,7 +513,9 @@ const createHrMasterRouter = (pageConfig) => {
         canBrowse && !missingRequiredFilters.length
           ? await fetchRows(hydrated, {
               branchId: req.user?.isAdmin ? null : req.branchId,
+              allowedBranchIds,
               locale: req.locale,
+              maxRows: hydrated.maxRows || 0,
               filters: {
                 primaryValues,
                 secondaryValues,
@@ -471,10 +579,14 @@ const createHrMasterRouter = (pageConfig) => {
     }
   });
 
-  router.post("/", requirePermission("SCREEN", pageConfig.scopeKey, "navigate"), async (req, res, next) => {
+  router.post("/", requirePermission("SCREEN", pageConfig.scopeKey, "create"), async (req, res, next) => {
     const values = buildValues(pageConfig, req.body);
     const basePath = req.baseUrl;
     const sanitizedValues = pageConfig.sanitizeValues ? pageConfig.sanitizeValues(values, req) : values;
+    logHrValidationDebug(pageConfig, req, "create:request_received", {
+      bodyKeys: Object.keys(req.body || {}),
+      valueKeys: Object.keys(sanitizedValues || {}),
+    });
     const traceId = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
     logEmployeeDebug(pageConfig, req, "create:start", {
       traceId,
@@ -500,6 +612,13 @@ const createHrMasterRouter = (pageConfig) => {
         return value === null || value === undefined || value === "" || (Array.isArray(value) && !value.length);
       });
     if (missing.length) {
+      logHrValidationDebug(pageConfig, req, "create:missing_required", {
+        missingFields: missing.map((f) => f.name),
+        requiredFieldSummary: summarizeFieldsForLog(
+          sanitizedValues,
+          pageConfig.fields.filter((field) => field.required).map((field) => field.name),
+        ),
+      });
       logEmployeeDebug(pageConfig, req, "create:missing_required", {
         traceId,
         missing: missing.map((f) => f.name),
@@ -516,6 +635,14 @@ const createHrMasterRouter = (pageConfig) => {
         const validationError = await pageConfig.validateValues({ values: sanitizedValues, req, isUpdate: false, knex });
         if (validationError) {
           const normalized = normalizeValidationError(validationError);
+          logHrValidationDebug(pageConfig, req, "create:validation_error", {
+            validationMessage: normalized?.message || String(validationError || ""),
+            fieldErrorKeys: Object.keys(normalized?.fieldErrors || {}),
+            requiredFieldSummary: summarizeFieldsForLog(
+              sanitizedValues,
+              pageConfig.fields.filter((field) => field.required).map((field) => field.name),
+            ),
+          });
           logEmployeeDebug(pageConfig, req, "create:validation_error", {
             traceId,
             validationError,
@@ -561,6 +688,15 @@ const createHrMasterRouter = (pageConfig) => {
         return renderIndexError(req, res, sanitizedValues, res.locals.t("error_select_branch"), "create", basePath, flashCookie, {
           branch_ids: res.locals.t("error_select_branch"),
         });
+      }
+      if (pageConfig.branchScoped && !req.user?.isAdmin) {
+        const allowed = new Set(getAllowedBranchIds(req).map(String));
+        const invalid = branchIds.some((id) => !allowed.has(String(id)));
+        if (invalid) {
+          return renderIndexError(req, res, sanitizedValues, res.locals.t("error_branch_out_of_scope"), "create", basePath, flashCookie, {
+            branch_ids: res.locals.t("error_branch_out_of_scope"),
+          });
+        }
       }
 
       const approval = await handleScreenApproval({
@@ -635,14 +771,25 @@ const createHrMasterRouter = (pageConfig) => {
     }
   });
 
-  router.post("/:id", requirePermission("SCREEN", pageConfig.scopeKey, "navigate"), async (req, res, next) => {
+  router.post("/:id", requirePermission("SCREEN", pageConfig.scopeKey, "edit"), async (req, res, next) => {
     const id = Number(req.params.id);
     if (!id) {
       return next();
     }
+    const traceId = `${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    logLabourRatesSaveDebug(pageConfig, req, "edit:request_received", {
+      traceId,
+      id,
+      bodyKeys: Object.keys(req.body || {}),
+    });
     const values = buildValues(pageConfig, req.body);
     const basePath = req.baseUrl;
     const sanitizedValues = pageConfig.sanitizeValues ? pageConfig.sanitizeValues(values, req) : values;
+    logHrValidationDebug(pageConfig, req, "edit:request_received", {
+      id,
+      bodyKeys: Object.keys(req.body || {}),
+      valueKeys: Object.keys(sanitizedValues || {}),
+    });
 
     if (!hasField(pageConfig, "code") && !pageConfig.autoCodeFromName) {
       delete sanitizedValues.code;
@@ -655,6 +802,19 @@ const createHrMasterRouter = (pageConfig) => {
         return value === null || value === undefined || value === "" || (Array.isArray(value) && !value.length);
       });
     if (missing.length) {
+      logHrValidationDebug(pageConfig, req, "edit:missing_required", {
+        id,
+        missingFields: missing.map((field) => field.name),
+        requiredFieldSummary: summarizeFieldsForLog(
+          sanitizedValues,
+          pageConfig.fields.filter((field) => field.required).map((field) => field.name),
+        ),
+      });
+      logLabourRatesSaveDebug(pageConfig, req, "edit:missing_required", {
+        traceId,
+        id,
+        missing: missing.map((field) => field.name),
+      });
       const missingMap = missing.reduce((acc, field) => {
         acc[field.name] = res.locals.t("error_required_fields");
         return acc;
@@ -665,6 +825,7 @@ const createHrMasterRouter = (pageConfig) => {
     try {
       const existing = await knex(pageConfig.table).where({ id }).first();
       if (!existing) {
+        logLabourRatesSaveDebug(pageConfig, req, "edit:not_found", { traceId, id });
         return renderIndexError(req, res, sanitizedValues, res.locals.t("error_not_found"), "edit", basePath, flashCookie);
       }
 
@@ -685,6 +846,20 @@ const createHrMasterRouter = (pageConfig) => {
         const validationError = await pageConfig.validateValues({ values: sanitizedValues, req, isUpdate: true, id, knex });
         if (validationError) {
           const normalized = normalizeValidationError(validationError);
+          logHrValidationDebug(pageConfig, req, "edit:validation_error", {
+            id,
+            validationMessage: normalized?.message || String(validationError || ""),
+            fieldErrorKeys: Object.keys(normalized?.fieldErrors || {}),
+            requiredFieldSummary: summarizeFieldsForLog(
+              sanitizedValues,
+              pageConfig.fields.filter((field) => field.required).map((field) => field.name),
+            ),
+          });
+          logLabourRatesSaveDebug(pageConfig, req, "edit:validation_failed", {
+            traceId,
+            id,
+            validationError,
+          });
           return renderIndexError(req, res, sanitizedValues, normalized.message || validationError, "edit", basePath, flashCookie, normalized.fieldErrors);
         }
       }
@@ -694,6 +869,7 @@ const createHrMasterRouter = (pageConfig) => {
       if (codeValue) {
         const codeExists = await knex(pageConfig.table).whereRaw("lower(code) = ?", [codeValue.toLowerCase()]).andWhereNot({ id }).first();
         if (codeExists) {
+          logLabourRatesSaveDebug(pageConfig, req, "edit:duplicate_code", { traceId, id, codeValue });
           return renderIndexError(req, res, sanitizedValues, res.locals.t("error_duplicate_code"), "edit", basePath, flashCookie, {
             code: res.locals.t("error_duplicate_code"),
           });
@@ -702,6 +878,7 @@ const createHrMasterRouter = (pageConfig) => {
       if (nameValue) {
         const nameExists = await knex(pageConfig.table).whereRaw("lower(name) = ?", [nameValue.toLowerCase()]).andWhereNot({ id }).first();
         if (nameExists) {
+          logLabourRatesSaveDebug(pageConfig, req, "edit:duplicate_name", { traceId, id, nameValue });
           return renderIndexError(req, res, sanitizedValues, res.locals.t("error_duplicate_name"), "edit", basePath, flashCookie, {
             name: res.locals.t("error_duplicate_name"),
           });
@@ -710,9 +887,19 @@ const createHrMasterRouter = (pageConfig) => {
 
       const branchIds = Array.isArray(sanitizedValues.branch_ids) ? sanitizedValues.branch_ids.map(String) : [];
       if (pageConfig.branchScoped && !branchIds.length) {
+        logLabourRatesSaveDebug(pageConfig, req, "edit:no_branch_selected", { traceId, id });
         return renderIndexError(req, res, sanitizedValues, res.locals.t("error_select_branch"), "edit", basePath, flashCookie, {
           branch_ids: res.locals.t("error_select_branch"),
         });
+      }
+      if (pageConfig.branchScoped && !req.user?.isAdmin) {
+        const allowed = new Set(getAllowedBranchIds(req).map(String));
+        const invalid = branchIds.some((id) => !allowed.has(String(id)));
+        if (invalid) {
+          return renderIndexError(req, res, sanitizedValues, res.locals.t("error_branch_out_of_scope"), "edit", basePath, flashCookie, {
+            branch_ids: res.locals.t("error_branch_out_of_scope"),
+          });
+        }
       }
 
       const approval = await handleScreenApproval({
@@ -727,6 +914,11 @@ const createHrMasterRouter = (pageConfig) => {
         t: res.locals.t,
       });
       if (approval.queued) {
+        logLabourRatesSaveDebug(pageConfig, req, "edit:queued_for_approval", {
+          traceId,
+          id,
+          requestId: approval.requestId || null,
+        });
         return res.redirect(req.get("referer") || basePath);
       }
 
@@ -778,8 +970,18 @@ const createHrMasterRouter = (pageConfig) => {
           ...changeSet,
         },
       });
+      logLabourRatesSaveDebug(pageConfig, req, "edit:db_update_success", {
+        traceId,
+        id,
+        changed: Array.isArray(changeSet?.changed) ? changeSet.changed.length : 0,
+      });
       return res.redirect(basePath);
     } catch (err) {
+      logLabourRatesSaveDebug(pageConfig, req, "edit:exception", {
+        traceId,
+        id,
+        error: err?.message || String(err),
+      });
       console.error("[hr-master:update]", { scopeKey: pageConfig.scopeKey, id, error: err.message });
       return renderIndexError(req, res, sanitizedValues, err?.message || res.locals.t("error_unable_save"), "edit", basePath, flashCookie);
     }
@@ -875,5 +1077,6 @@ const createHrMasterRouter = (pageConfig) => {
 
 module.exports = {
   createHrMasterRouter,
+  hydratePage,
   renderInfoScreen,
 };

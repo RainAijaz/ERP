@@ -11,6 +11,8 @@ const { setCookie } = require("../../middleware/utils/cookies");
 const { UI_NOTICE_COOKIE } = require("../../middleware/core/ui-notice");
 const { insertActivityLog } = require("../../utils/audit-log");
 const { inferAction, parseEditedPayload, sanitizeEditedValues, getEditableKeys } = require("../../utils/approval-request-edit");
+const { syncAutoBankSettlementForVoucherTx, markBankVoucherLinesRejectedTx } = require("../../services/financial/voucher-service");
+const { syncVoucherGlPostingTx } = require("../../services/financial/gl-posting-service");
 const basicInfoRoutes = require("../master_data/basic-info");
 const uomConversionsRoutes = require("../master_data/basic-info/uom-conversions");
 const accountsRoutes = require("../master_data/accounts");
@@ -19,6 +21,18 @@ const finishedRoutes = require("../master_data/products/finished");
 const rawMaterialsRoutes = require("../master_data/products/raw-materials");
 const semiFinishedRoutes = require("../master_data/products/semi-finished");
 const skuRoutes = require("../master_data/products/skus");
+const hrEmployeesRoutes = require("../hr-payroll/employees");
+const hrLaboursRoutes = require("../hr-payroll/labours");
+const hrCommissionsRoutes = require("../hr-payroll/commissions");
+const hrAllowancesRoutes = require("../hr-payroll/allowances");
+const {
+  buildBulkPreviewRows: buildCommissionBulkPreviewRows,
+} = require("../../services/hr-payroll/commission-rules-service");
+const {
+  ALL_LABOURS_VALUE,
+  resolveLabourIds,
+  buildBulkPreviewRows: buildLabourRateBulkPreviewRows,
+} = require("../../services/hr-payroll/labour-rates-service");
 const bomService = require("../../services/bom/service");
 
 const router = express.Router();
@@ -45,6 +59,104 @@ const ACTION_LABELS = {
   create: "create",
   update: "edit",
   delete: "delete",
+};
+
+const applyVoucherApprovalChangeTx = async ({ trx, request, approverId }) => {
+  const payload = request?.new_value && typeof request.new_value === "object" ? request.new_value : {};
+  const action = String(payload.action || "").toLowerCase();
+  const voucherId = Number(request.entity_id || payload.voucher_id || 0);
+  if (!Number.isInteger(voucherId) || voucherId <= 0) {
+    throw new Error("Invalid voucher id in approval payload");
+  }
+
+  if (action === "delete") {
+    const existing = await trx("erp.voucher_header")
+      .select("id", "voucher_type_code")
+      .where({ id: voucherId })
+      .first();
+    if (!existing) {
+      throw new Error("Voucher not found during delete approval apply");
+    }
+
+    if (String(existing.voucher_type_code || "").toUpperCase() === "BANK_VOUCHER") {
+      await markBankVoucherLinesRejectedTx({ trx, voucherId });
+    }
+
+    const updated = await trx("erp.voucher_header")
+      .where({ id: voucherId })
+      .whereNot({ status: "REJECTED" })
+      .update({
+        status: "REJECTED",
+        approved_by: approverId,
+        approved_at: trx.fn.now(),
+      });
+    if (!updated) {
+      throw new Error("Voucher delete approval apply failed");
+    }
+    await syncAutoBankSettlementForVoucherTx({ trx, voucherId, actorUserId: approverId });
+    await syncVoucherGlPostingTx({ trx, voucherId });
+    return;
+  }
+
+  if (action !== "update") {
+    const updated = await trx("erp.voucher_header")
+      .where({ id: voucherId, status: "PENDING" })
+      .update({
+        status: "APPROVED",
+        approved_by: approverId,
+        approved_at: trx.fn.now(),
+      });
+    if (!updated) {
+      throw new Error("Voucher approval apply failed");
+    }
+    await syncAutoBankSettlementForVoucherTx({ trx, voucherId, actorUserId: approverId });
+    await syncVoucherGlPostingTx({ trx, voucherId });
+    return;
+  }
+
+  const lines = Array.isArray(payload.lines) ? payload.lines : [];
+  const existing = await trx("erp.voucher_header")
+    .select("id", "voucher_type_code")
+    .where({ id: voucherId })
+    .first();
+  if (!existing) {
+    throw new Error("Voucher not found during approval apply");
+  }
+
+  await trx("erp.voucher_header")
+    .where({ id: voucherId })
+    .update({
+      voucher_date: payload.voucher_date || trx.raw("voucher_date"),
+      header_account_id: Number(payload.header_account_id || 0) > 0 ? Number(payload.header_account_id) : null,
+      remarks: payload.remarks ?? null,
+      status: "APPROVED",
+      approved_by: approverId,
+      approved_at: trx.fn.now(),
+    });
+
+  await trx("erp.voucher_line").where({ voucher_header_id: voucherId }).del();
+  if (lines.length) {
+    const lineRows = lines.map((line, index) => ({
+      voucher_header_id: voucherId,
+      line_no: Number(line.line_no || index + 1),
+      line_kind: line.line_kind,
+      item_id: null,
+      sku_id: null,
+      account_id: line.account_id || null,
+      party_id: line.party_id || null,
+      labour_id: line.labour_id || null,
+      employee_id: line.employee_id || null,
+      uom_id: null,
+      qty: Number(line.qty || 0),
+      rate: Number(line.rate || 0),
+      amount: Number(line.amount || 0),
+      reference_no: line.reference_no || null,
+      meta: line.meta || {},
+    }));
+    await trx("erp.voucher_line").insert(lineRows);
+  }
+  await syncAutoBankSettlementForVoucherTx({ trx, voucherId, actorUserId: approverId });
+  await syncVoucherGlPostingTx({ trx, voucherId });
 };
 
 const ENTITY_TO_BASIC_INFO = Object.entries(BASIC_INFO_ENTITY_TYPES).reduce((acc, [key, value]) => {
@@ -92,6 +204,115 @@ const safeJson = (value) => {
   } catch (err) {
     return null;
   }
+};
+
+const resolveHrScopeKey = (request, values = {}) => {
+  const scopeKey = String(values?._scope_key || request?.new_value?._scope_key || request?.old_value?._scope_key || "").trim();
+  if (scopeKey) return scopeKey;
+
+  const mode = String(values?.mode || request?.new_value?.mode || "").toUpperCase();
+  if (mode === "BULK_COMMISSION_SKU_UPSERT") return "hr_payroll.commissions";
+  if (mode === "BULK_LABOUR_RATE_SKU_UPSERT") return "hr_payroll.labour_rates";
+
+  const summary = String(request?.summary || "").toLowerCase();
+  if (summary.includes("commission")) return "hr_payroll.commissions";
+  if (summary.includes("allowance")) return "hr_payroll.allowances";
+  if (summary.includes("labour rate")) return "hr_payroll.labour_rates";
+  if (summary.includes("labour")) return "hr_payroll.labours";
+  if (summary.includes("employee")) return "hr_payroll.employees";
+  return "";
+};
+
+const normalizeRowsForLookup = (rowsValue) => {
+  const rows = Array.isArray(rowsValue) ? rowsValue : [];
+  return rows
+    .map((row) => (row && typeof row === "object" ? row : {}))
+    .map((row) => {
+      const skuId = Number(row.sku_id || row.skuId || 0);
+      const rate = row.new_rate ?? row.rate ?? row.value ?? null;
+      if (!Number.isInteger(skuId) || skuId <= 0) return null;
+      return { ...row, sku_id: skuId, new_rate: rate };
+    })
+    .filter(Boolean);
+};
+
+const hydrateSkuRows = async (rows) => {
+  if (!rows.length) return rows;
+  const skuIds = [...new Set(rows.map((row) => Number(row.sku_id)).filter((id) => Number.isInteger(id) && id > 0))];
+  if (!skuIds.length) return rows;
+  const skuRows = await knex("erp.skus as s")
+    .leftJoin("erp.variants as v", "s.variant_id", "v.id")
+    .leftJoin("erp.items as i", "v.item_id", "i.id")
+    .select("s.id as sku_id", "s.variant_id", "s.sku_code", "i.name as item_name")
+    .where(function whereSkuOrVariant() {
+      this.whereIn("s.id", skuIds).orWhereIn("s.variant_id", skuIds);
+    });
+  const skuMap = new Map(skuRows.map((row) => [Number(row.sku_id), row]));
+  const variantMap = new Map(
+    skuRows
+      .map((row) => [Number(row.variant_id), row])
+      .filter(([variantId]) => Number.isInteger(variantId) && variantId > 0),
+  );
+  return rows.map((row) => {
+    const lookupId = Number(row.sku_id);
+    const hydrated = skuMap.get(lookupId) || variantMap.get(lookupId);
+    return {
+      ...row,
+      sku_code: hydrated?.sku_code || row.sku_code || "",
+      item_name: hydrated?.item_name || row.item_name || "",
+    };
+  });
+};
+
+const enrichCommissionRowsFromScope = async (values, t) => {
+  const employeeId = Number(values?.employee_id || 0);
+  const applyOn = String(values?.apply_on || "").trim().toUpperCase();
+  if (!Number.isInteger(employeeId) || employeeId <= 0) return [];
+  if (applyOn !== "SUBGROUP" && applyOn !== "GROUP") return [];
+  return buildCommissionBulkPreviewRows({
+    db: knex,
+    employeeId,
+    applyOn,
+    subgroupId: values?.subgroup_id ? Number(values.subgroup_id) : null,
+    groupId: values?.group_id ? Number(values.group_id) : null,
+    baseRate: null,
+    t,
+  });
+};
+
+const enrichLabourRateRowsFromScope = async (values, t) => {
+  const deptId = Number(values?.dept_id || 0);
+  const applyOn = String(values?.apply_on || "").trim().toUpperCase();
+  const articleType = String(values?.article_type || "").trim().toUpperCase();
+  const rateType = String(values?.rate_type || "").trim().toUpperCase();
+  const labourRaw = String(values?.labour_id || "").trim();
+  if (!Number.isInteger(deptId) || deptId <= 0) return [];
+  if (!labourRaw) return [];
+  if (!rateType) return [];
+  if (!articleType) return [];
+  const labourSelection =
+    labourRaw.toUpperCase() === ALL_LABOURS_VALUE
+      ? { all: true, labourId: null, raw: ALL_LABOURS_VALUE }
+      : { all: false, labourId: Number(labourRaw || 0), raw: labourRaw };
+  const labourIds = await resolveLabourIds({
+    db: knex,
+    deptId,
+    labourSelection,
+    t,
+  });
+  return buildLabourRateBulkPreviewRows({
+    db: knex,
+    labourIds,
+    deptId,
+    applyOn,
+    skuId: values?.sku_id ? Number(values.sku_id) : null,
+    subgroupId: values?.subgroup_id ? Number(values.subgroup_id) : null,
+    groupId: values?.group_id ? Number(values.group_id) : null,
+    articleType,
+    rateType,
+    baseRate: null,
+    t,
+  });
 };
 
 const buildPreviewPayload = async (req, res, request, side) => {
@@ -153,6 +374,69 @@ const buildPreviewPayload = async (req, res, request, side) => {
       previewType: "parties",
       previewTitle: res.locals.t("parties") || "Parties",
       formPartial: "../../master_data/parties/form-fields.ejs",
+      page: hydrated,
+      isAdmin: req.user?.isAdmin || false,
+    };
+  }
+
+  const hrScopeKey = resolveHrScopeKey(request, values);
+  const hrPreviewMap = {
+    "hr_payroll.employees": hrEmployeesRoutes.preview?.page,
+    "hr_payroll.labours": hrLaboursRoutes.preview?.page,
+    "hr_payroll.commissions": hrCommissionsRoutes.preview?.page,
+    "hr_payroll.allowances": hrAllowancesRoutes.preview?.page,
+    "hr_payroll.labour_rates": hrLaboursRoutes.preview?.labourRatesPage,
+  };
+  const hrPage = hrPreviewMap[hrScopeKey] || null;
+  if (hrPage && typeof hrEmployeesRoutes.preview?.hydratePage === "function") {
+    const hydrateHrPage = hrEmployeesRoutes.preview.hydratePage;
+    const hydrated = await hydrateHrPage(hrPage, locale, req);
+    const previewValues = values && typeof values === "object" ? { ...values } : {};
+    if (previewValues && Array.isArray(previewValues.rows)) {
+      const normalizedRows = normalizeRowsForLookup(previewValues.rows);
+      let mergedRows = normalizedRows;
+      try {
+        if (hrScopeKey === "hr_payroll.commissions") {
+          const scopedRows = await enrichCommissionRowsFromScope(previewValues, res.locals.t);
+          if (Array.isArray(scopedRows) && scopedRows.length) {
+            const scopedBySku = new Map(scopedRows.map((row) => [Number(row.sku_id || 0), row]));
+            mergedRows = normalizedRows.map((row) => {
+              const scoped = scopedBySku.get(Number(row.sku_id));
+              return scoped
+                ? {
+                    ...scoped,
+                    new_rate: row.new_rate ?? scoped.new_rate ?? null,
+                  }
+                : row;
+            });
+          }
+        }
+        if (hrScopeKey === "hr_payroll.labour_rates") {
+          const scopedRows = await enrichLabourRateRowsFromScope(previewValues, res.locals.t);
+          if (Array.isArray(scopedRows) && scopedRows.length) {
+            const scopedBySku = new Map(scopedRows.map((row) => [Number(row.sku_id || 0), row]));
+            mergedRows = normalizedRows.map((row) => {
+              const scoped = scopedBySku.get(Number(row.sku_id));
+              return scoped
+                ? {
+                    ...scoped,
+                    new_rate: row.new_rate ?? scoped.new_rate ?? null,
+                  }
+                : row;
+            });
+          }
+        }
+      } catch (err) {
+        console.error("Error in ApprovalPreviewRowsHydration:", err);
+      }
+      previewValues.rows = await hydrateSkuRows(mergedRows);
+    }
+    return {
+      ...basePayload,
+      previewValues,
+      previewType: "hr-payroll",
+      previewTitle: res.locals.t(hydrated.titleKey) || hydrated.titleKey,
+      formPartial: "../../hr_payroll/form-fields.ejs",
       page: hydrated,
       isAdmin: req.user?.isAdmin || false,
     };
@@ -434,6 +718,8 @@ router.get("/:id/preview", requirePermission("SCREEN", "administration.approvals
     return res.render("administration/approvals/preview", {
       t: res.locals.t,
       locale: req.locale,
+      fieldErrors: {},
+      formValues: {},
       ...payload,
     });
   } catch (err) {
@@ -551,8 +837,8 @@ router.get("/settings", requirePermission("SCREEN", "administration.approval_set
       if (route && route.startsWith("/reports")) return false;
       if (scopeKey.includes("report")) return false;
       if (!route) return false;
-      // Only data-entry screens (create/edit/delete flows) live under master-data in this app.
-      if (!route.startsWith("/master-data")) return false;
+      // Data-entry screens eligible for approval policy live under master-data and hr-payroll.
+      if (!route.startsWith("/master-data") && !route.startsWith("/hr-payroll")) return false;
       return true;
     };
 
@@ -643,6 +929,7 @@ router.post("/settings", requirePermission("SCREEN", "administration.approval_se
 router.post("/:id/approve", requirePermission("SCREEN", "administration.approvals", "approve"), async (req, res, next) => {
   const id = Number(req.params.id);
   if (!id) return next(new HttpError(400, res.locals.t("error_invalid_id")));
+  if (!req.user?.isAdmin) return next(new HttpError(403, res.locals.t("permission_denied")));
 
   try {
     let requestSnapshot = null;
@@ -658,12 +945,21 @@ router.post("/:id/approve", requirePermission("SCREEN", "administration.approval
         const applyResult = await applyMasterDataChange(trx, request, req.user.id);
         const applied = typeof applyResult === "object" ? applyResult.applied !== false : Boolean(applyResult);
         appliedEntityId = typeof applyResult === "object" && applyResult.entityId ? String(applyResult.entityId) : null;
-        console.log("[DEBUG][Approval] applyMasterDataChange result:", applyResult);
+        console.log("[DEBUG][Approval] applyMasterDataChange result:", {
+          requestId: request.id,
+          entityType: request.entity_type,
+          entityId: request.entity_id,
+          summary: request.summary || null,
+          newValueKeys: request.new_value && typeof request.new_value === "object" ? Object.keys(request.new_value) : [],
+          applyResult,
+        });
         if (!applied) {
           const err = new Error(res.locals.t("approval_apply_failed"));
           err.code = "APPROVAL_APPLY_FAILED";
           throw err;
         }
+      } else if (request.request_type === "VOUCHER" && request.entity_type === "VOUCHER") {
+        await applyVoucherApprovalChangeTx({ trx, request, approverId: req.user.id });
       }
       await trx("erp.approval_request").where({ id }).update({
         status: "APPROVED",
@@ -727,6 +1023,7 @@ router.post("/:id/approve", requirePermission("SCREEN", "administration.approval
 // POST /:id/reject
 router.post("/:id/reject", requirePermission("SCREEN", "administration.approvals", "approve"), async (req, res, next) => {
   const id = Number(req.params.id);
+  if (!req.user?.isAdmin) return next(new HttpError(403, res.locals.t("permission_denied")));
 
   try {
     let requestSnapshot = null;
@@ -739,6 +1036,24 @@ router.post("/:id/reject", requirePermission("SCREEN", "administration.approvals
 
       if (request.entity_type === "BOM") {
         await bomService.resetPendingBomAfterRejectTx(trx, request);
+      }
+
+      if (request.request_type === "VOUCHER" && request.entity_type === "VOUCHER") {
+        const payload = request?.new_value && typeof request.new_value === "object" ? request.new_value : {};
+        const action = String(payload.action || "").toLowerCase();
+        const voucherId = Number(request.entity_id || 0);
+        if (!voucherId) {
+          throw new Error(res.locals.t("error_invalid_id"));
+        }
+        if (!action) {
+          await trx("erp.voucher_header")
+            .where({ id: voucherId, status: "PENDING" })
+            .update({
+              status: "REJECTED",
+              approved_by: req.user.id,
+              approved_at: trx.fn.now(),
+            });
+        }
       }
 
       await trx("erp.approval_request").where({ id }).update({

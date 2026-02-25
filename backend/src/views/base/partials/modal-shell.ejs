@@ -98,4 +98,133 @@
       setBodyScrollLock(true);
     }
   })();
+
+  (function () {
+    const shell = document.getElementById("modal-shell");
+    const notice = shell ? shell.querySelector("[data-modal-notice]") : null;
+    if (!shell || !notice) return;
+
+    const approvalSentText = <%- JSON.stringify(typeof t === "function" ? (t("approval_sent") || "") : "") %>;
+    const approvalSubmittedText = <%- JSON.stringify(typeof t === "function" ? (t("approval_submitted") || "") : "") %>;
+    const noticeLabel = <%- JSON.stringify(typeof t === "function" ? (t("notice") || "Notice") : "Notice") %>;
+    const fallbackLinkLabel = <%- JSON.stringify(typeof t === "function" ? (t("view_pending_approval") || "View pending approval") : "View pending approval") %>;
+
+    const clearUiNoticeCookie = () => {
+      document.cookie = "ui_notice=; Max-Age=0; Path=/; SameSite=Lax";
+    };
+
+    const showQueuedToast = ({ message = "", linkHref = "", linkLabel = "" } = {}) => {
+      const fallbackQueuedMessage = approvalSentText || approvalSubmittedText || "Change request sent for approval.";
+      const text = String(message || "").trim() || fallbackQueuedMessage;
+      if (!document.body) return;
+      document.querySelector("[data-inline-approval-toast]")?.remove();
+
+      const wrap = document.createElement("div");
+      wrap.className = "fixed right-4 top-4 z-[220] w-[92vw] max-w-sm";
+      wrap.setAttribute("data-inline-approval-toast", "true");
+      wrap.innerHTML = `
+        <div class="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-white p-4 shadow-xl">
+          <div class="mt-0.5 rounded-full bg-emerald-100 p-2 text-emerald-700">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <div class="flex-1" data-inline-approval-toast-content>
+            <div class="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">${noticeLabel}</div>
+            <p class="mt-1 text-sm text-slate-700" data-inline-approval-toast-message></p>
+          </div>
+          <button class="text-slate-400 hover:text-slate-600" type="button" data-inline-approval-toast-close aria-label="Close">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      `;
+      wrap.querySelector("[data-inline-approval-toast-message]").textContent = text;
+
+      const href = String(linkHref || "").trim();
+      if (href) {
+        const anchor = document.createElement("a");
+        anchor.href = href;
+        anchor.className = "mt-2 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-accent hover:text-accent/80";
+        anchor.textContent = String(linkLabel || "").trim() || fallbackLinkLabel;
+        wrap.querySelector("[data-inline-approval-toast-content]")?.appendChild(anchor);
+      }
+
+      const dismiss = () => wrap.remove();
+      wrap.querySelector("[data-inline-approval-toast-close]")?.addEventListener("click", dismiss);
+      document.body.appendChild(wrap);
+      clearUiNoticeCookie();
+      window.setTimeout(dismiss, 5000);
+    };
+
+    const handleQueuedApproval = ({ message = "", linkHref = "", linkLabel = "", closeModalShell = true } = {}) => {
+      if (closeModalShell) {
+        closeModal();
+      }
+      showQueuedToast({ message, linkHref, linkLabel });
+    };
+
+    window.handleApprovalQueuedToast = handleQueuedApproval;
+
+    document.addEventListener("erp:approval-queued", (event) => {
+      const detail = event?.detail && typeof event.detail === "object" ? event.detail : {};
+      handleQueuedApproval({
+        message: detail.message || "",
+        linkHref: detail.linkHref || "",
+        linkLabel: detail.linkLabel || "",
+        closeModalShell: detail.closeModalShell !== false,
+      });
+    });
+
+    const extractMessageWithoutLink = () => {
+      const clone = notice.cloneNode(true);
+      clone.querySelectorAll("a").forEach((node) => node.remove());
+      return String(clone.textContent || "").trim();
+    };
+
+    const maybeHandleQueuedNotice = () => {
+      if (notice.hidden) return;
+      if (notice.dataset.approvalHandled === "1") return;
+      const text = String(notice.textContent || "").trim();
+      if (!text) return;
+
+      const approvalLink = notice.querySelector("a[href]");
+      const href = String(approvalLink?.getAttribute("href") || "").trim();
+      const hasApprovalsLink = href.includes("/administration/approvals");
+      const looksLikeApprovalMessage =
+        (approvalSentText && text.includes(approvalSentText)) ||
+        (approvalSubmittedText && text.includes(approvalSubmittedText));
+
+      if (!hasApprovalsLink && !looksLikeApprovalMessage) return;
+
+      notice.dataset.approvalHandled = "1";
+      const message = extractMessageWithoutLink() || text;
+      const linkLabel = String(approvalLink?.textContent || "").trim();
+      notice.textContent = "";
+      notice.hidden = true;
+
+      handleQueuedApproval({
+        message,
+        linkHref: hasApprovalsLink ? href : "",
+        linkLabel: linkLabel || fallbackLinkLabel,
+        closeModalShell: true,
+      });
+    };
+
+    const observer = new MutationObserver(maybeHandleQueuedNotice);
+    observer.observe(notice, {
+      attributes: true,
+      attributeFilter: ["hidden", "class"],
+      childList: true,
+      subtree: true,
+      characterData: true,
+    });
+
+    const shellObserver = new MutationObserver(() => {
+      if (shell.classList.contains("hidden")) return;
+      notice.dataset.approvalHandled = "";
+    });
+    shellObserver.observe(shell, { attributes: true, attributeFilter: ["class"] });
+  })();
 </script>

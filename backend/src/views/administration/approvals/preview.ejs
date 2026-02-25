@@ -7,6 +7,8 @@
       .replace(/"/g, "&quot;")
       .replace(/'/g, "&#39;");
   const valuesAttr = escapeAttr(JSON.stringify(previewValues ?? {}));
+  const safeFieldErrors = typeof fieldErrors !== "undefined" && fieldErrors ? fieldErrors : {};
+  const safeFormValues = typeof formValues !== "undefined" && formValues ? formValues : {};
 %>
 <div
   class="space-y-4"
@@ -20,7 +22,7 @@
     <span class="text-sm font-semibold text-slate-700"><%= previewTitle %></span>
   </div>
   <div class="space-y-5" data-preview-body>
-    <%- include(formPartial) %>
+    <%- include(formPartial, { fieldErrors: safeFieldErrors, formValues: safeFormValues }) %>
     <div class="hidden space-y-3" data-preview-fallback></div>
   </div>
 </div>

@@ -63,7 +63,7 @@
               <% row.fg_ids = row.usage_article_ids || ""; %>
               <% const usageNames = displayUsage ? displayUsage.split(",").map((value) => value.trim()).filter(Boolean) : []; %>
               <% const usageIds = row.usage_article_ids ? row.usage_article_ids.split(",").map((value) => value.trim()).filter(Boolean) : []; %>
-              <tr class="hover:bg-amber-50/40" data-row data-subgroup-id="<%= row.subgroup_id || "" %>" data-active="<%= row.is_active ? "true" : "false" %>" data-created-by="<%= row.created_by_name || "" %>" data-created-at="<%= row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : "" %>">
+              <tr class="hover:bg-amber-50/40" data-row data-subgroup-id="<%= row.subgroup_id || "" %>" data-active="<%= row.is_active ? "true" : "false" %>" data-created-by="<%= row.created_by_name || "" %>" data-created-at="<%= row.created_at ? String(row.created_at).slice(0, 10) : "" %>">
                 <td class="px-4 py-3 text-slate-700"><%= idx + 1 %></td>
                                 <td class="px-4 py-3 text-slate-700"><%= displayName %></td>
                 <td class="px-4 py-3 text-slate-700"><%= displayGroup || "" %></td>

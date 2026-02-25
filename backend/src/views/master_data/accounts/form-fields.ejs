@@ -31,17 +31,38 @@
             <% if (field.helpText) { %>
               <span class="mt-1 block text-xs font-normal text-slate-500"><%= t(field.helpText) %></span>
             <% } %>
+            <% const emptyOptionLabel = (page.titleKey === "accounts" && field.name === "posting_class_id") ? t("none") : t("select"); %>
             <select
               class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
               name="<%= field.name %>"
               data-field="<%= field.name %>"
+              data-searchable-variant="unified"
               <%= field.required ? "required" : "" %>
             >
-              <option value=""><%= t("select") %></option>
+              <option value=""><%= emptyOptionLabel %></option>
               <% (field.options || []).forEach(function(option) { %>
-                <option value="<%= option.value %>"><%= t(option.label) %></option>
+                <option
+                  value="<%= option.value %>"
+                  data-account-type="<%= option.accountType || '' %>"
+                  data-party-type="<%= option.partyType || '' %>"
+                >
+                  <%= t(option.label) %>
+                </option>
               <% }) %>
             </select>
+            <% if (page.titleKey === "accounts" && field.name === "subgroup_id") { %>
+              <select class="hidden" aria-hidden="true" tabindex="-1" data-account-group-source>
+                <option value=""><%= t("select") %></option>
+                <% (field.options || []).forEach(function(option) { %>
+                  <option
+                    value="<%= option.value %>"
+                    data-account-type="<%= option.accountType || '' %>"
+                  >
+                    <%= t(option.label) %>
+                  </option>
+                <% }) %>
+              </select>
+            <% } %>
           </label>
         <% } else if (field.type === "textarea") { %>
           <label class="block text-sm font-semibold text-slate-600" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>

@@ -97,7 +97,7 @@
 
               <% const displayMinStock = row.min_stock_level === null || row.min_stock_level === undefined || row.min_stock_level === "" ? "" : Math.trunc(Number(row.min_stock_level)); %>
 
-              <tr class="hover:bg-amber-50/40" data-row data-rm-parent data-id="<%= row.id %>" data-subgroup-id="<%= row.subgroup_id || "" %>" data-active="<%= row.is_active ? "true" : "false" %>" data-created-by="<%= row.created_by_name || "" %>" data-created-at="<%= row.created_at ? new Date(row.created_at).toISOString().slice(0, 10) : "" %>">
+              <tr class="hover:bg-amber-50/40" data-row data-rm-parent data-id="<%= row.id %>" data-subgroup-id="<%= row.subgroup_id || "" %>" data-active="<%= row.is_active ? "true" : "false" %>" data-created-by="<%= row.created_by_name || "" %>" data-created-at="<%= row.created_at ? String(row.created_at).slice(0, 10) : "" %>">
                 <td class="px-3 py-3 text-slate-700 w-px whitespace-nowrap"><%= idx + 1 %></td>
                 <td class="px-3 py-3 text-slate-700 whitespace-normal max-w-[180px]"><%= displayName %></td>
                 <td class="px-3 py-3 text-slate-700 whitespace-normal max-w-[120px]"><%= displaySubgroup || "" %></td>
@@ -434,7 +434,7 @@
         // Show error message
         const errorBanner = document.querySelector("[data-modal-error]");
         if (errorBanner) {
-          errorBanner.textContent = "Please add at least one valid purchase rate.";
+          errorBanner.textContent = "<%= t('error_add_valid_purchase_rate') %>";
           errorBanner.hidden = false;
           // Scroll to top of modal to see error
           modalForm.closest(".overflow-y-auto").scrollTop = 0;

@@ -40,6 +40,16 @@
 		}
 		return "Pending Create";
 	};
+	const getEntityTypeLabel = (row) => {
+		if (!row) return "-";
+		if (row.entity_type !== "VOUCHER") return row.entity_type || "-";
+		const map = {
+			CASH_VOUCHER: t("cash_voucher"),
+			BANK_VOUCHER: t("bank_voucher"),
+			JOURNAL_VOUCHER: t("journal_voucher"),
+		};
+		return map[String(row.voucher_type_code || "").toUpperCase()] || row.voucher_type_code || row.entity_type || "-";
+	};
 	const branchLookup = (branches || []).reduce((acc, branch) => {
 		acc[String(branch.id)] = branch.name || branch.code || String(branch.id);
 		return acc;
@@ -108,7 +118,7 @@
 							<td class="px-6 py-4 text-slate-600"><%= new Date(row.created_at).toLocaleTimeString() %></td>
 							<td class="px-6 py-4 font-medium text-slate-900"><%= row.user_name || "-" %></td>
 							<td class="px-6 py-4 text-slate-600"><%= row.branch_name || row.branch_code || "-" %></td>
-							<td class="px-6 py-4 text-slate-600"><%= row.entity_type %></td>
+							<td class="px-6 py-4 text-slate-600"><%= getEntityTypeLabel(row) %></td>
 							<td class="px-6 py-4 text-slate-600"><%= getEntityIdLabel(row) %></td>
 							<td class="px-6 py-4">
 								<span class="inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] ring-1 <%= getActionClass(row.action) %>"><%= row.action %></span>
