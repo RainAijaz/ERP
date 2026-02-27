@@ -206,11 +206,9 @@
 
     dateRangeInput.addEventListener("click", () => {
       if (dateRangePanel.classList.contains("hidden")) openDateRangePanel();
-      else closeDateRangePanel();
     });
     dateRangeToggle?.addEventListener("click", () => {
       if (dateRangePanel.classList.contains("hidden")) openDateRangePanel();
-      else closeDateRangePanel();
     });
     dateRangeMonth1PrevBtn?.addEventListener("click", () => {
       rangeCursorMonth1 = addMonths(rangeCursorMonth1, -1);

@@ -2,6 +2,7 @@ const knex = require("../../db/knex");
 const { HttpError } = require("../../middleware/errors/http-error");
 const { insertActivityLog } = require("../../utils/audit-log");
 const { syncVoucherGlPostingTx } = require("./gl-posting-service");
+const { resolveReportType } = require("../../utils/report-filter-types");
 
 const ACCOUNT_FILTER_REPORTS = new Set(["account_activity_ledger", "cash_book"]);
 const REPORT_MODE_REPORTS = new Set(["account_activity_ledger", "voucher_register", "cash_book"]);
@@ -27,6 +28,9 @@ const canDo = (req, scopeType, scopeKey, action) => {
   if (typeof check !== "function") return false;
   return check(scopeType, scopeKey, action);
 };
+
+const canApproveVoucherAction = (req, scopeKey) =>
+  req?.user?.isAdmin === true || canDo(req, "VOUCHER", scopeKey, "approve");
 
 const resolveVoucherTypeFilter = (value, fallback = "cash") => {
   const key = String(value || "")
@@ -176,13 +180,9 @@ const getCommonFilters = (req, reportKey = "") => {
     branchIds = branchId ? [branchId] : [];
   }
   const accountId = supportsAccountFilter(normalizedReportKey) ? Number(requestInput.account_id || 0) || null : null;
-  const reportMode =
-    supportsReportModeFilter(normalizedReportKey) &&
-    String(requestInput.report_mode || "details")
-      .trim()
-      .toLowerCase() === "summary"
-      ? "summary"
-      : "details";
+  const reportMode = supportsReportModeFilter(normalizedReportKey)
+    ? resolveReportType(requestInput.report_mode, "details")
+    : "details";
 
   let voucherType = normalizedReportKey === "expense_analysis"
     ? resolveExpenseVoucherTypeFilter(requestInput.voucher_type, "all")
@@ -191,9 +191,7 @@ const getCommonFilters = (req, reportKey = "") => {
   if (normalizedReportKey === "bank_transactions") voucherType = "bank";
   if (normalizedReportKey === "journal_voucher_register") voucherType = "journal";
   const reportType = normalizedReportKey === "expense_analysis" ? "department_breakdown" : null;
-  const reportLoaded = (normalizedReportKey === "expense_analysis" || normalizedReportKey === "expense_trends")
-    ? toBool(requestInput.load_report, false)
-    : true;
+  const reportLoaded = toBool(requestInput.load_report, false);
   const departmentIds = normalizedReportKey === "expense_analysis" ? toIdList(requestInput.department_ids) : [];
   const breakdownStart =
     normalizedReportKey === "expense_analysis"
@@ -310,91 +308,37 @@ const getCashBook = async (filters) => {
     if (filters.branchId) summaryQuery = summaryQuery.where("ge.branch_id", filters.branchId);
     rows = await summaryQuery;
   } else {
-    // Detail mode: show voucher-line granularity for every voucher that impacts cash.
-    let detailsQuery = knex("erp.voucher_header as vh")
-      .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
-      .leftJoin("erp.accounts as ah", "ah.id", "vh.header_account_id")
-      .leftJoin("erp.accounts as a", "a.id", "vl.account_id")
-      .leftJoin("erp.parties as p", "p.id", "vl.party_id")
-      .leftJoin("erp.labours as l", "l.id", "vl.labour_id")
-      .leftJoin("erp.employees as e", "e.id", "vl.employee_id")
-      .leftJoin("erp.account_posting_classes as apch", "apch.id", "ah.posting_class_id")
-      .leftJoin("erp.account_posting_classes as apcl", "apcl.id", "a.posting_class_id")
-      .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
+    // Detail mode must follow GL entries so every approved voucher type (including PI/PR) is reflected.
+    let detailsQuery = knex("erp.gl_entry as ge")
+      .leftJoin("erp.gl_batch as gb", "gb.id", "ge.batch_id")
+      .leftJoin("erp.voucher_header as vh", "vh.id", "gb.source_voucher_id")
+      .leftJoin("erp.accounts as a", "a.id", "ge.account_id")
+      .leftJoin("erp.account_posting_classes as apc", "apc.id", "a.posting_class_id")
+      .leftJoin("erp.branches as b", "b.id", "ge.branch_id")
       .select(
-        knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"),
+        knex.raw("to_char(ge.entry_date, 'YYYY-MM-DD') as entry_date"),
         "vh.voucher_type_code",
         "vh.voucher_no",
-        knex.raw(`
-          CASE
-            WHEN vh.voucher_type_code IN ('CASH_VOUCHER','BANK_VOUCHER') THEN ah.name
-            ELSE COALESCE((
-              SELECT a2.name
-              FROM erp.voucher_line vl2
-              JOIN erp.accounts a2 ON a2.id = vl2.account_id
-              JOIN erp.account_posting_classes apc2 ON apc2.id = a2.posting_class_id
-              WHERE vl2.voucher_header_id = vh.id
-                AND upper(COALESCE(apc2.code, '')) = 'CASH'
-              ORDER BY vl2.line_no ASC
-              LIMIT 1
-            ), ah.name)
-          END as cash_account
-        `),
-        knex.raw("COALESCE(a.name, p.name, l.name, e.name, NULL) as entity"),
+        "a.name as cash_account",
         "b.name as branch_name",
-        knex.raw("COALESCE(NULLIF(vl.meta->>'description', ''), NULLIF(vh.remarks, '')) as description"),
-        knex.raw("COALESCE(NULLIF(vl.meta->>'credit','')::numeric, 0) as dr"),
-        knex.raw("COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0) as cr"),
-        "vl.id",
+        knex.raw("COALESCE(NULLIF(ge.narration, ''), NULLIF(vh.remarks, '')) as description"),
+        knex.raw("COALESCE(ge.dr, 0) as dr"),
+        knex.raw("COALESCE(ge.cr, 0) as cr"),
+        "ge.id",
       )
-      .where("vh.status", "APPROVED")
-      .whereIn("vh.voucher_type_code", ["CASH_VOUCHER", "BANK_VOUCHER", "JOURNAL_VOUCHER"])
-      .andWhere("vl.line_kind", "ACCOUNT")
-      .andWhere(function excludeJournalCashRows() {
-        this.whereNot("vh.voucher_type_code", "JOURNAL_VOUCHER")
-          .orWhereRaw("upper(COALESCE(apcl.code, '')) <> 'CASH'");
+      .whereRaw("upper(COALESCE(apc.code, '')) = 'CASH'")
+      .where(function whereApprovedOrManual() {
+        this.whereNull("vh.id").orWhere("vh.status", "APPROVED");
       })
-      .orderBy("vh.voucher_date", "asc")
-      .orderBy("vh.voucher_no", "asc")
-      .orderBy("vl.line_no", "asc")
-      .orderBy("vl.id", "asc");
+      .orderBy("ge.entry_date", "asc")
+      .orderBy("ge.id", "asc");
 
     if (selectedCashAccountId) {
-      detailsQuery = detailsQuery.where(function scopeSelectedCash() {
-        this.where(function cashOrBankByHeader() {
-          this.whereIn("vh.voucher_type_code", ["CASH_VOUCHER", "BANK_VOUCHER"])
-            .andWhere("vh.header_account_id", selectedCashAccountId);
-        }).orWhere(function journalByCashLine() {
-          this.where("vh.voucher_type_code", "JOURNAL_VOUCHER")
-            .whereExists(function cashLineExists() {
-              this.select(1)
-                .from("erp.voucher_line as jvl")
-                .whereRaw("jvl.voucher_header_id = vh.id")
-                .andWhere("jvl.account_id", selectedCashAccountId);
-            });
-        });
-      });
-    } else {
-      detailsQuery = detailsQuery.where(function anyCashImpactVoucher() {
-        this.where(function cashOrBankHeaderClass() {
-          this.whereIn("vh.voucher_type_code", ["CASH_VOUCHER", "BANK_VOUCHER"])
-            .whereRaw("upper(COALESCE(apch.code, '')) = 'CASH'");
-        }).orWhere(function journalHasCashLine() {
-          this.where("vh.voucher_type_code", "JOURNAL_VOUCHER")
-            .whereExists(function cashLineExists() {
-              this.select(1)
-                .from("erp.voucher_line as jvl")
-                .join("erp.accounts as ja", "ja.id", "jvl.account_id")
-                .join("erp.account_posting_classes as japc", "japc.id", "ja.posting_class_id")
-                .whereRaw("jvl.voucher_header_id = vh.id")
-                .whereRaw("upper(COALESCE(japc.code, '')) = 'CASH'");
-            });
-        });
-      });
+      detailsQuery = detailsQuery.where("ge.account_id", selectedCashAccountId);
     }
 
-    detailsQuery = buildDateFilter(detailsQuery, "vh.voucher_date", filters.from, filters.to);
-    if (filters.branchId) detailsQuery = detailsQuery.where("vh.branch_id", filters.branchId);
+    detailsQuery = buildDateFilter(detailsQuery, "ge.entry_date", filters.from, filters.to);
+    if (filters.branchId) detailsQuery = detailsQuery.where("ge.branch_id", filters.branchId);
     rows = await detailsQuery;
   }
 
@@ -503,6 +447,7 @@ const updateBankVoucherLineStatus = async ({ req, voucherId, lineId, nextStatus 
   }
 
   const canEdit = canDo(req, "VOUCHER", "BANK_VOUCHER", "edit");
+  const canApprove = canApproveVoucherAction(req, "BANK_VOUCHER");
 
   const result = await knex.transaction(async (trx) => {
     const row = await trx("erp.voucher_line as vl")
@@ -535,7 +480,7 @@ const updateBankVoucherLineStatus = async ({ req, voucherId, lineId, nextStatus 
     }
 
     const policyRequiresApproval = await requiresApprovalForVoucherAction(trx, "BANK_VOUCHER", "edit");
-    const queuedForApproval = policyRequiresApproval || !canEdit;
+    const queuedForApproval = !canEdit || (policyRequiresApproval && !canApprove);
     if (queuedForApproval) {
       const approvalRequestId = await queueVoucherApprovalRequest({
         trx,
@@ -1714,61 +1659,32 @@ const getAccountActivityLedger = async (filters) => {
 
   let rows = [];
   if (filters.reportMode === "details") {
-    let detailQuery = knex("erp.voucher_header as vh")
-      .join("erp.voucher_type as vt", "vt.code", "vh.voucher_type_code")
-      .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
-      .leftJoin("erp.accounts as a", "a.id", "vl.account_id")
-      .leftJoin("erp.parties as p", "p.id", "vl.party_id")
-      .leftJoin("erp.labours as l", "l.id", "vl.labour_id")
-      .leftJoin("erp.employees as e", "e.id", "vl.employee_id")
-      .leftJoin("erp.departments as d", knex.raw("d.id = NULLIF(vl.meta->>'department_id','')::bigint"))
-      .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
+    let detailQuery = knex("erp.gl_entry as ge")
+      .leftJoin("erp.gl_batch as gb", "gb.id", "ge.batch_id")
+      .leftJoin("erp.voucher_header as vh", "vh.id", "gb.source_voucher_id")
+      .leftJoin("erp.departments as d", "d.id", "ge.dept_id")
+      .leftJoin("erp.branches as b", "b.id", "ge.branch_id")
       .select(
-        knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"),
+        knex.raw("to_char(ge.entry_date, 'YYYY-MM-DD') as entry_date"),
         "vh.voucher_type_code",
         "vh.voucher_no",
         "b.name as branch_name",
-        knex.raw(
-          `
-          CASE
-            WHEN vh.voucher_type_code IN ('CASH_VOUCHER','BANK_VOUCHER') AND vh.header_account_id = ?
-              THEN COALESCE(NULLIF(vl.meta->>'credit','')::numeric, 0)
-            ELSE COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0)
-          END as dr
-        `,
-          [filters.accountId],
-        ),
-        knex.raw(
-          `
-          CASE
-            WHEN vh.voucher_type_code IN ('CASH_VOUCHER','BANK_VOUCHER') AND vh.header_account_id = ?
-              THEN COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0)
-            ELSE COALESCE(NULLIF(vl.meta->>'credit','')::numeric, 0)
-          END as cr
-        `,
-          [filters.accountId],
-        ),
-        knex.raw("NULLIF(vl.meta->>'description','') as description"),
+        knex.raw("COALESCE(ge.dr, 0) as dr"),
+        knex.raw("COALESCE(ge.cr, 0) as cr"),
+        knex.raw("COALESCE(NULLIF(ge.narration, ''), NULLIF(vh.remarks, '')) as description"),
         "d.name as department",
-        "vl.line_no",
       )
-      .where("vh.status", "APPROVED")
-      .andWhere("vt.affects_gl", true)
-      .andWhere(function whereAccountInvolvement() {
-        this.where(function whereHeaderAccount() {
-          this.whereIn("vh.voucher_type_code", ["CASH_VOUCHER", "BANK_VOUCHER"]).andWhere("vh.header_account_id", filters.accountId);
-        }).orWhere(function whereLineAccount() {
-          this.where("vl.line_kind", "ACCOUNT").andWhere("vl.account_id", filters.accountId);
-        });
+      .where("ge.account_id", filters.accountId)
+      .where(function whereApprovedOrManual() {
+        this.whereNull("vh.id").orWhere("vh.status", "APPROVED");
       })
-      .orderBy("vh.voucher_date", "asc")
-      .orderBy("vh.voucher_no", "asc")
-      .orderBy("vl.line_no", "asc");
+      .orderBy("ge.entry_date", "asc")
+      .orderBy("ge.id", "asc");
 
     if (filters.branchId) {
-      detailQuery = detailQuery.where("vh.branch_id", filters.branchId);
+      detailQuery = detailQuery.where("ge.branch_id", filters.branchId);
     }
-    detailQuery = buildDateFilter(detailQuery, "vh.voucher_date", filters.from, filters.to);
+    detailQuery = buildDateFilter(detailQuery, "ge.entry_date", filters.from, filters.to);
     rows = await detailQuery;
   } else {
     let summaryQuery = knex("erp.gl_entry as ge")
@@ -1833,6 +1749,13 @@ const getPayrollWageBalance = async (filters) => {
 const getFinancialReport = async (reportKey, req, precomputedFilters = null) => {
   const normalizedKey = normalizeReportKey(reportKey);
   const filters = precomputedFilters || getCommonFilters(req, normalizedKey);
+
+  if (!filters.reportLoaded) {
+    if (VOUCHER_REGISTER_REPORTS.has(normalizedKey)) {
+      return { rows: [], titleKey: "voucher_register", filters, meta: null };
+    }
+    return { rows: [], titleKey: normalizedKey, filters, meta: null };
+  }
 
   if (VOUCHER_REGISTER_REPORTS.has(normalizedKey)) {
     return { rows: await getVoucherRegister(filters), titleKey: "voucher_register", filters };

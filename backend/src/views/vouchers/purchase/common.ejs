@@ -1,0 +1,1662 @@
+<%
+  const formatDateInput = (value) => {
+    if (!value) return "";
+    const asText = String(value);
+    const textMatch = asText.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (textMatch) return textMatch[1];
+    const dt = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(dt.getTime())) return "";
+    const yyyy = dt.getFullYear();
+    const mm = String(dt.getMonth() + 1).padStart(2, "0");
+    const dd = String(dt.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  };
+  const selectedVoucherNo = selectedVoucher ? Number(selectedVoucher.voucher_no || 0) : null;
+  const suggestedVoucherNo = selectedVoucherNo || (Number(latestVoucherNo || 0) + 1);
+  const selectedDate = selectedVoucher && selectedVoucher.voucher_date
+    ? formatDateInput(selectedVoucher.voucher_date)
+    : formatDateInput(new Date());
+  const isDeletedVoucher = String(selectedVoucher?.status || "").toUpperCase() === "REJECTED";
+  const selectedStatus = String(selectedVoucher?.status || "").toUpperCase();
+  const selectedStatusLabel = selectedStatus === "APPROVED" ? t("approved") : selectedStatus === "REJECTED" ? t("rejected") : selectedStatus === "PENDING" ? t("pending") : selectedStatus;
+  const selectedStatusToneClass = selectedStatus === "APPROVED" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : selectedStatus === "REJECTED" ? "border-rose-200 bg-rose-50 text-rose-800" : "border-amber-200 bg-amber-50 text-amber-800";
+  const toFriendlyLabel = (key) => {
+    const text = String(t(key) || "").trim();
+    if (/^[A-Za-z0-9 _-]+$/.test(text)) {
+      return text.toLowerCase().replace(/[_-]+/g, " ").replace(/\b[a-z]/g, (ch) => ch.toUpperCase());
+    }
+    return text;
+  };
+
+  const isGrn = voucherTypeCode === "GRN";
+%>
+
+<style>
+  [data-purchase-voucher-form] table thead th {
+    font-size: 11px;
+    letter-spacing: 0.08em;
+  }
+  [data-purchase-voucher-form] table td {
+    padding: 0.2rem 0.35rem;
+  }
+  [data-purchase-voucher-form] table tbody tr:nth-child(even) td {
+    background-color: #f8fafc;
+  }
+  [data-purchase-voucher-form] table tbody tr:hover td {
+    background-color: #f1f5f9;
+  }
+</style>
+
+<div class="mx-auto w-full max-w-none space-y-3 px-2">
+  <section class="rounded-2xl border border-slate-200 bg-white/95 px-4 py-4 shadow-sm">
+    <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+      <div>
+        <h1 class="text-2xl font-display font-semibold tracking-tight text-ink"><%= toFriendlyLabel(titleKey) %></h1>
+        <p class="text-sm text-muted"><%= t("purchase") %></p>
+      </div>
+      <% if (selectedVoucher) { %>
+        <div class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] <%= selectedStatusToneClass %>">
+          <span><%= toFriendlyLabel("status") %></span>
+          <span class="rounded-full bg-white/80 px-2 py-0.5 text-slate-800"><%= selectedStatusLabel %></span>
+        </div>
+      <% } %>
+    </div>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <form method="post" action="<%= basePath || '' %>" class="space-y-4" data-purchase-voucher-form>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="voucher_id" value="<%= selectedVoucher?.id || '' %>">
+      <input type="hidden" name="lines_json" value="[]" data-lines-json>
+      <input type="hidden" name="grn_allocations_json" value="" data-grn-alloc-json>
+
+      <div class="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel("voucher_no") %></label>
+          <div class="lg:col-span-2">
+            <input type="text" value="<%= suggestedVoucherNo %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700" data-voucher-no-input>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 lg:col-span-8">
+            <a href="<%= prevVoucherNo ? ((basePath || '') + '?voucher_no=' + prevVoucherNo + '&view=1') : '#' %>" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700 <%= prevVoucherNo ? '' : 'pointer-events-none opacity-40' %>"><%= toFriendlyLabel("prev") %></a>
+            <a href="<%= nextVoucherNo ? ((basePath || '') + '?voucher_no=' + nextVoucherNo + '&view=1') : ((basePath || '') + '?new=1') %>" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700"><%= toFriendlyLabel("next") %></a>
+            <button type="button" class="rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-white shadow-sm" data-load-voucher><%= toFriendlyLabel("load") %></button>
+            <div class="ml-auto flex items-center gap-2">
+              <button type="button" class="rounded-xl border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-rose-700 disabled:opacity-40" data-delete-voucher <%= selectedVoucher && !isDeletedVoucher ? '' : 'disabled' %>><%= toFriendlyLabel("delete") %></button>
+              <button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700" onclick="window.print()"><%= toFriendlyLabel("print") %></button>
+            </div>
+          </div>
+        </div>
+
+        <% if (voucherTypeCode === "PI") { %>
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel("date") %></label>
+            <div class="lg:col-span-4">
+              <input type="date" name="voucher_date" value="<%= selectedDate %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" required>
+            </div>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= t("bill_number") || "Bill Number" %></label>
+            <div class="lg:col-span-4">
+              <input type="text" name="reference_no" maxlength="120" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" value="<%= selectedVoucher?.reference_no || '' %>" placeholder="e.g., Supplier Bill #" required>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center" data-general-purchase-fields>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel("payment_type") %></label>
+            <div class="lg:col-span-4">
+              <select name="payment_type" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-payment-type data-searchable-select="true" data-searchable-variant="unified">
+                <option value="CREDIT" <%= String(selectedVoucher?.payment_type || "CREDIT").toUpperCase() === "CREDIT" ? "selected" : "" %>><%= t("credit_purchase") %></option>
+                <option value="CASH" <%= String(selectedVoucher?.payment_type || "").toUpperCase() === "CASH" ? "selected" : "" %>><%= t("cash_purchase") %></option>
+              </select>
+            </div>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3" data-cash-account-label><%= toFriendlyLabel("cash_paid_account") %></label>
+            <div class="lg:col-span-4" data-cash-account-wrap>
+              <select name="cash_paid_account_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-cash-account data-searchable-select="true" data-searchable-variant="unified">
+                <option value=""><%= t("select_account_name") %></option>
+                <% (options.cashAccounts || []).forEach((account) => { %>
+                  <option value="<%= account.id %>" <%= Number(selectedVoucher?.cash_paid_account_id || 0) === Number(account.id) ? "selected" : "" %>><%= account.name %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center" data-general-purchase-fields>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel("supplier") %></label>
+            <div class="lg:col-span-4">
+              <select name="supplier_party_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-supplier-select data-searchable-select="true" data-searchable-variant="unified">
+                <option value=""><%= t("select_supplier") %></option>
+                <% (options.suppliers || []).forEach((supplier) => { %>
+                  <option value="<%= supplier.id %>" <%= Number(selectedVoucher?.supplier_party_id || 0) === Number(supplier.id) ? "selected" : "" %>><%= supplier.name %></option>
+                <% }) %>
+              </select>
+            </div>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= toFriendlyLabel("grn_reference") %></label>
+            <div class="lg:col-span-4">
+              <div class="flex items-center gap-2">
+                <input type="hidden" name="grn_reference_voucher_no" value="<%= selectedVoucher?.grn_reference_voucher_no || '' %>" data-grn-reference>
+                <input type="text" readonly class="h-10 w-full rounded-xl border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700" data-grn-reference-display placeholder="<%= t('auto_select_open_grn') %>">
+                <button type="button" class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700" data-open-grn-picker aria-label="<%= `${toFriendlyLabel('load')} GRN` %>" title="<%= `${toFriendlyLabel('load')} GRN` %>">
+                  <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M9 12h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+                    <path d="M8.5 8.5l-2 2a3 3 0 0 0 4.24 4.24l1.06-1.06" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+                    <path d="M15.5 15.5l2-2a3 3 0 0 0-4.24-4.24l-1.06 1.06" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel("description") %></label>
+            <div class="lg:col-span-10">
+              <input type="text" name="description" maxlength="1000" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" value="<%= selectedVoucher?.description || '' %>">
+            </div>
+          </div>
+
+        <% } else if (voucherTypeCode === "PR") { %>
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel("date") %></label>
+            <div class="lg:col-span-4">
+              <input type="date" name="voucher_date" value="<%= selectedDate %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" required>
+            </div>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= t("bill_number") || "Bill Number" %></label>
+            <div class="lg:col-span-4">
+              <input type="text" name="reference_no" maxlength="120" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" value="<%= selectedVoucher?.reference_no || '' %>" placeholder="e.g., Return Bill No." required>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel("supplier") %></label>
+            <div class="lg:col-span-4">
+              <select name="supplier_party_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-supplier-select data-searchable-select="true" data-searchable-variant="unified" required>
+                <option value=""><%= t("select_supplier") %></option>
+                <% (options.suppliers || []).forEach((supplier) => { %>
+                  <option value="<%= supplier.id %>" <%= Number(selectedVoucher?.supplier_party_id || 0) === Number(supplier.id) ? "selected" : "" %>><%= supplier.name %></option>
+                <% }) %>
+              </select>
+            </div>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= toFriendlyLabel("reason") %></label>
+            <div class="lg:col-span-4">
+              <select name="return_reason" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified">
+                <option value=""><%= t("select_reason") %></option>
+                <% (options.purchaseReturnReasons || []).forEach((reason) => { %>
+                  <option value="<%= reason %>" <%= String(selectedVoucher?.return_reason || "").toUpperCase() === String(reason).toUpperCase() ? "selected" : "" %>><%= t(`return_reason_${String(reason).toLowerCase()}`) %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel("description") %></label>
+            <div class="lg:col-span-10">
+              <input type="text" name="description" maxlength="1000" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" value="<%= selectedVoucher?.description || '' %>">
+            </div>
+          </div>
+
+        <% } else { %>
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel("date") %></label>
+            <div class="lg:col-span-4">
+              <input type="date" name="voucher_date" value="<%= selectedDate %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" required>
+            </div>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= t("bill_number") || "Bill Number" %></label>
+            <div class="lg:col-span-4">
+              <input type="text" name="reference_no" maxlength="120" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" value="<%= selectedVoucher?.reference_no || '' %>" placeholder="e.g., Delivery Note / Challan No." required>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel("supplier") %></label>
+            <div class="lg:col-span-4">
+              <select name="supplier_party_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-supplier-select data-searchable-select="true" data-searchable-variant="unified" required>
+                <option value=""><%= t("select_supplier") %></option>
+                <% (options.suppliers || []).forEach((supplier) => { %>
+                  <option value="<%= supplier.id %>" <%= Number(selectedVoucher?.supplier_party_id || 0) === Number(supplier.id) ? "selected" : "" %>><%= supplier.name %></option>
+                <% }) %>
+              </select>
+            </div>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= toFriendlyLabel("description") %></label>
+            <div class="lg:col-span-4">
+              <input type="text" name="description" maxlength="1000" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" value="<%= selectedVoucher?.description || '' %>">
+            </div>
+          </div>
+        <% } %>
+
+        <% if (isDeletedVoucher) { %>
+          <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+            <%= t("voucher_deleted_read_only") %>
+          </div>
+        <% } %>
+      </div>
+
+      <div class="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div class="overflow-x-auto lg:overflow-visible overflow-y-visible min-h-[16rem] pb-6">
+          <table class="w-full min-w-[960px] table-fixed text-xs">
+            <colgroup>
+              <% if (isGrn) { %>
+                <col class="w-[22%]">
+                <col class="w-[16%]">
+                <col class="w-[16%]">
+                <col class="w-[12%]">
+                <col class="w-[14%]">
+                <col class="w-[10%]">
+                <col class="w-[10%]">
+              <% } else { %>
+                <col class="w-[16%]">
+                <col class="w-[14%]">
+                <col class="w-[14%]">
+                <col class="w-[9%]">
+                <col class="w-[13%]">
+                <col class="w-[12%]">
+                <col class="w-[8%]">
+                <col class="w-[7%]">
+                <col class="w-[7%]">
+              <% } %>
+            </colgroup>
+            <thead class="bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
+              <tr>
+                <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel("raw_material") %></th>
+                <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel("color") %></th>
+                <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel("size") %></th>
+                <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel("unit") %></th>
+                <th class="border-b border-slate-200 px-2 py-2 text-right"><%= toFriendlyLabel("quantity") %></th>
+                <% if (!isGrn) { %>
+                  <th class="border-b border-slate-200 px-2 py-2 text-right"><%= toFriendlyLabel("rate") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-right"><%= toFriendlyLabel("amount") %></th>
+                <% } %>
+                <th class="border-b border-slate-200 px-2 py-2 text-center"><%= toFriendlyLabel("actions") %></th>
+                <th class="border-b border-slate-200 px-2 py-2 text-center"><%= toFriendlyLabel("sr_no") %></th>
+              </tr>
+            </thead>
+            <tbody data-lines-body></tbody>
+            <tfoot>
+              <tr class="bg-slate-50">
+                <td class="border-t border-slate-200 px-2 py-2 text-xs font-semibold text-slate-700" colspan="<%= isGrn ? 4 : 6 %>"><%= toFriendlyLabel("total") %></td>
+                <% if (isGrn) { %>
+                   <td class="border-t border-slate-200 px-2 py-2">
+                      <input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-qty>
+                   </td>
+                <% } else { %>
+                   <td class="border-t border-slate-200 px-2 py-2">
+                      <input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.00" data-total-amount>
+                   </td>
+                <% } %>
+                <td class="border-t border-slate-200 px-2 py-2 text-center">
+                  <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900" data-add-row aria-label="<%= toFriendlyLabel('add_row') %>" title="<%= toFriendlyLabel('add_row') %>">
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /><path d="M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+                  </button>
+                </td>
+                <td class="border-t border-slate-200 px-2 py-2"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-center gap-2 pt-1">
+        <button type="submit" class="rounded-xl bg-accent px-5 py-2 text-sm font-semibold uppercase tracking-[0.1em] text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40" <%= isDeletedVoucher ? 'disabled' : '' %>><%= toFriendlyLabel("confirm") %></button>
+      </div>
+    </form>
+    
+    <form method="post" action="<%= (basePath || '') + '/delete' %>" class="hidden" data-delete-voucher-form>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="voucher_id" value="<%= selectedVoucher?.id || '' %>">
+    </form>
+
+    <div class="fixed inset-0 z-40 hidden items-center justify-center bg-slate-900/40 p-3" data-grn-picker-modal aria-hidden="true">
+      <div class="w-full max-w-5xl rounded-2xl border border-slate-200 bg-white shadow-xl">
+        <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+          <h3 class="text-base font-semibold text-slate-800"><%= toFriendlyLabel("grn_reference") %></h3>
+          <button type="button" class="rounded-md border border-slate-300 px-2 py-1 text-xs font-semibold text-slate-700" data-grn-picker-close><%= toFriendlyLabel("cancel") %></button>
+        </div>
+        <div class="space-y-3 px-4 py-3">
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-12">
+            <div class="md:col-span-8">
+              <label class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500"><%= toFriendlyLabel("supplier") %></label>
+              <input type="text" readonly class="h-9 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-sm text-slate-700" data-grn-picker-supplier>
+            </div>
+            <div class="md:col-span-4">
+              <label class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500"><%= toFriendlyLabel("date") %></label>
+              <input type="text" readonly class="h-9 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-sm text-slate-700" data-grn-picker-date>
+            </div>
+          </div>
+
+          <div class="max-h-[45vh] overflow-auto rounded-xl border border-slate-200">
+            <table class="w-full min-w-[980px] table-fixed text-xs">
+              <thead class="bg-slate-50 uppercase tracking-[0.08em] text-slate-500">
+                <tr>
+                  <th class="border-b border-slate-200 px-2 py-2 text-center"><%= toFriendlyLabel("select") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel("voucher_no") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel("date") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel("raw_material") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel("color") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel("size") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-right"><%= toFriendlyLabel("quantity") %></th>
+                </tr>
+              </thead>
+              <tbody data-grn-picker-lines-body></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-4 py-3">
+          <button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700" data-grn-picker-close><%= toFriendlyLabel("cancel") %></button>
+          <button type="button" class="rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-white" data-grn-picker-apply><%= toFriendlyLabel("apply") %></button>
+        </div>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script><%- include("../../base/partials/searchable-select.js") %></script>
+<script>
+  (function () {
+    const form = document.querySelector("[data-purchase-voucher-form]");
+    if (!form) return;
+
+    const rawMaterials = <%- JSON.stringify(options.rawMaterials || []) %>;
+    const colors = <%- JSON.stringify(options.colors || []) %>;
+    const sizes = <%- JSON.stringify(options.sizes || []) %>;
+    const rawMaterialColorPolicyByItem = <%- JSON.stringify(options.rawMaterialColorPolicyByItem || {}) %>;
+    const rawMaterialSizePolicyByItem = <%- JSON.stringify(options.rawMaterialSizePolicyByItem || {}) %>;
+    const rawMaterialRatesByItem = <%- JSON.stringify(options.rawMaterialRatesByItem || {}) %>;
+    const openGrnHeaders = <%- JSON.stringify(options.openGrnHeaders || []) %>;
+    const openGrnLines = <%- JSON.stringify(options.openGrnLines || []) %>;
+    const selectedVoucher = <%- JSON.stringify(selectedVoucher || null) %>;
+    const voucherTypeCode = "<%= voucherTypeCode %>";
+    const isGrn = voucherTypeCode === "GRN";
+    const isGeneralPurchase = voucherTypeCode === "PI";
+    const isPurchaseReturn = voucherTypeCode === "PR";
+    
+    const linesBody = form.querySelector("[data-lines-body]");
+    const addRowButton = form.querySelector("[data-add-row]");
+    const totalAmountInput = form.querySelector("[data-total-amount]");
+    const totalQtyInput = form.querySelector("[data-total-qty]");
+    const linesJsonInput = form.querySelector("[data-lines-json]");
+    const grnAllocJsonInput = form.querySelector("[data-grn-alloc-json]");
+    
+    const supplierSelect = form.querySelector("[data-supplier-select]");
+    const paymentTypeSelect = form.querySelector("[data-payment-type]");
+    const cashAccountLabel = form.querySelector("[data-cash-account-label]");
+    const cashAccountWrap = form.querySelector("[data-cash-account-wrap]");
+    const cashAccountSelect = form.querySelector("[data-cash-account]");
+    const grnReferenceInput = form.querySelector("[data-grn-reference]");
+    const grnReferenceDisplayInput = form.querySelector("[data-grn-reference-display]");
+    const openGrnPickerButton = form.querySelector("[data-open-grn-picker]");
+    const grnPickerModal = document.querySelector("[data-grn-picker-modal]");
+    const grnPickerSupplierInput = grnPickerModal?.querySelector("[data-grn-picker-supplier]");
+    const grnPickerDateInput = grnPickerModal?.querySelector("[data-grn-picker-date]");
+    const grnPickerLinesBody = grnPickerModal?.querySelector("[data-grn-picker-lines-body]");
+    const grnPickerApplyButton = grnPickerModal?.querySelector("[data-grn-picker-apply]");
+    const grnPickerCloseButtons = grnPickerModal ? Array.from(grnPickerModal.querySelectorAll("[data-grn-picker-close]")) : [];
+    const voucherDateInput = form.querySelector('input[name="voucher_date"]');
+    const referenceNoInput = form.querySelector('input[name="reference_no"]');
+    const grnPickerSelectedLineIds = new Set();
+
+    const uomByItemId = new Map(rawMaterials.map((item) => [Number(item.id), { id: Number(item.base_uom_id || 0), name: item.base_uom_name || "" }]));
+    const colorNameById = new Map(colors.map((color) => [Number(color.id), color.name || ""]));
+    const sizeNameById = new Map(sizes.map((size) => [Number(size.id), size.name || ""]));
+    
+    const itemRows = Array.isArray(selectedVoucher?.lines) && selectedVoucher.lines.length
+      ? selectedVoucher.lines.map((line) => ({
+          item_id: Number(line.item_id || 0) || null,
+          color_id: Number(line.color_id || 0) || null,
+          size_id: Number(line.size_id || 0) || null,
+          uom_id: Number(line.uom_id || 0) || null,
+          qty: Number(line.qty || 0),
+          rate: Number(line.rate || 0),
+          amount: Number(line.amount || 0),
+          grn_source_line_id: null,
+        }))
+      : [{ item_id: null, color_id: null, size_id: null, uom_id: null, qty: 0, rate: 0, amount: 0, grn_source_line_id: null }];
+
+    const rowsState = itemRows;
+    let pendingFocusRowIndex = null;
+    let pendingFocusFieldByRow = null;
+    let pendingRowEnterAdvanceKey = "";
+    
+    const makeOption = (value, label, selected) => {
+      const option = document.createElement("option");
+      option.value = String(value);
+      option.textContent = label;
+      if (selected) option.selected = true;
+      return option;
+    };
+
+    const focusFirstEditableFieldOfRow = (rowIndex) => {
+      const rowElement = linesBody?.querySelector(`tr:nth-child(${Number(rowIndex) + 1})`);
+      if (!rowElement) return;
+
+      const focusTarget = rowElement.querySelector(
+        '[data-searchable-wrapper] input, select:not(.sr-only):not([disabled]), input:not([type="hidden"]):not([readonly]):not([disabled])',
+      );
+      if (!focusTarget) return;
+      focusTarget.focus();
+      if (focusTarget.matches("[data-searchable-wrapper] input")) {
+        focusTarget.click();
+        return;
+      }
+      if (typeof focusTarget.select === "function" && focusTarget.tagName === "INPUT") {
+        focusTarget.select();
+      }
+    };
+
+    const rowFieldOrder = isGrn
+      ? ["item", "color", "size", "qty"]
+      : ["item", "color", "size", "qty", "rate"];
+
+    const resolveRowFieldKey = (element) => {
+      if (!element) return "";
+      if (element.dataset?.rowField) return String(element.dataset.rowField);
+      const wrapper = element.closest("[data-searchable-wrapper]");
+      if (!wrapper) return "";
+      const linkedSelect = wrapper.querySelector("select[data-row-field]");
+      return linkedSelect?.dataset?.rowField ? String(linkedSelect.dataset.rowField) : "";
+    };
+
+    const focusRowField = (rowElement, fieldKey, { openSearchable = true } = {}) => {
+      if (!rowElement || !fieldKey) return false;
+      const field = rowElement.querySelector(`[data-row-field="${fieldKey}"]`);
+      if (!field || field.disabled) return false;
+
+      if (field.tagName === "SELECT") {
+        const searchableInput = field.parentElement?.querySelector("[data-searchable-wrapper] input");
+        if (searchableInput) {
+          if (!openSearchable) {
+            searchableInput.dataset.searchableSuppressOpenOnce = "1";
+          }
+          searchableInput.focus();
+          if (openSearchable) {
+            searchableInput.click();
+            requestAnimationFrame(() => {
+              if (document.activeElement !== searchableInput) {
+                searchableInput.focus();
+              }
+            });
+          }
+          return true;
+        }
+        field.focus();
+        return true;
+      }
+
+      field.focus();
+      if (field.tagName === "INPUT" && typeof field.select === "function") {
+        field.select();
+      }
+      return true;
+    };
+
+    const focusAnyRowField = (rowElement, fieldKeys = [], { openSearchable = true } = {}) => {
+      if (!rowElement || !Array.isArray(fieldKeys) || !fieldKeys.length) return false;
+      for (let idx = 0; idx < fieldKeys.length; idx += 1) {
+        const key = fieldKeys[idx];
+        const shouldOpen = idx === 0 ? openSearchable : true;
+        if (focusRowField(rowElement, key, { openSearchable: shouldOpen })) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const focusNextRowField = (currentEl) => {
+      const rowElement = currentEl?.closest("tr");
+      if (!rowElement) return false;
+      const dataRowIndex = Number(rowElement.getAttribute("data-row-index") || "");
+      const rowIndex = Number.isInteger(dataRowIndex) ? dataRowIndex : Array.from(linesBody?.querySelectorAll("tr") || []).indexOf(rowElement);
+      const currentFieldKey = resolveRowFieldKey(currentEl);
+      if (!currentFieldKey) return false;
+
+      const index = rowFieldOrder.indexOf(currentFieldKey);
+      if (index < 0) return false;
+
+      const nextFieldKeys = rowFieldOrder.slice(index + 1);
+      if (!nextFieldKeys.length) {
+        appendBlankRow({ focusNewRow: true });
+        return true;
+      }
+
+      pendingFocusFieldByRow = rowIndex >= 0 ? { rowIndex, fieldKeys: nextFieldKeys, openSearchable: true } : null;
+      if (!pendingFocusFieldByRow) {
+        setTimeout(() => {
+          const focused = focusAnyRowField(rowElement, nextFieldKeys, { openSearchable: true });
+          if (!focused) {
+            appendBlankRow({ focusNewRow: true });
+          }
+        }, 0);
+      } else {
+        setTimeout(() => {
+          const pending = pendingFocusFieldByRow;
+          pendingFocusFieldByRow = null;
+          if (!pending) return;
+          const targetRow = linesBody?.querySelector(`tr[data-row-index="${pending.rowIndex}"]`);
+          const focused = focusAnyRowField(targetRow, pending.fieldKeys || [], { openSearchable: pending.openSearchable !== false });
+          if (!focused) {
+            appendBlankRow({ focusNewRow: true });
+          }
+        }, 0);
+      }
+      return true;
+    };
+
+    const isVisibleElement = (el) => {
+      if (!el) return false;
+      if (el.disabled) return false;
+      if (el.type === "hidden") return false;
+      return el.offsetParent !== null;
+    };
+
+    const focusNextField = (currentEl) => {
+      const ordered = Array.from(
+        form.querySelectorAll(
+          'input:not([type="hidden"]), select:not(.hidden):not(.sr-only), textarea, [data-searchable-wrapper] input, button[data-enhanced-select-trigger="1"], button[data-load-voucher], button[type="submit"]',
+        ),
+      ).filter(isVisibleElement);
+      const idx = ordered.indexOf(currentEl);
+      if (idx < 0) return;
+      const next = ordered[idx + 1];
+      if (!next) return;
+      next.focus();
+      if (next.matches('[data-searchable-wrapper] input')) {
+        next.click();
+        return;
+      }
+      if (next.matches('button[data-enhanced-select-trigger="1"]')) {
+        next.click();
+        return;
+      }
+      if (next.tagName === "INPUT" && typeof next.select === "function") {
+        next.select();
+      }
+    };
+
+    const getColorPolicyForItem = (itemId) => {
+      const key = String(Number(itemId || 0));
+      const policy = rawMaterialColorPolicyByItem?.[key];
+      if (!policy || typeof policy !== "object") return null;
+      const rowColors = Array.isArray(policy.colors) ? policy.colors : [];
+      return {
+        hasAnyRate: policy.hasAnyRate === true,
+        hasColorless: policy.hasColorless === true,
+        colors: rowColors
+          .map((entry) => ({
+            id: Number(entry?.id || 0),
+            name: String(entry?.name || "").trim(),
+          }))
+          .filter((entry) => entry.id > 0),
+      };
+    };
+
+    const getSizePolicyForItem = (itemId) => {
+      const key = String(Number(itemId || 0));
+      const policy = rawMaterialSizePolicyByItem?.[key];
+      if (!policy || typeof policy !== "object") return null;
+      const rowSizes = Array.isArray(policy.sizes) ? policy.sizes : [];
+      return {
+        hasAnyRate: policy.hasAnyRate === true,
+        hasSizeless: policy.hasSizeless === true,
+        sizes: rowSizes
+          .map((entry) => ({
+            id: Number(entry?.id || 0),
+            name: String(entry?.name || "").trim(),
+          }))
+          .filter((entry) => entry.id > 0),
+      };
+    };
+
+    const toPositiveInt = (value) => {
+      const n = Number(value || 0);
+      return Number.isInteger(n) && n > 0 ? n : null;
+    };
+
+    const resolveAutoRateForRow = (row) => {
+      if (isGrn) return 0;
+      const itemId = toPositiveInt(row?.item_id);
+      if (!itemId) return 0;
+
+      const key = String(itemId);
+      const variants = Array.isArray(rawMaterialRatesByItem?.[key]) ? rawMaterialRatesByItem[key] : [];
+      if (!variants.length) return 0;
+
+      const selectedColorId = toPositiveInt(row?.color_id);
+      const selectedSizeId = toPositiveInt(row?.size_id);
+      let bestScore = -1;
+      let bestRate = 0;
+
+      variants.forEach((variant) => {
+        const variantColorId = toPositiveInt(variant?.color_id);
+        const variantSizeId = toPositiveInt(variant?.size_id);
+        const variantRate = Number(variant?.purchase_rate || 0);
+        if (!Number.isFinite(variantRate) || variantRate <= 0) return;
+
+        if (selectedColorId) {
+          if (variantColorId && Number(variantColorId) !== Number(selectedColorId)) return;
+        } else if (variantColorId) {
+          return;
+        }
+
+        if (selectedSizeId) {
+          if (variantSizeId && Number(variantSizeId) !== Number(selectedSizeId)) return;
+        } else if (variantSizeId) {
+          return;
+        }
+
+        let score = 0;
+        score += selectedColorId && variantColorId === selectedColorId ? 2 : 1;
+        score += selectedSizeId && variantSizeId === selectedSizeId ? 2 : 1;
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestRate = Number(variantRate.toFixed(4));
+        }
+      });
+
+      return bestRate > 0 ? bestRate : 0;
+    };
+    
+    const updateTotals = () => {
+      if (isGrn && totalQtyInput) {
+          const totalQty = rowsState.reduce((sum, row) => sum + Number(row.qty || 0), 0);
+          totalQtyInput.value = totalQty.toFixed(3);
+      } else if (totalAmountInput) {
+          const totalAmount = rowsState.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+          totalAmountInput.value = totalAmount.toFixed(2);
+      }
+    };
+
+    const recalculateRow = (row) => {
+      const qty = Number(row.qty || 0);
+      if (isGrn) {
+        row.rate = 0;
+        row.amount = 0;
+      } else {
+        const rate = Number(row.rate || 0);
+        row.amount = Number((qty * rate).toFixed(2));
+      }
+    };
+
+    const renderRows = () => {
+      linesBody.innerHTML = "";
+      rowsState.forEach((row, index) => {
+        recalculateRow(row);
+        const tr = document.createElement("tr");
+        tr.className = "border-b border-slate-100 align-middle";
+        tr.setAttribute("data-row-index", String(index));
+
+        const itemTd = document.createElement("td");
+        itemTd.className = "px-1.5 py-1"; 
+        const itemSelect = document.createElement("select");
+        itemSelect.className = "h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs";
+        itemSelect.dataset.rowField = "item";
+        itemSelect.dataset.searchableSelect = "true";
+        itemSelect.dataset.searchableVariant = "unified";
+        itemSelect.appendChild(makeOption("", "<%= toFriendlyLabel('select_raw_material') %>", !row.item_id));
+        rawMaterials.forEach((item) => {
+          itemSelect.appendChild(makeOption(item.id, item.name, Number(row.item_id || 0) === Number(item.id)));
+        });
+        itemSelect.addEventListener("change", () => {
+          row.item_id = Number(itemSelect.value || 0) || null;
+          row.grn_source_line_id = null;
+          const uom = uomByItemId.get(Number(row.item_id || 0));
+          row.uom_id = uom?.id || null;
+
+          const colorPolicy = getColorPolicyForItem(row.item_id);
+          if (!row.item_id) {
+            row.color_id = null;
+          } else if (colorPolicy?.hasAnyRate) {
+            const allowedColorIds = new Set((colorPolicy.colors || []).map((entry) => Number(entry.id)));
+            const requiresColor = allowedColorIds.size > 0 && !colorPolicy.hasColorless;
+            if (row.color_id && !allowedColorIds.has(Number(row.color_id))) {
+              row.color_id = null;
+            }
+            if (!row.color_id && requiresColor) {
+              const firstAllowed = (colorPolicy.colors || [])[0];
+              row.color_id = firstAllowed ? Number(firstAllowed.id) : null;
+            }
+          }
+
+          const sizePolicy = getSizePolicyForItem(row.item_id);
+          if (!row.item_id) {
+            row.size_id = null;
+          } else if (sizePolicy?.hasAnyRate) {
+            const allowedSizeIds = new Set((sizePolicy.sizes || []).map((entry) => Number(entry.id)));
+            const requiresSize = allowedSizeIds.size > 0 && !sizePolicy.hasSizeless;
+            if (row.size_id && !allowedSizeIds.has(Number(row.size_id))) {
+              row.size_id = null;
+            }
+            if (!row.size_id && requiresSize) {
+              const firstAllowedSize = (sizePolicy.sizes || [])[0];
+              row.size_id = firstAllowedSize ? Number(firstAllowedSize.id) : null;
+            }
+          }
+
+          if (!isGrn) {
+            row.rate = resolveAutoRateForRow(row);
+            recalculateRow(row);
+          }
+
+          renderRows(); 
+        });
+        itemTd.appendChild(itemSelect);
+        tr.appendChild(itemTd);
+
+        const colorTd = document.createElement("td");
+        colorTd.className = "px-1.5 py-1";
+        const colorSelect = document.createElement("select");
+        colorSelect.className = "h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs";
+        colorSelect.dataset.rowField = "color";
+        colorSelect.dataset.searchableSelect = "true";
+        colorSelect.dataset.searchableVariant = "unified";
+        const selectedItemId = Number(row.item_id || 0);
+        const colorPolicy = getColorPolicyForItem(selectedItemId);
+        const hasSelectedItem = selectedItemId > 0;
+        let allowedColors = [];
+        let allowNone = true;
+        let disableColorSelect = false;
+
+        if (!hasSelectedItem) {
+          disableColorSelect = true;
+        } else if (colorPolicy?.hasAnyRate) {
+          allowedColors = colorPolicy.colors || [];
+          allowNone = colorPolicy.hasColorless || allowedColors.length === 0;
+          disableColorSelect = allowedColors.length === 0;
+
+          const allowedSet = new Set(allowedColors.map((entry) => Number(entry.id)));
+          if (row.color_id && !allowedSet.has(Number(row.color_id))) {
+            row.color_id = null;
+          }
+          if (!row.color_id && !allowNone && allowedColors.length) {
+            row.color_id = Number(allowedColors[0].id);
+          }
+        } else {
+          allowedColors = colors;
+          allowNone = true;
+          disableColorSelect = false;
+        }
+
+        if (allowNone) {
+          colorSelect.appendChild(makeOption("", "<%= toFriendlyLabel('none') %>", !row.color_id));
+        }
+
+        allowedColors.forEach((color) => {
+          colorSelect.appendChild(makeOption(color.id, color.name, Number(row.color_id || 0) === Number(color.id)));
+        });
+
+        if (row.color_id) {
+          const existsInAllowed = allowedColors.some((entry) => Number(entry.id) === Number(row.color_id));
+          if (!existsInAllowed) {
+            const fallbackColorName = colorNameById.get(Number(row.color_id)) || `#${Number(row.color_id)}`;
+            colorSelect.appendChild(makeOption(row.color_id, fallbackColorName, true));
+          }
+        }
+
+        if (disableColorSelect) {
+          colorSelect.disabled = true;
+          colorSelect.classList.add("bg-slate-100");
+        } else {
+          colorSelect.disabled = false;
+          colorSelect.classList.remove("bg-slate-100");
+        }
+
+        colorSelect.addEventListener("change", () => {
+          row.color_id = Number(colorSelect.value || 0) || null;
+          row.grn_source_line_id = null;
+          if (!isGrn) {
+            row.rate = resolveAutoRateForRow(row);
+            recalculateRow(row);
+          }
+          renderRows();
+        });
+        colorTd.appendChild(colorSelect);
+        tr.appendChild(colorTd);
+
+        const sizeTd = document.createElement("td");
+        sizeTd.className = "px-1.5 py-1";
+        const sizeSelect = document.createElement("select");
+        sizeSelect.className = "h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs";
+        sizeSelect.dataset.rowField = "size";
+        sizeSelect.dataset.searchableSelect = "true";
+        sizeSelect.dataset.searchableVariant = "unified";
+        const sizePolicy = getSizePolicyForItem(selectedItemId);
+        let allowedSizes = [];
+        let allowSizeNone = true;
+        let disableSizeSelect = false;
+
+        if (!hasSelectedItem) {
+          disableSizeSelect = true;
+        } else if (sizePolicy?.hasAnyRate) {
+          allowedSizes = sizePolicy.sizes || [];
+          allowSizeNone = sizePolicy.hasSizeless || allowedSizes.length === 0;
+          disableSizeSelect = allowedSizes.length === 0;
+
+          const allowedSet = new Set(allowedSizes.map((entry) => Number(entry.id)));
+          if (row.size_id && !allowedSet.has(Number(row.size_id))) {
+            row.size_id = null;
+          }
+          if (!row.size_id && !allowSizeNone && allowedSizes.length) {
+            row.size_id = Number(allowedSizes[0].id);
+          }
+        } else {
+          allowedSizes = sizes;
+          allowSizeNone = true;
+          disableSizeSelect = false;
+        }
+
+        if (allowSizeNone) {
+          sizeSelect.appendChild(makeOption("", "<%= toFriendlyLabel('none') %>", !row.size_id));
+        }
+
+        allowedSizes.forEach((size) => {
+          sizeSelect.appendChild(makeOption(size.id, size.name, Number(row.size_id || 0) === Number(size.id)));
+        });
+
+        if (row.size_id) {
+          const existsInAllowed = allowedSizes.some((entry) => Number(entry.id) === Number(row.size_id));
+          if (!existsInAllowed) {
+            const fallbackSizeName = sizeNameById.get(Number(row.size_id)) || `#${Number(row.size_id)}`;
+            sizeSelect.appendChild(makeOption(row.size_id, fallbackSizeName, true));
+          }
+        }
+
+        if (disableSizeSelect) {
+          sizeSelect.disabled = true;
+          sizeSelect.classList.add("bg-slate-100");
+        } else {
+          sizeSelect.disabled = false;
+          sizeSelect.classList.remove("bg-slate-100");
+        }
+
+        sizeSelect.addEventListener("change", () => {
+          row.size_id = Number(sizeSelect.value || 0) || null;
+          row.grn_source_line_id = null;
+          if (!isGrn) {
+            row.rate = resolveAutoRateForRow(row);
+            recalculateRow(row);
+          }
+          renderRows();
+        });
+        sizeTd.appendChild(sizeSelect);
+        tr.appendChild(sizeTd);
+
+        const uomTd = document.createElement("td");
+        uomTd.className = "px-1.5 py-1";
+        const uomInput = document.createElement("input");
+        uomInput.type = "text";
+        uomInput.readOnly = true;
+        uomInput.className = "h-8 w-full rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs text-slate-600";
+        const currentUom = uomByItemId.get(Number(row.item_id || 0));
+        uomInput.value = currentUom?.name || "";
+        row.uom_id = currentUom?.id || null;
+        uomTd.appendChild(uomInput);
+        tr.appendChild(uomTd);
+
+        const qtyTd = document.createElement("td");
+        qtyTd.className = "px-1.5 py-1";
+        const qtyInput = document.createElement("input");
+        qtyInput.type = "number";
+        qtyInput.step = "0.001";
+        qtyInput.min = "0";
+        qtyInput.dataset.rowField = "qty";
+        qtyInput.dataset.rowLastField = isGrn ? "true" : "false";
+        qtyInput.className = "h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs";
+        qtyInput.value = row.qty !== null && row.qty !== undefined && row.qty !== 0 ? Number(row.qty).toFixed(3) : "";
+        
+        qtyInput.addEventListener("input", () => {
+          row.qty = Number(qtyInput.value || 0);
+          recalculateRow(row);
+          if (!isGrn) {
+             const amountInputInThisRow = tr.querySelector('[data-row-amount-input]');
+             if (amountInputInThisRow) {
+                 amountInputInThisRow.value = Number(row.amount || 0).toFixed(2);
+             }
+          }
+          updateTotals();
+        });
+        qtyTd.appendChild(qtyInput);
+        tr.appendChild(qtyTd);
+
+        if (!isGrn) {
+            const rateTd = document.createElement("td");
+            rateTd.className = "px-1.5 py-1";
+            const rateInput = document.createElement("input");
+            rateInput.type = "number";
+            rateInput.step = "0.0001";
+            rateInput.min = "0";
+            rateInput.dataset.rowField = "rate";
+            rateInput.dataset.rowLastField = "true";
+            rateInput.className = "h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs";
+            rateInput.value = row.rate !== null && row.rate !== undefined && row.rate !== 0 ? Number(row.rate).toFixed(4) : "";
+            
+            rateInput.addEventListener("input", () => {
+            row.rate = Number(rateInput.value || 0);
+            recalculateRow(row);
+             const amountInputInThisRow = tr.querySelector('[data-row-amount-input]');
+             if (amountInputInThisRow) {
+                 amountInputInThisRow.value = Number(row.amount || 0).toFixed(2);
+             }
+             updateTotals();
+            });
+            rateTd.appendChild(rateInput);
+            tr.appendChild(rateTd);
+
+            const amountTd = document.createElement("td");
+            amountTd.className = "px-1.5 py-1";
+            const amountInput = document.createElement("input");
+            amountInput.setAttribute('data-row-amount-input', '');
+            amountInput.type = "text";
+            amountInput.readOnly = true;
+            amountInput.className = "h-8 w-full rounded-lg border border-slate-200 bg-slate-50 px-2 text-right text-xs font-semibold text-slate-700";
+            amountInput.value = Number(row.amount || 0).toFixed(2);
+            amountTd.appendChild(amountInput);
+            tr.appendChild(amountTd);
+        }
+
+        const actionTd = document.createElement("td");
+        actionTd.className = "px-1.5 py-1 text-center align-middle";
+        const removeButton = document.createElement("button");
+        removeButton.type = "button";
+        removeButton.className = "inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-rose-50 p-2 text-rose-600 transition hover:border-rose-300 hover:text-rose-700";
+        removeButton.innerHTML = `<svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" aria-hidden="true"><path d="M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M9 7V5h6v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>`;
+        
+        const updateRemoveButtonState = () => {
+             removeButton.disabled = rowsState.length === 1;
+             removeButton.classList.toggle('opacity-40', rowsState.length === 1);
+             removeButton.classList.toggle('cursor-not-allowed', rowsState.length === 1);
+        }
+        updateRemoveButtonState();
+
+        removeButton.addEventListener("click", () => {
+          if (rowsState.length === 1) return;
+          rowsState.splice(index, 1);
+          renderRows(); 
+        });
+        actionTd.appendChild(removeButton);
+        tr.appendChild(actionTd);
+
+        const rowNoTd = document.createElement("td");
+        rowNoTd.className = "px-1.5 py-1 text-center text-xs font-semibold text-slate-600";
+        rowNoTd.textContent = String(index + 1);
+        tr.appendChild(rowNoTd);
+
+        linesBody.appendChild(tr);
+      });
+
+      if (typeof window.initSearchableSelects === "function") {
+        window.initSearchableSelects();
+      }
+
+      if (pendingFocusFieldByRow && Number.isInteger(pendingFocusFieldByRow.rowIndex)) {
+        const pending = pendingFocusFieldByRow;
+        pendingFocusFieldByRow = null;
+        setTimeout(() => {
+          const targetRow = linesBody?.querySelector(`tr[data-row-index="${pending.rowIndex}"]`);
+          const focused = focusAnyRowField(targetRow, pending.fieldKeys || [], { openSearchable: pending.openSearchable !== false });
+          if (!focused) {
+            appendBlankRow({ focusNewRow: true });
+          }
+        }, 0);
+      }
+
+      updateTotals();
+      if (pendingFocusRowIndex !== null) {
+        const targetRowIndex = pendingFocusRowIndex;
+        pendingFocusRowIndex = null;
+        setTimeout(() => focusFirstEditableFieldOfRow(targetRowIndex), 0);
+      }
+    };
+
+    const isGrnReferencedRowMode = () =>
+      isGeneralPurchase && Number(grnReferenceInput?.value || 0) > 0;
+
+    const updateRowInsertionUi = () => {
+      if (!addRowButton) return;
+      const isLocked = isGrnReferencedRowMode();
+      addRowButton.disabled = isLocked;
+      addRowButton.classList.toggle("opacity-40", isLocked);
+      addRowButton.classList.toggle("cursor-not-allowed", isLocked);
+    };
+
+    const updatePaymentModeUi = () => {
+      if (!isGeneralPurchase || !paymentTypeSelect) return;
+      const paymentType = String(paymentTypeSelect.value || "CREDIT").toUpperCase();
+      const isCash = paymentType === "CASH";
+      const hasGrnRef = Number(grnReferenceInput?.value || 0) > 0;
+      if (cashAccountLabel) {
+        cashAccountLabel.classList.toggle("hidden", !isCash);
+      }
+      if (cashAccountWrap) {
+        cashAccountWrap.classList.toggle("hidden", !isCash);
+      }
+      if (cashAccountSelect) {
+        cashAccountSelect.disabled = !isCash;
+        if (!isCash) cashAccountSelect.value = "";
+      }
+      if (supplierSelect) {
+        supplierSelect.required = !isCash || hasGrnRef;
+      }
+      if (referenceNoInput) {
+        // If GRN is selected, bill number can be derived server-side from GRN.
+        referenceNoInput.required = !hasGrnRef;
+      }
+      updateRowInsertionUi();
+    };
+
+    const findGrnHeaderByVoucherNo = (voucherNo) => {
+      const refNo = Number(voucherNo || 0);
+      if (!Number.isInteger(refNo) || refNo <= 0) return null;
+      return (openGrnHeaders || []).find((row) => Number(row.voucher_no || 0) === refNo) || null;
+    };
+
+    const findGrnReferenceNoByVoucherNo = (voucherNo) => {
+      const refNo = Number(voucherNo || 0);
+      if (!Number.isInteger(refNo) || refNo <= 0) return "";
+      const header = findGrnHeaderByVoucherNo(refNo);
+      const headerReference = String(header?.reference_no || "").trim();
+      if (headerReference) return headerReference;
+      const lineMatch = (openGrnLines || []).find((row) => Number(row.grn_voucher_no || 0) === refNo);
+      const lineReference = String(lineMatch?.reference_no || "").trim();
+      if (lineReference) return lineReference;
+      if (Number(selectedVoucher?.grn_reference_voucher_no || 0) === refNo) {
+        const selectedReference = String(selectedVoucher?.grn_reference_no || selectedVoucher?.reference_no || "").trim();
+        if (selectedReference) return selectedReference;
+      }
+      return "";
+    };
+
+    const formatGrnReferenceDisplayText = (header) => {
+      if (!header) return "";
+      const supplierName = String(header.supplier_name || "").trim() || "-";
+      const itemSummary = String(header.items_summary || "").trim();
+      const referenceNo = String(header.reference_no || "").trim();
+      const referenceText = referenceNo ? ` - ${"<%= t('bill_number') || 'Bill Number' %>"} ${referenceNo}` : "";
+      return `${"<%= t('voucher_no') %>"} ${header.voucher_no} - ${"<%= t('supplier') %>"} ${supplierName}${referenceText} - ${"<%= t('date') %>"} ${header.voucher_date} - ${"<%= t('open_qty') %>"} ${Number(header.open_qty || 0).toFixed(3)}${itemSummary ? ` - ${itemSummary}` : ""}`;
+    };
+
+    const applyReferenceNoFromGrn = (header, fallbackVoucherNo = null) => {
+      if (!isGeneralPurchase || !referenceNoInput) return;
+      let grnReferenceNo = String(header?.reference_no || "").trim();
+      if (!grnReferenceNo && fallbackVoucherNo) {
+        grnReferenceNo = findGrnReferenceNoByVoucherNo(fallbackVoucherNo);
+      }
+      if (!grnReferenceNo) return;
+      referenceNoInput.value = grnReferenceNo;
+    };
+
+    const setGrnReferenceValue = (voucherNo, { clearAllocations = false } = {}) => {
+      if (!isGeneralPurchase || !grnReferenceInput) return;
+      const refNo = Number(voucherNo || 0);
+      if (!Number.isInteger(refNo) || refNo <= 0) {
+        grnReferenceInput.value = "";
+        if (grnReferenceDisplayInput) grnReferenceDisplayInput.value = "";
+        if (clearAllocations && grnAllocJsonInput) grnAllocJsonInput.value = "";
+        updatePaymentModeUi();
+        return;
+      }
+      const header = findGrnHeaderByVoucherNo(refNo);
+      grnReferenceInput.value = String(refNo);
+      if (grnReferenceDisplayInput) {
+        grnReferenceDisplayInput.value = formatGrnReferenceDisplayText(header) || `${"<%= t('voucher_no') %>"} ${refNo}`;
+      }
+      applyReferenceNoFromGrn(header, refNo);
+      if (clearAllocations && grnAllocJsonInput) grnAllocJsonInput.value = "";
+      updatePaymentModeUi();
+    };
+
+    const syncGrnReferenceWithSupplier = () => {
+      if (!isGeneralPurchase) return;
+      const supplierId = getSelectedSupplierId();
+      const refNo = Number(grnReferenceInput?.value || 0);
+      if (!Number.isInteger(refNo) || refNo <= 0) {
+        setGrnReferenceValue(null, { clearAllocations: true });
+        return;
+      }
+      const header = findGrnHeaderByVoucherNo(refNo);
+      if (header && supplierId > 0 && Number(header.supplier_party_id || 0) !== supplierId) {
+        setGrnReferenceValue(null, { clearAllocations: true });
+        return;
+      }
+      setGrnReferenceValue(refNo, { clearAllocations: false });
+      applyReferenceNoFromGrn(header, refNo);
+    };
+
+    const toDateOnly = (value) => {
+      if (!value) return "";
+      const text = String(value).trim();
+      const match = text.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (match) return match[1];
+      return text;
+    };
+
+    const getSelectedSupplierId = () => Number(supplierSelect?.value || 0) || 0;
+    const getVoucherDate = () => toDateOnly(voucherDateInput?.value || "");
+
+    const buildGrnAllocationsPayload = (grnReferenceNo) => {
+      const refNo = Number(grnReferenceNo || 0);
+      if (!Number.isInteger(refNo) || refNo <= 0) return "";
+      const postedRows = rowsState.filter(
+        (row) =>
+          Number(row.item_id || 0) > 0 &&
+          Number(row.qty || 0) > 0 &&
+          (isGrn || Number(row.rate || 0) > 0),
+      );
+      const allocations = postedRows
+        .map((row, index) => ({
+          line_no: Number(index + 1),
+          grn_voucher_line_id: Number(row.grn_source_line_id || 0),
+          qty_allocated: Number(Number(row.qty || 0).toFixed(3)),
+        }))
+        .filter(
+          (entry) =>
+            Number.isInteger(entry.grn_voucher_line_id) &&
+            entry.grn_voucher_line_id > 0 &&
+            Number.isFinite(entry.qty_allocated) &&
+            entry.qty_allocated > 0,
+        );
+      if (!allocations.length) return "";
+      return JSON.stringify({
+        grn_reference_voucher_no: refNo,
+        allocations,
+      });
+    };
+
+    const closeGrnPickerModal = () => {
+      if (!grnPickerModal) return;
+      grnPickerModal.classList.add("hidden");
+      grnPickerModal.classList.remove("flex");
+      grnPickerModal.setAttribute("aria-hidden", "true");
+    };
+
+    const getScopedGrnLinesForModal = () => {
+      const supplierId = getSelectedSupplierId();
+      if (!supplierId) return [];
+      return (openGrnLines || [])
+        .filter((row) => Number(row.supplier_party_id || 0) === supplierId)
+        .filter((row) => Number(row.open_qty || 0) > 0)
+        .sort((a, b) => {
+          const aDate = toDateOnly(a.grn_voucher_date);
+          const bDate = toDateOnly(b.grn_voucher_date);
+          if (aDate !== bDate) return bDate.localeCompare(aDate);
+          const aVoucher = Number(a.grn_voucher_no || 0);
+          const bVoucher = Number(b.grn_voucher_no || 0);
+          if (aVoucher !== bVoucher) return bVoucher - aVoucher;
+          return Number(a.grn_line_no || 0) - Number(b.grn_line_no || 0);
+        });
+    };
+
+    const renderGrnPickerLinesTable = (scopedLines) => {
+      if (!grnPickerLinesBody) return;
+      grnPickerLinesBody.innerHTML = "";
+      const rows = scopedLines || [];
+
+      if (!rows.length) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td colspan="7" class="px-2 py-3 text-center text-xs text-slate-500">${"<%= t('no_data') %>"}</td>`;
+        grnPickerLinesBody.appendChild(tr);
+        return;
+      }
+
+      rows.forEach((row) => {
+        const lineId = Number(row.grn_line_id || 0);
+        const isChecked = lineId > 0 && grnPickerSelectedLineIds.has(lineId);
+        const tr = document.createElement("tr");
+        tr.className = "border-b border-slate-100";
+        const colorText = String(row.color_name || "").trim() || "<%= toFriendlyLabel('none') %>";
+        const sizeText = String(row.size_name || "").trim() || "<%= toFriendlyLabel('none') %>";
+        const voucherDate = toDateOnly(row.grn_voucher_date);
+        tr.innerHTML = `
+          <td class="px-2 py-2 text-center">
+            <input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent" data-grn-picker-line-checkbox value="${lineId > 0 ? lineId : ""}" ${isChecked ? "checked" : ""} ${lineId > 0 ? "" : "disabled"}>
+          </td>
+          <td class="px-2 py-2 text-slate-700">${String(row.grn_voucher_no || "-")}</td>
+          <td class="px-2 py-2 text-slate-700">${voucherDate || "-"}</td>
+          <td class="px-2 py-2 text-slate-700">${String(row.item_name || "-")}</td>
+          <td class="px-2 py-2 text-slate-700">${colorText}</td>
+          <td class="px-2 py-2 text-slate-700">${sizeText}</td>
+          <td class="px-2 py-2 text-right font-semibold text-slate-700">${Number(row.open_qty || 0).toFixed(3)}</td>
+        `;
+        grnPickerLinesBody.appendChild(tr);
+      });
+    };
+
+    const openGrnPickerModalView = () => {
+      if (!isGeneralPurchase || !grnPickerModal) return;
+      const supplierId = getSelectedSupplierId();
+      if (!supplierId) {
+        alert("<%= t('select_supplier') %>");
+        return;
+      }
+      const supplierName = supplierSelect?.selectedOptions?.[0]?.textContent?.trim() || "";
+      if (grnPickerSupplierInput) grnPickerSupplierInput.value = supplierName;
+      if (grnPickerDateInput) grnPickerDateInput.value = getVoucherDate();
+
+      grnPickerSelectedLineIds.clear();
+      rowsState.forEach((row) => {
+        const sourceLineId = Number(row.grn_source_line_id || 0);
+        if (sourceLineId > 0) {
+          grnPickerSelectedLineIds.add(sourceLineId);
+        }
+      });
+      const scopedLines = getScopedGrnLinesForModal();
+      const selectedRefNo = Number(grnReferenceInput?.value || 0);
+      if (!grnPickerSelectedLineIds.size && selectedRefNo > 0) {
+        scopedLines
+          .filter((row) => Number(row.grn_voucher_no || 0) === selectedRefNo)
+          .forEach((row) => {
+            const lineId = Number(row.grn_line_id || 0);
+            if (lineId > 0) grnPickerSelectedLineIds.add(lineId);
+          });
+      }
+      renderGrnPickerLinesTable(scopedLines);
+
+      if (typeof window.initSearchableSelects === "function") {
+        window.initSearchableSelects(grnPickerModal);
+      }
+
+      grnPickerModal.classList.remove("hidden");
+      grnPickerModal.classList.add("flex");
+      grnPickerModal.setAttribute("aria-hidden", "false");
+    };
+
+    const appendBlankRow = ({ focusNewRow = false } = {}) => {
+      if (isGrnReferencedRowMode()) {
+        return false;
+      }
+      rowsState.push({ item_id: null, color_id: null, size_id: null, uom_id: null, qty: 0, rate: 0, amount: 0, grn_source_line_id: null });
+      if (focusNewRow) {
+        pendingFocusRowIndex = rowsState.length - 1;
+      }
+      renderRows();
+      return true;
+    };
+
+    const getRowSearchableState = (target) => {
+      const searchableWrapper = target.closest("[data-searchable-wrapper]");
+      if (!searchableWrapper) return null;
+
+      const linkedSelect = searchableWrapper.querySelector("select");
+      const linkedValue = String(linkedSelect?.value || "").trim();
+      const fieldKey = resolveRowFieldKey(target);
+      const dropdownMenu = searchableWrapper.querySelector("div.z-50");
+      const isDropdownOpen = Boolean(dropdownMenu && !dropdownMenu.classList.contains("hidden"));
+      const wasOpenBeforeEnter = searchableWrapper.dataset.wasOpenBeforeEnter === "1";
+      searchableWrapper.dataset.wasOpenBeforeEnter = "0";
+
+      const rowElement = target.closest("tr");
+      const dataRowIndex = Number(rowElement?.getAttribute("data-row-index") || "");
+      const rowIndex = Number.isInteger(dataRowIndex) ? dataRowIndex : -1;
+      const rowAdvanceKey = rowIndex >= 0 && fieldKey ? `${rowIndex}:${fieldKey}` : "";
+      const isRowSearchable = Boolean(fieldKey) && Boolean(rowElement);
+
+      return {
+        searchableWrapper,
+        linkedValue,
+        fieldKey,
+        isDropdownOpen,
+        wasOpenBeforeEnter,
+        rowElement,
+        rowIndex,
+        rowAdvanceKey,
+        isRowSearchable,
+      };
+    };
+
+    const isRowAdvanceArmed = (state) => {
+      if (!state?.rowAdvanceKey) return false;
+      return pendingRowEnterAdvanceKey === state.rowAdvanceKey;
+    };
+
+    const armRowAdvance = (state, target) => {
+      if (state?.rowAdvanceKey) {
+        pendingRowEnterAdvanceKey = state.rowAdvanceKey;
+      }
+      if (target) {
+        target.dataset.searchableAdvanceNext = "1";
+      }
+    };
+
+    const clearRowAdvance = (state, target) => {
+      if (state?.rowAdvanceKey && pendingRowEnterAdvanceKey === state.rowAdvanceKey) {
+        pendingRowEnterAdvanceKey = "";
+      }
+      if (target) {
+        target.dataset.searchableAdvanceNext = "0";
+      }
+    };
+
+    const restoreCurrentRowFieldFocus = ({ rowIndex, fieldKey, rowElement }, target) => {
+      if (rowIndex >= 0) {
+        setTimeout(() => {
+          const refreshedRow = linesBody?.querySelector(`tr[data-row-index="${rowIndex}"]`);
+          const refreshedInput = refreshedRow
+            ?.querySelector(`[data-row-field="${fieldKey}"]`)
+            ?.parentElement?.querySelector("[data-searchable-wrapper] input");
+          if (refreshedInput) {
+            refreshedInput.dataset.searchableAdvanceNext = "1";
+          }
+          if (!focusRowField(refreshedRow, fieldKey, { openSearchable: false }) && document.activeElement !== target) {
+            target.focus();
+          }
+        }, 0);
+        return;
+      }
+      if (document.activeElement !== target) {
+        target.focus();
+      }
+    };
+
+    const moveToNextRowField = ({ rowIndex, rowElement, fieldKey }) => {
+      const currentIndex = rowFieldOrder.indexOf(fieldKey);
+      const nextKeys = currentIndex >= 0 ? rowFieldOrder.slice(currentIndex + 1) : [];
+      setTimeout(() => {
+        const refreshedRow = rowIndex >= 0
+          ? linesBody?.querySelector(`tr[data-row-index="${rowIndex}"]`)
+          : rowElement;
+        const moved = focusAnyRowField(refreshedRow, nextKeys, { openSearchable: true });
+        if (!moved) {
+          appendBlankRow({ focusNewRow: true });
+        }
+      }, 0);
+    };
+
+    addRowButton?.addEventListener("click", () => {
+      appendBlankRow({ focusNewRow: true });
+    });
+
+    form.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.key !== "Enter") return;
+        const target = event.target;
+        if (!target || !(target instanceof HTMLElement)) return;
+        const searchableWrapper = target.closest("[data-searchable-wrapper]");
+        if (!searchableWrapper) return;
+        const dropdownMenu = searchableWrapper.querySelector("div.z-50");
+        const isOpen = Boolean(dropdownMenu && !dropdownMenu.classList.contains("hidden"));
+        searchableWrapper.dataset.wasOpenBeforeEnter = isOpen ? "1" : "0";
+      },
+      true,
+    );
+
+    linesBody?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      const target = event.target;
+      if (!target || !target.closest("tr")) return;
+      if (target.closest("[data-searchable-wrapper]")) return;
+
+      event.preventDefault();
+
+      if (focusNextRowField(target)) {
+        return;
+      }
+
+      if (String(target.dataset?.rowLastField || "").toLowerCase() === "true") {
+        appendBlankRow({ focusNewRow: true });
+        return;
+      }
+
+      focusNextField(target);
+    });
+
+    const loadVoucherByNo = (voucherNo) => {
+      const n = Number(voucherNo || 0);
+      if (!Number.isInteger(n) || n <= 0) return;
+      window.location.href = `${"<%= basePath || '' %>"}?voucher_no=${n}&view=1`;
+    };
+
+    form.querySelector("[data-voucher-no-input]")?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      loadVoucherByNo(event.target?.value);
+    });
+
+    form.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      const target = event.target;
+      if (!target || !(target instanceof HTMLElement)) return;
+      if (event.defaultPrevented && !target.closest("[data-searchable-wrapper]")) return;
+      if (target.matches("[data-voucher-no-input]")) return;
+      if (target.matches("textarea")) return;
+      if (target.closest("[data-enhanced-select-wrapper]")) return;
+      if (!target.matches("input, select")) return;
+      event.preventDefault();
+      if (target.closest("[data-searchable-wrapper]")) {
+        const state = getRowSearchableState(target);
+        if (!state) return;
+        const isAdvanceArmed = isRowAdvanceArmed(state);
+
+        if (state.isRowSearchable) {
+          if (state.fieldKey === "item") {
+            if (event.defaultPrevented && !state.isDropdownOpen) {
+              if (focusNextRowField(target)) {
+                return;
+              }
+            }
+
+            if (!state.isDropdownOpen) {
+              if (state.linkedValue) {
+                target.dataset.searchableAdvanceNext = "0";
+                if (focusNextRowField(target)) {
+                  return;
+                }
+              }
+              if (typeof target.click === "function") target.click();
+              return;
+            }
+
+            return;
+          }
+
+          if (state.wasOpenBeforeEnter && !state.isDropdownOpen) {
+            armRowAdvance(state, target);
+            restoreCurrentRowFieldFocus(state, target);
+            return;
+          }
+
+          if (!state.isDropdownOpen) {
+            if (isAdvanceArmed) {
+              clearRowAdvance(state, target);
+              moveToNextRowField(state);
+              return;
+            }
+
+            clearRowAdvance(state, target);
+            if (typeof target.click === "function") target.click();
+            return;
+          }
+
+          clearRowAdvance(state, target);
+          return;
+        }
+
+        if (!state.linkedValue) {
+          if (!state.isDropdownOpen && typeof target.click === "function") target.click();
+          return;
+        }
+        if (focusNextRowField(target)) {
+          return;
+        }
+        setTimeout(() => focusNextField(target), 0);
+        return;
+      }
+      if (target.closest("tr") && focusNextRowField(target)) {
+        return;
+      }
+      if (target.matches("select")) {
+        const selectValue = String(target.value || "").trim();
+        if (!selectValue) return;
+      }
+      focusNextField(target);
+    });
+
+    paymentTypeSelect?.addEventListener("change", updatePaymentModeUi);
+    supplierSelect?.addEventListener("change", syncGrnReferenceWithSupplier);
+    openGrnPickerButton?.addEventListener("click", openGrnPickerModalView);
+    grnPickerCloseButtons.forEach((btn) => {
+      btn.addEventListener("click", closeGrnPickerModal);
+    });
+    grnPickerModal?.addEventListener("click", (event) => {
+      if (event.target === grnPickerModal) closeGrnPickerModal();
+    });
+    grnPickerLinesBody?.addEventListener("change", (event) => {
+      const checkbox = event.target;
+      if (!(checkbox instanceof HTMLInputElement)) return;
+      if (!checkbox.matches("[data-grn-picker-line-checkbox]")) return;
+      const lineId = Number(checkbox.value || 0);
+      if (lineId <= 0) return;
+      if (checkbox.checked) {
+        grnPickerSelectedLineIds.add(lineId);
+      } else {
+        grnPickerSelectedLineIds.delete(lineId);
+      }
+    });
+    grnPickerApplyButton?.addEventListener("click", () => {
+      const supplierId = getSelectedSupplierId();
+      if (!supplierId) {
+        alert("<%= t('select_supplier') %>");
+        return;
+      }
+
+      const selectedLines = getScopedGrnLinesForModal()
+        .filter((row) => grnPickerSelectedLineIds.has(Number(row.grn_line_id || 0)));
+      if (!selectedLines.length) {
+        alert("<%= t('select_grn_lines') %>");
+        return;
+      }
+
+      const selectedVoucherNos = [...new Set(
+        selectedLines
+          .map((row) => Number(row.grn_voucher_no || 0))
+          .filter((voucherNo) => Number.isInteger(voucherNo) && voucherNo > 0),
+      )];
+      if (selectedVoucherNos.length !== 1) {
+        alert("<%= t('single_grn_voucher_only') %>");
+        return;
+      }
+      const selectedVoucherNo = selectedVoucherNos[0];
+      const selectedVoucherDate = toDateOnly(selectedLines[0]?.grn_voucher_date);
+
+      selectedLines.sort((a, b) => Number(a.grn_line_no || 0) - Number(b.grn_line_no || 0));
+
+      const isCashPurchase = String(paymentTypeSelect?.value || "CREDIT").toUpperCase() === "CASH";
+      if (voucherDateInput && selectedVoucherDate && !isCashPurchase) {
+        voucherDateInput.value = selectedVoucherDate;
+        if (grnPickerDateInput) grnPickerDateInput.value = selectedVoucherDate;
+      }
+
+      setGrnReferenceValue(selectedVoucherNo, { clearAllocations: false });
+
+      rowsState.splice(0, rowsState.length);
+      selectedLines.forEach((line) => {
+        const uom = uomByItemId.get(Number(line.item_id || 0));
+        const row = {
+          item_id: Number(line.item_id || 0) || null,
+          color_id: Number(line.color_id || 0) || null,
+          size_id: Number(line.size_id || 0) || null,
+          uom_id: Number(uom?.id || 0) || null,
+          qty: Number(Number(line.open_qty || 0).toFixed(3)),
+          rate: 0,
+          amount: 0,
+          grn_source_line_id: Number(line.grn_line_id || 0) || null,
+        };
+        row.rate = resolveAutoRateForRow(row);
+        recalculateRow(row);
+        rowsState.push(row);
+      });
+
+      grnAllocJsonInput.value = buildGrnAllocationsPayload(selectedVoucherNo);
+      pendingFocusRowIndex = null;
+      renderRows();
+      closeGrnPickerModal();
+      setTimeout(() => {
+        const firstQtyInput = linesBody?.querySelector('tr[data-row-index="0"] input[data-row-field="qty"]');
+        if (firstQtyInput) {
+          firstQtyInput.focus();
+          if (typeof firstQtyInput.select === "function") firstQtyInput.select();
+        }
+      }, 0);
+    });
+
+    form.addEventListener("submit", (event) => {
+      const hasGrnRefOnSubmit = isGeneralPurchase && Number(grnReferenceInput?.value || 0) > 0;
+      if (!String(referenceNoInput?.value || "").trim() && hasGrnRefOnSubmit) {
+        const selectedRefNo = Number(grnReferenceInput?.value || 0);
+        applyReferenceNoFromGrn(findGrnHeaderByVoucherNo(selectedRefNo), selectedRefNo);
+      }
+
+      if (!String(referenceNoInput?.value || "").trim() && !hasGrnRefOnSubmit) {
+        event.preventDefault();
+        alert("<%= t('error_required_fields') %>");
+        return;
+      }
+
+      const supplierId = Number(supplierSelect?.value || 0);
+      if (isGeneralPurchase) {
+        const paymentType = String(paymentTypeSelect?.value || "CREDIT").toUpperCase();
+        const hasGrnRef = Number(grnReferenceInput?.value || 0) > 0;
+        const supplierRequired = paymentType !== "CASH" || hasGrnRef;
+        if (supplierRequired && !supplierId) {
+          event.preventDefault();
+          alert("<%= t('error_required_fields') %>");
+          return;
+        }
+      } else if (!supplierId) {
+        event.preventDefault();
+        alert("<%= t('error_required_fields') %>");
+        return;
+      }
+
+      if (isPurchaseReturn) {
+        const reasonSelect = form.querySelector('select[name="return_reason"]');
+        if (!String(reasonSelect?.value || "").trim()) {
+          event.preventDefault();
+          alert("<%= t('error_required_fields') %>");
+          return;
+        }
+      }
+
+      if (isGeneralPurchase && String(paymentTypeSelect?.value || "CREDIT").toUpperCase() === "CASH") {
+        if (!String(cashAccountSelect?.value || "").trim()) {
+          event.preventDefault();
+          alert("<%= t('cash_account_required') %>");
+          return;
+        }
+      }
+
+      const payloadLines = rowsState
+        .map((row) => ({
+          item_id: Number(row.item_id || 0) || null,
+          color_id: Number(row.color_id || 0) || null,
+          size_id: Number(row.size_id || 0) || null,
+          uom_id: Number(row.uom_id || 0) || null,
+          qty: Number(row.qty || 0),
+          rate: isGrn ? 0 : Number(row.rate || 0),
+          amount: isGrn ? 0 : Number(row.amount || 0),
+        }))
+        .filter((row) => row.item_id && row.qty > 0 && (isGrn || row.rate > 0));
+
+      if (!payloadLines.length) {
+        event.preventDefault();
+        alert("<%= t('error_required_fields') %>");
+        return;
+      }
+
+      linesJsonInput.value = JSON.stringify(payloadLines);
+      if (isGeneralPurchase) {
+        const grnReferenceNo = Number(grnReferenceInput?.value || 0);
+        grnAllocJsonInput.value =
+          Number.isInteger(grnReferenceNo) && grnReferenceNo > 0
+            ? buildGrnAllocationsPayload(grnReferenceNo)
+            : "";
+      } else {
+        grnAllocJsonInput.value = "";
+      }
+    });
+
+    form.querySelector("[data-load-voucher]")?.addEventListener("click", () => {
+      const voucherNo = form.querySelector("[data-voucher-no-input]")?.value;
+      loadVoucherByNo(voucherNo);
+    });
+
+    document.querySelector("[data-delete-voucher]")?.addEventListener("click", () => {
+      const deleteForm = document.querySelector("[data-delete-voucher-form]");
+      if (!deleteForm) return;
+      if (!confirm("<%= t('are_you_sure') %>")) return;
+      deleteForm.submit();
+    });
+
+    updatePaymentModeUi();
+    syncGrnReferenceWithSupplier();
+    renderRows();
+  })();
+</script>

@@ -1,0 +1,197 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - checkbox "Menu" [ref=e5]
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - link "CHAND EVA" [ref=e8] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e10]: ERP
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - generic [ref=e14]: Signed in as
+            - generic [ref=e15]: admin
+          - generic [ref=e16]:
+            - generic [ref=e17]: Branch
+            - generic [ref=e18]:
+              - generic [ref=e19]: Branch
+              - combobox "Branch" [ref=e20]:
+                - option "124" [selected]
+                - option "207"
+          - button "Logout" [ref=e22] [cursor=pointer]
+          - generic [ref=e23]:
+            - generic [ref=e24]: Language
+            - link "English" [ref=e25] [cursor=pointer]:
+              - /url: "?lang=en"
+            - generic [ref=e26]: "|"
+            - link "Urdu" [ref=e27] [cursor=pointer]:
+              - /url: "?lang=ur"
+      - navigation [ref=e28]:
+        - button "Administration" [ref=e30] [cursor=pointer]:
+          - generic [ref=e31]: Administration
+          - img [ref=e32]
+        - button "Master Data" [ref=e35] [cursor=pointer]:
+          - generic [ref=e36]: Master Data
+          - img [ref=e37]
+        - button "HR & Payroll" [ref=e40] [cursor=pointer]:
+          - generic [ref=e41]: HR & Payroll
+          - img [ref=e42]
+        - button "Financial" [ref=e45] [cursor=pointer]:
+          - generic [ref=e46]: Financial
+          - img [ref=e47]
+        - button "Purchase" [ref=e50] [cursor=pointer]:
+          - generic [ref=e51]: Purchase
+          - img [ref=e52]
+        - button "Production" [ref=e55] [cursor=pointer]:
+          - generic [ref=e56]: Production
+          - img [ref=e57]
+        - button "Inventory" [ref=e60] [cursor=pointer]:
+          - generic [ref=e61]: Inventory
+          - img [ref=e62]
+        - button "Outward & Returnable" [ref=e65] [cursor=pointer]:
+          - generic [ref=e66]: Outward & Returnable
+          - img [ref=e67]
+        - button "Sales" [ref=e70] [cursor=pointer]:
+          - generic [ref=e71]: Sales
+          - img [ref=e72]
+  - main [ref=e74]:
+    - generic [ref=e75]:
+      - generic [ref=e78]:
+        - heading "Goods Receipt Note" [level=1] [ref=e79]
+        - paragraph [ref=e80]: Purchase
+      - generic [ref=e82]:
+        - generic [ref=e83]:
+          - generic [ref=e84]:
+            - generic [ref=e85]: Voucher No
+            - textbox [ref=e87]: "5"
+            - generic [ref=e88]:
+              - link "Prev" [ref=e89] [cursor=pointer]:
+                - /url: /vouchers/goods-receipt-note?voucher_no=4&view=1
+              - link "Next" [ref=e90] [cursor=pointer]:
+                - /url: /vouchers/goods-receipt-note?new=1
+              - button "Load" [ref=e91] [cursor=pointer]
+              - generic [ref=e92]:
+                - button "Delete" [disabled] [ref=e93] [cursor=pointer]
+                - button "Print" [ref=e94] [cursor=pointer]
+          - generic [ref=e95]:
+            - generic [ref=e96]: Date
+            - textbox [ref=e98]: 2026-02-26
+            - generic [ref=e99]: Bill Number
+            - textbox "e.g., Delivery Note / Challan No." [active] [ref=e101]
+          - generic [ref=e102]:
+            - generic [ref=e103]: Supplier
+            - generic [ref=e105]:
+              - textbox "Select Supplier" [ref=e106]: Hoorain Aijaz
+              - generic:
+                - img
+              - combobox [ref=e107]:
+                - option "Select Supplier"
+                - option "Hoorain Aijaz" [selected]
+                - option "PAPPU CRAIP"
+            - generic [ref=e108]: Description
+            - textbox [ref=e110]
+        - table [ref=e113]:
+          - rowgroup [ref=e122]:
+            - row "Raw Material Color Size Unit Quantity Actions Sr.No" [ref=e123]:
+              - columnheader "Raw Material" [ref=e124]
+              - columnheader "Color" [ref=e125]
+              - columnheader "Size" [ref=e126]
+              - columnheader "Unit" [ref=e127]
+              - columnheader "Quantity" [ref=e128]
+              - columnheader "Actions" [ref=e129]
+              - columnheader "Sr.No" [ref=e130]
+          - rowgroup [ref=e131]:
+            - row "ANWAAR FANCY ANWAAR FANCY None None None None PAIRSS 1" [ref=e132]:
+              - cell "ANWAAR FANCY ANWAAR FANCY" [ref=e133]:
+                - generic [ref=e134]:
+                  - textbox "Select Raw Material" [ref=e135]: ANWAAR FANCY
+                  - generic:
+                    - img
+                  - combobox [ref=e136]:
+                    - option "Select Raw Material"
+                    - option "ANWAAR FANCY" [selected]
+                    - option "black"
+                    - option "E2E RM neg1770614079168495"
+                    - option "EVA DANA"
+                    - option "EVR DANA"
+                    - option "PATAWA"
+                    - option "PEARLS"
+                    - option "PU CHEMICALS"
+                    - option "RAYGZEEN"
+                    - option "STICKERS"
+                    - option "XTOOCH STICKER"
+              - cell "None None" [ref=e137]:
+                - generic [ref=e138]:
+                  - textbox "None" [ref=e139]
+                  - generic:
+                    - img
+                  - combobox [ref=e140]:
+                    - option "None" [selected]
+                    - option "Black"
+                    - option "BROWN"
+                    - option "BROWNN"
+                    - option "Dupe Color 1770373136651"
+                    - option "Dupe Color 1770373649250"
+                    - option "Dupe Color 1770374093668"
+                    - option "Dupe Color 1770374456229"
+                    - option "Dupe Color 1770375970488"
+                    - option "Dupe Color 1770376827118"
+                    - option "Dupe Color 1770377408692"
+                    - option "Dupe Color 1770478824981"
+                    - option "Dupe Color 1771398078332"
+                    - option "Dupe Color 1771399160359"
+                    - option "E2E name 1770477509559_1"
+                    - option "E2E name 1770478855220_1"
+                    - option "E2E name 1771398105030_1"
+                    - option "E2E name 1771399190781_1"
+                    - option "GOLDEN"
+                    - option "Mix Colors"
+                    - option "PURPLE"
+                    - option "RED"
+                    - option "SILVER"
+                    - option "White"
+                    - option "XYZ"
+              - cell "None None" [ref=e141]:
+                - generic [ref=e142]:
+                  - textbox "None" [ref=e143]
+                  - generic:
+                    - img
+                  - combobox [ref=e144]:
+                    - option "None" [selected]
+                    - option "2/5"
+                    - option "6/9"
+                    - option "7/10"
+                    - option "8/10"
+                    - option "DOUBLE"
+                    - option "E2E name 1770477440632_0"
+                    - option "E2E name 1770477509559_0"
+                    - option "E2E name 1770478855220_0"
+                    - option "E2E name 1771398105030_0"
+                    - option "E2E name 1771399190781_0"
+                    - option "E2E Size 1771399218242"
+                    - option "LARGE"
+                    - option "SINGLE"
+                    - option "SMALL"
+              - cell "PAIRSS" [ref=e145]:
+                - textbox [ref=e146]: PAIRSS
+              - cell [ref=e147]:
+                - spinbutton [ref=e148]: "5.000"
+              - cell [ref=e149]:
+                - button [disabled] [ref=e150]:
+                  - img [ref=e151]
+              - cell "1" [ref=e155]
+          - rowgroup [ref=e156]:
+            - row "Total 5.000 Add Row" [ref=e157]:
+              - cell "Total" [ref=e158]
+              - cell "5.000" [ref=e159]:
+                - textbox [ref=e160]: "5.000"
+              - cell "Add Row" [ref=e161]:
+                - button "Add Row" [ref=e162] [cursor=pointer]:
+                  - img [ref=e163]
+              - cell [ref=e164]
+        - button "Confirm" [ref=e166] [cursor=pointer]
+    - generic [ref=e167]: ERP System © 2026
+```

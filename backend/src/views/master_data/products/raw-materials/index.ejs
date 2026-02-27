@@ -185,6 +185,7 @@
   filters: typeof filters !== 'undefined' ? filters : {}  // <--- ADD THIS LINE
 }) %>
 <%- include("../../../base/partials/basic-info-utils", { t, page: { titleKey: "raw_materials" }, basePath, modalOpen, modalMode }) %>
+<script><%- include("../../../base/partials/searchable-select.js") %></script>
 
 <script>
   (function () {
@@ -194,8 +195,13 @@
 
     const rateList = modalForm.querySelector("[data-rate-list]");
     const template = modalForm.querySelector("[data-rate-template]");
-    const modeSelect = modalForm.querySelector("[data-rate-mode]");
     if (!rateList || !template) return;
+
+    const refreshSearchableSelects = () => {
+      if (typeof window.initSearchableSelects === "function") {
+        window.initSearchableSelects();
+      }
+    };
 
     const addRateRow = (colorId = "", sizeId = "", rateValue = "") => {
       const row = template.content.cloneNode(true);
@@ -206,6 +212,7 @@
       if (sizeSelect) sizeSelect.value = sizeId;
       if (input) input.value = rateValue;
       rateList.appendChild(row);
+      refreshSearchableSelects();
     };
 
     modalForm.addEventListener("keydown", (event) => {
@@ -222,7 +229,6 @@
       event.preventDefault();
       if (String(input.value || "").trim() === "") return;
       addRateRow();
-      applyRateMode();
       const inputs = rateList.querySelectorAll("[data-rate-value]");
       const last = inputs[inputs.length - 1];
       if (last) last.focus();
@@ -230,22 +236,6 @@
 
     const resetRates = () => {
       rateList.innerHTML = "";
-    };
-
-    const applyRateMode = () => {
-      const mode = modeSelect ? modeSelect.value : "both";
-      rateList.querySelectorAll("[data-rate-row]").forEach((row) => {
-        const colorSelect = row.querySelector("[data-rate-color]");
-        const sizeSelect = row.querySelector("[data-rate-size]");
-        if (colorSelect) {
-          colorSelect.classList.toggle("hidden", mode === "size");
-          if (mode === "size") colorSelect.value = "";
-        }
-        if (sizeSelect) {
-          sizeSelect.classList.toggle("hidden", mode === "color");
-          if (mode === "color") sizeSelect.value = "";
-        }
-      });
     };
 
     const fillRatesFromPairs = (pairs) => {
@@ -257,14 +247,12 @@
       const list = pairs.split(",").map((pair) => pair.trim()).filter(Boolean);
       if (!list.length) {
         addRateRow();
-        applyRateMode();
         return;
       }
       list.forEach((pair) => {
         const [colorId, sizeId, rateValue] = pair.split(":");
         addRateRow(colorId || "", sizeId || "", rateValue || "");
       });
-      applyRateMode();
     };
 
     const openForCreate = () => {
@@ -299,14 +287,10 @@
       const addBtn = event.target.closest("[data-rate-add-row]");
       if (addBtn) {
         addRateRow();
-        applyRateMode();
         return;
       }
     });
 
-    if (modeSelect) {
-      modeSelect.addEventListener("change", applyRateMode);
-    }
     if (modal.dataset.autoOpen === "true") {
       if (modal.dataset.modalMode === "edit") {
         const editButton = document.querySelector("[data-edit][data-id=\"" + modal.dataset.currentId + "\"]");
@@ -316,10 +300,9 @@
       } else {
         openForCreate();
       }
-      if (modeSelect) {
-        setTimeout(applyRateMode, 0);
-      }
     }
+
+    refreshSearchableSelects();
   })();
 </script>
 <script>

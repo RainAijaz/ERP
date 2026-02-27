@@ -3,6 +3,7 @@ const knex = require("../../db/knex");
 const { requirePermission } = require("../../middleware/access/role-permissions");
 const { setCookie } = require("../../middleware/utils/cookies");
 const { UI_NOTICE_COOKIE } = require("../../middleware/core/ui-notice");
+const { toLocalDateOnly } = require("../../utils/date-only");
 const { createVoucher, updateVoucher, deleteVoucher } = require("../../services/financial/voucher-service");
 
 const toLines = (body) => {
@@ -107,7 +108,11 @@ const loadRecent = async (req, voucherTypeCode) => {
     .orderBy("id", "desc")
     .limit(20);
 
-  return query.where({ branch_id: req.branchId });
+  const rows = await query.where({ branch_id: req.branchId });
+  return rows.map((row) => ({
+    ...row,
+    voucher_date: toLocalDateOnly(row.voucher_date),
+  }));
 };
 
 const parseVoucherNo = (value) => {
@@ -121,15 +126,7 @@ const asNum = (value) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-const toDateOnly = (value) => {
-  if (!value) return "";
-  const text = String(value);
-  const match = text.match(/^(\d{4}-\d{2}-\d{2})/);
-  if (match) return match[1];
-  const dt = new Date(value);
-  if (Number.isNaN(dt.getTime())) return "";
-  return dt.toISOString().slice(0, 10);
-};
+const toDateOnly = toLocalDateOnly;
 
 const getAutoSettlementDateFromRemarks = (remarks) => {
   const text = String(remarks || "");
@@ -314,6 +311,7 @@ const loadVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
 
   return {
     ...header,
+    voucher_date: toDateOnly(header.voucher_date),
     lines: lines.map((line) => {
       const sourceVoucherId = Number(line?.meta?.source_voucher_id || 0);
       const sourceType = String(

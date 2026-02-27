@@ -181,12 +181,22 @@ const navConfig = [
     children: [
       {
         key: "purchase",
-        labelKey: "purchase",
+        labelKey: "vouchers",
         type: "group",
         children: [
-          { key: "purchase_invoice", labelKey: "purchase_invoice", scopeType: "VOUCHER", scopeKey: "PI", moduleGroup: "Purchase", route: "/vouchers/purchase" },
-          { key: "purchase_order", labelKey: "purchase_order", scopeType: "VOUCHER", scopeKey: "PO", moduleGroup: "Purchase", route: "/vouchers/purchase-order" },
-          { key: "purchase_return", labelKey: "purchase_return", scopeType: "VOUCHER", scopeKey: "PR", moduleGroup: "Purchase", route: "/vouchers/purchase-return" },
+          { key: "goods_receipt_note", labelKey: "goods_receipt_note_voucher", scopeType: "VOUCHER", scopeKey: "GRN", moduleGroup: "Purchase", route: "/vouchers/goods-receipt-note" },
+          { key: "general_purchase", labelKey: "general_purchase_voucher", scopeType: "VOUCHER", scopeKey: "PI", moduleGroup: "Purchase", route: "/vouchers/purchase" },
+          { key: "purchase_return", labelKey: "purchase_return_voucher", scopeType: "VOUCHER", scopeKey: "PR", moduleGroup: "Purchase", route: "/vouchers/purchase-return" },
+        ],
+      },
+      {
+        key: "supplier_reports",
+        labelKey: "supplier_reports",
+        type: "group",
+        children: [
+          { key: "supplier_listings", labelKey: "supplier_listings", scopeType: "REPORT", scopeKey: "purchase_report", moduleGroup: "Purchase", route: "/reports/purchases/supplier-listings" },
+          { key: "supplier_ledger_report", labelKey: "supplier_ledger_report", scopeType: "REPORT", scopeKey: "supplier_ledger", moduleGroup: "Purchase", route: "/reports/purchases/supplier-ledger" },
+          { key: "supplier_balances_report", labelKey: "supplier_balances_report", scopeType: "REPORT", scopeKey: "supplier_balances", moduleGroup: "Purchase", route: "/reports/purchases/supplier-balances" },
         ],
       },
       {

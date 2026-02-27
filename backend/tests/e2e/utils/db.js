@@ -121,6 +121,37 @@ const findLatestApprovalRequest = async ({ requestedBy, status, entityType, summ
   return query.first();
 };
 
+const getLatestVoucherHeader = async ({ voucherTypeCode, createdBy, branchId } = {}) => {
+  let query = knex("erp.voucher_header")
+    .select("id", "voucher_no", "voucher_type_code", "status", "created_by", "branch_id", "created_at")
+    .orderBy("id", "desc");
+  if (voucherTypeCode) query = query.where("voucher_type_code", voucherTypeCode);
+  if (createdBy) query = query.where("created_by", createdBy);
+  if (branchId) query = query.where("branch_id", branchId);
+  return query.first();
+};
+
+const getVoucherLineCount = async (voucherId) => {
+  const id = Number(voucherId || 0);
+  if (!id) return 0;
+  const row = await knex("erp.voucher_line")
+    .where({ voucher_header_id: id })
+    .count({ count: "*" })
+    .first();
+  return Number(row?.count || 0);
+};
+
+const getPurchaseAllocationCountByVoucher = async (voucherId) => {
+  const id = Number(voucherId || 0);
+  if (!id) return 0;
+  const row = await knex("erp.purchase_grn_invoice_alloc as a")
+    .join("erp.voucher_line as vl", "vl.id", "a.purchase_voucher_line_id")
+    .where("vl.voucher_header_id", id)
+    .count({ count: "*" })
+    .first();
+  return Number(row?.count || 0);
+};
+
 const setVariantSaleRate = async (variantId, saleRate) => {
   if (!variantId) return;
   await knex("erp.variants").where({ id: Number(variantId) }).update({ sale_rate: saleRate });
@@ -203,10 +234,19 @@ const clearUserPermissionsOverride = async ({ userId, scopeKeys = [] }) => {
 };
 
 const setUserScreenPermission = async ({ userId, scopeKey, permissions = {} }) => {
+  return setUserScopePermission({
+    userId,
+    scopeType: "SCREEN",
+    scopeKey,
+    permissions,
+  });
+};
+
+const setUserScopePermission = async ({ userId, scopeType, scopeKey, permissions = {} }) => {
   if (!userId || !scopeKey) return;
   const scope = await knex("erp.permission_scope_registry")
     .select("id")
-    .where({ scope_type: "SCREEN", scope_key: scopeKey })
+    .where({ scope_type: scopeType || "SCREEN", scope_key: scopeKey })
     .first();
   if (!scope) return;
 
@@ -234,6 +274,18 @@ const setUserScreenPermission = async ({ userId, scopeKey, permissions = {} }) =
       can_print: permissions.can_print ?? null,
       can_approve: permissions.can_approve ?? null,
     });
+};
+
+const clearUserScopePermission = async ({ userId, scopeType, scopeKey }) => {
+  if (!userId || !scopeKey) return;
+  const scope = await knex("erp.permission_scope_registry")
+    .select("id")
+    .where({ scope_type: scopeType || "SCREEN", scope_key: scopeKey })
+    .first();
+  if (!scope) return;
+  await knex("erp.user_permissions_override")
+    .where({ user_id: userId, scope_id: scope.id })
+    .del();
 };
 
 const insertActivityLogRows = async (rows = []) => {
@@ -702,10 +754,15 @@ module.exports = {
   createApprovalRequest,
   deleteApprovalRequests,
   findLatestApprovalRequest,
+  getLatestVoucherHeader,
+  getVoucherLineCount,
+  getPurchaseAllocationCountByVoucher,
   setVariantSaleRate,
   upsertUserWithPermissions,
   clearUserPermissionsOverride,
   setUserScreenPermission,
+  setUserScopePermission,
+  clearUserScopePermission,
   insertActivityLogRows,
   deleteActivityLogs,
   getActivityLogIdsByApprovalRequestId,

@@ -1,0 +1,64 @@
+<div class="mx-auto w-full max-w-7xl space-y-6">
+  <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
+    <div class="flex flex-col gap-2">
+      <h1 class="text-2xl font-display text-ink"><%= t('supplier_listings') %></h1>
+      <p class="text-sm text-muted"><%= t('purchase_reports') %></p>
+    </div>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md" data-print-area>
+    <div class="px-5 pt-4 text-center text-xl font-display font-semibold uppercase tracking-[0.35em] text-slate-900" data-print-header>
+      <%= t("brand") %>
+    </div>
+
+    <div class="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div class="text-sm font-semibold text-slate-700"><%= t('list') %> <%= t('supplier_listings') %></div>
+      <%- include("../../base/partials/table-controls", { t, showStatus: false }) %>
+    </div>
+
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm" data-table>
+        <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
+          <tr>
+            <th class="cursor-pointer px-4 py-3 text-left" data-sort-key="__sr">SR.NO</th>
+            <th class="cursor-pointer px-4 py-3 text-left" data-sort-key="name"><%= t('party_name') %></th>
+            <th class="cursor-pointer px-4 py-3 text-left" data-sort-key="group_name"><%= t('party_group') %></th>
+            <th class="cursor-pointer px-4 py-3 text-left" data-sort-key="city_name"><%= t('city') %></th>
+            <th class="cursor-pointer px-4 py-3 text-left" data-sort-key="phone_primary"><%= t('phone_primary') %></th>
+            <th class="cursor-pointer px-4 py-3 text-left" data-sort-key="created_at"><%= t('created_at') %></th>
+            <th class="cursor-pointer px-4 py-3 text-left" data-sort-key="branch_names"><%= t('branches') %></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100" data-table-body>
+          <% if (!rows || !rows.length) { %>
+            <tr>
+              <td colspan="7" class="px-4 py-8 text-center text-sm text-slate-500"><%= t('no_entries') %></td>
+            </tr>
+          <% } else { %>
+            <% rows.forEach((row, idx) => { %>
+              <tr class="hover:bg-amber-50/40" data-row data-active="true" data-branch="<%= row.branch_names || '' %>">
+                <td class="px-4 py-3 text-slate-700" data-sort-value="<%= idx + 1 %>"><%= idx + 1 %></td>
+                <td class="px-4 py-3 text-slate-700"><%= row.name || '-' %></td>
+                <td class="px-4 py-3 text-slate-700"><%= row.group_name || t('none') %></td>
+                <td class="px-4 py-3 text-slate-700"><%= row.city_name || t('none') %></td>
+                <td class="px-4 py-3 text-slate-700"><%= row.phone_primary || '-' %></td>
+                <td class="px-4 py-3 text-slate-700" data-sort-value="<%= row.created_at ? new Date(row.created_at).toISOString() : '' %>"><%= formatDateDisplay(row.created_at, '') %></td>
+                <td class="px-4 py-3 text-slate-700"><%= row.branch_names || t('none') %></td>
+              </tr>
+            <% }) %>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+
+    <%- include("../../base/partials/table-footer", { t }) %>
+  </section>
+</div>
+
+<%- include("../../base/partials/basic-info-utils", {
+  t,
+  page: { titleKey: "supplier_listings", autoCodeFromName: false },
+  basePath: "/reports/purchases/supplier-listings",
+  modalOpen: false,
+  modalMode: "add"
+}) %>

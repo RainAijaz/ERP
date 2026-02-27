@@ -21,3 +21,10 @@ Run your migrations/DDL files to create schema/tables inside it
 Why this is normal
 The database server (your laptop, or a hosted server) is separate from your code.
 Your code repo should not “contain the database”, only the instructions to build it (migrations/DDL).
+
+## UTF-8 and Urdu text safety
+
+- This repo is configured for UTF-8 (`.editorconfig` + workspace settings).
+- Keep Urdu literals in source files only, and save files in UTF-8 encoding.
+- Avoid editing Urdu text through legacy code-page terminals.
+- In Windows terminal sessions, run `chcp 65001` before manual text operations.

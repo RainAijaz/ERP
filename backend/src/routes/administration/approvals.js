@@ -13,6 +13,10 @@ const { insertActivityLog } = require("../../utils/audit-log");
 const { inferAction, parseEditedPayload, sanitizeEditedValues, getEditableKeys } = require("../../utils/approval-request-edit");
 const { syncAutoBankSettlementForVoucherTx, markBankVoucherLinesRejectedTx } = require("../../services/financial/voucher-service");
 const { syncVoucherGlPostingTx } = require("../../services/financial/gl-posting-service");
+const {
+  PURCHASE_VOUCHER_TYPES,
+  applyPurchaseVoucherUpdatePayloadTx,
+} = require("../../services/purchase/purchase-voucher-service");
 const basicInfoRoutes = require("../master_data/basic-info");
 const uomConversionsRoutes = require("../master_data/basic-info/uom-conversions");
 const accountsRoutes = require("../master_data/accounts");
@@ -61,7 +65,7 @@ const ACTION_LABELS = {
   delete: "delete",
 };
 
-const applyVoucherApprovalChangeTx = async ({ trx, request, approverId }) => {
+const applyVoucherApprovalChangeTx = async ({ trx, request, approverId, req }) => {
   const payload = request?.new_value && typeof request.new_value === "object" ? request.new_value : {};
   const action = String(payload.action || "").toLowerCase();
   const voucherId = Number(request.entity_id || payload.voucher_id || 0);
@@ -123,12 +127,19 @@ const applyVoucherApprovalChangeTx = async ({ trx, request, approverId }) => {
     throw new Error("Voucher not found during approval apply");
   }
 
+  const hasHeaderAccount = Object.prototype.hasOwnProperty.call(payload, "header_account_id");
+  const hasReferenceNo = Object.prototype.hasOwnProperty.call(payload, "reference_no");
+  const hasDescription = Object.prototype.hasOwnProperty.call(payload, "description");
+  const hasRemarks = Object.prototype.hasOwnProperty.call(payload, "remarks");
+  const hasVoucherDate = Object.prototype.hasOwnProperty.call(payload, "voucher_date");
+
   await trx("erp.voucher_header")
     .where({ id: voucherId })
     .update({
-      voucher_date: payload.voucher_date || trx.raw("voucher_date"),
-      header_account_id: Number(payload.header_account_id || 0) > 0 ? Number(payload.header_account_id) : null,
-      remarks: payload.remarks ?? null,
+      voucher_date: hasVoucherDate ? (payload.voucher_date || null) : trx.raw("voucher_date"),
+      header_account_id: hasHeaderAccount ? (Number(payload.header_account_id || 0) > 0 ? Number(payload.header_account_id) : null) : trx.raw("header_account_id"),
+      book_no: hasReferenceNo ? (payload.reference_no || null) : trx.raw("book_no"),
+      remarks: hasDescription ? (payload.description ?? null) : (hasRemarks ? (payload.remarks ?? null) : trx.raw("remarks")),
       status: "APPROVED",
       approved_by: approverId,
       approved_at: trx.fn.now(),
@@ -136,25 +147,59 @@ const applyVoucherApprovalChangeTx = async ({ trx, request, approverId }) => {
 
   await trx("erp.voucher_line").where({ voucher_header_id: voucherId }).del();
   if (lines.length) {
-    const lineRows = lines.map((line, index) => ({
-      voucher_header_id: voucherId,
-      line_no: Number(line.line_no || index + 1),
-      line_kind: line.line_kind,
-      item_id: null,
-      sku_id: null,
-      account_id: line.account_id || null,
-      party_id: line.party_id || null,
-      labour_id: line.labour_id || null,
-      employee_id: line.employee_id || null,
-      uom_id: null,
-      qty: Number(line.qty || 0),
-      rate: Number(line.rate || 0),
-      amount: Number(line.amount || 0),
-      reference_no: line.reference_no || null,
-      meta: line.meta || {},
-    }));
+    const lineRows = lines.map((line, index) => {
+      const toNullableId = (value) => {
+        const n = Number(value || 0);
+        return Number.isInteger(n) && n > 0 ? n : null;
+      };
+      const colorId = toNullableId(line.color_id);
+      const lineMeta =
+        line.meta && typeof line.meta === "object"
+          ? { ...line.meta }
+          : {};
+      if (colorId && !lineMeta.color_id) lineMeta.color_id = colorId;
+
+      return {
+        voucher_header_id: voucherId,
+        line_no: Number(line.line_no || index + 1),
+        line_kind: String(line.line_kind || (toNullableId(line.item_id) ? "ITEM" : "ACCOUNT")).toUpperCase(),
+        item_id: toNullableId(line.item_id),
+        sku_id: toNullableId(line.sku_id),
+        account_id: toNullableId(line.account_id),
+        party_id: toNullableId(line.party_id),
+        labour_id: toNullableId(line.labour_id),
+        employee_id: toNullableId(line.employee_id),
+        uom_id: toNullableId(line.uom_id),
+        qty: Number(line.qty || 0),
+        rate: Number(line.rate || 0),
+        amount: Number(line.amount || 0),
+        reference_no: line.reference_no || null,
+        meta: lineMeta,
+      };
+    });
     await trx("erp.voucher_line").insert(lineRows);
   }
+
+  const voucherTypeCode = String(existing.voucher_type_code || "").toUpperCase();
+  if (
+    voucherTypeCode === PURCHASE_VOUCHER_TYPES.goodsReceiptNote ||
+    voucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase ||
+    voucherTypeCode === PURCHASE_VOUCHER_TYPES.purchaseReturn
+  ) {
+    const approvalReq = {
+      ...req,
+      branchId: Number(request.branch_id || req?.branchId || 0),
+      user: { ...(req?.user || {}), id: approverId },
+    };
+    await applyPurchaseVoucherUpdatePayloadTx({
+      trx,
+      voucherId,
+      voucherTypeCode,
+      payload,
+      req: approvalReq,
+    });
+  }
+
   await syncAutoBankSettlementForVoucherTx({ trx, voucherId, actorUserId: approverId });
   await syncVoucherGlPostingTx({ trx, voucherId });
 };
@@ -204,6 +249,98 @@ const safeJson = (value) => {
   } catch (err) {
     return null;
   }
+};
+
+const parseSummaryVoucherTypeCode = (summary) => {
+  const text = String(summary || "").toUpperCase();
+  if (!text) return "";
+  const match = text.match(/([A-Z]+_VOUCHER)/);
+  return match ? String(match[1]) : "";
+};
+
+const parseSummaryVoucherNo = (summary) => {
+  const text = String(summary || "");
+  const match = text.match(/#\s*(\d+)/);
+  if (!match) return null;
+  const voucherNo = Number(match[1]);
+  return Number.isInteger(voucherNo) && voucherNo > 0 ? voucherNo : null;
+};
+
+const getLocalizedLabel = (t, key, fallback) => {
+  if (typeof t !== "function") return fallback;
+  const translated = String(t(key) || "").trim();
+  if (!translated || translated === key) return fallback;
+  return translated;
+};
+
+const mapVoucherActionLabel = (action, t) => {
+  const normalized = String(action || "").trim().toLowerCase();
+  if (normalized === "create") return getLocalizedLabel(t, "add", "ADD");
+  if (normalized === "update") return getLocalizedLabel(t, "edit", "EDIT");
+  if (normalized === "delete") return getLocalizedLabel(t, "delete", "DELETE");
+  if (normalized === "update_bank_line_status") {
+    const statusLabel = getLocalizedLabel(t, "status", "STATUS");
+    const updateLabel = getLocalizedLabel(t, "edit", "UPDATE");
+    return `${statusLabel} ${updateLabel}`.trim();
+  }
+  return "";
+};
+
+const normalizeVoucherApprovalSummary = (row, t) => {
+  const requestType = String(row?.request_type || "").toUpperCase();
+  const entityType = String(row?.entity_type || "").toUpperCase();
+  if (requestType !== "VOUCHER" && entityType !== "VOUCHER") return String(row?.summary || "");
+
+  const newValue = safeJson(row?.new_value) || {};
+  const oldValue = safeJson(row?.old_value) || {};
+
+  const payloadAction = String(newValue?.action || "").trim().toLowerCase();
+  const rowAction = String(row?.action || "").trim().toLowerCase();
+  const fallbackAction = oldValue && Object.keys(oldValue).length ? "update" : "create";
+  const effectiveAction = payloadAction || rowAction || fallbackAction;
+
+  const actionLabel = mapVoucherActionLabel(effectiveAction, t) || getLocalizedLabel(t, "action", "ACTION");
+  const voucherTypeCode =
+    String(newValue?.voucher_type_code || row?.entity_id || "").toUpperCase().includes("_VOUCHER")
+      ? String(newValue?.voucher_type_code || row?.entity_id || "").toUpperCase()
+      : parseSummaryVoucherTypeCode(row?.summary);
+
+  const voucherTypeLabel = voucherTypeCode ? voucherTypeCode.replace(/_/g, " ") : "VOUCHER";
+  const voucherNoFromPayload = Number(newValue?.voucher_no || 0);
+  const voucherNo =
+    Number.isInteger(voucherNoFromPayload) && voucherNoFromPayload > 0 ? voucherNoFromPayload : parseSummaryVoucherNo(row?.summary);
+  const lineNo = Number(newValue?.line_no || 0);
+
+  if (effectiveAction === "update_bank_line_status") {
+    const lineWord = getLocalizedLabel(t, "line", "LINE");
+    const lineLabel = Number.isInteger(lineNo) && lineNo > 0 ? ` ${lineWord} ${lineNo}` : "";
+    return `${actionLabel} ${voucherTypeLabel}${lineLabel}`.trim();
+  }
+
+  if (actionLabel === "ADD") {
+    return `${actionLabel} ${voucherTypeLabel}`;
+  }
+
+  if (Number.isInteger(voucherNo) && voucherNo > 0) {
+    return `${actionLabel} ${voucherTypeLabel} #${voucherNo}`;
+  }
+
+  return `${actionLabel} ${voucherTypeLabel}`;
+};
+
+const resolveApprovalRequestVoucherTypeCode = (request) => {
+  const direct = String(request?.voucher_type_code || "")
+    .trim()
+    .toUpperCase();
+  if (direct) return direct;
+
+  const payload = safeJson(request?.new_value) || {};
+  const fromPayload = String(payload?.voucher_type_code || payload?.voucherTypeCode || "")
+    .trim()
+    .toUpperCase();
+  if (fromPayload) return fromPayload;
+
+  return parseSummaryVoucherTypeCode(request?.summary);
 };
 
 const resolveHrScopeKey = (request, values = {}) => {
@@ -540,6 +677,10 @@ router.get("/", requirePermission("SCREEN", "administration.approvals", "navigat
     }
 
     const rows = await rowsQuery;
+
+    for (const row of rows) {
+      row.summary = normalizeVoucherApprovalSummary(row, res.locals.t);
+    }
 
     const skuRows = rows.filter((row) => row.entity_type === "SKU");
     if (skuRows.length) {
@@ -959,7 +1100,7 @@ router.post("/:id/approve", requirePermission("SCREEN", "administration.approval
           throw err;
         }
       } else if (request.request_type === "VOUCHER" && request.entity_type === "VOUCHER") {
-        await applyVoucherApprovalChangeTx({ trx, request, approverId: req.user.id });
+        await applyVoucherApprovalChangeTx({ trx, request, approverId: req.user.id, req });
       }
       await trx("erp.approval_request").where({ id }).update({
         status: "APPROVED",
@@ -973,7 +1114,7 @@ router.post("/:id/approve", requirePermission("SCREEN", "administration.approval
         user_id: req.user.id,
         entity_type: request.entity_type,
         entity_id: request.entity_id === "NEW" && appliedEntityId ? appliedEntityId : request.entity_id,
-        voucher_type_code: request.voucher_type_code || null,
+        voucher_type_code: resolveApprovalRequestVoucherTypeCode(request) || null,
         action: "APPROVE",
         ip_address: req.ip,
         context: {
@@ -1067,7 +1208,7 @@ router.post("/:id/reject", requirePermission("SCREEN", "administration.approvals
         user_id: req.user.id,
         entity_type: request.entity_type,
         entity_id: request.entity_id,
-        voucher_type_code: request.voucher_type_code || null,
+        voucher_type_code: resolveApprovalRequestVoucherTypeCode(request) || null,
         action: "REJECT",
         ip_address: req.ip,
         context: {

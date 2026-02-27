@@ -1,6 +1,7 @@
 const knex = require("../../db/knex");
 const { HttpError } = require("../../middleware/errors/http-error");
 const { insertActivityLog, queueAuditLog } = require("../../utils/audit-log");
+const { toLocalDateOnlyOrRaw } = require("../../utils/date-only");
 const { syncVoucherGlPostingTx } = require("./gl-posting-service");
 
 const VOUCHER_TYPES = {
@@ -48,7 +49,7 @@ const getAccountPostingClassMapTx = async ({ trx, req, accountIds = [] }) => {
   const rows = await trx("erp.accounts as a")
     .leftJoin("erp.account_posting_classes as apc", "apc.id", "a.posting_class_id")
     .leftJoin("erp.account_groups as ag", "ag.id", "a.subgroup_id")
-    .select("a.id", "apc.code as posting_class_code", "apc.is_active as posting_class_active", "ag.account_type")
+    .select("a.id", "a.lock_posting", "apc.code as posting_class_code", "apc.is_active as posting_class_active", "ag.account_type")
     .whereIn("a.id", uniqueIds)
     .where({ "a.is_active": true })
     .whereExists(function branchAccess() {
@@ -61,6 +62,7 @@ const getAccountPostingClassMapTx = async ({ trx, req, accountIds = [] }) => {
         postingClassCode: String(row.posting_class_code || "").toLowerCase(),
         postingClassActive: row.posting_class_active !== false,
         accountType: String(row.account_type || "").toLowerCase(),
+        lockPosting: row.lock_posting === true,
       },
     ]),
   );
@@ -97,6 +99,9 @@ const validateLines = async ({ trx, req, voucherTypeCode, rawLines = [], headerA
       const accountMeta = accountPostingClassById.get(Number(ref.account_id || 0)) || null;
       if (!accountMeta) {
         throw new HttpError(400, `Line ${index + 1}: account is invalid for current branch`);
+      }
+      if (accountMeta.lockPosting === true) {
+        throw new HttpError(400, `Line ${index + 1}: selected account is locked for manual posting`);
       }
       const postingClassCode = String(accountMeta.postingClassCode || "").toLowerCase();
       if (postingClassCode && accountMeta.postingClassActive === false) {
@@ -237,14 +242,14 @@ const canDo = (req, scopeType, scopeKey, action) => {
   return check(scopeType, scopeKey, action);
 };
 
+const canApproveVoucherAction = (req, scopeKey) =>
+  req?.user?.isAdmin === true || canDo(req, "VOUCHER", scopeKey, "approve");
+
 const isAutoSettlementSourceVoucher = (voucherTypeCode) =>
   voucherTypeCode === VOUCHER_TYPES.cash || voucherTypeCode === VOUCHER_TYPES.journal;
 
 const toIsoDate = (value) => {
-  if (!value) return "";
-  const dt = new Date(value);
-  if (Number.isNaN(dt.getTime())) return String(value);
-  return dt.toISOString().slice(0, 10);
+  return toLocalDateOnlyOrRaw(value);
 };
 
 const toTitleCase = (value) =>
@@ -569,7 +574,7 @@ const ensureHeaderAccount = async ({ trx, req, voucherTypeCode, headerAccountId 
 
   let query = trx("erp.accounts as a")
     .leftJoin("erp.account_posting_classes as apc", "apc.id", "a.posting_class_id")
-    .select("a.id", "apc.code as posting_class_code")
+    .select("a.id", "a.lock_posting", "apc.code as posting_class_code")
     .where({ "a.id": normalizedHeaderAccountId, "a.is_active": true });
   query = query.whereExists(function branchAccess() {
     this.select(1).from("erp.account_branch as ab").whereRaw("ab.account_id = a.id").andWhere("ab.branch_id", req.branchId);
@@ -577,6 +582,9 @@ const ensureHeaderAccount = async ({ trx, req, voucherTypeCode, headerAccountId 
   const account = await query.first();
   if (!account) {
     throw new HttpError(400, "Selected cash/bank account is invalid for current branch");
+  }
+  if (account.lock_posting === true) {
+    throw new HttpError(400, "Selected cash/bank account is locked for manual posting");
   }
   if (voucherTypeCode === VOUCHER_TYPES.cash) {
     const postingClassCode = String(account.posting_class_code || "").toLowerCase();
@@ -630,6 +638,7 @@ const createVoucher = async ({ req, voucherTypeCode, voucherDate, remarks, lines
   if (!req.branchId) throw new HttpError(400, "Branch context is required");
 
   const canCreate = canDo(req, "VOUCHER", scopeKey, "create");
+  const canApprove = canApproveVoucherAction(req, scopeKey);
 
   const result = await knex.transaction(async (trx) => {
     const validated = await validateLines({ trx, req, voucherTypeCode, rawLines: lines, headerAccountId });
@@ -637,7 +646,7 @@ const createVoucher = async ({ req, voucherTypeCode, voucherDate, remarks, lines
     await enforceCashVoucherContraRule({ trx, req, voucherTypeCode, lines: validated.lines });
     const voucherNo = await getNextVoucherNo(trx, req.branchId, voucherTypeCode);
     const policyRequiresApproval = await requiresApprovalForAction(trx, voucherTypeCode, "create");
-    const queuedForApproval = policyRequiresApproval || !canCreate;
+    const queuedForApproval = !canCreate || (policyRequiresApproval && !canApprove);
 
     const [header] = await trx("erp.voucher_header")
       .insert({
@@ -688,8 +697,9 @@ const createVoucher = async ({ req, voucherTypeCode, voucherDate, remarks, lines
         req,
         voucherId: header.id,
         voucherTypeCode,
-        summary: `${voucherTypeCode} #${header.voucher_no}`,
+        summary: `ADD ${voucherTypeCode}`,
         newValue: {
+          action: "create",
           voucher_type_code: voucherTypeCode,
           voucher_no: header.voucher_no,
           voucher_date: voucherDate,
@@ -741,6 +751,7 @@ const updateVoucher = async ({ req, voucherId, voucherTypeCode, voucherDate, rem
   }
 
   const canEdit = canDo(req, "VOUCHER", scopeKey, "edit");
+  const canApprove = canApproveVoucherAction(req, scopeKey);
 
   const result = await knex.transaction(async (trx) => {
     const validated = await validateLines({ trx, req, voucherTypeCode, rawLines: lines, headerAccountId });
@@ -759,7 +770,7 @@ const updateVoucher = async ({ req, voucherId, voucherTypeCode, voucherDate, rem
       .orderBy("line_no", "asc");
 
     const policyRequiresApproval = await requiresApprovalForAction(trx, voucherTypeCode, "edit");
-    const queuedForApproval = policyRequiresApproval || !canEdit;
+    const queuedForApproval = !canEdit || (policyRequiresApproval && !canApprove);
 
     const updatePayload = {
       action: "update",
@@ -781,7 +792,7 @@ const updateVoucher = async ({ req, voucherId, voucherTypeCode, voucherDate, rem
         req,
         voucherId: existing.id,
         voucherTypeCode,
-        summary: `UPDATE ${voucherTypeCode} #${existing.voucher_no}`,
+        summary: `EDIT ${voucherTypeCode} #${existing.voucher_no}`,
         oldValue: {
           voucher_date: existing.voucher_date,
           remarks: existing.remarks,
@@ -881,6 +892,7 @@ const deleteVoucher = async ({ req, voucherId, voucherTypeCode, scopeKey }) => {
   }
 
   const canDelete = canDo(req, "VOUCHER", scopeKey, "delete");
+  const canApprove = canApproveVoucherAction(req, scopeKey);
 
   const result = await knex.transaction(async (trx) => {
     let headerQuery = trx("erp.voucher_header")
@@ -905,7 +917,7 @@ const deleteVoucher = async ({ req, voucherId, voucherTypeCode, scopeKey }) => {
     }
 
     const policyRequiresApproval = await requiresApprovalForAction(trx, voucherTypeCode, "delete");
-    const queuedForApproval = policyRequiresApproval || !canDelete;
+    const queuedForApproval = !canDelete || (policyRequiresApproval && !canApprove);
 
     if (queuedForApproval) {
       const approvalRequestId = await createApprovalRequest({

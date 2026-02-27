@@ -53,6 +53,33 @@
     <!-- LIVE APPROVAL TOASTS: Real-time approval notifications -->
     <script>
       (function () {
+        const path = String(window.location.pathname || "");
+        if (!path.startsWith("/vouchers/")) return;
+
+        const params = new URLSearchParams(window.location.search || "");
+        const hasVoucherContext = params.has("voucher_no") || String(params.get("view") || "") === "1";
+        if (!hasVoucherContext) return;
+
+        let navType = "";
+        try {
+          const navEntries = performance.getEntriesByType("navigation");
+          navType = String(navEntries?.[0]?.type || "");
+        } catch (err) {
+          navType = "";
+        }
+
+        if (!navType && performance && performance.navigation) {
+          const legacyType = Number(performance.navigation.type);
+          if (legacyType === 1) navType = "reload";
+        }
+
+        if (navType !== "reload") return;
+
+        window.location.replace(`${path}?new=1`);
+      })();
+    </script>
+    <script>
+      (function () {
         // Live approval event stream and toast notifications
         if (!window.EventSource) return;
         const csrfToken = "<%= csrfToken %>";

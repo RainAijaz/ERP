@@ -17,14 +17,126 @@ const resolveBaseUrl = (apiKey) => {
   if (!apiKey) {
     return null;
   }
-  return apiKey.endsWith(":fx") ? "https://api-free.deepl.com/v2/translate" : "https://api.deepl.com/v2/translate";
+  return apiKey.endsWith(":fx")
+    ? "https://api-free.deepl.com/v2/translate"
+    : "https://api.deepl.com/v2/translate";
 };
 
-const TRANSLATION_CACHE_TTL_MS = Number(process.env.TRANSLATION_CACHE_TTL_MS || 0);
-const TRANSLATION_HTTP_TIMEOUT_MS = Number(process.env.TRANSLATION_HTTP_TIMEOUT_MS || 8000);
+const TRANSLATION_CACHE_TTL_MS = Number(
+  process.env.TRANSLATION_CACHE_TTL_MS || 0,
+);
+const TRANSLATION_HTTP_TIMEOUT_MS = Number(
+  process.env.TRANSLATION_HTTP_TIMEOUT_MS || 8000,
+);
 const translationCache = new Map();
 
-const fetchWithTimeout = async (url, options = {}, timeoutMs = TRANSLATION_HTTP_TIMEOUT_MS) => {
+const readEnvValue = (...keys) => {
+  for (const key of keys) {
+    const raw = process.env[key];
+    if (typeof raw !== "string") continue;
+    const trimmed = raw.trim();
+    if (!trimmed) continue;
+    const unquoted = trimmed.replace(/^['\"]|['\"]$/g, "").trim();
+    if (unquoted) return unquoted;
+  }
+  return "";
+};
+
+const resolveAzureConfig = () => {
+  const apiKey = readEnvValue(
+    "AZURE_TRANSLATOR_KEY",
+    "AZURE_TRANSLATOR_API_KEY",
+    "AZURE_AI_TRANSLATOR_KEY",
+  );
+  const region = readEnvValue(
+    "AZURE_TRANSLATOR_REGION",
+    "AZURE_TRANSLATOR_LOCATION",
+    "AZURE_REGION",
+  );
+  const endpoint =
+    readEnvValue(
+      "AZURE_TRANSLATOR_ENDPOINT",
+      "AZURE_TRANSLATOR_BASE_URL",
+      "AZURE_AI_TRANSLATOR_ENDPOINT",
+    ) || "https://api.cognitive.microsofttranslator.com";
+  return {
+    apiKey,
+    region,
+    endpoint,
+  };
+};
+
+const normalizeAzureEndpoint = (endpoint) => {
+  const normalized = String(
+    endpoint || "https://api.cognitive.microsofttranslator.com",
+  )
+    .trim()
+    .replace(/\/+$/, "");
+  return normalized.replace(/\/(translate|transliterate)$/i, "");
+};
+
+const buildAzureHeaders = ({ apiKey, region, includeRegion = true }) => {
+  const headers = {
+    "Ocp-Apim-Subscription-Key": apiKey,
+    "Content-Type": "application/json",
+  };
+  if (includeRegion && region) {
+    headers["Ocp-Apim-Subscription-Region"] = region;
+  }
+  return headers;
+};
+
+const azureRequestWithAuthRetry = async ({ url, body, apiKey, region }) => {
+  const normalizedRegion = String(region || "").trim();
+  const attempts = [];
+  if (normalizedRegion) {
+    attempts.push({ includeRegion: true, region: normalizedRegion });
+    if (normalizedRegion.toLowerCase() !== "global") {
+      attempts.push({ includeRegion: true, region: "global" });
+    }
+  }
+  attempts.push({ includeRegion: false, region: "" });
+  let lastError = "Azure request failed";
+  let lastStatus = 0;
+
+  for (let index = 0; index < attempts.length; index += 1) {
+    const attempt = attempts[index];
+    const response = await fetchWithTimeout(url, {
+      method: "POST",
+      headers: buildAzureHeaders({
+        apiKey,
+        region: attempt.region,
+        includeRegion: attempt.includeRegion,
+      }),
+      body: JSON.stringify(body),
+    });
+
+    const raw = await response.text();
+    if (response.ok) {
+      return raw;
+    }
+
+    lastStatus = Number(response.status || 0);
+    lastError = `Azure ${response.status}: ${raw}`;
+    const hasAnotherAttempt = index < attempts.length - 1;
+    if (!hasAnotherAttempt || response.status !== 401) {
+      break;
+    }
+  }
+
+  if (lastStatus === 401) {
+    throw new Error(
+      `${lastError} | Verify AZURE translator key/region from the Azure Translator resource (try region 'global' if your resource is global).`,
+    );
+  }
+  throw new Error(lastError);
+};
+
+const fetchWithTimeout = async (
+  url,
+  options = {},
+  timeoutMs = TRANSLATION_HTTP_TIMEOUT_MS,
+) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
@@ -61,30 +173,21 @@ const writeCache = (mode, text, value) => {
 };
 
 const transliterateToUrdu = async (text) => {
-  const apiKey = process.env.AZURE_TRANSLATOR_KEY;
-  const region = process.env.AZURE_TRANSLATOR_REGION;
-  if (!apiKey || !region || !text) {
+  const { apiKey, region, endpoint } = resolveAzureConfig();
+  if (!apiKey || !text) {
     throw new Error("Azure transliteration not configured");
   }
 
-  const endpoint = process.env.AZURE_TRANSLATOR_ENDPOINT || "https://api.cognitive.microsofttranslator.com";
-  const normalizedEndpoint = endpoint.replace(/\/+$/, "");
-  const url = `${normalizedEndpoint}/transliterate` + "?api-version=3.0&language=ur&fromScript=Latn&toScript=Arab";
-
-  const response = await fetchWithTimeout(url, {
-    method: "POST",
-    headers: {
-      "Ocp-Apim-Subscription-Key": apiKey,
-      "Ocp-Apim-Subscription-Region": region,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify([{ text }]),
+  const normalizedEndpoint = normalizeAzureEndpoint(endpoint);
+  const url =
+    `${normalizedEndpoint}/transliterate` +
+    "?api-version=3.0&language=ur&fromScript=Latn&toScript=Arab";
+  const raw = await azureRequestWithAuthRetry({
+    url,
+    body: [{ text }],
+    apiKey,
+    region,
   });
-
-  const raw = await response.text();
-  if (!response.ok) {
-    throw new Error(`Azure ${response.status}: ${raw}`);
-  }
 
   let data = null;
   try {
@@ -101,30 +204,19 @@ const transliterateToUrdu = async (text) => {
 };
 
 const azureTranslateToUrdu = async (text) => {
-  const apiKey = process.env.AZURE_TRANSLATOR_KEY;
-  const region = process.env.AZURE_TRANSLATOR_REGION;
-  if (!apiKey || !region || !text) {
+  const { apiKey, region, endpoint } = resolveAzureConfig();
+  if (!apiKey || !text) {
     throw new Error("Azure translation not configured");
   }
 
-  const endpoint = process.env.AZURE_TRANSLATOR_ENDPOINT || "https://api.cognitive.microsofttranslator.com";
-  const normalizedEndpoint = endpoint.replace(/\/+$/, "");
+  const normalizedEndpoint = normalizeAzureEndpoint(endpoint);
   const url = `${normalizedEndpoint}/translate?api-version=3.0&to=ur`;
-
-  const response = await fetchWithTimeout(url, {
-    method: "POST",
-    headers: {
-      "Ocp-Apim-Subscription-Key": apiKey,
-      "Ocp-Apim-Subscription-Region": region,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify([{ text }]),
+  const raw = await azureRequestWithAuthRetry({
+    url,
+    body: [{ text }],
+    apiKey,
+    region,
   });
-
-  const raw = await response.text();
-  if (!response.ok) {
-    throw new Error(`Azure ${response.status}: ${raw}`);
-  }
 
   let data = null;
   try {
@@ -133,7 +225,12 @@ const azureTranslateToUrdu = async (text) => {
     throw new Error(`Azure invalid JSON: ${raw}`);
   }
 
-  const translated = data && data[0] && data[0].translations && data[0].translations[0] && data[0].translations[0].text;
+  const translated =
+    data &&
+    data[0] &&
+    data[0].translations &&
+    data[0].translations[0] &&
+    data[0].translations[0].text;
   if (!translated) {
     throw new Error(`Azure empty translation: ${raw}`);
   }
@@ -173,28 +270,46 @@ const translateToUrdu = async (text) => {
     throw new Error(`DeepL invalid JSON: ${raw}`);
   }
 
-  const translated = data && data.translations && data.translations[0] && data.translations[0].text;
+  const translated =
+    data &&
+    data.translations &&
+    data.translations[0] &&
+    data.translations[0].text;
   if (!translated) {
     throw new Error(`DeepL empty translation: ${raw}`);
   }
   return translated;
 };
 
-const translateUrduWithFallback = async ({ text, mode = "translate", logger = console }) => {
+const translateUrduWithFallback = async ({
+  text,
+  mode = "translate",
+  logger = console,
+}) => {
   const resolvedMode = mode === "transliterate" ? "transliterate" : "translate";
   const cached = readCache(resolvedMode, text);
   if (cached) {
-    return { translated: cached.translated, provider: cached.provider, azure_error: null };
+    return {
+      translated: cached.translated,
+      provider: cached.provider,
+      azure_error: null,
+    };
   }
   let azureError = null;
 
   try {
-    const translated = resolvedMode === "transliterate" ? await transliterateToUrdu(text) : await azureTranslateToUrdu(text);
+    const translated =
+      resolvedMode === "transliterate"
+        ? await transliterateToUrdu(text)
+        : await azureTranslateToUrdu(text);
     writeCache(resolvedMode, text, { translated, provider: "azure" });
     return { translated, provider: "azure", azure_error: null };
   } catch (err) {
     azureError = err?.message || "Azure failed";
-    logger.error("[translate] azure fallback triggered", { mode: resolvedMode, error: azureError });
+    logger.error("[translate] azure fallback triggered", {
+      mode: resolvedMode,
+      error: azureError,
+    });
   }
 
   try {
@@ -211,8 +326,15 @@ const translateUrduWithFallback = async ({ text, mode = "translate", logger = co
       azure_error: azureError,
       deepl_error: deeplError,
     });
-    throw new Error(`Fallback unavailable. Azure error: ${azureError || "unknown"}. DeepL error: ${deeplError}`);
+    throw new Error(
+      `Fallback unavailable. Azure error: ${azureError || "unknown"}. DeepL error: ${deeplError}`,
+    );
   }
 };
 
-module.exports = { translateToUrdu, transliterateToUrdu, azureTranslateToUrdu, translateUrduWithFallback };
+module.exports = {
+  translateToUrdu,
+  transliterateToUrdu,
+  azureTranslateToUrdu,
+  translateUrduWithFallback,
+};

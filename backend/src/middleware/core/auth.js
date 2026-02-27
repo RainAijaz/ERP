@@ -167,7 +167,7 @@ const loadUserContext = async (userId) => {
     status: user.status,
     primaryRoleId: user.primary_role_id,
     primaryRoleName: role?.name || null,
-    isAdmin: String(role?.name || "").toLowerCase() === "admin",
+    isAdmin: String(role?.name || "").trim().toLowerCase() === "admin",
     branchIds,
     permissions,
   };

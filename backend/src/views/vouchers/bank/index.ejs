@@ -223,13 +223,14 @@
         <div class="overflow-x-auto lg:overflow-visible overflow-y-visible">
         <table class="w-full table-fixed text-xs" data-lines-table>
           <colgroup>
-            <col class="w-[12%]">
-            <col class="w-[20%]">
-            <col class="w-[14%]">
-            <col class="w-[16%]">
-            <col class="w-[12%]">
-            <col class="w-[12%]">
+            <col class="w-[11%]">
+            <col class="w-[19%]">
+            <col class="w-[13%]">
+            <col class="w-[15%]">
+            <col class="w-[11%]">
+            <col class="w-[11%]">
             <col class="w-[8%]">
+            <col class="w-[6%]">
             <col class="w-[6%]">
           </colgroup>
           <thead class="bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
@@ -242,6 +243,7 @@
               <th class="border-b border-slate-200 px-2 py-2 text-right"><%= t(paymentLabelKey) %></th>
               <th class="border-b border-slate-200 px-2 py-2 text-left"><%= t('status') %></th>
               <th class="border-b border-slate-200 px-2 py-2 text-center whitespace-nowrap"><%= t('actions') %></th>
+              <th class="border-b border-slate-200 px-2 py-2 text-center"><%= t('sr_no') %></th>
             </tr>
           </thead>
           <tbody data-lines-body></tbody>
@@ -254,7 +256,7 @@
               <td class="border-t border-slate-200 px-2 py-2">
                 <input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.00" data-total-payment>
               </td>
-              <td class="border-t border-slate-200 px-2 py-2" colspan="2"></td>
+              <td class="border-t border-slate-200 px-2 py-2" colspan="3"></td>
             </tr>
           </tfoot>
         </table>
@@ -725,6 +727,10 @@
 
     const recalcTotals = () => {
       const rows = Array.from(body.querySelectorAll('tr'));
+      rows.forEach((tr, index) => {
+        const rowNoEl = tr.querySelector('[data-row-no]');
+        if (rowNoEl) rowNoEl.textContent = String(index + 1);
+      });
       let receipt = 0;
       let payment = 0;
       rows.forEach((tr) => {
@@ -820,6 +826,7 @@
             </svg>
           </button>
         </td>
+        <td class="px-1.5 py-1 text-center align-middle text-[11px] font-semibold text-slate-600" data-row-no></td>
       `;
 
       tr.addEventListener('click', () => {
