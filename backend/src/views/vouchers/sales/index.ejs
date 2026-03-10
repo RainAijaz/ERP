@@ -1,0 +1,1791 @@
+<%
+  const formatDateInput = (value) => {
+    if (!value) return "";
+    const asText = String(value);
+    const textMatch = asText.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (textMatch) return textMatch[1];
+    const dt = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(dt.getTime())) return "";
+    const yyyy = dt.getFullYear();
+    const mm = String(dt.getMonth() + 1).padStart(2, "0");
+    const dd = String(dt.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  };
+  const isSalesOrder = voucherTypeCode === "SALES_ORDER";
+  const selectedVoucherNo = selectedVoucher ? Number(selectedVoucher.voucher_no || 0) : null;
+  const suggestedVoucherNo = selectedVoucherNo || (Number(latestVoucherNo || 0) + 1);
+  const selectedDate = selectedVoucher && selectedVoucher.voucher_date
+    ? formatDateInput(selectedVoucher.voucher_date)
+    : formatDateInput(new Date());
+  const selectedStatus = String(selectedVoucher?.status || "").toUpperCase();
+  const selectedStatusLabel = selectedStatus === "APPROVED" ? t("approved") : selectedStatus === "REJECTED" ? t("rejected") : selectedStatus === "PENDING" ? t("pending") : selectedStatus;
+  const selectedStatusToneClass = selectedStatus === "APPROVED" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : selectedStatus === "REJECTED" ? "border-rose-200 bg-rose-50 text-rose-800" : "border-amber-200 bg-amber-50 text-amber-800";
+  const isDeletedVoucher = String(selectedVoucher?.status || "").toUpperCase() === "REJECTED";
+%>
+<style>
+  [data-sales-voucher-form] table thead th { font-size: 11px; letter-spacing: 0.08em; }
+  [data-sales-voucher-form] table td { padding: 0.2rem 0.35rem; }
+  [data-sales-voucher-form] table tbody tr:nth-child(even) td { background-color: #f8fafc; }
+  [data-sales-voucher-form] table tbody tr:hover td { background-color: #f1f5f9; }
+</style>
+<div class="mx-auto w-full max-w-none space-y-3 px-2">
+  <section class="rounded-2xl border border-slate-200 bg-white/95 px-4 py-4 shadow-sm">
+    <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+      <div>
+        <h1 class="text-2xl font-display font-semibold tracking-tight text-ink"><%= t(titleKey) %></h1>
+        <p class="text-sm text-muted"><%= t("sales") %></p>
+      </div>
+      <% if (selectedVoucher) { %>
+        <div class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] <%= selectedStatusToneClass %>">
+          <span><%= t("status") %></span>
+          <span class="rounded-full bg-white/80 px-2 py-0.5 text-slate-800"><%= selectedStatusLabel %></span>
+        </div>
+      <% } %>
+    </div>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <form method="post" action="<%= basePath || '' %>" class="space-y-4" data-sales-voucher-form>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="voucher_id" value="<%= selectedVoucher?.id || '' %>">
+      <input type="hidden" name="lines_json" value="[]" data-lines-json>
+
+      <div class="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t("voucher_no") %></label>
+          <div class="lg:col-span-2">
+            <input type="text" value="<%= suggestedVoucherNo %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700" data-voucher-no-input>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 lg:col-span-8">
+            <a href="<%= prevVoucherNo ? ((basePath || '') + '?voucher_no=' + prevVoucherNo + '&view=1') : '#' %>" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700 <%= prevVoucherNo ? '' : 'pointer-events-none opacity-40' %>"><%= t("prev") %></a>
+            <a href="<%= nextVoucherNo ? ((basePath || '') + '?voucher_no=' + nextVoucherNo + '&view=1') : ((basePath || '') + '?new=1') %>" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700"><%= t("next") %></a>
+            <button type="button" class="rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-white shadow-sm" data-load-voucher><%= t("load") %></button>
+            <div class="ml-auto flex items-center gap-2">
+              <button type="button" class="rounded-xl border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-rose-700 disabled:opacity-40" data-delete-voucher <%= selectedVoucher && !isDeletedVoucher ? '' : 'disabled' %>><%= t("delete") %></button>
+              <button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700" onclick="window.print()"><%= t("print") %></button>
+              <button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700 disabled:opacity-40" data-print-gate-pass <%= selectedVoucherNo ? '' : 'disabled' %>><%= t("print_gate_pass") %></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t("date") %></label>
+          <div class="lg:col-span-4"><input type="date" name="voucher_date" value="<%= selectedDate %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" required></div>
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= t("bill_number") %></label>
+          <div class="lg:col-span-4"><input type="text" name="reference_no" maxlength="120" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" value="<%= selectedVoucher?.reference_no || '' %>"></div>
+        </div>
+
+        <% if (!isSalesOrder) { %>
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+            <input type="hidden" name="sale_mode" value="<%= String(selectedVoucher?.sale_mode || 'DIRECT').toUpperCase() === 'FROM_SO' ? 'FROM_SO' : 'DIRECT' %>" data-sale-mode>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t("payment_type") %></label>
+            <div class="lg:col-span-4">
+              <input type="hidden" name="payment_type" data-payment-type value="<%= String(selectedVoucher?.payment_type || 'CASH').toUpperCase() === 'CREDIT' ? 'CREDIT' : 'CASH' %>">
+              <div class="grid h-10 grid-cols-2 rounded-xl border border-slate-300 bg-white p-1" data-payment-type-segment>
+                <button type="button" class="rounded-lg text-xs font-semibold uppercase tracking-[0.08em] transition" data-payment-type-option="CASH"><%= t("cash_sale") %></button>
+                <button type="button" class="rounded-lg text-xs font-semibold uppercase tracking-[0.08em] transition" data-payment-type-option="CREDIT"><%= t("credit_sale") %></button>
+              </div>
+            </div>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3" data-receive-account-field data-receive-account-label><%= t("receive_into_account_if_any") === "receive_into_account_if_any" ? t("receive_into_account") : t("receive_into_account_if_any") %></label>
+            <div class="lg:col-span-4" data-receive-account-field><select name="receive_into_account_id" data-receive-account class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified"><option value=""><%= t("select_account_name") %></option><% (options.receiveAccounts || []).forEach((a) => { %><option value="<%= a.id %>" <%= Number(selectedVoucher?.receive_into_account_id || 0) === Number(a.id) ? "selected" : "" %>><%= a.name %></option><% }) %></select></div>
+          </div>
+        <% } else { %>
+          <input type="hidden" name="sale_mode" value="DIRECT" data-sale-mode>
+          <input type="hidden" name="payment_type" value="CASH" data-payment-type>
+        <% } %>
+
+        <% if (!isSalesOrder) { %>
+          <input type="hidden" name="linked_sales_order_id" data-linked-order value="<%= Number(selectedVoucher?.linked_sales_order_id || 0) || '' %>">
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t("customer_name") %></label>
+            <div class="lg:col-span-4" data-customer-select-container>
+              <select name="customer_party_id" data-customer data-customer-select-wrap class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified"><option value=""><%= t("select_customer") %></option><% (options.customers || []).forEach((c) => { %><option value="<%= c.id %>" data-phone="<%= c.phone1 || '' %>" <%= Number(selectedVoucher?.customer_party_id || 0) === Number(c.id) ? "selected" : "" %>><%= c.name %></option><% }) %></select>
+            </div>
+            <div class="hidden lg:col-span-4" data-customer-name-wrap><input type="text" name="customer_name" data-customer-name maxlength="160" placeholder="<%= t('customer_name') %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" value="<%= selectedVoucher?.customer_name || '' %>"></div>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= t("sales_order_link") %></label>
+            <div class="lg:col-span-4">
+              <div class="flex items-center gap-2">
+                <input type="text" data-reference-no maxlength="120" readonly class="h-10 w-full rounded-xl border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700" value="">
+                <button type="button" class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700" data-link-sales-order-btn aria-label="<%= t('sales_order_link') %>" title="<%= t('sales_order_link') %>">
+                  <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M9 12h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+                    <path d="M8.5 8.5l-2 2a3 3 0 0 0 4.24 4.24l1.06-1.06" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+                    <path d="M15.5 15.5l2-2a3 3 0 0 0-4.24-4.24l-1.06 1.06" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        <% } else { %>
+          <%
+            const selectedAdvanceReceive =
+              String(selectedVoucher?.advance_receive || "").trim().toLowerCase() === "yes" ||
+              Number(selectedVoucher?.payment_received_amount || 0) > 0;
+          %>
+          <input type="hidden" name="linked_sales_order_id" value="">
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center" data-advance-receive-row>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t("advance_receive") %></label>
+            <div class="lg:col-span-4">
+              <input type="hidden" name="advance_receive" data-advance-receive value="<%= selectedAdvanceReceive ? 'yes' : 'no' %>">
+              <div class="grid h-10 grid-cols-2 rounded-xl border border-slate-300 bg-white p-1" data-advance-receive-segment>
+                <button type="button" class="rounded-lg text-xs font-semibold uppercase tracking-[0.08em] transition" data-advance-receive-option="no"><%= t("no") %></button>
+                <button type="button" class="rounded-lg text-xs font-semibold uppercase tracking-[0.08em] transition" data-advance-receive-option="yes"><%= t("yes") %></button>
+              </div>
+            </div>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3" data-sales-order-advance-fields-row><%= t("receive_into_account") %></label>
+            <div class="lg:col-span-4" data-sales-order-advance-fields-row><select name="receive_into_account_id" data-receive-account class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified"><option value=""><%= t("select_account_name") %></option><% (options.receiveAccounts || []).forEach((a) => { %><option value="<%= a.id %>" <%= Number(selectedVoucher?.receive_into_account_id || 0) === Number(a.id) ? "selected" : "" %>><%= a.name %></option><% }) %></select></div>
+          </div>
+        <% } %>
+
+        <% if (!isSalesOrder) { %>
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2" data-phone-label><%= t("phone_number") %></label>
+            <div class="lg:col-span-4">
+              <div data-phone-wrap><input type="text" name="customer_phone_number" data-customer-phone maxlength="30" placeholder="03XXXXXXXXX" pattern="^\\+?[0-9()\\-\\s]{7,15}$" title="Enter a valid phone number" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" value="<%= selectedVoucher?.customer_phone_number || '' %>"></div>
+              <div class="hidden" data-due-date-field><input type="date" name="payment_due_date" data-due-date value="<%= formatDateInput(selectedVoucher?.payment_due_date) %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"></div>
+            </div>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= t("delivery_method") %></label>
+            <div class="lg:col-span-4"><select name="delivery_method" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified"><option value="CUSTOMER_PICKUP" <%= String(selectedVoucher?.delivery_method || "CUSTOMER_PICKUP").toUpperCase() === "CUSTOMER_PICKUP" ? "selected" : "" %>><%= t("customer_pickup") %></option><option value="OUR_DELIVERY" <%= String(selectedVoucher?.delivery_method || "").toUpperCase() === "OUR_DELIVERY" ? "selected" : "" %>><%= t("our_delivery") %></option></select></div>
+          </div>
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t("salesman") %></label>
+            <div class="lg:col-span-4"><select name="salesman_employee_id" data-salesman class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified" required><option value=""><%= t("select_salesman") %></option><% (options.salesmen || []).forEach((s) => { %><option value="<%= s.id %>" <%= Number(selectedVoucher?.salesman_employee_id || 0) === Number(s.id) ? "selected" : "" %>><%= s.name %></option><% }) %></select></div>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= t("remarks") %></label>
+            <div class="lg:col-span-4"><input type="text" name="description" maxlength="1000" placeholder="<%= t('remarks') %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" value="<%= selectedVoucher?.description || '' %>"></div>
+          </div>
+          <input type="hidden" name="advance_receive" value="no">
+        <% } else { %>
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t("customer_name") %></label>
+            <div class="lg:col-span-4"><select name="customer_party_id" data-customer class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified"><option value=""><%= t("select_customer") %></option><% (options.customers || []).forEach((c) => { %><option value="<%= c.id %>" data-phone="<%= c.phone1 || '' %>" <%= Number(selectedVoucher?.customer_party_id || 0) === Number(c.id) ? "selected" : "" %>><%= c.name %></option><% }) %></select></div>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= t("salesman") %></label>
+            <div class="lg:col-span-4"><select name="salesman_employee_id" data-salesman class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified" required><option value=""><%= t("select_salesman") %></option><% (options.salesmen || []).forEach((s) => { %><option value="<%= s.id %>" <%= Number(selectedVoucher?.salesman_employee_id || 0) === Number(s.id) ? "selected" : "" %>><%= s.name %></option><% }) %></select></div>
+          </div>
+          <input type="hidden" name="customer_name" value="">
+          <input type="hidden" name="customer_phone_number" value="">
+          <input type="hidden" name="payment_due_date" value="">
+          <input type="hidden" name="delivery_method" value="CUSTOMER_PICKUP">
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t("remarks") %></label>
+            <div class="lg:col-span-10"><input type="text" name="description" maxlength="1000" placeholder="<%= t('remarks') %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" value="<%= selectedVoucher?.description || '' %>"></div>
+          </div>
+          
+        <% } %>
+
+        <% if (isDeletedVoucher) { %>
+          <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800"><%= t("voucher_deleted_read_only") %></div>
+        <% } %>
+      </div>
+
+      <div class="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div class="overflow-x-auto lg:overflow-visible overflow-y-visible">
+          <table class="w-full min-w-[1040px] text-xs" data-lines-table>
+            <thead class="bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500"><tr><th class="w-[22rem] border-b border-slate-200 px-2 py-2 text-left"><%= t("article") %></th><th class="w-32 border-b border-slate-200 px-2 py-2 text-left whitespace-nowrap"><%= t("status") %></th><th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("sale_qty") %></th><% if (!isSalesOrder) { %><th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("return_qty") %></th><th class="border-b border-slate-200 px-2 py-2 text-left whitespace-nowrap"><%= t("return_reason") %></th><% } %><th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("pair_rate") %></th><th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("pair_discount") %></th><th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("total_discount") %></th><th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("total") %></th><th class="w-20 border-b border-slate-200 px-2 py-2 text-center whitespace-nowrap"><%= t("actions") %></th><th class="w-20 border-b border-slate-200 px-2 py-2 text-center"><%= t("sr_no") %></th></tr></thead>
+            <tbody data-lines-body></tbody>
+            <tfoot>
+              <tr class="bg-slate-50">
+                <td class="border-t border-slate-200 px-2 py-2 text-xs font-semibold text-slate-700" colspan="<%= isSalesOrder ? 6 : 8 %>"><%= t("total") %></td>
+                <td class="border-t border-slate-200 px-2 py-2">
+                  <input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="" data-lines-total>
+                </td>
+                <td class="border-t border-slate-200 px-2 py-2 text-center">
+                  <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900" data-add-row aria-label="<%= t('add') %>" title="<%= t('add') %>">
+                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /><path d="M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
+                  </button>
+                </td>
+                <td class="border-t border-slate-200 px-2 py-2"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+        <div class="ml-auto w-full max-w-md space-y-2">
+          <div class="grid grid-cols-[minmax(0,1fr)_220px] items-center gap-3">
+            <label class="text-sm font-semibold text-slate-700" data-total-sales-label><%= t("total_sales_amount") %></label>
+            <input type="text" readonly class="h-9 w-full rounded-xl border border-slate-300 bg-slate-100 px-2 text-right text-sm font-semibold text-slate-700" value="" data-total-sales>
+          </div>
+          <% if (!isSalesOrder) { %>
+            <div class="grid grid-cols-[minmax(0,1fr)_220px] items-center gap-3" data-total-returns-row>
+              <label class="text-sm font-semibold text-slate-700"><%= t("total_returns_amount") %></label>
+              <input type="text" readonly class="h-9 w-full rounded-xl border border-slate-300 bg-slate-100 px-2 text-right text-sm font-semibold text-slate-700" value="" data-total-returns>
+            </div>
+          <% } %>
+          <div class="grid grid-cols-[minmax(0,1fr)_220px] items-center gap-3" data-extra-discount-row>
+            <label class="text-sm font-semibold text-slate-700"><%= t("extra_discount") %></label>
+            <input type="text" name="extra_discount" class="h-9 w-full rounded-xl border border-slate-300 bg-white px-2 text-right text-sm font-semibold text-slate-700" value="<%= Number(selectedVoucher?.extra_discount || 0) > 0 ? formatNumberDisplay(selectedVoucher?.extra_discount || 0, { decimals: 1, fallback: '' }) : '' %>" data-extra>
+          </div>
+          <div class="hidden grid-cols-[minmax(0,1fr)_220px] items-center gap-3" data-so-order-total-row>
+            <label class="text-sm font-semibold text-slate-700"><%= t("sales_order_total_amount") %></label>
+            <input type="text" readonly class="h-9 w-full rounded-xl border border-slate-300 bg-slate-100 px-2 text-right text-sm font-semibold text-slate-700" value="" data-so-order-total>
+          </div>
+          <div class="hidden grid-cols-[minmax(0,1fr)_220px] items-center gap-3" data-so-advance-row>
+            <label class="text-sm font-semibold text-slate-700"><%= t("sales_order_previous_payments_received") %></label>
+            <input type="text" readonly class="h-9 w-full rounded-xl border border-slate-300 bg-slate-100 px-2 text-right text-sm font-semibold text-slate-700" value="" data-so-advance>
+          </div>
+          <div class="grid grid-cols-[minmax(0,1fr)_220px] items-center gap-3" data-final-row>
+            <label class="text-sm font-semibold text-slate-700" data-final-label><%= t("final_amount") %></label>
+            <input type="text" readonly class="h-9 w-full rounded-xl border border-slate-300 bg-slate-100 px-2 text-right text-sm font-semibold text-slate-700" value="" data-final>
+          </div>
+          <div class="grid grid-cols-[minmax(0,1fr)_220px] items-center gap-3" data-amount-receive-row>
+            <label class="text-sm font-semibold text-slate-700" data-received-label><%= isSalesOrder ? t("advance_received_amount") : t("payment_received_amount") %></label>
+            <input type="text" name="payment_received_amount" data-received class="h-9 w-full rounded-xl border border-slate-300 bg-white px-2 text-right text-sm font-semibold text-slate-700" value="<%= Number(selectedVoucher?.payment_received_amount || 0) > 0 ? formatNumberDisplay(selectedVoucher?.payment_received_amount || 0, { decimals: 1, fallback: '' }) : '' %>">
+          </div>
+          <div class="hidden grid-cols-[minmax(0,1fr)_220px] items-center gap-3" data-so-total-received-row>
+            <label class="text-sm font-semibold text-slate-700"><%= t("sales_order_total_received_for_order") %></label>
+            <input type="text" readonly class="h-9 w-full rounded-xl border border-slate-300 bg-slate-100 px-2 text-right text-sm font-semibold text-slate-700" value="" data-so-total-received>
+          </div>
+          <div class="hidden grid-cols-[minmax(0,1fr)_220px] items-center gap-3" data-remaining-row>
+            <label class="text-sm font-semibold text-slate-700" data-remaining-label><%= t("remaining_amount") %></label>
+            <input type="text" readonly class="h-9 w-full rounded-xl border border-slate-300 bg-slate-100 px-2 text-right text-sm font-semibold text-slate-700" value="" data-remaining>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex justify-center pt-2">
+        <button type="submit" class="rounded-xl bg-accent px-6 py-2 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= t("confirm") %></button>
+      </div>
+    </form>
+    <form method="post" action="<%= (basePath || '') + '/delete' %>" class="hidden" data-delete-voucher-form><input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="voucher_id" value="<%= selectedVoucher?.id || '' %>"></form>
+
+    <% if (!isSalesOrder) { %>
+      <div class="fixed inset-0 z-40 hidden items-center justify-center bg-slate-900/40 p-3" data-sales-order-picker-modal aria-hidden="true">
+        <div class="w-full max-w-6xl rounded-2xl border border-slate-200 bg-white shadow-xl">
+          <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+            <h3 class="text-base font-semibold text-slate-800"><%= t("select_sales_order") %></h3>
+            <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700" data-sales-order-picker-close aria-label="<%= t('cancel') %>" title="<%= t('cancel') %>"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg></button>
+          </div>
+          <div class="space-y-3 px-4 py-3">
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-12">
+              <div class="md:col-span-8">
+                <label class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t("customer") %></label>
+                <input type="text" readonly class="h-9 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-sm text-slate-700" data-sales-order-picker-customer>
+              </div>
+              <div class="md:col-span-4">
+                <label class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t("date") %></label>
+                <input type="text" readonly class="h-9 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-sm text-slate-700" data-sales-order-picker-date>
+              </div>
+            </div>
+
+            <div class="max-h-[45vh] overflow-auto rounded-xl border border-slate-200">
+              <table class="w-full min-w-[980px] table-fixed text-xs">
+                <thead class="bg-slate-50 uppercase tracking-[0.08em] text-slate-500">
+                  <tr>
+                    <th class="border-b border-slate-200 px-2 py-2 text-left"><%= t("voucher_no") %></th>
+                    <th class="border-b border-slate-200 px-2 py-2 text-left"><%= t("date") %></th>
+                    <th class="border-b border-slate-200 px-2 py-2 text-left"><%= t("article") %></th>
+                    <th class="border-b border-slate-200 px-2 py-2 text-left"><%= t("status") %></th>
+                    <th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("open_qty") %></th>
+                    <th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("deliver_qty") %></th>
+                    <th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("pair_rate") %></th>
+                    <th class="border-b border-slate-200 px-2 py-2 text-center"><%= t("select") %></th>
+                  </tr>
+                </thead>
+                <tbody data-sales-order-picker-lines-body></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-4 py-3">
+            <button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700" data-sales-order-picker-close><%= t("cancel") %></button>
+            <button type="button" class="rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-white" data-sales-order-picker-apply><%= t("apply") %></button>
+          </div>
+        </div>
+      </div>
+    <% } %>
+  </section>
+</div>
+<script><%- include("../../base/partials/searchable-select.js") %></script>
+<script>
+(() => {
+  const form = document.querySelector("[data-sales-voucher-form]");
+  if (!form) return;
+
+  const isSalesOrderVoucher = <%= isSalesOrder ? "true" : "false" %>;
+  const canOverrideRateDiscount = <%= canOverrideRateDiscount ? "true" : "false" %>;
+  const selectedVoucherNo = <%= selectedVoucherNo ? Number(selectedVoucherNo) : "null" %>;
+  const requiredMessage = (label) =>
+    window.VoucherValidation?.requiredMessage?.(label)
+    || `<%= t("error_required_fields") %>: ${String(label || "").trim()}`;
+
+  const linesBody = form.querySelector("[data-lines-body]");
+  const linesJsonInput = form.querySelector("[data-lines-json]");
+  const addRowButton = form.querySelector("[data-add-row]");
+  const linesTotalInput = form.querySelector("[data-lines-total]");
+  const headerSection = form.querySelector(".space-y-3.rounded-2xl");
+  const saleModeSelect = form.querySelector("[data-sale-mode]");
+  const paymentTypeSelect = form.querySelector("[data-payment-type]");
+  const paymentTypeSegment = form.querySelector("[data-payment-type-segment]");
+  const paymentTypeOptions = paymentTypeSegment ? Array.from(paymentTypeSegment.querySelectorAll("[data-payment-type-option]")) : [];
+  const billNumberInput = form.querySelector('input[name="reference_no"]');
+  const referenceNoInput = form.querySelector("[data-reference-no]");
+  const linkSalesOrderBtn = form.querySelector("[data-link-sales-order-btn]");
+  const linkedOrderSelect = form.querySelector("[data-linked-order]");
+  const customerSelect = form.querySelector("[data-customer]");
+  const customerSelectContainer = form.querySelector("[data-customer-select-container]");
+  const customerNameInput = form.querySelector("[data-customer-name]");
+  const customerNameWrap = form.querySelector("[data-customer-name-wrap]");
+  const phoneLabel = form.querySelector("[data-phone-label]");
+  const phoneWrap = form.querySelector("[data-phone-wrap]");
+  const phoneInput = form.querySelector("[data-customer-phone]");
+  const salesmanSelect = form.querySelector("[data-salesman]");
+  const dueDateFields = Array.from(form.querySelectorAll("[data-due-date-field]"));
+  const dueDateInput = form.querySelector("[data-due-date]");
+  const advanceReceiveSelect = form.querySelector("[data-advance-receive]");
+  const advanceReceiveSegment = form.querySelector("[data-advance-receive-segment]");
+  const advanceReceiveOptions = advanceReceiveSegment ? Array.from(advanceReceiveSegment.querySelectorAll("[data-advance-receive-option]")) : [];
+  const salesOrderAdvanceFieldRows = Array.from(form.querySelectorAll("[data-sales-order-advance-fields-row]"));
+  const amountReceiveRow = form.querySelector("[data-amount-receive-row]");
+  const receivedLabel = form.querySelector("[data-received-label]");
+  const receiveAccountFields = Array.from(form.querySelectorAll("[data-receive-account-field]"));
+  const receiveAccountLabel = form.querySelector("[data-receive-account-label]");
+  const receiveAccountSelect = form.querySelector("[data-receive-account]");
+  const receivedInput = form.querySelector("[data-received]");
+  const extraInput = form.querySelector("[data-extra]");
+  const voucherDateInput = form.querySelector('input[name="voucher_date"]');
+  const totalSalesInput = form.querySelector("[data-total-sales]");
+  const totalSalesLabel = form.querySelector("[data-total-sales-label]");
+  const totalReturnsInput = form.querySelector("[data-total-returns]");
+  const finalRow = form.querySelector("[data-final-row]");
+  const finalInput = form.querySelector("[data-final]");
+  const finalLabel = form.querySelector("[data-final-label]");
+  const soOrderTotalRow = form.querySelector("[data-so-order-total-row]");
+  const soOrderTotalInput = form.querySelector("[data-so-order-total]");
+  const remainingRow = form.querySelector("[data-remaining-row]");
+  const remainingInput = form.querySelector("[data-remaining]");
+  const remainingLabel = form.querySelector("[data-remaining-label]");
+  const soAdvanceRow = form.querySelector("[data-so-advance-row]");
+  const soAdvanceInput = form.querySelector("[data-so-advance]");
+  const soTotalReceivedRow = form.querySelector("[data-so-total-received-row]");
+  const soTotalReceivedInput = form.querySelector("[data-so-total-received]");
+  const totalReturnsRow = form.querySelector("[data-total-returns-row]");
+  const extraDiscountRow = form.querySelector("[data-extra-discount-row]");
+  const salesOrderPickerModal = document.querySelector("[data-sales-order-picker-modal]");
+  const salesOrderPickerCustomerInput = salesOrderPickerModal?.querySelector("[data-sales-order-picker-customer]");
+  const salesOrderPickerDateInput = salesOrderPickerModal?.querySelector("[data-sales-order-picker-date]");
+  const salesOrderPickerLinesBody = salesOrderPickerModal?.querySelector("[data-sales-order-picker-lines-body]");
+  const salesOrderPickerApplyButton = salesOrderPickerModal?.querySelector("[data-sales-order-picker-apply]");
+  const salesOrderPickerCloseButtons = salesOrderPickerModal
+    ? Array.from(salesOrderPickerModal.querySelectorAll("[data-sales-order-picker-close]"))
+    : [];
+  const salesOrderPickerSelectedLineIds = new Set();
+  const salesOrderPickerDeliverQtyMap = new Map();
+
+  const skus = <%- JSON.stringify(options?.skus || []) %>;
+  const reasons = <%- JSON.stringify(options?.returnReasons || []) %>;
+  const openOrders = <%- JSON.stringify(options?.openSalesOrders || []) %>;
+  const openOrderLines = <%- JSON.stringify(options?.openSalesOrderLines || []) %>;
+  const seedLines = <%- JSON.stringify(selectedVoucher?.lines || []) %>;
+  const selectedLinkedOrderSeed = {
+    id: <%= Number(selectedVoucher?.linked_sales_order_id || 0) || 0 %>,
+    voucher_no: <%= Number(selectedVoucher?.linked_sales_order_voucher_no || 0) || 0 %>,
+    book_no: <%- JSON.stringify(String(selectedVoucher?.linked_sales_order_book_no || "").trim()) %>,
+    voucher_date: <%- JSON.stringify(String(selectedVoucher?.linked_sales_order_voucher_date || "").trim()) %>,
+    customer_party_id: <%= Number(selectedVoucher?.customer_party_id || 0) || 0 %>,
+    salesman_employee_id: <%= Number(selectedVoucher?.salesman_employee_id || 0) || 0 %>,
+    receive_into_account_id: <%= Number(selectedVoucher?.linked_sales_order_receive_into_account_id || 0) || 0 %>,
+    sales_order_advance_amount: <%= Number(selectedVoucher?.linked_sales_order_advance_amount || 0) || 0 %>,
+    previous_payments_received: <%= Number(selectedVoucher?.linked_sales_order_previous_payments_received || 0) || 0 %>,
+    total_order_amount: <%= Number(selectedVoucher?.linked_sales_order_total_amount || 0) || 0 %>,
+    payment_received_amount: <%= Number(selectedVoucher?.linked_sales_order_previous_payments_received || selectedVoucher?.linked_sales_order_payment_received_amount || 0) || 0 %>,
+  };
+
+  const skuMap = new Map((skus || []).map((s) => [Number(s.id), s]));
+  const reasonMap = new Map((reasons || []).map((r) => [Number(r.id), r]));
+  const orderMap = new Map((openOrders || []).map((o) => [Number(o.id), o]));
+  const orderLineMap = new Map((openOrderLines || []).map((l) => [Number(l.sales_order_line_id), l]));
+  if (Number(selectedLinkedOrderSeed.id || 0) > 0 && !orderMap.has(Number(selectedLinkedOrderSeed.id))) {
+    orderMap.set(Number(selectedLinkedOrderSeed.id), selectedLinkedOrderSeed);
+  }
+  (seedLines || []).forEach((line) => {
+    const lineId = Number(line?.sales_order_line_id || 0);
+    if (lineId <= 0 || orderLineMap.has(lineId)) return;
+    const sku = skuMap.get(Number(line?.sku_id || 0));
+    orderLineMap.set(lineId, {
+      sales_order_id: Number(selectedLinkedOrderSeed.id || 0) || null,
+      sales_order_voucher_no: Number(selectedLinkedOrderSeed.voucher_no || 0) || null,
+      sales_order_line_id: lineId,
+      sales_order_line_no: Number(line?.line_no || 0) || null,
+      sku_id: Number(line?.sku_id || 0) || null,
+      sku_code: String(line?.sku_code || sku?.sku_code || "").trim(),
+      item_name: String(line?.item_name || sku?.item_name || "").trim(),
+      row_status: String(line?.row_status || "PACKED").toUpperCase(),
+      open_qty: Number(line?.sale_qty || 0),
+      open_pairs:
+        String(line?.row_status || "PACKED").toUpperCase() === "PACKED"
+          ? Number(line?.sale_qty || 0) * 12
+          : Number(line?.sale_qty || 0),
+      pair_rate: Number(line?.pair_rate || 0),
+      pair_discount: Number(line?.pair_discount || 0),
+    });
+  });
+
+  const n = (v) => {
+    const x = Number(v);
+    return Number.isFinite(x) ? x : 0;
+  };
+  const displayNumber = (value, decimals = 1, fallback = "") =>
+    window.erpDisplay?.formatNumber
+      ? window.erpDisplay.formatNumber(value, { decimals, fallback })
+      : String(Number(n(value).toFixed(decimals)));
+  const f1 = (v) => displayNumber(v, 1, "0");
+  const f1SignedOrBlank = (v) => {
+    const x = n(v);
+    return Math.abs(x) > 0 ? displayNumber(x, 1, "") : "";
+  };
+  const f1OrBlank = (v) => {
+    const x = n(v);
+    return x > 0 ? displayNumber(x, 1, "") : "";
+  };
+  const qtyDisplay = (v) => {
+    const x = n(v);
+    return x > 0 ? displayNumber(x, 1, "") : "";
+  };
+  const pairs = (status, qty) => Number(((String(status || "PACKED").toUpperCase() === "PACKED" ? n(qty) * 12 : n(qty))).toFixed(1));
+  const isValidPhone = (value) => {
+    const text = String(value || "").trim();
+    if (!text) return false;
+    return /^\+?[0-9()\-\s]{7,15}$/.test(text);
+  };
+
+  const getSaleMode = () => (isSalesOrderVoucher ? "DIRECT" : String(saleModeSelect?.value || "DIRECT").toUpperCase());
+  const getPaymentType = () => {
+    if (isSalesOrderVoucher) return "CASH";
+    if (getSaleMode() === "FROM_SO") return "CREDIT";
+    return String(paymentTypeSelect?.value || "CASH").toUpperCase();
+  };
+  const syncPaymentTypeSegmentUi = () => {
+    if (!paymentTypeOptions.length) return;
+    const active = getPaymentType();
+    paymentTypeOptions.forEach((btn) => {
+      const value = String(btn.getAttribute("data-payment-type-option") || "").toUpperCase();
+      const isActive = value === active;
+      btn.classList.toggle("bg-accent", isActive);
+      btn.classList.toggle("text-white", isActive);
+      btn.classList.toggle("shadow-sm", isActive);
+      btn.classList.toggle("text-slate-700", !isActive);
+      btn.setAttribute("aria-pressed", isActive ? "true" : "false");
+    });
+  };
+  const isSalesOrderAdvanceReceiveEnabled = () => {
+    if (!isSalesOrderVoucher) return false;
+    return String(advanceReceiveSelect?.value || "no").trim().toLowerCase() === "yes";
+  };
+  const syncAdvanceReceiveSegmentUi = () => {
+    if (!advanceReceiveOptions.length) return;
+    const active = String(advanceReceiveSelect?.value || "no").trim().toLowerCase() === "yes" ? "yes" : "no";
+    advanceReceiveOptions.forEach((btn) => {
+      const value = String(btn.getAttribute("data-advance-receive-option") || "").trim().toLowerCase();
+      const isActive = value === active;
+      btn.classList.toggle("bg-accent", isActive);
+      btn.classList.toggle("text-white", isActive);
+      btn.classList.toggle("shadow-sm", isActive);
+      btn.classList.toggle("text-slate-700", !isActive);
+      btn.setAttribute("aria-pressed", isActive ? "true" : "false");
+    });
+  };
+  const isFromSO = () => getSaleMode() === "FROM_SO";
+  const getReceivedAmount = () => Number(n(receivedInput?.value || 0).toFixed(1));
+  const creditReceivedLabelText = "<%= t('payment_received_amount_if_any') %>" === "payment_received_amount_if_any"
+    ? "Payment Received Amount (if any)"
+    : "<%= t('payment_received_amount_if_any') %>";
+  const receiveAccountRequiredLabelText = "<%= t('receive_into_account') %>" === "receive_into_account"
+    ? "Payment Received Account"
+    : "<%= t('receive_into_account') %>";
+  const receiveAccountOptionalLabelText = "<%= t('receive_into_account_if_any') %>" === "receive_into_account_if_any"
+    ? `${receiveAccountRequiredLabelText} (if any)`
+    : "<%= t('receive_into_account_if_any') %>";
+  const currentDeliveryAmountLabelText = "<%= t('current_delivery_amount') %>" === "current_delivery_amount"
+    ? "Current Delivery Amount"
+    : "<%= t('current_delivery_amount') %>";
+  const currentVoucherAmountLabelText = "<%= t('current_voucher_amount') %>" === "current_voucher_amount"
+    ? "Current Voucher Amount"
+    : "<%= t('current_voucher_amount') %>";
+  const currentPaymentReceivedLabelText = "<%= t('current_payment_received') %>" === "current_payment_received"
+    ? "Current Payment Received"
+    : "<%= t('current_payment_received') %>";
+  const refundAmountLabelText = "<%= t('refund_amount') %>" === "refund_amount"
+    ? "Refund Amount"
+    : "<%= t('refund_amount') %>";
+  const refundDueLabelText = "<%= t('refund_due') %>" === "refund_due"
+    ? "Refund Due"
+    : "<%= t('refund_due') %>";
+  const cashSettlementMismatchText = "<%= t('error_cash_settlement_must_equal_total') %>" === "error_cash_settlement_must_equal_total"
+    ? "Cash settlement amount must match voucher total."
+    : "<%= t('error_cash_settlement_must_equal_total') %>";
+  const remainingReceivableLabelText = "<%= t('remaining_receivable') %>" === "remaining_receivable"
+    ? "Remaining Receivable"
+    : "<%= t('remaining_receivable') %>";
+  const outstandingCurrentDeliveryLabelText = "<%= t('outstanding_for_current_delivery') %>" === "outstanding_for_current_delivery"
+    ? "Outstanding for Current Delivery"
+    : "<%= t('outstanding_for_current_delivery') %>";
+
+  const emptyRow = () => ({
+    sku_id: null,
+    sales_order_line_id: null,
+    row_status: "PACKED",
+    sale_qty: 0,
+    return_qty: 0,
+    return_reason_id: null,
+    pair_rate: 0,
+    pair_discount: 0,
+    total_discount: 0,
+    total_amount: 0,
+    item_name: "",
+  });
+
+  const rows = (Array.isArray(seedLines) && seedLines.length
+    ? seedLines.map((r) => ({
+        sku_id: Number(r.sku_id || 0) || null,
+        sales_order_line_id: Number(r.sales_order_line_id || 0) || null,
+        row_status: String(r.row_status || "PACKED").toUpperCase(),
+        sale_qty: Number(r.sale_qty || 0),
+        return_qty: Number(r.return_qty || 0),
+        return_reason_id: Number(r.return_reason_id || 0) || null,
+        pair_rate: Number(r.pair_rate || 0),
+        pair_discount: Number(r.pair_discount || 0),
+        total_discount: Number(r.total_discount || 0),
+        total_amount: Number(r.total_amount || 0),
+        item_name: String(r.item_name || ""),
+      }))
+    : [emptyRow()]);
+
+  const normalize = (row) => {
+    const next = { ...emptyRow(), ...row };
+    next.sku_id = Number(next.sku_id || 0) || null;
+    next.sales_order_line_id = Number(next.sales_order_line_id || 0) || null;
+    next.row_status = String(next.row_status || "PACKED").toUpperCase() === "PACKED" ? "PACKED" : "LOOSE";
+    next.sale_qty = Number(n(next.sale_qty).toFixed(1));
+    next.return_qty = Number(n(next.return_qty).toFixed(1));
+    next.pair_rate = Number(n(next.pair_rate).toFixed(1));
+    next.pair_discount = Number(n(next.pair_discount).toFixed(1));
+    next.return_reason_id = Number(next.return_reason_id || 0) || null;
+
+    const fromSO = isFromSO();
+    const source = fromSO ? orderLineMap.get(Number(next.sales_order_line_id || 0)) : null;
+    if (source) {
+      next.sku_id = Number(source.sku_id || 0) || null;
+      next.row_status = String(source.row_status || "PACKED").toUpperCase();
+      if (!canOverrideRateDiscount || next.pair_rate <= 0) next.pair_rate = Number(n(source.pair_rate).toFixed(1));
+      next.pair_discount = Number(n(source.pair_discount).toFixed(1));
+    }
+
+    if (next.sku_id && !source && next.pair_rate <= 0) {
+      const sku = skuMap.get(Number(next.sku_id));
+      if (sku) next.pair_rate = Number(n(sku.sale_rate).toFixed(1));
+    }
+
+    if (next.sale_qty > 0) {
+      next.return_qty = 0;
+      next.return_reason_id = null;
+    }
+    if (fromSO || isSalesOrderVoucher) {
+      next.return_qty = 0;
+      next.return_reason_id = null;
+    }
+    if (next.return_qty <= 0) next.return_reason_id = null;
+    if (next.pair_discount < 0) next.pair_discount = 0;
+    if (next.pair_discount >= next.pair_rate && next.pair_rate > 0) next.pair_discount = Number(Math.max(0, next.pair_rate - 0.1).toFixed(1));
+
+    const qty = next.sale_qty > 0 ? next.sale_qty : next.return_qty;
+    const totalPairs = pairs(next.row_status, qty);
+    next.total_discount = Number((totalPairs * next.pair_discount).toFixed(1));
+    next.total_amount = Number((totalPairs * (next.pair_rate - next.pair_discount)).toFixed(1));
+    next.item_name = String(next.item_name || skuMap.get(Number(next.sku_id || 0))?.item_name || "");
+    return next;
+  };
+
+  const toDateOnly = (value) => {
+    const text = String(value || "").trim();
+    const match = text.match(/^(\d{4}-\d{2}-\d{2})/);
+    return match ? match[1] : "";
+  };
+
+  const formatDisplayDate = (value) => {
+    return window.erpDisplay?.formatDate ? window.erpDisplay.formatDate(value, "") : String(value || "");
+  };
+
+  const autoSelectSingleOption = (select, { dispatchChange = true } = {}) => {
+    if (!(select instanceof HTMLSelectElement)) return false;
+    if (select.disabled || select.readOnly) return false;
+    if (String(select.value || "").trim()) return false;
+    const candidates = Array.from(select.options)
+      .filter((opt) => !opt.disabled)
+      .filter((opt) => String(opt.value || "").trim() !== "");
+    if (candidates.length !== 1) return false;
+    select.value = String(candidates[0].value || "");
+    if (dispatchChange) select.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  };
+
+  const autoSelectSingleOptionsIn = (root, { dispatchChange = true } = {}) => {
+    const scope = root instanceof HTMLElement ? root : form;
+    Array.from(scope.querySelectorAll("select")).forEach((select) => {
+      autoSelectSingleOption(select, { dispatchChange });
+    });
+  };
+
+  const setSelectValueAndSync = (select, value) => {
+    if (!(select instanceof HTMLSelectElement)) return;
+    const nextValue = String(value || "");
+    if (String(select.value || "") === nextValue) return;
+    select.value = nextValue;
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+  };
+
+  const getSelectedCustomerId = () => Number(customerSelect?.value || 0) || 0;
+  const getVoucherDate = () => toDateOnly(voucherDateInput?.value || "");
+
+  const getPendingLinesForOrder = () => {
+    const orderId = Number(linkedOrderSelect?.value || 0);
+    if (!orderId) return [];
+    return (openOrderLines || []).filter((line) => Number(line.sales_order_id || 0) === orderId);
+  };
+
+  const getScopedSalesOrderLinesForModal = () => {
+    const customerId = getSelectedCustomerId();
+    if (!customerId) return [];
+    return (openOrderLines || [])
+      .filter((line) => Number(line.customer_party_id || 0) === customerId)
+      .filter((line) => Number(line.open_qty || 0) > 0)
+      .sort((a, b) => {
+        const aVoucher = Number(a.sales_order_voucher_no || 0);
+        const bVoucher = Number(b.sales_order_voucher_no || 0);
+        if (aVoucher !== bVoucher) return aVoucher - bVoucher;
+        return Number(a.sales_order_line_no || 0) - Number(b.sales_order_line_no || 0);
+      });
+  };
+
+  const closeSalesOrderPickerModal = () => {
+    if (!salesOrderPickerModal) return;
+    salesOrderPickerModal.classList.add("hidden");
+    salesOrderPickerModal.classList.remove("flex");
+    salesOrderPickerModal.setAttribute("aria-hidden", "true");
+  };
+
+  const syncReceiveIntoAccountState = ({
+    salesOrderAdvanceEnabled = false,
+    forcedAccountId = null,
+    lockAccount = false,
+  } = {}) => {
+    if (!receiveAccountSelect) return;
+    if (!isSalesOrderVoucher) {
+      const paymentType = getPaymentType();
+      const normalizedForcedAccountId = Number(forcedAccountId || 0) || null;
+      const shouldShowRequiredLabel = lockAccount || getReceivedAmount() > 0;
+      receiveAccountSelect.required = false;
+      if (normalizedForcedAccountId) {
+        setSelectValueAndSync(receiveAccountSelect, String(normalizedForcedAccountId));
+      }
+      receiveAccountSelect.disabled = Boolean(lockAccount);
+      if (receiveAccountLabel) {
+        const showOptionalText = paymentType === "CREDIT" && !shouldShowRequiredLabel;
+        receiveAccountLabel.textContent = showOptionalText
+          ? receiveAccountOptionalLabelText
+          : receiveAccountRequiredLabelText;
+      }
+      return;
+    }
+
+    receiveAccountSelect.disabled = !salesOrderAdvanceEnabled;
+    if (!salesOrderAdvanceEnabled) {
+      setSelectValueAndSync(receiveAccountSelect, "");
+    }
+  };
+
+  const sanitizeDeliverQty = (value, openQty) => {
+    const maxQty = Math.max(0, Number(openQty || 0));
+    const numeric = Number(value || 0);
+    if (!Number.isFinite(numeric)) return Number(maxQty.toFixed(1));
+    const bounded = Math.min(Math.max(0, numeric), maxQty);
+    return Number(bounded.toFixed(1));
+  };
+
+  const renderSalesOrderPickerLinesTable = (scopedLines) => {
+    if (!salesOrderPickerLinesBody) return;
+    salesOrderPickerLinesBody.innerHTML = "";
+    const dataRows = scopedLines || [];
+    if (!dataRows.length) {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td colspan="8" class="px-2 py-3 text-center text-xs text-slate-500"><%= t("no_data") %></td>`;
+      salesOrderPickerLinesBody.appendChild(tr);
+      return;
+    }
+
+    dataRows.forEach((row) => {
+      const lineId = Number(row.sales_order_line_id || 0);
+      const openQty = Number(Number(row.open_qty || 0).toFixed(1));
+      const isChecked = lineId > 0 && salesOrderPickerSelectedLineIds.has(lineId);
+      const existingDeliverQty = Number(salesOrderPickerDeliverQtyMap.get(lineId));
+      const deliverQty = Number.isFinite(existingDeliverQty)
+        ? sanitizeDeliverQty(existingDeliverQty, openQty)
+        : openQty;
+      salesOrderPickerDeliverQtyMap.set(lineId, deliverQty);
+      const tr = document.createElement("tr");
+      tr.className = "border-b border-slate-100";
+      tr.innerHTML = `
+        <td class="px-2 py-2 text-slate-700">${String(row.sales_order_voucher_no || "-")}</td>
+        <td class="px-2 py-2 text-slate-700">${formatDisplayDate(row.sales_order_voucher_date) || "-"}</td>
+        <td class="px-2 py-2 text-slate-700">${String(row.sku_code || "")}</td>
+        <td class="px-2 py-2 text-slate-700">${String(row.row_status || "")}</td>
+        <td class="px-2 py-2 text-right font-semibold text-slate-700">${displayNumber(openQty, 1, "0")}</td>
+        <td class="px-2 py-2"><input type="number" min="0" step="0.1" class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs" data-sales-order-picker-deliver-qty data-line-id="${lineId > 0 ? lineId : ""}" data-open-qty="${displayNumber(openQty, 1, "0")}" value="${displayNumber(deliverQty, 1, "")}" ${lineId > 0 ? "" : "disabled"}></td>
+        <td class="px-2 py-2 text-right font-semibold text-slate-700">${displayNumber(row.pair_rate || 0, 1, "0")}</td>
+        <td class="px-2 py-2 text-center"><input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent" data-sales-order-picker-line-checkbox data-open-qty="${displayNumber(openQty, 1, "0")}" value="${lineId > 0 ? lineId : ""}" ${isChecked ? "checked" : ""} ${lineId > 0 ? "" : "disabled"}></td>
+      `;
+      salesOrderPickerLinesBody.appendChild(tr);
+    });
+  };
+
+  const openSalesOrderPickerModalView = () => {
+    if (isSalesOrderVoucher) return;
+    if (!salesOrderPickerModal) {
+      window.showVoucherError("<%= t('error_no_open_sales_order_lines') %>");
+      return;
+    }
+    const customerId = getSelectedCustomerId();
+    if (!customerId) {
+      window.showVoucherError("<%= t('select_customer') %>");
+      return;
+    }
+
+    const scopedLines = getScopedSalesOrderLinesForModal();
+    if (!scopedLines.length) {
+      window.showVoucherError("<%= t('error_no_open_sales_order_lines') %>");
+      return;
+    }
+
+    const customerName = customerSelect?.selectedOptions?.[0]?.textContent?.trim() || "";
+    if (salesOrderPickerCustomerInput) salesOrderPickerCustomerInput.value = customerName;
+    if (salesOrderPickerDateInput) salesOrderPickerDateInput.value = formatDisplayDate(getVoucherDate());
+
+    salesOrderPickerSelectedLineIds.clear();
+    rows.forEach((row) => {
+      const sourceLineId = Number(row.sales_order_line_id || 0);
+      if (sourceLineId > 0) salesOrderPickerSelectedLineIds.add(sourceLineId);
+    });
+    renderSalesOrderPickerLinesTable(scopedLines);
+
+    salesOrderPickerModal.classList.remove("hidden");
+    salesOrderPickerModal.classList.add("flex");
+    salesOrderPickerModal.setAttribute("aria-hidden", "false");
+  };
+
+  const render = () => {
+    linesBody.innerHTML = "";
+    rows.forEach((row, index) => {
+      const r = normalize(row);
+      rows[index] = r;
+      const fromSO = isFromSO();
+      const source = fromSO ? orderLineMap.get(Number(r.sales_order_line_id || 0)) : null;
+      const articleOptions = fromSO
+        ? (() => {
+            const selectedId = Number(r.sales_order_line_id || 0);
+            const list = getPendingLinesForOrder();
+            if (selectedId && !list.some((x) => Number(x.sales_order_line_id) === selectedId) && source) list.unshift(source);
+            const opts = list.map((x) => `<option value="${x.sales_order_line_id}" ${Number(x.sales_order_line_id) === selectedId ? "selected" : ""}>SO #${Number(x.sales_order_voucher_no || 0)} / L${Number(x.sales_order_line_no || 0)} - ${String(x.sku_code || "")} (${displayNumber(x.open_qty || 0, 1, "0")})</option>`).join("");
+            return `<option value=""><%= t("sales_order_line") %></option>${opts}`;
+          })()
+        : (() => {
+            const opts = (skus || []).map((s) => `<option value="${s.id}" ${Number(s.id) === Number(r.sku_id || 0) ? "selected" : ""}>${String(s.sku_code || "")} - ${String(s.item_name || "")}</option>`).join("");
+            return `<option value=""><%= t("select_article") %></option>${opts}`;
+          })();
+      const reasonOpts = `<option value=""><%= t("select_reason") %></option>${(reasons || []).map((x) => `<option value="${x.id}" ${Number(x.id) === Number(r.return_reason_id || 0) ? "selected" : ""}>${String(x.description || x.code || "")}</option>`).join("")}`;
+      const reasonDisabled = isSalesOrderVoucher || fromSO || Number(r.return_qty || 0) <= 0;
+      const canRate = canOverrideRateDiscount;
+      const canDiscount = !fromSO;
+      const tr = document.createElement("tr");
+      tr.dataset.i = String(index);
+      const showReasonSelect = !reasonDisabled;
+      const returnCells = isSalesOrderVoucher
+        ? ""
+        : `<td class="border-b border-slate-200 px-1.5 py-1"><input data-f="return_qty" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${fromSO ? "bg-slate-100" : "bg-white"}" value="${qtyDisplay(r.return_qty)}" ${fromSO ? "disabled" : ""}></td><td class="border-b border-slate-200 px-1.5 py-1">${showReasonSelect ? `<select data-f="return_reason_id" class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-searchable-select="true" data-searchable-variant="unified">${reasonOpts}</select>` : `<input class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-xs" value="" readonly>`}</td>`;
+      tr.innerHTML = `<td class="border-b border-slate-200 px-1.5 py-1"><select data-f="${fromSO ? "sales_order_line_id" : "sku_id"}" class="h-8 min-w-[18rem] w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-searchable-select="true" data-searchable-variant="unified">${articleOptions}</select></td><td class="border-b border-slate-200 px-1.5 py-1"><select data-f="row_status" class="h-8 min-w-[7rem] w-full rounded-lg border border-slate-300 px-2 text-xs ${fromSO ? "bg-slate-100" : "bg-white"}" ${fromSO ? "disabled" : ""} data-searchable-select="true" data-searchable-variant="unified"><option value="LOOSE" ${r.row_status === "LOOSE" ? "selected" : ""}><%= t("loose") %></option><option value="PACKED" ${r.row_status === "PACKED" ? "selected" : ""}><%= t("packed") %></option></select></td><td class="border-b border-slate-200 px-1.5 py-1"><input data-f="sale_qty" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${fromSO ? "bg-slate-100" : "bg-white"}" value="${qtyDisplay(r.sale_qty)}" ${fromSO ? "readonly" : ""}></td>${returnCells}<td class="border-b border-slate-200 px-1.5 py-1"><input data-f="pair_rate" class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.pair_rate)}" readonly></td><td class="border-b border-slate-200 px-1.5 py-1"><input data-f="pair_discount" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${canDiscount ? "bg-white" : "bg-slate-100"}" value="${f1OrBlank(r.pair_discount)}" ${canDiscount ? "" : "readonly"}></td><td class="border-b border-slate-200 px-1.5 py-1"><input class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.total_discount)}" readonly></td><td class="border-b border-slate-200 px-1.5 py-1"><input class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.total_amount)}" readonly></td><td class="w-20 border-b border-slate-200 px-1.5 py-1 text-center"><button type="button" data-del class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white p-2 text-rose-600" aria-label="<%= t("delete") %>"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M9 7V5h6v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg></button></td><td class="border-b border-slate-200 px-1.5 py-1 text-center align-middle text-[11px] font-semibold text-slate-600" data-row-no>${index + 1}</td>`;
+      linesBody.appendChild(tr);
+    });
+
+    if (window.initSearchableSelects) window.initSearchableSelects(form);
+    autoSelectSingleOptionsIn(linesBody, { dispatchChange: true });
+    let sales = 0; let ret = 0;
+    rows.forEach((r) => {
+      const x = normalize(r);
+      if (x.sale_qty > 0) sales += n(x.total_amount);
+      if (x.return_qty > 0) ret += n(x.total_amount);
+    });
+    sales = Number(sales.toFixed(1));
+    ret = Number(ret.toFixed(1));
+    const extra = Number(n(extraInput?.value || 0).toFixed(1));
+    const final = Number((sales - ret - extra).toFixed(1));
+    totalSalesInput.value = f1OrBlank(sales);
+    if (totalReturnsInput) totalReturnsInput.value = f1OrBlank(ret);
+    finalInput.value = f1SignedOrBlank(final);
+    if (!isSalesOrderVoucher && getPaymentType() === "CASH" && !canOverrideRateDiscount) {
+      receivedInput.value = f1OrBlank(Math.abs(final));
+    }
+    if (receivedInput && document.activeElement !== receivedInput) {
+      receivedInput.value = f1OrBlank(receivedInput.value || 0);
+    }
+    const linkedOrderId = Number(linkedOrderSelect?.value || 0) || 0;
+    const fromSO = isFromSO();
+    const paymentType = getPaymentType();
+    const isCashRefundSettlement = !isSalesOrderVoucher && !fromSO && paymentType === "CASH" && final < 0;
+    if (finalLabel) {
+      finalLabel.textContent = isCashRefundSettlement
+        ? refundDueLabelText
+        : "<%= t('final_amount') %>";
+    }
+    if (receivedLabel) {
+      receivedLabel.textContent = isCashRefundSettlement
+        ? refundAmountLabelText
+        : isSalesOrderVoucher
+          ? "<%= t('advance_received_amount') %>"
+          : fromSO
+            ? currentPaymentReceivedLabelText
+            : paymentType === "CREDIT"
+              ? creditReceivedLabelText
+              : "<%= t('payment_received_amount') %>";
+    }
+    const selectedOrder = fromSO && linkedOrderId > 0 ? orderMap.get(linkedOrderId) : null;
+    const orderTotalAmount = Number(n(selectedOrder?.total_order_amount || 0).toFixed(1));
+    const previousPaymentsReceived = Number(
+      n(
+        selectedOrder?.previous_payments_received
+        || selectedOrder?.payment_received_amount
+        || 0,
+      ).toFixed(1),
+    );
+    const currentReceivedAmount = Number(n(receivedInput?.value || 0).toFixed(1));
+    const linkedOrderReceiveIntoAccountId = Number(selectedOrder?.receive_into_account_id || 0) || null;
+    const shouldLockReceiveAccountToSalesOrder =
+      fromSO
+      && previousPaymentsReceived > 0
+      && Number(linkedOrderReceiveIntoAccountId || 0) > 0;
+    const effectiveReceivedAmount = fromSO
+      ? Number((previousPaymentsReceived + currentReceivedAmount).toFixed(1))
+      : currentReceivedAmount;
+    const remaining = fromSO
+      ? Number((Math.max(0, orderTotalAmount - effectiveReceivedAmount)).toFixed(1))
+      : Number((Math.max(0, final - effectiveReceivedAmount)).toFixed(1));
+    const dueDateRequired = !isSalesOrderVoucher
+      && paymentType === "CREDIT"
+      && Number(remaining) > 0;
+    if (remainingInput) {
+      remainingInput.value = fromSO ? f1(remaining) : f1OrBlank(remaining);
+    }
+    if (soOrderTotalInput) {
+      soOrderTotalInput.value = fromSO ? f1OrBlank(orderTotalAmount) : "";
+    }
+    if (soAdvanceInput) {
+      soAdvanceInput.value = fromSO ? f1OrBlank(previousPaymentsReceived) : "";
+    }
+    if (soTotalReceivedInput) {
+      const totalReceived = fromSO
+        ? Number((previousPaymentsReceived + currentReceivedAmount).toFixed(1))
+        : 0;
+      soTotalReceivedInput.value = f1OrBlank(totalReceived);
+    }
+    dueDateFields.forEach((el) => {
+      el.classList.toggle("hidden", !dueDateRequired);
+    });
+    if (dueDateInput) {
+      dueDateInput.required = dueDateRequired;
+      dueDateInput.disabled = !dueDateRequired;
+      dueDateInput.setAttribute("aria-required", dueDateRequired ? "true" : "false");
+      if (!dueDateRequired) dueDateInput.value = "";
+    }
+    const lineTotal = Number((sales - ret).toFixed(1));
+    if (linesTotalInput) linesTotalInput.value = f1OrBlank(Math.max(0, lineTotal));
+    syncReceiveIntoAccountState({
+      salesOrderAdvanceEnabled: isSalesOrderVoucher ? isSalesOrderAdvanceReceiveEnabled() : false,
+      forcedAccountId: shouldLockReceiveAccountToSalesOrder ? linkedOrderReceiveIntoAccountId : null,
+      lockAccount: shouldLockReceiveAccountToSalesOrder,
+    });
+  };
+
+  const syncHeaderUi = () => {
+    const linkedOrderId = Number(linkedOrderSelect?.value || 0) || 0;
+    if (!isSalesOrderVoucher && saleModeSelect) {
+      const requestedMode = String(saleModeSelect.value || "DIRECT").toUpperCase();
+      saleModeSelect.value = linkedOrderId > 0 || requestedMode === "FROM_SO" ? "FROM_SO" : "DIRECT";
+    }
+    const fromSO = isFromSO();
+    if (!isSalesOrderVoucher && fromSO && paymentTypeSelect) {
+      paymentTypeSelect.value = "CREDIT";
+    }
+    const paymentType = getPaymentType();
+    syncPaymentTypeSegmentUi();
+    syncAdvanceReceiveSegmentUi();
+    const isCredit = paymentType === "CREDIT";
+    const isCash = paymentType === "CASH";
+    const showReceiveIntoAccount = !isSalesOrderVoucher;
+    const salesOrderAdvanceEnabled = isSalesOrderAdvanceReceiveEnabled();
+    const selectedOrder = fromSO && linkedOrderId > 0 ? orderMap.get(linkedOrderId) : null;
+    const previousPaymentsReceived = Number(
+      n(
+        selectedOrder?.previous_payments_received
+        || selectedOrder?.payment_received_amount
+        || 0,
+      ).toFixed(1),
+    );
+    const linkedOrderReceiveIntoAccountId = Number(selectedOrder?.receive_into_account_id || 0) || null;
+    const shouldLockReceiveAccountToSalesOrder =
+      fromSO
+      && previousPaymentsReceived > 0
+      && Number(linkedOrderReceiveIntoAccountId || 0) > 0;
+    const lockCustomerToLinkedOrder = fromSO && linkedOrderId > 0;
+    const showCustomerSelect = isSalesOrderVoucher || fromSO || isCredit;
+    const showCustomerName = !isSalesOrderVoucher && !fromSO && !isCredit;
+    const showPhone = !isSalesOrderVoucher && isCash;
+    if (totalSalesLabel) {
+      totalSalesLabel.textContent = !isSalesOrderVoucher && fromSO
+        ? currentVoucherAmountLabelText
+        : "<%= t('total_sales_amount') %>";
+    }
+    if (finalLabel) {
+      finalLabel.textContent = "<%= t('final_amount') %>";
+    }
+    if (remainingLabel) {
+      remainingLabel.textContent = !isSalesOrderVoucher && fromSO
+        ? remainingReceivableLabelText
+        : "<%= t('remaining_amount') %>";
+    }
+    if (receivedLabel) {
+      receivedLabel.textContent = isSalesOrderVoucher
+        ? "<%= t('advance_received_amount') %>"
+        : fromSO
+          ? currentPaymentReceivedLabelText
+          : isCredit
+            ? creditReceivedLabelText
+            : "<%= t('payment_received_amount') %>";
+    }
+
+    if (linkedOrderSelect) {
+      linkedOrderSelect.required = fromSO;
+      if (!fromSO && String(linkedOrderSelect.value || "").trim()) {
+        linkedOrderSelect.value = "";
+        rows.forEach((row) => { row.sales_order_line_id = null; });
+      }
+    }
+    paymentTypeOptions.forEach((btn) => {
+      const value = String(btn.getAttribute("data-payment-type-option") || "").toUpperCase();
+      const lockCash = fromSO && value === "CASH";
+      btn.disabled = lockCash;
+      btn.classList.toggle("opacity-50", lockCash);
+      btn.classList.toggle("cursor-not-allowed", lockCash);
+      btn.setAttribute("aria-disabled", lockCash ? "true" : "false");
+    });
+    const customerSelectVisual = customerSelect?.closest("[data-searchable-wrapper]") || customerSelect;
+    if (customerSelectContainer) customerSelectContainer.classList.toggle("hidden", !showCustomerSelect);
+    if (customerSelectVisual && customerSelectVisual !== customerSelectContainer) customerSelectVisual.classList.toggle("hidden", !showCustomerSelect);
+    if (customerSelectVisual) {
+      customerSelectVisual.classList.toggle("pointer-events-none", lockCustomerToLinkedOrder);
+      customerSelectVisual.classList.toggle("opacity-80", lockCustomerToLinkedOrder);
+      const customerSearchInput = customerSelectVisual.querySelector('input[type="text"]');
+      if (customerSearchInput instanceof HTMLInputElement) {
+        customerSearchInput.readOnly = lockCustomerToLinkedOrder;
+        customerSearchInput.setAttribute("aria-readonly", lockCustomerToLinkedOrder ? "true" : "false");
+      }
+    }
+    if (customerNameWrap) customerNameWrap.classList.toggle("hidden", !showCustomerName);
+    if (phoneLabel) {
+      phoneLabel.classList.toggle("hidden", isSalesOrderVoucher);
+      phoneLabel.textContent = isCredit ? "<%= t('payment_due_date') %>" : "<%= t('phone_number') %>";
+    }
+    if (phoneWrap) phoneWrap.classList.toggle("hidden", !showPhone);
+    dueDateFields.forEach((el) => {
+      el.classList.toggle("hidden", isSalesOrderVoucher || !isCredit);
+    });
+    receiveAccountFields.forEach((el) => {
+      el.classList.toggle("hidden", !showReceiveIntoAccount);
+    });
+    if (totalReturnsRow) totalReturnsRow.classList.toggle("hidden", fromSO);
+    if (extraDiscountRow) extraDiscountRow.classList.toggle("hidden", fromSO);
+    if (finalRow) finalRow.classList.toggle("hidden", fromSO);
+    if (amountReceiveRow) amountReceiveRow.classList.toggle("hidden", isSalesOrderVoucher && !salesOrderAdvanceEnabled);
+    if (remainingRow) {
+      remainingRow.classList.add("grid");
+      const showRemaining = isSalesOrderVoucher
+        ? salesOrderAdvanceEnabled
+        : true;
+      remainingRow.classList.toggle("hidden", !showRemaining);
+    }
+    if (soOrderTotalRow) {
+      soOrderTotalRow.classList.add("grid");
+      soOrderTotalRow.classList.toggle("hidden", !(fromSO && linkedOrderId > 0));
+    }
+    if (soAdvanceRow) {
+      soAdvanceRow.classList.add("grid");
+      soAdvanceRow.classList.toggle("hidden", !(fromSO && linkedOrderId > 0));
+    }
+    if (soTotalReceivedRow) {
+      soTotalReceivedRow.classList.add("grid");
+      soTotalReceivedRow.classList.toggle("hidden", !(fromSO && linkedOrderId > 0));
+    }
+    salesOrderAdvanceFieldRows.forEach((el) => {
+      el.classList.toggle("hidden", isSalesOrderVoucher && !salesOrderAdvanceEnabled);
+    });
+
+    if (customerSelect) {
+      customerSelect.required = showCustomerSelect;
+      customerSelect.disabled = !showCustomerSelect || lockCustomerToLinkedOrder;
+      if (lockCustomerToLinkedOrder && Number(selectedOrder?.customer_party_id || 0) > 0) {
+        setSelectValueAndSync(customerSelect, String(selectedOrder.customer_party_id));
+      }
+      if (!showCustomerSelect) customerSelect.value = "";
+    }
+    if (salesmanSelect) {
+      const lockSalesmanToLinkedOrder = fromSO && linkedOrderId > 0;
+      if (lockSalesmanToLinkedOrder && Number(selectedOrder?.salesman_employee_id || 0) > 0) {
+        setSelectValueAndSync(salesmanSelect, String(selectedOrder.salesman_employee_id));
+      }
+      salesmanSelect.disabled = lockSalesmanToLinkedOrder;
+      salesmanSelect.classList.toggle("bg-slate-100", lockSalesmanToLinkedOrder);
+      salesmanSelect.classList.toggle("bg-white", !lockSalesmanToLinkedOrder);
+    }
+    if (customerNameInput) {
+      customerNameInput.required = showCustomerName;
+      customerNameInput.disabled = !showCustomerName;
+      if (!showCustomerName) customerNameInput.value = "";
+    }
+    if (phoneInput) {
+      phoneInput.required = showPhone;
+      phoneInput.disabled = !showPhone;
+      if (!showPhone) phoneInput.value = "";
+    }
+    if (dueDateInput && !isCredit) {
+      dueDateInput.required = false;
+      dueDateInput.disabled = true;
+      dueDateInput.value = "";
+    }
+    if (extraInput) {
+      extraInput.disabled = fromSO;
+      extraInput.classList.toggle("bg-slate-100", fromSO);
+      extraInput.classList.toggle("bg-white", !fromSO);
+      if (fromSO) extraInput.value = "";
+    }
+    if (receiveAccountSelect && !isSalesOrderVoucher) {
+      syncReceiveIntoAccountState({
+        forcedAccountId: shouldLockReceiveAccountToSalesOrder ? linkedOrderReceiveIntoAccountId : null,
+        lockAccount: shouldLockReceiveAccountToSalesOrder,
+      });
+    }
+    if (receivedInput && !isSalesOrderVoucher) {
+      receivedInput.disabled = false;
+      receivedInput.required = paymentType === "CASH";
+      receivedInput.setAttribute("aria-required", paymentType === "CASH" ? "true" : "false");
+      if (!String(receivedInput.value || "").trim()) receivedInput.value = "";
+    }
+    if (isSalesOrderVoucher && receiveAccountSelect) {
+      syncReceiveIntoAccountState({ salesOrderAdvanceEnabled });
+    }
+    if (isSalesOrderVoucher && receivedInput) {
+      receivedInput.disabled = !salesOrderAdvanceEnabled;
+      if (!salesOrderAdvanceEnabled) receivedInput.value = "";
+    }
+
+    if (fromSO && linkedOrderId > 0) {
+      const order = orderMap.get(linkedOrderId);
+      const selectedCustomerId = Number(customerSelect?.value || 0);
+      if (!order || (selectedCustomerId > 0 && selectedCustomerId !== Number(order.customer_party_id || 0))) {
+        linkedOrderSelect.value = "";
+        rows.forEach((row) => { row.sales_order_line_id = null; });
+      } else if (order && !selectedCustomerId) {
+        customerSelect.value = String(order.customer_party_id || "");
+      }
+      if (order && Number(order.salesman_employee_id || 0) > 0) {
+        setSelectValueAndSync(salesmanSelect, String(order.salesman_employee_id || ""));
+      }
+      if (receiveAccountSelect) {
+        const orderPreviousPaymentsReceived = Number(
+          n(order?.previous_payments_received || order?.payment_received_amount || 0).toFixed(1),
+        );
+        const orderReceiveAccountId = Number(order?.receive_into_account_id || 0) || null;
+        if (orderPreviousPaymentsReceived > 0 && orderReceiveAccountId) {
+          setSelectValueAndSync(receiveAccountSelect, String(orderReceiveAccountId));
+        }
+      }
+      if (billNumberInput) {
+        const linkedBookNo = String(order?.book_no || "").trim();
+        billNumberInput.value = linkedBookNo;
+      }
+      if (referenceNoInput) {
+        const linkedVoucherNo = Number(order?.voucher_no || 0);
+        referenceNoInput.value = linkedVoucherNo > 0 ? String(linkedVoucherNo) : "";
+      }
+    } else if (referenceNoInput) {
+      referenceNoInput.value = "";
+    }
+
+    if (phoneInput && showPhone && showCustomerSelect && customerSelect?.selectedOptions?.[0]?.dataset?.phone) {
+      const partyPhone = String(customerSelect.selectedOptions[0].dataset.phone || "").trim();
+      if (partyPhone && (fromSO || isCredit || !String(phoneInput?.value || "").trim())) {
+        phoneInput.value = partyPhone;
+      }
+    }
+
+    render();
+    autoSelectSingleOptionsIn(headerSection, { dispatchChange: true });
+  };
+
+  linesBody.addEventListener("change", (e) => {
+    const target = e.target;
+    const tr = target.closest("tr[data-i]");
+    if (!tr) return;
+    const i = Number(tr.dataset.i || -1);
+    if (!Number.isInteger(i) || i < 0) return;
+    const f = target.getAttribute("data-f");
+    if (!f) return;
+    rows[i][f] = (f.includes("id") ? (Number(target.value || 0) || null) : target.value);
+    if (f === "sku_id") {
+      const sku = skuMap.get(Number(rows[i].sku_id || 0));
+      if (sku && n(rows[i].pair_rate) <= 0) rows[i].pair_rate = Number(n(sku.sale_rate).toFixed(1));
+    }
+    if (f === "sales_order_line_id") {
+      const source = orderLineMap.get(Number(rows[i].sales_order_line_id || 0));
+      if (source) {
+        rows[i].sku_id = Number(source.sku_id || 0) || null;
+        rows[i].row_status = String(source.row_status || "LOOSE").toUpperCase();
+        rows[i].pair_rate = Number(n(source.pair_rate).toFixed(1));
+        rows[i].pair_discount = Number(n(source.pair_discount).toFixed(1));
+      }
+    }
+    render();
+  });
+
+  linesBody.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-del]");
+    if (!btn) return;
+    const i = Number(btn.closest("tr")?.dataset.i || -1);
+    if (i < 0) return;
+    rows.splice(i, 1);
+    if (!rows.length) rows.push(emptyRow());
+    render();
+  });
+
+  const appendNewRow = () => {
+    rows.push(emptyRow());
+    render();
+    requestAnimationFrame(() => {
+      const rowEl = linesBody?.querySelector(`tr[data-i="${rows.length - 1}"]`);
+      const firstField = rowEl?.querySelector('[data-f="sales_order_line_id"], [data-f="sku_id"], [data-f]');
+      if (firstField instanceof HTMLSelectElement && String(firstField.dataset.searchableReady || "") === "true") {
+        const wrapper = firstField.closest("[data-searchable-wrapper]")
+          || (firstField.parentElement?.matches("[data-searchable-wrapper]") ? firstField.parentElement : null);
+        const searchableInput = wrapper?.querySelector('input[type="text"]:not([readonly])');
+        if (searchableInput && typeof searchableInput.focus === "function") {
+          searchableInput.focus();
+          if (typeof searchableInput.click === "function") searchableInput.click();
+          return;
+        }
+      }
+      if (firstField && typeof firstField.focus === "function") firstField.focus();
+    });
+  };
+
+  const ensureRowRequiredBeforeAppend = (rowIndex) => {
+    const row = normalize(rows[rowIndex] || emptyRow());
+    rows[rowIndex] = row;
+    const hasArticle = Number(row.sku_id || 0) > 0 || Number(row.sales_order_line_id || 0) > 0;
+    if (!hasArticle) {
+      window.showVoucherError("<%= t('select_article') %>");
+      const rowEl = linesBody?.querySelector(`tr[data-i="${rowIndex}"]`);
+      const articleField = rowEl?.querySelector('[data-f="sales_order_line_id"], [data-f="sku_id"]');
+      if (articleField) focusRowFieldByElement(articleField, { openSearchable: true });
+      return false;
+    }
+    if (n(row.sale_qty) > 0 && n(row.return_qty) > 0) {
+      window.showVoucherError("<%= t('error_line_sale_and_return_conflict') %>");
+      const rowEl = linesBody?.querySelector(`tr[data-i="${rowIndex}"]`);
+      const saleQtyField = rowEl?.querySelector('[data-f="sale_qty"]');
+      if (saleQtyField && typeof saleQtyField.focus === "function") {
+        saleQtyField.focus();
+        if (typeof saleQtyField.select === "function") saleQtyField.select();
+      }
+      return false;
+    }
+    if (n(row.sale_qty) <= 0 && n(row.return_qty) <= 0) {
+      window.showVoucherError("<%= t('error_line_sale_or_return_required') %>");
+      const rowEl = linesBody?.querySelector(`tr[data-i="${rowIndex}"]`);
+      const saleQtyField = rowEl?.querySelector('[data-f="sale_qty"]');
+      if (saleQtyField && typeof saleQtyField.focus === "function") {
+        saleQtyField.focus();
+        if (typeof saleQtyField.select === "function") saleQtyField.select();
+      }
+      return false;
+    }
+    if (n(row.return_qty) > 0 && !row.return_reason_id) {
+      window.showVoucherError("<%= t('select_reason') %>");
+      const rowEl = linesBody?.querySelector(`tr[data-i="${rowIndex}"]`);
+      const reasonField = rowEl?.querySelector('[data-f="return_reason_id"]');
+      if (reasonField) focusRowFieldByElement(reasonField, { openSearchable: true });
+      return false;
+    }
+    if (isFromSO() && n(row.return_qty) > 0) {
+      window.showVoucherError("<%= t('error_line_return_not_allowed_from_so') %>");
+      const rowEl = linesBody?.querySelector(`tr[data-i="${rowIndex}"]`);
+      const returnQtyField = rowEl?.querySelector('[data-f="return_qty"]');
+      if (returnQtyField && typeof returnQtyField.focus === "function") {
+        returnQtyField.focus();
+        if (typeof returnQtyField.select === "function") returnQtyField.select();
+      }
+      return false;
+    }
+    return true;
+  };
+
+  if (addRowButton) {
+    addRowButton.addEventListener("click", () => {
+      if (!rows.length) {
+        rows.push(emptyRow());
+        render();
+        return;
+      }
+      const lastRowIndex = rows.length - 1;
+      if (!ensureRowRequiredBeforeAppend(lastRowIndex)) return;
+      appendNewRow();
+    });
+  }
+
+  const focusRowFieldByElement = (fieldElement, { openSearchable = true } = {}) => {
+    if (!fieldElement || fieldElement.disabled || fieldElement.readOnly) return false;
+    if (fieldElement instanceof HTMLSelectElement && String(fieldElement.dataset.searchableReady || "") === "true") {
+      const wrapper = fieldElement.closest("[data-searchable-wrapper]")
+        || (fieldElement.parentElement?.matches("[data-searchable-wrapper]") ? fieldElement.parentElement : null);
+      const searchableInput = wrapper?.querySelector('input[type="text"]:not([readonly])');
+      if (searchableInput && typeof searchableInput.focus === "function") {
+        searchableInput.focus();
+        if (openSearchable && typeof searchableInput.click === "function") searchableInput.click();
+        return true;
+      }
+      return false;
+    }
+    if (typeof fieldElement.focus === "function") {
+      fieldElement.focus();
+      return true;
+    }
+    return false;
+  };
+
+  const moveToNextRowField = (rowIndex, currentFieldKey) => {
+    setTimeout(() => {
+      const rowEl = linesBody?.querySelector(`tr[data-i="${rowIndex}"]`);
+      if (!rowEl) return;
+      const preferredFieldOrder = [
+        "sales_order_line_id",
+        "sku_id",
+        "row_status",
+        "sale_qty",
+        "return_qty",
+        "return_reason_id",
+        "pair_discount",
+      ];
+      const rowFields = preferredFieldOrder
+        .map((key) => rowEl.querySelector(`[data-f="${key}"]`))
+        .filter((el) => !!el)
+        .filter((el) => !el.disabled && !el.readOnly);
+      if (!rowFields.length) return;
+
+      const currentIndex = rowFields.findIndex((el) => String(el.dataset.f || "") === String(currentFieldKey || ""));
+      for (let i = currentIndex + 1; i < rowFields.length; i += 1) {
+        if (focusRowFieldByElement(rowFields[i], { openSearchable: true })) return;
+      }
+
+      const nextRowEl = linesBody?.querySelector(`tr[data-i="${rowIndex + 1}"]`);
+      if (nextRowEl) {
+        const preferredFieldOrder = [
+          "sales_order_line_id",
+          "sku_id",
+          "row_status",
+          "sale_qty",
+          "return_qty",
+          "return_reason_id",
+          "pair_discount",
+        ];
+        const nextRowFields = preferredFieldOrder
+          .map((key) => nextRowEl.querySelector(`[data-f="${key}"]`))
+          .filter((el) => !!el)
+          .filter((el) => !el.disabled && !el.readOnly);
+        if (nextRowFields.length && focusRowFieldByElement(nextRowFields[0], { openSearchable: true })) return;
+      }
+
+      if (rowIndex === rows.length - 1) {
+        if (!ensureRowRequiredBeforeAppend(rowIndex)) return;
+        appendNewRow();
+      }
+    }, 0);
+  };
+
+  linesBody.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      const rawTarget = event.target;
+      if (!(rawTarget instanceof HTMLElement)) return;
+      const rowEl = rawTarget.closest("tr[data-i]");
+      if (!rowEl) return;
+      const target = rawTarget.closest("[data-f]");
+      if (!target) return;
+      const rowIndex = Number(rowEl.dataset.i || -1);
+      if (!Number.isInteger(rowIndex) || rowIndex < 0) return;
+      const preferredFieldOrder = [
+        "sales_order_line_id",
+        "sku_id",
+        "row_status",
+        "sale_qty",
+        "return_qty",
+        "return_reason_id",
+        "pair_discount",
+      ];
+      const editableFields = preferredFieldOrder
+        .map((key) => rowEl.querySelector(`[data-f="${key}"]`))
+        .filter((el) => !!el)
+        .filter((el) => !el.disabled && !el.readOnly);
+      if (!editableFields.length) return;
+      const currentIndex = editableFields.indexOf(target);
+      if (currentIndex < 0) return;
+      const nextIndex = event.key === "ArrowRight" ? currentIndex + 1 : currentIndex - 1;
+      if (nextIndex < 0 || nextIndex >= editableFields.length) return;
+      event.preventDefault();
+      focusRowFieldByElement(editableFields[nextIndex], { openSearchable: true });
+      return;
+    }
+
+    if (event.key !== "Enter") return;
+    const rawTarget = event.target;
+    if (!(rawTarget instanceof HTMLElement)) return;
+    const rowEl = rawTarget.closest("tr[data-i]");
+    if (!rowEl) return;
+
+    const searchableWrapper = rawTarget.closest("[data-searchable-wrapper]");
+    if (searchableWrapper) {
+      const linkedSelect = searchableWrapper.querySelector("select[data-f]");
+      if (!linkedSelect) return;
+      const rowIndex = Number(rowEl.dataset.i || -1);
+      if (!Number.isInteger(rowIndex) || rowIndex < 0) return;
+      const dropdownMenu = searchableWrapper.querySelector("div.z-50");
+      const isDropdownOpen = Boolean(dropdownMenu && !dropdownMenu.classList.contains("hidden"));
+      const linkedValue = String(linkedSelect.value || "").trim();
+      const wasOpenBeforeEnter = searchableWrapper.dataset.wasOpenBeforeEnter === "1";
+      searchableWrapper.dataset.wasOpenBeforeEnter = "0";
+
+      if (isDropdownOpen) return;
+
+      if (wasOpenBeforeEnter) {
+        event.preventDefault();
+        moveToNextRowField(rowIndex, linkedSelect.dataset.f || "");
+        return;
+      }
+
+      if (!linkedValue) {
+        event.preventDefault();
+        if (typeof rawTarget.click === "function") rawTarget.click();
+        return;
+      }
+
+      event.preventDefault();
+      moveToNextRowField(rowIndex, linkedSelect.dataset.f || "");
+      return;
+    }
+
+    const target = rawTarget.closest("[data-f]");
+    if (!target) return;
+    const preferredFieldOrder = [
+      "sales_order_line_id",
+      "sku_id",
+      "row_status",
+      "sale_qty",
+      "return_qty",
+      "return_reason_id",
+      "pair_discount",
+    ];
+    const editableFields = preferredFieldOrder
+      .map((key) => rowEl.querySelector(`[data-f="${key}"]`))
+      .filter((el) => !!el)
+      .filter((el) => !el.disabled && !el.readOnly);
+    if (!editableFields.length) return;
+    const currentIndex = editableFields.indexOf(target);
+    const rowIndex = Number(rowEl.dataset.i || -1);
+    if (!Number.isInteger(rowIndex) || rowIndex < 0) return;
+    event.preventDefault();
+    if (currentIndex >= 0 && currentIndex < editableFields.length - 1) {
+      const nextField = editableFields[currentIndex + 1];
+      if (nextField) focusRowFieldByElement(nextField, { openSearchable: true });
+      return;
+    }
+    moveToNextRowField(rowIndex, target.dataset.f || "");
+  });
+
+  form.addEventListener(
+    "keydown",
+    (event) => {
+      if (event.key !== "Enter") return;
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const wrapper = target.closest("[data-searchable-wrapper]");
+      if (!wrapper) return;
+      if (!target.closest("[data-lines-body]")) return;
+      const dropdownMenu = wrapper.querySelector("div.z-50");
+      const isOpen = Boolean(dropdownMenu && !dropdownMenu.classList.contains("hidden"));
+      wrapper.dataset.wasOpenBeforeEnter = isOpen ? "1" : "0";
+    },
+    true,
+  );
+
+  form.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    if (!headerSection) return;
+    if (event.target?.closest("[data-lines-body]")) return;
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.tagName === "TEXTAREA") return;
+    if (target.closest("button") || target.closest("[role='button']")) return;
+    const focusables = Array.from(
+      headerSection.querySelectorAll("input, select, button, textarea, [tabindex]:not([tabindex='-1'])"),
+    ).filter((el) => {
+      if (!(el instanceof HTMLElement)) return false;
+      if (el.dataset.voucherNoInput !== undefined) return false;
+      if (el.tagName === "BUTTON") return false;
+      const disabled = el.hasAttribute("disabled") || el.getAttribute("aria-disabled") === "true";
+      const hidden = el.classList.contains("hidden") || el.closest(".hidden");
+      if (disabled || hidden) return false;
+      return el.offsetParent !== null;
+    });
+    const idx = focusables.indexOf(target);
+    if (idx < 0 || idx >= focusables.length - 1) return;
+    event.preventDefault();
+    const next = focusables[idx + 1];
+    if (next && typeof next.focus === "function") next.focus();
+  });
+
+  saleModeSelect?.addEventListener("change", syncHeaderUi);
+  paymentTypeOptions.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const value = String(btn.getAttribute("data-payment-type-option") || "").toUpperCase();
+      if (isFromSO() && value === "CASH") return;
+      if (!paymentTypeSelect || (value !== "CASH" && value !== "CREDIT")) return;
+      paymentTypeSelect.value = value;
+      paymentTypeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  });
+  advanceReceiveOptions.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const value = String(btn.getAttribute("data-advance-receive-option") || "").trim().toLowerCase();
+      if (!advanceReceiveSelect || (value !== "yes" && value !== "no")) return;
+      advanceReceiveSelect.value = value;
+      advanceReceiveSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  });
+  paymentTypeSelect?.addEventListener("change", syncHeaderUi);
+  advanceReceiveSelect?.addEventListener("change", syncHeaderUi);
+  linkedOrderSelect?.addEventListener("change", syncHeaderUi);
+  customerSelect?.addEventListener("change", syncHeaderUi);
+  extraInput?.addEventListener("input", render);
+  receivedInput?.addEventListener("input", () => {
+    render();
+    syncHeaderUi();
+  });
+  receivedInput?.addEventListener("blur", () => {
+    receivedInput.value = f1OrBlank(receivedInput.value || 0);
+    render();
+    syncHeaderUi();
+  });
+  linkSalesOrderBtn?.addEventListener("click", () => {
+    if (isSalesOrderVoucher) return;
+    openSalesOrderPickerModalView();
+  });
+  salesOrderPickerCloseButtons.forEach((btn) => {
+    btn.addEventListener("click", closeSalesOrderPickerModal);
+  });
+  salesOrderPickerModal?.addEventListener("click", (event) => {
+    if (event.target === salesOrderPickerModal) closeSalesOrderPickerModal();
+  });
+  salesOrderPickerLinesBody?.addEventListener("change", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+
+    if (target.matches("[data-sales-order-picker-line-checkbox]")) {
+      const lineId = Number(target.value || 0);
+      if (lineId <= 0) return;
+      if (target.checked) {
+        salesOrderPickerSelectedLineIds.add(lineId);
+        const openQty = Number(target.dataset.openQty || 0);
+        if (!salesOrderPickerDeliverQtyMap.has(lineId)) {
+          salesOrderPickerDeliverQtyMap.set(lineId, Number(openQty.toFixed(1)));
+        }
+      } else {
+        salesOrderPickerSelectedLineIds.delete(lineId);
+      }
+      return;
+    }
+
+    if (target.matches("[data-sales-order-picker-deliver-qty]")) {
+      const lineId = Number(target.dataset.lineId || 0);
+      if (lineId <= 0) return;
+      const openQty = Number(target.dataset.openQty || 0);
+      const value = sanitizeDeliverQty(target.value, openQty);
+      target.value = displayNumber(value, 1, "0");
+      salesOrderPickerDeliverQtyMap.set(lineId, value);
+      if (value > 0) {
+        salesOrderPickerSelectedLineIds.add(lineId);
+        const checkbox = target.closest("tr")?.querySelector("[data-sales-order-picker-line-checkbox]");
+        if (checkbox instanceof HTMLInputElement) checkbox.checked = true;
+      }
+    }
+  });
+  salesOrderPickerApplyButton?.addEventListener("click", () => {
+    const customerId = getSelectedCustomerId();
+    if (!customerId) {
+      window.showVoucherError("<%= t('select_customer') %>");
+      return;
+    }
+    const selectedLines = getScopedSalesOrderLinesForModal()
+      .filter((line) => salesOrderPickerSelectedLineIds.has(Number(line.sales_order_line_id || 0)));
+    if (!selectedLines.length) {
+      window.showVoucherError(requiredMessage("<%= t('voucher_lines') %>"));
+      return;
+    }
+
+    const selectedLinesWithDeliverQty = selectedLines.map((line) => {
+      const lineId = Number(line.sales_order_line_id || 0);
+      const openQty = Number(Number(line.open_qty || 0).toFixed(1));
+      const requestedQty = Number(salesOrderPickerDeliverQtyMap.get(lineId));
+      const deliverQty = Number.isFinite(requestedQty)
+        ? sanitizeDeliverQty(requestedQty, openQty)
+        : openQty;
+      return { line, openQty, deliverQty };
+    });
+
+    const invalidDeliverQty = selectedLinesWithDeliverQty.find((x) => x.deliverQty <= 0 || x.deliverQty > x.openQty + 0.0001);
+    if (invalidDeliverQty) {
+      window.showVoucherError(requiredMessage("<%= t('deliver_qty') %>"));
+      const badLineId = Number(invalidDeliverQty.line.sales_order_line_id || 0);
+      const badInput = salesOrderPickerLinesBody?.querySelector(`[data-sales-order-picker-deliver-qty][data-line-id="${badLineId}"]`);
+      if (badInput instanceof HTMLInputElement) {
+        badInput.focus();
+        if (typeof badInput.select === "function") badInput.select();
+      }
+      return;
+    }
+
+    const selectedOrderIds = [...new Set(
+      selectedLinesWithDeliverQty
+        .map(({ line }) => Number(line.sales_order_id || 0))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    )];
+    if (selectedOrderIds.length !== 1) {
+      window.showVoucherError("<%= t('error_single_sales_order_only') %>");
+      return;
+    }
+    const selectedOrderId = selectedOrderIds[0];
+    const order = orderMap.get(selectedOrderId);
+    if (!order) {
+      window.showVoucherError("<%= t('error_sales_order_not_found') %>");
+      return;
+    }
+
+    if (saleModeSelect) saleModeSelect.value = "FROM_SO";
+    if (linkedOrderSelect) linkedOrderSelect.value = String(selectedOrderId);
+    const linkedBookNo = String(order?.book_no || "").trim();
+    if (billNumberInput) {
+      billNumberInput.value = linkedBookNo;
+    }
+    if (referenceNoInput) {
+      const linkedVoucherNo = Number(order?.voucher_no || 0);
+      referenceNoInput.value = linkedVoucherNo > 0 ? String(linkedVoucherNo) : "";
+    }
+    if (receiveAccountSelect) {
+      const orderPreviousPaymentsReceived = Number(
+        n(order?.previous_payments_received || order?.payment_received_amount || 0).toFixed(1),
+      );
+      const orderReceiveAccountId = Number(order?.receive_into_account_id || 0) || null;
+      if (orderPreviousPaymentsReceived > 0 && orderReceiveAccountId) {
+        setSelectValueAndSync(receiveAccountSelect, String(orderReceiveAccountId));
+      }
+    }
+    if (customerSelect) setSelectValueAndSync(customerSelect, String(order.customer_party_id || ""));
+    if (salesmanSelect && Number(order.salesman_employee_id || 0) > 0) {
+      setSelectValueAndSync(salesmanSelect, String(order.salesman_employee_id || ""));
+    }
+
+    rows.splice(0, rows.length);
+    selectedLinesWithDeliverQty
+      .sort((a, b) => Number(a.line.sales_order_line_no || 0) - Number(b.line.sales_order_line_no || 0))
+      .forEach(({ line, deliverQty }) => {
+        rows.push({
+          sku_id: Number(line.sku_id || 0) || null,
+          sales_order_line_id: Number(line.sales_order_line_id || 0) || null,
+          row_status: String(line.row_status || "PACKED").toUpperCase(),
+          sale_qty: Number(Number(deliverQty || 0).toFixed(1)),
+          return_qty: 0,
+          return_reason_id: null,
+          pair_rate: Number(Number(line.pair_rate || 0).toFixed(1)),
+          pair_discount: Number(Number(line.pair_discount || 0).toFixed(1)),
+          total_discount: 0,
+          total_amount: 0,
+          item_name: "",
+        });
+      });
+    if (!rows.length) rows.push(emptyRow());
+    syncHeaderUi();
+    closeSalesOrderPickerModal();
+    setTimeout(() => {
+      const firstQty = linesBody?.querySelector('tr[data-i="0"] input[data-f="sale_qty"]');
+      if (firstQty) {
+        firstQty.focus();
+        if (typeof firstQty.select === "function") firstQty.select();
+      }
+    }, 0);
+  });
+
+  const loadVoucher = (value) => {
+    const no = Number(value || 0);
+    if (!Number.isInteger(no) || no <= 0) return;
+    window.location.href = `${"<%= basePath || '' %>"}?voucher_no=${no}&view=1`;
+  };
+
+  form.querySelector("[data-voucher-no-input]")?.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    loadVoucher(e.target?.value);
+  });
+  form.querySelector("[data-load-voucher]")?.addEventListener("click", () => loadVoucher(form.querySelector("[data-voucher-no-input]")?.value));
+  document.querySelector("[data-delete-voucher]")?.addEventListener("click", () => {
+    const deleteForm = document.querySelector("[data-delete-voucher-form]");
+    if (!deleteForm) return;
+    if (!confirm("<%= t('are_you_sure') %>")) return;
+    deleteForm.submit();
+  });
+  document.querySelector("[data-print-gate-pass]")?.addEventListener("click", () => {
+    if (!selectedVoucherNo) return;
+    window.open(`${"<%= basePath || '' %>"}/gate-pass?voucher_no=${selectedVoucherNo}`, "_blank", "noopener,noreferrer");
+  });
+
+  [voucherDateInput, dueDateInput].forEach((dateEl) => {
+    dateEl?.addEventListener("click", () => {
+      if (typeof dateEl.showPicker === "function") {
+        try { dateEl.showPicker(); } catch (err) {}
+      }
+    });
+    dateEl?.addEventListener("focus", () => {
+      if (typeof dateEl.showPicker === "function") {
+        try { dateEl.showPicker(); } catch (err) {}
+      }
+    });
+  });
+
+  form.addEventListener("submit", (e) => {
+    const fromSO = isFromSO();
+    const paymentType = getPaymentType();
+    const customerId = Number(customerSelect?.value || 0) || null;
+    const customerName = String(customerNameInput?.value || "").trim();
+    const phone = String(phoneInput?.value || "").trim();
+    const salesmanId = Number(salesmanSelect?.value || 0) || null;
+    const linkedOrderId = Number(linkedOrderSelect?.value || 0) || null;
+    const salesOrderAdvanceEnabled = isSalesOrderAdvanceReceiveEnabled();
+    const received = Number(n(receivedInput?.value || 0).toFixed(1));
+    const finalAmount = Number(n(finalInput?.value || 0).toFixed(1));
+    const selectedOrder = fromSO && linkedOrderId ? orderMap.get(Number(linkedOrderId)) : null;
+    const orderTotalAmount = Number(n(selectedOrder?.total_order_amount || 0).toFixed(1));
+    const previousPaymentsReceived = Number(
+      n(
+        selectedOrder?.previous_payments_received
+        || selectedOrder?.payment_received_amount
+        || 0,
+      ).toFixed(1),
+    );
+    const receiveAcc = Number(receiveAccountSelect?.value || 0) || null;
+    const billNo = String(form.querySelector('[name="reference_no"]')?.value || "").trim();
+    const voucherDateValue = String(voucherDateInput?.value || "").trim();
+    const dueDateValue = String(dueDateInput?.value || "").trim();
+
+    if (!billNo) { e.preventDefault(); window.showVoucherError(requiredMessage("<%= t('bill_number') %>")); return; }
+    if (!salesmanId) { e.preventDefault(); window.showVoucherError(requiredMessage("<%= t('salesman') %>")); return; }
+    if (!isSalesOrderVoucher && paymentType === "CASH" && !phone) { e.preventDefault(); window.showVoucherError(requiredMessage("<%= t('phone_number') %>")); return; }
+    if (!isSalesOrderVoucher && paymentType === "CASH" && !isValidPhone(phone)) { e.preventDefault(); window.showVoucherError("<%= t('error_invalid_phone_number') %>"); return; }
+    if ((fromSO || paymentType === "CREDIT" || isSalesOrderVoucher) && !customerId) { e.preventDefault(); window.showVoucherError("<%= t('select_customer') %>"); return; }
+    if (!fromSO && !isSalesOrderVoucher && paymentType === "CASH" && !customerName) { e.preventDefault(); window.showVoucherError(requiredMessage("<%= t('customer_name') %>")); return; }
+    if (fromSO && !linkedOrderId) { e.preventDefault(); window.showVoucherError("<%= t('select_sales_order') %>"); return; }
+    if (fromSO && paymentType !== "CREDIT") { e.preventDefault(); window.showVoucherError("<%= t('error_sales_order_requires_credit_sale') %>"); return; }
+    const dueDateOutstanding = !isSalesOrderVoucher && paymentType === "CREDIT"
+      ? Number(
+          Math.max(
+            0,
+            (fromSO && orderTotalAmount > 0 ? orderTotalAmount : finalAmount)
+              - (fromSO ? previousPaymentsReceived : 0)
+              - received,
+          ).toFixed(1),
+        )
+      : 0;
+    if (!isSalesOrderVoucher && paymentType === "CREDIT" && dueDateOutstanding > 0 && !String(dueDateInput?.value || "").trim()) { e.preventDefault(); window.showVoucherError(requiredMessage("<%= t('payment_due_date') %>")); return; }
+    if (!isSalesOrderVoucher && paymentType === "CREDIT" && dueDateValue && voucherDateValue && dueDateValue <= voucherDateValue) { e.preventDefault(); window.showVoucherError("<%= t('error_due_date_must_be_after_voucher') %>"); return; }
+    if (!isSalesOrderVoucher && paymentType === "CASH") {
+      const cashSettlementAmount = Math.abs(finalAmount);
+      if (cashSettlementAmount > 0 && received <= 0) { e.preventDefault(); window.showVoucherError("<%= t('error_cash_sale_no_advanced_amount') %>"); return; }
+      if (Math.abs(received - cashSettlementAmount) > 0.0001) { e.preventDefault(); window.showVoucherError(cashSettlementMismatchText); return; }
+    }
+    if (!isSalesOrderVoucher && paymentType === "CREDIT") {
+      const maxAllowedCurrentReceived = fromSO
+        ? Number(
+            Math.max(
+              0,
+              (orderTotalAmount > 0 ? orderTotalAmount : finalAmount) - previousPaymentsReceived,
+            ).toFixed(1),
+          )
+        : finalAmount;
+      if (received > maxAllowedCurrentReceived + 0.0001) {
+        e.preventDefault();
+        window.showVoucherError(fromSO ? "<%= t('error_current_payment_exceeds_receivable') %>" : "<%= t('error_advance_amount_exceeds_final') %>");
+        return;
+      }
+    }
+    if (!isSalesOrderVoucher && received > 0 && !receiveAcc) { e.preventDefault(); window.showVoucherError("<%= t('select_account_name') %>"); return; }
+    if (isSalesOrderVoucher && !salesOrderAdvanceEnabled) {
+      if (receivedInput) receivedInput.value = "0.0";
+      if (receiveAccountSelect) receiveAccountSelect.value = "";
+    }
+    if (isSalesOrderVoucher && salesOrderAdvanceEnabled) {
+      if (received <= 0) { e.preventDefault(); window.showVoucherError("<%= t('error_advance_receive_enabled_no_amount') %>"); return; }
+      if (!receiveAcc) { e.preventDefault(); window.showVoucherError("<%= t('select_account_name') %>"); return; }
+      if (received > finalAmount + 0.0001) { e.preventDefault(); window.showVoucherError("<%= t('error_advance_amount_exceeds_final') %>"); return; }
+    }
+
+    const payload = [];
+    const soConsumedPairs = new Map();
+    for (let i = 0; i < rows.length; i += 1) {
+      const r = normalize(rows[i]);
+      rows[i] = r;
+      const blank = !r.sku_id && n(r.sale_qty) <= 0 && n(r.return_qty) <= 0;
+      if (blank) continue;
+      if (!r.sku_id) { e.preventDefault(); window.showVoucherError(requiredMessage("<%= t('article') %>")); return; }
+      if (r.sale_qty > 0 && r.return_qty > 0) { e.preventDefault(); window.showVoucherError("<%= t('error_line_sale_and_return_conflict') %>"); return; }
+      if (r.sale_qty <= 0 && r.return_qty <= 0) { e.preventDefault(); window.showVoucherError("<%= t('error_line_sale_or_return_required') %>"); return; }
+      if (r.pair_rate <= 0) { e.preventDefault(); window.showVoucherError("<%= t('error_line_pair_rate_required') %>"); return; }
+      if (r.pair_discount >= r.pair_rate) { e.preventDefault(); window.showVoucherError("<%= t('error_line_discount_must_be_less_than_rate') %>"); return; }
+      if (r.return_qty > 0 && !r.return_reason_id) { e.preventDefault(); window.showVoucherError("<%= t('select_reason') %>"); return; }
+      if (fromSO) {
+        if (!r.sales_order_line_id) { e.preventDefault(); window.showVoucherError("<%= t('error_line_sales_order_line_required') %>"); return; }
+        if (r.return_qty > 0) { e.preventDefault(); window.showVoucherError("<%= t('error_line_return_not_allowed_from_so') %>"); return; }
+        const source = orderLineMap.get(Number(r.sales_order_line_id || 0));
+        if (!source) { e.preventDefault(); window.showVoucherError("<%= t('error_line_sales_order_source_invalid') %>"); return; }
+        const linePairs = pairs(r.row_status, r.sale_qty);
+        const consumed = Number(soConsumedPairs.get(Number(r.sales_order_line_id)) || 0);
+        const next = Number((consumed + linePairs).toFixed(1));
+        if (next > Number(source.open_pairs || 0) + 0.0001) { e.preventDefault(); window.showVoucherError("<%= t('error_line_sales_order_qty_exceeds_open') %>"); return; }
+        soConsumedPairs.set(Number(r.sales_order_line_id), next);
+      }
+      payload.push({ sku_id: Number(r.sku_id), row_status: String(r.row_status || "PACKED").toUpperCase(), sale_qty: Number(n(r.sale_qty).toFixed(1)), return_qty: Number(n(r.return_qty).toFixed(1)), return_reason_id: r.return_reason_id ? Number(r.return_reason_id) : null, pair_rate: Number(n(r.pair_rate).toFixed(1)), pair_discount: Number(n(r.pair_discount).toFixed(1)), sales_order_line_id: r.sales_order_line_id ? Number(r.sales_order_line_id) : null });
+    }
+
+    if (!payload.length) { e.preventDefault(); window.showVoucherError(requiredMessage("<%= t('voucher_lines') %>")); return; }
+    // Disabled form controls are omitted from native form posts. Re-enable
+    // locked fields so linked sales-order values are preserved on submit.
+    Array.from(form.querySelectorAll("[name][disabled]")).forEach((field) => {
+      if (!(field instanceof HTMLInputElement || field instanceof HTMLSelectElement || field instanceof HTMLTextAreaElement)) {
+        return;
+      }
+      field.disabled = false;
+    });
+    linesJsonInput.value = JSON.stringify(payload);
+  });
+
+  syncHeaderUi();
+})();
+</script>

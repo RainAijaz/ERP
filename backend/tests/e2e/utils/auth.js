@@ -12,12 +12,12 @@ const getCredentials = (prefix) => {
 const login = async (page, prefix) => {
   const { username, password } = getCredentials(prefix);
   await page.goto("/auth/login", { waitUntil: "domcontentloaded" });
-  await page.getByLabel("Username", { exact: false }).fill(username);
-  await page.getByLabel("Password", { exact: false }).fill(password);
-  await page.getByRole("button", { name: /login/i }).click();
-  // await page.waitForLoadState("networkidle");
-  // await page.waitForURL("**/administration/**", { timeout: 30000 });
-  await expect(page.getByRole("button", { name: /logout/i })).toBeVisible();
+  await page.locator('input[name="username"]').fill(username);
+  await page.locator('input[name="password"]').fill(password);
+  await page.locator('form[action="/auth/login"] button[type="submit"]').click();
+
+  await expect(page).not.toHaveURL(/\/auth\/login/i);
+  await expect(page.locator('form[action="/auth/logout"] button[type="submit"]')).toBeVisible();
 };
 
 module.exports = { getCredentials, login };

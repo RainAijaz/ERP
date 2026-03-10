@@ -5,9 +5,27 @@ const journalRoutes = require("./journal");
 const purchaseRoutes = require("./purchase");
 const goodsReceiptNoteRoutes = require("./goods-receipt-note");
 const purchaseReturnRoutes = require("./purchase-return");
+const salesRoutes = require("./sales");
+const salesOrderRoutes = require("./sales-order");
+const returnablesLegacyRoutes = require("./returnables");
+const { createReturnableVoucherRouter } = require("./returnable-router-factory");
 const voucherEngineRoutes = require("./voucher-engine");
 
 const router = express.Router();
+
+const returnableDispatchRoutes = createReturnableVoucherRouter({
+  voucherTypeCode: "RDV",
+  scopeKey: "RDV",
+  dispatchPath: "/vouchers/returnable-dispatch",
+  receiptPath: "/vouchers/returnable-receipt",
+});
+
+const returnableReceiptRoutes = createReturnableVoucherRouter({
+  voucherTypeCode: "RRV",
+  scopeKey: "RRV",
+  dispatchPath: "/vouchers/returnable-dispatch",
+  receiptPath: "/vouchers/returnable-receipt",
+});
 
 router.use("/cash", cashRoutes);
 router.use("/bank", bankRoutes);
@@ -18,6 +36,11 @@ router.get("/purchase-order", (req, res) => {
 router.use("/purchase", purchaseRoutes);
 router.use("/goods-receipt-note", goodsReceiptNoteRoutes);
 router.use("/purchase-return", purchaseReturnRoutes);
+router.use("/sales", salesRoutes);
+router.use("/sales-order", salesOrderRoutes);
+router.use("/returnable-dispatch", returnableDispatchRoutes);
+router.use("/returnable-receipt", returnableReceiptRoutes);
+router.use("/returnables", returnablesLegacyRoutes);
 router.use("/engine", voucherEngineRoutes);
 
 module.exports = router;

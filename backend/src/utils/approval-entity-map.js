@@ -17,6 +17,7 @@ const BASIC_INFO_ENTITY_TYPES = {
   groups: "PRODUCT_GROUP",
   "product-subgroups": "PRODUCT_SUBGROUP",
   "product-types": "PRODUCT_TYPE",
+  "sales-discount-policies": "SALES_DISCOUNT_POLICY",
   "party-groups": "PARTY_GROUP",
   "account-groups": "ACCOUNT_GROUP",
   departments: "DEPARTMENT",
@@ -26,6 +27,8 @@ const BASIC_INFO_ENTITY_TYPES = {
 const SCREEN_ENTITY_TYPES = {
   "master_data.accounts": "ACCOUNT",
   "master_data.parties": "PARTY",
+  "master_data.returnable_assets": "ASSET",
+  "master_data.asset_types": "ASSET_TYPE",
   "master_data.products.raw_materials": "ITEM",
   "master_data.products.semi_finished": "ITEM",
   "master_data.products.finished": "ITEM",

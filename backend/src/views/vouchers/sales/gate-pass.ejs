@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title><%= t("print_gate_pass") %> - <%= gatePass?.voucher_no || "" %></title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body class="bg-white p-6 text-slate-800">
+    <div class="mx-auto max-w-4xl space-y-4">
+      <div class="flex items-center justify-between">
+        <h1 class="text-xl font-semibold"><%= t("print_gate_pass") %></h1>
+        <button type="button" class="rounded border border-slate-300 px-3 py-1 text-xs font-semibold" onclick="window.print()"><%= t("print") %></button>
+      </div>
+      <div class="grid grid-cols-2 gap-2 text-sm">
+        <div><strong><%= t("voucher_no") %>:</strong> <%= gatePass?.voucher_no || "" %></div>
+        <div><strong><%= t("date") %>:</strong> <%= formatDateDisplay(gatePass?.voucher_date, "") %></div>
+        <div><strong><%= t("customer_name") %>:</strong> <%= gatePass?.customer_name || "" %></div>
+        <div><strong><%= t("phone_number") %>:</strong> <%= gatePass?.customer_phone_number || "" %></div>
+        <div><strong><%= t("delivery_method") %>:</strong> <%= gatePass?.delivery_method || "" %></div>
+      </div>
+      <table class="w-full border border-slate-200 text-xs">
+        <thead class="bg-slate-50 uppercase tracking-[0.08em] text-slate-500">
+          <tr>
+            <th class="border border-slate-200 p-2 text-left"><%= t("sr_no") %></th>
+            <th class="border border-slate-200 p-2 text-left"><%= t("sku_code") %></th>
+            <th class="border border-slate-200 p-2 text-left"><%= t("article_name") %></th>
+            <th class="border border-slate-200 p-2 text-left"><%= t("status") %></th>
+            <th class="border border-slate-200 p-2 text-right"><%= t("sale_qty") %></th>
+            <th class="border border-slate-200 p-2 text-right"><%= t("pairs") %></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% (gatePass?.lines || []).forEach((line, idx) => { %>
+            <tr>
+              <td class="border border-slate-200 p-2"><%= idx + 1 %></td>
+              <td class="border border-slate-200 p-2"><%= line.sku_code || "" %></td>
+              <td class="border border-slate-200 p-2"><%= line.item_name || "" %></td>
+              <td class="border border-slate-200 p-2"><%= line.row_status || "" %></td>
+              <td class="border border-slate-200 p-2 text-right"><%= formatNumberDisplay(line.sale_qty || 0, { decimals: 3, fallback: "0" }) %></td>
+              <td class="border border-slate-200 p-2 text-right"><%= formatNumberDisplay(line.total_pairs || 0, { decimals: 3, fallback: "0" }) %></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+    <script>window.addEventListener("load", () => window.focus());</script>
+  </body>
+</html>

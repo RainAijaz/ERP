@@ -165,6 +165,36 @@ router.get(
   },
 );
 
+router.post(
+  "/supplier-ledger",
+  requirePermission("REPORT", "supplier_ledger", "view"),
+  async (req, res, next) => {
+    try {
+      const pageData = await getSupplierLedgerReportPageData({
+        req,
+        input: req.body,
+      });
+
+      return res.render("base/layouts/main", {
+        title: `${res.locals.t("supplier_ledger_report")} - ${res.locals.t("reports")}`,
+        user: req.user,
+        branchId: req.branchId,
+        branchScope: req.branchScope,
+        csrfToken: res.locals.csrfToken,
+        view: "../../reports/purchases/supplier-ledger",
+        t: res.locals.t,
+        filters: pageData.filters,
+        options: pageData.options,
+        reportData: pageData.reportData,
+        reportPath: `${req.baseUrl}/supplier-ledger`,
+      });
+    } catch (err) {
+      console.error("Error in PurchaseReportsService:", err);
+      return next(err);
+    }
+  },
+);
+
 router.get(
   "/supplier-balances",
   requirePermission("REPORT", "supplier_balances", "view"),
@@ -173,6 +203,35 @@ router.get(
       const pageData = await getSupplierBalancesReportPageData({
         req,
         input: req.query,
+      });
+      return res.render("base/layouts/main", {
+        title: `${res.locals.t("supplier_balances_report")} - ${res.locals.t("reports")}`,
+        user: req.user,
+        branchId: req.branchId,
+        branchScope: req.branchScope,
+        csrfToken: res.locals.csrfToken,
+        view: "../../reports/purchases/supplier-balances",
+        t: res.locals.t,
+        filters: pageData.filters,
+        options: pageData.options,
+        reportData: pageData.reportData,
+        reportPath: `${req.baseUrl}/supplier-balances`,
+      });
+    } catch (err) {
+      console.error("Error in PurchaseReportsService:", err);
+      return next(err);
+    }
+  },
+);
+
+router.post(
+  "/supplier-balances",
+  requirePermission("REPORT", "supplier_balances", "view"),
+  async (req, res, next) => {
+    try {
+      const pageData = await getSupplierBalancesReportPageData({
+        req,
+        input: req.body,
       });
       return res.render("base/layouts/main", {
         title: `${res.locals.t("supplier_balances_report")} - ${res.locals.t("reports")}`,

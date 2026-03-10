@@ -1,0 +1,880 @@
+<%
+const reportLoaded = Boolean(filters?.reportLoaded);
+const selectedFrom = String(filters?.from || "");
+const selectedTo = String(filters?.to || "");
+const selectedPartyId = Number(filters?.partyId || 0) || null;
+const selectedGroupId = Number(filters?.groupId || 0) || null;
+const selectedSubgroupId = Number(filters?.subgroupId || 0) || null;
+const selectedCategoryId = Number(filters?.categoryId || 0) || null;
+const selectedReturnReasonId = Number(filters?.returnReasonId || 0) || null;
+const selectedSalesmanId = Number(filters?.salesmanId || 0) || null;
+const selectedReceiveIntoAccountId = Number(filters?.receiveIntoAccountId || 0) || null;
+const selectedBranchId = Number(filters?.branchId || 0) || null;
+const selectedVoucherStatus = ["all", "approved", "pending"].includes(String(filters?.voucherStatus || "").toLowerCase()) ? String(filters.voucherStatus).toLowerCase() : "all";
+const rawSelectedOrderBy = String(filters?.orderBy || "").toLowerCase();
+const normalizedSelectedOrderBy = rawSelectedOrderBy === "party" ? "payment_account" : rawSelectedOrderBy;
+const selectedOrderBy = ["payment_account", "voucher", "article"].includes(normalizedSelectedOrderBy) ? normalizedSelectedOrderBy : "payment_account";
+const selectedSaleType = ["all", "cash", "credit"].includes(String(filters?.saleType || "").toLowerCase()) ? String(filters.saleType).toLowerCase() : "all";
+const selectedReportType = ["details", "summary"].includes(String(filters?.reportType || "").toLowerCase()) ? String(filters.reportType).toLowerCase() : "details";
+const groups = Array.isArray(reportData?.groups) ? reportData.groups : [];
+const summaryRows = Array.isArray(reportData?.summaryRows) ? reportData.summaryRows : [];
+const totals = reportData?.totals || { qty: 0, packedQty: 0, looseQty: 0, grossAmount: 0, discountAmount: 0, netAmount: 0, effectivePairDiscount: 0 };
+const includeBranchColumn = Boolean(reportData?.includeBranchColumn);
+const hasData = selectedReportType === "summary" ? summaryRows.length > 0 : groups.length > 0;
+const customerOptions = Array.isArray(options?.customers) ? options.customers : [];
+const groupOptions = Array.isArray(options?.groups) ? options.groups : [];
+const subgroupOptions = Array.isArray(options?.subgroups) ? options.subgroups : [];
+const categoryOptions = Array.isArray(options?.categories) ? options.categories : [];
+const returnReasonOptions = Array.isArray(options?.returnReasons) ? options.returnReasons : [];
+const salesmanOptions = Array.isArray(options?.salesmen) ? options.salesmen : [];
+const receiveAccountOptions = Array.isArray(options?.receiveAccounts) ? options.receiveAccounts : [];
+const branchOptions = Array.isArray(options?.branches) ? options.branches : [];
+const showReturnReasonFilter = Boolean(returnReasonFilter);
+const showReceiveAccountFilter = !showReturnReasonFilter;
+const pageTitle = (() => {
+  if (typeof reportTitle === "string" && reportTitle.trim()) return reportTitle.trim();
+  const v = typeof t === "function" ? t("sales_report") : "";
+  return v && v !== "sales_report" ? v : "Sales Report";
+})();
+const downloadName = (() => {
+  if (typeof downloadFileName === "string" && downloadFileName.trim()) return downloadFileName.trim();
+  return "sales-report.csv";
+})();
+const dateRangeLabel = (() => {
+  const v = typeof t === "function" ? t("date_range") : "";
+  return v || "Date Range";
+})();
+const articleGroupLabel = (() => { const v = typeof t === "function" ? t("product_group") : ""; return v && v !== "product_group" ? v : "Article Group"; })();
+const articleSubgroupLabel = (() => { const v = typeof t === "function" ? t("sub_group") : ""; if (v && v !== "sub_group") return v; const alt = typeof t === "function" ? t("product_subgroups") : ""; return alt && alt !== "product_subgroups" ? alt : "Article Subgroup"; })();
+const articleCategoryLabel = (() => { const v = typeof t === "function" ? t("category") : ""; return v && v !== "category" ? v : "Article Category"; })();
+const returnReasonLabel = (() => { const v = typeof t === "function" ? t("return_reason") : ""; return v && v !== "return_reason" ? v : "Return Reason"; })();
+const salesTypeLabel = (() => { const v = typeof t === "function" ? t("sales_type") : ""; return v && v !== "sales_type" ? v : "Sales Type"; })();
+const totalDozenSoldLabel = (() => { const v = typeof t === "function" ? t("total_dozen_sold") : ""; return v && v !== "total_dozen_sold" ? v : "Total Dozen Sold"; })();
+const totalPairsSoldLabel = (() => { const v = typeof t === "function" ? t("total_pairs_sold") : ""; return v && v !== "total_pairs_sold" ? v : "Total Pairs Sold"; })();
+const dozenShortLabel = (() => { const v = typeof t === "function" ? t("dozen") : ""; return v && v !== "dozen" ? v : "Dozen"; })();
+const pairsShortLabel = (() => { const v = typeof t === "function" ? t("pairs") : ""; return v && v !== "pairs" ? v : "Pairs"; })();
+const saleReturnLabel = (() => { const v = typeof t === "function" ? t("sale_return_report") : ""; const text = v && v !== "sale_return_report" ? v : "Sale Return"; return String(text).replace(/\s+Report$/i, ""); })();
+const pairRateLabel = (() => { const v = typeof t === "function" ? t("pair_rate") : ""; return v && v !== "pair_rate" ? v : "Pair Rate"; })();
+const pairDiscountLabel = (() => { const v = typeof t === "function" ? t("pair_discount") : ""; return v && v !== "pair_discount" ? v : "Pair Discount"; })();
+const totalDiscountLabel = (() => { const v = typeof t === "function" ? t("total_discount") : ""; return v && v !== "total_discount" ? v : "Total Discount"; })();
+const paymentAccountLabel = (() => { const v = typeof t === "function" ? t("payment_account") : ""; return v && v !== "payment_account" ? v : "Payment Account"; })();
+const invoiceLabel = (() => { const v = typeof t === "function" ? t("invoice") : ""; return v && v !== "invoice" ? v : "Invoice"; })();
+const allLabel = typeof t === "function" ? t("all") : "All";
+const weekdayShortLabels = [t("weekday_sun_short"), t("weekday_mon_short"), t("weekday_tue_short"), t("weekday_wed_short"), t("weekday_thu_short"), t("weekday_fri_short"), t("weekday_sat_short")];
+const formatDate = (value) => formatDateDisplay(value, "-");
+const formatQty = (value) => formatNumberDisplay(value, { decimals: 3, fallback: "0" });
+const formatMoney = (value, digits = 2) => formatNumberDisplay(value, { decimals: digits, fallback: "0" });
+const resolveCustomerOptionName = (customer) => { if (!customer) return "-"; if (locale === "ur") return String(customer.name_ur || customer.name || "-"); return String(customer.name || customer.name_ur || "-"); };
+const resolveRowCustomerName = (row) => { if (!row) return "-"; if (row.customer_party_id) { if (locale === "ur") return String(row.customer_name_ur || row.customer_name_en || "-"); return String(row.customer_name_en || row.customer_name_ur || "-"); } return String(row.walk_in_customer_name || "-"); };
+const rowStatusLabel = (value) => String(value || "").trim().toUpperCase() === "LOOSE" ? (t("loose") === "loose" ? "Loose" : t("loose")) : (t("packed") === "packed" ? "Packed" : t("packed"));
+const rowStatusTone = (value) => String(value || "").trim().toUpperCase() === "LOOSE" ? "border-amber-300 bg-amber-50 text-amber-800" : "border-slate-300 bg-slate-100 text-slate-700";
+const paymentTypeLabel = (value) => String(value || "").trim().toUpperCase() === "CASH" ? t("cash_sale") : String(value || "").trim().toUpperCase() === "CREDIT" ? t("credit_sale") : "-";
+const paymentTypeTone = (value) => String(value || "").trim().toUpperCase() === "CASH" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : String(value || "").trim().toUpperCase() === "CREDIT" ? "border-amber-300 bg-amber-50 text-amber-700" : "border-slate-300 bg-slate-50 text-slate-700";
+const voucherStatusLabel = (value) => { const normalized = String(value || "").trim().toUpperCase(); if (normalized === "APPROVED") return t("approved") === "approved" ? "Approved" : t("approved"); if (normalized === "PENDING") return t("pending") === "pending" ? "Pending" : t("pending"); if (normalized === "REJECTED") return t("rejected") === "rejected" ? "Rejected" : t("rejected"); return normalized || "-"; };
+const voucherStatusTone = (value) => { const normalized = String(value || "").trim().toUpperCase(); if (normalized === "APPROVED") return "border-emerald-300 bg-emerald-50 text-emerald-700"; if (normalized === "PENDING") return "border-amber-300 bg-amber-50 text-amber-700"; if (normalized === "REJECTED") return "border-rose-300 bg-rose-50 text-rose-700"; return "border-slate-300 bg-slate-50 text-slate-700"; };
+const remainingTone = (value) => Number(value || 0) > 0 ? "border-amber-300 bg-amber-50 text-amber-700" : "border-emerald-300 bg-emerald-50 text-emerald-700";
+const advancedFilterEntries = [
+  selectedPartyId ? t("party_name") : "",
+  selectedGroupId ? articleGroupLabel : "",
+  selectedSubgroupId ? articleSubgroupLabel : "",
+  selectedCategoryId ? articleCategoryLabel : "",
+  selectedSalesmanId ? t("salesman") : "",
+  selectedVoucherStatus !== "all" ? t("status") : "",
+  showReceiveAccountFilter && selectedReceiveIntoAccountId ? t("receive_into_account") : "",
+  showReturnReasonFilter && selectedReturnReasonId ? returnReasonLabel : "",
+].filter(Boolean);
+const advancedFilterCount = advancedFilterEntries.length;
+const advancedFilterSummary = advancedFilterEntries.join(", ");
+const detailStaticColumnCount = 1
+  + (selectedOrderBy !== "voucher" ? 2 : 0)
+  + (selectedOrderBy !== "voucher" ? 1 : 0)
+  + (selectedOrderBy !== "article" ? 1 : 0)
+  + 1
+  + (selectedOrderBy !== "voucher" ? 1 : 0)
+  + 1
+  + (showReturnReasonFilter ? 1 : 0);
+const detailTotalsLabelSpan = detailStaticColumnCount;
+const detailMetricColumnCount = 5 + (selectedOrderBy === "voucher" ? 1 : 0);
+const detailColumnCount = detailStaticColumnCount + detailMetricColumnCount + (includeBranchColumn ? 1 : 0);
+const distinctCount = (rows, key) => { const values = new Set(); (rows || []).forEach((row) => { const value = row?.[key]; if (value !== null && value !== undefined && String(value).trim() !== "") values.add(String(value)); }); return values.size; };
+%>
+<div class="mx-auto w-full max-w-none space-y-4 px-2">
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <h1 class="text-xl font-display font-semibold tracking-tight text-ink sm:text-2xl"><%= pageTitle %></h1>
+    <% if (filters?.invalidFilterInput) { %><div class="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800"><%= t("date_filters_auto_corrected") %></div><% } %>
+    <form method="post" action="<%= reportPath %>" class="mt-3 max-w-6xl rounded-xl border border-slate-200 bg-slate-50/30 p-3 sm:p-4" data-sales-report-filter-form>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="load_report" value="1">
+      <div class="space-y-3">
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+          <button
+            type="button"
+            class="relative inline-flex h-10 w-10 items-center justify-center self-end rounded-lg border border-slate-300 bg-white text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+            data-advanced-filter-toggle
+            aria-expanded="false"
+            aria-label="<%= t('advanced_filters') !== 'advanced_filters' ? t('advanced_filters') : 'Advanced Filters' %>"
+            title="<%= t('advanced_filters') !== 'advanced_filters' ? t('advanced_filters') : 'Advanced Filters' %>"
+          >
+            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <path d="M3 5h14M6 10h8M8 15h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+            <% if (advancedFilterCount > 0) { %>
+              <span class="absolute -right-1.5 -top-1.5 inline-flex min-w-[1.1rem] items-center justify-center rounded-full bg-accent px-1 py-0.5 text-[10px] font-bold text-white"><%= advancedFilterCount %></span>
+            <% } %>
+          </button>
+          <% if (advancedFilterCount > 0) { %>
+            <div class="text-right text-xs font-medium text-slate-600 sm:max-w-[32rem]">
+              <span class="font-semibold text-slate-700"><%= t("advanced_filters") !== "advanced_filters" ? t("advanced_filters") : "Advanced Filters" %>:</span>
+              <span><%= advancedFilterSummary %></span>
+            </div>
+          <% } %>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= dateRangeLabel %></label>
+          <div class="sm:col-span-9">
+            <div class="relative" data-date-range-wrap>
+              <input type="text" readonly value="<%= `${filters?.from || ''} - ${filters?.to || ''}` %>" data-date-range-input class="h-10 w-full cursor-pointer rounded-lg border border-slate-300 bg-white px-3 pr-10 text-sm">
+              <button type="button" class="absolute inset-y-0 right-2 inline-flex items-center text-slate-500 hover:text-slate-700" data-date-range-toggle aria-label="<%= t('open_date_range_picker') %>">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+              </button>
+              <div class="absolute left-0 z-50 mt-2 hidden max-h-[62vh] overflow-auto rounded-xl border border-slate-200 bg-white p-2.5 shadow-lg" style="width:min(700px,calc(100vw - 1rem));" data-date-range-panel>
+                <div class="grid grid-cols-1 gap-2 lg:grid-cols-[156px_1fr]">
+                  <div class="space-y-1.5">
+                    <div><div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('from_date') %></div><div class="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700" data-date-range-from-display>-</div></div>
+                    <div><div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('to_date') %></div><div class="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700" data-date-range-to-display>-</div></div>
+                  </div>
+                  <div>
+                    <div class="mb-1.5 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600" data-date-range-caption><%= t('select_date_range') %></div>
+                    <div class="grid grid-cols-1 gap-3 xl:grid-cols-[1fr_auto_1fr]">
+                      <div class="min-w-[210px] rounded-lg border border-slate-200 bg-slate-50/40 p-2">
+                        <div class="mb-1 flex items-center justify-between gap-2"><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-prev>&larr;</button><div class="text-center text-xs font-semibold text-slate-700" data-date-range-month-1-label></div><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-next>&rarr;</button></div>
+                        <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-500"><% weekdayShortLabels.forEach((weekdayLabel) => { %><span><%= weekdayLabel %></span><% }) %></div>
+                        <div class="mt-1 grid grid-cols-7 gap-1" data-date-range-month-1-grid></div>
+                      </div>
+                      <div class="hidden xl:block w-px bg-slate-200 self-stretch"></div>
+                      <div class="min-w-[210px] rounded-lg border border-slate-200 bg-slate-50/40 p-2">
+                        <div class="mb-1 flex items-center justify-between gap-2"><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-2-prev>&larr;</button><div class="text-center text-xs font-semibold text-slate-700" data-date-range-month-2-label></div><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-2-next>&rarr;</button></div>
+                        <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-500"><% weekdayShortLabels.forEach((weekdayLabel) => { %><span><%= weekdayLabel %></span><% }) %></div>
+                        <div class="mt-1 grid grid-cols-7 gap-1" data-date-range-month-2-grid></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="mt-1.5 flex items-center justify-end gap-2"><button type="button" class="rounded-lg border border-slate-300 bg-white px-3 py-1.25 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700" data-date-range-cancel><%= t('cancel') %></button><button type="button" class="rounded-lg bg-accent px-3 py-1.25 text-xs font-semibold uppercase tracking-[0.08em] text-white" data-date-range-apply><%= t('apply') %></button></div>
+              </div>
+            </div>
+            <input type="hidden" name="from_date" value="<%= filters?.from || '' %>" data-from-date-hidden>
+            <input type="hidden" name="to_date" value="<%= filters?.to || '' %>" data-to-date-hidden>
+          </div>
+        </div>
+
+        <div class="hidden space-y-3 rounded-2xl border border-slate-200/80 bg-white/70 p-3" data-advanced-filter-panel>
+          <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+            <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("party_name") %></label>
+            <div class="sm:col-span-9">
+              <select name="party_id" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified">
+                <option value=""><%= allLabel %></option>
+                <% customerOptions.forEach((customer) => { %>
+                  <option value="<%= customer.id %>" <%= selectedPartyId === Number(customer.id) ? "selected" : "" %>><%= resolveCustomerOptionName(customer) %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+            <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("status") %></label>
+            <div class="sm:col-span-9">
+              <select name="voucher_status" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+                <option value="all" <%= selectedVoucherStatus === "all" ? "selected" : "" %>><%= allLabel %></option>
+                <option value="approved" <%= selectedVoucherStatus === "approved" ? "selected" : "" %>><%= t("approved") %></option>
+                <option value="pending" <%= selectedVoucherStatus === "pending" ? "selected" : "" %>><%= t("pending") %></option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+            <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= articleGroupLabel %></label>
+            <div class="sm:col-span-9">
+              <select name="group_id" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified">
+                <option value=""><%= allLabel %></option>
+                <% groupOptions.forEach((group) => { %>
+                  <option value="<%= group.id %>" <%= selectedGroupId === Number(group.id) ? "selected" : "" %>><%= group.name %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+            <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= articleSubgroupLabel %></label>
+            <div class="sm:col-span-9">
+              <select name="subgroup_id" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified">
+                <option value=""><%= allLabel %></option>
+                <% subgroupOptions.forEach((subgroup) => { %>
+                  <option value="<%= subgroup.id %>" <%= selectedSubgroupId === Number(subgroup.id) ? "selected" : "" %>><%= subgroup.name %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+            <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= articleCategoryLabel %></label>
+            <div class="sm:col-span-9">
+              <select name="category_id" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified">
+                <option value=""><%= allLabel %></option>
+                <% categoryOptions.forEach((category) => { %>
+                  <option value="<%= category.id %>" <%= selectedCategoryId === Number(category.id) ? "selected" : "" %>><%= locale === "ur" ? (category.name_ur || category.name || "-") : (category.name || category.name_ur || "-") %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+
+          <% if (showReturnReasonFilter) { %>
+            <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+              <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= returnReasonLabel %></label>
+              <div class="sm:col-span-9">
+                <select name="return_reason_id" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified">
+                  <option value=""><%= allLabel %></option>
+                  <% returnReasonOptions.forEach((reason) => { %>
+                    <option value="<%= reason.id %>" <%= selectedReturnReasonId === Number(reason.id) ? "selected" : "" %>><%= reason.description || reason.code || "-" %></option>
+                  <% }) %>
+                </select>
+              </div>
+            </div>
+          <% } %>
+
+          <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+            <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("salesman") %></label>
+            <div class="sm:col-span-9">
+              <select name="salesman_employee_id" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified">
+                <option value=""><%= allLabel %></option>
+                <% salesmanOptions.forEach((salesman) => { %>
+                  <option value="<%= salesman.id %>" <%= selectedSalesmanId === Number(salesman.id) ? "selected" : "" %>><%= salesman.name || salesman.code || "-" %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+
+          <% if (showReceiveAccountFilter) { %>
+            <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+              <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("receive_into_account") %></label>
+              <div class="sm:col-span-9">
+                <select name="receive_into_account_id" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified">
+                  <option value=""><%= allLabel %></option>
+                  <% receiveAccountOptions.forEach((account) => { %>
+                    <option value="<%= account.id %>" <%= selectedReceiveIntoAccountId === Number(account.id) ? "selected" : "" %>><%= account.name || account.code || "-" %></option>
+                  <% }) %>
+                </select>
+              </div>
+            </div>
+          <% } %>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t("branches") : t("branch") %></label>
+          <div class="sm:col-span-9">
+            <% if (user?.isAdmin) { %>
+              <select name="branch_id" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified">
+                <option value=""><%= allLabel %></option>
+                <% branchOptions.forEach((branch) => { %>
+                  <option value="<%= branch.id %>" <%= selectedBranchId === Number(branch.id) ? "selected" : "" %>><%= branch.name %></option>
+                <% }) %>
+              </select>
+            <% } else { %>
+              <input type="text" readonly class="h-10 w-full rounded-lg border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700" value="<%= branchOptions[0]?.name || branchId || '-' %>">
+            <% } %>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("order_by") %></label>
+          <div class="sm:col-span-9">
+            <div class="flex flex-wrap gap-2 rounded-xl bg-white/60 p-1">
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedOrderBy === 'payment_account' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="order_by" value="payment_account" <%= selectedOrderBy === "payment_account" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= paymentAccountLabel %></span>
+              </label>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedOrderBy === 'voucher' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="order_by" value="voucher" <%= selectedOrderBy === "voucher" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= invoiceLabel %></span>
+              </label>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedOrderBy === 'article' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="order_by" value="article" <%= selectedOrderBy === "article" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t("article") %></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= salesTypeLabel %></label>
+          <div class="sm:col-span-9">
+            <div class="flex flex-wrap gap-2 rounded-xl bg-white/60 p-1">
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedSaleType === 'all' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="sale_type" value="all" <%= selectedSaleType === "all" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= allLabel %></span>
+              </label>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedSaleType === 'cash' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="sale_type" value="cash" <%= selectedSaleType === "cash" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t("cash_sale") %></span>
+              </label>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedSaleType === 'credit' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="sale_type" value="credit" <%= selectedSaleType === "credit" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t("credit_sale") %></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("report_type") %></label>
+          <div class="sm:col-span-9">
+            <div class="flex flex-wrap gap-2 rounded-xl bg-white/60 p-1">
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedReportType === 'details' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="report_type" value="details" <%= selectedReportType === "details" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t("details") %></span>
+              </label>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedReportType === 'summary' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="report_type" value="summary" <%= selectedReportType === "summary" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t("summary") %></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-center gap-2 pt-1 sm:grid-cols-12">
+          <div class="sm:col-start-4 sm:col-span-9 flex flex-wrap items-center gap-2">
+            <button type="submit" class="inline-flex items-center rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= t("load") %></button>
+            <a href="<%= reportPath %>" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= t("cancel") %></a>
+          </div>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm" data-report-print-area>
+    <% if (reportLoaded && hasData) { %>
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div></div>
+        <div class="flex items-center gap-2" data-report-controls>
+          <button type="button" class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40" data-download-report <%= reportLoaded && hasData ? "" : "disabled" %>><%= t("download") %></button>
+          <button type="button" class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40" data-print-report <%= reportLoaded && hasData ? "" : "disabled" %>><%= t("print") %></button>
+          <%- include("../../base/partials/table-controls", { t, showStatus: false }) %>
+        </div>
+      </div>
+    <% } else { %>
+      <div class="flex items-center justify-end gap-2" data-report-controls><button type="button" class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40" data-download-report <%= reportLoaded && hasData ? "" : "disabled" %>><%= t("download") %></button><button type="button" class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40" data-print-report <%= reportLoaded && hasData ? "" : "disabled" %>><%= t("print") %></button></div>
+    <% } %>
+    <% if (!reportLoaded) { %><div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= t("load_report_to_view") %></div>
+    <% } else if (!hasData) { %><div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= t("no_entries") %></div>
+    <% } else { %>
+      <% if (selectedReportType === "details") { %>
+        <div class="relative mt-3 overflow-x-auto rounded-2xl border border-slate-200">
+          <table class="min-w-[1480px] w-full text-sm tabular-nums" data-table data-report-table>
+            <thead class="bg-slate-100 text-slate-700">
+              <tr>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("date") %></th>
+                <% if (selectedOrderBy !== "voucher") { %>
+                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= invoiceLabel %></th>
+                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("bill_number") %></th>
+                <% } %>
+                <% if (selectedOrderBy !== "voucher") { %>
+                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("customer_name") %></th>
+                <% } %>
+                <% if (selectedOrderBy !== "article") { %>
+                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("article") %></th>
+                <% } %>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("salesman") %></th>
+                <% if (selectedOrderBy !== "voucher") { %>
+                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= salesTypeLabel %></th>
+                <% } %>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("status") %></th>
+                <% if (showReturnReasonFilter) { %>
+                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= returnReasonLabel %></th>
+                <% } %>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("quantity") %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= pairRateLabel %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("gross_amount") %></th>
+                <% if (selectedOrderBy === "voucher") { %>
+                  <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= pairDiscountLabel %></th>
+                <% } %>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= totalDiscountLabel %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("net_amount") %></th>
+                <% if (includeBranchColumn) { %>
+                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("branch") %></th>
+                <% } %>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100" data-table-body>
+              <% groups.forEach((group) => { %>
+                <tr class="bg-slate-700 text-white" data-row data-active="true" data-report-group-header data-report-group-key="<%= group.key %>">
+                  <td colspan="<%= detailColumnCount %>" class="px-3 py-1.5">
+                    <div class="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 lg:flex-row lg:items-center lg:justify-between">
+                      <% if (selectedOrderBy === "voucher") { %>
+                        <div class="min-w-0 flex flex-wrap items-center gap-2">
+                          <span class="rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white">VR No. <%= group.voucher_no || "-" %></span>
+                          <% if (group.bill_number) { %>
+                            <span class="rounded-md border border-white/30 bg-white/10 px-2 py-0.5 text-xs font-semibold text-white"><%= `${t("bill_number")}: ${group.bill_number}` %></span>
+                          <% } %>
+                          <span class="rounded-md border border-white/15 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white">
+                            <span class="mr-1 text-slate-200"><%= t("customer_name") %>:</span>
+                            <span><%= group.customer_label || "-" %></span>
+                          </span>
+                        </div>
+                        <div class="min-w-0 flex flex-wrap items-center gap-2 lg:justify-end">
+                          <span class="inline-flex rounded-md border px-2 py-0.5 text-xs font-bold <%= paymentTypeTone(group.payment_type) %>"><%= paymentTypeLabel(group.payment_type) %></span>
+                          <span class="inline-flex min-w-0 max-w-full items-center gap-1 rounded-md border border-white/15 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white whitespace-nowrap">
+                            <span class="shrink-0 text-slate-200"><%= t("receive_into_account") %>:</span>
+                            <span class="block max-w-[14rem] truncate"><%= group.receive_account_name || "-" %></span>
+                          </span>
+                        </div>
+                      <% } else if (selectedOrderBy === "article") { %>
+                        <div class="flex flex-wrap items-center gap-2">
+                          <span class="rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white"><%= group.label || "-" %></span>
+                          <span class="rounded-md border border-white/20 bg-transparent px-2 py-0.5 text-xs font-semibold text-slate-100"><%= `${t("parties_label")}: ${distinctCount(group.lines, "customer_party_id")}` %></span>
+                        </div>
+                      <% } else { %>
+                        <div class="flex flex-wrap items-center gap-2">
+                          <span class="rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white"><%= group.label || "-" %></span>
+                        </div>
+                      <% } %>
+                    </div>
+                  </td>
+                </tr>
+                <% (group.lines || []).forEach((line) => { %>
+                  <tr class="<%= String(line.movement_kind || '').trim().toUpperCase() === 'RETURN' ? 'bg-rose-50 hover:bg-rose-100' : String(line.row_status || '').trim().toUpperCase() === 'LOOSE' ? 'bg-amber-50 hover:bg-amber-100' : 'bg-white odd:bg-slate-50 even:bg-white hover:bg-slate-100' %>" data-row data-active="true" data-report-group-line data-report-group-key="<%= group.key %>">
+                    <td class="px-3 py-2"><%= formatDate(line.voucher_date) %></td>
+                    <% if (selectedOrderBy !== "voucher") { %>
+                      <td class="px-3 py-2 font-semibold text-slate-800"><%= line.voucher_no || "-" %></td>
+                      <td class="px-3 py-2"><%= line.bill_number || "-" %></td>
+                    <% } %>
+                    <% if (selectedOrderBy !== "voucher") { %>
+                      <td class="px-3 py-2"><%= resolveRowCustomerName(line) %></td>
+                    <% } %>
+                    <% if (selectedOrderBy !== "article") { %>
+                      <td class="px-3 py-2"><%= line.item_label || "-" %></td>
+                    <% } %>
+                    <td class="px-3 py-2"><%= line.salesman_name || "-" %></td>
+                    <% if (selectedOrderBy !== "voucher") { %>
+                      <td class="px-3 py-2"><%= paymentTypeLabel(line.payment_type) %></td>
+                    <% } %>
+                    <td class="px-3 py-2">
+                      <span class="inline-flex rounded-md border px-2 py-0.5 text-[11px] font-bold uppercase tracking-[0.08em] <%= rowStatusTone(line.row_status) %>"><%= rowStatusLabel(line.row_status) %></span>
+                    </td>
+                    <% if (showReturnReasonFilter) { %>
+                      <td class="px-3 py-2"><%= line.return_reason_label || "-" %></td>
+                    <% } %>
+                    <td class="px-3 py-2 text-right font-semibold">
+                      <div class="flex flex-wrap items-center justify-end gap-2">
+                        <% if (String(line.movement_kind || '').trim().toUpperCase() === 'RETURN') { %>
+                          <span class="inline-flex rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-rose-700"><%= saleReturnLabel %></span>
+                        <% } %>
+                        <span class="<%= Number(line.input_qty !== undefined ? line.input_qty : line.qty || 0) < 0 ? 'tabular-nums text-rose-700' : 'tabular-nums text-slate-900' %>"><%= formatQty(line.input_qty !== undefined ? line.input_qty : line.qty || 0) %></span>
+                      </div>
+                    </td>
+                    <td class="px-3 py-2 text-right"><%= formatMoney(line.rate || 0) %></td>
+                    <td class="px-3 py-2 text-right"><%= formatMoney(line.gross_amount || 0) %></td>
+                    <% if (selectedOrderBy === "voucher") { %>
+                      <td class="px-3 py-2 text-right"><%= formatMoney(line.pair_discount || 0) %></td>
+                    <% } %>
+                    <td class="px-3 py-2 text-right text-rose-700"><%= formatMoney(line.discount_amount || 0) %></td>
+                    <td class="px-3 py-2 text-right font-semibold text-emerald-700"><%= formatMoney(line.net_amount || 0) %></td>
+                    <% if (includeBranchColumn) { %>
+                      <td class="px-3 py-2"><%= line.branch_name || "-" %></td>
+                    <% } %>
+                  </tr>
+                <% }) %>
+                <tr class="bg-accent text-white" data-row data-active="true" data-report-group-total data-report-group-key="<%= group.key %>">
+                  <% if (selectedOrderBy === "voucher") { %>
+                    <td colspan="<%= detailTotalsLabelSpan %>" class="px-3 py-2"></td>
+                    <td class="px-3 py-2 text-right align-top">
+                      <div class="flex items-center justify-end gap-3 leading-tight">
+                        <span class="self-center text-[10px] font-extrabold uppercase tracking-[0.08em] text-white"><%= t("total") %></span>
+                        <div class="flex flex-col items-end gap-0.5">
+                          <span class="inline-flex items-baseline gap-1 text-[10px] font-extrabold uppercase tracking-[0.06em] text-white">
+                            <span class="text-white/90"><%= dozenShortLabel %>:</span>
+                            <span class="font-black tabular-nums text-white"><%= formatQty(group.total_packed_qty_input || 0) %></span>
+                          </span>
+                          <span class="inline-flex items-baseline gap-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-100">
+                            <span class="text-slate-200"><%= pairsShortLabel %>:</span>
+                            <span class="tabular-nums text-white/90"><%= formatQty(group.total_loose_qty_input || 0) %></span>
+                          </span>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="px-3 py-2 text-right font-extrabold"></td>
+                  <% } else { %>
+                    <td colspan="<%= detailTotalsLabelSpan %>" class="px-3 py-2">
+                      <div class="flex w-full flex-wrap items-center justify-center gap-x-5 gap-y-1 text-center">
+                        <span class="text-xs font-extrabold uppercase tracking-[0.08em] text-white"><%= t("total") %></span>
+                        <span class="inline-flex items-baseline gap-1 text-[10px] font-extrabold uppercase tracking-[0.06em] text-white">
+                          <span class="text-white"><%= dozenShortLabel %>:</span>
+                          <span class="font-black tabular-nums text-white"><%= formatQty(group.total_packed_qty_input || 0) %></span>
+                        </span>
+                        <span class="inline-flex items-baseline gap-1 text-[10px] font-bold uppercase tracking-[0.06em] text-slate-100">
+                          <span class="text-slate-200"><%= pairsShortLabel %>:</span>
+                          <span class="tabular-nums text-white"><%= formatQty(group.total_loose_qty_input || 0) %></span>
+                        </span>
+                      </div>
+                    </td>
+                    <td class="px-3 py-2 text-right font-extrabold"></td>
+                    <td class="px-3 py-2 text-right font-extrabold"></td>
+                  <% } %>
+                  <td class="px-3 py-2 text-right font-extrabold tabular-nums"><%= formatMoney(group.total_gross_amount || 0) %></td>
+                  <% if (selectedOrderBy === "voucher") { %>
+                    <td class="px-3 py-2 text-right font-extrabold tabular-nums"><%= formatMoney(group.effective_pair_discount || 0) %></td>
+                  <% } %>
+                  <td class="px-3 py-2 text-right font-extrabold tabular-nums"><%= formatMoney(group.total_discount_amount || 0) %></td>
+                  <td class="px-3 py-2 text-right font-extrabold tabular-nums"><%= formatMoney(group.total_net_amount || 0) %></td>
+                  <% if (includeBranchColumn) { %>
+                    <td class="px-3 py-2"></td>
+                  <% } %>
+                </tr>
+                <% if (selectedOrderBy === "voucher") { %>
+                  <tr class="bg-slate-200/50 text-slate-700" data-row data-active="true" data-report-group-credit-summary data-report-group-key="<%= group.key %>">
+                    <td colspan="<%= detailColumnCount - (includeBranchColumn ? 2 : 1) %>" class="px-3 py-1.5">
+                      <% if (Number(group.total_remaining_amount || 0) > 0) { %>
+                        <div class="ml-auto flex max-w-full flex-nowrap items-center justify-end gap-1 text-[10px] font-semibold leading-tight">
+                          <span class="text-[9px] font-extrabold uppercase tracking-[0.08em] text-slate-700"><%= t("remaining_amount") %>:</span>
+                          <span class="text-[11px] font-extrabold tabular-nums text-amber-900"><%= formatMoney(group.total_remaining_amount || 0) %></span>
+                        </div>
+                      <% } %>
+                    </td>
+                    <td class="px-3 py-1.5 text-right">
+                      <div class="flex items-baseline justify-end gap-1 whitespace-nowrap leading-tight">
+                        <span class="text-[9px] font-extrabold uppercase tracking-[0.08em] text-slate-700"><%= t("payment_received_amount") %>:</span>
+                        <span class="text-[11px] font-extrabold tabular-nums text-slate-900"><%= formatMoney(group.total_payment_received_amount || 0) %></span>
+                      </div>
+                    </td>
+                    <% if (includeBranchColumn) { %>
+                      <td class="px-3 py-1.5"></td>
+                    <% } %>
+                  </tr>
+                <% } %>
+              <% }) %>
+              <tr class="bg-slate-800 text-white" data-row data-active="true" data-report-grand-total>
+                <% if (selectedOrderBy === "voucher") { %>
+                  <td colspan="<%= detailTotalsLabelSpan %>" class="px-3 py-3 text-right">
+                    <span class="inline-flex items-center rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[11px] font-semibold tracking-[0.08em] text-white"><%= t("grand_total") %></span>
+                  </td>
+                  <td class="px-3 py-3 text-right align-middle">
+                    <div class="flex flex-wrap items-center justify-end gap-x-4 gap-y-1.5 leading-tight">
+                      <span class="inline-flex items-baseline gap-1 text-[11px] font-semibold tracking-[0.04em] text-white">
+                        <span class="text-white/75"><%= dozenShortLabel %>:</span>
+                        <span class="font-black tabular-nums text-white"><%= formatQty(totals.packedQty || 0) %></span>
+                      </span>
+                      <span class="inline-flex items-baseline gap-1 text-[10px] font-medium tracking-[0.04em] text-slate-200">
+                        <span class="text-slate-300"><%= pairsShortLabel %>:</span>
+                        <span class="tabular-nums text-white/90"><%= formatQty(totals.looseQty || 0) %></span>
+                      </span>
+                    </div>
+                  </td>
+                  <td class="px-3 py-3 text-right font-extrabold"></td>
+                  <td class="px-3 py-3 text-right font-extrabold tabular-nums text-white"><%= formatMoney(totals.grossAmount || 0) %></td>
+                  <td class="px-3 py-3 text-right font-extrabold tabular-nums text-white"><%= formatMoney(totals.effectivePairDiscount || 0) %></td>
+                  <td class="px-3 py-3 text-right font-extrabold tabular-nums text-white"><%= formatMoney(totals.discountAmount || 0) %></td>
+                  <td class="px-3 py-3 text-right font-black tabular-nums text-emerald-100"><%= formatMoney(totals.netAmount || 0) %></td>
+                  <% if (includeBranchColumn) { %>
+                    <td class="px-3 py-3"></td>
+                  <% } %>
+                <% } else { %>
+                  <td colspan="<%= detailTotalsLabelSpan %>" class="px-3 py-3 text-right align-middle">
+                    <span class="inline-flex items-center rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[11px] font-semibold tracking-[0.08em] text-white"><%= t("grand_total") %></span>
+                  </td>
+                  <td class="px-3 py-3 text-right align-middle">
+                    <div class="flex flex-wrap items-center justify-end gap-x-4 gap-y-1.5 leading-tight">
+                      <span class="inline-flex items-baseline gap-1 text-[11px] font-semibold tracking-[0.04em] text-white">
+                        <span class="text-white/75"><%= dozenShortLabel %>:</span>
+                        <span class="font-black tabular-nums text-white"><%= formatQty(totals.packedQty || 0) %></span>
+                      </span>
+                      <span class="inline-flex items-baseline gap-1 text-[10px] font-medium tracking-[0.04em] text-slate-200">
+                        <span class="text-slate-300"><%= pairsShortLabel %>:</span>
+                        <span class="tabular-nums text-white/90"><%= formatQty(totals.looseQty || 0) %></span>
+                      </span>
+                    </div>
+                  </td>
+                  <td class="px-3 py-3 text-right font-extrabold"></td>
+                  <td class="px-3 py-3 text-right font-extrabold tabular-nums text-white"><%= formatMoney(totals.grossAmount || 0) %></td>
+                  <td class="px-3 py-3 text-right font-extrabold tabular-nums text-white"><%= formatMoney(totals.discountAmount || 0) %></td>
+                  <td class="px-3 py-3 text-right font-black tabular-nums text-emerald-100"><%= formatMoney(totals.netAmount || 0) %></td>
+                  <% if (includeBranchColumn) { %>
+                    <td class="px-3 py-3"></td>
+                  <% } %>
+                <% } %>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      <% } else { %>
+        <div class="relative mt-3 overflow-x-auto rounded-2xl border border-slate-200">
+          <table class="min-w-[1180px] w-full text-sm tabular-nums" data-table data-report-table>
+            <thead class="bg-slate-100 text-slate-700">
+              <tr>
+                <% if (selectedOrderBy === "voucher") { %>
+                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= invoiceLabel %></th>
+                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("date") %></th>
+                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("bill_number") %></th>
+                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("customer_name") %></th>
+                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("receive_into_account") %></th>
+                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= salesTypeLabel %></th>
+                  <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("payment_received_amount") %></th>
+                  <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("remaining_amount") %></th>
+                <% } else if (selectedOrderBy === "article") { %>
+                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("group") %></th>
+                  <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("parties_label") %></th>
+                  <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("vouchers_label") %></th>
+                <% } else { %>
+                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= paymentAccountLabel %></th>
+                  <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("vouchers_label") %></th>
+                  <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("items_label") %></th>
+                <% } %>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("quantity") %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= pairRateLabel %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("gross_amount") %></th>
+                <% if (selectedOrderBy === "voucher") { %>
+                  <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= pairDiscountLabel %></th>
+                <% } %>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= totalDiscountLabel %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("net_amount") %></th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100" data-table-body>
+              <% summaryRows.forEach((row) => { %>
+                <tr class="<%= selectedOrderBy === 'voucher' && Number(row.total_qty || 0) < 0 ? 'bg-rose-50 hover:bg-rose-100' : 'odd:bg-slate-50 even:bg-white hover:bg-slate-100' %>" data-row data-active="true" data-report-entry>
+                  <% if (selectedOrderBy === "voucher") { %>
+                    <td class="px-3 py-2 font-semibold text-slate-800"><%= row.voucher_no || "-" %></td>
+                    <td class="px-3 py-2"><%= formatDate(row.voucher_date) %></td>
+                    <td class="px-3 py-2"><%= row.bill_number || "-" %></td>
+                    <td class="px-3 py-2"><%= row.customer_label || "-" %></td>
+                    <td class="px-3 py-2"><%= row.receive_account_name || "-" %></td>
+                    <td class="px-3 py-2">
+                      <span class="inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold <%= paymentTypeTone(row.payment_type) %>"><%= paymentTypeLabel(row.payment_type) %></span>
+                    </td>
+                    <% if (String(row.payment_type || '').trim().toUpperCase() === 'CREDIT') { %>
+                      <td class="px-3 py-2 text-right font-semibold text-sky-700"><%= formatMoney(row.payment_received_amount || 0) %></td>
+                      <td class="px-3 py-2 text-right font-semibold <%= Number(row.remaining_amount || 0) > 0 ? 'text-amber-700' : 'text-emerald-700' %>"><%= formatMoney(row.remaining_amount || 0) %></td>
+                    <% } else { %>
+                      <td class="px-3 py-2 text-right text-slate-400">-</td>
+                      <td class="px-3 py-2 text-right text-slate-400">-</td>
+                    <% } %>
+                  <% } else if (selectedOrderBy === "article") { %>
+                    <td class="px-3 py-2 font-medium text-slate-800"><%= row.group_label || "-" %></td>
+                    <td class="px-3 py-2 text-right"><%= row.customer_count || 0 %></td>
+                    <td class="px-3 py-2 text-right"><%= row.voucher_count || 0 %></td>
+                  <% } else { %>
+                    <td class="px-3 py-2 font-medium text-slate-800"><%= row.group_label || "-" %></td>
+                    <td class="px-3 py-2 text-right"><%= row.voucher_count || 0 %></td>
+                    <td class="px-3 py-2 text-right"><%= row.article_count || 0 %></td>
+                  <% } %>
+                  <td class="px-3 py-2 text-right font-semibold">
+                    <div class="flex flex-wrap items-center justify-end gap-2">
+                      <% if (selectedOrderBy === "voucher" && Number(row.total_qty || 0) < 0) { %>
+                        <span class="inline-flex rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-rose-700"><%= saleReturnLabel %></span>
+                      <% } %>
+                      <span class="<%= Number(row.total_qty || 0) < 0 ? 'tabular-nums text-rose-700' : 'tabular-nums text-slate-900' %>"><%= formatQty(row.total_qty || 0) %></span>
+                    </div>
+                  </td>
+                  <td class="px-3 py-2 text-right"><%= formatMoney(row.avg_rate || 0) %></td>
+                  <td class="px-3 py-2 text-right"><%= formatMoney(row.total_gross_amount || 0) %></td>
+                  <% if (selectedOrderBy === "voucher") { %>
+                    <td class="px-3 py-2 text-right"><%= formatMoney(row.effective_pair_discount || 0) %></td>
+                  <% } %>
+                  <td class="px-3 py-2 text-right text-rose-700"><%= formatMoney(row.total_discount_amount || 0) %></td>
+                  <td class="px-3 py-2 text-right font-semibold text-emerald-700"><%= formatMoney(row.total_net_amount || 0) %></td>
+                </tr>
+              <% }) %>
+              <tr class="bg-rose-700 text-white" data-row data-active="true" data-report-grand-total>
+                <% if (selectedOrderBy === "voucher") { %>
+                  <td colspan="8" class="px-3 py-2">
+                    <div class="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+                      <span class="text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></span>
+                      <span class="inline-flex items-baseline gap-1 rounded-md border border-white/20 bg-white/10 px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-[0.06em] text-white">
+                        <span class="text-white"><%= totalDozenSoldLabel %>:</span>
+                        <span class="font-black tabular-nums text-white"><%= formatQty(totals.packedQty || 0) %></span>
+                      </span>
+                      <span class="inline-flex items-baseline gap-1 text-[10px] font-bold uppercase tracking-[0.06em] text-rose-100">
+                        <span><%= totalPairsSoldLabel %>:</span>
+                        <span class="tabular-nums text-white"><%= formatQty(totals.looseQty || 0) %></span>
+                      </span>
+                    </div>
+                  </td>
+                <% } else { %>
+                  <td colspan="3" class="px-3 py-2">
+                    <div class="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+                      <span class="text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></span>
+                      <span class="inline-flex items-baseline gap-1 rounded-md border border-white/20 bg-white/10 px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-[0.06em] text-white">
+                        <span class="text-white"><%= totalDozenSoldLabel %>:</span>
+                        <span class="font-black tabular-nums text-white"><%= formatQty(totals.packedQty || 0) %></span>
+                      </span>
+                      <span class="inline-flex items-baseline gap-1 text-[10px] font-bold uppercase tracking-[0.06em] text-rose-100">
+                        <span><%= totalPairsSoldLabel %>:</span>
+                        <span class="tabular-nums text-white"><%= formatQty(totals.looseQty || 0) %></span>
+                      </span>
+                    </div>
+                  </td>
+                <% } %>
+                <td class="px-3 py-2 text-right font-extrabold"></td>
+                <td class="px-3 py-2"></td>
+                <td class="px-3 py-2 text-right font-extrabold"><%= formatMoney(totals.grossAmount || 0) %></td>
+                <% if (selectedOrderBy === "voucher") { %>
+                  <td class="px-3 py-2 text-right font-extrabold"><%= formatMoney(totals.effectivePairDiscount || 0) %></td>
+                <% } %>
+                <td class="px-3 py-2 text-right font-extrabold"><%= formatMoney(totals.discountAmount || 0) %></td>
+                <td class="px-3 py-2 text-right font-extrabold"><%= formatMoney(totals.netAmount || 0) %></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+      <%- include("../../base/partials/table-footer", { t }) %>
+    <% } %>
+  </section>
+</div>
+<script><%- include("../../base/partials/date-range-picker.js") %></script>
+<script><%- include("../../base/partials/searchable-select.js") %></script>
+<script>(function(){
+  if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+  const form = document.querySelector("[data-sales-report-filter-form]");
+  if (form && typeof window.initReportDateRangePicker === "function") {
+    window.initReportDateRangePicker({
+      root: form,
+      invalidDateRangeMessage: <%- JSON.stringify(t("invalid_date_range")) %>,
+      selectDateRangeText: <%- JSON.stringify(t("select_date_range")) %>
+    });
+  }
+
+  const advancedFilterToggle = document.querySelector("[data-advanced-filter-toggle]");
+  const advancedFilterPanel = document.querySelector("[data-advanced-filter-panel]");
+  if (advancedFilterToggle && advancedFilterPanel) {
+    advancedFilterToggle.addEventListener("click", () => {
+      const expanded = advancedFilterToggle.getAttribute("aria-expanded") === "true";
+      advancedFilterToggle.setAttribute("aria-expanded", expanded ? "false" : "true");
+      advancedFilterPanel.classList.toggle("hidden", expanded);
+    });
+  }
+
+  document.querySelector("[data-print-report]")?.addEventListener("click", () => window.print());
+  document.querySelector("[data-download-report]")?.addEventListener("click", () => {
+    const table = document.querySelector("[data-report-table]");
+    if (!table) return;
+    const csv = Array.from(table.querySelectorAll("tr"))
+      .filter((tr) => !tr.classList.contains("hidden"))
+      .map((tr) => Array.from(tr.querySelectorAll("th,td"))
+        .map((cell) => `"${String(cell.textContent || "").replace(/\s+/g, " ").trim().replace(/"/g, '""')}"`)
+        .join(","))
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = <%- JSON.stringify(downloadName) %>;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(link.href);
+  });
+
+  const searchInput = document.querySelector("[data-search-input]");
+  const pageSizeSelect = document.querySelector("[data-page-size]");
+  const prevButton = document.querySelector("[data-prev-page]");
+  const nextButton = document.querySelector("[data-next-page]");
+  const pageIndicator = document.querySelector("[data-page-indicator]");
+  const showingCount = document.querySelector("[data-showing-count]");
+  const detailGroupHeaders = Array.from(document.querySelectorAll("[data-report-group-header]"));
+  const grandTotalRows = Array.from(document.querySelectorAll("[data-report-grand-total]"));
+  const summaryRows = Array.from(document.querySelectorAll("[data-report-entry]"));
+  const isDetailMode = detailGroupHeaders.length > 0;
+  if (!pageSizeSelect || !pageIndicator || !showingCount) return;
+
+  let currentPage = 1;
+
+  const getPageSize = () => {
+    const raw = String(pageSizeSelect.value || "10").toLowerCase();
+    if (raw === "all") return Number.POSITIVE_INFINITY;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 10;
+  };
+
+  const hideNodes = (nodes) => nodes.forEach((node) => node.classList.add("hidden"));
+  const showNodes = (nodes) => nodes.forEach((node) => node.classList.remove("hidden"));
+
+  const getDetailEntries = () => detailGroupHeaders.map((header) => {
+    const key = header.getAttribute("data-report-group-key");
+    const related = Array.from(document.querySelectorAll("[data-report-group-key]"))
+      .filter((node) => node.getAttribute("data-report-group-key") === key);
+    return {
+      key,
+      nodes: related,
+      searchText: related.map((node) => String(node.textContent || "")).join(" ").toLowerCase()
+    };
+  });
+
+  const getSummaryEntries = () => summaryRows.map((row, index) => ({
+    key: `summary-${index}`,
+    nodes: [row],
+    searchText: String(row.textContent || "").toLowerCase()
+  }));
+
+  const render = () => {
+    const query = String(searchInput?.value || "").trim().toLowerCase();
+    const allEntries = isDetailMode ? getDetailEntries() : getSummaryEntries();
+    const filteredEntries = query
+      ? allEntries.filter((entry) => entry.searchText.includes(query))
+      : allEntries;
+    const pageSize = getPageSize();
+
+    let totalPages = 1;
+    let visibleEntries = filteredEntries;
+    let startIndex = 0;
+
+    if (Number.isFinite(pageSize)) {
+      totalPages = Math.max(1, Math.ceil(filteredEntries.length / pageSize));
+      currentPage = Math.min(currentPage, totalPages);
+      startIndex = (currentPage - 1) * pageSize;
+      visibleEntries = filteredEntries.slice(startIndex, startIndex + pageSize);
+    } else {
+      currentPage = 1;
+    }
+
+    allEntries.forEach((entry) => hideNodes(entry.nodes));
+    visibleEntries.forEach((entry) => showNodes(entry.nodes));
+
+    const hasVisibleEntries = visibleEntries.length > 0;
+    grandTotalRows.forEach((row) => {
+      row.classList.toggle("hidden", !hasVisibleEntries);
+    });
+
+    const startLabel = filteredEntries.length === 0 ? 0 : startIndex + 1;
+    const endLabel = filteredEntries.length === 0 ? 0 : startIndex + visibleEntries.length;
+    showingCount.textContent = `${<%- JSON.stringify(t("showing")) %>} ${startLabel} ${<%- JSON.stringify(t("to")) %>} ${endLabel} ${<%- JSON.stringify(t("of")) %>} ${filteredEntries.length} ${<%- JSON.stringify(t("entries")) %>}`;
+    pageIndicator.textContent = String(currentPage);
+
+    if (prevButton) {
+      prevButton.disabled = currentPage <= 1;
+      prevButton.classList.toggle("opacity-40", currentPage <= 1);
+    }
+    if (nextButton) {
+      nextButton.disabled = currentPage >= totalPages;
+      nextButton.classList.toggle("opacity-40", currentPage >= totalPages);
+    }
+  };
+
+  searchInput?.addEventListener("input", () => {
+    currentPage = 1;
+    render();
+  });
+  pageSizeSelect.addEventListener("change", () => {
+    currentPage = 1;
+    render();
+  });
+  prevButton?.addEventListener("click", () => {
+    if (currentPage <= 1) return;
+    currentPage -= 1;
+    render();
+  });
+  nextButton?.addEventListener("click", () => {
+    currentPage += 1;
+    render();
+  });
+
+  render();
+})();</script>

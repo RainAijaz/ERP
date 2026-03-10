@@ -53,6 +53,7 @@ const page = {
   ],
   columns: [
     { key: "id", label: "ID" },
+    { key: "code", label: "code" },
     { key: "name", label: "account_name" },
     { key: "name_ur", label: "Name (Urdu)" },
     { key: "account_type", label: "account_type" },
@@ -492,7 +493,7 @@ router.post("/:id", requirePermission("SCREEN", "master_data.accounts", "edit"),
       values.posting_class_id = null;
     }
 
-    if (hasField(page, "code") && existing.code) {
+    if (existing.code) {
       values.code = existing.code;
     } else {
       values.code = await generateUniqueCode({

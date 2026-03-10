@@ -1,4 +1,4 @@
-<div class="flex flex-col gap-6">
+<div class="flex flex-col gap-6" data-admin-page-root>
   <div class="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-200 bg-white/90 px-6 py-5 shadow-sm">
     <div class="space-y-1">
       <h1 class="text-2xl font-bold text-slate-800"><%= t('users') %></h1>
@@ -12,9 +12,9 @@
     <% } %>
   </div>
 
-  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-    <div class="overflow-x-auto">
-      <table class="w-full text-left text-sm">
+  <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden" data-admin-table-card>
+    <div class="overflow-x-auto" data-admin-table-scroll>
+      <table class="w-full text-left text-sm" data-admin-table>
         <thead class="bg-slate-50 border-b border-slate-100">
           <tr>
             <th class="px-6 py-4 font-semibold text-slate-600"><%= t('username') %></th>
@@ -107,6 +107,33 @@
   </div>
 </div>
 
+<style>
+  [data-admin-page-root],
+  [data-admin-table-card] {
+    min-width: 0;
+  }
+  [data-admin-table-scroll] {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+  }
+  [data-admin-table] {
+    width: 100%;
+    table-layout: fixed;
+  }
+  @media (max-width: 640px) {
+    [data-admin-table] th,
+    [data-admin-table] td {
+      padding-left: 0.5rem;
+      padding-right: 0.5rem;
+      font-size: 0.72rem;
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+    }
+  }
+</style>
+
 <%- include('../../base/partials/modal-shell') %>
 <%- include('../../base/partials/confirm-modal', { t, csrfToken }) %>
 
@@ -147,6 +174,8 @@
     max-width: 100%;
   }
 </style>
+
+<script><%- include('../../base/partials/searchable-select.js') %></script>
 
 <script>
   const csrfToken = "<%= csrfToken %>";
@@ -288,6 +317,7 @@
         const form = content.querySelector('form');
         if (form) form.addEventListener('submit', handleFormSubmit);
         initMultiSelects(content);
+        if (window.initSearchableSelects) window.initSearchableSelects();
         if (window.wireUrduTranslateForms) window.wireUrduTranslateForms();
       })
         .catch(err => content.innerHTML = `<div class="p-6 text-red-600 text-center">${i18nLoadFailed}</div>`);

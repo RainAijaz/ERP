@@ -4,9 +4,21 @@ const { insertActivityLog } = require("../../utils/audit-log");
 const { syncVoucherGlPostingTx } = require("./gl-posting-service");
 const { resolveReportType } = require("../../utils/report-filter-types");
 
-const ACCOUNT_FILTER_REPORTS = new Set(["account_activity_ledger", "cash_book"]);
-const REPORT_MODE_REPORTS = new Set(["account_activity_ledger", "voucher_register", "cash_book"]);
-const VOUCHER_REGISTER_REPORTS = new Set(["voucher_register", "cash_voucher_register", "bank_transactions", "journal_voucher_register"]);
+const ACCOUNT_FILTER_REPORTS = new Set([
+  "account_activity_ledger",
+  "cash_book",
+]);
+const REPORT_MODE_REPORTS = new Set([
+  "account_activity_ledger",
+  "voucher_register",
+  "cash_book",
+]);
+const VOUCHER_REGISTER_REPORTS = new Set([
+  "voucher_register",
+  "cash_voucher_register",
+  "bank_transactions",
+  "journal_voucher_register",
+]);
 const EXPENSE_TREND_GRANULARITY_SET = new Set(["daily", "weekly", "monthly"]);
 const EXPENSE_TREND_TOP_DRIVER_LIMIT = 6;
 const EXPENSE_VOUCHER_TYPE_BY_FILTER = {
@@ -36,14 +48,16 @@ const resolveVoucherTypeFilter = (value, fallback = "cash") => {
   const key = String(value || "")
     .trim()
     .toLowerCase();
-  if (Object.prototype.hasOwnProperty.call(VOUCHER_TYPE_BY_FILTER, key)) return key;
+  if (Object.prototype.hasOwnProperty.call(VOUCHER_TYPE_BY_FILTER, key))
+    return key;
   return fallback;
 };
 const resolveExpenseVoucherTypeFilter = (value, fallback = "all") => {
   const key = String(value || "")
     .trim()
     .toLowerCase();
-  if (Object.prototype.hasOwnProperty.call(EXPENSE_VOUCHER_TYPE_BY_FILTER, key)) return key;
+  if (Object.prototype.hasOwnProperty.call(EXPENSE_VOUCHER_TYPE_BY_FILTER, key))
+    return key;
   return fallback;
 };
 const resolveExpenseTrendGranularity = (value, fallback = "daily") => {
@@ -58,8 +72,10 @@ const normalizeReportKey = (value) =>
   String(value || "")
     .trim()
     .toLowerCase();
-const supportsAccountFilter = (reportKey) => ACCOUNT_FILTER_REPORTS.has(normalizeReportKey(reportKey));
-const supportsReportModeFilter = (reportKey) => REPORT_MODE_REPORTS.has(normalizeReportKey(reportKey));
+const supportsAccountFilter = (reportKey) =>
+  ACCOUNT_FILTER_REPORTS.has(normalizeReportKey(reportKey));
+const supportsReportModeFilter = (reportKey) =>
+  REPORT_MODE_REPORTS.has(normalizeReportKey(reportKey));
 const toIdList = (value) => {
   const raw = Array.isArray(value) ? value : [value];
   return [
@@ -104,9 +120,15 @@ const parseYmdStrict = (value) => {
   const y = Number(m[1]);
   const mm = Number(m[2]);
   const dd = Number(m[3]);
-  if (!Number.isInteger(y) || !Number.isInteger(mm) || !Number.isInteger(dd)) return null;
+  if (!Number.isInteger(y) || !Number.isInteger(mm) || !Number.isInteger(dd))
+    return null;
   const dt = new Date(Date.UTC(y, mm - 1, dd));
-  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mm - 1 || dt.getUTCDate() !== dd) return null;
+  if (
+    dt.getUTCFullYear() !== y ||
+    dt.getUTCMonth() !== mm - 1 ||
+    dt.getUTCDate() !== dd
+  )
+    return null;
   return `${m[1]}-${m[2]}-${m[3]}`;
 };
 
@@ -158,7 +180,10 @@ const getCommonFilters = (req, reportKey = "") => {
   let branchIds = [];
   const branchIdsFromQuery = toIdList(requestInput.branch_ids);
   if (req.user?.isAdmin) {
-    const hasBranchParam = Object.prototype.hasOwnProperty.call(requestInput, "branch_id");
+    const hasBranchParam = Object.prototype.hasOwnProperty.call(
+      requestInput,
+      "branch_id",
+    );
     if (branchIdsFromQuery.length) {
       branchIds = branchIdsFromQuery;
       branchId = branchIds.length === 1 ? branchIds[0] : null;
@@ -167,7 +192,10 @@ const getCommonFilters = (req, reportKey = "") => {
       branchId = Number.isInteger(selected) && selected > 0 ? selected : null;
       branchIds = branchId ? [branchId] : [];
     } else {
-      if (normalizedReportKey === "expense_analysis" || normalizedReportKey === "expense_trends") {
+      if (
+        normalizedReportKey === "expense_analysis" ||
+        normalizedReportKey === "expense_trends"
+      ) {
         branchId = null;
         branchIds = [];
       } else {
@@ -179,20 +207,28 @@ const getCommonFilters = (req, reportKey = "") => {
     branchId = Number(req.branchId || 0) || null;
     branchIds = branchId ? [branchId] : [];
   }
-  const accountId = supportsAccountFilter(normalizedReportKey) ? Number(requestInput.account_id || 0) || null : null;
+  const accountId = supportsAccountFilter(normalizedReportKey)
+    ? Number(requestInput.account_id || 0) || null
+    : null;
   const reportMode = supportsReportModeFilter(normalizedReportKey)
     ? resolveReportType(requestInput.report_mode, "details")
     : "details";
 
-  let voucherType = normalizedReportKey === "expense_analysis"
-    ? resolveExpenseVoucherTypeFilter(requestInput.voucher_type, "all")
-    : resolveVoucherTypeFilter(requestInput.voucher_type, "cash");
+  let voucherType =
+    normalizedReportKey === "expense_analysis"
+      ? resolveExpenseVoucherTypeFilter(requestInput.voucher_type, "all")
+      : resolveVoucherTypeFilter(requestInput.voucher_type, "cash");
   if (normalizedReportKey === "cash_voucher_register") voucherType = "cash";
   if (normalizedReportKey === "bank_transactions") voucherType = "bank";
-  if (normalizedReportKey === "journal_voucher_register") voucherType = "journal";
-  const reportType = normalizedReportKey === "expense_analysis" ? "department_breakdown" : null;
+  if (normalizedReportKey === "journal_voucher_register")
+    voucherType = "journal";
+  const reportType =
+    normalizedReportKey === "expense_analysis" ? "department_breakdown" : null;
   const reportLoaded = toBool(requestInput.load_report, false);
-  const departmentIds = normalizedReportKey === "expense_analysis" ? toIdList(requestInput.department_ids) : [];
+  const departmentIds =
+    normalizedReportKey === "expense_analysis"
+      ? toIdList(requestInput.department_ids)
+      : [];
   const breakdownStart =
     normalizedReportKey === "expense_analysis"
       ? (() => {
@@ -202,11 +238,22 @@ const getCommonFilters = (req, reportKey = "") => {
           return raw === "group" || raw === "account" ? raw : "department";
         })()
       : "department";
-  const cashierAccountId = normalizedReportKey === "expense_analysis" ? Number(requestInput.cashier_account_id || 0) || null : null;
+  const cashierAccountId =
+    normalizedReportKey === "expense_analysis"
+      ? Number(requestInput.cashier_account_id || 0) || null
+      : null;
   const trendGranularity =
-    normalizedReportKey === "expense_trends" ? resolveExpenseTrendGranularity(requestInput.time_granularity, "daily") : null;
-  const trendAccountGroupId = normalizedReportKey === "expense_trends" ? Number(requestInput.account_group_id || 0) || null : null;
-  const trendAccountId = normalizedReportKey === "expense_trends" ? Number(requestInput.trend_account_id || 0) || null : null;
+    normalizedReportKey === "expense_trends"
+      ? resolveExpenseTrendGranularity(requestInput.time_granularity, "daily")
+      : null;
+  const trendAccountGroupId =
+    normalizedReportKey === "expense_trends"
+      ? Number(requestInput.account_group_id || 0) || null
+      : null;
+  const trendAccountId =
+    normalizedReportKey === "expense_trends"
+      ? Number(requestInput.trend_account_id || 0) || null
+      : null;
 
   return {
     from,
@@ -232,7 +279,23 @@ const getCommonFilters = (req, reportKey = "") => {
 };
 
 const baseLedger = ({ from, to, branchId, accountId }) => {
-  let query = knex("erp.gl_entry as ge").select("ge.entry_date", "ge.branch_id", "ge.account_id", "a.name as account_name", "vh.voucher_type_code", "vh.voucher_no", "vh.status as voucher_status", "ge.dr", "ge.cr", "ge.narration").leftJoin("erp.accounts as a", "a.id", "ge.account_id").leftJoin("erp.gl_batch as gb", "gb.id", "ge.batch_id").leftJoin("erp.voucher_header as vh", "vh.id", "gb.source_voucher_id").orderBy("ge.entry_date", "desc");
+  let query = knex("erp.gl_entry as ge")
+    .select(
+      "ge.entry_date",
+      "ge.branch_id",
+      "ge.account_id",
+      "a.name as account_name",
+      "vh.voucher_type_code",
+      "vh.voucher_no",
+      "vh.status as voucher_status",
+      "ge.dr",
+      "ge.cr",
+      "ge.narration",
+    )
+    .leftJoin("erp.accounts as a", "a.id", "ge.account_id")
+    .leftJoin("erp.gl_batch as gb", "gb.id", "ge.batch_id")
+    .leftJoin("erp.voucher_header as vh", "vh.id", "gb.source_voucher_id")
+    .orderBy("ge.entry_date", "desc");
 
   query = buildDateFilter(query, "ge.entry_date", from, to);
   if (branchId) query = query.where("ge.branch_id", branchId);
@@ -245,7 +308,14 @@ const getCashBook = async (filters) => {
   const selectedCashAccountId = Number(filters.accountId || 0) || null;
 
   const cashAccountScope = (queryBuilder) => {
-    queryBuilder.join("erp.accounts as a", "a.id", "ge.account_id").join("erp.account_posting_classes as apc", "apc.id", "a.posting_class_id").whereRaw("upper(COALESCE(apc.code, '')) = 'CASH'");
+    queryBuilder
+      .join("erp.accounts as a", "a.id", "ge.account_id")
+      .join(
+        "erp.account_posting_classes as apc",
+        "apc.id",
+        "a.posting_class_id",
+      )
+      .whereRaw("upper(COALESCE(apc.code, '')) = 'CASH'");
     if (selectedCashAccountId) {
       queryBuilder.andWhere("ge.account_id", selectedCashAccountId);
     }
@@ -255,21 +325,36 @@ const getCashBook = async (filters) => {
     .leftJoin("erp.gl_batch as gb", "gb.id", "ge.batch_id")
     .leftJoin("erp.voucher_header as vh", "vh.id", "gb.source_voucher_id")
     .modify(cashAccountScope)
-    .select(knex.raw("COALESCE(SUM(COALESCE(ge.dr, 0) - COALESCE(ge.cr, 0)), 0) as opening_balance"))
+    .select(
+      knex.raw(
+        "COALESCE(SUM(COALESCE(ge.dr, 0) - COALESCE(ge.cr, 0)), 0) as opening_balance",
+      ),
+    )
     .where(function whereApprovedOrManual() {
       this.whereNull("vh.id").orWhere("vh.status", "APPROVED");
     })
     .modify((queryBuilder) => {
-      if (filters.branchId) queryBuilder.where("ge.branch_id", filters.branchId);
+      if (filters.branchId)
+        queryBuilder.where("ge.branch_id", filters.branchId);
       if (filters.from) queryBuilder.where("ge.entry_date", "<", filters.from);
     })
     .first();
 
-  const selectedAccount = selectedCashAccountId ? await knex("erp.accounts").select("id", "name").where({ id: selectedCashAccountId }).first() : null;
+  const selectedAccount = selectedCashAccountId
+    ? await knex("erp.accounts")
+        .select("id", "name")
+        .where({ id: selectedCashAccountId })
+        .first()
+    : null;
   const boundaryCashAccount = selectedAccount?.name || null;
   const openingBalance = Number(openingRow?.opening_balance || 0);
 
-  const createBoundaryRow = (voucherTypeCode, entryDate, balance, totals = null) => {
+  const createBoundaryRow = (
+    voucherTypeCode,
+    entryDate,
+    balance,
+    totals = null,
+  ) => {
     const payload = {
       entry_date: entryDate || null,
       voucher_type_code: voucherTypeCode,
@@ -292,28 +377,11 @@ const getCashBook = async (filters) => {
       .leftJoin("erp.gl_batch as gb", "gb.id", "ge.batch_id")
       .leftJoin("erp.voucher_header as vh", "vh.id", "gb.source_voucher_id")
       .leftJoin("erp.accounts as a", "a.id", "ge.account_id")
-      .leftJoin("erp.account_posting_classes as apc", "apc.id", "a.posting_class_id")
-      .leftJoin("erp.branches as b", "b.id", "ge.branch_id")
-      .select(knex.raw("to_char(ge.entry_date, 'YYYY-MM-DD') as entry_date"), "vh.voucher_type_code", "vh.voucher_no", "a.name as cash_account", "b.name as branch_name", knex.raw("COALESCE(MAX(NULLIF(vh.remarks,'')), MAX(NULLIF(ge.narration,''))) as description"), knex.raw("COALESCE(SUM(COALESCE(ge.dr,0)), 0) as dr"), knex.raw("COALESCE(SUM(COALESCE(ge.cr,0)), 0) as cr"))
-      .where(function whereApprovedOrManual() {
-        this.whereNull("vh.id").orWhere("vh.status", "APPROVED");
-      })
-      .whereRaw("upper(COALESCE(apc.code, '')) = 'CASH'")
-      .groupBy("ge.entry_date", "vh.voucher_type_code", "vh.voucher_no", "a.name", "b.name")
-      .orderBy("ge.entry_date", "asc")
-      .orderBy("vh.voucher_no", "asc");
-
-    if (selectedCashAccountId) summaryQuery = summaryQuery.where("ge.account_id", selectedCashAccountId);
-    summaryQuery = buildDateFilter(summaryQuery, "ge.entry_date", filters.from, filters.to);
-    if (filters.branchId) summaryQuery = summaryQuery.where("ge.branch_id", filters.branchId);
-    rows = await summaryQuery;
-  } else {
-    // Detail mode must follow GL entries so every approved voucher type (including PI/PR) is reflected.
-    let detailsQuery = knex("erp.gl_entry as ge")
-      .leftJoin("erp.gl_batch as gb", "gb.id", "ge.batch_id")
-      .leftJoin("erp.voucher_header as vh", "vh.id", "gb.source_voucher_id")
-      .leftJoin("erp.accounts as a", "a.id", "ge.account_id")
-      .leftJoin("erp.account_posting_classes as apc", "apc.id", "a.posting_class_id")
+      .leftJoin(
+        "erp.account_posting_classes as apc",
+        "apc.id",
+        "a.posting_class_id",
+      )
       .leftJoin("erp.branches as b", "b.id", "ge.branch_id")
       .select(
         knex.raw("to_char(ge.entry_date, 'YYYY-MM-DD') as entry_date"),
@@ -321,7 +389,58 @@ const getCashBook = async (filters) => {
         "vh.voucher_no",
         "a.name as cash_account",
         "b.name as branch_name",
-        knex.raw("COALESCE(NULLIF(ge.narration, ''), NULLIF(vh.remarks, '')) as description"),
+        knex.raw(
+          "COALESCE(MAX(NULLIF(vh.remarks,'')), MAX(NULLIF(ge.narration,''))) as description",
+        ),
+        knex.raw("COALESCE(SUM(COALESCE(ge.dr,0)), 0) as dr"),
+        knex.raw("COALESCE(SUM(COALESCE(ge.cr,0)), 0) as cr"),
+      )
+      .where(function whereApprovedOrManual() {
+        this.whereNull("vh.id").orWhere("vh.status", "APPROVED");
+      })
+      .whereRaw("upper(COALESCE(apc.code, '')) = 'CASH'")
+      .groupBy(
+        "ge.entry_date",
+        "vh.voucher_type_code",
+        "vh.voucher_no",
+        "a.name",
+        "b.name",
+      )
+      .orderBy("ge.entry_date", "asc")
+      .orderBy("vh.voucher_no", "asc");
+
+    if (selectedCashAccountId)
+      summaryQuery = summaryQuery.where("ge.account_id", selectedCashAccountId);
+    summaryQuery = buildDateFilter(
+      summaryQuery,
+      "ge.entry_date",
+      filters.from,
+      filters.to,
+    );
+    if (filters.branchId)
+      summaryQuery = summaryQuery.where("ge.branch_id", filters.branchId);
+    rows = await summaryQuery;
+  } else {
+    // Detail mode must follow GL entries so every approved voucher type (including PI/PR) is reflected.
+    let detailsQuery = knex("erp.gl_entry as ge")
+      .leftJoin("erp.gl_batch as gb", "gb.id", "ge.batch_id")
+      .leftJoin("erp.voucher_header as vh", "vh.id", "gb.source_voucher_id")
+      .leftJoin("erp.accounts as a", "a.id", "ge.account_id")
+      .leftJoin(
+        "erp.account_posting_classes as apc",
+        "apc.id",
+        "a.posting_class_id",
+      )
+      .leftJoin("erp.branches as b", "b.id", "ge.branch_id")
+      .select(
+        knex.raw("to_char(ge.entry_date, 'YYYY-MM-DD') as entry_date"),
+        "vh.voucher_type_code",
+        "vh.voucher_no",
+        "a.name as cash_account",
+        "b.name as branch_name",
+        knex.raw(
+          "COALESCE(NULLIF(ge.narration, ''), NULLIF(vh.remarks, '')) as description",
+        ),
         knex.raw("COALESCE(ge.dr, 0) as dr"),
         knex.raw("COALESCE(ge.cr, 0) as cr"),
         "ge.id",
@@ -337,8 +456,14 @@ const getCashBook = async (filters) => {
       detailsQuery = detailsQuery.where("ge.account_id", selectedCashAccountId);
     }
 
-    detailsQuery = buildDateFilter(detailsQuery, "ge.entry_date", filters.from, filters.to);
-    if (filters.branchId) detailsQuery = detailsQuery.where("ge.branch_id", filters.branchId);
+    detailsQuery = buildDateFilter(
+      detailsQuery,
+      "ge.entry_date",
+      filters.from,
+      filters.to,
+    );
+    if (filters.branchId)
+      detailsQuery = detailsQuery.where("ge.branch_id", filters.branchId);
     rows = await detailsQuery;
   }
 
@@ -387,13 +512,28 @@ const getCashBook = async (filters) => {
   ];
 };
 
-const requiresApprovalForVoucherAction = async (trx, voucherTypeCode, action) => {
-  const policy = await trx("erp.approval_policy").select("requires_approval").where({ entity_type: "VOUCHER_TYPE", entity_key: voucherTypeCode, action }).first();
+const requiresApprovalForVoucherAction = async (
+  trx,
+  voucherTypeCode,
+  action,
+) => {
+  const policy = await trx("erp.approval_policy")
+    .select("requires_approval")
+    .where({ entity_type: "VOUCHER_TYPE", entity_key: voucherTypeCode, action })
+    .first();
   if (policy) return policy.requires_approval === true;
   return false;
 };
 
-const queueVoucherApprovalRequest = async ({ trx, req, voucherId, voucherTypeCode, summary, oldValue = null, newValue = null }) => {
+const queueVoucherApprovalRequest = async ({
+  trx,
+  req,
+  voucherId,
+  voucherTypeCode,
+  summary,
+  oldValue = null,
+  newValue = null,
+}) => {
   const [row] = await trx("erp.approval_request")
     .insert({
       branch_id: req.branchId,
@@ -427,7 +567,12 @@ const queueVoucherApprovalRequest = async ({ trx, req, voucherId, voucherTypeCod
   return row?.id || null;
 };
 
-const updateBankVoucherLineStatus = async ({ req, voucherId, lineId, nextStatus }) => {
+const updateBankVoucherLineStatus = async ({
+  req,
+  voucherId,
+  lineId,
+  nextStatus,
+}) => {
   if (!req?.user?.id) throw new HttpError(401, "Not authenticated");
   if (!req.branchId) throw new HttpError(400, "Branch context is required");
 
@@ -452,7 +597,16 @@ const updateBankVoucherLineStatus = async ({ req, voucherId, lineId, nextStatus 
   const result = await knex.transaction(async (trx) => {
     const row = await trx("erp.voucher_line as vl")
       .join("erp.voucher_header as vh", "vh.id", "vl.voucher_header_id")
-      .select("vl.id as line_id", "vl.voucher_header_id", "vl.line_no", "vl.meta", "vh.id as voucher_id", "vh.voucher_no", "vh.status as voucher_status", "vh.voucher_type_code")
+      .select(
+        "vl.id as line_id",
+        "vl.voucher_header_id",
+        "vl.line_no",
+        "vl.meta",
+        "vh.id as voucher_id",
+        "vh.voucher_no",
+        "vh.status as voucher_status",
+        "vh.voucher_type_code",
+      )
       .where({
         "vh.id": normalizedVoucherId,
         "vh.branch_id": req.branchId,
@@ -462,7 +616,9 @@ const updateBankVoucherLineStatus = async ({ req, voucherId, lineId, nextStatus 
       .first();
     if (!row) throw new HttpError(404, "Bank voucher line not found");
 
-    const currentStatus = String(row?.meta?.bank_status || row?.voucher_status || "PENDING")
+    const currentStatus = String(
+      row?.meta?.bank_status || row?.voucher_status || "PENDING",
+    )
       .trim()
       .toUpperCase();
     if (currentStatus === normalizedStatus) {
@@ -479,8 +635,13 @@ const updateBankVoucherLineStatus = async ({ req, voucherId, lineId, nextStatus 
       };
     }
 
-    const policyRequiresApproval = await requiresApprovalForVoucherAction(trx, "BANK_VOUCHER", "edit");
-    const queuedForApproval = !canEdit || (policyRequiresApproval && !canApprove);
+    const policyRequiresApproval = await requiresApprovalForVoucherAction(
+      trx,
+      "BANK_VOUCHER",
+      "edit",
+    );
+    const queuedForApproval =
+      !canEdit || (policyRequiresApproval && !canApprove);
     if (queuedForApproval) {
       const approvalRequestId = await queueVoucherApprovalRequest({
         trx,
@@ -519,7 +680,10 @@ const updateBankVoucherLineStatus = async ({ req, voucherId, lineId, nextStatus 
     await trx("erp.voucher_line")
       .where({ id: Number(row.line_id) })
       .update({
-        meta: trx.raw("jsonb_set(COALESCE(meta, '{}'::jsonb), '{bank_status}', to_jsonb(?::text), true)", [normalizedStatus]),
+        meta: trx.raw(
+          "jsonb_set(COALESCE(meta, '{}'::jsonb), '{bank_status}', to_jsonb(?::text), true)",
+          [normalizedStatus],
+        ),
       });
 
     await syncVoucherGlPostingTx({ trx, voucherId: Number(row.voucher_id) });
@@ -559,7 +723,10 @@ const updateBankVoucherLineStatus = async ({ req, voucherId, lineId, nextStatus 
 };
 
 const getVoucherRegister = async (filters) => {
-  const voucherTypeCode = VOUCHER_TYPE_BY_FILTER[resolveVoucherTypeFilter(filters.voucherType, "cash")] || "CASH_VOUCHER";
+  const voucherTypeCode =
+    VOUCHER_TYPE_BY_FILTER[
+      resolveVoucherTypeFilter(filters.voucherType, "cash")
+    ] || "CASH_VOUCHER";
   const includeBranchColumn = !filters.branchId;
   const includeBankStatus = voucherTypeCode === "BANK_VOUCHER";
   const includeBankReferenceNoInSummary = false;
@@ -575,15 +742,43 @@ const getVoucherRegister = async (filters) => {
       .leftJoin("erp.accounts as ah", "ah.id", "vh.header_account_id")
       .leftJoin("erp.users as u", "u.id", "vh.created_by")
       .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
-      .select(knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"), "vh.voucher_no", "b.name as branch_name", knex.raw("COALESCE(NULLIF(vh.remarks, ''), NULL) as note"), "ah.name as cash_account", knex.raw("COALESCE(NULLIF(u.name, ''), u.username) as created_by"), knex.raw("COALESCE(SUM(COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0)), 0) as total_dr"), knex.raw("COALESCE(SUM(COALESCE(NULLIF(vl.meta->>'credit','')::numeric, 0)), 0) as total_cr"))
+      .select(
+        knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"),
+        "vh.voucher_no",
+        "b.name as branch_name",
+        knex.raw("COALESCE(NULLIF(vh.remarks, ''), NULL) as note"),
+        "ah.name as cash_account",
+        knex.raw("COALESCE(NULLIF(u.name, ''), u.username) as created_by"),
+        knex.raw(
+          "COALESCE(SUM(COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0)), 0) as total_dr",
+        ),
+        knex.raw(
+          "COALESCE(SUM(COALESCE(NULLIF(vl.meta->>'credit','')::numeric, 0)), 0) as total_cr",
+        ),
+      )
       .where("vh.voucher_type_code", voucherTypeCode)
       .andWhere("vh.status", "APPROVED")
-      .groupBy("vh.id", "vh.voucher_date", "vh.voucher_no", "b.name", "vh.remarks", "ah.name", "u.name", "u.username")
+      .groupBy(
+        "vh.id",
+        "vh.voucher_date",
+        "vh.voucher_no",
+        "b.name",
+        "vh.remarks",
+        "ah.name",
+        "u.name",
+        "u.username",
+      )
       .orderBy("vh.voucher_date", "asc")
       .orderBy("vh.voucher_no", "asc");
 
-    summaryQuery = buildDateFilter(summaryQuery, "vh.voucher_date", filters.from, filters.to);
-    if (filters.branchId) summaryQuery = summaryQuery.where("vh.branch_id", filters.branchId);
+    summaryQuery = buildDateFilter(
+      summaryQuery,
+      "vh.voucher_date",
+      filters.from,
+      filters.to,
+    );
+    if (filters.branchId)
+      summaryQuery = summaryQuery.where("vh.branch_id", filters.branchId);
 
     const rows = await summaryQuery;
     return rows.map((row) => {
@@ -611,17 +806,39 @@ const getVoucherRegister = async (filters) => {
       .leftJoin("erp.parties as p", "p.id", "vl.party_id")
       .leftJoin("erp.labours as l", "l.id", "vl.labour_id")
       .leftJoin("erp.employees as e", "e.id", "vl.employee_id")
-      .leftJoin("erp.departments as d", knex.raw("d.id = NULLIF(vl.meta->>'department_id','')::bigint"))
+      .leftJoin(
+        "erp.departments as d",
+        knex.raw("d.id = NULLIF(vl.meta->>'department_id','')::bigint"),
+      )
       .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
-      .select(knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"), "vh.voucher_no", "b.name as branch_name", "ah.name as cash_account", knex.raw("COALESCE(a.name, p.name, l.name, e.name, NULL) as against_account"), knex.raw("NULLIF(vl.meta->>'description','') as description"), "d.name as department", knex.raw("COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0) as dr"), knex.raw("COALESCE(NULLIF(vl.meta->>'credit','')::numeric, 0) as cr"), "vl.line_no")
+      .select(
+        knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"),
+        "vh.voucher_no",
+        "b.name as branch_name",
+        "ah.name as cash_account",
+        knex.raw(
+          "COALESCE(a.name, p.name, l.name, e.name, NULL) as against_account",
+        ),
+        knex.raw("NULLIF(vl.meta->>'description','') as description"),
+        "d.name as department",
+        knex.raw("COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0) as dr"),
+        knex.raw("COALESCE(NULLIF(vl.meta->>'credit','')::numeric, 0) as cr"),
+        "vl.line_no",
+      )
       .where("vh.voucher_type_code", voucherTypeCode)
       .andWhere("vh.status", "APPROVED")
       .orderBy("vh.voucher_date", "asc")
       .orderBy("vh.voucher_no", "asc")
       .orderBy("vl.line_no", "asc");
 
-    detailsQuery = buildDateFilter(detailsQuery, "vh.voucher_date", filters.from, filters.to);
-    if (filters.branchId) detailsQuery = detailsQuery.where("vh.branch_id", filters.branchId);
+    detailsQuery = buildDateFilter(
+      detailsQuery,
+      "vh.voucher_date",
+      filters.from,
+      filters.to,
+    );
+    if (filters.branchId)
+      detailsQuery = detailsQuery.where("vh.branch_id", filters.branchId);
 
     const rows = await detailsQuery;
     return rows
@@ -642,20 +859,49 @@ const getVoucherRegister = async (filters) => {
       .filter((row) => Number(row.dr || 0) !== 0 || Number(row.cr || 0) !== 0);
   }
 
-  if (voucherTypeCode === "JOURNAL_VOUCHER" && filters.reportMode === "summary") {
+  if (
+    voucherTypeCode === "JOURNAL_VOUCHER" &&
+    filters.reportMode === "summary"
+  ) {
     let summaryQuery = knex("erp.voucher_header as vh")
       .leftJoin("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
       .leftJoin("erp.users as u", "u.id", "vh.created_by")
       .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
-      .select(knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"), "vh.voucher_no", "b.name as branch_name", knex.raw("COALESCE(NULLIF(vh.remarks, ''), NULL) as note"), knex.raw("COALESCE(NULLIF(u.name, ''), u.username) as created_by"), knex.raw("COALESCE(SUM(COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0)), 0) as total_debit"), knex.raw("COALESCE(SUM(COALESCE(NULLIF(vl.meta->>'credit','')::numeric, 0)), 0) as total_credit"))
+      .select(
+        knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"),
+        "vh.voucher_no",
+        "b.name as branch_name",
+        knex.raw("COALESCE(NULLIF(vh.remarks, ''), NULL) as note"),
+        knex.raw("COALESCE(NULLIF(u.name, ''), u.username) as created_by"),
+        knex.raw(
+          "COALESCE(SUM(COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0)), 0) as total_debit",
+        ),
+        knex.raw(
+          "COALESCE(SUM(COALESCE(NULLIF(vl.meta->>'credit','')::numeric, 0)), 0) as total_credit",
+        ),
+      )
       .where("vh.voucher_type_code", voucherTypeCode)
       .andWhere("vh.status", "APPROVED")
-      .groupBy("vh.id", "vh.voucher_date", "vh.voucher_no", "b.name", "vh.remarks", "u.name", "u.username")
+      .groupBy(
+        "vh.id",
+        "vh.voucher_date",
+        "vh.voucher_no",
+        "b.name",
+        "vh.remarks",
+        "u.name",
+        "u.username",
+      )
       .orderBy("vh.voucher_date", "asc")
       .orderBy("vh.voucher_no", "asc");
 
-    summaryQuery = buildDateFilter(summaryQuery, "vh.voucher_date", filters.from, filters.to);
-    if (filters.branchId) summaryQuery = summaryQuery.where("vh.branch_id", filters.branchId);
+    summaryQuery = buildDateFilter(
+      summaryQuery,
+      "vh.voucher_date",
+      filters.from,
+      filters.to,
+    );
+    if (filters.branchId)
+      summaryQuery = summaryQuery.where("vh.branch_id", filters.branchId);
 
     const rows = await summaryQuery;
     return rows.map((row) => {
@@ -672,24 +918,48 @@ const getVoucherRegister = async (filters) => {
     });
   }
 
-  if (voucherTypeCode === "JOURNAL_VOUCHER" && filters.reportMode === "details") {
+  if (
+    voucherTypeCode === "JOURNAL_VOUCHER" &&
+    filters.reportMode === "details"
+  ) {
     let detailsQuery = knex("erp.voucher_header as vh")
       .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
       .leftJoin("erp.accounts as a", "a.id", "vl.account_id")
       .leftJoin("erp.parties as p", "p.id", "vl.party_id")
       .leftJoin("erp.labours as l", "l.id", "vl.labour_id")
       .leftJoin("erp.employees as e", "e.id", "vl.employee_id")
-      .leftJoin("erp.departments as d", knex.raw("d.id = NULLIF(vl.meta->>'department_id','')::bigint"))
+      .leftJoin(
+        "erp.departments as d",
+        knex.raw("d.id = NULLIF(vl.meta->>'department_id','')::bigint"),
+      )
       .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
-      .select(knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"), "vh.voucher_no", "b.name as branch_name", knex.raw("COALESCE(a.name, p.name, l.name, e.name, NULL) as account_name"), knex.raw("NULLIF(vl.meta->>'description','') as description"), "d.name as department", knex.raw("COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0) as dr"), knex.raw("COALESCE(NULLIF(vl.meta->>'credit','')::numeric, 0) as cr"), "vl.line_no")
+      .select(
+        knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"),
+        "vh.voucher_no",
+        "b.name as branch_name",
+        knex.raw(
+          "COALESCE(a.name, p.name, l.name, e.name, NULL) as account_name",
+        ),
+        knex.raw("NULLIF(vl.meta->>'description','') as description"),
+        "d.name as department",
+        knex.raw("COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0) as dr"),
+        knex.raw("COALESCE(NULLIF(vl.meta->>'credit','')::numeric, 0) as cr"),
+        "vl.line_no",
+      )
       .where("vh.voucher_type_code", voucherTypeCode)
       .andWhere("vh.status", "APPROVED")
       .orderBy("vh.voucher_date", "asc")
       .orderBy("vh.voucher_no", "asc")
       .orderBy("vl.line_no", "asc");
 
-    detailsQuery = buildDateFilter(detailsQuery, "vh.voucher_date", filters.from, filters.to);
-    if (filters.branchId) detailsQuery = detailsQuery.where("vh.branch_id", filters.branchId);
+    detailsQuery = buildDateFilter(
+      detailsQuery,
+      "vh.voucher_date",
+      filters.from,
+      filters.to,
+    );
+    if (filters.branchId)
+      detailsQuery = detailsQuery.where("vh.branch_id", filters.branchId);
 
     const rows = await detailsQuery;
     return rows
@@ -713,9 +983,26 @@ const getVoucherRegister = async (filters) => {
     let summaryQuery = knex("erp.voucher_header as vh")
       .leftJoin("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
       .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
-      .select(knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"), "vh.voucher_type_code", "vh.voucher_no", "b.name as branch_name", knex.raw("COALESCE(SUM(COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0)), 0) as dr"), knex.raw("COALESCE(SUM(COALESCE(NULLIF(vl.meta->>'credit','')::numeric, 0)), 0) as cr"))
+      .select(
+        knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"),
+        "vh.voucher_type_code",
+        "vh.voucher_no",
+        "b.name as branch_name",
+        knex.raw(
+          "COALESCE(SUM(COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0)), 0) as dr",
+        ),
+        knex.raw(
+          "COALESCE(SUM(COALESCE(NULLIF(vl.meta->>'credit','')::numeric, 0)), 0) as cr",
+        ),
+      )
       .where("vh.voucher_type_code", voucherTypeCode)
-      .groupBy("vh.id", "vh.voucher_date", "vh.voucher_type_code", "vh.voucher_no", "b.name")
+      .groupBy(
+        "vh.id",
+        "vh.voucher_date",
+        "vh.voucher_type_code",
+        "vh.voucher_no",
+        "b.name",
+      )
       .orderBy("vh.voucher_date", "asc")
       .orderBy("vh.voucher_no", "asc");
 
@@ -732,11 +1019,24 @@ const getVoucherRegister = async (filters) => {
       );
     }
     if (includeBankReferenceNoInSummary) {
-      summaryQuery = summaryQuery.select(knex.raw("COUNT(DISTINCT NULLIF(COALESCE(vl.reference_no, vl.meta->>'reference_no', ''), '')) as reference_count"), knex.raw("MIN(NULLIF(COALESCE(vl.reference_no, vl.meta->>'reference_no', ''), '')) as reference_first"));
+      summaryQuery = summaryQuery.select(
+        knex.raw(
+          "COUNT(DISTINCT NULLIF(COALESCE(vl.reference_no, vl.meta->>'reference_no', ''), '')) as reference_count",
+        ),
+        knex.raw(
+          "MIN(NULLIF(COALESCE(vl.reference_no, vl.meta->>'reference_no', ''), '')) as reference_first",
+        ),
+      );
     }
 
-    summaryQuery = buildDateFilter(summaryQuery, "vh.voucher_date", filters.from, filters.to);
-    if (filters.branchId) summaryQuery = summaryQuery.where("vh.branch_id", filters.branchId);
+    summaryQuery = buildDateFilter(
+      summaryQuery,
+      "vh.voucher_date",
+      filters.from,
+      filters.to,
+    );
+    if (filters.branchId)
+      summaryQuery = summaryQuery.where("vh.branch_id", filters.branchId);
 
     const rows = await summaryQuery;
     return rows.map((row) => {
@@ -747,11 +1047,17 @@ const getVoucherRegister = async (filters) => {
       if (!includeBankStatus) payload.voucher_type_code = row.voucher_type_code;
       if (includeBankReferenceNoInSummary) {
         const referenceCount = Number(row.reference_count || 0);
-        payload.reference_no = referenceCount <= 0 ? null : referenceCount === 1 ? row.reference_first || null : "Multiple";
+        payload.reference_no =
+          referenceCount <= 0
+            ? null
+            : referenceCount === 1
+              ? row.reference_first || null
+              : "Multiple";
       }
       payload.dr = Number(row.dr || 0);
       payload.cr = Number(row.cr || 0);
-      if (includeBankStatus) payload.status = String(row.status || "PENDING").toUpperCase();
+      if (includeBankStatus)
+        payload.status = String(row.status || "PENDING").toUpperCase();
       if (includeBranchColumn) payload.branch = row.branch_name || null;
       return payload;
     });
@@ -760,15 +1066,30 @@ const getVoucherRegister = async (filters) => {
   let detailQuery = knex("erp.voucher_header as vh")
     .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
     .leftJoin("erp.accounts as bh", "bh.id", "vh.header_account_id")
-    .leftJoin("erp.voucher_header as svh", knex.raw("svh.id = NULLIF(vl.meta->>'source_voucher_id','')::bigint"))
+    .leftJoin(
+      "erp.voucher_header as svh",
+      knex.raw("svh.id = NULLIF(vl.meta->>'source_voucher_id','')::bigint"),
+    )
     .leftJoin("erp.accounts as sa", "sa.id", "svh.header_account_id")
     .leftJoin("erp.accounts as a", "a.id", "vl.account_id")
     .leftJoin("erp.parties as p", "p.id", "vl.party_id")
     .leftJoin("erp.labours as l", "l.id", "vl.labour_id")
     .leftJoin("erp.employees as e", "e.id", "vl.employee_id")
-    .leftJoin("erp.departments as d", knex.raw("d.id = NULLIF(vl.meta->>'department_id','')::bigint"))
+    .leftJoin(
+      "erp.departments as d",
+      knex.raw("d.id = NULLIF(vl.meta->>'department_id','')::bigint"),
+    )
     .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
-    .select(knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"), "vh.voucher_no", "b.name as branch_name", "vh.id as voucher_id", "vl.id as line_id", "vl.line_no", knex.raw("COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0) as dr"), knex.raw("COALESCE(NULLIF(vl.meta->>'credit','')::numeric, 0) as cr"))
+    .select(
+      knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"),
+      "vh.voucher_no",
+      "b.name as branch_name",
+      "vh.id as voucher_id",
+      "vl.id as line_id",
+      "vl.line_no",
+      knex.raw("COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0) as dr"),
+      knex.raw("COALESCE(NULLIF(vl.meta->>'credit','')::numeric, 0) as cr"),
+    )
     .where("vh.voucher_type_code", voucherTypeCode)
     .orderBy("vh.voucher_date", "asc")
     .orderBy("vh.voucher_no", "asc")
@@ -778,17 +1099,25 @@ const getVoucherRegister = async (filters) => {
     detailQuery = detailQuery.select("vh.voucher_type_code");
   }
   if (includeDescriptionInDetails) {
-    detailQuery = detailQuery.select(knex.raw("NULLIF(vl.meta->>'description','') as description"));
+    detailQuery = detailQuery.select(
+      knex.raw("NULLIF(vl.meta->>'description','') as description"),
+    );
   }
   if (includeDepartmentInDetails) {
     detailQuery = detailQuery.select("d.name as department");
   }
 
   if (includeBankStatus) {
-    detailQuery = detailQuery.select(knex.raw("upper(COALESCE(vl.meta->>'bank_status', vh.status::text, 'PENDING')) as status"));
+    detailQuery = detailQuery.select(
+      knex.raw(
+        "upper(COALESCE(vl.meta->>'bank_status', vh.status::text, 'PENDING')) as status",
+      ),
+    );
   }
   if (includeBankAccountInBankDetails) {
-    detailQuery = detailQuery.select(knex.raw("COALESCE(bh.name, a.name, NULL) as bank_account"));
+    detailQuery = detailQuery.select(
+      knex.raw("COALESCE(bh.name, a.name, NULL) as bank_account"),
+    );
   }
   if (includeAgainstAccountInBankDetails) {
     detailQuery = detailQuery.select(
@@ -806,11 +1135,21 @@ const getVoucherRegister = async (filters) => {
     );
   }
   if (includeBankReferenceNoInDetails) {
-    detailQuery = detailQuery.select(knex.raw("NULLIF(COALESCE(vl.reference_no, vl.meta->>'reference_no', ''), '') as reference_no"));
+    detailQuery = detailQuery.select(
+      knex.raw(
+        "NULLIF(COALESCE(vl.reference_no, vl.meta->>'reference_no', ''), '') as reference_no",
+      ),
+    );
   }
 
-  detailQuery = buildDateFilter(detailQuery, "vh.voucher_date", filters.from, filters.to);
-  if (filters.branchId) detailQuery = detailQuery.where("vh.branch_id", filters.branchId);
+  detailQuery = buildDateFilter(
+    detailQuery,
+    "vh.voucher_date",
+    filters.from,
+    filters.to,
+  );
+  if (filters.branchId)
+    detailQuery = detailQuery.where("vh.branch_id", filters.branchId);
 
   const rows = await detailQuery;
   return rows
@@ -820,11 +1159,16 @@ const getVoucherRegister = async (filters) => {
         voucher_no: row.voucher_no,
       };
       if (!includeBankStatus) payload.voucher_type_code = row.voucher_type_code;
-      if (includeBankAccountInBankDetails) payload.bank_account = row.bank_account || null;
-      if (includeAgainstAccountInBankDetails) payload.counterparty = row.counterparty || null;
-      if (includeBankReferenceNoInDetails) payload.reference_no = row.reference_no || null;
-      if (includeDescriptionInDetails) payload.description = row.description || null;
-      if (includeDepartmentInDetails) payload.department = row.department || null;
+      if (includeBankAccountInBankDetails)
+        payload.bank_account = row.bank_account || null;
+      if (includeAgainstAccountInBankDetails)
+        payload.counterparty = row.counterparty || null;
+      if (includeBankReferenceNoInDetails)
+        payload.reference_no = row.reference_no || null;
+      if (includeDescriptionInDetails)
+        payload.description = row.description || null;
+      if (includeDepartmentInDetails)
+        payload.department = row.department || null;
       if (includeBranchColumn) payload.branch = row.branch_name || null;
       payload.dr = Number(row.dr || 0);
       payload.cr = Number(row.cr || 0);
@@ -851,9 +1195,17 @@ const getPreviousPeriodRange = (fromDate, toDate) => {
   if (!from || !to) return null;
   const fromDt = new Date(`${from}T00:00:00`);
   const toDt = new Date(`${to}T00:00:00`);
-  if (Number.isNaN(fromDt.getTime()) || Number.isNaN(toDt.getTime()) || toDt < fromDt) return null;
+  if (
+    Number.isNaN(fromDt.getTime()) ||
+    Number.isNaN(toDt.getTime()) ||
+    toDt < fromDt
+  )
+    return null;
   const oneDayMs = 24 * 60 * 60 * 1000;
-  const spanDays = Math.max(1, Math.floor((toDt.getTime() - fromDt.getTime()) / oneDayMs) + 1);
+  const spanDays = Math.max(
+    1,
+    Math.floor((toDt.getTime() - fromDt.getTime()) / oneDayMs) + 1,
+  );
   const prevTo = new Date(fromDt.getTime() - oneDayMs);
   const prevFrom = new Date(prevTo.getTime() - (spanDays - 1) * oneDayMs);
   return {
@@ -919,8 +1271,10 @@ const enumerateBucketKeys = (fromDate, toDate, granularity) => {
   return keys;
 };
 const getBucketSql = (granularity, dateColumn = "ge.entry_date") => {
-  if (granularity === "weekly") return `to_char(date_trunc('week', ${dateColumn}), 'YYYY-MM-DD')`;
-  if (granularity === "monthly") return `to_char(date_trunc('month', ${dateColumn}), 'YYYY-MM-DD')`;
+  if (granularity === "weekly")
+    return `to_char(date_trunc('week', ${dateColumn}), 'YYYY-MM-DD')`;
+  if (granularity === "monthly")
+    return `to_char(date_trunc('month', ${dateColumn}), 'YYYY-MM-DD')`;
   return `to_char(date_trunc('day', ${dateColumn}), 'YYYY-MM-DD')`;
 };
 const toTrendPeriodLabel = (bucketStartKey, granularity) => {
@@ -929,12 +1283,18 @@ const toTrendPeriodLabel = (bucketStartKey, granularity) => {
   const end = endOfBucket(start, granularity);
   if (granularity === "daily") return toDisplayDmy(start);
   const endKey = toLocalYmd(end);
-  if (granularity === "weekly") return `${toDisplayDmy(start)} - ${toDisplayDmy(endKey)}`;
+  if (granularity === "weekly")
+    return `${toDisplayDmy(start)} - ${toDisplayDmy(endKey)}`;
   const mm = String(start.getMonth() + 1).padStart(2, "0");
   const yyyy = String(start.getFullYear());
   return `${mm}-${yyyy}`;
 };
-const getExpenseTrendBuckets = async (filters, fromDate, toDate, granularity) => {
+const getExpenseTrendBuckets = async (
+  filters,
+  fromDate,
+  toDate,
+  granularity,
+) => {
   const bucketSql = getBucketSql(granularity, "vh.voucher_date");
   let query = knex("erp.voucher_header as vh")
     .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
@@ -967,8 +1327,10 @@ const getExpenseTrendBuckets = async (filters, fromDate, toDate, granularity) =>
 
   query = buildDateFilter(query, "vh.voucher_date", fromDate, toDate);
   if (filters.branchId) query = query.where("vh.branch_id", filters.branchId);
-  if (filters.trendAccountGroupId) query = query.where("ag.id", Number(filters.trendAccountGroupId));
-  if (filters.trendAccountId) query = query.where("vl.account_id", Number(filters.trendAccountId));
+  if (filters.trendAccountGroupId)
+    query = query.where("ag.id", Number(filters.trendAccountGroupId));
+  if (filters.trendAccountId)
+    query = query.where("vl.account_id", Number(filters.trendAccountId));
 
   const rows = await query;
   const rawByBucket = new Map();
@@ -1024,8 +1386,10 @@ const getExpenseTrendGroupTotals = async (filters, fromDate, toDate) => {
 
   query = buildDateFilter(query, "vh.voucher_date", fromDate, toDate);
   if (filters.branchId) query = query.where("vh.branch_id", filters.branchId);
-  if (filters.trendAccountGroupId) query = query.where("ag.id", Number(filters.trendAccountGroupId));
-  if (filters.trendAccountId) query = query.where("vl.account_id", Number(filters.trendAccountId));
+  if (filters.trendAccountGroupId)
+    query = query.where("ag.id", Number(filters.trendAccountGroupId));
+  if (filters.trendAccountId)
+    query = query.where("vl.account_id", Number(filters.trendAccountId));
 
   const rows = await query;
   return rows.map((row) => {
@@ -1052,17 +1416,44 @@ const getDateRangeSpanDays = (fromDate, toDate) => {
   return Math.floor((to.getTime() - from.getTime()) / oneDayMs) + 1;
 };
 const getExpenseTrends = async (filters) => {
-  const requestedGranularity = resolveExpenseTrendGranularity(filters.trendGranularity, "daily");
+  const requestedGranularity = resolveExpenseTrendGranularity(
+    filters.trendGranularity,
+    "daily",
+  );
   const spanDays = getDateRangeSpanDays(filters.from, filters.to);
-  const monthlyShortRange = requestedGranularity === "monthly" && spanDays > 0 && spanDays < 28;
-  const weeklyShortRange = requestedGranularity === "weekly" && spanDays > 0 && spanDays < 7;
-  const granularity = monthlyShortRange || weeklyShortRange ? "daily" : requestedGranularity;
+  const monthlyShortRange =
+    requestedGranularity === "monthly" && spanDays > 0 && spanDays < 28;
+  const weeklyShortRange =
+    requestedGranularity === "weekly" && spanDays > 0 && spanDays < 7;
+  const granularity =
+    monthlyShortRange || weeklyShortRange ? "daily" : requestedGranularity;
   const granularityAdjusted = granularity !== requestedGranularity;
-  const currentBuckets = await getExpenseTrendBuckets(filters, filters.from, filters.to, granularity);
+  const currentBuckets = await getExpenseTrendBuckets(
+    filters,
+    filters.from,
+    filters.to,
+    granularity,
+  );
 
   const previousRange = getPreviousPeriodRange(filters.from, filters.to);
-  const previousBuckets = previousRange ? await getExpenseTrendBuckets(filters, previousRange.from, previousRange.to, granularity) : [];
-  const [currentGroupTotals, previousGroupTotals] = await Promise.all([getExpenseTrendGroupTotals(filters, filters.from, filters.to), previousRange ? getExpenseTrendGroupTotals(filters, previousRange.from, previousRange.to) : Promise.resolve([])]);
+  const previousBuckets = previousRange
+    ? await getExpenseTrendBuckets(
+        filters,
+        previousRange.from,
+        previousRange.to,
+        granularity,
+      )
+    : [];
+  const [currentGroupTotals, previousGroupTotals] = await Promise.all([
+    getExpenseTrendGroupTotals(filters, filters.from, filters.to),
+    previousRange
+      ? getExpenseTrendGroupTotals(
+          filters,
+          previousRange.from,
+          previousRange.to,
+        )
+      : Promise.resolve([]),
+  ]);
 
   const rows = currentBuckets.map((bucket, index) => {
     const previousNet = Number(previousBuckets[index]?.netExpense || 0);
@@ -1084,15 +1475,36 @@ const getExpenseTrends = async (filters) => {
     return gross !== 0 || credits !== 0 || net !== 0 || previous !== 0;
   });
 
-  const currentTotal = roundMoney(rows.reduce((acc, row) => acc + Number(row.net_expense || 0), 0));
-  const grossTotal = roundMoney(rows.reduce((acc, row) => acc + Number(row.gross_expense || 0), 0));
-  const creditsTotal = roundMoney(rows.reduce((acc, row) => acc + Number(row.credits_adjustments || 0), 0));
-  const previousTotal = roundMoney(rows.reduce((acc, row) => acc + Number(row.previous_net_expense || 0), 0));
-  const nonZeroBucketCount = rows.reduce((count, row) => (Number(row.net_expense || 0) !== 0 ? count + 1 : count), 0);
-  const avgPerBucket = nonZeroBucketCount ? roundMoney(currentTotal / nonZeroBucketCount) : 0;
+  const currentTotal = roundMoney(
+    rows.reduce((acc, row) => acc + Number(row.net_expense || 0), 0),
+  );
+  const grossTotal = roundMoney(
+    rows.reduce((acc, row) => acc + Number(row.gross_expense || 0), 0),
+  );
+  const creditsTotal = roundMoney(
+    rows.reduce((acc, row) => acc + Number(row.credits_adjustments || 0), 0),
+  );
+  const previousTotal = roundMoney(
+    rows.reduce((acc, row) => acc + Number(row.previous_net_expense || 0), 0),
+  );
+  const nonZeroBucketCount = rows.reduce(
+    (count, row) => (Number(row.net_expense || 0) !== 0 ? count + 1 : count),
+    0,
+  );
+  const avgPerBucket = nonZeroBucketCount
+    ? roundMoney(currentTotal / nonZeroBucketCount)
+    : 0;
   const changeAmount = roundMoney(currentTotal - previousTotal);
   const changePercent = toChangePercent(currentTotal, previousTotal);
-  const highestBucket = rows.length ? rows.reduce((best, row) => (Number(row.net_expense || 0) > Number(best.net_expense || 0) ? row : best), rows[0]) : null;
+  const highestBucket = rows.length
+    ? rows.reduce(
+        (best, row) =>
+          Number(row.net_expense || 0) > Number(best.net_expense || 0)
+            ? row
+            : best,
+        rows[0],
+      )
+    : null;
   const hasCreditHeavyPeriods = currentBuckets.some((row) => {
     const gross = Number(row.grossExpense || 0);
     const credits = Number(row.creditsAdjustments || 0);
@@ -1137,18 +1549,29 @@ const getExpenseTrends = async (filters) => {
           currentNetExpense: 0,
           previousNetExpense: roundMoney(previousRow.netExpense || 0),
           deltaAmount: roundMoney(0 - Number(previousRow.netExpense || 0)),
-          deltaPercentage: toChangePercent(0, Number(previousRow.netExpense || 0)),
+          deltaPercentage: toChangePercent(
+            0,
+            Number(previousRow.netExpense || 0),
+          ),
         })),
     )
-    .sort((a, b) => Math.abs(Number(b.deltaAmount || 0)) - Math.abs(Number(a.deltaAmount || 0)));
+    .sort(
+      (a, b) =>
+        Math.abs(Number(b.deltaAmount || 0)) -
+        Math.abs(Number(a.deltaAmount || 0)),
+    );
 
   let topDrivers = allDriverRows.slice(0, EXPENSE_TREND_TOP_DRIVER_LIMIT);
   if (allDriverRows.length > EXPENSE_TREND_TOP_DRIVER_LIMIT) {
     const remainingRows = allDriverRows.slice(EXPENSE_TREND_TOP_DRIVER_LIMIT);
     const rolled = remainingRows.reduce(
       (acc, row) => ({
-        currentNetExpense: roundMoney(acc.currentNetExpense + Number(row.currentNetExpense || 0)),
-        previousNetExpense: roundMoney(acc.previousNetExpense + Number(row.previousNetExpense || 0)),
+        currentNetExpense: roundMoney(
+          acc.currentNetExpense + Number(row.currentNetExpense || 0),
+        ),
+        previousNetExpense: roundMoney(
+          acc.previousNetExpense + Number(row.previousNetExpense || 0),
+        ),
         deltaAmount: roundMoney(acc.deltaAmount + Number(row.deltaAmount || 0)),
       }),
       { currentNetExpense: 0, previousNetExpense: 0, deltaAmount: 0 },
@@ -1164,7 +1587,10 @@ const getExpenseTrends = async (filters) => {
         currentNetExpense: roundMoney(rolled.currentNetExpense),
         previousNetExpense: roundMoney(rolled.previousNetExpense),
         deltaAmount: roundMoney(rolled.deltaAmount),
-        deltaPercentage: toChangePercent(rolled.currentNetExpense, rolled.previousNetExpense),
+        deltaPercentage: toChangePercent(
+          rolled.currentNetExpense,
+          rolled.previousNetExpense,
+        ),
         isOthers: true,
         contributorsCount: remainingRows.length,
       });
@@ -1223,13 +1649,26 @@ const applyExpenseBreakdownFilters = (query, filters, fromDate, toDate) => {
   } else if (filters.branchId) {
     scoped = scoped.where("vh.branch_id", filters.branchId);
   }
-  const voucherTypeCode = EXPENSE_VOUCHER_TYPE_BY_FILTER[String(filters.voucherType || "all")] || null;
-  if (voucherTypeCode) scoped = scoped.where("vh.voucher_type_code", voucherTypeCode);
-  if (filters.cashierAccountId) scoped = scoped.where("vh.header_account_id", Number(filters.cashierAccountId));
+  const voucherTypeCode =
+    EXPENSE_VOUCHER_TYPE_BY_FILTER[String(filters.voucherType || "all")] ||
+    null;
+  if (voucherTypeCode)
+    scoped = scoped.where("vh.voucher_type_code", voucherTypeCode);
+  if (filters.cashierAccountId)
+    scoped = scoped.where(
+      "vh.header_account_id",
+      Number(filters.cashierAccountId),
+    );
 
-  const normalizedDeptIds = Array.isArray(filters.departmentIds) ? filters.departmentIds : [];
-  if (normalizedDeptIds.length) scoped = scoped.whereIn(deptExpr, normalizedDeptIds);
-  else scoped = scoped.whereRaw("NULLIF(vl.meta->>'department_id','')::bigint IS NOT NULL");
+  const normalizedDeptIds = Array.isArray(filters.departmentIds)
+    ? filters.departmentIds
+    : [];
+  if (normalizedDeptIds.length)
+    scoped = scoped.whereIn(deptExpr, normalizedDeptIds);
+  else
+    scoped = scoped.whereRaw(
+      "NULLIF(vl.meta->>'department_id','')::bigint IS NOT NULL",
+    );
   return scoped;
 };
 
@@ -1238,7 +1677,10 @@ const getExpenseBreakdownRows = async (filters, fromDate, toDate) => {
     .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
     .join("erp.accounts as a", "a.id", "vl.account_id")
     .join("erp.account_groups as ag", "ag.id", "a.subgroup_id")
-    .leftJoin("erp.departments as d", knex.raw("d.id = NULLIF(vl.meta->>'department_id','')::bigint"))
+    .leftJoin(
+      "erp.departments as d",
+      knex.raw("d.id = NULLIF(vl.meta->>'department_id','')::bigint"),
+    )
     .leftJoin("erp.parties as p", "p.id", "vl.party_id")
     .leftJoin("erp.labours as l", "l.id", "vl.labour_id")
     .leftJoin("erp.employees as e", "e.id", "vl.employee_id")
@@ -1251,7 +1693,9 @@ const getExpenseBreakdownRows = async (filters, fromDate, toDate) => {
       "vh.voucher_type_code",
       "vh.header_account_id",
       "ha.name as cashier_name",
-      knex.raw("COALESCE(NULLIF(u.name, ''), u.username, NULL) as created_by_name"),
+      knex.raw(
+        "COALESCE(NULLIF(u.name, ''), u.username, NULL) as created_by_name",
+      ),
       "vl.id as line_id",
       "vl.line_no",
       "a.id as account_id",
@@ -1282,18 +1726,28 @@ const getExpenseBreakdownRows = async (filters, fromDate, toDate) => {
 const getExpenseDepartmentBreakdown = async (filters) => {
   const rows = await getExpenseBreakdownRows(filters, filters.from, filters.to);
   const prevPeriod = getPreviousPeriodRange(filters.from, filters.to);
-  const previousRows = prevPeriod ? await getExpenseBreakdownRows(filters, prevPeriod.from, prevPeriod.to) : [];
+  const previousRows = prevPeriod
+    ? await getExpenseBreakdownRows(filters, prevPeriod.from, prevPeriod.to)
+    : [];
 
-  const toDeptKey = (departmentId) => (Number.isInteger(Number(departmentId)) && Number(departmentId) > 0 ? `D:${Number(departmentId)}` : "NA");
-  const toGroupKey = (deptKey, groupId) => `${deptKey}|G:${Number(groupId || 0)}`;
-  const toAccountKey = (groupKey, accountId) => `${groupKey}|A:${Number(accountId || 0)}`;
+  const toDeptKey = (departmentId) =>
+    Number.isInteger(Number(departmentId)) && Number(departmentId) > 0
+      ? `D:${Number(departmentId)}`
+      : "NA";
+  const toGroupKey = (deptKey, groupId) =>
+    `${deptKey}|G:${Number(groupId || 0)}`;
+  const toAccountKey = (groupKey, accountId) =>
+    `${groupKey}|A:${Number(accountId || 0)}`;
 
   const previousTotalsByGroup = new Map();
   previousRows.forEach((row) => {
     const deptKey = toDeptKey(row.department_id);
     const groupKey = toGroupKey(deptKey, row.account_group_id);
     const netExpense = roundMoney(Number(row.dr || 0) - Number(row.cr || 0));
-    previousTotalsByGroup.set(groupKey, roundMoney((previousTotalsByGroup.get(groupKey) || 0) + netExpense));
+    previousTotalsByGroup.set(
+      groupKey,
+      roundMoney((previousTotalsByGroup.get(groupKey) || 0) + netExpense),
+    );
   });
 
   const departmentsMap = new Map();
@@ -1301,7 +1755,8 @@ const getExpenseDepartmentBreakdown = async (filters) => {
     const grossExpense = roundMoney(Number(row.dr || 0));
     const creditsAdjustments = roundMoney(Number(row.cr || 0));
     const netExpense = roundMoney(grossExpense - creditsAdjustments);
-    if (grossExpense === 0 && creditsAdjustments === 0 && netExpense === 0) return;
+    if (grossExpense === 0 && creditsAdjustments === 0 && netExpense === 0)
+      return;
     const deptId = Number(row.department_id || 0) || null;
     const deptKey = toDeptKey(deptId);
     if (!departmentsMap.has(deptKey)) {
@@ -1318,15 +1773,21 @@ const getExpenseDepartmentBreakdown = async (filters) => {
       });
     }
     const department = departmentsMap.get(deptKey);
-    department.grossExpense = roundMoney(department.grossExpense + grossExpense);
-    department.creditsAdjustments = roundMoney(department.creditsAdjustments + creditsAdjustments);
+    department.grossExpense = roundMoney(
+      department.grossExpense + grossExpense,
+    );
+    department.creditsAdjustments = roundMoney(
+      department.creditsAdjustments + creditsAdjustments,
+    );
     department.netExpense = roundMoney(department.netExpense + netExpense);
     department.transactionsCount += 1;
 
     const groupId = Number(row.account_group_id || 0) || null;
     const groupKey = toGroupKey(deptKey, groupId);
     if (!department.groupsMap.has(groupKey)) {
-      const previousNetExpense = roundMoney(previousTotalsByGroup.get(groupKey) || 0);
+      const previousNetExpense = roundMoney(
+        previousTotalsByGroup.get(groupKey) || 0,
+      );
       department.groupsMap.set(groupKey, {
         key: groupKey,
         accountGroupId: groupId,
@@ -1342,7 +1803,9 @@ const getExpenseDepartmentBreakdown = async (filters) => {
     }
     const group = department.groupsMap.get(groupKey);
     group.grossExpense = roundMoney(group.grossExpense + grossExpense);
-    group.creditsAdjustments = roundMoney(group.creditsAdjustments + creditsAdjustments);
+    group.creditsAdjustments = roundMoney(
+      group.creditsAdjustments + creditsAdjustments,
+    );
     group.netExpense = roundMoney(group.netExpense + netExpense);
     group.transactionsCount += 1;
 
@@ -1362,7 +1825,9 @@ const getExpenseDepartmentBreakdown = async (filters) => {
     }
     const account = group.accountsMap.get(accountKey);
     account.grossExpense = roundMoney(account.grossExpense + grossExpense);
-    account.creditsAdjustments = roundMoney(account.creditsAdjustments + creditsAdjustments);
+    account.creditsAdjustments = roundMoney(
+      account.creditsAdjustments + creditsAdjustments,
+    );
     account.netExpense = roundMoney(account.netExpense + netExpense);
     account.transactionsCount += 1;
     account.lines.push({
@@ -1387,13 +1852,20 @@ const getExpenseDepartmentBreakdown = async (filters) => {
         .map((group) => {
           const previousNetExpense = roundMoney(group.previousNetExpense || 0);
           if (previousNetExpense !== 0) {
-            group.trendPercentage = roundMoney(((group.netExpense - previousNetExpense) / Math.abs(previousNetExpense)) * 100);
+            group.trendPercentage = roundMoney(
+              ((group.netExpense - previousNetExpense) /
+                Math.abs(previousNetExpense)) *
+                100,
+            );
           } else if (group.netExpense === 0) {
             group.trendPercentage = 0;
           } else {
             group.trendPercentage = null;
           }
-          group.percentageOfDepartment = department.netExpense !== 0 ? roundMoney((group.netExpense / department.netExpense) * 100) : 0;
+          group.percentageOfDepartment =
+            department.netExpense !== 0
+              ? roundMoney((group.netExpense / department.netExpense) * 100)
+              : 0;
 
           const accounts = [...group.accountsMap.values()]
             .map((account) => {
@@ -1414,7 +1886,9 @@ const getExpenseDepartmentBreakdown = async (filters) => {
                 lines,
               };
             })
-            .sort((a, b) => Number(b.netExpense || 0) - Number(a.netExpense || 0));
+            .sort(
+              (a, b) => Number(b.netExpense || 0) - Number(a.netExpense || 0),
+            );
 
           const mapped = {
             key: group.key,
@@ -1461,8 +1935,12 @@ const getExpenseDepartmentBreakdown = async (filters) => {
 
   const totals = departments.reduce(
     (acc, row) => {
-      acc.grossExpense = roundMoney(acc.grossExpense + Number(row.grossExpense || 0));
-      acc.creditsAdjustments = roundMoney(acc.creditsAdjustments + Number(row.creditsAdjustments || 0));
+      acc.grossExpense = roundMoney(
+        acc.grossExpense + Number(row.grossExpense || 0),
+      );
+      acc.creditsAdjustments = roundMoney(
+        acc.creditsAdjustments + Number(row.creditsAdjustments || 0),
+      );
       acc.netExpense = roundMoney(acc.netExpense + Number(row.netExpense || 0));
       return acc;
     },
@@ -1471,7 +1949,10 @@ const getExpenseDepartmentBreakdown = async (filters) => {
 
   const departmentsWithPercent = departments.map((row) => ({
     ...row,
-    percentageOfTotal: totals.netExpense !== 0 ? roundMoney((Number(row.netExpense || 0) / totals.netExpense) * 100) : 0,
+    percentageOfTotal:
+      totals.netExpense !== 0
+        ? roundMoney((Number(row.netExpense || 0) / totals.netExpense) * 100)
+        : 0,
   }));
 
   const topDepartments = departmentsWithPercent.slice(0, 3).map((row) => ({
@@ -1493,7 +1974,17 @@ const getExpenseDepartmentBreakdown = async (filters) => {
       netExpense: roundMoney(row.netExpense),
     }));
 
-  const biggestIncrease = [...allGroups].filter((row) => Number(row.previousNetExpense || 0) !== 0 && Number(row.trendPercentage || 0) > 0).sort((a, b) => Number(b.trendPercentage || 0) - Number(a.trendPercentage || 0))[0] || null;
+  const biggestIncrease =
+    [...allGroups]
+      .filter(
+        (row) =>
+          Number(row.previousNetExpense || 0) !== 0 &&
+          Number(row.trendPercentage || 0) > 0,
+      )
+      .sort(
+        (a, b) =>
+          Number(b.trendPercentage || 0) - Number(a.trendPercentage || 0),
+      )[0] || null;
 
   return {
     mode: "department_breakdown",
@@ -1539,10 +2030,20 @@ const getExpenseAnalysis = async (filters) => {
     return breakdown;
   }
 
-  let query = knex("erp.gl_entry as ge").select("ag.name as account_group", "d.name as department").sum({ total_debit: "ge.dr" }).sum({ total_credit: "ge.cr" }).leftJoin("erp.accounts as a", "a.id", "ge.account_id").leftJoin("erp.account_groups as ag", "ag.id", "a.subgroup_id").leftJoin("erp.departments as d", "d.id", "ge.dept_id").groupBy("ag.name", "d.name").orderBy("ag.name", "asc");
+  let query = knex("erp.gl_entry as ge")
+    .select("ag.name as account_group", "d.name as department")
+    .sum({ total_debit: "ge.dr" })
+    .sum({ total_credit: "ge.cr" })
+    .leftJoin("erp.accounts as a", "a.id", "ge.account_id")
+    .leftJoin("erp.account_groups as ag", "ag.id", "a.subgroup_id")
+    .leftJoin("erp.departments as d", "d.id", "ge.dept_id")
+    .groupBy("ag.name", "d.name")
+    .orderBy("ag.name", "asc");
   query = buildDateFilter(query, "ge.entry_date", filters.from, filters.to);
-  if (Array.isArray(filters.branchIds) && filters.branchIds.length) query = query.whereIn("ge.branch_id", filters.branchIds);
-  else if (filters.branchId) query = query.where("ge.branch_id", filters.branchId);
+  if (Array.isArray(filters.branchIds) && filters.branchIds.length)
+    query = query.whereIn("ge.branch_id", filters.branchIds);
+  else if (filters.branchId)
+    query = query.where("ge.branch_id", filters.branchId);
   return query;
 };
 
@@ -1556,10 +2057,22 @@ const getTrialBalance = async (filters) => {
       "a.code as account_code",
       "a.name as account_name",
       ...(includeBranchColumn ? ["b.name as branch_name"] : []),
-      knex.raw(`COALESCE(SUM(CASE WHEN ge.entry_date < ? THEN COALESCE(ge.dr, 0) - COALESCE(ge.cr, 0) ELSE 0 END), 0) as opening_balance`, [filters.from]),
-      knex.raw(`COALESCE(SUM(CASE WHEN ge.entry_date >= ? AND ge.entry_date <= ? THEN COALESCE(ge.dr, 0) ELSE 0 END), 0) as period_debit`, [filters.from, filters.to]),
-      knex.raw(`COALESCE(SUM(CASE WHEN ge.entry_date >= ? AND ge.entry_date <= ? THEN COALESCE(ge.cr, 0) ELSE 0 END), 0) as period_credit`, [filters.from, filters.to]),
-      knex.raw(`COALESCE(SUM(CASE WHEN ge.entry_date <= ? THEN COALESCE(ge.dr, 0) - COALESCE(ge.cr, 0) ELSE 0 END), 0) as closing_balance`, [filters.to]),
+      knex.raw(
+        `COALESCE(SUM(CASE WHEN ge.entry_date < ? THEN COALESCE(ge.dr, 0) - COALESCE(ge.cr, 0) ELSE 0 END), 0) as opening_balance`,
+        [filters.from],
+      ),
+      knex.raw(
+        `COALESCE(SUM(CASE WHEN ge.entry_date >= ? AND ge.entry_date <= ? THEN COALESCE(ge.dr, 0) ELSE 0 END), 0) as period_debit`,
+        [filters.from, filters.to],
+      ),
+      knex.raw(
+        `COALESCE(SUM(CASE WHEN ge.entry_date >= ? AND ge.entry_date <= ? THEN COALESCE(ge.cr, 0) ELSE 0 END), 0) as period_credit`,
+        [filters.from, filters.to],
+      ),
+      knex.raw(
+        `COALESCE(SUM(CASE WHEN ge.entry_date <= ? THEN COALESCE(ge.dr, 0) - COALESCE(ge.cr, 0) ELSE 0 END), 0) as closing_balance`,
+        [filters.to],
+      ),
     )
     .groupBy("a.code", "a.name", ...(includeBranchColumn ? ["b.name"] : []))
     .orderBy("a.code", "asc");
@@ -1616,10 +2129,118 @@ const getTrialBalance = async (filters) => {
 };
 
 const getProfitAndLoss = async (filters) => {
-  let query = knex("erp.gl_entry as ge").select("ag.account_type").sum({ debit: "ge.dr" }).sum({ credit: "ge.cr" }).leftJoin("erp.accounts as a", "a.id", "ge.account_id").leftJoin("erp.account_groups as ag", "ag.id", "a.subgroup_id").groupBy("ag.account_type");
+  let query = knex("erp.gl_entry as ge")
+    .select("ag.account_type")
+    .sum({ debit: "ge.dr" })
+    .sum({ credit: "ge.cr" })
+    .leftJoin("erp.accounts as a", "a.id", "ge.account_id")
+    .leftJoin("erp.account_groups as ag", "ag.id", "a.subgroup_id")
+    .groupBy("ag.account_type");
   query = buildDateFilter(query, "ge.entry_date", filters.from, filters.to);
   if (filters.branchId) query = query.where("ge.branch_id", filters.branchId);
   return query;
+};
+
+const buildSalesVoucherDescriptionSummaryMap = async (voucherIds) => {
+  const uniqueIds = [
+    ...new Set(
+      (voucherIds || [])
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value > 0),
+    ),
+  ];
+  if (!uniqueIds.length) return new Map();
+
+  const salesHeaders = await knex("erp.sales_header as sh")
+    .select("sh.voucher_id", "sh.extra_discount")
+    .whereIn("sh.voucher_id", uniqueIds);
+  const extraDiscountByVoucherId = new Map();
+  salesHeaders.forEach((row) => {
+    const voucherId = Number(row.voucher_id || 0);
+    if (!voucherId) return;
+    const extraDiscount = Number(Number(row.extra_discount || 0).toFixed(2));
+    extraDiscountByVoucherId.set(
+      voucherId,
+      Number.isFinite(extraDiscount) ? extraDiscount : 0,
+    );
+  });
+
+  const voucherLines = await knex("erp.voucher_line as vl")
+    .leftJoin("erp.skus as s", "s.id", "vl.sku_id")
+    .leftJoin("erp.variants as v", "v.id", "s.variant_id")
+    .leftJoin("erp.items as i", "i.id", "v.item_id")
+    .select(
+      "vl.voucher_header_id",
+      "vl.line_no",
+      "vl.qty",
+      "vl.rate",
+      "vl.amount",
+      "vl.meta",
+      "s.sku_code",
+      "i.name as item_name",
+    )
+    .whereIn("vl.voucher_header_id", uniqueIds)
+    .whereIn("vl.line_kind", ["ITEM", "SKU"])
+    .orderBy("vl.voucher_header_id", "asc")
+    .orderBy("vl.line_no", "asc");
+
+  const linesByVoucherId = new Map();
+  voucherLines.forEach((line) => {
+    const voucherId = Number(line.voucher_header_id || 0);
+    if (!voucherId) return;
+    const meta = line.meta && typeof line.meta === "object" ? line.meta : {};
+    const name =
+      String(line.item_name || "").trim() ||
+      String(line.sku_code || "").trim() ||
+      "Line";
+    const qty = Number(Number(line.qty || 0).toFixed(3));
+    const rate = Number(Number(line.rate || 0).toFixed(2));
+    const saleQty =
+      meta.sale_qty !== undefined
+        ? Number(Number(meta.sale_qty || 0).toFixed(3))
+        : qty;
+    const pairRate =
+      meta.pair_rate !== undefined
+        ? Number(Number(meta.pair_rate || 0).toFixed(2))
+        : rate;
+    const pairDiscount =
+      meta.pair_discount !== undefined
+        ? Number(Number(meta.pair_discount || 0).toFixed(2))
+        : 0;
+    const lineTotal =
+      meta.total_amount !== undefined
+        ? Number(Math.abs(Number(meta.total_amount || 0)).toFixed(2))
+        : Number(Math.abs(Number(line.amount || 0)).toFixed(2));
+    const lineText = `Article: ${name} | Qty: ${saleQty.toFixed(3)} | Pair Rate: ${pairRate.toFixed(2)} | Pair Discount: ${pairDiscount.toFixed(2)} | Line Total: ${lineTotal.toFixed(2)}`;
+    const list = linesByVoucherId.get(voucherId) || [];
+    list.push({
+      text: lineText,
+      line_no: Number(line.line_no || 0),
+    });
+    linesByVoucherId.set(voucherId, list);
+  });
+
+  const summaryByVoucherId = new Map();
+  linesByVoucherId.forEach((list, voucherId) => {
+    const sorted = [...list].sort(
+      (a, b) => Number(a.line_no || 0) - Number(b.line_no || 0),
+    );
+    const extraDiscount = Number(extraDiscountByVoucherId.get(voucherId) || 0);
+    if (extraDiscount > 0) {
+      sorted.push({
+        text: `Extra Discount: ${extraDiscount.toFixed(2)}`,
+        line_no: 999999,
+      });
+    }
+    const compact = sorted
+      .slice(0, 4)
+      .map((line) => String(line.text || "").trim())
+      .filter(Boolean);
+    const suffix = sorted.length > 4 ? ` +${sorted.length - 4} more` : "";
+    summaryByVoucherId.set(voucherId, `${compact.join("; ")}${suffix}`);
+  });
+
+  return summaryByVoucherId;
 };
 
 const getAccountActivityLedger = async (filters) => {
@@ -1628,11 +2249,16 @@ const getAccountActivityLedger = async (filters) => {
   const openingRow = await knex("erp.gl_entry as ge")
     .leftJoin("erp.gl_batch as gb", "gb.id", "ge.batch_id")
     .leftJoin("erp.voucher_header as vh", "vh.id", "gb.source_voucher_id")
-    .select(knex.raw("COALESCE(SUM(COALESCE(ge.dr, 0) - COALESCE(ge.cr, 0)), 0) as opening_balance"))
+    .select(
+      knex.raw(
+        "COALESCE(SUM(COALESCE(ge.dr, 0) - COALESCE(ge.cr, 0)), 0) as opening_balance",
+      ),
+    )
     .where("ge.account_id", filters.accountId)
     .where("vh.status", "APPROVED")
     .modify((queryBuilder) => {
-      if (filters.branchId) queryBuilder.where("ge.branch_id", filters.branchId);
+      if (filters.branchId)
+        queryBuilder.where("ge.branch_id", filters.branchId);
       if (filters.from) queryBuilder.where("ge.entry_date", "<", filters.from);
     })
     .first();
@@ -1666,12 +2292,15 @@ const getAccountActivityLedger = async (filters) => {
       .leftJoin("erp.branches as b", "b.id", "ge.branch_id")
       .select(
         knex.raw("to_char(ge.entry_date, 'YYYY-MM-DD') as entry_date"),
+        "vh.id as voucher_id",
         "vh.voucher_type_code",
         "vh.voucher_no",
         "b.name as branch_name",
         knex.raw("COALESCE(ge.dr, 0) as dr"),
         knex.raw("COALESCE(ge.cr, 0) as cr"),
-        knex.raw("COALESCE(NULLIF(ge.narration, ''), NULLIF(vh.remarks, '')) as description"),
+        knex.raw(
+          "COALESCE(NULLIF(ge.narration, ''), NULLIF(vh.remarks, '')) as description",
+        ),
         "d.name as department",
       )
       .where("ge.account_id", filters.accountId)
@@ -1684,14 +2313,26 @@ const getAccountActivityLedger = async (filters) => {
     if (filters.branchId) {
       detailQuery = detailQuery.where("ge.branch_id", filters.branchId);
     }
-    detailQuery = buildDateFilter(detailQuery, "ge.entry_date", filters.from, filters.to);
+    detailQuery = buildDateFilter(
+      detailQuery,
+      "ge.entry_date",
+      filters.from,
+      filters.to,
+    );
     rows = await detailQuery;
   } else {
     let summaryQuery = knex("erp.gl_entry as ge")
       .leftJoin("erp.gl_batch as gb", "gb.id", "ge.batch_id")
       .leftJoin("erp.voucher_header as vh", "vh.id", "gb.source_voucher_id")
       .leftJoin("erp.branches as b", "b.id", "ge.branch_id")
-      .select(knex.raw("to_char(ge.entry_date, 'YYYY-MM-DD') as entry_date"), "vh.voucher_type_code", "vh.voucher_no", "b.name as branch_name", "ge.dr", "ge.cr")
+      .select(
+        knex.raw("to_char(ge.entry_date, 'YYYY-MM-DD') as entry_date"),
+        "vh.voucher_type_code",
+        "vh.voucher_no",
+        "b.name as branch_name",
+        "ge.dr",
+        "ge.cr",
+      )
       .where("ge.account_id", filters.accountId)
       .where("vh.status", "APPROVED")
       .orderBy("ge.entry_date", "asc")
@@ -1700,9 +2341,33 @@ const getAccountActivityLedger = async (filters) => {
     if (filters.branchId) {
       summaryQuery = summaryQuery.where("ge.branch_id", filters.branchId);
     }
-    summaryQuery = buildDateFilter(summaryQuery, "ge.entry_date", filters.from, filters.to);
+    summaryQuery = buildDateFilter(
+      summaryQuery,
+      "ge.entry_date",
+      filters.from,
+      filters.to,
+    );
     rows = await summaryQuery;
   }
+
+  const salesVoucherIds =
+    filters.reportMode === "details"
+      ? [
+          ...new Set(
+            rows
+              .filter(
+                (row) =>
+                  String(row.voucher_type_code || "").toUpperCase() ===
+                  "SALES_VOUCHER",
+              )
+              .map((row) => Number(row.voucher_id || 0))
+              .filter((id) => Number.isInteger(id) && id > 0),
+          ),
+        ]
+      : [];
+  const salesVoucherSummaryByVoucherId = salesVoucherIds.length
+    ? await buildSalesVoucherDescriptionSummaryMap(salesVoucherIds)
+    : new Map();
 
   let running = openingBalance;
   const detailRows = rows
@@ -1710,13 +2375,30 @@ const getAccountActivityLedger = async (filters) => {
       const dr = Number(row.dr || 0);
       const cr = Number(row.cr || 0);
       running += dr - cr;
+      const voucherTypeCode = String(row.voucher_type_code || "").toUpperCase();
+      const voucherId = Number(row.voucher_id || 0) || null;
       const payload = {
         entry_date: row.entry_date,
         voucher_type_code: row.voucher_type_code,
         voucher_no: row.voucher_no,
       };
       if (filters.reportMode === "details") {
-        payload.description = row.description || null;
+        let description = row.description || null;
+        if (voucherTypeCode === "SALES_ORDER") {
+          description = "Advance Payment Received";
+        }
+        if (voucherTypeCode === "SALES_VOUCHER" && voucherId) {
+          const salesSummary = String(
+            salesVoucherSummaryByVoucherId.get(voucherId) || "",
+          ).trim();
+          if (salesSummary) {
+            const baseDescription = String(description || "").trim();
+            description = baseDescription
+              ? `${baseDescription} | ${salesSummary}`
+              : salesSummary;
+          }
+        }
+        payload.description = description || null;
         payload.department = row.department || null;
       }
       if (includeBranchColumn) payload.branch = row.branch_name || null;
@@ -1727,7 +2409,11 @@ const getAccountActivityLedger = async (filters) => {
     })
     .filter((row) => Number(row.dr || 0) !== 0 || Number(row.cr || 0) !== 0);
 
-  return [createBoundaryRow("OPENING_BALANCE", filters.from, openingBalance), ...detailRows, createBoundaryRow("CLOSING_BALANCE", filters.to, running)];
+  return [
+    createBoundaryRow("OPENING_BALANCE", filters.from, openingBalance),
+    ...detailRows,
+    createBoundaryRow("CLOSING_BALANCE", filters.to, running),
+  ];
 };
 
 const getPayrollWageBalance = async (filters) => {
@@ -1737,7 +2423,9 @@ const getPayrollWageBalance = async (filters) => {
     .sum({ credit: "ge.cr" })
     .leftJoin("erp.accounts as a", "a.id", "ge.account_id")
     .where(function () {
-      this.whereRaw("lower(a.name) like '%wages%'").orWhereRaw("lower(a.name) like '%salary%'");
+      this.whereRaw("lower(a.name) like '%wages%'").orWhereRaw(
+        "lower(a.name) like '%salary%'",
+      );
     })
     .groupBy("a.name")
     .orderBy("a.name", "asc");
@@ -1746,7 +2434,11 @@ const getPayrollWageBalance = async (filters) => {
   return query;
 };
 
-const getFinancialReport = async (reportKey, req, precomputedFilters = null) => {
+const getFinancialReport = async (
+  reportKey,
+  req,
+  precomputedFilters = null,
+) => {
   const normalizedKey = normalizeReportKey(reportKey);
   const filters = precomputedFilters || getCommonFilters(req, normalizedKey);
 
@@ -1758,7 +2450,11 @@ const getFinancialReport = async (reportKey, req, precomputedFilters = null) => 
   }
 
   if (VOUCHER_REGISTER_REPORTS.has(normalizedKey)) {
-    return { rows: await getVoucherRegister(filters), titleKey: "voucher_register", filters };
+    return {
+      rows: await getVoucherRegister(filters),
+      titleKey: "voucher_register",
+      filters,
+    };
   }
 
   switch (normalizedKey) {
@@ -1804,18 +2500,33 @@ const getFinancialReport = async (reportKey, req, precomputedFilters = null) => 
     case "production_overhead":
     case "non_production_expense":
     case "accrued_expenses":
-      return { rows: await getExpenseAnalysis(filters), titleKey: normalizedKey };
+      return {
+        rows: await getExpenseAnalysis(filters),
+        titleKey: normalizedKey,
+      };
     case "profitability_analysis":
     case "profit_and_loss":
       return { rows: await getProfitAndLoss(filters), titleKey: reportKey };
     case "account_activity_ledger":
-      return { rows: await getAccountActivityLedger(filters), titleKey: "account_activity_ledger" };
+      return {
+        rows: await getAccountActivityLedger(filters),
+        titleKey: "account_activity_ledger",
+      };
     case "trial_balance":
-      return { rows: await getTrialBalance(filters), titleKey: "trial_balance" };
+      return {
+        rows: await getTrialBalance(filters),
+        titleKey: "trial_balance",
+      };
     case "payroll_wage_balance":
-      return { rows: await getPayrollWageBalance(filters), titleKey: "payroll_wage_balance" };
+      return {
+        rows: await getPayrollWageBalance(filters),
+        titleKey: "payroll_wage_balance",
+      };
     default:
-      return { rows: await getTrialBalance(filters), titleKey: "financial_reports" };
+      return {
+        rows: await getTrialBalance(filters),
+        titleKey: "financial_reports",
+      };
   }
 };
 

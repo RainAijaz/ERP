@@ -1,0 +1,98 @@
+<div class="mx-auto w-full max-w-7xl space-y-6">
+  <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div class="space-y-1">
+        <h1 class="text-2xl font-display text-ink"><%= t("asset_types") %></h1>
+        <p class="text-sm text-muted"><%= t("asset_types_description") %></p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <% const canCreate = can('SCREEN', 'master_data.asset_types', 'create'); %>
+        <% const canDownload = can('SCREEN', 'master_data.asset_types', 'print'); %>
+        <% if (canDownload) { %>
+          <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-download-button>
+            <%= t("download") %>
+          </button>
+          <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-print-button>
+            <%= t("print") %>
+          </button>
+        <% } %>
+        <% if (canCreate) { %>
+          <button class="cursor-pointer rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800" type="button" data-modal-open style="color: #fff;">
+            <%= t("add") %> <%= t("asset_types") %>
+          </button>
+        <% } %>
+      </div>
+    </div>
+  </section>
+
+  <%- include("../../base/partials/error-banner", { error, modalOpen }) %>
+
+  <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md" data-print-area>
+    <% const canEdit = can('SCREEN', 'master_data.asset_types', 'edit'); %>
+    <% const canDelete = can('SCREEN', 'master_data.asset_types', 'delete'); %>
+    <% const canHardDelete = can('SCREEN', 'master_data.asset_types', 'hard_delete'); %>
+    <div class="px-5 pt-4 text-center text-xl font-display font-semibold uppercase tracking-[0.35em] text-slate-900" data-print-header>
+      <%= t("brand") %>
+    </div>
+    <div class="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div class="text-sm font-semibold text-slate-700"><%= t("list") %> <%= t("asset_types") %></div>
+      <%- include("../../base/partials/table-controls", { t, showStatus: true }) %>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm" data-table>
+        <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+          <% const displayColumns = [
+            { key: "code", label: "code" },
+            { key: "name", label: "name" },
+          ]; %>
+          <%- include("../../base/partials/table-header", { t, displayColumns, columnTooltips: {}, sortStartIndex: 1 }) %>
+        </thead>
+        <tbody class="divide-y divide-slate-100" data-table-body>
+          <% if (!rows || rows.length === 0) { %>
+            <%- include("../../base/partials/table-empty", { t, colspan: displayColumns.length + 2 }) %>
+          <% } else { %>
+            <% rows.forEach(function(row, idx) { %>
+              <tr
+                class="hover:bg-amber-50/40"
+                data-row
+                data-code="<%= row.code || '' %>"
+                data-name="<%= row.name || '' %>"
+                data-name-ur="<%= row.name_ur || '' %>"
+                data-search="<%= [row.code, row.name, row.name_ur].filter(Boolean).join(' ').toLowerCase() %>"
+                data-active="<%= row.is_active ? 'true' : 'false' %>"
+              >
+                <td class="px-4 py-3 text-slate-700"><%= idx + 1 %></td>
+                <td class="px-4 py-3 text-slate-700"><%= row.code || "" %></td>
+                <td class="px-4 py-3 text-slate-700"><%= row.name || "" %></td>
+                <td class="px-4 py-3">
+                  <%- include("../../base/partials/table-actions", { t, row, basePath, withMenu: true, canEdit, canDelete, canHardDelete, editFields: ["code", "name", "name_ur"] }) %>
+                </td>
+              </tr>
+            <% }) %>
+          <% } %>
+        </tbody>
+      </table>
+    </div>
+    <%- include("../../base/partials/table-footer", { t }) %>
+  </section>
+</div>
+
+<%- include("../../base/partials/modal-shell", {
+  t,
+  modalOpen,
+  modalMode,
+  modalTitle: t("add") + " " + t("asset_types"),
+  modalDescription: t("enter_details_save"),
+  formAction: basePath,
+  formClass: "flex-1 space-y-5 overflow-y-auto px-6 py-5",
+  modalContainerClass: "w-full max-w-lg max-h-[90vh] rounded-2xl border border-slate-200 bg-white shadow-xl flex flex-col",
+  modalHeaderClass: "sticky top-0 z-10 flex items-center justify-between border-b border-slate-200 bg-white px-6 py-4",
+  translateMode: "transliterate",
+  modalError: modalOpen ? error : null,
+  modalValues: modalOpen ? values : null,
+  csrfToken,
+  bodyPartial: "../../master_data/asset-types/form-fields.ejs"
+}) %>
+
+<%- include("../../base/partials/confirm-modal", { t, csrfToken }) %>
+<%- include("../../base/partials/basic-info-utils", { t, page, basePath, modalOpen, modalMode }) %>

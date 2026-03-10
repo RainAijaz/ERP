@@ -829,7 +829,7 @@ const createHrMasterRouter = (pageConfig) => {
         return renderIndexError(req, res, sanitizedValues, res.locals.t("error_not_found"), "edit", basePath, flashCookie);
       }
 
-      if (hasField(pageConfig, "code") && existing.code) {
+      if (existing.code) {
         sanitizedValues.code = existing.code;
       } else if (hasField(pageConfig, "code") || pageConfig.autoCodeFromName) {
         sanitizedValues.code = await generateUniqueCode({

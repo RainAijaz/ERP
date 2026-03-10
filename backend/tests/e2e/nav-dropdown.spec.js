@@ -49,7 +49,7 @@ test.describe("Navigation dropdowns", () => {
     await expect(links.last()).toBeVisible();
   });
 
-  test("deep nested master data flyouts remain usable", async ({ page }) => {
+  test("groups submenu exposes product group screens without nested products flyout", async ({ page }) => {
     await page.setViewportSize({ width: 1366, height: 768 });
     await login(page, "E2E_ADMIN");
 
@@ -68,13 +68,13 @@ test.describe("Navigation dropdowns", () => {
     const groupsToggle = page.locator('[data-submenu-toggle="master_data-basic_information-groups"]');
     test.skip((await groupsToggle.count()) === 0, "Groups submenu toggle is not present.");
     await groupsToggle.click();
-    await expect(page.locator('[data-submenu="master_data-basic_information-groups"]')).toBeVisible();
 
-    const productsToggle = page.locator('[data-submenu-toggle="master_data-basic_information-groups-products"]');
-    test.skip((await productsToggle.count()) === 0, "Products flyout toggle is not present.");
-    await productsToggle.click();
-    await expect(page.locator('[data-submenu="master_data-basic_information-groups-products"]')).toBeVisible();
-
-    await expect(page.locator('[data-submenu="master_data-basic_information-groups-products"] a[href="/master-data/basic-info/product-groups"]')).toBeVisible();
+    const groupsMenu = page.locator('[data-submenu="master_data-basic_information-groups"]');
+    await expect(groupsMenu).toBeVisible();
+    await expect(page.locator('[data-submenu-toggle="master_data-basic_information-groups-products"]')).toHaveCount(0);
+    await expect(groupsMenu.locator('a[href="/master-data/basic-info/product-groups"]')).toBeVisible();
+    await expect(groupsMenu.locator('a[href="/master-data/basic-info/product-subgroups"]')).toBeVisible();
+    await expect(groupsMenu.locator('a[href="/master-data/basic-info/product-types"]')).toBeVisible();
+    await expect(groupsMenu.locator('a[href="/master-data/basic-info/sales-discount-policies"]')).toBeVisible();
   });
 });

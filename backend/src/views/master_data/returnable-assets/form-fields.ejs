@@ -1,0 +1,90 @@
+<%
+  const values = (typeof modalValues !== "undefined" && modalValues) ? modalValues : {};
+%>
+<div class="space-y-4">
+  <label class="block space-y-1" data-hide-on-create="true">
+    <span class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"><%= t("asset_code") %></span>
+    <input
+      type="text"
+      data-field="asset_code"
+      value="<%= values.asset_code || '' %>"
+      class="h-11 w-full cursor-not-allowed rounded-xl border border-slate-300 bg-slate-100 px-3 text-sm text-slate-600"
+      readonly
+      disabled
+    >
+  </label>
+
+  <label class="block space-y-1">
+    <span class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"><%= t("asset_name") %></span>
+    <input
+      type="text"
+      name="name"
+      data-field="name"
+      required
+      maxlength="150"
+      value="<%= values.name || '' %>"
+      class="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"
+      placeholder="<%= t('asset_name') %>"
+    >
+  </label>
+
+  <label class="block space-y-1">
+    <span class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"><%= t("name_ur") %></span>
+    <input
+      type="text"
+      name="name_ur"
+      data-field="name_ur"
+      required
+      maxlength="150"
+      value="<%= values.name_ur || '' %>"
+      class="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"
+      placeholder="<%= t('name_ur') %>"
+    >
+  </label>
+
+  <label class="block space-y-1">
+    <span class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"><%= t("asset_type") %></span>
+    <select
+      name="asset_type_code"
+      data-field="asset_type_code"
+      required
+      class="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"
+      data-searchable-select="true"
+      data-searchable-variant="unified"
+    >
+      <option value=""><%= t("select_asset_type") %></option>
+      <% (options.assetTypes || []).forEach((type) => { %>
+        <option value="<%= type.code %>" <%= String(values.asset_type_code || '').toUpperCase() === String(type.code || '').toUpperCase() ? 'selected' : '' %>><%= type.name %></option>
+      <% }) %>
+    </select>
+  </label>
+
+  <label class="block space-y-1">
+    <span class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"><%= t("branch") %></span>
+    <select
+      name="home_branch_id"
+      data-field="home_branch_id"
+      class="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"
+      data-searchable-select="true"
+      data-searchable-variant="unified"
+    >
+      <option value=""><%= t("all_branches") %></option>
+      <% (options.branches || []).forEach((branch) => { %>
+        <option value="<%= branch.id %>" <%= Number(values.home_branch_id || 0) === Number(branch.id) ? 'selected' : '' %>><%= branch.name %></option>
+      <% }) %>
+    </select>
+  </label>
+
+  <label class="inline-flex items-center gap-2">
+    <input
+      type="checkbox"
+      name="is_active"
+      data-field="is_active"
+      class="h-4 w-4 rounded border-slate-300"
+      <%= Object.prototype.hasOwnProperty.call(values, 'is_active')
+        ? (values.is_active === 'on' || values.is_active === true ? 'checked' : '')
+        : 'checked' %>
+    >
+    <span class="text-sm font-semibold text-slate-700"><%= t("is_active") %></span>
+  </label>
+</div>

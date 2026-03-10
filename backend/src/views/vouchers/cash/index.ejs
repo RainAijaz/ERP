@@ -97,6 +97,14 @@
     box-shadow: 0 0 0 1px #111827 !important;
     outline: none !important;
   }
+  @media (max-width: 640px) {
+    [data-voucher-form] [data-lines-table] th {
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      line-height: 1.2;
+    }
+  }
 </style>
 
 <div class="mx-auto w-full max-w-none space-y-3 px-2">
@@ -278,6 +286,9 @@
         window.showUiErrorModal(message);
       }
     };
+    const requiredMessage = (label) =>
+      window.VoucherValidation?.requiredMessage?.(label)
+      || `<%= t("error_required_fields") %>: ${String(label || "").trim()}`;
 
     const isVisibleElement = (el) => {
       if (!el) return false;
@@ -327,6 +338,20 @@
       }
       entitySelect.focus();
     };
+
+    const rowEnterNavigator = window.createVoucherRowEnterNavigator?.({
+      form,
+      linesBody: body,
+      fieldAttr: "data-field",
+      fieldOrder: ["entity_ref", "description", "department_id", receiptKey, paymentKey],
+      shouldHandle: (event, target) => {
+        if (event.defaultPrevented) return false;
+        if (!(target instanceof HTMLElement)) return false;
+        if (target.closest("[data-remove-row]")) return false;
+        return true;
+      },
+    });
+    rowEnterNavigator?.bind();
 
     const attachSelectEnhancer = (selectEl) => {
       if (!selectEl) return;
@@ -719,7 +744,7 @@
           const currentDept = String(currentRow?.querySelector('[data-field="department_id"]')?.value || '').trim();
           const currentRef = String(currentRow?.querySelector('[data-field="entity_ref"]')?.value || '').trim();
           if (!isNaDepartmentEntityRef(currentRef) && !currentDept) {
-            showError('<%= t("error_required_fields") %>: <%= t("department") %>');
+            showError(requiredMessage('<%= t("department") %>'));
             currentRow?.querySelector('[data-field="department_id"]')?.focus();
             return;
           }
@@ -749,7 +774,7 @@
       const receiptVal = parseNum(receiptInput?.value || 0);
       const paymentVal = parseNum(paymentInput?.value || 0);
       if (receiptVal <= 0 && paymentVal <= 0) {
-        showError('<%= t("error_required_fields") %>: <%= t(receiptLabelKey) %>/<%= t(paymentLabelKey) %>');
+        showError(requiredMessage('<%= t(receiptLabelKey) %>/<%= t(paymentLabelKey) %>'));
         if (receiptInput) {
           receiptInput.focus();
           if (typeof receiptInput.select === 'function') receiptInput.select();
@@ -760,7 +785,7 @@
       const currentDept = String(currentRow?.querySelector('[data-field="department_id"]')?.value || '').trim();
       const currentRef = String(currentRow?.querySelector('[data-field="entity_ref"]')?.value || '').trim();
       if (!isNaDepartmentEntityRef(currentRef) && !currentDept) {
-        showError('<%= t("error_required_fields") %>: <%= t("department") %>');
+        showError(requiredMessage('<%= t("department") %>'));
         currentRow?.querySelector('[data-field="department_id"]')?.focus();
         return;
       }
@@ -869,10 +894,12 @@
     });
     form.addEventListener('keydown', (event) => {
       if (event.key !== 'Enter') return;
+      if (event.defaultPrevented) return;
       const target = event.target;
       if (!target || !(target instanceof HTMLElement)) return;
       if (target.matches('[data-voucher-no-input]')) return;
       if (target.matches(`[data-field="${receiptKey}"], [data-field="${paymentKey}"]`)) return;
+      if (target.closest('[data-lines-body]')) return;
       if (target.matches('textarea')) return;
       if (target.closest('[data-enhanced-select-wrapper]')) return;
       if (!target.matches('input, select')) return;
@@ -935,7 +962,7 @@
       const selectedHeaderAccountId = Number(form.querySelector('[data-header-account]')?.value || 0);
       if ((voucherTypeCode === 'CASH_VOUCHER' || voucherTypeCode === 'BANK_VOUCHER') && selectedHeaderAccountId <= 0) {
         event.preventDefault();
-        showError('<%= t("error_required_fields") %>: <%= t(accountLabelKey) %>');
+        showError(requiredMessage('<%= t(accountLabelKey) %>'));
         return;
       }
 
@@ -988,7 +1015,7 @@
 
       if (!rows.length) {
         event.preventDefault();
-        showError('<%= t("error_required_fields") %>');
+        showError(requiredMessage('<%= t("voucher_lines") %>'));
         return;
       }
       if (voucherTypeCode === 'CASH_VOUCHER') {

@@ -32,24 +32,17 @@
 
 <label class="block text-sm font-semibold text-slate-600">
   <span><%= t("usage") %></span>
-  <div class="mt-2 space-y-2" data-multi-select>
-    <button
-      class="flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-accent/30"
-      type="button"
-      data-multi-trigger
-    >
-      <span data-multi-placeholder><%= t("select") %></span>
-      <svg class="h-4 w-4 text-slate-400" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-        <path d="M5 7l5 6 5-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
-    </button>
-    <div class="hidden max-h-48 w-full overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-md" data-multi-menu></div>
-    <div class="flex flex-wrap gap-2" data-multi-tags></div>
-    <select class="sr-only" name="fg_ids" data-field="fg_ids" multiple>
-      <% finished.forEach(function(item) { %>
-        <option value="<%= item.id %>"><%= locale === "ur" ? (item.name_ur || item.name) : item.name %></option>
-      <% }) %>
-    </select>
-  </div>
+  <select
+    class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+    name="fg_ids"
+    data-field="fg_ids"
+    data-searchable-select="true"
+    data-searchable-variant="unified"
+    multiple
+  >
+    <% finished.forEach(function(item) { %>
+      <option value="<%= item.id %>"><%= locale === "ur" ? (item.name_ur || item.name) : item.name %></option>
+    <% }) %>
+  </select>
   <p class="mt-1 text-xs text-slate-500"><%= t("usage_help") %></p>
 </label>

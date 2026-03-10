@@ -1,8 +1,24 @@
-<% const hideCode = ["accounts", "parties"].includes(page.titleKey); %>
+<%
+  const initialValues = (typeof modalValues !== "undefined" && modalValues) ? modalValues : {};
+  const hasCodeColumn = Array.isArray(page.columns) && page.columns.some((column) => column.key === "code");
+%>
+<% if (hasCodeColumn) { %>
+  <label class="block text-sm font-semibold text-slate-600" data-hide-on-create="true">
+    <span><%= t("code") %></span>
+    <input
+      class="mt-2 w-full rounded-xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm text-slate-600 shadow-sm cursor-not-allowed"
+      type="text"
+      data-field="code"
+      value="<%= initialValues.code || '' %>"
+      readonly
+      disabled
+    />
+  </label>
+<% } %>
 <% page.fields.forEach(function(field) { %>
         <% const hideOnCreate = page.titleKey === "parties" && (field.name === "credit_allowed" || field.name === "credit_limit"); %>
         <% if (field.adminOnly && !isAdmin) { return; } %>
-        <% if (hideCode && field.name === "code") { return; } %>
+        <% if (field.name === "code") { return; } %>
         <% if (field.type === "checkbox") { %>
           <label class="flex flex-1 items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>
             <input class="mt-0.5 h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent/40" type="checkbox" name="<%= field.name %>" data-field="<%= field.name %>" />

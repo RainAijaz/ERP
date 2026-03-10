@@ -5,16 +5,35 @@
   All page views are rendered inside this layout.
 -->
 <!DOCTYPE html>
-<html lang="<%= locale || 'en' %>" dir="<%= locale === 'ur' ? 'rtl' : 'ltr' %>">
+<html lang="<%= locale || 'en' %>" dir="<%= locale === 'ur' ? 'rtl' : 'ltr' %>" class="h-full overflow-x-hidden">
   <head>
     <!-- Head includes meta, title, and global styles/scripts -->
     <%- include("../partials/head", { title }) %>
   </head>
   <body class="<%= locale === 'ur' ? 'font-urdu' : 'font-sans' %> min-h-screen overflow-x-hidden bg-linear-to-br from-amber-50 via-slate-50 to-amber-50 text-ink">
+    <script>
+      (function () {
+        const fallbackAlert = (message) => {
+          const text = String(message || "").trim();
+          if (!text) return;
+          window.alert(text);
+        };
+
+        window.showVoucherError = (message, title) => {
+          const text = String(message || "").trim();
+          if (!text) return;
+          if (typeof window.showUiErrorModal === "function") {
+            window.showUiErrorModal(text, title);
+            return;
+          }
+          fallbackAlert(text);
+        };
+      })();
+    </script>
     <div class="flex min-h-screen flex-col">
       <!-- HEADER: Top navigation bar and brand -->
-      <header class="sticky top-0 z-40 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div class="mx-auto w-full px-4 lg:px-8">
+      <header class="sticky top-0 z-40 overflow-visible border-b border-slate-200 bg-white/90 backdrop-blur">
+        <div class="mx-auto w-full overflow-visible px-4 lg:px-8">
           <input id="nav-toggle" type="checkbox" class="peer sr-only" />
           <div class="flex flex-wrap items-center justify-between gap-4 py-4 lg:py-5">
             <div class="flex items-center gap-4">
@@ -36,7 +55,7 @@
             </div>
           </div>
           <!-- NAVIGATION: Main and submenu navigation -->
-          <nav class="hidden w-full flex-col gap-2 pb-4 peer-checked:flex lg:flex lg:flex-row lg:flex-nowrap lg:items-center lg:gap-1 lg:pb-6">
+          <nav class="hidden w-full flex-col gap-2 overflow-visible pb-4 peer-checked:flex lg:flex lg:flex-row lg:flex-nowrap lg:items-center lg:gap-1 lg:pb-6">
             <%- include("../partials/nav-menu", { navConfig, can, t }) %>
           </nav>
         </div>
@@ -55,6 +74,9 @@
       (function () {
         const path = String(window.location.pathname || "");
         if (!path.startsWith("/vouchers/")) return;
+        const hasUiError = <%- JSON.stringify(Boolean(uiError && uiError.message)) %>;
+        const hasStickyUiNotice = <%- JSON.stringify(Boolean(uiNotice && uiNotice.message && uiNotice.sticky === true)) %>;
+        const shouldPreserveDraft = hasUiError || hasStickyUiNotice;
 
         const params = new URLSearchParams(window.location.search || "");
         const hasVoucherContext = params.has("voucher_no") || String(params.get("view") || "") === "1";
@@ -74,8 +96,280 @@
         }
 
         if (navType !== "reload") return;
+        if (shouldPreserveDraft) return;
 
+        try {
+          sessionStorage.removeItem(`voucher_draft:${path}`);
+        } catch (err) {
+          // ignore
+        }
         window.location.replace(`${path}?new=1`);
+      })();
+    </script>
+    <script>
+      (function () {
+        const path = String(window.location.pathname || "");
+        if (!path.startsWith("/vouchers/")) return;
+
+        const form = document.querySelector("[data-voucher-form], [data-sales-voucher-form], [data-purchase-voucher-form]");
+        if (!form || !(form instanceof HTMLFormElement)) return;
+
+        const storageKey = `voucher_draft:${path}`;
+        const hasUiError = <%- JSON.stringify(Boolean(uiError && uiError.message)) %>;
+        const hasStickyUiNotice = <%- JSON.stringify(Boolean(uiNotice && uiNotice.message && uiNotice.sticky === true)) %>;
+        const shouldRestoreDraft = hasUiError || hasStickyUiNotice;
+
+        const detectNavigationType = () => {
+          let navType = "";
+          try {
+            const navEntries = performance.getEntriesByType("navigation");
+            navType = String(navEntries?.[0]?.type || "");
+          } catch (err) {
+            navType = "";
+          }
+                clearSubmitMarker();
+          if (!navType && performance && performance.navigation) {
+            const legacyType = Number(performance.navigation.type);
+            if (legacyType === 1) navType = "reload";
+          }
+          return navType;
+        };
+
+        const setFieldValue = (field, value) => {
+          if (!(field instanceof HTMLElement)) return;
+          if (field instanceof HTMLInputElement) {
+            if (field.type === "checkbox" || field.type === "radio") {
+              field.checked = String(field.value || "") === String(value || "");
+              return;
+            }
+            field.value = String(value ?? "");
+            return;
+          }
+          if (field instanceof HTMLTextAreaElement || field instanceof HTMLSelectElement) {
+            field.value = String(value ?? "");
+          }
+        };
+
+        const restoreDraft = () => {
+          let parsed = null;
+          try {
+            const raw = sessionStorage.getItem(storageKey);
+            parsed = raw ? JSON.parse(raw) : null;
+          } catch (err) {
+            parsed = null;
+          }
+          if (!parsed || typeof parsed !== "object") return;
+          const { values } = parsed;
+          if (!values || typeof values !== "object") return;
+
+          Object.entries(values).forEach(([name, value]) => {
+            const fields = Array.from(form.querySelectorAll(`[name="${CSS.escape(name)}"]`));
+            if (!fields.length) return;
+
+            if (Array.isArray(value)) {
+              if (fields.every((field) => field instanceof HTMLInputElement && (field.type === "checkbox" || field.type === "radio"))) {
+                const selected = new Set(value.map((entry) => String(entry ?? "")));
+                fields.forEach((field) => {
+                  if (field instanceof HTMLInputElement) {
+                    field.checked = selected.has(String(field.value || ""));
+                  }
+                });
+              } else if (fields[0] instanceof HTMLSelectElement && fields[0].multiple) {
+                const selected = new Set(value.map((entry) => String(entry ?? "")));
+                Array.from(fields[0].options).forEach((option) => {
+                  option.selected = selected.has(String(option.value || ""));
+                });
+              } else {
+                setFieldValue(fields[0], value[0]);
+              }
+              return;
+            }
+
+            setFieldValue(fields[0], value);
+          });
+
+          Array.from(form.querySelectorAll("input, select, textarea")).forEach((field) => {
+            field.dispatchEvent(new Event("change", { bubbles: true }));
+            field.dispatchEvent(new Event("input", { bubbles: true }));
+          });
+        };
+
+        const collectDraftValues = () => {
+          const values = {};
+          const elements = Array.from(form.elements || []);
+          elements.forEach((element) => {
+            if (!(element instanceof HTMLInputElement || element instanceof HTMLSelectElement || element instanceof HTMLTextAreaElement)) {
+              return;
+            }
+            const name = String(element.name || "").trim();
+            if (!name) return;
+            if (element instanceof HTMLInputElement && (element.type === "submit" || element.type === "button" || element.type === "file")) {
+              return;
+            }
+
+            if (element instanceof HTMLInputElement && (element.type === "checkbox" || element.type === "radio")) {
+              if (!values[name]) values[name] = [];
+              if (element.checked) values[name].push(String(element.value || "on"));
+              return;
+            }
+
+            if (element instanceof HTMLSelectElement && element.multiple) {
+              values[name] = Array.from(element.selectedOptions).map((option) => String(option.value || ""));
+              return;
+            }
+
+            values[name] = String(element.value ?? "");
+          });
+          return values;
+        };
+
+        const navType = detectNavigationType();
+        if (navType === "reload") {
+          if (shouldRestoreDraft) {
+            restoreDraft();
+            return;
+          }
+          try {
+            sessionStorage.removeItem(storageKey);
+          } catch (err) {
+            // ignore
+          }
+          return;
+        }
+
+        if (shouldRestoreDraft) {
+          restoreDraft();
+        } else {
+          try {
+            sessionStorage.removeItem(storageKey);
+          } catch (err) {
+            // ignore
+          }
+        }
+
+        form.addEventListener("submit", (event) => {
+          if (event.defaultPrevented) return;
+          const payload = {
+            ts: Date.now(),
+            values: collectDraftValues(),
+          };
+          try {
+            sessionStorage.setItem(storageKey, JSON.stringify(payload));
+          } catch (err) {
+            // ignore
+          }
+        });
+      })();
+    </script>
+    <script>
+      (function () {
+        const path = String(window.location.pathname || "");
+        if (!path.startsWith("/vouchers/")) return;
+
+        const form = document.querySelector("[data-voucher-form], [data-sales-voucher-form], [data-purchase-voucher-form]");
+        if (!(form instanceof HTMLFormElement)) return;
+        if (String(form.method || "").toUpperCase() !== "POST") return;
+        if (form.dataset.asyncVoucherSubmitBound === "1") return;
+        form.dataset.asyncVoucherSubmitBound = "1";
+
+        const genericError = <%- JSON.stringify(String(t("generic_error") || "Something went wrong. Please try again.")) %>;
+        let isSubmitting = false;
+
+        const extractErrorMessage = async (response) => {
+          try {
+            const payload = await response.json();
+            const message = String(payload?.error || payload?.message || "").trim();
+            return message || genericError;
+          } catch (err) {
+            return genericError;
+          }
+        };
+
+        form.addEventListener("submit", async (event) => {
+          if (event.defaultPrevented) return;
+          if (isSubmitting) {
+            event.preventDefault();
+            return;
+          }
+
+          event.preventDefault();
+          isSubmitting = true;
+
+          try {
+            const formData = new FormData(form);
+            const encodedBody = new URLSearchParams();
+            formData.forEach((value, key) => {
+              if (typeof value === "string") {
+                encodedBody.append(key, value);
+              }
+            });
+            const submitter = event.submitter;
+            if (
+              submitter
+              && (submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement)
+              && String(submitter.name || "").trim()
+            ) {
+              encodedBody.append(String(submitter.name), String(submitter.value || ""));
+            }
+            const csrfToken = String(formData.get("_csrf") || "").trim();
+
+            const response = await fetch(form.action || window.location.href, {
+              method: "POST",
+              body: encodedBody.toString(),
+              headers: {
+                Accept: "application/json",
+                "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+                "x-csrf-token": csrfToken,
+              },
+              credentials: "same-origin",
+            });
+
+            if (!response.ok) {
+              const message = await extractErrorMessage(response);
+              window.showVoucherError(message);
+              return;
+            }
+
+            const nextUrl = String(response.url || "").trim();
+            window.location.assign(nextUrl || (form.action || window.location.href));
+          } catch (err) {
+            window.showVoucherError(genericError);
+          } finally {
+            isSubmitting = false;
+          }
+        });
+      })();
+    </script>
+    <script>
+      (function () {
+        const path = String(window.location.pathname || "");
+        if (!path.startsWith("/vouchers/")) return;
+
+        const form = document.querySelector("[data-voucher-form], [data-sales-voucher-form], [data-purchase-voucher-form]");
+        if (!(form instanceof HTMLFormElement)) return;
+
+        const DATE_INPUT_SELECTOR = 'input[type="date"], input[type="datetime-local"], input[type="month"], input[type="time"]';
+        const pickerSupportedTypes = new Set(["date", "datetime-local", "month", "time"]);
+
+        const tryOpenPicker = (input) => {
+          if (!(input instanceof HTMLInputElement)) return;
+          if (!pickerSupportedTypes.has(String(input.type || "").toLowerCase())) return;
+          if (input.disabled || input.readOnly) return;
+          if (typeof input.showPicker !== "function") return;
+          try {
+            input.showPicker();
+          } catch (err) {
+            // ignore browser restrictions
+          }
+        };
+
+        form.querySelectorAll(DATE_INPUT_SELECTOR).forEach((input) => {
+          if (!(input instanceof HTMLInputElement)) return;
+          if (input.dataset.pickerAutoBound === "1") return;
+          input.dataset.pickerAutoBound = "1";
+          input.addEventListener("click", () => tryOpenPicker(input));
+          input.addEventListener("focus", () => tryOpenPicker(input));
+        });
       })();
     </script>
     <script>
@@ -220,6 +514,131 @@
         }
       })();
     </script>
+    <script>
+      (function () {
+        const path = String(window.location.pathname || "");
+        if (!path.startsWith("/reports/")) return;
+
+        const ALL_VALUE = "__ALL__";
+        const REPORT_SUBMIT_MARKER_KEY = `report_submit_marker:${path}`;
+
+        const detectNavigationType = () => {
+          let navType = "";
+          try {
+            const navEntries = performance.getEntriesByType("navigation");
+            navType = String(navEntries?.[0]?.type || "");
+          } catch (err) {
+            navType = "";
+          }
+          if (!navType && performance && performance.navigation) {
+            const legacyType = Number(performance.navigation.type);
+            if (legacyType === 1) navType = "reload";
+            else if (legacyType === 0) navType = "navigate";
+          }
+          return navType;
+        };
+
+        const readSubmitMarker = () => {
+          try {
+            const raw = sessionStorage.getItem(REPORT_SUBMIT_MARKER_KEY);
+            const ts = Number(raw || 0);
+            return Number.isFinite(ts) ? ts : 0;
+          } catch (err) {
+            return 0;
+          }
+        };
+
+        const clearSubmitMarker = () => {
+          try {
+            sessionStorage.removeItem(REPORT_SUBMIT_MARKER_KEY);
+          } catch (err) {
+            // ignore
+          }
+        };
+
+        const writeSubmitMarker = () => {
+          try {
+            sessionStorage.setItem(REPORT_SUBMIT_MARKER_KEY, String(Date.now()));
+          } catch (err) {
+            // ignore
+          }
+        };
+
+        const navType = detectNavigationType();
+        const submitMarkerAgeMs = Date.now() - readSubmitMarker();
+        const isRecentSubmitNavigation = submitMarkerAgeMs >= 0 && submitMarkerAgeMs < 15000;
+        const shouldResetOnThisLoad = navType === "reload" && !isRecentSubmitNavigation;
+
+        const normalizeSelectAllState = (select, triggerValue = "", ensureDefault = false) => {
+          if (!(select instanceof HTMLSelectElement) || !select.multiple) return;
+          const options = Array.from(select.options || []);
+          const allOption = options.find((opt) => String(opt.value || "") === ALL_VALUE);
+          if (!allOption) return;
+
+          const nonAllOptions = options.filter((opt) => String(opt.value || "") !== ALL_VALUE);
+
+          if (String(triggerValue || "") === ALL_VALUE && allOption.selected) {
+            nonAllOptions.forEach((opt) => {
+              opt.selected = false;
+            });
+            return;
+          }
+
+          const hasNonAllSelected = nonAllOptions.some((opt) => opt.selected);
+          if (hasNonAllSelected) {
+            allOption.selected = false;
+            return;
+          }
+
+          if (ensureDefault) {
+            allOption.selected = true;
+          }
+        };
+
+        const bindReportFormDefaults = (form) => {
+          if (!(form instanceof HTMLFormElement)) return;
+          const multiSelects = Array.from(form.querySelectorAll("select[multiple]"));
+
+          multiSelects.forEach((select) => {
+            const options = Array.from(select.options || []);
+            const hasAllOption = options.some((opt) => String(opt.value || "") === ALL_VALUE);
+            if (!hasAllOption) return;
+
+            if (shouldResetOnThisLoad) {
+              options.forEach((opt) => {
+                opt.selected = String(opt.value || "") === ALL_VALUE;
+              });
+            }
+
+            normalizeSelectAllState(select, "", shouldResetOnThisLoad);
+
+            select.addEventListener("change", (event) => {
+              const target = event.target;
+              if (!(target instanceof HTMLSelectElement)) return;
+              normalizeSelectAllState(target, "", true);
+            });
+          });
+
+          if (shouldResetOnThisLoad) {
+            const fromDate = form.querySelector('input[name="from_date"]');
+            const toDate = form.querySelector('input[name="to_date"]');
+            if (fromDate instanceof HTMLInputElement) fromDate.value = "";
+            if (toDate instanceof HTMLInputElement) toDate.value = "";
+
+            const dateRangeInput = form.querySelector("[data-date-range-input]");
+            if (dateRangeInput instanceof HTMLInputElement) dateRangeInput.value = "";
+          }
+
+          form.addEventListener("submit", () => {
+            writeSubmitMarker();
+          });
+        };
+
+        const reportForms = Array.from(document.querySelectorAll("form"));
+        reportForms.forEach((form) => bindReportFormDefaults(form));
+        clearSubmitMarker();
+      })();
+    </script>
     <!-- NAVIGATION DROPDOWNS: Submenu open/close logic -->
     <script>
       (function () {
@@ -231,22 +650,80 @@
           if (!menu) return;
           menu.classList.remove("nav-scrollable");
           menu.style.maxHeight = "";
+          menu.style.overflowX = "";
           menu.style.overflowY = "";
           menu.style.overscrollBehavior = "";
+          menu.style.top = "";
+          menu.style.bottom = "";
+          menu.style.left = "";
+          menu.style.right = "";
+          menu.style.marginTop = "";
+          menu.style.marginBottom = "";
+          menu.style.marginLeft = "";
+          menu.style.marginRight = "";
         };
         const applyMenuViewportConstraint = (menu) => {
           if (!menu || !mediaQuery.matches) return;
           clearMenuViewportConstraint(menu);
-          // Keep nested flyout menus unclipped; only constrain leaf menus that can overflow viewport.
-          if (menu.querySelector("[data-submenu-toggle]")) return;
-          const rect = menu.getBoundingClientRect();
+          const viewportTop = 12;
           const viewportBottom = window.innerHeight - 12;
-          if (rect.bottom <= viewportBottom) return;
-          const maxHeight = Math.max(180, Math.floor(viewportBottom - rect.top));
-          menu.classList.add("nav-scrollable");
-          menu.style.maxHeight = `${maxHeight}px`;
-          menu.style.overflowY = "auto";
-          menu.style.overscrollBehavior = "contain";
+          const viewportRight = window.innerWidth - 12;
+          const forceScrollable = menu.dataset.forceScrollable === "1";
+          const wrap = menu.closest("[data-submenu-wrap]");
+          const wrapRect = wrap?.getBoundingClientRect();
+
+          if (menu.classList.contains("nav-submenu")) {
+            const initialRect = menu.getBoundingClientRect();
+            if (initialRect.right > viewportRight) {
+              menu.style.left = "auto";
+              menu.style.right = "calc(100% + 0.5rem)";
+              menu.style.marginLeft = "0";
+              menu.style.marginRight = "0.5rem";
+            }
+          }
+
+          let rect = menu.getBoundingClientRect();
+          if (rect.bottom > viewportBottom && wrapRect) {
+            const spaceAbove = Math.max(0, wrapRect.top - viewportTop);
+            const spaceBelow = Math.max(0, viewportBottom - wrapRect.bottom);
+            if (spaceAbove > spaceBelow) {
+              menu.style.top = "auto";
+              menu.style.marginTop = "0";
+              if (menu.classList.contains("nav-dropdown")) {
+                menu.style.bottom = "calc(100% + 0.5rem)";
+              } else {
+                menu.style.bottom = "0";
+              }
+            }
+            rect = menu.getBoundingClientRect();
+          }
+
+          if (menu.classList.contains("nav-submenu")) {
+            const safeTop = Math.max(viewportTop, rect.top);
+            const availableHeight = Math.max(180, Math.floor(viewportBottom - safeTop));
+            const forcedMaxHeight = Math.max(180, Math.min(220, availableHeight));
+            const targetMaxHeight = forceScrollable ? forcedMaxHeight : availableHeight;
+            const needsVerticalConstraint = forceScrollable || menu.scrollHeight > targetMaxHeight + 1;
+            menu.style.overflowX = "hidden";
+            if (needsVerticalConstraint) {
+              menu.classList.add("nav-scrollable");
+              menu.style.maxHeight = `${targetMaxHeight}px`;
+              menu.style.overflowY = "auto";
+              menu.style.overscrollBehavior = "contain";
+            }
+            return;
+          }
+
+          const overflowBottom = rect.bottom - viewportBottom;
+          const overflowTop = viewportTop - rect.top;
+          if (overflowBottom > 0 || overflowTop > 0) {
+            const safeTop = Math.max(viewportTop, rect.top);
+            const maxHeight = Math.max(180, Math.floor(viewportBottom - safeTop));
+            menu.classList.add("nav-scrollable");
+            menu.style.maxHeight = `${maxHeight}px`;
+            menu.style.overflowY = "auto";
+            menu.style.overscrollBehavior = "contain";
+          }
         };
 
         const closeAll = (except) => {

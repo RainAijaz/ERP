@@ -254,4 +254,65 @@ test.describe("Voucher Enter key focus flow", () => {
 
     await expect(descriptionInput).toBeFocused();
   });
+
+  test("sales voucher Enter after article selection focuses and opens status dropdown", async ({
+    page,
+  }) => {
+    await login(page, "E2E_ADMIN");
+
+    const response = await page.goto("/vouchers/sales?new=1", {
+      waitUntil: "domcontentloaded",
+    });
+    test.skip(
+      !response || response.status() !== 200,
+      "Sales voucher page not accessible.",
+    );
+
+    const firstRow = page.locator("[data-lines-body] tr").first();
+    await expect(firstRow).toBeVisible();
+
+    const articleSelect = firstRow.locator('select[data-f="sku_id"]').first();
+    await expect(articleSelect).toBeVisible();
+    const articleValues = await articleSelect
+      .locator("option")
+      .evaluateAll((opts) =>
+        opts.map((opt) => String(opt.value || "").trim()).filter(Boolean),
+      );
+    test.skip(
+      !articleValues.length,
+      "No article options available for sales voucher Enter-flow test.",
+    );
+
+    const articleInput = firstRow
+      .locator("td")
+      .nth(0)
+      .locator("[data-searchable-wrapper] input")
+      .first();
+    const articleMenu = firstRow
+      .locator("td")
+      .nth(0)
+      .locator("div.z-50")
+      .first();
+    const statusInput = firstRow
+      .locator("td")
+      .nth(1)
+      .locator("[data-searchable-wrapper] input")
+      .first();
+    const statusMenu = firstRow
+      .locator("td")
+      .nth(1)
+      .locator("div.z-50")
+      .first();
+
+    await expect(articleInput).toBeVisible();
+    await articleInput.click();
+    await expect(articleMenu).toBeVisible();
+    await articleInput.press("ArrowDown");
+    await articleInput.press("Enter");
+
+    await expect(articleSelect).not.toHaveValue("");
+    await articleInput.press("Enter");
+    await expect(statusInput).toBeFocused();
+    await expect(statusMenu).toBeVisible();
+  });
 });

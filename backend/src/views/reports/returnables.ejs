@@ -1,0 +1,480 @@
+<%
+	const tt = (key, fallback) => {
+		const value = typeof t === "function" ? t(key) : "";
+		return value && value !== key ? value : fallback;
+	};
+	const mode = String(reportMode || "control").toLowerCase() === "vendor" ? "vendor" : "control";
+	const reportLoaded = Boolean(filters?.reportLoaded);
+	const rows = Array.isArray(reportData?.rows) ? reportData.rows : [];
+	const hasData = rows.length > 0;
+	const selectedVendorIds = Array.isArray(filters?.vendorIds) ? filters.vendorIds : [];
+	const selectedAssetIds = Array.isArray(filters?.assetIds) ? filters.assetIds : [];
+	const selectedReasonCodes = Array.isArray(filters?.reasonCodes) ? filters.reasonCodes : [];
+	const selectedStatusList = Array.isArray(filters?.statusList) ? filters.statusList : [];
+	const selectedBranchIds = Array.isArray(filters?.branchIds) ? filters.branchIds : [];
+	const formatDate = (value) => formatDateDisplay(value, "-");
+	const formatQty = (value) => formatNumberDisplay(value, { decimals: 3, fallback: "0" });
+	const formatPct = (value) => formatNumberDisplay(value, { decimals: 2, fallback: "0" });
+	const totals = reportData?.totals || {};
+	const kpis = reportData?.kpis || {};
+	const dateRangeLabel = tt("date_range", "Date Range");
+	const weekdayShortLabels = [
+		t("weekday_sun_short"),
+		t("weekday_mon_short"),
+		t("weekday_tue_short"),
+		t("weekday_wed_short"),
+		t("weekday_thu_short"),
+		t("weekday_fri_short"),
+		t("weekday_sat_short"),
+	];
+%>
+
+<div class="mx-auto w-full max-w-none space-y-4 px-2">
+	<section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+		<div class="flex flex-wrap items-center justify-between gap-3">
+			<h1 class="text-xl font-display font-semibold tracking-tight text-ink sm:text-2xl"><%= mode === 'control' ? tt('pending_returnables', 'Returnables Control Dashboard') : tt('overdue_returnables', 'Vendor Returnables Performance') %></h1>
+		</div>
+		<% if (filters?.invalidFilterInput) { %>
+			<div class="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800"><%= tt("date_filters_auto_corrected", "Invalid date filters were auto-corrected.") %></div>
+		<% } %>
+
+		<form method="post" action="<%= reportPath %>" class="mt-3 max-w-6xl rounded-xl border border-slate-200 bg-slate-50/30 p-3 sm:p-4" data-returnables-report-form>
+			<input type="hidden" name="_csrf" value="<%= csrfToken %>">
+			<input type="hidden" name="load_report" value="1">
+
+			<div class="space-y-3">
+				<div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+					<label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= dateRangeLabel %></label>
+					<div class="sm:col-span-9">
+						<div class="relative" data-date-range-wrap>
+							<input type="text" readonly value="" data-date-range-input class="h-10 w-full cursor-pointer rounded-lg border border-slate-300 bg-white px-3 pr-10 text-sm">
+							<button type="button" class="absolute inset-y-0 right-2 inline-flex items-center text-slate-500 hover:text-slate-700" data-date-range-toggle aria-label="<%= tt('open_date_range_picker', 'Open date range picker') %>">
+								<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+							</button>
+							<div class="absolute left-0 z-50 mt-2 hidden max-h-[62vh] overflow-auto rounded-xl border border-slate-200 bg-white p-2.5 shadow-lg" style="width:min(700px,calc(100vw - 1rem));" data-date-range-panel>
+								<div class="grid grid-cols-1 gap-2 lg:grid-cols-[156px_1fr]">
+									<div class="space-y-1.5">
+										<div>
+											<div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= tt('from_date', 'From Date') %></div>
+											<div class="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700" data-date-range-from-display>-</div>
+										</div>
+										<div>
+											<div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= tt('to_date', 'To Date') %></div>
+											<div class="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700" data-date-range-to-display>-</div>
+										</div>
+									</div>
+									<div>
+										<div class="mb-1.5 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600" data-date-range-caption><%= tt('select_date_range', 'Select Date Range') %></div>
+										<div class="grid grid-cols-1 gap-3 xl:grid-cols-[1fr_auto_1fr]">
+											  <div class="min-w-52.5 rounded-lg border border-slate-200 bg-slate-50/40 p-2">
+												<div class="mb-1 flex items-center justify-between gap-2">
+													<button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-prev>&larr;</button>
+													<div class="text-center text-xs font-semibold text-slate-700" data-date-range-month-1-label></div>
+													<button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-next>&rarr;</button>
+												</div>
+												<div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-500">
+													<% weekdayShortLabels.forEach((weekdayLabel) => { %><span><%= weekdayLabel %></span><% }) %>
+												</div>
+												<div class="mt-1 grid grid-cols-7 gap-1" data-date-range-month-1-grid></div>
+											</div>
+											<div class="hidden xl:block w-px bg-slate-200 self-stretch"></div>
+											  <div class="min-w-52.5 rounded-lg border border-slate-200 bg-slate-50/40 p-2">
+												<div class="mb-1 flex items-center justify-between gap-2">
+													<button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-2-prev>&larr;</button>
+													<div class="text-center text-xs font-semibold text-slate-700" data-date-range-month-2-label></div>
+													<button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-2-next>&rarr;</button>
+												</div>
+												<div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-500">
+													<% weekdayShortLabels.forEach((weekdayLabel) => { %><span><%= weekdayLabel %></span><% }) %>
+												</div>
+												<div class="mt-1 grid grid-cols-7 gap-1" data-date-range-month-2-grid></div>
+											</div>
+										</div>
+									</div>
+								</div>
+								<div class="mt-1.5 flex items-center justify-end gap-2">
+									<button type="button" class="rounded-lg border border-slate-300 bg-white px-3 py-1.25 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700" data-date-range-cancel><%= tt('cancel', 'Cancel') %></button>
+									<button type="button" class="rounded-lg bg-accent px-3 py-1.25 text-xs font-semibold uppercase tracking-[0.08em] text-white" data-date-range-apply><%= tt('apply', 'Apply') %></button>
+								</div>
+							</div>
+						</div>
+						<input type="hidden" name="from_date" value="<%= filters?.from || '' %>" data-from-date-hidden>
+						<input type="hidden" name="to_date" value="<%= filters?.to || '' %>" data-to-date-hidden>
+					</div>
+				</div>
+
+				<div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+					<label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt('vendor_party', 'Vendor') %></label>
+					<div class="sm:col-span-9">
+						<select name="vendor_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+							<option value="__ALL__" <%= !selectedVendorIds.length ? 'selected' : '' %>><%= tt('all', 'All') %></option>
+							<% (options?.vendors || []).forEach((vendor) => { %>
+								<option value="<%= vendor.id %>" <%= selectedVendorIds.includes(Number(vendor.id)) ? 'selected' : '' %>><%= vendor.name %></option>
+							<% }) %>
+						</select>
+					</div>
+				</div>
+
+				<% if (mode === 'control') { %>
+					<div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+						<label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt('asset_name', 'Asset') %></label>
+						<div class="sm:col-span-9">
+							<select name="asset_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+								<option value="__ALL__" <%= !selectedAssetIds.length ? 'selected' : '' %>><%= tt('all', 'All') %></option>
+								<% (options?.assets || []).forEach((asset) => { %>
+									<option value="<%= asset.id %>" <%= selectedAssetIds.includes(Number(asset.id)) ? 'selected' : '' %>><%= asset.asset_name || '-' %></option>
+								<% }) %>
+							</select>
+						</div>
+					</div>
+				<% } %>
+
+				<div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+					<label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt('reason', 'Reason') %></label>
+					<div class="sm:col-span-9">
+						<select name="reason_codes" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+							<option value="__ALL__" <%= !selectedReasonCodes.length ? 'selected' : '' %>><%= tt('all', 'All') %></option>
+							<% (options?.reasons || []).forEach((reason) => { %>
+								<option value="<%= reason.code %>" <%= selectedReasonCodes.includes(String(reason.code || '').toUpperCase()) ? 'selected' : '' %>><%= reason.name %></option>
+							<% }) %>
+						</select>
+					</div>
+				</div>
+
+				<% if (mode === 'control') { %>
+					<div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+						<label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt('status', 'Status') %></label>
+						<div class="sm:col-span-9">
+							<select name="status_list" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+								<option value="__ALL__" <%= !selectedStatusList.length ? 'selected' : '' %>><%= tt('all', 'All') %></option>
+								<% (options?.statuses || []).forEach((status) => { %>
+									<option value="<%= status %>" <%= selectedStatusList.includes(status) ? 'selected' : '' %>><%= status %></option>
+								<% }) %>
+							</select>
+						</div>
+					</div>
+				<% } %>
+
+				<div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+					<label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? tt('branches', 'Branches') : tt('branch', 'Branch') %></label>
+					<div class="sm:col-span-9">
+						<% if (user?.isAdmin) { %>
+							<select name="branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+								<option value="__ALL__" <%= !selectedBranchIds.length ? 'selected' : '' %>><%= tt('all', 'All') %></option>
+								<% (options?.branches || []).forEach((branch) => { %>
+									<option value="<%= branch.id %>" <%= selectedBranchIds.includes(Number(branch.id)) ? 'selected' : '' %>><%= branch.name %></option>
+								<% }) %>
+							</select>
+						<% } else { %>
+							<input type="text" readonly value="<%= (options?.branches || [])[0]?.name || branchId %>" class="h-10 w-full rounded-lg border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700">
+						<% } %>
+					</div>
+				</div>
+
+				<% if (mode === 'control') { %>
+					<div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+						<label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt('report_filters', 'Report Filters') %></label>
+						<div class="sm:col-span-9 pt-1">
+							<label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+								<input type="checkbox" name="overdue_only" value="1" class="h-4 w-4 border-slate-300 text-accent focus:ring-accent" <%= filters?.overdueOnly ? 'checked' : '' %>>
+								<span><%= tt('overdue_only', 'Overdue Only') %></span>
+							</label>
+						</div>
+					</div>
+				<% } else { %>
+					<div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+						<label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt('report_filters', 'Report Filters') %></label>
+						<div class="sm:col-span-9 grid grid-cols-1 gap-2 sm:grid-cols-2">
+							<label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+								<input type="checkbox" name="include_closed" value="1" class="h-4 w-4 border-slate-300 text-accent focus:ring-accent" <%= filters?.includeClosed ? 'checked' : '' %>>
+								<span><%= tt('include_closed', 'Include Closed Vendors') %></span>
+							</label>
+							<label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+								<input type="checkbox" name="overdue_vendors_only" value="1" class="h-4 w-4 border-slate-300 text-accent focus:ring-accent" <%= filters?.overdueVendorsOnly ? 'checked' : '' %>>
+								<span><%= tt('only_overdue_vendors', 'Only Overdue Vendors') %></span>
+							</label>
+						</div>
+					</div>
+				<% } %>
+
+				<div class="grid grid-cols-1 items-center gap-2 pt-1 sm:grid-cols-12">
+					<div class="sm:col-start-4 sm:col-span-9 flex items-center gap-2">
+						<button type="submit" class="inline-flex items-center rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= tt('load', 'Load') %></button>
+						<a href="<%= reportPath %>" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= tt('cancel', 'Cancel') %></a>
+					</div>
+				</div>
+			</div>
+		</form>
+	</section>
+
+	<% if (mode === 'control' && reportLoaded) { %>
+		<section class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+			<article class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+				<p class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500"><%= tt('total_lines', 'Total Lines') %></p>
+				<p class="mt-1 text-xl font-semibold text-slate-900"><%= Number(kpis.totalLines || 0) %></p>
+			</article>
+			<article class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+				<p class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500"><%= tt('pending_lines', 'Pending Lines') %></p>
+				<p class="mt-1 text-xl font-semibold text-slate-900"><%= Number(kpis.pendingLines || 0) %></p>
+			</article>
+			<article class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+				<p class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500"><%= tt('overdue_lines', 'Overdue Lines') %></p>
+				<p class="mt-1 text-xl font-semibold text-rose-700"><%= Number(kpis.overdueLines || 0) %></p>
+			</article>
+			<article class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+				<p class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500"><%= tt('overdue_qty', 'Overdue Qty') %></p>
+				<p class="mt-1 text-xl font-semibold text-rose-700"><%= formatQty(kpis.overdueQty || 0) %></p>
+			</article>
+			<article class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+				<p class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500"><%= tt('closed_percent', 'Closed %') %></p>
+				<p class="mt-1 text-xl font-semibold text-emerald-700"><%= `${formatPct(kpis.closedPercent || 0)}%` %></p>
+			</article>
+		</section>
+	<% } %>
+
+	<section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm" data-print-area>
+		<div class="px-1 pt-1 text-center text-xl font-display font-semibold uppercase tracking-[0.35em] text-slate-900" data-print-header>
+			<%= tt('brand', 'ERP') %>
+		</div>
+
+		<div class="flex flex-col gap-3 border-b border-slate-200 px-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+			<div class="text-sm font-semibold text-slate-700"><%= mode === 'control' ? tt('pending_returnables', 'Returnables Control Dashboard') : tt('overdue_returnables', 'Vendor Returnables Performance') %></div>
+			<div class="flex items-center gap-2">
+				<button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40" type="button" data-download-button <%= reportLoaded && hasData ? '' : 'disabled' %>><%= tt('download', 'Download') %></button>
+				<button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40" type="button" data-print-button <%= reportLoaded && hasData ? '' : 'disabled' %>><%= tt('print', 'Print') %></button>
+				<%- include("../base/partials/table-controls", { t, showStatus: false }) %>
+			</div>
+		</div>
+
+		<% if (!reportLoaded) { %>
+			<div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= tt('load_report_to_view', 'Load report to view') %></div>
+		<% } else if (!hasData) { %>
+			<div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= tt('no_entries', 'No entries') %></div>
+		<% } else { %>
+			<div class="relative mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+				<% if (mode === 'control') { %>
+					  <table class="min-w-420 w-full text-sm tabular-nums" data-table data-report-table>
+						<thead class="bg-slate-100 text-slate-700">
+							<tr>
+								<th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="rdv_no"><%= tt('voucher_no', 'Voucher No') %></th>
+								<th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="rdv_date"><%= tt('date', 'Date') %></th>
+								<th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('vendor_party', 'Vendor') %></th>
+								<th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('asset_name', 'Asset') %></th>
+								<th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('quantity', 'Quantity') %></th>
+								<th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('received_quantity', 'Received Qty') %></th>
+								<th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('pending_qty', 'Pending Qty') %></th>
+								<th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('expected_return_date', 'Expected Return Date') %></th>
+								<th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('days_out', 'Days Out') %></th>
+								<th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('overdue_days', 'Overdue Days') %></th>
+								<th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('status', 'Status') %></th>
+								<th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('branch', 'Branch') %></th>
+							</tr>
+						</thead>
+						<tbody class="divide-y divide-slate-100" data-table-body>
+							<% rows.forEach((row) => { %>
+								<tr class="bg-white odd:bg-slate-50/30" data-row data-active="true" data-report-entry>
+									<td class="px-3 py-2" data-sort-value="<%= row.rdvNo %>"><%= row.rdvNo %></td>
+									<td class="px-3 py-2" data-sort-value="<%= row.rdvDate || '' %>"><%= formatDate(row.rdvDate) %></td>
+									<td class="px-3 py-2"><%= row.vendorName || '-' %></td>
+									<td class="px-3 py-2"><%= row.assetName || '-' %></td>
+									<td class="px-3 py-2 text-right font-semibold"><%= formatQty(row.sentQty || 0) %></td>
+									<td class="px-3 py-2 text-right font-semibold"><%= formatQty(row.returnedQty || 0) %></td>
+									<td class="px-3 py-2 text-right font-semibold"><%= formatQty(row.pendingQty || 0) %></td>
+									<td class="px-3 py-2"><%= formatDate(row.expectedReturnDate) %></td>
+									<td class="px-3 py-2 text-right"><%= Number(row.daysOut || 0) %></td>
+									<td class="px-3 py-2 text-right"><%= Number(row.overdueDays || 0) %></td>
+									<td class="px-3 py-2">
+										<span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold <%= row.status === 'OVERDUE' ? 'bg-rose-100 text-rose-700' : row.status === 'CLOSED' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700' %>"><%= row.status %></span>
+									</td>
+									<td class="px-3 py-2"><%= row.branchName || '-' %></td>
+								</tr>
+							<% }) %>
+							<tr class="border-t border-slate-200 bg-slate-100" data-report-total-row>
+								<td colspan="4" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= tt('total', 'Total') %></td>
+								<td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatQty(totals.sentQty || 0) %></td>
+								<td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatQty(totals.returnedQty || 0) %></td>
+								<td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatQty(totals.pendingQty || 0) %></td>
+								<td colspan="5"></td>
+							</tr>
+						</tbody>
+					</table>
+				<% } else { %>
+					  <table class="min-w-345 w-full text-sm tabular-nums" data-table data-report-table>
+						<thead class="bg-slate-100 text-slate-700">
+							<tr>
+								<th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('vendor_party', 'Vendor') %></th>
+								<th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('quantity', 'Dispatch Qty') %></th>
+								<th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('received_quantity', 'Returned Qty') %></th>
+								<th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('pending_qty', 'Pending Qty') %></th>
+								<th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('overdue_qty', 'Overdue Qty') %></th>
+								<th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('avg_return_days', 'Avg Return Days') %></th>
+								<th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('on_time_percent', 'On-Time %') %></th>
+								<th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('shortage_cases', 'Shortage Cases') %></th>
+								<th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('condition_variance', 'Condition Variance') %></th>
+								<th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('risk_grade', 'Risk Grade') %></th>
+							</tr>
+						</thead>
+						<tbody class="divide-y divide-slate-100" data-table-body>
+							<% rows.forEach((row) => { %>
+								<tr class="bg-white odd:bg-slate-50/30" data-row data-active="true" data-report-entry>
+									<td class="px-3 py-2"><%= row.vendorName || '-' %></td>
+									<td class="px-3 py-2 text-right font-semibold"><%= formatQty(row.totalDispatchQty || 0) %></td>
+									<td class="px-3 py-2 text-right font-semibold"><%= formatQty(row.totalReturnedQty || 0) %></td>
+									<td class="px-3 py-2 text-right font-semibold"><%= formatQty(row.pendingQty || 0) %></td>
+									<td class="px-3 py-2 text-right font-semibold"><%= formatQty(row.overdueQty || 0) %></td>
+									<td class="px-3 py-2 text-right"><%= formatPct(row.avgReturnDays || 0) %></td>
+									<td class="px-3 py-2 text-right"><%= `${formatPct(row.onTimePercent || 0)}%` %></td>
+									<td class="px-3 py-2 text-right"><%= Number(row.shortageCases || 0) %></td>
+									<td class="px-3 py-2 text-right"><%= Number(row.conditionVarianceCases || 0) %></td>
+									<td class="px-3 py-2"><span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold <%= row.riskGrade === 'C' ? 'bg-rose-100 text-rose-700' : row.riskGrade === 'B' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700' %>"><%= row.riskGrade %></span></td>
+								</tr>
+							<% }) %>
+							<tr class="border-t border-slate-200 bg-slate-100" data-report-total-row>
+								<td class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= tt('total', 'Total') %></td>
+								<td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatQty(totals.totalDispatchQty || 0) %></td>
+								<td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatQty(totals.totalReturnedQty || 0) %></td>
+								<td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatQty(totals.pendingQty || 0) %></td>
+								<td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatQty(totals.overdueQty || 0) %></td>
+								<td colspan="2"></td>
+								<td class="px-3 py-2 text-right font-semibold text-slate-900"><%= Number(totals.shortageCases || 0) %></td>
+								<td class="px-3 py-2 text-right font-semibold text-slate-900"><%= Number(totals.conditionVarianceCases || 0) %></td>
+								<td></td>
+							</tr>
+						</tbody>
+					</table>
+				<% } %>
+			</div>
+			<%- include("../base/partials/table-footer", { t }) %>
+		<% } %>
+	</section>
+</div>
+
+<%- include("../base/partials/basic-info-utils", {
+	t,
+	page: { titleKey: mode === 'control' ? 'pending_returnables' : 'overdue_returnables', autoCodeFromName: false },
+	basePath: reportPath,
+	modalOpen: false,
+	modalMode: "add"
+}) %>
+
+<script><%- include("../base/partials/date-range-picker.js") %></script>
+<script><%- include("../base/partials/searchable-select.js") %></script>
+<script>
+	(function () {
+		const form = document.querySelector("[data-returnables-report-form]");
+		if (!form) return;
+
+		if (typeof window.initSearchableSelects === "function") {
+			window.initSearchableSelects();
+		}
+
+		if (typeof window.initReportDateRangePicker === "function") {
+			window.initReportDateRangePicker({
+				root: form,
+				invalidDateRangeMessage: <%- JSON.stringify(tt("invalid_date_range", "Invalid date range")) %>,
+				selectDateRangeText: <%- JSON.stringify(tt("select_date_range", "Select Date Range")) %>,
+			});
+		}
+
+		document.querySelector("[data-print-button]")?.addEventListener("click", () => window.print());
+		document.querySelector("[data-download-button]")?.addEventListener("click", () => {
+			const table = document.querySelector("[data-report-table]");
+			if (!table) return;
+			const csv = Array.from(table.querySelectorAll("tr"))
+				.filter((tr) => !tr.classList.contains("hidden"))
+				.map((tr) => Array.from(tr.querySelectorAll("th,td"))
+					.map((cell) => `"${String(cell.textContent || "").replace(/\s+/g, " ").trim().replace(/"/g, '""')}"`)
+					.join(","))
+				.join("\n");
+			const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+			const link = document.createElement("a");
+			link.href = URL.createObjectURL(blob);
+			link.download = <%- JSON.stringify(downloadFileName || "returnables-report.csv") %>;
+			document.body.appendChild(link);
+			link.click();
+			link.remove();
+			URL.revokeObjectURL(link.href);
+		});
+
+		const searchInput = document.querySelector("[data-search-input]");
+		const pageSizeSelect = document.querySelector("[data-page-size]");
+		const prevButton = document.querySelector("[data-prev-page]");
+		const nextButton = document.querySelector("[data-next-page]");
+		const pageIndicator = document.querySelector("[data-page-indicator]");
+		const showingCount = document.querySelector("[data-showing-count]");
+		const entries = Array.from(document.querySelectorAll("[data-report-entry]"));
+		const totalRow = document.querySelector("[data-report-total-row]");
+		if (!pageSizeSelect || !pageIndicator || !showingCount || !entries.length) return;
+
+		let currentPage = 1;
+
+		const getPageSize = () => {
+			const raw = String(pageSizeSelect.value || "10").toLowerCase();
+			if (raw === "all") return Number.POSITIVE_INFINITY;
+			const parsed = Number(raw);
+			return Number.isFinite(parsed) && parsed > 0 ? parsed : 10;
+		};
+
+		const render = () => {
+			const query = String(searchInput?.value || "").trim().toLowerCase();
+			const filtered = query
+				? entries.filter((entry) => String(entry.textContent || "").toLowerCase().includes(query))
+				: entries;
+			const pageSize = getPageSize();
+
+			let totalPages = 1;
+			let visible = filtered;
+			let startIndex = 0;
+
+			if (Number.isFinite(pageSize)) {
+				totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+				currentPage = Math.min(currentPage, totalPages);
+				startIndex = (currentPage - 1) * pageSize;
+				visible = filtered.slice(startIndex, startIndex + pageSize);
+			} else {
+				currentPage = 1;
+			}
+
+			entries.forEach((entry) => entry.classList.add("hidden"));
+			visible.forEach((entry) => entry.classList.remove("hidden"));
+			if (totalRow) totalRow.classList.toggle("hidden", visible.length === 0);
+
+			const startLabel = filtered.length === 0 ? 0 : startIndex + 1;
+			const endLabel = filtered.length === 0 ? 0 : startIndex + visible.length;
+			showingCount.textContent = `${<%- JSON.stringify(tt("showing", "Showing")) %>} ${startLabel} ${<%- JSON.stringify(tt("to", "to")) %>} ${endLabel} ${<%- JSON.stringify(tt("of", "of")) %>} ${filtered.length} ${<%- JSON.stringify(tt("entries", "entries")) %>}`;
+			pageIndicator.textContent = String(currentPage);
+
+			if (prevButton) {
+				prevButton.disabled = currentPage <= 1;
+				prevButton.classList.toggle("opacity-40", currentPage <= 1);
+			}
+			if (nextButton) {
+				nextButton.disabled = currentPage >= totalPages;
+				nextButton.classList.toggle("opacity-40", currentPage >= totalPages);
+			}
+		};
+
+		searchInput?.addEventListener("input", () => {
+			currentPage = 1;
+			render();
+		});
+
+		pageSizeSelect.addEventListener("change", () => {
+			currentPage = 1;
+			render();
+		});
+
+		prevButton?.addEventListener("click", () => {
+			if (currentPage <= 1) return;
+			currentPage -= 1;
+			render();
+		});
+
+		nextButton?.addEventListener("click", () => {
+			currentPage += 1;
+			render();
+		});
+
+		render();
+	})();
+</script>

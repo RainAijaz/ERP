@@ -42,7 +42,6 @@
     <% const canEdit = can('SCREEN', 'master_data.parties', 'edit'); %>
     <% const canDelete = can('SCREEN', 'master_data.parties', 'delete'); %>
     <% const canHardDelete = can('SCREEN', 'master_data.parties', 'hard_delete'); %>
-    <% const hideCode = ["accounts", "parties"].includes(page.titleKey); %>
     <div class="px-5 pt-4 text-center text-xl font-display font-semibold uppercase tracking-[0.35em] text-slate-900" data-print-header>
       <%= t("brand") %>
     </div>
@@ -77,7 +76,7 @@
           };
           %>
           <% // Hide the opposite-language name column in the table. %>
-          <% const displayColumns = page.columns.filter(function(column) { return column.key !== "id" && !(column.key === "name_ur" && locale !== "ur") && !(column.key === "name" && locale === "ur") && !(hideCode && column.key === "code") && !(column.adminOnlyTable && !isAdmin); }); %>
+          <% const displayColumns = page.columns.filter(function(column) { return column.key !== "id" && !(column.key === "name_ur" && locale !== "ur") && !(column.key === "name" && locale === "ur") && !(column.adminOnlyTable && !isAdmin); }); %>
           <%- include("../../base/partials/table-header", { t, displayColumns, columnTooltips, sortStartIndex: 1 }) %>
         </thead>
         <tbody class="divide-y divide-slate-100" data-table-body>
@@ -88,7 +87,10 @@
               <tr
                 class="hover:bg-amber-50/40"
                 data-row
-                <% if (!hideCode) { %>data-code="<%= row.code || "" %>"<% } %>
+                data-code="<%= row.code || "" %>"
+                data-name="<%= row.name || "" %>"
+                data-name-ur="<%= row.name_ur || "" %>"
+                data-search="<%= [row.code, row.name, row.name_ur].filter(Boolean).join(' ').toLowerCase() %>"
                 data-active="<%= row.is_active ? "true" : "false" %>"
                 data-branch="<%= row.branch_names || "" %>"
                 data-account-type="<%= row.account_type || "" %>"
@@ -133,7 +135,7 @@
                   </td>
                 <% }) %>
                 <td class="px-4 py-3">
-                  <%- include("../../base/partials/table-actions", { t, row, basePath, editFields: page.fields.map(function(field) { return field.name; }), withMenu: true, canEdit, canDelete, canHardDelete }) %>
+                  <%- include("../../base/partials/table-actions", { t, row, basePath, editFields: Array.from(new Set(page.fields.map(function(field) { return field.name; }).concat(["code"]))), withMenu: true, canEdit, canDelete, canHardDelete }) %>
                 </td>
               </tr>
             <% }) %>
@@ -165,4 +167,3 @@
 <%- include("../../base/partials/confirm-modal", { t, csrfToken }) %>
 
 <%- include("../../base/partials/basic-info-utils", { t, page, basePath, modalOpen, modalMode }) %>
-

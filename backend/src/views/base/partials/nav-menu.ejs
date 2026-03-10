@@ -29,7 +29,11 @@
             <path d="M7 5l6 5-6 5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
           </svg>
         </button>
-        <div class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu lg:absolute lg:left-full lg:top-0 lg:mt-0 lg:ml-2 lg:w-64" data-submenu="<%= itemKey %>">
+        <div
+          class="mt-2 hidden w-full rounded-xl border border-slate-200 bg-white p-3 shadow-sm nav-submenu lg:absolute lg:left-full lg:top-0 lg:z-90 lg:mt-0 lg:ml-2 lg:w-64"
+          data-submenu="<%= itemKey %>"
+          data-force-scrollable="<%= itemKey === 'financial-reports' ? '1' : '0' %>"
+        >
           <% renderChildren(item.children, level + 1, itemKey); %>
         </div>
       </div>
@@ -59,7 +63,7 @@
         <path d="M5 7l5 6 5-6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
       </svg>
     </button>
-    <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-md nav-dropdown lg:absolute lg:left-0 lg:mt-2 lg:w-72 lg:shadow-xl" data-submenu="<%= module.key %>">
+    <div class="mt-2 hidden w-full rounded-2xl border border-slate-200 bg-white p-3 shadow-md nav-dropdown lg:absolute lg:left-0 lg:z-60 lg:mt-2 lg:w-72 lg:shadow-xl" data-submenu="<%= module.key %>">
       <div class="space-y-3">
         <% renderChildren(module.children || [], 0, module.key); %>
       </div>

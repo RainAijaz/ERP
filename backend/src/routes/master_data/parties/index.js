@@ -23,6 +23,46 @@ const normalizeCredit = (value) => {
   return Number.isNaN(numberValue) ? null : numberValue;
 };
 
+const normalizePartyType = (value) => {
+  const token = String(value || "")
+    .trim()
+    .toUpperCase();
+  if (!token) return "";
+  if (token === "SUPPLIERS") return "SUPPLIER";
+  return token;
+};
+
+const isSupplierPartyType = (value) => normalizePartyType(value) === "SUPPLIER";
+
+const SUPPLIER_CAPABILITY_CODES = Object.freeze(["MATERIAL", "SERVICE"]);
+let partiesHasVendorCapabilitiesColumn;
+
+const hasVendorCapabilitiesColumn = async () => {
+  if (typeof partiesHasVendorCapabilitiesColumn === "boolean") {
+    return partiesHasVendorCapabilitiesColumn;
+  }
+  try {
+    partiesHasVendorCapabilitiesColumn = await knex.schema
+      .withSchema("erp")
+      .hasColumn("parties", "vendor_capabilities");
+    return partiesHasVendorCapabilitiesColumn;
+  } catch (err) {
+    console.error("Error in PartiesCapabilitiesColumnService:", err);
+    partiesHasVendorCapabilitiesColumn = false;
+    return false;
+  }
+};
+
+const normalizeVendorCapabilities = (value) => {
+  const raw = Array.isArray(value) ? value : value ? [value] : [];
+  const normalized = raw
+    .flatMap((entry) => String(entry || "").split(","))
+    .map((entry) => String(entry || "").trim().toUpperCase())
+    .filter(Boolean)
+    .filter((entry) => SUPPLIER_CAPABILITY_CODES.includes(entry));
+  return [...new Set(normalized)];
+};
+
 const hasField = (page, name) => page.fields.some((field) => field.name === name);
 
 const page = {
@@ -64,9 +104,11 @@ const page = {
   ],
   columns: [
     { key: "id", label: "ID" },
+    { key: "code", label: "code" },
     { key: "name", label: "party_name" },
     { key: "name_ur", label: "Name (Urdu)" },
     { key: "party_type", label: "party_type" },
+    { key: "vendor_capabilities", label: "vendor_capabilities" },
     { key: "group_name", label: "party_group" },
     { key: "branch_names", label: "branches" },
     { key: "city_name", label: "city" },
@@ -94,6 +136,17 @@ const page = {
         { value: "CUSTOMER", label: "Customer" },
         { value: "SUPPLIER", label: "Supplier" },
       ],
+    },
+    {
+      name: "vendor_capabilities",
+      label: "vendor_capabilities",
+      type: "multi-select",
+      required: false,
+      options: [
+        { value: "MATERIAL", label: "material_capability" },
+        { value: "SERVICE", label: "service_capability" },
+      ],
+      helpText: "vendor_capabilities_help",
     },
     {
       name: "group_id",
@@ -377,6 +430,7 @@ router.post("/", requirePermission("SCREEN", "master_data.parties", "create"), a
     method: req.method,
   });
   const values = buildValues(page, req.body);
+  values.party_type = normalizePartyType(values.party_type);
   if (!hasField(page, "code") && !page.autoCodeFromName) {
     delete values.code;
   }
@@ -389,6 +443,20 @@ router.post("/", requirePermission("SCREEN", "master_data.parties", "create"), a
   }
 
   try {
+    const hasVendorCapabilities = await hasVendorCapabilitiesColumn();
+    const normalizedCapabilities = normalizeVendorCapabilities(values.vendor_capabilities);
+    if (isSupplierPartyType(values.party_type)) {
+      if (hasVendorCapabilities && !normalizedCapabilities.length) {
+        return renderIndexError(req, res, values, res.locals.t("error_select_vendor_capabilities"), "create", basePath);
+      }
+      values.vendor_capabilities = hasVendorCapabilities ? normalizedCapabilities : [];
+    } else {
+      values.vendor_capabilities = [];
+    }
+    if (!hasVendorCapabilities) {
+      delete values.vendor_capabilities;
+    }
+
     const branchIds = Array.isArray(values.branch_ids) ? values.branch_ids : [];
     if (!req.user?.isAdmin) {
       const allowed = new Set(getAllowedBranchIds(req).map(String));
@@ -402,7 +470,8 @@ router.post("/", requirePermission("SCREEN", "master_data.parties", "create"), a
       if (!groupRow || groupRow.is_active === false) {
         return renderIndexError(req, res, values, res.locals.t("error_select_party_group"), "create", basePath);
       }
-      if (groupRow.party_type && groupRow.party_type !== "BOTH" && groupRow.party_type !== values.party_type) {
+      const groupPartyType = normalizePartyType(groupRow.party_type);
+      if (groupPartyType && groupPartyType !== "BOTH" && groupPartyType !== values.party_type) {
         return renderIndexError(req, res, values, res.locals.t("error_party_group_type"), "create", basePath);
       }
     }
@@ -500,6 +569,7 @@ router.post("/:id", requirePermission("SCREEN", "master_data.parties", "edit"), 
     return next(new HttpError(404, res.locals.t("error_not_found")));
   }
   const values = buildValues(page, req.body);
+  values.party_type = normalizePartyType(values.party_type);
   if (!hasField(page, "code") && !page.autoCodeFromName) {
     delete values.code;
   }
@@ -511,11 +581,25 @@ router.post("/:id", requirePermission("SCREEN", "master_data.parties", "edit"), 
   }
 
   try {
+    const hasVendorCapabilities = await hasVendorCapabilitiesColumn();
+    const normalizedCapabilities = normalizeVendorCapabilities(values.vendor_capabilities);
+    if (isSupplierPartyType(values.party_type)) {
+      if (hasVendorCapabilities && !normalizedCapabilities.length) {
+        return renderIndexError(req, res, values, res.locals.t("error_select_vendor_capabilities"), "edit", basePath);
+      }
+      values.vendor_capabilities = hasVendorCapabilities ? normalizedCapabilities : [];
+    } else {
+      values.vendor_capabilities = [];
+    }
+    if (!hasVendorCapabilities) {
+      delete values.vendor_capabilities;
+    }
+
     const existing = await knex(page.table).where({ id }).first();
     if (!existing) {
       return renderIndexError(req, res, values, res.locals.t("error_not_found"), "edit", basePath);
     }
-    if (hasField(page, "code") && existing.code) {
+    if (existing.code) {
       values.code = existing.code;
     } else {
       values.code = await generateUniqueCode({
@@ -540,7 +624,8 @@ router.post("/:id", requirePermission("SCREEN", "master_data.parties", "edit"), 
       if (!groupRow || groupRow.is_active === false) {
         return renderIndexError(req, res, values, res.locals.t("error_select_party_group"), "edit", basePath);
       }
-      if (groupRow.party_type && groupRow.party_type !== "BOTH" && groupRow.party_type !== values.party_type) {
+      const groupPartyType = normalizePartyType(groupRow.party_type);
+      if (groupPartyType && groupPartyType !== "BOTH" && groupPartyType !== values.party_type) {
         return renderIndexError(req, res, values, res.locals.t("error_party_group_type"), "edit", basePath);
       }
     }

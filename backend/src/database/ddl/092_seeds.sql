@@ -182,14 +182,11 @@ ON CONFLICT (entity_type, entity_key, action) DO UPDATE SET
 -- ---------------------------------------------------------
 INSERT INTO erp.return_reasons (code, description, affects_stock, is_active)
 VALUES
-  ('WRONG_SIZE',            'Wrong size delivered / ordered',                                true,  true),
-  ('WRONG_COLOR',           'Wrong color / variant delivered',                               true,  true),
-  ('WRONG_ITEM',            'Wrong SKU delivered',                                           true,  true),
-  ('QUALITY_DEFECT',        'Manufacturing defect / quality issue',                          true,  true),
-  ('DAMAGED_IN_TRANSIT',    'Courier / transit damage',                                     false, true),
-  ('MISSING_ITEMS',         'Short shipment / missing items (claim/adjustment)',            false, true),
-  ('OPENED_USED',           'Opened/used item returned (no restock allowed)',                false, true),
-  ('CUSTOMER_CHANGED_MIND', 'Customer changed mind / no longer needed',                      true,  true),
+  ('WRONG_SIZE',            'Wrong Size delivered ',                                true,  true),
+  ('WRONG_ITEM',            'Wrong Item delivered',                                           true,  true),
+  ('QUALITY_DEFECT',        'Quality Issue',                          true,  true),
+  ('MISSING_ITEMS',         'Missing items',            false, true),
+  ('CUSTOMER_CHANGED_MIND', 'Customer changed mind',                      true,  true),
   ('LATE_DELIVERY',         'Late delivery return request',                                  true,  true),
   ('OTHER',                 'Other',                                                        false, true)
 ON CONFLICT (code) DO UPDATE SET
@@ -245,6 +242,7 @@ VALUES
   ('SCREEN','master_data.basic_info.product_groups','Product Groups', 'Master Data'),
   ('SCREEN','master_data.basic_info.product_subgroups','Product Subgroups', 'Master Data'),
   ('SCREEN','master_data.basic_info.product_types','Product Types', 'Master Data'),
+  ('SCREEN','master_data.basic_info.sales_discount_policies','Sales Discount Policies', 'Master Data'),
   ('SCREEN','master_data.basic_info.party_groups','Party Groups', 'Master Data'),
   ('SCREEN','master_data.basic_info.account_groups','Account Groups', 'Master Data'),
   ('SCREEN','master_data.basic_info.departments','Departments', 'Master Data'),

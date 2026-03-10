@@ -21,8 +21,8 @@
 -- TABLES CREATED IN THIS FILE
 --   Registries (to avoid typos; extendable by INSERT)
 --     - asset_type_registry       : MOULD/TOOL/KNIFE/FIXTURE/OTHER...
---     - rgp_reason_registry       : REPAIR/SHARPEN/CALIBRATE/TRIAL...
---     - rgp_condition_registry    : GOOD/WORN/DAMAGED/OK/REPAIRED/SCRAP...
+--     - rgp_reason_registry       : REPAIR/CALIBRATION/SHARPENING/REFURBISH/...
+--     - rgp_condition_registry    : NEW/GOOD_WORKING/WORKING_MINOR_WEAR/DAMAGED/...
 --
 --   Masters / Documents
 --     - assets                    : Asset master (optional; codes/serials + home branch)
@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS erp.asset_type_registry (
 );
 
 -- Reasons for sending items out
--- Examples: REPAIR, SHARPEN, CALIBRATE, TRIAL
+-- Examples: REPAIR, CALIBRATION, SHARPENING, REFURBISH, COATING_TREATMENT
 CREATE TABLE IF NOT EXISTS erp.rgp_reason_registry (
   code        text PRIMARY KEY,              -- stable key
   name        text NOT NULL,
@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS erp.rgp_reason_registry (
 );
 
 -- Condition states used on outward/inward
--- Examples: GOOD, WORN, DAMAGED, OK, REPAIRED, SCRAP
+-- Examples: NEW, GOOD_WORKING, WORKING_MINOR_WEAR, DAMAGED, NON_FUNCTIONAL
 CREATE TABLE IF NOT EXISTS erp.rgp_condition_registry (
   code        text PRIMARY KEY,              -- stable key
   name        text NOT NULL,
@@ -90,7 +90,7 @@ CREATE INDEX IF NOT EXISTS idx_assets_home_branch
   ON erp.assets(home_branch_id);
 
 -- --------------------------------------------------------------------
--- RGP outward header (sent out to vendor for repair/sharpening/etc.)
+-- RGP outward header (sent out to vendor for service/workflow reason)
 -- voucher_id points to voucher_header for numbering/branch/date/status workflow
 -- --------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS erp.rgp_outward (

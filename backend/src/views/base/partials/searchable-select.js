@@ -1,5 +1,18 @@
 (() => {
   const i18nSearch = '<%= t("search") %>';
+  const i18nRequiredFields = '<%= t("error_required_fields") %>';
+
+  if (typeof window !== "undefined") {
+    const existing = window.VoucherValidation || {};
+    window.VoucherValidation = {
+      ...existing,
+      requiredMessage(fieldLabel) {
+        const label = String(fieldLabel || "").trim();
+        return label ? `${i18nRequiredFields}: ${label}` : i18nRequiredFields;
+      },
+    };
+  }
+
   const isWithinModal = (select) => !!select.closest("[data-modal-form]");
   const isSearchableOptIn = (select) =>
     String(select?.dataset?.searchableSelect || "").toLowerCase() === "true";
@@ -24,6 +37,79 @@
     if (select.dataset.searchableReady === "true") return;
 
     const isMulti = select.multiple;
+    const isVoucherContext = Boolean(
+      select.closest(
+        "[data-voucher-form], [data-purchase-voucher-form], [data-sales-voucher-form]",
+      ),
+    );
+
+    const getFocusableFields = () => {
+      const scope =
+        select.closest("form") ||
+        select.closest("[data-modal-form]") ||
+        document.body;
+      return Array.from(
+        scope.querySelectorAll(
+          "input, select, textarea, button, [tabindex]:not([tabindex='-1'])",
+        ),
+      ).filter((el) => {
+        if (!(el instanceof HTMLElement)) return false;
+        if (el === select) return false;
+        if (el.hasAttribute("disabled")) return false;
+        if (el.getAttribute("aria-hidden") === "true") return false;
+        if (el instanceof HTMLInputElement && el.type === "hidden")
+          return false;
+        const style = window.getComputedStyle(el);
+        if (style.display === "none" || style.visibility === "hidden")
+          return false;
+        if (el.offsetParent === null && style.position !== "fixed")
+          return false;
+        return true;
+      });
+    };
+
+    const resolveTarget = (el) => {
+      if (!el) return null;
+      if (
+        el instanceof HTMLSelectElement &&
+        el.dataset.searchableReady === "true"
+      ) {
+        const wrapper =
+          el.closest("[data-searchable-wrapper]") ||
+          (el.parentElement?.matches("[data-searchable-wrapper]")
+            ? el.parentElement
+            : null);
+        const searchableInput = wrapper?.querySelector(
+          'input[type="text"]:not([readonly])',
+        );
+        return searchableInput || el;
+      }
+      return el;
+    };
+
+    const advanceFocusToNextField = () => {
+      if (!isVoucherContext) return;
+      const fields = getFocusableFields();
+      const current = input;
+      const idx = fields.indexOf(current);
+      if (idx < 0) return;
+      for (let i = idx + 1; i < fields.length; i += 1) {
+        const nextField = fields[i];
+        if (nextField === select) continue;
+        const target = resolveTarget(nextField);
+        if (!target || !(target instanceof HTMLElement)) continue;
+        if (target === current) continue;
+        target.focus();
+        if (target instanceof HTMLInputElement) {
+          const wrapper = target.closest("[data-searchable-wrapper]");
+          if (wrapper) {
+            target.dataset.searchableSuppressOpenOnce = "0";
+            target.click();
+          }
+        }
+        break;
+      }
+    };
     let placeholderText = makePlaceholder(select);
     const emptyOption = Array.from(select.options).find((opt) => !opt.value);
     if (emptyOption && emptyOption.textContent.trim()) {
@@ -126,8 +212,48 @@
 
     let activeIndex = -1;
 
+    const hasAllMultiSelect = isMulti
+      && String(select.dataset.allMultiSelect || "").toLowerCase() === "true";
+    const getAllOption = () => {
+      if (!hasAllMultiSelect) return null;
+      return Array.from(select.options).find((opt) => {
+        const value = String(opt.value || "").trim().toLowerCase();
+        return value === "__all__" || value === "all";
+      }) || null;
+    };
+    const normalizeMultiSelectAll = (changedOption = null) => {
+      if (!hasAllMultiSelect) return;
+      const allOption = getAllOption();
+      if (!allOption) return;
+      const options = Array.from(select.options);
+      const nonAllOptions = options.filter((opt) => opt !== allOption);
+
+      if (changedOption === allOption && allOption.selected) {
+        nonAllOptions.forEach((opt) => {
+          opt.selected = false;
+        });
+        return;
+      }
+
+      if (
+        changedOption
+        && changedOption !== allOption
+        && changedOption.selected
+      ) {
+        allOption.selected = false;
+      }
+
+      const hasNonAllSelected = nonAllOptions.some((opt) => opt.selected);
+      if (!hasNonAllSelected) {
+        allOption.selected = true;
+      } else if (allOption.selected) {
+        allOption.selected = false;
+      }
+    };
+
     const syncToInput = () => {
       if (isMulti) {
+        normalizeMultiSelectAll(null);
         const labels = Array.from(select.selectedOptions).map((opt) =>
           opt.textContent.trim(),
         );
@@ -218,6 +344,7 @@
           activeIndex = index;
           if (isMulti) {
             opt.selected = !opt.selected;
+            normalizeMultiSelectAll(opt);
             select.dispatchEvent(new Event("change", { bubbles: true }));
             syncToInput();
             renderMenu({ preserveActive: true });
@@ -277,6 +404,9 @@
           menu.classList.remove("hidden");
           return;
         }
+        e.preventDefault();
+        advanceFocusToNextField();
+        return;
       }
 
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
@@ -351,6 +481,7 @@
       select.dispatchEvent(new Event("change", { bubbles: true }));
       syncToInput();
       menu.classList.add("hidden");
+      advanceFocusToNextField();
     });
     input.addEventListener("blur", () => {
       setTimeout(() => {

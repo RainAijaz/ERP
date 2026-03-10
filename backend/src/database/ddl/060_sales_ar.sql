@@ -114,11 +114,12 @@ CREATE TABLE IF NOT EXISTS erp.sales_header (
     (sale_mode = 'FROM_SO' AND linked_sales_order_id IS NOT NULL AND customer_party_id IS NOT NULL)
   ),
 
-  -- CREDIT requires party + due date
+  -- CREDIT requires party. Due date is enforced by the service layer only
+  -- when an outstanding receivable remains after the current payment.
   CHECK (
     (payment_type = 'CASH')
     OR
-    (payment_type = 'CREDIT' AND customer_party_id IS NOT NULL AND payment_due_date IS NOT NULL)
+    (payment_type = 'CREDIT' AND customer_party_id IS NOT NULL)
   ),
 
   -- If no party (cash walk-in), name+phone must exist
@@ -224,6 +225,27 @@ CREATE TABLE IF NOT EXISTS erp.sales_line (
 -- Optional but useful for “Returns by Reason” reports
 CREATE INDEX IF NOT EXISTS idx_sales_line_return_reason
   ON erp.sales_line(return_reason_id);
+
+-- =====================================================================
+-- SALES DISCOUNT POLICY (per product group)
+-- =====================================================================
+-- Purpose:
+--   Store the maximum allowed discount per pair for each product group.
+--   Sales Order / Sales Voucher validation can use this as the baseline
+--   policy for both line discounts and voucher-level extra discount allocation.
+CREATE TABLE IF NOT EXISTS erp.sales_discount_policy (
+  id                bigserial PRIMARY KEY,
+  product_group_id  bigint NOT NULL REFERENCES erp.product_groups(id) ON DELETE RESTRICT,
+  max_pair_discount numeric(18,2) NOT NULL DEFAULT 0,
+  is_active         boolean NOT NULL DEFAULT true,
+  created_by        bigint REFERENCES erp.users(id) ON DELETE RESTRICT,
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  updated_by        bigint REFERENCES erp.users(id) ON DELETE RESTRICT,
+  updated_at        timestamptz NOT NULL DEFAULT now(),
+
+  CHECK (max_pair_discount >= 0),
+  CONSTRAINT sales_discount_policy_product_group_unique UNIQUE (product_group_id)
+);
 
 -- =====================================================================
 -- CUSTOMER FOLLOW-UP STATUS (for balances/collection report)

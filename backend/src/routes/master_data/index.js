@@ -5,10 +5,18 @@ const uomConversionsRoutes = require("./basic-info/uom-conversions");
 const accountsRoutes = require("./accounts");
 const partiesRoutes = require("./parties");
 const bomRoutes = require("./bom");
+const returnableAssetsRoutes = require("./returnable-assets");
+const assetTypesRoutes = require("./asset-types");
 
 const router = express.Router();
 
 router.use("/products", productsRoutes);
+router.use("/assets", returnableAssetsRoutes);
+router.use("/asset-types", assetTypesRoutes);
+router.use("/returnable-assets", (req, res) => {
+  const suffix = req.originalUrl.replace(/^\/master-data\/returnable-assets/, "");
+  return res.redirect(`/master-data/assets${suffix || ""}`);
+});
 router.use("/hr-payroll", (req, res) => {
   const suffix = req.originalUrl.replace(/^\/master-data\/hr-payroll/, "");
   return res.redirect(`/hr-payroll${suffix || ""}`);

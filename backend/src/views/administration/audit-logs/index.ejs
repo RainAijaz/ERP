@@ -5,16 +5,6 @@
 		acc[dateKey].push(row);
 		return acc;
 	}, {});
-	const actionStyles = {
-		CREATE: "bg-emerald-50 text-emerald-700 ring-emerald-200",
-		UPDATE: "bg-blue-50 text-blue-700 ring-blue-200",
-		DELETE: "bg-rose-50 text-rose-700 ring-rose-200",
-		APPROVE: "bg-amber-50 text-amber-700 ring-amber-200",
-		REJECT: "bg-slate-100 text-slate-700 ring-slate-200",
-		POST: "bg-indigo-50 text-indigo-700 ring-indigo-200",
-		CANCEL: "bg-orange-50 text-orange-700 ring-orange-200",
-	};
-	const getActionClass = (action) => actionStyles[action] || "bg-slate-50 text-slate-600 ring-slate-200";
 	const escapeAttr = (value) =>
 		String(value)
 			.replace(/&/g, "&amp;")
@@ -23,33 +13,6 @@
 			.replace(/"/g, "&quot;")
 			.replace(/'/g, "&#39;");
 	const jsonAttr = (value) => escapeAttr(JSON.stringify(value ?? null));
-	const parseContext = (value) => {
-		if (!value) return null;
-		if (typeof value === "object") return value;
-		try {
-			return JSON.parse(String(value));
-		} catch (err) {
-			return null;
-		}
-	};
-	const getEntityIdLabel = (row) => {
-		if (!row || row.entity_id !== "NEW") return row?.entity_id || "-";
-		const context = parseContext(row.context_json);
-		if (row.action === "APPROVE" && context && context.applied_entity_id) {
-			return String(context.applied_entity_id);
-		}
-		return "Pending Create";
-	};
-	const getEntityTypeLabel = (row) => {
-		if (!row) return "-";
-		if (row.entity_type !== "VOUCHER") return row.entity_type || "-";
-		const map = {
-			CASH_VOUCHER: t("cash_voucher"),
-			BANK_VOUCHER: t("bank_voucher"),
-			JOURNAL_VOUCHER: t("journal_voucher"),
-		};
-		return map[String(row.voucher_type_code || "").toUpperCase()] || row.voucher_type_code || row.entity_type || "-";
-	};
 	const branchLookup = (branches || []).reduce((acc, branch) => {
 		acc[String(branch.id)] = branch.name || branch.code || String(branch.id);
 		return acc;
@@ -90,8 +53,8 @@
     <%- include("../../base/partials/filter-modal", { t, bodyPartial: "../../administration/audit-logs/filter-fields.ejs", serverFilters: true }) %>
   </form>
 
-  <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-		<table class="w-full text-sm text-left">
+  <div class="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+		<table class="min-w-full text-left text-sm">
 			<thead class="bg-slate-50 text-xs font-semibold uppercase text-slate-500">
 				<tr>
 					<th class="px-6 py-3"><%= t("date") %></th>
@@ -118,10 +81,18 @@
 							<td class="px-6 py-4 text-slate-600"><%= new Date(row.created_at).toLocaleTimeString() %></td>
 							<td class="px-6 py-4 font-medium text-slate-900"><%= row.user_name || "-" %></td>
 							<td class="px-6 py-4 text-slate-600"><%= row.branch_name || row.branch_code || "-" %></td>
-							<td class="px-6 py-4 text-slate-600"><%= getEntityTypeLabel(row) %></td>
-							<td class="px-6 py-4 text-slate-600"><%= getEntityIdLabel(row) %></td>
+							<td class="px-6 py-4 text-slate-600"><%= row.entity_label || row.entity_type || "-" %></td>
+							<td class="px-6 py-4 text-slate-600">
+								<% if (row.entity_href) { %>
+									<a href="<%= row.entity_href %>" class="font-semibold text-slate-700 underline decoration-dotted underline-offset-2 hover:text-slate-900">
+										<%= row.entity_id_label || "-" %>
+									</a>
+								<% } else { %>
+									<%= row.entity_id_label || "-" %>
+								<% } %>
+							</td>
 							<td class="px-6 py-4">
-								<span class="inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] ring-1 <%= getActionClass(row.action) %>"><%= row.action %></span>
+								<span class="inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] ring-1 <%= row.action_class || 'bg-slate-50 text-slate-600 ring-slate-200' %>"><%= row.display_action || row.action %></span>
 							</td>
 							<% if (canViewDetails) { %>
 								<td class="px-6 py-4">
@@ -129,7 +100,7 @@
 										type="button"
 										class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
 										data-audit-details-btn
-										data-audit-details="<%= jsonAttr(row.context_json) %>"
+										data-audit-details-model="<%- jsonAttr(row.details_model) %>"
 									>
 										<%= t("view") || "View" %>
 									</button>
@@ -167,7 +138,7 @@
 <% } %>
 
 <% if (canViewDetails) { %>
-	<div class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 p-4" data-audit-details-modal>
+	<div class="fixed inset-0 z-50 hidden items-center justify-center overflow-y-auto bg-slate-900/40 p-4" data-audit-details-modal>
 		<div class="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden">
 			<div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
 				<div class="text-sm font-semibold text-slate-700"><%= t("audit_context_details") || "Audit Context Details" %></div>
@@ -189,7 +160,6 @@
 		const modal = document.querySelector("[data-audit-details-modal]");
 		const closeBtn = document.querySelector("[data-audit-details-close]");
 		const content = document.querySelector("[data-audit-details-content]");
-		const branchLookup = <%- JSON.stringify(branchLookup) %>;
 		let bodyScrollLocked = false;
 
 		const setBodyScrollLock = (locked) => {
@@ -206,75 +176,11 @@
 			}
 		};
 
-		const decodeHtml = (raw) => {
-			if (!raw) return "";
-			const textarea = document.createElement("textarea");
-			textarea.innerHTML = raw;
-			return textarea.value;
-		};
-
 		const closeModal = () => {
 			if (!modal) return;
 			modal.classList.add("hidden");
 			modal.classList.remove("flex");
 			setBodyScrollLock(false);
-		};
-
-		const humanizeKey = (value) =>
-			String(value || "")
-				.replace(/_/g, " ")
-				.replace(/\bid\b/gi, "ID")
-				.replace(/\s+/g, " ")
-				.trim();
-
-		const toIdList = (value) => {
-			if (Array.isArray(value)) {
-				return value.map((entry) => String(entry).trim()).filter(Boolean);
-			}
-			if (value && typeof value === "object") {
-				return Object.values(value).map((entry) => String(entry).trim()).filter(Boolean);
-			}
-			return String(value || "")
-				.split(",")
-				.map((entry) => entry.trim())
-				.filter(Boolean);
-		};
-
-		const mapBranchValue = (value) => {
-			const ids = toIdList(value);
-			if (!ids.length) return value;
-			return ids.map((id) => branchLookup[id] || id);
-		};
-
-		const normalizeDisplayValue = (field, value) => {
-			const key = String(field || "").toLowerCase();
-			if (key === "branch_id" || key === "branch_ids") {
-				return mapBranchValue(value);
-			}
-			return value;
-		};
-
-		const normalizeContext = (context) => {
-			if (!context || typeof context !== "object") return context;
-			const copy = JSON.parse(JSON.stringify(context));
-			if (copy.branch_id !== undefined) copy.branch_id = normalizeDisplayValue("branch_id", copy.branch_id);
-			if (copy.branch_ids !== undefined) copy.branch_ids = normalizeDisplayValue("branch_ids", copy.branch_ids);
-			if (copy.request_body && typeof copy.request_body === "object") {
-				if (copy.request_body.branch_id !== undefined) {
-					copy.request_body.branch_id = normalizeDisplayValue("branch_id", copy.request_body.branch_id);
-				}
-				if (copy.request_body.branch_ids !== undefined) {
-					copy.request_body.branch_ids = normalizeDisplayValue("branch_ids", copy.request_body.branch_ids);
-				}
-			}
-			return copy;
-		};
-
-		const valueText = (value) => {
-			if (value === null || typeof value === "undefined" || value === "") return "-";
-			if (Array.isArray(value)) return value.join(", ") || "-";
-			if (typeof value === "object") return Object.entries(value).map(([k, v]) => `${humanizeKey(k)}: ${valueText(v)}`).join(" | ");
-			return String(value);
 		};
 
 		const makeSection = (title, rows) => {
@@ -289,12 +195,12 @@
 			list.className = "mt-3 space-y-2";
 			rows.forEach((row) => {
 				const line = document.createElement("div");
-				line.className = "grid grid-cols-12 gap-3 text-xs";
+				line.className = "grid grid-cols-1 gap-2 text-xs sm:grid-cols-12 sm:gap-3";
 				const key = document.createElement("div");
-				key.className = "col-span-4 font-semibold text-slate-600";
+				key.className = "font-semibold text-slate-600 sm:col-span-4";
 				key.textContent = row.label;
 				const val = document.createElement("div");
-				val.className = "col-span-8 text-slate-700";
+				val.className = "break-words text-slate-700 sm:col-span-8";
 				val.textContent = row.value;
 				line.appendChild(key);
 				line.appendChild(val);
@@ -304,79 +210,53 @@
 			return card;
 		};
 
-		const renderDetails = (parsed) => {
+		const renderDetails = (model) => {
 			if (!content) return;
 			content.innerHTML = "";
-			if (!parsed || typeof parsed !== "object") {
+			if (!model || typeof model !== "object") {
 				const empty = document.createElement("div");
 				empty.className = "rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600";
-				empty.textContent = parsed ? String(parsed) : "<%= t('no_entries') || 'No entries yet.' %>";
+				empty.textContent = "<%= t('no_entries') || 'No entries yet.' %>";
 				content.appendChild(empty);
 				return;
 			}
-			const normalized = normalizeContext(parsed);
-			const metaRows = [
-				{ label: "<%= t('source') || 'Source' %>", value: valueText(normalized.source) },
-				{ label: "<%= t('decision') || 'Decision' %>", value: valueText(normalized.decision) },
-				{ label: "<%= t('request_type') || 'Request Type' %>", value: valueText(normalized.request_type) },
-				{ label: "<%= t('summary') || 'Summary' %>", value: valueText(normalized.summary) },
-				{ label: "<%= t('requested_entity') || 'Requested Entity' %>", value: valueText(normalized.requested_entity_id) },
-				{ label: "<%= t('applied_entity') || 'Applied Entity' %>", value: valueText(normalized.applied_entity_id) },
-			].filter((row) => row.value !== "-");
-			const metaSection = makeSection("<%= t('overview') || 'Overview' %>", metaRows);
-			if (metaSection) content.appendChild(metaSection);
-			const reservedKeys = new Set([
-				"source",
-				"decision",
-				"request_type",
-				"summary",
-				"requested_entity_id",
-				"applied_entity_id",
-				"changed_fields",
-				"old_value",
-				"new_value",
-			]);
-			const contextRows = Object.entries(normalized)
-				.filter(([key]) => !reservedKeys.has(key))
-				.map(([key, value]) => ({ label: humanizeKey(key), value: valueText(normalizeDisplayValue(key, value)) }))
-				.filter((row) => row.value !== "-");
-			const contextSection = makeSection("<%= t('context') || 'Context' %>", contextRows);
-			if (contextSection) content.appendChild(contextSection);
-
-			const changed = Array.isArray(normalized.changed_fields) ? normalized.changed_fields : [];
-			if (changed.length) {
-				const changedRows = changed.map((entry) => {
-					const field = entry && entry.field ? entry.field : "unknown";
-					const oldValue = entry ? normalizeDisplayValue(field, entry.old_value) : null;
-					const newValue = entry ? normalizeDisplayValue(field, entry.new_value) : null;
-					return {
-						label: humanizeKey(field),
-						value: `${"<%= t('old_value') || 'Old' %>"}: ${valueText(oldValue)} | ${"<%= t('new_value') || 'New' %>"}: ${valueText(newValue)}`,
-					};
-				});
-				const changedSection = makeSection("<%= t('changed_fields') || 'Changed Fields' %>", changedRows);
-				if (changedSection) content.appendChild(changedSection);
+			if (model.voucherHref && model.voucherLinkLabel) {
+				const linkWrap = document.createElement("div");
+				linkWrap.className = "rounded-xl border border-emerald-200 bg-emerald-50 p-3";
+				const link = document.createElement("a");
+				link.href = model.voucherHref;
+				link.className = "text-xs font-semibold text-emerald-800 underline decoration-dotted underline-offset-2";
+				link.textContent = model.voucherLinkLabel;
+				linkWrap.appendChild(link);
+				content.appendChild(linkWrap);
 			}
-
-			const oldValueObj = normalized.old_value && typeof normalized.old_value === "object" ? normalized.old_value : null;
-			const newValueObj = normalized.new_value && typeof normalized.new_value === "object" ? normalized.new_value : null;
-			if (oldValueObj || newValueObj) {
-				const keys = Array.from(
-					new Set([
-						...Object.keys(oldValueObj || {}),
-						...Object.keys(newValueObj || {}),
-					]),
-				).filter((key) => !String(key).startsWith("_"));
-				const detailRows = keys.map((key) => ({
-					label: humanizeKey(key),
-					value: `${"<%= t('old_value') || 'Old' %>"}: ${valueText(normalizeDisplayValue(key, oldValueObj ? oldValueObj[key] : null))} | ${"<%= t('new_value') || 'New' %>"}: ${valueText(normalizeDisplayValue(key, newValueObj ? newValueObj[key] : null))}`,
-				}));
-				const valuesSection = makeSection("<%= t('approved_values') || 'Approved Values' %>", detailRows);
-				if (valuesSection) content.appendChild(valuesSection);
+			const sections = Array.isArray(model.sections) ? model.sections : [];
+			sections.forEach((section) => {
+				const rows = Array.isArray(section.rows) ? section.rows : [];
+				const card = makeSection(section.title || "", rows);
+				if (card) content.appendChild(card);
+			});
+			if (model.rawContext && typeof model.rawContext === "object") {
+				const rawWrap = document.createElement("details");
+				rawWrap.className = "rounded-xl border border-slate-200 bg-slate-50 p-3";
+				const summary = document.createElement("summary");
+				summary.className = "cursor-pointer text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600";
+				summary.textContent = "<%= t('show_raw_data') || 'Show raw data' %>";
+				rawWrap.appendChild(summary);
+				const pre = document.createElement("pre");
+				pre.className = "mt-3 whitespace-pre-wrap break-words rounded-lg bg-white p-3 text-[11px] text-slate-700";
+				pre.textContent = JSON.stringify(model.rawContext, null, 2);
+				rawWrap.appendChild(pre);
+				content.appendChild(rawWrap);
 			}
 		};
 
 		closeBtn?.addEventListener("click", closeModal);
+		document.addEventListener("keydown", (event) => {
+			if (event.key === "Escape" && modal && !modal.classList.contains("hidden")) {
+				closeModal();
+			}
+		});
 		modal?.addEventListener("click", (event) => {
 			if (event.target === modal) closeModal();
 		});
@@ -384,12 +264,12 @@
 		document.addEventListener("click", (event) => {
 			const btn = event.target.closest("[data-audit-details-btn]");
 			if (!btn || !modal || !content) return;
-			const raw = decodeHtml(btn.getAttribute("data-audit-details"));
-			let parsed = null;
+			const raw = btn.getAttribute("data-audit-details-model");
+			let parsed = {};
 			try {
-				parsed = raw ? JSON.parse(raw) : null;
+				parsed = raw ? JSON.parse(raw) : {};
 			} catch (err) {
-				parsed = raw || null;
+				parsed = {};
 			}
 			renderDetails(parsed);
 			modal.classList.remove("hidden");

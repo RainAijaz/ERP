@@ -101,10 +101,11 @@
           <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center" data-general-purchase-fields>
             <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel("payment_type") %></label>
             <div class="lg:col-span-4">
-              <select name="payment_type" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-payment-type data-searchable-select="true" data-searchable-variant="unified">
-                <option value="CREDIT" <%= String(selectedVoucher?.payment_type || "CREDIT").toUpperCase() === "CREDIT" ? "selected" : "" %>><%= t("credit_purchase") %></option>
-                <option value="CASH" <%= String(selectedVoucher?.payment_type || "").toUpperCase() === "CASH" ? "selected" : "" %>><%= t("cash_purchase") %></option>
-              </select>
+              <input type="hidden" name="payment_type" data-payment-type value="<%= String(selectedVoucher?.payment_type || 'CREDIT').toUpperCase() === 'CASH' ? 'CASH' : 'CREDIT' %>">
+              <div class="grid h-10 grid-cols-2 rounded-xl border border-slate-300 bg-white p-1" data-payment-type-segment>
+                <button type="button" class="rounded-lg text-xs font-semibold uppercase tracking-[0.08em] transition" data-payment-type-option="CREDIT"><%= t("credit_purchase") %></button>
+                <button type="button" class="rounded-lg text-xs font-semibold uppercase tracking-[0.08em] transition" data-payment-type-option="CASH"><%= t("cash_purchase") %></button>
+              </div>
             </div>
             <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3" data-cash-account-label><%= toFriendlyLabel("cash_paid_account") %></label>
             <div class="lg:col-span-4" data-cash-account-wrap>
@@ -222,8 +223,8 @@
       </div>
 
       <div class="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div class="overflow-x-auto lg:overflow-visible overflow-y-visible min-h-[16rem] pb-6">
-          <table class="w-full min-w-[960px] table-fixed text-xs">
+        <div class="overflow-x-auto lg:overflow-visible overflow-y-visible">
+          <table class="w-full min-w-[960px] table-fixed text-xs" data-lines-table>
             <colgroup>
               <% if (isGrn) { %>
                 <col class="w-[22%]">
@@ -358,6 +359,15 @@
     const isGrn = voucherTypeCode === "GRN";
     const isGeneralPurchase = voucherTypeCode === "PI";
     const isPurchaseReturn = voucherTypeCode === "PR";
+    const requiredMessage = (label) =>
+      window.VoucherValidation?.requiredMessage?.(label)
+      || `<%= t("error_required_fields") %>: ${String(label || "").trim()}`;
+    const formatDisplayNumber = (value, decimals = 3, fallback = "") =>
+      window.erpDisplay?.formatNumber
+        ? window.erpDisplay.formatNumber(value, { decimals, fallback })
+        : (value === null || value === undefined || value === "" ? fallback : String(Number(Number(value).toFixed(decimals))));
+    const formatDisplayDate = (value, fallback = "-") =>
+      window.erpDisplay?.formatDate ? window.erpDisplay.formatDate(value, fallback) : String(value || fallback || "");
     
     const linesBody = form.querySelector("[data-lines-body]");
     const addRowButton = form.querySelector("[data-add-row]");
@@ -368,6 +378,8 @@
     
     const supplierSelect = form.querySelector("[data-supplier-select]");
     const paymentTypeSelect = form.querySelector("[data-payment-type]");
+    const paymentTypeSegment = form.querySelector("[data-payment-type-segment]");
+    const paymentTypeOptions = paymentTypeSegment ? Array.from(paymentTypeSegment.querySelectorAll("[data-payment-type-option]")) : [];
     const cashAccountLabel = form.querySelector("[data-cash-account-label]");
     const cashAccountWrap = form.querySelector("[data-cash-account-wrap]");
     const cashAccountSelect = form.querySelector("[data-cash-account]");
@@ -503,7 +515,20 @@
 
       const nextFieldKeys = rowFieldOrder.slice(index + 1);
       if (!nextFieldKeys.length) {
-        appendBlankRow({ focusNewRow: true });
+        const nextRow = rowIndex >= 0
+          ? linesBody?.querySelector(`tr[data-row-index="${rowIndex + 1}"]`)
+          : rowElement?.nextElementSibling;
+        if (nextRow) {
+          const focusedNextRow = focusAnyRowField(nextRow, [rowFieldOrder[0]], { openSearchable: true });
+          if (focusedNextRow) return true;
+        }
+        const currentRows = Array.from(linesBody?.querySelectorAll("tr") || []);
+        const isLastRow = rowIndex >= 0
+          ? rowIndex === currentRows.length - 1
+          : currentRows.length ? currentRows[currentRows.length - 1] === rowElement : false;
+        if (isLastRow) {
+          appendBlankRow({ focusNewRow: true });
+        }
         return true;
       }
 
@@ -512,7 +537,13 @@
         setTimeout(() => {
           const focused = focusAnyRowField(rowElement, nextFieldKeys, { openSearchable: true });
           if (!focused) {
-            appendBlankRow({ focusNewRow: true });
+            const rows = Array.from(linesBody?.querySelectorAll("tr") || []);
+            const isLastRow = rowIndex >= 0
+              ? rowIndex === rows.length - 1
+              : rows.length ? rows[rows.length - 1] === rowElement : false;
+            if (isLastRow) {
+              appendBlankRow({ focusNewRow: true });
+            }
           }
         }, 0);
       } else {
@@ -523,7 +554,13 @@
           const targetRow = linesBody?.querySelector(`tr[data-row-index="${pending.rowIndex}"]`);
           const focused = focusAnyRowField(targetRow, pending.fieldKeys || [], { openSearchable: pending.openSearchable !== false });
           if (!focused) {
-            appendBlankRow({ focusNewRow: true });
+            const rows = Array.from(linesBody?.querySelectorAll("tr") || []);
+            const isLastRow = Number.isInteger(pending.rowIndex)
+              ? pending.rowIndex === rows.length - 1
+              : false;
+            if (isLastRow) {
+              appendBlankRow({ focusNewRow: true });
+            }
           }
         }, 0);
       }
@@ -648,10 +685,10 @@
     const updateTotals = () => {
       if (isGrn && totalQtyInput) {
           const totalQty = rowsState.reduce((sum, row) => sum + Number(row.qty || 0), 0);
-          totalQtyInput.value = totalQty.toFixed(3);
+          totalQtyInput.value = formatDisplayNumber(totalQty, 3, "0");
       } else if (totalAmountInput) {
           const totalAmount = rowsState.reduce((sum, row) => sum + Number(row.amount || 0), 0);
-          totalAmountInput.value = totalAmount.toFixed(2);
+          totalAmountInput.value = formatDisplayNumber(totalAmount, 2, "0");
       }
     };
 
@@ -890,7 +927,7 @@
         qtyInput.dataset.rowField = "qty";
         qtyInput.dataset.rowLastField = isGrn ? "true" : "false";
         qtyInput.className = "h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs";
-        qtyInput.value = row.qty !== null && row.qty !== undefined && row.qty !== 0 ? Number(row.qty).toFixed(3) : "";
+        qtyInput.value = row.qty !== null && row.qty !== undefined && row.qty !== 0 ? formatDisplayNumber(row.qty, 3, "") : "";
         
         qtyInput.addEventListener("input", () => {
           row.qty = Number(qtyInput.value || 0);
@@ -898,7 +935,7 @@
           if (!isGrn) {
              const amountInputInThisRow = tr.querySelector('[data-row-amount-input]');
              if (amountInputInThisRow) {
-                 amountInputInThisRow.value = Number(row.amount || 0).toFixed(2);
+                 amountInputInThisRow.value = formatDisplayNumber(row.amount || 0, 2, "0");
              }
           }
           updateTotals();
@@ -916,14 +953,14 @@
             rateInput.dataset.rowField = "rate";
             rateInput.dataset.rowLastField = "true";
             rateInput.className = "h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs";
-            rateInput.value = row.rate !== null && row.rate !== undefined && row.rate !== 0 ? Number(row.rate).toFixed(4) : "";
+            rateInput.value = row.rate !== null && row.rate !== undefined && row.rate !== 0 ? formatDisplayNumber(row.rate, 4, "") : "";
             
             rateInput.addEventListener("input", () => {
             row.rate = Number(rateInput.value || 0);
             recalculateRow(row);
              const amountInputInThisRow = tr.querySelector('[data-row-amount-input]');
              if (amountInputInThisRow) {
-                 amountInputInThisRow.value = Number(row.amount || 0).toFixed(2);
+                 amountInputInThisRow.value = formatDisplayNumber(row.amount || 0, 2, "0");
              }
              updateTotals();
             });
@@ -937,7 +974,7 @@
             amountInput.type = "text";
             amountInput.readOnly = true;
             amountInput.className = "h-8 w-full rounded-lg border border-slate-200 bg-slate-50 px-2 text-right text-xs font-semibold text-slate-700";
-            amountInput.value = Number(row.amount || 0).toFixed(2);
+            amountInput.value = formatDisplayNumber(row.amount || 0, 2, "0");
             amountTd.appendChild(amountInput);
             tr.appendChild(amountTd);
         }
@@ -1007,9 +1044,24 @@
       addRowButton.classList.toggle("cursor-not-allowed", isLocked);
     };
 
+    const syncPaymentTypeSegmentUi = () => {
+      if (!paymentTypeOptions.length) return;
+      const active = String(paymentTypeSelect?.value || "CREDIT").toUpperCase();
+      paymentTypeOptions.forEach((btn) => {
+        const value = String(btn.getAttribute("data-payment-type-option") || "").toUpperCase();
+        const isActive = value === active;
+        btn.classList.toggle("bg-accent", isActive);
+        btn.classList.toggle("text-white", isActive);
+        btn.classList.toggle("shadow-sm", isActive);
+        btn.classList.toggle("text-slate-700", !isActive);
+        btn.setAttribute("aria-pressed", isActive ? "true" : "false");
+      });
+    };
+
     const updatePaymentModeUi = () => {
       if (!isGeneralPurchase || !paymentTypeSelect) return;
       const paymentType = String(paymentTypeSelect.value || "CREDIT").toUpperCase();
+      syncPaymentTypeSegmentUi();
       const isCash = paymentType === "CASH";
       const hasGrnRef = Number(grnReferenceInput?.value || 0) > 0;
       if (cashAccountLabel) {
@@ -1060,7 +1112,7 @@
       const itemSummary = String(header.items_summary || "").trim();
       const referenceNo = String(header.reference_no || "").trim();
       const referenceText = referenceNo ? ` - ${"<%= t('bill_number') || 'Bill Number' %>"} ${referenceNo}` : "";
-      return `${"<%= t('voucher_no') %>"} ${header.voucher_no} - ${"<%= t('supplier') %>"} ${supplierName}${referenceText} - ${"<%= t('date') %>"} ${header.voucher_date} - ${"<%= t('open_qty') %>"} ${Number(header.open_qty || 0).toFixed(3)}${itemSummary ? ` - ${itemSummary}` : ""}`;
+      return `${"<%= t('voucher_no') %>"} ${header.voucher_no} - ${"<%= t('supplier') %>"} ${supplierName}${referenceText} - ${"<%= t('date') %>"} ${formatDisplayDate(header.voucher_date, "-")} - ${"<%= t('open_qty') %>"} ${formatDisplayNumber(header.open_qty || 0, 3, "0")}${itemSummary ? ` - ${itemSummary}` : ""}`;
     };
 
     const applyReferenceNoFromGrn = (header, fallbackVoucherNo = null) => {
@@ -1199,11 +1251,11 @@
             <input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent" data-grn-picker-line-checkbox value="${lineId > 0 ? lineId : ""}" ${isChecked ? "checked" : ""} ${lineId > 0 ? "" : "disabled"}>
           </td>
           <td class="px-2 py-2 text-slate-700">${String(row.grn_voucher_no || "-")}</td>
-          <td class="px-2 py-2 text-slate-700">${voucherDate || "-"}</td>
+          <td class="px-2 py-2 text-slate-700">${formatDisplayDate(voucherDate, "-")}</td>
           <td class="px-2 py-2 text-slate-700">${String(row.item_name || "-")}</td>
           <td class="px-2 py-2 text-slate-700">${colorText}</td>
           <td class="px-2 py-2 text-slate-700">${sizeText}</td>
-          <td class="px-2 py-2 text-right font-semibold text-slate-700">${Number(row.open_qty || 0).toFixed(3)}</td>
+          <td class="px-2 py-2 text-right font-semibold text-slate-700">${formatDisplayNumber(row.open_qty || 0, 3, "0")}</td>
         `;
         grnPickerLinesBody.appendChild(tr);
       });
@@ -1213,7 +1265,7 @@
       if (!isGeneralPurchase || !grnPickerModal) return;
       const supplierId = getSelectedSupplierId();
       if (!supplierId) {
-        alert("<%= t('select_supplier') %>");
+        window.showVoucherError("<%= t('select_supplier') %>");
         return;
       }
       const supplierName = supplierSelect?.selectedOptions?.[0]?.textContent?.trim() || "";
@@ -1381,7 +1433,14 @@
       }
 
       if (String(target.dataset?.rowLastField || "").toLowerCase() === "true") {
-        appendBlankRow({ focusNewRow: true });
+        const rowElement = target.closest("tr");
+        const rows = Array.from(linesBody?.querySelectorAll("tr") || []);
+        const isLastRow = rows.length ? rows[rows.length - 1] === rowElement : false;
+        if (isLastRow) {
+          appendBlankRow({ focusNewRow: true });
+        } else if (rowElement?.nextElementSibling) {
+          focusAnyRowField(rowElement.nextElementSibling, [rowFieldOrder[0]], { openSearchable: true });
+        }
         return;
       }
 
@@ -1479,6 +1538,14 @@
       focusNextField(target);
     });
 
+    paymentTypeOptions.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const value = String(btn.getAttribute("data-payment-type-option") || "").toUpperCase();
+        if (!paymentTypeSelect || (value !== "CASH" && value !== "CREDIT")) return;
+        paymentTypeSelect.value = value;
+        paymentTypeSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+    });
     paymentTypeSelect?.addEventListener("change", updatePaymentModeUi);
     supplierSelect?.addEventListener("change", syncGrnReferenceWithSupplier);
     openGrnPickerButton?.addEventListener("click", openGrnPickerModalView);
@@ -1503,14 +1570,14 @@
     grnPickerApplyButton?.addEventListener("click", () => {
       const supplierId = getSelectedSupplierId();
       if (!supplierId) {
-        alert("<%= t('select_supplier') %>");
+        window.showVoucherError("<%= t('select_supplier') %>");
         return;
       }
 
       const selectedLines = getScopedGrnLinesForModal()
         .filter((row) => grnPickerSelectedLineIds.has(Number(row.grn_line_id || 0)));
       if (!selectedLines.length) {
-        alert("<%= t('select_grn_lines') %>");
+        window.showVoucherError("<%= t('select_grn_lines') %>");
         return;
       }
 
@@ -1520,7 +1587,7 @@
           .filter((voucherNo) => Number.isInteger(voucherNo) && voucherNo > 0),
       )];
       if (selectedVoucherNos.length !== 1) {
-        alert("<%= t('single_grn_voucher_only') %>");
+        window.showVoucherError("<%= t('single_grn_voucher_only') %>");
         return;
       }
       const selectedVoucherNo = selectedVoucherNos[0];
@@ -1576,7 +1643,7 @@
 
       if (!String(referenceNoInput?.value || "").trim() && !hasGrnRefOnSubmit) {
         event.preventDefault();
-        alert("<%= t('error_required_fields') %>");
+        window.showVoucherError(requiredMessage("<%= t('reference_no') %>"));
         return;
       }
 
@@ -1587,12 +1654,12 @@
         const supplierRequired = paymentType !== "CASH" || hasGrnRef;
         if (supplierRequired && !supplierId) {
           event.preventDefault();
-          alert("<%= t('error_required_fields') %>");
+          window.showVoucherError(requiredMessage("<%= t('supplier') %>"));
           return;
         }
       } else if (!supplierId) {
         event.preventDefault();
-        alert("<%= t('error_required_fields') %>");
+        window.showVoucherError(requiredMessage("<%= t('supplier') %>"));
         return;
       }
 
@@ -1600,7 +1667,7 @@
         const reasonSelect = form.querySelector('select[name="return_reason"]');
         if (!String(reasonSelect?.value || "").trim()) {
           event.preventDefault();
-          alert("<%= t('error_required_fields') %>");
+          window.showVoucherError(requiredMessage("<%= t('reason') %>"));
           return;
         }
       }
@@ -1608,7 +1675,7 @@
       if (isGeneralPurchase && String(paymentTypeSelect?.value || "CREDIT").toUpperCase() === "CASH") {
         if (!String(cashAccountSelect?.value || "").trim()) {
           event.preventDefault();
-          alert("<%= t('cash_account_required') %>");
+          window.showVoucherError("<%= t('cash_account_required') %>");
           return;
         }
       }
@@ -1627,7 +1694,7 @@
 
       if (!payloadLines.length) {
         event.preventDefault();
-        alert("<%= t('error_required_fields') %>");
+        window.showVoucherError(requiredMessage("<%= t('voucher_lines') %>"));
         return;
       }
 

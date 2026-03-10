@@ -24,6 +24,15 @@ const loginWithCredentials = async (page, username, password) => {
   await expect(page.getByRole("button", { name: /logout/i })).toBeVisible();
 };
 
+const getDateWindow = () => {
+  const end = new Date();
+  const start = new Date(Date.now() - 24 * 60 * 60 * 1000);
+  return {
+    startDate: start.toISOString().slice(0, 10),
+    endDate: end.toISOString().slice(0, 10),
+  };
+};
+
 const selectFirstOption = async (page, selector) => {
   const value = await page.$eval(selector, (select) => {
     const option = Array.from(select.options).find((entry) => entry.value && String(entry.value).trim() !== "");
@@ -166,6 +175,22 @@ test.describe("Activity log scenarios", () => {
         created_at: yesterday,
         context_json: { marker: "seed-marker-3", source: "seed", approval_request_id: "seed-approval-3" },
       },
+      {
+        branch_id: ctx.branchId,
+        user_id: ctx.adminUser.id,
+        entity_type: "VOUCHER",
+        entity_id: "seed-voucher-internal-id",
+        voucher_type_code: "SALES_VOUCHER",
+        action: "CREATE",
+        created_at: today,
+        context_json: {
+          marker: "seed-marker-voucher",
+          source: "seed",
+          voucher_no: 105,
+          summary: "CREATE SALES_VOUCHER #105",
+          remarks: 'Seed voucher "quoted" & verified',
+        },
+      },
     ];
 
     for (let i = 0; i < 40; i += 1) {
@@ -231,8 +256,8 @@ test.describe("Activity log scenarios", () => {
 
   test("non-admin can access activity logs but cannot see details column", async ({ page }) => {
     await loginWithCredentials(page, ctx.actorCredentials.username, ctx.actorCredentials.password);
-    const date = new Date().toISOString().slice(0, 10);
-    await page.goto(`/administration/audit-logs?start_date=${date}&end_date=${date}&entity_type=ACCOUNT&entity_mode=include`, { waitUntil: "domcontentloaded" });
+    const { startDate, endDate } = getDateWindow();
+    await page.goto(`/administration/audit-logs?start_date=${startDate}&end_date=${endDate}&entity_type=ACCOUNT&entity_mode=include`, { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("columnheader", { name: /details/i })).toHaveCount(0);
     await expect(page.locator("[data-audit-details-btn]")).toHaveCount(0);
     await expect(page.locator("[data-audit-details-modal]")).toHaveCount(0);
@@ -240,8 +265,8 @@ test.describe("Activity log scenarios", () => {
 
   test("non-admin DOM does not leak context json markers", async ({ page }) => {
     await loginWithCredentials(page, ctx.actorCredentials.username, ctx.actorCredentials.password);
-    const date = new Date().toISOString().slice(0, 10);
-    await page.goto(`/administration/audit-logs?start_date=${date}&end_date=${date}`, { waitUntil: "domcontentloaded" });
+    const { startDate, endDate } = getDateWindow();
+    await page.goto(`/administration/audit-logs?start_date=${startDate}&end_date=${endDate}`, { waitUntil: "domcontentloaded" });
     await expect(page.locator("body")).not.toContainText("seed-marker-1");
     await expect(page.locator("body")).not.toContainText("seed-marker-2");
     await expect(page.locator("[data-audit-details]")).toHaveCount(0);
@@ -249,8 +274,8 @@ test.describe("Activity log scenarios", () => {
 
   test("admin can view details modal with context JSON", async ({ page }) => {
     await loginWithCredentials(page, process.env.E2E_ADMIN_USER, process.env.E2E_ADMIN_PASS);
-    const date = new Date().toISOString().slice(0, 10);
-    await page.goto(`/administration/audit-logs?start_date=${date}&end_date=${date}&entity_type=ACCOUNT&entity_mode=include`, { waitUntil: "domcontentloaded" });
+    const { startDate, endDate } = getDateWindow();
+    await page.goto(`/administration/audit-logs?start_date=${startDate}&end_date=${endDate}&entity_type=ACCOUNT&entity_mode=include`, { waitUntil: "domcontentloaded" });
     await expect(page.getByRole("columnheader", { name: /details/i })).toBeVisible();
     const row = page.locator("tbody tr", { hasText: "seed-1" }).first();
     await expect(row).toBeVisible();
@@ -261,23 +286,54 @@ test.describe("Activity log scenarios", () => {
 
   test("admin details modal shows changed fields with old and new values for updates", async ({ page }) => {
     await loginWithCredentials(page, process.env.E2E_ADMIN_USER, process.env.E2E_ADMIN_PASS);
-    const date = new Date().toISOString().slice(0, 10);
-    await page.goto(`/administration/audit-logs?start_date=${date}&end_date=${date}&entity_type=PARTY&entity_mode=include`, { waitUntil: "domcontentloaded" });
+    const { startDate, endDate } = getDateWindow();
+    await page.goto(`/administration/audit-logs?start_date=${startDate}&end_date=${endDate}&entity_type=PARTY&entity_mode=include`, { waitUntil: "domcontentloaded" });
     const row = page.locator("tbody tr", { hasText: "seed-2" }).first();
     await expect(row).toBeVisible();
     await row.locator("[data-audit-details-btn]").click();
     await expect(page.locator("[data-audit-details-modal]")).toBeVisible();
-    await expect(page.locator("[data-audit-details-content]")).toContainText(/changed_fields/i);
-    await expect(page.locator("[data-audit-details-content]")).toContainText(/old_value/i);
-    await expect(page.locator("[data-audit-details-content]")).toContainText(/new_value/i);
+    await expect(page.locator("[data-audit-details-content]")).toContainText(/changed fields/i);
+    await expect(page.locator("[data-audit-details-content]")).toContainText(/old value/i);
+    await expect(page.locator("[data-audit-details-content]")).toContainText(/new value/i);
     await expect(page.locator("[data-audit-details-content]")).toContainText("Old Party");
     await expect(page.locator("[data-audit-details-content]")).toContainText("New Party");
   });
 
+  test("voucher rows show voucher number instead of internal entity id", async ({ page }) => {
+    await loginWithCredentials(page, process.env.E2E_ADMIN_USER, process.env.E2E_ADMIN_PASS);
+    const { startDate, endDate } = getDateWindow();
+    await page.goto(
+      `/administration/audit-logs?start_date=${startDate}&end_date=${endDate}&entity_type=VOUCHER&entity_mode=include`,
+      { waitUntil: "domcontentloaded" },
+    );
+    const row = page.locator("tbody tr", { hasText: /sales voucher|sales_voucher/i }).first();
+    await expect(row).toBeVisible();
+    await expect(row).toContainText("105");
+    await expect(row).not.toContainText("seed-voucher-internal-id");
+    const voucherLink = row.locator('a[href*="/vouchers/sales?voucher_no=105&view=1"]').first();
+    await expect(voucherLink).toBeVisible();
+  });
+
+  test("voucher details modal parses escaped JSON cleanly", async ({ page }) => {
+    await loginWithCredentials(page, process.env.E2E_ADMIN_USER, process.env.E2E_ADMIN_PASS);
+    const { startDate, endDate } = getDateWindow();
+    await page.goto(
+      `/administration/audit-logs?start_date=${startDate}&end_date=${endDate}&entity_type=VOUCHER&entity_mode=include`,
+      { waitUntil: "domcontentloaded" },
+    );
+    const row = page.locator("tbody tr", { hasText: /sales voucher|sales_voucher/i }).first();
+    await expect(row).toBeVisible();
+    await row.locator("[data-audit-details-btn]").click();
+    await expect(page.locator("[data-audit-details-modal]")).toBeVisible();
+    await expect(page.locator("[data-audit-details-content]")).toContainText(/open voucher/i);
+    await expect(page.locator("[data-audit-details-content]")).toContainText('Seed voucher "quoted" & verified');
+    await expect(page.locator("[data-audit-details-content]")).toContainText("seed-marker-voucher");
+  });
+
   test("filters by user and action through query parameters", async ({ page }) => {
     await loginWithCredentials(page, ctx.actorCredentials.username, ctx.actorCredentials.password);
-    const date = new Date().toISOString().slice(0, 10);
-    const url = `/administration/audit-logs?start_date=${date}&end_date=${date}&user_ids=${ctx.actorUser.id}&user_mode=include&action=UPDATE&action_mode=include`;
+    const { startDate, endDate } = getDateWindow();
+    const url = `/administration/audit-logs?start_date=${startDate}&end_date=${endDate}&user_ids=${ctx.actorUser.id}&user_mode=include&action=UPDATE&action_mode=include`;
     await page.goto(url, { waitUntil: "domcontentloaded" });
     await expect(page.locator("tbody tr", { hasText: "seed-2" }).first()).toBeVisible();
     await expect(page.locator("tbody tr", { hasText: "seed-1" })).toHaveCount(0);
@@ -331,9 +387,9 @@ test.describe("Activity log scenarios", () => {
     await row.getByRole("button", { name: /reject/i }).click();
     await page.waitForURL(/administration\/approvals/);
 
-    const date = new Date().toISOString().slice(0, 10);
+    const { startDate, endDate } = getDateWindow();
     await page.goto(
-      `/administration/audit-logs?start_date=${date}&end_date=${date}&action=SUBMIT&action_mode=include&user_ids=${ctx.actorUser.id}&user_mode=include`,
+      `/administration/audit-logs?start_date=${startDate}&end_date=${endDate}&action=SUBMIT&action_mode=include&user_ids=${ctx.actorUser.id}&user_mode=include`,
       { waitUntil: "domcontentloaded" },
     );
     const submitRow = page.locator("tbody tr", { hasText: "ACCOUNT" }).first();
@@ -342,7 +398,7 @@ test.describe("Activity log scenarios", () => {
     await expect(page.locator("[data-audit-details-content]")).toContainText("screen-approval");
 
     await page.goto(
-      `/administration/audit-logs?start_date=${date}&end_date=${date}&action=REJECT&action_mode=include&user_ids=${ctx.adminUser.id}&user_mode=include`,
+      `/administration/audit-logs?start_date=${startDate}&end_date=${endDate}&action=REJECT&action_mode=include&user_ids=${ctx.adminUser.id}&user_mode=include`,
       { waitUntil: "domcontentloaded" },
     );
     const rejectRow = page.locator("tbody tr", { hasText: "ACCOUNT" }).first();

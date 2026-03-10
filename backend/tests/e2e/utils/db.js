@@ -131,6 +131,89 @@ const getLatestVoucherHeader = async ({ voucherTypeCode, createdBy, branchId } =
   return query.first();
 };
 
+const getLatestOpenReturnableOutwardReference = async ({ branchId } = {}) => {
+  let query = knex("erp.rgp_outward as ro")
+    .join("erp.voucher_header as vh", "vh.id", "ro.voucher_id")
+    .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
+    .join("erp.rgp_outward_line as rol", "rol.voucher_line_id", "vl.id")
+    .leftJoin(
+      knex("erp.rgp_inward_line as ril")
+        .join("erp.rgp_inward as ri", "ri.voucher_id", "ril.rgp_in_voucher_id")
+        .join("erp.voucher_header as rvh", "rvh.id", "ri.voucher_id")
+        .select("ril.rgp_out_voucher_line_id")
+        .sum({ returned_qty: "ril.returned_qty" })
+        .whereNot("rvh.status", "REJECTED")
+        .groupBy("ril.rgp_out_voucher_line_id")
+        .as("ret"),
+      "ret.rgp_out_voucher_line_id",
+      "vl.id",
+    )
+    .select(
+      "ro.vendor_party_id",
+      "vh.voucher_no",
+      "vh.voucher_date",
+      knex.raw("GREATEST(rol.qty - COALESCE(ret.returned_qty, 0), 0) as pending_qty"),
+    )
+    .where("vh.voucher_type_code", "RDV")
+    .whereNot("vh.status", "REJECTED")
+    .whereNot("ro.status", "CLOSED")
+    .whereRaw("GREATEST(rol.qty - COALESCE(ret.returned_qty, 0), 0) > 0")
+    .orderBy("vh.voucher_no", "desc");
+
+  if (branchId) query = query.where("vh.branch_id", branchId);
+
+  return query.first();
+};
+
+const getTwoOpenReturnableOutwardReferencesForSameVendor = async ({ branchId } = {}) => {
+  let query = knex("erp.rgp_outward as ro")
+    .join("erp.voucher_header as vh", "vh.id", "ro.voucher_id")
+    .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
+    .join("erp.rgp_outward_line as rol", "rol.voucher_line_id", "vl.id")
+    .leftJoin(
+      knex("erp.rgp_inward_line as ril")
+        .join("erp.rgp_inward as ri", "ri.voucher_id", "ril.rgp_in_voucher_id")
+        .join("erp.voucher_header as rvh", "rvh.id", "ri.voucher_id")
+        .select("ril.rgp_out_voucher_line_id")
+        .sum({ returned_qty: "ril.returned_qty" })
+        .whereNot("rvh.status", "REJECTED")
+        .groupBy("ril.rgp_out_voucher_line_id")
+        .as("ret"),
+      "ret.rgp_out_voucher_line_id",
+      "vl.id",
+    )
+    .select("ro.vendor_party_id", "vh.voucher_no")
+    .where("vh.voucher_type_code", "RDV")
+    .whereNot("vh.status", "REJECTED")
+    .whereNot("ro.status", "CLOSED")
+    .whereRaw("GREATEST(rol.qty - COALESCE(ret.returned_qty, 0), 0) > 0")
+    .groupBy("ro.vendor_party_id", "vh.voucher_no")
+    .orderBy("ro.vendor_party_id", "asc")
+    .orderBy("vh.voucher_no", "desc");
+
+  if (branchId) query = query.where("vh.branch_id", branchId);
+
+  const rows = await query;
+  const grouped = new Map();
+  rows.forEach((row) => {
+    const vendorId = Number(row.vendor_party_id || 0);
+    if (!vendorId) return;
+    const list = grouped.get(vendorId) || [];
+    list.push({
+      vendor_party_id: vendorId,
+      voucher_no: Number(row.voucher_no || 0),
+    });
+    grouped.set(vendorId, list);
+  });
+
+  for (const list of grouped.values()) {
+    const distinct = list.filter((row) => Number(row.voucher_no || 0) > 0);
+    if (distinct.length >= 2) return distinct.slice(0, 2);
+  }
+
+  return [];
+};
+
 const getVoucherLineCount = async (voucherId) => {
   const id = Number(voucherId || 0);
   if (!id) return 0;
@@ -755,6 +838,8 @@ module.exports = {
   deleteApprovalRequests,
   findLatestApprovalRequest,
   getLatestVoucherHeader,
+  getLatestOpenReturnableOutwardReference,
+  getTwoOpenReturnableOutwardReferencesForSameVendor,
   getVoucherLineCount,
   getPurchaseAllocationCountByVoucher,
   setVariantSaleRate,

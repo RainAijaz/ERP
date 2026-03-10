@@ -1,6 +1,7 @@
 const express = require("express");
 const knex = require("../../db/knex");
 const { requirePermission } = require("../../middleware/access/role-permissions");
+const { presentActivityRows } = require("../../services/administration/activity-log-presenter");
 
 const router = express.Router();
 
@@ -144,8 +145,13 @@ router.get("/", requirePermission("SCREEN", "administration.audit_logs", "view")
       return `?${params.toString()}`;
     };
 
-    renderPage(req, res, {
+    const presentedRows = presentActivityRows({
       rows,
+      t: res.locals.t,
+    });
+
+    renderPage(req, res, {
+      rows: presentedRows,
       users,
       branches: req.branchOptions || [],
       entityTypes,

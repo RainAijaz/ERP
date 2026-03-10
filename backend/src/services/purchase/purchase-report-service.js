@@ -18,6 +18,8 @@ const PURCHASE_TYPE_FILTERS = Object.freeze({
 });
 
 const ALL_MULTI_FILTER_VALUE = "__ALL__";
+const SUPPLIER_CAPABILITY_CODES = Object.freeze(["MATERIAL", "REPAIR", "SERVICE"]);
+let partiesHasVendorCapabilitiesColumn;
 
 const toPositiveId = (value) => {
   const id = Number(value || 0);
@@ -102,6 +104,37 @@ const toIdListWithAllFromSources = (...sources) => {
     else merged.push(source);
   });
   return toIdListWithAll(merged);
+};
+
+const toCapabilityListWithAll = (value) => {
+  const raw = Array.isArray(value) ? value : [value];
+  const tokens = raw
+    .flatMap((entry) => String(entry == null ? "" : entry).split(","))
+    .map((entry) => entry.trim().toUpperCase())
+    .filter(Boolean);
+  const hasAll = tokens.some(
+    (entry) =>
+      entry.toLowerCase() === String(ALL_MULTI_FILTER_VALUE).toLowerCase() ||
+      entry.toLowerCase() === "all",
+  );
+  if (hasAll) return [];
+  return [...new Set(tokens.filter((entry) => SUPPLIER_CAPABILITY_CODES.includes(entry)))];
+};
+
+const hasPartiesVendorCapabilitiesColumn = async () => {
+  if (typeof partiesHasVendorCapabilitiesColumn === "boolean") {
+    return partiesHasVendorCapabilitiesColumn;
+  }
+  try {
+    partiesHasVendorCapabilitiesColumn = await knex.schema
+      .withSchema("erp")
+      .hasColumn("parties", "vendor_capabilities");
+    return partiesHasVendorCapabilitiesColumn;
+  } catch (err) {
+    console.error("Error in PurchaseReportCapabilitiesSchemaService:", err);
+    partiesHasVendorCapabilitiesColumn = false;
+    return false;
+  }
 };
 
 const parseFilters = ({ req, input = {} }) => {
@@ -421,9 +454,7 @@ const getGroupIdentity = (row, orderBy) => {
 
   if (orderBy === REPORT_ORDER_TYPES.product) {
     const key = `RM:${Number(row.item_id || 0)}`;
-    const label = row.item_code
-      ? `${row.item_code} - ${row.item_name || ""}`
-      : row.item_name || "-";
+    const label = String(row.item_name || "").trim() || "-";
     return {
       key,
       label,
@@ -555,6 +586,7 @@ const parseSupplierBalanceFilters = ({ req, input = {} }) => {
   return {
     asOn,
     branchIds,
+    vendorCapabilities: toCapabilityListWithAll(input.vendor_capabilities),
     reportLoaded: toBoolean(input.load_report, false),
     invalidAsOnDate: Boolean(parsedAsOn.provided && !parsedAsOn.valid),
     invalidFilterInput: Boolean(parsedAsOn.provided && !parsedAsOn.valid),
@@ -581,6 +613,12 @@ const parseSupplierLedgerFilters = ({ req, input = {} }) => {
   }
 
   const branchIdsFromInput = toIdListWithAll(input.branch_ids);
+  const ledgerView =
+    String(input.ledger_view || "summary")
+      .trim()
+      .toLowerCase() === "detail"
+      ? "detail"
+      : "summary";
   const branchIds = req.user?.isAdmin
     ? branchIdsFromInput
     : [Number(req.branchId || 0)].filter(
@@ -591,6 +629,7 @@ const parseSupplierLedgerFilters = ({ req, input = {} }) => {
     from,
     to,
     partyId: toPositiveId(input.party_id),
+    ledgerView,
     branchIds,
     reportLoaded: toBoolean(input.load_report, false),
     invalidFromDate: Boolean(parsedFrom.provided && !parsedFrom.valid),
@@ -732,39 +771,82 @@ const getSupplierLedgerRows = async ({ req, filters, options }) => {
   const rawRows = await detailsQuery;
   const openingBalance = toAmount(openingRow?.opening_balance || 0, 2);
 
+  const baseEntries = rawRows.map((row) => ({
+    id: Number(row.id || 0),
+    entry_date: row.entry_date || null,
+    voucher_no: row.voucher_no || null,
+    bill_number: row.bill_number || "",
+    voucher_type: row.voucher_type_code || "",
+    description: row.description || "",
+    qty: toQty(row.qty, 3),
+    debit: toAmount(row.dr, 2),
+    credit: toAmount(row.cr, 2),
+    branch_name: row.branch_name || "",
+  }));
+
+  const reportEntries =
+    filters.ledgerView === "summary"
+      ? (() => {
+          const grouped = new Map();
+          baseEntries.forEach((entry) => {
+            const key = entry.voucher_no
+              ? `V:${entry.voucher_type}:${entry.voucher_no}`
+              : `G:${entry.id}`;
+            const current = grouped.get(key);
+            if (!current) {
+              grouped.set(key, { ...entry });
+              return;
+            }
+            current.qty = toQty(current.qty + entry.qty, 3);
+            current.debit = toAmount(current.debit + entry.debit, 2);
+            current.credit = toAmount(current.credit + entry.credit, 2);
+            if (!current.description && entry.description) {
+              current.description = entry.description;
+            }
+          });
+
+          return [...grouped.values()].sort((a, b) => {
+            const dateA = String(a.entry_date || "");
+            const dateB = String(b.entry_date || "");
+            if (dateA !== dateB) return dateA.localeCompare(dateB);
+            const voucherA = Number(a.voucher_no || 0);
+            const voucherB = Number(b.voucher_no || 0);
+            if (voucherA !== voucherB) return voucherA - voucherB;
+            return Number(a.id || 0) - Number(b.id || 0);
+          });
+        })()
+      : baseEntries;
+
   let runningBalance = openingBalance;
   let totalQty = 0;
   let totalDebit = 0;
   let totalCredit = 0;
 
-  const rows = rawRows.map((row, index) => {
-    const qty = toQty(row.qty, 3);
-    const debit = toAmount(row.dr, 2);
-    const credit = toAmount(row.cr, 2);
-
-    totalQty = toQty(totalQty + qty, 3);
-    totalDebit = toAmount(totalDebit + debit, 2);
-    totalCredit = toAmount(totalCredit + credit, 2);
-    runningBalance = toAmount(runningBalance + debit - credit, 2);
+  const rows = reportEntries.map((entry, index) => {
+    totalQty = toQty(totalQty + entry.qty, 3);
+    totalDebit = toAmount(totalDebit + entry.debit, 2);
+    totalCredit = toAmount(totalCredit + entry.credit, 2);
+    runningBalance = toAmount(runningBalance + entry.debit - entry.credit, 2);
 
     return {
       sr_no: index + 1,
-      entry_date: row.entry_date || null,
-      voucher_no: row.voucher_no || null,
-      bill_number: row.bill_number || "",
-      voucher_type: row.voucher_type_code || "",
-      description: row.description || "",
-      qty,
-      debit,
-      credit,
+      entry_date: entry.entry_date,
+      voucher_no: entry.voucher_no,
+      bill_number: entry.bill_number,
+      voucher_type: entry.voucher_type,
+      description: entry.description,
+      qty: entry.qty,
+      debit: entry.debit,
+      credit: entry.credit,
       balance: runningBalance,
-      branch_name: row.branch_name || "",
+      branch_name: entry.branch_name,
     };
   });
 
   return {
     supplier: selectedSupplier || null,
     openingBalance,
+    ledgerView: filters.ledgerView,
     rows,
     totals: {
       qty: totalQty,
@@ -791,6 +873,7 @@ const getSupplierLedgerReportPageData = async ({ req, input = {} }) => {
 };
 
 const loadSupplierBalanceOptions = async ({ req }) => {
+  const hasVendorCapabilities = await hasPartiesVendorCapabilitiesColumn();
   const branches = req.user?.isAdmin
     ? await knex("erp.branches")
         .select("id", "name")
@@ -801,11 +884,17 @@ const loadSupplierBalanceOptions = async ({ req }) => {
         name: row.name,
       }));
 
-  return { branches };
+  return {
+    branches,
+    vendorCapabilities: hasVendorCapabilities
+      ? SUPPLIER_CAPABILITY_CODES.map((code) => ({ value: code, label: code }))
+      : [],
+  };
 };
 
 const getSupplierBalanceRows = async ({ req, filters }) => {
   if (!filters.reportLoaded) return [];
+  const hasVendorCapabilities = await hasPartiesVendorCapabilitiesColumn();
 
   const scopedBranchIds = req.user?.isAdmin
     ? filters.branchIds
@@ -832,6 +921,9 @@ const getSupplierBalanceRows = async ({ req, filters }) => {
       "p.name",
       "p.name_ur",
       knex.raw("COALESCE(bal.amount, 0) as amount"),
+      ...(hasVendorCapabilities
+        ? [knex.raw("COALESCE(array_to_string(p.vendor_capabilities, ', '), '') as vendor_capabilities")]
+        : [knex.raw("'' as vendor_capabilities")]),
     )
     .where({ "p.is_active": true })
     .whereRaw("upper(coalesce(p.party_type::text, '')) in ('SUPPLIER','BOTH')")
@@ -840,6 +932,16 @@ const getSupplierBalanceRows = async ({ req, filters }) => {
   if (scopedBranchIds.length) {
     query = applyPartyBranchScope(query, scopedBranchIds);
   }
+  if (hasVendorCapabilities && Array.isArray(filters.vendorCapabilities) && filters.vendorCapabilities.length) {
+    query = query.whereRaw(
+      `EXISTS (
+        SELECT 1
+        FROM unnest(COALESCE(p.vendor_capabilities, ARRAY[]::text[])) AS cap(value)
+        WHERE upper(cap.value) = ANY (?::text[])
+      )`,
+      [filters.vendorCapabilities],
+    );
+  }
 
   const rows = await query;
   return rows.map((row) => ({
@@ -847,6 +949,7 @@ const getSupplierBalanceRows = async ({ req, filters }) => {
     supplier_code: row.code || "",
     supplier_name: row.name || "",
     supplier_name_ur: row.name_ur || "",
+    vendor_capabilities: row.vendor_capabilities || "",
     amount: toAmount(row.amount, 2),
   }));
 };

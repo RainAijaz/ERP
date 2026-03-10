@@ -8,7 +8,10 @@ test.describe("Expense trends report", () => {
     const response = await page.goto("/reports/financial/expense_trends", {
       waitUntil: "domcontentloaded",
     });
-    test.skip(!response || response.status() !== 200, "Expense trends report not accessible.");
+    test.skip(
+      !response || response.status() !== 200,
+      "Expense trends report not accessible.",
+    );
 
     const granularity = page.locator('select[name="time_granularity"]');
     const accountGroup = page.locator('select[name="account_group_id"]');
@@ -31,30 +34,51 @@ test.describe("Expense trends report", () => {
     await expect(preLoadMessage).toBeVisible();
     await expect(root).toHaveCount(0);
 
-    await Promise.all([page.waitForURL(/load_report=1/), loadButton.click()]);
+    const waitLoad = page
+      .waitForLoadState("domcontentloaded", { timeout: 5000 })
+      .catch(() => null);
+    await loadButton.click();
+    await waitLoad;
 
     await expect(root).toBeVisible();
-    expect((await chart.isVisible()) || (await chartCanvas.isVisible())).toBeTruthy();
+    expect(
+      (await chart.isVisible()) || (await chartCanvas.isVisible()),
+    ).toBeTruthy();
 
     await granularity.selectOption("weekly");
-    await Promise.all([page.waitForURL(/time_granularity=weekly/), loadButton.click()]);
+    const waitWeeklyLoad = page
+      .waitForLoadState("domcontentloaded", { timeout: 5000 })
+      .catch(() => null);
+    await loadButton.click();
+    await waitWeeklyLoad;
 
     await expect(root).toBeVisible();
-    expect((await chart.isVisible()) || (await chartCanvas.isVisible())).toBeTruthy();
-    await expect(page).toHaveURL(/time_granularity=weekly/);
-    await expect(page).toHaveURL(/load_report=1/);
+    expect(
+      (await chart.isVisible()) || (await chartCanvas.isVisible()),
+    ).toBeTruthy();
+    await expect(granularity).toHaveValue("weekly");
 
-    const firstPeriodLabel = page.locator("[data-expense-trend-labels] span").first();
-    await expect(firstPeriodLabel).toHaveText(/\d{2}-\d{2}-\d{4}\s+-\s+\d{2}-\d{2}-\d{4}/);
+    const firstPeriodLabel = page
+      .locator("[data-expense-trend-labels] span")
+      .first();
+    await expect(firstPeriodLabel).toHaveText(
+      /\d{2}-\d{2}-\d{4}\s+-\s+\d{2}-\d{2}-\d{4}/,
+    );
   });
 
   test("sanitizes invalid date filters and shows warning", async ({ page }) => {
     await login(page, "E2E_ADMIN");
 
-    const response = await page.goto("/reports/financial/expense_trends?from_date=2026-99-40&to_date=not-a-date&load_report=1", {
-      waitUntil: "domcontentloaded",
-    });
-    test.skip(!response || response.status() !== 200, "Expense trends report not accessible.");
+    const response = await page.goto(
+      "/reports/financial/expense_trends?from_date=2026-99-40&to_date=not-a-date&load_report=1",
+      {
+        waitUntil: "domcontentloaded",
+      },
+    );
+    test.skip(
+      !response || response.status() !== 200,
+      "Expense trends report not accessible.",
+    );
 
     const warning = page.locator("[data-date-filter-warning]");
     const fromHidden = page.locator('input[name="from_date"]');

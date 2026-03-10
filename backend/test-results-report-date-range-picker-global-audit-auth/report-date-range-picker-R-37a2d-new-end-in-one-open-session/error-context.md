@@ -1,0 +1,249 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - checkbox "Menu" [ref=e5]
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - link "CHAND EVA" [ref=e8] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e10]: ERP
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - generic [ref=e14]: Signed in as
+            - generic [ref=e15]: admin
+          - generic [ref=e16]:
+            - generic [ref=e17]: Branch
+            - generic [ref=e18]:
+              - generic [ref=e19]: Branch
+              - combobox "Branch" [ref=e20]:
+                - option "124" [selected]
+                - option "207"
+          - button "Logout" [ref=e22] [cursor=pointer]
+          - generic [ref=e23]:
+            - generic [ref=e24]: Language
+            - link "English" [ref=e25] [cursor=pointer]:
+              - /url: "?lang=en"
+            - generic [ref=e26]: "|"
+            - link "Urdu" [ref=e27] [cursor=pointer]:
+              - /url: "?lang=ur"
+      - navigation [ref=e28]:
+        - button "Administration" [ref=e30] [cursor=pointer]:
+          - generic [ref=e31]: Administration
+          - img [ref=e32]
+        - button "Master Data" [ref=e35] [cursor=pointer]:
+          - generic [ref=e36]: Master Data
+          - img [ref=e37]
+        - button "HR & Payroll" [ref=e40] [cursor=pointer]:
+          - generic [ref=e41]: HR & Payroll
+          - img [ref=e42]
+        - button "Financial" [ref=e45] [cursor=pointer]:
+          - generic [ref=e46]: Financial
+          - img [ref=e47]
+        - button "Purchase" [ref=e50] [cursor=pointer]:
+          - generic [ref=e51]: Purchase
+          - img [ref=e52]
+        - button "Production" [ref=e55] [cursor=pointer]:
+          - generic [ref=e56]: Production
+          - img [ref=e57]
+        - button "Inventory" [ref=e60] [cursor=pointer]:
+          - generic [ref=e61]: Inventory
+          - img [ref=e62]
+        - button "Outward & Returnables" [ref=e65] [cursor=pointer]:
+          - generic [ref=e66]: Outward & Returnables
+          - img [ref=e67]
+        - button "Sales" [ref=e70] [cursor=pointer]:
+          - generic [ref=e71]: Sales
+          - img [ref=e72]
+  - main [ref=e74]:
+    - generic [ref=e75]:
+      - generic [ref=e76]:
+        - heading "Account Activity Ledger" [level=1] [ref=e78]
+        - generic [ref=e79]:
+          - generic [ref=e80]:
+            - generic [ref=e81]: Code
+            - textbox "Code" [ref=e82]
+          - generic [ref=e83]:
+            - generic [ref=e84]: Account Name
+            - generic [ref=e85]:
+              - textbox "Account Name Select Account Name" [ref=e86]:
+                - /placeholder: Select Account Name
+                - text: Select Account Name
+              - generic:
+                - img
+              - combobox [ref=e87]:
+                - option "Select Account Name" [selected]
+                - option "AHSAN - CASH IN HAND"
+                - option "BILL BOOKS"
+                - option "DRUM SALE"
+                - option "E2E Account 1770370198944"
+                - option "ELECTRICITY"
+                - option "GL Advances from Customers"
+                - option "GL AP Control"
+                - option "GL AR Control"
+                - option "GL Inventory RM Control"
+                - option "GL Salaries Payable Control"
+                - option "GL Sales Revenue"
+                - option "GL Wages Payable Control"
+                - option "HUMAIR - CASH IN HAND"
+                - option "MIS"
+                - option "PENS"
+                - option "POSTINGCLASSBANKTEST"
+                - option "PRODUCTS DELIVERY"
+                - option "PTCL BILL"
+                - option "WATER"
+          - generic [ref=e88]:
+            - generic [ref=e89]: Date Range
+            - generic [ref=e90]:
+              - textbox "Date Range Open date range picker From Date 09-02-2026 To Date 11-03-2026 09-02-2026 - 11-03-2026 ← Feb 2026 → Su Mo Tu We Th Fr Sa 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 ← Mar 2026 → Su Mo Tu We Th Fr Sa 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 Cancel Apply" [active] [ref=e91] [cursor=pointer]: 09-02-2026 - 11-03-2026
+              - button "Open date range picker" [ref=e92] [cursor=pointer]:
+                - img [ref=e93]
+              - generic [ref=e95]:
+                - generic [ref=e96]:
+                  - generic [ref=e97]:
+                    - generic [ref=e98]:
+                      - generic [ref=e99]: From Date
+                      - generic [ref=e100]: 09-02-2026
+                    - generic [ref=e101]:
+                      - generic [ref=e102]: To Date
+                      - generic [ref=e103]: 11-03-2026
+                  - generic [ref=e104]:
+                    - generic [ref=e105]: 09-02-2026 - 11-03-2026
+                    - generic [ref=e106]:
+                      - generic [ref=e107]:
+                        - generic [ref=e108]:
+                          - button "←" [ref=e109] [cursor=pointer]
+                          - generic [ref=e110]: Feb 2026
+                          - button "→" [ref=e111] [cursor=pointer]
+                        - generic [ref=e112]:
+                          - generic [ref=e113]: Su
+                          - generic [ref=e114]: Mo
+                          - generic [ref=e115]: Tu
+                          - generic [ref=e116]: We
+                          - generic [ref=e117]: Th
+                          - generic [ref=e118]: Fr
+                          - generic [ref=e119]: Sa
+                        - generic [ref=e120]:
+                          - button "1" [ref=e121] [cursor=pointer]
+                          - button "2" [ref=e122] [cursor=pointer]
+                          - button "3" [ref=e123] [cursor=pointer]
+                          - button "4" [ref=e124] [cursor=pointer]
+                          - button "5" [ref=e125] [cursor=pointer]
+                          - button "6" [ref=e126] [cursor=pointer]
+                          - button "7" [ref=e127] [cursor=pointer]
+                          - button "8" [ref=e128] [cursor=pointer]
+                          - button "9" [ref=e129] [cursor=pointer]
+                          - button "10" [ref=e130] [cursor=pointer]
+                          - button "11" [ref=e131] [cursor=pointer]
+                          - button "12" [ref=e132] [cursor=pointer]
+                          - button "13" [ref=e133] [cursor=pointer]
+                          - button "14" [ref=e134] [cursor=pointer]
+                          - button "15" [ref=e135] [cursor=pointer]
+                          - button "16" [ref=e136] [cursor=pointer]
+                          - button "17" [ref=e137] [cursor=pointer]
+                          - button "18" [ref=e138] [cursor=pointer]
+                          - button "19" [ref=e139] [cursor=pointer]
+                          - button "20" [ref=e140] [cursor=pointer]
+                          - button "21" [ref=e141] [cursor=pointer]
+                          - button "22" [ref=e142] [cursor=pointer]
+                          - button "23" [ref=e143] [cursor=pointer]
+                          - button "24" [ref=e144] [cursor=pointer]
+                          - button "25" [ref=e145] [cursor=pointer]
+                          - button "26" [ref=e146] [cursor=pointer]
+                          - button "27" [ref=e147] [cursor=pointer]
+                          - button "28" [ref=e148] [cursor=pointer]
+                      - generic [ref=e150]:
+                        - generic [ref=e151]:
+                          - button "←" [ref=e152] [cursor=pointer]
+                          - generic [ref=e153]: Mar 2026
+                          - button "→" [ref=e154] [cursor=pointer]
+                        - generic [ref=e155]:
+                          - generic [ref=e156]: Su
+                          - generic [ref=e157]: Mo
+                          - generic [ref=e158]: Tu
+                          - generic [ref=e159]: We
+                          - generic [ref=e160]: Th
+                          - generic [ref=e161]: Fr
+                          - generic [ref=e162]: Sa
+                        - generic [ref=e163]:
+                          - button "1" [ref=e164] [cursor=pointer]
+                          - button "2" [ref=e165] [cursor=pointer]
+                          - button "3" [ref=e166] [cursor=pointer]
+                          - button "4" [ref=e167] [cursor=pointer]
+                          - button "5" [ref=e168] [cursor=pointer]
+                          - button "6" [ref=e169] [cursor=pointer]
+                          - button "7" [ref=e170] [cursor=pointer]
+                          - button "8" [ref=e171] [cursor=pointer]
+                          - button "9" [ref=e172] [cursor=pointer]
+                          - button "10" [ref=e173] [cursor=pointer]
+                          - button "11" [ref=e174] [cursor=pointer]
+                          - button "12" [ref=e175] [cursor=pointer]
+                          - button "13" [ref=e176] [cursor=pointer]
+                          - button "14" [ref=e177] [cursor=pointer]
+                          - button "15" [ref=e178] [cursor=pointer]
+                          - button "16" [ref=e179] [cursor=pointer]
+                          - button "17" [ref=e180] [cursor=pointer]
+                          - button "18" [ref=e181] [cursor=pointer]
+                          - button "19" [ref=e182] [cursor=pointer]
+                          - button "20" [ref=e183] [cursor=pointer]
+                          - button "21" [ref=e184] [cursor=pointer]
+                          - button "22" [ref=e185] [cursor=pointer]
+                          - button "23" [ref=e186] [cursor=pointer]
+                          - button "24" [ref=e187] [cursor=pointer]
+                          - button "25" [ref=e188] [cursor=pointer]
+                          - button "26" [ref=e189] [cursor=pointer]
+                          - button "27" [ref=e190] [cursor=pointer]
+                          - button "28" [ref=e191] [cursor=pointer]
+                          - button "29" [ref=e192] [cursor=pointer]
+                          - button "30" [ref=e193] [cursor=pointer]
+                          - button "31" [ref=e194] [cursor=pointer]
+                - generic [ref=e195]:
+                  - button "Cancel" [ref=e196] [cursor=pointer]
+                  - button "Apply" [ref=e197] [cursor=pointer]
+          - generic [ref=e198]:
+            - generic [ref=e199]: Branch
+            - generic [ref=e200]:
+              - textbox "Branch 124" [ref=e201]:
+                - /placeholder: All branches
+                - text: "124"
+              - generic:
+                - img
+              - combobox [ref=e202]:
+                - option "All branches"
+                - option "124" [selected]
+                - option "207"
+          - generic [ref=e203]:
+            - generic [ref=e204]: Report Type
+            - generic [ref=e205]:
+              - generic [ref=e206]:
+                - radio "Details" [checked] [ref=e207]
+                - generic [ref=e208]: Details
+              - generic [ref=e209]:
+                - radio "Summary" [ref=e210]
+                - generic [ref=e211]: Summary
+          - generic [ref=e212]:
+            - button "Load" [ref=e213] [cursor=pointer]
+            - link "Cancel" [ref=e214] [cursor=pointer]:
+              - /url: /reports/financial/account_activity_ledger
+      - generic [ref=e215]:
+        - generic [ref=e216]:
+          - button "Print" [disabled] [ref=e217]
+          - button "Download" [disabled] [ref=e218]
+          - generic [ref=e219]:
+            - generic [ref=e220]:
+              - generic [ref=e221]: Show
+              - combobox "Show Rows" [ref=e222] [cursor=pointer]:
+                - option "10" [selected]
+                - option "25"
+                - option "50"
+                - option "All"
+              - generic [ref=e223]: Rows
+            - generic [ref=e224]:
+              - img [ref=e225]
+              - textbox [ref=e227]:
+                - /placeholder: Search
+        - generic [ref=e229]: Select Account Name
+    - generic [ref=e230]: ERP System © 2026
+```

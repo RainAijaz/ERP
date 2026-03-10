@@ -1,0 +1,1032 @@
+<%
+  const formatDateInput = (value) => {
+    if (!value) return "";
+    const asText = String(value);
+    const textMatch = asText.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (textMatch) return textMatch[1];
+    const dt = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(dt.getTime())) return "";
+    const yyyy = dt.getFullYear();
+    const mm = String(dt.getMonth() + 1).padStart(2, "0");
+    const dd = String(dt.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  };
+  const isReceipt = voucherTypeCode === receiptCode;
+  const voucherPageTitle = isReceipt ? t("returnable_receipt_voucher") : t("returnable_dispatch_voucher");
+  const selectedVoucherNo = selectedVoucher ? Number(selectedVoucher.voucher_no || 0) : null;
+  const suggestedVoucherNo = selectedVoucherNo || (Number(latestVoucherNo || 0) + 1);
+  const selectedDate = selectedVoucher && selectedVoucher.voucher_date
+    ? formatDateInput(selectedVoucher.voucher_date)
+    : formatDateInput(new Date());
+  const selectedStatus = String(selectedVoucher?.status || "").toUpperCase();
+  const isDeletedVoucher = selectedStatus === "REJECTED";
+  const selectedStatusLabel = selectedStatus === "APPROVED" ? t("approved") : selectedStatus === "REJECTED" ? t("rejected") : selectedStatus === "PENDING" ? t("pending") : selectedStatus;
+  const selectedStatusToneClass = selectedStatus === "APPROVED" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : selectedStatus === "REJECTED" ? "border-rose-200 bg-rose-50 text-rose-800" : "border-amber-200 bg-amber-50 text-amber-800";
+  const toFriendlyLabel = (key) => {
+    const text = String(t(key) || "").trim();
+    if (/^[A-Za-z0-9 _-]+$/.test(text)) {
+      return text.toLowerCase().replace(/[_-]+/g, " ").replace(/\b[a-z]/g, (ch) => ch.toUpperCase());
+    }
+    return text;
+  };
+  const initialLines = selectedVoucher?.lines || [];
+%>
+
+<div class="mx-auto w-full max-w-none space-y-3 px-2">
+  <section class="rounded-2xl border border-slate-200 bg-white/95 px-4 py-4 shadow-sm">
+    <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+      <div>
+        <h1 class="text-2xl font-display font-semibold tracking-tight text-ink"><%= voucherPageTitle %></h1>
+        <p class="text-sm text-muted"><%= t("outward_returnable") %></p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <% if (selectedVoucher) { %>
+          <div class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] <%= selectedStatusToneClass %>">
+            <span><%= toFriendlyLabel("status") %></span>
+            <span class="rounded-full bg-white/80 px-2 py-0.5 text-slate-800"><%= selectedStatusLabel %></span>
+          </div>
+        <% } %>
+      </div>
+    </div>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <form method="post" action="<%= basePath || '' %>" class="space-y-4" data-returnable-form data-voucher-form>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="voucher_id" value="<%= selectedVoucher?.id || '' %>">
+      <input type="hidden" name="voucher_type_code" value="<%= voucherTypeCode %>">
+      <input type="hidden" name="lines_json" value="[]" data-lines-json>
+
+      <div class="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t("voucher_no") %></label>
+          <div class="lg:col-span-2">
+            <input type="text" value="<%= suggestedVoucherNo %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700" data-voucher-no-input>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 lg:col-span-8">
+            <a href="<%= prevVoucherNo ? ((basePath || '') + '?voucher_no=' + prevVoucherNo + '&view=1') : '#' %>" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700 <%= prevVoucherNo ? '' : 'pointer-events-none opacity-40' %>"><%= t("prev") %></a>
+            <a href="<%= nextVoucherNo ? ((basePath || '') + '?voucher_no=' + nextVoucherNo + '&view=1') : ((basePath || '') + '?new=1') %>" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700"><%= t("next") %></a>
+            <button type="button" class="rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-white shadow-sm" data-load-voucher><%= t("load") %></button>
+            <div class="ml-auto flex items-center gap-2">
+              <% if (!isReceipt && selectedVoucher && !isDeletedVoucher) { %>
+                <a href="<%= `${basePath}/gate-pass?voucher_no=${selectedVoucher.voucher_no}` %>" target="_blank" rel="noopener" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700"><%= t("gate_pass") %></a>
+              <% } %>
+              <button type="button" class="rounded-xl border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-rose-700 disabled:opacity-40" data-delete-voucher <%= selectedVoucher && !isDeletedVoucher ? '' : 'disabled' %>><%= t("delete") %></button>
+              <button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700" onclick="window.print()"><%= t("print") %></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t("date") %></label>
+          <div class="lg:col-span-4">
+            <input type="date" name="voucher_date" value="<%= isReceipt && selectedVoucher?.return_date ? formatDateInput(selectedVoucher.return_date) : selectedDate %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" required>
+          </div>
+          <% if (!isReceipt) { %>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= t("vendor_party") %></label>
+            <div class="lg:col-span-4">
+              <select name="vendor_party_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-vendor-select data-searchable-select="true" data-searchable-variant="unified" required>
+                <option value=""><%= t("select_vendor") %></option>
+                <% (options.vendors || []).forEach((vendor) => { %>
+                  <option value="<%= vendor.id %>" <%= Number(selectedVoucher?.vendor_party_id || 0) === Number(vendor.id) ? "selected" : "" %>><%= vendor.name %></option>
+                <% }) %>
+              </select>
+            </div>
+          <% } else { %>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= t("vendor_party") %></label>
+            <div class="lg:col-span-4">
+              <select name="vendor_party_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-vendor-select data-searchable-select="true" data-searchable-variant="unified" required>
+                <option value=""><%= t("select_vendor") %></option>
+                <% (options.vendors || []).forEach((vendor) => { %>
+                  <option value="<%= vendor.id %>" <%= Number(selectedVoucher?.vendor_party_id || 0) === Number(vendor.id) ? "selected" : "" %>><%= vendor.name %></option>
+                <% }) %>
+              </select>
+            </div>
+          <% } %>
+        </div>
+
+        <% if (!isReceipt) { %>
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t("reason") %></label>
+            <div class="lg:col-span-4">
+              <select name="reason_code" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified" required>
+                <option value=""><%= t("select_reason") %></option>
+                <% (options.reasons || []).forEach((reason) => { %>
+                  <option value="<%= reason.code %>" <%= String(selectedVoucher?.reason_code || "").toUpperCase() === String(reason.code).toUpperCase() ? "selected" : "" %>><%= reason.name %></option>
+                <% }) %>
+              </select>
+            </div>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= t("expected_return_date") %></label>
+            <div class="lg:col-span-4">
+              <input type="date" name="expected_return_date" value="<%= formatDateInput(selectedVoucher?.expected_return_date) %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" required>
+            </div>
+          </div>
+        <% } else { %>
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t("rgp_outward_reference") %></label>
+            <div class="lg:col-span-4">
+              <input type="hidden" name="rgp_out_voucher_id" value="<%= Number(selectedVoucher?.rgp_out_voucher_id || 0) || '' %>" data-outward-select>
+              <div class="flex items-center gap-2">
+                <input
+                  type="text"
+                  readonly
+                  class="h-10 w-full rounded-xl border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700"
+                  data-outward-reference-display
+                  placeholder="<%= t('select_outward_reference') %>"
+                >
+                <button
+                  type="button"
+                  class="inline-flex h-10 w-10 flex-none items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                  data-outward-picker-open
+                  aria-label="<%= t('select_outward_reference') %>"
+                  title="<%= t('select_outward_reference') %>"
+                >
+                  <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M9 12h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+                    <path d="M8.5 8.5l-2 2a3 3 0 0 0 4.24 4.24l1.06-1.06" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+                    <path d="M15.5 15.5l2-2a3 3 0 0 0-4.24-4.24l-1.06 1.06" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= t("remarks") %></label>
+            <div class="lg:col-span-4">
+              <input type="text" name="remarks" maxlength="1000" value="<%= selectedVoucher?.remarks || '' %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm">
+            </div>
+          </div>
+        <% } %>
+
+        <% if (!isReceipt) { %>
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t("remarks") %></label>
+            <div class="lg:col-span-10">
+              <input type="text" name="remarks" maxlength="1000" value="<%= selectedVoucher?.remarks || '' %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm">
+            </div>
+          </div>
+        <% } %>
+
+        <% if (isDeletedVoucher) { %>
+          <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+            <%= t("voucher_deleted_read_only") %>
+          </div>
+        <% } %>
+      </div>
+
+      <div class="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div class="overflow-auto lg:overflow-visible">
+          <table class="w-full <%= isReceipt ? 'min-w-[760px]' : 'min-w-[980px]' %> table-fixed text-xs" data-lines-table>
+            <thead class="bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
+              <tr>
+                <th class="border-b border-slate-200 px-2 py-2 text-left"><%= t("asset_name") %></th>
+                <% if (isReceipt) { %>
+                  <th class="border-b border-slate-200 px-2 py-2 text-left"><%= t("description") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("received_quantity") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-left"><%= t("condition_on_return") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-center"><%= t("actions") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-center"><%= t("sr_no") %></th>
+                <% } else { %>
+                  <th class="border-b border-slate-200 px-2 py-2 text-left"><%= t("item_type") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-left"><%= t("description") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("quantity") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-left"><%= t("condition_at_dispatch") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-center"><%= t("actions") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-center"><%= t("sr_no") %></th>
+                <% } %>
+              </tr>
+            </thead>
+            <tbody data-lines-body></tbody>
+            <tfoot>
+              <tr class="bg-slate-50">
+                <td class="border-t border-slate-200 px-2 py-2 text-xs font-semibold text-slate-700" colspan="<%= isReceipt ? 4 : 5 %>"><%= t("total") %></td>
+                <td class="border-t border-slate-200 px-2 py-2 text-center">
+                  <% if (!isReceipt) { %>
+                    <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white p-2 text-slate-700" data-add-row aria-label="<%= t('add_row') %>" title="<%= t('add_row') %>">
+                      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M12 5v14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+                        <path d="M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+                      </svg>
+                    </button>
+                  <% } %>
+                </td>
+                <td class="border-t border-slate-200 px-2 py-2"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-center">
+        <button type="submit" class="rounded-xl bg-accent px-4 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-white shadow-sm" data-enter-submit><%= t("confirm") %></button>
+      </div>
+    </form>
+
+    <form method="post" action="<%= `${basePath}/delete` %>" class="hidden" data-delete-voucher-form>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="voucher_id" value="<%= selectedVoucher?.id || '' %>">
+      <input type="hidden" name="voucher_type_code" value="<%= voucherTypeCode %>">
+    </form>
+  </section>
+
+</div>
+
+<% if (isReceipt) { %>
+  <div class="fixed inset-0 z-40 hidden items-center justify-center bg-slate-900/40 p-3" data-outward-picker-modal aria-hidden="true">
+    <div class="w-full max-w-6xl rounded-2xl border border-slate-200 bg-white shadow-xl">
+      <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+        <h2 class="text-sm font-semibold text-slate-800"><%= t("select_outward_reference") %></h2>
+        <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700" data-outward-picker-close aria-label="<%= t('cancel') %>" title="<%= t('cancel') %>">
+          <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" aria-hidden="true">
+            <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+          </svg>
+        </button>
+      </div>
+      <div class="grid grid-cols-1 gap-3 border-b border-slate-200 px-4 py-3 md:grid-cols-12 md:items-center">
+        <label class="text-sm font-semibold text-slate-700 md:col-span-2"><%= t("vendor_party") %></label>
+        <div class="md:col-span-10">
+          <input type="text" readonly class="h-10 w-full rounded-xl border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700" data-outward-picker-vendor>
+        </div>
+      </div>
+      <div class="max-h-[60vh] overflow-auto p-3">
+        <table class="w-full text-xs">
+          <thead class="sticky top-0 bg-slate-50 text-slate-600">
+            <tr>
+              <th class="px-2 py-2 text-left"><%= t("voucher_no") %></th>
+              <th class="px-2 py-2 text-left"><%= t("date") %></th>
+              <th class="px-2 py-2 text-left"><%= t("asset_name") %></th>
+              <th class="px-2 py-2 text-right"><%= t("balance_pending") %></th>
+              <th class="px-2 py-2 text-right"><%= t("quantity") %></th>
+              <th class="px-2 py-2 text-right"><%= t("remaining_qty") %></th>
+              <th class="px-2 py-2 text-center"><%= t("select") %></th>
+            </tr>
+          </thead>
+          <tbody data-outward-picker-body>
+            <tr><td colspan="7" class="px-2 py-4 text-center text-slate-500"><%= t("no_entries") %></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-4 py-3">
+        <button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700" data-outward-picker-close><%= t("cancel") %></button>
+        <button type="button" class="rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-white" data-outward-picker-apply><%= t("apply") %></button>
+      </div>
+    </div>
+  </div>
+<% } %>
+
+<script><%- include("../../base/partials/searchable-select.js") %></script>
+<script>
+  (() => {
+    const form = document.querySelector("[data-returnable-form]");
+    if (!form) return;
+
+    const isReceipt = <%- JSON.stringify(isReceipt) %>;
+    const selectedVoucher = <%- JSON.stringify(selectedVoucher || null) %>;
+    const initialRows = <%- JSON.stringify(initialLines || []) %>;
+    const assetOptions = <%- JSON.stringify(options.assets || []) %>;
+    const conditionOptions = <%- JSON.stringify(options.conditions || []) %>;
+    const openOutwardRows = <%- JSON.stringify(options.openOutwardLines || []) %>;
+    const openOutwardHeaders = <%- JSON.stringify(options.openOutwards || []) %>;
+    const linesBody = form.querySelector("[data-lines-body]");
+    const linesJsonInput = form.querySelector("[data-lines-json]");
+    const addRowButton = form.querySelector("[data-add-row]");
+    const outwardSelect = form.querySelector("[data-outward-select]");
+    const outwardReferenceDisplayInput = form.querySelector("[data-outward-reference-display]");
+    const vendorSelect = form.querySelector("[data-vendor-select]");
+    const outwardPickerModal = document.querySelector("[data-outward-picker-modal]");
+    const outwardPickerBody = document.querySelector("[data-outward-picker-body]");
+    const outwardPickerVendorInput = document.querySelector("[data-outward-picker-vendor]");
+    const outwardPickerApplyButton = document.querySelector("[data-outward-picker-apply]");
+    const rowsState = [];
+    let outwardPickerRowsState = [];
+
+    const toNumber = (value, fallback = 0) => {
+      const parsed = Number(value || 0);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    };
+    const toQty = (value) => Number(toNumber(value, 0).toFixed(3));
+    const formatDisplayNumber = (value, decimals = 3, fallback = "") =>
+      window.erpDisplay?.formatNumber
+        ? window.erpDisplay.formatNumber(value, { decimals, fallback })
+        : String(Number(toNumber(value, 0).toFixed(decimals)));
+    const formatDisplayDate = (value, fallback = "") =>
+      window.erpDisplay?.formatDate ? window.erpDisplay.formatDate(value, fallback) : String(value || fallback || "");
+    const clampQty = (value, max) => {
+      const numeric = toQty(value);
+      if (numeric < 0) return 0;
+      const maxQty = toQty(max);
+      if (numeric > maxQty) return maxQty;
+      return numeric;
+    };
+    const requiredFieldsText = <%- JSON.stringify(t("error_required_fields")) %>;
+    const lineText = <%- JSON.stringify(t("line")) %>;
+    const lineLabelText = String(lineText || "").trim() || "Line";
+    const assetLabel = <%- JSON.stringify(t("asset_name")) %>;
+    const quantityLabel = <%- JSON.stringify(t("quantity")) %>;
+    const receivedQuantityLabel = <%- JSON.stringify(t("received_quantity")) %>;
+    const outwardReferenceLabel = <%- JSON.stringify(t("rgp_outward_reference")) %>;
+    const dispatchConditionLabel = <%- JSON.stringify(t("condition_at_dispatch")) %>;
+    const receiptConditionLabel = <%- JSON.stringify(t("condition_on_return")) %>;
+    const expectedReturnDateLabel = <%- JSON.stringify(t("expected_return_date")) %>;
+    const remarksLabel = <%- JSON.stringify(t("remarks")) %>;
+    const invalidExpectedReturnDateMessage = <%- JSON.stringify(t("error_invalid_value")) %>;
+    const dispatchReasonSelect = form.querySelector('select[name="reason_code"]');
+    const remarksInput = form.querySelector('input[name="remarks"]');
+
+    const lineRequiredMessage = (lineNo, label) =>
+      `${requiredFieldsText}: ${label} (${lineLabelText} ${lineNo})`;
+
+    const resetRows = (nextRows) => {
+      rowsState.splice(0, rowsState.length, ...nextRows);
+      renderRows();
+    };
+
+    const getHeaderByOutwardId = (outwardId) =>
+      openOutwardHeaders.find((row) => Number(row.voucher_id || 0) === Number(outwardId || 0)) || null;
+
+    const setOutwardReferenceDisplay = () => {
+      if (!isReceipt || !outwardReferenceDisplayInput) return;
+      const outwardId = Number(outwardSelect?.value || 0);
+      const header = getHeaderByOutwardId(outwardId);
+      outwardReferenceDisplayInput.value = header ? String(Number(header.voucher_no || 0) || "") : "";
+    };
+
+    const buildReceiptRowsForOutward = (outwardId, qtyOverrides = new Map(), lineIds = null) =>
+      openOutwardRows
+        .filter((row) => {
+          const lineId = Number(row.outward_voucher_line_id || 0);
+          if (lineIds && !lineIds.has(lineId)) return false;
+          return Number(row.outward_voucher_id || 0) === Number(outwardId || 0) && Number(row.pending_qty || 0) > 0;
+        })
+        .map((row) => ({
+          rgp_out_voucher_line_id: Number(row.outward_voucher_line_id || 0),
+          outward_line_no: Number(row.line_no || 0),
+          asset_id: Number(row.asset_id || 0),
+          asset_name: row.asset_name || "",
+          item_description: row.item_description || row.asset_name || "",
+          sent_qty: Number(row.sent_qty || 0),
+          open_qty: Number(row.pending_qty || 0),
+          returned_qty: clampQty(qtyOverrides.get(Number(row.outward_voucher_line_id || 0)), Number(row.pending_qty || 0)) || Number(row.pending_qty || 0),
+          condition_in_code: "",
+        }));
+
+    const parseDraftLinesJson = () => {
+      const raw = String(linesJsonInput?.value || "").trim();
+      if (!raw) return [];
+      try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch (err) {
+        return [];
+      }
+    };
+
+    const hydrateRowsFromDraftLines = () => {
+      if (!linesJsonInput) return false;
+      const draftLines = parseDraftLinesJson();
+      if (!draftLines.length) return false;
+
+      if (isReceipt) {
+        const draftLineMap = new Map(
+          draftLines.map((line) => [Number(line.rgp_out_voucher_line_id || 0), line]),
+        );
+        const selectedLineIds = new Set(
+          [...draftLineMap.keys()].filter((id) => Number.isInteger(id) && id > 0),
+        );
+        if (!selectedLineIds.size) return false;
+
+        let outwardId = Number(outwardSelect?.value || 0);
+        if (!outwardId) {
+          const outwardCandidates = [...new Set(
+            openOutwardRows
+              .filter((row) => selectedLineIds.has(Number(row.outward_voucher_line_id || 0)))
+              .map((row) => Number(row.outward_voucher_id || 0))
+              .filter((id) => Number.isInteger(id) && id > 0),
+          )];
+          if (outwardCandidates.length === 1) outwardId = outwardCandidates[0];
+        }
+        if (!outwardId) return false;
+
+        const qtyOverrides = new Map(
+          [...selectedLineIds].map((lineId) => [lineId, toQty(draftLineMap.get(lineId)?.returned_qty)]),
+        );
+
+        const draftRows = buildReceiptRowsForOutward(outwardId, qtyOverrides, selectedLineIds);
+        if (!draftRows.length) return false;
+
+        draftRows.forEach((row) => {
+          const line = draftLineMap.get(Number(row.rgp_out_voucher_line_id || 0)) || {};
+          row.item_description = String(line.item_description || row.item_description || "");
+          row.condition_in_code = String(line.condition_in_code || "");
+          row.returned_qty = clampQty(line.returned_qty, row.open_qty || row.sent_qty || row.returned_qty);
+        });
+        if (outwardSelect) outwardSelect.value = String(outwardId);
+        syncOutwardHeaderUi();
+        resetRows(draftRows);
+        return true;
+      }
+
+      const draftRows = draftLines
+        .map((line) => {
+          const assetId = Number(line.asset_id || 0) || null;
+          const asset = assetOptions.find((option) => Number(option.id || 0) === Number(assetId || 0));
+          return {
+            asset_id: assetId,
+            item_type_code: String(line.item_type_code || asset?.asset_type_code || "").toUpperCase(),
+            item_description: String(line.item_description || asset?.description || asset?.name || ""),
+            qty: toQty(line.qty),
+            condition_out_code: String(line.condition_out_code || ""),
+          };
+        })
+        .filter((row) =>
+          row.asset_id
+          || row.qty > 0
+          || String(row.item_description || "").trim()
+          || String(row.condition_out_code || "").trim(),
+        );
+
+      if (!draftRows.length) return false;
+      resetRows(draftRows);
+      return true;
+    };
+
+    const appendDispatchRow = () => {
+      rowsState.push({
+        asset_id: null,
+        item_type_code: "",
+        item_description: "",
+        qty: 1,
+        condition_out_code: "",
+      });
+      renderRows();
+    };
+
+    const removeRow = (rowIndex) => {
+      rowsState.splice(rowIndex, 1);
+      if (!rowsState.length && !isReceipt) appendDispatchRow();
+      renderRows();
+    };
+
+    const rowEnterNavigator = window.createVoucherRowEnterNavigator?.({
+      form,
+      linesBody,
+      fieldAttr: "data-row-field",
+      fieldOrder: isReceipt
+        ? ["item_description", "returned_qty", "condition_in_code"]
+        : ["asset_id", "item_description", "qty", "condition_out_code"],
+      appendRow: !isReceipt ? () => {
+        appendDispatchRow();
+        return true;
+      } : null,
+      canAppendRow: () => !isReceipt,
+    });
+    rowEnterNavigator?.bind();
+
+    const focusDispatchRowField = (rowIndex, fieldKey, { openSearchable = true } = {}) => {
+      const row = Array.from(linesBody.querySelectorAll("tr"))[Number(rowIndex)];
+      if (!row || !fieldKey) return false;
+      const field = row.querySelector(`[data-row-field="${fieldKey}"]`);
+      if (!(field instanceof HTMLElement)) return false;
+      if (field.hasAttribute("disabled")) return false;
+      if (field instanceof HTMLInputElement && field.readOnly) return false;
+      if (field instanceof HTMLTextAreaElement && field.readOnly) return false;
+
+      if (field instanceof HTMLSelectElement) {
+        const searchableInput = field.parentElement?.querySelector('[data-searchable-wrapper] input[type="text"]:not([readonly])');
+        if (searchableInput instanceof HTMLInputElement) {
+          if (!openSearchable) {
+            searchableInput.dataset.searchableSuppressOpenOnce = "1";
+          }
+          searchableInput.focus();
+          if (openSearchable && typeof searchableInput.click === "function") {
+            searchableInput.click();
+          }
+          return true;
+        }
+      }
+
+      field.focus();
+      if (field instanceof HTMLInputElement && typeof field.select === "function") {
+        field.select();
+      }
+      return true;
+    };
+
+    const renderOptions = (rows, value, placeholder) => {
+      const base = [`<option value="">${placeholder}</option>`];
+      rows.forEach((row) => {
+        const selected = String(value || "") === String(row.id || row.code || "") ? "selected" : "";
+        const optionValue = row.id || row.code;
+        const optionLabel = row.name || row.label || "";
+        base.push(`<option value="${optionValue}" ${selected}>${optionLabel}</option>`);
+      });
+      return base.join("");
+    };
+
+    const renderRows = () => {
+      linesBody.innerHTML = "";
+      rowsState.forEach((row, rowIndex) => {
+        const tr = document.createElement("tr");
+        tr.className = "border-b border-slate-100";
+        if (isReceipt) {
+          tr.innerHTML = `
+            <td class="px-2 py-2">
+              <div class="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-slate-700">${row.asset_name || "-"}</div>
+            </td>
+            <td class="px-2 py-2">
+              <input type="text" class="h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-row-field="item_description" value="${row.item_description || ""}">
+            </td>
+            <td class="px-2 py-2">
+              <input type="number" step="0.001" min="0" class="h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs" data-row-field="returned_qty" value="${formatDisplayNumber(row.returned_qty, 3, "")}">
+            </td>
+            <td class="px-2 py-2">
+              <select class="h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-row-field="condition_in_code" data-searchable-select="true" data-searchable-variant="unified">${renderOptions(conditionOptions, row.condition_in_code, "<%= t('select_condition') %>")}</select>
+            </td>
+            <td class="px-2 py-2 text-center">
+              <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white p-2 text-rose-600" data-remove-row="${rowIndex}" aria-label="<%= t("delete") %>">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M9 7V5h6v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
+              </button>
+            </td>
+            <td class="px-2 py-2 text-center font-semibold text-slate-500">${rowIndex + 1}</td>
+          `;
+        } else {
+          tr.innerHTML = `
+            <td class="px-2 py-2">
+              <select class="h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-row-field="asset_id" data-searchable-select="true" data-searchable-variant="unified">${renderOptions(assetOptions, row.asset_id, "<%= t('asset_name') %>")}</select>
+            </td>
+            <td class="px-2 py-2">
+              <div class="rounded-lg border border-slate-200 bg-slate-50 px-2 py-2 text-slate-700">${row.item_type_code || "-"}</div>
+            </td>
+            <td class="px-2 py-2">
+              <input type="text" class="h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-row-field="item_description" value="${row.item_description || ""}">
+            </td>
+            <td class="px-2 py-2">
+              <input type="number" step="0.001" min="0" class="h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs" data-row-field="qty" value="${formatDisplayNumber(row.qty, 3, "")}">
+            </td>
+            <td class="px-2 py-2">
+              <select class="h-9 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-row-field="condition_out_code" data-searchable-select="true" data-searchable-variant="unified">${renderOptions(conditionOptions, row.condition_out_code, "<%= t('select_condition') %>")}</select>
+            </td>
+            <td class="px-2 py-2 text-center">
+              <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white p-2 text-rose-600" data-remove-row="${rowIndex}" aria-label="<%= t("delete") %>">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M9 7V5h6v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
+              </button>
+            </td>
+            <td class="px-2 py-2 text-center font-semibold text-slate-500">${rowIndex + 1}</td>
+          `;
+        }
+        linesBody.appendChild(tr);
+      });
+      if (typeof window.initSearchableSelects === "function") {
+        window.initSearchableSelects(linesBody);
+      }
+    };
+
+    const syncOutwardHeaderUi = () => {
+      if (!isReceipt) return;
+      const outwardId = Number(outwardSelect?.value || 0);
+      const header = getHeaderByOutwardId(outwardId);
+      if (vendorSelect && header?.vendor_party_id) {
+        vendorSelect.value = String(header.vendor_party_id);
+      }
+      setOutwardReferenceDisplay();
+    };
+
+    const getSelectedVendorId = () => Number(vendorSelect?.value || 0) || null;
+
+    const getFilteredOpenOutwardLines = () => {
+      if (!isReceipt) return [];
+      const selectedVendorId = getSelectedVendorId();
+      if (!selectedVendorId) return [];
+      return openOutwardRows.filter((row) => {
+        const header = getHeaderByOutwardId(Number(row.outward_voucher_id || 0));
+        if (!header) return false;
+        return Number(header.vendor_party_id || 0) === Number(selectedVendorId) && Number(row.pending_qty || 0) > 0;
+      });
+    };
+
+    const renderOutwardPickerRows = () => {
+      if (!outwardPickerBody) return;
+      outwardPickerBody.innerHTML = "";
+      if (!outwardPickerRowsState.length) {
+        outwardPickerBody.innerHTML = `<tr><td colspan="7" class="px-2 py-4 text-center text-slate-500"><%= t("no_entries") %></td></tr>`;
+        return;
+      }
+      outwardPickerRowsState.forEach((row, index) => {
+        const remainingQty = Math.max(0, toQty(row.pendingQty - row.receiveQty));
+        const tr = document.createElement("tr");
+        tr.className = "border-b border-slate-100";
+        tr.innerHTML = `
+          <td class="px-2 py-2">${row.outwardVoucherNo}</td>
+          <td class="px-2 py-2">${formatDisplayDate(row.voucherDate, "-")}</td>
+          <td class="px-2 py-2">${row.assetName}</td>
+          <td class="px-2 py-2 text-right font-semibold text-slate-700">${formatDisplayNumber(row.pendingQty, 3, "0")}</td>
+          <td class="px-2 py-2">
+            <input type="number" min="0" step="0.001" class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs" data-picker-row-index="${index}" data-picker-field="receive_qty" value="${formatDisplayNumber(row.receiveQty, 3, "")}">
+          </td>
+          <td class="px-2 py-2 text-right font-semibold text-slate-700">${formatDisplayNumber(remainingQty, 3, "0")}</td>
+          <td class="px-2 py-2 text-center">
+            <input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent" data-picker-row-index="${index}" data-picker-field="selected" ${row.selected ? "checked" : ""}>
+          </td>
+        `;
+        outwardPickerBody.appendChild(tr);
+      });
+    };
+
+    const openOutwardPickerModal = () => {
+      if (!isReceipt || !outwardPickerModal || !outwardPickerBody) return;
+      const selectedVendorId = getSelectedVendorId();
+      if (!selectedVendorId) {
+        window.showVoucherError("<%= t('select_vendor') %>");
+        return;
+      }
+      const selectedVendorOption = vendorSelect?.selectedOptions?.[0];
+      if (outwardPickerVendorInput) {
+        outwardPickerVendorInput.value = selectedVendorOption?.textContent?.trim() || "";
+      }
+
+      const currentRowsMap = new Map(
+        rowsState.map((row) => [
+          Number(row.rgp_out_voucher_line_id || 0),
+          {
+            returnedQty: toQty(row.returned_qty),
+          },
+        ]),
+      );
+      const currentOutwardId = Number(outwardSelect?.value || 0);
+      outwardPickerRowsState = getFilteredOpenOutwardLines().map((row) => {
+        const lineId = Number(row.outward_voucher_line_id || 0);
+        const existing = currentRowsMap.get(lineId);
+        const pendingQty = toQty(row.pending_qty);
+        return {
+          outwardVoucherId: Number(row.outward_voucher_id || 0),
+          outwardVoucherNo: Number(row.outward_voucher_no || 0),
+          voucherDate: String(row.voucher_date || "").slice(0, 10),
+          lineId,
+          outwardLineNo: Number(row.line_no || 0),
+          assetId: Number(row.asset_id || 0),
+          assetName: String(row.asset_name || "-"),
+          itemTypeCode: String(row.item_type_code || ""),
+          itemDescription: String(row.item_description || row.asset_name || ""),
+          sentQty: toQty(row.sent_qty),
+          pendingQty,
+          receiveQty: existing ? clampQty(existing.returnedQty, pendingQty) : pendingQty,
+          selected: existing ? true : Number(row.outward_voucher_id || 0) === currentOutwardId,
+        };
+      });
+
+      renderOutwardPickerRows();
+      outwardPickerModal.classList.remove("hidden");
+      outwardPickerModal.classList.add("flex");
+      outwardPickerModal.setAttribute("aria-hidden", "false");
+      document.body.classList.add("overflow-hidden");
+    };
+
+    const closeOutwardPickerModal = () => {
+      if (!outwardPickerModal) return;
+      outwardPickerModal.classList.add("hidden");
+      outwardPickerModal.classList.remove("flex");
+      outwardPickerModal.setAttribute("aria-hidden", "true");
+      document.body.classList.remove("overflow-hidden");
+    };
+
+    const applyOutwardPickerSelection = () => {
+      if (!isReceipt || !outwardSelect) return;
+      const selectedRows = outwardPickerRowsState.filter((row) => row.selected && toQty(row.receiveQty) > 0);
+      if (!selectedRows.length) {
+        window.showVoucherError("<%= t('voucher_lines') %>");
+        return;
+      }
+      const outwardIds = [...new Set(selectedRows.map((row) => Number(row.outwardVoucherId || 0)))];
+      if (outwardIds.length !== 1) {
+        window.showVoucherError("<%= t('single_outward_voucher_only') %>");
+        return;
+      }
+      const outwardId = outwardIds[0];
+      const lineIds = new Set(selectedRows.map((row) => Number(row.lineId || 0)));
+      const qtyOverrides = new Map(
+        selectedRows.map((row) => [Number(row.lineId || 0), toQty(row.receiveQty)]),
+      );
+      outwardSelect.value = String(outwardId);
+      syncOutwardHeaderUi();
+      resetRows(buildReceiptRowsForOutward(outwardId, qtyOverrides, lineIds));
+      closeOutwardPickerModal();
+    };
+
+    const hydrateInitialRows = () => {
+      if (initialRows.length) {
+        if (isReceipt) {
+          resetRows(initialRows.map((row) => ({
+            rgp_out_voucher_line_id: Number(row.rgp_out_voucher_line_id || 0),
+            outward_line_no: Number(row.outward_line_no || 0),
+            asset_id: Number(row.asset_id || 0),
+            asset_name: row.asset_name || "",
+            item_description: row.item_description || row.asset_name || "",
+            sent_qty: Number(row.sent_qty || 0),
+            open_qty: Number(row.sent_qty || 0),
+            returned_qty: Number(row.returned_qty || 0),
+            condition_in_code: row.condition_in_code || "",
+          })));
+        } else {
+          resetRows(initialRows.map((row) => ({
+            asset_id: Number(row.asset_id || 0),
+            item_type_code: row.item_type_code || "",
+            item_description: row.item_description || row.asset_name || "",
+            qty: Number(row.qty || 0),
+            condition_out_code: row.condition_out_code || "",
+          })));
+        }
+        return;
+      }
+      if (hydrateRowsFromDraftLines()) return;
+      if (isReceipt) {
+        syncOutwardHeaderUi();
+        if (outwardSelect?.value) {
+          resetRows(buildReceiptRowsForOutward(Number(outwardSelect.value || 0)));
+        } else {
+          resetRows([]);
+        }
+        return;
+      }
+      appendDispatchRow();
+    };
+
+    linesBody.addEventListener("input", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const rowElement = target.closest("tr");
+      const rowIndex = Array.from(linesBody.children).indexOf(rowElement);
+      if (rowIndex < 0) return;
+      const field = target.getAttribute("data-row-field");
+      if (!field) return;
+      rowsState[rowIndex][field] = target.value;
+    });
+
+    linesBody.addEventListener("change", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const rowElement = target.closest("tr");
+      const rowIndex = Array.from(linesBody.children).indexOf(rowElement);
+      if (rowIndex < 0) return;
+      const field = target.getAttribute("data-row-field");
+      if (!field) return;
+      rowsState[rowIndex][field] = target.value;
+      if (field === "asset_id" && !isReceipt) {
+        const asset = assetOptions.find((option) => Number(option.id || 0) === Number(target.value || 0));
+        if (asset) {
+          rowsState[rowIndex].item_type_code = String(asset.asset_type_code || "").toUpperCase();
+        } else {
+          rowsState[rowIndex].item_type_code = "";
+        }
+        renderRows();
+        window.setTimeout(() => {
+          if (focusDispatchRowField(rowIndex, "item_description", { openSearchable: false })) {
+            return;
+          }
+          focusDispatchRowField(rowIndex, "qty", { openSearchable: false });
+        }, 0);
+      }
+    });
+
+    linesBody.addEventListener("click", (event) => {
+      const btn = event.target.closest("[data-remove-row]");
+      if (!btn) return;
+      removeRow(Number(btn.getAttribute("data-remove-row") || -1));
+    });
+
+    outwardSelect?.addEventListener("change", () => {
+      syncOutwardHeaderUi();
+      resetRows(buildReceiptRowsForOutward(Number(outwardSelect.value || 0)));
+    });
+    vendorSelect?.addEventListener("change", () => {
+      if (!isReceipt) return;
+      const selectedVendorId = getSelectedVendorId();
+      const selectedOutwardId = Number(outwardSelect?.value || 0);
+      const selectedOutwardHeader = getHeaderByOutwardId(selectedOutwardId);
+      if (
+        selectedOutwardId
+        && (
+          !selectedOutwardHeader
+          || Number(selectedOutwardHeader.vendor_party_id || 0) !== Number(selectedVendorId || 0)
+        )
+      ) {
+        if (outwardSelect) outwardSelect.value = "";
+        syncOutwardHeaderUi();
+        resetRows([]);
+        return;
+      }
+      syncOutwardHeaderUi();
+    });
+    form.querySelector("[data-outward-picker-open]")?.addEventListener("click", openOutwardPickerModal);
+    document.querySelectorAll("[data-outward-picker-close]").forEach((button) => {
+      button.addEventListener("click", closeOutwardPickerModal);
+      if (!button.getAttribute("title") && String(button.textContent || "").trim().length <= 3) {
+        button.style.display = "none";
+      }
+      if (String(button.textContent || "").trim() === "Ã—" || String(button.textContent || "").trim() === "×") {
+        button.style.display = "none";
+      }
+    });
+    outwardPickerModal?.addEventListener("click", (event) => {
+      if (event.target === outwardPickerModal) closeOutwardPickerModal();
+    });
+    outwardPickerApplyButton?.addEventListener("click", applyOutwardPickerSelection);
+    outwardPickerBody?.addEventListener("input", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const rowIndex = Number(target.getAttribute("data-picker-row-index") || -1);
+      if (rowIndex < 0 || !outwardPickerRowsState[rowIndex]) return;
+      const field = target.getAttribute("data-picker-field");
+      if (field !== "receive_qty") return;
+      const row = outwardPickerRowsState[rowIndex];
+      row.receiveQty = clampQty(target.value, row.pendingQty);
+      if (row.receiveQty > 0) row.selected = true;
+      renderOutwardPickerRows();
+    });
+    outwardPickerBody?.addEventListener("change", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      const rowIndex = Number(target.getAttribute("data-picker-row-index") || -1);
+      if (rowIndex < 0 || !outwardPickerRowsState[rowIndex]) return;
+      const field = target.getAttribute("data-picker-field");
+      const row = outwardPickerRowsState[rowIndex];
+      if (field === "selected") {
+        row.selected = target instanceof HTMLInputElement ? target.checked : row.selected;
+        renderOutwardPickerRows();
+      }
+    });
+
+    addRowButton?.addEventListener("click", () => appendDispatchRow());
+    const syncDispatchRemarksRequirement = () => {
+      if (isReceipt || !remarksInput) return;
+      const reasonCode = String(dispatchReasonSelect?.value || "").trim().toUpperCase();
+      remarksInput.required = reasonCode === "OTHERS";
+    };
+    dispatchReasonSelect?.addEventListener("change", syncDispatchRemarksRequirement);
+    const restoreDraftLinesDeferred = () => {
+      if (initialRows.length) return;
+      window.setTimeout(() => {
+        hydrateRowsFromDraftLines();
+      }, 0);
+    };
+    linesJsonInput?.addEventListener("change", restoreDraftLinesDeferred);
+    linesJsonInput?.addEventListener("input", restoreDraftLinesDeferred);
+
+    form.querySelector("[data-load-voucher]")?.addEventListener("click", () => {
+      const voucherNo = form.querySelector("[data-voucher-no-input]")?.value;
+      const n = Number(voucherNo || 0);
+      if (!Number.isInteger(n) || n <= 0) return;
+      window.location.href = `${"<%= basePath || '' %>"}?voucher_no=${n}&view=1`;
+    });
+
+    form.querySelector("[data-voucher-no-input]")?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      form.querySelector("[data-load-voucher]")?.click();
+    });
+
+    form.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      if (event.defaultPrevented) return;
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (target.closest("[data-lines-body]")) return;
+      if (target.matches("textarea")) return;
+      if (!target.matches("input, select")) return;
+      event.preventDefault();
+      const fields = Array.from(form.querySelectorAll("input, select, button[type='submit']"))
+        .filter((el) => !(el instanceof HTMLInputElement && el.type === "hidden"))
+        .filter((el) => !el.disabled && el.offsetParent !== null);
+      const currentIndex = fields.indexOf(target);
+      const next = fields[currentIndex + 1];
+      if (next) {
+        next.focus();
+        if (typeof next.select === "function") next.select();
+      }
+    });
+
+    form.addEventListener("submit", (event) => {
+      if (isReceipt && !Number(outwardSelect?.value || 0)) {
+        event.preventDefault();
+        window.showVoucherError("<%= t('select_outward_reference') %>");
+        return;
+      }
+      if (!isReceipt) {
+        const voucherDateInput = form.querySelector('input[name="voucher_date"]');
+        const expectedDateInput = form.querySelector('input[name="expected_return_date"]');
+        const voucherDateValue = String(voucherDateInput?.value || "").trim();
+        const expectedDateValue = String(expectedDateInput?.value || "").trim();
+        if (!expectedDateValue) {
+          event.preventDefault();
+          window.showVoucherError(`${requiredFieldsText}: ${expectedReturnDateLabel}`);
+          return;
+        }
+        if (voucherDateValue && expectedDateValue < voucherDateValue) {
+          event.preventDefault();
+          window.showVoucherError(invalidExpectedReturnDateMessage);
+          return;
+        }
+        const reasonCode = String(dispatchReasonSelect?.value || "").trim().toUpperCase();
+        const remarksValue = String(remarksInput?.value || "").trim();
+        if (reasonCode === "OTHERS" && !remarksValue) {
+          event.preventDefault();
+          window.showVoucherError(`${requiredFieldsText}: ${remarksLabel}`);
+          return;
+        }
+      }
+
+      const normalizedRows = rowsState.map((row, idx) => {
+        if (isReceipt) {
+          return {
+            __lineNo: idx + 1,
+            rgp_out_voucher_line_id: Number(row.rgp_out_voucher_line_id || 0),
+            item_description: String(row.item_description || ""),
+            returned_qty: toQty(row.returned_qty),
+            condition_in_code: String(row.condition_in_code || ""),
+          };
+        }
+        return {
+          __lineNo: idx + 1,
+          asset_id: Number(row.asset_id || 0),
+          item_type_code: String(row.item_type_code || ""),
+          item_description: String(row.item_description || ""),
+          qty: toQty(row.qty),
+          condition_out_code: String(row.condition_out_code || ""),
+        };
+      });
+
+      const payloadLines = normalizedRows.filter((row) => {
+        if (isReceipt) {
+          return row.rgp_out_voucher_line_id
+            || row.returned_qty > 0
+            || String(row.condition_in_code || "").trim()
+            || String(row.item_description || "").trim();
+        }
+        return row.asset_id
+          || row.qty > 0
+          || String(row.condition_out_code || "").trim()
+          || String(row.item_description || "").trim();
+      });
+
+      if (!payloadLines.length) {
+        event.preventDefault();
+        window.showVoucherError("<%= t('voucher_lines') %>");
+        return;
+      }
+
+      for (const row of payloadLines) {
+        if (isReceipt) {
+          if (!row.rgp_out_voucher_line_id) {
+            event.preventDefault();
+            window.showVoucherError(lineRequiredMessage(row.__lineNo, outwardReferenceLabel));
+            return;
+          }
+          if (!(Number(row.returned_qty || 0) > 0)) {
+            event.preventDefault();
+            window.showVoucherError(lineRequiredMessage(row.__lineNo, receivedQuantityLabel));
+            return;
+          }
+          if (!String(row.condition_in_code || "").trim()) {
+            event.preventDefault();
+            window.showVoucherError(lineRequiredMessage(row.__lineNo, receiptConditionLabel));
+            return;
+          }
+        } else {
+          if (!row.asset_id) {
+            event.preventDefault();
+            window.showVoucherError(lineRequiredMessage(row.__lineNo, assetLabel));
+            return;
+          }
+          if (!(Number(row.qty || 0) > 0)) {
+            event.preventDefault();
+            window.showVoucherError(lineRequiredMessage(row.__lineNo, quantityLabel));
+            return;
+          }
+          if (!String(row.condition_out_code || "").trim()) {
+            event.preventDefault();
+            window.showVoucherError(lineRequiredMessage(row.__lineNo, dispatchConditionLabel));
+            return;
+          }
+        }
+      }
+
+      linesJsonInput.value = JSON.stringify(
+        payloadLines.map((row) => {
+          const { __lineNo, ...line } = row;
+          return line;
+        }),
+      );
+    });
+
+    document.querySelector("[data-delete-voucher]")?.addEventListener("click", () => {
+      const deleteForm = document.querySelector("[data-delete-voucher-form]");
+      if (!deleteForm) return;
+      if (!confirm("<%= t('are_you_sure') %>")) return;
+      deleteForm.submit();
+    });
+
+    hydrateInitialRows();
+    syncOutwardHeaderUi();
+    syncDispatchRemarksRequirement();
+    if (typeof window.initSearchableSelects === "function") {
+      window.initSearchableSelects(document);
+    }
+  })();
+</script>

@@ -1,0 +1,341 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - checkbox "Menu" [ref=e5]
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - link "CHAND EVA" [ref=e8] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e10]: ERP
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - generic [ref=e14]: Signed in as
+            - generic [ref=e15]: admin
+          - generic [ref=e16]:
+            - generic [ref=e17]: Branch
+            - generic [ref=e18]:
+              - generic [ref=e19]: Branch
+              - combobox "Branch" [ref=e20]:
+                - option "124" [selected]
+                - option "207"
+          - button "Logout" [ref=e22] [cursor=pointer]
+          - generic [ref=e23]:
+            - generic [ref=e24]: Language
+            - link "English" [ref=e25] [cursor=pointer]:
+              - /url: "?lang=en"
+            - generic [ref=e26]: "|"
+            - link "Urdu" [ref=e27] [cursor=pointer]:
+              - /url: "?lang=ur"
+      - navigation [ref=e28]:
+        - button "Administration" [ref=e30] [cursor=pointer]:
+          - generic [ref=e31]: Administration
+          - img [ref=e32]
+        - button "Master Data" [ref=e35] [cursor=pointer]:
+          - generic [ref=e36]: Master Data
+          - img [ref=e37]
+        - button "HR & Payroll" [ref=e40] [cursor=pointer]:
+          - generic [ref=e41]: HR & Payroll
+          - img [ref=e42]
+        - button "Financial" [ref=e45] [cursor=pointer]:
+          - generic [ref=e46]: Financial
+          - img [ref=e47]
+        - button "Purchase" [ref=e50] [cursor=pointer]:
+          - generic [ref=e51]: Purchase
+          - img [ref=e52]
+        - button "Production" [ref=e55] [cursor=pointer]:
+          - generic [ref=e56]: Production
+          - img [ref=e57]
+        - button "Inventory" [ref=e60] [cursor=pointer]:
+          - generic [ref=e61]: Inventory
+          - img [ref=e62]
+        - button "Outward & Returnables" [ref=e65] [cursor=pointer]:
+          - generic [ref=e66]: Outward & Returnables
+          - img [ref=e67]
+        - button "Sales" [ref=e70] [cursor=pointer]:
+          - generic [ref=e71]: Sales
+          - img [ref=e72]
+  - main [ref=e74]:
+    - generic [ref=e75]:
+      - generic [ref=e76]:
+        - heading "Returnables Control Dashboard" [level=1] [ref=e78]
+        - generic [ref=e80]:
+          - generic [ref=e81]:
+            - generic [ref=e82]: Date Range
+            - generic [ref=e84]:
+              - textbox [ref=e85] [cursor=pointer]: 09-02-2026 - 11-03-2026
+              - button "Open date range picker" [ref=e86] [cursor=pointer]:
+                - img [ref=e87]
+          - generic [ref=e89]:
+            - generic [ref=e90]: Vendor
+            - generic [ref=e92]:
+              - textbox "Search" [ref=e93]: All
+              - generic:
+                - img
+              - listbox [ref=e94]:
+                - option "All" [selected] [ref=e95]
+                - option "AMEEN DYE MAKER" [ref=e96]
+                - option "Hoorain Aijaz" [ref=e97]
+                - option "PAPPU CRAIP" [ref=e98]
+          - generic [ref=e99]:
+            - generic [ref=e100]: Asset Name
+            - generic [ref=e102]:
+              - textbox "Search" [ref=e103]: All
+              - generic:
+                - img
+              - listbox [ref=e104]:
+                - option "All" [selected] [ref=e105]
+                - option "THREE COLOR MOULD" [ref=e106]
+          - generic [ref=e107]:
+            - generic [ref=e108]: Reason
+            - generic [ref=e110]:
+              - textbox "Search" [ref=e111]: All
+              - generic:
+                - img
+              - listbox [ref=e112]:
+                - option "All" [selected] [ref=e113]
+                - option "Calibration" [ref=e114]
+                - option "Coating / Surface Treatment" [ref=e115]
+                - option "Modification" [ref=e116]
+                - option "Others" [ref=e117]
+                - option "Refurbishment / Overhaul" [ref=e118]
+                - option "Repair" [ref=e119]
+                - option "Sharpening" [ref=e120]
+          - generic [ref=e121]:
+            - generic [ref=e122]: Status
+            - generic [ref=e124]:
+              - textbox "Search" [ref=e125]: All
+              - generic:
+                - img
+              - listbox [ref=e126]:
+                - option "All" [selected] [ref=e127]
+                - option "PENDING" [ref=e128]
+                - option "PARTIALLY_RETURNED" [ref=e129]
+                - option "CLOSED" [ref=e130]
+                - option "OVERDUE" [ref=e131]
+          - generic [ref=e132]:
+            - generic [ref=e133]: Branches
+            - generic [ref=e135]:
+              - textbox "Search" [ref=e136]: All
+              - generic:
+                - img
+              - listbox [ref=e137]:
+                - option "All" [selected] [ref=e138]
+                - option "124" [ref=e139]
+                - option "207" [ref=e140]
+          - generic [ref=e141]:
+            - generic [ref=e142]: Report Filters
+            - generic [ref=e144]:
+              - checkbox "Overdue Only" [ref=e145]
+              - generic [ref=e146]: Overdue Only
+          - generic [ref=e148]:
+            - button "Load" [ref=e149] [cursor=pointer]
+            - link "Cancel" [ref=e150] [cursor=pointer]:
+              - /url: /reports/returnables/control
+      - generic [ref=e151]:
+        - article [ref=e152]:
+          - paragraph [ref=e153]: Total Lines
+          - paragraph [ref=e154]: "11"
+        - article [ref=e155]:
+          - paragraph [ref=e156]: Pending Lines
+          - paragraph [ref=e157]: "9"
+        - article [ref=e158]:
+          - paragraph [ref=e159]: Overdue Lines
+          - paragraph [ref=e160]: "1"
+        - article [ref=e161]:
+          - paragraph [ref=e162]: Overdue Qty
+          - paragraph [ref=e163]: "2"
+        - article [ref=e164]:
+          - paragraph [ref=e165]: Closed %
+          - paragraph [ref=e166]: 18.18%
+      - generic [ref=e167]:
+        - generic [ref=e168]:
+          - generic [ref=e169]: Returnables Control Dashboard
+          - generic [ref=e170]:
+            - button "Download" [ref=e171] [cursor=pointer]
+            - button "Print" [ref=e172] [cursor=pointer]
+            - generic [ref=e173]:
+              - generic [ref=e174]:
+                - generic [ref=e175]: Show
+                - combobox "Show Rows" [ref=e176] [cursor=pointer]:
+                  - option "10" [selected]
+                  - option "25"
+                  - option "50"
+                  - option "All"
+                - generic [ref=e177]: Rows
+              - generic [ref=e178]:
+                - img [ref=e179]
+                - textbox [ref=e181]:
+                  - /placeholder: Search
+        - table [ref=e183]:
+          - rowgroup [ref=e184]:
+            - row "Voucher No Date Vendor Asset Name Quantity Received Quantity Pending Qty Expected Return Date Days Out Overdue Days Status Branch" [ref=e185]:
+              - columnheader "Voucher No" [ref=e186]
+              - columnheader "Date" [ref=e187]
+              - columnheader "Vendor" [ref=e188]
+              - columnheader "Asset Name" [ref=e189]
+              - columnheader "Quantity" [ref=e190]
+              - columnheader "Received Quantity" [ref=e191]
+              - columnheader "Pending Qty" [ref=e192]
+              - columnheader "Expected Return Date" [ref=e193]
+              - columnheader "Days Out" [ref=e194]
+              - columnheader "Overdue Days" [ref=e195]
+              - columnheader "Status" [ref=e196]
+              - columnheader "Branch" [ref=e197]
+          - rowgroup [ref=e198]:
+            - row "10 11-03-2026 AMEEN DYE MAKER THREE COLOR MOULD 5 0 5 11-03-2026 0 0 PENDING 124" [ref=e199]:
+              - cell "10" [ref=e200]
+              - cell "11-03-2026" [ref=e201]
+              - cell "AMEEN DYE MAKER" [ref=e202]
+              - cell "THREE COLOR MOULD" [ref=e203]
+              - cell "5" [ref=e204]
+              - cell "0" [ref=e205]
+              - cell "5" [ref=e206]
+              - cell "11-03-2026" [ref=e207]
+              - cell "0" [ref=e208]
+              - cell "0" [ref=e209]
+              - cell "PENDING" [ref=e210]:
+                - generic [ref=e211]: PENDING
+              - cell "124" [ref=e212]
+            - row "9 11-03-2026 AMEEN DYE MAKER THREE COLOR MOULD 5 0 5 12-03-2026 0 0 PENDING 124" [ref=e213]:
+              - cell "9" [ref=e214]
+              - cell "11-03-2026" [ref=e215]
+              - cell "AMEEN DYE MAKER" [ref=e216]
+              - cell "THREE COLOR MOULD" [ref=e217]
+              - cell "5" [ref=e218]
+              - cell "0" [ref=e219]
+              - cell "5" [ref=e220]
+              - cell "12-03-2026" [ref=e221]
+              - cell "0" [ref=e222]
+              - cell "0" [ref=e223]
+              - cell "PENDING" [ref=e224]:
+                - generic [ref=e225]: PENDING
+              - cell "124" [ref=e226]
+            - row "8 11-03-2026 AMEEN DYE MAKER THREE COLOR MOULD 5 0 5 12-03-2026 0 0 PENDING 124" [ref=e227]:
+              - cell "8" [ref=e228]
+              - cell "11-03-2026" [ref=e229]
+              - cell "AMEEN DYE MAKER" [ref=e230]
+              - cell "THREE COLOR MOULD" [ref=e231]
+              - cell "5" [ref=e232]
+              - cell "0" [ref=e233]
+              - cell "5" [ref=e234]
+              - cell "12-03-2026" [ref=e235]
+              - cell "0" [ref=e236]
+              - cell "0" [ref=e237]
+              - cell "PENDING" [ref=e238]:
+                - generic [ref=e239]: PENDING
+              - cell "124" [ref=e240]
+            - row "7 10-03-2026 AMEEN DYE MAKER THREE COLOR MOULD 1 0 1 11-03-2026 1 0 PENDING 124" [ref=e241]:
+              - cell "7" [ref=e242]
+              - cell "10-03-2026" [ref=e243]
+              - cell "AMEEN DYE MAKER" [ref=e244]
+              - cell "THREE COLOR MOULD" [ref=e245]
+              - cell "1" [ref=e246]
+              - cell "0" [ref=e247]
+              - cell "1" [ref=e248]
+              - cell "11-03-2026" [ref=e249]
+              - cell "1" [ref=e250]
+              - cell "0" [ref=e251]
+              - cell "PENDING" [ref=e252]:
+                - generic [ref=e253]: PENDING
+              - cell "124" [ref=e254]
+            - row "6 10-03-2026 AMEEN DYE MAKER THREE COLOR MOULD 1 0 1 11-03-2026 1 0 PENDING 124" [ref=e255]:
+              - cell "6" [ref=e256]
+              - cell "10-03-2026" [ref=e257]
+              - cell "AMEEN DYE MAKER" [ref=e258]
+              - cell "THREE COLOR MOULD" [ref=e259]
+              - cell "1" [ref=e260]
+              - cell "0" [ref=e261]
+              - cell "1" [ref=e262]
+              - cell "11-03-2026" [ref=e263]
+              - cell "1" [ref=e264]
+              - cell "0" [ref=e265]
+              - cell "PENDING" [ref=e266]:
+                - generic [ref=e267]: PENDING
+              - cell "124" [ref=e268]
+            - row "4 10-03-2026 AMEEN DYE MAKER THREE COLOR MOULD 1 0 1 11-03-2026 1 0 PENDING 124" [ref=e269]:
+              - cell "4" [ref=e270]
+              - cell "10-03-2026" [ref=e271]
+              - cell "AMEEN DYE MAKER" [ref=e272]
+              - cell "THREE COLOR MOULD" [ref=e273]
+              - cell "1" [ref=e274]
+              - cell "0" [ref=e275]
+              - cell "1" [ref=e276]
+              - cell "11-03-2026" [ref=e277]
+              - cell "1" [ref=e278]
+              - cell "0" [ref=e279]
+              - cell "PENDING" [ref=e280]:
+                - generic [ref=e281]: PENDING
+              - cell "124" [ref=e282]
+            - row "3 10-03-2026 AMEEN DYE MAKER THREE COLOR MOULD 5 5 0 11-03-2026 1 0 CLOSED 124" [ref=e283]:
+              - cell "3" [ref=e284]
+              - cell "10-03-2026" [ref=e285]
+              - cell "AMEEN DYE MAKER" [ref=e286]
+              - cell "THREE COLOR MOULD" [ref=e287]
+              - cell "5" [ref=e288]
+              - cell "5" [ref=e289]
+              - cell "0" [ref=e290]
+              - cell "11-03-2026" [ref=e291]
+              - cell "1" [ref=e292]
+              - cell "0" [ref=e293]
+              - cell "CLOSED" [ref=e294]:
+                - generic [ref=e295]: CLOSED
+              - cell "124" [ref=e296]
+            - row "3 10-03-2026 AMEEN DYE MAKER THREE COLOR MOULD 2 2 0 11-03-2026 1 0 CLOSED 124" [ref=e297]:
+              - cell "3" [ref=e298]
+              - cell "10-03-2026" [ref=e299]
+              - cell "AMEEN DYE MAKER" [ref=e300]
+              - cell "THREE COLOR MOULD" [ref=e301]
+              - cell "2" [ref=e302]
+              - cell "2" [ref=e303]
+              - cell "0" [ref=e304]
+              - cell "11-03-2026" [ref=e305]
+              - cell "1" [ref=e306]
+              - cell "0" [ref=e307]
+              - cell "CLOSED" [ref=e308]:
+                - generic [ref=e309]: CLOSED
+              - cell "124" [ref=e310]
+            - row "2 10-03-2026 AMEEN DYE MAKER THREE COLOR MOULD 1 0 1 - 1 0 PENDING 124" [ref=e311]:
+              - cell "2" [ref=e312]
+              - cell "10-03-2026" [ref=e313]
+              - cell "AMEEN DYE MAKER" [ref=e314]
+              - cell "THREE COLOR MOULD" [ref=e315]
+              - cell "1" [ref=e316]
+              - cell "0" [ref=e317]
+              - cell "1" [ref=e318]
+              - cell "-" [ref=e319]
+              - cell "1" [ref=e320]
+              - cell "0" [ref=e321]
+              - cell "PENDING" [ref=e322]:
+                - generic [ref=e323]: PENDING
+              - cell "124" [ref=e324]
+            - row "1 10-03-2026 AMEEN DYE MAKER THREE COLOR MOULD 1 0 1 - 1 0 PENDING 124" [ref=e325]:
+              - cell "1" [ref=e326]
+              - cell "10-03-2026" [ref=e327]
+              - cell "AMEEN DYE MAKER" [ref=e328]
+              - cell "THREE COLOR MOULD" [ref=e329]
+              - cell "1" [ref=e330]
+              - cell "0" [ref=e331]
+              - cell "1" [ref=e332]
+              - cell "-" [ref=e333]
+              - cell "1" [ref=e334]
+              - cell "0" [ref=e335]
+              - cell "PENDING" [ref=e336]:
+                - generic [ref=e337]: PENDING
+              - cell "124" [ref=e338]
+            - row "Total 32 10 22" [ref=e339]:
+              - cell "Total" [ref=e340]
+              - cell "32" [ref=e341]
+              - cell "10" [ref=e342]
+              - cell "22" [ref=e343]
+              - cell [ref=e344]
+        - generic [ref=e345]:
+          - generic [ref=e346]: Showing 1 to 10 of 11 entries
+          - generic [ref=e347]:
+            - button "Prev" [disabled] [ref=e348] [cursor=pointer]
+            - button "1" [ref=e349] [cursor=pointer]
+            - button "Next" [ref=e350] [cursor=pointer]
+    - generic [ref=e351]: ERP System © 2026
+```

@@ -17,10 +17,22 @@ const {
   PURCHASE_VOUCHER_TYPES,
   applyPurchaseVoucherUpdatePayloadTx,
 } = require("../../services/purchase/purchase-voucher-service");
+const {
+  SALES_VOUCHER_TYPES,
+  applySalesVoucherUpdatePayloadTx,
+} = require("../../services/sales/sales-voucher-service");
+const {
+  RETURNABLE_VOUCHER_TYPES,
+  applyReturnableVoucherCreatePayloadTx,
+  applyReturnableVoucherUpdatePayloadTx,
+  applyReturnableVoucherDeletePayloadTx,
+} = require("../../services/returnables/returnable-voucher-service");
 const basicInfoRoutes = require("../master_data/basic-info");
 const uomConversionsRoutes = require("../master_data/basic-info/uom-conversions");
 const accountsRoutes = require("../master_data/accounts");
 const partiesRoutes = require("../master_data/parties");
+const returnableAssetsRoutes = require("../master_data/returnable-assets");
+const assetTypesRoutes = require("../master_data/asset-types");
 const finishedRoutes = require("../master_data/products/finished");
 const rawMaterialsRoutes = require("../master_data/products/raw-materials");
 const semiFinishedRoutes = require("../master_data/products/semi-finished");
@@ -68,9 +80,57 @@ const ACTION_LABELS = {
 const applyVoucherApprovalChangeTx = async ({ trx, request, approverId, req }) => {
   const payload = request?.new_value && typeof request.new_value === "object" ? request.new_value : {};
   const action = String(payload.action || "").toLowerCase();
+  const payloadVoucherTypeCode = String(payload.voucher_type_code || "").trim().toUpperCase();
+  const isReturnableVoucherType =
+    payloadVoucherTypeCode === RETURNABLE_VOUCHER_TYPES.dispatch ||
+    payloadVoucherTypeCode === RETURNABLE_VOUCHER_TYPES.receipt;
+  const requestEntityId = String(request.entity_id || "").trim();
   const voucherId = Number(request.entity_id || payload.voucher_id || 0);
+
+  if (action === "create" && requestEntityId === "NEW" && isReturnableVoucherType) {
+    const created = await applyReturnableVoucherCreatePayloadTx({
+      trx,
+      payload,
+      approverId,
+      req: {
+        ...req,
+        branchId: Number(request.branch_id || req?.branchId || 0),
+        user: { ...(req?.user || {}), id: approverId },
+      },
+    });
+    return {
+      appliedEntityId: created?.id ? String(created.id) : null,
+    };
+  }
+
   if (!Number.isInteger(voucherId) || voucherId <= 0) {
     throw new Error("Invalid voucher id in approval payload");
+  }
+
+  if (isReturnableVoucherType && action === "delete") {
+    await applyReturnableVoucherDeletePayloadTx({
+      trx,
+      voucherId,
+      voucherTypeCode: payloadVoucherTypeCode,
+      approverId,
+    });
+    return;
+  }
+
+  if (isReturnableVoucherType && action === "update") {
+    await applyReturnableVoucherUpdatePayloadTx({
+      trx,
+      voucherId,
+      voucherTypeCode: payloadVoucherTypeCode,
+      payload,
+      approverId,
+      req: {
+        ...req,
+        branchId: Number(request.branch_id || req?.branchId || 0),
+        user: { ...(req?.user || {}), id: approverId },
+      },
+    });
+    return;
   }
 
   if (action === "delete") {
@@ -192,6 +252,24 @@ const applyVoucherApprovalChangeTx = async ({ trx, request, approverId, req }) =
       user: { ...(req?.user || {}), id: approverId },
     };
     await applyPurchaseVoucherUpdatePayloadTx({
+      trx,
+      voucherId,
+      voucherTypeCode,
+      payload,
+      req: approvalReq,
+    });
+  }
+
+  if (
+    voucherTypeCode === SALES_VOUCHER_TYPES.salesOrder ||
+    voucherTypeCode === SALES_VOUCHER_TYPES.salesVoucher
+  ) {
+    const approvalReq = {
+      ...req,
+      branchId: Number(request.branch_id || req?.branchId || 0),
+      user: { ...(req?.user || {}), id: approverId },
+    };
+    await applySalesVoucherUpdatePayloadTx({
       trx,
       voucherId,
       voucherTypeCode,
@@ -513,6 +591,36 @@ const buildPreviewPayload = async (req, res, request, side) => {
       formPartial: "../../master_data/parties/form-fields.ejs",
       page: hydrated,
       isAdmin: req.user?.isAdmin || false,
+    };
+  }
+
+  if (screen === "master_data.returnable_assets") {
+    const hydrated = await returnableAssetsRoutes.preview.hydratePage(
+      returnableAssetsRoutes.preview.page,
+      locale,
+      req,
+    );
+    return {
+      previewValues: values,
+      previewType: "parties",
+      previewTitle: res.locals.t("asset_master") || "Asset Master",
+      page: hydrated,
+      formPartial: "../../master_data/returnable-assets/form-fields.ejs",
+    };
+  }
+
+  if (screen === "master_data.asset_types") {
+    const hydrated = await assetTypesRoutes.preview.hydratePage(
+      assetTypesRoutes.preview.page,
+      locale,
+      req,
+    );
+    return {
+      previewValues: values,
+      previewType: "parties",
+      previewTitle: res.locals.t("asset_types") || "Asset Types",
+      page: hydrated,
+      formPartial: "../../master_data/asset-types/form-fields.ejs",
     };
   }
 
@@ -1100,7 +1208,8 @@ router.post("/:id/approve", requirePermission("SCREEN", "administration.approval
           throw err;
         }
       } else if (request.request_type === "VOUCHER" && request.entity_type === "VOUCHER") {
-        await applyVoucherApprovalChangeTx({ trx, request, approverId: req.user.id, req });
+        const voucherApplyResult = await applyVoucherApprovalChangeTx({ trx, request, approverId: req.user.id, req });
+        appliedEntityId = voucherApplyResult?.appliedEntityId || appliedEntityId;
       }
       await trx("erp.approval_request").where({ id }).update({
         status: "APPROVED",

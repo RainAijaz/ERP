@@ -1,0 +1,57 @@
+<%
+  const values = (typeof modalValues !== "undefined" && modalValues) ? modalValues : {};
+%>
+<div class="space-y-4">
+  <label class="block space-y-1" data-hide-on-create="true">
+    <span class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"><%= t("code") %></span>
+    <input
+      type="text"
+      data-field="code"
+      value="<%= values.code || '' %>"
+      class="h-11 w-full cursor-not-allowed rounded-xl border border-slate-300 bg-slate-100 px-3 text-sm text-slate-600"
+      readonly
+      disabled
+    >
+  </label>
+
+  <label class="block space-y-1">
+    <span class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"><%= t("name") %></span>
+    <input
+      type="text"
+      name="name"
+      data-field="name"
+      required
+      maxlength="120"
+      value="<%= values.name || '' %>"
+      class="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"
+      placeholder="<%= t('name') %>"
+    >
+  </label>
+
+  <label class="block space-y-1">
+    <span class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"><%= t("name_ur") %></span>
+    <input
+      type="text"
+      name="name_ur"
+      data-field="name_ur"
+      required
+      maxlength="120"
+      value="<%= values.name_ur || '' %>"
+      class="h-11 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"
+      placeholder="<%= t('name_ur') %>"
+    >
+  </label>
+
+  <label class="inline-flex items-center gap-2">
+    <input
+      type="checkbox"
+      name="is_active"
+      data-field="is_active"
+      class="h-4 w-4 rounded border-slate-300"
+      <%= Object.prototype.hasOwnProperty.call(values, 'is_active')
+        ? (values.is_active === 'on' || values.is_active === true ? 'checked' : '')
+        : 'checked' %>
+    >
+    <span class="text-sm font-semibold text-slate-700"><%= t("is_active") %></span>
+  </label>
+</div>

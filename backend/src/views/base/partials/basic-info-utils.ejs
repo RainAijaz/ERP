@@ -525,7 +525,11 @@
       const rows = getRows();
       const sorted = sortRows(rows);
       const filtered = sorted.filter((row) => {
-        const matchesText = !query || row.textContent.toLowerCase().includes(query);
+        const searchText = String(
+          row.dataset.search ||
+            `${row.dataset.code || ""} ${row.dataset.name || ""} ${row.dataset.nameUr || ""} ${row.textContent || ""}`,
+        ).toLowerCase();
+        const matchesText = !query || searchText.includes(query);
         if (!matchesText) return false;
         if (status !== "all") {
           const isActive = row.dataset.active === "true";
@@ -904,12 +908,53 @@
         // Locate the party type and group selects inside the modal form.
         const partyType = modalForm.querySelector('[data-field="party_type"]');
         const groupSelect = modalForm.querySelector('[data-field="group_id"]');
+        const vendorCapabilitiesSelect = modalForm.querySelector('[data-field="vendor_capabilities"]');
+        const supplierOnlyFields = Array.from(modalForm.querySelectorAll("[data-supplier-only='true']"));
         // Cache the full list of group options for rebuilding on each change.
         const allGroupOptions = groupSelect ? Array.from(groupSelect.options) : [];
+        const normalizePartyType = (rawValue) => {
+          const token = String(rawValue || "")
+            .trim()
+            .toUpperCase();
+          if (!token) return "";
+          if (token === "SUPPLIER" || token === "SUPPLIERS") return "SUPPLIER";
+          if (token.includes("SUPPLIER")) return "SUPPLIER";
+          return token;
+        };
+        const resolvePartyType = () => {
+          const rawSelectValue = String(partyType?.value || "").trim();
+          if (rawSelectValue) return normalizePartyType(rawSelectValue);
+          const selectedOption = partyType?.options?.[partyType.selectedIndex];
+          const selectedOptionValue = String(selectedOption?.value || "").trim();
+          if (selectedOptionValue) return normalizePartyType(selectedOptionValue);
+          const selectedOptionText = String(selectedOption?.textContent || "").trim();
+          if (selectedOptionText) return normalizePartyType(selectedOptionText);
+          const searchableInput = partyType
+            ? partyType.closest("[data-searchable-wrapper]")?.querySelector('input[type="text"]')
+            : null;
+          return normalizePartyType(searchableInput?.value);
+        };
+        const syncSupplierOnlyVisibility = () => {
+          const normalizedPartyType = resolvePartyType();
+          const isSupplier = normalizedPartyType === "SUPPLIER";
+          supplierOnlyFields.forEach((fieldWrap) => {
+            if (isSupplier) {
+              fieldWrap.classList.remove("hidden");
+            } else {
+              fieldWrap.classList.add("hidden");
+            }
+          });
+          if (!isSupplier && vendorCapabilitiesSelect?.multiple) {
+            Array.from(vendorCapabilitiesSelect.options).forEach((option) => {
+              option.selected = false;
+            });
+            vendorCapabilitiesSelect.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+        };
         const filterGroups = () => {
           if (!partyType || !groupSelect) return;
           // Normalize the selected type for case-insensitive matching.
-          const selectedType = (partyType.value || "").toUpperCase();
+          const selectedType = resolvePartyType();
           // Remember current selection to restore it if it still matches.
           const previous = groupSelect.value;
           // Rebuild the dropdown options based on the selected party type.
@@ -935,13 +980,36 @@
             }
           }
         };
-        if (partyType && groupSelect) {
-          // Re-filter whenever the party type changes.
-          partyType.addEventListener("change", filterGroups);
+        const handlePartyTypeChange = () => {
+          filterGroups();
+          syncSupplierOnlyVisibility();
+        };
+        if (partyType) {
+          partyType.addEventListener("change", handlePartyTypeChange);
+          partyType.addEventListener("input", handlePartyTypeChange);
+          modalForm.addEventListener("change", (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) return;
+            if (target === partyType || target.closest('[data-searchable-wrapper]')) {
+              handlePartyTypeChange();
+            }
+          });
+          modalForm.addEventListener("input", (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) return;
+            if (target === partyType || target.closest('[data-searchable-wrapper]')) {
+              handlePartyTypeChange();
+            }
+          });
+          document.addEventListener("modal:opened", handlePartyTypeChange);
+          document.addEventListener("modal:opened", () => {
+            setTimeout(handlePartyTypeChange, 0);
+          });
+          handlePartyTypeChange();
+        }
+        if (groupSelect) {
           // Expose for re-use when the modal opens.
           filterPartyGroups = filterGroups;
-          // Apply once on load so the list matches the current selection.
-          filterGroups();
         }
       }
       if (pageKey === "accounts") {
@@ -1554,10 +1622,46 @@
       // 6. Create the Dropdown Menu
       const menu = document.createElement("div");
       menu.className = "absolute left-0 right-0 z-50 mt-1 hidden max-h-60 overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl ring-1 ring-black/5";
+      const hasAllMultiSelect = isMulti && String(select.dataset.allMultiSelect || "").toLowerCase() === "true";
+      const getAllOption = () => {
+        if (!hasAllMultiSelect) return null;
+        return (
+          Array.from(select.options).find((opt) => {
+            const value = String(opt.value || "").trim().toLowerCase();
+            return value === "__all__" || value === "all";
+          }) || null
+        );
+      };
+      const normalizeMultiSelectAll = (changedOption = null) => {
+        if (!hasAllMultiSelect) return;
+        const allOption = getAllOption();
+        if (!allOption) return;
+        const options = Array.from(select.options);
+        const nonAllOptions = options.filter((opt) => opt !== allOption);
+
+        if (changedOption === allOption && allOption.selected) {
+          nonAllOptions.forEach((opt) => {
+            opt.selected = false;
+          });
+          return;
+        }
+
+        if (changedOption && changedOption !== allOption && changedOption.selected) {
+          allOption.selected = false;
+        }
+
+        const hasNonAllSelected = nonAllOptions.some((opt) => opt.selected);
+        if (!hasNonAllSelected) {
+          allOption.selected = true;
+        } else if (allOption.selected) {
+          allOption.selected = false;
+        }
+      };
 
       // --- HELPER: Sync Visible Input with Hidden Select ---
       const syncToInput = () => {
         if (isMulti) {
+          normalizeMultiSelectAll(null);
           // For multi-select, join selected labels with commas
           const labels = Array.from(select.selectedOptions).map((opt) => opt.textContent.trim());
           input.value = labels.length ? labels.join(", ") : "";
@@ -1623,6 +1727,7 @@
             if (isMulti) {
               // MODIFIED: Toggle selection for multi
               opt.selected = !opt.selected;
+              normalizeMultiSelectAll(opt);
               select.dispatchEvent(new Event("change", { bubbles: true }));
               syncToInput();
               // Re-render menu to update checkboxes, keep menu open
@@ -1651,9 +1756,22 @@
 
       // 7. Event Listeners
       input.addEventListener("focus", () => {
+        if (isMulti) return;
         input.select(); // Select all text so user can easily overwrite
         renderMenu();
         menu.classList.remove("hidden");
+      });
+
+      input.addEventListener("mousedown", (event) => {
+        if (!isMulti) return;
+        event.preventDefault();
+        if (menu.classList.contains("hidden")) {
+          renderMenu();
+          menu.classList.remove("hidden");
+        } else {
+          menu.classList.add("hidden");
+        }
+        input.focus();
       });
 
       input.addEventListener("input", () => {

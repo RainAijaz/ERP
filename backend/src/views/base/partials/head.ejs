@@ -2,11 +2,19 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title><%= title || "ERP" %></title>
 <link rel="stylesheet" href="/styles.css" />
+<script><%- include("./display-formatters.js") %></script>
+<script><%- include("./voucher-row-enter-navigation.js") %></script>
 
 <style>
   @media print {
     @page {
       size: landscape;
     }
+  }
+
+  [data-voucher-form] [data-lines-table] thead th,
+  [data-sales-voucher-form] [data-lines-table] thead th,
+  [data-purchase-voucher-form] [data-lines-table] thead th {
+    text-align: center !important;
   }
 </style>

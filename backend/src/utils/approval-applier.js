@@ -20,6 +20,7 @@ const {
   resolveLabourIds,
   ALL_LABOURS_VALUE,
 } = require("../services/hr-payroll/labour-rates-service");
+const { generateUniqueCode } = require("./entity-code");
 
 // Mapping of basic info entity types to their DB tables
 const BASIC_INFO_TABLES = {
@@ -53,6 +54,7 @@ const BRANCH_MAPS = {
 
 const ACCOUNT_TABLE = "erp.accounts";
 const PARTY_TABLE = "erp.parties";
+const ASSET_TABLE = "erp.assets";
 const EMPLOYEE_TABLE = "erp.employees";
 const LABOUR_TABLE = "erp.labours";
 const EMPLOYEE_BRANCH_TABLE = "erp.employee_branch";
@@ -62,6 +64,34 @@ const EMPLOYEE_COMMISSION_TABLE = "erp.employee_commission_rules";
 const EMPLOYEE_ALLOWANCE_TABLE = "erp.employee_allowance_rules";
 const LABOUR_RATE_TABLE = "erp.labour_rate_rules";
 const COMMISSION_BASIS_FIXED_PER_UNIT = "FIXED_PER_UNIT";
+let columnSupportCachePromise = null;
+
+const loadColumnSupport = async (trx) => {
+  if (columnSupportCachePromise) return columnSupportCachePromise;
+  columnSupportCachePromise = (async () => {
+    try {
+      const hasAssetColumn = (column) => trx.schema.withSchema("erp").hasColumn("assets", column);
+      const hasAssetTypeColumn = (column) => trx.schema.withSchema("erp").hasColumn("asset_type_registry", column);
+      return {
+        assets: {
+          name: await hasAssetColumn("name"),
+          name_ur: await hasAssetColumn("name_ur"),
+          created_by: await hasAssetColumn("created_by"),
+          created_at: await hasAssetColumn("created_at"),
+          updated_by: await hasAssetColumn("updated_by"),
+          updated_at: await hasAssetColumn("updated_at"),
+        },
+        assetTypeRegistry: {
+          name_ur: await hasAssetTypeColumn("name_ur"),
+        },
+      };
+    } catch (err) {
+      columnSupportCachePromise = null;
+      throw err;
+    }
+  })();
+  return columnSupportCachePromise;
+};
 
 const stripMeta = (value = {}) => {
   const clone = { ...value };
@@ -682,6 +712,281 @@ const applyAccountPartyChange = async (trx, entityType, entityId, newValue, user
   return true;
 };
 
+const applyAssetChange = async (trx, entityId, newValue, userId) => {
+  const columnSupport = (await loadColumnSupport(trx)).assets;
+  const values = newValue && typeof newValue === "object" ? { ...newValue } : null;
+  const action = values?._action || (!values ? "delete" : (entityId === "NEW" ? "create" : "update"));
+
+  if (action === "delete") {
+    const id = Number(entityId || 0);
+    if (!Number.isInteger(id) || id <= 0) return false;
+
+    const used = await trx("erp.rgp_outward_line").select("voucher_line_id").where({ asset_id: id }).first();
+    if (used) {
+      await trx(ASSET_TABLE)
+        .where({ id })
+        .update({
+          is_active: false,
+          updated_by: userId || null,
+          updated_at: trx.fn.now(),
+        });
+      return true;
+    }
+
+    await trx(ASSET_TABLE).where({ id }).del();
+    return true;
+  }
+
+  const isCreate = !entityId || entityId === "NEW";
+  const id = Number(entityId || 0);
+  const existingSelect = [
+    "id",
+    "asset_code",
+    "asset_type_code",
+    "home_branch_id",
+    "description",
+    "is_active",
+    ...(columnSupport.name ? ["name"] : [trx.raw("NULL::text as name")]),
+    ...(columnSupport.name_ur ? ["name_ur"] : [trx.raw("NULL::text as name_ur")]),
+  ];
+  const existing = !isCreate
+    ? await trx(ASSET_TABLE)
+        .select(existingSelect)
+        .where({ id })
+        .first()
+    : null;
+  if (!isCreate && !existing) return false;
+
+  const payload = stripMeta(values || {});
+  const statusOnlyUpdate = !isCreate
+    && Object.prototype.hasOwnProperty.call(payload, "is_active")
+    && !Object.prototype.hasOwnProperty.call(payload, "asset_code")
+    && !Object.prototype.hasOwnProperty.call(payload, "name")
+    && !Object.prototype.hasOwnProperty.call(payload, "name_ur")
+    && !Object.prototype.hasOwnProperty.call(payload, "asset_type_code")
+    && !Object.prototype.hasOwnProperty.call(payload, "home_branch_id")
+    && !Object.prototype.hasOwnProperty.call(payload, "description");
+  if (statusOnlyUpdate) {
+    await trx(ASSET_TABLE)
+      .where({ id })
+      .update({
+        is_active: toBoolean(payload.is_active),
+        updated_by: userId || null,
+        updated_at: trx.fn.now(),
+      });
+    return true;
+  }
+
+  let assetCode = String(payload.asset_code || existing?.asset_code || "").trim().toUpperCase();
+  if (!assetCode) {
+    const generatedCode = await generateUniqueCode({
+      name: payload.name || existing?.name || "asset",
+      prefix: "asset",
+      maxLen: 80,
+      exists: async (candidate) => {
+        const duplicate = await trx(ASSET_TABLE)
+          .select("id")
+          .whereRaw("lower(asset_code) = ?", [String(candidate || "").toLowerCase()])
+          .modify((query) => {
+            if (!isCreate) query.whereNot({ id });
+          })
+          .first();
+        return Boolean(duplicate);
+      },
+    });
+    assetCode = String(generatedCode || "")
+      .trim()
+      .toUpperCase();
+  }
+
+  const normalized = {
+    asset_code: assetCode,
+    asset_type_code: String(
+      Object.prototype.hasOwnProperty.call(payload, "asset_type_code")
+        ? payload.asset_type_code
+        : existing?.asset_type_code || "",
+    )
+      .trim()
+      .toUpperCase(),
+    home_branch_id: Object.prototype.hasOwnProperty.call(payload, "home_branch_id")
+      ? toNullableInt(payload.home_branch_id)
+      : toNullableInt(existing?.home_branch_id),
+    description: String(payload.description || payload.name || existing?.description || "").trim() || null,
+    is_active: Object.prototype.hasOwnProperty.call(payload, "is_active")
+      ? toBoolean(payload.is_active)
+      : isCreate ? true : !!existing?.is_active,
+  };
+  const normalizedName = String(payload.name || existing?.name || payload.description || existing?.description || "").trim();
+  if (columnSupport.name) normalized.name = normalizedName;
+  if (columnSupport.name_ur) {
+    normalized.name_ur = String(payload.name_ur || existing?.name_ur || "").trim() || null;
+  }
+  if (!normalized.description) {
+    normalized.description = normalizedName || null;
+  }
+
+  if (!normalized.asset_code || !normalized.asset_type_code || !normalized.description) {
+    return false;
+  }
+  if (columnSupport.name && !normalized.name) {
+    return false;
+  }
+
+  const existsType = await trx("erp.asset_type_registry")
+    .select("code")
+    .where({ code: normalized.asset_type_code, is_active: true })
+    .first();
+  if (!existsType) return false;
+
+  const duplicate = await trx(ASSET_TABLE)
+    .select("id")
+    .whereRaw("lower(asset_code) = ?", [normalized.asset_code.toLowerCase()])
+    .modify((query) => {
+      if (!isCreate) query.whereNot({ id });
+    })
+    .first();
+  if (duplicate) {
+    const err = new Error("Duplicate asset code");
+    err.code = "DUPLICATE_CODE";
+    throw err;
+  }
+
+  if (isCreate) {
+    const insertPayload = { ...normalized };
+    if (columnSupport.created_by) insertPayload.created_by = userId || null;
+    if (columnSupport.created_at) insertPayload.created_at = trx.fn.now();
+    if (columnSupport.updated_by) insertPayload.updated_by = userId || null;
+    if (columnSupport.updated_at) insertPayload.updated_at = trx.fn.now();
+    const [created] = await trx(ASSET_TABLE)
+      .insert(insertPayload)
+      .returning(["id"]);
+    const newId = created && typeof created === "object" ? created.id : created;
+    return { applied: true, entityId: String(newId) };
+  }
+
+  const updatePayload = { ...normalized };
+  if (columnSupport.updated_by) updatePayload.updated_by = userId || null;
+  if (columnSupport.updated_at) updatePayload.updated_at = trx.fn.now();
+  await trx(ASSET_TABLE)
+    .where({ id })
+    .update(updatePayload);
+  return true;
+};
+
+const applyAssetTypeChange = async (trx, entityId, newValue) => {
+  const supportsNameUr = (await loadColumnSupport(trx)).assetTypeRegistry.name_ur;
+  const values = newValue && typeof newValue === "object" ? { ...newValue } : null;
+  const action = values?._action || (!values ? "delete" : (entityId === "NEW" ? "create" : "update"));
+  const code = String(entityId || values?.code || "").trim().toUpperCase();
+
+  if (action === "delete") {
+    if (!code) return false;
+    const inUse = await trx("erp.assets")
+      .select("id")
+      .whereRaw("upper(asset_type_code) = ?", [code])
+      .first();
+    if (inUse) {
+      await trx("erp.asset_type_registry")
+        .whereRaw("upper(code) = ?", [code])
+        .update({ is_active: false });
+      return true;
+    }
+    await trx("erp.asset_type_registry")
+      .whereRaw("upper(code) = ?", [code])
+      .del();
+    return true;
+  }
+
+  const isCreate = !entityId || entityId === "NEW";
+  const existingSelect = supportsNameUr
+    ? ["code", "name", "name_ur"]
+    : ["code", "name", trx.raw("NULL::text as name_ur")];
+  const existing = !isCreate
+    ? await trx("erp.asset_type_registry")
+        .select(existingSelect)
+        .whereRaw("upper(code) = ?", [code])
+        .first()
+    : null;
+  if (!isCreate && !existing) return false;
+
+  const payload = stripMeta(values || {});
+  const statusOnlyUpdate = !isCreate
+    && Object.prototype.hasOwnProperty.call(payload, "is_active")
+    && !Object.prototype.hasOwnProperty.call(payload, "code")
+    && !Object.prototype.hasOwnProperty.call(payload, "name")
+    && !Object.prototype.hasOwnProperty.call(payload, "name_ur")
+    && !Object.prototype.hasOwnProperty.call(payload, "description");
+  if (statusOnlyUpdate) {
+    await trx("erp.asset_type_registry")
+      .whereRaw("upper(code) = ?", [code])
+      .update({ is_active: toBoolean(payload.is_active) });
+    return true;
+  }
+
+  let normalizedCode = String(payload.code || code || existing?.code || "").trim().toUpperCase();
+  const name = String(payload.name || existing?.name || "").trim();
+  const nameUr = String(payload.name_ur || existing?.name_ur || "").trim() || null;
+  const description = String(payload.description || "").trim() || null;
+  const isActive = Object.prototype.hasOwnProperty.call(payload, "is_active")
+    ? toBoolean(payload.is_active)
+    : true;
+
+  if (!normalizedCode && name) {
+    const generatedCode = await generateUniqueCode({
+      name,
+      prefix: "",
+      maxLen: 40,
+      exists: async (candidate) => {
+        const duplicateRow = await trx("erp.asset_type_registry")
+          .select("code")
+          .whereRaw("lower(code) = ?", [String(candidate || "").toLowerCase()])
+          .first();
+        return Boolean(duplicateRow);
+      },
+    });
+    normalizedCode = String(generatedCode || "")
+      .trim()
+      .toUpperCase();
+  }
+
+  if (!normalizedCode || !name) return false;
+  const duplicate = await trx("erp.asset_type_registry")
+    .select("code")
+    .whereRaw("upper(code) = ?", [normalizedCode])
+    .modify((query) => {
+      if (code) query.whereRaw("upper(code) <> ?", [code]);
+    })
+    .first();
+  if (duplicate) {
+    const err = new Error("Duplicate asset type code");
+    err.code = "DUPLICATE_CODE";
+    throw err;
+  }
+
+  if (isCreate) {
+    const insertPayload = {
+      code: normalizedCode,
+      name,
+      description,
+      is_active: isActive,
+    };
+    if (supportsNameUr) insertPayload.name_ur = nameUr;
+    await trx("erp.asset_type_registry").insert(insertPayload);
+    return { applied: true, entityId: normalizedCode };
+  }
+
+  const updatePayload = {
+    name,
+    description,
+    is_active: isActive,
+  };
+  if (supportsNameUr) updatePayload.name_ur = nameUr;
+  await trx("erp.asset_type_registry")
+    .whereRaw("upper(code) = ?", [code])
+    .update(updatePayload);
+  return true;
+};
+
 const upsertBranchMap = async (trx, mapTable, keyColumn, entityId, branchIds = []) => {
   const entity = Number(entityId || 0);
   if (!Number.isInteger(entity) || entity <= 0) return;
@@ -1053,6 +1358,12 @@ const applyMasterDataChange = async (trx, request, userId) => {
   }
   if (entityType === "ACCOUNT" || entityType === "PARTY") {
     return applyAccountPartyChange(trx, entityType, entityId, newValue, userId);
+  }
+  if (entityType === "ASSET") {
+    return applyAssetChange(trx, entityId, newValue, userId);
+  }
+  if (entityType === "ASSET_TYPE") {
+    return applyAssetTypeChange(trx, entityId, newValue);
   }
   if (entityType === "BOM") {
     return applyApprovedBomChange(trx, request, userId);

@@ -347,6 +347,57 @@ const BASIC_INFO_PAGES = {
       },
     ],
   },
+  "sales-discount-policies": {
+    titleKey: "sales_discount_policies",
+    description:
+      "Define the maximum allowed discount per pair for each product group.",
+    table: "erp.sales_discount_policy",
+    joins: [{ table: { pg: "erp.product_groups" }, on: ["t.product_group_id", "pg.id"] }],
+    extraSelect: (locale) => [
+      locale === "ur"
+        ? knex.raw("COALESCE(pg.name_ur, pg.name) as product_group_name")
+        : "pg.name as product_group_name",
+      knex.raw(
+        "CASE WHEN t.is_active THEN 'Active' ELSE 'Inactive' END as policy_status",
+      ),
+    ],
+    columns: [
+      { key: "id", label: "ID" },
+      { key: "product_group_name", label: "product_group" },
+      { key: "max_pair_discount", label: "max_pair_discount" },
+      { key: "policy_status", label: "status" },
+    ],
+    defaults: {
+      is_active: true,
+    },
+    fields: [
+      {
+        name: "product_group_id",
+        label: "product_group",
+        type: "select",
+        required: true,
+        optionsQuery: {
+          table: "erp.product_groups",
+          valueKey: "id",
+          labelKey: "name",
+          orderBy: "name",
+        },
+      },
+      {
+        name: "max_pair_discount",
+        label: "max_pair_discount",
+        type: "number",
+        required: true,
+        min: "0",
+        step: "0.01",
+      },
+      {
+        name: "is_active",
+        label: "is_active",
+        type: "checkbox",
+      },
+    ],
+  },
   "party-groups": {
     titleKey: "party_groups",
     description: "Organize customers and suppliers into reusable party groups.",
@@ -604,6 +655,7 @@ const ROUTE_MAP = {
   groups: "/product-groups",
   "product-subgroups": "/product-subgroups",
   "product-types": "/product-types",
+  "sales-discount-policies": "/sales-discount-policies",
   "party-groups": "/party-groups",
   "account-groups": "/account-groups",
   departments: "/departments",
@@ -619,6 +671,7 @@ const BASIC_INFO_SCOPE_KEYS = {
   groups: "master_data.basic_info.product_groups",
   "product-subgroups": "master_data.basic_info.product_subgroups",
   "product-types": "master_data.basic_info.product_types",
+  "sales-discount-policies": "master_data.basic_info.sales_discount_policies",
   "party-groups": "master_data.basic_info.party_groups",
   "account-groups": "master_data.basic_info.account_groups",
   departments: "master_data.basic_info.departments",
@@ -935,7 +988,7 @@ const updateHandler = (type) => async (req, res, next) => {
     if (!existingRow) {
       return renderIndexError(req, res, page, values, res.locals.t("error_not_found"), "edit", basePath, type);
     }
-    if (hasField(page, "code") && existingRow.code) {
+    if (existingRow.code) {
       values.code = existingRow.code;
     } else if (hasField(page, "code") || page.autoCodeFromName) {
       values.code = await generateUniqueCode({
