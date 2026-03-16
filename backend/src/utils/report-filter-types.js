@@ -31,8 +31,14 @@ const resolveReportType = (value, fallback = REPORT_TYPES.details) => {
   return fallback;
 };
 
+const toRawList = (value) => {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object") return Object.values(value);
+  return [value];
+};
+
 const toIdList = (value) => {
-  const raw = Array.isArray(value) ? value : [value];
+  const raw = toRawList(value);
   return [
     ...new Set(
       raw

@@ -5,6 +5,7 @@ const { requirePermission } = require("../../../middleware/access/role-permissio
 const { handleScreenApproval } = require("../../../middleware/approvals/screen-approval");
 const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
 const { queueAuditLog } = require("../../../utils/audit-log");
+const { applyItemLifecycleToggleTx } = require("../../../services/products/item-lifecycle-service");
 
 const router = express.Router();
 const ITEM_TYPE = "FG";
@@ -414,6 +415,10 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.fin
   try {
     const current = await knex("erp.items").select("is_active").where({ id }).first();
     if (!current) return next(new HttpError(404, res.locals.t("error_not_found")));
+    const nextIsActive = !current.is_active;
+    const toggleLabel = nextIsActive
+      ? (res.locals.t("activate") || "Activate")
+      : (res.locals.t("deactivate") || "Deactivate");
 
     const approval = await handleScreenApproval({
       req,
@@ -421,9 +426,9 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.fin
       action: "delete",
       entityType: SCREEN_ENTITY_TYPES["master_data.products.finished"],
       entityId: id,
-      summary: `${res.locals.t("deactivate")} ${res.locals.t("finished")}`,
+      summary: `${toggleLabel} ${res.locals.t("finished")}`,
       oldValue: current,
-      newValue: { _action: "toggle", is_active: !current.is_active, item_type: ITEM_TYPE },
+      newValue: { _action: "toggle", is_active: nextIsActive, item_type: ITEM_TYPE },
       t: res.locals.t,
     });
 
@@ -431,23 +436,12 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.fin
       return res.redirect(req.get("referer") || basePath);
     }
     await knex.transaction(async (trx) => {
-      await trx("erp.items")
-        .where({ id })
-        .update({
-          is_active: !current.is_active,
-          updated_by: req.user ? req.user.id : null,
-          updated_at: trx.fn.now(),
-        });
-      const linked = await getLinkedSfgIds(trx, id);
-      if (linked.length) {
-        await trx("erp.items")
-          .whereIn("id", linked)
-          .update({
-            is_active: !current.is_active,
-            updated_by: req.user ? req.user.id : null,
-            updated_at: trx.fn.now(),
-          });
-      }
+      await applyItemLifecycleToggleTx(trx, {
+        itemId: id,
+        itemType: ITEM_TYPE,
+        isActive: nextIsActive,
+        userId: req.user ? req.user.id : null,
+      });
     });
     queueAuditLog(req, {
       entityType: SCREEN_ENTITY_TYPES["master_data.products.finished"],

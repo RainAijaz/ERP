@@ -9,6 +9,9 @@ const BOM_LEVELS = new Set(["FINISHED", "SEMI_FINISHED"]);
 const LABOUR_RATE_TYPES = new Set(["PER_DOZEN", "PER_PAIR"]);
 const BOM_SCOPE = new Set(["ALL", "SPECIFIC"]);
 const RULE_ACTION_TYPES = new Set(["ADD_RM", "REMOVE_RM", "REPLACE_RM", "ADJUST_QTY", "CHANGE_LOSS"]);
+let bomLifecycleColumnSupportPromise = null;
+let bomSkuOverrideTableSupportPromise = null;
+let bomSkuOverrideDeptColumnSupportPromise = null;
 
 const toArray = (value) => {
   if (!value) return [];
@@ -87,11 +90,51 @@ const tableExists = async (db, tableName) => {
   }
 };
 
+const hasBomLifecycleColumn = async (db) => {
+  if (bomLifecycleColumnSupportPromise) return bomLifecycleColumnSupportPromise;
+  bomLifecycleColumnSupportPromise = (async () => {
+    try {
+      return db.schema.withSchema("erp").hasColumn("bom_header", "is_active");
+    } catch (err) {
+      bomLifecycleColumnSupportPromise = null;
+      return false;
+    }
+  })();
+  return bomLifecycleColumnSupportPromise;
+};
+
+const hasBomSkuOverrideTable = async (db) => {
+  if (bomSkuOverrideTableSupportPromise) return bomSkuOverrideTableSupportPromise;
+  bomSkuOverrideTableSupportPromise = (async () => {
+    try {
+      return tableExists(db, "erp.bom_sku_override_line");
+    } catch (err) {
+      bomSkuOverrideTableSupportPromise = null;
+      return false;
+    }
+  })();
+  return bomSkuOverrideTableSupportPromise;
+};
+
+const hasBomSkuOverrideDeptColumn = async (db) => {
+  if (bomSkuOverrideDeptColumnSupportPromise) return bomSkuOverrideDeptColumnSupportPromise;
+  bomSkuOverrideDeptColumnSupportPromise = (async () => {
+    try {
+      return db.schema.withSchema("erp").hasColumn("bom_sku_override_line", "dept_id");
+    } catch (err) {
+      bomSkuOverrideDeptColumnSupportPromise = null;
+      return false;
+    }
+  })();
+  return bomSkuOverrideDeptColumnSupportPromise;
+};
+
 const parseBomFormPayload = (body = {}) => {
   const rmRaw = parseJsonArray(body.rm_lines_json);
   const sfgRaw = parseJsonArray(body.sfg_lines_json);
   const labourRaw = parseJsonArray(body.labour_lines_json);
   const ruleRaw = parseJsonArray(body.variant_rules_json);
+  const skuOverrideRaw = parseJsonArray(body.sku_overrides_json);
 
   return {
     header: {
@@ -118,7 +161,7 @@ const parseBomFormPayload = (body = {}) => {
         required_qty: toNumberOrNull(row.required_qty),
         uom_id: toNumberOrNull(row.uom_id),
       }))
-      .filter((row) => row.fg_size_id || row.sfg_sku_id || row.required_qty),
+      .filter((row) => row.sfg_sku_id || row.required_qty),
     labour_lines: labourRaw
       .map((row) => ({
         size_scope: normalizeScope(row.size_scope),
@@ -143,6 +186,19 @@ const parseBomFormPayload = (body = {}) => {
         new_value: parseJsonObject(row.new_value),
       }))
       .filter((row) => row.action_type),
+    sku_overrides: skuOverrideRaw
+      .map((row) => ({
+        sku_id: toNumberOrNull(row.sku_id),
+        target_rm_item_id: toNumberOrNull(row.target_rm_item_id),
+        dept_id: toNumberOrNull(row.dept_id),
+        is_excluded: Boolean(row.is_excluded),
+        override_qty: toNumberOrNull(row.override_qty),
+        override_uom_id: toNumberOrNull(row.override_uom_id),
+        replacement_rm_item_id: toNumberOrNull(row.replacement_rm_item_id),
+        rm_color_id: toNumberOrNull(row.rm_color_id),
+        notes: String(row.notes || "").trim() || null,
+      }))
+      .filter((row) => row.sku_id || row.target_rm_item_id || row.dept_id || row.is_excluded || row.override_qty || row.replacement_rm_item_id || row.rm_color_id),
   };
 };
 
@@ -153,7 +209,7 @@ const fetchLatestApprovedBomId = async (db, itemId) => {
 };
 
 const validateRequiredRates = async (db, rmLines, t) => {
-  const lineKeys = rmLines.map((line) => ({ itemId: line.rm_item_id, colorId: line.color_id || 0, sizeId: line.size_id || 0 }));
+  const lineKeys = rmLines.map((line) => ({ itemId: line.rm_item_id }));
   if (!lineKeys.length) return;
   const itemIds = [...new Set(lineKeys.map((entry) => entry.itemId).filter(Boolean))];
   if (!itemIds.length) return;
@@ -163,10 +219,10 @@ const validateRequiredRates = async (db, rmLines, t) => {
     db("erp.items").select("id", "name").whereIn("id", itemIds),
   ]);
 
-  const rateSet = new Set(rateRows.map((row) => `${row.rm_item_id}:${row.color_id || 0}:${row.size_id || 0}`));
+  const rateSet = new Set(rateRows.map((row) => `${row.rm_item_id}`));
   const itemMap = new Map(itemRows.map((row) => [toNumberOrNull(row.id), row.name]));
 
-  const missing = lineKeys.filter((entry) => !rateSet.has(`${entry.itemId}:${entry.colorId || 0}:${entry.sizeId || 0}`));
+  const missing = lineKeys.filter((entry) => !rateSet.has(`${entry.itemId}`));
   if (!missing.length) return;
 
   const names = missing.map((entry) => itemMap.get(entry.itemId) || String(entry.itemId));
@@ -181,6 +237,10 @@ const validateRequiredRates = async (db, rmLines, t) => {
 const validateAndNormalizeInput = async (db, input, t) => {
   const details = [];
   const header = input?.header || {};
+  const formatRowMessage = (index, message) =>
+    `${t("bom_error_row_prefix") || "Row"} ${index + 1}: ${message}`;
+  const formatRuleMessage = (index, message) =>
+    `${t("bom_error_rule_prefix") || "Rule"} ${index + 1}: ${message}`;
 
   const itemId = toNumberOrNull(header.item_id);
   const level = String(header.level || "").toUpperCase();
@@ -216,7 +276,7 @@ const validateAndNormalizeInput = async (db, input, t) => {
       uom_id: toNumberOrNull(line.uom_id),
       normal_loss_pct: toNumberOrNull(line.normal_loss_pct) ?? 0,
     }))
-    .filter((line) => line.rm_item_id || line.dept_id || line.qty);
+    .filter((line) => line.rm_item_id || line.color_id || line.size_id || line.dept_id);
 
   const rmItemIds = [...new Set(rmLines.map((line) => line.rm_item_id).filter(Boolean))];
   const rmItems = rmItemIds.length
@@ -224,20 +284,52 @@ const validateAndNormalizeInput = async (db, input, t) => {
     : [];
   const rmItemMap = new Map(rmItems.map((row) => [toNumberOrNull(row.id), row]));
   rmLines.forEach((line, idx) => {
+    const rowLabel = `${t("bom_error_row_prefix") || "Row"} ${idx + 1}`;
     if (!line.rm_item_id || !line.dept_id || !line.qty) {
-      details.push({ field: "rm_lines_json", message: `${t("bom_error_rm_line_invalid") || "Invalid raw material line"} #${idx + 1}` });
+      details.push({
+        field: "rm_lines_json",
+        message: `${rowLabel}: ${t("bom_error_rm_line_invalid") || "Complete this raw material row: select material, department, and quantity."}`,
+      });
       return;
     }
     const rmItem = rmItemMap.get(line.rm_item_id);
     if (!rmItem || rmItem.item_type !== "RM") {
-      details.push({ field: "rm_lines_json", message: `${t("bom_error_rm_item_invalid") || "Raw material line must reference an RM item"} #${idx + 1}` });
+      details.push({
+        field: "rm_lines_json",
+        message: `${rowLabel}: ${t("bom_error_rm_item_invalid") || "Selected material must be a Raw Material item."}`,
+      });
       return;
     }
     line.uom_id = rmItem.base_uom_id || null;
-    if (!line.uom_id) details.push({ field: "rm_lines_json", message: `${t("bom_error_rm_uom_required") || "Raw material UOM is required"} #${idx + 1}` });
-    if (line.normal_loss_pct < 0 || line.normal_loss_pct > 100) {
-      details.push({ field: "rm_lines_json", message: `${t("bom_error_loss_pct_invalid") || "Normal loss % must be between 0 and 100"} #${idx + 1}` });
+    if (!line.uom_id) {
+      details.push({
+        field: "rm_lines_json",
+        message: `${rowLabel}: ${t("bom_error_rm_uom_required") || "Material unit is missing. Please set base unit for this material."}`,
+      });
     }
+    if (line.normal_loss_pct < 0 || line.normal_loss_pct > 100) {
+      details.push({
+        field: "rm_lines_json",
+        message: `${rowLabel}: ${t("bom_error_loss_pct_invalid") || "Normal loss % must be between 0 and 100."}`,
+      });
+    }
+  });
+  const rmComboFirstIndex = new Map();
+  rmLines.forEach((line, idx) => {
+    if (!line.rm_item_id || !line.dept_id) return;
+    const comboKey = `${line.rm_item_id}:${line.dept_id}`;
+    if (rmComboFirstIndex.has(comboKey)) {
+      details.push({
+        field: "rm_lines_json",
+        message: formatRowMessage(
+          idx,
+          t("bom_error_rm_department_duplicate")
+          || "This material is already added for the selected consumption department. Use a different material or department.",
+        ),
+      });
+      return;
+    }
+    rmComboFirstIndex.set(comboKey, idx);
   });
 
   const sfgLines = toArray(input?.sfg_lines)
@@ -248,7 +340,7 @@ const validateAndNormalizeInput = async (db, input, t) => {
       uom_id: toNumberOrNull(line.uom_id),
       ref_approved_bom_id: null,
     }))
-    .filter((line) => line.fg_size_id || line.sfg_sku_id || line.required_qty);
+    .filter((line) => line.sfg_sku_id || line.required_qty);
 
   if (level === "SEMI_FINISHED" && sfgLines.length) {
     details.push({ field: "sfg_lines_json", message: t("bom_error_sfg_not_allowed_for_sfg_level") || "Semi-finished BOM cannot include SFG section lines." });
@@ -263,25 +355,45 @@ const validateAndNormalizeInput = async (db, input, t) => {
         .whereIn("s.id", skuIds)
     : [];
   const skuMap = new Map(skuRows.map((row) => [toNumberOrNull(row.id), row]));
+  const incompleteSfgRowIndexes = [];
   for (let idx = 0; idx < sfgLines.length; idx += 1) {
     const line = sfgLines[idx];
     if (!line.fg_size_id || !line.sfg_sku_id || !line.required_qty) {
-      details.push({ field: "sfg_lines_json", message: `${t("bom_error_sfg_line_invalid") || "Invalid semi-finished line"} #${idx + 1}` });
+      incompleteSfgRowIndexes.push(idx + 1);
       continue;
     }
     const sku = skuMap.get(line.sfg_sku_id);
     if (!sku || sku.item_type !== "SFG") {
-      details.push({ field: "sfg_lines_json", message: `${t("bom_error_sfg_item_invalid") || "Selected SKU must belong to a semi-finished item"} #${idx + 1}` });
+      details.push({
+        field: "sfg_lines_json",
+        message: formatRowMessage(idx, t("bom_error_sfg_item_invalid") || "Selected SKU must belong to a semi-finished item."),
+      });
       continue;
     }
     line.uom_id = sku.base_uom_id || null;
-    if (!line.uom_id) details.push({ field: "sfg_lines_json", message: `${t("bom_error_sfg_uom_required") || "SFG UOM is required"} #${idx + 1}` });
+    if (!line.uom_id) {
+      details.push({
+        field: "sfg_lines_json",
+        message: formatRowMessage(idx, t("bom_error_sfg_uom_required") || "Semi-finished SKU is missing a base unit."),
+      });
+    }
     const approvedBomId = await fetchLatestApprovedBomId(db, sku.item_id);
     if (!approvedBomId) {
-      details.push({ field: "sfg_lines_json", message: `${t("bom_error_sfg_requires_approved_bom") || "Selected SFG item has no approved BOM"} #${idx + 1}` });
+      details.push({
+        field: "sfg_lines_json",
+        message: formatRowMessage(idx, t("bom_error_sfg_requires_approved_bom") || "Selected SFG item has no approved BOM."),
+      });
       continue;
     }
     line.ref_approved_bom_id = approvedBomId;
+  }
+  if (incompleteSfgRowIndexes.length) {
+    const message = t("bom_error_sfg_section_incomplete")
+      || "Complete all mandatory fields in Semi-Finished section (Article SKU, Step/Upper SKU, and Step Quantity).";
+    details.push({
+      field: "sfg_lines_json",
+      message,
+    });
   }
 
   const labourLines = toArray(input?.labour_lines)
@@ -328,36 +440,71 @@ const validateAndNormalizeInput = async (db, input, t) => {
   const departmentMap = new Map(departmentRows.map((row) => [toNumberOrNull(row.id), row]));
 
   rmLines.forEach((line, idx) => {
+    const rowLabel = `${t("bom_error_row_prefix") || "Row"} ${idx + 1}`;
+    if (!line.dept_id) return;
     const dept = departmentMap.get(line.dept_id);
     if (!dept || !dept.is_active || !dept.is_production) {
-      details.push({ field: "rm_lines_json", message: `${t("bom_error_department_must_be_production") || "Department must be an active production department"} #${idx + 1}` });
+      details.push({
+        field: "rm_lines_json",
+        message: `${rowLabel}: ${t("bom_error_department_must_be_production") || "Selected department must be an active Production department."}`,
+      });
     }
   });
 
   labourLines.forEach((line, idx) => {
     if (!line.dept_id || !line.labour_id || line.rate_value === null || line.rate_value < 0) {
-      details.push({ field: "labour_lines_json", message: `${t("bom_error_labour_line_invalid") || "Invalid labour line"} #${idx + 1}` });
+      details.push({
+        field: "labour_lines_json",
+        message: formatRowMessage(idx, t("bom_error_labour_line_invalid") || "Complete this labour row: select labour, department, rate type, and valid rate."),
+      });
       return;
     }
     if (!LABOUR_RATE_TYPES.has(line.rate_type)) {
-      details.push({ field: "labour_lines_json", message: `${t("bom_error_labour_rate_type_invalid") || "Invalid labour rate type"} #${idx + 1}` });
+      details.push({
+        field: "labour_lines_json",
+        message: formatRowMessage(idx, t("bom_error_labour_rate_type_invalid") || "Select a valid labour rate type."),
+      });
       return;
     }
     const dept = departmentMap.get(line.dept_id);
     if (!dept || !dept.is_active || !dept.is_production) {
-      details.push({ field: "labour_lines_json", message: `${t("bom_error_department_must_be_production") || "Department must be an active production department"} #${idx + 1}` });
+      details.push({
+        field: "labour_lines_json",
+        message: formatRowMessage(idx, t("bom_error_department_must_be_production") || "Selected department must be an active Production department."),
+      });
     }
     const allowedDeptSet = labourAllowedDeptMap.get(line.labour_id);
     if (!allowedDeptSet || !allowedDeptSet.has(line.dept_id)) {
       details.push({
         field: "labour_lines_json",
-        message: `${t("bom_error_labour_department_invalid") || "Selected department is not allowed for this labour"} #${idx + 1}`,
+        message: formatRowMessage(idx, t("bom_error_labour_department_invalid") || "Selected department is not allowed for this labour."),
       });
     }
     if (line.size_scope === "SPECIFIC" && !line.size_id) {
-      details.push({ field: "labour_lines_json", message: `${t("bom_error_size_required_for_specific_scope") || "Size is required for SPECIFIC scope"} #${idx + 1}` });
+      details.push({
+        field: "labour_lines_json",
+        message: formatRowMessage(idx, t("bom_error_size_required_for_specific_scope") || "Size is required for specific scope."),
+      });
     }
     if (line.size_scope === "ALL") line.size_id = null;
+  });
+  const labourComboFirstIndex = new Map();
+  labourLines.forEach((line, idx) => {
+    if (!line.labour_id || !line.dept_id) return;
+    const sizeKey = line.size_scope === "SPECIFIC" ? String(line.size_id || "") : "ALL";
+    const comboKey = `${line.labour_id}:${line.dept_id}:${sizeKey}`;
+    if (labourComboFirstIndex.has(comboKey)) {
+      details.push({
+        field: "labour_lines_json",
+        message: formatRowMessage(
+          idx,
+          t("bom_error_labour_department_duplicate")
+          || "This labour is already added for the selected department. Choose a different labour or department.",
+        ),
+      });
+      return;
+    }
+    labourComboFirstIndex.set(comboKey, idx);
   });
 
   const variantRules = toArray(input?.variant_rules)
@@ -375,6 +522,59 @@ const validateAndNormalizeInput = async (db, input, t) => {
       __raw_new_value: line.new_value,
     }))
     .filter((line) => line.action_type);
+  const skuOverrides = toArray(input?.sku_overrides)
+    .map((line) => ({
+      sku_id: toNumberOrNull(line.sku_id),
+      target_rm_item_id: toNumberOrNull(line.target_rm_item_id),
+      dept_id: toNumberOrNull(line.dept_id),
+      is_excluded: Boolean(line.is_excluded),
+      override_qty: toPositiveNumber(line.override_qty),
+      override_uom_id: toNumberOrNull(line.override_uom_id),
+      replacement_rm_item_id: toNumberOrNull(line.replacement_rm_item_id),
+      rm_color_id: toNumberOrNull(line.rm_color_id),
+      notes: String(line.notes || "").trim() || null,
+    }))
+    .filter((line) => line.sku_id || line.target_rm_item_id || line.dept_id || line.is_excluded || line.override_qty || line.replacement_rm_item_id || line.rm_color_id);
+
+  const ruleReplacementRmIds = [...new Set(variantRules.map((rule) => toNumberOrNull(rule?.new_value?.replacement_rm_item_id)).filter(Boolean))];
+  const ruleTargetRmIds = [...new Set(variantRules.map((rule) => toNumberOrNull(rule?.target_rm_item_id)).filter(Boolean))];
+  const overrideTargetRmIds = [...new Set(skuOverrides.map((line) => line.target_rm_item_id).filter(Boolean))];
+  const overrideReplacementRmIds = [...new Set(skuOverrides.map((line) => line.replacement_rm_item_id).filter(Boolean))];
+  const allRuleRmIds = [...new Set([...rmItemIds, ...ruleTargetRmIds, ...ruleReplacementRmIds, ...overrideTargetRmIds, ...overrideReplacementRmIds])];
+  const allRuleRmRows = allRuleRmIds.length
+    ? await db("erp.items").select("id", "item_type", "base_uom_id", "name", "code").whereIn("id", allRuleRmIds)
+    : [];
+  const allRuleRmMap = new Map(allRuleRmRows.map((row) => [toNumberOrNull(row.id), row]));
+  const [bomItemVariantColorRows, rmColorRateRows] = await Promise.all([
+    itemId
+      ? db("erp.variants").select("color_id").where({ item_id: itemId, is_active: true })
+      : Promise.resolve([]),
+    rmItemIds.length
+      ? db("erp.rm_purchase_rates")
+          .select("rm_item_id", "color_id")
+          .whereIn("rm_item_id", rmItemIds)
+          .andWhere({ is_active: true })
+      : Promise.resolve([]),
+  ]);
+  const itemSkuColorIds = new Set((bomItemVariantColorRows || []).map((row) => toNumberOrNull(row?.color_id)).filter(Boolean));
+  const hasItemSkuColorVariants = itemSkuColorIds.size > 0;
+  const rmColorSetByItem = new Map();
+  (rmColorRateRows || []).forEach((row) => {
+    const rmItemId = toNumberOrNull(row?.rm_item_id);
+    const colorId = toNumberOrNull(row?.color_id);
+    if (!rmItemId || !colorId) return;
+    if (!rmColorSetByItem.has(rmItemId)) rmColorSetByItem.set(rmItemId, new Set());
+    rmColorSetByItem.get(rmItemId).add(colorId);
+  });
+  const multiColorRmIds = new Set(
+    Array.from(rmColorSetByItem.entries())
+      .filter(([, colorSet]) => colorSet.size > 1)
+      .map(([rmItemId]) => rmItemId),
+  );
+  const getRmDisplayName = (rmItemId) => {
+    const row = allRuleRmMap.get(toNumberOrNull(rmItemId));
+    return row?.name || row?.code || String(rmItemId || "");
+  };
 
   const hasRuleSizeOrColorScope = variantRules.some((rule) => (rule.size_scope === "SPECIFIC" && rule.size_id) || (rule.color_scope === "SPECIFIC" && rule.color_id));
   let allowedRuleSizeIds = new Set();
@@ -400,60 +600,311 @@ const validateAndNormalizeInput = async (db, input, t) => {
       if (colorId) allowedRuleColorIds.add(colorId);
     });
   }
+  const hasRuleRmColor = variantRules.some((rule) => toNumberOrNull(rule?.new_value?.rm_color_id));
+  const hasOverrideRmColor = skuOverrides.some((line) => toNumberOrNull(line?.rm_color_id));
+  const activeColorSet = new Set();
+  if (hasRuleRmColor || hasOverrideRmColor) {
+    const colorRows = await db("erp.colors").select("id").where({ is_active: true });
+    (colorRows || []).forEach((row) => {
+      const colorId = toNumberOrNull(row?.id);
+      if (colorId) activeColorSet.add(colorId);
+    });
+  }
 
   variantRules.forEach((rule, idx) => {
     if (!RULE_ACTION_TYPES.has(rule.action_type)) {
-      details.push({ field: "variant_rules_json", message: `${t("bom_error_variant_action_invalid") || "Invalid variant rule action"} #${idx + 1}` });
+      details.push({
+        field: "variant_rules_json",
+        message: formatRuleMessage(idx, t("bom_error_variant_action_invalid") || "Invalid variant rule action."),
+      });
       return;
     }
-    if (rule.action_type !== "ADJUST_QTY") {
-      details.push({ field: "variant_rules_json", message: `${t("bom_error_variant_action_invalid") || "Invalid variant rule action"} #${idx + 1}` });
-    }
-    if (rule.packing_scope !== "ALL" || rule.color_scope !== "ALL") {
-      details.push({ field: "variant_rules_json", message: `${t("error_invalid_value") || "Invalid value"} #${idx + 1}` });
+    if (!["ADJUST_QTY", "REPLACE_RM"].includes(rule.action_type)) {
+      details.push({
+        field: "variant_rules_json",
+        message: formatRuleMessage(idx, t("bom_error_variant_action_invalid") || "Invalid variant rule action."),
+      });
+      return;
     }
     if (rule.size_scope === "SPECIFIC" && !rule.size_id) {
-      details.push({ field: "variant_rules_json", message: `${t("bom_error_size_required_for_specific_scope") || "Size is required for SPECIFIC scope"} #${idx + 1}` });
+      details.push({
+        field: "variant_rules_json",
+        message: formatRuleMessage(idx, t("bom_error_size_required_for_specific_scope") || "Size is required for specific scope."),
+      });
     }
     if (rule.packing_scope === "SPECIFIC" && !rule.packing_type_id) {
-      details.push({ field: "variant_rules_json", message: `${t("bom_error_packing_required_for_specific_scope") || "Packing type is required for SPECIFIC scope"} #${idx + 1}` });
+      details.push({
+        field: "variant_rules_json",
+        message: formatRuleMessage(idx, t("bom_error_packing_required_for_specific_scope") || "Packing type is required for specific scope."),
+      });
     }
     if (rule.color_scope === "SPECIFIC" && !rule.color_id) {
-      details.push({ field: "variant_rules_json", message: `${t("bom_error_color_required_for_specific_scope") || "Color is required for SPECIFIC scope"} #${idx + 1}` });
+      details.push({
+        field: "variant_rules_json",
+        message: formatRuleMessage(idx, t("bom_error_color_required_for_specific_scope") || "Color is required for specific scope."),
+      });
     }
     if (rule.size_scope === "SPECIFIC" && rule.size_id && !allowedRuleSizeIds.has(rule.size_id)) {
-      details.push({ field: "variant_rules_json", message: `${t("error_invalid_value") || "Invalid value"} #${idx + 1} (size)` });
+      details.push({
+        field: "variant_rules_json",
+        message: formatRuleMessage(idx, t("bom_error_variant_invalid_size") || "Selected size is invalid for this BOM item."),
+      });
     }
     if (rule.color_scope === "SPECIFIC" && rule.color_id && !allowedRuleColorIds.has(rule.color_id)) {
-      details.push({ field: "variant_rules_json", message: `${t("error_invalid_value") || "Invalid value"} #${idx + 1} (color)` });
+      details.push({
+        field: "variant_rules_json",
+        message: formatRuleMessage(idx, t("bom_error_variant_invalid_color") || "Selected color is invalid for this BOM item."),
+      });
+    }
+    if (!hasItemSkuColorVariants && rule.color_scope === "SPECIFIC") {
+      details.push({
+        field: "variant_rules_json",
+        message: formatRuleMessage(
+          idx,
+          t("bom_error_color_scope_not_allowed_no_sku_colors")
+            || "This article has no SKU color variants. Use 'All SKUs' for color scope.",
+        ),
+      });
     }
     if (rule.material_scope === "SPECIFIC" && !rule.target_rm_item_id) {
-      details.push({ field: "variant_rules_json", message: `${t("bom_error_material_required_for_specific_scope") || "Target material is required for SPECIFIC scope"} #${idx + 1}` });
+      details.push({
+        field: "variant_rules_json",
+        message: formatRuleMessage(idx, t("bom_error_material_required_for_specific_scope") || "Target material is required for specific scope."),
+      });
     }
     if (rule.size_scope === "ALL") rule.size_id = null;
     if (rule.packing_scope === "ALL") rule.packing_type_id = null;
     if (rule.color_scope === "ALL") rule.color_id = null;
     if (rule.material_scope === "ALL") rule.target_rm_item_id = null;
+    if (rule.material_scope === "SPECIFIC" && rule.target_rm_item_id) {
+      const targetRm = allRuleRmMap.get(rule.target_rm_item_id);
+      if (!targetRm || targetRm.item_type !== "RM") {
+        details.push({ field: "variant_rules_json", message: `${t("bom_error_rm_item_invalid") || "Raw material line must reference an RM item"} #${idx + 1}` });
+      }
+    }
+
     const rawRuleValue = typeof rule.__raw_new_value === "string" ? rule.__raw_new_value.trim() : "";
     if (rawRuleValue && rawRuleValue !== "{}" && Object.keys(rule.new_value || {}).length === 0) {
-      details.push({ field: "variant_rules_json", message: `${t("bom_error_variant_value_invalid_json") || "Rule value must be a valid JSON object"} #${idx + 1}` });
+      details.push({
+        field: "variant_rules_json",
+        message: formatRuleMessage(idx, t("bom_error_variant_value_invalid_json") || "Rule value must be a valid JSON object."),
+      });
     }
-    const qty = toPositiveNumber(rule.new_value?.qty);
-    const uomId = toNumberOrNull(rule.new_value?.uom_id);
-    if (!qty) {
-      details.push({ field: "variant_rules_json", message: `${t("error_invalid_value") || "Invalid value"} #${idx + 1} (qty)` });
-    } else {
-      rule.new_value.qty = qty;
-    }
-    if (!uomId) {
-      details.push({ field: "variant_rules_json", message: `${t("error_invalid_value") || "Invalid value"} #${idx + 1} (uom)` });
-    } else {
-      rule.new_value.uom_id = uomId;
+    if (rule.action_type === "ADJUST_QTY") {
+      if (rule.size_scope !== "SPECIFIC") {
+        details.push({
+          field: "variant_rules_json",
+          message: formatRuleMessage(idx, t("bom_error_size_required_for_specific_scope") || "Size is required for specific scope."),
+        });
+      }
+      const qty = toPositiveNumber(rule.new_value?.qty);
+      const uomId = toNumberOrNull(rule.new_value?.uom_id);
+      if (!qty) {
+        details.push({
+          field: "variant_rules_json",
+          message: formatRuleMessage(idx, t("bom_error_variant_invalid_qty") || "Adjusted quantity must be greater than zero."),
+        });
+      } else {
+        rule.new_value.qty = qty;
+      }
+      if (!uomId) {
+        details.push({
+          field: "variant_rules_json",
+          message: formatRuleMessage(idx, t("bom_error_variant_invalid_uom") || "Select a unit for adjusted quantity."),
+        });
+      } else {
+        rule.new_value.uom_id = uomId;
+      }
+    } else if (rule.action_type === "REPLACE_RM") {
+      const replacementRmId = toNumberOrNull(rule.new_value?.replacement_rm_item_id);
+      const rmColorId = toNumberOrNull(rule.new_value?.rm_color_id);
+      if (!replacementRmId && !rmColorId) {
+        details.push({
+          field: "variant_rules_json",
+          message: formatRuleMessage(idx, t("bom_error_variant_replace_requires_target") || "Provide replacement material or raw material color."),
+        });
+      }
+      if (replacementRmId) {
+        const replacementRm = allRuleRmMap.get(replacementRmId);
+        if (!replacementRm || replacementRm.item_type !== "RM") {
+          details.push({
+            field: "variant_rules_json",
+            message: formatRuleMessage(idx, t("bom_error_rm_item_invalid") || "Raw material line must reference an RM item."),
+          });
+        } else {
+          rule.new_value.replacement_rm_item_id = replacementRmId;
+          rule.new_value.uom_id = toNumberOrNull(replacementRm.base_uom_id);
+        }
+      }
+      if (rmColorId) {
+        if (!activeColorSet.has(rmColorId)) {
+          details.push({
+            field: "variant_rules_json",
+            message: formatRuleMessage(idx, t("bom_error_variant_invalid_color") || "Selected color is invalid for this BOM item."),
+          });
+        } else {
+          rule.new_value.rm_color_id = rmColorId;
+        }
+      }
     }
     delete rule.__raw_new_value;
   });
 
-  if (details.length) throw makeValidationError(t("error_required_fields") || "Please fix validation errors.", details);
+  if (!hasItemSkuColorVariants && multiColorRmIds.size > 0) {
+    const mappedRmIds = new Set(
+      variantRules
+        .filter((rule) =>
+          String(rule?.action_type || "").toUpperCase() === "REPLACE_RM"
+          && toNumberOrNull(rule?.target_rm_item_id)
+          && toNumberOrNull(rule?.new_value?.rm_color_id),
+        )
+        .map((rule) => toNumberOrNull(rule.target_rm_item_id))
+        .filter(Boolean),
+    );
+    const missingRmIds = Array.from(multiColorRmIds).filter((rmItemId) => !mappedRmIds.has(rmItemId));
+    if (missingRmIds.length) {
+      details.push({
+        field: "variant_rules_json",
+        message:
+          t("bom_error_color_rules_required_no_sku_colors")
+          || "This article has no SKU color variants. Add Color Rules for each raw material that has multiple color rates.",
+      });
+      missingRmIds.forEach((rmItemId) => {
+        details.push({
+          field: "variant_rules_json",
+          message: `${t("bom_error_color_rule_missing_for_material_prefix") || "Color rule missing for material"}: ${getRmDisplayName(rmItemId)}.`,
+        });
+      });
+    }
+  }
+
+  const hasSkuOverrideTable = await hasBomSkuOverrideTable(db);
+  const hasSkuOverrideDeptColumn = hasSkuOverrideTable
+    ? await hasBomSkuOverrideDeptColumn(db)
+    : false;
+  if (skuOverrides.length && (!hasSkuOverrideTable || !hasSkuOverrideDeptColumn)) {
+    details.push({
+      field: "sku_overrides_json",
+      message:
+        t("bom_error_sku_override_table_missing")
+        || "SKU override storage is not available. Please run latest migration.",
+    });
+  }
+  if (skuOverrides.length && hasSkuOverrideTable && hasSkuOverrideDeptColumn) {
+    const rmDeptByItemMap = new Map();
+    rmLines.forEach((line) => {
+      const rmItemId = toNumberOrNull(line.rm_item_id);
+      const deptId = toNumberOrNull(line.dept_id);
+      if (!rmItemId || !deptId) return;
+      if (!rmDeptByItemMap.has(rmItemId)) rmDeptByItemMap.set(rmItemId, new Set());
+      rmDeptByItemMap.get(rmItemId).add(deptId);
+    });
+    const baseRmDeptSet = new Set(
+      rmLines
+        .map((line) => {
+          const rmItemId = toNumberOrNull(line.rm_item_id);
+          const deptId = toNumberOrNull(line.dept_id);
+          if (!rmItemId || !deptId) return "";
+          return `${rmItemId}:${deptId}`;
+        })
+        .filter(Boolean),
+    );
+    const overrideUniqueSet = new Set();
+    const overrideSkuIds = [...new Set(skuOverrides.map((line) => line.sku_id).filter(Boolean))];
+    const skuRows = overrideSkuIds.length
+      ? await db("erp.skus as s")
+          .select("s.id", "v.item_id")
+          .leftJoin("erp.variants as v", "s.variant_id", "v.id")
+          .whereIn("s.id", overrideSkuIds)
+      : [];
+    const skuItemMap = new Map(skuRows.map((row) => [toNumberOrNull(row.id), toNumberOrNull(row.item_id)]));
+    skuOverrides.forEach((line, idx) => {
+      if (!line.dept_id && line.target_rm_item_id) {
+        const candidateDeptSet = rmDeptByItemMap.get(line.target_rm_item_id) || new Set();
+        if (candidateDeptSet.size === 1) {
+          line.dept_id = [...candidateDeptSet][0];
+        }
+      }
+      if (!line.sku_id || !line.target_rm_item_id || !line.dept_id) {
+        details.push({
+          field: "sku_overrides_json",
+          message: formatRowMessage(
+            idx,
+            t("bom_error_sku_override_required")
+            || "Select SKU, target raw material, and consumption department.",
+          ),
+        });
+        return;
+      }
+      if (!baseRmDeptSet.has(`${line.target_rm_item_id}:${line.dept_id}`)) {
+        details.push({
+          field: "sku_overrides_json",
+          message: formatRowMessage(
+            idx,
+            t("bom_error_sku_override_target_missing")
+            || "Target raw material + department must match a BOM material line.",
+          ),
+        });
+      }
+      const uniqueKey = `${line.sku_id}:${line.target_rm_item_id}:${line.dept_id}`;
+      if (overrideUniqueSet.has(uniqueKey)) {
+        details.push({
+          field: "sku_overrides_json",
+          message: formatRowMessage(
+            idx,
+            t("bom_error_sku_override_duplicate")
+            || "Duplicate SKU override for the same material and department.",
+          ),
+        });
+      } else {
+        overrideUniqueSet.add(uniqueKey);
+      }
+      const skuItemId = skuItemMap.get(line.sku_id);
+      if (!skuItemId || Number(skuItemId) !== Number(itemId)) {
+        details.push({
+          field: "sku_overrides_json",
+          message: formatRowMessage(idx, t("bom_error_sku_override_item_mismatch") || "Selected SKU does not belong to this BOM article."),
+        });
+      }
+      const targetRm = allRuleRmMap.get(line.target_rm_item_id);
+      if (!targetRm || targetRm.item_type !== "RM") {
+        details.push({
+          field: "sku_overrides_json",
+          message: formatRowMessage(idx, t("bom_error_rm_item_invalid") || "Raw material line must reference an RM item."),
+        });
+      }
+      if (line.replacement_rm_item_id) {
+        const replacementRm = allRuleRmMap.get(line.replacement_rm_item_id);
+        if (!replacementRm || replacementRm.item_type !== "RM") {
+          details.push({
+            field: "sku_overrides_json",
+            message: formatRowMessage(idx, t("bom_error_rm_item_invalid") || "Raw material line must reference an RM item."),
+          });
+        } else {
+          line.override_uom_id = toNumberOrNull(replacementRm.base_uom_id);
+        }
+      } else if (targetRm?.base_uom_id) {
+        line.override_uom_id = toNumberOrNull(targetRm.base_uom_id);
+      }
+      if (!line.is_excluded && !line.override_qty && !line.replacement_rm_item_id && !line.rm_color_id) {
+        details.push({
+          field: "sku_overrides_json",
+          message: formatRowMessage(idx, t("bom_error_sku_override_no_change") || "Add at least one change: exclude, quantity, replacement material, or color."),
+        });
+      }
+      if (line.rm_color_id && !activeColorSet.has(line.rm_color_id)) {
+        details.push({
+          field: "sku_overrides_json",
+          message: formatRowMessage(idx, t("bom_error_variant_invalid_color") || "Selected color is invalid for this BOM item."),
+        });
+      }
+      if (line.is_excluded) {
+        line.override_qty = null;
+      }
+    });
+  }
+
+  if (details.length) throw makeValidationError(t("bom_error_fix_fields") || "Please review and correct the BOM details.", details);
 
   await validateRequiredRates(db, rmLines, t);
 
@@ -468,6 +919,7 @@ const validateAndNormalizeInput = async (db, input, t) => {
     sfg_lines: sfgLines,
     labour_lines: labourLines,
     variant_rules: variantRules,
+    sku_overrides: skuOverrides,
   };
 };
 
@@ -479,6 +931,17 @@ const ensureDraftUniqueness = async (db, { itemId, level, excludeId, t }) => {
     throw makeValidationError(t("bom_error_draft_exists") || "A draft already exists for this item and level.", [
       { field: "item_id", message: t("bom_error_draft_exists") || "A draft already exists for this item and level." },
     ]);
+  }
+};
+
+const ensureNoExistingBomForItem = async (db, { itemId, excludeId, t }) => {
+  let query = db("erp.bom_header").select("id").where({ item_id: itemId });
+  if (excludeId) query = query.andWhereNot({ id: excludeId });
+  const existing = await query.first();
+  if (existing) {
+    const message = t("bom_error_existing_bom")
+      || "A BOM already exists for this article. Use BOM Register/Revise instead of Add BOM.";
+    throw makeValidationError(message, [{ field: "item_id", message }]);
   }
 };
 
@@ -554,6 +1017,23 @@ const buildApprovalSnapshot = (snapshot = {}) => {
         `${b.size_scope || "ALL"}:${b.size_id || 0}:${b.packing_scope || "ALL"}:${b.packing_type_id || 0}:${b.color_scope || "ALL"}:${b.color_id || 0}:${b.action_type || ""}:${b.material_scope || "ALL"}:${b.target_rm_item_id || 0}`,
       ),
     );
+  const skuOverrides = toArray(snapshot.sku_overrides)
+    .map((line) => ({
+      sku_id: toNumberOrNull(line.sku_id),
+      target_rm_item_id: toNumberOrNull(line.target_rm_item_id),
+      dept_id: toNumberOrNull(line.dept_id),
+      is_excluded: Boolean(line.is_excluded),
+      override_qty: toPositiveNumber(line.override_qty),
+      override_uom_id: toNumberOrNull(line.override_uom_id),
+      replacement_rm_item_id: toNumberOrNull(line.replacement_rm_item_id),
+      rm_color_id: toNumberOrNull(line.rm_color_id),
+      notes: String(line.notes || "").trim() || null,
+    }))
+    .sort((a, b) =>
+      `${a.sku_id || 0}:${a.target_rm_item_id || 0}:${a.dept_id || 0}`.localeCompare(
+        `${b.sku_id || 0}:${b.target_rm_item_id || 0}:${b.dept_id || 0}`,
+      ),
+    );
 
   return {
     header,
@@ -561,6 +1041,7 @@ const buildApprovalSnapshot = (snapshot = {}) => {
     sfg_lines: sfgLines,
     labour_lines: labourLines,
     variant_rules: variantRules,
+    sku_overrides: skuOverrides,
   };
 };
 
@@ -571,6 +1052,13 @@ const replaceBomLines = async (trx, bomId, lines) => {
   await trx("erp.bom_sfg_line").where({ bom_id: bomId }).del();
   await trx("erp.bom_labour_line").where({ bom_id: bomId }).del();
   await trx("erp.bom_variant_rule").where({ bom_id: bomId }).del();
+  const hasSkuOverrideTable = await hasBomSkuOverrideTable(trx);
+  const hasSkuOverrideDeptColumn = hasSkuOverrideTable
+    ? await hasBomSkuOverrideDeptColumn(trx)
+    : false;
+  if (hasSkuOverrideTable) {
+    await trx("erp.bom_sku_override_line").where({ bom_id: bomId }).del();
+  }
 
   if (lines.rm_lines?.length) {
     await trx("erp.bom_rm_line").insert(
@@ -631,16 +1119,56 @@ const replaceBomLines = async (trx, bomId, lines) => {
       })),
     );
   }
+  if (hasSkuOverrideTable && lines.sku_overrides?.length) {
+    await trx("erp.bom_sku_override_line").insert(
+      lines.sku_overrides.map((line) => ({
+        bom_id: bomId,
+        sku_id: line.sku_id,
+        target_rm_item_id: line.target_rm_item_id,
+        ...(hasSkuOverrideDeptColumn ? { dept_id: line.dept_id || null } : {}),
+        is_excluded: Boolean(line.is_excluded),
+        override_qty: line.override_qty || null,
+        override_uom_id: line.override_uom_id || null,
+        replacement_rm_item_id: line.replacement_rm_item_id || null,
+        rm_color_id: line.rm_color_id || null,
+        notes: line.notes || null,
+      })),
+    );
+  }
 };
 
 const getBomSnapshot = async (db, bomId) => {
-  const header = await db("erp.bom_header").select("id", "bom_no", "item_id", "level", "output_qty", "output_uom_id", "status", "version_no", "created_by", "approved_by").where({ id: bomId }).first();
+  const lifecycleSupported = await hasBomLifecycleColumn(db);
+  const headerFields = ["id", "bom_no", "item_id", "level", "output_qty", "output_uom_id", "status", "version_no", "created_by", "approved_by"];
+  if (lifecycleSupported) headerFields.push("is_active");
+  const header = await db("erp.bom_header").select(headerFields).where({ id: bomId }).first();
+  if (header && !lifecycleSupported) header.is_active = true;
   if (!header) return null;
-  const [rmLines, sfgLines, labourLines, variantRules] = await Promise.all([
+  const hasSkuOverrideTable = await hasBomSkuOverrideTable(db);
+  const hasSkuOverrideDeptColumn = hasSkuOverrideTable
+    ? await hasBomSkuOverrideDeptColumn(db)
+    : false;
+  const [rmLines, sfgLines, labourLines, variantRules, skuOverrides] = await Promise.all([
     db("erp.bom_rm_line").select("rm_item_id", "color_id", "size_id", "dept_id", "qty", "uom_id", "normal_loss_pct").where({ bom_id: bomId }).orderBy("id", "asc"),
     db("erp.bom_sfg_line").select("fg_size_id", "sfg_sku_id", "required_qty", "uom_id", "ref_approved_bom_id").where({ bom_id: bomId }).orderBy("id", "asc"),
     db("erp.bom_labour_line").select("size_scope", "size_id", "dept_id", "labour_id", "rate_type", "rate_value").where({ bom_id: bomId }).orderBy("id", "asc"),
     db("erp.bom_variant_rule").select("size_scope", "size_id", "packing_scope", "packing_type_id", "color_scope", "color_id", "action_type", "material_scope", "target_rm_item_id", "new_value").where({ bom_id: bomId }).orderBy("id", "asc"),
+    hasSkuOverrideTable
+      ? db("erp.bom_sku_override_line")
+          .select(
+            "sku_id",
+            "target_rm_item_id",
+            ...(hasSkuOverrideDeptColumn ? ["dept_id"] : []),
+            "is_excluded",
+            "override_qty",
+            "override_uom_id",
+            "replacement_rm_item_id",
+            "rm_color_id",
+            "notes",
+          )
+          .where({ bom_id: bomId })
+          .orderBy("id", "asc")
+      : Promise.resolve([]),
   ]);
   return {
     header,
@@ -648,6 +1176,7 @@ const getBomSnapshot = async (db, bomId) => {
     sfg_lines: sfgLines,
     labour_lines: labourLines,
     variant_rules: variantRules,
+    sku_overrides: skuOverrides,
   };
 };
 
@@ -687,8 +1216,161 @@ const setBomPendingTx = async (trx, { bomId, t }) => {
 
 const setBomPending = async (knex, params) => knex.transaction((trx) => setBomPendingTx(trx, params));
 
+const toggleBomLifecycleTx = async (trx, { bomId, isActive, t }) => {
+  const lifecycleSupported = await hasBomLifecycleColumn(trx);
+  if (!lifecycleSupported) {
+    throw makeValidationError(
+      t("bom_error_lifecycle_not_available") || "BOM lifecycle is not available in this environment.",
+    );
+  }
+  const id = Number(bomId);
+  const nextActive = Boolean(isActive);
+  const row = await trx("erp.bom_header as bh")
+    .select("bh.id", "bh.is_active", "bh.item_id", "i.is_active as item_is_active")
+    .leftJoin("erp.items as i", "bh.item_id", "i.id")
+    .where("bh.id", id)
+    .first();
+  if (!row) throw makeValidationError(t("error_not_found") || "Record not found.");
+  if (nextActive && !row.item_is_active) {
+    throw makeValidationError(
+      t("bom_error_item_inactive_cannot_activate") || "Cannot activate BOM while the article is inactive.",
+    );
+  }
+  await trx("erp.bom_header")
+    .where({ id })
+    .update({ is_active: nextActive });
+  return { id, is_active: nextActive };
+};
+
+const toggleBomLifecycle = async (knex, params) => knex.transaction((trx) => toggleBomLifecycleTx(trx, params));
+
+const validateDraftReadyForApproval = async (db, { bomId, t, locale = "en" } = {}) => {
+  const id = Number(bomId);
+  if (!id) {
+    throw makeValidationError((t && t("error_not_found")) || "BOM not found.");
+  }
+  const form = await getBomForForm(db, id);
+  if (!form || !form.header) {
+    throw makeValidationError((t && t("error_not_found")) || "BOM not found.");
+  }
+  if (String(form.header.status || "").toUpperCase() !== "DRAFT") {
+    throw makeValidationError((t && t("bom_error_approve_requires_draft")) || "Only draft BOM can be approved.");
+  }
+
+  const details = [];
+  const itemId = toNumberOrNull(form.header.item_id);
+  if (!itemId) {
+    throw makeValidationError((t && t("bom_error_item_required")) || "Please select an item.");
+  }
+
+  const [itemRow, options] = await Promise.all([
+    db("erp.items").select("id", "item_type", "uses_sfg").where({ id: itemId }).first(),
+    loadFormOptions(db, locale, { includeItemId: itemId }),
+  ]);
+
+  const skuRows = Array.isArray(options?.itemSkuMap?.[String(itemId)])
+    ? options.itemSkuMap[String(itemId)].filter((sku) => toNumberOrNull(sku?.size_id))
+    : [];
+  const rmLines = toArray(form.rm_lines)
+    .map((line) => ({
+      rm_item_id: toNumberOrNull(line?.rm_item_id),
+      dept_id: toNumberOrNull(line?.dept_id),
+    }))
+    .filter((line) => line.rm_item_id && line.dept_id);
+  const skuOverrideRows = toArray(form.sku_overrides)
+    .map((row) => ({
+      sku_id: toNumberOrNull(row?.sku_id),
+      target_rm_item_id: toNumberOrNull(row?.target_rm_item_id),
+      dept_id: toNumberOrNull(row?.dept_id),
+      override_qty: toPositiveNumber(row?.override_qty),
+      rm_color_id: toNumberOrNull(row?.rm_color_id),
+    }))
+    .filter((row) => row.sku_id && row.target_rm_item_id && row.dept_id);
+  const skuOverrideMap = new Map(
+    skuOverrideRows.map((row) => [`${row.sku_id}:${row.target_rm_item_id}:${row.dept_id}`, row]),
+  );
+
+  const getSkuLabel = (sku) => {
+    const parts = [];
+    if (sku?.size_name) parts.push(sku.size_name);
+    if (sku?.color_name) parts.push(sku.color_name);
+    if (sku?.packing_name) parts.push(sku.packing_name);
+    if (sku?.grade_name) parts.push(sku.grade_name);
+    return parts.length ? `(${parts.join(" ")})` : `SKU ${sku?.id || ""}`.trim();
+  };
+
+  if (String(form.header.level || "").toUpperCase() === "FINISHED" && String(itemRow?.item_type || "").toUpperCase() === "FG" && Boolean(itemRow?.uses_sfg)) {
+    const validSfgBySize = new Set(
+      toArray(form.sfg_lines)
+        .map((line) => ({
+          fg_size_id: toNumberOrNull(line?.fg_size_id),
+          sfg_sku_id: toNumberOrNull(line?.sfg_sku_id),
+          required_qty: toPositiveNumber(line?.required_qty),
+        }))
+        .filter((line) => line.fg_size_id && line.sfg_sku_id && line.required_qty)
+        .map((line) => String(line.fg_size_id)),
+    );
+    const missingSfgSkus = skuRows.filter((sku) => !validSfgBySize.has(String(sku.size_id)));
+    if (missingSfgSkus.length) {
+      const sample = missingSfgSkus.slice(0, 12).map((sku) => getSkuLabel(sku)).join(", ");
+      const suffix = missingSfgSkus.length > 12 ? ` (+${missingSfgSkus.length - 12})` : "";
+      details.push({
+        field: "sfg_lines_json",
+        message:
+          "Complete all Semi-Finished rows for every Article SKU before sending for approval."
+          + (sample ? ` ${sample}${suffix}` : ""),
+      });
+    }
+  }
+
+  if (skuRows.length && rmLines.length) {
+    const rmNameById = new Map((options?.rmItems || []).map((row) => [toNumberOrNull(row.id), row?.name || row?.code || row?.id]));
+    const deptNameById = new Map((options?.departments || []).map((row) => [toNumberOrNull(row.id), row?.name || row?.id]));
+    const rmItemColorMap = options?.rmItemColorMap || {};
+    const missing = [];
+
+    skuRows.forEach((sku) => {
+      rmLines.forEach((rmLine) => {
+        const key = `${toNumberOrNull(sku.id)}:${rmLine.rm_item_id}:${rmLine.dept_id}`;
+        const override = skuOverrideMap.get(key);
+        const requiresColor = Array.isArray(rmItemColorMap[String(rmLine.rm_item_id)]) && rmItemColorMap[String(rmLine.rm_item_id)].length > 1;
+        const hasQty = Boolean(override?.override_qty);
+        const hasColor = !requiresColor || Boolean(override?.rm_color_id);
+        if (hasQty && hasColor) return;
+        missing.push({
+          sku,
+          rmName: rmNameById.get(rmLine.rm_item_id) || `RM ${rmLine.rm_item_id}`,
+          deptName: deptNameById.get(rmLine.dept_id) || `Dept ${rmLine.dept_id}`,
+          missingQty: !hasQty,
+          missingColor: !hasColor,
+        });
+      });
+    });
+
+    if (missing.length) {
+      const sample = missing.slice(0, 12).map((row) => {
+        const needs = [row.missingQty ? "qty" : "", row.missingColor ? "color" : ""].filter(Boolean).join("+");
+        return `${getSkuLabel(row.sku)} - ${row.rmName} - ${row.deptName}${needs ? ` (${needs})` : ""}`;
+      }).join("; ");
+      const suffix = missing.length > 12 ? ` (+${missing.length - 12})` : "";
+      details.push({
+        field: "sku_overrides_json",
+        message:
+          "Complete all SKU Rules rows (quantity and required color variant) before sending for approval."
+          + (sample ? ` ${sample}${suffix}` : ""),
+      });
+    }
+  }
+
+  if (details.length) {
+    throw makeValidationError("Please complete all mandatory BOM rows before sending for approval.", details);
+  }
+  return true;
+};
+
 const saveBomDraftTx = async (trx, { input, bomId, userId, requestId, t }) => {
   const normalized = await validateAndNormalizeInput(trx, input, t);
+  const lifecycleSupported = await hasBomLifecycleColumn(trx);
   const actorId = userId || null;
   const existingId = bomId ? Number(bomId) : null;
   const before = existingId ? await getBomSnapshot(trx, existingId) : null;
@@ -705,6 +1387,12 @@ const saveBomDraftTx = async (trx, { input, bomId, userId, requestId, t }) => {
   let bomNo = null;
 
   if (!existingId) {
+    await ensureNoExistingBomForItem(trx, {
+      itemId: normalized.header.item_id,
+      excludeId: null,
+      t,
+    });
+
     const maxVersionRow = await trx("erp.bom_header")
       .where({
         item_id: normalized.header.item_id,
@@ -714,17 +1402,19 @@ const saveBomDraftTx = async (trx, { input, bomId, userId, requestId, t }) => {
       .first();
     versionNo = Number(maxVersionRow?.max || 0) + 1;
     bomNo = await nextBomNo(trx);
+    const insertPayload = {
+      bom_no: bomNo,
+      item_id: normalized.header.item_id,
+      level: normalized.header.level,
+      output_qty: normalized.header.output_qty,
+      output_uom_id: normalized.header.output_uom_id,
+      status: "DRAFT",
+      version_no: versionNo,
+      created_by: actorId,
+    };
+    if (lifecycleSupported) insertPayload.is_active = true;
     const inserted = await trx("erp.bom_header")
-      .insert({
-        bom_no: bomNo,
-        item_id: normalized.header.item_id,
-        level: normalized.header.level,
-        output_qty: normalized.header.output_qty,
-        output_uom_id: normalized.header.output_uom_id,
-        status: "DRAFT",
-        version_no: versionNo,
-        created_by: actorId,
-      })
+      .insert(insertPayload)
       .returning(["id", "version_no", "bom_no"]);
     const row = inserted?.[0] || inserted;
     targetId = row?.id || row;
@@ -786,6 +1476,29 @@ const saveBomDraft = async (knex, params) => {
   }
 };
 
+const saveAndApproveFromInput = async (knex, { input, bomId, userId, requestId, t, locale = "en" }) =>
+  knex.transaction(async (trx) => {
+    const saved = await saveBomDraftTx(trx, {
+      input,
+      bomId: bomId || null,
+      userId: userId || null,
+      requestId: requestId || null,
+      t,
+    });
+    await validateDraftReadyForApproval(trx, {
+      bomId: saved.id,
+      t,
+      locale,
+    });
+    await approveBomDirectTx(trx, {
+      bomId: saved.id,
+      userId: userId || null,
+      requestId: requestId || null,
+      t,
+    });
+    return saved;
+  });
+
 const approveBomDirectTx = async (trx, { bomId, userId, requestId, t }) => {
   const id = Number(bomId);
   const row = await trx("erp.bom_header").select("id", "status", "version_no").where({ id }).first();
@@ -818,8 +1531,11 @@ const approveBomDirectTx = async (trx, { bomId, userId, requestId, t }) => {
 const approveBomDirect = async (knex, params) => knex.transaction((trx) => approveBomDirectTx(trx, params));
 
 const createNewVersionFromApprovedTx = async (trx, { sourceBomId, userId, t }) => {
+  const lifecycleSupported = await hasBomLifecycleColumn(trx);
   const sourceId = Number(sourceBomId);
-  const source = await trx("erp.bom_header").select("id", "item_id", "level", "output_qty", "output_uom_id", "status").where({ id: sourceId }).first();
+  const sourceFields = ["id", "item_id", "level", "output_qty", "output_uom_id", "status"];
+  if (lifecycleSupported) sourceFields.push("is_active");
+  const source = await trx("erp.bom_header").select(sourceFields).where({ id: sourceId }).first();
   if (!source) throw makeValidationError(t("error_not_found") || "Record not found.");
   if (source.status !== "APPROVED") {
     throw makeValidationError(t("bom_error_new_version_requires_approved") || "New version can only be created from an approved BOM.");
@@ -839,25 +1555,46 @@ const createNewVersionFromApprovedTx = async (trx, { sourceBomId, userId, t }) =
     .first();
   const versionNo = Number(maxVersionRow?.max || 0) + 1;
   const bomNo = await nextBomNo(trx);
+  const insertPayload = {
+    bom_no: bomNo,
+    item_id: source.item_id,
+    level: source.level,
+    output_qty: source.output_qty,
+    output_uom_id: source.output_uom_id,
+    status: "DRAFT",
+    version_no: versionNo,
+    created_by: userId || null,
+  };
+  if (lifecycleSupported) insertPayload.is_active = source.is_active !== false;
   const inserted = await trx("erp.bom_header")
-    .insert({
-      bom_no: bomNo,
-      item_id: source.item_id,
-      level: source.level,
-      output_qty: source.output_qty,
-      output_uom_id: source.output_uom_id,
-      status: "DRAFT",
-      version_no: versionNo,
-      created_by: userId || null,
-    })
+    .insert(insertPayload)
     .returning("id");
   const newBomId = inserted?.[0]?.id || inserted?.[0];
 
-  const [rmLines, sfgLines, labourLines, variantRules] = await Promise.all([
+  const hasSkuOverrideTable = await hasBomSkuOverrideTable(trx);
+  const hasSkuOverrideDeptColumn = hasSkuOverrideTable
+    ? await hasBomSkuOverrideDeptColumn(trx)
+    : false;
+  const [rmLines, sfgLines, labourLines, variantRules, skuOverrides] = await Promise.all([
     trx("erp.bom_rm_line").select("rm_item_id", "color_id", "size_id", "dept_id", "qty", "uom_id", "normal_loss_pct").where({ bom_id: sourceId }),
     trx("erp.bom_sfg_line").select("fg_size_id", "sfg_sku_id", "required_qty", "uom_id", "ref_approved_bom_id").where({ bom_id: sourceId }),
     trx("erp.bom_labour_line").select("size_scope", "size_id", "dept_id", "labour_id", "rate_type", "rate_value").where({ bom_id: sourceId }),
     trx("erp.bom_variant_rule").select("size_scope", "size_id", "packing_scope", "packing_type_id", "color_scope", "color_id", "action_type", "material_scope", "target_rm_item_id", "new_value").where({ bom_id: sourceId }),
+    hasSkuOverrideTable
+      ? trx("erp.bom_sku_override_line")
+          .select(
+            "sku_id",
+            "target_rm_item_id",
+            ...(hasSkuOverrideDeptColumn ? ["dept_id"] : []),
+            "is_excluded",
+            "override_qty",
+            "override_uom_id",
+            "replacement_rm_item_id",
+            "rm_color_id",
+            "notes",
+          )
+          .where({ bom_id: sourceId })
+      : Promise.resolve([]),
   ]);
 
   await replaceBomLines(trx, newBomId, {
@@ -865,6 +1602,7 @@ const createNewVersionFromApprovedTx = async (trx, { sourceBomId, userId, t }) =
     sfg_lines: sfgLines,
     labour_lines: labourLines,
     variant_rules: variantRules,
+    sku_overrides: skuOverrides,
   });
 
   const after = await getBomSnapshot(trx, newBomId);
@@ -884,15 +1622,17 @@ const createNewVersionFromApproved = async (knex, params) => knex.transaction((t
 
 const hasPendingApprovalForBom = async (knex, bomId, options = {}) => hasPendingApprovalForBomTx(knex, bomId, options);
 
-const loadFormOptions = async (knex, locale = "en") => {
+const loadFormOptions = async (knex, locale = "en", options = {}) => {
   const useUr = locale === "ur";
+  const excludeExistingBomItems = Boolean(options?.excludeExistingBomItems);
+  const includeItemId = toNumberOrNull(options?.includeItemId);
   const [hasLabourDeptTable, hasSizeItemTypesTable] = await Promise.all([
     tableExists(knex, "erp.labour_department"),
     tableExists(knex, "erp.size_item_types"),
   ]);
-  const [items, rmItems, uoms, departments, sizes, colors, packings, labours, labourDeptRows, rmRateVariants, sfgSkus, fgSfgVariantDims, sizeItemTypeRows, fgSfgUsageRows] = await Promise.all([
+  const [itemsRaw, rmItems, uoms, departments, sizes, colors, packings, labours, labourDeptRows, rmRateVariants, sfgSkus, itemSkus, fgSfgVariantDims, sizeItemTypeRows, fgSfgUsageRows, existingBomItemRows] = await Promise.all([
     knex("erp.items")
-      .select("id", "code", useUr ? knex.raw("COALESCE(name_ur, name) as name") : "name", "item_type", "base_uom_id")
+      .select("id", "code", useUr ? knex.raw("COALESCE(name_ur, name) as name") : "name", "item_type", "base_uom_id", "uses_sfg", "sfg_part_type")
       .whereIn("item_type", ["FG", "SFG"])
       .andWhere({ is_active: true })
       .orderBy("name", "asc"),
@@ -937,13 +1677,38 @@ const loadFormOptions = async (knex, locale = "en") => {
         "i.id as item_id",
         "i.base_uom_id as base_uom_id",
         "v.size_id as size_id",
+        knex.raw("EXISTS (SELECT 1 FROM erp.bom_header bh WHERE bh.item_id = i.id AND bh.status = 'APPROVED') as has_approved_bom"),
       )
       .leftJoin("erp.variants as v", "s.variant_id", "v.id")
       .leftJoin("erp.items as i", "v.item_id", "i.id")
       .where("i.item_type", "SFG")
-      .whereExists(function () {
-        this.select(1).from("erp.bom_header as bh").whereRaw("bh.item_id = i.id").andWhere("bh.status", "APPROVED");
-      })
+      .andWhere("i.is_active", true)
+      .andWhere("s.is_active", true)
+      .orderBy("has_approved_bom", "desc")
+      .orderBy("s.sku_code", "asc"),
+    knex("erp.skus as s")
+      .select(
+        "s.id",
+        "s.sku_code",
+        "v.item_id",
+        "v.size_id",
+        "v.grade_id",
+        "v.color_id",
+        "v.packing_type_id",
+        useUr ? knex.raw("COALESCE(sz.name_ur, sz.name) as size_name") : "sz.name as size_name",
+        useUr ? knex.raw("COALESCE(gr.name_ur, gr.name) as grade_name") : "gr.name as grade_name",
+        useUr ? knex.raw("COALESCE(c.name_ur, c.name) as color_name") : "c.name as color_name",
+        useUr ? knex.raw("COALESCE(pt.name_ur, pt.name) as packing_name") : "pt.name as packing_name",
+      )
+      .leftJoin("erp.variants as v", "s.variant_id", "v.id")
+      .leftJoin("erp.items as i", "v.item_id", "i.id")
+      .leftJoin("erp.sizes as sz", "sz.id", "v.size_id")
+      .leftJoin("erp.grades as gr", "gr.id", "v.grade_id")
+      .leftJoin("erp.colors as c", "c.id", "v.color_id")
+      .leftJoin("erp.packing_types as pt", "pt.id", "v.packing_type_id")
+      .whereIn("i.item_type", ["FG", "SFG"])
+      .andWhere("i.is_active", true)
+      .andWhere("s.is_active", true)
       .orderBy("s.sku_code", "asc"),
     knex("erp.variants as v")
       .select("v.item_id", "v.size_id", "v.color_id")
@@ -957,7 +1722,23 @@ const loadFormOptions = async (knex, locale = "en") => {
       : Promise.resolve([]),
     knex("erp.item_usage")
       .select("fg_item_id", "sfg_item_id"),
+    excludeExistingBomItems
+      ? knex("erp.bom_header")
+          .distinct("item_id")
+          .whereNotNull("item_id")
+      : Promise.resolve([]),
   ]);
+
+  const existingBomItemIds = new Set(
+    (existingBomItemRows || []).map((row) => Number(row?.item_id)).filter(Boolean),
+  );
+  const items = (itemsRaw || []).filter((item) => {
+    const itemId = Number(item?.id);
+    if (!itemId) return false;
+    if (!excludeExistingBomItems) return true;
+    if (includeItemId && itemId === includeItemId) return true;
+    return !existingBomItemIds.has(itemId);
+  });
 
   const productionDeptSet = new Set((departments || []).map((row) => Number(row.id)).filter(Boolean));
   const labourDeptMap = {};
@@ -1039,6 +1820,54 @@ const loadFormOptions = async (knex, locale = "en") => {
     if (!Array.isArray(fgToSfgMap[key])) fgToSfgMap[key] = [];
     if (!fgToSfgMap[key].includes(String(sfgId))) fgToSfgMap[key].push(String(sfgId));
   });
+  // Legacy safety: if explicit FG->SFG usage mapping is missing, infer from generated code pattern.
+  const sfgItemIdByCode = new Map(
+    (itemsRaw || [])
+      .filter((item) => String(item?.item_type || "").toUpperCase() === "SFG")
+      .map((item) => [String(item?.code || "").trim().toLowerCase(), Number(item?.id)])
+      .filter((entry) => entry[0] && entry[1]),
+  );
+  (itemsRaw || [])
+    .filter((item) => String(item?.item_type || "").toUpperCase() === "FG" && Boolean(item?.uses_sfg))
+    .forEach((item) => {
+      const fgId = Number(item?.id);
+      if (!fgId) return;
+      const fgKey = String(fgId);
+      if (Array.isArray(fgToSfgMap[fgKey]) && fgToSfgMap[fgKey].length) return;
+      const fgCode = String(item?.code || "").trim();
+      if (!fgCode) return;
+      const partType = String(item?.sfg_part_type || "").trim().toUpperCase();
+      const suffixes = partType === "STEP"
+        ? ["step"]
+        : partType === "UPPER"
+          ? ["upper"]
+          : ["step", "upper"];
+      const inferred = suffixes
+        .map((suffix) => sfgItemIdByCode.get(`${fgCode}_${suffix}`.toLowerCase()))
+        .filter(Boolean)
+        .map((id) => String(id));
+      if (!inferred.length) return;
+      fgToSfgMap[fgKey] = [...new Set(inferred)];
+    });
+  const itemSkuMap = {};
+  (itemSkus || []).forEach((sku) => {
+    const itemId = toNumberOrNull(sku?.item_id);
+    if (!itemId) return;
+    const key = String(itemId);
+    if (!Array.isArray(itemSkuMap[key])) itemSkuMap[key] = [];
+    itemSkuMap[key].push({
+      id: toNumberOrNull(sku.id),
+      sku_code: sku.sku_code,
+      size_id: toNumberOrNull(sku.size_id),
+      grade_id: toNumberOrNull(sku.grade_id),
+      color_id: toNumberOrNull(sku.color_id),
+      packing_type_id: toNumberOrNull(sku.packing_type_id),
+      size_name: sku.size_name || null,
+      grade_name: sku.grade_name || null,
+      color_name: sku.color_name || null,
+      packing_name: sku.packing_name || null,
+    });
+  });
 
   return {
     items,
@@ -1055,6 +1884,8 @@ const loadFormOptions = async (knex, locale = "en") => {
     rmItemColorMap,
     rmItemSizeMap,
     itemSizeMap,
+    itemSkuMap,
+    itemSkus,
     fgToSfgMap,
     sfgSkus,
     levelOptions: [
@@ -1066,11 +1897,7 @@ const loadFormOptions = async (knex, locale = "en") => {
       { value: "PER_DOZEN", label: "rate_type_per_dozen" },
     ],
     ruleActionOptions: [
-      { value: "ADD_RM", label: "bom_rule_add_rm" },
-      { value: "REMOVE_RM", label: "bom_rule_remove_rm" },
-      { value: "REPLACE_RM", label: "bom_rule_replace_rm" },
       { value: "ADJUST_QTY", label: "bom_rule_adjust_qty" },
-      { value: "CHANGE_LOSS", label: "bom_rule_change_loss" },
     ],
     scopeOptions: [
       { value: "ALL", label: "all" },
@@ -1080,9 +1907,20 @@ const loadFormOptions = async (knex, locale = "en") => {
 };
 
 const listBoms = async (knex, filters = {}) => {
-  const status = String(filters.status || "").toUpperCase();
-  const level = String(filters.level || "").toUpperCase();
+  const normalizeRowsFilter = (value) => {
+    const text = String(value || "25").trim().toLowerCase();
+    if (text === "all") return "all";
+    const parsed = Number.parseInt(text, 10);
+    if (!Number.isInteger(parsed) || parsed <= 0) return 25;
+    return [10, 25, 50].includes(parsed) ? parsed : 25;
+  };
+
+  const lifecycleSupported = await hasBomLifecycleColumn(knex);
+  const workflow = String(filters.workflow || filters.stage || "").toUpperCase();
+  const level = String(filters.bom_type || filters.bomType || filters.level || "").toUpperCase();
+  const lifecycle = String(filters.lifecycle || "").trim().toLowerCase();
   const q = String(filters.q || "").trim();
+  const rows = normalizeRowsFilter(filters.rows);
 
   const query = knex("erp.bom_header as bh")
     .select(
@@ -1090,12 +1928,16 @@ const listBoms = async (knex, filters = {}) => {
       "bh.bom_no",
       "bh.level",
       "bh.status",
+      lifecycleSupported
+        ? "bh.is_active as bom_is_active"
+        : knex.raw("COALESCE(i.is_active, true) as bom_is_active"),
       "bh.version_no",
       "bh.output_qty",
       "bh.created_at",
       "bh.approved_at",
       "i.code as item_code",
       "i.name as item_name",
+      "i.is_active as item_is_active",
       "u.username as created_by_name",
       "au.username as approved_by_name",
       knex.raw(
@@ -1110,42 +1952,53 @@ const listBoms = async (knex, filters = {}) => {
     .leftJoin("erp.users as au", "bh.approved_by", "au.id")
     .orderBy("bh.id", "desc");
 
-  if (status && ["DRAFT", "PENDING", "APPROVED", "REJECTED"].includes(status)) query.where("bh.status", status);
+  if (workflow && ["DRAFT", "PENDING", "APPROVED", "REJECTED"].includes(workflow)) query.where("bh.status", workflow);
   if (level && BOM_LEVELS.has(level)) query.where("bh.level", level);
+  if (lifecycle === "active") query.where(lifecycleSupported ? "bh.is_active" : "i.is_active", true);
+  if (lifecycle === "inactive") query.where(lifecycleSupported ? "bh.is_active" : "i.is_active", false);
   if (q) {
     query.where((builder) => {
       builder.whereILike("bh.bom_no", `%${q}%`).orWhereILike("i.name", `%${q}%`).orWhereILike("i.code", `%${q}%`);
     });
   }
+  if (rows !== "all") query.limit(rows);
 
   return query;
 };
 
 const getBomForForm = async (knex, id) => {
   const bomId = Number(id);
+  const lifecycleSupported = await hasBomLifecycleColumn(knex);
+  const headerFields = [
+    "bh.id",
+    "bh.bom_no",
+    "bh.item_id",
+    "bh.level",
+    "bh.output_qty",
+    "bh.output_uom_id",
+    "bh.status",
+    "bh.version_no",
+    "bh.created_at",
+    "bh.approved_at",
+    "bh.created_by",
+    "bh.approved_by",
+    "i.name as item_name",
+    "i.code as item_code",
+  ];
+  if (lifecycleSupported) headerFields.splice(7, 0, "bh.is_active");
   const header = await knex("erp.bom_header as bh")
-    .select(
-      "bh.id",
-      "bh.bom_no",
-      "bh.item_id",
-      "bh.level",
-      "bh.output_qty",
-      "bh.output_uom_id",
-      "bh.status",
-      "bh.version_no",
-      "bh.created_at",
-      "bh.approved_at",
-      "bh.created_by",
-      "bh.approved_by",
-      "i.name as item_name",
-      "i.code as item_code",
-    )
+    .select(headerFields)
     .leftJoin("erp.items as i", "bh.item_id", "i.id")
     .where("bh.id", bomId)
     .first();
   if (!header) return null;
+  if (!lifecycleSupported) header.is_active = true;
 
-  const [rmLines, sfgLines, labourLines, variantRules] = await Promise.all([
+  const hasSkuOverrideTable = await hasBomSkuOverrideTable(knex);
+  const hasSkuOverrideDeptColumn = hasSkuOverrideTable
+    ? await hasBomSkuOverrideDeptColumn(knex)
+    : false;
+  const [rmLines, sfgLines, labourLines, variantRules, skuOverrides] = await Promise.all([
     knex("erp.bom_rm_line")
       .select("id", "rm_item_id", "color_id", "size_id", "dept_id", "qty", "uom_id", "normal_loss_pct")
       .where({ bom_id: bomId })
@@ -1162,6 +2015,23 @@ const getBomForForm = async (knex, id) => {
       .select("id", "size_scope", "size_id", "packing_scope", "packing_type_id", "color_scope", "color_id", "action_type", "material_scope", "target_rm_item_id", "new_value")
       .where({ bom_id: bomId })
       .orderBy("id", "asc"),
+    hasSkuOverrideTable
+      ? knex("erp.bom_sku_override_line")
+          .select(
+            "id",
+            "sku_id",
+            "target_rm_item_id",
+            ...(hasSkuOverrideDeptColumn ? ["dept_id"] : []),
+            "is_excluded",
+            "override_qty",
+            "override_uom_id",
+            "replacement_rm_item_id",
+            "rm_color_id",
+            "notes",
+          )
+          .where({ bom_id: bomId })
+          .orderBy("id", "asc")
+      : Promise.resolve([]),
   ]);
 
   return {
@@ -1170,6 +2040,7 @@ const getBomForForm = async (knex, id) => {
     sfg_lines: sfgLines,
     labour_lines: labourLines,
     variant_rules: variantRules,
+    sku_overrides: skuOverrides,
   };
 };
 
@@ -1201,6 +2072,7 @@ const buildApprovalPayload = ({ action, input, bomId }) => ({
     sfg_lines: input.sfg_lines,
     labour_lines: input.labour_lines,
     variant_rules: input.variant_rules,
+    sku_overrides: input.sku_overrides || [],
   },
 });
 
@@ -1263,6 +2135,11 @@ const applyApprovedBomChange = async (trx, request, approverUserId) => {
   if (action === "approve_draft") {
     const bomId = Number(payload.bom_id || request.entity_id);
     if (!bomId) return false;
+    await validateDraftReadyForApproval(trx, {
+      bomId,
+      t: () => "",
+      locale: "en",
+    });
     if (payload.snapshot && typeof payload.snapshot === "object") {
       const current = await getBomSnapshot(trx, bomId);
       if (!current) return false;
@@ -1295,6 +2172,17 @@ const applyApprovedBomChange = async (trx, request, approverUserId) => {
     return { applied: true, entityId: String(result.id) };
   }
 
+  if (action === "toggle_lifecycle") {
+    const bomId = Number(payload.bom_id || request.entity_id);
+    if (!bomId) return false;
+    const result = await toggleBomLifecycleTx(trx, {
+      bomId,
+      isActive: payload.is_active,
+      t: (key) => key,
+    });
+    return { applied: true, entityId: String(result.id) };
+  }
+
   return false;
 };
 
@@ -1306,6 +2194,8 @@ module.exports = {
   listVersions,
   saveBomDraft,
   saveBomDraftTx,
+  saveAndApproveFromInput,
+  validateDraftReadyForApproval,
   approveBomDirect,
   approveBomDirectTx,
   createNewVersionFromApproved,
@@ -1319,4 +2209,6 @@ module.exports = {
   buildApprovalPayload,
   buildApproveDraftPayload,
   applyApprovedBomChange,
+  toggleBomLifecycle,
+  toggleBomLifecycleTx,
 };

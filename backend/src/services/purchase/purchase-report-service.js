@@ -83,7 +83,11 @@ const resolvePurchaseTypeFilter = (
 };
 
 const toIdListWithAll = (value) => {
-  const raw = Array.isArray(value) ? value : [value];
+  const raw = Array.isArray(value)
+    ? value
+    : value && typeof value === "object"
+      ? Object.values(value)
+      : [value];
   const tokens = raw
     .flatMap((entry) => String(entry == null ? "" : entry).split(","))
     .map((entry) => entry.trim())
@@ -107,7 +111,11 @@ const toIdListWithAllFromSources = (...sources) => {
 };
 
 const toCapabilityListWithAll = (value) => {
-  const raw = Array.isArray(value) ? value : [value];
+  const raw = Array.isArray(value)
+    ? value
+    : value && typeof value === "object"
+      ? Object.values(value)
+      : [value];
   const tokens = raw
     .flatMap((entry) => String(entry == null ? "" : entry).split(","))
     .map((entry) => entry.trim().toUpperCase())

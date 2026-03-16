@@ -186,6 +186,7 @@
 }) %>
 <%- include("../../../base/partials/basic-info-utils", { t, page: { titleKey: "raw_materials" }, basePath, modalOpen, modalMode }) %>
 <script><%- include("../../../base/partials/searchable-select.js") %></script>
+<script><%- include("../../../base/partials/voucher-row-enter-navigation.js") %></script>
 
 <script>
   (function () {
@@ -193,9 +194,11 @@
     const modalForm = document.querySelector("[data-modal-form]");
     if (!modal || !modalForm) return;
 
+    const modalError = modalForm.querySelector("[data-modal-error]");
     const rateList = modalForm.querySelector("[data-rate-list]");
     const template = modalForm.querySelector("[data-rate-template]");
     if (!rateList || !template) return;
+    const requiredRateMessage = "<%= t('error_add_valid_purchase_rate') || 'Please add at least one valid purchase rate.' %>";
 
     const refreshSearchableSelects = () => {
       if (typeof window.initSearchableSelects === "function") {
@@ -203,106 +206,195 @@
       }
     };
 
+    const normalizeArray = (value) => {
+      if (Array.isArray(value)) return value;
+      if (value === null || value === undefined || value === "") return [];
+      if (typeof value === "object") return Object.values(value);
+      return [value];
+    };
+
+    const reindexRateRows = () => {
+      Array.from(rateList.querySelectorAll("[data-rate-row]")).forEach((row, idx) => {
+        row.setAttribute("data-row-index", String(idx));
+      });
+    };
+
+    const showModalError = (message) => {
+      if (!modalError) return;
+      modalError.textContent = String(message || "").trim();
+      modalError.hidden = !modalError.textContent;
+      if (!modalError.hidden) {
+        const modalScrollArea = modalForm.querySelector("#modal-content");
+        if (modalScrollArea) modalScrollArea.scrollTop = 0;
+      }
+    };
+
     const addRateRow = (colorId = "", sizeId = "", rateValue = "") => {
-      const row = template.content.cloneNode(true);
-      const select = row.querySelector("[data-rate-color]");
-      const sizeSelect = row.querySelector("[data-rate-size]");
-      const input = row.querySelector("[data-rate-value]");
+      const rowFragment = template.content.cloneNode(true);
+      const select = rowFragment.querySelector("[data-rate-color]");
+      const sizeSelect = rowFragment.querySelector("[data-rate-size]");
+      const input = rowFragment.querySelector("[data-rate-value]");
       if (select) select.value = colorId;
       if (sizeSelect) sizeSelect.value = sizeId;
       if (input) input.value = rateValue;
-      rateList.appendChild(row);
+      rateList.appendChild(rowFragment);
+      reindexRateRows();
       refreshSearchableSelects();
     };
 
-    modalForm.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter") return;
-      const target = event.target;
-      if (!target || target.tagName === "TEXTAREA" || target.isContentEditable) return;
-      event.preventDefault();
-    });
-
-    rateList.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter") return;
-      const input = event.target.closest("[data-rate-value]");
-      if (!input) return;
-      event.preventDefault();
-      if (String(input.value || "").trim() === "") return;
-      addRateRow();
-      const inputs = rateList.querySelectorAll("[data-rate-value]");
-      const last = inputs[inputs.length - 1];
-      if (last) last.focus();
-    });
+    const ensureAtLeastOneRateRow = () => {
+      if (!rateList.querySelector("[data-rate-row]")) {
+        addRateRow();
+      }
+    };
 
     const resetRates = () => {
       rateList.innerHTML = "";
+      reindexRateRows();
     };
 
     const fillRatesFromPairs = (pairs) => {
       resetRates();
       if (!pairs) {
-        addRateRow();
+        ensureAtLeastOneRateRow();
         return;
       }
       const list = pairs.split(",").map((pair) => pair.trim()).filter(Boolean);
       if (!list.length) {
-        addRateRow();
+        ensureAtLeastOneRateRow();
         return;
       }
       list.forEach((pair) => {
         const [colorId, sizeId, rateValue] = pair.split(":");
         addRateRow(colorId || "", sizeId || "", rateValue || "");
       });
+      ensureAtLeastOneRateRow();
     };
 
-    const openForCreate = () => {
-      setTimeout(() => fillRatesFromPairs(""), 0);
+    const fillRatesFromValues = (values = {}) => {
+      resetRates();
+      const colorIds = normalizeArray(values.color_ids);
+      const sizeIds = normalizeArray(values.size_ids);
+      const rates = normalizeArray(values.purchase_rates);
+      const maxLen = Math.max(colorIds.length, sizeIds.length, rates.length);
+      if (!maxLen) {
+        ensureAtLeastOneRateRow();
+        return;
+      }
+      for (let idx = 0; idx < maxLen; idx += 1) {
+        addRateRow(colorIds[idx] || "", sizeIds[idx] || "", rates[idx] || "");
+      }
+      ensureAtLeastOneRateRow();
+    };
+
+    const openForCreate = (values = {}) => {
+      setTimeout(() => fillRatesFromValues(values), 0);
     };
 
     const openForEdit = (button) => {
-      // 1. POPULATE BASIC FIELDS (This fixes the empty dropdowns issue)
       const fields = ["name", "name_ur", "subgroup_id", "base_uom_id", "min_stock_level"];
       fields.forEach(f => {
          const input = modalForm.querySelector(`[name="${f}"]`);
          if(input) {
-             // We get the ID from the button's data attribute and set the input value
              const val = button.getAttribute(`data-${f}`) || ""; 
              input.value = val;
+             if (input.tagName === "SELECT") {
+               input.dispatchEvent(new Event("change", { bubbles: true }));
+             }
          }
       });
 
-      // 2. POPULATE RATES
       const pairs = button.getAttribute("data-color_rate_pairs") || "";
       setTimeout(() => fillRatesFromPairs(pairs), 0);
     };
 
+    const bindRateEnterNavigation = () => {
+      if (typeof window.createVoucherRowEnterNavigator !== "function") return;
+      const navigator = window.createVoucherRowEnterNavigator({
+        form: modalForm,
+        linesBody: rateList,
+        rowSelector: "[data-rate-row]",
+        fieldAttr: "data-rate-col",
+        fieldOrder: ["color_id", "size_id", "purchase_rate"],
+        appendRow: () => {
+          addRateRow("", "", "");
+          return true;
+        },
+        canAppendRow: ({ row } = {}) => {
+          if (!(row instanceof HTMLElement)) return true;
+          const rateInput = row.querySelector('[data-rate-col="purchase_rate"]');
+          const rateValue = Number(rateInput?.value || 0);
+          return Number.isFinite(rateValue) && rateValue > 0;
+        },
+      });
+      navigator?.bind();
+    };
+
+    modalForm.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (target.tagName === "TEXTAREA" || target.isContentEditable) return;
+      if (target.closest("[data-rate-list]")) return;
+      const submitButton = target instanceof HTMLButtonElement && target.type === "submit";
+      if (submitButton) return;
+      event.preventDefault();
+    });
+
     document.querySelectorAll("[data-modal-open]").forEach((btn) => {
-      btn.addEventListener("click", openForCreate);
+      btn.addEventListener("click", () => openForCreate({}));
     });
     document.querySelectorAll("[data-edit]").forEach((btn) => {
       btn.addEventListener("click", () => openForEdit(btn));
     });
 
-    modalForm.addEventListener("click", (event) => {
-      const addBtn = event.target.closest("[data-rate-add-row]");
-      if (addBtn) {
-        addRateRow();
-        return;
-      }
+    rateList.addEventListener("click", (event) => {
+      const removeBtn = event.target.closest("[data-rate-remove-row]");
+      if (!removeBtn) return;
+      const row = removeBtn.closest("[data-rate-row]");
+      if (!row) return;
+      row.remove();
+      reindexRateRows();
+      ensureAtLeastOneRateRow();
+      refreshSearchableSelects();
     });
 
+    modalForm.addEventListener("submit", (event) => {
+      const rateInputs = modalForm.querySelectorAll("[data-rate-value]");
+      const hasValidRate = Array.from(rateInputs).some((input) => Number(input.value || 0) > 0);
+      if (!hasValidRate) {
+        event.preventDefault();
+        showModalError(requiredRateMessage);
+        return;
+      }
+      showModalError("");
+    });
+
+    let autoValues = {};
+    if (modal.dataset.modalValues) {
+      try {
+        autoValues = JSON.parse(modal.dataset.modalValues);
+      } catch (err) {
+        autoValues = {};
+      }
+    }
     if (modal.dataset.autoOpen === "true") {
       if (modal.dataset.modalMode === "edit") {
         const editButton = document.querySelector("[data-edit][data-id=\"" + modal.dataset.currentId + "\"]");
         if (editButton) {
           openForEdit(editButton);
+        } else {
+          openForCreate(autoValues);
         }
       } else {
-        openForCreate();
+        openForCreate(autoValues);
       }
+    } else {
+      ensureAtLeastOneRateRow();
     }
 
     refreshSearchableSelects();
+    bindRateEnterNavigation();
   })();
 </script>
 <script>
@@ -401,28 +493,4 @@
       safeRelink();
     }
   })();
-  modalForm.addEventListener("submit", (event) => {
-      // 1. Check Rates
-      const rateInputs = modalForm.querySelectorAll("[data-rate-value]");
-      let hasValidRate = false;
-      
-      rateInputs.forEach(input => {
-        if (input.value && parseFloat(input.value) > 0) {
-          hasValidRate = true;
-        }
-      });
-
-      if (!hasValidRate) {
-        event.preventDefault();
-        // Show error message
-        const errorBanner = document.querySelector("[data-modal-error]");
-        if (errorBanner) {
-          errorBanner.textContent = "<%= t('error_add_valid_purchase_rate') %>";
-          errorBanner.hidden = false;
-          // Scroll to top of modal to see error
-          modalForm.closest(".overflow-y-auto").scrollTop = 0;
-        }
-        return;
-      }
-    });
 </script>

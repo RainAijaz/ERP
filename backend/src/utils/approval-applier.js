@@ -20,6 +20,7 @@ const {
   resolveLabourIds,
   ALL_LABOURS_VALUE,
 } = require("../services/hr-payroll/labour-rates-service");
+const { applyItemLifecycleToggleTx } = require("../services/products/item-lifecycle-service");
 const { generateUniqueCode } = require("./entity-code");
 
 // Mapping of basic info entity types to their DB tables
@@ -402,25 +403,12 @@ const applyItemChange = async (trx, request, userId) => {
   }
 
   if (action === "toggle") {
-    await trx("erp.items")
-      .where({ id: Number(entityId) })
-      .update({
-        is_active: !!newValue.is_active,
-        updated_by: userId || null,
-        updated_at: trx.fn.now(),
-      });
-    if (itemType === "FG") {
-      const linked = await getLinkedSfgIds(trx, Number(entityId));
-      if (linked.length) {
-        await trx("erp.items")
-          .whereIn("id", linked)
-          .update({
-            is_active: !!newValue.is_active,
-            updated_by: userId || null,
-            updated_at: trx.fn.now(),
-          });
-      }
-    }
+    await applyItemLifecycleToggleTx(trx, {
+      itemId: Number(entityId),
+      itemType,
+      isActive: !!newValue.is_active,
+      userId: userId || null,
+    });
     return true;
   }
 

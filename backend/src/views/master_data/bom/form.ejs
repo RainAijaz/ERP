@@ -6,7 +6,56 @@
   const isDraft = !header.status || header.status === "DRAFT";
   const isEditable = !isEdit || isDraft;
   const submitPath = isEdit ? `${basePath}/${header.id}/save-draft` : `${basePath}/save-draft`;
+  const tx = (key, fallback) => {
+    const value = typeof t === "function" ? t(key) : "";
+    return value && value !== key ? value : fallback;
+  };
 %>
+
+<style>
+  #bom-form input[type="number"]::-webkit-outer-spin-button,
+  #bom-form input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  #bom-form input[type="number"] {
+    -moz-appearance: textfield;
+  }
+  #bom-form [data-searchable-wrapper] {
+    z-index: 1;
+  }
+  #bom-form [data-searchable-wrapper]:focus-within {
+    z-index: 80;
+  }
+  #bom-form [data-rm-view-toggle],
+  #bom-form [data-rm-mode-toggle],
+  #bom-form [data-labour-view-toggle] {
+    border-color: #cbd5e1;
+    background: #ffffff;
+    color: #475569;
+  }
+  #bom-form [data-rm-view-toggle][data-active="true"],
+  #bom-form [data-rm-mode-toggle][data-active="true"],
+  #bom-form [data-labour-view-toggle][data-active="true"] {
+    border-color: #0f172a;
+    background: #0f172a;
+    color: #ffffff;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.25);
+  }
+  #bom-form [data-rm-view-toggle][data-active="false"],
+  #bom-form [data-rm-mode-toggle][data-active="false"],
+  #bom-form [data-labour-view-toggle][data-active="false"] {
+    border-color: #cbd5e1;
+    background: #ffffff;
+    color: #475569;
+  }
+  #bom-header { order: 10; }
+  #bom-form [data-header-lock-notice] { order: 20; }
+  #bom-sfg { order: 30; }
+  #bom-rm { order: 40; }
+  #bom-labour { order: 50; }
+  #bom-form [data-bom-save-wrap] { order: 60; }
+</style>
 
 <div class="mx-auto w-full max-w-7xl space-y-6">
   <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
@@ -15,21 +64,26 @@
         <h1 class="text-2xl font-display text-ink">
           <%= isEdit ? (t("bom_edit_title") || "Edit BOM") : (t("bom_new_title") || "Add BOM") %>
         </h1>
-        <p class="text-sm text-muted"><%= t("bom_header_required_message") || "Complete BOM Header first. Other sections depend on it." %></p>
+        <p class="text-sm text-muted"><%= t("bom_header_required_message") || "Complete the BOM setup first. Material, SFG, and labour sections unlock after that." %></p>
       </div>
       <div class="flex flex-wrap gap-2">
+        <% if (!isEdit && user?.isAdmin) { %>
+          <button type="button" data-bom-approve-now class="inline-flex min-w-[8.5rem] items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white shadow-sm transition hover:bg-slate-800">
+            <%= t("approve") || "Approve" %>
+          </button>
+        <% } %>
         <% if (isEdit && header.status === "APPROVED" && can('SCREEN', 'master_data.bom', 'create')) { %>
           <form method="POST" action="<%= basePath %>/<%= header.id %>/create-new-version">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-            <button type="submit" class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800">
-              <%= t("bom_create_new_version") || "Create New Version" %>
+            <button type="submit" class="inline-flex min-w-[8.5rem] items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 transition hover:border-slate-400 hover:text-slate-900" title="<%= t('bom_create_new_version') || 'Create New Version' %>">
+              <%= t("bom_revise") || "Revise" %>
             </button>
           </form>
         <% } %>
         <% if (isEdit && isDraft) { %>
           <form method="POST" action="<%= basePath %>/<%= header.id %>/send-for-approval">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-            <button type="submit" class="rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-emerald-500">
+            <button type="submit" class="inline-flex min-w-[8.5rem] items-center justify-center rounded-xl bg-accent px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white shadow-sm transition hover:brightness-95">
               <%= user?.isAdmin ? (t("approve") || "Approve") : (t("send_for_approval") || "Send for Approval") %>
             </button>
           </form>
@@ -38,37 +92,26 @@
     </div>
   </section>
 
-  <% if (errorMessage) { %>
-    <section class="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
-      <div class="font-semibold"><%= errorMessage %></div>
-      <% if (errors && errors.length) { %>
-        <ul class="mt-2 list-disc space-y-1 ps-5">
-          <% errors.forEach(function(err) { %>
-            <li><%= err.message %></li>
-          <% }) %>
-        </ul>
-      <% } %>
-    </section>
-  <% } %>
-
-  <form id="bom-form" method="POST" action="<%= submitPath %>" class="space-y-6">
+  <form id="bom-form" method="POST" action="<%= submitPath %>" class="flex flex-col gap-6">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input type="hidden" name="submit_intent" value="" data-bom-submit-intent>
     <input type="hidden" name="rm_lines_json" value="<%- JSON.stringify(formState?.rm_lines || []) %>" data-lines-json="rm_lines">
     <input type="hidden" name="sfg_lines_json" value="<%- JSON.stringify(formState?.sfg_lines || []) %>" data-lines-json="sfg_lines">
     <input type="hidden" name="labour_lines_json" value="<%- JSON.stringify(formState?.labour_lines || []) %>" data-lines-json="labour_lines">
     <input type="hidden" name="variant_rules_json" value="<%- JSON.stringify(formState?.variant_rules || []) %>" data-lines-json="variant_rules">
+    <input type="hidden" name="sku_overrides_json" value="<%- JSON.stringify(formState?.sku_overrides || []) %>" data-lines-json="sku_overrides">
 
     <section id="bom-header" class="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm scroll-mt-24">
       <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <div class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_header") || "BOM Header" %></div>
+        <div class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_header") || "BOM Setup" %></div>
         <% if (header.bom_no) { %>
           <div class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500"><%= t("code") || "Code" %>: <%= header.bom_no %></div>
         <% } %>
       </div>
-      <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4" data-header-enter-row>
         <label class="block text-sm font-semibold text-slate-600">
           <span><%= t("level") || "Level" %></span>
-          <select name="level" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" <%= isEditable ? "" : "disabled" %> required>
+          <select name="level" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" data-searchable-select="true" data-searchable-variant="unified" data-header-field="level" <%= isEditable ? "" : "disabled" %> required>
             <option value=""><%= t("select") %></option>
             <% (options?.levelOptions || []).forEach(function(levelOpt) { %>
               <option value="<%= levelOpt.value %>" <%= selectedLevel === levelOpt.value ? "selected" : "" %>>
@@ -79,7 +122,7 @@
         </label>
         <label class="block text-sm font-semibold text-slate-600">
           <span><%= t("article_name") || "Article Name" %></span>
-          <select name="item_id" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" <%= isEditable ? "" : "disabled" %> required>
+          <select name="item_id" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" data-searchable-select="true" data-searchable-variant="unified" data-header-field="item_id" <%= isEditable ? "" : "disabled" %> required>
             <option value=""><%= t("select") %></option>
             <% (options?.items || []).filter(function(item) { return !selectedItemType || item.item_type === selectedItemType; }).forEach(function(item) { %>
               <option value="<%= item.id %>" <%= Number(header.item_id) === Number(item.id) ? "selected" : "" %>>
@@ -87,14 +130,17 @@
               </option>
             <% }) %>
           </select>
+          <% if (!isEdit && (!options?.items || options.items.length === 0)) { %>
+            <div class="mt-1 text-xs font-medium text-amber-700"><%= t("bom_no_available_articles") || "No new articles are available. Use BOM Register to revise an existing BOM." %></div>
+          <% } %>
         </label>
         <label class="block text-sm font-semibold text-slate-600">
-          <span><%= t("bom_output_qty") || "Output Quantity" %></span>
-          <input type="number" step="0.001" min="0.001" name="output_qty" value="<%= header.output_qty ?? 1 %>" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" <%= isEditable ? "" : "readonly" %> required>
+          <span><%= t("bom_output_batch_size") || "Planned Output Qty" %></span>
+          <input type="number" step="0.001" min="0.001" name="output_qty" value="<%= header.output_qty ?? 1 %>" data-no-stepper="true" data-header-field="output_qty" class="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 transition focus:border-black focus:outline-none focus:ring-2 focus:ring-black/20" <%= isEditable ? "" : "readonly" %> required>
         </label>
         <label class="block text-sm font-semibold text-slate-600">
-          <span><%= t("base_unit") || "Output Unit" %></span>
-          <select name="output_uom_id" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" <%= isEditable ? "" : "disabled" %> required>
+          <span><%= t("bom_output_uom") || "Output Unit (UOM)" %></span>
+          <select name="output_uom_id" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" data-searchable-select="true" data-searchable-variant="unified" data-header-field="output_uom_id" <%= isEditable ? "" : "disabled" %> required>
             <option value=""><%= t("select") %></option>
             <% (options?.uoms || []).forEach(function(uom) { %>
               <option value="<%= uom.id %>" <%= Number(header.output_uom_id) === Number(uom.id) ? "selected" : "" %>><%= uom.name %></option>
@@ -130,61 +176,177 @@
 
     <section class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 <%= (header.item_id && header.level && Number(header.output_qty || 0) > 0 && header.output_uom_id) ? 'hidden' : '' %>" data-header-lock-notice>
       <span class="font-semibold"><%= t("notice") || "Notice" %>:</span>
-      <%= t("bom_header_required_message") || "Complete BOM Header first. Other sections depend on it." %>
+      <%= t("bom_header_required_message") || "Complete the BOM setup first. Material, SFG, and labour sections unlock after that." %>
     </section>
 
     <section id="bom-rm" class="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm scroll-mt-24 space-y-5">
-      <div class="mb-3 flex items-center justify-between">
-        <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_tab_rm") || "Raw Materials" %></h2>
+      <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="space-y-1">
+            <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-700"><%= t("bom_tab_rm") || "Raw Material Inputs for This BOM" %></h2>
+            <p class="text-xs text-slate-500"><%= t("bom_rm_section_hint") || "Add all raw materials required for one planned output batch, then fine-tune size-specific rules if needed." %></p>
+          </div>
+          <div class="flex flex-col items-end gap-2">
+            <div class="inline-flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                data-rm-mode-toggle="materials"
+                data-active="true"
+                class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
+              >
+                <%= t("bom_rm_view_material_lines") || "Material Lines" %>
+              </button>
+              <button
+                type="button"
+                data-rm-mode-toggle="sku_rules"
+                data-active="false"
+                class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
+              >
+                <%= t("bom_sku_rules") || "SKU Rules" %>
+              </button>
+              <button
+                type="button"
+                data-rm-mode-toggle="advanced"
+                data-active="false"
+                class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
+              >
+                <%= t("bom_advanced_rules") || "Advanced Rules" %>
+              </button>
+            </div>
+            <div class="hidden inline-flex flex-wrap items-center gap-2" data-rm-advanced-toggles hidden aria-hidden="true">
+              <button
+                type="button"
+                data-rm-view-toggle="size_rules"
+                data-active="true"
+                class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
+              >
+                <%= t("bom_rm_view_variant_rules") || "Size Rules" %>
+              </button>
+              <button
+                type="button"
+                data-rm-view-toggle="color_rules"
+                data-active="false"
+                class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
+              >
+                <%= t("bom_color_rules") || "Color Rules" %>
+              </button>
+              <button
+                type="button"
+                data-rm-view-toggle="packing_rules"
+                data-active="false"
+                class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
+              >
+                <%= t("bom_packing_rules") || "Packing Rules" %>
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="overflow-x-auto">
-        <table class="min-w-full text-sm">
+      <div data-rm-view="sku_rules" class="space-y-3">
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div>
+            <div class="mb-2 text-xs font-medium text-slate-500"><%= t("bom_sku_rules_hint") || "Select a SKU to edit final raw material requirements. Only differences are saved as SKU overrides." %></div>
+            <div class="flex flex-wrap items-center gap-2" data-sku-rule-chips></div>
+          </div>
+        </div>
+        <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
+          <table class="min-w-full text-sm">
+            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+              <tr>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_material') || 'Select the raw material used in this BOM.' %>"><%= t("bom_rm_col_material") || "Material" %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_consumption_department') || 'Production department that consumes this material.' %>"><%= t("department") || "Department" %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_rm_color') || 'Raw material color to consume for the selected SKU scope.' %>"><%= t("bom_rm_col_color") || "RM Color" %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_required_qty') || 'Required quantity for this line.' %>"><%= t("bom_rules_col_qty") || "Required Qty" %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_base_unit') || 'Base unit is picked from the selected material and is read-only.' %>"><%= t("base_unit") || "Unit" %></th>
+              </tr>
+            </thead>
+            <tbody data-sku-rules-body></tbody>
+          </table>
+        </div>
+      </div>
+      <div data-rm-view="materials" class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
+        <table class="w-full table-fixed text-sm">
+          <colgroup>
+            <col class="w-[34%]">
+            <col class="w-[24%]">
+            <col class="w-[32%]">
+            <col class="w-[10%]">
+          </colgroup>
           <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
             <tr>
-              <th class="px-3 py-2 text-left"><%= t("raw_materials") || "Raw Material" %></th>
-              <th class="px-3 py-2 text-left"><%= t("color") || "Color" %></th>
-              <th class="px-3 py-2 text-left"><%= t("size") || "Size" %></th>
-              <th class="px-3 py-2 text-left"><%= t("department") || "Department" %></th>
-              <th class="px-3 py-2 text-right"><%= t("actions") %></th>
+              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_material') || 'Select the raw material used in this BOM.' %>"><%= t("bom_rm_col_material") || "Material" %></th>
+              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_base_unit') || 'Base unit is picked from the selected material and is read-only.' %>"><%= t("base_unit") || "Base Unit" %></th>
+              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_consumption_department') || 'Production department that consumes this material.' %>"><%= t("bom_rm_col_department") || "Consumption Department" %></th>
+              <th class="px-3 py-2 text-right" title="<%= t('bom_hint_actions') || 'Use plus/minus to add or remove rows.' %>"><%= t("bom_rm_col_actions") || "Actions" %></th>
             </tr>
           </thead>
           <tbody data-lines-body="rm"></tbody>
         </table>
       </div>
-      <div class="space-y-3 border-t border-slate-100 pt-4">
-        <div class="mb-1 flex items-center justify-between">
-          <h3 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_rm_rules_size_wise") || "Raw Material Rules Size Wise" %></h3>
-        </div>
+      <div data-rm-view="size_rules" class="hidden space-y-3">
         <div class="space-y-3" data-rule-size-sections></div>
-        <div class="hidden overflow-x-auto rounded-xl border border-slate-200" data-rule-size-grid-template>
+        <div class="hidden overflow-x-auto lg:overflow-visible overflow-y-visible rounded-xl border border-slate-200" data-rule-size-grid-template data-searchable-boundary>
           <table class="min-w-full text-sm">
             <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
               <tr>
-                <th class="px-3 py-2 text-left"><%= t("raw_materials") || "Raw Materials" %></th>
-                <th class="px-3 py-2 text-left"><%= t("quantity") || "Quantity" %></th>
-                <th class="px-3 py-2 text-left"><%= t("base_unit") || "Unit" %></th>
-                <th class="px-3 py-2 text-right"><%= t("actions") %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_size_rule_material') || 'Material to which this size rule applies.' %>"><%= t("bom_rm_col_material") || "Material" %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_size_rule_uom') || 'Unit for the size-specific quantity.' %>"><%= t("bom_rules_col_uom") || "Unit" %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_size_rule_qty') || 'Required quantity for the selected size.' %>"><%= t("bom_rules_col_qty") || "Required Qty" %></th>
+                <th class="px-3 py-2 text-right" title="<%= t('bom_hint_actions') || 'Use plus/minus to add or remove rows.' %>"><%= t("bom_rm_col_actions") || "Actions" %></th>
               </tr>
             </thead>
             <tbody data-lines-body="rule"></tbody>
           </table>
         </div>
       </div>
+      <div data-rm-view="color_rules" class="hidden space-y-3">
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div class="mb-2 text-xs font-medium text-slate-500"><%= t("bom_color_scope_hint") || "Choose a SKU variant scope to edit material color mapping." %></div>
+          <div class="flex flex-wrap items-center gap-2" data-rule-color-scopes></div>
+        </div>
+        <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
+          <table class="min-w-full text-sm">
+            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+              <tr>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_color_rule_material') || 'Material whose color mapping you want to control.' %>"><%= t("bom_rm_col_material") || "Material" %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_base_unit') || 'Base unit is picked from the selected material and is read-only.' %>"><%= t("base_unit") || "Unit" %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_rm_color') || 'Raw material color to consume for the selected SKU scope.' %>"><%= t("bom_rm_col_color") || "Raw Material Color" %></th>
+                <th class="px-3 py-2 text-right" title="<%= t('bom_hint_actions') || 'Use plus/minus to add or remove rows.' %>"><%= t("actions") %></th>
+              </tr>
+            </thead>
+            <tbody data-lines-body="color_rule"></tbody>
+          </table>
+        </div>
+      </div>
+      <div data-rm-view="packing_rules" class="hidden overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
+        <table class="min-w-full text-sm">
+          <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+            <tr>
+              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_packing_rule_material') || 'Base material that will be replaced.' %>"><%= t("bom_rm_col_material") || "Material" %></th>
+              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_base_unit') || 'Base unit is picked from the selected material and is read-only.' %>"><%= t("base_unit") || "Unit" %></th>
+              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_packing') || 'Packing type condition for this replacement.' %>"><%= t("packing") || "Packing" %></th>
+              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_size_optional') || 'Optional size filter; leave blank to apply for all sizes.' %>"><%= t("size") || "Size (Optional)" %></th>
+              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_replace_with') || 'Material to consume instead of base material.' %>"><%= t("replace_with") || "Replace With RM" %></th>
+              <th class="px-3 py-2 text-right" title="<%= t('bom_hint_actions') || 'Use plus/minus to add or remove rows.' %>"><%= t("actions") %></th>
+            </tr>
+          </thead>
+          <tbody data-lines-body="packing_rule"></tbody>
+        </table>
+      </div>
     </section>
 
     <section id="bom-sfg" class="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm scroll-mt-24">
       <div class="mb-3 flex items-center justify-between">
-        <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_tab_sfg") || "Semi-Finished Products" %></h2>
+        <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_tab_sfg_per_sku") || "List Semi-Finished Products Used For Each SKU" %></h2>
       </div>
-      <div class="overflow-x-auto">
+      <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
         <table class="min-w-full text-sm">
           <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
             <tr>
-              <th class="px-3 py-2 text-left"><%= t("size") || "Size" %></th>
-              <th class="px-3 py-2 text-left"><%= t("semi_finished") || "Semi Finished" %></th>
-              <th class="px-3 py-2 text-left"><%= t("value") || "Required Qty" %></th>
-              <th class="px-3 py-2 text-left"><%= t("base_unit") || "UOM" %></th>
-              <th class="px-3 py-2 text-right"><%= t("actions") %></th>
+              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_article_sku') || 'Finished article SKU this row applies to.' %>"><%= t("article_sku") || "Article SKU" %></th>
+              <th class="px-3 py-2 text-left" data-sfg-part-col-title title="<%= t('bom_hint_step_upper_sku') || 'Select the semi-finished SKU used for this finished SKU.' %>"><span data-sfg-part-col-label><%= t("bom_sfg_col_step_upper_sku") || "Step/Upper SKU" %></span></th>
+              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_base_unit') || 'Base unit for selected SKU.' %>"><%= t("base_unit") || "Unit" %></th>
+              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_step_quantity') || 'Quantity of selected step/upper SKU required for this finished SKU.' %>"><%= t("bom_sfg_col_step_qty") || "Step Quantity" %></th>
             </tr>
           </thead>
           <tbody data-lines-body="sfg"></tbody>
@@ -192,30 +354,74 @@
       </div>
     </section>
 
-    <section id="bom-labour" class="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm scroll-mt-24">
-      <div class="mb-3 flex items-center justify-between">
-        <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_tab_labour") || "Labours" %></h2>
+    <section id="bom-labour" class="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm scroll-mt-24 space-y-4">
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_tab_labour") || "List Labour Rates by Size and Department" %></h2>
+        <div class="inline-flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            data-labour-view-toggle="selection"
+            data-active="true"
+            class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
+          >
+            <%= t("bom_labour_selection_title") || "Labours Selection" %>
+          </button>
+          <button
+            type="button"
+            data-labour-view-toggle="size_rules"
+            data-active="false"
+            class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
+          >
+            <%= t("bom_sku_rules") || "SKU Rules" %>
+          </button>
+        </div>
       </div>
-      <div class="overflow-x-auto">
-        <table class="min-w-full text-sm">
-          <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
-            <tr>
-              <th class="px-3 py-2 text-left"><%= t("size") || "Size" %></th>
-              <th class="px-3 py-2 text-left"><%= t("labours") || "Labour" %></th>
-              <th class="px-3 py-2 text-left"><%= t("department") || "Department" %></th>
-              <th class="px-3 py-2 text-left"><%= t("rate_type") || "Rate Type" %></th>
-              <th class="px-3 py-2 text-left"><%= t("rate_value") || "Rate Value" %></th>
-              <th class="px-3 py-2 text-right"><%= t("actions") %></th>
-            </tr>
-          </thead>
-          <tbody data-lines-body="labour"></tbody>
-        </table>
-      </div>
+      <section class="rounded-xl border border-slate-200 bg-white" data-labour-view="selection">
+        <div class="border-b border-slate-200 px-3 py-3">
+          <h3 class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"><%= t("bom_labour_selection_title") || "Labours Selection" %></h3>
+          <p class="mt-1 text-xs text-slate-500"><%= t("bom_labour_selection_hint") || "Select labour, department, and rate type. Size-wise rates are set below." %></p>
+        </div>
+        <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
+          <table class="min-w-full text-sm">
+            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+              <tr>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_labour') || 'Labour master to apply cost from.' %>"><%= t("labours") || "Labours" %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_department') || 'Production department for this labour.' %>"><%= t("department") || "Department" %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_rate_type') || 'Cost basis (per pair or per dozen).' %>"><%= t("rate_type") || "Rate Type" %></th>
+                <th class="px-3 py-2 text-right" title="<%= t('bom_hint_actions') || 'Use plus/minus to add or remove rows.' %>"><%= t("actions") || "Actions" %></th>
+              </tr>
+            </thead>
+            <tbody data-lines-body="labour_selection"></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="rounded-xl border border-slate-200 bg-white hidden" data-labour-view="size_rules">
+        <div class="border-b border-slate-200 px-3 py-3">
+          <div>
+            <h3 class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"><%= t("bom_sku_rules") || "SKU Rules" %></h3>
+            <p class="mt-1 text-xs text-slate-500"><%= t("bom_labour_sku_rules_hint") || "Select a SKU to set labour rates. These rates apply by SKU size scope." %></p>
+            <div class="mt-2 flex flex-wrap items-center gap-2" data-labour-rule-sku-sections></div>
+          </div>
+        </div>
+        <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
+          <table class="min-w-full text-sm">
+            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+              <tr>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_labour') || 'Labour master to apply cost from.' %>"><%= t("labours") || "Labours" %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_department') || 'Production department for this labour.' %>"><%= t("department") || "Department" %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_rate_type') || 'Cost basis (per pair or per dozen).' %>"><%= t("rate_type") || "Rate Type" %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_rate_value') || 'Enter the labour rate amount for this SKU scope.' %>"><%= t("rate_value") || "Rate Value" %></th>
+              </tr>
+            </thead>
+            <tbody data-lines-body="labour_rule"></tbody>
+          </table>
+        </div>
+      </section>
     </section>
 
     <% if (isEditable) { %>
-      <div class="flex justify-center">
-        <button type="submit" class="rounded-full bg-slate-900 px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800">
+      <div class="flex justify-center" data-bom-save-wrap>
+        <button type="button" data-bom-save-draft class="rounded-xl bg-accent px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] text-white shadow-sm transition hover:brightness-95">
           <%= t("save_draft") || "Save Draft" %>
         </button>
       </div>
@@ -223,16 +429,85 @@
   </form>
 </div>
 
+<div class="fixed inset-0 z-[95] hidden items-center justify-center bg-slate-900/40 p-4" data-bom-header-change-modal>
+  <div class="w-full max-w-xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+    <div class="relative border-b border-slate-200 px-6 py-5">
+      <button
+        type="button"
+        data-bom-header-modal-close
+        class="absolute right-6 top-5 inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+        aria-label="<%= tx('close', 'Close') %>"
+        title="<%= tx('close', 'Close') %>"
+      >
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+        </svg>
+      </button>
+      <div class="flex items-start gap-3">
+        <div class="mt-0.5 inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 8v5m0 3h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.2 16c-.77 1.33.19 3 1.73 3z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div>
+          <h3 class="text-base font-semibold text-slate-800"><%= tx("bom_header_change_modal_title", "BOM setup changed") %></h3>
+          <p class="mt-1 text-sm text-slate-600"><%= tx("bom_header_change_modal_message", "You changed BOM Setup fields. This can reset dependent material, SFG, and labour sections.") %></p>
+        </div>
+      </div>
+    </div>
+    <div class="bg-slate-50 px-6 py-4 text-sm text-slate-700">
+      <p><%= tx("bom_header_change_modal_hint", "Save Draft to keep current entries. Discard Changes to continue with the new setup and clear dependent sections.") %></p>
+    </div>
+    <div class="flex flex-col-reverse gap-2 border-t border-slate-200 px-6 py-4 sm:flex-row sm:justify-end">
+      <button type="button" data-bom-header-modal-discard class="rounded-xl border border-rose-300 bg-white px-4 py-2 text-sm font-semibold text-rose-700 transition hover:border-rose-400 hover:bg-rose-50">
+        <%= tx("bom_header_change_modal_discard", "Clear and Continue") %>
+      </button>
+      <button type="button" data-bom-header-modal-save class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800">
+        <%= tx("bom_header_change_modal_save", "Save Draft and Continue") %>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script><%- include("../../base/partials/searchable-select.js") %></script>
+<script><%- include("../../base/partials/voucher-row-enter-navigation.js") %></script>
 <script>
   (function () {
     const editable = <%- JSON.stringify(Boolean(isEditable)) %>;
     const options = <%- JSON.stringify(options || {}) %>;
+    const initialVariantRules = <%- JSON.stringify(formState?.variant_rules || []) %>;
     const state = {
       rm: <%- JSON.stringify(formState?.rm_lines || []) %>,
       sfg: <%- JSON.stringify(formState?.sfg_lines || []) %>,
       labour: <%- JSON.stringify(formState?.labour_lines || []) %>,
-      rule: <%- JSON.stringify(formState?.variant_rules || []) %>,
+      labour_selection: [],
+      labourRuleRateMap: {},
+      labourRuleOpenSkuId: "",
+      labourRuleOpenFallbackSizeId: null,
+      rule: (initialVariantRules || []).filter((row) => String(row?.action_type || "").toUpperCase() === "ADJUST_QTY"),
+      color_rule: (initialVariantRules || []).filter((row) => {
+        const action = String(row?.action_type || "").toUpperCase();
+        const newValue = row?.new_value && typeof row.new_value === "object" ? row.new_value : {};
+        return action === "REPLACE_RM" && (newValue.rm_color_id || 0) && !(newValue.replacement_rm_item_id || 0);
+      }).map((row) => ({
+        target_rm_item_id: row.target_rm_item_id || "",
+        sku_color_id: String(row.color_scope || "").toUpperCase() === "SPECIFIC" ? (row.color_id || "") : "",
+        rm_color_id: (row.new_value && row.new_value.rm_color_id) || "",
+      })),
+      packing_rule: (initialVariantRules || []).filter((row) => {
+        const action = String(row?.action_type || "").toUpperCase();
+        const newValue = row?.new_value && typeof row.new_value === "object" ? row.new_value : {};
+        return action === "REPLACE_RM" && (newValue.replacement_rm_item_id || 0);
+      }).map((row) => ({
+        target_rm_item_id: row.target_rm_item_id || "",
+        packing_type_id: String(row.packing_scope || "").toUpperCase() === "SPECIFIC" ? (row.packing_type_id || "") : "",
+        size_id: String(row.size_scope || "").toUpperCase() === "SPECIFIC" ? (row.size_id || "") : "",
+        replacement_rm_item_id: (row.new_value && row.new_value.replacement_rm_item_id) || "",
+      })),
+      sku_override: <%- JSON.stringify(formState?.sku_overrides || []) %>,
       ruleOpenSizeId: null,
+      colorRuleOpenScope: "ALL",
+      skuRuleOpenSkuId: "",
       ruleRemovedKeys: new Set(),
     };
     const labels = {
@@ -241,6 +516,33 @@
       specific: "<%= t('bom_specific') || 'Specific' %>",
       add: "<%= t('add') || 'Add' %>",
       remove: "<%= t('delete') || 'Delete' %>",
+      clear: "<%= t('clear') || 'Clear' %>",
+    };
+    const serverErrorMessage = <%- JSON.stringify(errorMessage || "") %>;
+    const serverErrorDetails = <%- JSON.stringify((errors || []).map((err) => err?.message).filter(Boolean)) %>;
+    let allowBomSubmit = false;
+    let bomForm = null;
+    let saveDraftBtn = null;
+    let approveNowBtn = null;
+    let submitIntentInput = null;
+    let headerCommittedState = null;
+    let applyingHeaderState = false;
+    const rmUiText = {
+      sizePickerHint: "<%= t('bom_rules_size_picker_hint') || 'Choose a size tab to edit material quantities for that size.' %>",
+      activeSizeLabel: "<%= t('bom_rules_active_size_label') || 'Editing rules for size' %>",
+      ruleCountLabel: "<%= t('bom_rules_count_label') || 'rules' %>",
+      colMaterial: "<%= t('bom_rm_col_material') || 'Material' %>",
+      colQty: "<%= t('bom_rules_col_qty') || 'Required Qty' %>",
+      colUom: "<%= t('bom_rules_col_uom') || 'Unit' %>",
+      colActions: "<%= t('bom_rm_col_actions') || 'Actions' %>",
+      colMaterialHelp: "<%= t('bom_hint_size_rule_material') || 'Material to which this size rule applies.' %>",
+      colQtyHelp: "<%= t('bom_hint_size_rule_qty') || 'Required quantity for the selected size.' %>",
+      colUomHelp: "<%= t('bom_hint_size_rule_uom') || 'Unit for the size-specific quantity.' %>",
+      colActionsHelp: "<%= t('bom_hint_actions') || 'Use plus/minus to add or remove rows.' %>",
+      colColor: "<%= t('color') || 'Color' %>",
+      colPacking: "<%= t('packing') || 'Packing' %>",
+      colReplace: "<%= t('replace_with') || 'Replace With' %>",
+      colSku: "<%= t('sku') || 'SKU' %>",
     };
     const esc = (value) =>
       String(value ?? "")
@@ -261,6 +563,9 @@
     const rmItemUomById = new Map((options.rmItems || []).map((item) => [String(item.id), String(item.base_uom_id || "")]));
     const sfgSkuUomById = new Map((options.sfgSkus || []).map((sku) => [String(sku.id), String(sku.base_uom_id || "")]));
     const uomNameById = new Map((options.uoms || []).map((uom) => [String(uom.id), String(uom.name || "")]));
+    const rmItemNameById = new Map((options.rmItems || []).map((item) => [String(item.id), item.name || item.code || item.id]));
+    const departmentNameById = new Map((options.departments || []).map((dept) => [String(dept.id), dept.name || dept.id]));
+    const labourNameById = new Map((options.labours || []).map((labour) => [String(labour.id), labour.name || labour.code || labour.id]));
     const rmItemColorMap = options.rmItemColorMap || {};
     const rmItemSizeMap = options.rmItemSizeMap || {};
     const labourDeptMap = options.labourDeptMap || {};
@@ -268,6 +573,16 @@
     const headerItemSelect = document.querySelector('select[name="item_id"]');
     const headerLevelSelect = document.querySelector('select[name="level"]');
     const allHeaderItems = Array.isArray(options.items) ? options.items : [];
+    const headerItemById = new Map(allHeaderItems.map((item) => [String(item.id || ""), item]));
+    const sfgSection = document.getElementById("bom-sfg");
+    const sfgPartColumnLabelEl = document.querySelector("[data-sfg-part-col-label]");
+    const sfgPartColumnTitleEl = document.querySelector("[data-sfg-part-col-title]");
+    const stepLabel = "<%= t('step') || 'Step' %>";
+    const upperLabel = "<%= t('upper') || 'Upper' %>";
+    const sfgPartDefaultColLabel = "<%= t('bom_sfg_col_step_upper_sku') || 'Step/Upper SKU' %>";
+    const sfgPartDefaultHint = "<%= t('bom_hint_step_upper_sku') || 'Select the semi-finished SKU used for this finished SKU.' %>";
+    const sfgPartStepHint = "<%= t('bom_hint_step_sku') || 'Select step SKU used for this finished SKU.' %>";
+    const sfgPartUpperHint = "<%= t('bom_hint_upper_sku') || 'Select upper SKU used for this finished SKU.' %>";
     const plusIcon = '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /><path d="M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>';
     const deleteIcon = '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 12h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>';
     const resolveRmUomId = (row) => rmItemUomById.get(String(row?.rm_item_id || "")) || String(row?.uom_id || "");
@@ -296,10 +611,48 @@
       PER_PAIR: "<%= t('rate_type_per_pair') || 'Per Pair' %>",
       PER_DOZEN: "<%= t('rate_type_per_dozen') || 'Per Dozen' %>",
     };
+    const defaultLabourSelectionRow = () => ({ labour_id: "", dept_id: "", rate_type: "PER_PAIR" });
+    const normalizeLabourRateType = (rateType) => {
+      const normalized = String(rateType || "PER_PAIR").toUpperCase();
+      return Object.prototype.hasOwnProperty.call(rateTypeLabel, normalized) ? normalized : "PER_PAIR";
+    };
+    const normalizeLabourSelectionRow = (row) => ({
+      labour_id: String(row?.labour_id || "").trim(),
+      dept_id: String(row?.dept_id || "").trim(),
+      rate_type: normalizeLabourRateType(row?.rate_type),
+    });
+    const toLabourComboKey = (row) => {
+      const normalized = normalizeLabourSelectionRow(row);
+      return `${normalized.labour_id}:${normalized.dept_id}:${normalized.rate_type}`;
+    };
+    const toLabourRateKey = (row, sizeKey) => `${toLabourComboKey(row)}:${String(sizeKey || "ALL")}`;
+    const toLabourSizeKeyFromLine = (line) => (
+      String(line?.size_scope || "").toUpperCase() === "SPECIFIC"
+        ? String(line?.size_id || "").trim()
+        : "ALL"
+    );
     const allSizesLabel = "<%= t('all_sizes') || 'All Sizes' %>";
     const ruleSectionsHost = document.querySelector("[data-rule-size-sections]");
-    const nonHeaderSections = Array.from(document.querySelectorAll("#bom-rm, #bom-sfg, #bom-labour"));
+    const colorRuleScopesHost = document.querySelector("[data-rule-color-scopes]");
+    const skuRuleChipsHost = document.querySelector("[data-sku-rule-chips]");
+    const skuRulesBody = document.querySelector("[data-sku-rules-body]");
+    const labourRuleSkuChipsHost = document.querySelector("[data-labour-rule-sku-sections]");
+    const rmModeToggleButtons = Array.from(document.querySelectorAll("[data-rm-mode-toggle]"));
+    const rmAdvancedTogglesHost = document.querySelector("[data-rm-advanced-toggles]");
+    const rmViewToggleButtons = Array.from(document.querySelectorAll("[data-rm-view-toggle]"));
+    const rmViewPanels = Array.from(document.querySelectorAll("[data-rm-view]"));
+    const labourViewToggleButtons = Array.from(document.querySelectorAll("[data-labour-view-toggle]"));
+    const labourViewPanels = Array.from(document.querySelectorAll("[data-labour-view]"));
+    const nonHeaderSections = Array.from(document.querySelectorAll("#bom-rm, #bom-labour"));
     const headerLockNotice = document.querySelector("[data-header-lock-notice]");
+    const headerChangeModal = document.querySelector("[data-bom-header-change-modal]");
+    const headerModalSaveBtn = headerChangeModal?.querySelector("[data-bom-header-modal-save]");
+    const headerModalDiscardBtn = headerChangeModal?.querySelector("[data-bom-header-modal-discard]");
+    const headerModalCancelBtn = headerChangeModal?.querySelector("[data-bom-header-modal-cancel]");
+    const headerModalCloseBtn = headerChangeModal?.querySelector("[data-bom-header-modal-close]");
+    let rmEditorMode = "materials";
+    let rmViewMode = "materials";
+    let labourViewMode = "selection";
 
     const setSelectOptions = (selectEl, rows, selectedValue, textFn) => {
       if (!selectEl) return;
@@ -311,10 +664,11 @@
 
     const refreshRmVariantSelectors = (row, rmItemId) => {
       if (!row) return;
-      const colorSelect = row.querySelector('[data-col="color_id"]');
-      const sizeSelect = row.querySelector('[data-col="size_id"]');
-      setSelectOptions(colorSelect, getRmColorsForItem(rmItemId), colorSelect?.value || "");
-      setSelectOptions(sizeSelect, getRmSizesForItem(rmItemId), sizeSelect?.value || "");
+      const hidden = row.querySelector('[data-col="uom_id"]');
+      const display = row.querySelector('[data-col-display="uom_id"]');
+      const uomId = rmItemUomById.get(String(rmItemId || "")) || "";
+      if (hidden) hidden.value = uomId;
+      if (display) display.value = getUomName(uomId);
     };
 
     const refreshLabourDepartmentSelector = (row, labourId) => {
@@ -338,10 +692,556 @@
       headerItemSelect.disabled = !editable || !requiredItemType;
     };
 
+    const getSelectedHeaderItem = () => {
+      const itemId = String(headerItemSelect?.value || "");
+      return headerItemById.get(itemId) || null;
+    };
+
+    const getSfgPartType = () => String(getSelectedHeaderItem()?.sfg_part_type || "").trim().toUpperCase();
+
+    const getSfgPartColumnLabel = () => {
+      const partType = getSfgPartType();
+      if (partType === "STEP") return `${stepLabel} SKU`;
+      if (partType === "UPPER") return `${upperLabel} SKU`;
+      return sfgPartDefaultColLabel;
+    };
+
+    const updateSfgPartColumnPresentation = () => {
+      const partType = getSfgPartType();
+      const label = getSfgPartColumnLabel();
+      if (sfgPartColumnLabelEl) sfgPartColumnLabelEl.textContent = label;
+      if (sfgPartColumnTitleEl) {
+        if (partType === "STEP") {
+          sfgPartColumnTitleEl.setAttribute("title", sfgPartStepHint);
+        } else if (partType === "UPPER") {
+          sfgPartColumnTitleEl.setAttribute("title", sfgPartUpperHint);
+        } else {
+          sfgPartColumnTitleEl.setAttribute("title", sfgPartDefaultHint);
+        }
+      }
+    };
+
     const getHeaderSizeOptions = () => {
       const itemId = String(headerItemSelect?.value || "");
       const rows = options.itemSizeMap && Array.isArray(options.itemSizeMap[itemId]) ? options.itemSizeMap[itemId] : [];
       return rows;
+    };
+    const getLabourSizeScopes = () => {
+      const sizeRows = getHeaderSizeOptions();
+      if (sizeRows.length) {
+        return sizeRows.map((size) => ({ id: String(size.id), name: size.name || size.id }));
+      }
+      return [{ id: "ALL", name: allSizesLabel }];
+    };
+    const syncLabourLinesFromSelectionAndRates = () => {
+      const normalizedSelection = (Array.isArray(state.labour_selection) ? state.labour_selection : [])
+        .map((row) => normalizeLabourSelectionRow(row));
+      const activeSelection = normalizedSelection.filter((row) => row.labour_id || row.dept_id);
+      state.labour_selection = normalizedSelection.length ? normalizedSelection : [defaultLabourSelectionRow()];
+
+      if (!state.labourRuleRateMap || typeof state.labourRuleRateMap !== "object") {
+        state.labourRuleRateMap = {};
+      }
+      const scopeRows = getLabourSizeScopes();
+      const validSizeKeys = new Set(scopeRows.map((scope) => String(scope.id)));
+      const validComboKeys = new Set(activeSelection.map((row) => toLabourComboKey(row)));
+      Object.keys(state.labourRuleRateMap).forEach((key) => {
+        const separatorIndex = key.lastIndexOf(":");
+        if (separatorIndex <= 0) {
+          delete state.labourRuleRateMap[key];
+          return;
+        }
+        const comboKey = key.slice(0, separatorIndex);
+        const sizeKey = key.slice(separatorIndex + 1);
+        if (!validComboKeys.has(comboKey) || !validSizeKeys.has(sizeKey)) {
+          delete state.labourRuleRateMap[key];
+        }
+      });
+
+      const nextLines = [];
+      activeSelection.forEach((row) => {
+        scopeRows.forEach((scope) => {
+          const scopeId = String(scope.id || "ALL");
+          const directRate = state.labourRuleRateMap[toLabourRateKey(row, scopeId)];
+          const inheritedRate = scopeId === "ALL" ? "" : state.labourRuleRateMap[toLabourRateKey(row, "ALL")];
+          nextLines.push({
+            size_scope: scopeId === "ALL" ? "ALL" : "SPECIFIC",
+            size_id: scopeId === "ALL" ? null : scopeId,
+            dept_id: row.dept_id || null,
+            labour_id: row.labour_id || null,
+            rate_type: row.rate_type || "PER_PAIR",
+            rate_value: String(directRate ?? inheritedRate ?? "").trim(),
+          });
+        });
+      });
+      state.labour = nextLines;
+    };
+    const initializeLabourStateFromExistingLines = () => {
+      const lines = Array.isArray(state.labour) ? state.labour : [];
+      const selectionMap = new Map();
+      const rateMap = {};
+      lines.forEach((line) => {
+        const selectionRow = normalizeLabourSelectionRow(line);
+        const hasSelection = selectionRow.labour_id || selectionRow.dept_id;
+        if (!hasSelection) return;
+        const comboKey = toLabourComboKey(selectionRow);
+        if (!selectionMap.has(comboKey)) {
+          selectionMap.set(comboKey, selectionRow);
+        }
+        const rateValue = String(line?.rate_value ?? "").trim();
+        if (!rateValue) return;
+        const sizeKey = toLabourSizeKeyFromLine(line);
+        if (!sizeKey) return;
+        rateMap[toLabourRateKey(selectionRow, sizeKey)] = rateValue;
+      });
+      state.labour_selection = selectionMap.size ? Array.from(selectionMap.values()) : [defaultLabourSelectionRow()];
+      state.labourRuleRateMap = rateMap;
+      syncLabourLinesFromSelectionAndRates();
+    };
+    const getHeaderSkuOptions = () => {
+      const itemId = String(headerItemSelect?.value || "");
+      const rows = options.itemSkuMap && Array.isArray(options.itemSkuMap[itemId]) ? options.itemSkuMap[itemId] : [];
+      return rows;
+    };
+    const findHeaderSkuById = (skuId) =>
+      getHeaderSkuOptions().find((row) => String(row.id || "") === String(skuId || "")) || null;
+    const findHeaderSkuBySizeId = (sizeId) =>
+      getHeaderSkuOptions().find((row) => String(row.size_id || "") === String(sizeId || "")) || null;
+    const shouldShowSfgSection = () => {
+      const level = String(headerLevelSelect?.value || "").trim().toUpperCase();
+      if (level !== "FINISHED") return false;
+      const item = getSelectedHeaderItem();
+      if (!item) return false;
+      if (String(item.item_type || "").toUpperCase() !== "FG") return false;
+      return Boolean(item.uses_sfg);
+    };
+    const getLabourActiveSku = () => {
+      const skuOptions = getHeaderSkuOptions();
+      if (!skuOptions.length) {
+        state.labourRuleOpenSkuId = "";
+        return null;
+      }
+      const hasCurrent = skuOptions.some((sku) => String(sku.id) === String(state.labourRuleOpenSkuId || ""));
+      if (!hasCurrent) state.labourRuleOpenSkuId = String(skuOptions[0].id);
+      return skuOptions.find((sku) => String(sku.id) === String(state.labourRuleOpenSkuId || "")) || null;
+    };
+    const getLabourSizeKeyFromSku = (sku) => {
+      const sizeId = String(sku?.size_id || "").trim();
+      return sizeId || "ALL";
+    };
+    const getHeaderColorOptions = () => {
+      const itemId = String(headerItemSelect?.value || "");
+      const skuRows = options.itemSkuMap && Array.isArray(options.itemSkuMap[itemId]) ? options.itemSkuMap[itemId] : [];
+      const colorMap = new Map();
+      skuRows.forEach((row) => {
+        const colorId = String(row?.color_id || "");
+        if (!colorId) return;
+        if (!colorMap.has(colorId)) colorMap.set(colorId, row?.color_name || colorId);
+      });
+      return Array.from(colorMap.entries()).map(([id, name]) => ({ id, name }));
+    };
+    const getRmUnitNameByItemId = (itemId) => {
+      const uomId = rmItemUomById.get(String(itemId || "")) || "";
+      return getUomName(uomId);
+    };
+    const getColorRuleRmOptions = () => {
+      const rmMap = new Map();
+      (state.rm || []).forEach((line) => {
+        const itemId = String(line?.rm_item_id || "").trim();
+        if (!itemId || rmMap.has(itemId)) return;
+        const item = (options.rmItems || []).find((row) => String(row.id) === itemId);
+        rmMap.set(itemId, { id: itemId, name: item?.name || item?.code || itemId });
+      });
+      const allRmOptions = Array.from(rmMap.values());
+      const multiColorOnly = allRmOptions.filter((row) => getRmColorsForItem(row.id).length > 1);
+      if (multiColorOnly.length) return multiColorOnly;
+      const hasAnyColor = allRmOptions.filter((row) => getRmColorsForItem(row.id).length > 0);
+      return hasAnyColor.length ? hasAnyColor : allRmOptions;
+    };
+
+    const seedColorRulesForNoSkuColorVariants = () => {
+      const skuColorOptions = getHeaderColorOptions();
+      if (skuColorOptions.length) return;
+      if (Array.isArray(state.color_rule) && state.color_rule.some((row) => Number(row?.target_rm_item_id || 0))) return;
+      const candidateMaterials = getColorRuleRmOptions().filter((row) => getRmColorsForItem(row.id).length > 1);
+      if (!candidateMaterials.length) return;
+      state.color_rule = candidateMaterials.map((row) => ({
+        target_rm_item_id: String(row.id || ""),
+        sku_color_id: "",
+        rm_color_id: "",
+      }));
+    };
+    const getColorScopeOptions = () => {
+      const skuColorOptions = getHeaderColorOptions();
+      const defaultLabel = skuColorOptions.length
+        ? "<%= t('bom_all_skus') || 'All SKUs' %>"
+        : "<%= t('bom_all_skus_no_color') || 'All SKUs (no color variants)' %>";
+      return [
+        { id: "ALL", name: defaultLabel },
+        ...skuColorOptions.map((row) => ({ id: String(row.id || ""), name: row.name || row.id })),
+      ];
+    };
+    const toColorScopeKey = (value) => {
+      const key = String(value || "").trim();
+      return key ? key : "ALL";
+    };
+    const showErrorModal = (message) => {
+      const text = String(message || "").trim();
+      if (!text) return;
+      if (typeof window.showUiErrorModal === "function") {
+        window.showUiErrorModal(text, "<%= t('error_generic') || 'Error' %>");
+      }
+    };
+    const getRmDuplicateCombo = () => {
+      const seen = new Map();
+      for (let idx = 0; idx < (state.rm || []).length; idx += 1) {
+        const line = state.rm[idx] || {};
+        const rmItemId = String(line.rm_item_id || "").trim();
+        const deptId = String(line.dept_id || "").trim();
+        if (!rmItemId || !deptId) continue;
+        const key = `${rmItemId}:${deptId}`;
+        if (seen.has(key)) return { firstIndex: seen.get(key), secondIndex: idx, key };
+        seen.set(key, idx);
+      }
+      return null;
+    };
+    const getLabourSelectionDuplicateCombo = () => {
+      const seen = new Map();
+      for (let idx = 0; idx < (state.labour_selection || []).length; idx += 1) {
+        const line = state.labour_selection[idx] || {};
+        const labourId = String(line.labour_id || "").trim();
+        const deptId = String(line.dept_id || "").trim();
+        if (!labourId || !deptId) continue;
+        const key = `${labourId}:${deptId}`;
+        if (seen.has(key)) return { firstIndex: seen.get(key), secondIndex: idx, key };
+        seen.set(key, idx);
+      }
+      return null;
+    };
+    const hasClientDuplicateCombos = () => {
+      const rmDuplicate = getRmDuplicateCombo();
+      if (rmDuplicate) {
+        showErrorModal("<%= t('bom_error_rm_department_duplicate') || 'This material is already added for the selected consumption department. Use a different material or department.' %>");
+        return true;
+      }
+      const labourDuplicate = getLabourSelectionDuplicateCombo();
+      if (labourDuplicate) {
+        showErrorModal("<%= t('bom_error_labour_department_duplicate') || 'This labour is already added for the selected department. Choose a different labour or department.' %>");
+        return true;
+      }
+      return false;
+    };
+    const resolveRmDuplicateOnChange = (rowIndex, changedCol) => {
+      const duplicate = getRmDuplicateCombo();
+      if (!duplicate) return false;
+      if (duplicate.firstIndex !== rowIndex && duplicate.secondIndex !== rowIndex) return false;
+      const line = state.rm[rowIndex];
+      if (!line) return false;
+      if (changedCol === "rm_item_id") {
+        line.rm_item_id = "";
+        line.uom_id = "";
+      } else if (changedCol === "dept_id") {
+        line.dept_id = "";
+      }
+      showErrorModal("<%= t('bom_error_rm_department_duplicate') || 'This material is already added for the selected consumption department. Use a different material or department.' %>");
+      return true;
+    };
+    const resolveLabourSelectionDuplicateOnChange = (rowIndex, changedCol) => {
+      const duplicate = getLabourSelectionDuplicateCombo();
+      if (!duplicate) return false;
+      if (duplicate.firstIndex !== rowIndex && duplicate.secondIndex !== rowIndex) return false;
+      const line = state.labour_selection[rowIndex];
+      if (!line) return false;
+      if (changedCol === "labour_id") {
+        line.labour_id = "";
+      } else if (changedCol === "dept_id") {
+        line.dept_id = "";
+      }
+      syncLabourLinesFromSelectionAndRates();
+      showErrorModal("<%= t('bom_error_labour_department_duplicate') || 'This labour is already added for the selected department. Choose a different labour or department.' %>");
+      return true;
+    };
+    const findSkuOverride = (skuId, targetRmItemId, targetDeptId) =>
+      (state.sku_override || []).find(
+        (row) => String(row?.sku_id || "") === String(skuId || "")
+          && String(row?.target_rm_item_id || "") === String(targetRmItemId || "")
+          && String(row?.dept_id || "") === String(targetDeptId || ""),
+      ) || (() => {
+        const materialRows = (state.rm || []).filter(
+          (line) => String(line?.rm_item_id || "") === String(targetRmItemId || ""),
+        );
+        const deptSet = new Set(
+          materialRows
+            .map((line) => String(line?.dept_id || "").trim())
+            .filter(Boolean),
+        );
+        if (deptSet.size !== 1 || !deptSet.has(String(targetDeptId || "").trim())) return null;
+        return (state.sku_override || []).find(
+          (row) =>
+            String(row?.sku_id || "") === String(skuId || "")
+            && String(row?.target_rm_item_id || "") === String(targetRmItemId || "")
+            && !String(row?.dept_id || "").trim(),
+        ) || null;
+      })();
+    const getSkuLabel = (sku) => {
+      if (!sku) return "";
+      const parts = [];
+      if (sku.size_name) parts.push(sku.size_name);
+      if (sku.color_name) parts.push(sku.color_name);
+      if (sku.packing_name || sku.packing_type_name) parts.push(sku.packing_name || sku.packing_type_name);
+      if (sku.grade_name) parts.push(sku.grade_name);
+      if (parts.length) return `(${parts.filter(Boolean).join(" ")})`;
+      return String(sku.sku_code || "");
+    };
+    const getSkuVariantPeerIds = (skuId) => {
+      const allSkus = getHeaderSkuOptions();
+      const current = allSkus.find((row) => String(row.id) === String(skuId || ""));
+      if (!current) return [];
+      const key = [
+        String(current.size_id || ""),
+        String(current.color_id || ""),
+        String(current.packing_type_id || ""),
+      ].join("|");
+      const peerIds = allSkus
+        .filter((row) => String(row.id) !== String(current.id))
+        .filter((row) => [
+          String(row.size_id || ""),
+          String(row.color_id || ""),
+          String(row.packing_type_id || ""),
+        ].join("|") === key)
+        .map((row) => String(row.id || ""))
+        .filter(Boolean);
+      return peerIds;
+    };
+    const pickMatchingSizeRule = (targetRmItemId, sizeId) => {
+      const target = String(targetRmItemId || "");
+      const size = String(sizeId || "");
+      return (state.rule || []).find((row) =>
+        String(row?.target_rm_item_id || "") === target
+        && String(row?.size_id || "") === size
+        && Number(row?.new_value?.qty || 0) > 0,
+      ) || null;
+    };
+    const pickMatchingColorRule = (targetRmItemId, skuColorId) => {
+      const target = String(targetRmItemId || "");
+      const skuColor = String(skuColorId || "");
+      const rows = (state.color_rule || []).filter((row) =>
+        String(row?.target_rm_item_id || "") === target
+        && String(row?.rm_color_id || "").trim(),
+      );
+      if (!rows.length) return null;
+      const specific = rows.find((row) => String(row?.sku_color_id || "") === skuColor && skuColor);
+      if (specific) return specific;
+      return rows.find((row) => !String(row?.sku_color_id || "").trim()) || null;
+    };
+    const pickMatchingPackingRule = (targetRmItemId, packingTypeId, sizeId) => {
+      const target = String(targetRmItemId || "");
+      const packing = String(packingTypeId || "");
+      if (!packing) return null;
+      const rows = (state.packing_rule || []).filter((row) =>
+        String(row?.target_rm_item_id || "") === target
+        && String(row?.replacement_rm_item_id || "").trim()
+        && String(row?.packing_type_id || "") === packing,
+      );
+      if (!rows.length) return null;
+      const size = String(sizeId || "");
+      return rows.find((row) => String(row?.size_id || "") === size)
+        || rows.find((row) => !String(row?.size_id || "").trim())
+        || null;
+    };
+    const applyRulesToRmLineForSku = (rmLine, sku, overrideLine = null) => {
+      const targetRmItemId = String(rmLine?.rm_item_id || "").trim();
+      const deptId = String(rmLine?.dept_id || "").trim();
+      if (!targetRmItemId) return null;
+      let effectiveRmItemId = targetRmItemId;
+      let qty = Number(rmLine?.qty || 0);
+      if (!Number.isFinite(qty) || qty <= 0) qty = 1;
+      let qtyIsExplicit = false;
+      let uomId = resolveRmUomId(rmLine) || "";
+      let rmColorId = "";
+      let excluded = false;
+
+      const sizeRule = pickMatchingSizeRule(targetRmItemId, sku?.size_id);
+      if (sizeRule) {
+        const ruleQty = Number(sizeRule?.new_value?.qty || 0);
+        if (Number.isFinite(ruleQty) && ruleQty > 0) {
+          qty = ruleQty;
+          qtyIsExplicit = true;
+        }
+        const ruleUomId = String(sizeRule?.new_value?.uom_id || "").trim();
+        if (ruleUomId) uomId = ruleUomId;
+      }
+
+      const colorRule = pickMatchingColorRule(targetRmItemId, sku?.color_id);
+      if (colorRule) {
+        rmColorId = String(colorRule?.rm_color_id || "").trim();
+      }
+
+      const packingRule = pickMatchingPackingRule(targetRmItemId, sku?.packing_type_id, sku?.size_id);
+      if (packingRule) {
+        effectiveRmItemId = String(packingRule?.replacement_rm_item_id || "").trim() || effectiveRmItemId;
+        const replacementUomId = rmItemUomById.get(String(effectiveRmItemId || "")) || "";
+        if (replacementUomId) uomId = replacementUomId;
+      }
+
+      if (overrideLine) {
+        if (overrideLine.is_excluded) excluded = true;
+        const overrideQty = Number(overrideLine.override_qty || 0);
+        if (Number.isFinite(overrideQty) && overrideQty > 0) {
+          qty = overrideQty;
+          qtyIsExplicit = true;
+        }
+        if (String(overrideLine.replacement_rm_item_id || "").trim()) {
+          effectiveRmItemId = String(overrideLine.replacement_rm_item_id);
+          const overrideUomId = rmItemUomById.get(String(effectiveRmItemId || "")) || "";
+          if (overrideUomId) uomId = overrideUomId;
+        }
+        if (String(overrideLine.rm_color_id || "").trim()) {
+          rmColorId = String(overrideLine.rm_color_id).trim();
+        }
+      }
+
+      return {
+        targetRmItemId,
+        effectiveRmItemId,
+        qty,
+        qtyIsExplicit,
+        uomId,
+        deptId,
+        rmColorId,
+        excluded,
+      };
+    };
+    const getSkuRulesRows = (skuId) => {
+      const sku = getHeaderSkuOptions().find((row) => String(row.id) === String(skuId || ""));
+      if (!sku) return [];
+      const rmLines = (state.rm || []).filter((row) => String(row?.rm_item_id || "").trim());
+      return rmLines.map((rmLine) => {
+        const overrideLine = findSkuOverride(sku.id, rmLine.rm_item_id, rmLine.dept_id);
+        const baseline = applyRulesToRmLineForSku(rmLine, sku, null);
+        const effective = applyRulesToRmLineForSku(rmLine, sku, overrideLine);
+        return {
+          sku,
+          baseline,
+          effective,
+        };
+      }).filter((row) => row.baseline && row.effective);
+    };
+    const ensureSkuRuleOpenSku = () => {
+      const skuOptions = getHeaderSkuOptions();
+      if (!skuOptions.length) {
+        state.skuRuleOpenSkuId = "";
+        return null;
+      }
+      const hasCurrent = skuOptions.some((sku) => String(sku.id) === String(state.skuRuleOpenSkuId || ""));
+      if (!hasCurrent) state.skuRuleOpenSkuId = String(skuOptions[0].id);
+      return skuOptions.find((sku) => String(sku.id) === String(state.skuRuleOpenSkuId || "")) || null;
+    };
+    const upsertSkuOverrideLine = (nextLine) => {
+      const skuId = String(nextLine?.sku_id || "");
+      const targetRmItemId = String(nextLine?.target_rm_item_id || "");
+      const targetDeptId = String(nextLine?.dept_id || "");
+      if (!skuId || !targetRmItemId || !targetDeptId) return;
+      const idx = (state.sku_override || []).findIndex(
+        (row) =>
+          String(row?.sku_id || "") === skuId
+          && String(row?.target_rm_item_id || "") === targetRmItemId
+          && String(row?.dept_id || "") === targetDeptId,
+      );
+      const hasAnyChange = Boolean(
+        nextLine.is_excluded
+        || Number(nextLine.override_qty || 0) > 0
+        || String(nextLine.replacement_rm_item_id || "").trim()
+        || String(nextLine.rm_color_id || "").trim(),
+      );
+      if (!hasAnyChange) {
+        if (idx >= 0) state.sku_override.splice(idx, 1);
+        return;
+      }
+      if (idx >= 0) {
+        state.sku_override[idx] = { ...state.sku_override[idx], ...nextLine };
+      } else {
+        state.sku_override = (state.sku_override || []).filter((row) => !(
+          String(row?.sku_id || "") === skuId
+          && String(row?.target_rm_item_id || "") === targetRmItemId
+          && !String(row?.dept_id || "").trim()
+        ));
+        state.sku_override.push(nextLine);
+      }
+    };
+    const renderSkuRules = () => {
+      if (!(skuRulesBody instanceof HTMLElement)) return;
+      const skuOptions = getHeaderSkuOptions();
+      const activeSku = ensureSkuRuleOpenSku();
+      if (skuRuleChipsHost) {
+        skuRuleChipsHost.innerHTML = skuOptions.length
+          ? skuOptions.map((sku) => {
+            const skuId = String(sku.id);
+            const isActive = skuId === String(activeSku?.id || "");
+            return `
+              <button
+                type="button"
+                data-sku-rule-chip="${esc(skuId)}"
+                class="inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] transition ${isActive ? "border-slate-800 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}"
+                title="${esc(getSkuLabel(sku))}"
+              >
+                ${esc(getSkuLabel(sku))}
+              </button>
+            `;
+          }).join("")
+          : `<span class="text-xs text-slate-500"><%= t("no_entries") || "No entries" %></span>`;
+      }
+      if (!activeSku) {
+        skuRulesBody.innerHTML = `<tr><td colspan="5" class="px-3 py-3 text-sm text-slate-500"><%= t("bom_no_sku_available") || "No SKU available for selected article." %></td></tr>`;
+        return;
+      }
+      const rows = getSkuRulesRows(activeSku.id);
+      if (!rows.length) {
+        skuRulesBody.innerHTML = `<tr><td colspan="5" class="px-3 py-3 text-sm text-slate-500"><%= t("bom_no_material_lines_for_sku_rules") || "Add material lines first to edit SKU rules." %></td></tr>`;
+        return;
+      }
+      skuRulesBody.innerHTML = rows.map(({ sku, baseline, effective }, rowIndex) => {
+        const materialName = rmItemNameById.get(String(effective.effectiveRmItemId || "")) || effective.effectiveRmItemId;
+        const deptName = departmentNameById.get(String(effective.deptId || "")) || "";
+        const uomName = getUomName(effective.uomId);
+        const rmColorOptions = getRmColorsForItem(effective.effectiveRmItemId);
+        const baselineQty = Number(baseline.qty || 0);
+        const baselineQtyExplicit = Boolean(baseline.qtyIsExplicit);
+        const baselineColor = String(baseline.rmColorId || "");
+        const qtyValue = effective.excluded
+          ? ""
+          : (effective.qtyIsExplicit ? String(effective.qty || "") : "");
+        const rowClass = effective.excluded ? "opacity-60" : "";
+        const colorControl = rmColorOptions.length
+          ? `<select data-sku-rule-col="rm_color_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable && !effective.excluded ? "" : "disabled"}>
+                <option value="">${esc(labels.select)}</option>
+                ${makeOptions(rmColorOptions, effective.rmColorId)}
+              </select>`
+          : `<input type="text" value="-" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm text-slate-500" readonly>`;
+        return `
+          <tr
+            class="border-b border-slate-100 ${rowClass}"
+            data-sku-rule-row="true"
+            data-row-index="${rowIndex}"
+            data-sku-id="${esc(sku.id)}"
+            data-target-rm-item-id="${esc(effective.targetRmItemId)}"
+            data-target-dept-id="${esc(effective.deptId)}"
+            data-baseline-qty="${esc(baselineQty)}"
+            data-baseline-explicit="${baselineQtyExplicit ? "1" : "0"}"
+            data-baseline-rm-color-id="${esc(baselineColor)}"
+          >
+            <td class="px-3 py-2 font-medium text-slate-700">${esc(materialName)}</td>
+            <td class="px-3 py-2 text-slate-600">${esc(deptName)}</td>
+            <td class="px-3 py-2">
+              ${colorControl}
+            </td>
+            <td class="px-3 py-2">
+              <input data-sku-rule-col="required_qty" data-no-stepper="true" type="number" min="0.001" step="0.001" value="${esc(qtyValue)}" ${editable && !effective.excluded ? "" : "readonly"} class="w-32 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm ${effective.excluded ? "bg-slate-50 text-slate-500" : ""}">
+            </td>
+            <td class="px-3 py-2 text-slate-600">${esc(uomName)}</td>
+          </tr>
+        `;
+      }).join("");
     };
 
     const getRelevantSfgSkus = () => {
@@ -351,7 +1251,7 @@
         const itemIdSet = new Set(linkedSfgItemIds.map((id) => String(id)));
         return (options.sfgSkus || []).filter((sku) => itemIdSet.has(String(sku.item_id || "")));
       }
-      return options.sfgSkus || [];
+      return [];
     };
 
     const isHeaderReady = () => {
@@ -367,8 +1267,153 @@
       nonHeaderSections.forEach((section) => {
         section.classList.toggle("hidden", !ready);
       });
+      if (sfgSection) {
+        const showSfg = ready && shouldShowSfgSection();
+        sfgSection.classList.toggle("hidden", !showSfg);
+      }
+      updateSfgPartColumnPresentation();
       if (headerLockNotice) headerLockNotice.classList.toggle("hidden", ready);
     };
+    const getHeaderState = () => ({
+      level: String(headerLevelSelect?.value || "").trim(),
+      item_id: String(headerItemSelect?.value || "").trim(),
+      output_qty: String(document.querySelector('input[name="output_qty"]')?.value || "").trim(),
+      output_uom_id: String(document.querySelector('select[name="output_uom_id"]')?.value || "").trim(),
+    });
+    const isSameHeaderState = (a, b) =>
+      String(a?.level || "") === String(b?.level || "")
+      && String(a?.item_id || "") === String(b?.item_id || "")
+      && String(a?.output_qty || "") === String(b?.output_qty || "")
+      && String(a?.output_uom_id || "") === String(b?.output_uom_id || "");
+    const applyHeaderState = (nextState) => {
+      const safeState = nextState || {};
+      applyingHeaderState = true;
+      if (headerLevelSelect) headerLevelSelect.value = String(safeState.level || "");
+      renderHeaderItemsByLevel(false);
+      if (headerItemSelect) {
+        const itemId = String(safeState.item_id || "");
+        const hasItem = Array.from(headerItemSelect.options || []).some((opt) => String(opt.value || "") === itemId);
+        headerItemSelect.value = hasItem ? itemId : "";
+      }
+      const outputQtyInput = document.querySelector('input[name="output_qty"]');
+      if (outputQtyInput) outputQtyInput.value = String(safeState.output_qty || "");
+      const outputUomSelect = document.querySelector('select[name="output_uom_id"]');
+      if (outputUomSelect) outputUomSelect.value = String(safeState.output_uom_id || "");
+      applyingHeaderState = false;
+      syncStateFromDom();
+      updateHeaderSectionState();
+      renderAll();
+      if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+    };
+    const hasDependentBomData = () => {
+      const hasRm = (state.rm || []).some((row) =>
+        String(row?.rm_item_id || "").trim()
+        || String(row?.dept_id || "").trim(),
+      );
+      const hasSfg = (state.sfg || []).some((row) =>
+        String(row?.sfg_sku_id || "").trim()
+        || Number(row?.required_qty || 0) > 0,
+      );
+      const hasLabourSelection = (state.labour_selection || []).some((row) =>
+        String(row?.labour_id || "").trim()
+        || String(row?.dept_id || "").trim(),
+      );
+      const hasLabourRates = (state.labour || []).some((row) => String(row?.rate_value || "").trim());
+      const hasSizeRules = normalizeRuleRows(state.rule).some((row) =>
+        String(row?.target_rm_item_id || "").trim()
+        && Number(row?.new_value?.qty || 0) > 0,
+      );
+      const hasColorRules = (state.color_rule || []).some((row) =>
+        String(row?.target_rm_item_id || "").trim()
+        || String(row?.sku_color_id || "").trim()
+        || String(row?.rm_color_id || "").trim(),
+      );
+      const hasPackingRules = (state.packing_rule || []).some((row) =>
+        String(row?.target_rm_item_id || "").trim()
+        || String(row?.packing_type_id || "").trim()
+        || String(row?.size_id || "").trim()
+        || String(row?.replacement_rm_item_id || "").trim(),
+      );
+      const hasSkuOverrides = (state.sku_override || []).some((row) =>
+        Boolean(row?.is_excluded)
+        || String(row?.override_qty || "").trim()
+        || String(row?.replacement_rm_item_id || "").trim()
+        || String(row?.rm_color_id || "").trim(),
+      );
+      return hasRm || hasSfg || hasLabourSelection || hasLabourRates || hasSizeRules || hasColorRules || hasPackingRules || hasSkuOverrides;
+    };
+    const resetDependentBomStateForHeaderChange = () => {
+      state.rm = editable ? [addDefaults.rm()] : [];
+      state.sfg = [];
+      state.labour_selection = editable ? [defaultLabourSelectionRow()] : [];
+      state.labourRuleRateMap = {};
+      state.labour = [];
+      state.labourRuleOpenSkuId = "";
+      state.labourRuleOpenFallbackSizeId = null;
+      state.rule = [];
+      state.color_rule = [];
+      state.packing_rule = [];
+      state.sku_override = [];
+      state.ruleOpenSizeId = null;
+      state.colorRuleOpenScope = "ALL";
+      state.skuRuleOpenSkuId = "";
+      state.ruleRemovedKeys = new Set();
+      syncLabourLinesFromSelectionAndRates();
+    };
+    const commitHeaderChange = (changedField) => {
+      if (String(changedField || "") === "level") {
+        renderHeaderItemsByLevel(false);
+      }
+      syncStateFromDom();
+      updateHeaderSectionState();
+      renderAll();
+      if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+      headerCommittedState = getHeaderState();
+    };
+    const openHeaderChangeModal = () =>
+      new Promise((resolve) => {
+        if (!(headerChangeModal instanceof HTMLElement)) {
+          resolve("cancel");
+          return;
+        }
+        let settled = false;
+        const close = (result) => {
+          if (settled) return;
+          settled = true;
+          document.removeEventListener("keydown", onKeydown);
+          headerChangeModal.removeEventListener("click", onBackdropClick);
+          headerModalSaveBtn?.removeEventListener("click", onSave);
+          headerModalDiscardBtn?.removeEventListener("click", onDiscard);
+          headerModalCancelBtn?.removeEventListener("click", onCancel);
+          headerModalCloseBtn?.removeEventListener("click", onCancel);
+          headerChangeModal.classList.add("hidden");
+          headerChangeModal.classList.remove("flex");
+          resolve(result);
+        };
+        const onSave = () => close("save");
+        const onDiscard = () => close("discard");
+        const onCancel = () => close("cancel");
+        const onKeydown = (event) => {
+          if (event.key === "Escape") {
+            event.preventDefault();
+            close("cancel");
+          }
+        };
+        const onBackdropClick = (event) => {
+          if (event.target === headerChangeModal) close("cancel");
+        };
+        headerModalSaveBtn?.addEventListener("click", onSave);
+        headerModalDiscardBtn?.addEventListener("click", onDiscard);
+        headerModalCancelBtn?.addEventListener("click", onCancel);
+        headerModalCloseBtn?.addEventListener("click", onCancel);
+        document.addEventListener("keydown", onKeydown);
+        headerChangeModal.addEventListener("click", onBackdropClick);
+        headerChangeModal.classList.remove("hidden");
+        headerChangeModal.classList.add("flex");
+        window.setTimeout(() => {
+          if (headerModalSaveBtn instanceof HTMLElement) headerModalSaveBtn.focus();
+        }, 0);
+      });
 
     const renderRm = () => {
       const body = document.querySelector('[data-lines-body="rm"]');
@@ -376,18 +1421,22 @@
       body.innerHTML = state.rm
         .map((row, idx) => {
           const fixedUomId = resolveRmUomId(row);
-          const rmColorOptions = getRmColorsForItem(row.rm_item_id);
-          const rmSizeOptions = getRmSizesForItem(row.rm_item_id);
+          const fixedUomName = getUomName(fixedUomId);
           return `
           <tr data-row-index="${idx}" class="border-b border-slate-100">
-            <td class="px-3 py-2"><select data-col="rm_item_id" data-searchable-outside-modal="true" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(options.rmItems || [], row.rm_item_id, (r) => r.name || r.code || r.id)}</select></td>
-            <td class="px-3 py-2"><select data-col="color_id" data-searchable-outside-modal="true" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(rmColorOptions, row.color_id)}</select></td>
-            <td class="px-3 py-2"><select data-col="size_id" data-searchable-outside-modal="true" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(rmSizeOptions, row.size_id)}</select></td>
-            <td class="px-3 py-2"><select data-col="dept_id" data-searchable-outside-modal="true" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(options.departments || [], row.dept_id)}</select></td>
-            <input type="hidden" data-col="qty" value="${esc(row.qty || 1)}" />
-            <input type="hidden" data-col="uom_id" value="${esc(fixedUomId)}" />
-            <input type="hidden" data-col="normal_loss_pct" value="${esc(row.normal_loss_pct ?? 0)}" />
-            <td class="px-3 py-2 text-right">${editable ? actionButtons("rm") : ""}</td>
+            <td class="px-3 py-2"><select data-col="rm_item_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(options.rmItems || [], row.rm_item_id, (r) => r.name || r.code || r.id)}</select></td>
+            <td class="px-3 py-2">
+              <input type="hidden" data-col="uom_id" value="${esc(fixedUomId)}" />
+              <input type="text" data-col-display="uom_id" value="${esc(fixedUomName)}" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm text-slate-600" readonly>
+            </td>
+            <td class="px-3 py-2"><select data-col="dept_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(options.departments || [], row.dept_id)}</select></td>
+            <td class="px-3 py-2 text-right">
+              <input type="hidden" data-col="qty" value="${esc(row.qty ?? 1)}" />
+              <input type="hidden" data-col="color_id" value="">
+              <input type="hidden" data-col="size_id" value="">
+              <input type="hidden" data-col="normal_loss_pct" value="${esc(row.normal_loss_pct ?? 0)}" />
+              ${editable ? actionButtons("rm") : ""}
+            </td>
           </tr>`;
         })
         .join("");
@@ -396,44 +1445,152 @@
     const renderSfg = () => {
       const body = document.querySelector('[data-lines-body="sfg"]');
       if (!body) return;
-      const sizeOptions = getHeaderSizeOptions();
+      if (!shouldShowSfgSection()) {
+        body.innerHTML = "";
+        return;
+      }
+      const fgSkuOptions = getHeaderSkuOptions().filter((sku) => Number(sku?.size_id || 0) > 0);
       const sfgOptions = getRelevantSfgSkus();
-      body.innerHTML = state.sfg
+      if (!fgSkuOptions.length) {
+        body.innerHTML = `<tr><td colspan="4" class="px-3 py-3 text-sm text-slate-500"><%= t("bom_no_sku_available") || "No SKU available for selected article." %></td></tr>`;
+        return;
+      }
+      const existingBySkuId = new Map((state.sfg || []).map((row) => [String(row?.fg_sku_id || ""), row]));
+      const existingBySizeId = new Map((state.sfg || []).map((row) => [String(row?.fg_size_id || ""), row]));
+      const nextSfg = fgSkuOptions.map((sku) => {
+        const bySku = existingBySkuId.get(String(sku.id || ""));
+        const bySize = existingBySizeId.get(String(sku.size_id || ""));
+        const existing = bySku || bySize || {};
+        return {
+          fg_sku_id: String(sku.id || ""),
+          fg_size_id: String(sku.size_id || ""),
+          sfg_sku_id: String(existing?.sfg_sku_id || ""),
+          required_qty: existing?.required_qty ?? "",
+          uom_id: String(existing?.uom_id || ""),
+        };
+      });
+      state.sfg = nextSfg;
+      body.innerHTML = nextSfg
         .map((row, idx) => {
+          const mappedFgSku = findHeaderSkuById(row.fg_sku_id);
+          const fgSkuLabel = getSkuLabel(mappedFgSku) || mappedFgSku?.sku_code || row.fg_sku_id;
+          const fgSizeId = String(mappedFgSku?.size_id || row.fg_size_id || "");
           const fixedUomId = resolveSfgUomId(row);
           const fixedUomName = getUomName(fixedUomId);
           return `
           <tr data-row-index="${idx}" class="border-b border-slate-100">
-            <td class="px-3 py-2"><select data-col="fg_size_id" data-searchable-outside-modal="true" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(sizeOptions, row.fg_size_id)}</select></td>
-            <td class="px-3 py-2"><select data-col="sfg_sku_id" data-searchable-outside-modal="true" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(sfgOptions, row.sfg_sku_id, (r) => r.item_name || r.sku_code || r.id)}</select></td>
-            <td class="px-3 py-2"><input data-col="required_qty" type="number" min="0.001" step="0.001" value="${esc(row.required_qty ?? "")}" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "readonly"}></td>
+            <td class="px-3 py-2">
+              <input type="hidden" data-col="fg_sku_id" value="${esc(row.fg_sku_id)}">
+              <input type="hidden" data-col="fg_size_id" value="${esc(fgSizeId)}">
+              <input type="text" value="${esc(fgSkuLabel)}" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm text-slate-700" readonly>
+            </td>
+            <td class="px-3 py-2"><select data-col="sfg_sku_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(sfgOptions, row.sfg_sku_id, (r) => r.sku_code || r.item_name || r.id)}</select></td>
             <td class="px-3 py-2">
               <input type="hidden" data-col="uom_id" value="${esc(fixedUomId)}">
               <input type="text" data-col-display="uom_id" value="${esc(fixedUomName)}" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm text-slate-600" readonly>
             </td>
-            <td class="px-3 py-2 text-right">${editable ? actionButtons("sfg") : ""}</td>
+            <td class="px-3 py-2"><input data-col="required_qty" data-no-stepper="true" type="number" min="0.001" step="0.001" value="${esc(row.required_qty ?? "")}" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "readonly"}></td>
           </tr>`;
         })
         .join("");
     };
 
-    const renderLabour = () => {
-      const body = document.querySelector('[data-lines-body="labour"]');
+    const renderLabourSelection = () => {
+      const body = document.querySelector('[data-lines-body="labour_selection"]');
       if (!body) return;
-      const sizeOptions = getHeaderSizeOptions();
-      body.innerHTML = state.labour
+      const lines = Array.isArray(state.labour_selection) ? state.labour_selection : [];
+      body.innerHTML = lines
         .map((row, idx) => {
-          const selectedSize = String(row.size_scope || "").toUpperCase() === "ALL" ? "ALL" : String(row.size_id || "");
-          const sizeSelectOptions = `<option value="ALL" ${selectedSize === "ALL" ? "selected" : ""}>${esc(allSizesLabel)}</option>${makeOptions(sizeOptions, selectedSize)}`;
+          const normalizedRow = normalizeLabourSelectionRow(row);
           return `
           <tr data-row-index="${idx}" class="border-b border-slate-100">
-            <td class="px-3 py-2"><select data-col="size_selector" data-searchable-outside-modal="true" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}>${sizeSelectOptions}</select></td>
-            <td class="px-3 py-2"><select data-col="labour_id" data-searchable-outside-modal="true" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(options.labours || [], row.labour_id, (r) => r.name || r.code || r.id)}</select></td>
-            <td class="px-3 py-2"><select data-col="dept_id" data-searchable-outside-modal="true" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(getLabourDepartmentsForLabour(row.labour_id), row.dept_id)}</select></td>
-            <td class="px-3 py-2"><select data-col="rate_type" data-searchable-outside-modal="true" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions((options.labourRateTypeOptions || []).map((r) => ({ value: r.value, id: r.value })), row.rate_type, (r) => rateTypeLabel[r.value] || r.value)}</select></td>
-            <td class="px-3 py-2"><input data-col="rate_value" type="number" min="0" step="0.0001" value="${esc(row.rate_value ?? "")}" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "readonly"}></td>
-            <td class="px-3 py-2 text-right">${editable ? actionButtons("labour") : ""}</td>
+            <td class="px-3 py-2"><select data-col="labour_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(options.labours || [], normalizedRow.labour_id, (r) => r.name || r.code || r.id)}</select></td>
+            <td class="px-3 py-2"><select data-col="dept_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(getLabourDepartmentsForLabour(normalizedRow.labour_id), normalizedRow.dept_id)}</select></td>
+            <td class="px-3 py-2"><select data-col="rate_type" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions((options.labourRateTypeOptions || []).map((r) => ({ value: r.value, id: r.value })), normalizedRow.rate_type, (r) => rateTypeLabel[r.value] || r.value)}</select></td>
+            <td class="px-3 py-2 text-right">${editable ? actionButtons("labour_selection") : ""}</td>
           </tr>`;
+        })
+        .join("");
+    };
+
+    const renderLabourRules = () => {
+      syncLabourLinesFromSelectionAndRates();
+      const body = document.querySelector('[data-lines-body="labour_rule"]');
+      if (!(body instanceof HTMLElement)) return;
+      const skuOptions = getHeaderSkuOptions();
+      const activeSku = getLabourActiveSku();
+      const sizeScopes = getLabourSizeScopes();
+      const hasSkuOptions = skuOptions.length > 0;
+      let activeSizeKey = "ALL";
+      if (labourRuleSkuChipsHost) {
+        if (hasSkuOptions) {
+          labourRuleSkuChipsHost.innerHTML = skuOptions.map((sku) => {
+            const skuId = String(sku.id || "");
+            const isActive = skuId === String(activeSku?.id || "");
+            const label = getSkuLabel(sku) || String(sku.sku_code || sku.id || "");
+            return `
+              <button
+                type="button"
+                data-labour-rule-chip="${esc(skuId)}"
+                class="inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] transition ${isActive ? "border-slate-800 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}"
+                title="${esc(label)}"
+              >
+                ${esc(label)}
+              </button>
+            `;
+          }).join("");
+        } else {
+          if (!state.labourRuleOpenFallbackSizeId || !sizeScopes.some((scope) => String(scope.id) === String(state.labourRuleOpenFallbackSizeId))) {
+            state.labourRuleOpenFallbackSizeId = sizeScopes.length ? String(sizeScopes[0].id) : "ALL";
+          }
+          labourRuleSkuChipsHost.innerHTML = sizeScopes.map((scope) => {
+            const scopeId = String(scope.id || "ALL");
+            const isActive = scopeId === String(state.labourRuleOpenFallbackSizeId || "");
+            return `
+              <button
+                type="button"
+                data-labour-rule-fallback-size="${esc(scopeId)}"
+                class="inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] transition ${isActive ? "border-slate-800 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}"
+                title="${esc(scope.name || scopeId)}"
+              >
+                ${esc(scope.name || scopeId)}
+              </button>
+            `;
+          }).join("");
+        }
+      }
+      if (hasSkuOptions) {
+        if (!activeSku) {
+          body.innerHTML = `<tr><td colspan="4" class="px-3 py-3 text-sm text-slate-500"><%= t("bom_no_sku_available") || "No SKU available for selected article." %></td></tr>`;
+          return;
+        }
+        activeSizeKey = getLabourSizeKeyFromSku(activeSku);
+      } else {
+        activeSizeKey = String(state.labourRuleOpenFallbackSizeId || sizeScopes[0]?.id || "ALL");
+      }
+      const activeRows = (state.labour || []).filter((row) => {
+        const sizeKey = toLabourSizeKeyFromLine(row);
+        return String(sizeKey || "ALL") === activeSizeKey;
+      });
+      if (!activeRows.length) {
+        body.innerHTML = `<tr><td colspan="4" class="px-3 py-3 text-sm text-slate-500"><%= t("bom_no_labour_selected") || "Add labour lines first to set size-wise rates." %></td></tr>`;
+        return;
+      }
+      body.innerHTML = activeRows
+        .map((row, idx) => {
+          const labourId = String(row?.labour_id || "");
+          const deptId = String(row?.dept_id || "");
+          const rateType = normalizeLabourRateType(row?.rate_type);
+          const labourName = labourNameById.get(labourId) || labourId || "-";
+          const deptName = departmentNameById.get(deptId) || deptId || "-";
+          return `
+            <tr data-row-index="${idx}" data-labour-rule-entry="true" data-labour-id="${esc(labourId)}" data-dept-id="${esc(deptId)}" data-rate-type="${esc(rateType)}" data-size-id="${esc(activeSizeKey)}" class="border-b border-slate-100">
+              <td class="px-3 py-2 text-slate-700">${esc(labourName)}</td>
+              <td class="px-3 py-2 text-slate-700">${esc(deptName)}</td>
+              <td class="px-3 py-2 text-slate-700">${esc(rateTypeLabel[rateType] || rateType)}</td>
+              <td class="px-3 py-2"><input data-labour-rule-col="rate_value" data-no-stepper="true" type="number" min="0" step="0.0001" value="${esc(row?.rate_value ?? "")}" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "readonly"}></td>
+            </tr>
+          `;
         })
         .join("");
     };
@@ -445,7 +1602,7 @@
           const rmItemId = Number(entry?.target_rm_item_id || 0);
           if (!sizeId || !rmItemId) return null;
           const nextValue = entry?.new_value && typeof entry.new_value === "object" ? entry.new_value : {};
-          const qty = Number(nextValue.qty || 0) > 0 ? Number(nextValue.qty) : 1;
+          const qty = Number(nextValue.qty || 0) > 0 ? Number(nextValue.qty) : "";
           const uomId = Number(nextValue.uom_id || 0) || Number(resolveRmUomId({ rm_item_id: rmItemId })) || null;
           return {
             size_id: sizeId,
@@ -475,17 +1632,17 @@
           const rmItemId = Number(rmRow.rm_item_id);
           const key = `${sizeId}:${rmItemId}`;
           if (state.ruleRemovedKeys.has(key)) return;
-          const existing = existingMap.get(key);
-          const fallbackUomId = Number(resolveRmUomId(rmRow)) || null;
-          merged.push({
-            size_id: sizeId,
-            target_rm_item_id: rmItemId,
-            new_value: {
-              qty: Number(existing?.new_value?.qty || 0) > 0 ? Number(existing.new_value.qty) : 1,
-              uom_id: Number(existing?.new_value?.uom_id || 0) || fallbackUomId,
-            },
+            const existing = existingMap.get(key);
+            const fallbackUomId = Number(resolveRmUomId(rmRow)) || null;
+            merged.push({
+              size_id: sizeId,
+              target_rm_item_id: rmItemId,
+              new_value: {
+                qty: Number(existing?.new_value?.qty || 0) > 0 ? Number(existing.new_value.qty) : "",
+                uom_id: Number(existing?.new_value?.uom_id || 0) || fallbackUomId,
+              },
+            });
           });
-        });
       });
       state.rule = merged;
 
@@ -510,8 +1667,9 @@
       const activeRows = grouped.get(String(activeSize.id)) || [];
 
       ruleSectionsHost.innerHTML = `
-        <div class="overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 p-2">
-          <div class="flex min-w-max items-center gap-2">
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+          <div class="mb-2 text-xs font-medium text-slate-500">${esc(rmUiText.sizePickerHint)}</div>
+          <div class="flex flex-wrap items-center gap-2">
             ${sizeOptions
               .map((size) => {
                 const sizeId = String(size.id);
@@ -524,7 +1682,7 @@
                     class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] transition ${isActive ? "border-slate-800 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}"
                   >
                     <span>${esc(size.name || size.id)}</span>
-                    <span class="rounded-full ${isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"} px-2 py-0.5 text-[10px]">${count}</span>
+                    <span class="rounded-full ${isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"} px-2 py-0.5 text-[10px]">${count} ${esc(rmUiText.ruleCountLabel)}</span>
                   </button>
                 `;
               })
@@ -532,15 +1690,18 @@
           </div>
         </div>
         <section class="rounded-xl border border-slate-200 bg-white p-3">
-          <div class="mb-3 text-sm font-semibold text-slate-700">${esc(activeSize.name || activeSize.id)}</div>
-          <div class="overflow-x-auto">
+          <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div class="text-sm font-semibold text-slate-700">${esc(rmUiText.activeSizeLabel)}: ${esc(activeSize.name || activeSize.id)}</div>
+            <div class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600">${activeRows.length} ${esc(rmUiText.ruleCountLabel)}</div>
+          </div>
+          <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
             <table class="min-w-full text-sm">
               <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
                 <tr>
-                  <th class="px-3 py-2 text-left"><%= t("raw_materials") || "Raw Materials" %></th>
-                  <th class="px-3 py-2 text-left"><%= t("quantity") || "Quantity" %></th>
-                  <th class="px-3 py-2 text-left"><%= t("base_unit") || "Unit" %></th>
-                  <th class="px-3 py-2 text-right"><%= t("actions") %></th>
+                  <th class="px-3 py-2 text-left" title="${esc(rmUiText.colMaterialHelp)}">${esc(rmUiText.colMaterial)}</th>
+                  <th class="px-3 py-2 text-left" title="${esc(rmUiText.colUomHelp)}">${esc(rmUiText.colUom)}</th>
+                  <th class="px-3 py-2 text-left" title="${esc(rmUiText.colQtyHelp)}">${esc(rmUiText.colQty)}</th>
+                  <th class="px-3 py-2 text-right" title="${esc(rmUiText.colActionsHelp)}">${esc(rmUiText.colActions)}</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-100">
@@ -553,8 +1714,8 @@
                     return `
                       <tr data-rule-entry data-size-id="${activeSize.id}" data-rm-item-id="${row.target_rm_item_id}">
                         <td class="px-3 py-2 font-medium text-slate-700">${esc(rmLabel)}</td>
-                        <td class="px-3 py-2"><input data-rule-qty type="number" min="0.001" step="0.001" value="${esc(row.new_value?.qty || 1)}" class="w-32 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" ${editable ? "" : "readonly"} /></td>
-                        <td class="px-3 py-2"><select data-rule-uom data-searchable-outside-modal="true" class="w-40 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}>${makeOptions(options.uoms || [], uomId)}</select></td>
+                        <td class="px-3 py-2"><select data-rule-uom data-searchable-select="true" data-searchable-variant="unified" class="w-40 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}>${makeOptions(options.uoms || [], uomId)}</select></td>
+                        <td class="px-3 py-2"><input data-rule-qty data-no-stepper="true" type="number" min="0.001" step="0.001" value="${esc(row.new_value?.qty || "")}" class="w-32 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" ${editable ? "" : "readonly"} /></td>
                         <td class="px-3 py-2 text-right">
                           ${editable ? `<button type="button" data-rule-remove-entry="${activeSize.id}:${row.target_rm_item_id}" class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900">${deleteIcon}</button>` : ""}
                         </td>
@@ -569,39 +1730,243 @@
       `;
     };
 
+    const renderColorRules = () => {
+      const body = document.querySelector('[data-lines-body="color_rule"]');
+      if (!body) return;
+      seedColorRulesForNoSkuColorVariants();
+      const rmBaseOptions = getColorRuleRmOptions();
+      const colorScopeOptions = getColorScopeOptions();
+      const allowedScopeKeys = new Set(colorScopeOptions.map((row) => String(row.id)));
+      if (!Array.isArray(state.color_rule) || state.color_rule.length === 0) {
+        state.color_rule = [addDefaults.color_rule()];
+      }
+      const hasSpecificSkuColors = colorScopeOptions.some((row) => String(row.id) !== "ALL");
+      if (!hasSpecificSkuColors) {
+        state.color_rule = state.color_rule.map((row) => ({ ...row, sku_color_id: "" }));
+      }
+      const groupedCount = new Map();
+      state.color_rule.forEach((row) => {
+        const scopeKey = toColorScopeKey(row.sku_color_id);
+        groupedCount.set(scopeKey, (groupedCount.get(scopeKey) || 0) + 1);
+      });
+      const currentScope = toColorScopeKey(state.colorRuleOpenScope);
+      state.colorRuleOpenScope = allowedScopeKeys.has(currentScope)
+        ? currentScope
+        : String(colorScopeOptions[0]?.id || "ALL");
+      if (colorRuleScopesHost) {
+        colorRuleScopesHost.innerHTML = colorScopeOptions
+          .map((scope) => {
+            const scopeId = String(scope.id || "ALL");
+            const isActive = scopeId === String(state.colorRuleOpenScope);
+            const count = groupedCount.get(scopeId) || 0;
+            return `
+              <button
+                type="button"
+                data-color-rule-toggle-scope="${esc(scopeId)}"
+                class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] transition ${isActive ? "border-slate-800 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}"
+              >
+                <span>${esc(scope.name || scopeId)}</span>
+                <span class="rounded-full ${isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"} px-2 py-0.5 text-[10px]">${count} ${esc(rmUiText.ruleCountLabel)}</span>
+              </button>
+            `;
+          })
+          .join("");
+      }
+      body.innerHTML = (state.color_rule || [])
+        .map((row, idx) => {
+          const scopeKey = toColorScopeKey(row.sku_color_id);
+          const rmColorOptions = getRmColorsForItem(row.target_rm_item_id);
+          const unitName = getRmUnitNameByItemId(row.target_rm_item_id);
+          const isActiveScopeRow = String(scopeKey) === String(state.colorRuleOpenScope);
+          return `
+          <tr data-row-index="${idx}" class="border-b border-slate-100${isActiveScopeRow ? "" : " hidden"}">
+            <td class="px-3 py-2"><select data-col="target_rm_item_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(rmBaseOptions, row.target_rm_item_id)}</select></td>
+            <td class="px-3 py-2"><input type="text" value="${esc(unitName)}" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm text-slate-600" readonly></td>
+            <td class="px-3 py-2">
+              <input type="hidden" data-col="sku_color_id" value="${esc(scopeKey === "ALL" ? "" : scopeKey)}">
+              <select data-col="rm_color_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(rmColorOptions, row.rm_color_id)}</select>
+            </td>
+            <td class="px-3 py-2 text-right">${editable ? actionButtons("color_rule") : ""}</td>
+          </tr>`;
+        })
+        .join("");
+    };
+
+    const renderPackingRules = () => {
+      const body = document.querySelector('[data-lines-body="packing_rule"]');
+      if (!body) return;
+      const rmBaseOptions = (state.rm || []).map((line) => {
+        const item = (options.rmItems || []).find((row) => String(row.id) === String(line.rm_item_id));
+        return { id: line.rm_item_id, name: item?.name || item?.code || line.rm_item_id };
+      }).filter((row) => row.id);
+      const sizeOptions = getHeaderSizeOptions();
+      body.innerHTML = (state.packing_rule || [])
+        .map((row, idx) => {
+          const unitName = getRmUnitNameByItemId(row.target_rm_item_id);
+          return `
+          <tr data-row-index="${idx}" class="border-b border-slate-100">
+            <td class="px-3 py-2"><select data-col="target_rm_item_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(rmBaseOptions, row.target_rm_item_id)}</select></td>
+            <td class="px-3 py-2"><input type="text" value="${esc(unitName)}" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm text-slate-600" readonly></td>
+            <td class="px-3 py-2"><select data-col="packing_type_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(options.packings || [], row.packing_type_id)}</select></td>
+            <td class="px-3 py-2"><select data-col="size_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${esc(labels.all)}</option>${makeOptions(sizeOptions, row.size_id)}</select></td>
+            <td class="px-3 py-2"><select data-col="replacement_rm_item_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(options.rmItems || [], row.replacement_rm_item_id, (r) => r.name || r.code || r.id)}</select></td>
+            <td class="px-3 py-2 text-right">${editable ? actionButtons("packing_rule") : ""}</td>
+          </tr>`;
+        })
+        .join("");
+    };
+
+    const renderSkuOverrides = () => {
+      const body = document.querySelector('[data-lines-body="sku_override"]');
+      if (!body) return;
+      const skuOptions = getHeaderSkuOptions();
+      const rmBaseOptions = (state.rm || []).map((line) => {
+        const item = (options.rmItems || []).find((row) => String(row.id) === String(line.rm_item_id));
+        return { id: line.rm_item_id, name: item?.name || item?.code || line.rm_item_id };
+      }).filter((row) => row.id);
+      body.innerHTML = (state.sku_override || [])
+        .map((row, idx) => {
+          const rmColorOptions = getRmColorsForItem(row.target_rm_item_id);
+          const unitItemId = row.replacement_rm_item_id || row.target_rm_item_id;
+          const unitName = getRmUnitNameByItemId(unitItemId);
+          return `
+          <tr data-row-index="${idx}" class="border-b border-slate-100">
+            <td class="px-3 py-2"><select data-col="sku_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(skuOptions, row.sku_id, (r) => {
+              const parts = [r.sku_code];
+              if (r.size_name) parts.push(r.size_name);
+              if (r.color_name) parts.push(r.color_name);
+              if (r.packing_name) parts.push(r.packing_name);
+              return parts.join(" / ");
+            })}</select></td>
+            <td class="px-3 py-2"><select data-col="target_rm_item_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(rmBaseOptions, row.target_rm_item_id)}</select></td>
+            <td class="px-3 py-2"><input type="text" value="${esc(unitName)}" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm text-slate-600" readonly></td>
+            <td class="px-3 py-2"><input data-col="override_qty" data-no-stepper="true" type="number" min="0.001" step="0.001" value="${esc(row.override_qty ?? "")}" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "readonly"}></td>
+            <td class="px-3 py-2"><select data-col="replacement_rm_item_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(options.rmItems || [], row.replacement_rm_item_id, (r) => r.name || r.code || r.id)}</select></td>
+            <td class="px-3 py-2"><select data-col="rm_color_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(rmColorOptions, row.rm_color_id)}</select></td>
+            <td class="px-3 py-2 text-center"><input data-col="is_excluded" type="checkbox" ${row.is_excluded ? "checked" : ""} ${editable ? "" : "disabled"}></td>
+            <td class="px-3 py-2 text-right">${editable ? actionButtons("sku_override") : ""}</td>
+          </tr>`;
+        })
+        .join("");
+    };
+
+    const setRmViewMode = (mode) => {
+      const allowedModes = new Set(["sku_rules", "materials", "size_rules", "color_rules", "packing_rules"]);
+      const requestedMode = allowedModes.has(mode) ? mode : "materials";
+      const isAdvancedRequested = ["size_rules", "color_rules", "packing_rules"].includes(requestedMode);
+      rmViewMode = isAdvancedRequested && rmEditorMode !== "advanced" ? "materials" : requestedMode;
+      rmViewPanels.forEach((panel) => {
+        const panelMode = String(panel.getAttribute("data-rm-view") || "");
+        panel.classList.toggle("hidden", panelMode !== rmViewMode);
+      });
+      rmViewToggleButtons.forEach((button) => {
+        const buttonMode = String(button.getAttribute("data-rm-view-toggle") || "");
+        button.setAttribute("data-active", buttonMode === rmViewMode ? "true" : "false");
+      });
+      if (rmViewMode === "sku_rules") {
+        renderSkuRules();
+        if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+      } else if (rmViewMode === "size_rules") {
+        syncStateFromDom();
+        renderRules();
+        if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+      } else if (rmViewMode === "color_rules") {
+        syncStateFromDom();
+        renderColorRules();
+        if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+      }
+    };
+    const setRmEditorMode = (mode) => {
+      rmEditorMode = ["materials", "sku_rules", "advanced"].includes(mode) ? mode : "materials";
+      rmModeToggleButtons.forEach((button) => {
+        const buttonMode = String(button.getAttribute("data-rm-mode-toggle") || "");
+        button.setAttribute("data-active", buttonMode === rmEditorMode ? "true" : "false");
+      });
+      if (rmAdvancedTogglesHost) {
+        const hideAdvanced = rmEditorMode !== "advanced";
+        rmAdvancedTogglesHost.classList.toggle("hidden", hideAdvanced);
+        rmAdvancedTogglesHost.hidden = hideAdvanced;
+        rmAdvancedTogglesHost.setAttribute("aria-hidden", hideAdvanced ? "true" : "false");
+      }
+      if (rmEditorMode === "advanced") {
+        const currentAdvancedMode = ["size_rules", "color_rules", "packing_rules"].includes(rmViewMode)
+          ? rmViewMode
+          : "size_rules";
+        setRmViewMode(currentAdvancedMode);
+      } else {
+        setRmViewMode(rmEditorMode);
+      }
+    };
+    const setLabourViewMode = (mode) => {
+      labourViewMode = ["selection", "size_rules"].includes(mode) ? mode : "selection";
+      labourViewPanels.forEach((panel) => {
+        const panelMode = String(panel.getAttribute("data-labour-view") || "");
+        panel.classList.toggle("hidden", panelMode !== labourViewMode);
+      });
+      labourViewToggleButtons.forEach((button) => {
+        const buttonMode = String(button.getAttribute("data-labour-view-toggle") || "");
+        button.setAttribute("data-active", buttonMode === labourViewMode ? "true" : "false");
+      });
+      if (labourViewMode === "size_rules") {
+        renderLabourRules();
+        if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+      }
+    };
+
     const renderAll = () => {
+      updateSfgPartColumnPresentation();
       renderRm();
       renderSfg();
-      renderLabour();
+      renderLabourSelection();
+      renderLabourRules();
       renderRules();
+      renderColorRules();
+      renderPackingRules();
+      renderSkuOverrides();
+      renderSkuRules();
       if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
     };
 
     const addDefaults = {
       rm: () => ({ rm_item_id: "", color_id: "", size_id: "", dept_id: "", qty: 1, uom_id: "", normal_loss_pct: 0 }),
-      sfg: () => ({ fg_size_id: "", sfg_sku_id: "", required_qty: "", uom_id: "" }),
-      labour: () => ({ size_scope: "ALL", size_id: "", dept_id: "", labour_id: "", rate_type: "PER_PAIR", rate_value: "" }),
-      rule: () => ({ size_scope: "SPECIFIC", size_id: "", packing_scope: "ALL", packing_type_id: null, color_scope: "ALL", color_id: null, action_type: "ADJUST_QTY", material_scope: "SPECIFIC", target_rm_item_id: "", new_value: { qty: 1, uom_id: "" } }),
+      sfg: () => ({ fg_sku_id: "", fg_size_id: "", sfg_sku_id: "", required_qty: "", uom_id: "" }),
+      labour_selection: () => defaultLabourSelectionRow(),
+      rule: () => ({ size_scope: "SPECIFIC", size_id: "", packing_scope: "ALL", packing_type_id: null, color_scope: "ALL", color_id: null, action_type: "ADJUST_QTY", material_scope: "SPECIFIC", target_rm_item_id: "", new_value: { qty: "", uom_id: "" } }),
+      color_rule: () => ({ target_rm_item_id: "", sku_color_id: "", rm_color_id: "" }),
+      packing_rule: () => ({ target_rm_item_id: "", packing_type_id: "", size_id: "", replacement_rm_item_id: "" }),
+      sku_override: () => ({ sku_id: "", target_rm_item_id: "", dept_id: "", is_excluded: false, override_qty: "", replacement_rm_item_id: "", rm_color_id: "" }),
     };
 
     const addRow = (type, insertAtIndex = null) => {
       if (!editable || !addDefaults[type]) return;
       syncStateFromDom();
+      const nextRow = addDefaults[type]();
+      if (type === "color_rule") {
+        const scopeKey = toColorScopeKey(state.colorRuleOpenScope);
+        nextRow.sku_color_id = scopeKey === "ALL" ? "" : scopeKey;
+      }
       if (Number.isInteger(insertAtIndex) && insertAtIndex >= 0 && insertAtIndex <= state[type].length) {
-        state[type].splice(insertAtIndex, 0, addDefaults[type]());
+        state[type].splice(insertAtIndex, 0, nextRow);
       } else {
-        state[type].push(addDefaults[type]());
+        state[type].push(nextRow);
+      }
+      if (type === "labour_selection") {
+        syncLabourLinesFromSelectionAndRates();
       }
       renderAll();
     };
 
     const ensureMinimumRows = () => {
       if (!editable) return;
-      Object.keys(addDefaults).forEach((type) => {
+      ["rm", "labour_selection"].forEach((type) => {
         if (!Array.isArray(state[type]) || state[type].length === 0) {
           state[type] = [addDefaults[type]()];
         }
       });
+      if (!Array.isArray(state.color_rule)) state.color_rule = [];
+      if (!Array.isArray(state.packing_rule)) state.packing_rule = [];
+      if (!Array.isArray(state.sku_override)) state.sku_override = [];
+      syncLabourLinesFromSelectionAndRates();
     };
 
     document.addEventListener("click", (event) => {
@@ -614,10 +1979,70 @@
         if (Number.isFinite(idx)) addRow(type, idx + 1);
         return;
       }
+      const rmModeToggleBtn = event.target.closest("[data-rm-mode-toggle]");
+      if (rmModeToggleBtn) {
+        const nextMode = String(rmModeToggleBtn.getAttribute("data-rm-mode-toggle") || "materials");
+        setRmEditorMode(nextMode);
+        return;
+      }
+      const rmViewToggleBtn = event.target.closest("[data-rm-view-toggle]");
+      if (rmViewToggleBtn) {
+        const nextMode = String(rmViewToggleBtn.getAttribute("data-rm-view-toggle") || "materials");
+        if (rmEditorMode !== "advanced") setRmEditorMode("advanced");
+        setRmViewMode(nextMode);
+        return;
+      }
+      const labourViewToggleBtn = event.target.closest("[data-labour-view-toggle]");
+      if (labourViewToggleBtn) {
+        const nextMode = String(labourViewToggleBtn.getAttribute("data-labour-view-toggle") || "selection");
+        setLabourViewMode(nextMode);
+        return;
+      }
+      const skuRuleChipBtn = event.target.closest("[data-sku-rule-chip]");
+      if (skuRuleChipBtn) {
+        state.skuRuleOpenSkuId = String(skuRuleChipBtn.getAttribute("data-sku-rule-chip") || "");
+        renderSkuRules();
+        if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+        return;
+      }
       const ruleToggleBtn = event.target.closest("[data-rule-toggle-size]");
       if (ruleToggleBtn) {
+        syncRuleRowsFromDom();
         state.ruleOpenSizeId = String(ruleToggleBtn.getAttribute("data-rule-toggle-size") || "");
         renderRules();
+        return;
+      }
+      const labourRuleChipBtn = event.target.closest("[data-labour-rule-chip]");
+      if (labourRuleChipBtn) {
+        syncLabourRulesFromDom();
+        state.labourRuleOpenSkuId = String(labourRuleChipBtn.getAttribute("data-labour-rule-chip") || "");
+        renderLabourRules();
+        if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+        return;
+      }
+      const labourRuleFallbackSizeBtn = event.target.closest("[data-labour-rule-fallback-size]");
+      if (labourRuleFallbackSizeBtn) {
+        syncLabourRulesFromDom();
+        state.labourRuleOpenFallbackSizeId = String(labourRuleFallbackSizeBtn.getAttribute("data-labour-rule-fallback-size") || "ALL");
+        renderLabourRules();
+        if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+        return;
+      }
+      const colorRuleToggleBtn = event.target.closest("[data-color-rule-toggle-scope]");
+      if (colorRuleToggleBtn) {
+        syncStateFromDom();
+        const nextScope = toColorScopeKey(colorRuleToggleBtn.getAttribute("data-color-rule-toggle-scope"));
+        state.colorRuleOpenScope = nextScope;
+        const hasRowsForScope = (state.color_rule || []).some((row) => toColorScopeKey(row.sku_color_id) === nextScope);
+        if (!hasRowsForScope && editable) {
+          state.color_rule.push({
+            target_rm_item_id: "",
+            sku_color_id: nextScope === "ALL" ? "" : nextScope,
+            rm_color_id: "",
+          });
+        }
+        renderColorRules();
+        if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
         return;
       }
       const ruleRemoveBtn = event.target.closest("[data-rule-remove-entry]");
@@ -636,33 +2061,159 @@
       if (!Number.isFinite(idx)) return;
       syncStateFromDom();
       state[type].splice(idx, 1);
-      if (!state[type].length && addDefaults[type]) state[type].push(addDefaults[type]());
+      const keepAtLeastOne = new Set(["rm", "labour_selection"]);
+      if (!state[type].length && addDefaults[type] && keepAtLeastOne.has(type)) state[type].push(addDefaults[type]());
+      if (type === "labour_selection") syncLabourLinesFromSelectionAndRates();
       renderAll();
     });
 
-    document.addEventListener("change", (event) => {
-      if (event.target && event.target.matches('select[name="level"]')) {
-        renderHeaderItemsByLevel(false);
-        updateHeaderSectionState();
-        renderAll();
+    document.addEventListener("change", async (event) => {
+      const headerControl = event.target instanceof HTMLElement
+        ? event.target.closest("[data-header-field]")
+        : null;
+      if (headerControl instanceof HTMLElement) {
+        if (applyingHeaderState) return;
+        const changedField = String(headerControl.getAttribute("data-header-field") || "").trim();
+        if (!changedField) return;
+        if (!headerCommittedState) headerCommittedState = getHeaderState();
+        const nextHeaderState = getHeaderState();
+        if (isSameHeaderState(nextHeaderState, headerCommittedState)) return;
+        syncStateFromDom();
+        if (!hasDependentBomData()) {
+          commitHeaderChange(changedField);
+          return;
+        }
+        const decision = await openHeaderChangeModal();
+        if (decision === "save") {
+          applyHeaderState(headerCommittedState);
+          if (bomForm instanceof HTMLFormElement) {
+            allowBomSubmit = true;
+            bomForm.requestSubmit();
+          }
+          return;
+        }
+        if (decision === "discard") {
+          resetDependentBomStateForHeaderChange();
+          commitHeaderChange(changedField);
+          return;
+        }
+        applyHeaderState(headerCommittedState);
+        return;
       }
-      if (event.target && event.target.matches('select[name="item_id"], input[name="output_qty"], select[name="output_uom_id"]')) {
-        updateHeaderSectionState();
-        renderAll();
+      const skuRuleControl = event.target.closest("[data-sku-rule-col]");
+      if (skuRuleControl) {
+        const row = skuRuleControl.closest("[data-sku-rule-row]");
+        if (!row) return;
+        const skuId = String(row.getAttribute("data-sku-id") || "");
+        const targetRmItemId = String(row.getAttribute("data-target-rm-item-id") || "");
+        const targetDeptId = String(row.getAttribute("data-target-dept-id") || "");
+        if (!skuId || !targetRmItemId || !targetDeptId) return;
+        const baselineQty = Number(row.getAttribute("data-baseline-qty") || 0);
+        const baselineExplicit = String(row.getAttribute("data-baseline-explicit") || "") === "1";
+        const baselineColorId = String(row.getAttribute("data-baseline-rm-color-id") || "");
+        const qtyInput = row.querySelector('[data-sku-rule-col="required_qty"]');
+        const colorSelect = row.querySelector('[data-sku-rule-col="rm_color_id"]');
+        const enteredQty = Number(qtyInput?.value || 0);
+        const selectedColorId = String(colorSelect?.value || "").trim();
+        const existing = findSkuOverride(skuId, targetRmItemId, targetDeptId) || {
+          sku_id: skuId,
+          target_rm_item_id: targetRmItemId,
+          dept_id: targetDeptId,
+          is_excluded: false,
+          override_qty: null,
+          override_uom_id: null,
+          replacement_rm_item_id: null,
+          rm_color_id: null,
+          notes: null,
+        };
+        const qtyDiff = Number.isFinite(enteredQty) && enteredQty > 0 && (!baselineExplicit || Math.abs(enteredQty - baselineQty) > 1e-9);
+        const colorDiff = selectedColorId && selectedColorId !== baselineColorId;
+        const nextLine = {
+          ...existing,
+          sku_id: skuId,
+          target_rm_item_id: targetRmItemId,
+          dept_id: targetDeptId,
+          override_qty: qtyDiff ? enteredQty : null,
+          rm_color_id: colorDiff ? selectedColorId : null,
+        };
+        upsertSkuOverrideLine(nextLine);
+        const peerSkuIds = getSkuVariantPeerIds(skuId);
+        peerSkuIds.forEach((peerSkuId) => {
+          upsertSkuOverrideLine({
+            ...nextLine,
+            sku_id: peerSkuId,
+          });
+        });
+        renderSkuRules();
+        if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+        return;
       }
       const rmItemControl = event.target.closest('[data-col="rm_item_id"]');
       if (rmItemControl) {
         const row = rmItemControl.closest("tr");
         refreshRmVariantSelectors(row, rmItemControl.value);
-        const uomId = rmItemUomById.get(String(rmItemControl.value || "")) || "";
-        const hidden = row?.querySelector('[data-col="uom_id"]');
-        if (hidden) hidden.value = uomId;
-        renderRules();
+        syncStateFromDom();
+        const rowIndex = Number(row?.getAttribute("data-row-index"));
+        if (Number.isFinite(rowIndex) && resolveRmDuplicateOnChange(rowIndex, "rm_item_id")) {
+          renderAll();
+          if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+          return;
+        }
+        renderAll();
+        if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+        return;
       }
-      const labourControl = event.target.closest('[data-col="labour_id"]');
+      const rmDeptControl = event.target.closest('[data-lines-body="rm"] [data-col="dept_id"]');
+      if (rmDeptControl) {
+        const row = rmDeptControl.closest("tr");
+        syncStateFromDom();
+        const rowIndex = Number(row?.getAttribute("data-row-index"));
+        if (Number.isFinite(rowIndex) && resolveRmDuplicateOnChange(rowIndex, "dept_id")) {
+          renderAll();
+          if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+          return;
+        }
+        renderAll();
+        if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+        return;
+      }
+      const labourControl = event.target.closest('[data-lines-body="labour_selection"] [data-col="labour_id"]');
       if (labourControl) {
         const row = labourControl.closest("tr");
         refreshLabourDepartmentSelector(row, labourControl.value);
+        syncStateFromDom();
+        const rowIndex = Number(row?.getAttribute("data-row-index"));
+        if (Number.isFinite(rowIndex) && resolveLabourSelectionDuplicateOnChange(rowIndex, "labour_id")) {
+          renderAll();
+          if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+          return;
+        }
+        renderLabourRules();
+        if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+        return;
+      }
+      const labourSelectionControl = event.target.closest('[data-lines-body="labour_selection"] [data-col="dept_id"], [data-lines-body="labour_selection"] [data-col="rate_type"]');
+      if (labourSelectionControl) {
+        syncStateFromDom();
+        const labourDeptControl = labourSelectionControl.closest('[data-col="dept_id"]');
+        if (labourDeptControl) {
+          const row = labourDeptControl.closest("tr");
+          const rowIndex = Number(row?.getAttribute("data-row-index"));
+          if (Number.isFinite(rowIndex) && resolveLabourSelectionDuplicateOnChange(rowIndex, "dept_id")) {
+            renderAll();
+            if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+            return;
+          }
+        }
+        renderLabourRules();
+        if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+        return;
+      }
+      const labourRateControl = event.target.closest('[data-lines-body="labour_rule"] [data-labour-rule-col="rate_value"]');
+      if (labourRateControl) {
+        syncLabourRulesFromDom();
+        syncLabourLinesFromSelectionAndRates();
+        return;
       }
       const sfgSkuControl = event.target.closest('[data-col="sfg_sku_id"]');
       if (sfgSkuControl) {
@@ -671,38 +2222,93 @@
         const hidden = row?.querySelector('[data-col="uom_id"]');
         if (hidden) hidden.value = uomId;
       }
-    });
-
-    document.addEventListener("keydown", (event) => {
-      if (!editable || event.key !== "Enter") return;
-      const target = event.target;
-      if (!(target instanceof HTMLElement)) return;
-      const row = target.closest("tr[data-row-index]");
-      const body = target.closest("[data-lines-body]");
-      if (!row || !body) return;
-      if (!target.matches("input, select, textarea")) return;
-
-      event.preventDefault();
-      const controls = Array.from(row.querySelectorAll("select[data-col], input[data-col], textarea[data-col]")).filter(
-        (node) => node instanceof HTMLElement && node.getAttribute("type") !== "hidden",
-      );
-      const currentIndex = controls.indexOf(target);
-      if (currentIndex >= 0 && currentIndex < controls.length - 1) {
-        const nextControl = controls[currentIndex + 1];
-        if (nextControl && typeof nextControl.focus === "function") nextControl.focus();
-        return;
+      const fgSkuControl = event.target.closest('[data-col="fg_sku_id"]');
+      if (fgSkuControl) {
+        const row = fgSkuControl.closest("tr");
+        const fgSku = findHeaderSkuById(fgSkuControl.value);
+        const hiddenSize = row?.querySelector('[data-col="fg_size_id"]');
+        if (hiddenSize) hiddenSize.value = String(fgSku?.size_id || "");
       }
-
-      const type = body.getAttribute("data-lines-body");
-      const rowIndex = Number(row.getAttribute("data-row-index"));
-      if (!type || !Number.isFinite(rowIndex)) return;
-      addRow(type, rowIndex + 1);
-      setTimeout(() => {
-        const insertedRow = document.querySelector(`[data-lines-body="${type}"] tr[data-row-index="${rowIndex + 1}"]`);
-        const firstInput = insertedRow?.querySelector("select[data-col], input[data-col], textarea[data-col]");
-        if (firstInput && typeof firstInput.focus === "function") firstInput.focus();
-      }, 0);
+      const genericRuleTarget = event.target.closest('[data-col="target_rm_item_id"], [data-col="sku_id"]');
+      if (genericRuleTarget) {
+        syncStateFromDom();
+        renderAll();
+      }
     });
+
+    const bindEnterNavigation = () => {
+      if (!editable || typeof window.createVoucherRowEnterNavigator !== "function") return;
+      const form = document.getElementById("bom-form");
+      const headerSection = document.getElementById("bom-header");
+      if (form instanceof HTMLElement && headerSection instanceof HTMLElement) {
+        const headerNavigator = window.createVoucherRowEnterNavigator({
+          form,
+          linesBody: headerSection,
+          rowSelector: "[data-header-enter-row]",
+          fieldAttr: "data-header-field",
+          fieldOrder: ["level", "item_id", "output_qty", "output_uom_id"],
+          canAppendRow: () => false,
+        });
+        headerNavigator?.bind();
+      }
+      const rowConfigs = [
+        { type: "rm", fieldOrder: ["rm_item_id", "dept_id"] },
+        { type: "labour_selection", fieldOrder: ["labour_id", "dept_id", "rate_type"] },
+        { type: "color_rule", fieldOrder: ["target_rm_item_id", "rm_color_id"] },
+        { type: "packing_rule", fieldOrder: ["target_rm_item_id", "packing_type_id", "size_id", "replacement_rm_item_id"] },
+      ];
+      rowConfigs.forEach((cfg) => {
+        const linesBody = document.querySelector(`[data-lines-body="${cfg.type}"]`);
+        if (!(linesBody instanceof HTMLElement)) return;
+        const navigator = window.createVoucherRowEnterNavigator({
+          form,
+          linesBody,
+          fieldAttr: "data-col",
+          fieldOrder: cfg.fieldOrder,
+          appendRow: () => {
+            syncStateFromDom();
+            addRow(cfg.type);
+            return true;
+          },
+          canAppendRow: () => Boolean(editable),
+        });
+        navigator?.bind();
+      });
+      const sfgBody = document.querySelector('[data-lines-body="sfg"]');
+      if (sfgBody instanceof HTMLElement) {
+        const sfgNavigator = window.createVoucherRowEnterNavigator({
+          form,
+          linesBody: sfgBody,
+          fieldAttr: "data-col",
+          fieldOrder: ["sfg_sku_id", "required_qty"],
+          canAppendRow: () => false,
+        });
+        sfgNavigator?.bind();
+      }
+      const labourRuleBody = document.querySelector('[data-lines-body="labour_rule"]');
+      if (labourRuleBody instanceof HTMLElement) {
+        const labourRuleNavigator = window.createVoucherRowEnterNavigator({
+          form,
+          linesBody: labourRuleBody,
+          rowSelector: '[data-labour-rule-entry="true"]',
+          fieldAttr: "data-labour-rule-col",
+          fieldOrder: ["rate_value"],
+          canAppendRow: () => false,
+        });
+        labourRuleNavigator?.bind();
+      }
+      if (skuRulesBody instanceof HTMLElement) {
+        const skuRuleNavigator = window.createVoucherRowEnterNavigator({
+          form,
+          linesBody: skuRulesBody,
+          rowSelector: '[data-sku-rule-row="true"]',
+          fieldAttr: "data-sku-rule-col",
+          fieldOrder: ["rm_color_id", "required_qty"],
+          canAppendRow: () => false,
+        });
+        skuRuleNavigator?.bind();
+      }
+    };
 
     const collectRows = (type, mapFn) => {
       return Array.from(document.querySelectorAll(`[data-lines-body="${type}"] tr`)).map((row) => mapFn(row));
@@ -710,64 +2316,270 @@
 
     const getValue = (row, col) => row.querySelector(`[data-col="${col}"]`)?.value ?? "";
 
+    const syncRuleRowsFromDom = () => {
+      const existingRows = normalizeRuleRows(state.rule)
+        .filter((row) => !state.ruleRemovedKeys.has(`${row.size_id}:${row.target_rm_item_id}`));
+      const byKey = new Map(existingRows.map((row) => [`${row.size_id}:${row.target_rm_item_id}`, row]));
+      const domRows = Array.from(document.querySelectorAll("[data-rule-entry]"))
+        .map((row) => ({
+          size_scope: "SPECIFIC",
+          size_id: Number(row.getAttribute("data-size-id") || 0),
+          packing_scope: "ALL",
+          packing_type_id: null,
+          color_scope: "ALL",
+          color_id: null,
+          action_type: "ADJUST_QTY",
+          material_scope: "SPECIFIC",
+          target_rm_item_id: Number(row.getAttribute("data-rm-item-id") || 0),
+          new_value: {
+            qty: Number(row.querySelector("[data-rule-qty]")?.value || 0),
+            uom_id: Number(row.querySelector("[data-rule-uom]")?.value || 0) || null,
+          },
+        }))
+        .filter((row) => row.size_id && row.target_rm_item_id && row.new_value.qty > 0);
+
+      domRows.forEach((row) => {
+        const key = `${row.size_id}:${row.target_rm_item_id}`;
+        if (state.ruleRemovedKeys.has(key)) return;
+        byKey.set(key, row);
+      });
+
+      state.rule = Array.from(byKey.values()).sort((a, b) =>
+        `${a.size_id || 0}:${a.target_rm_item_id || 0}`.localeCompare(
+          `${b.size_id || 0}:${b.target_rm_item_id || 0}`,
+        ),
+      );
+    };
+
+    const syncLabourRulesFromDom = () => {
+      const ruleRows = Array.from(document.querySelectorAll('[data-lines-body="labour_rule"] [data-labour-rule-entry="true"]'));
+      if (!ruleRows.length) return;
+      if (!state.labourRuleRateMap || typeof state.labourRuleRateMap !== "object") {
+        state.labourRuleRateMap = {};
+      }
+      ruleRows.forEach((row) => {
+        const labourId = String(row.getAttribute("data-labour-id") || "").trim();
+        const deptId = String(row.getAttribute("data-dept-id") || "").trim();
+        const rateType = normalizeLabourRateType(row.getAttribute("data-rate-type"));
+        const sizeId = String(row.getAttribute("data-size-id") || "ALL").trim() || "ALL";
+        const rateInput = row.querySelector('[data-labour-rule-col="rate_value"]');
+        const rateValue = String(rateInput?.value ?? "").trim();
+        const selectionRow = { labour_id: labourId, dept_id: deptId, rate_type: rateType };
+        const key = toLabourRateKey(selectionRow, sizeId);
+        if (!labourId || !deptId || !rateValue) {
+          delete state.labourRuleRateMap[key];
+          return;
+        }
+        state.labourRuleRateMap[key] = rateValue;
+      });
+    };
+
     const syncStateFromDom = () => {
       state.rm = collectRows("rm", (row) => ({
         rm_item_id: getValue(row, "rm_item_id"),
-        color_id: getValue(row, "color_id"),
-        size_id: getValue(row, "size_id"),
+        color_id: "",
+        size_id: "",
         dept_id: getValue(row, "dept_id"),
         qty: getValue(row, "qty"),
         uom_id: getValue(row, "uom_id"),
         normal_loss_pct: getValue(row, "normal_loss_pct"),
       }));
       state.sfg = collectRows("sfg", (row) => ({
+        fg_sku_id: getValue(row, "fg_sku_id"),
         fg_size_id: getValue(row, "fg_size_id"),
         sfg_sku_id: getValue(row, "sfg_sku_id"),
         required_qty: getValue(row, "required_qty"),
         uom_id: getValue(row, "uom_id"),
       }));
-      state.labour = collectRows("labour", (row) => {
-        const sizeSelector = getValue(row, "size_selector");
-        return {
-          size_scope: sizeSelector === "ALL" ? "ALL" : "SPECIFIC",
-          size_id: sizeSelector === "ALL" ? null : sizeSelector,
+      if (!shouldShowSfgSection()) {
+        state.sfg = [];
+      }
+      state.labour_selection = collectRows("labour_selection", (row) => normalizeLabourSelectionRow({
+        labour_id: getValue(row, "labour_id"),
+        dept_id: getValue(row, "dept_id"),
+        rate_type: getValue(row, "rate_type"),
+      }));
+      if (!state.labour_selection.length) state.labour_selection = [defaultLabourSelectionRow()];
+      syncLabourRulesFromDom();
+      syncLabourLinesFromSelectionAndRates();
+      state.color_rule = collectRows("color_rule", (row) => ({
+        target_rm_item_id: getValue(row, "target_rm_item_id"),
+        sku_color_id: getValue(row, "sku_color_id"),
+        rm_color_id: getValue(row, "rm_color_id"),
+      })).filter((row) => row.target_rm_item_id || row.sku_color_id || row.rm_color_id);
+      state.packing_rule = collectRows("packing_rule", (row) => ({
+        target_rm_item_id: getValue(row, "target_rm_item_id"),
+        packing_type_id: getValue(row, "packing_type_id"),
+        size_id: getValue(row, "size_id"),
+        replacement_rm_item_id: getValue(row, "replacement_rm_item_id"),
+      })).filter((row) => row.target_rm_item_id || row.packing_type_id || row.size_id || row.replacement_rm_item_id);
+      const skuOverrideBody = document.querySelector('[data-lines-body="sku_override"]');
+      if (skuOverrideBody) {
+        state.sku_override = collectRows("sku_override", (row) => ({
+          sku_id: getValue(row, "sku_id"),
+          target_rm_item_id: getValue(row, "target_rm_item_id"),
           dept_id: getValue(row, "dept_id"),
-          labour_id: getValue(row, "labour_id"),
-          rate_type: getValue(row, "rate_type"),
-          rate_value: getValue(row, "rate_value"),
-        };
-      });
-      state.rule = Array.from(document.querySelectorAll("[data-rule-entry]")).map((row) => ({
+          is_excluded: row.querySelector('[data-col="is_excluded"]')?.checked === true,
+          override_qty: getValue(row, "override_qty"),
+          replacement_rm_item_id: getValue(row, "replacement_rm_item_id"),
+          rm_color_id: getValue(row, "rm_color_id"),
+        })).filter((row) => row.sku_id || row.target_rm_item_id || row.dept_id || row.is_excluded || row.override_qty || row.replacement_rm_item_id || row.rm_color_id);
+      } else if (!Array.isArray(state.sku_override)) {
+        state.sku_override = [];
+      }
+      syncRuleRowsFromDom();
+    };
+
+    const composeVariantRulesPayload = () => {
+      const sizeRules = normalizeRuleRows(state.rule).map((row) => ({
         size_scope: "SPECIFIC",
-        size_id: Number(row.getAttribute("data-size-id") || 0),
+        size_id: Number(row.size_id || 0) || null,
         packing_scope: "ALL",
         packing_type_id: null,
         color_scope: "ALL",
         color_id: null,
         action_type: "ADJUST_QTY",
         material_scope: "SPECIFIC",
-        target_rm_item_id: Number(row.getAttribute("data-rm-item-id") || 0),
+        target_rm_item_id: Number(row.target_rm_item_id || 0) || null,
         new_value: {
-          qty: Number(row.querySelector("[data-rule-qty]")?.value || 0),
-          uom_id: Number(row.querySelector("[data-rule-uom]")?.value || 0) || null,
+          qty: Number(row.new_value?.qty || 0) || null,
+          uom_id: Number(row.new_value?.uom_id || 0) || null,
         },
-      }))
-        .filter((row) => row.size_id && row.target_rm_item_id && row.new_value.qty > 0);
+      })).filter((row) => row.size_id && row.target_rm_item_id && row.new_value.qty && row.new_value.uom_id);
+
+      const colorRules = (state.color_rule || []).map((row) => ({
+        size_scope: "ALL",
+        size_id: null,
+        packing_scope: "ALL",
+        packing_type_id: null,
+        color_scope: row.sku_color_id ? "SPECIFIC" : "ALL",
+        color_id: row.sku_color_id ? Number(row.sku_color_id) : null,
+        action_type: "REPLACE_RM",
+        material_scope: "SPECIFIC",
+        target_rm_item_id: Number(row.target_rm_item_id || 0) || null,
+        new_value: {
+          rm_color_id: Number(row.rm_color_id || 0) || null,
+        },
+      })).filter((row) => row.target_rm_item_id && row.new_value.rm_color_id);
+
+      const packingRules = (state.packing_rule || []).map((row) => ({
+        size_scope: row.size_id ? "SPECIFIC" : "ALL",
+        size_id: row.size_id ? Number(row.size_id) : null,
+        packing_scope: row.packing_type_id ? "SPECIFIC" : "ALL",
+        packing_type_id: row.packing_type_id ? Number(row.packing_type_id) : null,
+        color_scope: "ALL",
+        color_id: null,
+        action_type: "REPLACE_RM",
+        material_scope: "SPECIFIC",
+        target_rm_item_id: Number(row.target_rm_item_id || 0) || null,
+        new_value: {
+          replacement_rm_item_id: Number(row.replacement_rm_item_id || 0) || null,
+        },
+      })).filter((row) => row.target_rm_item_id && row.packing_type_id && row.new_value.replacement_rm_item_id);
+
+      return [...sizeRules, ...colorRules, ...packingRules];
     };
 
-    document.getElementById("bom-form")?.addEventListener("submit", () => {
+    document.getElementById("bom-form")?.addEventListener("submit", (event) => {
+      const submitter = event.submitter;
+      const submitIntent = String(submitIntentInput?.value || "").trim().toLowerCase();
+      const isExplicitApprove = submitIntent === "approve"
+        || (submitter instanceof HTMLElement && submitter.matches("[data-bom-approve-now]"));
+      const isExplicitSave = allowBomSubmit
+        || (submitter instanceof HTMLElement && submitter.matches("[data-bom-save-draft]"));
+      if (!isExplicitSave && !isExplicitApprove) {
+        event.preventDefault();
+        return;
+      }
+      allowBomSubmit = false;
       syncStateFromDom();
+      if (hasClientDuplicateCombos()) {
+        event.preventDefault();
+        return;
+      }
 
       document.querySelector('[data-lines-json="rm_lines"]').value = JSON.stringify(state.rm);
       document.querySelector('[data-lines-json="sfg_lines"]').value = JSON.stringify(state.sfg);
       document.querySelector('[data-lines-json="labour_lines"]').value = JSON.stringify(state.labour);
-      document.querySelector('[data-lines-json="variant_rules"]').value = JSON.stringify(state.rule);
+      document.querySelector('[data-lines-json="variant_rules"]').value = JSON.stringify(composeVariantRulesPayload());
+      document.querySelector('[data-lines-json="sku_overrides"]').value = JSON.stringify(state.sku_override || []);
+      if (submitIntentInput) {
+        submitIntentInput.value = isExplicitApprove ? "approve" : "";
+      }
     });
 
+    bomForm = document.getElementById("bom-form");
+    if (bomForm instanceof HTMLFormElement) {
+      submitIntentInput = bomForm.querySelector("[data-bom-submit-intent]");
+      saveDraftBtn = bomForm.querySelector("[data-bom-save-draft]");
+      approveNowBtn = document.querySelector("[data-bom-approve-now]");
+      if (saveDraftBtn instanceof HTMLButtonElement) {
+        saveDraftBtn.addEventListener("click", () => {
+          if (submitIntentInput) submitIntentInput.value = "";
+          allowBomSubmit = true;
+          bomForm.requestSubmit();
+        });
+      }
+      if (approveNowBtn instanceof HTMLButtonElement) {
+        approveNowBtn.addEventListener("click", () => {
+          if (submitIntentInput) submitIntentInput.value = "approve";
+          allowBomSubmit = true;
+          bomForm.requestSubmit();
+        });
+      }
+      bomForm.addEventListener(
+        "wheel",
+        (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          const numberInput = target.closest('input[data-no-stepper="true"]');
+          if (!(numberInput instanceof HTMLInputElement)) return;
+          if (document.activeElement !== numberInput) return;
+          event.preventDefault();
+        },
+        { passive: false },
+      );
+
+      bomForm.addEventListener("keydown", (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (target instanceof HTMLInputElement && target.dataset.noStepper === "true" && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+          event.preventDefault();
+          return;
+        }
+        if (event.key !== "Enter") return;
+        const isExplicitSubmitButton = target instanceof HTMLButtonElement && target.type === "submit";
+        if (isExplicitSubmitButton && target.matches("[data-bom-save-draft]")) return;
+        if (target instanceof HTMLTextAreaElement) return;
+        event.preventDefault();
+      });
+    }
+
+    initializeLabourStateFromExistingLines();
     ensureMinimumRows();
     state.rule = normalizeRuleRows(state.rule);
     renderHeaderItemsByLevel(true);
     updateHeaderSectionState();
     renderAll();
+    setRmEditorMode("materials");
+    setLabourViewMode("selection");
+    bindEnterNavigation();
+    headerCommittedState = getHeaderState();
+    const detailLines = Array.isArray(serverErrorDetails)
+      ? [...new Set(serverErrorDetails.map((msg) => String(msg || "").trim()).filter(Boolean))]
+      : [];
+    if (String(serverErrorMessage || "").trim() || detailLines.length) {
+      const detailsText = detailLines.map((msg, idx) => `${idx + 1}. ${msg}`).join("\n");
+      const modalMessage = [String(serverErrorMessage || "").trim(), detailsText].filter(Boolean).join("\n");
+      const modalTitle = "<%= t('error_generic') || 'Error' %>";
+      const showServerErrors = () => {
+        if (typeof window.showUiErrorModal === "function") {
+          window.showUiErrorModal(modalMessage, modalTitle);
+          return;
+        }
+        window.__pendingUiErrorModalPayload = { message: modalMessage, title: modalTitle };
+      };
+      window.setTimeout(showServerErrors, 0);
+    }
   })();
 </script>

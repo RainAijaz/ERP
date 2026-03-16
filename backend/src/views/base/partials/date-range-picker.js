@@ -323,6 +323,16 @@
       dateRangePanel.classList.add("hidden");
     };
 
+    const isClickInsideDateRange = (event) => {
+      if (!dateRangeWrap) return false;
+      if (event && typeof event.composedPath === "function") {
+        const path = event.composedPath();
+        if (Array.isArray(path) && path.includes(dateRangeWrap)) return true;
+      }
+      const target = event && "target" in event ? event.target : null;
+      return target instanceof Node ? dateRangeWrap.contains(target) : false;
+    };
+
     const restoreOpenedRange = () => {
       rangeStart = toDateObj(openedFromIso);
       rangeEnd = toDateObj(openedToIso);
@@ -392,6 +402,7 @@
       if (!(target instanceof Element)) return;
       const button = target.closest("button[data-iso]");
       if (!(button instanceof HTMLButtonElement) || button.disabled) return;
+      event.stopPropagation();
       handleDateSelection("from", String(button.dataset.iso || ""));
     });
     dateRangeMonth2Grid?.addEventListener("click", (event) => {
@@ -399,6 +410,7 @@
       if (!(target instanceof Element)) return;
       const button = target.closest("button[data-iso]");
       if (!(button instanceof HTMLButtonElement) || button.disabled) return;
+      event.stopPropagation();
       handleDateSelection("to", String(button.dataset.iso || ""));
     });
     dateRangeApplyBtn?.addEventListener("click", () => {
@@ -417,7 +429,7 @@
     });
     document.addEventListener("click", (event) => {
       if (!dateRangeWrap || dateRangePanel.classList.contains("hidden")) return;
-      if (dateRangeWrap.contains(event.target)) return;
+      if (isClickInsideDateRange(event)) return;
       restoreOpenedRange();
       closeDateRangePanel();
     });

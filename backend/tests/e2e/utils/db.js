@@ -563,10 +563,34 @@ const createBomUiFixture = async (token) => {
         name_ur: `E2E FG ${safeToken}`,
         group_id: group.id,
         base_uom_id: uom.id,
+        uses_sfg: true,
+        sfg_part_type: "STEP",
         created_by: creatorId,
       })
       .returning(["id"]);
     const fgItemId = Number(fgInserted?.id || fgInserted);
+
+    const [fgVariantInserted] = await trx("erp.variants")
+      .insert({
+        item_id: fgItemId,
+        size_id: size.id,
+        color_id: color.id,
+        packing_type_id: packing.id,
+        sale_rate: 100,
+        is_active: true,
+        created_by: creatorId,
+      })
+      .returning(["id"]);
+    const fgVariantId = Number(fgVariantInserted?.id || fgVariantInserted);
+
+    const [fgSkuInserted] = await trx("erp.skus")
+      .insert({
+        variant_id: fgVariantId,
+        sku_code: `E2E-FG-${safeToken}`.slice(0, 80),
+        is_active: true,
+      })
+      .returning(["id"]);
+    const fgSkuId = Number(fgSkuInserted?.id || fgSkuInserted);
 
     const [sfgInserted] = await trx("erp.items")
       .insert({
@@ -632,6 +656,11 @@ const createBomUiFixture = async (token) => {
       .returning(["id"]);
     const approvedSfgBomId = Number(bomInserted?.id || bomInserted);
 
+    await trx("erp.item_usage").insert({
+      fg_item_id: fgItemId,
+      sfg_item_id: sfgItemId,
+    });
+
     await trx("erp.rm_purchase_rates").insert({
       rm_item_id: rmItemId,
       color_id: color.id,
@@ -656,6 +685,8 @@ const createBomUiFixture = async (token) => {
       fgItemId,
       sfgItemId,
       rmItemId,
+      fgVariantId,
+      fgSkuId,
       sfgVariantId,
       sfgSkuId,
       approvedSfgBomId,
@@ -780,11 +811,17 @@ const cleanupBomUiFixture = async ({ fixture, bomIds = [] } = {}) => {
     if (fixture.sfgSkuId) {
       await trx("erp.skus").where({ id: fixture.sfgSkuId }).del();
     }
+    if (fixture.fgSkuId) {
+      await trx("erp.skus").where({ id: fixture.fgSkuId }).del();
+    }
     if (fixture.sfgNoApprovedSkuId) {
       await trx("erp.skus").where({ id: fixture.sfgNoApprovedSkuId }).del();
     }
     if (fixture.sfgVariantId) {
       await trx("erp.variants").where({ id: fixture.sfgVariantId }).del();
+    }
+    if (fixture.fgVariantId) {
+      await trx("erp.variants").where({ id: fixture.fgVariantId }).del();
     }
     if (fixture.sfgNoApprovedVariantId) {
       await trx("erp.variants").where({ id: fixture.sfgNoApprovedVariantId }).del();
@@ -797,6 +834,10 @@ const cleanupBomUiFixture = async ({ fixture, bomIds = [] } = {}) => {
     }
 
     if (fixtureItemIds.length) {
+      await trx("erp.item_usage")
+        .whereIn("fg_item_id", fixtureItemIds)
+        .orWhereIn("sfg_item_id", fixtureItemIds)
+        .del();
       await trx("erp.items").whereIn("id", fixtureItemIds).del();
     }
 

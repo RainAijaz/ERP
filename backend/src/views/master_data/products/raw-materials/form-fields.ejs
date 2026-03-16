@@ -12,7 +12,7 @@
     <label class="block">
       <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500"><%= t("name") %> <span class="text-rose-500">*</span></span>
       <input 
-        class="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 transition focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-slate-100" 
+        class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 transition focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-slate-100" 
         type="text" 
         name="name" 
         data-field="name" 
@@ -25,7 +25,7 @@
   <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500">
     <%= t("name_ur") %> <span class="text-rose-500">*</span> </span>
   <input 
-    class="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 transition focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-slate-100" 
+    class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 placeholder-slate-400 transition focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-slate-100" 
     type="text" 
     name="name_ur" 
     data-field="name_ur" 
@@ -106,24 +106,13 @@
     <div class="divide-y divide-slate-50" data-rate-list>
       </div>
 
-    <div 
-      class="cursor-pointer border-t border-dashed border-slate-200 bg-slate-50/50 hover:bg-slate-50 transition p-2 text-center"
-      data-rate-add-row
-    >
-      <button type="button" class="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-slate-500 hover:text-slate-800">
-        <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-        </svg>
-        <span><%= t("add_row") || "Add Row" %></span>
-      </button>
-    </div>
   </div>
 </div>
 
 <template data-rate-template>
   <div class="group grid grid-cols-[1.5fr_1.5fr_1fr_40px] items-center gap-0 hover:bg-amber-50/30 transition-colors" data-rate-row>
     <div class="p-2 border-r border-slate-50">
-      <select class="w-full rounded border border-transparent bg-transparent px-2 py-1.5 text-xs text-slate-700 focus:border-slate-300 focus:bg-white focus:ring-0" name="color_ids" data-rate-color data-searchable-select="true" data-searchable-variant="unified" data-searchable-menu-z-index="220">
+      <select class="w-full rounded border border-transparent bg-transparent px-2 py-1.5 text-xs text-slate-700 focus:border-slate-300 focus:bg-white focus:ring-0" name="color_ids" data-rate-color data-rate-col="color_id" data-searchable-select="true" data-searchable-variant="unified" data-searchable-menu-z-index="220">
         <option value=""><%= t("none") %></option>
         <% colors.forEach(function(color) { %>
           <option value="<%= color.id %>"><%= locale === "ur" ? (color.name_ur || color.name) : color.name %></option>
@@ -132,7 +121,7 @@
     </div>
 
     <div class="p-2 border-r border-slate-50">
-      <select class="w-full rounded border border-transparent bg-transparent px-2 py-1.5 text-xs text-slate-700 focus:border-slate-300 focus:bg-white focus:ring-0" name="size_ids" data-rate-size data-searchable-select="true" data-searchable-variant="unified" data-searchable-menu-z-index="220">
+      <select class="w-full rounded border border-transparent bg-transparent px-2 py-1.5 text-xs text-slate-700 focus:border-slate-300 focus:bg-white focus:ring-0" name="size_ids" data-rate-size data-rate-col="size_id" data-searchable-select="true" data-searchable-variant="unified" data-searchable-menu-z-index="220">
         <option value=""><%= t("none") %></option>
         <% sizes.forEach(function(size) { %>
           <option value="<%= size.id %>"><%= locale === "ur" ? (size.name_ur || size.name) : size.name %></option>
@@ -149,12 +138,13 @@
         name="purchase_rates" 
         placeholder="0.00" 
         data-rate-value 
+        data-rate-col="purchase_rate"
         data-rate-input 
       />
     </div>
 
     <div class="flex justify-center p-2">
-      <button class="invisible group-hover:visible rounded p-1 text-rose-400 hover:bg-rose-50 hover:text-rose-600 transition" type="button" onclick="this.closest('[data-rate-row]').remove()" aria-label="Remove row">
+      <button class="rounded p-1 text-rose-400 hover:bg-rose-50 hover:text-rose-600 transition" type="button" data-rate-remove-row aria-label="Remove row">
         <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
         </svg>

@@ -48,7 +48,11 @@ const parseDateFilter = (value, fallback) => {
 };
 
 const toList = (value) => {
-  const raw = Array.isArray(value) ? value : [value];
+  const raw = Array.isArray(value)
+    ? value
+    : value && typeof value === "object"
+      ? Object.values(value)
+      : [value];
   return raw
     .flatMap((entry) => String(entry == null ? "" : entry).split(","))
     .map((entry) => String(entry || "").trim())
@@ -57,25 +61,31 @@ const toList = (value) => {
 
 const toIdListWithAll = (value) => {
   const tokens = toList(value);
-  const hasAll = tokens.some(
-    (token) => token.toLowerCase() === "all" || token === "__ALL__",
+  const nonAllTokens = tokens.filter(
+    (token) => token.toLowerCase() !== "all" && token !== "__ALL__",
   );
-  if (hasAll) return [];
-  return toIdList(tokens);
+  if (nonAllTokens.length) return toIdList(nonAllTokens);
+  return [];
 };
 
 const toStatusList = (value) => {
   const tokens = toList(value).map((token) => token.toUpperCase());
-  const hasAll = tokens.some((token) => token === "ALL" || token === "__ALL__");
-  if (hasAll || !tokens.length) return [];
-  return [...new Set(tokens.filter((token) => STATUS_OPTIONS.includes(token)))];
+  const nonAllTokens = tokens.filter(
+    (token) => token !== "ALL" && token !== "__ALL__",
+  );
+  if (!nonAllTokens.length) return [];
+  return [
+    ...new Set(nonAllTokens.filter((token) => STATUS_OPTIONS.includes(token))),
+  ];
 };
 
 const toReasonCodeList = (value) => {
   const tokens = toList(value).map((token) => token.toUpperCase());
-  const hasAll = tokens.some((token) => token === "ALL" || token === "__ALL__");
-  if (hasAll || !tokens.length) return [];
-  return [...new Set(tokens)];
+  const nonAllTokens = tokens.filter(
+    (token) => token !== "ALL" && token !== "__ALL__",
+  );
+  if (!nonAllTokens.length) return [];
+  return [...new Set(nonAllTokens)];
 };
 
 const normalizeDate = (value) => {

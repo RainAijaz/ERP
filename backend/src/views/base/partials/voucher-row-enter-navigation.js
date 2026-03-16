@@ -120,6 +120,14 @@
       }
       return false;
     };
+    const focusLastFieldInRow = (row, { openSearchable = true } = {}) => {
+      const keys = getFieldKeysInRow(row);
+      for (let index = keys.length - 1; index >= 0; index -= 1) {
+        const field = getFieldByKey(row, keys[index]);
+        if (focusFieldElement(field, { openSearchable })) return true;
+      }
+      return false;
+    };
 
     const focusNextFieldInSameRow = (row, currentKey) => {
       const keys = getFieldKeysInRow(row);
@@ -132,11 +140,73 @@
       }
       return false;
     };
+    const focusPreviousFieldInSameRow = (row, currentKey) => {
+      const keys = getFieldKeysInRow(row);
+      if (!keys.length) return false;
+      const currentIndex = keys.indexOf(String(currentKey || ""));
+      if (currentIndex < 0) return false;
+      for (let index = currentIndex - 1; index >= 0; index -= 1) {
+        const field = getFieldByKey(row, keys[index]);
+        if (focusFieldElement(field, { openSearchable: true })) return true;
+      }
+      return false;
+    };
+    const focusSameFieldInAdjacentRows = (currentRow, fieldKey, rowStep) => {
+      const rows = getRows();
+      const currentIndex = rows.indexOf(currentRow);
+      if (currentIndex < 0 || !rowStep) return false;
+      for (
+        let rowIndex = currentIndex + rowStep;
+        rowIndex >= 0 && rowIndex < rows.length;
+        rowIndex += rowStep
+      ) {
+        const row = rows[rowIndex];
+        const sameField = getFieldByKey(row, fieldKey);
+        if (focusFieldElement(sameField, { openSearchable: true })) return true;
+        if (rowStep > 0) {
+          if (focusFirstFieldInRow(row, { openSearchable: true })) return true;
+        } else if (focusLastFieldInRow(row, { openSearchable: true })) {
+          return true;
+        }
+      }
+      return false;
+    };
+    const moveByArrow = (row, fieldKey, directionKey) => {
+      if (!rowMatches(row) || !fieldKey) return false;
+      if (directionKey === "ArrowUp") {
+        return focusSameFieldInAdjacentRows(row, fieldKey, -1);
+      }
+      if (directionKey === "ArrowDown") {
+        return focusSameFieldInAdjacentRows(row, fieldKey, 1);
+      }
+      if (directionKey === "ArrowRight") {
+        if (focusNextFieldInSameRow(row, fieldKey)) return true;
+        const rows = getRows();
+        const rowIndex = rows.indexOf(row);
+        if (rowIndex < 0) return false;
+        if (focusFirstAvailableRowFromIndex(rowIndex + 1, { openSearchable: true })) {
+          return true;
+        }
+        return appendAndFocusNextRow(row);
+      }
+      if (directionKey === "ArrowLeft") {
+        if (focusPreviousFieldInSameRow(row, fieldKey)) return true;
+        const rows = getRows();
+        const rowIndex = rows.indexOf(row);
+        if (rowIndex <= 0) return false;
+        for (let idx = rowIndex - 1; idx >= 0; idx -= 1) {
+          if (focusLastFieldInRow(rows[idx], { openSearchable: true })) return true;
+        }
+      }
+      return false;
+    };
 
     const focusFirstAvailableRowFromIndex = (startIndex, { openSearchable = true } = {}) => {
       const rows = getRows();
       if (!rows.length) return false;
-      const normalizedStart = Number.isInteger(startIndex) ? Math.max(0, startIndex) : 0;
+      if (!Number.isInteger(startIndex)) return false;
+      const normalizedStart = Math.max(0, startIndex);
+      if (normalizedStart >= rows.length) return false;
       for (let rowIndex = normalizedStart; rowIndex < rows.length; rowIndex += 1) {
         if (focusFirstFieldInRow(rows[rowIndex], { openSearchable })) {
           return true;
@@ -148,6 +218,7 @@
     const appendAndFocusNextRow = (currentRow) => {
       const rowsBefore = getRows();
       const currentIndex = rowsBefore.indexOf(currentRow);
+      if (currentIndex < 0) return false;
       const canAppend =
         typeof canAppendRow === "function"
           ? Boolean(canAppendRow({ row: currentRow, rowIndex: currentIndex }))
@@ -158,7 +229,7 @@
       if (appended === false) return false;
 
       window.setTimeout(() => {
-        const startRowIndex = currentIndex >= 0 ? currentIndex + 1 : 0;
+        const startRowIndex = currentIndex + 1;
         if (focusFirstAvailableRowFromIndex(startRowIndex, { openSearchable: true })) {
           return;
         }
@@ -197,7 +268,8 @@
 
         const rows = getRows();
         const rowIndex = rows.indexOf(targetRow);
-        const nextRowIndex = rowIndex >= 0 ? rowIndex + 1 : 0;
+        if (rowIndex < 0) return false;
+        const nextRowIndex = rowIndex + 1;
         if (focusFirstAvailableRowFromIndex(nextRowIndex, { openSearchable: true })) {
           return true;
         }
@@ -206,9 +278,26 @@
 
       if (!defer) return runMove(row);
       const rowIndex = getRows().indexOf(row);
+      const rowStableAttrName = row.hasAttribute("data-row-index")
+        ? "data-row-index"
+        : row.hasAttribute("data-index")
+          ? "data-index"
+          : "";
+      const rowStableAttrValue = rowStableAttrName
+        ? String(row.getAttribute(rowStableAttrName) || "")
+        : "";
       window.setTimeout(() => {
         const rows = getRows();
-        const refreshedRow = rowIndex >= 0 ? rows[rowIndex] : row;
+        let refreshedRow = null;
+        if (rowStableAttrName && rowStableAttrValue) {
+          refreshedRow = rows.find((candidate) =>
+            String(candidate.getAttribute(rowStableAttrName) || "") === rowStableAttrValue,
+          ) || null;
+        }
+        if (!refreshedRow && rowIndex >= 0) {
+          refreshedRow = rows[rowIndex] || null;
+        }
+        if (!(refreshedRow instanceof HTMLElement)) return;
         runMove(refreshedRow);
       }, 0);
       return true;
@@ -248,7 +337,17 @@
         const linkedValue = String(linkedSelect?.value || "").trim();
         const dropdownMenu = wrapper.querySelector("div.z-50");
         const isDropdownOpen = Boolean(dropdownMenu && !dropdownMenu.classList.contains("hidden"));
-        if (isDropdownOpen) return false;
+        if (isDropdownOpen) {
+          // Let searchable-select handle Enter selection first, then move focus.
+          window.setTimeout(() => {
+            const refreshedValue = String(linkedSelect?.value || "").trim();
+            const menuStillOpen = Boolean(dropdownMenu && !dropdownMenu.classList.contains("hidden"));
+            if (!menuStillOpen && refreshedValue) {
+              moveForwardFrom(row, fieldKey, { defer: true });
+            }
+          }, 0);
+          return false;
+        }
 
         event.preventDefault();
         if (!linkedValue) {
@@ -263,13 +362,46 @@
       moveForwardFrom(row, fieldKey, { defer: false });
       return true;
     };
+    const handleArrows = (event) => {
+      const key = String(event.key || "");
+      if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(key)) {
+        return false;
+      }
+      if (event.defaultPrevented) return false;
+      if (event.altKey || event.ctrlKey || event.metaKey) return false;
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return false;
+      if (!linesBody.contains(target)) return false;
+      if (typeof shouldHandle === "function" && !shouldHandle(event, target)) {
+        return false;
+      }
+
+      const row = target.closest(rowSelector);
+      if (!rowMatches(row)) return false;
+      const fieldKey = resolveFieldKey(target);
+      if (!fieldKey) return false;
+
+      const wrapper = target.closest("[data-searchable-wrapper]");
+      if (wrapper) {
+        const dropdownMenu = wrapper.querySelector("div.z-50");
+        const isDropdownOpen = Boolean(dropdownMenu && !dropdownMenu.classList.contains("hidden"));
+        if (isDropdownOpen) return false;
+      }
+
+      event.preventDefault();
+      return moveByArrow(row, fieldKey, key);
+    };
 
     const bind = () => {
+      linesBody.setAttribute("data-grid-arrow-nav", "true");
       form.addEventListener("keydown", captureSearchableState, true);
       linesBody.addEventListener("keydown", handleEnter);
+      linesBody.addEventListener("keydown", handleArrows);
       return () => {
         form.removeEventListener("keydown", captureSearchableState, true);
         linesBody.removeEventListener("keydown", handleEnter);
+        linesBody.removeEventListener("keydown", handleArrows);
+        linesBody.removeAttribute("data-grid-arrow-nav");
       };
     };
 
@@ -277,6 +409,7 @@
       bind,
       captureSearchableState,
       handleEnter,
+      handleArrows,
       focusFieldElement,
     };
   };

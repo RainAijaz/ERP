@@ -41,6 +41,12 @@
       if (event.target === modal) closeModal();
     });
 
+    const queuedPayload = window.__pendingUiErrorModalPayload;
+    if (queuedPayload && String(queuedPayload.message || "").trim()) {
+      openModal(queuedPayload.message, queuedPayload.title || defaultTitle);
+      window.__pendingUiErrorModalPayload = null;
+    }
+
     const initialMessage = <%- JSON.stringify(uiErrorMessage || "") %>;
     if (initialMessage) openModal(initialMessage, defaultTitle);
   })();

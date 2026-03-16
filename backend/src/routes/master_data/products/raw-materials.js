@@ -5,6 +5,7 @@ const { requirePermission } = require("../../../middleware/access/role-permissio
 const { handleScreenApproval } = require("../../../middleware/approvals/screen-approval");
 const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
 const { queueAuditLog } = require("../../../utils/audit-log");
+const { applyItemLifecycleToggleTx } = require("../../../services/products/item-lifecycle-service");
 
 const router = express.Router();
 const ITEM_TYPE = "RM";
@@ -22,6 +23,21 @@ const parseNumber = (value) => {
   return Number.isNaN(numberValue) ? null : numberValue;
 };
 
+const toFriendlySaveError = (err, t) => {
+  if (!err) return t("error_unable_save") || "Unable to save.";
+  const detail = String(err.detail || "").toLowerCase();
+  const message = String(err.message || "").toLowerCase();
+  if (String(err.code || "") === "23505") {
+    if (detail.includes("(code)") || message.includes("code")) {
+      return t("error_duplicate_code") || "Code already exists.";
+    }
+    if (detail.includes("(name)") || message.includes("name")) {
+      return t("error_duplicate_name") || "Name already exists.";
+    }
+  }
+  return err.detail || err.message || t("error_unable_save") || "Unable to save.";
+};
+
 const toArray = (value) => {
   if (Array.isArray(value)) return value;
   if (!value) return [];
@@ -37,7 +53,7 @@ const buildRateRows = ({ itemId, colorIds, sizeIds, rates, userId, now }) => {
     const color_id = colorIds[idx] ? Number(colorIds[idx]) : null;
     const size_id = sizeIds[idx] ? Number(sizeIds[idx]) : null;
     const purchase_rate = parseNumber(rates[idx]);
-    if (purchase_rate === null) continue;
+    if (purchase_rate === null || purchase_rate <= 0) continue;
     const key = `${color_id || 0}:${size_id || 0}`;
     if (keys.has(key)) continue;
     keys.add(key);
@@ -227,6 +243,19 @@ router.post("/", requirePermission("SCREEN", "master_data.products.raw_materials
       userId: req.user ? req.user.id : null,
       now: () => knex.fn.now(),
     });
+    if (!rateRows.length) {
+      const [rows, options, rateDetailsByItem, users] = await Promise.all([loadRows(), loadOptions(), loadRateDetails(), loadUsers()]);
+      return renderIndex(req, res, {
+        rows,
+        rateDetailsByItem,
+        ...options,
+        users,
+        error: res.locals.t("error_add_valid_purchase_rate"),
+        modalOpen: true,
+        modalMode: "create",
+        values,
+      });
+    }
     const approvalRates = rateRows.map((row) => ({
       color_id: row.color_id,
       size_id: row.size_id,
@@ -306,8 +335,7 @@ router.post("/", requirePermission("SCREEN", "master_data.products.raw_materials
     return res.redirect(basePath);
   } catch (err) {
     console.error("[raw-materials:create] error", err);
-    const fallbackMessage = res.locals.t("error_unable_save") || "Unable to save.";
-    const errorMessage = err?.detail || err?.message || fallbackMessage;
+    const errorMessage = toFriendlySaveError(err, res.locals.t);
     const [rows, options, rateDetailsByItem, users] = await Promise.all([loadRows(), loadOptions(), loadRateDetails(), loadUsers()]);
     return renderIndex(req, res, {
       rows,
@@ -384,6 +412,19 @@ router.post("/:id", requirePermission("SCREEN", "master_data.products.raw_materi
       userId: req.user ? req.user.id : null,
       now: () => knex.fn.now(),
     });
+    if (!rateRows.length) {
+      const [rows, options, rateDetailsByItem, users] = await Promise.all([loadRows(), loadOptions(), loadRateDetails(), loadUsers()]);
+      return renderIndex(req, res, {
+        rows,
+        rateDetailsByItem,
+        ...options,
+        users,
+        error: res.locals.t("error_add_valid_purchase_rate"),
+        modalOpen: true,
+        modalMode: "edit",
+        values: { ...values, id },
+      });
+    }
     const approvalRates = rateRows.map((row) => ({
       color_id: row.color_id,
       size_id: row.size_id,
@@ -458,8 +499,7 @@ router.post("/:id", requirePermission("SCREEN", "master_data.products.raw_materi
     return res.redirect(basePath);
   } catch (err) {
     console.error("[raw-materials:update] error", err);
-    const fallbackMessage = res.locals.t("error_unable_save") || "Unable to save.";
-    const errorMessage = err?.detail || err?.message || fallbackMessage;
+    const errorMessage = toFriendlySaveError(err, res.locals.t);
     const [rows, options, rateDetailsByItem, users] = await Promise.all([loadRows(), loadOptions(), loadRateDetails(), loadUsers()]);
     return renderIndex(req, res, {
       rows,
@@ -482,6 +522,10 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.raw
   try {
     const current = await knex("erp.items").select("is_active").where({ id }).first();
     if (!current) return next(new HttpError(404, res.locals.t("error_not_found")));
+    const nextIsActive = !current.is_active;
+    const toggleLabel = nextIsActive
+      ? (res.locals.t("activate") || "Activate")
+      : (res.locals.t("deactivate") || "Deactivate");
 
     const approval = await handleScreenApproval({
       req,
@@ -489,9 +533,9 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.raw
       action: "delete",
       entityType: SCREEN_ENTITY_TYPES["master_data.products.raw_materials"],
       entityId: id,
-      summary: `${res.locals.t("deactivate")} ${res.locals.t("raw_materials")}`,
+      summary: `${toggleLabel} ${res.locals.t("raw_materials")}`,
       oldValue: current,
-      newValue: { _action: "toggle", is_active: !current.is_active, item_type: ITEM_TYPE },
+      newValue: { _action: "toggle", is_active: nextIsActive, item_type: ITEM_TYPE },
       t: res.locals.t,
     });
 
@@ -499,13 +543,14 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.raw
       return res.redirect(req.get("referer") || basePath);
     }
 
-    await knex("erp.items")
-      .where({ id })
-      .update({
-        is_active: !current.is_active,
-        updated_by: req.user ? req.user.id : null,
-        updated_at: knex.fn.now(),
+    await knex.transaction(async (trx) => {
+      await applyItemLifecycleToggleTx(trx, {
+        itemId: id,
+        itemType: ITEM_TYPE,
+        isActive: nextIsActive,
+        userId: req.user ? req.user.id : null,
       });
+    });
     queueAuditLog(req, {
       entityType: SCREEN_ENTITY_TYPES["master_data.products.raw_materials"],
       entityId: id,

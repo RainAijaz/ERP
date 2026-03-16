@@ -9,10 +9,20 @@
   <head>
     <!-- Head includes meta, title, and global styles/scripts -->
     <%- include("../partials/head", { title }) %>
+    <style>
+      body.voucher-page main > .mx-auto {
+        width: 100%;
+        max-width: none !important;
+      }
+    </style>
   </head>
   <body class="<%= locale === 'ur' ? 'font-urdu' : 'font-sans' %> min-h-screen overflow-x-hidden bg-linear-to-br from-amber-50 via-slate-50 to-amber-50 text-ink">
     <script>
       (function () {
+        if (String(window.location.pathname || "").startsWith("/vouchers/")) {
+          document.body.classList.add("voucher-page");
+        }
+
         const fallbackAlert = (message) => {
           const text = String(message || "").trim();
           if (!text) return;
@@ -127,7 +137,6 @@
           } catch (err) {
             navType = "";
           }
-                clearSubmitMarker();
           if (!navType && performance && performance.navigation) {
             const legacyType = Number(performance.navigation.type);
             if (legacyType === 1) navType = "reload";
@@ -595,22 +604,43 @@
           }
         };
 
+        const formHasExplicitReportFilters = (form) => {
+          if (!(form instanceof HTMLFormElement)) return false;
+
+          const fromDate = form.querySelector('input[name="from_date"]');
+          const toDate = form.querySelector('input[name="to_date"]');
+          const hasFromDate = fromDate instanceof HTMLInputElement && String(fromDate.value || "").trim() !== "";
+          const hasToDate = toDate instanceof HTMLInputElement && String(toDate.value || "").trim() !== "";
+          if (hasFromDate || hasToDate) return true;
+
+          const multiSelects = Array.from(form.querySelectorAll("select[multiple]"));
+          return multiSelects.some((select) => {
+            const options = Array.from(select.options || []);
+            if (!options.length) return false;
+            const nonAllSelected = options.some(
+              (opt) => String(opt.value || "") !== ALL_VALUE && opt.selected,
+            );
+            return nonAllSelected;
+          });
+        };
+
         const bindReportFormDefaults = (form) => {
           if (!(form instanceof HTMLFormElement)) return;
           const multiSelects = Array.from(form.querySelectorAll("select[multiple]"));
+          const shouldResetThisForm = shouldResetOnThisLoad && !formHasExplicitReportFilters(form);
 
           multiSelects.forEach((select) => {
             const options = Array.from(select.options || []);
             const hasAllOption = options.some((opt) => String(opt.value || "") === ALL_VALUE);
             if (!hasAllOption) return;
 
-            if (shouldResetOnThisLoad) {
+            if (shouldResetThisForm) {
               options.forEach((opt) => {
                 opt.selected = String(opt.value || "") === ALL_VALUE;
               });
             }
 
-            normalizeSelectAllState(select, "", shouldResetOnThisLoad);
+            normalizeSelectAllState(select, "", true);
 
             select.addEventListener("change", (event) => {
               const target = event.target;
@@ -619,7 +649,7 @@
             });
           });
 
-          if (shouldResetOnThisLoad) {
+          if (shouldResetThisForm) {
             const fromDate = form.querySelector('input[name="from_date"]');
             const toDate = form.querySelector('input[name="to_date"]');
             if (fromDate instanceof HTMLInputElement) fromDate.value = "";
@@ -630,6 +660,7 @@
           }
 
           form.addEventListener("submit", () => {
+            multiSelects.forEach((select) => normalizeSelectAllState(select, "", true));
             writeSubmitMarker();
           });
         };

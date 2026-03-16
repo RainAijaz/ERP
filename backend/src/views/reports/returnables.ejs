@@ -303,41 +303,41 @@
 						<thead class="bg-slate-100 text-slate-700">
 							<tr>
 								<th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('vendor_party', 'Vendor') %></th>
-								<th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('quantity', 'Dispatch Qty') %></th>
-								<th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('received_quantity', 'Returned Qty') %></th>
-								<th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('pending_qty', 'Pending Qty') %></th>
-								<th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('overdue_qty', 'Overdue Qty') %></th>
-								<th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('avg_return_days', 'Avg Return Days') %></th>
-								<th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('on_time_percent', 'On-Time %') %></th>
-								<th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('shortage_cases', 'Shortage Cases') %></th>
-								<th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('condition_variance', 'Condition Variance') %></th>
-								<th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('risk_grade', 'Risk Grade') %></th>
+								<th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('returnables_vendor_dispatched_qty', 'Dispatched Qty') %></th>
+								<th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('returnables_vendor_returned_qty', 'Returned Qty') %></th>
+								<th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('returnables_vendor_open_qty', 'Open Qty') %></th>
+								<th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('returnables_vendor_overdue_open_qty', 'Overdue Open Qty') %></th>
+								<th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('returnables_vendor_avg_cycle_days', 'Avg Cycle Days') %></th>
+								<th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('returnables_vendor_on_time_rate', 'On-Time Return Rate') %></th>
+								<th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('returnables_vendor_open_cases', 'Open Cases') %></th>
+								<th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('returnables_vendor_condition_mismatch_cases', 'Condition Mismatch Cases') %></th>
+								<th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-[0.08em]"><%= tt('returnables_vendor_risk_level', 'Risk Level') %></th>
 							</tr>
 						</thead>
 						<tbody class="divide-y divide-slate-100" data-table-body>
 							<% rows.forEach((row) => { %>
 								<tr class="bg-white odd:bg-slate-50/30" data-row data-active="true" data-report-entry>
 									<td class="px-3 py-2"><%= row.vendorName || '-' %></td>
-									<td class="px-3 py-2 text-right font-semibold"><%= formatQty(row.totalDispatchQty || 0) %></td>
-									<td class="px-3 py-2 text-right font-semibold"><%= formatQty(row.totalReturnedQty || 0) %></td>
-									<td class="px-3 py-2 text-right font-semibold"><%= formatQty(row.pendingQty || 0) %></td>
-									<td class="px-3 py-2 text-right font-semibold"><%= formatQty(row.overdueQty || 0) %></td>
-									<td class="px-3 py-2 text-right"><%= formatPct(row.avgReturnDays || 0) %></td>
-									<td class="px-3 py-2 text-right"><%= `${formatPct(row.onTimePercent || 0)}%` %></td>
-									<td class="px-3 py-2 text-right"><%= Number(row.shortageCases || 0) %></td>
-									<td class="px-3 py-2 text-right"><%= Number(row.conditionVarianceCases || 0) %></td>
-									<td class="px-3 py-2"><span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold <%= row.riskGrade === 'C' ? 'bg-rose-100 text-rose-700' : row.riskGrade === 'B' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700' %>"><%= row.riskGrade %></span></td>
+									<td class="px-3 py-2 text-center font-semibold"><%= formatQty(row.totalDispatchQty || 0) %></td>
+									<td class="px-3 py-2 text-center font-semibold"><%= formatQty(row.totalReturnedQty || 0) %></td>
+									<td class="px-3 py-2 text-center font-semibold"><%= formatQty(row.pendingQty || 0) %></td>
+									<td class="px-3 py-2 text-center font-semibold"><%= formatQty(row.overdueQty || 0) %></td>
+									<td class="px-3 py-2 text-center"><%= formatPct(row.avgReturnDays || 0) %></td>
+									<td class="px-3 py-2 text-center"><%= `${formatPct(row.onTimePercent || 0)}%` %></td>
+									<td class="px-3 py-2 text-center"><%= Number(row.shortageCases || 0) %></td>
+									<td class="px-3 py-2 text-center"><%= Number(row.conditionVarianceCases || 0) %></td>
+									<td class="px-3 py-2 text-center"><span class="inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold <%= row.riskGrade === 'C' ? 'bg-rose-100 text-rose-700' : row.riskGrade === 'B' ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700' %>"><%= row.riskGrade %></span></td>
 								</tr>
 							<% }) %>
 							<tr class="border-t border-slate-200 bg-slate-100" data-report-total-row>
 								<td class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= tt('total', 'Total') %></td>
-								<td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatQty(totals.totalDispatchQty || 0) %></td>
-								<td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatQty(totals.totalReturnedQty || 0) %></td>
-								<td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatQty(totals.pendingQty || 0) %></td>
-								<td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatQty(totals.overdueQty || 0) %></td>
+								<td class="px-3 py-2 text-center font-semibold text-slate-900"><%= formatQty(totals.totalDispatchQty || 0) %></td>
+								<td class="px-3 py-2 text-center font-semibold text-slate-900"><%= formatQty(totals.totalReturnedQty || 0) %></td>
+								<td class="px-3 py-2 text-center font-semibold text-slate-900"><%= formatQty(totals.pendingQty || 0) %></td>
+								<td class="px-3 py-2 text-center font-semibold text-slate-900"><%= formatQty(totals.overdueQty || 0) %></td>
 								<td colspan="2"></td>
-								<td class="px-3 py-2 text-right font-semibold text-slate-900"><%= Number(totals.shortageCases || 0) %></td>
-								<td class="px-3 py-2 text-right font-semibold text-slate-900"><%= Number(totals.conditionVarianceCases || 0) %></td>
+								<td class="px-3 py-2 text-center font-semibold text-slate-900"><%= Number(totals.shortageCases || 0) %></td>
+								<td class="px-3 py-2 text-center font-semibold text-slate-900"><%= Number(totals.conditionVarianceCases || 0) %></td>
 								<td></td>
 							</tr>
 						</tbody>

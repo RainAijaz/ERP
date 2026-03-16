@@ -27,6 +27,12 @@ const {
   applyReturnableVoucherUpdatePayloadTx,
   applyReturnableVoucherDeletePayloadTx,
 } = require("../../services/returnables/returnable-voucher-service");
+const {
+  isProductionVoucherType,
+  ensureProductionVoucherDerivedDataTx,
+  applyProductionVoucherUpdatePayloadTx,
+  applyProductionVoucherDeletePayloadTx,
+} = require("../../services/production/production-voucher-service");
 const basicInfoRoutes = require("../master_data/basic-info");
 const uomConversionsRoutes = require("../master_data/basic-info/uom-conversions");
 const accountsRoutes = require("../master_data/accounts");
@@ -84,6 +90,11 @@ const applyVoucherApprovalChangeTx = async ({ trx, request, approverId, req }) =
   const isReturnableVoucherType =
     payloadVoucherTypeCode === RETURNABLE_VOUCHER_TYPES.dispatch ||
     payloadVoucherTypeCode === RETURNABLE_VOUCHER_TYPES.receipt;
+  const approvalReq = {
+    ...req,
+    branchId: Number(request.branch_id || req?.branchId || 0),
+    user: { ...(req?.user || {}), id: approverId },
+  };
   const requestEntityId = String(request.entity_id || "").trim();
   const voucherId = Number(request.entity_id || payload.voucher_id || 0);
 
@@ -92,11 +103,7 @@ const applyVoucherApprovalChangeTx = async ({ trx, request, approverId, req }) =
       trx,
       payload,
       approverId,
-      req: {
-        ...req,
-        branchId: Number(request.branch_id || req?.branchId || 0),
-        user: { ...(req?.user || {}), id: approverId },
-      },
+      req: approvalReq,
     });
     return {
       appliedEntityId: created?.id ? String(created.id) : null,
@@ -124,11 +131,7 @@ const applyVoucherApprovalChangeTx = async ({ trx, request, approverId, req }) =
       voucherTypeCode: payloadVoucherTypeCode,
       payload,
       approverId,
-      req: {
-        ...req,
-        branchId: Number(request.branch_id || req?.branchId || 0),
-        user: { ...(req?.user || {}), id: approverId },
-      },
+      req: approvalReq,
     });
     return;
   }
@@ -141,8 +144,18 @@ const applyVoucherApprovalChangeTx = async ({ trx, request, approverId, req }) =
     if (!existing) {
       throw new Error("Voucher not found during delete approval apply");
     }
+    const existingVoucherTypeCode = String(existing.voucher_type_code || "").toUpperCase();
+    if (isProductionVoucherType(existingVoucherTypeCode)) {
+      await applyProductionVoucherDeletePayloadTx({
+        trx,
+        voucherId,
+        voucherTypeCode: existingVoucherTypeCode,
+        approverId,
+      });
+      return;
+    }
 
-    if (String(existing.voucher_type_code || "").toUpperCase() === "BANK_VOUCHER") {
+    if (existingVoucherTypeCode === "BANK_VOUCHER") {
       await markBankVoucherLinesRejectedTx({ trx, voucherId });
     }
 
@@ -163,6 +176,15 @@ const applyVoucherApprovalChangeTx = async ({ trx, request, approverId, req }) =
   }
 
   if (action !== "update") {
+    const existing = await trx("erp.voucher_header")
+      .select("id", "voucher_type_code")
+      .where({ id: voucherId })
+      .first();
+    if (!existing) {
+      throw new Error("Voucher not found during approval apply");
+    }
+    const voucherTypeCode = String(existing.voucher_type_code || payloadVoucherTypeCode || "").toUpperCase();
+
     const updated = await trx("erp.voucher_header")
       .where({ id: voucherId, status: "PENDING" })
       .update({
@@ -172,6 +194,14 @@ const applyVoucherApprovalChangeTx = async ({ trx, request, approverId, req }) =
       });
     if (!updated) {
       throw new Error("Voucher approval apply failed");
+    }
+    if (isProductionVoucherType(voucherTypeCode)) {
+      await ensureProductionVoucherDerivedDataTx({
+        trx,
+        voucherId,
+        voucherTypeCode,
+        actorUserId: approverId,
+      });
     }
     await syncAutoBankSettlementForVoucherTx({ trx, voucherId, actorUserId: approverId });
     await syncVoucherGlPostingTx({ trx, voucherId });
@@ -185,6 +215,19 @@ const applyVoucherApprovalChangeTx = async ({ trx, request, approverId, req }) =
     .first();
   if (!existing) {
     throw new Error("Voucher not found during approval apply");
+  }
+  const voucherTypeCode = String(existing.voucher_type_code || "").toUpperCase();
+  if (isProductionVoucherType(voucherTypeCode)) {
+    await applyProductionVoucherUpdatePayloadTx({
+      trx,
+      voucherId,
+      voucherTypeCode,
+      payload,
+      req: approvalReq,
+      approverId,
+    });
+    await syncAutoBankSettlementForVoucherTx({ trx, voucherId, actorUserId: approverId });
+    return;
   }
 
   const hasHeaderAccount = Object.prototype.hasOwnProperty.call(payload, "header_account_id");
@@ -240,17 +283,11 @@ const applyVoucherApprovalChangeTx = async ({ trx, request, approverId, req }) =
     await trx("erp.voucher_line").insert(lineRows);
   }
 
-  const voucherTypeCode = String(existing.voucher_type_code || "").toUpperCase();
   if (
     voucherTypeCode === PURCHASE_VOUCHER_TYPES.goodsReceiptNote ||
     voucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase ||
     voucherTypeCode === PURCHASE_VOUCHER_TYPES.purchaseReturn
   ) {
-    const approvalReq = {
-      ...req,
-      branchId: Number(request.branch_id || req?.branchId || 0),
-      user: { ...(req?.user || {}), id: approverId },
-    };
     await applyPurchaseVoucherUpdatePayloadTx({
       trx,
       voucherId,
@@ -264,11 +301,6 @@ const applyVoucherApprovalChangeTx = async ({ trx, request, approverId, req }) =
     voucherTypeCode === SALES_VOUCHER_TYPES.salesOrder ||
     voucherTypeCode === SALES_VOUCHER_TYPES.salesVoucher
   ) {
-    const approvalReq = {
-      ...req,
-      branchId: Number(request.branch_id || req?.branchId || 0),
-      user: { ...(req?.user || {}), id: approverId },
-    };
     await applySalesVoucherUpdatePayloadTx({
       trx,
       voucherId,

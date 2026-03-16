@@ -77,7 +77,11 @@ const supportsAccountFilter = (reportKey) =>
 const supportsReportModeFilter = (reportKey) =>
   REPORT_MODE_REPORTS.has(normalizeReportKey(reportKey));
 const toIdList = (value) => {
-  const raw = Array.isArray(value) ? value : [value];
+  const raw = Array.isArray(value)
+    ? value
+    : value && typeof value === "object"
+      ? Object.values(value)
+      : [value];
   return [
     ...new Set(
       raw

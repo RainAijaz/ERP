@@ -5,6 +5,7 @@ const { requirePermission } = require("../../../middleware/access/role-permissio
 const { handleScreenApproval } = require("../../../middleware/approvals/screen-approval");
 const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
 const { queueAuditLog } = require("../../../utils/audit-log");
+const { applyItemLifecycleToggleTx } = require("../../../services/products/item-lifecycle-service");
 
 const router = express.Router();
 const ITEM_TYPE = "SFG";
@@ -359,6 +360,10 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.sem
   try {
     const current = await knex("erp.items").select("is_active").where({ id }).first();
     if (!current) return next(new HttpError(404, res.locals.t("error_not_found")));
+    const nextIsActive = !current.is_active;
+    const toggleLabel = nextIsActive
+      ? (res.locals.t("activate") || "Activate")
+      : (res.locals.t("deactivate") || "Deactivate");
 
     const approval = await handleScreenApproval({
       req,
@@ -366,9 +371,9 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.sem
       action: "delete",
       entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
       entityId: id,
-      summary: `${res.locals.t("deactivate")} ${res.locals.t("semi_finished")}`,
+      summary: `${toggleLabel} ${res.locals.t("semi_finished")}`,
       oldValue: current,
-      newValue: { _action: "toggle", is_active: !current.is_active, item_type: ITEM_TYPE },
+      newValue: { _action: "toggle", is_active: nextIsActive, item_type: ITEM_TYPE },
       t: res.locals.t,
     });
 
@@ -376,13 +381,14 @@ router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.sem
       return res.redirect(req.get("referer") || basePath);
     }
 
-    await knex("erp.items")
-      .where({ id })
-      .update({
-        is_active: !current.is_active,
-        updated_by: req.user ? req.user.id : null,
-        updated_at: knex.fn.now(),
+    await knex.transaction(async (trx) => {
+      await applyItemLifecycleToggleTx(trx, {
+        itemId: id,
+        itemType: ITEM_TYPE,
+        isActive: nextIsActive,
+        userId: req.user ? req.user.id : null,
       });
+    });
     queueAuditLog(req, {
       entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
       entityId: id,

@@ -20,6 +20,13 @@
     !!select.closest("[data-multi-select]");
   const unifiedVariantClass =
     "h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 transition focus:border-black focus:outline-none focus:ring-2 focus:ring-black/20";
+  const escapeAttributeValue = (value) => {
+    const text = String(value || "");
+    if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+      return CSS.escape(text);
+    }
+    return text.replace(/["\\]/g, "\\$&");
+  };
 
   const makePlaceholder = (select) => {
     const label = select.closest("label")?.querySelector("span");
@@ -110,6 +117,119 @@
         break;
       }
     };
+    const isFocusableControl = (el) => {
+      if (!(el instanceof HTMLElement)) return false;
+      if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement)) {
+        return false;
+      }
+      if (el.hasAttribute("disabled")) return false;
+      if (el instanceof HTMLInputElement && el.type === "hidden") return false;
+      if (el instanceof HTMLInputElement && el.readOnly) return false;
+      if (el instanceof HTMLTextAreaElement && el.readOnly) return false;
+      const style = window.getComputedStyle(el);
+      if (style.display === "none" || style.visibility === "hidden") return false;
+      return el.offsetParent !== null || style.position === "fixed";
+    };
+    const focusControl = (el) => {
+      if (!(el instanceof HTMLElement)) return false;
+      if (!el.isConnected) return false;
+      if (el instanceof HTMLSelectElement) {
+        const selectWrapper =
+          el.closest("[data-searchable-wrapper]") ||
+          (el.parentElement?.matches("[data-searchable-wrapper]")
+            ? el.parentElement
+            : null);
+        const searchableInput = selectWrapper?.querySelector(
+          'input[type="text"]:not([readonly])',
+        );
+        if (
+          searchableInput instanceof HTMLInputElement &&
+          searchableInput.isConnected
+        ) {
+          searchableInput.focus();
+          searchableInput.click();
+          return true;
+        }
+      }
+      if (!isFocusableControl(el)) return false;
+      el.focus();
+      if (el instanceof HTMLInputElement && typeof el.select === "function") {
+        el.select();
+      }
+      return true;
+    };
+    const advanceFocusWithinRow = () => {
+      const fieldKey = String(select.getAttribute("data-col") || "").trim();
+      if (!fieldKey) return false;
+      const row = select.closest("tr");
+      if (!(row instanceof HTMLElement)) return false;
+      const rowFields = Array.from(
+        row.querySelectorAll("select[data-col], input[data-col], textarea[data-col]"),
+      );
+      if (!rowFields.length) return false;
+      const currentIndex = rowFields.findIndex((field) => {
+        if (!(field instanceof HTMLElement)) return false;
+        const key = String(field.getAttribute("data-col") || "").trim();
+        return key === fieldKey;
+      });
+      if (currentIndex < 0) return false;
+      for (let idx = currentIndex + 1; idx < rowFields.length; idx += 1) {
+        const candidate = rowFields[idx];
+        if (!(candidate instanceof HTMLElement)) continue;
+        if (focusControl(candidate)) return true;
+      }
+      return false;
+    };
+    const getNextRowFieldMeta = () => {
+      const fieldKey = String(select.getAttribute("data-col") || "").trim();
+      if (!fieldKey) return null;
+      const row = select.closest("tr[data-row-index]");
+      if (!(row instanceof HTMLElement)) return null;
+      const rowIndexRaw = row.getAttribute("data-row-index");
+      if (rowIndexRaw === null) return null;
+      const rowIndex = String(rowIndexRaw).trim();
+      if (rowIndex.length === 0) return null;
+      const linesBody = row.closest("[data-lines-body]");
+      if (!(linesBody instanceof HTMLElement)) return null;
+      const linesType = String(linesBody.getAttribute("data-lines-body") || "").trim();
+      if (!linesType) return null;
+
+      const rowFields = Array.from(
+        row.querySelectorAll("select[data-col], input[data-col], textarea[data-col]"),
+      );
+      if (!rowFields.length) return null;
+      const currentIndex = rowFields.findIndex((field) => field === select);
+      if (currentIndex < 0) return null;
+      for (let idx = currentIndex + 1; idx < rowFields.length; idx += 1) {
+        const candidate = rowFields[idx];
+        if (!(candidate instanceof HTMLElement)) continue;
+        const nextKey = String(candidate.getAttribute("data-col") || "").trim();
+        if (!nextKey) continue;
+        if (candidate instanceof HTMLSelectElement || isFocusableControl(candidate)) {
+          return { linesType, rowIndex, nextKey };
+        }
+      }
+      return null;
+    };
+    const focusNextRowFieldByMeta = (meta) => {
+      if (!meta || typeof meta !== "object") return false;
+      const linesType = String(meta.linesType || "").trim();
+      const rowIndex = String(meta.rowIndex ?? "").trim();
+      const nextKey = String(meta.nextKey || "").trim();
+      if (!linesType || rowIndex.length === 0 || !nextKey) return false;
+      const linesBody = document.querySelector(
+        `[data-lines-body="${escapeAttributeValue(linesType)}"]`,
+      );
+      if (!(linesBody instanceof HTMLElement)) return false;
+      const row = linesBody.querySelector(
+        `tr[data-row-index="${escapeAttributeValue(rowIndex)}"]`,
+      );
+      if (!(row instanceof HTMLElement)) return false;
+      const nextField = row.querySelector(
+        `[data-col="${escapeAttributeValue(nextKey)}"]`,
+      );
+      return focusControl(nextField);
+    };
     let placeholderText = makePlaceholder(select);
     const emptyOption = Array.from(select.options).find((opt) => !opt.value);
     if (emptyOption && emptyOption.textContent.trim()) {
@@ -151,14 +271,14 @@
 
     const menu = document.createElement("div");
     menu.className =
-      "absolute left-0 right-0 z-50 hidden max-h-60 overflow-y-auto overflow-x-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl ring-1 ring-black/5";
+      "fixed z-50 hidden overflow-y-auto overflow-x-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-xl ring-1 ring-black/5";
     const customMenuZIndex = Number.parseInt(
       select.dataset.searchableMenuZIndex || "",
       10,
     );
-    if (Number.isFinite(customMenuZIndex)) {
-      menu.style.zIndex = String(customMenuZIndex);
-    }
+    menu.style.zIndex = Number.isFinite(customMenuZIndex)
+      ? String(customMenuZIndex)
+      : "2400";
 
     const getBoundaryRect = () => {
       const modalForm = select.closest("[data-modal-form]");
@@ -177,9 +297,16 @@
     const positionMenu = () => {
       const inputRect = input.getBoundingClientRect();
       const boundaryRect = getBoundaryRect();
-      const safeGap = 8;
-      const minMenuHeight = 120;
-      const preferredMaxHeight = 240;
+      const safeEdge = 8;
+      const safeGap = 4;
+      const minimumPreferredHeight = 160;
+      const minimumFallbackHeight = 96;
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const preferredMaxHeight = Math.max(
+        minimumPreferredHeight,
+        Math.floor(viewportHeight - safeEdge * 2),
+      );
 
       const availableBelow = Math.floor(
         boundaryRect.bottom - inputRect.bottom - safeGap,
@@ -187,30 +314,52 @@
       const availableAbove = Math.floor(
         inputRect.top - boundaryRect.top - safeGap,
       );
-      const openUpward =
-        availableBelow < minMenuHeight && availableAbove > availableBelow;
+      let openUpward =
+        availableBelow < minimumPreferredHeight && availableAbove > availableBelow;
 
-      const availableSpace = openUpward ? availableAbove : availableBelow;
-      const boundedHeight = Math.min(
-        preferredMaxHeight,
-        availableSpace > 0 ? availableSpace : preferredMaxHeight,
-      );
-      const maxHeight = Math.max(100, boundedHeight);
+      let availableSpace = openUpward ? availableAbove : availableBelow;
+      if (availableSpace < minimumFallbackHeight) {
+        const alternateSpace = openUpward ? availableBelow : availableAbove;
+        if (alternateSpace > availableSpace) {
+          openUpward = !openUpward;
+          availableSpace = alternateSpace;
+        }
+      }
+
+      const normalizedSpace = Math.max(0, availableSpace);
+      const maxHeight = normalizedSpace >= minimumFallbackHeight
+        ? Math.min(preferredMaxHeight, normalizedSpace)
+        : Math.max(56, normalizedSpace);
+      const targetWidth = Math.max(140, Math.floor(inputRect.width));
+      const maxAllowedWidth = Math.max(140, viewportWidth - safeEdge * 2);
+      const menuWidth = Math.min(targetWidth, maxAllowedWidth);
+      let menuLeft = Math.floor(inputRect.left);
+      if (menuLeft + menuWidth > viewportWidth - safeEdge) {
+        menuLeft = Math.floor(viewportWidth - safeEdge - menuWidth);
+      }
+      if (menuLeft < safeEdge) menuLeft = safeEdge;
 
       menu.style.maxHeight = `${maxHeight}px`;
-      menu.style.marginTop = "0";
-      menu.style.marginBottom = "0";
-
+      menu.style.width = `${menuWidth}px`;
+      menu.style.left = `${menuLeft}px`;
       if (openUpward) {
+        // Anchor to the input's top edge to avoid visible gaps when menu content
+        // is shorter than available upward space.
+        const bottom = Math.floor(viewportHeight - inputRect.top + safeGap);
         menu.style.top = "auto";
-        menu.style.bottom = "calc(100% + 0.25rem)";
+        menu.style.bottom = `${Math.max(safeEdge, bottom)}px`;
       } else {
-        menu.style.top = "calc(100% + 0.25rem)";
+        let menuTop = Math.floor(inputRect.bottom + safeGap);
+        const maxTop = Math.floor(viewportHeight - safeEdge - maxHeight);
+        if (menuTop > maxTop) menuTop = maxTop;
+        if (menuTop < safeEdge) menuTop = safeEdge;
+        menu.style.top = `${menuTop}px`;
         menu.style.bottom = "auto";
       }
     };
 
     let activeIndex = -1;
+    let keyboardNavigatedMenu = false;
 
     const hasAllMultiSelect = isMulti
       && String(select.dataset.allMultiSelect || "").toLowerCase() === "true";
@@ -371,6 +520,7 @@
     };
 
     input.addEventListener("focus", () => {
+      keyboardNavigatedMenu = false;
       if (input.dataset.searchableSuppressOpenOnce === "1") {
         input.dataset.searchableSuppressOpenOnce = "0";
         return;
@@ -380,17 +530,26 @@
       menu.classList.remove("hidden");
     });
     input.addEventListener("click", () => {
+      keyboardNavigatedMenu = false;
       renderMenu({ showAll: true });
       menu.classList.remove("hidden");
     });
     input.addEventListener("input", () => {
+      keyboardNavigatedMenu = false;
       renderMenu({ showAll: false });
       menu.classList.remove("hidden");
     });
     input.addEventListener("keydown", (e) => {
       if (isMulti) return;
+      const isGridArrowNavContext = Boolean(
+        input.closest('[data-grid-arrow-nav="true"]'),
+      );
 
       if (e.key === "Enter" && menu.classList.contains("hidden")) {
+        if (isGridArrowNavContext) {
+          // In row-grid contexts, let voucher-row-enter-navigation own Enter.
+          return;
+        }
         if (input.dataset.searchableAdvanceNext === "1") {
           input.dataset.searchableAdvanceNext = "0";
           return;
@@ -405,14 +564,23 @@
           return;
         }
         e.preventDefault();
+        if (advanceFocusWithinRow()) {
+          e.stopPropagation();
+          return;
+        }
         advanceFocusToNextField();
         return;
       }
 
       if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        if (menu.classList.contains("hidden") && isGridArrowNavContext) {
+          // Let voucher-row-enter-navigation handle row/column arrow movement.
+          return;
+        }
         e.preventDefault();
 
         if (menu.classList.contains("hidden")) {
+          keyboardNavigatedMenu = false;
           renderMenu({ showAll: true });
           menu.classList.remove("hidden");
           return;
@@ -444,6 +612,7 @@
             }
           }
         }
+        keyboardNavigatedMenu = true;
 
         renderMenu({ showAll: false, preserveActive: true });
         const activeButton = menu.querySelector(
@@ -457,6 +626,7 @@
 
       if (e.key === "Escape") {
         menu.classList.add("hidden");
+        keyboardNavigatedMenu = false;
         return;
       }
 
@@ -466,7 +636,9 @@
       const filteredOptions = getFilteredOptions({ showAll: false });
       if (filteredOptions.length === 0) return;
 
-      if (activeIndex < 0 || activeIndex >= filteredOptions.length) {
+      if (!keyboardNavigatedMenu) {
+        activeIndex = getDefaultActiveIndex(filteredOptions);
+      } else if (activeIndex < 0 || activeIndex >= filteredOptions.length) {
         activeIndex = getDefaultActiveIndex(filteredOptions);
       }
 
@@ -477,15 +649,35 @@
       if (!match) return;
 
       e.preventDefault();
-      select.value = match.value;
-      select.dispatchEvent(new Event("change", { bubbles: true }));
+      const nextRowFieldMeta = getNextRowFieldMeta();
+      const previousValue = String(select.value || "");
+      const nextValue = String(match.value || "");
+      select.value = nextValue;
+      const valueChanged = previousValue !== nextValue;
+      if (valueChanged) {
+        select.dispatchEvent(new Event("change", { bubbles: true }));
+      }
       syncToInput();
       menu.classList.add("hidden");
+      keyboardNavigatedMenu = false;
+      if (isGridArrowNavContext) {
+        // Keep focus flow in sync with row navigator; do not auto-advance here.
+        return;
+      }
+      if (valueChanged && nextRowFieldMeta) {
+        window.setTimeout(() => {
+          if (focusNextRowFieldByMeta(nextRowFieldMeta)) return;
+          advanceFocusToNextField();
+        }, 0);
+        return;
+      }
+      if (advanceFocusWithinRow()) return;
       advanceFocusToNextField();
     });
     input.addEventListener("blur", () => {
       setTimeout(() => {
         menu.classList.add("hidden");
+        keyboardNavigatedMenu = false;
         if (isMulti) {
           syncToInput();
         } else {
@@ -512,24 +704,27 @@
     const modalContent = modalForm
       ? modalForm.querySelector("#modal-content")
       : null;
+    const handleViewportReposition = () => {
+      if (menu.classList.contains("hidden")) return;
+      positionMenu();
+    };
     if (modalContent) {
       modalContent.addEventListener(
         "scroll",
-        () => {
-          if (menu.classList.contains("hidden")) return;
-          positionMenu();
-        },
+        handleViewportReposition,
         { passive: true },
       );
     }
 
     window.addEventListener(
       "resize",
-      () => {
-        if (menu.classList.contains("hidden")) return;
-        positionMenu();
-      },
+      handleViewportReposition,
       { passive: true },
+    );
+    window.addEventListener(
+      "scroll",
+      handleViewportReposition,
+      { passive: true, capture: true },
     );
 
     select.addEventListener("change", syncToInput);

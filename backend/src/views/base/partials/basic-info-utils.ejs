@@ -308,10 +308,11 @@
     };
     cleanModalPath();
 
-    const openModal = (mode, data) => {
+    const openModal = (mode, data, options = {}) => {
       cleanModalPath();
       if (!modal || !modalForm) return;
       const payload = data || {};
+      const preserveModalError = options && options.preserveModalError === true;
       // Populate modal fields from row data (or defaults on create).
       modal.classList.remove("hidden");
       modal.classList.add("flex");
@@ -341,6 +342,9 @@
           });
         } else {
           input.value = payload[name] || "";
+          if (input.tagName === "SELECT") {
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          }
         }
       });
       modalForm.querySelectorAll("[data-hide-on-create]").forEach((node) => {
@@ -361,7 +365,7 @@
           input.classList.remove("cursor-not-allowed");
         }
       });
-      if (modalError) {
+      if (modalError && !preserveModalError) {
         modalError.textContent = "";
         modalError.hidden = true;
       }
@@ -1549,7 +1553,7 @@
           payload = {};
         }
       }
-      openModal(autoMode, payload);
+      openModal(autoMode, payload, { preserveModalError: true });
     }
   })();
 </script>

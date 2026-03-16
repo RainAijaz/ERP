@@ -13,4 +13,5 @@ BEGIN;
 \ir 091_integrity_checks.sql
 \ir 092_seeds.sql
 \ir 093_seed_admin_user.sql
+\ir 094_bom_lifecycle.sql
 COMMIT;

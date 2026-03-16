@@ -10,6 +10,13 @@ const salesOrderRoutes = require("./sales-order");
 const returnablesLegacyRoutes = require("./returnables");
 const { createReturnableVoucherRouter } = require("./returnable-router-factory");
 const voucherEngineRoutes = require("./voucher-engine");
+const productionFinishedRoutes = require("./production");
+const productionSemiFinishedRoutes = require("./production-sfg");
+const departmentCompletionRoutes = require("./department-completion");
+const productionPlanningRoutes = require("./production-planning");
+const consumptionRoutes = require("./consumption");
+const labourProductionRoutes = require("./labour-production");
+const abnormalLossRoutes = require("./abnormal-loss");
 
 const router = express.Router();
 
@@ -41,6 +48,13 @@ router.use("/sales-order", salesOrderRoutes);
 router.use("/returnable-dispatch", returnableDispatchRoutes);
 router.use("/returnable-receipt", returnableReceiptRoutes);
 router.use("/returnables", returnablesLegacyRoutes);
+router.use("/production", productionFinishedRoutes);
+router.use("/production-sfg", productionSemiFinishedRoutes);
+router.use("/department-completion", departmentCompletionRoutes);
+router.use("/production-planning", productionPlanningRoutes);
+router.use("/consumption", consumptionRoutes);
+router.use("/labour-production", labourProductionRoutes);
+router.use("/abnormal-loss", abnormalLossRoutes);
 router.use("/engine", voucherEngineRoutes);
 
 module.exports = router;

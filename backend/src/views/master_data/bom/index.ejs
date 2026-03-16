@@ -1,92 +1,98 @@
+<%
+  const canCreateBom = can("SCREEN", "master_data.bom", "create");
+  const canNavigateBom = can("SCREEN", "master_data.bom", "navigate");
+  const canSubmitBomRequest = !canCreateBom && canNavigateBom;
+  const selectedLifecycle = String(filters?.lifecycle || "all").toLowerCase();
+  const selectedWorkflow = String(filters?.workflow || "all").toUpperCase();
+  const selectedBomType = String(filters?.bom_type || "all").toUpperCase();
+  const selectedRows = String(filters?.rows || "25").toLowerCase();
+  const lifecycleStatusOptions = [
+    { value: "all", label: t("all") },
+    { value: "active", label: t("active") },
+    { value: "inactive", label: t("inactive") },
+  ];
+%>
+
 <div class="mx-auto w-full max-w-7xl space-y-6">
   <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
     <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
       <div class="space-y-1">
-        <h1 class="text-2xl font-display text-ink"><%= t("bom_list") || "BOM List" %></h1>
+        <h1 class="text-2xl font-display text-ink"><%= t("bom_list") || "BOM Register" %></h1>
         <p class="text-sm text-muted"><%= t("bom_description") || "Manage global BOM drafts, approvals, and versions." %></p>
       </div>
       <div class="flex flex-wrap gap-2">
-        <a href="<%= basePath %>" class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800">
-          <%= t("bom_list") || "BOM List" %>
-        </a>
-        <% const canCreateBom = can('SCREEN', 'master_data.bom', 'create'); %>
         <% if (canCreateBom) { %>
-          <a href="<%= basePath %>/new" class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800">
+          <a href="<%= basePath %>/new" class="cursor-pointer rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800">
             <%= t("add") %> <%= t("bom") || "BOM" %>
           </a>
+        <% } else if (canSubmitBomRequest) { %>
+          <a href="<%= basePath %>/new" class="cursor-pointer rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800">
+            <%= t("submit_bom_request") || "Submit BOM Request" %>
+          </a>
         <% } %>
-        <a href="<%= basePath %>/versions" class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800">
-          <%= t("bom_versions") || "Versions" %>
-        </a>
       </div>
     </div>
   </section>
 
-  <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md">
-    <form method="GET" class="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
-      <div class="text-sm font-semibold text-slate-700"><%= t("list") %> <%= t("bom") || "BOM" %></div>
-      <div class="flex flex-wrap gap-2">
-        <input
-          type="text"
-          name="q"
-          value="<%= filters?.q || '' %>"
-          placeholder="<%= t('search') || 'Search' %>"
-          class="min-w-[180px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
-        />
-        <select name="status" data-searchable-outside-modal="true" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-          <option value=""><%= t("status") %></option>
-          <% ["DRAFT", "PENDING", "APPROVED", "REJECTED"].forEach(function(status) { %>
-            <option value="<%= status %>" <%= (filters?.status || '').toUpperCase() === status ? 'selected' : '' %>><%= t(status.toLowerCase()) || status %></option>
-          <% }) %>
-        </select>
-        <select name="level" data-searchable-outside-modal="true" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-          <option value=""><%= t("all") %></option>
-          <option value="FINISHED" <%= (filters?.level || '').toUpperCase() === 'FINISHED' ? 'selected' : '' %>><%= t("finished") || "Finished" %></option>
-          <option value="SEMI_FINISHED" <%= (filters?.level || '').toUpperCase() === 'SEMI_FINISHED' ? 'selected' : '' %>><%= t("semi_finished") || "Semi Finished" %></option>
-        </select>
-        <button type="submit" class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white">
-          <%= t("apply") %>
-        </button>
-        <a href="<%= basePath %>" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600">
-          <%= t("clear") %>
-        </a>
+  <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md overflow-hidden">
+    <form method="GET" action="<%= basePath %>" class="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between" data-bom-filter-form>
+      <div class="text-sm font-semibold text-slate-700"><%= t("list") %> <%= t("bom_list") || "BOM Register" %></div>
+      <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+        <%- include("../../base/partials/table-controls", {
+          t,
+          showStatus: true,
+          showFilters: true,
+          pageSizeName: "rows",
+          selectedPageSize: selectedRows,
+          statusName: "lifecycle",
+          selectedStatus: selectedLifecycle,
+          statusOptions: lifecycleStatusOptions,
+          searchName: "q",
+          searchValue: filters?.q || "",
+        }) %>
+        <input type="hidden" name="workflow" value="<%= selectedWorkflow === "ALL" ? "all" : selectedWorkflow %>" data-bom-workflow-input>
+        <input type="hidden" name="bom_type" value="<%= selectedBomType === "ALL" ? "all" : selectedBomType %>" data-bom-type-input>
       </div>
     </form>
 
-    <div class="overflow-x-auto">
+    <div class="overflow-x-auto bg-white">
       <table class="min-w-full text-sm">
-        <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+        <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
           <tr>
             <th class="px-4 py-3 text-left"><%= t("sr_no") || "Sr No" %></th>
             <th class="px-4 py-3 text-left"><%= t("code") || "Code" %></th>
             <th class="px-4 py-3 text-left"><%= t("article_name") || "Article Name" %></th>
-            <th class="px-4 py-3 text-left"><%= t("level") || "Level" %></th>
+            <th class="px-4 py-3 text-left"><%= t("bom_stage") || "Stage" %></th>
             <th class="px-4 py-3 text-left"><%= t("version") || "Version" %></th>
             <th class="px-4 py-3 text-left"><%= t("status") %></th>
+            <th class="px-4 py-3 text-left"><%= t("bom_lifecycle") || "BOM Status" %></th>
             <th class="px-4 py-3 text-left"><%= t("date") %></th>
             <th class="px-4 py-3 text-right"><%= t("actions") %></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100">
           <% if (!rows || rows.length === 0) { %>
-            <tr>
-              <td colspan="8" class="px-4 py-8 text-center text-slate-400"><%= t("no_entries") %></td>
-            </tr>
+            <%- include("../../base/partials/table-empty", { t, colspan: 9 }) %>
           <% } %>
           <% (rows || []).forEach(function(row, idx) { %>
-            <tr class="hover:bg-amber-50/40">
+            <tr class="hover:bg-amber-50/40 odd:bg-white even:bg-slate-50/40">
               <td class="px-4 py-3 text-slate-700"><%= idx + 1 %></td>
               <td class="px-4 py-3 text-slate-700"><%= row.bom_no %></td>
               <td class="px-4 py-3 text-slate-700"><%= row.item_name || "-" %></td>
-              <td class="px-4 py-3 text-slate-700"><%= t((row.level || '').toLowerCase()) || row.level %></td>
+              <td class="px-4 py-3 text-slate-700"><%= t((row.level || "").toLowerCase()) || row.level %></td>
               <td class="px-4 py-3 text-slate-700">V<%= row.version_no %></td>
               <td class="px-4 py-3">
-                <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] <%= row.status === 'APPROVED' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : row.status === 'DRAFT' ? 'border-amber-200 bg-amber-50 text-amber-700' : row.status === 'PENDING' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-rose-200 bg-rose-50 text-rose-700' %>">
-                  <%= t((row.status || '').toLowerCase()) || row.status %>
+                <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] <%= row.status === 'APPROVED' ? 'border-sky-200 bg-sky-50 text-sky-700' : row.status === 'DRAFT' ? 'border-amber-200 bg-amber-50 text-amber-700' : row.status === 'PENDING' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-rose-200 bg-rose-50 text-rose-700' %>">
+                  <%= t((row.status || "").toLowerCase()) || row.status %>
                 </span>
                 <% if (Number(row.pending_approval_count || 0) > 0) { %>
                   <div class="mt-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-blue-600"><%= t("pending") %>: <%= row.pending_approval_count %></div>
                 <% } %>
+              </td>
+              <td class="px-4 py-3">
+                <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] <%= row.bom_is_active ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-300 bg-slate-100 text-slate-600' %>">
+                  <%= row.bom_is_active ? (t("active") || "Active") : (t("inactive") || "Inactive") %>
+                </span>
               </td>
               <td class="px-4 py-3 text-slate-700"><%= formatDateDisplay(row.created_at) %></td>
               <td class="px-4 py-3">
@@ -97,18 +103,37 @@
                       <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6" />
                     </svg>
                   </a>
-                  <% if (row.status === 'APPROVED' && can('SCREEN', 'master_data.bom', 'create')) { %>
-                    <form method="POST" action="<%= basePath %>/<%= row.id %>/create-new-version" class="inline">
+                  <% if (can("SCREEN", "master_data.bom", "delete")) { %>
+                    <form method="POST" action="<%= basePath %>/<%= row.id %>/toggle-lifecycle" class="inline">
                       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                      <button type="submit" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-800">
-                        <%= t("bom_create_new_version") || "New Version" %>
+                      <button
+                        type="submit"
+                        class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-600 transition hover:border-slate-300 hover:text-slate-900"
+                        title="<%= row.bom_is_active ? (t('deactivate') || 'Deactivate') : (t('activate') || 'Activate') %>"
+                        aria-label="<%= row.bom_is_active ? (t('deactivate') || 'Deactivate') : (t('activate') || 'Activate') %>"
+                      >
+                        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                          <% if (row.bom_is_active) { %>
+                            <path d="M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                          <% } else { %>
+                            <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                          <% } %>
+                        </svg>
                       </button>
                     </form>
                   <% } %>
-                  <% if (row.status === 'DRAFT') { %>
+                  <% if (row.status === "APPROVED" && can("SCREEN", "master_data.bom", "create")) { %>
+                    <form method="POST" action="<%= basePath %>/<%= row.id %>/create-new-version" class="inline">
+                      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                      <button type="submit" class="inline-flex min-w-[8.5rem] items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-800" title="<%= t('bom_create_new_version') || 'Create New Version' %>">
+                        <%= t("bom_revise") || "Revise" %>
+                      </button>
+                    </form>
+                  <% } %>
+                  <% if (row.status === "DRAFT") { %>
                     <form method="POST" action="<%= basePath %>/<%= row.id %>/send-for-approval" class="inline">
                       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                      <button type="submit" class="rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-800">
+                      <button type="submit" class="inline-flex min-w-[8.5rem] items-center justify-center rounded-lg bg-blue-700 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-800">
                         <%= user?.isAdmin ? (t("approve") || "Approve") : (t("send_for_approval") || "Send for Approval") %>
                       </button>
                     </form>
@@ -122,3 +147,98 @@
     </div>
   </section>
 </div>
+
+<%- include("../../base/partials/filter-modal", { t, bodyPartial: "../../master_data/bom/filters.ejs", serverFilters: false }) %>
+
+<script>
+  (() => {
+    const form = document.querySelector("[data-bom-filter-form]");
+    if (!form) return;
+
+    const selects = Array.from(form.querySelectorAll("select"));
+    selects.forEach((selectEl) => {
+      selectEl.addEventListener("change", () => form.requestSubmit());
+    });
+
+    const searchInput = form.querySelector("[data-search-input]");
+    if (!(searchInput instanceof HTMLInputElement)) return;
+
+    let submitTimer = null;
+    searchInput.addEventListener("input", () => {
+      window.clearTimeout(submitTimer);
+      submitTimer = window.setTimeout(() => form.requestSubmit(), 350);
+    });
+    searchInput.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      window.clearTimeout(submitTimer);
+      form.requestSubmit();
+    });
+
+    const filterToggle = form.querySelector("[data-filter-toggle]");
+    const filterCount = form.querySelector("[data-filter-count]");
+    const workflowInput = form.querySelector("[data-bom-workflow-input]");
+    const bomTypeInput = form.querySelector("[data-bom-type-input]");
+    const filterPanel = document.querySelector("[data-filter-panel]");
+    const panelWorkflow = filterPanel?.querySelector("[data-bom-modal-workflow]");
+    const panelType = filterPanel?.querySelector("[data-bom-modal-type]");
+    const panelClose = filterPanel?.querySelector("[data-filter-close]");
+    const panelApply = filterPanel?.querySelector("[data-filter-apply]");
+    const panelClear = filterPanel?.querySelector("[data-filter-clear]");
+
+    const normalizeValue = (value) => String(value || "").trim();
+    const isAllValue = (value) => normalizeValue(value).toLowerCase() === "all";
+
+    const updateFilterCount = () => {
+      if (!(filterCount instanceof HTMLElement)) return;
+      let active = 0;
+      if (!isAllValue(workflowInput?.value)) active += 1;
+      if (!isAllValue(bomTypeInput?.value)) active += 1;
+      if (active > 0) {
+        filterCount.textContent = String(active);
+        filterCount.classList.remove("hidden");
+      } else {
+        filterCount.classList.add("hidden");
+      }
+    };
+
+    const closePanel = () => {
+      if (!filterPanel) return;
+      filterPanel.classList.add("hidden");
+      filterPanel.classList.remove("flex");
+    };
+
+    const openPanel = () => {
+      if (!filterPanel || !panelWorkflow || !panelType) return;
+      panelWorkflow.value = workflowInput?.value || "all";
+      panelType.value = bomTypeInput?.value || "all";
+      filterPanel.classList.remove("hidden");
+      filterPanel.classList.add("flex");
+    };
+
+    filterToggle?.addEventListener("click", openPanel);
+    panelClose?.addEventListener("click", closePanel);
+    panelApply?.addEventListener("click", () => {
+      if (workflowInput && panelWorkflow) workflowInput.value = panelWorkflow.value || "all";
+      if (bomTypeInput && panelType) bomTypeInput.value = panelType.value || "all";
+      updateFilterCount();
+      closePanel();
+      form.requestSubmit();
+    });
+    panelClear?.addEventListener("click", () => {
+      if (panelWorkflow) panelWorkflow.value = "all";
+      if (panelType) panelType.value = "all";
+      if (workflowInput) workflowInput.value = "all";
+      if (bomTypeInput) bomTypeInput.value = "all";
+      updateFilterCount();
+      closePanel();
+      form.requestSubmit();
+    });
+    filterPanel?.addEventListener("click", (event) => {
+      if (event.target !== filterPanel) return;
+      closePanel();
+    });
+
+    updateFilterCount();
+  })();
+</script>

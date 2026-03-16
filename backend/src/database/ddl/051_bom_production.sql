@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS erp.bom_header (
   output_uom_id  bigint NOT NULL REFERENCES erp.uom(id),
 
   status         erp.bom_status NOT NULL DEFAULT 'DRAFT',
+  is_active      boolean NOT NULL DEFAULT true,
   version_no     int NOT NULL DEFAULT 1,
 
   created_by     bigint NOT NULL REFERENCES erp.users(id),
@@ -75,6 +76,8 @@ CREATE TABLE IF NOT EXISTS erp.bom_header (
 
 CREATE INDEX IF NOT EXISTS ix_bom_header_item_status
 ON erp.bom_header(item_id, status);
+CREATE INDEX IF NOT EXISTS ix_bom_header_item_active
+ON erp.bom_header(item_id, is_active);
 
 -- One active draft per item+level across the system.
 CREATE UNIQUE INDEX IF NOT EXISTS ux_bom_header_single_draft

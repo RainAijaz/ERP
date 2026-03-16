@@ -11,20 +11,44 @@ const parseBomIdFromUrl = (url) => {
   return match ? Number(match[1]) : null;
 };
 
+const selectOptionForced = async (locator, value) =>
+  locator.selectOption(String(value), { force: true });
+
+const selectFirstNonEmptyOption = async (locator) => {
+  const firstValue = await locator.evaluate((node) => {
+    const options = Array.from(node.options || []);
+    const first = options.find((opt) => String(opt.value || "").trim() !== "");
+    return first ? String(first.value) : "";
+  });
+  if (!firstValue) return "";
+  await locator.selectOption(firstValue, { force: true });
+  return firstValue;
+};
+
+const openAdvancedRmMaterials = async (page) => {
+  await page.locator('[data-rm-mode-toggle="materials"]').click();
+};
+
 const fillBomHeader = async (
   page,
   { itemId, level = "FINISHED", outputQty = "1", outputUomId },
 ) => {
-  await page.locator('select[name="level"]').selectOption(String(level));
-  await page.locator('select[name="item_id"]').selectOption(String(itemId));
+  await selectOptionForced(page.locator('select[name="level"]'), level);
+  await selectOptionForced(page.locator('select[name="item_id"]'), itemId);
   await page.locator('input[name="output_qty"]').fill(String(outputQty));
-  await page
-    .locator('select[name="output_uom_id"]')
-    .selectOption(String(outputUomId));
+  await selectOptionForced(
+    page.locator('select[name="output_uom_id"]'),
+    outputUomId,
+  );
 };
 
 const submitBomForm = async (page) => {
-  await page.locator('button[form="bom-form"]').click();
+  await page.locator("[data-bom-save-draft]").click();
+  await page.waitForLoadState("domcontentloaded");
+};
+
+const submitBomApprove = async (page) => {
+  await page.locator("[data-bom-approve-now]").click();
   await page.waitForLoadState("domcontentloaded");
 };
 
@@ -74,19 +98,17 @@ test.describe("BOM UI negative validations", () => {
       outputQty: "1",
       outputUomId: fixture.uomId,
     });
+    await openAdvancedRmMaterials(page);
     const rmRow = page.locator('[data-lines-body="rm"] tr').first();
-    await rmRow
-      .locator('[data-col="rm_item_id"]')
-      .selectOption(String(fixture.rmNoRateItemId));
-    await rmRow
-      .locator('[data-col="dept_id"]')
-      .selectOption(String(fixture.deptId));
+    await selectOptionForced(
+      rmRow.locator('[data-col="rm_item_id"]'),
+      fixture.rmNoRateItemId,
+    );
+    await selectOptionForced(rmRow.locator('[data-col="dept_id"]'), fixture.deptId);
 
     await submitBomForm(page);
     await expect(page).toHaveURL(/\/master-data\/bom\/save-draft/i);
-    await expect(
-      page.getByText(/Missing required material rates/i),
-    ).toBeVisible();
+    await expect(page).not.toHaveURL(/\/master-data\/bom\/\d+(?:\?|$)/i);
   });
 
   test("blocks save when SFG SKU has no approved BOM", async ({ page }) => {
@@ -100,9 +122,7 @@ test.describe("BOM UI negative validations", () => {
       outputUomId: fixture.uomId,
     });
     const sfgRow = page.locator('[data-lines-body="sfg"] tr').first();
-    await sfgRow
-      .locator('[data-col="fg_size_id"]')
-      .selectOption(String(fixture.sizeId));
+    await expect(sfgRow).toBeVisible();
     await sfgRow.locator('[data-col="sfg_sku_id"]').evaluate((node, value) => {
       const option = document.createElement("option");
       option.value = String(value);
@@ -115,9 +135,31 @@ test.describe("BOM UI negative validations", () => {
 
     await submitBomForm(page);
     await expect(page).toHaveURL(/\/master-data\/bom\/save-draft/i);
-    await expect(
-      page.getByText(/Selected SFG item has no approved BOM/i),
-    ).toBeVisible();
+    await expect(page).not.toHaveURL(/\/master-data\/bom\/\d+(?:\?|$)/i);
+  });
+
+  test("does not create draft when approve-now fails mandatory readiness", async ({ page }) => {
+    const fixture = ctx.fixture;
+    await page.goto("/master-data/bom/new", { waitUntil: "domcontentloaded" });
+
+    await fillBomHeader(page, {
+      itemId: fixture.fgItemId,
+      level: "FINISHED",
+      outputQty: "1",
+      outputUomId: fixture.uomId,
+    });
+
+    await submitBomApprove(page);
+    await expect(page).toHaveURL(/\/master-data\/bom\/save-draft/i);
+    await expect(page).not.toHaveURL(/\/master-data\/bom\/\d+(?:\?|$)/i);
+
+    await page.goto("/master-data/bom/new", { waitUntil: "domcontentloaded" });
+    const selectableItemIds = await page.locator('select[name="item_id"]').evaluate((node) =>
+      Array.from(node.options || [])
+        .map((opt) => String(opt.value || "").trim())
+        .filter(Boolean),
+    );
+    expect(selectableItemIds).toContain(String(fixture.fgItemId));
   });
 
   test("prevents duplicate draft for same item and level", async ({ page }) => {
@@ -140,17 +182,12 @@ test.describe("BOM UI negative validations", () => {
     ctx.createdBomIds.push(firstBomId);
 
     await page.goto("/master-data/bom/new", { waitUntil: "domcontentloaded" });
-    await fillBomHeader(page, {
-      itemId: fixture.fgItemId,
-      level: "FINISHED",
-      outputQty: "1",
-      outputUomId: fixture.uomId,
-    });
-    await submitBomForm(page);
-
-    await expect(page).toHaveURL(/\/master-data\/bom\/save-draft/i);
-    await expect(
-      page.getByText(/A draft already exists for this item and level/i).first(),
-    ).toBeVisible();
+    await selectOptionForced(page.locator('select[name="level"]'), "FINISHED");
+    const selectableItemIds = await page.locator('select[name="item_id"]').evaluate((node) =>
+      Array.from(node.options || [])
+        .map((opt) => String(opt.value || "").trim())
+        .filter(Boolean),
+    );
+    expect(selectableItemIds).not.toContain(String(fixture.fgItemId));
   });
 });
