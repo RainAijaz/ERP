@@ -18,6 +18,17 @@ const normalizeCredit = (value) => {
   return Number.isNaN(numberValue) ? null : numberValue;
 };
 
+const toPositiveIntOrNull = (value) => {
+  const num = Number(value);
+  if (!Number.isInteger(num) || num <= 0) return null;
+  return num;
+};
+
+const buildProductionStageCode = (deptId) => {
+  const normalizedDeptId = toPositiveIntOrNull(deptId);
+  return normalizedDeptId ? `DEPT_${normalizedDeptId}` : null;
+};
+
 const hasField = (page, name) => page.fields.some((field) => field.name === name);
 
 // Page metadata drives form fields, table columns, and DB mapping.
@@ -209,7 +220,7 @@ const BASIC_INFO_PAGES = {
     ],
   },
   groups: {
-    titleKey: "groups",
+    titleKey: "product_groups",
     description: "Product group visibility for raw, semi-finished, and finished items.",
     table: "erp.product_groups",
     translateMode: "transliterate",
@@ -530,6 +541,62 @@ const BASIC_INFO_PAGES = {
       },
     ],
   },
+  "production-stages": {
+    titleKey: "production_stages",
+    description: "Define production stages and map each stage to a production department.",
+    table: "erp.production_stages",
+    translateMode: "transliterate",
+    joins: [{ table: { d: "erp.departments" }, on: ["t.dept_id", "d.id"] }],
+    extraSelect: (locale) => [
+      locale === "ur"
+        ? knex.raw("COALESCE(d.name_ur, d.name) as dept_name")
+        : "d.name as dept_name",
+    ],
+    columns: [
+      { key: "id", label: "ID" },
+      { key: "name", label: "Name" },
+      { key: "name_ur", label: "Name (Urdu)" },
+      { key: "dept_name", label: "Department" },
+      { key: "is_active", label: "Active", type: "boolean" },
+      { key: "created_by_name", label: "Created By" },
+      { key: "created_at", label: "Created At" },
+    ],
+    defaults: {
+      is_active: true,
+    },
+    fields: [
+      {
+        name: "name",
+        label: "Name",
+        placeholder: "Cutting, Stitching, Finishing",
+        required: true,
+      },
+      {
+        name: "name_ur",
+        label: "Name (Urdu)",
+        placeholder: "Urdu name",
+        required: false,
+      },
+      {
+        name: "dept_id",
+        label: "Department",
+        type: "select",
+        required: true,
+        optionsQuery: {
+          table: "erp.departments",
+          valueKey: "id",
+          labelKey: "name",
+          orderBy: "name",
+          where: { is_active: true, is_production: true },
+        },
+      },
+      {
+        name: "is_active",
+        label: "is_active",
+        type: "checkbox",
+      },
+    ],
+  },
 };
 
 const getPageConfig = (key) => BASIC_INFO_PAGES[key];
@@ -659,6 +726,7 @@ const ROUTE_MAP = {
   "party-groups": "/party-groups",
   "account-groups": "/account-groups",
   departments: "/departments",
+  "production-stages": "/production-stages",
 };
 
 const BASIC_INFO_SCOPE_KEYS = {
@@ -675,6 +743,7 @@ const BASIC_INFO_SCOPE_KEYS = {
   "party-groups": "master_data.basic_info.party_groups",
   "account-groups": "master_data.basic_info.account_groups",
   departments: "master_data.basic_info.departments",
+  "production-stages": "master_data.basic_info.production_stages",
   "uom-conversions": "master_data.basic_info.uom_conversions",
 };
 
@@ -824,6 +893,52 @@ const createHandler = (type) => async (req, res, next) => {
   }
 
   try {
+    if (type === "production-stages") {
+      const deptId = toPositiveIntOrNull(values.dept_id);
+      if (!deptId) {
+        return renderIndexError(req, res, page, values, res.locals.t("error_required_fields"), "create", basePath, type);
+      }
+      const dept = await knex("erp.departments")
+        .select("id", "is_active", "is_production")
+        .where({ id: deptId })
+        .first();
+      if (!dept || !dept.is_active || !dept.is_production) {
+        return renderIndexError(
+          req,
+          res,
+          page,
+          values,
+          res.locals.t("bom_error_department_must_be_production") || "Selected department must be an active Production department.",
+          "create",
+          basePath,
+          type,
+        );
+      }
+      values.dept_id = deptId;
+      values.code = buildProductionStageCode(deptId);
+      if (!values.code) {
+        return renderIndexError(req, res, page, values, res.locals.t("error_required_fields"), "create", basePath, type);
+      }
+      if (values.is_active !== false) {
+        const existingActiveForDept = await knex("erp.production_stages")
+          .select("id")
+          .where({ dept_id: deptId, is_active: true })
+          .first();
+        if (existingActiveForDept) {
+          return renderIndexError(
+            req,
+            res,
+            page,
+            values,
+            "This production department already has an active stage.",
+            "create",
+            basePath,
+            type,
+          );
+        }
+      }
+    }
+
     if (hasField(page, "code") || page.autoCodeFromName) {
       values.code = await generateUniqueCode({
         name: values.name,
@@ -988,7 +1103,52 @@ const updateHandler = (type) => async (req, res, next) => {
     if (!existingRow) {
       return renderIndexError(req, res, page, values, res.locals.t("error_not_found"), "edit", basePath, type);
     }
-    if (existingRow.code) {
+    if (type === "production-stages") {
+      const deptId = toPositiveIntOrNull(values.dept_id);
+      if (!deptId) {
+        return renderIndexError(req, res, page, values, res.locals.t("error_required_fields"), "edit", basePath, type);
+      }
+      const dept = await knex("erp.departments")
+        .select("id", "is_active", "is_production")
+        .where({ id: deptId })
+        .first();
+      if (!dept || !dept.is_active || !dept.is_production) {
+        return renderIndexError(
+          req,
+          res,
+          page,
+          values,
+          res.locals.t("bom_error_department_must_be_production") || "Selected department must be an active Production department.",
+          "edit",
+          basePath,
+          type,
+        );
+      }
+      values.dept_id = deptId;
+      values.code = buildProductionStageCode(deptId);
+      if (!values.code) {
+        return renderIndexError(req, res, page, values, res.locals.t("error_required_fields"), "edit", basePath, type);
+      }
+      if (values.is_active !== false) {
+        const existingActiveForDept = await knex("erp.production_stages")
+          .select("id")
+          .where({ dept_id: deptId, is_active: true })
+          .whereNot({ id })
+          .first();
+        if (existingActiveForDept) {
+          return renderIndexError(
+            req,
+            res,
+            page,
+            values,
+            "This production department already has an active stage.",
+            "edit",
+            basePath,
+            type,
+          );
+        }
+      }
+    } else if (existingRow.code) {
       values.code = existingRow.code;
     } else if (hasField(page, "code") || page.autoCodeFromName) {
       values.code = await generateUniqueCode({
@@ -1282,6 +1442,9 @@ router.get("/groups/account-groups", (req, res) => {
 });
 router.get("/groups/departments", (req, res) => {
   res.redirect(`${req.baseUrl}${ROUTE_MAP.departments}`);
+});
+router.get("/groups/production-stages", (req, res) => {
+  res.redirect(`${req.baseUrl}${ROUTE_MAP["production-stages"]}`);
 });
 
 router.get("/:type", (req, res, next) => {

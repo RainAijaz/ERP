@@ -27,12 +27,9 @@ const selectFirstNonEmptyOption = async (locator) => {
 };
 
 const openRmView = async (page, view = "materials") => {
-  if (view === "materials" || view === "sku_rules") {
-    await page.locator(`[data-rm-mode-toggle="${view}"]`).click();
-    return;
-  }
-  await page.locator('[data-rm-mode-toggle="advanced"]').click();
-  await page.locator(`[data-rm-view-toggle="${view}"]`).click();
+  const normalizedView = view === "size_rules" ? "sku_rules" : view;
+  if (normalizedView !== "materials" && normalizedView !== "sku_rules") return;
+  await page.locator(`[data-rm-view-toggle="${normalizedView}"]`).click();
 };
 
 test.describe("BOM UI row editing flow", () => {
@@ -80,6 +77,10 @@ test.describe("BOM UI row editing flow", () => {
     await selectOptionForced(page.locator('select[name="item_id"]'), fixture.fgItemId);
     await page.locator('input[name="output_qty"]').fill("1.5");
     await selectOptionForced(page.locator('select[name="output_uom_id"]'), fixture.uomId);
+    await selectOptionForced(
+      page.locator('[data-lines-body="stage_route"] tr').first().locator('[data-col="dept_id"]'),
+      fixture.deptId,
+    );
 
     await openRmView(page, "materials");
 
@@ -127,16 +128,15 @@ test.describe("BOM UI row editing flow", () => {
     await expect(labourRateRow).toBeVisible();
     await labourRateRow.locator('[data-labour-rule-col="rate_value"]').fill("15");
 
-    await openRmView(page, "size_rules");
-    const ruleRows = page.locator("[data-rule-entry]");
-    const ruleRowCount = await ruleRows.count();
-    const hasRuleRows = ruleRowCount > 0;
-    if (hasRuleRows) {
-      const ruleRow = ruleRows.first();
-      await expect(ruleRow).toBeVisible();
-      await ruleRow.locator("[data-rule-qty]").fill("1.25");
-      await expect(ruleRow.locator("[data-rule-qty]")).toHaveValue("1.25");
-    }
+    // Stage row actions must remain functional after labour interactions.
+    const stageRows = page.locator('[data-lines-body="stage_route"] tr');
+    const stageRowsBeforeAdd = await stageRows.count();
+    await stageRows.last().locator('[data-add-after="stage_route"]').click();
+    await expect(stageRows).toHaveCount(stageRowsBeforeAdd + 1);
+    await stageRows.last().locator('[data-remove-row="stage_route"]').click();
+    await expect(stageRows).toHaveCount(stageRowsBeforeAdd);
+
+    const hasRuleRows = false;
 
     await expect(rmRow.locator('[data-col="rm_item_id"]')).toHaveValue(
       String(fixture.rmItemId),
@@ -180,11 +180,7 @@ test.describe("BOM UI row editing flow", () => {
     expect(draftSnapshot.counts.rm).toBe(1);
     expect(draftSnapshot.counts.sfg).toBeGreaterThanOrEqual(0);
     expect(draftSnapshot.counts.labour).toBeGreaterThanOrEqual(1);
-    if (hasRuleRows) {
-      expect(draftSnapshot.counts.rule).toBe(1);
-    } else {
-      expect(draftSnapshot.counts.rule).toBe(0);
-    }
+    expect(draftSnapshot.counts.rule).toBe(0);
 
     const approveBtn = page
       .locator(`form[action$="/${firstBomId}/send-for-approval"] button`)
@@ -224,10 +220,6 @@ test.describe("BOM UI row editing flow", () => {
     expect(newVersionSnapshot.counts.rm).toBe(1);
     expect(newVersionSnapshot.counts.sfg).toBeGreaterThanOrEqual(0);
     expect(newVersionSnapshot.counts.labour).toBeGreaterThanOrEqual(1);
-    if (hasRuleRows) {
-      expect(newVersionSnapshot.counts.rule).toBe(1);
-    } else {
-      expect(newVersionSnapshot.counts.rule).toBe(0);
-    }
+    expect(newVersionSnapshot.counts.rule).toBe(0);
   });
 });

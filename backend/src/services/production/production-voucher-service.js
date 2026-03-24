@@ -28,6 +28,7 @@ const EDITABLE_VOUCHER_TYPES = new Set([
 ]);
 
 const ROW_STATUS_VALUES = ["PACKED", "LOOSE"];
+const ROW_UNIT_VALUES = ["PAIR", "DZN"];
 const LOSS_TYPE_VALUES = new Set(["RM_LOSS", "SFG_LOSS", "FG_LOSS", "DVC_ABANDON"]);
 const PAIRS_PER_DOZEN = 12;
 const LABOUR_RATE_TYPE = {
@@ -36,7 +37,11 @@ const LABOUR_RATE_TYPE = {
 };
 
 let approvalRequestHasVoucherTypeCodeColumn;
-let bomSkuOverrideTableSupportPromise;
+let productionStagesTableSupport;
+let productionLineStageColumnSupport;
+let dcvHeaderStageColumnSupport;
+let abnormalLossStageColumnSupport;
+let bomStageRoutingTableSupport;
 
 const toDateOnly = toLocalDateOnly;
 
@@ -44,6 +49,66 @@ const normalizeText = (value, max = 1000) => {
   const text = String(value || "").trim();
   if (!text) return null;
   return text.slice(0, max);
+};
+
+const tableExistsTx = async (trx, tableName) => {
+  try {
+    const row = await trx.raw("SELECT to_regclass(?) AS reg", [tableName]);
+    const value = row?.rows?.[0]?.reg || row?.[0]?.reg || null;
+    return Boolean(value);
+  } catch (err) {
+    return false;
+  }
+};
+
+const hasColumnTx = async (trx, schemaName, tableName, columnName) => {
+  try {
+    return trx.schema.withSchema(schemaName).hasColumn(tableName, columnName);
+  } catch (err) {
+    return false;
+  }
+};
+
+const hasProductionStagesTableTx = async (trx) => {
+  if (typeof productionStagesTableSupport === "boolean") return productionStagesTableSupport;
+  productionStagesTableSupport = await tableExistsTx(trx, "erp.production_stages");
+  return productionStagesTableSupport;
+};
+
+const hasBomStageRoutingTableTx = async (trx) => {
+  if (typeof bomStageRoutingTableSupport === "boolean") return bomStageRoutingTableSupport;
+  bomStageRoutingTableSupport = await tableExistsTx(trx, "erp.bom_stage_routing");
+  return bomStageRoutingTableSupport;
+};
+
+const hasProductionLineStageColumnTx = async (trx) => {
+  if (typeof productionLineStageColumnSupport === "boolean") return productionLineStageColumnSupport;
+  productionLineStageColumnSupport = await hasColumnTx(trx, "erp", "production_line", "stage_id");
+  return productionLineStageColumnSupport;
+};
+
+const hasDcvHeaderStageColumnTx = async (trx) => {
+  if (typeof dcvHeaderStageColumnSupport === "boolean") return dcvHeaderStageColumnSupport;
+  dcvHeaderStageColumnSupport = await hasColumnTx(trx, "erp", "dcv_header", "stage_id");
+  return dcvHeaderStageColumnSupport;
+};
+
+const hasAbnormalLossStageColumnTx = async (trx) => {
+  if (typeof abnormalLossStageColumnSupport === "boolean") return abnormalLossStageColumnSupport;
+  abnormalLossStageColumnSupport = await hasColumnTx(trx, "erp", "abnormal_loss_line", "stage_id");
+  return abnormalLossStageColumnSupport;
+};
+
+const loadActiveProductionStagesTx = async (trx) => {
+  const hasStagesTable = await hasProductionStagesTableTx(trx);
+  if (!hasStagesTable) return [];
+  return trx("erp.production_stages as ps")
+    .leftJoin("erp.departments as d", "d.id", "ps.dept_id")
+    .select("ps.id", "ps.code", "ps.name", "ps.dept_id", "ps.is_active")
+    .where("ps.is_active", true)
+    .andWhere("d.is_active", true)
+    .andWhere("d.is_production", true)
+    .orderBy("ps.name", "asc");
 };
 
 const toPositiveInt = (value) => {
@@ -78,32 +143,26 @@ const normalizeRowStatus = (value) => {
   return ROW_STATUS_VALUES.includes(status) ? status : "LOOSE";
 };
 
+const normalizeRowUnit = (value) => {
+  const unit = String(value || "").trim().toUpperCase();
+  return ROW_UNIT_VALUES.includes(unit) ? unit : null;
+};
+
+const unitToStatus = (unit) => (String(unit || "").toUpperCase() === "DZN" ? "PACKED" : "LOOSE");
+
+const statusToUnit = (status) => (String(status || "").toUpperCase() === "PACKED" ? "DZN" : "PAIR");
+
+const resolveProductionUnitAndStatus = (line = {}) => {
+  const normalizedUnit = normalizeRowUnit(line?.unit || line?.entry_unit);
+  const fallbackStatus = normalizeRowStatus(line?.status || line?.row_status);
+  const unit = normalizedUnit || statusToUnit(fallbackStatus);
+  const status = unitToStatus(unit);
+  return { unit, status };
+};
+
 const normalizeLossType = (value) => {
   const lossType = String(value || "").trim().toUpperCase();
   return LOSS_TYPE_VALUES.has(lossType) ? lossType : null;
-};
-
-const normalizeBomScope = (value) => {
-  const scope = String(value || "ALL").trim().toUpperCase();
-  return scope === "SPECIFIC" ? "SPECIFIC" : "ALL";
-};
-
-const tableExists = async (trx, tableName) => {
-  try {
-    const row = await trx.raw("SELECT to_regclass(?) AS reg", [tableName]);
-    const value = row?.rows?.[0]?.reg || row?.[0]?.reg || null;
-    return Boolean(value);
-  } catch (err) {
-    return false;
-  }
-};
-
-const hasBomSkuOverrideTable = async (trx) => {
-  if (typeof bomSkuOverrideTableSupportPromise !== "undefined" && bomSkuOverrideTableSupportPromise) {
-    return bomSkuOverrideTableSupportPromise;
-  }
-  bomSkuOverrideTableSupportPromise = tableExists(trx, "erp.bom_sku_override_line");
-  return bomSkuOverrideTableSupportPromise;
 };
 
 const qtyToPairs = ({ qty, status }) => {
@@ -118,6 +177,16 @@ const qtyToPairs = ({ qty, status }) => {
   }
   if (!Number.isInteger(numericQty)) return null;
   return Number(numericQty);
+};
+
+const computeLineQuantityTotals = (lines = []) => {
+  const totalPairs = Number(
+    (Array.isArray(lines) ? lines : [])
+      .reduce((sum, line) => sum + Number(line?.total_pairs || 0), 0)
+      .toFixed(3),
+  );
+  const totalDozens = Number((totalPairs / PAIRS_PER_DOZEN).toFixed(3));
+  return { totalPairs, totalDozens };
 };
 
 const canDo = (req, scopeType, scopeKey, action) => {
@@ -277,6 +346,27 @@ const loadSkuMapTx = async ({ trx, skuIds = [], itemTypes = [] }) => {
   return new Map(rows.map((row) => [Number(row.id), row]));
 };
 
+const buildSkuDisplayLabel = (row) => {
+  const skuCode = String(row?.sku_code || "").trim();
+  const itemName = String(row?.item_name || "").trim();
+  if (skuCode && itemName) return `${skuCode} - ${itemName}`;
+  if (skuCode) return skuCode;
+  if (itemName) return itemName;
+  return "Unknown SKU";
+};
+
+const loadSkuDisplayMapTx = async ({ trx, skuIds = [] }) => {
+  const normalizedSkuIds = [...new Set((skuIds || []).map((id) => toPositiveInt(id)).filter(Boolean))];
+  if (!normalizedSkuIds.length) return new Map();
+
+  const rows = await trx("erp.skus as s")
+    .join("erp.variants as v", "v.id", "s.variant_id")
+    .join("erp.items as i", "i.id", "v.item_id")
+    .select("s.id as sku_id", "s.sku_code", "i.name as item_name")
+    .whereIn("s.id", normalizedSkuIds);
+  return new Map(rows.map((row) => [Number(row.sku_id), row]));
+};
+
 const loadBomHeaderByItemIdTx = async ({ trx, itemId }) => {
   const normalizedItemId = toPositiveInt(itemId);
   if (!normalizedItemId) return null;
@@ -285,6 +375,27 @@ const loadBomHeaderByItemIdTx = async ({ trx, itemId }) => {
     .where({ item_id: normalizedItemId, status: "APPROVED" })
     .orderBy("version_no", "desc")
     .first();
+};
+
+const ensureApprovedBomExistsForSkusTx = async ({ trx, skuIds = [] }) => {
+  const normalizedSkuIds = [...new Set((skuIds || []).map((id) => toPositiveInt(id)).filter(Boolean))];
+  if (!normalizedSkuIds.length) return;
+
+  const missingRows = await trx("erp.skus as s")
+    .join("erp.variants as v", "v.id", "s.variant_id")
+    .join("erp.items as i", "i.id", "v.item_id")
+    .leftJoin("erp.bom_header as bh", function joinApprovedBom() {
+      this.on("bh.item_id", "=", "i.id").andOn("bh.status", "=", trx.raw("?", ["APPROVED"]));
+    })
+    .select("s.id as sku_id", "s.sku_code", "i.name as item_name")
+    .whereIn("s.id", normalizedSkuIds)
+    .groupBy("s.id", "s.sku_code", "i.name")
+    .havingRaw("COUNT(bh.id) = 0")
+    .orderBy("s.sku_code", "asc");
+
+  if (!missingRows.length) return;
+  const skuLabel = buildSkuDisplayLabel(missingRows[0]);
+  throw new HttpError(400, `Approved BOM not found for SKU ${skuLabel}`);
 };
 
 const loadBomProfileBySkuTx = async ({ trx, skuId }) => {
@@ -301,40 +412,31 @@ const loadBomProfileBySkuTx = async ({ trx, skuId }) => {
   if (!sku) return null;
   const bomHeader = await loadBomHeaderByItemIdTx({ trx, itemId: sku.item_id });
   if (!bomHeader) return null;
+  const hasBomStageRouting = await hasBomStageRoutingTableTx(trx);
+  const hasStagesTable = await hasProductionStagesTableTx(trx);
 
-  const hasSkuOverrideTable = await hasBomSkuOverrideTable(trx);
-  const [rmLines, labourLines, variantRules, skuOverrides] = await Promise.all([
+  const [rmLines, labourLines, stageRoutes] = await Promise.all([
     trx("erp.bom_rm_line")
       .select("id", "rm_item_id", "dept_id", "qty", "uom_id", "normal_loss_pct")
       .where({ bom_id: bomHeader.id }),
     trx("erp.bom_labour_line")
       .select("id", "dept_id", "labour_id", "rate_type", "rate_value", "size_scope", "size_id")
       .where({ bom_id: bomHeader.id }),
-    trx("erp.bom_variant_rule")
-      .select("id", "size_scope", "size_id", "packing_scope", "packing_type_id", "color_scope", "color_id", "action_type", "material_scope", "target_rm_item_id", "new_value")
-      .where({ bom_id: bomHeader.id }),
-    hasSkuOverrideTable
-      ? trx("erp.bom_sku_override_line")
-          .select("id", "sku_id", "target_rm_item_id", "is_excluded", "override_qty", "override_uom_id", "replacement_rm_item_id", "rm_color_id")
-          .where({ bom_id: bomHeader.id, sku_id: normalizedSkuId })
+    hasBomStageRouting && hasStagesTable
+      ? trx("erp.bom_stage_routing as bsr")
+          .join("erp.production_stages as ps", "ps.id", "bsr.stage_id")
+          .select(
+            "bsr.stage_id",
+            "bsr.sequence_no",
+            "bsr.is_required",
+            "ps.dept_id",
+            "ps.name as stage_name",
+          )
+          .where({ "bsr.bom_id": bomHeader.id })
+          .andWhere("ps.is_active", true)
+          .orderBy("bsr.sequence_no", "asc")
       : Promise.resolve([]),
   ]);
-
-  const rmItemIds = new Set((rmLines || []).map((line) => Number(line.rm_item_id)).filter(Boolean));
-  (variantRules || []).forEach((rule) => {
-    const replacementRmId = toPositiveInt(rule?.new_value?.replacement_rm_item_id);
-    if (replacementRmId) rmItemIds.add(replacementRmId);
-  });
-  (skuOverrides || []).forEach((line) => {
-    if (toPositiveInt(line?.replacement_rm_item_id)) rmItemIds.add(toPositiveInt(line.replacement_rm_item_id));
-    if (toPositiveInt(line?.target_rm_item_id)) rmItemIds.add(toPositiveInt(line.target_rm_item_id));
-  });
-  const rmItemRows = rmItemIds.size
-    ? await trx("erp.items")
-        .select("id", "item_type", "base_uom_id")
-        .whereIn("id", [...rmItemIds])
-    : [];
-  const rmItemMap = new Map(rmItemRows.map((row) => [Number(row.id), row]));
 
   const applicableLabourLines = labourLines.filter((line) => {
     const scope = String(line.size_scope || "ALL").trim().toUpperCase();
@@ -366,133 +468,13 @@ const loadBomProfileBySkuTx = async ({ trx, skuId }) => {
       rate_type: String(row.rate_type || LABOUR_RATE_TYPE.perPair).toUpperCase(),
       rate_value: Number(row.rate_value || 0),
     })),
-    variantRules: (variantRules || []).map((row) => ({
-      id: Number(row.id),
-      size_scope: normalizeBomScope(row.size_scope),
-      size_id: toPositiveInt(row.size_id),
-      packing_scope: normalizeBomScope(row.packing_scope),
-      packing_type_id: toPositiveInt(row.packing_type_id),
-      color_scope: normalizeBomScope(row.color_scope),
-      color_id: toPositiveInt(row.color_id),
-      action_type: String(row.action_type || "").trim().toUpperCase(),
-      material_scope: normalizeBomScope(row.material_scope),
-      target_rm_item_id: toPositiveInt(row.target_rm_item_id),
-      new_value:
-        row.new_value && typeof row.new_value === "object" && !Array.isArray(row.new_value)
-          ? row.new_value
-          : {},
+    stageRoutes: (stageRoutes || []).map((row) => ({
+      stage_id: Number(row.stage_id),
+      sequence_no: Number(row.sequence_no || 0),
+      is_required: row.is_required !== false,
+      dept_id: Number(row.dept_id || 0) || null,
+      stage_name: String(row.stage_name || ""),
     })),
-    skuOverrides: (skuOverrides || []).map((row) => ({
-      id: Number(row.id),
-      sku_id: Number(row.sku_id),
-      target_rm_item_id: toPositiveInt(row.target_rm_item_id),
-      is_excluded: row.is_excluded === true,
-      override_qty: toPositiveNumber(row.override_qty, 3),
-      override_uom_id: toPositiveInt(row.override_uom_id),
-      replacement_rm_item_id: toPositiveInt(row.replacement_rm_item_id),
-      rm_color_id: toPositiveInt(row.rm_color_id),
-    })),
-    rmItemMap,
-  };
-};
-
-const matchVariantRuleForRm = ({ bomProfile, rmLine, rule }) => {
-  const sizeScope = normalizeBomScope(rule?.size_scope);
-  const packingScope = normalizeBomScope(rule?.packing_scope);
-  const colorScope = normalizeBomScope(rule?.color_scope);
-  const materialScope = normalizeBomScope(rule?.material_scope);
-  if (sizeScope === "SPECIFIC" && Number(toPositiveInt(rule?.size_id) || 0) !== Number(toPositiveInt(bomProfile?.skuSizeId) || 0)) return false;
-  if (packingScope === "SPECIFIC" && Number(toPositiveInt(rule?.packing_type_id) || 0) !== Number(toPositiveInt(bomProfile?.skuPackingTypeId) || 0)) return false;
-  if (colorScope === "SPECIFIC" && Number(toPositiveInt(rule?.color_id) || 0) !== Number(toPositiveInt(bomProfile?.skuColorId) || 0)) return false;
-  if (materialScope === "SPECIFIC" && Number(toPositiveInt(rule?.target_rm_item_id) || 0) !== Number(toPositiveInt(rmLine?.rm_item_id) || 0)) return false;
-  return true;
-};
-
-const sortVariantRulesBySpecificity = (a, b) => {
-  const weight = (rule) => (
-    (normalizeBomScope(rule?.size_scope) === "SPECIFIC" ? 8 : 0)
-    + (normalizeBomScope(rule?.packing_scope) === "SPECIFIC" ? 4 : 0)
-    + (normalizeBomScope(rule?.color_scope) === "SPECIFIC" ? 2 : 0)
-    + (normalizeBomScope(rule?.material_scope) === "SPECIFIC" ? 1 : 0)
-  );
-  const diff = weight(b) - weight(a);
-  if (diff !== 0) return diff;
-  return Number(a?.id || 0) - Number(b?.id || 0);
-};
-
-const resolveAdjustedRmQtyForSkuTx = ({ bomProfile, rmLine }) => {
-  const baseQty = Number(rmLine?.qty || 0);
-  if (!Number.isFinite(baseQty) || baseQty <= 0) return 0;
-
-  const matchingRules = (bomProfile?.variantRules || [])
-    .filter((rule) => String(rule?.action_type || "").trim().toUpperCase() === "ADJUST_QTY")
-    .filter((rule) => matchVariantRuleForRm({ bomProfile, rmLine, rule }));
-
-  if (!matchingRules.length) return baseQty;
-  const sortedRules = matchingRules.sort(sortVariantRulesBySpecificity);
-
-  const chosenRule = sortedRules[0];
-  const adjustedQty = toPositiveNumber(chosenRule?.new_value?.qty, 3);
-  return adjustedQty ? Number(adjustedQty) : baseQty;
-};
-
-const resolveRmConsumptionForSkuTx = ({ bomProfile, rmLine }) => {
-  const baseItemId = Number(rmLine?.rm_item_id || 0);
-  if (!baseItemId) return null;
-
-  let resolvedItemId = baseItemId;
-  let resolvedColorId = null;
-  let adjustedQty = resolveAdjustedRmQtyForSkuTx({ bomProfile, rmLine });
-  let replacementRuleApplied = false;
-  let overrideApplied = false;
-
-  const replacementRules = (bomProfile?.variantRules || [])
-    .filter((rule) => String(rule?.action_type || "").trim().toUpperCase() === "REPLACE_RM")
-    .filter((rule) => matchVariantRuleForRm({ bomProfile, rmLine, rule }))
-    .sort(sortVariantRulesBySpecificity);
-  if (replacementRules.length) {
-    const selectedRule = replacementRules[0];
-    const replacementRmId = toPositiveInt(selectedRule?.new_value?.replacement_rm_item_id);
-    if (replacementRmId) {
-      resolvedItemId = replacementRmId;
-      replacementRuleApplied = true;
-    }
-    const rmColorId = toPositiveInt(selectedRule?.new_value?.rm_color_id);
-    if (rmColorId) {
-      resolvedColorId = rmColorId;
-      replacementRuleApplied = true;
-    }
-  }
-
-  const matchedOverride = (bomProfile?.skuOverrides || [])
-    .find((line) => Number(toPositiveInt(line?.target_rm_item_id) || 0) === Number(baseItemId));
-  if (matchedOverride) {
-    overrideApplied = true;
-    if (matchedOverride.is_excluded) {
-      adjustedQty = 0;
-    } else {
-      const overrideQty = toPositiveNumber(matchedOverride.override_qty, 3);
-      if (overrideQty) adjustedQty = Number(overrideQty);
-      const replacementRmId = toPositiveInt(matchedOverride.replacement_rm_item_id);
-      if (replacementRmId) resolvedItemId = replacementRmId;
-      const rmColorId = toPositiveInt(matchedOverride.rm_color_id);
-      if (rmColorId) resolvedColorId = rmColorId;
-    }
-  }
-
-  const resolvedItem = bomProfile?.rmItemMap instanceof Map ? bomProfile.rmItemMap.get(Number(resolvedItemId)) : null;
-  const resolvedUomId = toPositiveInt(
-    matchedOverride?.override_uom_id
-      || resolvedItem?.base_uom_id
-      || rmLine?.uom_id,
-  );
-  return {
-    item_id: Number(resolvedItemId),
-    uom_id: resolvedUomId,
-    qty: adjustedQty,
-    rm_color_id: resolvedColorId,
-    replacementRuleApplied,
-    overrideApplied,
   };
 };
 
@@ -519,6 +501,36 @@ const validateDepartmentTx = async ({ trx, departmentId, requireProduction = tru
     throw new HttpError(400, "Department must be a production department");
   }
   return Number(row.id);
+};
+
+const validateStageTx = async ({
+  trx,
+  stageId,
+  departmentId = null,
+  allowNull = true,
+}) => {
+  const normalizedStageId = toPositiveInt(stageId);
+  if (!normalizedStageId) {
+    if (allowNull) return null;
+    throw new HttpError(400, "Stage is required");
+  }
+
+  if (!(await hasProductionStagesTableTx(trx))) {
+    throw new HttpError(400, "Stage is not available in this environment");
+  }
+
+  const stage = await trx("erp.production_stages")
+    .select("id", "dept_id", "is_active")
+    .where({ id: normalizedStageId })
+    .first();
+  if (!stage || stage.is_active !== true) {
+    throw new HttpError(400, "Selected stage is invalid");
+  }
+  const normalizedDeptId = toPositiveInt(departmentId);
+  if (normalizedDeptId && Number(stage.dept_id) !== Number(normalizedDeptId)) {
+    throw new HttpError(400, "Selected stage does not belong to selected department");
+  }
+  return Number(stage.id);
 };
 
 const validateLabourTx = async ({ trx, req, labourId, allowNull = true }) => {
@@ -656,7 +668,7 @@ const validateProductionOrPlanLinesTx = async ({
     const sku = skuMap.get(Number(skuId));
     if (!sku) throw new HttpError(400, `Line ${lineNo}: SKU is invalid`);
 
-    const status = normalizeRowStatus(line?.status || line?.row_status);
+    const { unit, status } = resolveProductionUnitAndStatus(line);
     const qty = toPositiveNumber(line?.qty, 3);
     if (!qty) throw new HttpError(400, `Line ${lineNo}: quantity must be greater than zero`);
 
@@ -665,8 +677,8 @@ const validateProductionOrPlanLinesTx = async ({
       throw new HttpError(
         400,
         status === "PACKED"
-          ? `Line ${lineNo}: packed quantity must be in 0.5 steps`
-          : `Line ${lineNo}: loose quantity must be whole pairs`,
+          ? `Line ${lineNo}: dozen quantity must be in 0.5 steps`
+          : `Line ${lineNo}: pair quantity must be whole numbers`,
       );
     }
 
@@ -675,6 +687,7 @@ const validateProductionOrPlanLinesTx = async ({
     const inputAmount = toNonNegativeNumber(line?.amount, 2);
     if (inputAmount === null) throw new HttpError(400, `Line ${lineNo}: amount is invalid`);
     const amount = Number((inputAmount > 0 ? inputAmount : Number(qty) * Number(rate)).toFixed(2));
+    const stageId = toPositiveInt(line?.stage_id || line?.stageId);
 
     return {
       line_no: lineNo,
@@ -685,17 +698,60 @@ const validateProductionOrPlanLinesTx = async ({
       rate: Number(rate.toFixed(4)),
       amount,
       meta: {
+        unit,
         status,
         total_pairs: Number(totalPairs),
+        total_dozens: Number((Number(totalPairs) / PAIRS_PER_DOZEN).toFixed(3)),
+        stage_id: stageId,
       },
+      unit,
       status,
+      stage_id: stageId,
       is_packed: status === "PACKED",
       total_pairs: Number(totalPairs),
     };
   });
 };
 
-const validateDcvLinesTx = async ({ trx, rawLines = [] }) => {
+const checkPreviousStageCompletionTx = async ({ trx, bomId, currentSequenceNo }) => {
+  if (currentSequenceNo <= 1) return { valid: true, missingStage: null };
+
+  try {
+    const dcvWithPreviousStage = await trx("erp.dcv_header as dh")
+      .join("erp.voucher_header as vh", "vh.id", "dh.voucher_id")
+      .join("erp.bom_stage_routing as bsr", function joinStage() {
+        this.on("dh.stage_id", "bsr.stage_id")
+          .andOn("bsr.bom_id", trx.raw("?", [bomId]));
+      })
+      .join("erp.production_stages as ps", "ps.id", "dh.stage_id")
+      .select("bsr.sequence_no", "ps.name as stage_name")
+      .where("vh.status", "APPROVED")
+      .andWhere("bsr.sequence_no", "<", currentSequenceNo)
+      .orderBy("bsr.sequence_no", "desc")
+      .first();
+
+    if (!dcvWithPreviousStage) {
+      const previousStageInfo = await trx("erp.bom_stage_routing as bsr")
+        .join("erp.production_stages as ps", "ps.id", "bsr.stage_id")
+        .select("bsr.sequence_no", "ps.name")
+        .where({ "bsr.bom_id": bomId })
+        .andWhere("bsr.sequence_no", "=", currentSequenceNo - 1)
+        .first();
+
+      const missingStage = previousStageInfo
+        ? { sequence: previousStageInfo.sequence_no, name: previousStageInfo.name }
+        : { sequence: currentSequenceNo - 1, name: "Previous stage" };
+
+      return { valid: false, missingStage };
+    }
+
+    return { valid: true, missingStage: null };
+  } catch (err) {
+    return { valid: true, missingStage: null };
+  }
+};
+
+const validateDcvLinesTx = async ({ trx, rawLines = [], stageId = null }) => {
   const lines = Array.isArray(rawLines) ? rawLines : [];
   if (!lines.length) throw new HttpError(400, "Voucher lines are required");
 
@@ -705,41 +761,69 @@ const validateDcvLinesTx = async ({ trx, rawLines = [] }) => {
     throw new HttpError(400, "One or more selected SKUs are invalid");
   }
 
-  return lines.map((line, index) => {
-    const lineNo = Number(index + 1);
-    const skuId = toPositiveInt(line?.sku_id || line?.skuId);
-    const sku = skuMap.get(Number(skuId));
-    if (!sku) throw new HttpError(400, `Line ${lineNo}: SKU is invalid`);
+  const normalizedStageId = toPositiveInt(stageId);
 
-    const qty = toPositiveNumber(line?.qty, 3);
-    if (!qty) throw new HttpError(400, `Line ${lineNo}: quantity must be greater than zero`);
-    if (!Number.isInteger(Number(qty))) {
-      throw new HttpError(400, `Line ${lineNo}: quantity must be whole pairs`);
-    }
+  return Promise.all(
+    lines.map(async (line, index) => {
+      const lineNo = Number(index + 1);
+      const skuId = toPositiveInt(line?.sku_id || line?.skuId);
+      const sku = skuMap.get(Number(skuId));
+      if (!sku) throw new HttpError(400, `Line ${lineNo}: SKU is invalid`);
 
-    const rate = toNonNegativeNumber(line?.rate, 4);
-    if (rate === null) throw new HttpError(400, `Line ${lineNo}: rate is invalid`);
-    const inputAmount = toNonNegativeNumber(line?.amount, 2);
-    if (inputAmount === null) throw new HttpError(400, `Line ${lineNo}: amount is invalid`);
-    const amount = Number((inputAmount > 0 ? inputAmount : Number(qty) * Number(rate)).toFixed(2));
+      const qty = toPositiveNumber(line?.qty, 3);
+      if (!qty) throw new HttpError(400, `Line ${lineNo}: quantity must be greater than zero`);
+      if (!Number.isInteger(Number(qty))) {
+        throw new HttpError(400, `Line ${lineNo}: quantity must be whole pairs`);
+      }
 
-    return {
-      line_no: lineNo,
-      line_kind: "SKU",
-      sku_id: Number(skuId),
-      uom_id: toPositiveInt(sku.base_uom_id),
-      qty: Number(qty.toFixed(3)),
-      rate: Number(rate.toFixed(4)),
-      amount,
-      meta: {
+      const rate = toNonNegativeNumber(line?.rate, 4);
+      if (rate === null) throw new HttpError(400, `Line ${lineNo}: rate is invalid`);
+      const inputAmount = toNonNegativeNumber(line?.amount, 2);
+      if (inputAmount === null) throw new HttpError(400, `Line ${lineNo}: amount is invalid`);
+      const amount = Number((inputAmount > 0 ? inputAmount : Number(qty) * Number(rate)).toFixed(2));
+
+      if (normalizedStageId) {
+        const bomProfile = await loadBomProfileBySkuTx({ trx, skuId: Number(skuId) });
+        if (bomProfile && bomProfile.stageRoutes && bomProfile.stageRoutes.length > 0) {
+          const currentStageRoute = bomProfile.stageRoutes.find(
+            (route) => Number(route.stage_id) === normalizedStageId
+          );
+
+          if (currentStageRoute) {
+            const seqCheck = await checkPreviousStageCompletionTx({
+              trx,
+              bomId: bomProfile.bomId,
+              currentSequenceNo: currentStageRoute.sequence_no,
+            });
+
+            if (!seqCheck.valid) {
+              throw new HttpError(
+                400,
+                `Line ${lineNo}: Cannot complete stage before ${seqCheck.missingStage.name} (Stage ${seqCheck.missingStage.sequence}) is completed`
+              );
+            }
+          }
+        }
+      }
+
+      return {
+        line_no: lineNo,
+        line_kind: "SKU",
+        sku_id: Number(skuId),
+        uom_id: toPositiveInt(sku.base_uom_id),
+        qty: Number(qty.toFixed(3)),
+        rate: Number(rate.toFixed(4)),
+        amount,
+        meta: {
+          status: "LOOSE",
+          total_pairs: Number(qty),
+        },
         status: "LOOSE",
+        is_packed: false,
         total_pairs: Number(qty),
-      },
-      status: "LOOSE",
-      is_packed: false,
-      total_pairs: Number(qty),
-    };
-  });
+      };
+    })
+  );
 };
 
 const validateLossLinesTx = async ({ trx, req, rawLines = [] }) => {
@@ -869,6 +953,44 @@ const validateLossLinesTx = async ({ trx, req, rawLines = [] }) => {
   );
 };
 
+const validateProductionLineStagesTx = async ({ trx, lines = [] }) => {
+  const hasStagesTable = await hasProductionStagesTableTx(trx);
+  const hasLineStageColumn = await hasProductionLineStageColumnTx(trx);
+  if (!hasStagesTable || !hasLineStageColumn) return lines;
+
+  const stageRows = await loadActiveProductionStagesTx(trx);
+  if (!stageRows.length) {
+    return (lines || []).map((line) => ({
+      ...line,
+      stage_id: null,
+      meta: {
+        ...(line?.meta && typeof line.meta === "object" ? line.meta : {}),
+        stage_id: null,
+      },
+    }));
+  }
+
+  const activeStageIdSet = new Set(stageRows.map((row) => Number(row.id)));
+  return (lines || []).map((line, index) => {
+    const lineNo = Number(index + 1);
+    const stageId = toPositiveInt(line?.stage_id || line?.stageId || line?.meta?.stage_id);
+    if (!stageId) {
+      throw new HttpError(400, `Line ${lineNo}: stage is required`);
+    }
+    if (!activeStageIdSet.has(Number(stageId))) {
+      throw new HttpError(400, `Line ${lineNo}: selected stage is invalid`);
+    }
+    return {
+      ...line,
+      stage_id: Number(stageId),
+      meta: {
+        ...(line?.meta && typeof line.meta === "object" ? line.meta : {}),
+        stage_id: Number(stageId),
+      },
+    };
+  });
+};
+
 const normalizeAndValidatePayloadTx = async ({
   trx,
   req,
@@ -882,10 +1004,18 @@ const normalizeAndValidatePayloadTx = async ({
   const referenceNo = normalizeText(payload?.reference_no || payload?.referenceNo, 120);
 
   if (voucherTypeCode === PRODUCTION_VOUCHER_TYPES.finishedProduction || voucherTypeCode === PRODUCTION_VOUCHER_TYPES.semiFinishedProduction) {
-    const lines = await validateProductionOrPlanLinesTx({
+    const baseLines = await validateProductionOrPlanLinesTx({
       trx,
       voucherTypeCode,
       rawLines: payload?.lines,
+    });
+    const lines = await validateProductionLineStagesTx({
+      trx,
+      lines: baseLines,
+    });
+    await ensureApprovedBomExistsForSkusTx({
+      trx,
+      skuIds: lines.map((line) => toPositiveInt(line?.sku_id)).filter(Boolean),
     });
     return {
       voucherDate,
@@ -894,6 +1024,7 @@ const normalizeAndValidatePayloadTx = async ({
       lines,
       deptId: null,
       labourId: null,
+      stageId: null,
       planKind: null,
       reasonCodeId: null,
     };
@@ -912,9 +1043,16 @@ const normalizeAndValidatePayloadTx = async ({
       labourId,
       requireProduction: true,
     });
+    const stageId = await validateStageTx({
+      trx,
+      stageId: payload?.stage_id || payload?.stageId,
+      departmentId: deptId,
+      allowNull: !(await hasDcvHeaderStageColumnTx(trx)),
+    });
     const lines = await validateDcvLinesTx({
       trx,
       rawLines: payload?.lines,
+      stageId,
     });
     return {
       voucherDate,
@@ -923,6 +1061,7 @@ const normalizeAndValidatePayloadTx = async ({
       lines,
       deptId,
       labourId,
+      stageId,
       planKind: null,
       reasonCodeId: null,
     };
@@ -946,6 +1085,7 @@ const normalizeAndValidatePayloadTx = async ({
       lines,
       deptId: null,
       labourId: null,
+      stageId: null,
       planKind,
       reasonCodeId: null,
     };
@@ -969,6 +1109,7 @@ const normalizeAndValidatePayloadTx = async ({
       lines,
       deptId: null,
       labourId: null,
+      stageId: null,
       planKind: null,
       reasonCodeId,
     };
@@ -1011,16 +1152,21 @@ const upsertVoucherExtensionsTx = async ({
   const lineByNo = new Map(
     (insertedLines || []).map((row) => [Number(row.line_no), Number(row.id)]),
   );
+  const supportsDcvStage = await hasDcvHeaderStageColumnTx(trx);
+  const supportsProductionStage = await hasProductionLineStageColumnTx(trx);
+  const supportsLossStage = await hasAbnormalLossStageColumnTx(trx);
 
   if (voucherTypeCode === PRODUCTION_VOUCHER_TYPES.departmentCompletion) {
+    const dcvPayload = {
+      voucher_id: voucherId,
+      dept_id: validated.deptId,
+      labour_id: validated.labourId,
+    };
+    if (supportsDcvStage) dcvPayload.stage_id = toPositiveInt(validated.stageId);
     await trx("erp.dcv_header")
-      .insert({
-        voucher_id: voucherId,
-        dept_id: validated.deptId,
-        labour_id: validated.labourId,
-      })
+      .insert(dcvPayload)
       .onConflict("voucher_id")
-      .merge(["dept_id", "labour_id"]);
+      .merge(supportsDcvStage ? ["dept_id", "labour_id", "stage_id"] : ["dept_id", "labour_id"]);
     return;
   }
 
@@ -1033,6 +1179,7 @@ const upsertVoucherExtensionsTx = async ({
           voucher_line_id: Number(voucherLineId),
           is_packed: line.is_packed === true,
           total_pairs: Number(line.total_pairs || 0),
+          ...(supportsProductionStage ? { stage_id: toPositiveInt(line.stage_id) } : {}),
         };
       })
       .filter(Boolean);
@@ -1086,6 +1233,7 @@ const upsertVoucherExtensionsTx = async ({
           voucher_line_id: Number(voucherLineId),
           loss_type: line.loss_type,
           dept_id: line.dept_id || null,
+          ...(supportsLossStage ? { stage_id: toPositiveInt(line.stage_id) } : {}),
         };
       })
       .filter(Boolean);
@@ -1285,10 +1433,26 @@ const buildProductionShortfallTx = async ({
   skuId,
   totalPairs,
   bomProfile,
+  stageId = null,
 }) => {
+  const normalizedStageId = toPositiveInt(stageId);
+  const stageRoutes = Array.isArray(bomProfile?.stageRoutes) ? bomProfile.stageRoutes : [];
+  const stageDeptIds = normalizedStageId
+    ? [...new Set(
+        stageRoutes
+          .filter((route) => Number(route.stage_id) === Number(normalizedStageId))
+          .map((route) => Number(route.dept_id || 0))
+          .filter((deptId) => Number.isInteger(deptId) && deptId > 0),
+      )]
+    : [];
+
   const deptIds = new Set();
-  (bomProfile?.rmLines || []).forEach((line) => deptIds.add(Number(line.dept_id)));
-  (bomProfile?.labourLines || []).forEach((line) => deptIds.add(Number(line.dept_id)));
+  if (stageDeptIds.length) {
+    stageDeptIds.forEach((deptId) => deptIds.add(Number(deptId)));
+  } else {
+    (bomProfile?.rmLines || []).forEach((line) => deptIds.add(Number(line.dept_id)));
+    (bomProfile?.labourLines || []).forEach((line) => deptIds.add(Number(line.dept_id)));
+  }
 
   const result = [];
   for (const deptId of deptIds) {
@@ -1323,9 +1487,7 @@ const buildConsumptionLinesFromShortfall = ({ lineNoStart = 1, skuLine, shortfal
     const ratio = Number((shortfallPairs / outputQty).toFixed(6));
     const deptRmLines = (bomProfile?.rmLines || []).filter((row) => Number(row.dept_id) === Number(deptPlan.dept_id));
     for (const rm of deptRmLines) {
-      const resolvedRm = resolveRmConsumptionForSkuTx({ bomProfile, rmLine: rm });
-      if (!resolvedRm) continue;
-      const baseQty = Number(resolvedRm.qty || 0);
+      const baseQty = Number(rm.qty || 0);
       if (baseQty <= 0) continue;
       const lossFactor = 1 + Number(rm.normal_loss_pct || 0) / 100;
       const qty = Number((baseQty * ratio * lossFactor).toFixed(3));
@@ -1333,21 +1495,22 @@ const buildConsumptionLinesFromShortfall = ({ lineNoStart = 1, skuLine, shortfal
       lines.push({
         line_no: lineNo,
         line_kind: "ITEM",
-        item_id: Number(resolvedRm.item_id || rm.rm_item_id),
-        uom_id: toPositiveInt(resolvedRm.uom_id || rm.uom_id),
+        item_id: Number(rm.rm_item_id),
+        uom_id: toPositiveInt(rm.uom_id),
         qty,
         rate: 0,
         amount: 0,
         meta: {
           department_id: Number(deptPlan.dept_id),
           source_sku_id: Number(skuLine.sku_id),
+          stage_id: toPositiveInt(skuLine.stage_id),
           shortfall_pairs: shortfallPairs,
           auto_generated: true,
           bom_id: Number(bomProfile.bomId),
-          adjusted_qty_rule_applied: baseQty !== Number(rm.qty || 0),
-          replacement_rule_applied: Boolean(resolvedRm.replacementRuleApplied),
-          sku_override_applied: Boolean(resolvedRm.overrideApplied),
-          rm_color_id: toPositiveInt(resolvedRm.rm_color_id),
+          adjusted_qty_rule_applied: false,
+          replacement_rule_applied: false,
+          sku_override_applied: false,
+          rm_color_id: null,
         },
       });
       lineNo += 1;
@@ -1384,6 +1547,7 @@ const buildLabourLinesFromShortfall = ({ lineNoStart = 1, skuLine, shortfallPlan
         meta: {
           department_id: Number(deptPlan.dept_id),
           source_sku_id: Number(skuLine.sku_id),
+          stage_id: toPositiveInt(skuLine.stage_id),
           shortfall_pairs: shortfallPairs,
           auto_generated: true,
           bom_id: Number(bomProfile.bomId),
@@ -1570,15 +1734,20 @@ const applyProductionToGeneratedVouchersTx = async ({
   createdBy,
   voucherNo,
 }) => {
+  const supportsProductionStage = await hasProductionLineStageColumnTx(trx);
   const productionLines = await trx("erp.voucher_line as vl")
     .join("erp.production_line as pl", "pl.voucher_line_id", "vl.id")
-    .select("vl.line_no", "vl.sku_id", "vl.qty", "pl.total_pairs")
+    .select("vl.line_no", "vl.sku_id", "vl.qty", "pl.total_pairs", ...(supportsProductionStage ? ["pl.stage_id"] : []))
     .where("vl.voucher_header_id", voucherId)
     .orderBy("vl.line_no", "asc");
 
   if (!productionLines.length) return;
 
   const bomBySku = new Map();
+  const skuDisplayMap = await loadSkuDisplayMapTx({
+    trx,
+    skuIds: productionLines.map((line) => toPositiveInt(line?.sku_id)).filter(Boolean),
+  });
   const consumptionLines = [];
   const labourLines = [];
   let consumptionLineNo = 1;
@@ -1587,15 +1756,36 @@ const applyProductionToGeneratedVouchersTx = async ({
   for (const line of productionLines) {
     const skuId = Number(line.sku_id || 0);
     const totalPairs = Number(line.total_pairs || 0);
+    const stageId = toPositiveInt(line.stage_id);
     if (!skuId || !Number.isInteger(totalPairs) || totalPairs <= 0) continue;
 
     let bomProfile = bomBySku.get(skuId);
     if (!bomProfile) {
       bomProfile = await loadBomProfileBySkuTx({ trx, skuId });
       if (!bomProfile) {
-        throw new HttpError(400, `Approved BOM not found for SKU ${skuId}`);
+        const skuLabel = buildSkuDisplayLabel(skuDisplayMap.get(skuId) || { sku_id: skuId });
+        throw new HttpError(400, `Approved BOM not found for SKU ${skuLabel}`);
       }
       bomBySku.set(skuId, bomProfile);
+    }
+
+    const hasStageRouting = Array.isArray(bomProfile.stageRoutes) && bomProfile.stageRoutes.length > 0;
+    if (hasStageRouting && !stageId) {
+      const skuLabel = buildSkuDisplayLabel(skuDisplayMap.get(skuId) || { sku_id: skuId });
+      throw new HttpError(400, `Stage is required for SKU ${skuLabel}`);
+    }
+    if (hasStageRouting && stageId) {
+      const mappedRoutes = bomProfile.stageRoutes.filter((route) => Number(route.stage_id) === Number(stageId));
+      const isStageMapped = mappedRoutes.length > 0;
+      if (!isStageMapped) {
+        const skuLabel = buildSkuDisplayLabel(skuDisplayMap.get(skuId) || { sku_id: skuId });
+        throw new HttpError(400, `Selected stage is not mapped in approved BOM for SKU ${skuLabel}`);
+      }
+      const hasMappedDept = mappedRoutes.some((route) => toPositiveInt(route.dept_id));
+      if (!hasMappedDept) {
+        const skuLabel = buildSkuDisplayLabel(skuDisplayMap.get(skuId) || { sku_id: skuId });
+        throw new HttpError(400, `Selected stage has no production department mapped in approved BOM for SKU ${skuLabel}`);
+      }
     }
 
     const shortfallPlan = await buildProductionShortfallTx({
@@ -1606,6 +1796,7 @@ const applyProductionToGeneratedVouchersTx = async ({
       skuId,
       totalPairs,
       bomProfile,
+      stageId,
     });
 
     const nextConsumptionLines = buildConsumptionLinesFromShortfall({
@@ -1813,6 +2004,7 @@ const saveProductionVoucherCoreTx = async ({
     lines: validated.lines,
     permission_reroute: isCreate ? !canCreate : !canEdit,
   };
+  const quantityTotals = computeLineQuantityTotals(validated.lines);
 
   if (queuedForApproval) {
     if (!isCreate) {
@@ -1832,6 +2024,7 @@ const saveProductionVoucherCoreTx = async ({
         queuedForApproval: true,
         approvalRequestId,
         permissionReroute: !canEdit,
+        quantityTotals,
       };
     }
 
@@ -1864,6 +2057,7 @@ const saveProductionVoucherCoreTx = async ({
       queuedForApproval: true,
       approvalRequestId,
       permissionReroute: !canCreate,
+      quantityTotals,
     };
   }
 
@@ -1909,6 +2103,7 @@ const saveProductionVoucherCoreTx = async ({
     queuedForApproval: false,
     approvalRequestId: null,
     permissionReroute: false,
+    quantityTotals,
   };
 };
 
@@ -2257,6 +2452,9 @@ const loadProductionVoucherDetails = async ({ req, voucherTypeCode, voucherNo })
     })
     .first();
   if (!header) return null;
+  const supportsDcvStage = await hasDcvHeaderStageColumnTx(knex);
+  const supportsProductionStage = await hasProductionLineStageColumnTx(knex);
+  const supportsLossStage = await hasAbnormalLossStageColumnTx(knex);
 
   const lines = await knex("erp.voucher_line as vl")
     .leftJoin("erp.items as i", "i.id", "vl.item_id")
@@ -2292,7 +2490,7 @@ const loadProductionVoucherDetails = async ({ req, voucherTypeCode, voucherNo })
 
   if (voucherTypeCode === PRODUCTION_VOUCHER_TYPES.departmentCompletion) {
     dcvHeader = await knex("erp.dcv_header")
-      .select("dept_id", "labour_id")
+      .select("dept_id", "labour_id", ...(supportsDcvStage ? ["stage_id"] : []))
       .where({ voucher_id: header.id })
       .first();
   } else if (voucherTypeCode === PRODUCTION_VOUCHER_TYPES.productionPlan) {
@@ -2341,7 +2539,7 @@ const loadProductionVoucherDetails = async ({ req, voucherTypeCode, voucherNo })
 
   if (voucherTypeCode === PRODUCTION_VOUCHER_TYPES.finishedProduction || voucherTypeCode === PRODUCTION_VOUCHER_TYPES.semiFinishedProduction) {
     const extRows = await knex("erp.production_line")
-      .select("voucher_line_id", "is_packed", "total_pairs")
+      .select("voucher_line_id", "is_packed", "total_pairs", ...(supportsProductionStage ? ["stage_id"] : []))
       .whereIn("voucher_line_id", lines.map((line) => Number(line.id)));
     productionLineMap = new Map(extRows.map((row) => [Number(row.voucher_line_id), row]));
   } else if (voucherTypeCode === PRODUCTION_VOUCHER_TYPES.productionPlan) {
@@ -2351,7 +2549,7 @@ const loadProductionVoucherDetails = async ({ req, voucherTypeCode, voucherNo })
     planLineMap = new Map(extRows.map((row) => [Number(row.voucher_line_id), row]));
   } else if (voucherTypeCode === PRODUCTION_VOUCHER_TYPES.abnormalLoss) {
     const extRows = await knex("erp.abnormal_loss_line")
-      .select("voucher_line_id", "loss_type", "dept_id")
+      .select("voucher_line_id", "loss_type", "dept_id", ...(supportsLossStage ? ["stage_id"] : []))
       .whereIn("voucher_line_id", lines.map((line) => Number(line.id)));
     lossLineMap = new Map(extRows.map((row) => [Number(row.voucher_line_id), row]));
   } else if (voucherTypeCode === PRODUCTION_VOUCHER_TYPES.labourProduction) {
@@ -2371,6 +2569,7 @@ const loadProductionVoucherDetails = async ({ req, voucherTypeCode, voucherNo })
     voucher_type_code: voucherTypeCode,
     dept_id: toPositiveInt(dcvHeader?.dept_id),
     labour_id: toPositiveInt(dcvHeader?.labour_id),
+    stage_id: toPositiveInt(dcvHeader?.stage_id),
     plan_kind: String(planHeader?.plan_kind || "").toUpperCase() || null,
     reason_code_id: toPositiveInt(lossHeader?.reason_code_id),
     source_production_id: toPositiveInt(sourceHeader?.source_production_id),
@@ -2389,6 +2588,17 @@ const loadProductionVoucherDetails = async ({ req, voucherTypeCode, voucherNo })
       const lossExt = lossLineMap.get(Number(line.id));
       const labourExt = labourLineMap.get(Number(line.id));
       const fallbackStatus = String(line?.meta?.status || "LOOSE").toUpperCase();
+      const resolvedStatus =
+        productionExt
+          ? productionExt.is_packed
+            ? "PACKED"
+            : "LOOSE"
+          : planExt
+            ? planExt.is_packed
+              ? "PACKED"
+              : "LOOSE"
+            : fallbackStatus;
+      const resolvedUnit = statusToUnit(resolvedStatus);
       return {
         id: Number(line.id),
         line_no: Number(line.line_no || 0),
@@ -2404,19 +2614,12 @@ const loadProductionVoucherDetails = async ({ req, voucherTypeCode, voucherNo })
         qty: Number(line.qty || 0),
         rate: Number(line.rate || 0),
         amount: Number(line.amount || 0),
-        status:
-          productionExt
-            ? productionExt.is_packed
-              ? "PACKED"
-              : "LOOSE"
-            : planExt
-              ? planExt.is_packed
-                ? "PACKED"
-                : "LOOSE"
-              : fallbackStatus,
+        unit: resolvedUnit,
+        status: resolvedStatus,
         total_pairs: Number(productionExt?.total_pairs || planExt?.total_pairs || line?.meta?.total_pairs || 0) || null,
         loss_type: String(lossExt?.loss_type || "").toUpperCase() || null,
         dept_id: toPositiveInt(lossExt?.dept_id || labourExt?.dept_id || line?.meta?.department_id),
+        stage_id: toPositiveInt(productionExt?.stage_id || lossExt?.stage_id || line?.meta?.stage_id),
       };
     }),
   };
@@ -2431,7 +2634,7 @@ const loadProductionVoucherOptions = async (req, { voucherTypeCode, selectedVouc
   const isConsumption = normalizedVoucherTypeCode === PRODUCTION_VOUCHER_TYPES.consumption;
   const isLabourProd = normalizedVoucherTypeCode === PRODUCTION_VOUCHER_TYPES.labourProduction;
 
-  const [departments, labours, reasonCodes, rmItems, skus, sourceProductions] = await Promise.all([
+  const [departments, labours, reasonCodes, rmItems, skus, sourceProductions, productionStages] = await Promise.all([
     knex("erp.departments")
       .select("id", "name")
       .where({ is_active: true, is_production: true })
@@ -2520,6 +2723,9 @@ const loadProductionVoucherOptions = async (req, { voucherTypeCode, selectedVouc
           .orderBy("vh.voucher_no", "desc")
           .limit(200)
       : Promise.resolve([]),
+    (isFg || isSfg || normalizedVoucherTypeCode === PRODUCTION_VOUCHER_TYPES.departmentCompletion || isLoss)
+      ? loadActiveProductionStagesTx(knex)
+      : Promise.resolve([]),
   ]);
 
   const normalizedLabours = (labours || []).map((row) => {
@@ -2545,6 +2751,12 @@ const loadProductionVoucherOptions = async (req, { voucherTypeCode, selectedVouc
     reasonCodes,
     rmItems,
     skus,
+    productionStages: (productionStages || []).map((row) => ({
+      id: Number(row.id),
+      code: String(row.code || "").trim(),
+      name: String(row.name || row.code || row.id || "").trim(),
+      dept_id: Number(row.dept_id || 0) || null,
+    })),
     lossTypes: ["RM_LOSS", "SFG_LOSS", "FG_LOSS", "DVC_ABANDON"],
     sourceProductions,
     isAutoGeneratedVoucher: AUTO_GENERATED_VOUCHER_TYPES.has(normalizedVoucherTypeCode),

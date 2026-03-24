@@ -34,8 +34,13 @@
           if (!text) return;
           if (typeof window.showUiErrorModal === "function") {
             window.showUiErrorModal(text, title);
+            window.requestAnimationFrame(() => {
+              const closeBtn = document.querySelector("[data-ui-error-close]");
+              if (closeBtn instanceof HTMLElement) closeBtn.focus();
+            });
             return;
           }
+          window.__pendingUiErrorModalPayload = { message: text, title: String(title || "").trim() };
           fallbackAlert(text);
         };
       })();
@@ -282,7 +287,30 @@
         form.dataset.asyncVoucherSubmitBound = "1";
 
         const genericError = <%- JSON.stringify(String(t("generic_error") || "Something went wrong. Please try again.")) %>;
+        const submitControls = Array.from(
+          form.querySelectorAll('button[type="submit"], input[type="submit"]'),
+        ).filter(
+          (control) =>
+            control instanceof HTMLButtonElement || control instanceof HTMLInputElement,
+        );
         let isSubmitting = false;
+
+        const setSubmittingState = (submitting) => {
+          submitControls.forEach((control) => {
+            if (!(control instanceof HTMLButtonElement || control instanceof HTMLInputElement)) return;
+            if (submitting) {
+              if (!Object.prototype.hasOwnProperty.call(control.dataset, "asyncSubmitOriginalDisabled")) {
+                control.dataset.asyncSubmitOriginalDisabled = control.disabled ? "1" : "0";
+              }
+              control.disabled = true;
+              control.setAttribute("aria-busy", "true");
+              return;
+            }
+
+            control.removeAttribute("aria-busy");
+            control.disabled = control.dataset.asyncSubmitOriginalDisabled === "1";
+          });
+        };
 
         const extractErrorMessage = async (response) => {
           try {
@@ -303,6 +331,7 @@
 
           event.preventDefault();
           isSubmitting = true;
+          setSubmittingState(true);
 
           try {
             const formData = new FormData(form);
@@ -329,6 +358,7 @@
                 Accept: "application/json",
                 "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
                 "x-csrf-token": csrfToken,
+                "X-Requested-With": "XMLHttpRequest",
               },
               credentials: "same-origin",
             });
@@ -345,6 +375,7 @@
             window.showVoucherError(genericError);
           } finally {
             isSubmitting = false;
+            setSubmittingState(false);
           }
         });
       })();
@@ -386,6 +417,158 @@
         // Live approval event stream and toast notifications
         if (!window.EventSource) return;
         const csrfToken = "<%= csrfToken %>";
+        const OWNER_KEY = "approval_live_owner_v1";
+        const BROADCAST_KEY = "approval_live_event_v1";
+        const DISMISS_KEY = "approval_live_dismissed";
+        const OWNER_TTL_MS = 45000;
+        const OWNER_HEARTBEAT_MS = 12000;
+        const tabId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        let source = null;
+        let ownerHeartbeat = null;
+        let isOwner = false;
+        let storageEnabled = true;
+
+        const safeJsonParse = (value) => {
+          try {
+            return JSON.parse(String(value || ""));
+          } catch (err) {
+            return null;
+          }
+        };
+
+        const now = () => Date.now();
+        const ownerExpiresAt = () => now() + OWNER_TTL_MS;
+
+        const detectStorage = () => {
+          try {
+            const key = "__approval_live_probe__";
+            localStorage.setItem(key, "1");
+            localStorage.removeItem(key);
+            return true;
+          } catch (err) {
+            return false;
+          }
+        };
+        storageEnabled = detectStorage();
+
+        const readOwner = () => {
+          if (!storageEnabled) return null;
+          return safeJsonParse(localStorage.getItem(OWNER_KEY));
+        };
+
+        const writeOwner = (payload) => {
+          if (!storageEnabled) return;
+          try {
+            localStorage.setItem(OWNER_KEY, JSON.stringify(payload));
+          } catch (err) {
+            // ignore
+          }
+        };
+
+        const removeOwner = () => {
+          if (!storageEnabled) return;
+          try {
+            const current = readOwner();
+            if (current && current.tabId === tabId) {
+              localStorage.removeItem(OWNER_KEY);
+            }
+          } catch (err) {
+            // ignore
+          }
+        };
+
+        const isOwnerAlive = (owner) => {
+          if (!owner || !owner.tabId) return false;
+          return Number(owner.expiresAt || 0) > now();
+        };
+
+        const startSource = () => {
+          if (source || !isOwner) return;
+          source = new EventSource("/events/approvals");
+          source.addEventListener("approval_decision", (event) => {
+            try {
+              const payload = JSON.parse(event.data);
+              const nextCount = getDecisionCount() + 1;
+              setDecisionCount(nextCount);
+              renderToast(payload);
+              if (storageEnabled) {
+                localStorage.setItem(
+                  BROADCAST_KEY,
+                  JSON.stringify({ tabId, ts: now(), payload }),
+                );
+              }
+            } catch (err) {
+              // ignore
+            }
+          });
+          source.addEventListener("error", () => {
+            // Browser will auto-retry SSE; no manual reconnect needed.
+          });
+        };
+
+        const stopSource = () => {
+          if (!source) return;
+          try {
+            source.close();
+          } catch (err) {
+            // ignore
+          }
+          source = null;
+        };
+
+        const startOwnerHeartbeat = () => {
+          if (ownerHeartbeat) return;
+          ownerHeartbeat = window.setInterval(() => {
+            if (!isOwner) return;
+            writeOwner({
+              tabId,
+              expiresAt: ownerExpiresAt(),
+              ts: now(),
+            });
+          }, OWNER_HEARTBEAT_MS);
+        };
+
+        const stopOwnerHeartbeat = () => {
+          if (!ownerHeartbeat) return;
+          clearInterval(ownerHeartbeat);
+          ownerHeartbeat = null;
+        };
+
+        const becomeOwner = () => {
+          if (isOwner) return;
+          isOwner = true;
+          writeOwner({
+            tabId,
+            expiresAt: ownerExpiresAt(),
+            ts: now(),
+          });
+          startOwnerHeartbeat();
+          startSource();
+        };
+
+        const resignOwner = ({ releaseLock = true } = {}) => {
+          if (!isOwner && !source) return;
+          isOwner = false;
+          stopOwnerHeartbeat();
+          stopSource();
+          if (releaseLock) removeOwner();
+        };
+
+        const tryClaimOwner = () => {
+          if (document.visibilityState === "hidden") return;
+          if (!storageEnabled) {
+            // Fallback: no shared storage available, keep SSE only on visible tab.
+            becomeOwner();
+            return;
+          }
+          const current = readOwner();
+          if (!isOwnerAlive(current) || current.tabId === tabId) {
+            becomeOwner();
+            return;
+          }
+          resignOwner({ releaseLock: false });
+        };
+
         const ackApproval = () => {
           try {
             fetch("/events/approvals/ack", {
@@ -396,21 +579,34 @@
             // ignore
           }
         };
-        const source = new EventSource("/events/approvals");
         const getDecisionCount = () => Number(sessionStorage.getItem("approval_decision_count") || "0");
         const setDecisionCount = (value) => sessionStorage.setItem("approval_decision_count", String(value));
         const resetDecisionCount = () => setDecisionCount(0);
 
         const broadcastLiveDismiss = () => {
           try {
-            localStorage.setItem("approval_live_dismissed", String(Date.now()));
+            if (!storageEnabled) return;
+            localStorage.setItem(DISMISS_KEY, String(Date.now()));
           } catch (err) {
             // ignore
           }
         };
         window.addEventListener("storage", (event) => {
-          if (event.key === "approval_live_dismissed") {
+          if (event.key === DISMISS_KEY) {
             document.querySelector("[data-live-approval-toast]")?.remove();
+            resetDecisionCount();
+            return;
+          }
+          if (event.key === BROADCAST_KEY) {
+            const packet = safeJsonParse(event.newValue);
+            if (!packet || packet.tabId === tabId || !packet.payload) return;
+            const nextCount = getDecisionCount() + 1;
+            setDecisionCount(nextCount);
+            renderToast(packet.payload);
+            return;
+          }
+          if (event.key === OWNER_KEY && document.visibilityState !== "hidden") {
+            tryClaimOwner();
           }
         });
 
@@ -495,29 +691,19 @@
           document.body.appendChild(wrap);
         };
 
-        source.addEventListener("approval_decision", (event) => {
-          try {
-            const payload = JSON.parse(event.data);
-            const nextCount = getDecisionCount() + 1;
-            setDecisionCount(nextCount);
-            renderToast(payload);
-          } catch (err) {
-            // ignore
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "hidden") {
+            resignOwner({ releaseLock: true });
+            return;
           }
-        });
-
-        source.addEventListener("error", () => {
-          // Leave the connection; browser will retry automatically.
+          tryClaimOwner();
         });
 
         window.addEventListener("beforeunload", () => {
-          try {
-            source.close();
-          } catch (err) {
-            // ignore
-          }
+          resignOwner({ releaseLock: true });
         });
 
+        tryClaimOwner();
         if (window.location.pathname.startsWith("/administration/approvals")) {
           ackApproval();
         }
@@ -730,11 +916,21 @@
           }
 
           if (menu.classList.contains("nav-submenu")) {
+            const hasNestedFlyout = Boolean(menu.querySelector("[data-submenu-wrap] [data-submenu]"));
             const safeTop = Math.max(viewportTop, rect.top);
             const availableHeight = Math.max(180, Math.floor(viewportBottom - safeTop));
             const forcedMaxHeight = Math.max(180, Math.min(220, availableHeight));
             const targetMaxHeight = forceScrollable ? forcedMaxHeight : availableHeight;
             const needsVerticalConstraint = forceScrollable || menu.scrollHeight > targetMaxHeight + 1;
+            // Keep flyout chains usable: constraining overflow on a parent submenu clips child submenus.
+            if (hasNestedFlyout) {
+              menu.style.overflowX = "visible";
+              menu.style.overflowY = "visible";
+              menu.style.maxHeight = "";
+              menu.style.overscrollBehavior = "";
+              return;
+            }
+
             menu.style.overflowX = "hidden";
             if (needsVerticalConstraint) {
               menu.classList.add("nav-scrollable");

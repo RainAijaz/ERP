@@ -136,14 +136,6 @@ const navConfig = [
                 route: "/master-data/basic-info/product-types",
               },
               {
-                key: "sales_discount_policies",
-                labelKey: "sales_discount_policies",
-                scopeType: "SCREEN",
-                scopeKey: "master_data.basic_info.sales_discount_policies",
-                moduleGroup: "Master Data",
-                route: "/master-data/basic-info/sales-discount-policies",
-              },
-              {
                 key: "party_groups",
                 labelKey: "party_groups",
                 scopeType: "SCREEN",
@@ -166,6 +158,14 @@ const navConfig = [
                 scopeKey: "master_data.basic_info.departments",
                 moduleGroup: "Master Data",
                 route: "/master-data/basic-info/departments",
+              },
+              {
+                key: "production_stages",
+                labelKey: "production_stages",
+                scopeType: "SCREEN",
+                scopeKey: "master_data.basic_info.production_stages",
+                moduleGroup: "Master Data",
+                route: "/master-data/basic-info/production-stages",
               },
             ],
           },
@@ -609,22 +609,6 @@ const navConfig = [
         labelKey: "vouchers",
         type: "group",
         children: [
-          {
-            key: "finished_production_voucher",
-            labelKey: "finished_production_voucher",
-            scopeType: "VOUCHER",
-            scopeKey: "PROD_FG",
-            moduleGroup: "Production",
-            route: "/vouchers/production",
-          },
-          {
-            key: "semi_finished_production_voucher",
-            labelKey: "semi_finished_production_voucher",
-            scopeType: "VOUCHER",
-            scopeKey: "PROD_SFG",
-            moduleGroup: "Production",
-            route: "/vouchers/production-sfg",
-          },
           {
             key: "department_completion_voucher",
             labelKey: "department_completion_voucher",

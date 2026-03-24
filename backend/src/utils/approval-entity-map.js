@@ -21,6 +21,7 @@ const BASIC_INFO_ENTITY_TYPES = {
   "party-groups": "PARTY_GROUP",
   "account-groups": "ACCOUNT_GROUP",
   departments: "DEPARTMENT",
+  "production-stages": "PRODUCTION_STAGE",
   "uom-conversions": "UOM_CONVERSION",
 };
 

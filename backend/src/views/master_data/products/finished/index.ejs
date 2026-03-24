@@ -120,6 +120,16 @@
   (function () {
     const modalForm = document.querySelector("[data-modal-form]");
     if (!modalForm) return;
+    const setDefaultBaseUom = (mode) => {
+      if (mode && mode !== "create") return;
+      const baseUom = modalForm.querySelector('[data-field="base_uom_id"]');
+      if (!(baseUom instanceof HTMLSelectElement)) return;
+      if (baseUom.value) return;
+      const firstOption = baseUom.options[0];
+      if (firstOption && firstOption.value) {
+        baseUom.value = firstOption.value;
+      }
+    };
     const usesSfg = modalForm.querySelector("[data-field=\"uses_sfg\"]");
     const partField = modalForm.querySelector("[data-field=\"sfg_part_type\"]");
     const partWrap = partField ? partField.closest("[data-sfg-part]") : null;
@@ -135,5 +145,10 @@
       usesSfg.addEventListener("change", togglePart);
       togglePart();
     }
+    document.addEventListener("modal:opened", (event) => {
+      setDefaultBaseUom(event?.detail?.mode || "");
+      togglePart();
+    });
+    setDefaultBaseUom("create");
   })();
 </script>

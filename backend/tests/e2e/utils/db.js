@@ -456,6 +456,13 @@ const createBomUiFixture = async (token) => {
       createdSupport.uomId = Number(uom.id);
     }
 
+    const pairUom = await trx("erp.uom")
+      .select("id")
+      .whereRaw("is_active = true AND (UPPER(code) = 'PAIR' OR UPPER(name) = 'PAIR')")
+      .orderBy("id", "asc")
+      .first();
+    const productionUomId = Number(pairUom?.id || uom.id);
+
     let group = await trx("erp.product_groups").select("id").where({ is_active: true }).orderBy("id", "asc").first();
     if (!group) {
       const [inserted] = await trx("erp.product_groups")
@@ -562,7 +569,7 @@ const createBomUiFixture = async (token) => {
         name: `E2E FG ${safeToken}`,
         name_ur: `E2E FG ${safeToken}`,
         group_id: group.id,
-        base_uom_id: uom.id,
+        base_uom_id: productionUomId,
         uses_sfg: true,
         sfg_part_type: "STEP",
         created_by: creatorId,
@@ -599,7 +606,7 @@ const createBomUiFixture = async (token) => {
         name: `E2E SFG ${safeToken}`,
         name_ur: `E2E SFG ${safeToken}`,
         group_id: group.id,
-        base_uom_id: uom.id,
+        base_uom_id: productionUomId,
         created_by: creatorId,
       })
       .returning(["id"]);
@@ -646,7 +653,7 @@ const createBomUiFixture = async (token) => {
         item_id: sfgItemId,
         level: "SEMI_FINISHED",
         output_qty: 1,
-        output_uom_id: uom.id,
+        output_uom_id: productionUomId,
         status: "APPROVED",
         version_no: 1,
         created_by: creatorId,
@@ -675,7 +682,7 @@ const createBomUiFixture = async (token) => {
       createdSupport,
       creatorId,
       approverId,
-      uomId: Number(uom.id),
+      uomId: productionUomId,
       groupId: Number(group.id),
       sizeId: Number(size.id),
       colorId: Number(color.id),
@@ -767,11 +774,10 @@ const getBomSnapshot = async (bomId) => {
     .first();
   if (!header) return null;
 
-  const [rmCount, sfgCount, labourCount, ruleCount] = await Promise.all([
+  const [rmCount, sfgCount, labourCount] = await Promise.all([
     knex("erp.bom_rm_line").where({ bom_id: id }).count({ count: "*" }).first(),
     knex("erp.bom_sfg_line").where({ bom_id: id }).count({ count: "*" }).first(),
     knex("erp.bom_labour_line").where({ bom_id: id }).count({ count: "*" }).first(),
-    knex("erp.bom_variant_rule").where({ bom_id: id }).count({ count: "*" }).first(),
   ]);
 
   return {
@@ -780,7 +786,7 @@ const getBomSnapshot = async (bomId) => {
       rm: Number(rmCount?.count || 0),
       sfg: Number(sfgCount?.count || 0),
       labour: Number(labourCount?.count || 0),
-      rule: Number(ruleCount?.count || 0),
+      rule: 0,
     },
   };
 };
@@ -790,22 +796,35 @@ const cleanupBomUiFixture = async ({ fixture, bomIds = [] } = {}) => {
   const fixtureItemIds = [fixture.fgItemId, fixture.sfgItemId, fixture.rmItemId, fixture.sfgNoApprovedItemId, fixture.rmNoRateItemId]
     .map((id) => Number(id))
     .filter(Boolean);
+  const fixtureSkuIds = [fixture.fgSkuId, fixture.sfgSkuId, fixture.sfgNoApprovedSkuId]
+    .map((id) => Number(id))
+    .filter(Boolean);
 
   await knex.transaction(async (trx) => {
     const itemLinkedBomRows = fixtureItemIds.length ? await trx("erp.bom_header").select("id").whereIn("item_id", fixtureItemIds) : [];
     const bomIdList = [...new Set([...bomIds, fixture.approvedSfgBomId, ...itemLinkedBomRows.map((row) => Number(row.id))].map((id) => Number(id)).filter(Boolean))];
 
     if (bomIdList.length) {
+      const bomVariantRuleExists = await trx.raw("SELECT to_regclass('erp.bom_variant_rule') AS reg");
+      const hasBomVariantRule = Boolean(bomVariantRuleExists?.rows?.[0]?.reg || bomVariantRuleExists?.[0]?.reg);
       await trx("erp.approval_request")
         .where({ entity_type: "BOM" })
         .whereIn("entity_id", bomIdList.map((id) => String(id)))
         .del();
       await trx("erp.bom_change_log").whereIn("bom_id", bomIdList).del();
-      await trx("erp.bom_variant_rule").whereIn("bom_id", bomIdList).del();
+      if (hasBomVariantRule) {
+        await trx("erp.bom_variant_rule").whereIn("bom_id", bomIdList).del();
+      }
       await trx("erp.bom_labour_line").whereIn("bom_id", bomIdList).del();
       await trx("erp.bom_sfg_line").whereIn("bom_id", bomIdList).del();
       await trx("erp.bom_rm_line").whereIn("bom_id", bomIdList).del();
       await trx("erp.bom_header").whereIn("id", bomIdList).del();
+    }
+
+    const labourRateRuleTableReg = await trx.raw("SELECT to_regclass('erp.labour_rate_rules') AS reg");
+    const hasLabourRateRuleTable = Boolean(labourRateRuleTableReg?.rows?.[0]?.reg || labourRateRuleTableReg?.[0]?.reg);
+    if (hasLabourRateRuleTable && fixtureSkuIds.length) {
+      await trx("erp.labour_rate_rules").whereIn("sku_id", fixtureSkuIds).del();
     }
 
     if (fixture.sfgSkuId) {

@@ -2,6 +2,8 @@ const express = require("express");
 const { requirePermission } = require("../../middleware/access/role-permissions");
 const { setCookie } = require("../../middleware/utils/cookies");
 const { UI_NOTICE_COOKIE } = require("../../middleware/core/ui-notice");
+const { UI_ERROR_COOKIE } = require("../../middleware/core/ui-flash");
+const { friendlyErrorMessage } = require("../../middleware/errors/friendly-error");
 const {
   createProductionVoucher,
   updateProductionVoucher,
@@ -39,6 +41,43 @@ const setNotice = (res, message, sticky = false) => {
     }),
     { path: "/", maxAge: 30, sameSite: "Lax" },
   );
+};
+
+const setError = (res, message) => {
+  if (!message) return;
+  setCookie(
+    res,
+    UI_ERROR_COOKIE,
+    JSON.stringify({ message: String(message) }),
+    { path: "/", maxAge: 30, sameSite: "Lax" },
+  );
+};
+
+const prefersJson = (req) => {
+  const accept = String(req.get("accept") || "").toLowerCase();
+  const requestedWith = String(req.get("x-requested-with") || "").toLowerCase();
+  if (requestedWith === "xmlhttprequest") return true;
+  return accept.includes("application/json");
+};
+
+const formatQty = (value) => {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n)) return "0";
+  return String(Number(n.toFixed(3)));
+};
+
+const buildSavedTotalsNotice = ({ res, saved, voucherTypeCode }) => {
+  const base = res.locals.t("saved_successfully") || "Saved successfully.";
+  const isProductionVoucher = voucherTypeCode === "PROD_FG" || voucherTypeCode === "PROD_SFG";
+  const totalPairs = Number(saved?.quantityTotals?.totalPairs || 0);
+  const totalDozens = Number(saved?.quantityTotals?.totalDozens || 0);
+  if (!isProductionVoucher) return base;
+  if (!Number.isFinite(totalPairs) || totalPairs <= 0) return base;
+
+  const totalLabel = res.locals.t("total") || "Total";
+  const pairsLabel = res.locals.t("pairs") || "Pairs";
+  const dozensLabel = res.locals.t("dozens") || "Dozens";
+  return `${base} ${totalLabel}: ${pairsLabel} ${formatQty(totalPairs)}, ${dozensLabel} ${formatQty(totalDozens)}.`;
 };
 
 const createProductionVoucherRouter = ({
@@ -141,6 +180,7 @@ const createProductionVoucherRouter = ({
         remarks: req.body?.remarks,
         dept_id: req.body?.dept_id,
         labour_id: req.body?.labour_id,
+        stage_id: req.body?.stage_id,
         plan_kind: req.body?.plan_kind,
         reason_code_id: req.body?.reason_code_id,
         lines: toLines(req.body),
@@ -167,14 +207,22 @@ const createProductionVoucherRouter = ({
           : res.locals.t("approval_submitted");
         setNotice(res, msg, true);
       } else {
-        setNotice(res, res.locals.t("saved_successfully"));
+        setNotice(
+          res,
+          buildSavedTotalsNotice({ res, saved, voucherTypeCode }),
+        );
       }
 
       return res.redirect(`${req.baseUrl}?new=1`);
     } catch (err) {
       console.error("Error in ProductionVoucherSaveService:", err);
-      setNotice(res, res.locals.t("generic_error"), true);
-      return next(err);
+      const message = friendlyErrorMessage(err, res.locals.t);
+      if (prefersJson(req)) {
+        const status = Number(err?.status || 500);
+        return res.status(status).json({ error: message, requestId: req.id || null });
+      }
+      setError(res, message);
+      return res.redirect(req.baseUrl);
     }
   });
 
@@ -210,8 +258,13 @@ const createProductionVoucherRouter = ({
       return res.redirect(`${req.baseUrl}?new=1`);
     } catch (err) {
       console.error("Error in ProductionVoucherDeleteService:", err);
-      setNotice(res, res.locals.t("generic_error"), true);
-      return next(err);
+      const message = friendlyErrorMessage(err, res.locals.t);
+      if (prefersJson(req)) {
+        const status = Number(err?.status || 500);
+        return res.status(status).json({ error: message, requestId: req.id || null });
+      }
+      setError(res, message);
+      return res.redirect(req.baseUrl);
     }
   });
 

@@ -3,7 +3,7 @@ SET search_path = erp;
 -- =============================================================================
 -- 051_bom_production.sql
 -- =============================================================================
--- BOM (global, versioned, maker-checker, variant rules)
+-- BOM (global, versioned, maker-checker)
 --   - BOM is global (same for all branches) => no branch_id
 --   - Maker-checker statuses: DRAFT -> PENDING -> APPROVED/REJECTED
 --   - RM lines can be color-specific (aligned with color-specific RM purchase rates)
@@ -24,10 +24,6 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
   CREATE TYPE erp.labour_rate_type AS ENUM ('PER_DOZEN','PER_PAIR');
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
-
-DO $$ BEGIN
-  CREATE TYPE erp.bom_rule_action_type AS ENUM ('ADD_RM','REMOVE_RM','REPLACE_RM','ADJUST_QTY','CHANGE_LOSS');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
@@ -164,65 +160,6 @@ CREATE TABLE IF NOT EXISTS erp.bom_labour_line (
   ),
 
   UNIQUE (bom_id, dept_id, labour_id, size_scope, size_id, rate_type)
-);
-
--- -----------------------------------------------------------------------------
--- bom_variant_rule (rules apply to PRODUCT variant dimensions, not RM variants)
--- -----------------------------------------------------------------------------
--- Rules adjust RM consumption/loss based on finished variant dimensions.
--- action_type + new_value is interpreted by your BOM engine (app logic).
-CREATE TABLE IF NOT EXISTS erp.bom_variant_rule (
-  id                 bigserial PRIMARY KEY,
-  bom_id             bigint NOT NULL REFERENCES erp.bom_header(id) ON DELETE CASCADE,
-
-  size_scope         erp.bom_scope NOT NULL DEFAULT 'ALL',
-  size_id            bigint REFERENCES erp.sizes(id),
-
-  packing_scope      erp.bom_scope NOT NULL DEFAULT 'ALL',
-  packing_type_id    bigint REFERENCES erp.packing_types(id),
-
-  color_scope        erp.bom_scope NOT NULL DEFAULT 'ALL',
-  color_id           bigint REFERENCES erp.colors(id),
-
-  action_type        erp.bom_rule_action_type NOT NULL,
-
-  material_scope     erp.bom_scope NOT NULL,
-  target_rm_item_id  bigint REFERENCES erp.items(id),
-
-  new_value          jsonb NOT NULL DEFAULT '{}'::jsonb,
-
-  CHECK (
-    (size_scope = 'ALL' AND size_id IS NULL)
-    OR
-    (size_scope = 'SPECIFIC' AND size_id IS NOT NULL)
-  ),
-  CHECK (
-    (packing_scope = 'ALL' AND packing_type_id IS NULL)
-    OR
-    (packing_scope = 'SPECIFIC' AND packing_type_id IS NOT NULL)
-  ),
-  CHECK (
-    (color_scope = 'ALL' AND color_id IS NULL)
-    OR
-    (color_scope = 'SPECIFIC' AND color_id IS NOT NULL)
-  ),
-  CHECK (
-    (material_scope = 'ALL' AND target_rm_item_id IS NULL)
-    OR
-    (material_scope = 'SPECIFIC' AND target_rm_item_id IS NOT NULL)
-  )
-);
-
--- Uniqueness for variant rules (prevents duplicate/ambiguous rules).
--- Uses COALESCE to treat NULL ids as a stable "bucket" for uniqueness.
-CREATE UNIQUE INDEX IF NOT EXISTS ux_bom_variant_rule_unique
-ON erp.bom_variant_rule (
-  bom_id,
-  size_scope,        COALESCE(size_id, 0),
-  packing_scope,     COALESCE(packing_type_id, 0),
-  color_scope,       COALESCE(color_id, 0),
-  action_type,
-  material_scope,    COALESCE(target_rm_item_id, 0)
 );
 
 -- -----------------------------------------------------------------------------

@@ -260,7 +260,8 @@
     };
 
     const moveForwardFrom = (row, fieldKey, { defer = false } = {}) => {
-      if (!rowMatches(row) || !fieldKey) return false;
+      if (!(row instanceof HTMLElement) || !fieldKey) return false;
+      if (!defer && !rowMatches(row)) return false;
 
       const runMove = (targetRow) => {
         if (!rowMatches(targetRow)) return false;
@@ -337,12 +338,24 @@
         const linkedValue = String(linkedSelect?.value || "").trim();
         const dropdownMenu = wrapper.querySelector("div.z-50");
         const isDropdownOpen = Boolean(dropdownMenu && !dropdownMenu.classList.contains("hidden"));
+        const wasOpenBeforeEnter = String(wrapper.dataset.wasOpenBeforeEnter || "") === "1";
+        wrapper.dataset.wasOpenBeforeEnter = "0";
+        if (wasOpenBeforeEnter) {
+          // Enter came from an open searchable dropdown. Let selection commit, then move.
+          window.setTimeout(() => {
+            const refreshedValue = String(linkedSelect?.value || "").trim();
+            if (refreshedValue || linkedValue) {
+              moveForwardFrom(row, fieldKey, { defer: true });
+            }
+          }, 0);
+          return false;
+        }
         if (isDropdownOpen) {
           // Let searchable-select handle Enter selection first, then move focus.
           window.setTimeout(() => {
             const refreshedValue = String(linkedSelect?.value || "").trim();
             const menuStillOpen = Boolean(dropdownMenu && !dropdownMenu.classList.contains("hidden"));
-            if (!menuStillOpen && refreshedValue) {
+            if (!menuStillOpen && (refreshedValue || linkedValue)) {
               moveForwardFrom(row, fieldKey, { defer: true });
             }
           }, 0);

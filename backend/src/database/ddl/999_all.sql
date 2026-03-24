@@ -14,4 +14,7 @@ BEGIN;
 \ir 092_seeds.sql
 \ir 093_seed_admin_user.sql
 \ir 094_bom_lifecycle.sql
+\ir 095_production_uom_pair_enforcement.sql
+\ir 096_remove_bom_advanced_rules.sql
+\ir 097_production_stages_and_bom_routing.sql
 COMMIT;

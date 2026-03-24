@@ -9,6 +9,7 @@
 </label>
 
 <div class="grid gap-4 lg:grid-cols-2">
+  <% const pairUom = (uoms && uoms[0]) ? uoms[0] : null; %>
   <label class="block text-sm font-semibold text-slate-600">
     <span><%= t("group") %></span>
     <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" name="group_id" data-field="group_id" required>
@@ -21,11 +22,11 @@
   <label class="block text-sm font-semibold text-slate-600">
     <span><%= t("base_unit") %></span>
     <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" name="base_uom_id" data-field="base_uom_id" required>
-      <option value=""><%= t("select") %> <%= t("base_unit") %></option>
-      <% uoms.forEach(function(uom) { %>
-        <% const isPair = String(uom.code || "").toUpperCase() === "PAIR" || String(uom.name || "").toUpperCase() === "PAIR"; %>
-        <option value="<%= uom.id %>" <%= isPair ? "selected" : "" %>><%= uom.code %></option>
-      <% }) %>
+      <% if (pairUom) { %>
+        <option value="<%= pairUom.id %>" selected><%= pairUom.code %></option>
+      <% } else { %>
+        <option value=""><%= t("pair_uom_required") || "PAIR UOM required" %></option>
+      <% } %>
     </select>
   </label>
 </div>

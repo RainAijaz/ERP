@@ -3,6 +3,11 @@
   const header = formState?.header || {};
   const selectedLevel = String(header.level || "").toUpperCase();
   const selectedItemType = selectedLevel === "SEMI_FINISHED" ? "SFG" : selectedLevel === "FINISHED" ? "FG" : null;
+  const selectedItemId = Number(header.item_id || 0);
+  const initialOutputUoms =
+    (options?.itemOutputUomMap && Array.isArray(options.itemOutputUomMap[String(selectedItemId)]))
+      ? options.itemOutputUomMap[String(selectedItemId)]
+      : (options?.uoms || []);
   const isDraft = !header.status || header.status === "DRAFT";
   const isEditable = !isEdit || isDraft;
   const submitPath = isEdit ? `${basePath}/${header.id}/save-draft` : `${basePath}/save-draft`;
@@ -28,14 +33,12 @@
     z-index: 80;
   }
   #bom-form [data-rm-view-toggle],
-  #bom-form [data-rm-mode-toggle],
   #bom-form [data-labour-view-toggle] {
     border-color: #cbd5e1;
     background: #ffffff;
     color: #475569;
   }
   #bom-form [data-rm-view-toggle][data-active="true"],
-  #bom-form [data-rm-mode-toggle][data-active="true"],
   #bom-form [data-labour-view-toggle][data-active="true"] {
     border-color: #0f172a;
     background: #0f172a;
@@ -43,7 +46,6 @@
     box-shadow: 0 1px 2px rgba(15, 23, 42, 0.25);
   }
   #bom-form [data-rm-view-toggle][data-active="false"],
-  #bom-form [data-rm-mode-toggle][data-active="false"],
   #bom-form [data-labour-view-toggle][data-active="false"] {
     border-color: #cbd5e1;
     background: #ffffff;
@@ -51,6 +53,7 @@
   }
   #bom-header { order: 10; }
   #bom-form [data-header-lock-notice] { order: 20; }
+  #bom-stage { order: 25; }
   #bom-sfg { order: 30; }
   #bom-rm { order: 40; }
   #bom-labour { order: 50; }
@@ -95,11 +98,16 @@
   <form id="bom-form" method="POST" action="<%= submitPath %>" class="flex flex-col gap-6">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
     <input type="hidden" name="submit_intent" value="" data-bom-submit-intent>
+    <input type="hidden" name="switch_after_save" value="0" data-bom-switch-after-save>
+    <input type="hidden" name="switch_level" value="" data-bom-switch-level>
+    <input type="hidden" name="switch_item_id" value="" data-bom-switch-item-id>
+    <input type="hidden" name="switch_output_qty" value="" data-bom-switch-output-qty>
+    <input type="hidden" name="switch_output_uom_id" value="" data-bom-switch-output-uom-id>
     <input type="hidden" name="rm_lines_json" value="<%- JSON.stringify(formState?.rm_lines || []) %>" data-lines-json="rm_lines">
+    <input type="hidden" name="sku_rules_json" value="[]" data-lines-json="sku_rules">
     <input type="hidden" name="sfg_lines_json" value="<%- JSON.stringify(formState?.sfg_lines || []) %>" data-lines-json="sfg_lines">
     <input type="hidden" name="labour_lines_json" value="<%- JSON.stringify(formState?.labour_lines || []) %>" data-lines-json="labour_lines">
-    <input type="hidden" name="variant_rules_json" value="<%- JSON.stringify(formState?.variant_rules || []) %>" data-lines-json="variant_rules">
-    <input type="hidden" name="sku_overrides_json" value="<%- JSON.stringify(formState?.sku_overrides || []) %>" data-lines-json="sku_overrides">
+    <input type="hidden" name="stage_routes_json" value="<%- JSON.stringify(formState?.stage_routes || []) %>" data-lines-json="stage_routes">
 
     <section id="bom-header" class="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm scroll-mt-24">
       <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -142,7 +150,7 @@
           <span><%= t("bom_output_uom") || "Output Unit (UOM)" %></span>
           <select name="output_uom_id" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" data-searchable-select="true" data-searchable-variant="unified" data-header-field="output_uom_id" <%= isEditable ? "" : "disabled" %> required>
             <option value=""><%= t("select") %></option>
-            <% (options?.uoms || []).forEach(function(uom) { %>
+            <% (initialOutputUoms || []).forEach(function(uom) { %>
               <option value="<%= uom.id %>" <%= Number(header.output_uom_id) === Number(uom.id) ? "selected" : "" %>><%= uom.name %></option>
             <% }) %>
           </select>
@@ -179,160 +187,99 @@
       <%= t("bom_header_required_message") || "Complete the BOM setup first. Material, SFG, and labour sections unlock after that." %>
     </section>
 
+    <section id="bom-stage" class="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm scroll-mt-24">
+      <div class="mb-3 flex items-center justify-between">
+        <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("production_stages") || "Production Stages" %></h2>
+      </div>
+      <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
+        <table class="w-full table-fixed text-sm">
+          <colgroup>
+            <col class="w-[16%]">
+            <col class="w-[44%]">
+            <col class="w-[20%]">
+            <col class="w-[20%]">
+          </colgroup>
+          <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+            <tr>
+              <th class="px-3 py-2 text-left"><%= t("sr_no") || "Sr.No" %></th>
+              <th class="px-3 py-2 text-left"><%= t("department") || "Department" %></th>
+              <th class="px-3 py-2 text-center"><%= t("bom_stage_mandatory_in_flow") || "Mandatory In Flow" %></th>
+              <th class="px-3 py-2 text-right"><%= t("actions") || "Actions" %></th>
+            </tr>
+          </thead>
+          <tbody data-lines-body="stage_route"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section id="bom-rm" class="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm scroll-mt-24 space-y-5">
-      <div class="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-        <div class="flex flex-wrap items-start justify-between gap-3">
-          <div class="space-y-1">
-            <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-700"><%= t("bom_tab_rm") || "Raw Material Inputs for This BOM" %></h2>
-            <p class="text-xs text-slate-500"><%= t("bom_rm_section_hint") || "Add all raw materials required for one planned output batch, then fine-tune size-specific rules if needed." %></p>
-          </div>
-          <div class="flex flex-col items-end gap-2">
-            <div class="inline-flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                data-rm-mode-toggle="materials"
-                data-active="true"
-                class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
-              >
-                <%= t("bom_rm_view_material_lines") || "Material Lines" %>
-              </button>
-              <button
-                type="button"
-                data-rm-mode-toggle="sku_rules"
-                data-active="false"
-                class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
-              >
-                <%= t("bom_sku_rules") || "SKU Rules" %>
-              </button>
-              <button
-                type="button"
-                data-rm-mode-toggle="advanced"
-                data-active="false"
-                class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
-              >
-                <%= t("bom_advanced_rules") || "Advanced Rules" %>
-              </button>
-            </div>
-            <div class="hidden inline-flex flex-wrap items-center gap-2" data-rm-advanced-toggles hidden aria-hidden="true">
-              <button
-                type="button"
-                data-rm-view-toggle="size_rules"
-                data-active="true"
-                class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
-              >
-                <%= t("bom_rm_view_variant_rules") || "Size Rules" %>
-              </button>
-              <button
-                type="button"
-                data-rm-view-toggle="color_rules"
-                data-active="false"
-                class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
-              >
-                <%= t("bom_color_rules") || "Color Rules" %>
-              </button>
-              <button
-                type="button"
-                data-rm-view-toggle="packing_rules"
-                data-active="false"
-                class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
-              >
-                <%= t("bom_packing_rules") || "Packing Rules" %>
-              </button>
-            </div>
-          </div>
+      <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_tab_rm") || "Raw Material Inputs for This BOM" %></h2>
+        <div class="inline-flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            data-rm-view-toggle="materials"
+            data-active="true"
+            class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
+          >
+            <%= t("bom_rm_view_material_lines") || "Material Lines" %>
+          </button>
+          <button
+            type="button"
+            data-rm-view-toggle="sku_rules"
+            data-active="false"
+            class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
+          >
+            <%= t("bom_sku_rules") || "SKU Rules" %>
+          </button>
         </div>
       </div>
-      <div data-rm-view="sku_rules" class="space-y-3">
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <div>
-            <div class="mb-2 text-xs font-medium text-slate-500"><%= t("bom_sku_rules_hint") || "Select a SKU to edit final raw material requirements. Only differences are saved as SKU overrides." %></div>
-            <div class="flex flex-wrap items-center gap-2" data-sku-rule-chips></div>
-          </div>
+      <section data-rm-view="materials" class="rounded-xl border border-slate-200 bg-white">
+        <div class="border-b border-slate-200 px-3 py-3">
+          <h3 class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"><%= t("bom_rm_view_material_lines") || "Material Lines" %></h3>
+          <p class="mt-1 text-xs text-slate-500"><%= t("bom_rm_section_hint") || "Add raw materials and departments here. Enter quantities in SKU Rules." %></p>
+        </div>
+        <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
+          <table class="w-full table-fixed text-sm">
+            <colgroup>
+              <col class="w-[36%]">
+              <col class="w-[22%]">
+              <col class="w-[32%]">
+              <col class="w-[10%]">
+            </colgroup>
+            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+              <tr>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_material') || 'Select the raw material used in this BOM.' %>"><%= t("bom_rm_col_material") || "Material" %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_base_unit') || 'Base unit is picked from the selected material and is read-only.' %>"><%= t("base_unit") || "Base Unit" %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_consumption_department') || 'Production department that consumes this material.' %>"><%= t("bom_rm_col_department") || "Consumption Department" %></th>
+                <th class="px-3 py-2 text-right" title="<%= t('bom_hint_actions') || 'Use plus/minus to add or remove rows.' %>"><%= t("bom_rm_col_actions") || "Actions" %></th>
+              </tr>
+            </thead>
+            <tbody data-lines-body="rm"></tbody>
+          </table>
+        </div>
+      </section>
+      <section data-rm-view="sku_rules" class="hidden rounded-xl border border-slate-200 bg-white">
+        <div class="border-b border-slate-200 px-3 py-3">
+          <h3 class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"><%= t("bom_sku_rules") || "SKU Rules" %></h3>
+          <p class="mt-1 text-xs text-slate-500"><%= t("bom_sku_rules_hint") || "Select a SKU to edit final raw material requirements. Only differences are saved as SKU overrides." %></p>
+          <div class="mt-2 flex flex-wrap items-center gap-2" data-sku-rule-chips></div>
         </div>
         <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
           <table class="min-w-full text-sm">
             <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
               <tr>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_material') || 'Select the raw material used in this BOM.' %>"><%= t("bom_rm_col_material") || "Material" %></th>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_consumption_department') || 'Production department that consumes this material.' %>"><%= t("department") || "Department" %></th>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_rm_color') || 'Raw material color to consume for the selected SKU scope.' %>"><%= t("bom_rm_col_color") || "RM Color" %></th>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_required_qty') || 'Required quantity for this line.' %>"><%= t("bom_rules_col_qty") || "Required Qty" %></th>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_base_unit') || 'Base unit is picked from the selected material and is read-only.' %>"><%= t("base_unit") || "Unit" %></th>
+                <th class="px-3 py-2 text-left"><%= t("bom_rm_col_material") || "Material" %></th>
+                <th class="px-3 py-2 text-left"><%= t("bom_rm_col_department") || "Consumption Department" %></th>
+                <th class="px-3 py-2 text-left"><%= t("color") || "Color" %></th>
+                <th class="px-3 py-2 text-left"><%= t("bom_rules_col_qty") || "Required Qty" %></th>
+                <th class="px-3 py-2 text-left"><%= t("bom_rules_col_uom") || "Unit" %></th>
               </tr>
             </thead>
             <tbody data-sku-rules-body></tbody>
           </table>
         </div>
-      </div>
-      <div data-rm-view="materials" class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
-        <table class="w-full table-fixed text-sm">
-          <colgroup>
-            <col class="w-[34%]">
-            <col class="w-[24%]">
-            <col class="w-[32%]">
-            <col class="w-[10%]">
-          </colgroup>
-          <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
-            <tr>
-              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_material') || 'Select the raw material used in this BOM.' %>"><%= t("bom_rm_col_material") || "Material" %></th>
-              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_base_unit') || 'Base unit is picked from the selected material and is read-only.' %>"><%= t("base_unit") || "Base Unit" %></th>
-              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_consumption_department') || 'Production department that consumes this material.' %>"><%= t("bom_rm_col_department") || "Consumption Department" %></th>
-              <th class="px-3 py-2 text-right" title="<%= t('bom_hint_actions') || 'Use plus/minus to add or remove rows.' %>"><%= t("bom_rm_col_actions") || "Actions" %></th>
-            </tr>
-          </thead>
-          <tbody data-lines-body="rm"></tbody>
-        </table>
-      </div>
-      <div data-rm-view="size_rules" class="hidden space-y-3">
-        <div class="space-y-3" data-rule-size-sections></div>
-        <div class="hidden overflow-x-auto lg:overflow-visible overflow-y-visible rounded-xl border border-slate-200" data-rule-size-grid-template data-searchable-boundary>
-          <table class="min-w-full text-sm">
-            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
-              <tr>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_size_rule_material') || 'Material to which this size rule applies.' %>"><%= t("bom_rm_col_material") || "Material" %></th>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_size_rule_uom') || 'Unit for the size-specific quantity.' %>"><%= t("bom_rules_col_uom") || "Unit" %></th>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_size_rule_qty') || 'Required quantity for the selected size.' %>"><%= t("bom_rules_col_qty") || "Required Qty" %></th>
-                <th class="px-3 py-2 text-right" title="<%= t('bom_hint_actions') || 'Use plus/minus to add or remove rows.' %>"><%= t("bom_rm_col_actions") || "Actions" %></th>
-              </tr>
-            </thead>
-            <tbody data-lines-body="rule"></tbody>
-          </table>
-        </div>
-      </div>
-      <div data-rm-view="color_rules" class="hidden space-y-3">
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <div class="mb-2 text-xs font-medium text-slate-500"><%= t("bom_color_scope_hint") || "Choose a SKU variant scope to edit material color mapping." %></div>
-          <div class="flex flex-wrap items-center gap-2" data-rule-color-scopes></div>
-        </div>
-        <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
-          <table class="min-w-full text-sm">
-            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
-              <tr>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_color_rule_material') || 'Material whose color mapping you want to control.' %>"><%= t("bom_rm_col_material") || "Material" %></th>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_base_unit') || 'Base unit is picked from the selected material and is read-only.' %>"><%= t("base_unit") || "Unit" %></th>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_rm_color') || 'Raw material color to consume for the selected SKU scope.' %>"><%= t("bom_rm_col_color") || "Raw Material Color" %></th>
-                <th class="px-3 py-2 text-right" title="<%= t('bom_hint_actions') || 'Use plus/minus to add or remove rows.' %>"><%= t("actions") %></th>
-              </tr>
-            </thead>
-            <tbody data-lines-body="color_rule"></tbody>
-          </table>
-        </div>
-      </div>
-      <div data-rm-view="packing_rules" class="hidden overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
-        <table class="min-w-full text-sm">
-          <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
-            <tr>
-              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_packing_rule_material') || 'Base material that will be replaced.' %>"><%= t("bom_rm_col_material") || "Material" %></th>
-              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_base_unit') || 'Base unit is picked from the selected material and is read-only.' %>"><%= t("base_unit") || "Unit" %></th>
-              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_packing') || 'Packing type condition for this replacement.' %>"><%= t("packing") || "Packing" %></th>
-              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_size_optional') || 'Optional size filter; leave blank to apply for all sizes.' %>"><%= t("size") || "Size (Optional)" %></th>
-              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_replace_with') || 'Material to consume instead of base material.' %>"><%= t("replace_with") || "Replace With RM" %></th>
-              <th class="px-3 py-2 text-right" title="<%= t('bom_hint_actions') || 'Use plus/minus to add or remove rows.' %>"><%= t("actions") %></th>
-            </tr>
-          </thead>
-          <tbody data-lines-body="packing_rule"></tbody>
-        </table>
-      </div>
+      </section>
     </section>
 
     <section id="bom-sfg" class="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm scroll-mt-24">
@@ -345,8 +292,8 @@
             <tr>
               <th class="px-3 py-2 text-left" title="<%= t('bom_hint_article_sku') || 'Finished article SKU this row applies to.' %>"><%= t("article_sku") || "Article SKU" %></th>
               <th class="px-3 py-2 text-left" data-sfg-part-col-title title="<%= t('bom_hint_step_upper_sku') || 'Select the semi-finished SKU used for this finished SKU.' %>"><span data-sfg-part-col-label><%= t("bom_sfg_col_step_upper_sku") || "Step/Upper SKU" %></span></th>
-              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_base_unit') || 'Base unit for selected SKU.' %>"><%= t("base_unit") || "Unit" %></th>
               <th class="px-3 py-2 text-left" title="<%= t('bom_hint_step_quantity') || 'Quantity of selected step/upper SKU required for this finished SKU.' %>"><%= t("bom_sfg_col_step_qty") || "Step Quantity" %></th>
+              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_base_unit') || 'Base unit for selected SKU.' %>"><%= t("base_unit") || "Unit" %></th>
             </tr>
           </thead>
           <tbody data-lines-body="sfg"></tbody>
@@ -356,7 +303,7 @@
 
     <section id="bom-labour" class="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm scroll-mt-24 space-y-4">
       <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_tab_labour") || "List Labour Rates by Size and Department" %></h2>
+        <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_tab_labour") || "Labour Rates For This BOM" %></h2>
         <div class="inline-flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -372,7 +319,7 @@
             data-active="false"
             class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
           >
-            <%= t("bom_sku_rules") || "SKU Rules" %>
+            <%= t("bom_labour_size_rules_title") || "SKU Rules" %>
           </button>
         </div>
       </div>
@@ -398,8 +345,8 @@
       <section class="rounded-xl border border-slate-200 bg-white hidden" data-labour-view="size_rules">
         <div class="border-b border-slate-200 px-3 py-3">
           <div>
-            <h3 class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"><%= t("bom_sku_rules") || "SKU Rules" %></h3>
-            <p class="mt-1 text-xs text-slate-500"><%= t("bom_labour_sku_rules_hint") || "Select a SKU to set labour rates. These rates apply by SKU size scope." %></p>
+            <h3 class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"><%= t("bom_labour_size_rules_title") || "SKU Rules" %></h3>
+            <p class="mt-1 text-xs text-slate-500"><%= t("bom_labour_size_rules_hint") || "Select a SKU to add labour rates based on rate type." %></p>
             <div class="mt-2 flex flex-wrap items-center gap-2" data-labour-rule-sku-sections></div>
           </div>
         </div>
@@ -409,8 +356,8 @@
               <tr>
                 <th class="px-3 py-2 text-left" title="<%= t('bom_hint_labour') || 'Labour master to apply cost from.' %>"><%= t("labours") || "Labours" %></th>
                 <th class="px-3 py-2 text-left" title="<%= t('bom_hint_department') || 'Production department for this labour.' %>"><%= t("department") || "Department" %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_rate_value') || 'Enter the labour rate amount for this SKU scope.' %>"><%= t("bom_labour_col_rate") || "Rate" %></th>
                 <th class="px-3 py-2 text-left" title="<%= t('bom_hint_rate_type') || 'Cost basis (per pair or per dozen).' %>"><%= t("rate_type") || "Rate Type" %></th>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_rate_value') || 'Enter the labour rate amount for this SKU scope.' %>"><%= t("rate_value") || "Rate Value" %></th>
               </tr>
             </thead>
             <tbody data-lines-body="labour_rule"></tbody>
@@ -430,12 +377,12 @@
 </div>
 
 <div class="fixed inset-0 z-[95] hidden items-center justify-center bg-slate-900/40 p-4" data-bom-header-change-modal>
-  <div class="w-full max-w-xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
-    <div class="relative border-b border-slate-200 px-6 py-5">
+  <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl" role="dialog" aria-modal="true" aria-labelledby="bom-header-change-title">
+    <div class="relative border-b border-slate-200 px-6 py-4">
       <button
         type="button"
         data-bom-header-modal-close
-        class="absolute right-6 top-5 inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
+        class="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700"
         aria-label="<%= tx('close', 'Close') %>"
         title="<%= tx('close', 'Close') %>"
       >
@@ -443,27 +390,27 @@
           <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
         </svg>
       </button>
-      <div class="flex items-start gap-3">
+      <div class="flex items-start gap-3 pr-10">
         <div class="mt-0.5 inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-100 text-amber-700">
           <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M12 8v5m0 3h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.2 16c-.77 1.33.19 3 1.73 3z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </div>
         <div>
-          <h3 class="text-base font-semibold text-slate-800"><%= tx("bom_header_change_modal_title", "BOM setup changed") %></h3>
-          <p class="mt-1 text-sm text-slate-600"><%= tx("bom_header_change_modal_message", "You changed BOM Setup fields. This can reset dependent material, SFG, and labour sections.") %></p>
+          <div class="text-sm font-semibold text-slate-700" id="bom-header-change-title" data-bom-header-modal-title><%= tx("bom_header_change_modal_title", "BOM setup changed") %></div>
+          <p class="mt-1 text-xs text-slate-500 whitespace-pre-line" data-bom-header-modal-message><%= tx("bom_header_change_modal_message", "You changed BOM Setup fields. This affects material, SFG, and labour sections.") %></p>
         </div>
       </div>
     </div>
-    <div class="bg-slate-50 px-6 py-4 text-sm text-slate-700">
-      <p><%= tx("bom_header_change_modal_hint", "Save Draft to keep current entries. Discard Changes to continue with the new setup and clear dependent sections.") %></p>
+    <div class="px-6 py-4">
+      <p class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" data-bom-header-modal-hint><%= tx("bom_header_change_modal_hint", "Save Draft & Switch: saves current draft and opens selected BOM context. Apply: keeps new header values and clears impacted sections.") %></p>
     </div>
-    <div class="flex flex-col-reverse gap-2 border-t border-slate-200 px-6 py-4 sm:flex-row sm:justify-end">
-      <button type="button" data-bom-header-modal-discard class="rounded-xl border border-rose-300 bg-white px-4 py-2 text-sm font-semibold text-rose-700 transition hover:border-rose-400 hover:bg-rose-50">
-        <%= tx("bom_header_change_modal_discard", "Clear and Continue") %>
+    <div class="space-y-2 border-t border-slate-200 px-6 py-5">
+      <button type="button" data-bom-header-modal-secondary class="hidden w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800">
+        <%= tx("bom_header_change_modal_save_switch", "Save Draft & Switch") %>
       </button>
-      <button type="button" data-bom-header-modal-save class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800">
-        <%= tx("bom_header_change_modal_save", "Save Draft and Continue") %>
+      <button type="button" data-bom-header-modal-apply class="w-full rounded-xl bg-slate-900 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-slate-800">
+        <%= tx("bom_header_change_modal_apply", "Apply") %>
       </button>
     </div>
   </div>
@@ -475,40 +422,18 @@
   (function () {
     const editable = <%- JSON.stringify(Boolean(isEditable)) %>;
     const options = <%- JSON.stringify(options || {}) %>;
-    const initialVariantRules = <%- JSON.stringify(formState?.variant_rules || []) %>;
     const state = {
       rm: <%- JSON.stringify(formState?.rm_lines || []) %>,
       sfg: <%- JSON.stringify(formState?.sfg_lines || []) %>,
       labour: <%- JSON.stringify(formState?.labour_lines || []) %>,
+      stage_routes: <%- JSON.stringify(formState?.stage_routes || []) %>,
       labour_selection: [],
       labourRuleRateMap: {},
+      labourRuleLockedMap: {},
       labourRuleOpenSkuId: "",
       labourRuleOpenFallbackSizeId: null,
-      rule: (initialVariantRules || []).filter((row) => String(row?.action_type || "").toUpperCase() === "ADJUST_QTY"),
-      color_rule: (initialVariantRules || []).filter((row) => {
-        const action = String(row?.action_type || "").toUpperCase();
-        const newValue = row?.new_value && typeof row.new_value === "object" ? row.new_value : {};
-        return action === "REPLACE_RM" && (newValue.rm_color_id || 0) && !(newValue.replacement_rm_item_id || 0);
-      }).map((row) => ({
-        target_rm_item_id: row.target_rm_item_id || "",
-        sku_color_id: String(row.color_scope || "").toUpperCase() === "SPECIFIC" ? (row.color_id || "") : "",
-        rm_color_id: (row.new_value && row.new_value.rm_color_id) || "",
-      })),
-      packing_rule: (initialVariantRules || []).filter((row) => {
-        const action = String(row?.action_type || "").toUpperCase();
-        const newValue = row?.new_value && typeof row.new_value === "object" ? row.new_value : {};
-        return action === "REPLACE_RM" && (newValue.replacement_rm_item_id || 0);
-      }).map((row) => ({
-        target_rm_item_id: row.target_rm_item_id || "",
-        packing_type_id: String(row.packing_scope || "").toUpperCase() === "SPECIFIC" ? (row.packing_type_id || "") : "",
-        size_id: String(row.size_scope || "").toUpperCase() === "SPECIFIC" ? (row.size_id || "") : "",
-        replacement_rm_item_id: (row.new_value && row.new_value.replacement_rm_item_id) || "",
-      })),
-      sku_override: <%- JSON.stringify(formState?.sku_overrides || []) %>,
-      ruleOpenSizeId: null,
-      colorRuleOpenScope: "ALL",
+      sku_override: [],
       skuRuleOpenSkuId: "",
-      ruleRemovedKeys: new Set(),
     };
     const labels = {
       select: "<%= t('select') || 'Select' %>",
@@ -518,6 +443,27 @@
       remove: "<%= t('delete') || 'Delete' %>",
       clear: "<%= t('clear') || 'Clear' %>",
     };
+    const headerModalCopy = {
+      qty: {
+        title: "<%= t('bom_header_change_qty_title') || 'Apply Planned Output Qty Change?' %>",
+        message: "<%= t('bom_header_change_qty_message') || 'Material/SFG quantities will be cleared. Item, level, material selections, departments, and labour selections stay.' %>",
+        hint: "<%= t('bom_header_change_qty_hint') || 'Apply will keep new planned output quantity and clear quantity fields for re-entry.' %>",
+        applyLabel: "<%= t('bom_header_change_apply_clear_quantities') || 'Apply (Clear Quantities)' %>",
+      },
+      uom: {
+        title: "<%= t('bom_header_change_uom_title') || 'Apply Output Unit Change?' %>",
+        message: "<%= t('bom_header_change_uom_message') || 'Unit-sensitive quantity fields will be cleared and need re-entry.' %>",
+        hint: "<%= t('bom_header_change_uom_hint') || 'Apply will keep new output unit and clear quantity fields for re-entry.' %>",
+        applyLabel: "<%= t('bom_header_change_apply_clear_quantities') || 'Apply (Clear Quantities)' %>",
+      },
+      identity: {
+        title: "<%= t('bom_header_change_identity_title') || 'Switch BOM Context?' %>",
+        message: "<%= t('bom_header_change_identity_message') || 'This starts a different BOM context. RM, SFG, Labour, and SKU overrides will be cleared.' %>",
+        hint: "<%= t('bom_header_change_identity_hint') || 'Save Draft & Switch saves current draft and opens selected BOM context. Apply (Start Fresh) clears current sections and switches without saving.' %>",
+        applyLabel: "<%= t('bom_header_change_apply_start_fresh') || 'Apply (Start Fresh)' %>",
+        secondaryLabel: "<%= t('bom_header_change_save_switch') || 'Save Draft & Switch' %>",
+      },
+    };
     const serverErrorMessage = <%- JSON.stringify(errorMessage || "") %>;
     const serverErrorDetails = <%- JSON.stringify((errors || []).map((err) => err?.message).filter(Boolean)) %>;
     let allowBomSubmit = false;
@@ -525,25 +471,13 @@
     let saveDraftBtn = null;
     let approveNowBtn = null;
     let submitIntentInput = null;
+    let switchAfterSaveInput = null;
+    let switchLevelInput = null;
+    let switchItemIdInput = null;
+    let switchOutputQtyInput = null;
+    let switchOutputUomInput = null;
     let headerCommittedState = null;
     let applyingHeaderState = false;
-    const rmUiText = {
-      sizePickerHint: "<%= t('bom_rules_size_picker_hint') || 'Choose a size tab to edit material quantities for that size.' %>",
-      activeSizeLabel: "<%= t('bom_rules_active_size_label') || 'Editing rules for size' %>",
-      ruleCountLabel: "<%= t('bom_rules_count_label') || 'rules' %>",
-      colMaterial: "<%= t('bom_rm_col_material') || 'Material' %>",
-      colQty: "<%= t('bom_rules_col_qty') || 'Required Qty' %>",
-      colUom: "<%= t('bom_rules_col_uom') || 'Unit' %>",
-      colActions: "<%= t('bom_rm_col_actions') || 'Actions' %>",
-      colMaterialHelp: "<%= t('bom_hint_size_rule_material') || 'Material to which this size rule applies.' %>",
-      colQtyHelp: "<%= t('bom_hint_size_rule_qty') || 'Required quantity for the selected size.' %>",
-      colUomHelp: "<%= t('bom_hint_size_rule_uom') || 'Unit for the size-specific quantity.' %>",
-      colActionsHelp: "<%= t('bom_hint_actions') || 'Use plus/minus to add or remove rows.' %>",
-      colColor: "<%= t('color') || 'Color' %>",
-      colPacking: "<%= t('packing') || 'Packing' %>",
-      colReplace: "<%= t('replace_with') || 'Replace With' %>",
-      colSku: "<%= t('sku') || 'SKU' %>",
-    };
     const esc = (value) =>
       String(value ?? "")
         .replace(/&/g, "&amp;")
@@ -569,8 +503,28 @@
     const rmItemColorMap = options.rmItemColorMap || {};
     const rmItemSizeMap = options.rmItemSizeMap || {};
     const labourDeptMap = options.labourDeptMap || {};
+    const stageById = new Map((options.productionStages || []).map((stage) => [String(stage.id), stage]));
+    const stageIdByDeptId = new Map((options.productionStages || [])
+      .map((stage) => [String(stage?.dept_id || ""), String(stage?.id || "")])
+      .filter(([deptId, stageId]) => deptId && stageId));
+    const uomConversionMap = (options && typeof options.uomConversionMap === "object" && options.uomConversionMap)
+      ? options.uomConversionMap
+      : {};
+    const stageDeptOptions = [];
+    const seenStageDeptIds = new Set();
+    (options.departments || []).forEach((department) => {
+      const deptId = String(department?.id || "").trim();
+      if (!deptId || seenStageDeptIds.has(deptId)) return;
+      seenStageDeptIds.add(deptId);
+      stageDeptOptions.push({
+        id: deptId,
+        name: String(department?.name || deptId),
+      });
+    });
+    const labourDefaultsByItem = options.itemLabourDefaultsMap || {};
     const headerLevelToItemType = { FINISHED: "FG", SEMI_FINISHED: "SFG" };
     const headerItemSelect = document.querySelector('select[name="item_id"]');
+    const headerOutputUomSelect = document.querySelector('select[name="output_uom_id"]');
     const headerLevelSelect = document.querySelector('select[name="level"]');
     const allHeaderItems = Array.isArray(options.items) ? options.items : [];
     const headerItemById = new Map(allHeaderItems.map((item) => [String(item.id || ""), item]));
@@ -596,10 +550,70 @@
       const rows = rmItemSizeMap[String(rmItemId || "")];
       return Array.isArray(rows) ? rows : [];
     };
+    const getSelectedStageDepartmentIdSet = () => {
+      const rows = Array.isArray(state?.stage_routes) ? state.stage_routes : [];
+      return new Set(
+        rows
+          .map((line) => String(line?.dept_id || "").trim())
+          .filter(Boolean),
+      );
+    };
+    const getDraftFallbackDepartments = () => {
+      const allDepartments = Array.isArray(options.departments) ? options.departments : [];
+      const productionDepartments = allDepartments.filter((dept) => dept?.is_production === true);
+      return productionDepartments.length ? productionDepartments : allDepartments;
+    };
+    const getDepartmentsScopedToSelectedStages = () => {
+      const selectedDeptIds = getSelectedStageDepartmentIdSet();
+      const scopedBase = getDraftFallbackDepartments();
+      if (!selectedDeptIds.size) return scopedBase;
+      return scopedBase.filter((dept) => selectedDeptIds.has(String(dept.id || "")));
+    };
     const getLabourDepartmentsForLabour = (labourId) => {
       const allowedDeptIds = Array.isArray(labourDeptMap[String(labourId || "")]) ? labourDeptMap[String(labourId || "")] : [];
-      if (!allowedDeptIds.length) return [];
-      return (options.departments || []).filter((dept) => allowedDeptIds.includes(String(dept.id)));
+      const stageScopedDepartments = getDepartmentsScopedToSelectedStages();
+      if (!allowedDeptIds.length) return stageScopedDepartments;
+      return stageScopedDepartments.filter((dept) => allowedDeptIds.includes(String(dept.id)));
+    };
+    const upsertStageRouteForDepartment = (deptId) => {
+      const normalizedDeptId = String(deptId || "").trim();
+      if (!normalizedDeptId) return false;
+      const mappedStageId = String(stageIdByDeptId.get(normalizedDeptId) || "").trim();
+      if (!mappedStageId) return false;
+      if (!Array.isArray(state.stage_routes)) state.stage_routes = [];
+      const alreadyExists = state.stage_routes.some(
+        (line) => String(line?.dept_id || "").trim() === normalizedDeptId,
+      );
+      if (alreadyExists) return false;
+      const emptyRowIndex = state.stage_routes.findIndex(
+        (line) => !String(line?.dept_id || "").trim(),
+      );
+      const nextRow = {
+        dept_id: normalizedDeptId,
+        stage_id: mappedStageId,
+        sequence_no: "",
+        is_required: true,
+      };
+      if (emptyRowIndex >= 0) {
+        state.stage_routes[emptyRowIndex] = {
+          ...(state.stage_routes[emptyRowIndex] || {}),
+          ...nextRow,
+        };
+        return true;
+      }
+      state.stage_routes.push(nextRow);
+      return true;
+    };
+    const ensureStageRoutesCoverDepartments = (deptIds = []) => {
+      const seen = new Set();
+      let changed = false;
+      deptIds.forEach((deptId) => {
+        const normalizedDeptId = String(deptId || "").trim();
+        if (!normalizedDeptId || seen.has(normalizedDeptId)) return;
+        seen.add(normalizedDeptId);
+        if (upsertStageRouteForDepartment(normalizedDeptId)) changed = true;
+      });
+      return changed;
     };
     const actionButtons = (type) =>
       `<div class="inline-flex items-center gap-2">
@@ -626,33 +640,41 @@
       return `${normalized.labour_id}:${normalized.dept_id}:${normalized.rate_type}`;
     };
     const toLabourRateKey = (row, sizeKey) => `${toLabourComboKey(row)}:${String(sizeKey || "ALL")}`;
+    const isLabourRateLockedByKey = (key) => Boolean(state.labourRuleLockedMap && state.labourRuleLockedMap[key]);
+    const isLabourRateLocked = (selectionRow, sizeKey) => isLabourRateLockedByKey(toLabourRateKey(selectionRow, sizeKey));
+    const clearLabourRateLocksForComboKey = (comboKey) => {
+      if (!comboKey || !state.labourRuleLockedMap || typeof state.labourRuleLockedMap !== "object") return;
+      Object.keys(state.labourRuleLockedMap).forEach((key) => {
+        if (String(key || "").startsWith(`${comboKey}:`)) {
+          delete state.labourRuleLockedMap[key];
+        }
+      });
+    };
     const toLabourSizeKeyFromLine = (line) => (
       String(line?.size_scope || "").toUpperCase() === "SPECIFIC"
         ? String(line?.size_id || "").trim()
         : "ALL"
     );
     const allSizesLabel = "<%= t('all_sizes') || 'All Sizes' %>";
-    const ruleSectionsHost = document.querySelector("[data-rule-size-sections]");
-    const colorRuleScopesHost = document.querySelector("[data-rule-color-scopes]");
     const skuRuleChipsHost = document.querySelector("[data-sku-rule-chips]");
     const skuRulesBody = document.querySelector("[data-sku-rules-body]");
     const labourRuleSkuChipsHost = document.querySelector("[data-labour-rule-sku-sections]");
-    const rmModeToggleButtons = Array.from(document.querySelectorAll("[data-rm-mode-toggle]"));
-    const rmAdvancedTogglesHost = document.querySelector("[data-rm-advanced-toggles]");
     const rmViewToggleButtons = Array.from(document.querySelectorAll("[data-rm-view-toggle]"));
     const rmViewPanels = Array.from(document.querySelectorAll("[data-rm-view]"));
     const labourViewToggleButtons = Array.from(document.querySelectorAll("[data-labour-view-toggle]"));
     const labourViewPanels = Array.from(document.querySelectorAll("[data-labour-view]"));
-    const nonHeaderSections = Array.from(document.querySelectorAll("#bom-rm, #bom-labour"));
+    const nonHeaderSections = Array.from(document.querySelectorAll("#bom-stage, #bom-rm, #bom-labour"));
     const headerLockNotice = document.querySelector("[data-header-lock-notice]");
     const headerChangeModal = document.querySelector("[data-bom-header-change-modal]");
-    const headerModalSaveBtn = headerChangeModal?.querySelector("[data-bom-header-modal-save]");
-    const headerModalDiscardBtn = headerChangeModal?.querySelector("[data-bom-header-modal-discard]");
-    const headerModalCancelBtn = headerChangeModal?.querySelector("[data-bom-header-modal-cancel]");
+    const headerModalTitleEl = headerChangeModal?.querySelector("[data-bom-header-modal-title]");
+    const headerModalMessageEl = headerChangeModal?.querySelector("[data-bom-header-modal-message]");
+    const headerModalHintEl = headerChangeModal?.querySelector("[data-bom-header-modal-hint]");
+    const headerModalApplyBtn = headerChangeModal?.querySelector("[data-bom-header-modal-apply]");
+    const headerModalSecondaryBtn = headerChangeModal?.querySelector("[data-bom-header-modal-secondary]");
     const headerModalCloseBtn = headerChangeModal?.querySelector("[data-bom-header-modal-close]");
-    let rmEditorMode = "materials";
     let rmViewMode = "materials";
     let labourViewMode = "selection";
+    let suppressNextSfgQtyAutofill = false;
 
     const setSelectOptions = (selectEl, rows, selectedValue, textFn) => {
       if (!selectEl) return;
@@ -676,6 +698,48 @@
       const deptSelect = row.querySelector('[data-col="dept_id"]');
       setSelectOptions(deptSelect, getLabourDepartmentsForLabour(labourId), deptSelect?.value || "");
     };
+    const pruneDepartmentScopedRows = () => {
+      const selectedDeptIds = getSelectedStageDepartmentIdSet();
+      if (!selectedDeptIds.size) return;
+      const keepDept = (deptId) => selectedDeptIds.has(String(deptId || "").trim());
+      state.rm = (state.rm || []).map((line) => ({
+        ...line,
+        dept_id: keepDept(line?.dept_id) ? String(line?.dept_id || "").trim() : "",
+      }));
+      state.labour_selection = (state.labour_selection || []).map((line) => ({
+        ...line,
+        dept_id: keepDept(line?.dept_id) ? String(line?.dept_id || "").trim() : "",
+      }));
+      if (Array.isArray(state.sku_override)) {
+        state.sku_override = state.sku_override.filter((line) => keepDept(line?.dept_id));
+      }
+    };
+    const getAllowedOutputUomsForSelectedItem = () => {
+      const itemId = String(headerItemSelect?.value || "").trim();
+      if (!itemId) return [];
+      const mappedRows = options.itemOutputUomMap && Array.isArray(options.itemOutputUomMap[itemId])
+        ? options.itemOutputUomMap[itemId]
+        : [];
+      if (mappedRows.length) return mappedRows;
+      const selectedItem = headerItemById.get(itemId);
+      const baseUomId = String(selectedItem?.base_uom_id || "").trim();
+      if (!baseUomId) return [];
+      const fallbackBaseUom = (options.uoms || []).find((uom) => String(uom?.id || "") === baseUomId);
+      return fallbackBaseUom ? [fallbackBaseUom] : [];
+    };
+    const renderOutputUomOptions = (preferredValue = null) => {
+      if (!headerOutputUomSelect) return;
+      const selectedValue = preferredValue === null
+        ? String(headerOutputUomSelect.value || "")
+        : String(preferredValue || "");
+      setSelectOptions(
+        headerOutputUomSelect,
+        getAllowedOutputUomsForSelectedItem(),
+        selectedValue,
+        (uom) => uom.name || uom.code || uom.id,
+      );
+      headerOutputUomSelect.disabled = !editable || !String(headerItemSelect?.value || "").trim();
+    };
 
     const renderHeaderItemsByLevel = (preserveSelectedItem = true) => {
       if (!headerItemSelect || !headerLevelSelect) return;
@@ -690,6 +754,7 @@
       const hasCurrent = filteredItems.some((item) => String(item.id) === currentValue);
       headerItemSelect.value = hasCurrent ? currentValue : "";
       headerItemSelect.disabled = !editable || !requiredItemType;
+      renderOutputUomOptions();
     };
 
     const getSelectedHeaderItem = () => {
@@ -736,11 +801,14 @@
     const syncLabourLinesFromSelectionAndRates = () => {
       const normalizedSelection = (Array.isArray(state.labour_selection) ? state.labour_selection : [])
         .map((row) => normalizeLabourSelectionRow(row));
-      const activeSelection = normalizedSelection.filter((row) => row.labour_id || row.dept_id);
+      const activeSelection = normalizedSelection.filter((row) => row.labour_id && row.dept_id);
       state.labour_selection = normalizedSelection.length ? normalizedSelection : [defaultLabourSelectionRow()];
 
       if (!state.labourRuleRateMap || typeof state.labourRuleRateMap !== "object") {
         state.labourRuleRateMap = {};
+      }
+      if (!state.labourRuleLockedMap || typeof state.labourRuleLockedMap !== "object") {
+        state.labourRuleLockedMap = {};
       }
       const scopeRows = getLabourSizeScopes();
       const validSizeKeys = new Set(scopeRows.map((scope) => String(scope.id)));
@@ -749,12 +817,14 @@
         const separatorIndex = key.lastIndexOf(":");
         if (separatorIndex <= 0) {
           delete state.labourRuleRateMap[key];
+          delete state.labourRuleLockedMap[key];
           return;
         }
         const comboKey = key.slice(0, separatorIndex);
         const sizeKey = key.slice(separatorIndex + 1);
         if (!validComboKeys.has(comboKey) || !validSizeKeys.has(sizeKey)) {
           delete state.labourRuleRateMap[key];
+          delete state.labourRuleLockedMap[key];
         }
       });
 
@@ -796,6 +866,7 @@
       });
       state.labour_selection = selectionMap.size ? Array.from(selectionMap.values()) : [defaultLabourSelectionRow()];
       state.labourRuleRateMap = rateMap;
+      state.labourRuleLockedMap = {};
       syncLabourLinesFromSelectionAndRates();
     };
     const getHeaderSkuOptions = () => {
@@ -828,62 +899,6 @@
     const getLabourSizeKeyFromSku = (sku) => {
       const sizeId = String(sku?.size_id || "").trim();
       return sizeId || "ALL";
-    };
-    const getHeaderColorOptions = () => {
-      const itemId = String(headerItemSelect?.value || "");
-      const skuRows = options.itemSkuMap && Array.isArray(options.itemSkuMap[itemId]) ? options.itemSkuMap[itemId] : [];
-      const colorMap = new Map();
-      skuRows.forEach((row) => {
-        const colorId = String(row?.color_id || "");
-        if (!colorId) return;
-        if (!colorMap.has(colorId)) colorMap.set(colorId, row?.color_name || colorId);
-      });
-      return Array.from(colorMap.entries()).map(([id, name]) => ({ id, name }));
-    };
-    const getRmUnitNameByItemId = (itemId) => {
-      const uomId = rmItemUomById.get(String(itemId || "")) || "";
-      return getUomName(uomId);
-    };
-    const getColorRuleRmOptions = () => {
-      const rmMap = new Map();
-      (state.rm || []).forEach((line) => {
-        const itemId = String(line?.rm_item_id || "").trim();
-        if (!itemId || rmMap.has(itemId)) return;
-        const item = (options.rmItems || []).find((row) => String(row.id) === itemId);
-        rmMap.set(itemId, { id: itemId, name: item?.name || item?.code || itemId });
-      });
-      const allRmOptions = Array.from(rmMap.values());
-      const multiColorOnly = allRmOptions.filter((row) => getRmColorsForItem(row.id).length > 1);
-      if (multiColorOnly.length) return multiColorOnly;
-      const hasAnyColor = allRmOptions.filter((row) => getRmColorsForItem(row.id).length > 0);
-      return hasAnyColor.length ? hasAnyColor : allRmOptions;
-    };
-
-    const seedColorRulesForNoSkuColorVariants = () => {
-      const skuColorOptions = getHeaderColorOptions();
-      if (skuColorOptions.length) return;
-      if (Array.isArray(state.color_rule) && state.color_rule.some((row) => Number(row?.target_rm_item_id || 0))) return;
-      const candidateMaterials = getColorRuleRmOptions().filter((row) => getRmColorsForItem(row.id).length > 1);
-      if (!candidateMaterials.length) return;
-      state.color_rule = candidateMaterials.map((row) => ({
-        target_rm_item_id: String(row.id || ""),
-        sku_color_id: "",
-        rm_color_id: "",
-      }));
-    };
-    const getColorScopeOptions = () => {
-      const skuColorOptions = getHeaderColorOptions();
-      const defaultLabel = skuColorOptions.length
-        ? "<%= t('bom_all_skus') || 'All SKUs' %>"
-        : "<%= t('bom_all_skus_no_color') || 'All SKUs (no color variants)' %>";
-      return [
-        { id: "ALL", name: defaultLabel },
-        ...skuColorOptions.map((row) => ({ id: String(row.id || ""), name: row.name || row.id })),
-      ];
-    };
-    const toColorScopeKey = (value) => {
-      const key = String(value || "").trim();
-      return key ? key : "ALL";
     };
     const showErrorModal = (message) => {
       const text = String(message || "").trim();
@@ -918,6 +933,17 @@
       }
       return null;
     };
+    const getStageRouteDuplicateCombo = () => {
+      const seen = new Map();
+      for (let idx = 0; idx < (state.stage_routes || []).length; idx += 1) {
+        const line = state.stage_routes[idx] || {};
+        const deptId = String(line.dept_id || "").trim();
+        if (!deptId) continue;
+        if (seen.has(deptId)) return { firstIndex: seen.get(deptId), secondIndex: idx, key: deptId };
+        seen.set(deptId, idx);
+      }
+      return null;
+    };
     const hasClientDuplicateCombos = () => {
       const rmDuplicate = getRmDuplicateCombo();
       if (rmDuplicate) {
@@ -927,6 +953,11 @@
       const labourDuplicate = getLabourSelectionDuplicateCombo();
       if (labourDuplicate) {
         showErrorModal("<%= t('bom_error_labour_department_duplicate') || 'This labour is already added for the selected department. Choose a different labour or department.' %>");
+        return true;
+      }
+      const stageDuplicate = getStageRouteDuplicateCombo();
+      if (stageDuplicate) {
+        showErrorModal("<%= t('error_duplicate_name') || 'Duplicate value is not allowed.' %>");
         return true;
       }
       return false;
@@ -983,15 +1014,13 @@
             && !String(row?.dept_id || "").trim(),
         ) || null;
       })();
+    const getSkuCodeLabel = (sku) => {
+      if (!sku) return "";
+      return String(sku.sku_code || sku.code || sku.id || "").trim();
+    };
     const getSkuLabel = (sku) => {
       if (!sku) return "";
-      const parts = [];
-      if (sku.size_name) parts.push(sku.size_name);
-      if (sku.color_name) parts.push(sku.color_name);
-      if (sku.packing_name || sku.packing_type_name) parts.push(sku.packing_name || sku.packing_type_name);
-      if (sku.grade_name) parts.push(sku.grade_name);
-      if (parts.length) return `(${parts.filter(Boolean).join(" ")})`;
-      return String(sku.sku_code || "");
+      return getSkuCodeLabel(sku);
     };
     const getSkuVariantPeerIds = (skuId) => {
       const allSkus = getHeaderSkuOptions();
@@ -1013,76 +1042,17 @@
         .filter(Boolean);
       return peerIds;
     };
-    const pickMatchingSizeRule = (targetRmItemId, sizeId) => {
-      const target = String(targetRmItemId || "");
-      const size = String(sizeId || "");
-      return (state.rule || []).find((row) =>
-        String(row?.target_rm_item_id || "") === target
-        && String(row?.size_id || "") === size
-        && Number(row?.new_value?.qty || 0) > 0,
-      ) || null;
-    };
-    const pickMatchingColorRule = (targetRmItemId, skuColorId) => {
-      const target = String(targetRmItemId || "");
-      const skuColor = String(skuColorId || "");
-      const rows = (state.color_rule || []).filter((row) =>
-        String(row?.target_rm_item_id || "") === target
-        && String(row?.rm_color_id || "").trim(),
-      );
-      if (!rows.length) return null;
-      const specific = rows.find((row) => String(row?.sku_color_id || "") === skuColor && skuColor);
-      if (specific) return specific;
-      return rows.find((row) => !String(row?.sku_color_id || "").trim()) || null;
-    };
-    const pickMatchingPackingRule = (targetRmItemId, packingTypeId, sizeId) => {
-      const target = String(targetRmItemId || "");
-      const packing = String(packingTypeId || "");
-      if (!packing) return null;
-      const rows = (state.packing_rule || []).filter((row) =>
-        String(row?.target_rm_item_id || "") === target
-        && String(row?.replacement_rm_item_id || "").trim()
-        && String(row?.packing_type_id || "") === packing,
-      );
-      if (!rows.length) return null;
-      const size = String(sizeId || "");
-      return rows.find((row) => String(row?.size_id || "") === size)
-        || rows.find((row) => !String(row?.size_id || "").trim())
-        || null;
-    };
     const applyRulesToRmLineForSku = (rmLine, sku, overrideLine = null) => {
       const targetRmItemId = String(rmLine?.rm_item_id || "").trim();
       const deptId = String(rmLine?.dept_id || "").trim();
       if (!targetRmItemId) return null;
       let effectiveRmItemId = targetRmItemId;
       let qty = Number(rmLine?.qty || 0);
-      if (!Number.isFinite(qty) || qty <= 0) qty = 1;
+      if (!Number.isFinite(qty) || qty <= 0) qty = 0;
       let qtyIsExplicit = false;
       let uomId = resolveRmUomId(rmLine) || "";
       let rmColorId = "";
       let excluded = false;
-
-      const sizeRule = pickMatchingSizeRule(targetRmItemId, sku?.size_id);
-      if (sizeRule) {
-        const ruleQty = Number(sizeRule?.new_value?.qty || 0);
-        if (Number.isFinite(ruleQty) && ruleQty > 0) {
-          qty = ruleQty;
-          qtyIsExplicit = true;
-        }
-        const ruleUomId = String(sizeRule?.new_value?.uom_id || "").trim();
-        if (ruleUomId) uomId = ruleUomId;
-      }
-
-      const colorRule = pickMatchingColorRule(targetRmItemId, sku?.color_id);
-      if (colorRule) {
-        rmColorId = String(colorRule?.rm_color_id || "").trim();
-      }
-
-      const packingRule = pickMatchingPackingRule(targetRmItemId, sku?.packing_type_id, sku?.size_id);
-      if (packingRule) {
-        effectiveRmItemId = String(packingRule?.replacement_rm_item_id || "").trim() || effectiveRmItemId;
-        const replacementUomId = rmItemUomById.get(String(effectiveRmItemId || "")) || "";
-        if (replacementUomId) uomId = replacementUomId;
-      }
 
       if (overrideLine) {
         if (overrideLine.is_excluded) excluded = true;
@@ -1183,9 +1153,9 @@
                 type="button"
                 data-sku-rule-chip="${esc(skuId)}"
                 class="inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] transition ${isActive ? "border-slate-800 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}"
-                title="${esc(getSkuLabel(sku))}"
+                title="${esc(getSkuCodeLabel(sku))}"
               >
-                ${esc(getSkuLabel(sku))}
+                ${esc(getSkuCodeLabel(sku))}
               </button>
             `;
           }).join("")
@@ -1243,6 +1213,76 @@
         `;
       }).join("");
     };
+    const buildSkuRulesForSubmission = () => {
+      const errors = [];
+      const entries = [];
+      const rmLines = (state.rm || []).filter(
+        (row) => String(row?.rm_item_id || "").trim() && String(row?.dept_id || "").trim(),
+      );
+      if (!rmLines.length) return { entries, errors };
+
+      const skuOptions = getHeaderSkuOptions();
+      if (!skuOptions.length) {
+        errors.push("<%= t('bom_no_sku_available') || 'No SKU available for selected article.' %>");
+        return { entries, errors };
+      }
+
+      skuOptions.forEach((sku) => {
+        rmLines.forEach((rmLine) => {
+          const overrideLine = findSkuOverride(sku.id, rmLine.rm_item_id, rmLine.dept_id);
+          const effective = applyRulesToRmLineForSku(rmLine, sku, overrideLine);
+          if (!effective || effective.excluded) return;
+          const qty = Number(effective.qty || 0);
+          const rmName = rmItemNameById.get(String(effective.targetRmItemId || "")) || String(effective.targetRmItemId || "");
+          const deptName = departmentNameById.get(String(effective.deptId || "")) || String(effective.deptId || "");
+          const skuCode = getSkuCodeLabel(sku) || String(sku?.id || "");
+          if (!Number.isFinite(qty) || qty <= 0) {
+            errors.push(`SKU ${skuCode}: ${rmName} / ${deptName} -> <%= t("bom_rules_col_qty") || "Required Qty" %>.`);
+            return;
+          }
+          entries.push({
+            sku_id: String(sku.id || "").trim(),
+            target_rm_item_id: String(effective.targetRmItemId || "").trim(),
+            dept_id: String(effective.deptId || "").trim(),
+            required_qty: Number((Math.round(qty * 1000) / 1000).toFixed(3)),
+            uom_id: String(effective.uomId || "").trim(),
+          });
+        });
+      });
+      return { entries, errors };
+    };
+    const aggregateRmLinesFromSkuRules = (skuRuleEntries) => {
+      const qtyByRmDept = new Map();
+      (skuRuleEntries || []).forEach((entry) => {
+        const rmItemId = String(entry?.target_rm_item_id || "").trim();
+        const deptId = String(entry?.dept_id || "").trim();
+        const qty = Number(entry?.required_qty || 0);
+        if (!rmItemId || !deptId || !Number.isFinite(qty) || qty <= 0) return;
+        const key = `${rmItemId}:${deptId}`;
+        qtyByRmDept.set(key, (qtyByRmDept.get(key) || 0) + qty);
+      });
+      const seen = new Set();
+      return (state.rm || [])
+        .map((line) => {
+          const rmItemId = String(line?.rm_item_id || "").trim();
+          const deptId = String(line?.dept_id || "").trim();
+          if (!rmItemId || !deptId) return null;
+          const key = `${rmItemId}:${deptId}`;
+          if (seen.has(key)) return null;
+          seen.add(key);
+          const totalQty = qtyByRmDept.get(key) || 0;
+          return {
+            rm_item_id: rmItemId,
+            color_id: "",
+            size_id: "",
+            dept_id: deptId,
+            qty: Number((Math.round(totalQty * 1000) / 1000).toFixed(3)),
+            uom_id: resolveRmUomId(line) || "",
+            normal_loss_pct: line?.normal_loss_pct ?? 0,
+          };
+        })
+        .filter(Boolean);
+    };
 
     const getRelevantSfgSkus = () => {
       const headerItemId = String(headerItemSelect?.value || "");
@@ -1252,6 +1292,41 @@
         return (options.sfgSkus || []).filter((sku) => itemIdSet.has(String(sku.item_id || "")));
       }
       return [];
+    };
+    const getPlannedOutputQtyValue = () => {
+      const raw = String(document.querySelector('input[name="output_qty"]')?.value || "").trim();
+      const qty = Number(raw);
+      if (!Number.isFinite(qty) || qty <= 0) return "";
+      return String(qty);
+    };
+    const getPlannedOutputQtyNumber = () => {
+      const qty = Number(getPlannedOutputQtyValue());
+      return Number.isFinite(qty) && qty > 0 ? qty : null;
+    };
+    const formatQtyForInput = (qty) => {
+      const numeric = Number(qty);
+      if (!Number.isFinite(numeric) || numeric <= 0) return "";
+      return String(Math.round(numeric * 1000) / 1000);
+    };
+    const getUomConversionFactor = (fromUomId, toUomId) => {
+      const fromKey = String(fromUomId || "").trim();
+      const toKey = String(toUomId || "").trim();
+      if (!fromKey || !toKey || fromKey === toKey) return 1;
+      const direct = Number(uomConversionMap?.[fromKey]?.[toKey]);
+      if (Number.isFinite(direct) && direct > 0) return direct;
+      const reverse = Number(uomConversionMap?.[toKey]?.[fromKey]);
+      if (Number.isFinite(reverse) && reverse > 0) return 1 / reverse;
+      return null;
+    };
+    const getDefaultSfgRequiredQty = (selectedSfgSkuId) => {
+      const plannedOutputQty = getPlannedOutputQtyNumber();
+      if (!plannedOutputQty) return "";
+      const outputUomId = String(headerOutputUomSelect?.value || "").trim();
+      const sfgUomId = String(sfgSkuUomById.get(String(selectedSfgSkuId || "").trim()) || "").trim();
+      if (!outputUomId || !sfgUomId) return formatQtyForInput(plannedOutputQty);
+      const factor = getUomConversionFactor(outputUomId, sfgUomId);
+      if (!factor) return "";
+      return formatQtyForInput(plannedOutputQty * factor);
     };
 
     const isHeaderReady = () => {
@@ -1285,6 +1360,56 @@
       && String(a?.item_id || "") === String(b?.item_id || "")
       && String(a?.output_qty || "") === String(b?.output_qty || "")
       && String(a?.output_uom_id || "") === String(b?.output_uom_id || "");
+    const getHeaderChangeKind = (previousState, nextState) => {
+      const prev = previousState || {};
+      const next = nextState || {};
+      const levelChanged = String(prev.level || "") !== String(next.level || "");
+      const itemChanged = String(prev.item_id || "") !== String(next.item_id || "");
+      const qtyChanged = String(prev.output_qty || "") !== String(next.output_qty || "");
+      const uomChanged = String(prev.output_uom_id || "") !== String(next.output_uom_id || "");
+      if (levelChanged || itemChanged) return "identity";
+      if (uomChanged) return "uom";
+      if (qtyChanged) return "qty";
+      return "none";
+    };
+    const clearSwitchAfterSaveIntent = () => {
+      if (switchAfterSaveInput) switchAfterSaveInput.value = "0";
+      if (switchLevelInput) switchLevelInput.value = "";
+      if (switchItemIdInput) switchItemIdInput.value = "";
+      if (switchOutputQtyInput) switchOutputQtyInput.value = "";
+      if (switchOutputUomInput) switchOutputUomInput.value = "";
+    };
+    const setSwitchAfterSaveIntent = (nextState) => {
+      clearSwitchAfterSaveIntent();
+      if (!nextState) return;
+      if (switchAfterSaveInput) switchAfterSaveInput.value = "1";
+      if (switchLevelInput) switchLevelInput.value = String(nextState.level || "");
+      if (switchItemIdInput) switchItemIdInput.value = String(nextState.item_id || "");
+      if (switchOutputQtyInput) switchOutputQtyInput.value = String(nextState.output_qty || "");
+      if (switchOutputUomInput) switchOutputUomInput.value = String(nextState.output_uom_id || "");
+    };
+    const clearQuantityFieldsForHeaderChange = () => {
+      suppressNextSfgQtyAutofill = true;
+      (state.rm || []).forEach((line) => {
+        if (!line) return;
+        line.qty = "";
+      });
+      (state.sfg || []).forEach((line) => {
+        if (!line) return;
+        line.required_qty = "";
+      });
+      (state.sku_override || []).forEach((line) => {
+        if (!line) return;
+        line.override_qty = "";
+      });
+      // Also clear live inputs so next syncStateFromDom does not repopulate cleared values.
+      Array.from(document.querySelectorAll('[data-lines-body="sfg"] [data-col="required_qty"]')).forEach((input) => {
+        if (input instanceof HTMLInputElement) input.value = "";
+      });
+      Array.from(document.querySelectorAll('[data-sku-rules-body] [data-sku-rule-col="required_qty"]')).forEach((input) => {
+        if (input instanceof HTMLInputElement) input.value = "";
+      });
+    };
     const applyHeaderState = (nextState) => {
       const safeState = nextState || {};
       applyingHeaderState = true;
@@ -1297,8 +1422,7 @@
       }
       const outputQtyInput = document.querySelector('input[name="output_qty"]');
       if (outputQtyInput) outputQtyInput.value = String(safeState.output_qty || "");
-      const outputUomSelect = document.querySelector('select[name="output_uom_id"]');
-      if (outputUomSelect) outputUomSelect.value = String(safeState.output_uom_id || "");
+      renderOutputUomOptions(String(safeState.output_uom_id || ""));
       applyingHeaderState = false;
       syncStateFromDom();
       updateHeaderSectionState();
@@ -1319,50 +1443,73 @@
         || String(row?.dept_id || "").trim(),
       );
       const hasLabourRates = (state.labour || []).some((row) => String(row?.rate_value || "").trim());
-      const hasSizeRules = normalizeRuleRows(state.rule).some((row) =>
-        String(row?.target_rm_item_id || "").trim()
-        && Number(row?.new_value?.qty || 0) > 0,
-      );
-      const hasColorRules = (state.color_rule || []).some((row) =>
-        String(row?.target_rm_item_id || "").trim()
-        || String(row?.sku_color_id || "").trim()
-        || String(row?.rm_color_id || "").trim(),
-      );
-      const hasPackingRules = (state.packing_rule || []).some((row) =>
-        String(row?.target_rm_item_id || "").trim()
-        || String(row?.packing_type_id || "").trim()
-        || String(row?.size_id || "").trim()
-        || String(row?.replacement_rm_item_id || "").trim(),
-      );
       const hasSkuOverrides = (state.sku_override || []).some((row) =>
         Boolean(row?.is_excluded)
         || String(row?.override_qty || "").trim()
         || String(row?.replacement_rm_item_id || "").trim()
         || String(row?.rm_color_id || "").trim(),
       );
-      return hasRm || hasSfg || hasLabourSelection || hasLabourRates || hasSizeRules || hasColorRules || hasPackingRules || hasSkuOverrides;
+      return hasRm || hasSfg || hasLabourSelection || hasLabourRates || hasSkuOverrides;
     };
     const resetDependentBomStateForHeaderChange = () => {
       state.rm = editable ? [addDefaults.rm()] : [];
       state.sfg = [];
+      state.stage_routes = editable ? [addDefaults.stage_route()] : [];
       state.labour_selection = editable ? [defaultLabourSelectionRow()] : [];
       state.labourRuleRateMap = {};
+      state.labourRuleLockedMap = {};
       state.labour = [];
       state.labourRuleOpenSkuId = "";
       state.labourRuleOpenFallbackSizeId = null;
-      state.rule = [];
-      state.color_rule = [];
-      state.packing_rule = [];
       state.sku_override = [];
-      state.ruleOpenSizeId = null;
-      state.colorRuleOpenScope = "ALL";
       state.skuRuleOpenSkuId = "";
-      state.ruleRemovedKeys = new Set();
       syncLabourLinesFromSelectionAndRates();
     };
+    const applyLabourDefaultsForSelectedItem = (force = false) => {
+      const itemId = String(headerItemSelect?.value || "").trim();
+      if (!itemId) return false;
+      const defaults = labourDefaultsByItem[itemId];
+      const hasSelectionValues = (state.labour_selection || []).some((row) =>
+        String(row?.labour_id || "").trim()
+        || String(row?.dept_id || "").trim(),
+      );
+      const hasRateValues = Object.keys(state.labourRuleRateMap || {}).length > 0
+        || (state.labour || []).some((row) => String(row?.rate_value || "").trim());
+      if (!force && (hasSelectionValues || hasRateValues)) return false;
+
+      if (!defaults || !Array.isArray(defaults.labour_selection) || !defaults.labour_selection.length) {
+        if (force) {
+          state.labour_selection = editable ? [defaultLabourSelectionRow()] : [];
+          state.labourRuleRateMap = {};
+          state.labourRuleLockedMap = {};
+          syncLabourLinesFromSelectionAndRates();
+        }
+        return false;
+      }
+
+      state.labour_selection = defaults.labour_selection.map((row) => normalizeLabourSelectionRow(row));
+      ensureStageRoutesCoverDepartments(
+        state.labour_selection.map((row) => String(row?.dept_id || "").trim()).filter(Boolean),
+      );
+      state.labourRuleRateMap = {};
+      state.labourRuleLockedMap = {};
+      Object.entries(defaults.labour_rate_map || {}).forEach(([key, value]) => {
+        const text = String(value || "").trim();
+        if (!text) return;
+        state.labourRuleRateMap[key] = text;
+      });
+      Object.entries(defaults.labour_rate_locked_map || {}).forEach(([key, value]) => {
+        if (!value) return;
+        state.labourRuleLockedMap[key] = true;
+      });
+      syncLabourLinesFromSelectionAndRates();
+      return true;
+    };
     const commitHeaderChange = (changedField) => {
-      if (String(changedField || "") === "level") {
-        renderHeaderItemsByLevel(false);
+      const field = String(changedField || "").trim();
+      if (field === "level" || field === "item_id") {
+        renderHeaderItemsByLevel(true);
+        applyLabourDefaultsForSelectedItem(true);
       }
       syncStateFromDom();
       updateHeaderSectionState();
@@ -1370,11 +1517,28 @@
       if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
       headerCommittedState = getHeaderState();
     };
-    const openHeaderChangeModal = () =>
+    const openHeaderChangeModal = (config = {}) =>
       new Promise((resolve) => {
         if (!(headerChangeModal instanceof HTMLElement)) {
           resolve("cancel");
           return;
+        }
+        if (headerModalTitleEl) {
+          headerModalTitleEl.textContent = String(config.title || "<%= tx('bom_header_change_modal_title', 'BOM setup changed') %>");
+        }
+        if (headerModalMessageEl) {
+          headerModalMessageEl.textContent = String(config.message || "<%= tx('bom_header_change_modal_message', 'You changed BOM Setup fields. This affects material, SFG, and labour sections.') %>");
+        }
+        if (headerModalHintEl) {
+          headerModalHintEl.textContent = String(config.hint || "<%= tx('bom_header_change_modal_hint', 'Save Draft & Switch: saves current draft and opens selected BOM context. Apply: keeps new header values and clears impacted sections.') %>");
+        }
+        if (headerModalApplyBtn) {
+          headerModalApplyBtn.textContent = String(config.applyLabel || "<%= tx('bom_header_change_modal_apply', 'Apply') %>");
+        }
+        if (headerModalSecondaryBtn) {
+          const hasSecondary = Boolean(config.secondaryLabel);
+          headerModalSecondaryBtn.classList.toggle("hidden", !hasSecondary);
+          if (hasSecondary) headerModalSecondaryBtn.textContent = String(config.secondaryLabel);
         }
         let settled = false;
         const close = (result) => {
@@ -1382,16 +1546,15 @@
           settled = true;
           document.removeEventListener("keydown", onKeydown);
           headerChangeModal.removeEventListener("click", onBackdropClick);
-          headerModalSaveBtn?.removeEventListener("click", onSave);
-          headerModalDiscardBtn?.removeEventListener("click", onDiscard);
-          headerModalCancelBtn?.removeEventListener("click", onCancel);
+          headerModalApplyBtn?.removeEventListener("click", onApply);
+          headerModalSecondaryBtn?.removeEventListener("click", onSecondary);
           headerModalCloseBtn?.removeEventListener("click", onCancel);
           headerChangeModal.classList.add("hidden");
           headerChangeModal.classList.remove("flex");
           resolve(result);
         };
-        const onSave = () => close("save");
-        const onDiscard = () => close("discard");
+        const onApply = () => close("apply");
+        const onSecondary = () => close("secondary");
         const onCancel = () => close("cancel");
         const onKeydown = (event) => {
           if (event.key === "Escape") {
@@ -1402,22 +1565,22 @@
         const onBackdropClick = (event) => {
           if (event.target === headerChangeModal) close("cancel");
         };
-        headerModalSaveBtn?.addEventListener("click", onSave);
-        headerModalDiscardBtn?.addEventListener("click", onDiscard);
-        headerModalCancelBtn?.addEventListener("click", onCancel);
+        headerModalApplyBtn?.addEventListener("click", onApply);
+        headerModalSecondaryBtn?.addEventListener("click", onSecondary);
         headerModalCloseBtn?.addEventListener("click", onCancel);
         document.addEventListener("keydown", onKeydown);
         headerChangeModal.addEventListener("click", onBackdropClick);
         headerChangeModal.classList.remove("hidden");
         headerChangeModal.classList.add("flex");
         window.setTimeout(() => {
-          if (headerModalSaveBtn instanceof HTMLElement) headerModalSaveBtn.focus();
+          if (headerModalApplyBtn instanceof HTMLElement) headerModalApplyBtn.focus();
         }, 0);
       });
 
     const renderRm = () => {
       const body = document.querySelector('[data-lines-body="rm"]');
       if (!body) return;
+      const stageScopedDepartments = getDepartmentsScopedToSelectedStages();
       body.innerHTML = state.rm
         .map((row, idx) => {
           const fixedUomId = resolveRmUomId(row);
@@ -1429,9 +1592,8 @@
               <input type="hidden" data-col="uom_id" value="${esc(fixedUomId)}" />
               <input type="text" data-col-display="uom_id" value="${esc(fixedUomName)}" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm text-slate-600" readonly>
             </td>
-            <td class="px-3 py-2"><select data-col="dept_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(options.departments || [], row.dept_id)}</select></td>
+            <td class="px-3 py-2"><select data-col="dept_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(stageScopedDepartments, row.dept_id)}</select></td>
             <td class="px-3 py-2 text-right">
-              <input type="hidden" data-col="qty" value="${esc(row.qty ?? 1)}" />
               <input type="hidden" data-col="color_id" value="">
               <input type="hidden" data-col="size_id" value="">
               <input type="hidden" data-col="normal_loss_pct" value="${esc(row.normal_loss_pct ?? 0)}" />
@@ -1461,15 +1623,20 @@
         const bySku = existingBySkuId.get(String(sku.id || ""));
         const bySize = existingBySizeId.get(String(sku.size_id || ""));
         const existing = bySku || bySize || {};
+        const selectedSfgSkuId = String(existing?.sfg_sku_id || "");
+        const resolvedUomId = sfgSkuUomById.get(selectedSfgSkuId) || String(existing?.uom_id || "");
+        const existingQtyText = String(existing?.required_qty ?? "").trim();
+        const defaultRequiredQty = selectedSfgSkuId ? getDefaultSfgRequiredQty(selectedSfgSkuId) : "";
         return {
           fg_sku_id: String(sku.id || ""),
           fg_size_id: String(sku.size_id || ""),
-          sfg_sku_id: String(existing?.sfg_sku_id || ""),
-          required_qty: existing?.required_qty ?? "",
-          uom_id: String(existing?.uom_id || ""),
+          sfg_sku_id: selectedSfgSkuId,
+          required_qty: existingQtyText || (suppressNextSfgQtyAutofill ? "" : defaultRequiredQty),
+          uom_id: String(resolvedUomId || ""),
         };
       });
       state.sfg = nextSfg;
+      suppressNextSfgQtyAutofill = false;
       body.innerHTML = nextSfg
         .map((row, idx) => {
           const mappedFgSku = findHeaderSkuById(row.fg_sku_id);
@@ -1484,13 +1651,45 @@
               <input type="hidden" data-col="fg_size_id" value="${esc(fgSizeId)}">
               <input type="text" value="${esc(fgSkuLabel)}" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm text-slate-700" readonly>
             </td>
-            <td class="px-3 py-2"><select data-col="sfg_sku_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(sfgOptions, row.sfg_sku_id, (r) => r.sku_code || r.item_name || r.id)}</select></td>
+            <td class="px-3 py-2"><select data-col="sfg_sku_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(sfgOptions, row.sfg_sku_id, (r) => getSkuLabel(r) || r.item_name || r.id)}</select></td>
+            <td class="px-3 py-2"><input data-col="required_qty" data-no-stepper="true" type="number" min="0.001" step="0.001" value="${esc(row.required_qty ?? "")}" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "readonly"}></td>
             <td class="px-3 py-2">
               <input type="hidden" data-col="uom_id" value="${esc(fixedUomId)}">
               <input type="text" data-col-display="uom_id" value="${esc(fixedUomName)}" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm text-slate-600" readonly>
             </td>
-            <td class="px-3 py-2"><input data-col="required_qty" data-no-stepper="true" type="number" min="0.001" step="0.001" value="${esc(row.required_qty ?? "")}" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "readonly"}></td>
           </tr>`;
+        })
+        .join("");
+    };
+
+    const renderStageRoutes = () => {
+      const body = document.querySelector('[data-lines-body="stage_route"]');
+      if (!(body instanceof HTMLElement)) return;
+      const lines = Array.isArray(state.stage_routes) ? state.stage_routes : [];
+      if (!lines.length && editable) {
+        state.stage_routes = [addDefaults.stage_route()];
+      }
+      const rows = Array.isArray(state.stage_routes) ? state.stage_routes : [];
+      body.innerHTML = rows
+        .map((row, idx) => {
+          const stageId = String(row?.stage_id || "").trim();
+          const deptId = String(row?.dept_id || stageById.get(stageId)?.dept_id || "").trim();
+          const isRequired = row?.is_required !== false;
+          return `
+          <tr data-row-index="${idx}" class="border-b border-slate-100">
+            <td class="px-3 py-2 text-sm font-semibold text-slate-600">${idx + 1}</td>
+            <td class="px-3 py-2">
+              <select data-col="dept_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}>
+                <option value="">${labels.select}</option>
+                ${makeOptions(stageDeptOptions || [], deptId, (r) => r.name || r.id)}
+              </select>
+            </td>
+            <td class="px-3 py-2 text-center">
+              <input type="checkbox" data-col="is_required" class="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-700" ${isRequired ? "checked" : ""} ${editable ? "" : "disabled"}>
+            </td>
+            <td class="px-3 py-2 text-right">${editable ? actionButtons("stage_route") : ""}</td>
+          </tr>
+          `;
         })
         .join("");
     };
@@ -1527,7 +1726,7 @@
           labourRuleSkuChipsHost.innerHTML = skuOptions.map((sku) => {
             const skuId = String(sku.id || "");
             const isActive = skuId === String(activeSku?.id || "");
-            const label = getSkuLabel(sku) || String(sku.sku_code || sku.id || "");
+            const label = getSkuCodeLabel(sku) || String(sku.sku_code || sku.id || "");
             return `
               <button
                 type="button"
@@ -1581,280 +1780,27 @@
           const labourId = String(row?.labour_id || "");
           const deptId = String(row?.dept_id || "");
           const rateType = normalizeLabourRateType(row?.rate_type);
+          const selectionRow = { labour_id: labourId, dept_id: deptId, rate_type: rateType };
+          const locked = isLabourRateLocked(selectionRow, activeSizeKey);
           const labourName = labourNameById.get(labourId) || labourId || "-";
           const deptName = departmentNameById.get(deptId) || deptId || "-";
+          const lockHint = locked
+            ? `<div class="mt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${esc("<%= t('bom_labour_locked_from_rates') || 'Locked (from Labour Rates)' %>")}</div>`
+            : "";
           return `
-            <tr data-row-index="${idx}" data-labour-rule-entry="true" data-labour-id="${esc(labourId)}" data-dept-id="${esc(deptId)}" data-rate-type="${esc(rateType)}" data-size-id="${esc(activeSizeKey)}" class="border-b border-slate-100">
+            <tr data-row-index="${idx}" data-labour-rule-entry="true" data-labour-id="${esc(labourId)}" data-dept-id="${esc(deptId)}" data-rate-type="${esc(rateType)}" data-size-id="${esc(activeSizeKey)}" data-rate-locked="${locked ? "1" : "0"}" class="border-b border-slate-100">
               <td class="px-3 py-2 text-slate-700">${esc(labourName)}</td>
               <td class="px-3 py-2 text-slate-700">${esc(deptName)}</td>
+              <td class="px-3 py-2"><input data-labour-rule-col="rate_value" data-no-stepper="true" type="number" min="0" step="0.0001" value="${esc(row?.rate_value ?? "")}" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${(editable && !locked) ? "" : "readonly"}>${lockHint}</td>
               <td class="px-3 py-2 text-slate-700">${esc(rateTypeLabel[rateType] || rateType)}</td>
-              <td class="px-3 py-2"><input data-labour-rule-col="rate_value" data-no-stepper="true" type="number" min="0" step="0.0001" value="${esc(row?.rate_value ?? "")}" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "readonly"}></td>
             </tr>
           `;
         })
         .join("");
     };
 
-    const normalizeRuleRows = (rows) => {
-      return (Array.isArray(rows) ? rows : [])
-        .map((entry) => {
-          const sizeId = Number(entry?.size_id || 0);
-          const rmItemId = Number(entry?.target_rm_item_id || 0);
-          if (!sizeId || !rmItemId) return null;
-          const nextValue = entry?.new_value && typeof entry.new_value === "object" ? entry.new_value : {};
-          const qty = Number(nextValue.qty || 0) > 0 ? Number(nextValue.qty) : "";
-          const uomId = Number(nextValue.uom_id || 0) || Number(resolveRmUomId({ rm_item_id: rmItemId })) || null;
-          return {
-            size_id: sizeId,
-            target_rm_item_id: rmItemId,
-            new_value: {
-              qty,
-              uom_id: uomId,
-            },
-          };
-        })
-        .filter(Boolean);
-    };
-
-    const renderRules = () => {
-      if (!ruleSectionsHost) return;
-      const sizeOptions = getHeaderSizeOptions();
-      const rmRows = (state.rm || []).filter((row) => Number(row.rm_item_id));
-      const rmRowMap = new Map(rmRows.map((row) => [Number(row.rm_item_id), row]));
-      const normalizedRules = normalizeRuleRows(state.rule);
-      const existingMap = new Map(
-        normalizedRules.map((row) => [`${row.size_id}:${row.target_rm_item_id}`, row]),
-      );
-      const merged = [];
-      (sizeOptions || []).forEach((size) => {
-        const sizeId = Number(size.id);
-        rmRows.forEach((rmRow) => {
-          const rmItemId = Number(rmRow.rm_item_id);
-          const key = `${sizeId}:${rmItemId}`;
-          if (state.ruleRemovedKeys.has(key)) return;
-            const existing = existingMap.get(key);
-            const fallbackUomId = Number(resolveRmUomId(rmRow)) || null;
-            merged.push({
-              size_id: sizeId,
-              target_rm_item_id: rmItemId,
-              new_value: {
-                qty: Number(existing?.new_value?.qty || 0) > 0 ? Number(existing.new_value.qty) : "",
-                uom_id: Number(existing?.new_value?.uom_id || 0) || fallbackUomId,
-              },
-            });
-          });
-      });
-      state.rule = merged;
-
-      const grouped = new Map();
-      merged.forEach((row) => {
-        const key = String(row.size_id);
-        if (!grouped.has(key)) grouped.set(key, []);
-        grouped.get(key).push(row);
-      });
-      if (sizeOptions.length && !state.ruleOpenSizeId) state.ruleOpenSizeId = String(sizeOptions[0].id);
-      if (state.ruleOpenSizeId && !sizeOptions.some((row) => String(row.id) === String(state.ruleOpenSizeId))) {
-        state.ruleOpenSizeId = sizeOptions.length ? String(sizeOptions[0].id) : null;
-      }
-
-      if (!sizeOptions.length) {
-        ruleSectionsHost.innerHTML = `<div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600"><%= t("no_entries") %></div>`;
-        return;
-      }
-
-      const activeSizeId = String(state.ruleOpenSizeId || sizeOptions[0].id);
-      const activeSize = sizeOptions.find((size) => String(size.id) === activeSizeId) || sizeOptions[0];
-      const activeRows = grouped.get(String(activeSize.id)) || [];
-
-      ruleSectionsHost.innerHTML = `
-        <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
-          <div class="mb-2 text-xs font-medium text-slate-500">${esc(rmUiText.sizePickerHint)}</div>
-          <div class="flex flex-wrap items-center gap-2">
-            ${sizeOptions
-              .map((size) => {
-                const sizeId = String(size.id);
-                const isActive = sizeId === String(activeSize.id);
-                const count = (grouped.get(sizeId) || []).length;
-                return `
-                  <button
-                    type="button"
-                    data-rule-toggle-size="${sizeId}"
-                    class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] transition ${isActive ? "border-slate-800 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}"
-                  >
-                    <span>${esc(size.name || size.id)}</span>
-                    <span class="rounded-full ${isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"} px-2 py-0.5 text-[10px]">${count} ${esc(rmUiText.ruleCountLabel)}</span>
-                  </button>
-                `;
-              })
-              .join("")}
-          </div>
-        </div>
-        <section class="rounded-xl border border-slate-200 bg-white p-3">
-          <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-            <div class="text-sm font-semibold text-slate-700">${esc(rmUiText.activeSizeLabel)}: ${esc(activeSize.name || activeSize.id)}</div>
-            <div class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600">${activeRows.length} ${esc(rmUiText.ruleCountLabel)}</div>
-          </div>
-          <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
-            <table class="min-w-full text-sm">
-              <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                <tr>
-                  <th class="px-3 py-2 text-left" title="${esc(rmUiText.colMaterialHelp)}">${esc(rmUiText.colMaterial)}</th>
-                  <th class="px-3 py-2 text-left" title="${esc(rmUiText.colUomHelp)}">${esc(rmUiText.colUom)}</th>
-                  <th class="px-3 py-2 text-left" title="${esc(rmUiText.colQtyHelp)}">${esc(rmUiText.colQty)}</th>
-                  <th class="px-3 py-2 text-right" title="${esc(rmUiText.colActionsHelp)}">${esc(rmUiText.colActions)}</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-100">
-                ${activeRows
-                  .map((row) => {
-                    const rm = rmRowMap.get(Number(row.target_rm_item_id));
-                    const rmItem = (options.rmItems || []).find((item) => Number(item.id) === Number(row.target_rm_item_id));
-                    const rmLabel = rmItem ? (rmItem.name || rmItem.code || row.target_rm_item_id) : row.target_rm_item_id;
-                    const uomId = Number(row.new_value?.uom_id || 0) || Number(resolveRmUomId(rm)) || "";
-                    return `
-                      <tr data-rule-entry data-size-id="${activeSize.id}" data-rm-item-id="${row.target_rm_item_id}">
-                        <td class="px-3 py-2 font-medium text-slate-700">${esc(rmLabel)}</td>
-                        <td class="px-3 py-2"><select data-rule-uom data-searchable-select="true" data-searchable-variant="unified" class="w-40 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}>${makeOptions(options.uoms || [], uomId)}</select></td>
-                        <td class="px-3 py-2"><input data-rule-qty data-no-stepper="true" type="number" min="0.001" step="0.001" value="${esc(row.new_value?.qty || "")}" class="w-32 rounded-lg border border-slate-200 px-2 py-1.5 text-sm" ${editable ? "" : "readonly"} /></td>
-                        <td class="px-3 py-2 text-right">
-                          ${editable ? `<button type="button" data-rule-remove-entry="${activeSize.id}:${row.target_rm_item_id}" class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900">${deleteIcon}</button>` : ""}
-                        </td>
-                      </tr>
-                    `;
-                  })
-                  .join("")}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      `;
-    };
-
-    const renderColorRules = () => {
-      const body = document.querySelector('[data-lines-body="color_rule"]');
-      if (!body) return;
-      seedColorRulesForNoSkuColorVariants();
-      const rmBaseOptions = getColorRuleRmOptions();
-      const colorScopeOptions = getColorScopeOptions();
-      const allowedScopeKeys = new Set(colorScopeOptions.map((row) => String(row.id)));
-      if (!Array.isArray(state.color_rule) || state.color_rule.length === 0) {
-        state.color_rule = [addDefaults.color_rule()];
-      }
-      const hasSpecificSkuColors = colorScopeOptions.some((row) => String(row.id) !== "ALL");
-      if (!hasSpecificSkuColors) {
-        state.color_rule = state.color_rule.map((row) => ({ ...row, sku_color_id: "" }));
-      }
-      const groupedCount = new Map();
-      state.color_rule.forEach((row) => {
-        const scopeKey = toColorScopeKey(row.sku_color_id);
-        groupedCount.set(scopeKey, (groupedCount.get(scopeKey) || 0) + 1);
-      });
-      const currentScope = toColorScopeKey(state.colorRuleOpenScope);
-      state.colorRuleOpenScope = allowedScopeKeys.has(currentScope)
-        ? currentScope
-        : String(colorScopeOptions[0]?.id || "ALL");
-      if (colorRuleScopesHost) {
-        colorRuleScopesHost.innerHTML = colorScopeOptions
-          .map((scope) => {
-            const scopeId = String(scope.id || "ALL");
-            const isActive = scopeId === String(state.colorRuleOpenScope);
-            const count = groupedCount.get(scopeId) || 0;
-            return `
-              <button
-                type="button"
-                data-color-rule-toggle-scope="${esc(scopeId)}"
-                class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] transition ${isActive ? "border-slate-800 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}"
-              >
-                <span>${esc(scope.name || scopeId)}</span>
-                <span class="rounded-full ${isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"} px-2 py-0.5 text-[10px]">${count} ${esc(rmUiText.ruleCountLabel)}</span>
-              </button>
-            `;
-          })
-          .join("");
-      }
-      body.innerHTML = (state.color_rule || [])
-        .map((row, idx) => {
-          const scopeKey = toColorScopeKey(row.sku_color_id);
-          const rmColorOptions = getRmColorsForItem(row.target_rm_item_id);
-          const unitName = getRmUnitNameByItemId(row.target_rm_item_id);
-          const isActiveScopeRow = String(scopeKey) === String(state.colorRuleOpenScope);
-          return `
-          <tr data-row-index="${idx}" class="border-b border-slate-100${isActiveScopeRow ? "" : " hidden"}">
-            <td class="px-3 py-2"><select data-col="target_rm_item_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(rmBaseOptions, row.target_rm_item_id)}</select></td>
-            <td class="px-3 py-2"><input type="text" value="${esc(unitName)}" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm text-slate-600" readonly></td>
-            <td class="px-3 py-2">
-              <input type="hidden" data-col="sku_color_id" value="${esc(scopeKey === "ALL" ? "" : scopeKey)}">
-              <select data-col="rm_color_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(rmColorOptions, row.rm_color_id)}</select>
-            </td>
-            <td class="px-3 py-2 text-right">${editable ? actionButtons("color_rule") : ""}</td>
-          </tr>`;
-        })
-        .join("");
-    };
-
-    const renderPackingRules = () => {
-      const body = document.querySelector('[data-lines-body="packing_rule"]');
-      if (!body) return;
-      const rmBaseOptions = (state.rm || []).map((line) => {
-        const item = (options.rmItems || []).find((row) => String(row.id) === String(line.rm_item_id));
-        return { id: line.rm_item_id, name: item?.name || item?.code || line.rm_item_id };
-      }).filter((row) => row.id);
-      const sizeOptions = getHeaderSizeOptions();
-      body.innerHTML = (state.packing_rule || [])
-        .map((row, idx) => {
-          const unitName = getRmUnitNameByItemId(row.target_rm_item_id);
-          return `
-          <tr data-row-index="${idx}" class="border-b border-slate-100">
-            <td class="px-3 py-2"><select data-col="target_rm_item_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(rmBaseOptions, row.target_rm_item_id)}</select></td>
-            <td class="px-3 py-2"><input type="text" value="${esc(unitName)}" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm text-slate-600" readonly></td>
-            <td class="px-3 py-2"><select data-col="packing_type_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(options.packings || [], row.packing_type_id)}</select></td>
-            <td class="px-3 py-2"><select data-col="size_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${esc(labels.all)}</option>${makeOptions(sizeOptions, row.size_id)}</select></td>
-            <td class="px-3 py-2"><select data-col="replacement_rm_item_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(options.rmItems || [], row.replacement_rm_item_id, (r) => r.name || r.code || r.id)}</select></td>
-            <td class="px-3 py-2 text-right">${editable ? actionButtons("packing_rule") : ""}</td>
-          </tr>`;
-        })
-        .join("");
-    };
-
-    const renderSkuOverrides = () => {
-      const body = document.querySelector('[data-lines-body="sku_override"]');
-      if (!body) return;
-      const skuOptions = getHeaderSkuOptions();
-      const rmBaseOptions = (state.rm || []).map((line) => {
-        const item = (options.rmItems || []).find((row) => String(row.id) === String(line.rm_item_id));
-        return { id: line.rm_item_id, name: item?.name || item?.code || line.rm_item_id };
-      }).filter((row) => row.id);
-      body.innerHTML = (state.sku_override || [])
-        .map((row, idx) => {
-          const rmColorOptions = getRmColorsForItem(row.target_rm_item_id);
-          const unitItemId = row.replacement_rm_item_id || row.target_rm_item_id;
-          const unitName = getRmUnitNameByItemId(unitItemId);
-          return `
-          <tr data-row-index="${idx}" class="border-b border-slate-100">
-            <td class="px-3 py-2"><select data-col="sku_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(skuOptions, row.sku_id, (r) => {
-              const parts = [r.sku_code];
-              if (r.size_name) parts.push(r.size_name);
-              if (r.color_name) parts.push(r.color_name);
-              if (r.packing_name) parts.push(r.packing_name);
-              return parts.join(" / ");
-            })}</select></td>
-            <td class="px-3 py-2"><select data-col="target_rm_item_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(rmBaseOptions, row.target_rm_item_id)}</select></td>
-            <td class="px-3 py-2"><input type="text" value="${esc(unitName)}" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm text-slate-600" readonly></td>
-            <td class="px-3 py-2"><input data-col="override_qty" data-no-stepper="true" type="number" min="0.001" step="0.001" value="${esc(row.override_qty ?? "")}" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "readonly"}></td>
-            <td class="px-3 py-2"><select data-col="replacement_rm_item_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(options.rmItems || [], row.replacement_rm_item_id, (r) => r.name || r.code || r.id)}</select></td>
-            <td class="px-3 py-2"><select data-col="rm_color_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(rmColorOptions, row.rm_color_id)}</select></td>
-            <td class="px-3 py-2 text-center"><input data-col="is_excluded" type="checkbox" ${row.is_excluded ? "checked" : ""} ${editable ? "" : "disabled"}></td>
-            <td class="px-3 py-2 text-right">${editable ? actionButtons("sku_override") : ""}</td>
-          </tr>`;
-        })
-        .join("");
-    };
-
     const setRmViewMode = (mode) => {
-      const allowedModes = new Set(["sku_rules", "materials", "size_rules", "color_rules", "packing_rules"]);
-      const requestedMode = allowedModes.has(mode) ? mode : "materials";
-      const isAdvancedRequested = ["size_rules", "color_rules", "packing_rules"].includes(requestedMode);
-      rmViewMode = isAdvancedRequested && rmEditorMode !== "advanced" ? "materials" : requestedMode;
+      rmViewMode = ["materials", "sku_rules"].includes(mode) ? mode : "materials";
       rmViewPanels.forEach((panel) => {
         const panelMode = String(panel.getAttribute("data-rm-view") || "");
         panel.classList.toggle("hidden", panelMode !== rmViewMode);
@@ -1865,36 +1811,6 @@
       });
       if (rmViewMode === "sku_rules") {
         renderSkuRules();
-        if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
-      } else if (rmViewMode === "size_rules") {
-        syncStateFromDom();
-        renderRules();
-        if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
-      } else if (rmViewMode === "color_rules") {
-        syncStateFromDom();
-        renderColorRules();
-        if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
-      }
-    };
-    const setRmEditorMode = (mode) => {
-      rmEditorMode = ["materials", "sku_rules", "advanced"].includes(mode) ? mode : "materials";
-      rmModeToggleButtons.forEach((button) => {
-        const buttonMode = String(button.getAttribute("data-rm-mode-toggle") || "");
-        button.setAttribute("data-active", buttonMode === rmEditorMode ? "true" : "false");
-      });
-      if (rmAdvancedTogglesHost) {
-        const hideAdvanced = rmEditorMode !== "advanced";
-        rmAdvancedTogglesHost.classList.toggle("hidden", hideAdvanced);
-        rmAdvancedTogglesHost.hidden = hideAdvanced;
-        rmAdvancedTogglesHost.setAttribute("aria-hidden", hideAdvanced ? "true" : "false");
-      }
-      if (rmEditorMode === "advanced") {
-        const currentAdvancedMode = ["size_rules", "color_rules", "packing_rules"].includes(rmViewMode)
-          ? rmViewMode
-          : "size_rules";
-        setRmViewMode(currentAdvancedMode);
-      } else {
-        setRmViewMode(rmEditorMode);
       }
     };
     const setLabourViewMode = (mode) => {
@@ -1915,56 +1831,65 @@
 
     const renderAll = () => {
       updateSfgPartColumnPresentation();
+      renderStageRoutes();
       renderRm();
+      renderSkuRules();
       renderSfg();
       renderLabourSelection();
       renderLabourRules();
-      renderRules();
-      renderColorRules();
-      renderPackingRules();
-      renderSkuOverrides();
+      if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+    };
+    const renderRmWithSkuRules = () => {
+      renderRm();
       renderSkuRules();
+      if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+    };
+    const renderLabourSections = () => {
+      renderLabourSelection();
+      renderLabourRules();
       if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
     };
 
     const addDefaults = {
       rm: () => ({ rm_item_id: "", color_id: "", size_id: "", dept_id: "", qty: 1, uom_id: "", normal_loss_pct: 0 }),
       sfg: () => ({ fg_sku_id: "", fg_size_id: "", sfg_sku_id: "", required_qty: "", uom_id: "" }),
+      stage_route: () => ({ dept_id: "", stage_id: "", sequence_no: "", is_required: true }),
       labour_selection: () => defaultLabourSelectionRow(),
-      rule: () => ({ size_scope: "SPECIFIC", size_id: "", packing_scope: "ALL", packing_type_id: null, color_scope: "ALL", color_id: null, action_type: "ADJUST_QTY", material_scope: "SPECIFIC", target_rm_item_id: "", new_value: { qty: "", uom_id: "" } }),
-      color_rule: () => ({ target_rm_item_id: "", sku_color_id: "", rm_color_id: "" }),
-      packing_rule: () => ({ target_rm_item_id: "", packing_type_id: "", size_id: "", replacement_rm_item_id: "" }),
       sku_override: () => ({ sku_id: "", target_rm_item_id: "", dept_id: "", is_excluded: false, override_qty: "", replacement_rm_item_id: "", rm_color_id: "" }),
     };
+    const getStateKeyForRowType = (type) => (type === "stage_route" ? "stage_routes" : type);
 
     const addRow = (type, insertAtIndex = null) => {
       if (!editable || !addDefaults[type]) return;
+      const stateKey = getStateKeyForRowType(type);
       syncStateFromDom();
+      if (!Array.isArray(state[stateKey])) state[stateKey] = [];
       const nextRow = addDefaults[type]();
-      if (type === "color_rule") {
-        const scopeKey = toColorScopeKey(state.colorRuleOpenScope);
-        nextRow.sku_color_id = scopeKey === "ALL" ? "" : scopeKey;
-      }
-      if (Number.isInteger(insertAtIndex) && insertAtIndex >= 0 && insertAtIndex <= state[type].length) {
-        state[type].splice(insertAtIndex, 0, nextRow);
+      if (Number.isInteger(insertAtIndex) && insertAtIndex >= 0 && insertAtIndex <= state[stateKey].length) {
+        state[stateKey].splice(insertAtIndex, 0, nextRow);
       } else {
-        state[type].push(nextRow);
+        state[stateKey].push(nextRow);
       }
       if (type === "labour_selection") {
         syncLabourLinesFromSelectionAndRates();
+        renderLabourSections();
+        return;
+      }
+      if (type === "rm") {
+        renderRmWithSkuRules();
+        return;
       }
       renderAll();
     };
 
     const ensureMinimumRows = () => {
       if (!editable) return;
-      ["rm", "labour_selection"].forEach((type) => {
-        if (!Array.isArray(state[type]) || state[type].length === 0) {
-          state[type] = [addDefaults[type]()];
+      ["rm", "stage_route", "labour_selection"].forEach((type) => {
+        const stateKey = getStateKeyForRowType(type);
+        if (!Array.isArray(state[stateKey]) || state[stateKey].length === 0) {
+          state[stateKey] = [addDefaults[type]()];
         }
       });
-      if (!Array.isArray(state.color_rule)) state.color_rule = [];
-      if (!Array.isArray(state.packing_rule)) state.packing_rule = [];
       if (!Array.isArray(state.sku_override)) state.sku_override = [];
       syncLabourLinesFromSelectionAndRates();
     };
@@ -1979,17 +1904,11 @@
         if (Number.isFinite(idx)) addRow(type, idx + 1);
         return;
       }
-      const rmModeToggleBtn = event.target.closest("[data-rm-mode-toggle]");
-      if (rmModeToggleBtn) {
-        const nextMode = String(rmModeToggleBtn.getAttribute("data-rm-mode-toggle") || "materials");
-        setRmEditorMode(nextMode);
-        return;
-      }
       const rmViewToggleBtn = event.target.closest("[data-rm-view-toggle]");
       if (rmViewToggleBtn) {
         const nextMode = String(rmViewToggleBtn.getAttribute("data-rm-view-toggle") || "materials");
-        if (rmEditorMode !== "advanced") setRmEditorMode("advanced");
         setRmViewMode(nextMode);
+        if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
         return;
       }
       const labourViewToggleBtn = event.target.closest("[data-labour-view-toggle]");
@@ -2003,13 +1922,6 @@
         state.skuRuleOpenSkuId = String(skuRuleChipBtn.getAttribute("data-sku-rule-chip") || "");
         renderSkuRules();
         if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
-        return;
-      }
-      const ruleToggleBtn = event.target.closest("[data-rule-toggle-size]");
-      if (ruleToggleBtn) {
-        syncRuleRowsFromDom();
-        state.ruleOpenSizeId = String(ruleToggleBtn.getAttribute("data-rule-toggle-size") || "");
-        renderRules();
         return;
       }
       const labourRuleChipBtn = event.target.closest("[data-labour-rule-chip]");
@@ -2028,42 +1940,27 @@
         if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
         return;
       }
-      const colorRuleToggleBtn = event.target.closest("[data-color-rule-toggle-scope]");
-      if (colorRuleToggleBtn) {
-        syncStateFromDom();
-        const nextScope = toColorScopeKey(colorRuleToggleBtn.getAttribute("data-color-rule-toggle-scope"));
-        state.colorRuleOpenScope = nextScope;
-        const hasRowsForScope = (state.color_rule || []).some((row) => toColorScopeKey(row.sku_color_id) === nextScope);
-        if (!hasRowsForScope && editable) {
-          state.color_rule.push({
-            target_rm_item_id: "",
-            sku_color_id: nextScope === "ALL" ? "" : nextScope,
-            rm_color_id: "",
-          });
-        }
-        renderColorRules();
-        if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
-        return;
-      }
-      const ruleRemoveBtn = event.target.closest("[data-rule-remove-entry]");
-      if (ruleRemoveBtn) {
-        const key = String(ruleRemoveBtn.getAttribute("data-rule-remove-entry") || "");
-        state.ruleRemovedKeys.add(key);
-        state.rule = normalizeRuleRows(state.rule).filter((row) => `${row.size_id}:${row.target_rm_item_id}` !== key);
-        renderRules();
-        return;
-      }
       const removeBtn = event.target.closest("[data-remove-row]");
       if (!removeBtn) return;
       const type = removeBtn.getAttribute("data-remove-row");
       const row = removeBtn.closest("tr");
       const idx = Number(row?.getAttribute("data-row-index"));
       if (!Number.isFinite(idx)) return;
+      const stateKey = getStateKeyForRowType(type);
       syncStateFromDom();
-      state[type].splice(idx, 1);
-      const keepAtLeastOne = new Set(["rm", "labour_selection"]);
-      if (!state[type].length && addDefaults[type] && keepAtLeastOne.has(type)) state[type].push(addDefaults[type]());
-      if (type === "labour_selection") syncLabourLinesFromSelectionAndRates();
+      if (!Array.isArray(state[stateKey])) return;
+      state[stateKey].splice(idx, 1);
+      const keepAtLeastOne = new Set(["rm", "stage_route", "labour_selection"]);
+      if (!state[stateKey].length && addDefaults[type] && keepAtLeastOne.has(type)) state[stateKey].push(addDefaults[type]());
+      if (type === "labour_selection") {
+        syncLabourLinesFromSelectionAndRates();
+        renderLabourSections();
+        return;
+      }
+      if (type === "rm") {
+        renderRmWithSkuRules();
+        return;
+      }
       renderAll();
     });
 
@@ -2078,26 +1975,53 @@
         if (!headerCommittedState) headerCommittedState = getHeaderState();
         const nextHeaderState = getHeaderState();
         if (isSameHeaderState(nextHeaderState, headerCommittedState)) return;
+        const headerChangeKind = getHeaderChangeKind(headerCommittedState, nextHeaderState);
         syncStateFromDom();
         if (!hasDependentBomData()) {
           commitHeaderChange(changedField);
           return;
         }
-        const decision = await openHeaderChangeModal();
-        if (decision === "save") {
+        const modalConfig = headerChangeKind === "identity"
+          ? headerModalCopy.identity
+          : (headerChangeKind === "uom" ? headerModalCopy.uom : headerModalCopy.qty);
+        const decision = await openHeaderChangeModal(modalConfig);
+        if (decision === "secondary" && headerChangeKind === "identity") {
+          setSwitchAfterSaveIntent(nextHeaderState);
           applyHeaderState(headerCommittedState);
           if (bomForm instanceof HTMLFormElement) {
+            if (submitIntentInput) submitIntentInput.value = "";
             allowBomSubmit = true;
             bomForm.requestSubmit();
           }
           return;
         }
-        if (decision === "discard") {
-          resetDependentBomStateForHeaderChange();
+        if (decision === "apply") {
+          clearSwitchAfterSaveIntent();
+          if (headerChangeKind === "identity") {
+            resetDependentBomStateForHeaderChange();
+          } else {
+            clearQuantityFieldsForHeaderChange();
+          }
           commitHeaderChange(changedField);
           return;
         }
         applyHeaderState(headerCommittedState);
+        return;
+      }
+      const stageControl = event.target.closest('[data-lines-body="stage_route"] [data-col="dept_id"]');
+      if (stageControl) {
+        syncStateFromDom();
+        const stageRow = stageControl.closest("tr");
+        const stageRowIndex = Number(stageRow?.getAttribute("data-row-index"));
+        const selectedDeptId = String(stageControl.value || "").trim();
+        if (selectedDeptId && Number.isFinite(stageRowIndex) && stageRowIndex === (state.stage_routes.length - 1)) {
+          state.stage_routes.push(addDefaults.stage_route());
+          renderStageRoutes();
+        }
+        pruneDepartmentScopedRows();
+        syncLabourLinesFromSelectionAndRates();
+        renderRmWithSkuRules();
+        renderLabourSections();
         return;
       }
       const skuRuleControl = event.target.closest("[data-sku-rule-col]");
@@ -2155,11 +2079,10 @@
         syncStateFromDom();
         const rowIndex = Number(row?.getAttribute("data-row-index"));
         if (Number.isFinite(rowIndex) && resolveRmDuplicateOnChange(rowIndex, "rm_item_id")) {
-          renderAll();
-          if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+          renderRmWithSkuRules();
           return;
         }
-        renderAll();
+        renderSkuRules();
         if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
         return;
       }
@@ -2169,12 +2092,17 @@
         syncStateFromDom();
         const rowIndex = Number(row?.getAttribute("data-row-index"));
         if (Number.isFinite(rowIndex) && resolveRmDuplicateOnChange(rowIndex, "dept_id")) {
-          renderAll();
-          if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+          renderRmWithSkuRules();
           return;
         }
-        renderAll();
-        if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+        const selectedDeptId = String(rmDeptControl.value || "").trim();
+        const stageChanged = selectedDeptId ? upsertStageRouteForDepartment(selectedDeptId) : false;
+        if (stageChanged) {
+          renderStageRoutes();
+        }
+        syncLabourLinesFromSelectionAndRates();
+        renderRmWithSkuRules();
+        renderLabourSections();
         return;
       }
       const labourControl = event.target.closest('[data-lines-body="labour_selection"] [data-col="labour_id"]');
@@ -2184,33 +2112,49 @@
         syncStateFromDom();
         const rowIndex = Number(row?.getAttribute("data-row-index"));
         if (Number.isFinite(rowIndex) && resolveLabourSelectionDuplicateOnChange(rowIndex, "labour_id")) {
-          renderAll();
-          if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+          renderLabourSections();
           return;
         }
-        renderLabourRules();
-        if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+        renderLabourSections();
         return;
       }
       const labourSelectionControl = event.target.closest('[data-lines-body="labour_selection"] [data-col="dept_id"], [data-lines-body="labour_selection"] [data-col="rate_type"]');
       if (labourSelectionControl) {
         syncStateFromDom();
         const labourDeptControl = labourSelectionControl.closest('[data-col="dept_id"]');
+        let stageChanged = false;
         if (labourDeptControl) {
           const row = labourDeptControl.closest("tr");
           const rowIndex = Number(row?.getAttribute("data-row-index"));
           if (Number.isFinite(rowIndex) && resolveLabourSelectionDuplicateOnChange(rowIndex, "dept_id")) {
-            renderAll();
-            if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+            renderLabourSections();
             return;
           }
+          const selectedDeptId = String(labourDeptControl.value || "").trim();
+          if (selectedDeptId) stageChanged = upsertStageRouteForDepartment(selectedDeptId);
         }
-        renderLabourRules();
-        if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+        if (stageChanged) {
+          renderStageRoutes();
+        }
+        renderLabourSections();
         return;
       }
       const labourRateControl = event.target.closest('[data-lines-body="labour_rule"] [data-labour-rule-col="rate_value"]');
       if (labourRateControl) {
+        const ruleRow = labourRateControl.closest("[data-labour-rule-entry]");
+        const labourId = String(ruleRow?.getAttribute("data-labour-id") || "").trim();
+        const deptId = String(ruleRow?.getAttribute("data-dept-id") || "").trim();
+        const rateType = normalizeLabourRateType(ruleRow?.getAttribute("data-rate-type"));
+        const sizeId = String(ruleRow?.getAttribute("data-size-id") || "ALL").trim() || "ALL";
+        const key = toLabourRateKey({ labour_id: labourId, dept_id: deptId, rate_type: rateType }, sizeId);
+        const locked = String(ruleRow?.getAttribute("data-rate-locked") || "0") === "1" || isLabourRateLockedByKey(key);
+        if (locked) {
+          if (labourRateControl instanceof HTMLInputElement) {
+            labourRateControl.value = String(state.labourRuleRateMap?.[key] || "").trim();
+          }
+          showErrorModal("<%= t('bom_labour_locked_message') || 'This rate is managed from Labour Rates and is read-only in Add BOM.' %>");
+          return;
+        }
         syncLabourRulesFromDom();
         syncLabourLinesFromSelectionAndRates();
         return;
@@ -2218,9 +2162,22 @@
       const sfgSkuControl = event.target.closest('[data-col="sfg_sku_id"]');
       if (sfgSkuControl) {
         const row = sfgSkuControl.closest("tr");
-        const uomId = sfgSkuUomById.get(String(sfgSkuControl.value || "")) || "";
+        const selectedSkuId = String(sfgSkuControl.value || "").trim();
+        const uomId = sfgSkuUomById.get(selectedSkuId) || "";
         const hidden = row?.querySelector('[data-col="uom_id"]');
+        const display = row?.querySelector('[data-col-display="uom_id"]');
+        const qtyInput = row?.querySelector('[data-col="required_qty"]');
         if (hidden) hidden.value = uomId;
+        if (display) display.value = getUomName(uomId);
+        if (selectedSkuId && qtyInput) {
+          const currentQty = String(qtyInput.value || "").trim();
+          if (!currentQty || Number(currentQty) <= 0) {
+            const defaultRequiredQty = getDefaultSfgRequiredQty(selectedSkuId);
+            if (defaultRequiredQty) qtyInput.value = defaultRequiredQty;
+          }
+        }
+        syncStateFromDom();
+        return;
       }
       const fgSkuControl = event.target.closest('[data-col="fg_sku_id"]');
       if (fgSkuControl) {
@@ -2228,11 +2185,6 @@
         const fgSku = findHeaderSkuById(fgSkuControl.value);
         const hiddenSize = row?.querySelector('[data-col="fg_size_id"]');
         if (hiddenSize) hiddenSize.value = String(fgSku?.size_id || "");
-      }
-      const genericRuleTarget = event.target.closest('[data-col="target_rm_item_id"], [data-col="sku_id"]');
-      if (genericRuleTarget) {
-        syncStateFromDom();
-        renderAll();
       }
     });
 
@@ -2253,9 +2205,8 @@
       }
       const rowConfigs = [
         { type: "rm", fieldOrder: ["rm_item_id", "dept_id"] },
+        { type: "stage_route", fieldOrder: ["dept_id", "is_required"] },
         { type: "labour_selection", fieldOrder: ["labour_id", "dept_id", "rate_type"] },
-        { type: "color_rule", fieldOrder: ["target_rm_item_id", "rm_color_id"] },
-        { type: "packing_rule", fieldOrder: ["target_rm_item_id", "packing_type_id", "size_id", "replacement_rm_item_id"] },
       ];
       rowConfigs.forEach((cfg) => {
         const linesBody = document.querySelector(`[data-lines-body="${cfg.type}"]`);
@@ -2266,7 +2217,10 @@
           fieldAttr: "data-col",
           fieldOrder: cfg.fieldOrder,
           appendRow: () => {
-            syncStateFromDom();
+            if (cfg.type === "stage_route") {
+              window.setTimeout(() => addRow(cfg.type), 0);
+              return true;
+            }
             addRow(cfg.type);
             return true;
           },
@@ -2274,6 +2228,60 @@
         });
         navigator?.bind();
       });
+      const stageBody = document.querySelector('[data-lines-body="stage_route"]');
+      if (stageBody instanceof HTMLElement) {
+        stageBody.addEventListener("click", (event) => {
+          const addBtn = event.target instanceof HTMLElement
+            ? event.target.closest('[data-add-after="stage_route"]')
+            : null;
+          if (addBtn) {
+            event.preventDefault();
+            event.stopPropagation();
+            const row = addBtn.closest("tr");
+            const idx = Number(row?.getAttribute("data-row-index"));
+            if (Number.isFinite(idx)) addRow("stage_route", idx + 1);
+            return;
+          }
+          const removeBtn = event.target instanceof HTMLElement
+            ? event.target.closest('[data-remove-row="stage_route"]')
+            : null;
+          if (!removeBtn) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const row = removeBtn.closest("tr");
+          const idx = Number(row?.getAttribute("data-row-index"));
+          if (!Number.isFinite(idx)) return;
+          syncStateFromDom();
+          state.stage_routes.splice(idx, 1);
+          if (!state.stage_routes.length) state.stage_routes.push(addDefaults.stage_route());
+          renderAll();
+        }, true);
+        stageBody.addEventListener("keyup", (event) => {
+          if (event.key !== "Enter") return;
+          const target = event.target instanceof HTMLElement ? event.target : null;
+          const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          const checkbox = target?.closest('[data-lines-body="stage_route"] [data-col="is_required"]')
+            || activeElement?.closest('[data-lines-body="stage_route"] [data-col="is_required"]');
+          if (!(checkbox instanceof HTMLElement)) return;
+          event.preventDefault();
+          syncStateFromDom();
+          const row = checkbox.closest("tr");
+          const rowIndex = Number(row?.getAttribute("data-row-index"));
+          if (!Number.isFinite(rowIndex)) return;
+          const rows = Array.isArray(state.stage_routes) ? state.stage_routes : [];
+          const nextRowIndex = rowIndex + 1;
+          if (nextRowIndex >= rows.length) {
+            addRow("stage_route");
+          }
+          window.setTimeout(() => {
+            const nextRow = document.querySelector(`[data-lines-body="stage_route"] tr[data-row-index="${nextRowIndex}"]`);
+            const nextDeptField = nextRow?.querySelector('[data-col="dept_id"]');
+            if (nextDeptField && window.VoucherRowEnterNavigation?.focusFieldElement) {
+              window.VoucherRowEnterNavigation.focusFieldElement(nextDeptField, { openSearchable: true });
+            }
+          }, 0);
+        }, true);
+      }
       const sfgBody = document.querySelector('[data-lines-body="sfg"]');
       if (sfgBody instanceof HTMLElement) {
         const sfgNavigator = window.createVoucherRowEnterNavigator({
@@ -2311,51 +2319,19 @@
     };
 
     const collectRows = (type, mapFn) => {
-      return Array.from(document.querySelectorAll(`[data-lines-body="${type}"] tr`)).map((row) => mapFn(row));
+      return Array.from(document.querySelectorAll(`[data-lines-body="${type}"] tr`)).map((row, index) => mapFn(row, index));
     };
 
     const getValue = (row, col) => row.querySelector(`[data-col="${col}"]`)?.value ?? "";
-
-    const syncRuleRowsFromDom = () => {
-      const existingRows = normalizeRuleRows(state.rule)
-        .filter((row) => !state.ruleRemovedKeys.has(`${row.size_id}:${row.target_rm_item_id}`));
-      const byKey = new Map(existingRows.map((row) => [`${row.size_id}:${row.target_rm_item_id}`, row]));
-      const domRows = Array.from(document.querySelectorAll("[data-rule-entry]"))
-        .map((row) => ({
-          size_scope: "SPECIFIC",
-          size_id: Number(row.getAttribute("data-size-id") || 0),
-          packing_scope: "ALL",
-          packing_type_id: null,
-          color_scope: "ALL",
-          color_id: null,
-          action_type: "ADJUST_QTY",
-          material_scope: "SPECIFIC",
-          target_rm_item_id: Number(row.getAttribute("data-rm-item-id") || 0),
-          new_value: {
-            qty: Number(row.querySelector("[data-rule-qty]")?.value || 0),
-            uom_id: Number(row.querySelector("[data-rule-uom]")?.value || 0) || null,
-          },
-        }))
-        .filter((row) => row.size_id && row.target_rm_item_id && row.new_value.qty > 0);
-
-      domRows.forEach((row) => {
-        const key = `${row.size_id}:${row.target_rm_item_id}`;
-        if (state.ruleRemovedKeys.has(key)) return;
-        byKey.set(key, row);
-      });
-
-      state.rule = Array.from(byKey.values()).sort((a, b) =>
-        `${a.size_id || 0}:${a.target_rm_item_id || 0}`.localeCompare(
-          `${b.size_id || 0}:${b.target_rm_item_id || 0}`,
-        ),
-      );
-    };
 
     const syncLabourRulesFromDom = () => {
       const ruleRows = Array.from(document.querySelectorAll('[data-lines-body="labour_rule"] [data-labour-rule-entry="true"]'));
       if (!ruleRows.length) return;
       if (!state.labourRuleRateMap || typeof state.labourRuleRateMap !== "object") {
         state.labourRuleRateMap = {};
+      }
+      if (!state.labourRuleLockedMap || typeof state.labourRuleLockedMap !== "object") {
+        state.labourRuleLockedMap = {};
       }
       ruleRows.forEach((row) => {
         const labourId = String(row.getAttribute("data-labour-id") || "").trim();
@@ -2366,12 +2342,32 @@
         const rateValue = String(rateInput?.value ?? "").trim();
         const selectionRow = { labour_id: labourId, dept_id: deptId, rate_type: rateType };
         const key = toLabourRateKey(selectionRow, sizeId);
+        const rowLocked = String(row.getAttribute("data-rate-locked") || "0") === "1" || isLabourRateLockedByKey(key);
+        if (rowLocked) return;
         if (!labourId || !deptId || !rateValue) {
           delete state.labourRuleRateMap[key];
           return;
         }
         state.labourRuleRateMap[key] = rateValue;
       });
+    };
+    const getSanitizedStageRoutesForSubmission = () => {
+      const rows = Array.isArray(state.stage_routes) ? state.stage_routes : [];
+      return rows
+        .map((row) => {
+          const deptId = String(row?.dept_id || "").trim();
+          return {
+            dept_id: deptId,
+            stage_id: stageIdByDeptId.get(deptId) || String(row?.stage_id || "").trim(),
+            sequence_no: Number(row?.sequence_no || 0),
+            is_required: row?.is_required !== false,
+          };
+        })
+        .filter((row) => row.dept_id)
+        .map((row, index) => ({
+          ...row,
+          sequence_no: Number(index + 1),
+        }));
     };
 
     const syncStateFromDom = () => {
@@ -2394,6 +2390,12 @@
       if (!shouldShowSfgSection()) {
         state.sfg = [];
       }
+      state.stage_routes = collectRows("stage_route", (row, index) => ({
+        dept_id: getValue(row, "dept_id"),
+        stage_id: stageIdByDeptId.get(String(getValue(row, "dept_id") || "").trim()) || "",
+        sequence_no: Number(index + 1),
+        is_required: row.querySelector('[data-col="is_required"]')?.checked !== false,
+      }));
       state.labour_selection = collectRows("labour_selection", (row) => normalizeLabourSelectionRow({
         labour_id: getValue(row, "labour_id"),
         dept_id: getValue(row, "dept_id"),
@@ -2402,17 +2404,6 @@
       if (!state.labour_selection.length) state.labour_selection = [defaultLabourSelectionRow()];
       syncLabourRulesFromDom();
       syncLabourLinesFromSelectionAndRates();
-      state.color_rule = collectRows("color_rule", (row) => ({
-        target_rm_item_id: getValue(row, "target_rm_item_id"),
-        sku_color_id: getValue(row, "sku_color_id"),
-        rm_color_id: getValue(row, "rm_color_id"),
-      })).filter((row) => row.target_rm_item_id || row.sku_color_id || row.rm_color_id);
-      state.packing_rule = collectRows("packing_rule", (row) => ({
-        target_rm_item_id: getValue(row, "target_rm_item_id"),
-        packing_type_id: getValue(row, "packing_type_id"),
-        size_id: getValue(row, "size_id"),
-        replacement_rm_item_id: getValue(row, "replacement_rm_item_id"),
-      })).filter((row) => row.target_rm_item_id || row.packing_type_id || row.size_id || row.replacement_rm_item_id);
       const skuOverrideBody = document.querySelector('[data-lines-body="sku_override"]');
       if (skuOverrideBody) {
         state.sku_override = collectRows("sku_override", (row) => ({
@@ -2427,57 +2418,6 @@
       } else if (!Array.isArray(state.sku_override)) {
         state.sku_override = [];
       }
-      syncRuleRowsFromDom();
-    };
-
-    const composeVariantRulesPayload = () => {
-      const sizeRules = normalizeRuleRows(state.rule).map((row) => ({
-        size_scope: "SPECIFIC",
-        size_id: Number(row.size_id || 0) || null,
-        packing_scope: "ALL",
-        packing_type_id: null,
-        color_scope: "ALL",
-        color_id: null,
-        action_type: "ADJUST_QTY",
-        material_scope: "SPECIFIC",
-        target_rm_item_id: Number(row.target_rm_item_id || 0) || null,
-        new_value: {
-          qty: Number(row.new_value?.qty || 0) || null,
-          uom_id: Number(row.new_value?.uom_id || 0) || null,
-        },
-      })).filter((row) => row.size_id && row.target_rm_item_id && row.new_value.qty && row.new_value.uom_id);
-
-      const colorRules = (state.color_rule || []).map((row) => ({
-        size_scope: "ALL",
-        size_id: null,
-        packing_scope: "ALL",
-        packing_type_id: null,
-        color_scope: row.sku_color_id ? "SPECIFIC" : "ALL",
-        color_id: row.sku_color_id ? Number(row.sku_color_id) : null,
-        action_type: "REPLACE_RM",
-        material_scope: "SPECIFIC",
-        target_rm_item_id: Number(row.target_rm_item_id || 0) || null,
-        new_value: {
-          rm_color_id: Number(row.rm_color_id || 0) || null,
-        },
-      })).filter((row) => row.target_rm_item_id && row.new_value.rm_color_id);
-
-      const packingRules = (state.packing_rule || []).map((row) => ({
-        size_scope: row.size_id ? "SPECIFIC" : "ALL",
-        size_id: row.size_id ? Number(row.size_id) : null,
-        packing_scope: row.packing_type_id ? "SPECIFIC" : "ALL",
-        packing_type_id: row.packing_type_id ? Number(row.packing_type_id) : null,
-        color_scope: "ALL",
-        color_id: null,
-        action_type: "REPLACE_RM",
-        material_scope: "SPECIFIC",
-        target_rm_item_id: Number(row.target_rm_item_id || 0) || null,
-        new_value: {
-          replacement_rm_item_id: Number(row.replacement_rm_item_id || 0) || null,
-        },
-      })).filter((row) => row.target_rm_item_id && row.packing_type_id && row.new_value.replacement_rm_item_id);
-
-      return [...sizeRules, ...colorRules, ...packingRules];
     };
 
     document.getElementById("bom-form")?.addEventListener("submit", (event) => {
@@ -2498,11 +2438,32 @@
         return;
       }
 
+      const { entries: skuRuleEntries, errors: skuRuleErrors } = buildSkuRulesForSubmission();
+      if (skuRuleErrors.length) {
+        event.preventDefault();
+        const detailText = skuRuleErrors.slice(0, 20).map((msg, idx) => `${idx + 1}. ${msg}`).join("\n");
+        showErrorModal([
+          "<%= t('bom_error_approval_missing_sku_rules') || 'Complete all SKU Rules rows (quantity and required color variant) before sending for approval.' %>",
+          detailText,
+        ].filter(Boolean).join("\n"));
+        return;
+      }
+      const aggregatedRmLines = aggregateRmLinesFromSkuRules(skuRuleEntries);
+      if (aggregatedRmLines.some((line) => !Number.isFinite(Number(line?.qty || 0)) || Number(line?.qty || 0) <= 0)) {
+        event.preventDefault();
+        showErrorModal("<%= t('bom_error_approval_missing_sku_rules') || 'Complete all SKU Rules rows (quantity and required color variant) before sending for approval.' %>");
+        return;
+      }
+      state.rm = aggregatedRmLines;
+
       document.querySelector('[data-lines-json="rm_lines"]').value = JSON.stringify(state.rm);
+      document.querySelector('[data-lines-json="sku_rules"]').value = JSON.stringify(skuRuleEntries || []);
       document.querySelector('[data-lines-json="sfg_lines"]').value = JSON.stringify(state.sfg);
       document.querySelector('[data-lines-json="labour_lines"]').value = JSON.stringify(state.labour);
-      document.querySelector('[data-lines-json="variant_rules"]').value = JSON.stringify(composeVariantRulesPayload());
-      document.querySelector('[data-lines-json="sku_overrides"]').value = JSON.stringify(state.sku_override || []);
+      document.querySelector('[data-lines-json="stage_routes"]').value = JSON.stringify(getSanitizedStageRoutesForSubmission());
+      if (isExplicitApprove) {
+        clearSwitchAfterSaveIntent();
+      }
       if (submitIntentInput) {
         submitIntentInput.value = isExplicitApprove ? "approve" : "";
       }
@@ -2511,10 +2472,16 @@
     bomForm = document.getElementById("bom-form");
     if (bomForm instanceof HTMLFormElement) {
       submitIntentInput = bomForm.querySelector("[data-bom-submit-intent]");
+      switchAfterSaveInput = bomForm.querySelector("[data-bom-switch-after-save]");
+      switchLevelInput = bomForm.querySelector("[data-bom-switch-level]");
+      switchItemIdInput = bomForm.querySelector("[data-bom-switch-item-id]");
+      switchOutputQtyInput = bomForm.querySelector("[data-bom-switch-output-qty]");
+      switchOutputUomInput = bomForm.querySelector("[data-bom-switch-output-uom-id]");
       saveDraftBtn = bomForm.querySelector("[data-bom-save-draft]");
       approveNowBtn = document.querySelector("[data-bom-approve-now]");
       if (saveDraftBtn instanceof HTMLButtonElement) {
         saveDraftBtn.addEventListener("click", () => {
+          clearSwitchAfterSaveIntent();
           if (submitIntentInput) submitIntentInput.value = "";
           allowBomSubmit = true;
           bomForm.requestSubmit();
@@ -2522,6 +2489,7 @@
       }
       if (approveNowBtn instanceof HTMLButtonElement) {
         approveNowBtn.addEventListener("click", () => {
+          clearSwitchAfterSaveIntent();
           if (submitIntentInput) submitIntentInput.value = "approve";
           allowBomSubmit = true;
           bomForm.requestSubmit();
@@ -2557,11 +2525,11 @@
 
     initializeLabourStateFromExistingLines();
     ensureMinimumRows();
-    state.rule = normalizeRuleRows(state.rule);
     renderHeaderItemsByLevel(true);
+    applyLabourDefaultsForSelectedItem(false);
     updateHeaderSectionState();
     renderAll();
-    setRmEditorMode("materials");
+    setRmViewMode("materials");
     setLabourViewMode("selection");
     bindEnterNavigation();
     headerCommittedState = getHeaderState();
@@ -2579,7 +2547,7 @@
         }
         window.__pendingUiErrorModalPayload = { message: modalMessage, title: modalTitle };
       };
-      window.setTimeout(showServerErrors, 0);
+      showServerErrors();
     }
   })();
 </script>

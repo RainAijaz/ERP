@@ -151,6 +151,9 @@ const translations = {
     type: "Type",
     search: "Search",
     all: "All",
+    dozens: "Dozens",
+    unit_pair: "Pair",
+    unit_dozen: "Dozen",
     others: "Others",
     none: "NONE",
     not_applicable: "N/A",
@@ -339,6 +342,10 @@ const translations = {
     error_duplicate_code: "Code already exists.",
     error_duplicate_name:
       "Request could not be approved because the name already exists.",
+    error_pair_uom_missing:
+      "PAIR UOM is missing. Run the latest database migration.",
+    error_production_base_unit_pair:
+      "Finished and Semi-Finished articles must use PAIR as base unit.",
 
     // --- EXISTING KEYS (Preserved) ---
     units: "Units",
@@ -391,6 +398,7 @@ const translations = {
     error_select_vendor_capabilities:
       "Please select at least one vendor capability for supplier.",
     departments: "Departments",
+    production_stages: "Production Stages",
     product_groups: "Product Groups",
     product_group: "Product Group",
     product_subgroups: "Product Sub-Groups",
@@ -412,6 +420,7 @@ const translations = {
     group: "Group",
     sub_group: "Sub Group",
     base_unit: "Base Unit",
+    pair_uom_required: "PAIR UOM required",
     category: "Category",
     uses_sfg: "Uses SFG",
     sfg_part: "SFG Part",
@@ -448,14 +457,14 @@ const translations = {
     bom_output_qty: "Output Quantity",
     bom_output_batch_size: "Planned Output Qty",
     bom_output_uom: "Output Unit (UOM)",
-    bom_tab_rm: "Raw Material Inputs for This BOM",
+    bom_tab_rm: "List Raw Material Used for This Article",
     bom_tab_sfg: "List Semi-Finished Products Used (If Any)",
     bom_tab_sfg_per_sku: "List Semi-Finished Products Used For Each SKU",
-    bom_tab_labour: "List Labour Rates by Size and Department",
+    bom_tab_labour: "List Labour Rates For This Article",
     bom_tab_variant_rules: "Variant Rules",
     bom_rm_rules_size_wise: "Size-Wise Raw Material Rules",
     bom_rm_section_hint:
-      "Add all raw materials required for one planned output batch, then fine-tune size-specific rules if needed.",
+      "Add raw materials and departments here. Enter quantities in SKU Rules.",
     bom_rm_view_material_lines: "Material Lines",
     bom_rm_view_variant_rules: "Size Rules",
     bom_sku_rules: "SKU Rules",
@@ -472,13 +481,16 @@ const translations = {
     bom_labour_selection_title: "Labours Selection",
     bom_labour_selection_hint:
       "Select labour, department, and rate type. Size-wise rates are set below.",
-    bom_labour_size_rules_title: "Size Rules",
+    bom_labour_size_rules_title: "SKU Rules",
     bom_labour_size_rules_hint:
-      "Rates apply to all SKUs matching the selected size.",
+      "Select a SKU to add labour rates based on rate type.",
+    bom_labour_col_rate: "Rate",
+    bom_labour_locked_from_rates: "Locked (from Labour Rates)",
+    bom_labour_locked_message:
+      "This rate is managed from Labour Rates and is read-only in Add BOM.",
     bom_labour_sku_rules_hint:
       "Select a SKU to set labour rates. These rates apply by SKU size scope.",
-    bom_no_labour_selected:
-      "Add labour lines first to set size-wise rates.",
+    bom_no_labour_selected: "Add labour lines first to set size-wise rates.",
     bom_packing_rules: "Packing Rules",
     bom_sku_overrides: "SKU Overrides",
     bom_rm_col_material: "Material",
@@ -493,50 +505,37 @@ const translations = {
     bom_hint_consumption_department:
       "Production department that consumes this material.",
     bom_hint_actions: "Use plus/minus to add or remove rows.",
-    bom_hint_size_rule_material:
-      "Material to which this size rule applies.",
+    bom_hint_size_rule_material: "Material to which this size rule applies.",
     bom_hint_size_rule_uom: "Unit for the size-specific quantity.",
-    bom_hint_size_rule_qty:
-      "Required quantity for the selected size.",
+    bom_hint_size_rule_qty: "Required quantity for the selected size.",
     bom_hint_color_rule_material:
       "Material whose color mapping you want to control.",
     bom_hint_rm_color:
       "Raw material color to consume for the selected SKU scope.",
-    bom_hint_packing_rule_material:
-      "Base material that will be replaced.",
-    bom_hint_packing:
-      "Packing type condition for this replacement.",
+    bom_hint_packing_rule_material: "Base material that will be replaced.",
+    bom_hint_packing: "Packing type condition for this replacement.",
     bom_hint_size_optional:
       "Optional size filter; leave blank to apply for all sizes.",
-    bom_hint_replace_with:
-      "Material to consume instead of base material.",
+    bom_hint_replace_with: "Material to consume instead of base material.",
     bom_hint_sku: "Specific SKU for this exception rule.",
-    bom_hint_target_rm:
-      "Target raw material to override for this SKU.",
+    bom_hint_target_rm: "Target raw material to override for this SKU.",
     bom_hint_override_qty:
       "Optional quantity override for this SKU and material.",
     bom_hint_exclude: "Exclude this material for the selected SKU.",
     bom_hint_size: "Size scope for this line.",
     bom_hint_article_sku: "Finished article SKU this row applies to.",
-    bom_hint_semi_finished:
-      "Semi-finished SKU used in this BOM.",
+    bom_hint_semi_finished: "Semi-finished SKU used in this BOM.",
     bom_hint_step_upper_sku:
       "Select the semi-finished SKU used for this finished SKU.",
-    bom_hint_step_sku:
-      "Select step SKU used for this finished SKU.",
-    bom_hint_upper_sku:
-      "Select upper SKU used for this finished SKU.",
-    bom_hint_required_qty:
-      "Required quantity for this line.",
+    bom_hint_step_sku: "Select step SKU used for this finished SKU.",
+    bom_hint_upper_sku: "Select upper SKU used for this finished SKU.",
+    bom_hint_required_qty: "Required quantity for this line.",
     bom_hint_step_quantity:
       "Quantity of selected step/upper SKU required for this finished SKU.",
     bom_hint_labour: "Labour master to apply cost from.",
-    bom_hint_department:
-      "Production department for this labour.",
-    bom_hint_rate_type:
-      "Cost basis (per pair or per dozen).",
-    bom_hint_rate_value:
-      "Rate amount for selected basis.",
+    bom_hint_department: "Production department for this labour.",
+    bom_hint_rate_type: "Cost basis (per pair or per dozen).",
+    bom_hint_rate_value: "Rate amount for selected basis.",
     bom_source_base: "Base",
     bom_source_size_rule: "Size Rule",
     bom_source_color_rule: "Color Rule",
@@ -555,11 +554,29 @@ const translations = {
     bom_all_skus_no_color: "All SKUs (no color variants)",
     bom_header_change_modal_title: "BOM setup changed",
     bom_header_change_modal_message:
-      "You changed BOM Setup fields. This can reset dependent material, SFG, and labour sections.",
+      "You changed BOM Setup fields. This affects material, SFG, and labour sections.",
     bom_header_change_modal_hint:
-      "Save Draft to keep current entries. Discard Changes to continue with the new setup and clear dependent sections.",
-    bom_header_change_modal_discard: "Clear and Continue",
-    bom_header_change_modal_save: "Save Draft and Continue",
+      "Save Draft & Switch: saves current draft and opens selected BOM context. Apply: keeps new header values and clears impacted sections.",
+    bom_header_change_modal_apply: "Apply",
+    bom_header_change_modal_save_switch: "Save Draft & Switch",
+    bom_header_change_qty_title: "Apply Planned Output Qty Change?",
+    bom_header_change_qty_message:
+      "Material/SFG quantities will be cleared. Item, level, material selections, departments, and labour selections stay.",
+    bom_header_change_qty_hint:
+      "Apply will keep new planned output quantity and clear quantity fields for re-entry.",
+    bom_header_change_uom_title: "Apply Output Unit Change?",
+    bom_header_change_uom_message:
+      "Unit-sensitive quantity fields will be cleared and need re-entry.",
+    bom_header_change_uom_hint:
+      "Apply will keep new output unit and clear quantity fields for re-entry.",
+    bom_header_change_identity_title: "Switch BOM Context?",
+    bom_header_change_identity_message:
+      "This starts a different BOM context. RM, SFG, Labour, and SKU overrides will be cleared.",
+    bom_header_change_identity_hint:
+      "Save Draft & Switch saves current draft and opens selected BOM context. Apply (Start Fresh) clears current sections and switches without saving.",
+    bom_header_change_apply_clear_quantities: "Apply (Clear Quantities)",
+    bom_header_change_apply_start_fresh: "Apply (Start Fresh)",
+    bom_header_change_save_switch: "Save Draft & Switch",
     bom_header_required_message:
       "Complete the BOM setup first. Material, SFG, and labour sections unlock after that.",
     all_sizes: "All Sizes",
@@ -577,6 +594,7 @@ const translations = {
     level: "Level",
     bom_stage: "Stage",
     bom_workflow_stage: "Stage",
+    bom_stage_mandatory_in_flow: "Mandatory In Flow",
     bom_type: "Type",
     bom_type_finished_goods: "Finished Goods BOM",
     bom_type_semi_finished: "Semi-Finished BOM",
@@ -595,10 +613,14 @@ const translations = {
     bom_error_level_required: "Please select a valid BOM level.",
     bom_error_output_qty_required: "Output quantity must be greater than zero.",
     bom_error_output_uom_required: "Output UOM is required.",
+    bom_error_item_base_uom_missing:
+      "Selected article has no base unit. Please set Base Unit in product master first.",
+    bom_error_output_uom_conversion_missing:
+      "Output Unit must have an active conversion to the article Base Unit in UOM Conversions.",
     bom_error_item_not_found: "Selected item does not exist.",
     bom_error_level_item_mismatch: "Selected level does not match item type.",
     bom_error_rm_line_invalid:
-      "Complete this raw material row: select material, department, and quantity.",
+      "Complete this raw material row: select material and department.",
     bom_error_rm_department_duplicate:
       "This material is already added for the selected consumption department. Use a different material or department.",
     bom_error_rm_item_invalid: "Raw material line must reference an RM item.",
@@ -659,7 +681,7 @@ const translations = {
     bom_error_already_pending:
       "A pending approval already exists for this BOM.",
     bom_error_fix_fields:
-      "Please complete all mandatory fields before submitting BOM for approval.",
+      "Please fix the following validation issues before saving BOM.",
     bom_error_sku_override_table_missing:
       "SKU override storage is not available. Please run latest migration.",
     bom_error_row_prefix: "Row",
@@ -676,6 +698,8 @@ const translations = {
       "Add at least one change: exclude, quantity, replacement material, or color.",
     bom_error_approval_requirements:
       "Please complete all mandatory BOM rows before sending for approval.",
+    bom_error_approval_blocked:
+      "BOM cannot be sent for approval yet. Resolve the following BOM readiness issues.",
     bom_error_approval_missing_sfg_rows:
       "Complete all Semi-Finished rows for every Article SKU before sending for approval.",
     bom_error_approval_missing_sku_rules:
@@ -809,7 +833,8 @@ const translations = {
       "A similar labour rate rule already exists.",
     placeholder_allowance_type: "House, Conveyance, Mobile",
     placeholder_raw_material_name: "e.g. Synthetic Leather Sheet",
-    placeholder_raw_material_name_ur: "e.g. Ã™â€¦Ã˜ÂµÃ™â€ Ã™Ë†Ã˜Â¹Ã›Å’ Ãšâ€ Ã™â€¦Ãšâ€˜Ã˜Â§",
+    placeholder_raw_material_name_ur:
+      "e.g. Ã™â€¦Ã˜ÂµÃ™â€ Ã™Ë†Ã˜Â¹Ã›Å’ Ãšâ€ Ã™â€¦Ãšâ€˜Ã˜Â§",
     vouchers: "Vouchers",
     cash_voucher: "Cash Voucher",
     cash_voucher_description:
@@ -1385,7 +1410,8 @@ translations.ur = {
     "(Ù†ÛŒØ§ Ù¾Ø§Ø³ ÙˆØ±Úˆ Ø¯ÛŒÚº (Ù…ÙˆØ¬ÙˆØ¯Û Ø¨Ø±Ù‚Ø±Ø§Ø± Ø±Ú©Ú¾Ù†Û’ Ú©Û’ Ù„ÛŒÛ’ Ø®Ø§Ù„ÛŒ Ú†Ú¾ÙˆÚ‘ÛŒÚº))",
   select_role: "Ø±ÙˆÙ„ Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚº",
   assigned_branches: "ØªÙÙˆÛŒØ¶ Ø´Ø¯Û Ø¨Ø±Ø§Ù†Ú†Ø²",
-  branch_access_hint: "ØµØ§Ø±Ù ØµØ±Ù ØªÙÙˆÛŒØ¶ Ø´Ø¯Û Ø¨Ø±Ø§Ù†Ú†Ø² Ú©Ø§ ÚˆÛŒÙ¹Ø§ Ø¯ÛŒÚ©Ú¾ Ø³Ú©ØªØ§ ÛÛ’Û”",
+  branch_access_hint:
+    "ØµØ§Ø±Ù ØµØ±Ù ØªÙÙˆÛŒØ¶ Ø´Ø¯Û Ø¨Ø±Ø§Ù†Ú†Ø² Ú©Ø§ ÚˆÛŒÙ¹Ø§ Ø¯ÛŒÚ©Ú¾ Ø³Ú©ØªØ§ ÛÛ’Û”",
   role: "Ø±ÙˆÙ„",
   add_role: "Ù†ÛŒØ§ Ø±ÙˆÙ„ Ø´Ø§Ù…Ù„ Ú©Ø±ÛŒÚº",
   manage_user_roles: "ØµØ§Ø±Ù Ø±ÙˆÙ„Ø² Ú©Ø§ Ø§Ù†ØªØ¸Ø§Ù… Ú©Ø±ÛŒÚº",
@@ -1410,8 +1436,10 @@ translations.ur = {
   approval_sent:
     "ØªØ¨Ø¯ÛŒÙ„ÛŒ Ú©ÛŒ Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ù…Ù†Ø¸ÙˆØ±ÛŒ Ú©Û’ Ù„ÛŒÛ’ Ø¨Ú¾ÛŒØ¬ Ø¯ÛŒ Ú¯Ø¦ÛŒ ÛÛ’Û” Ù…Ù†Ø¸ÙˆØ±ÛŒ Ú©Û’ Ø¨Ø¹Ø¯ Ù„Ø§Ú¯Ùˆ ÛÙˆÚ¯ÛŒÛ”",
   notice: "Ø§Ø·Ù„Ø§Ø¹",
-  approval_approved: "Ù…Ù†Ø¸ÙˆØ±ÛŒ Ú©ÛŒ Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ù…Ù†Ø¸ÙˆØ± ÛÙˆ Ú¯Ø¦ÛŒ ÛÛ’Û”",
-  approval_rejected: "Ù…Ù†Ø¸ÙˆØ±ÛŒ Ú©ÛŒ Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ù…Ø³ØªØ±Ø¯ Ú©Ø± Ø¯ÛŒ Ú¯Ø¦ÛŒ ÛÛ’Û”",
+  approval_approved:
+    "Ù…Ù†Ø¸ÙˆØ±ÛŒ Ú©ÛŒ Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ù…Ù†Ø¸ÙˆØ± ÛÙˆ Ú¯Ø¦ÛŒ ÛÛ’Û”",
+  approval_rejected:
+    "Ù…Ù†Ø¸ÙˆØ±ÛŒ Ú©ÛŒ Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ù…Ø³ØªØ±Ø¯ Ú©Ø± Ø¯ÛŒ Ú¯Ø¦ÛŒ ÛÛ’Û”",
   permission_denied: "Ø§Ø¬Ø§Ø²Øª Ù†ÛÛŒÚº ÛÛ’Û”",
   error_invalid_id: "ØºÙ„Ø· Ø´Ù†Ø§Ø®ØªÛ”",
   error_not_found: "Ø±ÛŒÚ©Ø§Ø±Úˆ Ù…ÙˆØ¬ÙˆØ¯ Ù†ÛÛŒÚºÛ”",
@@ -1453,7 +1481,8 @@ translations.ur = {
   select: "Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚº",
   select_date_range: "ØªØ§Ø±ÛŒØ® Ú©ÛŒ Ø­Ø¯ Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚº",
   invalid_date_range: "ØºÙ„Ø· ØªØ§Ø±ÛŒØ® Ú©ÛŒ Ø­Ø¯Û”",
-  open_date_range_picker: "ØªØ§Ø±ÛŒØ® Ú©ÛŒ Ø­Ø¯ Ù…Ù†ØªØ®Ø¨ Ú©Ø±Ù†Û’ Ú©Ø§ Ù¾ÛŒÙ†Ù„ Ú©Ú¾ÙˆÙ„ÛŒÚº",
+  open_date_range_picker:
+    "ØªØ§Ø±ÛŒØ® Ú©ÛŒ Ø­Ø¯ Ù…Ù†ØªØ®Ø¨ Ú©Ø±Ù†Û’ Ú©Ø§ Ù¾ÛŒÙ†Ù„ Ú©Ú¾ÙˆÙ„ÛŒÚº",
   delete: "Ø­Ø°Ù Ú©Ø±ÛŒÚº",
   download: "ÚˆØ§Ø¤Ù† Ù„ÙˆÚˆ",
   print: "Ù¾Ø±Ù†Ù¹",
@@ -1490,16 +1519,20 @@ translations.ur = {
   ordered_qty: "Ø¢Ø±ÚˆØ± Ù…Ù‚Ø¯Ø§Ø±",
   delivered_qty: "ÚˆÛŒÙ„ÛŒÙˆØ± Ù…Ù‚Ø¯Ø§Ø±",
   remaining_qty: "Ø¨Ù‚Ø§ÛŒØ§ Ù…Ù‚Ø¯Ø§Ø±",
-  sales_order_advance_received: "Ø³ÛŒÙ„Ø² Ø¢Ø±ÚˆØ± Ú©ÛŒ Ø§ÛŒÚˆÙˆØ§Ù†Ø³ ÙˆØµÙˆÙ„ Ø´Ø¯Û Ø±Ù‚Ù…",
+  sales_order_advance_received:
+    "Ø³ÛŒÙ„Ø² Ø¢Ø±ÚˆØ± Ú©ÛŒ Ø§ÛŒÚˆÙˆØ§Ù†Ø³ ÙˆØµÙˆÙ„ Ø´Ø¯Û Ø±Ù‚Ù…",
   sales_order_previous_payments_received:
     "Ø§Ø³ Ø¢Ø±ÚˆØ± Ú©Û’ Ù„ÛŒÛ’ Ù¾ÛÙ„Û’ Ø³Û’ ÙˆØµÙˆÙ„ Ø´Ø¯Û Ø§Ø¯Ø§Ø¦ÛŒÚ¯ÛŒØ§Úº",
   sales_order_total_amount: "Ú©Ù„ Ø¢Ø±ÚˆØ± Ø±Ù‚Ù…",
-  sales_order_total_received_with_current: "Ú©Ù„ ÙˆØµÙˆÙ„ Ø´Ø¯Û (Ø³ÛŒÙ„Ø² Ø¢Ø±ÚˆØ± + Ù…ÙˆØ¬ÙˆØ¯Û)",
-  sales_order_total_received_for_order: "Ø§Ø³ Ø¢Ø±ÚˆØ± Ú©Û’ Ù„ÛŒÛ’ Ú©Ù„ ÙˆØµÙˆÙ„ Ø´Ø¯Û",
+  sales_order_total_received_with_current:
+    "Ú©Ù„ ÙˆØµÙˆÙ„ Ø´Ø¯Û (Ø³ÛŒÙ„Ø² Ø¢Ø±ÚˆØ± + Ù…ÙˆØ¬ÙˆØ¯Û)",
+  sales_order_total_received_for_order:
+    "Ø§Ø³ Ø¢Ø±ÚˆØ± Ú©Û’ Ù„ÛŒÛ’ Ú©Ù„ ÙˆØµÙˆÙ„ Ø´Ø¯Û",
   current_voucher_amount: "Ù…ÙˆØ¬ÙˆØ¯Û ÙˆØ§Ø¤Ú†Ø± Ø±Ù‚Ù…",
   remaining_receivable: "Ø¨Ø§Ù‚ÛŒ Ù‚Ø§Ø¨Ù„ ÙˆØµÙˆÙ„ Ø±Ù‚Ù…",
   current_delivery_amount: "Ù…ÙˆØ¬ÙˆØ¯Û ÚˆÛŒÙ„ÛŒÙˆØ±ÛŒ Ø±Ù‚Ù…",
-  outstanding_for_current_delivery: "Ù…ÙˆØ¬ÙˆØ¯Û ÚˆÛŒÙ„ÛŒÙˆØ±ÛŒ Ú©Û’ Ù„ÛŒÛ’ Ø¨Ù‚Ø§ÛŒØ§",
+  outstanding_for_current_delivery:
+    "Ù…ÙˆØ¬ÙˆØ¯Û ÚˆÛŒÙ„ÛŒÙˆØ±ÛŒ Ú©Û’ Ù„ÛŒÛ’ Ø¨Ù‚Ø§ÛŒØ§",
   vendor_capabilities: "Vendor Capabilities",
   vendor_capabilities_help:
     "Choose what this supplier can handle (Material, Repair, Service).",
@@ -1536,14 +1569,16 @@ translations.ur = {
     "Ø§ÛŒÚ© ÛÛŒ Ù„Ø§Ø¦Ù† Ù…ÛŒÚº Ø³ÛŒÙ„ Ø§ÙˆØ± Ø±ÛŒÙ¹Ø±Ù† Ù…Ù‚Ø¯Ø§Ø± Ø³Ø§ØªÚ¾ Ù†ÛÛŒÚº ÛÙˆ Ø³Ú©ØªÛŒÛ”",
   error_line_sale_or_return_required:
     "ÛØ± Ù„Ø§Ø¦Ù† Ù…ÛŒÚº Ø³ÛŒÙ„ Ù…Ù‚Ø¯Ø§Ø± ÛŒØ§ Ø±ÛŒÙ¹Ø±Ù† Ù…Ù‚Ø¯Ø§Ø± Ù…ÛŒÚº Ø³Û’ Ø§ÛŒÚ© Ù„Ø§Ø²Ù…ÛŒ ÛÛ’Û”",
-  error_line_pair_rate_required: "Ù¾ÛŒØ¦Ø± Ø±ÛŒÙ¹ ØµÙØ± Ø³Û’ Ø²ÛŒØ§Ø¯Û ÛÙˆÙ†Ø§ Ù„Ø§Ø²Ù…ÛŒ ÛÛ’Û”",
+  error_line_pair_rate_required:
+    "Ù¾ÛŒØ¦Ø± Ø±ÛŒÙ¹ ØµÙØ± Ø³Û’ Ø²ÛŒØ§Ø¯Û ÛÙˆÙ†Ø§ Ù„Ø§Ø²Ù…ÛŒ ÛÛ’Û”",
   error_line_discount_must_be_less_than_rate:
     "Ù¾ÛŒØ¦Ø± ÚˆØ³Ú©Ø§Ø¤Ù†Ù¹ Ù¾ÛŒØ¦Ø± Ø±ÛŒÙ¹ Ø³Û’ Ú©Ù… ÛÙˆÙ†Ø§ Ù„Ø§Ø²Ù…ÛŒ ÛÛ’Û”",
   error_line_sales_order_line_required:
     "Ø§Ø³ Ù„Ø§Ø¦Ù† Ú©Û’ Ù„ÛŒÛ’ Ø³ÛŒÙ„Ø² Ø¢Ø±ÚˆØ± Ù„Ø§Ø¦Ù† Ù…Ù†ØªØ®Ø¨ Ú©Ø±Ù†Ø§ Ù„Ø§Ø²Ù…ÛŒ ÛÛ’Û”",
   error_line_return_not_allowed_from_so:
     "Ø³ÛŒÙ„Ø² Ø¢Ø±ÚˆØ± Ø³Û’ Ù…Ù†Ø³Ù„Ú© Ù„Ø§Ø¦Ù† Ù…ÛŒÚº Ø±ÛŒÙ¹Ø±Ù† Ù…Ù‚Ø¯Ø§Ø± Ú©ÛŒ Ø§Ø¬Ø§Ø²Øª Ù†ÛÛŒÚº ÛÛ’Û”",
-  error_line_sales_order_source_invalid: "Ù…Ù†ØªØ®Ø¨ Ø³ÛŒÙ„Ø² Ø¢Ø±ÚˆØ± Ù„Ø§Ø¦Ù† Ø¯Ø±Ø³Øª Ù†ÛÛŒÚº ÛÛ’Û”",
+  error_line_sales_order_source_invalid:
+    "Ù…Ù†ØªØ®Ø¨ Ø³ÛŒÙ„Ø² Ø¢Ø±ÚˆØ± Ù„Ø§Ø¦Ù† Ø¯Ø±Ø³Øª Ù†ÛÛŒÚº ÛÛ’Û”",
   error_line_sales_order_qty_exceeds_open:
     "Ø¯Ø±Ø¬ Ú©Ø±Ø¯Û ÚˆÙ„ÛŒÙˆØ± Ù…Ù‚Ø¯Ø§Ø± Ù…Ù†ØªØ®Ø¨ Ø³ÛŒÙ„Ø² Ø¢Ø±ÚˆØ± Ú©ÛŒ Ø§ÙˆÙ¾Ù† Ù…Ù‚Ø¯Ø§Ø± Ø³Û’ Ø²ÛŒØ§Ø¯Û ÛÛ’Û”",
   rate: "Ø±ÛŒÙ¹",
@@ -1568,7 +1603,8 @@ translations.ur = {
   account_code: "Ø§Ú©Ø§Ø¤Ù†Ù¹ Ú©ÙˆÚˆ",
   account_group: "Ø§Ú©Ø§Ø¤Ù†Ù¹ Ú¯Ø±ÙˆÙ¾",
   account_groups: "Ø§Ú©Ø§Ø¤Ù†Ù¹ Ú¯Ø±ÙˆÙ¾Ø³",
-  account_groups_description: "Ù…Ø¹ÛŒØ§Ø±ÛŒ COA Ø¹Ù†ÙˆØ§Ù†Ø§Øª Ú©Û’ ØªØ­Øª Ø°ÛŒÙ„ÛŒ Ú¯Ø±ÙˆÙ¾Ø³Û”",
+  account_groups_description:
+    "Ù…Ø¹ÛŒØ§Ø±ÛŒ COA Ø¹Ù†ÙˆØ§Ù†Ø§Øª Ú©Û’ ØªØ­Øª Ø°ÛŒÙ„ÛŒ Ú¯Ø±ÙˆÙ¾Ø³Û”",
   account_name: "Ø§Ú©Ø§Ø¤Ù†Ù¹ Ú©Ø§ Ù†Ø§Ù…",
   account_type: "Ø§Ú©Ø§Ø¤Ù†Ù¹ Ú©ÛŒ Ù‚Ø³Ù…",
   accounts: "Ø§Ú©Ø§Ø¤Ù†Ù¹Ø³",
@@ -1593,7 +1629,8 @@ translations.ur = {
   all_voucher_types: "ØªÙ…Ø§Ù… ÙˆØ§Ø¤Ú†Ø± Ú©ÛŒ Ø§Ù‚Ø³Ø§Ù…",
   allowance_type: "Ø§Ù„Ø§Ø¤Ù†Ø³ Ú©ÛŒ Ù‚Ø³Ù…",
   allowances: "Ø§Ù„Ø§Ø¤Ù†Ø³Ø²",
-  allowances_description: "Ù…Ù„Ø§Ø²Ù… Ø§Ù„Ø§Ø¤Ù†Ø³ Ú©Û’ Ù‚ÙˆØ§Ø¹Ø¯ ÛŒÛØ§Úº ØªØ±ØªÛŒØ¨ Ø¯ÛŒÛ’ Ø¬Ø§Ø¦ÛŒÚº Ú¯Û’Û”",
+  allowances_description:
+    "Ù…Ù„Ø§Ø²Ù… Ø§Ù„Ø§Ø¤Ù†Ø³ Ú©Û’ Ù‚ÙˆØ§Ø¹Ø¯ ÛŒÛØ§Úº ØªØ±ØªÛŒØ¨ Ø¯ÛŒÛ’ Ø¬Ø§Ø¦ÛŒÚº Ú¯Û’Û”",
   amount_type: "Ø±Ù‚Ù… Ú©ÛŒ Ù‚Ø³Ù…",
   amount_type_fixed: "ÙÚ©Ø³Úˆ",
   amount_type_percent_basic: "Ø¨Ù†ÛŒØ§Ø¯ÛŒ Ú©Ø§ %",
@@ -1616,18 +1653,23 @@ translations.ur = {
     "Ø¢Ù¾ Ú©ÛŒ Ù…Ù†Ø¸ÙˆØ±ÛŒ Ú©ÛŒ Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ù…Ù†Ø¸ÙˆØ± Ú©Ø± Ù„ÛŒ Ú¯Ø¦ÛŒ: {summary}",
   approval_edit_delete_not_allowed:
     "ÚˆÛŒÙ„ÛŒÙ¹ Ú©ÛŒ Ø¯Ø±Ø®ÙˆØ§Ø³ØªÙˆÚº Ù…ÛŒÚº ØªØ±Ù…ÛŒÙ… Ù†ÛÛŒÚº Ú©ÛŒ Ø¬Ø§ Ø³Ú©ØªÛŒÛ”",
-  approval_edit_failed: "Ù…Ù†Ø¸ÙˆØ±ÛŒ Ú©ÛŒ Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ú©Ùˆ Ø§Ù¾ ÚˆÛŒÙ¹ Ú©Ø±Ù†Û’ Ø³Û’ Ù‚Ø§ØµØ±Û”",
+  approval_edit_failed:
+    "Ù…Ù†Ø¸ÙˆØ±ÛŒ Ú©ÛŒ Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ú©Ùˆ Ø§Ù¾ ÚˆÛŒÙ¹ Ú©Ø±Ù†Û’ Ø³Û’ Ù‚Ø§ØµØ±Û”",
   approval_edit_invalid_payload: "ØºÙ„Ø· Ù…Ù†Ø¸ÙˆØ±ÛŒ ØªØ±Ù…ÛŒÙ… Ù¾Û’ Ù„ÙˆÚˆÛ”",
-  approval_edit_no_fields: "Ø§Ø³ Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ù…ÛŒÚº Ú©ÙˆØ¦ÛŒ Ù‚Ø§Ø¨Ù„ ØªØ¯ÙˆÛŒÙ† ÙÛŒÙ„Úˆ Ù†ÛÛŒÚº Ù…Ù„Ø§Û”",
-  approval_no_changes: "Ù…Ù†Ø¸ÙˆØ±ÛŒ Ú©ÛŒ Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ù…ÛŒÚº Ú©ÙˆØ¦ÛŒ ØªØ¨Ø¯ÛŒÙ„ÛŒ Ù†ÛÛŒÚº Ù…Ù„ÛŒÛ”",
-  approval_pending_details: "Ø¢Ù¾ Ú©ÛŒ Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ø¬Ù…Ø¹ ÛÛ’ Ø§ÙˆØ± Ù…Ù†Ø¸ÙˆØ±ÛŒ Ø²ÛŒØ± Ø§Ù„ØªÙˆØ§Ø¡ ÛÛ’Û”",
+  approval_edit_no_fields:
+    "Ø§Ø³ Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ù…ÛŒÚº Ú©ÙˆØ¦ÛŒ Ù‚Ø§Ø¨Ù„ ØªØ¯ÙˆÛŒÙ† ÙÛŒÙ„Úˆ Ù†ÛÛŒÚº Ù…Ù„Ø§Û”",
+  approval_no_changes:
+    "Ù…Ù†Ø¸ÙˆØ±ÛŒ Ú©ÛŒ Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ù…ÛŒÚº Ú©ÙˆØ¦ÛŒ ØªØ¨Ø¯ÛŒÙ„ÛŒ Ù†ÛÛŒÚº Ù…Ù„ÛŒÛ”",
+  approval_pending_details:
+    "Ø¢Ù¾ Ú©ÛŒ Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ø¬Ù…Ø¹ ÛÛ’ Ø§ÙˆØ± Ù…Ù†Ø¸ÙˆØ±ÛŒ Ø²ÛŒØ± Ø§Ù„ØªÙˆØ§Ø¡ ÛÛ’Û”",
   approval_pending_subject: "Ø²ÛŒØ± Ø§Ù„ØªÙˆØ§Ø¡ Ù…Ù†Ø¸ÙˆØ±ÛŒ",
   approval_rejected_detail:
     "Ø¢Ù¾ Ú©ÛŒ Ù…Ù†Ø¸ÙˆØ±ÛŒ Ú©ÛŒ Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ù…Ø³ØªØ±Ø¯ Ú©Ø± Ø¯ÛŒ Ú¯Ø¦ÛŒ: {summary}",
   approval_request_id: "Ù…Ù†Ø¸ÙˆØ±ÛŒ Ú©ÛŒ Ø¯Ø±Ø®ÙˆØ§Ø³Øª ID",
   approval_request_not_found:
     "Ù…Ù†Ø¸ÙˆØ±ÛŒ Ú©ÛŒ Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ù†ÛÛŒÚº Ù…Ù„ÛŒ ÛŒØ§ Ù¾ÛÙ„Û’ ÛÛŒ ÙÛŒØµÙ„Û Ú©ÛŒØ§ Ú¯ÛŒØ§ ÛÛ’Û”",
-  approval_request_updated: "Ù…Ù†Ø¸ÙˆØ±ÛŒ Ú©ÛŒ Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ú©Ùˆ Ø§Ù¾ ÚˆÛŒÙ¹ Ú©Ø± Ø¯ÛŒØ§ Ú¯ÛŒØ§Û”",
+  approval_request_updated:
+    "Ù…Ù†Ø¸ÙˆØ±ÛŒ Ú©ÛŒ Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ú©Ùˆ Ø§Ù¾ ÚˆÛŒÙ¹ Ú©Ø± Ø¯ÛŒØ§ Ú¯ÛŒØ§Û”",
   approval_request_updated_detail:
     "Ø¢Ù¾ Ú©ÛŒ Ø²ÛŒØ± Ø§Ù„ØªÙˆØ§Ø¡ Ù…Ù†Ø¸ÙˆØ±ÛŒ Ú©ÛŒ Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ú©Ùˆ Ø§Ù¾ ÚˆÛŒÙ¹ Ú©Ø± Ø¯ÛŒØ§ Ú¯ÛŒØ§: {summary}",
   approval_updates:
@@ -1658,11 +1700,14 @@ translations.ur = {
   audit: "Ø¢ÚˆÙ¹",
   audit_context_details: "Ø¢ÚˆÙ¹ Ø³ÛŒØ§Ù‚ Ùˆ Ø³Ø¨Ø§Ù‚ Ú©ÛŒ ØªÙØµÛŒÙ„Ø§Øª",
   audit_logs: "Ø³Ø±Ú¯Ø±Ù…ÛŒ Ù„Ø§Ú¯",
-  audit_logs_description: "Ø³Ø³Ù¹Ù… Ú©ÛŒ Ø³Ø±Ú¯Ø±Ù…ÛŒÙˆÚº Ø§ÙˆØ± ØªØ¨Ø¯ÛŒÙ„ÛŒÙˆÚº Ú©Ùˆ Ù¹Ø±ÛŒÚ© Ú©Ø±ÛŒÚºÛ”",
-  auto_select_open_grn: "Ú©Ú¾Ù„ÛŒ GRN Ù…Ù‚Ø¯Ø§Ø±ÙˆÚº Ø³Û’ Ø®ÙˆØ¯Ú©Ø§Ø± Ø·ÙˆØ± Ù¾Ø± Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
+  audit_logs_description:
+    "Ø³Ø³Ù¹Ù… Ú©ÛŒ Ø³Ø±Ú¯Ø±Ù…ÛŒÙˆÚº Ø§ÙˆØ± ØªØ¨Ø¯ÛŒÙ„ÛŒÙˆÚº Ú©Ùˆ Ù¹Ø±ÛŒÚ© Ú©Ø±ÛŒÚºÛ”",
+  auto_select_open_grn:
+    "Ú©Ú¾Ù„ÛŒ GRN Ù…Ù‚Ø¯Ø§Ø±ÙˆÚº Ø³Û’ Ø®ÙˆØ¯Ú©Ø§Ø± Ø·ÙˆØ± Ù¾Ø± Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
   auto_translate: "Ø®ÙˆØ¯Ú©Ø§Ø± ØªØ±Ø¬Ù…Û",
   average_per_bucket: "ÙÛŒ Ø¨Ø§Ù„Ù¹ÛŒ Ø§ÙˆØ³Ø·",
-  average_per_bucket_help: "ØµØ±Ù ØºÛŒØ± ØµÙØ± Ø¨Ø§Ù„Ù¹ÛŒÙˆÚº Ù…ÛŒÚº Ø§ÙˆØ³Ø· Ø®Ø§Ù„Øµ Ø®Ø±Ú†Ø›",
+  average_per_bucket_help:
+    "ØµØ±Ù ØºÛŒØ± ØµÙØ± Ø¨Ø§Ù„Ù¹ÛŒÙˆÚº Ù…ÛŒÚº Ø§ÙˆØ³Ø· Ø®Ø§Ù„Øµ Ø®Ø±Ú†Ø›",
   avg_purchase_rate: "Ø§ÙˆØ³Ø· Ø®Ø±ÛŒØ¯Ø§Ø±ÛŒ Ú©ÛŒ Ø´Ø±Ø­",
   back: "Ù¾ÛŒÚ†Ú¾Û’",
   back_to_branches: "Ø´Ø§Ø®ÙˆÚº Ù¾Ø± ÙˆØ§Ù¾Ø³ Ø¬Ø§Ø¦ÛŒÚºÛ”",
@@ -1682,50 +1727,69 @@ translations.ur = {
   basic_salary: "Ø¨Ù†ÛŒØ§Ø¯ÛŒ ØªÙ†Ø®ÙˆØ§Û",
   batch_dozen_rates: "Ø¨ÛŒÚ† Ø¯Ø±Ø¬Ù† Ú©Û’ Ù†Ø±Ø®",
   before: "Ø§Ø³ Ø³Û’ Ù¾ÛÙ„Û’",
-  biggest_increase_vs_previous: "Ø³Ø¨ Ø³Û’ Ø¨Ú‘Ø§ Ø§Ø¶Ø§ÙÛ Ø¨Ù…Ù‚Ø§Ø¨Ù„Û Ù¾Ú†Ú¾Ù„ÛŒ Ù…Ø¯Øª",
+  biggest_increase_vs_previous:
+    "Ø³Ø¨ Ø³Û’ Ø¨Ú‘Ø§ Ø§Ø¶Ø§ÙÛ Ø¨Ù…Ù‚Ø§Ø¨Ù„Û Ù¾Ú†Ú¾Ù„ÛŒ Ù…Ø¯Øª",
   bill_count: "Ø¨Ù„ Ø´Ù…Ø§Ø±",
   bill_number: "Ø¨Ù„ Ù†Ù…Ø¨Ø±",
   bom: "BOM",
   bom_approval: "Ù…Ù†Ø¸ÙˆØ±ÛŒ",
   bom_create_new_version: "Ù†ÛŒØ§ ÙˆØ±Ú˜Ù† Ø¨Ù†Ø§Ø¦ÛŒÚº",
-  bom_description: "Ø¹Ø§Ù„Ù…ÛŒ BOM ÚˆØ±Ø§ÙÙ¹Ø³ØŒ Ù…Ù†Ø¸ÙˆØ±ÛŒÙˆÚº Ø§ÙˆØ± ÙˆØ±Ú˜Ù†Ø² Ú©Ø§ Ù†Ø¸Ù… Ú©Ø±ÛŒÚºÛ”",
+  bom_description:
+    "Ø¹Ø§Ù„Ù…ÛŒ BOM ÚˆØ±Ø§ÙÙ¹Ø³ØŒ Ù…Ù†Ø¸ÙˆØ±ÛŒÙˆÚº Ø§ÙˆØ± ÙˆØ±Ú˜Ù†Ø² Ú©Ø§ Ù†Ø¸Ù… Ú©Ø±ÛŒÚºÛ”",
   submit_bom_request: "BOM Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ø¬Ù…Ø¹ Ú©Ø±ÛŒÚº",
   bom_edit_title: "BOM Ù…ÛŒÚº ØªØ±Ù…ÛŒÙ… Ú©Ø±ÛŒÚºÛ”",
   bom_error_already_pending:
     "Ø§Ø³ BOM Ú©Û’ Ù„ÛŒÛ’ Ø§ÛŒÚ© Ø²ÛŒØ± Ø§Ù„ØªÙˆØ§Ø¡ Ù…Ù†Ø¸ÙˆØ±ÛŒ Ù¾ÛÙ„Û’ Ø³Û’ Ù…ÙˆØ¬ÙˆØ¯ ÛÛ’Û”",
-  bom_error_approve_requires_draft: "ØµØ±Ù BOM Ú©Ø§ Ù…Ø³ÙˆØ¯Û Ù…Ù†Ø¸ÙˆØ± Ú©ÛŒØ§ Ø¬Ø§ Ø³Ú©ØªØ§ ÛÛ’Û”",
+  bom_error_approve_requires_draft:
+    "ØµØ±Ù BOM Ú©Ø§ Ù…Ø³ÙˆØ¯Û Ù…Ù†Ø¸ÙˆØ± Ú©ÛŒØ§ Ø¬Ø§ Ø³Ú©ØªØ§ ÛÛ’Û”",
   bom_error_color_required_for_specific_scope:
     "Ù…Ø®ØµÙˆØµ Ø¯Ø§Ø¦Ø±Û Ú©Ø§Ø± Ú©Û’ Ù„ÛŒÛ’ Ø±Ù†Ú¯ Ø¯Ø±Ú©Ø§Ø± ÛÛ’Û”",
   bom_error_color_scope_not_allowed_no_sku_colors:
     "Ø§Ø³ Ø¢Ø±Ù¹ÛŒÚ©Ù„ Ù…ÛŒÚº SKU Ø±Ù†Ú¯ÛŒ ÙˆÛŒØ±ÛŒØ¦Ù†Ù¹Ø³ Ù…ÙˆØ¬ÙˆØ¯ Ù†ÛÛŒÚºÛ” Color Scope Ù…ÛŒÚº 'All SKUs' Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
   bom_error_department_must_be_production:
     "Selected department must be an active Production department.",
-  bom_error_draft_exists: "Ø§Ø³ Ø¢Ø¦Ù¹Ù… Ø§ÙˆØ± Ø³Ø·Ø­ Ú©Û’ Ù„ÛŒÛ’ Ø§ÛŒÚ© Ù…Ø³ÙˆØ¯Û Ù¾ÛÙ„Û’ Ø³Û’ Ù…ÙˆØ¬ÙˆØ¯ ÛÛ’Û”",
-  bom_error_existing_bom: "A BOM already exists for this article. Use BOM Register/Revise instead of Add BOM.",
-  bom_error_item_not_found: "Ù…Ù†ØªØ®Ø¨ Ú©Ø±Ø¯Û Ø¢Ø¦Ù¹Ù… Ù…ÙˆØ¬ÙˆØ¯ Ù†ÛÛŒÚº ÛÛ’Û”",
-  bom_error_item_required: "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ø§ÛŒÚ© Ø¢Ø¦Ù¹Ù… Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
+  bom_error_draft_exists:
+    "Ø§Ø³ Ø¢Ø¦Ù¹Ù… Ø§ÙˆØ± Ø³Ø·Ø­ Ú©Û’ Ù„ÛŒÛ’ Ø§ÛŒÚ© Ù…Ø³ÙˆØ¯Û Ù¾ÛÙ„Û’ Ø³Û’ Ù…ÙˆØ¬ÙˆØ¯ ÛÛ’Û”",
+  bom_error_existing_bom:
+    "A BOM already exists for this article. Use BOM Register/Revise instead of Add BOM.",
+  bom_error_item_not_found:
+    "Ù…Ù†ØªØ®Ø¨ Ú©Ø±Ø¯Û Ø¢Ø¦Ù¹Ù… Ù…ÙˆØ¬ÙˆØ¯ Ù†ÛÛŒÚº ÛÛ’Û”",
+  bom_error_item_required:
+    "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ø§ÛŒÚ© Ø¢Ø¦Ù¹Ù… Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
   bom_error_labour_department_invalid:
     "Ù…Ù†ØªØ®Ø¨ Ù„ÛŒØ¨Ø± Ø§Ø³ Ø´Ø¹Ø¨Û Ú©Û’ Ù„ÛŒÛ’ Ø¯Ø±Ø³Øª Ù†ÛÛŒÚº ÛÛ’Û”",
   bom_error_labour_line_invalid: "ØºÙ„Ø· Ù„ÛŒØ¨Ø± Ù„Ø§Ø¦Ù†Û”",
   bom_error_labour_department_duplicate:
     "ÙˆÛÛŒ Ù„ÛŒØ¨Ø± Ø§Ø³ÛŒ Ø´Ø¹Ø¨Û Ú©Û’ Ù„ÛŒÛ’ Ø¯ÙˆØ¨Ø§Ø±Û Ø´Ø§Ù…Ù„ Ù†ÛÛŒÚº Ú©ÛŒØ§ Ø¬Ø§ Ø³Ú©ØªØ§Û”",
-  bom_error_labour_rate_type_invalid: "Ù„ÛŒØ¨Ø± Ú©ÛŒ Ø´Ø±Ø­ Ú©ÛŒ ØºÙ„Ø· Ù‚Ø³Ù…Û”",
-  bom_error_level_item_mismatch: "Ù…Ù†ØªØ®Ø¨ Ú©Ø±Ø¯Û Ø³Ø·Ø­ Ø¢Ø¦Ù¹Ù… Ú©ÛŒ Ù‚Ø³Ù… Ø³Û’ Ù…Ù…Ø§Ø«Ù„ Ù†ÛÛŒÚº ÛÛ’Û”",
-  bom_error_level_required: "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ø§ÛŒÚ© Ø¯Ø±Ø³Øª BOM Ù„ÛŒÙˆÙ„ Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
-  bom_error_loss_pct_invalid: "Ø¹Ø§Ù… Ù†Ù‚ØµØ§Ù† % 0 Ø§ÙˆØ± 100 Ú©Û’ Ø¯Ø±Ù…ÛŒØ§Ù† ÛÙˆÙ†Ø§ Ú†Ø§ÛÛŒÛ’Û”",
+  bom_error_labour_rate_type_invalid:
+    "Ù„ÛŒØ¨Ø± Ú©ÛŒ Ø´Ø±Ø­ Ú©ÛŒ ØºÙ„Ø· Ù‚Ø³Ù…Û”",
+  bom_error_level_item_mismatch:
+    "Ù…Ù†ØªØ®Ø¨ Ú©Ø±Ø¯Û Ø³Ø·Ø­ Ø¢Ø¦Ù¹Ù… Ú©ÛŒ Ù‚Ø³Ù… Ø³Û’ Ù…Ù…Ø§Ø«Ù„ Ù†ÛÛŒÚº ÛÛ’Û”",
+  bom_error_level_required:
+    "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ø§ÛŒÚ© Ø¯Ø±Ø³Øª BOM Ù„ÛŒÙˆÙ„ Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
+  bom_error_loss_pct_invalid:
+    "Ø¹Ø§Ù… Ù†Ù‚ØµØ§Ù† % 0 Ø§ÙˆØ± 100 Ú©Û’ Ø¯Ø±Ù…ÛŒØ§Ù† ÛÙˆÙ†Ø§ Ú†Ø§ÛÛŒÛ’Û”",
   bom_error_material_required_for_specific_scope:
     "Ù…Ø®ØµÙˆØµ Ø¯Ø§Ø¦Ø±Û Ú©Ø§Ø± Ú©Û’ Ù„ÛŒÛ’ ÛØ¯Ù Ú©Ø§ Ù…ÙˆØ§Ø¯ Ø¯Ø±Ú©Ø§Ø± ÛÛ’Û”",
-  bom_error_missing_material_rates: "Ù…Ø·Ù„ÙˆØ¨Û Ù…ÙˆØ§Ø¯ Ú©Û’ Ù†Ø±Ø® ØºØ§Ø¦Ø¨ ÛÛŒÚºÛ”",
+  bom_error_missing_material_rates:
+    "Ù…Ø·Ù„ÙˆØ¨Û Ù…ÙˆØ§Ø¯ Ú©Û’ Ù†Ø±Ø® ØºØ§Ø¦Ø¨ ÛÛŒÚºÛ”",
   bom_error_missing_material_rates_detail:
     "Ú©Û’ Ù„ÛŒÛ’ ÙØ¹Ø§Ù„ Ø®Ø±ÛŒØ¯Ø§Ø±ÛŒ Ú©ÛŒ Ø´Ø±Ø­ÛŒÚº ØºØ§Ø¦Ø¨ ÛÛŒÚºÛ”",
   bom_error_new_version_requires_approved:
     "Ù†ÛŒØ§ ÙˆØ±Ú˜Ù† ØµØ±Ù Ù…Ù†Ø¸ÙˆØ± Ø´Ø¯Û BOM Ø³Û’ Ø¨Ù†Ø§ÛŒØ§ Ø¬Ø§ Ø³Ú©ØªØ§ ÛÛ’Û”",
-  bom_error_only_draft_editable: "ØµØ±Ù BOM Ú©Û’ Ù…Ø³ÙˆØ¯Û’ Ù…ÛŒÚº ØªØ±Ù…ÛŒÙ… Ú©ÛŒ Ø¬Ø§ Ø³Ú©ØªÛŒ ÛÛ’Û”",
-  bom_error_output_qty_required: "Ø¢Ø¤Ù¹ Ù¾Ù¹ Ú©ÛŒ Ù…Ù‚Ø¯Ø§Ø± ØµÙØ± Ø³Û’ Ø²ÛŒØ§Ø¯Û ÛÙˆÙ†ÛŒ Ú†Ø§ÛÛŒÛ’Û”",
+  bom_error_only_draft_editable:
+    "ØµØ±Ù BOM Ú©Û’ Ù…Ø³ÙˆØ¯Û’ Ù…ÛŒÚº ØªØ±Ù…ÛŒÙ… Ú©ÛŒ Ø¬Ø§ Ø³Ú©ØªÛŒ ÛÛ’Û”",
+  bom_error_output_qty_required:
+    "Ø¢Ø¤Ù¹ Ù¾Ù¹ Ú©ÛŒ Ù…Ù‚Ø¯Ø§Ø± ØµÙØ± Ø³Û’ Ø²ÛŒØ§Ø¯Û ÛÙˆÙ†ÛŒ Ú†Ø§ÛÛŒÛ’Û”",
   bom_error_output_uom_required: "Ø¢Ø¤Ù¹ Ù¾Ù¹ UOM Ø¯Ø±Ú©Ø§Ø± ÛÛ’Û”",
+  bom_error_item_base_uom_missing:
+    "Selected article has no base unit. Please set Base Unit in product master first.",
+  bom_error_output_uom_conversion_missing:
+    "Output Unit must have an active conversion to the article Base Unit in UOM Conversions.",
   bom_error_packing_required_for_specific_scope:
     "Ù¾ÛŒÚ©Ù†Ú¯ Ú©ÛŒ Ù‚Ø³Ù… Ù…Ø®ØµÙˆØµ Ø¯Ø§Ø¦Ø±Û Ú©Ø§Ø± Ú©Û’ Ù„ÛŒÛ’ Ø¯Ø±Ú©Ø§Ø± ÛÛ’Û”",
-  bom_error_rm_item_invalid: "Ø®Ø§Ù… Ù…Ø§Ù„ Ú©ÛŒ Ù„Ø§Ø¦Ù† Ú©Ùˆ RM Ø¢Ø¦Ù¹Ù… Ú©Ø§ Ø­ÙˆØ§Ù„Û Ø¯ÛŒÙ†Ø§ Ú†Ø§ÛÛŒÛ’Û”",
+  bom_error_rm_item_invalid:
+    "Ø®Ø§Ù… Ù…Ø§Ù„ Ú©ÛŒ Ù„Ø§Ø¦Ù† Ú©Ùˆ RM Ø¢Ø¦Ù¹Ù… Ú©Ø§ Ø­ÙˆØ§Ù„Û Ø¯ÛŒÙ†Ø§ Ú†Ø§ÛÛŒÛ’Û”",
   bom_error_rm_line_invalid:
     "Complete this raw material row: select material, department, and quantity.",
   bom_error_rm_department_duplicate:
@@ -1743,15 +1807,18 @@ translations.ur = {
   bom_error_sfg_uom_required: "SFG UOM Ø¯Ø±Ú©Ø§Ø± ÛÛ’Û”",
   bom_error_size_required_for_specific_scope:
     "Ù…Ø®ØµÙˆØµ Ø¯Ø§Ø¦Ø±Û Ú©Ø§Ø± Ú©Û’ Ù„ÛŒÛ’ Ø³Ø§Ø¦Ø² Ø¯Ø±Ú©Ø§Ø± ÛÛ’Û”",
-  bom_error_snapshot_mismatch: "ÚˆØ±Ø§ÙÙ¹ Ø³Ù†ÛŒÙ¾ Ø´Ø§Ù¹ Ù…Ù…Ø§Ø«Ù„ Ù†ÛÛŒÚº ÛÛ’Û”",
+  bom_error_snapshot_mismatch:
+    "ÚˆØ±Ø§ÙÙ¹ Ø³Ù†ÛŒÙ¾ Ø´Ø§Ù¹ Ù…Ù…Ø§Ø«Ù„ Ù†ÛÛŒÚº ÛÛ’Û”",
   bom_error_fix_fields:
     "BOM Ø¨Ú¾ÛŒØ¬Ù†Û’ Ø³Û’ Ù¾ÛÙ„Û’ ØªÙ…Ø§Ù… Ù„Ø§Ø²Ù…ÛŒ ÙÛŒÙ„ÚˆØ² Ù…Ú©Ù…Ù„ Ú©Ø±ÛŒÚºÛ”",
-  bom_error_variant_action_invalid: "Ù…Ø®ØªÙ„Ù Ù‚Ø³Ù… Ú©ÛŒ Ú©Ø§Ø±Ø±ÙˆØ§Ø¦ÛŒ Ú©ÛŒ ØºÙ„Ø· Ù‚Ø³Ù…Û”",
+  bom_error_variant_action_invalid:
+    "Ù…Ø®ØªÙ„Ù Ù‚Ø³Ù… Ú©ÛŒ Ú©Ø§Ø±Ø±ÙˆØ§Ø¦ÛŒ Ú©ÛŒ ØºÙ„Ø· Ù‚Ø³Ù…Û”",
   bom_error_color_rules_required_no_sku_colors:
     "Ø§Ø³ Ø¢Ø±Ù¹ÛŒÚ©Ù„ Ù…ÛŒÚº SKU Ø±Ù†Ú¯ÛŒ ÙˆÛŒØ±ÛŒØ¦Ù†Ù¹Ø³ Ù…ÙˆØ¬ÙˆØ¯ Ù†ÛÛŒÚºÛ” ÛØ± Ø§ÛŒØ³Û’ Ø®Ø§Ù… Ù…Ø§Ù„ Ú©Û’ Ù„ÛŒÛ’ Color Rules Ø´Ø§Ù…Ù„ Ú©Ø±ÛŒÚº Ø¬Ø³ Ú©Û’ Ø§Ù†Ø¯Ø± Ù…ØªØ¹Ø¯Ø¯ Ø±Ù†Ú¯ÛŒ Ø±ÛŒÙ¹Ø³ ÛÛŒÚºÛ”",
   bom_error_color_rule_missing_for_material_prefix:
     "Ø§Ø³ Ù…ÛŒÙ¹ÛŒØ±ÛŒÙ„ Ú©Û’ Ù„ÛŒÛ’ Color Rule Ù…ÙˆØ¬ÙˆØ¯ Ù†ÛÛŒÚº",
-  bom_error_variant_value_invalid_json: "ØºÙ„Ø· ÙˆÛŒØ±ÛŒÙ†Ù¹ ÙˆÛŒÙ„ÛŒÙˆ Ù¾Û’ Ù„ÙˆÚˆÛ”",
+  bom_error_variant_value_invalid_json:
+    "ØºÙ„Ø· ÙˆÛŒØ±ÛŒÙ†Ù¹ ÙˆÛŒÙ„ÛŒÙˆ Ù¾Û’ Ù„ÙˆÚˆÛ”",
   bom_header: "BOM Ø³ÛŒÙ¹ Ø§Ù¾",
   bom_header_required_message:
     "Ù¾ÛÙ„Û’ BOM Ø³ÛŒÙ¹ Ø§Ù¾ Ù…Ú©Ù…Ù„ Ú©Ø±ÛŒÚºÛ” Ø§Ø³ Ú©Û’ Ø¨Ø¹Ø¯ Ù…ÛŒÙ¹ÛŒØ±ÛŒÙ„ØŒ SFG Ø§ÙˆØ± Ù„ÛŒØ¨Ø± Ø³ÛŒÚ©Ø´Ù† Ú©Ú¾Ù„ÛŒÚº Ú¯Û’Û”",
@@ -1761,7 +1828,8 @@ translations.ur = {
   bom_output_qty: "Ø¢Ø¤Ù¹ Ù¾Ù¹ Ú©ÛŒ Ù…Ù‚Ø¯Ø§Ø±",
   bom_output_batch_size: "Ù…Ù†ØµÙˆØ¨Û Ø´Ø¯Û Ø¢Ø¤Ù¹ Ù¾Ù¹ Ù…Ù‚Ø¯Ø§Ø±",
   bom_output_uom: "Ø¢Ø¤Ù¹ Ù¾Ù¹ ÛŒÙˆÙ†Ù¹ (UOM)",
-  bom_rm_rules_size_wise: "Ø³Ø§Ø¦Ø² Ú©Û’ Ù…Ø·Ø§Ø¨Ù‚ Ø®Ø§Ù… Ù…Ø§Ù„ Ú©Û’ Ù‚ÙˆØ§Ø¹Ø¯",
+  bom_rm_rules_size_wise:
+    "Ø³Ø§Ø¦Ø² Ú©Û’ Ù…Ø·Ø§Ø¨Ù‚ Ø®Ø§Ù… Ù…Ø§Ù„ Ú©Û’ Ù‚ÙˆØ§Ø¹Ø¯",
   bom_rm_section_hint:
     "Ø§ÛŒÚ© Ù…Ù†ØµÙˆØ¨Û Ø´Ø¯Û Ø¢Ø¤Ù¹ Ù¾Ù¹ Ø¨ÛŒÚ† Ú©Û’ Ù„ÛŒÛ’ ØªÙ…Ø§Ù… Ø®Ø§Ù… Ù…Ø§Ù„ Ø´Ø§Ù…Ù„ Ú©Ø±ÛŒÚºØŒ Ù¾Ú¾Ø± Ø¶Ø±ÙˆØ±Øª ÛÙˆ ØªÙˆ Ø³Ø§Ø¦Ø² Ú©Û’ Ø­Ø³Ø§Ø¨ Ø³Û’ Ù‚ÙˆØ§Ø¹Ø¯ Ø§ÛŒÚˆØ¬Ø³Ù¹ Ú©Ø±ÛŒÚºÛ”",
   bom_rm_view_material_lines: "Ù…ÛŒÙ¹ÛŒØ±ÛŒÙ„ Ù„Ø§Ø¦Ù†Ø²",
@@ -1798,45 +1866,35 @@ translations.ur = {
   bom_hint_consumption_department:
     "??????? ????????? ?? ?? ??????? ?? ??????? ???? ???",
   bom_hint_actions: "???/????? ?? ??? ???? ?? ??? ?????",
-  bom_hint_size_rule_material:
-    "?? ??????? ?? ?? ???? ??? ???? ?????",
+  bom_hint_size_rule_material: "?? ??????? ?? ?? ???? ??? ???? ?????",
   bom_hint_size_rule_uom: "???? ??? ????? ?? ??? ?????",
-  bom_hint_size_rule_qty:
-    "????? ???? ?? ??? ????? ??????",
+  bom_hint_size_rule_qty: "????? ???? ?? ??? ????? ??????",
   bom_hint_color_rule_material:
     "?? ??????? ?? ?? ??? ????? ?? ?????? ???? ????? ????",
-  bom_hint_rm_color:
-    "????? SKU ????? ?? ??? ??????? ???? ???? ??? ??? ?? ????",
-  bom_hint_packing_rule_material:
-    "?????? ??????? ??? ?????? ??? ???? ???",
-  bom_hint_packing:
-    "?? ????????? ?? ??? ????? ?? ????",
+  bom_hint_rm_color: "????? SKU ????? ?? ??? ??????? ???? ???? ??? ??? ?? ????",
+  bom_hint_packing_rule_material: "?????? ??????? ??? ?????? ??? ???? ???",
+  bom_hint_packing: "?? ????????? ?? ??? ????? ?? ????",
   bom_hint_size_optional:
     "??????? ???? ????? ???? ????? ?? ???? ???? ?? ??? ???? ???????",
-  bom_hint_replace_with:
-    "?????? ??????? ?? ??? ??????? ???? ???? ????????",
+  bom_hint_replace_with: "?????? ??????? ?? ??? ??????? ???? ???? ????????",
   bom_hint_sku: "?? ?????? ??? ?? ??? ????? SKU?",
-  bom_hint_target_rm:
-    "?? SKU ?? ??? ????????? ???? ???? ???? ??? ????",
-  bom_hint_override_qty:
-    "?? SKU ??? ??????? ?? ??? ??????? ????? ??????????",
-  bom_hint_exclude:
-    "????? SKU ?? ??? ?? ??????? ?? ???? ?????",
+  bom_hint_target_rm: "?? SKU ?? ??? ????????? ???? ???? ???? ??? ????",
+  bom_hint_override_qty: "?? SKU ??? ??????? ?? ??? ??????? ????? ??????????",
+  bom_hint_exclude: "????? SKU ?? ??? ?? ??????? ?? ???? ?????",
   bom_hint_size: "?? ???? ?? ??? ???? ??????",
   bom_hint_article_sku: "?? ???? ?? ???? SKU ?? ???? ???? ???",
   bom_hint_semi_finished: "?? BOM ??? ??????? ???? ???? ??? ???? SKU?",
-  bom_hint_step_upper_sku: "?? ???? SKU ?? ??? ??????? ???? ???? ??? ???? SKU ????? ?????",
+  bom_hint_step_upper_sku:
+    "?? ???? SKU ?? ??? ??????? ???? ???? ??? ???? SKU ????? ?????",
   bom_hint_step_sku: "?? ???? SKU ?? ??? Step SKU ????? ?????",
   bom_hint_upper_sku: "?? ???? SKU ?? ??? Upper SKU ????? ?????",
   bom_hint_required_qty: "?? ???? ?? ??? ????? ??????",
   bom_hint_step_quantity: "????? Step/Upper SKU ?? ????? ????? ??? ?????",
   bom_hint_labour: "???? ???? ???? ?? ??? ???? ????? ????? ?????",
-  bom_hint_department:
-    "?? ???? ?? ??? ??????? ??????????",
-  bom_hint_rate_type:
-    "???? ?? ???? (?? ???? ?? ?? ????)?",
-  bom_hint_rate_value:
-    "????? ???? ?? ????? ??? ??????",  bom_source_base: "Base",
+  bom_hint_department: "?? ???? ?? ??? ??????? ??????????",
+  bom_hint_rate_type: "???? ?? ???? (?? ???? ?? ?? ????)?",
+  bom_hint_rate_value: "????? ???? ?? ????? ??? ??????",
+  bom_source_base: "Base",
   bom_source_size_rule: "Size Rule",
   bom_source_color_rule: "Color Rule",
   bom_source_packing_rule: "Packing Rule",
@@ -1844,23 +1902,27 @@ translations.ur = {
   bom_source_excluded: "Excluded",
   bom_rules_size_picker_hint:
     "Ø¬Ø³ Ø³Ø§Ø¦Ø² Ú©Û’ Ù„ÛŒÛ’ Ù‚ÙˆØ§Ø¹Ø¯ ØªØ¨Ø¯ÛŒÙ„ Ú©Ø±Ù†Û’ ÛÛŒÚºØŒ ÙˆÛ Ø³Ø§Ø¦Ø² Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
-  bom_rules_active_size_label: "Ø§Ø³ Ø³Ø§Ø¦Ø² Ú©Û’ Ù‚ÙˆØ§Ø¹Ø¯ Ù…ÛŒÚº ØªØ±Ù…ÛŒÙ…",
+  bom_rules_active_size_label:
+    "Ø§Ø³ Ø³Ø§Ø¦Ø² Ú©Û’ Ù‚ÙˆØ§Ø¹Ø¯ Ù…ÛŒÚº ØªØ±Ù…ÛŒÙ…",
   bom_rules_count_label: "Ø±ÙˆÙ„Ø²",
   bom_rules_col_qty: "Ø¯Ø±Ú©Ø§Ø± Ù…Ù‚Ø¯Ø§Ø±",
   bom_rules_col_uom: "ÛŒÙˆÙ†Ù¹",
   bom_sfg_col_step_upper_sku: "Step/Upper SKU",
   bom_sfg_col_step_qty: "Step Quantity",
   bom_all_skus: "ØªÙ…Ø§Ù… SKU",
-  bom_all_skus_no_color: "ØªÙ…Ø§Ù… SKU (Ø±Ù†Ú¯ÛŒ ÙˆÛŒØ±ÛŒØ¦Ù†Ù¹ Ù…ÙˆØ¬ÙˆØ¯ Ù†ÛÛŒÚº)",
+  bom_all_skus_no_color:
+    "ØªÙ…Ø§Ù… SKU (Ø±Ù†Ú¯ÛŒ ÙˆÛŒØ±ÛŒØ¦Ù†Ù¹ Ù…ÙˆØ¬ÙˆØ¯ Ù†ÛÛŒÚº)",
   bom_rule_add_rm: "RM Ø´Ø§Ù…Ù„ Ú©Ø±ÛŒÚºÛ”",
   bom_rule_adjust_qty: "Ù…Ù‚Ø¯Ø§Ø± Ú©Ùˆ Ø§ÛŒÚˆØ¬Ø³Ù¹ Ú©Ø±ÛŒÚºÛ”",
   bom_rule_change_loss: "Ù†Ù‚ØµØ§Ù† Ú©Ùˆ ØªØ¨Ø¯ÛŒÙ„ Ú©Ø±ÛŒÚºÛ”",
   bom_rule_remove_rm: "RM Ú©Ùˆ ÛÙ¹Ø§ Ø¯ÛŒÚºÛ”",
   bom_rule_replace_rm: "RM Ú©Ùˆ ØªØ¨Ø¯ÛŒÙ„ Ú©Ø±ÛŒÚºÛ”",
   bom_specific: "Ù…Ø®ØµÙˆØµ",
-  bom_tab_labour: "Ø³Ø§Ø¦Ø² Ø§ÙˆØ± ÚˆÛŒÙ¾Ø§Ø±Ù¹Ù…Ù†Ù¹ Ú©Û’ Ù…Ø·Ø§Ø¨Ù‚ Ù„ÛŒØ¨Ø± Ø±ÛŒÙ¹Ø³",
+  bom_tab_labour:
+    "Ø³Ø§Ø¦Ø² Ø§ÙˆØ± ÚˆÛŒÙ¾Ø§Ø±Ù¹Ù…Ù†Ù¹ Ú©Û’ Ù…Ø·Ø§Ø¨Ù‚ Ù„ÛŒØ¨Ø± Ø±ÛŒÙ¹Ø³",
   bom_tab_rm: "Ø§Ø³ BOM Ú©Û’ Ù„ÛŒÛ’ Ø®Ø§Ù… Ù…Ø§Ù„ Ø§ÙÙ† Ù¾Ù¹Ø³",
-  bom_tab_sfg: "Ø§Ø³ØªØ¹Ù…Ø§Ù„ ÛÙˆÙ†Û’ ÙˆØ§Ù„ÛŒ Ù†ÛŒÙ… ØªÛŒØ§Ø± Ù…ØµÙ†ÙˆØ¹Ø§Øª (Ø§Ú¯Ø± ÛÙˆÚº)",
+  bom_tab_sfg:
+    "Ø§Ø³ØªØ¹Ù…Ø§Ù„ ÛÙˆÙ†Û’ ÙˆØ§Ù„ÛŒ Ù†ÛŒÙ… ØªÛŒØ§Ø± Ù…ØµÙ†ÙˆØ¹Ø§Øª (Ø§Ú¯Ø± ÛÙˆÚº)",
   bom_tab_sfg_per_sku: "ہر SKU کے لیے استعمال ہونے والی نیم تیار مصنوعات",
   bom_tab_variant_rules: "Ù…ØªØºÛŒØ± Ù‚ÙˆØ§Ø¹Ø¯",
   bom_version_created: "Ù†ÛŒØ§ ÙˆØ±Ú˜Ù† Ø¨Ù†Ø§ÛŒØ§ Ú¯ÛŒØ§Û”",
@@ -1874,7 +1936,8 @@ translations.ur = {
   branches: "Ø´Ø§Ø®ÛŒÚº",
   cancel: "Ù…Ù†Ø³ÙˆØ® Ú©Ø±ÛŒÚºÛ”",
   cash_account: "Ú©ÛŒØ´ Ø§Ú©Ø§Ø¤Ù†Ù¹",
-  cash_account_required: "Ù†Ù‚Ø¯ Ø®Ø±ÛŒØ¯Ø§Ø±ÛŒ Ú©Û’ Ù„ÛŒÛ’ Ú©ÛŒØ´ Ø§Ú©Ø§Ø¤Ù†Ù¹ Ø¯Ø±Ú©Ø§Ø± ÛÛ’Û”",
+  cash_account_required:
+    "Ù†Ù‚Ø¯ Ø®Ø±ÛŒØ¯Ø§Ø±ÛŒ Ú©Û’ Ù„ÛŒÛ’ Ú©ÛŒØ´ Ø§Ú©Ø§Ø¤Ù†Ù¹ Ø¯Ø±Ú©Ø§Ø± ÛÛ’Û”",
   cash_book: "Ú©ÛŒØ´ Ø¨Ú©",
   cash_paid_account: "Ú©ÛŒØ´ Ù¾ÛŒÚˆ Ø§Ú©Ø§Ø¤Ù†Ù¹",
   cash_payment: "Ù†Ù‚Ø¯ Ø§Ø¯Ø§Ø¦ÛŒÚ¯ÛŒ",
@@ -1895,7 +1958,8 @@ translations.ur = {
     "Ù…Ø«Ø¨Øª Ú©Ø§ Ù…Ø·Ù„Ø¨ ÛÛ’ Ú¯Ø²Ø´ØªÛ Ù…Ø¯Øª Ú©Û’ Ù…Ù‚Ø§Ø¨Ù„Û’ Ø§Ø®Ø±Ø§Ø¬Ø§Øª Ù…ÛŒÚº Ø§Ø¶Ø§ÙÛÛ”",
   changed_fields: "ØªØ¨Ø¯ÛŒÙ„ Ø´Ø¯Û ÙÛŒÙ„ÚˆØ²",
   check_availability: "Ø¯Ø³ØªÛŒØ§Ø¨ÛŒ Ú†ÛŒÚ© Ú©Ø±ÛŒÚºÛ”",
-  choose_option_top_right: "Ø§ÙˆÙ¾Ø±ÛŒ Ø¯Ø§Ø¦ÛŒÚº Ø³Û’ Ø¢Ù¾Ø´Ù† Ú©Ø§ Ø§Ù†ØªØ®Ø§Ø¨ Ú©Ø±ÛŒÚºÛ”",
+  choose_option_top_right:
+    "Ø§ÙˆÙ¾Ø±ÛŒ Ø¯Ø§Ø¦ÛŒÚº Ø³Û’ Ø¢Ù¾Ø´Ù† Ú©Ø§ Ø§Ù†ØªØ®Ø§Ø¨ Ú©Ø±ÛŒÚºÛ”",
   choose_role_above:
     "Ø§Ø¬Ø§Ø²ØªÙˆÚº Ú©Ùˆ Ø¯ÛŒÚ©Ú¾Ù†Û’ Ø§ÙˆØ± Ø§Ù¾ ÚˆÛŒÙ¹ Ú©Ø±Ù†Û’ Ú©Û’ Ù„ÛŒÛ’ Ø§ÙˆÙ¾Ø± Ø§ÛŒÚ© Ú©Ø±Ø¯Ø§Ø± Ú©Ø§ Ø§Ù†ØªØ®Ø§Ø¨ Ú©Ø±ÛŒÚºÛ”",
   choose_role_or_user_above:
@@ -1920,10 +1984,13 @@ translations.ur = {
   contribution_to_delta: "ÚˆÛŒÙ„Ù¹Ø§ Ú©Ø§ %",
   contribution_to_delta_tooltip:
     "Ø¯Ú©Ú¾Ø§Ø¦Û’ Ú¯Ø¦Û’ ÚˆØ±Ø§Ø¦ÛŒÙˆØ±ÙˆÚº Ù…ÛŒÚº ÛØ± Ù‚Ø·Ø§Ø± Ú©Ø§ Ø­ØµÛ Ù…Ø·Ù„Ù‚ ØªØ¨Ø¯ÛŒÙ„ÛŒÛ”",
-  contribution_to_driver_movement: "ÚˆØ±Ø§Ø¦ÛŒÙˆØ± Ú©ÛŒ Ù†Ù‚Ù„ Ùˆ Ø­Ø±Ú©Øª Ú©Ø§ %",
+  contribution_to_driver_movement:
+    "ÚˆØ±Ø§Ø¦ÛŒÙˆØ± Ú©ÛŒ Ù†Ù‚Ù„ Ùˆ Ø­Ø±Ú©Øª Ú©Ø§ %",
   conversion_exists: "ØªØ¨Ø¯ÛŒÙ„ÛŒ Ù¾ÛÙ„Û’ Ø³Û’ Ù…ÙˆØ¬ÙˆØ¯ ÛÛ’Û”",
-  conversion_factor: "ØªØ¨Ø§Ø¯Ù„ÙˆÚº Ú©Ø§ Ø¹Ù†ØµØ± ØµÙØ± Ø³Û’ Ø²ÛŒØ§Ø¯Û ÛÙˆÙ†Ø§ Ú†Ø§ÛÛŒÛ’Û”",
-  conversion_same_units: "Ø³Û’ Ø§ÙˆØ± ØªÚ© ÛŒÙˆÙ†Ù¹Ø³ Ø§ÛŒÚ© Ø¬ÛŒØ³Û’ Ù†ÛÛŒÚº ÛÙˆ Ø³Ú©ØªÛ’Û”",
+  conversion_factor:
+    "ØªØ¨Ø§Ø¯Ù„ÙˆÚº Ú©Ø§ Ø¹Ù†ØµØ± ØµÙØ± Ø³Û’ Ø²ÛŒØ§Ø¯Û ÛÙˆÙ†Ø§ Ú†Ø§ÛÛŒÛ’Û”",
+  conversion_same_units:
+    "Ø³Û’ Ø§ÙˆØ± ØªÚ© ÛŒÙˆÙ†Ù¹Ø³ Ø§ÛŒÚ© Ø¬ÛŒØ³Û’ Ù†ÛÛŒÚº ÛÙˆ Ø³Ú©ØªÛ’Û”",
   coverage_scope_both: "Ø¯ÙˆÙ†ÙˆÚº",
   coverage_scope_fg: "Ø®ØªÙ…",
   coverage_scope_sfg: "Ù†ÛŒÙ… ØªÛŒØ§Ø±",
@@ -1959,11 +2026,14 @@ translations.ur = {
   deletion_requested: "Ø­Ø°Ù Ú©Ø±Ù†Û’ Ú©ÛŒ Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ú©ÛŒ Ú¯Ø¦ÛŒÛ”",
   delivery_method: "ØªØ±Ø³ÛŒÙ„ Ú©Ø§ Ø·Ø±ÛŒÙ‚Û",
   delta: "ÚˆÛŒÙ„Ù¹Ø§",
-  delta_tooltip: "Ù…ÙˆØ¬ÙˆØ¯Û Ù…Ø¯Øª Ú©Ø§ Ú©Ù„ Ù…Ø§Ø¦Ù†Ø³ Ù¾Ú†Ú¾Ù„ÛŒ Ù…Ø¯Øª Ú©Ø§ Ú©Ù„Û”",
+  delta_tooltip:
+    "Ù…ÙˆØ¬ÙˆØ¯Û Ù…Ø¯Øª Ú©Ø§ Ú©Ù„ Ù…Ø§Ø¦Ù†Ø³ Ù¾Ú†Ú¾Ù„ÛŒ Ù…Ø¯Øª Ú©Ø§ Ú©Ù„Û”",
   department: "Ù…Ø­Ú©Ù…Û",
   department_breakdown: "Ù…Ø­Ú©Ù…Û Ú©ÛŒ Ø®Ø±Ø§Ø¨ÛŒÛ”",
   departments: "Ù…Ø­Ú©Ù…Û’",
-  departments_description: "Ù¾ÛŒØ¯Ø§ÙˆØ§Ø± Ø¨Ù…Ù‚Ø§Ø¨Ù„Û ØºÛŒØ± Ù¾ÛŒØ¯Ø§ÙˆØ§Ø±ÛŒ Ù„Ø§Ú¯Øª Ú©Û’ Ù…Ø±Ø§Ú©Ø²Û”",
+  production_stages: "Production Stages",
+  departments_description:
+    "Ù¾ÛŒØ¯Ø§ÙˆØ§Ø± Ø¨Ù…Ù‚Ø§Ø¨Ù„Û ØºÛŒØ± Ù¾ÛŒØ¯Ø§ÙˆØ§Ø±ÛŒ Ù„Ø§Ú¯Øª Ú©Û’ Ù…Ø±Ø§Ú©Ø²Û”",
   designation_role: "Ø¹ÛØ¯Û/ Ú©Ø±Ø¯Ø§Ø±",
   details: "ØªÙØµÛŒÙ„Ø§Øª",
   dismiss: "Ø¨Ø±Ø·Ø±Ù Ú©Ø±Ù†Ø§",
@@ -1981,7 +2051,8 @@ translations.ur = {
     "HR Ø§ÙˆØ± Ù¾Û’ Ø±ÙˆÙ„ Ú©Û’ Ù„ÛŒÛ’ Ù…Ù„Ø§Ø²Ù… Ú©Û’ Ù…Ø§Ø³Ù¹Ø± Ø±ÛŒÚ©Ø§Ø±Úˆ Ú©Ø§ Ù†Ø¸Ù… Ú©Ø±ÛŒÚºÛ”",
   enter: "Ø¯Ø§Ø®Ù„ Ú©Ø±ÛŒÚºÛ”",
   enter_code: "Ú©ÙˆÚˆ Ø¯Ø±Ø¬ Ú©Ø±ÛŒÚºÛ”",
-  enter_details_save: "ØªÙØµÛŒÙ„Ø§Øª Ø¯Ø±Ø¬ Ú©Ø±ÛŒÚº Ø§ÙˆØ± Ù…Ø­ÙÙˆØ¸ Ú©Ø±ÛŒÚºÛ”",
+  enter_details_save:
+    "ØªÙØµÛŒÙ„Ø§Øª Ø¯Ø±Ø¬ Ú©Ø±ÛŒÚº Ø§ÙˆØ± Ù…Ø­ÙÙˆØ¸ Ú©Ø±ÛŒÚºÛ”",
   enter_note: "Ø§ÛŒÚ© Ù†ÙˆÙ¹ Ø¯Ø±Ø¬ Ú©Ø±ÛŒÚºÛ”",
   entity: "ÛØ³ØªÛŒ",
   entity_id: "ÛØ³ØªÛŒ Ú©ÛŒ Ø´Ù†Ø§Ø®Øª",
@@ -2006,60 +2077,87 @@ translations.ur = {
     "Ø§Ø³ Ù…Ù„Ø§Ø²Ù… Ú©Û’ Ù„ÛŒÛ’ Ø§Ù„Ø§Ø¤Ù†Ø³ Ú©ÛŒ Ù‚Ø³Ù… Ù¾ÛÙ„Û’ Ø³Û’ Ù…ÙˆØ¬ÙˆØ¯ ÛÛ’Û”",
   error_duplicate_cnic: "CNIC Ù¾ÛÙ„Û’ Ø³Û’ Ù…ÙˆØ¬ÙˆØ¯ ÛÛ’Û”",
   error_duplicate_code: "Ú©ÙˆÚˆ Ù¾ÛÙ„Û’ Ø³Û’ Ù…ÙˆØ¬ÙˆØ¯ ÛÛ’Û”",
-  error_duplicate_commission_rule: "Ø§Ø³ÛŒ Ø·Ø±Ø­ Ú©Ø§ Ú©Ù…ÛŒØ´Ù† Ú©Ø§ Ø§ØµÙˆÙ„ Ù¾ÛÙ„Û’ Ø³Û’ Ù…ÙˆØ¬ÙˆØ¯ ÛÛ’Û”",
+  error_duplicate_commission_rule:
+    "Ø§Ø³ÛŒ Ø·Ø±Ø­ Ú©Ø§ Ú©Ù…ÛŒØ´Ù† Ú©Ø§ Ø§ØµÙˆÙ„ Ù¾ÛÙ„Û’ Ø³Û’ Ù…ÙˆØ¬ÙˆØ¯ ÛÛ’Û”",
   error_duplicate_labour_rate_rule:
     "Ø§Ø³ÛŒ Ø·Ø±Ø­ Ú©ÛŒ Ù…Ø²Ø¯ÙˆØ±ÛŒ Ú©ÛŒ Ø´Ø±Ø­ Ú©Ø§ Ø§ØµÙˆÙ„ Ù¾ÛÙ„Û’ Ø³Û’ Ù…ÙˆØ¬ÙˆØ¯ ÛÛ’Û”",
   error_duplicate_name:
     "Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ù…Ù†Ø¸ÙˆØ± Ù†ÛÛŒÚº ÛÙˆ Ø³Ú©ÛŒ Ú©ÛŒÙˆÙ†Ú©Û Ù†Ø§Ù… Ù¾ÛÙ„Û’ Ø³Û’ Ù…ÙˆØ¬ÙˆØ¯ ÛÛ’Û”",
   error_duplicate_phone_number: "ÙÙˆÙ† Ù†Ù…Ø¨Ø± Ù¾ÛÙ„Û’ Ø³Û’ Ù…ÙˆØ¬ÙˆØ¯ ÛÛ’Û”",
-  error_duplicate_record: "Ø§Ø³ÛŒ ØªÙØµÛŒÙ„Ø§Øª Ú©Û’ Ø³Ø§ØªÚ¾ Ø§ÛŒÚ© Ø±ÛŒÚ©Ø§Ø±Úˆ Ù¾ÛÙ„Û’ Ø³Û’ Ù…ÙˆØ¬ÙˆØ¯ ÛÛ’Û”",
+  error_duplicate_record:
+    "Ø§Ø³ÛŒ ØªÙØµÛŒÙ„Ø§Øª Ú©Û’ Ø³Ø§ØªÚ¾ Ø§ÛŒÚ© Ø±ÛŒÚ©Ø§Ø±Úˆ Ù¾ÛÙ„Û’ Ø³Û’ Ù…ÙˆØ¬ÙˆØ¯ ÛÛ’Û”",
   error_generic: "Ø®Ø±Ø§Ø¨ÛŒ",
   error_group_subgroup_only_for_bulk_commission:
     "Ø§Ø³ Ø§Ø³Ú©Ø±ÛŒÙ† Ú©Û’ Ù„ÛŒÛ’ØŒ Ú¯Ø±ÙˆÙ¾/Ø³Ø¨ Ú¯Ø±ÙˆÙ¾ Ú©Ù…ÛŒØ´Ù† Ú©ÛŒ ØªØ¨Ø¯ÛŒÙ„ÛŒÙˆÚº Ú©ÛŒ Ø§Ø¬Ø§Ø²Øª ØµØ±Ù Ø¨Ù„Ú© Ø³ÛŒÙˆ Ú©Û’ Ø°Ø±ÛŒØ¹Û’ ÛÛ’Û”",
-  error_immutable_field: "Ø·Ø¨Ø¹ÛŒ Ù…Ø®ØªÙ„Ù Ø®ØµÙˆØµÛŒØ§Øª Ù…ÛŒÚº ØªØ±Ù…ÛŒÙ… Ù†ÛÛŒÚº Ú©ÛŒ Ø¬Ø§ Ø³Ú©ØªÛŒÛ”",
-  error_invalid_account_group: "Ø§Ú©Ø§Ø¤Ù†Ù¹ Ú©Ø§ ØºÙ„Ø· Ú¯Ø±ÙˆÙ¾ Ù…Ù†ØªØ®Ø¨ Ú©ÛŒØ§ Ú¯ÛŒØ§Û”",
-  error_invalid_amount_type: "Ø±Ù‚Ù… Ú©ÛŒ ØºÙ„Ø· Ù‚Ø³Ù… Ù…Ù†ØªØ®Ø¨ Ú©ÛŒ Ú¯Ø¦ÛŒÛ”",
+  error_immutable_field:
+    "Ø·Ø¨Ø¹ÛŒ Ù…Ø®ØªÙ„Ù Ø®ØµÙˆØµÛŒØ§Øª Ù…ÛŒÚº ØªØ±Ù…ÛŒÙ… Ù†ÛÛŒÚº Ú©ÛŒ Ø¬Ø§ Ø³Ú©ØªÛŒÛ”",
+  error_invalid_account_group:
+    "Ø§Ú©Ø§Ø¤Ù†Ù¹ Ú©Ø§ ØºÙ„Ø· Ú¯Ø±ÙˆÙ¾ Ù…Ù†ØªØ®Ø¨ Ú©ÛŒØ§ Ú¯ÛŒØ§Û”",
+  error_invalid_amount_type:
+    "Ø±Ù‚Ù… Ú©ÛŒ ØºÙ„Ø· Ù‚Ø³Ù… Ù…Ù†ØªØ®Ø¨ Ú©ÛŒ Ú¯Ø¦ÛŒÛ”",
   error_invalid_apply_on: "Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ù¾Ø± ØºÙ„Ø· Ø§Ù†ØªØ®Ø§Ø¨Û”",
-  error_invalid_article_type: "ØºÙ„Ø· Ù…Ø¶Ù…ÙˆÙ† Ú©ÛŒ Ù‚Ø³Ù… Ù…Ù†ØªØ®Ø¨ Ú©ÛŒ Ú¯Ø¦ÛŒÛ”",
-  error_invalid_bulk_commission_payload: "ØºÙ„Ø· Ø¨Ù„Ú© Ú©Ù…ÛŒØ´Ù† Ù¾Û’ Ù„ÙˆÚˆÛ”",
-  error_invalid_bulk_labour_rate_payload: "ØºÙ„Ø· Ù„ÛŒØ¨Ø± Ø±ÛŒÙ¹ Ù¾Û’ Ù„ÙˆÚˆÛ”",
+  error_invalid_article_type:
+    "ØºÙ„Ø· Ù…Ø¶Ù…ÙˆÙ† Ú©ÛŒ Ù‚Ø³Ù… Ù…Ù†ØªØ®Ø¨ Ú©ÛŒ Ú¯Ø¦ÛŒÛ”",
+  error_invalid_bulk_commission_payload:
+    "ØºÙ„Ø· Ø¨Ù„Ú© Ú©Ù…ÛŒØ´Ù† Ù¾Û’ Ù„ÙˆÚˆÛ”",
+  error_invalid_bulk_labour_rate_payload:
+    "ØºÙ„Ø· Ù„ÛŒØ¨Ø± Ø±ÛŒÙ¹ Ù¾Û’ Ù„ÙˆÚˆÛ”",
   error_invalid_cnic: "ØºÙ„Ø· CNIC ÙØ§Ø±Ù…ÛŒÙ¹Û”",
-  error_invalid_commission_basis: "Ú©Ù…ÛŒØ´Ù† Ú©ÛŒ Ø¨Ù†ÛŒØ§Ø¯ Ù¾Ø± ØºÙ„Ø· Ø§Ù†ØªØ®Ø§Ø¨ Ú©ÛŒØ§ Ú¯ÛŒØ§Û”",
+  error_invalid_commission_basis:
+    "Ú©Ù…ÛŒØ´Ù† Ú©ÛŒ Ø¨Ù†ÛŒØ§Ø¯ Ù¾Ø± ØºÙ„Ø· Ø§Ù†ØªØ®Ø§Ø¨ Ú©ÛŒØ§ Ú¯ÛŒØ§Û”",
   error_invalid_frequency: "ØºÙ„Ø· ÙØ±ÛŒÚ©ÙˆØ¦Ù†Ø³ÛŒ Ù…Ù†ØªØ®Ø¨ Ú©ÛŒ Ú¯Ø¦ÛŒÛ”",
-  error_invalid_payroll_type: "Ù¾Û’ Ø±ÙˆÙ„ Ú©ÛŒ ØºÙ„Ø· Ù‚Ø³Ù… Ù…Ù†ØªØ®Ø¨ Ú©ÛŒ Ú¯Ø¦ÛŒÛ”",
+  error_invalid_payroll_type:
+    "Ù¾Û’ Ø±ÙˆÙ„ Ú©ÛŒ ØºÙ„Ø· Ù‚Ø³Ù… Ù…Ù†ØªØ®Ø¨ Ú©ÛŒ Ú¯Ø¦ÛŒÛ”",
   error_invalid_phone_number: "ÙÙˆÙ† Ù†Ù…Ø¨Ø± Ú©ÛŒ ØºÙ„Ø· Ø´Ú©Ù„Û”",
-  error_invalid_posting_class: "ØºÙ„Ø· Ù¾ÙˆØ³Ù¹Ù†Ú¯ Ú©Ù„Ø§Ø³ Ù…Ù†ØªØ®Ø¨ Ú©ÛŒ Ú¯Ø¦ÛŒÛ”",
-  error_invalid_production_category: "ØºÙ„Ø· Ù¾Ø±ÙˆÚˆÚ©Ø´Ù† Ø²Ù…Ø±Û Ù…Ù†ØªØ®Ø¨ Ú©ÛŒØ§ Ú¯ÛŒØ§Û”",
+  error_invalid_posting_class:
+    "ØºÙ„Ø· Ù¾ÙˆØ³Ù¹Ù†Ú¯ Ú©Ù„Ø§Ø³ Ù…Ù†ØªØ®Ø¨ Ú©ÛŒ Ú¯Ø¦ÛŒÛ”",
+  error_invalid_production_category:
+    "ØºÙ„Ø· Ù¾Ø±ÙˆÚˆÚ©Ø´Ù† Ø²Ù…Ø±Û Ù…Ù†ØªØ®Ø¨ Ú©ÛŒØ§ Ú¯ÛŒØ§Û”",
   error_invalid_rate_type: "ØºÙ„Ø· Ø´Ø±Ø­ Ú©ÛŒ Ù‚Ø³Ù… Ù…Ù†ØªØ®Ø¨ Ú©ÛŒ Ú¯Ø¦ÛŒÛ”",
   error_invalid_rate_value: "ØºÙ„Ø· Ù‚Ø¯Ø±",
-  error_invalid_salary: "Ø¨Ù†ÛŒØ§Ø¯ÛŒ ØªÙ†Ø®ÙˆØ§Û Ø§ÛŒÚ© ØºÛŒØ± Ù…Ù†ÙÛŒ Ù†Ù…Ø¨Ø± ÛÙˆÙ†ÛŒ Ú†Ø§ÛÛŒÛ’Û”",
+  error_invalid_salary:
+    "Ø¨Ù†ÛŒØ§Ø¯ÛŒ ØªÙ†Ø®ÙˆØ§Û Ø§ÛŒÚ© ØºÛŒØ± Ù…Ù†ÙÛŒ Ù†Ù…Ø¨Ø± ÛÙˆÙ†ÛŒ Ú†Ø§ÛÛŒÛ’Û”",
   error_invalid_salary_precision:
     "Ø¨Ù†ÛŒØ§Ø¯ÛŒ ØªÙ†Ø®ÙˆØ§Û ØµØ±Ù 2 Ø§Ø¹Ø´Ø§Ø±ÛŒÛ 2 Ù…Ù‚Ø§Ù…Ø§Øª Ø§ÙˆØ± Ø¯Ø±Ø³Øª Ø­Ø¯ ØªÚ© Ø³Ù¾ÙˆØ±Ù¹ Ú©Ø±ØªÛŒ ÛÛ’Û”",
   error_invalid_status: "ØºÙ„Ø· Ø­ÛŒØ«ÛŒØª Ú©Ø§ Ø§Ù†ØªØ®Ø§Ø¨ Ú©ÛŒØ§ Ú¯ÛŒØ§Û”",
   error_invalid_value: "Ø§ÛŒÚ© ÛŒØ§ Ø²ÛŒØ§Ø¯Û Ù‚Ø¯Ø±ÛŒÚº ØºÙ„Ø· ÛÛŒÚºÛ”",
-  error_invalid_value_type: "ØºÙ„Ø· Ù‚Ø¯Ø± Ú©ÛŒ Ù‚Ø³Ù… Ù…Ù†ØªØ®Ø¨ Ú©ÛŒ Ú¯Ø¦ÛŒÛ”",
-  error_no_target_skus_found: "Ù…Ù†ØªØ®Ø¨ ÙÙ„Ù¹Ø±Ø² Ú©Û’ Ù„ÛŒÛ’ Ú©ÙˆØ¦ÛŒ ÛØ¯Ù SKUs Ù†ÛÛŒÚº Ù…Ù„Û’Û”",
-  error_party_group_type: "Ù¾Ø§Ø±Ù¹ÛŒ Ú©ÛŒ Ù‚Ø³Ù… Ù…Ù†ØªØ®Ø¨ Ú¯Ø±ÙˆÙ¾ Ø³Û’ Ù…Ù…Ø§Ø«Ù„ Ù†ÛÛŒÚº ÛÛ’Û”",
+  error_invalid_value_type:
+    "ØºÙ„Ø· Ù‚Ø¯Ø± Ú©ÛŒ Ù‚Ø³Ù… Ù…Ù†ØªØ®Ø¨ Ú©ÛŒ Ú¯Ø¦ÛŒÛ”",
+  error_no_target_skus_found:
+    "Ù…Ù†ØªØ®Ø¨ ÙÙ„Ù¹Ø±Ø² Ú©Û’ Ù„ÛŒÛ’ Ú©ÙˆØ¦ÛŒ ÛØ¯Ù SKUs Ù†ÛÛŒÚº Ù…Ù„Û’Û”",
+  error_party_group_type:
+    "Ù¾Ø§Ø±Ù¹ÛŒ Ú©ÛŒ Ù‚Ø³Ù… Ù…Ù†ØªØ®Ø¨ Ú¯Ø±ÙˆÙ¾ Ø³Û’ Ù…Ù…Ø§Ø«Ù„ Ù†ÛÛŒÚº ÛÛ’Û”",
   error_record_in_use:
     "ÛŒÛ Ø±ÛŒÚ©Ø§Ø±Úˆ Ø¯ÙˆØ³Ø±Û’ ÚˆÛŒÙ¹Ø§ Ø³Û’ Ù…Ù†Ø³Ù„Ú© ÛÛ’ Ø§ÙˆØ± Ø§Ø³Û’ Ø­Ø°Ù Ù†ÛÛŒÚº Ú©ÛŒØ§ Ø¬Ø§ Ø³Ú©ØªØ§Û”",
-  error_required_fields: "Ø¨Ø±Ø§Û Ú©Ø±Ù… ØªÙ…Ø§Ù… Ù…Ø·Ù„ÙˆØ¨Û ÙÛŒÙ„ÚˆØ² Ú©Ùˆ Ù¾ÙØ± Ú©Ø±ÛŒÚºÛ”",
+  error_required_fields:
+    "Ø¨Ø±Ø§Û Ú©Ø±Ù… ØªÙ…Ø§Ù… Ù…Ø·Ù„ÙˆØ¨Û ÙÛŒÙ„ÚˆØ² Ú©Ùˆ Ù¾ÙØ± Ú©Ø±ÛŒÚºÛ”",
   error_saving: "Ù…Ø­ÙÙˆØ¸ Ú©Ø±Ù†Û’ Ù…ÛŒÚº Ø®Ø±Ø§Ø¨ÛŒÛ”",
-  error_select_article_type: "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ù…Ø¶Ù…ÙˆÙ† Ú©ÛŒ Ù‚Ø³Ù… Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
+  error_select_article_type:
+    "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ù…Ø¶Ù…ÙˆÙ† Ú©ÛŒ Ù‚Ø³Ù… Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
   error_select_branch: "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ø§ÛŒÚ© Ø¨Ø±Ø§Ù†Ú† Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
   error_select_city: "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ø´ÛØ± Ú©Ø§ Ø§Ù†ØªØ®Ø§Ø¨ Ú©Ø±ÛŒÚºÛ”",
-  error_select_commission_basis: "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ú©Ù…ÛŒØ´Ù† Ú©ÛŒ Ø¨Ù†ÛŒØ§Ø¯ Ù¾Ø± Ø§Ù†ØªØ®Ø§Ø¨ Ú©Ø±ÛŒÚºÛ”",
-  error_select_department: "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ø§ÛŒÚ© Ø´Ø¹Ø¨Û Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
-  error_select_group: "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ø§ÛŒÚ© Ù¾Ø±ÙˆÚˆÚ©Ù¹ Ú¯Ø±ÙˆÙ¾ Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
+  error_select_commission_basis:
+    "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ú©Ù…ÛŒØ´Ù† Ú©ÛŒ Ø¨Ù†ÛŒØ§Ø¯ Ù¾Ø± Ø§Ù†ØªØ®Ø§Ø¨ Ú©Ø±ÛŒÚºÛ”",
+  error_select_department:
+    "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ø§ÛŒÚ© Ø´Ø¹Ø¨Û Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
+  error_select_group:
+    "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ø§ÛŒÚ© Ù¾Ø±ÙˆÚˆÚ©Ù¹ Ú¯Ø±ÙˆÙ¾ Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
   error_select_labour: "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ø§ÛŒÚ© Ù„ÛŒØ¨Ø± Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
-  error_select_party_group: "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ù¾Ø§Ø±Ù¹ÛŒ Ú¯Ø±ÙˆÙ¾ Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
-  error_select_phone: "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ú©Ù… Ø§Ø² Ú©Ù… Ø§ÛŒÚ© ÙÙˆÙ† Ù†Ù…Ø¨Ø± Ø¯Ø±Ø¬ Ú©Ø±ÛŒÚºÛ”",
-  error_select_rate_type: "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ø´Ø±Ø­ Ú©ÛŒ Ù‚Ø³Ù… Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
-  error_select_sku: "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ø§ÛŒÚ© Ù…Ø¶Ù…ÙˆÙ† (SKU) Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
-  error_select_subgroup: "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ø§ÛŒÚ© Ù¾Ø±ÙˆÚˆÚ©Ù¹ Ø°ÛŒÙ„ÛŒ Ú¯Ø±ÙˆÙ¾ Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
+  error_select_party_group:
+    "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ù¾Ø§Ø±Ù¹ÛŒ Ú¯Ø±ÙˆÙ¾ Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
+  error_select_phone:
+    "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ú©Ù… Ø§Ø² Ú©Ù… Ø§ÛŒÚ© ÙÙˆÙ† Ù†Ù…Ø¨Ø± Ø¯Ø±Ø¬ Ú©Ø±ÛŒÚºÛ”",
+  error_select_rate_type:
+    "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ø´Ø±Ø­ Ú©ÛŒ Ù‚Ø³Ù… Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
+  error_select_sku:
+    "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ø§ÛŒÚ© Ù…Ø¶Ù…ÙˆÙ† (SKU) Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
+  error_select_subgroup:
+    "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ø§ÛŒÚ© Ù¾Ø±ÙˆÚˆÚ©Ù¹ Ø°ÛŒÙ„ÛŒ Ú¯Ø±ÙˆÙ¾ Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
   error_select_vendor_capabilities:
     "Ø¨Ø±Ø§Û Ú©Ø±Ù… Ø³Ù¾Ù„Ø§Ø¦Ø± Ú©Û’ Ù„ÛŒÛ’ Ú©Ù… Ø§Ø² Ú©Ù… Ø§ÛŒÚ© ÙˆÛŒÙ†ÚˆØ± Ú©ÛŒ Ø§ÛÙ„ÛŒØª Ú©Ø§ Ø§Ù†ØªØ®Ø§Ø¨ Ú©Ø±ÛŒÚºÛ”",
   error_unable_save: "Ù…Ø­ÙÙˆØ¸ Ú©Ø±Ù†Û’ Ø³Û’ Ù‚Ø§ØµØ±Û”",
-  error_unit_code_locked: "ÛŒÙˆÙ†Ù¹ Ú©ÙˆÚˆ Ú©Ùˆ ØªØ¨Ø¯ÛŒÙ„ Ù†ÛÛŒÚº Ú©ÛŒØ§ Ø¬Ø§ Ø³Ú©ØªØ§Û”",
+  error_unit_code_locked:
+    "ÛŒÙˆÙ†Ù¹ Ú©ÙˆÚˆ Ú©Ùˆ ØªØ¨Ø¯ÛŒÙ„ Ù†ÛÛŒÚº Ú©ÛŒØ§ Ø¬Ø§ Ø³Ú©ØªØ§Û”",
   error_update_status: "Ø§Ø³Ù¹ÛŒÙ¹Ø³ Ú©Ùˆ Ø§Ù¾ ÚˆÛŒÙ¹ Ú©Ø±Ù†Û’ Ø³Û’ Ù‚Ø§ØµØ±Û”",
   exclude: "Ø®Ø§Ø±Ø¬ Ú©Ø±Ù†Ø§",
   expand: "Ù¾Ú¾ÛŒÙ„Ø§Ø¦ÛŒÚºÛ”",
@@ -2082,7 +2180,8 @@ translations.ur = {
   finished_description:
     "ØªÛŒØ§Ø± Ø³Ø§Ù…Ø§Ù† Ú©ÛŒ Ø§Ø´ÛŒØ§Ø¡ Ø§ÙˆØ± Ø§Ù† Ú©ÛŒ Ù…Ø®ØªÙ„Ù Ø­Ø§Ù„ØªÙˆÚº Ú©Ø§ Ù†Ø¸Ù… Ú©Ø±ÛŒÚºÛ”",
   finished_goods: "ØªÛŒØ§Ø± Ø³Ø§Ù…Ø§Ù†",
-  finished_setup_note: "ØªÛŒØ§Ø± Ø§Ø´ÛŒØ§Ø¡ Ú©Û’ Ù„ÛŒÛ’ Ø³Ø§Ø¦Ø² Ø§ÙˆØ± Ù…Ø®ØªÙ„Ù Ø³ÛŒÙ¹ Ø§Ù¾ ØªØ±ØªÛŒØ¨ Ø¯ÛŒÚºÛ”",
+  finished_setup_note:
+    "ØªÛŒØ§Ø± Ø§Ø´ÛŒØ§Ø¡ Ú©Û’ Ù„ÛŒÛ’ Ø³Ø§Ø¦Ø² Ø§ÙˆØ± Ù…Ø®ØªÙ„Ù Ø³ÛŒÙ¹ Ø§Ù¾ ØªØ±ØªÛŒØ¨ Ø¯ÛŒÚºÛ”",
   frequency: "ØªØ¹Ø¯Ø¯",
   frequency_daily: "Ø±ÙˆØ²Ø§Ù†Û",
   frequency_monthly: "Ù…Ø§ÛØ§Ù†Û",
@@ -2112,19 +2211,22 @@ translations.ur = {
     "Ù¾ÙˆØ³Ù¹Ù†Ú¯ Ø±ÙˆÛŒÛ’ Ú©Û’ Ù„ÛŒÛ’ Ø§Ø®ØªÛŒØ§Ø±ÛŒ Ø¯Ø±Ø¬Û Ø¨Ù†Ø¯ÛŒ Ú©Ø§ Ø§Ø³ØªØ¹Ù…Ø§Ù„ Ú©ÛŒØ§ Ø¬Ø§ØªØ§ ÛÛ’ (Ù…Ø«Ø§Ù„ Ú©Û’ Ø·ÙˆØ± Ù¾Ø±ØŒ Ø¨ÛŒÙ†Ú©)Û”",
   help_unit_code:
     "Ø³Ø³Ù¹Ù… Ú©Û’ Ø°Ø±ÛŒØ¹Û’ Ø§Ø³ØªØ¹Ù…Ø§Ù„ ÛÙˆÙ†Û’ ÙˆØ§Ù„ÛŒ Ù…Ø®ØªØµØ± Ù…Ù†ÙØ±Ø¯ Ú©Ù„ÛŒØ¯ (Ø¬ÛŒØ³Û’ØŒ PCSØŒ KG)Û”",
-  help_unit_name: "ÙˆØ¶Ø§Ø­ØªÛŒ Ù†Ø§Ù… Ø±Ù¾ÙˆØ±Ù¹ÙˆÚº Ø§ÙˆØ± Ø¯Ø³ØªØ§ÙˆÛŒØ²Ø§Øª Ù¾Ø± Ø¯Ú©Ú¾Ø§ÛŒØ§ Ú¯ÛŒØ§ ÛÛ’Û”",
+  help_unit_name:
+    "ÙˆØ¶Ø§Ø­ØªÛŒ Ù†Ø§Ù… Ø±Ù¾ÙˆØ±Ù¹ÙˆÚº Ø§ÙˆØ± Ø¯Ø³ØªØ§ÙˆÛŒØ²Ø§Øª Ù¾Ø± Ø¯Ú©Ú¾Ø§ÛŒØ§ Ú¯ÛŒØ§ ÛÛ’Û”",
   highest_bill: "Ø³Ø¨ Ø³Û’ Ø²ÛŒØ§Ø¯Û Ø¨Ù„",
   highest_bucket: "Ú†ÙˆÙ¹ÛŒ Ú©Û’ Ø§Ø®Ø±Ø§Ø¬Ø§Øª Ú©ÛŒ Ù…Ø¯Øª",
   home_branch: "ÛÙˆÙ… Ø¨Ø±Ø§Ù†Ú†",
   hr_screen_description:
     "Ø§Ø³ÛŒ ÛŒÙˆÙ†ÛŒÙˆØ±Ø³Ù„ ÙˆØ±Ú© ÙÙ„Ùˆ Ø§ÙˆØ± Ù…Ù†Ø¸ÙˆØ±ÛŒÙˆÚº Ú©Ø§ Ø§Ø³ØªØ¹Ù…Ø§Ù„ Ú©Ø±ØªÛ’ ÛÙˆØ¦Û’ HR Ø§ÙˆØ± Ù¾Û’ Ø±ÙˆÙ„ Ø³ÛŒÙ¹ Ø§Ù¾ Ú©Ø§ Ù†Ø¸Ù… Ú©Ø±ÛŒÚºÛ”",
-  hr_screen_planned_note: "ÛŒÛ Ø§Ø³Ú©Ø±ÛŒÙ† Ú©Ø§ Ø±Ø§Ø³ØªÛ ÙØ¹Ø§Ù„ ÛÛ’ Ø§ÙˆØ± Ø§Ø¬Ø§Ø²ØªÙˆÚº Ø³Û’ Ù…Ù†Ø³Ù„Ú© ÛÛ’Û”",
+  hr_screen_planned_note:
+    "ÛŒÛ Ø§Ø³Ú©Ø±ÛŒÙ† Ú©Ø§ Ø±Ø§Ø³ØªÛ ÙØ¹Ø§Ù„ ÛÛ’ Ø§ÙˆØ± Ø§Ø¬Ø§Ø²ØªÙˆÚº Ø³Û’ Ù…Ù†Ø³Ù„Ú© ÛÛ’Û”",
   id: "ID",
   impact: "Ø§Ø«Ø±",
   inactive: "ØºÛŒØ± ÙØ¹Ø§Ù„",
   include: "Ø´Ø§Ù…Ù„ Ú©Ø±ÛŒÚºÛ”",
   include_na: "N/A Ø´Ø§Ù…Ù„ Ú©Ø±ÛŒÚºÛ”",
-  include_non_department_postings: "ØºÛŒØ± Ù…Ø­Ú©Ù…Ø§Ù†Û Ù¾ÙˆØ³Ù¹Ù†Ú¯ Ø´Ø§Ù…Ù„ Ú©Ø±ÛŒÚº (N/A)",
+  include_non_department_postings:
+    "ØºÛŒØ± Ù…Ø­Ú©Ù…Ø§Ù†Û Ù¾ÙˆØ³Ù¹Ù†Ú¯ Ø´Ø§Ù…Ù„ Ú©Ø±ÛŒÚº (N/A)",
   include_non_department_postings_hint:
     "Ø§Ù† Ù„Ø§Ø¦Ù†ÙˆÚº Ù¾Ø± Ù…Ø´ØªÙ…Ù„ ÛÛ’ Ø¬ÛØ§Úº Ù…Ø­Ú©Ù…Û Ù„Ø§Ú¯Ùˆ Ù†ÛÛŒÚº ÛÛ’ (Ù†Ù‚Ø¯/Ø¨ÛŒÙ†Ú©/ Ø§ÛŒÚˆÙˆØ§Ù†Ø³Ø²/ Ù¹Ø±Ø§Ù†Ø³ÙØ±Ø²)Û”",
   incorrect_credentials: "ØºÙ„Ø· ØµØ§Ø±Ù Ù†Ø§Ù… ÛŒØ§ Ù¾Ø§Ø³ ÙˆØ±ÚˆÛ”",
@@ -2163,7 +2265,8 @@ translations.ur = {
   login: "Ù„Ø§Ú¯ Ø§Ù†",
   login_failed: "Ù„Ø§Ú¯ Ø§Ù† Ù†Ø§Ú©Ø§Ù… ÛÙˆ Ú¯ÛŒØ§Û”",
   loose: "ÚˆÚ¾ÛŒÙ„Ø§",
-  manage_company_locations: "Ø¨Ø±Ø§Ù†Ú† Ú©Û’ Ù…Ù‚Ø§Ù…Ø§Øª Ø§ÙˆØ± Ø¯Ø³ØªÛŒØ§Ø¨ÛŒ Ú©Ø§ Ù†Ø¸Ù… Ú©Ø±ÛŒÚºÛ”",
+  manage_company_locations:
+    "Ø¨Ø±Ø§Ù†Ú† Ú©Û’ Ù…Ù‚Ø§Ù…Ø§Øª Ø§ÙˆØ± Ø¯Ø³ØªÛŒØ§Ø¨ÛŒ Ú©Ø§ Ù†Ø¸Ù… Ú©Ø±ÛŒÚºÛ”",
   manage_permissions: "Ø§Ø¬Ø§Ø²ØªÙˆÚº Ú©Ø§ Ù†Ø¸Ù… Ú©Ø±ÛŒÚºÛ”",
   material_capability: "Ù…ÙˆØ§Ø¯",
   min_stock: "Ú©Ù… Ø§Ø² Ú©Ù… Ø§Ø³Ù¹Ø§Ú©",
@@ -2184,15 +2287,18 @@ translations.ur = {
   new_value: "Ù†Ø¦ÛŒ Ù‚Ø¯Ø±",
   no: "Ù†ÛÛŒÚº",
   no_data: "Ú©ÙˆØ¦ÛŒ ÚˆÛŒÙ¹Ø§ Ù†ÛÛŒÚº Ù…Ù„Ø§Û”",
-  no_data_for_selected_period: "Ù…Ù†ØªØ®Ø¨ Ù…Ø¯Øª Ú©Û’ Ù„ÛŒÛ’ Ø§Ø®Ø±Ø§Ø¬Ø§Øª Ú©Û’ Ø§Ù†Ø¯Ø±Ø§Ø¬Ø§Øª Ù†ÛÛŒÚº Ù…Ù„Û’Û”",
+  no_data_for_selected_period:
+    "Ù…Ù†ØªØ®Ø¨ Ù…Ø¯Øª Ú©Û’ Ù„ÛŒÛ’ Ø§Ø®Ø±Ø§Ø¬Ø§Øª Ú©Û’ Ø§Ù†Ø¯Ø±Ø§Ø¬Ø§Øª Ù†ÛÛŒÚº Ù…Ù„Û’Û”",
   no_entries: "Ø§Ø¨Ú¾ÛŒ ØªÚ© Ú©ÙˆØ¦ÛŒ Ø§Ù†Ø¯Ø±Ø§Ø¬ Ù†ÛÛŒÚº ÛÛ’Û”",
   no_labours_found_for_department:
     "Ù…Ù†ØªØ®Ø¨ Ù…Ø­Ú©Ù…Û Ú©Û’ Ù„ÛŒÛ’ Ú©ÙˆØ¦ÛŒ ÙØ¹Ø§Ù„ Ù…Ø²Ø¯ÙˆØ± Ù†ÛÛŒÚº Ù…Ù„Ø§Û”",
   no_navigate_access_message:
     "Ø±ÛŒÚ©Ø§Ø±ÚˆØ² Ù¾ÙˆØ´ÛŒØ¯Û ÛÛŒÚº Ú©ÛŒÙˆÙ†Ú©Û Ø¢Ù¾ Ú©Ùˆ Ù†ÛŒÙˆÛŒÚ¯ÛŒØ´Ù† ØªÚ© Ø±Ø³Ø§Ø¦ÛŒ Ù†ÛÛŒÚº ÛÛ’Û”",
-  no_new_combinations: "ØªÙ…Ø§Ù… Ù…Ù†ØªØ®Ø¨ Ú©Ø±Ø¯Û Ø§Ù…ØªØ²Ø§Ø¬ Ù¾ÛÙ„Û’ Ø³Û’ Ù…ÙˆØ¬ÙˆØ¯ ÛÛŒÚºÛ”",
+  no_new_combinations:
+    "ØªÙ…Ø§Ù… Ù…Ù†ØªØ®Ø¨ Ú©Ø±Ø¯Û Ø§Ù…ØªØ²Ø§Ø¬ Ù¾ÛÙ„Û’ Ø³Û’ Ù…ÙˆØ¬ÙˆØ¯ ÛÛŒÚºÛ”",
   no_records_found: "Ú©ÙˆØ¦ÛŒ Ø±ÛŒÚ©Ø§Ø±Úˆ Ù†ÛÛŒÚº Ù…Ù„Ø§",
-  non_production_expense: "ØºÛŒØ± Ù¾ÛŒØ¯Ø§ÙˆØ§Ø±ÛŒ Ø§Ø®Ø±Ø§Ø¬Ø§Øª Ú©Ø§ ØªØ¬Ø²ÛŒÛ",
+  non_production_expense:
+    "ØºÛŒØ± Ù¾ÛŒØ¯Ø§ÙˆØ§Ø±ÛŒ Ø§Ø®Ø±Ø§Ø¬Ø§Øª Ú©Ø§ ØªØ¬Ø²ÛŒÛ",
   note: "Ù†ÙˆÙ¹",
   of: "Ú©ÛŒ",
   ok: "Ù¹Ú¾ÛŒÚ© ÛÛ’",
@@ -2220,7 +2326,8 @@ translations.ur = {
   party_code: "Ù¾Ø§Ø±Ù¹ÛŒ Ú©ÙˆÚˆ",
   party_group: "Ù¾Ø§Ø±Ù¹ÛŒ Ú¯Ø±ÙˆÙ¾",
   party_groups: "Ù¾Ø§Ø±Ù¹ÛŒ Ú¯Ø±ÙˆÙ¾Ø³",
-  party_groups_description: "ØµØ§Ø±ÙÛŒÙ† Ø§ÙˆØ± Ø³Ù¾Ù„Ø§Ø¦Ø±Ø² Ú©Ùˆ ØªÙ‚Ø³ÛŒÙ… Ú©Ø±ÛŒÚºÛ”",
+  party_groups_description:
+    "ØµØ§Ø±ÙÛŒÙ† Ø§ÙˆØ± Ø³Ù¾Ù„Ø§Ø¦Ø±Ø² Ú©Ùˆ ØªÙ‚Ø³ÛŒÙ… Ú©Ø±ÛŒÚºÛ”",
   party_name: "Ù¾Ø§Ø±Ù¹ÛŒ Ú©Ø§ Ù†Ø§Ù…",
   party_type: "Ù¾Ø§Ø±Ù¹ÛŒ Ú©ÛŒ Ù‚Ø³Ù…",
   password: "Ù¾Ø§Ø³ ÙˆØ±Úˆ",
@@ -2231,30 +2338,36 @@ translations.ur = {
   payroll_multiple: "Ù…ØªØ¹Ø¯Ø¯",
   payroll_piece_rate: "Ù¾ÛŒØ³ Ø±ÛŒÙ¹",
   payroll_type: "Ù¾Û’ Ø±ÙˆÙ„ Ú©ÛŒ Ù‚Ø³Ù…",
-  payroll_wage_balance: "Ù¾Û’ Ø±ÙˆÙ„ Ø§ÙˆØ± Ø§Ø¬Ø±Øª Ú©Û’ ØªÙˆØ§Ø²Ù† Ú©ÛŒ Ø±Ù¾ÙˆØ±Ù¹",
+  payroll_wage_balance:
+    "Ù¾Û’ Ø±ÙˆÙ„ Ø§ÙˆØ± Ø§Ø¬Ø±Øª Ú©Û’ ØªÙˆØ§Ø²Ù† Ú©ÛŒ Ø±Ù¾ÙˆØ±Ù¹",
   pending: "Ø²ÛŒØ± Ø§Ù„ØªÙˆØ§Ø¡",
   pending_delivery_qty: "Ø²ÛŒØ± Ø§Ù„ØªÙˆØ§Ø¡ ØªØ±Ø³ÛŒÙ„ Ú©ÛŒ Ù…Ù‚Ø¯Ø§Ø±",
   percent_of_department: "Ù…Ø­Ú©Ù…Û Ú©Ø§ %",
   percent_of_total: "Ú©Ù„ Ú©Ø§ %",
   period: "Ù…Ø¯Øª",
   permanent_delete: "Ù…Ø³ØªÙ‚Ù„ Ø­Ø°Ù Ú©Ø±ÛŒÚºÛ”",
-  permanent_delete_message: "ÛŒÛ Ø¹Ù…Ù„ Ù…Ø³ØªÙ‚Ù„ Ø·ÙˆØ± Ù¾Ø± Ø±ÛŒÚ©Ø§Ø±Úˆ Ú©Ùˆ Ø­Ø°Ù Ú©Ø± Ø¯ÛŒØªØ§ ÛÛ’Û”",
+  permanent_delete_message:
+    "ÛŒÛ Ø¹Ù…Ù„ Ù…Ø³ØªÙ‚Ù„ Ø·ÙˆØ± Ù¾Ø± Ø±ÛŒÚ©Ø§Ø±Úˆ Ú©Ùˆ Ø­Ø°Ù Ú©Ø± Ø¯ÛŒØªØ§ ÛÛ’Û”",
   permissions_read_only_hint:
     "Ø¢Ù¾ Ú©Ùˆ Ø¯ÛŒÚ©Ú¾Ù†Û’ Ú©ÛŒ Ø§Ø¬Ø§Ø²Øª ØªÚ© Ø±Ø³Ø§Ø¦ÛŒ Ø­Ø§ØµÙ„ ÛÛ’ØŒ Ù„ÛŒÚ©Ù† Ø¢Ù¾ Ø§Ù† Ù…ÛŒÚº ØªØ±Ù…ÛŒÙ… Ù†ÛÛŒÚº Ú©Ø± Ø³Ú©ØªÛ’Û”",
-  permissions_subtitle: "ØµØ§Ø±Ù Ø§ÙˆØ± Ú©Ø±Ø¯Ø§Ø± ØªÚ© Ø±Ø³Ø§Ø¦ÛŒ Ú©ÛŒ Ø³Ø·Ø­ÙˆÚº Ú©Ø§ Ù†Ø¸Ù… Ú©Ø±ÛŒÚºÛ”",
+  permissions_subtitle:
+    "ØµØ§Ø±Ù Ø§ÙˆØ± Ú©Ø±Ø¯Ø§Ø± ØªÚ© Ø±Ø³Ø§Ø¦ÛŒ Ú©ÛŒ Ø³Ø·Ø­ÙˆÚº Ú©Ø§ Ù†Ø¸Ù… Ú©Ø±ÛŒÚºÛ”",
   permissions_tip_approve:
     "Ø±ÛŒÚ©Ø§Ø±Úˆ Ú©ÛŒ Ø­ÛŒØ«ÛŒØª Ú©Ùˆ Ø­ØªÙ…ÛŒ Ø´Ú©Ù„ Ø¯ÛŒÙ†Û’ Ú©Ø§ Ø§Ø®ØªÛŒØ§Ø± Ø¯ÛŒØªØ§ ÛÛ’Û”",
   permissions_tip_create:
     "Ù†Ø¦ÛŒ Ø§Ù†Ø¯Ø±Ø§Ø¬Ø§Øª Ú©Ùˆ Ù…Ø­ÙÙˆØ¸ Ú©Ø±Ù†Û’ Ú©Û’ Ù„ÛŒÛ’ Ù†ÛŒØ§ ÙØ§Ø±Ù… Ø´Ø§Ù…Ù„ Ú©Ø±ÛŒÚº Ú©Ùˆ ÙØ¹Ø§Ù„ Ú©Ø±ØªØ§ ÛÛ’Û”",
   permissions_tip_deactivate:
     "Ø±ÛŒÚ©Ø§Ø±ÚˆØ² Ú©Ùˆ ØºÛŒØ± ÙØ¹Ø§Ù„ Ú©Ø±Ù†Û’ Ú©Û’ Ø§Ø®ØªÛŒØ§Ø± Ú©Ùˆ ÙØ¹Ø§Ù„ Ú©Ø±ØªØ§ ÛÛ’Û”",
-  permissions_tip_delete: "Ù…Ø³ØªÙ‚Ù„ Ø·ÙˆØ± Ù¾Ø± Ø±ÛŒÚ©Ø§Ø±Úˆ Ú©Ùˆ ÛÙ¹Ø§ØªØ§ ÛÛ’Û”",
-  permissions_tip_download: "ÚˆØ§Ø¤Ù† Ù„ÙˆÚˆ Ø§ÙˆØ± Ø§ÛŒÚ©Ø³Ù¾ÙˆØ±Ù¹ Ø¨Ù¹Ù† Ú©Ùˆ ÙØ¹Ø§Ù„ Ú©Ø±ØªØ§ ÛÛ’Û”",
+  permissions_tip_delete:
+    "Ù…Ø³ØªÙ‚Ù„ Ø·ÙˆØ± Ù¾Ø± Ø±ÛŒÚ©Ø§Ø±Úˆ Ú©Ùˆ ÛÙ¹Ø§ØªØ§ ÛÛ’Û”",
+  permissions_tip_download:
+    "ÚˆØ§Ø¤Ù† Ù„ÙˆÚˆ Ø§ÙˆØ± Ø§ÛŒÚ©Ø³Ù¾ÙˆØ±Ù¹ Ø¨Ù¹Ù† Ú©Ùˆ ÙØ¹Ø§Ù„ Ú©Ø±ØªØ§ ÛÛ’Û”",
   permissions_tip_edit:
     "Ù…ÙˆØ¬ÙˆØ¯Û Ø±ÛŒÚ©Ø§Ø±ÚˆØ² Ù…ÛŒÚº ÚˆÛŒÙ¹Ø§ Ú©Ùˆ ØªØ¨Ø¯ÛŒÙ„ Ú©Ø±Ù†Û’ Ú©ÛŒ ØµÙ„Ø§Ø­ÛŒØª Ú©Ùˆ ØºÛŒØ± Ù…Ù‚ÙÙ„ Ú©Ø±ØªØ§ ÛÛ’Û”",
   permissions_tip_navigate:
     "Ø§Ø³ Ø§Ø³Ú©Ø±ÛŒÙ† Ù…ÛŒÚº Ù…ÙˆØ¬ÙˆØ¯Û Ø±ÛŒÚ©Ø§Ø±ÚˆØ² Ú©ÛŒ ÙÛØ±Ø³Øª Ø¨Ù†Ø§Ù†Û’ Ú©ÛŒ Ø§Ø¬Ø§Ø²Øª Ø¯ÛŒØªØ§ ÛÛ’Û”",
-  permissions_tip_view: "Ø§Ø³ Ù…Ø§ÚˆÛŒÙˆÙ„ Ú©Ùˆ Ú©Ú¾ÙˆÙ„Ù†Û’ Ú©ÛŒ Ø§Ø¬Ø§Ø²Øª Ø¯ÛŒØªØ§ ÛÛ’Û”",
+  permissions_tip_view:
+    "Ø§Ø³ Ù…Ø§ÚˆÛŒÙˆÙ„ Ú©Ùˆ Ú©Ú¾ÙˆÙ„Ù†Û’ Ú©ÛŒ Ø§Ø¬Ø§Ø²Øª Ø¯ÛŒØªØ§ ÛÛ’Û”",
   phone_1: "ÙÙˆÙ† 1",
   phone_2: "ÙÙˆÙ† 2",
   phone_number: "ÙÙˆÙ† Ù†Ù…Ø¨Ø±",
@@ -2282,7 +2395,8 @@ translations.ur = {
   product_group: "Ù¾Ø±ÙˆÚˆÚ©Ù¹ Ú¯Ø±ÙˆÙ¾",
   product_groups: "Ù¾Ø±ÙˆÚˆÚ©Ù¹ Ú¯Ø±ÙˆÙ¾Ø³",
   product_groups_bought: "Ù¾Ø±ÙˆÚˆÚ©Ù¹ Ú¯Ø±ÙˆÙ¾Ø³ Ø®Ø±ÛŒØ¯Û’ Ú¯Ø¦Û’Û”",
-  product_groups_description: "RM/SFG/FG Ù…Ø±Ø¦ÛŒØª Ú¯Ø±ÙˆÙ¾Ø³ Ú©ÛŒ ÙˆØ¶Ø§Ø­Øª Ú©Ø±ÛŒÚºÛ”",
+  product_groups_description:
+    "RM/SFG/FG Ù…Ø±Ø¦ÛŒØª Ú¯Ø±ÙˆÙ¾Ø³ Ú©ÛŒ ÙˆØ¶Ø§Ø­Øª Ú©Ø±ÛŒÚºÛ”",
   product_scope: "Ù¾Ø±ÙˆÚˆÚ©Ù¹ Ú©Ø§ Ø¯Ø§Ø¦Ø±Û Ú©Ø§Ø±",
   product_subgroups: "Ù¾Ø±ÙˆÚˆÚ©Ù¹ Ú©Û’ Ø°ÛŒÙ„ÛŒ Ú¯Ø±ÙˆÙ¾Ø³",
   product_types: "Ù…ØµÙ†ÙˆØ¹Ø§Øª Ú©ÛŒ Ø§Ù‚Ø³Ø§Ù…",
@@ -2325,11 +2439,13 @@ translations.ur = {
   purchase_order: "Ø®Ø±ÛŒØ¯Ø§Ø±ÛŒ Ú©Ø§ Ø¢Ø±ÚˆØ±",
   purchase_rate: "Ø®Ø±ÛŒØ¯Ø§Ø±ÛŒ Ú©ÛŒ Ø´Ø±Ø­",
   purchase_reports: "Ø®Ø±ÛŒØ¯Ø§Ø±ÛŒ Ú©ÛŒ Ø±Ù¾ÙˆØ±Ù¹",
-  purchase_return_description: "Ø±ÛŒÚ©Ø§Ø±Úˆ Ø³Ù¾Ù„Ø§Ø¦Ø± Ø§ÙˆØ± ÙˆØ¬Û Ú©Û’ Ø®Ù„Ø§Ù Ø®Ø§Ù… Ù…Ø§Ù„ ÙˆØ§Ù¾Ø³.",
+  purchase_return_description:
+    "Ø±ÛŒÚ©Ø§Ø±Úˆ Ø³Ù¾Ù„Ø§Ø¦Ø± Ø§ÙˆØ± ÙˆØ¬Û Ú©Û’ Ø®Ù„Ø§Ù Ø®Ø§Ù… Ù…Ø§Ù„ ÙˆØ§Ù¾Ø³.",
   purchase_type: "Ø®Ø±ÛŒØ¯Ø§Ø±ÛŒ Ú©ÛŒ Ù‚Ø³Ù…",
   quantity: "Ù…Ù‚Ø¯Ø§Ø±",
   quick_ranges: "ÙÙˆØ±ÛŒ Ø­Ø¯ÙˆØ¯",
-  rate_change_submitted: "Ø´Ø±Ø­ Ú©ÛŒ ØªØ¨Ø¯ÛŒÙ„ÛŒ Ù…Ù†Ø¸ÙˆØ±ÛŒ Ú©Û’ Ù„ÛŒÛ’ Ø¬Ù…Ø¹ Ú©Ø±Ø§Ø¦ÛŒ Ú¯Ø¦ÛŒÛ”",
+  rate_change_submitted:
+    "Ø´Ø±Ø­ Ú©ÛŒ ØªØ¨Ø¯ÛŒÙ„ÛŒ Ù…Ù†Ø¸ÙˆØ±ÛŒ Ú©Û’ Ù„ÛŒÛ’ Ø¬Ù…Ø¹ Ú©Ø±Ø§Ø¦ÛŒ Ú¯Ø¦ÛŒÛ”",
   rate_type: "Ø´Ø±Ø­ Ú©ÛŒ Ù‚Ø³Ù…",
   rate_type_per_dozen: "ÙÛŒ Ø¯Ø±Ø¬Ù†",
   rate_type_per_pair: "ÙÛŒ Ø¬ÙˆÚ‘Ø§",
@@ -2349,7 +2465,8 @@ translations.ur = {
   remaining_amount: "Ø¨Ø§Ù‚ÛŒ Ø±Ù‚Ù…",
   remarks: "Ø±ÛŒÙ…Ø§Ø±Ú©Ø³",
   repair_capability: "Ù…Ø±Ù…Øª",
-  report_not_configured_yet: "ÛŒÛ Ø±Ù¾ÙˆØ±Ù¹ Ø§Ø¨Ú¾ÛŒ ØªÚ© Ú©Ù†ÙÛŒÚ¯Ø± Ù†ÛÛŒÚº ÛÙˆØ¦ÛŒ ÛÛ’Û”",
+  report_not_configured_yet:
+    "ÛŒÛ Ø±Ù¾ÙˆØ±Ù¹ Ø§Ø¨Ú¾ÛŒ ØªÚ© Ú©Ù†ÙÛŒÚ¯Ø± Ù†ÛÛŒÚº ÛÙˆØ¦ÛŒ ÛÛ’Û”",
   report_type: "Ø±Ù¾ÙˆØ±Ù¹ Ú©ÛŒ Ù‚Ø³Ù…",
   reports: "Ø±Ù¾ÙˆØ±Ù¹Ø³",
   request_approved: "Ø¯Ø±Ø®ÙˆØ§Ø³Øª Ù…Ù†Ø¸ÙˆØ± Ú©Ø± Ù„ÛŒ Ú¯Ø¦ÛŒÛ”",
@@ -2426,17 +2543,20 @@ translations.ur = {
   select_module_permissions:
     "Ø§Ø³ Ú©ÛŒ Ø§Ø¬Ø§Ø²ØªÙˆÚº Ú©Ùˆ Ø¯ÛŒÚ©Ú¾Ù†Û’ Ø§ÙˆØ± Ø§Ø³ Ù…ÛŒÚº ØªØ±Ù…ÛŒÙ… Ú©Ø±Ù†Û’ Ú©Û’ Ù„ÛŒÛ’ Ø³Ø§Ø¦ÚˆØ¨Ø§Ø± Ø³Û’ Ø§ÛŒÚ© Ù…Ø§ÚˆÛŒÙˆÙ„ Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
   select_option: "Ø¢Ù¾Ø´Ù† Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
-  select_options_to_generate: "Ù¾ÛŒØ¯Ø§ Ú©Ø±Ù†Û’ Ú©Û’ Ù„ÛŒÛ’ Ø§Ø®ØªÛŒØ§Ø±Ø§Øª Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
+  select_options_to_generate:
+    "Ù¾ÛŒØ¯Ø§ Ú©Ø±Ù†Û’ Ú©Û’ Ù„ÛŒÛ’ Ø§Ø®ØªÛŒØ§Ø±Ø§Øª Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
   select_outward_reference: "Ø¸Ø§ÛØ±ÛŒ Ø­ÙˆØ§Ù„Û Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
   select_raw_material: "Ø®Ø§Ù… Ù…Ø§Ù„ Ú©Ùˆ Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
   select_role_to_configure:
     "Ø§Ø¬Ø§Ø²ØªÙˆÚº Ú©Ùˆ ØªØ±ØªÛŒØ¨ Ø¯ÛŒÙ†Û’ Ú©Û’ Ù„ÛŒÛ’ Ø§ÛŒÚ© Ú©Ø±Ø¯Ø§Ø± Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
   select_salesman: "Ø³ÛŒÙ„Ø² Ù…ÛŒÙ† Ú©Ùˆ Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
-  select_target_to_configure: "ØªØ±ØªÛŒØ¨ Ø¯ÛŒÙ†Û’ Ú©Û’ Ù„ÛŒÛ’ Ø§ÛŒÚ© ÛØ¯Ù Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
+  select_target_to_configure:
+    "ØªØ±ØªÛŒØ¨ Ø¯ÛŒÙ†Û’ Ú©Û’ Ù„ÛŒÛ’ Ø§ÛŒÚ© ÛØ¯Ù Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
   select_target_to_preview_impact:
     "Ø§Ø«Ø± Ú©Ø§ Ø¬Ø§Ø¦Ø²Û Ù„ÛŒÙ†Û’ Ú©Û’ Ù„ÛŒÛ’ Ø§ÛŒÚ© ÛØ¯Ù Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
   select_unit: "ÛŒÙˆÙ†Ù¹ Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
-  select_user_to_configure: "Ø§Ø¬Ø§Ø²ØªÙˆÚº Ú©Ùˆ ØªØ±ØªÛŒØ¨ Ø¯ÛŒÙ†Û’ Ú©Û’ Ù„ÛŒÛ’ ØµØ§Ø±Ù Ú©Ùˆ Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
+  select_user_to_configure:
+    "Ø§Ø¬Ø§Ø²ØªÙˆÚº Ú©Ùˆ ØªØ±ØªÛŒØ¨ Ø¯ÛŒÙ†Û’ Ú©Û’ Ù„ÛŒÛ’ ØµØ§Ø±Ù Ú©Ùˆ Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
   select_vendor: "ÙˆÛŒÙ†ÚˆØ± Ú©Ùˆ Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
   semi_finished: "Ù†ÛŒÙ… ØªÛŒØ§Ø±",
   semi_finished_description:
@@ -2452,14 +2572,17 @@ translations.ur = {
   showing: "Ø¯Ú©Ú¾Ø§ Ø±ÛØ§ ÛÛ’Û”",
   shown_rows_totals: "Ø¯Ú©Ú¾Ø§Ø¦ÛŒ Ú¯Ø¦ÛŒ Ù‚Ø·Ø§Ø±ÙˆÚº Ú©Û’ Ù„ÛŒÛ’ Ù¹ÙˆÙ¹Ù„",
   sign_in: "Ø³Ø§Ø¦Ù† Ø§Ù† Ú©Ø±ÛŒÚºÛ”",
-  single_grn_voucher_only: "Ø§ÛŒÚ© ÙˆØ§Ø­Ø¯ ÙˆØ§Ø¤Ú†Ø± Ø³Û’ GRN Ù„Ø§Ø¦Ù†ÛŒÚº Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
-  single_outward_voucher_only: "Ø§ÛŒÚ© ÙˆØ§Ø¤Ú†Ø± Ø³Û’ Ø¸Ø§ÛØ±ÛŒ Ø­ÙˆØ§Ù„Û Ú©ÛŒ Ù„Ú©ÛŒØ±ÛŒÚº Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
+  single_grn_voucher_only:
+    "Ø§ÛŒÚ© ÙˆØ§Ø­Ø¯ ÙˆØ§Ø¤Ú†Ø± Ø³Û’ GRN Ù„Ø§Ø¦Ù†ÛŒÚº Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
+  single_outward_voucher_only:
+    "Ø§ÛŒÚ© ÙˆØ§Ø¤Ú†Ø± Ø³Û’ Ø¸Ø§ÛØ±ÛŒ Ø­ÙˆØ§Ù„Û Ú©ÛŒ Ù„Ú©ÛŒØ±ÛŒÚº Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
   sizes_help:
     "Ø§Ø³ Ù†ÛŒÙ… ØªÛŒØ§Ø± Ø´Ø¯Û Ø´Û’ Ú©Û’ Ø°Ø±ÛŒØ¹Û’ Ø§Ø³ØªØ¹Ù…Ø§Ù„ ÛÙˆÙ†Û’ ÙˆØ§Ù„Û’ Ø§ÛŒÚ© ÛŒØ§ Ø²ÛŒØ§Ø¯Û Ø³Ø§Ø¦Ø² Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”",
   sku: "SKU",
   sku_code: "SKU Ú©ÙˆÚˆ",
   skus: "SKUs",
-  skus_description: "SKU Ù…Ø®ØªÙ„Ù Ø­Ø§Ù„ØªÙˆÚº Ø§ÙˆØ± Ù‚ÛŒÙ…ØªÙˆÚº Ú©Ùˆ Ø¨Ø±Ù‚Ø±Ø§Ø± Ø±Ú©Ú¾ÛŒÚºÛ”",
+  skus_description:
+    "SKU Ù…Ø®ØªÙ„Ù Ø­Ø§Ù„ØªÙˆÚº Ø§ÙˆØ± Ù‚ÛŒÙ…ØªÙˆÚº Ú©Ùˆ Ø¨Ø±Ù‚Ø±Ø§Ø± Ø±Ú©Ú¾ÛŒÚºÛ”",
   source: "Ù…Ø§Ø®Ø°",
   sr_no: "Sr.No",
   start_account: "Ø§Ú©Ø§Ø¤Ù†Ù¹",
@@ -2472,7 +2595,8 @@ translations.ur = {
   sub_group: "Ø°ÛŒÙ„ÛŒ Ú¯Ø±ÙˆÙ¾",
   submitted_for_approval: "Ù…Ù†Ø¸ÙˆØ±ÛŒ Ú©Û’ Ù„ÛŒÛ’ Ù¾ÛŒØ´ Ú©ÛŒØ§ Ú¯ÛŒØ§Û”",
   subtotal: "Ø°ÛŒÙ„ÛŒ Ú©Ù„",
-  success_bulk_commission_saved: "Ø¨Ù„Ú© Ú©Ù…ÛŒØ´Ù† Ú©Ø§Ù…ÛŒØ§Ø¨ÛŒ Ø³Û’ Ù…Ø­ÙÙˆØ¸ ÛÙˆ Ú¯ÛŒØ§Û”",
+  success_bulk_commission_saved:
+    "Ø¨Ù„Ú© Ú©Ù…ÛŒØ´Ù† Ú©Ø§Ù…ÛŒØ§Ø¨ÛŒ Ø³Û’ Ù…Ø­ÙÙˆØ¸ ÛÙˆ Ú¯ÛŒØ§Û”",
   success_bulk_commission_saved_counts:
     "ØªØ®Ù„ÛŒÙ‚ Ú©ÛŒØ§ Ú¯ÛŒØ§: {created}ØŒ Ø§Ù¾ ÚˆÛŒÙ¹ Ú©ÛŒØ§ Ú¯ÛŒØ§: {updated}Û”",
   success_bulk_labour_rate_saved:
@@ -2494,8 +2618,10 @@ translations.ur = {
   to_unit: "ÛŒÙˆÙ†Ù¹ Ú©Ùˆ",
   tooltip_account_type:
     "Ù…Ø±Ú©Ø²ÛŒ Ø§Ú©Ø§Ø¤Ù†Ù¹Ù†Ú¯ Ú©ÛŒ Ø¯Ø±Ø¬Û Ø¨Ù†Ø¯ÛŒ (Ø§Ø«Ø§Ø«ÛØŒ Ø°Ù…Û Ø¯Ø§Ø±ÛŒØŒ Ø§ÛŒÚ©ÙˆÛŒÙ¹ÛŒØŒ Ù…Ø­ØµÙˆÙ„ØŒ Ø§Ø®Ø±Ø§Ø¬Ø§Øª)Û”",
-  tooltip_code: "Ø±Ù¾ÙˆØ±Ù¹Ø³ Ø§ÙˆØ± ÙÙ„Ù¹Ø±Ù†Ú¯ Ù…ÛŒÚº Ø§Ø³ØªØ¹Ù…Ø§Ù„ ÛÙˆÙ†Û’ ÙˆØ§Ù„Ø§ Ù…Ø®ØªØµØ± Ú©ÙˆÚˆÛ”",
-  tooltip_contra: "Ø§Ø³ Ú©Û’ Ù¾ÛŒØ±Ù†Ù¹ Ú¯Ø±ÙˆÙ¾ Ú©Û’ ØªÙˆØ§Ø²Ù† Ú©Ùˆ Ø¢ÙØ³ÛŒÙ¹ Ú©Ø±ØªØ§ ÛÛ’Û”",
+  tooltip_code:
+    "Ø±Ù¾ÙˆØ±Ù¹Ø³ Ø§ÙˆØ± ÙÙ„Ù¹Ø±Ù†Ú¯ Ù…ÛŒÚº Ø§Ø³ØªØ¹Ù…Ø§Ù„ ÛÙˆÙ†Û’ ÙˆØ§Ù„Ø§ Ù…Ø®ØªØµØ± Ú©ÙˆÚˆÛ”",
+  tooltip_contra:
+    "Ø§Ø³ Ú©Û’ Ù¾ÛŒØ±Ù†Ù¹ Ú¯Ø±ÙˆÙ¾ Ú©Û’ ØªÙˆØ§Ø²Ù† Ú©Ùˆ Ø¢ÙØ³ÛŒÙ¹ Ú©Ø±ØªØ§ ÛÛ’Û”",
   top_account_groups: "Ø³Ø±ÙÛØ±Ø³Øª Ø§Ú©Ø§Ø¤Ù†Ù¹ Ú¯Ø±ÙˆÙ¾Ø³",
   top_accounts: "Ù¹Ø§Ù¾ Ø§Ú©Ø§Ø¤Ù†Ù¹Ø³",
   top_departments: "Ø§Ø¹Ù„ÛŒÙ° Ù…Ø­Ú©Ù…Û’",
@@ -2511,7 +2637,8 @@ translations.ur = {
   translate_to_urdu: "Ø§Ø±Ø¯Ùˆ Ù…ÛŒÚº ØªØ±Ø¬Ù…Û Ú©Ø±ÛŒÚºÛ”",
   translation_failed: "ØªØ±Ø¬Ù…Û Ø¯Ø³ØªÛŒØ§Ø¨ Ù†ÛÛŒÚº ÛÛ’Û”",
   translation_fetching: "ØªØ±Ø¬Ù…Û Ù„Ø§ Ø±ÛØ§ ÛÛ’...",
-  translation_idle: "Ø§Ø±Ø¯Ùˆ Ù†Ø§Ù… Ø¨Ú¾Ø±Ù†Û’ Ú©Û’ Ù„ÛŒÛ’ Ø¢Ù¹Ùˆ Ù¹Ø±Ø§Ù†Ø³Ù„ÛŒÙ¹ Ù¾Ø± Ú©Ù„Ú© Ú©Ø±ÛŒÚºÛ”",
+  translation_idle:
+    "Ø§Ø±Ø¯Ùˆ Ù†Ø§Ù… Ø¨Ú¾Ø±Ù†Û’ Ú©Û’ Ù„ÛŒÛ’ Ø¢Ù¹Ùˆ Ù¹Ø±Ø§Ù†Ø³Ù„ÛŒÙ¹ Ù¾Ø± Ú©Ù„Ú© Ú©Ø±ÛŒÚºÛ”",
   translation_ready: "ØªØ±Ø¬Ù…Û Ø´Ø¯Û",
   trend_chart: "Ø±Ø¬Ø­Ø§Ù† Ú†Ø§Ø±Ù¹",
   trend_chart_click_hint:
@@ -2519,7 +2646,8 @@ translations.ur = {
   trend_vs_previous_period: "Ø±Ø¬Ø­Ø§Ù† Ø¨Ù…Ù‚Ø§Ø¨Ù„Û Ù¾Ú†Ú¾Ù„Ø§ Ø¯ÙˆØ±",
   trial_balance: "Ù¹Ø±Ø§Ø¦Ù„ Ø¨ÛŒÙ„Ù†Ø³ Ú©Ø§ Ø®Ù„Ø§ØµÛ",
   unexpected_response: "ØºÛŒØ± Ù…ØªÙˆÙ‚Ø¹ Ø¬ÙˆØ§Ø¨",
-  unique_identifier_hint: "Ø§Ø³ Ø¨Ø±Ø§Ù†Ú† Ú©Û’ Ù„ÛŒÛ’ Ù…Ø®ØªØµØ± Ù…Ù†ÙØ±Ø¯ Ú©ÙˆÚˆ (Ø¬ÛŒØ³Û’ LHR01)",
+  unique_identifier_hint:
+    "Ø§Ø³ Ø¨Ø±Ø§Ù†Ú† Ú©Û’ Ù„ÛŒÛ’ Ù…Ø®ØªØµØ± Ù…Ù†ÙØ±Ø¯ Ú©ÙˆÚˆ (Ø¬ÛŒØ³Û’ LHR01)",
   unit_code_exists: "ÛŒÙˆÙ†Ù¹ Ú©ÙˆÚˆ Ù¾ÛÙ„Û’ Ø³Û’ Ù…ÙˆØ¬ÙˆØ¯ ÛÛ’Û”",
   units: "ÛŒÙˆÙ†Ù¹Ø³",
   unknown: "Ù†Ø§Ù…Ø¹Ù„ÙˆÙ…",
@@ -2529,7 +2657,8 @@ translations.ur = {
   updated: "ØªØ§Ø²Û Ú©Ø§Ø±ÛŒ",
   usage: "Ø§Ø³ØªØ¹Ù…Ø§Ù„ Ù…ÛŒÚº",
   usage_help: "Ø§Ø³ØªØ¹Ù…Ø§Ù„ Ù…ÛŒÚº Ù…Ø¯Ø¯",
-  use_credentials: "Ø¬Ø§Ø±ÛŒ Ø±Ú©Ú¾Ù†Û’ Ú©Û’ Ù„ÛŒÛ’ Ø§Ù¾Ù†Û’ ERP Ø§Ø³Ù†Ø§Ø¯ Ú©Ø§ Ø§Ø³ØªØ¹Ù…Ø§Ù„ Ú©Ø±ÛŒÚºÛ”",
+  use_credentials:
+    "Ø¬Ø§Ø±ÛŒ Ø±Ú©Ú¾Ù†Û’ Ú©Û’ Ù„ÛŒÛ’ Ø§Ù¾Ù†Û’ ERP Ø§Ø³Ù†Ø§Ø¯ Ú©Ø§ Ø§Ø³ØªØ¹Ù…Ø§Ù„ Ú©Ø±ÛŒÚºÛ”",
   user_inactive: "ØµØ§Ø±Ù ØºÛŒØ± ÙØ¹Ø§Ù„ ÛÛ’Û”",
   user_overrides_hint:
     "ØµØ±Ù ØµØ§Ø±Ù Ú©ÛŒ ØªØ¨Ø¯ÛŒÙ„ÛŒØ§Úº ØµØ±Ù Ø§Ø³ ØµØ§Ø±Ù Ù¾Ø± Ù„Ø§Ú¯Ùˆ ÛÙˆØªÛŒ ÛÛŒÚº (Ø±ÙˆÙ„ Ú©ÛŒ Ø§Ø¬Ø§Ø²ØªÛŒÚº ØªØ¨ ØªÚ© Ù„Ø§Ú¯Ùˆ ÛÙˆØªÛŒ ÛÛŒÚº Ø¬Ø¨ ØªÚ© Ú©Û Ø§ÙˆÙˆØ± Ø±Ø§Ø¦Úˆ Ù†Û ÛÙˆ Ø¬Ø§Ø¦ÛŒÚº)Û”",
@@ -2545,7 +2674,8 @@ translations.ur = {
     "Ù¾ÛŒØ±ÛŒÚˆ Ø§ÙˆÙˆØ± Ù¾ÛŒØ±ÛŒÚˆ Ù…ÙˆÙˆÙ…Ù†Ù¹ Ú©Û’ Ù¾ÛŒÚ†Ú¾Û’ Ø§Ú©Ø§Ø¤Ù†Ù¹ Ú©Û’ Ø³Ø¨ Ø³Û’ Ø¨Ú‘Û’ Ú¯Ø±ÙˆÙ¾ Ø¯Ú©Ú¾Ø§ØªØ§ ÛÛ’Û”",
   variant_id: "Ù…ØªØºÛŒØ± ID",
   variants: "Ù…ØªØºÛŒØ±Ø§Øª",
-  variants_sent_approval: "Ù…Ù†Ø¸ÙˆØ±ÛŒ Ú©Û’ Ø¨Ø¹Ø¯ Ù…Ø®ØªÙ„Ù Ù‚Ø³Ù…ÛŒÚº Ø´Ø§Ù…Ù„ Ú©ÛŒ Ø¬Ø§Ø¦ÛŒÚº Ú¯ÛŒÛ”",
+  variants_sent_approval:
+    "Ù…Ù†Ø¸ÙˆØ±ÛŒ Ú©Û’ Ø¨Ø¹Ø¯ Ù…Ø®ØªÙ„Ù Ù‚Ø³Ù…ÛŒÚº Ø´Ø§Ù…Ù„ Ú©ÛŒ Ø¬Ø§Ø¦ÛŒÚº Ú¯ÛŒÛ”",
   vendor_capabilities: "ÙˆÛŒÙ†ÚˆØ± Ú©ÛŒ ØµÙ„Ø§Ø­ÛŒØªÛŒÚºÛ”",
   vendor_capabilities_help:
     "Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚº Ú©Û ÛŒÛ Ø³Ù¾Ù„Ø§Ø¦Ø± Ú©ÛŒØ§ Ø³Ù†Ø¨Ú¾Ø§Ù„ Ø³Ú©ØªØ§ ÛÛ’ (Ù…ÙˆØ§Ø¯ØŒ Ù…Ø±Ù…ØªØŒ Ø³Ø±ÙˆØ³)Û”",
@@ -2553,7 +2683,8 @@ translations.ur = {
   version: "ÙˆØ±Ú˜Ù†",
   view_pending_approval: "Ø²ÛŒØ± Ø§Ù„ØªÙˆØ§Ø¡ Ù…Ù†Ø¸ÙˆØ±ÛŒ Ø¯ÛŒÚ©Ú¾ÛŒÚº",
   view_voucher: "ÙˆØ§Ø¤Ú†Ø± Ú©Ú¾ÙˆÙ„ÛŒÚºÛ”",
-  voucher_deleted_read_only: "Ø­Ø°Ù Ø´Ø¯Û ÙˆØ§Ø¤Ú†Ø± ØµØ±Ù Ù¾Ú‘Ú¾Ù†Û’ Ú©Û’ Ù„ÛŒÛ’ ÛÛ’Û”",
+  voucher_deleted_read_only:
+    "Ø­Ø°Ù Ø´Ø¯Û ÙˆØ§Ø¤Ú†Ø± ØµØ±Ù Ù¾Ú‘Ú¾Ù†Û’ Ú©Û’ Ù„ÛŒÛ’ ÛÛ’Û”",
   voucher_lines: "ÙˆØ§Ø¤Ú†Ø± Ù„Ø§Ø¦Ù†Ø²",
   voucher_register: "ÙˆØ§Ø¤Ú†Ø± Ø±Ø¬Ø³Ù¹Ø±",
   voucher_summary: "ÙˆØ§Ø¤Ú†Ø± Ú©Ø§ Ø®Ù„Ø§ØµÛ",
@@ -2658,5 +2789,3 @@ module.exports = (req, res, next) => {
   res.locals.formatNumberDisplay = formatNumberDisplay;
   next();
 };
-
-

@@ -174,6 +174,26 @@
               </select>
             </div>
           </div>
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center" data-voucher-grid>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t("stage") || "Stage" %></label>
+            <div class="lg:col-span-10">
+              <select
+                name="stage_id"
+                class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"
+                data-dcv-stage
+                data-searchable-select="true"
+                data-searchable-variant="unified"
+                <%= canSave ? '' : 'disabled' %>
+              >
+                <option value=""><%= t("select_stage") || "Select Stage" %></option>
+                <% (options.productionStages || []).forEach((stage) => { %>
+                  <option value="<%= stage.id %>" <%= Number(selectedVoucher?.stage_id || 0) === Number(stage.id) ? "selected" : "" %>>
+                    <%= `${stage.name || stage.id}` %>
+                  </option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
         <% } %>
 
         <% if (isPlanning) { %>
@@ -219,7 +239,27 @@
             <tbody data-lines-body></tbody>
             <tfoot>
               <tr class="bg-slate-50">
-                <td class="border-t border-slate-200 px-2 py-2 text-xs font-semibold text-slate-700" colspan="5"><%= t("total") %></td>
+                <td class="border-t border-slate-200 px-2 py-2 text-xs font-semibold text-slate-700" colspan="5">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="uppercase tracking-[0.08em]"><%= t("total") %></span>
+                    <span class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t("pairs") || "Pairs" %></span>
+                    <input
+                      type="text"
+                      readonly
+                      class="h-8 w-20 rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700"
+                      value="0.000"
+                      data-total-pairs
+                    >
+                    <span class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t("dozens") || "Dozens" %></span>
+                    <input
+                      type="text"
+                      readonly
+                      class="h-8 w-20 rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700"
+                      value="0.000"
+                      data-total-dozens
+                    >
+                  </div>
+                </td>
                 <td class="border-t border-slate-200 px-2 py-2 text-right">
                   <input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.00" data-total-amount>
                 </td>
@@ -271,8 +311,11 @@
     const linesHeadRow = form.querySelector("[data-lines-head-row]");
     const addRowButton = form.querySelector("[data-add-row]");
     const totalAmountInput = form.querySelector("[data-total-amount]");
+    const totalPairsInput = form.querySelector("[data-total-pairs]");
+    const totalDozensInput = form.querySelector("[data-total-dozens]");
     const dcvLabourSelect = form.querySelector("[data-dcv-labour]");
     const dcvDepartmentSelect = form.querySelector("[data-dcv-department]");
+    const dcvStageSelect = form.querySelector("[data-dcv-stage]");
     const rowsState = [];
 
     const toNum = (value, fallback = 0) => {
@@ -297,7 +340,10 @@
 
     const isLoss = mode === "loss";
     const isDcv = mode === "dcv";
-    const showStatus = mode === "production" || mode === "planning";
+    const showUnit = mode === "production";
+    const showStatus = mode === "planning";
+    const productionStages = Array.isArray(options.productionStages) ? options.productionStages : [];
+    const defaultStageId = productionStages.length ? toPositiveInt(productionStages[0]?.id) : null;
     const allDepartments = Array.isArray(options.departments)
       ? options.departments
         .map((department) => ({
@@ -320,6 +366,14 @@
         })
         .filter(Boolean),
     );
+    const stageRows = (Array.isArray(productionStages) ? productionStages : [])
+      .map((stage) => ({
+        id: toPositiveInt(stage?.id),
+        code: String(stage?.code || "").trim(),
+        name: String(stage?.name || "").trim(),
+        dept_id: toPositiveInt(stage?.dept_id),
+      }))
+      .filter((stage) => stage.id && stage.dept_id);
 
     const syncSearchableReadonlyState = (selectEl) => {
       if (!(selectEl instanceof HTMLSelectElement)) return;
@@ -393,6 +447,35 @@
       syncSearchableReadonlyState(dcvLabourSelect);
     };
 
+    const refreshDcvStageOptions = ({ preserveSelection = true } = {}) => {
+      if (!isDcv) return;
+      if (!(dcvStageSelect instanceof HTMLSelectElement)) return;
+      const selectedDeptId = toPositiveInt(dcvDepartmentSelect?.value);
+      const previousStageId = toPositiveInt(dcvStageSelect.value);
+      const allowedStages = selectedDeptId
+        ? stageRows.filter((stage) => Number(stage.dept_id) === Number(selectedDeptId))
+        : [];
+      const optionsHtml = [`<option value="">${<%- JSON.stringify(t("select_stage") || "Select Stage") %>}</option>`]
+        .concat(
+          allowedStages.map(
+            (stage) => `<option value="${stage.id}">${stage.name}</option>`,
+          ),
+        )
+        .join("");
+      dcvStageSelect.innerHTML = optionsHtml;
+      if (preserveSelection && previousStageId) {
+        const stillAllowed = allowedStages.some((stage) => Number(stage.id) === Number(previousStageId));
+        if (stillAllowed) dcvStageSelect.value = String(previousStageId);
+      }
+      if (!dcvStageSelect.value && canSave && allowedStages.length === 1) {
+        dcvStageSelect.value = String(allowedStages[0].id);
+      }
+      const shouldDisable = !canSave || !selectedDeptId || allowedStages.length === 0;
+      if (shouldDisable) dcvStageSelect.setAttribute("disabled", "disabled");
+      else dcvStageSelect.removeAttribute("disabled");
+      syncSearchableReadonlyState(dcvStageSelect);
+    };
+
     const buildLossEntityOptions = (lossType, selectedItemId, selectedSkuId) => {
       if (lossType === "RM_LOSS") {
         const base = [`<option value="">${<%- JSON.stringify(t("select_item")) %>}</option>`];
@@ -430,14 +513,16 @@
       }
       return {
         sku_id: Number(seed.sku_id || 0) || null,
-        status: String(seed.status || (isDcv ? "LOOSE" : "LOOSE")).toUpperCase(),
+        stage_id: toPositiveInt(seed.stage_id) || defaultStageId,
+        status: String(seed.status || "LOOSE").toUpperCase(),
+        unit: String(seed.unit || (String(seed.status || "").toUpperCase() === "PACKED" ? "DZN" : "PAIR")).toUpperCase(),
         qty: toQty(seed.qty || 0),
         rate: toNum(seed.rate, 0),
         amount: toAmount(seed.amount || 0),
       };
     };
 
-    const createEmptyRow = () => makeRow({ qty: 0, rate: 0, amount: 0 });
+    const createEmptyRow = () => makeRow({ stage_id: defaultStageId, qty: 0, rate: 0, amount: 0 });
 
     const setHead = () => {
       if (isLoss) {
@@ -445,6 +530,19 @@
           <th class="w-40 border-b border-slate-200 px-2 py-2 text-left">${<%- JSON.stringify(t("loss_type")) %>}</th>
           <th class="w-[28rem] border-b border-slate-200 px-2 py-2 text-left">${<%- JSON.stringify(t("item_name")) %>}/${<%- JSON.stringify(t("sku")) %>}</th>
           <th class="w-44 border-b border-slate-200 px-2 py-2 text-left">${<%- JSON.stringify(t("department")) %>}</th>
+          <th class="w-32 border-b border-slate-200 px-2 py-2 text-right">${<%- JSON.stringify(t("quantity")) %>}</th>
+          <th class="w-32 border-b border-slate-200 px-2 py-2 text-right">${<%- JSON.stringify(t("rate")) %>}</th>
+          <th class="w-36 border-b border-slate-200 px-2 py-2 text-right">${<%- JSON.stringify(t("amount")) %>}</th>
+          <th class="w-20 border-b border-slate-200 px-2 py-2 text-center">${<%- JSON.stringify(t("actions")) %>}</th>
+          <th class="w-20 border-b border-slate-200 px-2 py-2 text-center">${<%- JSON.stringify(t("sr_no")) %>}</th>
+        `;
+        return;
+      }
+      if (showUnit) {
+        linesHeadRow.innerHTML = `
+          <th class="w-[28rem] border-b border-slate-200 px-2 py-2 text-left">${<%- JSON.stringify(t("sku")) %>}</th>
+          <th class="w-44 border-b border-slate-200 px-2 py-2 text-left">${<%- JSON.stringify(t("stage") || "Stage") %>}</th>
+          <th class="w-40 border-b border-slate-200 px-2 py-2 text-left">${<%- JSON.stringify(t("unit")) %>}</th>
           <th class="w-32 border-b border-slate-200 px-2 py-2 text-right">${<%- JSON.stringify(t("quantity")) %>}</th>
           <th class="w-32 border-b border-slate-200 px-2 py-2 text-right">${<%- JSON.stringify(t("rate")) %>}</th>
           <th class="w-36 border-b border-slate-200 px-2 py-2 text-right">${<%- JSON.stringify(t("amount")) %>}</th>
@@ -490,12 +588,31 @@
         const skuOptions = [`<option value="">${<%- JSON.stringify(t("select_sku")) %>}</option>`]
           .concat((options.skus || []).map((sku) => `<option value="${sku.id}" ${Number(row.sku_id || 0) === Number(sku.id || 0) ? "selected" : ""}>${sku.sku_code} - ${sku.item_name || ""}</option>`))
           .join("");
-        const statusDisabled = showStatus ? "" : "disabled";
+        const secondFieldName = showUnit ? "unit" : "status";
+        const secondFieldValue = showUnit ? (row.unit || "PAIR") : (row.status || "LOOSE");
+        const secondFieldDisabled = (showUnit || showStatus) ? "" : "disabled";
+        const secondOptionsHtml = showUnit
+          ? `<option value="PAIR" ${secondFieldValue === "PAIR" ? "selected" : ""}>${<%- JSON.stringify(t("unit_pair")) %>}</option><option value="DZN" ${secondFieldValue === "DZN" ? "selected" : ""}>${<%- JSON.stringify(t("unit_dozen")) %>}</option>`
+          : `<option value="LOOSE" ${secondFieldValue === "LOOSE" ? "selected" : ""}>LOOSE</option><option value="PACKED" ${secondFieldValue === "PACKED" ? "selected" : ""}>PACKED</option>`;
+        const stageOptions = [`<option value="">${<%- JSON.stringify(t("select_stage") || "Select Stage") %>}</option>`]
+          .concat(productionStages.map((stage) => {
+            const selected = Number(row.stage_id || 0) === Number(stage.id || 0) ? "selected" : "";
+            const label = `${stage.name || stage.id}`;
+            return `<option value="${stage.id}" ${selected}>${label}</option>`;
+          }))
+          .join("");
+        const stageCellHtml = showUnit
+          ? `<td class="border-b border-slate-200 px-2 py-2"><select data-row-field="stage_id" data-field="stage_id" data-row-index="${rowIndex}" class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${stageOptions}</select></td>`
+          : "";
+        const qtyStep = showUnit
+          ? ((secondFieldValue === "DZN") ? "0.5" : "1")
+          : ((secondFieldValue === "PACKED") ? "0.5" : "1");
         return `
           <tr data-row-index="${rowIndex}">
             <td class="border-b border-slate-200 px-2 py-2"><select data-row-field="sku_id" data-field="sku_id" data-row-index="${rowIndex}" class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${skuOptions}</select></td>
-            <td class="border-b border-slate-200 px-2 py-2"><select data-row-field="status" data-field="status" data-row-index="${rowIndex}" class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"} ${statusDisabled}><option value="LOOSE" ${row.status === "LOOSE" ? "selected" : ""}>LOOSE</option><option value="PACKED" ${row.status === "PACKED" ? "selected" : ""}>PACKED</option></select></td>
-            <td class="border-b border-slate-200 px-2 py-2"><input data-row-field="qty" data-field="qty" data-row-index="${rowIndex}" type="number" min="0" step="0.001" class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs" value="${row.qty || 0}" ${canSave ? "" : "readonly"}></td>
+            ${stageCellHtml}
+            <td class="border-b border-slate-200 px-2 py-2"><select data-row-field="${secondFieldName}" data-field="${secondFieldName}" data-row-index="${rowIndex}" class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"} ${secondFieldDisabled}>${secondOptionsHtml}</select></td>
+            <td class="border-b border-slate-200 px-2 py-2"><input data-row-field="qty" data-field="qty" data-row-index="${rowIndex}" type="number" min="0" step="${qtyStep}" class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs" value="${row.qty || 0}" ${canSave ? "" : "readonly"}></td>
             <td class="border-b border-slate-200 px-2 py-2"><input data-row-field="rate" data-field="rate" data-row-index="${rowIndex}" type="number" min="0" step="0.0001" class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs" value="${row.rate || 0}" ${canSave ? "" : "readonly"}></td>
             <td class="border-b border-slate-200 px-2 py-2"><input data-row-field="amount" data-field="amount" data-row-index="${rowIndex}" type="number" min="0" step="0.01" class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs" value="${row.amount || 0}" ${canSave ? "" : "readonly"}></td>
             <td class="border-b border-slate-200 px-2 py-2 text-center"><button type="button" data-remove-row="${rowIndex}" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white p-2 text-rose-600 ${canSave ? "" : "opacity-40 pointer-events-none"}" aria-label="${<%- JSON.stringify(t("delete")) %>}" title="${<%- JSON.stringify(t("delete")) %>}"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M9 7V5h6v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg></button></td>
@@ -506,13 +623,33 @@
 
       linesBody.innerHTML = rowsHtml;
       if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
-      const total = rowsState.reduce((sum, row) => sum + toAmount(row.amount), 0);
-      totalAmountInput.value = total.toFixed(2);
+      Array.from(linesBody.querySelectorAll("tr[data-row-index]")).forEach((rowEl) => {
+        syncQtyStepForRow(rowEl);
+      });
+      syncTotals();
     };
 
     const syncTotals = () => {
-      const total = rowsState.reduce((sum, row) => sum + toAmount(row.amount), 0);
-      totalAmountInput.value = total.toFixed(2);
+      const totalAmount = rowsState.reduce((sum, row) => sum + toAmount(row.amount), 0);
+      const totalPairs = rowsState.reduce((sum, row) => {
+        if (isLoss) return sum;
+        if (!toPositiveInt(row?.sku_id)) return sum;
+        const qty = toNum(row?.qty, 0);
+        if (qty <= 0) return sum;
+        const unit = String(showUnit ? row?.unit : row?.status === "PACKED" ? "DZN" : "PAIR").toUpperCase();
+        return sum + (unit === "DZN" ? (qty * 12) : qty);
+      }, 0);
+      const totalDozens = totalPairs / 12;
+
+      if (totalAmountInput instanceof HTMLInputElement) {
+        totalAmountInput.value = totalAmount.toFixed(2);
+      }
+      if (totalPairsInput instanceof HTMLInputElement) {
+        totalPairsInput.value = totalPairs.toFixed(3);
+      }
+      if (totalDozensInput instanceof HTMLInputElement) {
+        totalDozensInput.value = totalDozens.toFixed(3);
+      }
     };
 
     const syncRowFromDom = (rowEl) => {
@@ -527,7 +664,14 @@
         row.dept_id = Number(rowEl.querySelector('[data-field="dept_id"]')?.value || 0) || null;
       } else {
         row.sku_id = Number(rowEl.querySelector('[data-field="sku_id"]')?.value || 0) || null;
-        row.status = showStatus ? String(rowEl.querySelector('[data-field="status"]')?.value || row.status || "LOOSE").toUpperCase() : "LOOSE";
+        row.stage_id = Number(rowEl.querySelector('[data-field="stage_id"]')?.value || 0) || null;
+        if (showUnit) {
+          row.unit = String(rowEl.querySelector('[data-field="unit"]')?.value || row.unit || "PAIR").toUpperCase();
+          row.status = row.unit === "DZN" ? "PACKED" : "LOOSE";
+        } else {
+          row.status = showStatus ? String(rowEl.querySelector('[data-field="status"]')?.value || row.status || "LOOSE").toUpperCase() : "LOOSE";
+          row.unit = row.status === "PACKED" ? "DZN" : "PAIR";
+        }
       }
       row.qty = toQty(rowEl.querySelector('[data-field="qty"]')?.value || row.qty || 0);
       row.rate = toNum(rowEl.querySelector('[data-field="rate"]')?.value || row.rate || 0);
@@ -540,6 +684,20 @@
         syncRowFromDom(rowEl);
       });
       syncTotals();
+    };
+
+    const syncQtyStepForRow = (rowEl) => {
+      if (!(rowEl instanceof HTMLElement)) return;
+      const rowIndex = Number(rowEl.getAttribute("data-row-index") || -1);
+      if (rowIndex < 0 || !rowsState[rowIndex]) return;
+      const row = rowsState[rowIndex];
+      const qtyInput = rowEl.querySelector('[data-field="qty"]');
+      if (!(qtyInput instanceof HTMLInputElement)) return;
+      if (showUnit) {
+        qtyInput.step = String((row.unit || "PAIR").toUpperCase() === "DZN" ? "0.5" : "1");
+        return;
+      }
+      qtyInput.step = String((row.status || "LOOSE").toUpperCase() === "PACKED" ? "0.5" : "1");
     };
 
     const addRow = () => {
@@ -567,6 +725,8 @@
       }
       return rowsState.map((row) => ({
         sku_id: row.sku_id || null,
+        stage_id: showUnit ? (row.stage_id || null) : null,
+        unit: row.unit || (row.status === "PACKED" ? "DZN" : "PAIR"),
         status: row.status || "LOOSE",
         qty: toQty(row.qty),
         rate: toNum(row.rate, 0),
@@ -604,6 +764,10 @@
           showError(`Line ${lineNo}: ${<%- JSON.stringify(t("sku")) %>} ${<%- JSON.stringify(t("is_required") || "is required") %>}`);
           return null;
         }
+        if (showUnit && productionStages.length && !toPositiveInt(line.stage_id)) {
+          showError(`Line ${lineNo}: ${<%- JSON.stringify(t("stage") || "Stage") %>} ${<%- JSON.stringify(t("is_required") || "is required") %>}`);
+          return null;
+        }
         if (toNum(line.qty, 0) <= 0) {
           showError(`Line ${lineNo}: ${<%- JSON.stringify(t("quantity")) %>} ${<%- JSON.stringify(t("must_be_positive") || "must be greater than zero") %>}`);
           return null;
@@ -620,10 +784,17 @@
     }
     renderRows();
     refreshDcvDepartmentOptions({ preserveSelection: true });
+    refreshDcvStageOptions({ preserveSelection: true });
 
     if (isDcv && dcvLabourSelect instanceof HTMLSelectElement) {
       dcvLabourSelect.addEventListener("change", () => {
         refreshDcvDepartmentOptions({ preserveSelection: false });
+        refreshDcvStageOptions({ preserveSelection: false });
+      });
+    }
+    if (isDcv && dcvDepartmentSelect instanceof HTMLSelectElement) {
+      dcvDepartmentSelect.addEventListener("change", () => {
+        refreshDcvStageOptions({ preserveSelection: false });
       });
     }
 
@@ -674,6 +845,9 @@
         }, 0);
         return;
       }
+      if (!isLoss && (field === "unit" || field === "status")) {
+        syncQtyStepForRow(rowEl);
+      }
       syncTotals();
     });
 
@@ -681,7 +855,11 @@
       form,
       linesBody,
       fieldAttr: "data-row-field",
-      fieldOrder: isLoss ? ["loss_type", "entity_ref", "dept_id", "qty", "rate", "amount"] : ["sku_id", "status", "qty", "rate", "amount"],
+      fieldOrder: isLoss
+        ? ["loss_type", "entity_ref", "dept_id", "qty", "rate", "amount"]
+        : showUnit
+          ? ["sku_id", "stage_id", "unit", "qty", "rate", "amount"]
+          : ["sku_id", "status", "qty", "rate", "amount"],
       appendRow: () => {
         if (!canSave) return false;
         syncAllRowsFromDom();
@@ -700,6 +878,7 @@
       if (isDcv) {
         const labourId = toPositiveInt(dcvLabourSelect?.value);
         const departmentId = toPositiveInt(dcvDepartmentSelect?.value);
+        const stageId = toPositiveInt(dcvStageSelect?.value);
         if (!labourId) {
           showError(`${<%- JSON.stringify(t("labour")) %>} ${<%- JSON.stringify(t("is_required") || "is required") %>}`);
           event.preventDefault();
@@ -707,6 +886,11 @@
         }
         if (!departmentId) {
           showError(`${<%- JSON.stringify(t("department")) %>} ${<%- JSON.stringify(t("is_required") || "is required") %>}`);
+          event.preventDefault();
+          return;
+        }
+        if (productionStages.length > 0 && !stageId) {
+          showError(`${<%- JSON.stringify(t("stage") || "Stage") %>} ${<%- JSON.stringify(t("is_required") || "is required") %>}`);
           event.preventDefault();
           return;
         }

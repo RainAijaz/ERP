@@ -6,6 +6,10 @@ const { handleScreenApproval } = require("../../../middleware/approvals/screen-a
 const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
 const { queueAuditLog } = require("../../../utils/audit-log");
 const { applyItemLifecycleToggleTx } = require("../../../services/products/item-lifecycle-service");
+const {
+  fetchProductionBaseUomOptions,
+  isPairUomId,
+} = require("../../../services/products/production-uom-policy-service");
 
 const router = express.Router();
 const ITEM_TYPE = "FG";
@@ -21,7 +25,7 @@ const loadOptions = async () => {
   const [groups, subgroups, uoms, types] = await Promise.all([
     knex("erp.product_groups as g").select("g.id", "g.name", "g.name_ur").join("erp.product_group_item_types as gt", "gt.group_id", "g.id").where("gt.item_type", ITEM_TYPE).andWhere("g.is_active", true).orderBy("g.name"),
     knex("erp.product_subgroups as s").select("s.id", "s.name", "s.name_ur").join("erp.product_subgroup_item_types as st", "st.subgroup_id", "s.id").where("st.item_type", ITEM_TYPE).andWhere("s.is_active", true).orderBy("s.name"),
-    knex("erp.uom").select("id", "code", "name").where("is_active", true).orderBy("code"),
+    fetchProductionBaseUomOptions(knex),
     knex("erp.product_types").select("id", "name", "name_ur").where("is_active", true).orderBy("name"),
   ]);
   return { groups, subgroups, uoms, types };
@@ -167,7 +171,8 @@ router.get("/", requirePermission("SCREEN", "master_data.products.finished", "vi
     const canBrowse = res.locals.can("SCREEN", "master_data.products.finished", "navigate");
     const [options, users] = await Promise.all([loadOptions(), loadUsers()]);
     const rows = canBrowse ? await loadRows(filters) : [];
-    renderIndex(req, res, { rows, ...options, users, filters, error: null, modalOpen: false, modalMode: "create" });
+    const pairUomError = !options.uoms?.length ? (res.locals.t("error_pair_uom_missing") || "PAIR UOM is missing. Run latest migration.") : null;
+    renderIndex(req, res, { rows, ...options, users, filters, error: pairUomError, modalOpen: false, modalMode: "create" });
   } catch (err) {
     next(err);
   }
@@ -186,16 +191,17 @@ router.post("/", requirePermission("SCREEN", "master_data.products.finished", "c
     const uses_sfg = values.uses_sfg === "true" || values.uses_sfg === "on";
     const sfg_part_type = uses_sfg ? (values.sfg_part_type || "").toUpperCase() : null;
 
-    if (!code || !name || !values.name_ur || !group_id || !base_uom_id || !product_type_id || (uses_sfg && !sfg_part_type)) {
+    const pairBaseUnitValid = base_uom_id ? await isPairUomId(knex, base_uom_id) : false;
+    if (!code || !name || !values.name_ur || !group_id || !base_uom_id || !product_type_id || (uses_sfg && !sfg_part_type) || !pairBaseUnitValid) {
       const [rows, options, users] = await Promise.all([loadRows(), loadOptions(), loadUsers()]);
       return renderIndex(req, res, {
         rows,
         ...options,
         users,
-        error: res.locals.t("error_required_fields"),
+        error: pairBaseUnitValid ? res.locals.t("error_required_fields") : (res.locals.t("error_production_base_unit_pair") || "Finished and Semi-Finished articles must use PAIR as base unit."),
         modalOpen: true,
-        modalMode: "edit",
-        values: { ...values, id },
+        modalMode: "create",
+        values,
       });
     }
 
@@ -306,13 +312,14 @@ router.post("/:id", requirePermission("SCREEN", "master_data.products.finished",
       sfg_part_type,
     });
 
-    if (!code || !name || !group_id || !base_uom_id || !product_type_id || (uses_sfg && !sfg_part_type)) {
+    const pairBaseUnitValid = base_uom_id ? await isPairUomId(knex, base_uom_id) : false;
+    if (!code || !name || !group_id || !base_uom_id || !product_type_id || (uses_sfg && !sfg_part_type) || !pairBaseUnitValid) {
       const [rows, options, users] = await Promise.all([loadRows(), loadOptions(), loadUsers()]);
       return renderIndex(req, res, {
         rows,
         ...options,
         users,
-        error: res.locals.t("error_required_fields"),
+        error: pairBaseUnitValid ? res.locals.t("error_required_fields") : (res.locals.t("error_production_base_unit_pair") || "Finished and Semi-Finished articles must use PAIR as base unit."),
         modalOpen: true,
         modalMode: "edit",
         values: { ...values, id },

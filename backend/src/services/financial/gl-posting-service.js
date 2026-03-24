@@ -24,6 +24,9 @@ const SALES_ACCOUNT_GROUP_CODES = {
   salesRevenue: "sales_revenue",
   advancesFromCustomers: "advances_from_customers",
 };
+const PRODUCTION_VOUCHER_TYPES = {
+  departmentCompletion: "DCV",
+};
 
 const SUPPORTED_POSTING_RULES = {
   [VOUCHER_TYPES.cash]: {
@@ -55,6 +58,10 @@ const SUPPORTED_POSTING_RULES = {
   [SALES_VOUCHER_TYPES.salesVoucher]: {
     buildEntriesTx: ({ trx, header, voucherId }) =>
       buildSalesVoucherEntriesTx({ trx, header, voucherId }),
+  },
+  [PRODUCTION_VOUCHER_TYPES.departmentCompletion]: {
+    buildEntriesTx: ({ trx, header, voucherId }) =>
+      buildDCVEntriesTx({ trx, header, voucherId }),
   },
 };
 

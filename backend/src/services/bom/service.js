@@ -8,10 +8,14 @@ const debugBom = (...args) => {
 const BOM_LEVELS = new Set(["FINISHED", "SEMI_FINISHED"]);
 const LABOUR_RATE_TYPES = new Set(["PER_DOZEN", "PER_PAIR"]);
 const BOM_SCOPE = new Set(["ALL", "SPECIFIC"]);
-const RULE_ACTION_TYPES = new Set(["ADD_RM", "REMOVE_RM", "REPLACE_RM", "ADJUST_QTY", "CHANGE_LOSS"]);
+const BOM_SYNC_NOTE_PREFIX = "[BOM_SYNC]";
+const LABOUR_RATE_RULE_PRECEDENCE = {
+  SKU: 1,
+  SUBGROUP: 2,
+  GROUP: 3,
+  FLAT: 4,
+};
 let bomLifecycleColumnSupportPromise = null;
-let bomSkuOverrideTableSupportPromise = null;
-let bomSkuOverrideDeptColumnSupportPromise = null;
 
 const toArray = (value) => {
   if (!value) return [];
@@ -32,6 +36,12 @@ const toPositiveNumber = (value) => {
   return num;
 };
 
+const toPositiveInt = (value) => {
+  const num = toNumberOrNull(value);
+  if (num === null || !Number.isInteger(num) || num <= 0) return null;
+  return num;
+};
+
 const parseJsonArray = (raw) => {
   if (!raw) return [];
   if (Array.isArray(raw)) return raw;
@@ -41,17 +51,6 @@ const parseJsonArray = (raw) => {
     return Array.isArray(parsed) ? parsed : [];
   } catch (err) {
     return [];
-  }
-};
-
-const parseJsonObject = (raw) => {
-  if (!raw) return {};
-  if (typeof raw === "object" && !Array.isArray(raw)) return raw;
-  try {
-    const parsed = JSON.parse(String(raw));
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
-  } catch (err) {
-    return {};
   }
 };
 
@@ -103,38 +102,12 @@ const hasBomLifecycleColumn = async (db) => {
   return bomLifecycleColumnSupportPromise;
 };
 
-const hasBomSkuOverrideTable = async (db) => {
-  if (bomSkuOverrideTableSupportPromise) return bomSkuOverrideTableSupportPromise;
-  bomSkuOverrideTableSupportPromise = (async () => {
-    try {
-      return tableExists(db, "erp.bom_sku_override_line");
-    } catch (err) {
-      bomSkuOverrideTableSupportPromise = null;
-      return false;
-    }
-  })();
-  return bomSkuOverrideTableSupportPromise;
-};
-
-const hasBomSkuOverrideDeptColumn = async (db) => {
-  if (bomSkuOverrideDeptColumnSupportPromise) return bomSkuOverrideDeptColumnSupportPromise;
-  bomSkuOverrideDeptColumnSupportPromise = (async () => {
-    try {
-      return db.schema.withSchema("erp").hasColumn("bom_sku_override_line", "dept_id");
-    } catch (err) {
-      bomSkuOverrideDeptColumnSupportPromise = null;
-      return false;
-    }
-  })();
-  return bomSkuOverrideDeptColumnSupportPromise;
-};
-
 const parseBomFormPayload = (body = {}) => {
   const rmRaw = parseJsonArray(body.rm_lines_json);
+  const skuRaw = parseJsonArray(body.sku_rules_json);
   const sfgRaw = parseJsonArray(body.sfg_lines_json);
   const labourRaw = parseJsonArray(body.labour_lines_json);
-  const ruleRaw = parseJsonArray(body.variant_rules_json);
-  const skuOverrideRaw = parseJsonArray(body.sku_overrides_json);
+  const stageRaw = parseJsonArray(body.stage_routes_json);
 
   return {
     header: {
@@ -153,7 +126,16 @@ const parseBomFormPayload = (body = {}) => {
         uom_id: toNumberOrNull(row.uom_id),
         normal_loss_pct: toNumberOrNull(row.normal_loss_pct),
       }))
-      .filter((row) => row.rm_item_id || row.dept_id || row.qty),
+      .filter((row) => row.rm_item_id || row.dept_id),
+    sku_rules: skuRaw
+      .map((row) => ({
+        sku_id: toNumberOrNull(row.sku_id),
+        target_rm_item_id: toNumberOrNull(row.target_rm_item_id),
+        dept_id: toNumberOrNull(row.dept_id),
+        required_qty: toNumberOrNull(row.required_qty),
+        uom_id: toNumberOrNull(row.uom_id),
+      }))
+      .filter((row) => row.sku_id || row.target_rm_item_id || row.dept_id || row.required_qty),
     sfg_lines: sfgRaw
       .map((row) => ({
         fg_size_id: toNumberOrNull(row.fg_size_id),
@@ -171,34 +153,17 @@ const parseBomFormPayload = (body = {}) => {
         rate_type: String(row.rate_type || "PER_PAIR").toUpperCase(),
         rate_value: toNumberOrNull(row.rate_value),
       }))
-      .filter((row) => row.dept_id || row.labour_id || row.rate_value),
-    variant_rules: ruleRaw
-      .map((row) => ({
-        size_scope: normalizeScope(row.size_scope),
-        size_id: toNumberOrNull(row.size_id),
-        packing_scope: normalizeScope(row.packing_scope),
-        packing_type_id: toNumberOrNull(row.packing_type_id),
-        color_scope: normalizeScope(row.color_scope),
-        color_id: toNumberOrNull(row.color_id),
-        action_type: String(row.action_type || "").toUpperCase(),
-        material_scope: normalizeScope(row.material_scope),
-        target_rm_item_id: toNumberOrNull(row.target_rm_item_id),
-        new_value: parseJsonObject(row.new_value),
+      // Save only fully specified labour rows; partial UI rows are draft-in-progress.
+      .filter((row) => row.dept_id && row.labour_id && row.rate_value !== null),
+    stage_routes: stageRaw
+      .map((row, index) => ({
+        stage_id: toPositiveInt(row.stage_id),
+        sequence_no: toPositiveInt(row.sequence_no) || index + 1,
+        is_required: row.is_required !== false,
       }))
-      .filter((row) => row.action_type),
-    sku_overrides: skuOverrideRaw
-      .map((row) => ({
-        sku_id: toNumberOrNull(row.sku_id),
-        target_rm_item_id: toNumberOrNull(row.target_rm_item_id),
-        dept_id: toNumberOrNull(row.dept_id),
-        is_excluded: Boolean(row.is_excluded),
-        override_qty: toNumberOrNull(row.override_qty),
-        override_uom_id: toNumberOrNull(row.override_uom_id),
-        replacement_rm_item_id: toNumberOrNull(row.replacement_rm_item_id),
-        rm_color_id: toNumberOrNull(row.rm_color_id),
-        notes: String(row.notes || "").trim() || null,
-      }))
-      .filter((row) => row.sku_id || row.target_rm_item_id || row.dept_id || row.is_excluded || row.override_qty || row.replacement_rm_item_id || row.rm_color_id),
+      .filter((row) => row.stage_id),
+    variant_rules: [],
+    sku_overrides: [],
   };
 };
 
@@ -239,8 +204,6 @@ const validateAndNormalizeInput = async (db, input, t) => {
   const header = input?.header || {};
   const formatRowMessage = (index, message) =>
     `${t("bom_error_row_prefix") || "Row"} ${index + 1}: ${message}`;
-  const formatRuleMessage = (index, message) =>
-    `${t("bom_error_rule_prefix") || "Rule"} ${index + 1}: ${message}`;
 
   const itemId = toNumberOrNull(header.item_id);
   const level = String(header.level || "").toUpperCase();
@@ -261,10 +224,56 @@ const validateAndNormalizeInput = async (db, input, t) => {
     if (level === "SEMI_FINISHED" && item.item_type !== "SFG") {
       details.push({ field: "level", message: t("bom_error_level_item_mismatch") || "Level must match item type." });
     }
+    if (!item.base_uom_id) {
+      details.push({
+        field: "item_id",
+        message:
+          t("bom_error_item_base_uom_missing")
+          || "Selected article has no base unit. Please set Base Unit in product master first.",
+      });
+    }
     if (!outputUomId) outputUomId = item.base_uom_id || null;
   }
 
   if (!outputUomId) details.push({ field: "output_uom_id", message: t("bom_error_output_uom_required") || "Output UOM is required." });
+
+  if (item?.base_uom_id && outputUomId && Number(outputUomId) !== Number(item.base_uom_id)) {
+    const hasUomConversionsTable = await tableExists(db, "erp.uom_conversions");
+    if (!hasUomConversionsTable) {
+      details.push({
+        field: "output_uom_id",
+        message:
+          t("bom_error_output_uom_conversion_missing")
+          || "Output Unit must have an active conversion to the article Base Unit in UOM Conversions.",
+      });
+    } else {
+      const [uomRows, conversionRows] = await Promise.all([
+        db("erp.uom")
+          .select("id", "name")
+          .whereIn("id", [Number(outputUomId), Number(item.base_uom_id)]),
+        db("erp.uom_conversions")
+          .select("from_uom_id", "to_uom_id")
+          .where({
+            from_uom_id: Number(outputUomId),
+            to_uom_id: Number(item.base_uom_id),
+            is_active: true,
+          })
+          .limit(1),
+      ]);
+      const uomNameById = new Map((uomRows || []).map((row) => [Number(row.id), String(row.name || row.id)]));
+      const outputUomLabel = uomNameById.get(Number(outputUomId)) || `UOM ${outputUomId}`;
+      const baseUomLabel = uomNameById.get(Number(item.base_uom_id)) || `UOM ${item.base_uom_id}`;
+      if (!Array.isArray(conversionRows) || conversionRows.length === 0) {
+        details.push({
+          field: "output_uom_id",
+          message: `${
+            t("bom_error_output_uom_conversion_missing")
+            || "Output Unit must have an active conversion to the article Base Unit in UOM Conversions."
+          } (${outputUomLabel} -> ${baseUomLabel}).`,
+        });
+      }
+    }
+  }
 
   const rmLines = toArray(input?.rm_lines)
     .map((line) => ({
@@ -280,15 +289,15 @@ const validateAndNormalizeInput = async (db, input, t) => {
 
   const rmItemIds = [...new Set(rmLines.map((line) => line.rm_item_id).filter(Boolean))];
   const rmItems = rmItemIds.length
-    ? await db("erp.items").select("id", "item_type", "base_uom_id").whereIn("id", rmItemIds)
+    ? await db("erp.items").select("id", "name", "item_type", "base_uom_id").whereIn("id", rmItemIds)
     : [];
   const rmItemMap = new Map(rmItems.map((row) => [toNumberOrNull(row.id), row]));
   rmLines.forEach((line, idx) => {
     const rowLabel = `${t("bom_error_row_prefix") || "Row"} ${idx + 1}`;
-    if (!line.rm_item_id || !line.dept_id || !line.qty) {
+    if (!line.rm_item_id || !line.dept_id) {
       details.push({
         field: "rm_lines_json",
-        message: `${rowLabel}: ${t("bom_error_rm_line_invalid") || "Complete this raw material row: select material, department, and quantity."}`,
+        message: `${rowLabel}: ${t("bom_error_rm_line_invalid") || "Complete this raw material row: select material and department."}`,
       });
       return;
     }
@@ -378,14 +387,7 @@ const validateAndNormalizeInput = async (db, input, t) => {
       });
     }
     const approvedBomId = await fetchLatestApprovedBomId(db, sku.item_id);
-    if (!approvedBomId) {
-      details.push({
-        field: "sfg_lines_json",
-        message: formatRowMessage(idx, t("bom_error_sfg_requires_approved_bom") || "Selected SFG item has no approved BOM."),
-      });
-      continue;
-    }
-    line.ref_approved_bom_id = approvedBomId;
+    line.ref_approved_bom_id = approvedBomId || null;
   }
   if (incompleteSfgRowIndexes.length) {
     const message = t("bom_error_sfg_section_incomplete")
@@ -437,13 +439,17 @@ const validateAndNormalizeInput = async (db, input, t) => {
   const departmentRows = departmentIds.length
     ? await db("erp.departments").select("id", "is_active", "is_production").whereIn("id", departmentIds)
     : [];
+  const hasAnyActiveProductionDepartment = await db("erp.departments")
+    .first("id")
+    .where({ is_active: true, is_production: true });
+  const enforceProductionDepartment = Boolean(hasAnyActiveProductionDepartment?.id);
   const departmentMap = new Map(departmentRows.map((row) => [toNumberOrNull(row.id), row]));
 
   rmLines.forEach((line, idx) => {
     const rowLabel = `${t("bom_error_row_prefix") || "Row"} ${idx + 1}`;
     if (!line.dept_id) return;
     const dept = departmentMap.get(line.dept_id);
-    if (!dept || !dept.is_active || !dept.is_production) {
+    if (!dept || !dept.is_active || (enforceProductionDepartment && !dept.is_production)) {
       details.push({
         field: "rm_lines_json",
         message: `${rowLabel}: ${t("bom_error_department_must_be_production") || "Selected department must be an active Production department."}`,
@@ -467,7 +473,7 @@ const validateAndNormalizeInput = async (db, input, t) => {
       return;
     }
     const dept = departmentMap.get(line.dept_id);
-    if (!dept || !dept.is_active || !dept.is_production) {
+    if (!dept || !dept.is_active || (enforceProductionDepartment && !dept.is_production)) {
       details.push({
         field: "labour_lines_json",
         message: formatRowMessage(idx, t("bom_error_department_must_be_production") || "Selected department must be an active Production department."),
@@ -507,402 +513,177 @@ const validateAndNormalizeInput = async (db, input, t) => {
     labourComboFirstIndex.set(comboKey, idx);
   });
 
-  const variantRules = toArray(input?.variant_rules)
+  const skuRules = toArray(input?.sku_rules)
     .map((line) => ({
-      size_scope: normalizeScope(line.size_scope),
-      size_id: toNumberOrNull(line.size_id),
-      packing_scope: normalizeScope(line.packing_scope),
-      packing_type_id: toNumberOrNull(line.packing_type_id),
-      color_scope: normalizeScope(line.color_scope),
-      color_id: toNumberOrNull(line.color_id),
-      action_type: String(line.action_type || "").toUpperCase(),
-      material_scope: normalizeScope(line.material_scope),
-      target_rm_item_id: toNumberOrNull(line.target_rm_item_id),
-      new_value: parseJsonObject(line.new_value),
-      __raw_new_value: line.new_value,
+      sku_id: toNumberOrNull(line?.sku_id),
+      target_rm_item_id: toNumberOrNull(line?.target_rm_item_id),
+      dept_id: toNumberOrNull(line?.dept_id),
+      required_qty: toPositiveNumber(line?.required_qty),
+      uom_id: toNumberOrNull(line?.uom_id),
     }))
-    .filter((line) => line.action_type);
-  const skuOverrides = toArray(input?.sku_overrides)
-    .map((line) => ({
-      sku_id: toNumberOrNull(line.sku_id),
-      target_rm_item_id: toNumberOrNull(line.target_rm_item_id),
-      dept_id: toNumberOrNull(line.dept_id),
-      is_excluded: Boolean(line.is_excluded),
-      override_qty: toPositiveNumber(line.override_qty),
-      override_uom_id: toNumberOrNull(line.override_uom_id),
-      replacement_rm_item_id: toNumberOrNull(line.replacement_rm_item_id),
-      rm_color_id: toNumberOrNull(line.rm_color_id),
-      notes: String(line.notes || "").trim() || null,
-    }))
-    .filter((line) => line.sku_id || line.target_rm_item_id || line.dept_id || line.is_excluded || line.override_qty || line.replacement_rm_item_id || line.rm_color_id);
+    .filter((line) => line.sku_id || line.target_rm_item_id || line.dept_id || line.required_qty);
 
-  const ruleReplacementRmIds = [...new Set(variantRules.map((rule) => toNumberOrNull(rule?.new_value?.replacement_rm_item_id)).filter(Boolean))];
-  const ruleTargetRmIds = [...new Set(variantRules.map((rule) => toNumberOrNull(rule?.target_rm_item_id)).filter(Boolean))];
-  const overrideTargetRmIds = [...new Set(skuOverrides.map((line) => line.target_rm_item_id).filter(Boolean))];
-  const overrideReplacementRmIds = [...new Set(skuOverrides.map((line) => line.replacement_rm_item_id).filter(Boolean))];
-  const allRuleRmIds = [...new Set([...rmItemIds, ...ruleTargetRmIds, ...ruleReplacementRmIds, ...overrideTargetRmIds, ...overrideReplacementRmIds])];
-  const allRuleRmRows = allRuleRmIds.length
-    ? await db("erp.items").select("id", "item_type", "base_uom_id", "name", "code").whereIn("id", allRuleRmIds)
+  const headerSkuRows = itemId
+    ? await db("erp.skus as s")
+        .select("s.id", "s.sku_code")
+        .leftJoin("erp.variants as v", "s.variant_id", "v.id")
+        .where("v.item_id", itemId)
+        .andWhere("s.is_active", true)
     : [];
-  const allRuleRmMap = new Map(allRuleRmRows.map((row) => [toNumberOrNull(row.id), row]));
-  const [bomItemVariantColorRows, rmColorRateRows] = await Promise.all([
-    itemId
-      ? db("erp.variants").select("color_id").where({ item_id: itemId, is_active: true })
-      : Promise.resolve([]),
-    rmItemIds.length
-      ? db("erp.rm_purchase_rates")
-          .select("rm_item_id", "color_id")
-          .whereIn("rm_item_id", rmItemIds)
-          .andWhere({ is_active: true })
-      : Promise.resolve([]),
-  ]);
-  const itemSkuColorIds = new Set((bomItemVariantColorRows || []).map((row) => toNumberOrNull(row?.color_id)).filter(Boolean));
-  const hasItemSkuColorVariants = itemSkuColorIds.size > 0;
-  const rmColorSetByItem = new Map();
-  (rmColorRateRows || []).forEach((row) => {
-    const rmItemId = toNumberOrNull(row?.rm_item_id);
-    const colorId = toNumberOrNull(row?.color_id);
-    if (!rmItemId || !colorId) return;
-    if (!rmColorSetByItem.has(rmItemId)) rmColorSetByItem.set(rmItemId, new Set());
-    rmColorSetByItem.get(rmItemId).add(colorId);
-  });
-  const multiColorRmIds = new Set(
-    Array.from(rmColorSetByItem.entries())
-      .filter(([, colorSet]) => colorSet.size > 1)
-      .map(([rmItemId]) => rmItemId),
-  );
-  const getRmDisplayName = (rmItemId) => {
-    const row = allRuleRmMap.get(toNumberOrNull(rmItemId));
-    return row?.name || row?.code || String(rmItemId || "");
-  };
+  const headerSkuSet = new Set((headerSkuRows || []).map((row) => toNumberOrNull(row?.id)).filter(Boolean));
+  const headerSkuCodeById = new Map((headerSkuRows || []).map((row) => [toNumberOrNull(row?.id), String(row?.sku_code || row?.id || "").trim()]));
+  const rmComboSet = new Set(rmLines.map((line) => `${line.rm_item_id}:${line.dept_id}`));
+  const aggregatedQtyByRmCombo = new Map();
+  const providedSkuRmCombos = new Set();
 
-  const hasRuleSizeOrColorScope = variantRules.some((rule) => (rule.size_scope === "SPECIFIC" && rule.size_id) || (rule.color_scope === "SPECIFIC" && rule.color_id));
-  let allowedRuleSizeIds = new Set();
-  let allowedRuleColorIds = new Set();
-  if (hasRuleSizeOrColorScope) {
-    const [fgSfgVariantDims, sizeItemTypeRows] = await Promise.all([
-      db("erp.variants as v")
-        .select("v.size_id", "v.color_id")
-        .leftJoin("erp.items as i", "v.item_id", "i.id")
-        .whereIn("i.item_type", ["FG", "SFG"])
-        .andWhere("v.is_active", true),
-      hasSizeItemTypesTable
-        ? db("erp.size_item_types")
-            .select("size_id")
-            .whereIn("item_type", ["FG", "SFG"])
-        : Promise.resolve([]),
-    ]);
-    allowedRuleSizeIds = new Set((sizeItemTypeRows || []).map((row) => toNumberOrNull(row?.size_id)).filter(Boolean));
-    (fgSfgVariantDims || []).forEach((row) => {
-      const sizeId = toNumberOrNull(row?.size_id);
-      const colorId = toNumberOrNull(row?.color_id);
-      if (sizeId) allowedRuleSizeIds.add(sizeId);
-      if (colorId) allowedRuleColorIds.add(colorId);
-    });
-  }
-  const hasRuleRmColor = variantRules.some((rule) => toNumberOrNull(rule?.new_value?.rm_color_id));
-  const hasOverrideRmColor = skuOverrides.some((line) => toNumberOrNull(line?.rm_color_id));
-  const activeColorSet = new Set();
-  if (hasRuleRmColor || hasOverrideRmColor) {
-    const colorRows = await db("erp.colors").select("id").where({ is_active: true });
-    (colorRows || []).forEach((row) => {
-      const colorId = toNumberOrNull(row?.id);
-      if (colorId) activeColorSet.add(colorId);
-    });
-  }
-
-  variantRules.forEach((rule, idx) => {
-    if (!RULE_ACTION_TYPES.has(rule.action_type)) {
+  if (rmLines.length) {
+    if (!headerSkuSet.size) {
       details.push({
-        field: "variant_rules_json",
-        message: formatRuleMessage(idx, t("bom_error_variant_action_invalid") || "Invalid variant rule action."),
+        field: "sku_rules_json",
+        message: "No active SKU found for selected article. Define SKUs first.",
+      });
+    }
+    if (!skuRules.length) {
+      details.push({
+        field: "sku_rules_json",
+        message: "Enter required quantity in SKU Rules for all SKU/material rows.",
+      });
+    }
+  }
+
+  skuRules.forEach((line, idx) => {
+    const rowLabel = `${t("bom_error_row_prefix") || "Row"} ${idx + 1}`;
+    if (!line.sku_id || !line.target_rm_item_id || !line.dept_id || !line.required_qty) {
+      details.push({
+        field: "sku_rules_json",
+        message: `${rowLabel}: Enter SKU, material, department, and required quantity.`,
       });
       return;
     }
-    if (!["ADJUST_QTY", "REPLACE_RM"].includes(rule.action_type)) {
+    if (!headerSkuSet.has(line.sku_id)) {
       details.push({
-        field: "variant_rules_json",
-        message: formatRuleMessage(idx, t("bom_error_variant_action_invalid") || "Invalid variant rule action."),
+        field: "sku_rules_json",
+        message: `${rowLabel}: Selected SKU does not belong to this article.`,
       });
       return;
     }
-    if (rule.size_scope === "SPECIFIC" && !rule.size_id) {
+    const rmComboKey = `${line.target_rm_item_id}:${line.dept_id}`;
+    if (!rmComboSet.has(rmComboKey)) {
       details.push({
-        field: "variant_rules_json",
-        message: formatRuleMessage(idx, t("bom_error_size_required_for_specific_scope") || "Size is required for specific scope."),
+        field: "sku_rules_json",
+        message: `${rowLabel}: SKU rule must match an existing material line (material + department).`,
       });
+      return;
     }
-    if (rule.packing_scope === "SPECIFIC" && !rule.packing_type_id) {
+    const skuRmKey = `${line.sku_id}:${rmComboKey}`;
+    if (providedSkuRmCombos.has(skuRmKey)) {
       details.push({
-        field: "variant_rules_json",
-        message: formatRuleMessage(idx, t("bom_error_packing_required_for_specific_scope") || "Packing type is required for specific scope."),
+        field: "sku_rules_json",
+        message: `${rowLabel}: Duplicate SKU rule row is not allowed.`,
       });
+      return;
     }
-    if (rule.color_scope === "SPECIFIC" && !rule.color_id) {
-      details.push({
-        field: "variant_rules_json",
-        message: formatRuleMessage(idx, t("bom_error_color_required_for_specific_scope") || "Color is required for specific scope."),
-      });
-    }
-    if (rule.size_scope === "SPECIFIC" && rule.size_id && !allowedRuleSizeIds.has(rule.size_id)) {
-      details.push({
-        field: "variant_rules_json",
-        message: formatRuleMessage(idx, t("bom_error_variant_invalid_size") || "Selected size is invalid for this BOM item."),
-      });
-    }
-    if (rule.color_scope === "SPECIFIC" && rule.color_id && !allowedRuleColorIds.has(rule.color_id)) {
-      details.push({
-        field: "variant_rules_json",
-        message: formatRuleMessage(idx, t("bom_error_variant_invalid_color") || "Selected color is invalid for this BOM item."),
-      });
-    }
-    if (!hasItemSkuColorVariants && rule.color_scope === "SPECIFIC") {
-      details.push({
-        field: "variant_rules_json",
-        message: formatRuleMessage(
-          idx,
-          t("bom_error_color_scope_not_allowed_no_sku_colors")
-            || "This article has no SKU color variants. Use 'All SKUs' for color scope.",
-        ),
-      });
-    }
-    if (rule.material_scope === "SPECIFIC" && !rule.target_rm_item_id) {
-      details.push({
-        field: "variant_rules_json",
-        message: formatRuleMessage(idx, t("bom_error_material_required_for_specific_scope") || "Target material is required for specific scope."),
-      });
-    }
-    if (rule.size_scope === "ALL") rule.size_id = null;
-    if (rule.packing_scope === "ALL") rule.packing_type_id = null;
-    if (rule.color_scope === "ALL") rule.color_id = null;
-    if (rule.material_scope === "ALL") rule.target_rm_item_id = null;
-    if (rule.material_scope === "SPECIFIC" && rule.target_rm_item_id) {
-      const targetRm = allRuleRmMap.get(rule.target_rm_item_id);
-      if (!targetRm || targetRm.item_type !== "RM") {
-        details.push({ field: "variant_rules_json", message: `${t("bom_error_rm_item_invalid") || "Raw material line must reference an RM item"} #${idx + 1}` });
-      }
-    }
-
-    const rawRuleValue = typeof rule.__raw_new_value === "string" ? rule.__raw_new_value.trim() : "";
-    if (rawRuleValue && rawRuleValue !== "{}" && Object.keys(rule.new_value || {}).length === 0) {
-      details.push({
-        field: "variant_rules_json",
-        message: formatRuleMessage(idx, t("bom_error_variant_value_invalid_json") || "Rule value must be a valid JSON object."),
-      });
-    }
-    if (rule.action_type === "ADJUST_QTY") {
-      if (rule.size_scope !== "SPECIFIC") {
-        details.push({
-          field: "variant_rules_json",
-          message: formatRuleMessage(idx, t("bom_error_size_required_for_specific_scope") || "Size is required for specific scope."),
-        });
-      }
-      const qty = toPositiveNumber(rule.new_value?.qty);
-      const uomId = toNumberOrNull(rule.new_value?.uom_id);
-      if (!qty) {
-        details.push({
-          field: "variant_rules_json",
-          message: formatRuleMessage(idx, t("bom_error_variant_invalid_qty") || "Adjusted quantity must be greater than zero."),
-        });
-      } else {
-        rule.new_value.qty = qty;
-      }
-      if (!uomId) {
-        details.push({
-          field: "variant_rules_json",
-          message: formatRuleMessage(idx, t("bom_error_variant_invalid_uom") || "Select a unit for adjusted quantity."),
-        });
-      } else {
-        rule.new_value.uom_id = uomId;
-      }
-    } else if (rule.action_type === "REPLACE_RM") {
-      const replacementRmId = toNumberOrNull(rule.new_value?.replacement_rm_item_id);
-      const rmColorId = toNumberOrNull(rule.new_value?.rm_color_id);
-      if (!replacementRmId && !rmColorId) {
-        details.push({
-          field: "variant_rules_json",
-          message: formatRuleMessage(idx, t("bom_error_variant_replace_requires_target") || "Provide replacement material or raw material color."),
-        });
-      }
-      if (replacementRmId) {
-        const replacementRm = allRuleRmMap.get(replacementRmId);
-        if (!replacementRm || replacementRm.item_type !== "RM") {
-          details.push({
-            field: "variant_rules_json",
-            message: formatRuleMessage(idx, t("bom_error_rm_item_invalid") || "Raw material line must reference an RM item."),
-          });
-        } else {
-          rule.new_value.replacement_rm_item_id = replacementRmId;
-          rule.new_value.uom_id = toNumberOrNull(replacementRm.base_uom_id);
-        }
-      }
-      if (rmColorId) {
-        if (!activeColorSet.has(rmColorId)) {
-          details.push({
-            field: "variant_rules_json",
-            message: formatRuleMessage(idx, t("bom_error_variant_invalid_color") || "Selected color is invalid for this BOM item."),
-          });
-        } else {
-          rule.new_value.rm_color_id = rmColorId;
-        }
-      }
-    }
-    delete rule.__raw_new_value;
-  });
-
-  if (!hasItemSkuColorVariants && multiColorRmIds.size > 0) {
-    const mappedRmIds = new Set(
-      variantRules
-        .filter((rule) =>
-          String(rule?.action_type || "").toUpperCase() === "REPLACE_RM"
-          && toNumberOrNull(rule?.target_rm_item_id)
-          && toNumberOrNull(rule?.new_value?.rm_color_id),
-        )
-        .map((rule) => toNumberOrNull(rule.target_rm_item_id))
-        .filter(Boolean),
+    providedSkuRmCombos.add(skuRmKey);
+    aggregatedQtyByRmCombo.set(
+      rmComboKey,
+      Number(aggregatedQtyByRmCombo.get(rmComboKey) || 0) + Number(line.required_qty || 0),
     );
-    const missingRmIds = Array.from(multiColorRmIds).filter((rmItemId) => !mappedRmIds.has(rmItemId));
-    if (missingRmIds.length) {
-      details.push({
-        field: "variant_rules_json",
-        message:
-          t("bom_error_color_rules_required_no_sku_colors")
-          || "This article has no SKU color variants. Add Color Rules for each raw material that has multiple color rates.",
-      });
-      missingRmIds.forEach((rmItemId) => {
-        details.push({
-          field: "variant_rules_json",
-          message: `${t("bom_error_color_rule_missing_for_material_prefix") || "Color rule missing for material"}: ${getRmDisplayName(rmItemId)}.`,
-        });
-      });
-    }
-  }
+  });
 
-  const hasSkuOverrideTable = await hasBomSkuOverrideTable(db);
-  const hasSkuOverrideDeptColumn = hasSkuOverrideTable
-    ? await hasBomSkuOverrideDeptColumn(db)
-    : false;
-  if (skuOverrides.length && (!hasSkuOverrideTable || !hasSkuOverrideDeptColumn)) {
-    details.push({
-      field: "sku_overrides_json",
-      message:
-        t("bom_error_sku_override_table_missing")
-        || "SKU override storage is not available. Please run latest migration.",
+  if (headerSkuSet.size && rmComboSet.size) {
+    const missingSkuRulePairs = [];
+    [...headerSkuSet].forEach((skuId) => {
+      [...rmComboSet].forEach((rmComboKey) => {
+        const skuRmKey = `${skuId}:${rmComboKey}`;
+        if (!providedSkuRmCombos.has(skuRmKey)) {
+          missingSkuRulePairs.push({ skuId, rmComboKey });
+        }
+      });
     });
-  }
-  if (skuOverrides.length && hasSkuOverrideTable && hasSkuOverrideDeptColumn) {
-    const rmDeptByItemMap = new Map();
-    rmLines.forEach((line) => {
-      const rmItemId = toNumberOrNull(line.rm_item_id);
-      const deptId = toNumberOrNull(line.dept_id);
-      if (!rmItemId || !deptId) return;
-      if (!rmDeptByItemMap.has(rmItemId)) rmDeptByItemMap.set(rmItemId, new Set());
-      rmDeptByItemMap.get(rmItemId).add(deptId);
-    });
-    const baseRmDeptSet = new Set(
-      rmLines
-        .map((line) => {
-          const rmItemId = toNumberOrNull(line.rm_item_id);
-          const deptId = toNumberOrNull(line.dept_id);
-          if (!rmItemId || !deptId) return "";
-          return `${rmItemId}:${deptId}`;
+    if (missingSkuRulePairs.length) {
+      const sample = missingSkuRulePairs
+        .slice(0, 8)
+        .map((row) => {
+          const [rmItemId, deptId] = String(row.rmComboKey).split(":");
+          const skuLabel = headerSkuCodeById.get(row.skuId) || `SKU ${row.skuId}`;
+          const rmName = String(rmItemMap.get(toNumberOrNull(rmItemId))?.name || rmItemId || "").trim();
+          return `${skuLabel} / ${rmName} / Dept ${deptId}`;
         })
-        .filter(Boolean),
-    );
-    const overrideUniqueSet = new Set();
-    const overrideSkuIds = [...new Set(skuOverrides.map((line) => line.sku_id).filter(Boolean))];
-    const skuRows = overrideSkuIds.length
-      ? await db("erp.skus as s")
-          .select("s.id", "v.item_id")
-          .leftJoin("erp.variants as v", "s.variant_id", "v.id")
-          .whereIn("s.id", overrideSkuIds)
-      : [];
-    const skuItemMap = new Map(skuRows.map((row) => [toNumberOrNull(row.id), toNumberOrNull(row.item_id)]));
-    skuOverrides.forEach((line, idx) => {
-      if (!line.dept_id && line.target_rm_item_id) {
-        const candidateDeptSet = rmDeptByItemMap.get(line.target_rm_item_id) || new Set();
-        if (candidateDeptSet.size === 1) {
-          line.dept_id = [...candidateDeptSet][0];
-        }
-      }
-      if (!line.sku_id || !line.target_rm_item_id || !line.dept_id) {
-        details.push({
-          field: "sku_overrides_json",
-          message: formatRowMessage(
-            idx,
-            t("bom_error_sku_override_required")
-            || "Select SKU, target raw material, and consumption department.",
-          ),
-        });
-        return;
-      }
-      if (!baseRmDeptSet.has(`${line.target_rm_item_id}:${line.dept_id}`)) {
-        details.push({
-          field: "sku_overrides_json",
-          message: formatRowMessage(
-            idx,
-            t("bom_error_sku_override_target_missing")
-            || "Target raw material + department must match a BOM material line.",
-          ),
-        });
-      }
-      const uniqueKey = `${line.sku_id}:${line.target_rm_item_id}:${line.dept_id}`;
-      if (overrideUniqueSet.has(uniqueKey)) {
-        details.push({
-          field: "sku_overrides_json",
-          message: formatRowMessage(
-            idx,
-            t("bom_error_sku_override_duplicate")
-            || "Duplicate SKU override for the same material and department.",
-          ),
-        });
-      } else {
-        overrideUniqueSet.add(uniqueKey);
-      }
-      const skuItemId = skuItemMap.get(line.sku_id);
-      if (!skuItemId || Number(skuItemId) !== Number(itemId)) {
-        details.push({
-          field: "sku_overrides_json",
-          message: formatRowMessage(idx, t("bom_error_sku_override_item_mismatch") || "Selected SKU does not belong to this BOM article."),
-        });
-      }
-      const targetRm = allRuleRmMap.get(line.target_rm_item_id);
-      if (!targetRm || targetRm.item_type !== "RM") {
-        details.push({
-          field: "sku_overrides_json",
-          message: formatRowMessage(idx, t("bom_error_rm_item_invalid") || "Raw material line must reference an RM item."),
-        });
-      }
-      if (line.replacement_rm_item_id) {
-        const replacementRm = allRuleRmMap.get(line.replacement_rm_item_id);
-        if (!replacementRm || replacementRm.item_type !== "RM") {
-          details.push({
-            field: "sku_overrides_json",
-            message: formatRowMessage(idx, t("bom_error_rm_item_invalid") || "Raw material line must reference an RM item."),
-          });
-        } else {
-          line.override_uom_id = toNumberOrNull(replacementRm.base_uom_id);
-        }
-      } else if (targetRm?.base_uom_id) {
-        line.override_uom_id = toNumberOrNull(targetRm.base_uom_id);
-      }
-      if (!line.is_excluded && !line.override_qty && !line.replacement_rm_item_id && !line.rm_color_id) {
-        details.push({
-          field: "sku_overrides_json",
-          message: formatRowMessage(idx, t("bom_error_sku_override_no_change") || "Add at least one change: exclude, quantity, replacement material, or color."),
-        });
-      }
-      if (line.rm_color_id && !activeColorSet.has(line.rm_color_id)) {
-        details.push({
-          field: "sku_overrides_json",
-          message: formatRowMessage(idx, t("bom_error_variant_invalid_color") || "Selected color is invalid for this BOM item."),
-        });
-      }
-      if (line.is_excluded) {
-        line.override_qty = null;
-      }
+        .filter(Boolean)
+        .join(", ");
+      const more = missingSkuRulePairs.length > 8 ? ` (+${missingSkuRulePairs.length - 8})` : "";
+      details.push({
+        field: "sku_rules_json",
+        message: `Complete SKU Rules quantity for all SKU/material rows.${sample ? ` Missing: ${sample}${more}.` : ""}`,
+      });
+    }
+  }
+
+  rmLines.forEach((line, idx) => {
+    const comboKey = `${line.rm_item_id}:${line.dept_id}`;
+    const aggregatedQty = Number(aggregatedQtyByRmCombo.get(comboKey) || 0);
+    if (Number.isFinite(aggregatedQty) && aggregatedQty > 0) {
+      line.qty = Number(aggregatedQty.toFixed(3));
+      return;
+    }
+    details.push({
+      field: "sku_rules_json",
+      message: `${t("bom_error_row_prefix") || "Row"} ${idx + 1}: Material line has no SKU-rule quantity total.`,
+    });
+  });
+
+  const stageRoutes = toArray(input?.stage_routes)
+    .map((line, idx) => ({
+      stage_id: toPositiveInt(line?.stage_id),
+      sequence_no: toPositiveInt(line?.sequence_no) || idx + 1,
+      is_required: line?.is_required !== false,
+    }))
+    .filter((line) => line.stage_id);
+
+  const hasProductionStageTable = await tableExists(db, "erp.production_stages");
+  const hasBomStageRoutingTable = await tableExists(db, "erp.bom_stage_routing");
+  if (stageRoutes.length && (!hasProductionStageTable || !hasBomStageRoutingTable)) {
+    details.push({
+      field: "stage_routes_json",
+      message: t("generic_error") || "Production stage routing is not available in this environment.",
     });
   }
+  if (stageRoutes.length && hasProductionStageTable) {
+    const stageIds = [...new Set(stageRoutes.map((line) => line.stage_id).filter(Boolean))];
+    const stageRows = stageIds.length
+      ? await db("erp.production_stages")
+          .select("id", "is_active")
+          .whereIn("id", stageIds)
+      : [];
+    const activeStageMap = new Map(stageRows.map((row) => [toPositiveInt(row.id), Boolean(row.is_active)]));
+    const usedStageIds = new Set();
+    const usedSequenceNos = new Set();
+    stageRoutes.forEach((line, idx) => {
+      if (!activeStageMap.has(line.stage_id) || !activeStageMap.get(line.stage_id)) {
+        details.push({
+          field: "stage_routes_json",
+          message: `${t("bom_error_row_prefix") || "Row"} ${idx + 1}: ${(t("error_not_found") || "Record not found.")} (${line.stage_id})`,
+        });
+      }
+      if (usedStageIds.has(line.stage_id)) {
+        details.push({
+          field: "stage_routes_json",
+          message: `${t("bom_error_row_prefix") || "Row"} ${idx + 1}: ${(t("error_duplicate_name") || "Duplicate value is not allowed.")}`,
+        });
+      }
+      usedStageIds.add(line.stage_id);
+      if (usedSequenceNos.has(line.sequence_no)) {
+        details.push({
+          field: "stage_routes_json",
+          message: `${t("bom_error_row_prefix") || "Row"} ${idx + 1}: ${(t("error_duplicate_code") || "Duplicate sequence is not allowed.")}`,
+        });
+      }
+      usedSequenceNos.add(line.sequence_no);
+    });
+  }
+
+  const variantRules = [];
+  const skuOverrides = [];
 
   if (details.length) throw makeValidationError(t("bom_error_fix_fields") || "Please review and correct the BOM details.", details);
 
@@ -916,8 +697,12 @@ const validateAndNormalizeInput = async (db, input, t) => {
       output_uom_id: outputUomId,
     },
     rm_lines: rmLines,
+    sku_rules: skuRules,
     sfg_lines: sfgLines,
     labour_lines: labourLines,
+    stage_routes: stageRoutes
+      .slice()
+      .sort((a, b) => Number(a.sequence_no || 0) - Number(b.sequence_no || 0)),
     variant_rules: variantRules,
     sku_overrides: skuOverrides,
   };
@@ -999,65 +784,34 @@ const buildApprovalSnapshot = (snapshot = {}) => {
         `${b.dept_id || 0}:${b.labour_id || 0}:${b.size_scope || "ALL"}:${b.size_id || 0}:${b.rate_type || "PER_PAIR"}`,
       ),
     );
-  const variantRules = toArray(snapshot.variant_rules)
+  const stageRoutes = toArray(snapshot.stage_routes)
     .map((line) => ({
-      size_scope: normalizeScope(line.size_scope),
-      size_id: toNumberOrNull(line.size_id),
-      packing_scope: normalizeScope(line.packing_scope),
-      packing_type_id: toNumberOrNull(line.packing_type_id),
-      color_scope: normalizeScope(line.color_scope),
-      color_id: toNumberOrNull(line.color_id),
-      action_type: String(line.action_type || "").toUpperCase(),
-      material_scope: normalizeScope(line.material_scope),
-      target_rm_item_id: toNumberOrNull(line.target_rm_item_id),
-      new_value: toSortedObject(parseJsonObject(line.new_value)),
+      stage_id: toPositiveInt(line.stage_id),
+      sequence_no: toPositiveInt(line.sequence_no),
+      is_required: line.is_required !== false,
     }))
-    .sort((a, b) =>
-      `${a.size_scope || "ALL"}:${a.size_id || 0}:${a.packing_scope || "ALL"}:${a.packing_type_id || 0}:${a.color_scope || "ALL"}:${a.color_id || 0}:${a.action_type || ""}:${a.material_scope || "ALL"}:${a.target_rm_item_id || 0}`.localeCompare(
-        `${b.size_scope || "ALL"}:${b.size_id || 0}:${b.packing_scope || "ALL"}:${b.packing_type_id || 0}:${b.color_scope || "ALL"}:${b.color_id || 0}:${b.action_type || ""}:${b.material_scope || "ALL"}:${b.target_rm_item_id || 0}`,
-      ),
-    );
-  const skuOverrides = toArray(snapshot.sku_overrides)
-    .map((line) => ({
-      sku_id: toNumberOrNull(line.sku_id),
-      target_rm_item_id: toNumberOrNull(line.target_rm_item_id),
-      dept_id: toNumberOrNull(line.dept_id),
-      is_excluded: Boolean(line.is_excluded),
-      override_qty: toPositiveNumber(line.override_qty),
-      override_uom_id: toNumberOrNull(line.override_uom_id),
-      replacement_rm_item_id: toNumberOrNull(line.replacement_rm_item_id),
-      rm_color_id: toNumberOrNull(line.rm_color_id),
-      notes: String(line.notes || "").trim() || null,
-    }))
-    .sort((a, b) =>
-      `${a.sku_id || 0}:${a.target_rm_item_id || 0}:${a.dept_id || 0}`.localeCompare(
-        `${b.sku_id || 0}:${b.target_rm_item_id || 0}:${b.dept_id || 0}`,
-      ),
-    );
-
+    .filter((line) => line.stage_id && line.sequence_no)
+    .sort((a, b) => Number(a.sequence_no || 0) - Number(b.sequence_no || 0));
   return {
     header,
     rm_lines: rmLines,
     sfg_lines: sfgLines,
     labour_lines: labourLines,
-    variant_rules: variantRules,
-    sku_overrides: skuOverrides,
+    stage_routes: stageRoutes,
+    variant_rules: [],
+    sku_overrides: [],
   };
 };
 
 const snapshotSignature = (snapshot = {}) => JSON.stringify(toSortedObject(buildApprovalSnapshot(snapshot)));
 
 const replaceBomLines = async (trx, bomId, lines) => {
+  const hasBomStageRoutingTable = await tableExists(trx, "erp.bom_stage_routing");
   await trx("erp.bom_rm_line").where({ bom_id: bomId }).del();
   await trx("erp.bom_sfg_line").where({ bom_id: bomId }).del();
   await trx("erp.bom_labour_line").where({ bom_id: bomId }).del();
-  await trx("erp.bom_variant_rule").where({ bom_id: bomId }).del();
-  const hasSkuOverrideTable = await hasBomSkuOverrideTable(trx);
-  const hasSkuOverrideDeptColumn = hasSkuOverrideTable
-    ? await hasBomSkuOverrideDeptColumn(trx)
-    : false;
-  if (hasSkuOverrideTable) {
-    await trx("erp.bom_sku_override_line").where({ bom_id: bomId }).del();
+  if (hasBomStageRoutingTable) {
+    await trx("erp.bom_stage_routing").where({ bom_id: bomId }).del();
   }
 
   if (lines.rm_lines?.length) {
@@ -1102,72 +856,212 @@ const replaceBomLines = async (trx, bomId, lines) => {
     );
   }
 
-  if (lines.variant_rules?.length) {
-    await trx("erp.bom_variant_rule").insert(
-      lines.variant_rules.map((line) => ({
+  if (hasBomStageRoutingTable && lines.stage_routes?.length) {
+    await trx("erp.bom_stage_routing").insert(
+      lines.stage_routes.map((line, index) => ({
         bom_id: bomId,
-        size_scope: line.size_scope,
-        size_id: line.size_scope === "SPECIFIC" ? line.size_id : null,
-        packing_scope: line.packing_scope,
-        packing_type_id: line.packing_scope === "SPECIFIC" ? line.packing_type_id : null,
-        color_scope: line.color_scope,
-        color_id: line.color_scope === "SPECIFIC" ? line.color_id : null,
-        action_type: line.action_type,
-        material_scope: line.material_scope,
-        target_rm_item_id: line.material_scope === "SPECIFIC" ? line.target_rm_item_id : null,
-        new_value: line.new_value || {},
+        stage_id: toPositiveInt(line.stage_id),
+        sequence_no: toPositiveInt(line.sequence_no) || index + 1,
+        is_required: line.is_required !== false,
       })),
     );
   }
-  if (hasSkuOverrideTable && lines.sku_overrides?.length) {
-    await trx("erp.bom_sku_override_line").insert(
-      lines.sku_overrides.map((line) => ({
-        bom_id: bomId,
-        sku_id: line.sku_id,
-        target_rm_item_id: line.target_rm_item_id,
-        ...(hasSkuOverrideDeptColumn ? { dept_id: line.dept_id || null } : {}),
-        is_excluded: Boolean(line.is_excluded),
-        override_qty: line.override_qty || null,
-        override_uom_id: line.override_uom_id || null,
-        replacement_rm_item_id: line.replacement_rm_item_id || null,
-        rm_color_id: line.rm_color_id || null,
-        notes: line.notes || null,
-      })),
-    );
+
+  // Advanced RM rules (size/color/packing, SKU overrides) are intentionally disabled.
+};
+
+const syncLabourRatesFromBomTx = async (trx, { bomId, normalized }) => {
+  const hasLabourRateRulesTable = await tableExists(trx, "erp.labour_rate_rules");
+  if (!hasLabourRateRulesTable) return;
+  const [
+    hasAppliesToAllLaboursColumn,
+    hasStatusColumn,
+    hasArticleTypeColumn,
+    hasNotesColumn,
+    hasEffectiveFromColumn,
+    hasEffectiveToColumn,
+  ] = await Promise.all([
+    trx.schema.withSchema("erp").hasColumn("labour_rate_rules", "applies_to_all_labours"),
+    trx.schema.withSchema("erp").hasColumn("labour_rate_rules", "status"),
+    trx.schema.withSchema("erp").hasColumn("labour_rate_rules", "article_type"),
+    trx.schema.withSchema("erp").hasColumn("labour_rate_rules", "notes"),
+    trx.schema.withSchema("erp").hasColumn("labour_rate_rules", "effective_from"),
+    trx.schema.withSchema("erp").hasColumn("labour_rate_rules", "effective_to"),
+  ]);
+
+  const normalizedBomId = toPositiveInt(bomId);
+  if (!normalizedBomId) return;
+
+  const header = await trx("erp.bom_header")
+    .select("id", "item_id", "level")
+    .where({ id: normalizedBomId })
+    .first();
+  if (!header?.item_id) return;
+
+  const itemId = toPositiveInt(header.item_id);
+  if (!itemId) return;
+
+  const skuRows = await trx("erp.skus as s")
+    .join("erp.variants as v", "v.id", "s.variant_id")
+    .select("s.id", "s.sku_code", "v.size_id")
+    .where("v.item_id", itemId)
+    .andWhere("s.is_active", true)
+    .orderBy("s.id", "asc");
+  if (!skuRows.length) return;
+
+  const skuIds = skuRows.map((row) => toPositiveInt(row.id)).filter(Boolean);
+  const skuIdsBySize = new Map();
+  skuRows.forEach((row) => {
+    const skuId = toPositiveInt(row.id);
+    const sizeId = toPositiveInt(row.size_id);
+    if (!skuId || !sizeId) return;
+    if (!skuIdsBySize.has(sizeId)) skuIdsBySize.set(sizeId, []);
+    skuIdsBySize.get(sizeId).push(skuId);
+  });
+
+  const lines = toArray(normalized?.labour_lines);
+  if (!lines.length) {
+    if (!hasNotesColumn) return;
+    await trx("erp.labour_rate_rules")
+      .where("notes", "like", `${BOM_SYNC_NOTE_PREFIX} bom_id=${normalizedBomId};%`)
+      .del();
+    return;
+  }
+
+  const effectiveRateMap = new Map();
+  const applyRateForSku = ({ skuId, labourId, deptId, rateType, rateValue, isSpecific }) => {
+    if (!skuId || !labourId || !deptId) return;
+    const key = `${labourId}:${deptId}:${rateType}:${skuId}`;
+    if (effectiveRateMap.has(key) && !isSpecific) return;
+    effectiveRateMap.set(key, {
+      labour_id: labourId,
+      dept_id: deptId,
+      sku_id: skuId,
+      rate_type: rateType,
+      rate_value: rateValue,
+    });
+  };
+
+  lines.forEach((line) => {
+    const labourId = toPositiveInt(line?.labour_id);
+    const deptId = toPositiveInt(line?.dept_id);
+    const rateType = String(line?.rate_type || "").trim().toUpperCase();
+    const rateValue = toNumberOrNull(line?.rate_value);
+    if (!labourId || !deptId || !LABOUR_RATE_TYPES.has(rateType) || rateValue === null || rateValue < 0) return;
+
+    const scope = String(line?.size_scope || "ALL").trim().toUpperCase();
+    if (scope === "SPECIFIC") {
+      const sizeId = toPositiveInt(line?.size_id);
+      const scopedSkuIds = sizeId ? (skuIdsBySize.get(sizeId) || []) : [];
+      scopedSkuIds.forEach((skuId) => applyRateForSku({
+        skuId,
+        labourId,
+        deptId,
+        rateType,
+        rateValue,
+        isSpecific: true,
+      }));
+      return;
+    }
+
+    skuIds.forEach((skuId) => applyRateForSku({
+      skuId,
+      labourId,
+      deptId,
+      rateType,
+      rateValue,
+      isSpecific: false,
+    }));
+  });
+
+  const articleType = String(header.level || "").toUpperCase() === "SEMI_FINISHED" ? "SFG" : "FG";
+  const syncNote = `${BOM_SYNC_NOTE_PREFIX} bom_id=${normalizedBomId}; item_id=${itemId}`;
+
+  if (hasNotesColumn) {
+    await trx("erp.labour_rate_rules")
+      .where("notes", "like", `${BOM_SYNC_NOTE_PREFIX} bom_id=${normalizedBomId};%`)
+      .del();
+  }
+
+  const entries = [...effectiveRateMap.values()];
+  for (let idx = 0; idx < entries.length; idx += 1) {
+    const row = entries[idx];
+    let existingQuery = trx("erp.labour_rate_rules")
+      .select("id")
+      .where({
+        labour_id: row.labour_id,
+        dept_id: row.dept_id,
+        sku_id: row.sku_id,
+      })
+      .orderBy("id", "desc");
+    if (hasAppliesToAllLaboursColumn) {
+      existingQuery = existingQuery.andWhere({ applies_to_all_labours: false });
+    }
+    const existing = await existingQuery;
+
+    const primary = existing[0] || null;
+    if (primary?.id) {
+      const updatePayload = {
+        apply_on: "SKU",
+        subgroup_id: null,
+        group_id: null,
+        rate_type: row.rate_type,
+        rate_value: row.rate_value,
+      };
+      if (hasArticleTypeColumn) updatePayload.article_type = articleType;
+      if (hasStatusColumn) updatePayload.status = "active";
+      if (hasNotesColumn) updatePayload.notes = syncNote;
+      if (hasEffectiveFromColumn) updatePayload.effective_from = null;
+      if (hasEffectiveToColumn) updatePayload.effective_to = null;
+      await trx("erp.labour_rate_rules")
+        .where({ id: primary.id })
+        .update(updatePayload);
+      if (existing.length > 1) {
+        const duplicateIds = existing.slice(1).map((r) => toPositiveInt(r.id)).filter(Boolean);
+        if (duplicateIds.length) {
+          await trx("erp.labour_rate_rules").whereIn("id", duplicateIds).del();
+        }
+      }
+      continue;
+    }
+
+    const insertPayload = {
+      labour_id: row.labour_id,
+      dept_id: row.dept_id,
+      apply_on: "SKU",
+      sku_id: row.sku_id,
+      subgroup_id: null,
+      group_id: null,
+      rate_type: row.rate_type,
+      rate_value: row.rate_value,
+    };
+    if (hasAppliesToAllLaboursColumn) insertPayload.applies_to_all_labours = false;
+    if (hasArticleTypeColumn) insertPayload.article_type = articleType;
+    if (hasStatusColumn) insertPayload.status = "active";
+    if (hasNotesColumn) insertPayload.notes = syncNote;
+    if (hasEffectiveFromColumn) insertPayload.effective_from = null;
+    if (hasEffectiveToColumn) insertPayload.effective_to = null;
+    await trx("erp.labour_rate_rules").insert(insertPayload);
   }
 };
 
 const getBomSnapshot = async (db, bomId) => {
   const lifecycleSupported = await hasBomLifecycleColumn(db);
+  const hasBomStageRoutingTable = await tableExists(db, "erp.bom_stage_routing");
   const headerFields = ["id", "bom_no", "item_id", "level", "output_qty", "output_uom_id", "status", "version_no", "created_by", "approved_by"];
   if (lifecycleSupported) headerFields.push("is_active");
   const header = await db("erp.bom_header").select(headerFields).where({ id: bomId }).first();
   if (header && !lifecycleSupported) header.is_active = true;
   if (!header) return null;
-  const hasSkuOverrideTable = await hasBomSkuOverrideTable(db);
-  const hasSkuOverrideDeptColumn = hasSkuOverrideTable
-    ? await hasBomSkuOverrideDeptColumn(db)
-    : false;
-  const [rmLines, sfgLines, labourLines, variantRules, skuOverrides] = await Promise.all([
+  const [rmLines, sfgLines, labourLines, stageRoutes] = await Promise.all([
     db("erp.bom_rm_line").select("rm_item_id", "color_id", "size_id", "dept_id", "qty", "uom_id", "normal_loss_pct").where({ bom_id: bomId }).orderBy("id", "asc"),
     db("erp.bom_sfg_line").select("fg_size_id", "sfg_sku_id", "required_qty", "uom_id", "ref_approved_bom_id").where({ bom_id: bomId }).orderBy("id", "asc"),
     db("erp.bom_labour_line").select("size_scope", "size_id", "dept_id", "labour_id", "rate_type", "rate_value").where({ bom_id: bomId }).orderBy("id", "asc"),
-    db("erp.bom_variant_rule").select("size_scope", "size_id", "packing_scope", "packing_type_id", "color_scope", "color_id", "action_type", "material_scope", "target_rm_item_id", "new_value").where({ bom_id: bomId }).orderBy("id", "asc"),
-    hasSkuOverrideTable
-      ? db("erp.bom_sku_override_line")
-          .select(
-            "sku_id",
-            "target_rm_item_id",
-            ...(hasSkuOverrideDeptColumn ? ["dept_id"] : []),
-            "is_excluded",
-            "override_qty",
-            "override_uom_id",
-            "replacement_rm_item_id",
-            "rm_color_id",
-            "notes",
-          )
+    hasBomStageRoutingTable
+      ? db("erp.bom_stage_routing")
+          .select("stage_id", "sequence_no", "is_required")
           .where({ bom_id: bomId })
-          .orderBy("id", "asc")
+          .orderBy("sequence_no", "asc")
       : Promise.resolve([]),
   ]);
   return {
@@ -1175,8 +1069,9 @@ const getBomSnapshot = async (db, bomId) => {
     rm_lines: rmLines,
     sfg_lines: sfgLines,
     labour_lines: labourLines,
-    variant_rules: variantRules,
-    sku_overrides: skuOverrides,
+    stage_routes: stageRoutes,
+    variant_rules: [],
+    sku_overrides: [],
   };
 };
 
@@ -1277,18 +1172,55 @@ const validateDraftReadyForApproval = async (db, { bomId, t, locale = "en" } = {
       dept_id: toNumberOrNull(line?.dept_id),
     }))
     .filter((line) => line.rm_item_id && line.dept_id);
-  const skuOverrideRows = toArray(form.sku_overrides)
-    .map((row) => ({
-      sku_id: toNumberOrNull(row?.sku_id),
-      target_rm_item_id: toNumberOrNull(row?.target_rm_item_id),
-      dept_id: toNumberOrNull(row?.dept_id),
-      override_qty: toPositiveNumber(row?.override_qty),
-      rm_color_id: toNumberOrNull(row?.rm_color_id),
-    }))
-    .filter((row) => row.sku_id && row.target_rm_item_id && row.dept_id);
-  const skuOverrideMap = new Map(
-    skuOverrideRows.map((row) => [`${row.sku_id}:${row.target_rm_item_id}:${row.dept_id}`, row]),
-  );
+  const labourDeptIds = toArray(form.labour_lines)
+    .map((line) => toNumberOrNull(line?.dept_id))
+    .filter(Boolean);
+  const departmentsUsedInBom = [...new Set([
+    ...rmLines.map((line) => toNumberOrNull(line?.dept_id)).filter(Boolean),
+    ...labourDeptIds,
+  ])];
+  const [hasProductionStageTable, hasBomStageRoutingTable] = await Promise.all([
+    tableExists(db, "erp.production_stages"),
+    tableExists(db, "erp.bom_stage_routing"),
+  ]);
+  if (departmentsUsedInBom.length && hasProductionStageTable && hasBomStageRoutingTable) {
+    const stageRouteIds = [...new Set(
+      toArray(form.stage_routes)
+        .map((line) => toPositiveInt(line?.stage_id))
+        .filter(Boolean),
+    )];
+    const stageRows = stageRouteIds.length
+      ? await db("erp.production_stages")
+          .select("id", "dept_id", "is_active")
+          .whereIn("id", stageRouteIds)
+      : [];
+    const stageDeptSet = new Set(
+      (stageRows || [])
+        .filter((row) => row?.is_active === true)
+        .map((row) => toNumberOrNull(row?.dept_id))
+        .filter(Boolean),
+    );
+    const missingDeptIds = departmentsUsedInBom.filter((deptId) => !stageDeptSet.has(deptId));
+    if (missingDeptIds.length) {
+      const deptRows = await db("erp.departments")
+        .select("id", "name")
+        .whereIn("id", missingDeptIds);
+      const deptNameById = new Map(
+        (deptRows || []).map((row) => [toNumberOrNull(row?.id), String(row?.name || row?.id || "").trim()]),
+      );
+      const sample = missingDeptIds
+        .slice(0, 12)
+        .map((deptId) => deptNameById.get(deptId) || `Dept ${deptId}`)
+        .join(", ");
+      const suffix = missingDeptIds.length > 12 ? ` (+${missingDeptIds.length - 12})` : "";
+      details.push({
+        field: "stage_routes_json",
+        message:
+          ((t && t("bom_error_stage_department_scope")) || "Every department used in Raw Materials and Labour must be added in Production Stages before sending for approval.")
+          + (sample ? ` Missing: ${sample}${suffix}.` : ""),
+      });
+    }
+  }
 
   const getSkuLabel = (sku) => {
     const parts = [];
@@ -1300,15 +1232,16 @@ const validateDraftReadyForApproval = async (db, { bomId, t, locale = "en" } = {
   };
 
   if (String(form.header.level || "").toUpperCase() === "FINISHED" && String(itemRow?.item_type || "").toUpperCase() === "FG" && Boolean(itemRow?.uses_sfg)) {
+    const sfgRowsForApproval = toArray(form.sfg_lines)
+      .map((line, idx) => ({
+        rowIndex: idx + 1,
+        fg_size_id: toNumberOrNull(line?.fg_size_id),
+        sfg_sku_id: toNumberOrNull(line?.sfg_sku_id),
+        required_qty: toPositiveNumber(line?.required_qty),
+      }))
+      .filter((line) => line.fg_size_id && line.sfg_sku_id && line.required_qty);
     const validSfgBySize = new Set(
-      toArray(form.sfg_lines)
-        .map((line) => ({
-          fg_size_id: toNumberOrNull(line?.fg_size_id),
-          sfg_sku_id: toNumberOrNull(line?.sfg_sku_id),
-          required_qty: toPositiveNumber(line?.required_qty),
-        }))
-        .filter((line) => line.fg_size_id && line.sfg_sku_id && line.required_qty)
-        .map((line) => String(line.fg_size_id)),
+      sfgRowsForApproval.map((line) => String(line.fg_size_id)),
     );
     const missingSfgSkus = skuRows.filter((sku) => !validSfgBySize.has(String(sku.size_id)));
     if (missingSfgSkus.length) {
@@ -1317,53 +1250,47 @@ const validateDraftReadyForApproval = async (db, { bomId, t, locale = "en" } = {
       details.push({
         field: "sfg_lines_json",
         message:
-          "Complete all Semi-Finished rows for every Article SKU before sending for approval."
+          ((t && t("bom_error_approval_missing_sfg_rows")) || "Complete all Semi-Finished rows for every Article SKU before sending for approval.")
           + (sample ? ` ${sample}${suffix}` : ""),
       });
     }
-  }
 
-  if (skuRows.length && rmLines.length) {
-    const rmNameById = new Map((options?.rmItems || []).map((row) => [toNumberOrNull(row.id), row?.name || row?.code || row?.id]));
-    const deptNameById = new Map((options?.departments || []).map((row) => [toNumberOrNull(row.id), row?.name || row?.id]));
-    const rmItemColorMap = options?.rmItemColorMap || {};
-    const missing = [];
-
-    skuRows.forEach((sku) => {
-      rmLines.forEach((rmLine) => {
-        const key = `${toNumberOrNull(sku.id)}:${rmLine.rm_item_id}:${rmLine.dept_id}`;
-        const override = skuOverrideMap.get(key);
-        const requiresColor = Array.isArray(rmItemColorMap[String(rmLine.rm_item_id)]) && rmItemColorMap[String(rmLine.rm_item_id)].length > 1;
-        const hasQty = Boolean(override?.override_qty);
-        const hasColor = !requiresColor || Boolean(override?.rm_color_id);
-        if (hasQty && hasColor) return;
-        missing.push({
-          sku,
-          rmName: rmNameById.get(rmLine.rm_item_id) || `RM ${rmLine.rm_item_id}`,
-          deptName: deptNameById.get(rmLine.dept_id) || `Dept ${rmLine.dept_id}`,
-          missingQty: !hasQty,
-          missingColor: !hasColor,
+    const selectedSfgSkuIds = [...new Set(sfgRowsForApproval.map((line) => line.sfg_sku_id).filter(Boolean))];
+    if (selectedSfgSkuIds.length) {
+      const selectedSfgSkuRows = await db("erp.skus as s")
+        .select("s.id", "s.sku_code", "v.item_id")
+        .leftJoin("erp.variants as v", "s.variant_id", "v.id")
+        .whereIn("s.id", selectedSfgSkuIds);
+      const skuRowById = new Map(selectedSfgSkuRows.map((row) => [toNumberOrNull(row.id), row]));
+      const itemApprovedBomMap = new Map();
+      for (let i = 0; i < selectedSfgSkuRows.length; i += 1) {
+        const row = selectedSfgSkuRows[i];
+        const itemId = toNumberOrNull(row.item_id);
+        if (!itemId || itemApprovedBomMap.has(itemId)) continue;
+        const approvedBomId = await fetchLatestApprovedBomId(db, itemId);
+        itemApprovedBomMap.set(itemId, approvedBomId || null);
+      }
+      sfgRowsForApproval.forEach((line) => {
+        const skuRow = skuRowById.get(line.sfg_sku_id);
+        const itemId = toNumberOrNull(skuRow?.item_id);
+        const hasApprovedBom = Boolean(itemId && itemApprovedBomMap.get(itemId));
+        if (hasApprovedBom) return;
+        const skuLabel = String(skuRow?.sku_code || line.sfg_sku_id || "").trim();
+        details.push({
+          field: "sfg_lines_json",
+          message: `Row ${line.rowIndex}: ${t("bom_error_sfg_requires_approved_bom") || "Selected SFG item has no approved BOM."}${skuLabel ? ` SKU: ${skuLabel}.` : ""}`,
         });
       });
-    });
-
-    if (missing.length) {
-      const sample = missing.slice(0, 12).map((row) => {
-        const needs = [row.missingQty ? "qty" : "", row.missingColor ? "color" : ""].filter(Boolean).join("+");
-        return `${getSkuLabel(row.sku)} - ${row.rmName} - ${row.deptName}${needs ? ` (${needs})` : ""}`;
-      }).join("; ");
-      const suffix = missing.length > 12 ? ` (+${missing.length - 12})` : "";
-      details.push({
-        field: "sku_overrides_json",
-        message:
-          "Complete all SKU Rules rows (quantity and required color variant) before sending for approval."
-          + (sample ? ` ${sample}${suffix}` : ""),
-      });
     }
   }
 
+  // Advanced RM rules are disabled; approval readiness checks only material/SFG/labour sections.
+
   if (details.length) {
-    throw makeValidationError("Please complete all mandatory BOM rows before sending for approval.", details);
+    throw makeValidationError(
+      (t && t("bom_error_approval_blocked")) || "BOM cannot be sent for approval yet.",
+      details,
+    );
   }
   return true;
 };
@@ -1447,6 +1374,10 @@ const saveBomDraftTx = async (trx, { input, bomId, userId, requestId, t }) => {
   }
 
   await replaceBomLines(trx, targetId, normalized);
+  await syncLabourRatesFromBomTx(trx, {
+    bomId: targetId,
+    normalized,
+  });
   const after = await getBomSnapshot(trx, targetId);
   await insertBomChangeLog(trx, {
     bomId: targetId,
@@ -1571,29 +1502,16 @@ const createNewVersionFromApprovedTx = async (trx, { sourceBomId, userId, t }) =
     .returning("id");
   const newBomId = inserted?.[0]?.id || inserted?.[0];
 
-  const hasSkuOverrideTable = await hasBomSkuOverrideTable(trx);
-  const hasSkuOverrideDeptColumn = hasSkuOverrideTable
-    ? await hasBomSkuOverrideDeptColumn(trx)
-    : false;
-  const [rmLines, sfgLines, labourLines, variantRules, skuOverrides] = await Promise.all([
+  const hasBomStageRoutingTable = await tableExists(trx, "erp.bom_stage_routing");
+  const [rmLines, sfgLines, labourLines, stageRoutes] = await Promise.all([
     trx("erp.bom_rm_line").select("rm_item_id", "color_id", "size_id", "dept_id", "qty", "uom_id", "normal_loss_pct").where({ bom_id: sourceId }),
     trx("erp.bom_sfg_line").select("fg_size_id", "sfg_sku_id", "required_qty", "uom_id", "ref_approved_bom_id").where({ bom_id: sourceId }),
     trx("erp.bom_labour_line").select("size_scope", "size_id", "dept_id", "labour_id", "rate_type", "rate_value").where({ bom_id: sourceId }),
-    trx("erp.bom_variant_rule").select("size_scope", "size_id", "packing_scope", "packing_type_id", "color_scope", "color_id", "action_type", "material_scope", "target_rm_item_id", "new_value").where({ bom_id: sourceId }),
-    hasSkuOverrideTable
-      ? trx("erp.bom_sku_override_line")
-          .select(
-            "sku_id",
-            "target_rm_item_id",
-            ...(hasSkuOverrideDeptColumn ? ["dept_id"] : []),
-            "is_excluded",
-            "override_qty",
-            "override_uom_id",
-            "replacement_rm_item_id",
-            "rm_color_id",
-            "notes",
-          )
+    hasBomStageRoutingTable
+      ? trx("erp.bom_stage_routing")
+          .select("stage_id", "sequence_no", "is_required")
           .where({ bom_id: sourceId })
+          .orderBy("sequence_no", "asc")
       : Promise.resolve([]),
   ]);
 
@@ -1601,8 +1519,9 @@ const createNewVersionFromApprovedTx = async (trx, { sourceBomId, userId, t }) =
     rm_lines: rmLines,
     sfg_lines: sfgLines,
     labour_lines: labourLines,
-    variant_rules: variantRules,
-    sku_overrides: skuOverrides,
+    stage_routes: stageRoutes,
+    variant_rules: [],
+    sku_overrides: [],
   });
 
   const after = await getBomSnapshot(trx, newBomId);
@@ -1621,18 +1540,52 @@ const createNewVersionFromApprovedTx = async (trx, { sourceBomId, userId, t }) =
 const createNewVersionFromApproved = async (knex, params) => knex.transaction((trx) => createNewVersionFromApprovedTx(trx, params));
 
 const hasPendingApprovalForBom = async (knex, bomId, options = {}) => hasPendingApprovalForBomTx(knex, bomId, options);
+const findDraftBomByItemLevel = async (knex, { itemId, level, excludeBomId = null } = {}) => {
+  const normalizedItemId = toNumberOrNull(itemId);
+  const normalizedLevel = String(level || "").trim().toUpperCase();
+  if (!normalizedItemId || !BOM_LEVELS.has(normalizedLevel)) return null;
+  let query = knex("erp.bom_header")
+    .select("id")
+    .where({
+      item_id: normalizedItemId,
+      level: normalizedLevel,
+      status: "DRAFT",
+    })
+    .orderBy("id", "desc");
+  if (toNumberOrNull(excludeBomId)) {
+    query = query.whereNot("id", toNumberOrNull(excludeBomId));
+  }
+  const row = await query.first();
+  return toNumberOrNull(row?.id);
+};
 
 const loadFormOptions = async (knex, locale = "en", options = {}) => {
   const useUr = locale === "ur";
   const excludeExistingBomItems = Boolean(options?.excludeExistingBomItems);
   const includeItemId = toNumberOrNull(options?.includeItemId);
-  const [hasLabourDeptTable, hasSizeItemTypesTable] = await Promise.all([
+  const [hasLabourDeptTable, hasSizeItemTypesTable, hasUomConversionsTable, hasLabourRateRulesTable, hasProductionStagesTable] = await Promise.all([
     tableExists(knex, "erp.labour_department"),
     tableExists(knex, "erp.size_item_types"),
+    tableExists(knex, "erp.uom_conversions"),
+    tableExists(knex, "erp.labour_rate_rules"),
+    tableExists(knex, "erp.production_stages"),
   ]);
-  const [itemsRaw, rmItems, uoms, departments, sizes, colors, packings, labours, labourDeptRows, rmRateVariants, sfgSkus, itemSkus, fgSfgVariantDims, sizeItemTypeRows, fgSfgUsageRows, existingBomItemRows] = await Promise.all([
+  const [
+    hasLabourRateRuleStatusColumn,
+    hasLabourRateRuleAppliesToAllLaboursColumn,
+    hasLabourRateRuleArticleTypeColumn,
+    hasLabourRateRuleNotesColumn,
+  ] = hasLabourRateRulesTable
+    ? await Promise.all([
+        knex.schema.withSchema("erp").hasColumn("labour_rate_rules", "status"),
+        knex.schema.withSchema("erp").hasColumn("labour_rate_rules", "applies_to_all_labours"),
+        knex.schema.withSchema("erp").hasColumn("labour_rate_rules", "article_type"),
+        knex.schema.withSchema("erp").hasColumn("labour_rate_rules", "notes"),
+      ])
+    : [false, false, false, false];
+  const [itemsRaw, rmItems, uoms, departments, sizes, colors, packings, labours, labourDeptRows, rmRateVariants, sfgSkus, itemSkus, fgSfgVariantDims, sizeItemTypeRows, fgSfgUsageRows, labourRateRuleRows, productionStageRows, existingBomItemRows] = await Promise.all([
     knex("erp.items")
-      .select("id", "code", useUr ? knex.raw("COALESCE(name_ur, name) as name") : "name", "item_type", "base_uom_id", "uses_sfg", "sfg_part_type")
+      .select("id", "code", useUr ? knex.raw("COALESCE(name_ur, name) as name") : "name", "item_type", "base_uom_id", "uses_sfg", "sfg_part_type", "subgroup_id", "group_id")
       .whereIn("item_type", ["FG", "SFG"])
       .andWhere({ is_active: true })
       .orderBy("name", "asc"),
@@ -1642,8 +1595,8 @@ const loadFormOptions = async (knex, locale = "en", options = {}) => {
       .orderBy("name", "asc"),
     knex("erp.uom").select("id", useUr ? knex.raw("COALESCE(name_ur, name) as name") : "name").where({ is_active: true }).orderBy("name", "asc"),
     knex("erp.departments")
-      .select("id", useUr ? knex.raw("COALESCE(name_ur, name) as name") : "name")
-      .where({ is_active: true, is_production: true })
+      .select("id", "is_production", useUr ? knex.raw("COALESCE(name_ur, name) as name") : "name")
+      .where({ is_active: true })
       .orderBy("name", "asc"),
     knex("erp.sizes").select("id", useUr ? knex.raw("COALESCE(name_ur, name) as name") : "name").where({ is_active: true }).orderBy("name", "asc"),
     knex("erp.colors").select("id", useUr ? knex.raw("COALESCE(name_ur, name) as name") : "name").where({ is_active: true }).orderBy("name", "asc"),
@@ -1691,6 +1644,9 @@ const loadFormOptions = async (knex, locale = "en", options = {}) => {
         "s.id",
         "s.sku_code",
         "v.item_id",
+        "i.item_type as item_type",
+        "i.subgroup_id as subgroup_id",
+        "i.group_id as group_id",
         "v.size_id",
         "v.grade_id",
         "v.color_id",
@@ -1722,6 +1678,52 @@ const loadFormOptions = async (knex, locale = "en", options = {}) => {
       : Promise.resolve([]),
     knex("erp.item_usage")
       .select("fg_item_id", "sfg_item_id"),
+    hasLabourRateRulesTable
+      ? (() => {
+          let query = knex("erp.labour_rate_rules as r")
+            .select(
+              "r.id",
+              "r.labour_id",
+              "r.dept_id",
+              "r.apply_on",
+              "r.sku_id",
+              "r.subgroup_id",
+              "r.group_id",
+              "r.rate_type",
+              "r.rate_value",
+              hasLabourRateRuleArticleTypeColumn ? "r.article_type" : knex.raw("NULL::text as article_type"),
+              hasLabourRateRuleNotesColumn ? "r.notes" : knex.raw("NULL::text as notes"),
+            )
+            .leftJoin("erp.labours as l", "l.id", "r.labour_id")
+            .leftJoin("erp.departments as d", "d.id", "r.dept_id")
+            .whereNotNull("r.labour_id")
+            .whereRaw("lower(trim(COALESCE(l.status, ''))) = 'active'")
+            .andWhere("d.is_active", true)
+            .andWhere("d.is_production", true);
+          if (hasLabourRateRuleStatusColumn) {
+            query = query.whereRaw("lower(trim(COALESCE(r.status, ''))) = 'active'");
+          }
+          if (hasLabourRateRuleAppliesToAllLaboursColumn) {
+            query = query.andWhere("r.applies_to_all_labours", false);
+          }
+          return query;
+        })()
+      : Promise.resolve([]),
+    hasProductionStagesTable
+      ? knex("erp.production_stages as ps")
+          .leftJoin("erp.departments as d", "d.id", "ps.dept_id")
+          .select(
+            "ps.id",
+            "ps.code",
+            "ps.dept_id",
+            useUr ? knex.raw("COALESCE(ps.name_ur, ps.name) as name") : "ps.name as name",
+            useUr ? knex.raw("COALESCE(d.name_ur, d.name) as dept_name") : "d.name as dept_name",
+          )
+          .where("ps.is_active", true)
+          .andWhere("d.is_active", true)
+          .andWhere("d.is_production", true)
+          .orderBy("ps.name", "asc")
+      : Promise.resolve([]),
     excludeExistingBomItems
       ? knex("erp.bom_header")
           .distinct("item_id")
@@ -1740,7 +1742,14 @@ const loadFormOptions = async (knex, locale = "en", options = {}) => {
     return !existingBomItemIds.has(itemId);
   });
 
-  const productionDeptSet = new Set((departments || []).map((row) => Number(row.id)).filter(Boolean));
+  const strictProductionDeptSet = new Set(
+    (departments || [])
+      .filter((row) => row?.is_production === true)
+      .map((row) => Number(row.id))
+      .filter(Boolean),
+  );
+  const fallbackActiveDeptSet = new Set((departments || []).map((row) => Number(row.id)).filter(Boolean));
+  const productionDeptSet = strictProductionDeptSet.size ? strictProductionDeptSet : fallbackActiveDeptSet;
   const labourDeptMap = {};
   (labours || []).forEach((labour) => {
     labourDeptMap[String(labour.id)] = [];
@@ -1869,11 +1878,231 @@ const loadFormOptions = async (knex, locale = "en", options = {}) => {
     });
   });
 
+  const itemLabourDefaultsMap = {};
+  const labourRulesBySkuId = new Map();
+  const labourRulesBySubgroupId = new Map();
+  const labourRulesByGroupId = new Map();
+  const flatLabourRules = [];
+  const itemSkuRowsByItemId = new Map();
+  const articleTypeMatches = (ruleArticleType, itemType) => {
+    const normalizedRuleType = String(ruleArticleType || "").trim().toUpperCase();
+    const normalizedItemType = String(itemType || "").trim().toUpperCase();
+    if (!normalizedRuleType || normalizedRuleType === "BOTH") return true;
+    return normalizedRuleType === normalizedItemType;
+  };
+  (labourRateRuleRows || []).forEach((rule) => {
+    const applyOn = String(rule?.apply_on || "SKU").trim().toUpperCase();
+    if (!Object.prototype.hasOwnProperty.call(LABOUR_RATE_RULE_PRECEDENCE, applyOn)) return;
+    if (!LABOUR_RATE_TYPES.has(String(rule?.rate_type || "").trim().toUpperCase())) return;
+    const labourId = toNumberOrNull(rule?.labour_id);
+    const deptId = toNumberOrNull(rule?.dept_id);
+    if (!labourId || !deptId) return;
+    if (applyOn === "SKU") {
+      const skuId = toNumberOrNull(rule?.sku_id);
+      if (!skuId) return;
+      if (!labourRulesBySkuId.has(skuId)) labourRulesBySkuId.set(skuId, []);
+      labourRulesBySkuId.get(skuId).push(rule);
+      return;
+    }
+    if (applyOn === "SUBGROUP") {
+      const subgroupId = toNumberOrNull(rule?.subgroup_id);
+      if (!subgroupId) return;
+      if (!labourRulesBySubgroupId.has(subgroupId)) labourRulesBySubgroupId.set(subgroupId, []);
+      labourRulesBySubgroupId.get(subgroupId).push(rule);
+      return;
+    }
+    if (applyOn === "GROUP") {
+      const groupId = toNumberOrNull(rule?.group_id);
+      if (!groupId) return;
+      if (!labourRulesByGroupId.has(groupId)) labourRulesByGroupId.set(groupId, []);
+      labourRulesByGroupId.get(groupId).push(rule);
+      return;
+    }
+    flatLabourRules.push(rule);
+  });
+  (itemSkus || []).forEach((sku) => {
+    const itemId = toNumberOrNull(sku?.item_id);
+    const skuId = toNumberOrNull(sku?.id);
+    if (!itemId || !skuId) return;
+    if (!itemSkuRowsByItemId.has(itemId)) itemSkuRowsByItemId.set(itemId, []);
+    itemSkuRowsByItemId.get(itemId).push({
+      sku_id: skuId,
+      sku_code: String(sku?.sku_code || ""),
+      size_id: toNumberOrNull(sku?.size_id),
+    });
+  });
+  (items || []).forEach((item) => {
+    const itemId = toNumberOrNull(item?.id);
+    if (!itemId) return;
+    const itemType = String(item?.item_type || "").trim().toUpperCase();
+    const subgroupId = toNumberOrNull(item?.subgroup_id);
+    const groupId = toNumberOrNull(item?.group_id);
+    const skuRows = (itemSkuRowsByItemId.get(itemId) || [])
+      .slice()
+      .sort((a, b) => String(a.sku_code || "").localeCompare(String(b.sku_code || "")));
+    if (!skuRows.length) return;
+
+    const comboSelectionMap = new Map();
+    const comboRatesBySize = new Map();
+
+    skuRows.forEach((skuRow) => {
+      const candidates = [
+        ...(labourRulesBySkuId.get(toNumberOrNull(skuRow?.sku_id)) || []),
+        ...(subgroupId ? (labourRulesBySubgroupId.get(subgroupId) || []) : []),
+        ...(groupId ? (labourRulesByGroupId.get(groupId) || []) : []),
+        ...flatLabourRules,
+      ];
+      if (!candidates.length) return;
+
+      const bestRuleByCombo = new Map();
+      candidates.forEach((rule) => {
+        if (!articleTypeMatches(rule?.article_type, itemType)) return;
+        const labourId = toNumberOrNull(rule?.labour_id);
+        const deptId = toNumberOrNull(rule?.dept_id);
+        const rateType = String(rule?.rate_type || "").trim().toUpperCase();
+        const rateValue = toNumberOrNull(rule?.rate_value);
+        const applyOn = String(rule?.apply_on || "SKU").trim().toUpperCase();
+        if (!labourId || !deptId || !LABOUR_RATE_TYPES.has(rateType) || rateValue === null || rateValue < 0) return;
+        const precedence = LABOUR_RATE_RULE_PRECEDENCE[applyOn] || 99;
+        const comboKey = `${labourId}:${deptId}:${rateType}`;
+        const current = bestRuleByCombo.get(comboKey);
+        const ruleId = toNumberOrNull(rule?.id) || 0;
+        const isLockedFromBomSync = String(rule?.notes || "").trim().startsWith(BOM_SYNC_NOTE_PREFIX);
+        if (!current || precedence < current.precedence || (precedence === current.precedence && ruleId > current.ruleId)) {
+          bestRuleByCombo.set(comboKey, {
+            labour_id: String(labourId),
+            dept_id: String(deptId),
+            rate_type: rateType,
+            rate_value: String(rateValue),
+            is_locked: isLockedFromBomSync,
+            precedence,
+            ruleId,
+          });
+        }
+      });
+
+      const sizeKey = String(toNumberOrNull(skuRow?.size_id) || "ALL");
+      bestRuleByCombo.forEach((resolved) => {
+        const comboKey = `${resolved.labour_id}:${resolved.dept_id}:${resolved.rate_type}`;
+        if (!comboSelectionMap.has(comboKey)) {
+          comboSelectionMap.set(comboKey, {
+            labour_id: resolved.labour_id,
+            dept_id: resolved.dept_id,
+            rate_type: resolved.rate_type,
+          });
+        }
+        if (!comboRatesBySize.has(comboKey)) comboRatesBySize.set(comboKey, new Map());
+        const sizeRateMap = comboRatesBySize.get(comboKey);
+        if (!sizeRateMap.has(sizeKey)) sizeRateMap.set(sizeKey, []);
+        sizeRateMap.get(sizeKey).push({
+          rate_value: String(resolved.rate_value || ""),
+          is_locked: Boolean(resolved.is_locked),
+        });
+      });
+    });
+
+    if (!comboSelectionMap.size) return;
+
+    const labourSelection = [...comboSelectionMap.values()].sort((a, b) => {
+      const labourDiff = Number(a.labour_id || 0) - Number(b.labour_id || 0);
+      if (labourDiff !== 0) return labourDiff;
+      const deptDiff = Number(a.dept_id || 0) - Number(b.dept_id || 0);
+      if (deptDiff !== 0) return deptDiff;
+      return String(a.rate_type || "").localeCompare(String(b.rate_type || ""));
+    });
+    const labourRateMap = {};
+    const labourRateLockedMap = {};
+    comboRatesBySize.forEach((sizeRateMap, comboKey) => {
+      const resolvedBySize = [];
+      sizeRateMap.forEach((rateEntries, sizeKey) => {
+        const normalizedEntries = Array.isArray(rateEntries)
+          ? rateEntries.map((entry) => ({
+              rate: String(entry?.rate_value || "").trim(),
+              isLocked: Boolean(entry?.is_locked),
+            })).filter((entry) => entry.rate)
+          : [];
+        const rates = [...new Set(normalizedEntries.map((entry) => entry.rate))];
+        if (rates.length !== 1) return;
+        const resolvedRate = String(rates[0]);
+        labourRateMap[`${comboKey}:${sizeKey}`] = resolvedRate;
+        const allLockedForSize = normalizedEntries.length > 0 && normalizedEntries.every((entry) => entry.isLocked);
+        if (allLockedForSize) labourRateLockedMap[`${comboKey}:${sizeKey}`] = true;
+        resolvedBySize.push({
+          rate: resolvedRate,
+          isLocked: allLockedForSize,
+        });
+      });
+      const uniqueResolvedRates = [...new Set(resolvedBySize.map((entry) => entry.rate).filter(Boolean))];
+      if (uniqueResolvedRates.length === 1) {
+        labourRateMap[`${comboKey}:ALL`] = uniqueResolvedRates[0];
+        const allLockedForAll = resolvedBySize.length > 0 && resolvedBySize.every((entry) => entry.isLocked);
+        if (allLockedForAll) labourRateLockedMap[`${comboKey}:ALL`] = true;
+      }
+    });
+    itemLabourDefaultsMap[String(itemId)] = {
+      labour_selection: labourSelection,
+      labour_rate_map: labourRateMap,
+      labour_rate_locked_map: labourRateLockedMap,
+    };
+  });
+
+  const itemOutputUomMap = {};
+  const uomNameById = new Map((uoms || []).map((row) => [toNumberOrNull(row.id), row?.name || row?.id]));
+  const baseUomIds = [...new Set((items || []).map((item) => toNumberOrNull(item?.base_uom_id)).filter(Boolean))];
+  const conversionRows = hasUomConversionsTable && baseUomIds.length
+    ? await knex("erp.uom_conversions")
+        .select("from_uom_id", "to_uom_id", "factor")
+        .where({ is_active: true })
+        .whereIn("to_uom_id", baseUomIds)
+    : [];
+  const conversionFromSetByBase = new Map();
+  const uomConversionMap = {};
+  (conversionRows || []).forEach((row) => {
+    const fromId = toNumberOrNull(row?.from_uom_id);
+    const toId = toNumberOrNull(row?.to_uom_id);
+    const factor = Number(row?.factor);
+    if (!fromId || !toId) return;
+    if (!conversionFromSetByBase.has(toId)) conversionFromSetByBase.set(toId, new Set());
+    conversionFromSetByBase.get(toId).add(fromId);
+    if (Number.isFinite(factor) && factor > 0) {
+      const fromKey = String(fromId);
+      const toKey = String(toId);
+      if (!uomConversionMap[fromKey]) uomConversionMap[fromKey] = {};
+      uomConversionMap[fromKey][toKey] = factor;
+    }
+  });
+  (items || []).forEach((item) => {
+    const itemId = toNumberOrNull(item?.id);
+    const baseUomId = toNumberOrNull(item?.base_uom_id);
+    if (!itemId || !baseUomId) return;
+    const allowed = new Set([baseUomId]);
+    const convertibleFrom = conversionFromSetByBase.get(baseUomId);
+    if (convertibleFrom) {
+      convertibleFrom.forEach((id) => allowed.add(id));
+    }
+    const sortedAllowedRows = [...allowed]
+      .map((uomId) => ({ id: uomId, name: uomNameById.get(uomId) || String(uomId) }))
+      .sort((a, b) => String(a.name).localeCompare(String(b.name)));
+    itemOutputUomMap[String(itemId)] = sortedAllowedRows;
+  });
+
+  const productionStages = (productionStageRows || []).map((row) => ({
+    id: Number(row?.id),
+    code: String(row?.code || "").trim(),
+    name: String(row?.name || row?.code || row?.id || "").trim(),
+    dept_id: Number(row?.dept_id || 0) || null,
+    dept_name: String(row?.dept_name || "").trim(),
+  })).filter((row) => Number(row.id) > 0);
+
   return {
     items,
     rmItems,
     uoms,
-    departments,
+    departments: (departments || []).map((row) => ({
+      id: row.id,
+      name: row.name,
+      is_production: row?.is_production === true,
+    })),
     sizes,
     colors,
     ruleSizes,
@@ -1886,6 +2115,10 @@ const loadFormOptions = async (knex, locale = "en", options = {}) => {
     itemSizeMap,
     itemSkuMap,
     itemSkus,
+    productionStages,
+    itemOutputUomMap,
+    uomConversionMap,
+    itemLabourDefaultsMap,
     fgToSfgMap,
     sfgSkus,
     levelOptions: [
@@ -1969,6 +2202,7 @@ const listBoms = async (knex, filters = {}) => {
 const getBomForForm = async (knex, id) => {
   const bomId = Number(id);
   const lifecycleSupported = await hasBomLifecycleColumn(knex);
+  const hasBomStageRoutingTable = await tableExists(knex, "erp.bom_stage_routing");
   const headerFields = [
     "bh.id",
     "bh.bom_no",
@@ -1994,11 +2228,7 @@ const getBomForForm = async (knex, id) => {
   if (!header) return null;
   if (!lifecycleSupported) header.is_active = true;
 
-  const hasSkuOverrideTable = await hasBomSkuOverrideTable(knex);
-  const hasSkuOverrideDeptColumn = hasSkuOverrideTable
-    ? await hasBomSkuOverrideDeptColumn(knex)
-    : false;
-  const [rmLines, sfgLines, labourLines, variantRules, skuOverrides] = await Promise.all([
+  const [rmLines, sfgLines, labourLines, stageRoutes] = await Promise.all([
     knex("erp.bom_rm_line")
       .select("id", "rm_item_id", "color_id", "size_id", "dept_id", "qty", "uom_id", "normal_loss_pct")
       .where({ bom_id: bomId })
@@ -2011,26 +2241,11 @@ const getBomForForm = async (knex, id) => {
       .select("id", "size_scope", "size_id", "dept_id", "labour_id", "rate_type", "rate_value")
       .where({ bom_id: bomId })
       .orderBy("id", "asc"),
-    knex("erp.bom_variant_rule")
-      .select("id", "size_scope", "size_id", "packing_scope", "packing_type_id", "color_scope", "color_id", "action_type", "material_scope", "target_rm_item_id", "new_value")
-      .where({ bom_id: bomId })
-      .orderBy("id", "asc"),
-    hasSkuOverrideTable
-      ? knex("erp.bom_sku_override_line")
-          .select(
-            "id",
-            "sku_id",
-            "target_rm_item_id",
-            ...(hasSkuOverrideDeptColumn ? ["dept_id"] : []),
-            "is_excluded",
-            "override_qty",
-            "override_uom_id",
-            "replacement_rm_item_id",
-            "rm_color_id",
-            "notes",
-          )
+    hasBomStageRoutingTable
+      ? knex("erp.bom_stage_routing")
+          .select("id", "stage_id", "sequence_no", "is_required")
           .where({ bom_id: bomId })
-          .orderBy("id", "asc")
+          .orderBy("sequence_no", "asc")
       : Promise.resolve([]),
   ]);
 
@@ -2039,8 +2254,9 @@ const getBomForForm = async (knex, id) => {
     rm_lines: rmLines,
     sfg_lines: sfgLines,
     labour_lines: labourLines,
-    variant_rules: variantRules,
-    sku_overrides: skuOverrides,
+    stage_routes: stageRoutes,
+    variant_rules: [],
+    sku_overrides: [],
   };
 };
 
@@ -2071,8 +2287,9 @@ const buildApprovalPayload = ({ action, input, bomId }) => ({
     rm_lines: input.rm_lines,
     sfg_lines: input.sfg_lines,
     labour_lines: input.labour_lines,
-    variant_rules: input.variant_rules,
-    sku_overrides: input.sku_overrides || [],
+    stage_routes: input.stage_routes || [],
+    variant_rules: [],
+    sku_overrides: [],
   },
 });
 
@@ -2200,6 +2417,7 @@ module.exports = {
   approveBomDirectTx,
   createNewVersionFromApproved,
   createNewVersionFromApprovedTx,
+  findDraftBomByItemLevel,
   hasPendingApprovalForBom,
   hasPendingApprovalForBomTx,
   setBomPending,

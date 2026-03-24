@@ -661,7 +661,17 @@
       menu.classList.add("hidden");
       keyboardNavigatedMenu = false;
       if (isGridArrowNavContext) {
-        // Keep focus flow in sync with row navigator; do not auto-advance here.
+        e.stopPropagation();
+        if (nextRowFieldMeta) {
+          window.setTimeout(() => {
+            if (focusNextRowFieldByMeta(nextRowFieldMeta)) return;
+            if (advanceFocusWithinRow()) return;
+            advanceFocusToNextField();
+          }, 0);
+          return;
+        }
+        if (advanceFocusWithinRow()) return;
+        advanceFocusToNextField();
         return;
       }
       if (valueChanged && nextRowFieldMeta) {

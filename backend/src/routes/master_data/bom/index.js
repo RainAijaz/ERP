@@ -49,6 +49,7 @@ const buildEmptyFormState = () => ({
   rm_lines: [],
   sfg_lines: [],
   labour_lines: [],
+  stage_routes: [],
   variant_rules: [],
   sku_overrides: [],
 });
@@ -87,8 +88,9 @@ const getSnapshotForApproval = async (id) => {
     rm_lines: form.rm_lines,
     sfg_lines: form.sfg_lines,
     labour_lines: form.labour_lines,
-    variant_rules: form.variant_rules,
-    sku_overrides: form.sku_overrides || [],
+    stage_routes: form.stage_routes || [],
+    variant_rules: [],
+    sku_overrides: [],
   };
 };
 
@@ -152,8 +154,9 @@ const buildSubmittedFormState = (reqBody = {}, bomId = null) => ({
   rm_lines: safeJsonArray(reqBody.rm_lines_json),
   sfg_lines: safeJsonArray(reqBody.sfg_lines_json),
   labour_lines: safeJsonArray(reqBody.labour_lines_json),
-  variant_rules: safeJsonArray(reqBody.variant_rules_json),
-  sku_overrides: safeJsonArray(reqBody.sku_overrides_json),
+  stage_routes: safeJsonArray(reqBody.stage_routes_json),
+  variant_rules: [],
+  sku_overrides: [],
 });
 
 router.get("/", requirePermission("SCREEN", BOM_SCOPE, "view"), async (req, res, next) => {
@@ -190,7 +193,36 @@ router.get("/", requirePermission("SCREEN", BOM_SCOPE, "view"), async (req, res,
 
 router.get("/new", requirePermission("SCREEN", BOM_SCOPE, "navigate"), async (req, res, next) => {
   try {
-    return await renderForm(req, res, { formMode: "create", formState: buildEmptyFormState() });
+    const requestedLevel = String(req.query.level || "").trim().toUpperCase();
+    const requestedItemId = Number(req.query.item_id || 0);
+    const requestedOutputQtyRaw = String(req.query.output_qty || "").trim();
+    const requestedOutputQty = Number(requestedOutputQtyRaw || 0);
+    const requestedOutputUomId = Number(req.query.output_uom_id || 0);
+
+    if (requestedItemId > 0 && ["FINISHED", "SEMI_FINISHED"].includes(requestedLevel)) {
+      const existingDraftId = await bomService.findDraftBomByItemLevel(knex, {
+        itemId: requestedItemId,
+        level: requestedLevel,
+      });
+      if (existingDraftId) {
+        return res.redirect(`${req.baseUrl}/${existingDraftId}`);
+      }
+    }
+
+    const formState = buildEmptyFormState();
+    if (["FINISHED", "SEMI_FINISHED"].includes(requestedLevel)) {
+      formState.header.level = requestedLevel;
+    }
+    if (requestedItemId > 0) {
+      formState.header.item_id = requestedItemId;
+    }
+    if (Number.isFinite(requestedOutputQty) && requestedOutputQty > 0) {
+      formState.header.output_qty = requestedOutputQty;
+    }
+    if (Number.isFinite(requestedOutputUomId) && requestedOutputUomId > 0) {
+      formState.header.output_uom_id = requestedOutputUomId;
+    }
+    return await renderForm(req, res, { formMode: "create", formState });
   } catch (err) {
     return next(err);
   }
@@ -234,12 +266,18 @@ router.get("/:id", requirePermission("SCREEN", BOM_SCOPE, "view"), async (req, r
 });
 
 const handleSaveDraft = async (req, res, next, bomId = null) => {
+  const toSingleText = (raw) =>
+    Array.isArray(raw)
+      ? String(raw.find((v) => String(v || "").trim()) || "").trim()
+      : String(raw || "").trim();
   const rawSubmitIntent = req.body?.submit_intent;
-  const submitIntent = Array.isArray(rawSubmitIntent)
-    ? String(rawSubmitIntent.find((v) => String(v || "").trim()) || "")
-        .trim()
-        .toLowerCase()
-    : String(rawSubmitIntent || "").trim().toLowerCase();
+  const submitIntent = toSingleText(rawSubmitIntent).toLowerCase();
+  const switchAfterSave = toSingleText(req.body?.switch_after_save) === "1";
+  const switchLevel = toSingleText(req.body?.switch_level).toUpperCase();
+  const switchItemId = Number(toSingleText(req.body?.switch_item_id) || 0);
+  const switchOutputQtyRaw = toSingleText(req.body?.switch_output_qty);
+  const switchOutputQty = Number(switchOutputQtyRaw || 0);
+  const switchOutputUomId = Number(toSingleText(req.body?.switch_output_uom_id) || 0);
   let targetBomId = bomId || null;
   try {
     const parsed = bomService.parseBomFormPayload(req.body);
@@ -263,6 +301,31 @@ const handleSaveDraft = async (req, res, next, bomId = null) => {
       input: parsed,
     });
     targetBomId = result.id || targetBomId;
+    if (
+      switchAfterSave
+      && switchItemId > 0
+      && ["FINISHED", "SEMI_FINISHED"].includes(switchLevel)
+    ) {
+      const existingDraftId = await bomService.findDraftBomByItemLevel(knex, {
+        itemId: switchItemId,
+        level: switchLevel,
+        excludeBomId: result.id || null,
+      });
+      if (existingDraftId) {
+        return res.redirect(`${req.baseUrl}/${existingDraftId}`);
+      }
+      const query = new URLSearchParams({
+        level: switchLevel,
+        item_id: String(switchItemId),
+      });
+      if (Number.isFinite(switchOutputQty) && switchOutputQty > 0) {
+        query.set("output_qty", String(switchOutputQty));
+      }
+      if (Number.isFinite(switchOutputUomId) && switchOutputUomId > 0) {
+        query.set("output_uom_id", String(switchOutputUomId));
+      }
+      return res.redirect(`${req.baseUrl}/new?${query.toString()}`);
+    }
     if (result.queued) {
       return res.redirect(req.get("referer") || req.baseUrl);
     }
@@ -271,8 +334,7 @@ const handleSaveDraft = async (req, res, next, bomId = null) => {
   } catch (err) {
     debugBom("Save draft failed", { bomId, error: err?.message || err });
     if (err?.code === "BOM_VALIDATION") {
-      const persistedState = targetBomId ? await bomService.getBomForForm(knex, targetBomId) : null;
-      const formState = persistedState || buildSubmittedFormState(req.body, targetBomId);
+      const formState = buildSubmittedFormState(req.body, targetBomId);
       return await renderForm(req, res, {
         formMode: targetBomId ? "edit" : "create",
         formState,
@@ -296,8 +358,9 @@ router.post("/:id/save-draft", requirePermission("SCREEN", BOM_SCOPE, "navigate"
 router.post("/:id/send-for-approval", requirePermission("SCREEN", BOM_SCOPE, "navigate"), async (req, res, next) => {
   const bomId = Number(req.params.id);
   if (!bomId) return res.redirect(req.baseUrl);
+  let current = null;
   try {
-    const current = await bomService.getBomForForm(knex, bomId);
+    current = await bomService.getBomForForm(knex, bomId);
     if (!current) {
       setUiNotice(res, res.locals.t("error_not_found"), { autoClose: true });
       return res.redirect(req.baseUrl);
@@ -362,7 +425,28 @@ router.post("/:id/send-for-approval", requirePermission("SCREEN", BOM_SCOPE, "na
     return res.redirect(`${req.baseUrl}/${bomId}`);
   } catch (err) {
     debugBom("send-for-approval failed", { bomId, error: err?.message || err });
-    setUiNotice(res, friendlyErrorMessage(err, res.locals.t), { autoClose: true });
+    if (err?.code === "BOM_VALIDATION") {
+      const formState = current || await bomService.getBomForForm(knex, bomId);
+      if (formState) {
+        return await renderForm(req, res, {
+          formMode: "edit",
+          formState,
+          errors: err.details || [],
+          errorMessage: err.message,
+        });
+      }
+    }
+    const message = friendlyErrorMessage(err, res.locals.t);
+    const formState = current || await bomService.getBomForForm(knex, bomId);
+    if (formState) {
+      return await renderForm(req, res, {
+        formMode: "edit",
+        formState,
+        errors: [],
+        errorMessage: message,
+      });
+    }
+    setUiNotice(res, message, { autoClose: true });
     return res.redirect(`${req.baseUrl}/${bomId}`);
   }
 });

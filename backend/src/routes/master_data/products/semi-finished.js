@@ -6,6 +6,10 @@ const { handleScreenApproval } = require("../../../middleware/approvals/screen-a
 const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
 const { queueAuditLog } = require("../../../utils/audit-log");
 const { applyItemLifecycleToggleTx } = require("../../../services/products/item-lifecycle-service");
+const {
+  fetchProductionBaseUomOptions,
+  isPairUomId,
+} = require("../../../services/products/production-uom-policy-service");
 
 const router = express.Router();
 const ITEM_TYPE = "SFG";
@@ -20,7 +24,7 @@ const toCode = (value) =>
 const loadOptions = async () => {
   const [groups, uoms, finished, subgroups, colors, sizes] = await Promise.all([
     knex("erp.product_groups as g").select("g.id", "g.name", "g.name_ur").join("erp.product_group_item_types as gt", "gt.group_id", "g.id").where("gt.item_type", ITEM_TYPE).andWhere("g.is_active", true).orderBy("g.name"),
-    knex("erp.uom").select("id", "code", "name", "name_ur").where("is_active", true).orderBy("code"),
+    fetchProductionBaseUomOptions(knex),
     knex("erp.items as i").select("i.id", "i.name", "i.name_ur", "i.subgroup_id", "sg.name as subgroup_name", "sg.name_ur as subgroup_name_ur").leftJoin("erp.product_subgroups as sg", "sg.id", "i.subgroup_id").where({ "i.item_type": "FG", "i.is_active": true }).orderBy("i.name"),
     knex("erp.product_subgroups as s").select("s.id", "s.name", "s.name_ur").join("erp.product_subgroup_item_types as st", "st.subgroup_id", "s.id").where("st.item_type", ITEM_TYPE).andWhere("s.is_active", true).orderBy("s.name"),
     knex("erp.colors").select("id", "name", "name_ur").where("is_active", true).orderBy("name"),
@@ -85,13 +89,6 @@ const loadRows = async (filters = {}) => {
   return query;
 };
 
-const resolveSubgroupId = async (trx, usageIds) => {
-  if (!usageIds.length) return null;
-  const rows = await trx("erp.items").select("subgroup_id").whereIn("id", usageIds).whereNotNull("subgroup_id");
-  const unique = Array.from(new Set(rows.map((row) => row.subgroup_id).filter(Boolean)));
-  return unique.length === 1 ? unique[0] : null;
-};
-
 const renderIndex = (req, res, payload) => {
   const basePath = `${req.baseUrl}`;
   return res.render("base/layouts/main", {
@@ -119,7 +116,8 @@ router.get("/", requirePermission("SCREEN", "master_data.products.semi_finished"
     const canBrowse = res.locals.can("SCREEN", "master_data.products.semi_finished", "navigate");
     const [options, users] = await Promise.all([loadOptions(), loadUsers()]);
     const rows = canBrowse ? await loadRows(filters) : [];
-    renderIndex(req, res, { rows, ...options, users, filters, error: null, modalOpen: false, modalMode: "create" });
+    const pairUomError = !options.uoms?.length ? (res.locals.t("error_pair_uom_missing") || "PAIR UOM is missing. Run latest migration.") : null;
+    renderIndex(req, res, { rows, ...options, users, filters, error: pairUomError, modalOpen: false, modalMode: "create" });
   } catch (err) {
     next(err);
   }
@@ -145,10 +143,8 @@ router.post("/", requirePermission("SCREEN", "master_data.products.semi_finished
     const name = (values.name || "").trim();
     const code = toCode(name);
     const group_id = values.group_id ? Number(values.group_id) : null;
-    // FIX: Read user's subgroup selection
     const user_subgroup_id = values.subgroup_id ? Number(values.subgroup_id) : null;
     const base_uom_id = values.base_uom_id ? Number(values.base_uom_id) : null;
-    // FIX: Read min stock
     const min_stock_level = values.min_stock_level ? Number(values.min_stock_level) : 0;
 
     const usageIds = normalizeUsageIds(values.fg_ids)
@@ -156,14 +152,14 @@ router.post("/", requirePermission("SCREEN", "master_data.products.semi_finished
       .filter((id) => Number.isFinite(id));
     const uniqueUsageIds = Array.from(new Set(usageIds));
 
-    // FIX: Add name_ur and subgroup_id validation
-    if (!code || !name || !values.name_ur || !group_id || !base_uom_id || !user_subgroup_id) {
+    const pairBaseUnitValid = base_uom_id ? await isPairUomId(knex, base_uom_id) : false;
+    if (!code || !name || !values.name_ur || !group_id || !base_uom_id || !user_subgroup_id || !pairBaseUnitValid) {
       const [rows, options, users] = await Promise.all([loadRows(), loadOptions(), loadUsers()]);
       return renderIndex(req, res, {
         rows,
         ...options,
         users,
-        error: res.locals.t("error_required_fields"),
+        error: pairBaseUnitValid ? res.locals.t("error_required_fields") : (res.locals.t("error_production_base_unit_pair") || "Finished and Semi-Finished articles must use PAIR as base unit."),
         modalOpen: true,
         modalMode: "create",
         values,
@@ -199,7 +195,6 @@ router.post("/", requirePermission("SCREEN", "master_data.products.semi_finished
 
     let createdId = null;
     await knex.transaction(async (trx) => {
-      // FIX: Use user's subgroup choice. Only use resolve if you want to override (removed overwrite here).
       const [item] = await trx("erp.items")
         .insert({
           item_type: ITEM_TYPE,
@@ -207,9 +202,9 @@ router.post("/", requirePermission("SCREEN", "master_data.products.semi_finished
           name,
           name_ur: values.name_ur || null,
           group_id,
-          subgroup_id: user_subgroup_id, // FIX: Use the variable
+          subgroup_id: user_subgroup_id,
           base_uom_id,
-          min_stock_level, // FIX: Use the variable
+          min_stock_level,
           created_by: req.user ? req.user.id : null,
           created_at: trx.fn.now(),
         })
@@ -267,14 +262,14 @@ router.post("/:id", requirePermission("SCREEN", "master_data.products.semi_finis
       .filter((id) => Number.isFinite(id));
     const uniqueUsageIds = Array.from(new Set(usageIds));
 
-    // FIX: Add name_ur and subgroup_id to validation
-    if (!code || !name || !values.name_ur || !group_id || !base_uom_id || !user_subgroup_id) {
+    const pairBaseUnitValid = base_uom_id ? await isPairUomId(knex, base_uom_id) : false;
+    if (!code || !name || !values.name_ur || !group_id || !base_uom_id || !user_subgroup_id || !pairBaseUnitValid) {
       const [rows, options, users] = await Promise.all([loadRows(), loadOptions(), loadUsers()]);
       return renderIndex(req, res, {
         rows,
         ...options,
         users,
-        error: res.locals.t("error_required_fields"),
+        error: pairBaseUnitValid ? res.locals.t("error_required_fields") : (res.locals.t("error_production_base_unit_pair") || "Finished and Semi-Finished articles must use PAIR as base unit."),
         modalOpen: true,
         modalMode: "edit",
         values: { ...values, id },
@@ -316,9 +311,9 @@ router.post("/:id", requirePermission("SCREEN", "master_data.products.semi_finis
           name,
           name_ur: values.name_ur || null,
           group_id,
-          subgroup_id: user_subgroup_id, // FIX: Use user input
+          subgroup_id: user_subgroup_id,
           base_uom_id,
-          min_stock_level, // FIX: Save min stock
+          min_stock_level,
           updated_by: req.user ? req.user.id : null,
           updated_at: trx.fn.now(),
         });

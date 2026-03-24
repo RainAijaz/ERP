@@ -34,7 +34,6 @@
 --   E) BOM Enforcement
 --      - bom_header.level must match items.item_type (FINISHED->FG, SEMI_FINISHED->SFG)
 --      - bom_rm_line.rm_item_id must be RM
---      - bom_variant_rule.target_rm_item_id (if set) must be RM
 --      - bom_sfg_line.ref_approved_bom_id (if set) must be APPROVED and must belong to same SFG item
 --
 --   F) Purchase Enforcement
@@ -859,48 +858,6 @@ CREATE TRIGGER trg_bom_rm_line_validate_rm_item
 BEFORE INSERT OR UPDATE OF rm_item_id ON erp.bom_rm_line
 FOR EACH ROW
 EXECUTE FUNCTION erp.trg_bom_rm_line_validate_rm_item();
-
--- F4) bom_variant_rule.target_rm_item_id (if set) must be RM
-DO $$
-BEGIN
-  IF to_regclass('erp.bom_variant_rule') IS NULL THEN
-    RETURN;
-  END IF;
-END $$;
-
-CREATE OR REPLACE FUNCTION erp.trg_bom_variant_rule_validate_target_rm()
-RETURNS trigger
-LANGUAGE plpgsql
-AS $$
-DECLARE v_item_type erp.item_type;
-BEGIN
-  IF NEW.target_rm_item_id IS NULL THEN
-    RETURN NEW;
-  END IF;
-
-  SELECT i.item_type INTO v_item_type
-  FROM erp.items i
-  WHERE i.id = NEW.target_rm_item_id;
-
-  IF v_item_type IS NULL THEN
-    RAISE EXCEPTION 'bom_variant_rule.target_rm_item_id % not found in items.', NEW.target_rm_item_id;
-  END IF;
-
-  IF v_item_type <> 'RM' THEN
-    RAISE EXCEPTION
-      'Invalid bom_variant_rule: target_rm_item_id % must be item_type=RM (found=%).',
-      NEW.target_rm_item_id, v_item_type;
-  END IF;
-
-  RETURN NEW;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS trg_bom_variant_rule_validate_target_rm ON erp.bom_variant_rule;
-CREATE TRIGGER trg_bom_variant_rule_validate_target_rm
-BEFORE INSERT OR UPDATE OF target_rm_item_id ON erp.bom_variant_rule
-FOR EACH ROW
-EXECUTE FUNCTION erp.trg_bom_variant_rule_validate_target_rm();
 
 -- =============================================================================
 -- G) SALES ENFORCEMENT
