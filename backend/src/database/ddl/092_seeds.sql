@@ -144,8 +144,6 @@ VALUES
   ('STOCK_COUNT_ADJ',  'Stock Count Adjustment Voucher',         true,  true,  true),
 
   -- PRODUCTION
-  ('PROD_SFG',         'Semi-Finished Production Voucher',       false, true,  true),
-  ('PROD_FG',          'Finished Production Voucher',            false, true,  true),
   ('DCV',              'Department Completion Voucher (DCV)',    true,  true,  true),
   ('LABOUR_PROD',      'General Labour Production Voucher',      false, false, true),
   ('CONSUMP',          'Consumption Voucher',                    false, true,  true),
@@ -302,8 +300,6 @@ VALUES
   ('VOUCHER','STOCK_COUNT_ADJ','Stock Count Adjustment Voucher', 'Inventory'),
 
   -- Production
-  ('VOUCHER','PROD_SFG','Semi-Finished Production Voucher', 'Production'),
-  ('VOUCHER','PROD_FG','Finished Production Voucher', 'Production'),
   ('VOUCHER','DCV','Department Completion Voucher (DCV)', 'Production'),
   ('VOUCHER','LABOUR_PROD','General Labour Production Voucher', 'Production'),
   ('VOUCHER','CONSUMP','Consumption Voucher', 'Production'),

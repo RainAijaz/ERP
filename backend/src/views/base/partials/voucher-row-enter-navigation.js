@@ -336,6 +336,9 @@
       if (wrapper) {
         const linkedSelect = wrapper.querySelector("select");
         const linkedValue = String(linkedSelect?.value || "").trim();
+        const hasSelectableOption = Array.from(linkedSelect?.options || []).some(
+          (opt) => String(opt?.value || "").trim(),
+        );
         const dropdownMenu = wrapper.querySelector("div.z-50");
         const isDropdownOpen = Boolean(dropdownMenu && !dropdownMenu.classList.contains("hidden"));
         const wasOpenBeforeEnter = String(wrapper.dataset.wasOpenBeforeEnter || "") === "1";
@@ -344,7 +347,7 @@
           // Enter came from an open searchable dropdown. Let selection commit, then move.
           window.setTimeout(() => {
             const refreshedValue = String(linkedSelect?.value || "").trim();
-            if (refreshedValue || linkedValue) {
+            if (refreshedValue || linkedValue || !hasSelectableOption) {
               moveForwardFrom(row, fieldKey, { defer: true });
             }
           }, 0);
@@ -363,7 +366,7 @@
         }
 
         event.preventDefault();
-        if (!linkedValue) {
+        if (!linkedValue && hasSelectableOption) {
           if (typeof target.click === "function") target.click();
           return true;
         }

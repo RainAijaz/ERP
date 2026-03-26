@@ -21,6 +21,7 @@
   const selectedStatusLabel = selectedStatus === "APPROVED" ? t("approved") : selectedStatus === "REJECTED" ? t("rejected") : selectedStatus === "PENDING" ? t("pending") : selectedStatus;
   const selectedStatusToneClass = selectedStatus === "APPROVED" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : selectedStatus === "REJECTED" ? "border-rose-200 bg-rose-50 text-rose-800" : "border-amber-200 bg-amber-50 text-amber-800";
   const isDeletedVoucher = String(selectedVoucher?.status || "").toUpperCase() === "REJECTED";
+  const selectedPaymentType = String(selectedVoucher?.payment_type || "CASH").toUpperCase() === "CREDIT" ? "CREDIT" : "CASH";
 %>
 <style>
   [data-sales-voucher-form] table thead th { font-size: 11px; letter-spacing: 0.08em; }
@@ -80,10 +81,10 @@
             <input type="hidden" name="sale_mode" value="<%= String(selectedVoucher?.sale_mode || 'DIRECT').toUpperCase() === 'FROM_SO' ? 'FROM_SO' : 'DIRECT' %>" data-sale-mode>
             <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t("payment_type") %></label>
             <div class="lg:col-span-4">
-              <input type="hidden" name="payment_type" data-payment-type value="<%= String(selectedVoucher?.payment_type || 'CASH').toUpperCase() === 'CREDIT' ? 'CREDIT' : 'CASH' %>">
+              <input type="hidden" name="payment_type" data-payment-type value="<%= selectedPaymentType %>">
               <div class="grid h-10 grid-cols-2 rounded-xl border border-slate-300 bg-white p-1" data-payment-type-segment>
-                <button type="button" class="rounded-lg text-xs font-semibold uppercase tracking-[0.08em] transition" data-payment-type-option="CASH"><%= t("cash_sale") %></button>
-                <button type="button" class="rounded-lg text-xs font-semibold uppercase tracking-[0.08em] transition" data-payment-type-option="CREDIT"><%= t("credit_sale") %></button>
+                <button type="button" class="rounded-lg text-xs font-semibold uppercase tracking-[0.08em] transition <%= selectedPaymentType === 'CASH' ? 'bg-accent text-white shadow-sm' : 'text-slate-700' %>" data-payment-type-option="CASH" aria-pressed="<%= selectedPaymentType === 'CASH' ? 'true' : 'false' %>"><%= t("cash_sale") %></button>
+                <button type="button" class="rounded-lg text-xs font-semibold uppercase tracking-[0.08em] transition <%= selectedPaymentType === 'CREDIT' ? 'bg-accent text-white shadow-sm' : 'text-slate-700' %>" data-payment-type-option="CREDIT" aria-pressed="<%= selectedPaymentType === 'CREDIT' ? 'true' : 'false' %>"><%= t("credit_sale") %></button>
               </div>
             </div>
             <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3" data-receive-account-field data-receive-account-label><%= t("receive_into_account_if_any") === "receive_into_account_if_any" ? t("receive_into_account") : t("receive_into_account_if_any") %></label>
@@ -128,8 +129,8 @@
             <div class="lg:col-span-4">
               <input type="hidden" name="advance_receive" data-advance-receive value="<%= selectedAdvanceReceive ? 'yes' : 'no' %>">
               <div class="grid h-10 grid-cols-2 rounded-xl border border-slate-300 bg-white p-1" data-advance-receive-segment>
-                <button type="button" class="rounded-lg text-xs font-semibold uppercase tracking-[0.08em] transition" data-advance-receive-option="no"><%= t("no") %></button>
-                <button type="button" class="rounded-lg text-xs font-semibold uppercase tracking-[0.08em] transition" data-advance-receive-option="yes"><%= t("yes") %></button>
+                <button type="button" class="rounded-lg text-xs font-semibold uppercase tracking-[0.08em] transition <%= selectedAdvanceReceive ? 'text-slate-700' : 'bg-accent text-white shadow-sm' %>" data-advance-receive-option="no" aria-pressed="<%= selectedAdvanceReceive ? 'false' : 'true' %>"><%= t("no") %></button>
+                <button type="button" class="rounded-lg text-xs font-semibold uppercase tracking-[0.08em] transition <%= selectedAdvanceReceive ? 'bg-accent text-white shadow-sm' : 'text-slate-700' %>" data-advance-receive-option="yes" aria-pressed="<%= selectedAdvanceReceive ? 'true' : 'false' %>"><%= t("yes") %></button>
               </div>
             </div>
             <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3" data-sales-order-advance-fields-row><%= t("receive_into_account") %></label>
@@ -180,7 +181,7 @@
       <div class="rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div class="overflow-x-auto lg:overflow-visible overflow-y-visible">
           <table class="w-full min-w-[1040px] text-xs" data-lines-table>
-            <thead class="bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500"><tr><th class="w-[22rem] border-b border-slate-200 px-2 py-2 text-left"><%= t("article") %></th><th class="w-32 border-b border-slate-200 px-2 py-2 text-left whitespace-nowrap"><%= t("status") %></th><th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("sale_qty") %></th><% if (!isSalesOrder) { %><th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("return_qty") %></th><th class="border-b border-slate-200 px-2 py-2 text-left whitespace-nowrap"><%= t("return_reason") %></th><% } %><th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("pair_rate") %></th><th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("pair_discount") %></th><th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("total_discount") %></th><th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("total") %></th><th class="w-20 border-b border-slate-200 px-2 py-2 text-center whitespace-nowrap"><%= t("actions") %></th><th class="w-20 border-b border-slate-200 px-2 py-2 text-center"><%= t("sr_no") %></th></tr></thead>
+            <thead class="bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500"><tr><th class="w-[22rem] border-b border-slate-200 px-2 py-2 text-left"><%= t("article") %></th><th class="w-32 border-b border-slate-200 px-2 py-2 text-left whitespace-nowrap"><%= t("unit") %></th><th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("sale_qty") %></th><% if (!isSalesOrder) { %><th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("return_qty") %></th><th class="border-b border-slate-200 px-2 py-2 text-left whitespace-nowrap"><%= t("return_reason") %></th><% } %><th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("pair_rate") %></th><th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("pair_discount") %></th><th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("total_discount") %></th><th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("total") %></th><th class="w-20 border-b border-slate-200 px-2 py-2 text-center whitespace-nowrap"><%= t("actions") %></th><th class="w-20 border-b border-slate-200 px-2 py-2 text-center"><%= t("sr_no") %></th></tr></thead>
             <tbody data-lines-body></tbody>
             <tfoot>
               <tr class="bg-slate-50">
@@ -275,7 +276,7 @@
                     <th class="border-b border-slate-200 px-2 py-2 text-left"><%= t("voucher_no") %></th>
                     <th class="border-b border-slate-200 px-2 py-2 text-left"><%= t("date") %></th>
                     <th class="border-b border-slate-200 px-2 py-2 text-left"><%= t("article") %></th>
-                    <th class="border-b border-slate-200 px-2 py-2 text-left"><%= t("status") %></th>
+                    <th class="border-b border-slate-200 px-2 py-2 text-left"><%= t("unit") %></th>
                     <th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("open_qty") %></th>
                     <th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("deliver_qty") %></th>
                     <th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("pair_rate") %></th>
@@ -298,8 +299,10 @@
 <script><%- include("../../base/partials/searchable-select.js") %></script>
 <script>
 (() => {
+  const boot = () => {
+  if (window.__salesVoucherInitDone) return true;
   const form = document.querySelector("[data-sales-voucher-form]");
-  if (!form) return;
+  if (!form) return false;
 
   const isSalesOrderVoucher = <%= isSalesOrder ? "true" : "false" %>;
   const canOverrideRateDiscount = <%= canOverrideRateDiscount ? "true" : "false" %>;
@@ -441,6 +444,10 @@
     const x = n(v);
     return x > 0 ? displayNumber(x, 1, "") : "";
   };
+  const rowUnitLabel = (status) =>
+    String(status || "PACKED").toUpperCase() === "LOOSE"
+      ? (<%= JSON.stringify(t("unit_pair")) %> || "Pair")
+      : (<%= JSON.stringify(t("unit_dozen")) %> || "Dozen");
   const pairs = (status, qty) => Number(((String(status || "PACKED").toUpperCase() === "PACKED" ? n(qty) * 12 : n(qty))).toFixed(1));
   const isValidPhone = (value) => {
     const text = String(value || "").trim();
@@ -727,7 +734,7 @@
         <td class="px-2 py-2 text-slate-700">${String(row.sales_order_voucher_no || "-")}</td>
         <td class="px-2 py-2 text-slate-700">${formatDisplayDate(row.sales_order_voucher_date) || "-"}</td>
         <td class="px-2 py-2 text-slate-700">${String(row.sku_code || "")}</td>
-        <td class="px-2 py-2 text-slate-700">${String(row.row_status || "")}</td>
+        <td class="px-2 py-2 text-slate-700">${rowUnitLabel(row.row_status)}</td>
         <td class="px-2 py-2 text-right font-semibold text-slate-700">${displayNumber(openQty, 1, "0")}</td>
         <td class="px-2 py-2"><input type="number" min="0" step="0.1" class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs" data-sales-order-picker-deliver-qty data-line-id="${lineId > 0 ? lineId : ""}" data-open-qty="${displayNumber(openQty, 1, "0")}" value="${displayNumber(deliverQty, 1, "")}" ${lineId > 0 ? "" : "disabled"}></td>
         <td class="px-2 py-2 text-right font-semibold text-slate-700">${displayNumber(row.pair_rate || 0, 1, "0")}</td>
@@ -800,7 +807,7 @@
       const returnCells = isSalesOrderVoucher
         ? ""
         : `<td class="border-b border-slate-200 px-1.5 py-1"><input data-f="return_qty" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${fromSO ? "bg-slate-100" : "bg-white"}" value="${qtyDisplay(r.return_qty)}" ${fromSO ? "disabled" : ""}></td><td class="border-b border-slate-200 px-1.5 py-1">${showReasonSelect ? `<select data-f="return_reason_id" class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-searchable-select="true" data-searchable-variant="unified">${reasonOpts}</select>` : `<input class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-xs" value="" readonly>`}</td>`;
-      tr.innerHTML = `<td class="border-b border-slate-200 px-1.5 py-1"><select data-f="${fromSO ? "sales_order_line_id" : "sku_id"}" class="h-8 min-w-[18rem] w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-searchable-select="true" data-searchable-variant="unified">${articleOptions}</select></td><td class="border-b border-slate-200 px-1.5 py-1"><select data-f="row_status" class="h-8 min-w-[7rem] w-full rounded-lg border border-slate-300 px-2 text-xs ${fromSO ? "bg-slate-100" : "bg-white"}" ${fromSO ? "disabled" : ""} data-searchable-select="true" data-searchable-variant="unified"><option value="LOOSE" ${r.row_status === "LOOSE" ? "selected" : ""}><%= t("loose") %></option><option value="PACKED" ${r.row_status === "PACKED" ? "selected" : ""}><%= t("packed") %></option></select></td><td class="border-b border-slate-200 px-1.5 py-1"><input data-f="sale_qty" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${fromSO ? "bg-slate-100" : "bg-white"}" value="${qtyDisplay(r.sale_qty)}" ${fromSO ? "readonly" : ""}></td>${returnCells}<td class="border-b border-slate-200 px-1.5 py-1"><input data-f="pair_rate" class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.pair_rate)}" readonly></td><td class="border-b border-slate-200 px-1.5 py-1"><input data-f="pair_discount" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${canDiscount ? "bg-white" : "bg-slate-100"}" value="${f1OrBlank(r.pair_discount)}" ${canDiscount ? "" : "readonly"}></td><td class="border-b border-slate-200 px-1.5 py-1"><input class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.total_discount)}" readonly></td><td class="border-b border-slate-200 px-1.5 py-1"><input class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.total_amount)}" readonly></td><td class="w-20 border-b border-slate-200 px-1.5 py-1 text-center"><button type="button" data-del class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white p-2 text-rose-600" aria-label="<%= t("delete") %>"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M9 7V5h6v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg></button></td><td class="border-b border-slate-200 px-1.5 py-1 text-center align-middle text-[11px] font-semibold text-slate-600" data-row-no>${index + 1}</td>`;
+      tr.innerHTML = `<td class="border-b border-slate-200 px-1.5 py-1"><select data-f="${fromSO ? "sales_order_line_id" : "sku_id"}" class="h-8 min-w-[18rem] w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-searchable-select="true" data-searchable-variant="unified">${articleOptions}</select></td><td class="border-b border-slate-200 px-1.5 py-1"><select data-f="row_status" class="h-8 min-w-[7rem] w-full rounded-lg border border-slate-300 px-2 text-xs ${fromSO ? "bg-slate-100" : "bg-white"}" ${fromSO ? "disabled" : ""} data-searchable-select="true" data-searchable-variant="unified"><option value="LOOSE" ${r.row_status === "LOOSE" ? "selected" : ""}><%= t("unit_pair") %></option><option value="PACKED" ${r.row_status === "PACKED" ? "selected" : ""}><%= t("unit_dozen") %></option></select></td><td class="border-b border-slate-200 px-1.5 py-1"><input data-f="sale_qty" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${fromSO ? "bg-slate-100" : "bg-white"}" value="${qtyDisplay(r.sale_qty)}" ${fromSO ? "readonly" : ""}></td>${returnCells}<td class="border-b border-slate-200 px-1.5 py-1"><input data-f="pair_rate" class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.pair_rate)}" readonly></td><td class="border-b border-slate-200 px-1.5 py-1"><input data-f="pair_discount" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${canDiscount ? "bg-white" : "bg-slate-100"}" value="${f1OrBlank(r.pair_discount)}" ${canDiscount ? "" : "readonly"}></td><td class="border-b border-slate-200 px-1.5 py-1"><input class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.total_discount)}" readonly></td><td class="border-b border-slate-200 px-1.5 py-1"><input class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.total_amount)}" readonly></td><td class="w-20 border-b border-slate-200 px-1.5 py-1 text-center"><button type="button" data-del class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white p-2 text-rose-600" aria-label="<%= t("delete") %>"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M9 7V5h6v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg></button></td><td class="border-b border-slate-200 px-1.5 py-1 text-center align-middle text-[11px] font-semibold text-slate-600" data-row-no>${index + 1}</td>`;
       linesBody.appendChild(tr);
     });
 
@@ -1786,6 +1793,22 @@
     linesJsonInput.value = JSON.stringify(payload);
   });
 
-  syncHeaderUi();
+  try {
+    if (!rows.length) rows.push(emptyRow());
+    render();
+    syncHeaderUi();
+    window.__salesVoucherInitDone = true;
+    return true;
+  } catch (err) {
+    console.error("Error in SalesVoucherInit:", err);
+    try { syncPaymentTypeSegmentUi(); } catch (e) {}
+    try { syncAdvanceReceiveSegmentUi(); } catch (e) {}
+    return false;
+  }
+  };
+
+  if (boot()) return;
+  document.addEventListener("DOMContentLoaded", () => { boot(); }, { once: true });
+  window.requestAnimationFrame(() => { boot(); });
 })();
 </script>

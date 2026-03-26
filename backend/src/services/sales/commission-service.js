@@ -2,6 +2,7 @@ const { HttpError } = require("../../middleware/errors/http-error");
 
 const SALES_VOUCHER_CODE = "SALES_VOUCHER";
 const PRECEDENCE = ["SKU", "SUBGROUP", "GROUP", "ALL"];
+const PAIRS_PER_DOZEN = 12;
 const BASIS = {
   NET_SALES_PERCENT: "NET_SALES_PERCENT",
   GROSS_MARGIN_PERCENT: "GROSS_MARGIN_PERCENT",
@@ -35,7 +36,10 @@ const resolveSalesHeaderPayload = (body = {}) => {
 
 const resolveSalesLinePayload = (line = {}) => {
   const meta = line.meta && typeof line.meta === "object" ? line.meta : {};
-  const isPacked = Boolean(meta.is_packed);
+  const rowStatus = String(meta.row_status || line.row_status || line.status || "LOOSE")
+    .trim()
+    .toUpperCase();
+  const isPacked = Boolean(meta.is_packed) || rowStatus === "PACKED";
   const saleQtyRaw = meta.sale_qty ?? (toNumber(line.qty, 0) > 0 ? line.qty : 0);
   const returnQtyRaw = meta.return_qty ?? 0;
   const saleQty = toNumber(saleQtyRaw, 0);
@@ -43,6 +47,7 @@ const resolveSalesLinePayload = (line = {}) => {
   const rowAmount = toNumber(meta.total_amount ?? line.amount, 0);
   const grossMarginAmount = toNumber(meta.gross_margin_amount ?? meta.gross_margin ?? 0, 0);
   return {
+    row_status: rowStatus,
     is_packed: isPacked,
     sale_qty: saleQty,
     return_qty: returnQty,
@@ -94,7 +99,18 @@ const convertToBaseQty = ({ qty, fromUomId, baseUomId, conversionMap, t }) => {
 const buildRuleMatchIndex = async (trx, salesmanEmployeeId) => {
   if (!salesmanEmployeeId) return [];
   return trx("erp.employee_commission_rules")
-    .select("id", "apply_on", "sku_id", "subgroup_id", "group_id", "commission_basis", "value", "reverse_on_returns", "value_type")
+    .select(
+      "id",
+      "apply_on",
+      "sku_id",
+      "subgroup_id",
+      "group_id",
+      "commission_basis",
+      trx.raw(`COALESCE(NULLIF(to_jsonb(erp.employee_commission_rules)->>'rate_type', ''), 'PER_PAIR') as rate_type`),
+      "value",
+      "reverse_on_returns",
+      "value_type",
+    )
     .where({ employee_id: salesmanEmployeeId, status: "active" });
 };
 
@@ -119,7 +135,7 @@ const evaluateSign = ({ saleQty, returnQty, reverseOnReturns }) => {
   return 0;
 };
 
-const computeLineCommissionBreakdown = ({ line, salesLine, matchedRules, qtyInBaseUnit }) => {
+const computeLineCommissionBreakdown = ({ line, salesLine, matchedRules, qtyInPair }) => {
   const entries = [];
   let lineTotal = 0;
 
@@ -140,7 +156,11 @@ const computeLineCommissionBreakdown = ({ line, salesLine, matchedRules, qtyInBa
     } else if (basis === BASIS.GROSS_MARGIN_PERCENT) {
       computed = roundMoney(toNumber(salesLine.gross_margin_amount, 0) * (rate / 100) * sign);
     } else if (basis === BASIS.FIXED_PER_UNIT) {
-      computed = roundMoney(toNumber(qtyInBaseUnit, 0) * rate * sign);
+      const rateType = String(rule.rate_type || "PER_PAIR").trim().toUpperCase();
+      const unitQty = rateType === "PER_DOZEN"
+        ? Number((toNumber(qtyInPair, 0) / PAIRS_PER_DOZEN).toFixed(6))
+        : toNumber(qtyInPair, 0);
+      computed = roundMoney(unitQty * rate * sign);
     }
 
     if (basis === BASIS.FIXED_PER_INVOICE) {
@@ -243,6 +263,8 @@ const enrichSalesVoucherLines = async ({ trx, lines, salesmanEmployeeId, t }) =>
     const context = itemContextMap.get(Number(line.sku_id));
     if (!context) continue;
     const salesLine = resolveSalesLinePayload(line);
+    // Policy: pair/loose rows are excluded from salesman commission.
+    if (!salesLine.is_packed) continue;
     const qtyForRule = toNumber(line.qty, 0);
     const qtyInBaseUnit = convertToBaseQty({
       qty: qtyForRule,
@@ -267,7 +289,7 @@ const enrichSalesVoucherLines = async ({ trx, lines, salesmanEmployeeId, t }) =>
       line,
       salesLine,
       matchedRules,
-      qtyInBaseUnit,
+      qtyInPair: qtyInBaseUnit,
     });
     lineBreakdowns[idx] = breakdown;
   }
@@ -341,4 +363,3 @@ module.exports = {
   prepareSalesVoucherData,
   SALES_VOUCHER_CODE,
 };
-

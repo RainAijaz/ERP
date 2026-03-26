@@ -102,19 +102,56 @@ const queueApproval = async ({ req, scopeKey, action, entityType, entityId, summ
             _approval_action: action || null,
           }
         : newValue;
+    const normalizedEntityId = String(entityId || "NEW");
+    const approvalAction = String(enrichedNewValue?._action || action || "").trim().toLowerCase();
+    let requestId = null;
+
+    if (entityType === "BOM" && approvalAction) {
+      let duplicateQuery = knex("erp.approval_request as ar")
+        .select("ar.id")
+        .where({
+          "ar.entity_type": "BOM",
+          "ar.entity_id": normalizedEntityId,
+          "ar.status": "PENDING",
+        })
+        .andWhereRaw("COALESCE(ar.new_value ->> '_action', '') = ?", [approvalAction])
+        .orderBy("ar.id", "desc");
+
+      if (approvalAction === "approve_draft" && normalizedEntityId !== "NEW") {
+        duplicateQuery = knex("erp.approval_request as ar")
+          .select("ar.id")
+          .joinRaw("JOIN erp.bom_header bh ON ar.entity_id ~ '^[0-9]+$' AND bh.id = ar.entity_id::bigint")
+          .where({
+            "ar.entity_type": "BOM",
+            "ar.status": "PENDING",
+          })
+          .andWhereRaw("COALESCE(ar.new_value ->> '_action', '') = ?", [approvalAction])
+          .andWhereRaw(
+            "bh.item_id = (SELECT item_id FROM erp.bom_header WHERE id = ?)",
+            [Number(normalizedEntityId)],
+          )
+          .orderBy("ar.id", "desc");
+      }
+
+      const duplicate = await duplicateQuery.first();
+      if (duplicate?.id) {
+        return duplicate.id;
+      }
+    }
+
     const [created] = await knex("erp.approval_request")
       .insert({
         branch_id: req.branchId,
         request_type: "MASTER_DATA_CHANGE",
         entity_type: entityType,
-        entity_id: String(entityId || "NEW"),
+        entity_id: normalizedEntityId,
         summary: summary || null,
         old_value: oldValue || null,
         new_value: enrichedNewValue || null,
         requested_by: req.user?.id || null,
       })
       .returning(["id"]);
-    const requestId = created?.id || null;
+    requestId = created?.id || null;
     await insertActivityLog(knex, {
       branch_id: req.branchId,
       user_id: req.user?.id || null,
@@ -157,7 +194,18 @@ const queueApproval = async ({ req, scopeKey, action, entityType, entityId, summ
   }
 };
 
-const handleScreenApproval = async ({ req, scopeKey, action, entityType, entityId, summary, oldValue, newValue, t }) => {
+const handleScreenApproval = async ({
+  req,
+  scopeKey,
+  action,
+  entityType,
+  entityId,
+  summary,
+  oldValue,
+  newValue,
+  t,
+  forceQueue = false,
+}) => {
   try {
     debugApproval("[screen-approval] handleScreenApproval called", {
       user: req.user && { id: req.user.id, username: req.user.username, isAdmin: req.user.isAdmin },
@@ -172,15 +220,17 @@ const handleScreenApproval = async ({ req, scopeKey, action, entityType, entityI
       method: req.method,
     });
   } catch (e) {}
-  if (req.user?.isAdmin) {
+  if (!forceQueue && req.user?.isAdmin) {
     debugApproval("[screen-approval] user is admin, bypassing approval queue");
     return { queued: false };
   }
   const allowed = hasPermission(req.user, scopeKey, action);
   debugApproval("[screen-approval] hasPermission result", { allowed });
-  let approvalRequired;
+  let approvalRequired = Boolean(forceQueue);
   try {
-    approvalRequired = await requiresApproval(scopeKey, action);
+    if (!approvalRequired) {
+      approvalRequired = await requiresApproval(scopeKey, action);
+    }
     debugApproval("[screen-approval] requiresApproval result", { approvalRequired });
   } catch (err) {
     console.error("[screen-approval] requiresApproval threw error", err);

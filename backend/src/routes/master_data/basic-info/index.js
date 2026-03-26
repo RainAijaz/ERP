@@ -619,6 +619,13 @@ const hydratePage = async (page, locale) => {
     if (field.optionsQuery.where) {
       query = query.where(field.optionsQuery.where);
     }
+    if (
+      page.table === "erp.production_stages" &&
+      field.name === "dept_id" &&
+      field.optionsQuery.table === "erp.departments"
+    ) {
+      query = query.where({ is_production: true });
+    }
     const rows = await query.orderBy(field.optionsQuery.orderBy || field.optionsQuery.labelKey);
     fields.push({
       ...field,

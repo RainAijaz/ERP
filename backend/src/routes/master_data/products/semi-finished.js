@@ -1,11 +1,17 @@
 const express = require("express");
 const knex = require("../../../db/knex");
 const { HttpError } = require("../../../middleware/errors/http-error");
-const { requirePermission } = require("../../../middleware/access/role-permissions");
-const { handleScreenApproval } = require("../../../middleware/approvals/screen-approval");
+const {
+  requirePermission,
+} = require("../../../middleware/access/role-permissions");
+const {
+  handleScreenApproval,
+} = require("../../../middleware/approvals/screen-approval");
 const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
 const { queueAuditLog } = require("../../../utils/audit-log");
-const { applyItemLifecycleToggleTx } = require("../../../services/products/item-lifecycle-service");
+const {
+  applyItemLifecycleToggleTx,
+} = require("../../../services/products/item-lifecycle-service");
 const {
   fetchProductionBaseUomOptions,
   isPairUomId,
@@ -23,17 +29,56 @@ const toCode = (value) =>
 
 const loadOptions = async () => {
   const [groups, uoms, finished, subgroups, colors, sizes] = await Promise.all([
-    knex("erp.product_groups as g").select("g.id", "g.name", "g.name_ur").join("erp.product_group_item_types as gt", "gt.group_id", "g.id").where("gt.item_type", ITEM_TYPE).andWhere("g.is_active", true).orderBy("g.name"),
+    knex("erp.product_groups as g")
+      .select("g.id", "g.name", "g.name_ur")
+      .join("erp.product_group_item_types as gt", "gt.group_id", "g.id")
+      .where("gt.item_type", ITEM_TYPE)
+      .andWhere("g.is_active", true)
+      .orderBy("g.name"),
     fetchProductionBaseUomOptions(knex),
-    knex("erp.items as i").select("i.id", "i.name", "i.name_ur", "i.subgroup_id", "sg.name as subgroup_name", "sg.name_ur as subgroup_name_ur").leftJoin("erp.product_subgroups as sg", "sg.id", "i.subgroup_id").where({ "i.item_type": "FG", "i.is_active": true }).orderBy("i.name"),
-    knex("erp.product_subgroups as s").select("s.id", "s.name", "s.name_ur").join("erp.product_subgroup_item_types as st", "st.subgroup_id", "s.id").where("st.item_type", ITEM_TYPE).andWhere("s.is_active", true).orderBy("s.name"),
-    knex("erp.colors").select("id", "name", "name_ur").where("is_active", true).orderBy("name"),
-    knex("erp.sizes as s").select("s.id", "s.name", "s.name_ur").join("erp.size_item_types as sit", "sit.size_id", "s.id").where("sit.item_type", ITEM_TYPE).andWhere("s.is_active", true).orderBy("s.name"),
+    knex("erp.items as i")
+      .select(
+        "i.id",
+        "i.name",
+        "i.name_ur",
+        "i.subgroup_id",
+        "sg.name as subgroup_name",
+        "sg.name_ur as subgroup_name_ur",
+      )
+      .leftJoin("erp.product_subgroups as sg", "sg.id", "i.subgroup_id")
+      .where({ "i.item_type": "FG", "i.is_active": true })
+      .orderBy("i.name"),
+    knex("erp.product_subgroups as s")
+      .select("s.id", "s.name", "s.name_ur")
+      .join("erp.product_subgroup_item_types as st", "st.subgroup_id", "s.id")
+      .where("st.item_type", ITEM_TYPE)
+      .andWhere((builder) => {
+        builder
+          .where("s.is_active", true)
+          .orWhereExists(
+            knex("erp.items as used_i")
+              .select(knex.raw("1"))
+              .whereRaw("used_i.subgroup_id = s.id")
+              .andWhere("used_i.item_type", ITEM_TYPE),
+          );
+      })
+      .orderBy("s.name"),
+    knex("erp.colors")
+      .select("id", "name", "name_ur")
+      .where("is_active", true)
+      .orderBy("name"),
+    knex("erp.sizes as s")
+      .select("s.id", "s.name", "s.name_ur")
+      .join("erp.size_item_types as sit", "sit.size_id", "s.id")
+      .where("sit.item_type", ITEM_TYPE)
+      .andWhere("s.is_active", true)
+      .orderBy("s.name"),
   ]);
   return { groups, uoms, finished, subgroups, colors, sizes };
 };
 
-const loadUsers = async () => knex("erp.users").select("id", "username").orderBy("username");
+const loadUsers = async () =>
+  knex("erp.users").select("id", "username").orderBy("username");
 
 const loadRows = async (filters = {}) => {
   let query = knex("erp.items as i")
@@ -47,19 +92,35 @@ const loadRows = async (filters = {}) => {
       "u.name as uom_name",
       "u.name_ur as uom_name_ur",
       "cu.username as created_by_name",
-      knex.raw(`COALESCE(string_agg(DISTINCT COALESCE(sg_usage.name, ''), ', ' ORDER BY COALESCE(sg_usage.name, '')), '') as subgroup_names`),
-      knex.raw(`COALESCE(string_agg(DISTINCT COALESCE(sg_usage.name_ur, sg_usage.name), ', ' ORDER BY COALESCE(sg_usage.name_ur, sg_usage.name)), '') as subgroup_names_ur`),
-      knex.raw(`COALESCE(string_agg(DISTINCT sg_usage.id::text, ', ' ORDER BY sg_usage.id::text), '') as subgroup_ids`),
-      knex.raw(`COALESCE(string_agg(fg.name, ', ' ORDER BY fg.name), '') as usage_articles`),
-      knex.raw(`COALESCE(string_agg(COALESCE(fg.name_ur, fg.name), ', ' ORDER BY fg.name), '') as usage_articles_ur`),
-      knex.raw(`COALESCE(string_agg(fg.id::text, ', ' ORDER BY fg.name), '') as usage_article_ids`),
+      knex.raw(
+        `COALESCE(string_agg(DISTINCT COALESCE(sg_usage.name, ''), ', ' ORDER BY COALESCE(sg_usage.name, '')), '') as subgroup_names`,
+      ),
+      knex.raw(
+        `COALESCE(string_agg(DISTINCT COALESCE(sg_usage.name_ur, sg_usage.name), ', ' ORDER BY COALESCE(sg_usage.name_ur, sg_usage.name)), '') as subgroup_names_ur`,
+      ),
+      knex.raw(
+        `COALESCE(string_agg(DISTINCT sg_usage.id::text, ', ' ORDER BY sg_usage.id::text), '') as subgroup_ids`,
+      ),
+      knex.raw(
+        `COALESCE(string_agg(fg.name, ', ' ORDER BY fg.name), '') as usage_articles`,
+      ),
+      knex.raw(
+        `COALESCE(string_agg(COALESCE(fg.name_ur, fg.name), ', ' ORDER BY fg.name), '') as usage_articles_ur`,
+      ),
+      knex.raw(
+        `COALESCE(string_agg(fg.id::text, ', ' ORDER BY fg.name), '') as usage_article_ids`,
+      ),
     )
     .leftJoin("erp.product_groups as g", "i.group_id", "g.id")
     .leftJoin("erp.uom as u", "i.base_uom_id", "u.id")
     .leftJoin("erp.product_subgroups as sg_item", "sg_item.id", "i.subgroup_id")
     .leftJoin("erp.item_usage as iu", "iu.sfg_item_id", "i.id")
     .leftJoin("erp.items as fg", "fg.id", "iu.fg_item_id")
-    .leftJoin("erp.product_subgroups as sg_usage", "sg_usage.id", "fg.subgroup_id")
+    .leftJoin(
+      "erp.product_subgroups as sg_usage",
+      "sg_usage.id",
+      "fg.subgroup_id",
+    )
     .leftJoin("erp.users as cu", "i.created_by", "cu.id")
     .where("i.item_type", ITEM_TYPE);
 
@@ -67,7 +128,10 @@ const loadRows = async (filters = {}) => {
     const subgroupId = Number(filters.subgroup_id);
     if (Number.isFinite(subgroupId)) {
       query = query.where(function () {
-        this.where("i.subgroup_id", subgroupId).orWhere("sg_usage.id", subgroupId);
+        this.where("i.subgroup_id", subgroupId).orWhere(
+          "sg_usage.id",
+          subgroupId,
+        );
       });
     }
   }
@@ -78,13 +142,29 @@ const loadRows = async (filters = {}) => {
     query = query.where("i.created_at", ">=", filters.created_at_start);
   }
   if (filters.created_at_end) {
-    query = query.where("i.created_at", "<=", filters.created_at_end + " 23:59:59");
+    query = query.where(
+      "i.created_at",
+      "<=",
+      filters.created_at_end + " 23:59:59",
+    );
   }
   if (filters.low_stock_only === "true") {
     query = query.whereRaw("COALESCE(i.min_stock_level, 0) > 0");
   }
 
-  query = query.groupBy("i.id", "g.name", "g.name_ur", "sg_item.name", "sg_item.name_ur", "u.code", "u.name", "u.name_ur", "cu.username").orderBy("i.id", "desc");
+  query = query
+    .groupBy(
+      "i.id",
+      "g.name",
+      "g.name_ur",
+      "sg_item.name",
+      "sg_item.name_ur",
+      "u.code",
+      "u.name",
+      "u.name_ur",
+      "cu.username",
+    )
+    .orderBy("i.id", "desc");
 
   return query;
 };
@@ -104,24 +184,43 @@ const renderIndex = (req, res, payload) => {
   });
 };
 
-router.get("/", requirePermission("SCREEN", "master_data.products.semi_finished", "view"), async (req, res, next) => {
-  try {
-    const filters = {
-      subgroup_id: req.query.subgroup_id || "",
-      created_by: req.query.created_by || "",
-      created_at_start: req.query.created_at_start || "",
-      created_at_end: req.query.created_at_end || "",
-      low_stock_only: req.query.low_stock_only || "",
-    };
-    const canBrowse = res.locals.can("SCREEN", "master_data.products.semi_finished", "navigate");
-    const [options, users] = await Promise.all([loadOptions(), loadUsers()]);
-    const rows = canBrowse ? await loadRows(filters) : [];
-    const pairUomError = !options.uoms?.length ? (res.locals.t("error_pair_uom_missing") || "PAIR UOM is missing. Run latest migration.") : null;
-    renderIndex(req, res, { rows, ...options, users, filters, error: pairUomError, modalOpen: false, modalMode: "create" });
-  } catch (err) {
-    next(err);
-  }
-});
+router.get(
+  "/",
+  requirePermission("SCREEN", "master_data.products.semi_finished", "view"),
+  async (req, res, next) => {
+    try {
+      const filters = {
+        subgroup_id: req.query.subgroup_id || "",
+        created_by: req.query.created_by || "",
+        created_at_start: req.query.created_at_start || "",
+        created_at_end: req.query.created_at_end || "",
+        low_stock_only: req.query.low_stock_only || "",
+      };
+      const canBrowse = res.locals.can(
+        "SCREEN",
+        "master_data.products.semi_finished",
+        "navigate",
+      );
+      const [options, users] = await Promise.all([loadOptions(), loadUsers()]);
+      const rows = canBrowse ? await loadRows(filters) : [];
+      const pairUomError = !options.uoms?.length
+        ? res.locals.t("error_pair_uom_missing") ||
+          "PAIR UOM is missing. Run latest migration."
+        : null;
+      renderIndex(req, res, {
+        rows,
+        ...options,
+        users,
+        filters,
+        error: pairUomError,
+        modalOpen: false,
+        modalMode: "create",
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 const normalizeUsageIds = (value) => {
   if (Array.isArray(value)) return value;
@@ -136,316 +235,412 @@ const normalizeUsageIds = (value) => {
   return [value];
 };
 
-router.post("/", requirePermission("SCREEN", "master_data.products.semi_finished", "create"), async (req, res) => {
-  const values = { ...req.body };
-  const basePath = `${req.baseUrl}`;
-  try {
-    const name = (values.name || "").trim();
-    const code = toCode(name);
-    const group_id = values.group_id ? Number(values.group_id) : null;
-    const user_subgroup_id = values.subgroup_id ? Number(values.subgroup_id) : null;
-    const base_uom_id = values.base_uom_id ? Number(values.base_uom_id) : null;
-    const min_stock_level = values.min_stock_level ? Number(values.min_stock_level) : 0;
+router.post(
+  "/",
+  requirePermission("SCREEN", "master_data.products.semi_finished", "create"),
+  async (req, res) => {
+    const values = { ...req.body };
+    const basePath = `${req.baseUrl}`;
+    try {
+      const name = (values.name || "").trim();
+      const name_ur = (values.name_ur || "").trim();
+      const code = toCode(name);
+      const group_id = values.group_id ? Number(values.group_id) : null;
+      const user_subgroup_id = values.subgroup_id
+        ? Number(values.subgroup_id)
+        : null;
+      const base_uom_id = values.base_uom_id
+        ? Number(values.base_uom_id)
+        : null;
+      const min_stock_level = values.min_stock_level
+        ? Number(values.min_stock_level)
+        : 0;
 
-    const usageIds = normalizeUsageIds(values.fg_ids)
-      .map((id) => Number(id))
-      .filter((id) => Number.isFinite(id));
-    const uniqueUsageIds = Array.from(new Set(usageIds));
+      const usageIds = normalizeUsageIds(values.fg_ids)
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id));
+      const uniqueUsageIds = Array.from(new Set(usageIds));
 
-    const pairBaseUnitValid = base_uom_id ? await isPairUomId(knex, base_uom_id) : false;
-    if (!code || !name || !values.name_ur || !group_id || !base_uom_id || !user_subgroup_id || !pairBaseUnitValid) {
-      const [rows, options, users] = await Promise.all([loadRows(), loadOptions(), loadUsers()]);
+      const pairBaseUnitValid = base_uom_id
+        ? await isPairUomId(knex, base_uom_id)
+        : false;
+      if (
+        !code ||
+        !name ||
+        !name_ur ||
+        !group_id ||
+        !base_uom_id ||
+        !user_subgroup_id ||
+        !pairBaseUnitValid
+      ) {
+        const [rows, options, users] = await Promise.all([
+          loadRows(),
+          loadOptions(),
+          loadUsers(),
+        ]);
+        return renderIndex(req, res, {
+          rows,
+          ...options,
+          users,
+          error: pairBaseUnitValid
+            ? res.locals.t("error_required_fields")
+            : res.locals.t("error_production_base_unit_pair") ||
+              "Finished and Semi-Finished articles must use PAIR as base unit.",
+          modalOpen: true,
+          modalMode: "create",
+          values,
+        });
+      }
+
+      const approval = await handleScreenApproval({
+        req,
+        scopeKey: "master_data.products.semi_finished",
+        action: "create",
+        entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
+        entityId: "NEW",
+        summary: `${res.locals.t("create")} ${res.locals.t("semi_finished")}`,
+        oldValue: null,
+        newValue: {
+          _action: "create",
+          item_type: ITEM_TYPE,
+          code,
+          name,
+          name_ur,
+          group_id,
+          subgroup_id: user_subgroup_id,
+          base_uom_id,
+          min_stock_level,
+          usage_ids: uniqueUsageIds,
+        },
+        t: res.locals.t,
+      });
+
+      if (approval.queued) {
+        return res.redirect(req.get("referer") || basePath);
+      }
+
+      let createdId = null;
+      await knex.transaction(async (trx) => {
+        const [item] = await trx("erp.items")
+          .insert({
+            item_type: ITEM_TYPE,
+            code,
+            name,
+            name_ur,
+            group_id,
+            subgroup_id: user_subgroup_id,
+            base_uom_id,
+            min_stock_level,
+            created_by: req.user ? req.user.id : null,
+            created_at: trx.fn.now(),
+          })
+          .returning("id");
+        const itemId = item.id || item;
+        createdId = itemId;
+        if (uniqueUsageIds.length) {
+          await trx("erp.item_usage").insert(
+            uniqueUsageIds.map((fgId) => ({
+              fg_item_id: fgId,
+              sfg_item_id: itemId,
+            })),
+          );
+        }
+      });
+
+      if (createdId) {
+        queueAuditLog(req, {
+          entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
+          entityId: createdId,
+          action: "CREATE",
+        });
+      }
+
+      return res.redirect(basePath);
+    } catch (err) {
+      const [rows, options, users] = await Promise.all([
+        loadRows(),
+        loadOptions(),
+        loadUsers(),
+      ]);
       return renderIndex(req, res, {
         rows,
         ...options,
         users,
-        error: pairBaseUnitValid ? res.locals.t("error_required_fields") : (res.locals.t("error_production_base_unit_pair") || "Finished and Semi-Finished articles must use PAIR as base unit."),
+        error: res.locals.t("error_unable_save"),
         modalOpen: true,
         modalMode: "create",
         values,
       });
     }
+  },
+);
+router.post(
+  "/:id",
+  requirePermission("SCREEN", "master_data.products.semi_finished", "edit"),
+  async (req, res, next) => {
+    const id = Number(req.params.id);
+    const values = { ...req.body };
+    const basePath = `${req.baseUrl}`;
+    if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
 
-    const approval = await handleScreenApproval({
-      req,
-      scopeKey: "master_data.products.semi_finished",
-      action: "create",
-      entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
-      entityId: "NEW",
-      summary: `${res.locals.t("create")} ${res.locals.t("semi_finished")}`,
-      oldValue: null,
-      newValue: {
-        _action: "create",
-        item_type: ITEM_TYPE,
-        code,
-        name,
-        name_ur: values.name_ur || null,
-        group_id,
-        subgroup_id: user_subgroup_id,
-        base_uom_id,
-        min_stock_level,
-        usage_ids: uniqueUsageIds,
-      },
-      t: res.locals.t,
-    });
+    try {
+      const name = (values.name || "").trim();
+      const name_ur = (values.name_ur || "").trim();
+      const code = toCode(name);
+      const group_id = values.group_id ? Number(values.group_id) : null;
+      const user_subgroup_id = values.subgroup_id
+        ? Number(values.subgroup_id)
+        : null;
+      const base_uom_id = values.base_uom_id
+        ? Number(values.base_uom_id)
+        : null;
+      const min_stock_level = values.min_stock_level
+        ? Number(values.min_stock_level)
+        : 0;
 
-    if (approval.queued) {
-      return res.redirect(req.get("referer") || basePath);
-    }
+      const usageIds = normalizeUsageIds(values.fg_ids)
+        .map((id) => Number(id))
+        .filter((id) => Number.isFinite(id));
+      const uniqueUsageIds = Array.from(new Set(usageIds));
 
-    let createdId = null;
-    await knex.transaction(async (trx) => {
-      const [item] = await trx("erp.items")
-        .insert({
+      const pairBaseUnitValid = base_uom_id
+        ? await isPairUomId(knex, base_uom_id)
+        : false;
+      if (
+        !code ||
+        !name ||
+        !name_ur ||
+        !group_id ||
+        !base_uom_id ||
+        !user_subgroup_id ||
+        !pairBaseUnitValid
+      ) {
+        const [rows, options, users] = await Promise.all([
+          loadRows(),
+          loadOptions(),
+          loadUsers(),
+        ]);
+        return renderIndex(req, res, {
+          rows,
+          ...options,
+          users,
+          error: pairBaseUnitValid
+            ? res.locals.t("error_required_fields")
+            : res.locals.t("error_production_base_unit_pair") ||
+              "Finished and Semi-Finished articles must use PAIR as base unit.",
+          modalOpen: true,
+          modalMode: "edit",
+          values: { ...values, id },
+        });
+      }
+
+      const approval = await handleScreenApproval({
+        req,
+        scopeKey: "master_data.products.semi_finished",
+        action: "edit",
+        entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
+        entityId: id,
+        summary: `${res.locals.t("edit")} ${res.locals.t("semi_finished")}`,
+        oldValue: null,
+        newValue: {
+          _action: "update",
           item_type: ITEM_TYPE,
           code,
           name,
-          name_ur: values.name_ur || null,
+          name_ur,
           group_id,
           subgroup_id: user_subgroup_id,
           base_uom_id,
           min_stock_level,
-          created_by: req.user ? req.user.id : null,
-          created_at: trx.fn.now(),
-        })
-        .returning("id");
-      const itemId = item.id || item;
-      createdId = itemId;
-      if (uniqueUsageIds.length) {
-        await trx("erp.item_usage").insert(
-          uniqueUsageIds.map((fgId) => ({
-            fg_item_id: fgId,
-            sfg_item_id: itemId,
-          })),
-        );
-      }
-    });
+          usage_ids: uniqueUsageIds,
+        },
+        t: res.locals.t,
+      });
 
-    if (createdId) {
+      if (approval.queued) {
+        return res.redirect(req.get("referer") || basePath);
+      }
+
+      await knex.transaction(async (trx) => {
+        await trx("erp.items")
+          .where({ id })
+          .update({
+            code,
+            name,
+            name_ur,
+            group_id,
+            subgroup_id: user_subgroup_id,
+            base_uom_id,
+            min_stock_level,
+            updated_by: req.user ? req.user.id : null,
+            updated_at: trx.fn.now(),
+          });
+        await trx("erp.item_usage").where({ sfg_item_id: id }).del();
+        if (uniqueUsageIds.length) {
+          await trx("erp.item_usage").insert(
+            uniqueUsageIds.map((fgId) => ({
+              fg_item_id: fgId,
+              sfg_item_id: id,
+            })),
+          );
+        }
+      });
+
       queueAuditLog(req, {
         entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
-        entityId: createdId,
-        action: "CREATE",
+        entityId: id,
+        action: "UPDATE",
       });
-    }
 
-    return res.redirect(basePath);
-  } catch (err) {
-    const [rows, options, users] = await Promise.all([loadRows(), loadOptions(), loadUsers()]);
-    return renderIndex(req, res, {
-      rows,
-      ...options,
-      users,
-      error: res.locals.t("error_unable_save"),
-      modalOpen: true,
-      modalMode: "create",
-      values,
-    });
-  }
-});
-router.post("/:id", requirePermission("SCREEN", "master_data.products.semi_finished", "edit"), async (req, res, next) => {
-  const id = Number(req.params.id);
-  const values = { ...req.body };
-  const basePath = `${req.baseUrl}`;
-  if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
-
-  try {
-    const name = (values.name || "").trim();
-    const code = toCode(name);
-    const group_id = values.group_id ? Number(values.group_id) : null;
-    const user_subgroup_id = values.subgroup_id ? Number(values.subgroup_id) : null;
-    const base_uom_id = values.base_uom_id ? Number(values.base_uom_id) : null;
-    const min_stock_level = values.min_stock_level ? Number(values.min_stock_level) : 0;
-
-    const usageIds = normalizeUsageIds(values.fg_ids)
-      .map((id) => Number(id))
-      .filter((id) => Number.isFinite(id));
-    const uniqueUsageIds = Array.from(new Set(usageIds));
-
-    const pairBaseUnitValid = base_uom_id ? await isPairUomId(knex, base_uom_id) : false;
-    if (!code || !name || !values.name_ur || !group_id || !base_uom_id || !user_subgroup_id || !pairBaseUnitValid) {
-      const [rows, options, users] = await Promise.all([loadRows(), loadOptions(), loadUsers()]);
+      return res.redirect(basePath);
+    } catch (err) {
+      const [rows, options, users] = await Promise.all([
+        loadRows(),
+        loadOptions(),
+        loadUsers(),
+      ]);
       return renderIndex(req, res, {
         rows,
         ...options,
         users,
-        error: pairBaseUnitValid ? res.locals.t("error_required_fields") : (res.locals.t("error_production_base_unit_pair") || "Finished and Semi-Finished articles must use PAIR as base unit."),
+        error: res.locals.t("error_unable_save"),
         modalOpen: true,
         modalMode: "edit",
         values: { ...values, id },
       });
     }
-
-    const approval = await handleScreenApproval({
-      req,
-      scopeKey: "master_data.products.semi_finished",
-      action: "edit",
-      entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
-      entityId: id,
-      summary: `${res.locals.t("edit")} ${res.locals.t("semi_finished")}`,
-      oldValue: null,
-      newValue: {
-        _action: "update",
-        item_type: ITEM_TYPE,
-        code,
-        name,
-        name_ur: values.name_ur || null,
-        group_id,
-        subgroup_id: user_subgroup_id,
-        base_uom_id,
-        min_stock_level,
-        usage_ids: uniqueUsageIds,
-      },
-      t: res.locals.t,
-    });
-
-    if (approval.queued) {
-      return res.redirect(req.get("referer") || basePath);
-    }
-
-    await knex.transaction(async (trx) => {
-      await trx("erp.items")
+  },
+);
+router.post(
+  "/:id/toggle",
+  requirePermission("SCREEN", "master_data.products.semi_finished", "delete"),
+  async (req, res, next) => {
+    const id = Number(req.params.id);
+    if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
+    const basePath = `${req.baseUrl}`;
+    try {
+      const current = await knex("erp.items")
+        .select("is_active")
         .where({ id })
-        .update({
-          code,
-          name,
-          name_ur: values.name_ur || null,
-          group_id,
-          subgroup_id: user_subgroup_id,
-          base_uom_id,
-          min_stock_level,
-          updated_by: req.user ? req.user.id : null,
-          updated_at: trx.fn.now(),
-        });
-      await trx("erp.item_usage").where({ sfg_item_id: id }).del();
-      if (uniqueUsageIds.length) {
-        await trx("erp.item_usage").insert(
-          uniqueUsageIds.map((fgId) => ({
-            fg_item_id: fgId,
-            sfg_item_id: id,
-          })),
-        );
-      }
-    });
+        .first();
+      if (!current)
+        return next(new HttpError(404, res.locals.t("error_not_found")));
+      const nextIsActive = !current.is_active;
+      const toggleLabel = nextIsActive
+        ? res.locals.t("activate") || "Activate"
+        : res.locals.t("deactivate") || "Deactivate";
 
-    queueAuditLog(req, {
-      entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
-      entityId: id,
-      action: "UPDATE",
-    });
-
-    return res.redirect(basePath);
-  } catch (err) {
-    const [rows, options, users] = await Promise.all([loadRows(), loadOptions(), loadUsers()]);
-    return renderIndex(req, res, {
-      rows,
-      ...options,
-      users,
-      error: res.locals.t("error_unable_save"),
-      modalOpen: true,
-      modalMode: "edit",
-      values: { ...values, id },
-    });
-  }
-});
-router.post("/:id/toggle", requirePermission("SCREEN", "master_data.products.semi_finished", "delete"), async (req, res, next) => {
-  const id = Number(req.params.id);
-  if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
-  const basePath = `${req.baseUrl}`;
-  try {
-    const current = await knex("erp.items").select("is_active").where({ id }).first();
-    if (!current) return next(new HttpError(404, res.locals.t("error_not_found")));
-    const nextIsActive = !current.is_active;
-    const toggleLabel = nextIsActive
-      ? (res.locals.t("activate") || "Activate")
-      : (res.locals.t("deactivate") || "Deactivate");
-
-    const approval = await handleScreenApproval({
-      req,
-      scopeKey: "master_data.products.semi_finished",
-      action: "delete",
-      entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
-      entityId: id,
-      summary: `${toggleLabel} ${res.locals.t("semi_finished")}`,
-      oldValue: current,
-      newValue: { _action: "toggle", is_active: nextIsActive, item_type: ITEM_TYPE },
-      t: res.locals.t,
-    });
-
-    if (approval.queued) {
-      return res.redirect(req.get("referer") || basePath);
-    }
-
-    await knex.transaction(async (trx) => {
-      await applyItemLifecycleToggleTx(trx, {
-        itemId: id,
-        itemType: ITEM_TYPE,
-        isActive: nextIsActive,
-        userId: req.user ? req.user.id : null,
+      const approval = await handleScreenApproval({
+        req,
+        scopeKey: "master_data.products.semi_finished",
+        action: "delete",
+        entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
+        entityId: id,
+        summary: `${toggleLabel} ${res.locals.t("semi_finished")}`,
+        oldValue: current,
+        newValue: {
+          _action: "toggle",
+          is_active: nextIsActive,
+          item_type: ITEM_TYPE,
+        },
+        t: res.locals.t,
       });
-    });
-    queueAuditLog(req, {
-      entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
-      entityId: id,
-      action: "DELETE",
-    });
-    return res.redirect(basePath);
-  } catch (err) {
-    const [rows, options, users] = await Promise.all([loadRows(), loadOptions(), loadUsers()]);
-    return renderIndex(req, res, {
-      rows,
-      ...options,
-      users,
-      error: res.locals.t("error_update_status"),
-      modalOpen: false,
-      modalMode: "create",
-    });
-  }
-});
 
-router.post("/:id/delete", requirePermission("SCREEN", "master_data.products.semi_finished", "hard_delete"), async (req, res, next) => {
-  const id = Number(req.params.id);
-  if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
-  const basePath = `${req.baseUrl}`;
-  try {
-    const existing = await knex("erp.items").select("id", "name", "is_active").where({ id }).first();
-    if (!existing) return next(new HttpError(404, res.locals.t("error_not_found")));
+      if (approval.queued) {
+        return res.redirect(req.get("referer") || basePath);
+      }
 
-    const approval = await handleScreenApproval({
-      req,
-      scopeKey: "master_data.products.semi_finished",
-      action: "delete",
-      entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
-      entityId: id,
-      summary: `${res.locals.t("delete")} ${res.locals.t("semi_finished")}`,
-      oldValue: existing,
-      newValue: { _action: "delete", item_type: ITEM_TYPE },
-      t: res.locals.t,
-    });
-
-    if (approval.queued) {
-      return res.redirect(req.get("referer") || basePath);
+      await knex.transaction(async (trx) => {
+        await applyItemLifecycleToggleTx(trx, {
+          itemId: id,
+          itemType: ITEM_TYPE,
+          isActive: nextIsActive,
+          userId: req.user ? req.user.id : null,
+        });
+      });
+      queueAuditLog(req, {
+        entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
+        entityId: id,
+        action: "DELETE",
+      });
+      return res.redirect(basePath);
+    } catch (err) {
+      const [rows, options, users] = await Promise.all([
+        loadRows(),
+        loadOptions(),
+        loadUsers(),
+      ]);
+      return renderIndex(req, res, {
+        rows,
+        ...options,
+        users,
+        error: res.locals.t("error_update_status"),
+        modalOpen: false,
+        modalMode: "create",
+      });
     }
+  },
+);
 
-    await knex("erp.items").where({ id }).del();
-    queueAuditLog(req, {
-      entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
-      entityId: id,
-      action: "DELETE",
-    });
-    return res.redirect(basePath);
-  } catch (err) {
-    const [rows, options, users] = await Promise.all([loadRows(), loadOptions(), loadUsers()]);
-    return renderIndex(req, res, {
-      rows,
-      ...options,
-      users,
-      error: res.locals.t("error_delete"),
-      modalOpen: false,
-      modalMode: "create",
-    });
-  }
-});
+router.post(
+  "/:id/delete",
+  requirePermission(
+    "SCREEN",
+    "master_data.products.semi_finished",
+    "hard_delete",
+  ),
+  async (req, res, next) => {
+    const id = Number(req.params.id);
+    if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
+    const basePath = `${req.baseUrl}`;
+    try {
+      const existing = await knex("erp.items")
+        .select("id", "name", "is_active")
+        .where({ id })
+        .first();
+      if (!existing)
+        return next(new HttpError(404, res.locals.t("error_not_found")));
+
+      const approval = await handleScreenApproval({
+        req,
+        scopeKey: "master_data.products.semi_finished",
+        action: "delete",
+        entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
+        entityId: id,
+        summary: `${res.locals.t("delete")} ${res.locals.t("semi_finished")}`,
+        oldValue: existing,
+        newValue: { _action: "delete", item_type: ITEM_TYPE },
+        t: res.locals.t,
+      });
+
+      if (approval.queued) {
+        return res.redirect(req.get("referer") || basePath);
+      }
+
+      await knex("erp.items").where({ id }).del();
+      queueAuditLog(req, {
+        entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
+        entityId: id,
+        action: "DELETE",
+      });
+      return res.redirect(basePath);
+    } catch (err) {
+      const [rows, options, users] = await Promise.all([
+        loadRows(),
+        loadOptions(),
+        loadUsers(),
+      ]);
+      return renderIndex(req, res, {
+        rows,
+        ...options,
+        users,
+        error: res.locals.t("error_delete"),
+        modalOpen: false,
+        modalMode: "create",
+      });
+    }
+  },
+);
 
 router.preview = {
   loadOptions,

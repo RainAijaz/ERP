@@ -57,6 +57,8 @@ test.describe("BOM Enter key flow", () => {
     const firstStageRow = stageRows.first();
     await expect(firstStageRow).toBeVisible();
     const deptSelect = firstStageRow.locator('select[data-col="dept_id"]');
+    await selectOptionForced(deptSelect, "");
+    await expect(deptSelect).toHaveValue("");
     const deptInput = deptSelect
       .locator("xpath=ancestor::*[@data-searchable-wrapper][1]//input[@type='text']")
       .first();

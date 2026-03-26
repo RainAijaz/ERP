@@ -458,7 +458,7 @@ const resolveHrScopeKey = (request, values = {}) => {
   if (scopeKey) return scopeKey;
 
   const mode = String(values?.mode || request?.new_value?.mode || "").toUpperCase();
-  if (mode === "BULK_COMMISSION_SKU_UPSERT") return "hr_payroll.commissions";
+  if (mode === "BULK_COMMISSION_SKU_UPSERT" || mode === "SKU_MULTI_UPSERT") return "hr_payroll.commissions";
   if (mode === "BULK_LABOUR_RATE_SKU_UPSERT") return "hr_payroll.labour_rates";
 
   const summary = String(request?.summary || "").toLowerCase();

@@ -1,0 +1,315 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - checkbox "Menu" [ref=e5]
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - link "CHAND EVA" [ref=e8] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e10]: ERP
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - generic [ref=e14]: Signed in as
+            - generic [ref=e15]: admin
+          - generic [ref=e16]:
+            - generic [ref=e17]: Branch
+            - generic [ref=e18]:
+              - generic [ref=e19]: Branch
+              - combobox "Branch" [ref=e20]:
+                - option "124" [selected]
+                - option "207"
+          - button "Logout" [ref=e22] [cursor=pointer]
+          - generic [ref=e23]:
+            - generic [ref=e24]: Language
+            - link "English" [ref=e25] [cursor=pointer]:
+              - /url: "?lang=en"
+            - generic [ref=e26]: "|"
+            - link "Urdu" [ref=e27] [cursor=pointer]:
+              - /url: "?lang=ur"
+      - navigation [ref=e28]:
+        - button "Administration" [ref=e30] [cursor=pointer]:
+          - generic [ref=e31]: Administration
+          - img [ref=e32]
+        - button "Master Data" [ref=e35] [cursor=pointer]:
+          - generic [ref=e36]: Master Data
+          - img [ref=e37]
+        - button "HR & Payroll" [ref=e40] [cursor=pointer]:
+          - generic [ref=e41]: HR & Payroll
+          - img [ref=e42]
+        - button "Financial" [ref=e45] [cursor=pointer]:
+          - generic [ref=e46]: Financial
+          - img [ref=e47]
+        - button "Purchase" [ref=e50] [cursor=pointer]:
+          - generic [ref=e51]: Purchase
+          - img [ref=e52]
+        - button "Production" [ref=e55] [cursor=pointer]:
+          - generic [ref=e56]: Production
+          - img [ref=e57]
+        - button "Inventory" [ref=e60] [cursor=pointer]:
+          - generic [ref=e61]: Inventory
+          - img [ref=e62]
+        - button "Outward & Returnables" [ref=e65] [cursor=pointer]:
+          - generic [ref=e66]: Outward & Returnables
+          - img [ref=e67]
+        - button "Sales" [ref=e70] [cursor=pointer]:
+          - generic [ref=e71]: Sales
+          - img [ref=e72]
+  - main [ref=e74]:
+    - generic [ref=e75]:
+      - generic [ref=e78]:
+        - heading "Add BOM" [level=1] [ref=e79]
+        - paragraph [ref=e80]: Complete the BOM setup first. Material, SFG, and labour sections unlock after that.
+      - generic [ref=e81]:
+        - generic [ref=e82]:
+          - generic [ref=e84]: BOM Setup
+          - generic [ref=e85]:
+            - generic [ref=e86]:
+              - text: Level
+              - generic [ref=e87]:
+                - textbox "Level Finished" [ref=e88]:
+                  - /placeholder: Select
+                  - text: Finished
+                - generic:
+                  - img
+                - combobox [ref=e89]:
+                  - option "Select"
+                  - option "Finished" [selected]
+                  - option "Semi-Finished"
+            - generic [ref=e90]:
+              - text: Article Name
+              - generic [ref=e91]:
+                - textbox "Article Name E2E FG 1774418466203471" [ref=e92]:
+                  - /placeholder: Select
+                  - text: E2E FG 1774418466203471
+                - generic:
+                  - img
+                - combobox [ref=e93]:
+                  - option "Select"
+                  - option "E2E FG 1774418466203471" [selected]
+                  - option "EVA Slipper 400"
+                  - option "J01"
+                  - option "P01"
+                  - option "W01"
+                  - option "W02"
+            - generic [ref=e94]:
+              - text: Planned Output Qty
+              - spinbutton "Planned Output Qty" [ref=e95]: "1.5"
+            - generic [ref=e96]:
+              - text: Output Unit (UOM)
+              - generic [ref=e97]:
+                - textbox "Output Unit (UOM) Pair" [ref=e98]:
+                  - /placeholder: Select
+                  - text: Pair
+                - generic:
+                  - img
+                - combobox [ref=e99]:
+                  - option "Select"
+                  - option "Dozen"
+                  - option "Pair" [selected]
+        - generic [ref=e100]:
+          - heading "Production Stages" [level=2] [ref=e102]
+          - table [ref=e104]:
+            - rowgroup [ref=e110]:
+              - row "Sr.No Department Mandatory In Flow Actions" [ref=e111]:
+                - columnheader "Sr.No" [ref=e112]
+                - columnheader "Department" [ref=e113]
+                - columnheader "Mandatory In Flow" [ref=e114]
+                - columnheader "Actions" [ref=e115]
+            - rowgroup [ref=e116]:
+              - row "1 CUTTINGG CUTTINGG Add Delete" [ref=e117]:
+                - cell "1" [ref=e118]
+                - cell "CUTTINGG CUTTINGG" [ref=e119]:
+                  - generic [ref=e120]:
+                    - textbox "Select" [ref=e121]: CUTTINGG
+                    - generic:
+                      - img
+                    - combobox [ref=e122]:
+                      - option "Select"
+                      - option "CUTTINGG" [selected]
+                - cell [ref=e123]:
+                  - checkbox [checked] [ref=e124]
+                - cell "Add Delete" [ref=e125]:
+                  - generic [ref=e126]:
+                    - button "Add" [ref=e127] [cursor=pointer]:
+                      - img [ref=e128]
+                    - button "Delete" [ref=e129] [cursor=pointer]:
+                      - img [ref=e130]
+              - row "2 Select Select Add Delete" [ref=e131]:
+                - cell "2" [ref=e132]
+                - cell "Select Select" [ref=e133]:
+                  - generic [ref=e134]:
+                    - textbox "Select" [ref=e135]
+                    - generic:
+                      - img
+                    - combobox [ref=e136]:
+                      - option "Select" [selected]
+                - cell [ref=e137]:
+                  - checkbox [checked] [ref=e138]
+                - cell "Add Delete" [ref=e139]:
+                  - generic [ref=e140]:
+                    - button "Add" [ref=e141] [cursor=pointer]:
+                      - img [ref=e142]
+                    - button "Delete" [ref=e143] [cursor=pointer]:
+                      - img [ref=e144]
+        - generic [ref=e145]:
+          - generic [ref=e146]:
+            - heading "List Raw Material Used for This Article" [level=2] [ref=e147]
+            - generic [ref=e148]:
+              - button "Material Lines" [ref=e149] [cursor=pointer]
+              - button "SKU Rules" [ref=e150] [cursor=pointer]
+          - generic [ref=e151]:
+            - generic [ref=e152]:
+              - heading "Material Lines" [level=3] [ref=e153]
+              - paragraph [ref=e154]: Add raw materials and departments here. Enter quantities in SKU Rules.
+            - table [ref=e156]:
+              - rowgroup [ref=e164]:
+                - row "Material Base Unit Consumption Department Required Qty normal_loss_pct Actions" [ref=e165]:
+                  - columnheader "Material" [ref=e166]
+                  - columnheader "Base Unit" [ref=e167]
+                  - columnheader "Consumption Department" [ref=e168]
+                  - columnheader "Required Qty" [ref=e169]
+                  - columnheader "normal_loss_pct" [ref=e170]
+                  - columnheader "Actions" [ref=e171]
+              - rowgroup [ref=e172]:
+                - row "E2E RM 1774418466203471 E2E RM 1774418466203471 Dozen CUTTINGG CUTTINGG 1 0 Add Delete" [ref=e173]:
+                  - cell "E2E RM 1774418466203471 E2E RM 1774418466203471" [ref=e174]:
+                    - generic [ref=e175]:
+                      - textbox "Select" [ref=e176]: E2E RM 1774418466203471
+                      - generic:
+                        - img
+                      - combobox [ref=e177]:
+                        - option "Select"
+                        - option "ANWAAR FANCY"
+                        - option "black"
+                        - option "CARTON"
+                        - option "E2E RM 1773946548418405"
+                        - option "E2E RM 1774418466203471" [selected]
+                        - option "E2E RM neg1770614079168495"
+                        - option "EVA DANA"
+                        - option "EVR DANA"
+                        - option "PATAWA"
+                        - option "PEARLS"
+                        - option "PU CHEMICALS"
+                        - option "RAYGZEEN"
+                        - option "STICKERS"
+                        - option "THAILI"
+                        - option "XTOOCH STICKER"
+                  - cell "Dozen" [ref=e178]:
+                    - textbox [ref=e179]: Dozen
+                  - cell "CUTTINGG CUTTINGG" [ref=e180]:
+                    - generic [ref=e181]:
+                      - textbox "Select" [ref=e182]: CUTTINGG
+                      - generic:
+                        - img
+                      - combobox [ref=e183]:
+                        - option "Select"
+                        - option "CUTTINGG" [selected]
+                  - cell "1" [ref=e184]:
+                    - spinbutton [ref=e185]: "1"
+                  - cell "0" [ref=e186]:
+                    - spinbutton [ref=e187]: "0"
+                  - cell "Add Delete" [ref=e188]:
+                    - generic [ref=e189]:
+                      - button "Add" [ref=e190] [cursor=pointer]:
+                        - img [ref=e191]
+                      - button "Delete" [ref=e192] [cursor=pointer]:
+                        - img [ref=e193]
+        - generic [ref=e194]:
+          - heading "List Semi-Finished Products Used For Each SKU" [level=2] [ref=e196]
+          - table [ref=e198]:
+            - rowgroup [ref=e199]:
+              - row "Article SKU Step SKU Step Quantity Base Unit" [ref=e200]:
+                - columnheader "Article SKU" [ref=e201]
+                - columnheader "Step SKU" [ref=e202]
+                - columnheader "Step Quantity" [ref=e203]
+                - columnheader "Base Unit" [ref=e204]
+            - rowgroup [ref=e205]:
+              - row "E2E-FG-1774418466203471 E2E-SFG-1774418466203471 E2E-SFG-1774418466203471 Pair" [ref=e206]:
+                - cell "E2E-FG-1774418466203471" [ref=e207]:
+                  - textbox [ref=e208]: E2E-FG-1774418466203471
+                - cell "E2E-SFG-1774418466203471 E2E-SFG-1774418466203471" [ref=e209]:
+                  - generic [ref=e210]:
+                    - textbox "Select" [ref=e211]: E2E-SFG-1774418466203471
+                    - generic:
+                      - img
+                    - combobox [ref=e212]:
+                      - option "Select"
+                      - option "E2E-SFG-1774418466203471" [selected]
+                - cell [ref=e213]:
+                  - spinbutton [ref=e214]: "1"
+                - cell "Pair" [ref=e215]:
+                  - textbox [ref=e216]: Pair
+        - generic [ref=e217]:
+          - generic [ref=e218]:
+            - heading "List Labour Rates For This Article" [level=2] [ref=e219]
+            - generic [ref=e220]:
+              - button "Labours Selection" [ref=e221] [cursor=pointer]
+              - button "SKU Rules" [active] [ref=e222] [cursor=pointer]
+          - generic [ref=e223]:
+            - generic [ref=e225]:
+              - heading "SKU Rules" [level=3] [ref=e226]
+              - paragraph [ref=e227]: Select a SKU to add labour rates based on rate type.
+              - button "E2E-FG-1774418466203471" [ref=e229] [cursor=pointer]
+            - table [ref=e231]:
+              - rowgroup [ref=e232]:
+                - row "Labours Department Rate Rate Type" [ref=e233]:
+                  - columnheader "Labours" [ref=e234]
+                  - columnheader "Department" [ref=e235]
+                  - columnheader "Rate" [ref=e236]
+                  - columnheader "Rate Type" [ref=e237]
+              - rowgroup [ref=e238]:
+                - row "E2E Labour 350371 CUTTINGG Locked (from Labour Rates) Per Pair" [ref=e239]:
+                  - cell "E2E Labour 350371" [ref=e240]
+                  - cell "CUTTINGG" [ref=e241]
+                  - cell "Locked (from Labour Rates)" [ref=e242]:
+                    - spinbutton [ref=e243]
+                    - generic [ref=e244]: Locked (from Labour Rates)
+                  - cell "Per Pair" [ref=e245]
+                - row "E2E name 1770453355018 CUTTINGG 60 Locked (from Labour Rates) Per Dozen" [ref=e246]:
+                  - cell "E2E name 1770453355018" [ref=e247]
+                  - cell "CUTTINGG" [ref=e248]
+                  - cell "60 Locked (from Labour Rates)" [ref=e249]:
+                    - spinbutton [ref=e250]: "60"
+                    - generic [ref=e251]: Locked (from Labour Rates)
+                  - cell "Per Dozen" [ref=e252]
+                - row "E2E name 1770454038361 CUTTINGG 60 Locked (from Labour Rates) Per Dozen" [ref=e253]:
+                  - cell "E2E name 1770454038361" [ref=e254]
+                  - cell "CUTTINGG" [ref=e255]
+                  - cell "60 Locked (from Labour Rates)" [ref=e256]:
+                    - spinbutton [ref=e257]: "60"
+                    - generic [ref=e258]: Locked (from Labour Rates)
+                  - cell "Per Dozen" [ref=e259]
+                - row "E2E name 1770454635501 CUTTINGG 60 Locked (from Labour Rates) Per Dozen" [ref=e260]:
+                  - cell "E2E name 1770454635501" [ref=e261]
+                  - cell "CUTTINGG" [ref=e262]
+                  - cell "60 Locked (from Labour Rates)" [ref=e263]:
+                    - spinbutton [ref=e264]: "60"
+                    - generic [ref=e265]: Locked (from Labour Rates)
+                  - cell "Per Dozen" [ref=e266]
+                - row "ASLAM BHAI EVA MACHINE CUTTINGG 60 Locked (from Labour Rates) Per Dozen" [ref=e267]:
+                  - cell "ASLAM BHAI EVA MACHINE" [ref=e268]
+                  - cell "CUTTINGG" [ref=e269]
+                  - cell "60 Locked (from Labour Rates)" [ref=e270]:
+                    - spinbutton [ref=e271]: "60"
+                    - generic [ref=e272]: Locked (from Labour Rates)
+                  - cell "Per Dozen" [ref=e273]
+                - row "ASLAM BHAI EVA MACHINE CUTTINGG 48 Locked (from Labour Rates) Per Pair" [ref=e274]:
+                  - cell "ASLAM BHAI EVA MACHINE" [ref=e275]
+                  - cell "CUTTINGG" [ref=e276]
+                  - cell "48 Locked (from Labour Rates)" [ref=e277]:
+                    - spinbutton [ref=e278]: "48"
+                    - generic [ref=e279]: Locked (from Labour Rates)
+                  - cell "Per Pair" [ref=e280]
+                - row "E2E Labour 1774418466203471 CUTTINGG 15 Locked (from Labour Rates) Per Pair" [ref=e281]:
+                  - cell "E2E Labour 1774418466203471" [ref=e282]
+                  - cell "CUTTINGG" [ref=e283]
+                  - cell "15 Locked (from Labour Rates)" [ref=e284]:
+                    - spinbutton [ref=e285]: "15"
+                    - generic [ref=e286]: Locked (from Labour Rates)
+                  - cell "Per Pair" [ref=e287]
+        - button "Save Draft" [ref=e289] [cursor=pointer]
+    - generic [ref=e290]: ERP System © 2026
+```

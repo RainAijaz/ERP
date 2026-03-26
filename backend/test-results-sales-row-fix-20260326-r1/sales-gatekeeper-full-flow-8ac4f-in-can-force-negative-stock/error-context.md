@@ -1,0 +1,198 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - checkbox "Menu" [ref=e5]
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - link "CHAND EVA" [ref=e8] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e10]: ERP
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - generic [ref=e14]: Signed in as
+            - generic [ref=e15]: admin
+          - generic [ref=e16]:
+            - generic [ref=e17]: Branch
+            - generic [ref=e18]:
+              - generic [ref=e19]: Branch
+              - combobox "Branch" [ref=e20]:
+                - option "124" [selected]
+                - option "207"
+          - button "Logout" [ref=e22] [cursor=pointer]
+          - generic [ref=e23]:
+            - generic [ref=e24]: Language
+            - link "English" [ref=e25] [cursor=pointer]:
+              - /url: "?lang=en"
+            - generic [ref=e26]: "|"
+            - link "Urdu" [ref=e27] [cursor=pointer]:
+              - /url: "?lang=ur"
+      - navigation [ref=e28]:
+        - button "Administration" [ref=e30] [cursor=pointer]:
+          - generic [ref=e31]: Administration
+          - img [ref=e32]
+        - button "Master Data" [ref=e35] [cursor=pointer]:
+          - generic [ref=e36]: Master Data
+          - img [ref=e37]
+        - button "HR & Payroll" [ref=e40] [cursor=pointer]:
+          - generic [ref=e41]: HR & Payroll
+          - img [ref=e42]
+        - button "Financial" [ref=e45] [cursor=pointer]:
+          - generic [ref=e46]: Financial
+          - img [ref=e47]
+        - button "Purchase" [ref=e50] [cursor=pointer]:
+          - generic [ref=e51]: Purchase
+          - img [ref=e52]
+        - button "Production" [ref=e55] [cursor=pointer]:
+          - generic [ref=e56]: Production
+          - img [ref=e57]
+        - button "Inventory" [ref=e60] [cursor=pointer]:
+          - generic [ref=e61]: Inventory
+          - img [ref=e62]
+        - button "Outward & Returnables" [ref=e65] [cursor=pointer]:
+          - generic [ref=e66]: Outward & Returnables
+          - img [ref=e67]
+        - button "Sales" [ref=e70] [cursor=pointer]:
+          - generic [ref=e71]: Sales
+          - img [ref=e72]
+  - main [ref=e74]:
+    - generic [ref=e75]:
+      - generic [ref=e78]:
+        - heading "Sales Voucher" [level=1] [ref=e79]
+        - paragraph [ref=e80]: Sales
+      - generic [ref=e82]:
+        - generic [ref=e83]:
+          - generic [ref=e84]:
+            - generic [ref=e85]: Voucher No
+            - textbox [ref=e87]: "15"
+            - generic [ref=e88]:
+              - link "Prev" [ref=e89] [cursor=pointer]:
+                - /url: /vouchers/sales?voucher_no=14&view=1
+              - link "Next" [ref=e90] [cursor=pointer]:
+                - /url: /vouchers/sales?new=1
+              - button "Load" [ref=e91] [cursor=pointer]
+              - generic [ref=e92]:
+                - button "Delete" [disabled] [ref=e93] [cursor=pointer]
+                - button "Print" [ref=e94] [cursor=pointer]
+                - button "Print Gate Pass" [disabled] [ref=e95] [cursor=pointer]
+          - generic [ref=e96]:
+            - generic [ref=e97]: Date
+            - textbox [ref=e99]: 2026-03-26
+            - generic [ref=e100]: Bill Number
+            - textbox [ref=e102]: E2E-1774544401713
+          - generic [ref=e103]:
+            - generic [ref=e104]: Payment Type
+            - generic [ref=e106]:
+              - button "Cash Sale" [pressed] [ref=e107] [cursor=pointer]
+              - button "Credit Sale" [ref=e108] [cursor=pointer]
+            - generic [ref=e109]: Payment Received Account (if any)
+            - generic [ref=e111]:
+              - textbox "Select Account Name" [ref=e112]
+              - generic:
+                - img
+              - combobox [ref=e113]:
+                - option "Select Account Name" [selected]
+                - option "AHSAN - CASH IN HAND"
+                - option "HUMAIR - CASH IN HAND"
+          - generic [ref=e114]:
+            - generic [ref=e115]: Customer Name
+            - generic [ref=e117]:
+              - textbox "Select Customer" [ref=e118]: AFSAR KHAN PESHAWAR
+              - generic:
+                - img
+              - combobox [ref=e119]:
+                - option "Select Customer"
+                - option "AFSAR KHAN PESHAWAR" [selected]
+                - option "E2E name 1770477509559_7"
+                - option "E2E name 1770478855220_7"
+                - option "E2E name 1771398105030_7"
+                - option "E2E name 1771399190781_7"
+                - option "E2E Party 1770368544483"
+                - option "E2E Party Edited 1770477252408"
+                - option "E2E Party Edited 1770478853363"
+                - option "E2E Party Edited 1771398102994"
+                - option "E2E Party Edited 1771399188180"
+                - option "HAMZA TRADERS"
+                - option "Hoorain Aijazzz"
+                - option "KR EVA"
+                - option "MALIK ASHRAF"
+            - generic [ref=e120]: Sales Order Link
+            - generic [ref=e122]:
+              - textbox [ref=e123]
+              - button "Sales Order Link" [ref=e124] [cursor=pointer]:
+                - img [ref=e125]
+          - generic [ref=e128]:
+            - generic [ref=e129]: Phone Number
+            - textbox "Enter a valid phone number" [ref=e132]:
+              - /placeholder: 03XXXXXXXXX
+            - generic [ref=e133]: Delivery Method
+            - generic [ref=e135]:
+              - textbox "Search" [ref=e136]: Customer Pickup
+              - generic:
+                - img
+              - combobox [ref=e137]:
+                - option "Customer Pickup" [selected]
+                - option "Our Delivery"
+          - generic [ref=e138]:
+            - generic [ref=e139]: Salesman
+            - generic [ref=e141]:
+              - textbox "Select Salesman" [ref=e142]: AHSAN
+              - generic:
+                - img
+              - combobox [ref=e143]:
+                - option "Select Salesman"
+                - option "AHSAN" [selected]
+                - option "ALI HAYDERR"
+                - option "BOOTA"
+                - option "E2E Employee 350146"
+                - option "E2E name 1770453352192"
+                - option "E2E name 1770454036161"
+                - option "E2E name 1770454402303"
+                - option "E2E name 1770454632185"
+            - generic [ref=e144]: Remarks
+            - textbox "Remarks" [ref=e146]
+        - table [ref=e149]:
+          - rowgroup [ref=e150]:
+            - row "Article Unit Sale Qty Return Qty Return Reason Pair Rate Pair Discount Total Discount Total Actions Sr.No" [ref=e151]:
+              - columnheader "Article" [ref=e152]
+              - columnheader "Unit" [ref=e153]
+              - columnheader "Sale Qty" [ref=e154]
+              - columnheader "Return Qty" [ref=e155]
+              - columnheader "Return Reason" [ref=e156]
+              - columnheader "Pair Rate" [ref=e157]
+              - columnheader "Pair Discount" [ref=e158]
+              - columnheader "Total Discount" [ref=e159]
+              - columnheader "Total" [ref=e160]
+              - columnheader "Actions" [ref=e161]
+              - columnheader "Sr.No" [ref=e162]
+          - rowgroup
+          - rowgroup [ref=e163]:
+            - row "Total Add" [ref=e164]:
+              - cell "Total" [ref=e165]
+              - cell [ref=e166]:
+                - textbox [ref=e167]
+              - cell "Add" [ref=e168]:
+                - button "Add" [active] [ref=e169] [cursor=pointer]:
+                  - img [ref=e170]
+              - cell [ref=e171]
+        - generic [ref=e173]:
+          - generic [ref=e174]:
+            - generic [ref=e175]: Total Sales Amount
+            - textbox [ref=e176]
+          - generic [ref=e177]:
+            - generic [ref=e178]: Total Returns Amount
+            - textbox [ref=e179]
+          - generic [ref=e180]:
+            - generic [ref=e181]: Extra Discount
+            - textbox [ref=e182]
+          - generic [ref=e183]:
+            - generic [ref=e184]: Final Amount
+            - textbox [ref=e185]
+          - generic [ref=e186]:
+            - generic [ref=e187]: Payment Received Amount
+            - textbox [ref=e188]
+        - button "Confirm" [ref=e190] [cursor=pointer]
+    - generic [ref=e191]: ERP System © 2026
+```

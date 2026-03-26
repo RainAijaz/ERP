@@ -13,7 +13,6 @@ const voucherEngineRoutes = require("./voucher-engine");
 const departmentCompletionRoutes = require("./department-completion");
 const productionPlanningRoutes = require("./production-planning");
 const consumptionRoutes = require("./consumption");
-const labourProductionRoutes = require("./labour-production");
 const abnormalLossRoutes = require("./abnormal-loss");
 
 const router = express.Router();
@@ -49,7 +48,6 @@ router.use("/returnables", returnablesLegacyRoutes);
 router.use("/department-completion", departmentCompletionRoutes);
 router.use("/production-planning", productionPlanningRoutes);
 router.use("/consumption", consumptionRoutes);
-router.use("/labour-production", labourProductionRoutes);
 router.use("/abnormal-loss", abnormalLossRoutes);
 router.use("/engine", voucherEngineRoutes);
 

@@ -35,7 +35,9 @@
     </div>
     <div class="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
       <div class="text-sm font-semibold text-slate-700"><%= t("list") %> <%= t(page.titleKey) %></div>
-      <%- include("../base/partials/table-controls", { t, showStatus: page.scopeKey !== "hr_payroll.labour_rates", showFilters: true }) %>
+      <div class="flex flex-wrap items-center gap-3">
+        <%- include("../base/partials/table-controls", { t, showStatus: page.scopeKey !== "hr_payroll.labour_rates", showFilters: true }) %>
+      </div>
     </div>
     <form method="GET" action="" data-filter-form>
       <%- include("../base/partials/filter-modal", { t, bodyPartial: "../../hr_payroll/filter-fields.ejs", serverFilters: true }) %>
@@ -64,6 +66,9 @@
                 data-account-type="<%= row.payroll_type || row.apply_on || row.amount_type || row.rate_type || "" %>"
                 data-account-group="<%= row.department_name || row.commission_basis || row.frequency || "" %>"
                 data-branch="<%= row.branch_names || "" %>"
+                data-rate-type="<%= row.rate_type || '' %>"
+                data-rate-amount="<%= page.scopeKey === 'hr_payroll.commissions' ? (row.value ?? '') : (row.rate_value ?? '') %>"
+                data-commission-basis="<%= row.commission_basis || '' %>"
                 data-rule-id="<%= row.id || '' %>"
                 data-labour-id="<%= row.labour_id || '' %>"
                 data-dept-id="<%= row.dept_id || '' %>"
@@ -73,7 +78,9 @@
               >
                 <td class="px-4 py-3 text-slate-700"><%= idx + 1 %></td>
                 <% displayColumns.forEach(function(column) { %>
-                  <td class="px-4 py-3 text-slate-700">
+                  <% const isRateAmountColumn = (page.scopeKey === "hr_payroll.labour_rates" && column.key === "rate_value") || (page.scopeKey === "hr_payroll.commissions" && column.key === "value"); %>
+                  <% const isRateTypeColumn = column.key === "rate_type"; %>
+                  <td class="px-4 py-3 text-slate-700" <%= isRateAmountColumn ? 'data-rate-value-cell' : '' %> <%= isRateTypeColumn ? 'data-rate-type-cell' : '' %>>
                     <% if (column.key === "status") { %>
                       <span class="inline-flex items-center whitespace-nowrap rounded-full border <%= (row[column.key] || "").toLowerCase() === "active" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700" %> px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em]">
                         <%= t((row[column.key] || "").toLowerCase() === "active" ? "active" : "inactive") %>
@@ -162,6 +169,7 @@
 
 <%- include("../base/partials/confirm-modal", { t, csrfToken }) %>
 <%- include("../base/partials/basic-info-utils", { t, page, basePath, modalOpen, modalMode }) %>
+<script><%- include("../base/partials/searchable-select.js") %></script>
 <script>
   (function () {
     const form = document.querySelector("[data-modal-form]");
@@ -235,6 +243,68 @@
     setTimeout(refreshConditionalFields, 0);
   })();
 </script>
+<script>
+  (function () {
+    const rateViewSelect = document.querySelector('[name="rate_view"]');
+    if (!rateViewSelect) return;
+
+    const PAIRS_PER_DOZEN = 12;
+    const scopeKey = "<%= page.scopeKey %>";
+    const tPerDozen = "<%= t('rate_type_per_dozen') || 'Per Dozen' %>";
+    const tPerPair = "<%= t('rate_type_per_pair') || 'Per Pair' %>";
+
+    const toNumber = (value) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+
+    const normalizeRateType = (rawValue, fallback = "PER_PAIR") => {
+      const raw = String(rawValue || "").trim().toUpperCase().replace(/[\s-]+/g, "_");
+      if (!raw) return fallback;
+      if (raw === "PAIR" || raw === "PERPAIR") return "PER_PAIR";
+      if (raw === "DOZEN" || raw === "PERDOZEN") return "PER_DOZEN";
+      if (raw === "PER_PAIR" || raw === "PER_DOZEN") return raw;
+      return fallback;
+    };
+
+    const convertRate = (value, sourceType, targetType) => {
+      if (!Number.isFinite(value)) return null;
+      const src = normalizeRateType(sourceType, "PER_PAIR");
+      const target = normalizeRateType(targetType, "PER_DOZEN");
+      if (src === target) return value;
+      if (src === "PER_PAIR" && target === "PER_DOZEN") return value * PAIRS_PER_DOZEN;
+      if (src === "PER_DOZEN" && target === "PER_PAIR") return value / PAIRS_PER_DOZEN;
+      return value;
+    };
+
+    const applyRateView = () => {
+      const targetType = normalizeRateType(rateViewSelect.value, "PER_DOZEN");
+      const rows = document.querySelectorAll("tr[data-row]");
+      rows.forEach((row) => {
+        const rateValueCell = row.querySelector("[data-rate-value-cell]");
+        const rateTypeCell = row.querySelector("[data-rate-type-cell]");
+
+        const rawValue = toNumber(row.getAttribute("data-rate-amount"));
+        const sourceType = normalizeRateType(row.getAttribute("data-rate-type"), "PER_PAIR");
+        const commissionBasis = String(row.getAttribute("data-commission-basis") || "").trim().toUpperCase();
+        const allowConversion = !(scopeKey === "hr_payroll.commissions" && commissionBasis && commissionBasis !== "FIXED_PER_UNIT");
+        const displayedRateType = allowConversion ? targetType : sourceType;
+
+        if (rateTypeCell) {
+          rateTypeCell.textContent = displayedRateType === "PER_DOZEN" ? tPerDozen : tPerPair;
+        }
+
+        if (!rateValueCell || !Number.isFinite(rawValue)) return;
+        const converted = allowConversion ? convertRate(rawValue, sourceType, targetType) : rawValue;
+        if (!Number.isFinite(converted)) return;
+        rateValueCell.textContent = converted.toFixed(2);
+      });
+    };
+
+    rateViewSelect.addEventListener("change", applyRateView);
+    applyRateView();
+  })();
+</script>
 <% if (page.scopeKey === "hr_payroll.commissions") { %>
 <script>
   (function () {
@@ -261,6 +331,7 @@
     const tUnableSave = "<%= t('error_unable_save') %>";
     const tRequiredFields = "<%= t('error_required_fields') %>";
     const tSelectCommissionBasis = "<%= t('error_select_commission_basis') %>";
+    const tSelectRateType = "<%= t('error_select_rate_type') %>";
     const tViewPendingApproval = "<%= t('view_pending_approval') %>";
     const tSaveSummaryTemplate = "<%= t('success_bulk_commission_saved_counts') %>";
 
@@ -270,6 +341,7 @@
       subgroupId: form.querySelector('[data-field="subgroup_id"]'),
       groupId: form.querySelector('[data-field="group_id"]'),
       commissionBasis: form.querySelector('[data-field="commission_basis"]'),
+      rateType: form.querySelector('[data-field="rate_type"]'),
       value: form.querySelector('[data-field="value"]'),
       reverseOnReturns: form.querySelector('[data-field="reverse_on_returns"]'),
       status: form.querySelector('[data-field="status"]'),
@@ -351,6 +423,10 @@
       if (fields.commissionBasis) {
         fields.commissionBasis.value = "";
         fields.commissionBasis.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      if (fields.rateType) {
+        fields.rateType.value = "PER_PAIR";
+        fields.rateType.dispatchEvent(new Event("change", { bubbles: true }));
       }
       if (fields.value) fields.value.value = "";
       if (fields.reverseOnReturns) fields.reverseOnReturns.checked = true;
@@ -436,9 +512,10 @@
     const getPreviewQuery = () => {
       const applyOn = normalizeApplyOn();
       const employeeId = String(fields.employeeId?.value || "").trim();
-      const commissionBasis = String(fields.commissionBasis?.value || "").trim();
+      const commissionBasis = String(fields.commissionBasis?.value || "FIXED_PER_UNIT").trim();
       const subgroupId = String(fields.subgroupId?.value || "").trim();
       const groupId = String(fields.groupId?.value || "").trim();
+      const rateType = String(fields.rateType?.value || "").trim();
 
       if (!applyOn) return null;
       if (applyOn === "SUBGROUP" && !subgroupId) return null;
@@ -451,6 +528,7 @@
       if (commissionBasis) params.set("commission_basis", commissionBasis);
       if (subgroupId) params.set("subgroup_id", subgroupId);
       if (groupId) params.set("group_id", groupId);
+      if (rateType) params.set("rate_type", rateType);
       return params;
     };
 
@@ -463,9 +541,10 @@
       hideModalError();
       hideModalNotice();
 
-      const commissionBasis = String(fields.commissionBasis?.value || "").trim();
-      if (!commissionBasis) {
-        clearRows(tSelectCommissionBasis);
+      const commissionBasis = String(fields.commissionBasis?.value || "FIXED_PER_UNIT").trim();
+      const rateType = String(fields.rateType?.value || "").trim();
+      if (!rateType) {
+        clearRows(tSelectRateType);
         return;
       }
 
@@ -513,6 +592,34 @@
       state.debounceTimer = window.setTimeout(loadPreview, 200);
     };
 
+    const normalizeCommaList = (raw) =>
+      String(raw || "")
+        .split(",")
+        .map((token) => token.trim())
+        .filter(Boolean);
+
+    const restoreMultiSelectFromSearchableText = (selectEl) => {
+      if (!(selectEl instanceof HTMLSelectElement) || !selectEl.multiple) return;
+      const selectedCount = Array.from(selectEl.selectedOptions || []).length;
+      if (selectedCount > 0) return;
+      const searchableInput = selectEl.closest("[data-searchable-wrapper]")?.querySelector('input[type="text"]');
+      if (!(searchableInput instanceof HTMLInputElement)) return;
+      const tokens = normalizeCommaList(searchableInput.value);
+      if (!tokens.length) return;
+      const lowerTokens = tokens.map((token) => token.toLowerCase());
+      let matched = 0;
+      Array.from(selectEl.options || []).forEach((option) => {
+        const label = String(option.textContent || "").trim().toLowerCase();
+        const isMatch = lowerTokens.some((token) => token && label === token);
+        option.selected = isMatch;
+        if (isMatch) matched += 1;
+      });
+      if (matched > 0) {
+        selectEl.dispatchEvent(new Event("input", { bubbles: true }));
+        selectEl.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+    };
+
     form.addEventListener("input", (event) => {
       const target = event.target;
       if (!target) return;
@@ -542,7 +649,7 @@
     form.addEventListener("change", (event) => {
       const target = event.target;
       if (!target) return;
-      if (target.matches("[data-field='employee_id'], [data-field='apply_on'], [data-field='subgroup_id'], [data-field='group_id'], [data-field='commission_basis']")) {
+      if (target.matches("[data-field='employee_id'], [data-field='apply_on'], [data-field='subgroup_id'], [data-field='group_id'], [data-field='commission_basis'], [data-field='rate_type']")) {
         schedulePreview();
       }
     });
@@ -564,15 +671,24 @@
       "submit",
       async (event) => {
         if (modal.dataset.mode !== "create") return;
-        if (!isBulkMode()) return;
+        if (!isBulkMode()) {
+          restoreMultiSelectFromSearchableText(fields.employeeId);
+          restoreMultiSelectFromSearchableText(form.querySelector('[data-field="sku_id"]'));
+          return;
+        }
         event.preventDefault();
         event.stopImmediatePropagation();
         hideModalError();
         hideModalNotice();
 
-        const commissionBasis = String(fields.commissionBasis?.value || "").trim();
+        const commissionBasis = String(fields.commissionBasis?.value || "FIXED_PER_UNIT").trim();
+        const rateType = String(fields.rateType?.value || "").trim();
         if (!commissionBasis) {
           showModalError(tSelectCommissionBasis);
+          return;
+        }
+        if (!rateType) {
+          showModalError(tSelectRateType);
           return;
         }
 
@@ -587,7 +703,8 @@
           apply_on: normalizeApplyOn(),
           subgroup_id: fields.subgroupId?.value || null,
           group_id: fields.groupId?.value || null,
-          commission_basis: fields.commissionBasis?.value || "",
+          commission_basis: commissionBasis,
+          rate_type: rateType,
           reverse_on_returns: Boolean(fields.reverseOnReturns?.checked),
           status: fields.status?.value || "active",
           rows: state.rows.map((row) => ({
@@ -674,7 +791,10 @@
     const tbody = document.querySelector("[data-labour-rate-bulk-body]");
     const skuBody = document.querySelector("[data-labour-rate-skus-body]");
     const skuToggle = document.querySelector("[data-labour-rate-skus-toggle]");
-    if (!form || !modal || !panel || !summary || !tbody || !labourScopePanel || !labourScopeSummary || !labourScopeList || !labourScopeBody || !labourScopeToggle || !skuBody || !skuToggle) return;
+    const hasLabourScopePanel = Boolean(labourScopePanel && labourScopeSummary && labourScopeList);
+    const hasLabourScopeAccordion = Boolean(labourScopeBody && labourScopeToggle);
+    const hasSkuAccordion = Boolean(skuBody && skuToggle);
+    if (!form || !modal || !panel || !summary || !tbody) return;
 
     const basePath = "<%= basePath %>";
     const csrfToken = "<%= csrfToken %>";
@@ -695,6 +815,7 @@
     const tSelectGroup = "<%= t('error_select_group') %>";
     const tSelectArticleType = "<%= t('error_select_article_type') %>";
     const tSelectRateType = "<%= t('error_select_rate_type') %>";
+    const tNoTargetSkus = "<%= t('error_no_target_skus_found') %>";
     const tViewPendingApproval = "<%= t('view_pending_approval') %>";
     const tSaveSummaryTemplate = "<%= t('success_bulk_labour_rate_saved_counts') %>";
     const tAppliesToLabours = "<%= t('applies_to_labours') %>";
@@ -717,6 +838,7 @@
       rateType: form.querySelector('[data-field="rate_type"]'),
       rateValue: form.querySelector('[data-field="rate_value"]'),
     };
+    const labourMultiRoot = form.querySelector('[data-field-wrapper="labour_id"] [data-multi-select]');
     const fieldsByName = {
       labour_id: fields.labourId,
       dept_id: fields.deptId,
@@ -741,8 +863,8 @@
     const editLockedFields = new Set(["labour_id", "dept_id", "apply_on", "sku_id", "subgroup_id", "group_id", "article_type"]);
     const editVisibleFields = new Set(["sku_id", "rate_type", "rate_value"]);
     let skuReadonlyText = null;
-
     const hideLabourScope = () => {
+      if (!hasLabourScopePanel) return;
       labourScopePanel.classList.add("hidden");
       labourScopeSummary.textContent = tSelectTarget;
       labourScopeList.innerHTML = "";
@@ -755,12 +877,30 @@
     };
 
     const normalizeApplyOn = () => String(fields.applyOn?.value || "").trim().toUpperCase();
+    const getSelectedLabourIds = () => {
+      if (!fields.labourId) return [];
+      const hiddenValues = String(fields.labourId.value || "")
+        .split(",")
+        .map((value) => value.trim())
+        .filter((value) => value);
+      if (hiddenValues.length) return hiddenValues;
+      return Array.from(fields.labourId.selectedOptions || [])
+        .map((option) => String(option.value || "").trim())
+        .filter((value) => value);
+    };
+    const getSelectedSkuIds = () => {
+      if (!fields.skuId) return [];
+      return Array.from(fields.skuId.selectedOptions || [])
+        .map((option) => String(option.value || "").trim())
+        .filter((value) => value);
+    };
     const isBulkApplyOn = () => {
       const applyOn = normalizeApplyOn();
       return applyOn === "SUBGROUP" || applyOn === "GROUP";
     };
 
     const renderLabourScope = (rows) => {
+      if (!hasLabourScopePanel) return;
       const safeRows = Array.isArray(rows) ? rows : [];
       if (!safeRows.length) {
         labourScopePanel.classList.remove("hidden");
@@ -779,9 +919,10 @@
     };
 
     const loadResolvedLabours = async () => {
-      const labourIdRaw = String(fields.labourId?.value || "").trim();
+      if (!hasLabourScopePanel) return;
+      const labourIds = getSelectedLabourIds();
       const deptIdRaw = String(fields.deptId?.value || "").trim();
-      if (labourIdRaw.toUpperCase() !== "ALL") {
+      if (!labourIds.length) {
         hideLabourScope();
         return;
       }
@@ -791,7 +932,7 @@
       }
       try {
         const params = new URLSearchParams({
-          labour_id: labourIdRaw,
+          labour_ids: labourIds.join(","),
           dept_id: deptIdRaw,
         });
         const response = await fetch(`${resolvedLaboursPath}?${params.toString()}`, {
@@ -814,15 +955,19 @@
       }
     };
 
-    labourScopeToggle.addEventListener("click", () => {
-      const isCollapsed = labourScopeToggle.dataset.collapsed === "true";
-      setCollapsedState(labourScopeToggle, labourScopeBody, !isCollapsed);
-    });
+    if (hasLabourScopeAccordion) {
+      labourScopeToggle.addEventListener("click", () => {
+        const isCollapsed = labourScopeToggle.dataset.collapsed === "true";
+        setCollapsedState(labourScopeToggle, labourScopeBody, !isCollapsed);
+      });
+    }
 
-    skuToggle.addEventListener("click", () => {
-      const isCollapsed = skuToggle.dataset.collapsed === "true";
-      setCollapsedState(skuToggle, skuBody, !isCollapsed);
-    });
+    if (hasSkuAccordion) {
+      skuToggle.addEventListener("click", () => {
+        const isCollapsed = skuToggle.dataset.collapsed === "true";
+        setCollapsedState(skuToggle, skuBody, !isCollapsed);
+      });
+    }
 
     const resetDepartmentOptions = () => {
       if (!fields.deptId) return;
@@ -846,15 +991,16 @@
     };
 
     const syncDepartmentOptions = async ({ preserveSelection = true } = {}) => {
-      const labourId = String(fields.labourId?.value || "").trim();
+      const labourIds = getSelectedLabourIds();
+      const labourIdsKey = labourIds.join(",");
       const currentDept = preserveSelection ? String(fields.deptId?.value || "").trim() : "";
       const requestSeq = ++state.deptOptionsSeq;
-      if (!labourId) {
+      if (!labourIds.length) {
         resetDepartmentOptions();
         return;
       }
       try {
-        const params = new URLSearchParams({ labour_id: labourId });
+        const params = new URLSearchParams({ labour_ids: labourIdsKey });
         const response = await fetch(`${departmentOptionsPath}?${params.toString()}`, {
           method: "GET",
           headers: { Accept: "application/json" },
@@ -867,7 +1013,7 @@
         }
         if (requestSeq !== state.deptOptionsSeq) return;
         if (modal.classList.contains("hidden")) return;
-        if (String(fields.labourId?.value || "").trim() !== labourId) return;
+        if (getSelectedLabourIds().join(",") !== labourIdsKey) return;
         if (!response.ok) {
           resetDepartmentOptions();
           return;
@@ -880,46 +1026,70 @@
 
     const resetSkuOptions = () => {
       if (!fields.skuId) return;
-      fields.skuId.innerHTML = `<option value="">${tSelect}</option>`;
-      fields.skuId.value = "";
-      fields.skuId.dispatchEvent(new Event("change", { bubbles: true }));
-    };
-
-    const applySkuOptions = (options, selectedValue = "", selectedLabel = "") => {
-      if (!fields.skuId) return;
-      const safeOptions = Array.isArray(options) ? options : [];
-      const exists = selectedValue && safeOptions.some((opt) => String(opt.value) === String(selectedValue));
-      const allOptions = [...safeOptions];
-      if (selectedValue && !exists) {
-        allOptions.unshift({
-          value: selectedValue,
-          label: selectedLabel || selectedValue,
+      fields.skuId.innerHTML = fields.skuId.multiple ? "" : `<option value="">${tSelect}</option>`;
+      if (fields.skuId.multiple) {
+        Array.from(fields.skuId.options || []).forEach((option) => {
+          option.selected = false;
         });
-      }
-      const optionHtml = allOptions
-        .map((option) => `<option value="${String(option.value)}">${String(option.label || option.value)}</option>`)
-        .join("");
-      fields.skuId.innerHTML = `<option value="">${tSelect}</option>${optionHtml}`;
-      if (selectedValue && allOptions.some((opt) => String(opt.value) === String(selectedValue))) {
-        fields.skuId.value = String(selectedValue);
       } else {
         fields.skuId.value = "";
       }
       fields.skuId.dispatchEvent(new Event("change", { bubbles: true }));
     };
 
-    const syncSkuOptions = async ({ preserveSelection = true, selectedValue = "", selectedLabel = "" } = {}) => {
+    const applySkuOptions = (options, selectedValues = [], selectedLabel = "") => {
+      if (!fields.skuId) return;
+      const safeOptions = Array.isArray(options) ? options : [];
+      const selectedList = Array.isArray(selectedValues)
+        ? selectedValues.map((value) => String(value || "").trim()).filter((value) => value)
+        : String(selectedValues || "").trim()
+          ? [String(selectedValues).trim()]
+          : [];
+      const existingValueSet = new Set(safeOptions.map((opt) => String(opt.value)));
+      const allOptions = [...safeOptions];
+      selectedList.forEach((selectedValue) => {
+        if (!existingValueSet.has(String(selectedValue))) {
+          allOptions.unshift({
+            value: selectedValue,
+            label: selectedLabel || selectedValue,
+          });
+        }
+      });
+      const optionHtml = allOptions
+        .map((option) => `<option value="${String(option.value)}">${String(option.label || option.value)}</option>`)
+        .join("");
+      fields.skuId.innerHTML = fields.skuId.multiple ? optionHtml : `<option value="">${tSelect}</option>${optionHtml}`;
+      if (fields.skuId.multiple) {
+        const selectedSet = new Set(selectedList);
+        Array.from(fields.skuId.options || []).forEach((option) => {
+          option.selected = selectedSet.has(String(option.value));
+        });
+      } else {
+        const selectedValue = selectedList[0] || "";
+        if (selectedValue && allOptions.some((opt) => String(opt.value) === String(selectedValue))) {
+          fields.skuId.value = String(selectedValue);
+        } else {
+          fields.skuId.value = "";
+        }
+      }
+      fields.skuId.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+
+    const syncSkuOptions = async ({ preserveSelection = true, selectedValues = [], selectedLabel = "" } = {}) => {
       const applyOn = String(fields.applyOn?.value || "").trim().toUpperCase();
       const articleType = String(fields.articleType?.value || "").trim().toUpperCase();
       const requestSeq = ++state.skuOptionsSeq;
-      const currentSku = preserveSelection ? String(fields.skuId?.value || "").trim() : "";
-      const targetSku = selectedValue || currentSku;
-      if (applyOn !== "SKU" || !articleType) {
+      const currentSkus = preserveSelection ? getSelectedSkuIds() : [];
+      const targetSkus = Array.isArray(selectedValues) && selectedValues.length ? selectedValues : currentSkus;
+      if (applyOn !== "SKU") {
         resetSkuOptions();
         return;
       }
       try {
-        const params = new URLSearchParams({ article_type: articleType });
+        const params = new URLSearchParams();
+        if (articleType) {
+          params.set("article_type", articleType);
+        }
         const response = await fetch(`${skuOptionsPath}?${params.toString()}`, {
           method: "GET",
           headers: { Accept: "application/json" },
@@ -936,7 +1106,7 @@
           resetSkuOptions();
           return;
         }
-        applySkuOptions(payload.options, targetSku, selectedLabel);
+        applySkuOptions(payload.options, targetSkus, selectedLabel);
       } catch (err) {
         resetSkuOptions();
       }
@@ -1126,28 +1296,31 @@
     };
 
     const getPreviewQuery = () => {
-      const labourId = String(fields.labourId?.value || "").trim();
+      const labourIds = getSelectedLabourIds();
       const deptId = String(fields.deptId?.value || "").trim();
       const applyOn = String(fields.applyOn?.value || "").trim().toUpperCase();
-      const skuId = String(fields.skuId?.value || "").trim();
+      const skuIds = getSelectedSkuIds();
       const subgroupId = String(fields.subgroupId?.value || "").trim();
       const groupId = String(fields.groupId?.value || "").trim();
       const articleType = String(fields.articleType?.value || "").trim();
       const rateType = String(fields.rateType?.value || "").trim();
 
-      if (!labourId || !deptId || !applyOn || !articleType || !rateType) return null;
-      if (applyOn === "SKU" && !skuId) return null;
+      if (!labourIds.length || !deptId || !applyOn || !articleType || !rateType) return null;
+      if (applyOn === "SKU" && !skuIds.length) return null;
       if (applyOn === "SUBGROUP" && !subgroupId) return null;
       if (applyOn === "GROUP" && !groupId) return null;
 
       const params = new URLSearchParams({
-        labour_id: labourId,
+        labour_ids: labourIds.join(","),
         dept_id: deptId,
         apply_on: applyOn,
         article_type: articleType,
         rate_type: rateType,
       });
-      if (skuId) params.set("sku_id", skuId);
+      if (skuIds.length) {
+        params.set("sku_ids", skuIds.join(","));
+        params.set("sku_id", skuIds[0]);
+      }
       if (subgroupId) params.set("subgroup_id", subgroupId);
       if (groupId) params.set("group_id", groupId);
       return params;
@@ -1162,7 +1335,7 @@
       hideModalError();
       hideModalNotice();
 
-      if (!fields.labourId?.value) {
+      if (!getSelectedLabourIds().length) {
         clearRows(tSelectLabour);
         return;
       }
@@ -1175,7 +1348,7 @@
         clearRows(tSelectTarget);
         return;
       }
-      if (applyOn === "SKU" && !fields.skuId?.value) {
+      if (applyOn === "SKU" && !getSelectedSkuIds().length) {
         clearRows(tSelectSku);
         return;
       }
@@ -1244,7 +1417,17 @@
       state.deptOptionsSeq += 1;
       state.skuOptionsSeq += 1;
       if (fields.labourId) {
-        fields.labourId.value = "";
+        if (fields.labourId.tagName === "SELECT") {
+          Array.from(fields.labourId.options || []).forEach((option) => {
+            option.selected = false;
+          });
+        } else {
+          fields.labourId.value = "";
+          labourMultiRoot?.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
+            checkbox.checked = false;
+          });
+          labourMultiRoot?.querySelector("[data-multi-trigger]")?.replaceChildren(document.createTextNode(tSelect));
+        }
         fields.labourId.dispatchEvent(new Event("change", { bubbles: true }));
       }
       resetDepartmentOptions();
@@ -1258,7 +1441,13 @@
         fields.applyOn.dispatchEvent(new Event("change", { bubbles: true }));
       }
       if (fields.skuId) {
-        fields.skuId.value = "";
+        if (fields.skuId.multiple) {
+          Array.from(fields.skuId.options || []).forEach((option) => {
+            option.selected = false;
+          });
+        } else {
+          fields.skuId.value = "";
+        }
         fields.skuId.dispatchEvent(new Event("change", { bubbles: true }));
       }
       if (fields.subgroupId) {
@@ -1277,8 +1466,12 @@
       hideModalError();
       hideModalNotice();
       hideLabourScope();
-      setCollapsedState(labourScopeToggle, labourScopeBody, true);
-      setCollapsedState(skuToggle, skuBody, true);
+      if (hasLabourScopeAccordion) {
+        setCollapsedState(labourScopeToggle, labourScopeBody, true);
+      }
+      if (hasSkuAccordion) {
+        setCollapsedState(skuToggle, skuBody, true);
+      }
       clearRows(tSelectTarget);
       setPanelVisibility();
     };
@@ -1347,6 +1540,9 @@
 
     document.addEventListener("modal:opened", (event) => {
       state.requestSeq += 1;
+      if (typeof window.initDataMultiSelects === "function") {
+        window.initDataMultiSelects(form);
+      }
       const modalMode = event?.detail?.mode || modal.dataset.mode || "create";
       let editSkuValue = "";
       let editSkuLabel = "";
@@ -1376,12 +1572,16 @@
       } else if (modalMode === "edit") {
         syncSkuOptions({
           preserveSelection: false,
-          selectedValue: editSkuValue,
+          selectedValues: editSkuValue ? [editSkuValue] : [],
           selectedLabel: editSkuLabel,
         });
       }
-      setCollapsedState(labourScopeToggle, labourScopeBody, true);
-      setCollapsedState(skuToggle, skuBody, true);
+      if (hasLabourScopeAccordion) {
+        setCollapsedState(labourScopeToggle, labourScopeBody, true);
+      }
+      if (hasSkuAccordion) {
+        setCollapsedState(skuToggle, skuBody, true);
+      }
     });
 
     const modalObserver = new MutationObserver(() => {
@@ -1400,15 +1600,15 @@
         hideModalError();
         hideModalNotice();
 
-        const labourId = String(fields.labourId?.value || "").trim();
+        const labourIds = getSelectedLabourIds();
         const deptId = String(fields.deptId?.value || "").trim();
         const applyOn = String(fields.applyOn?.value || "").trim().toUpperCase();
-        const skuId = String(fields.skuId?.value || "").trim();
+        const skuIds = getSelectedSkuIds();
         const subgroupId = String(fields.subgroupId?.value || "").trim();
         const groupId = String(fields.groupId?.value || "").trim();
         const articleType = String(fields.articleType?.value || "").trim();
         const rateType = String(fields.rateType?.value || "").trim();
-        if (!labourId) {
+        if (!labourIds.length) {
           showModalError(tSelectLabour);
           return;
         }
@@ -1420,7 +1620,7 @@
           showModalError(tSelectTarget);
           return;
         }
-        if (applyOn === "SKU" && !skuId) {
+        if (applyOn === "SKU" && !skuIds.length) {
           showModalError(tSelectSku);
           return;
         }
@@ -1441,16 +1641,17 @@
           return;
         }
         if (!state.rows.length) {
-          showModalError(tSelectTarget);
+          showModalError(tNoTargetSkus || tSelectTarget);
           return;
         }
 
         const payload = {
           _csrf: csrfToken,
-          labour_id: labourId,
+          labour_ids: labourIds,
           dept_id: deptId,
           apply_on: applyOn,
-          sku_id: skuId || null,
+          sku_id: skuIds[0] || null,
+          sku_ids: skuIds,
           subgroup_id: subgroupId || null,
           group_id: groupId || null,
           article_type: articleType,
@@ -1461,7 +1662,7 @@
           })),
         };
 
-        if (!payload.labour_id || !payload.dept_id || !payload.apply_on || !payload.article_type || !payload.rate_type) {
+        if (!Array.isArray(payload.labour_ids) || !payload.labour_ids.length || !payload.dept_id || !payload.apply_on || !payload.article_type || !payload.rate_type) {
           showModalError(tRequiredFields);
           return;
         }
@@ -1513,9 +1714,16 @@
     );
 
     setPanelVisibility();
+    if (typeof window.initDataMultiSelects === "function") {
+      window.initDataMultiSelects(form);
+    }
     hideLabourScope();
-    setCollapsedState(labourScopeToggle, labourScopeBody, true);
-    setCollapsedState(skuToggle, skuBody, true);
+    if (hasLabourScopeAccordion) {
+      setCollapsedState(labourScopeToggle, labourScopeBody, true);
+    }
+    if (hasSkuAccordion) {
+      setCollapsedState(skuToggle, skuBody, true);
+    }
     clearRows(tSelectTarget);
   })();
 </script>

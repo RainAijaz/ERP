@@ -315,7 +315,21 @@ const buildValues = (pageConfig, body) =>
       return acc;
     }
     if (field.type === "select") {
-      const value = (body[field.name] || "").trim();
+      const rawValue = body[field.name];
+      if (field.multiple === true) {
+        if (Array.isArray(rawValue)) {
+          acc[field.name] = rawValue.map((value) => String(value || "").trim()).filter(Boolean);
+          return acc;
+        }
+        if (rawValue && typeof rawValue === "object") {
+          acc[field.name] = Object.values(rawValue).map((value) => String(value || "").trim()).filter(Boolean);
+          return acc;
+        }
+        const single = String(rawValue || "").trim();
+        acc[field.name] = single ? [single] : [];
+        return acc;
+      }
+      const value = String(rawValue || "").trim();
       acc[field.name] = value === "" ? null : value;
       return acc;
     }
@@ -449,6 +463,8 @@ const createHrMasterRouter = (pageConfig) => {
       const subgroupValues = parseList(req.query.subgroup_id);
       const groupValues = parseList(req.query.group_id);
       const articleTypeValues = parseList(req.query.article_type).map((value) => String(value || "").trim().toUpperCase()).filter(Boolean);
+      const rateViewRaw = String(req.query.rate_view || "").trim().toUpperCase();
+      const rateView = rateViewRaw === "PER_PAIR" ? "PER_PAIR" : "PER_DOZEN";
       const applyOnMode = normalizeMode(req.query.apply_on_mode);
       const subgroupMode = normalizeMode(req.query.subgroup_mode);
       const groupMode = normalizeMode(req.query.group_mode);
@@ -563,6 +579,7 @@ const createHrMasterRouter = (pageConfig) => {
           group_mode: groupMode,
           article_type: articleTypeValues,
           article_type_mode: articleTypeMode,
+          rate_view: rateView,
         },
         basePath,
         values: flash ? flash.values : defaults,

@@ -562,7 +562,7 @@
         values[key] = items;
       });
       const hrBulkMode = String(panel?.dataset?.hrBulkMode || "").trim().toUpperCase();
-      if (hrBulkMode === "BULK_COMMISSION_SKU_UPSERT" || hrBulkMode === "BULK_LABOUR_RATE_SKU_UPSERT") {
+      if (hrBulkMode === "BULK_COMMISSION_SKU_UPSERT" || hrBulkMode === "SKU_MULTI_UPSERT" || hrBulkMode === "BULK_LABOUR_RATE_SKU_UPSERT") {
         let rows = [];
         try {
           rows = JSON.parse(panel?.dataset?.hrBulkRows || "[]");
@@ -765,7 +765,7 @@
       if (labourPanel) labourPanel.classList.add("hidden");
       if (labourScopePanel) labourScopePanel.classList.add("hidden");
 
-      if (mode === "BULK_COMMISSION_SKU_UPSERT" && commissionPanel && commissionBody && commissionSummary) {
+      if ((mode === "BULK_COMMISSION_SKU_UPSERT" || mode === "SKU_MULTI_UPSERT") && commissionPanel && commissionBody && commissionSummary) {
         commissionPanel.classList.remove("hidden");
         commissionSummary.textContent = rows.length ? String(rows.length) : previewText.noEntries;
         if (!rows.length) {
@@ -934,7 +934,8 @@
       return String(value.mode || "").trim().toUpperCase();
     };
 
-    const isHrBulkMode = (mode) => mode === "BULK_COMMISSION_SKU_UPSERT" || mode === "BULK_LABOUR_RATE_SKU_UPSERT";
+    const isHrBulkMode = (mode) =>
+      mode === "BULK_COMMISSION_SKU_UPSERT" || mode === "SKU_MULTI_UPSERT" || mode === "BULK_LABOUR_RATE_SKU_UPSERT";
 
     const open = async (payload) => {
       if (!modal) return;

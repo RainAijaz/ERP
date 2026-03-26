@@ -1,0 +1,195 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - checkbox "Menu" [ref=e5]
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - link "CHAND EVA" [ref=e8] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e10]: ERP
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - generic [ref=e14]: Signed in as
+            - generic [ref=e15]: admin
+          - generic [ref=e16]:
+            - generic [ref=e17]: Branch
+            - generic [ref=e18]:
+              - generic [ref=e19]: Branch
+              - combobox "Branch" [ref=e20]:
+                - option "124" [selected]
+                - option "207"
+          - button "Logout" [ref=e22] [cursor=pointer]
+          - generic [ref=e23]:
+            - generic [ref=e24]: Language
+            - link "English" [ref=e25] [cursor=pointer]:
+              - /url: "?lang=en"
+            - generic [ref=e26]: "|"
+            - link "Urdu" [ref=e27] [cursor=pointer]:
+              - /url: "?lang=ur"
+      - navigation [ref=e28]:
+        - button "Administration" [ref=e30] [cursor=pointer]:
+          - generic [ref=e31]: Administration
+          - img [ref=e32]
+        - button "Master Data" [ref=e35] [cursor=pointer]:
+          - generic [ref=e36]: Master Data
+          - img [ref=e37]
+        - button "HR & Payroll" [ref=e40] [cursor=pointer]:
+          - generic [ref=e41]: HR & Payroll
+          - img [ref=e42]
+        - button "Financial" [ref=e45] [cursor=pointer]:
+          - generic [ref=e46]: Financial
+          - img [ref=e47]
+        - button "Purchase" [ref=e50] [cursor=pointer]:
+          - generic [ref=e51]: Purchase
+          - img [ref=e52]
+        - button "Production" [ref=e55] [cursor=pointer]:
+          - generic [ref=e56]: Production
+          - img [ref=e57]
+        - button "Inventory" [ref=e60] [cursor=pointer]:
+          - generic [ref=e61]: Inventory
+          - img [ref=e62]
+        - button "Outward & Returnables" [ref=e65] [cursor=pointer]:
+          - generic [ref=e66]: Outward & Returnables
+          - img [ref=e67]
+        - button "Sales" [ref=e70] [cursor=pointer]:
+          - generic [ref=e71]: Sales
+          - img [ref=e72]
+  - main [ref=e74]:
+    - generic [ref=e75]:
+      - generic [ref=e78]:
+        - heading "Cash Voucher" [level=1] [ref=e79]
+        - paragraph [ref=e80]: Financial
+      - generic [ref=e82]:
+        - generic [ref=e83]:
+          - generic [ref=e84]:
+            - generic [ref=e85]: Voucher No
+            - textbox [ref=e87]: "32"
+            - generic [ref=e88]:
+              - link "Prev" [ref=e89] [cursor=pointer]:
+                - /url: /vouchers/cash?voucher_no=31&view=1
+              - link "Next" [ref=e90] [cursor=pointer]:
+                - /url: /vouchers/cash?new=1
+              - button "Load" [ref=e91] [cursor=pointer]
+              - generic [ref=e92]:
+                - button "Delete" [disabled] [ref=e93] [cursor=pointer]
+                - button "Print" [ref=e94] [cursor=pointer]
+          - generic [ref=e95]:
+            - generic [ref=e96]: Date
+            - textbox [ref=e98]: 2026-03-26
+          - generic [ref=e99]:
+            - generic [ref=e100]: Cash Account
+            - textbox [ref=e102]: Code
+            - generic [ref=e104]:
+              - textbox "Select Account Name" [ref=e105]
+              - generic:
+                - img
+              - combobox [ref=e106]:
+                - option "Select Account Name" [selected]
+                - option "AHSAN - CASH IN HAND"
+                - option "HUMAIR - CASH IN HAND"
+          - generic [ref=e107]:
+            - generic [ref=e108]: Note
+            - textbox "Enter A Note" [ref=e110]
+        - table [ref=e113]:
+          - rowgroup [ref=e123]:
+            - row "Code Name Description Department Cash Receipt Cash Payment Actions Sr.No" [ref=e124]:
+              - columnheader "Code" [ref=e125]
+              - columnheader "Name" [ref=e126]
+              - columnheader "Description" [ref=e127]
+              - columnheader "Department" [ref=e128]
+              - columnheader "Cash Receipt" [ref=e129]
+              - columnheader "Cash Payment" [ref=e130]
+              - columnheader "Actions" [ref=e131]
+              - columnheader "Sr.No" [ref=e132]
+          - rowgroup [ref=e133]:
+            - row "Select Name Select Name Select Department N/A Delete 1" [ref=e134]:
+              - cell [ref=e135]:
+                - textbox "Code" [ref=e136]
+              - cell "Select Name Select Name" [ref=e137]:
+                - generic [ref=e138]:
+                  - textbox "Select Name" [ref=e139]
+                  - generic:
+                    - img
+                  - combobox [ref=e140]:
+                    - option "Select Name" [selected]
+                    - option "BILL BOOKS"
+                    - option "DRUM SALE"
+                    - option "E2E Account 1770370198944"
+                    - option "ELECTRICITY"
+                    - option "GL Advances from Customers"
+                    - option "GL AP Control"
+                    - option "GL AR Control"
+                    - option "GL Inventory RM Control"
+                    - option "GL Salaries Payable Control"
+                    - option "GL Sales Revenue"
+                    - option "GL Wages Payable Control"
+                    - option "MIS"
+                    - option "PENS"
+                    - option "POSTINGCLASSBANKTEST"
+                    - option "PRODUCTS DELIVERY"
+                    - option "PTCL BILL"
+                    - option "WATER"
+                    - option "AFSAR KHAN PESHAWAR"
+                    - option "AMEEN DYE MAKER"
+                    - option "E2E name 1770477509559_7"
+                    - option "E2E name 1770478855220_7"
+                    - option "E2E name 1771398105030_7"
+                    - option "E2E name 1771399190781_7"
+                    - option "E2E Party 1770368544483"
+                    - option "E2E Party Edited 1770477252408"
+                    - option "E2E Party Edited 1770478853363"
+                    - option "E2E Party Edited 1771398102994"
+                    - option "E2E Party Edited 1771399188180"
+                    - option "HAMZA TRADERS"
+                    - option "Hoorain Aijaz"
+                    - option "Hoorain Aijazzz"
+                    - option "KR EVA"
+                    - option "MALIK ASHRAF"
+                    - option "PAPPU CRAIP"
+                    - option "148 CC phase 4 dha"
+                    - option "E2E Labour 350371"
+                    - option "E2E name 1770453355018"
+                    - option "E2E name 1770454038361"
+                    - option "E2E name 1770454404958"
+                    - option "E2E name 1770454635501"
+                    - option "GULSHER DC PROI"
+                    - option "AHSAN"
+                    - option "ALI HAYDERR"
+                    - option "BOOTA"
+                    - option "E2E Employee 350146"
+                    - option "E2E name 1770453352192"
+                    - option "E2E name 1770454036161"
+                    - option "E2E name 1770454402303"
+                    - option "E2E name 1770454632185"
+              - cell [ref=e141]:
+                - textbox [ref=e142]
+              - cell "Select Department N/A" [ref=e143]:
+                - generic [ref=e144]:
+                  - textbox "Select Department" [ref=e145]
+                  - generic:
+                    - img
+                  - combobox [disabled] [ref=e146]:
+                    - option "N/A" [selected]
+              - cell [ref=e147]:
+                - spinbutton [active] [ref=e148]
+              - cell [ref=e149]:
+                - spinbutton [ref=e150]
+              - cell "Delete" [ref=e151]:
+                - button "Delete" [ref=e152] [cursor=pointer]:
+                  - img [ref=e153]
+              - cell "1" [ref=e157]
+          - rowgroup [ref=e158]:
+            - row "Total 0.00 0.00" [ref=e159]:
+              - cell "Total" [ref=e160]
+              - cell "0.00" [ref=e161]:
+                - textbox [ref=e162]: "0.00"
+              - cell "0.00" [ref=e163]:
+                - textbox [ref=e164]: "0.00"
+              - cell [ref=e165]
+              - cell [ref=e166]
+        - button "Confirm" [ref=e168] [cursor=pointer]
+    - generic [ref=e169]: ERP System © 2026
+```

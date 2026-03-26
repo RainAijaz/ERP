@@ -21,13 +21,13 @@
 
   <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md">
     <form method="GET" class="flex flex-wrap gap-2 border-b border-slate-200 px-5 py-4">
-      <select name="item_id" class="min-w-[220px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+      <select name="item_id" class="min-w-55 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" data-searchable-select="true" data-searchable-variant="unified">
         <option value=""><%= t("all") %> <%= t("article_name") || "Article" %></option>
         <% (options?.items || []).forEach(function(item) { %>
           <option value="<%= item.id %>" <%= String(filters?.item_id || '') === String(item.id) ? 'selected' : '' %>><%= item.code %> - <%= item.name %></option>
         <% }) %>
       </select>
-      <select name="level" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+      <select name="level" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" data-searchable-select="true" data-searchable-variant="unified">
         <option value=""><%= t("all") %></option>
         <option value="FINISHED" <%= (filters?.level || '').toUpperCase() === 'FINISHED' ? 'selected' : '' %>><%= t("finished") || "Finished" %></option>
         <option value="SEMI_FINISHED" <%= (filters?.level || '').toUpperCase() === 'SEMI_FINISHED' ? 'selected' : '' %>><%= t("semi_finished") || "Semi Finished" %></option>
@@ -38,7 +38,7 @@
 
     <div class="overflow-x-auto">
       <table class="min-w-full text-sm">
-        <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+        <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
           <tr>
             <th class="px-4 py-3 text-left"><%= t("sr_no") || "Sr No" %></th>
             <th class="px-4 py-3 text-left"><%= t("article_name") || "Article Name" %></th>

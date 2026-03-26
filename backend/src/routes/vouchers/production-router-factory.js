@@ -13,6 +13,7 @@ const {
   getProductionVoucherSeriesStats,
   getProductionVoucherNeighbours,
   loadProductionVoucherDetails,
+  resolveDcvRateForSku,
   parseVoucherNo,
 } = require("../../services/production/production-voucher-service");
 
@@ -68,10 +69,8 @@ const formatQty = (value) => {
 
 const buildSavedTotalsNotice = ({ res, saved, voucherTypeCode }) => {
   const base = res.locals.t("saved_successfully") || "Saved successfully.";
-  const isProductionVoucher = voucherTypeCode === "PROD_FG" || voucherTypeCode === "PROD_SFG";
   const totalPairs = Number(saved?.quantityTotals?.totalPairs || 0);
   const totalDozens = Number(saved?.quantityTotals?.totalDozens || 0);
-  if (!isProductionVoucher) return base;
   if (!Number.isFinite(totalPairs) || totalPairs <= 0) return base;
 
   const totalLabel = res.locals.t("total") || "Total";
@@ -159,6 +158,24 @@ const createProductionVoucherRouter = ({
     } catch (err) {
       console.error("Error in ProductionVoucherPageService:", err);
       return next(err);
+    }
+  });
+
+  router.get("/dcv-rate", requirePermission("VOUCHER", scopeKey, "view"), async (req, res) => {
+    try {
+      const result = await resolveDcvRateForSku({
+        req,
+        labourId: req.query?.labour_id,
+        deptId: req.query?.dept_id,
+        skuId: req.query?.sku_id,
+        unitCode: req.query?.unit,
+      });
+      return res.json(result || { rate: 0, found: false });
+    } catch (err) {
+      console.error("Error in ProductionVoucherDcvRateService:", err);
+      const message = friendlyErrorMessage(err, res.locals.t);
+      const status = Number(err?.status || 500);
+      return res.status(status).json({ error: message, requestId: req.id || null });
     }
   });
 

@@ -66,7 +66,7 @@ const formatQty = (value) => formatNumberDisplay(value, { decimals: 3, fallback:
 const formatMoney = (value, digits = 2) => formatNumberDisplay(value, { decimals: digits, fallback: "0" });
 const resolveCustomerOptionName = (customer) => { if (!customer) return "-"; if (locale === "ur") return String(customer.name_ur || customer.name || "-"); return String(customer.name || customer.name_ur || "-"); };
 const resolveRowCustomerName = (row) => { if (!row) return "-"; if (row.customer_party_id) { if (locale === "ur") return String(row.customer_name_ur || row.customer_name_en || "-"); return String(row.customer_name_en || row.customer_name_ur || "-"); } return String(row.walk_in_customer_name || "-"); };
-const rowStatusLabel = (value) => String(value || "").trim().toUpperCase() === "LOOSE" ? (t("loose") === "loose" ? "Loose" : t("loose")) : (t("packed") === "packed" ? "Packed" : t("packed"));
+const rowStatusLabel = (value) => String(value || "").trim().toUpperCase() === "LOOSE" ? (t("unit_pair") === "unit_pair" ? "Pair" : t("unit_pair")) : (t("unit_dozen") === "unit_dozen" ? "Dozen" : t("unit_dozen"));
 const rowStatusTone = (value) => String(value || "").trim().toUpperCase() === "LOOSE" ? "border-amber-300 bg-amber-50 text-amber-800" : "border-slate-300 bg-slate-100 text-slate-700";
 const paymentTypeLabel = (value) => String(value || "").trim().toUpperCase() === "CASH" ? t("cash_sale") : String(value || "").trim().toUpperCase() === "CREDIT" ? t("credit_sale") : "-";
 const paymentTypeTone = (value) => String(value || "").trim().toUpperCase() === "CASH" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : String(value || "").trim().toUpperCase() === "CREDIT" ? "border-amber-300 bg-amber-50 text-amber-700" : "border-slate-300 bg-slate-50 text-slate-700";
@@ -388,7 +388,7 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                 <% if (selectedOrderBy !== "voucher") { %>
                   <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= salesTypeLabel %></th>
                 <% } %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("status") %></th>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("unit") %></th>
                 <% if (showReturnReasonFilter) { %>
                   <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= returnReasonLabel %></th>
                 <% } %>

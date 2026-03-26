@@ -44,6 +44,10 @@
   const labourRateArticleTypeField = page && page.scopeKey === "hr_payroll.labour_rates"
     ? (page.fields || []).find((field) => field.name === "article_type")
     : null;
+  const supportsRateView = page && (page.scopeKey === "hr_payroll.labour_rates" || page.scopeKey === "hr_payroll.commissions");
+  const selectedRateView = typeof filters !== "undefined" && filters && typeof filters.rate_view !== "undefined"
+    ? String(filters.rate_view || "").toUpperCase()
+    : "PER_DOZEN";
 %>
 
 <div class="space-y-4">
@@ -128,6 +132,18 @@
   </div>
   <% } %>
 </div>
+
+<% if (supportsRateView) { %>
+  <div class="space-y-2">
+    <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= t("view_rate_in") || "View Rate In" %></span>
+    <div class="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+      <select name="rate_view" class="flex-1 min-w-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer" data-filter-rate-view data-searchable-skip="true">
+        <option value="PER_DOZEN" <%= selectedRateView === "PER_PAIR" ? "" : "selected" %>><%= t("rate_type_per_dozen") || "Per Dozen" %></option>
+        <option value="PER_PAIR" <%= selectedRateView === "PER_PAIR" ? "selected" : "" %>><%= t("rate_type_per_pair") || "Per Pair" %></option>
+      </select>
+    </div>
+  </div>
+<% } %>
 
 <% if (page && page.scopeKey === "hr_payroll.labour_rates") { %>
   <div class="space-y-4">

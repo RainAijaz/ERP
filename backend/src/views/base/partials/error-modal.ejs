@@ -1,14 +1,30 @@
 <% const uiErrorMessage = uiError && uiError.message ? uiError.message : ""; %>
-<div class="fixed inset-0 z-[90] hidden items-center justify-center bg-slate-900/40 p-4" data-ui-error-modal>
-  <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl">
-    <div class="border-b border-slate-200 px-6 py-4">
-      <div class="text-sm font-semibold text-slate-700" data-ui-error-title><%= t("error_generic") %></div>
-      <p class="mt-1 text-xs text-slate-500 whitespace-pre-line break-words" data-ui-error-message></p>
+<div class="fixed inset-0 z-90 hidden items-center justify-center bg-slate-900/55 p-4 backdrop-blur-[1px]" data-ui-error-modal>
+  <div class="w-full max-w-2xl rounded-3xl border border-slate-200 bg-white shadow-2xl">
+    <div class="border-b border-slate-200 px-6 py-5 sm:px-7">
+      <div class="flex items-start gap-3">
+        <div class="mt-0.5 rounded-full bg-rose-100 p-2 text-rose-700">
+          <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v4m0 4h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.2 16c-.77 1.33.19 3 1.73 3z" />
+          </svg>
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="text-2xl font-semibold leading-tight text-slate-800" data-ui-error-title><%= t("error_generic") %></div>
+          <p class="mt-1 text-sm text-slate-500"><%= t("review_and_fix") || "Please review and resolve the issues below." %></p>
+        </div>
+      </div>
     </div>
-    <div class="px-6 py-5">
-      <button class="w-full rounded-xl bg-slate-900 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-slate-800" type="button" data-ui-error-close>
-        <%= t("ok") || "OK" %>
-      </button>
+    <div class="space-y-4 px-6 py-5 sm:px-7">
+      <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700" data-ui-error-summary hidden></div>
+      <div class="max-h-[42vh] space-y-2 overflow-y-auto pr-1" data-ui-error-issues hidden></div>
+      <p class="text-sm text-slate-600 whitespace-pre-line wrap-break-word" data-ui-error-message></p>
+    </div>
+    <div class="border-t border-slate-200 px-6 py-5 sm:px-7">
+      <div class="flex justify-end">
+        <button class="min-w-48 rounded-xl bg-slate-900 px-5 py-3 text-sm font-semibold uppercase tracking-[0.18em] text-white transition hover:bg-slate-800" type="button" data-ui-error-close>
+          <%= t("ok") || "OK" %>
+        </button>
+      </div>
     </div>
   </div>
 </div>
@@ -18,6 +34,8 @@
     const close = document.querySelector("[data-ui-error-close]");
     const titleEl = document.querySelector("[data-ui-error-title]");
     const messageEl = document.querySelector("[data-ui-error-message]");
+    const summaryEl = document.querySelector("[data-ui-error-summary]");
+    const issuesEl = document.querySelector("[data-ui-error-issues]");
     if (!modal || !messageEl) return;
 
     const defaultTitle = "<%= t('error_generic') %>";
@@ -25,10 +43,69 @@
       modal.classList.add("hidden");
       modal.classList.remove("flex");
     };
+    const lineToIssue = (line) => {
+      const normalized = String(line || "").trim();
+      if (!normalized) return null;
+      const numbered = normalized.match(/^\d+\.\s*(.+)$/);
+      if (numbered && numbered[1]) return numbered[1].trim();
+      if (/^issue\s+in\s+/i.test(normalized)) return normalized;
+      return null;
+    };
+
+    const renderIssueCards = (issues) => {
+      if (!issuesEl) return;
+      issuesEl.innerHTML = "";
+      if (!Array.isArray(issues) || !issues.length) {
+        issuesEl.hidden = true;
+        return;
+      }
+      issues.forEach((issue, index) => {
+        const card = document.createElement("div");
+        card.className = "rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3";
+
+        const heading = document.createElement("div");
+        heading.className = "text-xs font-semibold uppercase tracking-[0.14em] text-amber-800";
+        heading.textContent = `Issue ${index + 1}`;
+
+        const body = document.createElement("p");
+        body.className = "mt-1 text-sm text-slate-700 whitespace-pre-line break-words";
+        body.textContent = issue;
+
+        card.appendChild(heading);
+        card.appendChild(body);
+        issuesEl.appendChild(card);
+      });
+      issuesEl.hidden = false;
+    };
+
+    const renderMessage = (message) => {
+      const text = String(message || "").trim();
+      const lines = text
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+      const issueLines = lines.map(lineToIssue).filter(Boolean);
+      const issueSet = new Set(issueLines.map((line) => line.toLowerCase()));
+      const summaryLines = lines.filter((line) => !issueSet.has(line.toLowerCase()) && !lineToIssue(line));
+
+      if (summaryEl) {
+        const summaryText = summaryLines.join(" ").trim();
+        summaryEl.textContent = summaryText;
+        summaryEl.hidden = !summaryText;
+      }
+
+      renderIssueCards(issueLines);
+
+      const shouldUseFallbackMessage = !issueLines.length && !(summaryEl && !summaryEl.hidden);
+      messageEl.textContent = shouldUseFallbackMessage ? text : "";
+      messageEl.hidden = !shouldUseFallbackMessage;
+    };
+
     const openModal = (message, title) => {
       if (!String(message || "").trim()) return;
       if (titleEl) titleEl.textContent = String(title || defaultTitle);
-      messageEl.textContent = String(message || "");
+      renderMessage(message);
       modal.classList.remove("hidden");
       modal.classList.add("flex");
     };

@@ -4,11 +4,28 @@
 </label>
 
 <label class="block text-sm font-semibold text-slate-600">
-  <span><%= t("name_ur") %></span>
-  <input class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" type="text" name="name_ur" data-field="name_ur" placeholder="<%= t('name_ur') %>" />
+  <span><%= t("name_ur") %> <span class="text-rose-500">*</span></span>
+  <input class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" type="text" name="name_ur" data-field="name_ur" placeholder="<%= t('name_ur') %>" required />
 </label>
 
 <div class="grid gap-4 lg:grid-cols-2">
+  <label class="block text-sm font-semibold text-slate-600">
+    <span><%= t("sub_group") %></span>
+    <select
+      class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+      name="subgroup_id"
+      data-field="subgroup_id"
+      data-searchable-select="true"
+      data-searchable-variant="unified"
+      required
+    >
+      <option value=""><%= t("select") %> <%= t("sub_group") %></option>
+      <% subgroups.forEach(function(subgroup) { %>
+        <option value="<%= subgroup.id %>"><%= locale === "ur" ? (subgroup.name_ur || subgroup.name) : subgroup.name %></option>
+      <% }) %>
+    </select>
+  </label>
+
   <% const pairUom = (uoms && uoms[0]) ? uoms[0] : null; %>
   <label class="block text-sm font-semibold text-slate-600">
     <span><%= t("group") %></span>
@@ -19,7 +36,7 @@
       <% }) %>
     </select>
   </label>
-  <label class="block text-sm font-semibold text-slate-600">
+  <label class="block text-sm font-semibold text-slate-600 lg:col-span-2">
     <span><%= t("base_unit") %></span>
     <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" name="base_uom_id" data-field="base_uom_id" required>
       <% if (pairUom) { %>

@@ -1012,7 +1012,7 @@ const inferHrTarget = ({ entityType, request, newValue, oldValue }) => {
     ...Object.keys(oldValue && typeof oldValue === "object" ? oldValue : {}),
   ]);
 
-  if (mode === "BULK_COMMISSION_SKU_UPSERT") return "bulk_commission";
+  if (mode === "BULK_COMMISSION_SKU_UPSERT" || mode === "SKU_MULTI_UPSERT") return "bulk_commission";
   if (mode === "BULK_LABOUR_RATE_SKU_UPSERT") return "bulk_labour_rate";
   if (scopeKey === "hr_payroll.commissions") return "employee_commission_rule";
   if (scopeKey === "hr_payroll.allowances") return "employee_allowance_rule";
@@ -1181,7 +1181,8 @@ const applyEmployeeCommissionApproval = async (trx, request) => {
     return true;
   }
 
-  const basis = COMMISSION_BASIS_FIXED_PER_UNIT;
+  const basis = String(payload.commission_basis || COMMISSION_BASIS_FIXED_PER_UNIT).trim().toUpperCase();
+  const valueType = deriveValueTypeFromBasis(basis) || deriveValueTypeFromBasis(COMMISSION_BASIS_FIXED_PER_UNIT);
   const row = {
     employee_id: toNullableInt(payload.employee_id),
     apply_on: payload.apply_on || null,
@@ -1189,7 +1190,8 @@ const applyEmployeeCommissionApproval = async (trx, request) => {
     subgroup_id: toNullableInt(payload.subgroup_id),
     group_id: toNullableInt(payload.group_id),
     commission_basis: basis,
-    value_type: deriveValueTypeFromBasis(basis),
+    value_type: valueType,
+    rate_type: String(payload.rate_type || "PER_PAIR").trim().toUpperCase() || "PER_PAIR",
     value: toMoneyOrNull(payload.value),
     reverse_on_returns: toBoolean(payload.reverse_on_returns),
     status: normalizeStatus(payload.status, "active"),
@@ -1248,32 +1250,47 @@ const applyLabourRateApproval = async (trx, request) => {
 
 const applyBulkCommissionApproval = async (trx, request) => {
   const payload = request?.new_value && typeof request.new_value === "object" ? request.new_value : {};
-  const employeeId = toNullableInt(payload.employee_id) || toNullableInt(request?.entity_id);
-  if (!employeeId) return false;
+  const employeeIdsRaw = toArray(payload.employee_ids)
+    .map((entry) => toNullableInt(entry))
+    .filter((entry) => Number.isInteger(entry) && entry > 0);
+  const fallbackEmployeeId = toNullableInt(payload.employee_id) || toNullableInt(request?.entity_id);
+  const employeeIds = employeeIdsRaw.length ? [...new Set(employeeIdsRaw)] : (fallbackEmployeeId ? [fallbackEmployeeId] : []);
+  if (!employeeIds.length) return false;
   const status = normalizeStatus(payload.status, "active");
   const reverseOnReturns = toBoolean(payload.reverse_on_returns);
+  const rateTypeDefault = String(payload.rate_type || "PER_PAIR").trim().toUpperCase() || "PER_PAIR";
   const valueType = deriveValueTypeFromBasis(COMMISSION_BASIS_FIXED_PER_UNIT);
   const rows = toArray(payload.rows)
     .map((row) => {
       const data = row && typeof row === "object" ? row : {};
       const skuId = toNullableInt(data.sku_id || data.skuId);
       const rate = toMoneyOrNull(Object.prototype.hasOwnProperty.call(data, "new_rate") ? data.new_rate : data.rate);
+      const employeeId = toNullableInt(data.employee_id || data.employeeId) || null;
+      const rateType = String(data.rate_type || rateTypeDefault).trim().toUpperCase() || rateTypeDefault;
       if (!skuId || rate === null) return null;
-      return { skuId, rate };
+      return { employeeId, skuId, rate, rateType };
     })
     .filter(Boolean);
   if (!rows.length) return false;
 
-  await applyCommissionBulkSkuRateUpsert({
-    trx,
-    employeeId,
-    commissionBasis: COMMISSION_BASIS_FIXED_PER_UNIT,
-    valueType,
-    reverseOnReturns,
-    status,
-    rows,
-  });
-  return { applied: true, entityId: String(employeeId) };
+  for (const employeeId of employeeIds) {
+    const rowsForEmployee = rows
+      .filter((row) => !row.employeeId || row.employeeId === employeeId)
+      .map((row) => ({ skuId: row.skuId, rate: row.rate }));
+    if (!rowsForEmployee.length) continue;
+    const rowRateType = rows.find((row) => (!row.employeeId || row.employeeId === employeeId) && row.rateType)?.rateType || rateTypeDefault;
+    await applyCommissionBulkSkuRateUpsert({
+      trx,
+      employeeId,
+      commissionBasis: COMMISSION_BASIS_FIXED_PER_UNIT,
+      rateType: rowRateType,
+      valueType,
+      reverseOnReturns,
+      status,
+      rows: rowsForEmployee,
+    });
+  }
+  return { applied: true, entityId: String(employeeIds[0]) };
 };
 
 const applyBulkLabourRateApproval = async (trx, request) => {

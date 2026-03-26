@@ -24,6 +24,17 @@ const toPositiveIntOrNull = (value) => {
   return parsed;
 };
 
+const toPositiveIntArray = (value) => {
+  const source = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(",")
+      : value == null
+        ? []
+        : [value];
+  return [...new Set(source.map((entry) => toPositiveIntOrNull(entry)).filter(Boolean))];
+};
+
 const toMoney = (value) => {
   if (value === null || value === undefined || value === "") return null;
   const numberValue = Number(value);
@@ -46,7 +57,20 @@ const normalizeLabourSelection = (value) => {
     return { all: true, labourId: null, raw: ALL_LABOURS_VALUE };
   }
   const labourId = toPositiveIntOrNull(raw);
-  return { all: false, labourId, raw };
+  return { all: false, labourId, labourIds: labourId ? [labourId] : [], raw };
+};
+
+const normalizeLabourSelectionFromPayload = (payload = {}) => {
+  const labourIds = toPositiveIntArray(payload.labour_ids);
+  if (labourIds.length) {
+    return {
+      all: false,
+      labourId: labourIds[0],
+      labourIds,
+      raw: labourIds.join(","),
+    };
+  }
+  return normalizeLabourSelection(payload.labour_id);
 };
 
 const normalizeArticleType = (value) => {
@@ -69,8 +93,8 @@ const normalizeScopeInput = ({ payload, t }) => {
   const deptId = toPositiveIntOrNull(payload.dept_id);
   if (!deptId) throw new Error(t("error_select_department"));
 
-  const labourSelection = normalizeLabourSelection(payload.labour_id);
-  if (!labourSelection.all && !labourSelection.labourId) {
+  const labourSelection = normalizeLabourSelectionFromPayload(payload);
+  if (!labourSelection.all && (!Array.isArray(labourSelection.labourIds) || !labourSelection.labourIds.length)) {
     throw new Error(t("error_select_labour"));
   }
 
@@ -83,11 +107,17 @@ const normalizeScopeInput = ({ payload, t }) => {
   }
 
   const applyOn = normalizeApplyOn(payload.apply_on);
-  const skuId = toPositiveIntOrNull(payload.sku_id);
+  const skuIdsInput = toPositiveIntArray(payload.sku_ids);
+  const skuIdFallback = toPositiveIntOrNull(payload.sku_id);
+  const skuIds = skuIdsInput.length
+    ? skuIdsInput
+    : skuIdFallback
+      ? [skuIdFallback]
+      : [];
   const subgroupId = toPositiveIntOrNull(payload.subgroup_id);
   const groupId = toPositiveIntOrNull(payload.group_id);
 
-  if (applyOn === APPLY_ON.SKU && !skuId) throw new Error(t("error_select_sku"));
+  if (applyOn === APPLY_ON.SKU && !skuIds.length) throw new Error(t("error_select_sku"));
   if (applyOn === APPLY_ON.SUBGROUP && !subgroupId) throw new Error(t("error_select_subgroup"));
   if (applyOn === APPLY_ON.GROUP && !groupId) throw new Error(t("error_select_group"));
 
@@ -106,7 +136,8 @@ const normalizeScopeInput = ({ payload, t }) => {
     labourSelection,
     deptId,
     applyOn,
-    skuId: applyOn === APPLY_ON.SKU ? skuId : null,
+    skuId: applyOn === APPLY_ON.SKU ? skuIds[0] || null : null,
+    skuIds: applyOn === APPLY_ON.SKU ? skuIds : [],
     subgroupId: applyOn === APPLY_ON.SUBGROUP ? subgroupId : null,
     groupId: applyOn === APPLY_ON.GROUP ? groupId : null,
     articleType,
@@ -166,12 +197,16 @@ const resolveLabourIds = async ({ db = knex, deptId, labourSelection, t }) => {
     return unique;
   }
 
-  const labourId = Number(labourSelection?.labourId || 0);
-  if (!Number.isInteger(labourId) || labourId <= 0) throw new Error(t("error_select_labour"));
+  const selectedLabourIds = [...new Set(
+    (Array.isArray(labourSelection?.labourIds) ? labourSelection.labourIds : [])
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id) && id > 0),
+  )];
+  if (!selectedLabourIds.length) throw new Error(t("error_select_labour"));
 
-  const labour = await db("erp.labours as l")
+  const validRows = await db("erp.labours as l")
     .select("l.id")
-    .where("l.id", labourId)
+    .whereIn("l.id", selectedLabourIds)
     .whereRaw("lower(trim(l.status)) = 'active'")
     .andWhere(function whereDept() {
       this.where("l.dept_id", dept).orWhereExists(function labourDept() {
@@ -180,11 +215,12 @@ const resolveLabourIds = async ({ db = knex, deptId, labourSelection, t }) => {
           .whereRaw("ld.labour_id = l.id")
           .andWhere("ld.dept_id", dept);
       });
-    })
-    .first();
-
-  if (!labour) throw new Error(t("error_select_labour"));
-  return [labourId];
+    });
+  const validIdSet = new Set((validRows || []).map((row) => Number(row.id)).filter((id) => Number.isInteger(id) && id > 0));
+  if (!validIdSet.size || selectedLabourIds.some((id) => !validIdSet.has(id))) {
+    throw new Error(t("error_select_labour"));
+  }
+  return selectedLabourIds;
 };
 
 const resolveItemTypes = (articleType) => {
@@ -198,6 +234,7 @@ const fetchTargetSkus = async ({
   articleType,
   applyOn = APPLY_ON.SKU,
   skuId = null,
+  skuIds = [],
   subgroupId = null,
   groupId = null,
 }) => {
@@ -207,8 +244,17 @@ const fetchTargetSkus = async ({
     .select("s.id as sku_id", "s.sku_code", "i.name as item_name", "i.item_type", "i.subgroup_id", "i.group_id")
     .whereIn("i.item_type", resolveItemTypes(articleType));
 
-  if (applyOn === APPLY_ON.SKU && skuId) {
-    query = query.where("s.id", skuId);
+  if (applyOn === APPLY_ON.SKU) {
+    const requestedSkuIds = [...new Set(
+      (Array.isArray(skuIds) ? skuIds : [])
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    )];
+    if (requestedSkuIds.length) {
+      query = query.whereIn("s.id", requestedSkuIds);
+    } else if (skuId) {
+      query = query.where("s.id", skuId);
+    }
   } else if (applyOn === APPLY_ON.SUBGROUP && subgroupId) {
     query = query.where("i.subgroup_id", subgroupId);
   } else if (applyOn === APPLY_ON.GROUP && groupId) {
@@ -268,13 +314,14 @@ const buildBulkPreviewRows = async ({
   deptId,
   applyOn,
   skuId,
+  skuIds,
   subgroupId,
   groupId,
   articleType,
   rateType,
   baseRate,
 }) => {
-  const targetSkus = await fetchTargetSkus({ db, articleType, applyOn, skuId, subgroupId, groupId });
+  const targetSkus = await fetchTargetSkus({ db, articleType, applyOn, skuId, skuIds, subgroupId, groupId });
   if (!targetSkus.length) return [];
 
   const uniqueLabourIds = Array.isArray(labourIds)

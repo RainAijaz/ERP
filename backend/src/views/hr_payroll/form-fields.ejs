@@ -21,15 +21,19 @@
       <% } %>
     </label>
   <% } else if (field.type === "select") { %>
+    <% const isMultipleSelect = field.multiple === true; %>
     <label data-field-wrapper="<%= field.name %>" class="block text-sm font-semibold text-slate-600" <%- wrapperAttrs %> <%- hideOnCreateAttr %>>
       <span><%= t(field.label) || field.label %></span>
       <select
         class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
         name="<%= field.name %>"
         data-field="<%= field.name %>"
+        <%= isMultipleSelect ? "multiple" : "" %>
         <%= field.required ? "required data-required='true'" : "" %>
       >
-        <option value=""><%= t("select") %></option>
+        <% if (!isMultipleSelect) { %>
+          <option value=""><%= t("select") %></option>
+        <% } %>
         <% (field.options || []).forEach(function(option) { %>
           <option value="<%= option.value %>"><%= t(option.label) || option.label %></option>
         <% }) %>
@@ -51,6 +55,48 @@
         <%= field.min ? "min=\"" + field.min + "\"" : "" %>
         <%= field.required ? "required data-required='true'" : "" %>
       />
+      <% if (fieldError) { %>
+        <span class="mt-1 block text-xs font-medium text-rose-600"><%= fieldError %></span>
+      <% } %>
+    </label>
+  <% } else if (field.type === "multi-select" && page.scopeKey === "hr_payroll.labour_rates" && field.name === "labour_id") { %>
+    <label data-field-wrapper="<%= field.name %>" class="block text-sm font-semibold text-slate-600" <%- wrapperAttrs %> <%- hideOnCreateAttr %>>
+      <span><%= t(field.label) || field.label %></span>
+      <div
+        class="relative mt-2"
+        data-multi-select
+        data-name="labour_ids"
+        data-placeholder="<%= t('select') %>"
+      >
+        <button
+          type="button"
+          class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 pr-10 text-left text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+          data-multi-trigger
+        ></button>
+        <span class="pointer-events-none absolute inset-y-0 right-3 inline-flex items-center text-slate-500">
+          <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M6 8l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"></path>
+          </svg>
+        </span>
+        <div class="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-50 hidden rounded-xl border border-slate-200 bg-white p-2 shadow-xl" data-multi-panel>
+          <div class="max-h-52 overflow-auto pr-1" data-multi-options>
+            <% (field.options || []).forEach(function(option) { %>
+              <label class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+                <input type="checkbox" value="<%= option.value %>">
+                <span><%= t(option.label) || option.label %></span>
+              </label>
+            <% }) %>
+          </div>
+        </div>
+        <input
+          type="hidden"
+          name="labour_ids"
+          value=""
+          data-multi-hidden
+          data-field="labour_id"
+          <%= field.required ? "data-required='true'" : "" %>
+        >
+      </div>
       <% if (fieldError) { %>
         <span class="mt-1 block text-xs font-medium text-rose-600"><%= fieldError %></span>
       <% } %>
@@ -106,11 +152,6 @@
 <% }) %>
 
 <% if (page.scopeKey === "hr_payroll.labour_rates") { %>
-  <div class="hidden rounded-xl border border-slate-200 bg-slate-50/60 p-3" data-labour-rate-labour-scope-panel>
-    <div class="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-700"><%= t("applies_to_labours") %></div>
-    <div class="mt-1 text-xs text-slate-500" data-labour-rate-labour-scope-summary><%= t("select_target_to_preview_impact") %></div>
-    <div class="mt-2 flex flex-wrap gap-1.5" data-labour-rate-labour-scope-list></div>
-  </div>
   <div class="hidden rounded-xl border border-slate-200 bg-slate-50/60 p-4" data-labour-rate-bulk-panel>
     <div class="flex flex-wrap items-center justify-between gap-2">
       <div>

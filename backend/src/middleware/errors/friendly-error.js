@@ -12,6 +12,8 @@ const messageFromCode = (code, t) => {
       return local("error_required_fields", "Required fields are missing.");
     case "22P02": // invalid_text_representation
       return local("error_invalid_value", "One or more values are invalid.");
+    case "23514": // check_violation
+      return local("error_invalid_value", "One or more values are invalid.");
     default:
       return null;
   }

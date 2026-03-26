@@ -1,0 +1,486 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - checkbox "Menu" [ref=e5]
+        - generic [ref=e6]:
+          - generic [ref=e7]:
+            - link "CHAND EVA" [ref=e8] [cursor=pointer]:
+              - /url: /
+            - generic [ref=e10]: ERP
+          - generic [ref=e12]:
+            - generic [ref=e13]:
+              - generic [ref=e14]: Signed in as
+              - generic [ref=e15]: admin
+            - generic [ref=e16]:
+              - generic [ref=e17]: Branch
+              - generic [ref=e18]:
+                - generic [ref=e19]: Branch
+                - combobox "Branch" [ref=e20]:
+                  - option "124" [selected]
+                  - option "207"
+            - button "Logout" [ref=e22] [cursor=pointer]
+            - generic [ref=e23]:
+              - generic [ref=e24]: Language
+              - link "English" [ref=e25] [cursor=pointer]:
+                - /url: "?lang=en"
+              - generic [ref=e26]: "|"
+              - link "Urdu" [ref=e27] [cursor=pointer]:
+                - /url: "?lang=ur"
+        - navigation [ref=e28]:
+          - button "Administration" [ref=e30] [cursor=pointer]:
+            - generic [ref=e31]: Administration
+            - img [ref=e32]
+          - button "Master Data" [ref=e35] [cursor=pointer]:
+            - generic [ref=e36]: Master Data
+            - img [ref=e37]
+          - button "HR & Payroll" [ref=e40] [cursor=pointer]:
+            - generic [ref=e41]: HR & Payroll
+            - img [ref=e42]
+          - button "Financial" [ref=e45] [cursor=pointer]:
+            - generic [ref=e46]: Financial
+            - img [ref=e47]
+          - button "Purchase" [ref=e50] [cursor=pointer]:
+            - generic [ref=e51]: Purchase
+            - img [ref=e52]
+          - button "Production" [ref=e55] [cursor=pointer]:
+            - generic [ref=e56]: Production
+            - img [ref=e57]
+          - button "Inventory" [ref=e60] [cursor=pointer]:
+            - generic [ref=e61]: Inventory
+            - img [ref=e62]
+          - button "Outward & Returnables" [ref=e65] [cursor=pointer]:
+            - generic [ref=e66]: Outward & Returnables
+            - img [ref=e67]
+          - button "Sales" [ref=e70] [cursor=pointer]:
+            - generic [ref=e71]: Sales
+            - img [ref=e72]
+    - main [ref=e74]:
+      - generic [ref=e75]:
+        - generic [ref=e77]:
+          - generic [ref=e78]:
+            - heading "Edit BOM" [level=1] [ref=e79]
+            - paragraph [ref=e80]: Complete the BOM setup first. Material, SFG, and labour sections unlock after that.
+          - button "Revise" [ref=e83] [cursor=pointer]
+        - generic [ref=e84]:
+          - generic [ref=e85]:
+            - generic [ref=e86]:
+              - generic [ref=e87]: BOM Setup
+              - generic [ref=e88]: "Code: BOM-000557"
+            - generic [ref=e89]:
+              - generic [ref=e90]:
+                - text: Level
+                - generic [ref=e91]:
+                  - textbox "Level Finished" [ref=e92]:
+                    - /placeholder: Select
+                    - text: Finished
+                  - generic:
+                    - img
+                  - combobox [disabled] [ref=e93]:
+                    - option "Select"
+                    - option "Finished" [selected]
+                    - option "Semi-Finished"
+              - generic [ref=e94]:
+                - text: Article Name
+                - generic [ref=e95]:
+                  - textbox "Article Name E2E FG 1774412210750315" [ref=e96]:
+                    - /placeholder: Select
+                    - text: E2E FG 1774412210750315
+                  - generic:
+                    - img
+                  - combobox [disabled] [ref=e97]:
+                    - option "Select"
+                    - option "300"
+                    - option "3011"
+                    - option "321"
+                    - option "701"
+                    - option "E05"
+                    - option "E2E FG 1773946548418405"
+                    - option "E2E FG 1774412210750315" [selected]
+                    - option "E2E FG neg1770614079168495"
+                    - option "EVA Slipper 400"
+                    - option "J01"
+                    - option "P01"
+                    - option "W01"
+                    - option "W02"
+                    - option "W03"
+              - generic [ref=e98]:
+                - text: Planned Output Qty
+                - spinbutton "Planned Output Qty" [ref=e99]: "1.5"
+              - generic [ref=e100]:
+                - text: Output Unit (UOM)
+                - generic [ref=e101]:
+                  - textbox "Output Unit (UOM) Pair" [ref=e102]:
+                    - /placeholder: Select
+                    - text: Pair
+                  - generic:
+                    - img
+                  - combobox [disabled] [ref=e103]:
+                    - option "Select"
+                    - option "Dozen"
+                    - option "Pair" [selected]
+            - generic [ref=e104]:
+              - generic [ref=e105]:
+                - generic [ref=e106]: Version
+                - generic [ref=e107]: V1
+              - generic [ref=e108]:
+                - generic [ref=e109]: Status
+                - generic [ref=e111]: Approved
+              - generic [ref=e112]:
+                - generic [ref=e113]: Created
+                - generic [ref=e114]: 25-03-2026
+              - generic [ref=e115]:
+                - generic [ref=e116]: Approved
+                - generic [ref=e117]: 25-03-2026
+          - generic [ref=e118]:
+            - heading "Production Stages" [level=2] [ref=e120]
+            - table [ref=e122]:
+              - rowgroup [ref=e128]:
+                - row "Sr.No Department Mandatory In Flow Actions" [ref=e129]:
+                  - columnheader "Sr.No" [ref=e130]
+                  - columnheader "Department" [ref=e131]
+                  - columnheader "Mandatory In Flow" [ref=e132]
+                  - columnheader "Actions" [ref=e133]
+              - rowgroup [ref=e134]:
+                - row "1 CUTTINGG CUTTINGG" [ref=e135]:
+                  - cell "1" [ref=e136]
+                  - cell "CUTTINGG CUTTINGG" [ref=e137]:
+                    - generic [ref=e138]:
+                      - textbox "Select" [ref=e139]: CUTTINGG
+                      - generic:
+                        - img
+                      - combobox [disabled] [ref=e140]:
+                        - option "Select"
+                        - option "CUTTINGG" [selected]
+                  - cell [ref=e141]:
+                    - checkbox [checked] [disabled] [ref=e142]
+                  - cell [ref=e143]
+          - generic [ref=e144]:
+            - generic [ref=e145]:
+              - heading "List Raw Material Used for This Article" [level=2] [ref=e146]
+              - generic [ref=e147]:
+                - button "Material Lines" [ref=e148] [cursor=pointer]
+                - button "SKU Rules" [ref=e149] [cursor=pointer]
+            - generic [ref=e150]:
+              - generic [ref=e151]:
+                - heading "Material Lines" [level=3] [ref=e152]
+                - paragraph [ref=e153]: Add raw materials and departments here. Enter quantities in SKU Rules.
+              - table [ref=e155]:
+                - rowgroup [ref=e161]:
+                  - row "Material Base Unit Consumption Department Actions" [ref=e162]:
+                    - columnheader "Material" [ref=e163]
+                    - columnheader "Base Unit" [ref=e164]
+                    - columnheader "Consumption Department" [ref=e165]
+                    - columnheader "Actions" [ref=e166]
+                - rowgroup [ref=e167]:
+                  - row "E2E RM 1774412210750315 E2E RM 1774412210750315 Dozen CUTTINGG CUTTINGG" [ref=e168]:
+                    - cell "E2E RM 1774412210750315 E2E RM 1774412210750315" [ref=e169]:
+                      - generic [ref=e170]:
+                        - textbox "Select" [ref=e171]: E2E RM 1774412210750315
+                        - generic:
+                          - img
+                        - combobox [disabled] [ref=e172]:
+                          - option "Select"
+                          - option "ANWAAR FANCY"
+                          - option "black"
+                          - option "CARTON"
+                          - option "E2E RM 1773946548418405"
+                          - option "E2E RM 1774412210750315" [selected]
+                          - option "E2E RM neg1770614079168495"
+                          - option "EVA DANA"
+                          - option "EVR DANA"
+                          - option "PATAWA"
+                          - option "PEARLS"
+                          - option "PU CHEMICALS"
+                          - option "RAYGZEEN"
+                          - option "STICKERS"
+                          - option "THAILI"
+                          - option "XTOOCH STICKER"
+                    - cell "Dozen" [ref=e173]:
+                      - textbox [ref=e174]: Dozen
+                    - cell "CUTTINGG CUTTINGG" [ref=e175]:
+                      - generic [ref=e176]:
+                        - textbox "Select" [ref=e177]: CUTTINGG
+                        - generic:
+                          - img
+                        - combobox [disabled] [ref=e178]:
+                          - option "Select"
+                          - option "CUTTINGG" [selected]
+                    - cell [ref=e179]
+          - generic [ref=e180]:
+            - heading "List Semi-Finished Products Used For Each SKU" [level=2] [ref=e182]
+            - table [ref=e184]:
+              - rowgroup [ref=e185]:
+                - row "Article SKU Step SKU Step Quantity Base Unit" [ref=e186]:
+                  - columnheader "Article SKU" [ref=e187]
+                  - columnheader "Step SKU" [ref=e188]
+                  - columnheader "Step Quantity" [ref=e189]
+                  - columnheader "Base Unit" [ref=e190]
+              - rowgroup [ref=e191]:
+                - row "E2E-FG-1774412210750315 E2E-SFG-1774412210750315 E2E-SFG-1774412210750315 1.000 Pair" [ref=e192]:
+                  - cell "E2E-FG-1774412210750315" [ref=e193]:
+                    - textbox [ref=e194]: E2E-FG-1774412210750315
+                  - cell "E2E-SFG-1774412210750315 E2E-SFG-1774412210750315" [ref=e195]:
+                    - generic [ref=e196]:
+                      - textbox "Select" [ref=e197]: E2E-SFG-1774412210750315
+                      - generic:
+                        - img
+                      - combobox [disabled] [ref=e198]:
+                        - option "Select"
+                        - option "E2E-SFG-1774412210750315" [selected]
+                  - cell "1.000" [ref=e199]:
+                    - spinbutton [ref=e200]: "1"
+                  - cell "Pair" [ref=e201]:
+                    - textbox [ref=e202]: Pair
+          - generic [ref=e203]:
+            - generic [ref=e204]:
+              - heading "List Labour Rates For This Article" [level=2] [ref=e205]
+              - generic [ref=e206]:
+                - button "Labours Selection" [ref=e207] [cursor=pointer]
+                - button "SKU Rules" [ref=e208] [cursor=pointer]
+            - generic [ref=e209]:
+              - generic [ref=e210]:
+                - heading "Labours Selection" [level=3] [ref=e211]
+                - paragraph [ref=e212]: Select labour, department, and rate type. Size-wise rates are set below.
+              - table [ref=e214]:
+                - rowgroup [ref=e215]:
+                  - row "Labours Department Rate Type Actions" [ref=e216]:
+                    - columnheader "Labours" [ref=e217]
+                    - columnheader "Department" [ref=e218]
+                    - columnheader "Rate Type" [ref=e219]
+                    - columnheader "Actions" [ref=e220]
+                - rowgroup [ref=e221]:
+                  - row "E2E Labour 350371 E2E Labour 350371 CUTTINGG CUTTINGG Per Pair Per Pair" [ref=e222]:
+                    - cell "E2E Labour 350371 E2E Labour 350371" [ref=e223]:
+                      - generic [ref=e224]:
+                        - textbox "Select" [ref=e225]: E2E Labour 350371
+                        - generic:
+                          - img
+                        - combobox [disabled] [ref=e226]:
+                          - option "Select"
+                          - option "148 CC phase 4 dha"
+                          - option "abbad ali"
+                          - option "ASLAM BHAI EVA MACHINE"
+                          - option "E2E Labour 1773946548418405"
+                          - option "E2E Labour 1774412210750315"
+                          - option "E2E Labour 350371" [selected]
+                          - option "E2E name 1770453355018"
+                          - option "E2E name 1770454038361"
+                          - option "E2E name 1770454404958"
+                          - option "E2E name 1770454635501"
+                          - option "GULSHER DC PROI"
+                    - cell "CUTTINGG CUTTINGG" [ref=e227]:
+                      - generic [ref=e228]:
+                        - textbox "Select" [ref=e229]: CUTTINGG
+                        - generic:
+                          - img
+                        - combobox [disabled] [ref=e230]:
+                          - option "Select"
+                          - option "CUTTINGG" [selected]
+                    - cell "Per Pair Per Pair" [ref=e231]:
+                      - generic [ref=e232]:
+                        - textbox "Select" [ref=e233]: Per Pair
+                        - generic:
+                          - img
+                        - combobox [disabled] [ref=e234]:
+                          - option "Select"
+                          - option "Per Pair" [selected]
+                          - option "Per Dozen"
+                    - cell [ref=e235]
+                  - row "E2E name 1770453355018 E2E name 1770453355018 CUTTINGG CUTTINGG Per Dozen Per Dozen" [ref=e236]:
+                    - cell "E2E name 1770453355018 E2E name 1770453355018" [ref=e237]:
+                      - generic [ref=e238]:
+                        - textbox "Select" [ref=e239]: E2E name 1770453355018
+                        - generic:
+                          - img
+                        - combobox [disabled] [ref=e240]:
+                          - option "Select"
+                          - option "148 CC phase 4 dha"
+                          - option "abbad ali"
+                          - option "ASLAM BHAI EVA MACHINE"
+                          - option "E2E Labour 1773946548418405"
+                          - option "E2E Labour 1774412210750315"
+                          - option "E2E Labour 350371"
+                          - option "E2E name 1770453355018" [selected]
+                          - option "E2E name 1770454038361"
+                          - option "E2E name 1770454404958"
+                          - option "E2E name 1770454635501"
+                          - option "GULSHER DC PROI"
+                    - cell "CUTTINGG CUTTINGG" [ref=e241]:
+                      - generic [ref=e242]:
+                        - textbox "Select" [ref=e243]: CUTTINGG
+                        - generic:
+                          - img
+                        - combobox [disabled] [ref=e244]:
+                          - option "Select"
+                          - option "CUTTINGG" [selected]
+                    - cell "Per Dozen Per Dozen" [ref=e245]:
+                      - generic [ref=e246]:
+                        - textbox "Select" [ref=e247]: Per Dozen
+                        - generic:
+                          - img
+                        - combobox [disabled] [ref=e248]:
+                          - option "Select"
+                          - option "Per Pair"
+                          - option "Per Dozen" [selected]
+                    - cell [ref=e249]
+                  - row "E2E name 1770454038361 E2E name 1770454038361 CUTTINGG CUTTINGG Per Dozen Per Dozen" [ref=e250]:
+                    - cell "E2E name 1770454038361 E2E name 1770454038361" [ref=e251]:
+                      - generic [ref=e252]:
+                        - textbox "Select" [ref=e253]: E2E name 1770454038361
+                        - generic:
+                          - img
+                        - combobox [disabled] [ref=e254]:
+                          - option "Select"
+                          - option "148 CC phase 4 dha"
+                          - option "abbad ali"
+                          - option "ASLAM BHAI EVA MACHINE"
+                          - option "E2E Labour 1773946548418405"
+                          - option "E2E Labour 1774412210750315"
+                          - option "E2E Labour 350371"
+                          - option "E2E name 1770453355018"
+                          - option "E2E name 1770454038361" [selected]
+                          - option "E2E name 1770454404958"
+                          - option "E2E name 1770454635501"
+                          - option "GULSHER DC PROI"
+                    - cell "CUTTINGG CUTTINGG" [ref=e255]:
+                      - generic [ref=e256]:
+                        - textbox "Select" [ref=e257]: CUTTINGG
+                        - generic:
+                          - img
+                        - combobox [disabled] [ref=e258]:
+                          - option "Select"
+                          - option "CUTTINGG" [selected]
+                    - cell "Per Dozen Per Dozen" [ref=e259]:
+                      - generic [ref=e260]:
+                        - textbox "Select" [ref=e261]: Per Dozen
+                        - generic:
+                          - img
+                        - combobox [disabled] [ref=e262]:
+                          - option "Select"
+                          - option "Per Pair"
+                          - option "Per Dozen" [selected]
+                    - cell [ref=e263]
+                  - row "E2E name 1770454635501 E2E name 1770454635501 CUTTINGG CUTTINGG Per Dozen Per Dozen" [ref=e264]:
+                    - cell "E2E name 1770454635501 E2E name 1770454635501" [ref=e265]:
+                      - generic [ref=e266]:
+                        - textbox "Select" [ref=e267]: E2E name 1770454635501
+                        - generic:
+                          - img
+                        - combobox [disabled] [ref=e268]:
+                          - option "Select"
+                          - option "148 CC phase 4 dha"
+                          - option "abbad ali"
+                          - option "ASLAM BHAI EVA MACHINE"
+                          - option "E2E Labour 1773946548418405"
+                          - option "E2E Labour 1774412210750315"
+                          - option "E2E Labour 350371"
+                          - option "E2E name 1770453355018"
+                          - option "E2E name 1770454038361"
+                          - option "E2E name 1770454404958"
+                          - option "E2E name 1770454635501" [selected]
+                          - option "GULSHER DC PROI"
+                    - cell "CUTTINGG CUTTINGG" [ref=e269]:
+                      - generic [ref=e270]:
+                        - textbox "Select" [ref=e271]: CUTTINGG
+                        - generic:
+                          - img
+                        - combobox [disabled] [ref=e272]:
+                          - option "Select"
+                          - option "CUTTINGG" [selected]
+                    - cell "Per Dozen Per Dozen" [ref=e273]:
+                      - generic [ref=e274]:
+                        - textbox "Select" [ref=e275]: Per Dozen
+                        - generic:
+                          - img
+                        - combobox [disabled] [ref=e276]:
+                          - option "Select"
+                          - option "Per Pair"
+                          - option "Per Dozen" [selected]
+                    - cell [ref=e277]
+                  - row "ASLAM BHAI EVA MACHINE ASLAM BHAI EVA MACHINE CUTTINGG CUTTINGG Per Dozen Per Dozen" [ref=e278]:
+                    - cell "ASLAM BHAI EVA MACHINE ASLAM BHAI EVA MACHINE" [ref=e279]:
+                      - generic [ref=e280]:
+                        - textbox "Select" [ref=e281]: ASLAM BHAI EVA MACHINE
+                        - generic:
+                          - img
+                        - combobox [disabled] [ref=e282]:
+                          - option "Select"
+                          - option "148 CC phase 4 dha"
+                          - option "abbad ali"
+                          - option "ASLAM BHAI EVA MACHINE" [selected]
+                          - option "E2E Labour 1773946548418405"
+                          - option "E2E Labour 1774412210750315"
+                          - option "E2E Labour 350371"
+                          - option "E2E name 1770453355018"
+                          - option "E2E name 1770454038361"
+                          - option "E2E name 1770454404958"
+                          - option "E2E name 1770454635501"
+                          - option "GULSHER DC PROI"
+                    - cell "CUTTINGG CUTTINGG" [ref=e283]:
+                      - generic [ref=e284]:
+                        - textbox "Select" [ref=e285]: CUTTINGG
+                        - generic:
+                          - img
+                        - combobox [disabled] [ref=e286]:
+                          - option "Select"
+                          - option "CUTTINGG" [selected]
+                    - cell "Per Dozen Per Dozen" [ref=e287]:
+                      - generic [ref=e288]:
+                        - textbox "Select" [ref=e289]: Per Dozen
+                        - generic:
+                          - img
+                        - combobox [disabled] [ref=e290]:
+                          - option "Select"
+                          - option "Per Pair"
+                          - option "Per Dozen" [selected]
+                    - cell [ref=e291]
+                  - row "ASLAM BHAI EVA MACHINE ASLAM BHAI EVA MACHINE CUTTINGG CUTTINGG Per Pair Per Pair" [ref=e292]:
+                    - cell "ASLAM BHAI EVA MACHINE ASLAM BHAI EVA MACHINE" [ref=e293]:
+                      - generic [ref=e294]:
+                        - textbox "Select" [ref=e295]: ASLAM BHAI EVA MACHINE
+                        - generic:
+                          - img
+                        - combobox [disabled] [ref=e296]:
+                          - option "Select"
+                          - option "148 CC phase 4 dha"
+                          - option "abbad ali"
+                          - option "ASLAM BHAI EVA MACHINE" [selected]
+                          - option "E2E Labour 1773946548418405"
+                          - option "E2E Labour 1774412210750315"
+                          - option "E2E Labour 350371"
+                          - option "E2E name 1770453355018"
+                          - option "E2E name 1770454038361"
+                          - option "E2E name 1770454404958"
+                          - option "E2E name 1770454635501"
+                          - option "GULSHER DC PROI"
+                    - cell "CUTTINGG CUTTINGG" [ref=e297]:
+                      - generic [ref=e298]:
+                        - textbox "Select" [ref=e299]: CUTTINGG
+                        - generic:
+                          - img
+                        - combobox [disabled] [ref=e300]:
+                          - option "Select"
+                          - option "CUTTINGG" [selected]
+                    - cell "Per Pair Per Pair" [ref=e301]:
+                      - generic [ref=e302]:
+                        - textbox "Select" [ref=e303]: Per Pair
+                        - generic:
+                          - img
+                        - combobox [disabled] [ref=e304]:
+                          - option "Select"
+                          - option "Per Pair" [selected]
+                          - option "Per Dozen"
+                    - cell [ref=e305]
+      - generic [ref=e306]: ERP System © 2026
+  - generic [ref=e308]:
+    - img [ref=e310]
+    - generic [ref=e312]:
+      - generic [ref=e313]: Notice
+      - paragraph [ref=e314]: Approval request approved.
+    - button "Close" [ref=e315] [cursor=pointer]:
+      - img [ref=e316]
+```

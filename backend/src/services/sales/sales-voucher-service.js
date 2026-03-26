@@ -7,6 +7,10 @@ const {
   evaluateSalesDiscountPolicy,
   loadActiveSalesDiscountPolicyMapTx,
 } = require("./sales-discount-policy-service");
+const {
+  prepareSalesVoucherData,
+  SALES_VOUCHER_CODE,
+} = require("./commission-service");
 
 const SALES_VOUCHER_TYPES = {
   salesOrder: "SALES_ORDER",
@@ -18,6 +22,7 @@ const SALES_MODES = ["DIRECT", "FROM_SO"];
 const SALES_DELIVERY_METHODS = ["CUSTOMER_PICKUP", "OUR_DELIVERY"];
 const ROW_STATUS_VALUES = ["PACKED", "LOOSE"];
 const PAIRS_PER_PACKED_UNIT = 12;
+const SALES_COMMISSION_LINE_DESCRIPTION = "Auto sales commission accrual";
 
 let approvalRequestHasVoucherTypeCodeColumn;
 
@@ -81,6 +86,20 @@ const normalizeRowStatus = (value) => {
     .toUpperCase();
   return ROW_STATUS_VALUES.includes(text) ? text : "LOOSE";
 };
+const normalizeRowUnit = (value) => {
+  const text = String(value || "")
+    .trim()
+    .toUpperCase();
+  if (text === "PAIR" || text === "LOOSE") return "PAIR";
+  if (text === "DZN" || text === "DOZEN" || text === "PACKED") return "DZN";
+  return null;
+};
+const resolveRowStatusFromInput = (line = {}) => {
+  const normalizedUnit = normalizeRowUnit(line?.row_unit || line?.rowUnit || line?.unit);
+  if (normalizedUnit === "PAIR") return "LOOSE";
+  if (normalizedUnit === "DZN") return "PACKED";
+  return normalizeRowStatus(line?.row_status || line?.status);
+};
 
 const toBool = (value) => {
   if (typeof value === "boolean") return value;
@@ -89,6 +108,23 @@ const toBool = (value) => {
     .trim()
     .toLowerCase();
   return text === "1" || text === "true" || text === "yes" || text === "on";
+};
+
+const toLineKind = (value, fallback = "SKU") => {
+  const text = String(value || fallback)
+    .trim()
+    .toUpperCase();
+  if (
+    text === "SKU" ||
+    text === "ITEM" ||
+    text === "ACCOUNT" ||
+    text === "PARTY" ||
+    text === "LABOUR" ||
+    text === "EMPLOYEE"
+  ) {
+    return text;
+  }
+  return fallback;
 };
 
 const approxEq = (a, b, epsilon = 0.0001) =>
@@ -119,7 +155,7 @@ const ensureQtyByStatus = ({ lineNo, qty, isPacked }) => {
     if (!Number.isInteger(doubled)) {
       throw new HttpError(
         400,
-        `Line ${lineNo}: packed quantity must be in 0.5 steps`,
+        `Line ${lineNo}: dozen quantity must be in 0.5 steps`,
       );
     }
     return;
@@ -127,7 +163,7 @@ const ensureQtyByStatus = ({ lineNo, qty, isPacked }) => {
   if (!Number.isInteger(Number(qty))) {
     throw new HttpError(
       400,
-      `Line ${lineNo}: loose quantity must be whole pairs`,
+      `Line ${lineNo}: pair quantity must be whole numbers`,
     );
   }
 };
@@ -687,7 +723,7 @@ const normalizeSalesOrderLinesTx = async ({
     const sku = skuMap.get(Number(skuId));
     if (!sku) throw new HttpError(400, `Line ${lineNo}: SKU is invalid`);
 
-    const rowStatus = normalizeRowStatus(line?.row_status || line?.status);
+    const rowStatus = resolveRowStatusFromInput(line);
     const isPacked =
       rowStatus === "PACKED" || toBool(line?.is_packed || line?.isPacked);
     const saleQty = toPositiveNumber(
@@ -895,7 +931,7 @@ const validateSalesOrderEditableLines = ({
     ) {
       throw new HttpError(
         400,
-        `Line ${lineNo}: status cannot be changed after delivery`,
+        `Line ${lineNo}: unit cannot be changed after delivery`,
       );
     }
 
@@ -1039,7 +1075,7 @@ const normalizeSalesVoucherLinesTx = async ({
 
       const rowStatus = soSourceLine
         ? normalizeRowStatus(soSourceLine.row_status)
-        : normalizeRowStatus(line?.row_status || line?.status);
+        : resolveRowStatusFromInput(line);
       const isPacked = soSourceLine
         ? toBool(soSourceLine.is_packed)
         : rowStatus === "PACKED" || toBool(line?.is_packed || line?.isPacked);
@@ -1557,25 +1593,103 @@ const validateSalesPayloadTx = async ({
 };
 
 const insertVoucherLinesTx = async ({ trx, voucherId, lines }) => {
-  const rows = (lines || []).map((line) => ({
-    voucher_header_id: voucherId,
-    line_no: Number(line.line_no),
-    line_kind: "SKU",
-    item_id: null,
-    sku_id: Number(line.sku_id),
-    account_id: null,
-    party_id: null,
-    labour_id: null,
-    employee_id: null,
-    uom_id: toPositiveInt(line.uom_id),
-    qty: Number(line.qty || 0),
-    rate: Number(line.rate || 0),
-    amount: Number(line.amount || 0),
-    reference_no: line.reference_no || null,
-    meta: line.meta || {},
-  }));
+  const rows = (lines || []).map((line, index) => {
+    const lineKind = toLineKind(line?.line_kind, "SKU");
+    const lineNo = Number(line?.line_no || index + 1);
+    return {
+      voucher_header_id: voucherId,
+      line_no: Number.isInteger(lineNo) && lineNo > 0 ? lineNo : index + 1,
+      line_kind: lineKind,
+      item_id: lineKind === "ITEM" ? toPositiveInt(line?.item_id) : null,
+      sku_id: lineKind === "SKU" ? toPositiveInt(line?.sku_id) : null,
+      account_id:
+        lineKind === "ACCOUNT" ? toPositiveInt(line?.account_id) : null,
+      party_id: lineKind === "PARTY" ? toPositiveInt(line?.party_id) : null,
+      labour_id: lineKind === "LABOUR" ? toPositiveInt(line?.labour_id) : null,
+      employee_id:
+        lineKind === "EMPLOYEE" ? toPositiveInt(line?.employee_id) : null,
+      uom_id: toPositiveInt(line?.uom_id),
+      qty: Number(line?.qty || 0),
+      rate: Number(line?.rate || 0),
+      amount: Number(line?.amount || 0),
+      reference_no: line?.reference_no || null,
+      meta:
+        line?.meta && typeof line.meta === "object" ? { ...line.meta } : {},
+    };
+  });
   if (!rows.length) return [];
   return trx("erp.voucher_line").insert(rows).returning(["id", "line_no"]);
+};
+
+const prepareSalesVoucherPostingLinesTx = async ({
+  trx,
+  voucherTypeCode,
+  validated,
+  t,
+}) => {
+  const normalizedVoucherType = String(voucherTypeCode || "")
+    .trim()
+    .toUpperCase();
+  let postingLines = Array.isArray(validated?.lines)
+    ? validated.lines.map((line, index) => ({
+        ...line,
+        line_no: Number(line?.line_no || index + 1),
+      }))
+    : [];
+  let totalCommission = 0;
+
+  if (normalizedVoucherType === SALES_VOUCHER_CODE) {
+    const prepared = await prepareSalesVoucherData({
+      trx,
+      voucherTypeCode: normalizedVoucherType,
+      body: {
+        sales_header: {
+          salesman_employee_id: validated?.salesmanEmployeeId || null,
+        },
+        salesman_employee_id: validated?.salesmanEmployeeId || null,
+      },
+      lines: postingLines,
+      t,
+    });
+
+    postingLines = Array.isArray(prepared?.lines)
+      ? prepared.lines.map((line, index) => ({
+          ...line,
+          line_no: Number(line?.line_no || index + 1),
+        }))
+      : postingLines;
+    totalCommission = Number(prepared?.totalCommission || 0);
+  }
+
+  if (
+    normalizedVoucherType === SALES_VOUCHER_TYPES.salesVoucher &&
+    Number(validated?.salesmanEmployeeId || 0) > 0 &&
+    Math.abs(Number(totalCommission || 0)) > 0.0001
+  ) {
+    const normalizedCommission = Number(Number(totalCommission).toFixed(2));
+    const normalizedAmount = Number(Math.abs(normalizedCommission).toFixed(2));
+    postingLines.push({
+      line_no: postingLines.length + 1,
+      line_kind: "EMPLOYEE",
+      employee_id: Number(validated.salesmanEmployeeId),
+      qty: 0,
+      rate: normalizedAmount,
+      amount: normalizedAmount,
+      reference_no: null,
+      meta: {
+        auto_sales_commission: true,
+        sales_commission: true,
+        debit: normalizedCommission > 0 ? normalizedAmount : 0,
+        credit: normalizedCommission < 0 ? normalizedAmount : 0,
+        description: SALES_COMMISSION_LINE_DESCRIPTION,
+      },
+    });
+  }
+
+  return {
+    lines: postingLines,
+    totalCommission: Number(Number(totalCommission || 0).toFixed(2)),
+  };
 };
 
 const upsertSalesHeaderExtensionsTx = async ({
@@ -1788,6 +1902,12 @@ const saveSalesVoucherTx = async ({
     allowRateDiscountOverride,
     allowCashPaymentOverride,
   });
+  const postingPrepared = await prepareSalesVoucherPostingLinesTx({
+    trx,
+    voucherTypeCode,
+    validated,
+    t: req?.res?.locals?.t,
+  });
   const queuedForApproval = isCreate
     ? !canCreate ||
       (policyRequiresApproval && !canApprove)
@@ -1851,7 +1971,7 @@ const saveSalesVoucherTx = async ({
     const insertedLines = await insertVoucherLinesTx({
       trx,
       voucherId: headerId,
-      lines: validated.lines,
+      lines: postingPrepared.lines,
     });
     await upsertSalesHeaderExtensionsTx({
       trx,
@@ -1872,6 +1992,7 @@ const saveSalesVoucherTx = async ({
       voucherNo,
       status,
       totals: validated.totals,
+      totalCommission: postingPrepared.totalCommission,
       queuedForApproval,
       approvalRequestId: null,
     };
@@ -1905,7 +2026,7 @@ const saveSalesVoucherTx = async ({
   const insertedLines = await insertVoucherLinesTx({
     trx,
     voucherId: headerId,
-    lines: validated.lines,
+    lines: postingPrepared.lines,
   });
   await upsertSalesHeaderExtensionsTx({
     trx,
@@ -1925,6 +2046,7 @@ const saveSalesVoucherTx = async ({
     voucherNo,
     status: "PENDING",
     totals: validated.totals,
+    totalCommission: postingPrepared.totalCommission,
     queuedForApproval: true,
     approvalRequestId: await createApprovalRequest({
       trx,
@@ -2125,12 +2247,6 @@ const loadSalesVoucherOptions = async (req, context = {}) => {
   const salesmenQuery = knex("erp.employees as e")
     .select("e.id", "e.code", "e.name")
     .whereRaw("lower(coalesce(e.status, '')) = 'active'")
-    .whereExists(function commissionRulesExists() {
-      this.select(1)
-        .from("erp.employee_commission_rules as ecr")
-        .whereRaw("ecr.employee_id = e.id")
-        .whereRaw("lower(coalesce(ecr.status, '')) = 'active'");
-    })
     .whereExists(function branchAccess() {
       this.select(1)
         .from("erp.employee_branch as eb")
@@ -2653,10 +2769,16 @@ const applySalesVoucherUpdatePayloadTx = async ({
     remarks: validated.remarks,
   });
   await trx("erp.voucher_line").where({ voucher_header_id: voucherId }).del();
+  const postingPrepared = await prepareSalesVoucherPostingLinesTx({
+    trx,
+    voucherTypeCode,
+    validated,
+    t: req?.res?.locals?.t,
+  });
   const insertedLines = await insertVoucherLinesTx({
     trx,
     voucherId,
-    lines: validated.lines,
+    lines: postingPrepared.lines,
   });
   await upsertSalesHeaderExtensionsTx({
     trx,

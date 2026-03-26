@@ -1,0 +1,180 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - checkbox "Menu" [ref=e5]
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - link "CHAND EVA" [ref=e8] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e10]: ERP
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - generic [ref=e14]: Signed in as
+            - generic [ref=e15]: admin
+          - generic [ref=e16]:
+            - generic [ref=e17]: Branch
+            - generic [ref=e18]:
+              - generic [ref=e19]: Branch
+              - combobox "Branch" [ref=e20]:
+                - option "124" [selected]
+                - option "207"
+          - button "Logout" [ref=e22] [cursor=pointer]
+          - generic [ref=e23]:
+            - generic [ref=e24]: Language
+            - link "English" [ref=e25] [cursor=pointer]:
+              - /url: "?lang=en"
+            - generic [ref=e26]: "|"
+            - link "Urdu" [ref=e27] [cursor=pointer]:
+              - /url: "?lang=ur"
+      - navigation [ref=e28]:
+        - button "Administration" [ref=e30] [cursor=pointer]:
+          - generic [ref=e31]: Administration
+          - img [ref=e32]
+        - button "Master Data" [ref=e35] [cursor=pointer]:
+          - generic [ref=e36]: Master Data
+          - img [ref=e37]
+        - button "HR & Payroll" [ref=e40] [cursor=pointer]:
+          - generic [ref=e41]: HR & Payroll
+          - img [ref=e42]
+        - button "Financial" [ref=e45] [cursor=pointer]:
+          - generic [ref=e46]: Financial
+          - img [ref=e47]
+        - button "Purchase" [ref=e50] [cursor=pointer]:
+          - generic [ref=e51]: Purchase
+          - img [ref=e52]
+        - button "Production" [ref=e55] [cursor=pointer]:
+          - generic [ref=e56]: Production
+          - img [ref=e57]
+        - button "Inventory" [ref=e60] [cursor=pointer]:
+          - generic [ref=e61]: Inventory
+          - img [ref=e62]
+        - button "Outward & Returnables" [ref=e65] [cursor=pointer]:
+          - generic [ref=e66]: Outward & Returnables
+          - img [ref=e67]
+        - button "Sales" [ref=e70] [cursor=pointer]:
+          - generic [ref=e71]: Sales
+          - img [ref=e72]
+  - main [ref=e74]:
+    - generic [ref=e75]:
+      - generic [ref=e78]:
+        - heading "General Purchase" [level=1] [ref=e79]
+        - paragraph [ref=e80]: Purchase
+      - generic [ref=e82]:
+        - generic [ref=e83]:
+          - generic [ref=e84]:
+            - generic [ref=e85]: Voucher No
+            - textbox [ref=e87]: "11"
+            - generic [ref=e88]:
+              - link "Prev" [ref=e89] [cursor=pointer]:
+                - /url: /vouchers/purchase?voucher_no=10&view=1
+              - link "Next" [ref=e90] [cursor=pointer]:
+                - /url: /vouchers/purchase?new=1
+              - button "Load" [ref=e91] [cursor=pointer]
+              - generic [ref=e92]:
+                - button "Delete" [disabled] [ref=e93] [cursor=pointer]
+                - button "Print" [ref=e94] [cursor=pointer]
+          - generic [ref=e95]:
+            - generic [ref=e96]: Date
+            - textbox [ref=e98]: 2026-03-26
+            - generic [ref=e99]: Bill Number
+            - 'textbox "e.g., Supplier Bill #" [ref=e101]'
+          - generic [ref=e102]:
+            - generic [ref=e103]: Payment Type
+            - generic [ref=e105]:
+              - button "Credit Purchase" [pressed] [ref=e106] [cursor=pointer]
+              - button "Cash Purchase" [ref=e107] [cursor=pointer]
+          - generic [ref=e108]:
+            - generic [ref=e109]: Supplier
+            - generic [ref=e111]:
+              - textbox "Select Supplier" [ref=e112]: AMEEN DYE MAKER
+              - generic:
+                - img
+              - combobox [ref=e113]:
+                - option "Select Supplier"
+                - option "AMEEN DYE MAKER" [selected]
+                - option "Hoorain Aijaz"
+                - option "PAPPU CRAIP"
+            - generic [ref=e114]: Grn Reference
+            - generic [ref=e116]:
+              - textbox "Auto select from open GRN quantities" [ref=e117]
+              - button "Load GRN" [ref=e118] [cursor=pointer]:
+                - img [ref=e119]
+          - generic [ref=e122]:
+            - generic [ref=e123]: Description
+            - textbox [ref=e125]
+        - table [ref=e128]:
+          - rowgroup [ref=e139]:
+            - row "Raw Material Color Size Unit Quantity Rate Amount Actions Sr.No" [ref=e140]:
+              - columnheader "Raw Material" [ref=e141]
+              - columnheader "Color" [ref=e142]
+              - columnheader "Size" [ref=e143]
+              - columnheader "Unit" [ref=e144]
+              - columnheader "Quantity" [ref=e145]
+              - columnheader "Rate" [ref=e146]
+              - columnheader "Amount" [ref=e147]
+              - columnheader "Actions" [ref=e148]
+              - columnheader "Sr.No" [ref=e149]
+          - rowgroup [ref=e150]:
+            - row "ANWAAR FANCY ANWAAR FANCY None None None None PAIRSS 0 1" [ref=e151]:
+              - cell "ANWAAR FANCY ANWAAR FANCY" [ref=e152]:
+                - generic [ref=e153]:
+                  - textbox "Select Raw Material" [ref=e154]: ANWAAR FANCY
+                  - generic:
+                    - img
+                  - combobox [ref=e155]:
+                    - option "Select Raw Material"
+                    - option "ANWAAR FANCY" [selected]
+                    - option "black"
+                    - option "CARTON"
+                    - option "E2E RM 1773946548418405"
+                    - option "E2E RM neg1770614079168495"
+                    - option "EVA DANA"
+                    - option "EVR DANA"
+                    - option "PATAWA"
+                    - option "PEARLS"
+                    - option "PU CHEMICALS"
+                    - option "RAYGZEEN"
+                    - option "STICKERS"
+                    - option "THAILI"
+                    - option "XTOOCH STICKER"
+              - cell "None None" [ref=e156]:
+                - generic [ref=e157]:
+                  - textbox "None" [ref=e158]
+                  - generic:
+                    - img
+                  - combobox [disabled] [ref=e159]:
+                    - option "None" [selected]
+              - cell "None None" [ref=e160]:
+                - generic [ref=e161]:
+                  - textbox "None" [ref=e162]
+                  - generic:
+                    - img
+                  - combobox [disabled] [ref=e163]:
+                    - option "None" [selected]
+              - cell "PAIRSS" [ref=e164]:
+                - textbox [ref=e165]: PAIRSS
+              - cell [ref=e166]:
+                - spinbutton [active] [ref=e167]
+              - cell [ref=e168]:
+                - spinbutton [ref=e169]: "500"
+              - cell "0" [ref=e170]:
+                - textbox [ref=e171]: "0"
+              - cell [ref=e172]:
+                - button [disabled] [ref=e173]:
+                  - img [ref=e174]
+              - cell "1" [ref=e178]
+          - rowgroup [ref=e179]:
+            - row "Total 0 Add Row" [ref=e180]:
+              - cell "Total" [ref=e181]
+              - cell "0" [ref=e182]:
+                - textbox [ref=e183]: "0"
+              - cell "Add Row" [ref=e184]:
+                - button "Add Row" [ref=e185] [cursor=pointer]:
+                  - img [ref=e186]
+              - cell [ref=e187]
+        - button "Confirm" [ref=e189] [cursor=pointer]
+    - generic [ref=e190]: ERP System © 2026
+```

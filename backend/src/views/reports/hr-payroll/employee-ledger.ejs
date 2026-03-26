@@ -1,0 +1,382 @@
+<%
+  const reportLoaded = Boolean(filters?.reportLoaded);
+  const selectedEntityId = Number(filters?.entityId || 0) || null;
+  const selectedBranchIds = Array.isArray(filters?.branchIds)
+    ? filters.branchIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
+    : [];
+  const selectedFrom = String(filters?.from || "");
+  const selectedTo = String(filters?.to || "");
+  const selectedLedgerView = String(filters?.ledgerView || "summary").toLowerCase() === "detail" ? "detail" : "summary";
+  const selectedLedgerViewLabel = selectedLedgerView === "detail" ? t("details") : t("summary");
+  const showLedgerNarrativeCols = selectedLedgerView === "detail";
+  const ledgerStaticCols = showLedgerNarrativeCols ? 6 : 4;
+  const rows = Array.isArray(reportData?.rows) ? reportData.rows : [];
+  const totals = reportData?.totals || { qty: 0, debit: 0, credit: 0, closingBalance: 0 };
+  const entityOptions = Array.isArray(options?.entities) ? options.entities : [];
+  const selectedEntity = entityOptions.find((entry) => Number(entry.id) === selectedEntityId) || reportData?.entity || null;
+  const selectedEntityCode = selectedEntity?.code || "";
+  const includeBranchColumn = Boolean(reportData?.includeBranchColumn);
+  const dateRangeLabel = (() => {
+    const value = typeof t === "function" ? t("date_range") : "";
+    return value || "Date Range";
+  })();
+  const weekdayShortLabels = [
+    t("weekday_sun_short"),
+    t("weekday_mon_short"),
+    t("weekday_tue_short"),
+    t("weekday_wed_short"),
+    t("weekday_thu_short"),
+    t("weekday_fri_short"),
+    t("weekday_sat_short"),
+  ];
+
+  const formatDate = (value) => {
+    return formatDateDisplay(value, "-");
+  };
+
+  const formatNumber = (value, digits = 2) => {
+    return formatNumberDisplay(value, { decimals: digits, fallback: "0" });
+  };
+
+  const resolveEntityName = (entry) => {
+    if (!entry) return "-";
+    if (locale === "ur") return String(entry.name_ur || entry.name || "-");
+    return String(entry.name || "-");
+  };
+%>
+
+<div class="mx-auto w-full max-w-none space-y-4 px-2">
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <h1 class="text-xl font-display font-semibold tracking-tight text-ink sm:text-2xl"><%= t('employee_ledger_report') %></h1>
+    <% if (filters?.invalidFilterInput) { %>
+      <div class="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800"><%= t('date_filters_auto_corrected') %></div>
+    <% } %>
+
+    <form method="post" action="<%= reportPath %>" class="mt-3 max-w-6xl rounded-xl border border-slate-200 bg-slate-50/30 p-3 sm:p-4" data-entity-ledger-form>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="load_report" value="1">
+
+      <div class="space-y-3">
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t('code') %></label>
+          <div class="sm:col-span-9">
+            <input
+              type="text"
+              value="<%= selectedEntityCode %>"
+              readonly
+              class="h-10 w-full rounded-xl border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700"
+              data-entity-code
+            >
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t('employees') %></label>
+          <div class="sm:col-span-9">
+            <select
+              name="entity_id"
+              class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm"
+              data-searchable-select="true"
+              data-searchable-variant="unified"
+              data-entity-select
+            >
+              <option value=""><%= t('select') %></option>
+              <% entityOptions.forEach((entry) => { %>
+                <option
+                  value="<%= entry.id %>"
+                  data-code="<%= entry.code || '' %>"
+                  <%= selectedEntityId === Number(entry.id) ? 'selected' : '' %>
+                ><%= resolveEntityName(entry) %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= dateRangeLabel %></label>
+          <div class="sm:col-span-9">
+            <div class="relative" data-date-range-wrap>
+              <input
+                type="text"
+                readonly
+                value=""
+                data-date-range-input
+                class="h-10 w-full cursor-pointer rounded-xl border border-slate-300 bg-white px-3 pr-10 text-sm"
+              >
+              <button type="button" class="absolute inset-y-0 right-2 inline-flex items-center text-slate-500 hover:text-slate-700" data-date-range-toggle aria-label="<%= t('open_date_range_picker') %>">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
+              </button>
+              <div class="absolute left-0 z-50 mt-2 hidden max-h-[62vh] overflow-auto rounded-xl border border-slate-200 bg-white p-2.5 shadow-lg" style="width:min(700px,calc(100vw - 1rem));" data-date-range-panel>
+                <div class="grid grid-cols-1 gap-2 lg:grid-cols-[156px_1fr]">
+                  <div class="space-y-1.5">
+                    <div>
+                      <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('from_date') %></div>
+                      <div class="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700" data-date-range-from-display>-</div>
+                    </div>
+                    <div>
+                      <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('to_date') %></div>
+                      <div class="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700" data-date-range-to-display>-</div>
+                    </div>
+                  </div>
+                  <div>
+                    <div class="mb-1.5 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600" data-date-range-caption><%= t('select_date_range') %></div>
+                    <div class="grid grid-cols-1 gap-3 xl:grid-cols-[1fr_auto_1fr]">
+                      <div class="min-w-[210px] rounded-lg border border-slate-200 bg-slate-50/40 p-2">
+                        <div class="mb-1 flex items-center justify-between gap-2">
+                          <button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-prev>&larr;</button>
+                          <div class="text-center text-xs font-semibold text-slate-700" data-date-range-month-1-label></div>
+                          <button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-next>&rarr;</button>
+                        </div>
+                        <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-500">
+                          <% weekdayShortLabels.forEach((weekdayLabel) => { %>
+                            <span><%= weekdayLabel %></span>
+                          <% }) %>
+                        </div>
+                        <div class="mt-1 grid grid-cols-7 gap-1" data-date-range-month-1-grid></div>
+                      </div>
+                      <div class="hidden xl:block w-px bg-slate-200 self-stretch"></div>
+                      <div class="min-w-[210px] rounded-lg border border-slate-200 bg-slate-50/40 p-2">
+                        <div class="mb-1 flex items-center justify-between gap-2">
+                          <button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-2-prev>&larr;</button>
+                          <div class="text-center text-xs font-semibold text-slate-700" data-date-range-month-2-label></div>
+                          <button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-2-next>&rarr;</button>
+                        </div>
+                        <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-500">
+                          <% weekdayShortLabels.forEach((weekdayLabel) => { %>
+                            <span><%= weekdayLabel %></span>
+                          <% }) %>
+                        </div>
+                        <div class="mt-1 grid grid-cols-7 gap-1" data-date-range-month-2-grid></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="mt-1.5 flex items-center justify-end gap-2">
+                  <button type="button" class="rounded-lg border border-slate-300 bg-white px-3 py-1.25 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700" data-date-range-cancel><%= t('cancel') %></button>
+                  <button type="button" class="rounded-lg bg-accent px-3 py-1.25 text-xs font-semibold uppercase tracking-[0.08em] text-white" data-date-range-apply><%= t('apply') %></button>
+                </div>
+              </div>
+            </div>
+            <input type="hidden" name="from_date" value="<%= selectedFrom %>" data-from-date-hidden>
+            <input type="hidden" name="to_date" value="<%= selectedTo %>" data-to-date-hidden>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t('branches') : t('branch') %></label>
+          <div class="sm:col-span-9">
+            <% if (user?.isAdmin) { %>
+              <div
+                class="relative"
+                data-multi-select
+                data-name="branch_ids"
+                data-placeholder="<%= `${t('all')} ${t('branches')}` %>"
+                data-multi-all-value="__ALL__"
+                data-multi-auto-all="1"
+              >
+                <button type="button" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 pr-10 text-left text-sm text-slate-700" data-multi-trigger></button>
+                <span class="pointer-events-none absolute inset-y-0 right-3 inline-flex items-center text-slate-500">
+                  <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                    <path d="M6 8l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"></path>
+                  </svg>
+                </span>
+                <div class="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-50 hidden rounded-xl border border-slate-200 bg-white p-2 shadow-xl" data-multi-panel>
+                  <div class="max-h-52 overflow-auto pr-1" data-multi-options>
+                    <label class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                      <input type="checkbox" value="__ALL__" <%= selectedBranchIds.length ? '' : 'checked' %>>
+                      <span><%= `${t('all')} ${t('branches')}` %></span>
+                    </label>
+                    <% (options?.branches || []).forEach((branch) => { %>
+                      <label class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+                        <input type="checkbox" value="<%= branch.id %>" <%= selectedBranchIds.includes(Number(branch.id)) ? 'checked' : '' %>>
+                        <span><%= branch.name %></span>
+                      </label>
+                    <% }) %>
+                  </div>
+                </div>
+                <input type="hidden" name="branch_ids" value="<%= selectedBranchIds.join(',') %>" data-multi-hidden>
+              </div>
+            <% } else { %>
+              <input type="text" readonly class="h-10 w-full rounded-xl border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700" value="<%= (options?.branches || [])[0]?.name || branchId %>">
+              <input type="hidden" name="branch_ids" value="<%= branchId || '' %>">
+            <% } %>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t('report_type') %></label>
+          <div class="sm:col-span-9">
+            <div class="flex flex-wrap items-center gap-4 pt-1">
+              <label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <input type="radio" name="ledger_view" value="detail" class="h-4 w-4 border-slate-300 text-accent focus:ring-accent" <%= selectedLedgerView === 'detail' ? 'checked' : '' %>>
+                <span><%= t('details') %></span>
+              </label>
+              <label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <input type="radio" name="ledger_view" value="summary" class="h-4 w-4 border-slate-300 text-accent focus:ring-accent" <%= selectedLedgerView === 'summary' ? 'checked' : '' %>>
+                <span><%= t('summary') %></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-center gap-2 pt-1 sm:grid-cols-12">
+          <div class="sm:col-start-4 sm:col-span-9 flex items-center gap-2">
+            <button type="submit" class="inline-flex items-center rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= t('load') %></button>
+            <a href="<%= reportPath %>" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= t('cancel') %></a>
+          </div>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm" data-print-area>
+    <div class="px-1 pt-1 text-center text-xl font-display font-semibold uppercase tracking-[0.35em] text-slate-900" data-print-header>
+      <%= t('brand') %>
+    </div>
+
+    <div class="flex flex-col gap-3 border-b border-slate-200 px-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div class="text-sm font-semibold text-slate-700"><%= t('employee_ledger_report') %> - <%= selectedLedgerViewLabel %></div>
+      <div class="flex items-center gap-2">
+        <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40" type="button" data-download-button <%= reportLoaded && selectedEntityId ? '' : 'disabled' %>>
+          <%= t('download') %>
+        </button>
+        <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40" type="button" data-print-button <%= reportLoaded && selectedEntityId ? '' : 'disabled' %>>
+          <%= t('print') %>
+        </button>
+        <%- include("../../base/partials/table-controls", { t, showStatus: false }) %>
+      </div>
+    </div>
+
+    <% if (!reportLoaded) { %>
+      <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= t('load_report_to_view') %></div>
+    <% } else if (!selectedEntityId) { %>
+      <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= `${t('select')} ${t('employees')}` %></div>
+    <% } else { %>
+      <div class="relative mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+        <table class="min-w-280 w-full text-sm tabular-nums" data-table data-report-table>
+          <thead class="bg-slate-100 text-slate-700">
+            <tr>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="__sr"><%= t('sr_no') %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="entry_date"><%= t('date') %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="voucher_type"><%= t('voucher_type') %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="voucher_no"><%= t('voucher_no') %></th>
+              <% if (showLedgerNarrativeCols) { %>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="bill_number"><%= t('bill_number') %></th>
+              <% } %>
+              <% if (showLedgerNarrativeCols) { %>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="description"><%= t('description') %></th>
+              <% } %>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="qty"><%= t('quantity') %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="debit"><%= t('debit') %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="credit"><%= t('credit') %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="balance"><%= t('balance') %></th>
+              <% if (includeBranchColumn) { %>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="branch"><%= t('branch') %></th>
+              <% } %>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100" data-table-body>
+            <tr class="bg-white" data-row data-active="true">
+              <td class="px-3 py-2" data-sort-value="0">1</td>
+              <td class="px-3 py-2">-</td>
+              <td class="px-3 py-2">-</td>
+              <td class="px-3 py-2">-</td>
+              <% if (showLedgerNarrativeCols) { %>
+                <td class="px-3 py-2">-</td>
+              <% } %>
+              <td class="px-3 py-2 font-semibold"><%= t('opening_balance') %></td>
+              <td class="px-3 py-2 text-right" data-sort-value="0">0.000</td>
+              <td class="px-3 py-2 text-right" data-sort-value="0">0.00</td>
+              <td class="px-3 py-2 text-right" data-sort-value="0">0.00</td>
+              <td class="px-3 py-2 text-right font-semibold" data-sort-value="<%= Number(reportData?.openingBalance || 0) %>"><%= formatNumber(reportData?.openingBalance || 0, 2) %></td>
+              <% if (includeBranchColumn) { %>
+                <td class="px-3 py-2">-</td>
+              <% } %>
+            </tr>
+
+            <% rows.forEach((row, rowIndex) => { %>
+              <tr class="bg-white odd:bg-slate-50/30" data-row data-active="true">
+                <td class="px-3 py-2" data-sort-value="<%= rowIndex + 2 %>"><%= rowIndex + 2 %></td>
+                <td class="px-3 py-2" data-sort-value="<%= row.entry_date || '' %>"><%= formatDate(row.entry_date) %></td>
+                <td class="px-3 py-2"><%= row.voucher_type || '-' %></td>
+                <td class="px-3 py-2" data-sort-value="<%= Number(row.voucher_no || 0) %>"><%= row.voucher_no || '-' %></td>
+                <% if (showLedgerNarrativeCols) { %>
+                  <td class="px-3 py-2"><%= row.bill_number || '-' %></td>
+                <% } %>
+                <% if (showLedgerNarrativeCols) { %>
+                  <td class="px-3 py-2"><%= row.description || '-' %></td>
+                <% } %>
+                <td class="px-3 py-2 text-right" data-sort-value="<%= Number(row.qty || 0) %>"><%= formatNumber(row.qty || 0, 3) %></td>
+                <td class="px-3 py-2 text-right" data-sort-value="<%= Number(row.debit || 0) %>"><%= formatNumber(row.debit || 0, 2) %></td>
+                <td class="px-3 py-2 text-right" data-sort-value="<%= Number(row.credit || 0) %>"><%= formatNumber(row.credit || 0, 2) %></td>
+                <td class="px-3 py-2 text-right font-semibold" data-sort-value="<%= Number(row.balance || 0) %>"><%= formatNumber(row.balance || 0, 2) %></td>
+                <% if (includeBranchColumn) { %>
+                  <td class="px-3 py-2"><%= row.branch_name || '-' %></td>
+                <% } %>
+              </tr>
+            <% }) %>
+
+            <tr class="border-t border-slate-200 bg-slate-100">
+              <td colspan="<%= ledgerStaticCols %>" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('total') %></td>
+              <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatNumber(totals.qty || 0, 3) %></td>
+              <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatNumber(totals.debit || 0, 2) %></td>
+              <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatNumber(totals.credit || 0, 2) %></td>
+              <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatNumber(totals.closingBalance || 0, 2) %></td>
+              <% if (includeBranchColumn) { %>
+                <td class="px-3 py-2"></td>
+              <% } %>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <%- include("../../base/partials/table-footer", { t }) %>
+    <% } %>
+  </section>
+</div>
+
+<%- include("../../base/partials/basic-info-utils", {
+  t,
+  page: { titleKey: "employee_ledger_report", autoCodeFromName: false },
+  basePath: reportPath,
+  modalOpen: false,
+  modalMode: "add"
+}) %>
+
+<script><%- include("../../base/partials/date-range-picker.js") %></script>
+<script><%- include("../../base/partials/searchable-select.js") %></script>
+<script>
+  (function () {
+    const form = document.querySelector('[data-entity-ledger-form]');
+    if (!form) return;
+
+    if (typeof window.initSearchableSelects === 'function') {
+      window.initSearchableSelects();
+    }
+
+    if (typeof window.initReportDateRangePicker === 'function') {
+      window.initReportDateRangePicker({
+        root: form,
+        invalidDateRangeMessage: <%- JSON.stringify(t('invalid_date_range')) %>,
+        selectDateRangeText: <%- JSON.stringify(t('select_date_range')) %>,
+      });
+    }
+
+    const entitySelect = document.querySelector('[data-entity-select]');
+    const codeInput = document.querySelector('[data-entity-code]');
+    if (entitySelect && codeInput) {
+      const syncCode = () => {
+        const selectedOption = entitySelect.options[entitySelect.selectedIndex];
+        codeInput.value = selectedOption ? String(selectedOption.getAttribute('data-code') || '') : '';
+      };
+      entitySelect.addEventListener('change', syncCode);
+      syncCode();
+    }
+
+    if (typeof window.initDataMultiSelects === 'function') {
+      window.initDataMultiSelects(form);
+    }
+  })();
+</script>
+

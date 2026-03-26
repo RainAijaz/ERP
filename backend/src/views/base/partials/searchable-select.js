@@ -1,6 +1,8 @@
 (() => {
   const i18nSearch = '<%= t("search") %>';
   const i18nRequiredFields = '<%= t("error_required_fields") %>';
+  const i18nSelect = '<%= t("select") %>';
+  const i18nSelected = '<%= t("selected") || "selected" %>';
 
   if (typeof window !== "undefined") {
     const existing = window.VoucherValidation || {};
@@ -158,18 +160,32 @@
       }
       return true;
     };
+    const resolveRowFieldAttrName = () => {
+      const candidates = [
+        "data-col",
+        "data-sku-rule-col",
+        "data-labour-rule-col",
+        "data-row-field",
+      ];
+      for (let index = 0; index < candidates.length; index += 1) {
+        const attrName = candidates[index];
+        if (select.hasAttribute(attrName)) return attrName;
+      }
+      return "data-col";
+    };
+    const rowFieldAttrName = resolveRowFieldAttrName();
     const advanceFocusWithinRow = () => {
-      const fieldKey = String(select.getAttribute("data-col") || "").trim();
+      const fieldKey = String(select.getAttribute(rowFieldAttrName) || "").trim();
       if (!fieldKey) return false;
       const row = select.closest("tr");
       if (!(row instanceof HTMLElement)) return false;
       const rowFields = Array.from(
-        row.querySelectorAll("select[data-col], input[data-col], textarea[data-col]"),
+        row.querySelectorAll(`[${rowFieldAttrName}]`),
       );
       if (!rowFields.length) return false;
       const currentIndex = rowFields.findIndex((field) => {
         if (!(field instanceof HTMLElement)) return false;
-        const key = String(field.getAttribute("data-col") || "").trim();
+        const key = String(field.getAttribute(rowFieldAttrName) || "").trim();
         return key === fieldKey;
       });
       if (currentIndex < 0) return false;
@@ -181,7 +197,7 @@
       return false;
     };
     const getNextRowFieldMeta = () => {
-      const fieldKey = String(select.getAttribute("data-col") || "").trim();
+      const fieldKey = String(select.getAttribute(rowFieldAttrName) || "").trim();
       if (!fieldKey) return null;
       const row = select.closest("tr[data-row-index]");
       if (!(row instanceof HTMLElement)) return null;
@@ -195,7 +211,7 @@
       if (!linesType) return null;
 
       const rowFields = Array.from(
-        row.querySelectorAll("select[data-col], input[data-col], textarea[data-col]"),
+        row.querySelectorAll(`[${rowFieldAttrName}]`),
       );
       if (!rowFields.length) return null;
       const currentIndex = rowFields.findIndex((field) => field === select);
@@ -203,7 +219,7 @@
       for (let idx = currentIndex + 1; idx < rowFields.length; idx += 1) {
         const candidate = rowFields[idx];
         if (!(candidate instanceof HTMLElement)) continue;
-        const nextKey = String(candidate.getAttribute("data-col") || "").trim();
+        const nextKey = String(candidate.getAttribute(rowFieldAttrName) || "").trim();
         if (!nextKey) continue;
         if (candidate instanceof HTMLSelectElement || isFocusableControl(candidate)) {
           return { linesType, rowIndex, nextKey };
@@ -226,7 +242,7 @@
       );
       if (!(row instanceof HTMLElement)) return false;
       const nextField = row.querySelector(
-        `[data-col="${escapeAttributeValue(nextKey)}"]`,
+        `[${rowFieldAttrName}="${escapeAttributeValue(nextKey)}"]`,
       );
       return focusControl(nextField);
     };
@@ -260,7 +276,18 @@
 
     if (select.hasAttribute("required")) {
       input.required = true;
-      if (!isMulti) select.removeAttribute("required");
+      // Keep browser validation on the visible control, not the hidden original <select>.
+      select.removeAttribute("required");
+    }
+    if (select.disabled) {
+      input.readOnly = true;
+      input.classList.add("bg-slate-50", "text-slate-600");
+      input.classList.remove("cursor-text");
+      input.classList.add("cursor-not-allowed");
+      // Force disabled visual state even when base utility classes include bg-white.
+      input.style.backgroundColor = "rgb(248 250 252)";
+      input.style.color = "rgb(71 85 105)";
+      input.style.caretColor = "transparent";
     }
 
     const icon = document.createElement("div");
@@ -360,6 +387,7 @@
 
     let activeIndex = -1;
     let keyboardNavigatedMenu = false;
+    let multiSearchValue = "";
 
     const hasAllMultiSelect = isMulti
       && String(select.dataset.allMultiSelect || "").toLowerCase() === "true";
@@ -414,7 +442,8 @@
     };
 
     const getFilteredOptions = ({ showAll = false } = {}) => {
-      let filter = showAll ? "" : input.value.trim().toLowerCase();
+      const rawFilterSource = isMulti ? multiSearchValue : input.value;
+      let filter = showAll ? "" : String(rawFilterSource || "").trim().toLowerCase();
       if (isMulti) {
         const currentString = Array.from(select.selectedOptions)
           .map((opt) => opt.textContent.trim())
@@ -454,6 +483,31 @@
 
     const renderMenu = ({ showAll = false, preserveActive = false } = {}) => {
       menu.innerHTML = "";
+      if (isMulti) {
+        const searchWrap = document.createElement("div");
+        searchWrap.className = "sticky top-0 z-10 bg-white px-2 pt-2";
+        const searchInput = document.createElement("input");
+        searchInput.type = "search";
+        searchInput.className =
+          "h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 focus:border-black focus:bg-white focus:outline-none focus:ring-2 focus:ring-black/20";
+        searchInput.placeholder = i18nSearch;
+        searchInput.autocomplete = "off";
+        searchInput.value = String(multiSearchValue || "");
+        searchInput.setAttribute("data-searchable-multi-search", "true");
+        searchInput.addEventListener("input", () => {
+          multiSearchValue = searchInput.value || "";
+          renderMenu({ showAll: false, preserveActive: true });
+          menu.classList.remove("hidden");
+          const replacement = menu.querySelector('[data-searchable-multi-search="true"]');
+          if (replacement instanceof HTMLInputElement) {
+            replacement.focus();
+            const caretPos = replacement.value.length;
+            replacement.setSelectionRange(caretPos, caretPos);
+          }
+        });
+        searchWrap.appendChild(searchInput);
+        menu.appendChild(searchWrap);
+      }
       const filteredOptions = getFilteredOptions({ showAll });
 
       if (!preserveActive) {
@@ -503,6 +557,12 @@
             select.dispatchEvent(new Event("change", { bubbles: true }));
             syncToInput();
             menu.classList.add("hidden");
+            input.dataset.searchableSuppressOpenOnce = "1";
+            window.setTimeout(() => {
+              if (!input.isConnected) return;
+              input.focus();
+              input.select();
+            }, 0);
           }
         });
         menu.appendChild(btn);
@@ -520,6 +580,7 @@
     };
 
     input.addEventListener("focus", () => {
+      if (select.disabled) return;
       keyboardNavigatedMenu = false;
       if (input.dataset.searchableSuppressOpenOnce === "1") {
         input.dataset.searchableSuppressOpenOnce = "0";
@@ -528,18 +589,40 @@
       input.select();
       renderMenu({ showAll: true });
       menu.classList.remove("hidden");
+      if (isMulti) {
+        window.setTimeout(() => {
+          const multiSearchInput = menu.querySelector('[data-searchable-multi-search="true"]');
+          if (multiSearchInput instanceof HTMLInputElement) {
+            multiSearchInput.focus();
+          }
+        }, 0);
+      }
     });
     input.addEventListener("click", () => {
+      if (select.disabled) return;
       keyboardNavigatedMenu = false;
       renderMenu({ showAll: true });
       menu.classList.remove("hidden");
+      if (isMulti) {
+        window.setTimeout(() => {
+          const multiSearchInput = menu.querySelector('[data-searchable-multi-search="true"]');
+          if (multiSearchInput instanceof HTMLInputElement) {
+            multiSearchInput.focus();
+          }
+        }, 0);
+      }
     });
     input.addEventListener("input", () => {
+      if (select.disabled) return;
+      if (isMulti) {
+        multiSearchValue = input.value || "";
+      }
       keyboardNavigatedMenu = false;
       renderMenu({ showAll: false });
       menu.classList.remove("hidden");
     });
     input.addEventListener("keydown", (e) => {
+      if (select.disabled) return;
       if (isMulti) return;
       const isGridArrowNavContext = Boolean(
         input.closest('[data-grid-arrow-nav="true"]'),
@@ -756,10 +839,176 @@
     });
   };
 
+  const initDataMultiSelects = (root = document) => {
+    const scope = root && typeof root.querySelectorAll === "function" ? root : document;
+    const wraps = Array.from(scope.querySelectorAll("[data-multi-select]"));
+    let openRoot = null;
+
+    const closeAll = () => {
+      wraps.forEach((wrap) => {
+        wrap.querySelector("[data-multi-panel]")?.classList.add("hidden");
+      });
+      openRoot = null;
+    };
+
+    wraps.forEach((wrap) => {
+      if (wrap.dataset.dataMultiReady === "true") return;
+      const trigger = wrap.querySelector("[data-multi-trigger]");
+      const panel = wrap.querySelector("[data-multi-panel]");
+      const hidden = wrap.querySelector("[data-multi-hidden]");
+      const checkboxes = Array.from(wrap.querySelectorAll('[data-multi-panel] input[type="checkbox"]'));
+      if (!trigger || !panel || !hidden) return;
+
+      wrap.dataset.dataMultiReady = "true";
+      const allValue = String(wrap.dataset.multiAllValue || "").trim();
+      const autoAll = String(wrap.dataset.multiAutoAll || "").trim() === "1";
+      const optionsContainer = panel.querySelector("[data-multi-options]") || panel;
+      const optionRows = checkboxes
+        .map((cb) => cb.closest("label"))
+        .filter((label) => label && optionsContainer.contains(label));
+
+      const searchInput = document.createElement("input");
+      searchInput.type = "search";
+      searchInput.className =
+        "mb-2 h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 focus:border-black focus:bg-white focus:outline-none focus:ring-2 focus:ring-black/20";
+      searchInput.placeholder = i18nSearch;
+      searchInput.autocomplete = "off";
+      searchInput.setAttribute("data-multi-search", "true");
+
+      const noResults = document.createElement("div");
+      noResults.className = "hidden px-2 py-2 text-center text-xs italic text-slate-400";
+      noResults.textContent = "<%= t('no_records_found') %>";
+
+      if (!panel.querySelector("[data-multi-search]")) {
+        panel.insertBefore(searchInput, panel.firstChild);
+      }
+      if (!panel.querySelector("[data-multi-no-results]")) {
+        noResults.setAttribute("data-multi-no-results", "true");
+        panel.appendChild(noResults);
+      }
+
+      const searchField = panel.querySelector("[data-multi-search]");
+      const noResultsNode = panel.querySelector("[data-multi-no-results]");
+
+      const applyFilter = () => {
+        const query = String(searchField?.value || "").trim().toLowerCase();
+        let visibleCount = 0;
+        optionRows.forEach((row) => {
+          const label = String(row.textContent || "").trim().toLowerCase();
+          const matched = !query || label.includes(query);
+          row.classList.toggle("hidden", !matched);
+          if (matched) visibleCount += 1;
+        });
+        if (noResultsNode) {
+          noResultsNode.classList.toggle("hidden", visibleCount > 0);
+        }
+      };
+
+      const getAllCheckbox = () => {
+        if (!allValue) return null;
+        return checkboxes.find((cb) => String(cb.value || "").trim() === allValue) || null;
+      };
+
+      const normalizeSelection = (changedCheckbox) => {
+        const allCheckbox = getAllCheckbox();
+        if (!allCheckbox) return;
+
+        const nonAllCheckboxes = checkboxes.filter((cb) => cb !== allCheckbox);
+        if (changedCheckbox === allCheckbox && allCheckbox.checked) {
+          nonAllCheckboxes.forEach((cb) => {
+            cb.checked = false;
+          });
+          return;
+        }
+
+        if (changedCheckbox && changedCheckbox !== allCheckbox && changedCheckbox.checked) {
+          allCheckbox.checked = false;
+        }
+
+        const checkedNonAll = nonAllCheckboxes.filter((cb) => cb.checked);
+        if (!checkedNonAll.length && autoAll) {
+          allCheckbox.checked = true;
+          return;
+        }
+
+        if (checkedNonAll.length && allCheckbox.checked) {
+          allCheckbox.checked = false;
+        }
+      };
+
+      const refresh = () => {
+        const selected = checkboxes.filter((cb) => cb.checked);
+        const selectedValues = selected
+          .map((cb) => String(cb.value || "").trim())
+          .filter((value) => Boolean(value) && value !== allValue);
+        hidden.value = selectedValues.join(",");
+        hidden.dispatchEvent(new Event("change", { bubbles: true }));
+
+        if (!selectedValues.length) {
+          trigger.textContent = String(wrap.dataset.placeholder || i18nSelect);
+          return;
+        }
+        if (selectedValues.length === 1) {
+          const selectedCheckbox = selected.find((cb) => String(cb.value || "").trim() === selectedValues[0]);
+          const label = selectedCheckbox?.closest("label")?.querySelector("span")?.textContent || selectedValues[0];
+          trigger.textContent = label;
+          return;
+        }
+        trigger.textContent = `${selectedValues.length} ${i18nSelected}`;
+      };
+
+      normalizeSelection(null);
+      refresh();
+
+      checkboxes.forEach((cb) => {
+        cb.addEventListener("change", () => {
+          normalizeSelection(cb);
+          refresh();
+          applyFilter();
+        });
+      });
+
+      if (searchField) {
+        searchField.addEventListener("input", applyFilter);
+      }
+
+      trigger.addEventListener("click", (event) => {
+        event.preventDefault();
+        const wasHidden = panel.classList.contains("hidden");
+        closeAll();
+        if (wasHidden) {
+          panel.classList.remove("hidden");
+          applyFilter();
+          if (searchField) {
+            window.setTimeout(() => searchField.focus(), 0);
+          }
+          openRoot = wrap;
+        }
+      });
+    });
+
+    if (!window.__dataMultiSelectGlobalListenersAttached) {
+      document.addEventListener("click", (event) => {
+        if (!openRoot) return;
+        if (openRoot.contains(event.target)) return;
+        closeAll();
+      });
+
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") closeAll();
+      });
+      window.__dataMultiSelectGlobalListenersAttached = true;
+    }
+  };
+
   if (typeof window !== "undefined") {
     if (!window.initSearchableSelects) {
       document.addEventListener("DOMContentLoaded", initSearchableSelects);
     }
     window.initSearchableSelects = initSearchableSelects;
+    window.initDataMultiSelects = initDataMultiSelects;
+    document.addEventListener("DOMContentLoaded", () => {
+      initDataMultiSelects(document);
+    });
   }
 })();

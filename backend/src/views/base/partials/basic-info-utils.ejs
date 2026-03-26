@@ -206,6 +206,7 @@
     const filterCity = document.querySelector("[data-filter-city]");
     const filterCreatedBy = document.querySelector("[data-filter-created-by]");
     const filterSubgroup = document.querySelector("[data-filter-subgroup]");
+    const filterRateView = document.querySelector("[data-filter-rate-view]");
     const filterCreatedAtStart = document.querySelector("[data-filter-created-at-start]");
     const filterCreatedAtEnd = document.querySelector("[data-filter-created-at-end]");
     const filterAddButtons = document.querySelectorAll("[data-filter-add]");
@@ -274,12 +275,14 @@
       if (!filterCountBadge) return;
       const createdByActive = filterCreatedBy && (filterCreatedBy.value || "").trim() ? 1 : 0;
       const subgroupActive = filterSubgroup && (filterSubgroup.value || "").trim() ? 1 : 0;
+      const rateViewActive = filterRateView && String(filterRateView.value || "").trim().toUpperCase() === "PER_PAIR" ? 1 : 0;
       const createdAtActive = (filterCreatedAtStart && filterCreatedAtStart.value) || (filterCreatedAtEnd && filterCreatedAtEnd.value) ? 1 : 0;
       const activeFilters =
         [...getFilterValues("[data-filter-account-type]"), ...getFilterValues("[data-filter-account-group]"), ...getFilterValues("[data-filter-party-type]"), ...getFilterValues("[data-filter-party-group]"), ...getFilterValues("[data-filter-branch]"), ...getFilterValues("[data-filter-city]"), ...getFilterValues("[data-filter-apply-on]"), ...getFilterValues("[data-filter-subgroup]"), ...getFilterValues("[data-filter-group]"), ...getFilterValues("[data-filter-article-type]")].length +
         createdByActive +
         createdAtActive +
-        subgroupActive;
+        subgroupActive +
+        rateViewActive;
       if (activeFilters > 0) {
         filterCountBadge.textContent = String(activeFilters);
         filterCountBadge.classList.remove("hidden");
@@ -313,6 +316,20 @@
       if (!modal || !modalForm) return;
       const payload = data || {};
       const preserveModalError = options && options.preserveModalError === true;
+      const toSelectedList = (rawValue) => {
+        if (Array.isArray(rawValue)) {
+          return rawValue.map((value) => String(value || "").trim()).filter(Boolean);
+        }
+        if (rawValue && typeof rawValue === "object") {
+          return Object.values(rawValue).map((value) => String(value || "").trim()).filter(Boolean);
+        }
+        const text = String(rawValue || "").trim();
+        if (!text) return [];
+        return text
+          .split(",")
+          .map((value) => value.trim())
+          .filter(Boolean);
+      };
       // Populate modal fields from row data (or defaults on create).
       modal.classList.remove("hidden");
       modal.classList.add("flex");
@@ -324,35 +341,56 @@
         const name = input.getAttribute("data-field");
         if (input.type === "checkbox") {
           if (input.dataset.multi === "true") {
-            const selected = (payload[name] || "")
-              .split(",")
-              .map((value) => value.trim())
-              .filter(Boolean);
+            const selected = toSelectedList(payload[name]);
             input.checked = selected.includes(input.value);
           } else {
             input.checked = payload[name] === "true" || payload[name] === true;
           }
         } else if (input.tagName === "SELECT" && input.multiple) {
-          const selected = (payload[name] || "")
-            .split(",")
-            .map((value) => value.trim())
-            .filter(Boolean);
+          const selected = toSelectedList(payload[name]);
           Array.from(input.options).forEach((option) => {
             option.selected = selected.includes(option.value);
           });
         } else {
-          input.value = payload[name] || "";
+          const hasPayloadValue = Object.prototype.hasOwnProperty.call(payload, name);
+          const defaultValue = mode === "create" && name === "status" ? "active" : "";
+          input.value = hasPayloadValue ? payload[name] || "" : defaultValue;
           if (input.tagName === "SELECT") {
             input.dispatchEvent(new Event("change", { bubbles: true }));
           }
         }
       });
       modalForm.querySelectorAll("[data-hide-on-create]").forEach((node) => {
-        if (mode === "create") {
+        const hideNode = mode === "create";
+        if (hideNode) {
           node.classList.add("hidden");
         } else {
           node.classList.remove("hidden");
         }
+        const controls = node.querySelectorAll("[data-field]");
+        controls.forEach((control) => {
+          if (!(control instanceof HTMLElement)) return;
+          const searchableInput = control.closest("[data-searchable-wrapper]")?.querySelector('input[type="text"]');
+          if (hideNode) {
+            control.setAttribute("disabled", "disabled");
+            control.removeAttribute("required");
+            if (searchableInput instanceof HTMLInputElement) {
+              searchableInput.disabled = true;
+              searchableInput.removeAttribute("required");
+            }
+          } else {
+            control.removeAttribute("disabled");
+            if (control.hasAttribute("data-required")) {
+              control.setAttribute("required", "required");
+            }
+            if (searchableInput instanceof HTMLInputElement) {
+              searchableInput.disabled = false;
+              if (control.hasAttribute("data-required")) {
+                searchableInput.setAttribute("required", "required");
+              }
+            }
+          }
+        });
       });
       modalForm.querySelectorAll('[data-field="code"]').forEach((input) => {
         if (mode === "edit") {
@@ -744,6 +782,7 @@
     hookFilterAll("[data-filter-article-type]");
     if (filterCreatedBy) filterCreatedBy.addEventListener("change", updateFilterCount);
     if (filterSubgroup) filterSubgroup.addEventListener("change", updateFilterCount);
+    if (filterRateView) filterRateView.addEventListener("change", updateFilterCount);
     if (filterCreatedAtStart) filterCreatedAtStart.addEventListener("change", updateFilterCount);
     if (filterCreatedAtEnd) filterCreatedAtEnd.addEventListener("change", updateFilterCount);
     document.querySelectorAll("[data-filter-account-type-mode]").forEach((el) => hookFilter(el));
@@ -1433,6 +1472,7 @@
             const createdAtStartValue = filterCreatedAtStart ? filterCreatedAtStart.value : "";
             const createdAtEndValue = filterCreatedAtEnd ? filterCreatedAtEnd.value : "";
             const lowStockOnly = filterPanel.querySelector('[name="low_stock_only"]');
+            const rateView = filterPanel.querySelector('[name="rate_view"]');
             if (createdByValue) params.set("created_by", createdByValue);
             else params.delete("created_by");
             if (createdAtStartValue) params.set("created_at_start", createdAtStartValue);
@@ -1441,6 +1481,8 @@
             else params.delete("created_at_end");
             if (lowStockOnly && lowStockOnly.checked) params.set("low_stock_only", "true");
             else params.delete("low_stock_only");
+            if (rateView && (rateView.value || "").trim()) params.set("rate_view", String(rateView.value).trim());
+            else params.delete("rate_view");
 
             url.search = params.toString();
             window.location.href = url.toString();
@@ -1458,7 +1500,7 @@
           if (useServerFilters) {
             const url = new URL(window.location.href);
             const params = new URLSearchParams(url.search);
-            ["primary_value", "primary_mode", "secondary_value", "secondary_mode", "tertiary_value", "tertiary_mode", "branch_id", "branch_mode", "apply_on", "apply_on_mode", "subgroup_id", "subgroup_mode", "group_id", "group_mode", "article_type", "article_type_mode", "created_by", "created_at_start", "created_at_end", "low_stock_only"].forEach((key) => params.delete(key));
+            ["primary_value", "primary_mode", "secondary_value", "secondary_mode", "tertiary_value", "tertiary_mode", "branch_id", "branch_mode", "apply_on", "apply_on_mode", "subgroup_id", "subgroup_mode", "group_id", "group_mode", "article_type", "article_type_mode", "created_by", "created_at_start", "created_at_end", "low_stock_only", "rate_view"].forEach((key) => params.delete(key));
             url.search = params.toString();
             window.location.href = url.toString();
             return;
@@ -1613,9 +1655,8 @@
 
       if (select.hasAttribute("required")) {
         input.required = true;
-        // For multi-select, we don't remove required from select immediately as browser validation might vary,
-        // but typically we rely on the input's required state.
-        if (!isMulti) select.removeAttribute("required");
+        // Keep browser validation on the visible control, not the hidden original <select>.
+        select.removeAttribute("required");
       }
 
       // 5. Add a Chevron Icon
@@ -1839,85 +1880,5 @@
 
     document.addEventListener("DOMContentLoaded", initSearchableSelects);
     window.initSearchableSelects = initSearchableSelects;
-  })();
-</script>
-
-<script>
-  (function () {
-    // GENERIC EDIT LOADER (Fixes Dropdowns & Inputs for all Modals)
-    const modalForm = document.querySelector("[data-modal-form]");
-
-    if (modalForm) {
-      const fillFormFromButton = (button) => {
-        // Loop through every input/select in the form
-        Array.from(modalForm.elements).forEach((input) => {
-          if (!input.name) return;
-
-          // Try to find matching data on the button (e.g. name="group_id" -> data-group_id)
-          const val = button.getAttribute(`data-${input.name}`);
-
-          if (val !== null && val !== undefined) {
-            // Handle Checkboxes
-            if (input.type === "checkbox") {
-              if (input.dataset.multi === "true") {
-                const selected = String(val)
-                  .split(",")
-                  .map((value) => value.trim())
-                  .filter(Boolean);
-                input.checked = selected.includes(input.value);
-              } else {
-                input.checked = val === "true" || val === "1" || val === "on";
-              }
-            }
-            // Handle Radios (only check if value matches)
-            else if (input.type === "radio") {
-              if (input.value === val) input.checked = true;
-            }
-            // Handle Multi-Selects (MODIFIED)
-            else if (input.tagName === "SELECT" && input.multiple) {
-              // Assume values are comma-separated in the data attribute
-              const values = String(val)
-                .split(",")
-                .map((v) => v.trim());
-              Array.from(input.options).forEach((opt) => {
-                opt.selected = values.includes(opt.value);
-              });
-            }
-            // Handle Standard Inputs & Selects
-            else {
-              input.value = val;
-            }
-
-            // CRITICAL FIX: Trigger 'change' event manually.
-            input.dispatchEvent(new Event("change", { bubbles: true }));
-          }
-        });
-      };
-
-      // Attach listener to document to catch all Edit buttons (even dynamically added ones)
-      document.addEventListener("click", (event) => {
-        const editBtn = event.target.closest("[data-edit]");
-        if (editBtn) {
-          // Reset form first to clear old errors/values
-          modalForm.reset();
-
-          // Clear multi-selects explicitly as reset() might not handle visual sync immediately
-          modalForm.querySelectorAll("select[multiple] option").forEach((opt) => (opt.selected = false));
-
-          // Small delay to ensure modal is visible/ready before filling
-          setTimeout(() => {
-            fillFormFromButton(editBtn);
-          }, 10);
-        }
-      });
-
-      // Auto-open logic (for Server-Side errors)
-      const modal = document.querySelector("[data-modal]");
-      if (modal && modal.dataset.autoOpen === "true" && modal.dataset.modalMode === "edit") {
-        const currentId = modal.dataset.currentId;
-        const targetBtn = document.querySelector(`[data-edit][data-id="${currentId}"]`);
-        if (targetBtn) setTimeout(() => fillFormFromButton(targetBtn), 50);
-      }
-    }
   })();
 </script>

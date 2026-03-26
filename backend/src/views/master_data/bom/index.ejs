@@ -90,9 +90,13 @@
                 <% } %>
               </td>
               <td class="px-4 py-3">
-                <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] <%= row.bom_is_active ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-300 bg-slate-100 text-slate-600' %>">
-                  <%= row.bom_is_active ? (t("active") || "Active") : (t("inactive") || "Inactive") %>
-                </span>
+                <% if (row.status === "APPROVED") { %>
+                  <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] <%= row.bom_is_active ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-slate-300 bg-slate-100 text-slate-600' %>">
+                    <%= row.bom_is_active ? (t("active") || "Active") : (t("inactive") || "Inactive") %>
+                  </span>
+                <% } else { %>
+                  <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">N/A</span>
+                <% } %>
               </td>
               <td class="px-4 py-3 text-slate-700"><%= formatDateDisplay(row.created_at) %></td>
               <td class="px-4 py-3">
@@ -103,7 +107,7 @@
                       <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6" />
                     </svg>
                   </a>
-                  <% if (can("SCREEN", "master_data.bom", "delete")) { %>
+                  <% if (row.status === "APPROVED" && can("SCREEN", "master_data.bom", "delete")) { %>
                     <form method="POST" action="<%= basePath %>/<%= row.id %>/toggle-lifecycle" class="inline">
                       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                       <button
@@ -121,6 +125,18 @@
                         </svg>
                       </button>
                     </form>
+                  <% } else { %>
+                    <button
+                      type="button"
+                      disabled
+                      class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-300"
+                      title="<%= t('not_applicable') || 'Not applicable' %>"
+                      aria-label="<%= t('not_applicable') || 'Not applicable' %>"
+                    >
+                      <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                      </svg>
+                    </button>
                   <% } %>
                   <% if (row.status === "APPROVED" && can("SCREEN", "master_data.bom", "create")) { %>
                     <form method="POST" action="<%= basePath %>/<%= row.id %>/create-new-version" class="inline">
@@ -131,12 +147,20 @@
                     </form>
                   <% } %>
                   <% if (row.status === "DRAFT") { %>
-                    <form method="POST" action="<%= basePath %>/<%= row.id %>/send-for-approval" class="inline">
+                    <form method="POST" action="<%= basePath %>/<%= row.id %>/delete-draft" class="inline" onsubmit="return window.confirm(<%- JSON.stringify(t('confirm_delete') || 'Delete this draft BOM?') %>)">
                       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                      <button type="submit" class="inline-flex min-w-[8.5rem] items-center justify-center rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white shadow-sm transition hover:bg-slate-800">
-                        <%= user?.isAdmin ? (t("approve") || "Approve") : (t("send_for_approval") || "Send for Approval") %>
+                      <button type="submit" class="inline-flex min-w-[8.5rem] items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">
+                        <%= t("delete_draft") || "Delete Draft" %>
                       </button>
                     </form>
+                  <% } %>
+                  <% if (row.status === "PENDING" && user?.isAdmin) { %>
+                    <a
+                      href="/administration/approvals?status=PENDING&entity_type=BOM&entity_id=<%= row.id %>"
+                      class="inline-flex min-w-[8.5rem] items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
+                    >
+                      <%= t("open_approval") || "Open Approval" %>
+                    </a>
                   <% } %>
                 </div>
               </td>

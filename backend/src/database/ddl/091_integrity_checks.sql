@@ -82,7 +82,7 @@ BEGIN
 END;
 $$;
 
--- 0.2 Guard: Source voucher must be a production voucher (FG/SFG).
+-- 0.2 Guard: Source voucher must be a production source voucher (DCV/FG/SFG legacy).
 CREATE OR REPLACE FUNCTION erp.assert_is_production_voucher(p_voucher_id bigint)
 RETURNS void
 LANGUAGE plpgsql
@@ -97,8 +97,8 @@ BEGIN
     RAISE EXCEPTION 'Voucher % not found', p_voucher_id;
   END IF;
 
-  IF v_type NOT IN ('PROD_FG','PROD_SFG') THEN
-    RAISE EXCEPTION 'Expected production voucher (PROD_FG/PROD_SFG), got % for voucher %', v_type, p_voucher_id;
+  IF v_type NOT IN ('DCV','PROD_FG','PROD_SFG') THEN
+    RAISE EXCEPTION 'Expected production source voucher (DCV/PROD_FG/PROD_SFG), got % for voucher %', v_type, p_voucher_id;
   END IF;
 END;
 $$;
@@ -440,7 +440,7 @@ BEFORE INSERT OR UPDATE ON erp.production_line
 FOR EACH ROW
 EXECUTE FUNCTION erp.trg_production_line_validate();
 
--- D3) Consumption header must be CONSUMP and must reference production voucher
+-- D3) Consumption header must be CONSUMP and must reference a production source voucher
 DO $$
 BEGIN
   IF to_regclass('erp.consumption_header') IS NULL THEN
@@ -465,7 +465,7 @@ BEFORE INSERT OR UPDATE ON erp.consumption_header
 FOR EACH ROW
 EXECUTE FUNCTION erp.trg_consumption_header_validate();
 
--- D3) Labour voucher header must be LABOUR_PROD and must reference production voucher
+-- D3) Labour voucher header must be LABOUR_PROD and must reference a production source voucher
 DO $$
 BEGIN
   IF to_regclass('erp.labour_voucher_header') IS NULL THEN

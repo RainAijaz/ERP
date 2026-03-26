@@ -538,6 +538,36 @@ const createBomUiFixture = async (token) => {
       dept = { id: inserted?.id || inserted };
       createdSupport.deptId = Number(dept.id);
     }
+    const productionStagesReg = await trx.raw("SELECT to_regclass('erp.production_stages') AS reg");
+    const hasProductionStagesTable = Boolean(productionStagesReg?.rows?.[0]?.reg || productionStagesReg?.[0]?.reg);
+    if (hasProductionStagesTable) {
+      const existingActiveStage = await trx("erp.production_stages")
+        .select("id")
+        .where({ dept_id: dept.id, is_active: true })
+        .orderBy("id", "asc")
+        .first();
+      if (!existingActiveStage) {
+        const stageCode = `E2E-STAGE-${safeToken}`.slice(0, 80);
+        const stageName = `E2E Stage ${safeToken}`.slice(0, 120);
+        const insertStageResult = await trx.raw(
+          `
+            INSERT INTO erp.production_stages (code, name, name_ur, dept_id, is_active, created_by)
+            VALUES (?, ?, ?, ?, true, ?)
+            ON CONFLICT (dept_id) WHERE is_active DO NOTHING
+            RETURNING id
+          `,
+          [stageCode, stageName, stageName, dept.id, creatorId],
+        );
+        const insertedStageId = Number(
+          insertStageResult?.rows?.[0]?.id
+          || insertStageResult?.[0]?.id
+          || 0,
+        );
+        if (insertedStageId) {
+          createdSupport.productionStageId = insertedStageId;
+        }
+      }
+    }
 
     const [labourInserted] = await trx("erp.labours")
       .insert({
@@ -598,6 +628,33 @@ const createBomUiFixture = async (token) => {
       })
       .returning(["id"]);
     const fgSkuId = Number(fgSkuInserted?.id || fgSkuInserted);
+
+    const labourRateRuleTable = await trx.raw("SELECT to_regclass('erp.labour_rate_rules') AS reg");
+    const hasLabourRateRuleTable = Boolean(labourRateRuleTable?.rows?.[0]?.reg || labourRateRuleTable?.[0]?.reg);
+    if (hasLabourRateRuleTable) {
+      const hasArticleTypeColumn = await trx.schema.withSchema("erp").hasColumn("labour_rate_rules", "article_type");
+      const labourRatePayload = {
+        labour_id: labour.id,
+        dept_id: dept.id,
+        apply_on: "GROUP",
+        sku_id: null,
+        subgroup_id: null,
+        group_id: group.id,
+        rate_type: "PER_PAIR",
+        rate_value: 15,
+        status: "active",
+      };
+      if (hasArticleTypeColumn) labourRatePayload.article_type = "FG";
+      await trx("erp.labour_rate_rules")
+        .where({
+          labour_id: labour.id,
+          dept_id: dept.id,
+          apply_on: "GROUP",
+          group_id: group.id,
+        })
+        .del();
+      await trx("erp.labour_rate_rules").insert(labourRatePayload);
+    }
 
     const [sfgInserted] = await trx("erp.items")
       .insert({
@@ -826,6 +883,16 @@ const cleanupBomUiFixture = async ({ fixture, bomIds = [] } = {}) => {
     if (hasLabourRateRuleTable && fixtureSkuIds.length) {
       await trx("erp.labour_rate_rules").whereIn("sku_id", fixtureSkuIds).del();
     }
+    if (hasLabourRateRuleTable && fixture?.labourId && fixture?.deptId && fixture?.groupId) {
+      await trx("erp.labour_rate_rules")
+        .where({
+          labour_id: Number(fixture.labourId),
+          dept_id: Number(fixture.deptId),
+          apply_on: "GROUP",
+          group_id: Number(fixture.groupId),
+        })
+        .del();
+    }
 
     if (fixture.sfgSkuId) {
       await trx("erp.skus").where({ id: fixture.sfgSkuId }).del();
@@ -862,6 +929,9 @@ const cleanupBomUiFixture = async ({ fixture, bomIds = [] } = {}) => {
 
     if (fixture.createdSupport?.labourId) {
       await trx("erp.labours").where({ id: Number(fixture.createdSupport.labourId) }).del();
+    }
+    if (fixture.createdSupport?.productionStageId) {
+      await trx("erp.production_stages").where({ id: Number(fixture.createdSupport.productionStageId) }).del();
     }
     if (fixture.createdSupport?.deptId) {
       await trx("erp.departments").where({ id: Number(fixture.createdSupport.deptId) }).del();

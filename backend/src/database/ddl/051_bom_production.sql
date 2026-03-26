@@ -75,9 +75,9 @@ ON erp.bom_header(item_id, status);
 CREATE INDEX IF NOT EXISTS ix_bom_header_item_active
 ON erp.bom_header(item_id, is_active);
 
--- One active draft per item+level across the system.
+-- One active draft per item+level per creator.
 CREATE UNIQUE INDEX IF NOT EXISTS ux_bom_header_single_draft
-ON erp.bom_header (item_id, level)
+ON erp.bom_header (item_id, level, created_by)
 WHERE status = 'DRAFT';
 
 -- -----------------------------------------------------------------------------
@@ -100,7 +100,7 @@ CREATE TABLE IF NOT EXISTS erp.bom_rm_line (
 
   normal_loss_pct numeric(6,3) NOT NULL DEFAULT 0,
 
-  CHECK (qty > 0),
+  CHECK (qty >= 0),
   CHECK (normal_loss_pct >= 0 AND normal_loss_pct <= 100),
 
   -- Avoid duplicates for same RM+dept within one BOM (color-specific if provided).

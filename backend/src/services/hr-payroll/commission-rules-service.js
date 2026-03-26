@@ -10,6 +10,7 @@ const APPLY_ON = {
 const PRECEDENCE = [APPLY_ON.SKU, APPLY_ON.SUBGROUP, APPLY_ON.GROUP, APPLY_ON.ALL];
 const ALLOWED_SCOPE_FOR_BULK = new Set([APPLY_ON.SUBGROUP, APPLY_ON.GROUP]);
 const COMMISSION_BASIS_FIXED_PER_UNIT = "FIXED_PER_UNIT";
+const COMMISSION_RATE_TYPES = new Set(["PER_DOZEN", "PER_PAIR"]);
 
 const deriveValueTypeFromBasis = (commissionBasis) => {
   if (commissionBasis === "NET_SALES_PERCENT" || commissionBasis === "GROSS_MARGIN_PERCENT") return "PERCENT";
@@ -48,6 +49,10 @@ const normalizeBulkInput = ({ payload, t }) => {
   }
 
   const commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT;
+  const rateType = String(payload.rate_type || "PER_PAIR").trim().toUpperCase();
+  if (!COMMISSION_RATE_TYPES.has(rateType)) {
+    throw new Error(t("error_invalid_rate_type") || "Invalid rate type selected.");
+  }
 
   const subgroupId = applyOn === APPLY_ON.SUBGROUP ? toPositiveIntOrNull(payload.subgroup_id) : null;
   const groupId = applyOn === APPLY_ON.GROUP ? toPositiveIntOrNull(payload.group_id) : null;
@@ -92,6 +97,7 @@ const normalizeBulkInput = ({ payload, t }) => {
     subgroupId,
     groupId,
     commissionBasis,
+    rateType,
     valueType,
     reverseOnReturns,
     status: statusRaw,
@@ -127,7 +133,17 @@ const fetchExistingRules = async ({ db = knex, employeeId, commissionBasis = COM
   if (!basis) return [];
 
   return db("erp.employee_commission_rules")
-    .select("id", "apply_on", "sku_id", "subgroup_id", "group_id", "value", "status", "reverse_on_returns")
+    .select(
+      "id",
+      "apply_on",
+      "sku_id",
+      "subgroup_id",
+      "group_id",
+      "value",
+      db.raw(`COALESCE(NULLIF(to_jsonb(erp.employee_commission_rules)->>'rate_type', ''), 'PER_PAIR') as rate_type`),
+      "status",
+      "reverse_on_returns",
+    )
     .where({
       employee_id: employee,
       commission_basis: basis,
@@ -147,6 +163,7 @@ const resolvePreviousForSku = ({ existingRules, sku }) => {
     if (matched) {
       return {
         previousRate: matched.value == null ? null : Number(matched.value),
+        previousRateType: String(matched.rate_type || "PER_PAIR").trim().toUpperCase(),
         previousSource: scope,
         previousRuleId: Number(matched.id),
       };
@@ -154,6 +171,7 @@ const resolvePreviousForSku = ({ existingRules, sku }) => {
   }
   return {
     previousRate: null,
+    previousRateType: null,
     previousSource: null,
     previousRuleId: null,
   };
@@ -186,6 +204,7 @@ const buildBulkPreviewRows = async ({
       sku_code: sku.sku_code,
       item_name: sku.item_name || "",
       previous_rate: previous.previousRate,
+      previous_rate_type: previous.previousRateType,
       previous_source: previous.previousSource,
       previous_rule_id: previous.previousRuleId,
       new_rate: defaultRate,
@@ -197,6 +216,7 @@ const applyBulkSkuRateUpsert = async ({
   trx,
   employeeId,
   commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT,
+  rateType = "PER_PAIR",
   valueType,
   reverseOnReturns,
   status,
@@ -241,6 +261,7 @@ const applyBulkSkuRateUpsert = async ({
         .where({ id: existingId })
         .update({
           value: row.rate,
+          rate_type: rateType,
           value_type: valueType,
           reverse_on_returns: reverseOnReturns,
           status,
@@ -260,6 +281,7 @@ const applyBulkSkuRateUpsert = async ({
       group_id: null,
       commission_basis: commissionBasis,
       value: row.rate,
+      rate_type: rateType,
       reverse_on_returns: reverseOnReturns,
       value_type: valueType,
       status,

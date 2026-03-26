@@ -25,7 +25,7 @@
             <th class="border border-slate-200 p-2 text-left"><%= t("sr_no") %></th>
             <th class="border border-slate-200 p-2 text-left"><%= t("sku_code") %></th>
             <th class="border border-slate-200 p-2 text-left"><%= t("article_name") %></th>
-            <th class="border border-slate-200 p-2 text-left"><%= t("status") %></th>
+            <th class="border border-slate-200 p-2 text-left"><%= t("unit") %></th>
             <th class="border border-slate-200 p-2 text-right"><%= t("sale_qty") %></th>
             <th class="border border-slate-200 p-2 text-right"><%= t("pairs") %></th>
           </tr>
@@ -36,7 +36,7 @@
               <td class="border border-slate-200 p-2"><%= idx + 1 %></td>
               <td class="border border-slate-200 p-2"><%= line.sku_code || "" %></td>
               <td class="border border-slate-200 p-2"><%= line.item_name || "" %></td>
-              <td class="border border-slate-200 p-2"><%= line.row_status || "" %></td>
+              <td class="border border-slate-200 p-2"><%= String(line.row_status || "").trim().toUpperCase() === "LOOSE" ? (t("unit_pair") || "Pair") : (t("unit_dozen") || "Dozen") %></td>
               <td class="border border-slate-200 p-2 text-right"><%= formatNumberDisplay(line.sale_qty || 0, { decimals: 3, fallback: "0" }) %></td>
               <td class="border border-slate-200 p-2 text-right"><%= formatNumberDisplay(line.total_pairs || 0, { decimals: 3, fallback: "0" }) %></td>
             </tr>

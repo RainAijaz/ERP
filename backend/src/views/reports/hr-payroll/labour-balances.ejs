@@ -1,0 +1,271 @@
+<%
+  const reportLoaded = Boolean(filters?.reportLoaded);
+  const rows = Array.isArray(reportData?.rows) ? reportData.rows : [];
+  const selectedBranchIds = Array.isArray(filters?.branchIds)
+    ? filters.branchIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
+    : [];
+  const selectedAsOn = String(filters?.asOn || "");
+  const formatNumber = (value, digits = 2) => {
+    return formatNumberDisplay(value, { decimals: digits, fallback: "0" });
+  };
+  const resolveEntityName = (row) => {
+    if (locale === "ur") return String(row?.entity_name_ur || row?.entity_name || "-");
+    return String(row?.entity_name || "-");
+  };
+  const buildLedgerHref = (row) => {
+    const entityId = Number(row?.entity_id || 0);
+    if (!Number.isInteger(entityId) || entityId <= 0) return "";
+    const params = new URLSearchParams();
+    params.set("load_report", "1");
+    params.set("entity_id", String(entityId));
+    params.set("ledger_view", "summary");
+    params.set("from_date", selectedAsOn);
+    params.set("to_date", selectedAsOn);
+    if (selectedBranchIds.length) {
+      params.set("branch_ids", selectedBranchIds.join(","));
+    }
+    return `${ledgerPath}?${params.toString()}`;
+  };
+%>
+
+<div class="mx-auto w-full max-w-none space-y-4 px-2">
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <h1 class="text-xl font-display font-semibold tracking-tight text-ink sm:text-2xl"><%= t('labour_balances_report') %></h1>
+    <% if (filters?.invalidFilterInput) { %>
+      <div class="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800"><%= t('date_filters_auto_corrected') %></div>
+    <% } %>
+
+    <form method="post" action="<%= reportPath %>" class="mt-3 w-full max-w-3xl space-y-3" data-entity-balance-filter-form>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="load_report" value="1">
+
+      <div class="grid grid-cols-1 gap-3 lg:grid-cols-[180px_minmax(320px,520px)] lg:items-center">
+        <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('as_on') %></label>
+        <input type="date" name="as_on" value="<%= selectedAsOn %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700">
+
+        <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('branch') %></label>
+        <% if (user?.isAdmin) { %>
+          <div
+            class="relative"
+            data-multi-select
+            data-name="branch_ids"
+            data-placeholder="<%= `${t('all')} ${t('branches')}` %>"
+            data-multi-all-value="__ALL__"
+            data-multi-auto-all="1"
+          >
+            <button type="button" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 pr-10 text-left text-sm text-slate-700" data-multi-trigger></button>
+            <span class="pointer-events-none absolute inset-y-0 right-3 inline-flex items-center text-slate-500">
+              <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                <path d="M6 8l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"></path>
+              </svg>
+            </span>
+            <div class="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-50 hidden rounded-xl border border-slate-200 bg-white p-2 shadow-xl" data-multi-panel>
+              <div class="max-h-52 overflow-auto pr-1" data-multi-options>
+                <label class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                  <input type="checkbox" value="__ALL__" <%= selectedBranchIds.length ? '' : 'checked' %>>
+                  <span><%= `${t('all')} ${t('branches')}` %></span>
+                </label>
+                <% (options?.branches || []).forEach((branch) => { %>
+                  <label class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
+                    <input type="checkbox" value="<%= branch.id %>" <%= selectedBranchIds.includes(Number(branch.id)) ? 'checked' : '' %>>
+                    <span><%= branch.name %></span>
+                  </label>
+                <% }) %>
+              </div>
+            </div>
+            <input type="hidden" name="branch_ids" value="<%= selectedBranchIds.join(',') %>" data-multi-hidden>
+          </div>
+        <% } else { %>
+          <div>
+            <input type="text" readonly class="h-10 w-full rounded-xl border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700" value="<%= (options?.branches || [])[0]?.name || branchId %>">
+            <input type="hidden" name="branch_ids" value="<%= branchId || '' %>">
+          </div>
+        <% } %>
+
+        <div class="hidden lg:block"></div>
+        <div class="flex gap-2">
+          <button type="submit" class="inline-flex items-center rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= t('load') %></button>
+          <a href="<%= reportPath %>" class="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= t('cancel') %></a>
+        </div>
+      </div>
+
+    </form>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm" data-print-area>
+    <div class="px-1 pt-1 text-center text-xl font-display font-semibold uppercase tracking-[0.35em] text-slate-900" data-print-header>
+      <%= t('brand') %>
+    </div>
+
+    <div class="flex flex-col gap-3 border-b border-slate-200 px-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div class="text-sm font-semibold text-slate-700"><%= t('labour_balances_report') %></div>
+      <div class="flex items-center gap-2">
+        <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40" type="button" data-download-button <%= reportLoaded && rows.length ? '' : 'disabled' %>>
+          <%= t('download') %>
+        </button>
+        <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40" type="button" data-print-button <%= reportLoaded && rows.length ? '' : 'disabled' %>>
+          <%= t('print') %>
+        </button>
+        <%- include("../../base/partials/table-controls", { t, showStatus: false }) %>
+      </div>
+    </div>
+
+    <% if (!reportLoaded) { %>
+      <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= t('load_report_to_view') %></div>
+    <% } else if (!rows.length) { %>
+      <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= t('no_entries') %></div>
+    <% } else { %>
+      <div class="relative mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+        <table class="min-w-[860px] w-full text-sm tabular-nums" data-table data-report-table>
+          <thead class="bg-slate-100 text-slate-700">
+            <tr>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="__sr">SR.NO</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="entity_code"><%= t('code') %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="entity_name"><%= t('labours') %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="amount"><%= t('amount') %></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100" data-table-body>
+            <% rows.forEach((row, rowIndex) => { %>
+              <% const ledgerHref = buildLedgerHref(row); %>
+              <tr class="bg-white odd:bg-slate-50/30" data-row data-active="true">
+                <td class="px-3 py-2" data-sort-value="<%= rowIndex + 1 %>"><%= rowIndex + 1 %></td>
+                <td class="px-3 py-2"><%= row.entity_code || '-' %></td>
+                <td class="px-3 py-2">
+                  <% if (ledgerHref) { %>
+                    <a href="<%= ledgerHref %>" class="text-slate-700 underline decoration-slate-300 underline-offset-2 hover:text-accent"><%= resolveEntityName(row) %></a>
+                  <% } else { %>
+                    <%= resolveEntityName(row) %>
+                  <% } %>
+                </td>
+                <td class="px-3 py-2 text-right font-semibold" data-sort-value="<%= Number(row.amount || 0) %>"><%= formatNumber(row.amount, 2) %></td>
+              </tr>
+            <% }) %>
+            <tr class="border-t border-slate-200 bg-slate-100">
+              <td colspan="3" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('total') %></td>
+              <td class="px-3 py-2 text-right font-semibold text-slate-900" data-sort-value="<%= Number(reportData?.totalAmount || 0) %>"><%= formatNumber(reportData?.totalAmount || 0, 2) %></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <%- include("../../base/partials/table-footer", { t }) %>
+    <% } %>
+  </section>
+</div>
+
+<%- include("../../base/partials/basic-info-utils", {
+  t,
+  page: { titleKey: "labour_balances_report", autoCodeFromName: false },
+  basePath: reportPath,
+  modalOpen: false,
+  modalMode: "add"
+}) %>
+
+<script>
+  (function () {
+    const roots = Array.from(document.querySelectorAll('[data-multi-select]'));
+    if (!roots.length) return;
+
+    let openRoot = null;
+    const closeAll = () => {
+      roots.forEach((root) => {
+        root.querySelector('[data-multi-panel]')?.classList.add('hidden');
+      });
+      openRoot = null;
+    };
+
+    roots.forEach((root) => {
+      const trigger = root.querySelector('[data-multi-trigger]');
+      const panel = root.querySelector('[data-multi-panel]');
+      const hidden = root.querySelector('[data-multi-hidden]');
+      const checkboxes = Array.from(root.querySelectorAll('input[type="checkbox"]'));
+      const allValue = String(root.dataset.multiAllValue || '').trim();
+      const autoAll = String(root.dataset.multiAutoAll || '').trim() === '1';
+      if (!trigger || !panel || !hidden) return;
+
+      const getAllCheckbox = () => {
+        if (!allValue) return null;
+        return checkboxes.find((cb) => String(cb.value || '').trim() === allValue) || null;
+      };
+
+      const normalizeSelection = (changedCheckbox) => {
+        const allCheckbox = getAllCheckbox();
+        if (!allCheckbox) return;
+
+        const nonAllCheckboxes = checkboxes.filter((cb) => cb !== allCheckbox);
+        if (changedCheckbox === allCheckbox && allCheckbox.checked) {
+          nonAllCheckboxes.forEach((cb) => {
+            cb.checked = false;
+          });
+          return;
+        }
+
+        if (changedCheckbox && changedCheckbox !== allCheckbox && changedCheckbox.checked) {
+          allCheckbox.checked = false;
+        }
+
+        const checkedNonAll = nonAllCheckboxes.filter((cb) => cb.checked);
+        if (!checkedNonAll.length && autoAll) {
+          allCheckbox.checked = true;
+          return;
+        }
+
+        if (checkedNonAll.length && allCheckbox.checked) {
+          allCheckbox.checked = false;
+        }
+      };
+
+      const refresh = () => {
+        const selected = checkboxes.filter((cb) => cb.checked);
+        const selectedValues = selected
+          .map((cb) => String(cb.value || '').trim())
+          .filter((value) => Boolean(value) && value !== allValue);
+        hidden.value = selectedValues.join(',');
+
+        if (!selectedValues.length) {
+          trigger.textContent = String(root.dataset.placeholder || '');
+          return;
+        }
+        if (selectedValues.length === 1) {
+          const selectedCheckbox = selected.find((cb) => String(cb.value || '').trim() === selectedValues[0]);
+          const label = selectedCheckbox?.closest('label')?.querySelector('span')?.textContent || selectedValues[0];
+          trigger.textContent = label;
+          return;
+        }
+
+        trigger.textContent = `${selectedValues.length} <%= t('selected') || 'selected' %>`;
+      };
+
+      normalizeSelection(null);
+      refresh();
+
+      checkboxes.forEach((cb) => {
+        cb.addEventListener('change', () => {
+          normalizeSelection(cb);
+          refresh();
+        });
+      });
+
+      trigger.addEventListener('click', (event) => {
+        event.preventDefault();
+        const wasHidden = panel.classList.contains('hidden');
+        closeAll();
+        if (wasHidden) {
+          panel.classList.remove('hidden');
+          openRoot = root;
+        }
+      });
+    });
+
+    document.addEventListener('click', (event) => {
+      if (!openRoot) return;
+      if (openRoot.contains(event.target)) return;
+      closeAll();
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') closeAll();
+    });
+  })();
+</script>
+
