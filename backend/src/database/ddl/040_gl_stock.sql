@@ -66,6 +66,7 @@ CREATE INDEX IF NOT EXISTS idx_gl_entry_branch_date
 -- category tells WHAT it is (RM vs SFG vs FG)
 --   RM      => tracked at item level  (item_id filled, sku_id NULL)
 --   SFG/FG  => tracked at SKU level   (sku_id filled, item_id NULL)
+-- RM can optionally carry color_id/size_id variant dimensions.
 -- direction:
 --   +1 = IN, -1 = OUT
 CREATE TABLE IF NOT EXISTS erp.stock_ledger (
@@ -76,6 +77,8 @@ CREATE TABLE IF NOT EXISTS erp.stock_ledger (
 
   item_id          bigint REFERENCES erp.items(id) ON DELETE RESTRICT, -- ONLY for RM
   sku_id           bigint REFERENCES erp.skus(id)  ON DELETE RESTRICT, -- ONLY for SFG/FG
+  color_id         bigint REFERENCES erp.colors(id) ON DELETE RESTRICT, -- OPTIONAL for RM
+  size_id          bigint REFERENCES erp.sizes(id) ON DELETE RESTRICT,  -- OPTIONAL for RM
 
   voucher_header_id bigint NOT NULL REFERENCES erp.voucher_header(id) ON DELETE CASCADE,
   voucher_line_id   bigint REFERENCES erp.voucher_line(id) ON DELETE SET NULL,
@@ -98,7 +101,7 @@ CREATE TABLE IF NOT EXISTS erp.stock_ledger (
   CHECK (
     (category = 'RM' AND item_id IS NOT NULL AND sku_id IS NULL)
     OR
-    (category IN ('SFG','FG') AND sku_id IS NOT NULL AND item_id IS NULL)
+    (category IN ('SFG','FG') AND sku_id IS NOT NULL AND item_id IS NULL AND color_id IS NULL AND size_id IS NULL)
   )
 );
 
@@ -115,15 +118,21 @@ CREATE INDEX IF NOT EXISTS idx_stock_ledger_sku_date
 CREATE INDEX IF NOT EXISTS idx_stock_ledger_item_date
   ON erp.stock_ledger(item_id, txn_date);
 
+CREATE INDEX IF NOT EXISTS idx_stock_ledger_rm_variant_date
+  ON erp.stock_ledger(branch_id, item_id, color_id, size_id, txn_date)
+  WHERE category = 'RM';
+
 -- =============================================================================
 -- Fast balances (running totals)
 -- =============================================================================
 
--- RM running balance (item-level), split by stock_state.
+-- RM running balance (item + optional color/size), split by stock_state.
 CREATE TABLE IF NOT EXISTS erp.stock_balance_rm (
   branch_id   bigint NOT NULL REFERENCES erp.branches(id) ON DELETE RESTRICT,
   stock_state erp.stock_state NOT NULL DEFAULT 'ON_HAND',
   item_id     bigint NOT NULL REFERENCES erp.items(id) ON DELETE RESTRICT,
+  color_id    bigint REFERENCES erp.colors(id) ON DELETE RESTRICT,
+  size_id     bigint REFERENCES erp.sizes(id) ON DELETE RESTRICT,
 
   qty         numeric(18,3) NOT NULL DEFAULT 0,
   wac         numeric(18,6) NOT NULL DEFAULT 0,
@@ -132,10 +141,20 @@ CREATE TABLE IF NOT EXISTS erp.stock_balance_rm (
 
   CHECK (qty >= 0),
   CHECK (wac >= 0),
-  CHECK (value >= 0),
-
-  PRIMARY KEY (branch_id, stock_state, item_id)
+  CHECK (value >= 0)
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_stock_balance_rm_identity
+  ON erp.stock_balance_rm (
+    branch_id,
+    stock_state,
+    item_id,
+    COALESCE(color_id, 0),
+    COALESCE(size_id, 0)
+  );
+
+CREATE INDEX IF NOT EXISTS idx_stock_balance_rm_item_variant
+  ON erp.stock_balance_rm (branch_id, stock_state, item_id, color_id, size_id);
 
 -- SKU running balance (SFG/FG), split by stock_state.
 -- is_packed is an entry/measurement mode flag:

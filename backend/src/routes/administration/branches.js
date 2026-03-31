@@ -135,8 +135,12 @@ router.post("/:id/delete", requirePermission("SCREEN", "administration.branches"
   try {
     const branch = await trx("erp.branches").where({ id: req.params.id }).first();
     if (!branch) throw new HttpError(404, res.locals.t("branch_not_found"));
-    await trx("erp.user_branch").where({ branch_id: req.params.id }).del();
-    await trx("erp.branches").where({ id: req.params.id }).del();
+    try {
+      await trx("erp.branches").where({ id: req.params.id }).del();
+    } catch (deleteErr) {
+      if (String(deleteErr?.code || "") !== "23503") throw deleteErr;
+      await trx("erp.branches").where({ id: req.params.id }).update({ is_active: false });
+    }
     queueAuditLog(req, { entityType: "BRANCH", entityId: req.params.id, action: "DELETE" });
     await trx.commit();
     if (req.xhr) return res.json({ success: true });

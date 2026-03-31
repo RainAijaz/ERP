@@ -125,6 +125,7 @@ CREATE TABLE IF NOT EXISTS erp.bom_sfg_line (
 
   required_qty        numeric(18,3) NOT NULL,
   uom_id              bigint NOT NULL REFERENCES erp.uom(id),
+  consumed_in_stage_id bigint REFERENCES erp.production_stages(id) ON DELETE RESTRICT,
 
   -- Intended to reference the APPROVED BOM of the SFG item behind sfg_sku_id
   ref_approved_bom_id bigint REFERENCES erp.bom_header(id),

@@ -1,0 +1,197 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - checkbox "Menu" [ref=e5]
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - link "CHAND EVA" [ref=e8] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e10]: ERP
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - generic [ref=e14]: Signed in as
+            - generic [ref=e15]: e2e_so_std
+          - generic [ref=e16]:
+            - generic [ref=e17]: Branch
+            - generic [ref=e18]:
+              - generic [ref=e19]: Branch
+              - generic [ref=e20]: "124"
+          - button "Logout" [ref=e22] [cursor=pointer]
+          - generic [ref=e23]:
+            - generic [ref=e24]: Language
+            - link "English" [ref=e25] [cursor=pointer]:
+              - /url: "?lang=en"
+            - generic [ref=e26]: "|"
+            - link "Urdu" [ref=e27] [cursor=pointer]:
+              - /url: "?lang=ur"
+      - navigation [ref=e28]:
+        - button "Administration" [ref=e30] [cursor=pointer]:
+          - generic [ref=e31]: Administration
+          - img [ref=e32]
+        - button "Master Data" [ref=e35] [cursor=pointer]:
+          - generic [ref=e36]: Master Data
+          - img [ref=e37]
+        - button "Sales" [ref=e40] [cursor=pointer]:
+          - generic [ref=e41]: Sales
+          - img [ref=e42]
+  - main [ref=e44]:
+    - generic [ref=e45]:
+      - generic [ref=e48]:
+        - heading "Sales Order" [level=1] [ref=e49]
+        - paragraph [ref=e50]: Sales
+      - generic [ref=e52]:
+        - generic [ref=e53]:
+          - generic [ref=e54]:
+            - generic [ref=e55]: Voucher No
+            - textbox [ref=e57]: "31"
+            - generic [ref=e58]:
+              - link "Prev" [ref=e59] [cursor=pointer]:
+                - /url: /vouchers/sales-order?voucher_no=30&view=1
+              - link "Next" [ref=e60] [cursor=pointer]:
+                - /url: /vouchers/sales-order?new=1
+              - button "Load" [ref=e61] [cursor=pointer]
+              - generic [ref=e62]:
+                - button "Delete" [disabled] [ref=e63] [cursor=pointer]
+                - button "Print" [ref=e64] [cursor=pointer]
+                - button "Print Gate Pass" [disabled] [ref=e65] [cursor=pointer]
+          - generic [ref=e66]:
+            - generic [ref=e67]: Date
+            - textbox [ref=e69]: 2026-03-28
+            - generic [ref=e70]: Bill Number
+            - textbox [ref=e72]
+          - generic [ref=e73]:
+            - generic [ref=e74]: Advance Payment Received
+            - generic [ref=e76]:
+              - button "No" [pressed] [ref=e77] [cursor=pointer]
+              - button "Yes" [ref=e78] [cursor=pointer]
+          - generic [ref=e79]:
+            - generic [ref=e80]: Customer Name
+            - generic [ref=e82]:
+              - textbox "Select Customer" [ref=e83]
+              - generic:
+                - img
+              - combobox [ref=e84]:
+                - option "Select Customer" [selected]
+                - option "AFSAR KHAN PESHAWAR"
+                - option "E2E name 1770477509559_7"
+                - option "E2E name 1770478855220_7"
+                - option "E2E name 1771398105030_7"
+                - option "E2E name 1771399190781_7"
+                - option "E2E Party 1770368544483"
+                - option "E2E Party Edited 1770477252408"
+                - option "E2E Party Edited 1770478853363"
+                - option "E2E Party Edited 1771398102994"
+                - option "E2E Party Edited 1771399188180"
+                - option "HAMZA TRADERS"
+                - option "Hoorain Aijazzz"
+                - option "KR EVA"
+                - option "MALIK ASHRAF"
+            - generic [ref=e85]: Salesman
+            - generic [ref=e87]:
+              - textbox "Select Salesman" [ref=e88]
+              - generic:
+                - img
+              - combobox [ref=e89]:
+                - option "Select Salesman" [selected]
+                - option "AHSAN"
+                - option "ALI HAYDERR"
+                - option "BOOTA"
+                - option "E2E Employee 350146"
+                - option "E2E name 1770453352192"
+                - option "E2E name 1770454036161"
+                - option "E2E name 1770454402303"
+                - option "E2E name 1770454632185"
+          - generic [ref=e90]:
+            - generic [ref=e91]: Remarks
+            - textbox "Remarks" [ref=e93]
+        - table [ref=e96]:
+          - rowgroup [ref=e97]:
+            - row "Article Unit Sale Qty Pair Rate Pair Discount Total Discount Total Actions Sr.No" [ref=e98]:
+              - columnheader "Article" [ref=e99]
+              - columnheader "Unit" [ref=e100]
+              - columnheader "Sale Qty" [ref=e101]
+              - columnheader "Pair Rate" [ref=e102]
+              - columnheader "Pair Discount" [ref=e103]
+              - columnheader "Total Discount" [ref=e104]
+              - columnheader "Total" [ref=e105]
+              - columnheader "Actions" [ref=e106]
+              - columnheader "Sr.No" [ref=e107]
+          - rowgroup [ref=e108]:
+            - row "Select Article Select Article Dozen Dozen Delete 1" [ref=e109]:
+              - cell "Select Article Select Article" [ref=e110]:
+                - generic [ref=e111]:
+                  - textbox "Select Article" [ref=e112]
+                  - generic:
+                    - img
+                  - combobox [ref=e113]:
+                    - option "Select Article" [selected]
+                    - option "300-2 - 300"
+                    - option "300 2/5 CARTON PACKED A BLACK - 300"
+                    - option "300 2/5 THAILI PACKED A BLACK - 300"
+                    - option "300 3 - 300"
+                    - option "300 7/10 THAILI PACKED A - 300"
+                    - option "301 - 3011"
+                    - option "301-2 - 3011"
+                    - option "301-3 - 3011"
+                    - option "301 2 - 3011"
+                    - option "3011 7/10 CARTON PACKED B - 3011"
+                    - option "E2E-FG-1773946548418405 - E2E FG 1773946548418405"
+                    - option "EVA SLIPPER 400 - EVA Slipper 400"
+                    - option "EVA SLIPPER 400 2 - EVA Slipper 400"
+                    - option "EVA SLIPPER 400 2/5 THAILI PACKED B - EVA Slipper 400"
+                    - option "EVA SLIPPER 400 3 - EVA Slipper 400"
+                    - option "EVA SLIPPER 400 7/10 THAILI PACKED B - EVA Slipper 400"
+                    - option "EVA SLIPPER 400 8/10 CARTON PACKED B - EVA Slipper 400"
+                    - option "P01 7/10 CARTON PACKED A - P01"
+                    - option "P01 7/10 CARTON PACKED B - P01"
+                    - option "W03 2/5 CARTON PACKED A - W03"
+                    - option "W03 2/5 THAILI PACKED A - W03"
+                    - option "W03 6/9 CARTON PACKED A - W03"
+                    - option "W03 6/9 THAILI PACKED A - W03"
+              - cell "Dozen Dozen" [ref=e114]:
+                - generic [ref=e115]:
+                  - textbox "Search" [ref=e116]: Dozen
+                  - generic:
+                    - img
+                  - combobox [ref=e117]:
+                    - option "Pair"
+                    - option "Dozen" [selected]
+              - cell [ref=e118]:
+                - textbox [ref=e119]
+              - cell [ref=e120]:
+                - textbox [ref=e121]
+              - cell [ref=e122]:
+                - textbox [ref=e123]
+              - cell [ref=e124]:
+                - textbox [ref=e125]
+              - cell [ref=e126]:
+                - textbox [ref=e127]
+              - cell "Delete" [ref=e128]:
+                - button "Delete" [ref=e129] [cursor=pointer]:
+                  - img [ref=e130]
+              - cell "1" [ref=e134]
+          - rowgroup [ref=e135]:
+            - row "Total Add" [ref=e136]:
+              - cell "Total" [ref=e137]
+              - cell [ref=e138]:
+                - textbox [ref=e139]
+              - cell "Add" [ref=e140]:
+                - button "Add" [ref=e141] [cursor=pointer]:
+                  - img [ref=e142]
+              - cell [ref=e143]
+        - generic [ref=e145]:
+          - generic [ref=e146]:
+            - generic [ref=e147]: Total Sales Amount
+            - textbox [ref=e148]
+          - generic [ref=e149]:
+            - generic [ref=e150]: Extra Discount
+            - textbox [ref=e151]
+          - generic [ref=e152]:
+            - generic [ref=e153]: Final Amount
+            - textbox [ref=e154]
+        - button "Confirm" [ref=e156] [cursor=pointer]
+    - generic [ref=e157]: ERP System © 2026
+```

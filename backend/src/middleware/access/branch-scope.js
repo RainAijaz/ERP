@@ -8,13 +8,30 @@ const toNumber = (value) => {
   return Number.isNaN(parsed) ? null : parsed;
 };
 
+const toNumberList = (value) => {
+  if (Array.isArray(value)) {
+    return value
+      .flatMap((entry) => String(entry || "").split(","))
+      .map((entry) => toNumber(String(entry || "").trim()))
+      .filter((entry) => Number.isInteger(entry) && entry > 0);
+  }
+  const text = String(value || "").trim();
+  if (!text) return [];
+  return text
+    .split(",")
+    .map((entry) => toNumber(String(entry || "").trim()))
+    .filter((entry) => Number.isInteger(entry) && entry > 0);
+};
+
 // Enforces branch-level access control so users can only see/act on assigned branches.
 module.exports = async (req, res, next) => {
   if (!req.user) return next();
   if (req.path.startsWith("/auth")) return next();
 
   const isAdmin = Boolean(req.user.isAdmin);
-  let branchIds = (req.user.branchIds || []).filter((id) => id != null);
+  let branchIds = (req.user.branchIds || [])
+    .map((id) => toNumber(id))
+    .filter((id) => Number.isInteger(id) && id > 0);
   if (!branchIds.length && !isAdmin) {
     return next(new HttpError(403, "No branches assigned"));
   }
@@ -22,8 +39,15 @@ module.exports = async (req, res, next) => {
   const requested = toNumber(req.branchContext?.requestedBranchId);
   let activeBranch = requested || branchIds[0];
 
-  const submittedBranch = toNumber(req.body?.branch_id || req.query?.branch_id);
-  if (submittedBranch && !isAdmin && !branchIds.includes(submittedBranch)) {
+  const submittedBranches = [
+    ...toNumberList(req.query?.branch_id),
+    ...toNumberList(req.body?.branch_id),
+  ];
+  if (
+    submittedBranches.length
+    && !isAdmin
+    && submittedBranches.some((branchId) => !branchIds.includes(branchId))
+  ) {
     return next(new HttpError(403, "Branch not assigned"));
   }
 

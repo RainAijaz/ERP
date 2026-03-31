@@ -140,10 +140,14 @@ const BASIC_INFO_PAGES = {
     description: "Quality grades for product variants.",
     table: "erp.grades",
     translateMode: "transliterate",
+    defaults: {
+      grade_rank: 1,
+    },
     columns: [
       { key: "id", label: "ID" },
       { key: "name", label: "Name" },
       { key: "name_ur", label: "Name (Urdu)" },
+      { key: "grade_rank", label: "grade_rank" },
       { key: "is_active", label: "Active", type: "boolean" },
       { key: "created_by_name", label: "Created By" },
       { key: "created_at", label: "Created At" },
@@ -159,6 +163,13 @@ const BASIC_INFO_PAGES = {
         name: "name_ur",
         label: "Name (Urdu)",
         placeholder: "Urdu name",
+        required: true,
+      },
+      {
+        name: "grade_rank",
+        label: "grade_rank",
+        type: "number",
+        placeholder: "1, 2, 3",
         required: true,
       },
     ],
@@ -1410,7 +1421,18 @@ const deleteHandler = (type) => async (req, res, next) => {
     if (approval.queued) {
       return res.redirect(req.get("referer") || basePath);
     }
-    await knex(page.table).where({ id }).del();
+    const auditFields = page.hasUpdatedFields === false ? {} : { updated_by: req.user ? req.user.id : null, updated_at: knex.fn.now() };
+    try {
+      await knex(page.table).where({ id }).del();
+    } catch (deleteErr) {
+      if (String(deleteErr?.code || "") !== "23503") throw deleteErr;
+      await knex(page.table)
+        .where({ id })
+        .update({
+          is_active: false,
+          ...auditFields,
+        });
+    }
     queueAuditLog(req, {
       entityType: getBasicInfoEntityType(type),
       entityId: id,

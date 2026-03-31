@@ -1,0 +1,359 @@
+<%
+  const reportLoaded = Boolean(filters?.reportLoaded);
+  const detailGroups = Array.isArray(reportData?.detailGroups) ? reportData.detailGroups : [];
+  const summaryRows = Array.isArray(reportData?.summaryRows) ? reportData.summaryRows : [];
+  const selectedReportType = ["details", "summary"].includes(String(filters?.reportType || "").toLowerCase())
+    ? String(filters.reportType).toLowerCase()
+    : "details";
+  const hasData = selectedReportType === "summary" ? summaryRows.length > 0 : detailGroups.length > 0;
+  const allMultiOptionValue = "__ALL__";
+  const selectedFromDate = String(filters?.fromDate || "");
+  const selectedToDate = String(filters?.toDate || "");
+  const selectedBranchIds = Array.isArray(filters?.branchIds) ? filters.branchIds : [];
+  const selectedDepartmentId = Number(filters?.departmentId || 0) || null;
+  const selectedSkuId = Number(filters?.skuId || 0) || null;
+  const missingRequiredFilters = Boolean(filters?.missingRequiredFilters);
+  const branchAllSelected = !selectedBranchIds.length;
+  const includeBranchColumn = Boolean(user?.isAdmin) && selectedBranchIds.length !== 1;
+  const reportTitle = (() => { const v = t("department_wip_ledger_report"); return v && v !== "department_wip_ledger_report" ? v : "Department WIP Ledger Report"; })();
+  const articlesLabel = (() => { const v = t("articles"); return v && v !== "articles" ? v : "Articles"; })();
+  const openingPairsLabel = (() => { const v = t("opening_pairs"); return v && v !== "opening_pairs" ? v : "Opening Pairs"; })();
+  const inPairsLabel = (() => { const v = t("in_pairs"); return v && v !== "in_pairs" ? v : "In Pairs"; })();
+  const outPairsLabel = (() => { const v = t("out_pairs"); return v && v !== "out_pairs" ? v : "Out Pairs"; })();
+  const closingPairsLabel = (() => { const v = t("closing_pairs"); return v && v !== "closing_pairs" ? v : "Closing Pairs"; })();
+  const closingDozenLabel = (() => { const v = t("closing_dozen"); return v && v !== "closing_dozen" ? v : "Closing Dozen"; })();
+  const movementLabel = (() => { const v = t("movement"); return v && v !== "movement" ? v : "Movement"; })();
+  const inMovementLabel = (() => { const v = t("in_movement"); return v && v !== "in_movement" ? v : "IN"; })();
+  const outMovementLabel = (() => { const v = t("out_movement"); return v && v !== "out_movement" ? v : "OUT"; })();
+  const agingDaysLabel = (() => { const v = t("aging_days"); return v && v !== "aging_days" ? v : "Aging (Days)"; })();
+  const dateRangeValue = (selectedFromDate || selectedToDate) ? `${selectedFromDate || ""} - ${selectedToDate || ""}` : "";
+  const weekdayShortLabels = [
+    t("weekday_sun_short"),
+    t("weekday_mon_short"),
+    t("weekday_tue_short"),
+    t("weekday_wed_short"),
+    t("weekday_thu_short"),
+    t("weekday_fri_short"),
+    t("weekday_sat_short"),
+  ];
+  const formatNumber = (value, decimals = 3) => formatNumberDisplay(value, { decimals, fallback: "0" });
+  const formatDate = (value) => formatDateDisplay(value, "-");
+  const detailTotalsLabelSpan = 4;
+  const detailColumnCount = detailTotalsLabelSpan + 4 + (includeBranchColumn ? 1 : 0);
+  const reportPurposeTooltip = (() => {
+    const key = "department_wip_ledger_report_purpose_tooltip";
+    const value = t(key);
+    return value && value !== key ? value : "";
+  })();
+%>
+
+<div class="mx-auto w-full max-w-none space-y-4 px-2">
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <div class="flex items-center gap-2">
+      <h1 class="text-xl font-display font-semibold tracking-tight text-ink sm:text-2xl"><%= reportTitle %></h1>
+      <% if (reportPurposeTooltip) { %>
+        <span class="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-[10px] font-bold text-slate-600 cursor-help" title="<%= reportPurposeTooltip %>" aria-label="<%= reportPurposeTooltip %>">i</span>
+      <% } %>
+    </div>
+    <% if (filters?.invalidFilterInput) { %>
+      <div class="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800"><%= t("date_filters_auto_corrected") %></div>
+    <% } %>
+
+    <form method="post" action="<%= reportPath %>" class="mt-3 max-w-6xl rounded-xl border border-slate-200 bg-slate-50/30 p-3 sm:p-4" data-production-department-wip-ledger-filter-form>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="load_report" value="1">
+
+      <div class="space-y-3">
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("date_range") %></label>
+          <div class="sm:col-span-9">
+            <div class="relative" data-date-range-wrap>
+              <input type="text" readonly value="<%= dateRangeValue %>" data-date-range-input class="h-10 w-full cursor-pointer rounded-lg border border-slate-300 bg-white px-3 pr-10 text-sm">
+              <button type="button" class="absolute inset-y-0 right-2 inline-flex items-center text-slate-500 hover:text-slate-700" data-date-range-toggle aria-label="<%= t('open_date_range_picker') %>">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
+              </button>
+              <div class="absolute left-0 z-50 mt-2 hidden max-h-[62vh] overflow-auto rounded-xl border border-slate-200 bg-white p-2.5 shadow-lg" style="width:min(700px,calc(100vw - 1rem));" data-date-range-panel>
+                <div class="grid grid-cols-1 gap-2 lg:grid-cols-[156px_1fr]">
+                  <div class="space-y-1.5">
+                    <div>
+                      <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('from_date') %></div>
+                      <div class="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700" data-date-range-from-display>-</div>
+                    </div>
+                    <div>
+                      <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('to_date') %></div>
+                      <div class="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700" data-date-range-to-display>-</div>
+                    </div>
+                  </div>
+                  <div>
+                    <div class="mb-1.5 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600" data-date-range-caption><%= t('select_date_range') %></div>
+                    <div class="grid grid-cols-1 gap-3 xl:grid-cols-[1fr_auto_1fr]">
+                      <div class="min-w-52.5 rounded-lg border border-slate-200 bg-slate-50/40 p-2">
+                        <div class="mb-1 flex items-center justify-between gap-2">
+                          <button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-prev>&larr;</button>
+                          <div class="text-center text-xs font-semibold text-slate-700" data-date-range-month-1-label></div>
+                          <button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-next>&rarr;</button>
+                        </div>
+                        <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-500">
+                          <% weekdayShortLabels.forEach((weekdayLabel) => { %>
+                            <span><%= weekdayLabel %></span>
+                          <% }) %>
+                        </div>
+                        <div class="mt-1 grid grid-cols-7 gap-1" data-date-range-month-1-grid></div>
+                      </div>
+                      <div class="hidden xl:block w-px bg-slate-200 self-stretch"></div>
+                      <div class="min-w-52.5 rounded-lg border border-slate-200 bg-slate-50/40 p-2">
+                        <div class="mb-1 flex items-center justify-between gap-2">
+                          <button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-2-prev>&larr;</button>
+                          <div class="text-center text-xs font-semibold text-slate-700" data-date-range-month-2-label></div>
+                          <button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-2-next>&rarr;</button>
+                        </div>
+                        <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-500">
+                          <% weekdayShortLabels.forEach((weekdayLabel) => { %>
+                            <span><%= weekdayLabel %></span>
+                          <% }) %>
+                        </div>
+                        <div class="mt-1 grid grid-cols-7 gap-1" data-date-range-month-2-grid></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="mt-1.5 flex items-center justify-end gap-2">
+                  <button type="button" class="rounded-lg border border-slate-300 bg-white px-3 py-1.25 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700" data-date-range-cancel><%= t('cancel') %></button>
+                  <button type="button" class="rounded-lg bg-accent px-3 py-1.25 text-xs font-semibold uppercase tracking-[0.08em] text-white" data-date-range-apply><%= t('apply') %></button>
+                </div>
+              </div>
+            </div>
+            <input type="hidden" name="from_date" value="<%= selectedFromDate %>" data-from-date-hidden>
+            <input type="hidden" name="to_date" value="<%= selectedToDate %>" data-to-date-hidden>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("department") %></label>
+          <div class="sm:col-span-9">
+            <select name="department_id" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+              <option value=""><%= t("select_department") %></option>
+              <% (options?.departments || []).forEach((department) => { %>
+                <option value="<%= department.id %>" <%= selectedDepartmentId === Number(department.id) ? "selected" : "" %>><%= department.name %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("sku") %></label>
+          <div class="sm:col-span-9">
+            <select name="sku_id" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+              <option value=""><%= t("select_sku") %></option>
+              <% (options?.skus || []).forEach((sku) => { %>
+                <option value="<%= sku.id %>" <%= selectedSkuId === Number(sku.id) ? "selected" : "" %>><%= `${sku.sku_code || "-"} - ${sku.article_name || "-"}` %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t("branches") : t("branch") %></label>
+          <div class="sm:col-span-9">
+            <% if (user?.isAdmin) { %>
+              <select name="branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+                <option value="<%= allMultiOptionValue %>" <%= branchAllSelected ? "selected" : "" %>><%= t("all") %></option>
+                <% (options?.branches || []).forEach((branch) => { %>
+                  <option value="<%= branch.id %>" <%= selectedBranchIds.includes(Number(branch.id)) ? "selected" : "" %>><%= branch.name %></option>
+                <% }) %>
+              </select>
+            <% } else { %>
+              <input type="text" readonly value="<%= (options?.branches || [])[0]?.name || branchId %>" class="h-10 w-full rounded-lg border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700">
+            <% } %>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("report_type") %></label>
+          <div class="sm:col-span-9">
+            <div class="flex flex-wrap gap-2 rounded-xl bg-white/60 p-1">
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedReportType === 'details' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="report_type" value="details" <%= selectedReportType === "details" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t("details") %></span>
+              </label>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedReportType === 'summary' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="report_type" value="summary" <%= selectedReportType === "summary" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t("summary") %></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <div class="sm:col-span-3"></div>
+          <div class="sm:col-span-9 flex flex-wrap gap-2">
+            <button type="submit" class="inline-flex items-center rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= t("load") %></button>
+            <a href="<%= reportPath %>" class="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= t("cancel") %></a>
+          </div>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm" data-print-area>
+    <div class="flex flex-col gap-3 border-b border-slate-200 px-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div class="text-sm font-semibold text-slate-700"><%= reportTitle %></div>
+      <div class="flex items-center gap-2">
+        <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40" type="button" data-download-button <%= reportLoaded && hasData ? "" : "disabled" %>><%= t("download") %></button>
+        <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40" type="button" data-print-button <%= reportLoaded && hasData ? "" : "disabled" %>><%= t("print") %></button>
+        <%- include("../base/partials/table-controls", { t, showStatus: false }) %>
+      </div>
+    </div>
+
+    <% if (!reportLoaded) { %>
+      <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= t("load_report_to_view") %></div>
+    <% } else if (missingRequiredFilters) { %>
+      <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= `${t("select")} ${t("department")} / ${t("sku")}` %></div>
+    <% } else if (!hasData) { %>
+      <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= t("no_entries") %></div>
+    <% } else if (selectedReportType === "details") { %>
+      <div class="relative mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+        <table class="min-w-[1200px] w-full text-sm tabular-nums" data-table data-report-table>
+          <thead class="bg-slate-100 text-slate-700">
+            <tr>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("date") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("voucher_type") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("voucher_no") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= movementLabel %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= inPairsLabel %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= outPairsLabel %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= closingPairsLabel %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= closingDozenLabel %></th>
+              <% if (includeBranchColumn) { %><th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("branch") %></th><% } %>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100" data-table-body>
+            <% detailGroups.forEach((group) => { %>
+              <tr class="bg-slate-700 text-white" data-row data-active="true">
+                <td colspan="<%= detailColumnCount %>" class="px-3 py-1.5">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="inline-flex items-center rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white"><%= t("department") %>: <%= group.department_name || "-" %></span>
+                    <span class="inline-flex items-center rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white"><%= t("sku") %>: <%= group.sku_code || "-" %></span>
+                    <span class="inline-flex items-center rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white"><%= articlesLabel %>: <%= group.article_name || "-" %></span>
+                    <span class="inline-flex items-center rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white"><%= agingDaysLabel %>: <%= Number(group.aging_days || 0) %></span>
+                  </div>
+                </td>
+              </tr>
+              <tr class="bg-slate-50" data-row data-active="true">
+                <td class="px-3 py-2">-</td><td class="px-3 py-2">-</td><td class="px-3 py-2">-</td>
+                <td class="px-3 py-2 font-semibold"><%= t("opening_balance") %></td>
+                <td class="px-3 py-2 text-right">0.000</td>
+                <td class="px-3 py-2 text-right">0.000</td>
+                <td class="px-3 py-2 text-right font-semibold"><%= formatNumber(group.opening_pairs || 0, 3) %></td>
+                <td class="px-3 py-2 text-right font-semibold"><%= formatNumber(group.opening_dozen || 0, 3) %></td>
+                <% if (includeBranchColumn) { %><td class="px-3 py-2"><%= group.branch_name || "-" %></td><% } %>
+              </tr>
+              <% (group.rows || []).forEach((row) => { %>
+                <tr class="odd:bg-white even:bg-slate-50/60 hover:bg-slate-100" data-row data-active="true">
+                  <td class="px-3 py-2"><%= formatDate(row.txn_date) %></td>
+                  <td class="px-3 py-2"><%= row.voucher_type_code || "-" %></td>
+                  <td class="px-3 py-2"><%= row.voucher_no || "-" %></td>
+                  <td class="px-3 py-2"><%= Number(row.direction || 0) === 1 ? inMovementLabel : outMovementLabel %></td>
+                  <td class="px-3 py-2 text-right"><%= formatNumber(row.in_pairs || 0, 3) %></td>
+                  <td class="px-3 py-2 text-right"><%= formatNumber(row.out_pairs || 0, 3) %></td>
+                  <td class="px-3 py-2 text-right font-semibold"><%= formatNumber(row.balance_pairs || 0, 3) %></td>
+                  <td class="px-3 py-2 text-right font-semibold"><%= formatNumber(row.balance_dozen || 0, 3) %></td>
+                  <% if (includeBranchColumn) { %><td class="px-3 py-2"><%= group.branch_name || "-" %></td><% } %>
+                </tr>
+              <% }) %>
+              <tr class="bg-accent text-white" data-row data-active="true">
+                <td colspan="<%= detailTotalsLabelSpan %>" class="px-3 py-2 text-right text-[11px] font-extrabold uppercase tracking-[0.08em]"><%= t("total") %></td>
+                <td class="px-3 py-2 text-right font-extrabold"><%= formatNumber(group.in_pairs || 0, 3) %></td>
+                <td class="px-3 py-2 text-right font-extrabold"><%= formatNumber(group.out_pairs || 0, 3) %></td>
+                <td class="px-3 py-2 text-right font-black text-emerald-100"><%= formatNumber(group.closing_pairs || 0, 3) %></td>
+                <td class="px-3 py-2 text-right font-black text-emerald-100"><%= formatNumber(group.closing_dozen || 0, 3) %></td>
+                <% if (includeBranchColumn) { %><td class="px-3 py-2"></td><% } %>
+              </tr>
+            <% }) %>
+            <tr class="bg-slate-800 text-white" data-row data-active="true" data-report-grand-total>
+              <td colspan="<%= detailTotalsLabelSpan %>" class="px-3 py-3 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
+              <td class="px-3 py-3 text-right font-extrabold"><%= formatNumber(reportData?.totals?.inPairs || 0, 3) %></td>
+              <td class="px-3 py-3 text-right font-extrabold"><%= formatNumber(reportData?.totals?.outPairs || 0, 3) %></td>
+              <td class="px-3 py-3 text-right font-black text-emerald-100"><%= formatNumber(reportData?.totals?.closingPairs || 0, 3) %></td>
+              <td class="px-3 py-3 text-right font-black text-emerald-100"><%= formatNumber(reportData?.totals?.closingDozen || 0, 3) %></td>
+              <% if (includeBranchColumn) { %><td class="px-3 py-3"></td><% } %>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <%- include("../base/partials/table-footer", { t }) %>
+    <% } else { %>
+      <div class="relative mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+        <table class="min-w-[1280px] w-full text-sm tabular-nums" data-table data-report-table>
+          <thead class="bg-slate-100 text-slate-700">
+            <tr>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("department") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= articlesLabel %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("sku") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("product_group") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("production_type") %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= agingDaysLabel %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= openingPairsLabel %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= inPairsLabel %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= outPairsLabel %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= closingPairsLabel %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= closingDozenLabel %></th>
+              <% if (includeBranchColumn) { %><th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("branch") %></th><% } %>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100" data-table-body>
+            <% summaryRows.forEach((row) => { %>
+              <tr class="bg-slate-200/50 text-slate-700" data-row data-active="true">
+                <td class="px-3 py-2"><%= row.department_name || "-" %></td>
+                <td class="px-3 py-2"><%= row.article_name || "-" %></td>
+                <td class="px-3 py-2"><%= row.sku_code || "-" %></td>
+                <td class="px-3 py-2"><%= row.product_group_name || "-" %></td>
+                <td class="px-3 py-2"><%= row.production_type || "-" %></td>
+                <td class="px-3 py-2 text-right"><%= Number(row.aging_days || 0) %></td>
+                <td class="px-3 py-2 text-right"><%= formatNumber(row.opening_pairs || 0, 3) %></td>
+                <td class="px-3 py-2 text-right"><%= formatNumber(row.in_pairs || 0, 3) %></td>
+                <td class="px-3 py-2 text-right"><%= formatNumber(row.out_pairs || 0, 3) %></td>
+                <td class="px-3 py-2 text-right"><%= formatNumber(row.closing_pairs || 0, 3) %></td>
+                <td class="px-3 py-2 text-right font-semibold"><%= formatNumber(row.closing_dozen || 0, 3) %></td>
+                <% if (includeBranchColumn) { %><td class="px-3 py-2"><%= row.branch_name || "-" %></td><% } %>
+              </tr>
+            <% }) %>
+            <tr class="bg-rose-700 text-white" data-row data-active="true" data-report-grand-total>
+              <td colspan="6" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
+              <td class="px-3 py-2 text-right font-extrabold"><%= formatNumber(reportData?.totals?.openingPairs || 0, 3) %></td>
+              <td class="px-3 py-2 text-right font-extrabold"><%= formatNumber(reportData?.totals?.inPairs || 0, 3) %></td>
+              <td class="px-3 py-2 text-right font-extrabold"><%= formatNumber(reportData?.totals?.outPairs || 0, 3) %></td>
+              <td class="px-3 py-2 text-right font-black text-emerald-100"><%= formatNumber(reportData?.totals?.closingPairs || 0, 3) %></td>
+              <td class="px-3 py-2 text-right font-black text-emerald-100"><%= formatNumber(reportData?.totals?.closingDozen || 0, 3) %></td>
+              <% if (includeBranchColumn) { %><td class="px-3 py-2"><%= Number(reportData?.totals?.skuCount || 0) %> <%= t("sku") %></td><% } %>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <%- include("../base/partials/table-footer", { t }) %>
+    <% } %>
+  </section>
+</div>
+
+<script><%- include("../base/partials/date-range-picker.js") %></script>
+<script><%- include("../base/partials/searchable-select.js") %></script>
+<script>
+  (function () {
+    const form = document.querySelector('[data-production-department-wip-ledger-filter-form]');
+    if (!form) return;
+
+    if (typeof window.initSearchableSelects === "function") {
+      window.initSearchableSelects();
+    }
+
+    if (typeof window.initReportDateRangePicker === "function") {
+      window.initReportDateRangePicker({
+        root: form,
+        invalidDateRangeMessage: <%- JSON.stringify(t("invalid_date_range")) %>,
+        selectDateRangeText: <%- JSON.stringify(t("select_date_range")) %>,
+      });
+    }
+  })();
+</script>

@@ -420,10 +420,14 @@ router.post("/:id/delete", requirePermission("SCREEN", SCOPE_KEY, "hard_delete")
 
     const used = await knex("erp.rgp_outward_line").select("voucher_line_id").where({ asset_id: id }).first();
     if (used) {
-      throw new HttpError(400, res.locals.t("error_record_in_use"));
+      await knex("erp.assets").where({ id }).update({
+        is_active: false,
+        updated_by: req.user ? req.user.id : null,
+        updated_at: knex.fn.now(),
+      });
+    } else {
+      await knex("erp.assets").where({ id }).del();
     }
-
-    await knex("erp.assets").where({ id }).del();
     queueAuditLog(req, {
       entityType: ENTITY_TYPE,
       entityId: id,

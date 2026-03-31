@@ -48,6 +48,10 @@
   const selectedHeaderAccountName = selectedHeaderAccount?.name || "";
   const isAutoSettlementVoucher = String(selectedRemarksRaw || "").startsWith("[AUTO_BANK_SETTLEMENT]");
   const isDeletedVoucher = String(selectedVoucher?.status || "").toUpperCase() === "REJECTED";
+  const canEditVoucher = typeof allowEdit === "boolean" ? allowEdit : true;
+  const canDeleteVoucher = typeof allowDelete === "boolean" ? allowDelete : true;
+  const canSaveVoucher = !isDeletedVoucher && (!selectedVoucher || canEditVoucher);
+  const canDeleteCurrentVoucher = !!selectedVoucher && !isDeletedVoucher && canDeleteVoucher;
   const selectedStatus = String(selectedVoucher?.status || "").toUpperCase();
   const selectedStatusLabel =
     selectedStatus === "APPROVED"
@@ -168,7 +172,7 @@
             <a href="<%= nextVoucherNo ? ((basePath || '') + '?voucher_no=' + nextVoucherNo + '&view=1') : ((basePath || '') + '?new=1') %>" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700" data-next-voucher><%= t('next') %></a>
             <button type="button" class="rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-white shadow-sm" data-load-voucher><%= t('load') %></button>
             <div class="ml-auto flex items-center gap-2">
-              <button type="button" class="rounded-xl border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-rose-700 disabled:opacity-40" data-delete-voucher <%= selectedVoucher && !isDeletedVoucher ? '' : 'disabled' %>><%= t('delete') %></button>
+              <button type="button" class="rounded-xl border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-rose-700 disabled:opacity-40" data-delete-voucher <%= canDeleteCurrentVoucher ? '' : 'disabled' %>><%= t('delete') %></button>
               <button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700" onclick="window.print()"><%= t('print') %></button>
             </div>
           </div>
@@ -272,7 +276,7 @@
       </div>
 
       <div class="flex items-center justify-center gap-2 pt-1">
-        <button type="submit" class="rounded-xl bg-accent px-5 py-2 text-sm font-semibold uppercase tracking-[0.1em] text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40" <%= isDeletedVoucher ? 'disabled' : '' %>><%= t('confirm') %></button>
+        <button type="submit" class="rounded-xl bg-accent px-5 py-2 text-sm font-semibold uppercase tracking-[0.1em] text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40" <%= canSaveVoucher ? '' : 'disabled' %>><%= t('confirm') %></button>
       </div>
     </form>
     <form method="post" action="<%= (basePath || '') + '/delete' %>" class="hidden" data-delete-voucher-form>
@@ -297,6 +301,9 @@
 
     const selectedVoucher = <%- JSON.stringify(selectedVoucher || null) %>;
     const isDeletedVoucher = String(selectedVoucher?.status || '').toUpperCase() === 'REJECTED';
+    const canSaveVoucher = <%- JSON.stringify(Boolean(canSaveVoucher)) %>;
+    const canDeleteCurrentVoucher = <%- JSON.stringify(Boolean(canDeleteCurrentVoucher)) %>;
+    const actionNotAllowedMessage = <%- JSON.stringify(t('error_action_not_allowed') || t('permission_denied') || t('generic_error')) %>;
     const voucherTypeCode = '<%= voucherTypeCode %>';
     const seriesNos = <%- JSON.stringify(seriesNos || []) %>;
     const prevVoucherNo = <%- JSON.stringify(prevVoucherNo || null) %>;
@@ -968,6 +975,10 @@
     });
 
     form.querySelector('[data-delete-voucher]')?.addEventListener('click', () => {
+      if (!canDeleteCurrentVoucher) {
+        showError(actionNotAllowedMessage);
+        return;
+      }
       const deleteForm = document.querySelector('[data-delete-voucher-form]');
       if (!deleteForm) return;
       if (!window.confirm('<%= t("are_you_sure") %>')) return;
@@ -981,6 +992,11 @@
     }
 
     form.addEventListener('submit', (event) => {
+      if (!canSaveVoucher) {
+        event.preventDefault();
+        showError(actionNotAllowedMessage);
+        return;
+      }
       if (isDeletedVoucher) {
         event.preventDefault();
         showError('<%= t("voucher_deleted_read_only") %>');

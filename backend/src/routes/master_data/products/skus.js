@@ -734,8 +734,18 @@ router.post("/:id/delete", requirePermission("SCREEN", "master_data.products.sku
       return res.redirect(basePath + viewQuery + "&success=true&msg=" + encodeURIComponent(res.locals.t("approval_submitted")));
     }
 
-    await knex("erp.skus").where({ variant_id: id }).del();
-    await knex("erp.variants").where({ id }).del();
+    try {
+      await knex("erp.skus").where({ variant_id: id }).del();
+      await knex("erp.variants").where({ id }).del();
+    } catch (deleteErr) {
+      if (String(deleteErr?.code || "") !== "23503") throw deleteErr;
+      await knex("erp.variants").where({ id }).update({
+        is_active: false,
+        updated_at: knex.fn.now(),
+        updated_by: req.user.id,
+      });
+      await knex("erp.skus").where({ variant_id: id }).update({ is_active: false });
+    }
     queueAuditLog(req, {
       entityType: "SKU",
       entityId: id,

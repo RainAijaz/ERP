@@ -50,88 +50,86 @@
     : "PER_DOZEN";
 %>
 
-<div class="space-y-4">
-  <% if (primaryConfig) { %>
-  <div class="space-y-2">
-    <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= t(primaryConfig.label || "filter_primary") %></span>
-    <div class="flex flex-col gap-2" data-filter-list="primary">
-      <% selectedPrimary.forEach((value, idx) => { %>
-        <div class="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
-          <select <%= idx === 0 ? 'name="primary_mode"' : '' %> class="w-20 bg-transparent text-[10px] font-semibold text-slate-500 focus:outline-none cursor-pointer" data-filter-primary-mode data-filter-ignore="true" data-searchable-skip="true">
-            <option value="include" <%= primaryMode === "include" ? "selected" : "" %>><%= t("include") %></option>
-            <option value="exclude" <%= primaryMode === "exclude" ? "selected" : "" %>><%= t("exclude") %></option>
-          </select>
-          <select name="primary_value" class="flex-1 min-w-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer" data-filter-primary data-searchable-skip="true">
-            <option value=""><%= t("all") %></option>
-            <% (primaryConfig.options || []).forEach((option) => { %>
-              <option value="<%= option.value %>" <%= String(option.value) === String(value) ? "selected" : "" %>><%= t(option.label) || option.label %></option>
-            <% }) %>
-          </select>
-          <% if (idx === 0) { %>
-            <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-add="primary">+</button>
-          <% } else { %>
-            <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-remove="primary">x</button>
-          <% } %>
-        </div>
-      <% }) %>
-    </div>
+<% if (primaryConfig) { %>
+<div class="space-y-2">
+  <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= t(primaryConfig.label || "filter_primary") %></span>
+  <div class="flex flex-col gap-2" data-filter-list="primary">
+    <% selectedPrimary.forEach((value, idx) => { %>
+      <div class="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+        <select <%= idx === 0 ? 'name="primary_mode"' : '' %> class="w-20 bg-transparent text-[10px] font-semibold text-slate-500 focus:outline-none cursor-pointer" data-filter-primary-mode data-filter-ignore="true" data-searchable-skip="true">
+          <option value="include" <%= primaryMode === "include" ? "selected" : "" %>><%= t("include") %></option>
+          <option value="exclude" <%= primaryMode === "exclude" ? "selected" : "" %>><%= t("exclude") %></option>
+        </select>
+        <select name="primary_value" class="flex-1 min-w-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer" data-filter-primary data-searchable-skip="true">
+          <option value=""><%= t("all") %></option>
+          <% (primaryConfig.options || []).forEach((option) => { %>
+            <option value="<%= option.value %>" <%= String(option.value) === String(value) ? "selected" : "" %>><%= t(option.label) || option.label %></option>
+          <% }) %>
+        </select>
+        <% if (idx === 0) { %>
+          <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-add="primary">+</button>
+        <% } else { %>
+          <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-remove="primary">x</button>
+        <% } %>
+      </div>
+    <% }) %>
   </div>
-  <% } %>
-
-  <% if (secondaryConfig) { %>
-  <div class="space-y-2">
-    <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= t(secondaryConfig.label || "filter_secondary") %></span>
-    <div class="flex flex-col gap-2" data-filter-list="secondary">
-      <% selectedSecondary.forEach((value, idx) => { %>
-        <div class="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
-          <select <%= idx === 0 ? 'name="secondary_mode"' : '' %> class="w-20 bg-transparent text-[10px] font-semibold text-slate-500 focus:outline-none cursor-pointer" data-filter-secondary-mode data-filter-ignore="true" data-searchable-skip="true">
-            <option value="include" <%= secondaryMode === "include" ? "selected" : "" %>><%= t("include") %></option>
-            <option value="exclude" <%= secondaryMode === "exclude" ? "selected" : "" %>><%= t("exclude") %></option>
-          </select>
-          <select name="secondary_value" class="flex-1 min-w-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer" data-filter-secondary data-searchable-skip="true">
-            <option value=""><%= t("all") %></option>
-            <% (secondaryConfig.options || []).forEach((option) => { %>
-              <option value="<%= option.value %>" <%= String(option.value) === String(value) ? "selected" : "" %>><%= t(option.label) || option.label %></option>
-            <% }) %>
-          </select>
-          <% if (idx === 0) { %>
-            <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-add="secondary">+</button>
-          <% } else { %>
-            <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-remove="secondary">x</button>
-          <% } %>
-        </div>
-      <% }) %>
-    </div>
-  </div>
-  <% } %>
-
-  <% if (tertiaryConfig) { %>
-  <div class="space-y-2">
-    <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= t(tertiaryConfig.label || "filter_tertiary") %></span>
-    <div class="flex flex-col gap-2" data-filter-list="tertiary">
-      <% selectedTertiary.forEach((value, idx) => { %>
-        <div class="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
-          <select <%= idx === 0 ? 'name="tertiary_mode"' : '' %> class="w-20 bg-transparent text-[10px] font-semibold text-slate-500 focus:outline-none cursor-pointer" data-filter-tertiary-mode data-filter-ignore="true" data-searchable-skip="true">
-            <option value="include" <%= tertiaryMode === "include" ? "selected" : "" %>><%= t("include") %></option>
-            <option value="exclude" <%= tertiaryMode === "exclude" ? "selected" : "" %>><%= t("exclude") %></option>
-          </select>
-          <select name="tertiary_value" class="flex-1 min-w-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer" data-filter-tertiary data-searchable-skip="true">
-            <option value=""><%= t("all") %></option>
-            <% (tertiaryConfig.options || []).forEach((option) => { %>
-              <option value="<%= option.value %>" <%= String(option.value) === String(value) ? "selected" : "" %>><%= t(option.label) || option.label %></option>
-            <% }) %>
-          </select>
-          <% if (idx === 0) { %>
-            <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-add="tertiary">+</button>
-          <% } else { %>
-            <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-remove="tertiary">x</button>
-          <% } %>
-        </div>
-      <% }) %>
-    </div>
-  </div>
-  <% } %>
 </div>
+<% } %>
+
+<% if (secondaryConfig) { %>
+<div class="space-y-2">
+  <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= t(secondaryConfig.label || "filter_secondary") %></span>
+  <div class="flex flex-col gap-2" data-filter-list="secondary">
+    <% selectedSecondary.forEach((value, idx) => { %>
+      <div class="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+        <select <%= idx === 0 ? 'name="secondary_mode"' : '' %> class="w-20 bg-transparent text-[10px] font-semibold text-slate-500 focus:outline-none cursor-pointer" data-filter-secondary-mode data-filter-ignore="true" data-searchable-skip="true">
+          <option value="include" <%= secondaryMode === "include" ? "selected" : "" %>><%= t("include") %></option>
+          <option value="exclude" <%= secondaryMode === "exclude" ? "selected" : "" %>><%= t("exclude") %></option>
+        </select>
+        <select name="secondary_value" class="flex-1 min-w-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer" data-filter-secondary data-searchable-skip="true">
+          <option value=""><%= t("all") %></option>
+          <% (secondaryConfig.options || []).forEach((option) => { %>
+            <option value="<%= option.value %>" <%= String(option.value) === String(value) ? "selected" : "" %>><%= t(option.label) || option.label %></option>
+          <% }) %>
+        </select>
+        <% if (idx === 0) { %>
+          <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-add="secondary">+</button>
+        <% } else { %>
+          <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-remove="secondary">x</button>
+        <% } %>
+      </div>
+    <% }) %>
+  </div>
+</div>
+<% } %>
+
+<% if (tertiaryConfig) { %>
+<div class="space-y-2">
+  <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= t(tertiaryConfig.label || "filter_tertiary") %></span>
+  <div class="flex flex-col gap-2" data-filter-list="tertiary">
+    <% selectedTertiary.forEach((value, idx) => { %>
+      <div class="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+        <select <%= idx === 0 ? 'name="tertiary_mode"' : '' %> class="w-20 bg-transparent text-[10px] font-semibold text-slate-500 focus:outline-none cursor-pointer" data-filter-tertiary-mode data-filter-ignore="true" data-searchable-skip="true">
+          <option value="include" <%= tertiaryMode === "include" ? "selected" : "" %>><%= t("include") %></option>
+          <option value="exclude" <%= tertiaryMode === "exclude" ? "selected" : "" %>><%= t("exclude") %></option>
+        </select>
+        <select name="tertiary_value" class="flex-1 min-w-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer" data-filter-tertiary data-searchable-skip="true">
+          <option value=""><%= t("all") %></option>
+          <% (tertiaryConfig.options || []).forEach((option) => { %>
+            <option value="<%= option.value %>" <%= String(option.value) === String(value) ? "selected" : "" %>><%= t(option.label) || option.label %></option>
+          <% }) %>
+        </select>
+        <% if (idx === 0) { %>
+          <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-add="tertiary">+</button>
+        <% } else { %>
+          <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-remove="tertiary">x</button>
+        <% } %>
+      </div>
+    <% }) %>
+  </div>
+</div>
+<% } %>
 
 <% if (supportsRateView) { %>
   <div class="space-y-2">
@@ -146,81 +144,79 @@
 <% } %>
 
 <% if (page && page.scopeKey === "hr_payroll.labour_rates") { %>
-  <div class="space-y-4">
-    <div class="space-y-2">
-      <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= t("product_subgroups") %></span>
-      <div class="flex flex-col gap-2" data-filter-list="subgroup">
-        <% selectedSubgroup.forEach((value, idx) => { %>
-          <div class="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
-            <select name="subgroup_mode" class="w-20 bg-transparent text-[10px] font-semibold text-slate-500 focus:outline-none cursor-pointer" data-filter-subgroup-mode data-filter-ignore="true" data-searchable-skip="true">
-              <option value="include" <%= subgroupMode === "include" ? "selected" : "" %>><%= t("include") %></option>
-              <option value="exclude" <%= subgroupMode === "exclude" ? "selected" : "" %>><%= t("exclude") %></option>
-            </select>
-            <select name="subgroup_id" class="flex-1 min-w-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer" data-filter-subgroup data-searchable-skip="true">
-              <option value=""><%= t("all") %></option>
-              <% (labourRateSubgroupField && labourRateSubgroupField.options ? labourRateSubgroupField.options : []).forEach((option) => { %>
-                <option value="<%= option.value %>" <%= String(option.value) === String(value) ? "selected" : "" %>><%= t(option.label) || option.label %></option>
-              <% }) %>
-            </select>
-            <% if (idx === 0) { %>
-              <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-add="subgroup">+</button>
-            <% } else { %>
-              <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-remove="subgroup">x</button>
-            <% } %>
-          </div>
-        <% }) %>
-      </div>
+  <div class="space-y-2">
+    <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= t("product_subgroups") %></span>
+    <div class="flex flex-col gap-2" data-filter-list="subgroup">
+      <% selectedSubgroup.forEach((value, idx) => { %>
+        <div class="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+          <select name="subgroup_mode" class="w-20 bg-transparent text-[10px] font-semibold text-slate-500 focus:outline-none cursor-pointer" data-filter-subgroup-mode data-filter-ignore="true" data-searchable-skip="true">
+            <option value="include" <%= subgroupMode === "include" ? "selected" : "" %>><%= t("include") %></option>
+            <option value="exclude" <%= subgroupMode === "exclude" ? "selected" : "" %>><%= t("exclude") %></option>
+          </select>
+          <select name="subgroup_id" class="flex-1 min-w-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer" data-filter-subgroup data-searchable-skip="true">
+            <option value=""><%= t("all") %></option>
+            <% (labourRateSubgroupField && labourRateSubgroupField.options ? labourRateSubgroupField.options : []).forEach((option) => { %>
+              <option value="<%= option.value %>" <%= String(option.value) === String(value) ? "selected" : "" %>><%= t(option.label) || option.label %></option>
+            <% }) %>
+          </select>
+          <% if (idx === 0) { %>
+            <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-add="subgroup">+</button>
+          <% } else { %>
+            <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-remove="subgroup">x</button>
+          <% } %>
+        </div>
+      <% }) %>
     </div>
-    <div class="space-y-2">
-      <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= t("product_groups") %></span>
-      <div class="flex flex-col gap-2" data-filter-list="group">
-        <% selectedGroup.forEach((value, idx) => { %>
-          <div class="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
-            <select name="group_mode" class="w-20 bg-transparent text-[10px] font-semibold text-slate-500 focus:outline-none cursor-pointer" data-filter-group-mode data-filter-ignore="true" data-searchable-skip="true">
-              <option value="include" <%= groupMode === "include" ? "selected" : "" %>><%= t("include") %></option>
-              <option value="exclude" <%= groupMode === "exclude" ? "selected" : "" %>><%= t("exclude") %></option>
-            </select>
-            <select name="group_id" class="flex-1 min-w-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer" data-filter-group data-searchable-skip="true">
-              <option value=""><%= t("all") %></option>
-              <% (labourRateGroupField && labourRateGroupField.options ? labourRateGroupField.options : []).forEach((option) => { %>
-                <option value="<%= option.value %>" <%= String(option.value) === String(value) ? "selected" : "" %>><%= t(option.label) || option.label %></option>
-              <% }) %>
-            </select>
-            <% if (idx === 0) { %>
-              <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-add="group">+</button>
-            <% } else { %>
-              <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-remove="group">x</button>
-            <% } %>
-          </div>
-        <% }) %>
-      </div>
+  </div>
+  <div class="space-y-2">
+    <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= t("product_groups") %></span>
+    <div class="flex flex-col gap-2" data-filter-list="group">
+      <% selectedGroup.forEach((value, idx) => { %>
+        <div class="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+          <select name="group_mode" class="w-20 bg-transparent text-[10px] font-semibold text-slate-500 focus:outline-none cursor-pointer" data-filter-group-mode data-filter-ignore="true" data-searchable-skip="true">
+            <option value="include" <%= groupMode === "include" ? "selected" : "" %>><%= t("include") %></option>
+            <option value="exclude" <%= groupMode === "exclude" ? "selected" : "" %>><%= t("exclude") %></option>
+          </select>
+          <select name="group_id" class="flex-1 min-w-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer" data-filter-group data-searchable-skip="true">
+            <option value=""><%= t("all") %></option>
+            <% (labourRateGroupField && labourRateGroupField.options ? labourRateGroupField.options : []).forEach((option) => { %>
+              <option value="<%= option.value %>" <%= String(option.value) === String(value) ? "selected" : "" %>><%= t(option.label) || option.label %></option>
+            <% }) %>
+          </select>
+          <% if (idx === 0) { %>
+            <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-add="group">+</button>
+          <% } else { %>
+            <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-remove="group">x</button>
+          <% } %>
+        </div>
+      <% }) %>
     </div>
-    <div class="space-y-2">
-      <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= t("article_type") %></span>
-      <div class="flex flex-col gap-2" data-filter-list="article-type">
-        <% selectedArticleType.forEach((value, idx) => { %>
-          <div class="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
-            <select name="article_type_mode" class="w-20 bg-transparent text-[10px] font-semibold text-slate-500 focus:outline-none cursor-pointer" data-filter-article-type-mode data-filter-ignore="true" data-searchable-skip="true">
-              <option value="include" <%= articleTypeMode === "include" ? "selected" : "" %>><%= t("include") %></option>
-              <option value="exclude" <%= articleTypeMode === "exclude" ? "selected" : "" %>><%= t("exclude") %></option>
-            </select>
-            <select name="article_type" class="flex-1 min-w-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer" data-filter-article-type data-searchable-skip="true">
-              <option value=""><%= t("all") %></option>
-              <% (labourRateArticleTypeField && labourRateArticleTypeField.options ? labourRateArticleTypeField.options : []).forEach((option) => { %>
-                <% const normalizedValue = String(option.value || "").toUpperCase(); %>
-                <% if (normalizedValue === "FG" || normalizedValue === "SFG") { %>
-                  <option value="<%= normalizedValue %>" <%= String(value).toUpperCase() === normalizedValue ? "selected" : "" %>><%= t(option.label) || option.label %></option>
-                <% } %>
-              <% }) %>
-            </select>
-            <% if (idx === 0) { %>
-              <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-add="article-type">+</button>
-            <% } else { %>
-              <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-remove="article-type">x</button>
-            <% } %>
-          </div>
-        <% }) %>
-      </div>
+  </div>
+  <div class="space-y-2">
+    <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= t("article_type") %></span>
+    <div class="flex flex-col gap-2" data-filter-list="article-type">
+      <% selectedArticleType.forEach((value, idx) => { %>
+        <div class="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+          <select name="article_type_mode" class="w-20 bg-transparent text-[10px] font-semibold text-slate-500 focus:outline-none cursor-pointer" data-filter-article-type-mode data-filter-ignore="true" data-searchable-skip="true">
+            <option value="include" <%= articleTypeMode === "include" ? "selected" : "" %>><%= t("include") %></option>
+            <option value="exclude" <%= articleTypeMode === "exclude" ? "selected" : "" %>><%= t("exclude") %></option>
+          </select>
+          <select name="article_type" class="flex-1 min-w-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer" data-filter-article-type data-searchable-skip="true">
+            <option value=""><%= t("all") %></option>
+            <% (labourRateArticleTypeField && labourRateArticleTypeField.options ? labourRateArticleTypeField.options : []).forEach((option) => { %>
+              <% const normalizedValue = String(option.value || "").toUpperCase(); %>
+              <% if (normalizedValue === "FG" || normalizedValue === "SFG") { %>
+                <option value="<%= normalizedValue %>" <%= String(value).toUpperCase() === normalizedValue ? "selected" : "" %>><%= t(option.label) || option.label %></option>
+              <% } %>
+            <% }) %>
+          </select>
+          <% if (idx === 0) { %>
+            <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-add="article-type">+</button>
+          <% } else { %>
+            <button class="w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500" type="button" data-filter-remove="article-type">x</button>
+          <% } %>
+        </div>
+      <% }) %>
     </div>
   </div>
 <% } %>

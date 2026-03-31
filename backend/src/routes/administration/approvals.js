@@ -1,25 +1,46 @@
 const express = require("express");
 const knex = require("../../db/knex");
 const { HttpError } = require("../../middleware/errors/http-error");
-const { requirePermission } = require("../../middleware/access/role-permissions");
+const {
+  requirePermission,
+} = require("../../middleware/access/role-permissions");
 const { applyMasterDataChange } = require("../../utils/approval-applier");
 const { navConfig, getNavScopes } = require("../../utils/nav-config");
-const { BASIC_INFO_ENTITY_TYPES, SCREEN_ENTITY_TYPES } = require("../../utils/approval-entity-map");
-const { resolveApprovalPreview } = require("../../utils/approval-preview-registry");
+const {
+  BASIC_INFO_ENTITY_TYPES,
+  SCREEN_ENTITY_TYPES,
+} = require("../../utils/approval-entity-map");
+const {
+  resolveApprovalPreview,
+} = require("../../utils/approval-preview-registry");
 const { notifyApprovalDecision } = require("../../utils/approval-events");
 const { setCookie } = require("../../middleware/utils/cookies");
 const { UI_NOTICE_COOKIE } = require("../../middleware/core/ui-notice");
 const { insertActivityLog } = require("../../utils/audit-log");
-const { inferAction, parseEditedPayload, sanitizeEditedValues, getEditableKeys } = require("../../utils/approval-request-edit");
-const { syncAutoBankSettlementForVoucherTx, markBankVoucherLinesRejectedTx } = require("../../services/financial/voucher-service");
-const { syncVoucherGlPostingTx } = require("../../services/financial/gl-posting-service");
+const {
+  inferAction,
+  parseEditedPayload,
+  sanitizeEditedValues,
+  getEditableKeys,
+} = require("../../utils/approval-request-edit");
+const {
+  syncAutoBankSettlementForVoucherTx,
+  markBankVoucherLinesRejectedTx,
+} = require("../../services/financial/voucher-service");
+const {
+  syncVoucherGlPostingTx,
+} = require("../../services/financial/gl-posting-service");
 const {
   PURCHASE_VOUCHER_TYPES,
   applyPurchaseVoucherUpdatePayloadTx,
+  applyPurchaseVoucherDeletePayloadTx,
+  ensurePurchaseVoucherDerivedDataTx,
 } = require("../../services/purchase/purchase-voucher-service");
 const {
   SALES_VOUCHER_TYPES,
   applySalesVoucherUpdatePayloadTx,
+  applySalesVoucherDeletePayloadTx,
+  ensureSalesVoucherDerivedDataTx,
 } = require("../../services/sales/sales-voucher-service");
 const {
   RETURNABLE_VOUCHER_TYPES,
@@ -74,7 +95,11 @@ const renderPage = (req, res, view, title, payload = {}) =>
 
 const setUiNotice = (res, message, options = {}) => {
   if (!message) return;
-  setCookie(res, UI_NOTICE_COOKIE, JSON.stringify({ message, ...options }), { path: "/", maxAge: 30, sameSite: "Lax" });
+  setCookie(res, UI_NOTICE_COOKIE, JSON.stringify({ message, ...options }), {
+    path: "/",
+    maxAge: 30,
+    sameSite: "Lax",
+  });
 };
 
 const ACTION_LABELS = {
@@ -83,10 +108,20 @@ const ACTION_LABELS = {
   delete: "delete",
 };
 
-const applyVoucherApprovalChangeTx = async ({ trx, request, approverId, req }) => {
-  const payload = request?.new_value && typeof request.new_value === "object" ? request.new_value : {};
+const applyVoucherApprovalChangeTx = async ({
+  trx,
+  request,
+  approverId,
+  req,
+}) => {
+  const payload =
+    request?.new_value && typeof request.new_value === "object"
+      ? request.new_value
+      : {};
   const action = String(payload.action || "").toLowerCase();
-  const payloadVoucherTypeCode = String(payload.voucher_type_code || "").trim().toUpperCase();
+  const payloadVoucherTypeCode = String(payload.voucher_type_code || "")
+    .trim()
+    .toUpperCase();
   const isReturnableVoucherType =
     payloadVoucherTypeCode === RETURNABLE_VOUCHER_TYPES.dispatch ||
     payloadVoucherTypeCode === RETURNABLE_VOUCHER_TYPES.receipt;
@@ -98,7 +133,11 @@ const applyVoucherApprovalChangeTx = async ({ trx, request, approverId, req }) =
   const requestEntityId = String(request.entity_id || "").trim();
   const voucherId = Number(request.entity_id || payload.voucher_id || 0);
 
-  if (action === "create" && requestEntityId === "NEW" && isReturnableVoucherType) {
+  if (
+    action === "create" &&
+    requestEntityId === "NEW" &&
+    isReturnableVoucherType
+  ) {
     const created = await applyReturnableVoucherCreatePayloadTx({
       trx,
       payload,
@@ -144,9 +183,36 @@ const applyVoucherApprovalChangeTx = async ({ trx, request, approverId, req }) =
     if (!existing) {
       throw new Error("Voucher not found during delete approval apply");
     }
-    const existingVoucherTypeCode = String(existing.voucher_type_code || "").toUpperCase();
+    const existingVoucherTypeCode = String(
+      existing.voucher_type_code || "",
+    ).toUpperCase();
     if (isProductionVoucherType(existingVoucherTypeCode)) {
       await applyProductionVoucherDeletePayloadTx({
+        trx,
+        voucherId,
+        voucherTypeCode: existingVoucherTypeCode,
+        approverId,
+      });
+      return;
+    }
+    if (
+      existingVoucherTypeCode === PURCHASE_VOUCHER_TYPES.goodsReceiptNote ||
+      existingVoucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase ||
+      existingVoucherTypeCode === PURCHASE_VOUCHER_TYPES.purchaseReturn
+    ) {
+      await applyPurchaseVoucherDeletePayloadTx({
+        trx,
+        voucherId,
+        voucherTypeCode: existingVoucherTypeCode,
+        approverId,
+      });
+      return;
+    }
+    if (
+      existingVoucherTypeCode === SALES_VOUCHER_TYPES.salesOrder ||
+      existingVoucherTypeCode === SALES_VOUCHER_TYPES.salesVoucher
+    ) {
+      await applySalesVoucherDeletePayloadTx({
         trx,
         voucherId,
         voucherTypeCode: existingVoucherTypeCode,
@@ -170,7 +236,11 @@ const applyVoucherApprovalChangeTx = async ({ trx, request, approverId, req }) =
     if (!updated) {
       throw new Error("Voucher delete approval apply failed");
     }
-    await syncAutoBankSettlementForVoucherTx({ trx, voucherId, actorUserId: approverId });
+    await syncAutoBankSettlementForVoucherTx({
+      trx,
+      voucherId,
+      actorUserId: approverId,
+    });
     await syncVoucherGlPostingTx({ trx, voucherId });
     return;
   }
@@ -183,7 +253,9 @@ const applyVoucherApprovalChangeTx = async ({ trx, request, approverId, req }) =
     if (!existing) {
       throw new Error("Voucher not found during approval apply");
     }
-    const voucherTypeCode = String(existing.voucher_type_code || payloadVoucherTypeCode || "").toUpperCase();
+    const voucherTypeCode = String(
+      existing.voucher_type_code || payloadVoucherTypeCode || "",
+    ).toUpperCase();
 
     const updated = await trx("erp.voucher_header")
       .where({ id: voucherId, status: "PENDING" })
@@ -201,9 +273,37 @@ const applyVoucherApprovalChangeTx = async ({ trx, request, approverId, req }) =
         voucherId,
         voucherTypeCode,
         actorUserId: approverId,
+        // Preserve admin operational override when approval application replays derived production posting.
+        allowNegativeRm: req?.user?.isAdmin === true,
       });
     }
-    await syncAutoBankSettlementForVoucherTx({ trx, voucherId, actorUserId: approverId });
+    if (
+      voucherTypeCode === PURCHASE_VOUCHER_TYPES.goodsReceiptNote ||
+      voucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase ||
+      voucherTypeCode === PURCHASE_VOUCHER_TYPES.purchaseReturn
+    ) {
+      await ensurePurchaseVoucherDerivedDataTx({
+        trx,
+        voucherId,
+        voucherTypeCode,
+        req: approvalReq,
+      });
+    }
+    if (
+      voucherTypeCode === SALES_VOUCHER_TYPES.salesOrder ||
+      voucherTypeCode === SALES_VOUCHER_TYPES.salesVoucher
+    ) {
+      await ensureSalesVoucherDerivedDataTx({
+        trx,
+        voucherId,
+        voucherTypeCode,
+      });
+    }
+    await syncAutoBankSettlementForVoucherTx({
+      trx,
+      voucherId,
+      actorUserId: approverId,
+    });
     await syncVoucherGlPostingTx({ trx, voucherId });
     return;
   }
@@ -216,7 +316,9 @@ const applyVoucherApprovalChangeTx = async ({ trx, request, approverId, req }) =
   if (!existing) {
     throw new Error("Voucher not found during approval apply");
   }
-  const voucherTypeCode = String(existing.voucher_type_code || "").toUpperCase();
+  const voucherTypeCode = String(
+    existing.voucher_type_code || "",
+  ).toUpperCase();
   if (isProductionVoucherType(voucherTypeCode)) {
     await applyProductionVoucherUpdatePayloadTx({
       trx,
@@ -226,23 +328,51 @@ const applyVoucherApprovalChangeTx = async ({ trx, request, approverId, req }) =
       req: approvalReq,
       approverId,
     });
-    await syncAutoBankSettlementForVoucherTx({ trx, voucherId, actorUserId: approverId });
+    await syncAutoBankSettlementForVoucherTx({
+      trx,
+      voucherId,
+      actorUserId: approverId,
+    });
     return;
   }
 
-  const hasHeaderAccount = Object.prototype.hasOwnProperty.call(payload, "header_account_id");
-  const hasReferenceNo = Object.prototype.hasOwnProperty.call(payload, "reference_no");
-  const hasDescription = Object.prototype.hasOwnProperty.call(payload, "description");
+  const hasHeaderAccount = Object.prototype.hasOwnProperty.call(
+    payload,
+    "header_account_id",
+  );
+  const hasReferenceNo = Object.prototype.hasOwnProperty.call(
+    payload,
+    "reference_no",
+  );
+  const hasDescription = Object.prototype.hasOwnProperty.call(
+    payload,
+    "description",
+  );
   const hasRemarks = Object.prototype.hasOwnProperty.call(payload, "remarks");
-  const hasVoucherDate = Object.prototype.hasOwnProperty.call(payload, "voucher_date");
+  const hasVoucherDate = Object.prototype.hasOwnProperty.call(
+    payload,
+    "voucher_date",
+  );
 
   await trx("erp.voucher_header")
     .where({ id: voucherId })
     .update({
-      voucher_date: hasVoucherDate ? (payload.voucher_date || null) : trx.raw("voucher_date"),
-      header_account_id: hasHeaderAccount ? (Number(payload.header_account_id || 0) > 0 ? Number(payload.header_account_id) : null) : trx.raw("header_account_id"),
-      book_no: hasReferenceNo ? (payload.reference_no || null) : trx.raw("book_no"),
-      remarks: hasDescription ? (payload.description ?? null) : (hasRemarks ? (payload.remarks ?? null) : trx.raw("remarks")),
+      voucher_date: hasVoucherDate
+        ? payload.voucher_date || null
+        : trx.raw("voucher_date"),
+      header_account_id: hasHeaderAccount
+        ? Number(payload.header_account_id || 0) > 0
+          ? Number(payload.header_account_id)
+          : null
+        : trx.raw("header_account_id"),
+      book_no: hasReferenceNo
+        ? payload.reference_no || null
+        : trx.raw("book_no"),
+      remarks: hasDescription
+        ? (payload.description ?? null)
+        : hasRemarks
+          ? (payload.remarks ?? null)
+          : trx.raw("remarks"),
       status: "APPROVED",
       approved_by: approverId,
       approved_at: trx.fn.now(),
@@ -257,15 +387,15 @@ const applyVoucherApprovalChangeTx = async ({ trx, request, approverId, req }) =
       };
       const colorId = toNullableId(line.color_id);
       const lineMeta =
-        line.meta && typeof line.meta === "object"
-          ? { ...line.meta }
-          : {};
+        line.meta && typeof line.meta === "object" ? { ...line.meta } : {};
       if (colorId && !lineMeta.color_id) lineMeta.color_id = colorId;
 
       return {
         voucher_header_id: voucherId,
         line_no: Number(line.line_no || index + 1),
-        line_kind: String(line.line_kind || (toNullableId(line.item_id) ? "ITEM" : "ACCOUNT")).toUpperCase(),
+        line_kind: String(
+          line.line_kind || (toNullableId(line.item_id) ? "ITEM" : "ACCOUNT"),
+        ).toUpperCase(),
         item_id: toNullableId(line.item_id),
         sku_id: toNullableId(line.sku_id),
         account_id: toNullableId(line.account_id),
@@ -310,19 +440,29 @@ const applyVoucherApprovalChangeTx = async ({ trx, request, approverId, req }) =
     });
   }
 
-  await syncAutoBankSettlementForVoucherTx({ trx, voucherId, actorUserId: approverId });
+  await syncAutoBankSettlementForVoucherTx({
+    trx,
+    voucherId,
+    actorUserId: approverId,
+  });
   await syncVoucherGlPostingTx({ trx, voucherId });
 };
 
-const ENTITY_TO_BASIC_INFO = Object.entries(BASIC_INFO_ENTITY_TYPES).reduce((acc, [key, value]) => {
-  acc[value] = key;
-  return acc;
-}, {});
+const ENTITY_TO_BASIC_INFO = Object.entries(BASIC_INFO_ENTITY_TYPES).reduce(
+  (acc, [key, value]) => {
+    acc[value] = key;
+    return acc;
+  },
+  {},
+);
 
-const ENTITY_TO_SCREEN = Object.entries(SCREEN_ENTITY_TYPES).reduce((acc, [screen, entity]) => {
-  acc[entity] = screen;
-  return acc;
-}, {});
+const ENTITY_TO_SCREEN = Object.entries(SCREEN_ENTITY_TYPES).reduce(
+  (acc, [screen, entity]) => {
+    acc[entity] = screen;
+    return acc;
+  },
+  {},
+);
 
 const getPreviewValues = (request, side) => {
   if (side === "old") return request?.old_value || null;
@@ -345,8 +485,23 @@ const compactJoin = (parts) =>
     .filter(Boolean)
     .join(" ");
 
-const buildSkuLabel = ({ skuCode, itemName, sizeName, packingName, gradeName, colorName, suffix }) => {
-  const detailed = compactJoin([itemName, sizeName, packingName, gradeName, colorName, suffix]);
+const buildSkuLabel = ({
+  skuCode,
+  itemName,
+  sizeName,
+  packingName,
+  gradeName,
+  colorName,
+  suffix,
+}) => {
+  const detailed = compactJoin([
+    itemName,
+    sizeName,
+    packingName,
+    gradeName,
+    colorName,
+    suffix,
+  ]);
   if (detailed) return detailed;
   return skuCode || "-";
 };
@@ -384,7 +539,9 @@ const getLocalizedLabel = (t, key, fallback) => {
 };
 
 const mapVoucherActionLabel = (action, t) => {
-  const normalized = String(action || "").trim().toLowerCase();
+  const normalized = String(action || "")
+    .trim()
+    .toLowerCase();
   if (normalized === "create") return getLocalizedLabel(t, "add", "ADD");
   if (normalized === "update") return getLocalizedLabel(t, "edit", "EDIT");
   if (normalized === "delete") return getLocalizedLabel(t, "delete", "DELETE");
@@ -399,31 +556,47 @@ const mapVoucherActionLabel = (action, t) => {
 const normalizeVoucherApprovalSummary = (row, t) => {
   const requestType = String(row?.request_type || "").toUpperCase();
   const entityType = String(row?.entity_type || "").toUpperCase();
-  if (requestType !== "VOUCHER" && entityType !== "VOUCHER") return String(row?.summary || "");
+  if (requestType !== "VOUCHER" && entityType !== "VOUCHER")
+    return String(row?.summary || "");
 
   const newValue = safeJson(row?.new_value) || {};
   const oldValue = safeJson(row?.old_value) || {};
 
-  const payloadAction = String(newValue?.action || "").trim().toLowerCase();
-  const rowAction = String(row?.action || "").trim().toLowerCase();
-  const fallbackAction = oldValue && Object.keys(oldValue).length ? "update" : "create";
+  const payloadAction = String(newValue?.action || "")
+    .trim()
+    .toLowerCase();
+  const rowAction = String(row?.action || "")
+    .trim()
+    .toLowerCase();
+  const fallbackAction =
+    oldValue && Object.keys(oldValue).length ? "update" : "create";
   const effectiveAction = payloadAction || rowAction || fallbackAction;
 
-  const actionLabel = mapVoucherActionLabel(effectiveAction, t) || getLocalizedLabel(t, "action", "ACTION");
-  const voucherTypeCode =
-    String(newValue?.voucher_type_code || row?.entity_id || "").toUpperCase().includes("_VOUCHER")
-      ? String(newValue?.voucher_type_code || row?.entity_id || "").toUpperCase()
-      : parseSummaryVoucherTypeCode(row?.summary);
+  const actionLabel =
+    mapVoucherActionLabel(effectiveAction, t) ||
+    getLocalizedLabel(t, "action", "ACTION");
+  const voucherTypeCode = String(
+    newValue?.voucher_type_code || row?.entity_id || "",
+  )
+    .toUpperCase()
+    .includes("_VOUCHER")
+    ? String(newValue?.voucher_type_code || row?.entity_id || "").toUpperCase()
+    : parseSummaryVoucherTypeCode(row?.summary);
 
-  const voucherTypeLabel = voucherTypeCode ? voucherTypeCode.replace(/_/g, " ") : "VOUCHER";
+  const voucherTypeLabel = voucherTypeCode
+    ? voucherTypeCode.replace(/_/g, " ")
+    : "VOUCHER";
   const voucherNoFromPayload = Number(newValue?.voucher_no || 0);
   const voucherNo =
-    Number.isInteger(voucherNoFromPayload) && voucherNoFromPayload > 0 ? voucherNoFromPayload : parseSummaryVoucherNo(row?.summary);
+    Number.isInteger(voucherNoFromPayload) && voucherNoFromPayload > 0
+      ? voucherNoFromPayload
+      : parseSummaryVoucherNo(row?.summary);
   const lineNo = Number(newValue?.line_no || 0);
 
   if (effectiveAction === "update_bank_line_status") {
     const lineWord = getLocalizedLabel(t, "line", "LINE");
-    const lineLabel = Number.isInteger(lineNo) && lineNo > 0 ? ` ${lineWord} ${lineNo}` : "";
+    const lineLabel =
+      Number.isInteger(lineNo) && lineNo > 0 ? ` ${lineWord} ${lineNo}` : "";
     return `${actionLabel} ${voucherTypeLabel}${lineLabel}`.trim();
   }
 
@@ -445,7 +618,9 @@ const resolveApprovalRequestVoucherTypeCode = (request) => {
   if (direct) return direct;
 
   const payload = safeJson(request?.new_value) || {};
-  const fromPayload = String(payload?.voucher_type_code || payload?.voucherTypeCode || "")
+  const fromPayload = String(
+    payload?.voucher_type_code || payload?.voucherTypeCode || "",
+  )
     .trim()
     .toUpperCase();
   if (fromPayload) return fromPayload;
@@ -454,11 +629,19 @@ const resolveApprovalRequestVoucherTypeCode = (request) => {
 };
 
 const resolveHrScopeKey = (request, values = {}) => {
-  const scopeKey = String(values?._scope_key || request?.new_value?._scope_key || request?.old_value?._scope_key || "").trim();
+  const scopeKey = String(
+    values?._scope_key ||
+      request?.new_value?._scope_key ||
+      request?.old_value?._scope_key ||
+      "",
+  ).trim();
   if (scopeKey) return scopeKey;
 
-  const mode = String(values?.mode || request?.new_value?.mode || "").toUpperCase();
-  if (mode === "BULK_COMMISSION_SKU_UPSERT" || mode === "SKU_MULTI_UPSERT") return "hr_payroll.commissions";
+  const mode = String(
+    values?.mode || request?.new_value?.mode || "",
+  ).toUpperCase();
+  if (mode === "BULK_COMMISSION_SKU_UPSERT" || mode === "SKU_MULTI_UPSERT")
+    return "hr_payroll.commissions";
   if (mode === "BULK_LABOUR_RATE_SKU_UPSERT") return "hr_payroll.labour_rates";
 
   const summary = String(request?.summary || "").toLowerCase();
@@ -485,12 +668,23 @@ const normalizeRowsForLookup = (rowsValue) => {
 
 const hydrateSkuRows = async (rows) => {
   if (!rows.length) return rows;
-  const skuIds = [...new Set(rows.map((row) => Number(row.sku_id)).filter((id) => Number.isInteger(id) && id > 0))];
+  const skuIds = [
+    ...new Set(
+      rows
+        .map((row) => Number(row.sku_id))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    ),
+  ];
   if (!skuIds.length) return rows;
   const skuRows = await knex("erp.skus as s")
     .leftJoin("erp.variants as v", "s.variant_id", "v.id")
     .leftJoin("erp.items as i", "v.item_id", "i.id")
-    .select("s.id as sku_id", "s.variant_id", "s.sku_code", "i.name as item_name")
+    .select(
+      "s.id as sku_id",
+      "s.variant_id",
+      "s.sku_code",
+      "i.name as item_name",
+    )
     .where(function whereSkuOrVariant() {
       this.whereIn("s.id", skuIds).orWhereIn("s.variant_id", skuIds);
     });
@@ -513,7 +707,9 @@ const hydrateSkuRows = async (rows) => {
 
 const enrichCommissionRowsFromScope = async (values, t) => {
   const employeeId = Number(values?.employee_id || 0);
-  const applyOn = String(values?.apply_on || "").trim().toUpperCase();
+  const applyOn = String(values?.apply_on || "")
+    .trim()
+    .toUpperCase();
   if (!Number.isInteger(employeeId) || employeeId <= 0) return [];
   if (applyOn !== "SUBGROUP" && applyOn !== "GROUP") return [];
   return buildCommissionBulkPreviewRows({
@@ -529,9 +725,15 @@ const enrichCommissionRowsFromScope = async (values, t) => {
 
 const enrichLabourRateRowsFromScope = async (values, t) => {
   const deptId = Number(values?.dept_id || 0);
-  const applyOn = String(values?.apply_on || "").trim().toUpperCase();
-  const articleType = String(values?.article_type || "").trim().toUpperCase();
-  const rateType = String(values?.rate_type || "").trim().toUpperCase();
+  const applyOn = String(values?.apply_on || "")
+    .trim()
+    .toUpperCase();
+  const articleType = String(values?.article_type || "")
+    .trim()
+    .toUpperCase();
+  const rateType = String(values?.rate_type || "")
+    .trim()
+    .toUpperCase();
   const labourRaw = String(values?.labour_id || "").trim();
   if (!Number.isInteger(deptId) || deptId <= 0) return [];
   if (!labourRaw) return [];
@@ -583,7 +785,8 @@ const buildPreviewPayload = async (req, res, request, side) => {
         ...basePayload,
         previewType: "basic-info-uom",
         previewTitle: res.locals.t("uom_conversions") || "UOM Conversions",
-        formPartial: "../../master_data/basic-info/uom-conversions/form-fields.ejs",
+        formPartial:
+          "../../master_data/basic-info/uom-conversions/form-fields.ejs",
         uoms,
       };
     }
@@ -603,7 +806,10 @@ const buildPreviewPayload = async (req, res, request, side) => {
 
   const screen = ENTITY_TO_SCREEN[entityType];
   if (screen === "master_data.accounts") {
-    const hydrated = await accountsRoutes.preview.hydratePage(accountsRoutes.preview.page, locale);
+    const hydrated = await accountsRoutes.preview.hydratePage(
+      accountsRoutes.preview.page,
+      locale,
+    );
     return {
       ...basePayload,
       previewType: "accounts",
@@ -615,7 +821,10 @@ const buildPreviewPayload = async (req, res, request, side) => {
   }
 
   if (screen === "master_data.parties") {
-    const hydrated = await partiesRoutes.preview.hydratePage(partiesRoutes.preview.page, locale);
+    const hydrated = await partiesRoutes.preview.hydratePage(
+      partiesRoutes.preview.page,
+      locale,
+    );
     return {
       ...basePayload,
       previewType: "parties",
@@ -668,15 +877,21 @@ const buildPreviewPayload = async (req, res, request, side) => {
   if (hrPage && typeof hrEmployeesRoutes.preview?.hydratePage === "function") {
     const hydrateHrPage = hrEmployeesRoutes.preview.hydratePage;
     const hydrated = await hydrateHrPage(hrPage, locale, req);
-    const previewValues = values && typeof values === "object" ? { ...values } : {};
+    const previewValues =
+      values && typeof values === "object" ? { ...values } : {};
     if (previewValues && Array.isArray(previewValues.rows)) {
       const normalizedRows = normalizeRowsForLookup(previewValues.rows);
       let mergedRows = normalizedRows;
       try {
         if (hrScopeKey === "hr_payroll.commissions") {
-          const scopedRows = await enrichCommissionRowsFromScope(previewValues, res.locals.t);
+          const scopedRows = await enrichCommissionRowsFromScope(
+            previewValues,
+            res.locals.t,
+          );
           if (Array.isArray(scopedRows) && scopedRows.length) {
-            const scopedBySku = new Map(scopedRows.map((row) => [Number(row.sku_id || 0), row]));
+            const scopedBySku = new Map(
+              scopedRows.map((row) => [Number(row.sku_id || 0), row]),
+            );
             mergedRows = normalizedRows.map((row) => {
               const scoped = scopedBySku.get(Number(row.sku_id));
               return scoped
@@ -689,9 +904,14 @@ const buildPreviewPayload = async (req, res, request, side) => {
           }
         }
         if (hrScopeKey === "hr_payroll.labour_rates") {
-          const scopedRows = await enrichLabourRateRowsFromScope(previewValues, res.locals.t);
+          const scopedRows = await enrichLabourRateRowsFromScope(
+            previewValues,
+            res.locals.t,
+          );
           if (Array.isArray(scopedRows) && scopedRows.length) {
-            const scopedBySku = new Map(scopedRows.map((row) => [Number(row.sku_id || 0), row]));
+            const scopedBySku = new Map(
+              scopedRows.map((row) => [Number(row.sku_id || 0), row]),
+            );
             mergedRows = normalizedRows.map((row) => {
               const scoped = scopedBySku.get(Number(row.sku_id));
               return scoped
@@ -720,7 +940,12 @@ const buildPreviewPayload = async (req, res, request, side) => {
   }
 
   if (entityType === "ITEM") {
-    const itemType = (values.item_type || request?.old_value?.item_type || request?.new_value?.item_type || "").toUpperCase();
+    const itemType = (
+      values.item_type ||
+      request?.old_value?.item_type ||
+      request?.new_value?.item_type ||
+      ""
+    ).toUpperCase();
     if (itemType === rawMaterialsRoutes.preview.ITEM_TYPE) {
       const options = await rawMaterialsRoutes.preview.loadOptions();
       return {
@@ -758,7 +983,19 @@ const buildPreviewPayload = async (req, res, request, side) => {
     let lookupValues = values;
     const entityId = request.entity_id;
     if (entityId && entityId !== "NEW") {
-      const variant = await knex("erp.variants as v").select("v.item_id", "v.size_id", "v.grade_id", "v.color_id", "v.packing_type_id", "v.sale_rate", "i.item_type").leftJoin("erp.items as i", "v.item_id", "i.id").where("v.id", Number(entityId)).first();
+      const variant = await knex("erp.variants as v")
+        .select(
+          "v.item_id",
+          "v.size_id",
+          "v.grade_id",
+          "v.color_id",
+          "v.packing_type_id",
+          "v.sale_rate",
+          "i.item_type",
+        )
+        .leftJoin("erp.items as i", "v.item_id", "i.id")
+        .where("v.id", Number(entityId))
+        .first();
       if (variant) {
         itemType = variant.item_type === "SFG" ? "SFG" : "FG";
         lookupValues = {
@@ -779,9 +1016,15 @@ const buildPreviewPayload = async (req, res, request, side) => {
     const normalized = {
       ...lookupValues,
       size_ids: normalizeArray(lookupValues.size_ids || lookupValues.size_id),
-      grade_ids: normalizeArray(lookupValues.grade_ids || lookupValues.grade_id),
-      color_ids: normalizeArray(lookupValues.color_ids || lookupValues.color_id),
-      packing_type_ids: normalizeArray(lookupValues.packing_type_ids || lookupValues.packing_type_id),
+      grade_ids: normalizeArray(
+        lookupValues.grade_ids || lookupValues.grade_id,
+      ),
+      color_ids: normalizeArray(
+        lookupValues.color_ids || lookupValues.color_id,
+      ),
+      packing_type_ids: normalizeArray(
+        lookupValues.packing_type_ids || lookupValues.packing_type_id,
+      ),
     };
 
     return {
@@ -798,590 +1041,761 @@ const buildPreviewPayload = async (req, res, request, side) => {
 };
 
 // GET / - Dashboard
-router.get("/", requirePermission("SCREEN", "administration.approvals", "navigate"), async (req, res, next) => {
-  try {
-    const status = (req.query.status || "PENDING").toUpperCase();
+router.get(
+  "/",
+  requirePermission("SCREEN", "administration.approvals", "navigate"),
+  async (req, res, next) => {
+    try {
+      const status = (req.query.status || "PENDING").toUpperCase();
 
-    const rowsQuery = knex("erp.approval_request as ar")
-      .select("ar.*", "u.username as requester_name", "v.id as variant_id")
-      .leftJoin("erp.users as u", "ar.requested_by", "u.id")
-      // Left join variant to get SKU context if entity_type is SKU
-      .leftJoin("erp.variants as v", function () {
-        this.on("ar.entity_id", "=", knex.raw("CAST(v.id AS TEXT)")).andOn("ar.entity_type", "=", knex.raw("'SKU'"));
-      })
-      .where("ar.status", status)
-      .orderBy("ar.requested_at", "desc");
+      const rowsQuery = knex("erp.approval_request as ar")
+        .select("ar.*", "u.username as requester_name", "v.id as variant_id")
+        .leftJoin("erp.users as u", "ar.requested_by", "u.id")
+        // Left join variant to get SKU context if entity_type is SKU
+        .leftJoin("erp.variants as v", function () {
+          this.on("ar.entity_id", "=", knex.raw("CAST(v.id AS TEXT)")).andOn(
+            "ar.entity_type",
+            "=",
+            knex.raw("'SKU'"),
+          );
+        })
+        .where("ar.status", status)
+        .orderBy("ar.requested_at", "desc");
 
-    if (!req.user?.isAdmin) {
-      rowsQuery.andWhere("ar.requested_by", req.user.id);
-    }
+      if (!req.user?.isAdmin) {
+        rowsQuery.andWhere("ar.requested_by", req.user.id);
+      }
 
-    const rows = await rowsQuery;
+      const rows = await rowsQuery;
 
-    for (const row of rows) {
-      row.summary = normalizeVoucherApprovalSummary(row, res.locals.t);
-    }
+      for (const row of rows) {
+        row.summary = normalizeVoucherApprovalSummary(row, res.locals.t);
+      }
 
-    const skuRows = rows.filter((row) => row.entity_type === "SKU");
-    if (skuRows.length) {
-      const newValueRows = skuRows.map((row) => ({ row, values: safeJson(row.new_value) })).filter((entry) => entry.values);
+      const skuRows = rows.filter((row) => row.entity_type === "SKU");
+      if (skuRows.length) {
+        const newValueRows = skuRows
+          .map((row) => ({ row, values: safeJson(row.new_value) }))
+          .filter((entry) => entry.values);
 
-      const itemIds = new Set();
-      const sizeIds = new Set();
-      const gradeIds = new Set();
-      const colorIds = new Set();
-      const packingIds = new Set();
+        const itemIds = new Set();
+        const sizeIds = new Set();
+        const gradeIds = new Set();
+        const colorIds = new Set();
+        const packingIds = new Set();
 
-      newValueRows.forEach(({ values }) => {
-        if (values.item_id) itemIds.add(Number(values.item_id));
-        if (values.size_id) sizeIds.add(Number(values.size_id));
-        if (values.grade_id) gradeIds.add(Number(values.grade_id));
-        if (values.color_id) colorIds.add(Number(values.color_id));
-        if (values.packing_type_id) packingIds.add(Number(values.packing_type_id));
-      });
+        newValueRows.forEach(({ values }) => {
+          if (values.item_id) itemIds.add(Number(values.item_id));
+          if (values.size_id) sizeIds.add(Number(values.size_id));
+          if (values.grade_id) gradeIds.add(Number(values.grade_id));
+          if (values.color_id) colorIds.add(Number(values.color_id));
+          if (values.packing_type_id)
+            packingIds.add(Number(values.packing_type_id));
+        });
 
-      const variantIds = skuRows.map((row) => Number(row.entity_id)).filter((id) => Number.isFinite(id) && id > 0);
+        const variantIds = skuRows
+          .map((row) => Number(row.entity_id))
+          .filter((id) => Number.isFinite(id) && id > 0);
 
-      const [items, sizes, grades, colors, packings, variants] = await Promise.all([
-        itemIds.size
-          ? knex("erp.items")
-              .select("id", "name", "code")
-              .whereIn("id", [...itemIds])
-          : Promise.resolve([]),
-        sizeIds.size
-          ? knex("erp.sizes")
-              .select("id", "name")
-              .whereIn("id", [...sizeIds])
-          : Promise.resolve([]),
-        gradeIds.size
-          ? knex("erp.grades")
-              .select("id", "name")
-              .whereIn("id", [...gradeIds])
-          : Promise.resolve([]),
-        colorIds.size
-          ? knex("erp.colors")
-              .select("id", "name")
-              .whereIn("id", [...colorIds])
-          : Promise.resolve([]),
-        packingIds.size
-          ? knex("erp.packing_types")
-              .select("id", "name")
-              .whereIn("id", [...packingIds])
-          : Promise.resolve([]),
-        variantIds.length
-          ? knex("erp.variants as v")
-              .select("v.id", "i.name as item_name", "s.name as size_name", "g.name as grade_name", "c.name as color_name", "p.name as packing_name", "k.sku_code")
-              .leftJoin("erp.items as i", "v.item_id", "i.id")
-              .leftJoin("erp.sizes as s", "v.size_id", "s.id")
-              .leftJoin("erp.grades as g", "v.grade_id", "g.id")
-              .leftJoin("erp.colors as c", "v.color_id", "c.id")
-              .leftJoin("erp.packing_types as p", "v.packing_type_id", "p.id")
-              .leftJoin("erp.skus as k", "k.variant_id", "v.id")
-              .whereIn("v.id", variantIds)
-          : Promise.resolve([]),
-      ]);
+        const [items, sizes, grades, colors, packings, variants] =
+          await Promise.all([
+            itemIds.size
+              ? knex("erp.items")
+                  .select("id", "name", "code")
+                  .whereIn("id", [...itemIds])
+              : Promise.resolve([]),
+            sizeIds.size
+              ? knex("erp.sizes")
+                  .select("id", "name")
+                  .whereIn("id", [...sizeIds])
+              : Promise.resolve([]),
+            gradeIds.size
+              ? knex("erp.grades")
+                  .select("id", "name")
+                  .whereIn("id", [...gradeIds])
+              : Promise.resolve([]),
+            colorIds.size
+              ? knex("erp.colors")
+                  .select("id", "name")
+                  .whereIn("id", [...colorIds])
+              : Promise.resolve([]),
+            packingIds.size
+              ? knex("erp.packing_types")
+                  .select("id", "name")
+                  .whereIn("id", [...packingIds])
+              : Promise.resolve([]),
+            variantIds.length
+              ? knex("erp.variants as v")
+                  .select(
+                    "v.id",
+                    "i.name as item_name",
+                    "s.name as size_name",
+                    "g.name as grade_name",
+                    "c.name as color_name",
+                    "p.name as packing_name",
+                    "k.sku_code",
+                  )
+                  .leftJoin("erp.items as i", "v.item_id", "i.id")
+                  .leftJoin("erp.sizes as s", "v.size_id", "s.id")
+                  .leftJoin("erp.grades as g", "v.grade_id", "g.id")
+                  .leftJoin("erp.colors as c", "v.color_id", "c.id")
+                  .leftJoin(
+                    "erp.packing_types as p",
+                    "v.packing_type_id",
+                    "p.id",
+                  )
+                  .leftJoin("erp.skus as k", "k.variant_id", "v.id")
+                  .whereIn("v.id", variantIds)
+              : Promise.resolve([]),
+          ]);
 
-      const itemMap = new Map(items.map((row) => [row.id, row.name]));
-      const sizeMap = new Map(sizes.map((row) => [row.id, row.name]));
-      const gradeMap = new Map(grades.map((row) => [row.id, row.name]));
-      const colorMap = new Map(colors.map((row) => [row.id, row.name]));
-      const packingMap = new Map(packings.map((row) => [row.id, row.name]));
-      const variantMap = new Map(
-        variants.map((row) => [
-          row.id,
-          buildSkuLabel({
-            skuCode: row.sku_code,
-            itemName: row.item_name,
-            sizeName: row.size_name,
-            packingName: row.packing_name,
-            gradeName: row.grade_name,
-            colorName: row.color_name,
-          }),
-        ]),
-      );
+        const itemMap = new Map(items.map((row) => [row.id, row.name]));
+        const sizeMap = new Map(sizes.map((row) => [row.id, row.name]));
+        const gradeMap = new Map(grades.map((row) => [row.id, row.name]));
+        const colorMap = new Map(colors.map((row) => [row.id, row.name]));
+        const packingMap = new Map(packings.map((row) => [row.id, row.name]));
+        const variantMap = new Map(
+          variants.map((row) => [
+            row.id,
+            buildSkuLabel({
+              skuCode: row.sku_code,
+              itemName: row.item_name,
+              sizeName: row.size_name,
+              packingName: row.packing_name,
+              gradeName: row.grade_name,
+              colorName: row.color_name,
+            }),
+          ]),
+        );
 
-      for (const row of skuRows) {
-        const values = safeJson(row.new_value);
-        const isNew = row.entity_id === "NEW";
-        let label = null;
-        if (values && values._summary) {
-          label = String(values._summary);
-        } else if (isNew && values) {
-          label = buildSkuLabel({
-            itemName: itemMap.get(Number(values.item_id)),
-            sizeName: sizeMap.get(Number(values.size_id)),
-            packingName: packingMap.get(Number(values.packing_type_id)),
-            gradeName: gradeMap.get(Number(values.grade_id)),
-            colorName: values.color_id ? colorMap.get(Number(values.color_id)) : null,
-          });
-        } else if (!isNew) {
-          label = variantMap.get(Number(row.entity_id)) || null;
-          if (!label && Number.isFinite(Number(row.entity_id))) {
-            const fallback = await knex("erp.variants as v")
-              .select("v.id", "i.name as item_name", "s.name as size_name", "g.name as grade_name", "c.name as color_name", "p.name as packing_name", "k.sku_code")
-              .leftJoin("erp.items as i", "v.item_id", "i.id")
-              .leftJoin("erp.sizes as s", "v.size_id", "s.id")
-              .leftJoin("erp.grades as g", "v.grade_id", "g.id")
-              .leftJoin("erp.colors as c", "v.color_id", "c.id")
-              .leftJoin("erp.packing_types as p", "v.packing_type_id", "p.id")
-              .leftJoin("erp.skus as k", "k.variant_id", "v.id")
-              .where("v.id", Number(row.entity_id))
-              .first();
-            if (fallback) {
-              label = buildSkuLabel({
-                skuCode: fallback.sku_code,
-                itemName: fallback.item_name,
-                sizeName: fallback.size_name,
-                packingName: fallback.packing_name,
-                gradeName: fallback.grade_name,
-                colorName: fallback.color_name,
-              });
+        for (const row of skuRows) {
+          const values = safeJson(row.new_value);
+          const isNew = row.entity_id === "NEW";
+          let label = null;
+          if (values && values._summary) {
+            label = String(values._summary);
+          } else if (isNew && values) {
+            label = buildSkuLabel({
+              itemName: itemMap.get(Number(values.item_id)),
+              sizeName: sizeMap.get(Number(values.size_id)),
+              packingName: packingMap.get(Number(values.packing_type_id)),
+              gradeName: gradeMap.get(Number(values.grade_id)),
+              colorName: values.color_id
+                ? colorMap.get(Number(values.color_id))
+                : null,
+            });
+          } else if (!isNew) {
+            label = variantMap.get(Number(row.entity_id)) || null;
+            if (!label && Number.isFinite(Number(row.entity_id))) {
+              const fallback = await knex("erp.variants as v")
+                .select(
+                  "v.id",
+                  "i.name as item_name",
+                  "s.name as size_name",
+                  "g.name as grade_name",
+                  "c.name as color_name",
+                  "p.name as packing_name",
+                  "k.sku_code",
+                )
+                .leftJoin("erp.items as i", "v.item_id", "i.id")
+                .leftJoin("erp.sizes as s", "v.size_id", "s.id")
+                .leftJoin("erp.grades as g", "v.grade_id", "g.id")
+                .leftJoin("erp.colors as c", "v.color_id", "c.id")
+                .leftJoin("erp.packing_types as p", "v.packing_type_id", "p.id")
+                .leftJoin("erp.skus as k", "k.variant_id", "v.id")
+                .where("v.id", Number(row.entity_id))
+                .first();
+              if (fallback) {
+                label = buildSkuLabel({
+                  skuCode: fallback.sku_code,
+                  itemName: fallback.item_name,
+                  sizeName: fallback.size_name,
+                  packingName: fallback.packing_name,
+                  gradeName: fallback.grade_name,
+                  colorName: fallback.color_name,
+                });
+              }
+            }
+          }
+
+          if (label && row.summary) {
+            if (row.summary.startsWith("New Variant:")) {
+              row.summary = `New Variant: ${label}`;
+            } else if (!row.summary.includes(label)) {
+              row.summary = `${row.summary}: ${label}`;
             }
           }
         }
+      }
 
-        if (label && row.summary) {
-          if (row.summary.startsWith("New Variant:")) {
-            row.summary = `New Variant: ${label}`;
-          } else if (!row.summary.includes(label)) {
-            row.summary = `${row.summary}: ${label}`;
-          }
+      renderPage(
+        req,
+        res,
+        "../../administration/approvals/index",
+        res.locals.t("approvals"),
+        {
+          rows,
+          currentStatus: status,
+          basePath: req.baseUrl,
+        },
+      );
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+router.get(
+  "/:id/preview",
+  requirePermission("SCREEN", "administration.approvals", "navigate"),
+  async (req, res, next) => {
+    const id = Number(req.params.id);
+    if (!id) return next(new HttpError(400, res.locals.t("error_invalid_id")));
+    const side = req.query.side === "old" ? "old" : "new";
+
+    try {
+      const request = await knex("erp.approval_request").where({ id }).first();
+      if (!request)
+        return next(
+          new HttpError(404, res.locals.t("approval_request_not_found")),
+        );
+      if (process.env.DEBUG_APPROVAL_PREVIEW === "1") {
+        console.log("[APPROVAL PREVIEW DEBUG] request", {
+          id: request.id,
+          side,
+          entityType: request.entity_type,
+          entityId: request.entity_id,
+          oldType: typeof request.old_value,
+          newType: typeof request.new_value,
+        });
+      }
+
+      // First try globally-registered preview providers.
+      const payload =
+        (await resolveApprovalPreview({ req, res, request, side })) ||
+        (await buildPreviewPayload(req, res, request, side));
+      if (process.env.DEBUG_APPROVAL_PREVIEW === "1") {
+        console.log("[APPROVAL PREVIEW DEBUG] payload", {
+          id: request.id,
+          side,
+          hasPayload: Boolean(payload),
+          previewType: payload?.previewType || null,
+          formPartial: payload?.formPartial || null,
+          previewValuesType: typeof payload?.previewValues,
+          previewValueKeys:
+            payload?.previewValues && typeof payload.previewValues === "object"
+              ? Object.keys(payload.previewValues)
+              : null,
+        });
+      }
+      if (!payload) {
+        return res.status(204).send("");
+      }
+
+      return res.render("administration/approvals/preview", {
+        t: res.locals.t,
+        locale: req.locale,
+        fieldErrors: {},
+        formValues: {},
+        ...payload,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+router.post(
+  "/:id/edit",
+  requirePermission("SCREEN", "administration.approvals", "approve"),
+  async (req, res, next) => {
+    const id = Number(req.params.id);
+    if (!id) return next(new HttpError(400, res.locals.t("error_invalid_id")));
+    if (!req.user?.isAdmin)
+      return next(new HttpError(403, res.locals.t("permission_denied")));
+
+    try {
+      const submitted = parseEditedPayload(req.body?.edited_payload);
+      if (
+        !submitted ||
+        typeof submitted !== "object" ||
+        Array.isArray(submitted)
+      ) {
+        return res
+          .status(400)
+          .json({
+            ok: false,
+            message: res.locals.t("approval_edit_invalid_payload"),
+          });
+      }
+
+      let changedFields = [];
+      let requestSnapshot = null;
+      await knex.transaction(async (trx) => {
+        const request = await trx("erp.approval_request").where({ id }).first();
+        if (!request || request.status !== "PENDING") {
+          throw new HttpError(404, res.locals.t("approval_request_not_found"));
         }
-      }
-    }
+        requestSnapshot = request;
 
-    renderPage(req, res, "../../administration/approvals/index", res.locals.t("approvals"), {
-      rows,
-      currentStatus: status,
-      basePath: req.baseUrl,
-    });
-  } catch (err) {
-    next(err);
-  }
-});
+        const sanitized = sanitizeEditedValues(request, submitted);
+        if (sanitized.error) {
+          throw new HttpError(400, res.locals.t(sanitized.error));
+        }
+        if (!sanitized.changedFields.length) {
+          throw new HttpError(400, res.locals.t("approval_no_changes"));
+        }
 
-router.get("/:id/preview", requirePermission("SCREEN", "administration.approvals", "navigate"), async (req, res, next) => {
-  const id = Number(req.params.id);
-  if (!id) return next(new HttpError(400, res.locals.t("error_invalid_id")));
-  const side = req.query.side === "old" ? "old" : "new";
-
-  try {
-    const request = await knex("erp.approval_request").where({ id }).first();
-    if (!request) return next(new HttpError(404, res.locals.t("approval_request_not_found")));
-    if (process.env.DEBUG_APPROVAL_PREVIEW === "1") {
-      console.log("[APPROVAL PREVIEW DEBUG] request", {
-        id: request.id,
-        side,
-        entityType: request.entity_type,
-        entityId: request.entity_id,
-        oldType: typeof request.old_value,
-        newType: typeof request.new_value,
-      });
-    }
-
-    // First try globally-registered preview providers.
-    const payload = (await resolveApprovalPreview({ req, res, request, side })) || (await buildPreviewPayload(req, res, request, side));
-    if (process.env.DEBUG_APPROVAL_PREVIEW === "1") {
-      console.log("[APPROVAL PREVIEW DEBUG] payload", {
-        id: request.id,
-        side,
-        hasPayload: Boolean(payload),
-        previewType: payload?.previewType || null,
-        formPartial: payload?.formPartial || null,
-        previewValuesType: typeof payload?.previewValues,
-        previewValueKeys: payload?.previewValues && typeof payload.previewValues === "object" ? Object.keys(payload.previewValues) : null,
-      });
-    }
-    if (!payload) {
-      return res.status(204).send("");
-    }
-
-    return res.render("administration/approvals/preview", {
-      t: res.locals.t,
-      locale: req.locale,
-      fieldErrors: {},
-      formValues: {},
-      ...payload,
-    });
-  } catch (err) {
-    next(err);
-  }
-});
-
-router.post("/:id/edit", requirePermission("SCREEN", "administration.approvals", "approve"), async (req, res, next) => {
-  const id = Number(req.params.id);
-  if (!id) return next(new HttpError(400, res.locals.t("error_invalid_id")));
-  if (!req.user?.isAdmin) return next(new HttpError(403, res.locals.t("permission_denied")));
-
-  try {
-    const submitted = parseEditedPayload(req.body?.edited_payload);
-    if (!submitted || typeof submitted !== "object" || Array.isArray(submitted)) {
-      return res.status(400).json({ ok: false, message: res.locals.t("approval_edit_invalid_payload") });
-    }
-
-    let changedFields = [];
-    let requestSnapshot = null;
-    await knex.transaction(async (trx) => {
-      const request = await trx("erp.approval_request").where({ id }).first();
-      if (!request || request.status !== "PENDING") {
-        throw new HttpError(404, res.locals.t("approval_request_not_found"));
-      }
-      requestSnapshot = request;
-
-      const sanitized = sanitizeEditedValues(request, submitted);
-      if (sanitized.error) {
-        throw new HttpError(400, res.locals.t(sanitized.error));
-      }
-      if (!sanitized.changedFields.length) {
-        throw new HttpError(400, res.locals.t("approval_no_changes"));
-      }
-
-      changedFields = sanitized.changedFields;
-      await trx("erp.approval_request")
-        .where({ id })
-        .update({
+        changedFields = sanitized.changedFields;
+        await trx("erp.approval_request").where({ id }).update({
           new_value: sanitized.nextValue,
           decided_by: null,
           decided_at: null,
           decision_notes: null,
         });
 
-      await insertActivityLog(trx, {
-        branch_id: request.branch_id,
-        user_id: req.user.id,
-        entity_type: request.entity_type,
-        entity_id: request.entity_id,
-        action: "UPDATE",
-        ip_address: req.ip,
-        context: {
-          source: "approval-request-edit",
-          approval_request_id: request.id,
-          request_status: request.status,
-          request_action: inferAction(request),
-          editable_keys: getEditableKeys(request),
-          changed_fields: changedFields,
-          old_value: request.new_value || null,
-          new_value: sanitized.nextValue || null,
-        },
+        await insertActivityLog(trx, {
+          branch_id: request.branch_id,
+          user_id: req.user.id,
+          entity_type: request.entity_type,
+          entity_id: request.entity_id,
+          action: "UPDATE",
+          ip_address: req.ip,
+          context: {
+            source: "approval-request-edit",
+            approval_request_id: request.id,
+            request_status: request.status,
+            request_action: inferAction(request),
+            editable_keys: getEditableKeys(request),
+            changed_fields: changedFields,
+            old_value: request.new_value || null,
+            new_value: sanitized.nextValue || null,
+          },
+        });
       });
-    });
 
-    if (process.env.DEBUG_APPROVAL_PREVIEW === "1") {
-      console.log("[APPROVAL EDIT DEBUG] approval request updated", {
+      if (process.env.DEBUG_APPROVAL_PREVIEW === "1") {
+        console.log("[APPROVAL EDIT DEBUG] approval request updated", {
+          id,
+          editorUserId: req.user.id,
+          changedCount: changedFields.length,
+          changedFields: changedFields.map((entry) => entry.field),
+        });
+      }
+
+      if (requestSnapshot?.requested_by) {
+        notifyApprovalDecision({
+          userId: requestSnapshot.requested_by,
+          payload: {
+            status: "PENDING",
+            requestId: requestSnapshot.id,
+            summary: requestSnapshot.summary || "",
+            link: "/administration/approvals?status=PENDING",
+            message: (
+              res.locals.t("approval_request_updated_detail") ||
+              "Your pending approval request was updated: {summary}"
+            ).replace("{summary}", requestSnapshot.summary || ""),
+            sticky: true,
+          },
+        });
+      }
+
+      return res.json({
+        ok: true,
+        message: res.locals.t("approval_request_updated"),
+        changed_fields: changedFields,
+      });
+    } catch (err) {
+      console.error("[approvals:edit]", {
         id,
-        editorUserId: req.user.id,
-        changedCount: changedFields.length,
-        changedFields: changedFields.map((entry) => entry.field),
+        userId: req.user?.id,
+        error: err?.message || err,
       });
+      if (err instanceof HttpError) {
+        return res.status(err.status).json({ ok: false, message: err.message });
+      }
+      return next(err);
     }
-
-    if (requestSnapshot?.requested_by) {
-      notifyApprovalDecision({
-        userId: requestSnapshot.requested_by,
-        payload: {
-          status: "PENDING",
-          requestId: requestSnapshot.id,
-          summary: requestSnapshot.summary || "",
-          link: "/administration/approvals?status=PENDING",
-          message: (res.locals.t("approval_request_updated_detail") || "Your pending approval request was updated: {summary}").replace("{summary}", requestSnapshot.summary || ""),
-          sticky: true,
-        },
-      });
-    }
-
-    return res.json({
-      ok: true,
-      message: res.locals.t("approval_request_updated"),
-      changed_fields: changedFields,
-    });
-  } catch (err) {
-    console.error("[approvals:edit]", { id, userId: req.user?.id, error: err?.message || err });
-    if (err instanceof HttpError) {
-      return res.status(err.status).json({ ok: false, message: err.message });
-    }
-    return next(err);
-  }
-});
+  },
+);
 
 // GET /settings - Approval policy settings (voucher types + screens)
-router.get("/settings", requirePermission("SCREEN", "administration.approval_settings", "navigate"), async (req, res, next) => {
-  try {
-    const [voucherTypes, policyRows] = await Promise.all([knex("erp.voucher_type").select("code", "name").orderBy("name"), knex("erp.approval_policy").select("entity_type", "entity_key", "action", "requires_approval")]);
+router.get(
+  "/settings",
+  requirePermission("SCREEN", "administration.approval_settings", "navigate"),
+  async (req, res, next) => {
+    try {
+      const [voucherTypes, policyRows] = await Promise.all([
+        knex("erp.voucher_type").select("code", "name").orderBy("name"),
+        knex("erp.approval_policy").select(
+          "entity_type",
+          "entity_key",
+          "action",
+          "requires_approval",
+        ),
+      ]);
 
-    const excludedScreens = new Set(["administration.audit_logs", "administration.approvals", "administration.approval_settings", "administration.permissions", "administration.branches"]);
+      const excludedScreens = new Set([
+        "administration.audit_logs",
+        "administration.approvals",
+        "administration.approval_settings",
+        "administration.permissions",
+        "administration.branches",
+      ]);
 
-    const shouldIncludeScreen = (scopeKey, route) => {
-      if (!scopeKey) return false;
-      if (scopeKey.startsWith("administration.")) return false;
-      if (excludedScreens.has(scopeKey)) return false;
-      if (scopeKey.includes(".approval") || scopeKey.includes(".versions")) return false;
-      if (route && route.startsWith("/reports")) return false;
-      if (scopeKey.includes("report")) return false;
-      if (!route) return false;
-      // Data-entry screens eligible for approval policy live under master-data and hr-payroll.
-      if (!route.startsWith("/master-data") && !route.startsWith("/hr-payroll")) return false;
-      return true;
-    };
+      const shouldIncludeScreen = (scopeKey, route) => {
+        if (!scopeKey) return false;
+        if (scopeKey.startsWith("administration.")) return false;
+        if (excludedScreens.has(scopeKey)) return false;
+        if (scopeKey.includes(".approval") || scopeKey.includes(".versions"))
+          return false;
+        if (route && route.startsWith("/reports")) return false;
+        if (scopeKey.includes("report")) return false;
+        if (!route) return false;
+        // Data-entry screens eligible for approval policy live under master-data and hr-payroll.
+        if (
+          !route.startsWith("/master-data") &&
+          !route.startsWith("/hr-payroll")
+        )
+          return false;
+        return true;
+      };
 
-    const policyMap = policyRows.reduce((acc, row) => {
-      if (!acc[row.entity_type]) acc[row.entity_type] = {};
-      if (!acc[row.entity_type][row.entity_key]) acc[row.entity_type][row.entity_key] = {};
-      acc[row.entity_type][row.entity_key][row.action] = row.requires_approval;
-      return acc;
-    }, {});
+      const policyMap = policyRows.reduce((acc, row) => {
+        if (!acc[row.entity_type]) acc[row.entity_type] = {};
+        if (!acc[row.entity_type][row.entity_key])
+          acc[row.entity_type][row.entity_key] = {};
+        acc[row.entity_type][row.entity_key][row.action] =
+          row.requires_approval;
+        return acc;
+      }, {});
 
-    const voucherTypeMap = new Map(voucherTypes.map((vt) => [vt.code, vt.name]));
+      const voucherTypeMap = new Map(
+        voucherTypes.map((vt) => [vt.code, vt.name]),
+      );
 
-    const buildScreenRows = (nodes, parentPath = "", depth = 0) => {
-      let rows = [];
-      nodes.forEach((node) => {
-        const path = parentPath ? `${parentPath}.${node.key}` : node.key;
-        const hasChildren = Array.isArray(node.children) && node.children.length > 0;
-        const childRows = hasChildren ? buildScreenRows(node.children, path, depth + 1) : [];
-        const isScreen = node.scopeType === "SCREEN" && node.route && shouldIncludeScreen(node.scopeKey, node.route);
-        const isVoucher = node.scopeType === "VOUCHER";
-        const includeGroup = childRows.length > 0;
+      const buildScreenRows = (nodes, parentPath = "", depth = 0) => {
+        let rows = [];
+        nodes.forEach((node) => {
+          const path = parentPath ? `${parentPath}.${node.key}` : node.key;
+          const hasChildren =
+            Array.isArray(node.children) && node.children.length > 0;
+          const childRows = hasChildren
+            ? buildScreenRows(node.children, path, depth + 1)
+            : [];
+          const isScreen =
+            node.scopeType === "SCREEN" &&
+            node.route &&
+            shouldIncludeScreen(node.scopeKey, node.route);
+          const isVoucher = node.scopeType === "VOUCHER";
+          const includeGroup = childRows.length > 0;
 
-        if (isScreen || isVoucher || includeGroup) {
-          rows.push({
-            key: node.key,
-            path,
-            parentPath: parentPath || null,
-            depth,
-            hasChildren: childRows.length > 0,
-            scopeKey: isScreen || isVoucher ? node.scopeKey : null,
-            scopeType: isVoucher ? "VOUCHER" : "SCREEN",
-            labelKey: node.labelKey,
-            description: node.labelKey,
-            voucherName: isVoucher ? voucherTypeMap.get(node.scopeKey) || null : null,
-          });
-          rows = rows.concat(childRows);
-        }
-      });
-      return rows;
-    };
+          if (isScreen || isVoucher || includeGroup) {
+            rows.push({
+              key: node.key,
+              path,
+              parentPath: parentPath || null,
+              depth,
+              hasChildren: childRows.length > 0,
+              scopeKey: isScreen || isVoucher ? node.scopeKey : null,
+              scopeType: isVoucher ? "VOUCHER" : "SCREEN",
+              labelKey: node.labelKey,
+              description: node.labelKey,
+              voucherName: isVoucher
+                ? voucherTypeMap.get(node.scopeKey) || null
+                : null,
+            });
+            rows = rows.concat(childRows);
+          }
+        });
+        return rows;
+      };
 
-    let screenRows = buildScreenRows(navConfig);
+      let screenRows = buildScreenRows(navConfig);
 
-    renderPage(req, res, "../../administration/approvals/settings", res.locals.t("approval_settings"), {
-      screenRows,
-      policyMap,
-    });
-  } catch (err) {
-    next(err);
-  }
-});
+      renderPage(
+        req,
+        res,
+        "../../administration/approvals/settings",
+        res.locals.t("approval_settings"),
+        {
+          screenRows,
+          policyMap,
+        },
+      );
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // POST /settings - Save approval policy settings
-router.post("/settings", requirePermission("SCREEN", "administration.approval_settings", "edit"), async (req, res, next) => {
-  const trx = await knex.transaction();
-  try {
-    const { ...fields } = req.body;
+router.post(
+  "/settings",
+  requirePermission("SCREEN", "administration.approval_settings", "edit"),
+  async (req, res, next) => {
+    const trx = await knex.transaction();
+    try {
+      const { ...fields } = req.body;
 
-    await trx("erp.approval_policy").whereIn("entity_type", ["VOUCHER_TYPE", "SCREEN"]).del();
+      await trx("erp.approval_policy")
+        .whereIn("entity_type", ["VOUCHER_TYPE", "SCREEN"])
+        .del();
 
-    const insertRows = [];
-    Object.keys(fields).forEach((key) => {
-      if (!key.includes(":")) return;
-      const [entityType, entityKey, action] = key.split(":");
-      if (!entityType || !entityKey || !action) return;
-      insertRows.push({
-        entity_type: entityType,
-        entity_key: entityKey,
-        action,
-        requires_approval: true,
-        updated_by: req.user?.id || null,
+      const insertRows = [];
+      Object.keys(fields).forEach((key) => {
+        if (!key.includes(":")) return;
+        const [entityType, entityKey, action] = key.split(":");
+        if (!entityType || !entityKey || !action) return;
+        insertRows.push({
+          entity_type: entityType,
+          entity_key: entityKey,
+          action,
+          requires_approval: true,
+          updated_by: req.user?.id || null,
+        });
       });
-    });
 
-    if (insertRows.length) {
-      await trx("erp.approval_policy").insert(insertRows);
+      if (insertRows.length) {
+        await trx("erp.approval_policy").insert(insertRows);
+      }
+
+      await trx.commit();
+      res.redirect(`${req.baseUrl}/settings?success=1`);
+    } catch (err) {
+      await trx.rollback();
+      next(err);
     }
-
-    await trx.commit();
-    res.redirect(`${req.baseUrl}/settings?success=1`);
-  } catch (err) {
-    await trx.rollback();
-    next(err);
-  }
-});
+  },
+);
 
 // POST /:id/approve
-router.post("/:id/approve", requirePermission("SCREEN", "administration.approvals", "approve"), async (req, res, next) => {
-  const id = Number(req.params.id);
-  if (!id) return next(new HttpError(400, res.locals.t("error_invalid_id")));
-  if (!req.user?.isAdmin) return next(new HttpError(403, res.locals.t("permission_denied")));
+router.post(
+  "/:id/approve",
+  requirePermission("SCREEN", "administration.approvals", "approve"),
+  async (req, res, next) => {
+    const id = Number(req.params.id);
+    if (!id) return next(new HttpError(400, res.locals.t("error_invalid_id")));
+    if (!req.user?.isAdmin)
+      return next(new HttpError(403, res.locals.t("permission_denied")));
 
-  try {
-    let requestSnapshot = null;
-    let appliedEntityId = null;
-    await knex.transaction(async (trx) => {
-      const request = await trx("erp.approval_request").where({ id }).first();
-      if (!request || request.status !== "PENDING") {
-        throw new Error(res.locals.t("approval_request_not_found"));
-      }
-      requestSnapshot = request;
-
-      if (request.request_type === "MASTER_DATA_CHANGE") {
-        const applyResult = await applyMasterDataChange(trx, request, req.user.id);
-        const applied = typeof applyResult === "object" ? applyResult.applied !== false : Boolean(applyResult);
-        appliedEntityId = typeof applyResult === "object" && applyResult.entityId ? String(applyResult.entityId) : null;
-        console.log("[DEBUG][Approval] applyMasterDataChange result:", {
-          requestId: request.id,
-          entityType: request.entity_type,
-          entityId: request.entity_id,
-          summary: request.summary || null,
-          newValueKeys: request.new_value && typeof request.new_value === "object" ? Object.keys(request.new_value) : [],
-          applyResult,
-        });
-        if (!applied) {
-          const err = new Error(res.locals.t("approval_apply_failed"));
-          err.code = "APPROVAL_APPLY_FAILED";
-          throw err;
+    try {
+      let requestSnapshot = null;
+      let appliedEntityId = null;
+      await knex.transaction(async (trx) => {
+        const request = await trx("erp.approval_request").where({ id }).first();
+        if (!request || request.status !== "PENDING") {
+          throw new Error(res.locals.t("approval_request_not_found"));
         }
-      } else if (request.request_type === "VOUCHER" && request.entity_type === "VOUCHER") {
-        const voucherApplyResult = await applyVoucherApprovalChangeTx({ trx, request, approverId: req.user.id, req });
-        appliedEntityId = voucherApplyResult?.appliedEntityId || appliedEntityId;
-      }
-      await trx("erp.approval_request").where({ id }).update({
-        status: "APPROVED",
-        decided_by: req.user.id,
-        decided_at: trx.fn.now(),
-        decision_notes: null,
-      });
+        requestSnapshot = request;
 
-      await insertActivityLog(trx, {
-        branch_id: request.branch_id,
-        user_id: req.user.id,
-        entity_type: request.entity_type,
-        entity_id: request.entity_id === "NEW" && appliedEntityId ? appliedEntityId : request.entity_id,
-        voucher_type_code: resolveApprovalRequestVoucherTypeCode(request) || null,
-        action: "APPROVE",
-        ip_address: req.ip,
-        context: {
-          source: "approval-decision",
-          approval_request_id: request.id,
-          requested_entity_id: request.entity_id,
-          applied_entity_id: appliedEntityId,
-          decision: "APPROVED",
-          request_type: request.request_type,
-          summary: request.summary || null,
-          old_value: request.old_value || null,
-          new_value: request.new_value || null,
-        },
-      });
-    });
-
-    if (requestSnapshot?.requested_by) {
-      notifyApprovalDecision({
-        userId: requestSnapshot.requested_by,
-        payload: {
+        if (request.request_type === "MASTER_DATA_CHANGE") {
+          const applyResult = await applyMasterDataChange(
+            trx,
+            request,
+            req.user.id,
+          );
+          const applied =
+            typeof applyResult === "object"
+              ? applyResult.applied !== false
+              : Boolean(applyResult);
+          appliedEntityId =
+            typeof applyResult === "object" && applyResult.entityId
+              ? String(applyResult.entityId)
+              : null;
+          console.log("[DEBUG][Approval] applyMasterDataChange result:", {
+            requestId: request.id,
+            entityType: request.entity_type,
+            entityId: request.entity_id,
+            summary: request.summary || null,
+            newValueKeys:
+              request.new_value && typeof request.new_value === "object"
+                ? Object.keys(request.new_value)
+                : [],
+            applyResult,
+          });
+          if (!applied) {
+            const err = new Error(res.locals.t("approval_apply_failed"));
+            err.code = "APPROVAL_APPLY_FAILED";
+            throw err;
+          }
+        } else if (
+          request.request_type === "VOUCHER" &&
+          request.entity_type === "VOUCHER"
+        ) {
+          const voucherApplyResult = await applyVoucherApprovalChangeTx({
+            trx,
+            request,
+            approverId: req.user.id,
+            req,
+          });
+          appliedEntityId =
+            voucherApplyResult?.appliedEntityId || appliedEntityId;
+        }
+        await trx("erp.approval_request").where({ id }).update({
           status: "APPROVED",
-          requestId: requestSnapshot.id,
-          summary: requestSnapshot.summary || "",
-          link: "/administration/approvals?status=APPROVED",
-          message: (res.locals.t("approval_approved_detail") || "Your approval request was approved: {summary}").replace("{summary}", requestSnapshot.summary || ""),
-          sticky: true,
-        },
+          decided_by: req.user.id,
+          decided_at: trx.fn.now(),
+          decision_notes: null,
+        });
+
+        await insertActivityLog(trx, {
+          branch_id: request.branch_id,
+          user_id: req.user.id,
+          entity_type: request.entity_type,
+          entity_id:
+            request.entity_id === "NEW" && appliedEntityId
+              ? appliedEntityId
+              : request.entity_id,
+          voucher_type_code:
+            resolveApprovalRequestVoucherTypeCode(request) || null,
+          action: "APPROVE",
+          ip_address: req.ip,
+          context: {
+            source: "approval-decision",
+            approval_request_id: request.id,
+            requested_entity_id: request.entity_id,
+            applied_entity_id: appliedEntityId,
+            decision: "APPROVED",
+            request_type: request.request_type,
+            summary: request.summary || null,
+            old_value: request.old_value || null,
+            new_value: request.new_value || null,
+          },
+        });
       });
+
+      if (requestSnapshot?.requested_by) {
+        notifyApprovalDecision({
+          userId: requestSnapshot.requested_by,
+          payload: {
+            status: "APPROVED",
+            requestId: requestSnapshot.id,
+            summary: requestSnapshot.summary || "",
+            link: "/administration/approvals?status=APPROVED",
+            message: (
+              res.locals.t("approval_approved_detail") ||
+              "Your approval request was approved: {summary}"
+            ).replace("{summary}", requestSnapshot.summary || ""),
+            sticky: true,
+          },
+        });
+      }
+      setUiNotice(res, res.locals.t("approval_approved"), { autoClose: true });
+      return res.redirect(`${req.baseUrl}?status=PENDING`);
+    } catch (err) {
+      console.error("[ERROR][Approval] Error in applyMasterDataChange:", err);
+      let msg = res.locals.t("approval_apply_failed");
+      if (err && err.code === "DUPLICATE_NAME") {
+        msg = res.locals.t("error_duplicate_name");
+      } else if (err && err.code === "BOM_SNAPSHOT_MISMATCH") {
+        msg =
+          res.locals.t("bom_error_snapshot_mismatch") ||
+          "BOM snapshot mismatch while approving. Please reopen and resubmit approval.";
+      } else if (err && err.message) {
+        msg = err.message;
+      }
+      setUiNotice(res, msg, { autoClose: true });
+      return res.redirect(`${req.baseUrl}?status=PENDING`);
     }
-    setUiNotice(res, res.locals.t("approval_approved"), { autoClose: true });
-    return res.redirect(`${req.baseUrl}?status=PENDING`);
-  } catch (err) {
-    console.error("[ERROR][Approval] Error in applyMasterDataChange:", err);
-    let msg = res.locals.t("approval_apply_failed");
-    if (err && err.code === "DUPLICATE_NAME") {
-      msg = res.locals.t("error_duplicate_name");
-    } else if (err && err.code === "BOM_SNAPSHOT_MISMATCH") {
-      msg = res.locals.t("bom_error_snapshot_mismatch") || "BOM snapshot mismatch while approving. Please reopen and resubmit approval.";
-    } else if (err && err.message) {
-      msg = err.message;
-    }
-    setUiNotice(res, msg, { autoClose: true });
-    return res.redirect(`${req.baseUrl}?status=PENDING`);
-  }
-});
+  },
+);
 
 // POST /:id/reject
-router.post("/:id/reject", requirePermission("SCREEN", "administration.approvals", "approve"), async (req, res, next) => {
-  const id = Number(req.params.id);
-  if (!req.user?.isAdmin) return next(new HttpError(403, res.locals.t("permission_denied")));
+router.post(
+  "/:id/reject",
+  requirePermission("SCREEN", "administration.approvals", "approve"),
+  async (req, res, next) => {
+    const id = Number(req.params.id);
+    if (!req.user?.isAdmin)
+      return next(new HttpError(403, res.locals.t("permission_denied")));
 
-  try {
-    let requestSnapshot = null;
-    await knex.transaction(async (trx) => {
-      const request = await trx("erp.approval_request").where({ id }).first();
-      if (!request || request.status !== "PENDING") {
-        throw new Error(res.locals.t("approval_request_not_found"));
-      }
-      requestSnapshot = request;
-
-      if (request.entity_type === "BOM") {
-        await bomService.resetPendingBomAfterRejectTx(trx, request);
-      }
-
-      if (request.request_type === "VOUCHER" && request.entity_type === "VOUCHER") {
-        const payload = request?.new_value && typeof request.new_value === "object" ? request.new_value : {};
-        const action = String(payload.action || "").toLowerCase();
-        const voucherId = Number(request.entity_id || 0);
-        if (!voucherId) {
-          throw new Error(res.locals.t("error_invalid_id"));
+    try {
+      let requestSnapshot = null;
+      await knex.transaction(async (trx) => {
+        const request = await trx("erp.approval_request").where({ id }).first();
+        if (!request || request.status !== "PENDING") {
+          throw new Error(res.locals.t("approval_request_not_found"));
         }
-        if (!action) {
-          await trx("erp.voucher_header")
-            .where({ id: voucherId, status: "PENDING" })
-            .update({
-              status: "REJECTED",
-              approved_by: req.user.id,
-              approved_at: trx.fn.now(),
-            });
+        requestSnapshot = request;
+
+        if (request.entity_type === "BOM") {
+          await bomService.resetPendingBomAfterRejectTx(trx, request);
         }
-      }
 
-      await trx("erp.approval_request").where({ id }).update({
-        status: "REJECTED",
-        decided_by: req.user.id,
-        decided_at: trx.fn.now(),
-      });
+        if (
+          request.request_type === "VOUCHER" &&
+          request.entity_type === "VOUCHER"
+        ) {
+          const payload =
+            request?.new_value && typeof request.new_value === "object"
+              ? request.new_value
+              : {};
+          const action = String(payload.action || "").toLowerCase();
+          const voucherId = Number(request.entity_id || 0);
+          if (!voucherId) {
+            throw new Error(res.locals.t("error_invalid_id"));
+          }
+          if (!action) {
+            await trx("erp.voucher_header")
+              .where({ id: voucherId, status: "PENDING" })
+              .update({
+                status: "REJECTED",
+                approved_by: req.user.id,
+                approved_at: trx.fn.now(),
+              });
+          }
+        }
 
-      await insertActivityLog(trx, {
-        branch_id: request.branch_id,
-        user_id: req.user.id,
-        entity_type: request.entity_type,
-        entity_id: request.entity_id,
-        voucher_type_code: resolveApprovalRequestVoucherTypeCode(request) || null,
-        action: "REJECT",
-        ip_address: req.ip,
-        context: {
-          source: "approval-decision",
-          approval_request_id: request.id,
-          requested_entity_id: request.entity_id,
-          decision: "REJECTED",
-          request_type: request.request_type,
-          summary: request.summary || null,
-          old_value: request.old_value || null,
-          new_value: request.new_value || null,
-        },
-      });
-    });
-    if (requestSnapshot?.requested_by) {
-      notifyApprovalDecision({
-        userId: requestSnapshot.requested_by,
-        payload: {
+        await trx("erp.approval_request").where({ id }).update({
           status: "REJECTED",
-          requestId: requestSnapshot.id,
-          summary: requestSnapshot.summary || "",
-          link: "/administration/approvals?status=REJECTED",
-          message: (res.locals.t("approval_rejected_detail") || "Your approval request was rejected: {summary}").replace("{summary}", requestSnapshot.summary || ""),
-          sticky: true,
-        },
+          decided_by: req.user.id,
+          decided_at: trx.fn.now(),
+        });
+
+        await insertActivityLog(trx, {
+          branch_id: request.branch_id,
+          user_id: req.user.id,
+          entity_type: request.entity_type,
+          entity_id: request.entity_id,
+          voucher_type_code:
+            resolveApprovalRequestVoucherTypeCode(request) || null,
+          action: "REJECT",
+          ip_address: req.ip,
+          context: {
+            source: "approval-decision",
+            approval_request_id: request.id,
+            requested_entity_id: request.entity_id,
+            decision: "REJECTED",
+            request_type: request.request_type,
+            summary: request.summary || null,
+            old_value: request.old_value || null,
+            new_value: request.new_value || null,
+          },
+        });
       });
+      if (requestSnapshot?.requested_by) {
+        notifyApprovalDecision({
+          userId: requestSnapshot.requested_by,
+          payload: {
+            status: "REJECTED",
+            requestId: requestSnapshot.id,
+            summary: requestSnapshot.summary || "",
+            link: "/administration/approvals?status=REJECTED",
+            message: (
+              res.locals.t("approval_rejected_detail") ||
+              "Your approval request was rejected: {summary}"
+            ).replace("{summary}", requestSnapshot.summary || ""),
+            sticky: true,
+          },
+        });
+      }
+      setUiNotice(res, res.locals.t("approval_rejected"), { autoClose: true });
+      res.redirect(`${req.baseUrl}?status=PENDING`);
+    } catch (err) {
+      next(err);
     }
-    setUiNotice(res, res.locals.t("approval_rejected"), { autoClose: true });
-    res.redirect(`${req.baseUrl}?status=PENDING`);
-  } catch (err) {
-    next(err);
-  }
-});
+  },
+);
 
 module.exports = router;

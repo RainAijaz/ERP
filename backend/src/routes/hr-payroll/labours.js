@@ -37,12 +37,96 @@ const LABOUR_RATE_ARTICLE_TYPE_SQL = `
   )
 `;
 
+const labourDeptTableSupport = new Map();
+const hasErpTable = async (db, tableName) => {
+  const key = String(tableName || "").trim().toLowerCase();
+  if (!key) return false;
+  if (!labourDeptTableSupport.has(key)) {
+    labourDeptTableSupport.set(
+      key,
+      db.schema
+        .withSchema("erp")
+        .hasTable(key)
+        .catch((err) => {
+          console.error("Error in LabourDepartmentGuardService:", err);
+          return false;
+        }),
+    );
+  }
+  return labourDeptTableSupport.get(key);
+};
+
+const findLabourDeptUsageMap = async ({ db, labourId, deptIds = [] }) => {
+  const normalizedLabourId = Number(labourId || 0);
+  const normalizedDeptIds = [...new Set((Array.isArray(deptIds) ? deptIds : [])
+    .map((value) => Number(value))
+    .filter((value) => Number.isInteger(value) && value > 0))];
+  if (!Number.isInteger(normalizedLabourId) || normalizedLabourId <= 0 || !normalizedDeptIds.length) {
+    return new Map();
+  }
+
+  const [hasDcvHeader, hasLabourVoucherLine, hasLabourRateRules, hasBomLabourLine] = await Promise.all([
+    hasErpTable(db, "dcv_header"),
+    hasErpTable(db, "labour_voucher_line"),
+    hasErpTable(db, "labour_rate_rules"),
+    hasErpTable(db, "bom_labour_line"),
+  ]);
+
+  const [
+    dcvRows,
+    labourVoucherRows,
+    labourRateRows,
+    bomLabourRows,
+  ] = await Promise.all([
+    hasDcvHeader
+      ? db("erp.dcv_header")
+          .distinct("dept_id")
+          .where({ labour_id: normalizedLabourId })
+          .whereIn("dept_id", normalizedDeptIds)
+      : Promise.resolve([]),
+    hasLabourVoucherLine
+      ? db("erp.labour_voucher_line")
+          .distinct("dept_id")
+          .where({ labour_id: normalizedLabourId })
+          .whereIn("dept_id", normalizedDeptIds)
+      : Promise.resolve([]),
+    hasLabourRateRules
+      ? db("erp.labour_rate_rules")
+          .distinct("dept_id")
+          .where({ labour_id: normalizedLabourId })
+          .whereIn("dept_id", normalizedDeptIds)
+      : Promise.resolve([]),
+    hasBomLabourLine
+      ? db("erp.bom_labour_line")
+          .distinct("dept_id")
+          .where({ labour_id: normalizedLabourId })
+          .whereIn("dept_id", normalizedDeptIds)
+      : Promise.resolve([]),
+  ]);
+
+  const usageByDept = new Map();
+  const addUsage = (rows, source) => {
+    rows.forEach((row) => {
+      const deptId = Number(row?.dept_id || 0);
+      if (!deptId) return;
+      if (!usageByDept.has(deptId)) usageByDept.set(deptId, new Set());
+      usageByDept.get(deptId).add(source);
+    });
+  };
+  addUsage(dcvRows, "DCV");
+  addUsage(labourVoucherRows, "LABOUR_VOUCHER");
+  addUsage(labourRateRows, "LABOUR_RATE_RULE");
+  addUsage(bomLabourRows, "BOM_LABOUR_LINE");
+  return usageByDept;
+};
+
 const page = {
   titleKey: "labours",
   descriptionKey: "labours_description",
   table: "erp.labours",
   scopeKey: "hr_payroll.labours",
   entityType: "LABOUR",
+  softDeleteOnHardDelete: true,
   branchScoped: true,
   autoCodeFromName: true,
   codePrefix: "lab",
@@ -197,6 +281,57 @@ const page = {
     if (values.cnic && !isValidCnic(values.cnic)) return { field: "cnic", message: req.res.locals.t("error_invalid_cnic") };
     if (values.phone && !isValidPhone(values.phone)) return { field: "phone", message: req.res.locals.t("error_invalid_phone_number") };
     values.dept_id = Number(values.dept_ids[0] || 0) || null;
+
+    if (isUpdate && id) {
+      const labourId = Number(id || 0);
+      const [existingLabour, existingMapRows] = await Promise.all([
+        knex("erp.labours")
+          .select("id", "dept_id")
+          .where({ id: labourId })
+          .first(),
+        knex("erp.labour_department")
+          .select("dept_id")
+          .where({ labour_id: labourId }),
+      ]);
+      const existingDeptIds = new Set();
+      const primaryDeptId = Number(existingLabour?.dept_id || 0);
+      if (Number.isInteger(primaryDeptId) && primaryDeptId > 0) existingDeptIds.add(primaryDeptId);
+      (existingMapRows || []).forEach((row) => {
+        const deptId = Number(row?.dept_id || 0);
+        if (Number.isInteger(deptId) && deptId > 0) existingDeptIds.add(deptId);
+      });
+
+      const nextDeptIds = new Set(
+        (Array.isArray(values.dept_ids) ? values.dept_ids : [])
+          .map((deptId) => Number(deptId))
+          .filter((deptId) => Number.isInteger(deptId) && deptId > 0),
+      );
+      const removedDeptIds = [...existingDeptIds].filter((deptId) => !nextDeptIds.has(deptId));
+      if (removedDeptIds.length) {
+        const usageMap = await findLabourDeptUsageMap({
+          db: knex,
+          labourId,
+          deptIds: removedDeptIds,
+        });
+        const blockedDeptIds = removedDeptIds.filter((deptId) => usageMap.has(Number(deptId)));
+        if (blockedDeptIds.length) {
+          const deptRows = await knex("erp.departments")
+            .select("id", "name")
+            .whereIn("id", blockedDeptIds);
+          const deptNameById = new Map((deptRows || []).map((row) => [Number(row.id), String(row.name || `#${row.id}`).trim()]));
+          const blockedDeptLabels = blockedDeptIds.map((deptId) => deptNameById.get(Number(deptId)) || `#${deptId}`);
+          const msgTemplate = req.res.locals.t("error_labour_department_in_use");
+          const msg = String(msgTemplate && msgTemplate !== "error_labour_department_in_use"
+            ? msgTemplate
+            : "Department mapping cannot be removed because it is already used in vouchers/rates/BOM.");
+          return {
+            field: "dept_ids",
+            message: `${msg} ${blockedDeptLabels.join(", ")}`,
+          };
+        }
+      }
+    }
+
     return null;
   },
 };
@@ -232,15 +367,6 @@ const labourRatesPage = {
       valueType: "number",
       dbColumn: "t.dept_id",
       fieldName: "dept_id",
-    },
-    tertiary: {
-      key: "rate_type",
-      label: "rate_type",
-      dbColumn: "t.rate_type",
-      options: [
-        { value: "PER_DOZEN", label: "rate_type_per_dozen" },
-        { value: "PER_PAIR", label: "rate_type_per_pair" },
-      ],
     },
   },
   applyExtraFilters: (query, { filters = {} } = {}) => {

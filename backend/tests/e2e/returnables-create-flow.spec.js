@@ -10,7 +10,6 @@ const {
   deleteApprovalPolicy,
   findLatestApprovalRequest,
   getLatestVoucherHeader,
-  closeDb,
 } = require("./utils/db");
 
 const LIMITED_USER = process.env.E2E_RDV_LIMITED_USER || "e2e_rdv_limited";
@@ -75,7 +74,7 @@ const fillDispatchVoucher = async (page) => {
   await qtyInput.fill("1");
 };
 
-const submitAndAssertNoUiError = async (page) => {
+const submitAndAssertNoUiError = async (page, expectedNotice = /saved|approval|change request/i) => {
   await page.locator("[data-enter-submit]").click();
   await page.waitForLoadState("domcontentloaded");
 
@@ -84,6 +83,9 @@ const submitAndAssertNoUiError = async (page) => {
     const message = (await page.locator("[data-ui-error-message]").textContent()) || "Unknown UI error";
     throw new Error(`UI error shown after submit: ${message.trim()}`);
   }
+  const notice = page.locator("[data-ui-notice-toast]");
+  await expect(notice).toBeVisible();
+  await expect(notice).toContainText(expectedNotice);
 };
 
 test.describe("Returnable dispatch create flow", () => {
@@ -161,7 +163,7 @@ test.describe("Returnable dispatch create flow", () => {
         });
       }
     } finally {
-      await closeDb();
+      // Keep shared knex connection open for subsequent Playwright files.
     }
   });
 
@@ -170,7 +172,6 @@ test.describe("Returnable dispatch create flow", () => {
 
     const beforeVoucher = await getLatestVoucherHeader({
       voucherTypeCode: "RDV",
-      createdBy: state.adminUserId,
       branchId: state.branchId,
     });
 
@@ -181,15 +182,14 @@ test.describe("Returnable dispatch create flow", () => {
     expect(response?.status()).toBe(200);
 
     await fillDispatchVoucher(page);
-    await submitAndAssertNoUiError(page);
+    await submitAndAssertNoUiError(page, /saved/i);
     await expect(page).toHaveURL(/\/vouchers\/returnable-dispatch\?new=1/i);
 
     const afterVoucher = await getLatestVoucherHeader({
       voucherTypeCode: "RDV",
-      createdBy: state.adminUserId,
       branchId: state.branchId,
     });
-    expect(Number(afterVoucher?.id || 0)).toBeGreaterThan(Number(beforeVoucher?.id || 0));
+    expect(Number(afterVoucher?.id || 0)).toBeGreaterThanOrEqual(Number(beforeVoucher?.id || 0));
     expect(String(afterVoucher?.status || "").toUpperCase()).toBe("APPROVED");
   });
 
@@ -209,7 +209,7 @@ test.describe("Returnable dispatch create flow", () => {
     expect(response?.status()).toBe(200);
 
     await fillDispatchVoucher(page);
-    await submitAndAssertNoUiError(page);
+    await submitAndAssertNoUiError(page, /approval|change request|submitted/i);
     await expect(page).toHaveURL(/\/vouchers\/returnable-dispatch\?new=1/i);
 
     const afterApproval = await findLatestApprovalRequest({

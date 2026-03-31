@@ -1,0 +1,527 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - checkbox "Menu" [ref=e5]
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - link "CHAND EVA" [ref=e8] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e10]: ERP
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - generic [ref=e14]: Signed in as
+            - generic [ref=e15]: admin
+          - generic [ref=e16]:
+            - generic [ref=e17]: Branch
+            - generic [ref=e18]:
+              - generic [ref=e19]: Branch
+              - combobox "Branch" [ref=e20]:
+                - option "124" [selected]
+                - option "207"
+          - button "Logout" [ref=e22] [cursor=pointer]
+          - generic [ref=e23]:
+            - generic [ref=e24]: Language
+            - link "English" [ref=e25] [cursor=pointer]:
+              - /url: "?lang=en"
+            - generic [ref=e26]: "|"
+            - link "Urdu" [ref=e27] [cursor=pointer]:
+              - /url: "?lang=ur"
+      - navigation [ref=e28]:
+        - button "Administration" [ref=e30] [cursor=pointer]:
+          - generic [ref=e31]: Administration
+          - img [ref=e32]
+        - button "Master Data" [ref=e35] [cursor=pointer]:
+          - generic [ref=e36]: Master Data
+          - img [ref=e37]
+        - button "HR & Payroll" [ref=e40] [cursor=pointer]:
+          - generic [ref=e41]: HR & Payroll
+          - img [ref=e42]
+        - button "Financial" [ref=e45] [cursor=pointer]:
+          - generic [ref=e46]: Financial
+          - img [ref=e47]
+        - button "Purchase" [ref=e50] [cursor=pointer]:
+          - generic [ref=e51]: Purchase
+          - img [ref=e52]
+        - button "Production" [ref=e55] [cursor=pointer]:
+          - generic [ref=e56]: Production
+          - img [ref=e57]
+        - button "Inventory" [ref=e60] [cursor=pointer]:
+          - generic [ref=e61]: Inventory
+          - img [ref=e62]
+        - button "Outward & Returnables" [ref=e65] [cursor=pointer]:
+          - generic [ref=e66]: Outward & Returnables
+          - img [ref=e67]
+        - button "Sales" [ref=e70] [cursor=pointer]:
+          - generic [ref=e71]: Sales
+          - img [ref=e72]
+  - main [ref=e74]:
+    - generic [ref=e75]:
+      - generic [ref=e76]:
+        - heading "Sales Discount Report" [level=1] [ref=e77]
+        - generic [ref=e78]:
+          - generic [ref=e79]:
+            - generic [ref=e80]:
+              - generic [ref=e81]: Date Range
+              - generic [ref=e83]:
+                - textbox [ref=e84] [cursor=pointer]: 01-03-2026 - 15-03-2026
+                - button "Open date range picker" [ref=e85] [cursor=pointer]:
+                  - img [ref=e86]
+            - generic [ref=e88]:
+              - generic [ref=e89]: Salesman
+              - generic [ref=e91]:
+                - textbox "All Salesman" [ref=e92]
+                - generic:
+                  - img
+                - combobox [ref=e93]:
+                  - option "All Salesman" [selected]
+                  - option "AHSAN"
+                  - option "ALI HAYDERR"
+                  - option "BOOTA"
+                  - option "E2E Employee 350146"
+                  - option "E2E name 1770453352192"
+                  - option "E2E name 1770454036161"
+                  - option "E2E name 1770454402303"
+                  - option "E2E name 1770454632185"
+                  - option "PU CHEMICALS"
+                  - option "WAQAS KHAIL"
+                  - option "YOUNAS DYE MAKER"
+            - generic [ref=e94]:
+              - generic [ref=e95]: Customer Name
+              - generic [ref=e97]:
+                - textbox "All Customer Name" [ref=e98]
+                - generic:
+                  - img
+                - combobox [ref=e99]:
+                  - option "All Customer Name" [selected]
+                  - option "AFSAR KHAN PESHAWAR"
+                  - option "E2E name 1770477509559_7"
+                  - option "E2E name 1770478855220_7"
+                  - option "E2E name 1771398105030_7"
+                  - option "E2E name 1771399190781_7"
+                  - option "E2E Party 1770368544483"
+                  - option "E2E Party Edited 1770477252408"
+                  - option "E2E Party Edited 1770478853363"
+                  - option "E2E Party Edited 1771398102994"
+                  - option "E2E Party Edited 1771399188180"
+                  - option "HAMZA TRADERS"
+                  - option "Hoorain Aijazzz"
+                  - option "KR EVA"
+                  - option "MALIK ASHRAF"
+                  - option "Musfira"
+            - generic [ref=e100]:
+              - generic [ref=e101]: Product Group
+              - generic [ref=e103]:
+                - textbox "All Product Group" [ref=e104]
+                - generic:
+                  - img
+                - combobox [ref=e105]:
+                  - option "All Product Group" [selected]
+                  - option "EVA"
+                  - option "PCU"
+                  - option "PU"
+            - generic [ref=e106]:
+              - generic [ref=e107]: Branches
+              - generic [ref=e109]:
+                - textbox "Search" [ref=e110]: All Branches
+                - generic:
+                  - img
+                - combobox [ref=e111]:
+                  - option "All Branches" [selected]
+                  - option "124"
+                  - option "207"
+          - generic [ref=e112]:
+            - button "Load" [ref=e113] [cursor=pointer]
+            - link "Cancel" [ref=e114] [cursor=pointer]:
+              - /url: /reports/sales/sales-discount-report
+      - generic [ref=e115]:
+        - generic [ref=e116]:
+          - generic [ref=e117]:
+            - generic [ref=e118]: Gross Sales Before Discount
+            - generic [ref=e119]: "336520"
+            - generic [ref=e120]: "Voucher Count: 9"
+          - generic [ref=e121]:
+            - generic [ref=e122]: Total Discount
+            - generic [ref=e123]: "3180"
+            - generic [ref=e124]: "Discount % of Gross Sales: 0.94%"
+          - generic [ref=e125]:
+            - generic [ref=e126]: Net Sales After Discount
+            - generic [ref=e127]: "333340"
+            - generic [ref=e128]: "Discounted Vouchers: 5"
+          - generic [ref=e129]:
+            - generic [ref=e130]: Average Pair Discount
+            - generic [ref=e131]: "4.6"
+            - generic [ref=e132]: "Line Discount Total: 2880"
+          - generic [ref=e133]:
+            - generic [ref=e134]: Average Dozen Discount
+            - generic [ref=e135]: "55.2"
+            - generic [ref=e136]: "Extra Discount: 300"
+          - generic [ref=e137]:
+            - generic [ref=e138]: Policy Breach Count
+            - generic [ref=e139]: "4"
+            - generic [ref=e140]: "Policy Excess Discount: 1059.18"
+          - generic [ref=e141]:
+            - generic [ref=e142]: Highest Discount Voucher
+            - generic [ref=e143]:
+              - generic [ref=e144]: "#9"
+              - generic [ref=e145]: Hoorain Aijazzz
+              - generic [ref=e146]: "1020"
+              - link "View" [ref=e147] [cursor=pointer]:
+                - /url: /vouchers/sales?voucher_no=9&view=1
+        - generic [ref=e148]:
+          - generic [ref=e149]:
+            - heading "Daily Discount Trend" [level=2] [ref=e150]
+            - generic [ref=e151]:
+              - generic [ref=e152]:
+                - generic [ref=e153]:
+                  - generic [ref=e154]: 01-03-2026
+                  - generic [ref=e155]: 3 Voucher Count
+                - generic [ref=e158]:
+                  - generic [ref=e159]: "Gross Amount: 112200"
+                  - generic [ref=e160]: "Total Discount: 300"
+                  - generic [ref=e161]: "Discount %: 0.27%"
+              - generic [ref=e162]:
+                - generic [ref=e163]:
+                  - generic [ref=e164]: 02-03-2026
+                  - generic [ref=e165]: 2 Voucher Count
+                - generic [ref=e168]:
+                  - generic [ref=e169]: "Gross Amount: 62400"
+                  - generic [ref=e170]: "Total Discount: 1380"
+                  - generic [ref=e171]: "Discount %: 2.21%"
+              - generic [ref=e172]:
+                - generic [ref=e173]:
+                  - generic [ref=e174]: 03-03-2026
+                  - generic [ref=e175]: 4 Voucher Count
+                - generic [ref=e178]:
+                  - generic [ref=e179]: "Gross Amount: 161920"
+                  - generic [ref=e180]: "Total Discount: 1500"
+                  - generic [ref=e181]: "Discount %: 0.93%"
+          - generic [ref=e182]:
+            - heading "High Discount Alerts" [level=2] [ref=e183]
+            - generic [ref=e184]:
+              - generic [ref=e185]:
+                - generic [ref=e186]:
+                  - generic [ref=e187]:
+                    - generic [ref=e188]: "#9"
+                    - generic [ref=e189]: Hoorain Aijazzz
+                    - generic [ref=e190]: Policy Limit Exceeded
+                  - link "View" [ref=e191] [cursor=pointer]:
+                    - /url: /vouchers/sales?voucher_no=9&view=1
+                - generic [ref=e192]:
+                  - generic [ref=e193]: "Total Discount: 1020"
+                  - generic [ref=e194]: "Discount %: 2.39%"
+                  - generic [ref=e195]: "Salesman: AHSAN"
+                  - generic [ref=e196]: "Policy Excess Discount: 480"
+              - generic [ref=e197]:
+                - generic [ref=e198]:
+                  - generic [ref=e199]:
+                    - generic [ref=e200]: "#14"
+                    - generic [ref=e201]: MUAZZIM TRADERS
+                    - generic [ref=e202]: Policy Limit Exceeded
+                  - link "View" [ref=e203] [cursor=pointer]:
+                    - /url: /vouchers/sales?voucher_no=14&view=1
+                - generic [ref=e204]:
+                  - generic [ref=e205]: "Total Discount: 900"
+                  - generic [ref=e206]: "Discount %: 3%"
+                  - generic [ref=e207]: "Salesman: AHSAN"
+                  - generic [ref=e208]: "Policy Excess Discount: 300"
+              - generic [ref=e209]:
+                - generic [ref=e210]:
+                  - generic [ref=e211]:
+                    - generic [ref=e212]: "#13"
+                    - generic [ref=e213]: KHAN SHOES
+                    - generic [ref=e214]: Policy Limit Exceeded
+                  - link "View" [ref=e215] [cursor=pointer]:
+                    - /url: /vouchers/sales?voucher_no=13&view=1
+                - generic [ref=e216]:
+                  - generic [ref=e217]: "Total Discount: 600"
+                  - generic [ref=e218]: "Discount %: 1.76%"
+                  - generic [ref=e219]: "Salesman: AHSAN"
+                  - generic [ref=e220]: "Policy Excess Discount: 171.18"
+              - generic [ref=e221]:
+                - generic [ref=e222]:
+                  - generic [ref=e223]:
+                    - generic [ref=e224]: "#10"
+                    - generic [ref=e225]: AFSAR KHAN PESHAWAR
+                    - generic [ref=e226]: Policy Limit Exceeded
+                  - link "View" [ref=e227] [cursor=pointer]:
+                    - /url: /vouchers/sales?voucher_no=10&view=1
+                - generic [ref=e228]:
+                  - generic [ref=e229]: "Total Discount: 360"
+                  - generic [ref=e230]: "Discount %: 1.82%"
+                  - generic [ref=e231]: "Salesman: AHSAN"
+                  - generic [ref=e232]: "Policy Excess Discount: 108"
+        - generic [ref=e233]:
+          - generic [ref=e234]:
+            - heading "Top Salesmen by Discount" [level=2] [ref=e235]
+            - table [ref=e237]:
+              - rowgroup [ref=e238]:
+                - row "Salesman Qty Sold (Dozen) Avg Pair Discount Avg Dozen Discount Discount %" [ref=e239]:
+                  - columnheader "Salesman" [ref=e240]
+                  - columnheader "Qty Sold (Dozen)" [ref=e241]
+                  - columnheader "Avg Pair Discount" [ref=e242]
+                  - columnheader "Avg Dozen Discount" [ref=e243]
+                  - columnheader "Discount %" [ref=e244]
+              - rowgroup [ref=e245]:
+                - row "AHSAN 40 6.6 79.17 1.24%" [ref=e246]:
+                  - cell "AHSAN" [ref=e247]
+                  - cell "40" [ref=e248]
+                  - cell "6.6" [ref=e249]
+                  - cell "79.17" [ref=e250]
+                  - cell "1.24%" [ref=e251]
+                - row "BOOTA 12 0 0 0%" [ref=e252]:
+                  - cell "BOOTA" [ref=e253]
+                  - cell "12" [ref=e254]
+                  - cell "0" [ref=e255]
+                  - cell "0" [ref=e256]
+                  - cell "0%" [ref=e257]
+          - generic [ref=e258]:
+            - heading "Top Customers by Discount" [level=2] [ref=e259]
+            - table [ref=e261]:
+              - rowgroup [ref=e262]:
+                - row "Customer Name Qty Sold (Dozen) Avg Pair Discount Avg Dozen Discount Discount %" [ref=e263]:
+                  - columnheader "Customer Name" [ref=e264]
+                  - columnheader "Qty Sold (Dozen)" [ref=e265]
+                  - columnheader "Avg Pair Discount" [ref=e266]
+                  - columnheader "Avg Dozen Discount" [ref=e267]
+                  - columnheader "Discount %" [ref=e268]
+              - rowgroup [ref=e269]:
+                - row "Hoorain Aijazzz 7 12.14 145.71 2.39%" [ref=e270]:
+                  - cell "Hoorain Aijazzz" [ref=e271]
+                  - cell "7" [ref=e272]
+                  - cell "12.14" [ref=e273]
+                  - cell "145.71" [ref=e274]
+                  - cell "2.39%" [ref=e275]
+                - row "MUAZZIM TRADERS 5 15 180 3%" [ref=e276]:
+                  - cell "MUAZZIM TRADERS" [ref=e277]
+                  - cell "5" [ref=e278]
+                  - cell "15" [ref=e279]
+                  - cell "180" [ref=e280]
+                  - cell "3%" [ref=e281]
+                - row "KHAN SHOES 5 9.68 116.13 1.76%" [ref=e282]:
+                  - cell "KHAN SHOES" [ref=e283]
+                  - cell "5" [ref=e284]
+                  - cell "9.68" [ref=e285]
+                  - cell "116.13" [ref=e286]
+                  - cell "1.76%" [ref=e287]
+                - row "AFSAR KHAN PESHAWAR 3 10 120 1.82%" [ref=e288]:
+                  - cell "AFSAR KHAN PESHAWAR" [ref=e289]
+                  - cell "3" [ref=e290]
+                  - cell "10" [ref=e291]
+                  - cell "120" [ref=e292]
+                  - cell "1.82%" [ref=e293]
+                - row "HAMZA TRADERS 5 5 60 0.91%" [ref=e294]:
+                  - cell "HAMZA TRADERS" [ref=e295]
+                  - cell "5" [ref=e296]
+                  - cell "5" [ref=e297]
+                  - cell "60" [ref=e298]
+                  - cell "0.91%" [ref=e299]
+                - row "KR EVA 12 0 0 0%" [ref=e300]:
+                  - cell "KR EVA" [ref=e301]
+                  - cell "12" [ref=e302]
+                  - cell "0" [ref=e303]
+                  - cell "0" [ref=e304]
+                  - cell "0%" [ref=e305]
+                - row "HASHIE IJAZ 15 0 0 0%" [ref=e306]:
+                  - cell "HASHIE IJAZ" [ref=e307]
+                  - cell "15" [ref=e308]
+                  - cell "0" [ref=e309]
+                  - cell "0" [ref=e310]
+                  - cell "0%" [ref=e311]
+          - generic [ref=e312]:
+            - heading "Top Items by Discount" [level=2] [ref=e313]
+            - table [ref=e315]:
+              - rowgroup [ref=e316]:
+                - row "Article Qty Sold (Dozen) Avg Pair Discount Avg Dozen Discount" [ref=e317]:
+                  - columnheader "Article" [ref=e318]
+                  - columnheader "Qty Sold (Dozen)" [ref=e319]
+                  - columnheader "Avg Pair Discount" [ref=e320]
+                  - columnheader "Avg Dozen Discount" [ref=e321]
+              - rowgroup [ref=e322]:
+                - row "300 47 3.51 42.13" [ref=e323]:
+                  - cell "300" [ref=e324]
+                  - cell "47" [ref=e325]
+                  - cell "3.51" [ref=e326]
+                  - cell "42.13" [ref=e327]
+                - row "W03 5 14.52 174.19" [ref=e328]:
+                  - cell "W03" [ref=e329]
+                  - cell "5" [ref=e330]
+                  - cell "14.52" [ref=e331]
+                  - cell "174.19" [ref=e332]
+        - generic [ref=e333]:
+          - heading "Voucher Discount Details" [level=2] [ref=e334]
+          - table [ref=e336]:
+            - rowgroup [ref=e337]:
+              - row "Date Voucher No Customer Name Salesman Payment Type Dozen Qty Gross Amount Total Discount Exceeded Discount Amount Discount % Net Amount Branch Action" [ref=e338]:
+                - columnheader "Date" [ref=e339]
+                - columnheader "Voucher No" [ref=e340]
+                - columnheader "Customer Name" [ref=e341]
+                - columnheader "Salesman" [ref=e342]
+                - columnheader "Payment Type" [ref=e343]
+                - columnheader "Dozen Qty" [ref=e344]
+                - columnheader "Gross Amount" [ref=e345]
+                - columnheader "Total Discount" [ref=e346]
+                - columnheader "Exceeded Discount Amount" [ref=e347]
+                - columnheader "Discount %" [ref=e348]
+                - columnheader "Net Amount" [ref=e349]
+                - columnheader "Branch" [ref=e350]
+                - columnheader "Action" [ref=e351]
+            - rowgroup [ref=e352]:
+              - row "01-03-2026 5 KR EVA BOOTA Credit Sale 8 52800 0 0 0% 52800 124 View" [ref=e353]:
+                - cell "01-03-2026" [ref=e354]
+                - cell "5" [ref=e355]
+                - cell "KR EVA" [ref=e356]
+                - cell "BOOTA" [ref=e357]
+                - cell "Credit Sale" [ref=e358]
+                - cell "8" [ref=e359]
+                - cell "52800" [ref=e360]
+                - cell "0" [ref=e361]
+                - cell "0" [ref=e362]
+                - cell "0%" [ref=e363]
+                - cell "52800" [ref=e364]
+                - cell "124" [ref=e365]
+                - cell "View" [ref=e366]:
+                  - link "View" [ref=e367] [cursor=pointer]:
+                    - /url: /vouchers/sales?voucher_no=5&view=1
+              - row "01-03-2026 6 HAMZA TRADERS AHSAN Credit Sale 5 33000 300 0 0.91% 32700 124 View" [ref=e368]:
+                - cell "01-03-2026" [ref=e369]
+                - cell "6" [ref=e370]
+                - cell "HAMZA TRADERS" [ref=e371]
+                - cell "AHSAN" [ref=e372]
+                - cell "Credit Sale" [ref=e373]
+                - cell "5" [ref=e374]
+                - cell "33000" [ref=e375]
+                - cell "300" [ref=e376]
+                - cell "0" [ref=e377]
+                - cell "0.91%" [ref=e378]
+                - cell "32700" [ref=e379]
+                - cell "124" [ref=e380]
+                - cell "View" [ref=e381]:
+                  - link "View" [ref=e382] [cursor=pointer]:
+                    - /url: /vouchers/sales?voucher_no=6&view=1
+              - row "01-03-2026 8 KR EVA BOOTA Credit Sale 4 26400 0 0 0% 26400 124 View" [ref=e383]:
+                - cell "01-03-2026" [ref=e384]
+                - cell "8" [ref=e385]
+                - cell "KR EVA" [ref=e386]
+                - cell "BOOTA" [ref=e387]
+                - cell "Credit Sale" [ref=e388]
+                - cell "4" [ref=e389]
+                - cell "26400" [ref=e390]
+                - cell "0" [ref=e391]
+                - cell "0" [ref=e392]
+                - cell "0%" [ref=e393]
+                - cell "26400" [ref=e394]
+                - cell "124" [ref=e395]
+                - cell "View" [ref=e396]:
+                  - link "View" [ref=e397] [cursor=pointer]:
+                    - /url: /vouchers/sales?voucher_no=8&view=1
+              - row "02-03-2026 9 Hoorain Aijazzz AHSAN Credit Sale 7 42600 1020 480 2.39% 41580 124 View" [ref=e398]:
+                - cell "02-03-2026" [ref=e399]
+                - cell "9" [ref=e400]
+                - cell "Hoorain Aijazzz" [ref=e401]
+                - cell "AHSAN" [ref=e402]
+                - cell "Credit Sale" [ref=e403]
+                - cell "7" [ref=e404]
+                - cell "42600" [ref=e405]
+                - cell "1020" [ref=e406]
+                - cell "480" [ref=e407]
+                - cell "2.39%" [ref=e408]
+                - cell "41580" [ref=e409]
+                - cell "124" [ref=e410]
+                - cell "View" [ref=e411]:
+                  - link "View" [ref=e412] [cursor=pointer]:
+                    - /url: /vouchers/sales?voucher_no=9&view=1
+              - row "02-03-2026 10 AFSAR KHAN PESHAWAR AHSAN Credit Sale 3 19800 360 108 1.82% 19440 124 View" [ref=e413]:
+                - cell "02-03-2026" [ref=e414]
+                - cell "10" [ref=e415]
+                - cell "AFSAR KHAN PESHAWAR" [ref=e416]
+                - cell "AHSAN" [ref=e417]
+                - cell "Credit Sale" [ref=e418]
+                - cell "3" [ref=e419]
+                - cell "19800" [ref=e420]
+                - cell "360" [ref=e421]
+                - cell "108" [ref=e422]
+                - cell "1.82%" [ref=e423]
+                - cell "19440" [ref=e424]
+                - cell "124" [ref=e425]
+                - cell "View" [ref=e426]:
+                  - link "View" [ref=e427] [cursor=pointer]:
+                    - /url: /vouchers/sales?voucher_no=10&view=1
+              - row "03-03-2026 11 HASHIE IJAZ AHSAN Cash Sale 15 97920 0 0 0% 97920 124 View" [ref=e428]:
+                - cell "03-03-2026" [ref=e429]
+                - cell "11" [ref=e430]
+                - cell "HASHIE IJAZ" [ref=e431]
+                - cell "AHSAN" [ref=e432]
+                - cell "Cash Sale" [ref=e433]
+                - cell "15" [ref=e434]
+                - cell "97920" [ref=e435]
+                - cell "0" [ref=e436]
+                - cell "0" [ref=e437]
+                - cell "0%" [ref=e438]
+                - cell "97920" [ref=e439]
+                - cell "124" [ref=e440]
+                - cell "View" [ref=e441]:
+                  - link "View" [ref=e442] [cursor=pointer]:
+                    - /url: /vouchers/sales?voucher_no=11&view=1
+              - row "03-03-2026 12 HASHIE IJAZ AHSAN Cash Sale 0 0 0 0 0% 0 124 View" [ref=e443]:
+                - cell "03-03-2026" [ref=e444]
+                - cell "12" [ref=e445]
+                - cell "HASHIE IJAZ" [ref=e446]
+                - cell "AHSAN" [ref=e447]
+                - cell "Cash Sale" [ref=e448]
+                - cell "0" [ref=e449]
+                - cell "0" [ref=e450]
+                - cell "0" [ref=e451]
+                - cell "0" [ref=e452]
+                - cell "0%" [ref=e453]
+                - cell "0" [ref=e454]
+                - cell "124" [ref=e455]
+                - cell "View" [ref=e456]:
+                  - link "View" [ref=e457] [cursor=pointer]:
+                    - /url: /vouchers/sales?voucher_no=12&view=1
+              - row "03-03-2026 13 KHAN SHOES AHSAN Cash Sale 5 34000 600 171.18 1.76% 33400 124 View" [ref=e458]:
+                - cell "03-03-2026" [ref=e459]
+                - cell "13" [ref=e460]
+                - cell "KHAN SHOES" [ref=e461]
+                - cell "AHSAN" [ref=e462]
+                - cell "Cash Sale" [ref=e463]
+                - cell "5" [ref=e464]
+                - cell "34000" [ref=e465]
+                - cell "600" [ref=e466]
+                - cell "171.18" [ref=e467]
+                - cell "1.76%" [ref=e468]
+                - cell "33400" [ref=e469]
+                - cell "124" [ref=e470]
+                - cell "View" [ref=e471]:
+                  - link "View" [ref=e472] [cursor=pointer]:
+                    - /url: /vouchers/sales?voucher_no=13&view=1
+              - row "03-03-2026 14 MUAZZIM TRADERS AHSAN Cash Sale 5 30000 900 300 3% 29100 124 View" [ref=e473]:
+                - cell "03-03-2026" [ref=e474]
+                - cell "14" [ref=e475]
+                - cell "MUAZZIM TRADERS" [ref=e476]
+                - cell "AHSAN" [ref=e477]
+                - cell "Cash Sale" [ref=e478]
+                - cell "5" [ref=e479]
+                - cell "30000" [ref=e480]
+                - cell "900" [ref=e481]
+                - cell "300" [ref=e482]
+                - cell "3%" [ref=e483]
+                - cell "29100" [ref=e484]
+                - cell "124" [ref=e485]
+                - cell "View" [ref=e486]:
+                  - link "View" [ref=e487] [cursor=pointer]:
+                    - /url: /vouchers/sales?voucher_no=14&view=1
+              - row "Grand Total 52 336520 3180 1059.18 0.94% 333340" [ref=e488]:
+                - cell "Grand Total" [ref=e489]
+                - cell "52" [ref=e490]
+                - cell "336520" [ref=e491]
+                - cell "3180" [ref=e492]
+                - cell "1059.18" [ref=e493]
+                - cell "0.94%" [ref=e494]
+                - cell "333340" [ref=e495]
+                - cell [ref=e496]
+                - cell [ref=e497]
+    - generic [ref=e498]: ERP System © 2026
+```

@@ -98,7 +98,7 @@ const convertToBaseQty = ({ qty, fromUomId, baseUomId, conversionMap, t }) => {
 
 const buildRuleMatchIndex = async (trx, salesmanEmployeeId) => {
   if (!salesmanEmployeeId) return [];
-  return trx("erp.employee_commission_rules")
+  return trx("erp.employee_commission_rules as ecr")
     .select(
       "id",
       "apply_on",
@@ -106,12 +106,12 @@ const buildRuleMatchIndex = async (trx, salesmanEmployeeId) => {
       "subgroup_id",
       "group_id",
       "commission_basis",
-      trx.raw(`COALESCE(NULLIF(to_jsonb(erp.employee_commission_rules)->>'rate_type', ''), 'PER_PAIR') as rate_type`),
+      trx.raw(`COALESCE(NULLIF(to_jsonb(ecr)->>'rate_type', ''), 'PER_PAIR') as rate_type`),
       "value",
       "reverse_on_returns",
       "value_type",
     )
-    .where({ employee_id: salesmanEmployeeId, status: "active" });
+    .where({ "ecr.employee_id": salesmanEmployeeId, "ecr.status": "active" });
 };
 
 const pickRuleByPrecedence = (rules, basis, context) => {

@@ -493,19 +493,19 @@ router.post("/:id/delete", requirePermission("SCREEN", "master_data.products.fin
       return res.redirect(req.get("referer") || basePath);
     }
 
-    await knex.transaction(async (trx) => {
-      const linked = await getLinkedSfgIds(trx, id);
-      await trx("erp.item_usage").where({ fg_item_id: id }).del();
-      if (linked.length) {
-        const usedElsewhere = await trx("erp.item_usage").whereIn("sfg_item_id", linked).select("sfg_item_id").groupBy("sfg_item_id");
-        const usedSet = new Set(usedElsewhere.map((row) => row.sfg_item_id));
-        const deletable = linked.filter((sfgId) => !usedSet.has(sfgId));
-        if (deletable.length) {
-          await trx("erp.items").whereIn("id", deletable).del();
-        }
-      }
-      await trx("erp.items").where({ id }).del();
-    });
+    try {
+      await knex("erp.items").where({ id }).del();
+    } catch (deleteErr) {
+      if (String(deleteErr?.code || "") !== "23503") throw deleteErr;
+      await knex.transaction(async (trx) => {
+        await applyItemLifecycleToggleTx(trx, {
+          itemId: id,
+          itemType: ITEM_TYPE,
+          isActive: false,
+          userId: req.user ? req.user.id : null,
+        });
+      });
+    }
     queueAuditLog(req, {
       entityType: SCREEN_ENTITY_TYPES["master_data.products.finished"],
       entityId: id,

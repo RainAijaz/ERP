@@ -1,0 +1,389 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - checkbox "Menu" [ref=e5]
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - link "CHAND EVA" [ref=e8] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e10]: ERP
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - generic [ref=e14]: Signed in as
+            - generic [ref=e15]: admin
+          - generic [ref=e16]:
+            - generic [ref=e17]: Branch
+            - generic [ref=e18]:
+              - generic [ref=e19]: Branch
+              - combobox "Branch" [ref=e20]:
+                - option "124" [selected]
+                - option "207"
+          - button "Logout" [ref=e22] [cursor=pointer]
+          - generic [ref=e23]:
+            - generic [ref=e24]: Language
+            - link "English" [ref=e25] [cursor=pointer]:
+              - /url: "?lang=en"
+            - generic [ref=e26]: "|"
+            - link "Urdu" [ref=e27] [cursor=pointer]:
+              - /url: "?lang=ur"
+      - navigation [ref=e28]:
+        - button "Administration" [ref=e30] [cursor=pointer]:
+          - generic [ref=e31]: Administration
+          - img [ref=e32]
+        - button "Master Data" [ref=e35] [cursor=pointer]:
+          - generic [ref=e36]: Master Data
+          - img [ref=e37]
+        - button "HR & Payroll" [ref=e40] [cursor=pointer]:
+          - generic [ref=e41]: HR & Payroll
+          - img [ref=e42]
+        - button "Financial" [ref=e45] [cursor=pointer]:
+          - generic [ref=e46]: Financial
+          - img [ref=e47]
+        - button "Purchase" [ref=e50] [cursor=pointer]:
+          - generic [ref=e51]: Purchase
+          - img [ref=e52]
+        - button "Production" [ref=e55] [cursor=pointer]:
+          - generic [ref=e56]: Production
+          - img [ref=e57]
+        - button "Inventory" [ref=e60] [cursor=pointer]:
+          - generic [ref=e61]: Inventory
+          - img [ref=e62]
+        - button "Outward & Returnables" [ref=e65] [cursor=pointer]:
+          - generic [ref=e66]: Outward & Returnables
+          - img [ref=e67]
+        - button "Sales" [ref=e70] [cursor=pointer]:
+          - generic [ref=e71]: Sales
+          - img [ref=e72]
+  - main [ref=e74]:
+    - generic [ref=e75]:
+      - generic [ref=e77]:
+        - generic [ref=e78]:
+          - heading "Employees" [level=1] [ref=e79]
+          - paragraph [ref=e80]: Manage employee master records for HR and payroll.
+        - generic [ref=e81]:
+          - button "Download" [ref=e82] [cursor=pointer]
+          - button "Print" [ref=e83] [cursor=pointer]
+          - button "Add Employees" [ref=e84] [cursor=pointer]
+      - generic [ref=e85]:
+        - generic [ref=e86]:
+          - generic [ref=e87]: List Employees
+          - generic [ref=e89]:
+            - generic [ref=e90]:
+              - generic [ref=e91]: Show
+              - combobox "Show Rows" [ref=e92] [cursor=pointer]:
+                - option "10" [selected]
+                - option "25"
+                - option "50"
+                - option "All"
+              - generic [ref=e93]: Rows
+            - generic [ref=e94]:
+              - generic [ref=e95]: Status
+              - combobox "Status" [ref=e96] [cursor=pointer]:
+                - option "All" [selected]
+                - option "Active"
+                - option "Inactive"
+            - generic [ref=e97]:
+              - img [ref=e98]
+              - textbox [ref=e100]:
+                - /placeholder: Search
+            - button "Filters" [ref=e101] [cursor=pointer]:
+              - generic [ref=e102]: Filters
+        - table [ref=e104]:
+          - rowgroup [ref=e105]:
+            - row "Sr.No Name - CNIC - Phone Number - Payroll Type - Basic Salary - Branches - Status - Actions" [ref=e106]:
+              - columnheader "Sr.No" [ref=e107]
+              - columnheader "Name -" [ref=e108]:
+                - button "Name -" [ref=e109] [cursor=pointer]:
+                  - generic [ref=e110]: Name
+                  - generic [ref=e111]: "-"
+              - columnheader "CNIC -" [ref=e112]:
+                - button "CNIC -" [ref=e113] [cursor=pointer]:
+                  - generic [ref=e114]: CNIC
+                  - generic [ref=e115]: "-"
+              - columnheader "Phone Number -" [ref=e116]:
+                - button "Phone Number -" [ref=e117] [cursor=pointer]:
+                  - generic [ref=e118]: Phone Number
+                  - generic [ref=e119]: "-"
+              - columnheader "Payroll Type -" [ref=e120]:
+                - button "Payroll Type -" [ref=e121] [cursor=pointer]:
+                  - generic [ref=e122]: Payroll Type
+                  - generic [ref=e123]: "-"
+              - columnheader "Basic Salary -" [ref=e124]:
+                - button "Basic Salary -" [ref=e125] [cursor=pointer]:
+                  - generic [ref=e126]: Basic Salary
+                  - generic [ref=e127]: "-"
+              - columnheader "Branches -" [ref=e128]:
+                - button "Branches -" [ref=e129] [cursor=pointer]:
+                  - generic [ref=e130]: Branches
+                  - generic [ref=e131]: "-"
+              - columnheader "Status -" [ref=e132]:
+                - button "Status -" [ref=e133] [cursor=pointer]:
+                  - generic [ref=e134]: Status
+                  - generic [ref=e135]: "-"
+              - columnheader "Actions" [ref=e136]
+          - rowgroup [ref=e137]:
+            - row "1 ALI HAYDERR 4567890865456 03114673189 Monthly 56789.00 124 Active" [ref=e138]:
+              - cell "1" [ref=e139]
+              - cell "ALI HAYDERR" [ref=e140]
+              - cell "4567890865456" [ref=e141]
+              - cell "03114673189" [ref=e142]
+              - cell "Monthly" [ref=e143]:
+                - generic [ref=e144]: Monthly
+              - cell "56789.00" [ref=e145]
+              - cell "124" [ref=e146]
+              - cell "Active" [ref=e147]:
+                - generic [ref=e148]: Active
+              - cell [ref=e149]:
+                - generic [ref=e150]:
+                  - button "Edit" [ref=e151] [cursor=pointer]:
+                    - img [ref=e152]
+                  - button "Deactivate" [ref=e154] [cursor=pointer]:
+                    - img [ref=e155]
+                  - button "Permanent Delete" [ref=e156] [cursor=pointer]:
+                    - img [ref=e157]
+            - row "2 WAQAS KHAIL 4550406143469 03114673289 Monthly 25000.00 207 Active" [ref=e161]:
+              - cell "2" [ref=e162]
+              - cell "WAQAS KHAIL" [ref=e163]
+              - cell "4550406143469" [ref=e164]
+              - cell "03114673289" [ref=e165]
+              - cell "Monthly" [ref=e166]:
+                - generic [ref=e167]: Monthly
+              - cell "25000.00" [ref=e168]
+              - cell "207" [ref=e169]
+              - cell "Active" [ref=e170]:
+                - generic [ref=e171]: Active
+              - cell [ref=e172]:
+                - generic [ref=e173]:
+                  - button "Edit" [ref=e174] [cursor=pointer]:
+                    - img [ref=e175]
+                  - button "Deactivate" [ref=e177] [cursor=pointer]:
+                    - img [ref=e178]
+                  - button "Permanent Delete" [ref=e179] [cursor=pointer]:
+                    - img [ref=e180]
+            - row "3 YOUNAS DYE MAKER 4550406143429 03114673190 Monthly 4997.00 207 Active" [ref=e184]:
+              - cell "3" [ref=e185]
+              - cell "YOUNAS DYE MAKER" [ref=e186]
+              - cell "4550406143429" [ref=e187]
+              - cell "03114673190" [ref=e188]
+              - cell "Monthly" [ref=e189]:
+                - generic [ref=e190]: Monthly
+              - cell "4997.00" [ref=e191]
+              - cell "207" [ref=e192]
+              - cell "Active" [ref=e193]:
+                - generic [ref=e194]: Active
+              - cell [ref=e195]:
+                - generic [ref=e196]:
+                  - button "Edit" [ref=e197] [cursor=pointer]:
+                    - img [ref=e198]
+                  - button "Deactivate" [ref=e200] [cursor=pointer]:
+                    - img [ref=e201]
+                  - button "Permanent Delete" [ref=e202] [cursor=pointer]:
+                    - img [ref=e203]
+            - row "4 E2E name 1770454632185 NONE NONE Monthly 1.00 124 Active" [ref=e207]:
+              - cell "4" [ref=e208]
+              - cell "E2E name 1770454632185" [ref=e209]
+              - cell "NONE" [ref=e210]
+              - cell "NONE" [ref=e211]
+              - cell "Monthly" [ref=e212]:
+                - generic [ref=e213]: Monthly
+              - cell "1.00" [ref=e214]
+              - cell "124" [ref=e215]
+              - cell "Active" [ref=e216]:
+                - generic [ref=e217]: Active
+              - cell [ref=e218]:
+                - generic [ref=e219]:
+                  - button "Edit" [ref=e220] [cursor=pointer]:
+                    - img [ref=e221]
+                  - button "Deactivate" [ref=e223] [cursor=pointer]:
+                    - img [ref=e224]
+                  - button "Permanent Delete" [ref=e225] [cursor=pointer]:
+                    - img [ref=e226]
+            - row "5 BOOTA 4550406143423 03114673179 Monthly 2100.00 124, 207 Active" [ref=e230]:
+              - cell "5" [ref=e231]
+              - cell "BOOTA" [ref=e232]
+              - cell "4550406143423" [ref=e233]
+              - cell "03114673179" [ref=e234]
+              - cell "Monthly" [ref=e235]:
+                - generic [ref=e236]: Monthly
+              - cell "2100.00" [ref=e237]
+              - cell "124, 207" [ref=e238]
+              - cell "Active" [ref=e239]:
+                - generic [ref=e240]: Active
+              - cell [ref=e241]:
+                - generic [ref=e242]:
+                  - button "Edit" [ref=e243] [cursor=pointer]:
+                    - img [ref=e244]
+                  - button "Deactivate" [ref=e246] [cursor=pointer]:
+                    - img [ref=e247]
+                  - button "Permanent Delete" [ref=e248] [cursor=pointer]:
+                    - img [ref=e249]
+            - row "6 E2E name 1770454402303 NONE NONE Monthly 10000.00 124, 207 Active" [ref=e253]:
+              - cell "6" [ref=e254]
+              - cell "E2E name 1770454402303" [ref=e255]
+              - cell "NONE" [ref=e256]
+              - cell "NONE" [ref=e257]
+              - cell "Monthly" [ref=e258]:
+                - generic [ref=e259]: Monthly
+              - cell "10000.00" [ref=e260]
+              - cell "124, 207" [ref=e261]
+              - cell "Active" [ref=e262]:
+                - generic [ref=e263]: Active
+              - cell [ref=e264]:
+                - generic [ref=e265]:
+                  - button "Edit" [ref=e266] [cursor=pointer]:
+                    - img [ref=e267]
+                  - button "Deactivate" [ref=e269] [cursor=pointer]:
+                    - img [ref=e270]
+                  - button "Permanent Delete" [ref=e271] [cursor=pointer]:
+                    - img [ref=e272]
+            - row "7 E2E name 1770454036161 NONE NONE Monthly 1.00 124 Active" [ref=e276]:
+              - cell "7" [ref=e277]
+              - cell "E2E name 1770454036161" [ref=e278]
+              - cell "NONE" [ref=e279]
+              - cell "NONE" [ref=e280]
+              - cell "Monthly" [ref=e281]:
+                - generic [ref=e282]: Monthly
+              - cell "1.00" [ref=e283]
+              - cell "124" [ref=e284]
+              - cell "Active" [ref=e285]:
+                - generic [ref=e286]: Active
+              - cell [ref=e287]:
+                - generic [ref=e288]:
+                  - button "Edit" [ref=e289] [cursor=pointer]:
+                    - img [ref=e290]
+                  - button "Deactivate" [ref=e292] [cursor=pointer]:
+                    - img [ref=e293]
+                  - button "Permanent Delete" [ref=e294] [cursor=pointer]:
+                    - img [ref=e295]
+            - row "8 PU CHEMICALS 0324567890123 03456789034 Monthly 21000.00 207 Active" [ref=e299]:
+              - cell "8" [ref=e300]
+              - cell "PU CHEMICALS" [ref=e301]
+              - cell "0324567890123" [ref=e302]
+              - cell "03456789034" [ref=e303]
+              - cell "Monthly" [ref=e304]:
+                - generic [ref=e305]: Monthly
+              - cell "21000.00" [ref=e306]
+              - cell "207" [ref=e307]
+              - cell "Active" [ref=e308]:
+                - generic [ref=e309]: Active
+              - cell [ref=e310]:
+                - generic [ref=e311]:
+                  - button "Edit" [ref=e312] [cursor=pointer]:
+                    - img [ref=e313]
+                  - button "Deactivate" [ref=e315] [cursor=pointer]:
+                    - img [ref=e316]
+                  - button "Permanent Delete" [ref=e317] [cursor=pointer]:
+                    - img [ref=e318]
+            - row "9 E2E name 1770453352192 NONE NONE Monthly 1.00 124 Active" [ref=e322]:
+              - cell "9" [ref=e323]
+              - cell "E2E name 1770453352192" [ref=e324]
+              - cell "NONE" [ref=e325]
+              - cell "NONE" [ref=e326]
+              - cell "Monthly" [ref=e327]:
+                - generic [ref=e328]: Monthly
+              - cell "1.00" [ref=e329]
+              - cell "124" [ref=e330]
+              - cell "Active" [ref=e331]:
+                - generic [ref=e332]: Active
+              - cell [ref=e333]:
+                - generic [ref=e334]:
+                  - button "Edit" [ref=e335] [cursor=pointer]:
+                    - img [ref=e336]
+                  - button "Deactivate" [ref=e338] [cursor=pointer]:
+                    - img [ref=e339]
+                  - button "Permanent Delete" [ref=e340] [cursor=pointer]:
+                    - img [ref=e341]
+            - row "10 E2E Employee 350146 3520250146111 03451350146 Monthly 25000.00 124 Active" [ref=e345]:
+              - cell "10" [ref=e346]
+              - cell "E2E Employee 350146" [ref=e347]
+              - cell "3520250146111" [ref=e348]
+              - cell "03451350146" [ref=e349]
+              - cell "Monthly" [ref=e350]:
+                - generic [ref=e351]: Monthly
+              - cell "25000.00" [ref=e352]
+              - cell "124" [ref=e353]
+              - cell "Active" [ref=e354]:
+                - generic [ref=e355]: Active
+              - cell [ref=e356]:
+                - generic [ref=e357]:
+                  - button "Edit" [ref=e358] [cursor=pointer]:
+                    - img [ref=e359]
+                  - button "Deactivate" [ref=e361] [cursor=pointer]:
+                    - img [ref=e362]
+                  - button "Permanent Delete" [ref=e363] [cursor=pointer]:
+                    - img [ref=e364]
+        - generic [ref=e368]:
+          - generic [ref=e369]: Showing 1 to 10 of 11 entries
+          - generic [ref=e370]:
+            - button "Prev" [disabled] [ref=e371] [cursor=pointer]
+            - button "1" [ref=e372] [cursor=pointer]
+            - button "Next" [ref=e373] [cursor=pointer]
+    - dialog [ref=e374]:
+      - generic [ref=e375]:
+        - generic [ref=e376]:
+          - generic [ref=e377]:
+            - generic [ref=e378]: Add Employees
+            - generic [ref=e379]: Enter details and save.
+          - button [ref=e380] [cursor=pointer]:
+            - img [ref=e381]
+        - generic [ref=e383]:
+          - generic [ref=e384]:
+            - generic [ref=e385]:
+              - text: Name
+              - textbox "Name" [ref=e386]:
+                - /placeholder: Ali Raza
+                - text: Emp E2E1774722651075
+            - generic [ref=e387]:
+              - text: Name (Urdu)
+              - generic [ref=e389]:
+                - textbox "Name (Urdu) Auto Translate" [ref=e390]:
+                  - /placeholder: Name (Urdu)
+                - button "Auto Translate" [ref=e391] [cursor=pointer]
+            - generic [ref=e392]:
+              - text: CNIC
+              - textbox "CNIC" [ref=e393]:
+                - /placeholder: 35202-1234567-1
+                - text: "3520212341581"
+            - generic [ref=e394]:
+              - text: Phone Number
+              - textbox "Phone Number" [ref=e395]:
+                - /placeholder: 0300-0000000
+                - text: "03722651601"
+            - generic [ref=e396]:
+              - text: Designation / Role
+              - textbox "Designation / Role" [ref=e397]:
+                - /placeholder: Sales Officer
+                - text: Sales Officer
+            - generic [ref=e398]:
+              - text: Payroll Type
+              - generic [ref=e399]:
+                - textbox "Payroll Type Select" [ref=e400]:
+                  - /placeholder: Select
+                - generic:
+                  - img
+                - combobox [ref=e401]:
+                  - option "Select" [selected]
+                  - option "Monthly"
+                  - option "Daily"
+                  - option "Piece Rate"
+                  - option "Multiple"
+            - generic [ref=e402]:
+              - text: Basic Salary
+              - spinbutton "Basic Salary" [active] [ref=e403]: "25000"
+            - generic [ref=e404]:
+              - text: Branches
+              - generic [ref=e405]:
+                - button "Branches 124" [ref=e406] [cursor=pointer]:
+                  - generic [ref=e407]: Select
+                  - img [ref=e408]
+                - listbox [ref=e410]:
+                  - option "124" [ref=e411]
+                  - option "207" [ref=e412]
+          - generic [ref=e413]:
+            - button "Cancel" [ref=e414] [cursor=pointer]
+            - button "Save Changes" [ref=e415] [cursor=pointer]
+    - generic [ref=e416]: ERP System © 2026
+```

@@ -1076,7 +1076,41 @@ const createHrMasterRouter = (pageConfig) => {
       if (approval.queued) {
         return res.redirect(req.get("referer") || basePath);
       }
-      await knex(pageConfig.table).where({ id }).del();
+      const hasStatusField = hasField(pageConfig, "status") || Object.prototype.hasOwnProperty.call(existing || {}, "status");
+      const hasIsActiveField = hasField(pageConfig, "is_active") || Object.prototype.hasOwnProperty.call(existing || {}, "is_active");
+      const forceSoftDelete = pageConfig.softDeleteOnHardDelete === true;
+      const applySoftDelete = async () => {
+        if (hasStatusField) {
+          await knex(pageConfig.table).where({ id }).update({ status: "inactive" });
+          return true;
+        }
+        if (hasIsActiveField) {
+          await knex(pageConfig.table).where({ id }).update({ is_active: false });
+          return true;
+        }
+        return false;
+      };
+
+      if (forceSoftDelete) {
+        const softDeleted = await applySoftDelete();
+        if (!softDeleted) {
+          return renderIndexError(req, res, {}, res.locals.t("error_record_in_use"), "delete", basePath, flashCookie);
+        }
+      } else {
+        try {
+          await knex(pageConfig.table).where({ id }).del();
+        } catch (deleteErr) {
+          const code = String(deleteErr?.code || "");
+          if (code === "23503") {
+            const softDeleted = await applySoftDelete();
+            if (!softDeleted) {
+              return renderIndexError(req, res, {}, res.locals.t("error_record_in_use"), "delete", basePath, flashCookie);
+            }
+          } else {
+            throw deleteErr;
+          }
+        }
+      }
       queueAuditLog(req, {
         entityType: pageConfig.entityType,
         entityId: id,

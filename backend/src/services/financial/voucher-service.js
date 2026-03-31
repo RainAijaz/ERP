@@ -37,23 +37,45 @@ const toLineRef = (line = {}) => {
   ].filter(Boolean);
 
   if (refs.length !== 1) {
-    throw new HttpError(400, "Each line must reference exactly one entity (account/party/labour/employee)");
+    throw new HttpError(
+      400,
+      "Each line must reference exactly one entity (account/party/labour/employee)",
+    );
   }
 
   return refs[0];
 };
 
 const getAccountPostingClassMapTx = async ({ trx, req, accountIds = [] }) => {
-  const uniqueIds = [...new Set((accountIds || []).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
+  const uniqueIds = [
+    ...new Set(
+      (accountIds || [])
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    ),
+  ];
   if (!uniqueIds.length) return new Map();
   const rows = await trx("erp.accounts as a")
-    .leftJoin("erp.account_posting_classes as apc", "apc.id", "a.posting_class_id")
+    .leftJoin(
+      "erp.account_posting_classes as apc",
+      "apc.id",
+      "a.posting_class_id",
+    )
     .leftJoin("erp.account_groups as ag", "ag.id", "a.subgroup_id")
-    .select("a.id", "a.lock_posting", "apc.code as posting_class_code", "apc.is_active as posting_class_active", "ag.account_type")
+    .select(
+      "a.id",
+      "a.lock_posting",
+      "apc.code as posting_class_code",
+      "apc.is_active as posting_class_active",
+      "ag.account_type",
+    )
     .whereIn("a.id", uniqueIds)
     .where({ "a.is_active": true })
     .whereExists(function branchAccess() {
-      this.select(1).from("erp.account_branch as ab").whereRaw("ab.account_id = a.id").andWhere("ab.branch_id", req.branchId);
+      this.select(1)
+        .from("erp.account_branch as ab")
+        .whereRaw("ab.account_id = a.id")
+        .andWhere("ab.branch_id", req.branchId);
     });
   const map = new Map(
     rows.map((row) => [
@@ -69,11 +91,21 @@ const getAccountPostingClassMapTx = async ({ trx, req, accountIds = [] }) => {
   return map;
 };
 
-const validateLines = async ({ trx, req, voucherTypeCode, rawLines = [], headerAccountId = null }) => {
+const validateLines = async ({
+  trx,
+  req,
+  voucherTypeCode,
+  rawLines = [],
+  headerAccountId = null,
+}) => {
   const lines = Array.isArray(rawLines) ? rawLines : [];
   if (!lines.length) throw new HttpError(400, "Voucher lines are required");
   const normalizedHeaderAccountId = Number(headerAccountId || 0);
-  const lineRefs = lines.map((line, index) => ({ line, index, ref: toLineRef(line) }));
+  const lineRefs = lines.map((line, index) => ({
+    line,
+    index,
+    ref: toLineRef(line),
+  }));
   const accountPostingClassById = await getAccountPostingClassMapTx({
     trx,
     req,
@@ -84,31 +116,51 @@ const validateLines = async ({ trx, req, voucherTypeCode, rawLines = [], headerA
 
   const normalized = lineRefs.map(({ line, index, ref }) => {
     if (
-      (voucherTypeCode === VOUCHER_TYPES.cash || voucherTypeCode === VOUCHER_TYPES.bank) &&
+      (voucherTypeCode === VOUCHER_TYPES.cash ||
+        voucherTypeCode === VOUCHER_TYPES.bank) &&
       normalizedHeaderAccountId > 0 &&
       ref.line_kind === "ACCOUNT" &&
       Number(ref.account_id || 0) === normalizedHeaderAccountId
     ) {
-      throw new HttpError(400, `Line ${index + 1}: line account cannot be same as selected cash/bank account`);
+      throw new HttpError(
+        400,
+        `Line ${index + 1}: line account cannot be same as selected cash/bank account`,
+      );
     }
-    const description = normalizeText(line.description || line.narration || "", 500);
+    const description = normalizeText(
+      line.description || line.narration || "",
+      500,
+    );
     let departmentId = Number(line.department_id || line.dept_id || 0) || null;
     if (ref.line_kind !== "ACCOUNT") {
       departmentId = null;
     } else {
-      const accountMeta = accountPostingClassById.get(Number(ref.account_id || 0)) || null;
+      const accountMeta =
+        accountPostingClassById.get(Number(ref.account_id || 0)) || null;
       if (!accountMeta) {
-        throw new HttpError(400, `Line ${index + 1}: account is invalid for current branch`);
+        throw new HttpError(
+          400,
+          `Line ${index + 1}: account is invalid for current branch`,
+        );
       }
       if (accountMeta.lockPosting === true) {
-        throw new HttpError(400, `Line ${index + 1}: selected account is locked for manual posting`);
+        throw new HttpError(
+          400,
+          `Line ${index + 1}: selected account is locked for manual posting`,
+        );
       }
-      const postingClassCode = String(accountMeta.postingClassCode || "").toLowerCase();
+      const postingClassCode = String(
+        accountMeta.postingClassCode || "",
+      ).toLowerCase();
       if (postingClassCode && accountMeta.postingClassActive === false) {
-        throw new HttpError(400, `Line ${index + 1}: account posting class is invalid`);
+        throw new HttpError(
+          400,
+          `Line ${index + 1}: account posting class is invalid`,
+        );
       }
       const accountType = String(accountMeta.accountType || "").toLowerCase();
-      const departmentRequired = postingClassCode === "expense" || accountType === "expense";
+      const departmentRequired =
+        postingClassCode === "expense" || accountType === "expense";
       if (departmentRequired && !departmentId) {
         throw new HttpError(400, `Line ${index + 1}: department is required`);
       }
@@ -139,7 +191,10 @@ const validateLines = async ({ trx, req, voucherTypeCode, rawLines = [], headerA
     }
 
     if ((dr > 0 && cr > 0) || (dr <= 0 && cr <= 0)) {
-      throw new HttpError(400, `Line ${index + 1}: exactly one side must be non-zero`);
+      throw new HttpError(
+        400,
+        `Line ${index + 1}: exactly one side must be non-zero`,
+      );
     }
 
     const amount = normalizeNumber(Math.max(dr, cr));
@@ -147,8 +202,13 @@ const validateLines = async ({ trx, req, voucherTypeCode, rawLines = [], headerA
     const sourceVoucherNo = Number(line.source_voucher_no || 0);
     const sourceLineId = Number(line.source_line_id || 0);
     const sourceLineNo = Number(line.source_line_no || 0);
-    const sourceVoucherTypeCode = String(line.source_voucher_type_code || "").trim().toUpperCase();
-    const referenceNo = voucherTypeCode === VOUCHER_TYPES.bank ? normalizeText(line.reference_no || line.reference || "", 120) : null;
+    const sourceVoucherTypeCode = String(line.source_voucher_type_code || "")
+      .trim()
+      .toUpperCase();
+    const referenceNo =
+      voucherTypeCode === VOUCHER_TYPES.bank
+        ? normalizeText(line.reference_no || line.reference || "", 120)
+        : null;
 
     return {
       line_no: index + 1,
@@ -162,46 +222,93 @@ const validateLines = async ({ trx, req, voucherTypeCode, rawLines = [], headerA
         department_id: departmentId,
         debit: dr,
         credit: cr,
-        bank_status: voucherTypeCode === VOUCHER_TYPES.bank ? String(line.bank_status || "PENDING").toUpperCase() : undefined,
-        reference_no: voucherTypeCode === VOUCHER_TYPES.bank ? referenceNo || undefined : undefined,
+        bank_status:
+          voucherTypeCode === VOUCHER_TYPES.bank
+            ? String(line.bank_status || "PENDING").toUpperCase()
+            : undefined,
+        reference_no:
+          voucherTypeCode === VOUCHER_TYPES.bank
+            ? referenceNo || undefined
+            : undefined,
         direction_version:
-          voucherTypeCode === VOUCHER_TYPES.cash || voucherTypeCode === VOUCHER_TYPES.bank
+          voucherTypeCode === VOUCHER_TYPES.cash ||
+          voucherTypeCode === VOUCHER_TYPES.bank
             ? 2
             : undefined,
-        source_voucher_id: voucherTypeCode === VOUCHER_TYPES.bank && Number.isInteger(sourceVoucherId) && sourceVoucherId > 0 ? sourceVoucherId : undefined,
+        source_voucher_id:
+          voucherTypeCode === VOUCHER_TYPES.bank &&
+          Number.isInteger(sourceVoucherId) &&
+          sourceVoucherId > 0
+            ? sourceVoucherId
+            : undefined,
         source_voucher_type_code:
           voucherTypeCode === VOUCHER_TYPES.bank && sourceVoucherTypeCode
             ? sourceVoucherTypeCode
             : undefined,
         source_voucher_no:
-          voucherTypeCode === VOUCHER_TYPES.bank && Number.isInteger(sourceVoucherNo) && sourceVoucherNo > 0
+          voucherTypeCode === VOUCHER_TYPES.bank &&
+          Number.isInteger(sourceVoucherNo) &&
+          sourceVoucherNo > 0
             ? sourceVoucherNo
             : undefined,
         source_line_id:
-          voucherTypeCode === VOUCHER_TYPES.bank && Number.isInteger(sourceLineId) && sourceLineId > 0
+          voucherTypeCode === VOUCHER_TYPES.bank &&
+          Number.isInteger(sourceLineId) &&
+          sourceLineId > 0
             ? sourceLineId
             : undefined,
         source_line_no:
-          voucherTypeCode === VOUCHER_TYPES.bank && Number.isInteger(sourceLineNo) && sourceLineNo > 0
+          voucherTypeCode === VOUCHER_TYPES.bank &&
+          Number.isInteger(sourceLineNo) &&
+          sourceLineNo > 0
             ? sourceLineNo
             : undefined,
-        vr_type: voucherTypeCode === VOUCHER_TYPES.journal ? normalizeText(line.vr_type || "adjustment", 40) : undefined,
+        vr_type:
+          voucherTypeCode === VOUCHER_TYPES.journal
+            ? normalizeText(line.vr_type || "adjustment", 40)
+            : undefined,
       },
     };
   });
 
-  const totalDebit = normalizeNumber(normalized.reduce((sum, line) => sum + normalizeNumber(line.meta.debit || 0), 0));
-  const totalCredit = normalizeNumber(normalized.reduce((sum, line) => sum + normalizeNumber(line.meta.credit || 0), 0));
+  const totalDebit = normalizeNumber(
+    normalized.reduce(
+      (sum, line) => sum + normalizeNumber(line.meta.debit || 0),
+      0,
+    ),
+  );
+  const totalCredit = normalizeNumber(
+    normalized.reduce(
+      (sum, line) => sum + normalizeNumber(line.meta.credit || 0),
+      0,
+    ),
+  );
   if (totalDebit <= 0 && totalCredit <= 0) {
-    throw new HttpError(400, "Voucher must contain at least one non-zero debit or credit line");
+    throw new HttpError(
+      400,
+      "Voucher must contain at least one non-zero debit or credit line",
+    );
   }
   // Cash voucher must be single-direction only: either receipt or payment.
-  if (voucherTypeCode === VOUCHER_TYPES.cash && totalDebit > 0 && totalCredit > 0) {
-    throw new HttpError(400, "Cash voucher must be single-direction: use either receipt or payment");
+  if (
+    voucherTypeCode === VOUCHER_TYPES.cash &&
+    totalDebit > 0 &&
+    totalCredit > 0
+  ) {
+    throw new HttpError(
+      400,
+      "Cash voucher must be single-direction: use either receipt or payment",
+    );
   }
   // Strict balancing is required for Journal vouchers.
-  if (voucherTypeCode === VOUCHER_TYPES.journal && (totalDebit <= 0 || totalCredit <= 0 || totalDebit !== totalCredit)) {
-    throw new HttpError(400, "Voucher must be balanced (total debit must equal total credit)");
+  if (
+    voucherTypeCode === VOUCHER_TYPES.journal &&
+    (totalDebit <= 0 || totalCredit <= 0 || totalDebit !== totalCredit)
+  ) {
+    throw new HttpError(
+      400,
+      "Voucher must be balanced (total debit must equal total credit)",
+    );
   }
 
   return { lines: normalized, totalDebit, totalCredit };
@@ -218,10 +325,17 @@ const getNextVoucherNo = async (trx, branchId, voucherTypeCode) => {
 const requiresApproval = async (trx, voucherTypeCode) => {
   const policy = await trx("erp.approval_policy")
     .select("requires_approval")
-    .where({ entity_type: "VOUCHER_TYPE", entity_key: voucherTypeCode, action: "create" })
+    .where({
+      entity_type: "VOUCHER_TYPE",
+      entity_key: voucherTypeCode,
+      action: "create",
+    })
     .first();
   if (policy) return policy.requires_approval === true;
-  const voucherType = await trx("erp.voucher_type").select("requires_approval").where({ code: voucherTypeCode }).first();
+  const voucherType = await trx("erp.voucher_type")
+    .select("requires_approval")
+    .where({ code: voucherTypeCode })
+    .first();
   if (!voucherType) throw new HttpError(400, "Invalid voucher type");
   return voucherType.requires_approval === true;
 };
@@ -246,7 +360,8 @@ const canApproveVoucherAction = (req, scopeKey) =>
   req?.user?.isAdmin === true || canDo(req, "VOUCHER", scopeKey, "approve");
 
 const isAutoSettlementSourceVoucher = (voucherTypeCode) =>
-  voucherTypeCode === VOUCHER_TYPES.cash || voucherTypeCode === VOUCHER_TYPES.journal;
+  voucherTypeCode === VOUCHER_TYPES.cash ||
+  voucherTypeCode === VOUCHER_TYPES.journal;
 
 const toIsoDate = (value) => {
   return toLocalDateOnlyOrRaw(value);
@@ -261,7 +376,13 @@ const toTitleCase = (value) =>
     .join(" ");
 
 const getBankSettlementEligibleAccountSetTx = async (trx, accountIds = []) => {
-  const unique = [...new Set((accountIds || []).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
+  const unique = [
+    ...new Set(
+      (accountIds || [])
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    ),
+  ];
   if (!unique.length) return new Set();
   const rows = await trx("erp.accounts as a")
     .join("erp.account_posting_classes as apc", "apc.id", "a.posting_class_id")
@@ -289,14 +410,17 @@ const cleanupEmptyAutoBankVouchersTx = async ({ trx, branchId }) => {
     .groupBy("vh.id")
     .havingRaw("count(vl.id) = 0");
 
-  const ids = rows.map((row) => Number(row.id)).filter((id) => Number.isInteger(id) && id > 0);
+  const ids = rows
+    .map((row) => Number(row.id))
+    .filter((id) => Number.isInteger(id) && id > 0);
   if (!ids.length) return;
   await trx("erp.voucher_header").whereIn("id", ids).del();
 };
 
 const markBankVoucherLinesRejectedTx = async ({ trx, voucherId }) => {
   const normalizedVoucherId = Number(voucherId || 0);
-  if (!Number.isInteger(normalizedVoucherId) || normalizedVoucherId <= 0) return;
+  if (!Number.isInteger(normalizedVoucherId) || normalizedVoucherId <= 0)
+    return;
   await trx("erp.voucher_line")
     .where({ voucher_header_id: normalizedVoucherId })
     .update({
@@ -319,25 +443,56 @@ const findOrCreateAutoBankVoucherTx = async ({
 }) => {
   const normalizedSourceVoucherId = Number(sourceVoucherId || 0);
   const normalizedBankAccountId = Number(bankAccountId || 0);
-  if (!Number.isInteger(normalizedSourceVoucherId) || normalizedSourceVoucherId <= 0) {
-    throw new HttpError(400, "Auto bank settlement requires source voucher context");
+  if (
+    !Number.isInteger(normalizedSourceVoucherId) ||
+    normalizedSourceVoucherId <= 0
+  ) {
+    throw new HttpError(
+      400,
+      "Auto bank settlement requires source voucher context",
+    );
   }
-  if (!Number.isInteger(normalizedBankAccountId) || normalizedBankAccountId <= 0) {
-    throw new HttpError(400, "Auto bank settlement requires a bank account in header");
+  if (
+    !Number.isInteger(normalizedBankAccountId) ||
+    normalizedBankAccountId <= 0
+  ) {
+    throw new HttpError(
+      400,
+      "Auto bank settlement requires a bank account in header",
+    );
   }
 
   let existing = await trx("erp.voucher_header")
-    .leftJoin("erp.voucher_line as vl", "vl.voucher_header_id", "erp.voucher_header.id")
-    .select("erp.voucher_header.id", "erp.voucher_header.voucher_no", "erp.voucher_header.remarks", "erp.voucher_header.status")
+    .leftJoin(
+      "erp.voucher_line as vl",
+      "vl.voucher_header_id",
+      "erp.voucher_header.id",
+    )
+    .select(
+      "erp.voucher_header.id",
+      "erp.voucher_header.voucher_no",
+      "erp.voucher_header.remarks",
+      "erp.voucher_header.status",
+    )
     .where({
       "erp.voucher_header.branch_id": branchId,
       "erp.voucher_header.voucher_type_code": VOUCHER_TYPES.bank,
       "erp.voucher_header.header_account_id": normalizedBankAccountId,
     })
-    .whereRaw("erp.voucher_header.remarks like ?", [`${AUTO_BANK_SETTLEMENT_PREFIX}%`])
-    .andWhereRaw("COALESCE(NULLIF(vl.meta->>'source_voucher_id', ''), '0')::int = ?", [normalizedSourceVoucherId])
+    .whereRaw("erp.voucher_header.remarks like ?", [
+      `${AUTO_BANK_SETTLEMENT_PREFIX}%`,
+    ])
+    .andWhereRaw(
+      "COALESCE(NULLIF(vl.meta->>'source_voucher_id', ''), '0')::int = ?",
+      [normalizedSourceVoucherId],
+    )
     .whereNot({ "erp.voucher_header.status": "REJECTED" })
-    .groupBy("erp.voucher_header.id", "erp.voucher_header.voucher_no", "erp.voucher_header.remarks", "erp.voucher_header.status")
+    .groupBy(
+      "erp.voucher_header.id",
+      "erp.voucher_header.voucher_no",
+      "erp.voucher_header.remarks",
+      "erp.voucher_header.status",
+    )
     .orderBy("erp.voucher_header.id", "asc")
     .first();
 
@@ -362,7 +517,10 @@ const findOrCreateAutoBankVoucherTx = async ({
   return created;
 };
 
-const removeAutoBankLinesForSourceVoucherTx = async ({ trx, sourceVoucherId }) => {
+const removeAutoBankLinesForSourceVoucherTx = async ({
+  trx,
+  sourceVoucherId,
+}) => {
   const normalizedId = Number(sourceVoucherId || 0);
   if (!Number.isInteger(normalizedId) || normalizedId <= 0) return;
 
@@ -374,11 +532,17 @@ const removeAutoBankLinesForSourceVoucherTx = async ({ trx, sourceVoucherId }) =
 
   await trx("erp.voucher_line")
     .whereIn("voucher_header_id", autoBankIds)
-    .andWhereRaw("COALESCE(NULLIF(meta->>'source_voucher_id', ''), '0')::int = ?", [normalizedId])
+    .andWhereRaw(
+      "COALESCE(NULLIF(meta->>'source_voucher_id', ''), '0')::int = ?",
+      [normalizedId],
+    )
     .del();
 };
 
-const hasApprovedBankSettlementForSourceVoucherTx = async ({ trx, sourceVoucherId }) => {
+const hasApprovedBankSettlementForSourceVoucherTx = async ({
+  trx,
+  sourceVoucherId,
+}) => {
   const normalizedId = Number(sourceVoucherId || 0);
   if (!Number.isInteger(normalizedId) || normalizedId <= 0) return false;
 
@@ -386,21 +550,40 @@ const hasApprovedBankSettlementForSourceVoucherTx = async ({ trx, sourceVoucherI
     .join("erp.voucher_header as bh", "bh.id", "bl.voucher_header_id")
     .select("bh.id")
     .where("bh.voucher_type_code", VOUCHER_TYPES.bank)
-    .andWhereRaw("COALESCE(NULLIF(bl.meta->>'source_voucher_id', ''), '0')::int = ?", [normalizedId])
+    .andWhereRaw(
+      "COALESCE(NULLIF(bl.meta->>'source_voucher_id', ''), '0')::int = ?",
+      [normalizedId],
+    )
     .andWhere(function whereApprovedBank() {
-      this.where("bh.status", "APPROVED").orWhereRaw("upper(COALESCE(bl.meta->>'bank_status', 'PENDING')) = 'APPROVED'");
+      this.where("bh.status", "APPROVED").orWhereRaw(
+        "upper(COALESCE(bl.meta->>'bank_status', 'PENDING')) = 'APPROVED'",
+      );
     })
     .first();
 
   return Boolean(row?.id);
 };
 
-const syncAutoBankSettlementForVoucherTx = async ({ trx, voucherId, actorUserId = null }) => {
+const syncAutoBankSettlementForVoucherTx = async ({
+  trx,
+  voucherId,
+  actorUserId = null,
+}) => {
   const normalizedVoucherId = Number(voucherId || 0);
-  if (!Number.isInteger(normalizedVoucherId) || normalizedVoucherId <= 0) return;
+  if (!Number.isInteger(normalizedVoucherId) || normalizedVoucherId <= 0)
+    return;
 
   const sourceHeader = await trx("erp.voucher_header")
-    .select("id", "branch_id", "voucher_type_code", "voucher_no", "voucher_date", "status", "created_by", "header_account_id")
+    .select(
+      "id",
+      "branch_id",
+      "voucher_type_code",
+      "voucher_no",
+      "voucher_date",
+      "status",
+      "created_by",
+      "header_account_id",
+    )
     .where({ id: normalizedVoucherId })
     .first();
   if (!sourceHeader) return;
@@ -408,26 +591,55 @@ const syncAutoBankSettlementForVoucherTx = async ({ trx, voucherId, actorUserId 
   const sourceType = String(sourceHeader.voucher_type_code || "").toUpperCase();
   if (!isAutoSettlementSourceVoucher(sourceType)) return;
 
-  await removeAutoBankLinesForSourceVoucherTx({ trx, sourceVoucherId: normalizedVoucherId });
+  await removeAutoBankLinesForSourceVoucherTx({
+    trx,
+    sourceVoucherId: normalizedVoucherId,
+  });
 
   if (String(sourceHeader.status || "").toUpperCase() !== "APPROVED") {
-    await cleanupEmptyAutoBankVouchersTx({ trx, branchId: sourceHeader.branch_id });
+    await cleanupEmptyAutoBankVouchersTx({
+      trx,
+      branchId: sourceHeader.branch_id,
+    });
     return;
   }
 
   const sourceLines = await trx("erp.voucher_line")
-    .select("id", "line_no", "line_kind", "account_id", "party_id", "labour_id", "employee_id", "qty", "rate", "amount", "reference_no", "meta")
+    .select(
+      "id",
+      "line_no",
+      "line_kind",
+      "account_id",
+      "party_id",
+      "labour_id",
+      "employee_id",
+      "qty",
+      "rate",
+      "amount",
+      "reference_no",
+      "meta",
+    )
     .where({ voucher_header_id: normalizedVoucherId })
     .orderBy("line_no", "asc");
 
-  const accountIds = sourceLines.map((line) => Number(line.account_id || 0)).filter((id) => Number.isInteger(id) && id > 0);
-  const enabledAccountSet = await getBankSettlementEligibleAccountSetTx(trx, accountIds);
+  const accountIds = sourceLines
+    .map((line) => Number(line.account_id || 0))
+    .filter((id) => Number.isInteger(id) && id > 0);
+  const enabledAccountSet = await getBankSettlementEligibleAccountSetTx(
+    trx,
+    accountIds,
+  );
   const eligibleLines = sourceLines.filter(
-    (line) => String(line.line_kind || "").toUpperCase() === "ACCOUNT" && enabledAccountSet.has(Number(line.account_id || 0)),
+    (line) =>
+      String(line.line_kind || "").toUpperCase() === "ACCOUNT" &&
+      enabledAccountSet.has(Number(line.account_id || 0)),
   );
 
   if (!eligibleLines.length) {
-    await cleanupEmptyAutoBankVouchersTx({ trx, branchId: sourceHeader.branch_id });
+    await cleanupEmptyAutoBankVouchersTx({
+      trx,
+      branchId: sourceHeader.branch_id,
+    });
     return;
   }
 
@@ -456,7 +668,9 @@ const syncAutoBankSettlementForVoucherTx = async ({ trx, voucherId, actorUserId 
     });
 
     const candidateLines = canUseContraRows
-      ? sourceLines.filter((line) => !enabledAccountSet.has(Number(line.account_id || 0)))
+      ? sourceLines.filter(
+          (line) => !enabledAccountSet.has(Number(line.account_id || 0)),
+        )
       : bankLines;
     const finalLines = candidateLines.length ? candidateLines : bankLines;
     const useCashHeaderContraFallback =
@@ -466,28 +680,44 @@ const syncAutoBankSettlementForVoucherTx = async ({ trx, voucherId, actorUserId 
       Number.isInteger(Number(sourceHeader.header_account_id || 0)) &&
       Number(sourceHeader.header_account_id || 0) > 0;
 
-    const maxLine = await trx("erp.voucher_line").where({ voucher_header_id: autoHeader.id }).max({ value: "line_no" }).first();
+    const maxLine = await trx("erp.voucher_line")
+      .where({ voucher_header_id: autoHeader.id })
+      .max({ value: "line_no" })
+      .first();
     let nextLineNo = Number(maxLine?.value || 0);
     const rowsToInsert = finalLines.map((line) => {
       nextLineNo += 1;
-      const sourceMeta = line.meta && typeof line.meta === "object" ? { ...line.meta } : {};
-      const sourceReferenceNo = normalizeText(line.reference_no || sourceMeta.reference_no || "", 120);
+      const sourceMeta =
+        line.meta && typeof line.meta === "object" ? { ...line.meta } : {};
+      const sourceReferenceNo = normalizeText(
+        line.reference_no || sourceMeta.reference_no || "",
+        120,
+      );
       sourceMeta.auto_generated = true;
       sourceMeta.auto_source = "AUTO_BANK_SETTLEMENT";
       sourceMeta.source_voucher_id = normalizedVoucherId;
       sourceMeta.source_voucher_type_code = sourceType;
-      sourceMeta.source_voucher_no = Number(sourceHeader.voucher_no || 0) || null;
+      sourceMeta.source_voucher_no =
+        Number(sourceHeader.voucher_no || 0) || null;
       sourceMeta.source_line_id = Number(line.id || 0) || null;
       sourceMeta.source_line_no = Number(line.line_no || 0) || null;
       sourceMeta.bank_status = "PENDING";
 
-      const resolvedLineKind = useCashHeaderContraFallback ? "ACCOUNT" : (String(line.line_kind || "").toUpperCase() || "ACCOUNT");
+      const resolvedLineKind = useCashHeaderContraFallback
+        ? "ACCOUNT"
+        : String(line.line_kind || "").toUpperCase() || "ACCOUNT";
       const resolvedAccountId = useCashHeaderContraFallback
         ? Number(sourceHeader.header_account_id || 0)
-        : (Number(line.account_id || 0) || null);
-      const resolvedPartyId = useCashHeaderContraFallback ? null : (Number(line.party_id || 0) || null);
-      const resolvedLabourId = useCashHeaderContraFallback ? null : (Number(line.labour_id || 0) || null);
-      const resolvedEmployeeId = useCashHeaderContraFallback ? null : (Number(line.employee_id || 0) || null);
+        : Number(line.account_id || 0) || null;
+      const resolvedPartyId = useCashHeaderContraFallback
+        ? null
+        : Number(line.party_id || 0) || null;
+      const resolvedLabourId = useCashHeaderContraFallback
+        ? null
+        : Number(line.labour_id || 0) || null;
+      const resolvedEmployeeId = useCashHeaderContraFallback
+        ? null
+        : Number(line.employee_id || 0) || null;
 
       return {
         voucher_header_id: autoHeader.id,
@@ -510,20 +740,29 @@ const syncAutoBankSettlementForVoucherTx = async ({ trx, voucherId, actorUserId 
 
     if (rowsToInsert.length) {
       await trx("erp.voucher_line").insert(rowsToInsert);
-      await trx("erp.voucher_header")
-        .where({ id: autoHeader.id })
-        .update({
-          status: "PENDING",
-          approved_by: null,
-          approved_at: null,
-        });
+      await trx("erp.voucher_header").where({ id: autoHeader.id }).update({
+        status: "PENDING",
+        approved_by: null,
+        approved_at: null,
+      });
     }
   }
 
-  await cleanupEmptyAutoBankVouchersTx({ trx, branchId: sourceHeader.branch_id });
+  await cleanupEmptyAutoBankVouchersTx({
+    trx,
+    branchId: sourceHeader.branch_id,
+  });
 };
 
-const createApprovalRequest = async ({ trx, req, voucherId, voucherTypeCode, summary, oldValue = null, newValue = null }) => {
+const createApprovalRequest = async ({
+  trx,
+  req,
+  voucherId,
+  voucherTypeCode,
+  summary,
+  oldValue = null,
+  newValue = null,
+}) => {
   const [row] = await trx("erp.approval_request")
     .insert({
       branch_id: req.branchId,
@@ -556,65 +795,121 @@ const createApprovalRequest = async ({ trx, req, voucherId, voucherTypeCode, sum
   return row?.id || null;
 };
 
-const ensureHeaderAccount = async ({ trx, req, voucherTypeCode, headerAccountId }) => {
+const ensureHeaderAccount = async ({
+  trx,
+  req,
+  voucherTypeCode,
+  headerAccountId,
+}) => {
   const normalizedHeaderAccountId = Number(headerAccountId || 0);
-  if (voucherTypeCode !== VOUCHER_TYPES.cash && voucherTypeCode !== VOUCHER_TYPES.bank) {
+  if (
+    voucherTypeCode !== VOUCHER_TYPES.cash &&
+    voucherTypeCode !== VOUCHER_TYPES.bank
+  ) {
     return null;
   }
 
   // Cash voucher requires a selected cash account in header.
-  if (voucherTypeCode === VOUCHER_TYPES.cash && (!Number.isInteger(normalizedHeaderAccountId) || normalizedHeaderAccountId <= 0)) {
+  if (
+    voucherTypeCode === VOUCHER_TYPES.cash &&
+    (!Number.isInteger(normalizedHeaderAccountId) ||
+      normalizedHeaderAccountId <= 0)
+  ) {
     throw new HttpError(400, "Cash/Bank account is required");
   }
 
   // Bank voucher header account is optional in source-driven settlement flow.
-  if (voucherTypeCode === VOUCHER_TYPES.bank && (!Number.isInteger(normalizedHeaderAccountId) || normalizedHeaderAccountId <= 0)) {
+  if (
+    voucherTypeCode === VOUCHER_TYPES.bank &&
+    (!Number.isInteger(normalizedHeaderAccountId) ||
+      normalizedHeaderAccountId <= 0)
+  ) {
     return null;
   }
 
   let query = trx("erp.accounts as a")
-    .leftJoin("erp.account_posting_classes as apc", "apc.id", "a.posting_class_id")
+    .leftJoin(
+      "erp.account_posting_classes as apc",
+      "apc.id",
+      "a.posting_class_id",
+    )
     .select("a.id", "a.lock_posting", "apc.code as posting_class_code")
     .where({ "a.id": normalizedHeaderAccountId, "a.is_active": true });
   query = query.whereExists(function branchAccess() {
-    this.select(1).from("erp.account_branch as ab").whereRaw("ab.account_id = a.id").andWhere("ab.branch_id", req.branchId);
+    this.select(1)
+      .from("erp.account_branch as ab")
+      .whereRaw("ab.account_id = a.id")
+      .andWhere("ab.branch_id", req.branchId);
   });
   const account = await query.first();
   if (!account) {
-    throw new HttpError(400, "Selected cash/bank account is invalid for current branch");
+    throw new HttpError(
+      400,
+      "Selected cash/bank account is invalid for current branch",
+    );
   }
   if (account.lock_posting === true) {
-    throw new HttpError(400, "Selected cash/bank account is locked for manual posting");
+    throw new HttpError(
+      400,
+      "Selected cash/bank account is locked for manual posting",
+    );
   }
   if (voucherTypeCode === VOUCHER_TYPES.cash) {
-    const postingClassCode = String(account.posting_class_code || "").toLowerCase();
+    const postingClassCode = String(
+      account.posting_class_code || "",
+    ).toLowerCase();
     if (postingClassCode !== "cash") {
-      throw new HttpError(400, "Selected cash account must have CASH posting class");
+      throw new HttpError(
+        400,
+        "Selected cash account must have CASH posting class",
+      );
     }
   }
-  if (voucherTypeCode === VOUCHER_TYPES.bank && String(account.posting_class_code || "").toLowerCase() !== "bank") {
-    throw new HttpError(400, "Selected bank account must have BANK posting class");
+  if (
+    voucherTypeCode === VOUCHER_TYPES.bank &&
+    String(account.posting_class_code || "").toLowerCase() !== "bank"
+  ) {
+    throw new HttpError(
+      400,
+      "Selected bank account must have BANK posting class",
+    );
   }
   return normalizedHeaderAccountId;
 };
 
-const enforceCashVoucherContraRule = async ({ trx, req, voucherTypeCode, lines = [] }) => {
+const enforceCashVoucherContraRule = async ({
+  trx,
+  req,
+  voucherTypeCode,
+  lines = [],
+}) => {
   if (voucherTypeCode !== VOUCHER_TYPES.cash) return;
-  const accountIds = [...new Set(
-    (lines || [])
-      .filter((line) => String(line.line_kind || "").toUpperCase() === "ACCOUNT")
-      .map((line) => Number(line.account_id || 0))
-      .filter((id) => Number.isInteger(id) && id > 0),
-  )];
+  const accountIds = [
+    ...new Set(
+      (lines || [])
+        .filter(
+          (line) => String(line.line_kind || "").toUpperCase() === "ACCOUNT",
+        )
+        .map((line) => Number(line.account_id || 0))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    ),
+  ];
   if (!accountIds.length) return;
 
   const cashRows = await trx("erp.accounts as a")
-    .leftJoin("erp.account_posting_classes as apc", "apc.id", "a.posting_class_id")
+    .leftJoin(
+      "erp.account_posting_classes as apc",
+      "apc.id",
+      "a.posting_class_id",
+    )
     .select("a.id")
     .whereIn("a.id", accountIds)
     .where({ "a.is_active": true })
     .whereExists(function branchAccess() {
-      this.select(1).from("erp.account_branch as ab").whereRaw("ab.account_id = a.id").andWhere("ab.branch_id", req.branchId);
+      this.select(1)
+        .from("erp.account_branch as ab")
+        .whereRaw("ab.account_id = a.id")
+        .andWhere("ab.branch_id", req.branchId);
     })
     .whereRaw("upper(COALESCE(apc.code, '')) = 'CASH'");
 
@@ -622,7 +917,9 @@ const enforceCashVoucherContraRule = async ({ trx, req, voucherTypeCode, lines =
   if (!cashAccountIdSet.size) return;
 
   const violatingLine = (lines || []).find(
-    (line) => String(line.line_kind || "").toUpperCase() === "ACCOUNT" && cashAccountIdSet.has(Number(line.account_id || 0)),
+    (line) =>
+      String(line.line_kind || "").toUpperCase() === "ACCOUNT" &&
+      cashAccountIdSet.has(Number(line.account_id || 0)),
   );
   const violatingLineNo = Number(violatingLine?.line_no || 0) || 0;
   throw new HttpError(
@@ -633,7 +930,15 @@ const enforceCashVoucherContraRule = async ({ trx, req, voucherTypeCode, lines =
   );
 };
 
-const createVoucher = async ({ req, voucherTypeCode, voucherDate, remarks, lines, scopeKey, headerAccountId = null }) => {
+const createVoucher = async ({
+  req,
+  voucherTypeCode,
+  voucherDate,
+  remarks,
+  lines,
+  scopeKey,
+  headerAccountId = null,
+}) => {
   if (!req?.user?.id) throw new HttpError(401, "Not authenticated");
   if (!req.branchId) throw new HttpError(400, "Branch context is required");
 
@@ -641,12 +946,37 @@ const createVoucher = async ({ req, voucherTypeCode, voucherDate, remarks, lines
   const canApprove = canApproveVoucherAction(req, scopeKey);
 
   const result = await knex.transaction(async (trx) => {
-    const validated = await validateLines({ trx, req, voucherTypeCode, rawLines: lines, headerAccountId });
-    const validHeaderAccountId = await ensureHeaderAccount({ trx, req, voucherTypeCode, headerAccountId });
-    await enforceCashVoucherContraRule({ trx, req, voucherTypeCode, lines: validated.lines });
-    const voucherNo = await getNextVoucherNo(trx, req.branchId, voucherTypeCode);
-    const policyRequiresApproval = await requiresApprovalForAction(trx, voucherTypeCode, "create");
-    const queuedForApproval = !canCreate || (policyRequiresApproval && !canApprove);
+    const validated = await validateLines({
+      trx,
+      req,
+      voucherTypeCode,
+      rawLines: lines,
+      headerAccountId,
+    });
+    const validHeaderAccountId = await ensureHeaderAccount({
+      trx,
+      req,
+      voucherTypeCode,
+      headerAccountId,
+    });
+    await enforceCashVoucherContraRule({
+      trx,
+      req,
+      voucherTypeCode,
+      lines: validated.lines,
+    });
+    const voucherNo = await getNextVoucherNo(
+      trx,
+      req.branchId,
+      voucherTypeCode,
+    );
+    const policyRequiresApproval = await requiresApprovalForAction(
+      trx,
+      voucherTypeCode,
+      "create",
+    );
+    const queuedForApproval =
+      !canCreate || (policyRequiresApproval && !canApprove);
 
     const [header] = await trx("erp.voucher_header")
       .insert({
@@ -684,7 +1014,11 @@ const createVoucher = async ({ req, voucherTypeCode, voucherDate, remarks, lines
     await trx("erp.voucher_line").insert(lineRows);
 
     if (!queuedForApproval && isAutoSettlementSourceVoucher(voucherTypeCode)) {
-      await syncAutoBankSettlementForVoucherTx({ trx, voucherId: header.id, actorUserId: req.user.id });
+      await syncAutoBankSettlementForVoucherTx({
+        trx,
+        voucherId: header.id,
+        actorUserId: req.user.id,
+      });
     }
     if (!queuedForApproval) {
       await syncVoucherGlPostingTx({ trx, voucherId: header.id });
@@ -741,7 +1075,16 @@ const createVoucher = async ({ req, voucherTypeCode, voucherDate, remarks, lines
   return result;
 };
 
-const updateVoucher = async ({ req, voucherId, voucherTypeCode, voucherDate, remarks, lines, scopeKey, headerAccountId = null }) => {
+const updateVoucher = async ({
+  req,
+  voucherId,
+  voucherTypeCode,
+  voucherDate,
+  remarks,
+  lines,
+  scopeKey,
+  headerAccountId = null,
+}) => {
   if (!req?.user?.id) throw new HttpError(401, "Not authenticated");
   if (!req.branchId) throw new HttpError(400, "Branch context is required");
 
@@ -754,23 +1097,66 @@ const updateVoucher = async ({ req, voucherId, voucherTypeCode, voucherDate, rem
   const canApprove = canApproveVoucherAction(req, scopeKey);
 
   const result = await knex.transaction(async (trx) => {
-    const validated = await validateLines({ trx, req, voucherTypeCode, rawLines: lines, headerAccountId });
-    const validHeaderAccountId = await ensureHeaderAccount({ trx, req, voucherTypeCode, headerAccountId });
-    await enforceCashVoucherContraRule({ trx, req, voucherTypeCode, lines: validated.lines });
+    const validated = await validateLines({
+      trx,
+      req,
+      voucherTypeCode,
+      rawLines: lines,
+      headerAccountId,
+    });
+    const validHeaderAccountId = await ensureHeaderAccount({
+      trx,
+      req,
+      voucherTypeCode,
+      headerAccountId,
+    });
+    await enforceCashVoucherContraRule({
+      trx,
+      req,
+      voucherTypeCode,
+      lines: validated.lines,
+    });
     let headerQuery = trx("erp.voucher_header")
-      .select("id", "branch_id", "voucher_no", "voucher_type_code", "voucher_date", "remarks", "status")
-      .where({ id: normalizedVoucherId, voucher_type_code: voucherTypeCode, branch_id: req.branchId });
+      .select(
+        "id",
+        "branch_id",
+        "voucher_no",
+        "voucher_type_code",
+        "voucher_date",
+        "remarks",
+        "status",
+      )
+      .where({
+        id: normalizedVoucherId,
+        voucher_type_code: voucherTypeCode,
+        branch_id: req.branchId,
+      });
     const existing = await headerQuery.first();
     if (!existing) throw new HttpError(404, "Voucher not found");
-    if (existing.status === "REJECTED") throw new HttpError(400, "Deleted voucher cannot be edited");
+    if (existing.status === "REJECTED")
+      throw new HttpError(400, "Deleted voucher cannot be edited");
 
     const existingLines = await trx("erp.voucher_line")
-      .select("line_no", "line_kind", "account_id", "party_id", "labour_id", "employee_id", "reference_no", "meta")
+      .select(
+        "line_no",
+        "line_kind",
+        "account_id",
+        "party_id",
+        "labour_id",
+        "employee_id",
+        "reference_no",
+        "meta",
+      )
       .where({ voucher_header_id: existing.id })
       .orderBy("line_no", "asc");
 
-    const policyRequiresApproval = await requiresApprovalForAction(trx, voucherTypeCode, "edit");
-    const queuedForApproval = !canEdit || (policyRequiresApproval && !canApprove);
+    const policyRequiresApproval = await requiresApprovalForAction(
+      trx,
+      voucherTypeCode,
+      "edit",
+    );
+    const queuedForApproval =
+      !canEdit || (policyRequiresApproval && !canApprove);
 
     const updatePayload = {
       action: "update",
@@ -826,7 +1212,9 @@ const updateVoucher = async ({ req, voucherId, voucherTypeCode, voucherDate, rem
         approved_at: trx.fn.now(),
       });
 
-    await trx("erp.voucher_line").where({ voucher_header_id: existing.id }).del();
+    await trx("erp.voucher_line")
+      .where({ voucher_header_id: existing.id })
+      .del();
     const lineRows = validated.lines.map((line) => ({
       voucher_header_id: existing.id,
       line_no: line.line_no,
@@ -847,7 +1235,11 @@ const updateVoucher = async ({ req, voucherId, voucherTypeCode, voucherDate, rem
     await trx("erp.voucher_line").insert(lineRows);
 
     if (isAutoSettlementSourceVoucher(voucherTypeCode)) {
-      await syncAutoBankSettlementForVoucherTx({ trx, voucherId: existing.id, actorUserId: req.user.id });
+      await syncAutoBankSettlementForVoucherTx({
+        trx,
+        voucherId: existing.id,
+        actorUserId: req.user.id,
+      });
     }
     await syncVoucherGlPostingTx({ trx, voucherId: existing.id });
 
@@ -891,22 +1283,36 @@ const deleteVoucher = async ({ req, voucherId, voucherTypeCode, scopeKey }) => {
     throw new HttpError(400, "Invalid voucher id");
   }
 
-  const canDelete = canDo(req, "VOUCHER", scopeKey, "delete");
+  const canDelete = canDo(req, "VOUCHER", scopeKey, "hard_delete");
   const canApprove = canApproveVoucherAction(req, scopeKey);
 
   const result = await knex.transaction(async (trx) => {
     let headerQuery = trx("erp.voucher_header")
-      .select("id", "branch_id", "voucher_no", "voucher_type_code", "voucher_date", "remarks", "status")
-      .where({ id: normalizedVoucherId, voucher_type_code: voucherTypeCode, branch_id: req.branchId });
+      .select(
+        "id",
+        "branch_id",
+        "voucher_no",
+        "voucher_type_code",
+        "voucher_date",
+        "remarks",
+        "status",
+      )
+      .where({
+        id: normalizedVoucherId,
+        voucher_type_code: voucherTypeCode,
+        branch_id: req.branchId,
+      });
     const existing = await headerQuery.first();
     if (!existing) throw new HttpError(404, "Voucher not found");
-    if (existing.status === "REJECTED") throw new HttpError(400, "Voucher already deleted");
+    if (existing.status === "REJECTED")
+      throw new HttpError(400, "Voucher already deleted");
 
     if (isAutoSettlementSourceVoucher(voucherTypeCode)) {
-      const linkedApprovedBank = await hasApprovedBankSettlementForSourceVoucherTx({
-        trx,
-        sourceVoucherId: existing.id,
-      });
+      const linkedApprovedBank =
+        await hasApprovedBankSettlementForSourceVoucherTx({
+          trx,
+          sourceVoucherId: existing.id,
+        });
       if (linkedApprovedBank) {
         throw new HttpError(
           400,
@@ -916,8 +1322,13 @@ const deleteVoucher = async ({ req, voucherId, voucherTypeCode, scopeKey }) => {
       }
     }
 
-    const policyRequiresApproval = await requiresApprovalForAction(trx, voucherTypeCode, "delete");
-    const queuedForApproval = !canDelete || (policyRequiresApproval && !canApprove);
+    const policyRequiresApproval = await requiresApprovalForAction(
+      trx,
+      voucherTypeCode,
+      "delete",
+    );
+    const queuedForApproval =
+      !canDelete || (policyRequiresApproval && !canApprove);
 
     if (queuedForApproval) {
       const approvalRequestId = await createApprovalRequest({
@@ -951,20 +1362,22 @@ const deleteVoucher = async ({ req, voucherId, voucherTypeCode, scopeKey }) => {
       };
     }
 
-    await trx("erp.voucher_header")
-      .where({ id: existing.id })
-      .update({
-        status: "REJECTED",
-        approved_by: req.user.id,
-        approved_at: trx.fn.now(),
-      });
+    await trx("erp.voucher_header").where({ id: existing.id }).update({
+      status: "REJECTED",
+      approved_by: req.user.id,
+      approved_at: trx.fn.now(),
+    });
     if (voucherTypeCode === VOUCHER_TYPES.bank) {
       await markBankVoucherLinesRejectedTx({ trx, voucherId: existing.id });
     }
     await syncVoucherGlPostingTx({ trx, voucherId: existing.id });
 
     if (isAutoSettlementSourceVoucher(voucherTypeCode)) {
-      await syncAutoBankSettlementForVoucherTx({ trx, voucherId: existing.id, actorUserId: req.user.id });
+      await syncAutoBankSettlementForVoucherTx({
+        trx,
+        voucherId: existing.id,
+        actorUserId: req.user.id,
+      });
     }
 
     return {

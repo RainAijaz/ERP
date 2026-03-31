@@ -1,10 +1,16 @@
 const express = require("express");
 const knex = require("../../db/knex");
-const { requirePermission } = require("../../middleware/access/role-permissions");
+const {
+  requirePermission,
+} = require("../../middleware/access/role-permissions");
 const { setCookie } = require("../../middleware/utils/cookies");
 const { UI_NOTICE_COOKIE } = require("../../middleware/core/ui-notice");
 const { toLocalDateOnly } = require("../../utils/date-only");
-const { createVoucher, updateVoucher, deleteVoucher } = require("../../services/financial/voucher-service");
+const {
+  createVoucher,
+  updateVoucher,
+  deleteVoucher,
+} = require("../../services/financial/voucher-service");
 
 const toLines = (body) => {
   if (Array.isArray(body?.lines)) return body.lines;
@@ -29,20 +35,43 @@ const setNotice = (res, message, sticky = false) => {
       sticky,
       autoClose: !sticky,
     }),
-    { path: "/", maxAge: 30, sameSite: "Lax" }
+    { path: "/", maxAge: 30, sameSite: "Lax" },
   );
 };
 
+const canVoucherAction = (res, scopeKey, action) => {
+  if (typeof res?.locals?.can !== "function") return false;
+  return res.locals.can("VOUCHER", scopeKey, action);
+};
+
+const actionDeniedMessage = (res) =>
+  res.locals.t("error_action_not_allowed") ||
+  res.locals.t("permission_denied") ||
+  res.locals.t("generic_error");
+
 const loadOptions = async (req, voucherTypeCode) => {
   let accountsQuery = knex("erp.accounts as a")
-    .leftJoin("erp.account_posting_classes as apc", "apc.id", "a.posting_class_id")
+    .leftJoin(
+      "erp.account_posting_classes as apc",
+      "apc.id",
+      "a.posting_class_id",
+    )
     .leftJoin("erp.account_groups as ag", "ag.id", "a.subgroup_id")
-    .select("a.id", "a.code", "a.name", "apc.code as posting_class_code", "apc.is_active as posting_class_active", "ag.account_type")
+    .select(
+      "a.id",
+      "a.code",
+      "a.name",
+      "apc.code as posting_class_code",
+      "apc.is_active as posting_class_active",
+      "ag.account_type",
+    )
     .where({ "a.is_active": true })
     .andWhere(function allowMissingOrActivePostingClass() {
       this.whereNull("a.posting_class_id").orWhere("apc.is_active", true);
     });
-  let partiesQuery = knex("erp.parties as p").select("p.id", "p.code", "p.name").where({ "p.is_active": true });
+  let partiesQuery = knex("erp.parties as p")
+    .select("p.id", "p.code", "p.name")
+    .where({ "p.is_active": true });
   let laboursQuery = knex("erp.labours as l")
     .select(
       "l.id",
@@ -61,32 +90,54 @@ const loadOptions = async (req, voucherTypeCode) => {
     .whereRaw("lower(e.status)='active'");
 
   accountsQuery = accountsQuery.whereExists(function whereAccountBranchMap() {
-    this.select(1).from("erp.account_branch as ab").whereRaw("ab.account_id = a.id").andWhere("ab.branch_id", req.branchId);
+    this.select(1)
+      .from("erp.account_branch as ab")
+      .whereRaw("ab.account_id = a.id")
+      .andWhere("ab.branch_id", req.branchId);
   });
   partiesQuery = partiesQuery.where(function wherePartyScope() {
-    this.where("p.branch_id", req.branchId).orWhereExists(function wherePartyBranchMap() {
-      this.select(1).from("erp.party_branch as pb").whereRaw("pb.party_id = p.id").andWhere("pb.branch_id", req.branchId);
-    });
+    this.where("p.branch_id", req.branchId).orWhereExists(
+      function wherePartyBranchMap() {
+        this.select(1)
+          .from("erp.party_branch as pb")
+          .whereRaw("pb.party_id = p.id")
+          .andWhere("pb.branch_id", req.branchId);
+      },
+    );
   });
   laboursQuery = laboursQuery.whereExists(function whereLabourBranchMap() {
-    this.select(1).from("erp.labour_branch as lb").whereRaw("lb.labour_id = l.id").andWhere("lb.branch_id", req.branchId);
+    this.select(1)
+      .from("erp.labour_branch as lb")
+      .whereRaw("lb.labour_id = l.id")
+      .andWhere("lb.branch_id", req.branchId);
   });
-  employeesQuery = employeesQuery.whereExists(function whereEmployeeBranchMap() {
-    this.select(1).from("erp.employee_branch as eb").whereRaw("eb.employee_id = e.id").andWhere("eb.branch_id", req.branchId);
-  });
+  employeesQuery = employeesQuery.whereExists(
+    function whereEmployeeBranchMap() {
+      this.select(1)
+        .from("erp.employee_branch as eb")
+        .whereRaw("eb.employee_id = e.id")
+        .andWhere("eb.branch_id", req.branchId);
+    },
+  );
 
-  const [accounts, parties, labours, employees, departments] = await Promise.all([
-    accountsQuery.orderBy("a.name", "asc"),
-    partiesQuery.orderBy("p.name", "asc"),
-    laboursQuery.orderBy("l.name", "asc"),
-    employeesQuery.orderBy("e.name", "asc"),
-    knex("erp.departments as d").select("d.id", "d.name").where({ is_active: true }).orderBy("d.name", "asc"),
-  ]);
+  const [accounts, parties, labours, employees, departments] =
+    await Promise.all([
+      accountsQuery.orderBy("a.name", "asc"),
+      partiesQuery.orderBy("p.name", "asc"),
+      laboursQuery.orderBy("l.name", "asc"),
+      employeesQuery.orderBy("e.name", "asc"),
+      knex("erp.departments as d")
+        .select("d.id", "d.name")
+        .where({ is_active: true })
+        .orderBy("d.name", "asc"),
+    ]);
 
   const normalizedVoucherTypeCode = String(voucherTypeCode || "").toUpperCase();
   const headerAccounts = (() => {
     if (normalizedVoucherTypeCode === "BANK_VOUCHER") {
-      return accounts.filter((row) => String(row.posting_class_code || "").toLowerCase() === "bank");
+      return accounts.filter(
+        (row) => String(row.posting_class_code || "").toLowerCase() === "bank",
+      );
     }
     if (normalizedVoucherTypeCode === "CASH_VOUCHER") {
       return accounts.filter((row) => {
@@ -102,7 +153,14 @@ const loadOptions = async (req, voucherTypeCode) => {
 
 const loadRecent = async (req, voucherTypeCode) => {
   let query = knex("erp.voucher_header")
-    .select("id", "voucher_no", "voucher_date", "status", "remarks", "created_at")
+    .select(
+      "id",
+      "voucher_no",
+      "voucher_date",
+      "status",
+      "remarks",
+      "created_at",
+    )
     .where({ voucher_type_code: voucherTypeCode })
     .whereNot({ status: "REJECTED" })
     .orderBy("id", "desc")
@@ -145,10 +203,19 @@ const backfillAutoBankSourceMeta = async ({ req, header, lines }) => {
     String(header.remarks || "").startsWith("[AUTO_BANK_SETTLEMENT]");
   if (!isAutoBank) return lines;
 
-  const missing = lines.filter((line) => asNum(line?.meta?.source_voucher_id) <= 0);
+  const missing = lines.filter(
+    (line) => asNum(line?.meta?.source_voucher_id) <= 0,
+  );
   if (!missing.length) return lines;
 
-  const sourceDates = [...new Set([toDateOnly(header.voucher_date), getAutoSettlementDateFromRemarks(header.remarks)].filter(Boolean))];
+  const sourceDates = [
+    ...new Set(
+      [
+        toDateOnly(header.voucher_date),
+        getAutoSettlementDateFromRemarks(header.remarks),
+      ].filter(Boolean),
+    ),
+  ];
 
   let sourceQuery = knex("erp.voucher_header as vh")
     .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
@@ -159,7 +226,9 @@ const backfillAutoBankSourceMeta = async ({ req, header, lines }) => {
       "vl.id as source_line_id",
       "vl.account_id as source_account_id",
       "vl.amount as source_amount",
-      knex.raw("COALESCE((vl.meta->>'department_id')::int, 0) as source_department_id"),
+      knex.raw(
+        "COALESCE((vl.meta->>'department_id')::int, 0) as source_department_id",
+      ),
     )
     .whereIn("vh.voucher_type_code", ["CASH_VOUCHER", "JOURNAL_VOUCHER"])
     .where({ "vh.branch_id": header.branch_id, "vh.status": "APPROVED" })
@@ -182,7 +251,8 @@ const backfillAutoBankSourceMeta = async ({ req, header, lines }) => {
   const updates = [];
 
   for (const line of missing) {
-    const lineMeta = line.meta && typeof line.meta === "object" ? { ...line.meta } : {};
+    const lineMeta =
+      line.meta && typeof line.meta === "object" ? { ...line.meta } : {};
     const lineAccountId = asNum(line.account_id);
     const lineAmount = asNum(line.amount);
     const lineDept = asNum(lineMeta.department_id);
@@ -206,7 +276,9 @@ const backfillAutoBankSourceMeta = async ({ req, header, lines }) => {
 
     usedSourceLineIds.add(asNum(match.source_line_id));
     lineMeta.source_voucher_id = asNum(match.source_voucher_id);
-    lineMeta.source_voucher_type_code = String(match.source_voucher_type_code || "");
+    lineMeta.source_voucher_type_code = String(
+      match.source_voucher_type_code || "",
+    );
     lineMeta.source_voucher_no = asNum(match.source_voucher_no);
     lineMeta.source_line_id = asNum(match.source_line_id);
     updates.push({ lineId: asNum(line.id), meta: lineMeta });
@@ -221,10 +293,17 @@ const applyVoucherScope = (query, req) => {
 };
 
 const getVoucherSeriesStats = async ({ req, voucherTypeCode }) => {
-  const base = () => applyVoucherScope(knex("erp.voucher_header").where({ voucher_type_code: voucherTypeCode }), req);
+  const base = () =>
+    applyVoucherScope(
+      knex("erp.voucher_header").where({ voucher_type_code: voucherTypeCode }),
+      req,
+    );
   const [latestAny, latestActive] = await Promise.all([
     base().max({ value: "voucher_no" }).first(),
-    base().whereNot({ status: "REJECTED" }).max({ value: "voucher_no" }).first(),
+    base()
+      .whereNot({ status: "REJECTED" })
+      .max({ value: "voucher_no" })
+      .first(),
   ]);
   return {
     latestVoucherNo: Number(latestAny?.value || 0),
@@ -234,11 +313,22 @@ const getVoucherSeriesStats = async ({ req, voucherTypeCode }) => {
 
 const getVoucherNeighbours = async ({ req, voucherTypeCode, cursorNo }) => {
   const normalized = Number(cursorNo || 0);
-  if (!Number.isInteger(normalized) || normalized <= 0) return { prevVoucherNo: null, nextVoucherNo: null };
-  const base = () => applyVoucherScope(knex("erp.voucher_header").where({ voucher_type_code: voucherTypeCode }), req);
+  if (!Number.isInteger(normalized) || normalized <= 0)
+    return { prevVoucherNo: null, nextVoucherNo: null };
+  const base = () =>
+    applyVoucherScope(
+      knex("erp.voucher_header").where({ voucher_type_code: voucherTypeCode }),
+      req,
+    );
   const [prevRow, nextRow] = await Promise.all([
-    base().where("voucher_no", "<", normalized).max({ value: "voucher_no" }).first(),
-    base().where("voucher_no", ">", normalized).min({ value: "voucher_no" }).first(),
+    base()
+      .where("voucher_no", "<", normalized)
+      .max({ value: "voucher_no" })
+      .first(),
+    base()
+      .where("voucher_no", ">", normalized)
+      .min({ value: "voucher_no" })
+      .first(),
   ]);
   return {
     prevVoucherNo: Number(prevRow?.value || 0) || null,
@@ -251,8 +341,21 @@ const loadVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
   if (!targetNo) return null;
 
   let headerQuery = knex("erp.voucher_header as vh")
-    .select("vh.id", "vh.branch_id", "vh.voucher_type_code", "vh.voucher_no", "vh.voucher_date", "vh.header_account_id", "vh.status", "vh.remarks", "vh.created_at")
-    .where({ "vh.voucher_type_code": voucherTypeCode, "vh.voucher_no": targetNo });
+    .select(
+      "vh.id",
+      "vh.branch_id",
+      "vh.voucher_type_code",
+      "vh.voucher_no",
+      "vh.voucher_date",
+      "vh.header_account_id",
+      "vh.status",
+      "vh.remarks",
+      "vh.created_at",
+    )
+    .where({
+      "vh.voucher_type_code": voucherTypeCode,
+      "vh.voucher_no": targetNo,
+    });
 
   headerQuery = headerQuery.where({ "vh.branch_id": req.branchId });
   const header = await headerQuery.first();
@@ -276,7 +379,7 @@ const loadVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
       "e.code as employee_code",
       "e.name as employee_name",
       "vl.reference_no",
-      "vl.meta"
+      "vl.meta",
     )
     .leftJoin("erp.accounts as a", "a.id", "vl.account_id")
     .leftJoin("erp.parties as p", "p.id", "vl.party_id")
@@ -289,11 +392,13 @@ const loadVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
     await backfillAutoBankSourceMeta({ req, header, lines });
   }
 
-  const sourceVoucherIds = [...new Set(
-    lines
-      .map((line) => Number(line?.meta?.source_voucher_id || 0))
-      .filter((id) => Number.isInteger(id) && id > 0),
-  )];
+  const sourceVoucherIds = [
+    ...new Set(
+      lines
+        .map((line) => Number(line?.meta?.source_voucher_id || 0))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    ),
+  ];
   let sourceVoucherMap = new Map();
   let sourceHeaderAccountMap = new Map();
   if (sourceVoucherIds.length) {
@@ -304,9 +409,16 @@ const loadVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
 
     const sourceHeaderRows = await knex("erp.voucher_header as vh")
       .leftJoin("erp.accounts as ha", "ha.id", "vh.header_account_id")
-      .select("vh.id", "vh.header_account_id", "ha.code as header_account_code", "ha.name as header_account_name")
+      .select(
+        "vh.id",
+        "vh.header_account_id",
+        "ha.code as header_account_code",
+        "ha.name as header_account_name",
+      )
       .whereIn("vh.id", sourceVoucherIds);
-    sourceHeaderAccountMap = new Map(sourceHeaderRows.map((row) => [Number(row.id), row]));
+    sourceHeaderAccountMap = new Map(
+      sourceHeaderRows.map((row) => [Number(row.id), row]),
+    );
   }
 
   return {
@@ -319,8 +431,12 @@ const loadVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
           sourceVoucherMap.get(sourceVoucherId)?.voucher_type_code ||
           "",
       ).toUpperCase();
-      const isAutoBankLine = String(header?.remarks || "").startsWith("[AUTO_BANK_SETTLEMENT]");
-      const isSameAsBankHeader = Number(line.account_id || 0) > 0 && Number(line.account_id || 0) === Number(header?.header_account_id || 0);
+      const isAutoBankLine = String(header?.remarks || "").startsWith(
+        "[AUTO_BANK_SETTLEMENT]",
+      );
+      const isSameAsBankHeader =
+        Number(line.account_id || 0) > 0 &&
+        Number(line.account_id || 0) === Number(header?.header_account_id || 0);
       const sourceHeader = sourceHeaderAccountMap.get(sourceVoucherId);
       const shouldDisplayCashHeaderContra =
         isAutoBankLine &&
@@ -330,107 +446,188 @@ const loadVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
 
       const resolvedAccountId = shouldDisplayCashHeaderContra
         ? Number(sourceHeader?.header_account_id || 0)
-        : (Number(line.account_id || 0) || null);
+        : Number(line.account_id || 0) || null;
       const displayCode = shouldDisplayCashHeaderContra
-        ? (sourceHeader?.header_account_code || line.account_code || line.party_code || line.labour_code || line.employee_code || "")
-        : (line.account_code || line.party_code || line.labour_code || line.employee_code || "");
+        ? sourceHeader?.header_account_code ||
+          line.account_code ||
+          line.party_code ||
+          line.labour_code ||
+          line.employee_code ||
+          ""
+        : line.account_code ||
+          line.party_code ||
+          line.labour_code ||
+          line.employee_code ||
+          "";
       const displayName = shouldDisplayCashHeaderContra
-        ? (sourceHeader?.header_account_name || line.account_name || line.party_name || line.labour_name || line.employee_name || "")
-        : (line.account_name || line.party_name || line.labour_name || line.employee_name || "");
+        ? sourceHeader?.header_account_name ||
+          line.account_name ||
+          line.party_name ||
+          line.labour_name ||
+          line.employee_name ||
+          ""
+        : line.account_name ||
+          line.party_name ||
+          line.labour_name ||
+          line.employee_name ||
+          "";
 
       return {
-      id: line.id,
-      line_no: line.line_no,
-      line_kind: shouldDisplayCashHeaderContra ? "ACCOUNT" : line.line_kind,
-      account_id: resolvedAccountId,
-      party_id: line.party_id || null,
-      labour_id: line.labour_id || null,
-      employee_id: line.employee_id || null,
-      code: displayCode,
-      account_name: displayName,
-      description: line.meta?.description || "",
-      department_id: line.meta?.department_id || null,
-      bank_status: String(line.meta?.bank_status || "PENDING").toUpperCase(),
-      reference_no: line.reference_no || line.meta?.reference_no || "",
-      source_voucher_id: Number(line.meta?.source_voucher_id || 0) || null,
-      source_voucher_type_code: line.meta?.source_voucher_type_code || sourceVoucherMap.get(Number(line?.meta?.source_voucher_id || 0))?.voucher_type_code || null,
-      source_voucher_no: Number(line.meta?.source_voucher_no || sourceVoucherMap.get(Number(line?.meta?.source_voucher_id || 0))?.voucher_no || 0) || null,
-      source_line_id: Number(line.meta?.source_line_id || 0) || null,
-      source_line_no: Number(line.meta?.source_line_no || 0) || null,
-      direction_version: Number(line.meta?.direction_version || 1),
-      debit: Number(line.meta?.debit || 0),
-      credit: Number(line.meta?.credit || 0),
-    };
+        id: line.id,
+        line_no: line.line_no,
+        line_kind: shouldDisplayCashHeaderContra ? "ACCOUNT" : line.line_kind,
+        account_id: resolvedAccountId,
+        party_id: line.party_id || null,
+        labour_id: line.labour_id || null,
+        employee_id: line.employee_id || null,
+        code: displayCode,
+        account_name: displayName,
+        description: line.meta?.description || "",
+        department_id: line.meta?.department_id || null,
+        bank_status: String(line.meta?.bank_status || "PENDING").toUpperCase(),
+        reference_no: line.reference_no || line.meta?.reference_no || "",
+        source_voucher_id: Number(line.meta?.source_voucher_id || 0) || null,
+        source_voucher_type_code:
+          line.meta?.source_voucher_type_code ||
+          sourceVoucherMap.get(Number(line?.meta?.source_voucher_id || 0))
+            ?.voucher_type_code ||
+          null,
+        source_voucher_no:
+          Number(
+            line.meta?.source_voucher_no ||
+              sourceVoucherMap.get(Number(line?.meta?.source_voucher_id || 0))
+                ?.voucher_no ||
+              0,
+          ) || null,
+        source_line_id: Number(line.meta?.source_line_id || 0) || null,
+        source_line_no: Number(line.meta?.source_line_no || 0) || null,
+        direction_version: Number(line.meta?.direction_version || 1),
+        debit: Number(line.meta?.debit || 0),
+        credit: Number(line.meta?.credit || 0),
+      };
     }),
   };
 };
 
-const createFinancialVoucherRouter = ({ titleKey, voucherTypeCode, scopeKey, routeView, subtitleKey, accountLabelKey, receiptLabelKey, paymentLabelKey, receiptKey, paymentKey }) => {
+const createFinancialVoucherRouter = ({
+  titleKey,
+  voucherTypeCode,
+  scopeKey,
+  routeView,
+  subtitleKey,
+  accountLabelKey,
+  receiptLabelKey,
+  paymentLabelKey,
+  receiptKey,
+  paymentKey,
+}) => {
   const router = express.Router();
 
-  router.get("/", requirePermission("VOUCHER", scopeKey, "view"), async (req, res, next) => {
-    try {
-      const forceNew = String(req.query.new || "").trim() === "1";
-      const forceView = String(req.query.view || "").trim() === "1";
-      const requestedVoucherNo = parseVoucherNo(req.query.voucher_no);
-      const [options, rows, stats] = await Promise.all([
-        loadOptions(req, voucherTypeCode),
-        loadRecent(req, voucherTypeCode),
-        getVoucherSeriesStats({ req, voucherTypeCode }),
-      ]);
-      const latestVoucherNo = stats.latestVoucherNo;
-      const latestActiveVoucherNo = stats.latestActiveVoucherNo;
-      const latestVisibleVoucherNo = latestActiveVoucherNo || latestVoucherNo || null;
-      if (!forceNew && !forceView) {
-        return res.redirect(`${req.baseUrl}?new=1`);
+  router.get(
+    "/",
+    requirePermission("VOUCHER", scopeKey, "view"),
+    async (req, res, next) => {
+      try {
+        const forceNew = String(req.query.new || "").trim() === "1";
+        const forceView = String(req.query.view || "").trim() === "1";
+        const requestedVoucherNo = parseVoucherNo(req.query.voucher_no);
+        const canListHistory =
+          typeof res.locals.can === "function" &&
+          res.locals.can("VOUCHER", scopeKey, "navigate");
+        const [options, rows, stats] = await Promise.all([
+          loadOptions(req, voucherTypeCode),
+          canListHistory
+            ? loadRecent(req, voucherTypeCode)
+            : Promise.resolve([]),
+          getVoucherSeriesStats({ req, voucherTypeCode }),
+        ]);
+        const latestVoucherNo = stats.latestVoucherNo;
+        const latestActiveVoucherNo = stats.latestActiveVoucherNo;
+        const latestVisibleVoucherNo =
+          latestActiveVoucherNo || latestVoucherNo || null;
+        if (!forceNew && !forceView) {
+          return res.redirect(`${req.baseUrl}?new=1`);
+        }
+
+        if (!canListHistory && !forceNew) {
+          return res.redirect(`${req.baseUrl}?new=1`);
+        }
+
+        const selectedNo =
+          !canListHistory || forceNew
+            ? null
+            : requestedVoucherNo || latestVisibleVoucherNo;
+        const selectedVoucher = canListHistory
+          ? await loadVoucherDetails({
+              req,
+              voucherTypeCode,
+              voucherNo: selectedNo,
+            })
+          : null;
+        const currentCursorNo = forceNew
+          ? latestVoucherNo + 1
+          : requestedVoucherNo ||
+            Number(
+              selectedVoucher?.voucher_no ||
+                latestVisibleVoucherNo ||
+                latestVoucherNo ||
+                0,
+            );
+        const { prevVoucherNo, nextVoucherNo } = canListHistory
+          ? await getVoucherNeighbours({
+              req,
+              voucherTypeCode,
+              cursorNo: currentCursorNo,
+            })
+          : { prevVoucherNo: null, nextVoucherNo: null };
+        const seriesNos = latestVoucherNo > 0 ? [latestVoucherNo] : [];
+        const allowCreate = canVoucherAction(res, scopeKey, "create");
+        const allowEdit = canVoucherAction(res, scopeKey, "edit");
+        const allowDelete = canVoucherAction(res, scopeKey, "hard_delete");
+
+        return res.render("base/layouts/main", {
+          title: `${res.locals.t(titleKey)} - ${res.locals.t("financial")}`,
+          user: req.user,
+          branchId: req.branchId,
+          branchScope: req.branchScope,
+          csrfToken: res.locals.csrfToken,
+          view: routeView,
+          t: res.locals.t,
+          options,
+          rows,
+          selectedVoucher,
+          prevVoucherNo,
+          nextVoucherNo,
+          seriesNos,
+          basePath: req.baseUrl,
+          scopeKey,
+          voucherTypeCode,
+          titleKey,
+          subtitleKey,
+          accountLabelKey,
+          receiptLabelKey,
+          paymentLabelKey,
+          receiptKey,
+          paymentKey,
+          allowCreate,
+          allowEdit,
+          allowDelete,
+        });
+      } catch (err) {
+        console.error("Error in FinancialVoucherPageService:", err);
+        return next(err);
       }
-
-      const selectedNo = forceNew ? null : requestedVoucherNo || latestVisibleVoucherNo;
-      const selectedVoucher = await loadVoucherDetails({ req, voucherTypeCode, voucherNo: selectedNo });
-      const currentCursorNo = forceNew
-        ? latestVoucherNo + 1
-        : requestedVoucherNo || Number(selectedVoucher?.voucher_no || latestVisibleVoucherNo || latestVoucherNo || 0);
-      const { prevVoucherNo, nextVoucherNo } = await getVoucherNeighbours({
-        req,
-        voucherTypeCode,
-        cursorNo: currentCursorNo,
-      });
-      const seriesNos = latestVoucherNo > 0 ? [latestVoucherNo] : [];
-
-      return res.render("base/layouts/main", {
-        title: `${res.locals.t(titleKey)} - ${res.locals.t("financial")}`,
-        user: req.user,
-        branchId: req.branchId,
-        branchScope: req.branchScope,
-        csrfToken: res.locals.csrfToken,
-        view: routeView,
-        t: res.locals.t,
-        options,
-        rows,
-        selectedVoucher,
-        prevVoucherNo,
-        nextVoucherNo,
-        seriesNos,
-        basePath: req.baseUrl,
-        scopeKey,
-        voucherTypeCode,
-        titleKey,
-        subtitleKey,
-        accountLabelKey,
-        receiptLabelKey,
-        paymentLabelKey,
-        receiptKey,
-        paymentKey,
-      });
-    } catch (err) {
-      console.error("Error in FinancialVoucherPageService:", err);
-      return next(err);
-    }
-  });
+    },
+  );
 
   router.post("/", async (req, res, next) => {
     try {
       const voucherId = Number(req.body?.voucher_id || 0) || null;
+      if (voucherId && !canVoucherAction(res, scopeKey, "edit")) {
+        setNotice(res, actionDeniedMessage(res), true);
+        return res.redirect(req.baseUrl);
+      }
+
       const headerAccountId = Number(req.body?.header_account_id || 0) || null;
       const voucherDate = String(req.body?.voucher_date || "").trim();
       const remarks = String(req.body?.remarks || "").trim();
@@ -463,7 +660,8 @@ const createFinancialVoucherRouter = ({ titleKey, voucherTypeCode, scopeKey, rou
 
       if (saved.queuedForApproval) {
         const msg = saved.permissionReroute
-          ? res.locals.t("approval_sent") || "Change submitted for Administrator approval."
+          ? res.locals.t("approval_sent") ||
+            "Change submitted for Administrator approval."
           : res.locals.t("approval_submitted");
         setNotice(res, msg, true);
       } else {
@@ -480,6 +678,11 @@ const createFinancialVoucherRouter = ({ titleKey, voucherTypeCode, scopeKey, rou
 
   router.post("/delete", async (req, res, next) => {
     try {
+      if (!canVoucherAction(res, scopeKey, "hard_delete")) {
+        setNotice(res, actionDeniedMessage(res), true);
+        return res.redirect(req.baseUrl);
+      }
+
       const voucherId = Number(req.body?.voucher_id || 0);
       if (!Number.isInteger(voucherId) || voucherId <= 0) {
         setNotice(res, res.locals.t("error_invalid_id"), true);
@@ -495,11 +698,15 @@ const createFinancialVoucherRouter = ({ titleKey, voucherTypeCode, scopeKey, rou
 
       if (saved.queuedForApproval) {
         const msg = saved.permissionReroute
-          ? res.locals.t("approval_sent") || "Change submitted for Administrator approval."
+          ? res.locals.t("approval_sent") ||
+            "Change submitted for Administrator approval."
           : res.locals.t("approval_submitted");
         setNotice(res, msg, true);
       } else {
-        setNotice(res, res.locals.t("deleted_successfully") || "Deleted successfully.");
+        setNotice(
+          res,
+          res.locals.t("deleted_successfully") || "Deleted successfully.",
+        );
       }
 
       return res.redirect(req.baseUrl);

@@ -46,6 +46,11 @@
     if (select.dataset.searchableReady === "true") return;
 
     const isMulti = select.multiple;
+    const multiSearchMode = String(select.dataset.searchableMultiSearch || "")
+      .trim()
+      .toLowerCase();
+    const useInlineMultiSearch =
+      isMulti && (multiSearchMode === "inline" || multiSearchMode === "field");
     const isVoucherContext = Boolean(
       select.closest(
         "[data-voucher-form], [data-purchase-voucher-form], [data-sales-voucher-form]",
@@ -431,6 +436,7 @@
     const syncToInput = () => {
       if (isMulti) {
         normalizeMultiSelectAll(null);
+        if (useInlineMultiSearch && !menu.classList.contains("hidden")) return;
         const labels = Array.from(select.selectedOptions).map((opt) =>
           opt.textContent.trim(),
         );
@@ -483,7 +489,7 @@
 
     const renderMenu = ({ showAll = false, preserveActive = false } = {}) => {
       menu.innerHTML = "";
-      if (isMulti) {
+      if (isMulti && !useInlineMultiSearch) {
         const searchWrap = document.createElement("div");
         searchWrap.className = "sticky top-0 z-10 bg-white px-2 pt-2";
         const searchInput = document.createElement("input");
@@ -504,6 +510,15 @@
             const caretPos = replacement.value.length;
             replacement.setSelectionRange(caretPos, caretPos);
           }
+        });
+        searchInput.addEventListener("blur", () => {
+          window.setTimeout(() => {
+            const activeEl = document.activeElement;
+            if (activeEl && wrapper.contains(activeEl)) return;
+            menu.classList.add("hidden");
+            keyboardNavigatedMenu = false;
+            syncToInput();
+          }, 150);
         });
         searchWrap.appendChild(searchInput);
         menu.appendChild(searchWrap);
@@ -586,10 +601,14 @@
         input.dataset.searchableSuppressOpenOnce = "0";
         return;
       }
+      if (useInlineMultiSearch) {
+        multiSearchValue = "";
+        input.value = "";
+      }
       input.select();
       renderMenu({ showAll: true });
       menu.classList.remove("hidden");
-      if (isMulti) {
+      if (isMulti && !useInlineMultiSearch) {
         window.setTimeout(() => {
           const multiSearchInput = menu.querySelector('[data-searchable-multi-search="true"]');
           if (multiSearchInput instanceof HTMLInputElement) {
@@ -601,9 +620,13 @@
     input.addEventListener("click", () => {
       if (select.disabled) return;
       keyboardNavigatedMenu = false;
+      if (useInlineMultiSearch) {
+        multiSearchValue = "";
+        input.value = "";
+      }
       renderMenu({ showAll: true });
       menu.classList.remove("hidden");
-      if (isMulti) {
+      if (isMulti && !useInlineMultiSearch) {
         window.setTimeout(() => {
           const multiSearchInput = menu.querySelector('[data-searchable-multi-search="true"]');
           if (multiSearchInput instanceof HTMLInputElement) {
@@ -769,6 +792,8 @@
     });
     input.addEventListener("blur", () => {
       setTimeout(() => {
+        const activeEl = document.activeElement;
+        if (activeEl && wrapper.contains(activeEl)) return;
         menu.classList.add("hidden");
         keyboardNavigatedMenu = false;
         if (isMulti) {

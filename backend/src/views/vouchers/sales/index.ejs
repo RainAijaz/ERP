@@ -21,6 +21,10 @@
   const selectedStatusLabel = selectedStatus === "APPROVED" ? t("approved") : selectedStatus === "REJECTED" ? t("rejected") : selectedStatus === "PENDING" ? t("pending") : selectedStatus;
   const selectedStatusToneClass = selectedStatus === "APPROVED" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : selectedStatus === "REJECTED" ? "border-rose-200 bg-rose-50 text-rose-800" : "border-amber-200 bg-amber-50 text-amber-800";
   const isDeletedVoucher = String(selectedVoucher?.status || "").toUpperCase() === "REJECTED";
+  const canEditVoucher = typeof allowEdit === "boolean" ? allowEdit : true;
+  const canDeleteVoucher = typeof allowDelete === "boolean" ? allowDelete : true;
+  const canSaveVoucher = !isDeletedVoucher && (!selectedVoucher || canEditVoucher);
+  const canDeleteCurrentVoucher = !!selectedVoucher && !isDeletedVoucher && canDeleteVoucher;
   const selectedPaymentType = String(selectedVoucher?.payment_type || "CASH").toUpperCase() === "CREDIT" ? "CREDIT" : "CASH";
 %>
 <style>
@@ -62,7 +66,7 @@
             <a href="<%= nextVoucherNo ? ((basePath || '') + '?voucher_no=' + nextVoucherNo + '&view=1') : ((basePath || '') + '?new=1') %>" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700"><%= t("next") %></a>
             <button type="button" class="rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-white shadow-sm" data-load-voucher><%= t("load") %></button>
             <div class="ml-auto flex items-center gap-2">
-              <button type="button" class="rounded-xl border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-rose-700 disabled:opacity-40" data-delete-voucher <%= selectedVoucher && !isDeletedVoucher ? '' : 'disabled' %>><%= t("delete") %></button>
+              <button type="button" class="rounded-xl border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-rose-700 disabled:opacity-40" data-delete-voucher <%= canDeleteCurrentVoucher ? '' : 'disabled' %>><%= t("delete") %></button>
               <button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700" onclick="window.print()"><%= t("print") %></button>
               <button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700 disabled:opacity-40" data-print-gate-pass <%= selectedVoucherNo ? '' : 'disabled' %>><%= t("print_gate_pass") %></button>
             </div>
@@ -190,7 +194,7 @@
                   <input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="" data-lines-total>
                 </td>
                 <td class="border-t border-slate-200 px-2 py-2 text-center">
-                  <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900" data-add-row aria-label="<%= t('add') %>" title="<%= t('add') %>">
+                  <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900" data-add-row <%= canSaveVoucher ? '' : 'disabled' %> aria-label="<%= t('add') %>" title="<%= t('add') %>">
                     <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /><path d="M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>
                   </button>
                 </td>
@@ -245,7 +249,7 @@
       </div>
 
       <div class="flex justify-center pt-2">
-        <button type="submit" class="rounded-xl bg-accent px-6 py-2 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= t("confirm") %></button>
+        <button type="submit" class="rounded-xl bg-accent px-6 py-2 text-xs font-semibold uppercase tracking-widest text-white shadow-sm disabled:opacity-40" <%= canSaveVoucher ? '' : 'disabled' %>><%= t("confirm") %></button>
       </div>
     </form>
     <form method="post" action="<%= (basePath || '') + '/delete' %>" class="hidden" data-delete-voucher-form><input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="voucher_id" value="<%= selectedVoucher?.id || '' %>"></form>
@@ -300,12 +304,15 @@
 <script>
 (() => {
   const boot = () => {
-  if (window.__salesVoucherInitDone) return true;
   const form = document.querySelector("[data-sales-voucher-form]");
   if (!form) return false;
+  if (form.dataset.salesVoucherInitDone === "1") return true;
 
   const isSalesOrderVoucher = <%= isSalesOrder ? "true" : "false" %>;
   const canOverrideRateDiscount = <%= canOverrideRateDiscount ? "true" : "false" %>;
+  const canSaveVoucher = <%- JSON.stringify(Boolean(canSaveVoucher)) %>;
+  const canDeleteCurrentVoucher = <%- JSON.stringify(Boolean(canDeleteCurrentVoucher)) %>;
+  const actionNotAllowedMessage = <%- JSON.stringify(t("error_action_not_allowed") || t("permission_denied") || t("generic_error")) %>;
   const selectedVoucherNo = <%= selectedVoucherNo ? Number(selectedVoucherNo) : "null" %>;
   const requiredMessage = (label) =>
     window.VoucherValidation?.requiredMessage?.(label)
@@ -394,6 +401,13 @@
   };
 
   const skuMap = new Map((skus || []).map((s) => [Number(s.id), s]));
+  const skuUnitOptionsMap = new Map(
+    (skus || []).map((s) => {
+      const skuId = Number(s.id || 0);
+      const unitOptions = Array.isArray(s.unit_options) ? s.unit_options : [];
+      return [skuId, unitOptions];
+    }),
+  );
   const reasonMap = new Map((reasons || []).map((r) => [Number(r.id), r]));
   const orderMap = new Map((openOrders || []).map((o) => [Number(o.id), o]));
   const orderLineMap = new Map((openOrderLines || []).map((l) => [Number(l.sales_order_line_id), l]));
@@ -410,14 +424,18 @@
       sales_order_line_id: lineId,
       sales_order_line_no: Number(line?.line_no || 0) || null,
       sku_id: Number(line?.sku_id || 0) || null,
+      uom_id: Number(line?.uom_id || 0) || null,
       sku_code: String(line?.sku_code || sku?.sku_code || "").trim(),
       item_name: String(line?.item_name || sku?.item_name || "").trim(),
       row_status: String(line?.row_status || "PACKED").toUpperCase(),
+      uom_factor_to_base: Number(line?.uom_factor_to_base || 0) || null,
       open_qty: Number(line?.sale_qty || 0),
       open_pairs:
-        String(line?.row_status || "PACKED").toUpperCase() === "PACKED"
-          ? Number(line?.sale_qty || 0) * 12
-          : Number(line?.sale_qty || 0),
+        Number(line?.uom_factor_to_base || 0) > 0
+          ? Number(line?.sale_qty || 0) * Number(line?.uom_factor_to_base || 0)
+          : String(line?.row_status || "PACKED").toUpperCase() === "PACKED"
+            ? Number(line?.sale_qty || 0) * 12
+            : Number(line?.sale_qty || 0),
       pair_rate: Number(line?.pair_rate || 0),
       pair_discount: Number(line?.pair_discount || 0),
     });
@@ -444,11 +462,66 @@
     const x = n(v);
     return x > 0 ? displayNumber(x, 1, "") : "";
   };
-  const rowUnitLabel = (status) =>
-    String(status || "PACKED").toUpperCase() === "LOOSE"
-      ? (<%= JSON.stringify(t("unit_pair")) %> || "Pair")
-      : (<%= JSON.stringify(t("unit_dozen")) %> || "Dozen");
-  const pairs = (status, qty) => Number(((String(status || "PACKED").toUpperCase() === "PACKED" ? n(qty) * 12 : n(qty))).toFixed(1));
+  const getSkuUnitOptions = (skuId) => {
+    const normalizedSkuId = Number(skuId || 0);
+    const options = skuUnitOptionsMap.get(normalizedSkuId);
+    return Array.isArray(options) ? options : [];
+  };
+  const getBaseUomIdForSku = (skuId) => {
+    const sku = skuMap.get(Number(skuId || 0));
+    return Number(sku?.base_uom_id || 0) || null;
+  };
+  const getDefaultUomIdForSku = (skuId, preferredPacked = false) => {
+    const options = getSkuUnitOptions(skuId);
+    if (!options.length) return null;
+    const base = options.find((option) => Number(option?.is_base ? 1 : 0) === 1) || null;
+    if (preferredPacked) {
+      const byDozenLike = options.find((option) => {
+        const factor = Number(option?.factor_to_base || 0);
+        return option?.is_base !== true && Math.abs(factor - 12) < 0.000001;
+      });
+      if (byDozenLike) return Number(byDozenLike.id || 0) || null;
+      const packed = options.find((option) => option?.is_base !== true);
+      if (packed) return Number(packed.id || 0) || null;
+    }
+    if (base) return Number(base.id || 0) || null;
+    return Number(options[0]?.id || 0) || null;
+  };
+  const getFactorToBaseForRow = (row) => {
+    const skuId = Number(row?.sku_id || 0) || null;
+    const uomId = Number(row?.uom_id || 0) || null;
+    if (!skuId || !uomId) return null;
+    const options = getSkuUnitOptions(skuId);
+    const option = options.find((entry) => Number(entry?.id || 0) === Number(uomId));
+    const factor = Number(option?.factor_to_base || 0);
+    return Number.isFinite(factor) && factor > 0 ? factor : null;
+  };
+  const getUnitLabelForRow = (row) => {
+    const skuId = Number(row?.sku_id || 0) || null;
+    const uomId = Number(row?.uom_id || 0) || null;
+    if (skuId && uomId) {
+      const options = getSkuUnitOptions(skuId);
+      const option = options.find((entry) => Number(entry?.id || 0) === Number(uomId));
+      const label = String(option?.code || option?.name || "").trim();
+      if (label) return label;
+    }
+    return String(
+      String(row?.row_status || "PACKED").toUpperCase() === "LOOSE"
+        ? (<%- JSON.stringify(t("unit_pair")) %> || "Pair")
+        : (<%- JSON.stringify(t("unit_dozen")) %> || "Dozen"),
+    ).trim();
+  };
+  const pairs = (row, qty) => {
+    const factor = Number(getFactorToBaseForRow(row) || 0);
+    if (factor > 0) return Number((n(qty) * factor).toFixed(3));
+    return Number(
+      (
+        (String(row?.row_status || "PACKED").toUpperCase() === "PACKED"
+          ? n(qty) * 12
+          : n(qty))
+      ).toFixed(3),
+    );
+  };
   const isValidPhone = (value) => {
     const text = String(value || "").trim();
     if (!text) return false;
@@ -530,6 +603,8 @@
   const emptyRow = () => ({
     sku_id: null,
     sales_order_line_id: null,
+    uom_id: null,
+    uom_factor_to_base: null,
     row_status: "PACKED",
     sale_qty: 0,
     return_qty: 0,
@@ -542,9 +617,11 @@
   });
 
   const rows = (Array.isArray(seedLines) && seedLines.length
-    ? seedLines.map((r) => ({
+      ? seedLines.map((r) => ({
         sku_id: Number(r.sku_id || 0) || null,
         sales_order_line_id: Number(r.sales_order_line_id || 0) || null,
+        uom_id: Number(r.uom_id || 0) || null,
+        uom_factor_to_base: Number(r.uom_factor_to_base || 0) || null,
         row_status: String(r.row_status || "PACKED").toUpperCase(),
         sale_qty: Number(r.sale_qty || 0),
         return_qty: Number(r.return_qty || 0),
@@ -561,6 +638,8 @@
     const next = { ...emptyRow(), ...row };
     next.sku_id = Number(next.sku_id || 0) || null;
     next.sales_order_line_id = Number(next.sales_order_line_id || 0) || null;
+    next.uom_id = Number(next.uom_id || 0) || null;
+    next.uom_factor_to_base = Number(next.uom_factor_to_base || 0) || null;
     next.row_status = String(next.row_status || "PACKED").toUpperCase() === "PACKED" ? "PACKED" : "LOOSE";
     next.sale_qty = Number(n(next.sale_qty).toFixed(1));
     next.return_qty = Number(n(next.return_qty).toFixed(1));
@@ -572,10 +651,51 @@
     const source = fromSO ? orderLineMap.get(Number(next.sales_order_line_id || 0)) : null;
     if (source) {
       next.sku_id = Number(source.sku_id || 0) || null;
-      next.row_status = String(source.row_status || "PACKED").toUpperCase();
+      next.uom_id = Number(source.uom_id || 0) || null;
+      next.uom_factor_to_base = Number(source.uom_factor_to_base || 0) || null;
+      next.row_status = String(source.row_status || next.row_status || "PACKED").toUpperCase();
       if (!canOverrideRateDiscount || next.pair_rate <= 0) next.pair_rate = Number(n(source.pair_rate).toFixed(1));
       next.pair_discount = Number(n(source.pair_discount).toFixed(1));
     }
+
+    const preferredPacked =
+      String(next.row_status || "PACKED").toUpperCase() === "PACKED";
+    const validUomIds = new Set(
+      getSkuUnitOptions(next.sku_id).map((option) => Number(option?.id || 0)),
+    );
+    if (!next.uom_id || (validUomIds.size && !validUomIds.has(Number(next.uom_id)))) {
+      next.uom_id = getDefaultUomIdForSku(next.sku_id, preferredPacked);
+    }
+    if (!next.uom_id && next.sku_id) {
+      next.uom_id = getBaseUomIdForSku(next.sku_id);
+    }
+    const baseUomId = getBaseUomIdForSku(next.sku_id);
+    const legacyPackedHint =
+      String(next.row_status || "").toUpperCase() === "PACKED" ||
+      Number(next.uom_factor_to_base || 0) > 1;
+    if (
+      legacyPackedHint &&
+      Number(next.uom_id || 0) > 0 &&
+      Number(baseUomId || 0) > 0 &&
+      Number(next.uom_id) === Number(baseUomId)
+    ) {
+      const packedUomId = getDefaultUomIdForSku(next.sku_id, true);
+      if (
+        Number(packedUomId || 0) > 0 &&
+        Number(baseUomId || 0) > 0 &&
+        Number(packedUomId) !== Number(baseUomId)
+      ) {
+        next.uom_id = Number(packedUomId);
+      }
+    }
+    next.row_status =
+      Number(next.uom_id || 0) > 0 && Number(baseUomId || 0) > 0
+        ? Number(next.uom_id) === Number(baseUomId)
+          ? "LOOSE"
+          : "PACKED"
+        : String(next.row_status || "PACKED").toUpperCase() === "PACKED"
+          ? "PACKED"
+          : "LOOSE";
 
     if (next.sku_id && !source && next.pair_rate <= 0) {
       const sku = skuMap.get(Number(next.sku_id));
@@ -595,7 +715,7 @@
     if (next.pair_discount >= next.pair_rate && next.pair_rate > 0) next.pair_discount = Number(Math.max(0, next.pair_rate - 0.1).toFixed(1));
 
     const qty = next.sale_qty > 0 ? next.sale_qty : next.return_qty;
-    const totalPairs = pairs(next.row_status, qty);
+    const totalPairs = pairs(next, qty);
     next.total_discount = Number((totalPairs * next.pair_discount).toFixed(1));
     next.total_amount = Number((totalPairs * (next.pair_rate - next.pair_discount)).toFixed(1));
     next.item_name = String(next.item_name || skuMap.get(Number(next.sku_id || 0))?.item_name || "");
@@ -734,7 +854,7 @@
         <td class="px-2 py-2 text-slate-700">${String(row.sales_order_voucher_no || "-")}</td>
         <td class="px-2 py-2 text-slate-700">${formatDisplayDate(row.sales_order_voucher_date) || "-"}</td>
         <td class="px-2 py-2 text-slate-700">${String(row.sku_code || "")}</td>
-        <td class="px-2 py-2 text-slate-700">${rowUnitLabel(row.row_status)}</td>
+        <td class="px-2 py-2 text-slate-700">${getUnitLabelForRow(row)}</td>
         <td class="px-2 py-2 text-right font-semibold text-slate-700">${displayNumber(openQty, 1, "0")}</td>
         <td class="px-2 py-2"><input type="number" min="0" step="0.1" class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs" data-sales-order-picker-deliver-qty data-line-id="${lineId > 0 ? lineId : ""}" data-open-qty="${displayNumber(openQty, 1, "0")}" value="${displayNumber(deliverQty, 1, "")}" ${lineId > 0 ? "" : "disabled"}></td>
         <td class="px-2 py-2 text-right font-semibold text-slate-700">${displayNumber(row.pair_rate || 0, 1, "0")}</td>
@@ -804,10 +924,21 @@
       const tr = document.createElement("tr");
       tr.dataset.i = String(index);
       const showReasonSelect = !reasonDisabled;
+      const unitOptions = getSkuUnitOptions(source ? source.sku_id : r.sku_id);
+      const unitOptionsHtml = unitOptions.length
+        ? unitOptions
+            .map((option) => {
+              const optionId = Number(option?.id || 0);
+              const selected = optionId > 0 && optionId === Number(r.uom_id || 0);
+              const label = String(option?.code || option?.name || "").trim();
+              return `<option value="${optionId}" ${selected ? "selected" : ""}>${label}</option>`;
+            })
+            .join("")
+        : `<option value="">${String(getUnitLabelForRow(r) || "<%= t('unit') %>")}</option>`;
       const returnCells = isSalesOrderVoucher
         ? ""
         : `<td class="border-b border-slate-200 px-1.5 py-1"><input data-f="return_qty" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${fromSO ? "bg-slate-100" : "bg-white"}" value="${qtyDisplay(r.return_qty)}" ${fromSO ? "disabled" : ""}></td><td class="border-b border-slate-200 px-1.5 py-1">${showReasonSelect ? `<select data-f="return_reason_id" class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-searchable-select="true" data-searchable-variant="unified">${reasonOpts}</select>` : `<input class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-xs" value="" readonly>`}</td>`;
-      tr.innerHTML = `<td class="border-b border-slate-200 px-1.5 py-1"><select data-f="${fromSO ? "sales_order_line_id" : "sku_id"}" class="h-8 min-w-[18rem] w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-searchable-select="true" data-searchable-variant="unified">${articleOptions}</select></td><td class="border-b border-slate-200 px-1.5 py-1"><select data-f="row_status" class="h-8 min-w-[7rem] w-full rounded-lg border border-slate-300 px-2 text-xs ${fromSO ? "bg-slate-100" : "bg-white"}" ${fromSO ? "disabled" : ""} data-searchable-select="true" data-searchable-variant="unified"><option value="LOOSE" ${r.row_status === "LOOSE" ? "selected" : ""}><%= t("unit_pair") %></option><option value="PACKED" ${r.row_status === "PACKED" ? "selected" : ""}><%= t("unit_dozen") %></option></select></td><td class="border-b border-slate-200 px-1.5 py-1"><input data-f="sale_qty" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${fromSO ? "bg-slate-100" : "bg-white"}" value="${qtyDisplay(r.sale_qty)}" ${fromSO ? "readonly" : ""}></td>${returnCells}<td class="border-b border-slate-200 px-1.5 py-1"><input data-f="pair_rate" class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.pair_rate)}" readonly></td><td class="border-b border-slate-200 px-1.5 py-1"><input data-f="pair_discount" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${canDiscount ? "bg-white" : "bg-slate-100"}" value="${f1OrBlank(r.pair_discount)}" ${canDiscount ? "" : "readonly"}></td><td class="border-b border-slate-200 px-1.5 py-1"><input class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.total_discount)}" readonly></td><td class="border-b border-slate-200 px-1.5 py-1"><input class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.total_amount)}" readonly></td><td class="w-20 border-b border-slate-200 px-1.5 py-1 text-center"><button type="button" data-del class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white p-2 text-rose-600" aria-label="<%= t("delete") %>"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M9 7V5h6v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg></button></td><td class="border-b border-slate-200 px-1.5 py-1 text-center align-middle text-[11px] font-semibold text-slate-600" data-row-no>${index + 1}</td>`;
+      tr.innerHTML = `<td class="border-b border-slate-200 px-1.5 py-1"><select data-f="${fromSO ? "sales_order_line_id" : "sku_id"}" class="h-8 min-w-[18rem] w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-searchable-select="true" data-searchable-variant="unified">${articleOptions}</select></td><td class="border-b border-slate-200 px-1.5 py-1"><select data-f="uom_id" class="h-8 min-w-[7rem] w-full rounded-lg border border-slate-300 px-2 text-xs ${fromSO ? "bg-slate-100" : "bg-white"}" ${fromSO ? "disabled" : ""} data-searchable-select="true" data-searchable-variant="unified">${unitOptionsHtml}</select></td><td class="border-b border-slate-200 px-1.5 py-1"><input data-f="sale_qty" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${fromSO ? "bg-slate-100" : "bg-white"}" value="${qtyDisplay(r.sale_qty)}" ${fromSO ? "readonly" : ""}></td>${returnCells}<td class="border-b border-slate-200 px-1.5 py-1"><input data-f="pair_rate" class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.pair_rate)}" readonly></td><td class="border-b border-slate-200 px-1.5 py-1"><input data-f="pair_discount" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${canDiscount ? "bg-white" : "bg-slate-100"}" value="${f1OrBlank(r.pair_discount)}" ${canDiscount ? "" : "readonly"}></td><td class="border-b border-slate-200 px-1.5 py-1"><input class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.total_discount)}" readonly></td><td class="border-b border-slate-200 px-1.5 py-1"><input class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.total_amount)}" readonly></td><td class="w-20 border-b border-slate-200 px-1.5 py-1 text-center"><button type="button" data-del class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white p-2 text-rose-600" aria-label="<%= t("delete") %>"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M9 7V5h6v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg></button></td><td class="border-b border-slate-200 px-1.5 py-1 text-center align-middle text-[11px] font-semibold text-slate-600" data-row-no>${index + 1}</td>`;
       linesBody.appendChild(tr);
     });
 
@@ -1146,12 +1277,13 @@
     if (f === "sku_id") {
       const sku = skuMap.get(Number(rows[i].sku_id || 0));
       if (sku && n(rows[i].pair_rate) <= 0) rows[i].pair_rate = Number(n(sku.sale_rate).toFixed(1));
+      rows[i].uom_id = getDefaultUomIdForSku(rows[i].sku_id, false);
     }
     if (f === "sales_order_line_id") {
       const source = orderLineMap.get(Number(rows[i].sales_order_line_id || 0));
       if (source) {
         rows[i].sku_id = Number(source.sku_id || 0) || null;
-        rows[i].row_status = String(source.row_status || "LOOSE").toUpperCase();
+        rows[i].uom_id = Number(source.uom_id || 0) || null;
         rows[i].pair_rate = Number(n(source.pair_rate).toFixed(1));
         rows[i].pair_discount = Number(n(source.pair_discount).toFixed(1));
       }
@@ -1280,7 +1412,7 @@
       const preferredFieldOrder = [
         "sales_order_line_id",
         "sku_id",
-        "row_status",
+        "uom_id",
         "sale_qty",
         "return_qty",
         "return_reason_id",
@@ -1302,7 +1434,7 @@
         const preferredFieldOrder = [
           "sales_order_line_id",
           "sku_id",
-          "row_status",
+          "uom_id",
           "sale_qty",
           "return_qty",
           "return_reason_id",
@@ -1335,7 +1467,7 @@
       const preferredFieldOrder = [
         "sales_order_line_id",
         "sku_id",
-        "row_status",
+        "uom_id",
         "sale_qty",
         "return_qty",
         "return_reason_id",
@@ -1397,7 +1529,7 @@
     const preferredFieldOrder = [
       "sales_order_line_id",
       "sku_id",
-      "row_status",
+      "uom_id",
       "sale_qty",
       "return_qty",
       "return_reason_id",
@@ -1619,6 +1751,7 @@
         rows.push({
           sku_id: Number(line.sku_id || 0) || null,
           sales_order_line_id: Number(line.sales_order_line_id || 0) || null,
+          uom_id: Number(line.uom_id || 0) || null,
           row_status: String(line.row_status || "PACKED").toUpperCase(),
           sale_qty: Number(Number(deliverQty || 0).toFixed(1)),
           return_qty: 0,
@@ -1655,6 +1788,10 @@
   });
   form.querySelector("[data-load-voucher]")?.addEventListener("click", () => loadVoucher(form.querySelector("[data-voucher-no-input]")?.value));
   document.querySelector("[data-delete-voucher]")?.addEventListener("click", () => {
+    if (!canDeleteCurrentVoucher) {
+      window.showVoucherError(actionNotAllowedMessage);
+      return;
+    }
     const deleteForm = document.querySelector("[data-delete-voucher-form]");
     if (!deleteForm) return;
     if (!confirm("<%= t('are_you_sure') %>")) return;
@@ -1679,6 +1816,12 @@
   });
 
   form.addEventListener("submit", (e) => {
+    if (!canSaveVoucher) {
+      e.preventDefault();
+      window.showVoucherError(actionNotAllowedMessage);
+      return;
+    }
+
     const fromSO = isFromSO();
     const paymentType = getPaymentType();
     const customerId = Number(customerSelect?.value || 0) || null;
@@ -1772,13 +1915,13 @@
         if (r.return_qty > 0) { e.preventDefault(); window.showVoucherError("<%= t('error_line_return_not_allowed_from_so') %>"); return; }
         const source = orderLineMap.get(Number(r.sales_order_line_id || 0));
         if (!source) { e.preventDefault(); window.showVoucherError("<%= t('error_line_sales_order_source_invalid') %>"); return; }
-        const linePairs = pairs(r.row_status, r.sale_qty);
+        const linePairs = pairs(r, r.sale_qty);
         const consumed = Number(soConsumedPairs.get(Number(r.sales_order_line_id)) || 0);
         const next = Number((consumed + linePairs).toFixed(1));
         if (next > Number(source.open_pairs || 0) + 0.0001) { e.preventDefault(); window.showVoucherError("<%= t('error_line_sales_order_qty_exceeds_open') %>"); return; }
         soConsumedPairs.set(Number(r.sales_order_line_id), next);
       }
-      payload.push({ sku_id: Number(r.sku_id), row_status: String(r.row_status || "PACKED").toUpperCase(), sale_qty: Number(n(r.sale_qty).toFixed(1)), return_qty: Number(n(r.return_qty).toFixed(1)), return_reason_id: r.return_reason_id ? Number(r.return_reason_id) : null, pair_rate: Number(n(r.pair_rate).toFixed(1)), pair_discount: Number(n(r.pair_discount).toFixed(1)), sales_order_line_id: r.sales_order_line_id ? Number(r.sales_order_line_id) : null });
+      payload.push({ sku_id: Number(r.sku_id), uom_id: r.uom_id ? Number(r.uom_id) : null, row_status: String(r.row_status || "PACKED").toUpperCase(), sale_qty: Number(n(r.sale_qty).toFixed(1)), return_qty: Number(n(r.return_qty).toFixed(1)), return_reason_id: r.return_reason_id ? Number(r.return_reason_id) : null, pair_rate: Number(n(r.pair_rate).toFixed(1)), pair_discount: Number(n(r.pair_discount).toFixed(1)), sales_order_line_id: r.sales_order_line_id ? Number(r.sales_order_line_id) : null });
     }
 
     if (!payload.length) { e.preventDefault(); window.showVoucherError(requiredMessage("<%= t('voucher_lines') %>")); return; }
@@ -1797,7 +1940,7 @@
     if (!rows.length) rows.push(emptyRow());
     render();
     syncHeaderUi();
-    window.__salesVoucherInitDone = true;
+    form.dataset.salesVoucherInitDone = "1";
     return true;
   } catch (err) {
     console.error("Error in SalesVoucherInit:", err);

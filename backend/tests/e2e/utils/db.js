@@ -15,7 +15,12 @@ const logPool = (label, err) => {
       }
     : null;
   // eslint-disable-next-line no-console
-  console.log("[DB POOL]", label, stats || "no-pool", err ? { error: err.message } : "");
+  console.log(
+    "[DB POOL]",
+    label,
+    stats || "no-pool",
+    err ? { error: err.message } : "",
+  );
 };
 
 if (process.env.DEBUG_DB_POOL === "1") {
@@ -39,7 +44,10 @@ const getLinkedSize = async () => {
 };
 
 const getBranch = async () => {
-  const row = await knex("erp.branches").select("id").orderBy("id", "asc").first();
+  const row = await knex("erp.branches")
+    .select("id")
+    .orderBy("id", "asc")
+    .first();
   return row || null;
 };
 
@@ -48,7 +56,11 @@ const getApprovalEditFixtureData = async () => {
     knex("erp.branches").select("id").orderBy("id", "asc").limit(2),
     knex("erp.account_groups").select("id").orderBy("id", "asc").first(),
     knex("erp.cities").select("id").orderBy("id", "asc").first(),
-    knex("erp.party_groups").select("id").whereIn("party_type", ["CUSTOMER", "BOTH"]).orderBy("id", "asc").first(),
+    knex("erp.party_groups")
+      .select("id")
+      .whereIn("party_type", ["CUSTOMER", "BOTH"])
+      .orderBy("id", "asc")
+      .first(),
   ]);
   return {
     branchIds: (branches || []).map((row) => row.id).filter(Boolean),
@@ -60,7 +72,10 @@ const getApprovalEditFixtureData = async () => {
 
 const getUserByUsername = async (username) => {
   if (!username) return null;
-  const row = await knex("erp.users").select("id", "username").whereRaw("lower(username) = lower(?)", [username]).first();
+  const row = await knex("erp.users")
+    .select("id", "username")
+    .whereRaw("lower(username) = lower(?)", [username])
+    .first();
   return row || null;
 };
 
@@ -89,7 +104,7 @@ const getVariantForSkuApproval = async () => {
       "s.name as size_name",
       "g.name as grade_name",
       "c.name as color_name",
-      "p.name as packing_name"
+      "p.name as packing_name",
     )
     .leftJoin("erp.items as i", "v.item_id", "i.id")
     .leftJoin("erp.sizes as s", "v.size_id", "s.id")
@@ -102,7 +117,9 @@ const getVariantForSkuApproval = async () => {
 };
 
 const createApprovalRequest = async (payload) => {
-  const [created] = await knex("erp.approval_request").insert(payload).returning(["id"]);
+  const [created] = await knex("erp.approval_request")
+    .insert(payload)
+    .returning(["id"]);
   const id = created?.id || created;
   return id || null;
 };
@@ -112,8 +129,15 @@ const deleteApprovalRequests = async (ids = []) => {
   await knex("erp.approval_request").whereIn("id", ids).del();
 };
 
-const findLatestApprovalRequest = async ({ requestedBy, status, entityType, summary } = {}) => {
-  let query = knex("erp.approval_request").select("id", "status", "summary", "requested_by", "entity_type").orderBy("id", "desc");
+const findLatestApprovalRequest = async ({
+  requestedBy,
+  status,
+  entityType,
+  summary,
+} = {}) => {
+  let query = knex("erp.approval_request")
+    .select("id", "status", "summary", "requested_by", "entity_type")
+    .orderBy("id", "desc");
   if (requestedBy) query = query.where("requested_by", requestedBy);
   if (status) query = query.where("status", status);
   if (entityType) query = query.where("entity_type", entityType);
@@ -121,11 +145,24 @@ const findLatestApprovalRequest = async ({ requestedBy, status, entityType, summ
   return query.first();
 };
 
-const getLatestVoucherHeader = async ({ voucherTypeCode, createdBy, branchId } = {}) => {
+const getLatestVoucherHeader = async ({
+  voucherTypeCode,
+  createdBy,
+  branchId,
+} = {}) => {
   let query = knex("erp.voucher_header")
-    .select("id", "voucher_no", "voucher_type_code", "status", "created_by", "branch_id", "created_at")
+    .select(
+      "id",
+      "voucher_no",
+      "voucher_type_code",
+      "status",
+      "created_by",
+      "branch_id",
+      "created_at",
+    )
     .orderBy("id", "desc");
-  if (voucherTypeCode) query = query.where("voucher_type_code", voucherTypeCode);
+  if (voucherTypeCode)
+    query = query.where("voucher_type_code", voucherTypeCode);
   if (createdBy) query = query.where("created_by", createdBy);
   if (branchId) query = query.where("branch_id", branchId);
   return query.first();
@@ -152,7 +189,9 @@ const getLatestOpenReturnableOutwardReference = async ({ branchId } = {}) => {
       "ro.vendor_party_id",
       "vh.voucher_no",
       "vh.voucher_date",
-      knex.raw("GREATEST(rol.qty - COALESCE(ret.returned_qty, 0), 0) as pending_qty"),
+      knex.raw(
+        "GREATEST(rol.qty - COALESCE(ret.returned_qty, 0), 0) as pending_qty",
+      ),
     )
     .where("vh.voucher_type_code", "RDV")
     .whereNot("vh.status", "REJECTED")
@@ -165,7 +204,9 @@ const getLatestOpenReturnableOutwardReference = async ({ branchId } = {}) => {
   return query.first();
 };
 
-const getTwoOpenReturnableOutwardReferencesForSameVendor = async ({ branchId } = {}) => {
+const getTwoOpenReturnableOutwardReferencesForSameVendor = async ({
+  branchId,
+} = {}) => {
   let query = knex("erp.rgp_outward as ro")
     .join("erp.voucher_header as vh", "vh.id", "ro.voucher_id")
     .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
@@ -237,21 +278,39 @@ const getPurchaseAllocationCountByVoucher = async (voucherId) => {
 
 const setVariantSaleRate = async (variantId, saleRate) => {
   if (!variantId) return;
-  await knex("erp.variants").where({ id: Number(variantId) }).update({ sale_rate: saleRate });
+  await knex("erp.variants")
+    .where({ id: Number(variantId) })
+    .update({ sale_rate: saleRate });
 };
 
-const upsertUserWithPermissions = async ({ username, password, roleName, branchId, scopeKeys = [] }) => {
+const upsertUserWithPermissions = async ({
+  username,
+  password,
+  roleName,
+  branchId,
+  scopeKeys = [],
+}) => {
   if (!username || !password) return null;
   const roleRow = roleName
-    ? await knex("erp.role_templates").select("id").whereRaw("lower(name) = lower(?)", [roleName]).first()
+    ? await knex("erp.role_templates")
+        .select("id")
+        .whereRaw("lower(name) = lower(?)", [roleName])
+        .first()
     : null;
-  const fallbackRole = roleRow || (await knex("erp.role_templates").select("id").orderBy("id", "asc").first());
+  const fallbackRole =
+    roleRow ||
+    (await knex("erp.role_templates")
+      .select("id")
+      .orderBy("id", "asc")
+      .first());
   if (!fallbackRole) return null;
 
   const passwordHash = await bcrypt.hash(password, 10);
 
   return knex.transaction(async (trx) => {
-    let user = await trx("erp.users").whereRaw("lower(username) = lower(?)", [username]).first();
+    let user = await trx("erp.users")
+      .whereRaw("lower(username) = lower(?)", [username])
+      .first();
     if (!user) {
       const [created] = await trx("erp.users")
         .insert({
@@ -271,9 +330,14 @@ const upsertUserWithPermissions = async ({ username, password, roleName, branchI
     }
 
     if (branchId) {
-      const exists = await trx("erp.user_branch").where({ user_id: user.id, branch_id: branchId }).first();
+      const exists = await trx("erp.user_branch")
+        .where({ user_id: user.id, branch_id: branchId })
+        .first();
       if (!exists) {
-        await trx("erp.user_branch").insert({ user_id: user.id, branch_id: branchId });
+        await trx("erp.user_branch").insert({
+          user_id: user.id,
+          branch_id: branchId,
+        });
       }
     }
 
@@ -284,7 +348,10 @@ const upsertUserWithPermissions = async ({ username, password, roleName, branchI
         .whereIn("scope_key", scopeKeys);
       const scopeIds = scopeRows.map((row) => row.id);
       if (scopeIds.length) {
-        await trx("erp.user_permissions_override").where({ user_id: user.id }).whereIn("scope_id", scopeIds).del();
+        await trx("erp.user_permissions_override")
+          .where({ user_id: user.id })
+          .whereIn("scope_id", scopeIds)
+          .del();
         await trx("erp.user_permissions_override").insert(
           scopeIds.map((scopeId) => ({
             user_id: user.id,
@@ -313,10 +380,17 @@ const clearUserPermissionsOverride = async ({ userId, scopeKeys = [] }) => {
     .whereIn("scope_key", scopeKeys);
   const scopeIds = scopeRows.map((row) => row.id);
   if (!scopeIds.length) return;
-  await knex("erp.user_permissions_override").where({ user_id: userId }).whereIn("scope_id", scopeIds).del();
+  await knex("erp.user_permissions_override")
+    .where({ user_id: userId })
+    .whereIn("scope_id", scopeIds)
+    .del();
 };
 
-const setUserScreenPermission = async ({ userId, scopeKey, permissions = {} }) => {
+const setUserScreenPermission = async ({
+  userId,
+  scopeKey,
+  permissions = {},
+}) => {
   return setUserScopePermission({
     userId,
     scopeType: "SCREEN",
@@ -325,7 +399,12 @@ const setUserScreenPermission = async ({ userId, scopeKey, permissions = {} }) =
   });
 };
 
-const setUserScopePermission = async ({ userId, scopeType, scopeKey, permissions = {} }) => {
+const setUserScopePermission = async ({
+  userId,
+  scopeType,
+  scopeKey,
+  permissions = {},
+}) => {
   if (!userId || !scopeKey) return;
   const scope = await knex("erp.permission_scope_registry")
     .select("id")
@@ -371,11 +450,27 @@ const clearUserScopePermission = async ({ userId, scopeType, scopeKey }) => {
     .del();
 };
 
+const getPermissionScope = async ({ scopeType, scopeKey }) => {
+  if (!scopeType || !scopeKey) return null;
+  return knex("erp.permission_scope_registry")
+    .select("id", "scope_type", "scope_key")
+    .where({
+      scope_type: String(scopeType).trim().toUpperCase(),
+      scope_key: String(scopeKey).trim(),
+    })
+    .first();
+};
+
+const getFirstNonAdminRole = async () =>
+  knex("erp.role_templates")
+    .select("id", "name")
+    .whereRaw("lower(name) <> 'admin'")
+    .orderBy("id", "asc")
+    .first();
+
 const insertActivityLogRows = async (rows = []) => {
   if (!rows.length) return [];
-  const created = await knex("erp.activity_log")
-    .insert(rows)
-    .returning(["id"]);
+  const created = await knex("erp.activity_log").insert(rows).returning(["id"]);
   return created.map((row) => row.id || row).filter(Boolean);
 };
 
@@ -388,7 +483,9 @@ const getActivityLogIdsByApprovalRequestId = async (approvalRequestId) => {
   if (!approvalRequestId) return [];
   const rows = await knex("erp.activity_log")
     .select("id")
-    .whereRaw("context_json ->> 'approval_request_id' = ?", [String(approvalRequestId)]);
+    .whereRaw("context_json ->> 'approval_request_id' = ?", [
+      String(approvalRequestId),
+    ]);
   return rows.map((row) => row.id).filter(Boolean);
 };
 
@@ -404,7 +501,12 @@ const getApprovalPolicy = async ({ entityType, entityKey, action }) => {
     .first();
 };
 
-const upsertApprovalPolicy = async ({ entityType, entityKey, action, requiresApproval }) => {
+const upsertApprovalPolicy = async ({
+  entityType,
+  entityKey,
+  action,
+  requiresApproval,
+}) => {
   if (!entityType || !entityKey || !action) return;
   await knex("erp.approval_policy")
     .insert({
@@ -432,16 +534,25 @@ const deleteApprovalPolicy = async ({ entityType, entityKey, action }) => {
 };
 
 const createBomUiFixture = async (token) => {
-  const safeToken = String(token || Date.now()).replace(/[^a-zA-Z0-9_]/g, "").slice(0, 32);
+  const safeToken = String(token || Date.now())
+    .replace(/[^a-zA-Z0-9_]/g, "")
+    .slice(0, 32);
   return knex.transaction(async (trx) => {
     const createdSupport = {};
 
-    const users = await trx("erp.users").select("id").orderBy("id", "asc").limit(2);
+    const users = await trx("erp.users")
+      .select("id")
+      .orderBy("id", "asc")
+      .limit(2);
     if (!users.length) return null;
     const creatorId = Number(users[0].id);
     const approverId = Number(users[1]?.id || users[0].id);
 
-    let uom = await trx("erp.uom").select("id").where({ is_active: true }).orderBy("id", "asc").first();
+    let uom = await trx("erp.uom")
+      .select("id")
+      .where({ is_active: true })
+      .orderBy("id", "asc")
+      .first();
     if (!uom) {
       const [inserted] = await trx("erp.uom")
         .insert({
@@ -458,12 +569,18 @@ const createBomUiFixture = async (token) => {
 
     const pairUom = await trx("erp.uom")
       .select("id")
-      .whereRaw("is_active = true AND (UPPER(code) = 'PAIR' OR UPPER(name) = 'PAIR')")
+      .whereRaw(
+        "is_active = true AND (UPPER(code) = 'PAIR' OR UPPER(name) = 'PAIR')",
+      )
       .orderBy("id", "asc")
       .first();
     const productionUomId = Number(pairUom?.id || uom.id);
 
-    let group = await trx("erp.product_groups").select("id").where({ is_active: true }).orderBy("id", "asc").first();
+    let group = await trx("erp.product_groups")
+      .select("id")
+      .where({ is_active: true })
+      .orderBy("id", "asc")
+      .first();
     if (!group) {
       const [inserted] = await trx("erp.product_groups")
         .insert({
@@ -482,7 +599,11 @@ const createBomUiFixture = async (token) => {
       ]);
     }
 
-    let size = await trx("erp.sizes").select("id").where({ is_active: true }).orderBy("id", "asc").first();
+    let size = await trx("erp.sizes")
+      .select("id")
+      .where({ is_active: true })
+      .orderBy("id", "asc")
+      .first();
     if (!size) {
       const [inserted] = await trx("erp.sizes")
         .insert({
@@ -496,7 +617,11 @@ const createBomUiFixture = async (token) => {
       createdSupport.sizeId = Number(size.id);
     }
 
-    let color = await trx("erp.colors").select("id").where({ is_active: true }).orderBy("id", "asc").first();
+    let color = await trx("erp.colors")
+      .select("id")
+      .where({ is_active: true })
+      .orderBy("id", "asc")
+      .first();
     if (!color) {
       const [inserted] = await trx("erp.colors")
         .insert({
@@ -510,7 +635,11 @@ const createBomUiFixture = async (token) => {
       createdSupport.colorId = Number(color.id);
     }
 
-    let packing = await trx("erp.packing_types").select("id").where({ is_active: true }).orderBy("id", "asc").first();
+    let packing = await trx("erp.packing_types")
+      .select("id")
+      .where({ is_active: true })
+      .orderBy("id", "asc")
+      .first();
     if (!packing) {
       const [inserted] = await trx("erp.packing_types")
         .insert({
@@ -524,7 +653,11 @@ const createBomUiFixture = async (token) => {
       createdSupport.packingTypeId = Number(packing.id);
     }
 
-    let dept = await trx("erp.departments").select("id").where({ is_active: true, is_production: true }).orderBy("id", "asc").first();
+    let dept = await trx("erp.departments")
+      .select("id")
+      .where({ is_active: true, is_production: true })
+      .orderBy("id", "asc")
+      .first();
     if (!dept) {
       const [inserted] = await trx("erp.departments")
         .insert({
@@ -538,8 +671,12 @@ const createBomUiFixture = async (token) => {
       dept = { id: inserted?.id || inserted };
       createdSupport.deptId = Number(dept.id);
     }
-    const productionStagesReg = await trx.raw("SELECT to_regclass('erp.production_stages') AS reg");
-    const hasProductionStagesTable = Boolean(productionStagesReg?.rows?.[0]?.reg || productionStagesReg?.[0]?.reg);
+    const productionStagesReg = await trx.raw(
+      "SELECT to_regclass('erp.production_stages') AS reg",
+    );
+    const hasProductionStagesTable = Boolean(
+      productionStagesReg?.rows?.[0]?.reg || productionStagesReg?.[0]?.reg,
+    );
     if (hasProductionStagesTable) {
       const existingActiveStage = await trx("erp.production_stages")
         .select("id")
@@ -559,9 +696,7 @@ const createBomUiFixture = async (token) => {
           [stageCode, stageName, stageName, dept.id, creatorId],
         );
         const insertedStageId = Number(
-          insertStageResult?.rows?.[0]?.id
-          || insertStageResult?.[0]?.id
-          || 0,
+          insertStageResult?.rows?.[0]?.id || insertStageResult?.[0]?.id || 0,
         );
         if (insertedStageId) {
           createdSupport.productionStageId = insertedStageId;
@@ -580,8 +715,12 @@ const createBomUiFixture = async (token) => {
       .returning(["id"]);
     const labour = { id: labourInserted?.id || labourInserted };
     createdSupport.labourId = Number(labour.id);
-    const labourDeptTable = await trx.raw("SELECT to_regclass('erp.labour_department') AS reg");
-    const hasLabourDeptTable = Boolean(labourDeptTable?.rows?.[0]?.reg || labourDeptTable?.[0]?.reg);
+    const labourDeptTable = await trx.raw(
+      "SELECT to_regclass('erp.labour_department') AS reg",
+    );
+    const hasLabourDeptTable = Boolean(
+      labourDeptTable?.rows?.[0]?.reg || labourDeptTable?.[0]?.reg,
+    );
     if (hasLabourDeptTable) {
       await trx("erp.labour_department")
         .insert({
@@ -590,6 +729,29 @@ const createBomUiFixture = async (token) => {
         })
         .onConflict(["labour_id", "dept_id"])
         .ignore();
+    }
+    const labourBranchTable = await trx.raw(
+      "SELECT to_regclass('erp.labour_branch') AS reg",
+    );
+    const hasLabourBranchTable = Boolean(
+      labourBranchTable?.rows?.[0]?.reg || labourBranchTable?.[0]?.reg,
+    );
+    if (hasLabourBranchTable) {
+      // Link labour to at least one branch so DCV labour dropdown is populated under branch scoping.
+      const fallbackBranch = await trx("erp.branches")
+        .select("id")
+        .orderBy("id", "asc")
+        .first();
+      const branchId = Number(fallbackBranch?.id || 0) || null;
+      if (branchId) {
+        await trx("erp.labour_branch")
+          .insert({
+            labour_id: labour.id,
+            branch_id: branchId,
+          })
+          .onConflict(["labour_id", "branch_id"])
+          .ignore();
+      }
     }
 
     const [fgInserted] = await trx("erp.items")
@@ -629,10 +791,16 @@ const createBomUiFixture = async (token) => {
       .returning(["id"]);
     const fgSkuId = Number(fgSkuInserted?.id || fgSkuInserted);
 
-    const labourRateRuleTable = await trx.raw("SELECT to_regclass('erp.labour_rate_rules') AS reg");
-    const hasLabourRateRuleTable = Boolean(labourRateRuleTable?.rows?.[0]?.reg || labourRateRuleTable?.[0]?.reg);
+    const labourRateRuleTable = await trx.raw(
+      "SELECT to_regclass('erp.labour_rate_rules') AS reg",
+    );
+    const hasLabourRateRuleTable = Boolean(
+      labourRateRuleTable?.rows?.[0]?.reg || labourRateRuleTable?.[0]?.reg,
+    );
     if (hasLabourRateRuleTable) {
-      const hasArticleTypeColumn = await trx.schema.withSchema("erp").hasColumn("labour_rate_rules", "article_type");
+      const hasArticleTypeColumn = await trx.schema
+        .withSchema("erp")
+        .hasColumn("labour_rate_rules", "article_type");
       const labourRatePayload = {
         labour_id: labour.id,
         dept_id: dept.id,
@@ -720,6 +888,21 @@ const createBomUiFixture = async (token) => {
       .returning(["id"]);
     const approvedSfgBomId = Number(bomInserted?.id || bomInserted);
 
+    await trx("erp.bom_rm_line")
+      .insert({
+        bom_id: approvedSfgBomId,
+        rm_item_id: rmItemId,
+        color_id: null,
+        size_id: null,
+        dept_id: dept.id,
+        qty: 1,
+        uom_id: uom.id,
+        normal_loss_pct: 0,
+      })
+      // Seed deterministic RM consumption so DCV shortage path is exercised in E2E.
+      .onConflict(["bom_id", "rm_item_id", "dept_id", "color_id", "size_id"])
+      .ignore();
+
     await trx("erp.item_usage").insert({
       fg_item_id: fgItemId,
       sfg_item_id: sfgItemId,
@@ -759,7 +942,9 @@ const createBomUiFixture = async (token) => {
 };
 
 const createBomNegativeFixture = async (token) => {
-  const safeToken = String(token || Date.now()).replace(/[^a-zA-Z0-9_]/g, "").slice(0, 32);
+  const safeToken = String(token || Date.now())
+    .replace(/[^a-zA-Z0-9_]/g, "")
+    .slice(0, 32);
   const base = await createBomUiFixture(`neg${safeToken}`);
   if (!base) return null;
 
@@ -788,7 +973,9 @@ const createBomNegativeFixture = async (token) => {
         created_by: base.creatorId,
       })
       .returning(["id"]);
-    const sfgNoApprovedItemId = Number(sfgNoBomInserted?.id || sfgNoBomInserted);
+    const sfgNoApprovedItemId = Number(
+      sfgNoBomInserted?.id || sfgNoBomInserted,
+    );
 
     const [variantInserted] = await trx("erp.variants")
       .insert({
@@ -801,7 +988,9 @@ const createBomNegativeFixture = async (token) => {
         created_by: base.creatorId,
       })
       .returning(["id"]);
-    const sfgNoApprovedVariantId = Number(variantInserted?.id || variantInserted);
+    const sfgNoApprovedVariantId = Number(
+      variantInserted?.id || variantInserted,
+    );
 
     const [skuInserted] = await trx("erp.skus")
       .insert({
@@ -826,15 +1015,31 @@ const getBomSnapshot = async (bomId) => {
   const id = Number(bomId);
   if (!id) return null;
   const header = await knex("erp.bom_header")
-    .select("id", "bom_no", "item_id", "level", "status", "version_no", "output_qty", "output_uom_id", "approved_by")
+    .select(
+      "id",
+      "bom_no",
+      "item_id",
+      "level",
+      "status",
+      "version_no",
+      "output_qty",
+      "output_uom_id",
+      "approved_by",
+    )
     .where({ id })
     .first();
   if (!header) return null;
 
   const [rmCount, sfgCount, labourCount] = await Promise.all([
     knex("erp.bom_rm_line").where({ bom_id: id }).count({ count: "*" }).first(),
-    knex("erp.bom_sfg_line").where({ bom_id: id }).count({ count: "*" }).first(),
-    knex("erp.bom_labour_line").where({ bom_id: id }).count({ count: "*" }).first(),
+    knex("erp.bom_sfg_line")
+      .where({ bom_id: id })
+      .count({ count: "*" })
+      .first(),
+    knex("erp.bom_labour_line")
+      .where({ bom_id: id })
+      .count({ count: "*" })
+      .first(),
   ]);
 
   return {
@@ -850,23 +1055,54 @@ const getBomSnapshot = async (bomId) => {
 
 const cleanupBomUiFixture = async ({ fixture, bomIds = [] } = {}) => {
   if (!fixture) return;
-  const fixtureItemIds = [fixture.fgItemId, fixture.sfgItemId, fixture.rmItemId, fixture.sfgNoApprovedItemId, fixture.rmNoRateItemId]
+  const fixtureItemIds = [
+    fixture.fgItemId,
+    fixture.sfgItemId,
+    fixture.rmItemId,
+    fixture.sfgNoApprovedItemId,
+    fixture.rmNoRateItemId,
+  ]
     .map((id) => Number(id))
     .filter(Boolean);
-  const fixtureSkuIds = [fixture.fgSkuId, fixture.sfgSkuId, fixture.sfgNoApprovedSkuId]
+  const fixtureSkuIds = [
+    fixture.fgSkuId,
+    fixture.sfgSkuId,
+    fixture.sfgNoApprovedSkuId,
+  ]
     .map((id) => Number(id))
     .filter(Boolean);
 
   await knex.transaction(async (trx) => {
-    const itemLinkedBomRows = fixtureItemIds.length ? await trx("erp.bom_header").select("id").whereIn("item_id", fixtureItemIds) : [];
-    const bomIdList = [...new Set([...bomIds, fixture.approvedSfgBomId, ...itemLinkedBomRows.map((row) => Number(row.id))].map((id) => Number(id)).filter(Boolean))];
+    const itemLinkedBomRows = fixtureItemIds.length
+      ? await trx("erp.bom_header")
+          .select("id")
+          .whereIn("item_id", fixtureItemIds)
+      : [];
+    const bomIdList = [
+      ...new Set(
+        [
+          ...bomIds,
+          fixture.approvedSfgBomId,
+          ...itemLinkedBomRows.map((row) => Number(row.id)),
+        ]
+          .map((id) => Number(id))
+          .filter(Boolean),
+      ),
+    ];
 
     if (bomIdList.length) {
-      const bomVariantRuleExists = await trx.raw("SELECT to_regclass('erp.bom_variant_rule') AS reg");
-      const hasBomVariantRule = Boolean(bomVariantRuleExists?.rows?.[0]?.reg || bomVariantRuleExists?.[0]?.reg);
+      const bomVariantRuleExists = await trx.raw(
+        "SELECT to_regclass('erp.bom_variant_rule') AS reg",
+      );
+      const hasBomVariantRule = Boolean(
+        bomVariantRuleExists?.rows?.[0]?.reg || bomVariantRuleExists?.[0]?.reg,
+      );
       await trx("erp.approval_request")
         .where({ entity_type: "BOM" })
-        .whereIn("entity_id", bomIdList.map((id) => String(id)))
+        .whereIn(
+          "entity_id",
+          bomIdList.map((id) => String(id)),
+        )
         .del();
       await trx("erp.bom_change_log").whereIn("bom_id", bomIdList).del();
       if (hasBomVariantRule) {
@@ -878,12 +1114,22 @@ const cleanupBomUiFixture = async ({ fixture, bomIds = [] } = {}) => {
       await trx("erp.bom_header").whereIn("id", bomIdList).del();
     }
 
-    const labourRateRuleTableReg = await trx.raw("SELECT to_regclass('erp.labour_rate_rules') AS reg");
-    const hasLabourRateRuleTable = Boolean(labourRateRuleTableReg?.rows?.[0]?.reg || labourRateRuleTableReg?.[0]?.reg);
+    const labourRateRuleTableReg = await trx.raw(
+      "SELECT to_regclass('erp.labour_rate_rules') AS reg",
+    );
+    const hasLabourRateRuleTable = Boolean(
+      labourRateRuleTableReg?.rows?.[0]?.reg ||
+      labourRateRuleTableReg?.[0]?.reg,
+    );
     if (hasLabourRateRuleTable && fixtureSkuIds.length) {
       await trx("erp.labour_rate_rules").whereIn("sku_id", fixtureSkuIds).del();
     }
-    if (hasLabourRateRuleTable && fixture?.labourId && fixture?.deptId && fixture?.groupId) {
+    if (
+      hasLabourRateRuleTable &&
+      fixture?.labourId &&
+      fixture?.deptId &&
+      fixture?.groupId
+    ) {
       await trx("erp.labour_rate_rules")
         .where({
           labour_id: Number(fixture.labourId),
@@ -910,13 +1156,19 @@ const cleanupBomUiFixture = async ({ fixture, bomIds = [] } = {}) => {
       await trx("erp.variants").where({ id: fixture.fgVariantId }).del();
     }
     if (fixture.sfgNoApprovedVariantId) {
-      await trx("erp.variants").where({ id: fixture.sfgNoApprovedVariantId }).del();
+      await trx("erp.variants")
+        .where({ id: fixture.sfgNoApprovedVariantId })
+        .del();
     }
     if (fixture.rmItemId) {
-      await trx("erp.rm_purchase_rates").where({ rm_item_id: fixture.rmItemId }).del();
+      await trx("erp.rm_purchase_rates")
+        .where({ rm_item_id: fixture.rmItemId })
+        .del();
     }
     if (fixture.rmNoRateItemId) {
-      await trx("erp.rm_purchase_rates").where({ rm_item_id: fixture.rmNoRateItemId }).del();
+      await trx("erp.rm_purchase_rates")
+        .where({ rm_item_id: fixture.rmNoRateItemId })
+        .del();
     }
 
     if (fixtureItemIds.length) {
@@ -928,29 +1180,47 @@ const cleanupBomUiFixture = async ({ fixture, bomIds = [] } = {}) => {
     }
 
     if (fixture.createdSupport?.labourId) {
-      await trx("erp.labours").where({ id: Number(fixture.createdSupport.labourId) }).del();
+      await trx("erp.labours")
+        .where({ id: Number(fixture.createdSupport.labourId) })
+        .del();
     }
     if (fixture.createdSupport?.productionStageId) {
-      await trx("erp.production_stages").where({ id: Number(fixture.createdSupport.productionStageId) }).del();
+      await trx("erp.production_stages")
+        .where({ id: Number(fixture.createdSupport.productionStageId) })
+        .del();
     }
     if (fixture.createdSupport?.deptId) {
-      await trx("erp.departments").where({ id: Number(fixture.createdSupport.deptId) }).del();
+      await trx("erp.departments")
+        .where({ id: Number(fixture.createdSupport.deptId) })
+        .del();
     }
     if (fixture.createdSupport?.packingTypeId) {
-      await trx("erp.packing_types").where({ id: Number(fixture.createdSupport.packingTypeId) }).del();
+      await trx("erp.packing_types")
+        .where({ id: Number(fixture.createdSupport.packingTypeId) })
+        .del();
     }
     if (fixture.createdSupport?.colorId) {
-      await trx("erp.colors").where({ id: Number(fixture.createdSupport.colorId) }).del();
+      await trx("erp.colors")
+        .where({ id: Number(fixture.createdSupport.colorId) })
+        .del();
     }
     if (fixture.createdSupport?.sizeId) {
-      await trx("erp.sizes").where({ id: Number(fixture.createdSupport.sizeId) }).del();
+      await trx("erp.sizes")
+        .where({ id: Number(fixture.createdSupport.sizeId) })
+        .del();
     }
     if (fixture.createdSupport?.groupId) {
-      await trx("erp.product_group_item_types").where({ group_id: Number(fixture.createdSupport.groupId) }).del();
-      await trx("erp.product_groups").where({ id: Number(fixture.createdSupport.groupId) }).del();
+      await trx("erp.product_group_item_types")
+        .where({ group_id: Number(fixture.createdSupport.groupId) })
+        .del();
+      await trx("erp.product_groups")
+        .where({ id: Number(fixture.createdSupport.groupId) })
+        .del();
     }
     if (fixture.createdSupport?.uomId) {
-      await trx("erp.uom").where({ id: Number(fixture.createdSupport.uomId) }).del();
+      await trx("erp.uom")
+        .where({ id: Number(fixture.createdSupport.uomId) })
+        .del();
     }
   });
 };
@@ -978,6 +1248,8 @@ module.exports = {
   setUserScreenPermission,
   setUserScopePermission,
   clearUserScopePermission,
+  getPermissionScope,
+  getFirstNonAdminRole,
   insertActivityLogRows,
   deleteActivityLogs,
   getActivityLogIdsByApprovalRequestId,

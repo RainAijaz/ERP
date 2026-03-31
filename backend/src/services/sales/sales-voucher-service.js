@@ -23,8 +23,11 @@ const SALES_DELIVERY_METHODS = ["CUSTOMER_PICKUP", "OUR_DELIVERY"];
 const ROW_STATUS_VALUES = ["PACKED", "LOOSE"];
 const PAIRS_PER_PACKED_UNIT = 12;
 const SALES_COMMISSION_LINE_DESCRIPTION = "Auto sales commission accrual";
+const SALES_SKU_CATEGORIES = new Set(["FG", "SFG"]);
 
 let approvalRequestHasVoucherTypeCodeColumn;
+let stockBalanceSkuTableSupport;
+let stockLedgerTableSupport;
 
 const toDateOnly = toLocalDateOnly;
 
@@ -51,6 +54,56 @@ const toPositiveNumber = (value, decimals = 2) => {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return null;
   return Number(n.toFixed(decimals));
+};
+
+const roundCost2 = (value) => Number(Number(value || 0).toFixed(2));
+const roundUnitCost6 = (value) => Number(Number(value || 0).toFixed(6));
+const roundQty3 = (value) => Number(Number(value || 0).toFixed(3));
+
+const tableExistsTx = async (trx, tableName) => {
+  try {
+    const row = await trx.raw("SELECT to_regclass(?) AS reg", [tableName]);
+    const value = row?.rows?.[0]?.reg || row?.[0]?.reg || null;
+    return Boolean(value);
+  } catch (err) {
+    return false;
+  }
+};
+
+const hasStockBalanceSkuTableTx = async (trx) => {
+  if (typeof stockBalanceSkuTableSupport === "boolean")
+    return stockBalanceSkuTableSupport;
+  stockBalanceSkuTableSupport = await tableExistsTx(
+    trx,
+    "erp.stock_balance_sku",
+  );
+  return stockBalanceSkuTableSupport;
+};
+
+const hasStockLedgerTableTx = async (trx) => {
+  if (typeof stockLedgerTableSupport === "boolean")
+    return stockLedgerTableSupport;
+  stockLedgerTableSupport = await tableExistsTx(trx, "erp.stock_ledger");
+  return stockLedgerTableSupport;
+};
+
+const ensureSalesStockInfraTx = async (trx) => {
+  const [hasSkuBalance, hasLedger] = await Promise.all([
+    hasStockBalanceSkuTableTx(trx),
+    hasStockLedgerTableTx(trx),
+  ]);
+  if (!hasSkuBalance) {
+    throw new HttpError(
+      400,
+      "SKU stock balance infrastructure is unavailable for sales stock posting",
+    );
+  }
+  if (!hasLedger) {
+    throw new HttpError(
+      400,
+      "Stock ledger infrastructure is unavailable for sales stock posting",
+    );
+  }
 };
 
 const parseVoucherNo = (value) => {
@@ -95,10 +148,52 @@ const normalizeRowUnit = (value) => {
   return null;
 };
 const resolveRowStatusFromInput = (line = {}) => {
-  const normalizedUnit = normalizeRowUnit(line?.row_unit || line?.rowUnit || line?.unit);
+  const normalizedUnit = normalizeRowUnit(
+    line?.row_unit || line?.rowUnit || line?.unit,
+  );
   if (normalizedUnit === "PAIR") return "LOOSE";
   if (normalizedUnit === "DZN") return "PACKED";
   return normalizeRowStatus(line?.row_status || line?.status);
+};
+
+const normalizeSkuCategory = (value) => {
+  const category = String(value || "")
+    .trim()
+    .toUpperCase();
+  return SALES_SKU_CATEGORIES.has(category) ? category : null;
+};
+
+const qtyToBasePairs = ({ lineNo, qty, factorToBase }) => {
+  const numericQty = Number(qty || 0);
+  const numericFactor = Number(factorToBase || 0);
+  if (!Number.isFinite(numericQty) || numericQty <= 0) {
+    throw new HttpError(
+      400,
+      `Line ${lineNo}: quantity must be greater than zero`,
+    );
+  }
+  if (!Number.isFinite(numericFactor) || numericFactor <= 0) {
+    throw new HttpError(
+      400,
+      `Line ${lineNo}: selected unit conversion is invalid`,
+    );
+  }
+  const rawPairs = Number(numericQty) * Number(numericFactor);
+  const roundedPairs = Number(rawPairs.toFixed(6));
+  const roundedInt = Math.round(roundedPairs);
+  if (Math.abs(roundedPairs - roundedInt) > 0.0001) {
+    throw new HttpError(
+      400,
+      `Line ${lineNo}: quantity must convert to whole base units`,
+    );
+  }
+  if (roundedInt <= 0) {
+    throw new HttpError(
+      400,
+      `Line ${lineNo}: quantity must be greater than zero`,
+    );
+  }
+  return Number(roundedInt);
 };
 
 const toBool = (value) => {
@@ -136,36 +231,196 @@ const isValidPhoneNumber = (value) => {
   return /^\+?[0-9()\-\s]{7,15}$/.test(text);
 };
 
-const pairsFromQty = ({ qty, isPacked }) => {
-  const numericQty = Number(qty || 0);
-  if (!Number.isFinite(numericQty) || numericQty <= 0) return 0;
-  const multiplier = isPacked ? PAIRS_PER_PACKED_UNIT : 1;
-  return Number((numericQty * multiplier).toFixed(3));
+const buildUomGraph = (conversionRows = []) => {
+  const graph = new Map();
+  const addEdge = (fromId, toId, factor) => {
+    if (!fromId || !toId || !(factor > 0)) return;
+    if (!graph.has(fromId)) graph.set(fromId, []);
+    graph.get(fromId).push({ toId, factor });
+  };
+
+  (conversionRows || []).forEach((row) => {
+    const fromUomId = toPositiveInt(row?.from_uom_id);
+    const toUomId = toPositiveInt(row?.to_uom_id);
+    const factor = Number(row?.factor || 0);
+    if (!fromUomId || !toUomId || !(factor > 0)) return;
+    addEdge(Number(fromUomId), Number(toUomId), factor);
+    addEdge(Number(toUomId), Number(fromUomId), 1 / factor);
+  });
+
+  return graph;
 };
 
-const ensureQtyByStatus = ({ lineNo, qty, isPacked }) => {
-  if (!Number.isFinite(Number(qty)) || Number(qty) <= 0) {
-    throw new HttpError(
-      400,
-      `Line ${lineNo}: quantity must be greater than zero`,
-    );
-  }
-  if (isPacked) {
-    const doubled = Number((Number(qty) * 2).toFixed(4));
-    if (!Number.isInteger(doubled)) {
-      throw new HttpError(
-        400,
-        `Line ${lineNo}: dozen quantity must be in 0.5 steps`,
-      );
+const collectReachableUomIds = ({ graph, sourceUomId }) => {
+  const source = toPositiveInt(sourceUomId);
+  if (!source) return [];
+  const queue = [Number(source)];
+  const visited = new Set([Number(source)]);
+  while (queue.length) {
+    const current = queue.shift();
+    const edges = graph.get(Number(current)) || [];
+    for (const edge of edges) {
+      const nextId = Number(edge.toId);
+      if (!nextId || visited.has(nextId)) continue;
+      visited.add(nextId);
+      queue.push(nextId);
     }
-    return;
   }
-  if (!Number.isInteger(Number(qty))) {
+  return [...visited];
+};
+
+const getConversionFactor = ({ graph, fromUomId, toUomId }) => {
+  const source = toPositiveInt(fromUomId);
+  const target = toPositiveInt(toUomId);
+  if (!source || !target) return null;
+  if (source === target) return 1;
+  const queue = [{ id: Number(source), factor: 1 }];
+  const visited = new Set([Number(source)]);
+  while (queue.length) {
+    const current = queue.shift();
+    const edges = graph.get(Number(current.id)) || [];
+    for (const edge of edges) {
+      const nextId = Number(edge.toId);
+      if (!nextId || visited.has(nextId)) continue;
+      const nextFactor = Number(current.factor) * Number(edge.factor || 0);
+      if (!(nextFactor > 0)) continue;
+      if (nextId === Number(target)) return nextFactor;
+      visited.add(nextId);
+      queue.push({ id: nextId, factor: nextFactor });
+    }
+  }
+  return null;
+};
+
+const loadSkuUnitOptionsByBaseUomIdTx = async ({ trx, baseUomIds = [] }) => {
+  const normalizedBaseIds = [
+    ...new Set(
+      (baseUomIds || []).map((id) => toPositiveInt(id)).filter(Boolean),
+    ),
+  ];
+  if (!normalizedBaseIds.length) return new Map();
+
+  const [uomRows, conversionRows] = await Promise.all([
+    trx("erp.uom").select("id", "code", "name").where({ is_active: true }),
+    trx("erp.uom_conversions")
+      .select("from_uom_id", "to_uom_id", "factor")
+      .where({ is_active: true }),
+  ]);
+  const graph = buildUomGraph(conversionRows);
+  const uomById = new Map(
+    (uomRows || []).map((row) => [
+      Number(row.id),
+      {
+        id: Number(row.id),
+        code: String(row.code || "").trim(),
+        name: String(row.name || "").trim(),
+      },
+    ]),
+  );
+
+  const optionsByBase = new Map();
+  normalizedBaseIds.forEach((baseUomId) => {
+    const reachableIds = collectReachableUomIds({
+      graph,
+      sourceUomId: Number(baseUomId),
+    });
+    const options = reachableIds
+      .map((uomId) => {
+        const uom = uomById.get(Number(uomId));
+        if (!uom) return null;
+        const factorToBase = getConversionFactor({
+          graph,
+          fromUomId: Number(uomId),
+          toUomId: Number(baseUomId),
+        });
+        if (!(Number(factorToBase || 0) > 0)) return null;
+        return {
+          id: Number(uom.id),
+          code: String(uom.code || "").trim(),
+          name: String(uom.name || "").trim(),
+          factor_to_base: Number(Number(factorToBase).toFixed(6)),
+          is_base: Number(uom.id) === Number(baseUomId),
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => {
+        if (a.is_base) return -1;
+        if (b.is_base) return 1;
+        return String(a.name || a.code).localeCompare(String(b.name || b.code));
+      });
+    optionsByBase.set(Number(baseUomId), options);
+  });
+
+  return optionsByBase;
+};
+
+const resolvePreferredPackedUnit = (unitOptions = []) => {
+  const packedByDozen = (unitOptions || []).find(
+    (option) =>
+      option &&
+      option.is_base !== true &&
+      Math.abs(
+        Number(option.factor_to_base || 0) - Number(PAIRS_PER_PACKED_UNIT),
+      ) < 0.000001,
+  );
+  if (packedByDozen) return packedByDozen;
+  const anyNonBase = (unitOptions || []).find(
+    (option) => option && option.is_base !== true,
+  );
+  if (anyNonBase) return anyNonBase;
+  return (
+    (unitOptions || []).find((option) => option && option.is_base === true) ||
+    null
+  );
+};
+
+const resolveSkuUnitSelection = ({
+  line = {},
+  sku = {},
+  unitOptions = [],
+  lineNo,
+}) => {
+  const baseUomId = toPositiveInt(sku?.base_uom_id);
+  const optionById = new Map(
+    (unitOptions || [])
+      .filter((option) => option && toPositiveInt(option.id))
+      .map((option) => [Number(option.id), option]),
+  );
+  if (!baseUomId || !optionById.has(Number(baseUomId))) {
     throw new HttpError(
       400,
-      `Line ${lineNo}: pair quantity must be whole numbers`,
+      `Line ${lineNo}: unit configuration is missing for selected SKU`,
     );
   }
+
+  const explicitUomId = toPositiveInt(
+    line?.uom_id || line?.uomId || line?.selected_uom_id || line?.selectedUomId,
+  );
+  let selectedOption = explicitUomId
+    ? optionById.get(Number(explicitUomId))
+    : null;
+
+  if (!selectedOption) {
+    const legacyStatus = resolveRowStatusFromInput(line);
+    if (legacyStatus === "PACKED") {
+      selectedOption = resolvePreferredPackedUnit(unitOptions);
+    } else {
+      selectedOption = optionById.get(Number(baseUomId));
+    }
+  }
+  if (!selectedOption) {
+    throw new HttpError(400, `Line ${lineNo}: selected unit is invalid`);
+  }
+
+  const isPacked = Number(selectedOption.id) !== Number(baseUomId);
+  return {
+    uomId: Number(selectedOption.id),
+    factorToBase: Number(selectedOption.factor_to_base || 0),
+    isPacked,
+    rowStatus: isPacked ? "PACKED" : "LOOSE",
+    unitCode: String(selectedOption.code || "").trim(),
+    unitName: String(selectedOption.name || "").trim(),
+  };
 };
 
 const canDo = (req, scopeType, scopeKey, action) => {
@@ -303,9 +558,11 @@ const fetchSkuMapTx = async ({ trx, skuIds = [] }) => {
       "s.sku_code",
       "v.sale_rate",
       "i.name as item_name",
+      "i.item_type",
       "i.group_id",
       "pg.name as product_group_name",
       "i.base_uom_id",
+      "u.code as base_uom_code",
       "u.name as base_uom_name",
     )
     .whereIn("s.id", normalized)
@@ -362,8 +619,11 @@ const evaluateVoucherDiscountPolicyTx = async ({
   return evaluateSalesDiscountPolicy({
     saleLines: (lines || []).map((line) => ({
       lineNo: Number(line.line_no || 0),
-      productGroupId: Number(line?.discount_policy?.product_group_id || 0) || null,
-      productGroupName: String(line?.discount_policy?.product_group_name || "").trim(),
+      productGroupId:
+        Number(line?.discount_policy?.product_group_id || 0) || null,
+      productGroupName: String(
+        line?.discount_policy?.product_group_name || "",
+      ).trim(),
       qtyPairs: Number(line?.discount_policy?.qty_pairs || 0),
       grossAmount: Number(line?.discount_policy?.gross_amount || 0),
       pairDiscount: Number(line?.discount_policy?.pair_discount || 0),
@@ -558,6 +818,7 @@ const loadOpenSalesOrderLinesTx = async ({
     .join("erp.skus as s", "s.id", "vl.sku_id")
     .join("erp.variants as v", "v.id", "s.variant_id")
     .join("erp.items as i", "i.id", "v.item_id")
+    .leftJoin("erp.uom as lu", "lu.id", "vl.uom_id")
     .select(
       "vh.id as sales_order_id",
       "vh.voucher_no as sales_order_voucher_no",
@@ -570,10 +831,14 @@ const loadOpenSalesOrderLinesTx = async ({
       "vl.id as sales_order_line_id",
       "vl.line_no as sales_order_line_no",
       "vl.sku_id",
+      "vl.uom_id",
       "vl.qty as ordered_pairs",
       "vl.meta as sales_order_line_meta",
       "s.sku_code",
       "i.name as item_name",
+      "i.base_uom_id",
+      "lu.code as line_uom_code",
+      "lu.name as line_uom_name",
       "v.sale_rate",
     )
     .where({
@@ -643,8 +908,25 @@ const loadOpenSalesOrderLinesTx = async ({
         typeof row.sales_order_line_meta === "object"
           ? row.sales_order_line_meta
           : {};
-      const rowStatus = normalizeRowStatus(meta.row_status);
-      const isPacked = toBool(meta.is_packed) || rowStatus === "PACKED";
+      const baseUomId = toPositiveInt(row.base_uom_id);
+      const selectedUomId =
+        toPositiveInt(meta.uom_id) ||
+        toPositiveInt(row.uom_id) ||
+        baseUomId ||
+        null;
+      const explicitFactor = Number(meta.uom_factor_to_base || 0);
+      const fallbackStatus = normalizeRowStatus(meta.row_status);
+      const legacyFactor =
+        fallbackStatus === "PACKED" ? PAIRS_PER_PACKED_UNIT : 1;
+      const unitFactorToBase =
+        Number.isFinite(explicitFactor) && explicitFactor > 0
+          ? Number(explicitFactor)
+          : legacyFactor;
+      const isPacked =
+        Number(selectedUomId || 0) > 0 && Number(baseUomId || 0) > 0
+          ? Number(selectedUomId) !== Number(baseUomId)
+          : toBool(meta.is_packed) || fallbackStatus === "PACKED";
+      const rowStatus = isPacked ? "PACKED" : "LOOSE";
       const orderedPairs = Number(row.ordered_pairs || 0);
       const deliveredPairs = Number(
         deliveredPairsByLineKey.get(
@@ -658,12 +940,10 @@ const loadOpenSalesOrderLinesTx = async ({
       const openPairs = Number((orderedPairs - safeDeliveredPairs).toFixed(3));
       if (openPairs <= 0) return null;
 
-      const orderedQty = isPacked
-        ? Number((orderedPairs / PAIRS_PER_PACKED_UNIT).toFixed(3))
-        : Number(orderedPairs.toFixed(3));
-      const deliveredQty = isPacked
-        ? Number((safeDeliveredPairs / PAIRS_PER_PACKED_UNIT).toFixed(3))
-        : Number(safeDeliveredPairs.toFixed(3));
+      const orderedQty = Number((orderedPairs / unitFactorToBase).toFixed(3));
+      const deliveredQty = Number(
+        (safeDeliveredPairs / unitFactorToBase).toFixed(3),
+      );
       const openQty = Number((orderedQty - deliveredQty).toFixed(3));
 
       return {
@@ -683,6 +963,14 @@ const loadOpenSalesOrderLinesTx = async ({
         sku_id: Number(row.sku_id),
         sku_code: String(row.sku_code || "").trim(),
         item_name: String(row.item_name || "").trim(),
+        uom_id: selectedUomId,
+        uom_code:
+          String(meta.uom_code || row.line_uom_code || "")
+            .trim()
+            .toUpperCase() || null,
+        uom_name:
+          String(meta.uom_name || row.line_uom_name || "").trim() || null,
+        uom_factor_to_base: Number(unitFactorToBase.toFixed(6)),
         row_status: rowStatus,
         is_packed: isPacked,
         ordered_pairs: Number(orderedPairs.toFixed(3)),
@@ -716,6 +1004,16 @@ const normalizeSalesOrderLinesTx = async ({
   const skuMap = await fetchSkuMapTx({ trx, skuIds: uniqueSkuIds });
   if (skuMap.size !== uniqueSkuIds.length)
     throw new HttpError(400, "One or more selected SKUs are invalid");
+  const unitOptionsByBaseUomId = await loadSkuUnitOptionsByBaseUomIdTx({
+    trx,
+    baseUomIds: [
+      ...new Set(
+        [...skuMap.values()]
+          .map((row) => toPositiveInt(row?.base_uom_id))
+          .filter(Boolean),
+      ),
+    ],
+  });
 
   return lines.map((line, index) => {
     const lineNo = index + 1;
@@ -723,17 +1021,25 @@ const normalizeSalesOrderLinesTx = async ({
     const sku = skuMap.get(Number(skuId));
     if (!sku) throw new HttpError(400, `Line ${lineNo}: SKU is invalid`);
 
-    const rowStatus = resolveRowStatusFromInput(line);
-    const isPacked =
-      rowStatus === "PACKED" || toBool(line?.is_packed || line?.isPacked);
+    const unitSelection = resolveSkuUnitSelection({
+      line,
+      sku,
+      unitOptions: unitOptionsByBaseUomId.get(Number(sku.base_uom_id)) || [],
+      lineNo,
+    });
+    const rowStatus = unitSelection.rowStatus;
+    const isPacked = unitSelection.isPacked;
     const saleQty = toPositiveNumber(
       line?.sale_qty || line?.saleQty || line?.qty,
       3,
     );
     if (!saleQty)
       throw new HttpError(400, `Line ${lineNo}: sale quantity is required`);
-    ensureQtyByStatus({ lineNo, qty: saleQty, isPacked });
-    const totalPairs = pairsFromQty({ qty: saleQty, isPacked });
+    const totalPairs = qtyToBasePairs({
+      lineNo,
+      qty: saleQty,
+      factorToBase: unitSelection.factorToBase,
+    });
 
     const autoPairRate = toPositiveNumber(sku.sale_rate, 2);
     const pairRateInput = toPositiveNumber(
@@ -771,13 +1077,18 @@ const normalizeSalesOrderLinesTx = async ({
       line_no: lineNo,
       line_kind: "SKU",
       sku_id: Number(skuId),
-      uom_id: toPositiveInt(sku.base_uom_id),
+      uom_id: Number(unitSelection.uomId),
       qty: Number(totalPairs.toFixed(3)),
       rate: Number(pairRate.toFixed(2)),
       amount: lineTotal,
       reference_no: normalizeText(line?.reference_no || line?.referenceNo, 120),
       meta: {
+        uom_id: Number(unitSelection.uomId),
+        uom_factor_to_base: Number(unitSelection.factorToBase.toFixed(6)),
+        uom_code: unitSelection.unitCode || undefined,
+        uom_name: unitSelection.unitName || undefined,
         row_status: rowStatus,
+        status: rowStatus,
         is_packed: isPacked,
         sale_qty: Number(saleQty.toFixed(3)),
         return_qty: 0,
@@ -819,6 +1130,7 @@ const loadSalesOrderLineEditStateTx = async ({
       "vl.id as sales_order_line_id",
       "vl.line_no",
       "vl.sku_id",
+      "vl.uom_id",
       "vl.qty as ordered_pairs",
       "vl.rate",
       "vl.meta",
@@ -851,7 +1163,10 @@ const loadSalesOrderLineEditStateTx = async ({
     .whereRaw("coalesce(svl.meta->>'sales_order_line_id', '') ~ '^[0-9]+$'");
 
   if (excludedVoucherId) {
-    deliveredPairsQuery = deliveredPairsQuery.whereNot("svh.id", excludedVoucherId);
+    deliveredPairsQuery = deliveredPairsQuery.whereNot(
+      "svh.id",
+      excludedVoucherId,
+    );
   }
 
   deliveredPairsQuery = deliveredPairsQuery.groupBy(
@@ -878,20 +1193,30 @@ const loadSalesOrderLineEditStateTx = async ({
         0,
         Math.min(
           orderedPairs,
-          Number(deliveredByLineId.get(Number(row.sales_order_line_id || 0)) || 0),
+          Number(
+            deliveredByLineId.get(Number(row.sales_order_line_id || 0)) || 0,
+          ),
         ),
       ).toFixed(3),
     );
     const rowStatus = normalizeRowStatus(meta.row_status);
+    const uomId = toPositiveInt(meta.uom_id) || toPositiveInt(row.uom_id);
+    const uomFactorToBase = Number(meta.uom_factor_to_base || 0) || null;
     const pairDiscount = toNonNegativeNumber(meta.pair_discount, 2) || 0;
     return {
       sales_order_line_id: Number(row.sales_order_line_id || 0),
       line_no: Number(row.line_no || 0),
       sku_id: Number(row.sku_id || 0) || null,
+      uom_id: uomId || null,
+      uom_factor_to_base: uomFactorToBase ? Number(uomFactorToBase) : null,
       row_status: rowStatus,
       ordered_pairs: Number(orderedPairs.toFixed(3)),
       delivered_pairs: deliveredPairs,
-      rate: Number(toPositiveNumber(meta.pair_rate, 2) || toPositiveNumber(row.rate, 2) || 0),
+      rate: Number(
+        toPositiveNumber(meta.pair_rate, 2) ||
+          toPositiveNumber(row.rate, 2) ||
+          0,
+      ),
       pair_discount: Number(pairDiscount.toFixed(2)),
     };
   });
@@ -925,18 +1250,40 @@ const validateSalesOrderEditableLines = ({
       );
     }
 
+    const nextUomId = toPositiveInt(nextLine.uom_id || nextLine.meta?.uom_id);
+    const existingUomId = toPositiveInt(existingLine.uom_id);
     if (
-      String(nextLine.meta?.row_status || "").trim().toUpperCase() !==
-      String(existingLine.row_status || "").trim().toUpperCase()
+      nextUomId &&
+      existingUomId &&
+      Number(nextUomId) !== Number(existingUomId)
     ) {
       throw new HttpError(
         400,
         `Line ${lineNo}: unit cannot be changed after delivery`,
       );
     }
+    if (!nextUomId || !existingUomId) {
+      if (
+        String(nextLine.meta?.row_status || "")
+          .trim()
+          .toUpperCase() !==
+        String(existingLine.row_status || "")
+          .trim()
+          .toUpperCase()
+      ) {
+        throw new HttpError(
+          400,
+          `Line ${lineNo}: unit cannot be changed after delivery`,
+        );
+      }
+    }
 
     if (
-      !approxEq(Number(nextLine.rate || 0), Number(existingLine.rate || 0), 0.01)
+      !approxEq(
+        Number(nextLine.rate || 0),
+        Number(existingLine.rate || 0),
+        0.01,
+      )
     ) {
       throw new HttpError(
         400,
@@ -966,7 +1313,11 @@ const validateSalesOrderEditableLines = ({
 
     if (
       deliveredPairs >= Number(existingLine.ordered_pairs || 0) - 0.0001 &&
-      !approxEq(Number(nextLine.qty || 0), Number(existingLine.ordered_pairs || 0), 0.001)
+      !approxEq(
+        Number(nextLine.qty || 0),
+        Number(existingLine.ordered_pairs || 0),
+        0.001,
+      )
     ) {
       throw new HttpError(
         400,
@@ -1035,6 +1386,16 @@ const normalizeSalesVoucherLinesTx = async ({
   const skuMap = await fetchSkuMapTx({ trx, skuIds: uniqueSkuIds });
   if (skuMap.size !== uniqueSkuIds.length)
     throw new HttpError(400, "One or more selected SKUs are invalid");
+  const unitOptionsByBaseUomId = await loadSkuUnitOptionsByBaseUomIdTx({
+    trx,
+    baseUomIds: [
+      ...new Set(
+        [...skuMap.values()]
+          .map((row) => toPositiveInt(row?.base_uom_id))
+          .filter(Boolean),
+      ),
+    ],
+  });
 
   const consumedPairsBySourceLine = new Map();
   let salesTotal = 0;
@@ -1073,12 +1434,28 @@ const normalizeSalesVoucherLinesTx = async ({
         );
       }
 
-      const rowStatus = soSourceLine
-        ? normalizeRowStatus(soSourceLine.row_status)
-        : resolveRowStatusFromInput(line);
-      const isPacked = soSourceLine
-        ? toBool(soSourceLine.is_packed)
-        : rowStatus === "PACKED" || toBool(line?.is_packed || line?.isPacked);
+      const unitSelection = soSourceLine
+        ? resolveSkuUnitSelection({
+            line: {
+              ...line,
+              uom_id: soSourceLine.uom_id,
+              row_status: soSourceLine.row_status,
+              is_packed: soSourceLine.is_packed,
+            },
+            sku,
+            unitOptions:
+              unitOptionsByBaseUomId.get(Number(sku.base_uom_id)) || [],
+            lineNo,
+          })
+        : resolveSkuUnitSelection({
+            line,
+            sku,
+            unitOptions:
+              unitOptionsByBaseUomId.get(Number(sku.base_uom_id)) || [],
+            lineNo,
+          });
+      const rowStatus = unitSelection.rowStatus;
+      const isPacked = unitSelection.isPacked;
       const saleQty = toNonNegativeNumber(
         line?.sale_qty || line?.saleQty || 0,
         3,
@@ -1103,8 +1480,11 @@ const normalizeSalesVoucherLinesTx = async ({
       }
 
       const usedQty = saleQty > 0 ? saleQty : returnQty;
-      ensureQtyByStatus({ lineNo, qty: usedQty, isPacked });
-      const totalPairs = pairsFromQty({ qty: usedQty, isPacked });
+      const totalPairs = qtyToBasePairs({
+        lineNo,
+        qty: usedQty,
+        factorToBase: unitSelection.factorToBase,
+      });
       if (soSourceLine) {
         const consumedPairs = Number(
           consumedPairsBySourceLine.get(
@@ -1193,7 +1573,7 @@ const normalizeSalesVoucherLinesTx = async ({
         line_no: lineNo,
         line_kind: "SKU",
         sku_id: Number(skuId),
-        uom_id: toPositiveInt(sku.base_uom_id),
+        uom_id: Number(unitSelection.uomId),
         qty: Number(totalPairs.toFixed(3)),
         rate: Number(pairRate.toFixed(2)),
         amount:
@@ -1205,7 +1585,12 @@ const normalizeSalesVoucherLinesTx = async ({
           120,
         ),
         meta: {
+          uom_id: Number(unitSelection.uomId),
+          uom_factor_to_base: Number(unitSelection.factorToBase.toFixed(6)),
+          uom_code: unitSelection.unitCode || undefined,
+          uom_name: unitSelection.unitName || undefined,
           row_status: rowStatus,
+          status: rowStatus,
           is_packed: isPacked,
           sale_qty: Number(saleQty.toFixed(3)),
           return_qty: Number(returnQty.toFixed(3)),
@@ -1225,7 +1610,8 @@ const normalizeSalesVoucherLinesTx = async ({
         discount_policy: {
           product_group_id: Number(sku.group_id || 0) || null,
           product_group_name: String(sku.product_group_name || "").trim(),
-          qty_pairs: movementKind === "SALE" ? Number(totalPairs.toFixed(3)) : 0,
+          qty_pairs:
+            movementKind === "SALE" ? Number(totalPairs.toFixed(3)) : 0,
           gross_amount:
             movementKind === "SALE"
               ? Number((totalPairs * pairRate).toFixed(2))
@@ -1613,8 +1999,7 @@ const insertVoucherLinesTx = async ({ trx, voucherId, lines }) => {
       rate: Number(line?.rate || 0),
       amount: Number(line?.amount || 0),
       reference_no: line?.reference_no || null,
-      meta:
-        line?.meta && typeof line.meta === "object" ? { ...line.meta } : {},
+      meta: line?.meta && typeof line.meta === "object" ? { ...line.meta } : {},
     };
   });
   if (!rows.length) return [];
@@ -1773,6 +2158,561 @@ const syncSalesLineExtensionsTx = async ({
   await trx("erp.sales_line").insert(rows);
 };
 
+const resolveUnitCost = ({ qty = 0, value = 0, wac = 0 }) => {
+  const normalizedQty = Number(qty || 0);
+  const normalizedValue = Number(value || 0);
+  const normalizedWac = Number(wac || 0);
+  if (normalizedQty > 0 && normalizedValue > 0) {
+    return roundUnitCost6(normalizedValue / normalizedQty);
+  }
+  if (normalizedWac > 0) return roundUnitCost6(normalizedWac);
+  return 0;
+};
+
+const insertSalesStockLedgerTx = async ({
+  trx,
+  branchId,
+  skuId,
+  category,
+  voucherId,
+  voucherLineId = null,
+  txnDate,
+  direction,
+  qtyPairs,
+  unitCost,
+  value,
+}) => {
+  await trx("erp.stock_ledger").insert({
+    branch_id: Number(branchId),
+    category: String(category || "")
+      .trim()
+      .toUpperCase(),
+    stock_state: "ON_HAND",
+    item_id: null,
+    sku_id: Number(skuId),
+    voucher_header_id: Number(voucherId),
+    voucher_line_id: toPositiveInt(voucherLineId),
+    txn_date: txnDate,
+    direction: Number(direction),
+    qty: 0,
+    qty_pairs: Number(qtyPairs),
+    unit_cost: roundUnitCost6(unitCost),
+    value: roundCost2(value),
+  });
+};
+
+const ensureSkuBalanceSeedTx = async ({ trx, branchId, skuId, category }) => {
+  await trx("erp.stock_balance_sku")
+    .insert({
+      branch_id: Number(branchId),
+      stock_state: "ON_HAND",
+      category: String(category || "")
+        .trim()
+        .toUpperCase(),
+      is_packed: false,
+      sku_id: Number(skuId),
+      qty_pairs: 0,
+      value: 0,
+      wac: 0,
+      last_txn_at: trx.fn.now(),
+    })
+    .onConflict(["branch_id", "stock_state", "category", "is_packed", "sku_id"])
+    .ignore();
+};
+
+const resolveSkuCurrentUnitCostTx = async ({
+  trx,
+  branchId,
+  skuId,
+  category,
+}) => {
+  const summary = await trx("erp.stock_balance_sku")
+    .select(
+      trx.raw("sum(coalesce(qty_pairs, 0)) as qty_pairs"),
+      trx.raw("sum(coalesce(value, 0)) as value"),
+    )
+    .where({
+      branch_id: Number(branchId),
+      stock_state: "ON_HAND",
+      category: String(category || "")
+        .trim()
+        .toUpperCase(),
+      sku_id: Number(skuId),
+    })
+    .first();
+
+  const qtyPairs = Number(summary?.qty_pairs || 0);
+  const value = Number(summary?.value || 0);
+  if (qtyPairs > 0 && value > 0) {
+    return roundUnitCost6(value / qtyPairs);
+  }
+
+  const latest = await trx("erp.stock_ledger")
+    .select("unit_cost")
+    .where({
+      branch_id: Number(branchId),
+      stock_state: "ON_HAND",
+      category: String(category || "")
+        .trim()
+        .toUpperCase(),
+      sku_id: Number(skuId),
+    })
+    .orderBy("txn_date", "desc")
+    .orderBy("id", "desc")
+    .first();
+  return roundUnitCost6(Number(latest?.unit_cost || 0));
+};
+
+const applySalesSkuStockOutTx = async ({
+  trx,
+  branchId,
+  skuId,
+  category,
+  qtyPairsOut,
+  voucherId,
+  voucherLineId = null,
+  voucherDate,
+}) => {
+  const normalizedQtyPairsOut = Number(qtyPairsOut || 0);
+  if (!Number.isInteger(normalizedQtyPairsOut) || normalizedQtyPairsOut <= 0) {
+    return;
+  }
+
+  const rows = await trx("erp.stock_balance_sku")
+    .select("is_packed", "qty_pairs", "value", "wac")
+    .where({
+      branch_id: Number(branchId),
+      stock_state: "ON_HAND",
+      category: String(category || "")
+        .trim()
+        .toUpperCase(),
+      sku_id: Number(skuId),
+    })
+    .orderBy("is_packed", "asc")
+    .orderBy("qty_pairs", "desc")
+    .forUpdate();
+
+  const totalAvailablePairs = rows.reduce(
+    (sum, row) => sum + Number(row?.qty_pairs || 0),
+    0,
+  );
+  if (totalAvailablePairs < normalizedQtyPairsOut) {
+    throw new HttpError(
+      400,
+      `Insufficient stock for SKU ${Number(skuId)} (required ${normalizedQtyPairsOut}, available ${Number(totalAvailablePairs)})`,
+    );
+  }
+
+  let remainingPairs = Number(normalizedQtyPairsOut);
+  let consumedValueTotal = 0;
+  for (const row of rows) {
+    const rowQtyPairs = Number(row?.qty_pairs || 0);
+    if (remainingPairs <= 0 || rowQtyPairs <= 0) continue;
+    const consumePairs = Math.min(rowQtyPairs, remainingPairs);
+    const unitCost = resolveUnitCost({
+      qty: rowQtyPairs,
+      value: Number(row?.value || 0),
+      wac: Number(row?.wac || 0),
+    });
+    const consumedValue = roundCost2(consumePairs * unitCost);
+    const nextQtyPairsRaw = rowQtyPairs - consumePairs;
+    const nextValueRaw = Number(row?.value || 0) - consumedValue;
+    if (nextQtyPairsRaw < 0 || nextValueRaw < -0.05) {
+      throw new HttpError(
+        400,
+        `Sales stock posting would make stock negative for SKU ${Number(skuId)}`,
+      );
+    }
+
+    const nextQtyPairs = Math.max(Number(nextQtyPairsRaw || 0), 0);
+    const nextValue =
+      nextQtyPairs > 0 ? Math.max(roundCost2(nextValueRaw), 0) : 0;
+    const nextWac =
+      nextQtyPairs > 0 ? roundUnitCost6(nextValue / nextQtyPairs) : 0;
+
+    await trx("erp.stock_balance_sku")
+      .where({
+        branch_id: Number(branchId),
+        stock_state: "ON_HAND",
+        category: String(category || "")
+          .trim()
+          .toUpperCase(),
+        is_packed: row.is_packed === true,
+        sku_id: Number(skuId),
+      })
+      .update({
+        qty_pairs: nextQtyPairs,
+        value: nextValue,
+        wac: nextWac,
+        last_txn_at: trx.fn.now(),
+      });
+
+    consumedValueTotal = roundCost2(consumedValueTotal + consumedValue);
+    remainingPairs -= consumePairs;
+  }
+
+  if (remainingPairs > 0) {
+    throw new HttpError(
+      400,
+      `Sales stock posting failed due to stock split inconsistency for SKU ${Number(skuId)}`,
+    );
+  }
+
+  const avgUnitCost =
+    normalizedQtyPairsOut > 0
+      ? roundUnitCost6(consumedValueTotal / normalizedQtyPairsOut)
+      : 0;
+  await insertSalesStockLedgerTx({
+    trx,
+    branchId,
+    skuId,
+    category,
+    voucherId,
+    voucherLineId,
+    txnDate: voucherDate,
+    direction: -1,
+    qtyPairs: normalizedQtyPairsOut,
+    unitCost: avgUnitCost,
+    value: -consumedValueTotal,
+  });
+};
+
+const applySalesSkuStockInTx = async ({
+  trx,
+  branchId,
+  skuId,
+  category,
+  qtyPairsIn,
+  valueIn = 0,
+  voucherId,
+  voucherLineId = null,
+  voucherDate,
+}) => {
+  const normalizedQtyPairsIn = Number(qtyPairsIn || 0);
+  if (!Number.isInteger(normalizedQtyPairsIn) || normalizedQtyPairsIn <= 0) {
+    return;
+  }
+  await ensureSkuBalanceSeedTx({
+    trx,
+    branchId,
+    skuId,
+    category,
+  });
+  const target = await trx("erp.stock_balance_sku")
+    .select("qty_pairs", "value")
+    .where({
+      branch_id: Number(branchId),
+      stock_state: "ON_HAND",
+      category: String(category || "")
+        .trim()
+        .toUpperCase(),
+      is_packed: false,
+      sku_id: Number(skuId),
+    })
+    .first()
+    .forUpdate();
+
+  const nextQtyPairs = Number(target?.qty_pairs || 0) + normalizedQtyPairsIn;
+  const nextValue = roundCost2(
+    Number(target?.value || 0) + Number(valueIn || 0),
+  );
+  const nextWac =
+    nextQtyPairs > 0 ? roundUnitCost6(nextValue / nextQtyPairs) : 0;
+
+  await trx("erp.stock_balance_sku")
+    .where({
+      branch_id: Number(branchId),
+      stock_state: "ON_HAND",
+      category: String(category || "")
+        .trim()
+        .toUpperCase(),
+      is_packed: false,
+      sku_id: Number(skuId),
+    })
+    .update({
+      qty_pairs: nextQtyPairs,
+      value: nextValue,
+      wac: nextWac,
+      last_txn_at: trx.fn.now(),
+    });
+
+  const unitCost =
+    normalizedQtyPairsIn > 0
+      ? roundUnitCost6(Number(valueIn || 0) / normalizedQtyPairsIn)
+      : 0;
+  await insertSalesStockLedgerTx({
+    trx,
+    branchId,
+    skuId,
+    category,
+    voucherId,
+    voucherLineId,
+    txnDate: voucherDate,
+    direction: 1,
+    qtyPairs: normalizedQtyPairsIn,
+    unitCost,
+    value: roundCost2(valueIn),
+  });
+};
+
+const addBackSalesSkuFromLedgerTx = async ({ trx, row }) => {
+  const branchId = toPositiveInt(row?.branch_id);
+  const skuId = toPositiveInt(row?.sku_id);
+  const category = normalizeSkuCategory(row?.category);
+  const stockState =
+    String(row?.stock_state || "ON_HAND")
+      .trim()
+      .toUpperCase() || "ON_HAND";
+  const qtyPairs = Number(row?.qty_pairs || 0);
+  const value = roundCost2(Math.abs(Number(row?.value || 0)));
+  if (!branchId || !skuId || !category) return;
+  if (!Number.isInteger(qtyPairs) || qtyPairs <= 0) return;
+
+  await ensureSkuBalanceSeedTx({ trx, branchId, skuId, category });
+  const target = await trx("erp.stock_balance_sku")
+    .select("is_packed", "qty_pairs", "value")
+    .where({
+      branch_id: Number(branchId),
+      stock_state: stockState,
+      category,
+      sku_id: Number(skuId),
+    })
+    .orderBy("is_packed", "asc")
+    .first()
+    .forUpdate();
+  if (!target) return;
+
+  const nextQtyPairs = Number(target.qty_pairs || 0) + Number(qtyPairs || 0);
+  const nextValue = roundCost2(Number(target.value || 0) + value);
+  const nextWac =
+    nextQtyPairs > 0 ? roundUnitCost6(nextValue / nextQtyPairs) : 0;
+
+  await trx("erp.stock_balance_sku")
+    .where({
+      branch_id: Number(branchId),
+      stock_state: stockState,
+      category,
+      is_packed: target.is_packed === true,
+      sku_id: Number(skuId),
+    })
+    .update({
+      qty_pairs: nextQtyPairs,
+      value: nextValue,
+      wac: nextWac,
+      last_txn_at: trx.fn.now(),
+    });
+};
+
+const removeSalesSkuFromLedgerTx = async ({ trx, row }) => {
+  const branchId = toPositiveInt(row?.branch_id);
+  const skuId = toPositiveInt(row?.sku_id);
+  const category = normalizeSkuCategory(row?.category);
+  const stockState =
+    String(row?.stock_state || "ON_HAND")
+      .trim()
+      .toUpperCase() || "ON_HAND";
+  const qtyPairs = Number(row?.qty_pairs || 0);
+  const value = roundCost2(Math.abs(Number(row?.value || 0)));
+  if (!branchId || !skuId || !category) return;
+  if (!Number.isInteger(qtyPairs) || qtyPairs <= 0) return;
+
+  const target = await trx("erp.stock_balance_sku")
+    .select("qty_pairs", "value")
+    .where({
+      branch_id: Number(branchId),
+      stock_state: stockState,
+      category,
+      is_packed: false,
+      sku_id: Number(skuId),
+    })
+    .first()
+    .forUpdate();
+  const availableQtyPairs = Number(target?.qty_pairs || 0);
+  const availableValue = Number(target?.value || 0);
+  if (availableQtyPairs < qtyPairs) {
+    throw new HttpError(
+      400,
+      `Stock rollback failed: ${category} qty underflow for SKU ${Number(skuId)}`,
+    );
+  }
+  if (availableValue < value - 0.05) {
+    throw new HttpError(
+      400,
+      `Stock rollback failed: ${category} value underflow for SKU ${Number(skuId)}`,
+    );
+  }
+
+  const nextQtyPairs = Math.max(availableQtyPairs - qtyPairs, 0);
+  const nextValue =
+    nextQtyPairs > 0 ? Math.max(roundCost2(availableValue - value), 0) : 0;
+  const nextWac =
+    nextQtyPairs > 0 ? roundUnitCost6(nextValue / nextQtyPairs) : 0;
+
+  await trx("erp.stock_balance_sku")
+    .where({
+      branch_id: Number(branchId),
+      stock_state: stockState,
+      category,
+      is_packed: false,
+      sku_id: Number(skuId),
+    })
+    .update({
+      qty_pairs: nextQtyPairs,
+      value: nextValue,
+      wac: nextWac,
+      last_txn_at: trx.fn.now(),
+    });
+};
+
+const rollbackSalesStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
+  const normalizedVoucherId = toPositiveInt(voucherId);
+  if (!normalizedVoucherId) return;
+  if (!(await hasStockLedgerTableTx(trx))) return;
+  const rows = await trx("erp.stock_ledger")
+    .select(
+      "id",
+      "branch_id",
+      "category",
+      "stock_state",
+      "sku_id",
+      "direction",
+      "qty_pairs",
+      "value",
+    )
+    .where({ voucher_header_id: normalizedVoucherId })
+    .whereIn("category", ["FG", "SFG"])
+    .orderBy("id", "desc");
+
+  for (const row of rows) {
+    const direction = Number(row?.direction || 0);
+    if (direction === -1) {
+      await addBackSalesSkuFromLedgerTx({ trx, row });
+      continue;
+    }
+    if (direction === 1) {
+      await removeSalesSkuFromLedgerTx({ trx, row });
+      continue;
+    }
+    throw new HttpError(
+      400,
+      `Unexpected stock ledger direction (${direction}) while rolling back sales voucher ${normalizedVoucherId}`,
+    );
+  }
+  if (rows.length) {
+    await trx("erp.stock_ledger")
+      .where({ voucher_header_id: normalizedVoucherId })
+      .whereIn("category", ["FG", "SFG"])
+      .del();
+  }
+};
+
+const syncSalesVoucherStockTx = async ({ trx, voucherId, voucherTypeCode }) => {
+  const normalizedVoucherId = toPositiveInt(voucherId);
+  if (!normalizedVoucherId) return;
+  const normalizedVoucherTypeCode = String(voucherTypeCode || "")
+    .trim()
+    .toUpperCase();
+  if (normalizedVoucherTypeCode !== SALES_VOUCHER_TYPES.salesVoucher) return;
+
+  const header = await trx("erp.voucher_header")
+    .select("id", "branch_id", "voucher_date", "status")
+    .where({ id: normalizedVoucherId })
+    .first();
+  if (!header) return;
+
+  await ensureSalesStockInfraTx(trx);
+  await rollbackSalesStockLedgerByVoucherTx({
+    trx,
+    voucherId: normalizedVoucherId,
+  });
+  if (String(header.status || "").toUpperCase() !== "APPROVED") return;
+
+  const voucherLines = await trx("erp.voucher_line as vl")
+    .join("erp.skus as s", "s.id", "vl.sku_id")
+    .join("erp.variants as v", "v.id", "s.variant_id")
+    .join("erp.items as i", "i.id", "v.item_id")
+    .select(
+      "vl.id",
+      "vl.sku_id",
+      "vl.qty",
+      "vl.amount",
+      "vl.meta",
+      "i.item_type",
+    )
+    .where({
+      "vl.voucher_header_id": normalizedVoucherId,
+      "vl.line_kind": "SKU",
+    })
+    .orderBy("vl.line_no", "asc");
+
+  for (const line of voucherLines || []) {
+    const meta = line?.meta && typeof line.meta === "object" ? line.meta : {};
+    const category = normalizeSkuCategory(line?.item_type);
+    const skuId = toPositiveInt(line?.sku_id);
+    const qtyPairsRaw = Number(line?.qty || meta?.total_pairs || 0);
+    const qtyPairs = Math.round(Number(qtyPairsRaw || 0));
+    if (!category || !skuId || qtyPairs <= 0) continue;
+
+    const movementKind = String(meta?.movement_kind || "")
+      .trim()
+      .toUpperCase();
+    const effectiveMovementKind =
+      movementKind === "RETURN" || Number(line?.amount || 0) < 0
+        ? "RETURN"
+        : "SALE";
+    if (effectiveMovementKind === "SALE") {
+      await applySalesSkuStockOutTx({
+        trx,
+        branchId: Number(header.branch_id),
+        skuId: Number(skuId),
+        category,
+        qtyPairsOut: qtyPairs,
+        voucherId: normalizedVoucherId,
+        voucherLineId: Number(line.id),
+        voucherDate: toDateOnly(header.voucher_date),
+      });
+      continue;
+    }
+
+    const unitCost = await resolveSkuCurrentUnitCostTx({
+      trx,
+      branchId: Number(header.branch_id),
+      skuId: Number(skuId),
+      category,
+    });
+    const valueIn = roundCost2(Number(qtyPairs) * Number(unitCost || 0));
+    await applySalesSkuStockInTx({
+      trx,
+      branchId: Number(header.branch_id),
+      skuId: Number(skuId),
+      category,
+      qtyPairsIn: qtyPairs,
+      valueIn,
+      voucherId: normalizedVoucherId,
+      voucherLineId: Number(line.id),
+      voucherDate: toDateOnly(header.voucher_date),
+    });
+  }
+};
+
+const ensureSalesVoucherDerivedDataTx = async ({
+  trx,
+  voucherId,
+  voucherTypeCode,
+}) => {
+  const normalizedVoucherTypeCode = String(voucherTypeCode || "")
+    .trim()
+    .toUpperCase();
+  if (normalizedVoucherTypeCode !== SALES_VOUCHER_TYPES.salesVoucher) {
+    return;
+  }
+  await syncSalesVoucherStockTx({
+    trx,
+    voucherId,
+    voucherTypeCode: normalizedVoucherTypeCode,
+  });
+};
+
 const createApprovalRequest = async ({
   trx,
   req,
@@ -1909,10 +2849,8 @@ const saveSalesVoucherTx = async ({
     t: req?.res?.locals?.t,
   });
   const queuedForApproval = isCreate
-    ? !canCreate ||
-      (policyRequiresApproval && !canApprove)
-    : !canEdit ||
-      (policyRequiresApproval && !canApprove);
+    ? !canCreate || (policyRequiresApproval && !canApprove)
+    : !canEdit || (policyRequiresApproval && !canApprove);
 
   let voucherNo = null;
   let status = "APPROVED";
@@ -1987,6 +2925,11 @@ const saveSalesVoucherTx = async ({
       });
     }
     await syncVoucherGlPostingTx({ trx, voucherId: headerId });
+    await ensureSalesVoucherDerivedDataTx({
+      trx,
+      voucherId: headerId,
+      voucherTypeCode,
+    });
     return {
       id: headerId,
       voucherNo,
@@ -2141,7 +3084,7 @@ const deleteSalesVoucher = async ({
   voucherTypeCode,
   scopeKey,
 }) => {
-  const canDelete = canDo(req, "VOUCHER", scopeKey, "delete");
+  const canDelete = canDo(req, "VOUCHER", scopeKey, "hard_delete");
   const canApprove = canApproveVoucherAction(req, scopeKey);
   const normalizedVoucherId = toPositiveInt(voucherId);
   if (!normalizedVoucherId) throw new HttpError(400, "Invalid voucher id");
@@ -2173,6 +3116,11 @@ const deleteSalesVoucher = async ({
         approved_at: trx.fn.now(),
       });
       await syncVoucherGlPostingTx({ trx, voucherId: existing.id });
+      await ensureSalesVoucherDerivedDataTx({
+        trx,
+        voucherId: existing.id,
+        voucherTypeCode,
+      });
       return {
         id: existing.id,
         voucherNo: existing.voucher_no,
@@ -2219,6 +3167,36 @@ const deleteSalesVoucher = async ({
     permissionReroute: !canDelete,
     deleted: !result.queuedForApproval,
   };
+};
+
+const applySalesVoucherDeletePayloadTx = async ({
+  trx,
+  voucherId,
+  voucherTypeCode,
+  approverId,
+}) => {
+  const normalizedVoucherId = toPositiveInt(voucherId);
+  if (!normalizedVoucherId) throw new HttpError(400, "Invalid voucher id");
+
+  const existing = await trx("erp.voucher_header")
+    .select("id", "status")
+    .where({ id: normalizedVoucherId, voucher_type_code: voucherTypeCode })
+    .first();
+  if (!existing) throw new HttpError(404, "Voucher not found");
+  if (String(existing.status || "").toUpperCase() === "REJECTED") return;
+
+  await trx("erp.voucher_header").where({ id: normalizedVoucherId }).update({
+    status: "REJECTED",
+    approved_by: approverId,
+    approved_at: trx.fn.now(),
+  });
+
+  await syncVoucherGlPostingTx({ trx, voucherId: normalizedVoucherId });
+  await ensureSalesVoucherDerivedDataTx({
+    trx,
+    voucherId: normalizedVoucherId,
+    voucherTypeCode,
+  });
 };
 
 const loadSalesVoucherOptions = async (req, context = {}) => {
@@ -2284,11 +3262,15 @@ const loadSalesVoucherOptions = async (req, context = {}) => {
     knex("erp.skus as s")
       .join("erp.variants as v", "v.id", "s.variant_id")
       .join("erp.items as i", "i.id", "v.item_id")
+      .leftJoin("erp.uom as u", "u.id", "i.base_uom_id")
       .select(
         "s.id",
         "s.sku_code",
         "i.name as item_name",
         "i.group_id",
+        "i.base_uom_id",
+        "u.code as base_uom_code",
+        "u.name as base_uom_name",
         "v.sale_rate",
         knex.raw(
           `(select max(sdp.max_pair_discount)
@@ -2307,6 +3289,20 @@ const loadSalesVoucherOptions = async (req, context = {}) => {
       .orderBy("description", "asc"),
     loadOpenSalesOrderLinesTx({ trx: knex, req }),
   ]);
+  const skuUnitOptionsByBase = await loadSkuUnitOptionsByBaseUomIdTx({
+    trx: knex,
+    baseUomIds: [
+      ...new Set(
+        (skus || [])
+          .map((row) => toPositiveInt(row?.base_uom_id))
+          .filter(Boolean),
+      ),
+    ],
+  });
+  const enrichedSkus = (skus || []).map((row) => ({
+    ...row,
+    unit_options: skuUnitOptionsByBase.get(Number(row.base_uom_id || 0)) || [],
+  }));
 
   let linkedOrderScopedLines = [];
   if (
@@ -2446,7 +3442,7 @@ const loadSalesVoucherOptions = async (req, context = {}) => {
     customers,
     salesmen,
     receiveAccounts,
-    skus,
+    skus: enrichedSkus,
     returnReasons,
     openSalesOrders,
     openSalesOrderLines,
@@ -2538,16 +3534,20 @@ const loadSalesVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
     .join("erp.skus as s", "s.id", "vl.sku_id")
     .leftJoin("erp.variants as v", "v.id", "s.variant_id")
     .leftJoin("erp.items as i", "i.id", "v.item_id")
+    .leftJoin("erp.uom as lu", "lu.id", "vl.uom_id")
     .select(
       "vl.id",
       "vl.line_no",
       "vl.sku_id",
+      "vl.uom_id",
       "s.sku_code",
       "i.name as item_name",
       "vl.qty",
       "vl.rate",
       "vl.amount",
       "vl.meta",
+      "lu.code as line_uom_code",
+      "lu.name as line_uom_name",
     )
     .where({ "vl.voucher_header_id": header.id, "vl.line_kind": "SKU" })
     .orderBy("vl.line_no", "asc");
@@ -2566,6 +3566,12 @@ const loadSalesVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
         id: Number(line.id),
         line_no: Number(line.line_no),
         sku_id: Number(line.sku_id),
+        uom_id: toPositiveInt(meta.uom_id) || toPositiveInt(line.uom_id),
+        uom_code:
+          String(meta.uom_code || line.line_uom_code || "").trim() || null,
+        uom_name:
+          String(meta.uom_name || line.line_uom_name || "").trim() || null,
+        uom_factor_to_base: Number(meta.uom_factor_to_base || 0) || null,
         sku_code: String(line.sku_code || ""),
         item_name: String(line.item_name || ""),
         qty: Number(line.qty || 0),
@@ -2793,6 +3799,11 @@ const applySalesVoucherUpdatePayloadTx = async ({
       validatedLines: validated.lines,
     });
   }
+  await ensureSalesVoucherDerivedDataTx({
+    trx,
+    voucherId,
+    voucherTypeCode,
+  });
 };
 
 module.exports = {
@@ -2808,4 +3819,6 @@ module.exports = {
   loadSalesVoucherDetails,
   loadSalesGatePassDetails,
   applySalesVoucherUpdatePayloadTx,
+  applySalesVoucherDeletePayloadTx,
+  ensureSalesVoucherDerivedDataTx,
 };

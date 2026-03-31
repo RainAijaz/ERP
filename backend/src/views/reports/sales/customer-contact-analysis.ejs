@@ -62,11 +62,21 @@ const voucherStatusTone = (value) => {
   if (normalized === "REJECTED") return "border-rose-200 bg-rose-50 text-rose-700";
   return "border-slate-200 bg-slate-50 text-slate-700";
 };
+const reportPurposeTooltip = (() => {
+  const key = "customer_contact_analysis_purpose_tooltip";
+  const value = t(key);
+  return value && value !== key ? value : "";
+})();
 %>
 <div class="mx-auto w-full max-w-none space-y-6 px-2">
   <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
     <div class="flex flex-col gap-2">
-      <h1 class="text-xl font-display font-semibold tracking-tight text-ink sm:text-2xl"><%= t("customer_contact_analysis") %></h1>
+      <div class="flex items-center gap-2">
+        <h1 class="text-xl font-display font-semibold tracking-tight text-ink sm:text-2xl"><%= t("customer_contact_analysis") %></h1>
+        <% if (reportPurposeTooltip) { %>
+          <span class="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-[10px] font-bold text-slate-600 cursor-help" title="<%= reportPurposeTooltip %>" aria-label="<%= reportPurposeTooltip %>">i</span>
+        <% } %>
+      </div>
       <p class="text-sm text-slate-500"><%= t("customer_reports") %></p>
     </div>
     <% if (filters?.invalidFilterInput) { %>

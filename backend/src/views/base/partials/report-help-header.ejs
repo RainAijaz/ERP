@@ -1,0 +1,34 @@
+<%
+  const headingText = String(title || "").trim();
+  const helpTooltipText = String(tooltipText || "").trim();
+  const usageHeadingText = String(usageTitle || "").trim();
+  const usageLines = Array.isArray(usagePoints)
+    ? usagePoints.map((line) => String(line || "").trim()).filter(Boolean)
+    : [];
+%>
+
+<div class="space-y-2">
+  <div class="flex items-center gap-2">
+    <h1 class="text-xl font-display font-semibold tracking-tight text-ink sm:text-2xl"><%= headingText %></h1>
+    <% if (helpTooltipText) { %>
+      <span
+        class="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-[10px] font-bold text-slate-600 cursor-help"
+        title="<%= helpTooltipText %>"
+        aria-label="<%= helpTooltipText %>"
+      >i</span>
+    <% } %>
+  </div>
+
+  <% if (usageLines.length) { %>
+    <details class="group rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2">
+      <summary class="cursor-pointer select-none text-xs font-semibold uppercase tracking-[0.08em] text-slate-700">
+        <%= usageHeadingText %>
+      </summary>
+      <ul class="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-600">
+        <% usageLines.forEach((line) => { %>
+          <li><%= line %></li>
+        <% }) %>
+      </ul>
+    </details>
+  <% } %>
+</div>

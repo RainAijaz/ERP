@@ -595,7 +595,19 @@ router.post("/:id/delete", requirePermission("SCREEN", "master_data.products.raw
       return res.redirect(req.get("referer") || basePath);
     }
 
-    await knex("erp.items").where({ id }).del();
+    try {
+      await knex("erp.items").where({ id }).del();
+    } catch (deleteErr) {
+      if (String(deleteErr?.code || "") !== "23503") throw deleteErr;
+      await knex.transaction(async (trx) => {
+        await applyItemLifecycleToggleTx(trx, {
+          itemId: id,
+          itemType: ITEM_TYPE,
+          isActive: false,
+          userId: req.user ? req.user.id : null,
+        });
+      });
+    }
     queueAuditLog(req, {
       entityType: SCREEN_ENTITY_TYPES["master_data.products.raw_materials"],
       entityId: id,

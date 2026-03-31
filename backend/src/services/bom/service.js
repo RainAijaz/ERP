@@ -294,6 +294,7 @@ const parseBomFormPayload = (body = {}) => {
         sfg_sku_id: toNumberOrNull(row.sfg_sku_id),
         required_qty: toNumberOrNull(row.required_qty),
         uom_id: toNumberOrNull(row.uom_id),
+        consumed_in_stage_id: toPositiveInt(row.consumed_in_stage_id),
       }))
       .filter((row) => row.sfg_sku_id || row.required_qty),
     labour_lines: labourRaw
@@ -313,6 +314,7 @@ const parseBomFormPayload = (body = {}) => {
         stage_id: toPositiveInt(row.stage_id),
         sequence_no: toPositiveInt(row.sequence_no) || index + 1,
         is_required: row.is_required !== false,
+        enforce_sequence: row.enforce_sequence !== false,
       }))
       .filter((row) => row.stage_id || row.dept_id),
     variant_rules: [],
@@ -495,6 +497,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
       sfg_sku_id: toNumberOrNull(line.sfg_sku_id),
       required_qty: toPositiveNumber(line.required_qty),
       uom_id: toNumberOrNull(line.uom_id),
+      consumed_in_stage_id: toPositiveInt(line.consumed_in_stage_id),
       ref_approved_bom_id: null,
     }))
     .filter((line) => line.sfg_sku_id || line.required_qty);
@@ -547,7 +550,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
   }
   for (let idx = 0; idx < sfgLines.length; idx += 1) {
     const line = sfgLines[idx];
-    if (!line.fg_size_id || !line.sfg_sku_id || !line.required_qty) {
+    if (!line.fg_size_id || !line.sfg_sku_id || !line.required_qty || !line.consumed_in_stage_id) {
       incompleteSfgRowIndexes.push(idx + 1);
       continue;
     }
@@ -571,7 +574,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
   }
   if (incompleteSfgRowIndexes.length) {
     const message = t("bom_error_sfg_section_incomplete")
-      || "Complete all mandatory fields in Semi-Finished section (Article SKU, Step/Upper SKU, and Step Quantity).";
+      || "Complete all mandatory fields in Semi-Finished section (Article SKU, Step/Upper SKU, Step Quantity, and Consumed In Stage).";
     details.push({
       field: "sfg_lines_json",
       message,
@@ -855,6 +858,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
       stage_id: toPositiveInt(line?.stage_id),
       sequence_no: toPositiveInt(line?.sequence_no) || idx + 1,
       is_required: line?.is_required !== false,
+      enforce_sequence: line?.enforce_sequence !== false,
     }))
     .filter((line) => line.stage_id || line.dept_id);
 
@@ -926,6 +930,31 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
         });
       }
       usedSequenceNos.add(line.sequence_no);
+    });
+  }
+
+  if (sfgLines.length) {
+    const mappedStageIds = new Set(stageRoutes.map((line) => toPositiveInt(line.stage_id)).filter(Boolean));
+    if (hasBomStageRoutingTable && level === "FINISHED" && !mappedStageIds.size) {
+      details.push({
+        field: "stage_routes_json",
+        message: t("bom_error_stage_required_for_sfg") || "Add Production Stages first before mapping Semi-Finished consumption stages.",
+      });
+    }
+    sfgLines.forEach((line, idx) => {
+      if (!line.consumed_in_stage_id) {
+        details.push({
+          field: "sfg_lines_json",
+          message: `${t("bom_error_row_prefix") || "Row"} ${idx + 1}: ${(t("bom_error_sfg_consumed_stage_required") || "Select consumed-in stage for this Semi-Finished row.")}`,
+        });
+        return;
+      }
+      if (mappedStageIds.size && !mappedStageIds.has(Number(line.consumed_in_stage_id))) {
+        details.push({
+          field: "sfg_lines_json",
+          message: `${t("bom_error_row_prefix") || "Row"} ${idx + 1}: ${(t("bom_error_sfg_consumed_stage_not_mapped") || "Selected consumed-in stage is not mapped in Production Stages section.")}`,
+        });
+      }
     });
   }
 
@@ -1020,6 +1049,7 @@ const buildApprovalSnapshot = (snapshot = {}) => {
       sfg_sku_id: toNumberOrNull(line.sfg_sku_id),
       required_qty: toNumberOrNull(line.required_qty),
       uom_id: toNumberOrNull(line.uom_id),
+      consumed_in_stage_id: toPositiveInt(line.consumed_in_stage_id),
       ref_approved_bom_id: toNumberOrNull(line.ref_approved_bom_id),
     }))
     .sort((a, b) => `${a.fg_size_id || 0}:${a.sfg_sku_id || 0}`.localeCompare(`${b.fg_size_id || 0}:${b.sfg_sku_id || 0}`));
@@ -1042,6 +1072,7 @@ const buildApprovalSnapshot = (snapshot = {}) => {
       stage_id: toPositiveInt(line.stage_id),
       sequence_no: toPositiveInt(line.sequence_no),
       is_required: line.is_required !== false,
+      enforce_sequence: line.enforce_sequence !== false,
     }))
     .filter((line) => line.stage_id && line.sequence_no)
     .sort((a, b) => Number(a.sequence_no || 0) - Number(b.sequence_no || 0));
@@ -1113,6 +1144,7 @@ const replaceBomLines = async (trx, bomId, lines) => {
         sfg_sku_id: line.sfg_sku_id,
         required_qty: line.required_qty,
         uom_id: line.uom_id,
+        consumed_in_stage_id: line.consumed_in_stage_id || null,
         ref_approved_bom_id: line.ref_approved_bom_id || null,
       })),
     );
@@ -1139,6 +1171,7 @@ const replaceBomLines = async (trx, bomId, lines) => {
         stage_id: toPositiveInt(line.stage_id),
         sequence_no: toPositiveInt(line.sequence_no) || index + 1,
         is_required: line.is_required !== false,
+        enforce_sequence: line.enforce_sequence !== false,
       })),
     );
   }
@@ -1206,11 +1239,11 @@ const getBomSnapshot = async (db, bomId) => {
   if (!header) return null;
   const [rmLines, sfgLines, labourLines, stageRoutes, skuOverrides] = await Promise.all([
     db("erp.bom_rm_line").select("rm_item_id", "color_id", "size_id", "dept_id", "qty", "uom_id", "normal_loss_pct").where({ bom_id: bomId }).orderBy("id", "asc"),
-    db("erp.bom_sfg_line").select("fg_size_id", "sfg_sku_id", "required_qty", "uom_id", "ref_approved_bom_id").where({ bom_id: bomId }).orderBy("id", "asc"),
+    db("erp.bom_sfg_line").select("fg_size_id", "sfg_sku_id", "required_qty", "uom_id", "consumed_in_stage_id", "ref_approved_bom_id").where({ bom_id: bomId }).orderBy("id", "asc"),
     db("erp.bom_labour_line").select("size_scope", "size_id", "dept_id", "labour_id", "rate_type", "rate_value").where({ bom_id: bomId }).orderBy("id", "asc"),
     hasBomStageRoutingTable
       ? db("erp.bom_stage_routing")
-          .select("stage_id", "sequence_no", "is_required")
+          .select("stage_id", "sequence_no", "is_required", "enforce_sequence")
           .where({ bom_id: bomId })
           .orderBy("sequence_no", "asc")
       : Promise.resolve([]),
@@ -1549,8 +1582,9 @@ const validateDraftReadyForApproval = async (db, { bomId, t, locale = "en", inte
         fg_size_id: toNumberOrNull(line?.fg_size_id),
         sfg_sku_id: toNumberOrNull(line?.sfg_sku_id),
         required_qty: toPositiveNumber(line?.required_qty),
+        consumed_in_stage_id: toPositiveInt(line?.consumed_in_stage_id),
       }))
-      .filter((line) => line.fg_size_id && line.sfg_sku_id && line.required_qty);
+      .filter((line) => line.fg_size_id && line.sfg_sku_id && line.required_qty && line.consumed_in_stage_id);
     const validSfgBySize = new Set(
       sfgRowsForApproval.map((line) => String(line.fg_size_id)),
     );
@@ -1878,11 +1912,11 @@ const createNewVersionFromApprovedTx = async (trx, { sourceBomId, userId, t }) =
   const hasBomSkuOverrideTable = await tableExists(trx, "erp.bom_sku_override_line");
   const [rmLines, sfgLines, labourLines, stageRoutes, skuOverrides] = await Promise.all([
     trx("erp.bom_rm_line").select("rm_item_id", "color_id", "size_id", "dept_id", "qty", "uom_id", "normal_loss_pct").where({ bom_id: sourceId }),
-    trx("erp.bom_sfg_line").select("fg_size_id", "sfg_sku_id", "required_qty", "uom_id", "ref_approved_bom_id").where({ bom_id: sourceId }),
+    trx("erp.bom_sfg_line").select("fg_size_id", "sfg_sku_id", "required_qty", "uom_id", "consumed_in_stage_id", "ref_approved_bom_id").where({ bom_id: sourceId }),
     trx("erp.bom_labour_line").select("size_scope", "size_id", "dept_id", "labour_id", "rate_type", "rate_value").where({ bom_id: sourceId }),
     hasBomStageRoutingTable
       ? trx("erp.bom_stage_routing")
-          .select("stage_id", "sequence_no", "is_required")
+          .select("stage_id", "sequence_no", "is_required", "enforce_sequence")
           .where({ bom_id: sourceId })
           .orderBy("sequence_no", "asc")
       : Promise.resolve([]),
@@ -2643,7 +2677,7 @@ const getBomForForm = async (knex, id) => {
       .where({ bom_id: bomId })
       .orderBy("id", "asc"),
     knex("erp.bom_sfg_line")
-      .select("id", "fg_size_id", "sfg_sku_id", "required_qty", "uom_id", "ref_approved_bom_id")
+      .select("id", "fg_size_id", "sfg_sku_id", "required_qty", "uom_id", "consumed_in_stage_id", "ref_approved_bom_id")
       .where({ bom_id: bomId })
       .orderBy("id", "asc"),
     knex("erp.bom_labour_line")
@@ -2652,7 +2686,7 @@ const getBomForForm = async (knex, id) => {
       .orderBy("id", "asc"),
     hasBomStageRoutingTable
       ? knex("erp.bom_stage_routing")
-          .select("id", "stage_id", "sequence_no", "is_required")
+          .select("id", "stage_id", "sequence_no", "is_required", "enforce_sequence")
           .where({ bom_id: bomId })
           .orderBy("sequence_no", "asc")
       : Promise.resolve([]),

@@ -156,6 +156,7 @@ CREATE TABLE IF NOT EXISTS erp.grades (
   id   bigserial PRIMARY KEY,
   name text NOT NULL UNIQUE,
   name_ur text,
+  grade_rank integer NOT NULL DEFAULT 1 CHECK (grade_rank >= 1),
   is_active  boolean NOT NULL DEFAULT true,
   created_by bigint REFERENCES erp.users(id),
   created_at timestamptz NOT NULL DEFAULT now(),

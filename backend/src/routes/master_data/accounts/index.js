@@ -661,7 +661,18 @@ router.post("/:id/delete", requirePermission("SCREEN", "master_data.accounts", "
     if (approval.queued) {
       return res.redirect(req.get("referer") || basePath);
     }
-    await knex(page.table).where({ id }).del();
+    try {
+      await knex(page.table).where({ id }).del();
+    } catch (deleteErr) {
+      if (String(deleteErr?.code || "") !== "23503") throw deleteErr;
+      await knex(page.table)
+        .where({ id })
+        .update({
+          is_active: false,
+          updated_by: req.user ? req.user.id : null,
+          updated_at: knex.fn.now(),
+        });
+    }
     queueAuditLog(req, {
       entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
       entityId: id,

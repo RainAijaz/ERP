@@ -1,9 +1,13 @@
 const express = require("express");
-const { requirePermission } = require("../../middleware/access/role-permissions");
+const {
+  requirePermission,
+} = require("../../middleware/access/role-permissions");
 const { setCookie } = require("../../middleware/utils/cookies");
 const { UI_NOTICE_COOKIE } = require("../../middleware/core/ui-notice");
 const { UI_ERROR_COOKIE } = require("../../middleware/core/ui-flash");
-const { friendlyErrorMessage } = require("../../middleware/errors/friendly-error");
+const {
+  friendlyErrorMessage,
+} = require("../../middleware/errors/friendly-error");
 const {
   createProductionVoucher,
   updateProductionVoucher,
@@ -14,6 +18,7 @@ const {
   getProductionVoucherNeighbours,
   loadProductionVoucherDetails,
   resolveDcvRateForSku,
+  resolveDcvAvailabilityForLine,
   parseVoucherNo,
 } = require("../../services/production/production-voucher-service");
 
@@ -54,6 +59,16 @@ const setError = (res, message) => {
   );
 };
 
+const canVoucherAction = (res, scopeKey, action) => {
+  if (typeof res?.locals?.can !== "function") return false;
+  return res.locals.can("VOUCHER", scopeKey, action);
+};
+
+const actionDeniedMessage = (res) =>
+  res.locals.t("error_action_not_allowed") ||
+  res.locals.t("permission_denied") ||
+  res.locals.t("generic_error");
+
 const prefersJson = (req) => {
   const accept = String(req.get("accept") || "").toLowerCase();
   const requestedWith = String(req.get("x-requested-with") || "").toLowerCase();
@@ -91,110 +106,182 @@ const createProductionVoucherRouter = ({
 }) => {
   const router = express.Router();
 
-  router.get("/", requirePermission("VOUCHER", scopeKey, "view"), async (req, res, next) => {
-    try {
-      const forceNew = String(req.query.new || "").trim() === "1";
-      const forceView = String(req.query.view || "").trim() === "1";
-      const requestedVoucherNo = parseVoucherNo(req.query.voucher_no);
+  router.get(
+    "/",
+    requirePermission("VOUCHER", scopeKey, "view"),
+    async (req, res, next) => {
+      try {
+        const forceNew = String(req.query.new || "").trim() === "1";
+        const forceView = String(req.query.view || "").trim() === "1";
+        const requestedVoucherNo = parseVoucherNo(req.query.voucher_no);
+        const canListHistory =
+          typeof res.locals.can === "function" &&
+          res.locals.can("VOUCHER", scopeKey, "navigate");
 
-      const [rows, stats] = await Promise.all([
-        loadRecentProductionVouchers({ req, voucherTypeCode }),
-        getProductionVoucherSeriesStats({ req, voucherTypeCode }),
-      ]);
+        const [rows, stats] = await Promise.all([
+          canListHistory
+            ? loadRecentProductionVouchers({ req, voucherTypeCode })
+            : Promise.resolve([]),
+          getProductionVoucherSeriesStats({ req, voucherTypeCode }),
+        ]);
 
-      if (!forceNew && !forceView) {
-        return res.redirect(`${req.baseUrl}?new=1`);
+        if (!forceNew && !forceView) {
+          return res.redirect(`${req.baseUrl}?new=1`);
+        }
+
+        if (!canListHistory && !forceNew) {
+          return res.redirect(`${req.baseUrl}?new=1`);
+        }
+
+        const latestVoucherNo = Number(stats.latestVoucherNo || 0);
+        const latestActiveVoucherNo = Number(stats.latestActiveVoucherNo || 0);
+        const latestVisibleVoucherNo =
+          latestActiveVoucherNo || latestVoucherNo || null;
+
+        const selectedNo =
+          !canListHistory || forceNew
+            ? null
+            : requestedVoucherNo || latestVisibleVoucherNo;
+        const selectedVoucher = canListHistory
+          ? await loadProductionVoucherDetails({
+              req,
+              voucherTypeCode,
+              voucherNo: selectedNo,
+            })
+          : null;
+
+        const options = await loadProductionVoucherOptions(req, {
+          voucherTypeCode,
+          selectedVoucher,
+        });
+
+        const currentCursorNo = forceNew
+          ? latestVoucherNo + 1
+          : requestedVoucherNo ||
+            Number(
+              selectedVoucher?.voucher_no ||
+                latestVisibleVoucherNo ||
+                latestVoucherNo ||
+                0,
+            );
+        const { prevVoucherNo, nextVoucherNo } = canListHistory
+          ? await getProductionVoucherNeighbours({
+              req,
+              voucherTypeCode,
+              cursorNo: currentCursorNo,
+            })
+          : { prevVoucherNo: null, nextVoucherNo: null };
+        const allowCreateNow = allowCreate === true;
+        const allowEditNow =
+          allowEdit === true && canVoucherAction(res, scopeKey, "edit");
+        const allowDeleteNow =
+          allowDelete === true &&
+          canVoucherAction(res, scopeKey, "hard_delete");
+
+        return res.render("base/layouts/main", {
+          title: `${res.locals.t(titleKey)} - ${res.locals.t("production")}`,
+          user: req.user,
+          branchId: req.branchId,
+          branchScope: req.branchScope,
+          csrfToken: res.locals.csrfToken,
+          view: "../../vouchers/production/index",
+          t: res.locals.t,
+          options,
+          rows,
+          selectedVoucher,
+          prevVoucherNo,
+          nextVoucherNo,
+          latestVoucherNo,
+          basePath: req.baseUrl,
+          scopeKey,
+          voucherTypeCode,
+          titleKey,
+          subtitleKey,
+          mode,
+          allowCreate: allowCreateNow,
+          allowEdit: allowEditNow,
+          allowDelete: allowDeleteNow,
+        });
+      } catch (err) {
+        console.error("Error in ProductionVoucherPageService:", err);
+        return next(err);
       }
+    },
+  );
 
-      const latestVoucherNo = Number(stats.latestVoucherNo || 0);
-      const latestActiveVoucherNo = Number(stats.latestActiveVoucherNo || 0);
-      const latestVisibleVoucherNo = latestActiveVoucherNo || latestVoucherNo || null;
+  router.get(
+    "/dcv-rate",
+    requirePermission("VOUCHER", scopeKey, "view"),
+    async (req, res) => {
+      try {
+        const result = await resolveDcvRateForSku({
+          req,
+          labourId: req.query?.labour_id,
+          deptId: req.query?.dept_id,
+          skuId: req.query?.sku_id,
+          unitCode: req.query?.unit,
+        });
+        return res.json(result || { rate: 0, found: false });
+      } catch (err) {
+        console.error("Error in ProductionVoucherDcvRateService:", err);
+        const message = friendlyErrorMessage(err, res.locals.t);
+        const status = Number(err?.status || 500);
+        return res
+          .status(status)
+          .json({ error: message, requestId: req.id || null });
+      }
+    },
+  );
 
-      const selectedNo = forceNew ? null : requestedVoucherNo || latestVisibleVoucherNo;
-      const selectedVoucher = await loadProductionVoucherDetails({
-        req,
-        voucherTypeCode,
-        voucherNo: selectedNo,
-      });
-
-      const options = await loadProductionVoucherOptions(req, {
-        voucherTypeCode,
-        selectedVoucher,
-      });
-
-      const currentCursorNo = forceNew
-        ? latestVoucherNo + 1
-        : requestedVoucherNo || Number(selectedVoucher?.voucher_no || latestVisibleVoucherNo || latestVoucherNo || 0);
-      const { prevVoucherNo, nextVoucherNo } = await getProductionVoucherNeighbours({
-        req,
-        voucherTypeCode,
-        cursorNo: currentCursorNo,
-      });
-
-      return res.render("base/layouts/main", {
-        title: `${res.locals.t(titleKey)} - ${res.locals.t("production")}`,
-        user: req.user,
-        branchId: req.branchId,
-        branchScope: req.branchScope,
-        csrfToken: res.locals.csrfToken,
-        view: "../../vouchers/production/index",
-        t: res.locals.t,
-        options,
-        rows,
-        selectedVoucher,
-        prevVoucherNo,
-        nextVoucherNo,
-        latestVoucherNo,
-        basePath: req.baseUrl,
-        scopeKey,
-        voucherTypeCode,
-        titleKey,
-        subtitleKey,
-        mode,
-        allowCreate,
-        allowEdit,
-        allowDelete,
-      });
-    } catch (err) {
-      console.error("Error in ProductionVoucherPageService:", err);
-      return next(err);
-    }
-  });
-
-  router.get("/dcv-rate", requirePermission("VOUCHER", scopeKey, "view"), async (req, res) => {
-    try {
-      const result = await resolveDcvRateForSku({
-        req,
-        labourId: req.query?.labour_id,
-        deptId: req.query?.dept_id,
-        skuId: req.query?.sku_id,
-        unitCode: req.query?.unit,
-      });
-      return res.json(result || { rate: 0, found: false });
-    } catch (err) {
-      console.error("Error in ProductionVoucherDcvRateService:", err);
-      const message = friendlyErrorMessage(err, res.locals.t);
-      const status = Number(err?.status || 500);
-      return res.status(status).json({ error: message, requestId: req.id || null });
-    }
-  });
+  router.get(
+    "/dcv-availability",
+    requirePermission("VOUCHER", scopeKey, "view"),
+    async (req, res) => {
+      try {
+        const result = await resolveDcvAvailabilityForLine({
+          req,
+          labourId: req.query?.labour_id,
+          deptId: req.query?.dept_id,
+          stageId: req.query?.stage_id,
+          skuId: req.query?.sku_id,
+          qty: req.query?.qty,
+          unitCode: req.query?.unit,
+          voucherDate: req.query?.voucher_date,
+          voucherId: req.query?.voucher_id,
+        });
+        return res.json(result || { status: "OK" });
+      } catch (err) {
+        console.error("Error in ProductionVoucherDcvAvailabilityService:", err);
+        const message = friendlyErrorMessage(err, res.locals.t);
+        const status = Number(err?.status || 500);
+        return res
+          .status(status)
+          .json({ error: message, requestId: req.id || null });
+      }
+    },
+  );
 
   router.post("/", async (req, res, next) => {
     try {
-      if (!allowCreate && !req.body?.voucher_id) {
-        setNotice(res, res.locals.t("generic_error"), true);
+      const voucherId = Number(req.body?.voucher_id || 0) || null;
+      const allowCreateNow = allowCreate === true;
+      const allowEditNow =
+        allowEdit === true && canVoucherAction(res, scopeKey, "edit");
+
+      if (!allowCreateNow && !voucherId) {
+        setNotice(res, actionDeniedMessage(res), true);
         return res.redirect(req.baseUrl);
       }
-      if (!allowEdit && req.body?.voucher_id) {
-        setNotice(res, res.locals.t("generic_error"), true);
+      if (!allowEditNow && voucherId) {
+        setNotice(res, actionDeniedMessage(res), true);
         return res.redirect(req.baseUrl);
       }
 
-      const voucherId = Number(req.body?.voucher_id || 0) || null;
       const payload = {
         voucher_date: req.body?.voucher_date,
         reference_no: req.body?.reference_no,
         remarks: req.body?.remarks,
+        loss_type: req.body?.loss_type,
         dept_id: req.body?.dept_id,
         labour_id: req.body?.labour_id,
         stage_id: req.body?.stage_id,
@@ -220,14 +307,27 @@ const createProductionVoucherRouter = ({
 
       if (saved.queuedForApproval) {
         const msg = saved.permissionReroute
-          ? res.locals.t("approval_sent") || "Change submitted for Administrator approval."
+          ? res.locals.t("approval_sent") ||
+            "Change submitted for Administrator approval."
           : res.locals.t("approval_submitted");
-        setNotice(res, msg, true);
+        const approvalReason = String(saved.approvalReason || "").trim();
+        const hasShortageApprovalReroute =
+          saved.shortageApprovalReroute === true;
+        const reasonLabel = res.locals.t("reason") || "Reason";
+        const approvalMessage = approvalReason
+          ? `${msg} ${reasonLabel}: ${approvalReason}`
+          : msg;
+        if (prefersJson(req) && hasShortageApprovalReroute) {
+          // Async voucher forms expect JSON here so UI can show modal context (submitted + shortage reason).
+          return res.status(202).json({
+            queuedForApproval: true,
+            message: approvalMessage,
+            title: res.locals.t("approval_submitted") || "Approval Submitted",
+          });
+        }
+        setNotice(res, approvalMessage, true);
       } else {
-        setNotice(
-          res,
-          buildSavedTotalsNotice({ res, saved, voucherTypeCode }),
-        );
+        setNotice(res, buildSavedTotalsNotice({ res, saved, voucherTypeCode }));
       }
 
       return res.redirect(`${req.baseUrl}?new=1`);
@@ -236,7 +336,9 @@ const createProductionVoucherRouter = ({
       const message = friendlyErrorMessage(err, res.locals.t);
       if (prefersJson(req)) {
         const status = Number(err?.status || 500);
-        return res.status(status).json({ error: message, requestId: req.id || null });
+        return res
+          .status(status)
+          .json({ error: message, requestId: req.id || null });
       }
       setError(res, message);
       return res.redirect(req.baseUrl);
@@ -245,8 +347,10 @@ const createProductionVoucherRouter = ({
 
   router.post("/delete", async (req, res, next) => {
     try {
-      if (!allowDelete) {
-        setNotice(res, res.locals.t("generic_error"), true);
+      const allowDeleteNow =
+        allowDelete === true && canVoucherAction(res, scopeKey, "hard_delete");
+      if (!allowDeleteNow) {
+        setNotice(res, actionDeniedMessage(res), true);
         return res.redirect(req.baseUrl);
       }
 
@@ -265,11 +369,15 @@ const createProductionVoucherRouter = ({
 
       if (saved.queuedForApproval) {
         const msg = saved.permissionReroute
-          ? res.locals.t("approval_sent") || "Change submitted for Administrator approval."
+          ? res.locals.t("approval_sent") ||
+            "Change submitted for Administrator approval."
           : res.locals.t("approval_submitted");
         setNotice(res, msg, true);
       } else {
-        setNotice(res, res.locals.t("deleted_successfully") || "Deleted successfully.");
+        setNotice(
+          res,
+          res.locals.t("deleted_successfully") || "Deleted successfully.",
+        );
       }
 
       return res.redirect(`${req.baseUrl}?new=1`);
@@ -278,12 +386,24 @@ const createProductionVoucherRouter = ({
       const message = friendlyErrorMessage(err, res.locals.t);
       if (prefersJson(req)) {
         const status = Number(err?.status || 500);
-        return res.status(status).json({ error: message, requestId: req.id || null });
+        return res
+          .status(status)
+          .json({ error: message, requestId: req.id || null });
       }
       setError(res, message);
       return res.redirect(req.baseUrl);
     }
   });
+
+  router.get(
+    "/delete",
+    requirePermission("VOUCHER", scopeKey, "view"),
+    async (req, res) => {
+      // Delete must only happen through POST with CSRF token; GET is treated as invalid navigation.
+      setNotice(res, res.locals.t("generic_error"), true);
+      return res.redirect(req.baseUrl);
+    },
+  );
 
   return router;
 };

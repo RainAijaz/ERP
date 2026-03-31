@@ -1,0 +1,32 @@
+<%
+  const tt = (key, fallback) => {
+    const value = typeof t === "function" ? t(key) : "";
+    return value && value !== key ? value : fallback;
+  };
+%>
+
+<div class="mx-auto w-full max-w-none space-y-4 px-2">
+  <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <% const inventoryReportsPurpose = (() => { const key = "inventory_reports_purpose_tooltip"; const value = t(key); return value && value !== key ? value : ""; })(); %>
+    <div class="flex items-center gap-2">
+      <h1 class="text-2xl font-display font-semibold tracking-tight text-ink"><%= tt("inventory_reports", "Inventory Reports") %></h1>
+      <% if (inventoryReportsPurpose) { %>
+        <span class="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-[10px] font-bold text-slate-600 cursor-help" title="<%= inventoryReportsPurpose %>" aria-label="<%= inventoryReportsPurpose %>">i</span>
+      <% } %>
+    </div>
+    <p class="mt-1 text-sm text-slate-600"><%= t("reports") %></p>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <a href="<%= stockAmountPath %>" class="rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-accent/40 hover:shadow-sm">
+        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"><%= tt("report", "Report") %></div>
+        <div class="mt-1 text-lg font-semibold text-slate-900"><%= tt("stock_amount_report", "Stock Amount Report") %></div>
+      </a>
+      <a href="<%= stockBalancesPath %>" class="rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-accent/40 hover:shadow-sm">
+        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"><%= tt("report", "Report") %></div>
+        <div class="mt-1 text-lg font-semibold text-slate-900"><%= tt("stock_balances_report", "Stock Balances Report") %></div>
+      </a>
+    </div>
+  </section>
+</div>

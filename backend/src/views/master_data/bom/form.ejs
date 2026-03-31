@@ -203,15 +203,17 @@
         <table class="w-full table-fixed text-sm">
           <colgroup>
             <col class="w-[16%]">
-            <col class="w-[44%]">
-            <col class="w-[20%]">
-            <col class="w-[20%]">
+            <col class="w-[34%]">
+            <col class="w-[18%]">
+            <col class="w-[18%]">
+            <col class="w-[14%]">
           </colgroup>
           <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
             <tr>
               <th class="px-3 py-2 text-left"><%= t("sr_no") || "Sr.No" %></th>
               <th class="px-3 py-2 text-left"><%= t("department") || "Department" %></th>
               <th class="px-3 py-2 text-center"><%= t("bom_stage_mandatory_in_flow") || "Mandatory In Flow" %></th>
+              <th class="px-3 py-2 text-center"><%= t("bom_stage_strict_sequence") || "Strict Sequence" %></th>
               <th class="px-3 py-2 text-right"><%= t("actions") || "Actions" %></th>
             </tr>
           </thead>
@@ -311,6 +313,7 @@
               <th class="px-3 py-2 text-left" title="<%= t('bom_hint_article_sku') || 'Finished article SKU this row applies to.' %>"><%= t("article_sku") || "Article SKU" %></th>
               <th class="px-3 py-2 text-left" data-sfg-part-col-title title="<%= t('bom_hint_step_upper_sku') || 'Select the semi-finished SKU used for this finished SKU.' %>"><span data-sfg-part-col-label><%= t("bom_sfg_col_step_upper_sku") || "Step/Upper SKU" %></span></th>
               <th class="px-3 py-2 text-left" title="<%= t('bom_hint_step_quantity') || 'Quantity of selected step/upper SKU required for this finished SKU.' %>"><%= t("bom_sfg_col_step_qty") || "Step Quantity" %></th>
+              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_sfg_consumed_stage') || 'Select FG stage where this SFG is consumed.' %>"><%= t("bom_sfg_col_consumed_stage") || "Consumed In Stage" %></th>
               <th class="px-3 py-2 text-left" title="<%= t('bom_hint_base_unit') || 'Base unit for selected SKU.' %>"><%= t("base_unit") || "Unit" %></th>
             </tr>
           </thead>
@@ -624,6 +627,7 @@
         stage_id: mappedStageId,
         sequence_no: "",
         is_required: true,
+        enforce_sequence: true,
       };
       if (emptyRowIndex >= 0) {
         state.stage_routes[emptyRowIndex] = {
@@ -645,6 +649,27 @@
         if (upsertStageRouteForDepartment(normalizedDeptId)) changed = true;
       });
       return changed;
+    };
+    const getSelectedStageChoicesForSfg = () => {
+      const rows = Array.isArray(state?.stage_routes) ? state.stage_routes : [];
+      const byStageId = new Map();
+      rows.forEach((line, index) => {
+        const deptId = String(line?.dept_id || "").trim();
+        const stageId = String(stageIdByDeptId.get(deptId) || line?.stage_id || "").trim();
+        if (!stageId || byStageId.has(stageId)) return;
+        const stage = stageById.get(stageId);
+        const deptName = String(stage?.dept_name || departmentNameById.get(deptId) || deptId || "").trim();
+        const stageName = String(stage?.name || "").trim();
+        const baseLabel = deptName || stageName || stageId;
+        const displayLabel = stageName && stageName !== deptName
+          ? `${index + 1}. ${baseLabel} (${stageName})`
+          : `${index + 1}. ${baseLabel}`;
+        byStageId.set(stageId, {
+          id: stageId,
+          name: displayLabel,
+        });
+      });
+      return [...byStageId.values()];
     };
     const actionButtons = (type) =>
       `<div class="inline-flex items-center gap-2">
@@ -1856,8 +1881,9 @@
       }
       const fgSkuOptions = getHeaderSkuOptions().filter((sku) => Number(sku?.size_id || 0) > 0);
       const sfgOptions = getRelevantSfgSkus();
+      const stageChoices = getSelectedStageChoicesForSfg();
       if (!fgSkuOptions.length) {
-        body.innerHTML = `<tr><td colspan="4" class="px-3 py-3 text-sm text-slate-500"><%= t("bom_no_sku_available") || "No SKU available for selected article." %></td></tr>`;
+        body.innerHTML = `<tr><td colspan="5" class="px-3 py-3 text-sm text-slate-500"><%= t("bom_no_sku_available") || "No SKU available for selected article." %></td></tr>`;
         return;
       }
       const existingBySkuId = new Map((state.sfg || []).map((row) => [String(row?.fg_sku_id || ""), row]));
@@ -1875,6 +1901,7 @@
           fg_size_id: String(sku.size_id || ""),
           sfg_sku_id: selectedSfgSkuId,
           required_qty: existingQtyText || (suppressNextSfgQtyAutofill ? "" : defaultRequiredQty),
+          consumed_in_stage_id: String(existing?.consumed_in_stage_id || ""),
           uom_id: String(resolvedUomId || ""),
         };
       });
@@ -1896,6 +1923,7 @@
             </td>
             <td class="px-3 py-2"><select data-col="sfg_sku_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(sfgOptions, row.sfg_sku_id, (r) => getSkuLabel(r) || r.item_name || r.id)}</select></td>
             <td class="px-3 py-2"><input data-col="required_qty" data-no-stepper="true" type="number" min="0.001" step="0.001" value="${esc(row.required_qty ?? "")}" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "readonly"}></td>
+            <td class="px-3 py-2"><select data-col="consumed_in_stage_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(stageChoices, row.consumed_in_stage_id, (r) => r.name || r.id)}</select></td>
             <td class="px-3 py-2">
               <input type="hidden" data-col="uom_id" value="${esc(fixedUomId)}">
               <input type="text" data-col-display="uom_id" value="${esc(fixedUomName)}" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm text-slate-600" readonly>
@@ -1924,6 +1952,7 @@
           const stageId = String(row?.stage_id || "").trim();
           const deptId = String(row?.dept_id || stageById.get(stageId)?.dept_id || "").trim();
           const isRequired = row?.is_required !== false;
+          const enforceSequence = row?.enforce_sequence !== false;
           const deptOptionsForRow = (stageDeptOptions || []).filter((option) => {
             const optionId = String(option?.id || "").trim();
             if (!optionId) return false;
@@ -1941,6 +1970,9 @@
             </td>
             <td class="px-3 py-2 text-center">
               <input type="checkbox" data-col="is_required" class="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-700" ${isRequired ? "checked" : ""} ${editable ? "" : "disabled"}>
+            </td>
+            <td class="px-3 py-2 text-center">
+              <input type="checkbox" data-col="enforce_sequence" class="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-700" ${enforceSequence ? "checked" : ""} ${editable ? "" : "disabled"}>
             </td>
             <td class="px-3 py-2 text-right">${editable ? actionButtons("stage_route") : ""}</td>
           </tr>
@@ -2107,8 +2139,8 @@
 
     const addDefaults = {
       rm: () => ({ rm_item_id: "", color_id: "", size_id: "", dept_id: "", qty: 0, uom_id: "", normal_loss_pct: 0 }),
-      sfg: () => ({ fg_sku_id: "", fg_size_id: "", sfg_sku_id: "", required_qty: "", uom_id: "" }),
-      stage_route: () => ({ dept_id: "", stage_id: "", sequence_no: "", is_required: true }),
+      sfg: () => ({ fg_sku_id: "", fg_size_id: "", sfg_sku_id: "", required_qty: "", consumed_in_stage_id: "", uom_id: "" }),
+      stage_route: () => ({ dept_id: "", stage_id: "", sequence_no: "", is_required: true, enforce_sequence: true }),
       labour_selection: () => defaultLabourSelectionRow(),
       sku_override: () => ({ sku_id: "", target_rm_item_id: "", dept_id: "", is_excluded: false, override_qty: "", replacement_rm_item_id: "", rm_color_id: "", rm_size_id: "" }),
     };
@@ -2439,7 +2471,7 @@
       }
       const rowConfigs = [
         { type: "rm", fieldOrder: ["rm_item_id", "dept_id", "normal_loss_pct"] },
-        { type: "stage_route", fieldOrder: ["dept_id", "is_required"] },
+        { type: "stage_route", fieldOrder: ["dept_id", "is_required", "enforce_sequence"] },
         { type: "labour_selection", fieldOrder: ["labour_id", "dept_id", "rate_type"] },
       ];
       rowConfigs.forEach((cfg) => {
@@ -2494,8 +2526,8 @@
           if (event.key !== "Enter") return;
           const target = event.target instanceof HTMLElement ? event.target : null;
           const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-          const checkbox = target?.closest('[data-lines-body="stage_route"] [data-col="is_required"]')
-            || activeElement?.closest('[data-lines-body="stage_route"] [data-col="is_required"]');
+          const checkbox = target?.closest('[data-lines-body="stage_route"] [data-col="is_required"], [data-lines-body="stage_route"] [data-col="enforce_sequence"]')
+            || activeElement?.closest('[data-lines-body="stage_route"] [data-col="is_required"], [data-lines-body="stage_route"] [data-col="enforce_sequence"]');
           if (!(checkbox instanceof HTMLElement)) return;
           event.preventDefault();
           syncStateFromDom();
@@ -2522,7 +2554,7 @@
           form,
           linesBody: sfgBody,
           fieldAttr: "data-col",
-          fieldOrder: ["sfg_sku_id", "required_qty"],
+          fieldOrder: ["sfg_sku_id", "required_qty", "consumed_in_stage_id"],
           canAppendRow: () => false,
         });
         sfgNavigator?.bind();
@@ -2630,6 +2662,7 @@
             stage_id: stageIdByDeptId.get(deptId) || String(row?.stage_id || "").trim(),
             sequence_no: Number(row?.sequence_no || 0),
             is_required: row?.is_required !== false,
+            enforce_sequence: row?.enforce_sequence !== false,
           };
         })
         .filter((row) => row.dept_id)
@@ -2645,10 +2678,11 @@
         const fgSizeId = String(row?.fg_size_id || "").trim();
         const sfgSkuId = String(row?.sfg_sku_id || "").trim();
         const requiredQty = String(row?.required_qty ?? "").trim();
+        const consumedInStageId = String(row?.consumed_in_stage_id || "").trim();
         const uomId = String(row?.uom_id || "").trim();
-        if (!fgSizeId && !sfgSkuId && !requiredQty) return;
+        if (!fgSizeId && !sfgSkuId && !requiredQty && !consumedInStageId) return;
         const key = fgSizeId ? `size:${fgSizeId}:${sfgSkuId}` : `row:${index}`;
-        const score = (sfgSkuId ? 2 : 0) + (requiredQty ? 1 : 0);
+        const score = (sfgSkuId ? 2 : 0) + (requiredQty ? 1 : 0) + (consumedInStageId ? 1 : 0);
         const existing = byKey.get(key);
         if (!existing || score >= existing.score) {
           byKey.set(key, {
@@ -2658,6 +2692,7 @@
               fg_size_id: fgSizeId,
               sfg_sku_id: sfgSkuId,
               required_qty: requiredQty,
+              consumed_in_stage_id: consumedInStageId,
               uom_id: uomId,
             },
           });
@@ -2681,6 +2716,7 @@
         fg_size_id: getValue(row, "fg_size_id"),
         sfg_sku_id: getValue(row, "sfg_sku_id"),
         required_qty: getValue(row, "required_qty"),
+        consumed_in_stage_id: getValue(row, "consumed_in_stage_id"),
         uom_id: getValue(row, "uom_id"),
       }));
       if (!shouldShowSfgSection()) {
@@ -2693,6 +2729,7 @@
         stage_id: stageIdByDeptId.get(String(getValue(row, "dept_id") || "").trim()) || "",
         sequence_no: Number(index + 1),
         is_required: row.querySelector('[data-col="is_required"]')?.checked !== false,
+        enforce_sequence: row.querySelector('[data-col="enforce_sequence"]')?.checked !== false,
       }));
       state.labour_selection = collectRows("labour_selection", (row) => normalizeLabourSelectionRow({
         labour_id: getValue(row, "labour_id"),

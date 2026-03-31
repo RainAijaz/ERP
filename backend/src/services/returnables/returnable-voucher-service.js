@@ -45,7 +45,10 @@ const toQty = (value) => {
   return Number(parsed.toFixed(3));
 };
 
-const normalizeCode = (value) => String(value || "").trim().toUpperCase();
+const normalizeCode = (value) =>
+  String(value || "")
+    .trim()
+    .toUpperCase();
 const buildCapabilityMatchWhereSql = (alias = "p") =>
   `EXISTS (
     SELECT 1
@@ -56,17 +59,33 @@ const DEFAULT_RETURNABLE_REASONS = [
   { code: "REPAIR", name: "Repair", description: "Sent for repair" },
   { code: "CALIBRATION", name: "Calibration", description: "Calibration" },
   { code: "SHARPENING", name: "Sharpening", description: "Sharpening" },
-  { code: "REFURBISH", name: "Refurbishment / Overhaul", description: "Refurbishment / Overhaul" },
-  { code: "COATING_TREATMENT", name: "Coating / Surface Treatment", description: "Coating / Surface Treatment" },
+  {
+    code: "REFURBISH",
+    name: "Refurbishment / Overhaul",
+    description: "Refurbishment / Overhaul",
+  },
+  {
+    code: "COATING_TREATMENT",
+    name: "Coating / Surface Treatment",
+    description: "Coating / Surface Treatment",
+  },
   { code: "MODIFICATION", name: "Modification", description: "Modification" },
   { code: "OTHERS", name: "Others", description: "Others" },
 ];
 const DEFAULT_RETURNABLE_CONDITIONS = [
   { code: "NEW", name: "Unused", description: "Unused" },
   { code: "GOOD_WORKING", name: "Fully Working", description: "Fully Working" },
-  { code: "WORKING_MINOR_WEAR", name: "Working, Minor Wear", description: "Working, Minor Wear" },
+  {
+    code: "WORKING_MINOR_WEAR",
+    name: "Working, Minor Wear",
+    description: "Working, Minor Wear",
+  },
   { code: "DAMAGED", name: "Damaged", description: "Damaged condition" },
-  { code: "NON_FUNCTIONAL", name: "Non-Functional", description: "Non-Functional" },
+  {
+    code: "NON_FUNCTIONAL",
+    name: "Non-Functional",
+    description: "Non-Functional",
+  },
   { code: "INCOMPLETE", name: "Missing Parts", description: "Missing Parts" },
   { code: "RUSTED_CORRODED", name: "Rusted", description: "Rusted" },
 ];
@@ -106,11 +125,18 @@ const parseVoucherNo = (value) => {
 const ensureReturnableRegistryDefaultsTx = async (trx) => {
   try {
     await trx("erp.rgp_reason_registry")
-      .insert(DEFAULT_RETURNABLE_REASONS.map((row) => ({ ...row, is_active: true })))
+      .insert(
+        DEFAULT_RETURNABLE_REASONS.map((row) => ({ ...row, is_active: true })),
+      )
       .onConflict("code")
       .merge(["name", "description", "is_active"]);
     await trx("erp.rgp_condition_registry")
-      .insert(DEFAULT_RETURNABLE_CONDITIONS.map((row) => ({ ...row, is_active: true })))
+      .insert(
+        DEFAULT_RETURNABLE_CONDITIONS.map((row) => ({
+          ...row,
+          is_active: true,
+        })),
+      )
       .onConflict("code")
       .merge(["name", "description", "is_active"]);
   } catch (err) {
@@ -260,7 +286,9 @@ const createApprovalRequestTx = async ({
   } catch (err) {
     const missingOptionalColumn =
       String(err?.code || "").trim() === "42703" &&
-      String(err?.message || "").toLowerCase().includes("voucher_type_code");
+      String(err?.message || "")
+        .toLowerCase()
+        .includes("voucher_type_code");
     if (!missingOptionalColumn) throw err;
     approvalRequestHasVoucherTypeCodeColumn = false;
     delete payload.voucher_type_code;
@@ -287,11 +315,19 @@ const createApprovalRequestTx = async ({
 };
 
 const ensureAssetIdsExistTx = async (trx, assetIds = [], branchId = null) => {
-  const uniqueAssetIds = [...new Set(assetIds.map((id) => toPositiveInt(id)).filter(Boolean))];
+  const uniqueAssetIds = [
+    ...new Set(assetIds.map((id) => toPositiveInt(id)).filter(Boolean)),
+  ];
   if (!uniqueAssetIds.length) return new Map();
 
   const rows = await trx("erp.assets")
-    .select("id", "asset_code", "description", "asset_type_code", "home_branch_id")
+    .select(
+      "id",
+      "asset_code",
+      "description",
+      "asset_type_code",
+      "home_branch_id",
+    )
     .whereIn("id", uniqueAssetIds)
     .where({ is_active: true })
     .andWhere((builder) => {
@@ -306,7 +342,10 @@ const ensureAssetIdsExistTx = async (trx, assetIds = [], branchId = null) => {
 };
 
 const getSystemReturnableItemIdTx = async (trx, userId = null) => {
-  if (Number.isInteger(returnablePlaceholderItemId) && returnablePlaceholderItemId > 0) {
+  if (
+    Number.isInteger(returnablePlaceholderItemId) &&
+    returnablePlaceholderItemId > 0
+  ) {
     return returnablePlaceholderItemId;
   }
 
@@ -444,7 +483,8 @@ const ensurePartyExistsForBranchTx = async (trx, req, partyId) => {
   }
 
   const party = await query.first();
-  if (!party) throw new HttpError(400, "Selected vendor is invalid for current branch");
+  if (!party)
+    throw new HttpError(400, "Selected vendor is invalid for current branch");
   return party;
 };
 
@@ -464,7 +504,11 @@ const buildCodeOrderCaseSql = (codes = []) =>
     .map((code, index) => `WHEN '${code}' THEN ${index + 1}`)
     .join(" ")} ELSE 999 END`;
 
-const getActiveReceiptCountForDispatchTx = async (trx, dispatchVoucherId, excludeReceiptVoucherId = null) => {
+const getActiveReceiptCountForDispatchTx = async (
+  trx,
+  dispatchVoucherId,
+  excludeReceiptVoucherId = null,
+) => {
   let query = trx("erp.rgp_inward as ri")
     .join("erp.voucher_header as vh", "vh.id", "ri.voucher_id")
     .count({ value: "*" })
@@ -498,7 +542,8 @@ const syncOutwardStatusTx = async (trx, outwardVoucherId) => {
   const sentQty = Number(totals?.sent_qty || 0);
   const returnedQty = Number(returned?.returned_qty || 0);
   let nextStatus = "PENDING";
-  if (returnedQty > 0 && returnedQty < sentQty) nextStatus = "PARTIALLY_RETURNED";
+  if (returnedQty > 0 && returnedQty < sentQty)
+    nextStatus = "PARTIALLY_RETURNED";
   if (sentQty > 0 && returnedQty >= sentQty) nextStatus = "CLOSED";
 
   await trx("erp.rgp_outward")
@@ -526,13 +571,27 @@ const buildReceiptPayloadForApproval = (validated) => ({
   lines: validated.lines,
 });
 
-const validateDispatchPayloadTx = async ({ trx, req, payload, existingVoucherId = null }) => {
+const validateDispatchPayloadTx = async ({
+  trx,
+  req,
+  payload,
+  existingVoucherId = null,
+}) => {
   await ensureReturnableRegistryDefaultsTx(trx);
   const voucherDate = toDateOnly(payload?.voucher_date);
   if (!voucherDate) throw new HttpError(400, "Date is required");
 
-  const vendor = await ensurePartyExistsForBranchTx(trx, req, payload?.vendor_party_id);
-  const reasonCode = await ensureRegistryCodeExistsTx(trx, "erp.rgp_reason_registry", payload?.reason_code, "Reason");
+  const vendor = await ensurePartyExistsForBranchTx(
+    trx,
+    req,
+    payload?.vendor_party_id,
+  );
+  const reasonCode = await ensureRegistryCodeExistsTx(
+    trx,
+    "erp.rgp_reason_registry",
+    payload?.reason_code,
+    "Reason",
+  );
   const remarks = normalizeText(payload?.remarks, 1000);
   if (reasonCode === "OTHERS" && !remarks) {
     throw new HttpError(400, "Remarks are required when reason is Others");
@@ -543,7 +602,10 @@ const validateDispatchPayloadTx = async ({ trx, req, payload, existingVoucherId 
     throw new HttpError(400, "Expected return date is required");
   }
   if (expectedReturnDate && expectedReturnDate < voucherDate) {
-    throw new HttpError(400, "Expected return date cannot be before dispatch date");
+    throw new HttpError(
+      400,
+      "Expected return date cannot be before dispatch date",
+    );
   }
 
   const rawLines = Array.isArray(payload?.lines) ? payload.lines : [];
@@ -560,7 +622,8 @@ const validateDispatchPayloadTx = async ({ trx, req, payload, existingVoucherId 
     const line = rawLines[index] || {};
     const assetId = toPositiveInt(line.asset_id);
     const asset = assetMap.get(Number(assetId));
-    if (!asset) throw new HttpError(400, `Line ${index + 1}: asset is required`);
+    if (!asset)
+      throw new HttpError(400, `Line ${index + 1}: asset is required`);
     const itemTypeCode = await ensureRegistryCodeExistsTx(
       trx,
       "erp.asset_type_registry",
@@ -574,14 +637,21 @@ const validateDispatchPayloadTx = async ({ trx, req, payload, existingVoucherId 
       `Line ${index + 1}: condition`,
     );
     const qty = toQty(line.qty);
-    if (!qty) throw new HttpError(400, `Line ${index + 1}: quantity must be greater than zero`);
+    if (!qty)
+      throw new HttpError(
+        400,
+        `Line ${index + 1}: quantity must be greater than zero`,
+      );
     lines.push({
       line_no: index + 1,
       asset_id: asset.id,
       asset_name: asset.description,
       item_type_code: itemTypeCode,
-      item_description: normalizeText(line.item_description, 500) || asset.description,
-      serial_no: normalizeText(line.serial_no, 120) || normalizeText(asset.asset_code, 120),
+      item_description:
+        normalizeText(line.item_description, 500) || asset.description,
+      serial_no:
+        normalizeText(line.serial_no, 120) ||
+        normalizeText(asset.asset_code, 120),
       qty,
       condition_out_code: conditionOutCode,
       remarks: normalizeText(line.remarks, 500),
@@ -589,9 +659,15 @@ const validateDispatchPayloadTx = async ({ trx, req, payload, existingVoucherId 
   }
 
   if (existingVoucherId) {
-    const linkedReceipts = await getActiveReceiptCountForDispatchTx(trx, existingVoucherId);
+    const linkedReceipts = await getActiveReceiptCountForDispatchTx(
+      trx,
+      existingVoucherId,
+    );
     if (linkedReceipts > 0) {
-      throw new HttpError(400, "Dispatch voucher cannot be edited after return receipts exist");
+      throw new HttpError(
+        400,
+        "Dispatch voucher cannot be edited after return receipts exist",
+      );
     }
   }
 
@@ -606,7 +682,11 @@ const validateDispatchPayloadTx = async ({ trx, req, payload, existingVoucherId 
   };
 };
 
-const loadOutwardLineBalanceMapTx = async (trx, outwardVoucherId, excludeReceiptVoucherId = null) => {
+const loadOutwardLineBalanceMapTx = async (
+  trx,
+  outwardVoucherId,
+  excludeReceiptVoucherId = null,
+) => {
   let query = trx("erp.rgp_inward_line as ril")
     .join("erp.rgp_inward as ri", "ri.voucher_id", "ril.rgp_in_voucher_id")
     .join("erp.voucher_header as vh", "vh.id", "ri.voucher_id")
@@ -621,17 +701,28 @@ const loadOutwardLineBalanceMapTx = async (trx, outwardVoucherId, excludeReceipt
   }
 
   const rows = await query;
-  return new Map(rows.map((row) => [Number(row.rgp_out_voucher_line_id), Number(row.returned_qty || 0)]));
+  return new Map(
+    rows.map((row) => [
+      Number(row.rgp_out_voucher_line_id),
+      Number(row.returned_qty || 0),
+    ]),
+  );
 };
 
-const validateReceiptPayloadTx = async ({ trx, req, payload, existingVoucherId = null }) => {
+const validateReceiptPayloadTx = async ({
+  trx,
+  req,
+  payload,
+  existingVoucherId = null,
+}) => {
   await ensureReturnableRegistryDefaultsTx(trx);
   const returnDate = toDateOnly(payload?.voucher_date || payload?.return_date);
   if (!returnDate) throw new HttpError(400, "Return date is required");
 
   const requestedVendorPartyId = toPositiveInt(payload?.vendor_party_id);
   const outwardVoucherId = toPositiveInt(payload?.rgp_out_voucher_id);
-  if (!outwardVoucherId) throw new HttpError(400, "Outward reference is required");
+  if (!outwardVoucherId)
+    throw new HttpError(400, "Outward reference is required");
 
   const outwardHeader = await trx("erp.rgp_outward as ro")
     .join("erp.voucher_header as vh", "vh.id", "ro.voucher_id")
@@ -650,12 +741,19 @@ const validateReceiptPayloadTx = async ({ trx, req, payload, existingVoucherId =
     .andWhere("vh.branch_id", req.branchId)
     .first();
 
-  if (!outwardHeader) throw new HttpError(400, "Selected outward reference is invalid");
+  if (!outwardHeader)
+    throw new HttpError(400, "Selected outward reference is invalid");
   if (String(outwardHeader.voucher_status || "").toUpperCase() === "REJECTED") {
     throw new HttpError(400, "Selected outward voucher is deleted");
   }
-  if (requestedVendorPartyId && Number(outwardHeader.vendor_party_id) !== Number(requestedVendorPartyId)) {
-    throw new HttpError(400, "Selected outward reference does not belong to selected vendor");
+  if (
+    requestedVendorPartyId &&
+    Number(outwardHeader.vendor_party_id) !== Number(requestedVendorPartyId)
+  ) {
+    throw new HttpError(
+      400,
+      "Selected outward reference does not belong to selected vendor",
+    );
   }
 
   const outwardLines = await trx("erp.voucher_line as vl")
@@ -677,13 +775,20 @@ const validateReceiptPayloadTx = async ({ trx, req, payload, existingVoucherId =
     .where("vl.voucher_header_id", outwardVoucherId)
     .orderBy("vl.line_no", "asc");
 
-  const outwardLineMap = new Map(outwardLines.map((row) => [Number(row.id), row]));
-  if (!outwardLineMap.size) throw new HttpError(400, "Selected outward voucher has no lines");
+  const outwardLineMap = new Map(
+    outwardLines.map((row) => [Number(row.id), row]),
+  );
+  if (!outwardLineMap.size)
+    throw new HttpError(400, "Selected outward voucher has no lines");
 
   const rawLines = Array.isArray(payload?.lines) ? payload.lines : [];
   if (!rawLines.length) throw new HttpError(400, "Voucher lines are required");
 
-  const existingReturnedMap = await loadOutwardLineBalanceMapTx(trx, outwardVoucherId, existingVoucherId);
+  const existingReturnedMap = await loadOutwardLineBalanceMapTx(
+    trx,
+    outwardVoucherId,
+    existingVoucherId,
+  );
   const seenOutwardLineIds = new Set();
   const lines = [];
 
@@ -691,9 +796,16 @@ const validateReceiptPayloadTx = async ({ trx, req, payload, existingVoucherId =
     const line = rawLines[index] || {};
     const outwardLineId = toPositiveInt(line.rgp_out_voucher_line_id);
     const outwardLine = outwardLineMap.get(Number(outwardLineId));
-    if (!outwardLine) throw new HttpError(400, `Line ${index + 1}: outward line reference is invalid`);
+    if (!outwardLine)
+      throw new HttpError(
+        400,
+        `Line ${index + 1}: outward line reference is invalid`,
+      );
     if (seenOutwardLineIds.has(outwardLineId)) {
-      throw new HttpError(400, `Line ${index + 1}: duplicate outward line is not allowed`);
+      throw new HttpError(
+        400,
+        `Line ${index + 1}: duplicate outward line is not allowed`,
+      );
     }
     seenOutwardLineIds.add(outwardLineId);
 
@@ -704,13 +816,20 @@ const validateReceiptPayloadTx = async ({ trx, req, payload, existingVoucherId =
       `Line ${index + 1}: condition`,
     );
     const returnedQty = toQty(line.returned_qty);
-    if (!returnedQty) throw new HttpError(400, `Line ${index + 1}: returned quantity must be greater than zero`);
+    if (!returnedQty)
+      throw new HttpError(
+        400,
+        `Line ${index + 1}: returned quantity must be greater than zero`,
+      );
 
     const alreadyReturned = Number(existingReturnedMap.get(outwardLineId) || 0);
     const sentQty = Number(outwardLine.qty || 0);
     const openQty = Number((sentQty - alreadyReturned).toFixed(3));
     if (returnedQty > openQty) {
-      throw new HttpError(400, `Line ${index + 1}: returned quantity exceeds pending balance`);
+      throw new HttpError(
+        400,
+        `Line ${index + 1}: returned quantity exceeds pending balance`,
+      );
     }
 
     lines.push({
@@ -719,13 +838,18 @@ const validateReceiptPayloadTx = async ({ trx, req, payload, existingVoucherId =
       asset_id: Number(outwardLine.asset_id || 0) || null,
       asset_name: outwardLine.asset_name || "",
       rgp_out_voucher_line_id: outwardLineId,
-      item_description: normalizeText(line.item_description, 500) || outwardLine.item_description || outwardLine.asset_name,
+      item_description:
+        normalizeText(line.item_description, 500) ||
+        outwardLine.item_description ||
+        outwardLine.asset_name,
       returned_qty: returnedQty,
       condition_in_code: conditionInCode,
       condition_out_code: outwardLine.condition_out_code,
       sent_qty: sentQty,
       open_qty: openQty,
-      short_excess_qty: Number((sentQty - alreadyReturned - returnedQty).toFixed(3)),
+      short_excess_qty: Number(
+        (sentQty - alreadyReturned - returnedQty).toFixed(3),
+      ),
       remarks: normalizeText(line.remarks, 500),
     });
   }
@@ -751,7 +875,11 @@ const insertDispatchVoucherTx = async ({
   validated,
 }) => {
   const placeholderItemId = await getSystemReturnableItemIdTx(trx, actorUserId);
-  const voucherNo = await getNextVoucherNoTx(trx, branchId, RETURNABLE_VOUCHER_TYPES.dispatch);
+  const voucherNo = await getNextVoucherNoTx(
+    trx,
+    branchId,
+    RETURNABLE_VOUCHER_TYPES.dispatch,
+  );
   const approved = Boolean(approverId);
 
   const [header] = await trx("erp.voucher_header")
@@ -797,7 +925,9 @@ const insertDispatchVoucherTx = async ({
   const insertedVoucherLines = await trx("erp.voucher_line")
     .insert(voucherLineRows)
     .returning(["id", "line_no"]);
-  const lineIdMap = new Map(insertedVoucherLines.map((row) => [Number(row.line_no), Number(row.id)]));
+  const lineIdMap = new Map(
+    insertedVoucherLines.map((row) => [Number(row.line_no), Number(row.id)]),
+  );
 
   await trx("erp.rgp_outward").insert({
     voucher_id: header.id,
@@ -834,7 +964,11 @@ const insertReceiptVoucherTx = async ({
   approverId = null,
   validated,
 }) => {
-  const voucherNo = await getNextVoucherNoTx(trx, branchId, RETURNABLE_VOUCHER_TYPES.receipt);
+  const voucherNo = await getNextVoucherNoTx(
+    trx,
+    branchId,
+    RETURNABLE_VOUCHER_TYPES.receipt,
+  );
   const approved = Boolean(approverId);
 
   const [header] = await trx("erp.voucher_header")
@@ -931,20 +1065,22 @@ const loadReturnableVoucherOptions = async (req) => {
     isUrdu && hasAssetTypeNameUr
       ? knex.raw("COALESCE(name_ur, name) as name")
       : "name";
-  const assetNameSelect = isUrdu && hasAssetsNameUr
-    ? knex.raw("COALESCE(name_ur, name, description) as name")
-    : hasAssetsName
-      ? knex.raw("COALESCE(name, description) as name")
-      : knex.raw("description as name");
+  const assetNameSelect =
+    isUrdu && hasAssetsNameUr
+      ? knex.raw("COALESCE(name_ur, name, description) as name")
+      : hasAssetsName
+        ? knex.raw("COALESCE(name, description) as name")
+        : knex.raw("description as name");
   const outwardVendorNameSelect =
     isUrdu && hasPartiesNameUr
       ? knex.raw("COALESCE(p.name_ur, p.name) as vendor_name")
       : "p.name as vendor_name";
-  const outwardAssetNameSelect = isUrdu && hasAssetsNameUr
-    ? knex.raw("COALESCE(a.name_ur, a.name, a.description) as asset_name")
-    : hasAssetsName
-      ? knex.raw("COALESCE(a.name, a.description) as asset_name")
-      : "a.description as asset_name";
+  const outwardAssetNameSelect =
+    isUrdu && hasAssetsNameUr
+      ? knex.raw("COALESCE(a.name_ur, a.name, a.description) as asset_name")
+      : hasAssetsName
+        ? knex.raw("COALESCE(a.name, a.description) as asset_name")
+        : "a.description as asset_name";
 
   const vendorsQuery = knex("erp.parties as p")
     .leftJoin("erp.party_branch as pb", "pb.party_id", "p.id")
@@ -965,7 +1101,15 @@ const loadReturnableVoucherOptions = async (req) => {
     vendorsQuery.whereRaw(buildCapabilityMatchWhereSql("p"));
   }
 
-  const [vendors, reasons, conditions, itemTypes, assets, openOutwards, openOutwardLines] = await Promise.all([
+  const [
+    vendors,
+    reasons,
+    conditions,
+    itemTypes,
+    assets,
+    openOutwards,
+    openOutwardLines,
+  ] = await Promise.all([
     vendorsQuery,
     knex("erp.rgp_reason_registry")
       .select("code", "name")
@@ -982,7 +1126,13 @@ const loadReturnableVoucherOptions = async (req) => {
       .where({ is_active: true })
       .orderBy("name", "asc"),
     knex("erp.assets")
-      .select("id", "asset_code", assetNameSelect, "description", "asset_type_code")
+      .select(
+        "id",
+        "asset_code",
+        assetNameSelect,
+        "description",
+        "asset_type_code",
+      )
       .where({ is_active: true })
       .andWhere((builder) => {
         builder.whereNull("home_branch_id");
@@ -1012,7 +1162,11 @@ const loadReturnableVoucherOptions = async (req) => {
       .leftJoin("erp.assets as a", "a.id", "rol.asset_id")
       .leftJoin(
         knex("erp.rgp_inward_line as ril")
-          .join("erp.rgp_inward as ri", "ri.voucher_id", "ril.rgp_in_voucher_id")
+          .join(
+            "erp.rgp_inward as ri",
+            "ri.voucher_id",
+            "ril.rgp_in_voucher_id",
+          )
           .join("erp.voucher_header as rvh", "rvh.id", "ri.voucher_id")
           .select("ril.rgp_out_voucher_line_id")
           .sum({ returned_qty: "ril.returned_qty" })
@@ -1037,7 +1191,9 @@ const loadReturnableVoucherOptions = async (req) => {
         "rol.condition_out_code",
         "rol.serial_no",
         knex.raw("COALESCE(ret.returned_qty, 0) as returned_qty"),
-        knex.raw("GREATEST(rol.qty - COALESCE(ret.returned_qty, 0), 0) as pending_qty"),
+        knex.raw(
+          "GREATEST(rol.qty - COALESCE(ret.returned_qty, 0), 0) as pending_qty",
+        ),
       )
       .where("vh.branch_id", req.branchId)
       .whereNot("vh.status", "REJECTED")
@@ -1106,7 +1262,11 @@ const getReturnableVoucherSeriesStats = async ({ req, voucherTypeCode }) => {
   };
 };
 
-const getReturnableVoucherNeighbours = async ({ req, voucherTypeCode, cursorNo }) => {
+const getReturnableVoucherNeighbours = async ({
+  req,
+  voucherTypeCode,
+  cursorNo,
+}) => {
   const normalizedCursorNo = parseVoucherNo(cursorNo);
   if (!normalizedCursorNo) {
     return { prevVoucherNo: null, nextVoucherNo: null };
@@ -1185,13 +1345,22 @@ const loadDispatchDetailsTx = async ({ trx, req, voucherNo }) => {
     .where("ri.rgp_out_voucher_id", header.id)
     .whereNot("vh.status", "REJECTED")
     .groupBy("ril.rgp_out_voucher_line_id");
-  const returnedMap = new Map(returnedRows.map((row) => [Number(row.rgp_out_voucher_line_id), Number(row.returned_qty || 0)]));
+  const returnedMap = new Map(
+    returnedRows.map((row) => [
+      Number(row.rgp_out_voucher_line_id),
+      Number(row.returned_qty || 0),
+    ]),
+  );
 
   return {
     ...header,
     lines: lines.map((line) => {
-      const returnedQty = Number(returnedMap.get(Number(line.voucher_line_id)) || 0);
-      const pendingQty = Number((Number(line.qty || 0) - returnedQty).toFixed(3));
+      const returnedQty = Number(
+        returnedMap.get(Number(line.voucher_line_id)) || 0,
+      );
+      const pendingQty = Number(
+        (Number(line.qty || 0) - returnedQty).toFixed(3),
+      );
       return {
         ...line,
         returned_qty: returnedQty,
@@ -1255,18 +1424,31 @@ const loadReceiptDetailsTx = async ({ trx, req, voucherNo }) => {
   };
 };
 
-const loadReturnableVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
+const loadReturnableVoucherDetails = async ({
+  req,
+  voucherTypeCode,
+  voucherNo,
+}) => {
   const normalizedVoucherNo = parseVoucherNo(voucherNo);
   if (!normalizedVoucherNo) return null;
   return knex.transaction(async (trx) => {
     if (voucherTypeCode === RETURNABLE_VOUCHER_TYPES.dispatch) {
-      return loadDispatchDetailsTx({ trx, req, voucherNo: normalizedVoucherNo });
+      return loadDispatchDetailsTx({
+        trx,
+        req,
+        voucherNo: normalizedVoucherNo,
+      });
     }
     return loadReceiptDetailsTx({ trx, req, voucherNo: normalizedVoucherNo });
   });
 };
 
-const createReturnableVoucher = async ({ req, voucherTypeCode, scopeKey, payload }) => {
+const createReturnableVoucher = async ({
+  req,
+  voucherTypeCode,
+  scopeKey,
+  payload,
+}) => {
   if (!req?.user?.id) throw new HttpError(401, "Not authenticated");
   if (!req.branchId) throw new HttpError(400, "Branch context is required");
 
@@ -1279,8 +1461,13 @@ const createReturnableVoucher = async ({ req, voucherTypeCode, scopeKey, payload
         ? await validateDispatchPayloadTx({ trx, req, payload })
         : await validateReceiptPayloadTx({ trx, req, payload });
 
-    const policyRequiresApproval = await requiresApprovalForAction(trx, voucherTypeCode, "create");
-    const queuedForApproval = !canCreate || (policyRequiresApproval && !canApprove);
+    const policyRequiresApproval = await requiresApprovalForAction(
+      trx,
+      voucherTypeCode,
+      "create",
+    );
+    const queuedForApproval =
+      !canCreate || (policyRequiresApproval && !canApprove);
 
     if (queuedForApproval) {
       const approvalRequestId = await createApprovalRequestTx({
@@ -1348,7 +1535,13 @@ const createReturnableVoucher = async ({ req, voucherTypeCode, scopeKey, payload
   return result;
 };
 
-const updateReturnableVoucher = async ({ req, voucherId, voucherTypeCode, scopeKey, payload }) => {
+const updateReturnableVoucher = async ({
+  req,
+  voucherId,
+  voucherTypeCode,
+  scopeKey,
+  payload,
+}) => {
   if (!req?.user?.id) throw new HttpError(401, "Not authenticated");
   if (!req.branchId) throw new HttpError(400, "Branch context is required");
 
@@ -1388,8 +1581,13 @@ const updateReturnableVoucher = async ({ req, voucherId, voucherTypeCode, scopeK
             existingVoucherId: existing.id,
           });
 
-    const policyRequiresApproval = await requiresApprovalForAction(trx, voucherTypeCode, "edit");
-    const queuedForApproval = !canEdit || (policyRequiresApproval && !canApprove);
+    const policyRequiresApproval = await requiresApprovalForAction(
+      trx,
+      voucherTypeCode,
+      "edit",
+    );
+    const queuedForApproval =
+      !canEdit || (policyRequiresApproval && !canApprove);
 
     const newValue = {
       ...(voucherTypeCode === RETURNABLE_VOUCHER_TYPES.dispatch
@@ -1459,14 +1657,19 @@ const updateReturnableVoucher = async ({ req, voucherId, voucherTypeCode, scopeK
   return result;
 };
 
-const deleteReturnableVoucher = async ({ req, voucherId, voucherTypeCode, scopeKey }) => {
+const deleteReturnableVoucher = async ({
+  req,
+  voucherId,
+  voucherTypeCode,
+  scopeKey,
+}) => {
   if (!req?.user?.id) throw new HttpError(401, "Not authenticated");
   if (!req.branchId) throw new HttpError(400, "Branch context is required");
 
   const normalizedVoucherId = toPositiveInt(voucherId);
   if (!normalizedVoucherId) throw new HttpError(400, "Invalid voucher id");
 
-  const canDelete = canDo(req, "VOUCHER", scopeKey, "delete");
+  const canDelete = canDo(req, "VOUCHER", scopeKey, "hard_delete");
   const canApprove = canApproveVoucherAction(req, scopeKey);
 
   const result = await knex.transaction(async (trx) => {
@@ -1485,14 +1688,25 @@ const deleteReturnableVoucher = async ({ req, voucherId, voucherTypeCode, scopeK
     }
 
     if (voucherTypeCode === RETURNABLE_VOUCHER_TYPES.dispatch) {
-      const linkedReceipts = await getActiveReceiptCountForDispatchTx(trx, existing.id);
+      const linkedReceipts = await getActiveReceiptCountForDispatchTx(
+        trx,
+        existing.id,
+      );
       if (linkedReceipts > 0) {
-        throw new HttpError(400, "Dispatch voucher cannot be deleted after return receipts exist");
+        throw new HttpError(
+          400,
+          "Dispatch voucher cannot be deleted after return receipts exist",
+        );
       }
     }
 
-    const policyRequiresApproval = await requiresApprovalForAction(trx, voucherTypeCode, "delete");
-    const queuedForApproval = !canDelete || (policyRequiresApproval && !canApprove);
+    const policyRequiresApproval = await requiresApprovalForAction(
+      trx,
+      voucherTypeCode,
+      "delete",
+    );
+    const queuedForApproval =
+      !canDelete || (policyRequiresApproval && !canApprove);
 
     if (queuedForApproval) {
       const approvalRequestId = await createApprovalRequestTx({
@@ -1555,7 +1769,12 @@ const deleteReturnableVoucher = async ({ req, voucherId, voucherTypeCode, scopeK
   return result;
 };
 
-const applyReturnableVoucherCreatePayloadTx = async ({ trx, payload, approverId, req }) => {
+const applyReturnableVoucherCreatePayloadTx = async ({
+  trx,
+  payload,
+  approverId,
+  req,
+}) => {
   const voucherTypeCode = normalizeCode(payload?.voucher_type_code);
   if (
     voucherTypeCode !== RETURNABLE_VOUCHER_TYPES.dispatch &&
@@ -1606,7 +1825,9 @@ const applyReturnableVoucherUpdatePayloadTx = async ({
     throw new Error("Deleted voucher cannot be updated");
   }
 
-  const resolvedType = normalizeCode(voucherTypeCode || payload?.voucher_type_code || existing.voucher_type_code);
+  const resolvedType = normalizeCode(
+    voucherTypeCode || payload?.voucher_type_code || existing.voucher_type_code,
+  );
   if (
     resolvedType !== RETURNABLE_VOUCHER_TYPES.dispatch &&
     resolvedType !== RETURNABLE_VOUCHER_TYPES.receipt
@@ -1630,22 +1851,29 @@ const applyReturnableVoucherUpdatePayloadTx = async ({
         });
 
   if (resolvedType === RETURNABLE_VOUCHER_TYPES.dispatch) {
-    const placeholderItemId = await getSystemReturnableItemIdTx(trx, approverId || req?.user?.id || null);
-    await trx("erp.rgp_outward_line").whereIn(
-      "voucher_line_id",
-      trx("erp.voucher_line").select("id").where({ voucher_header_id: normalizedVoucherId }),
-    ).del();
-    await trx("erp.voucher_line").where({ voucher_header_id: normalizedVoucherId }).del();
+    const placeholderItemId = await getSystemReturnableItemIdTx(
+      trx,
+      approverId || req?.user?.id || null,
+    );
+    await trx("erp.rgp_outward_line")
+      .whereIn(
+        "voucher_line_id",
+        trx("erp.voucher_line")
+          .select("id")
+          .where({ voucher_header_id: normalizedVoucherId }),
+      )
+      .del();
+    await trx("erp.voucher_line")
+      .where({ voucher_header_id: normalizedVoucherId })
+      .del();
 
-    await trx("erp.voucher_header")
-      .where({ id: normalizedVoucherId })
-      .update({
-        voucher_date: validated.voucherDate,
-        status: "APPROVED",
-        approved_by: approverId,
-        approved_at: trx.fn.now(),
-        remarks: validated.remarks,
-      });
+    await trx("erp.voucher_header").where({ id: normalizedVoucherId }).update({
+      voucher_date: validated.voucherDate,
+      status: "APPROVED",
+      approved_by: approverId,
+      approved_at: trx.fn.now(),
+      remarks: validated.remarks,
+    });
 
     const insertedLines = await trx("erp.voucher_line")
       .insert(
@@ -1675,7 +1903,9 @@ const applyReturnableVoucherUpdatePayloadTx = async ({
         })),
       )
       .returning(["id", "line_no"]);
-    const lineIdMap = new Map(insertedLines.map((row) => [Number(row.line_no), Number(row.id)]));
+    const lineIdMap = new Map(
+      insertedLines.map((row) => [Number(row.line_no), Number(row.id)]),
+    );
 
     await trx("erp.rgp_outward")
       .where({ voucher_id: normalizedVoucherId })
@@ -1706,18 +1936,20 @@ const applyReturnableVoucherUpdatePayloadTx = async ({
     .where({ voucher_id: normalizedVoucherId })
     .first();
 
-  await trx("erp.rgp_inward_line").where({ rgp_in_voucher_id: normalizedVoucherId }).del();
-  await trx("erp.voucher_line").where({ voucher_header_id: normalizedVoucherId }).del();
+  await trx("erp.rgp_inward_line")
+    .where({ rgp_in_voucher_id: normalizedVoucherId })
+    .del();
+  await trx("erp.voucher_line")
+    .where({ voucher_header_id: normalizedVoucherId })
+    .del();
 
-  await trx("erp.voucher_header")
-    .where({ id: normalizedVoucherId })
-    .update({
-      voucher_date: validated.returnDate,
-      status: "APPROVED",
-      approved_by: approverId,
-      approved_at: trx.fn.now(),
-      remarks: validated.remarks,
-    });
+  await trx("erp.voucher_header").where({ id: normalizedVoucherId }).update({
+    voucher_date: validated.returnDate,
+    status: "APPROVED",
+    approved_by: approverId,
+    approved_at: trx.fn.now(),
+    remarks: validated.remarks,
+  });
 
   await trx("erp.voucher_line").insert(
     validated.lines.map((line) => ({
@@ -1764,7 +1996,10 @@ const applyReturnableVoucherUpdatePayloadTx = async ({
     })),
   );
 
-  if (receiptRow?.rgp_out_voucher_id && Number(receiptRow.rgp_out_voucher_id) !== Number(validated.outwardVoucherId)) {
+  if (
+    receiptRow?.rgp_out_voucher_id &&
+    Number(receiptRow.rgp_out_voucher_id) !== Number(validated.outwardVoucherId)
+  ) {
     await syncOutwardStatusTx(trx, Number(receiptRow.rgp_out_voucher_id));
   }
   await syncOutwardStatusTx(trx, validated.outwardVoucherId);
@@ -1786,12 +2021,19 @@ const applyReturnableVoucherDeletePayloadTx = async ({
   if (!header) throw new Error("Voucher not found during delete apply");
   if (String(header.status || "").toUpperCase() === "REJECTED") return;
 
-  const resolvedType = normalizeCode(voucherTypeCode || header.voucher_type_code);
+  const resolvedType = normalizeCode(
+    voucherTypeCode || header.voucher_type_code,
+  );
 
   if (resolvedType === RETURNABLE_VOUCHER_TYPES.dispatch) {
-    const linkedReceipts = await getActiveReceiptCountForDispatchTx(trx, normalizedVoucherId);
+    const linkedReceipts = await getActiveReceiptCountForDispatchTx(
+      trx,
+      normalizedVoucherId,
+    );
     if (linkedReceipts > 0) {
-      throw new Error("Dispatch voucher cannot be deleted after return receipts exist");
+      throw new Error(
+        "Dispatch voucher cannot be deleted after return receipts exist",
+      );
     }
   }
 
@@ -1804,13 +2046,11 @@ const applyReturnableVoucherDeletePayloadTx = async ({
     outwardVoucherIdToSync = Number(inward?.rgp_out_voucher_id || 0) || null;
   }
 
-  await trx("erp.voucher_header")
-    .where({ id: normalizedVoucherId })
-    .update({
-      status: "REJECTED",
-      approved_by: approverId,
-      approved_at: trx.fn.now(),
-    });
+  await trx("erp.voucher_header").where({ id: normalizedVoucherId }).update({
+    status: "REJECTED",
+    approved_by: approverId,
+    approved_at: trx.fn.now(),
+  });
 
   if (outwardVoucherIdToSync) {
     await syncOutwardStatusTx(trx, outwardVoucherIdToSync);

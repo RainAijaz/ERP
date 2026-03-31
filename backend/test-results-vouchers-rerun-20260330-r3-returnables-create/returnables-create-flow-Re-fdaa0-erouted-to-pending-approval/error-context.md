@@ -1,0 +1,147 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - checkbox "Menu" [ref=e5]
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - link "CHAND EVA" [ref=e8] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e10]: ERP
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - generic [ref=e14]: Signed in as
+            - generic [ref=e15]: e2e_rdv_limited
+          - generic [ref=e16]:
+            - generic [ref=e17]: Branch
+            - generic [ref=e18]:
+              - generic [ref=e19]: Branch
+              - generic [ref=e20]: "124"
+          - button "Logout" [ref=e22] [cursor=pointer]
+          - generic [ref=e23]:
+            - generic [ref=e24]: Language
+            - link "English" [ref=e25] [cursor=pointer]:
+              - /url: "?lang=en"
+            - generic [ref=e26]: "|"
+            - link "Urdu" [ref=e27] [cursor=pointer]:
+              - /url: "?lang=ur"
+      - navigation [ref=e28]:
+        - button "Administration" [ref=e30] [cursor=pointer]:
+          - generic [ref=e31]: Administration
+          - img [ref=e32]
+        - button "Master Data" [ref=e35] [cursor=pointer]:
+          - generic [ref=e36]: Master Data
+          - img [ref=e37]
+        - button "Outward & Returnables" [ref=e40] [cursor=pointer]:
+          - generic [ref=e41]: Outward & Returnables
+          - img [ref=e42]
+  - main [ref=e44]:
+    - generic [ref=e45]:
+      - generic [ref=e48]:
+        - heading "Dispatch (Outward)" [level=1] [ref=e49]
+        - paragraph [ref=e50]: Outward & Returnables
+      - generic [ref=e52]:
+        - generic [ref=e53]:
+          - generic [ref=e54]:
+            - generic [ref=e55]: Voucher No
+            - textbox [ref=e57]: "14"
+            - generic [ref=e58]:
+              - link "Prev" [ref=e59] [cursor=pointer]:
+                - /url: /vouchers/returnable-dispatch?voucher_no=13&view=1
+              - link "Next" [ref=e60] [cursor=pointer]:
+                - /url: /vouchers/returnable-dispatch?new=1
+              - button "Load" [ref=e61] [cursor=pointer]
+              - generic [ref=e62]:
+                - button "Delete" [disabled] [ref=e63] [cursor=pointer]
+                - button "Print" [ref=e64] [cursor=pointer]
+          - generic [ref=e65]:
+            - generic [ref=e66]: Date
+            - textbox [ref=e68]: 2026-03-30
+            - generic [ref=e69]: Vendor
+            - generic [ref=e71]:
+              - textbox "Select Vendor" [ref=e72]: AMEEN DYE MAKER
+              - generic:
+                - img
+              - button "Select Vendor" [ref=e74] [cursor=pointer]:
+                - generic [ref=e75]: Select Vendor
+              - combobox [ref=e76]:
+                - option "Select Vendor"
+                - option "AMEEN DYE MAKER" [selected]
+          - generic [ref=e77]:
+            - generic [ref=e78]: Reason
+            - generic [ref=e80]:
+              - textbox "Select Reason" [ref=e81]: Repair
+              - generic:
+                - img
+              - button "Select Reason" [ref=e83] [cursor=pointer]:
+                - generic [ref=e84]: Select Reason
+              - combobox [ref=e85]:
+                - option "Select Reason"
+                - option "Repair" [selected]
+                - option "Calibration"
+                - option "Sharpening"
+                - option "Refurbishment / Overhaul"
+                - option "Coating / Surface Treatment"
+                - option "Modification"
+                - option "Others"
+            - generic [ref=e86]: Expected Return Date
+            - textbox [ref=e88]: 2026-03-31
+          - generic [ref=e89]:
+            - generic [ref=e90]: Remarks
+            - textbox [ref=e92]
+        - table [ref=e95]:
+          - rowgroup [ref=e96]:
+            - row "Asset Name Item Type Description Quantity Condition At Dispatch Actions Sr.No" [ref=e97]:
+              - columnheader "Asset Name" [ref=e98]
+              - columnheader "Item Type" [ref=e99]
+              - columnheader "Description" [ref=e100]
+              - columnheader "Quantity" [ref=e101]
+              - columnheader "Condition At Dispatch" [ref=e102]
+              - columnheader "Actions" [ref=e103]
+              - columnheader "Sr.No" [ref=e104]
+          - rowgroup [ref=e105]:
+            - row "THREE COLOR MOULD THREE COLOR MOULD ASSET_TYPE_MOULDS THREE COLOR MOULD 1 Unused Unused Delete 1" [ref=e106]:
+              - cell "THREE COLOR MOULD THREE COLOR MOULD" [ref=e107]:
+                - generic [ref=e108]:
+                  - textbox "Asset Name" [ref=e109]: THREE COLOR MOULD
+                  - generic:
+                    - img
+                  - combobox [ref=e110]:
+                    - option "Asset Name"
+                    - option "THREE COLOR MOULD" [selected]
+              - cell "ASSET_TYPE_MOULDS" [ref=e111]:
+                - generic [ref=e112]: ASSET_TYPE_MOULDS
+              - cell "THREE COLOR MOULD" [ref=e113]:
+                - textbox [active] [ref=e114]: THREE COLOR MOULD
+              - cell "1" [ref=e115]:
+                - spinbutton [ref=e116]: "1"
+              - cell "Unused Unused" [ref=e117]:
+                - generic [ref=e118]:
+                  - textbox "Select Condition" [ref=e119]: Unused
+                  - generic:
+                    - img
+                  - combobox [ref=e120]:
+                    - option "Select Condition"
+                    - option "Unused" [selected]
+                    - option "Fully Working"
+                    - option "Working, Minor Wear"
+                    - option "Damaged"
+                    - option "Non-Functional"
+                    - option "Missing Parts"
+                    - option "Rusted"
+              - cell "Delete" [ref=e121]:
+                - button "Delete" [ref=e122] [cursor=pointer]:
+                  - img [ref=e123]
+              - cell "1" [ref=e127]
+          - rowgroup [ref=e128]:
+            - row "Total Add Row" [ref=e129]:
+              - cell "Total" [ref=e130]
+              - cell "Add Row" [ref=e131]:
+                - button "Add Row" [ref=e132] [cursor=pointer]:
+                  - img [ref=e133]
+              - cell [ref=e134]
+        - button "Confirm" [ref=e136] [cursor=pointer]
+    - generic [ref=e137]: ERP System © 2026
+```

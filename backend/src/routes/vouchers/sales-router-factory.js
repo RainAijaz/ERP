@@ -44,6 +44,16 @@ const setNotice = (res, message, sticky = false) => {
   );
 };
 
+const canVoucherAction = (res, scopeKey, action) => {
+  if (typeof res?.locals?.can !== "function") return false;
+  return res.locals.can("VOUCHER", scopeKey, action);
+};
+
+const actionDeniedMessage = (res) =>
+  res.locals.t("error_action_not_allowed") ||
+  res.locals.t("permission_denied") ||
+  res.locals.t("generic_error");
+
 const createSalesVoucherRouter = ({
   titleKey,
   subtitleKey,
@@ -60,13 +70,22 @@ const createSalesVoucherRouter = ({
         const forceNew = String(req.query.new || "").trim() === "1";
         const forceView = String(req.query.view || "").trim() === "1";
         const requestedVoucherNo = parseVoucherNo(req.query.voucher_no);
+        const canListHistory =
+          typeof res.locals.can === "function" &&
+          res.locals.can("VOUCHER", scopeKey, "navigate");
 
         const [rows, stats] = await Promise.all([
-          loadRecentSalesVouchers({ req, voucherTypeCode }),
+          canListHistory
+            ? loadRecentSalesVouchers({ req, voucherTypeCode })
+            : Promise.resolve([]),
           getSalesVoucherSeriesStats({ req, voucherTypeCode }),
         ]);
 
         if (!forceNew && !forceView) {
+          return res.redirect(`${req.baseUrl}?new=1`);
+        }
+
+        if (!canListHistory && !forceNew) {
           return res.redirect(`${req.baseUrl}?new=1`);
         }
 
@@ -75,14 +94,17 @@ const createSalesVoucherRouter = ({
         const latestVisibleVoucherNo =
           latestActiveVoucherNo || latestVoucherNo || null;
 
-        const selectedNo = forceNew
-          ? null
-          : requestedVoucherNo || latestVisibleVoucherNo;
-        const selectedVoucher = await loadSalesVoucherDetails({
-          req,
-          voucherTypeCode,
-          voucherNo: selectedNo,
-        });
+        const selectedNo =
+          !canListHistory || forceNew
+            ? null
+            : requestedVoucherNo || latestVisibleVoucherNo;
+        const selectedVoucher = canListHistory
+          ? await loadSalesVoucherDetails({
+              req,
+              voucherTypeCode,
+              voucherNo: selectedNo,
+            })
+          : null;
 
         const options = await loadSalesVoucherOptions(req, {
           selectedVoucher,
@@ -99,17 +121,21 @@ const createSalesVoucherRouter = ({
                 0,
             );
 
-        const { prevVoucherNo, nextVoucherNo } =
-          await getSalesVoucherNeighbours({
-            req,
-            voucherTypeCode,
-            cursorNo: currentCursorNo,
-          });
+        const { prevVoucherNo, nextVoucherNo } = canListHistory
+          ? await getSalesVoucherNeighbours({
+              req,
+              voucherTypeCode,
+              cursorNo: currentCursorNo,
+            })
+          : { prevVoucherNo: null, nextVoucherNo: null };
 
         const canOverrideRateDiscount =
           req.user?.isAdmin === true ||
           (typeof res.locals.can === "function" &&
             res.locals.can("VOUCHER", scopeKey, "approve"));
+        const allowCreate = canVoucherAction(res, scopeKey, "create");
+        const allowEdit = canVoucherAction(res, scopeKey, "edit");
+        const allowDelete = canVoucherAction(res, scopeKey, "hard_delete");
 
         return res.render("base/layouts/main", {
           title: `${res.locals.t(titleKey)} - ${res.locals.t("sales")}`,
@@ -131,6 +157,9 @@ const createSalesVoucherRouter = ({
           titleKey,
           subtitleKey,
           canOverrideRateDiscount,
+          allowCreate,
+          allowEdit,
+          allowDelete,
         });
       } catch (err) {
         console.error("Error in SalesVoucherPageService:", err);
@@ -142,6 +171,11 @@ const createSalesVoucherRouter = ({
   router.post("/", async (req, res, next) => {
     try {
       const voucherId = Number(req.body?.voucher_id || 0) || null;
+      if (voucherId && !canVoucherAction(res, scopeKey, "edit")) {
+        setNotice(res, actionDeniedMessage(res), true);
+        return res.redirect(req.baseUrl);
+      }
+
       const payload = {
         voucher_date: req.body?.voucher_date,
         book_no: req.body?.book_no,
@@ -198,6 +232,11 @@ const createSalesVoucherRouter = ({
 
   router.post("/delete", async (req, res, next) => {
     try {
+      if (!canVoucherAction(res, scopeKey, "hard_delete")) {
+        setNotice(res, actionDeniedMessage(res), true);
+        return res.redirect(req.baseUrl);
+      }
+
       const voucherId = Number(req.body?.voucher_id || 0);
       if (!Number.isInteger(voucherId) || voucherId <= 0) {
         setNotice(res, res.locals.t("error_invalid_id"), true);

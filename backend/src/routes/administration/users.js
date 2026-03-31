@@ -174,10 +174,12 @@ router.post("/:id/delete", requirePermission("SCREEN", "administration.users", "
   try {
     const user = await trx("erp.users").select("id").where({ id: req.params.id }).first();
     if (!user) throw new HttpError(404, "User not found");
-    await trx("erp.user_branch").where({ user_id: req.params.id }).del();
-    await trx("erp.user_sessions").where({ user_id: req.params.id }).del();
-    await trx("erp.user_permissions_override").where({ user_id: req.params.id }).del();
-    await trx("erp.users").where({ id: req.params.id }).del();
+    try {
+      await trx("erp.users").where({ id: req.params.id }).del();
+    } catch (deleteErr) {
+      if (String(deleteErr?.code || "") !== "23503") throw deleteErr;
+      await trx("erp.users").where({ id: req.params.id }).update({ status: "Inactive" });
+    }
     queueAuditLog(req, { entityType: "USER", entityId: req.params.id, action: "DELETE" });
     await trx.commit();
     if (req.xhr) return res.json({ success: true });

@@ -1,0 +1,233 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - checkbox "Menu" [ref=e5]
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - link "CHAND EVA" [ref=e8] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e10]: ERP
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - generic [ref=e14]: Signed in as
+            - generic [ref=e15]: admin
+          - generic [ref=e16]:
+            - generic [ref=e17]: Branch
+            - generic [ref=e18]:
+              - generic [ref=e19]: Branch
+              - combobox "Branch" [ref=e20]:
+                - option "124" [selected]
+                - option "207"
+          - button "Logout" [ref=e22] [cursor=pointer]
+          - generic [ref=e23]:
+            - generic [ref=e24]: Language
+            - link "English" [ref=e25] [cursor=pointer]:
+              - /url: "?lang=en"
+            - generic [ref=e26]: "|"
+            - link "Urdu" [ref=e27] [cursor=pointer]:
+              - /url: "?lang=ur"
+      - navigation [ref=e28]:
+        - button "Administration" [ref=e30] [cursor=pointer]:
+          - generic [ref=e31]: Administration
+          - img [ref=e32]
+        - button "Master Data" [ref=e35] [cursor=pointer]:
+          - generic [ref=e36]: Master Data
+          - img [ref=e37]
+        - button "HR & Payroll" [ref=e40] [cursor=pointer]:
+          - generic [ref=e41]: HR & Payroll
+          - img [ref=e42]
+        - button "Financial" [ref=e45] [cursor=pointer]:
+          - generic [ref=e46]: Financial
+          - img [ref=e47]
+        - button "Purchase" [ref=e50] [cursor=pointer]:
+          - generic [ref=e51]: Purchase
+          - img [ref=e52]
+        - button "Production" [ref=e55] [cursor=pointer]:
+          - generic [ref=e56]: Production
+          - img [ref=e57]
+        - button "Inventory" [ref=e60] [cursor=pointer]:
+          - generic [ref=e61]: Inventory
+          - img [ref=e62]
+        - button "Outward & Returnables" [ref=e65] [cursor=pointer]:
+          - generic [ref=e66]: Outward & Returnables
+          - img [ref=e67]
+        - button "Sales" [ref=e70] [cursor=pointer]:
+          - generic [ref=e71]: Sales
+          - img [ref=e72]
+  - main [ref=e74]:
+    - generic [ref=e75]:
+      - generic [ref=e77]:
+        - generic [ref=e78]:
+          - heading "Sizes" [level=1] [ref=e79]
+          - paragraph [ref=e80]: Size labels used in variants (e.g., 7/10, 9/10).
+        - generic [ref=e81]:
+          - button "Download" [ref=e82] [cursor=pointer]
+          - button "Print" [ref=e83] [cursor=pointer]
+          - button "Add Sizes" [ref=e84] [cursor=pointer]
+      - generic [ref=e85]:
+        - generic [ref=e86]:
+          - generic [ref=e87]: List Sizes
+          - generic [ref=e88]:
+            - generic [ref=e89]:
+              - generic [ref=e90]: Show
+              - combobox "Show Rows" [ref=e91] [cursor=pointer]:
+                - option "10" [selected]
+                - option "25"
+                - option "50"
+                - option "All"
+              - generic [ref=e92]: Rows
+            - generic [ref=e93]:
+              - generic [ref=e94]: Status
+              - combobox "Status" [ref=e95] [cursor=pointer]:
+                - option "All" [selected]
+                - option "Active"
+                - option "Inactive"
+            - generic [ref=e96]:
+              - img [ref=e97]
+              - textbox [ref=e99]:
+                - /placeholder: Search
+        - table [ref=e101]:
+          - rowgroup [ref=e102]:
+            - row "Sr.No Name - Applies To - Actions" [ref=e103]:
+              - columnheader "Sr.No" [ref=e104]
+              - columnheader "Name -" [ref=e105]:
+                - button "Name -" [ref=e106] [cursor=pointer]:
+                  - generic [ref=e107]: Name
+                  - generic [ref=e108]: "-"
+              - columnheader "Applies To -" [ref=e109]:
+                - button "Applies To -" [ref=e110] [cursor=pointer]:
+                  - generic [ref=e111]: Applies To
+                  - generic [ref=e112]: "-"
+              - columnheader "Actions" [ref=e113]
+          - rowgroup [ref=e114]:
+            - row "1 E2E Size 1771399218242 Finished Goods" [ref=e115]:
+              - cell "1" [ref=e116]
+              - cell "E2E Size 1771399218242" [ref=e117]
+              - cell "Finished Goods" [ref=e118]
+              - cell [ref=e119]:
+                - generic [ref=e120]:
+                  - button "Edit" [ref=e121] [cursor=pointer]:
+                    - img [ref=e122]
+                  - button "Deactivate" [ref=e124] [cursor=pointer]:
+                    - img [ref=e125]
+                  - button "Permanent Delete" [ref=e126] [cursor=pointer]:
+                    - img [ref=e127]
+            - row "2 E2E name 1771399190781_0" [ref=e131]:
+              - cell "2" [ref=e132]
+              - cell "E2E name 1771399190781_0" [ref=e133]
+              - cell [ref=e134]
+              - cell [ref=e135]:
+                - generic [ref=e136]:
+                  - button "Edit" [ref=e137] [cursor=pointer]:
+                    - img [ref=e138]
+                  - button "Deactivate" [ref=e140] [cursor=pointer]:
+                    - img [ref=e141]
+                  - button "Permanent Delete" [ref=e142] [cursor=pointer]:
+                    - img [ref=e143]
+            - row "3 E2E name 1771398105030_0" [ref=e147]:
+              - cell "3" [ref=e148]
+              - cell "E2E name 1771398105030_0" [ref=e149]
+              - cell [ref=e150]
+              - cell [ref=e151]:
+                - generic [ref=e152]:
+                  - button "Edit" [ref=e153] [cursor=pointer]:
+                    - img [ref=e154]
+                  - button "Deactivate" [ref=e156] [cursor=pointer]:
+                    - img [ref=e157]
+                  - button "Permanent Delete" [ref=e158] [cursor=pointer]:
+                    - img [ref=e159]
+            - row "4 E2E name 1770478855220_0" [ref=e163]:
+              - cell "4" [ref=e164]
+              - cell "E2E name 1770478855220_0" [ref=e165]
+              - cell [ref=e166]
+              - cell [ref=e167]:
+                - generic [ref=e168]:
+                  - button "Edit" [ref=e169] [cursor=pointer]:
+                    - img [ref=e170]
+                  - button "Deactivate" [ref=e172] [cursor=pointer]:
+                    - img [ref=e173]
+                  - button "Permanent Delete" [ref=e174] [cursor=pointer]:
+                    - img [ref=e175]
+            - row "5 E2E name 1770477509559_0" [ref=e179]:
+              - cell "5" [ref=e180]
+              - cell "E2E name 1770477509559_0" [ref=e181]
+              - cell [ref=e182]
+              - cell [ref=e183]:
+                - generic [ref=e184]:
+                  - button "Edit" [ref=e185] [cursor=pointer]:
+                    - img [ref=e186]
+                  - button "Deactivate" [ref=e188] [cursor=pointer]:
+                    - img [ref=e189]
+                  - button "Permanent Delete" [ref=e190] [cursor=pointer]:
+                    - img [ref=e191]
+            - row "6 E2E name 1770477440632_0" [ref=e195]:
+              - cell "6" [ref=e196]
+              - cell "E2E name 1770477440632_0" [ref=e197]
+              - cell [ref=e198]
+              - cell [ref=e199]:
+                - generic [ref=e200]:
+                  - button "Edit" [ref=e201] [cursor=pointer]:
+                    - img [ref=e202]
+                  - button "Deactivate" [ref=e204] [cursor=pointer]:
+                    - img [ref=e205]
+                  - button "Permanent Delete" [ref=e206] [cursor=pointer]:
+                    - img [ref=e207]
+            - row "7 SINGLE Raw Materials" [ref=e211]:
+              - cell "7" [ref=e212]
+              - cell "SINGLE" [ref=e213]
+              - cell "Raw Materials" [ref=e214]
+              - cell [ref=e215]:
+                - generic [ref=e216]:
+                  - button "Edit" [ref=e217] [cursor=pointer]:
+                    - img [ref=e218]
+                  - button "Deactivate" [ref=e220] [cursor=pointer]:
+                    - img [ref=e221]
+                  - button "Permanent Delete" [ref=e222] [cursor=pointer]:
+                    - img [ref=e223]
+            - row "8 DOUBLE Raw Materials" [ref=e227]:
+              - cell "8" [ref=e228]
+              - cell "DOUBLE" [ref=e229]
+              - cell "Raw Materials" [ref=e230]
+              - cell [ref=e231]:
+                - generic [ref=e232]:
+                  - button "Edit" [ref=e233] [cursor=pointer]:
+                    - img [ref=e234]
+                  - button "Deactivate" [ref=e236] [cursor=pointer]:
+                    - img [ref=e237]
+                  - button "Permanent Delete" [ref=e238] [cursor=pointer]:
+                    - img [ref=e239]
+            - row "9 LARGE Raw Materials" [ref=e243]:
+              - cell "9" [ref=e244]
+              - cell "LARGE" [ref=e245]
+              - cell "Raw Materials" [ref=e246]
+              - cell [ref=e247]:
+                - generic [ref=e248]:
+                  - button "Edit" [ref=e249] [cursor=pointer]:
+                    - img [ref=e250]
+                  - button "Deactivate" [ref=e252] [cursor=pointer]:
+                    - img [ref=e253]
+                  - button "Permanent Delete" [ref=e254] [cursor=pointer]:
+                    - img [ref=e255]
+            - row "10 SMALL Raw Materials" [ref=e259]:
+              - cell "10" [ref=e260]
+              - cell "SMALL" [ref=e261]
+              - cell "Raw Materials" [ref=e262]
+              - cell [ref=e263]:
+                - generic [ref=e264]:
+                  - button "Edit" [ref=e265] [cursor=pointer]:
+                    - img [ref=e266]
+                  - button "Deactivate" [ref=e268] [cursor=pointer]:
+                    - img [ref=e269]
+                  - button "Permanent Delete" [ref=e270] [cursor=pointer]:
+                    - img [ref=e271]
+        - generic [ref=e275]:
+          - generic [ref=e276]: Showing 1 to 10 of 14 entries
+          - generic [ref=e277]:
+            - button "Prev" [disabled] [ref=e278] [cursor=pointer]
+            - button "1" [ref=e279] [cursor=pointer]
+            - button "Next" [ref=e280] [cursor=pointer]
+    - generic [ref=e281]: ERP System © 2026
+```

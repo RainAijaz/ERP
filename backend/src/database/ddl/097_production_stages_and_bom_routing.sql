@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS erp.bom_stage_routing (
   stage_id      bigint NOT NULL REFERENCES erp.production_stages(id) ON DELETE RESTRICT,
   sequence_no   int NOT NULL CHECK (sequence_no > 0),
   is_required   boolean NOT NULL DEFAULT true,
+  enforce_sequence boolean NOT NULL DEFAULT true,
   created_at    timestamptz NOT NULL DEFAULT now(),
   UNIQUE (bom_id, stage_id),
   UNIQUE (bom_id, sequence_no)

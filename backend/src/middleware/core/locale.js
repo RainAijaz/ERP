@@ -1,4 +1,4 @@
-const { parseCookies, setCookie } = require("../utils/cookies");
+﻿const { parseCookies, setCookie } = require("../utils/cookies");
 
 const translations = {
   en: {
@@ -310,6 +310,7 @@ const translations = {
     size: "Size",
     color: "Color",
     grade: "Grade",
+    grade_rank: "Grade Rank",
     packing_type: "Packing Type",
     article: "Article",
     rates: "Rates",
@@ -554,6 +555,7 @@ const translations = {
     bom_rules_col_uom: "Unit",
     bom_sfg_col_step_upper_sku: "Step/Upper SKU",
     bom_sfg_col_step_qty: "Step Quantity",
+    bom_sfg_col_consumed_stage: "Consumed In Stage",
     bom_all_skus: "All SKUs",
     bom_all_skus_no_color: "All SKUs (no color variants)",
     bom_header_change_modal_title: "BOM setup changed",
@@ -597,6 +599,7 @@ const translations = {
     bom_stage: "Stage",
     bom_workflow_stage: "Stage",
     bom_stage_mandatory_in_flow: "Mandatory In Flow",
+    bom_stage_strict_sequence: "Follow Sequence",
     bom_type: "Type",
     bom_type_finished_goods: "Finished Goods BOM",
     bom_type_semi_finished: "Semi-Finished BOM",
@@ -765,6 +768,7 @@ const translations = {
     error_invalid_salary_precision:
       "Basic salary supports up to 2 decimal places and valid range only.",
     error_select_department: "Please select a department.",
+    error_labour_department_in_use: "Department cannot be removed from labour because existing vouchers/rates/BOM already reference it.",
     error_invalid_cnic: "Invalid CNIC format.",
     error_invalid_phone_number: "Invalid phone number format.",
     error_duplicate_cnic: "CNIC already exists.",
@@ -875,11 +879,23 @@ const translations = {
     to_date: "To Date",
     voucher_type: "Voucher Type",
     voucher_register: "Voucher Register",
+    voucher_register_purpose_tooltip:
+      "Lists voucher entries for audit, reconciliation, and posting traceability.",
     cash_book: "Cash Book",
+    cash_book_purpose_tooltip:
+      "Shows cash movement with opening, in-period, and closing balances.",
     cash_voucher_register: "Cash Voucher Register",
+    cash_voucher_register_purpose_tooltip:
+      "Shows cash voucher activity only, filtered for cash-side controls.",
     bank_transactions: "Bank Transactions Report",
+    bank_transactions_purpose_tooltip:
+      "Tracks bank voucher transactions and clearance status for reconciliation.",
     expense_analysis: "Expense Analysis Report",
+    expense_analysis_purpose_tooltip:
+      "Analyzes period expense by department/group/account with variance drivers.",
     expense_trends: "Expense Trends Report",
+    expense_trends_purpose_tooltip:
+      "Shows expense trends over time to identify spikes and direction changes.",
     department_breakdown: "Department Breakdown",
     expense_breakdown: "Expense Breakdown",
     time_granularity: "Time Granularity",
@@ -934,14 +950,32 @@ const translations = {
     level_group: "Group Level",
     level_account: "Account Level",
     production_overhead: "Production Overhead Cost Analysis",
+    production_overhead_purpose_tooltip:
+      "Breaks down overhead costs linked to production operations.",
     non_production_expense: "Non-Production Expense Analysis",
+    non_production_expense_purpose_tooltip:
+      "Shows expenses outside production functions for control visibility.",
     accrued_expenses: "Accrued Expenses Report",
+    accrued_expenses_purpose_tooltip:
+      "Lists accrued expense postings pending settlement/reversal review.",
     profitability_analysis: "Profitability Analysis Report",
+    profitability_analysis_purpose_tooltip:
+      "Analyzes profitability indicators using financial movement data.",
     profit_and_loss: "Profit and Loss Statement",
+    profit_and_loss_purpose_tooltip:
+      "Summarizes income and expense to show net profit/loss for the period.",
     journal_voucher_register: "Journal Voucher Register",
+    journal_voucher_register_purpose_tooltip:
+      "Lists journal vouchers for adjustment and accrual audit review.",
     account_activity_ledger: "Account Activity Ledger",
+    account_activity_ledger_purpose_tooltip:
+      "Provides transaction-wise movement and running balance for a selected account.",
     trial_balance: "Trial Balance Summary",
+    trial_balance_purpose_tooltip:
+      "Summarizes debit/credit balances across accounts for period validation.",
     payroll_wage_balance: "Payroll & Wage Balance Report",
+    payroll_wage_balance_purpose_tooltip:
+      "Shows payroll and wage account balances for control and reconciliation.",
     all_voucher_types: "All Voucher Types",
     cashier: "Cashier",
     cashiers: "Cashiers",
@@ -1039,15 +1073,31 @@ const translations = {
     return_reason_other: "Other",
     supplier_reports: "Supplier Reports",
     supplier_balance_information: "Supplier Balance Information",
+    supplier_balances_report_purpose_tooltip:
+      "Shows payable balance by supplier as of a selected date.",
     supplier_listings: "Supplier Listings",
+    supplier_listings_purpose_tooltip:
+      "Directory view of suppliers and their classification details.",
     supplier_ledger_report: "Supplier Ledger Report",
+    supplier_ledger_report_purpose_tooltip:
+      "Shows supplier-wise transaction ledger with running payable movement.",
     supplier_balances_report: "Supplier Balances Report",
     labour_ledger_report: "Labour Ledger Report",
+    labour_ledger_report_purpose_tooltip:
+      "Shows labour-wise transaction ledger with running balances.",
     labour_balances_report: "Labour Balances Report",
+    labour_balances_report_purpose_tooltip:
+      "Shows current payable/receivable balance by labour.",
     employee_ledger_report: "Employee Ledger Report",
+    employee_ledger_report_purpose_tooltip:
+      "Shows employee-wise transaction ledger with running balances.",
     employee_balances_report: "Employee Balances Report",
+    employee_balances_report_purpose_tooltip:
+      "Shows current payable/receivable balance by employee.",
     report_not_configured_yet: "This report is not configured yet.",
     purchase_reports: "Purchase Report",
+    purchase_reports_purpose_tooltip:
+      "Analyzes purchases by party, material, quantity, and amount.",
     abnormal_loss: "Abnormal Loss",
     abnormal_loss_voucher: "Abnormal Loss Voucher",
     finished_production_voucher: "Finished Production Voucher",
@@ -1069,6 +1119,43 @@ const translations = {
     production_planning_voucher_description:
       "Plan future production quantities without posting consumption or labour.",
     production_reports: "Production Reports",
+    production_reports_purpose_tooltip:
+      "Entry point for production control, planning, and pending flow reports.",
+    production_control_report: "Production Control Report",
+    production_control_report_purpose_tooltip:
+      "Tracks approved production output by voucher, SKU, and department.",
+    planned_consumption: "Planned Consumption",
+    planned_consumption_purpose_tooltip:
+      "Compares planned production against BOM-based expected material consumption.",
+    department_wip_report: "Department-wise Pending Production Report",
+    department_wip_report_purpose_tooltip:
+      "Shows stage-wise pending production using previous-stage net WIP balance.",
+    report_usage_help: "How to Use This Report",
+    department_wip_report_usage_point_1:
+      "Use As Of Date as the snapshot cutoff for pending calculation.",
+    department_wip_report_usage_point_2:
+      "Pending for a department is taken from previous-stage net balance (IN minus OUT).",
+    department_wip_report_usage_point_3:
+      "Loss, consumption, and conversion OUT movements are already deducted from pending.",
+    department_wip_ledger_report: "Department WIP Ledger Report",
+    department_wip_ledger_report_purpose_tooltip:
+      "Shows movement ledger and closing balance for selected department and SKU.",
+    as_of_date: "As Of Date",
+    aging_bucket: "Aging Bucket",
+    pending_articles: "Pending Articles",
+    avg_aging_days: "Avg Aging (Days)",
+    max_aging_days: "Max Aging (Days)",
+    pending_pairs: "Pending Pairs",
+    pending_dozen: "Pending Dozen",
+    opening_pairs: "Opening Pairs",
+    in_pairs: "In Pairs",
+    out_pairs: "Out Pairs",
+    closing_pairs: "Closing Pairs",
+    closing_dozen: "Closing Dozen",
+    movement: "Movement",
+    in_movement: "IN",
+    out_movement: "OUT",
+    production_type: "Production Type",
     loss_type: "Loss Type",
     plan_kind: "Plan Kind",
     voucher_lines_required: "Voucher lines are required.",
@@ -1078,10 +1165,24 @@ const translations = {
     stock_count: "Stock Count",
     stock_transfer: "Stock Transfer",
     inventory_reports: "Inventory Reports",
+    inventory_reports_purpose_tooltip:
+      "Entry point for stock valuation and stock balance reporting.",
+    stock_amount_report: "Stock Amount Report",
+    stock_amount_report_purpose_tooltip:
+      "Shows stock quantity, rate, and amount by filters and view type.",
+    stock_balances_report: "Stock Balances Report",
+    stock_balances_report_purpose_tooltip:
+      "Shows stock quantities only (without values) by selected filters.",
+    sale_rate_basis: "Sale Basis",
+    cost_rate_basis: "Cost Basis",
     returnables: "Returnables",
     returnable_reports: "Returnable Reports",
     pending_returnables: "Pending Returnables",
+    pending_returnables_purpose_tooltip:
+      "Shows open returnable cases pending return from counterparties.",
     overdue_returnables: "Overdue Returnables",
+    overdue_returnables_purpose_tooltip:
+      "Shows overdue returnable cases and vendor performance indicators.",
     returnables_vendor_dispatched_qty: "Dispatched Qty",
     returnables_vendor_returned_qty: "Returned Qty",
     returnables_vendor_open_qty: "Open Qty",
@@ -1100,17 +1201,33 @@ const translations = {
     sales_reports: "Sales Reports",
     customer_reports: "Customer Reports",
     customer_balance_information: "Customer Balance Information",
+    customer_balances_report_purpose_tooltip:
+      "Shows receivable/payable balance by customer as of selected date.",
     customer_balances_report: "Customer Balances Report",
     customer_ledger_report: "Customer Ledger Report",
+    customer_ledger_report_purpose_tooltip:
+      "Shows customer-wise transaction ledger with running balances.",
     customer_listings: "Customer Listings",
+    customer_listings_purpose_tooltip:
+      "Directory view of customers and their grouping details.",
     sales_order_report: "Sales Order Report",
+    sales_order_report_purpose_tooltip:
+      "Tracks sales orders, delivered quantity, and remaining pending quantity.",
     sales_report: "Sales Report",
+    sales_report_purpose_tooltip:
+      "Analyzes sales performance by voucher, party/account, and article.",
     sale_return_report: "Sale Return Report",
+    sale_return_report_purpose_tooltip:
+      "Analyzes returned sales quantities and values by filters.",
     customer_contact_analysis: "Customer Contact Analysis",
+    customer_contact_analysis_purpose_tooltip:
+      "Summarizes customer contact and billing behavior over selected dates.",
     sales_order_report: "Sales Order Report",
     sales_report: "Sales Report",
     sale_return_report: "Sale Return Report",
     sales_discount_report: "Sales Discount Report",
+    sales_discount_report_purpose_tooltip:
+      "Shows discount impact by voucher/customer to monitor margin leakage.",
     primary_customer_name: "Primary Customer Name",
     total_bill_amount: "Total Bill Amount",
     highest_bill: "Highest Bill",
@@ -1944,6 +2061,7 @@ translations.ur = {
   bom_rules_col_uom: "یونٹ",
   bom_sfg_col_step_upper_sku: "Step/Upper SKU",
   bom_sfg_col_step_qty: "Step Quantity",
+  bom_sfg_col_consumed_stage: "Consumed In Stage",
   bom_all_skus: "تمام SKU",
   bom_all_skus_no_color: "تمام SKU (رنگی ویریئنٹ موجود نہیں)",
   bom_rule_add_rm: "RM شامل کریں۔",
@@ -2145,6 +2263,7 @@ translations.ur = {
   error_select_city: "براہ کرم شہر کا انتخاب کریں۔",
   error_select_commission_basis: "براہ کرم کمیشن کی بنیاد پر انتخاب کریں۔",
   error_select_department: "براہ کرم ایک شعبہ منتخب کریں۔",
+  error_labour_department_in_use: "Department cannot be removed from labour because existing vouchers/rates/BOM already reference it.",
   error_select_group: "براہ کرم ایک پروڈکٹ گروپ منتخب کریں۔",
   error_select_labour: "براہ کرم ایک لیبر منتخب کریں۔",
   error_select_party_group: "براہ کرم پارٹی گروپ منتخب کریں۔",
@@ -2197,6 +2316,7 @@ translations.ur = {
     "جب ریٹس ابھی طے نہیں ہوئے ہیں تو ریکارڈ خام مال کی مقدار موصول ہوئی ہے۔",
   goods_receipt_note_voucher: "سامان کی رسید نوٹ واؤچر",
   grade: "گریڈ",
+  grade_rank: "گریڈ رینک",
   grades: "درجات",
   grand_total: "گرینڈ ٹوٹل",
   grn_reference: "GRN حوالہ",
@@ -2227,6 +2347,10 @@ translations.ur = {
     "ان لائنوں پر مشتمل ہے جہاں محکمہ لاگو نہیں ہے (نقد/بینک/ ایڈوانسز/ ٹرانسفرز)۔",
   incorrect_credentials: "غلط صارف نام یا پاس ورڈ۔",
   inventory_reports: "انوینٹری رپورٹس",
+  stock_amount_report: "اسٹاک اماؤنٹ رپورٹ",
+  stock_balances_report: "اسٹاک بیلنسز رپورٹ",
+  sale_rate_basis: "سیل بنیاد",
+  cost_rate_basis: "کاسٹ بنیاد",
   inventory_voucher: "انوینٹری واؤچر",
   item_name: "آئٹم کا نام",
   item_selector: "آئٹم سلیکٹر",
@@ -2247,6 +2371,9 @@ translations.ur = {
   last_purchase_date: "آخری خریداری کی تاریخ",
   level: "سطح",
   bom_stage: "مرحلہ",
+  bom_workflow_stage: "مرحلہ",
+  bom_stage_mandatory_in_flow: "فلو میں لازمی",
+  bom_stage_strict_sequence: "ترتیب لازمی",
   level_account: "اکاؤنٹ لیول",
   level_department: "ڈیپارٹمنٹ لیول",
   level_group: "گروپ لیول",
@@ -2389,6 +2516,35 @@ translations.ur = {
   production_category_semi_finished: "نیم تیار",
   production_overhead: "پروڈکشن اوور ہیڈ لاگت کا تجزیہ",
   production_reports: "پیداواری رپورٹس",
+  production_control_report: "پیداواری کنٹرول رپورٹ",
+  planned_consumption: "منصوبہ بند کھپت",
+  department_wip_report: "ڈیپارٹمنٹ وائز زیر التوا پیداوار رپورٹ",
+  department_wip_report_purpose_tooltip:
+    "پچھلے اسٹیج کے نیٹ WIP بیلنس کی بنیاد پر اسٹیج وائز زیر التوا پیداوار دکھاتی ہے۔",
+  report_usage_help: "اس رپورٹ کو استعمال کرنے کا طریقہ",
+  department_wip_report_usage_point_1:
+    "زیر التوا حساب کے لیے As Of Date کو snapshot cutoff تاریخ کے طور پر استعمال کریں۔",
+  department_wip_report_usage_point_2:
+    "کسی بھی شعبے کا زیر التوا حجم پچھلے اسٹیج کے net balance (IN - OUT) سے لیا جاتا ہے۔",
+  department_wip_report_usage_point_3:
+    "loss، consumption، اور conversion کی OUT movements زیر التوا میں خودکار منفی کر دی جاتی ہیں۔",
+  department_wip_ledger_report: "ڈیپارٹمنٹ WIP لیجر رپورٹ",
+  as_of_date: "بتاریخ",
+  aging_bucket: "عمر بکٹ",
+  pending_articles: "زیر التوا آرٹیکلز",
+  avg_aging_days: "اوسط عمر (دن)",
+  max_aging_days: "زیادہ سے زیادہ عمر (دن)",
+  pending_pairs: "زیر التوا جوڑے",
+  pending_dozen: "زیر التوا درجن",
+  opening_pairs: "اوپننگ جوڑے",
+  in_pairs: "اندر آنے والے جوڑے",
+  out_pairs: "باہر جانے والے جوڑے",
+  closing_pairs: "اختتامی جوڑے",
+  closing_dozen: "اختتامی درجن",
+  movement: "حرکت",
+  in_movement: "IN",
+  out_movement: "OUT",
+  production_type: "پیداواری قسم",
   select_department: "شعبہ منتخب کریں",
   select_labour: "لیبر منتخب کریں",
   select_sku: "SKU منتخب کریں",
@@ -2689,6 +2845,46 @@ translations.ur = {
   placeholder_employee_code: "ملازم-001",
   placeholder_labour_code: "لیبر-001",
   sku: "ایس کے یو",
+  voucher_register_purpose_tooltip: "Voucher entries ko audit aur reconciliation ke liye list karta hai.",
+  cash_book_purpose_tooltip: "Cash movement ko opening se closing balance tak dikhata hai.",
+  cash_voucher_register_purpose_tooltip: "Sirf cash vouchers ki activity aur control view deta hai.",
+  bank_transactions_purpose_tooltip: "Bank voucher transactions aur clearance status track karta hai.",
+  expense_analysis_purpose_tooltip: "Kharchon ka period-wise analysis department/group/account level par deta hai.",
+  expense_trends_purpose_tooltip: "Time ke sath expense trends aur spikes dikhata hai.",
+  journal_voucher_register_purpose_tooltip: "Journal vouchers ka audit register dikhata hai.",
+  account_activity_ledger_purpose_tooltip: "Selected account ki transaction-wise movement aur running balance dikhata hai.",
+  trial_balance_purpose_tooltip: "Accounts ka debit/credit summary validation ke liye deta hai.",
+  payroll_wage_balance_purpose_tooltip: "Payroll aur wage related balances ka control view deta hai.",
+  production_overhead_purpose_tooltip: "Production overhead cost breakdown dikhata hai.",
+  non_production_expense_purpose_tooltip: "Non-production expenses ka control analysis dikhata hai.",
+  accrued_expenses_purpose_tooltip: "Accrued expenses entries ko review ke liye list karta hai.",
+  profitability_analysis_purpose_tooltip: "Financial movement se profitability indicators analyze karta hai.",
+  profit_and_loss_purpose_tooltip: "Period ka income vs expense summary aur net profit/loss dikhata hai.",
+  supplier_listings_purpose_tooltip: "Suppliers ki directory aur grouping details dikhata hai.",
+  supplier_ledger_report_purpose_tooltip: "Supplier-wise ledger movement aur running balance dikhata hai.",
+  supplier_balances_report_purpose_tooltip: "Selected date par supplier payable balance dikhata hai.",
+  labour_ledger_report_purpose_tooltip: "Labour-wise ledger movement aur running balance dikhata hai.",
+  labour_balances_report_purpose_tooltip: "Labour-wise current payable/receivable balance dikhata hai.",
+  employee_ledger_report_purpose_tooltip: "Employee-wise ledger movement aur running balance dikhata hai.",
+  employee_balances_report_purpose_tooltip: "Employee-wise current payable/receivable balance dikhata hai.",
+  purchase_reports_purpose_tooltip: "Purchases ko party, material, quantity aur amount ke sath analyze karta hai.",
+  production_reports_purpose_tooltip: "Production control, planning, aur pending flow reports ka main section.",
+  production_control_report_purpose_tooltip: "Approved production output ko voucher, SKU aur department ke hisab se track karta hai.",
+  planned_consumption_purpose_tooltip: "Planned production ko BOM expected consumption ke sath compare karta hai.",
+  department_wip_ledger_report_purpose_tooltip: "Selected department aur SKU ka movement ledger aur closing balance dikhata hai.",
+  inventory_reports_purpose_tooltip: "Stock valuation aur stock balance reports ka main section.",
+  stock_amount_report_purpose_tooltip: "Stock quantity, rate aur amount ko filters ke mutabiq dikhata hai.",
+  stock_balances_report_purpose_tooltip: "Stock quantities-only view dikhata hai, amount ke baghair.",
+  pending_returnables_purpose_tooltip: "Pending returnable cases jo abhi wapas nahi aaye unko dikhata hai.",
+  overdue_returnables_purpose_tooltip: "Overdue returnables aur vendor performance indicators dikhata hai.",
+  customer_listings_purpose_tooltip: "Customers ki directory aur grouping details dikhata hai.",
+  customer_ledger_report_purpose_tooltip: "Customer-wise ledger movement aur running balance dikhata hai.",
+  customer_balances_report_purpose_tooltip: "Selected date par customer receivable/payable balance dikhata hai.",
+  customer_contact_analysis_purpose_tooltip: "Customer contact aur billing behavior ka summary analysis deta hai.",
+  sales_order_report_purpose_tooltip: "Sales order, delivered quantity aur remaining pending quantity track karta hai.",
+  sales_report_purpose_tooltip: "Sales performance ko voucher, party/account aur article ke mutabiq analyze karta hai.",
+  sale_return_report_purpose_tooltip: "Sale return quantity aur value analysis dikhata hai.",
+  sales_discount_report_purpose_tooltip: "Discount impact ko voucher/customer level par monitor karta hai.",
 };
 
 const formatDateDisplay = (value, fallback = "-") => {
@@ -2761,3 +2957,4 @@ module.exports = (req, res, next) => {
   res.locals.formatNumberDisplay = formatNumberDisplay;
   next();
 };
+

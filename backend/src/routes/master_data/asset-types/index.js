@@ -310,9 +310,13 @@ router.post("/:code/delete", requirePermission("SCREEN", SCOPE_KEY, "hard_delete
       .select("id")
       .whereRaw("upper(asset_type_code) = ?", [code])
       .first();
-    if (inUse) throw new HttpError(400, res.locals.t("error_record_in_use"));
-
-    await knex("erp.asset_type_registry").whereRaw("upper(code) = ?", [code]).del();
+    if (inUse) {
+      await knex("erp.asset_type_registry")
+        .whereRaw("upper(code) = ?", [code])
+        .update({ is_active: false });
+    } else {
+      await knex("erp.asset_type_registry").whereRaw("upper(code) = ?", [code]).del();
+    }
     queueAuditLog(req, {
       entityType: ENTITY_TYPE,
       entityId: existing.code,

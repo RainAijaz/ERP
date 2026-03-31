@@ -20,6 +20,10 @@
     : formatDateInput(new Date());
   const selectedStatus = String(selectedVoucher?.status || "").toUpperCase();
   const isDeletedVoucher = selectedStatus === "REJECTED";
+  const canEditVoucher = typeof allowEdit === "boolean" ? allowEdit : true;
+  const canDeleteVoucher = typeof allowDelete === "boolean" ? allowDelete : true;
+  const canSaveVoucher = !isDeletedVoucher && (!selectedVoucher || canEditVoucher);
+  const canDeleteCurrentVoucher = !!selectedVoucher && !isDeletedVoucher && canDeleteVoucher;
   const selectedStatusLabel = selectedStatus === "APPROVED" ? t("approved") : selectedStatus === "REJECTED" ? t("rejected") : selectedStatus === "PENDING" ? t("pending") : selectedStatus;
   const selectedStatusToneClass = selectedStatus === "APPROVED" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : selectedStatus === "REJECTED" ? "border-rose-200 bg-rose-50 text-rose-800" : "border-amber-200 bg-amber-50 text-amber-800";
   const toFriendlyLabel = (key) => {
@@ -71,7 +75,7 @@
               <% if (!isReceipt && selectedVoucher && !isDeletedVoucher) { %>
                 <a href="<%= `${basePath}/gate-pass?voucher_no=${selectedVoucher.voucher_no}` %>" target="_blank" rel="noopener" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700"><%= t("gate_pass") %></a>
               <% } %>
-              <button type="button" class="rounded-xl border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-rose-700 disabled:opacity-40" data-delete-voucher <%= selectedVoucher && !isDeletedVoucher ? '' : 'disabled' %>><%= t("delete") %></button>
+              <button type="button" class="rounded-xl border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-rose-700 disabled:opacity-40" data-delete-voucher <%= canDeleteCurrentVoucher ? '' : 'disabled' %>><%= t("delete") %></button>
               <button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700" onclick="window.print()"><%= t("print") %></button>
             </div>
           </div>
@@ -200,7 +204,7 @@
                 <td class="border-t border-slate-200 px-2 py-2 text-xs font-semibold text-slate-700" colspan="<%= isReceipt ? 4 : 5 %>"><%= t("total") %></td>
                 <td class="border-t border-slate-200 px-2 py-2 text-center">
                   <% if (!isReceipt) { %>
-                    <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white p-2 text-slate-700" data-add-row aria-label="<%= t('add_row') %>" title="<%= t('add_row') %>">
+                    <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white p-2 text-slate-700" data-add-row <%= canSaveVoucher ? '' : 'disabled' %> aria-label="<%= t('add_row') %>" title="<%= t('add_row') %>">
                       <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                         <path d="M12 5v14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
                         <path d="M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
@@ -216,7 +220,7 @@
       </div>
 
       <div class="flex items-center justify-center">
-        <button type="submit" class="rounded-xl bg-accent px-4 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-white shadow-sm" data-enter-submit><%= t("confirm") %></button>
+        <button type="submit" class="rounded-xl bg-accent px-4 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-white shadow-sm disabled:opacity-40" data-enter-submit <%= canSaveVoucher ? '' : 'disabled' %>><%= t("confirm") %></button>
       </div>
     </form>
 
@@ -280,6 +284,9 @@
 
     const isReceipt = <%- JSON.stringify(isReceipt) %>;
     const selectedVoucher = <%- JSON.stringify(selectedVoucher || null) %>;
+    const canSaveVoucher = <%- JSON.stringify(Boolean(canSaveVoucher)) %>;
+    const canDeleteCurrentVoucher = <%- JSON.stringify(Boolean(canDeleteCurrentVoucher)) %>;
+    const actionNotAllowedMessage = <%- JSON.stringify(t('error_action_not_allowed') || t('permission_denied') || t('generic_error')) %>;
     const initialRows = <%- JSON.stringify(initialLines || []) %>;
     const assetOptions = <%- JSON.stringify(options.assets || []) %>;
     const conditionOptions = <%- JSON.stringify(options.conditions || []) %>;
@@ -903,6 +910,12 @@
     });
 
     form.addEventListener("submit", (event) => {
+      if (!canSaveVoucher) {
+        event.preventDefault();
+        window.showVoucherError(actionNotAllowedMessage);
+        return;
+      }
+
       if (isReceipt && !Number(outwardSelect?.value || 0)) {
         event.preventDefault();
         window.showVoucherError("<%= t('select_outward_reference') %>");
@@ -1016,6 +1029,10 @@
     });
 
     document.querySelector("[data-delete-voucher]")?.addEventListener("click", () => {
+      if (!canDeleteCurrentVoucher) {
+        window.showVoucherError(actionNotAllowedMessage);
+        return;
+      }
       const deleteForm = document.querySelector("[data-delete-voucher-form]");
       if (!deleteForm) return;
       if (!confirm("<%= t('are_you_sure') %>")) return;

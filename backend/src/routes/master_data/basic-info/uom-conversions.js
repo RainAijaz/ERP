@@ -220,7 +220,18 @@ router.post("/:id/delete", requirePermission("SCREEN", "master_data.basic_info.u
     if (approval.queued) {
       return res.redirect(req.get("referer") || basePath);
     }
-    await knex("erp.uom_conversions").where({ id }).del();
+    try {
+      await knex("erp.uom_conversions").where({ id }).del();
+    } catch (deleteErr) {
+      if (String(deleteErr?.code || "") !== "23503") throw deleteErr;
+      await knex("erp.uom_conversions")
+        .where({ id })
+        .update({
+          is_active: false,
+          updated_by: req.user ? req.user.id : null,
+          updated_at: knex.fn.now(),
+        });
+    }
     return res.redirect("/master-data/basic-info/uom-conversions");
   } catch (err) {
     return renderError(req, res, err?.message || res.locals.t("error_delete"), "delete");

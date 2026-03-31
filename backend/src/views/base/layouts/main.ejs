@@ -369,6 +369,23 @@
               return;
             }
 
+            const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+            if (contentType.includes("application/json")) {
+              const payload = await response.json().catch(() => null);
+              if (payload && payload.queuedForApproval && payload.message) {
+                // Keep user on the same page and show approval/shortage context in the modal instead of redirecting.
+                window.showVoucherError(
+                  String(payload.message),
+                  String(payload.title || "<%= t('approval_submitted') || 'Approval Submitted' %>"),
+                );
+                return;
+              }
+              if (payload && payload.redirectUrl) {
+                window.location.assign(String(payload.redirectUrl));
+                return;
+              }
+            }
+
             const nextUrl = String(response.url || "").trim();
             window.location.assign(nextUrl || (form.action || window.location.href));
           } catch (err) {

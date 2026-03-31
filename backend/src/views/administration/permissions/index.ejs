@@ -198,13 +198,15 @@
                   <% const isAdministrationScope = row.moduleGroup === 'Administration' || (row.scopeType === 'MODULE' && row.scopeKey === 'administration') || (row.scopeKey && row.scopeKey.startsWith('administration.')); %>
                   <% actions.forEach(act => { %>
                     <td class="text-center border-r last:border-r-0 relative p-0 h-10 w-24">
+                      <% const actionAllowedByScope = row.isConfigurableScope && Array.isArray(row.applicableActions) && row.applicableActions.includes(act.key); %>
                       <% const hideAction =
+                        !actionAllowedByScope ||
                         (isPermissionsScreen && permissionsRestrictedActions.includes(act.key)) ||
                         (isAdministrationScope && act.key === 'can_print') ||
                         (isApprovalsScreen && ['can_create','can_edit','can_delete','can_hard_delete','can_approve'].includes(act.key)) ||
                         (isActivityLogScreen && ['can_create','can_edit','can_delete','can_hard_delete','can_approve'].includes(act.key)) ||
                         (isApprovalSettingsScreen && ['can_create','can_delete','can_hard_delete','can_approve'].includes(act.key)); %>
-                      <% if (!hideAction && row.scopeType === 'SCREEN' && row.scopeId) { %>
+                      <% if (!hideAction && row.isConfigurableScope && row.scopeId) { %>
                         <label class="w-full h-full flex items-center justify-center cursor-pointer hover:bg-black/5 transition-colors relative">
                           <% if (isUserMode) { %>
                             <input type="hidden" name="<%= row.scopeId %>:<%= act.key %>" value="false">
@@ -231,7 +233,7 @@
                   <% }) %>
 
                   <td class="text-center p-0 h-10 w-12">
-                    <% if (row.scopeType === 'SCREEN' && row.scopeId) { %>
+                    <% if (row.isConfigurableScope && row.scopeId) { %>
                       <div class="w-full h-full flex items-center justify-center hover:bg-slate-100">
                         <input type="checkbox" onchange="toggleRow(this, '<%= row.scopeId %>')" <%= !canEditPermissions ? 'disabled' : '' %> class="rounded-full text-slate-300 focus:ring-slate-400 w-4 h-4 cursor-pointer hover:text-accent <%= !canEditPermissions ? 'opacity-40 cursor-not-allowed' : '' %>" title="<%= t('select_all') %>">
                       </div>

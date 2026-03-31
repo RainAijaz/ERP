@@ -123,8 +123,16 @@ router.post("/:id/delete", requirePermission("SCREEN", "administration.roles", "
     if (!role) throw new HttpError(404, "Role not found");
     const userCountRow = await trx("erp.users").where({ primary_role_id: req.params.id }).count({ count: "*" }).first();
     const userCount = Number(userCountRow?.count || 0);
-    if (userCount > 0) throw new HttpError(400, "Role is assigned to users");
-    await trx("erp.role_templates").where({ id: req.params.id }).del();
+    if (userCount > 0) {
+      await trx("erp.role_templates").where({ id: req.params.id }).update({ is_active: false });
+    } else {
+      try {
+        await trx("erp.role_templates").where({ id: req.params.id }).del();
+      } catch (deleteErr) {
+        if (String(deleteErr?.code || "") !== "23503") throw deleteErr;
+        await trx("erp.role_templates").where({ id: req.params.id }).update({ is_active: false });
+      }
+    }
     queueAuditLog(req, { entityType: "ROLE", entityId: req.params.id, action: "DELETE" });
     await trx.commit();
     if (req.xhr) return res.json({ success: true });
