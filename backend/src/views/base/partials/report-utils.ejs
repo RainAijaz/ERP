@@ -1,0 +1,305 @@
+<style>
+  @media print {
+    body.report-printing * {
+      visibility: hidden !important;
+    }
+
+    body.report-printing [data-report-print-active="1"],
+    body.report-printing [data-report-print-active="1"] * {
+      visibility: visible !important;
+    }
+
+    body.report-printing [data-report-print-active="1"] {
+      position: absolute !important;
+      left: 0 !important;
+      top: 0 !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      background: #ffffff !important;
+      box-shadow: none !important;
+      border: 0 !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+
+    body.report-printing [data-report-print-active="1"] form,
+    body.report-printing [data-report-print-active="1"] [data-report-controls],
+    body.report-printing [data-report-print-active="1"] [data-table-controls],
+    body.report-printing [data-report-print-active="1"] [data-advanced-filter-toggle],
+    body.report-printing [data-report-print-active="1"] [data-advanced-filter-panel],
+    body.report-printing [data-report-print-active="1"] [data-prev-page],
+    body.report-printing [data-report-print-active="1"] [data-next-page],
+    body.report-printing [data-report-print-active="1"] [data-page-indicator],
+    body.report-printing [data-report-print-active="1"] [data-showing-count],
+    body.report-printing [data-report-print-active="1"] [data-page-size],
+    body.report-printing [data-report-print-active="1"] [data-search-input],
+    body.report-printing [data-report-print-active="1"] [data-download-button],
+    body.report-printing [data-report-print-active="1"] [data-download-report],
+    body.report-printing [data-report-print-active="1"] [data-print-button],
+    body.report-printing [data-report-print-active="1"] [data-print-report] {
+      display: none !important;
+    }
+
+    body.report-printing [data-report-print-active="1"] .overflow-x-auto {
+      overflow: visible !important;
+    }
+
+    body.report-printing [data-report-print-active="1"] table {
+      width: 100% !important;
+      border-collapse: collapse !important;
+      table-layout: auto !important;
+    }
+
+    body.report-printing [data-report-print-active="1"] th,
+    body.report-printing [data-report-print-active="1"] td {
+      white-space: normal !important;
+      overflow-wrap: anywhere !important;
+      word-break: break-word !important;
+    }
+  }
+</style>
+
+<script>
+  (function () {
+    const path = String(window.location.pathname || "");
+    if (!path.startsWith("/reports/")) return;
+
+    const reportSections = Array.from(
+      document.querySelectorAll("[data-report-print-area], [data-print-area]"),
+    );
+    if (!reportSections.length) return;
+
+    const normalizeText = (value) =>
+      String(value || "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+
+    const parsePageSize = (value) => {
+      const normalized = String(value || "").trim().toLowerCase();
+      if (!normalized || normalized === "all") return Number.POSITIVE_INFINITY;
+      const parsed = Number.parseInt(normalized, 10);
+      return Number.isFinite(parsed) && parsed > 0
+        ? parsed
+        : Number.POSITIVE_INFINITY;
+    };
+
+    const findPrimaryTable = (root) =>
+      root.querySelector("[data-report-table]") ||
+      root.querySelector("table[data-table]") ||
+      root.querySelector("table");
+
+    const csvEscape = (value) =>
+      `"${String(value || "").replace(/"/g, '""')}"`;
+
+    const isVisibleRow = (row) => {
+      if (!(row instanceof HTMLElement)) return false;
+      if (row.dataset && row.dataset.active === "false") return false;
+      if (row.hidden) return false;
+      const style = window.getComputedStyle(row);
+      return style.display !== "none";
+    };
+
+    const updateReportTableControls = (root) => {
+      const table = findPrimaryTable(root);
+      if (!(table instanceof HTMLTableElement)) return;
+
+      const tableBody = table.querySelector("[data-table-body]") || table.tBodies?.[0];
+      if (!(tableBody instanceof HTMLElement)) return;
+
+      const searchInput = root.querySelector("[data-search-input]");
+      const pageSizeSelect = root.querySelector("[data-page-size]");
+      const prevButton = root.querySelector("[data-prev-page]");
+      const nextButton = root.querySelector("[data-next-page]");
+      const pageIndicator = root.querySelector("[data-page-indicator]");
+      const showingCount = root.querySelector("[data-showing-count]");
+
+      const allRows = Array.from(tableBody.querySelectorAll("tr"));
+      if (!allRows.length) return;
+
+      const controlledRows = allRows.filter((row) => !row.hasAttribute("data-report-grand-total"));
+      const grandTotalRows = allRows.filter((row) => row.hasAttribute("data-report-grand-total"));
+
+      controlledRows.forEach((row) => {
+        if (!row.hasAttribute("data-row")) row.setAttribute("data-row", "");
+        if (!row.dataset.searchText) {
+          row.dataset.searchText = normalizeText(row.textContent || "");
+        }
+      });
+
+      let currentPage = 1;
+
+      const computeFilteredRows = () => {
+        const query = normalizeText(searchInput?.value || "");
+        if (!query) return controlledRows;
+        return controlledRows.filter((row) => String(row.dataset.searchText || "").includes(query));
+      };
+
+      const render = () => {
+        const filteredRows = computeFilteredRows();
+        const pageSize = parsePageSize(pageSizeSelect?.value || "");
+        const totalRows = filteredRows.length;
+        const totalPages = pageSize === Number.POSITIVE_INFINITY
+          ? 1
+          : Math.max(1, Math.ceil(totalRows / pageSize));
+
+        if (currentPage > totalPages) currentPage = totalPages;
+        if (currentPage < 1) currentPage = 1;
+
+        const startIndex = pageSize === Number.POSITIVE_INFINITY ? 0 : (currentPage - 1) * pageSize;
+        const endIndex = pageSize === Number.POSITIVE_INFINITY ? totalRows : Math.min(totalRows, startIndex + pageSize);
+
+        const visibleSet = new Set(filteredRows.slice(startIndex, endIndex));
+
+        controlledRows.forEach((row) => {
+          const show = visibleSet.has(row);
+          row.dataset.active = show ? "true" : "false";
+          row.style.display = show ? "" : "none";
+        });
+
+        grandTotalRows.forEach((row) => {
+          row.dataset.active = "true";
+          row.style.display = "";
+        });
+
+        if (prevButton) prevButton.disabled = currentPage <= 1;
+        if (nextButton) nextButton.disabled = currentPage >= totalPages;
+        if (pageIndicator) pageIndicator.textContent = String(totalPages === 0 ? 0 : currentPage);
+
+        if (showingCount) {
+          const startLabel = totalRows ? startIndex + 1 : 0;
+          const endLabel = totalRows ? endIndex : 0;
+          showingCount.textContent = `${startLabel}-${endLabel} / ${totalRows}`;
+        }
+      };
+
+      if (searchInput && !searchInput.dataset.reportWired) {
+        searchInput.dataset.reportWired = "1";
+        searchInput.addEventListener("input", () => {
+          currentPage = 1;
+          render();
+        });
+      }
+
+      if (pageSizeSelect && !pageSizeSelect.dataset.reportWired) {
+        pageSizeSelect.dataset.reportWired = "1";
+        pageSizeSelect.addEventListener("change", () => {
+          currentPage = 1;
+          render();
+        });
+      }
+
+      if (prevButton && !prevButton.dataset.reportWired) {
+        prevButton.dataset.reportWired = "1";
+        prevButton.addEventListener("click", () => {
+          currentPage -= 1;
+          render();
+        });
+      }
+
+      if (nextButton && !nextButton.dataset.reportWired) {
+        nextButton.dataset.reportWired = "1";
+        nextButton.addEventListener("click", () => {
+          currentPage += 1;
+          render();
+        });
+      }
+
+      render();
+    };
+
+    const clearPrintSelection = () => {
+      document
+        .querySelectorAll("[data-report-print-active='1']")
+        .forEach((el) => el.removeAttribute("data-report-print-active"));
+      document.body.classList.remove("report-printing");
+    };
+
+    window.addEventListener("afterprint", clearPrintSelection);
+
+    const exportTablesToCsv = (root, trigger) => {
+      const tables = Array.from(root.querySelectorAll("[data-report-table], table[data-table], table"));
+      if (!tables.length) return;
+
+      const csvChunks = tables
+        .map((table, index) => {
+          const lines = [];
+          const title = String(table.getAttribute("data-export-title") || "").trim();
+          if (title) lines.push(csvEscape(title));
+          if (!title && index > 0) lines.push(csvEscape(`Table ${index + 1}`));
+
+          Array.from(table.querySelectorAll("tr")).forEach((row) => {
+            if (!isVisibleRow(row)) return;
+            const cells = Array.from(row.querySelectorAll("th,td")).map((cell) =>
+              csvEscape(String(cell.textContent || "").replace(/\s+/g, " ").trim()),
+            );
+            if (cells.length) lines.push(cells.join(","));
+          });
+
+          return lines.join("\n");
+        })
+        .filter(Boolean);
+
+      if (!csvChunks.length) return;
+
+      const slug = path
+        .replace(/^\/reports\//, "")
+        .replace(/[^a-zA-Z0-9_-]+/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-|-$/g, "");
+      const fallbackName = `${slug || "report"}.csv`;
+      const downloadName = String(
+        trigger?.getAttribute("data-download-filename") || fallbackName,
+      ).trim() || fallbackName;
+
+      const blob = new Blob([csvChunks.join("\n\n")], {
+        type: "text/csv;charset=utf-8;",
+      });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = downloadName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(link.href);
+    };
+
+    document.addEventListener(
+      "click",
+      (event) => {
+        const trigger = event.target.closest(
+          "[data-print-button], [data-print-report], [data-download-button], [data-download-report]",
+        );
+        if (!(trigger instanceof HTMLElement)) return;
+
+        if (trigger.hasAttribute("disabled") || trigger.getAttribute("aria-disabled") === "true") {
+          return;
+        }
+
+        const section =
+          trigger.closest("[data-report-print-area], [data-print-area]") || reportSections[0];
+        if (!(section instanceof HTMLElement)) return;
+
+        const isPrint =
+          trigger.matches("[data-print-button]") || trigger.matches("[data-print-report]");
+
+        event.preventDefault();
+        event.stopImmediatePropagation();
+
+        if (isPrint) {
+          clearPrintSelection();
+          section.setAttribute("data-report-print-active", "1");
+          document.body.classList.add("report-printing");
+          window.print();
+          window.setTimeout(clearPrintSelection, 1500);
+          return;
+        }
+
+        exportTablesToCsv(section, trigger);
+      },
+      true,
+    );
+
+    reportSections.forEach(updateReportTableControls);
+  })();
+</script>

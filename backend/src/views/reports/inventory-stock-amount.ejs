@@ -21,23 +21,43 @@
   const stockType = String(filters?.stockType || "FG").toUpperCase();
   const stockStatus = String(filters?.stockStatus || "PACKED").toUpperCase() === "LOOSE" ? "LOOSE" : "PACKED";
   const rateType = String(filters?.rateType || "SALE").toUpperCase() === "COST" ? "COST" : "SALE";
+  const selectedOrderBy = String(filters?.orderBy || "SKU").toUpperCase() === "ARTICLE" ? "ARTICLE" : "SKU";
   const viewType = String(filters?.viewType || "details").toLowerCase() === "summary" ? "summary" : "details";
+  const selectedUnitId = Number(filters?.unitId || 0) || null;
   const asOfDate = String(filters?.asOfDate || "");
   const selectedBranchIds = Array.isArray(filters?.branchIds) ? filters.branchIds : [];
   const selectedGroupIds = Array.isArray(filters?.productGroupIds) ? filters.productGroupIds : [];
   const selectedSubgroupIds = Array.isArray(filters?.productSubgroupIds) ? filters.productSubgroupIds : [];
-  const selectedUnitId = Number(filters?.unitId || 0) || null;
   const allMultiOptionValue = "__ALL__";
 
   const branchAllSelected = !selectedBranchIds.length;
   const groupAllSelected = !selectedGroupIds.length;
   const subgroupAllSelected = !selectedSubgroupIds.length;
-  const includeBranchColumn = Boolean(user?.isAdmin) && selectedBranchIds.length !== 1;
+  // Show branch context even for single-branch filters to avoid detail view
+  // collapsing into summary-like layout.
+  const includeBranchColumn = Boolean(user?.isAdmin);
+  const rateTypeOptions = Array.isArray(options?.rateTypes) ? options.rateTypes : [];
+  const rateTypesByStockType = options?.rateTypesByStockType || {};
+  const showRateTypeForCurrentStockType = showRateTypeFilter && rateTypeOptions.length > 0;
 
   const showFgSfgSection = stockType === "FG" || stockType === "SFG";
   const showRmSection = stockType === "RM";
-  const isRmOnly = stockType === "RM";
-
+  const showSfgUnitFilter = stockType === "SFG";
+  const unitOptions = Array.isArray(options?.unitOptions) ? options.unitOptions : [];
+  const conversionUnits = Array.isArray(options?.conversionUnits) ? options.conversionUnits : [];
+  const isFgPacked = stockType === "FG" && stockStatus === "PACKED";
+  const showPackedUnitBreakdown = isFgPacked && conversionUnits.length > 0;
+  const showBaseQtyColumn = !isFgPacked;
+  const showFgUnitColumn = !isFgPacked;
+  const fgDetailDescriptorColspan = showFgUnitColumn ? 3 : 2;
+  const fgSummaryDescriptorColspan = showFgUnitColumn ? 2 : 1;
+  const fgDetailColumnCount =
+    fgDetailDescriptorColspan +
+    (showBaseQtyColumn ? 1 : 0) +
+    (showPackedUnitBreakdown ? conversionUnits.length : 0) +
+    (includeAmounts ? 2 : 0) +
+    (includeBranchColumn ? 1 : 0);
+  const rmDetailColumnCount = 5 + (includeAmounts ? 2 : 0) + (includeBranchColumn ? 1 : 0);
   const fgSfgDetailRows = Array.isArray(reportData?.fgSfgDetailRows) ? reportData.fgSfgDetailRows : [];
   const rmDetailRows = Array.isArray(reportData?.rmDetailRows) ? reportData.rmDetailRows : [];
   const fgSfgSummaryRows = Array.isArray(reportData?.fgSfgSummaryRows) ? reportData.fgSfgSummaryRows : [];
@@ -52,6 +72,138 @@
   const formatAmount = (value) => formatNumberDisplay(value, { decimals: 2, fallback: "0" });
 
   const rmSummaryTotalQty = rmSummaryRows.reduce((sum, row) => sum + Number(row?.quantity || 0), 0);
+  const showBranchGroupedDetail = viewType === "details";
+
+  const fgSfgDetailGroups = (() => {
+    if (!showBranchGroupedDetail || !showFgSfgSection) return [];
+    const groupByArticle = selectedOrderBy === "ARTICLE";
+    const grouped = new Map();
+    fgSfgDetailRows.forEach((row) => {
+      const skuId = Number(row?.sku_id || 0) || 0;
+      const skuCode = String(row?.sku_code || "").trim();
+      const articleId = Number(row?.article_id || 0) || 0;
+      const articleName = String(row?.article_name || "").trim();
+      const key = groupByArticle
+        ? (articleId > 0 ? `article:${articleId}` : `article:${articleName}`)
+        : (skuId > 0 ? `sku:${skuId}` : `sku:${skuCode}:${articleName}`);
+      const existing = grouped.get(key) || {
+        key,
+        skuId: skuId || null,
+        skuCode,
+        articleId: articleId || null,
+        articleName,
+        rows: [],
+        quantity: 0,
+        amount: 0,
+        convertedQuantities: {},
+        skuCodes: new Set(),
+      };
+      existing.rows.push(row);
+      if (skuCode) existing.skuCodes.add(skuCode);
+      existing.quantity += Number(row?.quantity || 0);
+      existing.amount += Number(row?.amount || 0);
+      (conversionUnits || []).forEach((unit) => {
+        const unitId = Number(unit?.id || 0);
+        if (!unitId) return;
+        const converted = Number(row?.convertedQuantities?.[unitId] || 0);
+        existing.convertedQuantities[unitId] =
+          Number(existing.convertedQuantities[unitId] || 0) + converted;
+      });
+      grouped.set(key, existing);
+    });
+
+    return [...grouped.values()]
+      .map((group) => {
+        const branchIds = new Set(
+          (group.rows || [])
+            .map((row) => Number(row?.branch_id || 0))
+            .filter((id) => Number.isInteger(id) && id > 0),
+        );
+        const quantity = Number(group.quantity.toFixed(3));
+        const amount = Number(group.amount.toFixed(2));
+        const convertedQuantities = {};
+        (conversionUnits || []).forEach((unit) => {
+          const unitId = Number(unit?.id || 0);
+          if (!unitId) return;
+          convertedQuantities[unitId] = Number(
+            Number(group.convertedQuantities?.[unitId] || 0).toFixed(3),
+          );
+        });
+        return {
+          ...group,
+          quantity,
+          amount,
+          convertedQuantities,
+          branchCount: branchIds.size,
+          skuCount: group.skuCodes?.size || 0,
+          rate: includeAmounts && quantity !== 0
+            ? Number((amount / quantity).toFixed(4))
+            : 0,
+          rows: (group.rows || []).slice().sort((a, b) =>
+            String(a?.branch_name || "").localeCompare(String(b?.branch_name || "")),
+          ),
+        };
+      })
+      .sort((a, b) => {
+        if (selectedOrderBy === "ARTICLE") {
+          const articleCompare = String(a.articleName || "").localeCompare(String(b.articleName || ""));
+          if (articleCompare !== 0) return articleCompare;
+        }
+        const skuCompare = String(a.skuCode || "").localeCompare(String(b.skuCode || ""));
+        if (skuCompare !== 0) return skuCompare;
+        return String(a.articleName || "").localeCompare(String(b.articleName || ""));
+      });
+  })();
+
+  const rmDetailGroups = (() => {
+    if (!showBranchGroupedDetail || !showRmSection) return [];
+    const grouped = new Map();
+    rmDetailRows.forEach((row) => {
+      const itemId = Number(row?.item_id || 0) || 0;
+      const itemName = String(row?.item_name || "").trim();
+      const key = itemId > 0 ? `item:${itemId}` : `item:${itemName}`;
+      const existing = grouped.get(key) || {
+        key,
+        itemId: itemId || null,
+        itemName,
+        rows: [],
+        quantity: 0,
+        amount: 0,
+      };
+      existing.rows.push(row);
+      existing.quantity += Number(row?.quantity || 0);
+      existing.amount += Number(row?.amount || 0);
+      grouped.set(key, existing);
+    });
+
+    return [...grouped.values()]
+      .map((group) => {
+        const branchIds = new Set(
+          (group.rows || [])
+            .map((row) => Number(row?.branch_id || 0))
+            .filter((id) => Number.isInteger(id) && id > 0),
+        );
+        const quantity = Number(group.quantity.toFixed(3));
+        const amount = Number(group.amount.toFixed(2));
+        return {
+          ...group,
+          quantity,
+          amount,
+          branchCount: branchIds.size,
+          rate: includeAmounts && quantity !== 0
+            ? Number((amount / quantity).toFixed(4))
+            : 0,
+          rows: (group.rows || []).slice().sort((a, b) => {
+            const colorCompare = String(a?.color_name || "").localeCompare(String(b?.color_name || ""));
+            if (colorCompare !== 0) return colorCompare;
+            const sizeCompare = String(a?.size_name || "").localeCompare(String(b?.size_name || ""));
+            if (sizeCompare !== 0) return sizeCompare;
+            return String(a?.branch_name || "").localeCompare(String(b?.branch_name || ""));
+          }),
+        };
+      })
+      .sort((a, b) => String(a.itemName || "").localeCompare(String(b.itemName || "")));
+  })();
 %>
 
 <div class="mx-auto w-full max-w-none space-y-4 px-2">
@@ -105,6 +257,17 @@
           </div>
         </div>
 
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12 <%= showSfgUnitFilter ? '' : 'hidden' %>" data-sfg-unit-filter-row>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("unit", "Unit") %></label>
+          <div class="sm:col-span-9">
+            <select name="unit_id" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" <%= showSfgUnitFilter ? "" : "disabled" %>>
+              <% unitOptions.forEach((unit) => { %>
+                <option value="<%= unit.id %>" data-unit-code="<%= unit.code || '' %>" <%= selectedUnitId === Number(unit.id) ? "selected" : "" %>><%= unit.code || unit.name %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
           <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("product_groups", "Product Groups") %></label>
           <div class="sm:col-span-9">
@@ -130,18 +293,6 @@
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("units", "Units") %></label>
-          <div class="sm:col-span-9">
-            <select name="unit_id" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" <%= isRmOnly ? "disabled" : "" %>>
-              <option value=""><%= t("all") %></option>
-              <% (options?.units || []).forEach((unit) => { %>
-                <option value="<%= unit.id %>" <%= selectedUnitId === Number(unit.id) ? "selected" : "" %>><%= unit.code || unit.name %></option>
-              <% }) %>
-            </select>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
           <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? tt("branches", "Branches") : tt("branch", "Branch") %></label>
           <div class="sm:col-span-9">
             <% if (user?.isAdmin) { %>
@@ -158,11 +309,11 @@
         </div>
 
         <% if (showRateTypeFilter) { %>
-          <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12 <%= showRateTypeForCurrentStockType ? '' : 'hidden' %>" data-rate-type-filter-row>
             <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("rate_type", "Rate Type") %></label>
             <div class="sm:col-span-9">
-              <select name="rate_type" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
-                <% (options?.rateTypes || []).forEach((option) => { %>
+              <select name="rate_type" data-rate-type-select data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" <%= showRateTypeForCurrentStockType ? "" : "disabled" %>>
+                <% rateTypeOptions.forEach((option) => { %>
                   <option value="<%= option.value %>" <%= String(option.value || "").toUpperCase() === rateType ? "selected" : "" %>><%= t(option.labelKey) %></option>
                 <% }) %>
               </select>
@@ -170,8 +321,24 @@
           </div>
         <% } %>
 
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12 <%= showFgSfgSection ? '' : 'hidden' %>" data-order-by-filter-row>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("order_by", "Order By") %></label>
+          <div class="sm:col-span-9">
+            <div class="flex flex-wrap gap-2 rounded-xl bg-white/60 p-1">
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedOrderBy === 'SKU' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="order_by" value="SKU" <%= selectedOrderBy === "SKU" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= tt("sku", "SKU") %></span>
+              </label>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedOrderBy === 'ARTICLE' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="order_by" value="ARTICLE" <%= selectedOrderBy === "ARTICLE" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= tt("article", "Article") %></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("view_filter", "View Filter") %></label>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("report_type", "Report Type") %></label>
           <div class="sm:col-span-9">
             <div class="flex flex-wrap gap-2 rounded-xl bg-white/60 p-1">
               <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= viewType === 'details' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
@@ -209,15 +376,23 @@
     <% } else if (viewType === "details") { %>
 
       <% if (showFgSfgSection && fgSfgDetailRows.length) { %>
-        <div class="mt-3 text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= tt("finished", "Finished") %>/<%= tt("semi_finished", "Semi-Finished") %></div>
         <div class="relative mt-2 overflow-x-auto rounded-2xl border border-slate-200">
-          <table class="min-w-[980px] w-full text-sm tabular-nums" data-report-table data-export-title="<%= `${tt(reportTitleKey, reportTitleFallback)} - ${tt("finished", "Finished")}/${tt("semi_finished", "Semi-Finished")} (${tt("details", "Details")})` %>">
+          <table class="min-w-[980px] w-full text-sm tabular-nums" data-report-table data-export-title="<%= `${tt(reportTitleKey, reportTitleFallback)} (${tt("details", "Details")})` %>">
             <thead class="bg-slate-100 text-slate-700">
               <tr>
                 <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("sku", "SKU") %></th>
                 <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("article", "Article") %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("units", "Units") %></th>
-                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("quantity") %></th>
+                <% if (showFgUnitColumn) { %>
+                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("units", "Units") %></th>
+                <% } %>
+                <% if (showBaseQtyColumn) { %>
+                  <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("quantity") %></th>
+                <% } %>
+                <% if (showPackedUnitBreakdown) { %>
+                  <% conversionUnits.forEach((unit) => { %>
+                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${String(unit.code || unit.name || "").trim() || "-"} ${tt("quantity", "Quantity")}` %></th>
+                  <% }) %>
+                <% } %>
                 <% if (includeAmounts) { %>
                   <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("rate") %></th>
                   <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("total_amount", "Total Amount") %></th>
@@ -228,33 +403,119 @@
               </tr>
             </thead>
             <tbody>
-              <% fgSfgDetailRows.forEach((row) => { %>
-                <tr class="bg-white odd:bg-slate-50 even:bg-white hover:bg-slate-100">
-                  <td class="px-3 py-2"><%= row.sku_code || "-" %></td>
-                  <td class="px-3 py-2"><%= row.article_name || "-" %></td>
-                  <td class="px-3 py-2"><%= row.unit_label || "-" %></td>
-                  <td class="px-3 py-2 text-right font-semibold"><%= formatQty(row.quantity) %></td>
-                  <% if (includeAmounts) { %>
-                    <td class="px-3 py-2 text-right font-semibold"><%= formatRate(row.rate) %></td>
-                    <td class="px-3 py-2 text-right font-semibold"><%= formatAmount(row.amount) %></td>
-                  <% } %>
-                  <% if (includeBranchColumn) { %>
-                    <td class="px-3 py-2"><%= row.branch_name || "-" %></td>
-                  <% } %>
-                </tr>
-              <% }) %>
+              <% if (showBranchGroupedDetail) { %>
+                <% fgSfgDetailGroups.forEach((group) => { %>
+                  <tr class="bg-slate-700 text-white" data-row data-active="true" data-report-group-header data-report-group-key="<%= group.key %>">
+                    <td colspan="<%= fgDetailColumnCount %>" class="px-3 py-1.5">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <% if (selectedOrderBy === "ARTICLE") { %>
+                          <span class="rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white"><%= group.articleName || "-" %></span>
+                          <span class="rounded-md border border-white/20 bg-transparent px-2 py-0.5 text-xs font-semibold text-slate-100"><%= `${tt("sku", "SKU")}: ${group.skuCount || 0}` %></span>
+                        <% } else { %>
+                          <span class="rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white"><%= group.skuCode || "-" %></span>
+                        <% } %>
+                        <span class="rounded-md border border-white/20 bg-white/10 px-2 py-0.5 text-[11px] font-semibold text-slate-100"><%= `${tt("branches", "Branches")}: ${group.branchCount}` %></span>
+                      </div>
+                    </td>
+                  </tr>
+                  <% (group.rows || []).forEach((row) => { %>
+                    <tr class="bg-white odd:bg-slate-50 even:bg-white hover:bg-slate-100" data-row data-active="true" data-report-group-line data-report-group-key="<%= group.key %>">
+                      <td class="px-3 py-2"><%= row.sku_code || "-" %></td>
+                      <td class="px-3 py-2"><%= row.article_name || "-" %></td>
+                      <% if (showFgUnitColumn) { %>
+                        <td class="px-3 py-2"><%= row.unit_label || "-" %></td>
+                      <% } %>
+                      <% if (showBaseQtyColumn) { %>
+                        <td class="px-3 py-2 text-right font-semibold"><%= formatQty(row.quantity) %></td>
+                      <% } %>
+                      <% if (showPackedUnitBreakdown) { %>
+                        <% conversionUnits.forEach((unit) => { %>
+                          <td class="px-3 py-2 text-right font-semibold"><%= formatQty(row?.convertedQuantities?.[unit.id] || 0) %></td>
+                        <% }) %>
+                      <% } %>
+                      <% if (includeAmounts) { %>
+                        <td class="px-3 py-2 text-right font-semibold"><%= formatRate(row.rate) %></td>
+                        <td class="px-3 py-2 text-right font-semibold"><%= formatAmount(row.amount) %></td>
+                      <% } %>
+                      <% if (includeBranchColumn) { %>
+                        <td class="px-3 py-2"><%= row.branch_name || "-" %></td>
+                      <% } %>
+                    </tr>
+                  <% }) %>
+                  <tr class="bg-accent text-white" data-row data-active="true" data-report-group-total data-report-group-key="<%= group.key %>">
+                    <td colspan="<%= fgDetailDescriptorColspan %>" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("total") %></td>
+                    <% if (showBaseQtyColumn) { %>
+                      <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(group.quantity) %></td>
+                    <% } %>
+                    <% if (showPackedUnitBreakdown) { %>
+                      <% conversionUnits.forEach((unit) => { %>
+                        <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(group?.convertedQuantities?.[unit.id] || 0) %></td>
+                      <% }) %>
+                    <% } %>
+                    <% if (includeAmounts) { %>
+                      <td class="px-3 py-2 text-right font-extrabold"><%= formatRate(group.rate) %></td>
+                      <td class="px-3 py-2 text-right font-extrabold"><%= formatAmount(group.amount) %></td>
+                    <% } %>
+                    <% if (includeBranchColumn) { %>
+                      <td class="px-3 py-2"></td>
+                    <% } %>
+                  </tr>
+                <% }) %>
+              <% } else { %>
+                <% fgSfgDetailRows.forEach((row) => { %>
+                  <tr class="bg-white odd:bg-slate-50 even:bg-white hover:bg-slate-100">
+                    <td class="px-3 py-2"><%= row.sku_code || "-" %></td>
+                    <td class="px-3 py-2"><%= row.article_name || "-" %></td>
+                    <% if (showFgUnitColumn) { %>
+                      <td class="px-3 py-2"><%= row.unit_label || "-" %></td>
+                    <% } %>
+                    <% if (showBaseQtyColumn) { %>
+                      <td class="px-3 py-2 text-right font-semibold"><%= formatQty(row.quantity) %></td>
+                    <% } %>
+                    <% if (showPackedUnitBreakdown) { %>
+                      <% conversionUnits.forEach((unit) => { %>
+                        <td class="px-3 py-2 text-right font-semibold"><%= formatQty(row?.convertedQuantities?.[unit.id] || 0) %></td>
+                      <% }) %>
+                    <% } %>
+                    <% if (includeAmounts) { %>
+                      <td class="px-3 py-2 text-right font-semibold"><%= formatRate(row.rate) %></td>
+                      <td class="px-3 py-2 text-right font-semibold"><%= formatAmount(row.amount) %></td>
+                    <% } %>
+                    <% if (includeBranchColumn) { %>
+                      <td class="px-3 py-2"><%= row.branch_name || "-" %></td>
+                    <% } %>
+                  </tr>
+                <% }) %>
+              <% } %>
 
               <% if (includeAmounts) { %>
                 <tr class="bg-rose-700 text-white">
-                  <td colspan="<%= 3 + (includeBranchColumn ? 1 : 0) %>" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
-                  <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(reportData?.totals?.fgSfgQuantity || 0) %></td>
+                  <td colspan="<%= fgDetailDescriptorColspan %>" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
+                  <% if (showBaseQtyColumn) { %>
+                    <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(reportData?.totals?.fgSfgQuantity || 0) %></td>
+                  <% } %>
+                  <% if (showPackedUnitBreakdown) { %>
+                    <% conversionUnits.forEach((unit) => { %>
+                      <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(reportData?.totals?.fgSfgConvertedQuantities?.[unit.id] || 0) %></td>
+                    <% }) %>
+                  <% } %>
                   <td class="px-3 py-2"></td>
                   <td class="px-3 py-2 text-right font-extrabold"><%= formatAmount(reportData?.totals?.fgSfgAmount || 0) %></td>
+                  <% if (includeBranchColumn) { %>
+                    <td class="px-3 py-2"></td>
+                  <% } %>
                 </tr>
               <% } else { %>
                 <tr class="bg-rose-700 text-white">
-                  <td colspan="3" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
-                  <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(reportData?.totals?.fgSfgQuantity || 0) %></td>
+                  <td colspan="<%= fgDetailDescriptorColspan %>" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
+                  <% if (showBaseQtyColumn) { %>
+                    <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(reportData?.totals?.fgSfgQuantity || 0) %></td>
+                  <% } %>
+                  <% if (showPackedUnitBreakdown) { %>
+                    <% conversionUnits.forEach((unit) => { %>
+                      <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(reportData?.totals?.fgSfgConvertedQuantities?.[unit.id] || 0) %></td>
+                    <% }) %>
+                  <% } %>
                   <% if (includeBranchColumn) { %>
                     <td class="px-3 py-2"></td>
                   <% } %>
@@ -286,22 +547,70 @@
               </tr>
             </thead>
             <tbody>
-              <% rmDetailRows.forEach((row) => { %>
-                <tr class="bg-white odd:bg-slate-50 even:bg-white hover:bg-slate-100">
-                  <td class="px-3 py-2"><%= row.item_name || "-" %></td>
-                  <td class="px-3 py-2"><%= row.color_name || "-" %></td>
-                  <td class="px-3 py-2"><%= row.size_name || "-" %></td>
-                  <td class="px-3 py-2"><%= row.unit_label || "-" %></td>
-                  <td class="px-3 py-2 text-right font-semibold"><%= formatQty(row.quantity) %></td>
+              <% if (showBranchGroupedDetail) { %>
+                <% rmDetailGroups.forEach((group) => { %>
+                  <tr class="bg-slate-700 text-white" data-row data-active="true" data-report-group-header data-report-group-key="<%= group.key %>">
+                    <td colspan="<%= rmDetailColumnCount %>" class="px-3 py-1.5">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span class="rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white"><%= group.itemName || "-" %></span>
+                        <span class="rounded-md border border-white/20 bg-white/10 px-2 py-0.5 text-[11px] font-semibold text-slate-100"><%= `${tt("branches", "Branches")}: ${group.branchCount}` %></span>
+                      </div>
+                    </td>
+                  </tr>
+                  <% (group.rows || []).forEach((row) => { %>
+                    <tr class="bg-white odd:bg-slate-50 even:bg-white hover:bg-slate-100" data-row data-active="true" data-report-group-line data-report-group-key="<%= group.key %>">
+                      <td class="px-3 py-2"><%= row.item_name || "-" %></td>
+                      <td class="px-3 py-2"><%= row.color_name || "-" %></td>
+                      <td class="px-3 py-2"><%= row.size_name || "-" %></td>
+                      <td class="px-3 py-2"><%= row.unit_label || "-" %></td>
+                      <td class="px-3 py-2 text-right font-semibold"><%= formatQty(row.quantity) %></td>
+                      <% if (includeAmounts) { %>
+                        <td class="px-3 py-2 text-right font-semibold"><%= formatRate(row.rate) %></td>
+                        <td class="px-3 py-2 text-right font-semibold"><%= formatAmount(row.amount) %></td>
+                      <% } %>
+                      <% if (includeBranchColumn) { %>
+                        <td class="px-3 py-2"><%= row.branch_name || "-" %></td>
+                      <% } %>
+                    </tr>
+                  <% }) %>
                   <% if (includeAmounts) { %>
-                    <td class="px-3 py-2 text-right font-semibold"><%= formatRate(row.rate) %></td>
-                    <td class="px-3 py-2 text-right font-semibold"><%= formatAmount(row.amount) %></td>
+                    <tr class="bg-accent text-white" data-row data-active="true" data-report-group-total data-report-group-key="<%= group.key %>">
+                      <td colspan="4" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("total") %></td>
+                      <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(group.quantity) %></td>
+                      <td class="px-3 py-2 text-right font-extrabold"><%= formatRate(group.rate) %></td>
+                      <td class="px-3 py-2 text-right font-extrabold"><%= formatAmount(group.amount) %></td>
+                      <% if (includeBranchColumn) { %>
+                        <td class="px-3 py-2"></td>
+                      <% } %>
+                    </tr>
+                  <% } else { %>
+                    <tr class="bg-accent text-white" data-row data-active="true" data-report-group-total data-report-group-key="<%= group.key %>">
+                      <td colspan="4" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("total") %></td>
+                      <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(group.quantity) %></td>
+                      <% if (includeBranchColumn) { %>
+                        <td class="px-3 py-2"></td>
+                      <% } %>
+                    </tr>
                   <% } %>
-                  <% if (includeBranchColumn) { %>
-                    <td class="px-3 py-2"><%= row.branch_name || "-" %></td>
-                  <% } %>
-                </tr>
-              <% }) %>
+                <% }) %>
+              <% } else { %>
+                <% rmDetailRows.forEach((row) => { %>
+                  <tr class="bg-white odd:bg-slate-50 even:bg-white hover:bg-slate-100">
+                    <td class="px-3 py-2"><%= row.item_name || "-" %></td>
+                    <td class="px-3 py-2"><%= row.color_name || "-" %></td>
+                    <td class="px-3 py-2"><%= row.size_name || "-" %></td>
+                    <td class="px-3 py-2"><%= row.unit_label || "-" %></td>
+                    <td class="px-3 py-2 text-right font-semibold"><%= formatQty(row.quantity) %></td>
+                    <% if (includeAmounts) { %>
+                      <td class="px-3 py-2 text-right font-semibold"><%= formatRate(row.rate) %></td>
+                      <td class="px-3 py-2 text-right font-semibold"><%= formatAmount(row.amount) %></td>
+                    <% } %>
+                    <% if (includeBranchColumn) { %>
+                      <td class="px-3 py-2"><%= row.branch_name || "-" %></td>
+                    <% } %>
+                  </tr>
+                <% }) %>
+              <% } %>
 
               <% if (includeAmounts) { %>
                 <tr class="bg-rose-700 text-white">
@@ -327,14 +636,22 @@
     <% } else { %>
 
       <% if (showFgSfgSection && fgSfgSummaryRows.length) { %>
-        <div class="mt-3 text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= tt("finished", "Finished") %>/<%= tt("semi_finished", "Semi-Finished") %></div>
         <div class="relative mt-2 overflow-x-auto rounded-2xl border border-slate-200">
-          <table class="min-w-[920px] w-full text-sm tabular-nums" data-report-table data-export-title="<%= `${tt(reportTitleKey, reportTitleFallback)} - ${tt("finished", "Finished")}/${tt("semi_finished", "Semi-Finished")} (${tt("summary", "Summary")})` %>">
+          <table class="min-w-[920px] w-full text-sm tabular-nums" data-report-table data-export-title="<%= `${tt(reportTitleKey, reportTitleFallback)} (${tt("summary", "Summary")})` %>">
             <thead class="bg-slate-100 text-slate-700">
               <tr>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("article", "Article") %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("units", "Units") %></th>
-                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("quantity") %></th>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= selectedOrderBy === "ARTICLE" ? tt("article", "Article") : tt("sku", "SKU") %></th>
+                <% if (showFgUnitColumn) { %>
+                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("units", "Units") %></th>
+                <% } %>
+                <% if (showBaseQtyColumn) { %>
+                  <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("quantity") %></th>
+                <% } %>
+                <% if (showPackedUnitBreakdown) { %>
+                  <% conversionUnits.forEach((unit) => { %>
+                    <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${String(unit.code || unit.name || "").trim() || "-"} ${tt("quantity", "Quantity")}` %></th>
+                  <% }) %>
+                <% } %>
                 <% if (includeAmounts) { %>
                   <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("rate") %></th>
                   <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("total_amount", "Total Amount") %></th>
@@ -344,9 +661,18 @@
             <tbody>
               <% fgSfgSummaryRows.forEach((row) => { %>
                 <tr class="bg-white odd:bg-slate-50 even:bg-white hover:bg-slate-100">
-                  <td class="px-3 py-2"><%= row.article_name || "-" %></td>
-                  <td class="px-3 py-2"><%= row.unit_label || "-" %></td>
-                  <td class="px-3 py-2 text-right font-semibold"><%= formatQty(row.quantity) %></td>
+                  <td class="px-3 py-2"><%= selectedOrderBy === "ARTICLE" ? (row.article_name || "-") : (row.sku_code || "-") %></td>
+                  <% if (showFgUnitColumn) { %>
+                    <td class="px-3 py-2"><%= row.unit_label || "-" %></td>
+                  <% } %>
+                  <% if (showBaseQtyColumn) { %>
+                    <td class="px-3 py-2 text-right font-semibold"><%= formatQty(row.quantity) %></td>
+                  <% } %>
+                  <% if (showPackedUnitBreakdown) { %>
+                    <% conversionUnits.forEach((unit) => { %>
+                      <td class="px-3 py-2 text-right font-semibold"><%= formatQty(row?.convertedQuantities?.[unit.id] || 0) %></td>
+                    <% }) %>
+                  <% } %>
                   <% if (includeAmounts) { %>
                     <td class="px-3 py-2 text-right font-semibold"><%= formatRate(row.rate) %></td>
                     <td class="px-3 py-2 text-right font-semibold"><%= formatAmount(row.amount) %></td>
@@ -356,15 +682,29 @@
 
               <% if (includeAmounts) { %>
                 <tr class="bg-rose-700 text-white">
-                  <td colspan="2" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
-                  <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(reportData?.totals?.fgSfgQuantity || 0) %></td>
+                  <td colspan="<%= fgSummaryDescriptorColspan %>" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
+                  <% if (showBaseQtyColumn) { %>
+                    <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(reportData?.totals?.fgSfgQuantity || 0) %></td>
+                  <% } %>
+                  <% if (showPackedUnitBreakdown) { %>
+                    <% conversionUnits.forEach((unit) => { %>
+                      <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(reportData?.totals?.fgSfgConvertedQuantities?.[unit.id] || 0) %></td>
+                    <% }) %>
+                  <% } %>
                   <td class="px-3 py-2"></td>
                   <td class="px-3 py-2 text-right font-extrabold"><%= formatAmount(reportData?.totals?.fgSfgAmount || 0) %></td>
                 </tr>
               <% } else { %>
                 <tr class="bg-rose-700 text-white">
-                  <td colspan="2" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
-                  <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(reportData?.totals?.fgSfgQuantity || 0) %></td>
+                  <td colspan="<%= fgSummaryDescriptorColspan %>" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
+                  <% if (showBaseQtyColumn) { %>
+                    <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(reportData?.totals?.fgSfgQuantity || 0) %></td>
+                  <% } %>
+                  <% if (showPackedUnitBreakdown) { %>
+                    <% conversionUnits.forEach((unit) => { %>
+                      <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(reportData?.totals?.fgSfgConvertedQuantities?.[unit.id] || 0) %></td>
+                    <% }) %>
+                  <% } %>
                 </tr>
               <% } %>
             </tbody>
@@ -455,17 +795,75 @@
     });
 
     const stockTypeSelect = form.querySelector('select[name="stock_type"]');
-    const unitSelect = form.querySelector('select[name="unit_id"]');
     const statusFilterRow = form.querySelector("[data-finished-status-filter-row]");
     const statusSelect = form.querySelector('select[name="stock_status"]');
+    const orderByFilterRow = form.querySelector("[data-order-by-filter-row]");
+    const orderByInputs = Array.from(form.querySelectorAll('input[name="order_by"]'));
+    const sfgUnitFilterRow = form.querySelector("[data-sfg-unit-filter-row]");
+    const sfgUnitSelect = form.querySelector('select[name="unit_id"]');
+    const rateTypeFilterRow = form.querySelector("[data-rate-type-filter-row]");
+    const rateTypeSelect = form.querySelector("[data-rate-type-select]");
+    const rateTypesByStockType = <%- JSON.stringify(rateTypesByStockType) %>;
+    const selectedRateType = <%- JSON.stringify(String(rateType || "")) %>;
+    const translatedRateTypeLabels = {
+      sale_rate_basis: <%- JSON.stringify(t("sale_rate_basis")) %>,
+      cost_rate_basis: <%- JSON.stringify(t("cost_rate_basis")) %>,
+      purchase_rate: <%- JSON.stringify(t("purchase_rate")) %>,
+      avg_purchase_rate: <%- JSON.stringify(t("avg_purchase_rate")) %>,
+    };
+
+    const pickSfgDefaultUnitValue = () => {
+      if (!sfgUnitSelect) return "";
+      const options = Array.from(sfgUnitSelect.options || []);
+      if (!options.length) return "";
+
+      const dozenOption = options.find((option) => {
+        const code = String(option.getAttribute("data-unit-code") || "").trim().toUpperCase();
+        const label = String(option.textContent || "").trim().toUpperCase();
+        return code === "DZN" || code === "DOZEN" || label === "DZN" || label === "DOZEN";
+      });
+      return String((dozenOption || options[0])?.value || "");
+    };
+
+    const ensureSfgUnitSelection = () => {
+      if (!sfgUnitSelect) return;
+      const options = Array.from(sfgUnitSelect.options || []);
+      const selectedValue = String(sfgUnitSelect.value || "");
+      const hasSelected = options.some((option) => String(option.value || "") === selectedValue);
+      if (hasSelected && selectedValue) return;
+      sfgUnitSelect.value = pickSfgDefaultUnitValue();
+    };
+
+    const populateRateTypes = (preserveSelection) => {
+      if (!stockTypeSelect || !rateTypeSelect) return;
+      const currentStockType = String(stockTypeSelect.value || "").toUpperCase();
+      const options = Array.isArray(rateTypesByStockType[currentStockType])
+        ? rateTypesByStockType[currentStockType]
+        : [];
+
+      const currentValue = preserveSelection ? String(rateTypeSelect.value || selectedRateType || "") : "";
+      rateTypeSelect.innerHTML = "";
+
+      options.forEach((entry) => {
+        const option = document.createElement("option");
+        option.value = String(entry.value || "").trim().toUpperCase();
+        const labelKey = String(entry.labelKey || "").trim();
+        option.textContent = String(translatedRateTypeLabels[labelKey] || labelKey || option.value || "").trim();
+        if (currentValue && option.value === currentValue) option.selected = true;
+        rateTypeSelect.appendChild(option);
+      });
+
+      const hasRateTypes = options.length > 0;
+      if (rateTypeFilterRow) {
+        rateTypeFilterRow.classList.toggle("hidden", !hasRateTypes);
+      }
+      rateTypeSelect.disabled = !hasRateTypes;
+    };
+
     const syncStockTypeDependentState = () => {
-      if (!stockTypeSelect || !unitSelect) return;
+      if (!stockTypeSelect) return;
       const currentStockType = String(stockTypeSelect.value || "").toUpperCase();
       const isFg = currentStockType === "FG";
-      const isRm = String(stockTypeSelect.value || "").toUpperCase() === "RM";
-
-      unitSelect.disabled = isRm;
-      if (isRm) unitSelect.value = "";
 
       if (statusFilterRow) {
         statusFilterRow.classList.toggle("hidden", !isFg);
@@ -473,6 +871,31 @@
       if (statusSelect) {
         statusSelect.disabled = !isFg;
         if (!isFg) statusSelect.value = "PACKED";
+      }
+
+      if (orderByFilterRow) {
+        orderByFilterRow.classList.toggle("hidden", currentStockType === "RM");
+      }
+      orderByInputs.forEach((input) => {
+        input.disabled = currentStockType === "RM";
+      });
+
+      const isSfg = currentStockType === "SFG";
+      if (sfgUnitFilterRow) {
+        sfgUnitFilterRow.classList.toggle("hidden", !isSfg);
+      }
+      if (sfgUnitSelect) {
+        sfgUnitSelect.disabled = !isSfg;
+        if (isSfg) {
+          ensureSfgUnitSelection();
+        } else {
+          sfgUnitSelect.value = "";
+        }
+      }
+
+      populateRateTypes(true);
+      if (typeof window.initSearchableSelects === "function") {
+        window.initSearchableSelects();
       }
     };
     stockTypeSelect?.addEventListener("change", syncStockTypeDependentState);

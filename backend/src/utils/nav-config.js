@@ -688,20 +688,20 @@ const navConfig = [
         type: "group",
         children: [
           {
-            key: "production_reports",
-            labelKey: "production_reports",
-            scopeType: "REPORT",
-            scopeKey: "production_report",
-            moduleGroup: "Production",
-            route: "/reports/production",
-          },
-          {
             key: "production_control_report",
             labelKey: "production_control_report",
             scopeType: "REPORT",
             scopeKey: "production_report",
             moduleGroup: "Production",
             route: "/reports/production/control",
+          },
+          {
+            key: "consumption_report",
+            labelKey: "consumption_report",
+            scopeType: "REPORT",
+            scopeKey: "consumption_report",
+            moduleGroup: "Production",
+            route: "/reports/production/consumption",
           },
           {
             key: "planned_consumption",
@@ -718,6 +718,14 @@ const navConfig = [
             scopeKey: "production_report",
             moduleGroup: "Production",
             route: "/reports/production/department-wip",
+          },
+          {
+            key: "department_wip_balances_report",
+            labelKey: "department_wip_balances_report",
+            scopeType: "REPORT",
+            scopeKey: "production_report",
+            moduleGroup: "Production",
+            route: "/reports/production/department-wip-balances",
           },
           {
             key: "department_wip_ledger_report",
@@ -740,12 +748,12 @@ const navConfig = [
     children: [
       {
         key: "inventory",
-        labelKey: "inventory",
+        labelKey: "vouchers",
         type: "group",
         children: [
           {
             key: "inventory_voucher",
-            labelKey: "inventory_voucher",
+            labelKey: "opening_stock_voucher",
             scopeType: "VOUCHER",
             scopeKey: "OPENING_STOCK",
             moduleGroup: "Inventory",
@@ -753,7 +761,7 @@ const navConfig = [
           },
           {
             key: "stock_count",
-            labelKey: "stock_count",
+            labelKey: "stock_count_adjustment_voucher",
             scopeType: "VOUCHER",
             scopeKey: "STOCK_COUNT_ADJ",
             moduleGroup: "Inventory",
@@ -761,11 +769,19 @@ const navConfig = [
           },
           {
             key: "stock_transfer",
-            labelKey: "stock_transfer",
+            labelKey: "stock_transfer_out_voucher",
             scopeType: "VOUCHER",
             scopeKey: "STN_OUT",
             moduleGroup: "Inventory",
-            route: "/vouchers/stn",
+            route: "/vouchers/stock-transfer-out",
+          },
+          {
+            key: "stock_transfer_in",
+            labelKey: "stock_transfer_in_voucher",
+            scopeType: "VOUCHER",
+            scopeKey: "GRN_IN",
+            moduleGroup: "Inventory",
+            route: "/vouchers/stock-transfer-in",
           },
         ],
       },
@@ -774,14 +790,6 @@ const navConfig = [
         labelKey: "reports",
         type: "group",
         children: [
-          {
-            key: "inventory_reports",
-            labelKey: "inventory_reports",
-            scopeType: "REPORT",
-            scopeKey: "stock_quantity",
-            moduleGroup: "Inventory",
-            route: "/reports/inventory",
-          },
           {
             key: "stock_amount_report",
             labelKey: "stock_amount_report",
@@ -797,6 +805,22 @@ const navConfig = [
             scopeKey: "stock_quantity",
             moduleGroup: "Inventory",
             route: "/reports/inventory/stock-balances",
+          },
+          {
+            key: "stock_ledger_report",
+            labelKey: "stock_ledger_report",
+            scopeType: "REPORT",
+            scopeKey: "stock_ledger",
+            moduleGroup: "Inventory",
+            route: "/reports/inventory/stock-ledger",
+          },
+          {
+            key: "stock_movement_report",
+            labelKey: "stock_movement_report",
+            scopeType: "REPORT",
+            scopeKey: "stock_item_activity",
+            moduleGroup: "Inventory",
+            route: "/reports/inventory/stock-movement",
           },
         ],
       },

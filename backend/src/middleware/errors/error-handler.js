@@ -16,6 +16,21 @@ module.exports = (err, req, res, next) => {
   if (err instanceof HttpError && err.details) {
     payload.details = err.details;
   }
+  if (!(err instanceof HttpError)) {
+    const dbDetails = {};
+    if (typeof err?.detail === "string" && err.detail.trim()) {
+      dbDetails.detail = err.detail.trim();
+    }
+    if (typeof err?.hint === "string" && err.hint.trim()) {
+      dbDetails.hint = err.hint.trim();
+    }
+    if (typeof err?.constraint === "string" && err.constraint.trim()) {
+      dbDetails.constraint = err.constraint.trim();
+    }
+    if (Object.keys(dbDetails).length) {
+      payload.details = dbDetails;
+    }
+  }
 
   if (status >= 500) {
     // Keep server-side visibility for unexpected failures.

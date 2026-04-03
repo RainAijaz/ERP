@@ -126,15 +126,15 @@ CREATE TABLE IF NOT EXISTS erp.stock_count_header (
 CREATE TABLE IF NOT EXISTS erp.stock_count_line (
   voucher_line_id           bigint PRIMARY KEY REFERENCES erp.voucher_line(id) ON DELETE CASCADE,
 
-  -- System snapshot at time of count (RM-only)
-  system_qty_snapshot       numeric(18,3) NOT NULL DEFAULT 0 CHECK (system_qty_snapshot >= 0),
-  -- Physical counted qty (RM-only)
-  physical_qty              numeric(18,3) NOT NULL DEFAULT 0 CHECK (physical_qty >= 0),
+  -- System snapshot at time of count (RM-only). Can be negative when legacy stock is already below zero.
+  system_qty_snapshot       numeric(18,3) NOT NULL DEFAULT 0,
+  -- Physical counted qty (RM-only). Can be negative for admin-authorized negative-stock adjustments.
+  physical_qty              numeric(18,3) NOT NULL DEFAULT 0,
 
-  -- System snapshot at time of count (SFG/FG only; integer pairs)
-  system_qty_pairs_snapshot int NOT NULL DEFAULT 0 CHECK (system_qty_pairs_snapshot >= 0),
-  -- Physical counted qty (SFG/FG only; integer pairs)
-  physical_qty_pairs        int NOT NULL DEFAULT 0 CHECK (physical_qty_pairs >= 0),
+  -- System snapshot at time of count (SFG/FG only; integer pairs). Can be negative.
+  system_qty_pairs_snapshot int NOT NULL DEFAULT 0,
+  -- Physical counted qty (SFG/FG only; integer pairs). Can be negative.
+  physical_qty_pairs        int NOT NULL DEFAULT 0,
 
   -- Selling rate shown on screen (display only; posting uses cost/WAC, not this)
   selling_rate_display      numeric(18,2) NOT NULL DEFAULT 0 CHECK (selling_rate_display >= 0)

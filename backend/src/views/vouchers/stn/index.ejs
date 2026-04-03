@@ -1,0 +1,974 @@
+<%
+  const formatDateInput = (value) => {
+    if (!value) return "";
+    const asText = String(value);
+    const textMatch = asText.match(/^(\d{4}-\d{2}-\d{2})/);
+    if (textMatch) return textMatch[1];
+    const dt = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(dt.getTime())) return "";
+    const yyyy = dt.getFullYear();
+    const mm = String(dt.getMonth() + 1).padStart(2, "0");
+    const dd = String(dt.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const toFriendlyLabel = (key, fallback = "") => {
+    const translated = String(t(key) || "").trim();
+    if (translated && translated !== key) return translated;
+    if (fallback) return fallback;
+    return String(key || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[_-]+/g, " ")
+      .replace(/\b[a-z]/g, (ch) => ch.toUpperCase());
+  };
+
+  const currentMode = String(mode || "out").toLowerCase() === "in" ? "in" : "out";
+  const selectedVoucherNo = selectedVoucher ? Number(selectedVoucher.voucher_no || 0) : null;
+  const suggestedVoucherNo = selectedVoucherNo || (Number(latestVoucherNo || 0) + 1);
+  const selectedDate = selectedVoucher && selectedVoucher.voucher_date
+    ? formatDateInput(selectedVoucher.voucher_date)
+    : formatDateInput(new Date());
+  const selectedStatus = String(selectedVoucher?.status || "").toUpperCase();
+  const isDeletedVoucher = selectedStatus === "REJECTED";
+  const statusLabel = selectedStatus === "APPROVED"
+    ? t("approved")
+    : selectedStatus === "REJECTED"
+      ? t("rejected")
+      : selectedStatus === "PENDING"
+        ? t("pending")
+        : selectedStatus;
+  const statusToneClass = selectedStatus === "APPROVED"
+    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+    : selectedStatus === "REJECTED"
+      ? "border-rose-200 bg-rose-50 text-rose-800"
+      : "border-amber-200 bg-amber-50 text-amber-800";
+
+  const canCreateVoucher = typeof allowCreate === "boolean" ? allowCreate : true;
+  const canEditVoucher = typeof allowEdit === "boolean" ? allowEdit : true;
+  const canDeleteVoucher = typeof allowDelete === "boolean" ? allowDelete : true;
+  const canSaveVoucher = !isDeletedVoucher && (selectedVoucher ? canEditVoucher : canCreateVoucher);
+  const canDeleteCurrentVoucher = !!selectedVoucher && !isDeletedVoucher && canDeleteVoucher;
+
+  const defaultStockType = String(selectedVoucher?.stock_type || "FG").toUpperCase();
+  const sourceBranchLabel = options?.sourceBranch?.name || "";
+%>
+
+<style>
+  [data-stock-transfer-form] [data-lines-table] thead th {
+    font-size: 10.5px;
+    letter-spacing: 0.08em;
+  }
+  [data-stock-transfer-form] [data-lines-table] td {
+    padding: 0.3rem 0.4rem;
+  }
+  [data-stock-transfer-form] [data-lines-table] tbody tr:nth-child(even) td {
+    background-color: #f8fafc;
+  }
+  [data-stock-transfer-form] [data-lines-table] tbody tr:hover td {
+    background-color: #f1f5f9;
+  }
+  [data-stock-transfer-form] [data-lines-table] input,
+  [data-stock-transfer-form] [data-lines-table] select,
+  [data-stock-transfer-form] [data-lines-table] button[data-enhanced-select-trigger="1"] {
+    height: 2.1rem !important;
+    font-size: 0.81rem !important;
+  }
+  [data-stock-transfer-form] input[readonly],
+  [data-stock-transfer-form] input:disabled,
+  [data-stock-transfer-form] select:disabled,
+  [data-stock-transfer-form] textarea[readonly] {
+    background-color: #f1f5f9 !important;
+    border-color: #cbd5e1 !important;
+    color: #475569 !important;
+    cursor: not-allowed;
+  }
+  [data-stock-transfer-form] input:focus,
+  [data-stock-transfer-form] select:focus,
+  [data-stock-transfer-form] textarea:focus,
+  [data-stock-transfer-form] [data-lines-table] button[data-enhanced-select-trigger="1"]:focus {
+    border-color: #111827 !important;
+    box-shadow: 0 0 0 1px #111827 !important;
+    outline: none !important;
+  }
+  @media (max-width: 640px) {
+    [data-stock-transfer-form] [data-lines-table] th {
+      white-space: normal;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      line-height: 1.2;
+    }
+  }
+</style>
+
+<div class="mx-auto w-full max-w-none space-y-3 px-2">
+  <section class="rounded-2xl border border-slate-200 bg-white/95 px-4 py-4 shadow-sm">
+    <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+      <div>
+        <h1 class="text-2xl font-display font-semibold tracking-tight text-ink">
+          <%= currentMode === 'in' ? toFriendlyLabel('stock_transfer_in_voucher', 'Stock Transfer In') : toFriendlyLabel('stock_transfer_out_voucher', 'Stock Transfer Out') %>
+        </h1>
+        <p class="text-sm text-muted"><%= toFriendlyLabel('inventory', 'Inventory') %></p>
+      </div>
+      <% if (selectedVoucher) { %>
+        <div class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] <%= statusToneClass %>">
+          <span><%= toFriendlyLabel('status', 'Status') %></span>
+          <span class="rounded-full bg-white/80 px-2 py-0.5 text-slate-800"><%= statusLabel %></span>
+        </div>
+      <% } %>
+    </div>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <form method="post" action="<%= basePath || '' %>" class="space-y-4" data-stock-transfer-form data-voucher-form>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="voucher_id" value="<%= selectedVoucher?.id || '' %>">
+      <input type="hidden" name="mode" value="<%= currentMode %>" data-mode-input>
+      <input type="hidden" name="lines_json" value="[]" data-lines-json>
+      <input type="hidden" name="stn_out_voucher_id" value="<%= selectedVoucher?.stn_out_voucher_id || '' %>" data-stn-out-id>
+
+      <div class="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel('voucher_no', 'Voucher No') %></label>
+          <div class="lg:col-span-2">
+            <input type="text" value="<%= suggestedVoucherNo %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700" data-voucher-no-input>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 lg:col-span-8">
+            <a href="<%= prevVoucherNo ? ((basePath || '') + '?voucher_no=' + prevVoucherNo + '&view=1') : '#' %>" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700 <%= prevVoucherNo ? '' : 'pointer-events-none opacity-40' %>"><%= toFriendlyLabel('prev', 'Prev') %></a>
+            <a href="<%= nextVoucherNo ? ((basePath || '') + '?voucher_no=' + nextVoucherNo + '&view=1') : ((basePath || '') + '?new=1') %>" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= toFriendlyLabel('next', 'Next') %></a>
+            <button type="button" class="rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm" data-load-voucher><%= toFriendlyLabel('load', 'Load') %></button>
+            <div class="ml-auto flex items-center gap-2">
+              <button type="button" class="rounded-xl border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-rose-700 disabled:opacity-40" data-delete-voucher <%= canDeleteCurrentVoucher ? '' : 'disabled' %>><%= toFriendlyLabel('delete', 'Delete') %></button>
+              <button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700" onclick="window.print()"><%= toFriendlyLabel('print', 'Print') %></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel('date', 'Date') %></label>
+          <div class="lg:col-span-4">
+            <input type="date" name="voucher_date" value="<%= selectedDate %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" required <%= canSaveVoucher ? '' : 'readonly' %>>
+          </div>
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= toFriendlyLabel('transfer_ref_no', 'Transfer Ref No') %></label>
+          <div class="lg:col-span-4">
+            <% if (currentMode === 'in') { %>
+              <select name="transfer_ref_no" data-transfer-ref class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified" <%= canSaveVoucher ? '' : 'disabled' %>>
+                <option value=""><%= toFriendlyLabel('select_transfer_reference', 'Select Transfer Reference') %></option>
+                <% (options.pendingTransfers || []).forEach((entry) => { %>
+                  <option
+                    value="<%= entry.transfer_ref_no %>"
+                    data-stn-id="<%= entry.stn_out_voucher_id %>"
+                    <%= String(selectedVoucher?.transfer_ref_no || '') === String(entry.transfer_ref_no || '') ? 'selected' : '' %>>
+                    <%= entry.transfer_ref_no %> - <%= entry.source_branch_name || entry.source_branch_id %>
+                  </option>
+                <% }) %>
+              </select>
+            <% } else { %>
+              <input type="text" name="transfer_ref_no" value="<%= selectedVoucher?.transfer_ref_no || '' %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" readonly data-transfer-ref-text>
+            <% } %>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel('source_branch', 'Source Branch') %></label>
+          <div class="lg:col-span-4">
+            <input type="text" value="<%= selectedVoucher?.source_branch_name || sourceBranchLabel %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" readonly data-source-branch-name>
+          </div>
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= toFriendlyLabel('destination_branch', 'Destination Branch') %></label>
+          <div class="lg:col-span-4">
+            <% if (currentMode === 'out') { %>
+              <select name="destination_branch_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-destination-branch data-searchable-select="true" data-searchable-variant="unified" <%= canSaveVoucher ? '' : 'disabled' %>>
+                <option value=""><%= toFriendlyLabel('select_branch', 'Select Branch') %></option>
+                <% (options.destinationBranches || []).forEach((branch) => { %>
+                  <option value="<%= branch.id %>" <%= Number(selectedVoucher?.destination_branch_id || 0) === Number(branch.id) ? 'selected' : '' %>><%= branch.name %></option>
+                <% }) %>
+              </select>
+            <% } else { %>
+              <input type="text" value="<%= selectedVoucher?.destination_branch_name || sourceBranchLabel %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" readonly data-destination-branch-name>
+            <% } %>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel('stock_type', 'Stock Type') %></label>
+          <div class="lg:col-span-4">
+            <select name="stock_type" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-stock-type data-searchable-select="true" data-searchable-variant="unified" <%= currentMode === 'in' || !canSaveVoucher ? 'disabled' : '' %>>
+              <% (options.stockTypes || []).forEach((entry) => { %>
+                <option value="<%= entry.value %>" <%= String(defaultStockType || 'FG').toUpperCase() === String(entry.value || '').toUpperCase() ? 'selected' : '' %>><%= toFriendlyLabel(entry.labelKey || entry.value, entry.value) %></option>
+              <% }) %>
+            </select>
+          </div>
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= currentMode === 'out' ? toFriendlyLabel('transfer_reason', 'Transfer Reason') : toFriendlyLabel('received_by_user_name', 'Received By') %></label>
+          <div class="lg:col-span-4">
+            <% if (currentMode === 'out') { %>
+              <select name="transfer_reason" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified" <%= canSaveVoucher ? '' : 'disabled' %>>
+                <% (options.transferReasons || []).forEach((entry) => { %>
+                  <option value="<%= entry.value %>" <%= String(selectedVoucher?.transfer_reason || 'REBALANCING').toUpperCase() === String(entry.value || '').toUpperCase() ? 'selected' : '' %>><%= toFriendlyLabel(entry.labelKey || entry.value, entry.value) %></option>
+                <% }) %>
+              </select>
+            <% } else { %>
+              <input type="text" value="<%= selectedVoucher?.received_by_user_name || user?.full_name || user?.username || '' %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" readonly>
+            <% } %>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= currentMode === 'out' ? toFriendlyLabel('transporter_name', 'Transporter Name') : toFriendlyLabel('received_date_time', 'Received Date') %></label>
+          <div class="lg:col-span-4">
+            <% if (currentMode === 'out') { %>
+              <input type="text" name="transporter_name" maxlength="120" value="<%= selectedVoucher?.transporter_name || '' %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" <%= canSaveVoucher ? '' : 'readonly' %>>
+            <% } else { %>
+              <input type="date" name="received_date_time" value="<%= selectedDate %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" required <%= canSaveVoucher ? '' : 'readonly' %>>
+            <% } %>
+          </div>
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= toFriendlyLabel('remarks', 'Remarks') %></label>
+          <div class="lg:col-span-4">
+            <input type="text" name="remarks" maxlength="1000" value="<%= selectedVoucher?.remarks || '' %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" <%= canSaveVoucher ? '' : 'readonly' %>>
+          </div>
+        </div>
+
+        <% if (isDeletedVoucher) { %>
+          <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+            <%= toFriendlyLabel('voucher_deleted_read_only', 'Voucher is deleted and read-only.') %>
+          </div>
+        <% } %>
+      </div>
+
+      <div class="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
+          <table class="w-full min-w-[1160px] text-xs" data-lines-table>
+            <thead class="bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
+              <tr data-lines-head-row></tr>
+            </thead>
+            <tbody data-lines-body></tbody>
+            <tfoot data-lines-footer></tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="flex items-center justify-center gap-2">
+        <button type="submit" class="rounded-xl bg-accent px-4 py-2 text-xs font-semibold uppercase tracking-widest text-white shadow-sm disabled:opacity-40" <%= canSaveVoucher ? '' : 'disabled' %>><%= toFriendlyLabel('confirm', 'Confirm') %></button>
+      </div>
+    </form>
+
+    <form method="post" action="<%= `${basePath}/delete` %>" class="hidden" data-delete-voucher-form>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="voucher_id" value="<%= selectedVoucher?.id || '' %>">
+      <input type="hidden" name="mode" value="<%= currentMode %>">
+    </form>
+  </section>
+</div>
+
+<script><%- include('../../base/partials/searchable-select.js') %></script>
+<script><%- include('../../base/partials/voucher-row-enter-navigation.js') %></script>
+<script>
+  (() => {
+    const form = document.querySelector('[data-stock-transfer-form]');
+    if (!form) return;
+
+    const options = <%- JSON.stringify(options || {}) %>;
+    const initialVoucher = <%- JSON.stringify(selectedVoucher || null) %>;
+    const mode = <%- JSON.stringify(currentMode) %>;
+    const basePath = <%- JSON.stringify(basePath || '') %>;
+    const canSave = <%- JSON.stringify(Boolean(canSaveVoucher)) %>;
+
+    const voucherNoInput = form.querySelector('[data-voucher-no-input]');
+    const loadVoucherButton = form.querySelector('[data-load-voucher]');
+    const linesJsonInput = form.querySelector('[data-lines-json]');
+    const linesBody = form.querySelector('[data-lines-body]');
+    const linesHeadRow = form.querySelector('[data-lines-head-row]');
+    const linesFooter = form.querySelector('[data-lines-footer]');
+    let totalQtyInput = null;
+    let totalAmountInput = null;
+    let totalQtyByUnitWrap = null;
+    let totalQtyByUnitRow = null;
+    const deleteButton = form.querySelector('[data-delete-voucher]');
+    const deleteForm = document.querySelector('[data-delete-voucher-form]');
+    const stockTypeSelect = form.querySelector('[data-stock-type]');
+    const destinationBranchSelect = form.querySelector('[data-destination-branch]');
+    const transferRefSelect = form.querySelector('[data-transfer-ref]');
+    const transferRefTextInput = form.querySelector('[data-transfer-ref-text]');
+    const stnOutIdInput = form.querySelector('[data-stn-out-id]');
+    const sourceBranchNameInput = form.querySelector('[data-source-branch-name]');
+    const destinationBranchNameInput = form.querySelector('[data-destination-branch-name]');
+
+    const toNum = (value, fallback = 0) => {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : fallback;
+    };
+    const toInt = (value) => {
+      const n = Number(value);
+      if (!Number.isInteger(n) || n <= 0) return null;
+      return n;
+    };
+    const qty3 = (value) => Number(toNum(value, 0).toFixed(3));
+    const amount2 = (value) => Number(toNum(value, 0).toFixed(2));
+    const cost6 = (value) => Number(toNum(value, 0).toFixed(6));
+    const escapeHtml = (value) =>
+      String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+    const stockTypeValues = ['FG', 'SFG', 'RM'];
+    const normalizeStockType = (value) => {
+      const normalized = String(value || '').trim().toUpperCase();
+      return stockTypeValues.includes(normalized) ? normalized : 'FG';
+    };
+
+    const skuList = Array.isArray(options.skus) ? options.skus : [];
+    const rmItems = Array.isArray(options.rmItems) ? options.rmItems : [];
+    const colors = Array.isArray(options.colors) ? options.colors : [];
+    const sizes = Array.isArray(options.sizes) ? options.sizes : [];
+    const sourceStock = options.sourceStock || { skuMap: {}, rmMap: {} };
+    const pendingTransfers = Array.isArray(options.pendingTransfers) ? options.pendingTransfers : [];
+
+    const skuMap = new Map(skuList.map((entry) => [Number(entry.id), entry]));
+    const rmMap = new Map(rmItems.map((entry) => [Number(entry.id), entry]));
+    const colorMap = new Map(colors.map((entry) => [Number(entry.id), entry]));
+    const sizeMap = new Map(sizes.map((entry) => [Number(entry.id), entry]));
+    const pendingTransferMap = new Map(
+      pendingTransfers.map((entry) => [Number(entry.stn_out_voucher_id || 0), entry]),
+    );
+    const totalLabel = <%- JSON.stringify(toFriendlyLabel('total', 'Total')) %>;
+    const quantityLabel = <%- JSON.stringify(toFriendlyLabel('quantity', 'Quantity')) %>;
+    const amountLabel = <%- JSON.stringify(toFriendlyLabel('amount', 'Amount')) %>;
+    const unitsLabel = <%- JSON.stringify(toFriendlyLabel('units', 'Units')) %>;
+    const addButtonTitle = <%- JSON.stringify(toFriendlyLabel('add', 'Add')) %>;
+    const deleteButtonTitle = <%- JSON.stringify(toFriendlyLabel('delete', 'Delete')) %>;
+
+    const stockMapKey = (itemId, colorId = null, sizeId = null) =>
+      `${Number(itemId || 0)}|${Number(colorId || 0)}|${Number(sizeId || 0)}`;
+
+    const getOutUnitOptions = (row, stockType) => {
+      if (stockType === 'RM') {
+        const item = rmMap.get(Number(row.item_id || 0));
+        return Array.isArray(item?.unit_options) ? item.unit_options : [];
+      }
+      const sku = skuMap.get(Number(row.sku_id || 0));
+      return Array.isArray(sku?.unit_options) ? sku.unit_options : [];
+    };
+
+    const getOutUomLabel = (row, stockType) => {
+      const optionsList = getOutUnitOptions(row, stockType);
+      const matched = optionsList.find((entry) => Number(entry.id || 0) === Number(row.uom_id || 0));
+      if (!matched) return '';
+      return String(matched.name || matched.code || matched.symbol || '').trim();
+    };
+
+    const getDefaultUnitId = (row, stockType) => {
+      const optionsList = getOutUnitOptions(row, stockType);
+      if (!optionsList.length) return null;
+      const preferred = optionsList.find((entry) => entry.is_base !== true) || optionsList[0];
+      return toInt(preferred?.id);
+    };
+
+    const defaultOutRow = () => ({
+      sku_id: null,
+      item_id: null,
+      color_id: null,
+      size_id: null,
+      uom_id: null,
+      available_qty: 0,
+      transfer_qty: 0,
+      unit_cost: 0,
+      amount: 0,
+    });
+
+    const toOutLine = (line) => ({
+      sku_id: toInt(line?.sku_id),
+      item_id: toInt(line?.item_id),
+      color_id: toInt(line?.color_id),
+      size_id: toInt(line?.size_id),
+      uom_id: toInt(line?.uom_id),
+      available_qty: qty3(line?.available_qty),
+      transfer_qty: qty3(line?.transfer_qty ?? line?.qty),
+      unit_cost: cost6(line?.unit_cost ?? line?.rate),
+      amount: amount2(line?.amount),
+    });
+
+    const toInLine = (line) => ({
+      stn_line_id: toInt(line?.stn_line_id || line?.id),
+      sku_id: toInt(line?.sku_id),
+      item_id: toInt(line?.item_id),
+      color_id: toInt(line?.color_id),
+      size_id: toInt(line?.size_id),
+      uom_id: toInt(line?.uom_id),
+      uom_name: String(line?.uom_name || ''),
+      item_name: String(line?.item_name || line?.sku_item_name || ''),
+      sku_code: String(line?.sku_code || ''),
+      expected_qty: qty3(line?.expected_qty ?? line?.qty),
+      received_qty: qty3(line?.received_qty ?? line?.qty),
+      rejected_qty: qty3(line?.rejected_qty),
+      variance_qty: qty3(line?.variance_qty),
+      variance_reason: String(line?.variance_reason || ''),
+    });
+
+    let outRows = [];
+    let inRows = [];
+    let activeStockType = normalizeStockType(stockTypeSelect?.value || initialVoucher?.stock_type || 'FG');
+
+    const applyOutDerived = (row) => {
+      const next = { ...row };
+      const stockType = activeStockType;
+      const unitOptions = getOutUnitOptions(next, stockType);
+      if (!next.uom_id) next.uom_id = getDefaultUnitId(next, stockType);
+      const selectedUnit = unitOptions.find((entry) => Number(entry.id) === Number(next.uom_id || 0));
+      const factorToBase = Number(selectedUnit?.factor_to_base || 0) || 1;
+
+      if (stockType === 'RM') {
+        const exactKey = stockMapKey(next.item_id, next.color_id, next.size_id);
+        const fallbackKey = stockMapKey(next.item_id, null, null);
+        const stock = sourceStock.rmMap?.[exactKey] || sourceStock.rmMap?.[fallbackKey] || {};
+        const availableBase = Number(stock.qty || 0);
+        const unitCostBase = Number(stock.wac || 0);
+        next.available_qty = factorToBase > 0 ? qty3(availableBase / factorToBase) : 0;
+        next.unit_cost = cost6(unitCostBase * factorToBase);
+      } else {
+        const stockKey = `${stockType}:${Number(next.sku_id || 0)}`;
+        const stock = sourceStock.skuMap?.[stockKey] || {};
+        const rowStatus = selectedUnit?.is_base === true ? 'LOOSE' : 'PACKED';
+        const availablePairs = stockType === 'FG'
+          ? Number(rowStatus === 'LOOSE' ? stock.loose_qty_pairs : stock.packed_qty_pairs)
+          : Number(stock.qty_pairs || 0);
+        const unitCostBase = stockType === 'FG'
+          ? Number(rowStatus === 'LOOSE' ? stock.loose_wac : stock.packed_wac) || Number(stock.wac || 0)
+          : Number(stock.wac || 0);
+        next.available_qty = factorToBase > 0 ? qty3(availablePairs / factorToBase) : 0;
+        next.unit_cost = cost6(unitCostBase * factorToBase);
+      }
+
+      next.transfer_qty = qty3(next.transfer_qty);
+      next.amount = amount2(Number(next.transfer_qty || 0) * Number(next.unit_cost || 0));
+      return next;
+    };
+
+    const readPendingTransfer = (stnOutId) => {
+      const id = Number(stnOutId || 0);
+      if (!id) return null;
+      return pendingTransferMap.get(id) || null;
+    };
+
+    const ensureOutRows = () => {
+      if (!outRows.length) outRows = [applyOutDerived(defaultOutRow())];
+    };
+
+    const updateTotals = () => {
+      if (mode === 'out') {
+        const totalQty = outRows.reduce((sum, row) => sum + Number(row.transfer_qty || 0), 0);
+        const totalAmount = outRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+        if (totalQtyInput) {
+          totalQtyInput.value = qty3(totalQty).toFixed(3);
+        }
+        if (totalAmountInput) {
+          totalAmountInput.value = amount2(totalAmount).toFixed(2);
+        }
+        if (totalQtyByUnitWrap) {
+          const totalsByUnit = new Map();
+          outRows.forEach((row) => {
+            if (!(Number(row.transfer_qty || 0) > 0) || !Number(row.uom_id || 0)) return;
+            const unitLabel = getOutUomLabel(row, activeStockType);
+            if (!unitLabel) return;
+            totalsByUnit.set(unitLabel, Number(totalsByUnit.get(unitLabel) || 0) + Number(row.transfer_qty || 0));
+          });
+          if (totalsByUnit.size) {
+            if (totalQtyByUnitRow) totalQtyByUnitRow.classList.remove('hidden');
+            totalQtyByUnitWrap.innerHTML = Array.from(totalsByUnit.entries())
+              .map(([label, value]) => {
+                const safeLabel = escapeHtml(label);
+                const safeValue = qty3(value).toFixed(3);
+                return `<span class="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${safeLabel}: ${safeValue}</span>`;
+              })
+              .join('');
+          } else {
+            if (totalQtyByUnitRow) totalQtyByUnitRow.classList.add('hidden');
+            totalQtyByUnitWrap.innerHTML = '';
+          }
+        }
+        return;
+      }
+      const totalQty = inRows.reduce((sum, row) => sum + Number(row.received_qty || 0), 0);
+      const totalAmount = inRows.reduce((sum, row) => sum + Number(row.received_qty || 0) * Number(initialVoucher?.lines?.find((line) => Number(line.id) === Number(row.stn_line_id))?.rate || 0), 0);
+      if (totalQtyInput) {
+        totalQtyInput.value = qty3(totalQty).toFixed(3);
+      }
+      if (totalAmountInput) {
+        totalAmountInput.value = amount2(totalAmount).toFixed(2);
+      }
+    };
+
+    const outHeadColumns = () => {
+      if (activeStockType === 'RM') {
+        return [
+          { key: 'item', label: <%- JSON.stringify(toFriendlyLabel('raw_material', 'Raw Material')) %> },
+          { key: 'color', label: <%- JSON.stringify(toFriendlyLabel('color', 'Color')) %> },
+          { key: 'size', label: <%- JSON.stringify(toFriendlyLabel('size', 'Size')) %> },
+          { key: 'uom', label: <%- JSON.stringify(toFriendlyLabel('unit', 'Unit')) %> },
+          { key: 'available', label: <%- JSON.stringify(toFriendlyLabel('available_qty', 'Available Qty')) %>, align: 'text-right' },
+          { key: 'qty', label: <%- JSON.stringify(toFriendlyLabel('transfer_qty', 'Transfer Qty')) %>, align: 'text-right' },
+          { key: 'cost', label: <%- JSON.stringify(toFriendlyLabel('unit_cost', 'Unit Cost')) %>, align: 'text-right' },
+          { key: 'amount', label: <%- JSON.stringify(toFriendlyLabel('amount', 'Amount')) %>, align: 'text-right' },
+          { key: 'actions', label: <%- JSON.stringify(toFriendlyLabel('actions', 'Actions')) %>, align: 'text-center' },
+          { key: 'sr', label: <%- JSON.stringify(toFriendlyLabel('sr_no', 'Sr #')) %>, align: 'text-center' },
+        ];
+      }
+      return [
+        { key: 'item', label: <%- JSON.stringify(toFriendlyLabel('item_name', 'Item')) %> },
+        { key: 'uom', label: <%- JSON.stringify(toFriendlyLabel('unit', 'Unit')) %> },
+        { key: 'available', label: <%- JSON.stringify(toFriendlyLabel('available_qty', 'Available Qty')) %>, align: 'text-right' },
+        { key: 'qty', label: <%- JSON.stringify(toFriendlyLabel('transfer_qty', 'Transfer Qty')) %>, align: 'text-right' },
+        { key: 'cost', label: <%- JSON.stringify(toFriendlyLabel('unit_cost', 'Unit Cost')) %>, align: 'text-right' },
+        { key: 'amount', label: <%- JSON.stringify(toFriendlyLabel('amount', 'Amount')) %>, align: 'text-right' },
+        { key: 'actions', label: <%- JSON.stringify(toFriendlyLabel('actions', 'Actions')) %>, align: 'text-center' },
+        { key: 'sr', label: <%- JSON.stringify(toFriendlyLabel('sr_no', 'Sr #')) %>, align: 'text-center' },
+      ];
+    };
+
+    const inHeadColumns = () => [
+      { key: 'item', label: <%- JSON.stringify(toFriendlyLabel('item_name', 'Item')) %> },
+      { key: 'uom', label: <%- JSON.stringify(toFriendlyLabel('unit', 'Unit')) %> },
+      { key: 'expected', label: <%- JSON.stringify(toFriendlyLabel('expected_qty', 'Expected Qty')) %>, align: 'text-right' },
+      { key: 'received', label: <%- JSON.stringify(toFriendlyLabel('received_qty', 'Received Qty')) %>, align: 'text-right' },
+      { key: 'rejected', label: <%- JSON.stringify(toFriendlyLabel('rejected_qty', 'Rejected Qty')) %>, align: 'text-right' },
+      { key: 'variance', label: <%- JSON.stringify(toFriendlyLabel('variance_qty', 'Variance Qty')) %>, align: 'text-right' },
+      { key: 'reason', label: <%- JSON.stringify(toFriendlyLabel('variance_reason', 'Variance Reason')) %> },
+      { key: 'sr', label: <%- JSON.stringify(toFriendlyLabel('sr_no', 'Sr #')) %>, align: 'text-center' },
+    ];
+
+    const renderFooter = () => {
+      if (!linesFooter) return;
+
+      if (mode === 'out') {
+        const descriptorColspan = activeStockType === 'RM' ? 5 : 3;
+        const totalColspan = activeStockType === 'RM' ? 10 : 8;
+        const addDisabled = canSave ? '' : 'disabled';
+
+        linesFooter.innerHTML = `
+          <tr class="bg-slate-50">
+            <td colspan="${descriptorColspan}" class="border-t border-slate-200 px-2 py-2 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-700">${escapeHtml(totalLabel)}</td>
+            <td class="border-t border-slate-200 px-2 py-1.5">
+              <input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-qty aria-label="${escapeHtml(quantityLabel)}">
+            </td>
+            <td class="border-t border-slate-200 px-2 py-1.5"></td>
+            <td class="border-t border-slate-200 px-2 py-1.5">
+              <input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.00" data-total-amount aria-label="${escapeHtml(amountLabel)}">
+            </td>
+            <td class="border-t border-slate-200 px-2 py-1 text-center">
+              <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white p-2 text-slate-700 disabled:opacity-40" data-add-row aria-label="${escapeHtml(addButtonTitle)}" title="${escapeHtml(addButtonTitle)}" ${addDisabled}>
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
+              </button>
+            </td>
+            <td class="border-t border-slate-200 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${escapeHtml(unitsLabel)}</td>
+          </tr>
+          <tr class="bg-slate-50" data-total-qty-by-unit-row>
+            <td colspan="${totalColspan}" class="border-t border-slate-200 px-2 py-2">
+              <div class="flex flex-wrap items-center gap-2" data-total-qty-by-unit></div>
+            </td>
+          </tr>
+        `;
+      } else {
+        const cols = inHeadColumns();
+        linesFooter.innerHTML = `
+          <tr class="bg-slate-50">
+            <td colspan="${cols.length}" class="border-t border-slate-200 px-2 py-2 text-xs font-semibold text-slate-700">
+              <div class="flex flex-wrap items-center justify-end gap-2">
+                <span class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${escapeHtml(quantityLabel)}</span>
+                <input type="text" readonly class="h-8 rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-qty>
+                <span class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${escapeHtml(amountLabel)}</span>
+                <input type="text" readonly class="h-8 rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.00" data-total-amount>
+              </div>
+            </td>
+          </tr>
+        `;
+      }
+
+      totalQtyInput = linesFooter.querySelector('[data-total-qty]');
+      totalAmountInput = linesFooter.querySelector('[data-total-amount]');
+      totalQtyByUnitWrap = linesFooter.querySelector('[data-total-qty-by-unit]');
+      totalQtyByUnitRow = linesFooter.querySelector('[data-total-qty-by-unit-row]');
+    };
+
+    const renderHead = () => {
+      const cols = mode === 'out' ? outHeadColumns() : inHeadColumns();
+      linesHeadRow.innerHTML = cols
+        .map((col) => `<th class="border-b border-slate-200 px-2 py-2 ${col.align || 'text-left'}">${escapeHtml(col.label)}</th>`)
+        .join('');
+      renderFooter();
+    };
+
+    const renderOutRows = () => {
+      ensureOutRows();
+      linesBody.innerHTML = outRows
+        .map((row, rowIndex) => {
+          const stockType = activeStockType;
+          const unitOptions = getOutUnitOptions(row, stockType);
+          const itemCell = stockType === 'RM'
+            ? `<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-out-change="item_id" data-row-index="${rowIndex}" data-row-field="item" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? '' : 'disabled'}><option value=""></option>${rmItems.map((item) => `<option value="${Number(item.id)}" ${Number(row.item_id || 0) === Number(item.id) ? 'selected' : ''}>${escapeHtml(item.name || item.code || item.id)}</option>`).join('')}</select>`
+            : `<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-out-change="sku_id" data-row-index="${rowIndex}" data-row-field="item" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? '' : 'disabled'}><option value=""></option>${skuList.filter((sku) => String(sku.stock_type || '').toUpperCase() === stockType).map((sku) => `<option value="${Number(sku.id)}" ${Number(row.sku_id || 0) === Number(sku.id) ? 'selected' : ''}>${escapeHtml(sku.sku_name || sku.sku_code || sku.id)}</option>`).join('')}</select>`;
+
+          const colorCell = stockType === 'RM'
+            ? `<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-out-change="color_id" data-row-index="${rowIndex}" data-row-field="color" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? '' : 'disabled'}><option value=""></option>${colors.map((entry) => `<option value="${Number(entry.id)}" ${Number(row.color_id || 0) === Number(entry.id) ? 'selected' : ''}>${escapeHtml(entry.name)}</option>`).join('')}</select>`
+            : '';
+
+          const sizeCell = stockType === 'RM'
+            ? `<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-out-change="size_id" data-row-index="${rowIndex}" data-row-field="size" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? '' : 'disabled'}><option value=""></option>${sizes.map((entry) => `<option value="${Number(entry.id)}" ${Number(row.size_id || 0) === Number(entry.id) ? 'selected' : ''}>${escapeHtml(entry.name)}</option>`).join('')}</select>`
+            : '';
+
+          const uomCell = `<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-out-change="uom_id" data-row-index="${rowIndex}" data-row-field="uom" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? '' : 'disabled'}><option value=""></option>${unitOptions.map((entry) => `<option value="${Number(entry.id)}" ${Number(row.uom_id || 0) === Number(entry.id) ? 'selected' : ''}>${escapeHtml(entry.name || entry.code || entry.id)}</option>`).join('')}</select>`;
+
+          const cols = [
+            `<td class="border-t border-slate-200 px-2 py-1">${itemCell}</td>`,
+            ...(stockType === 'RM' ? [`<td class="border-t border-slate-200 px-2 py-1">${colorCell}</td>`, `<td class="border-t border-slate-200 px-2 py-1">${sizeCell}</td>`] : []),
+            `<td class="border-t border-slate-200 px-2 py-1">${uomCell}</td>`,
+            `<td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${qty3(row.available_qty).toFixed(3)}" readonly></td>`,
+            `<td class="border-t border-slate-200 px-2 py-1"><input type="number" step="0.001" min="0" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs" value="${qty3(row.transfer_qty).toFixed(3)}" data-out-input="transfer_qty" data-row-index="${rowIndex}" data-row-field="qty" ${canSave ? '' : 'readonly'}></td>`,
+            `<td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${cost6(row.unit_cost).toFixed(6)}" readonly></td>`,
+            `<td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${amount2(row.amount).toFixed(2)}" readonly></td>`,
+            `<td class="border-t border-slate-200 px-2 py-1 text-center"><button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white p-2 text-rose-600 disabled:opacity-40" data-remove-row="${rowIndex}" aria-label="${escapeHtml(deleteButtonTitle)}" title="${escapeHtml(deleteButtonTitle)}" ${!canSave || outRows.length <= 1 ? 'disabled' : ''}><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M9 7V5h6v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg></button></td>`,
+            `<td class="border-t border-slate-200 px-2 py-2 text-center text-xs font-semibold text-slate-500">${rowIndex + 1}</td>`,
+          ];
+
+          return `<tr data-row-index="${rowIndex}">${cols.join('')}</tr>`;
+        })
+        .join('');
+      updateTotals();
+    };
+
+    const renderInRows = () => {
+      linesBody.innerHTML = inRows
+        .map((row, rowIndex) => {
+          const variance = qty3(Number(row.expected_qty || 0) - (Number(row.received_qty || 0) + Number(row.rejected_qty || 0)));
+          row.variance_qty = variance;
+          const itemName = row.item_name || row.sku_code || row.item_id || '';
+          return `<tr data-row-index="${rowIndex}">
+            <td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-xs" value="${escapeHtml(itemName)}" readonly></td>
+            <td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-xs" value="${escapeHtml(row.uom_name || '')}" readonly></td>
+            <td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${qty3(row.expected_qty).toFixed(3)}" readonly></td>
+            <td class="border-t border-slate-200 px-2 py-1"><input type="number" step="0.001" min="0" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs" value="${qty3(row.received_qty).toFixed(3)}" data-in-input="received_qty" data-row-index="${rowIndex}" data-row-field="received" ${canSave ? '' : 'readonly'}></td>
+            <td class="border-t border-slate-200 px-2 py-1"><input type="number" step="0.001" min="0" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs" value="${qty3(row.rejected_qty).toFixed(3)}" data-in-input="rejected_qty" data-row-index="${rowIndex}" data-row-field="rejected" ${canSave ? '' : 'readonly'}></td>
+            <td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs ${variance !== 0 ? 'text-amber-700' : ''}" value="${variance.toFixed(3)}" readonly></td>
+            <td class="border-t border-slate-200 px-2 py-1"><input type="text" maxlength="250" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" value="${escapeHtml(row.variance_reason || '')}" data-in-input="variance_reason" data-row-index="${rowIndex}" data-row-field="reason" ${canSave ? '' : 'readonly'}></td>
+            <td class="border-t border-slate-200 px-2 py-2 text-center text-xs font-semibold text-slate-500">${rowIndex + 1}</td>
+          </tr>`;
+        })
+        .join('');
+      updateTotals();
+    };
+
+    const renderRows = () => {
+      renderHead();
+      if (mode === 'out') {
+        renderOutRows();
+      } else {
+        renderInRows();
+      }
+      if (typeof window.initSearchableSelects === 'function') {
+        window.initSearchableSelects(form);
+      }
+      bindNavigator();
+    };
+
+    const updateOutRow = (rowIndex, key, value) => {
+      const row = outRows[rowIndex];
+      if (!row) return;
+      const next = { ...row };
+      if ([ 'item_id', 'sku_id', 'color_id', 'size_id', 'uom_id' ].includes(key)) {
+        next[key] = toInt(value);
+      } else if (key === 'transfer_qty') {
+        next.transfer_qty = qty3(value);
+      }
+      if (key === 'item_id') {
+        next.color_id = null;
+        next.size_id = null;
+        next.uom_id = null;
+      }
+      if (key === 'sku_id') {
+        next.uom_id = null;
+      }
+      if (key === 'uom_id') {
+        next.uom_id = toInt(value);
+      }
+      outRows[rowIndex] = applyOutDerived(next);
+      renderRows();
+    };
+
+    const setInRowsFromTransfer = (transfer) => {
+      if (!transfer || !Array.isArray(transfer.lines)) {
+        inRows = [];
+        return;
+      }
+      inRows = transfer.lines.map((line) => {
+        const expectedQty = qty3(line.qty || line.expected_qty || 0);
+        return toInLine({
+          ...line,
+          stn_line_id: line.id,
+          expected_qty: expectedQty,
+          received_qty: expectedQty,
+          rejected_qty: 0,
+          variance_qty: 0,
+        });
+      });
+    };
+
+    linesBody.addEventListener('change', (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (target.matches('[data-out-change]')) {
+        const key = String(target.getAttribute('data-out-change') || '');
+        const rowIndex = Number(target.getAttribute('data-row-index') || -1);
+        if (rowIndex < 0) return;
+        updateOutRow(rowIndex, key, target.value);
+        return;
+      }
+      if (target.matches('[data-in-input]')) {
+        const rowIndex = Number(target.getAttribute('data-row-index') || -1);
+        const key = String(target.getAttribute('data-in-input') || '');
+        if (rowIndex < 0 || !inRows[rowIndex]) return;
+        if (key === 'variance_reason') inRows[rowIndex].variance_reason = String(target.value || '').trim();
+        renderRows();
+      }
+    });
+
+    linesBody.addEventListener('input', (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (target.matches('[data-out-input]')) {
+        const key = String(target.getAttribute('data-out-input') || '');
+        const rowIndex = Number(target.getAttribute('data-row-index') || -1);
+        if (rowIndex < 0) return;
+        updateOutRow(rowIndex, key, target.value);
+        return;
+      }
+      if (target.matches('[data-in-input]')) {
+        const rowIndex = Number(target.getAttribute('data-row-index') || -1);
+        const key = String(target.getAttribute('data-in-input') || '');
+        if (rowIndex < 0 || !inRows[rowIndex]) return;
+        if (key === 'received_qty' || key === 'rejected_qty') {
+          inRows[rowIndex][key] = qty3(target.value);
+        }
+        if (key === 'variance_reason') {
+          inRows[rowIndex].variance_reason = String(target.value || '').trim();
+        }
+        renderRows();
+      }
+    });
+
+    linesBody.addEventListener('click', (event) => {
+      const btn = event.target instanceof HTMLElement
+        ? event.target.closest('[data-remove-row]')
+        : null;
+      if (!btn || mode !== 'out' || !canSave) return;
+      const rowIndex = Number(btn.getAttribute('data-remove-row') || -1);
+      if (rowIndex < 0) return;
+      outRows.splice(rowIndex, 1);
+      ensureOutRows();
+      renderRows();
+    });
+
+    if (stockTypeSelect) {
+      stockTypeSelect.addEventListener('change', () => {
+        activeStockType = normalizeStockType(stockTypeSelect.value);
+        outRows = outRows.map((row) => applyOutDerived({ ...defaultOutRow(), transfer_qty: row.transfer_qty }));
+        renderRows();
+      });
+    }
+
+    if (transferRefSelect) {
+      transferRefSelect.addEventListener('change', () => {
+        const selected = transferRefSelect.selectedOptions?.[0] || null;
+        const stnOutId = Number(selected?.dataset?.stnId || 0) || null;
+        stnOutIdInput.value = stnOutId || '';
+        const transfer = readPendingTransfer(stnOutId);
+        if (transfer) {
+          if (sourceBranchNameInput) {
+            sourceBranchNameInput.value = transfer.source_branch_name || String(transfer.source_branch_id || '');
+          }
+          if (destinationBranchNameInput) {
+            destinationBranchNameInput.value = transfer.destination_branch_name || String(transfer.destination_branch_id || '');
+          }
+          if (stockTypeSelect) {
+            stockTypeSelect.value = normalizeStockType(transfer.stock_type);
+            activeStockType = normalizeStockType(transfer.stock_type);
+          }
+          setInRowsFromTransfer(transfer);
+        } else {
+          inRows = [];
+        }
+        renderRows();
+      });
+    }
+
+    form.addEventListener('click', (event) => {
+      const addButton = event.target instanceof HTMLElement
+        ? event.target.closest('[data-add-row]')
+        : null;
+      if (!addButton || mode !== 'out' || !canSave) return;
+      outRows.push(applyOutDerived(defaultOutRow()));
+      renderRows();
+    });
+
+    if (loadVoucherButton) {
+      loadVoucherButton.addEventListener('click', () => {
+        const voucherNo = Number(voucherNoInput?.value || 0);
+        if (!Number.isInteger(voucherNo) || voucherNo <= 0) return;
+        window.location.href = `${basePath}?voucher_no=${voucherNo}&view=1`;
+      });
+    }
+
+    if (deleteButton && deleteForm) {
+      deleteButton.addEventListener('click', () => {
+        if (!canSave && !initialVoucher) return;
+        const confirmMessage = <%- JSON.stringify(toFriendlyLabel('confirm_delete', 'Delete this voucher?')) %>;
+        if (!window.confirm(confirmMessage)) return;
+        deleteForm.submit();
+      });
+    }
+
+    const validateBeforeSubmit = () => {
+      if (mode === 'out') {
+        if (!destinationBranchSelect?.value) {
+          window.alert(<%- JSON.stringify(toFriendlyLabel('destination_branch_required', 'Destination branch is required.')) %>);
+          return false;
+        }
+        if (!outRows.length) {
+          window.alert(<%- JSON.stringify(toFriendlyLabel('error_required_fields', 'Required fields are missing.')) %>);
+          return false;
+        }
+        for (let index = 0; index < outRows.length; index += 1) {
+          const row = outRows[index];
+          if (activeStockType === 'RM') {
+            if (!row.item_id || !(Number(row.transfer_qty || 0) > 0)) {
+              window.alert(`${<%- JSON.stringify(toFriendlyLabel('error_required_fields', 'Required fields are missing.')) %>} #${index + 1}`);
+              return false;
+            }
+          } else if (!row.sku_id || !(Number(row.transfer_qty || 0) > 0)) {
+            window.alert(`${<%- JSON.stringify(toFriendlyLabel('error_required_fields', 'Required fields are missing.')) %>} #${index + 1}`);
+            return false;
+          }
+        }
+      } else {
+        if (!stnOutIdInput?.value) {
+          window.alert(<%- JSON.stringify(toFriendlyLabel('transfer_reference_required', 'Transfer reference is required.')) %>);
+          return false;
+        }
+        if (!inRows.length) {
+          window.alert(<%- JSON.stringify(toFriendlyLabel('error_required_fields', 'Required fields are missing.')) %>);
+          return false;
+        }
+        for (let index = 0; index < inRows.length; index += 1) {
+          const row = inRows[index];
+          const processed = Number(row.received_qty || 0) + Number(row.rejected_qty || 0);
+          if (!(processed > 0)) {
+            window.alert(`${<%- JSON.stringify(toFriendlyLabel('received_qty_required', 'Received quantity is required.')) %>} #${index + 1}`);
+            return false;
+          }
+          const variance = qty3(Number(row.expected_qty || 0) - processed);
+          if (Math.abs(variance) > 0.0005 && !String(row.variance_reason || '').trim()) {
+            window.alert(`${<%- JSON.stringify(toFriendlyLabel('variance_reason_required', 'Variance reason is required.')) %>} #${index + 1}`);
+            return false;
+          }
+        }
+      }
+      return true;
+    };
+
+    form.addEventListener('submit', (event) => {
+      if (!validateBeforeSubmit()) {
+        event.preventDefault();
+        return;
+      }
+
+      if (mode === 'out') {
+        const payloadRows = outRows
+          .filter((row) => Number(row.transfer_qty || 0) > 0)
+          .map((row) => ({
+            sku_id: toInt(row.sku_id),
+            item_id: toInt(row.item_id),
+            color_id: toInt(row.color_id),
+            size_id: toInt(row.size_id),
+            uom_id: toInt(row.uom_id),
+            transfer_qty: qty3(row.transfer_qty),
+          }));
+        linesJsonInput.value = JSON.stringify(payloadRows);
+      } else {
+        const payloadRows = inRows.map((row) => ({
+          stn_line_id: toInt(row.stn_line_id),
+          received_qty: qty3(row.received_qty),
+          rejected_qty: qty3(row.rejected_qty),
+          variance_reason: String(row.variance_reason || '').trim() || null,
+        }));
+        linesJsonInput.value = JSON.stringify(payloadRows);
+      }
+    });
+
+    if (mode === 'out') {
+      if (initialVoucher?.lines?.length) {
+        outRows = initialVoucher.lines.map((line) => applyOutDerived(toOutLine(line)));
+      } else {
+        outRows = [applyOutDerived(defaultOutRow())];
+      }
+      if (transferRefTextInput && !transferRefTextInput.value.trim()) {
+        transferRefTextInput.value = `TRF-${Number(voucherNoInput?.value || 0) || ''}`;
+      }
+    } else {
+      if (initialVoucher?.lines?.length) {
+        inRows = initialVoucher.lines.map((line) => toInLine(line));
+      } else {
+        const selectedOption = transferRefSelect?.selectedOptions?.[0] || null;
+        const stnOutId = Number(selectedOption?.dataset?.stnId || stnOutIdInput?.value || 0) || null;
+        if (stnOutId) {
+          stnOutIdInput.value = String(stnOutId);
+          const transfer = readPendingTransfer(stnOutId);
+          if (transfer) {
+            if (sourceBranchNameInput) {
+              sourceBranchNameInput.value = transfer.source_branch_name || String(transfer.source_branch_id || '');
+            }
+            if (destinationBranchNameInput) {
+              destinationBranchNameInput.value = transfer.destination_branch_name || String(transfer.destination_branch_id || '');
+            }
+            if (stockTypeSelect) {
+              stockTypeSelect.value = normalizeStockType(transfer.stock_type);
+              activeStockType = normalizeStockType(transfer.stock_type);
+            }
+            setInRowsFromTransfer(transfer);
+          }
+        }
+      }
+    }
+
+    let unbindNavigator = null;
+    const bindNavigator = () => {
+      if (typeof unbindNavigator === 'function') {
+        unbindNavigator();
+        unbindNavigator = null;
+      }
+      if (typeof window.createVoucherRowEnterNavigator !== 'function') return;
+      unbindNavigator = window.createVoucherRowEnterNavigator({
+        form,
+        linesBody,
+        rowSelector: 'tr[data-row-index]',
+        fieldAttr: 'data-row-field',
+        fieldOrder: mode === 'out'
+          ? (activeStockType === 'RM' ? ['item', 'color', 'size', 'uom', 'qty'] : ['item', 'uom', 'qty'])
+          : ['received', 'rejected', 'reason'],
+        appendRow: mode === 'out' && canSave
+          ? () => {
+              outRows.push(applyOutDerived(defaultOutRow()));
+              renderRows();
+              return true;
+            }
+          : null,
+        canAppendRow: () => mode === 'out' && canSave,
+      });
+      if (unbindNavigator && typeof unbindNavigator.bind === 'function') {
+        unbindNavigator = unbindNavigator.bind();
+      } else {
+        unbindNavigator = null;
+      }
+    };
+
+    renderRows();
+  })();
+</script>

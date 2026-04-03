@@ -1,11 +1,20 @@
 const express = require("express");
 const knex = require("../../../db/knex");
 const { HttpError } = require("../../../middleware/errors/http-error");
-const { requirePermission } = require("../../../middleware/access/role-permissions");
-const { handleScreenApproval } = require("../../../middleware/approvals/screen-approval");
+const {
+  requirePermission,
+} = require("../../../middleware/access/role-permissions");
+const {
+  handleScreenApproval,
+} = require("../../../middleware/approvals/screen-approval");
 const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
-const { parseCookies, setCookie } = require("../../../middleware/utils/cookies");
-const { friendlyErrorMessage } = require("../../../middleware/errors/friendly-error");
+const {
+  parseCookies,
+  setCookie,
+} = require("../../../middleware/utils/cookies");
+const {
+  friendlyErrorMessage,
+} = require("../../../middleware/errors/friendly-error");
 const { queueAuditLog } = require("../../../utils/audit-log");
 const { generateUniqueCode } = require("../../../utils/entity-code");
 const { buildAuditChangeSet } = require("../../../utils/audit-diff");
@@ -57,13 +66,18 @@ const normalizeVendorCapabilities = (value) => {
   const raw = Array.isArray(value) ? value : value ? [value] : [];
   const normalized = raw
     .flatMap((entry) => String(entry || "").split(","))
-    .map((entry) => String(entry || "").trim().toUpperCase())
+    .map((entry) =>
+      String(entry || "")
+        .trim()
+        .toUpperCase(),
+    )
     .filter(Boolean)
     .filter((entry) => SUPPLIER_CAPABILITY_CODES.includes(entry));
   return [...new Set(normalized)];
 };
 
-const hasField = (page, name) => page.fields.some((field) => field.name === name);
+const hasField = (page, name) =>
+  page.fields.some((field) => field.name === name);
 
 const page = {
   titleKey: "parties",
@@ -87,9 +101,15 @@ const page = {
     { table: { c: "erp.cities" }, on: ["t.city_id", "c.id"] },
   ],
   extraSelect: (locale) => [
-    locale === "ur" ? knex.raw("COALESCE(pg.name_ur, pg.name) as group_name") : "pg.name as group_name",
-    locale === "ur" ? knex.raw("COALESCE(c.name_ur, c.name, t.city) as city_name") : knex.raw("COALESCE(c.name, t.city) as city_name"),
-    knex.raw("COALESCE(NULLIF(t.phone1, ''), NULLIF(t.phone2, '')) as phone_primary"),
+    locale === "ur"
+      ? knex.raw("COALESCE(pg.name_ur, pg.name) as group_name")
+      : "pg.name as group_name",
+    locale === "ur"
+      ? knex.raw("COALESCE(c.name_ur, c.name, t.city) as city_name")
+      : knex.raw("COALESCE(c.name, t.city) as city_name"),
+    knex.raw(
+      "COALESCE(NULLIF(t.phone1, ''), NULLIF(t.phone2, '')) as phone_primary",
+    ),
     knex.raw(
       `(SELECT COALESCE(string_agg(b.name, ', ' ORDER BY b.name), '')
         FROM erp.party_branch pb
@@ -230,14 +250,35 @@ page.columns = (page.columns || [])
   });
 
 if (!page.columns.some((column) => column.key === "created_at")) {
-  page.columns.push({ key: "created_at", label: "Created At", cellClass: "col-export-only" });
+  page.columns.push({
+    key: "created_at",
+    label: "Created At",
+    cellClass: "col-export-only",
+  });
 }
 
-const ACTIVE_OPTION_TABLES = new Set(["erp.party_groups", "erp.account_groups", "erp.product_groups", "erp.product_subgroups", "erp.cities", "erp.branches", "erp.departments", "erp.grades", "erp.packing_types", "erp.sizes", "erp.colors", "erp.uom"]);
+const ACTIVE_OPTION_TABLES = new Set([
+  "erp.party_groups",
+  "erp.account_groups",
+  "erp.product_groups",
+  "erp.product_subgroups",
+  "erp.cities",
+  "erp.branches",
+  "erp.departments",
+  "erp.grades",
+  "erp.packing_types",
+  "erp.sizes",
+  "erp.colors",
+  "erp.uom",
+]);
 
 const getAllowedBranchIds = (req) => {
   if (req?.user?.isAdmin) return [];
-  return Array.isArray(req?.branchScope) ? req.branchScope.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0) : [];
+  return Array.isArray(req?.branchScope)
+    ? req.branchScope
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0)
+    : [];
 };
 
 const hydratePage = async (pageConfig, locale, req = null) => {
@@ -247,30 +288,47 @@ const hydratePage = async (pageConfig, locale, req = null) => {
       fields.push(field);
       continue;
     }
-    const selectFields = field.optionsQuery.select || [field.optionsQuery.valueKey, field.optionsQuery.labelKey];
+    const selectFields = field.optionsQuery.select || [
+      field.optionsQuery.valueKey,
+      field.optionsQuery.labelKey,
+    ];
     let query = knex(field.optionsQuery.table).select(selectFields);
-    if (field.optionsQuery.activeOnly !== false && ACTIVE_OPTION_TABLES.has(field.optionsQuery.table)) {
+    if (
+      field.optionsQuery.activeOnly !== false &&
+      ACTIVE_OPTION_TABLES.has(field.optionsQuery.table)
+    ) {
       query = query.where({ is_active: true });
     }
     if (field.optionsQuery.where) {
       query = query.where(field.optionsQuery.where);
     }
-    const rows = await query.orderBy(field.optionsQuery.orderBy || field.optionsQuery.labelKey);
+    const rows = await query.orderBy(
+      field.optionsQuery.orderBy || field.optionsQuery.labelKey,
+    );
     const allowedBranchSet =
       field.optionsQuery.table === "erp.branches" && !req?.user?.isAdmin
         ? new Set(getAllowedBranchIds(req))
         : null;
     fields.push({
       ...field,
-      options: rows.map((row) => {
-        const labelRaw = field.labelFormat ? field.labelFormat(row, locale) : row[field.optionsQuery.labelKey];
-        const labelUr = !field.labelFormat && locale === "ur" && row.name_ur ? row.name_ur : null;
-        return {
-          value: row[field.optionsQuery.valueKey],
-          label: labelUr || labelRaw,
-          partyType: row.party_type || "",
-        };
-      }).filter((opt) => (allowedBranchSet ? allowedBranchSet.has(Number(opt.value)) : true)),
+      options: rows
+        .map((row) => {
+          const labelRaw = field.labelFormat
+            ? field.labelFormat(row, locale)
+            : row[field.optionsQuery.labelKey];
+          const labelUr =
+            !field.labelFormat && locale === "ur" && row.name_ur
+              ? row.name_ur
+              : null;
+          return {
+            value: row[field.optionsQuery.valueKey],
+            label: labelUr || labelRaw,
+            partyType: row.party_type || "",
+          };
+        })
+        .filter((opt) =>
+          allowedBranchSet ? allowedBranchSet.has(Number(opt.value)) : true,
+        ),
     });
   }
   return { ...pageConfig, fields };
@@ -291,7 +349,11 @@ const renderPage = (req, res, hydrated, data) =>
   });
 
 const fetchRows = (pageConfig, options = {}) => {
-  let query = knex({ t: pageConfig.table }).leftJoin({ u: "erp.users" }, "t.created_by", "u.id");
+  let query = knex({ t: pageConfig.table }).leftJoin(
+    { u: "erp.users" },
+    "t.created_by",
+    "u.id",
+  );
   if (pageConfig.hasUpdatedFields !== false) {
     query = query.leftJoin({ uu: "erp.users" }, "t.updated_by", "uu.id");
   }
@@ -304,7 +366,15 @@ const fetchRows = (pageConfig, options = {}) => {
     query = query.where((builder) => {
       builder
         .whereExists(function () {
-          this.select(1).from(pageConfig.branchMap.table).whereRaw(`${pageConfig.branchMap.table}.${pageConfig.branchMap.key} = t.id`).andWhere(`${pageConfig.branchMap.table}.${pageConfig.branchMap.branchKey}`, options.branchId);
+          this.select(1)
+            .from(pageConfig.branchMap.table)
+            .whereRaw(
+              `${pageConfig.branchMap.table}.${pageConfig.branchMap.key} = t.id`,
+            )
+            .andWhere(
+              `${pageConfig.branchMap.table}.${pageConfig.branchMap.branchKey}`,
+              options.branchId,
+            );
         })
         .orWhere("t.branch_id", options.branchId);
     });
@@ -313,7 +383,11 @@ const fetchRows = (pageConfig, options = {}) => {
   if (pageConfig.hasUpdatedFields !== false) {
     selects.push("uu.username as updated_by_name");
   }
-  let extraSelect = pageConfig.extraSelect ? (typeof pageConfig.extraSelect === "function" ? pageConfig.extraSelect(options.locale || "en") : pageConfig.extraSelect) : [];
+  let extraSelect = pageConfig.extraSelect
+    ? typeof pageConfig.extraSelect === "function"
+      ? pageConfig.extraSelect(options.locale || "en")
+      : pageConfig.extraSelect
+    : [];
   if (!Array.isArray(extraSelect)) {
     extraSelect = [extraSelect];
   }
@@ -373,7 +447,14 @@ const readFlash = (req, res, path) => {
   return payload;
 };
 
-const renderIndexError = async (req, res, values, error, modalMode, basePath) => {
+const renderIndexError = async (
+  req,
+  res,
+  values,
+  error,
+  modalMode,
+  basePath,
+) => {
   const message = friendlyErrorMessage(error, res.locals.t);
   const payload = { values, error: message, modalMode };
   setCookie(res, FLASH_COOKIE, JSON.stringify(payload), {
@@ -391,433 +472,715 @@ const renderIndexError = async (req, res, values, error, modalMode, basePath) =>
   return res.redirect(basePath);
 };
 
-router.get("/", requirePermission("SCREEN", "master_data.parties", "view"), async (req, res, next) => {
-  try {
-    const hydrated = await hydratePage(page, req.locale, req);
-    const flash = readFlash(req, res, req.baseUrl);
-    const modalMode = flash ? flash.modalMode : "create";
-    const modalOpen = flash ? ["create", "edit"].includes(modalMode) : false;
-    const canBrowse = res.locals.can("SCREEN", "master_data.parties", "navigate");
-    const rows = canBrowse
-      ? await fetchRows(hydrated, {
-          branchId: req.user?.isAdmin ? null : req.branchId,
-          locale: req.locale,
-        })
-      : [];
+router.get(
+  "/",
+  requirePermission("SCREEN", "master_data.parties", "view"),
+  async (req, res, next) => {
+    try {
+      const hydrated = await hydratePage(page, req.locale, req);
+      const flash = readFlash(req, res, req.baseUrl);
+      const modalMode = flash ? flash.modalMode : "create";
+      const modalOpen = flash ? ["create", "edit"].includes(modalMode) : false;
+      const canBrowse = res.locals.can(
+        "SCREEN",
+        "master_data.parties",
+        "navigate",
+      );
+      const rows = canBrowse
+        ? await fetchRows(hydrated, {
+            branchId: req.user?.isAdmin ? null : req.branchId,
+            locale: req.locale,
+          })
+        : [];
+      const basePath = req.baseUrl;
+      const defaults = { ...(hydrated.defaults || {}) };
+      if (!flash && req.branchId) {
+        defaults.branch_ids = [String(req.branchId)];
+      }
+      return renderPage(req, res, hydrated, {
+        rows,
+        basePath,
+        values: flash ? flash.values : defaults,
+        error: flash ? flash.error : null,
+        modalOpen,
+        modalMode,
+      });
+    } catch (err) {
+      return next(err);
+    }
+  },
+);
+
+router.post(
+  "/",
+  requirePermission("SCREEN", "master_data.parties", "create"),
+  async (req, res, next) => {
+    debugParties("[parties:POST /] route hit", {
+      user: req.user && {
+        id: req.user.id,
+        username: req.user.username,
+        isAdmin: req.user.isAdmin,
+      },
+      body: req.body,
+      path: req.path,
+      method: req.method,
+    });
+    const values = buildValues(page, req.body);
+    values.party_type = normalizePartyType(values.party_type);
+    if (!hasField(page, "code") && !page.autoCodeFromName) {
+      delete values.code;
+    }
+    const missing = page.fields
+      .filter((field) => field.required)
+      .filter((field) => !values[field.name]);
     const basePath = req.baseUrl;
-    const defaults = { ...(hydrated.defaults || {}) };
-    if (!flash && req.branchId) {
-      defaults.branch_ids = [String(req.branchId)];
+
+    if (missing.length) {
+      debugParties("[parties:POST /] missing required fields", { missing });
+      return renderIndexError(
+        req,
+        res,
+        values,
+        res.locals.t("error_required_fields"),
+        "create",
+        basePath,
+      );
     }
-    return renderPage(req, res, hydrated, {
-      rows,
-      basePath,
-      values: flash ? flash.values : defaults,
-      error: flash ? flash.error : null,
-      modalOpen,
-      modalMode,
-    });
-  } catch (err) {
-    return next(err);
-  }
-});
 
-router.post("/", requirePermission("SCREEN", "master_data.parties", "create"), async (req, res, next) => {
-  debugParties("[parties:POST /] route hit", {
-    user: req.user && { id: req.user.id, username: req.user.username, isAdmin: req.user.isAdmin },
-    body: req.body,
-    path: req.path,
-    method: req.method,
-  });
-  const values = buildValues(page, req.body);
-  values.party_type = normalizePartyType(values.party_type);
-  if (!hasField(page, "code") && !page.autoCodeFromName) {
-    delete values.code;
-  }
-  const missing = page.fields.filter((field) => field.required).filter((field) => !values[field.name]);
-  const basePath = req.baseUrl;
-
-  if (missing.length) {
-    debugParties("[parties:POST /] missing required fields", { missing });
-    return renderIndexError(req, res, values, res.locals.t("error_required_fields"), "create", basePath);
-  }
-
-  try {
-    const hasVendorCapabilities = await hasVendorCapabilitiesColumn();
-    const normalizedCapabilities = normalizeVendorCapabilities(values.vendor_capabilities);
-    if (isSupplierPartyType(values.party_type)) {
-      if (hasVendorCapabilities && !normalizedCapabilities.length) {
-        return renderIndexError(req, res, values, res.locals.t("error_select_vendor_capabilities"), "create", basePath);
+    try {
+      const hasVendorCapabilities = await hasVendorCapabilitiesColumn();
+      const normalizedCapabilities = normalizeVendorCapabilities(
+        values.vendor_capabilities,
+      );
+      if (isSupplierPartyType(values.party_type)) {
+        if (hasVendorCapabilities && !normalizedCapabilities.length) {
+          return renderIndexError(
+            req,
+            res,
+            values,
+            res.locals.t("error_select_vendor_capabilities"),
+            "create",
+            basePath,
+          );
+        }
+        values.vendor_capabilities = hasVendorCapabilities
+          ? normalizedCapabilities
+          : [];
+      } else {
+        values.vendor_capabilities = [];
       }
-      values.vendor_capabilities = hasVendorCapabilities ? normalizedCapabilities : [];
-    } else {
-      values.vendor_capabilities = [];
-    }
-    if (!hasVendorCapabilities) {
-      delete values.vendor_capabilities;
-    }
-
-    const branchIds = Array.isArray(values.branch_ids) ? values.branch_ids : [];
-    if (!req.user?.isAdmin) {
-      const allowed = new Set(getAllowedBranchIds(req).map(String));
-      const invalid = branchIds.map(String).some((id) => !allowed.has(id));
-      if (invalid) {
-        return renderIndexError(req, res, values, res.locals.t("error_branch_out_of_scope"), "create", basePath);
+      if (!hasVendorCapabilities) {
+        delete values.vendor_capabilities;
       }
-    }
-    if (values.group_id) {
-      const groupRow = await knex("erp.party_groups").select("party_type", "is_active").where({ id: values.group_id }).first();
-      if (!groupRow || groupRow.is_active === false) {
-        return renderIndexError(req, res, values, res.locals.t("error_select_party_group"), "create", basePath);
+
+      const branchIds = Array.isArray(values.branch_ids)
+        ? values.branch_ids
+        : [];
+      if (!req.user?.isAdmin) {
+        const allowed = new Set(getAllowedBranchIds(req).map(String));
+        const invalid = branchIds.map(String).some((id) => !allowed.has(id));
+        if (invalid) {
+          return renderIndexError(
+            req,
+            res,
+            values,
+            res.locals.t("error_branch_out_of_scope"),
+            "create",
+            basePath,
+          );
+        }
       }
-      const groupPartyType = normalizePartyType(groupRow.party_type);
-      if (groupPartyType && groupPartyType !== "BOTH" && groupPartyType !== values.party_type) {
-        return renderIndexError(req, res, values, res.locals.t("error_party_group_type"), "create", basePath);
+      if (values.group_id) {
+        const groupRow = await knex("erp.party_groups")
+          .select("party_type", "is_active")
+          .where({ id: values.group_id })
+          .first();
+        if (!groupRow || groupRow.is_active === false) {
+          return renderIndexError(
+            req,
+            res,
+            values,
+            res.locals.t("error_select_party_group"),
+            "create",
+            basePath,
+          );
+        }
+        const groupPartyType = normalizePartyType(groupRow.party_type);
+        if (
+          groupPartyType &&
+          groupPartyType !== "BOTH" &&
+          groupPartyType !== values.party_type
+        ) {
+          return renderIndexError(
+            req,
+            res,
+            values,
+            res.locals.t("error_party_group_type"),
+            "create",
+            basePath,
+          );
+        }
       }
-    }
-    if (!branchIds.length) {
-      return renderIndexError(req, res, values, res.locals.t("error_select_branch"), "create", basePath);
-    }
-    if (!values.city_id) {
-      return renderIndexError(req, res, values, res.locals.t("error_select_city"), "create", basePath);
-    }
-    if (req.user?.isAdmin && !values.phone1) {
-      return renderIndexError(req, res, values, res.locals.t("error_select_phone"), "create", basePath);
-    }
-    const hasCreditAllowed = Object.prototype.hasOwnProperty.call(values, "credit_allowed");
-    const hasCreditLimit = Object.prototype.hasOwnProperty.call(values, "credit_limit");
-    if (!hasCreditAllowed && !hasCreditLimit) {
-      values.credit_allowed = true;
-      values.credit_limit = page.defaults?.credit_limit ?? 500000;
-    }
-    const creditAllowed = values.credit_allowed === true;
-    const creditLimit = normalizeCredit(values.credit_limit);
-    values.code = await generateUniqueCode({
-      name: values.name,
-      prefix: "party",
-      maxLen: 50,
-      knex,
-      table: page.table,
-    });
-    const codeValue = values.code || "";
-    const nameValue = values.name || "";
-    if (codeValue && (await knex(page.table).whereRaw("lower(code) = ?", [codeValue.toLowerCase()]).first())) {
-      return renderIndexError(req, res, values, res.locals.t("error_duplicate_code"), "create", basePath);
-    }
-    if (nameValue && (await knex(page.table).whereRaw("lower(name) = ?", [nameValue.toLowerCase()]).first())) {
-      return renderIndexError(req, res, values, res.locals.t("error_duplicate_name"), "create", basePath);
-    }
-    values.credit_limit = creditAllowed ? String(creditLimit || 0) : "0";
-    values.branch_id = req.branchId;
-    values.branch_ids = (branchIds.length ? branchIds : [req.branchId]).map(String);
-
-    debugParties("[parties:POST /] calling handleScreenApproval", {
-      user: req.user && { id: req.user.id, username: req.user.username, isAdmin: req.user.isAdmin },
-      values,
-    });
-    const approval = await handleScreenApproval({
-      req,
-      scopeKey: "master_data.parties",
-      action: "create",
-      entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
-      entityId: "NEW",
-      summary: `${res.locals.t("create")} ${res.locals.t(page.titleKey)}`,
-      oldValue: null,
-      newValue: values,
-      t: res.locals.t,
-    });
-    debugParties("[parties:POST /] handleScreenApproval result", approval);
-
-    if (approval.queued) {
-      debugParties("[parties:POST /] approval was queued, redirecting");
-      return res.redirect(req.get("referer") || basePath);
-    }
-
-    const { branch_ids: branchIdsInsert = [], ...rest } = values;
-    await knex.transaction(async (trx) => {
-      const [row] = await trx(page.table)
-        .insert({
-          ...rest,
-          created_by: req.user ? req.user.id : null,
-        })
-        .returning("id");
-      const partyId = row && row.id ? row.id : row;
-      if (branchIdsInsert.length) {
-        await trx(page.branchMap.table).insert(
-          branchIdsInsert.map((branchId) => ({
-            [page.branchMap.key]: partyId,
-            [page.branchMap.branchKey]: branchId,
-          })),
+      if (!branchIds.length) {
+        return renderIndexError(
+          req,
+          res,
+          values,
+          res.locals.t("error_select_branch"),
+          "create",
+          basePath,
         );
       }
-      queueAuditLog(req, {
-        entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
-        entityId: partyId,
-        action: "CREATE",
-      });
-    });
-    return res.redirect(basePath);
-  } catch (err) {
-    console.error("[parties:create]", { error: err });
-    return renderIndexError(req, res, values, err?.message || res.locals.t("error_unable_save"), "create", basePath);
-  }
-});
-
-router.post("/:id", requirePermission("SCREEN", "master_data.parties", "edit"), async (req, res, next) => {
-  const id = Number(req.params.id);
-  if (!id) {
-    return next(new HttpError(404, res.locals.t("error_not_found")));
-  }
-  const values = buildValues(page, req.body);
-  values.party_type = normalizePartyType(values.party_type);
-  if (!hasField(page, "code") && !page.autoCodeFromName) {
-    delete values.code;
-  }
-  const missing = page.fields.filter((field) => field.required).filter((field) => !values[field.name]);
-  const basePath = req.baseUrl;
-
-  if (missing.length) {
-    return renderIndexError(req, res, values, res.locals.t("error_required_fields"), "edit", basePath);
-  }
-
-  try {
-    const hasVendorCapabilities = await hasVendorCapabilitiesColumn();
-    const normalizedCapabilities = normalizeVendorCapabilities(values.vendor_capabilities);
-    if (isSupplierPartyType(values.party_type)) {
-      if (hasVendorCapabilities && !normalizedCapabilities.length) {
-        return renderIndexError(req, res, values, res.locals.t("error_select_vendor_capabilities"), "edit", basePath);
+      if (!values.city_id) {
+        return renderIndexError(
+          req,
+          res,
+          values,
+          res.locals.t("error_select_city"),
+          "create",
+          basePath,
+        );
       }
-      values.vendor_capabilities = hasVendorCapabilities ? normalizedCapabilities : [];
-    } else {
-      values.vendor_capabilities = [];
-    }
-    if (!hasVendorCapabilities) {
-      delete values.vendor_capabilities;
-    }
-
-    const existing = await knex(page.table).where({ id }).first();
-    if (!existing) {
-      return renderIndexError(req, res, values, res.locals.t("error_not_found"), "edit", basePath);
-    }
-    if (existing.code) {
-      values.code = existing.code;
-    } else {
+      if (req.user?.isAdmin && !values.phone1) {
+        return renderIndexError(
+          req,
+          res,
+          values,
+          res.locals.t("error_select_phone"),
+          "create",
+          basePath,
+        );
+      }
+      const hasCreditAllowed = Object.prototype.hasOwnProperty.call(
+        values,
+        "credit_allowed",
+      );
+      const hasCreditLimit = Object.prototype.hasOwnProperty.call(
+        values,
+        "credit_limit",
+      );
+      if (!hasCreditAllowed && !hasCreditLimit) {
+        values.credit_allowed = true;
+        values.credit_limit = page.defaults?.credit_limit ?? 500000;
+      }
+      const creditAllowed = values.credit_allowed === true;
+      const creditLimit = normalizeCredit(values.credit_limit);
       values.code = await generateUniqueCode({
         name: values.name,
         prefix: "party",
         maxLen: 50,
         knex,
         table: page.table,
-        excludeId: id,
       });
-    }
-    const branchIds = Array.isArray(values.branch_ids) ? values.branch_ids : [];
-    if (!req.user?.isAdmin) {
-      const allowed = new Set(getAllowedBranchIds(req).map(String));
-      const invalid = branchIds.map(String).some((id) => !allowed.has(id));
-      if (invalid) {
-        return renderIndexError(req, res, values, res.locals.t("error_branch_out_of_scope"), "edit", basePath);
-      }
-    }
-    if (values.group_id) {
-      const groupRow = await knex("erp.party_groups").select("party_type", "is_active").where({ id: values.group_id }).first();
-      if (!groupRow || groupRow.is_active === false) {
-        return renderIndexError(req, res, values, res.locals.t("error_select_party_group"), "edit", basePath);
-      }
-      const groupPartyType = normalizePartyType(groupRow.party_type);
-      if (groupPartyType && groupPartyType !== "BOTH" && groupPartyType !== values.party_type) {
-        return renderIndexError(req, res, values, res.locals.t("error_party_group_type"), "edit", basePath);
-      }
-    }
-    if (!branchIds.length) {
-      return renderIndexError(req, res, values, res.locals.t("error_select_branch"), "edit", basePath);
-    }
-    if (!values.city_id) {
-      return renderIndexError(req, res, values, res.locals.t("error_select_city"), "edit", basePath);
-    }
-    if (req.user?.isAdmin && !values.phone1) {
-      return renderIndexError(req, res, values, res.locals.t("error_select_phone"), "edit", basePath);
-    }
-    const hasCreditAllowed = Object.prototype.hasOwnProperty.call(values, "credit_allowed");
-    const hasCreditLimit = Object.prototype.hasOwnProperty.call(values, "credit_limit");
-    const creditAllowed = values.credit_allowed === true;
-    const creditLimit = normalizeCredit(values.credit_limit);
-    if (!hasCreditAllowed && !hasCreditLimit) {
-      delete values.credit_allowed;
-      delete values.credit_limit;
-    }
-    const codeValue = values.code || "";
-    const nameValue = values.name || "";
-    if (codeValue) {
-      const existing = await knex(page.table).whereRaw("lower(code) = ?", [codeValue.toLowerCase()]).andWhereNot({ id }).first();
-      if (existing) {
-        return renderIndexError(req, res, values, res.locals.t("error_duplicate_code"), "edit", basePath);
-      }
-    }
-    if (nameValue) {
-      const existing = await knex(page.table).whereRaw("lower(name) = ?", [nameValue.toLowerCase()]).andWhereNot({ id }).first();
-      if (existing) {
-        return renderIndexError(req, res, values, res.locals.t("error_duplicate_name"), "edit", basePath);
-      }
-    }
-    if (hasCreditAllowed || hasCreditLimit) {
-      values.credit_limit = creditAllowed ? String(creditLimit || 0) : "0";
-    }
-    values.branch_id = req.branchId;
-    values.branch_ids = (branchIds.length ? branchIds : [req.branchId]).map(String);
-
-    const approval = await handleScreenApproval({
-      req,
-      scopeKey: "master_data.parties",
-      action: "edit",
-      entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
-      entityId: id,
-      summary: `${res.locals.t("edit")} ${res.locals.t(page.titleKey)}`,
-      oldValue: existing,
-      newValue: values,
-      t: res.locals.t,
-    });
-
-    if (approval.queued) {
-      return res.redirect(req.get("referer") || basePath);
-    }
-
-    const auditFields = { updated_by: req.user ? req.user.id : null, updated_at: knex.fn.now() };
-    const changeSet = buildAuditChangeSet({
-      before: existing,
-      after: values,
-      includeKeys: page.fields.map((field) => field.name),
-    });
-    const { branch_ids: branchIdsUpdate = [], ...rest } = values;
-    await knex.transaction(async (trx) => {
-      await trx(page.table)
-        .where({ id })
-        .update({
-          ...rest,
-          ...auditFields,
-        });
-      await trx(page.branchMap.table)
-        .where({ [page.branchMap.key]: id })
-        .del();
-      if (branchIdsUpdate.length) {
-        await trx(page.branchMap.table).insert(
-          branchIdsUpdate.map((branchId) => ({
-            [page.branchMap.key]: id,
-            [page.branchMap.branchKey]: branchId,
-          })),
+      const codeValue = values.code || "";
+      const nameValue = values.name || "";
+      if (
+        codeValue &&
+        (await knex(page.table)
+          .whereRaw("lower(code) = ?", [codeValue.toLowerCase()])
+          .first())
+      ) {
+        return renderIndexError(
+          req,
+          res,
+          values,
+          res.locals.t("error_duplicate_code"),
+          "create",
+          basePath,
         );
       }
-    });
-    queueAuditLog(req, {
-      entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
-      entityId: id,
-      action: "UPDATE",
-      context: {
-        source: "parties-update",
-        ...changeSet,
-      },
-    });
-    return res.redirect(basePath);
-  } catch (err) {
-    console.error("[parties:update]", { id, error: err });
-    return renderIndexError(req, res, values, err?.message || res.locals.t("error_unable_save"), "edit", basePath);
-  }
-});
+      if (
+        nameValue &&
+        (await knex(page.table)
+          .whereRaw("lower(name) = ?", [nameValue.toLowerCase()])
+          .first())
+      ) {
+        return renderIndexError(
+          req,
+          res,
+          values,
+          res.locals.t("error_duplicate_name"),
+          "create",
+          basePath,
+        );
+      }
+      values.credit_limit = creditAllowed ? String(creditLimit || 0) : "0";
+      values.branch_id = req.branchId;
+      values.branch_ids = (branchIds.length ? branchIds : [req.branchId]).map(
+        String,
+      );
 
-router.post("/:id/toggle", requirePermission("SCREEN", "master_data.parties", "delete"), async (req, res, next) => {
-  const id = Number(req.params.id);
-  if (!id) {
-    return next(new HttpError(404, res.locals.t("error_not_found")));
-  }
-  const basePath = req.baseUrl;
+      debugParties("[parties:POST /] calling handleScreenApproval", {
+        user: req.user && {
+          id: req.user.id,
+          username: req.user.username,
+          isAdmin: req.user.isAdmin,
+        },
+        values,
+      });
+      const approval = await handleScreenApproval({
+        req,
+        scopeKey: "master_data.parties",
+        action: "create",
+        entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
+        entityId: "NEW",
+        summary: `${res.locals.t("create")} ${res.locals.t(page.titleKey)}`,
+        oldValue: null,
+        newValue: values,
+        t: res.locals.t,
+      });
+      debugParties("[parties:POST /] handleScreenApproval result", approval);
 
-  try {
-    const current = await knex(page.table).select("is_active").where({ id }).first();
-    if (!current) {
+      if (approval.queued) {
+        debugParties("[parties:POST /] approval was queued, redirecting");
+        return res.redirect(req.get("referer") || basePath);
+      }
+
+      const { branch_ids: branchIdsInsert = [], ...rest } = values;
+      await knex.transaction(async (trx) => {
+        const [row] = await trx(page.table)
+          .insert({
+            ...rest,
+            created_by: req.user ? req.user.id : null,
+          })
+          .returning("id");
+        const partyId = row && row.id ? row.id : row;
+        if (branchIdsInsert.length) {
+          await trx(page.branchMap.table).insert(
+            branchIdsInsert.map((branchId) => ({
+              [page.branchMap.key]: partyId,
+              [page.branchMap.branchKey]: branchId,
+            })),
+          );
+        }
+        queueAuditLog(req, {
+          entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
+          entityId: partyId,
+          action: "CREATE",
+        });
+      });
+      return res.redirect(basePath);
+    } catch (err) {
+      console.error("[parties:create]", { error: err });
+      return renderIndexError(
+        req,
+        res,
+        values,
+        err?.message || res.locals.t("error_unable_save"),
+        "create",
+        basePath,
+      );
+    }
+  },
+);
+
+router.post(
+  "/:id",
+  requirePermission("SCREEN", "master_data.parties", "edit"),
+  async (req, res, next) => {
+    const id = Number(req.params.id);
+    if (!id) {
       return next(new HttpError(404, res.locals.t("error_not_found")));
     }
-    const approval = await handleScreenApproval({
-      req,
-      scopeKey: "master_data.parties",
-      action: "delete",
-      entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
-      entityId: id,
-      summary: `${res.locals.t("deactivate")} ${res.locals.t(page.titleKey)}`,
-      oldValue: current,
-      newValue: { is_active: !current.is_active },
-      t: res.locals.t,
-    });
-
-    if (approval.queued) {
-      return res.redirect(req.get("referer") || basePath);
+    const values = buildValues(page, req.body);
+    values.party_type = normalizePartyType(values.party_type);
+    if (!hasField(page, "code") && !page.autoCodeFromName) {
+      delete values.code;
     }
-    await knex(page.table)
-      .where({ id })
-      .update({
-        is_active: !current.is_active,
+    const missing = page.fields
+      .filter((field) => field.required)
+      .filter((field) => !values[field.name]);
+    const basePath = req.baseUrl;
+
+    if (missing.length) {
+      return renderIndexError(
+        req,
+        res,
+        values,
+        res.locals.t("error_required_fields"),
+        "edit",
+        basePath,
+      );
+    }
+
+    try {
+      const hasVendorCapabilities = await hasVendorCapabilitiesColumn();
+      const normalizedCapabilities = normalizeVendorCapabilities(
+        values.vendor_capabilities,
+      );
+      if (isSupplierPartyType(values.party_type)) {
+        if (hasVendorCapabilities && !normalizedCapabilities.length) {
+          return renderIndexError(
+            req,
+            res,
+            values,
+            res.locals.t("error_select_vendor_capabilities"),
+            "edit",
+            basePath,
+          );
+        }
+        values.vendor_capabilities = hasVendorCapabilities
+          ? normalizedCapabilities
+          : [];
+      } else {
+        values.vendor_capabilities = [];
+      }
+      if (!hasVendorCapabilities) {
+        delete values.vendor_capabilities;
+      }
+
+      const existing = await knex(page.table).where({ id }).first();
+      if (!existing) {
+        return renderIndexError(
+          req,
+          res,
+          values,
+          res.locals.t("error_not_found"),
+          "edit",
+          basePath,
+        );
+      }
+      if (existing.code) {
+        values.code = existing.code;
+      } else {
+        values.code = await generateUniqueCode({
+          name: values.name,
+          prefix: "party",
+          maxLen: 50,
+          knex,
+          table: page.table,
+          excludeId: id,
+        });
+      }
+      const branchIds = Array.isArray(values.branch_ids)
+        ? values.branch_ids
+        : [];
+      if (!req.user?.isAdmin) {
+        const allowed = new Set(getAllowedBranchIds(req).map(String));
+        const invalid = branchIds.map(String).some((id) => !allowed.has(id));
+        if (invalid) {
+          return renderIndexError(
+            req,
+            res,
+            values,
+            res.locals.t("error_branch_out_of_scope"),
+            "edit",
+            basePath,
+          );
+        }
+      }
+      if (values.group_id) {
+        const groupRow = await knex("erp.party_groups")
+          .select("party_type", "is_active")
+          .where({ id: values.group_id })
+          .first();
+        if (!groupRow || groupRow.is_active === false) {
+          return renderIndexError(
+            req,
+            res,
+            values,
+            res.locals.t("error_select_party_group"),
+            "edit",
+            basePath,
+          );
+        }
+        const groupPartyType = normalizePartyType(groupRow.party_type);
+        if (
+          groupPartyType &&
+          groupPartyType !== "BOTH" &&
+          groupPartyType !== values.party_type
+        ) {
+          return renderIndexError(
+            req,
+            res,
+            values,
+            res.locals.t("error_party_group_type"),
+            "edit",
+            basePath,
+          );
+        }
+      }
+      if (!branchIds.length) {
+        return renderIndexError(
+          req,
+          res,
+          values,
+          res.locals.t("error_select_branch"),
+          "edit",
+          basePath,
+        );
+      }
+      if (!values.city_id) {
+        return renderIndexError(
+          req,
+          res,
+          values,
+          res.locals.t("error_select_city"),
+          "edit",
+          basePath,
+        );
+      }
+      if (req.user?.isAdmin && !values.phone1) {
+        return renderIndexError(
+          req,
+          res,
+          values,
+          res.locals.t("error_select_phone"),
+          "edit",
+          basePath,
+        );
+      }
+      const hasCreditAllowed = Object.prototype.hasOwnProperty.call(
+        values,
+        "credit_allowed",
+      );
+      const hasCreditLimit = Object.prototype.hasOwnProperty.call(
+        values,
+        "credit_limit",
+      );
+      const creditAllowed = values.credit_allowed === true;
+      const creditLimit = normalizeCredit(values.credit_limit);
+      if (!hasCreditAllowed && !hasCreditLimit) {
+        delete values.credit_allowed;
+        delete values.credit_limit;
+      }
+      const codeValue = values.code || "";
+      const nameValue = values.name || "";
+      if (codeValue) {
+        const existing = await knex(page.table)
+          .whereRaw("lower(code) = ?", [codeValue.toLowerCase()])
+          .andWhereNot({ id })
+          .first();
+        if (existing) {
+          return renderIndexError(
+            req,
+            res,
+            values,
+            res.locals.t("error_duplicate_code"),
+            "edit",
+            basePath,
+          );
+        }
+      }
+      if (nameValue) {
+        const existing = await knex(page.table)
+          .whereRaw("lower(name) = ?", [nameValue.toLowerCase()])
+          .andWhereNot({ id })
+          .first();
+        if (existing) {
+          return renderIndexError(
+            req,
+            res,
+            values,
+            res.locals.t("error_duplicate_name"),
+            "edit",
+            basePath,
+          );
+        }
+      }
+      if (hasCreditAllowed || hasCreditLimit) {
+        values.credit_limit = creditAllowed ? String(creditLimit || 0) : "0";
+      }
+      values.branch_id = req.branchId;
+      values.branch_ids = (branchIds.length ? branchIds : [req.branchId]).map(
+        String,
+      );
+
+      const approval = await handleScreenApproval({
+        req,
+        scopeKey: "master_data.parties",
+        action: "edit",
+        entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
+        entityId: id,
+        summary: `${res.locals.t("edit")} ${res.locals.t(page.titleKey)}`,
+        oldValue: existing,
+        newValue: values,
+        t: res.locals.t,
+      });
+
+      if (approval.queued) {
+        return res.redirect(req.get("referer") || basePath);
+      }
+
+      const auditFields = {
         updated_by: req.user ? req.user.id : null,
         updated_at: knex.fn.now(),
+      };
+      const changeSet = buildAuditChangeSet({
+        before: existing,
+        after: values,
+        includeKeys: page.fields.map((field) => field.name),
       });
-    queueAuditLog(req, {
-      entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
-      entityId: id,
-      action: "DELETE",
-    });
-    return res.redirect(basePath);
-  } catch (err) {
-    return renderIndexError(req, res, {}, res.locals.t("error_update_status"), "delete", basePath);
-  }
-});
-
-router.post("/:id/delete", requirePermission("SCREEN", "master_data.parties", "hard_delete"), async (req, res, next) => {
-  const id = Number(req.params.id);
-  if (!id) {
-    return next(new HttpError(404, res.locals.t("error_not_found")));
-  }
-  const basePath = req.baseUrl;
-
-  try {
-    const existing = await knex(page.table).where({ id }).first();
-    if (!existing) {
-      return renderIndexError(req, res, {}, res.locals.t("error_not_found"), "delete", basePath);
+      const { branch_ids: branchIdsUpdate = [], ...rest } = values;
+      await knex.transaction(async (trx) => {
+        await trx(page.table)
+          .where({ id })
+          .update({
+            ...rest,
+            ...auditFields,
+          });
+        await trx(page.branchMap.table)
+          .where({ [page.branchMap.key]: id })
+          .del();
+        if (branchIdsUpdate.length) {
+          await trx(page.branchMap.table).insert(
+            branchIdsUpdate.map((branchId) => ({
+              [page.branchMap.key]: id,
+              [page.branchMap.branchKey]: branchId,
+            })),
+          );
+        }
+      });
+      queueAuditLog(req, {
+        entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
+        entityId: id,
+        action: "UPDATE",
+        context: {
+          source: "parties-update",
+          ...changeSet,
+        },
+      });
+      return res.redirect(basePath);
+    } catch (err) {
+      console.error("[parties:update]", { id, error: err });
+      return renderIndexError(
+        req,
+        res,
+        values,
+        err?.message || res.locals.t("error_unable_save"),
+        "edit",
+        basePath,
+      );
     }
-    const approval = await handleScreenApproval({
-      req,
-      scopeKey: "master_data.parties",
-      action: "delete",
-      entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
-      entityId: id,
-      summary: `${res.locals.t("delete")} ${res.locals.t(page.titleKey)}`,
-      oldValue: existing,
-      newValue: null,
-      t: res.locals.t,
-    });
+  },
+);
 
-    if (approval.queued) {
-      return res.redirect(req.get("referer") || basePath);
+router.post(
+  "/:id/toggle",
+  requirePermission("SCREEN", "master_data.parties", "delete"),
+  async (req, res, next) => {
+    const id = Number(req.params.id);
+    if (!id) {
+      return next(new HttpError(404, res.locals.t("error_not_found")));
     }
+    const basePath = req.baseUrl;
+
     try {
-      await knex(page.table).where({ id }).del();
-    } catch (deleteErr) {
-      if (String(deleteErr?.code || "") !== "23503") throw deleteErr;
+      const current = await knex(page.table)
+        .select("is_active")
+        .where({ id })
+        .first();
+      if (!current) {
+        return next(new HttpError(404, res.locals.t("error_not_found")));
+      }
+      const approval = await handleScreenApproval({
+        req,
+        scopeKey: "master_data.parties",
+        action: "delete",
+        entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
+        entityId: id,
+        summary: `${res.locals.t("deactivate")} ${res.locals.t(page.titleKey)}`,
+        oldValue: current,
+        newValue: { is_active: !current.is_active },
+        t: res.locals.t,
+      });
+
+      if (approval.queued) {
+        return res.redirect(req.get("referer") || basePath);
+      }
       await knex(page.table)
         .where({ id })
         .update({
-          is_active: false,
+          is_active: !current.is_active,
           updated_by: req.user ? req.user.id : null,
           updated_at: knex.fn.now(),
         });
+      queueAuditLog(req, {
+        entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
+        entityId: id,
+        action: "DELETE",
+      });
+      return res.redirect(basePath);
+    } catch (err) {
+      return renderIndexError(
+        req,
+        res,
+        {},
+        res.locals.t("error_update_status"),
+        "delete",
+        basePath,
+      );
     }
-    queueAuditLog(req, {
-      entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
-      entityId: id,
-      action: "DELETE",
-    });
-    return res.redirect(basePath);
-  } catch (err) {
-    return renderIndexError(req, res, {}, err?.message || res.locals.t("error_delete"), "delete", basePath);
-  }
-});
+  },
+);
+
+router.post(
+  "/:id/delete",
+  requirePermission("SCREEN", "master_data.parties", "hard_delete"),
+  async (req, res, next) => {
+    const id = Number(req.params.id);
+    if (!id) {
+      return next(new HttpError(404, res.locals.t("error_not_found")));
+    }
+    const basePath = req.baseUrl;
+
+    try {
+      const existing = await knex(page.table).where({ id }).first();
+      if (!existing) {
+        return renderIndexError(
+          req,
+          res,
+          {},
+          res.locals.t("error_not_found"),
+          "delete",
+          basePath,
+        );
+      }
+      const approval = await handleScreenApproval({
+        req,
+        scopeKey: "master_data.parties",
+        action: "delete",
+        entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
+        entityId: id,
+        summary: `${res.locals.t("delete")} ${res.locals.t(page.titleKey)}`,
+        oldValue: existing,
+        newValue: null,
+        t: res.locals.t,
+      });
+
+      if (approval.queued) {
+        return res.redirect(req.get("referer") || basePath);
+      }
+      try {
+        await knex(page.table).where({ id }).del();
+      } catch (deleteErr) {
+        if (String(deleteErr?.code || "") === "23503") {
+          throw new HttpError(
+            409,
+            res.locals.t("error_record_in_use") ||
+              "This record is being used in other ERP areas and cannot be deleted.",
+          );
+        }
+        throw deleteErr;
+      }
+      queueAuditLog(req, {
+        entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
+        entityId: id,
+        action: "DELETE",
+      });
+      return res.redirect(basePath);
+    } catch (err) {
+      return renderIndexError(
+        req,
+        res,
+        {},
+        err?.message || res.locals.t("error_delete"),
+        "delete",
+        basePath,
+      );
+    }
+  },
+);
 
 router.preview = {
   page,

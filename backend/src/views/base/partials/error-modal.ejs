@@ -40,6 +40,10 @@
 
     const defaultTitle = "<%= t('error_generic') %>";
     const closeModal = () => {
+      if (typeof window.closeAllSearchableSelectMenus === "function") {
+        window.closeAllSearchableSelectMenus();
+      }
+      document.dispatchEvent(new Event("ui:error-modal-close"));
       modal.classList.add("hidden");
       modal.classList.remove("flex");
     };
@@ -104,6 +108,10 @@
 
     const openModal = (message, title) => {
       if (!String(message || "").trim()) return;
+      if (typeof window.closeAllSearchableSelectMenus === "function") {
+        window.closeAllSearchableSelectMenus();
+      }
+      document.dispatchEvent(new Event("ui:error-modal-open"));
       if (titleEl) titleEl.textContent = String(title || defaultTitle);
       renderMessage(message);
       modal.classList.remove("hidden");

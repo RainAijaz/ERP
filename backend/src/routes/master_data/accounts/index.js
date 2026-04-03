@@ -1,18 +1,28 @@
 const express = require("express");
 const knex = require("../../../db/knex");
 const { HttpError } = require("../../../middleware/errors/http-error");
-const { requirePermission } = require("../../../middleware/access/role-permissions");
-const { handleScreenApproval } = require("../../../middleware/approvals/screen-approval");
+const {
+  requirePermission,
+} = require("../../../middleware/access/role-permissions");
+const {
+  handleScreenApproval,
+} = require("../../../middleware/approvals/screen-approval");
 const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
-const { parseCookies, setCookie } = require("../../../middleware/utils/cookies");
-const { friendlyErrorMessage } = require("../../../middleware/errors/friendly-error");
+const {
+  parseCookies,
+  setCookie,
+} = require("../../../middleware/utils/cookies");
+const {
+  friendlyErrorMessage,
+} = require("../../../middleware/errors/friendly-error");
 const { queueAuditLog } = require("../../../utils/audit-log");
 const { generateUniqueCode } = require("../../../utils/entity-code");
 const { buildAuditChangeSet } = require("../../../utils/audit-diff");
 
 const router = express.Router();
 
-const hasField = (page, name) => page.fields.some((field) => field.name === name);
+const hasField = (page, name) =>
+  page.fields.some((field) => field.name === name);
 const ACCOUNT_TYPES = ["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"];
 
 const page = {
@@ -30,10 +40,15 @@ const page = {
   },
   joins: [
     { table: { ag: "erp.account_groups" }, on: ["t.subgroup_id", "ag.id"] },
-    { table: { apc: "erp.account_posting_classes" }, on: ["t.posting_class_id", "apc.id"] },
+    {
+      table: { apc: "erp.account_posting_classes" },
+      on: ["t.posting_class_id", "apc.id"],
+    },
   ],
   extraSelect: (locale) => [
-    locale === "ur" ? knex.raw("COALESCE(ag.name_ur, ag.name) as group_name") : "ag.name as group_name",
+    locale === "ur"
+      ? knex.raw("COALESCE(ag.name_ur, ag.name) as group_name")
+      : "ag.name as group_name",
     "ag.account_type as account_type",
     locale === "ur"
       ? knex.raw("COALESCE(apc.name_ur, apc.name, '') as posting_class_name")
@@ -94,7 +109,8 @@ const page = {
         select: ["id", "name", "name_ur", "account_type"],
         orderBy: ["account_type", "name"],
       },
-      labelFormat: (row, locale) => `${row.account_type} - ${locale === "ur" && row.name_ur ? row.name_ur : row.name}`,
+      labelFormat: (row, locale) =>
+        `${row.account_type} - ${locale === "ur" && row.name_ur ? row.name_ur : row.name}`,
     },
     {
       name: "posting_class_id",
@@ -143,26 +159,52 @@ page.columns = (page.columns || [])
     return column;
   });
 
-const ACTIVE_OPTION_TABLES = new Set(["erp.party_groups", "erp.account_groups", "erp.product_groups", "erp.product_subgroups", "erp.cities", "erp.branches", "erp.departments", "erp.grades", "erp.packing_types", "erp.sizes", "erp.colors", "erp.uom"]);
+const ACTIVE_OPTION_TABLES = new Set([
+  "erp.party_groups",
+  "erp.account_groups",
+  "erp.product_groups",
+  "erp.product_subgroups",
+  "erp.cities",
+  "erp.branches",
+  "erp.departments",
+  "erp.grades",
+  "erp.packing_types",
+  "erp.sizes",
+  "erp.colors",
+  "erp.uom",
+]);
 
 const getAllowedBranchIds = (req) => {
   if (req?.user?.isAdmin) return [];
-  return Array.isArray(req?.branchScope) ? req.branchScope.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0) : [];
+  return Array.isArray(req?.branchScope)
+    ? req.branchScope
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0)
+    : [];
 };
 
 const getAccountGroupById = async (subgroupId) => {
   const id = Number(subgroupId || 0);
   if (!Number.isInteger(id) || id <= 0) return null;
-  return knex("erp.account_groups").select("id", "account_type", "is_active").where({ id }).first();
+  return knex("erp.account_groups")
+    .select("id", "account_type", "is_active")
+    .where({ id })
+    .first();
 };
 
 const getPostingClassById = async (postingClassId) => {
   const id = Number(postingClassId || 0);
   if (!Number.isInteger(id) || id <= 0) return null;
-  return knex("erp.account_posting_classes").select("id", "code", "is_active").where({ id }).first();
+  return knex("erp.account_posting_classes")
+    .select("id", "code", "is_active")
+    .where({ id })
+    .first();
 };
 
-const normalizeAccountType = (value) => String(value || "").trim().toUpperCase();
+const normalizeAccountType = (value) =>
+  String(value || "")
+    .trim()
+    .toUpperCase();
 
 const hydratePage = async (pageConfig, locale, req = null) => {
   const fields = [];
@@ -171,30 +213,47 @@ const hydratePage = async (pageConfig, locale, req = null) => {
       fields.push(field);
       continue;
     }
-    const selectFields = field.optionsQuery.select || [field.optionsQuery.valueKey, field.optionsQuery.labelKey];
+    const selectFields = field.optionsQuery.select || [
+      field.optionsQuery.valueKey,
+      field.optionsQuery.labelKey,
+    ];
     let query = knex(field.optionsQuery.table).select(selectFields);
-    if (field.optionsQuery.activeOnly !== false && ACTIVE_OPTION_TABLES.has(field.optionsQuery.table)) {
+    if (
+      field.optionsQuery.activeOnly !== false &&
+      ACTIVE_OPTION_TABLES.has(field.optionsQuery.table)
+    ) {
       query = query.where({ is_active: true });
     }
     if (field.optionsQuery.where) {
       query = query.where(field.optionsQuery.where);
     }
-    const rows = await query.orderBy(field.optionsQuery.orderBy || field.optionsQuery.labelKey);
+    const rows = await query.orderBy(
+      field.optionsQuery.orderBy || field.optionsQuery.labelKey,
+    );
     const allowedBranchSet =
       field.optionsQuery.table === "erp.branches" && !req?.user?.isAdmin
         ? new Set(getAllowedBranchIds(req))
         : null;
     fields.push({
       ...field,
-      options: rows.map((row) => {
-        const labelRaw = field.labelFormat ? field.labelFormat(row, locale) : row[field.optionsQuery.labelKey];
-        const labelUr = !field.labelFormat && locale === "ur" && row.name_ur ? row.name_ur : null;
-        return {
-          value: row[field.optionsQuery.valueKey],
-          label: labelUr || labelRaw,
-          accountType: row.account_type || "",
-        };
-      }).filter((opt) => (allowedBranchSet ? allowedBranchSet.has(Number(opt.value)) : true)),
+      options: rows
+        .map((row) => {
+          const labelRaw = field.labelFormat
+            ? field.labelFormat(row, locale)
+            : row[field.optionsQuery.labelKey];
+          const labelUr =
+            !field.labelFormat && locale === "ur" && row.name_ur
+              ? row.name_ur
+              : null;
+          return {
+            value: row[field.optionsQuery.valueKey],
+            label: labelUr || labelRaw,
+            accountType: row.account_type || "",
+          };
+        })
+        .filter((opt) =>
+          allowedBranchSet ? allowedBranchSet.has(Number(opt.value)) : true,
+        ),
     });
   }
   return { ...pageConfig, fields };
@@ -215,7 +274,11 @@ const renderPage = (req, res, hydrated, data) =>
   });
 
 const fetchRows = (pageConfig, options = {}) => {
-  let query = knex({ t: pageConfig.table }).leftJoin({ u: "erp.users" }, "t.created_by", "u.id");
+  let query = knex({ t: pageConfig.table }).leftJoin(
+    { u: "erp.users" },
+    "t.created_by",
+    "u.id",
+  );
   if (pageConfig.hasUpdatedFields !== false) {
     query = query.leftJoin({ uu: "erp.users" }, "t.updated_by", "uu.id");
   }
@@ -227,7 +290,15 @@ const fetchRows = (pageConfig, options = {}) => {
   if (pageConfig.branchScoped && options.branchId) {
     query = query.where((builder) => {
       builder.whereExists(function () {
-        this.select(1).from(pageConfig.branchMap.table).whereRaw(`${pageConfig.branchMap.table}.${pageConfig.branchMap.key} = t.id`).andWhere(`${pageConfig.branchMap.table}.${pageConfig.branchMap.branchKey}`, options.branchId);
+        this.select(1)
+          .from(pageConfig.branchMap.table)
+          .whereRaw(
+            `${pageConfig.branchMap.table}.${pageConfig.branchMap.key} = t.id`,
+          )
+          .andWhere(
+            `${pageConfig.branchMap.table}.${pageConfig.branchMap.branchKey}`,
+            options.branchId,
+          );
       });
     });
   }
@@ -235,7 +306,11 @@ const fetchRows = (pageConfig, options = {}) => {
   if (pageConfig.hasUpdatedFields !== false) {
     selects.push("uu.username as updated_by_name");
   }
-  let extraSelect = pageConfig.extraSelect ? (typeof pageConfig.extraSelect === "function" ? pageConfig.extraSelect(options.locale || "en") : pageConfig.extraSelect) : [];
+  let extraSelect = pageConfig.extraSelect
+    ? typeof pageConfig.extraSelect === "function"
+      ? pageConfig.extraSelect(options.locale || "en")
+      : pageConfig.extraSelect
+    : [];
   if (!Array.isArray(extraSelect)) {
     extraSelect = [extraSelect];
   }
@@ -290,7 +365,14 @@ const readFlash = (req, res, path) => {
   return payload;
 };
 
-const renderIndexError = async (req, res, values, error, modalMode, basePath) => {
+const renderIndexError = async (
+  req,
+  res,
+  values,
+  error,
+  modalMode,
+  basePath,
+) => {
   const message = friendlyErrorMessage(error, res.locals.t);
   const payload = { values, error: message, modalMode };
   setCookie(res, FLASH_COOKIE, JSON.stringify(payload), {
@@ -308,381 +390,611 @@ const renderIndexError = async (req, res, values, error, modalMode, basePath) =>
   return res.redirect(basePath);
 };
 
-router.get("/", requirePermission("SCREEN", "master_data.accounts", "view"), async (req, res, next) => {
-  try {
-    const hydrated = await hydratePage(page, req.locale, req);
-    const flash = readFlash(req, res, req.baseUrl);
-    const modalMode = flash ? flash.modalMode : "create";
-    const modalOpen = flash ? ["create", "edit"].includes(modalMode) : false;
-    const canBrowse = res.locals.can("SCREEN", "master_data.accounts", "navigate");
-    const rows = canBrowse
-      ? await fetchRows(hydrated, {
-          branchId: req.user?.isAdmin ? null : req.branchId,
-          locale: req.locale,
-        })
-      : [];
+router.get(
+  "/",
+  requirePermission("SCREEN", "master_data.accounts", "view"),
+  async (req, res, next) => {
+    try {
+      const hydrated = await hydratePage(page, req.locale, req);
+      const flash = readFlash(req, res, req.baseUrl);
+      const modalMode = flash ? flash.modalMode : "create";
+      const modalOpen = flash ? ["create", "edit"].includes(modalMode) : false;
+      const canBrowse = res.locals.can(
+        "SCREEN",
+        "master_data.accounts",
+        "navigate",
+      );
+      const rows = canBrowse
+        ? await fetchRows(hydrated, {
+            branchId: req.user?.isAdmin ? null : req.branchId,
+            locale: req.locale,
+          })
+        : [];
+      const basePath = req.baseUrl;
+      const defaults = { ...(hydrated.defaults || {}) };
+      if (!flash && req.branchId) {
+        defaults.branch_ids = [String(req.branchId)];
+      }
+      return renderPage(req, res, hydrated, {
+        rows,
+        basePath,
+        values: flash ? flash.values : defaults,
+        error: flash ? flash.error : null,
+        modalOpen,
+        modalMode,
+      });
+    } catch (err) {
+      return next(err);
+    }
+  },
+);
+
+router.post(
+  "/",
+  requirePermission("SCREEN", "master_data.accounts", "create"),
+  async (req, res, next) => {
+    const values = buildValues(page, req.body);
+    if (!hasField(page, "code") && !page.autoCodeFromName) {
+      delete values.code;
+    }
+    const missing = page.fields
+      .filter((field) => field.required)
+      .filter((field) => !values[field.name]);
     const basePath = req.baseUrl;
-    const defaults = { ...(hydrated.defaults || {}) };
-    if (!flash && req.branchId) {
-      defaults.branch_ids = [String(req.branchId)];
-    }
-    return renderPage(req, res, hydrated, {
-      rows,
-      basePath,
-      values: flash ? flash.values : defaults,
-      error: flash ? flash.error : null,
-      modalOpen,
-      modalMode,
-    });
-  } catch (err) {
-    return next(err);
-  }
-});
 
-router.post("/", requirePermission("SCREEN", "master_data.accounts", "create"), async (req, res, next) => {
-  const values = buildValues(page, req.body);
-  if (!hasField(page, "code") && !page.autoCodeFromName) {
-    delete values.code;
-  }
-  const missing = page.fields.filter((field) => field.required).filter((field) => !values[field.name]);
-  const basePath = req.baseUrl;
-
-  if (missing.length) {
-    return renderIndexError(req, res, values, res.locals.t("error_required_fields"), "create", basePath);
-  }
-
-  try {
-    const selectedType = normalizeAccountType(values.account_type);
-    if (!ACCOUNT_TYPES.includes(selectedType)) {
-      return renderIndexError(req, res, values, res.locals.t("error_invalid_value"), "create", basePath);
-    }
-    const selectedGroup = await getAccountGroupById(values.subgroup_id);
-    if (!selectedGroup || selectedGroup.is_active !== true) {
-      return renderIndexError(req, res, values, res.locals.t("error_invalid_account_group"), "create", basePath);
-    }
-    if (normalizeAccountType(selectedGroup.account_type) !== selectedType) {
-      return renderIndexError(req, res, values, res.locals.t("error_invalid_account_group"), "create", basePath);
-    }
-    values.account_type = selectedType;
-    values.subgroup_id = Number(selectedGroup.id);
-    if (values.posting_class_id) {
-      const postingClass = await getPostingClassById(values.posting_class_id);
-      if (!postingClass || postingClass.is_active !== true) {
-        return renderIndexError(req, res, values, res.locals.t("error_invalid_posting_class"), "create", basePath);
-      }
-      values.posting_class_id = Number(postingClass.id);
-    } else {
-      values.posting_class_id = null;
+    if (missing.length) {
+      return renderIndexError(
+        req,
+        res,
+        values,
+        res.locals.t("error_required_fields"),
+        "create",
+        basePath,
+      );
     }
 
-    const branchIds = Array.isArray(values.branch_ids) ? values.branch_ids : [];
-    if (!req.user?.isAdmin) {
-      const allowed = new Set(getAllowedBranchIds(req).map(String));
-      const invalid = branchIds.map(String).some((id) => !allowed.has(id));
-      if (invalid) {
-        return renderIndexError(req, res, values, res.locals.t("error_branch_out_of_scope"), "create", basePath);
-      }
-    }
-    if (!branchIds.length) {
-      return renderIndexError(req, res, values, res.locals.t("error_select_branch"), "create", basePath);
-    }
-    values.branch_ids = branchIds.map(String);
-    values.code = await generateUniqueCode({
-      name: values.name,
-      prefix: "account",
-      maxLen: 50,
-      knex,
-      table: page.table,
-    });
-    const codeValue = values.code || "";
-    const nameValue = values.name || "";
-    if (codeValue && (await knex(page.table).whereRaw("lower(code) = ?", [codeValue.toLowerCase()]).first())) {
-      return renderIndexError(req, res, values, res.locals.t("error_duplicate_code"), "create", basePath);
-    }
-    if (nameValue && (await knex(page.table).whereRaw("lower(name) = ?", [nameValue.toLowerCase()]).first())) {
-      return renderIndexError(req, res, values, res.locals.t("error_duplicate_name"), "create", basePath);
-    }
-
-    const approval = await handleScreenApproval({
-      req,
-      scopeKey: "master_data.accounts",
-      action: "create",
-      entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
-      entityId: "NEW",
-      summary: `${res.locals.t("create")} ${res.locals.t(page.titleKey)}`,
-      oldValue: null,
-      newValue: values,
-      t: res.locals.t,
-    });
-
-    if (approval.queued) {
-      return res.redirect(req.get("referer") || basePath);
-    }
-
-    const { branch_ids: branchIdsInsert = [], account_type: _accountType, ...rest } = values;
-    await knex.transaction(async (trx) => {
-      const [row] = await trx(page.table)
-        .insert({
-          ...rest,
-          created_by: req.user ? req.user.id : null,
-        })
-        .returning("id");
-      const accountId = row && row.id ? row.id : row;
-      if (branchIdsInsert.length) {
-        await trx(page.branchMap.table).insert(
-          branchIdsInsert.map((branchId) => ({
-            [page.branchMap.key]: accountId,
-            [page.branchMap.branchKey]: branchId,
-          })),
+    try {
+      const selectedType = normalizeAccountType(values.account_type);
+      if (!ACCOUNT_TYPES.includes(selectedType)) {
+        return renderIndexError(
+          req,
+          res,
+          values,
+          res.locals.t("error_invalid_value"),
+          "create",
+          basePath,
         );
       }
-      queueAuditLog(req, {
-        entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
-        entityId: accountId,
-        action: "CREATE",
-      });
-    });
-    return res.redirect(basePath);
-  } catch (err) {
-    console.error("[accounts:create]", { error: err });
-    return renderIndexError(req, res, values, err?.message || res.locals.t("error_unable_save"), "create", basePath);
-  }
-});
-
-router.post("/:id", requirePermission("SCREEN", "master_data.accounts", "edit"), async (req, res, next) => {
-  const id = Number(req.params.id);
-  if (!id) {
-    return next(new HttpError(404, res.locals.t("error_not_found")));
-  }
-  const values = buildValues(page, req.body);
-  if (!hasField(page, "code") && !page.autoCodeFromName) {
-    delete values.code;
-  }
-  const missing = page.fields.filter((field) => field.required).filter((field) => !values[field.name]);
-  const basePath = req.baseUrl;
-
-  if (missing.length) {
-    return renderIndexError(req, res, values, res.locals.t("error_required_fields"), "edit", basePath);
-  }
-
-  try {
-    const existing = await knex(page.table).where({ id }).first();
-    if (!existing) {
-      return renderIndexError(req, res, values, res.locals.t("error_not_found"), "edit", basePath);
-    }
-    const selectedType = normalizeAccountType(values.account_type);
-    if (!ACCOUNT_TYPES.includes(selectedType)) {
-      return renderIndexError(req, res, values, res.locals.t("error_invalid_value"), "edit", basePath);
-    }
-    const selectedGroup = await getAccountGroupById(values.subgroup_id);
-    if (!selectedGroup || selectedGroup.is_active !== true) {
-      return renderIndexError(req, res, values, res.locals.t("error_invalid_account_group"), "edit", basePath);
-    }
-    if (normalizeAccountType(selectedGroup.account_type) !== selectedType) {
-      return renderIndexError(req, res, values, res.locals.t("error_invalid_account_group"), "edit", basePath);
-    }
-    values.account_type = selectedType;
-    values.subgroup_id = Number(selectedGroup.id);
-    if (values.posting_class_id) {
-      const postingClass = await getPostingClassById(values.posting_class_id);
-      if (!postingClass || postingClass.is_active !== true) {
-        return renderIndexError(req, res, values, res.locals.t("error_invalid_posting_class"), "edit", basePath);
+      const selectedGroup = await getAccountGroupById(values.subgroup_id);
+      if (!selectedGroup || selectedGroup.is_active !== true) {
+        return renderIndexError(
+          req,
+          res,
+          values,
+          res.locals.t("error_invalid_account_group"),
+          "create",
+          basePath,
+        );
       }
-      values.posting_class_id = Number(postingClass.id);
-    } else {
-      values.posting_class_id = null;
-    }
+      if (normalizeAccountType(selectedGroup.account_type) !== selectedType) {
+        return renderIndexError(
+          req,
+          res,
+          values,
+          res.locals.t("error_invalid_account_group"),
+          "create",
+          basePath,
+        );
+      }
+      values.account_type = selectedType;
+      values.subgroup_id = Number(selectedGroup.id);
+      if (values.posting_class_id) {
+        const postingClass = await getPostingClassById(values.posting_class_id);
+        if (!postingClass || postingClass.is_active !== true) {
+          return renderIndexError(
+            req,
+            res,
+            values,
+            res.locals.t("error_invalid_posting_class"),
+            "create",
+            basePath,
+          );
+        }
+        values.posting_class_id = Number(postingClass.id);
+      } else {
+        values.posting_class_id = null;
+      }
 
-    if (existing.code) {
-      values.code = existing.code;
-    } else {
+      const branchIds = Array.isArray(values.branch_ids)
+        ? values.branch_ids
+        : [];
+      if (!req.user?.isAdmin) {
+        const allowed = new Set(getAllowedBranchIds(req).map(String));
+        const invalid = branchIds.map(String).some((id) => !allowed.has(id));
+        if (invalid) {
+          return renderIndexError(
+            req,
+            res,
+            values,
+            res.locals.t("error_branch_out_of_scope"),
+            "create",
+            basePath,
+          );
+        }
+      }
+      if (!branchIds.length) {
+        return renderIndexError(
+          req,
+          res,
+          values,
+          res.locals.t("error_select_branch"),
+          "create",
+          basePath,
+        );
+      }
+      values.branch_ids = branchIds.map(String);
       values.code = await generateUniqueCode({
         name: values.name,
         prefix: "account",
         maxLen: 50,
         knex,
         table: page.table,
-        excludeId: id,
       });
-    }
-    const branchIds = Array.isArray(values.branch_ids) ? values.branch_ids : [];
-    if (!req.user?.isAdmin) {
-      const allowed = new Set(getAllowedBranchIds(req).map(String));
-      const invalid = branchIds.map(String).some((id) => !allowed.has(id));
-      if (invalid) {
-        return renderIndexError(req, res, values, res.locals.t("error_branch_out_of_scope"), "edit", basePath);
-      }
-    }
-    if (!branchIds.length) {
-      return renderIndexError(req, res, values, res.locals.t("error_select_branch"), "edit", basePath);
-    }
-    values.branch_ids = branchIds.map(String);
-    const codeValue = values.code || "";
-    const nameValue = values.name || "";
-    if (codeValue) {
-      const existing = await knex(page.table).whereRaw("lower(code) = ?", [codeValue.toLowerCase()]).andWhereNot({ id }).first();
-      if (existing) {
-        return renderIndexError(req, res, values, res.locals.t("error_duplicate_code"), "edit", basePath);
-      }
-    }
-    if (nameValue) {
-      const existing = await knex(page.table).whereRaw("lower(name) = ?", [nameValue.toLowerCase()]).andWhereNot({ id }).first();
-      if (existing) {
-        return renderIndexError(req, res, values, res.locals.t("error_duplicate_name"), "edit", basePath);
-      }
-    }
-    const approval = await handleScreenApproval({
-      req,
-      scopeKey: "master_data.accounts",
-      action: "edit",
-      entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
-      entityId: id,
-      summary: `${res.locals.t("edit")} ${res.locals.t(page.titleKey)}`,
-      oldValue: existing,
-      newValue: values,
-      t: res.locals.t,
-    });
-
-    if (approval.queued) {
-      return res.redirect(req.get("referer") || basePath);
-    }
-
-    const auditFields = { updated_by: req.user ? req.user.id : null, updated_at: knex.fn.now() };
-    const changeSet = buildAuditChangeSet({
-      before: existing,
-      after: values,
-      includeKeys: page.fields.map((field) => field.name),
-    });
-    const { branch_ids: branchIdsUpdate = [], account_type: _accountType, ...rest } = values;
-    await knex.transaction(async (trx) => {
-      await trx(page.table)
-        .where({ id })
-        .update({
-          ...rest,
-          ...auditFields,
-        });
-      await trx(page.branchMap.table)
-        .where({ [page.branchMap.key]: id })
-        .del();
-      if (branchIdsUpdate.length) {
-        await trx(page.branchMap.table).insert(
-          branchIdsUpdate.map((branchId) => ({
-            [page.branchMap.key]: id,
-            [page.branchMap.branchKey]: branchId,
-          })),
+      const codeValue = values.code || "";
+      const nameValue = values.name || "";
+      if (
+        codeValue &&
+        (await knex(page.table)
+          .whereRaw("lower(code) = ?", [codeValue.toLowerCase()])
+          .first())
+      ) {
+        return renderIndexError(
+          req,
+          res,
+          values,
+          res.locals.t("error_duplicate_code"),
+          "create",
+          basePath,
         );
       }
-    });
-    queueAuditLog(req, {
-      entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
-      entityId: id,
-      action: "UPDATE",
-      context: {
-        source: "accounts-update",
-        ...changeSet,
-      },
-    });
-    return res.redirect(basePath);
-  } catch (err) {
-    console.error("[accounts:update]", { id, error: err });
-    return renderIndexError(req, res, values, err?.message || res.locals.t("error_unable_save"), "edit", basePath);
-  }
-});
+      if (
+        nameValue &&
+        (await knex(page.table)
+          .whereRaw("lower(name) = ?", [nameValue.toLowerCase()])
+          .first())
+      ) {
+        return renderIndexError(
+          req,
+          res,
+          values,
+          res.locals.t("error_duplicate_name"),
+          "create",
+          basePath,
+        );
+      }
 
-router.post("/:id/toggle", requirePermission("SCREEN", "master_data.accounts", "delete"), async (req, res, next) => {
-  const id = Number(req.params.id);
-  if (!id) {
-    return next(new HttpError(404, res.locals.t("error_not_found")));
-  }
-  const basePath = req.baseUrl;
+      const approval = await handleScreenApproval({
+        req,
+        scopeKey: "master_data.accounts",
+        action: "create",
+        entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
+        entityId: "NEW",
+        summary: `${res.locals.t("create")} ${res.locals.t(page.titleKey)}`,
+        oldValue: null,
+        newValue: values,
+        t: res.locals.t,
+      });
 
-  try {
-    const current = await knex(page.table).select("is_active").where({ id }).first();
-    if (!current) {
+      if (approval.queued) {
+        return res.redirect(req.get("referer") || basePath);
+      }
+
+      const {
+        branch_ids: branchIdsInsert = [],
+        account_type: _accountType,
+        ...rest
+      } = values;
+      await knex.transaction(async (trx) => {
+        const [row] = await trx(page.table)
+          .insert({
+            ...rest,
+            created_by: req.user ? req.user.id : null,
+          })
+          .returning("id");
+        const accountId = row && row.id ? row.id : row;
+        if (branchIdsInsert.length) {
+          await trx(page.branchMap.table).insert(
+            branchIdsInsert.map((branchId) => ({
+              [page.branchMap.key]: accountId,
+              [page.branchMap.branchKey]: branchId,
+            })),
+          );
+        }
+        queueAuditLog(req, {
+          entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
+          entityId: accountId,
+          action: "CREATE",
+        });
+      });
+      return res.redirect(basePath);
+    } catch (err) {
+      console.error("[accounts:create]", { error: err });
+      return renderIndexError(
+        req,
+        res,
+        values,
+        err?.message || res.locals.t("error_unable_save"),
+        "create",
+        basePath,
+      );
+    }
+  },
+);
+
+router.post(
+  "/:id",
+  requirePermission("SCREEN", "master_data.accounts", "edit"),
+  async (req, res, next) => {
+    const id = Number(req.params.id);
+    if (!id) {
       return next(new HttpError(404, res.locals.t("error_not_found")));
     }
-    const approval = await handleScreenApproval({
-      req,
-      scopeKey: "master_data.accounts",
-      action: "delete",
-      entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
-      entityId: id,
-      summary: `${res.locals.t("deactivate")} ${res.locals.t(page.titleKey)}`,
-      oldValue: current,
-      newValue: { is_active: !current.is_active },
-      t: res.locals.t,
-    });
-
-    if (approval.queued) {
-      return res.redirect(req.get("referer") || basePath);
+    const values = buildValues(page, req.body);
+    if (!hasField(page, "code") && !page.autoCodeFromName) {
+      delete values.code;
     }
-    await knex(page.table)
-      .where({ id })
-      .update({
-        is_active: !current.is_active,
+    const missing = page.fields
+      .filter((field) => field.required)
+      .filter((field) => !values[field.name]);
+    const basePath = req.baseUrl;
+
+    if (missing.length) {
+      return renderIndexError(
+        req,
+        res,
+        values,
+        res.locals.t("error_required_fields"),
+        "edit",
+        basePath,
+      );
+    }
+
+    try {
+      const existing = await knex(page.table).where({ id }).first();
+      if (!existing) {
+        return renderIndexError(
+          req,
+          res,
+          values,
+          res.locals.t("error_not_found"),
+          "edit",
+          basePath,
+        );
+      }
+      const selectedType = normalizeAccountType(values.account_type);
+      if (!ACCOUNT_TYPES.includes(selectedType)) {
+        return renderIndexError(
+          req,
+          res,
+          values,
+          res.locals.t("error_invalid_value"),
+          "edit",
+          basePath,
+        );
+      }
+      const selectedGroup = await getAccountGroupById(values.subgroup_id);
+      if (!selectedGroup || selectedGroup.is_active !== true) {
+        return renderIndexError(
+          req,
+          res,
+          values,
+          res.locals.t("error_invalid_account_group"),
+          "edit",
+          basePath,
+        );
+      }
+      if (normalizeAccountType(selectedGroup.account_type) !== selectedType) {
+        return renderIndexError(
+          req,
+          res,
+          values,
+          res.locals.t("error_invalid_account_group"),
+          "edit",
+          basePath,
+        );
+      }
+      values.account_type = selectedType;
+      values.subgroup_id = Number(selectedGroup.id);
+      if (values.posting_class_id) {
+        const postingClass = await getPostingClassById(values.posting_class_id);
+        if (!postingClass || postingClass.is_active !== true) {
+          return renderIndexError(
+            req,
+            res,
+            values,
+            res.locals.t("error_invalid_posting_class"),
+            "edit",
+            basePath,
+          );
+        }
+        values.posting_class_id = Number(postingClass.id);
+      } else {
+        values.posting_class_id = null;
+      }
+
+      if (existing.code) {
+        values.code = existing.code;
+      } else {
+        values.code = await generateUniqueCode({
+          name: values.name,
+          prefix: "account",
+          maxLen: 50,
+          knex,
+          table: page.table,
+          excludeId: id,
+        });
+      }
+      const branchIds = Array.isArray(values.branch_ids)
+        ? values.branch_ids
+        : [];
+      if (!req.user?.isAdmin) {
+        const allowed = new Set(getAllowedBranchIds(req).map(String));
+        const invalid = branchIds.map(String).some((id) => !allowed.has(id));
+        if (invalid) {
+          return renderIndexError(
+            req,
+            res,
+            values,
+            res.locals.t("error_branch_out_of_scope"),
+            "edit",
+            basePath,
+          );
+        }
+      }
+      if (!branchIds.length) {
+        return renderIndexError(
+          req,
+          res,
+          values,
+          res.locals.t("error_select_branch"),
+          "edit",
+          basePath,
+        );
+      }
+      values.branch_ids = branchIds.map(String);
+      const codeValue = values.code || "";
+      const nameValue = values.name || "";
+      if (codeValue) {
+        const existing = await knex(page.table)
+          .whereRaw("lower(code) = ?", [codeValue.toLowerCase()])
+          .andWhereNot({ id })
+          .first();
+        if (existing) {
+          return renderIndexError(
+            req,
+            res,
+            values,
+            res.locals.t("error_duplicate_code"),
+            "edit",
+            basePath,
+          );
+        }
+      }
+      if (nameValue) {
+        const existing = await knex(page.table)
+          .whereRaw("lower(name) = ?", [nameValue.toLowerCase()])
+          .andWhereNot({ id })
+          .first();
+        if (existing) {
+          return renderIndexError(
+            req,
+            res,
+            values,
+            res.locals.t("error_duplicate_name"),
+            "edit",
+            basePath,
+          );
+        }
+      }
+      const approval = await handleScreenApproval({
+        req,
+        scopeKey: "master_data.accounts",
+        action: "edit",
+        entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
+        entityId: id,
+        summary: `${res.locals.t("edit")} ${res.locals.t(page.titleKey)}`,
+        oldValue: existing,
+        newValue: values,
+        t: res.locals.t,
+      });
+
+      if (approval.queued) {
+        return res.redirect(req.get("referer") || basePath);
+      }
+
+      const auditFields = {
         updated_by: req.user ? req.user.id : null,
         updated_at: knex.fn.now(),
+      };
+      const changeSet = buildAuditChangeSet({
+        before: existing,
+        after: values,
+        includeKeys: page.fields.map((field) => field.name),
       });
-    queueAuditLog(req, {
-      entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
-      entityId: id,
-      action: "DELETE",
-    });
-    return res.redirect(basePath);
-  } catch (err) {
-    return renderIndexError(req, res, {}, res.locals.t("error_update_status"), "delete", basePath);
-  }
-});
-
-router.post("/:id/delete", requirePermission("SCREEN", "master_data.accounts", "hard_delete"), async (req, res, next) => {
-  const id = Number(req.params.id);
-  if (!id) {
-    return next(new HttpError(404, res.locals.t("error_not_found")));
-  }
-  const basePath = req.baseUrl;
-
-  try {
-    const existing = await knex(page.table).where({ id }).first();
-    if (!existing) {
-      return renderIndexError(req, res, {}, res.locals.t("error_not_found"), "delete", basePath);
+      const {
+        branch_ids: branchIdsUpdate = [],
+        account_type: _accountType,
+        ...rest
+      } = values;
+      await knex.transaction(async (trx) => {
+        await trx(page.table)
+          .where({ id })
+          .update({
+            ...rest,
+            ...auditFields,
+          });
+        await trx(page.branchMap.table)
+          .where({ [page.branchMap.key]: id })
+          .del();
+        if (branchIdsUpdate.length) {
+          await trx(page.branchMap.table).insert(
+            branchIdsUpdate.map((branchId) => ({
+              [page.branchMap.key]: id,
+              [page.branchMap.branchKey]: branchId,
+            })),
+          );
+        }
+      });
+      queueAuditLog(req, {
+        entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
+        entityId: id,
+        action: "UPDATE",
+        context: {
+          source: "accounts-update",
+          ...changeSet,
+        },
+      });
+      return res.redirect(basePath);
+    } catch (err) {
+      console.error("[accounts:update]", { id, error: err });
+      return renderIndexError(
+        req,
+        res,
+        values,
+        err?.message || res.locals.t("error_unable_save"),
+        "edit",
+        basePath,
+      );
     }
-    const approval = await handleScreenApproval({
-      req,
-      scopeKey: "master_data.accounts",
-      action: "delete",
-      entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
-      entityId: id,
-      summary: `${res.locals.t("delete")} ${res.locals.t(page.titleKey)}`,
-      oldValue: existing,
-      newValue: null,
-      t: res.locals.t,
-    });
+  },
+);
 
-    if (approval.queued) {
-      return res.redirect(req.get("referer") || basePath);
+router.post(
+  "/:id/toggle",
+  requirePermission("SCREEN", "master_data.accounts", "delete"),
+  async (req, res, next) => {
+    const id = Number(req.params.id);
+    if (!id) {
+      return next(new HttpError(404, res.locals.t("error_not_found")));
     }
+    const basePath = req.baseUrl;
+
     try {
-      await knex(page.table).where({ id }).del();
-    } catch (deleteErr) {
-      if (String(deleteErr?.code || "") !== "23503") throw deleteErr;
+      const current = await knex(page.table)
+        .select("is_active")
+        .where({ id })
+        .first();
+      if (!current) {
+        return next(new HttpError(404, res.locals.t("error_not_found")));
+      }
+      const approval = await handleScreenApproval({
+        req,
+        scopeKey: "master_data.accounts",
+        action: "delete",
+        entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
+        entityId: id,
+        summary: `${res.locals.t("deactivate")} ${res.locals.t(page.titleKey)}`,
+        oldValue: current,
+        newValue: { is_active: !current.is_active },
+        t: res.locals.t,
+      });
+
+      if (approval.queued) {
+        return res.redirect(req.get("referer") || basePath);
+      }
       await knex(page.table)
         .where({ id })
         .update({
-          is_active: false,
+          is_active: !current.is_active,
           updated_by: req.user ? req.user.id : null,
           updated_at: knex.fn.now(),
         });
+      queueAuditLog(req, {
+        entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
+        entityId: id,
+        action: "DELETE",
+      });
+      return res.redirect(basePath);
+    } catch (err) {
+      return renderIndexError(
+        req,
+        res,
+        {},
+        res.locals.t("error_update_status"),
+        "delete",
+        basePath,
+      );
     }
-    queueAuditLog(req, {
-      entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
-      entityId: id,
-      action: "DELETE",
-    });
-    return res.redirect(basePath);
-  } catch (err) {
-    return renderIndexError(req, res, {}, err?.message || res.locals.t("error_delete"), "delete", basePath);
-  }
-});
+  },
+);
+
+router.post(
+  "/:id/delete",
+  requirePermission("SCREEN", "master_data.accounts", "hard_delete"),
+  async (req, res, next) => {
+    const id = Number(req.params.id);
+    if (!id) {
+      return next(new HttpError(404, res.locals.t("error_not_found")));
+    }
+    const basePath = req.baseUrl;
+
+    try {
+      const existing = await knex(page.table).where({ id }).first();
+      if (!existing) {
+        return renderIndexError(
+          req,
+          res,
+          {},
+          res.locals.t("error_not_found"),
+          "delete",
+          basePath,
+        );
+      }
+      const approval = await handleScreenApproval({
+        req,
+        scopeKey: "master_data.accounts",
+        action: "delete",
+        entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
+        entityId: id,
+        summary: `${res.locals.t("delete")} ${res.locals.t(page.titleKey)}`,
+        oldValue: existing,
+        newValue: null,
+        t: res.locals.t,
+      });
+
+      if (approval.queued) {
+        return res.redirect(req.get("referer") || basePath);
+      }
+      try {
+        await knex(page.table).where({ id }).del();
+      } catch (deleteErr) {
+        if (String(deleteErr?.code || "") === "23503") {
+          throw new HttpError(
+            409,
+            res.locals.t("error_record_in_use") ||
+              "This record is being used in other ERP areas and cannot be deleted.",
+          );
+        }
+        throw deleteErr;
+      }
+      queueAuditLog(req, {
+        entityType: SCREEN_ENTITY_TYPES["master_data.accounts"],
+        entityId: id,
+        action: "DELETE",
+      });
+      return res.redirect(basePath);
+    } catch (err) {
+      return renderIndexError(
+        req,
+        res,
+        {},
+        err?.message || res.locals.t("error_delete"),
+        "delete",
+        basePath,
+      );
+    }
+  },
+);
 
 router.preview = {
   page,

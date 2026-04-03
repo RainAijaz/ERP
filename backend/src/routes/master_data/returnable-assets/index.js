@@ -1,8 +1,12 @@
 const express = require("express");
 const knex = require("../../../db/knex");
 const { HttpError } = require("../../../middleware/errors/http-error");
-const { requirePermission } = require("../../../middleware/access/role-permissions");
-const { handleScreenApproval } = require("../../../middleware/approvals/screen-approval");
+const {
+  requirePermission,
+} = require("../../../middleware/access/role-permissions");
+const {
+  handleScreenApproval,
+} = require("../../../middleware/approvals/screen-approval");
 const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
 const { queueAuditLog } = require("../../../utils/audit-log");
 const { generateUniqueCode } = require("../../../utils/entity-code");
@@ -18,7 +22,10 @@ const toPositiveInt = (value) => {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 };
 
-const normalizeText = (value, max = 255) => String(value || "").trim().slice(0, max);
+const normalizeText = (value, max = 255) =>
+  String(value || "")
+    .trim()
+    .slice(0, max);
 
 const getAssetColumnSupport = async () => {
   if (assetColumnSupport) return assetColumnSupport;
@@ -48,7 +55,9 @@ const getAssetTypeColumnSupport = async () => {
 const getAllowedBranchIds = (req) => {
   if (req?.user?.isAdmin) return [];
   return Array.isArray(req?.branchScope)
-    ? req.branchScope.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
+    ? req.branchScope
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0)
     : [];
 };
 
@@ -57,7 +66,10 @@ const loadOptions = async (req) => {
   const useUr = req.locale === "ur" && assetTypeColumns.name_ur;
   const [assetTypes, branches] = await Promise.all([
     knex("erp.asset_type_registry")
-      .select("code", useUr ? knex.raw("COALESCE(name_ur, name) as name") : "name")
+      .select(
+        "code",
+        useUr ? knex.raw("COALESCE(name_ur, name) as name") : "name",
+      )
       .where({ is_active: true })
       .orderBy("name", "asc"),
     knex("erp.branches")
@@ -68,7 +80,9 @@ const loadOptions = async (req) => {
   const allowed = req?.user?.isAdmin ? null : new Set(getAllowedBranchIds(req));
   return {
     assetTypes,
-    branches: allowed ? branches.filter((row) => allowed.has(Number(row.id))) : branches,
+    branches: allowed
+      ? branches.filter((row) => allowed.has(Number(row.id)))
+      : branches,
   };
 };
 
@@ -85,7 +99,9 @@ const loadRows = async (req) => {
       : columns.name
         ? "a.name as name"
         : "a.description as name";
-  const nameUrExpr = columns.name_ur ? "a.name_ur as name_ur" : "NULL::text as name_ur";
+  const nameUrExpr = columns.name_ur
+    ? "a.name_ur as name_ur"
+    : "NULL::text as name_ur";
 
   const query = knex("erp.assets as a")
     .leftJoin("erp.asset_type_registry as atr", "atr.code", "a.asset_type_code")
@@ -101,7 +117,11 @@ const loadRows = async (req) => {
       "b.name as home_branch_name",
       knex.raw(nameExpr),
       knex.raw(nameUrExpr),
-      knex.raw(columns.created_at ? "a.created_at as created_at" : "NULL::timestamp as created_at"),
+      knex.raw(
+        columns.created_at
+          ? "a.created_at as created_at"
+          : "NULL::timestamp as created_at",
+      ),
       knex.raw("NULL::text as created_by_name"),
     )
     .orderBy("a.id", "desc");
@@ -121,7 +141,11 @@ const loadRows = async (req) => {
         "b.name as home_branch_name",
         knex.raw(nameExpr),
         knex.raw(nameUrExpr),
-        knex.raw(columns.created_at ? "a.created_at as created_at" : "NULL::timestamp as created_at"),
+        knex.raw(
+          columns.created_at
+            ? "a.created_at as created_at"
+            : "NULL::timestamp as created_at",
+        ),
         "cu.username as created_by_name",
       );
   }
@@ -190,11 +214,16 @@ const validatePayload = async (req, values, options = {}) => {
     .select("code")
     .where({ code: assetTypeCode, is_active: true })
     .first();
-  if (!assetType) throw new HttpError(400, req.res.locals.t("error_invalid_value"));
+  if (!assetType)
+    throw new HttpError(400, req.res.locals.t("error_invalid_value"));
 
   if (homeBranchId) {
-    const branch = await knex("erp.branches").select("id").where({ id: homeBranchId, is_active: true }).first();
-    if (!branch) throw new HttpError(400, req.res.locals.t("error_invalid_value"));
+    const branch = await knex("erp.branches")
+      .select("id")
+      .where({ id: homeBranchId, is_active: true })
+      .first();
+    if (!branch)
+      throw new HttpError(400, req.res.locals.t("error_invalid_value"));
     if (!req.user?.isAdmin) {
       const allowed = new Set(getAllowedBranchIds(req));
       if (!allowed.has(homeBranchId)) {
@@ -212,7 +241,9 @@ const validatePayload = async (req, values, options = {}) => {
       exists: async (candidate) => {
         const duplicateRow = await knex("erp.assets")
           .select("id")
-          .whereRaw("lower(asset_code) = ?", [String(candidate || "").toLowerCase()])
+          .whereRaw("lower(asset_code) = ?", [
+            String(candidate || "").toLowerCase(),
+          ])
           .modify((query) => {
             if (id) query.whereNot({ id });
           })
@@ -250,202 +281,223 @@ const validatePayload = async (req, values, options = {}) => {
   return payload;
 };
 
-router.get("/", requirePermission("SCREEN", SCOPE_KEY, "view"), async (req, res, next) => {
-  try {
-    return await renderIndex(req, res);
-  } catch (err) {
-    console.error("Error in ReturnableAssetsListService:", err);
-    return next(err);
-  }
-});
-
-router.post("/", requirePermission("SCREEN", SCOPE_KEY, "create"), async (req, res, next) => {
-  try {
-    const columns = await getAssetColumnSupport();
-    const values = await validatePayload(req, req.body);
-    const approval = await handleScreenApproval({
-      req,
-      scopeKey: SCOPE_KEY,
-      action: "create",
-      entityType: ENTITY_TYPE,
-      entityId: "NEW",
-      summary: `${res.locals.t("create")} ${res.locals.t("assets")}`,
-      oldValue: null,
-      newValue: values,
-      t: res.locals.t,
-    });
-    if (approval.queued) {
-      return res.redirect(req.get("referer") || req.baseUrl);
+router.get(
+  "/",
+  requirePermission("SCREEN", SCOPE_KEY, "view"),
+  async (req, res, next) => {
+    try {
+      return await renderIndex(req, res);
+    } catch (err) {
+      console.error("Error in ReturnableAssetsListService:", err);
+      return next(err);
     }
+  },
+);
 
-    const insertPayload = { ...values };
-    if (columns.created_by) insertPayload.created_by = req.user?.id || null;
-    if (columns.created_at) insertPayload.created_at = knex.fn.now();
-    if (columns.updated_by) insertPayload.updated_by = req.user?.id || null;
-    if (columns.updated_at) insertPayload.updated_at = knex.fn.now();
-    const [created] = await knex("erp.assets")
-      .insert(insertPayload)
-      .returning("id");
-    const createdId = created?.id || created;
-    queueAuditLog(req, {
-      entityType: ENTITY_TYPE,
-      entityId: createdId,
-      action: "CREATE",
-    });
-    return res.redirect(req.baseUrl);
-  } catch (err) {
-    console.error("Error in ReturnableAssetsCreateService:", err);
-    if (err instanceof HttpError) {
-      return renderIndex(req, res, {
-        error: err.message || res.locals.t("generic_error"),
-        modalOpen: true,
-        modalMode: "create",
-        values: req.body,
+router.post(
+  "/",
+  requirePermission("SCREEN", SCOPE_KEY, "create"),
+  async (req, res, next) => {
+    try {
+      const columns = await getAssetColumnSupport();
+      const values = await validatePayload(req, req.body);
+      const approval = await handleScreenApproval({
+        req,
+        scopeKey: SCOPE_KEY,
+        action: "create",
+        entityType: ENTITY_TYPE,
+        entityId: "NEW",
+        summary: `${res.locals.t("create")} ${res.locals.t("assets")}`,
+        oldValue: null,
+        newValue: values,
+        t: res.locals.t,
       });
-    }
-    return next(err);
-  }
-});
+      if (approval.queued) {
+        return res.redirect(req.get("referer") || req.baseUrl);
+      }
 
-router.post("/:id", requirePermission("SCREEN", SCOPE_KEY, "edit"), async (req, res, next) => {
-  const id = toPositiveInt(req.params.id);
-  if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
-
-  try {
-    const columns = await getAssetColumnSupport();
-    const existing = await knex("erp.assets").where({ id }).first();
-    if (!existing) return next(new HttpError(404, res.locals.t("error_not_found")));
-    const values = await validatePayload(req, req.body, { id, existing });
-    const approval = await handleScreenApproval({
-      req,
-      scopeKey: SCOPE_KEY,
-      action: "edit",
-      entityType: ENTITY_TYPE,
-      entityId: id,
-      summary: `${res.locals.t("edit")} ${res.locals.t("assets")}`,
-      oldValue: existing,
-      newValue: values,
-      t: res.locals.t,
-    });
-    if (approval.queued) {
-      return res.redirect(req.get("referer") || req.baseUrl);
-    }
-
-    const updatePayload = { ...values };
-    if (columns.updated_by) updatePayload.updated_by = req.user?.id || null;
-    if (columns.updated_at) updatePayload.updated_at = knex.fn.now();
-    await knex("erp.assets").where({ id }).update(updatePayload);
-    queueAuditLog(req, {
-      entityType: ENTITY_TYPE,
-      entityId: id,
-      action: "UPDATE",
-    });
-    return res.redirect(req.baseUrl);
-  } catch (err) {
-    console.error("Error in ReturnableAssetsUpdateService:", err);
-    if (err instanceof HttpError) {
-      return renderIndex(req, res, {
-        error: err.message || res.locals.t("generic_error"),
-        modalOpen: true,
-        modalMode: "edit",
-        values: { ...req.body, id },
+      const insertPayload = { ...values };
+      if (columns.created_by) insertPayload.created_by = req.user?.id || null;
+      if (columns.created_at) insertPayload.created_at = knex.fn.now();
+      if (columns.updated_by) insertPayload.updated_by = req.user?.id || null;
+      if (columns.updated_at) insertPayload.updated_at = knex.fn.now();
+      const [created] = await knex("erp.assets")
+        .insert(insertPayload)
+        .returning("id");
+      const createdId = created?.id || created;
+      queueAuditLog(req, {
+        entityType: ENTITY_TYPE,
+        entityId: createdId,
+        action: "CREATE",
       });
+      return res.redirect(req.baseUrl);
+    } catch (err) {
+      console.error("Error in ReturnableAssetsCreateService:", err);
+      if (err instanceof HttpError) {
+        return renderIndex(req, res, {
+          error: err.message || res.locals.t("generic_error"),
+          modalOpen: true,
+          modalMode: "create",
+          values: req.body,
+        });
+      }
+      return next(err);
     }
-    return next(err);
-  }
-});
+  },
+);
 
-router.post("/:id/toggle", requirePermission("SCREEN", SCOPE_KEY, "delete"), async (req, res, next) => {
-  const id = toPositiveInt(req.params.id);
-  if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
+router.post(
+  "/:id",
+  requirePermission("SCREEN", SCOPE_KEY, "edit"),
+  async (req, res, next) => {
+    const id = toPositiveInt(req.params.id);
+    if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
 
-  try {
-    const columns = await getAssetColumnSupport();
-    const existing = await knex("erp.assets").select("id", "is_active").where({ id }).first();
-    if (!existing) return next(new HttpError(404, res.locals.t("error_not_found")));
-
-    const nextStatus = !existing.is_active;
-    const approval = await handleScreenApproval({
-      req,
-      scopeKey: SCOPE_KEY,
-      action: "delete",
-      entityType: ENTITY_TYPE,
-      entityId: id,
-      summary: `${res.locals.t("deactivate")} ${res.locals.t("assets")}`,
-      oldValue: existing,
-      newValue: { is_active: nextStatus },
-      t: res.locals.t,
-    });
-    if (approval.queued) {
-      return res.redirect(req.get("referer") || req.baseUrl);
-    }
-
-    const updatePayload = { is_active: nextStatus };
-    if (columns.updated_by) updatePayload.updated_by = req.user?.id || null;
-    if (columns.updated_at) updatePayload.updated_at = knex.fn.now();
-    await knex("erp.assets").where({ id }).update(updatePayload);
-    queueAuditLog(req, {
-      entityType: ENTITY_TYPE,
-      entityId: id,
-      action: "DELETE",
-    });
-    return res.redirect(req.baseUrl);
-  } catch (err) {
-    console.error("Error in ReturnableAssetsToggleService:", err);
-    return next(err);
-  }
-});
-
-router.post("/:id/delete", requirePermission("SCREEN", SCOPE_KEY, "hard_delete"), async (req, res, next) => {
-  const id = toPositiveInt(req.params.id);
-  if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
-
-  try {
-    const existing = await knex("erp.assets").where({ id }).first();
-    if (!existing) return next(new HttpError(404, res.locals.t("error_not_found")));
-    const approval = await handleScreenApproval({
-      req,
-      scopeKey: SCOPE_KEY,
-      action: "delete",
-      entityType: ENTITY_TYPE,
-      entityId: id,
-      summary: `${res.locals.t("delete")} ${res.locals.t("assets")}`,
-      oldValue: existing,
-      newValue: { _action: "delete" },
-      t: res.locals.t,
-    });
-    if (approval.queued) {
-      return res.redirect(req.get("referer") || req.baseUrl);
-    }
-
-    const used = await knex("erp.rgp_outward_line").select("voucher_line_id").where({ asset_id: id }).first();
-    if (used) {
-      await knex("erp.assets").where({ id }).update({
-        is_active: false,
-        updated_by: req.user ? req.user.id : null,
-        updated_at: knex.fn.now(),
+    try {
+      const columns = await getAssetColumnSupport();
+      const existing = await knex("erp.assets").where({ id }).first();
+      if (!existing)
+        return next(new HttpError(404, res.locals.t("error_not_found")));
+      const values = await validatePayload(req, req.body, { id, existing });
+      const approval = await handleScreenApproval({
+        req,
+        scopeKey: SCOPE_KEY,
+        action: "edit",
+        entityType: ENTITY_TYPE,
+        entityId: id,
+        summary: `${res.locals.t("edit")} ${res.locals.t("assets")}`,
+        oldValue: existing,
+        newValue: values,
+        t: res.locals.t,
       });
-    } else {
+      if (approval.queued) {
+        return res.redirect(req.get("referer") || req.baseUrl);
+      }
+
+      const updatePayload = { ...values };
+      if (columns.updated_by) updatePayload.updated_by = req.user?.id || null;
+      if (columns.updated_at) updatePayload.updated_at = knex.fn.now();
+      await knex("erp.assets").where({ id }).update(updatePayload);
+      queueAuditLog(req, {
+        entityType: ENTITY_TYPE,
+        entityId: id,
+        action: "UPDATE",
+      });
+      return res.redirect(req.baseUrl);
+    } catch (err) {
+      console.error("Error in ReturnableAssetsUpdateService:", err);
+      if (err instanceof HttpError) {
+        return renderIndex(req, res, {
+          error: err.message || res.locals.t("generic_error"),
+          modalOpen: true,
+          modalMode: "edit",
+          values: { ...req.body, id },
+        });
+      }
+      return next(err);
+    }
+  },
+);
+
+router.post(
+  "/:id/toggle",
+  requirePermission("SCREEN", SCOPE_KEY, "delete"),
+  async (req, res, next) => {
+    const id = toPositiveInt(req.params.id);
+    if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
+
+    try {
+      const columns = await getAssetColumnSupport();
+      const existing = await knex("erp.assets")
+        .select("id", "is_active")
+        .where({ id })
+        .first();
+      if (!existing)
+        return next(new HttpError(404, res.locals.t("error_not_found")));
+
+      const nextStatus = !existing.is_active;
+      const approval = await handleScreenApproval({
+        req,
+        scopeKey: SCOPE_KEY,
+        action: "delete",
+        entityType: ENTITY_TYPE,
+        entityId: id,
+        summary: `${res.locals.t("deactivate")} ${res.locals.t("assets")}`,
+        oldValue: existing,
+        newValue: { is_active: nextStatus },
+        t: res.locals.t,
+      });
+      if (approval.queued) {
+        return res.redirect(req.get("referer") || req.baseUrl);
+      }
+
+      const updatePayload = { is_active: nextStatus };
+      if (columns.updated_by) updatePayload.updated_by = req.user?.id || null;
+      if (columns.updated_at) updatePayload.updated_at = knex.fn.now();
+      await knex("erp.assets").where({ id }).update(updatePayload);
+      queueAuditLog(req, {
+        entityType: ENTITY_TYPE,
+        entityId: id,
+        action: "DELETE",
+      });
+      return res.redirect(req.baseUrl);
+    } catch (err) {
+      console.error("Error in ReturnableAssetsToggleService:", err);
+      return next(err);
+    }
+  },
+);
+
+router.post(
+  "/:id/delete",
+  requirePermission("SCREEN", SCOPE_KEY, "hard_delete"),
+  async (req, res, next) => {
+    const id = toPositiveInt(req.params.id);
+    if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
+
+    try {
+      const existing = await knex("erp.assets").where({ id }).first();
+      if (!existing)
+        return next(new HttpError(404, res.locals.t("error_not_found")));
+      const approval = await handleScreenApproval({
+        req,
+        scopeKey: SCOPE_KEY,
+        action: "delete",
+        entityType: ENTITY_TYPE,
+        entityId: id,
+        summary: `${res.locals.t("delete")} ${res.locals.t("assets")}`,
+        oldValue: existing,
+        newValue: { _action: "delete" },
+        t: res.locals.t,
+      });
+      if (approval.queued) {
+        return res.redirect(req.get("referer") || req.baseUrl);
+      }
+
+      const used = await knex("erp.rgp_outward_line")
+        .select("voucher_line_id")
+        .where({ asset_id: id })
+        .first();
+      if (used) {
+        throw new HttpError(
+          409,
+          res.locals.t("error_record_in_use") ||
+            "This record is being used in other ERP areas and cannot be deleted.",
+        );
+      }
       await knex("erp.assets").where({ id }).del();
-    }
-    queueAuditLog(req, {
-      entityType: ENTITY_TYPE,
-      entityId: id,
-      action: "DELETE",
-    });
-    return res.redirect(req.baseUrl);
-  } catch (err) {
-    console.error("Error in ReturnableAssetsDeleteService:", err);
-    if (err instanceof HttpError) {
-      return renderIndex(req, res, {
-        error: err.message || res.locals.t("generic_error"),
-        modalOpen: false,
-        modalMode: "create",
+      queueAuditLog(req, {
+        entityType: ENTITY_TYPE,
+        entityId: id,
+        action: "DELETE",
       });
+      return res.redirect(req.baseUrl);
+    } catch (err) {
+      console.error("Error in ReturnableAssetsDeleteService:", err);
+      return next(err);
     }
-    return next(err);
-  }
-});
+  },
+);
 
 router.preview = {
   page: {
@@ -464,10 +516,22 @@ router.preview = {
       locale,
       fields: page.fields.map((field) => {
         if (field.name === "asset_type_code") {
-          return { ...field, options: options.assetTypes.map((row) => ({ value: row.code, label: row.name })) };
+          return {
+            ...field,
+            options: options.assetTypes.map((row) => ({
+              value: row.code,
+              label: row.name,
+            })),
+          };
         }
         if (field.name === "home_branch_id") {
-          return { ...field, options: options.branches.map((row) => ({ value: row.id, label: row.name })) };
+          return {
+            ...field,
+            options: options.branches.map((row) => ({
+              value: row.id,
+              label: row.name,
+            })),
+          };
         }
         return field;
       }),

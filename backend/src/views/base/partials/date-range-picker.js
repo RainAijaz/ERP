@@ -124,8 +124,23 @@
     };
     const addMonths = (dt, delta) =>
       new Date(dt.getFullYear(), dt.getMonth() + delta, 1);
+    const startOfMonth = (dt) => new Date(dt.getFullYear(), dt.getMonth(), 1);
     const dayStart = (dt) =>
       new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+    const isMonthBefore = (a, b) =>
+      a instanceof Date &&
+      b instanceof Date &&
+      !Number.isNaN(a.getTime()) &&
+      !Number.isNaN(b.getTime()) &&
+      (a.getFullYear() < b.getFullYear() ||
+        (a.getFullYear() === b.getFullYear() && a.getMonth() < b.getMonth()));
+    const isMonthAfter = (a, b) =>
+      a instanceof Date &&
+      b instanceof Date &&
+      !Number.isNaN(a.getTime()) &&
+      !Number.isNaN(b.getTime()) &&
+      (a.getFullYear() > b.getFullYear() ||
+        (a.getFullYear() === b.getFullYear() && a.getMonth() > b.getMonth()));
     const sameMonth = (a, b) =>
       a instanceof Date &&
       b instanceof Date &&
@@ -187,26 +202,22 @@
       const selected = toDateObj(isoValue);
       if (!selected) return;
       if (boundTo === "from") {
-        if (rangeEnd && dayStart(selected) > dayStart(rangeEnd)) {
-          // Re-anchor selection: keep the newly selected start and force user
-          // to choose a new end date before applying.
-          rangeStart = selected;
-          rangeEnd = null;
-        } else {
-          rangeStart = selected;
-        }
+        if (rangeEnd && dayStart(selected) > dayStart(rangeEnd)) return;
+        rangeStart = selected;
       } else {
-        if (rangeStart && dayStart(selected) < dayStart(rangeStart)) {
-          // Re-anchor selection: keep the newly selected end and force user
-          // to choose a new start date before applying.
-          rangeEnd = selected;
-          rangeStart = null;
-        } else {
-          rangeEnd = selected;
-        }
+        if (rangeStart && dayStart(selected) < dayStart(rangeStart)) return;
+        rangeEnd = selected;
       }
       refreshRangeDisplayValues();
       renderCalendars();
+    };
+
+    const setNavButtonState = (button, disabled) => {
+      if (!button) return;
+      const shouldDisable = Boolean(disabled);
+      button.disabled = shouldDisable;
+      button.classList.toggle("opacity-40", shouldDisable);
+      button.classList.toggle("cursor-not-allowed", shouldDisable);
     };
 
     const renderMonthGrid = (
@@ -248,7 +259,9 @@
           hasValidRange() &&
           current >= dayStart(rangeStart) &&
           current <= dayStart(rangeEnd);
-        const isBlockedByRange = false;
+        const isBlockedByRange =
+          (boundTo === "from" && rangeEnd && current > dayStart(rangeEnd)) ||
+          (boundTo === "to" && rangeStart && current < dayStart(rangeStart));
 
         const btn = document.createElement("button");
         btn.type = "button";
@@ -268,16 +281,32 @@
     };
 
     const renderCalendars = () => {
-      const month1 = new Date(
+      let month1 = new Date(
         rangeCursorMonth1.getFullYear(),
         rangeCursorMonth1.getMonth(),
         1,
       );
-      const month2 = new Date(
+      let month2 = new Date(
         rangeCursorMonth2.getFullYear(),
         rangeCursorMonth2.getMonth(),
         1,
       );
+
+      if (rangeEnd) {
+        const endMonth = startOfMonth(rangeEnd);
+        if (isMonthAfter(month1, endMonth)) {
+          month1 = endMonth;
+          rangeCursorMonth1 = endMonth;
+        }
+      }
+      if (rangeStart) {
+        const startMonth = startOfMonth(rangeStart);
+        if (isMonthBefore(month2, startMonth)) {
+          month2 = startMonth;
+          rangeCursorMonth2 = startMonth;
+        }
+      }
+
       const duplicatedMonth = sameMonth(month1, month2);
       const month1View = duplicatedMonth
         ? { showStart: true, showEnd: false, showRange: true }
@@ -299,6 +328,19 @@
         "to",
         month2View,
       );
+
+      const month1Next = addMonths(month1, 1);
+      const month2Prev = addMonths(month2, -1);
+      setNavButtonState(
+        dateRangeMonth1NextBtn,
+        Boolean(rangeEnd) && isMonthAfter(month1Next, startOfMonth(rangeEnd)),
+      );
+      setNavButtonState(
+        dateRangeMonth2PrevBtn,
+        Boolean(rangeStart) &&
+          isMonthBefore(month2Prev, startOfMonth(rangeStart)),
+      );
+
       refreshRangeDisplayValues();
     };
 

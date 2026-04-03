@@ -175,9 +175,9 @@ CREATE TABLE IF NOT EXISTS erp.stock_balance_sku (
   value       numeric(18,2) NOT NULL DEFAULT 0,
   last_txn_at timestamptz,
 
-  CHECK (qty_pairs >= 0),
+  -- qty_pairs and value are allowed to go negative for controlled
+  -- negative-inventory workflows on sales vouchers.
   CHECK (wac >= 0),
-  CHECK (value >= 0),
 
   PRIMARY KEY (branch_id, stock_state, category, is_packed, sku_id)
 );

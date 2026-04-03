@@ -2,7 +2,13 @@ const express = require("express");
 const knex = require("../../db/knex");
 const approvalRequired = require("../../middleware/approvals/approval-required");
 const { HttpError } = require("../../middleware/errors/http-error");
-const { prepareSalesVoucherData, SALES_VOUCHER_CODE } = require("../../services/sales/commission-service");
+const {
+  hasPermissionForRequirement,
+} = require("../../middleware/access/role-permissions");
+const {
+  prepareSalesVoucherData,
+  SALES_VOUCHER_CODE,
+} = require("../../services/sales/commission-service");
 
 const router = express.Router();
 
@@ -31,10 +37,35 @@ const getNextVoucherNoTx = async (trx, branchId, voucherTypeCode) => {
   return Number(latest?.value || 0) + 1;
 };
 
-router.post("/", async (req, res, next) => {
-  const { voucher_type_code, voucher_no, voucher_date, book_no, remarks } = req.body || {};
+const toVoucherScopeKey = (value) =>
+  String(value || "")
+    .trim()
+    .toUpperCase();
 
-  if (!voucher_type_code || !voucher_date) {
+const permissionDeniedMessage = (res) =>
+  (typeof res?.locals?.t === "function" &&
+    (res.locals.t("permission_denied") || "").trim()) ||
+  "Permission denied";
+
+const canAnyVoucherAction = (req, scopeKey, actions = []) => {
+  const normalizedScopeKey = toVoucherScopeKey(scopeKey);
+  if (!normalizedScopeKey || !Array.isArray(actions) || !actions.length) {
+    return false;
+  }
+  return actions.some((action) =>
+    hasPermissionForRequirement(req, {
+      scopeType: "VOUCHER",
+      scopeKey: normalizedScopeKey,
+      action,
+    }),
+  );
+};
+
+router.post("/", async (req, res, next) => {
+  const { voucher_type_code, voucher_date, book_no, remarks } = req.body || {};
+  const normalizedVoucherTypeCode = toVoucherScopeKey(voucher_type_code);
+
+  if (!normalizedVoucherTypeCode || !voucher_date) {
     return next(new HttpError(400, "Missing required voucher fields"));
   }
 
@@ -44,23 +75,43 @@ router.post("/", async (req, res, next) => {
   }
 
   try {
-    const voucherType = await knex("erp.voucher_type").select("requires_approval").where({ code: voucher_type_code }).first();
+    const voucherType = await knex("erp.voucher_type")
+      .select("code", "requires_approval")
+      .where({ code: normalizedVoucherTypeCode })
+      .first();
 
     if (!voucherType) {
       return next(new HttpError(400, "Invalid voucher_type_code"));
     }
 
-    const policy = await knex("erp.approval_policy").select("requires_approval").where({ entity_type: "VOUCHER_TYPE", entity_key: voucher_type_code, action: "create" }).first();
+    if (!canAnyVoucherAction(req, voucherType.code, ["create"])) {
+      return next(new HttpError(403, permissionDeniedMessage(res)));
+    }
 
-    const requiresApproval = policy ? policy.requires_approval : voucherType.requires_approval;
+    const policy = await knex("erp.approval_policy")
+      .select("requires_approval")
+      .where({
+        entity_type: "VOUCHER_TYPE",
+        entity_key: voucherType.code,
+        action: "create",
+      })
+      .first();
+
+    const requiresApproval = policy
+      ? policy.requires_approval
+      : voucherType.requires_approval;
     const status = requiresApproval ? "PENDING" : "APPROVED";
 
     const result = await knex.transaction(async (trx) => {
-      const nextVoucherNo = await getNextVoucherNoTx(trx, req.branchId, voucher_type_code);
+      const nextVoucherNo = await getNextVoucherNoTx(
+        trx,
+        req.branchId,
+        voucherType.code,
+      );
 
       const preparedSales = await prepareSalesVoucherData({
         trx,
-        voucherTypeCode: voucher_type_code,
+        voucherTypeCode: voucherType.code,
         body: req.body || {},
         lines,
         t: res.locals.t,
@@ -68,7 +119,7 @@ router.post("/", async (req, res, next) => {
 
       const [header] = await trx("erp.voucher_header")
         .insert({
-          voucher_type_code,
+          voucher_type_code: voucherType.code,
           voucher_no: nextVoucherNo,
           branch_id: req.branchId,
           voucher_date,
@@ -85,16 +136,23 @@ router.post("/", async (req, res, next) => {
         ...line,
         voucher_header_id: header.id,
       }));
-      const insertedLines = await trx("erp.voucher_line").insert(lineRows).returning(["id", "line_no"]);
+      const insertedLines = await trx("erp.voucher_line")
+        .insert(lineRows)
+        .returning(["id", "line_no"]);
 
-      if (String(voucher_type_code || "").toUpperCase() === SALES_VOUCHER_CODE && preparedSales.salesHeader) {
+      if (
+        String(voucherType.code || "").toUpperCase() === SALES_VOUCHER_CODE &&
+        preparedSales.salesHeader
+      ) {
         await trx("erp.sales_header").insert({
           voucher_id: header.id,
           ...preparedSales.salesHeader,
         });
 
         if (preparedSales.salesLines.length) {
-          const lineIdByNo = new Map(insertedLines.map((row) => [Number(row.line_no), Number(row.id)]));
+          const lineIdByNo = new Map(
+            insertedLines.map((row) => [Number(row.line_no), Number(row.id)]),
+          );
           const salesLineRows = preparedSales.salesLines
             .map((row) => {
               const voucherLineId = lineIdByNo.get(Number(row.line_no));
@@ -121,10 +179,16 @@ router.post("/", async (req, res, next) => {
       entityType: "VOUCHER",
       entityId: result.id,
       action: "CREATE",
-      voucherTypeCode: voucher_type_code,
+      voucherTypeCode: voucherType.code,
     });
 
-    res.status(201).json({ id: result.id, status: result.status, total_commission: result.total_commission || 0 });
+    res
+      .status(201)
+      .json({
+        id: result.id,
+        status: result.status,
+        total_commission: result.total_commission || 0,
+      });
   } catch (err) {
     console.error("Error in VoucherEngineService:", err);
     next(err);
@@ -147,6 +211,16 @@ router.post(
 
       if (!voucher) {
         return next(new HttpError(404, "Voucher not found"));
+      }
+
+      if (
+        !canAnyVoucherAction(req, voucher.voucher_type_code, [
+          "create",
+          "edit",
+          "view",
+        ])
+      ) {
+        return next(new HttpError(403, permissionDeniedMessage(res)));
       }
 
       if (voucher.created_by !== req.user.id) {

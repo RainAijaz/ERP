@@ -1,0 +1,811 @@
+<%
+	const formatDateInput = (value) => {
+		if (!value) return "";
+		const asText = String(value);
+		const textMatch = asText.match(/^(\d{4}-\d{2}-\d{2})/);
+		if (textMatch) return textMatch[1];
+		const dt = value instanceof Date ? value : new Date(value);
+		if (Number.isNaN(dt.getTime())) return "";
+		const yyyy = dt.getFullYear();
+		const mm = String(dt.getMonth() + 1).padStart(2, "0");
+		const dd = String(dt.getDate()).padStart(2, "0");
+		return `${yyyy}-${mm}-${dd}`;
+	};
+
+	const selectedVoucherNo = selectedVoucher ? Number(selectedVoucher.voucher_no || 0) : null;
+	const suggestedVoucherNo = selectedVoucherNo || (Number(latestVoucherNo || 0) + 1);
+	const selectedDate = selectedVoucher && selectedVoucher.voucher_date
+		? formatDateInput(selectedVoucher.voucher_date)
+		: formatDateInput(new Date());
+	const selectedStatus = String(selectedVoucher?.status || "").toUpperCase();
+	const isDeletedVoucher = selectedStatus === "REJECTED";
+	const statusLabel = selectedStatus === "APPROVED" ? t("approved") : selectedStatus === "REJECTED" ? t("rejected") : selectedStatus === "PENDING" ? t("pending") : selectedStatus;
+	const statusToneClass = selectedStatus === "APPROVED" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : selectedStatus === "REJECTED" ? "border-rose-200 bg-rose-50 text-rose-800" : "border-amber-200 bg-amber-50 text-amber-800";
+	const defaultStockType = String(selectedVoucher?.stock_type || "FG").toUpperCase();
+
+	const canCreateVoucher = typeof allowCreate === "boolean" ? allowCreate : true;
+	const canEditVoucher = typeof allowEdit === "boolean" ? allowEdit : true;
+	const canDeleteVoucher = typeof allowDelete === "boolean" ? allowDelete : true;
+	const canSaveVoucher = !isDeletedVoucher && (selectedVoucher ? canEditVoucher : canCreateVoucher);
+	const canDeleteCurrentVoucher = !!selectedVoucher && !isDeletedVoucher && canDeleteVoucher;
+
+	const toFriendlyLabel = (key, fallback = "") => {
+		const translated = String(t(key) || "").trim();
+		if (translated && translated !== key) return translated;
+		if (fallback) return fallback;
+		return String(key || "")
+			.trim()
+			.toLowerCase()
+			.replace(/[_-]+/g, " ")
+			.replace(/\b[a-z]/g, (ch) => ch.toUpperCase());
+	};
+%>
+
+<style>
+	[data-stock-count-form] [data-lines-table] thead th {
+		font-size: 10.5px;
+		letter-spacing: 0.08em;
+	}
+	[data-stock-count-form] [data-lines-table] td {
+		padding: 0.3rem 0.4rem;
+	}
+	[data-stock-count-form] [data-lines-table] tbody tr:nth-child(even) td {
+		background-color: #f8fafc;
+	}
+	[data-stock-count-form] [data-lines-table] tbody tr:hover td {
+		background-color: #f1f5f9;
+	}
+	[data-stock-count-form] [data-lines-table] input,
+	[data-stock-count-form] [data-lines-table] select,
+	[data-stock-count-form] [data-lines-table] button[data-enhanced-select-trigger="1"] {
+		height: 2.15rem !important;
+		font-size: 0.82rem !important;
+	}
+	[data-stock-count-form] input[readonly],
+	[data-stock-count-form] input:disabled,
+	[data-stock-count-form] select:disabled,
+	[data-stock-count-form] textarea[readonly] {
+		background-color: #f1f5f9 !important;
+		border-color: #cbd5e1 !important;
+		color: #475569 !important;
+		cursor: not-allowed;
+	}
+</style>
+
+<div class="mx-auto w-full max-w-none space-y-3 px-2">
+	<section class="rounded-2xl border border-slate-200 bg-white/95 px-4 py-4 shadow-sm">
+		<div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+			<div>
+				<h1 class="text-2xl font-display font-semibold tracking-tight text-ink"><%= toFriendlyLabel("stock_count_adjustment_voucher", "Stock Count Adjustment Voucher") %></h1>
+				<p class="text-sm text-muted"><%= toFriendlyLabel("inventory", "Inventory") %></p>
+			</div>
+			<% if (selectedVoucher) { %>
+				<div class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] <%= statusToneClass %>">
+					<span><%= toFriendlyLabel("status", "Status") %></span>
+					<span class="rounded-full bg-white/80 px-2 py-0.5 text-slate-800"><%= statusLabel %></span>
+				</div>
+			<% } %>
+		</div>
+	</section>
+
+	<section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+		<form method="post" action="<%= basePath || '' %>" class="space-y-4" data-stock-count-form data-voucher-form>
+			<input type="hidden" name="_csrf" value="<%= csrfToken %>">
+			<input type="hidden" name="voucher_id" value="<%= selectedVoucher?.id || '' %>">
+			<input type="hidden" name="lines_json" value="[]" data-lines-json>
+
+			<div class="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+				<div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+					<label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel("voucher_no", "Voucher No") %></label>
+					<div class="lg:col-span-2">
+						<input type="text" value="<%= suggestedVoucherNo %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700" data-voucher-no-input>
+					</div>
+					<div class="flex flex-wrap items-center gap-2 lg:col-span-8">
+						<a href="<%= prevVoucherNo ? ((basePath || '') + '?voucher_no=' + prevVoucherNo + '&view=1') : '#' %>" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700 <%= prevVoucherNo ? '' : 'pointer-events-none opacity-40' %>"><%= toFriendlyLabel("prev", "Prev") %></a>
+						<a href="<%= nextVoucherNo ? ((basePath || '') + '?voucher_no=' + nextVoucherNo + '&view=1') : ((basePath || '') + '?new=1') %>" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= toFriendlyLabel("next", "Next") %></a>
+						<button type="button" class="rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm" data-load-voucher><%= toFriendlyLabel("load", "Load") %></button>
+						<div class="ml-auto flex items-center gap-2">
+							<button type="button" class="rounded-xl border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-rose-700 disabled:opacity-40" data-delete-voucher <%= canDeleteCurrentVoucher ? '' : 'disabled' %>><%= toFriendlyLabel("delete", "Delete") %></button>
+							<button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700" onclick="window.print()"><%= toFriendlyLabel("print", "Print") %></button>
+						</div>
+					</div>
+				</div>
+
+				<div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+					<label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel("date", "Date") %></label>
+					<div class="lg:col-span-4">
+						<input type="date" name="voucher_date" value="<%= selectedDate %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" required <%= canSaveVoucher ? '' : 'readonly' %>>
+					</div>
+					<label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= toFriendlyLabel("stock_type", "Stock Type") %></label>
+					<div class="lg:col-span-4">
+						<select name="stock_type" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-stock-type data-searchable-select="true" data-searchable-variant="unified" <%= canSaveVoucher ? '' : 'disabled' %>>
+							<% (options.stockTypes || []).forEach((entry) => { %>
+								<option value="<%= entry.value %>" <%= String(defaultStockType || 'FG').toUpperCase() === String(entry.value || '').toUpperCase() ? 'selected' : '' %>><%= toFriendlyLabel(entry.labelKey || entry.value, entry.value) %></option>
+							<% }) %>
+						</select>
+					</div>
+				</div>
+
+				<div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+					<label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel("reason", "Reason") %></label>
+					<div class="lg:col-span-4">
+						<select name="reason_code_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-reason-code data-searchable-select="true" data-searchable-variant="unified" required <%= canSaveVoucher ? '' : 'disabled' %>>
+							<option value=""><%= toFriendlyLabel("select_reason", "Select Reason") %></option>
+							<% (options.reasonCodes || []).forEach((reason) => { %>
+								<option value="<%= reason.id %>" data-requires-notes="<%= reason.requires_notes ? '1' : '0' %>" <%= Number(selectedVoucher?.reason_code_id || 0) === Number(reason.id) ? 'selected' : '' %>><%= reason.name %></option>
+							<% }) %>
+						</select>
+					</div>
+					<label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= toFriendlyLabel("remarks", "Remarks") %></label>
+					<div class="lg:col-span-4">
+						<input type="text" name="remarks" maxlength="1000" value="<%= selectedVoucher?.remarks || '' %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" <%= canSaveVoucher ? '' : 'readonly' %>>
+					</div>
+				</div>
+
+				<div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-start">
+					<label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:pt-2"><%= toFriendlyLabel("reason_notes", "Reason Notes") %></label>
+					<div class="lg:col-span-10">
+						<textarea name="reason_notes" rows="2" maxlength="1000" class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm" data-reason-notes <%= canSaveVoucher ? '' : 'readonly' %>><%= selectedVoucher?.reason_notes || '' %></textarea>
+					</div>
+				</div>
+
+				<% if (isDeletedVoucher) { %>
+					<div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+						<%= toFriendlyLabel("voucher_deleted_read_only", "Voucher is deleted and read-only.") %>
+					</div>
+				<% } %>
+			</div>
+
+			<div class="rounded-2xl border border-slate-200 bg-white shadow-sm">
+				<div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
+					<table class="w-full min-w-280 table-fixed text-xs" data-lines-table>
+						<thead class="bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
+							<tr data-lines-head-row></tr>
+						</thead>
+						<tbody data-lines-body="stock-count"></tbody>
+						<tfoot data-lines-footer></tfoot>
+					</table>
+				</div>
+			</div>
+
+			<div class="flex items-center justify-center gap-2">
+				<button type="submit" class="rounded-xl bg-accent px-4 py-2 text-xs font-semibold uppercase tracking-widest text-white shadow-sm disabled:opacity-40" <%= canSaveVoucher ? '' : 'disabled' %>><%= toFriendlyLabel("confirm", "Confirm") %></button>
+			</div>
+		</form>
+
+		<form method="post" action="<%= `${basePath}/delete` %>" class="hidden" data-delete-voucher-form>
+			<input type="hidden" name="_csrf" value="<%= csrfToken %>">
+			<input type="hidden" name="voucher_id" value="<%= selectedVoucher?.id || '' %>">
+		</form>
+	</section>
+</div>
+
+<script><%- include("../../base/partials/searchable-select.js") %></script>
+<script><%- include("../../base/partials/voucher-row-enter-navigation.js") %></script>
+<script>
+	(() => {
+		const form = document.querySelector("[data-stock-count-form]");
+		if (!form) return;
+
+		const options = <%- JSON.stringify(options || {}) %>;
+		const initialVoucher = <%- JSON.stringify(selectedVoucher || null) %>;
+		const basePath = <%- JSON.stringify(basePath || "") %>;
+		const canSave = <%- JSON.stringify(Boolean(canSaveVoucher)) %>;
+
+		const stockTypeValues = ["FG", "SFG", "RM"];
+		const toNum = (value, fallback = 0) => {
+			const n = Number(value);
+			return Number.isFinite(n) ? n : fallback;
+		};
+		const toInt = (value) => {
+			const n = Number(value);
+			if (!Number.isInteger(n) || n <= 0) return null;
+			return n;
+		};
+		const qty3 = (value) => Number(toNum(value, 0).toFixed(3));
+		const rate6 = (value) => Number(toNum(value, 0).toFixed(6));
+		const amount2 = (value) => Number(toNum(value, 0).toFixed(2));
+
+		const isTruthyFlag = (value) => {
+			if (value === true) return true;
+			if (value === false || value === null || value === undefined) return false;
+			if (typeof value === "string") {
+				const normalized = value.trim().toLowerCase();
+				return ["1", "true", "t", "yes", "y"].includes(normalized);
+			}
+			return Number(value) === 1;
+		};
+
+		const isBaseUnitOption = (option) => isTruthyFlag(option?.is_base);
+
+		const resolveFgSnapshotByStatus = ({ sku, requestedStatus }) => {
+			const normalizedRequested = String(requestedStatus || "").toUpperCase() === "PACKED" ? "PACKED" : "LOOSE";
+			const looseQty = qty3(Number(sku?.system_loose_qty_pairs || 0));
+			const packedQty = qty3(Number(sku?.system_packed_qty_pairs || 0));
+			const looseWac = rate6(Number(sku?.system_loose_wac || 0));
+			const packedWac = rate6(Number(sku?.system_packed_wac || 0));
+
+			const pickByStatus = (status) => status === "PACKED"
+				? { qtyPairs: packedQty, wac: packedWac }
+				: { qtyPairs: looseQty, wac: looseWac };
+
+			const preferred = pickByStatus(normalizedRequested);
+			return {
+				rowStatus: normalizedRequested,
+				qtyPairs: qty3(preferred.qtyPairs || 0),
+				wac: rate6(preferred.wac || 0),
+			};
+		};
+
+		const normalizeStockType = (value) => {
+			const normalized = String(value || "").trim().toUpperCase();
+			return stockTypeValues.includes(normalized) ? normalized : "FG";
+		};
+
+		const stockTypeSelect = form.querySelector("[data-stock-type]");
+		const reasonSelect = form.querySelector("[data-reason-code]");
+		const reasonNotes = form.querySelector("[data-reason-notes]");
+		const voucherNoInput = form.querySelector("[data-voucher-no-input]");
+		const loadVoucherButton = form.querySelector("[data-load-voucher]");
+		const linesJsonInput = form.querySelector("[data-lines-json]");
+		const linesBody = form.querySelector("[data-lines-body]");
+		const linesHeadRow = form.querySelector("[data-lines-head-row]");
+		const linesFooter = form.querySelector("[data-lines-footer]");
+		const deleteButton = form.querySelector("[data-delete-voucher]");
+		const deleteForm = document.querySelector("[data-delete-voucher-form]");
+
+		const skuList = Array.isArray(options.skus) ? options.skus : [];
+		const rmItems = Array.isArray(options.rmItems) ? options.rmItems : [];
+		const skuMap = new Map(skuList.map((entry) => [Number(entry.id), entry]));
+		const rmMap = new Map(rmItems.map((entry) => [Number(entry.id), entry]));
+		const rmColorPolicy = options.rawMaterialColorPolicyByItem || {};
+		const rmSizePolicy = options.rawMaterialSizePolicyByItem || {};
+		const rmRatesByItem = options.rawMaterialRatesByItem || {};
+		const rmSnapshotByKey = options.rmSnapshotByKey || {};
+
+		const rowTemplate = (stockType) => ({
+			sku_id: null,
+			item_id: null,
+			color_id: null,
+			size_id: null,
+			uom_id: null,
+			row_status: stockType === "FG" ? "LOOSE" : null,
+			system_qty: 0,
+			qty_in: 0,
+			qty_out: 0,
+			physical_qty: 0,
+			difference_qty: 0,
+			rate: 0,
+			amount: 0,
+		});
+
+		let rowsState = [];
+		let unbindNavigator = null;
+		let pendingEnterFocus = null;
+		let totalDiffInput = null;
+		let totalAmountInput = null;
+
+		const currentStockType = () => normalizeStockType(stockTypeSelect?.value);
+
+		const getUomOptions = (row, stockType) => {
+			if (stockType === "RM") {
+				const item = rmMap.get(Number(row.item_id || 0));
+				return Array.isArray(item?.unit_options) ? item.unit_options : [];
+			}
+			const sku = skuMap.get(Number(row.sku_id || 0));
+			return Array.isArray(sku?.unit_options) ? sku.unit_options : [];
+		};
+
+		const defaultUomId = (row, stockType) => {
+			const optionsList = getUomOptions(row, stockType);
+			if (!optionsList.length) return null;
+			const preferredNonBase = optionsList.find((entry) => !isBaseUnitOption(entry));
+			return toInt((preferredNonBase || optionsList[0])?.id);
+		};
+
+		const resolveRmRate = (row) => {
+			const itemId = toInt(row.item_id);
+			if (!itemId) return 0;
+			const itemRates = Array.isArray(rmRatesByItem[String(itemId)]) ? rmRatesByItem[String(itemId)] : [];
+			const colorId = toInt(row.color_id);
+			const sizeId = toInt(row.size_id);
+
+			const exact = itemRates.find((entry) => Number(entry?.color_id || 0) === Number(colorId || 0) && Number(entry?.size_id || 0) === Number(sizeId || 0));
+			if (exact) return rate6(exact.purchase_rate);
+
+			const colorOnly = itemRates.find((entry) => Number(entry?.color_id || 0) === Number(colorId || 0) && Number(entry?.size_id || 0) === 0);
+			if (colorOnly) return rate6(colorOnly.purchase_rate);
+
+			const sizeOnly = itemRates.find((entry) => Number(entry?.color_id || 0) === 0 && Number(entry?.size_id || 0) === Number(sizeId || 0));
+			if (sizeOnly) return rate6(sizeOnly.purchase_rate);
+
+			const fallback = itemRates.find((entry) => Number(entry?.color_id || 0) === 0 && Number(entry?.size_id || 0) === 0);
+			return fallback ? rate6(fallback.purchase_rate) : 0;
+		};
+
+		const getRmColorState = (itemId) => {
+			const normalizedItemId = toInt(itemId);
+			if (!normalizedItemId) return { entries: [], allowNone: true, disabled: true };
+			const policy = rmColorPolicy[String(normalizedItemId)] || null;
+			const entries = Array.isArray(policy?.colors)
+				? policy.colors.map((entry) => ({ id: toInt(entry?.id), name: String(entry?.name || "").trim() })).filter((entry) => entry.id)
+				: [];
+			if (policy?.hasAnyRate) {
+				return {
+					entries,
+					allowNone: policy.hasColorless === true || entries.length === 0,
+					disabled: entries.length === 0 && policy.hasColorless !== true,
+				};
+			}
+			return { entries: [], allowNone: true, disabled: true };
+		};
+
+		const getRmSizeState = (itemId) => {
+			const normalizedItemId = toInt(itemId);
+			if (!normalizedItemId) return { entries: [], allowNone: true, disabled: true };
+			const policy = rmSizePolicy[String(normalizedItemId)] || null;
+			const entries = Array.isArray(policy?.sizes)
+				? policy.sizes.map((entry) => ({ id: toInt(entry?.id), name: String(entry?.name || "").trim() })).filter((entry) => entry.id)
+				: [];
+			if (policy?.hasAnyRate) {
+				return {
+					entries,
+					allowNone: policy.hasSizeless === true || entries.length === 0,
+					disabled: entries.length === 0 && policy.hasSizeless !== true,
+				};
+			}
+			return { entries: [], allowNone: true, disabled: true };
+		};
+
+		const resolveSystemSnapshot = (row, stockType, selectedUnit) => {
+			// System quantity/rate snapshots always come from current stock balances and are read-only in UI.
+			const factor = Number(selectedUnit?.factor_to_base || 1);
+			const safeFactor = factor > 0 ? factor : 1;
+
+			if (stockType === "RM") {
+				const key = `${Number(row.item_id || 0)}:${Number(row.color_id || 0)}:${Number(row.size_id || 0)}`;
+				const snapshot = rmSnapshotByKey[key] || { qty: 0, wac: 0 };
+				const baseQty = qty3(snapshot.qty || 0);
+				return {
+					systemQty: qty3(baseQty / safeFactor),
+					systemWac: rate6(snapshot.wac || 0),
+				};
+			}
+
+			const sku = skuMap.get(Number(row.sku_id || 0));
+			// FG availability is unit-status aware and strictly bound to requested status bucket.
+			const requestedStatus = isBaseUnitOption(selectedUnit) ? "LOOSE" : "PACKED";
+			const fgResolved = resolveFgSnapshotByStatus({ sku, requestedStatus });
+			// Keep fractional pair balances to avoid collapsing valid stock to zero.
+			const pairs = stockType === "FG" ? Number(fgResolved.qtyPairs || 0) : Number(sku?.system_qty_pairs || 0);
+			return {
+				systemQty: qty3(pairs / safeFactor),
+				systemWac: rate6(stockType === "FG" ? fgResolved.wac : Number(sku?.system_wac || 0)),
+				rowStatus: stockType === "FG" ? fgResolved.rowStatus : null,
+			};
+		};
+
+		// Keep each row internally consistent after every change.
+		const applyDerivedRow = (row, stockType) => {
+			const next = { ...row };
+			if (!next.uom_id) next.uom_id = defaultUomId(next, stockType);
+
+			if (stockType === "RM") {
+				if (!next.item_id) {
+					next.color_id = null;
+					next.size_id = null;
+				} else {
+					const colorState = getRmColorState(next.item_id);
+					const allowedColors = new Set((colorState.entries || []).map((entry) => Number(entry.id || 0)));
+					if (next.color_id && !allowedColors.has(Number(next.color_id))) next.color_id = null;
+					if (!next.color_id && !colorState.allowNone && colorState.entries.length) {
+						next.color_id = Number(colorState.entries[0].id);
+					}
+
+					const sizeState = getRmSizeState(next.item_id);
+					const allowedSizes = new Set((sizeState.entries || []).map((entry) => Number(entry.id || 0)));
+					if (next.size_id && !allowedSizes.has(Number(next.size_id))) next.size_id = null;
+					if (!next.size_id && !sizeState.allowNone && sizeState.entries.length) {
+						next.size_id = Number(sizeState.entries[0].id);
+					}
+				}
+			}
+
+			const selectedUnit = getUomOptions(next, stockType).find((entry) => Number(entry.id || 0) === Number(next.uom_id || 0));
+			const snapshot = resolveSystemSnapshot(next, stockType, selectedUnit);
+			next.system_qty = qty3(snapshot.systemQty || 0);
+			// Difference is always net adjustment (in minus out); physical is derived only for display and legacy payload compatibility.
+			next.qty_in = qty3(next.qty_in || 0);
+			next.qty_out = qty3(next.qty_out || 0);
+			next.difference_qty = qty3(Number(next.qty_in) - Number(next.qty_out));
+			next.physical_qty = qty3(Number(next.system_qty) + Number(next.difference_qty));
+
+			if (stockType === "RM") {
+				const factor = Number(selectedUnit?.factor_to_base || 1);
+				const rmRate = resolveRmRate(next);
+				next.rate = rate6(rmRate > 0 ? rmRate : Number(snapshot.systemWac || 0) * factor);
+			} else {
+				const factor = Number(selectedUnit?.factor_to_base || 1);
+				const sku = skuMap.get(Number(next.sku_id || 0));
+				next.rate = rate6(Number(sku?.default_rate || 0) > 0 ? Number(sku.default_rate || 0) : Number(snapshot.systemWac || 0) * factor);
+				next.row_status = String(snapshot.rowStatus || (isBaseUnitOption(selectedUnit) ? "LOOSE" : "PACKED")).toUpperCase();
+			}
+
+			next.amount = amount2(Number(next.difference_qty || 0) * Number(next.rate || 0));
+			return next;
+		};
+
+		const optionMarkup = (entries, selectedId, placeholderLabel) => {
+			const normalizedSelected = Number(selectedId || 0);
+			let html = "";
+			if (String(placeholderLabel || "").trim()) {
+				html += `<option value="">${placeholderLabel}</option>`;
+			}
+			html += (entries || []).map((entry) => {
+				const id = Number(entry?.id || 0);
+				const selected = normalizedSelected === id ? " selected" : "";
+				const label = String(entry?.label || entry?.name || entry?.code || id);
+				return `<option value="${id}"${selected}>${label}</option>`;
+			}).join("");
+			return html;
+		};
+
+		const renderHead = (stockType) => {
+			const cols = stockType === "RM"
+				? ["Raw Material", "Color", "Size", "Unit", "System Qty", "Qty In", "Qty Out", "Difference Qty", "Rate", "Amount Diff", "Actions", "Sr #"]
+				: ["SKU", "Unit", "System Qty", "Qty In", "Qty Out", "Difference Qty", "Rate", "Amount Diff", "Actions", "Sr #"];
+			linesHeadRow.innerHTML = cols.map((label, idx) => {
+				const align = idx >= (stockType === "RM" ? 4 : 3) && idx <= (stockType === "RM" ? 9 : 7) ? "text-right" : idx >= cols.length - 2 ? "text-center" : "text-left";
+				return `<th class="border-b border-slate-200 px-2 py-2 ${align}">${label}</th>`;
+			}).join("");
+			renderFooter(stockType);
+		};
+
+		const renderFooter = (stockType) => {
+			// Footer keeps adjustment totals visible while rows are edited.
+			const descriptorColspan = stockType === "RM" ? 7 : 5;
+			const addButtonTitle = "Add";
+			linesFooter.innerHTML = `
+				<tr class="bg-slate-50">
+					<td colspan="${descriptorColspan}" class="border-t border-slate-200 px-2 py-2 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-700">Total</td>
+					<td class="border-t border-slate-200 px-2 py-1.5">
+						<input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-diff>
+					</td>
+					<td class="border-t border-slate-200 px-2 py-1.5"></td>
+					<td class="border-t border-slate-200 px-2 py-1.5">
+						<input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.00" data-total-amount>
+					</td>
+					<td class="border-t border-slate-200 px-2 py-1 text-center">
+						<button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white p-2 text-slate-700 disabled:opacity-40" data-add-row aria-label="${addButtonTitle}" title="${addButtonTitle}" ${canSave ? "" : "disabled"}>
+							<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
+						</button>
+					</td>
+					<td class="border-t border-slate-200 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Units</td>
+				</tr>
+			`;
+			totalDiffInput = linesFooter.querySelector("[data-total-diff]");
+			totalAmountInput = linesFooter.querySelector("[data-total-amount]");
+		};
+
+		const syncTotals = () => {
+			const totalDiff = rowsState.reduce((sum, row) => sum + Number(row.difference_qty || 0), 0);
+			const totalAmount = rowsState.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+			if (totalDiffInput) totalDiffInput.value = qty3(totalDiff).toFixed(3);
+			if (totalAmountInput) totalAmountInput.value = amount2(totalAmount).toFixed(2);
+		};
+
+		const renderRows = () => {
+			const stockType = currentStockType();
+			if (!rowsState.length) rowsState = [rowTemplate(stockType)];
+
+			linesBody.innerHTML = rowsState.map((row, index) => {
+				const normalized = applyDerivedRow(row, stockType);
+				rowsState[index] = normalized;
+
+				const removeDisabled = !canSave || rowsState.length <= 1;
+				const actionCell = `
+					<td class="border-t border-slate-200 px-2 py-1 text-center">
+						<button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white p-2 text-rose-600 disabled:opacity-40" data-remove-row="${index}" ${removeDisabled ? "disabled" : ""}>
+							<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 6h18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path><path d="M8 6V4.75A1.75 1.75 0 0 1 9.75 3h4.5A1.75 1.75 0 0 1 16 4.75V6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path><path d="M6.5 6l.9 12.2A2 2 0 0 0 9.39 20h5.22a2 2 0 0 0 1.99-1.8L17.5 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path><path d="M10 10v6M14 10v6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg>
+						</button>
+					</td>
+				`;
+				const rowNoCell = `<td class="border-t border-slate-200 px-2 py-2 text-center text-xs font-semibold text-slate-500">${index + 1}</td>`;
+
+				if (stockType === "RM") {
+					const colorState = getRmColorState(normalized.item_id);
+					const sizeState = getRmSizeState(normalized.item_id);
+					return `
+						<tr data-line-index="${index}" data-row-index="${index}">
+							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="item_id" data-row-field="item_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${optionMarkup(rmItems.map((entry) => ({ id: entry.id, label: entry.name })), normalized.item_id, "Select Raw Material")}</select></td>
+							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="color_id" data-row-field="color_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${(canSave && !colorState.disabled) ? "" : "disabled"}>${optionMarkup(colorState.entries, normalized.color_id, colorState.allowNone ? "None" : "")}</select></td>
+							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="size_id" data-row-field="size_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${(canSave && !sizeState.disabled) ? "" : "disabled"}>${optionMarkup(sizeState.entries, normalized.size_id, sizeState.allowNone ? "None" : "")}</select></td>
+							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="uom_id" data-row-field="uom_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${optionMarkup(getUomOptions(normalized, stockType), normalized.uom_id, "Select Unit")}</select></td>
+							<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" value="${normalized.system_qty.toFixed(3)}"></td>
+							<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty_in" data-row-field="qty_in" data-line-index="${index}" value="${normalized.qty_in}" ${canSave ? "" : "readonly"}></td>
+							<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty_out" data-row-field="qty_out" data-line-index="${index}" value="${normalized.qty_out}" ${canSave ? "" : "readonly"}></td>
+							<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold" value="${normalized.difference_qty.toFixed(3)}"></td>
+							<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" value="${rate6(normalized.rate).toFixed(4)}"></td>
+							<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold" value="${amount2(normalized.amount).toFixed(2)}"></td>
+							${actionCell}
+							${rowNoCell}
+						</tr>
+					`;
+				}
+
+				const skuRows = skuList.filter((entry) => String(entry.item_type || "").toUpperCase() === stockType);
+				return `
+					<tr data-line-index="${index}" data-row-index="${index}">
+						<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="sku_id" data-row-field="sku_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${optionMarkup(skuRows.map((entry) => ({ id: entry.id, label: entry.sku_name })), normalized.sku_id, "Select SKU")}</select></td>
+						<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="uom_id" data-row-field="uom_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${optionMarkup(getUomOptions(normalized, stockType), normalized.uom_id, "Select Unit")}</select></td>
+						<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" value="${normalized.system_qty.toFixed(3)}"></td>
+						<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty_in" data-row-field="qty_in" data-line-index="${index}" value="${normalized.qty_in}" ${canSave ? "" : "readonly"}></td>
+						<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty_out" data-row-field="qty_out" data-line-index="${index}" value="${normalized.qty_out}" ${canSave ? "" : "readonly"}></td>
+						<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold" value="${normalized.difference_qty.toFixed(3)}"></td>
+						<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" value="${rate6(normalized.rate).toFixed(4)}"></td>
+						<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold" value="${amount2(normalized.amount).toFixed(2)}"></td>
+						${actionCell}
+						${rowNoCell}
+					</tr>
+				`;
+			}).join("");
+
+			if (typeof window.initSearchableSelects === "function") {
+				window.initSearchableSelects(form);
+			}
+			bindNavigator();
+			syncTotals();
+		};
+
+		const fieldOrderForType = (stockType) => {
+			if (stockType === "RM") return ["item_id", "color_id", "size_id", "uom_id", "qty_in", "qty_out"];
+			return ["sku_id", "uom_id", "qty_in", "qty_out"];
+		};
+
+		const bindNavigator = () => {
+			if (typeof unbindNavigator === "function") {
+				unbindNavigator();
+				unbindNavigator = null;
+			}
+			if (typeof window.createVoucherRowEnterNavigator !== "function") return;
+			const nav = window.createVoucherRowEnterNavigator({
+				form,
+				linesBody,
+				rowSelector: "tr[data-line-index]",
+				fieldAttr: "data-row-field",
+				fieldOrder: fieldOrderForType(currentStockType()),
+				canAppendRow: () => canSave,
+				appendRow: () => {
+					if (!canSave) return false;
+					rowsState.push(rowTemplate(currentStockType()));
+					renderRows();
+					return true;
+				},
+			});
+			if (nav && typeof nav.bind === "function") {
+				unbindNavigator = nav.bind();
+			}
+		};
+
+		const captureActiveRowField = () => {
+			const active = document.activeElement;
+			if (!(active instanceof HTMLElement)) return null;
+
+			const directField = active.matches("[data-line-index][data-row-field]")
+				? active
+				: active.closest("[data-line-index][data-row-field]");
+			if (directField instanceof HTMLElement) {
+				return {
+					lineIndex: String(directField.getAttribute("data-line-index") || ""),
+					fieldKey: String(directField.getAttribute("data-row-field") || ""),
+				};
+			}
+
+			const searchableWrapper = active.closest("[data-searchable-wrapper]");
+			const linkedSelect = searchableWrapper?.querySelector("select[data-line-index][data-row-field]") || null;
+			if (linkedSelect instanceof HTMLElement) {
+				return {
+					lineIndex: String(linkedSelect.getAttribute("data-line-index") || ""),
+					fieldKey: String(linkedSelect.getAttribute("data-row-field") || ""),
+				};
+			}
+			return null;
+		};
+
+		const restoreActiveRowField = (state) => {
+			if (!state || !state.lineIndex || !state.fieldKey) return;
+			window.setTimeout(() => {
+				const selector = `[data-line-index="${state.lineIndex}"][data-row-field="${state.fieldKey}"]`;
+				const field = linesBody.querySelector(selector);
+				if (!(field instanceof HTMLElement)) return;
+
+				if (window.VoucherRowEnterNavigation?.focusFieldElement) {
+					window.VoucherRowEnterNavigation.focusFieldElement(field, { openSearchable: false });
+					return;
+				}
+
+				field.focus();
+				if (field instanceof HTMLInputElement && typeof field.select === "function") {
+					field.select();
+				}
+			}, 0);
+		};
+
+		linesBody.addEventListener("keydown", (event) => {
+			if (event.key !== "Enter") return;
+			const target = event.target;
+			if (!(target instanceof HTMLElement)) return;
+			const lineIndex = Number(target.getAttribute("data-line-index") || -1);
+			const fieldKey = String(target.getAttribute("data-row-field") || "").trim();
+			if (lineIndex < 0 || !fieldKey) return;
+			const order = fieldOrderForType(currentStockType());
+			const currentPos = order.indexOf(fieldKey);
+			if (currentPos < 0) return;
+			const nextFieldKey = currentPos < order.length - 1 ? order[currentPos + 1] : order[0];
+			const nextLineIndex = currentPos < order.length - 1 ? lineIndex : lineIndex + 1;
+			pendingEnterFocus = {
+				lineIndex: String(nextLineIndex),
+				fieldKey: String(nextFieldKey),
+			};
+		}, true);
+
+		const updateRowField = ({ index, field, value }) => {
+			const row = rowsState[index];
+			if (!row) return;
+			const stockType = currentStockType();
+			const focusState = captureActiveRowField();
+			const enterFocusState = pendingEnterFocus;
+			pendingEnterFocus = null;
+
+			if (["sku_id", "item_id", "uom_id", "color_id", "size_id"].includes(field)) {
+				row[field] = toInt(value);
+			}
+			if (field === "qty_in") {
+				row.qty_in = qty3(value);
+			}
+			if (field === "qty_out") {
+				row.qty_out = qty3(value);
+			}
+
+			if (field === "sku_id") {
+				row.uom_id = null;
+			}
+			if (field === "item_id") {
+				row.uom_id = null;
+				row.color_id = null;
+				row.size_id = null;
+			}
+
+			rowsState[index] = applyDerivedRow(row, stockType);
+			renderRows();
+			if (enterFocusState) {
+				restoreActiveRowField(enterFocusState);
+				return;
+			}
+			restoreActiveRowField(focusState);
+		};
+
+		linesBody.addEventListener("change", (event) => {
+			const target = event.target;
+			if (!(target instanceof HTMLElement)) return;
+			const index = Number(target.getAttribute("data-line-index") || -1);
+			const field = String(target.getAttribute("data-field") || "").trim();
+			if (!Number.isInteger(index) || index < 0 || !field) return;
+			updateRowField({ index, field, value: target.value });
+		});
+
+		linesBody.addEventListener("click", (event) => {
+			const button = event.target.closest("[data-remove-row]");
+			if (!button || !canSave) return;
+			const index = Number(button.getAttribute("data-remove-row") || -1);
+			if (!Number.isInteger(index) || index < 0) return;
+			rowsState.splice(index, 1);
+			if (!rowsState.length) rowsState = [rowTemplate(currentStockType())];
+			renderRows();
+		});
+
+		form.addEventListener("click", (event) => {
+			const addButton = event.target.closest("[data-add-row]");
+			if (!addButton || !canSave) return;
+			rowsState.push(rowTemplate(currentStockType()));
+			renderRows();
+		});
+
+		if (stockTypeSelect) {
+			stockTypeSelect.addEventListener("change", () => {
+				rowsState = [rowTemplate(currentStockType())];
+				renderHead(currentStockType());
+				renderRows();
+			});
+		}
+
+		if (reasonSelect && reasonNotes) {
+			const syncReasonNoteRequirement = () => {
+				const selected = reasonSelect.options[reasonSelect.selectedIndex];
+				const required = selected && selected.getAttribute("data-requires-notes") === "1";
+				reasonNotes.required = Boolean(required);
+			};
+			reasonSelect.addEventListener("change", syncReasonNoteRequirement);
+			syncReasonNoteRequirement();
+		}
+
+		if (loadVoucherButton) {
+			loadVoucherButton.addEventListener("click", () => {
+				const voucherNo = toInt(voucherNoInput?.value);
+				if (!voucherNo) return;
+				window.location.href = `${basePath}?voucher_no=${voucherNo}&view=1`;
+			});
+		}
+
+		if (deleteButton && deleteForm) {
+			deleteButton.addEventListener("click", () => {
+				const confirmMessage = "Delete this voucher?";
+				if (!window.confirm(confirmMessage)) return;
+				deleteForm.submit();
+			});
+		}
+
+		const setRowsFromVoucher = () => {
+			const stockType = normalizeStockType(initialVoucher?.stock_type || stockTypeSelect?.value);
+			if (stockTypeSelect) stockTypeSelect.value = stockType;
+			rowsState = Array.isArray(initialVoucher?.lines)
+				? initialVoucher.lines.map((line) => ({
+						sku_id: toInt(line?.sku_id),
+						item_id: toInt(line?.item_id),
+						color_id: toInt(line?.color_id),
+						size_id: toInt(line?.size_id),
+						uom_id: toInt(line?.uom_id),
+						row_status: String(line?.row_status || "").toUpperCase() || "LOOSE",
+						system_qty: qty3(line?.system_qty),
+						qty_in: qty3(line?.qty_in),
+						qty_out: qty3(line?.qty_out),
+						physical_qty: qty3(line?.physical_qty),
+						difference_qty: qty3(line?.difference_qty),
+						rate: rate6(line?.rate),
+						amount: amount2(line?.amount),
+					}))
+				: [rowTemplate(stockType)];
+			if (!rowsState.length) rowsState = [rowTemplate(stockType)];
+		};
+
+		form.addEventListener("submit", (event) => {
+			// Send only editable inputs; backend recomputes system snapshots and differences for integrity.
+			const stockType = currentStockType();
+			const payloadLines = rowsState
+				.map((row) => applyDerivedRow(row, stockType))
+				.filter((row) => stockType === "RM" ? toInt(row.item_id) : toInt(row.sku_id))
+				.map((row) => stockType === "RM"
+					? {
+							item_id: toInt(row.item_id),
+							color_id: toInt(row.color_id),
+							size_id: toInt(row.size_id),
+							uom_id: toInt(row.uom_id),
+							qty_in: qty3(row.qty_in),
+							qty_out: qty3(row.qty_out),
+						}
+					: {
+							sku_id: toInt(row.sku_id),
+							uom_id: toInt(row.uom_id),
+							qty_in: qty3(row.qty_in),
+							qty_out: qty3(row.qty_out),
+						});
+
+			if (!payloadLines.length) {
+				event.preventDefault();
+				window.alert("At least one valid line is required.");
+				return;
+			}
+
+			linesJsonInput.value = JSON.stringify(payloadLines);
+		});
+
+		if (initialVoucher) {
+			setRowsFromVoucher();
+		} else {
+			rowsState = [rowTemplate(currentStockType())];
+		}
+
+		renderHead(currentStockType());
+		renderRows();
+	})();
+</script>

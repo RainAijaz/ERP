@@ -1,0 +1,951 @@
+<%
+	// Prepare safe defaults so the same template supports both new and existing vouchers.
+	const formatDateInput = (value) => {
+		if (!value) return "";
+		const asText = String(value);
+		const textMatch = asText.match(/^(\d{4}-\d{2}-\d{2})/);
+		if (textMatch) return textMatch[1];
+		const dt = value instanceof Date ? value : new Date(value);
+		if (Number.isNaN(dt.getTime())) return "";
+		const yyyy = dt.getFullYear();
+		const mm = String(dt.getMonth() + 1).padStart(2, "0");
+		const dd = String(dt.getDate()).padStart(2, "0");
+		return `${yyyy}-${mm}-${dd}`;
+	};
+
+	const selectedVoucherNo = selectedVoucher ? Number(selectedVoucher.voucher_no || 0) : null;
+	const suggestedVoucherNo = selectedVoucherNo || (Number(latestVoucherNo || 0) + 1);
+	const selectedDate = selectedVoucher && selectedVoucher.voucher_date
+		? formatDateInput(selectedVoucher.voucher_date)
+		: formatDateInput(new Date());
+	const selectedStatus = String(selectedVoucher?.status || "").toUpperCase();
+	const isDeletedVoucher = selectedStatus === "REJECTED";
+	const statusLabel = selectedStatus === "APPROVED" ? t("approved") : selectedStatus === "REJECTED" ? t("rejected") : selectedStatus === "PENDING" ? t("pending") : selectedStatus;
+	const statusToneClass = selectedStatus === "APPROVED" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : selectedStatus === "REJECTED" ? "border-rose-200 bg-rose-50 text-rose-800" : "border-amber-200 bg-amber-50 text-amber-800";
+	const defaultStockType = String(selectedVoucher?.stock_type || "FG").toUpperCase();
+
+	const canCreateVoucher = typeof allowCreate === "boolean" ? allowCreate : true;
+	const canEditVoucher = typeof allowEdit === "boolean" ? allowEdit : true;
+	const canDeleteVoucher = typeof allowDelete === "boolean" ? allowDelete : true;
+	const canSaveVoucher = !isDeletedVoucher && (selectedVoucher ? canEditVoucher : canCreateVoucher);
+	const canDeleteCurrentVoucher = !!selectedVoucher && !isDeletedVoucher && canDeleteVoucher;
+
+	const toFriendlyLabel = (key, fallback = "") => {
+		const translated = String(t(key) || "").trim();
+		if (translated && translated !== key) return translated;
+		if (fallback) return fallback;
+		return String(key || "")
+			.trim()
+			.toLowerCase()
+			.replace(/[_-]+/g, " ")
+			.replace(/\b[a-z]/g, (ch) => ch.toUpperCase());
+	};
+%>
+
+<style>
+	[data-inventory-voucher-form] [data-lines-table] thead th {
+		font-size: 10.5px;
+		letter-spacing: 0.08em;
+	}
+	[data-inventory-voucher-form] [data-lines-table] td {
+		padding: 0.3rem 0.4rem;
+	}
+	[data-inventory-voucher-form] [data-lines-table] tbody tr:nth-child(even) td {
+		background-color: #f8fafc;
+	}
+	[data-inventory-voucher-form] [data-lines-table] tbody tr:hover td {
+		background-color: #f1f5f9;
+	}
+	[data-inventory-voucher-form] [data-lines-table] input,
+	[data-inventory-voucher-form] [data-lines-table] select,
+	[data-inventory-voucher-form] [data-lines-table] button[data-enhanced-select-trigger="1"] {
+		height: 2.15rem !important;
+		font-size: 0.82rem !important;
+	}
+	[data-inventory-voucher-form] input[readonly],
+	[data-inventory-voucher-form] input:disabled,
+	[data-inventory-voucher-form] select:disabled,
+	[data-inventory-voucher-form] textarea[readonly] {
+		background-color: #f1f5f9 !important;
+		border-color: #cbd5e1 !important;
+		color: #475569 !important;
+		cursor: not-allowed;
+	}
+	[data-inventory-voucher-form] input:focus,
+	[data-inventory-voucher-form] select:focus,
+	[data-inventory-voucher-form] textarea:focus,
+	[data-inventory-voucher-form] [data-searchable-wrapper] > input:focus,
+	[data-inventory-voucher-form] [data-lines-table] button[data-enhanced-select-trigger="1"]:focus {
+		border-color: #111827 !important;
+		box-shadow: 0 0 0 1px #111827 !important;
+		outline: none !important;
+	}
+	@media (max-width: 640px) {
+		[data-inventory-voucher-form] [data-lines-table] th {
+			white-space: normal;
+			overflow-wrap: anywhere;
+			word-break: break-word;
+			line-height: 1.2;
+		}
+	}
+</style>
+
+<div class="mx-auto w-full max-w-none space-y-3 px-2">
+	<section class="rounded-2xl border border-slate-200 bg-white/95 px-4 py-4 shadow-sm">
+		<div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+			<div>
+				<h1 class="text-2xl font-display font-semibold tracking-tight text-ink"><%= toFriendlyLabel("opening_stock", "Opening Stock Voucher") %></h1>
+				<p class="text-sm text-muted"><%= toFriendlyLabel("inventory", "Inventory") %></p>
+			</div>
+			<% if (selectedVoucher) { %>
+				<div class="inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] <%= statusToneClass %>">
+					<span><%= toFriendlyLabel("status", "Status") %></span>
+					<span class="rounded-full bg-white/80 px-2 py-0.5 text-slate-800"><%= statusLabel %></span>
+				</div>
+			<% } %>
+		</div>
+	</section>
+
+	<section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+		<form method="post" action="<%= basePath || '' %>" class="space-y-4" data-inventory-voucher-form data-voucher-form>
+			<input type="hidden" name="_csrf" value="<%= csrfToken %>">
+			<input type="hidden" name="voucher_id" value="<%= selectedVoucher?.id || '' %>">
+			<input type="hidden" name="lines_json" value="[]" data-lines-json>
+
+			<div class="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
+				<div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+					<label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel("voucher_no", "Voucher No") %></label>
+					<div class="lg:col-span-2">
+						<input type="text" value="<%= suggestedVoucherNo %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700" data-voucher-no-input>
+					</div>
+					<div class="flex flex-wrap items-center gap-2 lg:col-span-8">
+						<a href="<%= prevVoucherNo ? ((basePath || '') + '?voucher_no=' + prevVoucherNo + '&view=1') : '#' %>" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700 <%= prevVoucherNo ? '' : 'pointer-events-none opacity-40' %>"><%= toFriendlyLabel("prev", "Prev") %></a>
+						<a href="<%= nextVoucherNo ? ((basePath || '') + '?voucher_no=' + nextVoucherNo + '&view=1') : ((basePath || '') + '?new=1') %>" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= toFriendlyLabel("next", "Next") %></a>
+						<button type="button" class="rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm" data-load-voucher><%= toFriendlyLabel("load", "Load") %></button>
+						<div class="ml-auto flex items-center gap-2">
+							<button type="button" class="rounded-xl border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-rose-700 disabled:opacity-40" data-delete-voucher <%= canDeleteCurrentVoucher ? '' : 'disabled' %>><%= toFriendlyLabel("delete", "Delete") %></button>
+							<button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700" onclick="window.print()"><%= toFriendlyLabel("print", "Print") %></button>
+						</div>
+					</div>
+				</div>
+
+				<div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+					<label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel("date", "Date") %></label>
+					<div class="lg:col-span-4">
+						<input type="date" name="voucher_date" value="<%= selectedDate %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" required <%= canSaveVoucher ? '' : 'readonly' %>>
+					</div>
+					<label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= toFriendlyLabel("stock_type", "Stock Type") %></label>
+					<div class="lg:col-span-4">
+						<select name="stock_type" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-stock-type data-searchable-select="true" data-searchable-variant="unified" <%= canSaveVoucher ? '' : 'disabled' %>>
+							<% (options.stockTypes || []).forEach((entry) => { %>
+								<option value="<%= entry.value %>" <%= String(defaultStockType || 'FG').toUpperCase() === String(entry.value || '').toUpperCase() ? 'selected' : '' %>><%= toFriendlyLabel(entry.labelKey || entry.value, entry.value) %></option>
+							<% }) %>
+						</select>
+					</div>
+				</div>
+
+				<div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+					<label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel("remarks", "Remarks") %></label>
+					<div class="lg:col-span-10">
+						<input type="text" name="remarks" maxlength="1000" value="<%= selectedVoucher?.remarks || '' %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" <%= canSaveVoucher ? '' : 'readonly' %>>
+					</div>
+				</div>
+
+				<% if (isDeletedVoucher) { %>
+					<div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
+						<%= toFriendlyLabel("voucher_deleted_read_only", "Voucher is deleted and read-only.") %>
+					</div>
+				<% } %>
+			</div>
+
+			<div class="rounded-2xl border border-slate-200 bg-white shadow-sm">
+				<div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
+					<table class="w-full min-w-255 table-fixed text-xs" data-lines-table>
+						<thead class="bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
+							<tr data-lines-head-row></tr>
+						</thead>
+						<tbody data-lines-body="opening-stock"></tbody>
+						<tfoot data-lines-footer></tfoot>
+					</table>
+				</div>
+			</div>
+
+			<div class="flex items-center justify-center gap-2">
+				<button type="submit" class="rounded-xl bg-accent px-4 py-2 text-xs font-semibold uppercase tracking-widest text-white shadow-sm disabled:opacity-40" <%= canSaveVoucher ? '' : 'disabled' %>><%= toFriendlyLabel("confirm", "Confirm") %></button>
+			</div>
+		</form>
+
+		<form method="post" action="<%= `${basePath}/delete` %>" class="hidden" data-delete-voucher-form>
+			<input type="hidden" name="_csrf" value="<%= csrfToken %>">
+			<input type="hidden" name="voucher_id" value="<%= selectedVoucher?.id || '' %>">
+		</form>
+	</section>
+</div>
+
+<script><%- include("../../base/partials/searchable-select.js") %></script>
+<script><%- include("../../base/partials/voucher-row-enter-navigation.js") %></script>
+<script>
+	(() => {
+		const form = document.querySelector("[data-inventory-voucher-form]");
+		if (!form) return;
+
+		const options = <%- JSON.stringify(options || {}) %>;
+		const initialVoucher = <%- JSON.stringify(selectedVoucher || null) %>;
+		const basePath = <%- JSON.stringify(basePath || "") %>;
+		const canSave = <%- JSON.stringify(Boolean(canSaveVoucher)) %>;
+
+		const stockTypeSelect = form.querySelector("[data-stock-type]");
+		const voucherNoInput = form.querySelector("[data-voucher-no-input]");
+		const loadVoucherButton = form.querySelector("[data-load-voucher]");
+		const linesJsonInput = form.querySelector("[data-lines-json]");
+		const linesBody = form.querySelector("[data-lines-body]");
+		const linesHeadRow = form.querySelector("[data-lines-head-row]");
+		const linesFooter = form.querySelector("[data-lines-footer]");
+		const deleteButton = form.querySelector("[data-delete-voucher]");
+		const deleteForm = document.querySelector("[data-delete-voucher-form]");
+		let totalQtyInput = null;
+		let totalQtyByUnitWrap = null;
+		let totalQtyByUnitRow = null;
+		let totalAmountInput = null;
+
+		const stockTypeValues = ["FG", "SFG", "RM"];
+		const rowStatusValues = ["PACKED", "LOOSE"];
+
+		const toNum = (value, fallback = 0) => {
+			const n = Number(value);
+			return Number.isFinite(n) ? n : fallback;
+		};
+		const toInt = (value) => {
+			const n = Number(value);
+			if (!Number.isInteger(n) || n <= 0) return null;
+			return n;
+		};
+		const qty3 = (value) => Number(toNum(value, 0).toFixed(3));
+		const rate4 = (value) => Number(toNum(value, 0).toFixed(4));
+		const amount2 = (value) => Number(toNum(value, 0).toFixed(2));
+		const escapeHtml = (value) =>
+			String(value == null ? "" : value)
+				.replace(/&/g, "&amp;")
+				.replace(/</g, "&lt;")
+				.replace(/>/g, "&gt;")
+				.replace(/\"/g, "&quot;")
+				.replace(/'/g, "&#39;");
+
+		const normalizeStockType = (value) => {
+			const normalized = String(value || "").trim().toUpperCase();
+			return stockTypeValues.includes(normalized) ? normalized : "FG";
+		};
+
+		const normalizeRowStatus = (value) => {
+			const normalized = String(value || "").trim().toUpperCase();
+			return rowStatusValues.includes(normalized) ? normalized : "LOOSE";
+		};
+
+		const skuList = Array.isArray(options.skus) ? options.skus : [];
+		const rmItems = Array.isArray(options.rmItems) ? options.rmItems : [];
+
+		const skuMap = new Map(skuList.map((entry) => [Number(entry.id), entry]));
+		const rmMap = new Map(rmItems.map((entry) => [Number(entry.id), entry]));
+
+		const rmColorPolicy = options.rawMaterialColorPolicyByItem || {};
+		const rmSizePolicy = options.rawMaterialSizePolicyByItem || {};
+		const rmRatesByItem = options.rawMaterialRatesByItem || {};
+		const totalLabel = <%- JSON.stringify(toFriendlyLabel("total", "Total")) %>;
+		const quantityLabel = <%- JSON.stringify(toFriendlyLabel("quantity", "Quantity")) %>;
+		const amountLabel = <%- JSON.stringify(toFriendlyLabel("amount", "Amount")) %>;
+		const unitsLabel = <%- JSON.stringify(toFriendlyLabel("units", "Units")) %>;
+
+		const currentStockType = () => normalizeStockType(stockTypeSelect?.value);
+
+		const getUomLabelByRow = (row, stockType) => {
+			const optionsList = getUomOptions(row, stockType);
+			const matched = optionsList.find((entry) => Number(entry.id || 0) === Number(row.uom_id || 0));
+			if (!matched) return "";
+			return String(matched.name || matched.code || matched.symbol || "").trim();
+		};
+
+		const defaultRow = (stockType) => ({
+			sku_id: null,
+			item_id: null,
+			color_id: null,
+			size_id: null,
+			uom_id: null,
+			row_status: stockType === "FG" ? "LOOSE" : null,
+			qty: 0,
+			rate: 0,
+			amount: 0,
+		});
+
+		const normalizeIncomingLine = (line, stockType) => ({
+			sku_id: toInt(line?.sku_id),
+			item_id: toInt(line?.item_id),
+			color_id: toInt(line?.color_id),
+			size_id: toInt(line?.size_id),
+			uom_id: toInt(line?.uom_id),
+			row_status: stockType === "FG" ? normalizeRowStatus(line?.row_status) : null,
+			qty: qty3(line?.qty),
+			rate: rate4(line?.rate),
+			amount: amount2(line?.amount),
+		});
+
+		let rowsState = [];
+		let unbindNavigator = null;
+
+		// Unit options are resolved from selected stock item (SKU or RM item).
+		const getUomOptions = (row, stockType) => {
+			if (stockType === "RM") {
+				const item = rmMap.get(Number(row.item_id || 0));
+				return Array.isArray(item?.unit_options) ? item.unit_options : [];
+			}
+			const sku = skuMap.get(Number(row.sku_id || 0));
+			return Array.isArray(sku?.unit_options) ? sku.unit_options : [];
+		};
+
+		const defaultUomId = (row, stockType) => {
+			const optionsList = getUomOptions(row, stockType);
+			if (!optionsList.length) return null;
+
+			// Business rule: prefer non-base unit as UI default whenever available.
+			const preferredNonBase = optionsList.find((entry) => entry.is_base !== true);
+			const preferred = preferredNonBase || optionsList[0];
+			return toInt(preferred?.id);
+		};
+
+		const getRmRate = (row) => {
+			// RM rate resolution preference: exact(color+size) -> color-only -> size-only -> generic.
+			const itemId = toInt(row.item_id);
+			if (!itemId) return 0;
+			const itemRates = Array.isArray(rmRatesByItem[String(itemId)])
+				? rmRatesByItem[String(itemId)]
+				: [];
+			if (!itemRates.length) return 0;
+
+			const colorId = toInt(row.color_id);
+			const sizeId = toInt(row.size_id);
+
+			const exact = itemRates.find((entry) =>
+				Number(entry?.color_id || 0) === Number(colorId || 0)
+				&& Number(entry?.size_id || 0) === Number(sizeId || 0),
+			);
+			if (exact) return rate4(exact.purchase_rate);
+
+			const colorOnly = itemRates.find((entry) =>
+				Number(entry?.color_id || 0) === Number(colorId || 0)
+				&& Number(entry?.size_id || 0) === 0,
+			);
+			if (colorOnly) return rate4(colorOnly.purchase_rate);
+
+			const sizeOnly = itemRates.find((entry) =>
+				Number(entry?.color_id || 0) === 0
+				&& Number(entry?.size_id || 0) === Number(sizeId || 0),
+			);
+			if (sizeOnly) return rate4(sizeOnly.purchase_rate);
+
+			const fallback = itemRates.find((entry) =>
+				Number(entry?.color_id || 0) === 0 && Number(entry?.size_id || 0) === 0,
+			);
+			return fallback ? rate4(fallback.purchase_rate) : 0;
+		};
+
+		const getRmColorState = (itemId) => {
+			const normalizedItemId = toInt(itemId);
+			if (!normalizedItemId) {
+				return {
+					entries: [],
+					allowNone: true,
+					disabled: true,
+				};
+			}
+
+			const policy = rmColorPolicy[String(normalizedItemId)] || null;
+			const entries = Array.isArray(policy?.colors)
+				? policy.colors
+					.map((entry) => ({
+						id: toInt(entry?.id),
+						name: String(entry?.name || "").trim(),
+					}))
+					.filter((entry) => entry.id)
+				: [];
+
+			if (policy?.hasAnyRate) {
+				return {
+					entries,
+					allowNone: policy.hasColorless === true || entries.length === 0,
+					disabled: entries.length === 0 && policy.hasColorless !== true,
+				};
+			}
+
+			return {
+				entries: [],
+				allowNone: true,
+				disabled: true,
+			};
+		};
+
+		const getRmSizeState = (itemId) => {
+			const normalizedItemId = toInt(itemId);
+			if (!normalizedItemId) {
+				return {
+					entries: [],
+					allowNone: true,
+					disabled: true,
+				};
+			}
+
+			const policy = rmSizePolicy[String(normalizedItemId)] || null;
+			const entries = Array.isArray(policy?.sizes)
+				? policy.sizes
+					.map((entry) => ({
+						id: toInt(entry?.id),
+						name: String(entry?.name || "").trim(),
+					}))
+					.filter((entry) => entry.id)
+				: [];
+
+			if (policy?.hasAnyRate) {
+				return {
+					entries,
+					allowNone: policy.hasSizeless === true || entries.length === 0,
+					disabled: entries.length === 0 && policy.hasSizeless !== true,
+				};
+			}
+
+			return {
+				entries: [],
+				allowNone: true,
+				disabled: true,
+			};
+		};
+
+		const applyDerivedDefaults = (row, stockType, { forceRateRefresh = false } = {}) => {
+			// Keep row self-consistent after every edit (default unit/rate/status + amount recalc).
+			const next = { ...row };
+
+			if (stockType === "RM") {
+				if (next.item_id) {
+					const colorState = getRmColorState(next.item_id);
+					const allowedColorIds = new Set(
+						(colorState.entries || []).map((entry) => Number(entry.id || 0)),
+					);
+					if (next.color_id && !allowedColorIds.has(Number(next.color_id))) {
+						next.color_id = null;
+					}
+					if (!next.color_id && !colorState.allowNone && colorState.entries.length) {
+						next.color_id = Number(colorState.entries[0].id);
+					}
+
+					const sizeState = getRmSizeState(next.item_id);
+					const allowedSizeIds = new Set(
+						(sizeState.entries || []).map((entry) => Number(entry.id || 0)),
+					);
+					if (next.size_id && !allowedSizeIds.has(Number(next.size_id))) {
+						next.size_id = null;
+					}
+					if (!next.size_id && !sizeState.allowNone && sizeState.entries.length) {
+						next.size_id = Number(sizeState.entries[0].id);
+					}
+
+					if (!next.uom_id) next.uom_id = defaultUomId(next, stockType);
+					if (forceRateRefresh || !next.rate || Number(next.rate) <= 0) {
+						next.rate = getRmRate(next);
+					}
+				} else {
+					next.color_id = null;
+					next.size_id = null;
+				}
+			} else {
+				if (next.sku_id) {
+					const sku = skuMap.get(Number(next.sku_id));
+					if (!next.uom_id) next.uom_id = defaultUomId(next, stockType);
+					if (forceRateRefresh || !next.rate || Number(next.rate) <= 0) {
+						next.rate = rate4(sku?.default_rate || 0);
+					}
+				}
+				if (stockType === "FG") {
+					const selectedUom = getUomOptions(next, stockType).find(
+						(entry) => Number(entry.id) === Number(next.uom_id || 0),
+					);
+
+					// FG status is not user-editable: base unit => LOOSE, otherwise PACKED.
+					next.row_status = selectedUom?.is_base === true ? "LOOSE" : "PACKED";
+					next.row_status = normalizeRowStatus(next.row_status);
+				} else {
+					next.row_status = null;
+				}
+			}
+
+			next.qty = qty3(next.qty);
+			next.rate = rate4(next.rate);
+			next.amount = amount2(Number(next.qty || 0) * Number(next.rate || 0));
+			return next;
+		};
+
+		const headerColumnsByType = (stockType) => {
+			// Voucher grid columns switch by selected stock type.
+			if (stockType === "RM") {
+				return [
+					{ key: "item", label: <%- JSON.stringify(toFriendlyLabel("raw_material", "Raw Material")) %>, align: "text-left" },
+					{ key: "color", label: <%- JSON.stringify(toFriendlyLabel("color", "Color")) %>, align: "text-left" },
+					{ key: "size", label: <%- JSON.stringify(toFriendlyLabel("size", "Size")) %>, align: "text-left" },
+					{ key: "uom", label: <%- JSON.stringify(toFriendlyLabel("unit", "Unit")) %>, align: "text-left" },
+					{ key: "qty", label: <%- JSON.stringify(toFriendlyLabel("quantity", "Quantity")) %>, align: "text-right" },
+					{ key: "rate", label: <%- JSON.stringify(toFriendlyLabel("rate", "Rate")) %>, align: "text-right" },
+					{ key: "amount", label: <%- JSON.stringify(toFriendlyLabel("amount", "Amount")) %>, align: "text-right" },
+					{ key: "actions", label: <%- JSON.stringify(toFriendlyLabel("actions", "Actions")) %>, align: "text-center" },
+					{ key: "sr", label: <%- JSON.stringify(toFriendlyLabel("sr_no", "Sr #")) %>, align: "text-center" },
+				];
+			}
+
+			const base = [
+				{ key: "sku", label: <%- JSON.stringify(toFriendlyLabel("sku", "SKU")) %>, align: "text-left" },
+				{ key: "uom", label: <%- JSON.stringify(toFriendlyLabel("unit", "Unit")) %>, align: "text-left" },
+			];
+			if (stockType === "FG") {
+				// Status is intentionally hidden in UI for FG; it is derived from selected unit.
+			}
+			base.push(
+				{ key: "qty", label: <%- JSON.stringify(toFriendlyLabel("quantity", "Quantity")) %>, align: "text-right" },
+				{ key: "rate", label: <%- JSON.stringify(toFriendlyLabel("rate", "Rate")) %>, align: "text-right" },
+				{ key: "amount", label: <%- JSON.stringify(toFriendlyLabel("amount", "Amount")) %>, align: "text-right" },
+				{ key: "actions", label: <%- JSON.stringify(toFriendlyLabel("actions", "Actions")) %>, align: "text-center" },
+				{ key: "sr", label: <%- JSON.stringify(toFriendlyLabel("sr_no", "Sr #")) %>, align: "text-center" },
+			);
+			return base;
+		};
+
+		const renderHead = (stockType) => {
+			const columns = headerColumnsByType(stockType);
+			linesHeadRow.innerHTML = columns
+				.map((column) => `<th class="border-b border-slate-200 px-2 py-2 ${column.align}">${escapeHtml(column.label)}</th>`)
+				.join("");
+			renderFooter(stockType);
+		};
+
+		const optionMarkup = (entries, selectedId, placeholderLabel) => {
+			const normalizedSelected = Number(selectedId || 0);
+			let html = "";
+			if (String(placeholderLabel || "").trim()) {
+				html += `<option value="">${escapeHtml(placeholderLabel)}</option>`;
+			}
+			html += (entries || [])
+				.map((entry) => {
+					const id = Number(entry?.id || 0);
+					const selected = normalizedSelected === id ? " selected" : "";
+					const label = String(entry?.label || entry?.name || entry?.code || id);
+					return `<option value="${id}"${selected}>${escapeHtml(label)}</option>`;
+				})
+				.join("");
+			return html;
+		};
+
+		const rmColorOptions = (itemId) => getRmColorState(itemId);
+
+		const rmSizeOptions = (itemId) => getRmSizeState(itemId);
+
+		const renderFooter = (stockType) => {
+			if (!linesFooter) return;
+			const descriptorColspan = stockType === "RM" ? 4 : 2;
+			const totalColspan = stockType === "RM" ? 9 : 7;
+			const addDisabled = canSave ? "" : "disabled";
+			const addButtonTitle = <%- JSON.stringify(toFriendlyLabel("add", "Add")) %>;
+
+			linesFooter.innerHTML = `
+				<tr class="bg-slate-50">
+					<td colspan="${descriptorColspan}" class="border-t border-slate-200 px-2 py-2 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-700">${escapeHtml(totalLabel)}</td>
+					<td class="border-t border-slate-200 px-2 py-1.5">
+						<input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-qty aria-label="${escapeHtml(quantityLabel)}">
+					</td>
+					<td class="border-t border-slate-200 px-2 py-1.5"></td>
+					<td class="border-t border-slate-200 px-2 py-1.5">
+						<input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.00" data-total-amount aria-label="${escapeHtml(amountLabel)}">
+					</td>
+					<td class="border-t border-slate-200 px-2 py-1 text-center">
+						<button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white p-2 text-slate-700 disabled:opacity-40" data-add-row aria-label="${escapeHtml(addButtonTitle)}" title="${escapeHtml(addButtonTitle)}" ${addDisabled}>
+							<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
+						</button>
+					</td>
+					<td class="border-t border-slate-200 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${escapeHtml(unitsLabel)}</td>
+				</tr>
+				<tr class="bg-slate-50" data-total-qty-by-unit-row>
+					<td colspan="${totalColspan}" class="border-t border-slate-200 px-2 py-2">
+						<div class="flex flex-wrap items-center gap-2" data-total-qty-by-unit></div>
+					</td>
+				</tr>
+			`;
+
+			totalQtyInput = linesFooter.querySelector("[data-total-qty]");
+			totalAmountInput = linesFooter.querySelector("[data-total-amount]");
+			totalQtyByUnitWrap = linesFooter.querySelector("[data-total-qty-by-unit]");
+			totalQtyByUnitRow = linesFooter.querySelector("[data-total-qty-by-unit-row]");
+		};
+
+		const renderRows = () => {
+			// Full row render keeps table structure and searchable selects in sync after each change.
+			const stockType = currentStockType();
+			if (!rowsState.length) rowsState = [defaultRow(stockType)];
+
+			linesBody.innerHTML = rowsState
+				.map((row, index) => {
+					const normalized = applyDerivedDefaults(row, stockType);
+					rowsState[index] = normalized;
+
+					const rowNoCell = `<td class="border-t border-slate-200 px-2 py-2 text-center text-xs font-semibold text-slate-500">${index + 1}</td>`;
+					const removeDisabled = !canSave || rowsState.length <= 1;
+					const actionCell = `
+						<td class="border-t border-slate-200 px-2 py-1 text-center">
+							<button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-300 bg-white p-2 text-rose-600 hover:border-rose-400 hover:text-rose-700 disabled:opacity-40" data-remove-row="${index}" aria-label="${<%- JSON.stringify(toFriendlyLabel("delete", "Delete")) %>}" title="${<%- JSON.stringify(toFriendlyLabel("delete", "Delete")) %>}" ${removeDisabled ? "disabled" : ""}>
+								<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8.75 5.5h6.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path><path d="M10 5.5V4.75A1.25 1.25 0 0 1 11.25 3.5h1.5A1.25 1.25 0 0 1 14 4.75v.75" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path><path d="M6.5 7.25h11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path><path d="M8 7.25l.75 11A1.75 1.75 0 0 0 10.5 20h3a1.75 1.75 0 0 0 1.75-1.75l.75-11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path><path d="M10.75 10.25v6.25M13.25 10.25v6.25" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path></svg>
+							</button>
+						</td>
+					`;
+
+					if (stockType === "RM") {
+						const colorState = rmColorOptions(normalized.item_id);
+						const sizeState = rmSizeOptions(normalized.item_id);
+						const itemSelect = `
+							<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="item_id" data-line-index="${index}" data-row-field="item_id" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>
+								${optionMarkup(
+									rmItems.map((entry) => ({
+										id: entry.id,
+										label: String(entry.name || "").trim(),
+									})),
+									normalized.item_id,
+									<%- JSON.stringify(toFriendlyLabel("select_raw_material", "Select Raw Material")) %>,
+								)}
+							</select>
+						`;
+						const colorSelect = `
+							<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="color_id" data-line-index="${index}" data-row-field="color_id" data-searchable-select="true" data-searchable-variant="unified" ${(canSave && !colorState.disabled) ? "" : "disabled"}>
+								${optionMarkup(colorState.entries, normalized.color_id, colorState.allowNone ? <%- JSON.stringify(toFriendlyLabel("none", "None")) %> : "")}
+							</select>
+						`;
+						const sizeSelect = `
+							<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="size_id" data-line-index="${index}" data-row-field="size_id" data-searchable-select="true" data-searchable-variant="unified" ${(canSave && !sizeState.disabled) ? "" : "disabled"}>
+								${optionMarkup(sizeState.entries, normalized.size_id, sizeState.allowNone ? <%- JSON.stringify(toFriendlyLabel("none", "None")) %> : "")}
+							</select>
+						`;
+						const uomSelect = `
+							<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="uom_id" data-line-index="${index}" data-row-field="uom_id" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>
+								${optionMarkup(getUomOptions(normalized, stockType), normalized.uom_id, <%- JSON.stringify(toFriendlyLabel("select_unit", "Select Unit")) %>)}
+							</select>
+						`;
+
+						return `
+							<tr data-line-index="${index}" data-row-index="${index}">
+								<td class="border-t border-slate-200 px-2 py-1">${itemSelect}</td>
+								<td class="border-t border-slate-200 px-2 py-1">${colorSelect}</td>
+								<td class="border-t border-slate-200 px-2 py-1">${sizeSelect}</td>
+								<td class="border-t border-slate-200 px-2 py-1">${uomSelect}</td>
+								<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty" data-row-field="qty" data-line-index="${index}" value="${normalized.qty}" ${canSave ? "" : "readonly"}></td>
+								<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.0001" class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2 text-right" data-field="rate" data-row-field="rate" data-line-index="${index}" value="${normalized.rate}" readonly></td>
+								<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="${normalized.amount.toFixed(2)}" data-amount-display="${index}"></td>
+								${actionCell}
+								${rowNoCell}
+							</tr>
+						`;
+					}
+
+					const skuRows = skuList.filter((entry) => String(entry.item_type || "").toUpperCase() === stockType);
+					const skuSelect = `
+						<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="sku_id" data-line-index="${index}" data-row-field="sku_id" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>
+							${optionMarkup(
+								skuRows.map((entry) => ({
+									id: entry.id,
+									label: String(entry.sku_name || "").trim(),
+								})),
+								normalized.sku_id,
+								<%- JSON.stringify(toFriendlyLabel("select_sku", "Select SKU")) %>,
+							)}
+						</select>
+					`;
+					const uomSelect = `
+						<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="uom_id" data-line-index="${index}" data-row-field="uom_id" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>
+							${optionMarkup(getUomOptions(normalized, stockType), normalized.uom_id, <%- JSON.stringify(toFriendlyLabel("select_unit", "Select Unit")) %>)}
+						</select>
+					`;
+
+					return `
+						<tr data-line-index="${index}" data-row-index="${index}">
+							<td class="border-t border-slate-200 px-2 py-1">${skuSelect}</td>
+							<td class="border-t border-slate-200 px-2 py-1">${uomSelect}</td>
+							<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty" data-row-field="qty" data-line-index="${index}" value="${normalized.qty}" ${canSave ? "" : "readonly"}></td>
+							<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.0001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="rate" data-row-field="rate" data-line-index="${index}" value="${normalized.rate}" ${canSave ? "" : "readonly"}></td>
+							<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="${normalized.amount.toFixed(2)}" data-amount-display="${index}"></td>
+							${actionCell}
+							${rowNoCell}
+						</tr>
+					`;
+				})
+				.join("");
+
+			if (typeof window.initSearchableSelects === "function") {
+				window.initSearchableSelects(form);
+			}
+
+			bindNavigator();
+			syncTotals();
+		};
+
+		const syncTotals = () => {
+			let totalQty = 0;
+			let totalAmount = 0;
+			const totalsByUnit = new Map();
+			rowsState.forEach((row) => {
+				const qty = Number(row.qty || 0);
+				totalQty += qty;
+				totalAmount += Number(row.amount || 0);
+				if (Number(row.uom_id || 0) > 0) {
+					const rowStockType = Number(row.item_id || 0) > 0 ? "RM" : currentStockType();
+					const uomLabel = getUomLabelByRow(row, rowStockType);
+					if (uomLabel) {
+						totalsByUnit.set(uomLabel, Number(totalsByUnit.get(uomLabel) || 0) + qty);
+					}
+				}
+			});
+			if (totalQtyInput) {
+				totalQtyInput.value = qty3(totalQty).toFixed(3);
+			}
+			if (totalAmountInput) {
+				totalAmountInput.value = amount2(totalAmount).toFixed(2);
+			}
+
+			if (totalQtyByUnitWrap) {
+				if (totalsByUnit.size) {
+					if (totalQtyByUnitRow) totalQtyByUnitRow.classList.remove("hidden");
+					totalQtyByUnitWrap.innerHTML = Array.from(totalsByUnit.entries())
+						.map(([label, value]) => {
+							const safeLabel = escapeHtml(label);
+							const safeValue = qty3(value).toFixed(3);
+							return `<span class="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${safeLabel}: ${safeValue}</span>`;
+						})
+						.join("");
+				} else {
+					if (totalQtyByUnitRow) totalQtyByUnitRow.classList.add("hidden");
+					totalQtyByUnitWrap.innerHTML = "";
+				}
+			}
+		};
+
+		const syncAmountCell = (index) => {
+			const amountInput = linesBody.querySelector(`[data-amount-display="${index}"]`);
+			if (!(amountInput instanceof HTMLInputElement)) return;
+			const row = rowsState[index];
+			if (!row) return;
+			amountInput.value = amount2(row.amount || 0).toFixed(2);
+		};
+
+		const fieldOrderForType = (stockType) => {
+			// Enter-key navigation order mirrors visible columns per stock type.
+			if (stockType === "RM") {
+				return ["item_id", "color_id", "size_id", "uom_id", "qty", "rate"];
+			}
+			if (stockType === "FG") {
+				return ["sku_id", "uom_id", "qty", "rate"];
+			}
+			return ["sku_id", "uom_id", "qty", "rate"];
+		};
+
+		const bindNavigator = () => {
+			if (typeof unbindNavigator === "function") {
+				unbindNavigator();
+				unbindNavigator = null;
+			}
+			if (typeof window.createVoucherRowEnterNavigator !== "function") return;
+			const nav = window.createVoucherRowEnterNavigator({
+				form,
+				linesBody,
+				rowSelector: "tr[data-line-index]",
+				fieldAttr: "data-row-field",
+				fieldOrder: fieldOrderForType(currentStockType()),
+				canAppendRow: () => canSave,
+				appendRow: () => {
+					if (!canSave) return false;
+					rowsState.push(defaultRow(currentStockType()));
+					renderRows();
+					return true;
+				},
+			});
+			if (nav && typeof nav.bind === "function") {
+				unbindNavigator = nav.bind();
+			}
+		};
+
+		const setRowsFromVoucher = () => {
+			const stockType = normalizeStockType(initialVoucher?.stock_type || stockTypeSelect?.value);
+			if (stockTypeSelect) stockTypeSelect.value = stockType;
+			rowsState = Array.isArray(initialVoucher?.lines)
+				? initialVoucher.lines.map((line) => normalizeIncomingLine(line, stockType))
+				: [defaultRow(stockType)];
+			if (!rowsState.length) rowsState = [defaultRow(stockType)];
+		};
+
+		const setRowsToNew = () => {
+			rowsState = [defaultRow(currentStockType())];
+		};
+
+		const updateRowField = ({ index, field, value }) => {
+			// Field-level updates also reset dependent fields (e.g., unit after item change).
+			const row = rowsState[index];
+			if (!row) return;
+			const stockType = currentStockType();
+
+			if (["sku_id", "item_id", "uom_id", "color_id", "size_id"].includes(field)) {
+				row[field] = toInt(value);
+			} else if (field === "row_status") {
+				row.row_status = normalizeRowStatus(value);
+			} else if (field === "qty") {
+				row.qty = qty3(value);
+			} else if (field === "rate") {
+				row.rate = rate4(value);
+			}
+
+			if (field === "sku_id") {
+				row.uom_id = null;
+				row.rate = 0;
+			}
+			if (field === "item_id") {
+				row.uom_id = null;
+				row.color_id = null;
+				row.size_id = null;
+				row.rate = 0;
+			}
+			if (stockType === "RM" && (field === "color_id" || field === "size_id")) {
+				row.rate = 0;
+			}
+			row.amount = amount2(Number(row.qty || 0) * Number(row.rate || 0));
+			const shouldRefreshRate = (stockType === "RM" && (field === "item_id" || field === "color_id" || field === "size_id")) || (stockType !== "RM" && field === "sku_id");
+			rowsState[index] = applyDerivedDefaults(row, stockType, { forceRateRefresh: shouldRefreshRate });
+
+			if (field === "qty" || field === "rate") {
+				syncAmountCell(index);
+				syncTotals();
+				return;
+			}
+
+			renderRows();
+		};
+
+		const collectPayloadLines = () => {
+			// Serialize only valid rows; backend performs final authoritative validation.
+			const stockType = currentStockType();
+			return rowsState
+				.map((row) => applyDerivedDefaults(row, stockType))
+				.filter((row) => {
+					if (stockType === "RM") return toInt(row.item_id) && Number(row.qty || 0) > 0;
+					return toInt(row.sku_id) && Number(row.qty || 0) > 0;
+				})
+				.map((row) => {
+					if (stockType === "RM") {
+						return {
+							item_id: toInt(row.item_id),
+							color_id: toInt(row.color_id),
+							size_id: toInt(row.size_id),
+							uom_id: toInt(row.uom_id),
+							qty: qty3(row.qty),
+							rate: rate4(row.rate),
+						};
+					}
+
+					return {
+						sku_id: toInt(row.sku_id),
+						uom_id: toInt(row.uom_id),
+						row_status: stockType === "FG" ? normalizeRowStatus(row.row_status) : null,
+						qty: qty3(row.qty),
+						rate: rate4(row.rate),
+					};
+				});
+		};
+
+		linesBody.addEventListener("change", (event) => {
+			const target = event.target;
+			if (!(target instanceof HTMLElement)) return;
+			const index = Number(target.getAttribute("data-line-index") || -1);
+			const field = String(target.getAttribute("data-field") || "").trim();
+			if (!Number.isInteger(index) || index < 0 || !field) return;
+			updateRowField({ index, field, value: target.value });
+		});
+
+		linesBody.addEventListener("input", (event) => {
+			const target = event.target;
+			if (!(target instanceof HTMLElement)) return;
+			const index = Number(target.getAttribute("data-line-index") || -1);
+			const field = String(target.getAttribute("data-field") || "").trim();
+			if (!Number.isInteger(index) || index < 0 || !field) return;
+			if (field !== "qty" && field !== "rate") return;
+
+			const row = rowsState[index];
+			if (!row) return;
+			row[field] = field === "qty" ? qty3(target.value) : rate4(target.value);
+			row.amount = amount2(Number(row.qty || 0) * Number(row.rate || 0));
+			rowsState[index] = row;
+			syncAmountCell(index);
+			syncTotals();
+		});
+
+		linesBody.addEventListener("click", (event) => {
+			const button = event.target.closest("[data-remove-row]");
+			if (!button) return;
+			if (!canSave) return;
+
+			const index = Number(button.getAttribute("data-remove-row") || -1);
+			if (!Number.isInteger(index) || index < 0) return;
+
+			rowsState.splice(index, 1);
+			if (!rowsState.length) rowsState = [defaultRow(currentStockType())];
+			renderRows();
+		});
+
+		form.addEventListener("click", (event) => {
+			const addButton = event.target.closest("[data-add-row]");
+			if (!addButton) return;
+			if (!canSave) return;
+			rowsState.push(defaultRow(currentStockType()));
+			renderRows();
+		});
+
+		if (stockTypeSelect) {
+			stockTypeSelect.addEventListener("change", () => {
+				rowsState = [defaultRow(currentStockType())];
+				renderHead(currentStockType());
+				renderRows();
+			});
+		}
+
+		if (loadVoucherButton) {
+			loadVoucherButton.addEventListener("click", () => {
+				const voucherNo = toInt(voucherNoInput?.value);
+				if (!voucherNo) return;
+				window.location.href = `${basePath}?voucher_no=${voucherNo}&view=1`;
+			});
+		}
+
+		if (deleteButton && deleteForm) {
+			deleteButton.addEventListener("click", () => {
+				if (!canSave && !initialVoucher) return;
+				const confirmMessage = <%- JSON.stringify(toFriendlyLabel("confirm_delete", "Delete this voucher?")) %>;
+				if (!window.confirm(confirmMessage)) return;
+				deleteForm.submit();
+			});
+		}
+
+		form.addEventListener("submit", (event) => {
+			// Submit normalized line payload through hidden field consumed by route/service.
+			const payloadLines = collectPayloadLines();
+			if (!payloadLines.length) {
+				event.preventDefault();
+				const message = <%- JSON.stringify(toFriendlyLabel("error_lines_required", "At least one valid line is required.")) %>;
+				window.alert(message);
+				return;
+			}
+			linesJsonInput.value = JSON.stringify(payloadLines);
+		});
+
+		if (initialVoucher) {
+			setRowsFromVoucher();
+		} else {
+			setRowsToNew();
+		}
+		renderHead(currentStockType());
+		renderRows();
+	})();
+</script>

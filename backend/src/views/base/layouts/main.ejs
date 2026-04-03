@@ -316,6 +316,22 @@
           try {
             const payload = await response.json();
             const message = String(payload?.error || payload?.message || "").trim();
+            const details = payload?.details;
+            if (details && typeof details === "object") {
+              const detailLines = [];
+              if (typeof details.detail === "string" && details.detail.trim()) {
+                detailLines.push(details.detail.trim());
+              }
+              if (typeof details.hint === "string" && details.hint.trim()) {
+                detailLines.push(details.hint.trim());
+              }
+              if (typeof details.constraint === "string" && details.constraint.trim()) {
+                detailLines.push(`Constraint: ${details.constraint.trim()}`);
+              }
+              if (detailLines.length) {
+                return detailLines.join("\n");
+              }
+            }
             return message || genericError;
           } catch (err) {
             return genericError;
@@ -1045,6 +1061,7 @@
         mediaQuery.addEventListener("change", () => closeAll());
       })();
     </script>
+    <%- include("../partials/report-utils") %>
     <!-- Urdu translation utilities for multilingual support -->
     <%- include("../partials/urdu-translate-utils") %>
   </body>

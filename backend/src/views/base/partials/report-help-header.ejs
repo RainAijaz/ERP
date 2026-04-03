@@ -1,9 +1,14 @@
 <%
-  const headingText = String(title || "").trim();
-  const helpTooltipText = String(tooltipText || "").trim();
-  const usageHeadingText = String(usageTitle || "").trim();
-  const usageLines = Array.isArray(usagePoints)
-    ? usagePoints.map((line) => String(line || "").trim()).filter(Boolean)
+  const safeTitle = typeof title === "undefined" ? "" : title;
+  const safeTooltipText = typeof tooltipText === "undefined" ? "" : tooltipText;
+  const safeUsageTitle = typeof usageTitle === "undefined" ? "" : usageTitle;
+  const safeUsagePoints = typeof usagePoints === "undefined" ? [] : usagePoints;
+
+  const headingText = String(safeTitle || "").trim();
+  const helpTooltipText = String(safeTooltipText || "").trim();
+  const usageHeadingText = String(safeUsageTitle || "").trim();
+  const usageLines = Array.isArray(safeUsagePoints)
+    ? safeUsagePoints.map((line) => String(line || "").trim()).filter(Boolean)
     : [];
 %>
 

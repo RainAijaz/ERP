@@ -620,15 +620,14 @@ router.post(
       try {
         await knex("erp.items").where({ id }).del();
       } catch (deleteErr) {
-        if (String(deleteErr?.code || "") !== "23503") throw deleteErr;
-        await knex.transaction(async (trx) => {
-          await applyItemLifecycleToggleTx(trx, {
-            itemId: id,
-            itemType: ITEM_TYPE,
-            isActive: false,
-            userId: req.user ? req.user.id : null,
-          });
-        });
+        if (String(deleteErr?.code || "") === "23503") {
+          throw new HttpError(
+            409,
+            res.locals.t("error_record_in_use") ||
+              "This record is being used in other ERP areas and cannot be deleted.",
+          );
+        }
+        throw deleteErr;
       }
       queueAuditLog(req, {
         entityType: SCREEN_ENTITY_TYPES["master_data.products.semi_finished"],
@@ -637,19 +636,7 @@ router.post(
       });
       return res.redirect(basePath);
     } catch (err) {
-      const [rows, options, users] = await Promise.all([
-        loadRows(),
-        loadOptions(),
-        loadUsers(),
-      ]);
-      return renderIndex(req, res, {
-        rows,
-        ...options,
-        users,
-        error: res.locals.t("error_delete"),
-        modalOpen: false,
-        modalMode: "create",
-      });
+      return next(err);
     }
   },
 );

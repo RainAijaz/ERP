@@ -17,4 +17,5 @@ BEGIN;
 \ir 095_production_uom_pair_enforcement.sql
 \ir 096_remove_bom_advanced_rules.sql
 \ir 097_production_stages_and_bom_routing.sql
+\ir 098_allow_negative_stock_balance_sku.sql
 COMMIT;

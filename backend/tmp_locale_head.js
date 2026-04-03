@@ -732,7 +732,7 @@ const translations = {
     production_reports: "Production Reports",
     inventory_voucher: "Inventory Voucher",
     stock_count: "Stock Count",
-    stock_transfer: "Stock Transfer",
+    stock_transfer: "Stock Transfer In",
     inventory_reports: "Inventory Reports",
     returnables: "Returnables",
     returnable_reports: "Returnable Reports",

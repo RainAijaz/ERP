@@ -1,12 +1,23 @@
 const { test, expect } = require("@playwright/test");
 const { login } = require("./utils/auth");
-const { getApprovalPolicy, upsertApprovalPolicy, deleteApprovalPolicy, findLatestApprovalRequest, getUserByUsername, closeDb } = require("./utils/db");
+const {
+  getApprovalPolicy,
+  upsertApprovalPolicy,
+  deleteApprovalPolicy,
+  findLatestApprovalRequest,
+  getUserByUsername,
+  getBranch,
+  upsertUserWithPermissions,
+  setUserScopePermission,
+  closeDb,
+} = require("./utils/db");
 
 const POLICY_ENTITY_TYPE = "VOUCHER_TYPE";
 const POLICY_ENTITY_KEY = "BANK_VOUCHER";
 const POLICY_ACTION = "edit";
 
-const BANK_REGISTER_URL = "/reports/financial/voucher_register?voucher_type=bank&report_mode=details&load_report=1";
+const BANK_REGISTER_URL =
+  "/reports/financial/voucher_register?voucher_type=bank&report_mode=details&load_report=1";
 const CASH_VOUCHER_URL = "/vouchers/cash?new=1";
 const EXPENSE_TRENDS_URL = "/reports/financial/expense_trends";
 
@@ -16,7 +27,9 @@ const findEditableBankStatusSelect = async (page) => {
   for (let i = 0; i < count; i += 1) {
     const candidate = selects.nth(i);
     if (await candidate.isDisabled()) continue;
-    const voucherId = Number((await candidate.getAttribute("data-voucher-id")) || 0);
+    const voucherId = Number(
+      (await candidate.getAttribute("data-voucher-id")) || 0,
+    );
     const lineId = Number((await candidate.getAttribute("data-line-id")) || 0);
     if (voucherId > 0 && lineId > 0) return candidate;
   }
@@ -31,7 +44,12 @@ const pickNextStatus = (currentStatus) => {
 };
 
 const changeBankStatusAndCapture = async (page, selectEl, nextStatus) => {
-  const responsePromise = page.waitForResponse((res) => res.url().includes("/bank-line-status") && res.request().method() === "POST", { timeout: 15000 });
+  const responsePromise = page.waitForResponse(
+    (res) =>
+      res.url().includes("/bank-line-status") &&
+      res.request().method() === "POST",
+    { timeout: 15000 },
+  );
 
   await selectEl.selectOption(nextStatus);
 
@@ -43,18 +61,48 @@ const changeBankStatusAndCapture = async (page, selectEl, nextStatus) => {
   };
 };
 
+const waitForApprovalRequestAdvance = async ({
+  requestedBy,
+  baselineId,
+  attempts = 10,
+  delayMs = 200,
+}) => {
+  for (let i = 0; i < attempts; i += 1) {
+    const latest = await findLatestApprovalRequest({
+      requestedBy,
+      status: "PENDING",
+      entityType: "VOUCHER",
+    });
+    if (Number(latest?.id || 0) > Number(baselineId || 0)) {
+      return latest;
+    }
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+
+  return findLatestApprovalRequest({
+    requestedBy,
+    status: "PENDING",
+    entityType: "VOUCHER",
+  });
+};
+
 const fillBalancedCashVoucherLines = async (page) => {
   const firstRow = page.locator("[data-lines-body] tr").first();
   const firstAccount = firstRow.locator('select[data-field="account_id"]');
   const optionCount = await firstAccount.locator("option").count();
-  test.skip(optionCount < 2, "No account options available for cash voucher flow.");
+  test.skip(
+    optionCount < 2,
+    "No account options available for cash voucher flow.",
+  );
 
   await firstAccount.selectOption({ index: 1 });
   await firstRow.locator('input[data-field="cash_receipt"]').fill("250");
 
   await page.locator("[data-add-row]").click();
   const secondRow = page.locator("[data-lines-body] tr").nth(1);
-  await secondRow.locator('select[data-field="account_id"]').selectOption({ index: 1 });
+  await secondRow
+    .locator('select[data-field="account_id"]')
+    .selectOption({ index: 1 });
   await secondRow.locator('input[data-field="cash_payment"]').fill("250");
 };
 
@@ -64,6 +112,7 @@ test.describe("Financial module - multi-user, permissions, approvals", () => {
   const ctx = {
     policySnapshot: null,
     limitedUser: null,
+    scenarioCreatorUserId: null,
   };
 
   test.beforeAll(async () => {
@@ -75,11 +124,49 @@ test.describe("Financial module - multi-user, permissions, approvals", () => {
 
     const limitedUsername = process.env.E2E_LIMITED_USER;
     ctx.limitedUser = await getUserByUsername(limitedUsername || "");
+
+    const branch = await getBranch();
+    const branchId = Number(branch?.id || 0) || null;
+    const scenarioCreatorUser =
+      process.env.E2E_FIN_SCENARIO_CREATOR_USER || "e2e_fin_scn_creator";
+    const scenarioCreatorPass =
+      process.env.E2E_FIN_SCENARIO_CREATOR_PASS || "Creator@123";
+
+    process.env.E2E_FIN_SCENARIO_CREATOR_USER = scenarioCreatorUser;
+    process.env.E2E_FIN_SCENARIO_CREATOR_PASS = scenarioCreatorPass;
+
+    const scenarioCreatorUserId = await upsertUserWithPermissions({
+      username: scenarioCreatorUser,
+      password: scenarioCreatorPass,
+      roleName: "Salesman",
+      branchId,
+      scopeKeys: [],
+    });
+
+    ctx.scenarioCreatorUserId = Number(scenarioCreatorUserId || 0) || null;
+
+    await setUserScopePermission({
+      userId: ctx.scenarioCreatorUserId,
+      scopeType: "VOUCHER",
+      scopeKey: "BANK_VOUCHER",
+      permissions: {
+        can_navigate: true,
+        can_view: true,
+        can_create: true,
+        can_edit: true,
+        can_delete: false,
+        can_print: true,
+        can_approve: false,
+      },
+    });
   });
 
   test.afterAll(async () => {
     try {
-      if (ctx.policySnapshot && typeof ctx.policySnapshot.requires_approval === "boolean") {
+      if (
+        ctx.policySnapshot &&
+        typeof ctx.policySnapshot.requires_approval === "boolean"
+      ) {
         await upsertApprovalPolicy({
           entityType: POLICY_ENTITY_TYPE,
           entityKey: POLICY_ENTITY_KEY,
@@ -101,22 +188,35 @@ test.describe("Financial module - multi-user, permissions, approvals", () => {
   test("admin can access key financial module pages", async ({ page }) => {
     await login(page, "E2E_ADMIN");
 
-    const cashRes = await page.goto(CASH_VOUCHER_URL, { waitUntil: "domcontentloaded" });
+    const cashRes = await page.goto(CASH_VOUCHER_URL, {
+      waitUntil: "domcontentloaded",
+    });
     expect(cashRes?.status()).toBe(200);
 
-    const registerRes = await page.goto(BANK_REGISTER_URL, { waitUntil: "domcontentloaded" });
+    const registerRes = await page.goto(BANK_REGISTER_URL, {
+      waitUntil: "domcontentloaded",
+    });
     expect(registerRes?.status()).toBe(200);
 
-    const trendsRes = await page.goto(EXPENSE_TRENDS_URL, { waitUntil: "domcontentloaded" });
+    const trendsRes = await page.goto(EXPENSE_TRENDS_URL, {
+      waitUntil: "domcontentloaded",
+    });
     expect(trendsRes?.status()).toBe(200);
     await expect(page.locator("[data-ledger-filter-form]")).toBeVisible();
   });
 
-  test("empty cash voucher submission is blocked for admin", async ({ page }) => {
+  test("empty cash voucher submission is blocked for admin", async ({
+    page,
+  }) => {
     await login(page, "E2E_ADMIN");
 
-    const response = await page.goto(CASH_VOUCHER_URL, { waitUntil: "domcontentloaded" });
-    test.skip(!response || response.status() !== 200, "Cash voucher page not accessible.");
+    const response = await page.goto(CASH_VOUCHER_URL, {
+      waitUntil: "domcontentloaded",
+    });
+    test.skip(
+      !response || response.status() !== 200,
+      "Cash voucher page not accessible.",
+    );
 
     const submitButton = page.locator('form button[type="submit"]').first();
     await expect(submitButton).toBeVisible();
@@ -146,21 +246,37 @@ test.describe("Financial module - multi-user, permissions, approvals", () => {
       .catch(() => false);
     const stayedOnVoucherPage = /\/vouchers\/cash/i.test(currentUrl);
     const redirectedToLogin = /\/auth\/login/i.test(currentUrl);
-    expect(hasErrorModal || hasToast || stayedOnVoucherPage || redirectedToLogin).toBeTruthy();
+    expect(
+      hasErrorModal || hasToast || stayedOnVoucherPage || redirectedToLogin,
+    ).toBeTruthy();
   });
 
-  test("financial report sanitizes SQL-injection-like date filters", async ({ page }) => {
+  test("financial report sanitizes SQL-injection-like date filters", async ({
+    page,
+  }) => {
     await login(page, "E2E_ADMIN");
 
-    const response = await page.goto("/reports/financial/expense_trends?from_date=' OR 1=1 --&to_date=<script>alert(1)</script>&load_report=1", { waitUntil: "domcontentloaded" });
-    test.skip(!response || response.status() !== 200, "Expense trends report not accessible.");
+    const response = await page.goto(
+      "/reports/financial/expense_trends?from_date=' OR 1=1 --&to_date=<script>alert(1)</script>&load_report=1",
+      { waitUntil: "domcontentloaded" },
+    );
+    test.skip(
+      !response || response.status() !== 200,
+      "Expense trends report not accessible.",
+    );
 
     await expect(page.locator("[data-date-filter-warning]")).toBeVisible();
-    await expect(page.locator('input[name="from_date"]')).toHaveValue(/\d{4}-\d{2}-\d{2}/);
-    await expect(page.locator('input[name="to_date"]')).toHaveValue(/\d{4}-\d{2}-\d{2}/);
+    await expect(page.locator('input[name="from_date"]')).toHaveValue(
+      /\d{4}-\d{2}-\d{2}/,
+    );
+    await expect(page.locator('input[name="to_date"]')).toHaveValue(
+      /\d{4}-\d{2}-\d{2}/,
+    );
   });
 
-  test("admin bank status change applies immediately when approval policy is disabled", async ({ page }) => {
+  test("admin bank status change applies immediately when approval policy is disabled", async ({
+    page,
+  }) => {
     await upsertApprovalPolicy({
       entityType: POLICY_ENTITY_TYPE,
       entityKey: POLICY_ENTITY_KEY,
@@ -169,13 +285,23 @@ test.describe("Financial module - multi-user, permissions, approvals", () => {
     });
 
     await login(page, "E2E_ADMIN");
-    const response = await page.goto(BANK_REGISTER_URL, { waitUntil: "domcontentloaded" });
-    test.skip(!response || response.status() !== 200, "Bank voucher register not accessible.");
+    const response = await page.goto(BANK_REGISTER_URL, {
+      waitUntil: "domcontentloaded",
+    });
+    test.skip(
+      !response || response.status() !== 200,
+      "Bank voucher register not accessible.",
+    );
 
     const selectEl = await findEditableBankStatusSelect(page);
-    test.skip(!selectEl, "No editable bank status row found in voucher register details.");
+    test.skip(
+      !selectEl,
+      "No editable bank status row found in voucher register details.",
+    );
 
-    const previous = String((await selectEl.getAttribute("data-prev-status")) || "PENDING").toUpperCase();
+    const previous = String(
+      (await selectEl.getAttribute("data-prev-status")) || "PENDING",
+    ).toUpperCase();
     const next = pickNextStatus(previous);
 
     const result = await changeBankStatusAndCapture(page, selectEl, next);
@@ -188,7 +314,9 @@ test.describe("Financial module - multi-user, permissions, approvals", () => {
     await expect(page.locator("[data-inline-report-toast]")).toBeVisible();
   });
 
-  test("admin bank status change is queued when approval policy is enabled", async ({ page }) => {
+  test("non-approver bank status change is queued when approval policy is enabled", async ({
+    page,
+  }) => {
     await upsertApprovalPolicy({
       entityType: POLICY_ENTITY_TYPE,
       entityKey: POLICY_ENTITY_KEY,
@@ -196,18 +324,28 @@ test.describe("Financial module - multi-user, permissions, approvals", () => {
       requiresApproval: true,
     });
 
-    await login(page, "E2E_ADMIN");
-    const response = await page.goto(BANK_REGISTER_URL, { waitUntil: "domcontentloaded" });
-    test.skip(!response || response.status() !== 200, "Bank voucher register not accessible.");
+    await login(page, "E2E_FIN_SCENARIO_CREATOR");
+    const response = await page.goto(BANK_REGISTER_URL, {
+      waitUntil: "domcontentloaded",
+    });
+    test.skip(
+      !response || response.status() !== 200,
+      "Bank voucher register not accessible.",
+    );
 
     const selectEl = await findEditableBankStatusSelect(page);
-    test.skip(!selectEl, "No editable bank status row found in voucher register details.");
+    test.skip(
+      !selectEl,
+      "No editable bank status row found in voucher register details.",
+    );
 
-    const previous = String((await selectEl.getAttribute("data-prev-status")) || "PENDING").toUpperCase();
+    const previous = String(
+      (await selectEl.getAttribute("data-prev-status")) || "PENDING",
+    ).toUpperCase();
     const next = pickNextStatus(previous);
 
     const before = await findLatestApprovalRequest({
-      requestedBy: Number(process.env.E2E_ADMIN_ID || 0) || undefined,
+      requestedBy: ctx.scenarioCreatorUserId || undefined,
       status: "PENDING",
       entityType: "VOUCHER",
     });
@@ -219,14 +357,16 @@ test.describe("Financial module - multi-user, permissions, approvals", () => {
 
     await expect(selectEl).toHaveValue(previous);
 
-    const after = await findLatestApprovalRequest({
-      status: "PENDING",
-      entityType: "VOUCHER",
+    const after = await waitForApprovalRequestAdvance({
+      requestedBy: ctx.scenarioCreatorUserId || undefined,
+      baselineId: Number(before?.id || 0),
     });
     expect(Number(after?.id || 0)).toBeGreaterThan(Number(before?.id || 0));
   });
 
-  test("limited user financial action is denied or rerouted to approval", async ({ page }) => {
+  test("limited user financial action is denied or rerouted to approval", async ({
+    page,
+  }) => {
     await upsertApprovalPolicy({
       entityType: POLICY_ENTITY_TYPE,
       entityKey: POLICY_ENTITY_KEY,
@@ -235,7 +375,9 @@ test.describe("Financial module - multi-user, permissions, approvals", () => {
     });
 
     await login(page, "E2E_LIMITED");
-    const response = await page.goto(BANK_REGISTER_URL, { waitUntil: "domcontentloaded" });
+    const response = await page.goto(BANK_REGISTER_URL, {
+      waitUntil: "domcontentloaded",
+    });
 
     if (!response || response.status() === 403) {
       expect(response?.status()).toBe(403);
@@ -245,9 +387,14 @@ test.describe("Financial module - multi-user, permissions, approvals", () => {
     expect(response.status()).toBe(200);
 
     const selectEl = await findEditableBankStatusSelect(page);
-    test.skip(!selectEl, "No editable bank status row available for limited user scenario.");
+    test.skip(
+      !selectEl,
+      "No editable bank status row available for limited user scenario.",
+    );
 
-    const previous = String((await selectEl.getAttribute("data-prev-status")) || "PENDING").toUpperCase();
+    const previous = String(
+      (await selectEl.getAttribute("data-prev-status")) || "PENDING",
+    ).toUpperCase();
     const next = pickNextStatus(previous);
 
     const before = await findLatestApprovalRequest({
@@ -262,10 +409,9 @@ test.describe("Financial module - multi-user, permissions, approvals", () => {
 
     if (result.body?.queuedForApproval) {
       await expect(selectEl).toHaveValue(previous);
-      const after = await findLatestApprovalRequest({
+      const after = await waitForApprovalRequestAdvance({
         requestedBy: ctx.limitedUser?.id,
-        status: "PENDING",
-        entityType: "VOUCHER",
+        baselineId: Number(before?.id || 0),
       });
       expect(Number(after?.id || 0)).toBeGreaterThan(Number(before?.id || 0));
     } else {
@@ -274,7 +420,9 @@ test.describe("Financial module - multi-user, permissions, approvals", () => {
     }
   });
 
-  test("bank status update handles network timeout gracefully", async ({ page }) => {
+  test("bank status update handles network timeout gracefully", async ({
+    page,
+  }) => {
     await upsertApprovalPolicy({
       entityType: POLICY_ENTITY_TYPE,
       entityKey: POLICY_ENTITY_KEY,
@@ -283,18 +431,31 @@ test.describe("Financial module - multi-user, permissions, approvals", () => {
     });
 
     await login(page, "E2E_ADMIN");
-    const response = await page.goto(BANK_REGISTER_URL, { waitUntil: "domcontentloaded" });
-    test.skip(!response || response.status() !== 200, "Bank voucher register not accessible.");
+    const response = await page.goto(BANK_REGISTER_URL, {
+      waitUntil: "domcontentloaded",
+    });
+    test.skip(
+      !response || response.status() !== 200,
+      "Bank voucher register not accessible.",
+    );
 
     const selectEl = await findEditableBankStatusSelect(page);
-    test.skip(!selectEl, "No editable bank status row found for timeout scenario.");
+    test.skip(
+      !selectEl,
+      "No editable bank status row found for timeout scenario.",
+    );
 
-    const previous = String((await selectEl.getAttribute("data-prev-status")) || "PENDING").toUpperCase();
+    const previous = String(
+      (await selectEl.getAttribute("data-prev-status")) || "PENDING",
+    ).toUpperCase();
     const next = pickNextStatus(previous);
 
-    await page.route("**/reports/financial/**/bank-line-status", async (route) => {
-      await route.abort("timedout");
-    });
+    await page.route(
+      "**/reports/financial/**/bank-line-status",
+      async (route) => {
+        await route.abort("timedout");
+      },
+    );
 
     await selectEl.selectOption(next);
 
@@ -302,15 +463,24 @@ test.describe("Financial module - multi-user, permissions, approvals", () => {
     await page.unroute("**/reports/financial/**/bank-line-status");
   });
 
-  test("restricted cash voucher save shows approval/submit feedback", async ({ page }) => {
+  test("restricted cash voucher save shows approval/submit feedback", async ({
+    page,
+  }) => {
     await login(page, "E2E_LIMITED");
 
-    const response = await page.goto(CASH_VOUCHER_URL, { waitUntil: "domcontentloaded" });
-    test.skip(!response || response.status() !== 200, "Cash voucher page not accessible for limited user.");
+    const response = await page.goto(CASH_VOUCHER_URL, {
+      waitUntil: "domcontentloaded",
+    });
+    test.skip(
+      !response || response.status() !== 200,
+      "Cash voucher page not accessible for limited user.",
+    );
 
     await fillBalancedCashVoucherLines(page);
     await page.locator('form button[type="submit"]').first().click();
 
-    await expect(page.locator("[data-ui-notice-toast]")).toContainText(/approval|submitted|saved/i);
+    await expect(page.locator("[data-ui-notice-toast]")).toContainText(
+      /approval|submitted|saved/i,
+    );
   });
 });

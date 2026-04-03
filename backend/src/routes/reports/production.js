@@ -1,31 +1,39 @@
 const express = require("express");
-const { requirePermission } = require("../../middleware/access/role-permissions");
 const {
+  requirePermission,
+} = require("../../middleware/access/role-permissions");
+const {
+  getProductionConsumptionReportPageData,
   getProductionPlannedConsumptionReportPageData,
   getProductionControlReportPageData,
   getProductionDepartmentWipReportPageData,
+  getProductionDepartmentWipBalancesReportPageData,
   getProductionDepartmentWipLedgerReportPageData,
 } = require("../../services/production/production-report-service");
 
 const router = express.Router();
 
-const renderProductionReportLanding = async (req, res, next) => {
+const renderConsumptionReport = async (req, res, next, input) => {
   try {
+    const pageData = await getProductionConsumptionReportPageData({
+      req,
+      input,
+    });
     return res.render("base/layouts/main", {
-      title: `${res.locals.t("production_reports")} - ${res.locals.t("reports")}`,
+      title: `${res.locals.t("consumption_report")} - ${res.locals.t("reports")}`,
       user: req.user,
       branchId: req.branchId,
       branchScope: req.branchScope,
       csrfToken: res.locals.csrfToken,
-      view: "../../reports/production",
+      view: "../../reports/production-consumption",
       t: res.locals.t,
-      controlReportPath: `${req.baseUrl}/control`,
-      plannedConsumptionPath: `${req.baseUrl}/planned-consumption`,
-      departmentWipPath: `${req.baseUrl}/department-wip`,
-      departmentWipLedgerPath: `${req.baseUrl}/department-wip-ledger`,
+      filters: pageData.filters,
+      options: pageData.options,
+      reportData: pageData.reportData,
+      reportPath: `${req.baseUrl}/consumption`,
     });
   } catch (err) {
-    console.error("Error in ProductionReportsLandingService:", err);
+    console.error("Error in ProductionConsumptionReportService:", err);
     if (typeof req.flash === "function") {
       req.flash("error", res.locals.t("generic_error"));
     }
@@ -35,7 +43,10 @@ const renderProductionReportLanding = async (req, res, next) => {
 
 const renderPlannedConsumptionReport = async (req, res, next, input) => {
   try {
-    const pageData = await getProductionPlannedConsumptionReportPageData({ req, input });
+    const pageData = await getProductionPlannedConsumptionReportPageData({
+      req,
+      input,
+    });
     return res.render("base/layouts/main", {
       title: `${res.locals.t("planned_consumption")} - ${res.locals.t("reports")}`,
       user: req.user,
@@ -85,7 +96,10 @@ const renderProductionControlReport = async (req, res, next, input) => {
 
 const renderProductionDepartmentWipReport = async (req, res, next, input) => {
   try {
-    const pageData = await getProductionDepartmentWipReportPageData({ req, input });
+    const pageData = await getProductionDepartmentWipReportPageData({
+      req,
+      input,
+    });
     const reportTitle = (() => {
       const value = res.locals.t("department_wip_report");
       return value && value !== "department_wip_report"
@@ -153,46 +167,121 @@ const renderProductionDepartmentWipLedgerReport = async (
   }
 };
 
+const renderProductionDepartmentWipBalancesReport = async (
+  req,
+  res,
+  next,
+  input,
+) => {
+  try {
+    const pageData = await getProductionDepartmentWipBalancesReportPageData({
+      req,
+      input,
+    });
+    const reportTitle = (() => {
+      const value = res.locals.t("department_wip_balances_report");
+      return value && value !== "department_wip_balances_report"
+        ? value
+        : "Department WIP Balances Report";
+    })();
+    return res.render("base/layouts/main", {
+      title: `${reportTitle} - ${res.locals.t("reports")}`,
+      user: req.user,
+      branchId: req.branchId,
+      branchScope: req.branchScope,
+      csrfToken: res.locals.csrfToken,
+      view: "../../reports/production-department-wip-balances",
+      t: res.locals.t,
+      filters: pageData.filters,
+      options: pageData.options,
+      reportData: pageData.reportData,
+      reportPath: `${req.baseUrl}/department-wip-balances`,
+      ledgerReportPath: `${req.baseUrl}/department-wip-ledger`,
+    });
+  } catch (err) {
+    console.error(
+      "Error in ProductionDepartmentWipBalancesReportService:",
+      err,
+    );
+    if (typeof req.flash === "function") {
+      req.flash("error", res.locals.t("generic_error"));
+    }
+    return next(err);
+  }
+};
+
 router.get(
   "/",
   requirePermission("REPORT", "production_report", "view"),
-  async (req, res, next) => renderProductionReportLanding(req, res, next),
+  async (req, res) => res.redirect(`${req.baseUrl}/control`),
 );
 
 router.get(
   "/control",
   requirePermission("REPORT", "production_report", "view"),
-  async (req, res, next) => renderProductionControlReport(req, res, next, req.query),
+  async (req, res, next) =>
+    renderProductionControlReport(req, res, next, req.query),
 );
 
 router.post(
   "/control",
   requirePermission("REPORT", "production_report", "view"),
-  async (req, res, next) => renderProductionControlReport(req, res, next, req.body),
+  async (req, res, next) =>
+    renderProductionControlReport(req, res, next, req.body),
+);
+
+router.get(
+  "/consumption",
+  requirePermission("REPORT", "consumption_report", "view"),
+  async (req, res, next) => renderConsumptionReport(req, res, next, req.query),
+);
+
+router.post(
+  "/consumption",
+  requirePermission("REPORT", "consumption_report", "view"),
+  async (req, res, next) => renderConsumptionReport(req, res, next, req.body),
 );
 
 router.get(
   "/planned-consumption",
   requirePermission("REPORT", "production_report", "view"),
-  async (req, res, next) => renderPlannedConsumptionReport(req, res, next, req.query),
+  async (req, res, next) =>
+    renderPlannedConsumptionReport(req, res, next, req.query),
 );
 
 router.post(
   "/planned-consumption",
   requirePermission("REPORT", "production_report", "view"),
-  async (req, res, next) => renderPlannedConsumptionReport(req, res, next, req.body),
+  async (req, res, next) =>
+    renderPlannedConsumptionReport(req, res, next, req.body),
 );
 
 router.get(
   "/department-wip",
   requirePermission("REPORT", "production_report", "view"),
-  async (req, res, next) => renderProductionDepartmentWipReport(req, res, next, req.query),
+  async (req, res, next) =>
+    renderProductionDepartmentWipReport(req, res, next, req.query),
 );
 
 router.post(
   "/department-wip",
   requirePermission("REPORT", "production_report", "view"),
-  async (req, res, next) => renderProductionDepartmentWipReport(req, res, next, req.body),
+  async (req, res, next) =>
+    renderProductionDepartmentWipReport(req, res, next, req.body),
+);
+
+router.get(
+  "/department-wip-balances",
+  requirePermission("REPORT", "production_report", "view"),
+  async (req, res, next) =>
+    renderProductionDepartmentWipBalancesReport(req, res, next, req.query),
+);
+
+router.post(
+  "/department-wip-balances",
+  requirePermission("REPORT", "production_report", "view"),
+  async (req, res, next) =>
+    renderProductionDepartmentWipBalancesReport(req, res, next, req.body),
 );
 
 router.get(

@@ -10,10 +10,6 @@ const messageFromCode = (code, t) => {
       return local("error_duplicate_record", "A record with the same details already exists.");
     case "23502": // not_null_violation
       return local("error_required_fields", "Required fields are missing.");
-    case "22P02": // invalid_text_representation
-      return local("error_invalid_value", "One or more values are invalid.");
-    case "23514": // check_violation
-      return local("error_invalid_value", "One or more values are invalid.");
     default:
       return null;
   }
@@ -32,6 +28,13 @@ const friendlyErrorMessage = (err, t) => {
 
   const mapped = messageFromCode(err.code, t);
   if (mapped) return mapped;
+
+  if (typeof err.detail === "string" && err.detail.trim()) {
+    return err.detail.trim();
+  }
+  if (typeof err.hint === "string" && err.hint.trim()) {
+    return err.hint.trim();
+  }
 
   if (typeof err.message === "string" && err.message.toLowerCase().includes("violates foreign key constraint")) {
     return local("error_record_in_use", "This record is linked to other data and cannot be deleted.");

@@ -1,0 +1,784 @@
+﻿<%
+  const tt = (key, fallback) => {
+    const value = typeof t === "function" ? t(key) : "";
+    return value && value !== key ? value : fallback;
+  };
+
+  const reportLoaded = Boolean(filters?.reportLoaded);
+  const stockType = String(filters?.stockType || "FG").toUpperCase();
+  const orderBy = String(filters?.orderBy || "SKU").toUpperCase();
+  const stockStatus =
+    String(filters?.stockStatus || "PACKED").toUpperCase() === "LOOSE"
+      ? "LOOSE"
+      : "PACKED";
+  const selectedUnitId = Number(filters?.unitId || 0) || null;
+  const selectedUnitLabel = String(filters?.unitLabel || "").trim();
+  const fromDate = String(filters?.from || "");
+  const toDate = String(filters?.to || "");
+  const allMultiOptionValue = "__ALL__";
+
+  const selectedBranchIds = Array.isArray(filters?.branchIds)
+    ? filters.branchIds
+    : [];
+  const selectedGroupIds = Array.isArray(filters?.productGroupIds)
+    ? filters.productGroupIds
+    : [];
+  const selectedSubgroupIds = Array.isArray(filters?.productSubgroupIds)
+    ? filters.productSubgroupIds
+    : [];
+  const selectedArticleIds = Array.isArray(filters?.articleIds)
+    ? filters.articleIds
+    : [];
+  const selectedStockItemIds = Array.isArray(filters?.stockItemIds)
+    ? filters.stockItemIds
+    : [];
+
+  const branchAllSelected = !selectedBranchIds.length;
+  const groupAllSelected = !selectedGroupIds.length;
+  const subgroupAllSelected = !selectedSubgroupIds.length;
+  const articleAllSelected = !selectedArticleIds.length;
+  const stockItemAllSelected = !selectedStockItemIds.length;
+
+  const showArticleFilter = stockType !== "RM";
+  const showSfgUnitFilter = stockType === "SFG";
+  const stockItemLabel =
+    stockType === "RM"
+      ? tt("raw_material", "Raw Material")
+      : tt("sku", "SKU");
+
+  const rows = Array.isArray(reportData?.rows) ? reportData.rows : [];
+  const articlesByType = options?.articlesByType || {};
+  const stockItemsByType = options?.stockItemsByType || {};
+  const unitOptions = Array.isArray(options?.unitOptions)
+    ? options.unitOptions
+    : [];
+  const conversionUnits = Array.isArray(options?.conversionUnits)
+    ? options.conversionUnits
+    : [];
+  const showPackedUnitBreakdown =
+    stockType === "FG" && stockStatus === "PACKED" && conversionUnits.length > 0;
+  const primaryConversionUnit = showPackedUnitBreakdown
+    ? conversionUnits.find((unit) => Number(unit?.id || 0) > 0) || null
+    : null;
+  const primaryConversionUnitId = Number(primaryConversionUnit?.id || 0) || null;
+  const primaryConversionUnitLabel = String(
+    primaryConversionUnit?.code || primaryConversionUnit?.name || "",
+  ).trim();
+  const qtySuffix =
+    showPackedUnitBreakdown && primaryConversionUnitLabel
+      ? ` (${primaryConversionUnitLabel})`
+      : showSfgUnitFilter && selectedUnitLabel
+        ? ` (${selectedUnitLabel})`
+        : stockType === "FG" && stockStatus === "LOOSE"
+          ? ` (${String((unitOptions.find((unit) => String(unit?.code || "").toLowerCase().includes("pair") || String(unit?.name || "").toLowerCase().includes("pair")) || {}).code || (unitOptions.find((unit) => String(unit?.code || "").toLowerCase().includes("pair") || String(unit?.name || "").toLowerCase().includes("pair")) || {}).name || tt("pair", "Pair")).trim()})`
+          : "";
+  const totals = reportData?.totals || {
+    openingQty: 0,
+    productionQty: 0,
+    purchaseQty: 0,
+    saleQty: 0,
+    adjustmentQty: 0,
+    closingQty: 0,
+  };
+
+  const hasData = rows.length > 0;
+
+  const formatQty = (value) =>
+    formatNumberDisplay(value, { decimals: 3, fallback: "0" });
+  const getQty = (row, key) => {
+    if (showPackedUnitBreakdown && primaryConversionUnitId) {
+      return Number(row?.convertedQuantities?.[key]?.[primaryConversionUnitId] || 0);
+    }
+    return Number(row?.[key] || 0);
+  };
+  const getGroupQty = (group, key) => {
+    if (!showPackedUnitBreakdown) return Number(group?.[key] || 0);
+    return Number((group?.rows || []).reduce((sum, row) => sum + getQty(row, key), 0));
+  };
+  const getTotalQty = (baseKey, convertedKey) => {
+    if (showPackedUnitBreakdown && primaryConversionUnitId) {
+      return Number(totals?.[convertedKey]?.[primaryConversionUnitId] || 0);
+    }
+    return Number(totals?.[baseKey] || 0);
+  };
+
+  const includeBranchColumn = Boolean(reportData?.includeBranchColumn);
+  const showSkuGroupedDetail =
+    Boolean(reportData?.showSkuGroupedDetail) && rows.length > 0;
+  const showMovementColorSizeColumns = orderBy === "SKU";
+  const showMovementUnitColumn = stockType === "RM";
+  const movementDescriptorColspan =
+    (stockType === "RM" ? 1 : 2) +
+    (showMovementColorSizeColumns ? 2 : 0) +
+    (showMovementUnitColumn ? 1 : 0);
+  const movementColumnCount =
+    movementDescriptorColspan + 6 + (includeBranchColumn ? 1 : 0);
+  const movementDetailGroups = (() => {
+    if (!showSkuGroupedDetail) return [];
+    const grouped = new Map();
+    rows.forEach((row) => {
+      const itemId = Number(row?.stockItemId || 0) || 0;
+      const itemLabel = String(row?.stockItemLabel || row?.skuCode || "").trim();
+      const key = itemId > 0 ? `item:${itemId}` : `label:${itemLabel}`;
+      const existing = grouped.get(key) || {
+        key,
+        stockItemId: itemId || null,
+        stockItemLabel: itemLabel,
+        skuCode: String(row?.skuCode || "").trim(),
+        articleName: String(row?.articleName || "").trim(),
+        rows: [],
+        openingQty: 0,
+        productionQty: 0,
+        purchaseQty: 0,
+        saleQty: 0,
+        adjustmentQty: 0,
+        closingQty: 0,
+      };
+      existing.rows.push(row);
+      existing.openingQty += Number(row?.openingQty || 0);
+      existing.productionQty += Number(row?.productionQty || 0);
+      existing.purchaseQty += Number(row?.purchaseQty || 0);
+      existing.saleQty += Number(row?.saleQty || 0);
+      existing.adjustmentQty += Number(row?.adjustmentQty || 0);
+      existing.closingQty += Number(row?.closingQty || 0);
+      grouped.set(key, existing);
+    });
+
+    return [...grouped.values()]
+      .map((group) => {
+        const branchIds = new Set(
+          (group.rows || [])
+            .map((row) => Number(row?.branchId || 0))
+            .filter((id) => Number.isInteger(id) && id > 0),
+        );
+        return {
+          ...group,
+          branchCount: branchIds.size,
+          openingQty: Number(group.openingQty.toFixed(3)),
+          productionQty: Number(group.productionQty.toFixed(3)),
+          purchaseQty: Number(group.purchaseQty.toFixed(3)),
+          saleQty: Number(group.saleQty.toFixed(3)),
+          adjustmentQty: Number(group.adjustmentQty.toFixed(3)),
+          closingQty: Number(group.closingQty.toFixed(3)),
+          rows: (group.rows || []).slice().sort((a, b) =>
+            String(a?.branchName || "").localeCompare(String(b?.branchName || "")),
+          ),
+        };
+      })
+      .sort((a, b) => {
+        if (stockType === "RM") {
+          return String(a.stockItemLabel || "").localeCompare(String(b.stockItemLabel || ""));
+        }
+        const articleCompare = String(a.articleName || "").localeCompare(String(b.articleName || ""));
+        if (articleCompare !== 0) return articleCompare;
+        return String(a.stockItemLabel || "").localeCompare(String(b.stockItemLabel || ""));
+      });
+  })();
+
+  const weekdayShortLabels = [
+    t("weekday_sun_short"),
+    t("weekday_mon_short"),
+    t("weekday_tue_short"),
+    t("weekday_wed_short"),
+    t("weekday_thu_short"),
+    t("weekday_fri_short"),
+    t("weekday_sat_short"),
+  ];
+
+  const reportPurposeTooltip = (() => {
+    const key = "stock_movement_report_purpose_tooltip";
+    const value = t(key);
+    return value && value !== key ? value : "";
+  })();
+%>
+
+<div class="mx-auto w-full max-w-none space-y-4 px-2">
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <div class="flex items-center gap-2">
+      <h1 class="text-xl font-display font-semibold tracking-tight text-ink sm:text-2xl"><%= tt("stock_movement_report", "Stock Movement Report") %></h1>
+      <% if (reportPurposeTooltip) { %>
+        <span class="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-[10px] font-bold text-slate-600 cursor-help" title="<%= reportPurposeTooltip %>" aria-label="<%= reportPurposeTooltip %>">i</span>
+      <% } %>
+    </div>
+
+    <% if (filters?.invalidFilterInput) { %>
+      <div class="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800"><%= tt("date_filters_auto_corrected", "Some date filters were invalid and have been reset.") %></div>
+    <% } %>
+
+    <form method="post" action="<%= reportPath %>" class="mt-3 max-w-6xl rounded-xl border border-slate-200 bg-slate-50/30 p-3 sm:p-4" data-inventory-stock-movement-filter-form>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="load_report" value="1">
+
+      <div class="space-y-3">
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("date_range", "Date Range") %></label>
+          <div class="sm:col-span-9">
+            <div class="relative" data-date-range-wrap>
+              <input type="text" readonly value="<%= `${fromDate} - ${toDate}` %>" data-date-range-input class="h-10 w-full cursor-pointer rounded-lg border border-slate-300 bg-white px-3 pr-10 text-sm">
+              <button type="button" class="absolute inset-y-0 right-2 inline-flex items-center text-slate-500 hover:text-slate-700" data-date-range-toggle aria-label="<%= t('open_date_range_picker') %>">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+              </button>
+              <div class="absolute left-0 z-50 mt-2 hidden max-h-[62vh] overflow-auto rounded-xl border border-slate-200 bg-white p-2.5 shadow-lg" style="width:min(700px,calc(100vw - 1rem));" data-date-range-panel>
+                <div class="grid grid-cols-1 gap-2 lg:grid-cols-[156px_1fr]">
+                  <div class="space-y-1.5">
+                    <div><div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('from_date') %></div><div class="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700" data-date-range-from-display>-</div></div>
+                    <div><div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('to_date') %></div><div class="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700" data-date-range-to-display>-</div></div>
+                  </div>
+                  <div>
+                    <div class="mb-1.5 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600" data-date-range-caption><%= t('select_date_range') %></div>
+                    <div class="grid grid-cols-1 gap-3 xl:grid-cols-[1fr_auto_1fr]">
+                      <div class="min-w-52.5 rounded-lg border border-slate-200 bg-slate-50/40 p-2">
+                        <div class="mb-1 flex items-center justify-between gap-2"><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-prev>&larr;</button><div class="text-center text-xs font-semibold text-slate-700" data-date-range-month-1-label></div><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-next>&rarr;</button></div>
+                        <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-500"><% weekdayShortLabels.forEach((weekdayLabel) => { %><span><%= weekdayLabel %></span><% }) %></div>
+                        <div class="mt-1 grid grid-cols-7 gap-1" data-date-range-month-1-grid></div>
+                      </div>
+                      <div class="hidden xl:block w-px bg-slate-200 self-stretch"></div>
+                      <div class="min-w-52.5 rounded-lg border border-slate-200 bg-slate-50/40 p-2">
+                        <div class="mb-1 flex items-center justify-between gap-2"><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-2-prev>&larr;</button><div class="text-center text-xs font-semibold text-slate-700" data-date-range-month-2-label></div><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-2-next>&rarr;</button></div>
+                        <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-500"><% weekdayShortLabels.forEach((weekdayLabel) => { %><span><%= weekdayLabel %></span><% }) %></div>
+                        <div class="mt-1 grid grid-cols-7 gap-1" data-date-range-month-2-grid></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="mt-1.5 flex items-center justify-end gap-2"><button type="button" class="rounded-lg border border-slate-300 bg-white px-3 py-1.25 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700" data-date-range-cancel><%= t('cancel') %></button><button type="button" class="rounded-lg bg-accent px-3 py-1.25 text-xs font-semibold uppercase tracking-[0.08em] text-white" data-date-range-apply><%= t('apply') %></button></div>
+              </div>
+            </div>
+            <input type="hidden" name="from_date" value="<%= fromDate %>" data-from-date-hidden>
+            <input type="hidden" name="to_date" value="<%= toDate %>" data-to-date-hidden>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("stock_type", "Stock Type") %></label>
+          <div class="sm:col-span-9">
+            <select name="stock_type" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+              <% (options?.stockTypes || []).forEach((option) => { %>
+                <option value="<%= option.value %>" <%= String(option.value || "").toUpperCase() === stockType ? "selected" : "" %>><%= t(option.labelKey) %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12 <%= stockType === 'FG' ? '' : 'hidden' %>" data-finished-status-filter-row>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("status", "Status") %></label>
+          <div class="sm:col-span-9">
+            <select name="stock_status" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" <%= stockType === "FG" ? "" : "disabled" %>>
+              <% (options?.stockStatuses || []).forEach((option) => { %>
+                <option value="<%= option.value %>" <%= String(option.value || "").toUpperCase() === stockStatus ? "selected" : "" %>><%= t(option.labelKey) %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12 <%= showSfgUnitFilter ? '' : 'hidden' %>" data-sfg-unit-filter-row>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("unit", "Unit") %></label>
+          <div class="sm:col-span-9">
+            <select name="unit_id" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" <%= showSfgUnitFilter ? "" : "disabled" %>>
+                            <% unitOptions.forEach((unit) => { %>
+                <option value="<%= unit.id %>" data-unit-code="<%= unit.code || '' %>" <%= selectedUnitId === Number(unit.id) ? "selected" : "" %>><%= unit.code || unit.name %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("product_groups", "Product Groups") %></label>
+          <div class="sm:col-span-9">
+            <select name="product_group_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+              <option value="<%= allMultiOptionValue %>" <%= groupAllSelected ? "selected" : "" %>><%= t("all") %></option>
+              <% (options?.productGroups || []).forEach((group) => { %>
+                <option value="<%= group.id %>" <%= selectedGroupIds.includes(Number(group.id)) ? "selected" : "" %>><%= group.name %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("product_subgroups", "Product Sub-Groups") %></label>
+          <div class="sm:col-span-9">
+            <select name="product_subgroup_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+              <option value="<%= allMultiOptionValue %>" <%= subgroupAllSelected ? "selected" : "" %>><%= t("all") %></option>
+              <% (options?.productSubgroups || []).forEach((subgroup) => { %>
+                <option value="<%= subgroup.id %>" <%= selectedSubgroupIds.includes(Number(subgroup.id)) ? "selected" : "" %>><%= subgroup.name %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12 <%= showArticleFilter ? '' : 'hidden' %>" data-article-filter-row>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("article", "Article") %></label>
+          <div class="sm:col-span-9">
+            <select name="article_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" <%= showArticleFilter ? "" : "disabled" %>>
+              <option value="<%= allMultiOptionValue %>" <%= articleAllSelected ? "selected" : "" %>><%= t("all") %></option>
+              <% (options?.articles || []).forEach((article) => { %>
+                <option value="<%= article.id %>" <%= selectedArticleIds.includes(Number(article.id)) ? "selected" : "" %>><%= article.name %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12" data-stock-item-filter-row>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3" data-stock-item-label><%= stockItemLabel %></label>
+          <div class="sm:col-span-9">
+            <select name="stock_item_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-stock-item-select>
+              <option value="<%= allMultiOptionValue %>" <%= stockItemAllSelected ? "selected" : "" %>><%= t("all") %></option>
+              <% (options?.stockItems || []).forEach((stockItem) => { %>
+                <option value="<%= stockItem.id %>" <%= selectedStockItemIds.includes(Number(stockItem.id)) ? "selected" : "" %>><%= stockItem.label %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? tt("branches", "Branches") : tt("branch", "Branch") %></label>
+          <div class="sm:col-span-9">
+            <% if (user?.isAdmin) { %>
+              <select name="branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+                <option value="<%= allMultiOptionValue %>" <%= branchAllSelected ? "selected" : "" %>><%= t("all") %></option>
+                <% (options?.branches || []).forEach((branch) => { %>
+                  <option value="<%= branch.id %>" <%= selectedBranchIds.includes(Number(branch.id)) ? "selected" : "" %>><%= branch.name %></option>
+                <% }) %>
+              </select>
+            <% } else { %>
+              <input type="text" readonly value="<%= (options?.branches || [])[0]?.name || branchId %>" class="h-10 w-full rounded-lg border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700">
+            <% } %>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("order_by", "Order By") %></label>
+          <div class="sm:col-span-9 flex flex-wrap gap-4 rounded-xl bg-white/60 p-2">
+            <% (options?.orderByOptions || []).forEach((option) => { const selected = String(option.value || '').toUpperCase() === String(filters?.orderBy || "SKU").toUpperCase(); %>
+              <label class="inline-flex items-center gap-2 text-sm <%= selected ? 'font-semibold text-accent' : 'text-slate-700' %>">
+                <input type="radio" name="order_by" value="<%= option.value %>" <%= selected ? "checked" : "" %>>
+                <span><%= t(option.labelKey) %></span>
+              </label>
+            <% }) %>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("report_type", "Report Type") %></label>
+          <div class="sm:col-span-9 flex flex-wrap gap-4 rounded-xl bg-white/60 p-2">
+            <% (options?.viewFilters || []).forEach((option) => { const selected = String(option.value || '').toLowerCase() === String(filters?.viewType || "details").toLowerCase(); %>
+              <label class="inline-flex items-center gap-2 text-sm <%= selected ? 'font-semibold text-accent' : 'text-slate-700' %>">
+                <input type="radio" name="view_filter" value="<%= option.value %>" <%= selected ? "checked" : "" %>>
+                <span><%= t(option.labelKey) %></span>
+              </label>
+            <% }) %>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 items-center gap-2 pt-1 sm:grid-cols-12">
+          <div class="sm:col-start-4 sm:col-span-9 flex items-center gap-2">
+            <button type="submit" class="inline-flex items-center rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= t("load") %></button>
+            <a href="<%= reportPath %>" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= t("cancel") %></a>
+          </div>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm" data-report-print-area>
+    <div class="flex items-center justify-end gap-2" data-report-controls>
+      <button type="button" class="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700 disabled:opacity-40" data-print-report <%= reportLoaded && hasData ? "" : "disabled" %>><%= t("print") %></button>
+      <button type="button" class="inline-flex items-center rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm disabled:opacity-40" data-download-report <%= reportLoaded && hasData ? "" : "disabled" %>><%= t("download") %></button>
+    </div>
+
+    <% if (reportLoaded) { %>
+      <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-6">
+        <div class="rounded-xl border border-slate-200 bg-slate-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-slate-600"><%= `${tt("opening", "Opening")}${qtySuffix}` %></div><div class="mt-1 text-base font-semibold text-slate-900"><%= formatQty(getTotalQty("openingQty", "openingQtyConverted")) %></div></div>
+        <div class="rounded-xl border border-cyan-200 bg-cyan-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-cyan-700"><%= `${tt("production", "Production")}${qtySuffix}` %></div><div class="mt-1 text-base font-semibold text-cyan-900"><%= formatQty(getTotalQty("productionQty", "productionQtyConverted")) %></div></div>
+        <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-emerald-700"><%= `${tt("purchase", "Purchase")}${qtySuffix}` %></div><div class="mt-1 text-base font-semibold text-emerald-900"><%= formatQty(getTotalQty("purchaseQty", "purchaseQtyConverted")) %></div></div>
+        <div class="rounded-xl border border-amber-200 bg-amber-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-amber-700"><%= `${tt("sale", "Sale")}${qtySuffix}` %></div><div class="mt-1 text-base font-semibold text-amber-900"><%= formatQty(Math.abs(getTotalQty("saleQty", "saleQtyConverted"))) %></div></div>
+        <div class="rounded-xl border border-fuchsia-200 bg-fuchsia-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-fuchsia-700"><%= `${tt("adjustment", "Adjustment")}${qtySuffix}` %></div><div class="mt-1 text-base font-semibold text-fuchsia-900"><%= formatQty(getTotalQty("adjustmentQty", "adjustmentQtyConverted")) %></div></div>
+        <div class="rounded-xl border border-slate-300 bg-slate-100 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-slate-700"><%= `${tt("closing", "Closing")}${qtySuffix}` %></div><div class="mt-1 text-base font-semibold text-slate-900"><%= formatQty(getTotalQty("closingQty", "closingQtyConverted")) %></div></div>
+      </div>
+    <% } %>
+
+    <% if (!reportLoaded) { %>
+      <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= tt("load_report_to_view", "Load report to view") %></div>
+    <% } else if (!hasData) { %>
+      <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= tt("no_entries", "No entries") %></div>
+    <% } else { %>
+      <div class="relative mt-3 overflow-x-auto rounded-2xl border border-slate-200">
+        <table class="min-w-295 w-full text-sm tabular-nums" data-report-table data-export-title="<%= tt('stock_movement_report', 'Stock Movement Report') %>">
+          <thead class="bg-slate-100 text-slate-700">
+            <tr>
+              <% if (stockType === "RM") { %>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("raw_material", "Raw Material") %></th>
+              <% } else { %>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("article", "Article") %></th>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("sku", "SKU") %></th>
+              <% } %>
+              <% if (showMovementColorSizeColumns) { %>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("color", "Color") %></th>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("size", "Size") %></th>
+              <% } %>
+              <% if (showMovementUnitColumn) { %>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("unit", "Unit") %></th>
+              <% } %>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("opening", "Opening")}${qtySuffix}` %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("production", "Production")}${qtySuffix}` %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("purchase", "Purchase")}${qtySuffix}` %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("sale", "Sale")}${qtySuffix}` %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("adjustment", "Adjustment")}${qtySuffix}` %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("closing", "Closing")}${qtySuffix}` %></th>
+              <% if (includeBranchColumn) { %>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("branch", "Branch") %></th>
+              <% } %>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (showSkuGroupedDetail) { %>
+              <% movementDetailGroups.forEach((group) => { %>
+                <tr class="bg-slate-700 text-white" data-row data-active="true" data-report-group-header data-report-group-key="<%= group.key %>">
+                  <td colspan="<%= movementColumnCount %>" class="px-3 py-1.5">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <% if (stockType === "RM") { %>
+                        <span class="rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white"><%= group.stockItemLabel || "-" %></span>
+                      <% } else { %>
+                        <span class="rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white"><%= group.articleName || "-" %></span>
+                        <span class="rounded-md border border-white/20 bg-transparent px-2 py-0.5 text-xs font-semibold text-slate-100"><%= group.stockItemLabel || group.skuCode || "-" %></span>
+                      <% } %>
+                      <span class="rounded-md border border-white/20 bg-white/10 px-2 py-0.5 text-[11px] font-semibold text-slate-100"><%= `${tt("branches", "Branches")}: ${group.branchCount}` %></span>
+                    </div>
+                  </td>
+                </tr>
+                <% (group.rows || []).forEach((row) => { %>
+                  <tr class="bg-white odd:bg-slate-50 even:bg-white hover:bg-slate-100" data-row data-active="true" data-report-group-line data-report-group-key="<%= group.key %>">
+                    <% if (stockType === "RM") { %>
+                      <td class="px-3 py-2"><%= row.stockItemLabel || "-" %></td>
+                    <% } else { %>
+                      <td class="px-3 py-2"><%= row.articleName || "-" %></td>
+                      <td class="px-3 py-2"><%= row.skuCode || row.stockItemLabel || "-" %></td>
+                    <% } %>
+                    <% if (showMovementColorSizeColumns) { %>
+                      <td class="px-3 py-2"><%= row.colorName || "-" %></td>
+                      <td class="px-3 py-2"><%= row.sizeName || "-" %></td>
+                    <% } %>
+                    <% if (showMovementUnitColumn) { %>
+                      <td class="px-3 py-2"><%= row.unitLabel || "-" %></td>
+                    <% } %>
+                    <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "openingQty")) %></td>
+                    <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "productionQty")) %></td>
+                    <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "purchaseQty")) %></td>
+                    <td class="px-3 py-2 text-right font-semibold"><%= formatQty(Math.abs(getQty(row, "saleQty"))) %></td>
+                    <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "adjustmentQty")) %></td>
+                    <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "closingQty")) %></td>
+                    <% if (includeBranchColumn) { %>
+                      <td class="px-3 py-2"><%= row.branchName || "-" %></td>
+                    <% } %>
+                  </tr>
+                <% }) %>
+                <tr class="bg-accent text-white" data-row data-active="true" data-report-group-total data-report-group-key="<%= group.key %>">
+                  <td colspan="<%= movementDescriptorColspan %>" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("total") %></td>
+                  <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getGroupQty(group, "openingQty")) %></td>
+                  <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getGroupQty(group, "productionQty")) %></td>
+                  <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getGroupQty(group, "purchaseQty")) %></td>
+                  <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(Math.abs(getGroupQty(group, "saleQty"))) %></td>
+                  <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getGroupQty(group, "adjustmentQty")) %></td>
+                  <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getGroupQty(group, "closingQty")) %></td>
+                  <% if (includeBranchColumn) { %>
+                    <td class="px-3 py-2"></td>
+                  <% } %>
+                </tr>
+              <% }) %>
+            <% } else { %>
+              <% rows.forEach((row) => { %>
+                <tr class="bg-white odd:bg-slate-50 even:bg-white hover:bg-slate-100">
+                  <% if (stockType === "RM") { %>
+                    <td class="px-3 py-2"><%= row.stockItemLabel || "-" %></td>
+                  <% } else { %>
+                    <td class="px-3 py-2"><%= row.articleName || "-" %></td>
+                    <td class="px-3 py-2"><%= row.skuCode || row.stockItemLabel || "-" %></td>
+                  <% } %>
+                    <% if (showMovementColorSizeColumns) { %>
+                      <td class="px-3 py-2"><%= row.colorName || "-" %></td>
+                      <td class="px-3 py-2"><%= row.sizeName || "-" %></td>
+                    <% } %>
+                    <% if (showMovementUnitColumn) { %>
+                      <td class="px-3 py-2"><%= row.unitLabel || "-" %></td>
+                    <% } %>
+                  <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "openingQty")) %></td>
+                  <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "productionQty")) %></td>
+                  <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "purchaseQty")) %></td>
+                  <td class="px-3 py-2 text-right font-semibold"><%= formatQty(Math.abs(getQty(row, "saleQty"))) %></td>
+                  <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "adjustmentQty")) %></td>
+                  <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "closingQty")) %></td>
+                  <% if (includeBranchColumn) { %>
+                    <td class="px-3 py-2"><%= row.branchName || "-" %></td>
+                  <% } %>
+                </tr>
+              <% }) %>
+            <% } %>
+            <tr class="bg-rose-700 text-white">
+              <td colspan="<%= movementDescriptorColspan %>" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
+              <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getTotalQty("openingQty", "openingQtyConverted")) %></td>
+              <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getTotalQty("productionQty", "productionQtyConverted")) %></td>
+              <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getTotalQty("purchaseQty", "purchaseQtyConverted")) %></td>
+              <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(Math.abs(getTotalQty("saleQty", "saleQtyConverted"))) %></td>
+              <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getTotalQty("adjustmentQty", "adjustmentQtyConverted")) %></td>
+              <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getTotalQty("closingQty", "closingQtyConverted")) %></td>
+              <% if (includeBranchColumn) { %>
+                <td class="px-3 py-2"></td>
+              <% } %>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </section>
+</div>
+
+<script><%- include("../base/partials/date-range-picker.js") %></script>
+<script><%- include("../base/partials/searchable-select.js") %></script>
+<script>
+  (function () {
+    const form = document.querySelector("[data-inventory-stock-movement-filter-form]");
+    if (!form) return;
+
+    if (typeof window.initSearchableSelects === "function") {
+      window.initSearchableSelects();
+    }
+
+    if (typeof window.initReportDateRangePicker === "function") {
+      window.initReportDateRangePicker({
+        root: form,
+        invalidDateRangeMessage: <%- JSON.stringify(t("invalid_date_range")) %>,
+        selectDateRangeText: <%- JSON.stringify(t("select_date_range")) %>,
+      });
+    }
+
+    const allMultiValue = <%- JSON.stringify(allMultiOptionValue) %>;
+    const allMultiSelects = Array.from(form.querySelectorAll('select[data-all-multi-select="true"]'));
+
+    const setPrevSelectionState = (select) => {
+      const options = Array.from(select?.options || []);
+      const selectedValues = options
+        .filter((option) => option.selected)
+        .map((option) => option.value);
+      const hasAll = selectedValues.includes(allMultiValue);
+      if (select) select.dataset.prevHasAll = hasAll ? "1" : "0";
+    };
+
+    const normalizeAllSelection = (select, useIntent = false) => {
+      if (!select) return;
+      const options = Array.from(select.options || []);
+      const allOption = options.find((option) => option.value === allMultiValue);
+      if (!allOption) return;
+
+      const selectedValues = options
+        .filter((option) => option.selected)
+        .map((option) => option.value);
+      const hasSpecific = selectedValues.some((value) => value !== allMultiValue);
+      const hasAll = selectedValues.includes(allMultiValue);
+      const prevHasAll = String(select.dataset.prevHasAll || "0") === "1";
+
+      if (hasSpecific && hasAll) {
+        if (useIntent && prevHasAll) {
+          allOption.selected = false;
+        } else {
+          options.forEach((option) => {
+            if (option.value !== allMultiValue) option.selected = false;
+          });
+          allOption.selected = true;
+        }
+      } else if (!hasSpecific && !hasAll) {
+        allOption.selected = true;
+      }
+
+      setPrevSelectionState(select);
+    };
+
+    allMultiSelects.forEach((select) => {
+      normalizeAllSelection(select);
+      setPrevSelectionState(select);
+      select.addEventListener("focus", () => setPrevSelectionState(select));
+      select.addEventListener("change", () => normalizeAllSelection(select, true));
+    });
+
+    const stockTypeSelect = form.querySelector('select[name="stock_type"]');
+    const articleFilterRow = form.querySelector("[data-article-filter-row]");
+    const statusFilterRow = form.querySelector("[data-finished-status-filter-row]");
+    const statusSelect = form.querySelector('select[name="stock_status"]');
+    const sfgUnitFilterRow = form.querySelector("[data-sfg-unit-filter-row]");
+    const sfgUnitSelect = form.querySelector('select[name="unit_id"]');
+    const articleSelect = form.querySelector('select[name="article_ids"]');
+    const stockItemSelect = form.querySelector('select[name="stock_item_ids"]');
+    const stockItemLabel = form.querySelector("[data-stock-item-label]");
+    const allLabel = <%- JSON.stringify(t("all")) %>;
+    const skuLabel = <%- JSON.stringify(tt("sku", "SKU")) %>;
+    const rawMaterialLabel = <%- JSON.stringify(tt("raw_material", "Raw Material")) %>;
+    const articlesByType = <%- JSON.stringify(articlesByType) %>;
+    const stockItemsByType = <%- JSON.stringify(stockItemsByType) %>;
+    const pickSfgDefaultUnitValue = () => {
+      if (!sfgUnitSelect) return "";
+      const options = Array.from(sfgUnitSelect.options || []);
+      if (!options.length) return "";
+
+      const dozenOption = options.find((option) => {
+        const code = String(option.getAttribute("data-unit-code") || "").trim().toUpperCase();
+        const label = String(option.textContent || "").trim().toUpperCase();
+        return code === "DZN" || code === "DOZEN" || label === "DZN" || label === "DOZEN";
+      });
+      return String((dozenOption || options[0])?.value || "");
+    };
+
+    const ensureSfgUnitSelection = () => {
+      if (!sfgUnitSelect) return;
+      const options = Array.from(sfgUnitSelect.options || []);
+      const selectedValue = String(sfgUnitSelect.value || "");
+      const hasSelected = options.some((option) => String(option.value || "") === selectedValue);
+      if (hasSelected && selectedValue) return;
+      sfgUnitSelect.value = pickSfgDefaultUnitValue();
+    };
+
+    const populateMultiSelectWithAll = ({ select, rows, labelKey }) => {
+      if (!select) return;
+      const previousSelection = new Set(
+        Array.from(select.options || [])
+          .filter((option) => option.selected && option.value !== allMultiValue)
+          .map((option) => String(option.value || "")),
+      );
+
+      select.innerHTML = "";
+
+      const allOption = document.createElement("option");
+      allOption.value = allMultiValue;
+      allOption.textContent = String(allLabel || "All");
+      select.appendChild(allOption);
+
+      const normalizedRows = Array.isArray(rows) ? rows : [];
+      normalizedRows.forEach((row) => {
+        const option = document.createElement("option");
+        option.value = String(row?.id || "");
+        option.textContent = String(row?.[labelKey] || "").trim() || "-";
+        if (previousSelection.has(option.value)) option.selected = true;
+        select.appendChild(option);
+      });
+
+      const hasSpecificSelection = Array.from(select.options || []).some(
+        (option) => option.value !== allMultiValue && option.selected,
+      );
+      allOption.selected = !hasSpecificSelection;
+      setPrevSelectionState(select);
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+
+    const syncStockTypePresentation = () => {
+      if (!stockTypeSelect) return;
+      const currentStockType = String(stockTypeSelect.value || "").toUpperCase();
+      const isFg = currentStockType === "FG";
+      const isSfg = currentStockType === "SFG";
+      const isRawMaterial = currentStockType === "RM";
+      const scopedArticles = Array.isArray(articlesByType[currentStockType])
+        ? articlesByType[currentStockType]
+        : [];
+      const scopedStockItems = Array.isArray(stockItemsByType[currentStockType])
+        ? stockItemsByType[currentStockType]
+        : [];
+
+      if (articleFilterRow) {
+        articleFilterRow.classList.toggle("hidden", isRawMaterial);
+      }
+      if (articleSelect) {
+        populateMultiSelectWithAll({
+          select: articleSelect,
+          rows: isRawMaterial ? [] : scopedArticles,
+          labelKey: "name",
+        });
+        articleSelect.disabled = isRawMaterial;
+      }
+      if (stockItemSelect) {
+        populateMultiSelectWithAll({
+          select: stockItemSelect,
+          rows: scopedStockItems,
+          labelKey: "label",
+        });
+      }
+      if (stockItemLabel) {
+        stockItemLabel.textContent = isRawMaterial ? rawMaterialLabel : skuLabel;
+      }
+      if (statusFilterRow) {
+        statusFilterRow.classList.toggle("hidden", !isFg);
+      }
+      if (statusSelect) {
+        statusSelect.disabled = !isFg;
+        if (!isFg) statusSelect.value = "PACKED";
+      }
+
+      if (sfgUnitFilterRow) {
+        sfgUnitFilterRow.classList.toggle("hidden", !isSfg);
+      }
+      if (sfgUnitSelect) {
+        sfgUnitSelect.disabled = !isSfg;
+        if (isSfg) {
+          ensureSfgUnitSelection();
+        } else {
+          sfgUnitSelect.value = "";
+        }
+      }
+
+      if (typeof window.initSearchableSelects === "function") {
+        window.initSearchableSelects();
+      }
+    };
+
+    stockTypeSelect?.addEventListener("change", syncStockTypePresentation);
+    syncStockTypePresentation();
+
+    form.addEventListener("submit", () => {
+      allMultiSelects.forEach((select) => normalizeAllSelection(select));
+    });
+
+    document.querySelector("[data-print-report]")?.addEventListener("click", () => {
+      window.print();
+    });
+
+    document.querySelector("[data-download-report]")?.addEventListener("click", () => {
+      const tables = Array.from(document.querySelectorAll("[data-report-table]"));
+      if (!tables.length) return;
+
+      const csvBlocks = tables.map((table) => {
+        const lines = [];
+        const title = String(table.getAttribute("data-export-title") || "").trim();
+        if (title) lines.push(`"${title.replace(/"/g, '""')}"`);
+
+        Array.from(table.querySelectorAll("tr")).forEach((row) => {
+          const cells = Array.from(row.querySelectorAll("th,td")).map((cell) =>
+            `"${String(cell.textContent || "")
+              .replace(/\s+/g, " ")
+              .trim()
+              .replace(/"/g, '""')}"`,
+          );
+          if (cells.length) lines.push(cells.join(","));
+        });
+
+        return lines.join("\n");
+      });
+
+      const blob = new Blob([csvBlocks.join("\n\n")], {
+        type: "text/csv;charset=utf-8;",
+      });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = "stock-movement-report.csv";
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(link.href);
+    });
+  })();
+</script>
+
+
+
+
+
+
+
+
+
+
+

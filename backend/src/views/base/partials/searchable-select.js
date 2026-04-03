@@ -35,6 +35,54 @@
     const labelText = label ? label.textContent.trim() : "";
     return labelText ? `${i18nSearch} ${labelText}` : i18nSearch;
   };
+  const searchableRegistry = new Set();
+  const closeSearchableMenus = ({ exceptWrapper = null } = {}) => {
+    searchableRegistry.forEach((entry) => {
+      if (!entry || typeof entry !== "object") return;
+      if (exceptWrapper && entry.wrapper === exceptWrapper) return;
+      if (typeof entry.close === "function") entry.close();
+    });
+  };
+
+  const syncExistingSearchableSelectState = (select) => {
+    if (!select || select.dataset.searchableReady !== "true") return;
+    const wrapper =
+      select.closest("[data-searchable-wrapper]") ||
+      (select.parentElement?.matches("[data-searchable-wrapper]")
+        ? select.parentElement
+        : null);
+    if (!(wrapper instanceof HTMLElement)) return;
+
+    const input = wrapper.querySelector('input[type="text"]');
+    if (!(input instanceof HTMLInputElement)) return;
+
+    if (select.disabled) {
+      input.readOnly = true;
+      input.classList.add(
+        "bg-slate-50",
+        "text-slate-600",
+        "cursor-not-allowed",
+      );
+      input.classList.remove("cursor-text");
+      input.style.backgroundColor = "rgb(248 250 252)";
+      input.style.color = "rgb(71 85 105)";
+      input.style.caretColor = "transparent";
+      return;
+    }
+
+    input.readOnly = false;
+    input.classList.remove(
+      "bg-slate-50",
+      "text-slate-600",
+      "cursor-not-allowed",
+    );
+    if (!input.classList.contains("cursor-pointer")) {
+      input.classList.add("cursor-text");
+    }
+    input.style.backgroundColor = "";
+    input.style.color = "";
+    input.style.caretColor = "";
+  };
 
   const createSearchableSelect = (select) => {
     if (!select) return;
@@ -126,7 +174,13 @@
     };
     const isFocusableControl = (el) => {
       if (!(el instanceof HTMLElement)) return false;
-      if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement)) {
+      if (
+        !(
+          el instanceof HTMLInputElement ||
+          el instanceof HTMLSelectElement ||
+          el instanceof HTMLTextAreaElement
+        )
+      ) {
         return false;
       }
       if (el.hasAttribute("disabled")) return false;
@@ -134,7 +188,8 @@
       if (el instanceof HTMLInputElement && el.readOnly) return false;
       if (el instanceof HTMLTextAreaElement && el.readOnly) return false;
       const style = window.getComputedStyle(el);
-      if (style.display === "none" || style.visibility === "hidden") return false;
+      if (style.display === "none" || style.visibility === "hidden")
+        return false;
       return el.offsetParent !== null || style.position === "fixed";
     };
     const focusControl = (el) => {
@@ -180,7 +235,9 @@
     };
     const rowFieldAttrName = resolveRowFieldAttrName();
     const advanceFocusWithinRow = () => {
-      const fieldKey = String(select.getAttribute(rowFieldAttrName) || "").trim();
+      const fieldKey = String(
+        select.getAttribute(rowFieldAttrName) || "",
+      ).trim();
       if (!fieldKey) return false;
       const row = select.closest("tr");
       if (!(row instanceof HTMLElement)) return false;
@@ -202,7 +259,9 @@
       return false;
     };
     const getNextRowFieldMeta = () => {
-      const fieldKey = String(select.getAttribute(rowFieldAttrName) || "").trim();
+      const fieldKey = String(
+        select.getAttribute(rowFieldAttrName) || "",
+      ).trim();
       if (!fieldKey) return null;
       const row = select.closest("tr[data-row-index]");
       if (!(row instanceof HTMLElement)) return null;
@@ -212,7 +271,9 @@
       if (rowIndex.length === 0) return null;
       const linesBody = row.closest("[data-lines-body]");
       if (!(linesBody instanceof HTMLElement)) return null;
-      const linesType = String(linesBody.getAttribute("data-lines-body") || "").trim();
+      const linesType = String(
+        linesBody.getAttribute("data-lines-body") || "",
+      ).trim();
       if (!linesType) return null;
 
       const rowFields = Array.from(
@@ -224,9 +285,14 @@
       for (let idx = currentIndex + 1; idx < rowFields.length; idx += 1) {
         const candidate = rowFields[idx];
         if (!(candidate instanceof HTMLElement)) continue;
-        const nextKey = String(candidate.getAttribute(rowFieldAttrName) || "").trim();
+        const nextKey = String(
+          candidate.getAttribute(rowFieldAttrName) || "",
+        ).trim();
         if (!nextKey) continue;
-        if (candidate instanceof HTMLSelectElement || isFocusableControl(candidate)) {
+        if (
+          candidate instanceof HTMLSelectElement ||
+          isFocusableControl(candidate)
+        ) {
           return { linesType, rowIndex, nextKey };
         }
       }
@@ -326,7 +392,34 @@
       };
     };
 
-    const positionMenu = () => {
+    let lastRenderedOptionLabels = [];
+
+    const measureLabelWidth = (labels = []) => {
+      const normalizedLabels = Array.isArray(labels)
+        ? labels.map((label) => String(label || "").trim()).filter(Boolean)
+        : [];
+      if (!normalizedLabels.length) return 0;
+
+      const canvas = document.createElement("canvas");
+      const context = canvas.getContext("2d");
+      if (!context) return 0;
+
+      const styles = window.getComputedStyle(input);
+      const fontWeight = styles.fontWeight || "400";
+      const fontSize = styles.fontSize || "14px";
+      const fontFamily = styles.fontFamily || "sans-serif";
+      context.font = `${fontWeight} ${fontSize} ${fontFamily}`;
+
+      return normalizedLabels.reduce((maxWidth, label) => {
+        const measured = Math.ceil(context.measureText(label).width);
+        return Math.max(maxWidth, measured);
+      }, 0);
+    };
+
+    const positionMenu = ({ optionLabels = null } = {}) => {
+      const effectiveOptionLabels = Array.isArray(optionLabels)
+        ? optionLabels
+        : lastRenderedOptionLabels;
       const inputRect = input.getBoundingClientRect();
       const boundaryRect = getBoundaryRect();
       const safeEdge = 8;
@@ -335,9 +428,20 @@
       const minimumFallbackHeight = 96;
       const viewportWidth = window.innerWidth;
       const viewportHeight = window.innerHeight;
-      const preferredMaxHeight = Math.max(
-        minimumPreferredHeight,
-        Math.floor(viewportHeight - safeEdge * 2),
+      const configuredMenuMaxHeight = Number.parseInt(
+        select.dataset.searchableMaxHeight || "",
+        10,
+      );
+      const hardMenuMaxHeight =
+        Number.isFinite(configuredMenuMaxHeight) && configuredMenuMaxHeight > 0
+          ? configuredMenuMaxHeight
+          : 320;
+      const preferredMaxHeight = Math.min(
+        hardMenuMaxHeight,
+        Math.max(
+          minimumPreferredHeight,
+          Math.floor(viewportHeight - safeEdge * 2),
+        ),
       );
 
       const availableBelow = Math.floor(
@@ -347,7 +451,8 @@
         inputRect.top - boundaryRect.top - safeGap,
       );
       let openUpward =
-        availableBelow < minimumPreferredHeight && availableAbove > availableBelow;
+        availableBelow < minimumPreferredHeight &&
+        availableAbove > availableBelow;
 
       let availableSpace = openUpward ? availableAbove : availableBelow;
       if (availableSpace < minimumFallbackHeight) {
@@ -359,12 +464,22 @@
       }
 
       const normalizedSpace = Math.max(0, availableSpace);
-      const maxHeight = normalizedSpace >= minimumFallbackHeight
-        ? Math.min(preferredMaxHeight, normalizedSpace)
-        : Math.max(56, normalizedSpace);
+      const maxHeight =
+        normalizedSpace >= minimumFallbackHeight
+          ? Math.min(preferredMaxHeight, normalizedSpace)
+          : Math.max(56, normalizedSpace);
       const targetWidth = Math.max(140, Math.floor(inputRect.width));
       const maxAllowedWidth = Math.max(140, viewportWidth - safeEdge * 2);
-      const menuWidth = Math.min(targetWidth, maxAllowedWidth);
+      const measuredLabelWidth = measureLabelWidth(effectiveOptionLabels);
+      const horizontalChromeWidth = 84;
+      const preferredWidth =
+        measuredLabelWidth > 0
+          ? Math.ceil(measuredLabelWidth + horizontalChromeWidth)
+          : targetWidth;
+      const menuWidth = Math.min(
+        Math.max(targetWidth, preferredWidth),
+        maxAllowedWidth,
+      );
       let menuLeft = Math.floor(inputRect.left);
       if (menuLeft + menuWidth > viewportWidth - safeEdge) {
         menuLeft = Math.floor(viewportWidth - safeEdge - menuWidth);
@@ -393,15 +508,31 @@
     let activeIndex = -1;
     let keyboardNavigatedMenu = false;
     let multiSearchValue = "";
+    const closeMenu = () => {
+      menu.classList.add("hidden");
+      keyboardNavigatedMenu = false;
+      if (isMulti) syncToInput();
+    };
+    const openMenu = ({ showAll = false, preserveActive = false } = {}) => {
+      if (select.disabled) return;
+      closeSearchableMenus({ exceptWrapper: wrapper });
+      renderMenu({ showAll, preserveActive });
+      menu.classList.remove("hidden");
+    };
 
-    const hasAllMultiSelect = isMulti
-      && String(select.dataset.allMultiSelect || "").toLowerCase() === "true";
+    const hasAllMultiSelect =
+      isMulti &&
+      String(select.dataset.allMultiSelect || "").toLowerCase() === "true";
     const getAllOption = () => {
       if (!hasAllMultiSelect) return null;
-      return Array.from(select.options).find((opt) => {
-        const value = String(opt.value || "").trim().toLowerCase();
-        return value === "__all__" || value === "all";
-      }) || null;
+      return (
+        Array.from(select.options).find((opt) => {
+          const value = String(opt.value || "")
+            .trim()
+            .toLowerCase();
+          return value === "__all__" || value === "all";
+        }) || null
+      );
     };
     const normalizeMultiSelectAll = (changedOption = null) => {
       if (!hasAllMultiSelect) return;
@@ -418,9 +549,9 @@
       }
 
       if (
-        changedOption
-        && changedOption !== allOption
-        && changedOption.selected
+        changedOption &&
+        changedOption !== allOption &&
+        changedOption.selected
       ) {
         allOption.selected = false;
       }
@@ -449,7 +580,11 @@
 
     const getFilteredOptions = ({ showAll = false } = {}) => {
       const rawFilterSource = isMulti ? multiSearchValue : input.value;
-      let filter = showAll ? "" : String(rawFilterSource || "").trim().toLowerCase();
+      let filter = showAll
+        ? ""
+        : String(rawFilterSource || "")
+            .trim()
+            .toLowerCase();
       if (isMulti) {
         const currentString = Array.from(select.selectedOptions)
           .map((opt) => opt.textContent.trim())
@@ -504,7 +639,9 @@
           multiSearchValue = searchInput.value || "";
           renderMenu({ showAll: false, preserveActive: true });
           menu.classList.remove("hidden");
-          const replacement = menu.querySelector('[data-searchable-multi-search="true"]');
+          const replacement = menu.querySelector(
+            '[data-searchable-multi-search="true"]',
+          );
           if (replacement instanceof HTMLInputElement) {
             replacement.focus();
             const caretPos = replacement.value.length;
@@ -541,7 +678,7 @@
             : "text-slate-600";
         const btn = document.createElement("button");
         btn.type = "button";
-        btn.className = `flex w-full min-w-0 items-center justify-between gap-2 px-4 py-2.5 text-left text-sm transition hover:bg-slate-50 ${stateClass}`;
+        btn.className = `flex w-full min-w-0 items-start justify-between gap-2 px-4 py-2.5 text-left text-sm transition hover:bg-slate-50 ${stateClass}`;
         btn.setAttribute("data-searchable-option", "true");
         btn.setAttribute("data-active", isActive ? "true" : "false");
         btn.title = label;
@@ -555,7 +692,7 @@
           iconHtml =
             '<svg class="h-4 w-4 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>';
         }
-        btn.innerHTML = `<span class="block min-w-0 flex-1 truncate">${label}</span><span class="flex-none">${iconHtml}</span>`;
+        btn.innerHTML = `<span class="block min-w-0 flex-1 whitespace-normal wrap-break-word leading-5">${label}</span><span class="mt-0.5 flex-none">${iconHtml}</span>`;
 
         btn.addEventListener("mousedown", (e) => {
           e.preventDefault();
@@ -591,6 +728,9 @@
         menu.appendChild(empty);
       }
 
+      lastRenderedOptionLabels = filteredOptions.map((opt) =>
+        opt.textContent.trim(),
+      );
       positionMenu();
     };
 
@@ -606,11 +746,12 @@
         input.value = "";
       }
       input.select();
-      renderMenu({ showAll: true });
-      menu.classList.remove("hidden");
+      openMenu({ showAll: true });
       if (isMulti && !useInlineMultiSearch) {
         window.setTimeout(() => {
-          const multiSearchInput = menu.querySelector('[data-searchable-multi-search="true"]');
+          const multiSearchInput = menu.querySelector(
+            '[data-searchable-multi-search="true"]',
+          );
           if (multiSearchInput instanceof HTMLInputElement) {
             multiSearchInput.focus();
           }
@@ -624,11 +765,12 @@
         multiSearchValue = "";
         input.value = "";
       }
-      renderMenu({ showAll: true });
-      menu.classList.remove("hidden");
+      openMenu({ showAll: true });
       if (isMulti && !useInlineMultiSearch) {
         window.setTimeout(() => {
-          const multiSearchInput = menu.querySelector('[data-searchable-multi-search="true"]');
+          const multiSearchInput = menu.querySelector(
+            '[data-searchable-multi-search="true"]',
+          );
           if (multiSearchInput instanceof HTMLInputElement) {
             multiSearchInput.focus();
           }
@@ -641,8 +783,7 @@
         multiSearchValue = input.value || "";
       }
       keyboardNavigatedMenu = false;
-      renderMenu({ showAll: false });
-      menu.classList.remove("hidden");
+      openMenu({ showAll: false });
     });
     input.addEventListener("keydown", (e) => {
       if (select.disabled) return;
@@ -687,8 +828,7 @@
 
         if (menu.classList.contains("hidden")) {
           keyboardNavigatedMenu = false;
-          renderMenu({ showAll: true });
-          menu.classList.remove("hidden");
+          openMenu({ showAll: true });
           return;
         }
 
@@ -731,8 +871,7 @@
       }
 
       if (e.key === "Escape") {
-        menu.classList.add("hidden");
-        keyboardNavigatedMenu = false;
+        closeMenu();
         return;
       }
 
@@ -794,8 +933,7 @@
       setTimeout(() => {
         const activeEl = document.activeElement;
         if (activeEl && wrapper.contains(activeEl)) return;
-        menu.classList.add("hidden");
-        keyboardNavigatedMenu = false;
+        closeMenu();
         if (isMulti) {
           syncToInput();
         } else {
@@ -827,23 +965,18 @@
       positionMenu();
     };
     if (modalContent) {
-      modalContent.addEventListener(
-        "scroll",
-        handleViewportReposition,
-        { passive: true },
-      );
+      modalContent.addEventListener("scroll", handleViewportReposition, {
+        passive: true,
+      });
     }
 
-    window.addEventListener(
-      "resize",
-      handleViewportReposition,
-      { passive: true },
-    );
-    window.addEventListener(
-      "scroll",
-      handleViewportReposition,
-      { passive: true, capture: true },
-    );
+    window.addEventListener("resize", handleViewportReposition, {
+      passive: true,
+    });
+    window.addEventListener("scroll", handleViewportReposition, {
+      passive: true,
+      capture: true,
+    });
 
     select.addEventListener("change", syncToInput);
     select.classList.add("sr-only");
@@ -853,6 +986,7 @@
     wrapper.appendChild(icon);
     wrapper.appendChild(menu);
     wrapper.appendChild(select);
+    searchableRegistry.add({ wrapper, close: closeMenu });
     syncToInput();
   };
 
@@ -860,12 +994,17 @@
     document.querySelectorAll("select").forEach((select) => {
       if (!select) return;
       if (select.dataset.searchableSkip === "true") return;
+      if (select.dataset.searchableReady === "true") {
+        syncExistingSearchableSelectState(select);
+        return;
+      }
       createSearchableSelect(select);
     });
   };
 
   const initDataMultiSelects = (root = document) => {
-    const scope = root && typeof root.querySelectorAll === "function" ? root : document;
+    const scope =
+      root && typeof root.querySelectorAll === "function" ? root : document;
     const wraps = Array.from(scope.querySelectorAll("[data-multi-select]"));
     let openRoot = null;
 
@@ -881,13 +1020,16 @@
       const trigger = wrap.querySelector("[data-multi-trigger]");
       const panel = wrap.querySelector("[data-multi-panel]");
       const hidden = wrap.querySelector("[data-multi-hidden]");
-      const checkboxes = Array.from(wrap.querySelectorAll('[data-multi-panel] input[type="checkbox"]'));
+      const checkboxes = Array.from(
+        wrap.querySelectorAll('[data-multi-panel] input[type="checkbox"]'),
+      );
       if (!trigger || !panel || !hidden) return;
 
       wrap.dataset.dataMultiReady = "true";
       const allValue = String(wrap.dataset.multiAllValue || "").trim();
       const autoAll = String(wrap.dataset.multiAutoAll || "").trim() === "1";
-      const optionsContainer = panel.querySelector("[data-multi-options]") || panel;
+      const optionsContainer =
+        panel.querySelector("[data-multi-options]") || panel;
       const optionRows = checkboxes
         .map((cb) => cb.closest("label"))
         .filter((label) => label && optionsContainer.contains(label));
@@ -901,7 +1043,8 @@
       searchInput.setAttribute("data-multi-search", "true");
 
       const noResults = document.createElement("div");
-      noResults.className = "hidden px-2 py-2 text-center text-xs italic text-slate-400";
+      noResults.className =
+        "hidden px-2 py-2 text-center text-xs italic text-slate-400";
       noResults.textContent = "<%= t('no_records_found') %>";
 
       if (!panel.querySelector("[data-multi-search]")) {
@@ -916,10 +1059,14 @@
       const noResultsNode = panel.querySelector("[data-multi-no-results]");
 
       const applyFilter = () => {
-        const query = String(searchField?.value || "").trim().toLowerCase();
+        const query = String(searchField?.value || "")
+          .trim()
+          .toLowerCase();
         let visibleCount = 0;
         optionRows.forEach((row) => {
-          const label = String(row.textContent || "").trim().toLowerCase();
+          const label = String(row.textContent || "")
+            .trim()
+            .toLowerCase();
           const matched = !query || label.includes(query);
           row.classList.toggle("hidden", !matched);
           if (matched) visibleCount += 1;
@@ -931,7 +1078,10 @@
 
       const getAllCheckbox = () => {
         if (!allValue) return null;
-        return checkboxes.find((cb) => String(cb.value || "").trim() === allValue) || null;
+        return (
+          checkboxes.find((cb) => String(cb.value || "").trim() === allValue) ||
+          null
+        );
       };
 
       const normalizeSelection = (changedCheckbox) => {
@@ -946,7 +1096,11 @@
           return;
         }
 
-        if (changedCheckbox && changedCheckbox !== allCheckbox && changedCheckbox.checked) {
+        if (
+          changedCheckbox &&
+          changedCheckbox !== allCheckbox &&
+          changedCheckbox.checked
+        ) {
           allCheckbox.checked = false;
         }
 
@@ -974,8 +1128,12 @@
           return;
         }
         if (selectedValues.length === 1) {
-          const selectedCheckbox = selected.find((cb) => String(cb.value || "").trim() === selectedValues[0]);
-          const label = selectedCheckbox?.closest("label")?.querySelector("span")?.textContent || selectedValues[0];
+          const selectedCheckbox = selected.find(
+            (cb) => String(cb.value || "").trim() === selectedValues[0],
+          );
+          const label =
+            selectedCheckbox?.closest("label")?.querySelector("span")
+              ?.textContent || selectedValues[0];
           trigger.textContent = label;
           return;
         }
@@ -1027,6 +1185,28 @@
   };
 
   if (typeof window !== "undefined") {
+    if (!window.__searchableSelectGlobalListenersAttached) {
+      document.addEventListener("pointerdown", (event) => {
+        const target = event.target;
+        if (
+          target instanceof HTMLElement &&
+          target.closest("[data-searchable-wrapper]")
+        )
+          return;
+        closeSearchableMenus();
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") closeSearchableMenus();
+      });
+      document.addEventListener("ui:error-modal-open", () =>
+        closeSearchableMenus(),
+      );
+      document.addEventListener("ui:error-modal-close", () =>
+        closeSearchableMenus(),
+      );
+      window.__searchableSelectGlobalListenersAttached = true;
+    }
+    window.closeAllSearchableSelectMenus = () => closeSearchableMenus();
     if (!window.initSearchableSelects) {
       document.addEventListener("DOMContentLoaded", initSearchableSelects);
     }

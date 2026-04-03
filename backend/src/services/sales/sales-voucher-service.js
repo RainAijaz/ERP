@@ -292,6 +292,17 @@ const getConversionFactor = ({ graph, fromUomId, toUomId }) => {
   return null;
 };
 
+const normalizeFactorToBase = (value) => {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  const nearestInteger = Math.round(numeric);
+  // Guard against reciprocal precision drift (e.g., 12.000048 from 1 / 0.083333).
+  if (Math.abs(numeric - nearestInteger) <= 0.001) {
+    return Number(nearestInteger);
+  }
+  return Number(numeric.toFixed(6));
+};
+
 const loadSkuUnitOptionsByBaseUomIdTx = async ({ trx, baseUomIds = [] }) => {
   const normalizedBaseIds = [
     ...new Set(
@@ -333,12 +344,13 @@ const loadSkuUnitOptionsByBaseUomIdTx = async ({ trx, baseUomIds = [] }) => {
           fromUomId: Number(uomId),
           toUomId: Number(baseUomId),
         });
-        if (!(Number(factorToBase || 0) > 0)) return null;
+        const normalizedFactorToBase = normalizeFactorToBase(factorToBase);
+        if (!(Number(normalizedFactorToBase || 0) > 0)) return null;
         return {
           id: Number(uom.id),
           code: String(uom.code || "").trim(),
           name: String(uom.name || "").trim(),
-          factor_to_base: Number(Number(factorToBase).toFixed(6)),
+          factor_to_base: Number(normalizedFactorToBase),
           is_base: Number(uom.id) === Number(baseUomId),
         };
       })
@@ -2277,6 +2289,12 @@ const applySalesSkuStockOutTx = async ({
   if (!Number.isInteger(normalizedQtyPairsOut) || normalizedQtyPairsOut <= 0) {
     return;
   }
+  await ensureSkuBalanceSeedTx({
+    trx,
+    branchId,
+    skuId,
+    category,
+  });
 
   const rows = await trx("erp.stock_balance_sku")
     .select("is_packed", "qty_pairs", "value", "wac")
@@ -2292,17 +2310,6 @@ const applySalesSkuStockOutTx = async ({
     .orderBy("qty_pairs", "desc")
     .forUpdate();
 
-  const totalAvailablePairs = rows.reduce(
-    (sum, row) => sum + Number(row?.qty_pairs || 0),
-    0,
-  );
-  if (totalAvailablePairs < normalizedQtyPairsOut) {
-    throw new HttpError(
-      400,
-      `Insufficient stock for SKU ${Number(skuId)} (required ${normalizedQtyPairsOut}, available ${Number(totalAvailablePairs)})`,
-    );
-  }
-
   let remainingPairs = Number(normalizedQtyPairsOut);
   let consumedValueTotal = 0;
   for (const row of rows) {
@@ -2317,13 +2324,6 @@ const applySalesSkuStockOutTx = async ({
     const consumedValue = roundCost2(consumePairs * unitCost);
     const nextQtyPairsRaw = rowQtyPairs - consumePairs;
     const nextValueRaw = Number(row?.value || 0) - consumedValue;
-    if (nextQtyPairsRaw < 0 || nextValueRaw < -0.05) {
-      throw new HttpError(
-        400,
-        `Sales stock posting would make stock negative for SKU ${Number(skuId)}`,
-      );
-    }
-
     const nextQtyPairs = Math.max(Number(nextQtyPairsRaw || 0), 0);
     const nextValue =
       nextQtyPairs > 0 ? Math.max(roundCost2(nextValueRaw), 0) : 0;
@@ -2352,10 +2352,44 @@ const applySalesSkuStockOutTx = async ({
   }
 
   if (remainingPairs > 0) {
-    throw new HttpError(
-      400,
-      `Sales stock posting failed due to stock split inconsistency for SKU ${Number(skuId)}`,
-    );
+    const fallbackUnitCost = await resolveSkuCurrentUnitCostTx({
+      trx,
+      branchId: Number(branchId),
+      skuId: Number(skuId),
+      category,
+    });
+    const shortageValue = roundCost2(Number(remainingPairs) * Number(fallbackUnitCost || 0));
+    const baseBucket = rows.find((row) => row?.is_packed === false) || null;
+    if (!baseBucket) {
+      throw new HttpError(
+        400,
+        `Sales stock posting failed: base stock bucket is missing for SKU ${Number(skuId)}`,
+      );
+    }
+    const nextQtyPairs = Number(baseBucket.qty_pairs || 0) - Number(remainingPairs);
+    const nextValue = roundCost2(Number(baseBucket.value || 0) - Number(shortageValue));
+    const nextWac =
+      nextQtyPairs !== 0
+        ? roundUnitCost6(Math.abs(nextValue) / Math.abs(nextQtyPairs))
+        : 0;
+    await trx("erp.stock_balance_sku")
+      .where({
+        branch_id: Number(branchId),
+        stock_state: "ON_HAND",
+        category: String(category || "")
+          .trim()
+          .toUpperCase(),
+        is_packed: false,
+        sku_id: Number(skuId),
+      })
+      .update({
+        qty_pairs: nextQtyPairs,
+        value: nextValue,
+        wac: nextWac,
+        last_txn_at: trx.fn.now(),
+      });
+    consumedValueTotal = roundCost2(consumedValueTotal + Number(shortageValue || 0));
+    remainingPairs = 0;
   }
 
   const avgUnitCost =

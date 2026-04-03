@@ -54,6 +54,19 @@ const {
   applyProductionVoucherUpdatePayloadTx,
   applyProductionVoucherDeletePayloadTx,
 } = require("../../services/production/production-voucher-service");
+const {
+  INVENTORY_VOUCHER_TYPES,
+  isInventoryVoucherTypeCode,
+  ensureInventoryVoucherDerivedDataTx,
+  applyInventoryVoucherUpdatePayloadTx,
+  applyInventoryVoucherDeletePayloadTx,
+} = require("../../services/inventory/inventory-voucher-service");
+const {
+  STOCK_TRANSFER_VOUCHER_TYPES,
+  ensureStockTransferVoucherDerivedDataTx,
+  applyStockTransferVoucherUpdatePayloadTx,
+  applyStockTransferVoucherDeletePayloadTx,
+} = require("../../services/inventory/stock-transfer-voucher-service");
 const basicInfoRoutes = require("../master_data/basic-info");
 const uomConversionsRoutes = require("../master_data/basic-info/uom-conversions");
 const accountsRoutes = require("../master_data/accounts");
@@ -220,6 +233,28 @@ const applyVoucherApprovalChangeTx = async ({
       });
       return;
     }
+    // Inventory vouchers (opening stock + stock count) use dedicated stock rollback replay.
+    if (isInventoryVoucherTypeCode(existingVoucherTypeCode)) {
+      await applyInventoryVoucherDeletePayloadTx({
+        trx,
+        voucherId,
+        voucherTypeCode: existingVoucherTypeCode,
+        approverId,
+      });
+      return;
+    }
+    if (
+      existingVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out ||
+      existingVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.in
+    ) {
+      await applyStockTransferVoucherDeletePayloadTx({
+        trx,
+        voucherId,
+        voucherTypeCode: existingVoucherTypeCode,
+        approverId,
+      });
+      return;
+    }
 
     if (existingVoucherTypeCode === "BANK_VOUCHER") {
       await markBankVoucherLinesRejectedTx({ trx, voucherId });
@@ -294,6 +329,24 @@ const applyVoucherApprovalChangeTx = async ({
       voucherTypeCode === SALES_VOUCHER_TYPES.salesVoucher
     ) {
       await ensureSalesVoucherDerivedDataTx({
+        trx,
+        voucherId,
+        voucherTypeCode,
+      });
+    }
+    if (isInventoryVoucherTypeCode(voucherTypeCode)) {
+      // Inventory vouchers must replay derived stock sync on approve.
+      await ensureInventoryVoucherDerivedDataTx({
+        trx,
+        voucherId,
+        voucherTypeCode,
+      });
+    }
+    if (
+      voucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out ||
+      voucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.in
+    ) {
+      await ensureStockTransferVoucherDerivedDataTx({
         trx,
         voucherId,
         voucherTypeCode,
@@ -437,6 +490,29 @@ const applyVoucherApprovalChangeTx = async ({
       voucherTypeCode,
       payload,
       req: approvalReq,
+    });
+  }
+
+  if (isInventoryVoucherTypeCode(voucherTypeCode)) {
+    // Approved edit replay recalculates inventory balance/ledger from current lines.
+    await applyInventoryVoucherUpdatePayloadTx({
+      trx,
+      voucherId,
+      voucherTypeCode,
+      payload,
+    });
+  }
+  if (
+    voucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out ||
+    voucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.in
+  ) {
+    await applyStockTransferVoucherUpdatePayloadTx({
+      trx,
+      voucherId,
+      voucherTypeCode,
+      payload,
+      req: approvalReq,
+      approverId,
     });
   }
 
@@ -1321,12 +1397,10 @@ router.post(
         typeof submitted !== "object" ||
         Array.isArray(submitted)
       ) {
-        return res
-          .status(400)
-          .json({
-            ok: false,
-            message: res.locals.t("approval_edit_invalid_payload"),
-          });
+        return res.status(400).json({
+          ok: false,
+          message: res.locals.t("approval_edit_invalid_payload"),
+        });
       }
 
       let changedFields = [];

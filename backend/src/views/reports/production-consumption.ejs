@@ -1,0 +1,424 @@
+<%
+  const reportLoaded = Boolean(filters?.reportLoaded);
+  const detailRows = Array.isArray(reportData?.detailRows) ? reportData.detailRows : [];
+  const summaryRows = Array.isArray(reportData?.summaryRows) ? reportData.summaryRows : [];
+  const selectedType = String(filters?.type || "SEMIFINISHED").toUpperCase() === "RAWMATERIAL"
+    ? "RAWMATERIAL"
+    : "SEMIFINISHED";
+  const selectedReportType = String(filters?.reportType || "details").toLowerCase() === "summary"
+    ? "summary"
+    : "details";
+  const selectedOrderBy = String(filters?.orderBy || "department").toLowerCase();
+  const hasData = selectedReportType === "summary" ? summaryRows.length > 0 : detailRows.length > 0;
+  const allMultiOptionValue = "__ALL__";
+  const selectedBranchIds = Array.isArray(filters?.branchIds) ? filters.branchIds : [];
+  const selectedDepartmentIds = Array.isArray(filters?.departmentIds) ? filters.departmentIds : [];
+  const selectedProductGroupIds = Array.isArray(filters?.productGroupIds) ? filters.productGroupIds : [];
+  const selectedProductSubgroupIds = Array.isArray(filters?.productSubgroupIds) ? filters.productSubgroupIds : [];
+  const selectedFromDate = String(filters?.fromDate || "");
+  const selectedToDate = String(filters?.toDate || "");
+  const branchAllSelected = !selectedBranchIds.length;
+  const departmentAllSelected = !selectedDepartmentIds.length;
+  const groupAllSelected = !selectedProductGroupIds.length;
+  const subgroupAllSelected = !selectedProductSubgroupIds.length;
+  const includeBranchColumn = Boolean(user?.isAdmin) && selectedBranchIds.length !== 1;
+  const orderByModes = Array.isArray(options?.orderByModes) ? options.orderByModes : [];
+  const reportTitle = (() => {
+    const v = t("consumption_report");
+    return v && v !== "consumption_report" ? v : "Consumption Report";
+  })();
+  const reportPurposeTooltip = (() => {
+    const v = t("consumption_report_purpose_tooltip");
+    return v && v !== "consumption_report_purpose_tooltip"
+      ? v
+      : "Shows approved consumption voucher movement by department and stock item.";
+  })();
+  const sourceProductionVoucherLabel = (() => {
+    const v = t("source_production_voucher");
+    return v && v !== "source_production_voucher" ? v : "Source Production Voucher";
+  })();
+  const itemLabel = selectedType === "RAWMATERIAL"
+    ? (t("raw_material") && t("raw_material") !== "raw_material" ? t("raw_material") : "Raw Material")
+    : t("sku");
+  const secondaryLabel = selectedType === "RAWMATERIAL"
+    ? t("articles")
+    : (t("article") && t("article") !== "article" ? t("article") : "Article");
+  const orderByLabel = (() => {
+    const v = t("order_by");
+    return v && v !== "order_by" ? v : "Order By";
+  })();
+  const formatQty = (value, digits = 3) => formatNumberDisplay(value, { decimals: digits, fallback: "0" });
+  const detailGroups = (() => {
+    const map = new Map();
+    detailRows.forEach((row) => {
+      const key = String(row?.order_group_key || "-");
+      const existing = map.get(key) || {
+        key,
+        label: String(row?.order_group_label || "-"),
+        rows: [],
+        qty: 0,
+      };
+      existing.rows.push(row);
+      existing.qty += Number(row?.qty || 0);
+      map.set(key, existing);
+    });
+    return Array.from(map.values()).map((group) => ({
+      ...group,
+      qty: Number(Number(group.qty || 0).toFixed(3)),
+    }));
+  })();
+%>
+
+<div class="mx-auto w-full max-w-none space-y-4 px-2">
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <%- include("../base/partials/report-help-header", {
+      title: reportTitle,
+      tooltipText: reportPurposeTooltip,
+    }) %>
+
+    <form method="post" action="<%= reportPath %>" class="mt-3 max-w-6xl rounded-xl border border-slate-200 bg-slate-50/30 p-3 sm:p-4" data-production-consumption-report-form>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="load_report" value="1">
+
+      <div class="space-y-3">
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("date_range") %></label>
+          <div class="sm:col-span-9">
+            <div class="relative" data-date-range-wrap>
+              <input type="text" readonly value="<%= `${selectedFromDate} - ${selectedToDate}` %>" data-date-range-input class="h-10 w-full cursor-pointer rounded-lg border border-slate-300 bg-white px-3 pr-10 text-sm">
+              <button type="button" class="absolute inset-y-0 right-2 inline-flex items-center text-slate-500 hover:text-slate-700" data-date-range-toggle aria-label="<%= t('open_date_range_picker') %>">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+                </svg>
+              </button>
+              <div class="absolute left-0 z-50 mt-2 hidden max-h-[62vh] overflow-auto rounded-xl border border-slate-200 bg-white p-2.5 shadow-lg" style="width:min(700px,calc(100vw - 1rem));" data-date-range-panel>
+                <div class="grid grid-cols-1 gap-2 lg:grid-cols-[156px_1fr]">
+                  <div class="space-y-1.5">
+                    <div>
+                      <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('from_date') %></div>
+                      <div class="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700" data-date-range-from-display>-</div>
+                    </div>
+                    <div>
+                      <div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('to_date') %></div>
+                      <div class="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700" data-date-range-to-display>-</div>
+                    </div>
+                  </div>
+                  <div>
+                    <div class="mb-1.5 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600" data-date-range-caption><%= t('select_date_range') %></div>
+                    <div class="grid grid-cols-1 gap-3 xl:grid-cols-[1fr_auto_1fr]">
+                      <div class="min-w-52.5 rounded-lg border border-slate-200 bg-slate-50/40 p-2">
+                        <div class="mb-1 flex items-center justify-between gap-2">
+                          <button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-prev>&larr;</button>
+                          <div class="text-center text-xs font-semibold text-slate-700" data-date-range-month-1-label></div>
+                          <button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-next>&rarr;</button>
+                        </div>
+                        <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-500">
+                          <span><%= t("weekday_sun_short") %></span><span><%= t("weekday_mon_short") %></span><span><%= t("weekday_tue_short") %></span><span><%= t("weekday_wed_short") %></span><span><%= t("weekday_thu_short") %></span><span><%= t("weekday_fri_short") %></span><span><%= t("weekday_sat_short") %></span>
+                        </div>
+                        <div class="mt-1 grid grid-cols-7 gap-1" data-date-range-month-1-grid></div>
+                      </div>
+                      <div class="hidden xl:block w-px bg-slate-200 self-stretch"></div>
+                      <div class="min-w-52.5 rounded-lg border border-slate-200 bg-slate-50/40 p-2">
+                        <div class="mb-1 flex items-center justify-between gap-2">
+                          <button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-2-prev>&larr;</button>
+                          <div class="text-center text-xs font-semibold text-slate-700" data-date-range-month-2-label></div>
+                          <button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-2-next>&rarr;</button>
+                        </div>
+                        <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-500">
+                          <span><%= t("weekday_sun_short") %></span><span><%= t("weekday_mon_short") %></span><span><%= t("weekday_tue_short") %></span><span><%= t("weekday_wed_short") %></span><span><%= t("weekday_thu_short") %></span><span><%= t("weekday_fri_short") %></span><span><%= t("weekday_sat_short") %></span>
+                        </div>
+                        <div class="mt-1 grid grid-cols-7 gap-1" data-date-range-month-2-grid></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="mt-1.5 flex items-center justify-end gap-2">
+                  <button type="button" class="rounded-lg border border-slate-300 bg-white px-3 py-1.25 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700" data-date-range-cancel><%= t('cancel') %></button>
+                  <button type="button" class="rounded-lg bg-accent px-3 py-1.25 text-xs font-semibold uppercase tracking-[0.08em] text-white" data-date-range-apply><%= t('apply') %></button>
+                </div>
+              </div>
+            </div>
+            <input type="hidden" name="from_date" value="<%= selectedFromDate %>" data-from-date-hidden>
+            <input type="hidden" name="to_date" value="<%= selectedToDate %>" data-to-date-hidden>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("type") %></label>
+          <div class="sm:col-span-9">
+            <select name="type" data-type-select data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+              <% (options?.consumptionTypes || []).forEach((typeOption) => { %>
+                <option value="<%= typeOption.value %>" <%= String(typeOption.value || "").toUpperCase() === selectedType ? "selected" : "" %>><%= t(typeOption.labelKey) %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("product_groups") %></label>
+          <div class="sm:col-span-9">
+            <select name="product_group_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+              <option value="<%= allMultiOptionValue %>" <%= groupAllSelected ? "selected" : "" %>><%= t("all") %></option>
+              <% (options?.productGroups || []).forEach((group) => { %>
+                <option value="<%= group.id %>" <%= selectedProductGroupIds.includes(Number(group.id)) ? "selected" : "" %>><%= group.name %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("product_subgroups") %></label>
+          <div class="sm:col-span-9">
+            <select name="product_subgroup_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+              <option value="<%= allMultiOptionValue %>" <%= subgroupAllSelected ? "selected" : "" %>><%= t("all") %></option>
+              <% (options?.productSubgroups || []).forEach((subgroup) => { %>
+                <option value="<%= subgroup.id %>" <%= selectedProductSubgroupIds.includes(Number(subgroup.id)) ? "selected" : "" %>><%= subgroup.name %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("departments") %></label>
+          <div class="sm:col-span-9">
+            <select name="department_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+              <option value="<%= allMultiOptionValue %>" <%= departmentAllSelected ? "selected" : "" %>><%= t("all") %></option>
+              <% (options?.departments || []).forEach((department) => { %>
+                <option value="<%= department.id %>" <%= selectedDepartmentIds.includes(Number(department.id)) ? "selected" : "" %>><%= department.name %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t("branches") : t("branch") %></label>
+          <div class="sm:col-span-9">
+            <% if (user?.isAdmin) { %>
+              <select name="branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+                <option value="<%= allMultiOptionValue %>" <%= branchAllSelected ? "selected" : "" %>><%= t("all") %></option>
+                <% (options?.branches || []).forEach((branch) => { %>
+                  <option value="<%= branch.id %>" <%= selectedBranchIds.includes(Number(branch.id)) ? "selected" : "" %>><%= branch.name %></option>
+                <% }) %>
+              </select>
+            <% } else { %>
+              <input type="text" readonly value="<%= (options?.branches || [])[0]?.name || branchId %>" class="h-10 w-full rounded-lg border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700">
+            <% } %>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= orderByLabel %></label>
+          <div class="sm:col-span-9">
+            <div class="flex flex-wrap gap-2 rounded-xl bg-white/60 p-1" data-order-by-wrap>
+              <% orderByModes.forEach((orderMode) => { %>
+                <% const modeValue = String(orderMode.value || "").toLowerCase(); %>
+                <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedOrderBy === modeValue ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                  <input type="radio" name="order_by" value="<%= modeValue %>" <%= selectedOrderBy === modeValue ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                  <span><%= t(orderMode.labelKey) %></span>
+                </label>
+              <% }) %>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("report_type") %></label>
+          <div class="sm:col-span-9">
+            <div class="flex flex-wrap gap-2 rounded-xl bg-white/60 p-1">
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedReportType === 'details' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="report_type" value="details" <%= selectedReportType === "details" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t("details") %></span>
+              </label>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedReportType === 'summary' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="report_type" value="summary" <%= selectedReportType === "summary" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t("summary") %></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <div class="sm:col-span-3"></div>
+          <div class="sm:col-span-9 flex flex-wrap gap-2">
+            <button type="submit" class="inline-flex items-center rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= t("load") %></button>
+            <a href="<%= reportPath %>" class="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= t("cancel") %></a>
+          </div>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm" data-print-area>
+    <div class="flex flex-col gap-3 border-b border-slate-200 px-2 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div class="text-sm font-semibold text-slate-700"><%= reportTitle %></div>
+      <div class="flex items-center gap-2">
+        <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40" type="button" data-download-button <%= reportLoaded && hasData ? "" : "disabled" %>><%= t("download") %></button>
+        <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40" type="button" data-print-button <%= reportLoaded && hasData ? "" : "disabled" %>><%= t("print") %></button>
+        <%- include("../base/partials/table-controls", { t, showStatus: false }) %>
+      </div>
+    </div>
+
+    <% if (!reportLoaded) { %>
+      <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= t("load_report_to_view") %></div>
+    <% } else if (!hasData) { %>
+      <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= t("no_entries") %></div>
+    <% } else if (selectedReportType === "details") { %>
+      <div class="relative mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+        <table class="min-w-330 w-full text-sm tabular-nums" data-table data-report-table>
+          <thead class="bg-slate-100 text-slate-700">
+            <tr>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="date"><%= t("date") %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="voucher_no"><%= t("voucher_no") %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="source_voucher_no"><%= sourceProductionVoucherLabel %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="department_name"><%= t("department") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="item_label"><%= itemLabel %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="article_name"><%= secondaryLabel %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="product_group_name"><%= t("product_group") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="product_subgroup_name"><%= t("product_subgroup") %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="qty"><%= t("quantity") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="uom_code"><%= t("unit") %></th>
+              <% if (includeBranchColumn) { %>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="branch_name"><%= t("branch") %></th>
+              <% } %>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100" data-table-body>
+            <% detailGroups.forEach((group) => { %>
+              <tr class="bg-slate-700 text-white" data-row data-active="true">
+                <td colspan="<%= includeBranchColumn ? 11 : 10 %>" class="px-3 py-1.5">
+                  <span class="inline-flex items-center rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white"><%= orderByLabel %>: <%= group.label || "-" %></span>
+                </td>
+              </tr>
+              <% (group.rows || []).forEach((row) => { %>
+                <tr class="odd:bg-slate-50 even:bg-white hover:bg-slate-100" data-row data-active="true">
+                  <td class="px-3 py-2"><%= row.date || "-" %></td>
+                  <td class="px-3 py-2 text-right"><%= Number(row.voucher_no || 0) || "-" %></td>
+                  <td class="px-3 py-2 text-right"><%= Number(row.source_voucher_no || 0) || "-" %></td>
+                  <td class="px-3 py-2"><%= row.department_name || "-" %></td>
+                  <td class="px-3 py-2"><%= row.item_label || "-" %></td>
+                  <td class="px-3 py-2"><%= row.article_name || "-" %></td>
+                  <td class="px-3 py-2"><%= row.product_group_name || "-" %></td>
+                  <td class="px-3 py-2"><%= row.product_subgroup_name || "-" %></td>
+                  <td class="px-3 py-2 text-right font-semibold"><%= formatQty(row.qty || 0, 3) %></td>
+                  <td class="px-3 py-2"><%= row.uom_code || "-" %></td>
+                  <% if (includeBranchColumn) { %>
+                    <td class="px-3 py-2"><%= row.branch_name || "-" %></td>
+                  <% } %>
+                </tr>
+              <% }) %>
+              <tr class="bg-accent text-white" data-row data-active="true">
+                <td colspan="8" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("total") %></td>
+                <td class="px-3 py-2 text-right font-black tabular-nums"><%= formatQty(group.qty || 0, 3) %></td>
+                <td class="px-3 py-2"></td>
+                <% if (includeBranchColumn) { %>
+                  <td class="px-3 py-2"></td>
+                <% } %>
+              </tr>
+            <% }) %>
+            <tr class="bg-slate-800 text-white" data-row data-active="true" data-report-grand-total>
+              <td colspan="8" class="px-3 py-3 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
+              <td class="px-3 py-3 text-right font-black tabular-nums text-emerald-100"><%= formatQty(reportData?.totals?.qty || 0, 3) %></td>
+              <td class="px-3 py-3"></td>
+              <% if (includeBranchColumn) { %>
+                <td class="px-3 py-3"></td>
+              <% } %>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <%- include("../base/partials/table-footer", { t }) %>
+    <% } else { %>
+      <div class="relative mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+        <table class="min-w-220 w-full text-sm tabular-nums" data-table data-report-table>
+          <thead class="bg-slate-100 text-slate-700">
+            <tr>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="group_label"><%= orderByLabel %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="voucher_count"><%= t("vouchers") %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="line_count"><%= t("lines") %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="counterpart_count"><%= selectedOrderBy === 'department' ? itemLabel : t('departments') %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="qty"><%= t("quantity") %></th>
+              <% if (includeBranchColumn) { %>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="branch_label"><%= t("branches") %></th>
+              <% } %>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100" data-table-body>
+            <% summaryRows.forEach((row) => { %>
+              <tr class="bg-slate-200/50 text-slate-700" data-row data-active="true">
+                <td class="px-3 py-2"><%= row.group_label || "-" %></td>
+                <td class="px-3 py-2 text-right font-semibold"><%= Number(row.voucher_count || 0) %></td>
+                <td class="px-3 py-2 text-right font-semibold"><%= Number(row.line_count || 0) %></td>
+                <td class="px-3 py-2 text-right font-semibold"><%= selectedOrderBy === "department" ? Number(row.item_count || 0) : Number(row.department_count || 0) %></td>
+                <td class="px-3 py-2 text-right font-semibold"><%= formatQty(row.qty || 0, 3) %></td>
+                <% if (includeBranchColumn) { %>
+                  <td class="px-3 py-2"><%= row.branch_label || "-" %></td>
+                <% } %>
+              </tr>
+            <% }) %>
+            <tr class="bg-rose-700 text-white" data-row data-active="true" data-report-grand-total>
+              <td colspan="4" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
+              <td class="px-3 py-2 text-right font-black tabular-nums text-emerald-100"><%= formatQty(reportData?.totals?.qty || 0, 3) %></td>
+              <% if (includeBranchColumn) { %>
+                <td class="px-3 py-2 text-left"><%= Number(reportData?.totals?.branchCount || 0) %> <%= t("branches") %></td>
+              <% } %>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <%- include("../base/partials/table-footer", { t }) %>
+    <% } %>
+  </section>
+</div>
+
+<script><%- include("../base/partials/date-range-picker.js") %></script>
+<script><%- include("../base/partials/searchable-select.js") %></script>
+<script>
+  (function () {
+    const form = document.querySelector("[data-production-consumption-report-form]");
+    if (!form) return;
+
+    if (typeof window.initSearchableSelects === "function") {
+      window.initSearchableSelects();
+    }
+
+    if (typeof window.initReportDateRangePicker === "function") {
+      window.initReportDateRangePicker({
+        root: form,
+        invalidDateRangeMessage: <%- JSON.stringify(t("invalid_date_range")) %>,
+        selectDateRangeText: <%- JSON.stringify(t("select_date_range")) %>,
+      });
+    }
+
+    const typeSelect = form.querySelector("[data-type-select]");
+    if (!typeSelect) return;
+
+    typeSelect.addEventListener("change", function () {
+      const text = String(typeSelect.value || "").toUpperCase();
+      const orderRadios = form.querySelectorAll('input[name="order_by"]');
+      if (!orderRadios.length) return;
+
+      const allowed =
+        text === "RAWMATERIAL"
+          ? new Set(["department", "raw_material"])
+          : new Set(["department", "sku"]);
+
+      let selectedIsValid = false;
+      orderRadios.forEach((radio) => {
+        const value = String(radio.value || "").toLowerCase();
+        const enabled = allowed.has(value);
+        radio.disabled = !enabled;
+        if (!enabled) {
+          radio.checked = false;
+        }
+        if (enabled && radio.checked) selectedIsValid = true;
+      });
+
+      if (!selectedIsValid) {
+        const fallback = form.querySelector(
+          'input[name="order_by"][value="department"]',
+        );
+        if (fallback) fallback.checked = true;
+      }
+    });
+  })();
+</script>

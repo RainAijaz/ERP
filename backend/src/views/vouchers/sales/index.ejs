@@ -670,24 +670,6 @@
       next.uom_id = getBaseUomIdForSku(next.sku_id);
     }
     const baseUomId = getBaseUomIdForSku(next.sku_id);
-    const legacyPackedHint =
-      String(next.row_status || "").toUpperCase() === "PACKED" ||
-      Number(next.uom_factor_to_base || 0) > 1;
-    if (
-      legacyPackedHint &&
-      Number(next.uom_id || 0) > 0 &&
-      Number(baseUomId || 0) > 0 &&
-      Number(next.uom_id) === Number(baseUomId)
-    ) {
-      const packedUomId = getDefaultUomIdForSku(next.sku_id, true);
-      if (
-        Number(packedUomId || 0) > 0 &&
-        Number(baseUomId || 0) > 0 &&
-        Number(packedUomId) !== Number(baseUomId)
-      ) {
-        next.uom_id = Number(packedUomId);
-      }
-    }
     next.row_status =
       Number(next.uom_id || 0) > 0 && Number(baseUomId || 0) > 0
         ? Number(next.uom_id) === Number(baseUomId)
@@ -919,11 +901,14 @@
           })();
       const reasonOpts = `<option value=""><%= t("select_reason") %></option>${(reasons || []).map((x) => `<option value="${x.id}" ${Number(x.id) === Number(r.return_reason_id || 0) ? "selected" : ""}>${String(x.description || x.code || "")}</option>`).join("")}`;
       const reasonDisabled = isSalesOrderVoucher || fromSO || Number(r.return_qty || 0) <= 0;
+      const hasSaleQty = Number(r.sale_qty || 0) > 0;
+      const hasReturnQty = Number(r.return_qty || 0) > 0;
+      const lockSaleQty = !fromSO && hasReturnQty;
+      const lockReturnQty = !fromSO && hasSaleQty;
       const canRate = canOverrideRateDiscount;
       const canDiscount = !fromSO;
       const tr = document.createElement("tr");
       tr.dataset.i = String(index);
-      const showReasonSelect = !reasonDisabled;
       const unitOptions = getSkuUnitOptions(source ? source.sku_id : r.sku_id);
       const unitOptionsHtml = unitOptions.length
         ? unitOptions
@@ -937,8 +922,8 @@
         : `<option value="">${String(getUnitLabelForRow(r) || "<%= t('unit') %>")}</option>`;
       const returnCells = isSalesOrderVoucher
         ? ""
-        : `<td class="border-b border-slate-200 px-1.5 py-1"><input data-f="return_qty" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${fromSO ? "bg-slate-100" : "bg-white"}" value="${qtyDisplay(r.return_qty)}" ${fromSO ? "disabled" : ""}></td><td class="border-b border-slate-200 px-1.5 py-1">${showReasonSelect ? `<select data-f="return_reason_id" class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-searchable-select="true" data-searchable-variant="unified">${reasonOpts}</select>` : `<input class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-xs" value="" readonly>`}</td>`;
-      tr.innerHTML = `<td class="border-b border-slate-200 px-1.5 py-1"><select data-f="${fromSO ? "sales_order_line_id" : "sku_id"}" class="h-8 min-w-[18rem] w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-searchable-select="true" data-searchable-variant="unified">${articleOptions}</select></td><td class="border-b border-slate-200 px-1.5 py-1"><select data-f="uom_id" class="h-8 min-w-[7rem] w-full rounded-lg border border-slate-300 px-2 text-xs ${fromSO ? "bg-slate-100" : "bg-white"}" ${fromSO ? "disabled" : ""} data-searchable-select="true" data-searchable-variant="unified">${unitOptionsHtml}</select></td><td class="border-b border-slate-200 px-1.5 py-1"><input data-f="sale_qty" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${fromSO ? "bg-slate-100" : "bg-white"}" value="${qtyDisplay(r.sale_qty)}" ${fromSO ? "readonly" : ""}></td>${returnCells}<td class="border-b border-slate-200 px-1.5 py-1"><input data-f="pair_rate" class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.pair_rate)}" readonly></td><td class="border-b border-slate-200 px-1.5 py-1"><input data-f="pair_discount" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${canDiscount ? "bg-white" : "bg-slate-100"}" value="${f1OrBlank(r.pair_discount)}" ${canDiscount ? "" : "readonly"}></td><td class="border-b border-slate-200 px-1.5 py-1"><input class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.total_discount)}" readonly></td><td class="border-b border-slate-200 px-1.5 py-1"><input class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.total_amount)}" readonly></td><td class="w-20 border-b border-slate-200 px-1.5 py-1 text-center"><button type="button" data-del class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white p-2 text-rose-600" aria-label="<%= t("delete") %>"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M9 7V5h6v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg></button></td><td class="border-b border-slate-200 px-1.5 py-1 text-center align-middle text-[11px] font-semibold text-slate-600" data-row-no>${index + 1}</td>`;
+        : `<td class="border-b border-slate-200 px-1.5 py-1"><input data-f="return_qty" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${fromSO || lockReturnQty ? "bg-slate-100" : "bg-white"}" value="${qtyDisplay(r.return_qty)}" ${fromSO ? "disabled" : ""} ${lockReturnQty ? "readonly" : ""}></td><td class="border-b border-slate-200 px-1.5 py-1"><select data-f="return_reason_id" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-xs ${reasonDisabled ? "bg-slate-100" : "bg-white"}" ${reasonDisabled ? "disabled" : ""} data-searchable-select="true" data-searchable-variant="unified">${reasonOpts}</select></td>`;
+      tr.innerHTML = `<td class="border-b border-slate-200 px-1.5 py-1"><select data-f="${fromSO ? "sales_order_line_id" : "sku_id"}" class="h-8 min-w-[18rem] w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-searchable-select="true" data-searchable-variant="unified">${articleOptions}</select></td><td class="border-b border-slate-200 px-1.5 py-1"><select data-f="uom_id" class="h-8 min-w-[7rem] w-full rounded-lg border border-slate-300 px-2 text-xs ${fromSO ? "bg-slate-100" : "bg-white"}" ${fromSO ? "disabled" : ""} data-searchable-select="true" data-searchable-variant="unified">${unitOptionsHtml}</select></td><td class="border-b border-slate-200 px-1.5 py-1"><input data-f="sale_qty" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${fromSO || lockSaleQty ? "bg-slate-100" : "bg-white"}" value="${qtyDisplay(r.sale_qty)}" ${fromSO || lockSaleQty ? "readonly" : ""}></td>${returnCells}<td class="border-b border-slate-200 px-1.5 py-1"><input data-f="pair_rate" class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.pair_rate)}" readonly></td><td class="border-b border-slate-200 px-1.5 py-1"><input data-f="pair_discount" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${canDiscount ? "bg-white" : "bg-slate-100"}" value="${f1OrBlank(r.pair_discount)}" ${canDiscount ? "" : "readonly"}></td><td class="border-b border-slate-200 px-1.5 py-1"><input class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.total_discount)}" readonly></td><td class="border-b border-slate-200 px-1.5 py-1"><input class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.total_amount)}" readonly></td><td class="w-20 border-b border-slate-200 px-1.5 py-1 text-center"><button type="button" data-del class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white p-2 text-rose-600" aria-label="<%= t("delete") %>"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M9 7V5h6v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg></button></td><td class="border-b border-slate-200 px-1.5 py-1 text-center align-middle text-[11px] font-semibold text-slate-600" data-row-no>${index + 1}</td>`;
       linesBody.appendChild(tr);
     });
 
@@ -1007,6 +992,7 @@
     const dueDateRequired = !isSalesOrderVoucher
       && paymentType === "CREDIT"
       && Number(remaining) > 0;
+    const dueDateVisible = !isSalesOrderVoucher && paymentType === "CREDIT";
     if (remainingInput) {
       remainingInput.value = fromSO ? f1(remaining) : f1OrBlank(remaining);
     }
@@ -1023,13 +1009,13 @@
       soTotalReceivedInput.value = f1OrBlank(totalReceived);
     }
     dueDateFields.forEach((el) => {
-      el.classList.toggle("hidden", !dueDateRequired);
+      el.classList.toggle("hidden", !dueDateVisible);
     });
     if (dueDateInput) {
       dueDateInput.required = dueDateRequired;
-      dueDateInput.disabled = !dueDateRequired;
+      dueDateInput.disabled = !dueDateVisible;
       dueDateInput.setAttribute("aria-required", dueDateRequired ? "true" : "false");
-      if (!dueDateRequired) dueDateInput.value = "";
+      if (!dueDateVisible) dueDateInput.value = "";
     }
     const lineTotal = Number((sales - ret).toFixed(1));
     if (linesTotalInput) linesTotalInput.value = f1OrBlank(Math.max(0, lineTotal));
@@ -1265,6 +1251,48 @@
     autoSelectSingleOptionsIn(headerSection, { dispatchChange: true });
   };
 
+  const editableRowFieldOrder = [
+    "sales_order_line_id",
+    "sku_id",
+    "uom_id",
+    "sale_qty",
+    "return_qty",
+    "return_reason_id",
+    "pair_discount",
+  ];
+
+  let pendingEnterNavigation = null;
+  let pendingEnterNavigationClearTimer = null;
+
+  const setPendingEnterNavigation = (rowIndex, fieldKey) => {
+    pendingEnterNavigation = {
+      rowIndex: Number(rowIndex),
+      fieldKey: String(fieldKey || ""),
+    };
+    if (pendingEnterNavigationClearTimer) {
+      clearTimeout(pendingEnterNavigationClearTimer);
+    }
+    pendingEnterNavigationClearTimer = setTimeout(() => {
+      pendingEnterNavigation = null;
+      pendingEnterNavigationClearTimer = null;
+    }, 400);
+  };
+
+  const consumePendingEnterNavigation = (rowIndex, fieldKey) => {
+    if (!pendingEnterNavigation) return null;
+    const matches =
+      Number(pendingEnterNavigation.rowIndex) === Number(rowIndex)
+      && String(pendingEnterNavigation.fieldKey || "") === String(fieldKey || "");
+    if (!matches) return null;
+    const matched = { ...pendingEnterNavigation };
+    pendingEnterNavigation = null;
+    if (pendingEnterNavigationClearTimer) {
+      clearTimeout(pendingEnterNavigationClearTimer);
+      pendingEnterNavigationClearTimer = null;
+    }
+    return matched;
+  };
+
   linesBody.addEventListener("change", (e) => {
     const target = e.target;
     const tr = target.closest("tr[data-i]");
@@ -1273,11 +1301,12 @@
     if (!Number.isInteger(i) || i < 0) return;
     const f = target.getAttribute("data-f");
     if (!f) return;
+    const pendingMove = consumePendingEnterNavigation(i, f);
     rows[i][f] = (f.includes("id") ? (Number(target.value || 0) || null) : target.value);
     if (f === "sku_id") {
       const sku = skuMap.get(Number(rows[i].sku_id || 0));
       if (sku && n(rows[i].pair_rate) <= 0) rows[i].pair_rate = Number(n(sku.sale_rate).toFixed(1));
-      rows[i].uom_id = getDefaultUomIdForSku(rows[i].sku_id, false);
+      rows[i].uom_id = getDefaultUomIdForSku(rows[i].sku_id, true);
     }
     if (f === "sales_order_line_id") {
       const source = orderLineMap.get(Number(rows[i].sales_order_line_id || 0));
@@ -1288,7 +1317,17 @@
         rows[i].pair_discount = Number(n(source.pair_discount).toFixed(1));
       }
     }
+    if (f === "sale_qty" && n(rows[i].sale_qty) > 0) {
+      rows[i].return_qty = 0;
+      rows[i].return_reason_id = null;
+    }
+    if (f === "return_qty" && n(rows[i].return_qty) > 0) {
+      rows[i].sale_qty = 0;
+    }
     render();
+    if (pendingMove) {
+      moveToNextRowField(pendingMove.rowIndex, pendingMove.fieldKey);
+    }
   });
 
   linesBody.addEventListener("click", (e) => {
@@ -1409,16 +1448,7 @@
     setTimeout(() => {
       const rowEl = linesBody?.querySelector(`tr[data-i="${rowIndex}"]`);
       if (!rowEl) return;
-      const preferredFieldOrder = [
-        "sales_order_line_id",
-        "sku_id",
-        "uom_id",
-        "sale_qty",
-        "return_qty",
-        "return_reason_id",
-        "pair_discount",
-      ];
-      const rowFields = preferredFieldOrder
+      const rowFields = editableRowFieldOrder
         .map((key) => rowEl.querySelector(`[data-f="${key}"]`))
         .filter((el) => !!el)
         .filter((el) => !el.disabled && !el.readOnly);
@@ -1431,16 +1461,7 @@
 
       const nextRowEl = linesBody?.querySelector(`tr[data-i="${rowIndex + 1}"]`);
       if (nextRowEl) {
-        const preferredFieldOrder = [
-          "sales_order_line_id",
-          "sku_id",
-          "uom_id",
-          "sale_qty",
-          "return_qty",
-          "return_reason_id",
-          "pair_discount",
-        ];
-        const nextRowFields = preferredFieldOrder
+        const nextRowFields = editableRowFieldOrder
           .map((key) => nextRowEl.querySelector(`[data-f="${key}"]`))
           .filter((el) => !!el)
           .filter((el) => !el.disabled && !el.readOnly);
@@ -1464,16 +1485,7 @@
       if (!target) return;
       const rowIndex = Number(rowEl.dataset.i || -1);
       if (!Number.isInteger(rowIndex) || rowIndex < 0) return;
-      const preferredFieldOrder = [
-        "sales_order_line_id",
-        "sku_id",
-        "uom_id",
-        "sale_qty",
-        "return_qty",
-        "return_reason_id",
-        "pair_discount",
-      ];
-      const editableFields = preferredFieldOrder
+      const editableFields = editableRowFieldOrder
         .map((key) => rowEl.querySelector(`[data-f="${key}"]`))
         .filter((el) => !!el)
         .filter((el) => !el.disabled && !el.readOnly);
@@ -1509,7 +1521,9 @@
 
       if (wasOpenBeforeEnter) {
         event.preventDefault();
-        moveToNextRowField(rowIndex, linkedSelect.dataset.f || "");
+        const fieldKey = linkedSelect.dataset.f || "";
+        setPendingEnterNavigation(rowIndex, fieldKey);
+        moveToNextRowField(rowIndex, fieldKey);
         return;
       }
 
@@ -1520,22 +1534,15 @@
       }
 
       event.preventDefault();
-      moveToNextRowField(rowIndex, linkedSelect.dataset.f || "");
+      const fieldKey = linkedSelect.dataset.f || "";
+      setPendingEnterNavigation(rowIndex, fieldKey);
+      moveToNextRowField(rowIndex, fieldKey);
       return;
     }
 
     const target = rawTarget.closest("[data-f]");
     if (!target) return;
-    const preferredFieldOrder = [
-      "sales_order_line_id",
-      "sku_id",
-      "uom_id",
-      "sale_qty",
-      "return_qty",
-      "return_reason_id",
-      "pair_discount",
-    ];
-    const editableFields = preferredFieldOrder
+    const editableFields = editableRowFieldOrder
       .map((key) => rowEl.querySelector(`[data-f="${key}"]`))
       .filter((el) => !!el)
       .filter((el) => !el.disabled && !el.readOnly);
@@ -1544,12 +1551,10 @@
     const rowIndex = Number(rowEl.dataset.i || -1);
     if (!Number.isInteger(rowIndex) || rowIndex < 0) return;
     event.preventDefault();
-    if (currentIndex >= 0 && currentIndex < editableFields.length - 1) {
-      const nextField = editableFields[currentIndex + 1];
-      if (nextField) focusRowFieldByElement(nextField, { openSearchable: true });
-      return;
-    }
-    moveToNextRowField(rowIndex, target.dataset.f || "");
+    if (currentIndex < 0) return;
+    const fieldKey = target.dataset.f || "";
+    setPendingEnterNavigation(rowIndex, fieldKey);
+    moveToNextRowField(rowIndex, fieldKey);
   });
 
   form.addEventListener(

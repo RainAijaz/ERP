@@ -344,6 +344,8 @@
         const wasOpenBeforeEnter = String(wrapper.dataset.wasOpenBeforeEnter || "") === "1";
         wrapper.dataset.wasOpenBeforeEnter = "0";
         if (wasOpenBeforeEnter) {
+          // Prevent native form submit while searchable select commits/moves on Enter.
+          event.preventDefault();
           // Enter came from an open searchable dropdown. Let selection commit, then move.
           window.setTimeout(() => {
             const refreshedValue = String(linkedSelect?.value || "").trim();
@@ -354,6 +356,8 @@
           return false;
         }
         if (isDropdownOpen) {
+          // Prevent native form submit while searchable select handles Enter.
+          event.preventDefault();
           // Let searchable-select handle Enter selection first, then move focus.
           window.setTimeout(() => {
             const refreshedValue = String(linkedSelect?.value || "").trim();
