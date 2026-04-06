@@ -12,6 +12,17 @@ const {
   deleteVoucher,
 } = require("../../services/financial/voucher-service");
 
+let hasVoucherHeaderRemarksUrColumnPromise = null;
+
+const hasVoucherHeaderRemarksUrColumn = async () => {
+  if (!hasVoucherHeaderRemarksUrColumnPromise) {
+    hasVoucherHeaderRemarksUrColumnPromise = knex.schema
+      .hasColumn("erp.voucher_header", "remarks_ur")
+      .catch(() => false);
+  }
+  return hasVoucherHeaderRemarksUrColumnPromise;
+};
+
 const toLines = (body) => {
   if (Array.isArray(body?.lines)) return body.lines;
   if (typeof body?.lines_json === "string" && body.lines_json.trim()) {
@@ -152,6 +163,8 @@ const loadOptions = async (req, voucherTypeCode) => {
 };
 
 const loadRecent = async (req, voucherTypeCode) => {
+  const hasRemarksUrColumn = await hasVoucherHeaderRemarksUrColumn();
+  const isUrdu = String(req?.locale || "en").toLowerCase() === "ur";
   let query = knex("erp.voucher_header")
     .select(
       "id",
@@ -165,10 +178,18 @@ const loadRecent = async (req, voucherTypeCode) => {
     .whereNot({ status: "REJECTED" })
     .orderBy("id", "desc")
     .limit(20);
+  if (hasRemarksUrColumn) {
+    query = query.select("remarks_ur");
+  }
 
   const rows = await query.where({ branch_id: req.branchId });
   return rows.map((row) => ({
     ...row,
+    remarks_raw: row.remarks || "",
+    remarks:
+      isUrdu && hasRemarksUrColumn
+        ? row.remarks_ur || row.remarks || ""
+        : row.remarks || row.remarks_ur || "",
     voucher_date: toLocalDateOnly(row.voucher_date),
   }));
 };
@@ -339,6 +360,8 @@ const getVoucherNeighbours = async ({ req, voucherTypeCode, cursorNo }) => {
 const loadVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
   const targetNo = parseVoucherNo(voucherNo);
   if (!targetNo) return null;
+  const hasRemarksUrColumn = await hasVoucherHeaderRemarksUrColumn();
+  const isUrdu = String(req?.locale || "en").toLowerCase() === "ur";
 
   let headerQuery = knex("erp.voucher_header as vh")
     .select(
@@ -356,6 +379,9 @@ const loadVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
       "vh.voucher_type_code": voucherTypeCode,
       "vh.voucher_no": targetNo,
     });
+  if (hasRemarksUrColumn) {
+    headerQuery = headerQuery.select("vh.remarks_ur");
+  }
 
   headerQuery = headerQuery.where({ "vh.branch_id": req.branchId });
   const header = await headerQuery.first();
@@ -423,6 +449,11 @@ const loadVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
 
   return {
     ...header,
+    remarks_raw: header.remarks || "",
+    remarks_display:
+      isUrdu && hasRemarksUrColumn
+        ? header.remarks_ur || header.remarks || ""
+        : header.remarks || header.remarks_ur || "",
     voucher_date: toDateOnly(header.voucher_date),
     lines: lines.map((line) => {
       const sourceVoucherId = Number(line?.meta?.source_voucher_id || 0);
@@ -472,6 +503,10 @@ const loadVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
           line.employee_name ||
           "";
 
+      const description = isUrdu
+        ? line.meta?.description_ur || line.meta?.description || ""
+        : line.meta?.description || line.meta?.description_ur || "";
+
       return {
         id: line.id,
         line_no: line.line_no,
@@ -482,7 +517,7 @@ const loadVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
         employee_id: line.employee_id || null,
         code: displayCode,
         account_name: displayName,
-        description: line.meta?.description || "",
+        description,
         department_id: line.meta?.department_id || null,
         bank_status: String(line.meta?.bank_status || "PENDING").toUpperCase(),
         reference_no: line.reference_no || line.meta?.reference_no || "",
@@ -620,6 +655,41 @@ const createFinancialVoucherRouter = ({
     },
   );
 
+  router.get(
+    "/gate-pass",
+    requirePermission("VOUCHER", scopeKey, "print"),
+    async (req, res, next) => {
+      try {
+        const voucherNo = parseVoucherNo(req.query?.voucher_no);
+        if (!voucherNo) {
+          setNotice(res, res.locals.t("error_invalid_id"), true);
+          return res.redirect(req.baseUrl);
+        }
+
+        const voucher = await loadVoucherDetails({
+          req,
+          voucherTypeCode,
+          voucherNo,
+        });
+        if (!voucher) {
+          setNotice(res, res.locals.t("generic_error"), true);
+          return res.redirect(req.baseUrl);
+        }
+
+        return res.render("vouchers/financial/gate-pass", {
+          t: res.locals.t,
+          voucher,
+          titleKey,
+          subtitleKey,
+          voucherTypeCode,
+        });
+      } catch (err) {
+        console.error("Error in FinancialGatePassService:", err);
+        return next(err);
+      }
+    },
+  );
+
   router.post("/", async (req, res, next) => {
     try {
       const voucherId = Number(req.body?.voucher_id || 0) || null;
@@ -660,8 +730,7 @@ const createFinancialVoucherRouter = ({
 
       if (saved.queuedForApproval) {
         const msg = saved.permissionReroute
-          ? res.locals.t("approval_sent") ||
-            "Change submitted for Administrator approval."
+          ? res.locals.t("approval_sent")
           : res.locals.t("approval_submitted");
         setNotice(res, msg, true);
       } else {
@@ -698,15 +767,11 @@ const createFinancialVoucherRouter = ({
 
       if (saved.queuedForApproval) {
         const msg = saved.permissionReroute
-          ? res.locals.t("approval_sent") ||
-            "Change submitted for Administrator approval."
+          ? res.locals.t("approval_sent")
           : res.locals.t("approval_submitted");
         setNotice(res, msg, true);
       } else {
-        setNotice(
-          res,
-          res.locals.t("deleted_successfully") || "Deleted successfully.",
-        );
+        setNotice(res, res.locals.t("deleted_successfully"));
       }
 
       return res.redirect(req.baseUrl);

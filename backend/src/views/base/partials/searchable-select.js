@@ -2,7 +2,7 @@
   const i18nSearch = '<%= t("search") %>';
   const i18nRequiredFields = '<%= t("error_required_fields") %>';
   const i18nSelect = '<%= t("select") %>';
-  const i18nSelected = '<%= t("selected") || "selected" %>';
+  const i18nSelected = '<%= t("selected")  %>';
 
   if (typeof window !== "undefined") {
     const existing = window.VoucherValidation || {};
@@ -22,6 +22,8 @@
     !!select.closest("[data-multi-select]");
   const unifiedVariantClass =
     "h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 transition focus:border-black focus:outline-none focus:ring-2 focus:ring-black/20";
+  const navbarVariantClass =
+    "h-auto w-14 max-w-14 overflow-hidden text-ellipsis whitespace-nowrap rounded-none border-0 bg-transparent px-1 pr-6 py-0 text-sm font-semibold text-slate-700 transition focus:border-transparent focus:outline-none focus:ring-0 shadow-none";
   const escapeAttributeValue = (value) => {
     const text = String(value || "");
     if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
@@ -274,7 +276,6 @@
       const linesType = String(
         linesBody.getAttribute("data-lines-body") || "",
       ).trim();
-      if (!linesType) return null;
 
       const rowFields = Array.from(
         row.querySelectorAll(`[${rowFieldAttrName}]`),
@@ -293,7 +294,12 @@
           candidate instanceof HTMLSelectElement ||
           isFocusableControl(candidate)
         ) {
-          return { linesType, rowIndex, nextKey };
+          return {
+            linesType,
+            linesBody,
+            rowIndex,
+            nextKey,
+          };
         }
       }
       return null;
@@ -301,12 +307,20 @@
     const focusNextRowFieldByMeta = (meta) => {
       if (!meta || typeof meta !== "object") return false;
       const linesType = String(meta.linesType || "").trim();
+      const linesBodyFromMeta =
+        meta.linesBody instanceof HTMLElement && meta.linesBody.isConnected
+          ? meta.linesBody
+          : null;
       const rowIndex = String(meta.rowIndex ?? "").trim();
       const nextKey = String(meta.nextKey || "").trim();
-      if (!linesType || rowIndex.length === 0 || !nextKey) return false;
-      const linesBody = document.querySelector(
-        `[data-lines-body="${escapeAttributeValue(linesType)}"]`,
-      );
+      if (rowIndex.length === 0 || !nextKey) return false;
+      const linesBody =
+        linesBodyFromMeta ||
+        (linesType
+          ? document.querySelector(
+              `[data-lines-body="${escapeAttributeValue(linesType)}"]`,
+            )
+          : null);
       if (!(linesBody instanceof HTMLElement)) return false;
       const row = linesBody.querySelector(
         `tr[data-row-index="${escapeAttributeValue(rowIndex)}"]`,
@@ -323,16 +337,23 @@
       placeholderText = emptyOption.textContent.trim();
     }
 
+    const variant = String(select.dataset.searchableVariant || "")
+      .trim()
+      .toLowerCase();
+
     const wrapper = document.createElement("div");
-    wrapper.className = "relative w-full group";
+    wrapper.className =
+      variant === "navbar" ? "relative group" : "relative w-full group";
     wrapper.setAttribute("data-searchable-wrapper", "true");
 
     const input = document.createElement("input");
     input.type = "text";
-    const variant = String(select.dataset.searchableVariant || "")
-      .trim()
-      .toLowerCase();
-    if (variant === "unified") {
+    if (variant === "navbar") {
+      input.className = navbarVariantClass;
+      input.style.width = "3.5rem";
+      input.style.minWidth = "3rem";
+      input.style.maxWidth = "3.5rem";
+    } else if (variant === "unified") {
       input.className = `${unifiedVariantClass} pr-10`;
     } else {
       input.className =

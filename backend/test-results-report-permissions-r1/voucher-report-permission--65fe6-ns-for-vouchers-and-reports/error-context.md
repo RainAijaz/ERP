@@ -1,0 +1,194 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - checkbox "Menu" [ref=e5]
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - link "CHAND EVA" [ref=e8] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e10]: ERP
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - generic [ref=e14]: Signed in as
+            - generic [ref=e15]: admin
+          - generic [ref=e16]:
+            - generic [ref=e17]: Branch
+            - generic [ref=e18]:
+              - generic [ref=e19]: Branch
+              - combobox "Branch" [ref=e20]:
+                - option "124" [selected]
+                - option "207"
+          - button "Logout" [ref=e22] [cursor=pointer]
+          - generic [ref=e23]:
+            - generic [ref=e24]: Language
+            - link "English" [ref=e25] [cursor=pointer]:
+              - /url: "?lang=en"
+            - generic [ref=e26]: "|"
+            - link "Urdu" [ref=e27] [cursor=pointer]:
+              - /url: "?lang=ur"
+      - navigation [ref=e28]:
+        - button "Administration" [ref=e30] [cursor=pointer]:
+          - generic [ref=e31]: Administration
+          - img [ref=e32]
+        - button "Master Data" [ref=e35] [cursor=pointer]:
+          - generic [ref=e36]: Master Data
+          - img [ref=e37]
+        - button "HR & Payroll" [ref=e40] [cursor=pointer]:
+          - generic [ref=e41]: HR & Payroll
+          - img [ref=e42]
+        - button "Financial" [ref=e45] [cursor=pointer]:
+          - generic [ref=e46]: Financial
+          - img [ref=e47]
+        - button "Purchase" [ref=e50] [cursor=pointer]:
+          - generic [ref=e51]: Purchase
+          - img [ref=e52]
+        - button "Production" [ref=e55] [cursor=pointer]:
+          - generic [ref=e56]: Production
+          - img [ref=e57]
+        - button "Inventory" [ref=e60] [cursor=pointer]:
+          - generic [ref=e61]: Inventory
+          - img [ref=e62]
+        - button "Outward & Returnables" [ref=e65] [cursor=pointer]:
+          - generic [ref=e66]: Outward & Returnables
+          - img [ref=e67]
+        - button "Sales" [ref=e70] [cursor=pointer]:
+          - generic [ref=e71]: Sales
+          - img [ref=e72]
+  - main [ref=e74]:
+    - generic [ref=e75]:
+      - generic [ref=e76]:
+        - generic [ref=e77]:
+          - img [ref=e79]
+          - generic [ref=e81]:
+            - heading "Permissions" [level=1] [ref=e82]
+            - paragraph [ref=e83]: Manage user and role access levels
+          - generic [ref=e84]:
+            - link "Roles" [ref=e85] [cursor=pointer]:
+              - /url: "?type=role"
+            - link "Users" [ref=e86] [cursor=pointer]:
+              - /url: "?type=user"
+        - combobox [ref=e88] [cursor=pointer]:
+          - option "Select Role..."
+          - option "Manager" [selected]
+          - option "Salesman"
+      - generic [ref=e89]:
+        - complementary [ref=e90]:
+          - generic [ref=e91]:
+            - generic [ref=e92]: Modules
+            - generic [ref=e93]: "35"
+          - generic [ref=e94]:
+            - button "All Modules" [ref=e95] [cursor=pointer]
+            - button "📂 Administration" [ref=e96] [cursor=pointer]:
+              - generic [ref=e97]: 📂
+              - generic [ref=e98]: Administration
+            - button "└ Setup" [ref=e99] [cursor=pointer]:
+              - generic [ref=e100]: └
+              - generic [ref=e101]: Setup
+            - button "└ Security" [ref=e102] [cursor=pointer]:
+              - generic [ref=e103]: └
+              - generic [ref=e104]: Security
+            - button "└ Approvals" [ref=e105] [cursor=pointer]:
+              - generic [ref=e106]: └
+              - generic [ref=e107]: Approvals
+            - button "📂 Master Data" [ref=e108] [cursor=pointer]:
+              - generic [ref=e109]: 📂
+              - generic [ref=e110]: Master Data
+            - button "└ Basic Information" [ref=e111] [cursor=pointer]:
+              - generic [ref=e112]: └
+              - generic [ref=e113]: Basic Information
+            - button "└ Groups" [ref=e114] [cursor=pointer]:
+              - generic [ref=e115]: └
+              - generic [ref=e116]: Groups
+            - button "└ Accounts & Parties" [ref=e117] [cursor=pointer]:
+              - generic [ref=e118]: └
+              - generic [ref=e119]: Accounts & Parties
+            - button "└ Assets" [ref=e120] [cursor=pointer]:
+              - generic [ref=e121]: └
+              - generic [ref=e122]: Assets
+            - button "└ Products" [ref=e123] [cursor=pointer]:
+              - generic [ref=e124]: └
+              - generic [ref=e125]: Products
+            - button "└ BOM" [ref=e126] [cursor=pointer]:
+              - generic [ref=e127]: └
+              - generic [ref=e128]: BOM
+            - button "📂 HR & Payroll" [ref=e129] [cursor=pointer]:
+              - generic [ref=e130]: 📂
+              - generic [ref=e131]: HR & Payroll
+            - button "└ Employees" [ref=e132] [cursor=pointer]:
+              - generic [ref=e133]: └
+              - generic [ref=e134]: Employees
+            - button "└ Labours" [ref=e135] [cursor=pointer]:
+              - generic [ref=e136]: └
+              - generic [ref=e137]: Labours
+            - button "└ Reports" [ref=e138] [cursor=pointer]:
+              - generic [ref=e139]: └
+              - generic [ref=e140]: Reports
+            - button "📂 Financial" [ref=e141] [cursor=pointer]:
+              - generic [ref=e142]: 📂
+              - generic [ref=e143]: Financial
+            - button "└ Vouchers" [ref=e144] [cursor=pointer]:
+              - generic [ref=e145]: └
+              - generic [ref=e146]: Vouchers
+            - button "└ Reports" [ref=e147] [cursor=pointer]:
+              - generic [ref=e148]: └
+              - generic [ref=e149]: Reports
+            - button "📂 Purchase" [ref=e150] [cursor=pointer]:
+              - generic [ref=e151]: 📂
+              - generic [ref=e152]: Purchase
+            - button "└ Vouchers" [ref=e153] [cursor=pointer]:
+              - generic [ref=e154]: └
+              - generic [ref=e155]: Vouchers
+            - button "└ Supplier Reports" [ref=e156] [cursor=pointer]:
+              - generic [ref=e157]: └
+              - generic [ref=e158]: Supplier Reports
+            - button "└ Reports" [ref=e159] [cursor=pointer]:
+              - generic [ref=e160]: └
+              - generic [ref=e161]: Reports
+            - button "📂 Production" [ref=e162] [cursor=pointer]:
+              - generic [ref=e163]: 📂
+              - generic [ref=e164]: Production
+            - button "└ Vouchers" [ref=e165] [cursor=pointer]:
+              - generic [ref=e166]: └
+              - generic [ref=e167]: Vouchers
+            - button "└ Reports" [ref=e168] [cursor=pointer]:
+              - generic [ref=e169]: └
+              - generic [ref=e170]: Reports
+            - button "📂 Inventory" [ref=e171] [cursor=pointer]:
+              - generic [ref=e172]: 📂
+              - generic [ref=e173]: Inventory
+            - button "└ Vouchers" [ref=e174] [cursor=pointer]:
+              - generic [ref=e175]: └
+              - generic [ref=e176]: Vouchers
+            - button "└ Reports" [ref=e177] [cursor=pointer]:
+              - generic [ref=e178]: └
+              - generic [ref=e179]: Reports
+            - button "📂 Outward & Returnables" [ref=e180] [cursor=pointer]:
+              - generic [ref=e181]: 📂
+              - generic [ref=e182]: Outward & Returnables
+            - button "└ Vouchers" [ref=e183] [cursor=pointer]:
+              - generic [ref=e184]: └
+              - generic [ref=e185]: Vouchers
+            - button "└ Reports" [ref=e186] [cursor=pointer]:
+              - generic [ref=e187]: └
+              - generic [ref=e188]: Reports
+            - button "📂 Sales" [ref=e189] [cursor=pointer]:
+              - generic [ref=e190]: 📂
+              - generic [ref=e191]: Sales
+            - button "└ Sales" [ref=e192] [cursor=pointer]:
+              - generic [ref=e193]: └
+              - generic [ref=e194]: Sales
+            - button "└ Customer Reports" [ref=e195] [cursor=pointer]:
+              - generic [ref=e196]: └
+              - generic [ref=e197]: Customer Reports
+            - button "└ Sales Reports" [ref=e198] [cursor=pointer]:
+              - generic [ref=e199]: └
+              - generic [ref=e200]: Sales Reports
+        - generic [ref=e202]:
+          - img [ref=e204]
+          - heading "Select a Module" [level=3] [ref=e206]
+          - paragraph [ref=e207]: Select a module from the sidebar to view and edit its permissions.
+    - generic [ref=e208]: ERP System © 2026
+```

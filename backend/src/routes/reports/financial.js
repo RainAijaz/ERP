@@ -137,8 +137,8 @@ router.post("/:reportKey/bank-line-status", async (req, res, next) => {
 
     const canView =
       req.user?.isAdmin ||
-      res.locals.can("REPORT", "voucher_register", "view") ||
-      res.locals.can("REPORT", "bank_transactions", "view");
+      res.locals.can("REPORT", "voucher_register", "load") ||
+      res.locals.can("REPORT", "bank_transactions", "load");
     if (!canView) {
       throw new HttpError(403, res.locals.t("permission_denied"));
     }
@@ -157,7 +157,7 @@ router.post("/:reportKey/bank-line-status", async (req, res, next) => {
 
     const message = result.queuedForApproval
       ? (result.permissionReroute
-        ? (res.locals.t("approval_sent") || "Change submitted for Administrator approval.")
+        ? (res.locals.t("approval_sent") )
         : res.locals.t("approval_submitted"))
       : res.locals.t("saved_successfully");
 
@@ -203,14 +203,14 @@ const renderFinancialReportPage = async (req, res, next, options = {}) => {
       if (req.user?.isAdmin) return true;
       if (resolvedKey === "expense_analysis") {
         const selectedType = String(filters?.reportType || "expense_analysis");
-        return res.locals.can("REPORT", "expense_analysis", "view") || res.locals.can("REPORT", selectedType, "view");
+        return res.locals.can("REPORT", "expense_analysis", "load") || res.locals.can("REPORT", selectedType, "load");
       }
-      if (resolvedKey !== "voucher_register") return res.locals.can("REPORT", resolvedKey, "view");
+      if (resolvedKey !== "voucher_register") return res.locals.can("REPORT", resolvedKey, "load");
       return (
-        res.locals.can("REPORT", "voucher_register", "view") ||
-        res.locals.can("REPORT", "cash_voucher_register", "view") ||
-        res.locals.can("REPORT", "bank_transactions", "view") ||
-        res.locals.can("REPORT", "journal_voucher_register", "view")
+        res.locals.can("REPORT", "voucher_register", "load") ||
+        res.locals.can("REPORT", "cash_voucher_register", "load") ||
+        res.locals.can("REPORT", "bank_transactions", "load") ||
+        res.locals.can("REPORT", "journal_voucher_register", "load")
       );
     })();
     if (!allowed) {

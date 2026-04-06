@@ -2,6 +2,7 @@ const knex = require("../../db/knex");
 const { HttpError } = require("../../middleware/errors/http-error");
 const { insertActivityLog, queueAuditLog } = require("../../utils/audit-log");
 const { toLocalDateOnlyOrRaw } = require("../../utils/date-only");
+const { translateUrduWithFallback } = require("../../utils/translate");
 const { syncVoucherGlPostingTx } = require("./gl-posting-service");
 
 const VOUCHER_TYPES = {
@@ -10,6 +11,18 @@ const VOUCHER_TYPES = {
   journal: "JOURNAL_VOUCHER",
 };
 const AUTO_BANK_SETTLEMENT_PREFIX = "[AUTO_BANK_SETTLEMENT]";
+const URDU_REGEX = /[\u0600-\u06FF]/;
+
+let hasVoucherHeaderRemarksUrColumnPromise = null;
+
+const hasVoucherHeaderRemarksUrColumn = async () => {
+  if (!hasVoucherHeaderRemarksUrColumnPromise) {
+    hasVoucherHeaderRemarksUrColumnPromise = knex.schema
+      .hasColumn("erp.voucher_header", "remarks_ur")
+      .catch(() => false);
+  }
+  return hasVoucherHeaderRemarksUrColumnPromise;
+};
 
 const normalizeNumber = (value, decimals = 2) => {
   const parsed = Number(value);
@@ -21,6 +34,94 @@ const normalizeText = (value, max = 500) => {
   const text = String(value || "").trim();
   if (!text) return null;
   return text.slice(0, max);
+};
+
+const translateTextToUrduSafe = async ({
+  text,
+  max,
+  cache,
+  logger = console,
+  skipAutoSettlementPrefix = false,
+}) => {
+  const source = normalizeText(text, max);
+  if (!source) return null;
+  if (
+    skipAutoSettlementPrefix &&
+    source.startsWith(AUTO_BANK_SETTLEMENT_PREFIX)
+  ) {
+    return source;
+  }
+  if (URDU_REGEX.test(source)) {
+    return source;
+  }
+  if (cache.has(source)) {
+    return cache.get(source);
+  }
+
+  try {
+    const translated = await translateUrduWithFallback({
+      text: source,
+      mode: "translate",
+      logger,
+    });
+    const resolved = normalizeText(translated?.translated, max) || source;
+    cache.set(source, resolved);
+    return resolved;
+  } catch (err) {
+    console.error("Error in FinancialVoucherTranslationService:", err);
+    cache.set(source, source);
+    return source;
+  }
+};
+
+const prepareUrduVoucherText = async ({ remarks, lines = [] }) => {
+  const translationCache = new Map();
+  const remarksUr = await translateTextToUrduSafe({
+    text: remarks,
+    max: 1000,
+    cache: translationCache,
+    logger: console,
+    skipAutoSettlementPrefix: true,
+  });
+
+  const descriptionBySource = new Map();
+  for (const line of Array.isArray(lines) ? lines : []) {
+    const source = normalizeText(
+      line?.description || line?.narration || "",
+      500,
+    );
+    if (!source || descriptionBySource.has(source)) continue;
+    const translated = await translateTextToUrduSafe({
+      text: source,
+      max: 500,
+      cache: translationCache,
+      logger: console,
+    });
+    descriptionBySource.set(source, translated || source);
+  }
+
+  return {
+    remarksUr: remarksUr || null,
+    descriptionBySource,
+  };
+};
+
+const applyUrduDescriptionsToValidatedLines = (
+  validatedLines,
+  descriptionBySource,
+) => {
+  return (validatedLines || []).map((line) => {
+    const source = normalizeText(line?.meta?.description || "", 500);
+    if (!source) return line;
+    const descriptionUr = descriptionBySource.get(source) || source;
+    return {
+      ...line,
+      meta: {
+        ...(line.meta || {}),
+        description_ur: descriptionUr,
+      },
+    };
+  });
 };
 
 const toLineRef = (line = {}) => {
@@ -944,6 +1045,8 @@ const createVoucher = async ({
 
   const canCreate = canDo(req, "VOUCHER", scopeKey, "create");
   const canApprove = canApproveVoucherAction(req, scopeKey);
+  const hasRemarksUrColumn = await hasVoucherHeaderRemarksUrColumn();
+  const urduText = await prepareUrduVoucherText({ remarks, lines });
 
   const result = await knex.transaction(async (trx) => {
     const validated = await validateLines({
@@ -953,6 +1056,10 @@ const createVoucher = async ({
       rawLines: lines,
       headerAccountId,
     });
+    const linesWithUrdu = applyUrduDescriptionsToValidatedLines(
+      validated.lines,
+      urduText.descriptionBySource,
+    );
     const validHeaderAccountId = await ensureHeaderAccount({
       trx,
       req,
@@ -963,7 +1070,7 @@ const createVoucher = async ({
       trx,
       req,
       voucherTypeCode,
-      lines: validated.lines,
+      lines: linesWithUrdu,
     });
     const voucherNo = await getNextVoucherNo(
       trx,
@@ -990,10 +1097,11 @@ const createVoucher = async ({
         approved_by: queuedForApproval ? null : req.user.id,
         approved_at: queuedForApproval ? null : trx.fn.now(),
         remarks: normalizeText(remarks, 1000),
+        ...(hasRemarksUrColumn ? { remarks_ur: urduText.remarksUr } : {}),
       })
       .returning(["id", "voucher_no", "status"]);
 
-    const lineRows = validated.lines.map((line) => ({
+    const lineRows = linesWithUrdu.map((line) => ({
       voucher_header_id: header.id,
       line_no: line.line_no,
       line_kind: line.line_kind,
@@ -1038,6 +1146,7 @@ const createVoucher = async ({
           voucher_no: header.voucher_no,
           voucher_date: voucherDate,
           remarks: normalizeText(remarks, 1000),
+          ...(hasRemarksUrColumn ? { remarks_ur: urduText.remarksUr } : {}),
           total_debit: validated.totalDebit,
           total_credit: validated.totalCredit,
           header_account_id: validHeaderAccountId,
@@ -1095,6 +1204,8 @@ const updateVoucher = async ({
 
   const canEdit = canDo(req, "VOUCHER", scopeKey, "edit");
   const canApprove = canApproveVoucherAction(req, scopeKey);
+  const hasRemarksUrColumn = await hasVoucherHeaderRemarksUrColumn();
+  const urduText = await prepareUrduVoucherText({ remarks, lines });
 
   const result = await knex.transaction(async (trx) => {
     const validated = await validateLines({
@@ -1104,6 +1215,10 @@ const updateVoucher = async ({
       rawLines: lines,
       headerAccountId,
     });
+    const linesWithUrdu = applyUrduDescriptionsToValidatedLines(
+      validated.lines,
+      urduText.descriptionBySource,
+    );
     const validHeaderAccountId = await ensureHeaderAccount({
       trx,
       req,
@@ -1114,7 +1229,7 @@ const updateVoucher = async ({
       trx,
       req,
       voucherTypeCode,
-      lines: validated.lines,
+      lines: linesWithUrdu,
     });
     let headerQuery = trx("erp.voucher_header")
       .select(
@@ -1131,6 +1246,9 @@ const updateVoucher = async ({
         voucher_type_code: voucherTypeCode,
         branch_id: req.branchId,
       });
+    if (hasRemarksUrColumn) {
+      headerQuery = headerQuery.select("remarks_ur");
+    }
     const existing = await headerQuery.first();
     if (!existing) throw new HttpError(404, "Voucher not found");
     if (existing.status === "REJECTED")
@@ -1165,7 +1283,8 @@ const updateVoucher = async ({
       voucher_type_code: voucherTypeCode,
       voucher_date: voucherDate,
       remarks: normalizeText(remarks, 1000),
-      lines: validated.lines,
+      ...(hasRemarksUrColumn ? { remarks_ur: urduText.remarksUr } : {}),
+      lines: linesWithUrdu,
       total_debit: validated.totalDebit,
       total_credit: validated.totalCredit,
       header_account_id: validHeaderAccountId,
@@ -1182,6 +1301,7 @@ const updateVoucher = async ({
         oldValue: {
           voucher_date: existing.voucher_date,
           remarks: existing.remarks,
+          ...(hasRemarksUrColumn ? { remarks_ur: existing.remarks_ur } : {}),
           status: existing.status,
           lines: existingLines,
         },
@@ -1207,6 +1327,7 @@ const updateVoucher = async ({
         voucher_date: voucherDate,
         header_account_id: validHeaderAccountId,
         remarks: normalizeText(remarks, 1000),
+        ...(hasRemarksUrColumn ? { remarks_ur: urduText.remarksUr } : {}),
         status: "APPROVED",
         approved_by: req.user.id,
         approved_at: trx.fn.now(),
@@ -1215,7 +1336,7 @@ const updateVoucher = async ({
     await trx("erp.voucher_line")
       .where({ voucher_header_id: existing.id })
       .del();
-    const lineRows = validated.lines.map((line) => ({
+    const lineRows = linesWithUrdu.map((line) => ({
       voucher_header_id: existing.id,
       line_no: line.line_no,
       line_kind: line.line_kind,

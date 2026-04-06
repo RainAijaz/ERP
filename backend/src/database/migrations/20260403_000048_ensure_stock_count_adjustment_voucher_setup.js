@@ -2,7 +2,7 @@ exports.up = async function up(knex) {
   // Voucher type metadata is required for numbering, permissions, and approval policy routing.
   await knex.raw(`
     INSERT INTO erp.voucher_type (code, name, requires_approval, affects_stock, affects_gl)
-    VALUES ('STOCK_COUNT_ADJ', 'Stock Count Adjustment Voucher', true, true, true)
+    VALUES ('STOCK_COUNT_ADJ', 'Stock Count Voucher', true, true, true)
     ON CONFLICT (code) DO UPDATE SET
       name = EXCLUDED.name,
       requires_approval = EXCLUDED.requires_approval,
@@ -13,7 +13,7 @@ exports.up = async function up(knex) {
   // Permission scope must exist so role matrix and gatekeeper can evaluate voucher access.
   await knex.raw(`
     INSERT INTO erp.permission_scope_registry (scope_type, scope_key, description, module_group)
-    VALUES ('VOUCHER', 'STOCK_COUNT_ADJ', 'Stock Count Adjustment Voucher', 'Inventory')
+    VALUES ('VOUCHER', 'STOCK_COUNT_ADJ', 'Stock Count Voucher', 'Inventory')
     ON CONFLICT (scope_type, scope_key) DO UPDATE SET
       description = EXCLUDED.description,
       module_group = EXCLUDED.module_group

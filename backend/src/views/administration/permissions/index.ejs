@@ -145,18 +145,23 @@
                 
                 <% const actions = [
                      { key: 'can_view', icon: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z', label: t('view'), color: 'text-indigo-600', tooltip: t('permissions_tip_view') },
-                     { key: 'can_navigate', icon: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z', label: t('list'), color: 'text-blue-600', tooltip: t('permissions_tip_navigate') },
+                     { key: 'can_navigate', icon: 'M15 12a3 3 0 11-6 0 3 3 0 016 0z', label: t('navigation'), color: 'text-blue-600', tooltip: t('permissions_tip_navigate') },
+                     { key: 'can_load', icon: 'M5 3h10a2 2 0 012 2v14l-7-3-7 3V5a2 2 0 012-2z', label: t('load'), color: 'text-cyan-600', tooltip: t('permissions_tip_load') },
+                     { key: 'can_view_details', icon: 'M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 100 20 10 10 0 000-20z', label: t('view_details'), color: 'text-sky-600', tooltip: t('permissions_tip_view_details') },
                      { key: 'can_create', icon: 'M12 4v16m8-8H4', label: t('create'), color: 'text-emerald-600', tooltip: t('permissions_tip_create') },
                      { key: 'can_edit', icon: 'M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z', label: t('edit'), color: 'text-amber-600', tooltip: t('permissions_tip_edit') },
                      { key: 'can_delete', icon: 'M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16', label: t('deactivate'), color: 'text-rose-600', tooltip: t('permissions_tip_deactivate') },
                      { key: 'can_hard_delete', icon: 'M4 7h16M9 7V5h6v2M10 11v6M14 11v6M6 7l1 13h10l1-13', label: t('delete'), color: 'text-rose-700', tooltip: t('permissions_tip_delete') },
                      { key: 'can_approve', icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z', label: t('approve'), color: 'text-purple-600', tooltip: t('permissions_tip_approve') },
-                     { key: 'can_print', icon: 'M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z', label: t('download'), color: 'text-slate-600', tooltip: t('permissions_tip_download') }
+                     { key: 'can_print', icon: 'M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z', label: t('print'), color: 'text-slate-600', tooltip: t('permissions_tip_print') },
+                     { key: 'can_export_excel_csv', icon: 'M4 4h16v12H4zM8 16l2 4 2-4', label: t('export_excel_csv'), color: 'text-teal-600', tooltip: t('permissions_tip_export_excel_csv') },
+                     { key: 'can_filter_all_branches', icon: 'M4 6h16M7 12h10M9 18h6', label: t('filter_all_branches'), color: 'text-lime-600', tooltip: t('permissions_tip_filter_all_branches') },
+                     { key: 'can_view_cost_fields', icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-10v12', label: t('view_cost_fields'), color: 'text-emerald-700', tooltip: t('permissions_tip_view_cost_fields') }
                    ] %>
                 <% const permissionsRestrictedActions = ['can_create', 'can_delete', 'can_hard_delete', 'can_print']; %>
                 
                 <% actions.forEach(act => { %>
-                  <th class="py-3 border-b text-center w-24 group cursor-help hover:bg-slate-50 transition-colors" title="<%= act.tooltip %>">
+                  <th class="py-3 border-b text-center w-24 group cursor-help hover:bg-slate-50 transition-colors" title="<%= act.tooltip %>" data-action-col="<%= act.key %>">
                     <div class="flex flex-col items-center gap-1">
                       <span class="text-[10px] font-bold uppercase text-slate-500 group-hover:<%= act.color %> tracking-wide"><%= act.label %></span>
                     </div>
@@ -173,6 +178,7 @@
                     data-parent="<%= row.parentPath || '' %>" 
                     data-depth="<%= row.depth %>" 
                     data-has-children="<%= row.hasChildren ? 'true' : 'false' %>" 
+                    data-scope-type="<%= row.scopeType || '' %>"
                     data-search="<%= (labelForRow(row) || '') + ' ' + (row.scopeKey || '') %>">
                   
                   <td class="px-4 py-2 border-r text-sm font-medium text-slate-700 align-top">
@@ -196,12 +202,13 @@
                   <% const isApprovalsScreen = row.scopeType === 'SCREEN' && row.scopeKey === 'administration.approvals'; %>
                   <% const isActivityLogScreen = row.scopeType === 'SCREEN' && row.scopeKey === 'administration.audit_logs'; %>
                   <% const isAdministrationScope = row.moduleGroup === 'Administration' || (row.scopeType === 'MODULE' && row.scopeKey === 'administration') || (row.scopeKey && row.scopeKey.startsWith('administration.')); %>
+                  <% const permissionsScreenAllowedActions = ['can_view', 'can_edit']; %>
                   <% actions.forEach(act => { %>
-                    <td class="text-center border-r last:border-r-0 relative p-0 h-10 w-24">
+                    <td class="text-center border-r last:border-r-0 relative p-0 h-10 w-24" data-action-col="<%= act.key %>">
                       <% const actionAllowedByScope = row.isConfigurableScope && Array.isArray(row.applicableActions) && row.applicableActions.includes(act.key); %>
                       <% const hideAction =
                         !actionAllowedByScope ||
-                        (isPermissionsScreen && permissionsRestrictedActions.includes(act.key)) ||
+                        (isPermissionsScreen && !permissionsScreenAllowedActions.includes(act.key)) ||
                         (isAdministrationScope && act.key === 'can_print') ||
                         (isApprovalsScreen && ['can_create','can_edit','can_delete','can_hard_delete','can_approve'].includes(act.key)) ||
                         (isActivityLogScreen && ['can_create','can_edit','can_delete','can_hard_delete','can_approve'].includes(act.key)) ||
@@ -392,6 +399,41 @@
           const path = btn.getAttribute('data-toggle');
           btn.textContent = collapsedPaths.has(path) ? '+' : '−';
       });
+
+      syncActionColumns();
+  }
+
+  function syncActionColumns() {
+      const allActionHeaders = Array.from(document.querySelectorAll('th[data-action-col]'));
+      const allActionCells = Array.from(document.querySelectorAll('td[data-action-col]'));
+
+      const visibleRows = Array.from(document.querySelectorAll('.permission-row')).filter((row) => !row.classList.contains('hidden'));
+      const visibleConfigurableRows = visibleRows.filter((row) => Boolean(row.querySelector("input.permission-action[type='checkbox']")));
+      if (!visibleConfigurableRows.length) {
+          allActionHeaders.forEach((th) => th.classList.remove('hidden'));
+          allActionCells.forEach((td) => td.classList.remove('hidden'));
+          return;
+      }
+
+      const actionKeys = allActionHeaders
+        .map((th) => th.getAttribute('data-action-col'))
+        .filter(Boolean);
+
+      actionKeys.forEach((actionKey) => {
+          const hasAnyInput = visibleConfigurableRows.some((row) => {
+              const cell = row.querySelector(`td[data-action-col="${actionKey}"]`);
+              if (!(cell instanceof HTMLElement)) return false;
+              return Boolean(cell.querySelector('input[type="checkbox"]'));
+          });
+
+          const header = document.querySelector(`th[data-action-col="${actionKey}"]`);
+          if (header instanceof HTMLElement) {
+              header.classList.toggle('hidden', !hasAnyInput);
+          }
+          document.querySelectorAll(`td[data-action-col="${actionKey}"]`).forEach((cell) => {
+              cell.classList.toggle('hidden', !hasAnyInput);
+          });
+      });
   }
 
   // --- 2. PERMISSION DEPENDENCY LOGIC (AUTO-CHECK) ---
@@ -401,8 +443,13 @@
         'can_hard_delete': ['can_navigate', 'can_view'],
         'can_create': ['can_view'],
         'can_approve': ['can_navigate', 'can_view'],
-        'can_print':   ['can_navigate', 'can_view'],
-        'can_navigate': ['can_view']
+        'can_print':   ['can_navigate', 'can_load', 'can_view'],
+        'can_navigate': ['can_view'],
+        'can_load': ['can_view'],
+        'can_view_details': ['can_load', 'can_view'],
+        'can_export_excel_csv': ['can_load', 'can_view'],
+        'can_filter_all_branches': ['can_load', 'can_view'],
+        'can_view_cost_fields': ['can_load', 'can_view']
   };
 
   function checkDependencies(sourceCheckbox) {
@@ -513,7 +560,9 @@
   });
 
   function toggleRow(source, scopeId) {
-      document.querySelectorAll(`.permission-check-${scopeId}`).forEach(cb => {
+      const row = source.closest('tr.permission-row');
+      if (!row) return;
+      row.querySelectorAll("input.permission-action[type='checkbox']").forEach(cb => {
           if (cb.checked !== source.checked) {
               cb.checked = source.checked;
               // Trigger manually to ensure dependencies run and form state updates

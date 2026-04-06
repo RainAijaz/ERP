@@ -1,0 +1,111 @@
+<%
+  const view = gatePassView || {};
+  const topInfo = Array.isArray(view.topInfo) ? view.topInfo : [];
+  const metaInfo = Array.isArray(view.metaInfo) ? view.metaInfo : [];
+  const columns = Array.isArray(view.columns) ? view.columns : [];
+  const rows = Array.isArray(view.rows) ? view.rows : [];
+  const summaryRows = Array.isArray(view.summaryRows) ? view.summaryRows : [];
+  const signatures = Array.isArray(view.signatures) ? view.signatures : [];
+  const getCell = typeof view.cellValue === "function" ? view.cellValue : (row, column) => row?.[column?.key];
+
+  function safeCellValue(rawValue) {
+    if (rawValue === null || rawValue === undefined) return "-";
+    const strValue = String(rawValue);
+    return strValue.trim().length ? strValue : "-";
+  }
+%>
+
+<div class="gp-sheet">
+  <% if (!view.hideToolbar) { %>
+    <div class="gp-toolbar no-print">
+      <button type="button" class="gp-btn" onclick="window.print()"><%= t("print") %></button>
+    </div>
+  <% } %>
+
+  <div class="gp-grid">
+    <div class="gp-card">
+      <h1 class="gp-title"><%= t(view.titleKey || "gate_pass") %></h1>
+      <% if (view.subtitleKey) { %>
+        <p class="gp-subtitle"><%= t(view.subtitleKey) %></p>
+      <% } else if (view.subtitleText) { %>
+        <p class="gp-subtitle"><%= view.subtitleText %></p>
+      <% } %>
+    </div>
+
+    <div class="gp-card gp-kv">
+      <% topInfo.forEach((item) => { %>
+        <div>
+          <span class="gp-label"><%= t(item.labelKey) %>:</span>
+          <%= safeCellValue(item.value) %>
+        </div>
+      <% }) %>
+    </div>
+  </div>
+
+  <% if (metaInfo.length) { %>
+    <div class="gp-card" style="margin-bottom: 12px;">
+      <div class="gp-meta">
+        <% metaInfo.forEach((item) => { %>
+          <div class="<%= item.full ? "full" : "" %>">
+            <span class="gp-label"><%= t(item.labelKey) %>:</span>
+            <%= safeCellValue(item.value) %>
+          </div>
+        <% }) %>
+      </div>
+    </div>
+  <% } %>
+
+  <div class="gp-table-wrap">
+    <table class="gp-table">
+      <thead>
+        <tr>
+          <% columns.forEach((column) => { %>
+            <th class="<%= column.align === "right" ? "gp-right" : "" %>"><%= t(column.labelKey) %></th>
+          <% }) %>
+        </tr>
+      </thead>
+      <tbody>
+        <% rows.forEach((row, rowIndex) => { %>
+          <tr>
+            <% columns.forEach((column, colIndex) => { %>
+              <td class="<%= column.align === "right" ? "gp-right" : "" %>">
+                <%= safeCellValue(getCell(row, column, rowIndex, colIndex)) %>
+              </td>
+            <% }) %>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  </div>
+
+  <% if (summaryRows.length) { %>
+    <div class="gp-card gp-summary-card">
+      <div class="gp-summary-grid">
+        <% summaryRows.forEach((item) => { %>
+          <div class="gp-summary-row">
+            <span class="gp-label"><%= item.labelKey ? t(item.labelKey) : safeCellValue(item.labelText) %>:</span>
+            <span class="gp-summary-value"><%= safeCellValue(item.value) %></span>
+          </div>
+        <% }) %>
+      </div>
+    </div>
+  <% } %>
+
+  <% if (view.closingNoteKey || view.closingNoteText) { %>
+    <div class="gp-thanks"><%= safeCellValue(view.closingNoteKey ? t(view.closingNoteKey) : view.closingNoteText) %></div>
+  <% } %>
+
+  <% if (signatures.length) { %>
+    <div class="gp-signature">
+      <% signatures.forEach((item) => { %>
+        <div class="line">
+          <%= safeCellValue(item.labelKey ? t(item.labelKey) : item.labelText) %>
+        </div>
+      <% }) %>
+    </div>
+  <% } %>
+</div>
+
+<script>
+  window.addEventListener("load", () => window.focus());
+</script>

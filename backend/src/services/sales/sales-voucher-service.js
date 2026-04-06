@@ -3780,8 +3780,10 @@ const loadSalesGatePassDetails = async ({
   return {
     voucher_no: details.voucher_no,
     voucher_date: details.voucher_date,
+    status: details.status || "",
     customer_name: details.customer_name || "",
     customer_phone_number: details.customer_phone_number || "",
+    remarks: details.description || "",
     delivery_method: details.delivery_method || "CUSTOMER_PICKUP",
     lines,
   };

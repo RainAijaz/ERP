@@ -212,88 +212,88 @@ const renderProductionDepartmentWipBalancesReport = async (
 
 router.get(
   "/",
-  requirePermission("REPORT", "production_report", "view"),
+  requirePermission("REPORT", "production_report", "load"),
   async (req, res) => res.redirect(`${req.baseUrl}/control`),
 );
 
 router.get(
   "/control",
-  requirePermission("REPORT", "production_report", "view"),
+  requirePermission("REPORT", "production_report", "load"),
   async (req, res, next) =>
     renderProductionControlReport(req, res, next, req.query),
 );
 
 router.post(
   "/control",
-  requirePermission("REPORT", "production_report", "view"),
+  requirePermission("REPORT", "production_report", "load"),
   async (req, res, next) =>
     renderProductionControlReport(req, res, next, req.body),
 );
 
 router.get(
   "/consumption",
-  requirePermission("REPORT", "consumption_report", "view"),
+  requirePermission("REPORT", "consumption_report", "load"),
   async (req, res, next) => renderConsumptionReport(req, res, next, req.query),
 );
 
 router.post(
   "/consumption",
-  requirePermission("REPORT", "consumption_report", "view"),
+  requirePermission("REPORT", "consumption_report", "load"),
   async (req, res, next) => renderConsumptionReport(req, res, next, req.body),
 );
 
 router.get(
   "/planned-consumption",
-  requirePermission("REPORT", "production_report", "view"),
+  requirePermission("REPORT", "production_report", "load"),
   async (req, res, next) =>
     renderPlannedConsumptionReport(req, res, next, req.query),
 );
 
 router.post(
   "/planned-consumption",
-  requirePermission("REPORT", "production_report", "view"),
+  requirePermission("REPORT", "production_report", "load"),
   async (req, res, next) =>
     renderPlannedConsumptionReport(req, res, next, req.body),
 );
 
 router.get(
   "/department-wip",
-  requirePermission("REPORT", "production_report", "view"),
+  requirePermission("REPORT", "production_report", "load"),
   async (req, res, next) =>
     renderProductionDepartmentWipReport(req, res, next, req.query),
 );
 
 router.post(
   "/department-wip",
-  requirePermission("REPORT", "production_report", "view"),
+  requirePermission("REPORT", "production_report", "load"),
   async (req, res, next) =>
     renderProductionDepartmentWipReport(req, res, next, req.body),
 );
 
 router.get(
   "/department-wip-balances",
-  requirePermission("REPORT", "production_report", "view"),
+  requirePermission("REPORT", "production_report", "load"),
   async (req, res, next) =>
     renderProductionDepartmentWipBalancesReport(req, res, next, req.query),
 );
 
 router.post(
   "/department-wip-balances",
-  requirePermission("REPORT", "production_report", "view"),
+  requirePermission("REPORT", "production_report", "load"),
   async (req, res, next) =>
     renderProductionDepartmentWipBalancesReport(req, res, next, req.body),
 );
 
 router.get(
   "/department-wip-ledger",
-  requirePermission("REPORT", "production_report", "view"),
+  requirePermission("REPORT", "production_report", "load"),
   async (req, res, next) =>
     renderProductionDepartmentWipLedgerReport(req, res, next, req.query),
 );
 
 router.post(
   "/department-wip-ledger",
-  requirePermission("REPORT", "production_report", "view"),
+  requirePermission("REPORT", "production_report", "load"),
   async (req, res, next) =>
     renderProductionDepartmentWipLedgerReport(req, res, next, req.body),
 );

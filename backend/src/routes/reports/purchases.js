@@ -67,7 +67,7 @@ const renderSupplierReportStub =
 
 router.get(
   "/",
-  requirePermission("REPORT", "purchase_report", "view"),
+  requirePermission("REPORT", "purchase_report", "load"),
   async (req, res, next) => {
     return renderPurchaseReportPage(req, res, next, req.query);
   },
@@ -75,7 +75,7 @@ router.get(
 
 router.post(
   "/",
-  requirePermission("REPORT", "purchase_report", "view"),
+  requirePermission("REPORT", "purchase_report", "load"),
   async (req, res, next) => {
     return renderPurchaseReportPage(req, res, next, req.body);
   },
@@ -83,7 +83,7 @@ router.post(
 
 router.get(
   "/supplier-listings",
-  requirePermission("REPORT", "purchase_report", "view"),
+  requirePermission("REPORT", "purchase_report", "load"),
   async (req, res, next) => {
     try {
       let query = knex("erp.parties as p")
@@ -137,7 +137,7 @@ router.get(
 
 router.get(
   "/supplier-ledger",
-  requirePermission("REPORT", "supplier_ledger", "view"),
+  requirePermission("REPORT", "supplier_ledger", "load"),
   async (req, res, next) => {
     try {
       const pageData = await getSupplierLedgerReportPageData({
@@ -167,7 +167,7 @@ router.get(
 
 router.post(
   "/supplier-ledger",
-  requirePermission("REPORT", "supplier_ledger", "view"),
+  requirePermission("REPORT", "supplier_ledger", "load"),
   async (req, res, next) => {
     try {
       const pageData = await getSupplierLedgerReportPageData({
@@ -197,7 +197,7 @@ router.post(
 
 router.get(
   "/supplier-balances",
-  requirePermission("REPORT", "supplier_balances", "view"),
+  requirePermission("REPORT", "supplier_balances", "load"),
   async (req, res, next) => {
     try {
       const pageData = await getSupplierBalancesReportPageData({
@@ -226,7 +226,7 @@ router.get(
 
 router.post(
   "/supplier-balances",
-  requirePermission("REPORT", "supplier_balances", "view"),
+  requirePermission("REPORT", "supplier_balances", "load"),
   async (req, res, next) => {
     try {
       const pageData = await getSupplierBalancesReportPageData({

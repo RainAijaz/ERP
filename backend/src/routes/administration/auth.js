@@ -87,7 +87,7 @@ router.post(
         );
 
         if (summary.approved || summary.rejected) {
-          const template = res.locals.t("approval_updates") || "Since your last login: {approved} approved, {rejected} rejected.";
+          const template = res.locals.t("approval_updates") ;
           const message = template
             .replace("{approved}", String(summary.approved))
             .replace("{rejected}", String(summary.rejected));

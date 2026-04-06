@@ -127,11 +127,16 @@ const loadUserContext = async (userId) => {
       "erp.permission_scope_registry.scope_key",
       "erp.role_permissions.can_navigate",
       "erp.role_permissions.can_view",
+      "erp.role_permissions.can_load",
+      "erp.role_permissions.can_view_details",
       "erp.role_permissions.can_create",
       "erp.role_permissions.can_edit",
       "erp.role_permissions.can_delete",
       "erp.role_permissions.can_hard_delete",
       "erp.role_permissions.can_print",
+      "erp.role_permissions.can_export_excel_csv",
+      "erp.role_permissions.can_filter_all_branches",
+      "erp.role_permissions.can_view_cost_fields",
       "erp.role_permissions.can_approve",
     )
     .where({ role_id: user.primary_role_id });
@@ -141,11 +146,16 @@ const loadUserContext = async (userId) => {
       "scope_id",
       "can_navigate",
       "can_view",
+      "can_load",
+      "can_view_details",
       "can_create",
       "can_edit",
       "can_delete",
       "can_hard_delete",
       "can_print",
+      "can_export_excel_csv",
+      "can_filter_all_branches",
+      "can_view_cost_fields",
       "can_approve",
     )
     .where({ user_id: userId });
@@ -170,11 +180,16 @@ const loadUserContext = async (userId) => {
   const basePermissions = {
     can_navigate: false,
     can_view: false,
+    can_load: false,
+    can_view_details: false,
     can_create: false,
     can_edit: false,
     can_delete: false,
     can_hard_delete: false,
     can_print: false,
+    can_export_excel_csv: false,
+    can_filter_all_branches: false,
+    can_view_cost_fields: false,
     can_approve: false,
   };
 
@@ -185,6 +200,12 @@ const loadUserContext = async (userId) => {
       basePermissions.can_navigate,
     can_view:
       overrideRow?.can_view ?? roleRow?.can_view ?? basePermissions.can_view,
+    can_load:
+      overrideRow?.can_load ?? roleRow?.can_load ?? basePermissions.can_load,
+    can_view_details:
+      overrideRow?.can_view_details ??
+      roleRow?.can_view_details ??
+      basePermissions.can_view_details,
     can_create:
       overrideRow?.can_create ??
       roleRow?.can_create ??
@@ -201,6 +222,18 @@ const loadUserContext = async (userId) => {
       basePermissions.can_hard_delete,
     can_print:
       overrideRow?.can_print ?? roleRow?.can_print ?? basePermissions.can_print,
+    can_export_excel_csv:
+      overrideRow?.can_export_excel_csv ??
+      roleRow?.can_export_excel_csv ??
+      basePermissions.can_export_excel_csv,
+    can_filter_all_branches:
+      overrideRow?.can_filter_all_branches ??
+      roleRow?.can_filter_all_branches ??
+      basePermissions.can_filter_all_branches,
+    can_view_cost_fields:
+      overrideRow?.can_view_cost_fields ??
+      roleRow?.can_view_cost_fields ??
+      basePermissions.can_view_cost_fields,
     can_approve:
       overrideRow?.can_approve ??
       roleRow?.can_approve ??
@@ -296,6 +329,18 @@ const auth = async (req, res, next) => {
           Boolean(permissions.can_view)
         );
       }
+      if (actionKey === "can_view_details") {
+        return (
+          isActionApplicable(scopeType, "can_load") &&
+          Boolean(permissions.can_load)
+        );
+      }
+      if (actionKey === "can_load") {
+        return (
+          isActionApplicable(scopeType, "can_view") &&
+          Boolean(permissions.can_view)
+        );
+      }
       if (
         [
           "can_edit",
@@ -303,12 +348,18 @@ const auth = async (req, res, next) => {
           "can_hard_delete",
           "can_approve",
           "can_print",
+          "can_export_excel_csv",
+          "can_filter_all_branches",
+          "can_view_cost_fields",
         ].includes(actionKey)
       ) {
-        return (
-          isActionApplicable(scopeType, "can_navigate") &&
-          Boolean(permissions.can_navigate)
-        );
+        if (isActionApplicable(scopeType, "can_navigate")) {
+          return Boolean(permissions.can_navigate);
+        }
+        if (isActionApplicable(scopeType, "can_load")) {
+          return Boolean(permissions.can_load);
+        }
+        return false;
       }
       return true;
     };

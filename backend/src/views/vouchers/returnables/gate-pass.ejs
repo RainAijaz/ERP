@@ -4,79 +4,44 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title><%= t("gate_pass") %> - <%= voucher.voucher_no %></title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 24px; color: #0f172a; }
-    .sheet { max-width: 980px; margin: 0 auto; }
-    .header { display: flex; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
-    .card { border: 1px solid #cbd5e1; border-radius: 12px; padding: 16px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-    th, td { border: 1px solid #cbd5e1; padding: 8px; font-size: 12px; text-align: left; vertical-align: top; }
-    th { background: #f8fafc; text-transform: uppercase; letter-spacing: 0.06em; }
-    .meta { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-    .meta div strong { display: inline-block; min-width: 180px; }
-    .title { font-size: 22px; font-weight: 700; margin: 0 0 8px; }
-    .subtle { color: #475569; font-size: 12px; }
-    @media print {
-      body { margin: 0; }
-      .no-print { display: none; }
-      .sheet { max-width: none; }
-    }
-  </style>
+  <%- include("../../base/partials/gate-pass-print-style") %>
 </head>
 <body>
-  <div class="sheet">
-    <div class="no-print" style="margin-bottom:16px;">
-      <button type="button" onclick="window.print()"><%= t("download") %> / <%= t("print") %></button>
-    </div>
+  <%
+    const returnableRows = voucher.lines || [];
+    const gatePassView = {
+      titleKey: "gate_pass",
+      subtitleKey: "returnable_dispatch_voucher",
+      topInfo: [
+        { labelKey: "vr_no", value: voucher.voucher_no || "-" },
+        { labelKey: "date", value: formatDateDisplay(voucher.voucher_date) || "-" },
+        { labelKey: "status", value: voucher.status || "-" },
+        { labelKey: "returnable_status", value: voucher.outward_status || "-" },
+      ],
+      metaInfo: [
+        { labelKey: "vendor_party", value: voucher.vendor_name || "-" },
+        { labelKey: "reason", value: voucher.reason_code || "-" },
+        { labelKey: "expected_return_date", value: formatDateDisplay(voucher.expected_return_date) || "-" },
+        { labelKey: "remarks", value: voucher.remarks || "-", full: true },
+      ],
+      columns: [
+        { key: "sr_no", labelKey: "sr_no" },
+        { key: "asset_name", labelKey: "asset_name" },
+        { key: "item_type_code", labelKey: "item_type" },
+        { key: "item_description", labelKey: "description" },
+        { key: "qty", labelKey: "quantity", align: "right" },
+        { key: "condition_out_code", labelKey: "condition_at_dispatch" },
+        { key: "serial_no", labelKey: "serial_no" },
+      ],
+      rows: returnableRows,
+      cellValue: (line, column, rowIndex) => {
+        if (column.key === "sr_no") return rowIndex + 1;
+        if (column.key === "qty") return formatNumberDisplay(line?.qty || 0, { decimals: 3, fallback: "0" });
+        return line?.[column.key] || "-";
+      },
+    };
+  %>
 
-    <div class="header">
-      <div class="card" style="flex:1;">
-        <p class="title"><%= t("gate_pass") %></p>
-        <p class="subtle"><%= t("returnable_dispatch_voucher") %></p>
-      </div>
-      <div class="card" style="min-width:260px;">
-        <div><strong><%= t("vr_no") %>:</strong> <%= voucher.voucher_no %></div>
-        <div><strong><%= t("date") %>:</strong> <%= formatDateDisplay(voucher.voucher_date) %></div>
-        <div><strong><%= t("status") %>:</strong> <%= voucher.status %></div>
-        <div><strong><%= t("returnable_status") %>:</strong> <%= voucher.outward_status %></div>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="meta">
-        <div><strong><%= t("vendor_party") %>:</strong> <%= voucher.vendor_name || "-" %></div>
-        <div><strong><%= t("reason") %>:</strong> <%= voucher.reason_code || "-" %></div>
-        <div><strong><%= t("expected_return_date") %>:</strong> <%= formatDateDisplay(voucher.expected_return_date) %></div>
-        <div><strong><%= t("remarks") %>:</strong> <%= voucher.remarks || "-" %></div>
-      </div>
-
-      <table>
-        <thead>
-          <tr>
-            <th><%= t("sr_no") %></th>
-            <th><%= t("asset_name") %></th>
-            <th><%= t("item_type") %></th>
-            <th><%= t("description") %></th>
-            <th><%= t("quantity") %></th>
-            <th><%= t("condition_at_dispatch") %></th>
-            <th><%= t("serial_no") %></th>
-          </tr>
-        </thead>
-        <tbody>
-          <% (voucher.lines || []).forEach((line, index) => { %>
-            <tr>
-              <td><%= index + 1 %></td>
-              <td><%= line.asset_name || "-" %></td>
-              <td><%= line.item_type_code || "-" %></td>
-              <td><%= line.item_description || "-" %></td>
-              <td><%= formatNumberDisplay(line.qty || 0, { decimals: 3, fallback: "0" }) %></td>
-              <td><%= line.condition_out_code || "-" %></td>
-              <td><%= line.serial_no || "-" %></td>
-            </tr>
-          <% }) %>
-        </tbody>
-      </table>
-    </div>
-  </div>
+  <%- include("../../base/partials/gate-pass-document", { gatePassView }) %>
 </body>
 </html>

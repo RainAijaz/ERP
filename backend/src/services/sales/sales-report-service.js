@@ -594,7 +594,7 @@ const getSalesOrderReportGroupIdentity = (row, orderBy) => {
     const key = `SO:${Number(row.sales_order_id || 0)}`;
     return {
       key,
-      label: `#${Number(row.sales_order_no || 0) || "-"} | ${row.sales_order_date || "-"} | ${row.customer_name_en || row.customer_name_ur || "-"}`,
+      label: `VR. NO. ${Number(row.sales_order_no || 0) || "-"} | ${row.sales_order_date || "-"} | ${row.customer_name_en || row.customer_name_ur || "-"}`,
       sales_order_no: row.sales_order_no || null,
       sales_order_date: row.sales_order_date || "",
       close_date: row.close_date || "",
@@ -1240,7 +1240,7 @@ const getSalesReportGroupIdentity = (row, orderBy) => {
   if (orderBy === SALES_ORDER_REPORT_ORDER_TYPES.voucher) {
     return {
       key: `V:${Number(row.voucher_id || 0) || 0}`,
-      label: `#${Number(row.voucher_no || 0) || "-"}`,
+      label: `VR. NO. ${Number(row.voucher_no || 0) || "-"}`,
       voucher_type: "",
       voucher_status: row.voucher_status || "",
       voucher_no: row.voucher_no,

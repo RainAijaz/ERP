@@ -23,18 +23,18 @@
   <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
     <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
       <div class="space-y-1">
-        <h1 class="text-2xl font-display text-ink"><%= t("audit_logs") || "Audit Logs" %></h1>
-        <p class="text-sm text-muted"><%= t("audit_logs_description") || "Track who did what and when across the ERP." %></p>
+        <h1 class="text-2xl font-display text-ink"><%= t("audit_logs")  %></h1>
+        <p class="text-sm text-muted"><%= t("audit_logs_description")  %></p>
       </div>
       <div class="flex flex-wrap gap-2">
 			<button class="rounded-full border border-slate-200 bg-white px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500 transition hover:border-slate-300 hover:text-slate-800" type="button" data-filter-quick data-days="0">
-				<%= t("today") || "Today" %>
+				<%= t("today")  %>
 			</button>
 			<button class="rounded-full border border-slate-200 bg-white px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500 transition hover:border-slate-300 hover:text-slate-800" type="button" data-filter-quick data-days="7">
-				<%= t("last_7_days") || "7 Days" %>
+				<%= t("last_7_days")  %>
 			</button>
 			<button class="rounded-full border border-slate-200 bg-white px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500 transition hover:border-slate-300 hover:text-slate-800" type="button" data-filter-quick data-days="30">
-				<%= t("last_30_days") || "30 Days" %>
+				<%= t("last_30_days")  %>
 			</button>
         <button class="group cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-800" type="button" data-filter-toggle>
           <span class="inline-flex items-center gap-2">
@@ -58,13 +58,13 @@
 			<thead class="bg-slate-50 text-xs font-semibold uppercase text-slate-500">
 				<tr>
 					<th class="px-6 py-3"><%= t("date") %></th>
-					<th class="px-6 py-3"><%= t("user") || t("requester") || "User" %></th>
-					<th class="px-6 py-3"><%= t("branch") || "Branch" %></th>
-					<th class="px-6 py-3"><%= t("entity") || "Entity" %></th>
-					<th class="px-6 py-3"><%= t("sr_no") || "Sr No" %></th>
-					<th class="px-6 py-3"><%= t("action") || "Action" %></th>
+					<th class="px-6 py-3"><%= t("user") || t("requester")  %></th>
+					<th class="px-6 py-3"><%= t("branch")  %></th>
+					<th class="px-6 py-3"><%= t("entity")  %></th>
+					<th class="px-6 py-3"><%= t("sr_no")  %></th>
+					<th class="px-6 py-3"><%= t("action")  %></th>
 					<% if (canViewDetails) { %>
-						<th class="px-6 py-3"><%= t("details") || "Details" %></th>
+						<th class="px-6 py-3"><%= t("details")  %></th>
 					<% } %>
 				</tr>
 			</thead>
@@ -102,7 +102,7 @@
 										data-audit-details-btn
 										data-audit-details-model="<%- jsonAttr(row.details_model) %>"
 									>
-										<%= t("view") || "View" %>
+										<%= t("view")  %>
 									</button>
 								</td>
 							<% } %>
@@ -117,21 +117,21 @@
 <% if (pagination && pagination.total > 0) { %>
   <div class="mx-auto mt-4 flex w-full max-w-7xl items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 text-xs text-slate-600 shadow-sm">
     <div>
-      <%= t("showing") || "Showing" %>
+      <%= t("showing")  %>
       <%= ((pagination.page - 1) * pagination.pageSize) + 1 %>
-      <%= t("to") || "to" %>
+      <%= t("to")  %>
       <%= Math.min(pagination.page * pagination.pageSize, pagination.total) %>
-      <%= t("of") || "of" %>
+      <%= t("of")  %>
       <%= pagination.total %>
-      <%= t("entries") || "entries" %>
+      <%= t("entries")  %>
     </div>
     <div class="flex items-center gap-2">
-      <span><%= t("page") || "Page" %> <%= pagination.page %>/<%= pagination.totalPages %></span>
+      <span><%= t("page")  %> <%= pagination.page %>/<%= pagination.totalPages %></span>
       <% if (pagination.hasPrev) { %>
-        <a href="<%= pagination.prevUrl %>" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-600 hover:border-slate-300 hover:text-slate-800"><%= t("prev") || "Prev" %></a>
+        <a href="<%= pagination.prevUrl %>" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-600 hover:border-slate-300 hover:text-slate-800"><%= t("prev")  %></a>
       <% } %>
       <% if (pagination.hasNext) { %>
-        <a href="<%= pagination.nextUrl %>" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-600 hover:border-slate-300 hover:text-slate-800"><%= t("next") || "Next" %></a>
+        <a href="<%= pagination.nextUrl %>" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold text-slate-600 hover:border-slate-300 hover:text-slate-800"><%= t("next")  %></a>
       <% } %>
     </div>
   </div>
@@ -141,7 +141,7 @@
 	<div class="fixed inset-0 z-50 hidden items-center justify-center overflow-y-auto bg-slate-900/40 p-4" data-audit-details-modal>
 		<div class="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white shadow-xl overflow-hidden">
 			<div class="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-				<div class="text-sm font-semibold text-slate-700"><%= t("audit_context_details") || "Audit Context Details" %></div>
+				<div class="text-sm font-semibold text-slate-700"><%= t("audit_context_details")  %></div>
 				<button type="button" class="text-slate-400 hover:text-slate-600" data-audit-details-close>
 					<svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
 				</button>
@@ -216,7 +216,7 @@
 			if (!model || typeof model !== "object") {
 				const empty = document.createElement("div");
 				empty.className = "rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600";
-				empty.textContent = "<%= t('no_entries') || 'No entries yet.' %>";
+				empty.textContent = "<%= t('no_entries')  %>";
 				content.appendChild(empty);
 				return;
 			}
@@ -241,7 +241,7 @@
 				rawWrap.className = "rounded-xl border border-slate-200 bg-slate-50 p-3";
 				const summary = document.createElement("summary");
 				summary.className = "cursor-pointer text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600";
-				summary.textContent = "<%= t('show_raw_data') || 'Show raw data' %>";
+				summary.textContent = "<%= t('show_raw_data')  %>";
 				rawWrap.appendChild(summary);
 				const pre = document.createElement("pre");
 				pre.className = "mt-3 whitespace-pre-wrap break-words rounded-lg bg-white p-3 text-[11px] text-slate-700";

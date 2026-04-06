@@ -418,22 +418,32 @@ const setUserScopePermission = async ({
       scope_id: scope.id,
       can_navigate: permissions.can_navigate ?? null,
       can_view: permissions.can_view ?? null,
+      can_load: permissions.can_load ?? null,
+      can_view_details: permissions.can_view_details ?? null,
       can_create: permissions.can_create ?? null,
       can_edit: permissions.can_edit ?? null,
       can_delete: permissions.can_delete ?? null,
       can_hard_delete: permissions.can_hard_delete ?? null,
       can_print: permissions.can_print ?? null,
+      can_export_excel_csv: permissions.can_export_excel_csv ?? null,
+      can_filter_all_branches: permissions.can_filter_all_branches ?? null,
+      can_view_cost_fields: permissions.can_view_cost_fields ?? null,
       can_approve: permissions.can_approve ?? null,
     })
     .onConflict(["user_id", "scope_id"])
     .merge({
       can_navigate: permissions.can_navigate ?? null,
       can_view: permissions.can_view ?? null,
+      can_load: permissions.can_load ?? null,
+      can_view_details: permissions.can_view_details ?? null,
       can_create: permissions.can_create ?? null,
       can_edit: permissions.can_edit ?? null,
       can_delete: permissions.can_delete ?? null,
       can_hard_delete: permissions.can_hard_delete ?? null,
       can_print: permissions.can_print ?? null,
+      can_export_excel_csv: permissions.can_export_excel_csv ?? null,
+      can_filter_all_branches: permissions.can_filter_all_branches ?? null,
+      can_view_cost_fields: permissions.can_view_cost_fields ?? null,
       can_approve: permissions.can_approve ?? null,
     });
 };

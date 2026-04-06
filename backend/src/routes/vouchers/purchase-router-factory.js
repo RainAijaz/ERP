@@ -176,6 +176,41 @@ const createPurchaseVoucherRouter = ({
     },
   );
 
+  router.get(
+    "/gate-pass",
+    requirePermission("VOUCHER", scopeKey, "print"),
+    async (req, res, next) => {
+      try {
+        const voucherNo = parseVoucherNo(req.query?.voucher_no);
+        if (!voucherNo) {
+          setNotice(res, res.locals.t("error_invalid_id"), true);
+          return res.redirect(req.baseUrl);
+        }
+
+        const voucher = await loadPurchaseVoucherDetails({
+          req,
+          voucherTypeCode,
+          voucherNo,
+        });
+        if (!voucher) {
+          setNotice(res, res.locals.t("generic_error"), true);
+          return res.redirect(req.baseUrl);
+        }
+
+        return res.render("vouchers/purchase/gate-pass", {
+          t: res.locals.t,
+          voucher,
+          titleKey,
+          subtitleKey,
+          voucherTypeCode,
+        });
+      } catch (err) {
+        console.error("Error in PurchaseGatePassService:", err);
+        return next(err);
+      }
+    },
+  );
+
   router.post("/", async (req, res, next) => {
     try {
       const voucherId = Number(req.body?.voucher_id || 0) || null;
@@ -214,8 +249,7 @@ const createPurchaseVoucherRouter = ({
 
       if (saved.queuedForApproval) {
         const msg = saved.permissionReroute
-          ? res.locals.t("approval_sent") ||
-            "Change submitted for Administrator approval."
+          ? res.locals.t("approval_sent") 
           : res.locals.t("approval_submitted");
         setNotice(res, msg, true);
       } else {
@@ -252,14 +286,13 @@ const createPurchaseVoucherRouter = ({
 
       if (saved.queuedForApproval) {
         const msg = saved.permissionReroute
-          ? res.locals.t("approval_sent") ||
-            "Change submitted for Administrator approval."
+          ? res.locals.t("approval_sent") 
           : res.locals.t("approval_submitted");
         setNotice(res, msg, true);
       } else {
         setNotice(
           res,
-          res.locals.t("deleted_successfully") || "Deleted successfully.",
+          res.locals.t("deleted_successfully") ,
         );
       }
 

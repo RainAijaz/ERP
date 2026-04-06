@@ -37,7 +37,7 @@ const renderPage = async ({ req, res, next, pageDataLoader, input, titleKey, vie
 
 router.get(
   "/labour-ledger",
-  requirePermission("REPORT", "labour_ledger", "view"),
+  requirePermission("REPORT", "labour_ledger", "load"),
   async (req, res, next) =>
     renderPage({
       req,
@@ -53,7 +53,7 @@ router.get(
 
 router.post(
   "/labour-ledger",
-  requirePermission("REPORT", "labour_ledger", "view"),
+  requirePermission("REPORT", "labour_ledger", "load"),
   async (req, res, next) =>
     renderPage({
       req,
@@ -69,7 +69,7 @@ router.post(
 
 router.get(
   "/labour-balances",
-  requirePermission("REPORT", "labour_balances", "view"),
+  requirePermission("REPORT", "labour_balances", "load"),
   async (req, res, next) =>
     renderPage({
       req,
@@ -88,7 +88,7 @@ router.get(
 
 router.post(
   "/labour-balances",
-  requirePermission("REPORT", "labour_balances", "view"),
+  requirePermission("REPORT", "labour_balances", "load"),
   async (req, res, next) =>
     renderPage({
       req,
@@ -107,7 +107,7 @@ router.post(
 
 router.get(
   "/employee-ledger",
-  requirePermission("REPORT", "employee_ledger", "view"),
+  requirePermission("REPORT", "employee_ledger", "load"),
   async (req, res, next) =>
     renderPage({
       req,
@@ -123,7 +123,7 @@ router.get(
 
 router.post(
   "/employee-ledger",
-  requirePermission("REPORT", "employee_ledger", "view"),
+  requirePermission("REPORT", "employee_ledger", "load"),
   async (req, res, next) =>
     renderPage({
       req,
@@ -139,7 +139,7 @@ router.post(
 
 router.get(
   "/employee-balances",
-  requirePermission("REPORT", "employee_balances", "view"),
+  requirePermission("REPORT", "employee_balances", "load"),
   async (req, res, next) =>
     renderPage({
       req,
@@ -158,7 +158,7 @@ router.get(
 
 router.post(
   "/employee-balances",
-  requirePermission("REPORT", "employee_balances", "view"),
+  requirePermission("REPORT", "employee_balances", "load"),
   async (req, res, next) =>
     renderPage({
       req,

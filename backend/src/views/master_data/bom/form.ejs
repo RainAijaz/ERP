@@ -65,16 +65,16 @@
     <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
       <div class="space-y-1">
         <h1 class="text-2xl font-display text-ink">
-          <%= isEdit ? (t("bom_edit_title") || "Edit BOM") : (t("bom_new_title") || "Add BOM") %>
+          <%= isEdit ? (t("bom_edit_title") ) : (t("bom_new_title") ) %>
         </h1>
-        <p class="text-sm text-muted"><%= t("bom_header_required_message") || "Complete the BOM setup first. Material, SFG, and labour sections unlock after that." %></p>
+        <p class="text-sm text-muted"><%= t("bom_header_required_message")  %></p>
       </div>
       <div class="flex flex-wrap gap-2">
         <% if (isEdit && header.status === "APPROVED" && can('SCREEN', 'master_data.bom', 'create')) { %>
           <form method="POST" action="<%= basePath %>/<%= header.id %>/create-new-version">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-            <button type="submit" class="inline-flex min-w-[8.5rem] items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 transition hover:border-slate-400 hover:text-slate-900" title="<%= t('bom_create_new_version') || 'Create New Version' %>">
-              <%= t("bom_revise") || "Revise" %>
+            <button type="submit" class="inline-flex min-w-[8.5rem] items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 transition hover:border-slate-400 hover:text-slate-900" title="<%= t('bom_create_new_version')  %>">
+              <%= t("bom_revise")  %>
             </button>
           </form>
         <% } %>
@@ -88,7 +88,7 @@
             data-bom-send-approval="<%= user?.isAdmin ? '0' : '1' %>"
             class="inline-flex min-w-[8.5rem] items-center justify-center rounded-xl bg-accent px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white shadow-sm transition hover:brightness-95"
           >
-            <%= user?.isAdmin ? (t("approve") || "Approve") : (t("send_for_approval") || "Send for Approval") %>
+            <%= user?.isAdmin ? (t("approve") ) : (t("send_for_approval") ) %>
           </button>
         <% } %>
         <% if (isEdit && String(header.status || '').toUpperCase() === "PENDING" && user?.isAdmin) { %>
@@ -96,7 +96,7 @@
             href="/administration/approvals?status=PENDING&entity_type=BOM&entity_id=<%= header.id %>"
             class="inline-flex min-w-[8.5rem] items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
           >
-            <%= t("open_approval") || "Open Approval" %>
+            <%= t("open_approval")  %>
           </a>
         <% } %>
       </div>
@@ -119,14 +119,14 @@
 
     <section id="bom-header" class="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm scroll-mt-24">
       <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <div class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_header") || "BOM Setup" %></div>
+        <div class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_header")  %></div>
         <% if (header.bom_no) { %>
-          <div class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500"><%= t("code") || "Code" %>: <%= header.bom_no %></div>
+          <div class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500"><%= t("code")  %>: <%= header.bom_no %></div>
         <% } %>
       </div>
       <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4" data-header-enter-row>
         <label class="block text-sm font-semibold text-slate-600">
-          <span><%= t("level") || "Level" %></span>
+          <span><%= t("level")  %></span>
           <select name="level" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" data-searchable-select="true" data-searchable-variant="unified" data-header-field="level" <%= isEditable ? "" : "disabled" %> required>
             <option value=""><%= t("select") %></option>
             <% (options?.levelOptions || []).forEach(function(levelOpt) { %>
@@ -137,7 +137,7 @@
           </select>
         </label>
         <label class="block text-sm font-semibold text-slate-600">
-          <span><%= t("article_name") || "Article Name" %></span>
+          <span><%= t("article_name")  %></span>
           <select name="item_id" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" data-searchable-select="true" data-searchable-variant="unified" data-header-field="item_id" <%= isEditable ? "" : "disabled" %> required>
             <option value=""><%= t("select") %></option>
             <% (options?.items || []).filter(function(item) { return !selectedItemType || item.item_type === selectedItemType; }).forEach(function(item) { %>
@@ -147,15 +147,15 @@
             <% }) %>
           </select>
           <% if (!isEdit && (!options?.items || options.items.length === 0)) { %>
-            <div class="mt-1 text-xs font-medium text-amber-700"><%= t("bom_no_available_articles") || "No new articles are available. Use BOM Register to revise an existing BOM." %></div>
+            <div class="mt-1 text-xs font-medium text-amber-700"><%= t("bom_no_available_articles")  %></div>
           <% } %>
         </label>
         <label class="block text-sm font-semibold text-slate-600">
-          <span><%= t("bom_output_batch_size") || "Planned Output Qty" %></span>
+          <span><%= t("bom_output_batch_size")  %></span>
           <input type="number" step="0.001" min="0.001" name="output_qty" value="<%= header.output_qty ?? 1 %>" data-no-stepper="true" data-header-field="output_qty" class="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 transition focus:border-black focus:outline-none focus:ring-2 focus:ring-black/20" <%= isEditable ? "" : "readonly" %> required>
         </label>
         <label class="block text-sm font-semibold text-slate-600">
-          <span><%= t("bom_output_uom") || "Output Unit (UOM)" %></span>
+          <span><%= t("bom_output_uom")  %></span>
           <select name="output_uom_id" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" data-searchable-select="true" data-searchable-variant="unified" data-header-field="output_uom_id" <%= isEditable ? "" : "disabled" %> required>
             <option value=""><%= t("select") %></option>
             <% (initialOutputUoms || []).forEach(function(uom) { %>
@@ -167,7 +167,7 @@
       <% if (isEdit) { %>
         <div class="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           <div class="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-            <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"><%= t("version") || "Version" %></div>
+            <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"><%= t("version")  %></div>
             <div class="mt-1 text-sm font-semibold text-slate-800">V<%= header.version_no %></div>
           </div>
           <div class="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
@@ -179,11 +179,11 @@
             </div>
           </div>
           <div class="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-            <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"><%= t("created") || "Created" %></div>
+            <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"><%= t("created")  %></div>
             <div class="mt-1 text-sm font-semibold text-slate-800"><%= formatDateDisplay(header.created_at) %></div>
           </div>
           <div class="rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-            <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"><%= t("approved") || "Approved" %></div>
+            <div class="text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-500"><%= t("approved")  %></div>
             <div class="mt-1 text-sm font-semibold text-slate-800"><%= formatDateDisplay(header.approved_at) %></div>
           </div>
         </div>
@@ -191,13 +191,13 @@
     </section>
 
     <section class="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 <%= (header.item_id && header.level && Number(header.output_qty || 0) > 0 && header.output_uom_id) ? 'hidden' : '' %>" data-header-lock-notice>
-      <span class="font-semibold"><%= t("notice") || "Notice" %>:</span>
-      <%= t("bom_header_required_message") || "Complete the BOM setup first. Material, SFG, and labour sections unlock after that." %>
+      <span class="font-semibold"><%= t("notice")  %>:</span>
+      <%= t("bom_header_required_message")  %>
     </section>
 
     <section id="bom-stage" class="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm scroll-mt-24">
       <div class="mb-3 flex items-center justify-between">
-        <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("production_stages") || "Production Stages" %></h2>
+        <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("production_stages")  %></h2>
       </div>
       <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
         <table class="w-full table-fixed text-sm">
@@ -210,11 +210,11 @@
           </colgroup>
           <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
             <tr>
-              <th class="px-3 py-2 text-left"><%= t("sr_no") || "Sr.No" %></th>
-              <th class="px-3 py-2 text-left"><%= t("department") || "Department" %></th>
-              <th class="px-3 py-2 text-center"><%= t("bom_stage_mandatory_in_flow") || "Mandatory In Flow" %></th>
-              <th class="px-3 py-2 text-center"><%= t("bom_stage_strict_sequence") || "Strict Sequence" %></th>
-              <th class="px-3 py-2 text-right"><%= t("actions") || "Actions" %></th>
+              <th class="px-3 py-2 text-left"><%= t("sr_no")  %></th>
+              <th class="px-3 py-2 text-left"><%= t("department")  %></th>
+              <th class="px-3 py-2 text-center"><%= t("bom_stage_mandatory_in_flow")  %></th>
+              <th class="px-3 py-2 text-center"><%= t("bom_stage_strict_sequence")  %></th>
+              <th class="px-3 py-2 text-right"><%= t("actions")  %></th>
             </tr>
           </thead>
           <tbody data-lines-body="stage_route"></tbody>
@@ -224,7 +224,7 @@
 
     <section id="bom-rm" class="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm scroll-mt-24 space-y-5">
       <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_tab_rm") || "Raw Material Inputs for This BOM" %></h2>
+        <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_tab_rm")  %></h2>
         <div class="inline-flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -232,7 +232,7 @@
             data-active="true"
             class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
           >
-            <%= t("bom_rm_view_material_lines") || "Material Lines" %>
+            <%= t("bom_rm_view_material_lines")  %>
           </button>
           <button
             type="button"
@@ -240,14 +240,14 @@
             data-active="false"
             class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
           >
-            <%= t("bom_sku_rules") || "SKU Rules" %>
+            <%= t("bom_sku_rules")  %>
           </button>
         </div>
       </div>
       <section data-rm-view="materials" class="rounded-xl border border-slate-200 bg-white">
         <div class="border-b border-slate-200 px-3 py-3">
-          <h3 class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"><%= t("bom_rm_view_material_lines") || "Material Lines" %></h3>
-          <p class="mt-1 text-xs text-slate-500"><%= t("bom_rm_section_hint") || "Select material and department here. Color/size/unit/required qty are read-only references; manage SKU-wise values in SKU Rules." %></p>
+          <h3 class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"><%= t("bom_rm_view_material_lines")  %></h3>
+          <p class="mt-1 text-xs text-slate-500"><%= t("bom_rm_section_hint")  %></p>
         </div>
         <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
           <table class="w-full table-fixed text-sm">
@@ -264,14 +264,14 @@
             </colgroup>
             <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
               <tr>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_material') || 'Select the raw material used in this BOM.' %>"><%= t("bom_rm_col_material") || "Material" %></th>
-                <th class="px-3 py-2 text-left"><%= t("color") || "Color" %></th>
-                <th class="px-3 py-2 text-left"><%= t("size") || "Size" %></th>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_base_unit') || 'Base unit is picked from the selected material and is read-only.' %>"><%= t("base_unit") || "Base Unit" %></th>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_consumption_department') || 'Production department that consumes this material.' %>"><%= t("bom_rm_col_department") || "Consumption Department" %></th>
-                <th class="px-3 py-2 text-left"><%= t("bom_rules_col_qty") || "Required Qty" %></th>
-                <th class="px-3 py-2 text-left"><%= t("normal_loss_pct") || "Normal Loss %" %></th>
-                <th class="px-3 py-2 text-right" title="<%= t('bom_hint_actions') || 'Use plus/minus to add or remove rows.' %>"><%= t("bom_rm_col_actions") || "Actions" %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_material')  %>"><%= t("bom_rm_col_material")  %></th>
+                <th class="px-3 py-2 text-left"><%= t("color")  %></th>
+                <th class="px-3 py-2 text-left"><%= t("size")  %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_base_unit')  %>"><%= t("base_unit")  %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_consumption_department')  %>"><%= t("bom_rm_col_department")  %></th>
+                <th class="px-3 py-2 text-left"><%= t("bom_rules_col_qty")  %></th>
+                <th class="px-3 py-2 text-left"><%= t("normal_loss_pct")  %></th>
+                <th class="px-3 py-2 text-right" title="<%= t('bom_hint_actions')  %>"><%= t("bom_rm_col_actions")  %></th>
               </tr>
             </thead>
             <tbody data-lines-body="rm"></tbody>
@@ -280,20 +280,20 @@
       </section>
       <section data-rm-view="sku_rules" class="hidden rounded-xl border border-slate-200 bg-white">
         <div class="border-b border-slate-200 px-3 py-3">
-          <h3 class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"><%= t("bom_sku_rules") || "SKU Rules" %></h3>
-          <p class="mt-1 text-xs text-slate-500"><%= t("bom_sku_rules_hint") || "Maintain SKU-wise required qty and optional color/size overrides. Material Lines required qty is derived from SKU Rules." %></p>
+          <h3 class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"><%= t("bom_sku_rules")  %></h3>
+          <p class="mt-1 text-xs text-slate-500"><%= t("bom_sku_rules_hint")  %></p>
           <div class="mt-2 flex flex-wrap items-center gap-2" data-sku-rule-chips></div>
         </div>
         <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
           <table class="min-w-full text-sm">
             <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
               <tr>
-                <th class="px-3 py-2 text-left"><%= t("bom_rm_col_material") || "Material" %></th>
-                <th class="px-3 py-2 text-left"><%= t("bom_rm_col_department") || "Consumption Department" %></th>
-                <th class="px-3 py-2 text-left"><%= t("color") || "Color" %></th>
-                <th class="px-3 py-2 text-left"><%= t("size") || "Size" %></th>
-                <th class="px-3 py-2 text-left"><%= t("bom_rules_col_qty") || "Required Qty" %></th>
-                <th class="px-3 py-2 text-left"><%= t("bom_rules_col_uom") || "Unit" %></th>
+                <th class="px-3 py-2 text-left"><%= t("bom_rm_col_material")  %></th>
+                <th class="px-3 py-2 text-left"><%= t("bom_rm_col_department")  %></th>
+                <th class="px-3 py-2 text-left"><%= t("color")  %></th>
+                <th class="px-3 py-2 text-left"><%= t("size")  %></th>
+                <th class="px-3 py-2 text-left"><%= t("bom_rules_col_qty")  %></th>
+                <th class="px-3 py-2 text-left"><%= t("bom_rules_col_uom")  %></th>
               </tr>
             </thead>
             <tbody data-sku-rules-body></tbody>
@@ -304,17 +304,17 @@
 
     <section id="bom-sfg" class="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm scroll-mt-24">
       <div class="mb-3 flex items-center justify-between">
-        <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_tab_sfg_per_sku") || "List Semi-Finished Products Used For Each SKU" %></h2>
+        <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_tab_sfg_per_sku")  %></h2>
       </div>
       <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
         <table class="min-w-full text-sm">
           <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
             <tr>
-              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_article_sku') || 'Finished article SKU this row applies to.' %>"><%= t("article_sku") || "Article SKU" %></th>
-              <th class="px-3 py-2 text-left" data-sfg-part-col-title title="<%= t('bom_hint_step_upper_sku') || 'Select the semi-finished SKU used for this finished SKU.' %>"><span data-sfg-part-col-label><%= t("bom_sfg_col_step_upper_sku") || "Step/Upper SKU" %></span></th>
-              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_step_quantity') || 'Quantity of selected step/upper SKU required for this finished SKU.' %>"><%= t("bom_sfg_col_step_qty") || "Step Quantity" %></th>
-              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_sfg_consumed_stage') || 'Select FG stage where this SFG is consumed.' %>"><%= t("bom_sfg_col_consumed_stage") || "Consumed In Stage" %></th>
-              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_base_unit') || 'Base unit for selected SKU.' %>"><%= t("base_unit") || "Unit" %></th>
+              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_article_sku')  %>"><%= t("article_sku")  %></th>
+              <th class="px-3 py-2 text-left" data-sfg-part-col-title title="<%= t('bom_hint_step_upper_sku')  %>"><span data-sfg-part-col-label><%= t("bom_sfg_col_step_upper_sku")  %></span></th>
+              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_step_quantity')  %>"><%= t("bom_sfg_col_step_qty")  %></th>
+              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_sfg_consumed_stage')  %>"><%= t("bom_sfg_col_consumed_stage")  %></th>
+              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_base_unit')  %>"><%= t("base_unit")  %></th>
             </tr>
           </thead>
           <tbody data-lines-body="sfg"></tbody>
@@ -324,7 +324,7 @@
 
     <section id="bom-labour" class="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm scroll-mt-24 space-y-4">
       <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_tab_labour") || "List Labour Rates Applied To This Article (Auto-loaded From Labour Rates)" %></h2>
+        <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_tab_labour")  %></h2>
         <div class="inline-flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -332,7 +332,7 @@
             data-active="true"
             class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
           >
-            <%= t("bom_labour_selection_title") || "Labours (Auto-loaded From Labour Rates)" %>
+            <%= t("bom_labour_selection_title")  %>
           </button>
           <button
             type="button"
@@ -340,23 +340,23 @@
             data-active="false"
             class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
           >
-            <%= t("bom_labour_size_rules_title") || "SKU Rules" %>
+            <%= t("bom_labour_size_rules_title")  %>
           </button>
         </div>
       </div>
       <section class="rounded-xl border border-slate-200 bg-white" data-labour-view="selection">
         <div class="border-b border-slate-200 px-3 py-3">
-          <h3 class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"><%= t("bom_labour_selection_title") || "Labours (Auto-loaded From Labour Rates)" %></h3>
-          <p class="mt-1 text-xs text-slate-500"><%= t("bom_labour_selection_hint") || "Rows are auto-loaded from active Labour Rates for the selected article. Review and adjust only if needed." %></p>
+          <h3 class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"><%= t("bom_labour_selection_title")  %></h3>
+          <p class="mt-1 text-xs text-slate-500"><%= t("bom_labour_selection_hint")  %></p>
         </div>
         <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
           <table class="min-w-full text-sm">
             <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
               <tr>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_labour') || 'Labour master to apply cost from.' %>"><%= t("labours") || "Labours" %></th>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_department') || 'Production department for this labour.' %>"><%= t("department") || "Department" %></th>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_rate_type') || 'Cost basis (per pair or per dozen).' %>"><%= t("rate_type") || "Rate Type" %></th>
-                <th class="px-3 py-2 text-right" title="<%= t('bom_hint_actions') || 'Use plus/minus to add or remove rows.' %>"><%= t("actions") || "Actions" %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_labour')  %>"><%= t("labours")  %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_department')  %>"><%= t("department")  %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_rate_type')  %>"><%= t("rate_type")  %></th>
+                <th class="px-3 py-2 text-right" title="<%= t('bom_hint_actions')  %>"><%= t("actions")  %></th>
               </tr>
             </thead>
             <tbody data-lines-body="labour_selection"></tbody>
@@ -366,8 +366,8 @@
       <section class="rounded-xl border border-slate-200 bg-white hidden" data-labour-view="size_rules">
         <div class="border-b border-slate-200 px-3 py-3">
           <div>
-            <h3 class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"><%= t("bom_labour_size_rules_title") || "SKU Rules" %></h3>
-            <p class="mt-1 text-xs text-slate-500"><%= t("bom_labour_size_rules_hint") || "Rates are auto-fetched from Labour Rates and are read-only here." %></p>
+            <h3 class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"><%= t("bom_labour_size_rules_title")  %></h3>
+            <p class="mt-1 text-xs text-slate-500"><%= t("bom_labour_size_rules_hint")  %></p>
             <div class="mt-2 flex flex-wrap items-center gap-2" data-labour-rule-sku-sections></div>
           </div>
         </div>
@@ -375,10 +375,10 @@
           <table class="min-w-full text-sm">
             <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
               <tr>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_labour') || 'Labour master to apply cost from.' %>"><%= t("labours") || "Labours" %></th>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_department') || 'Production department for this labour.' %>"><%= t("department") || "Department" %></th>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_rate_value') || 'Enter the labour rate amount for this SKU scope.' %>"><%= t("bom_labour_col_rate") || "Rate" %></th>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_rate_type') || 'Cost basis (per pair or per dozen).' %>"><%= t("rate_type") || "Rate Type" %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_labour')  %>"><%= t("labours")  %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_department')  %>"><%= t("department")  %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_rate_value')  %>"><%= t("bom_labour_col_rate")  %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_rate_type')  %>"><%= t("rate_type")  %></th>
               </tr>
             </thead>
             <tbody data-lines-body="labour_rule"></tbody>
@@ -390,7 +390,7 @@
     <% if (isEditable) { %>
       <div class="flex justify-center" data-bom-save-wrap>
         <button type="button" data-bom-save-draft class="rounded-xl bg-accent px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] text-white shadow-sm transition hover:brightness-95">
-          <%= t("save_draft") || "Save Draft" %>
+          <%= t("save_draft")  %>
         </button>
       </div>
     <% } %>
@@ -457,33 +457,33 @@
       skuRuleOpenSkuId: "",
     };
     const labels = {
-      select: "<%= t('select') || 'Select' %>",
-      all: "<%= t('all') || 'All' %>",
-      specific: "<%= t('bom_specific') || 'Specific' %>",
-      skuRules: "<%= t('bom_sku_rules') || 'SKU Rules' %>",
-      add: "<%= t('add') || 'Add' %>",
-      remove: "<%= t('delete') || 'Delete' %>",
-      clear: "<%= t('clear') || 'Clear' %>",
+      select: "<%= t('select')  %>",
+      all: "<%= t('all')  %>",
+      specific: "<%= t('bom_specific')  %>",
+      skuRules: "<%= t('bom_sku_rules')  %>",
+      add: "<%= t('add')  %>",
+      remove: "<%= t('delete')  %>",
+      clear: "<%= t('clear')  %>",
     };
     const headerModalCopy = {
       qty: {
-        title: "<%= t('bom_header_change_qty_title') || 'Apply Planned Output Qty Change?' %>",
-        message: "<%= t('bom_header_change_qty_message') || 'Material/SFG/SKU-rule quantities will be cleared. Header, Production Stages, departments, and labour selections stay.' %>",
-        hint: "<%= t('bom_header_change_qty_hint') || 'Apply keeps new planned output quantity and clears only quantity fields for safe re-entry.' %>",
-        applyLabel: "<%= t('bom_header_change_apply_clear_quantities') || 'Apply (Clear Quantities)' %>",
+        title: "<%= t('bom_header_change_qty_title')  %>",
+        message: "<%= t('bom_header_change_qty_message')  %>",
+        hint: "<%= t('bom_header_change_qty_hint')  %>",
+        applyLabel: "<%= t('bom_header_change_apply_clear_quantities')  %>",
       },
       uom: {
-        title: "<%= t('bom_header_change_uom_title') || 'Apply Output Unit Change?' %>",
-        message: "<%= t('bom_header_change_uom_message') || 'Unit-sensitive Material/SFG/SKU-rule quantities will be cleared and need re-entry.' %>",
-        hint: "<%= t('bom_header_change_uom_hint') || 'Apply keeps new output unit and clears only quantity fields for safe re-entry.' %>",
-        applyLabel: "<%= t('bom_header_change_apply_clear_quantities') || 'Apply (Clear Quantities)' %>",
+        title: "<%= t('bom_header_change_uom_title')  %>",
+        message: "<%= t('bom_header_change_uom_message')  %>",
+        hint: "<%= t('bom_header_change_uom_hint')  %>",
+        applyLabel: "<%= t('bom_header_change_apply_clear_quantities')  %>",
       },
       identity: {
-        title: "<%= t('bom_header_change_identity_title') || 'Switch BOM Context?' %>",
-        message: "<%= t('bom_header_change_identity_message') || 'You are switching to a different BOM.' %>",
-        hint: "<%= t('bom_header_change_identity_hint') || 'Save Draft & Switch saves your current draft and opens the selected BOM.\nDiscard Changes & Switch clears your current BOM sections and opens the selected BOM.' %>",
-        applyLabel: "<%= t('bom_header_change_apply_start_fresh') || 'Discard Changes & Switch' %>",
-        secondaryLabel: "<%= t('bom_header_change_save_switch') || 'Save Draft & Switch' %>",
+        title: "<%= t('bom_header_change_identity_title')  %>",
+        message: "<%= t('bom_header_change_identity_message')  %>",
+        hint: "<%= t('bom_header_change_identity_hint')  %>",
+        applyLabel: "<%= t('bom_header_change_apply_start_fresh')  %>",
+        secondaryLabel: "<%= t('bom_header_change_save_switch')  %>",
       },
     };
     const serverErrorMessage = <%- JSON.stringify(errorMessage || "") %>;
@@ -564,12 +564,12 @@
     const sfgSection = document.getElementById("bom-sfg");
     const sfgPartColumnLabelEl = document.querySelector("[data-sfg-part-col-label]");
     const sfgPartColumnTitleEl = document.querySelector("[data-sfg-part-col-title]");
-    const stepLabel = "<%= t('step') || 'Step' %>";
-    const upperLabel = "<%= t('upper') || 'Upper' %>";
-    const sfgPartDefaultColLabel = "<%= t('bom_sfg_col_step_upper_sku') || 'Step/Upper SKU' %>";
-    const sfgPartDefaultHint = "<%= t('bom_hint_step_upper_sku') || 'Select the semi-finished SKU used for this finished SKU.' %>";
-    const sfgPartStepHint = "<%= t('bom_hint_step_sku') || 'Select step SKU used for this finished SKU.' %>";
-    const sfgPartUpperHint = "<%= t('bom_hint_upper_sku') || 'Select upper SKU used for this finished SKU.' %>";
+    const stepLabel = "<%= t('step')  %>";
+    const upperLabel = "<%= t('upper')  %>";
+    const sfgPartDefaultColLabel = "<%= t('bom_sfg_col_step_upper_sku')  %>";
+    const sfgPartDefaultHint = "<%= t('bom_hint_step_upper_sku')  %>";
+    const sfgPartStepHint = "<%= t('bom_hint_step_sku')  %>";
+    const sfgPartUpperHint = "<%= t('bom_hint_upper_sku')  %>";
     const plusIcon = '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /><path d="M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>';
     const deleteIcon = '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 12h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /></svg>';
     const resolveRmUomId = (row) => rmItemUomById.get(String(row?.rm_item_id || "")) || String(row?.uom_id || "");
@@ -678,8 +678,8 @@
       </div>`;
 
     const rateTypeLabel = {
-      PER_PAIR: "<%= t('rate_type_per_pair') || 'Per Pair' %>",
-      PER_DOZEN: "<%= t('rate_type_per_dozen') || 'Per Dozen' %>",
+      PER_PAIR: "<%= t('rate_type_per_pair')  %>",
+      PER_DOZEN: "<%= t('rate_type_per_dozen')  %>",
     };
     const defaultLabourSelectionRow = () => ({ labour_id: "", dept_id: "", rate_type: "PER_PAIR" });
     const normalizeLabourRateType = (rateType) => {
@@ -711,7 +711,7 @@
         ? String(line?.size_id || "").trim()
         : "ALL"
     );
-    const allSizesLabel = "<%= t('all_sizes') || 'All Sizes' %>";
+    const allSizesLabel = "<%= t('all_sizes')  %>";
     const skuRuleChipsHost = document.querySelector("[data-sku-rule-chips]");
     const skuRulesBody = document.querySelector("[data-sku-rules-body]");
     const labourRuleSkuChipsHost = document.querySelector("[data-labour-rule-sku-sections]");
@@ -1015,7 +1015,7 @@
       const text = String(message || "").trim();
       if (!text) return;
       if (typeof window.showUiErrorModal === "function") {
-        window.showUiErrorModal(text, "<%= t('error_generic') || 'Error' %>");
+        window.showUiErrorModal(text, "<%= t('error_generic')  %>");
       }
     };
     const getRmDuplicateCombo = () => {
@@ -1059,17 +1059,17 @@
     const hasClientDuplicateCombos = () => {
       const rmDuplicate = getRmDuplicateCombo();
       if (rmDuplicate) {
-        showErrorModal("<%= t('bom_error_rm_department_duplicate') || 'This material is already added for the selected consumption department. Use a different material or department.' %>");
+        showErrorModal("<%= t('bom_error_rm_department_duplicate')  %>");
         return true;
       }
       const labourDuplicate = getLabourSelectionDuplicateCombo();
       if (labourDuplicate) {
-        showErrorModal("<%= t('bom_error_labour_department_duplicate') || 'This labour is already added for the selected department. Choose a different labour or department.' %>");
+        showErrorModal("<%= t('bom_error_labour_department_duplicate')  %>");
         return true;
       }
       const stageDuplicate = getStageRouteDuplicateCombo();
       if (stageDuplicate) {
-        showErrorModal("<%= t('error_duplicate_name') || 'Duplicate value is not allowed.' %>");
+        showErrorModal("<%= t('error_duplicate_name')  %>");
         return true;
       }
       return false;
@@ -1086,7 +1086,7 @@
       } else if (changedCol === "dept_id") {
         line.dept_id = "";
       }
-      showErrorModal("<%= t('bom_error_rm_department_duplicate') || 'This material is already added for the selected consumption department. Use a different material or department.' %>");
+      showErrorModal("<%= t('bom_error_rm_department_duplicate')  %>");
       return true;
     };
     const resolveLabourSelectionDuplicateOnChange = (rowIndex, changedCol) => {
@@ -1103,7 +1103,7 @@
         line.rate_type = "PER_PAIR";
       }
       syncLabourLinesFromSelectionAndRates();
-      showErrorModal("<%= t('bom_error_labour_department_duplicate') || 'This labour is already added for the selected department. Choose a different labour or department.' %>");
+      showErrorModal("<%= t('bom_error_labour_department_duplicate')  %>");
       return true;
     };
     const findSkuOverride = (skuId, targetRmItemId, targetDeptId) =>
@@ -1334,15 +1334,15 @@
               </button>
             `;
           }).join("")
-          : `<span class="text-xs text-slate-500"><%= t("no_entries") || "No entries" %></span>`;
+          : `<span class="text-xs text-slate-500"><%= t("no_entries")  %></span>`;
       }
       if (!activeSku) {
-        skuRulesBody.innerHTML = `<tr><td colspan="6" class="px-3 py-3 text-sm text-slate-500"><%= t("bom_no_sku_available") || "No SKU available for selected article." %></td></tr>`;
+        skuRulesBody.innerHTML = `<tr><td colspan="6" class="px-3 py-3 text-sm text-slate-500"><%= t("bom_no_sku_available")  %></td></tr>`;
         return;
       }
       const rows = getSkuRulesRows(activeSku.id);
       if (!rows.length) {
-        skuRulesBody.innerHTML = `<tr><td colspan="6" class="px-3 py-3 text-sm text-slate-500"><%= t("bom_no_material_lines_for_sku_rules") || "Add material lines first to edit SKU rules." %></td></tr>`;
+        skuRulesBody.innerHTML = `<tr><td colspan="6" class="px-3 py-3 text-sm text-slate-500"><%= t("bom_no_material_lines_for_sku_rules")  %></td></tr>`;
         return;
       }
       skuRulesBody.innerHTML = rows.map(({ sku, baseline, effective }, rowIndex) => {
@@ -1410,7 +1410,7 @@
 
       const skuOptions = getHeaderSkuOptions();
       if (!skuOptions.length) {
-        errors.push("<%= t('bom_no_sku_available') || 'No SKU available for selected article.' %>");
+        errors.push("<%= t('bom_no_sku_available')  %>");
         return { entries, errors };
       }
 
@@ -1430,7 +1430,7 @@
           const deptName = departmentNameById.get(String(effective.deptId || "")) || String(effective.deptId || "");
           const skuCode = getSkuCodeLabel(sku) || String(sku?.id || "");
           if (qty !== null && (!Number.isFinite(qty) || qty < 0)) {
-            errors.push(`SKU ${skuCode}: ${rmName} / ${deptName} -> <%= t("bom_rules_col_qty") || "Required Qty" %>.`);
+            errors.push(`SKU ${skuCode}: ${rmName} / ${deptName} -> <%= t("bom_rules_col_qty")  %>.`);
             return;
           }
           entries.push({
@@ -1883,7 +1883,7 @@
       const sfgOptions = getRelevantSfgSkus();
       const stageChoices = getSelectedStageChoicesForSfg();
       if (!fgSkuOptions.length) {
-        body.innerHTML = `<tr><td colspan="5" class="px-3 py-3 text-sm text-slate-500"><%= t("bom_no_sku_available") || "No SKU available for selected article." %></td></tr>`;
+        body.innerHTML = `<tr><td colspan="5" class="px-3 py-3 text-sm text-slate-500"><%= t("bom_no_sku_available")  %></td></tr>`;
         return;
       }
       const existingBySkuId = new Map((state.sfg || []).map((row) => [String(row?.fg_sku_id || ""), row]));
@@ -2047,7 +2047,7 @@
       }
       if (hasSkuOptions) {
         if (!activeSku) {
-          body.innerHTML = `<tr><td colspan="4" class="px-3 py-3 text-sm text-slate-500"><%= t("bom_no_sku_available") || "No SKU available for selected article." %></td></tr>`;
+          body.innerHTML = `<tr><td colspan="4" class="px-3 py-3 text-sm text-slate-500"><%= t("bom_no_sku_available")  %></td></tr>`;
           return;
         }
         activeSizeKey = getLabourSizeKeyFromSku(activeSku);
@@ -2059,7 +2059,7 @@
         return String(sizeKey || "ALL") === activeSizeKey;
       });
       if (!activeRows.length) {
-        body.innerHTML = `<tr><td colspan="4" class="px-3 py-3 text-sm text-slate-500"><%= t("bom_no_labour_selected") || "Add labour lines first to set size-wise rates." %></td></tr>`;
+        body.innerHTML = `<tr><td colspan="4" class="px-3 py-3 text-sm text-slate-500"><%= t("bom_no_labour_selected")  %></td></tr>`;
         return;
       }
       body.innerHTML = activeRows
@@ -2072,7 +2072,7 @@
           const labourName = labourNameById.get(labourId) || labourId || "-";
           const deptName = departmentNameById.get(deptId) || deptId || "-";
           const lockHint = locked
-            ? `<div class="mt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${esc("<%= t('bom_labour_locked_from_rates') || 'Locked (from Labour Rates)' %>")}</div>`
+            ? `<div class="mt-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${esc("<%= t('bom_labour_locked_from_rates')  %>")}</div>`
             : "";
           return `
             <tr data-row-index="${idx}" data-labour-rule-entry="true" data-labour-id="${esc(labourId)}" data-dept-id="${esc(deptId)}" data-rate-type="${esc(rateType)}" data-size-id="${esc(activeSizeKey)}" data-rate-locked="${locked ? "1" : "0"}" class="border-b border-slate-100">
@@ -2418,7 +2418,7 @@
           if (labourRateControl instanceof HTMLInputElement) {
             labourRateControl.value = String(state.labourRuleRateMap?.[key] || "").trim();
           }
-          showErrorModal("<%= t('bom_labour_locked_message') || 'This rate is managed from Labour Rates and is read-only in Add BOM.' %>");
+          showErrorModal("<%= t('bom_labour_locked_message')  %>");
           return;
         }
         syncLabourRulesFromDom();
@@ -2851,7 +2851,7 @@
     if (String(serverErrorMessage || "").trim() || detailLines.length) {
       const detailsText = detailLines.map((msg, idx) => `${idx + 1}. ${msg}`).join("\n");
       const modalMessage = [String(serverErrorMessage || "").trim(), detailsText].filter(Boolean).join("\n");
-      const modalTitle = "<%= t('error_generic') || 'Error' %>";
+      const modalTitle = "<%= t('error_generic')  %>";
       const showServerErrors = () => {
         if (typeof window.showUiErrorModal === "function") {
           window.showUiErrorModal(modalMessage, modalTitle);

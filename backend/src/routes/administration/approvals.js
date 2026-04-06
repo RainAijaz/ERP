@@ -860,7 +860,7 @@ const buildPreviewPayload = async (req, res, request, side) => {
       return {
         ...basePayload,
         previewType: "basic-info-uom",
-        previewTitle: res.locals.t("uom_conversions") || "UOM Conversions",
+        previewTitle: res.locals.t("uom_conversions") ,
         formPartial:
           "../../master_data/basic-info/uom-conversions/form-fields.ejs",
         uoms,
@@ -889,7 +889,7 @@ const buildPreviewPayload = async (req, res, request, side) => {
     return {
       ...basePayload,
       previewType: "accounts",
-      previewTitle: res.locals.t("accounts") || "Accounts",
+      previewTitle: res.locals.t("accounts") ,
       formPartial: "../../master_data/accounts/form-fields.ejs",
       page: hydrated,
       isAdmin: req.user?.isAdmin || false,
@@ -904,7 +904,7 @@ const buildPreviewPayload = async (req, res, request, side) => {
     return {
       ...basePayload,
       previewType: "parties",
-      previewTitle: res.locals.t("parties") || "Parties",
+      previewTitle: res.locals.t("parties") ,
       formPartial: "../../master_data/parties/form-fields.ejs",
       page: hydrated,
       isAdmin: req.user?.isAdmin || false,
@@ -920,7 +920,7 @@ const buildPreviewPayload = async (req, res, request, side) => {
     return {
       previewValues: values,
       previewType: "parties",
-      previewTitle: res.locals.t("asset_master") || "Asset Master",
+      previewTitle: res.locals.t("asset_master") ,
       page: hydrated,
       formPartial: "../../master_data/returnable-assets/form-fields.ejs",
     };
@@ -935,7 +935,7 @@ const buildPreviewPayload = async (req, res, request, side) => {
     return {
       previewValues: values,
       previewType: "parties",
-      previewTitle: res.locals.t("asset_types") || "Asset Types",
+      previewTitle: res.locals.t("asset_types") ,
       page: hydrated,
       formPartial: "../../master_data/asset-types/form-fields.ejs",
     };
@@ -1027,7 +1027,7 @@ const buildPreviewPayload = async (req, res, request, side) => {
       return {
         ...basePayload,
         previewType: "raw-materials",
-        previewTitle: res.locals.t("raw_materials") || "Raw Materials",
+        previewTitle: res.locals.t("raw_materials") ,
         formPartial: "../../master_data/products/raw-materials/form-fields.ejs",
         ...options,
       };
@@ -1037,7 +1037,7 @@ const buildPreviewPayload = async (req, res, request, side) => {
       return {
         ...basePayload,
         previewType: "semi-finished",
-        previewTitle: res.locals.t("semi_finished") || "Semi Finished",
+        previewTitle: res.locals.t("semi_finished") ,
         formPartial: "../../master_data/products/semi-finished/form-fields.ejs",
         ...options,
       };
@@ -1047,7 +1047,7 @@ const buildPreviewPayload = async (req, res, request, side) => {
       return {
         ...basePayload,
         previewType: "finished",
-        previewTitle: res.locals.t("finished") || "Finished",
+        previewTitle: res.locals.t("finished") ,
         formPartial: "../../master_data/products/finished/form-fields.ejs",
         ...options,
       };
@@ -1107,7 +1107,7 @@ const buildPreviewPayload = async (req, res, request, side) => {
       ...basePayload,
       previewValues: normalized,
       previewType: "skus",
-      previewTitle: res.locals.t("skus") || "SKUs",
+      previewTitle: res.locals.t("skus") ,
       formPartial: "../../administration/approvals/preview-sku-compact.ejs",
       ...options,
     };
@@ -1466,8 +1466,7 @@ router.post(
             summary: requestSnapshot.summary || "",
             link: "/administration/approvals?status=PENDING",
             message: (
-              res.locals.t("approval_request_updated_detail") ||
-              "Your pending approval request was updated: {summary}"
+              res.locals.t("approval_request_updated_detail") 
             ).replace("{summary}", requestSnapshot.summary || ""),
             sticky: true,
           },
@@ -1748,8 +1747,7 @@ router.post(
             summary: requestSnapshot.summary || "",
             link: "/administration/approvals?status=APPROVED",
             message: (
-              res.locals.t("approval_approved_detail") ||
-              "Your approval request was approved: {summary}"
+              res.locals.t("approval_approved_detail") 
             ).replace("{summary}", requestSnapshot.summary || ""),
             sticky: true,
           },
@@ -1764,8 +1762,7 @@ router.post(
         msg = res.locals.t("error_duplicate_name");
       } else if (err && err.code === "BOM_SNAPSHOT_MISMATCH") {
         msg =
-          res.locals.t("bom_error_snapshot_mismatch") ||
-          "BOM snapshot mismatch while approving. Please reopen and resubmit approval.";
+          res.locals.t("bom_error_snapshot_mismatch") ;
       } else if (err && err.message) {
         msg = err.message;
       }
@@ -1857,8 +1854,7 @@ router.post(
             summary: requestSnapshot.summary || "",
             link: "/administration/approvals?status=REJECTED",
             message: (
-              res.locals.t("approval_rejected_detail") ||
-              "Your approval request was rejected: {summary}"
+              res.locals.t("approval_rejected_detail") 
             ).replace("{summary}", requestSnapshot.summary || ""),
             sticky: true,
           },

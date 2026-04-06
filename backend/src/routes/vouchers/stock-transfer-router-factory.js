@@ -120,6 +120,7 @@ const createStockTransferVoucherRouter = ({
           options.pendingTransfers.push({
             stn_out_voucher_id: Number(selectedVoucher.stn_out_voucher_id),
             transfer_ref_no: selectedVoucher.transfer_ref_no || "",
+            bill_book_no: selectedVoucher.bill_book_no || "",
             stock_type: selectedVoucher.stock_type || "FG",
             source_branch_id: Number(selectedVoucher.source_branch_id || 0) || null,
             source_branch_name: selectedVoucher.source_branch_name || "",
@@ -174,6 +175,41 @@ const createStockTransferVoucherRouter = ({
     },
   );
 
+  router.get(
+    "/gate-pass",
+    requirePermission("VOUCHER", scopeKey, "print"),
+    async (req, res, next) => {
+      try {
+        const voucherNo = parseVoucherNo(req.query?.voucher_no);
+        if (!voucherNo) {
+          setNotice(res, res.locals.t("error_invalid_id"), true);
+          return res.redirect(req.baseUrl);
+        }
+
+        const voucher = await loadStockTransferVoucherDetails({
+          req,
+          voucherTypeCode,
+          voucherNo,
+        });
+        if (!voucher) {
+          setNotice(res, res.locals.t("generic_error"), true);
+          return res.redirect(req.baseUrl);
+        }
+
+        return res.render("vouchers/stn/gate-pass", {
+          t: res.locals.t,
+          voucher,
+          titleKey,
+          voucherTypeCode,
+          mode: normalizedMode,
+        });
+      } catch (err) {
+        console.error("Error in StockTransferGatePassService:", err);
+        return next(err);
+      }
+    },
+  );
+
   router.post(
     "/",
     requirePermission("VOUCHER", scopeKey, "view"),
@@ -185,6 +221,7 @@ const createStockTransferVoucherRouter = ({
           stock_type: req.body?.stock_type,
           destination_branch_id: req.body?.destination_branch_id,
           transfer_ref_no: req.body?.transfer_ref_no,
+          bill_book_no: req.body?.bill_book_no,
           transfer_reason: req.body?.transfer_reason,
           transporter_name: req.body?.transporter_name,
           stn_out_voucher_id: req.body?.stn_out_voucher_id,
@@ -212,17 +249,15 @@ const createStockTransferVoucherRouter = ({
           let msg;
           if (saved.negativeStockApprovalReroute === true) {
             msg =
-              res.locals.t("approval_sent_negative_stock") ||
-              "Insufficient stock would make inventory negative. Voucher has been submitted for Administrator approval.";
+              res.locals.t("approval_sent_negative_stock") ;
             const approvalReason = String(saved.approvalReason || "").trim();
             if (approvalReason) {
-              const reasonLabel = res.locals.t("reason") || "Reason";
+              const reasonLabel = res.locals.t("reason") ;
               msg = `${msg} ${reasonLabel}: ${approvalReason}`;
             }
           } else {
             msg = saved.permissionReroute
-              ? res.locals.t("approval_sent") ||
-                "Change submitted for Administrator approval."
+              ? res.locals.t("approval_sent") 
               : res.locals.t("approval_submitted");
           }
           setNotice(res, msg, true);
@@ -259,14 +294,13 @@ const createStockTransferVoucherRouter = ({
 
         if (saved.queuedForApproval) {
           const msg = saved.permissionReroute
-            ? res.locals.t("approval_sent") ||
-              "Change submitted for Administrator approval."
+            ? res.locals.t("approval_sent") 
             : res.locals.t("approval_submitted");
           setNotice(res, msg, true);
         } else {
           setNotice(
             res,
-            res.locals.t("deleted_successfully") || "Deleted successfully.",
+            res.locals.t("deleted_successfully") ,
           );
         }
 

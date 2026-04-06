@@ -8,7 +8,14 @@
     <div class="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 shadow-sm">
       <span class="text-[10px] uppercase tracking-[0.2em] text-muted"><%= t("branch") %></span>
       <% if (branchScope && branchScope.length > 1) { %>
-        <select id="branch-select" name="branch_id" class="bg-transparent text-xs font-semibold text-slate-700 focus:outline-none" onchange="this.form.submit()">
+        <select
+          id="branch-select"
+          name="branch_id"
+          class="min-w-12 border-0 bg-transparent py-0 pl-1 pr-4 text-sm font-semibold text-slate-700"
+          data-searchable-select="true"
+          data-searchable-variant="navbar"
+          onchange="if (window.__syncBranchSelection) window.__syncBranchSelection(this.value); this.form.submit()"
+        >
         <% if (branchOptions && branchOptions.length) { %>
             <% branchOptions.forEach(function(branch) { %>
               <option value="<%= branch.id %>" <%= Number(branch.id) === branchId ? "selected" : "" %>>

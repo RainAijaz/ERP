@@ -605,7 +605,7 @@ router.post("/bulk-upsert", requirePermission("SCREEN", page.scopeKey, "create")
         queued: true,
         approval_request_id: approval.requestId || null,
         approvals_url: canViewApprovals ? "/administration/approvals" : null,
-        message: res.locals.t("approval_sent") || res.locals.t("approval_submitted") || "Change submitted for Administrator approval.",
+        message: res.locals.t("approval_sent") || res.locals.t("approval_submitted") ,
       });
     }
 
@@ -638,7 +638,7 @@ router.post("/bulk-upsert", requirePermission("SCREEN", page.scopeKey, "create")
       ok: true,
       created: result.created,
       updated: result.updated,
-      message: res.locals.t("success_bulk_commission_saved") || res.locals.t("saved") || "Saved",
+      message: res.locals.t("success_bulk_commission_saved") || res.locals.t("saved") ,
     });
   } catch (err) {
     console.error("Error in CommissionRulesService:", err);

@@ -71,11 +71,11 @@ const formatQty = (value) => formatNumberDisplay(value, { decimals: 3, fallback:
 const formatMoney = (value, digits = 2) => formatNumberDisplay(value, { decimals: digits, fallback: "0" });
 const resolveCustomerOptionName = (customer) => { if (!customer) return "-"; if (locale === "ur") return String(customer.name_ur || customer.name || "-"); return String(customer.name || customer.name_ur || "-"); };
 const resolveRowCustomerName = (row) => { if (!row) return "-"; if (row.customer_party_id) { if (locale === "ur") return String(row.customer_name_ur || row.customer_name_en || "-"); return String(row.customer_name_en || row.customer_name_ur || "-"); } return String(row.walk_in_customer_name || "-"); };
-const rowStatusLabel = (value) => String(value || "").trim().toUpperCase() === "LOOSE" ? (t("unit_pair") === "unit_pair" ? "Pair" : t("unit_pair")) : (t("unit_dozen") === "unit_dozen" ? "Dozen" : t("unit_dozen"));
+const rowStatusLabel = (value) => String(value || "").trim().toUpperCase() === "LOOSE" ? (t("unit_pair")) : (t("unit_dozen"));
 const rowStatusTone = (value) => String(value || "").trim().toUpperCase() === "LOOSE" ? "border-amber-300 bg-amber-50 text-amber-800" : "border-slate-300 bg-slate-100 text-slate-700";
 const paymentTypeLabel = (value) => String(value || "").trim().toUpperCase() === "CASH" ? t("cash_sale") : String(value || "").trim().toUpperCase() === "CREDIT" ? t("credit_sale") : "-";
 const paymentTypeTone = (value) => String(value || "").trim().toUpperCase() === "CASH" ? "border-emerald-300 bg-emerald-50 text-emerald-700" : String(value || "").trim().toUpperCase() === "CREDIT" ? "border-amber-300 bg-amber-50 text-amber-700" : "border-slate-300 bg-slate-50 text-slate-700";
-const voucherStatusLabel = (value) => { const normalized = String(value || "").trim().toUpperCase(); if (normalized === "APPROVED") return t("approved") === "approved" ? "Approved" : t("approved"); if (normalized === "PENDING") return t("pending") === "pending" ? "Pending" : t("pending"); if (normalized === "REJECTED") return t("rejected") === "rejected" ? "Rejected" : t("rejected"); return normalized || "-"; };
+const voucherStatusLabel = (value) => { const normalized = String(value || "").trim().toUpperCase(); if (normalized === "APPROVED") return t("approved"); if (normalized === "PENDING") return t("pending"); if (normalized === "REJECTED") return t("rejected"); return normalized || "-"; };
 const voucherStatusTone = (value) => { const normalized = String(value || "").trim().toUpperCase(); if (normalized === "APPROVED") return "border-emerald-300 bg-emerald-50 text-emerald-700"; if (normalized === "PENDING") return "border-amber-300 bg-amber-50 text-amber-700"; if (normalized === "REJECTED") return "border-rose-300 bg-rose-50 text-rose-700"; return "border-slate-300 bg-slate-50 text-slate-700"; };
 const remainingTone = (value) => Number(value || 0) > 0 ? "border-amber-300 bg-amber-50 text-amber-700" : "border-emerald-300 bg-emerald-50 text-emerald-700";
 const advancedFilterEntries = [
@@ -122,8 +122,8 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
             class="relative inline-flex h-10 w-10 items-center justify-center self-end rounded-lg border border-slate-300 bg-white text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
             data-advanced-filter-toggle
             aria-expanded="false"
-            aria-label="<%= t('advanced_filters') !== 'advanced_filters' ? t('advanced_filters') : 'Advanced Filters' %>"
-            title="<%= t('advanced_filters') !== 'advanced_filters' ? t('advanced_filters') : 'Advanced Filters' %>"
+            aria-label="<%= t('advanced_filters') %>"
+            title="<%= t('advanced_filters') %>"
           >
             <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" aria-hidden="true">
               <path d="M3 5h14M6 10h8M8 15h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
@@ -134,7 +134,7 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
           </button>
           <% if (advancedFilterCount > 0) { %>
             <div class="text-right text-xs font-medium text-slate-600 sm:max-w-[32rem]">
-              <span class="font-semibold text-slate-700"><%= t("advanced_filters") !== "advanced_filters" ? t("advanced_filters") : "Advanced Filters" %>:</span>
+              <span class="font-semibold text-slate-700"><%= t("advanced_filters") %>:</span>
               <span><%= advancedFilterSummary %></span>
             </div>
           <% } %>
@@ -422,7 +422,7 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                     <div class="flex flex-col gap-2 rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 lg:flex-row lg:items-center lg:justify-between">
                       <% if (selectedOrderBy === "voucher") { %>
                         <div class="min-w-0 flex flex-wrap items-center gap-2">
-                          <span class="rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white">VR No. <%= group.voucher_no || "-" %></span>
+                          <span class="rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white">VR. NO. <%= group.voucher_no || "-" %></span>
                           <% if (group.bill_number) { %>
                             <span class="rounded-md border border-white/30 bg-white/10 px-2 py-0.5 text-xs font-semibold text-white"><%= `${t("bill_number")}: ${group.bill_number}` %></span>
                           <% } %>
@@ -883,3 +883,4 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
 
   render();
 })();</script>
+

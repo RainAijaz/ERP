@@ -38,11 +38,11 @@
     return v && v !== "source_production_voucher" ? v : "Source Production Voucher";
   })();
   const itemLabel = selectedType === "RAWMATERIAL"
-    ? (t("raw_material") && t("raw_material") !== "raw_material" ? t("raw_material") : "Raw Material")
+    ? (t("raw_material") && t("raw_material"))
     : t("sku");
   const secondaryLabel = selectedType === "RAWMATERIAL"
     ? t("articles")
-    : (t("article") && t("article") !== "article" ? t("article") : "Article");
+    : (t("article") && t("article"));
   const orderByLabel = (() => {
     const v = t("order_by");
     return v && v !== "order_by" ? v : "Order By";
@@ -286,7 +286,11 @@
             <% detailGroups.forEach((group) => { %>
               <tr class="bg-slate-700 text-white" data-row data-active="true">
                 <td colspan="<%= includeBranchColumn ? 11 : 10 %>" class="px-3 py-1.5">
-                  <span class="inline-flex items-center rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white"><%= orderByLabel %>: <%= group.label || "-" %></span>
+                  <% if (selectedOrderBy === "voucher") { %>
+                    <span class="inline-flex items-center rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white">VR. NO. <%= group.label || "-" %></span>
+                  <% } else { %>
+                    <span class="inline-flex items-center rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white"><%= orderByLabel %>: <%= group.label || "-" %></span>
+                  <% } %>
                 </td>
               </tr>
               <% (group.rows || []).forEach((row) => { %>

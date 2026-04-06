@@ -23,6 +23,7 @@
   const isDeletedVoucher = String(selectedVoucher?.status || "").toUpperCase() === "REJECTED";
   const canEditVoucher = typeof allowEdit === "boolean" ? allowEdit : true;
   const canDeleteVoucher = typeof allowDelete === "boolean" ? allowDelete : true;
+  const canPrintGatePass = typeof allowPrintGatePass === "boolean" ? allowPrintGatePass : true;
   const canSaveVoucher = !isDeletedVoucher && (!selectedVoucher || canEditVoucher);
   const canDeleteCurrentVoucher = !!selectedVoucher && !isDeletedVoucher && canDeleteVoucher;
   const selectedPaymentType = String(selectedVoucher?.payment_type || "CASH").toUpperCase() === "CREDIT" ? "CREDIT" : "CASH";
@@ -68,7 +69,7 @@
             <div class="ml-auto flex items-center gap-2">
               <button type="button" class="rounded-xl border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-rose-700 disabled:opacity-40" data-delete-voucher <%= canDeleteCurrentVoucher ? '' : 'disabled' %>><%= t("delete") %></button>
               <button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700" onclick="window.print()"><%= t("print") %></button>
-              <button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700 disabled:opacity-40" data-print-gate-pass <%= selectedVoucherNo ? '' : 'disabled' %>><%= t("print_gate_pass") %></button>
+              <button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700 disabled:opacity-40" data-print-gate-pass <%= selectedVoucherNo && canPrintGatePass ? '' : 'disabled' %>><%= t("print_gate_pass") %></button>
             </div>
           </div>
         </div>
@@ -91,7 +92,7 @@
                 <button type="button" class="rounded-lg text-xs font-semibold uppercase tracking-[0.08em] transition <%= selectedPaymentType === 'CREDIT' ? 'bg-accent text-white shadow-sm' : 'text-slate-700' %>" data-payment-type-option="CREDIT" aria-pressed="<%= selectedPaymentType === 'CREDIT' ? 'true' : 'false' %>"><%= t("credit_sale") %></button>
               </div>
             </div>
-            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3" data-receive-account-field data-receive-account-label><%= t("receive_into_account_if_any") === "receive_into_account_if_any" ? t("receive_into_account") : t("receive_into_account_if_any") %></label>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3" data-receive-account-field data-receive-account-label><%= t("receive_into_account_if_any") %></label>
             <div class="lg:col-span-4" data-receive-account-field><select name="receive_into_account_id" data-receive-account class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified"><option value=""><%= t("select_account_name") %></option><% (options.receiveAccounts || []).forEach((a) => { %><option value="<%= a.id %>" <%= Number(selectedVoucher?.receive_into_account_id || 0) === Number(a.id) ? "selected" : "" %>><%= a.name %></option><% }) %></select></div>
           </div>
         <% } else { %>
@@ -255,6 +256,28 @@
     <form method="post" action="<%= (basePath || '') + '/delete' %>" class="hidden" data-delete-voucher-form><input type="hidden" name="_csrf" value="<%= csrfToken %>"><input type="hidden" name="voucher_id" value="<%= selectedVoucher?.id || '' %>"></form>
 
     <% if (!isSalesOrder) { %>
+      <div class="fixed inset-0 z-40 hidden items-center justify-center bg-slate-900/50 p-3" data-gate-pass-modal aria-hidden="true">
+        <div class="w-full max-w-6xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+          <div class="flex flex-col gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p class="text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-500"><%= t("gate_pass") %></p>
+              <h3 class="text-base font-semibold text-slate-800"><%= t("print_gate_pass") %></h3>
+              <p class="text-xs text-slate-500" data-gate-pass-voucher-label></p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <a href="#" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700" data-gate-pass-download><%= t("download") %></a>
+              <button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700" data-gate-pass-print><%= t("print") %></button>
+              <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700" data-gate-pass-close aria-label="<%= t('cancel') %>" title="<%= t('cancel') %>"><svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg></button>
+            </div>
+          </div>
+          <div class="h-[72vh] min-h-[420px] bg-slate-100 p-2">
+            <iframe title="<%= t('gate_pass') %>" src="about:blank" class="h-full w-full rounded-xl border border-slate-200 bg-white" data-gate-pass-frame></iframe>
+          </div>
+        </div>
+      </div>
+    <% } %>
+
+    <% if (!isSalesOrder) { %>
       <div class="fixed inset-0 z-40 hidden items-center justify-center bg-slate-900/40 p-3" data-sales-order-picker-modal aria-hidden="true">
         <div class="w-full max-w-6xl rounded-2xl border border-slate-200 bg-white shadow-xl">
           <div class="flex items-center justify-between border-b border-slate-200 px-4 py-3">
@@ -312,6 +335,8 @@
   const canOverrideRateDiscount = <%= canOverrideRateDiscount ? "true" : "false" %>;
   const canSaveVoucher = <%- JSON.stringify(Boolean(canSaveVoucher)) %>;
   const canDeleteCurrentVoucher = <%- JSON.stringify(Boolean(canDeleteCurrentVoucher)) %>;
+  const canPrintGatePass = <%- JSON.stringify(Boolean(canPrintGatePass)) %>;
+  const autoOpenGatePass = <%- JSON.stringify(Boolean(autoOpenGatePass)) %>;
   const actionNotAllowedMessage = <%- JSON.stringify(t("error_action_not_allowed") || t("permission_denied") || t("generic_error")) %>;
   const selectedVoucherNo = <%= selectedVoucherNo ? Number(selectedVoucherNo) : "null" %>;
   const requiredMessage = (label) =>
@@ -378,6 +403,15 @@
   const salesOrderPickerCloseButtons = salesOrderPickerModal
     ? Array.from(salesOrderPickerModal.querySelectorAll("[data-sales-order-picker-close]"))
     : [];
+  const gatePassModal = document.querySelector("[data-gate-pass-modal]");
+  const gatePassFrame = gatePassModal?.querySelector("[data-gate-pass-frame]");
+  const gatePassPrintButton = gatePassModal?.querySelector("[data-gate-pass-print]");
+  const gatePassDownloadLink = gatePassModal?.querySelector("[data-gate-pass-download]");
+  const gatePassVoucherLabel = gatePassModal?.querySelector("[data-gate-pass-voucher-label]");
+  const gatePassCloseButtons = gatePassModal
+    ? Array.from(gatePassModal.querySelectorAll("[data-gate-pass-close]"))
+    : [];
+  let activeGatePassVoucherNo = Number(selectedVoucherNo || 0) || null;
   const salesOrderPickerSelectedLineIds = new Set();
   const salesOrderPickerDeliverQtyMap = new Map();
 
@@ -770,6 +804,51 @@
     salesOrderPickerModal.classList.add("hidden");
     salesOrderPickerModal.classList.remove("flex");
     salesOrderPickerModal.setAttribute("aria-hidden", "true");
+  };
+
+  const buildGatePassUrl = (voucherNo, { embed = false, download = false } = {}) => {
+    const normalizedVoucherNo = Number(voucherNo || 0);
+    if (!Number.isInteger(normalizedVoucherNo) || normalizedVoucherNo <= 0) return "";
+    const params = new URLSearchParams();
+    params.set("voucher_no", String(normalizedVoucherNo));
+    if (embed) params.set("embed", "1");
+    if (download) params.set("download", "1");
+    return `${"<%= basePath || '' %>"}/gate-pass?${params.toString()}`;
+  };
+
+  const closeGatePassModal = () => {
+    if (!gatePassModal) return;
+    gatePassModal.classList.add("hidden");
+    gatePassModal.classList.remove("flex");
+    gatePassModal.setAttribute("aria-hidden", "true");
+    if (gatePassFrame) gatePassFrame.src = "about:blank";
+  };
+
+  const openGatePassModal = (voucherNo, { cleanUrl = false } = {}) => {
+    const normalizedVoucherNo = Number(voucherNo || 0);
+    if (!canPrintGatePass) {
+      window.showVoucherError(actionNotAllowedMessage);
+      return;
+    }
+    if (!Number.isInteger(normalizedVoucherNo) || normalizedVoucherNo <= 0 || !gatePassModal || !gatePassFrame) return;
+    activeGatePassVoucherNo = normalizedVoucherNo;
+    gatePassFrame.src = buildGatePassUrl(normalizedVoucherNo, { embed: true });
+    if (gatePassDownloadLink) {
+      gatePassDownloadLink.href = buildGatePassUrl(normalizedVoucherNo, { download: true });
+      gatePassDownloadLink.setAttribute("download", "");
+    }
+    if (gatePassVoucherLabel) {
+      gatePassVoucherLabel.textContent = `${"<%= t('voucher_no') %>"}: ${normalizedVoucherNo}`;
+    }
+    gatePassModal.classList.remove("hidden");
+    gatePassModal.classList.add("flex");
+    gatePassModal.setAttribute("aria-hidden", "false");
+
+    if (cleanUrl) {
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.delete("open_gate_pass");
+      window.history.replaceState({}, "", `${currentUrl.pathname}${currentUrl.search}${currentUrl.hash}`);
+    }
   };
 
   const syncReceiveIntoAccountState = ({
@@ -1804,7 +1883,37 @@
   });
   document.querySelector("[data-print-gate-pass]")?.addEventListener("click", () => {
     if (!selectedVoucherNo) return;
-    window.open(`${"<%= basePath || '' %>"}/gate-pass?voucher_no=${selectedVoucherNo}`, "_blank", "noopener,noreferrer");
+    if (isSalesOrderVoucher) {
+      window.open(`${"<%= basePath || '' %>"}/gate-pass?voucher_no=${selectedVoucherNo}`, "_blank", "noopener,noreferrer");
+      return;
+    }
+    openGatePassModal(selectedVoucherNo);
+  });
+  gatePassCloseButtons.forEach((btn) => {
+    btn.addEventListener("click", closeGatePassModal);
+  });
+  gatePassModal?.addEventListener("click", (event) => {
+    if (event.target === gatePassModal) closeGatePassModal();
+  });
+  gatePassPrintButton?.addEventListener("click", () => {
+    try {
+      const printWindow = gatePassFrame?.contentWindow;
+      if (!printWindow) return;
+      printWindow.focus();
+      printWindow.print();
+    } catch (err) {
+      window.showVoucherError("<%= t('generic_error') %>");
+    }
+  });
+  gatePassDownloadLink?.addEventListener("click", (event) => {
+    if (!activeGatePassVoucherNo) {
+      event.preventDefault();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (!gatePassModal || gatePassModal.classList.contains("hidden")) return;
+    closeGatePassModal();
   });
 
   [voucherDateInput, dueDateInput].forEach((dateEl) => {
@@ -1945,6 +2054,9 @@
     if (!rows.length) rows.push(emptyRow());
     render();
     syncHeaderUi();
+    if (autoOpenGatePass && selectedVoucherNo) {
+      openGatePassModal(selectedVoucherNo, { cleanUrl: true });
+    }
     form.dataset.salesVoucherInitDone = "1";
     return true;
   } catch (err) {

@@ -181,17 +181,15 @@ router.post("/", async (req, res, next) => {
       let msg;
       if (saved.negativeStockApprovalReroute === true) {
         msg =
-          res.locals.t("approval_sent_negative_stock") ||
-          "Insufficient stock would make inventory negative. Voucher has been submitted for Administrator approval.";
+          res.locals.t("approval_sent_negative_stock") ;
         const approvalReason = String(saved.approvalReason || "").trim();
         if (approvalReason) {
-          const reasonLabel = res.locals.t("reason") || "Reason";
+          const reasonLabel = res.locals.t("reason") ;
           msg = `${msg} ${reasonLabel}: ${approvalReason}`;
         }
       } else {
         msg = saved.permissionReroute
-          ? res.locals.t("approval_sent") ||
-            "Change submitted for Administrator approval."
+          ? res.locals.t("approval_sent") 
           : res.locals.t("approval_submitted");
       }
       setNotice(res, msg, true);
@@ -225,14 +223,13 @@ router.post("/delete", async (req, res, next) => {
 
     if (saved.queuedForApproval) {
       const msg = saved.permissionReroute
-        ? res.locals.t("approval_sent") ||
-          "Change submitted for Administrator approval."
+        ? res.locals.t("approval_sent") 
         : res.locals.t("approval_submitted");
       setNotice(res, msg, true);
     } else {
       setNotice(
         res,
-        res.locals.t("deleted_successfully") || "Deleted successfully.",
+        res.locals.t("deleted_successfully") ,
       );
     }
 

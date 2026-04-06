@@ -1,49 +1,93 @@
 <!doctype html>
-<html lang="en">
+<%
+  const normalizedLocale = String(locale || "en").trim().toLowerCase() === "ur" ? "ur" : "en";
+  const normalizedDir = normalizedLocale === "ur" ? "rtl" : "ltr";
+%>
+<html lang="<%= normalizedLocale %>" dir="<%= normalizedDir %>">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title><%= t("print_gate_pass") %> - <%= gatePass?.voucher_no || "" %></title>
-    <link rel="stylesheet" href="/styles.css" />
+    <%- include("../../base/partials/gate-pass-print-style") %>
   </head>
-  <body class="bg-white p-6 text-slate-800">
-    <div class="mx-auto max-w-4xl space-y-4">
-      <div class="flex items-center justify-between">
-        <h1 class="text-xl font-semibold"><%= t("print_gate_pass") %></h1>
-        <button type="button" class="rounded border border-slate-300 px-3 py-1 text-xs font-semibold" onclick="window.print()"><%= t("print") %></button>
-      </div>
-      <div class="grid grid-cols-2 gap-2 text-sm">
-        <div><strong><%= t("voucher_no") %>:</strong> <%= gatePass?.voucher_no || "" %></div>
-        <div><strong><%= t("date") %>:</strong> <%= formatDateDisplay(gatePass?.voucher_date, "") %></div>
-        <div><strong><%= t("customer_name") %>:</strong> <%= gatePass?.customer_name || "" %></div>
-        <div><strong><%= t("phone_number") %>:</strong> <%= gatePass?.customer_phone_number || "" %></div>
-        <div><strong><%= t("delivery_method") %>:</strong> <%= gatePass?.delivery_method || "" %></div>
-      </div>
-      <table class="w-full border border-slate-200 text-xs">
-        <thead class="bg-slate-50 uppercase tracking-[0.08em] text-slate-500">
-          <tr>
-            <th class="border border-slate-200 p-2 text-left"><%= t("sr_no") %></th>
-            <th class="border border-slate-200 p-2 text-left"><%= t("sku_code") %></th>
-            <th class="border border-slate-200 p-2 text-left"><%= t("article_name") %></th>
-            <th class="border border-slate-200 p-2 text-left"><%= t("unit") %></th>
-            <th class="border border-slate-200 p-2 text-right"><%= t("sale_qty") %></th>
-            <th class="border border-slate-200 p-2 text-right"><%= t("pairs") %></th>
-          </tr>
-        </thead>
-        <tbody>
-          <% (gatePass?.lines || []).forEach((line, idx) => { %>
-            <tr>
-              <td class="border border-slate-200 p-2"><%= idx + 1 %></td>
-              <td class="border border-slate-200 p-2"><%= line.sku_code || "" %></td>
-              <td class="border border-slate-200 p-2"><%= line.item_name || "" %></td>
-              <td class="border border-slate-200 p-2"><%= String(line.row_status || "").trim().toUpperCase() === "LOOSE" ? (t("unit_pair") || "Pair") : (t("unit_dozen") || "Dozen") %></td>
-              <td class="border border-slate-200 p-2 text-right"><%= formatNumberDisplay(line.sale_qty || 0, { decimals: 3, fallback: "0" }) %></td>
-              <td class="border border-slate-200 p-2 text-right"><%= formatNumberDisplay(line.total_pairs || 0, { decimals: 3, fallback: "0" }) %></td>
-            </tr>
-          <% }) %>
-        </tbody>
-      </table>
-    </div>
-    <script>window.addEventListener("load", () => window.focus());</script>
+  <body>
+    <%
+      const salesRows = gatePass?.lines || [];
+      const unitTotals = { pair: 0, dozen: 0 };
+      salesRows.forEach((line) => {
+        const unitKey = String(line?.row_status || "").trim().toUpperCase() === "LOOSE" ? "pair" : "dozen";
+        const qty = Number(line?.sale_qty || 0);
+        if (!Number.isFinite(qty) || qty <= 0) return;
+        unitTotals[unitKey] = Number((Number(unitTotals[unitKey] || 0) + qty).toFixed(3));
+      });
+
+      const unitPairLabel = String(t("unit_pair") || "Pair").trim();
+      const unitDozenLabel = String(t("unit_dozen") || "Dozen").trim();
+      const thankYouText =
+        t("thank_you_for_your_visit") === "thank_you_for_your_visit"
+          ? "THANK YOU FOR YOUR VISIT"
+          : t("thank_you_for_your_visit");
+      const preparedByText =
+        t("prepared_by") === "prepared_by" ? "Prepared By" : t("prepared_by");
+      const checkedByText =
+        t("checked_by") === "checked_by" ? "Checked By" : t("checked_by");
+      const approvedByText =
+        t("approved_by") === "approved_by" ? "Approved By" : t("approved_by");
+
+      const summaryRows = [];
+      if (Number(unitTotals.dozen || 0) > 0) {
+        summaryRows.push({
+          labelText: `${t("total")} ${unitDozenLabel}`,
+          value: formatNumberDisplay(unitTotals.dozen, { decimals: 3, fallback: "0" }),
+        });
+      }
+      if (Number(unitTotals.pair || 0) > 0) {
+        summaryRows.push({
+          labelText: `${t("total")} ${unitPairLabel}`,
+          value: formatNumberDisplay(unitTotals.pair, { decimals: 3, fallback: "0" }),
+        });
+      }
+
+      const gatePassView = {
+        titleKey: "print_gate_pass",
+        subtitleKey: "sales_voucher",
+        hideToolbar: Boolean(embedMode),
+        topInfo: [
+          { labelKey: "voucher_no", value: gatePass?.voucher_no || "-" },
+          { labelKey: "date", value: formatDateDisplay(gatePass?.voucher_date, "") || "-" },
+          { labelKey: "delivery_method", value: gatePass?.delivery_method || "-" },
+          { labelKey: "status", value: gatePass?.status || "-" },
+        ],
+        metaInfo: [
+          { labelKey: "customer_name", value: gatePass?.customer_name || "-" },
+          { labelKey: "remarks", value: gatePass?.remarks || "-", full: true },
+        ],
+        columns: [
+          { key: "sr_no", labelKey: "sr_no" },
+          { key: "sku_code", labelKey: "sku_code" },
+          { key: "item_name", labelKey: "article_name" },
+          { key: "unit", labelKey: "unit" },
+          { key: "sale_qty", labelKey: "sale_qty", align: "right" },
+        ],
+        rows: salesRows,
+        summaryRows,
+        closingNoteText: thankYouText,
+        signatures: [
+          { labelText: preparedByText },
+          { labelText: checkedByText },
+          { labelText: approvedByText },
+        ],
+        cellValue: (line, column, rowIndex) => {
+          if (column.key === "sr_no") return rowIndex + 1;
+          if (column.key === "unit") {
+            return String(line?.row_status || "").trim().toUpperCase() === "LOOSE" ? unitPairLabel : unitDozenLabel;
+          }
+          if (column.key === "sale_qty") return formatNumberDisplay(line?.sale_qty || 0, { decimals: 3, fallback: "0" });
+          return line?.[column.key] || "-";
+        },
+      };
+    %>
+
+    <%- include("../../base/partials/gate-pass-document", { gatePassView }) %>
   </body>
 </html>

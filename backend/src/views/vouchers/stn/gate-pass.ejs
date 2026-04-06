@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title><%= t("gate_pass") %> - <%= voucher?.voucher_no || "" %></title>
+    <%- include("../../base/partials/gate-pass-print-style") %>
+  </head>
+  <body>
+    <%
+      const gatePassView = {
+        titleKey: "gate_pass",
+        subtitleText: t(titleKey || "stock_transfer"),
+        topInfo: [
+          { labelKey: "voucher_no", value: voucher?.voucher_no || "-" },
+          { labelKey: "date", value: formatDateDisplay(voucher?.voucher_date, "") || "-" },
+          { labelKey: "status", value: voucher?.status || "-" },
+          { labelKey: "reference_no", value: voucher?.transfer_ref_no || voucher?.bill_book_no || "-" },
+        ],
+        metaInfo: [
+          { labelKey: "source_branch", value: voucher?.source_branch_name || "-" },
+          { labelKey: "destination_branch", value: voucher?.destination_branch_name || "-" },
+          { labelKey: "remarks", value: voucher?.remarks || "-", full: true },
+        ],
+        columns: [
+          { key: "sr_no", labelKey: "sr_no" },
+          { key: "sku_code", labelKey: "sku_code" },
+          { key: "display_name", labelKey: "article_name" },
+          { key: "stock_type", labelKey: "stock_type" },
+          { key: "uom_code", labelKey: "uom" },
+          { key: "qty", labelKey: "quantity", align: "right" },
+        ],
+        rows: voucher?.lines || [],
+        cellValue: (line, column, rowIndex) => {
+          if (column.key === "sr_no") return rowIndex + 1;
+          if (column.key === "qty") return formatNumberDisplay(line?.qty || 0, { decimals: 3, fallback: "0" });
+          if (column.key === "uom_code") return line?.uom_code || line?.uom_name || "-";
+          return line?.[column.key] || "-";
+        },
+      };
+    %>
+
+    <%- include("../../base/partials/gate-pass-document", { gatePassView }) %>
+  </body>
+</html>

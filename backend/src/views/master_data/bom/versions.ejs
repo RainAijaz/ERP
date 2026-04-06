@@ -2,18 +2,18 @@
   <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
     <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
       <div class="space-y-1">
-        <h1 class="text-2xl font-display text-ink"><%= t("bom_versions") || "BOM Versions" %></h1>
-        <p class="text-sm text-muted"><%= t("bom_versions_description") || "Track version history and status by item and level." %></p>
+        <h1 class="text-2xl font-display text-ink"><%= t("bom_versions")  %></h1>
+        <p class="text-sm text-muted"><%= t("bom_versions_description")  %></p>
       </div>
       <div class="flex flex-wrap gap-2">
         <a href="<%= basePath %>" class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800">
-          <%= t("bom_list") || "BOM Register" %>
+          <%= t("bom_list")  %>
         </a>
         <a href="<%= basePath %>/new" class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800">
-          <%= t("add") %> <%= t("bom") || "BOM" %>
+          <%= t("add") %> <%= t("bom")  %>
         </a>
         <a href="<%= basePath %>/versions" class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800">
-          <%= t("bom_versions") || "Versions" %>
+          <%= t("bom_versions")  %>
         </a>
       </div>
     </div>
@@ -22,15 +22,15 @@
   <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md">
     <form method="GET" class="flex flex-wrap gap-2 border-b border-slate-200 px-5 py-4">
       <select name="item_id" class="min-w-55 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" data-searchable-select="true" data-searchable-variant="unified">
-        <option value=""><%= t("all") %> <%= t("article_name") || "Article" %></option>
+        <option value=""><%= t("all") %> <%= t("article_name")  %></option>
         <% (options?.items || []).forEach(function(item) { %>
           <option value="<%= item.id %>" <%= String(filters?.item_id || '') === String(item.id) ? 'selected' : '' %>><%= item.code %> - <%= item.name %></option>
         <% }) %>
       </select>
       <select name="level" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" data-searchable-select="true" data-searchable-variant="unified">
         <option value=""><%= t("all") %></option>
-        <option value="FINISHED" <%= (filters?.level || '').toUpperCase() === 'FINISHED' ? 'selected' : '' %>><%= t("finished") || "Finished" %></option>
-        <option value="SEMI_FINISHED" <%= (filters?.level || '').toUpperCase() === 'SEMI_FINISHED' ? 'selected' : '' %>><%= t("semi_finished") || "Semi Finished" %></option>
+        <option value="FINISHED" <%= (filters?.level || '').toUpperCase() === 'FINISHED' ? 'selected' : '' %>><%= t("finished")  %></option>
+        <option value="SEMI_FINISHED" <%= (filters?.level || '').toUpperCase() === 'SEMI_FINISHED' ? 'selected' : '' %>><%= t("semi_finished")  %></option>
       </select>
       <button type="submit" class="rounded-xl bg-slate-900 px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white"><%= t("apply") %></button>
       <a href="<%= basePath %>/versions" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600"><%= t("clear") %></a>
@@ -40,13 +40,13 @@
       <table class="min-w-full text-sm">
         <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
           <tr>
-            <th class="px-4 py-3 text-left"><%= t("sr_no") || "Sr No" %></th>
-            <th class="px-4 py-3 text-left"><%= t("article_name") || "Article Name" %></th>
-            <th class="px-4 py-3 text-left"><%= t("level") || "Level" %></th>
-            <th class="px-4 py-3 text-left"><%= t("version") || "Version" %></th>
+            <th class="px-4 py-3 text-left"><%= t("sr_no")  %></th>
+            <th class="px-4 py-3 text-left"><%= t("article_name")  %></th>
+            <th class="px-4 py-3 text-left"><%= t("level")  %></th>
+            <th class="px-4 py-3 text-left"><%= t("version")  %></th>
             <th class="px-4 py-3 text-left"><%= t("status") %></th>
-            <th class="px-4 py-3 text-left"><%= t("created") || "Created" %></th>
-            <th class="px-4 py-3 text-left"><%= t("approved") || "Approved" %></th>
+            <th class="px-4 py-3 text-left"><%= t("created")  %></th>
+            <th class="px-4 py-3 text-left"><%= t("approved")  %></th>
             <th class="px-4 py-3 text-right"><%= t("actions") %></th>
           </tr>
         </thead>
@@ -64,7 +64,7 @@
               <td class="px-4 py-3 text-slate-700"><%= formatDateDisplay(row.created_at) %></td>
               <td class="px-4 py-3 text-slate-700"><%= formatDateDisplay(row.approved_at) %></td>
               <td class="px-4 py-3 text-right">
-                <a href="<%= basePath %>/<%= row.id %>" class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900" title="<%= t('view') || 'View' %>" aria-label="<%= t('view') || 'View' %>">
+                <a href="<%= basePath %>/<%= row.id %>" class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900" title="<%= t('view')  %>" aria-label="<%= t('view')  %>">
                   <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                     <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
                     <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.6" />

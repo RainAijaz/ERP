@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS erp.stock_transfer_out_header (
   voucher_id           bigint PRIMARY KEY REFERENCES erp.voucher_header(id) ON DELETE CASCADE, -- STN_OUT voucher id
   dest_branch_id       bigint NOT NULL REFERENCES erp.branches(id) ON DELETE RESTRICT,
   dispatch_date        date NOT NULL DEFAULT CURRENT_DATE,
+  bill_book_no         text,
 
   status               erp.stock_transfer_status NOT NULL DEFAULT 'DISPATCHED',
 

@@ -326,11 +326,11 @@
               <% if (selectedOrderBy === "party") { %>
                 <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('sales_order') %></th>
                 <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('date') %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('product') === 'product' ? t('products') : t('product') %></th>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('product') %></th>
               <% } else if (selectedOrderBy === "voucher") { %>
                 <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('date') %></th>
                 <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('customer_name') %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('product') === 'product' ? t('products') : t('product') %></th>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('product') %></th>
               <% } else { %>
                 <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('customer_name') %></th>
                 <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('sales_order') %></th>

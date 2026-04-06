@@ -141,7 +141,7 @@ VALUES
   ('STN_OUT',          'Stock Transfer Note (Outward)',          false, true,  false),
   ('GRN_IN',           'Internal GRN (Incoming Transfer)',       false, true,  false),
   ('OPENING_STOCK',    'Opening Stock Voucher',                  true,  true,  true),
-  ('STOCK_COUNT_ADJ',  'Stock Count Adjustment Voucher',         true,  true,  true),
+  ('STOCK_COUNT_ADJ',  'Stock Count Voucher',                    true,  true,  true),
 
   -- PRODUCTION
   ('DCV',              'Department Completion Voucher (DCV)',    true,  true,  true),
@@ -297,7 +297,7 @@ VALUES
   ('VOUCHER','STN_OUT','Stock Transfer Note (Outward)', 'Inventory'),
   ('VOUCHER','GRN_IN','Internal GRN (Incoming Transfer)', 'Inventory'),
   ('VOUCHER','OPENING_STOCK','Opening Stock Voucher', 'Inventory'),
-  ('VOUCHER','STOCK_COUNT_ADJ','Stock Count Adjustment Voucher', 'Inventory'),
+  ('VOUCHER','STOCK_COUNT_ADJ','Stock Count Voucher',            'Inventory'),
 
   -- Production
   ('VOUCHER','DCV','Department Completion Voucher (DCV)', 'Production'),
@@ -407,6 +407,159 @@ ON CONFLICT (role_id, scope_id) DO UPDATE SET
   can_delete  = EXCLUDED.can_delete,
   can_print   = EXCLUDED.can_print,
   can_approve = EXCLUDED.can_approve;
+
+
+-- =====================================================================
+-- C1) OPTIONAL URDU BACKFILL FOR SEEDED MASTER DATA
+-- NOTE:
+--   Applies ONLY when *_ur columns exist in your schema.
+--   Safe on older schemas because each update is guarded by column checks.
+-- =====================================================================
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'erp' AND table_name = 'branches' AND column_name = 'name_ur'
+  ) THEN
+    UPDATE erp.branches b
+    SET name_ur = CASE b.code
+      WHEN '124' THEN '۱۲۴'
+      WHEN '207' THEN '۲۰۷'
+      ELSE b.name_ur
+    END
+    WHERE (b.name_ur IS NULL OR trim(b.name_ur) = '')
+      AND b.code IN ('124', '207');
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'erp' AND table_name = 'role_templates' AND column_name = 'name_ur'
+  ) THEN
+    UPDATE erp.role_templates r
+    SET name_ur = CASE
+      WHEN lower(trim(r.name)) = 'admin' THEN 'ایڈمن'
+      ELSE r.name_ur
+    END
+    WHERE (r.name_ur IS NULL OR trim(r.name_ur) = '');
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'erp' AND table_name = 'role_templates' AND column_name = 'description_ur'
+  ) THEN
+    UPDATE erp.role_templates r
+    SET description_ur = CASE
+      WHEN lower(trim(r.name)) = 'admin' THEN 'سسٹم ایڈمنسٹریٹر (مکمل منظوری اختیار)'
+      ELSE r.description_ur
+    END
+    WHERE (r.description_ur IS NULL OR trim(r.description_ur) = '');
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'erp' AND table_name = 'voucher_type' AND column_name = 'name_ur'
+  ) THEN
+    UPDATE erp.voucher_type v
+    SET name_ur = CASE v.code
+      WHEN 'CASH_VOUCHER' THEN 'کیش واؤچر'
+      WHEN 'JOURNAL_VOUCHER' THEN 'جرنل واؤچر'
+      WHEN 'BANK_VOUCHER' THEN 'بینک واؤچر'
+      WHEN 'PO' THEN 'خرید آرڈر'
+      WHEN 'PI' THEN 'خرید انوائس'
+      WHEN 'PR' THEN 'خرید واپسی'
+      WHEN 'STN_OUT' THEN 'اسٹاک ٹرانسفر نوٹ (روانہ)'
+      WHEN 'GRN_IN' THEN 'داخلی جی آر این (موصولی ٹرانسفر)'
+      WHEN 'OPENING_STOCK' THEN 'ابتدائی اسٹاک واؤچر'
+      WHEN 'STOCK_COUNT_ADJ' THEN 'اسٹاک گنتی واؤچر'
+      WHEN 'DCV' THEN 'ڈیپارٹمنٹ کمپلیشن واؤچر (ڈی سی وی)'
+      WHEN 'LABOUR_PROD' THEN 'عمومی لیبر پیداوار واؤچر'
+      WHEN 'CONSUMP' THEN 'کنزمپشن واؤچر'
+      WHEN 'PROD_PLAN' THEN 'پروڈکشن پلاننگ'
+      WHEN 'LOSS' THEN 'غیر معمولی نقصان واؤچر'
+      WHEN 'SALES_ORDER' THEN 'سیلز آرڈر واؤچر'
+      WHEN 'SALES_VOUCHER' THEN 'سیلز واؤچر'
+      WHEN 'RDV' THEN 'ریٹرنیبل ڈسپیچ واؤچر'
+      WHEN 'RRV' THEN 'ریٹرنیبل رسید واؤچر'
+      ELSE v.name_ur
+    END
+    WHERE (v.name_ur IS NULL OR trim(v.name_ur) = '');
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'erp' AND table_name = 'return_reasons' AND column_name = 'description_ur'
+  ) THEN
+    UPDATE erp.return_reasons r
+    SET description_ur = CASE r.code
+      WHEN 'WRONG_SIZE' THEN 'غلط سائز موصول ہوا'
+      WHEN 'WRONG_ITEM' THEN 'غلط آئٹم موصول ہوا'
+      WHEN 'QUALITY_DEFECT' THEN 'معیار کا مسئلہ'
+      WHEN 'MISSING_ITEMS' THEN 'اشیاء نامکمل'
+      WHEN 'CUSTOMER_CHANGED_MIND' THEN 'کسٹمر نے فیصلہ تبدیل کیا'
+      WHEN 'LATE_DELIVERY' THEN 'تاخیر سے ڈیلیوری پر واپسی درخواست'
+      WHEN 'OTHER' THEN 'دیگر'
+      ELSE r.description_ur
+    END
+    WHERE (r.description_ur IS NULL OR trim(r.description_ur) = '');
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'erp' AND table_name = 'permission_scope_registry' AND column_name = 'description_ur'
+  ) THEN
+    UPDATE erp.permission_scope_registry p
+    SET description_ur = CASE p.scope_key
+      WHEN 'administration' THEN 'برانچز اور صارفین کی انتظامیہ'
+      WHEN 'master_data' THEN 'ماسٹر ڈیٹا اور سیٹ اپ'
+      WHEN 'hr_payroll' THEN 'ایچ آر اور پے رول'
+      WHEN 'financial' THEN 'مالیاتی اور اکاؤنٹنگ'
+      WHEN 'purchase' THEN 'خریداری'
+      WHEN 'production' THEN 'پیداوار'
+      WHEN 'inventory' THEN 'انوینٹری'
+      WHEN 'outward_returnable' THEN 'آؤٹ ورڈ اور ریٹرنیبل'
+      WHEN 'sales' THEN 'سیلز'
+      WHEN 'reports' THEN 'رپورٹس'
+      ELSE p.description_ur
+    END
+    WHERE p.scope_type = 'MODULE'
+      AND (p.description_ur IS NULL OR trim(p.description_ur) = '');
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'erp' AND table_name = 'permission_scope_registry' AND column_name = 'module_group_ur'
+  ) THEN
+    UPDATE erp.permission_scope_registry p
+    SET module_group_ur = CASE p.module_group
+      WHEN 'Modules' THEN 'ماڈیولز'
+      WHEN 'Administration' THEN 'انتظامیہ'
+      WHEN 'Master Data' THEN 'ماسٹر ڈیٹا'
+      WHEN 'HR & Payroll' THEN 'ایچ آر اور پے رول'
+      WHEN 'Financial' THEN 'مالیاتی'
+      WHEN 'Purchase' THEN 'خریداری'
+      WHEN 'Production' THEN 'پیداوار'
+      WHEN 'Inventory' THEN 'انوینٹری'
+      WHEN 'Outward & Returnable' THEN 'آؤٹ ورڈ اور ریٹرنیبل'
+      WHEN 'Sales' THEN 'سیلز'
+      WHEN 'Reports' THEN 'رپورٹس'
+      ELSE p.module_group_ur
+    END
+    WHERE (p.module_group_ur IS NULL OR trim(p.module_group_ur) = '');
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'erp' AND table_name = 'account_posting_classes' AND column_name = 'name_ur'
+  ) THEN
+    UPDATE erp.account_posting_classes a
+    SET name_ur = CASE a.code
+      WHEN 'bank' THEN 'بینک'
+      WHEN 'cash' THEN 'کیش'
+      ELSE a.name_ur
+    END
+    WHERE (a.name_ur IS NULL OR trim(a.name_ur) = '');
+  END IF;
+END $$;
 
 
 -- =====================================================================

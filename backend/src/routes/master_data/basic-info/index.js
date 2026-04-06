@@ -1050,8 +1050,7 @@ const createHandler = (type) => async (req, res, next) => {
           res,
           page,
           values,
-          res.locals.t("bom_error_department_must_be_production") ||
-            "Selected department must be an active Production department.",
+          res.locals.t("bom_error_department_must_be_production") ,
           "create",
           basePath,
           type,
@@ -1333,8 +1332,7 @@ const updateHandler = (type) => async (req, res, next) => {
           res,
           page,
           values,
-          res.locals.t("bom_error_department_must_be_production") ||
-            "Selected department must be an active Production department.",
+          res.locals.t("bom_error_department_must_be_production") ,
           "edit",
           basePath,
           type,
@@ -1713,8 +1711,7 @@ const deleteHandler = (type) => async (req, res, next) => {
       if (String(deleteErr?.code || "") === "23503") {
         throw new HttpError(
           409,
-          res.locals.t("error_record_in_use") ||
-            "This record is being used in other ERP areas and cannot be deleted.",
+          res.locals.t("error_record_in_use") ,
         );
       }
       throw deleteErr;

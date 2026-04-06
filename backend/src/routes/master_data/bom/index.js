@@ -72,7 +72,7 @@ const renderForm = async (req, res, params = {}) => {
   });
   const errors = params.errors || [];
   const errorMessage = params.errorMessage || null;
-  return renderPage(req, res, "../../master_data/bom/form", formMode === "edit" ? res.locals.t("bom_edit_title") || "Edit BOM" : res.locals.t("bom_new_title") || "Add BOM", {
+  return renderPage(req, res, "../../master_data/bom/form", formMode === "edit" ? res.locals.t("bom_edit_title")  : res.locals.t("bom_new_title") , {
     options,
     formState,
     formMode,
@@ -299,7 +299,7 @@ const handleSaveDraft = async (req, res, next, bomId = null) => {
     if (result.queued) {
       return res.redirect(req.get("referer") || req.baseUrl);
     }
-    setUiNotice(res, res.locals.t("draft_saved") || "Draft Saved", { autoClose: true });
+    setUiNotice(res, res.locals.t("draft_saved") , { autoClose: true });
     return res.redirect(`${req.baseUrl}/${result.id}`);
   } catch (err) {
     debugBom("Save draft failed", { bomId, error: err?.message || err });
@@ -344,7 +344,7 @@ router.post("/:id/approve-draft", requirePermission("SCREEN", BOM_SCOPE, "naviga
       return res.redirect(req.baseUrl);
     }
     if (current.header.status !== "DRAFT") {
-      setUiNotice(res, res.locals.t("bom_error_approve_requires_draft") || "Only draft BOM can be approved.", { autoClose: true });
+      setUiNotice(res, res.locals.t("bom_error_approve_requires_draft") , { autoClose: true });
       return res.redirect(`${req.baseUrl}/${bomId}`);
     }
 
@@ -420,7 +420,7 @@ router.post("/:id/send-for-approval", requirePermission("SCREEN", BOM_SCOPE, "na
     }
 
     if (current.header.status !== "DRAFT") {
-      setUiNotice(res, res.locals.t("bom_error_approve_requires_draft") || "Only draft BOM can be approved.", { autoClose: true });
+      setUiNotice(res, res.locals.t("bom_error_approve_requires_draft") , { autoClose: true });
       return res.redirect(`${req.baseUrl}/${bomId}`);
     }
 
@@ -459,7 +459,7 @@ router.post("/:id/send-for-approval", requirePermission("SCREEN", BOM_SCOPE, "na
       actions: ["approve_draft"],
     });
     if (alreadyPending) {
-      setUiNotice(res, res.locals.t("bom_error_already_pending") || "A pending approval already exists for this BOM.", { autoClose: true });
+      setUiNotice(res, res.locals.t("bom_error_already_pending") , { autoClose: true });
       return res.redirect(`${req.baseUrl}/${bomId}`);
     }
 
@@ -532,7 +532,7 @@ router.post("/:id/delete-draft", requirePermission("SCREEN", BOM_SCOPE, "navigat
       return res.redirect(req.baseUrl);
     }
     if (String(current.header?.status || "").toUpperCase() !== "DRAFT") {
-      setUiNotice(res, res.locals.t("bom_error_only_draft_editable") || "Only draft BOM can be edited.", { autoClose: true });
+      setUiNotice(res, res.locals.t("bom_error_only_draft_editable") , { autoClose: true });
       return res.redirect(`${req.baseUrl}/${bomId}`);
     }
 
@@ -542,7 +542,7 @@ router.post("/:id/delete-draft", requirePermission("SCREEN", BOM_SCOPE, "navigat
       action: "delete",
       entityType: BOM_ENTITY_TYPE,
       entityId: bomId,
-      summary: `${res.locals.t("delete") || "Delete"} ${res.locals.t("bom") || "BOM"} #${current.header?.bom_no || bomId}`,
+      summary: `${res.locals.t("delete") } ${res.locals.t("bom") } #${current.header?.bom_no || bomId}`,
       oldValue: current,
       newValue: bomService.buildDeleteDraftPayload({ bomId }),
       t: res.locals.t,
@@ -583,7 +583,7 @@ router.post("/:id/create-new-version", requirePermission("SCREEN", BOM_SCOPE, "n
         action: "create",
         entityType: BOM_ENTITY_TYPE,
         entityId: sourceId,
-        summary: `${res.locals.t("bom_create_new_version") || "Create new BOM version"} #${sourceId}`,
+        summary: `${res.locals.t("bom_create_new_version") } #${sourceId}`,
         oldValue: null,
         newValue: {
           schema_version: 1,
@@ -600,7 +600,7 @@ router.post("/:id/create-new-version", requirePermission("SCREEN", BOM_SCOPE, "n
       userId: req.user?.id || null,
       t: res.locals.t,
     });
-    setUiNotice(res, res.locals.t("bom_version_created") || "New version created.", { autoClose: true });
+    setUiNotice(res, res.locals.t("bom_version_created") , { autoClose: true });
     return res.redirect(`${req.baseUrl}/${created.id}`);
   } catch (err) {
     debugBom("create-new-version failed", { sourceId, error: err?.message || err });
@@ -619,13 +619,13 @@ router.post("/:id/toggle-lifecycle", requirePermission("SCREEN", BOM_SCOPE, "del
       return res.redirect(req.baseUrl);
     }
     if (String(current.header?.status || "").toUpperCase() !== "APPROVED") {
-      setUiNotice(res, res.locals.t("bom_error_lifecycle_requires_approved") || "Only approved BOM can be activated or deactivated.", { autoClose: true });
+      setUiNotice(res, res.locals.t("bom_error_lifecycle_requires_approved") , { autoClose: true });
       return res.redirect(req.get("referer") || req.baseUrl);
     }
     const nextIsActive = !(current.header?.is_active !== false);
     const actionLabel = nextIsActive
-      ? (res.locals.t("activate") || "Activate")
-      : (res.locals.t("deactivate") || "Deactivate");
+      ? (res.locals.t("activate") )
+      : (res.locals.t("deactivate") );
 
     const approval = await handleScreenApproval({
       req,

@@ -106,8 +106,8 @@
 
     const approvalSentText = <%- JSON.stringify(typeof t === "function" ? (t("approval_sent") || "") : "") %>;
     const approvalSubmittedText = <%- JSON.stringify(typeof t === "function" ? (t("approval_submitted") || "") : "") %>;
-    const noticeLabel = <%- JSON.stringify(typeof t === "function" ? (t("notice") || "Notice") : "Notice") %>;
-    const fallbackLinkLabel = <%- JSON.stringify(typeof t === "function" ? (t("view_pending_approval") || "View pending approval") : "View pending approval") %>;
+    const noticeLabel = <%- JSON.stringify(typeof t === "function" ? (t("notice") ) : "Notice") %>;
+    const fallbackLinkLabel = <%- JSON.stringify(typeof t === "function" ? (t("view_pending_approval") ) : "View pending approval") %>;
 
     const clearUiNoticeCookie = () => {
       document.cookie = "ui_notice=; Max-Age=0; Path=/; SameSite=Lax";

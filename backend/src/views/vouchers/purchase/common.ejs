@@ -85,6 +85,7 @@
             <a href="<%= nextVoucherNo ? ((basePath || '') + '?voucher_no=' + nextVoucherNo + '&view=1') : ((basePath || '') + '?new=1') %>" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700"><%= toFriendlyLabel("next") %></a>
             <button type="button" class="rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-white shadow-sm" data-load-voucher><%= toFriendlyLabel("load") %></button>
             <div class="ml-auto flex items-center gap-2">
+              <a href="<%= selectedVoucherNo ? ((basePath || '') + '/gate-pass?voucher_no=' + selectedVoucherNo) : '#' %>" target="_blank" rel="noopener" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700 <%= selectedVoucherNo ? '' : 'pointer-events-none opacity-40' %>"><%= toFriendlyLabel("gate_pass") %></a>
               <button type="button" class="rounded-xl border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-rose-700 disabled:opacity-40" data-delete-voucher <%= canDeleteCurrentVoucher ? '' : 'disabled' %>><%= toFriendlyLabel("delete") %></button>
               <button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700" onclick="window.print()"><%= toFriendlyLabel("print") %></button>
             </div>
@@ -97,7 +98,7 @@
             <div class="lg:col-span-4">
               <input type="date" name="voucher_date" value="<%= selectedDate %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" required>
             </div>
-            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= t("bill_number") || "Bill Number" %></label>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= t("bill_number")  %></label>
             <div class="lg:col-span-4">
               <input type="text" name="reference_no" maxlength="120" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" value="<%= selectedVoucher?.reference_no || '' %>" placeholder="e.g., Supplier Bill #" required>
             </div>
@@ -159,7 +160,7 @@
             <div class="lg:col-span-4">
               <input type="date" name="voucher_date" value="<%= selectedDate %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" required>
             </div>
-            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= t("bill_number") || "Bill Number" %></label>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= t("bill_number")  %></label>
             <div class="lg:col-span-4">
               <input type="text" name="reference_no" maxlength="120" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" value="<%= selectedVoucher?.reference_no || '' %>" placeholder="e.g., Return Bill No." required>
             </div>
@@ -197,7 +198,7 @@
             <div class="lg:col-span-4">
               <input type="date" name="voucher_date" value="<%= selectedDate %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" required>
             </div>
-            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= t("bill_number") || "Bill Number" %></label>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= t("bill_number")  %></label>
             <div class="lg:col-span-4">
               <input type="text" name="reference_no" maxlength="120" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" value="<%= selectedVoucher?.reference_no || '' %>" placeholder="e.g., Delivery Note / Challan No." required>
             </div>
@@ -1118,7 +1119,7 @@
       const supplierName = String(header.supplier_name || "").trim() || "-";
       const itemSummary = String(header.items_summary || "").trim();
       const referenceNo = String(header.reference_no || "").trim();
-      const referenceText = referenceNo ? ` - ${"<%= t('bill_number') || 'Bill Number' %>"} ${referenceNo}` : "";
+      const referenceText = referenceNo ? ` - ${"<%= t('bill_number')  %>"} ${referenceNo}` : "";
       return `${"<%= t('voucher_no') %>"} ${header.voucher_no} - ${"<%= t('supplier') %>"} ${supplierName}${referenceText} - ${"<%= t('date') %>"} ${formatDisplayDate(header.voucher_date, "-")} - ${"<%= t('open_qty') %>"} ${formatDisplayNumber(header.open_qty || 0, 3, "0")}${itemSummary ? ` - ${itemSummary}` : ""}`;
     };
 

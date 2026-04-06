@@ -2,9 +2,9 @@
   (function () {
     const endpoint = "/translate";
     const buttonLabel = '<%= t("auto_translate") %>';
-    const fetchingLabel = '<%= t("translation_fetching") || "Fetching translation..." %>';
-    const failedLabel = '<%= t("translation_failed") || "Translation unavailable" %>';
-    const readyLabel = '<%= t("translation_ready") || "Translated" %>';
+    const fetchingLabel = '<%= t("translation_fetching")  %>';
+    const failedLabel = '<%= t("translation_failed")  %>';
+    const readyLabel = '<%= t("translation_ready")  %>';
     const cache = new Map();
 
     const wireForm = (form) => {

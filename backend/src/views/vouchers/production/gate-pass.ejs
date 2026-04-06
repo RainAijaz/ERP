@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title><%= t("gate_pass") %> - <%= voucher?.voucher_no || "" %></title>
+    <%- include("../../base/partials/gate-pass-print-style") %>
+  </head>
+  <body>
+    <%
+      const gatePassView = {
+        titleKey: "gate_pass",
+        subtitleText: t(subtitleKey || titleKey || "production"),
+        topInfo: [
+          { labelKey: "voucher_no", value: voucher?.voucher_no || "-" },
+          { labelKey: "date", value: formatDateDisplay(voucher?.voucher_date, "") || "-" },
+          { labelKey: "status", value: voucher?.status || "-" },
+          { labelKey: "reference_no", value: voucher?.reference_no || "-" },
+        ],
+        metaInfo: [
+          { labelKey: "remarks", value: voucher?.remarks || "-", full: true },
+        ],
+        columns: [
+          { key: "sr_no", labelKey: "sr_no" },
+          { key: "sku_code", labelKey: "sku_code" },
+          { key: "item", labelKey: "article_name" },
+          { key: "labour_name", labelKey: "labour" },
+          { key: "unit", labelKey: "unit" },
+          { key: "qty", labelKey: "quantity", align: "right" },
+          { key: "rate", labelKey: "rate", align: "right" },
+          { key: "amount", labelKey: "amount", align: "right" },
+        ],
+        rows: voucher?.lines || [],
+        cellValue: (line, column, rowIndex) => {
+          if (column.key === "sr_no") return rowIndex + 1;
+          if (column.key === "item") return line?.sku_item_name || line?.item_name || "-";
+          if (column.key === "qty") return formatNumberDisplay(line?.qty || 0, { decimals: 3, fallback: "0" });
+          if (column.key === "rate") return formatNumberDisplay(line?.rate || 0, { decimals: 3, fallback: "0" });
+          if (column.key === "amount") return formatNumberDisplay(line?.amount || 0, { decimals: 2, fallback: "0" });
+          return line?.[column.key] || "-";
+        },
+      };
+    %>
+
+    <%- include("../../base/partials/gate-pass-document", { gatePassView }) %>
+  </body>
+</html>

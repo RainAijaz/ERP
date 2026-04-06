@@ -381,11 +381,11 @@ const validateRequiredRates = async (db, rmLines, t) => {
     (entry) => itemMap.get(entry.itemId) || String(entry.itemId),
   );
   throw makeValidationError(
-    t("bom_error_missing_material_rates") || "Missing required material rates.",
+    t("bom_error_missing_material_rates") ,
     [
       {
         field: "rm_lines_json",
-        message: `${t("bom_error_missing_material_rates_detail") || "Missing active purchase rates for"}: ${[...new Set(names)].join(", ")}`,
+        message: `${t("bom_error_missing_material_rates_detail") }: ${[...new Set(names)].join(", ")}`,
       },
     ],
   );
@@ -399,7 +399,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
   const details = [];
   const header = input?.header || {};
   const formatRowMessage = (index, message) =>
-    `${t("bom_error_row_prefix") || "Row"} ${index + 1}: ${message}`;
+    `${t("bom_error_row_prefix") } ${index + 1}: ${message}`;
 
   const itemId = toNumberOrNull(header.item_id);
   const level = String(header.level || "").toUpperCase();
@@ -409,20 +409,19 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
   if (!itemId)
     details.push({
       field: "item_id",
-      message: t("bom_error_item_required") || "Please select an item.",
+      message: t("bom_error_item_required") ,
     });
   if (!BOM_LEVELS.has(level))
     details.push({
       field: "level",
       message:
-        t("bom_error_level_required") || "Please select a valid BOM level.",
+        t("bom_error_level_required") ,
     });
   if (!outputQty)
     details.push({
       field: "output_qty",
       message:
-        t("bom_error_output_qty_required") ||
-        "Output quantity must be greater than zero.",
+        t("bom_error_output_qty_required") ,
     });
 
   const item = itemId
@@ -434,29 +433,28 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
   if (!item) {
     details.push({
       field: "item_id",
-      message: t("bom_error_item_not_found") || "Selected item does not exist.",
+      message: t("bom_error_item_not_found") ,
     });
   } else {
     if (level === "FINISHED" && item.item_type !== "FG") {
       details.push({
         field: "level",
         message:
-          t("bom_error_level_item_mismatch") || "Level must match item type.",
+          t("bom_error_level_item_mismatch") ,
       });
     }
     if (level === "SEMI_FINISHED" && item.item_type !== "SFG") {
       details.push({
         field: "level",
         message:
-          t("bom_error_level_item_mismatch") || "Level must match item type.",
+          t("bom_error_level_item_mismatch") ,
       });
     }
     if (!item.base_uom_id) {
       details.push({
         field: "item_id",
         message:
-          t("bom_error_item_base_uom_missing") ||
-          "Selected article has no base unit. Please set Base Unit in product master first.",
+          t("bom_error_item_base_uom_missing") ,
       });
     }
     if (!outputUomId) outputUomId = item.base_uom_id || null;
@@ -465,7 +463,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
   if (!outputUomId)
     details.push({
       field: "output_uom_id",
-      message: t("bom_error_output_uom_required") || "Output UOM is required.",
+      message: t("bom_error_output_uom_required") ,
     });
 
   if (
@@ -478,8 +476,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
       details.push({
         field: "output_uom_id",
         message:
-          t("bom_error_output_uom_conversion_missing") ||
-          "Output Unit must have an active conversion to the article Base Unit in UOM Conversions.",
+          t("bom_error_output_uom_conversion_missing") ,
       });
     } else {
       const [uomRows, conversionRows] = await Promise.all([
@@ -509,8 +506,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
         details.push({
           field: "output_uom_id",
           message: `${
-            t("bom_error_output_uom_conversion_missing") ||
-            "Output Unit must have an active conversion to the article Base Unit in UOM Conversions."
+            t("bom_error_output_uom_conversion_missing") 
           } (${outputUomLabel} -> ${baseUomLabel}).`,
         });
       }
@@ -567,11 +563,11 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
   });
 
   rmLines.forEach((line, idx) => {
-    const rowLabel = `${t("bom_error_row_prefix") || "Row"} ${idx + 1}`;
+    const rowLabel = `${t("bom_error_row_prefix") } ${idx + 1}`;
     if (!line.rm_item_id || !line.dept_id) {
       details.push({
         field: "rm_lines_json",
-        message: `${rowLabel}: ${t("bom_error_rm_line_invalid") || "Complete this raw material row: select material and department."}`,
+        message: `${rowLabel}: ${t("bom_error_rm_line_invalid") }`,
       });
       return;
     }
@@ -579,7 +575,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
     if (!rmItem || rmItem.item_type !== "RM") {
       details.push({
         field: "rm_lines_json",
-        message: `${rowLabel}: ${t("bom_error_rm_item_invalid") || "Selected material must be a Raw Material item."}`,
+        message: `${rowLabel}: ${t("bom_error_rm_item_invalid") }`,
       });
       return;
     }
@@ -587,7 +583,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
     if (!line.uom_id) {
       details.push({
         field: "rm_lines_json",
-        message: `${rowLabel}: ${t("bom_error_rm_uom_required") || "Material unit is missing. Please set base unit for this material."}`,
+        message: `${rowLabel}: ${t("bom_error_rm_uom_required") }`,
       });
     }
 
@@ -599,8 +595,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
         details.push({
           field: "rm_lines_json",
           message: `${rowLabel}: ${
-            t("bom_error_rm_color_required") ||
-            "Select color for this raw material because color-wise rates are configured."
+            t("bom_error_rm_color_required") 
           }`,
         });
       }
@@ -608,8 +603,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
         details.push({
           field: "rm_lines_json",
           message: `${rowLabel}: ${
-            t("bom_error_rm_size_required") ||
-            "Select size for this raw material because size-wise rates are configured."
+            t("bom_error_rm_size_required") 
           }`,
         });
       }
@@ -621,8 +615,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
         details.push({
           field: "rm_lines_json",
           message: `${rowLabel}: ${
-            t("bom_error_rm_color_invalid") ||
-            "Selected color is not configured in active rates for this raw material."
+            t("bom_error_rm_color_invalid") 
           }`,
         });
       }
@@ -634,8 +627,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
         details.push({
           field: "rm_lines_json",
           message: `${rowLabel}: ${
-            t("bom_error_rm_size_invalid") ||
-            "Selected size is not configured in active rates for this raw material."
+            t("bom_error_rm_size_invalid") 
           }`,
         });
       }
@@ -644,7 +636,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
     if (line.normal_loss_pct < 0 || line.normal_loss_pct > 100) {
       details.push({
         field: "rm_lines_json",
-        message: `${rowLabel}: ${t("bom_error_loss_pct_invalid") || "Normal loss % must be between 0 and 100."}`,
+        message: `${rowLabel}: ${t("bom_error_loss_pct_invalid") }`,
       });
     }
   });
@@ -657,8 +649,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
         field: "rm_lines_json",
         message: formatRowMessage(
           idx,
-          t("bom_error_rm_department_duplicate") ||
-            "This material is already added for the selected consumption department. Use a different material or department.",
+          t("bom_error_rm_department_duplicate") ,
         ),
       });
       return;
@@ -694,8 +685,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
     details.push({
       field: "sfg_lines_json",
       message:
-        t("bom_error_sfg_not_allowed_for_sfg_level") ||
-        "Semi-finished BOM cannot include SFG section lines.",
+        t("bom_error_sfg_not_allowed_for_sfg_level") ,
     });
   }
 
@@ -750,8 +740,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
         field: "sfg_lines_json",
         message: formatRowMessage(
           idx,
-          t("bom_error_sfg_item_invalid") ||
-            "Selected SKU must belong to a semi-finished item.",
+          t("bom_error_sfg_item_invalid") ,
         ),
       });
       continue;
@@ -762,8 +751,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
         field: "sfg_lines_json",
         message: formatRowMessage(
           idx,
-          t("bom_error_sfg_uom_required") ||
-            "Semi-finished SKU is missing a base unit.",
+          t("bom_error_sfg_uom_required") ,
         ),
       });
     }
@@ -773,8 +761,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
   }
   if (incompleteSfgRowIndexes.length) {
     const message =
-      t("bom_error_sfg_section_incomplete") ||
-      "Complete all mandatory fields in Semi-Finished section (Article SKU, Step/Upper SKU, Step Quantity, and Consumed In Stage).";
+      t("bom_error_sfg_section_incomplete") ;
     details.push({
       field: "sfg_lines_json",
       message,
@@ -854,7 +841,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
   );
 
   rmLines.forEach((line, idx) => {
-    const rowLabel = `${t("bom_error_row_prefix") || "Row"} ${idx + 1}`;
+    const rowLabel = `${t("bom_error_row_prefix") } ${idx + 1}`;
     if (!line.dept_id) return;
     const dept = departmentMap.get(line.dept_id);
     if (
@@ -864,7 +851,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
     ) {
       details.push({
         field: "rm_lines_json",
-        message: `${rowLabel}: ${t("bom_error_department_must_be_production") || "Selected department must be an active Production department."}`,
+        message: `${rowLabel}: ${t("bom_error_department_must_be_production") }`,
       });
     }
   });
@@ -875,8 +862,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
         field: "labour_lines_json",
         message: formatRowMessage(
           idx,
-          t("bom_error_labour_line_invalid") ||
-            "Complete this labour row: select labour, department, rate type, and valid rate.",
+          t("bom_error_labour_line_invalid") ,
         ),
       });
       return;
@@ -886,8 +872,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
         field: "labour_lines_json",
         message: formatRowMessage(
           idx,
-          t("bom_error_labour_rate_global_missing") ||
-            "No active global labour rate found for this Labour + Department + Rate Type. Define it in Labour Rates first.",
+          t("bom_error_labour_rate_global_missing") ,
         ),
       });
       return;
@@ -897,8 +882,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
         field: "labour_lines_json",
         message: formatRowMessage(
           idx,
-          t("bom_error_labour_line_invalid") ||
-            "Complete this labour row: select labour, department, rate type, and valid rate.",
+          t("bom_error_labour_line_invalid") ,
         ),
       });
       return;
@@ -908,8 +892,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
         field: "labour_lines_json",
         message: formatRowMessage(
           idx,
-          t("bom_error_labour_rate_type_invalid") ||
-            "Select a valid labour rate type.",
+          t("bom_error_labour_rate_type_invalid") ,
         ),
       });
       return;
@@ -924,8 +907,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
         field: "labour_lines_json",
         message: formatRowMessage(
           idx,
-          t("bom_error_department_must_be_production") ||
-            "Selected department must be an active Production department.",
+          t("bom_error_department_must_be_production") ,
         ),
       });
     }
@@ -935,8 +917,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
         field: "labour_lines_json",
         message: formatRowMessage(
           idx,
-          t("bom_error_labour_department_invalid") ||
-            "Selected department is not allowed for this labour.",
+          t("bom_error_labour_department_invalid") ,
         ),
       });
     }
@@ -945,8 +926,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
         field: "labour_lines_json",
         message: formatRowMessage(
           idx,
-          t("bom_error_size_required_for_specific_scope") ||
-            "Size is required for specific scope.",
+          t("bom_error_size_required_for_specific_scope") ,
         ),
       });
     }
@@ -964,8 +944,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
         field: "labour_lines_json",
         message: formatRowMessage(
           idx,
-          t("bom_error_labour_department_duplicate") ||
-            "This labour is already added for the selected department. Choose a different labour or department.",
+          t("bom_error_labour_department_duplicate") ,
         ),
       });
       return;
@@ -1028,7 +1007,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
   }
 
   skuRules.forEach((line, idx) => {
-    const rowLabel = `${t("bom_error_row_prefix") || "Row"} ${idx + 1}`;
+    const rowLabel = `${t("bom_error_row_prefix") } ${idx + 1}`;
     const hasCompleteRule =
       Boolean(line.sku_id) &&
       Boolean(line.target_rm_item_id) &&
@@ -1126,7 +1105,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
     if (enforceSkuRuleCompleteness) {
       details.push({
         field: "sku_rules_json",
-        message: `${t("bom_error_row_prefix") || "Row"} ${idx + 1}: Material line has no SKU-rule quantity total.`,
+        message: `${t("bom_error_row_prefix") } ${idx + 1}: Material line has no SKU-rule quantity total.`,
       });
       return;
     }
@@ -1158,8 +1137,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
     details.push({
       field: "stage_routes_json",
       message:
-        t("generic_error") ||
-        "Production stage routing is not available in this environment.",
+        t("generic_error") ,
     });
   }
   if (stageRoutes.length && hasProductionStageTable) {
@@ -1213,7 +1191,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
       if (!line.stage_id) {
         details.push({
           field: "stage_routes_json",
-          message: `${t("bom_error_row_prefix") || "Row"} ${idx + 1}: ${t("bom_error_stage_missing_mapping") || "Selected production department has no active stage mapping."}`,
+          message: `${t("bom_error_row_prefix") } ${idx + 1}: ${t("bom_error_stage_missing_mapping") }`,
         });
         return;
       }
@@ -1223,20 +1201,20 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
       ) {
         details.push({
           field: "stage_routes_json",
-          message: `${t("bom_error_row_prefix") || "Row"} ${idx + 1}: ${t("bom_error_stage_inactive_or_missing") || "Selected production stage is missing or inactive."} (${line.stage_id})`,
+          message: `${t("bom_error_row_prefix") } ${idx + 1}: ${t("bom_error_stage_inactive_or_missing") } (${line.stage_id})`,
         });
       }
       if (usedStageIds.has(line.stage_id)) {
         details.push({
           field: "stage_routes_json",
-          message: `${t("bom_error_row_prefix") || "Row"} ${idx + 1}: ${t("bom_error_stage_duplicate_in_flow") || "This production department/stage is already added in flow."}`,
+          message: `${t("bom_error_row_prefix") } ${idx + 1}: ${t("bom_error_stage_duplicate_in_flow") }`,
         });
       }
       usedStageIds.add(line.stage_id);
       if (usedSequenceNos.has(line.sequence_no)) {
         details.push({
           field: "stage_routes_json",
-          message: `${t("bom_error_row_prefix") || "Row"} ${idx + 1}: ${t("bom_error_stage_sequence_duplicate") || "Duplicate sequence is not allowed in production flow."}`,
+          message: `${t("bom_error_row_prefix") } ${idx + 1}: ${t("bom_error_stage_sequence_duplicate") }`,
         });
       }
       usedSequenceNos.add(line.sequence_no);
@@ -1255,15 +1233,14 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
       details.push({
         field: "stage_routes_json",
         message:
-          t("bom_error_stage_required_for_sfg") ||
-          "Add Production Stages first before mapping Semi-Finished consumption stages.",
+          t("bom_error_stage_required_for_sfg") ,
       });
     }
     sfgLines.forEach((line, idx) => {
       if (!line.consumed_in_stage_id) {
         details.push({
           field: "sfg_lines_json",
-          message: `${t("bom_error_row_prefix") || "Row"} ${idx + 1}: ${t("bom_error_sfg_consumed_stage_required") || "Select consumed-in stage for this Semi-Finished row."}`,
+          message: `${t("bom_error_row_prefix") } ${idx + 1}: ${t("bom_error_sfg_consumed_stage_required") }`,
         });
         return;
       }
@@ -1273,7 +1250,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
       ) {
         details.push({
           field: "sfg_lines_json",
-          message: `${t("bom_error_row_prefix") || "Row"} ${idx + 1}: ${t("bom_error_sfg_consumed_stage_not_mapped") || "Selected consumed-in stage is not mapped in Production Stages section."}`,
+          message: `${t("bom_error_row_prefix") } ${idx + 1}: ${t("bom_error_sfg_consumed_stage_not_mapped") }`,
         });
       }
     });
@@ -1284,7 +1261,7 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
 
   if (details.length)
     throw makeValidationError(
-      t("bom_error_fix_fields") || "Please review and correct the BOM details.",
+      t("bom_error_fix_fields") ,
       details,
     );
 
@@ -1323,14 +1300,12 @@ const ensureDraftUniqueness = async (
   const existing = await query.first();
   if (existing) {
     throw makeValidationError(
-      t("bom_error_draft_exists") ||
-        "A draft already exists for this item and level.",
+      t("bom_error_draft_exists") ,
       [
         {
           field: "item_id",
           message:
-            t("bom_error_draft_exists") ||
-            "A draft already exists for this item and level.",
+            t("bom_error_draft_exists") ,
         },
       ],
     );
@@ -1353,8 +1328,7 @@ const ensureNoExistingBomForItem = async (
   const existing = await query.first();
   if (existing) {
     const message =
-      t("bom_error_existing_bom") ||
-      "A BOM already exists for this article. Use BOM Register/Revise instead of Add BOM.";
+      t("bom_error_existing_bom") ;
     throw makeValidationError(message, [{ field: "item_id", message }]);
   }
 };
@@ -1758,12 +1732,11 @@ const setBomPendingTx = async (trx, { bomId, t }) => {
     .where({ id })
     .first();
   if (!row)
-    throw makeValidationError(t("error_not_found") || "Record not found.");
+    throw makeValidationError(t("error_not_found") );
   if (row.status === "PENDING") return { id, status: "PENDING" };
   if (row.status !== "DRAFT") {
     throw makeValidationError(
-      t("bom_error_approve_requires_draft") ||
-        "Only draft BOM can be approved.",
+      t("bom_error_approve_requires_draft") ,
     );
   }
   await trx("erp.bom_header").where({ id }).update({
@@ -1781,8 +1754,7 @@ const toggleBomLifecycleTx = async (trx, { bomId, isActive, t }) => {
   const lifecycleSupported = await hasBomLifecycleColumn(trx);
   if (!lifecycleSupported) {
     throw makeValidationError(
-      t("bom_error_lifecycle_not_available") ||
-        "BOM lifecycle is not available in this environment.",
+      t("bom_error_lifecycle_not_available") ,
     );
   }
   const id = Number(bomId);
@@ -1800,17 +1772,15 @@ const toggleBomLifecycleTx = async (trx, { bomId, isActive, t }) => {
     .where("bh.id", id)
     .first();
   if (!row)
-    throw makeValidationError(t("error_not_found") || "Record not found.");
+    throw makeValidationError(t("error_not_found") );
   if (String(row.status || "").toUpperCase() !== "APPROVED") {
     throw makeValidationError(
-      t("bom_error_lifecycle_requires_approved") ||
-        "Only approved BOM can be activated or deactivated.",
+      t("bom_error_lifecycle_requires_approved") ,
     );
   }
   if (nextActive && !row.item_is_active) {
     throw makeValidationError(
-      t("bom_error_item_inactive_cannot_activate") ||
-        "Cannot activate BOM while the article is inactive.",
+      t("bom_error_item_inactive_cannot_activate") ,
     );
   }
   if (nextActive) {
@@ -1833,35 +1803,33 @@ const toggleBomLifecycle = async (knex, params) =>
 const deleteDraftBomTx = async (trx, { bomId, userId, isAdmin = false, t }) => {
   const id = toPositiveInt(bomId);
   if (!id)
-    throw makeValidationError(t("error_not_found") || "Record not found.");
+    throw makeValidationError(t("error_not_found") );
   const actorId = toPositiveInt(userId);
   const row = await trx("erp.bom_header")
     .select("id", "status", "created_by")
     .where({ id })
     .first();
   if (!row)
-    throw makeValidationError(t("error_not_found") || "Record not found.");
+    throw makeValidationError(t("error_not_found") );
   if (String(row.status || "").toUpperCase() !== "DRAFT") {
     throw makeValidationError(
-      t("bom_error_only_draft_editable") || "Only draft BOM can be edited.",
+      t("bom_error_only_draft_editable") ,
     );
   }
   if (!isAdmin && actorId && Number(row.created_by || 0) !== actorId) {
-    throw makeValidationError(t("error_not_found") || "Record not found.");
+    throw makeValidationError(t("error_not_found") );
   }
   const pendingDecisionExists = await hasPendingApprovalForBomTx(trx, id, {
     actions: ["approve_draft", "delete_draft"],
   });
   if (pendingDecisionExists) {
     throw makeValidationError(
-      t("bom_error_already_pending") ||
-        "A pending approval already exists for this BOM.",
+      t("bom_error_already_pending") ,
       [
         {
           field: "item_id",
           message:
-            t("bom_error_already_pending") ||
-            "A pending approval already exists for this BOM.",
+            t("bom_error_already_pending") ,
         },
       ],
     );
@@ -2320,7 +2288,7 @@ const saveBomDraftTx = async (trx, { input, bomId, userId, requestId, t }) => {
       .where({ id: existingId })
       .first();
     if (!current) {
-      throw makeValidationError(t("error_not_found") || "Record not found.");
+      throw makeValidationError(t("error_not_found") );
     }
     const pendingDecisionExists = await hasPendingApprovalForBomTx(
       trx,
@@ -2331,21 +2299,19 @@ const saveBomDraftTx = async (trx, { input, bomId, userId, requestId, t }) => {
     );
     if (pendingDecisionExists) {
       throw makeValidationError(
-        t("bom_error_already_pending") ||
-          "A pending approval already exists for this BOM.",
+        t("bom_error_already_pending") ,
         [
           {
             field: "item_id",
             message:
-              t("bom_error_already_pending") ||
-              "A pending approval already exists for this BOM.",
+              t("bom_error_already_pending") ,
           },
         ],
       );
     }
     if (current.status !== "DRAFT") {
       throw makeValidationError(
-        t("bom_error_only_draft_editable") || "Only draft BOM can be edited.",
+        t("bom_error_only_draft_editable") ,
       );
     }
     versionNo = Number(current.version_no || 1);
@@ -2499,13 +2465,12 @@ const approveBomDirectTx = async (trx, { bomId, userId, requestId, t }) => {
     .where({ id })
     .first();
   if (!row)
-    throw makeValidationError(t("error_not_found") || "Record not found.");
+    throw makeValidationError(t("error_not_found") );
   if (row.status === "APPROVED")
     return { id, status: "APPROVED", versionNo: row.version_no };
   if (!["DRAFT", "PENDING"].includes(row.status)) {
     throw makeValidationError(
-      t("bom_error_approve_requires_draft") ||
-        "Only draft BOM can be approved.",
+      t("bom_error_approve_requires_draft") ,
     );
   }
 
@@ -2563,11 +2528,10 @@ const createNewVersionFromApprovedTx = async (
     .where({ id: sourceId })
     .first();
   if (!source)
-    throw makeValidationError(t("error_not_found") || "Record not found.");
+    throw makeValidationError(t("error_not_found") );
   if (source.status !== "APPROVED") {
     throw makeValidationError(
-      t("bom_error_new_version_requires_approved") ||
-        "New version can only be created from an approved BOM.",
+      t("bom_error_new_version_requires_approved") ,
     );
   }
 

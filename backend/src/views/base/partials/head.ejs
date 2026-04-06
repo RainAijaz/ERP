@@ -8,13 +8,71 @@
 <style>
   @media print {
     @page {
-      size: landscape;
+      size: A4 landscape;
+      margin: 10mm;
     }
-  }
 
-  [data-voucher-form] [data-lines-table] thead th,
-  [data-sales-voucher-form] [data-lines-table] thead th,
-  [data-purchase-voucher-form] [data-lines-table] thead th {
-    text-align: center !important;
+    body.voucher-page {
+      background: #fff !important;
+      color: #000 !important;
+    }
+
+    body.voucher-page header,
+    body.voucher-page nav,
+    body.voucher-page footer,
+    body.voucher-page [data-ui-notice-toast],
+    body.voucher-page [data-ui-error-modal],
+    body.voucher-page [data-delete-voucher],
+    body.voucher-page [data-load-voucher],
+    body.voucher-page [data-header-nav-btn],
+    body.voucher-page [data-add-row],
+    body.voucher-page [data-remove-row],
+    body.voucher-page button[type="submit"] {
+      display: none !important;
+    }
+
+    body.voucher-page main {
+      padding: 0 !important;
+      margin: 0 !important;
+    }
+
+    body.voucher-page main > .mx-auto,
+    body.voucher-page section,
+    body.voucher-page form {
+      max-width: none !important;
+      width: 100% !important;
+      box-shadow: none !important;
+      border-color: #d1d5db !important;
+      background: #fff !important;
+    }
+
+    body.voucher-page [data-lines-table] {
+      width: 100% !important;
+      table-layout: auto !important;
+      border-collapse: collapse !important;
+      font-size: 10px !important;
+    }
+
+    body.voucher-page [data-lines-table] th,
+    body.voucher-page [data-lines-table] td {
+      border: 1px solid #d1d5db !important;
+      background: #fff !important;
+      color: #111827 !important;
+      text-align: left !important;
+      padding: 4px 6px !important;
+    }
+
+    body.voucher-page input,
+    body.voucher-page select,
+    body.voucher-page textarea {
+      border: 0 !important;
+      background: transparent !important;
+      box-shadow: none !important;
+      color: #111827 !important;
+      padding: 0 !important;
+      height: auto !important;
+      appearance: none !important;
+      -webkit-appearance: none !important;
+    }
   }
 </style>

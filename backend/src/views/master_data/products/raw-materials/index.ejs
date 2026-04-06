@@ -198,7 +198,7 @@
     const rateList = modalForm.querySelector("[data-rate-list]");
     const template = modalForm.querySelector("[data-rate-template]");
     if (!rateList || !template) return;
-    const requiredRateMessage = "<%= t('error_add_valid_purchase_rate') || 'Please add at least one valid purchase rate.' %>";
+    const requiredRateMessage = "<%= t('error_add_valid_purchase_rate')  %>";
 
     const refreshSearchableSelects = () => {
       if (typeof window.initSearchableSelects === "function") {

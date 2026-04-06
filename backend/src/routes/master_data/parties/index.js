@@ -1157,8 +1157,7 @@ router.post(
         if (String(deleteErr?.code || "") === "23503") {
           throw new HttpError(
             409,
-            res.locals.t("error_record_in_use") ||
-              "This record is being used in other ERP areas and cannot be deleted.",
+            res.locals.t("error_record_in_use") ,
           );
         }
         throw deleteErr;

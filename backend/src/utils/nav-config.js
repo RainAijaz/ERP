@@ -43,6 +43,13 @@ const navConfig = [
             moduleGroup: "Administration",
             route: "/administration/roles",
           },
+        ],
+      },
+      {
+        key: "security",
+        labelKey: "security",
+        type: "group",
+        children: [
           {
             key: "permissions",
             labelKey: "permissions",
@@ -60,7 +67,7 @@ const navConfig = [
         children: [
           {
             key: "approvals",
-            labelKey: "approvals",
+            labelKey: "pending_approvals",
             scopeType: "SCREEN",
             scopeKey: "administration.approvals",
             moduleGroup: "Administration",
@@ -821,6 +828,14 @@ const navConfig = [
             scopeKey: "stock_item_activity",
             moduleGroup: "Inventory",
             route: "/reports/inventory/stock-movement",
+          },
+          {
+            key: "stock_transfer_report",
+            labelKey: "stock_transfer_report",
+            scopeType: "REPORT",
+            scopeKey: "stock_item_activity",
+            moduleGroup: "Inventory",
+            route: "/reports/inventory/stock-transfer",
           },
         ],
       },

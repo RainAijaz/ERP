@@ -1,16 +1,17 @@
 <% const renderChildren = (items, level = 0, parentKey = "") => { %>
+  <% const navActionForScope = (scopeType) => String(scopeType || "").toUpperCase() === "REPORT" ? "load" : "view"; %>
   <% items.forEach((item) => { %>
     <% const itemKey = parentKey ? `${parentKey}-${item.key}` : item.key; %>
     <% const isLink = item.scopeType && item.scopeKey && item.route; %>
     <% const hasChildren = Array.isArray(item.children) && item.children.length > 0; %>
-    <% const isVisibleLink = isLink ? can(item.scopeType, item.scopeKey, "view") : false; %>
+    <% const isVisibleLink = isLink ? can(item.scopeType, item.scopeKey, navActionForScope(item.scopeType)) : false; %>
     <% const isVisibleGroup = hasChildren ? item.children.some((child) => {
-      if (child.scopeType && child.scopeKey && child.route) return can(child.scopeType, child.scopeKey, "view");
+      if (child.scopeType && child.scopeKey && child.route) return can(child.scopeType, child.scopeKey, navActionForScope(child.scopeType));
       if (child.children && child.children.length) {
         return child.children.some((grand) => {
-          if (grand.scopeType && grand.scopeKey && grand.route) return can(grand.scopeType, grand.scopeKey, "view");
+          if (grand.scopeType && grand.scopeKey && grand.route) return can(grand.scopeType, grand.scopeKey, navActionForScope(grand.scopeType));
           if (grand.children && grand.children.length) {
-            return grand.children.some((deep) => deep.scopeType && deep.scopeKey && deep.route && can(deep.scopeType, deep.scopeKey, "view"));
+            return grand.children.some((deep) => deep.scopeType && deep.scopeKey && deep.route && can(deep.scopeType, deep.scopeKey, navActionForScope(deep.scopeType)));
           }
           return false;
         });
@@ -42,13 +43,14 @@
 <% }; %>
 
 <% (navConfig || []).forEach((module) => { %>
+  <% const navActionForScope = (scopeType) => String(scopeType || "").toUpperCase() === "REPORT" ? "load" : "view"; %>
   <% const moduleVisible = Array.isArray(module.children) && module.children.some((child) => {
-    if (child.scopeType && child.scopeKey && child.route) return can(child.scopeType, child.scopeKey, "view");
+    if (child.scopeType && child.scopeKey && child.route) return can(child.scopeType, child.scopeKey, navActionForScope(child.scopeType));
     if (child.children && child.children.length) {
       return child.children.some((grand) => {
-        if (grand.scopeType && grand.scopeKey && grand.route) return can(grand.scopeType, grand.scopeKey, "view");
+        if (grand.scopeType && grand.scopeKey && grand.route) return can(grand.scopeType, grand.scopeKey, navActionForScope(grand.scopeType));
         if (grand.children && grand.children.length) {
-          return grand.children.some((deep) => deep.scopeType && deep.scopeKey && deep.route && can(deep.scopeType, deep.scopeKey, "view"));
+          return grand.children.some((deep) => deep.scopeType && deep.scopeKey && deep.route && can(deep.scopeType, deep.scopeKey, navActionForScope(deep.scopeType)));
         }
         return false;
       });

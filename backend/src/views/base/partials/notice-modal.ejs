@@ -27,11 +27,11 @@
         <% } %>
       </div>
       <div class="flex-1">
-        <div class="text-xs font-semibold uppercase tracking-[0.18em] <%= isError ? 'text-rose-700' : 'text-emerald-700' %>"><%= isError ? (t("error_generic") || "Error") : (t("notice") || "Notice") %></div>
+        <div class="text-xs font-semibold uppercase tracking-[0.18em] <%= isError ? 'text-rose-700' : 'text-emerald-700' %>"><%= isError ? (t("error_generic") ) : (t("notice") ) %></div>
         <p class="mt-1 text-sm <%= isError ? 'text-rose-700' : 'text-slate-700' %>"><%= uiNoticeMessage %></p>
         <% if (uiNoticeSticky) { %>
           <button class="mt-1 text-[10px] uppercase tracking-[0.18em] text-slate-400 hover:text-slate-600" type="button" data-ui-notice-dismiss>
-            <%= t("dismiss") || "Dismiss" %>
+            <%= t("dismiss")  %>
           </button>
         <% } %>
       </div>

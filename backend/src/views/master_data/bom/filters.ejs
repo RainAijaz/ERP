@@ -1,19 +1,19 @@
 <label class="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
-  <span class="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500"><%= t("bom_stage") || "Stage" %></span>
+  <span class="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500"><%= t("bom_stage")  %></span>
   <select class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700" data-bom-modal-workflow data-searchable-select="true" data-searchable-variant="unified">
     <option value="all"><%= t("all") %></option>
-    <option value="DRAFT"><%= t("draft") || "Draft" %></option>
-    <option value="PENDING"><%= t("pending") || "Pending" %></option>
-    <option value="APPROVED"><%= t("approved") || "Approved" %></option>
-    <option value="REJECTED"><%= t("rejected") || "Rejected" %></option>
+    <option value="DRAFT"><%= t("draft")  %></option>
+    <option value="PENDING"><%= t("pending")  %></option>
+    <option value="APPROVED"><%= t("approved")  %></option>
+    <option value="REJECTED"><%= t("rejected")  %></option>
   </select>
 </label>
 
 <label class="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
-  <span class="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500"><%= t("type") || "Type" %></span>
+  <span class="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500"><%= t("type")  %></span>
   <select class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700" data-bom-modal-type data-searchable-select="true" data-searchable-variant="unified">
     <option value="all"><%= t("all") %></option>
-    <option value="FINISHED"><%= t("bom_type_finished_goods") || "Finished Goods BOM" %></option>
-    <option value="SEMI_FINISHED"><%= t("bom_type_semi_finished") || "Semi-Finished BOM" %></option>
+    <option value="FINISHED"><%= t("bom_type_finished_goods")  %></option>
+    <option value="SEMI_FINISHED"><%= t("bom_type_semi_finished")  %></option>
   </select>
 </label>

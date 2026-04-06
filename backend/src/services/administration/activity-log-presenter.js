@@ -79,16 +79,16 @@ const buildVoucherHref = ({ voucherTypeCode, voucherNo }) => {
 
 const normalizeActionLabel = ({ row, context, t }) => {
   const action = String(row?.action || "").toUpperCase();
-  if (action === "CREATE") return t("created") || "Created";
-  if (action === "UPDATE") return t("updated") || "Updated";
-  if (action === "SUBMIT") return t("submitted_for_approval") || "Submitted For Approval";
-  if (action === "APPROVE") return t("approved") || "Approved";
-  if (action === "REJECT") return t("rejected") || "Rejected";
+  if (action === "CREATE") return t("created") ;
+  if (action === "UPDATE") return t("updated") ;
+  if (action === "SUBMIT") return t("submitted_for_approval") ;
+  if (action === "APPROVE") return t("approved") ;
+  if (action === "REJECT") return t("rejected") ;
   if (action === "DELETE") {
-    if (context?.approval_request_id) return t("deletion_requested") || "Deletion Requested";
-    return t("delete") || "Delete";
+    if (context?.approval_request_id) return t("deletion_requested") ;
+    return t("delete") ;
   }
-  if (action === "POST") return t("post") || "Post";
+  if (action === "POST") return t("post") ;
   return action || "-";
 };
 
@@ -167,40 +167,40 @@ const buildDetailsModel = ({ row, context, voucherNo, t, voucherHref, displayAct
   const lineCount = Array.isArray(lineList) ? lineList.length : null;
 
   const voucherRows = compactRows([
-    { label: t("entity") || "Entity", value: normalizeEntityLabel({ row, t }) },
-    { label: t("voucher_no") || "Voucher No", value: toText(voucherNo) },
+    { label: t("entity") , value: normalizeEntityLabel({ row, t }) },
+    { label: t("voucher_no") , value: toText(voucherNo) },
     {
-      label: t("date") || "Date",
+      label: t("date") ,
       value: toText(firstDefined(newValue?.voucher_date, requestBody?.voucher_date, context?.voucher_date)),
     },
     {
-      label: t("payment_type") || "Payment Type",
+      label: t("payment_type") ,
       value: toText(firstDefined(newValue?.payment_type, requestBody?.payment_type)),
     },
     {
-      label: t("customer_name") || "Customer",
+      label: t("customer_name") ,
       value: toText(firstDefined(newValue?.customer_name, requestBody?.customer_name)),
     },
     {
-      label: t("total_amount") || "Total Amount",
+      label: t("total_amount") ,
       value: toText(firstDefined(newValue?.total_amount, requestBody?.total_amount, requestBody?.payment_received_amount)),
     },
-    { label: t("status") || "Status", value: toText(firstDefined(context?.status, newValue?.status)) },
-    { label: t("line_count") || "Line Count", value: toText(lineCount) },
+    { label: t("status") , value: toText(firstDefined(context?.status, newValue?.status)) },
+    { label: t("line_count") , value: toText(lineCount) },
   ]);
 
   const overviewRows = compactRows([
-    { label: t("action") || "Action", value: displayAction },
-    { label: t("source") || "Source", value: toText(context?.source) },
-    { label: t("request_type") || "Request Type", value: toText(context?.request_type) },
-    { label: t("summary") || "Summary", value: toText(context?.summary) },
-    { label: t("method") || "Method", value: toText(context?.method) },
-    { label: t("path") || "Path", value: toText(context?.path) },
+    { label: t("action") , value: displayAction },
+    { label: t("source") , value: toText(context?.source) },
+    { label: t("request_type") , value: toText(context?.request_type) },
+    { label: t("summary") , value: toText(context?.summary) },
+    { label: t("method") , value: toText(context?.method) },
+    { label: t("path") , value: toText(context?.path) },
   ]);
 
   const changedFieldRows = buildChangedFieldRows({ context }).map((entry) => ({
     label: String(entry.field || "").replace(/_/g, " "),
-    value: `${t("old_value") || "Old Value"}: ${entry.oldValue} | ${t("new_value") || "New Value"}: ${entry.newValue}`,
+    value: `${t("old_value") }: ${entry.oldValue} | ${t("new_value") }: ${entry.newValue}`,
   }));
 
   const nonVoucherContextRows = compactRows(
@@ -215,12 +215,12 @@ const buildDetailsModel = ({ row, context, voucherNo, t, voucherHref, displayAct
 
   return {
     voucherHref: voucherHref || null,
-    voucherLinkLabel: voucherNo ? `${t("view_voucher") || "Open Voucher"} #${voucherNo}` : null,
+    voucherLinkLabel: voucherNo ? `${t("view_voucher") } #${voucherNo}` : null,
     sections: compactRows([
-      overviewRows.length ? { title: t("overview") || "Overview", rows: overviewRows } : null,
-      voucherRows.length ? { title: t("voucher_summary") || "Voucher Summary", rows: voucherRows } : null,
-      changedFieldRows.length ? { title: t("change_summary") || "Change Summary", rows: changedFieldRows } : null,
-      nonVoucherContextRows.length ? { title: t("context") || "Context", rows: nonVoucherContextRows } : null,
+      overviewRows.length ? { title: t("overview") , rows: overviewRows } : null,
+      voucherRows.length ? { title: t("voucher_summary") , rows: voucherRows } : null,
+      changedFieldRows.length ? { title: t("change_summary") , rows: changedFieldRows } : null,
+      nonVoucherContextRows.length ? { title: t("context") , rows: nonVoucherContextRows } : null,
     ]),
     rawContext: context || null,
   };

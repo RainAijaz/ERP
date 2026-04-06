@@ -50,7 +50,9 @@
   const canSaveVoucher = !isDeletedVoucher && (selectedVoucher ? canEditVoucher : canCreateVoucher);
   const canDeleteCurrentVoucher = !!selectedVoucher && !isDeletedVoucher && canDeleteVoucher;
 
-  const defaultStockType = String(selectedVoucher?.stock_type || "FG").toUpperCase();
+  const defaultStockType = currentMode === "in"
+    ? String(selectedVoucher?.stock_type || "").toUpperCase()
+    : String(selectedVoucher?.stock_type || "FG").toUpperCase();
   const sourceBranchLabel = options?.sourceBranch?.name || "";
 %>
 
@@ -126,6 +128,12 @@
       <input type="hidden" name="mode" value="<%= currentMode %>" data-mode-input>
       <input type="hidden" name="lines_json" value="[]" data-lines-json>
       <input type="hidden" name="stn_out_voucher_id" value="<%= selectedVoucher?.stn_out_voucher_id || '' %>" data-stn-out-id>
+      <% if (currentMode === 'out') { %>
+        <input type="hidden" name="transfer_ref_no" value="<%= selectedVoucher?.transfer_ref_no || '' %>" data-transfer-ref-text>
+      <% } %>
+      <% if (currentMode === 'in') { %>
+        <input type="hidden" name="received_date_time" value="<%= selectedDate %>" data-received-date-hidden>
+      <% } %>
 
       <div class="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
         <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
@@ -138,6 +146,7 @@
             <a href="<%= nextVoucherNo ? ((basePath || '') + '?voucher_no=' + nextVoucherNo + '&view=1') : ((basePath || '') + '?new=1') %>" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= toFriendlyLabel('next', 'Next') %></a>
             <button type="button" class="rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm" data-load-voucher><%= toFriendlyLabel('load', 'Load') %></button>
             <div class="ml-auto flex items-center gap-2">
+              <a href="<%= selectedVoucherNo ? ((basePath || '') + '/gate-pass?voucher_no=' + selectedVoucherNo) : '#' %>" target="_blank" rel="noopener" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700 <%= selectedVoucherNo ? '' : 'pointer-events-none opacity-40' %>"><%= toFriendlyLabel('gate_pass', 'Gate Pass') %></a>
               <button type="button" class="rounded-xl border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-rose-700 disabled:opacity-40" data-delete-voucher <%= canDeleteCurrentVoucher ? '' : 'disabled' %>><%= toFriendlyLabel('delete', 'Delete') %></button>
               <button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700" onclick="window.print()"><%= toFriendlyLabel('print', 'Print') %></button>
             </div>
@@ -149,32 +158,44 @@
           <div class="lg:col-span-4">
             <input type="date" name="voucher_date" value="<%= selectedDate %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" required <%= canSaveVoucher ? '' : 'readonly' %>>
           </div>
-          <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= toFriendlyLabel('transfer_ref_no', 'Transfer Ref No') %></label>
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= currentMode === 'out' ? toFriendlyLabel('stock_type', 'Stock Type') : toFriendlyLabel('source_branch', 'Source Branch') %></label>
           <div class="lg:col-span-4">
-            <% if (currentMode === 'in') { %>
-              <select name="transfer_ref_no" data-transfer-ref class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified" <%= canSaveVoucher ? '' : 'disabled' %>>
-                <option value=""><%= toFriendlyLabel('select_transfer_reference', 'Select Transfer Reference') %></option>
-                <% (options.pendingTransfers || []).forEach((entry) => { %>
-                  <option
-                    value="<%= entry.transfer_ref_no %>"
-                    data-stn-id="<%= entry.stn_out_voucher_id %>"
-                    <%= String(selectedVoucher?.transfer_ref_no || '') === String(entry.transfer_ref_no || '') ? 'selected' : '' %>>
-                    <%= entry.transfer_ref_no %> - <%= entry.source_branch_name || entry.source_branch_id %>
-                  </option>
+            <% if (currentMode === 'out') { %>
+              <select name="stock_type" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-stock-type data-searchable-select="true" data-searchable-variant="unified" <%= !canSaveVoucher ? 'disabled' : '' %>>
+                <% (options.stockTypes || []).forEach((entry) => { %>
+                  <option value="<%= entry.value %>" <%= String(defaultStockType || 'FG').toUpperCase() === String(entry.value || '').toUpperCase() ? 'selected' : '' %>><%= toFriendlyLabel(entry.labelKey || entry.value, entry.value) %></option>
                 <% }) %>
               </select>
             <% } else { %>
-              <input type="text" name="transfer_ref_no" value="<%= selectedVoucher?.transfer_ref_no || '' %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" readonly data-transfer-ref-text>
+              <select class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-source-branch-select data-searchable-select="true" data-searchable-variant="unified" <%= canSaveVoucher ? '' : 'disabled' %>>
+                <option value=""><%= toFriendlyLabel('select_branch', 'Select Branch') %></option>
+                <% (options.sourceBranches || []).forEach((branch) => { %>
+                  <option value="<%= branch.id %>" <%= Number(selectedVoucher?.source_branch_id || 0) === Number(branch.id) ? 'selected' : '' %>><%= branch.name %></option>
+                <% }) %>
+              </select>
             <% } %>
           </div>
         </div>
 
         <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
-          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel('source_branch', 'Source Branch') %></label>
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= currentMode === 'out' ? toFriendlyLabel('bill_book_no', 'Bill Book No') : toFriendlyLabel('transfer_ref_no', 'Transfer Ref No') %></label>
           <div class="lg:col-span-4">
-            <input type="text" value="<%= selectedVoucher?.source_branch_name || sourceBranchLabel %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" readonly data-source-branch-name>
+            <% if (currentMode === 'out') { %>
+              <input type="text" name="bill_book_no" value="<%= selectedVoucher?.bill_book_no || '' %>" maxlength="120" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-bill-book-no <%= canSaveVoucher ? 'required' : 'readonly' %>>
+            <% } else { %>
+              <div class="flex items-center gap-2">
+                <input type="text" name="transfer_ref_no" value="<%= selectedVoucher?.transfer_ref_no || '' %>" class="h-10 w-full rounded-xl border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700" readonly data-transfer-ref-text>
+                <button type="button" class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white text-slate-700 disabled:opacity-40" data-open-sti-transfer-picker aria-label="<%= toFriendlyLabel('select_transfer_reference', 'Select Transfer Reference') %>" title="<%= toFriendlyLabel('select_transfer_reference', 'Select Transfer Reference') %>" <%= canSaveVoucher ? '' : 'disabled' %>>
+                  <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M9 12h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+                    <path d="M8.5 8.5l-2 2a3 3 0 0 0 4.24 4.24l1.06-1.06" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+                    <path d="M15.5 15.5l2-2a3 3 0 0 0-4.24-4.24l-1.06 1.06" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+                  </svg>
+                </button>
+              </div>
+            <% } %>
           </div>
-          <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= toFriendlyLabel('destination_branch', 'Destination Branch') %></label>
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= currentMode === 'out' ? toFriendlyLabel('destination_branch', 'Destination Branch') : toFriendlyLabel('remarks', 'Remarks') %></label>
           <div class="lg:col-span-4">
             <% if (currentMode === 'out') { %>
               <select name="destination_branch_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-destination-branch data-searchable-select="true" data-searchable-variant="unified" <%= canSaveVoucher ? '' : 'disabled' %>>
@@ -184,21 +205,13 @@
                 <% }) %>
               </select>
             <% } else { %>
-              <input type="text" value="<%= selectedVoucher?.destination_branch_name || sourceBranchLabel %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" readonly data-destination-branch-name>
+              <input type="text" name="remarks" maxlength="1000" value="<%= selectedVoucher?.remarks || '' %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" <%= canSaveVoucher ? '' : 'readonly' %>>
             <% } %>
           </div>
         </div>
 
         <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
-          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel('stock_type', 'Stock Type') %></label>
-          <div class="lg:col-span-4">
-            <select name="stock_type" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-stock-type data-searchable-select="true" data-searchable-variant="unified" <%= currentMode === 'in' || !canSaveVoucher ? 'disabled' : '' %>>
-              <% (options.stockTypes || []).forEach((entry) => { %>
-                <option value="<%= entry.value %>" <%= String(defaultStockType || 'FG').toUpperCase() === String(entry.value || '').toUpperCase() ? 'selected' : '' %>><%= toFriendlyLabel(entry.labelKey || entry.value, entry.value) %></option>
-              <% }) %>
-            </select>
-          </div>
-          <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= currentMode === 'out' ? toFriendlyLabel('transfer_reason', 'Transfer Reason') : toFriendlyLabel('received_by_user_name', 'Received By') %></label>
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= currentMode === 'out' ? toFriendlyLabel('transfer_reason', 'Transfer Reason') : toFriendlyLabel('bill_book_no', 'Bill Book No') %></label>
           <div class="lg:col-span-4">
             <% if (currentMode === 'out') { %>
               <select name="transfer_reason" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified" <%= canSaveVoucher ? '' : 'disabled' %>>
@@ -207,23 +220,40 @@
                 <% }) %>
               </select>
             <% } else { %>
-              <input type="text" value="<%= selectedVoucher?.received_by_user_name || user?.full_name || user?.username || '' %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" readonly>
+              <input type="text" name="bill_book_no" value="<%= selectedVoucher?.bill_book_no || '' %>" class="h-10 w-full rounded-xl border border-slate-300 bg-slate-100 px-3 text-sm" data-bill-book-no readonly>
+            <% } %>
+          </div>
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= currentMode === 'out' ? toFriendlyLabel('transporter_name', 'Transporter Name') : toFriendlyLabel('destination_branch', 'Destination Branch') %></label>
+          <div class="lg:col-span-4">
+            <% if (currentMode === 'out') { %>
+              <input type="text" name="transporter_name" maxlength="120" value="<%= selectedVoucher?.transporter_name || '' %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" <%= canSaveVoucher ? '' : 'readonly' %>>
+            <% } else { %>
+              <input type="text" value="<%= selectedVoucher?.destination_branch_name || sourceBranchLabel %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" readonly data-destination-branch-name>
             <% } %>
           </div>
         </div>
 
         <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
-          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= currentMode === 'out' ? toFriendlyLabel('transporter_name', 'Transporter Name') : toFriendlyLabel('received_date_time', 'Received Date') %></label>
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= currentMode === 'out' ? toFriendlyLabel('remarks', 'Remarks') : toFriendlyLabel('stock_type', 'Stock Type') %></label>
           <div class="lg:col-span-4">
             <% if (currentMode === 'out') { %>
-              <input type="text" name="transporter_name" maxlength="120" value="<%= selectedVoucher?.transporter_name || '' %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" <%= canSaveVoucher ? '' : 'readonly' %>>
+              <input type="text" name="remarks" maxlength="1000" value="<%= selectedVoucher?.remarks || '' %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" <%= canSaveVoucher ? '' : 'readonly' %>>
             <% } else { %>
-              <input type="date" name="received_date_time" value="<%= selectedDate %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" required <%= canSaveVoucher ? '' : 'readonly' %>>
+              <select name="stock_type" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-stock-type data-searchable-select="true" data-searchable-variant="unified" disabled>
+                <option value="" <%= !defaultStockType ? 'selected' : '' %>><%= toFriendlyLabel('select_stock_type', 'Select Stock Type') %></option>
+                <% (options.stockTypes || []).forEach((entry) => { %>
+                  <option value="<%= entry.value %>" <%= String(defaultStockType || '').toUpperCase() === String(entry.value || '').toUpperCase() ? 'selected' : '' %>><%= toFriendlyLabel(entry.labelKey || entry.value, entry.value) %></option>
+                <% }) %>
+              </select>
             <% } %>
           </div>
-          <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= toFriendlyLabel('remarks', 'Remarks') %></label>
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= currentMode === 'out' ? toFriendlyLabel('source_branch', 'Source Branch') : toFriendlyLabel('received_by_user_name', 'Received By') %></label>
           <div class="lg:col-span-4">
-            <input type="text" name="remarks" maxlength="1000" value="<%= selectedVoucher?.remarks || '' %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" <%= canSaveVoucher ? '' : 'readonly' %>>
+            <% if (currentMode === 'out') { %>
+              <input type="text" value="<%= selectedVoucher?.source_branch_name || sourceBranchLabel %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" readonly data-source-branch-name>
+            <% } else { %>
+              <input type="text" value="<%= selectedVoucher?.received_by_user_name || user?.full_name || user?.username || '' %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" readonly>
+            <% } %>
           </div>
         </div>
 
@@ -256,6 +286,52 @@
       <input type="hidden" name="voucher_id" value="<%= selectedVoucher?.id || '' %>">
       <input type="hidden" name="mode" value="<%= currentMode %>">
     </form>
+
+    <% if (currentMode === 'in') { %>
+      <div class="fixed inset-0 z-40 hidden items-center justify-center bg-slate-900/45 p-4 backdrop-blur-[1px]" data-sti-transfer-picker-modal aria-hidden="true">
+        <div class="w-full max-w-5xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+          <div class="flex items-center justify-between border-b border-slate-200 bg-slate-50/70 px-4 py-3">
+            <h3 class="text-base font-semibold text-slate-800"><%= toFriendlyLabel('select_transfer_reference', 'Select Transfer Reference') %></h3>
+            <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-700" data-sti-transfer-picker-close aria-label="<%= toFriendlyLabel('cancel', 'Cancel') %>" title="<%= toFriendlyLabel('cancel', 'Cancel') %>">
+              <svg viewBox="0 0 24 24" class="h-4 w-4" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg>
+            </button>
+          </div>
+          <div class="space-y-3 px-4 py-3">
+            <div class="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50/70 px-2 py-2">
+              <input type="date" class="h-8 rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-700" data-sti-transfer-picker-date>
+              <button
+                type="button"
+                class="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700"
+                data-sti-transfer-picker-date-only
+                aria-pressed="false"
+                title="<%= toFriendlyLabel('match_voucher_date_only', 'Match voucher date only') %>">
+                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M4 7h16M7 4v3m10-3v3M5 10h14v9H5z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path>
+                </svg>
+              </button>
+            </div>
+            <div class="max-h-[50vh] overflow-auto rounded-xl border border-slate-200">
+              <table class="w-full min-w-[980px] table-fixed text-xs">
+                <thead class="sticky top-0 z-10 bg-slate-100 uppercase tracking-[0.08em] text-slate-500">
+                  <tr>
+                    <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel('transfer_ref_no', 'Transfer Ref No') %></th>
+                    <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel('bill_book_no', 'Bill Book No') %></th>
+                    <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel('stock_type', 'Stock Type') %></th>
+                    <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel('date', 'Date') %></th>
+                    <th class="border-b border-slate-200 px-2 py-2 text-center"><%= toFriendlyLabel('select', 'Select') %></th>
+                  </tr>
+                </thead>
+                <tbody data-sti-transfer-picker-body></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="flex items-center justify-end gap-2 border-t border-slate-200 bg-white px-4 py-3">
+            <button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700" data-sti-transfer-picker-close><%= toFriendlyLabel('cancel', 'Cancel') %></button>
+            <button type="button" class="rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-white" data-sti-transfer-picker-apply><%= toFriendlyLabel('apply', 'Apply') %></button>
+          </div>
+        </div>
+      </div>
+    <% } %>
   </section>
 </div>
 
@@ -282,13 +358,32 @@
     let totalAmountInput = null;
     let totalQtyByUnitWrap = null;
     let totalQtyByUnitRow = null;
+    let totalExpectedQtyInput = null;
+    let totalReceivedQtyInput = null;
+    let totalRejectedQtyInput = null;
+    let totalVarianceQtyInput = null;
     const deleteButton = form.querySelector('[data-delete-voucher]');
     const deleteForm = document.querySelector('[data-delete-voucher-form]');
     const stockTypeSelect = form.querySelector('[data-stock-type]');
     const destinationBranchSelect = form.querySelector('[data-destination-branch]');
-    const transferRefSelect = form.querySelector('[data-transfer-ref]');
+    const sourceBranchSelect = form.querySelector('[data-source-branch-select]');
     const transferRefTextInput = form.querySelector('[data-transfer-ref-text]');
+    const openStiTransferPickerButton = form.querySelector('[data-open-sti-transfer-picker]');
+    const stiTransferPickerModal = document.querySelector('[data-sti-transfer-picker-modal]');
+    const stiTransferPickerBody = stiTransferPickerModal?.querySelector('[data-sti-transfer-picker-body]');
+    const stiTransferPickerDateInput = stiTransferPickerModal?.querySelector('[data-sti-transfer-picker-date]');
+    const stiTransferPickerDateOnlyToggle = stiTransferPickerModal?.querySelector('[data-sti-transfer-picker-date-only]');
+    const stiTransferPickerApplyButton = stiTransferPickerModal?.querySelector('[data-sti-transfer-picker-apply]');
+    const stiTransferPickerCloseButtons = stiTransferPickerModal
+      ? Array.from(stiTransferPickerModal.querySelectorAll('[data-sti-transfer-picker-close]'))
+      : [];
     const stnOutIdInput = form.querySelector('[data-stn-out-id]');
+    const billBookNoInput = form.querySelector('[data-bill-book-no]');
+    const voucherDateInput = form.querySelector('[name="voucher_date"]');
+    const transferReasonSelect = form.querySelector('[name="transfer_reason"]');
+    const transporterNameInput = form.querySelector('[name="transporter_name"]');
+    const receivedDateInput = form.querySelector('[name="received_date_time"]');
+    const remarksInput = form.querySelector('[name="remarks"]');
     const sourceBranchNameInput = form.querySelector('[data-source-branch-name]');
     const destinationBranchNameInput = form.querySelector('[data-destination-branch-name]');
 
@@ -303,7 +398,7 @@
     };
     const qty3 = (value) => Number(toNum(value, 0).toFixed(3));
     const amount2 = (value) => Number(toNum(value, 0).toFixed(2));
-    const cost6 = (value) => Number(toNum(value, 0).toFixed(6));
+    const cost1 = (value) => Number(toNum(value, 0).toFixed(1));
     const escapeHtml = (value) =>
       String(value == null ? '' : value)
         .replace(/&/g, '&amp;')
@@ -322,6 +417,8 @@
     const rmItems = Array.isArray(options.rmItems) ? options.rmItems : [];
     const colors = Array.isArray(options.colors) ? options.colors : [];
     const sizes = Array.isArray(options.sizes) ? options.sizes : [];
+    const rmColorPolicy = options.rawMaterialColorPolicyByItem || {};
+    const rmSizePolicy = options.rawMaterialSizePolicyByItem || {};
     const sourceStock = options.sourceStock || { skuMap: {}, rmMap: {} };
     const pendingTransfers = Array.isArray(options.pendingTransfers) ? options.pendingTransfers : [];
 
@@ -332,12 +429,16 @@
     const pendingTransferMap = new Map(
       pendingTransfers.map((entry) => [Number(entry.stn_out_voucher_id || 0), entry]),
     );
+    let stiTransferPickerSelectedId = null;
+    let stiTransferPickerShowAll = true;
     const totalLabel = <%- JSON.stringify(toFriendlyLabel('total', 'Total')) %>;
     const quantityLabel = <%- JSON.stringify(toFriendlyLabel('quantity', 'Quantity')) %>;
     const amountLabel = <%- JSON.stringify(toFriendlyLabel('amount', 'Amount')) %>;
     const unitsLabel = <%- JSON.stringify(toFriendlyLabel('units', 'Units')) %>;
     const addButtonTitle = <%- JSON.stringify(toFriendlyLabel('add', 'Add')) %>;
     const deleteButtonTitle = <%- JSON.stringify(toFriendlyLabel('delete', 'Delete')) %>;
+    const selectBranchMessage = <%- JSON.stringify(toFriendlyLabel('select_source_branch_first', 'Select source branch first.')) %>;
+    const noPendingTransfersMessage = <%- JSON.stringify(toFriendlyLabel('no_pending_transfer_vouchers', 'No pending transfer vouchers found for selected source branch.')) %>;
 
     const stockMapKey = (itemId, colorId = null, sizeId = null) =>
       `${Number(itemId || 0)}|${Number(colorId || 0)}|${Number(sizeId || 0)}`;
@@ -365,6 +466,49 @@
       return toInt(preferred?.id);
     };
 
+    const getRmColorState = (itemId) => {
+      const normalizedItemId = toInt(itemId);
+      if (!normalizedItemId) return { entries: [], allowNone: true, disabled: true };
+      const policy = rmColorPolicy[String(normalizedItemId)] || null;
+      const entries = Array.isArray(policy?.colors)
+        ? policy.colors
+          .map((entry) => ({ id: toInt(entry?.id), name: String(entry?.name || '').trim() }))
+          .filter((entry) => entry.id)
+        : [];
+      const allowNone = Boolean(policy?.hasColorless) || entries.length === 0;
+      return { entries, allowNone, disabled: false };
+    };
+
+    const getRmSizeState = (itemId) => {
+      const normalizedItemId = toInt(itemId);
+      if (!normalizedItemId) return { entries: [], allowNone: true, disabled: true };
+      const policy = rmSizePolicy[String(normalizedItemId)] || null;
+      const entries = Array.isArray(policy?.sizes)
+        ? policy.sizes
+          .map((entry) => ({ id: toInt(entry?.id), name: String(entry?.name || '').trim() }))
+          .filter((entry) => entry.id)
+        : [];
+      const allowNone = Boolean(policy?.hasSizeless) || entries.length === 0;
+      return { entries, allowNone, disabled: false };
+    };
+    const resolveRmPurchaseRate = (rateRows, colorId, sizeId) => {
+      const rows = Array.isArray(rateRows) ? rateRows : [];
+      const normalizedColorId = Number(colorId || 0);
+      const normalizedSizeId = Number(sizeId || 0);
+      const pickRate = (entry) => {
+        const rate = Number(entry?.purchase_rate || 0);
+        return rate > 0 ? rate : 0;
+      };
+      const exact = rows.find((entry) => Number(entry?.color_id || 0) === normalizedColorId && Number(entry?.size_id || 0) === normalizedSizeId);
+      if (exact) return pickRate(exact);
+      const colorOnly = rows.find((entry) => Number(entry?.color_id || 0) === normalizedColorId && Number(entry?.size_id || 0) === 0);
+      if (colorOnly) return pickRate(colorOnly);
+      const sizeOnly = rows.find((entry) => Number(entry?.color_id || 0) === 0 && Number(entry?.size_id || 0) === normalizedSizeId);
+      if (sizeOnly) return pickRate(sizeOnly);
+      const fallback = rows.find((entry) => Number(entry?.color_id || 0) === 0 && Number(entry?.size_id || 0) === 0);
+      return fallback ? pickRate(fallback) : 0;
+    };
+
     const defaultOutRow = () => ({
       sku_id: null,
       item_id: null,
@@ -385,9 +529,137 @@
       uom_id: toInt(line?.uom_id),
       available_qty: qty3(line?.available_qty),
       transfer_qty: qty3(line?.transfer_qty ?? line?.qty),
-      unit_cost: cost6(line?.unit_cost ?? line?.rate),
+      unit_cost: cost1(line?.unit_cost ?? line?.rate),
       amount: amount2(line?.amount),
     });
+
+    const isFocusableControl = (field) => {
+      if (!(field instanceof HTMLElement)) return false;
+      if (
+        !(field instanceof HTMLInputElement
+          || field instanceof HTMLSelectElement
+          || field instanceof HTMLTextAreaElement)
+      ) {
+        return false;
+      }
+      if (field instanceof HTMLInputElement && field.type === 'hidden') return false;
+      if (field instanceof HTMLInputElement && field.readOnly) return false;
+      if (field instanceof HTMLTextAreaElement && field.readOnly) return false;
+      if (field.disabled) return false;
+      const style = window.getComputedStyle(field);
+      if (style.display === 'none' || style.visibility === 'hidden') return false;
+      return field.offsetParent !== null || style.position === 'fixed';
+    };
+
+    const focusControl = (field, { openSearchable = true, selectText = false } = {}) => {
+      if (!(field instanceof HTMLElement)) return false;
+      if (field instanceof HTMLSelectElement && window.VoucherRowEnterNavigation?.focusFieldElement) {
+        return window.VoucherRowEnterNavigation.focusFieldElement(field, { openSearchable });
+      }
+      if (!isFocusableControl(field)) return false;
+      field.focus();
+      if (selectText && field instanceof HTMLInputElement && typeof field.select === 'function') {
+        field.select();
+      }
+      return true;
+    };
+
+    const resolveFieldHost = (node) => {
+      if (!(node instanceof HTMLElement)) return null;
+      const direct = node.matches('[data-row-field][data-row-index]')
+        ? node
+        : node.closest('[data-row-field][data-row-index]');
+      if (direct instanceof HTMLElement) return direct;
+      const wrapper = node.closest('[data-searchable-wrapper]');
+      const linkedSelect = wrapper?.querySelector('select[data-row-field][data-row-index]') || null;
+      return linkedSelect instanceof HTMLElement ? linkedSelect : null;
+    };
+
+    const captureActiveRowField = () => {
+      const active = document.activeElement;
+      if (!(active instanceof HTMLElement)) return null;
+      const host = resolveFieldHost(active);
+      if (!(host instanceof HTMLElement)) return null;
+      return {
+        rowIndex: String(host.getAttribute('data-row-index') || ''),
+        fieldKey: String(host.getAttribute('data-row-field') || ''),
+      };
+    };
+
+    const restoreActiveRowField = (state) => {
+      if (!state?.rowIndex || !state?.fieldKey) return false;
+      window.setTimeout(() => {
+        const selector = `[data-row-index="${state.rowIndex}"][data-row-field="${state.fieldKey}"]`;
+        const field = linesBody.querySelector(selector);
+        if (!(field instanceof HTMLElement)) return;
+        focusControl(field, { openSearchable: false });
+      }, 0);
+      return true;
+    };
+
+    const fieldOrderForMode = () => (
+      mode === 'out'
+        ? (activeStockType === 'RM' ? ['item', 'color', 'size', 'uom', 'qty'] : ['item', 'uom', 'qty'])
+        : ['received', 'rejected', 'reason']
+    );
+
+    const shouldShowCostAmountColumns = () => String(activeStockType || '').toUpperCase() !== 'SFG';
+
+    const focusFirstRowField = () => {
+      const firstRow = linesBody.querySelector('tr[data-row-index]');
+      if (!(firstRow instanceof HTMLElement)) return false;
+      const order = fieldOrderForMode();
+      for (let index = 0; index < order.length; index += 1) {
+        const field = firstRow.querySelector(`[data-row-field="${order[index]}"]`);
+        if (focusControl(field, { openSearchable: true })) return true;
+      }
+      return false;
+    };
+
+    const getHeaderEnterFields = () => {
+      const fields = [];
+      const push = (field) => {
+        if (isFocusableControl(field)) fields.push(field);
+      };
+      push(voucherDateInput);
+      if (mode === 'in') {
+        push(sourceBranchSelect);
+      }
+      if (mode === 'out') {
+        push(stockTypeSelect);
+        push(billBookNoInput);
+        push(destinationBranchSelect);
+        push(transferReasonSelect);
+        push(transporterNameInput);
+      }
+      push(remarksInput);
+      return fields;
+    };
+
+    const resolveHeaderFieldHost = (node) => {
+      if (!(node instanceof HTMLElement)) return null;
+      if (isFocusableControl(node) && !linesBody.contains(node)) return node;
+      const wrapper = node.closest('[data-searchable-wrapper]');
+      const linkedSelect = wrapper?.querySelector('select') || null;
+      if (linkedSelect && isFocusableControl(linkedSelect) && !linesBody.contains(linkedSelect)) {
+        return linkedSelect;
+      }
+      return null;
+    };
+
+    const resolveLineDisplayName = (line) => {
+      const explicit = String(line?.display_name || '').trim();
+      if (explicit) return explicit;
+      const skuParts = [
+        String(line?.sku_item_name || line?.item_name || '').trim(),
+        String(line?.size_name || '').trim(),
+        String(line?.color_name || '').trim(),
+        String(line?.packing_name || '').trim(),
+        String(line?.grade_name || '').trim(),
+      ].filter(Boolean);
+      if (skuParts.length) return skuParts.join(' ');
+      return String(line?.sku_code || line?.item_id || '').trim();
+    };
 
     const toInLine = (line) => ({
       stn_line_id: toInt(line?.stn_line_id || line?.id),
@@ -397,13 +669,15 @@
       size_id: toInt(line?.size_id),
       uom_id: toInt(line?.uom_id),
       uom_name: String(line?.uom_name || ''),
-      item_name: String(line?.item_name || line?.sku_item_name || ''),
+      item_name: resolveLineDisplayName(line),
       sku_code: String(line?.sku_code || ''),
       expected_qty: qty3(line?.expected_qty ?? line?.qty),
       received_qty: qty3(line?.received_qty ?? line?.qty),
       rejected_qty: qty3(line?.rejected_qty),
       variance_qty: qty3(line?.variance_qty),
       variance_reason: String(line?.variance_reason || ''),
+      unit_cost: cost1(line?.unit_cost ?? line?.rate),
+      amount: amount2(line?.amount ?? (Number(line?.received_qty ?? line?.qty ?? 0) * Number(line?.unit_cost ?? line?.rate ?? 0))),
     });
 
     let outRows = [];
@@ -422,22 +696,26 @@
         const exactKey = stockMapKey(next.item_id, next.color_id, next.size_id);
         const fallbackKey = stockMapKey(next.item_id, null, null);
         const stock = sourceStock.rmMap?.[exactKey] || sourceStock.rmMap?.[fallbackKey] || {};
+        const rmItem = rmMap.get(Number(next.item_id || 0));
         const availableBase = Number(stock.qty || 0);
-        const unitCostBase = Number(stock.wac || 0);
+        const unitCostBase = Number(
+          resolveRmPurchaseRate(rmItem?.rate_rows, next.color_id, next.size_id),
+        );
         next.available_qty = factorToBase > 0 ? qty3(availableBase / factorToBase) : 0;
-        next.unit_cost = cost6(unitCostBase * factorToBase);
+        next.unit_cost = cost1(unitCostBase * factorToBase);
       } else {
         const stockKey = `${stockType}:${Number(next.sku_id || 0)}`;
         const stock = sourceStock.skuMap?.[stockKey] || {};
+        const sku = skuMap.get(Number(next.sku_id || 0));
         const rowStatus = selectedUnit?.is_base === true ? 'LOOSE' : 'PACKED';
         const availablePairs = stockType === 'FG'
           ? Number(rowStatus === 'LOOSE' ? stock.loose_qty_pairs : stock.packed_qty_pairs)
           : Number(stock.qty_pairs || 0);
-        const unitCostBase = stockType === 'FG'
-          ? Number(rowStatus === 'LOOSE' ? stock.loose_wac : stock.packed_wac) || Number(stock.wac || 0)
-          : Number(stock.wac || 0);
+        const unitCostBase = stockType === 'FG' && Number(sku?.sale_rate || 0) > 0
+          ? Number(sku.sale_rate)
+          : 0;
         next.available_qty = factorToBase > 0 ? qty3(availablePairs / factorToBase) : 0;
-        next.unit_cost = cost6(unitCostBase * factorToBase);
+        next.unit_cost = cost1(unitCostBase * factorToBase);
       }
 
       next.transfer_qty = qty3(next.transfer_qty);
@@ -449,6 +727,72 @@
       const id = Number(stnOutId || 0);
       if (!id) return null;
       return pendingTransferMap.get(id) || null;
+    };
+
+    const formatDateDisplay = (value) => {
+      if (!value) return '';
+      const text = String(value);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+        const [yyyy, mm, dd] = text.split('-');
+        return `${dd}/${mm}/${yyyy}`;
+      }
+      const dt = new Date(value);
+      if (Number.isNaN(dt.getTime())) return text;
+      const dd = String(dt.getDate()).padStart(2, '0');
+      const mm = String(dt.getMonth() + 1).padStart(2, '0');
+      const yyyy = dt.getFullYear();
+      return `${dd}/${mm}/${yyyy}`;
+    };
+
+    const normalizeDateInputValue = (value) => {
+      if (!value) return '';
+      const text = String(value);
+      const direct = text.match(/^(\d{4}-\d{2}-\d{2})/);
+      if (direct) return direct[1];
+      const dt = new Date(value);
+      if (Number.isNaN(dt.getTime())) return '';
+      const yyyy = dt.getFullYear();
+      const mm = String(dt.getMonth() + 1).padStart(2, '0');
+      const dd = String(dt.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    };
+
+    const transferTotals = (transfer) => {
+      if (!transfer || typeof transfer !== 'object') {
+        return { baseQty: 0, dozenQty: 0 };
+      }
+      const explicitBase = Number(transfer.total_base_qty);
+      const explicitDozen = Number(transfer.total_dozen_qty);
+      if (Number.isFinite(explicitBase) || Number.isFinite(explicitDozen)) {
+        return {
+          baseQty: qty3(Number.isFinite(explicitBase) ? explicitBase : 0),
+          dozenQty: qty3(Number.isFinite(explicitDozen) ? explicitDozen : 0),
+        };
+      }
+      const totals = (Array.isArray(transfer.lines) ? transfer.lines : []).reduce(
+        (acc, line) => {
+          const factorToBase = Number(line?.uom_factor_to_base || 1) > 0
+            ? Number(line.uom_factor_to_base || 1)
+            : 1;
+          const qty = Number(line?.qty || line?.expected_qty || 0);
+          const baseQty = Number(line?.transfer_qty_base || 0);
+          const lineBaseQty = Number.isFinite(baseQty) && baseQty !== 0
+            ? baseQty
+            : qty * factorToBase;
+          let pairQty = Number(line?.transfer_qty_pairs || 0);
+          if (!(pairQty > 0) && String(line?.line_kind || '').toUpperCase() === 'SKU') {
+            pairQty = qty * factorToBase;
+          }
+          acc.baseQty += Number(lineBaseQty || 0);
+          acc.pairQty += Number(pairQty || 0);
+          return acc;
+        },
+        { baseQty: 0, pairQty: 0 },
+      );
+      return {
+        baseQty: qty3(totals.baseQty),
+        dozenQty: qty3(totals.pairQty / 12),
+      };
     };
 
     const ensureOutRows = () => {
@@ -490,101 +834,208 @@
         return;
       }
       const totalQty = inRows.reduce((sum, row) => sum + Number(row.received_qty || 0), 0);
-      const totalAmount = inRows.reduce((sum, row) => sum + Number(row.received_qty || 0) * Number(initialVoucher?.lines?.find((line) => Number(line.id) === Number(row.stn_line_id))?.rate || 0), 0);
+      const totalExpectedQty = inRows.reduce((sum, row) => sum + Number(row.expected_qty || 0), 0);
+      const totalRejectedQty = inRows.reduce((sum, row) => sum + Number(row.rejected_qty || 0), 0);
+      const totalAmount = inRows.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+      const totalVarianceQty = inRows.reduce((sum, row) => sum + Number(row.variance_qty || 0), 0);
       if (totalQtyInput) {
         totalQtyInput.value = qty3(totalQty).toFixed(3);
+      }
+      if (totalExpectedQtyInput) {
+        totalExpectedQtyInput.value = qty3(totalExpectedQty).toFixed(3);
+      }
+      if (totalReceivedQtyInput) {
+        totalReceivedQtyInput.value = qty3(totalQty).toFixed(3);
+      }
+      if (totalRejectedQtyInput) {
+        totalRejectedQtyInput.value = qty3(totalRejectedQty).toFixed(3);
+      }
+      if (totalVarianceQtyInput) {
+        totalVarianceQtyInput.value = qty3(totalVarianceQty).toFixed(3);
       }
       if (totalAmountInput) {
         totalAmountInput.value = amount2(totalAmount).toFixed(2);
       }
+      if (totalQtyByUnitWrap) {
+        const totalsByUnit = new Map();
+        inRows.forEach((row) => {
+          if (!(Number(row.received_qty || 0) > 0)) return;
+          const unitLabel = String(row.uom_name || '').trim();
+          if (!unitLabel) return;
+          totalsByUnit.set(
+            unitLabel,
+            Number(totalsByUnit.get(unitLabel) || 0) + Number(row.received_qty || 0),
+          );
+        });
+        if (totalsByUnit.size) {
+          if (totalQtyByUnitRow) totalQtyByUnitRow.classList.remove('hidden');
+          totalQtyByUnitWrap.innerHTML = Array.from(totalsByUnit.entries())
+            .map(([label, value]) => {
+              const safeLabel = escapeHtml(label);
+              const safeValue = qty3(value).toFixed(3);
+              return `<span class="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${safeLabel}: ${safeValue}</span>`;
+            })
+            .join('');
+        } else {
+          if (totalQtyByUnitRow) totalQtyByUnitRow.classList.add('hidden');
+          totalQtyByUnitWrap.innerHTML = '';
+        }
+      }
     };
 
     const outHeadColumns = () => {
+      const showCostAmount = shouldShowCostAmountColumns();
       if (activeStockType === 'RM') {
-        return [
+        const columns = [
           { key: 'item', label: <%- JSON.stringify(toFriendlyLabel('raw_material', 'Raw Material')) %> },
           { key: 'color', label: <%- JSON.stringify(toFriendlyLabel('color', 'Color')) %> },
           { key: 'size', label: <%- JSON.stringify(toFriendlyLabel('size', 'Size')) %> },
           { key: 'uom', label: <%- JSON.stringify(toFriendlyLabel('unit', 'Unit')) %> },
           { key: 'available', label: <%- JSON.stringify(toFriendlyLabel('available_qty', 'Available Qty')) %>, align: 'text-right' },
           { key: 'qty', label: <%- JSON.stringify(toFriendlyLabel('transfer_qty', 'Transfer Qty')) %>, align: 'text-right' },
-          { key: 'cost', label: <%- JSON.stringify(toFriendlyLabel('unit_cost', 'Unit Cost')) %>, align: 'text-right' },
-          { key: 'amount', label: <%- JSON.stringify(toFriendlyLabel('amount', 'Amount')) %>, align: 'text-right' },
           { key: 'actions', label: <%- JSON.stringify(toFriendlyLabel('actions', 'Actions')) %>, align: 'text-center' },
           { key: 'sr', label: <%- JSON.stringify(toFriendlyLabel('sr_no', 'Sr #')) %>, align: 'text-center' },
         ];
+        if (showCostAmount) {
+          columns.splice(6, 0,
+            { key: 'cost', label: <%- JSON.stringify(toFriendlyLabel('unit_cost', 'Unit Cost')) %>, align: 'text-right' },
+            { key: 'amount', label: <%- JSON.stringify(toFriendlyLabel('amount', 'Amount')) %>, align: 'text-right' },
+          );
+        }
+        return columns;
       }
-      return [
+      const columns = [
         { key: 'item', label: <%- JSON.stringify(toFriendlyLabel('item_name', 'Item')) %> },
         { key: 'uom', label: <%- JSON.stringify(toFriendlyLabel('unit', 'Unit')) %> },
         { key: 'available', label: <%- JSON.stringify(toFriendlyLabel('available_qty', 'Available Qty')) %>, align: 'text-right' },
         { key: 'qty', label: <%- JSON.stringify(toFriendlyLabel('transfer_qty', 'Transfer Qty')) %>, align: 'text-right' },
-        { key: 'cost', label: <%- JSON.stringify(toFriendlyLabel('unit_cost', 'Unit Cost')) %>, align: 'text-right' },
-        { key: 'amount', label: <%- JSON.stringify(toFriendlyLabel('amount', 'Amount')) %>, align: 'text-right' },
         { key: 'actions', label: <%- JSON.stringify(toFriendlyLabel('actions', 'Actions')) %>, align: 'text-center' },
         { key: 'sr', label: <%- JSON.stringify(toFriendlyLabel('sr_no', 'Sr #')) %>, align: 'text-center' },
       ];
+      if (showCostAmount) {
+        columns.splice(4, 0,
+          { key: 'cost', label: <%- JSON.stringify(toFriendlyLabel('unit_cost', 'Unit Cost')) %>, align: 'text-right' },
+          { key: 'amount', label: <%- JSON.stringify(toFriendlyLabel('amount', 'Amount')) %>, align: 'text-right' },
+        );
+      }
+      return columns;
     };
 
-    const inHeadColumns = () => [
-      { key: 'item', label: <%- JSON.stringify(toFriendlyLabel('item_name', 'Item')) %> },
-      { key: 'uom', label: <%- JSON.stringify(toFriendlyLabel('unit', 'Unit')) %> },
-      { key: 'expected', label: <%- JSON.stringify(toFriendlyLabel('expected_qty', 'Expected Qty')) %>, align: 'text-right' },
-      { key: 'received', label: <%- JSON.stringify(toFriendlyLabel('received_qty', 'Received Qty')) %>, align: 'text-right' },
-      { key: 'rejected', label: <%- JSON.stringify(toFriendlyLabel('rejected_qty', 'Rejected Qty')) %>, align: 'text-right' },
-      { key: 'variance', label: <%- JSON.stringify(toFriendlyLabel('variance_qty', 'Variance Qty')) %>, align: 'text-right' },
-      { key: 'reason', label: <%- JSON.stringify(toFriendlyLabel('variance_reason', 'Variance Reason')) %> },
-      { key: 'sr', label: <%- JSON.stringify(toFriendlyLabel('sr_no', 'Sr #')) %>, align: 'text-center' },
-    ];
+    const inHeadColumns = () => {
+      const columns = [
+        { key: 'item', label: <%- JSON.stringify(toFriendlyLabel('item_name', 'Item')) %> },
+        ...(activeStockType === 'RM'
+          ? [
+              { key: 'color', label: <%- JSON.stringify(toFriendlyLabel('color', 'Color')) %> },
+              { key: 'size', label: <%- JSON.stringify(toFriendlyLabel('size', 'Size')) %> },
+            ]
+          : []),
+        { key: 'uom', label: <%- JSON.stringify(toFriendlyLabel('unit', 'Unit')) %> },
+        { key: 'expected', label: <%- JSON.stringify(toFriendlyLabel('expected_qty', 'Expected Qty')) %>, align: 'text-right' },
+        { key: 'received', label: <%- JSON.stringify(toFriendlyLabel('received_qty', 'Received Qty')) %>, align: 'text-right' },
+        { key: 'rejected', label: <%- JSON.stringify(toFriendlyLabel('rejected_qty', 'Rejected Qty')) %>, align: 'text-right' },
+        { key: 'variance', label: <%- JSON.stringify(toFriendlyLabel('variance_qty', 'Variance Qty')) %>, align: 'text-right' },
+        { key: 'reason', label: <%- JSON.stringify(toFriendlyLabel('variance_reason', 'Variance Reason')) %> },
+        { key: 'sr', label: <%- JSON.stringify(toFriendlyLabel('sr_no', 'Sr #')) %>, align: 'text-center' },
+      ];
+      if (shouldShowCostAmountColumns()) {
+        columns.splice(6, 0,
+          { key: 'cost', label: <%- JSON.stringify(toFriendlyLabel('unit_cost', 'Unit Cost')) %>, align: 'text-right' },
+          { key: 'amount', label: <%- JSON.stringify(toFriendlyLabel('amount', 'Amount')) %>, align: 'text-right' },
+        );
+      }
+      return columns;
+    };
 
     const renderFooter = () => {
       if (!linesFooter) return;
 
       if (mode === 'out') {
+        const showCostAmount = shouldShowCostAmountColumns();
         const descriptorColspan = activeStockType === 'RM' ? 5 : 3;
-        const totalColspan = activeStockType === 'RM' ? 10 : 8;
+        const totalColspan = outHeadColumns().length;
         const addDisabled = canSave ? '' : 'disabled';
+
+        if (showCostAmount) {
+          linesFooter.innerHTML = `
+            <tr class="bg-slate-50">
+              <td colspan="${descriptorColspan}" class="border-t border-slate-200 px-2 py-2 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-700">${escapeHtml(totalLabel)}</td>
+              <td class="border-t border-slate-200 px-2 py-1.5">
+                <input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-qty aria-label="${escapeHtml(quantityLabel)}">
+              </td>
+              <td class="border-t border-slate-200 px-2 py-1.5"></td>
+              <td class="border-t border-slate-200 px-2 py-1.5">
+                <input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.00" data-total-amount aria-label="${escapeHtml(amountLabel)}">
+              </td>
+              <td class="border-t border-slate-200 px-2 py-1 text-center">
+                <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white p-2 text-slate-700 disabled:opacity-40" data-add-row aria-label="${escapeHtml(addButtonTitle)}" title="${escapeHtml(addButtonTitle)}" ${addDisabled}>
+                  <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
+                </button>
+              </td>
+              <td class="border-t border-slate-200 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${escapeHtml(unitsLabel)}</td>
+            </tr>
+            <tr class="bg-slate-50" data-total-qty-by-unit-row>
+              <td colspan="${totalColspan}" class="border-t border-slate-200 px-2 py-2">
+                <div class="flex flex-wrap items-center gap-2" data-total-qty-by-unit></div>
+              </td>
+            </tr>
+          `;
+        } else {
+          linesFooter.innerHTML = `
+            <tr class="bg-slate-50">
+              <td colspan="${descriptorColspan}" class="border-t border-slate-200 px-2 py-2 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-700">${escapeHtml(totalLabel)}</td>
+              <td class="border-t border-slate-200 px-2 py-1.5">
+                <input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-qty aria-label="${escapeHtml(quantityLabel)}">
+              </td>
+              <td class="border-t border-slate-200 px-2 py-1 text-center">
+                <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white p-2 text-slate-700 disabled:opacity-40" data-add-row aria-label="${escapeHtml(addButtonTitle)}" title="${escapeHtml(addButtonTitle)}" ${addDisabled}>
+                  <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
+                </button>
+              </td>
+              <td class="border-t border-slate-200 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${escapeHtml(unitsLabel)}</td>
+            </tr>
+            <tr class="bg-slate-50" data-total-qty-by-unit-row>
+              <td colspan="${totalColspan}" class="border-t border-slate-200 px-2 py-2">
+                <div class="flex flex-wrap items-center gap-2" data-total-qty-by-unit></div>
+              </td>
+            </tr>
+          `;
+        }
+      } else {
+        const showCostAmount = shouldShowCostAmountColumns();
+        const cols = inHeadColumns();
+        const descriptorColspan = activeStockType === 'RM' ? 4 : 2;
+        const expectedCell = `<td class="border-t border-slate-200 px-2 py-1.5"><input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-expected-qty></td>`;
+        const receivedCell = `<td class="border-t border-slate-200 px-2 py-1.5"><input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-received-qty data-total-qty></td>`;
+        const rejectedCell = `<td class="border-t border-slate-200 px-2 py-1.5"><input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-rejected-qty></td>`;
+        const varianceCell = `<td class="border-t border-slate-200 px-2 py-1.5"><input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-variance-qty></td>`;
+        const amountCell = `<td class="border-t border-slate-200 px-2 py-1.5"><input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.00" data-total-amount></td>`;
+        const spacerCell = '<td class="border-t border-slate-200 px-2 py-1.5"></td>';
 
         linesFooter.innerHTML = `
           <tr class="bg-slate-50">
             <td colspan="${descriptorColspan}" class="border-t border-slate-200 px-2 py-2 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-700">${escapeHtml(totalLabel)}</td>
-            <td class="border-t border-slate-200 px-2 py-1.5">
-              <input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-qty aria-label="${escapeHtml(quantityLabel)}">
-            </td>
-            <td class="border-t border-slate-200 px-2 py-1.5"></td>
-            <td class="border-t border-slate-200 px-2 py-1.5">
-              <input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.00" data-total-amount aria-label="${escapeHtml(amountLabel)}">
-            </td>
-            <td class="border-t border-slate-200 px-2 py-1 text-center">
-              <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white p-2 text-slate-700 disabled:opacity-40" data-add-row aria-label="${escapeHtml(addButtonTitle)}" title="${escapeHtml(addButtonTitle)}" ${addDisabled}>
-                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
-              </button>
-            </td>
-            <td class="border-t border-slate-200 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${escapeHtml(unitsLabel)}</td>
+            ${expectedCell}
+            ${receivedCell}
+            ${rejectedCell}
+            ${varianceCell}
+            ${showCostAmount ? `${spacerCell}${amountCell}` : ''}
+            ${spacerCell}
+            ${spacerCell}
           </tr>
-          <tr class="bg-slate-50" data-total-qty-by-unit-row>
-            <td colspan="${totalColspan}" class="border-t border-slate-200 px-2 py-2">
+          <tr class="bg-slate-50 hidden" data-total-qty-by-unit-row>
+            <td colspan="${cols.length}" class="border-t border-slate-200 px-2 py-2">
               <div class="flex flex-wrap items-center gap-2" data-total-qty-by-unit></div>
-            </td>
-          </tr>
-        `;
-      } else {
-        const cols = inHeadColumns();
-        linesFooter.innerHTML = `
-          <tr class="bg-slate-50">
-            <td colspan="${cols.length}" class="border-t border-slate-200 px-2 py-2 text-xs font-semibold text-slate-700">
-              <div class="flex flex-wrap items-center justify-end gap-2">
-                <span class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${escapeHtml(quantityLabel)}</span>
-                <input type="text" readonly class="h-8 rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-qty>
-                <span class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${escapeHtml(amountLabel)}</span>
-                <input type="text" readonly class="h-8 rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.00" data-total-amount>
-              </div>
             </td>
           </tr>
         `;
       }
 
       totalQtyInput = linesFooter.querySelector('[data-total-qty]');
+      totalExpectedQtyInput = linesFooter.querySelector('[data-total-expected-qty]');
+      totalReceivedQtyInput = linesFooter.querySelector('[data-total-received-qty]');
+      totalRejectedQtyInput = linesFooter.querySelector('[data-total-rejected-qty]');
+      totalVarianceQtyInput = linesFooter.querySelector('[data-total-variance-qty]');
       totalAmountInput = linesFooter.querySelector('[data-total-amount]');
       totalQtyByUnitWrap = linesFooter.querySelector('[data-total-qty-by-unit]');
       totalQtyByUnitRow = linesFooter.querySelector('[data-total-qty-by-unit-row]');
@@ -600,6 +1051,7 @@
 
     const renderOutRows = () => {
       ensureOutRows();
+      const showCostAmount = shouldShowCostAmountColumns();
       linesBody.innerHTML = outRows
         .map((row, rowIndex) => {
           const stockType = activeStockType;
@@ -609,11 +1061,19 @@
             : `<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-out-change="sku_id" data-row-index="${rowIndex}" data-row-field="item" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? '' : 'disabled'}><option value=""></option>${skuList.filter((sku) => String(sku.stock_type || '').toUpperCase() === stockType).map((sku) => `<option value="${Number(sku.id)}" ${Number(row.sku_id || 0) === Number(sku.id) ? 'selected' : ''}>${escapeHtml(sku.sku_name || sku.sku_code || sku.id)}</option>`).join('')}</select>`;
 
           const colorCell = stockType === 'RM'
-            ? `<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-out-change="color_id" data-row-index="${rowIndex}" data-row-field="color" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? '' : 'disabled'}><option value=""></option>${colors.map((entry) => `<option value="${Number(entry.id)}" ${Number(row.color_id || 0) === Number(entry.id) ? 'selected' : ''}>${escapeHtml(entry.name)}</option>`).join('')}</select>`
+            ? (() => {
+                const state = getRmColorState(row.item_id);
+                const disabled = !canSave || state.disabled;
+                return `<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-out-change="color_id" data-row-index="${rowIndex}" data-row-field="color" data-searchable-select="true" data-searchable-variant="unified" ${disabled ? 'disabled' : ''}><option value="">${state.allowNone ? 'None' : ''}</option>${state.entries.map((entry) => `<option value="${Number(entry.id)}" ${Number(row.color_id || 0) === Number(entry.id) ? 'selected' : ''}>${escapeHtml(entry.name || entry.id)}</option>`).join('')}</select>`;
+              })()
             : '';
 
           const sizeCell = stockType === 'RM'
-            ? `<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-out-change="size_id" data-row-index="${rowIndex}" data-row-field="size" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? '' : 'disabled'}><option value=""></option>${sizes.map((entry) => `<option value="${Number(entry.id)}" ${Number(row.size_id || 0) === Number(entry.id) ? 'selected' : ''}>${escapeHtml(entry.name)}</option>`).join('')}</select>`
+            ? (() => {
+                const state = getRmSizeState(row.item_id);
+                const disabled = !canSave || state.disabled;
+                return `<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-out-change="size_id" data-row-index="${rowIndex}" data-row-field="size" data-searchable-select="true" data-searchable-variant="unified" ${disabled ? 'disabled' : ''}><option value="">${state.allowNone ? 'None' : ''}</option>${state.entries.map((entry) => `<option value="${Number(entry.id)}" ${Number(row.size_id || 0) === Number(entry.id) ? 'selected' : ''}>${escapeHtml(entry.name || entry.id)}</option>`).join('')}</select>`;
+              })()
             : '';
 
           const uomCell = `<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-out-change="uom_id" data-row-index="${rowIndex}" data-row-field="uom" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? '' : 'disabled'}><option value=""></option>${unitOptions.map((entry) => `<option value="${Number(entry.id)}" ${Number(row.uom_id || 0) === Number(entry.id) ? 'selected' : ''}>${escapeHtml(entry.name || entry.code || entry.id)}</option>`).join('')}</select>`;
@@ -624,8 +1084,12 @@
             `<td class="border-t border-slate-200 px-2 py-1">${uomCell}</td>`,
             `<td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${qty3(row.available_qty).toFixed(3)}" readonly></td>`,
             `<td class="border-t border-slate-200 px-2 py-1"><input type="number" step="0.001" min="0" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs" value="${qty3(row.transfer_qty).toFixed(3)}" data-out-input="transfer_qty" data-row-index="${rowIndex}" data-row-field="qty" ${canSave ? '' : 'readonly'}></td>`,
-            `<td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${cost6(row.unit_cost).toFixed(6)}" readonly></td>`,
-            `<td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${amount2(row.amount).toFixed(2)}" readonly></td>`,
+            ...(showCostAmount
+              ? [
+                  `<td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${cost1(row.unit_cost).toFixed(1)}" readonly></td>`,
+                  `<td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${amount2(row.amount).toFixed(2)}" readonly></td>`,
+                ]
+              : []),
             `<td class="border-t border-slate-200 px-2 py-1 text-center"><button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white p-2 text-rose-600 disabled:opacity-40" data-remove-row="${rowIndex}" aria-label="${escapeHtml(deleteButtonTitle)}" title="${escapeHtml(deleteButtonTitle)}" ${!canSave || outRows.length <= 1 ? 'disabled' : ''}><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M9 7V5h6v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg></button></td>`,
             `<td class="border-t border-slate-200 px-2 py-2 text-center text-xs font-semibold text-slate-500">${rowIndex + 1}</td>`,
           ];
@@ -637,18 +1101,36 @@
     };
 
     const renderInRows = () => {
+      const showCostAmount = shouldShowCostAmountColumns();
       linesBody.innerHTML = inRows
         .map((row, rowIndex) => {
+          const stockType = activeStockType;
           const variance = qty3(Number(row.expected_qty || 0) - (Number(row.received_qty || 0) + Number(row.rejected_qty || 0)));
           row.variance_qty = variance;
-          const itemName = row.item_name || row.sku_code || row.item_id || '';
+          row.unit_cost = cost1(row.unit_cost);
+          row.amount = amount2(Number(row.received_qty || 0) * Number(row.unit_cost || 0));
+          const itemName = resolveLineDisplayName(row);
+          const colorName = stockType === 'RM'
+            ? (colorMap.get(Number(row.color_id || 0))?.name || '')
+            : '';
+          const sizeName = stockType === 'RM'
+            ? (sizeMap.get(Number(row.size_id || 0))?.name || '')
+            : '';
           return `<tr data-row-index="${rowIndex}">
             <td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-xs" value="${escapeHtml(itemName)}" readonly></td>
+            ${stockType === 'RM'
+              ? `<td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-xs" value="${escapeHtml(colorName)}" readonly></td>
+            <td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-xs" value="${escapeHtml(sizeName)}" readonly></td>`
+              : ''}
             <td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-xs" value="${escapeHtml(row.uom_name || '')}" readonly></td>
             <td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${qty3(row.expected_qty).toFixed(3)}" readonly></td>
             <td class="border-t border-slate-200 px-2 py-1"><input type="number" step="0.001" min="0" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs" value="${qty3(row.received_qty).toFixed(3)}" data-in-input="received_qty" data-row-index="${rowIndex}" data-row-field="received" ${canSave ? '' : 'readonly'}></td>
             <td class="border-t border-slate-200 px-2 py-1"><input type="number" step="0.001" min="0" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs" value="${qty3(row.rejected_qty).toFixed(3)}" data-in-input="rejected_qty" data-row-index="${rowIndex}" data-row-field="rejected" ${canSave ? '' : 'readonly'}></td>
             <td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs ${variance !== 0 ? 'text-amber-700' : ''}" value="${variance.toFixed(3)}" readonly></td>
+            ${showCostAmount
+              ? `<td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${cost1(row.unit_cost).toFixed(1)}" readonly></td>
+            <td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${amount2(row.amount).toFixed(2)}" readonly></td>`
+              : ''}
             <td class="border-t border-slate-200 px-2 py-1"><input type="text" maxlength="250" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" value="${escapeHtml(row.variance_reason || '')}" data-in-input="variance_reason" data-row-index="${rowIndex}" data-row-field="reason" ${canSave ? '' : 'readonly'}></td>
             <td class="border-t border-slate-200 px-2 py-2 text-center text-xs font-semibold text-slate-500">${rowIndex + 1}</td>
           </tr>`;
@@ -673,6 +1155,7 @@
     const updateOutRow = (rowIndex, key, value) => {
       const row = outRows[rowIndex];
       if (!row) return;
+      const focusState = captureActiveRowField();
       const next = { ...row };
       if ([ 'item_id', 'sku_id', 'color_id', 'size_id', 'uom_id' ].includes(key)) {
         next[key] = toInt(value);
@@ -692,6 +1175,7 @@
       }
       outRows[rowIndex] = applyOutDerived(next);
       renderRows();
+      restoreActiveRowField(focusState);
     };
 
     const setInRowsFromTransfer = (transfer) => {
@@ -712,6 +1196,138 @@
       });
     };
 
+    const clearInTransferSelection = () => {
+      if (stnOutIdInput) stnOutIdInput.value = '';
+      if (transferRefTextInput) transferRefTextInput.value = '';
+      if (billBookNoInput) billBookNoInput.value = '';
+      if (stockTypeSelect) stockTypeSelect.value = '';
+      if (destinationBranchNameInput) destinationBranchNameInput.value = '';
+      inRows = [];
+    };
+
+    const applyInTransferSelection = (transfer, { syncSourceBranch = true } = {}) => {
+      if (!transfer) {
+        clearInTransferSelection();
+        return;
+      }
+      const stnOutId = Number(transfer.stn_out_voucher_id || 0) || null;
+      if (!stnOutId) {
+        clearInTransferSelection();
+        return;
+      }
+      if (stnOutIdInput) stnOutIdInput.value = String(stnOutId);
+      if (transferRefTextInput) {
+        transferRefTextInput.value = String(transfer.transfer_ref_no || '').trim();
+      }
+      if (sourceBranchSelect && syncSourceBranch) {
+        const sourceId = Number(transfer.source_branch_id || 0) || null;
+        sourceBranchSelect.value = sourceId ? String(sourceId) : '';
+      }
+      if (sourceBranchNameInput) {
+        sourceBranchNameInput.value = transfer.source_branch_name || String(transfer.source_branch_id || '');
+      }
+      if (destinationBranchNameInput) {
+        destinationBranchNameInput.value = transfer.destination_branch_name || String(transfer.destination_branch_id || '');
+      }
+      if (billBookNoInput) {
+        billBookNoInput.value = String(transfer.bill_book_no || '');
+      }
+      if (stockTypeSelect) {
+        stockTypeSelect.value = normalizeStockType(transfer.stock_type);
+        activeStockType = normalizeStockType(transfer.stock_type);
+      }
+      setInRowsFromTransfer(transfer);
+    };
+
+    const pendingTransfersForSelectedSource = () => {
+      const sourceBranchId = Number(sourceBranchSelect?.value || 0) || null;
+      if (!sourceBranchId) return [];
+      const branchRows = pendingTransfers.filter(
+        (entry) => Number(entry?.source_branch_id || 0) === Number(sourceBranchId),
+      );
+      if (stiTransferPickerShowAll) return branchRows;
+      const selectedDate = normalizeDateInputValue(
+        stiTransferPickerDateInput?.value || voucherDateInput?.value || '',
+      );
+      if (!selectedDate) return branchRows;
+      return branchRows.filter(
+        (entry) => normalizeDateInputValue(entry?.dispatch_date || entry?.voucher_date || '') === selectedDate,
+      );
+    };
+
+    const refreshStiTransferPickerFilterUi = () => {
+      if (!(stiTransferPickerDateOnlyToggle instanceof HTMLButtonElement)) return;
+      const dateOnlyEnabled = !stiTransferPickerShowAll;
+      stiTransferPickerDateOnlyToggle.setAttribute('aria-pressed', dateOnlyEnabled ? 'true' : 'false');
+      stiTransferPickerDateOnlyToggle.classList.toggle('bg-accent', dateOnlyEnabled);
+      stiTransferPickerDateOnlyToggle.classList.toggle('text-white', dateOnlyEnabled);
+      stiTransferPickerDateOnlyToggle.classList.toggle('border-accent', dateOnlyEnabled);
+      stiTransferPickerDateOnlyToggle.classList.toggle('bg-white', !dateOnlyEnabled);
+      stiTransferPickerDateOnlyToggle.classList.toggle('text-slate-700', !dateOnlyEnabled);
+      stiTransferPickerDateOnlyToggle.classList.toggle('border-slate-300', !dateOnlyEnabled);
+    };
+
+    const closeStiTransferPicker = () => {
+      if (!stiTransferPickerModal) return;
+      stiTransferPickerModal.classList.add('hidden');
+      stiTransferPickerModal.classList.remove('flex');
+      stiTransferPickerModal.setAttribute('aria-hidden', 'true');
+    };
+
+    const renderStiTransferPickerRows = () => {
+      if (!stiTransferPickerBody) return;
+      refreshStiTransferPickerFilterUi();
+      const rows = pendingTransfersForSelectedSource();
+      if (!rows.length) {
+        stiTransferPickerBody.innerHTML = `
+          <tr>
+            <td colspan="5" class="px-2 py-6 text-center text-sm text-slate-500">${escapeHtml(noPendingTransfersMessage)}</td>
+          </tr>
+        `;
+        stiTransferPickerSelectedId = null;
+        return;
+      }
+      if (!rows.some((entry) => Number(entry.stn_out_voucher_id || 0) === Number(stiTransferPickerSelectedId || 0))) {
+        stiTransferPickerSelectedId = Number(rows[0].stn_out_voucher_id || 0) || null;
+      }
+      stiTransferPickerBody.innerHTML = rows.map((entry) => {
+        const stnOutId = Number(entry.stn_out_voucher_id || 0) || 0;
+        const checked = Number(stiTransferPickerSelectedId || 0) === stnOutId ? 'checked' : '';
+        const rowClass = checked ? 'bg-accent/5 ring-1 ring-inset ring-accent/25' : 'hover:bg-slate-50';
+        return `
+          <tr data-sti-transfer-row="${stnOutId}" class="cursor-pointer ${rowClass}">
+            <td class="border-t border-slate-200 px-2 py-2 text-left text-slate-700">${escapeHtml(String(entry.transfer_ref_no || ''))}</td>
+            <td class="border-t border-slate-200 px-2 py-2 text-left text-slate-700">${escapeHtml(String(entry.bill_book_no || '-'))}</td>
+            <td class="border-t border-slate-200 px-2 py-2 text-left text-slate-700">${escapeHtml(String(entry.stock_type || '-'))}</td>
+            <td class="border-t border-slate-200 px-2 py-2 text-left text-slate-700">${escapeHtml(formatDateDisplay(entry.dispatch_date))}</td>
+            <td class="border-t border-slate-200 px-2 py-2 text-center">
+              <input type="radio" name="sti_transfer_picker_row" class="h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent" value="${stnOutId}" ${checked}>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    };
+
+    const openStiTransferPicker = () => {
+      if (!stiTransferPickerModal) return;
+      const sourceBranchId = Number(sourceBranchSelect?.value || 0) || null;
+      if (!sourceBranchId) {
+        window.alert(selectBranchMessage);
+        focusControl(sourceBranchSelect, { openSearchable: true });
+        return;
+      }
+      if (stiTransferPickerDateInput) {
+        stiTransferPickerDateInput.value = normalizeDateInputValue(voucherDateInput?.value || '');
+      }
+      stiTransferPickerShowAll = true;
+      const selectedStnOutId = Number(stnOutIdInput?.value || 0) || null;
+      stiTransferPickerSelectedId = selectedStnOutId;
+      renderStiTransferPickerRows();
+      stiTransferPickerModal.classList.remove('hidden');
+      stiTransferPickerModal.classList.add('flex');
+      stiTransferPickerModal.setAttribute('aria-hidden', 'false');
+    };
+
     linesBody.addEventListener('change', (event) => {
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
@@ -726,8 +1342,13 @@
         const rowIndex = Number(target.getAttribute('data-row-index') || -1);
         const key = String(target.getAttribute('data-in-input') || '');
         if (rowIndex < 0 || !inRows[rowIndex]) return;
-        if (key === 'variance_reason') inRows[rowIndex].variance_reason = String(target.value || '').trim();
+        if (key === 'variance_reason') {
+          inRows[rowIndex].variance_reason = String(target.value || '').trim();
+          return;
+        }
+        const focusState = captureActiveRowField();
         renderRows();
+        restoreActiveRowField(focusState);
       }
     });
 
@@ -747,11 +1368,15 @@
         if (rowIndex < 0 || !inRows[rowIndex]) return;
         if (key === 'received_qty' || key === 'rejected_qty') {
           inRows[rowIndex][key] = qty3(target.value);
+          const focusState = captureActiveRowField();
+          renderRows();
+          restoreActiveRowField(focusState);
+          return;
         }
         if (key === 'variance_reason') {
           inRows[rowIndex].variance_reason = String(target.value || '').trim();
+          return;
         }
-        renderRows();
       }
     });
 
@@ -767,6 +1392,31 @@
       renderRows();
     });
 
+    form.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' || event.defaultPrevented) return;
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (target.matches('textarea')) return;
+      if (linesBody.contains(target)) return;
+
+      const currentField = resolveHeaderFieldHost(target);
+      if (!currentField) return;
+      const headerFields = getHeaderEnterFields();
+      if (!headerFields.length) return;
+
+      const currentIndex = headerFields.indexOf(currentField);
+      if (currentIndex < 0) return;
+      event.preventDefault();
+
+      for (let index = currentIndex + 1; index < headerFields.length; index += 1) {
+        if (focusControl(headerFields[index], { openSearchable: true })) {
+          return;
+        }
+      }
+      focusFirstRowField();
+    });
+
     if (stockTypeSelect) {
       stockTypeSelect.addEventListener('change', () => {
         activeStockType = normalizeStockType(stockTypeSelect.value);
@@ -775,28 +1425,90 @@
       });
     }
 
-    if (transferRefSelect) {
-      transferRefSelect.addEventListener('change', () => {
-        const selected = transferRefSelect.selectedOptions?.[0] || null;
-        const stnOutId = Number(selected?.dataset?.stnId || 0) || null;
-        stnOutIdInput.value = stnOutId || '';
-        const transfer = readPendingTransfer(stnOutId);
-        if (transfer) {
-          if (sourceBranchNameInput) {
-            sourceBranchNameInput.value = transfer.source_branch_name || String(transfer.source_branch_id || '');
-          }
-          if (destinationBranchNameInput) {
-            destinationBranchNameInput.value = transfer.destination_branch_name || String(transfer.destination_branch_id || '');
-          }
-          if (stockTypeSelect) {
-            stockTypeSelect.value = normalizeStockType(transfer.stock_type);
-            activeStockType = normalizeStockType(transfer.stock_type);
-          }
-          setInRowsFromTransfer(transfer);
-        } else {
-          inRows = [];
-        }
+    if (sourceBranchSelect && mode === 'in') {
+      sourceBranchSelect.addEventListener('change', () => {
+        if (!canSave) return;
+        clearInTransferSelection();
         renderRows();
+      });
+    }
+
+    if (stiTransferPickerDateInput) {
+      stiTransferPickerDateInput.addEventListener('change', () => {
+        renderStiTransferPickerRows();
+      });
+    }
+
+    if (stiTransferPickerDateOnlyToggle) {
+      stiTransferPickerDateOnlyToggle.addEventListener('click', () => {
+        stiTransferPickerShowAll = !stiTransferPickerShowAll;
+        renderStiTransferPickerRows();
+      });
+    }
+
+    if (mode === 'in' && voucherDateInput && receivedDateInput) {
+      const syncReceivedDateWithVoucherDate = () => {
+        receivedDateInput.value = String(voucherDateInput.value || '');
+      };
+      syncReceivedDateWithVoucherDate();
+      voucherDateInput.addEventListener('change', syncReceivedDateWithVoucherDate);
+      voucherDateInput.addEventListener('input', syncReceivedDateWithVoucherDate);
+    }
+
+    if (openStiTransferPickerButton) {
+      openStiTransferPickerButton.addEventListener('click', openStiTransferPicker);
+    }
+
+    if (stiTransferPickerBody) {
+      stiTransferPickerBody.addEventListener('click', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        const row = target.closest('[data-sti-transfer-row]');
+        if (!row) return;
+        const stnOutId = Number(row.getAttribute('data-sti-transfer-row') || 0) || null;
+        if (!stnOutId) return;
+        stiTransferPickerSelectedId = stnOutId;
+        renderStiTransferPickerRows();
+      });
+      stiTransferPickerBody.addEventListener('change', (event) => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        if (target.name !== 'sti_transfer_picker_row') return;
+        stiTransferPickerSelectedId = Number(target.value || 0) || null;
+        renderStiTransferPickerRows();
+      });
+    }
+
+    if (stiTransferPickerApplyButton) {
+      stiTransferPickerApplyButton.addEventListener('click', () => {
+        const selectedId = Number(stiTransferPickerSelectedId || 0) || null;
+        const transfer = readPendingTransfer(selectedId);
+        if (!transfer) {
+          window.alert(noPendingTransfersMessage);
+          return;
+        }
+        applyInTransferSelection(transfer);
+        renderRows();
+        closeStiTransferPicker();
+      });
+    }
+
+    if (stiTransferPickerCloseButtons.length) {
+      stiTransferPickerCloseButtons.forEach((button) => {
+        button.addEventListener('click', closeStiTransferPicker);
+      });
+    }
+
+    if (stiTransferPickerModal) {
+      stiTransferPickerModal.addEventListener('click', (event) => {
+        if (event.target === stiTransferPickerModal) {
+          closeStiTransferPicker();
+        }
+      });
+      document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape') return;
+        if (stiTransferPickerModal.classList.contains('hidden')) return;
+        closeStiTransferPicker();
       });
     }
 
@@ -832,6 +1544,10 @@
           window.alert(<%- JSON.stringify(toFriendlyLabel('destination_branch_required', 'Destination branch is required.')) %>);
           return false;
         }
+        if (!billBookNoInput?.value.trim()) {
+          window.alert(<%- JSON.stringify(toFriendlyLabel('bill_book_no_required', 'Bill Book No is required.')) %>);
+          return false;
+        }
         if (!outRows.length) {
           window.alert(<%- JSON.stringify(toFriendlyLabel('error_required_fields', 'Required fields are missing.')) %>);
           return false;
@@ -849,6 +1565,10 @@
           }
         }
       } else {
+        if (!sourceBranchSelect?.value) {
+          window.alert(selectBranchMessage);
+          return false;
+        }
         if (!stnOutIdInput?.value) {
           window.alert(<%- JSON.stringify(toFriendlyLabel('transfer_reference_required', 'Transfer reference is required.')) %>);
           return false;
@@ -910,29 +1630,26 @@
         outRows = [applyOutDerived(defaultOutRow())];
       }
       if (transferRefTextInput && !transferRefTextInput.value.trim()) {
-        transferRefTextInput.value = `TRF-${Number(voucherNoInput?.value || 0) || ''}`;
+        const sourceBranchId = Number(options?.sourceBranch?.id || 0) || Number(<%- JSON.stringify(branchId || 0) %>) || 0;
+        const voucherNo = Number(voucherNoInput?.value || 0) || '';
+        transferRefTextInput.value = sourceBranchId > 0
+          ? `TRF-${sourceBranchId}-${voucherNo}`
+          : `TRF-${voucherNo}`;
       }
     } else {
+      if (sourceBranchSelect && Number(initialVoucher?.source_branch_id || 0) > 0) {
+        sourceBranchSelect.value = String(Number(initialVoucher.source_branch_id));
+      }
       if (initialVoucher?.lines?.length) {
         inRows = initialVoucher.lines.map((line) => toInLine(line));
       } else {
-        const selectedOption = transferRefSelect?.selectedOptions?.[0] || null;
-        const stnOutId = Number(selectedOption?.dataset?.stnId || stnOutIdInput?.value || 0) || null;
+        const stnOutId = Number(stnOutIdInput?.value || 0) || null;
         if (stnOutId) {
-          stnOutIdInput.value = String(stnOutId);
           const transfer = readPendingTransfer(stnOutId);
           if (transfer) {
-            if (sourceBranchNameInput) {
-              sourceBranchNameInput.value = transfer.source_branch_name || String(transfer.source_branch_id || '');
-            }
-            if (destinationBranchNameInput) {
-              destinationBranchNameInput.value = transfer.destination_branch_name || String(transfer.destination_branch_id || '');
-            }
-            if (stockTypeSelect) {
-              stockTypeSelect.value = normalizeStockType(transfer.stock_type);
-              activeStockType = normalizeStockType(transfer.stock_type);
-            }
-            setInRowsFromTransfer(transfer);
+            applyInTransferSelection(transfer, { syncSourceBranch: true });
+          } else {
+            clearInTransferSelection();
           }
         }
       }
@@ -950,9 +1667,7 @@
         linesBody,
         rowSelector: 'tr[data-row-index]',
         fieldAttr: 'data-row-field',
-        fieldOrder: mode === 'out'
-          ? (activeStockType === 'RM' ? ['item', 'color', 'size', 'uom', 'qty'] : ['item', 'uom', 'qty'])
-          : ['received', 'rejected', 'reason'],
+        fieldOrder: fieldOrderForMode(),
         appendRow: mode === 'out' && canSave
           ? () => {
               outRows.push(applyOutDerived(defaultOutRow()));

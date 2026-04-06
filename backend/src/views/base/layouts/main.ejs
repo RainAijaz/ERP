@@ -45,6 +45,105 @@
         };
       })();
     </script>
+    <script>
+      (function () {
+        const BRANCH_SYNC_KEY = "erp_branch_context_sync_v1";
+        const tabId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        const currentBranchId = String(<%- JSON.stringify(branchId || "") %>).trim();
+        const branchChangedPrompt = <%- JSON.stringify(String(t("branch_changed_reload_confirm") )) %>;
+        let hasUnsavedChanges = false;
+        let branchReloadStarted = false;
+
+        const isEditableField = (element) => {
+          if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement)) {
+            return false;
+          }
+          if (element.disabled || element.readOnly) return false;
+          if (element instanceof HTMLInputElement) {
+            const fieldType = String(element.type || "").toLowerCase();
+            if (fieldType === "hidden" || fieldType === "submit" || fieldType === "button" || fieldType === "reset") {
+              return false;
+            }
+          }
+          return true;
+        };
+
+        const markDirtyFromEvent = (event) => {
+          if (!event.isTrusted) return;
+          if (!isEditableField(event.target)) return;
+          hasUnsavedChanges = true;
+        };
+
+        const publishBranchSelection = (nextBranchId) => {
+          const normalizedBranchId = String(nextBranchId || "").trim();
+          if (!normalizedBranchId) return;
+          try {
+            localStorage.setItem(
+              BRANCH_SYNC_KEY,
+              JSON.stringify({
+                tabId,
+                branchId: normalizedBranchId,
+                ts: Date.now(),
+                path: String(window.location.pathname || ""),
+              }),
+            );
+          } catch (err) {
+            // ignore storage errors
+          }
+        };
+
+        const navigateWithBranch = (nextBranchId) => {
+          if (branchReloadStarted) return;
+          const normalizedBranchId = String(nextBranchId || "").trim();
+          if (!normalizedBranchId) return;
+          branchReloadStarted = true;
+          const nextUrl = new URL(window.location.href);
+          nextUrl.searchParams.set("branch_id", normalizedBranchId);
+          window.location.assign(nextUrl.toString());
+        };
+
+        window.__syncBranchSelection = publishBranchSelection;
+        document.addEventListener("input", markDirtyFromEvent, true);
+        document.addEventListener("change", markDirtyFromEvent, true);
+        document.addEventListener(
+          "submit",
+          () => {
+            hasUnsavedChanges = false;
+          },
+          true,
+        );
+
+        const branchSelect = document.getElementById("branch-select");
+        if (branchSelect instanceof HTMLSelectElement) {
+          branchSelect.addEventListener("change", () => {
+            publishBranchSelection(branchSelect.value);
+          });
+        }
+
+        window.addEventListener("storage", (event) => {
+          if (event.key !== BRANCH_SYNC_KEY) return;
+          if (!event.newValue) return;
+
+          let packet = null;
+          try {
+            packet = JSON.parse(event.newValue);
+          } catch (err) {
+            packet = null;
+          }
+          if (!packet || typeof packet !== "object") return;
+          if (String(packet.tabId || "") === tabId) return;
+
+          const nextBranchId = String(packet.branchId || "").trim();
+          if (!nextBranchId || nextBranchId === currentBranchId) return;
+
+          if (hasUnsavedChanges) {
+            const shouldReload = window.confirm(branchChangedPrompt);
+            if (!shouldReload) return;
+          }
+          navigateWithBranch(nextBranchId);
+        });
+      })();
+    </script>
     <div class="flex min-h-screen flex-col">
       <!-- HEADER: Top navigation bar and brand -->
       <header class="sticky top-0 z-40 overflow-visible border-b border-slate-200 bg-white/90 backdrop-blur">
@@ -84,6 +183,182 @@
     <!-- GLOBAL MODALS: Notice and error modals -->
     <%- include("../partials/notice-modal") %>
     <%- include("../partials/error-modal") %>
+    <div class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 p-4" data-global-delete-confirm-modal>
+      <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl">
+        <div class="border-b border-slate-200 px-6 py-4">
+          <div class="text-sm font-semibold text-slate-700" data-global-delete-confirm-title><%= t("confirm_delete") %></div>
+          <p class="mt-1 text-xs text-slate-500" data-global-delete-confirm-message><%= t("permanent_delete_message") %></p>
+        </div>
+        <div class="flex items-center gap-2 px-6 py-5">
+          <button type="button" class="flex-1 rounded-xl bg-slate-900 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-slate-800" data-global-delete-confirm-yes><%= t("continue") %></button>
+          <button type="button" class="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" data-global-delete-confirm-no><%= t("cancel") %></button>
+        </div>
+      </div>
+    </div>
+    <script>
+      (function () {
+        const modal = document.querySelector("[data-global-delete-confirm-modal]");
+        const titleEl = modal?.querySelector("[data-global-delete-confirm-title]");
+        const messageEl = modal?.querySelector("[data-global-delete-confirm-message]");
+        const yesBtn = modal?.querySelector("[data-global-delete-confirm-yes]");
+        const noBtn = modal?.querySelector("[data-global-delete-confirm-no]");
+        if (!(modal instanceof HTMLElement) || !(yesBtn instanceof HTMLElement) || !(noBtn instanceof HTMLElement)) return;
+
+        const defaultTitle = <%- JSON.stringify(String(t("confirm_delete") || t("confirm") || "").trim() || "Confirm Delete") %>;
+        const defaultMessage = <%- JSON.stringify(String(t("permanent_delete_message") || t("are_you_sure") || "").trim() || "This action permanently deletes the record.") %>;
+        const csrfTokenValue = <%- JSON.stringify(csrfToken || "") %>;
+        let pendingConfirmAction = null;
+
+        const openConfirm = ({ title = defaultTitle, message = defaultMessage, onConfirm = null } = {}) => {
+          pendingConfirmAction = typeof onConfirm === "function" ? onConfirm : null;
+          if (titleEl instanceof HTMLElement) titleEl.textContent = String(title || defaultTitle).trim() || defaultTitle;
+          if (messageEl instanceof HTMLElement) messageEl.textContent = String(message || defaultMessage).trim() || defaultMessage;
+          modal.classList.remove("hidden");
+          modal.classList.add("flex");
+          window.requestAnimationFrame(() => yesBtn.focus());
+        };
+
+        const closeConfirm = () => {
+          pendingConfirmAction = null;
+          modal.classList.add("hidden");
+          modal.classList.remove("flex");
+        };
+
+        const confirmAndRun = () => {
+          const action = pendingConfirmAction;
+          closeConfirm();
+          if (typeof action === "function") action();
+        };
+
+        const submitPostTo = (actionUrl) => {
+          const action = String(actionUrl || "").trim();
+          if (!action) return;
+          const form = document.createElement("form");
+          form.method = "POST";
+          form.action = action;
+          form.style.display = "none";
+          if (csrfTokenValue) {
+            const csrfInput = document.createElement("input");
+            csrfInput.type = "hidden";
+            csrfInput.name = "_csrf";
+            csrfInput.value = csrfTokenValue;
+            form.appendChild(csrfInput);
+          }
+          document.body.appendChild(form);
+          form.submit();
+        };
+
+        const toText = (value) => String(value || "").replace(/\s+/g, " ").trim();
+        const buildDeleteMessage = (...sources) => {
+          const label = sources
+            .map((src) => {
+              if (!(src instanceof HTMLElement)) return "";
+              return (
+                src.getAttribute("data-confirm-message")
+                || src.getAttribute("data-delete-label")
+                || src.getAttribute("aria-label")
+                || src.textContent
+                || ""
+              );
+            })
+            .map(toText)
+            .find(Boolean);
+          if (!label) return defaultMessage;
+          if (label.toLowerCase() === defaultMessage.toLowerCase()) return defaultMessage;
+          return `${label}. ${defaultMessage}`;
+        };
+
+        const confirmDeleteFormSubmit = (form, message) => {
+          if (!(form instanceof HTMLFormElement)) return;
+          openConfirm({
+            title: defaultTitle,
+            message,
+            onConfirm: () => {
+              form.dataset.globalDeleteConfirmed = "1";
+              if (typeof form.requestSubmit === "function") {
+                form.requestSubmit();
+              } else {
+                form.submit();
+              }
+              window.setTimeout(() => {
+                delete form.dataset.globalDeleteConfirmed;
+              }, 0);
+            },
+          });
+        };
+
+        yesBtn.addEventListener("click", confirmAndRun);
+        noBtn.addEventListener("click", closeConfirm);
+        modal.addEventListener("click", (event) => {
+          if (event.target === modal) closeConfirm();
+        });
+        document.addEventListener("keydown", (event) => {
+          if (event.key === "Escape" && modal.classList.contains("flex")) closeConfirm();
+        });
+
+        document.addEventListener(
+          "click",
+          (event) => {
+            const target = event.target instanceof HTMLElement ? event.target : null;
+            if (!target) return;
+
+            const voucherDeleteBtn = target.closest("[data-delete-voucher]");
+            if (voucherDeleteBtn instanceof HTMLElement && !voucherDeleteBtn.hasAttribute("disabled")) {
+              event.preventDefault();
+              event.stopImmediatePropagation();
+              const contextForm = voucherDeleteBtn.closest("form");
+              const deleteForm =
+                (contextForm instanceof HTMLElement
+                  ? contextForm.parentElement?.querySelector("[data-delete-voucher-form]")
+                  : null)
+                || document.querySelector("[data-delete-voucher-form]");
+              if (deleteForm instanceof HTMLFormElement) {
+                const message = buildDeleteMessage(voucherDeleteBtn, deleteForm);
+                confirmDeleteFormSubmit(deleteForm, message);
+              }
+              return;
+            }
+
+            const explicitDeleteActionEl = target.closest("[data-delete-action]");
+            if (explicitDeleteActionEl instanceof HTMLElement) {
+              const action = String(explicitDeleteActionEl.getAttribute("data-delete-action") || "").trim();
+              if (!action) return;
+              const label = String(explicitDeleteActionEl.getAttribute("data-delete-label") || "").trim();
+              event.preventDefault();
+              event.stopImmediatePropagation();
+              openConfirm({
+                title: defaultTitle,
+                message: buildDeleteMessage(explicitDeleteActionEl) || label || defaultMessage,
+                onConfirm: () => submitPostTo(action),
+              });
+            }
+          },
+          true,
+        );
+
+        document.addEventListener(
+          "submit",
+          (event) => {
+            const form = event.target instanceof HTMLFormElement ? event.target : null;
+            if (!form) return;
+            if (form.dataset.globalDeleteConfirmed === "1") return;
+            const action = String(form.getAttribute("action") || "").toLowerCase();
+            const onsubmit = String(form.getAttribute("onsubmit") || "");
+            const isDeleteLike =
+              form.matches("[data-delete-voucher-form]") ||
+              /delete/.test(action) ||
+              /confirm\s*\(/i.test(onsubmit);
+            if (!isDeleteLike) return;
+
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            const message = buildDeleteMessage(form);
+            confirmDeleteFormSubmit(form, message);
+          },
+          true,
+        );
+      })();
+    </script>
     <!-- LIVE APPROVAL TOASTS: Real-time approval notifications -->
     <script>
       (function () {
@@ -286,7 +561,7 @@
         if (form.dataset.asyncVoucherSubmitBound === "1") return;
         form.dataset.asyncVoucherSubmitBound = "1";
 
-        const genericError = <%- JSON.stringify(String(t("generic_error") || "Something went wrong. Please try again.")) %>;
+        const genericError = <%- JSON.stringify(String(t("generic_error") )) %>;
         const submitControls = Array.from(
           form.querySelectorAll('button[type="submit"], input[type="submit"]'),
         ).filter(
@@ -392,7 +667,7 @@
                 // Keep user on the same page and show approval/shortage context in the modal instead of redirecting.
                 window.showVoucherError(
                   String(payload.message),
-                  String(payload.title || "<%= t('approval_submitted') || 'Approval Submitted' %>"),
+                  String(payload.title || "<%= t('approval_submitted')  %>"),
                 );
                 return;
               }
@@ -654,14 +929,14 @@
           wrap.setAttribute("data-live-approval-toast", "true");
           const status = String(payload.status || "").toUpperCase();
           const badgeClass = status === "APPROVED" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700";
-          const badgeText = status || "<%= t('status') || 'Status' %>";
+          const badgeText = status || "<%= t('status')  %>";
           const count = getDecisionCount();
           const extraCount = count > 1 ? count - 1 : 0;
           const summaryLine = payload.summary ? `<p class="mt-1 text-xs text-slate-500">${payload.summary}</p>` : "";
           const moreLine = extraCount > 0
             ? `<p class="mt-1 text-[10px] uppercase tracking-[0.18em] text-slate-400">+${extraCount} more</p>`
             : "";
-          const link = payload.link ? `<a class="mt-2 inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-accent hover:text-accent/80" href="${payload.link}"><%= t('view') || 'View' %> →</a>` : "";
+          const link = payload.link ? `<a class="mt-2 inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-accent hover:text-accent/80" href="${payload.link}"><%= t('view')  %> →</a>` : "";
           const requestId = payload.requestId ? `<div class="text-[10px] uppercase tracking-[0.18em] text-slate-400">#${payload.requestId}</div>` : "";
           wrap.innerHTML = `
             <div class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
@@ -672,7 +947,7 @@
               </div>
               <div class="flex-1">
                 <div class="flex items-center justify-between gap-2">
-                  <div class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("notice") || "Notice" %></div>
+                  <div class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("notice")  %></div>
                   <span class="rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] ${badgeClass}">${badgeText}</span>
                 </div>
                 ${requestId}
@@ -680,7 +955,7 @@
                 ${summaryLine}
                 ${moreLine}
                 ${link}
-                <p class="mt-1 text-[10px] uppercase tracking-[0.18em] text-slate-400"><%= t("dismiss") || "Dismiss" %></p>
+                <p class="mt-1 text-[10px] uppercase tracking-[0.18em] text-slate-400"><%= t("dismiss")  %></p>
               </div>
               <button class="text-slate-400 hover:text-slate-600" type="button" aria-label="Close">
                 <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

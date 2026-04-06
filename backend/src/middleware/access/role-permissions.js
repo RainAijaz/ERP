@@ -5,6 +5,11 @@ const { isActionApplicable } = require("../../utils/scope-action-policy");
 const normalizeAction = (action) => {
   if (!action) return null;
   const key = action.toLowerCase();
+  if (key === "load") return "can_load";
+  if (key === "view_details") return "can_view_details";
+  if (key === "export_excel_csv") return "can_export_excel_csv";
+  if (key === "filter_all_branches") return "can_filter_all_branches";
+  if (key === "view_cost_fields") return "can_view_cost_fields";
   if (key.startsWith("can_")) return key;
   return `can_${key}`;
 };
@@ -66,6 +71,12 @@ const hasRequiredAccess = (permissions, action, scopeType) => {
       isActionApplicable(scopeType, "can_view") && Boolean(permissions.can_view)
     );
   }
+  if (action === "can_view_details") {
+    return isActionApplicable(scopeType, "can_load") && Boolean(permissions.can_load);
+  }
+  if (action === "can_load") {
+    return isActionApplicable(scopeType, "can_view") && Boolean(permissions.can_view);
+  }
   if (
     [
       "can_edit",
@@ -73,12 +84,18 @@ const hasRequiredAccess = (permissions, action, scopeType) => {
       "can_hard_delete",
       "can_approve",
       "can_print",
+      "can_export_excel_csv",
+      "can_filter_all_branches",
+      "can_view_cost_fields",
     ].includes(action)
   ) {
-    return (
-      isActionApplicable(scopeType, "can_navigate") &&
-      Boolean(permissions.can_navigate)
-    );
+    if (isActionApplicable(scopeType, "can_navigate")) {
+      return Boolean(permissions.can_navigate);
+    }
+    if (isActionApplicable(scopeType, "can_load")) {
+      return Boolean(permissions.can_load);
+    }
+    return false;
   }
   return true;
 };

@@ -399,6 +399,105 @@ const loadPurchaseVoucherStockLinesTx = async ({ trx, voucherId }) =>
     .where({ "vl.voucher_header_id": voucherId, "vl.line_kind": "ITEM" })
     .orderBy("vl.line_no", "asc");
 
+const buildRmRateIdentityKey = ({ itemId, colorId = null, sizeId = null }) => {
+  const normalizedItemId = Number(toPositiveInt(itemId) || 0);
+  const normalizedColorId = Number(normalizeRmDimensionId(colorId) || 0);
+  const normalizedSizeId = Number(normalizeRmDimensionId(sizeId) || 0);
+  return `${normalizedItemId}:${normalizedColorId}:${normalizedSizeId}`;
+};
+
+const buildRmRateIdentitiesFromLines = (lines = []) => {
+  const identities = [];
+  const seen = new Set();
+  (lines || []).forEach((row) => {
+    const itemId = toPositiveInt(row?.item_id);
+    if (!itemId) return;
+    const colorId =
+      normalizeRmDimensionId(row?.meta?.color_id) ||
+      normalizeRmDimensionId(row?.meta?.rm_color_id);
+    const sizeId =
+      normalizeRmDimensionId(row?.meta?.size_id) ||
+      normalizeRmDimensionId(row?.meta?.rm_size_id);
+    const key = buildRmRateIdentityKey({ itemId, colorId, sizeId });
+    if (seen.has(key)) return;
+    seen.add(key);
+    identities.push({
+      itemId: Number(itemId),
+      colorId: normalizeRmDimensionId(colorId),
+      sizeId: normalizeRmDimensionId(sizeId),
+    });
+  });
+  return identities;
+};
+
+const loadHistoricalWeightedAvgRateTx = async ({
+  trx,
+  itemId,
+  colorId = null,
+  sizeId = null,
+  supportsLedgerVariantDimensions = true,
+}) => {
+  const query = trx("erp.stock_ledger as sl")
+    .join("erp.voucher_header as vh", "vh.id", "sl.voucher_header_id")
+    .select(
+      trx.raw("COALESCE(SUM(sl.qty), 0) as total_qty"),
+      trx.raw("COALESCE(SUM(sl.qty * sl.unit_cost), 0) as total_value"),
+    )
+    .where("sl.category", "RM")
+    .where("sl.stock_state", "ON_HAND")
+    .where("sl.direction", 1)
+    .where("vh.voucher_type_code", PURCHASE_VOUCHER_TYPES.generalPurchase)
+    .where("vh.status", "APPROVED")
+    .where("sl.item_id", Number(itemId));
+
+  if (supportsLedgerVariantDimensions) {
+    query
+      .whereRaw("COALESCE(sl.color_id, 0) = ?", [Number(colorId || 0)])
+      .whereRaw("COALESCE(sl.size_id, 0) = ?", [Number(sizeId || 0)]);
+  }
+
+  const row = await query.first();
+  const totalQty = Number(row?.total_qty || 0);
+  const totalValue = Number(row?.total_value || 0);
+  if (!Number.isFinite(totalQty) || totalQty <= 0) return null;
+  if (!Number.isFinite(totalValue)) return null;
+  return Number((totalValue / totalQty).toFixed(4));
+};
+
+const syncRmWeightedAverageRatesTx = async ({ trx, identities = [] }) => {
+  const normalized = Array.isArray(identities) ? identities : [];
+  if (!normalized.length) return;
+  if (!(await tableExistsTx(trx, "erp.rm_purchase_rates"))) return;
+
+  const supportsLedgerVariantDimensions =
+    await hasStockLedgerVariantDimensionsTx(trx);
+
+  for (const identity of normalized) {
+    const itemId = toPositiveInt(identity?.itemId);
+    if (!itemId) continue;
+    const colorId = normalizeRmDimensionId(identity?.colorId);
+    const sizeId = normalizeRmDimensionId(identity?.sizeId);
+
+    const historicalAvg = await loadHistoricalWeightedAvgRateTx({
+      trx,
+      itemId,
+      colorId,
+      sizeId,
+      supportsLedgerVariantDimensions,
+    });
+
+    const updateQuery = trx("erp.rm_purchase_rates")
+      .where({ rm_item_id: Number(itemId), is_active: true })
+      .whereRaw("COALESCE(color_id, 0) = ?", [Number(colorId || 0)])
+      .whereRaw("COALESCE(size_id, 0) = ?", [Number(sizeId || 0)])
+      .update({
+        avg_purchase_rate:
+          historicalAvg !== null ? historicalAvg : trx.raw("purchase_rate"),
+      });
+    await updateQuery;
+  }
+};
+
 // Rollback helper for prior OUT rows: add qty/value back to balance.
 const addBackRmStockFromLedgerTx = async ({ trx, row }) => {
   const branchId = toPositiveInt(row?.branch_id);
@@ -807,13 +906,24 @@ const syncPurchaseVoucherStockTx = async ({
     .where({ id: normalizedVoucherId })
     .first();
   if (!header) return;
+  const voucherLines = await loadPurchaseVoucherStockLinesTx({
+    trx,
+    voucherId: normalizedVoucherId,
+  });
+  const rmRateIdentities = buildRmRateIdentitiesFromLines(voucherLines);
 
   await ensurePurchaseStockInfraTx(trx);
   await rollbackPurchaseStockLedgerByVoucherTx({
     trx,
     voucherId: normalizedVoucherId,
   });
-  if (String(header.status || "").toUpperCase() !== "APPROVED") return;
+  if (String(header.status || "").toUpperCase() !== "APPROVED") {
+    await syncRmWeightedAverageRatesTx({
+      trx,
+      identities: rmRateIdentities,
+    });
+    return;
+  }
 
   if (normalizedVoucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase) {
     await applyPurchaseVoucherStockInTx({
@@ -821,6 +931,10 @@ const syncPurchaseVoucherStockTx = async ({
       voucherId: normalizedVoucherId,
       branchId: Number(header.branch_id),
       voucherDate: toDateOnly(header.voucher_date),
+    });
+    await syncRmWeightedAverageRatesTx({
+      trx,
+      identities: rmRateIdentities,
     });
     return;
   }
@@ -830,6 +944,10 @@ const syncPurchaseVoucherStockTx = async ({
     voucherId: normalizedVoucherId,
     branchId: Number(header.branch_id),
     voucherDate: toDateOnly(header.voucher_date),
+  });
+  await syncRmWeightedAverageRatesTx({
+    trx,
+    identities: rmRateIdentities,
   });
 };
 

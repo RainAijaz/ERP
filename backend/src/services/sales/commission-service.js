@@ -93,7 +93,7 @@ const convertToBaseQty = ({ qty, fromUomId, baseUomId, conversionMap, t }) => {
   if (Number.isFinite(directFactor) && directFactor > 0) return numericQty * directFactor;
   const reverseFactor = conversionMap.get(`${Number(baseUomId)}:${Number(fromUomId)}`);
   if (Number.isFinite(reverseFactor) && reverseFactor > 0) return numericQty / reverseFactor;
-  throw new HttpError(400, t("error_invalid_value") || "Invalid value");
+  throw new HttpError(400, t("error_invalid_value") );
 };
 
 const buildRuleMatchIndex = async (trx, salesmanEmployeeId) => {

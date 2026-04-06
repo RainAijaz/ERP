@@ -30,19 +30,19 @@ const parseNumber = (value) => {
 };
 
 const toFriendlySaveError = (err, t) => {
-  if (!err) return t("error_unable_save") || "Unable to save.";
+  if (!err) return t("error_unable_save") ;
   const detail = String(err.detail || "").toLowerCase();
   const message = String(err.message || "").toLowerCase();
   if (String(err.code || "") === "23505") {
     if (detail.includes("(code)") || message.includes("code")) {
-      return t("error_duplicate_code") || "Code already exists.";
+      return t("error_duplicate_code") ;
     }
     if (detail.includes("(name)") || message.includes("name")) {
-      return t("error_duplicate_name") || "Name already exists.";
+      return t("error_duplicate_name") ;
     }
   }
   return (
-    err.detail || err.message || t("error_unable_save") || "Unable to save."
+    err.detail || err.message || t("error_unable_save") 
   );
 };
 
@@ -692,8 +692,8 @@ router.post(
         return next(new HttpError(404, res.locals.t("error_not_found")));
       const nextIsActive = !current.is_active;
       const toggleLabel = nextIsActive
-        ? res.locals.t("activate") || "Activate"
-        : res.locals.t("deactivate") || "Deactivate";
+        ? res.locals.t("activate") 
+        : res.locals.t("deactivate") ;
 
       const approval = await handleScreenApproval({
         req,
@@ -790,8 +790,7 @@ router.post(
         if (String(deleteErr?.code || "") === "23503") {
           throw new HttpError(
             409,
-            res.locals.t("error_record_in_use") ||
-              "This record is being used in other ERP areas and cannot be deleted.",
+            res.locals.t("error_record_in_use") ,
           );
         }
         throw deleteErr;

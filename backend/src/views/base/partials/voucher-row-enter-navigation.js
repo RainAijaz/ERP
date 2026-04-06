@@ -50,6 +50,48 @@
     return true;
   };
 
+  const isEnabledActionButton = (el) => {
+    if (!(el instanceof HTMLElement)) return false;
+    if (el.hasAttribute("disabled")) return false;
+    if (String(el.getAttribute("aria-disabled") || "").toLowerCase() === "true") return false;
+    if (el.classList.contains("pointer-events-none")) return false;
+    return isElementVisible(el);
+  };
+
+  const bindGlobalVoucherNoEnterLoad = () => {
+    if (typeof document === "undefined") return;
+    if (window.__voucherNoEnterLoadBound) return;
+    window.__voucherNoEnterLoadBound = true;
+
+    document.addEventListener(
+      "keydown",
+      (event) => {
+        if (event.defaultPrevented) return;
+        if (event.key !== "Enter") return;
+        if (event.isComposing) return;
+        if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+
+        const target = event.target;
+        if (!(target instanceof HTMLElement)) return;
+        if (!target.matches("[data-voucher-no-input]")) return;
+
+        const voucherForm = target.closest(
+          "[data-voucher-form], [data-sales-voucher-form], [data-purchase-voucher-form]",
+        );
+        if (!(voucherForm instanceof HTMLElement)) return;
+
+        const loadButton = voucherForm.querySelector("[data-load-voucher]");
+        if (!(loadButton instanceof HTMLElement)) return;
+        if (!isEnabledActionButton(loadButton)) return;
+
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (typeof loadButton.click === "function") loadButton.click();
+      },
+      true,
+    );
+  };
+
   const escapeAttributeValue = (value) => {
     const text = String(value || "");
     if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
@@ -258,10 +300,40 @@
       }, 0);
       return true;
     };
+    const resolveRefreshedRow = (row, { indexHint = -1 } = {}) => {
+      if (!(row instanceof HTMLElement)) return null;
+      if (rowMatches(row)) return row;
+
+      const rows = getRows();
+      const rowStableAttrName = row.hasAttribute("data-row-index")
+        ? "data-row-index"
+        : row.hasAttribute("data-index")
+          ? "data-index"
+          : "";
+      const rowStableAttrValue = rowStableAttrName
+        ? String(row.getAttribute(rowStableAttrName) || "")
+        : "";
+      if (rowStableAttrName && rowStableAttrValue) {
+        const matched = rows.find((candidate) =>
+          String(candidate.getAttribute(rowStableAttrName) || "") === rowStableAttrValue,
+        );
+        if (matched instanceof HTMLElement) return matched;
+      }
+
+      const numericRowIndex = Number.parseInt(String(row.dataset.rowIndex || row.dataset.index || ""), 10);
+      if (Number.isInteger(numericRowIndex) && numericRowIndex >= 0) {
+        const byDatasetIndex = rows[numericRowIndex];
+        if (byDatasetIndex instanceof HTMLElement) return byDatasetIndex;
+      }
+      if (Number.isInteger(indexHint) && indexHint >= 0) {
+        const byHint = rows[indexHint];
+        if (byHint instanceof HTMLElement) return byHint;
+      }
+      return null;
+    };
 
     const moveForwardFrom = (row, fieldKey, { defer = false } = {}) => {
       if (!(row instanceof HTMLElement) || !fieldKey) return false;
-      if (!defer && !rowMatches(row)) return false;
 
       const runMove = (targetRow) => {
         if (!rowMatches(targetRow)) return false;
@@ -277,27 +349,14 @@
         return appendAndFocusNextRow(targetRow);
       };
 
-      if (!defer) return runMove(row);
+      if (!defer) {
+        const targetRow = resolveRefreshedRow(row);
+        if (!(targetRow instanceof HTMLElement)) return false;
+        return runMove(targetRow);
+      }
       const rowIndex = getRows().indexOf(row);
-      const rowStableAttrName = row.hasAttribute("data-row-index")
-        ? "data-row-index"
-        : row.hasAttribute("data-index")
-          ? "data-index"
-          : "";
-      const rowStableAttrValue = rowStableAttrName
-        ? String(row.getAttribute(rowStableAttrName) || "")
-        : "";
       window.setTimeout(() => {
-        const rows = getRows();
-        let refreshedRow = null;
-        if (rowStableAttrName && rowStableAttrValue) {
-          refreshedRow = rows.find((candidate) =>
-            String(candidate.getAttribute(rowStableAttrName) || "") === rowStableAttrValue,
-          ) || null;
-        }
-        if (!refreshedRow && rowIndex >= 0) {
-          refreshedRow = rows[rowIndex] || null;
-        }
+        const refreshedRow = resolveRefreshedRow(row, { indexHint: rowIndex });
         if (!(refreshedRow instanceof HTMLElement)) return;
         runMove(refreshedRow);
       }, 0);
@@ -435,6 +494,7 @@
   };
 
   if (typeof window !== "undefined") {
+    bindGlobalVoucherNoEnterLoad();
     window.createVoucherRowEnterNavigator = createVoucherRowEnterNavigator;
     window.VoucherRowEnterNavigation = {
       create: createVoucherRowEnterNavigator,

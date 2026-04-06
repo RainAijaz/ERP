@@ -182,6 +182,7 @@
             <a href="<%= nextVoucherNo ? ((basePath || '') + '?voucher_no=' + nextVoucherNo + '&view=1') : ((basePath || '') + '?new=1') %>" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700" data-header-nav-btn><%= t("next") %></a>
             <button type="button" class="rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-white shadow-sm" data-load-voucher data-header-nav-btn><%= t("load") %></button>
             <div class="ml-auto flex items-center gap-2">
+              <a href="<%= selectedVoucherNo ? ((basePath || '') + '/gate-pass?voucher_no=' + selectedVoucherNo) : '#' %>" target="_blank" rel="noopener" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700 <%= selectedVoucherNo ? '' : 'pointer-events-none opacity-40' %>"><%= t("gate_pass") %></a>
               <button type="button" class="rounded-xl border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-rose-700 disabled:opacity-40" data-delete-voucher <%= canDeleteVoucher ? '' : 'disabled' %>><%= t("delete") %></button>
               <button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700" onclick="window.print()"><%= t("print") %></button>
             </div>
@@ -339,7 +340,7 @@
                   <div class="flex flex-wrap items-center justify-between gap-3" data-lines-footer-bar>
                     <div class="flex flex-wrap items-center gap-2">
                       <span class="uppercase tracking-[0.08em]"><%= t("total") %></span>
-                      <span class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t("pairs") || "Pairs" %></span>
+                      <span class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t("pairs")  %></span>
                       <input
                         type="text"
                         readonly
@@ -348,7 +349,7 @@
                         data-total-pairs
                         data-footer-total-pill
                       >
-                      <span class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t("dozens") || "Dozens" %></span>
+                      <span class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t("dozens")  %></span>
                       <input
                         type="text"
                         readonly
@@ -376,8 +377,8 @@
       <% if (isDcv) { %>
         <section class="hidden rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs" data-dcv-availability-panel>
           <div class="mb-2 flex items-center justify-between gap-2">
-            <h3 class="text-sm font-semibold text-slate-800" data-dcv-availability-title><%= t("availability") || "Availability" %></h3>
-            <button type="button" class="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-700" data-dcv-availability-close><%= t("close") || "Close" %></button>
+            <h3 class="text-sm font-semibold text-slate-800" data-dcv-availability-title><%= t("availability")  %></h3>
+            <button type="button" class="rounded-md border border-slate-300 bg-white px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-700" data-dcv-availability-close><%= t("close")  %></button>
           </div>
           <div class="space-y-2 text-slate-700" data-dcv-availability-content></div>
         </section>
@@ -467,8 +468,9 @@
     const isDcv = mode === "dcv";
     const isConsumption = mode === "consumption";
     const showUnit = mode === "production";
-    const showStatus = mode === "planning";
-    const showUnitSelector = showUnit || isDcv || isConsumption;
+    const isPlanning = mode === "planning";
+    const showStatus = false;
+    const showUnitSelector = showUnit || isDcv || isConsumption || isPlanning;
     const primaryEntityField = isConsumption ? "item_id" : "sku_id";
     const primaryEntityLabel = isConsumption
       ? <%- JSON.stringify(t("raw_material")) %>
@@ -505,36 +507,36 @@
       const status = String(row?.availability_status || "CHECK").toUpperCase();
       if (status === "OK") {
         return {
-          label: <%- JSON.stringify(t("ok") || "OK") %>,
+          label: <%- JSON.stringify(t("ok") ) %>,
           buttonClass: "border-emerald-300 bg-emerald-50 text-emerald-700",
-          title: <%- JSON.stringify(t("availability_ok") || "Availability OK") %>,
+          title: <%- JSON.stringify(t("availability_ok") ) %>,
         };
       }
       if (status === "SHORT") {
         return {
-          label: <%- JSON.stringify(t("short") || "Short") %>,
+          label: <%- JSON.stringify(t("short") ) %>,
           buttonClass: "border-amber-300 bg-amber-50 text-amber-700",
-          title: <%- JSON.stringify(t("availability_short") || "Availability Short") %>,
+          title: <%- JSON.stringify(t("availability_short") ) %>,
         };
       }
       if (status === "LOADING") {
         return {
-          label: <%- JSON.stringify(t("checking") || "Checking") %>,
+          label: <%- JSON.stringify(t("checking") ) %>,
           buttonClass: "border-sky-300 bg-sky-50 text-sky-700",
-          title: <%- JSON.stringify(t("checking") || "Checking") %>,
+          title: <%- JSON.stringify(t("checking") ) %>,
         };
       }
       if (status === "NA") {
         return {
-          label: <%- JSON.stringify(t("na") || "N/A") %>,
+          label: <%- JSON.stringify(t("na") ) %>,
           buttonClass: "border-slate-300 bg-slate-50 text-slate-600",
-          title: <%- JSON.stringify(t("availability") || "Availability") %>,
+          title: <%- JSON.stringify(t("availability") ) %>,
         };
       }
       return {
-        label: <%- JSON.stringify(t("check") || "Check") %>,
+        label: <%- JSON.stringify(t("check") ) %>,
         buttonClass: "border-rose-300 bg-rose-50 text-rose-700",
-        title: <%- JSON.stringify(t("availability_check") || "Check Availability") %>,
+        title: <%- JSON.stringify(t("availability_check") ) %>,
       };
     };
     const buildDcvAvailabilityButtonHtml = (row = {}, rowIndex = 0) => {
@@ -791,7 +793,7 @@
     const buildRmLossColorOptions = (row = {}) => {
       const selectedColorId = toPositiveInt(row?.rm_color_id);
       const itemId = toPositiveInt(row?.item_id);
-      const placeholder = <%- JSON.stringify(t("select_color") || "Select Color") %>;
+      const placeholder = <%- JSON.stringify(t("select_color") ) %>;
       const optionsHtml = [`<option value="">${placeholder}</option>`];
       getRmLossVariantColorOptions(itemId).forEach((option) => {
         const selected = selectedColorId && Number(selectedColorId) === Number(option.color_id) ? "selected" : "";
@@ -803,7 +805,7 @@
       const selectedSizeId = toPositiveInt(row?.rm_size_id);
       const itemId = toPositiveInt(row?.item_id);
       const colorId = toPositiveInt(row?.rm_color_id);
-      const placeholder = <%- JSON.stringify(t("select_size") || "Select Size") %>;
+      const placeholder = <%- JSON.stringify(t("select_size") ) %>;
       const optionsHtml = [`<option value="">${placeholder}</option>`];
       getRmLossVariantSizeOptions(itemId, colorId).forEach((option) => {
         const selected = selectedSizeId && Number(selectedSizeId) === Number(option.size_id) ? "selected" : "";
@@ -812,11 +814,11 @@
       return optionsHtml.join("");
     };
     const getLossPrimaryFieldLabel = (lossType) => {
-      if (!lossType) return <%- JSON.stringify(`${t("item") || "Item"} / ${t("sku") || "SKU"}`) %>;
-      if (lossType === "RM_LOSS") return <%- JSON.stringify(t("raw_material") || "Raw Material") %>;
-      if (lossType === "SFG_LOSS") return <%- JSON.stringify(`${t("semi_finished") || "Semi Finished"} ${t("sku") || "SKU"}`) %>;
-      if (lossType === "FG_LOSS") return <%- JSON.stringify(`${t("finished") || "Finished"} ${t("sku") || "SKU"}`) %>;
-      return <%- JSON.stringify(t("sku") || "SKU") %>;
+      if (!lossType) return <%- JSON.stringify(`${t("item") } / ${t("sku") }`) %>;
+      if (lossType === "RM_LOSS") return <%- JSON.stringify(t("raw_material") ) %>;
+      if (lossType === "SFG_LOSS") return <%- JSON.stringify(`${t("semi_finished") } ${t("sku") }`) %>;
+      if (lossType === "FG_LOSS") return <%- JSON.stringify(`${t("finished") } ${t("sku") }`) %>;
+      return <%- JSON.stringify(t("sku") ) %>;
     };
     const getLossUomMeta = ({ lossType, row }) => {
       if (lossType === "RM_LOSS") {
@@ -828,13 +830,13 @@
         return {
           uomId: uomId || null,
           code: uomCode || "",
-          label: uomName || uomCode || <%- JSON.stringify(t("unit") || "Unit") %>,
+          label: uomName || uomCode || <%- JSON.stringify(t("unit") ) %>,
         };
       }
       return {
         uomId: null,
         code: "PAIR",
-        label: <%- JSON.stringify(t("unit_pair") || "Pair") %>,
+        label: <%- JSON.stringify(t("unit_pair") ) %>,
       };
     };
     const buildLossEntityOptions = (lossType, selectedItemId, selectedSkuId) => {
@@ -997,9 +999,9 @@
         if (isRmLossType(selectedType)) {
           linesHeadRow.innerHTML = `
             <th class="w-[24%] border-b border-slate-200 px-2 py-2 text-left">${lossFieldLabel}</th>
-            <th class="w-[12%] border-b border-slate-200 px-2 py-2 text-left">${<%- JSON.stringify(t("color") || "Color") %>}</th>
-            <th class="w-[12%] border-b border-slate-200 px-2 py-2 text-left">${<%- JSON.stringify(t("size") || "Size") %>}</th>
-            <th class="w-[10%] border-b border-slate-200 px-2 py-2 text-left">${<%- JSON.stringify(t("unit") || "Unit") %>}</th>
+            <th class="w-[12%] border-b border-slate-200 px-2 py-2 text-left">${<%- JSON.stringify(t("color") ) %>}</th>
+            <th class="w-[12%] border-b border-slate-200 px-2 py-2 text-left">${<%- JSON.stringify(t("size") ) %>}</th>
+            <th class="w-[10%] border-b border-slate-200 px-2 py-2 text-left">${<%- JSON.stringify(t("unit") ) %>}</th>
             <th class="w-[12%] border-b border-slate-200 px-2 py-2 text-right">${<%- JSON.stringify(t("quantity")) %>}</th>
             <th class="w-[12%] border-b border-slate-200 px-2 py-2 text-right">${<%- JSON.stringify(t("rate")) %>}</th>
             <th class="w-[14%] border-b border-slate-200 px-2 py-2 text-right">${<%- JSON.stringify(t("amount")) %>}</th>
@@ -1009,7 +1011,7 @@
         } else {
           linesHeadRow.innerHTML = `
             <th class="w-[32%] border-b border-slate-200 px-2 py-2 text-left">${lossFieldLabel}</th>
-            <th class="w-[12%] border-b border-slate-200 px-2 py-2 text-left">${<%- JSON.stringify(t("unit") || "Unit") %>}</th>
+            <th class="w-[12%] border-b border-slate-200 px-2 py-2 text-left">${<%- JSON.stringify(t("unit") ) %>}</th>
             <th class="w-[14%] border-b border-slate-200 px-2 py-2 text-right">${<%- JSON.stringify(t("quantity")) %>}</th>
             <th class="w-[14%] border-b border-slate-200 px-2 py-2 text-right">${<%- JSON.stringify(t("rate")) %>}</th>
             <th class="w-[16%] border-b border-slate-200 px-2 py-2 text-right">${<%- JSON.stringify(t("amount")) %>}</th>
@@ -1025,7 +1027,7 @@
       if (showUnit) {
         linesHeadRow.innerHTML = `
           <th class="w-[36%] border-b border-slate-200 px-2 py-2 text-left">${primaryEntityLabel}</th>
-          <th class="w-[16%] border-b border-slate-200 px-2 py-2 text-left">${<%- JSON.stringify(t("stage") || "Stage") %>}</th>
+          <th class="w-[16%] border-b border-slate-200 px-2 py-2 text-left">${<%- JSON.stringify(t("stage") ) %>}</th>
           <th class="w-[12%] border-b border-slate-200 px-2 py-2 text-left">${<%- JSON.stringify(t("unit")) %>}</th>
           <th class="w-[10%] border-b border-slate-200 px-2 py-2 text-right">${<%- JSON.stringify(t("quantity")) %>}</th>
           <th class="w-[10%] border-b border-slate-200 px-2 py-2 text-right">${<%- JSON.stringify(t("rate")) %>}</th>
@@ -1057,7 +1059,7 @@
           <th class="w-[9%] border-b border-slate-200 px-2 py-2 text-right">${<%- JSON.stringify(t("quantity")) %>}</th>
           <th class="w-[10%] border-b border-slate-200 px-2 py-2 text-right">${<%- JSON.stringify(t("rate")) %>}</th>
           <th class="w-[10%] border-b border-slate-200 px-2 py-2 text-right">${<%- JSON.stringify(t("amount")) %>}</th>
-          <th class="w-[10%] border-b border-slate-200 px-2 py-2 text-center">${<%- JSON.stringify(t("availability") || "Availability") %>}</th>
+          <th class="w-[10%] border-b border-slate-200 px-2 py-2 text-center">${<%- JSON.stringify(t("availability") ) %>}</th>
           <th class="w-[6%] border-b border-slate-200 px-2 py-2 text-center">${<%- JSON.stringify(t("actions")) %>}</th>
           <th class="w-[6%] border-b border-slate-200 px-2 py-2 text-center">${<%- JSON.stringify(t("sr_no")) %>}</th>
         `;
@@ -1137,7 +1139,7 @@
         const secondOptionsHtml = showUnitSelector && normalizedSecondFieldValue && !hasSelectedUnitInOptions
           ? `${secondOptionsBaseHtml}<option value="${normalizedSecondFieldValue}" selected>${normalizedSecondFieldValue}</option>`
           : secondOptionsBaseHtml;
-        const stageOptions = [`<option value="">${<%- JSON.stringify(t("select_stage") || "Select Stage") %>}</option>`]
+        const stageOptions = [`<option value="">${<%- JSON.stringify(t("select_stage") ) %>}</option>`]
           .concat(productionStages.map((stage) => {
             const selected = Number(row.stage_id || 0) === Number(stage.id || 0) ? "selected" : "";
             const label = `${stage.name || stage.id}`;
@@ -1372,10 +1374,10 @@
       const snapshot = getDcvAvailabilitySnapshot(row);
       const rowLabel = Number(rowIndex) + 1;
       if (dcvAvailabilityTitle instanceof HTMLElement) {
-        dcvAvailabilityTitle.textContent = `${snapshot.title} - ${<%- JSON.stringify(t("line") || "Line") %>} ${rowLabel}`;
+        dcvAvailabilityTitle.textContent = `${snapshot.title} - ${<%- JSON.stringify(t("line") ) %>} ${rowLabel}`;
       }
       if (!details) {
-        const note = row.availability_note || <%- JSON.stringify(t("no_data_found") || "No details available yet.") %>;
+        const note = row.availability_note || <%- JSON.stringify(t("no_data_found") ) %>;
         dcvAvailabilityContent.innerHTML = `<div class="rounded-lg border border-slate-200 bg-white p-2 text-slate-600">${note}</div>`;
       } else {
         const prev = details.previous_stage || null;
@@ -1383,29 +1385,29 @@
         const prevStageHtml = prev
           ? `
             <div class="rounded-lg border border-slate-200 bg-white p-2">
-              <div class="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">${<%- JSON.stringify(t("previous_stage") || "Previous Stage") %>}</div>
+              <div class="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">${<%- JSON.stringify(t("previous_stage") ) %>}</div>
               <div class="grid grid-cols-1 gap-1 sm:grid-cols-3">
-                <div><span class="font-semibold text-slate-500">${<%- JSON.stringify(t("available") || "Available") %>}:</span> ${toPairs(prev.available_pairs)} ${<%- JSON.stringify(t("pairs") || "Pairs") %>}</div>
-                ${Number(prev.convertible_pairs || 0) > 0 ? `<div><span class="font-semibold text-slate-500">${<%- JSON.stringify(t("convertible_from_better_grade") || "Convertible From Better Grade") %>}:</span> ${toPairs(prev.convertible_pairs)} ${<%- JSON.stringify(t("pairs") || "Pairs") %>}</div>` : ""}
-                ${Number(prev.effective_available_pairs || 0) > 0 ? `<div><span class="font-semibold text-slate-500">${<%- JSON.stringify(t("effective_available") || "Effective Available") %>}:</span> ${toPairs(prev.effective_available_pairs)} ${<%- JSON.stringify(t("pairs") || "Pairs") %>}</div>` : ""}
-                <div><span class="font-semibold text-slate-500">${<%- JSON.stringify(t("required") || "Required") %>}:</span> ${toPairs(prev.required_pairs)} ${<%- JSON.stringify(t("pairs") || "Pairs") %>}</div>
-                <div><span class="font-semibold text-slate-500">${<%- JSON.stringify(t("deficit") || "Deficit") %>}:</span> ${toPairs(prev.deficit_pairs)} ${<%- JSON.stringify(t("pairs") || "Pairs") %>}</div>
+                <div><span class="font-semibold text-slate-500">${<%- JSON.stringify(t("available") ) %>}:</span> ${toPairs(prev.available_pairs)} ${<%- JSON.stringify(t("pairs") ) %>}</div>
+                ${Number(prev.convertible_pairs || 0) > 0 ? `<div><span class="font-semibold text-slate-500">${<%- JSON.stringify(t("convertible_from_better_grade") ) %>}:</span> ${toPairs(prev.convertible_pairs)} ${<%- JSON.stringify(t("pairs") ) %>}</div>` : ""}
+                ${Number(prev.effective_available_pairs || 0) > 0 ? `<div><span class="font-semibold text-slate-500">${<%- JSON.stringify(t("effective_available") ) %>}:</span> ${toPairs(prev.effective_available_pairs)} ${<%- JSON.stringify(t("pairs") ) %>}</div>` : ""}
+                <div><span class="font-semibold text-slate-500">${<%- JSON.stringify(t("required") ) %>}:</span> ${toPairs(prev.required_pairs)} ${<%- JSON.stringify(t("pairs") ) %>}</div>
+                <div><span class="font-semibold text-slate-500">${<%- JSON.stringify(t("deficit") ) %>}:</span> ${toPairs(prev.deficit_pairs)} ${<%- JSON.stringify(t("pairs") ) %>}</div>
               </div>
             </div>
           `
-          : `<div class="rounded-lg border border-slate-200 bg-white p-2 text-slate-600">${<%- JSON.stringify(t("no_previous_stage_requirement") || "No previous-stage requirement for this row.") %>}</div>`;
+          : `<div class="rounded-lg border border-slate-200 bg-white p-2 text-slate-600">${<%- JSON.stringify(t("no_previous_stage_requirement") ) %>}</div>`;
         const sfgHtml = sfgRows.length
           ? `
             <div class="rounded-lg border border-slate-200 bg-white p-2">
-              <div class="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">${<%- JSON.stringify(t("semi_finished") || "Semi Finished") %>} ${<%- JSON.stringify(t("availability") || "Availability") %>}</div>
+              <div class="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">${<%- JSON.stringify(t("semi_finished") ) %>} ${<%- JSON.stringify(t("availability") ) %>}</div>
               <div class="overflow-x-auto">
                 <table class="min-w-full text-[11px]">
                   <thead>
                     <tr class="text-left text-slate-500">
                       <th class="px-1 py-1">${<%- JSON.stringify(t("sku")) %>}</th>
-                      <th class="px-1 py-1">${<%- JSON.stringify(t("available") || "Available") %>} (${<%- JSON.stringify(t("pairs") || "Pairs") %>})</th>
-                      <th class="px-1 py-1">${<%- JSON.stringify(t("required") || "Required") %>} (${<%- JSON.stringify(t("pairs") || "Pairs") %>})</th>
-                      <th class="px-1 py-1">${<%- JSON.stringify(t("deficit") || "Deficit") %>} (${<%- JSON.stringify(t("pairs") || "Pairs") %>})</th>
+                      <th class="px-1 py-1">${<%- JSON.stringify(t("available") ) %>} (${<%- JSON.stringify(t("pairs") ) %>})</th>
+                      <th class="px-1 py-1">${<%- JSON.stringify(t("required") ) %>} (${<%- JSON.stringify(t("pairs") ) %>})</th>
+                      <th class="px-1 py-1">${<%- JSON.stringify(t("deficit") ) %>} (${<%- JSON.stringify(t("pairs") ) %>})</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1423,12 +1425,12 @@
               </div>
             </div>
           `
-          : `<div class="rounded-lg border border-slate-200 bg-white p-2 text-slate-600">${<%- JSON.stringify(t("no_sfg_required_for_this_stage") || "No SFG requirement for this stage.") %>}</div>`;
+          : `<div class="rounded-lg border border-slate-200 bg-white p-2 text-slate-600">${<%- JSON.stringify(t("no_sfg_required_for_this_stage") ) %>}</div>`;
         const totalDeficit = toPairs(details.total_deficit_pairs || 0);
         dcvAvailabilityContent.innerHTML = `
           <div class="rounded-lg border border-slate-200 bg-white p-2 text-slate-700">
-            <span class="font-semibold text-slate-500">${<%- JSON.stringify(t("total_deficit") || "Total Deficit") %>}:</span>
-            ${totalDeficit} ${<%- JSON.stringify(t("pairs") || "Pairs") %>}
+            <span class="font-semibold text-slate-500">${<%- JSON.stringify(t("total_deficit") ) %>}:</span>
+            ${totalDeficit} ${<%- JSON.stringify(t("pairs") ) %>}
           </div>
           ${prevStageHtml}
           ${sfgHtml}
@@ -1483,7 +1485,7 @@
 
       if (!deptId || !labourId || !skuId || !(qty > 0) || !unit) {
         row.availability_status = "NA";
-        row.availability_note = <%- JSON.stringify(t("fill_required_fields_then_check_availability") || "Fill labour, department, SKU, unit, and quantity to check availability.") %>;
+        row.availability_note = <%- JSON.stringify(t("fill_required_fields_then_check_availability") ) %>;
         row.availability_details = null;
         updateDcvAvailabilityCell(rowIndex);
         if (openPanelAfter) renderDcvAvailabilityPanel(rowIndex);
@@ -1511,7 +1513,7 @@
         const totalDeficitPairs = Number(payload?.total_deficit_pairs || 0);
         rowsState[rowIndex].availability_status = totalDeficitPairs > 0 ? "SHORT" : "OK";
         rowsState[rowIndex].availability_note = totalDeficitPairs > 0
-          ? `${toPairs(totalDeficitPairs)} ${<%- JSON.stringify(t("pairs") || "Pairs") %>}`
+          ? `${toPairs(totalDeficitPairs)} ${<%- JSON.stringify(t("pairs") ) %>}`
           : "";
         rowsState[rowIndex].availability_details = payload && typeof payload === "object" ? payload : null;
       } catch (err) {
@@ -1595,21 +1597,21 @@
     const validateRows = () => {
       const lines = serializeRows().filter((line) => toNum(line.qty, 0) > 0 || line.sku_id || line.item_id);
       if (!lines.length) {
-        showError(<%- JSON.stringify(t("voucher_lines_required") || "Voucher lines are required") %>);
+        showError(<%- JSON.stringify(t("voucher_lines_required") ) %>);
         return null;
       }
       const headerLossType = isLoss ? getSelectedLossType() : "";
       const headerDeptId = isLoss ? getSelectedLossDepartmentId() : null;
       if (isLoss && !headerLossType) {
-        showError(`${<%- JSON.stringify(t("loss_type")) %>} ${<%- JSON.stringify(t("is_required") || "is required") %>}`);
+        showError(`${<%- JSON.stringify(t("loss_type")) %>} ${<%- JSON.stringify(t("is_required") ) %>}`);
         return null;
       }
       if (isLoss && headerLossType === "DVC_ABANDON" && !headerDeptId) {
-        showError(`${<%- JSON.stringify(t("department")) %>} ${<%- JSON.stringify(t("is_required") || "is required") %>}`);
+        showError(`${<%- JSON.stringify(t("department")) %>} ${<%- JSON.stringify(t("is_required") ) %>}`);
         return null;
       }
       if (isLoss && headerLossType === "RM_LOSS" && !headerDeptId) {
-        showError(`${<%- JSON.stringify(t("department")) %>} ${<%- JSON.stringify(t("is_required") || "is required") %>}`);
+        showError(`${<%- JSON.stringify(t("department")) %>} ${<%- JSON.stringify(t("is_required") ) %>}`);
         return null;
       }
       for (let i = 0; i < lines.length; i += 1) {
@@ -1617,7 +1619,7 @@
         const lineNo = i + 1;
         if (isLoss) {
           if (headerLossType === "RM_LOSS" && !line.item_id) {
-            showError(`Line ${lineNo}: ${<%- JSON.stringify(t("raw_material") || "Raw Material") %>} ${<%- JSON.stringify(t("is_required") || "is required") %>}`);
+            showError(`Line ${lineNo}: ${<%- JSON.stringify(t("raw_material") ) %>} ${<%- JSON.stringify(t("is_required") ) %>}`);
             return null;
           }
           if (headerLossType === "RM_LOSS" && line.item_id) {
@@ -1628,13 +1630,13 @@
                 rmVariants.map((variant) => `${Number(variant?.color_id || 0)}:${Number(variant?.size_id || 0)}`),
               );
               if (!allowedVariantKeys.has(selectedVariantKey)) {
-                showError(`Line ${lineNo}: ${<%- JSON.stringify(t("color") || "Color") %>} / ${<%- JSON.stringify(t("size") || "Size") %>} ${<%- JSON.stringify(t("is_required") || "is required") %>}`);
+                showError(`Line ${lineNo}: ${<%- JSON.stringify(t("color") ) %>} / ${<%- JSON.stringify(t("size") ) %>} ${<%- JSON.stringify(t("is_required") ) %>}`);
                 return null;
               }
             }
           }
           if (headerLossType !== "RM_LOSS" && !line.sku_id) {
-            showError(`Line ${lineNo}: ${getLossPrimaryFieldLabel(headerLossType)} ${<%- JSON.stringify(t("is_required") || "is required") %>}`);
+            showError(`Line ${lineNo}: ${getLossPrimaryFieldLabel(headerLossType)} ${<%- JSON.stringify(t("is_required") ) %>}`);
             return null;
           }
           if (headerLossType !== "RM_LOSS" && !Number.isInteger(Number(line.qty || 0))) {
@@ -1647,16 +1649,16 @@
             const requiredLabel = isConsumption
               ? <%- JSON.stringify(t("raw_material")) %>
               : <%- JSON.stringify(t("sku")) %>;
-            showError(`Line ${lineNo}: ${requiredLabel} ${<%- JSON.stringify(t("is_required") || "is required") %>}`);
+            showError(`Line ${lineNo}: ${requiredLabel} ${<%- JSON.stringify(t("is_required") ) %>}`);
             return null;
           }
         }
         if (showUnit && productionStages.length && !toPositiveInt(line.stage_id)) {
-          showError(`Line ${lineNo}: ${<%- JSON.stringify(t("stage") || "Stage") %>} ${<%- JSON.stringify(t("is_required") || "is required") %>}`);
+          showError(`Line ${lineNo}: ${<%- JSON.stringify(t("stage") ) %>} ${<%- JSON.stringify(t("is_required") ) %>}`);
           return null;
         }
         if (toNum(line.qty, 0) <= 0) {
-          showError(`Line ${lineNo}: ${<%- JSON.stringify(t("quantity")) %>} ${<%- JSON.stringify(t("must_be_positive") || "must be greater than zero") %>}`);
+          showError(`Line ${lineNo}: ${<%- JSON.stringify(t("quantity")) %>} ${<%- JSON.stringify(t("must_be_positive") ) %>}`);
           return null;
         }
       }
@@ -1853,12 +1855,12 @@
         const labourId = toPositiveInt(dcvLabourSelect?.value);
         const departmentId = toPositiveInt(dcvDepartmentSelect?.value);
         if (!labourId) {
-          showError(`${<%- JSON.stringify(t("labour")) %>} ${<%- JSON.stringify(t("is_required") || "is required") %>}`);
+          showError(`${<%- JSON.stringify(t("labour")) %>} ${<%- JSON.stringify(t("is_required") ) %>}`);
           event.preventDefault();
           return;
         }
         if (!departmentId) {
-          showError(`${<%- JSON.stringify(t("department")) %>} ${<%- JSON.stringify(t("is_required") || "is required") %>}`);
+          showError(`${<%- JSON.stringify(t("department")) %>} ${<%- JSON.stringify(t("is_required") ) %>}`);
           event.preventDefault();
           return;
         }

@@ -64,6 +64,221 @@
     const path = String(window.location.pathname || "");
     if (!path.startsWith("/reports/")) return;
 
+    const REPORT_SCOPE_BY_PATH = [
+      ["/reports/sales/", "sales_report"],
+      ["/reports/purchases/supplier-ledger", "supplier_ledger"],
+      ["/reports/purchases/supplier-balances", "supplier_balances"],
+      ["/reports/purchases/", "purchase_report"],
+      ["/reports/production/consumption", "consumption_report"],
+      ["/reports/production/", "production_report"],
+      ["/reports/inventory/stock-amount", "stock_amount"],
+      ["/reports/inventory/stock-balances", "stock_quantity"],
+      ["/reports/inventory/stock-ledger", "stock_ledger"],
+      ["/reports/inventory/stock-movement", "stock_item_activity"],
+      ["/reports/inventory/stock-transfer", "stock_item_activity"],
+      ["/reports/hr-payroll/labour-ledger", "labour_ledger"],
+      ["/reports/hr-payroll/labour-balances", "labour_balances"],
+      ["/reports/hr-payroll/employee-ledger", "employee_ledger"],
+      ["/reports/hr-payroll/employee-balances", "employee_balances"],
+      ["/reports/returnables/", "pending_returnables"],
+      ["/reports/financial/cash_book", "cash_book"],
+      ["/reports/financial/voucher_register", "voucher_register"],
+      ["/reports/financial/expense_analysis", "expense_analysis"],
+      ["/reports/financial/expense_trends", "expense_trends"],
+      ["/reports/financial/profitability_analysis", "profitability_analysis"],
+      ["/reports/financial/profit_and_loss", "profit_and_loss"],
+      ["/reports/financial/account_activity_ledger", "account_activity_ledger"],
+      ["/reports/financial/trial_balance", "trial_balance"],
+      ["/reports/financial/payroll_wage_balance", "payroll_wage_balance"],
+    ];
+
+    const reportPermissionByScope = <%- JSON.stringify({
+      sales_report: {
+        print: can("REPORT", "sales_report", "print"),
+        export: can("REPORT", "sales_report", "export_excel_csv"),
+        details: can("REPORT", "sales_report", "view_details"),
+        filterAllBranches: can("REPORT", "sales_report", "filter_all_branches"),
+        viewCostFields: can("REPORT", "sales_report", "view_cost_fields"),
+      },
+      purchase_report: {
+        print: can("REPORT", "purchase_report", "print"),
+        export: can("REPORT", "purchase_report", "export_excel_csv"),
+        details: can("REPORT", "purchase_report", "view_details"),
+        filterAllBranches: can("REPORT", "purchase_report", "filter_all_branches"),
+        viewCostFields: can("REPORT", "purchase_report", "view_cost_fields"),
+      },
+      supplier_ledger: {
+        print: can("REPORT", "supplier_ledger", "print"),
+        export: can("REPORT", "supplier_ledger", "export_excel_csv"),
+        details: can("REPORT", "supplier_ledger", "view_details"),
+        filterAllBranches: can("REPORT", "supplier_ledger", "filter_all_branches"),
+        viewCostFields: can("REPORT", "supplier_ledger", "view_cost_fields"),
+      },
+      supplier_balances: {
+        print: can("REPORT", "supplier_balances", "print"),
+        export: can("REPORT", "supplier_balances", "export_excel_csv"),
+        details: can("REPORT", "supplier_balances", "view_details"),
+        filterAllBranches: can("REPORT", "supplier_balances", "filter_all_branches"),
+        viewCostFields: can("REPORT", "supplier_balances", "view_cost_fields"),
+      },
+      production_report: {
+        print: can("REPORT", "production_report", "print"),
+        export: can("REPORT", "production_report", "export_excel_csv"),
+        details: can("REPORT", "production_report", "view_details"),
+        filterAllBranches: can("REPORT", "production_report", "filter_all_branches"),
+        viewCostFields: can("REPORT", "production_report", "view_cost_fields"),
+      },
+      consumption_report: {
+        print: can("REPORT", "consumption_report", "print"),
+        export: can("REPORT", "consumption_report", "export_excel_csv"),
+        details: can("REPORT", "consumption_report", "view_details"),
+        filterAllBranches: can("REPORT", "consumption_report", "filter_all_branches"),
+        viewCostFields: can("REPORT", "consumption_report", "view_cost_fields"),
+      },
+      stock_amount: {
+        print: can("REPORT", "stock_amount", "print"),
+        export: can("REPORT", "stock_amount", "export_excel_csv"),
+        details: can("REPORT", "stock_amount", "view_details"),
+        filterAllBranches: can("REPORT", "stock_amount", "filter_all_branches"),
+        viewCostFields: can("REPORT", "stock_amount", "view_cost_fields"),
+      },
+      stock_quantity: {
+        print: can("REPORT", "stock_quantity", "print"),
+        export: can("REPORT", "stock_quantity", "export_excel_csv"),
+        details: can("REPORT", "stock_quantity", "view_details"),
+        filterAllBranches: can("REPORT", "stock_quantity", "filter_all_branches"),
+        viewCostFields: can("REPORT", "stock_quantity", "view_cost_fields"),
+      },
+      stock_ledger: {
+        print: can("REPORT", "stock_ledger", "print"),
+        export: can("REPORT", "stock_ledger", "export_excel_csv"),
+        details: can("REPORT", "stock_ledger", "view_details"),
+        filterAllBranches: can("REPORT", "stock_ledger", "filter_all_branches"),
+        viewCostFields: can("REPORT", "stock_ledger", "view_cost_fields"),
+      },
+      stock_item_activity: {
+        print: can("REPORT", "stock_item_activity", "print"),
+        export: can("REPORT", "stock_item_activity", "export_excel_csv"),
+        details: can("REPORT", "stock_item_activity", "view_details"),
+        filterAllBranches: can("REPORT", "stock_item_activity", "filter_all_branches"),
+        viewCostFields: can("REPORT", "stock_item_activity", "view_cost_fields"),
+      },
+      labour_ledger: {
+        print: can("REPORT", "labour_ledger", "print"),
+        export: can("REPORT", "labour_ledger", "export_excel_csv"),
+        details: can("REPORT", "labour_ledger", "view_details"),
+        filterAllBranches: can("REPORT", "labour_ledger", "filter_all_branches"),
+        viewCostFields: can("REPORT", "labour_ledger", "view_cost_fields"),
+      },
+      labour_balances: {
+        print: can("REPORT", "labour_balances", "print"),
+        export: can("REPORT", "labour_balances", "export_excel_csv"),
+        details: can("REPORT", "labour_balances", "view_details"),
+        filterAllBranches: can("REPORT", "labour_balances", "filter_all_branches"),
+        viewCostFields: can("REPORT", "labour_balances", "view_cost_fields"),
+      },
+      employee_ledger: {
+        print: can("REPORT", "employee_ledger", "print"),
+        export: can("REPORT", "employee_ledger", "export_excel_csv"),
+        details: can("REPORT", "employee_ledger", "view_details"),
+        filterAllBranches: can("REPORT", "employee_ledger", "filter_all_branches"),
+        viewCostFields: can("REPORT", "employee_ledger", "view_cost_fields"),
+      },
+      employee_balances: {
+        print: can("REPORT", "employee_balances", "print"),
+        export: can("REPORT", "employee_balances", "export_excel_csv"),
+        details: can("REPORT", "employee_balances", "view_details"),
+        filterAllBranches: can("REPORT", "employee_balances", "filter_all_branches"),
+        viewCostFields: can("REPORT", "employee_balances", "view_cost_fields"),
+      },
+      pending_returnables: {
+        print: can("REPORT", "pending_returnables", "print"),
+        export: can("REPORT", "pending_returnables", "export_excel_csv"),
+        details: can("REPORT", "pending_returnables", "view_details"),
+        filterAllBranches: can("REPORT", "pending_returnables", "filter_all_branches"),
+        viewCostFields: can("REPORT", "pending_returnables", "view_cost_fields"),
+      },
+      cash_book: {
+        print: can("REPORT", "cash_book", "print"),
+        export: can("REPORT", "cash_book", "export_excel_csv"),
+        details: can("REPORT", "cash_book", "view_details"),
+        filterAllBranches: can("REPORT", "cash_book", "filter_all_branches"),
+        viewCostFields: can("REPORT", "cash_book", "view_cost_fields"),
+      },
+      voucher_register: {
+        print: can("REPORT", "voucher_register", "print"),
+        export: can("REPORT", "voucher_register", "export_excel_csv"),
+        details: can("REPORT", "voucher_register", "view_details"),
+        filterAllBranches: can("REPORT", "voucher_register", "filter_all_branches"),
+        viewCostFields: can("REPORT", "voucher_register", "view_cost_fields"),
+      },
+      expense_analysis: {
+        print: can("REPORT", "expense_analysis", "print"),
+        export: can("REPORT", "expense_analysis", "export_excel_csv"),
+        details: can("REPORT", "expense_analysis", "view_details"),
+        filterAllBranches: can("REPORT", "expense_analysis", "filter_all_branches"),
+        viewCostFields: can("REPORT", "expense_analysis", "view_cost_fields"),
+      },
+      expense_trends: {
+        print: can("REPORT", "expense_trends", "print"),
+        export: can("REPORT", "expense_trends", "export_excel_csv"),
+        details: can("REPORT", "expense_trends", "view_details"),
+        filterAllBranches: can("REPORT", "expense_trends", "filter_all_branches"),
+        viewCostFields: can("REPORT", "expense_trends", "view_cost_fields"),
+      },
+      profitability_analysis: {
+        print: can("REPORT", "profitability_analysis", "print"),
+        export: can("REPORT", "profitability_analysis", "export_excel_csv"),
+        details: can("REPORT", "profitability_analysis", "view_details"),
+        filterAllBranches: can("REPORT", "profitability_analysis", "filter_all_branches"),
+        viewCostFields: can("REPORT", "profitability_analysis", "view_cost_fields"),
+      },
+      profit_and_loss: {
+        print: can("REPORT", "profit_and_loss", "print"),
+        export: can("REPORT", "profit_and_loss", "export_excel_csv"),
+        details: can("REPORT", "profit_and_loss", "view_details"),
+        filterAllBranches: can("REPORT", "profit_and_loss", "filter_all_branches"),
+        viewCostFields: can("REPORT", "profit_and_loss", "view_cost_fields"),
+      },
+      account_activity_ledger: {
+        print: can("REPORT", "account_activity_ledger", "print"),
+        export: can("REPORT", "account_activity_ledger", "export_excel_csv"),
+        details: can("REPORT", "account_activity_ledger", "view_details"),
+        filterAllBranches: can("REPORT", "account_activity_ledger", "filter_all_branches"),
+        viewCostFields: can("REPORT", "account_activity_ledger", "view_cost_fields"),
+      },
+      trial_balance: {
+        print: can("REPORT", "trial_balance", "print"),
+        export: can("REPORT", "trial_balance", "export_excel_csv"),
+        details: can("REPORT", "trial_balance", "view_details"),
+        filterAllBranches: can("REPORT", "trial_balance", "filter_all_branches"),
+        viewCostFields: can("REPORT", "trial_balance", "view_cost_fields"),
+      },
+      payroll_wage_balance: {
+        print: can("REPORT", "payroll_wage_balance", "print"),
+        export: can("REPORT", "payroll_wage_balance", "export_excel_csv"),
+        details: can("REPORT", "payroll_wage_balance", "view_details"),
+        filterAllBranches: can("REPORT", "payroll_wage_balance", "filter_all_branches"),
+        viewCostFields: can("REPORT", "payroll_wage_balance", "view_cost_fields"),
+      },
+    }) %>;
+
+    const resolveReportScopeKey = () => {
+      for (const [prefix, scopeKey] of REPORT_SCOPE_BY_PATH) {
+        if (path.startsWith(prefix)) return scopeKey;
+      }
+      return null;
+    };
+
+    const activeScopeKey = resolveReportScopeKey();
+    const activePermission = activeScopeKey ? (reportPermissionByScope[activeScopeKey] || null) : null;
+    const canPrintReport = Boolean(activePermission?.print);
+    const canExportReport = Boolean(activePermission?.export);
+    const canOpenReportDetails = Boolean(activePermission?.details);
+    const canFilterAllBranches = Boolean(activePermission?.filterAllBranches);
+    const canViewCostFields = Boolean(activePermission?.viewCostFields);
+    const activeBranchId = Number(<%- JSON.stringify(branchId || 0) %>) || 0;
+
     const reportSections = Array.from(
       document.querySelectorAll("[data-report-print-area], [data-print-area]"),
     );
@@ -82,6 +297,66 @@
       return Number.isFinite(parsed) && parsed > 0
         ? parsed
         : Number.POSITIVE_INFINITY;
+    };
+
+    const lockActionButtons = () => {
+      if (!canPrintReport) {
+        document.querySelectorAll("[data-print-button], [data-print-report]").forEach((button) => {
+          if (!(button instanceof HTMLElement)) return;
+          if (button instanceof HTMLButtonElement) button.disabled = true;
+          button.setAttribute("aria-disabled", "true");
+          if (button instanceof HTMLAnchorElement) button.removeAttribute("href");
+        });
+      }
+      if (!canExportReport) {
+        document.querySelectorAll("[data-download-button], [data-download-report]").forEach((button) => {
+          if (!(button instanceof HTMLElement)) return;
+          if (button instanceof HTMLButtonElement) button.disabled = true;
+          button.setAttribute("aria-disabled", "true");
+          if (button instanceof HTMLAnchorElement) button.removeAttribute("href");
+        });
+      }
+      if (!canOpenReportDetails) {
+        document.querySelectorAll("a[href*='/vouchers/']").forEach((link) => {
+          if (!(link instanceof HTMLAnchorElement)) return;
+          link.classList.add("pointer-events-none", "opacity-50");
+          link.setAttribute("aria-disabled", "true");
+          link.removeAttribute("href");
+        });
+      }
+
+      if (!canFilterAllBranches) {
+        document.querySelectorAll("select[name='branch_id'], select[name='branch_ids']").forEach((select) => {
+          if (!(select instanceof HTMLSelectElement)) return;
+          Array.from(select.options || []).forEach((opt) => {
+            const selected = Number(opt.value || 0) === activeBranchId;
+            opt.selected = selected;
+          });
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+          select.disabled = true;
+        });
+
+        document.querySelectorAll("[data-multi-select][data-name='branch_ids']").forEach((wrap) => {
+          if (!(wrap instanceof HTMLElement)) return;
+          const hidden = wrap.querySelector("[data-multi-hidden]");
+          if (hidden instanceof HTMLInputElement) {
+            hidden.value = activeBranchId > 0 ? String(activeBranchId) : "";
+          }
+          wrap.querySelectorAll("input[type='checkbox']").forEach((cb) => {
+            if (!(cb instanceof HTMLInputElement)) return;
+            cb.disabled = true;
+          });
+          const trigger = wrap.querySelector("[data-multi-trigger]");
+          if (trigger instanceof HTMLButtonElement) {
+            trigger.disabled = true;
+          }
+        });
+      }
+
+      document.documentElement.setAttribute(
+        "data-report-can-view-cost",
+        canViewCostFields ? "1" : "0",
+      );
     };
 
     const findPrimaryTable = (root) =>
@@ -301,5 +576,6 @@
     );
 
     reportSections.forEach(updateReportTableControls);
+    lockActionButtons();
   })();
 </script>

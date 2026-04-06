@@ -7,6 +7,7 @@ const {
   getInventoryStockBalancesReportPageData,
   getInventoryStockLedgerReportPageData,
   getInventoryStockMovementReportPageData,
+  getInventoryStockTransferReportPageData,
 } = require("../../services/inventory/inventory-report-service");
 
 const router = express.Router();
@@ -132,60 +133,101 @@ const renderStockMovementReport = async (req, res, next, input) => {
   }
 };
 
+const renderStockTransferReport = async (req, res, next, input) => {
+  try {
+    const pageData = await getInventoryStockTransferReportPageData({
+      req,
+      input,
+    });
+
+    return res.render("base/layouts/main", {
+      title: `${translate(res, "stock_transfer_report", "Stock Transfer Report")} - ${translate(res, "inventory_reports", "Inventory Reports")}`,
+      user: req.user,
+      branchId: req.branchId,
+      branchScope: req.branchScope,
+      csrfToken: res.locals.csrfToken,
+      view: "../../reports/inventory-stock-transfer",
+      t: res.locals.t,
+      filters: pageData.filters,
+      options: pageData.options,
+      reportData: pageData.reportData,
+      reportPath: `${req.baseUrl}/stock-transfer`,
+    });
+  } catch (err) {
+    console.error("Error in InventoryStockTransferReportService:", err);
+    if (typeof req.flash === "function") {
+      req.flash("error", res.locals.t("generic_error"));
+    }
+    return next(err);
+  }
+};
+
 router.get(
   "/",
-  requirePermission("REPORT", "stock_quantity", "view"),
+  requirePermission("REPORT", "stock_quantity", "load"),
   async (req, res) => res.redirect(`${req.baseUrl}/stock-amount`),
 );
 
 router.get(
   "/stock-amount",
-  requirePermission("REPORT", "stock_amount", "view"),
+  requirePermission("REPORT", "stock_amount", "load"),
   async (req, res, next) => renderStockAmountReport(req, res, next, req.query),
 );
 
 router.post(
   "/stock-amount",
-  requirePermission("REPORT", "stock_amount", "view"),
+  requirePermission("REPORT", "stock_amount", "load"),
   async (req, res, next) => renderStockAmountReport(req, res, next, req.body),
 );
 
 router.get(
   "/stock-balances",
-  requirePermission("REPORT", "stock_quantity", "view"),
+  requirePermission("REPORT", "stock_quantity", "load"),
   async (req, res, next) =>
     renderStockBalancesReport(req, res, next, req.query),
 );
 
 router.post(
   "/stock-balances",
-  requirePermission("REPORT", "stock_quantity", "view"),
+  requirePermission("REPORT", "stock_quantity", "load"),
   async (req, res, next) => renderStockBalancesReport(req, res, next, req.body),
 );
 
 router.get(
   "/stock-ledger",
-  requirePermission("REPORT", "stock_ledger", "view"),
+  requirePermission("REPORT", "stock_ledger", "load"),
   async (req, res, next) => renderStockLedgerReport(req, res, next, req.query),
 );
 
 router.post(
   "/stock-ledger",
-  requirePermission("REPORT", "stock_ledger", "view"),
+  requirePermission("REPORT", "stock_ledger", "load"),
   async (req, res, next) => renderStockLedgerReport(req, res, next, req.body),
 );
 
 router.get(
   "/stock-movement",
-  requirePermission("REPORT", "stock_item_activity", "view"),
+  requirePermission("REPORT", "stock_item_activity", "load"),
   async (req, res, next) =>
     renderStockMovementReport(req, res, next, req.query),
 );
 
 router.post(
   "/stock-movement",
-  requirePermission("REPORT", "stock_item_activity", "view"),
+  requirePermission("REPORT", "stock_item_activity", "load"),
   async (req, res, next) => renderStockMovementReport(req, res, next, req.body),
+);
+
+router.get(
+  "/stock-transfer",
+  requirePermission("REPORT", "stock_item_activity", "load"),
+  async (req, res, next) => renderStockTransferReport(req, res, next, req.query),
+);
+
+router.post(
+  "/stock-transfer",
+  requirePermission("REPORT", "stock_item_activity", "load"),
+  async (req, res, next) => renderStockTransferReport(req, res, next, req.body),
 );
 
 module.exports = router;

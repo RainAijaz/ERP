@@ -18,7 +18,7 @@
   const selectedDate = selectedVoucher && selectedVoucher.voucher_date
     ? formatDateInput(selectedVoucher.voucher_date)
     : formatDateInput(new Date());
-  const selectedRemarks = selectedVoucher?.remarks || "";
+  const selectedRemarks = selectedVoucher?.remarks_display || selectedVoucher?.remarks || "";
   const selectedHeaderAccountId = selectedVoucher?.header_account_id || "";
   const isDeletedVoucher = String(selectedVoucher?.status || "").toUpperCase() === "REJECTED";
   const canEditVoucher = typeof allowEdit === "boolean" ? allowEdit : true;
@@ -145,6 +145,7 @@
             <a href="<%= nextVoucherNo ? ((basePath || '') + '?voucher_no=' + nextVoucherNo + '&view=1') : ((basePath || '') + '?new=1') %>" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700" data-next-voucher><%= t('next') %></a>
             <button type="button" class="rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-white shadow-sm" data-load-voucher><%= t('load') %></button>
             <div class="ml-auto flex items-center gap-2">
+              <a href="<%= selectedVoucherNo ? ((basePath || '') + '/gate-pass?voucher_no=' + selectedVoucherNo) : '#' %>" target="_blank" rel="noopener" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700 <%= selectedVoucherNo ? '' : 'pointer-events-none opacity-40' %>"><%= t('gate_pass') %></a>
               <button type="button" class="rounded-xl border border-rose-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-rose-700 disabled:opacity-40" data-delete-voucher <%= canDeleteCurrentVoucher ? '' : 'disabled' %>><%= t('delete') %></button>
               <button type="button" class="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700" onclick="window.print()"><%= t('print') %></button>
             </div>
@@ -272,7 +273,7 @@
     const paymentKey = '<%= paymentKey %>';
     const selectNameLabel = <%- JSON.stringify(t('select') + ' ' + t('name')) %>;
     const selectDepartmentLabel = <%- JSON.stringify(t('select') + ' ' + t('department')) %>;
-    const notApplicableDepartmentLabel = <%- JSON.stringify(t('not_applicable') || 'N/A') %>;
+    const notApplicableDepartmentLabel = <%- JSON.stringify(t('not_applicable') ) %>;
     const naDepartmentValue = '__NA__';
     const singleDirectionError = <%- JSON.stringify(t('error_cash_voucher_single_direction')) %>;
 

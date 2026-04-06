@@ -28,6 +28,7 @@ let stockTransferOutHasTransferRefColumn;
 let stockTransferOutHasStockTypeColumn;
 let stockTransferOutHasTransferReasonColumn;
 let stockTransferOutHasTransporterNameColumn;
+let stockTransferOutHasBillBookNoColumn;
 let grnInHasReceivedByUserIdColumn;
 let grnInHasReceivedAtColumn;
 
@@ -48,6 +49,14 @@ const toDateOnly = toLocalDateOnly;
 const roundQty3 = (value) => Number(Number(value || 0).toFixed(3));
 const roundCost2 = (value) => Number(Number(value || 0).toFixed(2));
 const roundUnitCost6 = (value) => Number(Number(value || 0).toFixed(6));
+const computeNonNegativeWac = (qty, value) => {
+  const numericQty = Number(qty || 0);
+  const numericValue = Number(value || 0);
+  if (!Number.isFinite(numericQty) || Math.abs(numericQty) <= 0.0005) return 0;
+  if (!Number.isFinite(numericValue)) return 0;
+  const ratio = Math.abs(numericValue) / Math.abs(numericQty);
+  return Number.isFinite(ratio) ? roundUnitCost6(ratio) : 0;
+};
 
 const parseVoucherNo = (value) => {
   const n = Number(value);
@@ -87,7 +96,11 @@ const normalizeStockType = (value) => {
 };
 
 const normalizeRowStatus = (value) =>
-  String(value || "").trim().toUpperCase() === "LOOSE" ? "LOOSE" : "PACKED";
+  String(value || "")
+    .trim()
+    .toUpperCase() === "LOOSE"
+    ? "LOOSE"
+    : "PACKED";
 
 const normalizeTransferReason = (value) => {
   const text = String(value || "")
@@ -155,44 +168,74 @@ const hasColumnTx = async (trx, schemaName, tableName, columnName) => {
 };
 
 const hasStockBalanceRmTableTx = async (trx) => {
-  if (typeof stockBalanceRmTableSupport === "boolean") return stockBalanceRmTableSupport;
+  if (typeof stockBalanceRmTableSupport === "boolean")
+    return stockBalanceRmTableSupport;
   stockBalanceRmTableSupport = await tableExistsTx(trx, "erp.stock_balance_rm");
   return stockBalanceRmTableSupport;
 };
 
 const hasStockBalanceSkuTableTx = async (trx) => {
-  if (typeof stockBalanceSkuTableSupport === "boolean") return stockBalanceSkuTableSupport;
-  stockBalanceSkuTableSupport = await tableExistsTx(trx, "erp.stock_balance_sku");
+  if (typeof stockBalanceSkuTableSupport === "boolean")
+    return stockBalanceSkuTableSupport;
+  stockBalanceSkuTableSupport = await tableExistsTx(
+    trx,
+    "erp.stock_balance_sku",
+  );
   return stockBalanceSkuTableSupport;
 };
 
 const hasStockLedgerTableTx = async (trx) => {
-  if (typeof stockLedgerTableSupport === "boolean") return stockLedgerTableSupport;
+  if (typeof stockLedgerTableSupport === "boolean")
+    return stockLedgerTableSupport;
   stockLedgerTableSupport = await tableExistsTx(trx, "erp.stock_ledger");
   return stockLedgerTableSupport;
 };
 
 const hasStockBalanceRmColorColumnTx = async (trx) => {
-  if (typeof stockBalanceRmColorColumnSupport === "boolean") return stockBalanceRmColorColumnSupport;
-  stockBalanceRmColorColumnSupport = await hasColumnTx(trx, "erp", "stock_balance_rm", "color_id");
+  if (typeof stockBalanceRmColorColumnSupport === "boolean")
+    return stockBalanceRmColorColumnSupport;
+  stockBalanceRmColorColumnSupport = await hasColumnTx(
+    trx,
+    "erp",
+    "stock_balance_rm",
+    "color_id",
+  );
   return stockBalanceRmColorColumnSupport;
 };
 
 const hasStockBalanceRmSizeColumnTx = async (trx) => {
-  if (typeof stockBalanceRmSizeColumnSupport === "boolean") return stockBalanceRmSizeColumnSupport;
-  stockBalanceRmSizeColumnSupport = await hasColumnTx(trx, "erp", "stock_balance_rm", "size_id");
+  if (typeof stockBalanceRmSizeColumnSupport === "boolean")
+    return stockBalanceRmSizeColumnSupport;
+  stockBalanceRmSizeColumnSupport = await hasColumnTx(
+    trx,
+    "erp",
+    "stock_balance_rm",
+    "size_id",
+  );
   return stockBalanceRmSizeColumnSupport;
 };
 
 const hasStockLedgerColorColumnTx = async (trx) => {
-  if (typeof stockLedgerColorColumnSupport === "boolean") return stockLedgerColorColumnSupport;
-  stockLedgerColorColumnSupport = await hasColumnTx(trx, "erp", "stock_ledger", "color_id");
+  if (typeof stockLedgerColorColumnSupport === "boolean")
+    return stockLedgerColorColumnSupport;
+  stockLedgerColorColumnSupport = await hasColumnTx(
+    trx,
+    "erp",
+    "stock_ledger",
+    "color_id",
+  );
   return stockLedgerColorColumnSupport;
 };
 
 const hasStockLedgerSizeColumnTx = async (trx) => {
-  if (typeof stockLedgerSizeColumnSupport === "boolean") return stockLedgerSizeColumnSupport;
-  stockLedgerSizeColumnSupport = await hasColumnTx(trx, "erp", "stock_ledger", "size_id");
+  if (typeof stockLedgerSizeColumnSupport === "boolean")
+    return stockLedgerSizeColumnSupport;
+  stockLedgerSizeColumnSupport = await hasColumnTx(
+    trx,
+    "erp",
+    "stock_ledger",
+    "size_id",
+  );
   return stockLedgerSizeColumnSupport;
 };
 
@@ -264,6 +307,19 @@ const hasStockTransferOutTransporterNameColumnTx = async (trx) => {
   return stockTransferOutHasTransporterNameColumn;
 };
 
+const hasStockTransferOutBillBookNoColumnTx = async (trx) => {
+  if (typeof stockTransferOutHasBillBookNoColumn === "boolean") {
+    return stockTransferOutHasBillBookNoColumn;
+  }
+  stockTransferOutHasBillBookNoColumn = await hasColumnTx(
+    trx,
+    "erp",
+    "stock_transfer_out_header",
+    "bill_book_no",
+  );
+  return stockTransferOutHasBillBookNoColumn;
+};
+
 const hasGrnInReceivedByUserIdColumnTx = async (trx) => {
   if (typeof grnInHasReceivedByUserIdColumn === "boolean") {
     return grnInHasReceivedByUserIdColumn;
@@ -281,7 +337,12 @@ const hasGrnInReceivedAtColumnTx = async (trx) => {
   if (typeof grnInHasReceivedAtColumn === "boolean") {
     return grnInHasReceivedAtColumn;
   }
-  grnInHasReceivedAtColumn = await hasColumnTx(trx, "erp", "grn_in_header", "received_at");
+  grnInHasReceivedAtColumn = await hasColumnTx(
+    trx,
+    "erp",
+    "grn_in_header",
+    "received_at",
+  );
   return grnInHasReceivedAtColumn;
 };
 
@@ -308,7 +369,8 @@ const buildUomGraph = (conversionRows = []) => {
 
 const collectReachableUomIds = ({ graph, sourceUomId }) => {
   const source = toPositiveInt(sourceUomId);
-  if (!source || !graph.has(source)) return [Number(source || 0)].filter(Boolean);
+  if (!source || !graph.has(source))
+    return [Number(source || 0)].filter(Boolean);
 
   const visited = new Set([Number(source)]);
   const queue = [Number(source)];
@@ -365,7 +427,9 @@ const normalizeFactorToBase = (value) => {
 
 const loadUnitOptionsByBaseUomIdTx = async ({ trx, baseUomIds = [] }) => {
   const normalizedBaseIds = [
-    ...new Set((baseUomIds || []).map((id) => toPositiveInt(id)).filter(Boolean)),
+    ...new Set(
+      (baseUomIds || []).map((id) => toPositiveInt(id)).filter(Boolean),
+    ),
   ];
   if (!normalizedBaseIds.length) return new Map();
 
@@ -462,8 +526,12 @@ const applyRmStockIdentityWhere = ({
     .where(`${prefix}item_id`, Number(identity.itemId));
   if (!supportsVariantDimensions) return chained;
   return chained
-    .whereRaw(`COALESCE(${prefix}color_id, 0) = ?`, [Number(identity.colorId || 0)])
-    .whereRaw(`COALESCE(${prefix}size_id, 0) = ?`, [Number(identity.sizeId || 0)]);
+    .whereRaw(`COALESCE(${prefix}color_id, 0) = ?`, [
+      Number(identity.colorId || 0),
+    ])
+    .whereRaw(`COALESCE(${prefix}size_id, 0) = ?`, [
+      Number(identity.sizeId || 0),
+    ]);
 };
 
 const ensureRmBalanceSeedTx = async ({
@@ -650,8 +718,14 @@ const rollbackInventoryStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
         sizeId: row?.size_id,
       });
       if (!identity.branchId || !identity.itemId) continue;
-      await ensureRmBalanceSeedTx({ trx, identity, supportsVariantDimensions: supportsRmVariants });
-      const targetQuery = trx("erp.stock_balance_rm").select("qty", "value").forUpdate();
+      await ensureRmBalanceSeedTx({
+        trx,
+        identity,
+        supportsVariantDimensions: supportsRmVariants,
+      });
+      const targetQuery = trx("erp.stock_balance_rm")
+        .select("qty", "value")
+        .forUpdate();
       applyRmStockIdentityWhere({
         query: targetQuery,
         identity,
@@ -694,7 +768,8 @@ const rollbackInventoryStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
     const skuId = toPositiveInt(row?.sku_id);
     const qtyPairs = Number(row?.qty_pairs || 0);
     const value = roundCost2(Math.abs(Number(row?.value || 0)));
-    if (!branchId || !skuId || !Number.isInteger(qtyPairs) || qtyPairs <= 0) continue;
+    if (!branchId || !skuId || !Number.isInteger(qtyPairs) || qtyPairs <= 0)
+      continue;
     await ensureSkuBalanceSeedTx({
       trx,
       branchId,
@@ -722,11 +797,12 @@ const rollbackInventoryStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
         ? roundCost2(Number(existing?.value || 0) + value)
         : roundCost2(Number(existing?.value || 0) - value);
     const normalizedQtyPairs = Number(nextQtyPairs || 0);
-    const normalizedValue = normalizedQtyPairs === 0 ? 0 : Number(nextValue || 0);
-    const normalizedWac =
-      normalizedQtyPairs !== 0
-        ? roundUnitCost6(normalizedValue / normalizedQtyPairs)
-        : 0;
+    const normalizedValue =
+      normalizedQtyPairs === 0 ? 0 : Number(nextValue || 0);
+    const normalizedWac = computeNonNegativeWac(
+      normalizedQtyPairs,
+      normalizedValue,
+    );
     await trx("erp.stock_balance_sku")
       .where({
         branch_id: branchId,
@@ -744,13 +820,16 @@ const rollbackInventoryStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
   }
 
   if (rows.length) {
-    await trx("erp.stock_ledger").where({ voucher_header_id: normalizedVoucherId }).del();
+    await trx("erp.stock_ledger")
+      .where({ voucher_header_id: normalizedVoucherId })
+      .del();
   }
 };
 
 const ensureInventoryStockInfraTx = async ({ trx, needsRm, needsSku }) => {
   const hasLedger = await hasStockLedgerTableTx(trx);
-  if (!hasLedger) throw new HttpError(400, "Stock ledger infrastructure is unavailable");
+  if (!hasLedger)
+    throw new HttpError(400, "Stock ledger infrastructure is unavailable");
   if (needsRm && !(await hasStockBalanceRmTableTx(trx))) {
     throw new HttpError(400, "RM stock balance infrastructure is unavailable");
   }
@@ -773,10 +852,16 @@ const ensureRmBalanceAvailableTx = async ({
   const row = await query.first();
   const availableQty = Number(row?.qty || 0);
   const availableValue = Number(row?.value || 0);
-  if (!allowNegativeSource && availableQty + 0.0005 < Number(qtyRequired || 0)) {
+  if (
+    !allowNegativeSource &&
+    availableQty + 0.0005 < Number(qtyRequired || 0)
+  ) {
     throw new HttpError(400, "Insufficient stock quantity for transfer");
   }
-  if (!allowNegativeSource && availableValue + 0.05 < Number(valueRequired || 0)) {
+  if (
+    !allowNegativeSource &&
+    availableValue + 0.05 < Number(valueRequired || 0)
+  ) {
     throw new HttpError(400, "Insufficient stock value for transfer");
   }
   return row;
@@ -797,7 +882,8 @@ const moveRmStockTx = async ({
   if (!(normalizedQty > 0)) return;
   const normalizedUnitCostBase = roundUnitCost6(unitCostBase);
   const value = roundCost2(normalizedQty * normalizedUnitCostBase);
-  const supportsVariantDimensions = await hasStockBalanceRmVariantDimensionsTx(trx);
+  const supportsVariantDimensions =
+    await hasStockBalanceRmVariantDimensionsTx(trx);
 
   const fromRow = await ensureRmBalanceAvailableTx({
     trx,
@@ -813,7 +899,9 @@ const moveRmStockTx = async ({
     identity: toIdentity,
     supportsVariantDimensions,
   });
-  const toQuery = trx("erp.stock_balance_rm").select("qty", "value").forUpdate();
+  const toQuery = trx("erp.stock_balance_rm")
+    .select("qty", "value")
+    .forUpdate();
   applyRmStockIdentityWhere({
     query: toQuery,
     identity: toIdentity,
@@ -916,9 +1004,7 @@ const moveSkuStockPairsTx = async ({
   }
   const normalizedRowStatus = normalizeRowStatus(rowStatus);
   const usePackedBucket =
-    normalizedCategory === "FG"
-      ? normalizedRowStatus === "PACKED"
-      : false;
+    normalizedCategory === "FG" ? normalizedRowStatus === "PACKED" : false;
   const normalizedUnitCostBase = roundUnitCost6(unitCostBase);
   const value = roundCost2(normalizedQtyPairs * normalizedUnitCostBase);
 
@@ -943,7 +1029,9 @@ const moveSkuStockPairsTx = async ({
     .select("qty_pairs", "value")
     .where({
       branch_id: fromBranchId,
-      stock_state: String(fromStockState || "ON_HAND").trim().toUpperCase(),
+      stock_state: String(fromStockState || "ON_HAND")
+        .trim()
+        .toUpperCase(),
       category: normalizedCategory,
       is_packed: usePackedBucket,
       sku_id: skuId,
@@ -972,7 +1060,9 @@ const moveSkuStockPairsTx = async ({
     .select("qty_pairs", "value")
     .where({
       branch_id: toBranchId,
-      stock_state: String(toStockState || "IN_TRANSIT").trim().toUpperCase(),
+      stock_state: String(toStockState || "IN_TRANSIT")
+        .trim()
+        .toUpperCase(),
       category: normalizedCategory,
       is_packed: usePackedBucket,
       sku_id: skuId,
@@ -988,7 +1078,8 @@ const moveSkuStockPairsTx = async ({
     usePackedBucket,
   });
 
-  const nextFromQtyPairs = Number(availableQtyPairs) - Number(normalizedQtyPairs);
+  const nextFromQtyPairs =
+    Number(availableQtyPairs) - Number(normalizedQtyPairs);
   const nextFromValueRaw = roundCost2(availableValue - value);
   const nextFromValue =
     nextFromQtyPairs === 0
@@ -996,14 +1087,13 @@ const moveSkuStockPairsTx = async ({
       : allowNegativeSource
         ? nextFromValueRaw
         : Math.max(nextFromValueRaw, 0);
-  const nextFromWac =
-    nextFromQtyPairs !== 0
-      ? roundUnitCost6(nextFromValue / nextFromQtyPairs)
-      : 0;
+  const nextFromWac = computeNonNegativeWac(nextFromQtyPairs, nextFromValue);
   await trx("erp.stock_balance_sku")
     .where({
       branch_id: fromBranchId,
-      stock_state: String(fromStockState || "ON_HAND").trim().toUpperCase(),
+      stock_state: String(fromStockState || "ON_HAND")
+        .trim()
+        .toUpperCase(),
       category: normalizedCategory,
       is_packed: usePackedBucket,
       sku_id: skuId,
@@ -1018,11 +1108,13 @@ const moveSkuStockPairsTx = async ({
   const nextToQtyPairs =
     Number(toSnapshot?.qty_pairs || 0) + normalizedQtyPairs;
   const nextToValue = roundCost2(Number(toSnapshot?.value || 0) + value);
-  const nextToWac = nextToQtyPairs > 0 ? roundUnitCost6(nextToValue / nextToQtyPairs) : 0;
+  const nextToWac = computeNonNegativeWac(nextToQtyPairs, nextToValue);
   await trx("erp.stock_balance_sku")
     .where({
       branch_id: toBranchId,
-      stock_state: String(toStockState || "IN_TRANSIT").trim().toUpperCase(),
+      stock_state: String(toStockState || "IN_TRANSIT")
+        .trim()
+        .toUpperCase(),
       category: normalizedCategory,
       is_packed: usePackedBucket,
       sku_id: skuId,
@@ -1064,7 +1156,11 @@ const moveSkuStockPairsTx = async ({
   });
 };
 
-const fetchSkuMapTx = async ({ trx, skuIds = [], expectedStockType = null }) => {
+const fetchSkuMapTx = async ({
+  trx,
+  skuIds = [],
+  expectedStockType = null,
+}) => {
   const normalized = [
     ...new Set((skuIds || []).map((id) => toPositiveInt(id)).filter(Boolean)),
   ];
@@ -1077,6 +1173,7 @@ const fetchSkuMapTx = async ({ trx, skuIds = [], expectedStockType = null }) => 
     .select(
       "s.id",
       "s.sku_code",
+      "v.sale_rate",
       "i.name as item_name",
       "i.item_type",
       "i.base_uom_id",
@@ -1086,8 +1183,13 @@ const fetchSkuMapTx = async ({ trx, skuIds = [], expectedStockType = null }) => 
     .whereIn("s.id", normalized)
     .where({ "s.is_active": true, "i.is_active": true });
 
-  if (expectedStockType && (expectedStockType === "FG" || expectedStockType === "SFG")) {
-    query = query.whereRaw("upper(coalesce(i.item_type::text, '')) = ?", [expectedStockType]);
+  if (
+    expectedStockType &&
+    (expectedStockType === "FG" || expectedStockType === "SFG")
+  ) {
+    query = query.whereRaw("upper(coalesce(i.item_type::text, '')) = ?", [
+      expectedStockType,
+    ]);
   }
 
   const rows = await query;
@@ -1116,6 +1218,71 @@ const fetchRmItemMapTx = async ({ trx, itemIds = [] }) => {
     .whereRaw("upper(coalesce(i.item_type::text, '')) = 'RM'");
 
   return new Map(rows.map((row) => [Number(row.id), row]));
+};
+
+const fetchRmRateRowsByItemTx = async ({ trx, itemIds = [] }) => {
+  const normalized = [
+    ...new Set((itemIds || []).map((id) => toPositiveInt(id)).filter(Boolean)),
+  ];
+  if (!normalized.length) return [];
+  if (!(await tableExistsTx(trx, "erp.rm_purchase_rates"))) return [];
+
+  return trx("erp.rm_purchase_rates as r")
+    .leftJoin("erp.colors as c", "c.id", "r.color_id")
+    .leftJoin("erp.sizes as s", "s.id", "r.size_id")
+    .select(
+      "r.rm_item_id",
+      "r.color_id",
+      "c.name as color_name",
+      "r.size_id",
+      "s.name as size_name",
+      "r.avg_purchase_rate",
+      "r.purchase_rate",
+    )
+    .whereIn("r.rm_item_id", normalized)
+    .where({ "r.is_active": true });
+};
+
+const resolveRmPurchaseRate = ({
+  itemRates = [],
+  colorId = null,
+  sizeId = null,
+}) => {
+  const normalizedColorId = Number(toPositiveInt(colorId) || 0);
+  const normalizedSizeId = Number(toPositiveInt(sizeId) || 0);
+  const rates = Array.isArray(itemRates) ? itemRates : [];
+
+  const pickRate = (entry) => {
+    const rate = Number(entry?.purchase_rate ?? 0);
+    return rate > 0 ? rate : 0;
+  };
+
+  const exact = rates.find(
+    (entry) =>
+      Number(entry?.color_id || 0) === normalizedColorId &&
+      Number(entry?.size_id || 0) === normalizedSizeId,
+  );
+  if (exact) return pickRate(exact);
+
+  const colorOnly = rates.find(
+    (entry) =>
+      Number(entry?.color_id || 0) === normalizedColorId &&
+      Number(entry?.size_id || 0) === 0,
+  );
+  if (colorOnly) return pickRate(colorOnly);
+
+  const sizeOnly = rates.find(
+    (entry) =>
+      Number(entry?.color_id || 0) === 0 &&
+      Number(entry?.size_id || 0) === normalizedSizeId,
+  );
+  if (sizeOnly) return pickRate(sizeOnly);
+
+  const fallback = rates.find(
+    (entry) =>
+      Number(entry?.color_id || 0) === 0 && Number(entry?.size_id || 0) === 0,
+  );
+  return fallback ? pickRate(fallback) : 0;
 };
 
 const fetchColorMapTx = async ({ trx, colorIds = [] }) => {
@@ -1175,7 +1342,9 @@ const loadSourceStockMapsTx = async ({ trx, sourceBranchId }) => {
 
   const skuMap = {};
   (skuRows || []).forEach((row) => {
-    const key = `${String(row.category || "").trim().toUpperCase()}:${Number(row.sku_id || 0)}`;
+    const key = `${String(row.category || "")
+      .trim()
+      .toUpperCase()}:${Number(row.sku_id || 0)}`;
     if (!skuMap[key]) {
       skuMap[key] = {
         qty_pairs: 0,
@@ -1194,7 +1363,9 @@ const loadSourceStockMapsTx = async ({ trx, sourceBranchId }) => {
     const current = skuMap[key];
     const qtyPairs = Number(row.qty_pairs || 0);
     const value = Number(row.value || 0);
-    const category = String(row.category || "").trim().toUpperCase();
+    const category = String(row.category || "")
+      .trim()
+      .toUpperCase();
     const isPacked = category === "FG" ? row.is_packed === true : false;
     if (isPacked) {
       current.has_packed_bucket = true;
@@ -1206,7 +1377,8 @@ const loadSourceStockMapsTx = async ({ trx, sourceBranchId }) => {
       current.loose_value += value;
     }
     current.qty_pairs =
-      Number(current.loose_qty_pairs || 0) + Number(current.packed_qty_pairs || 0);
+      Number(current.loose_qty_pairs || 0) +
+      Number(current.packed_qty_pairs || 0);
     current.value =
       Number(current.loose_value || 0) + Number(current.packed_value || 0);
     current.loose_wac =
@@ -1327,7 +1499,9 @@ const createApprovalRequestTx = async ({
   } catch (err) {
     const isMissingVoucherTypeCol =
       String(err?.code || "").trim() === "42703" &&
-      String(err?.message || "").toLowerCase().includes("voucher_type_code");
+      String(err?.message || "")
+        .toLowerCase()
+        .includes("voucher_type_code");
     if (!isMissingVoucherTypeCol) throw err;
     approvalRequestHasVoucherTypeCodeColumn = false;
     delete payload.voucher_type_code;
@@ -1361,7 +1535,8 @@ const getNextVoucherNoTx = async (trx, branchId, voucherTypeCode) => {
   return Number(latest?.value || 0) + 1;
 };
 
-const toLines = (payload) => (Array.isArray(payload?.lines) ? payload.lines : []);
+const toLines = (payload) =>
+  Array.isArray(payload?.lines) ? payload.lines : [];
 
 const fetchTransferOutHeaderTx = async ({
   trx,
@@ -1370,6 +1545,7 @@ const fetchTransferOutHeaderTx = async ({
   stnOutVoucherId = null,
   includeReceivedForVoucherId = null,
 }) => {
+  const hasBillBookNo = await hasStockTransferOutBillBookNoColumnTx(trx);
   let query = trx("erp.stock_transfer_out_header as sth")
     .join("erp.voucher_header as vh", "vh.id", "sth.voucher_id")
     .select(
@@ -1383,6 +1559,9 @@ const fetchTransferOutHeaderTx = async ({
       "vh.voucher_date as stn_voucher_date",
       "vh.book_no as stn_book_no",
       "vh.status as stn_header_status",
+      hasBillBookNo
+        ? knex.raw("sth.bill_book_no as bill_book_no")
+        : knex.raw("vh.book_no as bill_book_no"),
     )
     .where({
       "vh.voucher_type_code": STOCK_TRANSFER_VOUCHER_TYPES.out,
@@ -1395,12 +1574,19 @@ const fetchTransferOutHeaderTx = async ({
   } else if (transferRefNo) {
     const hasTransferRef = await hasStockTransferOutTransferRefColumnTx(trx);
     if (hasTransferRef) {
-      query = query.whereRaw("upper(coalesce(sth.transfer_ref_no, vh.book_no, '')) = ?", [
-        String(transferRefNo || "").trim().toUpperCase(),
-      ]);
+      query = query.whereRaw(
+        "upper(coalesce(sth.transfer_ref_no, vh.book_no, '')) = ?",
+        [
+          String(transferRefNo || "")
+            .trim()
+            .toUpperCase(),
+        ],
+      );
     } else {
       query = query.whereRaw("upper(coalesce(vh.book_no, '')) = ?", [
-        String(transferRefNo || "").trim().toUpperCase(),
+        String(transferRefNo || "")
+          .trim()
+          .toUpperCase(),
       ]);
     }
   }
@@ -1428,8 +1614,20 @@ const loadTransferOutLinesTx = async ({ trx, voucherId }) => {
     .leftJoin("erp.items as si", "si.id", "v.item_id")
     .leftJoin("erp.items as i", "i.id", "vl.item_id")
     .leftJoin("erp.uom as u", "u.id", "vl.uom_id")
-    .leftJoin("erp.colors as c", "c.id", knex.raw("(vl.meta->>'color_id')::bigint"))
-    .leftJoin("erp.sizes as sz", "sz.id", knex.raw("(vl.meta->>'size_id')::bigint"))
+    .leftJoin(
+      "erp.colors as c",
+      "c.id",
+      knex.raw("(vl.meta->>'color_id')::bigint"),
+    )
+    .leftJoin("erp.colors as vc", "vc.id", "v.color_id")
+    .leftJoin(
+      "erp.sizes as sz",
+      "sz.id",
+      knex.raw("(vl.meta->>'size_id')::bigint"),
+    )
+    .leftJoin("erp.sizes as vs", "vs.id", "v.size_id")
+    .leftJoin("erp.packing_types as p", "p.id", "v.packing_type_id")
+    .leftJoin("erp.grades as g", "g.id", "v.grade_id")
     .select(
       "vl.id",
       "vl.line_no",
@@ -1447,8 +1645,10 @@ const loadTransferOutLinesTx = async ({ trx, voucherId }) => {
       "si.item_type as sku_item_type",
       "u.code as uom_code",
       "u.name as uom_name",
-      "c.name as color_name",
-      "sz.name as size_name",
+      knex.raw("coalesce(c.name, vc.name, '') as color_name"),
+      knex.raw("coalesce(sz.name, vs.name, '') as size_name"),
+      "p.name as packing_name",
+      "g.name as grade_name",
     )
     .where({ "vl.voucher_header_id": voucherId })
     .orderBy("vl.line_no", "asc");
@@ -1460,10 +1660,23 @@ const loadTransferOutLinesTx = async ({ trx, voucherId }) => {
       (String(line?.line_kind || "").toUpperCase() === "ITEM"
         ? "RM"
         : normalizeStockType(line?.sku_item_type));
+    const lineKind = String(line?.line_kind || "").toUpperCase();
+    const displayName =
+      lineKind === "SKU"
+        ? buildSkuDisplayName({
+            id: line?.sku_id,
+            sku_code: line?.sku_code,
+            item_name: line?.sku_item_name || line?.item_name,
+            size_name: line?.size_name,
+            color_name: line?.color_name,
+            packing_name: line?.packing_name,
+            grade_name: line?.grade_name,
+          })
+        : String(line?.item_name || "");
     return {
       id: Number(line.id),
       line_no: Number(line.line_no || 0),
-      line_kind: String(line.line_kind || "").toUpperCase(),
+      line_kind: lineKind,
       stock_type: stockType,
       item_id: toPositiveInt(line.item_id),
       item_code: String(line.item_code || ""),
@@ -1471,6 +1684,7 @@ const loadTransferOutLinesTx = async ({ trx, voucherId }) => {
       sku_id: toPositiveInt(line.sku_id),
       sku_code: String(line.sku_code || ""),
       sku_item_name: String(line.sku_item_name || ""),
+      display_name: String(displayName || ""),
       qty: Number(line.qty || 0),
       rate: Number(line.rate || 0),
       amount: Number(line.amount || 0),
@@ -1482,7 +1696,12 @@ const loadTransferOutLinesTx = async ({ trx, voucherId }) => {
       color_name: String(line.color_name || ""),
       size_id: toPositiveInt(meta.size_id),
       size_name: String(line.size_name || ""),
-      row_status: String(meta.row_status || "").trim().toUpperCase() || null,
+      packing_name: String(line.packing_name || ""),
+      grade_name: String(line.grade_name || ""),
+      row_status:
+        String(meta.row_status || "")
+          .trim()
+          .toUpperCase() || null,
       available_qty: Number(meta.available_qty || 0),
       available_qty_base: Number(meta.available_qty_base || 0),
       transfer_qty_base: Number(meta.transfer_qty_base || 0),
@@ -1497,6 +1716,8 @@ const validateTransferOutPayloadTx = async ({
   req,
   payload,
   transferRefNo,
+  transferRefNoProvided = false,
+  currentVoucherId = null,
 }) => {
   const voucherDate = toDateOnly(payload?.voucher_date);
   if (!voucherDate) throw new HttpError(400, "Voucher date is required");
@@ -1505,9 +1726,13 @@ const validateTransferOutPayloadTx = async ({
   if (!stockType) throw new HttpError(400, "Stock type is required");
 
   const destinationBranchId = toPositiveInt(payload?.destination_branch_id);
-  if (!destinationBranchId) throw new HttpError(400, "Destination branch is required");
+  if (!destinationBranchId)
+    throw new HttpError(400, "Destination branch is required");
   if (Number(destinationBranchId) === Number(req.branchId)) {
-    throw new HttpError(400, "Destination branch must be different from source branch");
+    throw new HttpError(
+      400,
+      "Destination branch must be different from source branch",
+    );
   }
   if (
     Array.isArray(req.branchScope) &&
@@ -1519,9 +1744,18 @@ const validateTransferOutPayloadTx = async ({
 
   const transferReason = normalizeTransferReason(payload?.transfer_reason);
   const transporterName = normalizeText(payload?.transporter_name, 120);
+  const billBookNo = normalizeText(payload?.bill_book_no, 120);
+  if (!billBookNo) throw new HttpError(400, "Bill Book No is required");
   const remarks = normalizeText(payload?.remarks || payload?.description, 1000);
   const rawLines = toLines(payload);
   if (!rawLines.length) throw new HttpError(400, "Voucher lines are required");
+  const resolvedTransferRefNo = await resolveTransferRefNoTx({
+    trx,
+    transferRefNo,
+    fallbackTransferRefNo: transferRefNo,
+    userProvided: transferRefNoProvided === true,
+    exceptVoucherId: currentVoucherId,
+  });
 
   await ensureInventoryStockInfraTx({
     trx,
@@ -1531,10 +1765,12 @@ const validateTransferOutPayloadTx = async ({
 
   if (stockType === "RM") {
     const itemIds = [
-      ...new Set(rawLines.map((line) => toPositiveInt(line?.item_id)).filter(Boolean)),
+      ...new Set(
+        rawLines.map((line) => toPositiveInt(line?.item_id)).filter(Boolean),
+      ),
     ];
     if (!itemIds.length) throw new HttpError(400, "Raw material is required");
-    const [itemMap, colorMap, sizeMap] = await Promise.all([
+    const [itemMap, colorMap, sizeMap, rmRateRows] = await Promise.all([
       fetchRmItemMapTx({ trx, itemIds }),
       fetchColorMapTx({
         trx,
@@ -1544,34 +1780,63 @@ const validateTransferOutPayloadTx = async ({
         trx,
         sizeIds: rawLines.map((line) => line?.size_id),
       }),
+      fetchRmRateRowsByItemTx({ trx, itemIds }),
     ]);
+    const rmRatesByItem = new Map();
+    // Group RM rates once to keep per-line resolution deterministic and fast.
+    (rmRateRows || []).forEach((row) => {
+      const itemId = Number(row?.rm_item_id || 0);
+      if (!itemId) return;
+      if (!rmRatesByItem.has(itemId)) rmRatesByItem.set(itemId, []);
+      rmRatesByItem.get(itemId).push(row);
+    });
     const missingItem = itemIds.find((id) => !itemMap.has(Number(id)));
-    if (missingItem) throw new HttpError(400, "Invalid raw material in voucher lines");
+    if (missingItem)
+      throw new HttpError(400, "Invalid raw material in voucher lines");
 
     const baseUomIds = [
       ...new Set(
-        [...itemMap.values()].map((entry) => toPositiveInt(entry?.base_uom_id)).filter(Boolean),
+        [...itemMap.values()]
+          .map((entry) => toPositiveInt(entry?.base_uom_id))
+          .filter(Boolean),
       ),
     ];
-    const unitOptionsByBase = await loadUnitOptionsByBaseUomIdTx({ trx, baseUomIds });
-    const sourceStock = await loadSourceStockMapsTx({ trx, sourceBranchId: req.branchId });
+    const unitOptionsByBase = await loadUnitOptionsByBaseUomIdTx({
+      trx,
+      baseUomIds,
+    });
+    const sourceStock = await loadSourceStockMapsTx({
+      trx,
+      sourceBranchId: req.branchId,
+    });
 
     const lines = rawLines.map((raw, index) => {
       const lineNo = index + 1;
       const itemId = toPositiveInt(raw?.item_id);
-      if (!itemId) throw new HttpError(400, `Line ${lineNo}: raw material is required`);
+      if (!itemId)
+        throw new HttpError(400, `Line ${lineNo}: raw material is required`);
       const item = itemMap.get(Number(itemId));
       const baseUomId = toPositiveInt(item?.base_uom_id);
       const unitOptions = unitOptionsByBase.get(Number(baseUomId || 0)) || [];
       const selectedUomId = toPositiveInt(raw?.uom_id) || baseUomId;
-      const selectedUnit = unitOptions.find((entry) => Number(entry.id) === Number(selectedUomId));
-      if (!selectedUnit) throw new HttpError(400, `Line ${lineNo}: selected unit is invalid`);
+      const selectedUnit = unitOptions.find(
+        (entry) => Number(entry.id) === Number(selectedUomId),
+      );
+      if (!selectedUnit)
+        throw new HttpError(400, `Line ${lineNo}: selected unit is invalid`);
 
       const transferQty = toPositiveNumber(raw?.transfer_qty ?? raw?.qty, 3);
-      if (!transferQty) throw new HttpError(400, `Line ${lineNo}: transfer quantity is required`);
+      if (!transferQty)
+        throw new HttpError(
+          400,
+          `Line ${lineNo}: transfer quantity is required`,
+        );
       const factorToBase = Number(selectedUnit.factor_to_base || 0);
-      if (!(factorToBase > 0)) throw new HttpError(400, `Line ${lineNo}: unit conversion is invalid`);
-      const transferQtyBase = roundQty3(Number(transferQty) * Number(factorToBase));
+      if (!(factorToBase > 0))
+        throw new HttpError(400, `Line ${lineNo}: unit conversion is invalid`);
+      const transferQtyBase = roundQty3(
+        Number(transferQty) * Number(factorToBase),
+      );
 
       const colorId = toPositiveInt(raw?.color_id);
       const sizeId = toPositiveInt(raw?.size_id);
@@ -1583,18 +1848,30 @@ const validateTransferOutPayloadTx = async ({
       }
 
       const exactKey = buildStockMapKey({ itemId, colorId, sizeId });
-      const fallbackKey = buildStockMapKey({ itemId, colorId: null, sizeId: null });
-      const stock = sourceStock.rmMap[exactKey] || sourceStock.rmMap[fallbackKey];
+      const fallbackKey = buildStockMapKey({
+        itemId,
+        colorId: null,
+        sizeId: null,
+      });
+      const stock =
+        sourceStock.rmMap[exactKey] || sourceStock.rmMap[fallbackKey];
       const availableQtyBase = Number(stock?.qty || 0);
       const shortageQtyBase = Math.max(
         roundQty3(transferQtyBase - availableQtyBase),
         0,
       );
       const hasNegativeStockRisk = shortageQtyBase > 0.0005;
-      const unitCostBase = roundUnitCost6(Number(stock?.wac || 0));
+      const unitCostBase = roundUnitCost6(
+        resolveRmPurchaseRate({
+          itemRates: rmRatesByItem.get(Number(itemId)) || [],
+          colorId,
+          sizeId,
+        }),
+      );
       const unitCost = roundUnitCost6(unitCostBase * Number(factorToBase));
       const amount = roundCost2(Number(transferQty) * Number(unitCost));
-      const availableQty = factorToBase > 0 ? roundQty3(availableQtyBase / factorToBase) : 0;
+      const availableQty =
+        factorToBase > 0 ? roundQty3(availableQtyBase / factorToBase) : 0;
 
       return {
         line_no: lineNo,
@@ -1627,29 +1904,44 @@ const validateTransferOutPayloadTx = async ({
       voucherDate,
       stockType,
       destinationBranchId,
-      transferRefNo,
+      transferRefNo: resolvedTransferRefNo,
       transferReason,
       transporterName,
+      billBookNo,
       remarks,
       lines,
     };
   }
 
   const skuIds = [
-    ...new Set(rawLines.map((line) => toPositiveInt(line?.sku_id)).filter(Boolean)),
+    ...new Set(
+      rawLines.map((line) => toPositiveInt(line?.sku_id)).filter(Boolean),
+    ),
   ];
   if (!skuIds.length) throw new HttpError(400, "Item is required");
-  const skuMap = await fetchSkuMapTx({ trx, skuIds, expectedStockType: stockType });
+  const skuMap = await fetchSkuMapTx({
+    trx,
+    skuIds,
+    expectedStockType: stockType,
+  });
   const missingSku = skuIds.find((id) => !skuMap.has(Number(id)));
   if (missingSku) throw new HttpError(400, "Invalid item in voucher lines");
 
   const baseUomIds = [
     ...new Set(
-      [...skuMap.values()].map((entry) => toPositiveInt(entry?.base_uom_id)).filter(Boolean),
+      [...skuMap.values()]
+        .map((entry) => toPositiveInt(entry?.base_uom_id))
+        .filter(Boolean),
     ),
   ];
-  const unitOptionsByBase = await loadUnitOptionsByBaseUomIdTx({ trx, baseUomIds });
-  const sourceStock = await loadSourceStockMapsTx({ trx, sourceBranchId: req.branchId });
+  const unitOptionsByBase = await loadUnitOptionsByBaseUomIdTx({
+    trx,
+    baseUomIds,
+  });
+  const sourceStock = await loadSourceStockMapsTx({
+    trx,
+    sourceBranchId: req.branchId,
+  });
 
   const lines = rawLines.map((raw, index) => {
     const lineNo = index + 1;
@@ -1659,18 +1951,29 @@ const validateTransferOutPayloadTx = async ({
     const baseUomId = toPositiveInt(sku?.base_uom_id);
     const unitOptions = unitOptionsByBase.get(Number(baseUomId || 0)) || [];
     const selectedUomId = toPositiveInt(raw?.uom_id) || baseUomId;
-    const selectedUnit = unitOptions.find((entry) => Number(entry.id) === Number(selectedUomId));
-    if (!selectedUnit) throw new HttpError(400, `Line ${lineNo}: selected unit is invalid`);
+    const selectedUnit = unitOptions.find(
+      (entry) => Number(entry.id) === Number(selectedUomId),
+    );
+    if (!selectedUnit)
+      throw new HttpError(400, `Line ${lineNo}: selected unit is invalid`);
 
     const transferQty = toPositiveNumber(raw?.transfer_qty ?? raw?.qty, 3);
-    if (!transferQty) throw new HttpError(400, `Line ${lineNo}: transfer quantity is required`);
+    if (!transferQty)
+      throw new HttpError(400, `Line ${lineNo}: transfer quantity is required`);
     const factorToBase = Number(selectedUnit.factor_to_base || 0);
-    if (!(factorToBase > 0)) throw new HttpError(400, `Line ${lineNo}: unit conversion is invalid`);
+    if (!(factorToBase > 0))
+      throw new HttpError(400, `Line ${lineNo}: unit conversion is invalid`);
 
     const qtyPairsRaw = Number(transferQty) * Number(factorToBase);
     const transferQtyPairs = Math.round(Number(qtyPairsRaw || 0));
-    if (Math.abs(qtyPairsRaw - transferQtyPairs) > 0.0005 || transferQtyPairs <= 0) {
-      throw new HttpError(400, `Line ${lineNo}: quantity must convert to whole pairs`);
+    if (
+      Math.abs(qtyPairsRaw - transferQtyPairs) > 0.0005 ||
+      transferQtyPairs <= 0
+    ) {
+      throw new HttpError(
+        400,
+        `Line ${lineNo}: quantity must convert to whole pairs`,
+      );
     }
 
     const stockKey = `${stockType}:${Number(skuId)}`;
@@ -1689,19 +1992,15 @@ const validateTransferOutPayloadTx = async ({
       0,
     );
     const hasNegativeStockRisk = shortageQtyPairs > 0;
-    const unitCostBase =
-      stockType === "FG"
-        ? roundUnitCost6(
-            Number(
-              rowStatus === "LOOSE"
-                ? (stock?.loose_wac ?? stock?.wac)
-                : (stock?.packed_wac ?? stock?.wac),
-            ),
-          )
-        : roundUnitCost6(Number(stock?.wac || 0));
+    const unitCostBase = roundUnitCost6(
+      stockType === "FG" && Number(sku?.sale_rate || 0) > 0
+        ? Number(sku.sale_rate)
+        : 0,
+    );
     const unitCost = roundUnitCost6(unitCostBase * Number(factorToBase));
     const amount = roundCost2(Number(transferQty) * Number(unitCost));
-    const availableQty = factorToBase > 0 ? roundQty3(availableQtyPairs / factorToBase) : 0;
+    const availableQty =
+      factorToBase > 0 ? roundQty3(availableQtyPairs / factorToBase) : 0;
 
     return {
       line_no: lineNo,
@@ -1733,9 +2032,10 @@ const validateTransferOutPayloadTx = async ({
     voucherDate,
     stockType,
     destinationBranchId,
-    transferRefNo,
+    transferRefNo: resolvedTransferRefNo,
     transferReason,
     transporterName,
+    billBookNo,
     remarks,
     lines,
   };
@@ -1747,7 +2047,9 @@ const validateTransferInPayloadTx = async ({
   payload,
   existingVoucherId = null,
 }) => {
-  const voucherDate = toDateOnly(payload?.voucher_date || payload?.received_date_time);
+  const voucherDate = toDateOnly(
+    payload?.voucher_date || payload?.received_date_time,
+  );
   if (!voucherDate) throw new HttpError(400, "Voucher date is required");
 
   const incomingTransferRef = normalizeText(payload?.transfer_ref_no, 120);
@@ -1787,28 +2089,36 @@ const validateTransferInPayloadTx = async ({
 
   const lines = rawLines.map((raw, index) => {
     const lineNo = index + 1;
-    const stnLineId = toPositiveInt(raw?.stn_line_id || raw?.voucher_line_id || raw?.id);
+    const stnLineId = toPositiveInt(
+      raw?.stn_line_id || raw?.voucher_line_id || raw?.id,
+    );
     if (!stnLineId || !stnLineMap.has(Number(stnLineId))) {
       throw new HttpError(400, `Line ${lineNo}: transfer item is required`);
     }
     const stnLine = stnLineMap.get(Number(stnLineId));
     const factorToBase = Number(stnLine?.uom_factor_to_base || 1);
-    if (!(factorToBase > 0)) throw new HttpError(400, `Line ${lineNo}: unit conversion is invalid`);
+    if (!(factorToBase > 0))
+      throw new HttpError(400, `Line ${lineNo}: unit conversion is invalid`);
 
     const expectedQty = Number(stnLine?.qty || 0);
     const expectedQtyBase = Number(stnLine?.transfer_qty_base || 0);
     const expectedQtyPairs = Number(stnLine?.transfer_qty_pairs || 0);
     const receivedQty = toNonNegativeNumber(raw?.received_qty, 3);
     const rejectedQty = toNonNegativeNumber(raw?.rejected_qty, 3);
-    if (receivedQty === null) throw new HttpError(400, `Line ${lineNo}: received quantity is invalid`);
-    if (rejectedQty === null) throw new HttpError(400, `Line ${lineNo}: rejected quantity is invalid`);
+    if (receivedQty === null)
+      throw new HttpError(400, `Line ${lineNo}: received quantity is invalid`);
+    if (rejectedQty === null)
+      throw new HttpError(400, `Line ${lineNo}: rejected quantity is invalid`);
 
     const processedQty = roundQty3(Number(receivedQty) + Number(rejectedQty));
     if (!(processedQty > 0)) {
       throw new HttpError(400, `Line ${lineNo}: received quantity is required`);
     }
     if (processedQty > expectedQty + 0.0005) {
-      throw new HttpError(400, `Line ${lineNo}: processed quantity exceeds transfer quantity`);
+      throw new HttpError(
+        400,
+        `Line ${lineNo}: processed quantity exceeds transfer quantity`,
+      );
     }
     const varianceQty = roundQty3(Number(expectedQty) - Number(processedQty));
     const varianceReason = normalizeText(raw?.variance_reason, 250);
@@ -1837,7 +2147,9 @@ const validateTransferInPayloadTx = async ({
     };
 
     if (stockType === "RM") {
-      const expectedBase = roundQty3(expectedQtyBase || Number(expectedQty) * factorToBase);
+      const expectedBase = roundQty3(
+        expectedQtyBase || Number(expectedQty) * factorToBase,
+      );
       const receivedBase = roundQty3(Number(receivedQty) * factorToBase);
       const rejectedBase = roundQty3(Number(rejectedQty) * factorToBase);
       return {
@@ -1863,16 +2175,27 @@ const validateTransferInPayloadTx = async ({
     const receivedPairsRaw = Number(receivedQty) * factorToBase;
     const receivedPairs = Math.round(receivedPairsRaw);
     if (Math.abs(receivedPairsRaw - receivedPairs) > 0.0005) {
-      throw new HttpError(400, `Line ${lineNo}: received quantity must convert to whole pairs`);
+      throw new HttpError(
+        400,
+        `Line ${lineNo}: received quantity must convert to whole pairs`,
+      );
     }
     const rejectedPairsRaw = Number(rejectedQty) * factorToBase;
     const rejectedPairs = Math.round(rejectedPairsRaw);
     if (Math.abs(rejectedPairsRaw - rejectedPairs) > 0.0005) {
-      throw new HttpError(400, `Line ${lineNo}: rejected quantity must convert to whole pairs`);
+      throw new HttpError(
+        400,
+        `Line ${lineNo}: rejected quantity must convert to whole pairs`,
+      );
     }
-    const expectedPairs = Number(expectedQtyPairs || Math.round(Number(expectedQty) * factorToBase));
+    const expectedPairs = Number(
+      expectedQtyPairs || Math.round(Number(expectedQty) * factorToBase),
+    );
     if (receivedPairs + rejectedPairs > expectedPairs) {
-      throw new HttpError(400, `Line ${lineNo}: processed quantity exceeds transfer quantity`);
+      throw new HttpError(
+        400,
+        `Line ${lineNo}: processed quantity exceeds transfer quantity`,
+      );
     }
     return {
       line_no: lineNo,
@@ -1896,6 +2219,7 @@ const validateTransferInPayloadTx = async ({
   return {
     voucherDate,
     transferRefNo,
+    billBookNo: normalizeText(stnHeader?.bill_book_no, 120),
     stnOutVoucherId: Number(stnHeader.voucher_id),
     stockType,
     sourceBranchId: Number(stnHeader.source_branch_id),
@@ -1910,7 +2234,9 @@ const insertVoucherLinesTx = async ({ trx, voucherId, lines = [] }) => {
   const rows = lines.map((line) => ({
     voucher_header_id: Number(voucherId),
     line_no: Number(line.line_no),
-    line_kind: String(line.line_kind || "").trim().toUpperCase(),
+    line_kind: String(line.line_kind || "")
+      .trim()
+      .toUpperCase(),
     item_id: toPositiveInt(line.item_id),
     sku_id: toPositiveInt(line.sku_id),
     account_id: null,
@@ -1926,7 +2252,68 @@ const insertVoucherLinesTx = async ({ trx, voucherId, lines = [] }) => {
   return trx("erp.voucher_line").insert(rows).returning(["id", "line_no"]);
 };
 
-const buildTransferRefNo = ({ voucherNo }) => `TRF-${Number(voucherNo)}`;
+const buildTransferRefNo = ({ branchId, voucherNo }) =>
+  `TRF-${Number(branchId)}-${Number(voucherNo)}`;
+
+const findTransferRefConflictTx = async ({
+  trx,
+  transferRefNo,
+  exceptVoucherId = null,
+}) => {
+  const normalizedTransferRefNo = normalizeText(transferRefNo, 120);
+  if (!normalizedTransferRefNo) return null;
+  if (!(await hasStockTransferOutTransferRefColumnTx(trx))) return null;
+
+  const query = trx("erp.stock_transfer_out_header as sth")
+    .select("sth.voucher_id")
+    .whereRaw("upper(coalesce(sth.transfer_ref_no, '')) = ?", [
+      String(normalizedTransferRefNo).toUpperCase(),
+    ]);
+  if (toPositiveInt(exceptVoucherId)) {
+    query.whereNot("sth.voucher_id", Number(exceptVoucherId));
+  }
+  return query.first();
+};
+
+const resolveTransferRefNoTx = async ({
+  trx,
+  transferRefNo,
+  fallbackTransferRefNo,
+  userProvided = false,
+  exceptVoucherId = null,
+}) => {
+  const normalizedProvided = normalizeText(transferRefNo, 120);
+  const normalizedFallback = normalizeText(fallbackTransferRefNo, 120);
+  const requested = normalizedProvided || normalizedFallback;
+  if (!requested) return null;
+
+  const conflict = await findTransferRefConflictTx({
+    trx,
+    transferRefNo: requested,
+    exceptVoucherId,
+  });
+  if (!conflict) return requested;
+  if (userProvided) {
+    throw new HttpError(
+      400,
+      `Transfer reference "${requested}" already exists`,
+    );
+  }
+
+  const base = requested;
+  for (let suffix = 2; suffix <= 500; suffix += 1) {
+    const candidate = normalizeText(`${base}-${suffix}`, 120);
+    if (!candidate) continue;
+    // eslint-disable-next-line no-await-in-loop
+    const candidateConflict = await findTransferRefConflictTx({
+      trx,
+      transferRefNo: candidate,
+      exceptVoucherId,
+    });
+    if (!candidateConflict) return candidate;
+  }
+  throw new HttpError(400, "Could not generate unique transfer reference");
+};
 
 const upsertStockTransferOutHeaderTx = async ({
   trx,
@@ -1937,6 +2324,7 @@ const upsertStockTransferOutHeaderTx = async ({
   stockType,
   transferReason,
   transporterName,
+  billBookNo,
 }) => {
   const payload = {
     voucher_id: Number(voucherId),
@@ -1961,11 +2349,27 @@ const upsertStockTransferOutHeaderTx = async ({
     payload.transporter_name = transporterName || null;
     mergeColumns.push("transporter_name");
   }
+  if (await hasStockTransferOutBillBookNoColumnTx(trx)) {
+    payload.bill_book_no = billBookNo || null;
+    mergeColumns.push("bill_book_no");
+  }
 
-  await trx("erp.stock_transfer_out_header")
-    .insert(payload)
-    .onConflict("voucher_id")
-    .merge(mergeColumns);
+  try {
+    await trx("erp.stock_transfer_out_header")
+      .insert(payload)
+      .onConflict("voucher_id")
+      .merge(mergeColumns);
+  } catch (err) {
+    if (
+      String(err?.code || "") === "23505" &&
+      String(err?.constraint || "")
+        .toLowerCase()
+        .includes("transfer_ref")
+    ) {
+      throw new HttpError(400, "Transfer reference already exists");
+    }
+    throw err;
+  }
 };
 
 const upsertGrnInHeaderTx = async ({
@@ -2001,7 +2405,10 @@ const upsertGrnInHeaderTx = async ({
 const syncStockTransferOutVoucherTx = async ({ trx, voucherId }) => {
   const header = await trx("erp.voucher_header")
     .select("id", "voucher_date", "branch_id", "status")
-    .where({ id: voucherId, voucher_type_code: STOCK_TRANSFER_VOUCHER_TYPES.out })
+    .where({
+      id: voucherId,
+      voucher_type_code: STOCK_TRANSFER_VOUCHER_TYPES.out,
+    })
     .first();
   if (!header) return;
 
@@ -2012,14 +2419,19 @@ const syncStockTransferOutVoucherTx = async ({ trx, voucherId }) => {
     .select("dest_branch_id")
     .where({ voucher_id: voucherId })
     .first();
-  if (!ext?.dest_branch_id) throw new HttpError(400, "Transfer destination branch is required");
+  if (!ext?.dest_branch_id)
+    throw new HttpError(400, "Transfer destination branch is required");
 
   const lines = await trx("erp.voucher_line")
     .select("id", "line_kind", "item_id", "sku_id", "qty", "rate", "meta")
     .where({ voucher_header_id: voucherId })
     .orderBy("line_no", "asc");
-  const needsRm = lines.some((line) => String(line.line_kind || "").toUpperCase() === "ITEM");
-  const needsSku = lines.some((line) => String(line.line_kind || "").toUpperCase() === "SKU");
+  const needsRm = lines.some(
+    (line) => String(line.line_kind || "").toUpperCase() === "ITEM",
+  );
+  const needsSku = lines.some(
+    (line) => String(line.line_kind || "").toUpperCase() === "SKU",
+  );
   await ensureInventoryStockInfraTx({ trx, needsRm, needsSku });
 
   const voucherDate = toDateOnly(header.voucher_date);
@@ -2031,10 +2443,14 @@ const syncStockTransferOutVoucherTx = async ({ trx, voucherId }) => {
     const unitCostBase =
       Number(meta.unit_cost_base || 0) > 0
         ? Number(meta.unit_cost_base)
-        : roundUnitCost6(Number(line.rate || 0) / Math.max(Number(factorToBase || 1), 1));
+        : roundUnitCost6(
+            Number(line.rate || 0) / Math.max(Number(factorToBase || 1), 1),
+          );
 
     if (lineKind === "ITEM") {
-      const qtyBase = roundQty3(Number(meta.transfer_qty_base || Number(line.qty || 0) * factorToBase));
+      const qtyBase = roundQty3(
+        Number(meta.transfer_qty_base || Number(line.qty || 0) * factorToBase),
+      );
       await moveRmStockTx({
         trx,
         fromIdentity: buildRmStockIdentity({
@@ -2113,8 +2529,14 @@ const consumeInTransitRemainderTx = async ({
       valueRequired: remainderValue,
       supportsVariantDimensions: supportsVariants,
     });
-    const nextQty = Math.max(roundQty3(Number(source?.qty || 0) - remainderBase), 0);
-    const nextValue = nextQty > 0 ? Math.max(roundCost2(Number(source?.value || 0) - remainderValue), 0) : 0;
+    const nextQty = Math.max(
+      roundQty3(Number(source?.qty || 0) - remainderBase),
+      0,
+    );
+    const nextValue =
+      nextQty > 0
+        ? Math.max(roundCost2(Number(source?.value || 0) - remainderValue), 0)
+        : 0;
     const nextWac = nextQty > 0 ? roundUnitCost6(nextValue / nextQty) : 0;
     const updateQuery = trx("erp.stock_balance_rm").update({
       qty: nextQty,
@@ -2152,7 +2574,9 @@ const consumeInTransitRemainderTx = async ({
   if (!(remainderPairs > 0)) return;
   const rowStatus = normalizeRowStatus(meta.row_status);
   const usePackedBucket =
-    String(meta.stock_type || "").trim().toUpperCase() === "FG"
+    String(meta.stock_type || "")
+      .trim()
+      .toUpperCase() === "FG"
       ? rowStatus === "PACKED"
       : false;
   await ensureSkuBalanceSeedTx({
@@ -2177,10 +2601,15 @@ const consumeInTransitRemainderTx = async ({
   if (Number(source?.qty_pairs || 0) < remainderPairs) {
     throw new HttpError(400, "Transfer in transit balance is insufficient");
   }
-  const remainderValue = roundCost2(Number(remainderPairs) * Number(unitCostBase || 0));
+  const remainderValue = roundCost2(
+    Number(remainderPairs) * Number(unitCostBase || 0),
+  );
   const nextQtyPairs = Number(source?.qty_pairs || 0) - remainderPairs;
-  const nextValue = nextQtyPairs > 0 ? Math.max(roundCost2(Number(source?.value || 0) - remainderValue), 0) : 0;
-  const nextWac = nextQtyPairs > 0 ? roundUnitCost6(nextValue / nextQtyPairs) : 0;
+  const nextValue =
+    nextQtyPairs > 0
+      ? Math.max(roundCost2(Number(source?.value || 0) - remainderValue), 0)
+      : 0;
+  const nextWac = computeNonNegativeWac(nextQtyPairs, nextValue);
   await trx("erp.stock_balance_sku")
     .where({
       branch_id: branchId,
@@ -2218,8 +2647,20 @@ const loadTransferInLinesTx = async ({ trx, voucherId }) => {
     .leftJoin("erp.items as si", "si.id", "v.item_id")
     .leftJoin("erp.items as i", "i.id", "vl.item_id")
     .leftJoin("erp.uom as u", "u.id", "vl.uom_id")
-    .leftJoin("erp.colors as c", "c.id", knex.raw("(vl.meta->>'color_id')::bigint"))
-    .leftJoin("erp.sizes as sz", "sz.id", knex.raw("(vl.meta->>'size_id')::bigint"))
+    .leftJoin(
+      "erp.colors as c",
+      "c.id",
+      knex.raw("(vl.meta->>'color_id')::bigint"),
+    )
+    .leftJoin("erp.colors as vc", "vc.id", "v.color_id")
+    .leftJoin(
+      "erp.sizes as sz",
+      "sz.id",
+      knex.raw("(vl.meta->>'size_id')::bigint"),
+    )
+    .leftJoin("erp.sizes as vs", "vs.id", "v.size_id")
+    .leftJoin("erp.packing_types as p", "p.id", "v.packing_type_id")
+    .leftJoin("erp.grades as g", "g.id", "v.grade_id")
     .select(
       "vl.id",
       "vl.line_no",
@@ -2237,8 +2678,10 @@ const loadTransferInLinesTx = async ({ trx, voucherId }) => {
       "si.item_type as sku_item_type",
       "u.code as uom_code",
       "u.name as uom_name",
-      "c.name as color_name",
-      "sz.name as size_name",
+      knex.raw("coalesce(c.name, vc.name, '') as color_name"),
+      knex.raw("coalesce(sz.name, vs.name, '') as size_name"),
+      "p.name as packing_name",
+      "g.name as grade_name",
     )
     .where({ "vl.voucher_header_id": voucherId })
     .orderBy("vl.line_no", "asc");
@@ -2250,10 +2693,23 @@ const loadTransferInLinesTx = async ({ trx, voucherId }) => {
       (String(line?.line_kind || "").toUpperCase() === "ITEM"
         ? "RM"
         : normalizeStockType(line?.sku_item_type));
+    const lineKind = String(line?.line_kind || "").toUpperCase();
+    const displayName =
+      lineKind === "SKU"
+        ? buildSkuDisplayName({
+            id: line?.sku_id,
+            sku_code: line?.sku_code,
+            item_name: line?.sku_item_name || line?.item_name,
+            size_name: line?.size_name,
+            color_name: line?.color_name,
+            packing_name: line?.packing_name,
+            grade_name: line?.grade_name,
+          })
+        : String(line?.item_name || "");
     return {
       id: Number(line.id),
       line_no: Number(line.line_no || 0),
-      line_kind: String(line.line_kind || "").toUpperCase(),
+      line_kind: lineKind,
       stock_type: stockType,
       item_id: toPositiveInt(line.item_id),
       item_code: String(line.item_code || ""),
@@ -2261,6 +2717,7 @@ const loadTransferInLinesTx = async ({ trx, voucherId }) => {
       sku_id: toPositiveInt(line.sku_id),
       sku_code: String(line.sku_code || ""),
       sku_item_name: String(line.sku_item_name || ""),
+      display_name: String(displayName || ""),
       qty: Number(line.qty || 0),
       rate: Number(line.rate || 0),
       amount: Number(line.amount || 0),
@@ -2272,6 +2729,8 @@ const loadTransferInLinesTx = async ({ trx, voucherId }) => {
       color_name: String(line.color_name || ""),
       size_id: toPositiveInt(meta.size_id),
       size_name: String(line.size_name || ""),
+      packing_name: String(line.packing_name || ""),
+      grade_name: String(line.grade_name || ""),
       expected_qty: Number(meta.expected_qty || 0),
       received_qty: Number(meta.received_qty || line.qty || 0),
       rejected_qty: Number(meta.rejected_qty || 0),
@@ -2285,7 +2744,10 @@ const loadTransferInLinesTx = async ({ trx, voucherId }) => {
       rejected_qty_pairs: Number(meta.rejected_qty_pairs || 0),
       stn_line_id: toPositiveInt(meta.stn_line_id),
       stn_out_voucher_id: toPositiveInt(meta.stn_out_voucher_id),
-      row_status: String(meta.row_status || "").trim().toUpperCase() || null,
+      row_status:
+        String(meta.row_status || "")
+          .trim()
+          .toUpperCase() || null,
       unit_cost_base: Number(meta.unit_cost_base || 0),
     };
   });
@@ -2294,7 +2756,10 @@ const loadTransferInLinesTx = async ({ trx, voucherId }) => {
 const syncStockTransferInVoucherTx = async ({ trx, voucherId }) => {
   const header = await trx("erp.voucher_header")
     .select("id", "voucher_date", "branch_id", "status")
-    .where({ id: voucherId, voucher_type_code: STOCK_TRANSFER_VOUCHER_TYPES.in })
+    .where({
+      id: voucherId,
+      voucher_type_code: STOCK_TRANSFER_VOUCHER_TYPES.in,
+    })
     .first();
   if (!header) return;
 
@@ -2308,7 +2773,10 @@ const syncStockTransferInVoucherTx = async ({ trx, voucherId }) => {
   }
 
   await trx("erp.stock_transfer_out_header")
-    .where({ voucher_id: Number(ext.against_stn_out_id), received_voucher_id: voucherId })
+    .where({
+      voucher_id: Number(ext.against_stn_out_id),
+      received_voucher_id: voucherId,
+    })
     .update({
       status: "DISPATCHED",
       received_voucher_id: null,
@@ -2332,8 +2800,12 @@ const syncStockTransferInVoucherTx = async ({ trx, voucherId }) => {
     .select("id", "line_kind", "item_id", "sku_id", "qty", "rate", "meta")
     .where({ voucher_header_id: voucherId })
     .orderBy("line_no", "asc");
-  const needsRm = lines.some((line) => String(line.line_kind || "").toUpperCase() === "ITEM");
-  const needsSku = lines.some((line) => String(line.line_kind || "").toUpperCase() === "SKU");
+  const needsRm = lines.some(
+    (line) => String(line.line_kind || "").toUpperCase() === "ITEM",
+  );
+  const needsSku = lines.some(
+    (line) => String(line.line_kind || "").toUpperCase() === "SKU",
+  );
   await ensureInventoryStockInfraTx({ trx, needsRm, needsSku });
 
   const voucherDate = toDateOnly(header.voucher_date);
@@ -2345,11 +2817,16 @@ const syncStockTransferInVoucherTx = async ({ trx, voucherId }) => {
     const unitCostBase =
       Number(meta.unit_cost_base || 0) > 0
         ? Number(meta.unit_cost_base)
-        : roundUnitCost6(Number(line.rate || 0) / Math.max(Number(factorToBase || 1), 1));
+        : roundUnitCost6(
+            Number(line.rate || 0) / Math.max(Number(factorToBase || 1), 1),
+          );
 
     if (lineKind === "ITEM") {
       const receivedBase = roundQty3(
-        Number(meta.received_qty_base || Number(meta.received_qty || line.qty || 0) * factorToBase),
+        Number(
+          meta.received_qty_base ||
+            Number(meta.received_qty || line.qty || 0) * factorToBase,
+        ),
       );
       if (receivedBase > 0) {
         await moveRmStockTx({
@@ -2456,6 +2933,7 @@ const toApprovalPayload = ({
   transfer_ref_no: validated.transferRefNo || null,
   transfer_reason: validated.transferReason || null,
   transporter_name: validated.transporterName || null,
+  bill_book_no: validated.billBookNo || null,
   stn_out_voucher_id: validated.stnOutVoucherId || null,
   source_branch_id: validated.sourceBranchId || null,
   remarks: validated.remarks,
@@ -2510,10 +2988,27 @@ const createStockTransferVoucher = async ({
       req.branchId,
       normalizedVoucherTypeCode,
     );
+    const incomingTransferRefNo = normalizeText(payload?.transfer_ref_no, 120);
+    const generatedTransferRefNo = buildTransferRefNo({
+      branchId: req.branchId,
+      voucherNo,
+    });
+    const legacyGeneratedTransferRefNo = normalizeText(
+      `TRF-${Number(voucherNo)}`,
+      120,
+    );
     const transferRefNoBase =
       normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out
-        ? normalizeText(payload?.transfer_ref_no, 120) || buildTransferRefNo({ voucherNo })
+        ? incomingTransferRefNo || generatedTransferRefNo
         : normalizeText(payload?.transfer_ref_no, 120);
+    const transferRefNoProvided =
+      normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out
+        ? Boolean(
+            incomingTransferRefNo &&
+            incomingTransferRefNo !== generatedTransferRefNo &&
+            incomingTransferRefNo !== legacyGeneratedTransferRefNo,
+          )
+        : Boolean(incomingTransferRefNo);
 
     const validated =
       normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out
@@ -2522,6 +3017,7 @@ const createStockTransferVoucher = async ({
             req,
             payload,
             transferRefNo: transferRefNoBase,
+            transferRefNoProvided,
           })
         : await validateTransferInPayloadTx({
             trx,
@@ -2538,12 +3034,12 @@ const createStockTransferVoucher = async ({
       normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out
         ? resolveNegativeStockApprovalRouting({
             hasNegativeStockRisk: hasTransferOutNegativeStockRisk(validated),
-            canApproveVoucherAction: req?.user?.isAdmin === true,
+            canApproveVoucherAction: canApprove,
             voucherTypeCode: normalizedVoucherTypeCode,
           })
         : resolveNegativeStockApprovalRouting({
             hasNegativeStockRisk: false,
-            canApproveVoucherAction: req?.user?.isAdmin === true,
+            canApproveVoucherAction: canApprove,
             voucherTypeCode: normalizedVoucherTypeCode,
           });
     const queuedForApproval =
@@ -2582,6 +3078,7 @@ const createStockTransferVoucher = async ({
         stockType: validated.stockType,
         transferReason: validated.transferReason,
         transporterName: validated.transporterName,
+        billBookNo: validated.billBookNo,
       });
     } else {
       await upsertGrnInHeaderTx({
@@ -2694,10 +3191,27 @@ const updateStockTransferVoucher = async ({
       throw new HttpError(400, "Deleted voucher cannot be edited");
     }
 
+    const incomingTransferRefNo = normalizeText(payload?.transfer_ref_no, 120);
+    const generatedTransferRefNo = buildTransferRefNo({
+      branchId: req.branchId,
+      voucherNo: existing.voucher_no,
+    });
+    const legacyGeneratedTransferRefNo = normalizeText(
+      `TRF-${Number(existing.voucher_no)}`,
+      120,
+    );
     const transferRefNoBase =
       normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out
-        ? normalizeText(payload?.transfer_ref_no, 120) || buildTransferRefNo({ voucherNo: existing.voucher_no })
+        ? incomingTransferRefNo || generatedTransferRefNo
         : normalizeText(payload?.transfer_ref_no, 120);
+    const transferRefNoProvided =
+      normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out
+        ? Boolean(
+            incomingTransferRefNo &&
+            incomingTransferRefNo !== generatedTransferRefNo &&
+            incomingTransferRefNo !== legacyGeneratedTransferRefNo,
+          )
+        : Boolean(incomingTransferRefNo);
     const validated =
       normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out
         ? await validateTransferOutPayloadTx({
@@ -2705,6 +3219,8 @@ const updateStockTransferVoucher = async ({
             req,
             payload,
             transferRefNo: transferRefNoBase,
+            transferRefNoProvided,
+            currentVoucherId: existing.id,
           })
         : await validateTransferInPayloadTx({
             trx,
@@ -2722,12 +3238,12 @@ const updateStockTransferVoucher = async ({
       normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out
         ? resolveNegativeStockApprovalRouting({
             hasNegativeStockRisk: hasTransferOutNegativeStockRisk(validated),
-            canApproveVoucherAction: req?.user?.isAdmin === true,
+            canApproveVoucherAction: canApprove,
             voucherTypeCode: normalizedVoucherTypeCode,
           })
         : resolveNegativeStockApprovalRouting({
             hasNegativeStockRisk: false,
-            canApproveVoucherAction: req?.user?.isAdmin === true,
+            canApproveVoucherAction: canApprove,
             voucherTypeCode: normalizedVoucherTypeCode,
           });
     const queuedForApproval =
@@ -2774,16 +3290,20 @@ const updateStockTransferVoucher = async ({
       };
     }
 
-    await trx("erp.voucher_header").where({ id: existing.id }).update({
-      voucher_date: validated.voucherDate,
-      book_no: validated.transferRefNo || null,
-      remarks: validated.remarks,
-      status: "APPROVED",
-      approved_by: req.user.id,
-      approved_at: trx.fn.now(),
-    });
+    await trx("erp.voucher_header")
+      .where({ id: existing.id })
+      .update({
+        voucher_date: validated.voucherDate,
+        book_no: validated.transferRefNo || null,
+        remarks: validated.remarks,
+        status: "APPROVED",
+        approved_by: req.user.id,
+        approved_at: trx.fn.now(),
+      });
 
-    await trx("erp.voucher_line").where({ voucher_header_id: existing.id }).del();
+    await trx("erp.voucher_line")
+      .where({ voucher_header_id: existing.id })
+      .del();
     await insertVoucherLinesTx({
       trx,
       voucherId: existing.id,
@@ -2800,6 +3320,7 @@ const updateStockTransferVoucher = async ({
         stockType: validated.stockType,
         transferReason: validated.transferReason,
         transporterName: validated.transporterName,
+        billBookNo: validated.billBookNo,
       });
     } else {
       await upsertGrnInHeaderTx({
@@ -2869,7 +3390,10 @@ const applyStockTransferVoucherDeletePayloadTx = async ({
 
   const existing = await trx("erp.voucher_header")
     .select("id", "status")
-    .where({ id: normalizedVoucherId, voucher_type_code: normalizedVoucherTypeCode })
+    .where({
+      id: normalizedVoucherId,
+      voucher_type_code: normalizedVoucherTypeCode,
+    })
     .first();
   if (!existing) throw new HttpError(404, "Voucher not found");
   if (String(existing.status || "").toUpperCase() === "REJECTED") return;
@@ -2932,7 +3456,8 @@ const deleteStockTransferVoucher = async ({
       normalizedVoucherTypeCode,
       "delete",
     );
-    const queuedForApproval = !canDelete || (policyRequiresApproval && !canApprove);
+    const queuedForApproval =
+      !canDelete || (policyRequiresApproval && !canApprove);
 
     if (queuedForApproval) {
       const approvalRequestId = await createApprovalRequestTx({
@@ -3014,6 +3539,7 @@ const loadPendingTransferInReferencesTx = async ({
 }) => {
   const hasTransferRef = await hasStockTransferOutTransferRefColumnTx(trx);
   const hasStockType = await hasStockTransferOutStockTypeColumnTx(trx);
+  const hasBillBookNo = await hasStockTransferOutBillBookNoColumnTx(trx);
 
   const rows = await trx("erp.stock_transfer_out_header as sth")
     .join("erp.voucher_header as vh", "vh.id", "sth.voucher_id")
@@ -3032,11 +3558,16 @@ const loadPendingTransferInReferencesTx = async ({
       "sb.name as source_branch_name",
       "db.name as destination_branch_name",
       hasTransferRef
-        ? knex.raw("coalesce(sth.transfer_ref_no, vh.book_no) as transfer_ref_no")
+        ? knex.raw(
+            "coalesce(sth.transfer_ref_no, vh.book_no) as transfer_ref_no",
+          )
         : knex.raw("vh.book_no as transfer_ref_no"),
       hasStockType
         ? knex.raw("upper(coalesce(sth.stock_type::text, '')) as stock_type")
         : knex.raw("'' as stock_type"),
+      hasBillBookNo
+        ? knex.raw("sth.bill_book_no as bill_book_no")
+        : knex.raw("vh.book_no as bill_book_no"),
     )
     .where({
       "vh.voucher_type_code": STOCK_TRANSFER_VOUCHER_TYPES.out,
@@ -3046,7 +3577,10 @@ const loadPendingTransferInReferencesTx = async ({
     .where((builder) => {
       builder.where("sth.status", "DISPATCHED");
       if (includeReceivedForVoucherId) {
-        builder.orWhere("sth.received_voucher_id", Number(includeReceivedForVoucherId));
+        builder.orWhere(
+          "sth.received_voucher_id",
+          Number(includeReceivedForVoucherId),
+        );
       }
     })
     .orderBy("vh.voucher_no", "desc")
@@ -3058,6 +3592,33 @@ const loadPendingTransferInReferencesTx = async ({
         trx,
         voucherId: Number(row.voucher_id),
       });
+      const totals = (lines || []).reduce(
+        (acc, line) => {
+          const factorToBase =
+            Number(line?.uom_factor_to_base || 1) > 0
+              ? Number(line.uom_factor_to_base || 1)
+              : 1;
+          const qty = Number(line?.qty || 0);
+          const explicitBaseQty = Number(line?.transfer_qty_base || 0);
+          const baseQty =
+            Number.isFinite(explicitBaseQty) && explicitBaseQty !== 0
+              ? explicitBaseQty
+              : qty * factorToBase;
+
+          let pairQty = Number(line?.transfer_qty_pairs || 0);
+          if (
+            !(pairQty > 0) &&
+            String(line?.line_kind || "").toUpperCase() === "SKU"
+          ) {
+            pairQty = qty * factorToBase;
+          }
+
+          acc.baseQty += Number(baseQty || 0);
+          acc.pairQty += Number(pairQty || 0);
+          return acc;
+        },
+        { baseQty: 0, pairQty: 0 },
+      );
       const stockType =
         normalizeStockType(row.stock_type) ||
         normalizeStockType(lines.find((line) => line.stock_type)?.stock_type) ||
@@ -3073,9 +3634,12 @@ const loadPendingTransferInReferencesTx = async ({
         source_branch_name: row.source_branch_name || "",
         destination_branch_id: Number(row.dest_branch_id),
         destination_branch_name: row.destination_branch_name || "",
+        bill_book_no: normalizeText(row.bill_book_no, 120) || null,
         dispatch_date: toDateOnly(row.dispatch_date || row.stn_voucher_date),
         stn_voucher_no: Number(row.stn_voucher_no || 0),
         status: String(row.status || "").toUpperCase(),
+        total_base_qty: roundQty3(totals.baseQty),
+        total_dozen_qty: roundQty3(totals.pairQty / 12),
         lines,
       };
     }),
@@ -3094,67 +3658,146 @@ const loadStockTransferVoucherOptions = async ({
     .toUpperCase();
   if (!req?.branchId) throw new HttpError(400, "Branch context is required");
 
-  const [skus, rmItems, colors, sizes, branchRows, sourceStock, pendingTransfers] =
-    await Promise.all([
-      knex("erp.skus as s")
-        .join("erp.variants as v", "v.id", "s.variant_id")
-        .join("erp.items as i", "i.id", "v.item_id")
-        .leftJoin("erp.sizes as sz", "sz.id", "v.size_id")
-        .leftJoin("erp.colors as c", "c.id", "v.color_id")
-        .leftJoin("erp.packing_types as p", "p.id", "v.packing_type_id")
-        .leftJoin("erp.grades as g", "g.id", "v.grade_id")
-        .leftJoin("erp.uom as u", "u.id", "i.base_uom_id")
-        .select(
-          "s.id",
-          "s.sku_code",
-          "i.name as item_name",
-          "i.item_type",
-          "sz.name as size_name",
-          "c.name as color_name",
-          "p.name as packing_name",
-          "g.name as grade_name",
-          "i.base_uom_id",
-          "u.code as base_uom_code",
-          "u.name as base_uom_name",
-        )
-        .where({ "s.is_active": true, "i.is_active": true })
-        .whereIn(knex.raw("upper(coalesce(i.item_type::text, ''))"), ["FG", "SFG"])
-        .orderBy("i.name", "asc")
-        .orderBy("s.sku_code", "asc"),
-      knex("erp.items as i")
-        .leftJoin("erp.uom as u", "u.id", "i.base_uom_id")
-        .select(
-          "i.id",
-          "i.code",
-          "i.name",
-          "i.base_uom_id",
-          "u.code as base_uom_code",
-          "u.name as base_uom_name",
-        )
-        .where({ "i.is_active": true })
-        .whereRaw("upper(coalesce(i.item_type::text, '')) = 'RM'")
-        .orderBy("i.name", "asc"),
-      knex("erp.colors as c")
-        .select("c.id", "c.name")
-        .where({ "c.is_active": true })
-        .orderBy("c.name", "asc"),
-      knex("erp.sizes as s")
-        .select("s.id", "s.name")
-        .where({ "s.is_active": true })
-        .orderBy("s.name", "asc"),
-      knex("erp.branches")
-        .select("id", "name")
-        .where({ is_active: true })
-        .orderBy("name", "asc"),
-      loadSourceStockMapsTx({ trx: knex, sourceBranchId: req.branchId }),
-      normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.in
-        ? loadPendingTransferInReferencesTx({
-            trx: knex,
-            req,
-            includeReceivedForVoucherId,
-          })
-        : Promise.resolve([]),
-    ]);
+  const [
+    skus,
+    rmItems,
+    colors,
+    sizes,
+    branchRows,
+    sourceStock,
+    pendingTransfers,
+  ] = await Promise.all([
+    knex("erp.skus as s")
+      .join("erp.variants as v", "v.id", "s.variant_id")
+      .join("erp.items as i", "i.id", "v.item_id")
+      .leftJoin("erp.sizes as sz", "sz.id", "v.size_id")
+      .leftJoin("erp.colors as c", "c.id", "v.color_id")
+      .leftJoin("erp.packing_types as p", "p.id", "v.packing_type_id")
+      .leftJoin("erp.grades as g", "g.id", "v.grade_id")
+      .leftJoin("erp.uom as u", "u.id", "i.base_uom_id")
+      .select(
+        "s.id",
+        "s.sku_code",
+        "v.sale_rate",
+        "i.name as item_name",
+        "i.item_type",
+        "sz.name as size_name",
+        "c.name as color_name",
+        "p.name as packing_name",
+        "g.name as grade_name",
+        "i.base_uom_id",
+        "u.code as base_uom_code",
+        "u.name as base_uom_name",
+      )
+      .where({ "s.is_active": true, "i.is_active": true })
+      .whereIn(knex.raw("upper(coalesce(i.item_type::text, ''))"), [
+        "FG",
+        "SFG",
+      ])
+      .orderBy("i.name", "asc")
+      .orderBy("s.sku_code", "asc"),
+    knex("erp.items as i")
+      .leftJoin("erp.uom as u", "u.id", "i.base_uom_id")
+      .select(
+        "i.id",
+        "i.code",
+        "i.name",
+        "i.base_uom_id",
+        "u.code as base_uom_code",
+        "u.name as base_uom_name",
+      )
+      .where({ "i.is_active": true })
+      .whereRaw("upper(coalesce(i.item_type::text, '')) = 'RM'")
+      .orderBy("i.name", "asc"),
+    knex("erp.colors as c")
+      .select("c.id", "c.name")
+      .where({ "c.is_active": true })
+      .orderBy("c.name", "asc"),
+    knex("erp.sizes as s")
+      .select("s.id", "s.name")
+      .where({ "s.is_active": true })
+      .orderBy("s.name", "asc"),
+    knex("erp.branches")
+      .select("id", "name")
+      .where({ is_active: true })
+      .orderBy("name", "asc"),
+    loadSourceStockMapsTx({ trx: knex, sourceBranchId: req.branchId }),
+    normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.in
+      ? loadPendingTransferInReferencesTx({
+          trx: knex,
+          req,
+          includeReceivedForVoucherId,
+        })
+      : Promise.resolve([]),
+  ]);
+
+  const rmRateRows = await fetchRmRateRowsByItemTx({
+    trx: knex,
+    itemIds: (rmItems || []).map((row) => row?.id),
+  });
+  const rmRateRowsByItem = new Map();
+  (rmRateRows || []).forEach((row) => {
+    const itemId = Number(row?.rm_item_id || 0);
+    if (!itemId) return;
+    if (!rmRateRowsByItem.has(itemId)) rmRateRowsByItem.set(itemId, []);
+    rmRateRowsByItem.get(itemId).push({
+      color_id: toPositiveInt(row?.color_id),
+      size_id: toPositiveInt(row?.size_id),
+      purchase_rate: Number(row?.avg_purchase_rate ?? row?.purchase_rate ?? 0),
+    });
+  });
+
+  const rawMaterialColorPolicyByItem = {};
+  const rawMaterialSizePolicyByItem = {};
+  (rmRateRows || []).forEach((row) => {
+    const itemId = Number(row?.rm_item_id || 0);
+    if (!itemId) return;
+    const key = String(itemId);
+    if (!rawMaterialColorPolicyByItem[key]) {
+      rawMaterialColorPolicyByItem[key] = {
+        item_id: itemId,
+        hasColorless: false,
+        colors: [],
+      };
+    }
+    if (!rawMaterialSizePolicyByItem[key]) {
+      rawMaterialSizePolicyByItem[key] = {
+        item_id: itemId,
+        hasSizeless: false,
+        sizes: [],
+      };
+    }
+
+    const colorId = toPositiveInt(row?.color_id);
+    const colorName = String(row?.color_name || row?.color || "").trim();
+    if (!colorId) {
+      rawMaterialColorPolicyByItem[key].hasColorless = true;
+    } else if (
+      !rawMaterialColorPolicyByItem[key].colors.some(
+        (entry) => Number(entry.id) === Number(colorId),
+      )
+    ) {
+      rawMaterialColorPolicyByItem[key].colors.push({
+        id: Number(colorId),
+        name: colorName || String(colorId),
+      });
+    }
+
+    const sizeId = toPositiveInt(row?.size_id);
+    const sizeName = String(row?.size_name || row?.size || "").trim();
+    if (!sizeId) {
+      rawMaterialSizePolicyByItem[key].hasSizeless = true;
+    } else if (
+      !rawMaterialSizePolicyByItem[key].sizes.some(
+        (entry) => Number(entry.id) === Number(sizeId),
+      )
+    ) {
+      rawMaterialSizePolicyByItem[key].sizes.push({
+        id: Number(sizeId),
+        name: sizeName || String(sizeId),
+      });
+    }
+  });
 
   const allowedBranchSet = new Set(
     Array.isArray(req.branchScope) && req.branchScope.length
@@ -3184,9 +3827,16 @@ const loadStockTransferVoucherOptions = async ({
       id: Number(row.id),
       name: String(row.name || ""),
     }));
+  const sourceBranches = (branchRows || [])
+    .filter((row) => Number(row.id) !== Number(req.branchId))
+    .map((row) => ({
+      id: Number(row.id),
+      name: String(row.name || ""),
+    }));
 
   const currentBranch =
-    (branchRows || []).find((row) => Number(row.id) === Number(req.branchId)) || null;
+    (branchRows || []).find((row) => Number(row.id) === Number(req.branchId)) ||
+    null;
 
   return {
     voucherTypes: [
@@ -3207,15 +3857,19 @@ const loadStockTransferVoucherOptions = async ({
       name: String(row.name || ""),
     })),
     destinationBranches,
+    sourceBranches,
     sourceBranch: currentBranch
       ? { id: Number(currentBranch.id), name: String(currentBranch.name || "") }
       : { id: Number(req.branchId), name: String(req.branchId) },
     skus: (skus || []).map((row) => ({
       id: Number(row.id),
       sku_code: String(row.sku_code || ""),
-      stock_type: String(row.item_type || "").trim().toUpperCase(),
+      stock_type: String(row.item_type || "")
+        .trim()
+        .toUpperCase(),
       item_name: String(row.item_name || ""),
       sku_name: buildSkuDisplayName(row),
+      sale_rate: Number(row.sale_rate || 0),
       base_uom_id: toPositiveInt(row.base_uom_id),
       unit_options: unitOptionsByBase.get(Number(row.base_uom_id || 0)) || [],
     })),
@@ -3223,11 +3877,20 @@ const loadStockTransferVoucherOptions = async ({
       id: Number(row.id),
       code: String(row.code || ""),
       name: String(row.name || ""),
+      rate_rows: rmRateRowsByItem.get(Number(row.id)) || [],
       base_uom_id: toPositiveInt(row.base_uom_id),
       unit_options: unitOptionsByBase.get(Number(row.base_uom_id || 0)) || [],
     })),
-    colors: (colors || []).map((row) => ({ id: Number(row.id), name: String(row.name || "") })),
-    sizes: (sizes || []).map((row) => ({ id: Number(row.id), name: String(row.name || "") })),
+    colors: (colors || []).map((row) => ({
+      id: Number(row.id),
+      name: String(row.name || ""),
+    })),
+    sizes: (sizes || []).map((row) => ({
+      id: Number(row.id),
+      name: String(row.name || ""),
+    })),
+    rawMaterialColorPolicyByItem,
+    rawMaterialSizePolicyByItem,
     sourceStock: sourceStock || { skuMap: {}, rmMap: {} },
     pendingTransfers: pendingTransfers || [],
   };
@@ -3235,7 +3898,14 @@ const loadStockTransferVoucherOptions = async ({
 
 const loadRecentStockTransferVouchers = async ({ req, voucherTypeCode }) => {
   const rows = await knex("erp.voucher_header")
-    .select("id", "voucher_no", "voucher_date", "status", "remarks", "created_at")
+    .select(
+      "id",
+      "voucher_no",
+      "voucher_date",
+      "status",
+      "remarks",
+      "created_at",
+    )
     .where({ voucher_type_code: voucherTypeCode, branch_id: req.branchId })
     .whereNot({ status: "REJECTED" })
     .orderBy("id", "desc")
@@ -3256,7 +3926,10 @@ const getStockTransferVoucherSeriesStats = async ({ req, voucherTypeCode }) => {
 
   const [latestAny, latestActive] = await Promise.all([
     base().max({ value: "voucher_no" }).first(),
-    base().whereNot({ status: "REJECTED" }).max({ value: "voucher_no" }).first(),
+    base()
+      .whereNot({ status: "REJECTED" })
+      .max({ value: "voucher_no" })
+      .first(),
   ]);
 
   return {
@@ -3280,8 +3953,14 @@ const getStockTransferVoucherNeighbours = async ({
     });
 
   const [prevRow, nextRow] = await Promise.all([
-    base().where("voucher_no", "<", normalized).max({ value: "voucher_no" }).first(),
-    base().where("voucher_no", ">", normalized).min({ value: "voucher_no" }).first(),
+    base()
+      .where("voucher_no", "<", normalized)
+      .max({ value: "voucher_no" })
+      .first(),
+    base()
+      .where("voucher_no", ">", normalized)
+      .min({ value: "voucher_no" })
+      .first(),
   ]);
 
   return {
@@ -3322,7 +4001,9 @@ const loadStockTransferVoucherDetails = async ({
     const hasTransferRef = await hasStockTransferOutTransferRefColumnTx(knex);
     const hasStockType = await hasStockTransferOutStockTypeColumnTx(knex);
     const hasReason = await hasStockTransferOutTransferReasonColumnTx(knex);
-    const hasTransporter = await hasStockTransferOutTransporterNameColumnTx(knex);
+    const hasTransporter =
+      await hasStockTransferOutTransporterNameColumnTx(knex);
+    const hasBillBookNo = await hasStockTransferOutBillBookNoColumnTx(knex);
     const ext = await knex("erp.stock_transfer_out_header as sth")
       .leftJoin("erp.branches as db", "db.id", "sth.dest_branch_id")
       .select(
@@ -3330,15 +4011,27 @@ const loadStockTransferVoucherDetails = async ({
         "sth.dispatch_date",
         "sth.status as transfer_status",
         "db.name as destination_branch_name",
-        hasTransferRef ? "sth.transfer_ref_no" : knex.raw("NULL::text as transfer_ref_no"),
+        hasTransferRef
+          ? "sth.transfer_ref_no"
+          : knex.raw("NULL::text as transfer_ref_no"),
         hasStockType ? "sth.stock_type" : knex.raw("NULL::text as stock_type"),
-        hasReason ? "sth.transfer_reason" : knex.raw("NULL::text as transfer_reason"),
-        hasTransporter ? "sth.transporter_name" : knex.raw("NULL::text as transporter_name"),
+        hasReason
+          ? "sth.transfer_reason"
+          : knex.raw("NULL::text as transfer_reason"),
+        hasTransporter
+          ? "sth.transporter_name"
+          : knex.raw("NULL::text as transporter_name"),
+        hasBillBookNo
+          ? "sth.bill_book_no"
+          : knex.raw("NULL::text as bill_book_no"),
       )
       .where({ "sth.voucher_id": header.id })
       .first();
 
-    const lines = await loadTransferOutLinesTx({ trx: knex, voucherId: Number(header.id) });
+    const lines = await loadTransferOutLinesTx({
+      trx: knex,
+      voucherId: Number(header.id),
+    });
     return {
       id: Number(header.id),
       voucher_no: Number(header.voucher_no),
@@ -3352,12 +4045,16 @@ const loadStockTransferVoucherDetails = async ({
       transfer_ref_no:
         normalizeText(ext?.transfer_ref_no, 120) ||
         normalizeText(header.book_no, 120) ||
-        buildTransferRefNo({ voucherNo: header.voucher_no }),
+        buildTransferRefNo({
+          branchId: req.branchId,
+          voucherNo: header.voucher_no,
+        }),
       source_branch_id: Number(req.branchId),
       destination_branch_id: toPositiveInt(ext?.dest_branch_id),
       destination_branch_name: String(ext?.destination_branch_name || ""),
       transfer_reason: normalizeTransferReason(ext?.transfer_reason),
       transporter_name: ext?.transporter_name || "",
+      bill_book_no: normalizeText(ext?.bill_book_no, 120) || null,
       remarks: header.remarks || "",
       lines,
     };
@@ -3367,8 +4064,13 @@ const loadStockTransferVoucherDetails = async ({
   const hasReceivedAt = await hasGrnInReceivedAtColumnTx(knex);
   const hasTransferRef = await hasStockTransferOutTransferRefColumnTx(knex);
   const hasStockType = await hasStockTransferOutStockTypeColumnTx(knex);
+  const hasBillBookNo = await hasStockTransferOutBillBookNoColumnTx(knex);
   const ext = await knex("erp.grn_in_header as gih")
-    .join("erp.stock_transfer_out_header as sth", "sth.voucher_id", "gih.against_stn_out_id")
+    .join(
+      "erp.stock_transfer_out_header as sth",
+      "sth.voucher_id",
+      "gih.against_stn_out_id",
+    )
     .join("erp.voucher_header as stn", "stn.id", "sth.voucher_id")
     .leftJoin("erp.branches as sb", "sb.id", "stn.branch_id")
     .leftJoin("erp.branches as db", "db.id", "sth.dest_branch_id")
@@ -3388,23 +4090,35 @@ const loadStockTransferVoucherDetails = async ({
       "stn.voucher_no as stn_voucher_no",
       "stn.book_no as stn_book_no",
       hasTransferRef
-        ? knex.raw("coalesce(sth.transfer_ref_no, stn.book_no) as transfer_ref_no")
+        ? knex.raw(
+            "coalesce(sth.transfer_ref_no, stn.book_no) as transfer_ref_no",
+          )
         : knex.raw("stn.book_no as transfer_ref_no"),
       hasStockType
         ? knex.raw("upper(coalesce(sth.stock_type::text, '')) as stock_type")
         : knex.raw("'' as stock_type"),
+      hasBillBookNo
+        ? knex.raw("sth.bill_book_no as bill_book_no")
+        : knex.raw("stn.book_no as bill_book_no"),
       hasReceivedBy
         ? "gih.received_by_user_id"
         : knex.raw("NULL::bigint as received_by_user_id"),
       hasReceivedBy
-        ? knex.raw("coalesce(ru.full_name, ru.username, '') as received_by_user_name")
+        ? knex.raw(
+            "coalesce(nullif(ru.name, ''), ru.username, '') as received_by_user_name",
+          )
         : knex.raw("''::text as received_by_user_name"),
-      hasReceivedAt ? "gih.received_at" : knex.raw("NULL::timestamptz as received_at"),
+      hasReceivedAt
+        ? "gih.received_at"
+        : knex.raw("NULL::timestamptz as received_at"),
     )
     .where({ "gih.voucher_id": header.id })
     .first();
 
-  const lines = await loadTransferInLinesTx({ trx: knex, voucherId: Number(header.id) });
+  const lines = await loadTransferInLinesTx({
+    trx: knex,
+    voucherId: Number(header.id),
+  });
   return {
     id: Number(header.id),
     voucher_no: Number(header.voucher_no),
@@ -3421,9 +4135,11 @@ const loadStockTransferVoucherDetails = async ({
       `STN-${Number(ext?.stn_voucher_no || 0)}`,
     source_branch_id: toPositiveInt(ext?.source_branch_id),
     source_branch_name: String(ext?.source_branch_name || ""),
-    destination_branch_id: toPositiveInt(ext?.dest_branch_id) || Number(req.branchId),
+    destination_branch_id:
+      toPositiveInt(ext?.dest_branch_id) || Number(req.branchId),
     destination_branch_name: String(ext?.destination_branch_name || ""),
     stn_out_voucher_id: toPositiveInt(ext?.against_stn_out_id),
+    bill_book_no: normalizeText(ext?.bill_book_no, 120) || null,
     received_by_user_id: toPositiveInt(ext?.received_by_user_id),
     received_by_user_name: String(ext?.received_by_user_name || ""),
     received_date_time: toDateOnly(ext?.received_at || header.voucher_date),
@@ -3464,7 +4180,10 @@ const applyStockTransferVoucherUpdatePayloadTx = async ({
 
   const existing = await trx("erp.voucher_header")
     .select("id", "voucher_no", "branch_id")
-    .where({ id: Number(voucherId), voucher_type_code: normalizedVoucherTypeCode })
+    .where({
+      id: Number(voucherId),
+      voucher_type_code: normalizedVoucherTypeCode,
+    })
     .first();
   if (!existing) throw new HttpError(404, "Voucher not found");
 
@@ -3473,6 +4192,22 @@ const applyStockTransferVoucherUpdatePayloadTx = async ({
     branchId: Number(existing.branch_id),
     user: { ...(req?.user || {}), id: approverId || req?.user?.id },
   };
+  const incomingTransferRefNo = normalizeText(payload?.transfer_ref_no, 120);
+  const generatedTransferRefNo = buildTransferRefNo({
+    branchId: Number(existing.branch_id),
+    voucherNo: existing.voucher_no,
+  });
+  const legacyGeneratedTransferRefNo = normalizeText(
+    `TRF-${Number(existing.voucher_no)}`,
+    120,
+  );
+  const transferRefNoForValidation =
+    incomingTransferRefNo || generatedTransferRefNo;
+  const transferRefNoProvided = Boolean(
+    incomingTransferRefNo &&
+    incomingTransferRefNo !== generatedTransferRefNo &&
+    incomingTransferRefNo !== legacyGeneratedTransferRefNo,
+  );
 
   const validated =
     normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out
@@ -3480,9 +4215,9 @@ const applyStockTransferVoucherUpdatePayloadTx = async ({
           trx,
           req: approvalReq,
           payload,
-          transferRefNo:
-            normalizeText(payload?.transfer_ref_no, 120) ||
-            buildTransferRefNo({ voucherNo: existing.voucher_no }),
+          transferRefNo: transferRefNoForValidation,
+          transferRefNoProvided,
+          currentVoucherId: existing.id,
         })
       : await validateTransferInPayloadTx({
           trx,
@@ -3491,14 +4226,16 @@ const applyStockTransferVoucherUpdatePayloadTx = async ({
           existingVoucherId: existing.id,
         });
 
-  await trx("erp.voucher_header").where({ id: existing.id }).update({
-    voucher_date: validated.voucherDate,
-    book_no: validated.transferRefNo || null,
-    remarks: validated.remarks,
-    status: "APPROVED",
-    approved_by: approverId || approvalReq.user.id,
-    approved_at: trx.fn.now(),
-  });
+  await trx("erp.voucher_header")
+    .where({ id: existing.id })
+    .update({
+      voucher_date: validated.voucherDate,
+      book_no: validated.transferRefNo || null,
+      remarks: validated.remarks,
+      status: "APPROVED",
+      approved_by: approverId || approvalReq.user.id,
+      approved_at: trx.fn.now(),
+    });
 
   if (normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out) {
     await upsertStockTransferOutHeaderTx({
@@ -3510,6 +4247,7 @@ const applyStockTransferVoucherUpdatePayloadTx = async ({
       stockType: validated.stockType,
       transferReason: validated.transferReason,
       transporterName: validated.transporterName,
+      billBookNo: validated.billBookNo,
     });
   } else {
     await upsertGrnInHeaderTx({

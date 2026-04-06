@@ -1,0 +1,194 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - checkbox "Menu" [ref=e5]
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - link "CHAND EVA" [ref=e8] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e10]: ERP
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - generic [ref=e14]: Signed in as
+            - generic [ref=e15]: admin
+          - generic [ref=e16]:
+            - generic [ref=e17]: Branch
+            - generic [ref=e18]:
+              - generic [ref=e19]: Branch
+              - combobox "Branch" [ref=e20]:
+                - option "124" [selected]
+                - option "207"
+          - button "Logout" [ref=e22] [cursor=pointer]
+          - generic [ref=e23]:
+            - generic [ref=e24]: Language
+            - link "English" [ref=e25] [cursor=pointer]:
+              - /url: "?lang=en"
+            - generic [ref=e26]: "|"
+            - link "Urdu" [ref=e27] [cursor=pointer]:
+              - /url: "?lang=ur"
+      - navigation [ref=e28]:
+        - button "Administration" [ref=e30] [cursor=pointer]:
+          - generic [ref=e31]: Administration
+          - img [ref=e32]
+        - button "Master Data" [ref=e35] [cursor=pointer]:
+          - generic [ref=e36]: Master Data
+          - img [ref=e37]
+        - button "HR & Payroll" [ref=e40] [cursor=pointer]:
+          - generic [ref=e41]: HR & Payroll
+          - img [ref=e42]
+        - button "Financial" [ref=e45] [cursor=pointer]:
+          - generic [ref=e46]: Financial
+          - img [ref=e47]
+        - button "Purchase" [ref=e50] [cursor=pointer]:
+          - generic [ref=e51]: Purchase
+          - img [ref=e52]
+        - button "Production" [ref=e55] [cursor=pointer]:
+          - generic [ref=e56]: Production
+          - img [ref=e57]
+        - button "Inventory" [ref=e60] [cursor=pointer]:
+          - generic [ref=e61]: Inventory
+          - img [ref=e62]
+        - button "Outward & Returnables" [ref=e65] [cursor=pointer]:
+          - generic [ref=e66]: Outward & Returnables
+          - img [ref=e67]
+        - button "Sales" [ref=e70] [cursor=pointer]:
+          - generic [ref=e71]: Sales
+          - img [ref=e72]
+  - main [ref=e74]:
+    - generic [ref=e75]:
+      - generic [ref=e78]:
+        - heading "Stock Adjustment Voucher" [level=1] [ref=e79]
+        - paragraph [ref=e80]: Inventory
+      - generic [ref=e82]:
+        - generic [ref=e83]:
+          - generic [ref=e84]:
+            - generic [ref=e85]: Voucher No
+            - textbox [ref=e87]: "5"
+            - generic [ref=e88]:
+              - link "Prev" [ref=e89] [cursor=pointer]:
+                - /url: /vouchers/stock-count?voucher_no=4&view=1
+              - link "Next" [ref=e90] [cursor=pointer]:
+                - /url: /vouchers/stock-count?new=1
+              - button "Load" [ref=e91] [cursor=pointer]
+              - generic [ref=e92]:
+                - button "Delete" [disabled] [ref=e93] [cursor=pointer]
+                - button "Print" [ref=e94] [cursor=pointer]
+          - generic [ref=e95]:
+            - generic [ref=e96]: Date
+            - textbox [ref=e98]: 2026-04-03
+            - generic [ref=e99]: Stock Type
+            - generic [ref=e101]:
+              - textbox "Search" [ref=e102]: Finished
+              - generic:
+                - img
+              - combobox [ref=e103]:
+                - option "Finished" [selected]
+                - option "Semi-Finished"
+                - option "Raw Material"
+          - generic [ref=e104]:
+            - generic [ref=e105]: Reason
+            - generic [ref=e107]:
+              - textbox "Select Reason" [ref=e108]
+              - generic:
+                - img
+              - combobox [ref=e109]:
+                - option "Select Reason" [selected]
+                - option "Damage Write-off"
+                - option "Excess Found"
+                - option "Physical Count Correction"
+                - option "Shortage"
+                - option "System Correction"
+            - generic [ref=e110]: Remarks
+            - textbox [ref=e112]
+          - generic [ref=e113]:
+            - generic [ref=e114]: Reason Notes
+            - textbox [ref=e116]
+        - table [ref=e119]:
+          - rowgroup [ref=e120]:
+            - 'row "SKU Unit System Qty Qty In Qty Out Rate Amount Diff Actions Sr #" [ref=e121]':
+              - columnheader "SKU" [ref=e122]
+              - columnheader "Unit" [ref=e123]
+              - columnheader "System Qty" [ref=e124]
+              - columnheader "Qty In" [ref=e125]
+              - columnheader "Qty Out" [ref=e126]
+              - columnheader "Rate" [ref=e127]
+              - columnheader "Amount Diff" [ref=e128]
+              - columnheader "Actions" [ref=e129]
+              - 'columnheader "Sr #" [ref=e130]'
+          - rowgroup [ref=e131]:
+            - row "Select SKU Select SKU Select Unit Select Unit 0.000 0 0 0.0000 0.00 1" [ref=e132]:
+              - cell "Select SKU Select SKU" [ref=e133]:
+                - generic [ref=e134]:
+                  - textbox "Select SKU" [ref=e135]
+                  - generic:
+                    - img
+                  - combobox [ref=e136]:
+                    - option "Select SKU" [selected]
+                    - option "300 6/9 Carton Packed A"
+                    - option "300 2/5 Black Carton Packed A"
+                    - option "300 2/5 Black Thaili Packed A"
+                    - option "300 2/5 Thaili Packed A"
+                    - option "300 7/10 Thaili Packed A"
+                    - option "3011 2/5 Carton Packed A"
+                    - option "3011 2/5 Carton Packed B"
+                    - option "3011 6/9 Carton Packed A"
+                    - option "3011 7/10 Carton Packed A"
+                    - option "3011 7/10 Carton Packed B"
+                    - option "E2E FG 1773946548418405 7/10 Black Thaili Packed"
+                    - option "E2E FG dcvneg1774887214327494 7/10 Black Thaili Packed"
+                    - option "E2E FG dcvneg1774887293969226 7/10 Black Thaili Packed"
+                    - option "E2E FG dcvneg177488746992928 7/10 Black Thaili Packed"
+                    - option "E2E FG dcvneg1774887647268173 7/10 Black Thaili Packed"
+                    - option "E2E FG dcvneg177488787642086 7/10 Black Thaili Packed"
+                    - option "E2E FG dcvneg1774887912593621 7/10 Black Thaili Packed"
+                    - option "E2E FG dcvneg1774974777561534 7/10 Black Thaili Packed"
+                    - option "E2E FG dcvneg1774976916852216 7/10 Black Thaili Packed"
+                    - option "E2E FG dcvneg1774977069141872 7/10 Black Thaili Packed"
+                    - option "EVA Slipper 400 2/5 Carton Packed B"
+                    - option "EVA Slipper 400 6/9 Carton Packed B"
+                    - option "EVA Slipper 400 2/5 Thaili Packed B"
+                    - option "EVA Slipper 400 7/10 Carton Packed B"
+                    - option "EVA Slipper 400 7/10 Thaili Packed B"
+                    - option "EVA Slipper 400 8/10 Carton Packed B"
+                    - option "P01 7/10 Carton Packed A"
+                    - option "P01 7/10 Carton Packed B"
+                    - option "W03 2/5 Carton Packed A"
+                    - option "W03 2/5 Thaili Packed A"
+                    - option "W03 6/9 Carton Packed A"
+                    - option "W03 6/9 Thaili Packed A"
+              - cell "Select Unit Select Unit" [ref=e137]:
+                - generic [ref=e138]:
+                  - textbox "Select Unit" [ref=e139]
+                  - generic:
+                    - img
+                  - combobox [ref=e140]:
+                    - option "Select Unit" [selected]
+              - cell "0.000" [ref=e141]:
+                - textbox [ref=e142]: "0.000"
+              - cell "0" [ref=e143]:
+                - spinbutton [ref=e144]: "0"
+              - cell "0" [ref=e145]:
+                - spinbutton [ref=e146]: "0"
+              - cell "0.0000" [ref=e147]:
+                - textbox [ref=e148]: "0.0000"
+              - cell "0.00" [ref=e149]:
+                - textbox [ref=e150]: "0.00"
+              - cell [ref=e151]:
+                - button [disabled] [ref=e152] [cursor=pointer]:
+                  - img [ref=e153]
+              - cell "1" [ref=e157]
+          - rowgroup [ref=e158]:
+            - row "Total 0.00 Add Units" [ref=e159]:
+              - cell "Total" [ref=e160]
+              - cell "0.00" [ref=e161]:
+                - textbox [ref=e162]: "0.00"
+              - cell "Add" [ref=e163]:
+                - button "Add" [ref=e164] [cursor=pointer]:
+                  - img [ref=e165]
+              - cell "Units" [ref=e167]
+        - button "Confirm" [ref=e169] [cursor=pointer]
+    - generic [ref=e170]: ERP System © 2026
+```

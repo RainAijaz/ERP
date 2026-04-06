@@ -43,8 +43,24 @@ const getNonEmptyOptionValues = async (locator) =>
     .evaluateAll((options) =>
       options
         .map((option) => String(option.value || "").trim())
-        .filter(Boolean),
+      .filter(Boolean),
     );
+
+const getNonPhysicalReasonValue = async (reasonSelect) =>
+  reasonSelect.locator("option").evaluateAll((options) => {
+    const normalize = (value) =>
+      String(value || "")
+        .replace(/[^a-z0-9]+/gi, "")
+        .toUpperCase();
+    const rows = options
+      .map((option) => ({
+        value: String(option.value || "").trim(),
+        code: normalize(option.getAttribute("data-reason-value") || ""),
+      }))
+      .filter((row) => row.value);
+    const nonPhysical = rows.find((row) => !row.code.startsWith("PHYSICALCOUNT"));
+    return nonPhysical ? nonPhysical.value : rows[0]?.value || "";
+  });
 
 const readNumericInputValue = async (locator) => {
   const text = await locator.inputValue();
@@ -136,12 +152,12 @@ const fillStockCountForNegative = async (page) => {
   const reasonSelect = page.locator("[data-reason-code]");
   const reasonNotes = page.locator("[data-reason-notes]");
   await expect(reasonSelect).toBeVisible();
-  const reasonValues = await getNonEmptyOptionValues(reasonSelect);
+  const reasonValue = await getNonPhysicalReasonValue(reasonSelect);
   test.skip(
-    !reasonValues.length,
+    !reasonValue,
     "No reason codes available for Stock Count negative-stock test.",
   );
-  await setSelectValue(reasonSelect, reasonValues[0]);
+  await setSelectValue(reasonSelect, reasonValue);
   if (await reasonNotes.count()) {
     await reasonNotes.fill("E2E negative stock approval routing check.");
   }

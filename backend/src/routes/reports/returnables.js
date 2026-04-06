@@ -25,8 +25,8 @@ const requireReturnablesVendorAccess = (req, res, next) => {
   }
 
   const canViewVendorReport =
-    canCheck("REPORT", "overdue_returnables", "view") ||
-    canCheck("REPORT", "pending_returnables", "view");
+    canCheck("REPORT", "overdue_returnables", "load") ||
+    canCheck("REPORT", "pending_returnables", "load");
 
   if (canViewVendorReport) return next();
   return next(
@@ -48,7 +48,7 @@ const renderControlReport = async (req, res, next, inputSource = req.query) => {
     });
 
     return res.render("base/layouts/main", {
-      title: `${res.locals.t("pending_returnables") || "Pending Returnables"} - ${res.locals.t("reports")}`,
+      title: `${res.locals.t("pending_returnables") } - ${res.locals.t("reports")}`,
       user: req.user,
       branchId: req.branchId,
       branchScope: req.branchScope,
@@ -81,7 +81,7 @@ const renderVendorReport = async (req, res, next, inputSource = req.query) => {
     });
 
     return res.render("base/layouts/main", {
-      title: `${res.locals.t("overdue_returnables") || "Vendor Returnables Performance"} - ${res.locals.t("reports")}`,
+      title: `${res.locals.t("overdue_returnables") } - ${res.locals.t("reports")}`,
       user: req.user,
       branchId: req.branchId,
       branchScope: req.branchScope,
@@ -108,7 +108,7 @@ const renderVendorReport = async (req, res, next, inputSource = req.query) => {
 
 router.get(
   "/",
-  requirePermission("REPORT", "pending_returnables", "view"),
+  requirePermission("REPORT", "pending_returnables", "load"),
   async (req, res) => {
     return res.redirect(`${req.baseUrl}/control`);
   },
@@ -116,7 +116,7 @@ router.get(
 
 router.get(
   "/control",
-  requirePermission("REPORT", "pending_returnables", "view"),
+  requirePermission("REPORT", "pending_returnables", "load"),
   async (req, res, next) => {
     return renderControlReport(req, res, next, req.query);
   },
@@ -124,7 +124,7 @@ router.get(
 
 router.post(
   "/control",
-  requirePermission("REPORT", "pending_returnables", "view"),
+  requirePermission("REPORT", "pending_returnables", "load"),
   async (req, res, next) => {
     return renderControlReport(req, res, next, req.body);
   },

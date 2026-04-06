@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS erp.voucher_header (
   approved_at        timestamptz,
 
   remarks            text,
+  remarks_ur         text,
 
   -- Consistency:
   -- - While PENDING: no approval fields

@@ -349,6 +349,7 @@ router.post(
           insertMap[scopeId] = isUserMode
             ? { user_id: target_id, scope_id: scopeId }
             : { role_id: target_id, scope_id: scopeId };
+          insertMap[scopeId]._scopeType = scopeMeta.scope_type;
         }
 
         if (isUserMode) {
@@ -374,8 +375,30 @@ router.post(
         "can_approve",
         "can_print",
       ];
+      const requireLoad = [
+        "can_load",
+        "can_view_details",
+        "can_print",
+        "can_export_excel_csv",
+        "can_filter_all_branches",
+        "can_view_cost_fields",
+      ];
 
       Object.values(insertMap).forEach((permRow) => {
+        const scopeType = String(permRow._scopeType || "").toUpperCase();
+
+        if (scopeType === "REPORT") {
+          const needsLoad = requireLoad.some((act) => permRow[act] === true);
+          const needsView = needsLoad || permRow.can_view === true;
+          if (needsLoad) {
+            permRow.can_load = true;
+          }
+          if (needsView) {
+            permRow.can_view = true;
+          }
+          return;
+        }
+
         // Check if any "advanced" action is true
         const needsNavigate = requireNavigate.some(
           (act) => permRow[act] === true,
@@ -454,6 +477,10 @@ router.post(
           }
         });
       }
+
+      Object.values(insertMap).forEach((row) => {
+        delete row._scopeType;
+      });
 
       // 3. Bulk Insert
       const inserts = Object.values(insertMap);

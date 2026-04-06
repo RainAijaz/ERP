@@ -1,11 +1,16 @@
 const ACTION_KEYS = [
   "can_navigate",
   "can_view",
+  "can_load",
+  "can_view_details",
   "can_create",
   "can_edit",
   "can_delete",
   "can_hard_delete",
   "can_print",
+  "can_export_excel_csv",
+  "can_filter_all_branches",
+  "can_view_cost_fields",
   "can_approve",
 ];
 
@@ -23,8 +28,26 @@ const toActionKey = (action) => {
   return `can_${normalized}`;
 };
 
-const SCREEN_ACTIONS = new Set(ACTION_KEYS);
-const MODULE_ACTIONS = new Set(ACTION_KEYS);
+const SCREEN_ACTIONS = new Set([
+  "can_navigate",
+  "can_view",
+  "can_create",
+  "can_edit",
+  "can_delete",
+  "can_hard_delete",
+  "can_print",
+  "can_approve",
+]);
+const MODULE_ACTIONS = new Set([
+  "can_navigate",
+  "can_view",
+  "can_create",
+  "can_edit",
+  "can_delete",
+  "can_hard_delete",
+  "can_print",
+  "can_approve",
+]);
 const VOUCHER_ACTIONS = new Set([
   "can_navigate",
   "can_view",
@@ -34,7 +57,15 @@ const VOUCHER_ACTIONS = new Set([
   "can_print",
   "can_approve",
 ]);
-const REPORT_ACTIONS = new Set(["can_navigate", "can_view", "can_print"]);
+const REPORT_ACTIONS = new Set([
+  "can_view",
+  "can_load",
+  "can_view_details",
+  "can_print",
+  "can_export_excel_csv",
+  "can_filter_all_branches",
+  "can_view_cost_fields",
+]);
 
 const SCOPE_ACTION_MAP = {
   SCREEN: SCREEN_ACTIONS,

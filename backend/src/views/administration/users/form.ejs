@@ -6,11 +6,11 @@
     
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1"><%= t('name') || 'Name' %> *</label>
+        <label class="block text-sm font-medium text-slate-700 mb-1"><%= t('name')  %> *</label>
         <input type="text" name="name" value="<%= user ? user.name : '' %>" required autocomplete="off" class="w-full rounded-lg border-slate-300 focus:ring-accent focus:border-accent">
       </div>
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1"><%= t('name_ur') || 'Name (Urdu)' %></label>
+        <label class="block text-sm font-medium text-slate-700 mb-1"><%= t('name_ur')  %></label>
         <input type="text" name="name_ur" value="<%= user ? user.name_ur : '' %>" autocomplete="off" class="w-full rounded-lg border-slate-300 focus:ring-accent focus:border-accent">
       </div>
       <div>

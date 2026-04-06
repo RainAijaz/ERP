@@ -41,45 +41,45 @@ const hasTwoDecimalsOrLess = (value) => {
 
 const normalizeBulkInput = ({ payload, t }) => {
   const employeeId = toPositiveIntOrNull(payload.employee_id);
-  if (!employeeId) throw new Error(t("error_required_fields") || "Required fields are missing.");
+  if (!employeeId) throw new Error(t("error_required_fields") );
 
   const applyOn = String(payload.apply_on || "").trim().toUpperCase();
   if (!ALLOWED_SCOPE_FOR_BULK.has(applyOn)) {
-    throw new Error(t("error_group_subgroup_only_for_bulk_commission") || "Only Product Group or Product Sub-Group can be used for bulk commission update.");
+    throw new Error(t("error_group_subgroup_only_for_bulk_commission") );
   }
 
   const commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT;
   const rateType = String(payload.rate_type || "PER_PAIR").trim().toUpperCase();
   if (!COMMISSION_RATE_TYPES.has(rateType)) {
-    throw new Error(t("error_invalid_rate_type") || "Invalid rate type selected.");
+    throw new Error(t("error_invalid_rate_type") );
   }
 
   const subgroupId = applyOn === APPLY_ON.SUBGROUP ? toPositiveIntOrNull(payload.subgroup_id) : null;
   const groupId = applyOn === APPLY_ON.GROUP ? toPositiveIntOrNull(payload.group_id) : null;
   if (applyOn === APPLY_ON.SUBGROUP && !subgroupId) {
-    throw new Error(t("error_select_subgroup") || "Please select a product sub-group.");
+    throw new Error(t("error_select_subgroup") );
   }
   if (applyOn === APPLY_ON.GROUP && !groupId) {
-    throw new Error(t("error_select_group") || "Please select a product group.");
+    throw new Error(t("error_select_group") );
   }
 
   const reverseOnReturns = payload.reverse_on_returns === true || payload.reverse_on_returns === "true" || payload.reverse_on_returns === "on";
   const statusRaw = String(payload.status || "active").trim().toLowerCase();
   if (statusRaw !== "active" && statusRaw !== "inactive") {
-    throw new Error(t("error_invalid_status") || "Invalid status selected.");
+    throw new Error(t("error_invalid_status") );
   }
 
   const valueType = deriveValueTypeFromBasis(commissionBasis);
-  if (!valueType) throw new Error(t("error_invalid_value_type") || "Invalid value type selected.");
+  if (!valueType) throw new Error(t("error_invalid_value_type") );
 
   const rowsSource = Array.isArray(payload.rows) ? payload.rows : [];
   const rows = rowsSource.map((row) => {
     const skuId = toPositiveIntOrNull(row.sku_id);
     const rateRaw = row.new_rate;
     const money = toMoney(rateRaw);
-    if (!skuId) throw new Error(t("error_invalid_bulk_commission_payload") || "Invalid commission payload.");
+    if (!skuId) throw new Error(t("error_invalid_bulk_commission_payload") );
     if (money === null || Number(money) < 0 || !hasTwoDecimalsOrLess(rateRaw) || Number(money) > 99999999.99) {
-      throw new Error(t("error_invalid_rate_value") || "Invalid value. Enter a non-negative number with up to 2 decimals.");
+      throw new Error(t("error_invalid_rate_value") );
     }
     return {
       skuId,
@@ -88,7 +88,7 @@ const normalizeBulkInput = ({ payload, t }) => {
   });
 
   if (!rows.length) {
-    throw new Error(t("error_no_target_skus_found") || "No target SKUs found for selected Product Group/Sub-Group.");
+    throw new Error(t("error_no_target_skus_found") );
   }
 
   return {

@@ -13,6 +13,8 @@
     "test:bom": "node src/scripts/test-bom-routes.js",
     "test:approval-audit": "node src/scripts/test-approval-audit-enhancements.js",
     "test:approval-translation-code-policy": "node src/scripts/test-approval-translation-code-policy.js",
+    "audit:urdu-ui": "node src/scripts/audit-urdu-ui-coverage.js",
+    "localize:urdu:db": "node src/scripts/backfill-urdu-core-seed-text.js",
     "clear:labour-rates": "node src/scripts/clear-labour-rates.js",
     "test:e2e": "playwright test",
     "test:e2e:safe": "node src/scripts/run-playwright-safe-output.js",

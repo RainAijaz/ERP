@@ -13,6 +13,16 @@
   const isBankVoucherRegisterDetails = isVoucherRegister && voucherTypeFilter === "bank" && reportModeFilter === "details";
   const isCashVoucherRegisterDetails = isVoucherRegister && voucherTypeFilter === "cash" && reportModeFilter === "details";
   const isCashBook = String(reportKey || "") === "cash_book";
+  const isProfitAndLoss =
+    String(reportKey || "") === "profit_and_loss" ||
+    String(reportKey || "") === "profitability_analysis";
+  const profitLossMeta = isProfitAndLoss ? (reportMeta?.profitAndLoss || null) : null;
+  const hasProfitDerivation = Boolean(
+    isProfitAndLoss &&
+    reportDataLoaded &&
+    profitLossMeta &&
+    typeof profitLossMeta === "object"
+  );
   const expenseDepartments = Array.isArray(expenseFilterOptions?.departments) ? expenseFilterOptions.departments : [];
   const expenseCashierAccounts = Array.isArray(expenseFilterOptions?.cashierAccounts) ? expenseFilterOptions.cashierAccounts : [];
   const trendAccountGroups = Array.isArray(expenseFilterOptions?.accountGroups) ? expenseFilterOptions.accountGroups : [];
@@ -102,6 +112,7 @@
     if (key === "entity") return t('entity');
     if (key === "against_account" || key === "counterparty") return t('entity');
     if (key === "account_name") return t('name');
+    if (key === "line_item") return t('line_item');
     if (key === "description") return t('description');
     if (key === "period") return t('period');
     if (key === "department") return t('department');
@@ -468,7 +479,72 @@
   </section>
 
   <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm" data-report-print-area>
-    <div class="flex flex-wrap items-center justify-end gap-2" data-report-print-controls>
+    <% if (hasProfitDerivation) { %>
+      <details class="rounded-2xl border border-slate-200 bg-slate-50/50 p-3">
+        <summary class="flex cursor-pointer list-none items-center justify-between gap-2">
+          <div>
+            <h3 class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('profit_derivation') %></h3>
+            <p class="text-[11px] font-semibold text-slate-500"><%= t('profit_derivation_note') %></p>
+          </div>
+          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('view') %></span>
+        </summary>
+        <div class="mt-3 overflow-x-auto rounded-xl border border-slate-200 bg-white">
+          <table class="min-w-[980px] w-full text-sm tabular-nums">
+            <thead class="bg-slate-100 text-slate-700">
+              <tr>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('line_item') %></th>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('description') %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('amount') %></th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <tr class="odd:bg-slate-50/30">
+                <td class="px-3 py-2 font-semibold text-slate-800"><%= t('pl_net_sales') %></td>
+                <td class="px-3 py-2">
+                  <div class="text-xs font-semibold text-slate-600"><%= `${t('pl_net_sales')} = ${t('pl_gross_sales')} - ${t('pl_sales_returns')} - ${t('pl_discounts')}` %></div>
+                  <div class="mt-1 text-xs text-slate-500"><%= `${formatAmount(profitLossMeta.grossSales)} - ${formatAmount(profitLossMeta.salesReturns)} - ${formatAmount(profitLossMeta.discounts)}` %></div>
+                </td>
+                <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatAmount(profitLossMeta.netSales) %></td>
+              </tr>
+              <tr class="odd:bg-slate-50/30">
+                <td class="px-3 py-2 font-semibold text-slate-800"><%= t('pl_cogs') %></td>
+                <td class="px-3 py-2">
+                  <div class="text-xs font-semibold text-slate-600"><%= `${t('pl_cogs')} = ${t('pl_opening_inventory')} + ${t('pl_purchases')} + ${t('pl_direct_costs')} - ${t('pl_closing_inventory')}` %></div>
+                  <div class="mt-1 text-xs text-slate-500"><%= `${formatAmount(profitLossMeta.openingInventory)} + ${formatAmount(profitLossMeta.purchases)} + ${formatAmount(profitLossMeta.directCosts)} - ${formatAmount(profitLossMeta.closingInventory)}` %></div>
+                </td>
+                <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatAmount(profitLossMeta.cogs) %></td>
+              </tr>
+              <tr class="odd:bg-slate-50/30">
+                <td class="px-3 py-2 font-semibold text-slate-800"><%= t('pl_gross_profit') %></td>
+                <td class="px-3 py-2">
+                  <div class="text-xs font-semibold text-slate-600"><%= `${t('pl_gross_profit')} = ${t('pl_net_sales')} - ${t('pl_cogs')}` %></div>
+                  <div class="mt-1 text-xs text-slate-500"><%= `${formatAmount(profitLossMeta.netSales)} - ${formatAmount(profitLossMeta.cogs)}` %></div>
+                </td>
+                <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatAmount(profitLossMeta.grossProfit) %></td>
+              </tr>
+              <tr class="odd:bg-slate-50/30">
+                <td class="px-3 py-2 font-semibold text-slate-800"><%= t('pl_operating_profit_ebit') %></td>
+                <td class="px-3 py-2">
+                  <div class="text-xs font-semibold text-slate-600"><%= `${t('pl_operating_profit_ebit')} = ${t('pl_gross_profit')} - ${t('pl_operating_expenses')}` %></div>
+                  <div class="mt-1 text-xs text-slate-500"><%= `${formatAmount(profitLossMeta.grossProfit)} - ${formatAmount(profitLossMeta.operatingExpenses)}` %></div>
+                </td>
+                <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatAmount(profitLossMeta.operatingProfit) %></td>
+              </tr>
+              <tr class="odd:bg-slate-50/30">
+                <td class="px-3 py-2 font-semibold text-slate-800"><%= t('pl_net_profit_before_tax') %></td>
+                <td class="px-3 py-2">
+                  <div class="text-xs font-semibold text-slate-600"><%= `${t('pl_net_profit_before_tax')} = ${t('pl_operating_profit_ebit')} + ${t('pl_other_income')} - ${t('pl_other_expenses')} - ${t('pl_finance_cost')}` %></div>
+                  <div class="mt-1 text-xs text-slate-500"><%= `${formatAmount(profitLossMeta.operatingProfit)} + ${formatAmount(profitLossMeta.otherIncome)} - ${formatAmount(profitLossMeta.otherExpenses)} - ${formatAmount(profitLossMeta.financeCost)}` %></div>
+                </td>
+                <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatAmount(profitLossMeta.netProfitBeforeTax) %></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </details>
+    <% } %>
+
+    <div class="mt-3 flex flex-wrap items-center justify-end gap-2" data-report-print-controls>
       <button type="button" class="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700 disabled:cursor-not-allowed disabled:opacity-40" data-print-report <%= canExportRows ? '' : 'disabled' %>><%= t('print') %></button>
       <button type="button" class="inline-flex items-center gap-1.5 rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40" data-download-report <%= canExportRows ? '' : 'disabled' %>><%= t('download') %></button>
       <% if (isAccountActivityLedger) { %>
@@ -672,6 +748,10 @@
                     <td class="px-3 py-2"><%= formatDate(row[col]) %></td>
                   <% } else if (key === 'voucher_type_code' || key === 'voucher_subtype') { %>
                     <td class="px-3 py-2"><%= prettyVoucherType(row[col]) %></td>
+                  <% } else if (key === 'line_item') { %>
+                    <% const lineItemValue = row[col] == null ? '' : String(row[col]); %>
+                    <% const translatedLineItem = lineItemValue ? t(lineItemValue) : ''; %>
+                    <td class="px-3 py-2"><%= lineItemValue ? ((translatedLineItem && translatedLineItem !== lineItemValue) ? translatedLineItem : lineItemValue) : '-' %></td>
                   <% } else if (key === 'dr' || key === 'cr' || key === 'running_balance' || key === 'amount' || key === 'total_debit' || key === 'total_credit' || key === 'gross_expense' || key === 'credits_adjustments' || key === 'net_expense' || key === 'previous_net_expense') { %>
                     <td class="px-3 py-2 text-right font-semibold whitespace-nowrap <%= (isOpeningOrClosingRow || isTotalsRow) ? 'text-slate-900' : '' %>"><%= formatAmount(row[col]) %></td>
                   <% } else if (key === 'change_percentage') { %>
@@ -741,8 +821,8 @@
     const trendGranularityMode = <%- JSON.stringify((expenseTrends?.granularity || trendGranularityFilter || "daily")) %>;
     const breakdownStartMode = <%- JSON.stringify((breakdownStartFilter === 'group' || breakdownStartFilter === 'account') ? breakdownStartFilter : 'department') %>;
     const notApplicableText = <%- JSON.stringify(t('not_applicable')) %>;
-    const allLabelText = <%- JSON.stringify(t('all') || 'All') %>;
-    const selectedSuffixText = <%- JSON.stringify(t('selected') || 'selected') %>;
+    const allLabelText = <%- JSON.stringify(t('all') ) %>;
+    const selectedSuffixText = <%- JSON.stringify(t('selected') ) %>;
     const currentReportPath = <%- JSON.stringify(reportPath) %>;
     const csrfToken = <%- JSON.stringify(csrfToken || "") %>;
     const departmentsLabel = <%- JSON.stringify(t('departments')) %>;
@@ -2187,7 +2267,7 @@
             </svg>
           </div>
           <div class="flex-1">
-            <div class="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700"><%= t('notice') || 'Notice' %></div>
+            <div class="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700"><%= t('notice')  %></div>
             <p class="mt-1 text-sm text-slate-700"></p>
           </div>
           <button class="text-slate-400 hover:text-slate-600" type="button" data-inline-report-toast-close aria-label="Close">

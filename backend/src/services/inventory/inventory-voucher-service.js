@@ -20,6 +20,10 @@ const INVENTORY_VOUCHER_TYPE_SET = new Set(
 const STOCK_TYPE_VALUES = ["FG", "SFG", "RM"];
 const STOCK_TYPE_SET = new Set(STOCK_TYPE_VALUES);
 const ROW_STATUS_VALUES = ["PACKED", "LOOSE"];
+const PHYSICAL_COUNT_REASON_CODES = new Set([
+  "PHYSICALCOUNT",
+  "PHYSICALCOUNTCORRECTION",
+]);
 
 let approvalRequestHasVoucherTypeCodeColumn;
 let stockBalanceRmTableSupport;
@@ -74,6 +78,14 @@ const toNonNegativeNumber = (value, decimals = 4) => {
 const roundQty3 = (value) => Number(Number(value || 0).toFixed(3));
 const roundCost2 = (value) => Number(Number(value || 0).toFixed(2));
 const roundUnitCost6 = (value) => Number(Number(value || 0).toFixed(6));
+const computeNonNegativeWac = (qty, value) => {
+  const numericQty = Number(qty || 0);
+  const numericValue = Number(value || 0);
+  if (!Number.isFinite(numericQty) || Math.abs(numericQty) <= 0.0005) return 0;
+  if (!Number.isFinite(numericValue)) return 0;
+  const ratio = Math.abs(numericValue) / Math.abs(numericQty);
+  return Number.isFinite(ratio) ? roundUnitCost6(ratio) : 0;
+};
 
 const isTruthyFlag = (value) => {
   if (value === true) return true;
@@ -113,6 +125,11 @@ const normalizeRowStatus = (value) => {
     .toUpperCase();
   return ROW_STATUS_VALUES.includes(text) ? text : "LOOSE";
 };
+
+const normalizeReasonCode = (value) =>
+  String(value || "")
+    .replace(/[^a-z0-9]+/gi, "")
+    .toUpperCase();
 
 // SKU dropdown label should be a complete business name: article first, then variant parts.
 const buildSkuDisplayName = (row) => {
@@ -632,8 +649,7 @@ const applySkuStockInTx = async ({
 
   const nextQtyPairs = Number(row?.qty_pairs || 0) + normalizedQtyPairsIn;
   const nextValue = roundCost2(Number(row?.value || 0) + normalizedValueIn);
-  const nextWac =
-    nextQtyPairs > 0 ? roundUnitCost6(nextValue / nextQtyPairs) : 0;
+  const nextWac = computeNonNegativeWac(nextQtyPairs, nextValue);
 
   await trx("erp.stock_balance_sku")
     .where({
@@ -716,7 +732,7 @@ const addBackRmStockFromLedgerTx = async ({ trx, row }) => {
 
   const nextQty = roundQty3(Number(existing?.qty || 0) + qty);
   const nextValue = roundCost2(Number(existing?.value || 0) + value);
-  const nextWac = nextQty > 0 ? roundUnitCost6(nextValue / nextQty) : 0;
+  const nextWac = computeNonNegativeWac(nextQty, nextValue);
 
   const updateQuery = trx("erp.stock_balance_rm").update({
     qty: nextQty,
@@ -771,7 +787,7 @@ const removeRmStockFromLedgerTx = async ({ trx, row }) => {
   const nextQty = Math.abs(nextQtyRaw) <= 0.0005 ? 0 : nextQtyRaw;
   const nextValueRaw = roundCost2(availableValue - value);
   const nextValue = nextQty === 0 ? 0 : nextValueRaw;
-  const nextWac = nextQty !== 0 ? roundUnitCost6(nextValue / nextQty) : 0;
+  const nextWac = computeNonNegativeWac(nextQty, nextValue);
 
   const updateQuery = trx("erp.stock_balance_rm").update({
     qty: nextQty,
@@ -835,8 +851,7 @@ const addBackSkuStockFromLedgerTx = async ({ trx, row }) => {
 
   const nextQtyPairs = Number(target.qty_pairs || 0) + Number(qtyPairs || 0);
   const nextValue = roundCost2(Number(target.value || 0) + value);
-  const nextWac =
-    nextQtyPairs > 0 ? roundUnitCost6(nextValue / nextQtyPairs) : 0;
+  const nextWac = computeNonNegativeWac(nextQtyPairs, nextValue);
 
   await trx("erp.stock_balance_sku")
     .where({
@@ -888,8 +903,7 @@ const removeSkuStockFromLedgerTx = async ({ trx, row }) => {
   const nextQtyPairs = Number(availableQtyPairs || 0) - Number(qtyPairs || 0);
   const nextValueRaw = roundCost2(availableValue - value);
   const nextValue = nextQtyPairs === 0 ? 0 : nextValueRaw;
-  const nextWac =
-    nextQtyPairs !== 0 ? roundUnitCost6(nextValue / nextQtyPairs) : 0;
+  const nextWac = computeNonNegativeWac(nextQtyPairs, nextValue);
 
   await trx("erp.stock_balance_sku")
     .where({
@@ -1126,7 +1140,7 @@ const syncOpeningStockVoucherTx = async ({ trx, voucherId }) => {
 
       const nextQty = roundQty3(Number(existing?.qty || 0) + qtyBase);
       const nextValue = roundCost2(Number(existing?.value || 0) + valueIn);
-      const nextWac = nextQty > 0 ? roundUnitCost6(nextValue / nextQty) : 0;
+      const nextWac = computeNonNegativeWac(nextQty, nextValue);
 
       const updateQuery = trx("erp.stock_balance_rm").update({
         qty: nextQty,
@@ -1898,7 +1912,7 @@ const updateOpeningStockVoucher = async ({
     );
     const negativeStockRouting = resolveNegativeStockApprovalRouting({
       hasNegativeStockRisk: hasStockCountNegativeStockRisk(validated),
-      canApproveVoucherAction: req?.user?.isAdmin === true,
+      canApproveVoucherAction: canApprove,
       voucherTypeCode,
     });
     const queuedForApproval =
@@ -2440,12 +2454,14 @@ const loadSkuSystemSnapshotBySkuIdTx = async ({
     const skuId = Number(row?.sku_id || 0);
     if (!skuId) return;
 
-    const category = String(row?.category || "").trim().toUpperCase();
+    const category = String(row?.category || "")
+      .trim()
+      .toUpperCase();
     const isPacked = category === "FG" ? isTruthyFlag(row?.is_packed) : false;
     // Preserve fractional pair balances so available quantity does not collapse to zero.
     const qtyPairs = roundQty3(Number(row?.qty_pairs || 0));
     const value = roundCost2(Number(row?.value || 0));
-    const wac = Math.abs(qtyPairs) > 0 ? roundUnitCost6(value / qtyPairs) : 0;
+    const wac = computeNonNegativeWac(qtyPairs, value);
 
     const current = bySku.get(skuId) || {
       qty_pairs: 0,
@@ -2470,15 +2486,13 @@ const loadSkuSystemSnapshotBySkuIdTx = async ({
     }
 
     current.qty_pairs = roundQty3(
-      Number(current.loose_qty_pairs || 0) + Number(current.packed_qty_pairs || 0),
+      Number(current.loose_qty_pairs || 0) +
+        Number(current.packed_qty_pairs || 0),
     );
     current.value = roundCost2(
       Number(current.loose_value || 0) + Number(current.packed_value || 0),
     );
-    current.wac =
-      Math.abs(current.qty_pairs) > 0
-        ? roundUnitCost6(current.value / current.qty_pairs)
-        : 0;
+    current.wac = computeNonNegativeWac(current.qty_pairs, current.value);
 
     bySku.set(skuId, current);
   });
@@ -2536,7 +2550,7 @@ const loadSkuBucketSnapshotFromLedgerTx = async ({
   const row = await query.first();
   const qtyPairs = roundQty3(Number(row?.qty_pairs || 0));
   const value = roundCost2(Number(row?.value || 0));
-  const wac = Math.abs(qtyPairs) > 0 ? roundUnitCost6(value / qtyPairs) : 0;
+  const wac = computeNonNegativeWac(qtyPairs, value);
   return { qtyPairs, value, wac };
 };
 
@@ -2663,12 +2677,16 @@ const validateStockCountAdjustmentPayloadTx = async ({ trx, req, payload }) => {
   if (!stockType) throw new HttpError(400, "Stock type is required");
 
   const remarks = normalizeText(payload?.remarks || payload?.description, 1000);
-  const { reasonCodeId, reasonNotes } = await resolveSelectedReasonCodeTx({
+  const { reasonCodeId, reasonNotes, selectedReason } =
+    await resolveSelectedReasonCodeTx({
     trx,
     voucherTypeCode: INVENTORY_VOUCHER_TYPES.stockCountAdjustment,
     reasonCodeId: payload?.reason_code_id,
     reasonNotes: payload?.reason_notes || payload?.notes,
   });
+  const usePhysicalCountField = PHYSICAL_COUNT_REASON_CODES.has(
+    normalizeReasonCode(selectedReason?.code),
+  );
 
   const rawLines = Array.isArray(payload?.lines) ? payload.lines : [];
   if (!rawLines.length) throw new HttpError(400, "Voucher lines are required");
@@ -2805,51 +2823,49 @@ const validateStockCountAdjustmentPayloadTx = async ({ trx, req, payload }) => {
       const snapshot = rmSnapshotByKey.get(rmKey) || { qty: 0, wac: 0 };
       const systemQtyBase = roundQty3(Number(snapshot.qty || 0));
       const systemQty = roundQty3(systemQtyBase / factorToBase);
-      // Stock adjustment uses explicit in/out quantities; legacy physical_qty is accepted for backward compatibility.
-      const qtyInInput = toNonNegativeNumber(raw?.qty_in, 3);
-      const qtyOutInput = toNonNegativeNumber(raw?.qty_out, 3);
-      const hasSplitInput = qtyInInput !== null || qtyOutInput !== null;
-
-      if (hasSplitInput && (qtyInInput === null || qtyOutInput === null)) {
-        throw new HttpError(
-          400,
-          `Line ${index + 1}: quantity in/out must be zero or greater`,
-        );
-      }
-
-      let qtyInDisplay = qtyInInput;
-      let qtyOutDisplay = qtyOutInput;
+      let qtyInDisplay;
+      let qtyOutDisplay;
       let differenceQty;
       let differenceQtyBase;
       let physicalQty;
       let physicalQtyBase;
 
-      if (hasSplitInput) {
-        qtyInDisplay = roundQty3(qtyInInput || 0);
-        qtyOutDisplay = roundQty3(qtyOutInput || 0);
+      if (usePhysicalCountField) {
+        const countedStockQty = toNonNegativeNumber(
+          raw?.counted_stock_qty ?? raw?.physical_qty ?? raw?.qty,
+          3,
+        );
+        if (countedStockQty === null) {
+          throw new HttpError(
+            400,
+            `Line ${index + 1}: counted stock is required`,
+          );
+        }
+        physicalQty = roundQty3(countedStockQty);
+        physicalQtyBase = roundQty3(Number(physicalQty) * factorToBase);
+        differenceQty = roundQty3(Number(physicalQty) - systemQty);
+        differenceQtyBase = roundQty3(physicalQtyBase - systemQtyBase);
+        qtyInDisplay = differenceQty > 0 ? roundQty3(differenceQty) : 0;
+        qtyOutDisplay =
+          differenceQty < 0 ? roundQty3(Math.abs(differenceQty)) : 0;
+      } else {
+        const qtyInInput = toNonNegativeNumber(raw?.qty_in, 3);
+        const qtyOutInput = toNonNegativeNumber(raw?.qty_out, 3);
+        if (qtyInInput === null || qtyOutInput === null) {
+          throw new HttpError(
+            400,
+            `Line ${index + 1}: quantity in and quantity out are required`,
+          );
+        }
+
+        qtyInDisplay = roundQty3(qtyInInput);
+        qtyOutDisplay = roundQty3(qtyOutInput);
         const qtyInBase = roundQty3(Number(qtyInDisplay) * factorToBase);
         const qtyOutBase = roundQty3(Number(qtyOutDisplay) * factorToBase);
         differenceQty = roundQty3(Number(qtyInDisplay) - Number(qtyOutDisplay));
         differenceQtyBase = roundQty3(qtyInBase - qtyOutBase);
         physicalQtyBase = roundQty3(systemQtyBase + differenceQtyBase);
         physicalQty = roundQty3(systemQty + differenceQty);
-      } else {
-        const legacyPhysicalQty = toNonNegativeNumber(
-          raw?.physical_qty ?? raw?.qty,
-          3,
-        );
-        if (legacyPhysicalQty === null) {
-          throw new HttpError(
-            400,
-            `Line ${index + 1}: quantity in and quantity out are required`,
-          );
-        }
-        physicalQty = roundQty3(legacyPhysicalQty);
-        physicalQtyBase = roundQty3(Number(physicalQty) * factorToBase);
-        differenceQty = roundQty3(Number(physicalQty) - systemQty);
-        differenceQtyBase = roundQty3(physicalQtyBase - systemQtyBase);
-        qtyInDisplay = differenceQty > 0 ? roundQty3(differenceQty) : 0;
-        qtyOutDisplay = differenceQty < 0 ? roundQty3(Math.abs(differenceQty)) : 0;
       }
 
       if (differenceQtyBase !== 0) hasDifference = true;
@@ -2904,6 +2920,7 @@ const validateStockCountAdjustmentPayloadTx = async ({ trx, req, payload }) => {
           qty_out_base: roundQty3(Number(qtyOutDisplay || 0) * factorToBase),
           system_qty_display: systemQty,
           physical_qty_display: roundQty3(Number(physicalQty)),
+          counted_stock_display: roundQty3(Number(physicalQty)),
           difference_qty: differenceQty,
           negative_stock_risk: Number(physicalQtyBase) < -0.0005,
           difference_qty_base: differenceQtyBase,
@@ -3014,20 +3031,8 @@ const validateStockCountAdjustmentPayloadTx = async ({ trx, req, payload }) => {
         : roundQty3(Number(snapshot.qty_pairs || 0));
     const systemQty = roundQty3(systemPairs / factorToBase);
 
-    // SKU adjustments are entered as Quantity In and Quantity Out per selected unit.
-    const qtyInInput = toNonNegativeNumber(raw?.qty_in, 3);
-    const qtyOutInput = toNonNegativeNumber(raw?.qty_out, 3);
-    const hasSplitInput = qtyInInput !== null || qtyOutInput !== null;
-
-    if (hasSplitInput && (qtyInInput === null || qtyOutInput === null)) {
-      throw new HttpError(
-        400,
-        `Line ${index + 1}: quantity in/out must be zero or greater`,
-      );
-    }
-
-    let qtyInDisplay = qtyInInput;
-    let qtyOutDisplay = qtyOutInput;
+    let qtyInDisplay;
+    let qtyOutDisplay;
     let qtyInPairs;
     let qtyOutPairs;
     let differencePairs;
@@ -3047,33 +3052,24 @@ const validateStockCountAdjustmentPayloadTx = async ({ trx, req, payload }) => {
       return roundedPairs;
     };
 
-    if (hasSplitInput) {
-      qtyInDisplay = roundQty3(qtyInInput || 0);
-      qtyOutDisplay = roundQty3(qtyOutInput || 0);
-      qtyInPairs = toWholePairs(qtyInDisplay, "quantity in");
-      qtyOutPairs = toWholePairs(qtyOutDisplay, "quantity out");
-      differencePairs = Number(qtyInPairs) - Number(qtyOutPairs);
-      differenceQty = roundQty3(Number(qtyInDisplay) - Number(qtyOutDisplay));
-      physicalPairs = Number(systemPairs) + Number(differencePairs);
-      physicalQty = roundQty3(systemQty + differenceQty);
-    } else {
-      const legacyPhysicalQty = toNonNegativeNumber(
-        raw?.physical_qty ?? raw?.qty,
+    if (usePhysicalCountField) {
+      const countedStockQty = toNonNegativeNumber(
+        raw?.counted_stock_qty ?? raw?.physical_qty ?? raw?.qty,
         3,
       );
-      if (legacyPhysicalQty === null) {
+      if (countedStockQty === null) {
         throw new HttpError(
           400,
-          `Line ${index + 1}: quantity in and quantity out are required`,
+          `Line ${index + 1}: counted stock is required`,
         );
       }
-      physicalQty = roundQty3(legacyPhysicalQty);
+      physicalQty = roundQty3(countedStockQty);
       const physicalPairsRaw = Number(physicalQty) * factorToBase;
       physicalPairs = Math.round(physicalPairsRaw);
       if (Math.abs(physicalPairsRaw - physicalPairs) > 0.0005) {
         throw new HttpError(
           400,
-          `Line ${index + 1}: physical quantity must convert to whole pairs`,
+          `Line ${index + 1}: counted stock must convert to whole pairs`,
         );
       }
       differencePairs = Number(physicalPairs) - Number(systemPairs);
@@ -3081,7 +3077,26 @@ const validateStockCountAdjustmentPayloadTx = async ({ trx, req, payload }) => {
       qtyInPairs = differencePairs > 0 ? Number(differencePairs) : 0;
       qtyOutPairs = differencePairs < 0 ? Math.abs(Number(differencePairs)) : 0;
       qtyInDisplay = differenceQty > 0 ? roundQty3(differenceQty) : 0;
-      qtyOutDisplay = differenceQty < 0 ? roundQty3(Math.abs(differenceQty)) : 0;
+      qtyOutDisplay =
+        differenceQty < 0 ? roundQty3(Math.abs(differenceQty)) : 0;
+    } else {
+      const qtyInInput = toNonNegativeNumber(raw?.qty_in, 3);
+      const qtyOutInput = toNonNegativeNumber(raw?.qty_out, 3);
+      if (qtyInInput === null || qtyOutInput === null) {
+        throw new HttpError(
+          400,
+          `Line ${index + 1}: quantity in and quantity out are required`,
+        );
+      }
+
+      qtyInDisplay = roundQty3(qtyInInput);
+      qtyOutDisplay = roundQty3(qtyOutInput);
+      qtyInPairs = toWholePairs(qtyInDisplay, "quantity in");
+      qtyOutPairs = toWholePairs(qtyOutDisplay, "quantity out");
+      differencePairs = Number(qtyInPairs) - Number(qtyOutPairs);
+      differenceQty = roundQty3(Number(qtyInDisplay) - Number(qtyOutDisplay));
+      physicalPairs = Number(systemPairs) + Number(differencePairs);
+      physicalQty = roundQty3(systemQty + differenceQty);
     }
 
     if (differencePairs !== 0) hasDifference = true;
@@ -3090,14 +3105,15 @@ const validateStockCountAdjustmentPayloadTx = async ({ trx, req, payload }) => {
       stockType === "FG"
         ? Number(fgResolved?.wac || 0)
         : Number(snapshot.wac || 0);
-    const fallbackRateByWac = Number(statusWac || 0) * factorToBase;
+    // SKU rate is persisted/displayed as pair-rate, independent of selected entry unit.
+    const fallbackPairRateByWac = Number(statusWac || 0);
     const displayRateRaw =
       Number(sku?.sale_rate || 0) > 0
         ? Number(sku.sale_rate)
-        : Number(fallbackRateByWac || 0);
+        : Number(fallbackPairRateByWac || 0);
     const displayRate = roundUnitCost6(displayRateRaw);
     const amountDifference = roundCost2(
-      Number(differenceQty) * Number(displayRate),
+      Number(differencePairs) * Number(displayRate),
     );
 
     return {
@@ -3126,6 +3142,7 @@ const validateStockCountAdjustmentPayloadTx = async ({ trx, req, payload }) => {
         qty_out_display: roundQty3(Number(qtyOutDisplay || 0)),
         system_qty_display: systemQty,
         physical_qty_display: roundQty3(Number(physicalQty)),
+        counted_stock_display: roundQty3(Number(physicalQty)),
         difference_qty: differenceQty,
         negative_stock_risk: Number(physicalPairs) < 0,
         selling_rate_display: roundCost2(displayRate),
@@ -3308,8 +3325,13 @@ const syncStockCountAdjustmentVoucherTx = async ({ trx, voucherId }) => {
     const factorToBase = Number(meta?.uom_factor_to_base || 1);
     const safeFactor =
       Number.isFinite(factorToBase) && factorToBase > 0 ? factorToBase : 1;
+    const resolvedLineRate = Math.abs(
+      Number(line?.rate || meta?.selling_rate_display || 0),
+    );
     const fallbackUnitCost = roundUnitCost6(
-      Number(line?.rate || meta?.selling_rate_display || 0) / safeFactor,
+      stockType === "RM"
+        ? resolvedLineRate / safeFactor
+        : resolvedLineRate,
     );
 
     if (stockType === "RM") {
@@ -3363,8 +3385,9 @@ const syncStockCountAdjustmentVoucherTx = async ({ trx, voucherId }) => {
       const unitCost = roundUnitCost6(
         Number(existing?.wac || 0) > 0
           ? Number(existing.wac || 0)
-          : availableQty > 0
-            ? Number(availableValue || 0) / Number(availableQty || 1)
+          : Math.abs(availableQty) > 0
+            ? Math.abs(Number(availableValue || 0)) /
+              Math.abs(Number(availableQty || 1))
             : fallbackUnitCost,
       );
 
@@ -3379,7 +3402,7 @@ const syncStockCountAdjustmentVoucherTx = async ({ trx, voucherId }) => {
       const nextQty = Math.abs(nextQtyRaw) <= 0.0005 ? 0 : nextQtyRaw;
       const provisionalValue = roundCost2(availableValue + valueDelta);
       const nextValue = nextQty === 0 ? 0 : provisionalValue;
-      const nextWac = nextQty !== 0 ? roundUnitCost6(nextValue / nextQty) : 0;
+      const nextWac = computeNonNegativeWac(nextQty, nextValue);
 
       const updateQuery = trx("erp.stock_balance_rm").update({
         qty: nextQty,
@@ -3418,9 +3441,7 @@ const syncStockCountAdjustmentVoucherTx = async ({ trx, voucherId }) => {
 
     const systemPairs = Math.round(
       Number(
-        line?.system_qty_pairs_snapshot ??
-          meta?.system_qty_pairs_snapshot ??
-          0,
+        line?.system_qty_pairs_snapshot ?? meta?.system_qty_pairs_snapshot ?? 0,
       ),
     );
     const physicalPairs = Math.round(
@@ -3480,16 +3501,18 @@ const syncStockCountAdjustmentVoucherTx = async ({ trx, voucherId }) => {
     const unitCost = roundUnitCost6(
       Number(bucketSnapshot?.wac || 0) > 0
         ? Number(bucketSnapshot.wac || 0)
-        : availableQtyPairs > 0
-          ? Number(availableValue || 0) / Number(availableQtyPairs || 1)
+        : Math.abs(availableQtyPairs) > 0
+          ? Math.abs(Number(availableValue || 0)) /
+            Math.abs(Number(availableQtyPairs || 1))
           : fallbackUnitCost,
     );
     const valueDelta = roundCost2(Number(diffPairs) * Number(unitCost));
     const nextQtyPairs = Number(availableQtyPairs) + Number(diffPairs);
-    const provisionalValue = roundCost2(Number(availableValue) + Number(valueDelta));
+    const provisionalValue = roundCost2(
+      Number(availableValue) + Number(valueDelta),
+    );
     const nextValue = nextQtyPairs === 0 ? 0 : provisionalValue;
-    const nextWac =
-      nextQtyPairs !== 0 ? roundUnitCost6(nextValue / nextQtyPairs) : 0;
+    const nextWac = computeNonNegativeWac(nextQtyPairs, nextValue);
 
     await trx("erp.stock_balance_sku")
       .where({
@@ -3589,7 +3612,7 @@ const createStockCountAdjustmentVoucher = async ({
     );
     const negativeStockRouting = resolveNegativeStockApprovalRouting({
       hasNegativeStockRisk: hasStockCountNegativeStockRisk(validated),
-      canApproveVoucherAction: req?.user?.isAdmin === true,
+      canApproveVoucherAction: canApprove,
       voucherTypeCode,
     });
     const queuedForApproval =
@@ -3707,6 +3730,7 @@ const updateStockCountAdjustmentVoucher = async ({
         "vh.status",
         "vh.voucher_date",
         "vh.remarks",
+        "sch.item_type_scope",
         "sch.reason_code_id",
         "sch.notes",
       )
@@ -3722,10 +3746,22 @@ const updateStockCountAdjustmentVoucher = async ({
       throw new HttpError(400, "Deleted voucher cannot be edited");
     }
 
+    const mergedPayload = {
+      ...payload,
+      voucher_date: payload?.voucher_date || existing.voucher_date,
+      stock_type: payload?.stock_type || existing.item_type_scope,
+      remarks: payload?.remarks ?? existing.remarks,
+      reason_code_id:
+        toPositiveInt(payload?.reason_code_id) ||
+        toPositiveInt(existing.reason_code_id),
+      reason_notes:
+        payload?.reason_notes !== undefined ? payload.reason_notes : existing.notes,
+    };
+
     const validated = await validateStockCountAdjustmentPayloadTx({
       trx,
       req,
-      payload,
+      payload: mergedPayload,
     });
 
     const policyRequiresApproval = await requiresApprovalForAction(
@@ -3735,7 +3771,7 @@ const updateStockCountAdjustmentVoucher = async ({
     );
     const negativeStockRouting = resolveNegativeStockApprovalRouting({
       hasNegativeStockRisk: hasStockCountNegativeStockRisk(validated),
-      canApproveVoucherAction: req?.user?.isAdmin === true,
+      canApproveVoucherAction: canApprove,
       voucherTypeCode,
     });
     const queuedForApproval =
@@ -4111,6 +4147,9 @@ const loadStockCountAdjustmentVoucherDetails = async ({
       uom_factor_to_base: Number(meta.uom_factor_to_base || 0) || null,
       system_qty: systemQtyDisplay,
       physical_qty: physicalQtyDisplay,
+      counted_stock_qty: roundQty3(
+        Number(meta?.counted_stock_display ?? physicalQtyDisplay),
+      ),
       qty_in: roundQty3(
         Number(
           meta?.qty_in_display ??

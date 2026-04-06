@@ -246,8 +246,7 @@ const createReturnableVoucherRouter = ({
 
       if (saved.queuedForApproval) {
         const msg = saved.permissionReroute
-          ? res.locals.t("approval_sent") ||
-            "Change submitted for Administrator approval."
+          ? res.locals.t("approval_sent") 
           : res.locals.t("approval_submitted");
         setNotice(res, msg, true);
       } else {
@@ -284,14 +283,13 @@ const createReturnableVoucherRouter = ({
 
       if (saved.queuedForApproval) {
         const msg = saved.permissionReroute
-          ? res.locals.t("approval_sent") ||
-            "Change submitted for Administrator approval."
+          ? res.locals.t("approval_sent") 
           : res.locals.t("approval_submitted");
         setNotice(res, msg, true);
       } else {
         setNotice(
           res,
-          res.locals.t("deleted_successfully") || "Deleted successfully.",
+          res.locals.t("deleted_successfully") ,
         );
       }
 

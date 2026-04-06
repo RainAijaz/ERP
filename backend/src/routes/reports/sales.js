@@ -108,7 +108,7 @@ const renderSaleReturnReportPage = async (
 
 router.get(
   "/",
-  requirePermission("REPORT", "sales_report", "view"),
+  requirePermission("REPORT", "sales_report", "load"),
   async (req, res) => {
     return res.redirect(`${req.baseUrl}/customer-listings`);
   },
@@ -116,7 +116,7 @@ router.get(
 
 router.get(
   "/customer-listings",
-  requirePermission("REPORT", "sales_report", "view"),
+  requirePermission("REPORT", "sales_report", "load"),
   async (req, res, next) => {
     try {
       const rows = await getCustomerListingsRows({ req });
@@ -143,7 +143,7 @@ router.get(
 
 router.get(
   "/customer-contact-analysis",
-  requirePermission("REPORT", "sales_report", "view"),
+  requirePermission("REPORT", "sales_report", "load"),
   async (req, res, next) => {
     try {
       const pageData = await getCustomerContactAnalysisPageData({
@@ -176,7 +176,7 @@ router.get(
 
 router.post(
   "/customer-contact-analysis",
-  requirePermission("REPORT", "sales_report", "view"),
+  requirePermission("REPORT", "sales_report", "load"),
   async (req, res, next) => {
     try {
       const pageData = await getCustomerContactAnalysisPageData({
@@ -209,7 +209,7 @@ router.post(
 
 router.get(
   "/customer-ledger",
-  requirePermission("REPORT", "sales_report", "view"),
+  requirePermission("REPORT", "sales_report", "load"),
   async (req, res, next) => {
     try {
       const pageData = await getCustomerLedgerReportPageData({
@@ -242,7 +242,7 @@ router.get(
 
 router.post(
   "/customer-ledger",
-  requirePermission("REPORT", "sales_report", "view"),
+  requirePermission("REPORT", "sales_report", "load"),
   async (req, res, next) => {
     try {
       const pageData = await getCustomerLedgerReportPageData({
@@ -275,7 +275,7 @@ router.post(
 
 router.get(
   "/customer-balances",
-  requirePermission("REPORT", "sales_report", "view"),
+  requirePermission("REPORT", "sales_report", "load"),
   async (req, res, next) => {
     try {
       const pageData = await getCustomerBalancesReportPageData({
@@ -309,7 +309,7 @@ router.get(
 
 router.post(
   "/customer-balances",
-  requirePermission("REPORT", "sales_report", "view"),
+  requirePermission("REPORT", "sales_report", "load"),
   async (req, res, next) => {
     try {
       const pageData = await getCustomerBalancesReportPageData({
@@ -343,7 +343,7 @@ router.post(
 
 router.get(
   "/sales-order-report",
-  requirePermission("REPORT", "sales_report", "view"),
+  requirePermission("REPORT", "sales_report", "load"),
   async (req, res, next) => {
     try {
       const pageData = await getSalesOrderReportPageData({
@@ -376,7 +376,7 @@ router.get(
 
 router.post(
   "/sales-order-report",
-  requirePermission("REPORT", "sales_report", "view"),
+  requirePermission("REPORT", "sales_report", "load"),
   async (req, res, next) => {
     try {
       const pageData = await getSalesOrderReportPageData({
@@ -409,33 +409,33 @@ router.post(
 
 router.get(
   "/sales-report",
-  requirePermission("REPORT", "sales_report", "view"),
+  requirePermission("REPORT", "sales_report", "load"),
   async (req, res, next) => renderSalesReportPage(req, res, next, req.query),
 );
 
 router.post(
   "/sales-report",
-  requirePermission("REPORT", "sales_report", "view"),
+  requirePermission("REPORT", "sales_report", "load"),
   async (req, res, next) => renderSalesReportPage(req, res, next, req.body),
 );
 
 router.get(
   "/sale-return-report",
-  requirePermission("REPORT", "sales_report", "view"),
+  requirePermission("REPORT", "sales_report", "load"),
   async (req, res, next) =>
     renderSaleReturnReportPage(req, res, next, req.query),
 );
 
 router.post(
   "/sale-return-report",
-  requirePermission("REPORT", "sales_report", "view"),
+  requirePermission("REPORT", "sales_report", "load"),
   async (req, res, next) =>
     renderSaleReturnReportPage(req, res, next, req.body),
 );
 
 router.get(
   "/sales-discount-report",
-  requirePermission("REPORT", "sales_report", "view"),
+  requirePermission("REPORT", "sales_report", "load"),
   async (req, res, next) => {
     try {
       const pageData = await getSalesDiscountReportPageData({
@@ -468,7 +468,7 @@ router.get(
 
 router.post(
   "/sales-discount-report",
-  requirePermission("REPORT", "sales_report", "view"),
+  requirePermission("REPORT", "sales_report", "load"),
   async (req, res, next) => {
     try {
       const pageData = await getSalesDiscountReportPageData({

@@ -76,7 +76,7 @@
 	<section class="rounded-2xl border border-slate-200 bg-white/95 px-4 py-4 shadow-sm">
 		<div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
 			<div>
-				<h1 class="text-2xl font-display font-semibold tracking-tight text-ink"><%= toFriendlyLabel("stock_count_adjustment_voucher", "Stock Count Adjustment Voucher") %></h1>
+				<h1 class="text-2xl font-display font-semibold tracking-tight text-ink"><%= toFriendlyLabel("stock_count_adjustment_voucher", "Stock Count Voucher") %></h1>
 				<p class="text-sm text-muted"><%= toFriendlyLabel("inventory", "Inventory") %></p>
 			</div>
 			<% if (selectedVoucher) { %>
@@ -132,20 +132,13 @@
 						<select name="reason_code_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-reason-code data-searchable-select="true" data-searchable-variant="unified" required <%= canSaveVoucher ? '' : 'disabled' %>>
 							<option value=""><%= toFriendlyLabel("select_reason", "Select Reason") %></option>
 							<% (options.reasonCodes || []).forEach((reason) => { %>
-								<option value="<%= reason.id %>" data-requires-notes="<%= reason.requires_notes ? '1' : '0' %>" <%= Number(selectedVoucher?.reason_code_id || 0) === Number(reason.id) ? 'selected' : '' %>><%= reason.name %></option>
+								<option value="<%= reason.id %>" data-requires-notes="<%= reason.requires_notes ? '1' : '0' %>" data-reason-value="<%= reason.code || '' %>" <%= Number(selectedVoucher?.reason_code_id || 0) === Number(reason.id) ? 'selected' : '' %>><%= reason.name %></option>
 							<% }) %>
 						</select>
 					</div>
-					<label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= toFriendlyLabel("remarks", "Remarks") %></label>
+					<label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= toFriendlyLabel("reason_notes", "Reason Notes") %></label>
 					<div class="lg:col-span-4">
-						<input type="text" name="remarks" maxlength="1000" value="<%= selectedVoucher?.remarks || '' %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" <%= canSaveVoucher ? '' : 'readonly' %>>
-					</div>
-				</div>
-
-				<div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-start">
-					<label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:pt-2"><%= toFriendlyLabel("reason_notes", "Reason Notes") %></label>
-					<div class="lg:col-span-10">
-						<textarea name="reason_notes" rows="2" maxlength="1000" class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm" data-reason-notes <%= canSaveVoucher ? '' : 'readonly' %>><%= selectedVoucher?.reason_notes || '' %></textarea>
+						<input type="text" name="reason_notes" maxlength="1000" value="<%= selectedVoucher?.reason_notes || '' %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-reason-notes <%= canSaveVoucher ? '' : 'readonly' %>>
 					</div>
 				</div>
 
@@ -191,8 +184,11 @@
 		const initialVoucher = <%- JSON.stringify(selectedVoucher || null) %>;
 		const basePath = <%- JSON.stringify(basePath || "") %>;
 		const canSave = <%- JSON.stringify(Boolean(canSaveVoucher)) %>;
+		const reasonRequiredMessage = <%- JSON.stringify(toFriendlyLabel("reason_required", "Reason is required.")) %>;
+		const reasonNotesRequiredMessage = <%- JSON.stringify(toFriendlyLabel("reason_notes_required", "Reason notes are required.")) %>;
 
 		const stockTypeValues = ["FG", "SFG", "RM"];
+		const PHYSICAL_COUNT_REASON_CODES = new Set(["PHYSICALCOUNT", "PHYSICALCOUNTCORRECTION"]);
 		const toNum = (value, fallback = 0) => {
 			const n = Number(value);
 			return Number.isFinite(n) ? n : fallback;
@@ -241,6 +237,7 @@
 			const normalized = String(value || "").trim().toUpperCase();
 			return stockTypeValues.includes(normalized) ? normalized : "FG";
 		};
+		const normalizeReasonCode = (value) => String(value || "").replace(/[^a-z0-9]+/gi, "").toUpperCase();
 
 		const stockTypeSelect = form.querySelector("[data-stock-type]");
 		const reasonSelect = form.querySelector("[data-reason-code]");
@@ -262,6 +259,12 @@
 		const rmSizePolicy = options.rawMaterialSizePolicyByItem || {};
 		const rmRatesByItem = options.rawMaterialRatesByItem || {};
 		const rmSnapshotByKey = options.rmSnapshotByKey || {};
+		const isPhysicalCountReasonActive = () => {
+			if (!reasonSelect) return false;
+			const selected = reasonSelect.options[reasonSelect.selectedIndex];
+			const code = selected ? selected.getAttribute("data-reason-value") : "";
+			return PHYSICAL_COUNT_REASON_CODES.has(normalizeReasonCode(code));
+		};
 
 		const rowTemplate = (stockType) => ({
 			sku_id: null,
@@ -274,6 +277,7 @@
 			qty_in: 0,
 			qty_out: 0,
 			physical_qty: 0,
+			counted_stock_qty: null,
 			difference_qty: 0,
 			rate: 0,
 			amount: 0,
@@ -282,8 +286,14 @@
 		let rowsState = [];
 		let unbindNavigator = null;
 		let pendingEnterFocus = null;
+		let totalSystemQtyInput = null;
+		let totalCountedQtyInput = null;
+		let totalQtyInInput = null;
+		let totalQtyOutInput = null;
 		let totalDiffInput = null;
 		let totalAmountInput = null;
+		let totalQtyByUnitRow = null;
+		let totalQtyByUnitWrap = null;
 
 		const currentStockType = () => normalizeStockType(stockTypeSelect?.value);
 
@@ -294,6 +304,12 @@
 			}
 			const sku = skuMap.get(Number(row.sku_id || 0));
 			return Array.isArray(sku?.unit_options) ? sku.unit_options : [];
+		};
+
+		const getRowUnitLabel = (row, stockType) => {
+			const unitOptions = getUomOptions(row, stockType);
+			const matched = unitOptions.find((entry) => Number(entry?.id || 0) === Number(row?.uom_id || 0));
+			return String(matched?.name || matched?.code || "").trim();
 		};
 
 		const defaultUomId = (row, stockType) => {
@@ -389,6 +405,7 @@
 		const applyDerivedRow = (row, stockType) => {
 			const next = { ...row };
 			if (!next.uom_id) next.uom_id = defaultUomId(next, stockType);
+			const usePhysicalCountField = isPhysicalCountReasonActive();
 
 			if (stockType === "RM") {
 				if (!next.item_id) {
@@ -413,25 +430,45 @@
 
 			const selectedUnit = getUomOptions(next, stockType).find((entry) => Number(entry.id || 0) === Number(next.uom_id || 0));
 			const snapshot = resolveSystemSnapshot(next, stockType, selectedUnit);
+			const factorToBase = Number(selectedUnit?.factor_to_base || 1) > 0 ? Number(selectedUnit?.factor_to_base || 1) : 1;
 			next.system_qty = qty3(snapshot.systemQty || 0);
-			// Difference is always net adjustment (in minus out); physical is derived only for display and legacy payload compatibility.
-			next.qty_in = qty3(next.qty_in || 0);
-			next.qty_out = qty3(next.qty_out || 0);
-			next.difference_qty = qty3(Number(next.qty_in) - Number(next.qty_out));
-			next.physical_qty = qty3(Number(next.system_qty) + Number(next.difference_qty));
+			// Difference is derived from either split quantities (in/out) or counted stock based on reason code.
+			if (usePhysicalCountField) {
+				const countedRaw = Number(next.counted_stock_qty);
+				const fallbackPhysical = Number(next.physical_qty);
+				const defaultCounted = Number(next.system_qty || 0);
+				const normalizedCounted = Number.isFinite(countedRaw)
+					? Math.max(countedRaw, 0)
+					: Number.isFinite(fallbackPhysical)
+						? Math.max(fallbackPhysical, 0)
+						: Math.max(defaultCounted, 0);
+				next.counted_stock_qty = qty3(normalizedCounted);
+				next.physical_qty = qty3(next.counted_stock_qty);
+				next.difference_qty = qty3(Number(next.physical_qty) - Number(next.system_qty));
+				next.qty_in = next.difference_qty > 0 ? qty3(next.difference_qty) : 0;
+				next.qty_out = next.difference_qty < 0 ? qty3(Math.abs(next.difference_qty)) : 0;
+			} else {
+				next.qty_in = qty3(next.qty_in || 0);
+				next.qty_out = qty3(next.qty_out || 0);
+				next.difference_qty = qty3(Number(next.qty_in) - Number(next.qty_out));
+				next.physical_qty = qty3(Number(next.system_qty) + Number(next.difference_qty));
+				next.counted_stock_qty = qty3(next.physical_qty || 0);
+			}
 
 			if (stockType === "RM") {
-				const factor = Number(selectedUnit?.factor_to_base || 1);
 				const rmRate = resolveRmRate(next);
-				next.rate = rate6(rmRate > 0 ? rmRate : Number(snapshot.systemWac || 0) * factor);
+				next.rate = rate6(rmRate > 0 ? rmRate : Number(snapshot.systemWac || 0) * factorToBase);
 			} else {
-				const factor = Number(selectedUnit?.factor_to_base || 1);
 				const sku = skuMap.get(Number(next.sku_id || 0));
-				next.rate = rate6(Number(sku?.default_rate || 0) > 0 ? Number(sku.default_rate || 0) : Number(snapshot.systemWac || 0) * factor);
+				// SKU rate is always displayed as pair-rate for consistency across unit selections.
+				next.rate = rate6(Number(sku?.default_rate || 0) > 0 ? Number(sku.default_rate || 0) : Number(snapshot.systemWac || 0));
 				next.row_status = String(snapshot.rowStatus || (isBaseUnitOption(selectedUnit) ? "LOOSE" : "PACKED")).toUpperCase();
 			}
 
-			next.amount = amount2(Number(next.difference_qty || 0) * Number(next.rate || 0));
+			const differenceBaseQty = stockType === "RM"
+				? Number(next.difference_qty || 0)
+				: Number(next.difference_qty || 0) * factorToBase;
+			next.amount = amount2(differenceBaseQty * Number(next.rate || 0));
 			return next;
 		};
 
@@ -451,11 +488,17 @@
 		};
 
 		const renderHead = (stockType) => {
+			const usePhysicalCountField = isPhysicalCountReasonActive();
 			const cols = stockType === "RM"
-				? ["Raw Material", "Color", "Size", "Unit", "System Qty", "Qty In", "Qty Out", "Difference Qty", "Rate", "Amount Diff", "Actions", "Sr #"]
-				: ["SKU", "Unit", "System Qty", "Qty In", "Qty Out", "Difference Qty", "Rate", "Amount Diff", "Actions", "Sr #"];
+				? usePhysicalCountField
+					? ["Raw Material", "Color", "Size", "Unit", "System Qty", "Counted Stock", "Difference Qty", "Rate", "Amount Diff", "Actions", "Sr #"]
+					: ["Raw Material", "Color", "Size", "Unit", "System Qty", "Qty In", "Qty Out", "Difference Qty", "Rate", "Amount Diff", "Actions", "Sr #"]
+				: usePhysicalCountField
+					? ["SKU", "Unit", "System Qty", "Counted Stock", "Difference Qty", "Pair Rate", "Amount Diff", "Actions", "Sr #"]
+					: ["SKU", "Unit", "System Qty", "Qty In", "Qty Out", "Difference Qty", "Pair Rate", "Amount Diff", "Actions", "Sr #"];
 			linesHeadRow.innerHTML = cols.map((label, idx) => {
-				const align = idx >= (stockType === "RM" ? 4 : 3) && idx <= (stockType === "RM" ? 9 : 7) ? "text-right" : idx >= cols.length - 2 ? "text-center" : "text-left";
+				const rightAligned = ["System Qty", "Qty In", "Qty Out", "Counted Stock", "Difference Qty", "Rate", "Pair Rate", "Amount Diff"].includes(label);
+				const align = rightAligned ? "text-right" : idx >= cols.length - 2 ? "text-center" : "text-left";
 				return `<th class="border-b border-slate-200 px-2 py-2 ${align}">${label}</th>`;
 			}).join("");
 			renderFooter(stockType);
@@ -463,39 +506,123 @@
 
 		const renderFooter = (stockType) => {
 			// Footer keeps adjustment totals visible while rows are edited.
-			const descriptorColspan = stockType === "RM" ? 7 : 5;
+			const usePhysicalCountField = isPhysicalCountReasonActive();
+			const descriptorColspan = stockType === "RM" ? 4 : 2;
 			const addButtonTitle = "Add";
-			linesFooter.innerHTML = `
-				<tr class="bg-slate-50">
-					<td colspan="${descriptorColspan}" class="border-t border-slate-200 px-2 py-2 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-700">Total</td>
-					<td class="border-t border-slate-200 px-2 py-1.5">
-						<input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-diff>
-					</td>
-					<td class="border-t border-slate-200 px-2 py-1.5"></td>
-					<td class="border-t border-slate-200 px-2 py-1.5">
-						<input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.00" data-total-amount>
-					</td>
-					<td class="border-t border-slate-200 px-2 py-1 text-center">
-						<button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white p-2 text-slate-700 disabled:opacity-40" data-add-row aria-label="${addButtonTitle}" title="${addButtonTitle}" ${canSave ? "" : "disabled"}>
-							<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
-						</button>
-					</td>
-					<td class="border-t border-slate-200 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Units</td>
-				</tr>
-			`;
+			if (usePhysicalCountField) {
+				linesFooter.innerHTML = `
+					<tr class="bg-slate-50">
+						<td colspan="${descriptorColspan}" class="border-t border-slate-200 px-2 py-2 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-700">Total</td>
+						<td class="border-t border-slate-200 px-2 py-1.5">
+							<input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-system-qty>
+						</td>
+						<td class="border-t border-slate-200 px-2 py-1.5">
+							<input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-counted-qty>
+						</td>
+						<td class="border-t border-slate-200 px-2 py-1.5">
+							<input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-diff>
+						</td>
+						<td class="border-t border-slate-200 px-2 py-1.5"></td>
+						<td class="border-t border-slate-200 px-2 py-1.5">
+							<input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.00" data-total-amount>
+						</td>
+						<td class="border-t border-slate-200 px-2 py-1 text-center">
+							<button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white p-2 text-slate-700 disabled:opacity-40" data-add-row aria-label="${addButtonTitle}" title="${addButtonTitle}" ${canSave ? "" : "disabled"}>
+								<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
+							</button>
+						</td>
+						<td class="border-t border-slate-200 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Units</td>
+					</tr>
+				`;
+			} else {
+				linesFooter.innerHTML = `
+					<tr class="bg-slate-50">
+						<td colspan="${descriptorColspan}" class="border-t border-slate-200 px-2 py-2 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-700">Total</td>
+						<td class="border-t border-slate-200 px-2 py-1.5">
+							<input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-system-qty>
+						</td>
+						<td class="border-t border-slate-200 px-2 py-1.5">
+							<input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-qty-in>
+						</td>
+						<td class="border-t border-slate-200 px-2 py-1.5">
+							<input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-qty-out>
+						</td>
+						<td class="border-t border-slate-200 px-2 py-1.5">
+							<input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-diff>
+						</td>
+						<td class="border-t border-slate-200 px-2 py-1.5"></td>
+						<td class="border-t border-slate-200 px-2 py-1.5">
+							<input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.00" data-total-amount>
+						</td>
+						<td class="border-t border-slate-200 px-2 py-1 text-center">
+							<button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white p-2 text-slate-700 disabled:opacity-40" data-add-row aria-label="${addButtonTitle}" title="${addButtonTitle}" ${canSave ? "" : "disabled"}>
+								<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
+							</button>
+						</td>
+						<td class="border-t border-slate-200 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Units</td>
+					</tr>
+					<tr class="bg-slate-50 hidden" data-total-qty-by-unit-row>
+						<td colspan="${stockType === "RM" ? 12 : 10}" class="border-t border-slate-200 px-2 py-2">
+							<div class="flex flex-wrap items-center gap-2" data-total-qty-by-unit></div>
+						</td>
+					</tr>
+				`;
+			}
+			totalSystemQtyInput = linesFooter.querySelector("[data-total-system-qty]");
+			totalCountedQtyInput = linesFooter.querySelector("[data-total-counted-qty]");
+			totalQtyInInput = linesFooter.querySelector("[data-total-qty-in]");
+			totalQtyOutInput = linesFooter.querySelector("[data-total-qty-out]");
 			totalDiffInput = linesFooter.querySelector("[data-total-diff]");
 			totalAmountInput = linesFooter.querySelector("[data-total-amount]");
+			totalQtyByUnitRow = linesFooter.querySelector("[data-total-qty-by-unit-row]");
+			totalQtyByUnitWrap = linesFooter.querySelector("[data-total-qty-by-unit]");
 		};
 
 		const syncTotals = () => {
+			const totalSystemQty = rowsState.reduce((sum, row) => sum + Number(row.system_qty || 0), 0);
+			const totalCountedQty = rowsState.reduce((sum, row) => sum + Number(row.counted_stock_qty || 0), 0);
+			const totalQtyIn = rowsState.reduce((sum, row) => sum + Number(row.qty_in || 0), 0);
+			const totalQtyOut = rowsState.reduce((sum, row) => sum + Number(row.qty_out || 0), 0);
 			const totalDiff = rowsState.reduce((sum, row) => sum + Number(row.difference_qty || 0), 0);
 			const totalAmount = rowsState.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+			if (totalSystemQtyInput) totalSystemQtyInput.value = qty3(totalSystemQty).toFixed(3);
+			if (totalCountedQtyInput) totalCountedQtyInput.value = qty3(totalCountedQty).toFixed(3);
+			if (totalQtyInInput) totalQtyInInput.value = qty3(totalQtyIn).toFixed(3);
+			if (totalQtyOutInput) totalQtyOutInput.value = qty3(totalQtyOut).toFixed(3);
 			if (totalDiffInput) totalDiffInput.value = qty3(totalDiff).toFixed(3);
 			if (totalAmountInput) totalAmountInput.value = amount2(totalAmount).toFixed(2);
+			if (totalQtyByUnitWrap) {
+				const stockType = currentStockType();
+				const inByUnit = new Map();
+				const outByUnit = new Map();
+				rowsState.forEach((row) => {
+					const unitLabel = getRowUnitLabel(row, stockType);
+					if (!unitLabel) return;
+					const inQty = Number(row.qty_in || 0);
+					const outQty = Number(row.qty_out || 0);
+					if (inQty > 0) inByUnit.set(unitLabel, Number(inByUnit.get(unitLabel) || 0) + inQty);
+					if (outQty > 0) outByUnit.set(unitLabel, Number(outByUnit.get(unitLabel) || 0) + outQty);
+				});
+				const chips = [];
+				inByUnit.forEach((value, label) => {
+					chips.push(`<span class="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-700">IN ${label}: ${qty3(value).toFixed(3)}</span>`);
+				});
+				outByUnit.forEach((value, label) => {
+					chips.push(`<span class="rounded-md border border-slate-200 bg-white px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-rose-700">OUT ${label}: ${qty3(value).toFixed(3)}</span>`);
+				});
+				if (chips.length) {
+					totalQtyByUnitWrap.innerHTML = chips.join("");
+					if (totalQtyByUnitRow) totalQtyByUnitRow.classList.remove("hidden");
+				} else {
+					totalQtyByUnitWrap.innerHTML = "";
+					if (totalQtyByUnitRow) totalQtyByUnitRow.classList.add("hidden");
+				}
+			}
 		};
 
 		const renderRows = () => {
 			const stockType = currentStockType();
+			const usePhysicalCountField = isPhysicalCountReasonActive();
 			if (!rowsState.length) rowsState = [rowTemplate(stockType)];
 
 			linesBody.innerHTML = rowsState.map((row, index) => {
@@ -515,18 +642,24 @@
 				if (stockType === "RM") {
 					const colorState = getRmColorState(normalized.item_id);
 					const sizeState = getRmSizeState(normalized.item_id);
+					const diffCellMarkup = `<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly data-display-field="difference_qty" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold" value="${normalized.difference_qty.toFixed(3)}"></td>`;
+					const qtyCellMarkup = usePhysicalCountField
+						? `<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="counted_stock_qty" data-row-field="counted_stock_qty" data-line-index="${index}" value="${qty3(normalized.counted_stock_qty).toFixed(3)}" ${canSave ? "" : "readonly"}></td>`
+						: `
+							<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty_in" data-row-field="qty_in" data-line-index="${index}" value="${normalized.qty_in}" ${canSave ? "" : "readonly"}></td>
+							<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty_out" data-row-field="qty_out" data-line-index="${index}" value="${normalized.qty_out}" ${canSave ? "" : "readonly"}></td>
+						`;
 					return `
 						<tr data-line-index="${index}" data-row-index="${index}">
 							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="item_id" data-row-field="item_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${optionMarkup(rmItems.map((entry) => ({ id: entry.id, label: entry.name })), normalized.item_id, "Select Raw Material")}</select></td>
 							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="color_id" data-row-field="color_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${(canSave && !colorState.disabled) ? "" : "disabled"}>${optionMarkup(colorState.entries, normalized.color_id, colorState.allowNone ? "None" : "")}</select></td>
 							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="size_id" data-row-field="size_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${(canSave && !sizeState.disabled) ? "" : "disabled"}>${optionMarkup(sizeState.entries, normalized.size_id, sizeState.allowNone ? "None" : "")}</select></td>
 							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="uom_id" data-row-field="uom_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${optionMarkup(getUomOptions(normalized, stockType), normalized.uom_id, "Select Unit")}</select></td>
-							<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" value="${normalized.system_qty.toFixed(3)}"></td>
-							<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty_in" data-row-field="qty_in" data-line-index="${index}" value="${normalized.qty_in}" ${canSave ? "" : "readonly"}></td>
-							<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty_out" data-row-field="qty_out" data-line-index="${index}" value="${normalized.qty_out}" ${canSave ? "" : "readonly"}></td>
-							<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold" value="${normalized.difference_qty.toFixed(3)}"></td>
-							<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" value="${rate6(normalized.rate).toFixed(4)}"></td>
-							<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold" value="${amount2(normalized.amount).toFixed(2)}"></td>
+							<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly data-display-field="system_qty" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" value="${normalized.system_qty.toFixed(3)}"></td>
+							${qtyCellMarkup}
+							${diffCellMarkup}
+							<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly data-display-field="rate" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" value="${rate6(normalized.rate).toFixed(4)}"></td>
+							<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly data-display-field="amount_diff" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold" value="${amount2(normalized.amount).toFixed(2)}"></td>
 							${actionCell}
 							${rowNoCell}
 						</tr>
@@ -534,16 +667,22 @@
 				}
 
 				const skuRows = skuList.filter((entry) => String(entry.item_type || "").toUpperCase() === stockType);
+				const diffCellMarkup = `<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly data-display-field="difference_qty" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold" value="${normalized.difference_qty.toFixed(3)}"></td>`;
+				const qtyCellMarkup = usePhysicalCountField
+					? `<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="counted_stock_qty" data-row-field="counted_stock_qty" data-line-index="${index}" value="${qty3(normalized.counted_stock_qty).toFixed(3)}" ${canSave ? "" : "readonly"}></td>`
+					: `
+						<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty_in" data-row-field="qty_in" data-line-index="${index}" value="${normalized.qty_in}" ${canSave ? "" : "readonly"}></td>
+						<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty_out" data-row-field="qty_out" data-line-index="${index}" value="${normalized.qty_out}" ${canSave ? "" : "readonly"}></td>
+					`;
 				return `
 					<tr data-line-index="${index}" data-row-index="${index}">
 						<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="sku_id" data-row-field="sku_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${optionMarkup(skuRows.map((entry) => ({ id: entry.id, label: entry.sku_name })), normalized.sku_id, "Select SKU")}</select></td>
 						<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="uom_id" data-row-field="uom_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${optionMarkup(getUomOptions(normalized, stockType), normalized.uom_id, "Select Unit")}</select></td>
-						<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" value="${normalized.system_qty.toFixed(3)}"></td>
-						<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty_in" data-row-field="qty_in" data-line-index="${index}" value="${normalized.qty_in}" ${canSave ? "" : "readonly"}></td>
-						<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty_out" data-row-field="qty_out" data-line-index="${index}" value="${normalized.qty_out}" ${canSave ? "" : "readonly"}></td>
-						<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold" value="${normalized.difference_qty.toFixed(3)}"></td>
-						<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" value="${rate6(normalized.rate).toFixed(4)}"></td>
-						<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold" value="${amount2(normalized.amount).toFixed(2)}"></td>
+						<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly data-display-field="system_qty" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" value="${normalized.system_qty.toFixed(3)}"></td>
+						${qtyCellMarkup}
+						${diffCellMarkup}
+						<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly data-display-field="pair_rate" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" value="${rate6(normalized.rate).toFixed(4)}"></td>
+						<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly data-display-field="amount_diff" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold" value="${amount2(normalized.amount).toFixed(2)}"></td>
 						${actionCell}
 						${rowNoCell}
 					</tr>
@@ -558,8 +697,12 @@
 		};
 
 		const fieldOrderForType = (stockType) => {
-			if (stockType === "RM") return ["item_id", "color_id", "size_id", "uom_id", "qty_in", "qty_out"];
-			return ["sku_id", "uom_id", "qty_in", "qty_out"];
+			const baseOrder = stockType === "RM"
+				? ["item_id", "color_id", "size_id", "uom_id"]
+				: ["sku_id", "uom_id"];
+			return isPhysicalCountReasonActive()
+				? [...baseOrder, "counted_stock_qty"]
+				: [...baseOrder, "qty_in", "qty_out"];
 		};
 
 		const bindNavigator = () => {
@@ -631,6 +774,32 @@
 			}, 0);
 		};
 
+		const syncRenderedRowDerivedFields = (lineIndex, rowData) => {
+			const rowElement = linesBody.querySelector(`tr[data-line-index="${lineIndex}"]`);
+			if (!(rowElement instanceof HTMLElement) || !rowData) return;
+			const setValue = (selector, value, formatter = (v) => String(v ?? "")) => {
+				const input = rowElement.querySelector(selector);
+				if (input instanceof HTMLInputElement) input.value = formatter(value);
+			};
+			setValue('input[data-display-field="system_qty"]', rowData.system_qty, (v) => qty3(v).toFixed(3));
+			setValue('input[data-display-field="difference_qty"]', rowData.difference_qty, (v) => qty3(v).toFixed(3));
+			setValue('input[data-display-field="pair_rate"]', rowData.rate, (v) => rate6(v).toFixed(4));
+			setValue('input[data-display-field="rate"]', rowData.rate, (v) => rate6(v).toFixed(4));
+			setValue('input[data-display-field="amount_diff"]', rowData.amount, (v) => amount2(v).toFixed(2));
+		};
+
+		const commitNumericFieldImmediately = ({ lineIndex, fieldKey, rawValue }) => {
+			const row = rowsState[lineIndex];
+			if (!row) return;
+			if (fieldKey === "qty_in") row.qty_in = qty3(rawValue);
+			if (fieldKey === "qty_out") row.qty_out = qty3(rawValue);
+			if (fieldKey === "counted_stock_qty") row.counted_stock_qty = qty3(rawValue);
+			const normalized = applyDerivedRow(row, currentStockType());
+			rowsState[lineIndex] = normalized;
+			syncRenderedRowDerivedFields(lineIndex, normalized);
+			syncTotals();
+		};
+
 		linesBody.addEventListener("keydown", (event) => {
 			if (event.key !== "Enter") return;
 			const target = event.target;
@@ -638,6 +807,9 @@
 			const lineIndex = Number(target.getAttribute("data-line-index") || -1);
 			const fieldKey = String(target.getAttribute("data-row-field") || "").trim();
 			if (lineIndex < 0 || !fieldKey) return;
+			if (fieldKey === "qty_in" || fieldKey === "qty_out" || fieldKey === "counted_stock_qty") {
+				commitNumericFieldImmediately({ lineIndex, fieldKey, rawValue: target.value });
+			}
 			const order = fieldOrderForType(currentStockType());
 			const currentPos = order.indexOf(fieldKey);
 			if (currentPos < 0) return;
@@ -665,6 +837,9 @@
 			}
 			if (field === "qty_out") {
 				row.qty_out = qty3(value);
+			}
+			if (field === "counted_stock_qty") {
+				row.counted_stock_qty = qty3(value);
 			}
 
 			if (field === "sku_id") {
@@ -720,13 +895,15 @@
 		}
 
 		if (reasonSelect && reasonNotes) {
-			const syncReasonNoteRequirement = () => {
+			const syncReasonSettings = () => {
 				const selected = reasonSelect.options[reasonSelect.selectedIndex];
 				const required = selected && selected.getAttribute("data-requires-notes") === "1";
 				reasonNotes.required = Boolean(required);
+				renderHead(currentStockType());
+				renderRows();
 			};
-			reasonSelect.addEventListener("change", syncReasonNoteRequirement);
-			syncReasonNoteRequirement();
+			reasonSelect.addEventListener("change", syncReasonSettings);
+			syncReasonSettings();
 		}
 
 		if (loadVoucherButton) {
@@ -760,6 +937,7 @@
 						qty_in: qty3(line?.qty_in),
 						qty_out: qty3(line?.qty_out),
 						physical_qty: qty3(line?.physical_qty),
+						counted_stock_qty: qty3(line?.counted_stock_qty ?? line?.physical_qty),
 						difference_qty: qty3(line?.difference_qty),
 						rate: rate6(line?.rate),
 						amount: amount2(line?.amount),
@@ -770,25 +948,56 @@
 
 		form.addEventListener("submit", (event) => {
 			// Send only editable inputs; backend recomputes system snapshots and differences for integrity.
+			const selectedReasonId = toInt(reasonSelect?.value);
+			if (!selectedReasonId) {
+				event.preventDefault();
+				window.alert(reasonRequiredMessage);
+				reasonSelect?.focus();
+				return;
+			}
+			if (reasonNotes?.required && !String(reasonNotes.value || "").trim()) {
+				event.preventDefault();
+				window.alert(reasonNotesRequiredMessage);
+				reasonNotes.focus();
+				return;
+			}
+
 			const stockType = currentStockType();
+			const usePhysicalCountField = isPhysicalCountReasonActive();
 			const payloadLines = rowsState
 				.map((row) => applyDerivedRow(row, stockType))
 				.filter((row) => stockType === "RM" ? toInt(row.item_id) : toInt(row.sku_id))
 				.map((row) => stockType === "RM"
-					? {
-							item_id: toInt(row.item_id),
-							color_id: toInt(row.color_id),
-							size_id: toInt(row.size_id),
-							uom_id: toInt(row.uom_id),
-							qty_in: qty3(row.qty_in),
-							qty_out: qty3(row.qty_out),
-						}
-					: {
-							sku_id: toInt(row.sku_id),
-							uom_id: toInt(row.uom_id),
-							qty_in: qty3(row.qty_in),
-							qty_out: qty3(row.qty_out),
-						});
+					? (usePhysicalCountField
+						? {
+								item_id: toInt(row.item_id),
+								color_id: toInt(row.color_id),
+								size_id: toInt(row.size_id),
+								uom_id: toInt(row.uom_id),
+								counted_stock_qty: qty3(row.physical_qty),
+								physical_qty: qty3(row.physical_qty),
+							}
+						: {
+								item_id: toInt(row.item_id),
+								color_id: toInt(row.color_id),
+								size_id: toInt(row.size_id),
+								uom_id: toInt(row.uom_id),
+								qty_in: qty3(row.qty_in),
+								qty_out: qty3(row.qty_out),
+							})
+					: (usePhysicalCountField
+						? {
+								sku_id: toInt(row.sku_id),
+								uom_id: toInt(row.uom_id),
+								counted_stock_qty: qty3(row.physical_qty),
+								physical_qty: qty3(row.physical_qty),
+							}
+						: {
+								sku_id: toInt(row.sku_id),
+								uom_id: toInt(row.uom_id),
+								qty_in: qty3(row.qty_in),
+								qty_out: qty3(row.qty_out),
+							}));
 
 			if (!payloadLines.length) {
 				event.preventDefault();

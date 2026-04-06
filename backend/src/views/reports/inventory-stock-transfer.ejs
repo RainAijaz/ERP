@@ -1,0 +1,943 @@
+<%
+  const tt = (key, fallback) => {
+    const value = typeof t === "function" ? t(key) : "";
+    return value && value !== key ? value : fallback;
+  };
+
+  const allMultiOptionValue = "__ALL__";
+  const reportLoaded = Boolean(filters?.reportLoaded);
+  const mode = String(filters?.mode || "OUT").toUpperCase() === "IN" ? "IN" : "OUT";
+  const reportType =
+    String(filters?.reportType || "details").toLowerCase() === "summary"
+      ? "summary"
+      : "details";
+  const orderBy = ["BRANCH", "VOUCHER", "SKU"].includes(
+    String(filters?.orderBy || "SKU").toUpperCase(),
+  )
+    ? String(filters?.orderBy || "SKU").toUpperCase()
+    : "SKU";
+  const stockType = ["FG", "SFG", "RM"].includes(
+    String(filters?.stockType || "FG").toUpperCase(),
+  )
+    ? String(filters?.stockType || "FG").toUpperCase()
+    : "FG";
+
+  const fromDate = String(filters?.from || "");
+  const toDate = String(filters?.to || "");
+
+  const selectedSourceBranchIds = Array.isArray(filters?.sourceBranchIds)
+    ? filters.sourceBranchIds
+    : [];
+  const selectedDestinationBranchIds = Array.isArray(filters?.destinationBranchIds)
+    ? filters.destinationBranchIds
+    : [];
+  const selectedGroupIds = Array.isArray(filters?.productGroupIds)
+    ? filters.productGroupIds
+    : [];
+  const selectedSubgroupIds = Array.isArray(filters?.productSubgroupIds)
+    ? filters.productSubgroupIds
+    : [];
+  const selectedArticleIds = Array.isArray(filters?.articleIds) ? filters.articleIds : [];
+  const selectedStockItemIds = Array.isArray(filters?.stockItemIds)
+    ? filters.stockItemIds
+    : [];
+  const selectedTransferReasons = Array.isArray(filters?.transferReasons)
+    ? filters.transferReasons
+    : [];
+
+  const sourceAllSelected = !selectedSourceBranchIds.length;
+  const destinationAllSelected = !selectedDestinationBranchIds.length;
+  const groupAllSelected = !selectedGroupIds.length;
+  const subgroupAllSelected = !selectedSubgroupIds.length;
+  const articleAllSelected = !selectedArticleIds.length;
+  const stockItemAllSelected = !selectedStockItemIds.length;
+  const reasonAllSelected = !selectedTransferReasons.length;
+
+  const stockStatus =
+    stockType === "FG"
+      ? String(filters?.stockStatus || "ALL").toUpperCase()
+      : "ALL";
+  const transferStatus = String(filters?.transferStatus || "APPROVED").toUpperCase();
+  const rows = Array.isArray(reportData?.rows) ? reportData.rows : [];
+  const summaryRows = Array.isArray(reportData?.summaryRows) ? reportData.summaryRows : [];
+  const totals = reportData?.totals || {};
+  const hasData = reportType === "summary" ? summaryRows.length > 0 : rows.length > 0;
+  const modeIsOut = mode === "OUT";
+  const summaryExportTitle = `${tt("stock_transfer_report", "Stock Transfer Report")} (${tt("summary", "Summary")})`;
+  const detailExportTitle = `${tt("stock_transfer_report", "Stock Transfer Report")} (${modeIsOut ? tt("transfer_out", "Transfer Out") : tt("transfer_in", "Transfer In")})`;
+
+  const includeSourceBranchColumn = Boolean(reportData?.includeSourceBranchColumn);
+  const includeDestinationBranchColumn = Boolean(reportData?.includeDestinationBranchColumn);
+  const stockItemLabel = stockType === "RM" ? tt("raw_material", "Raw Material") : tt("sku", "SKU");
+
+  const detailColumns = (() => {
+    if (modeIsOut) {
+      if (orderBy === "VOUCHER") {
+        return ["movementDate", "itemLabel", "unitLabel", "qtyOut", "rate", "amount"];
+      }
+      if (orderBy === "BRANCH") {
+        return [
+          "voucherNo",
+          "movementDate",
+          "refBillNo",
+          "itemLabel",
+          "unitLabel",
+          "qtyOut",
+          "rate",
+          "amount",
+        ];
+      }
+
+      const columns = ["voucherNo", "movementDate", "refBillNo"];
+      if (includeSourceBranchColumn) columns.push("sourceBranch");
+      if (includeDestinationBranchColumn) columns.push("destinationBranch");
+      columns.push("unitLabel", "qtyOut", "rate", "amount");
+      return columns;
+    }
+
+    if (orderBy === "VOUCHER") {
+      return [
+        "itemLabel",
+        "unitLabel",
+        "expectedQty",
+        "receivedQty",
+        "rejectedQty",
+        "varianceQty",
+        "rate",
+        "amount",
+      ];
+    }
+    if (orderBy === "BRANCH") {
+      return [
+        "voucherNo",
+        "movementDate",
+        "billNo",
+        "itemLabel",
+        "unitLabel",
+        "expectedQty",
+        "receivedQty",
+        "rejectedQty",
+        "varianceQty",
+        "rate",
+        "amount",
+      ];
+    }
+
+    const columns = ["voucherNo", "movementDate", "billNo"];
+    if (includeSourceBranchColumn) columns.push("sourceBranch");
+    if (includeDestinationBranchColumn) columns.push("destinationBranch");
+    columns.push(
+      "unitLabel",
+      "expectedQty",
+      "receivedQty",
+      "rejectedQty",
+      "varianceQty",
+      "rate",
+      "amount",
+    );
+    return columns;
+  })();
+
+  const detailColumnLabels = {
+    sourceBranch: tt("source_branch", "Source Branch"),
+    destinationBranch: tt("destination_branch", "Destination Branch"),
+    voucherNo: tt("voucher_no", "Voucher No"),
+    movementDate: modeIsOut ? tt("dispatch_date", "Dispatch Date") : tt("received_date", "Received Date"),
+    refBillNo: tt("ref_bill_no", "Ref/Bill No"),
+    billNo: tt("bill_book_no", "Bill No"),
+    itemLabel: stockItemLabel,
+    unitLabel: tt("unit", "Unit"),
+    qtyOut: tt("qty_out", "Qty Out"),
+    expectedQty: tt("expected_qty", "Expected Qty"),
+    receivedQty: tt("received_qty", "Received Qty"),
+    rejectedQty: tt("rejected_qty", "Rejected Qty"),
+    varianceQty: tt("variance_qty", "Variance Qty"),
+    rate: tt("rate", "Rate"),
+    amount: tt("amount", "Amount"),
+  };
+
+  const shouldSplitTotalsByUnit = stockType === "FG" || stockType === "SFG";
+  const toUnitTotalEntries = (unitMap) => {
+    if (!shouldSplitTotalsByUnit || !(unitMap instanceof Map)) return [];
+    return [...unitMap.entries()]
+      .filter((entry) => Math.abs(Number(entry?.[1] || 0)) > 0.0005)
+      .sort((left, right) => String(left?.[0] || "").localeCompare(String(right?.[0] || "")));
+  };
+
+  const buildDetailGroups = () => {
+    const grouped = new Map();
+
+    (rows || []).forEach((row) => {
+      const sourceName = String(row?.sourceBranchName || "-").trim() || "-";
+      const destinationName = String(row?.destinationBranchName || "-").trim() || "-";
+      const voucherNo = Number(row?.voucherNo || 0) || null;
+      const itemLabel = String(row?.itemLabel || "-").trim() || "-";
+
+      const groupKey =
+        orderBy === "BRANCH"
+          ? `BRANCH:${sourceName}=>${destinationName}`
+          : orderBy === "VOUCHER"
+            ? `VOUCHER:${voucherNo || "-"}`
+            : `SKU:${itemLabel}`;
+
+      if (!grouped.has(groupKey)) {
+        grouped.set(groupKey, {
+          key: groupKey,
+          label:
+            orderBy === "BRANCH"
+              ? `${sourceName} -> ${destinationName}`
+              : orderBy === "VOUCHER"
+                ? String(voucherNo || "-")
+                : itemLabel,
+          sourceBranchName: sourceName,
+          destinationBranchName: destinationName,
+          voucherNo,
+          movementDate: String(row?.movementDate || ""),
+          refBillNo: String(row?.refBillNo || row?.billNo || "-").trim() || "-",
+          billNo: String(row?.billNo || row?.refBillNo || "-").trim() || "-",
+          itemLabel,
+          voucherSet: new Set(),
+          rows: [],
+          totals: {
+            qtyOut: 0,
+            expectedQty: 0,
+            receivedQty: 0,
+            rejectedQty: 0,
+            varianceQty: 0,
+            amount: 0,
+          },
+          unitTotals: {
+            qtyOut: new Map(),
+            expectedQty: new Map(),
+            receivedQty: new Map(),
+            rejectedQty: new Map(),
+            varianceQty: new Map(),
+          },
+        });
+      }
+
+      const group = grouped.get(groupKey);
+      group.rows.push(row);
+      group.voucherSet.add(String(voucherNo || "-"));
+
+      group.totals.qtyOut = Number(group.totals.qtyOut || 0) + Number(row?.qtyOut || 0);
+      group.totals.expectedQty = Number(group.totals.expectedQty || 0) + Number(row?.expectedQty || 0);
+      group.totals.receivedQty = Number(group.totals.receivedQty || 0) + Number(row?.receivedQty || 0);
+      group.totals.rejectedQty = Number(group.totals.rejectedQty || 0) + Number(row?.rejectedQty || 0);
+      group.totals.varianceQty = Number(group.totals.varianceQty || 0) + Number(row?.varianceQty || 0);
+      group.totals.amount = Number(group.totals.amount || 0) + Number(row?.amount || 0);
+
+      if (shouldSplitTotalsByUnit) {
+        const unitLabel = String(row?.unitLabel || "-").trim() || "-";
+        const accumulateUnitTotal = (field, value) => {
+          if (Math.abs(Number(value || 0)) <= 0.0005) return;
+          const map = group.unitTotals[field];
+          if (!(map instanceof Map)) return;
+          map.set(unitLabel, Number(map.get(unitLabel) || 0) + Number(value || 0));
+        };
+        accumulateUnitTotal("qtyOut", row?.qtyOut);
+        accumulateUnitTotal("expectedQty", row?.expectedQty);
+        accumulateUnitTotal("receivedQty", row?.receivedQty);
+        accumulateUnitTotal("rejectedQty", row?.rejectedQty);
+        accumulateUnitTotal("varianceQty", row?.varianceQty);
+      }
+    });
+
+    return [...grouped.values()].map((group) => ({
+      ...group,
+      voucherCount: group.voucherSet.size,
+    }));
+  };
+
+  const detailGroups = buildDetailGroups();
+  const firstMetricColumn = modeIsOut ? "qtyOut" : "expectedQty";
+  const detailTotalLabelColspan = Math.max(1, detailColumns.indexOf(firstMetricColumn));
+
+  const summaryGroupLabel =
+    orderBy === "BRANCH"
+      ? tt("branch", "Branch")
+      : orderBy === "VOUCHER"
+        ? tt("voucher_no", "Voucher No")
+        : stockItemLabel;
+
+  const formatQty = (value) => formatNumberDisplay(value, { decimals: 3, fallback: "0" });
+  const formatAmount = (value) => formatNumberDisplay(value, { decimals: 2, fallback: "0.00" });
+  const transferStatusLabel = (value) => {
+    const normalized = String(value || "").trim().toUpperCase();
+    if (normalized === "PENDING") return tt("pending", "Pending");
+    if (normalized === "PARTIALLY_APPROVED") return tt("partially_approved", "Partially Approved");
+    if (normalized === "APPROVED") return tt("approved", "Approved");
+    if (normalized === "MIXED") return tt("mixed", "Mixed");
+    return normalized || "-";
+  };
+
+  const productGroupsByType = options?.productGroupsByType || {};
+  const productSubgroupsByType = options?.productSubgroupsByType || {};
+  const articlesByType = options?.articlesByType || {};
+  const stockItemsByType = options?.stockItemsByType || {};
+  const weekdayShortLabels = [
+    t("weekday_sun_short"),
+    t("weekday_mon_short"),
+    t("weekday_tue_short"),
+    t("weekday_wed_short"),
+    t("weekday_thu_short"),
+    t("weekday_fri_short"),
+    t("weekday_sat_short"),
+  ];
+
+  const transferReasonLabel = (option) => {
+    if (option?.labelKey) {
+      const translated = t(option.labelKey);
+      if (translated && translated !== option.labelKey) return translated;
+    }
+    return String(option?.label || option?.value || "-");
+  };
+%>
+
+<div class="mx-auto w-full max-w-none space-y-4 px-2" data-report-print-area>
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <div class="flex items-center gap-2">
+      <h1 class="text-xl font-display font-semibold tracking-tight text-ink sm:text-2xl"><%= tt("stock_transfer_report", "Stock Transfer Report") %></h1>
+    </div>
+
+    <% if (filters?.invalidFilterInput) { %>
+      <div class="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800"><%= tt("date_filters_auto_corrected", "Some date filters were invalid and have been reset.") %></div>
+    <% } %>
+
+    <form method="post" action="<%= reportPath %>" class="mt-3 max-w-6xl rounded-xl border border-slate-200 bg-slate-50/30 p-3 sm:p-4" data-stock-transfer-filter-form>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="load_report" value="1">
+
+      <div class="space-y-3">
+        <div class="flex justify-end">
+          <button
+            type="button"
+            class="relative inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 transition hover:border-slate-400 hover:bg-slate-50"
+            data-advanced-filter-toggle
+            aria-expanded="false"
+            aria-label="<%= tt('advanced_filters', 'Advanced Filters') %>"
+            title="<%= tt('advanced_filters', 'Advanced Filters') %>"
+          >
+            <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+              <path d="M3 5h14M6 10h8M8 15h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("date_range", "Date Range") %></label>
+          <div class="sm:col-span-9">
+            <div class="relative" data-date-range-wrap>
+              <input type="text" readonly value="<%= `${fromDate} - ${toDate}` %>" data-date-range-input class="h-10 w-full cursor-pointer rounded-lg border border-slate-300 bg-white px-3 pr-10 text-sm">
+              <button type="button" class="absolute inset-y-0 right-2 inline-flex items-center text-slate-500 hover:text-slate-700" data-date-range-toggle aria-label="<%= t('open_date_range_picker') %>">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+              </button>
+              <div class="absolute left-0 z-50 mt-2 hidden max-h-[62vh] overflow-auto rounded-xl border border-slate-200 bg-white p-2.5 shadow-lg" style="width:min(700px,calc(100vw - 1rem));" data-date-range-panel>
+                <div class="grid grid-cols-1 gap-2 lg:grid-cols-[156px_1fr]">
+                  <div class="space-y-1.5">
+                    <div><div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('from_date') %></div><div class="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700" data-date-range-from-display>-</div></div>
+                    <div><div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('to_date') %></div><div class="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700" data-date-range-to-display>-</div></div>
+                  </div>
+                  <div>
+                    <div class="mb-1.5 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600" data-date-range-caption><%= t('select_date_range') %></div>
+                    <div class="grid grid-cols-1 gap-3 xl:grid-cols-[1fr_auto_1fr]">
+                      <div class="min-w-52.5 rounded-lg border border-slate-200 bg-slate-50/40 p-2">
+                        <div class="mb-1 flex items-center justify-between gap-2"><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-prev>&larr;</button><div class="text-center text-xs font-semibold text-slate-700" data-date-range-month-1-label></div><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-next>&rarr;</button></div>
+                        <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-500"><% weekdayShortLabels.forEach((weekdayLabel) => { %><span><%= weekdayLabel %></span><% }) %></div>
+                        <div class="mt-1 grid grid-cols-7 gap-1" data-date-range-month-1-grid></div>
+                      </div>
+                      <div class="hidden xl:block w-px bg-slate-200 self-stretch"></div>
+                      <div class="min-w-52.5 rounded-lg border border-slate-200 bg-slate-50/40 p-2">
+                        <div class="mb-1 flex items-center justify-between gap-2"><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-2-prev>&larr;</button><div class="text-center text-xs font-semibold text-slate-700" data-date-range-month-2-label></div><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-2-next>&rarr;</button></div>
+                        <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-500"><% weekdayShortLabels.forEach((weekdayLabel) => { %><span><%= weekdayLabel %></span><% }) %></div>
+                        <div class="mt-1 grid grid-cols-7 gap-1" data-date-range-month-2-grid></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="mt-1.5 flex items-center justify-end gap-2"><button type="button" class="rounded-lg border border-slate-300 bg-white px-3 py-1.25 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700" data-date-range-cancel><%= t('cancel') %></button><button type="button" class="rounded-lg bg-accent px-3 py-1.25 text-xs font-semibold uppercase tracking-[0.08em] text-white" data-date-range-apply><%= t('apply') %></button></div>
+              </div>
+            </div>
+            <input type="hidden" name="from_date" value="<%= fromDate %>" data-from-date-hidden>
+            <input type="hidden" name="to_date" value="<%= toDate %>" data-to-date-hidden>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("mode", "Mode") %></label>
+          <div class="sm:col-span-9">
+            <select name="mode" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+              <% (options?.transferModes || []).forEach((option) => { %>
+                <option value="<%= option.value %>" <%= String(option.value || '').toUpperCase() === mode ? 'selected' : '' %>><%= t(option.labelKey) %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("stock_type", "Stock Type") %></label>
+          <div class="sm:col-span-9">
+            <select name="stock_type" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-stock-type-select>
+              <% (options?.stockTypes || []).forEach((option) => { %>
+                <option value="<%= option.value %>" <%= String(option.value || '').toUpperCase() === stockType ? 'selected' : '' %>><%= t(option.labelKey) %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12 <%= stockType === 'FG' ? '' : 'hidden' %>" data-stock-status-row>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("stock_status", "Status") %></label>
+          <div class="sm:col-span-9">
+            <select name="stock_status" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-stock-status-select>
+              <% (options?.stockStatusOptions || []).forEach((option) => { %>
+                <option value="<%= option.value %>" <%= String(option.value || '').toUpperCase() === stockStatus ? 'selected' : '' %>><%= t(option.labelKey) %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("transfer_status", "Transfer Status") %></label>
+          <div class="sm:col-span-9">
+            <select name="transfer_status" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+              <% (options?.transferStatusOptions || []).forEach((option) => { %>
+                <option value="<%= option.value %>" <%= String(option.value || '').toUpperCase() === transferStatus ? 'selected' : '' %>><%= t(option.labelKey) %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("source_branch", "Source Branch") %></label>
+          <div class="sm:col-span-9">
+            <select name="source_branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+              <option value="<%= allMultiOptionValue %>" <%= sourceAllSelected ? 'selected' : '' %>><%= t("all") %></option>
+              <% (options?.sourceBranches || []).forEach((branch) => { %>
+                <option value="<%= branch.id %>" <%= selectedSourceBranchIds.includes(Number(branch.id)) ? 'selected' : '' %>><%= branch.name %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("destination_branch", "Destination Branch") %></label>
+          <div class="sm:col-span-9">
+            <select name="destination_branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+              <option value="<%= allMultiOptionValue %>" <%= destinationAllSelected ? 'selected' : '' %>><%= t("all") %></option>
+              <% (options?.destinationBranches || []).forEach((branch) => { %>
+                <option value="<%= branch.id %>" <%= selectedDestinationBranchIds.includes(Number(branch.id)) ? 'selected' : '' %>><%= branch.name %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("order_by", "Order By") %></label>
+          <div class="sm:col-span-9">
+            <div class="flex flex-wrap gap-2 rounded-xl bg-white/60 p-1">
+              <% (options?.orderByOptions || []).forEach((option) => { const selected = String(option.value || '').toUpperCase() === orderBy; %>
+                <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selected ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                  <input type="radio" name="order_by" value="<%= option.value %>" <%= selected ? 'checked' : '' %> class="h-4 w-4 text-accent focus:ring-accent">
+                  <span><%= t(option.labelKey) %></span>
+                </label>
+              <% }) %>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("report_type", "Report Type") %></label>
+          <div class="sm:col-span-9">
+            <div class="flex flex-wrap gap-2 rounded-xl bg-white/60 p-1">
+              <% (options?.reportTypeOptions || []).forEach((option) => { const selected = String(option.value || '').toLowerCase() === reportType; %>
+                <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selected ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                  <input type="radio" name="report_type" value="<%= option.value %>" <%= selected ? 'checked' : '' %> class="h-4 w-4 text-accent focus:ring-accent">
+                  <span><%= t(option.labelKey) %></span>
+                </label>
+              <% }) %>
+            </div>
+          </div>
+        </div>
+
+        <div class="hidden space-y-3 rounded-2xl border border-slate-200/80 bg-white/70 p-3" data-advanced-filter-panel>
+          <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+            <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("product_groups", "Product Groups") %></label>
+            <div class="sm:col-span-9">
+              <select name="product_group_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-group-select>
+                <option value="<%= allMultiOptionValue %>" <%= groupAllSelected ? 'selected' : '' %>><%= t("all") %></option>
+                <% (options?.productGroups || []).forEach((group) => { %>
+                  <option value="<%= group.id %>" <%= selectedGroupIds.includes(Number(group.id)) ? 'selected' : '' %>><%= group.name %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+            <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("product_subgroups", "Product Subgroups") %></label>
+            <div class="sm:col-span-9">
+              <select name="product_subgroup_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-subgroup-select>
+                <option value="<%= allMultiOptionValue %>" <%= subgroupAllSelected ? 'selected' : '' %>><%= t("all") %></option>
+                <% (options?.productSubgroups || []).forEach((subgroup) => { %>
+                  <option value="<%= subgroup.id %>" <%= selectedSubgroupIds.includes(Number(subgroup.id)) ? 'selected' : '' %>><%= subgroup.name %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12" data-article-filter-row>
+            <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("article", "Article") %></label>
+            <div class="sm:col-span-9">
+              <select name="article_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-article-select>
+                <option value="<%= allMultiOptionValue %>" <%= articleAllSelected ? 'selected' : '' %>><%= t("all") %></option>
+                <% (options?.articles || []).forEach((article) => { %>
+                  <option value="<%= article.id %>" <%= selectedArticleIds.includes(Number(article.id)) ? 'selected' : '' %>><%= article.name %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+            <label class="text-sm font-semibold text-slate-700 sm:col-span-3" data-stock-item-label><%= stockItemLabel %></label>
+            <div class="sm:col-span-9">
+              <select name="stock_item_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-stock-item-select>
+                <option value="<%= allMultiOptionValue %>" <%= stockItemAllSelected ? 'selected' : '' %>><%= t("all") %></option>
+                <% (options?.stockItems || []).forEach((entry) => { %>
+                  <option value="<%= entry.id %>" <%= selectedStockItemIds.includes(Number(entry.id)) ? 'selected' : '' %>><%= entry.label %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+            <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= tt("transfer_reason", "Transfer Reason") %></label>
+            <div class="sm:col-span-9">
+              <select name="transfer_reason" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+                <option value="<%= allMultiOptionValue %>" <%= reasonAllSelected ? 'selected' : '' %>><%= t("all") %></option>
+                <% (options?.transferReasonOptions || []).forEach((entry) => { %>
+                  <option value="<%= entry.value %>" <%= selectedTransferReasons.includes(String(entry.value || '').toUpperCase()) ? 'selected' : '' %>><%= transferReasonLabel(entry) %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-center gap-2 pt-1 sm:grid-cols-12">
+          <div class="sm:col-start-4 sm:col-span-9 flex items-center gap-2">
+            <button type="submit" class="inline-flex items-center rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= t("load") %></button>
+            <a href="<%= reportPath %>" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= t("cancel") %></a>
+          </div>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <div class="flex flex-col gap-3 border-b border-slate-200 px-2 py-3 sm:flex-row sm:items-center sm:justify-between" data-report-controls>
+      <div class="text-sm font-semibold text-slate-700"><%= tt("stock_transfer_report", "Stock Transfer Report") %></div>
+      <div class="flex items-center gap-2">
+        <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40" type="button" data-download-report data-download-filename="stock-transfer-report.csv" <%= reportLoaded && hasData ? "" : "disabled" %>><%= t("download") %></button>
+        <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800 disabled:cursor-not-allowed disabled:opacity-40" type="button" data-print-report <%= reportLoaded && hasData ? "" : "disabled" %>><%= t("print") %></button>
+        <%- include("../base/partials/table-controls", { t, showStatus: false }) %>
+      </div>
+    </div>
+
+    <% if (!reportLoaded) { %>
+      <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= t("load_report_to_view") %></div>
+    <% } else if (!hasData) { %>
+      <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= t("no_entries") %></div>
+    <% } else if (reportType === "summary") { %>
+      <div class="relative mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+        <table class="min-w-230 w-full text-sm tabular-nums" data-table data-report-table data-export-title="<%= summaryExportTitle %>">
+          <thead class="bg-slate-100 text-slate-700">
+            <tr>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= summaryGroupLabel %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("unit", "Unit") %></th>
+              <% if (modeIsOut) { %>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("qty_out", "Qty Out") %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("amount", "Amount") %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("voucher_count", "Voucher Count") %></th>
+              <% } else { %>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("expected_qty", "Expected Qty") %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("received_qty", "Received Qty") %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("rejected_qty", "Rejected Qty") %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("variance_qty", "Variance Qty") %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("amount", "Amount") %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("voucher_count", "Voucher Count") %></th>
+              <% } %>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100" data-table-body>
+            <% summaryRows.forEach((row) => { %>
+              <tr data-row>
+                <td class="px-3 py-2"><%= row.groupLabel || "-" %></td>
+                <td class="px-3 py-2"><%= row.unitLabel || "-" %></td>
+                <% if (modeIsOut) { %>
+                  <td class="px-3 py-2 text-right"><%= formatQty(row.qtyOut || 0) %></td>
+                  <td class="px-3 py-2 text-right"><%= formatAmount(row.amount || 0) %></td>
+                  <td class="px-3 py-2 text-right"><%= row.voucherCount || 0 %></td>
+                <% } else { %>
+                  <td class="px-3 py-2 text-right"><%= formatQty(row.expectedQty || 0) %></td>
+                  <td class="px-3 py-2 text-right"><%= formatQty(row.receivedQty || 0) %></td>
+                  <td class="px-3 py-2 text-right"><%= formatQty(row.rejectedQty || 0) %></td>
+                  <td class="px-3 py-2 text-right"><%= formatQty(row.varianceQty || 0) %></td>
+                  <td class="px-3 py-2 text-right"><%= formatAmount(row.amount || 0) %></td>
+                  <td class="px-3 py-2 text-right"><%= row.voucherCount || 0 %></td>
+                <% } %>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } else { %>
+      <div class="relative mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+        <table class="min-w-300 w-full text-sm tabular-nums" data-table data-report-table data-export-title="<%= detailExportTitle %>">
+          <thead class="bg-slate-100 text-slate-700">
+            <tr>
+              <% detailColumns.forEach((columnKey) => { %>
+                <th class="px-3 py-2 <%= ['qtyOut','expectedQty','receivedQty','rejectedQty','varianceQty','rate','amount'].includes(columnKey) ? 'text-right' : 'text-left' %> text-xs font-semibold uppercase tracking-[0.08em]"><%= detailColumnLabels[columnKey] || columnKey %></th>
+              <% }) %>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100" data-table-body>
+            <% detailGroups.forEach((group) => { %>
+              <tr class="bg-slate-700 text-white" data-row data-active="true" data-report-group-header data-report-group-key="<%= group.key %>">
+                <td colspan="<%= detailColumns.length %>" class="px-3 py-1.5">
+                  <div class="flex flex-wrap items-center gap-3">
+                    <% if (orderBy === 'VOUCHER') { %>
+                      <span class="rounded-md border border-white/40 bg-white/20 px-2.5 py-0.5 text-xs font-semibold text-white"><%= `VR. NO. ${group.voucherNo || '-'}` %></span>
+                      <span class="rounded-md border border-white/30 bg-white/10 px-2.5 py-0.5 text-xs font-semibold text-white"><%= `${modeIsOut ? tt('ref_bill_no', 'Ref/Bill No') : tt('bill_book_no', 'Bill No')}: ${modeIsOut ? group.refBillNo : group.billNo}` %></span>
+                      <% if (includeSourceBranchColumn) { %>
+                        <span class="rounded-md border border-white/20 bg-transparent px-2.5 py-0.5 text-xs font-semibold text-slate-100"><%= `${tt('source_branch', 'Source Branch')}: ${group.sourceBranchName}` %></span>
+                      <% } %>
+                      <% if (includeDestinationBranchColumn) { %>
+                        <span class="rounded-md border border-white/20 bg-transparent px-2.5 py-0.5 text-xs font-semibold text-slate-100"><%= `${tt('destination_branch', 'Destination Branch')}: ${group.destinationBranchName}` %></span>
+                      <% } %>
+                    <% } else if (orderBy === 'BRANCH') { %>
+                      <span class="rounded-md border border-white/40 bg-white/20 px-2.5 py-0.5 text-xs font-semibold text-white"><%= group.label %></span>
+                      <span class="rounded-md border border-white/20 bg-transparent px-2.5 py-0.5 text-xs font-semibold text-slate-100"><%= `${tt('voucher_count', 'Voucher Count')}: ${group.voucherCount}` %></span>
+                    <% } else { %>
+                      <span class="rounded-md border border-white/40 bg-white/20 px-2.5 py-0.5 text-xs font-semibold text-white"><%= `${stockItemLabel}: ${group.itemLabel}` %></span>
+                      <span class="rounded-md border border-white/20 bg-transparent px-2.5 py-0.5 text-xs font-semibold text-slate-100"><%= `${tt('voucher_count', 'Voucher Count')}: ${group.voucherCount}` %></span>
+                    <% } %>
+                  </div>
+                </td>
+              </tr>
+
+              <% (group.rows || []).forEach((row) => { %>
+                <tr class="bg-white odd:bg-slate-50 even:bg-white hover:bg-slate-100" data-row data-active="true" data-report-group-line data-report-group-key="<%= group.key %>">
+                  <% detailColumns.forEach((columnKey) => { %>
+                    <% if (columnKey === 'sourceBranch') { %>
+                      <td class="px-3 py-2"><%= row.sourceBranchName || '-' %></td>
+                    <% } else if (columnKey === 'destinationBranch') { %>
+                      <td class="px-3 py-2"><%= row.destinationBranchName || '-' %></td>
+                    <% } else if (columnKey === 'voucherNo') { %>
+                      <td class="px-3 py-2"><%= row.voucherNo || '-' %></td>
+                    <% } else if (columnKey === 'movementDate') { %>
+                      <td class="px-3 py-2"><%= formatDateDisplay(row.movementDate, '-') %></td>
+                    <% } else if (columnKey === 'refBillNo') { %>
+                      <td class="px-3 py-2"><%= row.refBillNo || '-' %></td>
+                    <% } else if (columnKey === 'billNo') { %>
+                      <td class="px-3 py-2"><%= row.billNo || '-' %></td>
+                    <% } else if (columnKey === 'itemLabel') { %>
+                      <td class="px-3 py-2"><%= row.itemLabel || '-' %></td>
+                    <% } else if (columnKey === 'unitLabel') { %>
+                      <td class="px-3 py-2"><%= row.unitLabel || '-' %></td>
+                    <% } else if (columnKey === 'qtyOut') { %>
+                      <td class="px-3 py-2 text-right"><%= formatQty(row.qtyOut || 0) %></td>
+                    <% } else if (columnKey === 'expectedQty') { %>
+                      <td class="px-3 py-2 text-right"><%= formatQty(row.expectedQty || 0) %></td>
+                    <% } else if (columnKey === 'receivedQty') { %>
+                      <td class="px-3 py-2 text-right"><%= formatQty(row.receivedQty || 0) %></td>
+                    <% } else if (columnKey === 'rejectedQty') { %>
+                      <td class="px-3 py-2 text-right"><%= formatQty(row.rejectedQty || 0) %></td>
+                    <% } else if (columnKey === 'varianceQty') { %>
+                      <td class="px-3 py-2 text-right"><%= formatQty(row.varianceQty || 0) %></td>
+                    <% } else if (columnKey === 'rate') { %>
+                      <td class="px-3 py-2 text-right"><%= formatNumberDisplay(row.rate || 0, { decimals: 4, fallback: '0.0000' }) %></td>
+                    <% } else if (columnKey === 'amount') { %>
+                      <td class="px-3 py-2 text-right"><%= formatAmount(row.amount || 0) %></td>
+                    <% } else { %>
+                      <td class="px-3 py-2">-</td>
+                    <% } %>
+                  <% }) %>
+                </tr>
+              <% }) %>
+
+              <tr class="bg-accent text-white" data-row data-active="true" data-report-group-total data-report-group-key="<%= group.key %>">
+                <td colspan="<%= detailTotalLabelColspan %>" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t('total') %></td>
+                <% for (let index = detailTotalLabelColspan; index < detailColumns.length; index += 1) { const columnKey = detailColumns[index]; %>
+                  <% if (columnKey === 'qtyOut') { %>
+                    <td class="px-3 py-2 text-right font-extrabold">
+                      <% const unitEntries = toUnitTotalEntries(group.unitTotals.qtyOut); %>
+                      <% if (unitEntries.length) { %>
+                        <div class="flex flex-wrap justify-end gap-1.5">
+                          <% unitEntries.forEach((entry) => { %>
+                            <span class="rounded-md border border-white/20 bg-white/10 px-1.5 py-0.5 text-[10px] font-bold tracking-[0.04em]"><%= `${entry[0]}: ${formatQty(entry[1])}` %></span>
+                          <% }) %>
+                        </div>
+                      <% } else { %>
+                        <%= formatQty(group.totals.qtyOut || 0) %>
+                      <% } %>
+                    </td>
+                  <% } else if (columnKey === 'expectedQty') { %>
+                    <td class="px-3 py-2 text-right font-extrabold">
+                      <% const unitEntries = toUnitTotalEntries(group.unitTotals.expectedQty); %>
+                      <% if (unitEntries.length) { %>
+                        <div class="flex flex-wrap justify-end gap-1.5">
+                          <% unitEntries.forEach((entry) => { %>
+                            <span class="rounded-md border border-white/20 bg-white/10 px-1.5 py-0.5 text-[10px] font-bold tracking-[0.04em]"><%= `${entry[0]}: ${formatQty(entry[1])}` %></span>
+                          <% }) %>
+                        </div>
+                      <% } else { %>
+                        <%= formatQty(group.totals.expectedQty || 0) %>
+                      <% } %>
+                    </td>
+                  <% } else if (columnKey === 'receivedQty') { %>
+                    <td class="px-3 py-2 text-right font-extrabold">
+                      <% const unitEntries = toUnitTotalEntries(group.unitTotals.receivedQty); %>
+                      <% if (unitEntries.length) { %>
+                        <div class="flex flex-wrap justify-end gap-1.5">
+                          <% unitEntries.forEach((entry) => { %>
+                            <span class="rounded-md border border-white/20 bg-white/10 px-1.5 py-0.5 text-[10px] font-bold tracking-[0.04em]"><%= `${entry[0]}: ${formatQty(entry[1])}` %></span>
+                          <% }) %>
+                        </div>
+                      <% } else { %>
+                        <%= formatQty(group.totals.receivedQty || 0) %>
+                      <% } %>
+                    </td>
+                  <% } else if (columnKey === 'rejectedQty') { %>
+                    <td class="px-3 py-2 text-right font-extrabold">
+                      <% const unitEntries = toUnitTotalEntries(group.unitTotals.rejectedQty); %>
+                      <% if (unitEntries.length) { %>
+                        <div class="flex flex-wrap justify-end gap-1.5">
+                          <% unitEntries.forEach((entry) => { %>
+                            <span class="rounded-md border border-white/20 bg-white/10 px-1.5 py-0.5 text-[10px] font-bold tracking-[0.04em]"><%= `${entry[0]}: ${formatQty(entry[1])}` %></span>
+                          <% }) %>
+                        </div>
+                      <% } else { %>
+                        <%= formatQty(group.totals.rejectedQty || 0) %>
+                      <% } %>
+                    </td>
+                  <% } else if (columnKey === 'varianceQty') { %>
+                    <td class="px-3 py-2 text-right font-extrabold">
+                      <% const unitEntries = toUnitTotalEntries(group.unitTotals.varianceQty); %>
+                      <% if (unitEntries.length) { %>
+                        <div class="flex flex-wrap justify-end gap-1.5">
+                          <% unitEntries.forEach((entry) => { %>
+                            <span class="rounded-md border border-white/20 bg-white/10 px-1.5 py-0.5 text-[10px] font-bold tracking-[0.04em]"><%= `${entry[0]}: ${formatQty(entry[1])}` %></span>
+                          <% }) %>
+                        </div>
+                      <% } else { %>
+                        <%= formatQty(group.totals.varianceQty || 0) %>
+                      <% } %>
+                    </td>
+                  <% } else if (columnKey === 'amount') { %>
+                    <td class="px-3 py-2 text-right font-extrabold"><%= formatAmount(group.totals.amount || 0) %></td>
+                  <% } else { %>
+                    <td class="px-3 py-2"></td>
+                  <% } %>
+                <% } %>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+  </section>
+</div>
+
+<script><%- include("../base/partials/date-range-picker.js") %></script>
+<script><%- include("../base/partials/searchable-select.js") %></script>
+<script>
+  (function () {
+    const form = document.querySelector("[data-stock-transfer-filter-form]");
+    if (!form) return;
+
+    if (typeof window.initSearchableSelects === "function") {
+      window.initSearchableSelects();
+    }
+
+    if (typeof window.initReportDateRangePicker === "function") {
+      window.initReportDateRangePicker({
+        root: form,
+        invalidDateRangeMessage: <%- JSON.stringify(t("invalid_date_range")) %>,
+        selectDateRangeText: <%- JSON.stringify(t("select_date_range")) %>,
+      });
+    }
+
+    const advancedToggleButton = form.querySelector("[data-advanced-filter-toggle]");
+    const advancedFilterPanel = form.querySelector("[data-advanced-filter-panel]");
+    const allMultiValue = <%- JSON.stringify(allMultiOptionValue) %>;
+
+    const setAdvancedPanelOpen = (isOpen) => {
+      if (!advancedFilterPanel) return;
+      const nextOpen = Boolean(isOpen);
+      advancedFilterPanel.classList.toggle("hidden", !nextOpen);
+      if (advancedToggleButton) {
+        advancedToggleButton.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+      }
+      if (nextOpen && typeof window.initSearchableSelects === "function") {
+        window.initSearchableSelects();
+      }
+    };
+
+    advancedToggleButton?.addEventListener("click", () => {
+      const currentlyOpen =
+        advancedToggleButton.getAttribute("aria-expanded") === "true";
+      setAdvancedPanelOpen(!currentlyOpen);
+    });
+
+    const allMultiSelects = Array.from(
+      form.querySelectorAll('select[data-all-multi-select="true"]'),
+    );
+
+    const setPrevSelectionState = (select) => {
+      const options = Array.from(select?.options || []);
+      const selectedValues = options
+        .filter((option) => option.selected)
+        .map((option) => option.value);
+      const hasAll = selectedValues.includes(allMultiValue);
+      if (select) select.dataset.prevHasAll = hasAll ? "1" : "0";
+    };
+
+    const normalizeAllSelection = (select, useIntent = false) => {
+      if (!select) return;
+      const options = Array.from(select.options || []);
+      const allOption = options.find((option) => option.value === allMultiValue);
+      if (!allOption) return;
+
+      const selectedValues = options
+        .filter((option) => option.selected)
+        .map((option) => option.value);
+      const hasSpecific = selectedValues.some((value) => value !== allMultiValue);
+      const hasAll = selectedValues.includes(allMultiValue);
+      const prevHasAll = String(select.dataset.prevHasAll || "0") === "1";
+
+      if (hasSpecific && hasAll) {
+        if (useIntent && prevHasAll) {
+          allOption.selected = false;
+        } else {
+          options.forEach((option) => {
+            if (option.value !== allMultiValue) option.selected = false;
+          });
+          allOption.selected = true;
+        }
+      } else if (!hasSpecific && !hasAll) {
+        allOption.selected = true;
+      }
+
+      setPrevSelectionState(select);
+    };
+
+    allMultiSelects.forEach((select) => {
+      normalizeAllSelection(select);
+      setPrevSelectionState(select);
+      select.addEventListener("focus", () => setPrevSelectionState(select));
+      select.addEventListener("change", () => normalizeAllSelection(select, true));
+    });
+
+    const stockTypeSelect = form.querySelector("[data-stock-type-select]");
+    const stockStatusRow = form.querySelector("[data-stock-status-row]");
+    const stockStatusSelect = form.querySelector("[data-stock-status-select]");
+    const groupSelect = form.querySelector("[data-group-select]");
+    const subgroupSelect = form.querySelector("[data-subgroup-select]");
+    const articleSelect = form.querySelector("[data-article-select]");
+    const articleFilterRow = form.querySelector("[data-article-filter-row]");
+    const stockItemSelect = form.querySelector("[data-stock-item-select]");
+    const stockItemLabel = form.querySelector("[data-stock-item-label]");
+
+    const allLabel = <%- JSON.stringify(t("all")) %>;
+    const skuLabel = <%- JSON.stringify(tt("sku", "SKU")) %>;
+    const rawMaterialLabel = <%- JSON.stringify(tt("raw_material", "Raw Material")) %>;
+    const productGroupsByType = <%- JSON.stringify(productGroupsByType) %>;
+    const productSubgroupsByType = <%- JSON.stringify(productSubgroupsByType) %>;
+    const articlesByType = <%- JSON.stringify(articlesByType) %>;
+    const stockItemsByType = <%- JSON.stringify(stockItemsByType) %>;
+
+    const populateMultiSelectWithAll = ({ select, rows, labelKey }) => {
+      if (!select) return;
+      const previousSelection = new Set(
+        Array.from(select.options || [])
+          .filter((option) => option.selected && option.value !== allMultiValue)
+          .map((option) => String(option.value || "")),
+      );
+
+      select.innerHTML = "";
+
+      const allOption = document.createElement("option");
+      allOption.value = allMultiValue;
+      allOption.textContent = String(allLabel || "All");
+      select.appendChild(allOption);
+
+      const normalizedRows = Array.isArray(rows) ? rows : [];
+      normalizedRows.forEach((row) => {
+        const option = document.createElement("option");
+        option.value = String(row?.id || "");
+        option.textContent = String(row?.[labelKey] || "").trim() || "-";
+        if (previousSelection.has(option.value)) option.selected = true;
+        select.appendChild(option);
+      });
+
+      const hasSpecificSelection = Array.from(select.options || []).some(
+        (option) => option.value !== allMultiValue && option.selected,
+      );
+      allOption.selected = !hasSpecificSelection;
+      setPrevSelectionState(select);
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+
+    const syncStockTypePresentation = () => {
+      if (!stockTypeSelect) return;
+      const currentStockType = String(stockTypeSelect.value || "").toUpperCase();
+      const isFinished = currentStockType === "FG";
+      const isRawMaterial = currentStockType === "RM";
+
+      if (stockStatusRow) stockStatusRow.classList.toggle("hidden", !isFinished);
+      if (stockStatusSelect) {
+        stockStatusSelect.disabled = !isFinished;
+        if (!isFinished) {
+          stockStatusSelect.value = "ALL";
+          stockStatusSelect.dispatchEvent(new Event("change", { bubbles: true }));
+        }
+      }
+
+      populateMultiSelectWithAll({
+        select: groupSelect,
+        rows: productGroupsByType[currentStockType] || [],
+        labelKey: "name",
+      });
+      populateMultiSelectWithAll({
+        select: subgroupSelect,
+        rows: productSubgroupsByType[currentStockType] || [],
+        labelKey: "name",
+      });
+      populateMultiSelectWithAll({
+        select: articleSelect,
+        rows: isRawMaterial ? [] : articlesByType[currentStockType] || [],
+        labelKey: "name",
+      });
+      populateMultiSelectWithAll({
+        select: stockItemSelect,
+        rows: stockItemsByType[currentStockType] || [],
+        labelKey: "label",
+      });
+
+      if (articleFilterRow) articleFilterRow.classList.toggle("hidden", isRawMaterial);
+      if (articleSelect) articleSelect.disabled = isRawMaterial;
+      if (stockItemLabel) {
+        stockItemLabel.textContent = isRawMaterial ? rawMaterialLabel : skuLabel;
+      }
+
+      if (typeof window.initSearchableSelects === "function") {
+        window.initSearchableSelects();
+      }
+    };
+
+    stockTypeSelect?.addEventListener("change", syncStockTypePresentation);
+    syncStockTypePresentation();
+
+    form.addEventListener("submit", () => {
+      allMultiSelects.forEach((select) => normalizeAllSelection(select));
+    });
+  })();
+</script>

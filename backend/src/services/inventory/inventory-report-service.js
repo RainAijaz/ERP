@@ -28,10 +28,36 @@ const ORDER_BY_TYPES = Object.freeze({
   sku: "SKU",
   article: "ARTICLE",
 });
+const TRANSFER_REPORT_MODES = Object.freeze({
+  out: "OUT",
+  in: "IN",
+});
+const TRANSFER_REPORT_ORDER_BY_TYPES = Object.freeze({
+  branch: "BRANCH",
+  voucher: "VOUCHER",
+  sku: "SKU",
+});
+const TRANSFER_REPORT_STATUSES = Object.freeze({
+  pending: "PENDING",
+  partiallyApproved: "PARTIALLY_APPROVED",
+  approved: "APPROVED",
+});
+const TRANSFER_STOCK_STATUS_FILTERS = Object.freeze({
+  all: "ALL",
+  packed: STOCK_STATUS_TYPES.packed,
+  loose: STOCK_STATUS_TYPES.loose,
+});
+const DEFAULT_TRANSFER_REASONS = Object.freeze([
+  "REBALANCING",
+  "DEMAND",
+  "RETURN",
+  "OTHER",
+]);
 const MOVEMENT_VOUCHER_CODES = Object.freeze({
   production: ["DCV", "CONSUMP", "PROD_FG", "PROD_SFG", "LABOUR_PROD"],
-  purchase: ["PI", "PR", "GRN_IN", "PO"],
+  purchase: ["PI", "PR", "PO"],
   sale: ["SALES_VOUCHER", "SALES_ORDER"],
+  transfer: ["STN_OUT", "GRN_IN"],
 });
 
 const FG_PACKED_FLAG_SQL = `
@@ -260,13 +286,17 @@ const resolveDefaultSemifinishedUnit = ({ unitOptions = [] }) => {
   if (!normalizedOptions.length) return null;
 
   const byCode = normalizedOptions.find((unit) => {
-    const code = String(unit?.code || "").trim().toUpperCase();
+    const code = String(unit?.code || "")
+      .trim()
+      .toUpperCase();
     return code === "DZN" || code === "DOZEN";
   });
   if (byCode) return byCode;
 
   const byName = normalizedOptions.find((unit) => {
-    const name = String(unit?.name || "").trim().toUpperCase();
+    const name = String(unit?.name || "")
+      .trim()
+      .toUpperCase();
     return name === "DOZEN" || name === "DZN";
   });
   if (byName) return byName;
@@ -1281,12 +1311,16 @@ const getMovementVoucherCodeBuckets = () => {
   const production = toNormalizedList(MOVEMENT_VOUCHER_CODES.production);
   const purchase = toNormalizedList(MOVEMENT_VOUCHER_CODES.purchase);
   const sale = toNormalizedList(MOVEMENT_VOUCHER_CODES.sale);
-  const allClassified = [...new Set([...production, ...purchase, ...sale])];
+  const transfer = toNormalizedList(MOVEMENT_VOUCHER_CODES.transfer);
+  const allClassified = [
+    ...new Set([...production, ...purchase, ...sale, ...transfer]),
+  ];
 
   return {
     production,
     purchase,
     sale,
+    transfer,
     allClassified,
   };
 };
@@ -1495,6 +1529,7 @@ const buildDefaultStockMovementReportData = ({
     productionQty: 0,
     purchaseQty: 0,
     saleQty: 0,
+    transferQty: 0,
     adjustmentQty: 0,
     closingQty: 0,
     openingQtyConverted: (conversionUnits || []).reduce((acc, unit) => {
@@ -1513,6 +1548,11 @@ const buildDefaultStockMovementReportData = ({
       return acc;
     }, {}),
     saleQtyConverted: (conversionUnits || []).reduce((acc, unit) => {
+      const unitId = toPositiveInt(unit?.id);
+      if (unitId) acc[unitId] = 0;
+      return acc;
+    }, {}),
+    transferQtyConverted: (conversionUnits || []).reduce((acc, unit) => {
       const unitId = toPositiveInt(unit?.id);
       if (unitId) acc[unitId] = 0;
       return acc;
@@ -1578,6 +1618,7 @@ const buildStockMovementSummaryRows = ({
       productionQty: 0,
       purchaseQty: 0,
       saleQty: 0,
+      transferQty: 0,
       adjustmentQty: 0,
       closingQty: 0,
       convertedQuantities: {
@@ -1585,6 +1626,7 @@ const buildStockMovementSummaryRows = ({
         productionQty: {},
         purchaseQty: {},
         saleQty: {},
+        transferQty: {},
         adjustmentQty: {},
         closingQty: {},
       },
@@ -1606,6 +1648,10 @@ const buildStockMovementSummaryRows = ({
       Number(existing.saleQty || 0) + Number(row?.saleQty || 0),
       3,
     );
+    existing.transferQty = toQuantity(
+      Number(existing.transferQty || 0) + Number(row?.transferQty || 0),
+      3,
+    );
     existing.adjustmentQty = toQuantity(
       Number(existing.adjustmentQty || 0) + Number(row?.adjustmentQty || 0),
       3,
@@ -1620,6 +1666,7 @@ const buildStockMovementSummaryRows = ({
       "productionQty",
       "purchaseQty",
       "saleQty",
+      "transferQty",
       "adjustmentQty",
       "closingQty",
     ].forEach((metricKey) => {
@@ -1696,6 +1743,7 @@ const loadStockMovementRows = async ({
   const productionClause = buildVoucherTypeClause(movementBuckets.production);
   const purchaseClause = buildVoucherTypeClause(movementBuckets.purchase);
   const saleClause = buildVoucherTypeClause(movementBuckets.sale);
+  const transferClause = buildVoucherTypeClause(movementBuckets.transfer);
   const adjustmentClause = buildVoucherTypeClause(
     movementBuckets.allClassified,
     true,
@@ -1900,6 +1948,12 @@ const loadStockMovementRows = async ({
     )
     .select(
       knex.raw(
+        `COALESCE(SUM(CASE WHEN sl.txn_date >= ? AND sl.txn_date <= ? AND ${transferClause.sql} THEN ${signedQtySql} ELSE 0 END), 0) as transfer_qty`,
+        [filters.from, filters.to, ...transferClause.bindings],
+      ),
+    )
+    .select(
+      knex.raw(
         `COALESCE(SUM(CASE WHEN sl.txn_date >= ? AND sl.txn_date <= ? AND ${adjustmentClause.sql} THEN ${signedQtySql} ELSE 0 END), 0) as adjustment_qty`,
         [filters.from, filters.to, ...adjustmentClause.bindings],
       ),
@@ -1935,6 +1989,10 @@ const loadStockMovementRows = async ({
         Number(row?.sale_qty || 0) * Number(selectedUnitFactor),
         3,
       );
+      const transferQty = toQuantity(
+        Number(row?.transfer_qty || 0) * Number(selectedUnitFactor),
+        3,
+      );
       const adjustmentQty = toQuantity(
         Number(row?.adjustment_qty || 0) * Number(selectedUnitFactor),
         3,
@@ -1949,6 +2007,7 @@ const loadStockMovementRows = async ({
         productionQty,
         purchaseQty,
         saleQty,
+        transferQty,
         adjustmentQty,
         closingQty,
       ].some((value) => hasNonZeroQuantity(value));
@@ -1959,6 +2018,7 @@ const loadStockMovementRows = async ({
         productionQty: {},
         purchaseQty: {},
         saleQty: {},
+        transferQty: {},
         adjustmentQty: {},
         closingQty: {},
       };
@@ -1978,6 +2038,7 @@ const loadStockMovementRows = async ({
           convertedQuantities.productionQty[targetUomId] = 0;
           convertedQuantities.purchaseQty[targetUomId] = 0;
           convertedQuantities.saleQty[targetUomId] = 0;
+          convertedQuantities.transferQty[targetUomId] = 0;
           convertedQuantities.adjustmentQty[targetUomId] = 0;
           convertedQuantities.closingQty[targetUomId] = 0;
           return;
@@ -1997,6 +2058,10 @@ const loadStockMovementRows = async ({
         );
         convertedQuantities.saleQty[targetUomId] = toQuantity(
           saleQty * factor,
+          3,
+        );
+        convertedQuantities.transferQty[targetUomId] = toQuantity(
+          transferQty * factor,
           3,
         );
         convertedQuantities.adjustmentQty[targetUomId] = toQuantity(
@@ -2026,13 +2091,13 @@ const loadStockMovementRows = async ({
         sizeId: toPositiveInt(row?.size_id),
         sizeName: String(row?.size_name || "").trim(),
         unitLabel:
-          String(row?.base_uom_code || row?.base_uom_name || "").trim() ||
-          "-",
+          String(row?.base_uom_code || row?.base_uom_name || "").trim() || "-",
         baseUomId,
         openingQty,
         productionQty,
         purchaseQty,
         saleQty,
+        transferQty,
         adjustmentQty,
         closingQty,
         convertedQuantities,
@@ -2239,6 +2304,13 @@ const getInventoryStockMovementReportPageData = async ({ req, input = {} }) => {
       totalSourceRows.reduce((sum, row) => sum + Number(row.saleQty || 0), 0),
       3,
     ),
+    transferQty: toQuantity(
+      totalSourceRows.reduce(
+        (sum, row) => sum + Number(row.transferQty || 0),
+        0,
+      ),
+      3,
+    ),
     adjustmentQty: toQuantity(
       totalSourceRows.reduce(
         (sum, row) => sum + Number(row.adjustmentQty || 0),
@@ -2273,6 +2345,11 @@ const getInventoryStockMovementReportPageData = async ({ req, input = {} }) => {
       conversionUnits,
       "saleQty",
     ),
+    transferQtyConverted: sumMovementConvertedQuantities(
+      totalSourceRows,
+      conversionUnits,
+      "transferQty",
+    ),
     adjustmentQtyConverted: sumMovementConvertedQuantities(
       totalSourceRows,
       conversionUnits,
@@ -2296,6 +2373,1224 @@ const getInventoryStockMovementReportPageData = async ({ req, input = {} }) => {
       showSkuGroupedDetail:
         filters.viewType === VIEW_TYPES.details ? showSkuGroupedDetail : false,
       totals,
+    },
+  };
+};
+
+const hasInventoryColumn = async (tableName, columnName) =>
+  knex.schema.withSchema("erp").hasColumn(tableName, columnName);
+
+const normalizeTransferMode = (value) => {
+  const normalized = String(value || TRANSFER_REPORT_MODES.out)
+    .trim()
+    .toUpperCase();
+  return normalized === TRANSFER_REPORT_MODES.in
+    ? TRANSFER_REPORT_MODES.in
+    : TRANSFER_REPORT_MODES.out;
+};
+
+const normalizeTransferStatus = (value) => {
+  const normalized = String(value || TRANSFER_REPORT_STATUSES.approved)
+    .trim()
+    .toUpperCase();
+  if (normalized === TRANSFER_REPORT_STATUSES.pending) {
+    return TRANSFER_REPORT_STATUSES.pending;
+  }
+  if (normalized === TRANSFER_REPORT_STATUSES.partiallyApproved) {
+    return TRANSFER_REPORT_STATUSES.partiallyApproved;
+  }
+  return TRANSFER_REPORT_STATUSES.approved;
+};
+
+const normalizeTransferStockStatus = (value) => {
+  const normalized = String(value || TRANSFER_STOCK_STATUS_FILTERS.all)
+    .trim()
+    .toUpperCase();
+  if (normalized === TRANSFER_STOCK_STATUS_FILTERS.packed) {
+    return TRANSFER_STOCK_STATUS_FILTERS.packed;
+  }
+  if (normalized === TRANSFER_STOCK_STATUS_FILTERS.loose) {
+    return TRANSFER_STOCK_STATUS_FILTERS.loose;
+  }
+  return TRANSFER_STOCK_STATUS_FILTERS.all;
+};
+
+const normalizeTransferOrderBy = (value) => {
+  const normalized = String(value || TRANSFER_REPORT_ORDER_BY_TYPES.sku)
+    .trim()
+    .toUpperCase();
+  if (normalized === TRANSFER_REPORT_ORDER_BY_TYPES.branch) {
+    return TRANSFER_REPORT_ORDER_BY_TYPES.branch;
+  }
+  if (normalized === TRANSFER_REPORT_ORDER_BY_TYPES.voucher) {
+    return TRANSFER_REPORT_ORDER_BY_TYPES.voucher;
+  }
+  return TRANSFER_REPORT_ORDER_BY_TYPES.sku;
+};
+
+const normalizeTransferReportType = (value) =>
+  normalizeViewType(value) === VIEW_TYPES.summary
+    ? VIEW_TYPES.summary
+    : VIEW_TYPES.details;
+
+const normalizeScopedBranchFilter = ({ req, value }) => {
+  const selected = toIdListWithAll(value);
+  if (req?.user?.isAdmin) return selected;
+
+  const allowed = getAllowedBranchIds(req);
+  if (!allowed.length) return [];
+  if (!selected.length) return allowed;
+
+  const allowedSet = new Set(allowed.map((entry) => Number(entry)));
+  return selected.filter((entry) => allowedSet.has(Number(entry)));
+};
+
+const toTokenListWithAll = (value) => {
+  const raw = Array.isArray(value)
+    ? value
+    : value && typeof value === "object"
+      ? Object.values(value)
+      : [value];
+  const tokens = raw
+    .flatMap((entry) => String(entry == null ? "" : entry).split(","))
+    .map((entry) => String(entry || "").trim())
+    .filter(Boolean)
+    .map((entry) => entry.toUpperCase());
+
+  const hasAll = tokens.some((entry) => {
+    const normalized = String(entry || "").toUpperCase();
+    return (
+      normalized === String(ALL_MULTI_FILTER_VALUE).toUpperCase() ||
+      normalized === "ALL"
+    );
+  });
+
+  if (hasAll) return [];
+  return [...new Set(tokens)];
+};
+
+const parseStockTransferReportFilters = ({ req, input = {} }) => {
+  const { today, defaultFrom } = getDefaultLedgerDateRange();
+  const parsedFrom = parseDateFilter(input.from_date || input.fromDate, defaultFrom);
+  const parsedTo = parseDateFilter(input.to_date || input.toDate, today);
+  const stockType = normalizeStockType(input.stock_type || input.stockType);
+
+  let from = parsedFrom.value;
+  let to = parsedTo.value;
+  let invalidDateRange = false;
+  if (from > to) {
+    from = defaultFrom;
+    to = today;
+    invalidDateRange = true;
+  }
+
+  return {
+    reportLoaded: toBoolean(input.load_report || input.loadReport, false),
+    from,
+    to,
+    sourceBranchIds: normalizeScopedBranchFilter({
+      req,
+      value:
+        input.source_branch_ids || input.sourceBranchIds || input.source_branch_id,
+    }),
+    destinationBranchIds: normalizeScopedBranchFilter({
+      req,
+      value:
+        input.destination_branch_ids ||
+        input.destinationBranchIds ||
+        input.destination_branch_id,
+    }),
+    stockType,
+    stockStatus:
+      stockType === STOCK_TYPES.finished
+        ? normalizeTransferStockStatus(input.stock_status || input.stockStatus)
+        : TRANSFER_STOCK_STATUS_FILTERS.all,
+    transferStatus: normalizeTransferStatus(
+      input.transfer_status || input.transferStatus,
+    ),
+    productGroupIds: toIdListWithAll(
+      input.product_group_ids || input.productGroupIds,
+    ),
+    productSubgroupIds: toIdListWithAll(
+      input.product_subgroup_ids || input.productSubgroupIds,
+    ),
+    articleIds: toIdListWithAll(input.article_ids || input.articleIds),
+    stockItemIds: toIdListWithAll(
+      input.stock_item_ids ||
+        input.stockItemIds ||
+        input.sku_ids ||
+        input.skuIds ||
+        input.item_ids ||
+        input.itemIds,
+    ),
+    transferReasons: toTokenListWithAll(
+      input.transfer_reason || input.transferReason || input.transfer_reasons,
+    ),
+    mode: normalizeTransferMode(input.mode),
+    orderBy: normalizeTransferOrderBy(input.order_by || input.orderBy),
+    reportType: normalizeTransferReportType(
+      input.report_type || input.reportType || input.view_filter || input.viewType,
+    ),
+    invalidFromDate: Boolean(parsedFrom.provided && !parsedFrom.valid),
+    invalidToDate: Boolean(parsedTo.provided && !parsedTo.valid),
+    invalidDateRange,
+    invalidFilterInput: Boolean(
+      (parsedFrom.provided && !parsedFrom.valid) ||
+        (parsedTo.provided && !parsedTo.valid) ||
+        invalidDateRange,
+    ),
+  };
+};
+
+const toMetaNumber = (meta, key) => {
+  if (!meta || typeof meta !== "object") return null;
+  const raw = meta[key];
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const pickFirstFiniteNumber = (...values) => {
+  for (const value of values) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+};
+
+const resolveTransferLineStockType = (row, meta = {}) => {
+  const metaStockType = String(meta?.stock_type || "")
+    .trim()
+    .toUpperCase();
+  if (
+    metaStockType === STOCK_TYPES.finished ||
+    metaStockType === STOCK_TYPES.semiFinished ||
+    metaStockType === STOCK_TYPES.rawMaterial
+  ) {
+    return metaStockType;
+  }
+  const lineKind = String(row?.line_kind || "").trim().toUpperCase();
+  if (lineKind === "ITEM") return STOCK_TYPES.rawMaterial;
+  const skuType = normalizeStockType(row?.sku_item_type);
+  return skuType || STOCK_TYPES.finished;
+};
+
+const resolveTransferLineLabel = (row) => {
+  const lineKind = String(row?.line_kind || "").trim().toUpperCase();
+  if (lineKind === "ITEM") {
+    return String(row?.item_name || "").trim() || "-";
+  }
+  const sku = String(row?.sku_code || "").trim();
+  const item = String(row?.sku_item_name || row?.item_name || "").trim();
+  if (sku && item) return `${sku} - ${item}`;
+  return sku || item || "-";
+};
+
+const resolveTransferDisplayRate = ({ row, meta, stockType }) => {
+  const rawRate = Number(row?.rate || 0);
+  if (stockType === STOCK_TYPES.rawMaterial) return toAmount(rawRate, 4);
+
+  const factorToBase = Number(toMetaNumber(meta, "uom_factor_to_base") || 0);
+  const unitCode = String(meta?.uom_code || row?.uom_code || row?.uom_name || "")
+    .trim()
+    .toUpperCase();
+  const isDozenUnit =
+    unitCode === "DZN" ||
+    unitCode === "DOZEN" ||
+    Math.abs(Number(factorToBase || 0) - 12) <= 0.0005;
+
+  const pairRate = pickFirstFiniteNumber(
+    toMetaNumber(meta, "unit_cost_base"),
+    factorToBase > 0 ? Number(rawRate || 0) / Number(factorToBase) : 0,
+    rawRate,
+  );
+
+  const normalizedRate = isDozenUnit
+    ? Number(pairRate || 0) * 12
+    : Number(pairRate || 0);
+  return toAmount(normalizedRate, 4);
+};
+
+const resolveTransferLineFgStatus = ({ row, meta }) => {
+  const lineUomId = toPositiveInt(row?.uom_id);
+  const baseUomId = toPositiveInt(row?.sku_base_uom_id || row?.item_base_uom_id);
+  if (lineUomId && baseUomId) {
+    return lineUomId === baseUomId
+      ? TRANSFER_STOCK_STATUS_FILTERS.loose
+      : TRANSFER_STOCK_STATUS_FILTERS.packed;
+  }
+
+  const metaStatus = String(meta?.status || meta?.row_status || "")
+    .trim()
+    .toUpperCase();
+  if (metaStatus === TRANSFER_STOCK_STATUS_FILTERS.packed) {
+    return TRANSFER_STOCK_STATUS_FILTERS.packed;
+  }
+  if (metaStatus === TRANSFER_STOCK_STATUS_FILTERS.loose) {
+    return TRANSFER_STOCK_STATUS_FILTERS.loose;
+  }
+  return null;
+};
+
+const shouldIncludeTransferLineByStockStatus = ({
+  filters,
+  stockType,
+  lineStockStatus,
+}) => {
+  if (stockType !== STOCK_TYPES.finished) return true;
+
+  const selectedStatus = normalizeTransferStockStatus(filters?.stockStatus);
+  if (selectedStatus === TRANSFER_STOCK_STATUS_FILTERS.all) return true;
+  return String(lineStockStatus || "").toUpperCase() === selectedStatus;
+};
+
+const resolveTransferOutQty = ({ row, meta, stockType }) => {
+  if (stockType === STOCK_TYPES.rawMaterial) {
+    return toQuantity(
+      pickFirstFiniteNumber(
+        toMetaNumber(meta, "transfer_qty_base"),
+        toMetaNumber(meta, "transfer_qty"),
+        row?.qty,
+      ),
+      3,
+    );
+  }
+  return toQuantity(
+    pickFirstFiniteNumber(
+      toMetaNumber(meta, "transfer_qty_pairs"),
+      toMetaNumber(meta, "transfer_qty"),
+      row?.qty,
+    ),
+    3,
+  );
+};
+
+const resolveTransferInQuantities = ({ row, meta, stockType }) => {
+  if (stockType === STOCK_TYPES.rawMaterial) {
+    const expectedQty = toQuantity(
+      pickFirstFiniteNumber(
+        toMetaNumber(meta, "expected_qty_base"),
+        toMetaNumber(meta, "expected_qty"),
+        row?.qty,
+      ),
+      3,
+    );
+    const receivedQty = toQuantity(
+      pickFirstFiniteNumber(
+        toMetaNumber(meta, "received_qty_base"),
+        toMetaNumber(meta, "received_qty"),
+        row?.qty,
+      ),
+      3,
+    );
+    const rejectedQty = toQuantity(
+      pickFirstFiniteNumber(
+        toMetaNumber(meta, "rejected_qty_base"),
+        toMetaNumber(meta, "rejected_qty"),
+        0,
+      ),
+      3,
+    );
+    const varianceQty = toQuantity(
+      pickFirstFiniteNumber(
+        toMetaNumber(meta, "variance_qty_base"),
+        toMetaNumber(meta, "variance_qty"),
+        expectedQty - (receivedQty + rejectedQty),
+      ),
+      3,
+    );
+    return {
+      expectedQty,
+      receivedQty,
+      rejectedQty,
+      varianceQty,
+    };
+  }
+
+  const expectedQty = toQuantity(
+    pickFirstFiniteNumber(
+      toMetaNumber(meta, "expected_qty_pairs"),
+      toMetaNumber(meta, "expected_qty"),
+      row?.qty,
+    ),
+    3,
+  );
+  const receivedQty = toQuantity(
+    pickFirstFiniteNumber(
+      toMetaNumber(meta, "received_qty_pairs"),
+      toMetaNumber(meta, "received_qty"),
+      row?.qty,
+    ),
+    3,
+  );
+  const rejectedQty = toQuantity(
+    pickFirstFiniteNumber(
+      toMetaNumber(meta, "rejected_qty_pairs"),
+      toMetaNumber(meta, "rejected_qty"),
+      0,
+    ),
+    3,
+  );
+  const varianceQty = toQuantity(
+    pickFirstFiniteNumber(
+      toMetaNumber(meta, "variance_qty_pairs"),
+      toMetaNumber(meta, "variance_qty"),
+      expectedQty - (receivedQty + rejectedQty),
+    ),
+    3,
+  );
+
+  return {
+    expectedQty,
+    receivedQty,
+    rejectedQty,
+    varianceQty,
+  };
+};
+
+const deriveTransferOutStatus = ({
+  receivedVoucherId,
+  workflowStatus,
+  rejectedQtyTotal,
+  varianceQtyTotal,
+}) => {
+  const normalizedWorkflowStatus = String(workflowStatus || "")
+    .trim()
+    .toUpperCase();
+  const hasReceived = Boolean(toPositiveInt(receivedVoucherId));
+  if (!hasReceived && normalizedWorkflowStatus !== "RECEIVED") {
+    return TRANSFER_REPORT_STATUSES.pending;
+  }
+
+  const hasPartialVariance =
+    Math.abs(Number(rejectedQtyTotal || 0)) > 0.0005 ||
+    Math.abs(Number(varianceQtyTotal || 0)) > 0.0005;
+  if (hasPartialVariance) return TRANSFER_REPORT_STATUSES.partiallyApproved;
+  return TRANSFER_REPORT_STATUSES.approved;
+};
+
+const deriveTransferInStatus = ({ rejectedQty, varianceQty }) => {
+  if (
+    Math.abs(Number(rejectedQty || 0)) > 0.0005 ||
+    Math.abs(Number(varianceQty || 0)) > 0.0005
+  ) {
+    return TRANSFER_REPORT_STATUSES.partiallyApproved;
+  }
+  return TRANSFER_REPORT_STATUSES.approved;
+};
+
+const compareText = (left, right) =>
+  String(left || "").localeCompare(String(right || ""));
+
+const sortStockTransferRows = ({ rows = [], filters }) => {
+  const normalizedRows = Array.isArray(rows) ? rows.slice() : [];
+  return normalizedRows.sort((a, b) => {
+    if (filters.orderBy === TRANSFER_REPORT_ORDER_BY_TYPES.branch) {
+      const sourceCompare = compareText(a.sourceBranchName, b.sourceBranchName);
+      if (sourceCompare !== 0) return sourceCompare;
+      const destinationCompare = compareText(
+        a.destinationBranchName,
+        b.destinationBranchName,
+      );
+      if (destinationCompare !== 0) return destinationCompare;
+    } else if (filters.orderBy === TRANSFER_REPORT_ORDER_BY_TYPES.voucher) {
+      const voucherCompare = Number(a.voucherNo || 0) - Number(b.voucherNo || 0);
+      if (voucherCompare !== 0) return voucherCompare;
+    } else {
+      const itemCompare = compareText(a.itemLabel, b.itemLabel);
+      if (itemCompare !== 0) return itemCompare;
+    }
+
+    const dateCompare = compareText(a.movementDate, b.movementDate);
+    if (dateCompare !== 0) return dateCompare;
+    const voucherCompare = Number(a.voucherNo || 0) - Number(b.voucherNo || 0);
+    if (voucherCompare !== 0) return voucherCompare;
+    return compareText(a.itemLabel, b.itemLabel);
+  });
+};
+
+const applyWhereInRaw = (query, sqlExpression, values) => {
+  if (!Array.isArray(values) || !values.length) return;
+  const placeholders = values.map(() => "?").join(", ");
+  query.whereRaw(`${sqlExpression} IN (${placeholders})`, values);
+};
+
+const buildStockTransferSummaryRows = ({ rows = [], filters }) => {
+  const grouped = new Map();
+
+  const buildGroupKey = (row) => {
+    if (filters.orderBy === TRANSFER_REPORT_ORDER_BY_TYPES.branch) {
+      return `BRANCH:${row.sourceBranchName}=>${row.destinationBranchName}`;
+    }
+    if (filters.orderBy === TRANSFER_REPORT_ORDER_BY_TYPES.voucher) {
+      return `VOUCHER:${row.voucherNo}`;
+    }
+    return `SKU:${row.itemLabel}`;
+  };
+
+  const buildGroupLabel = (row) => {
+    if (filters.orderBy === TRANSFER_REPORT_ORDER_BY_TYPES.branch) {
+      const source = String(row.sourceBranchName || "-").trim() || "-";
+      const destination = String(row.destinationBranchName || "-").trim() || "-";
+      return `${source} -> ${destination}`;
+    }
+    if (filters.orderBy === TRANSFER_REPORT_ORDER_BY_TYPES.voucher) {
+      return String(row.voucherNo || "-");
+    }
+    return String(row.itemLabel || "-");
+  };
+
+  (rows || []).forEach((row) => {
+    const unitLabel = String(row.unitLabel || "-").trim() || "-";
+    const key = `${buildGroupKey(row)}:UNIT:${unitLabel}`;
+    const existing = grouped.get(key) || {
+      key,
+      groupLabel: buildGroupLabel(row),
+      sourceBranchName: String(row.sourceBranchName || "").trim(),
+      destinationBranchName: String(row.destinationBranchName || "").trim(),
+      voucherNo: row.voucherNo,
+      itemLabel: String(row.itemLabel || "").trim(),
+      unitLabel,
+      voucherCount: new Set(),
+      statusSet: new Set(),
+      qtyOut: 0,
+      expectedQty: 0,
+      receivedQty: 0,
+      rejectedQty: 0,
+      varianceQty: 0,
+      amount: 0,
+    };
+
+    existing.voucherCount.add(Number(row.voucherId || row.voucherNo || 0));
+    existing.statusSet.add(String(row.transferStatus || "").trim().toUpperCase());
+    existing.amount = toAmount(Number(existing.amount || 0) + Number(row.amount || 0), 2);
+
+    if (filters.mode === TRANSFER_REPORT_MODES.out) {
+      existing.qtyOut = toQuantity(
+        Number(existing.qtyOut || 0) + Number(row.qtyOut || 0),
+        3,
+      );
+    } else {
+      existing.expectedQty = toQuantity(
+        Number(existing.expectedQty || 0) + Number(row.expectedQty || 0),
+        3,
+      );
+      existing.receivedQty = toQuantity(
+        Number(existing.receivedQty || 0) + Number(row.receivedQty || 0),
+        3,
+      );
+      existing.rejectedQty = toQuantity(
+        Number(existing.rejectedQty || 0) + Number(row.rejectedQty || 0),
+        3,
+      );
+      existing.varianceQty = toQuantity(
+        Number(existing.varianceQty || 0) + Number(row.varianceQty || 0),
+        3,
+      );
+    }
+
+    grouped.set(key, existing);
+  });
+
+  return [...grouped.values()]
+    .map((entry) => ({
+      ...entry,
+      voucherCount: entry.voucherCount.size,
+      transferStatus:
+        entry.statusSet.size === 1
+          ? [...entry.statusSet][0]
+          : "MIXED",
+    }))
+    .sort((a, b) => {
+      const groupCompare = compareText(a.groupLabel, b.groupLabel);
+      if (groupCompare !== 0) return groupCompare;
+      return compareText(a.unitLabel, b.unitLabel);
+    });
+};
+
+const buildStockTransferTotals = ({ rows = [], filters }) => {
+  const totals = {
+    rowCount: Number((rows || []).length || 0),
+    amount: toAmount(
+      (rows || []).reduce((sum, row) => sum + Number(row.amount || 0), 0),
+      2,
+    ),
+    pendingCount: 0,
+    partiallyApprovedCount: 0,
+    approvedCount: 0,
+    qtyOut: 0,
+    expectedQty: 0,
+    receivedQty: 0,
+    rejectedQty: 0,
+    varianceQty: 0,
+  };
+
+  (rows || []).forEach((row) => {
+    const status = String(row.transferStatus || "").trim().toUpperCase();
+    if (status === TRANSFER_REPORT_STATUSES.pending) totals.pendingCount += 1;
+    if (status === TRANSFER_REPORT_STATUSES.partiallyApproved) {
+      totals.partiallyApprovedCount += 1;
+    }
+    if (status === TRANSFER_REPORT_STATUSES.approved) totals.approvedCount += 1;
+
+    if (filters.mode === TRANSFER_REPORT_MODES.out) {
+      totals.qtyOut = toQuantity(
+        Number(totals.qtyOut || 0) + Number(row.qtyOut || 0),
+        3,
+      );
+    } else {
+      totals.expectedQty = toQuantity(
+        Number(totals.expectedQty || 0) + Number(row.expectedQty || 0),
+        3,
+      );
+      totals.receivedQty = toQuantity(
+        Number(totals.receivedQty || 0) + Number(row.receivedQty || 0),
+        3,
+      );
+      totals.rejectedQty = toQuantity(
+        Number(totals.rejectedQty || 0) + Number(row.rejectedQty || 0),
+        3,
+      );
+      totals.varianceQty = toQuantity(
+        Number(totals.varianceQty || 0) + Number(row.varianceQty || 0),
+        3,
+      );
+    }
+  });
+
+  return totals;
+};
+
+const loadTransferReasonOptions = async ({ hasTransferReasonColumn }) => {
+  if (!hasTransferReasonColumn) {
+    return DEFAULT_TRANSFER_REASONS.map((value) => ({
+      value,
+      labelKey: `transfer_reason_${String(value || "").toLowerCase()}`,
+      label: value,
+    }));
+  }
+
+  const rows = await knex("erp.stock_transfer_out_header as sth")
+    .select(knex.raw("upper(trim(sth.transfer_reason::text)) as value"))
+    .whereNotNull("sth.transfer_reason");
+
+  const knownSet = new Set(DEFAULT_TRANSFER_REASONS);
+  const values = [
+    ...new Set(
+      [...DEFAULT_TRANSFER_REASONS, ...(rows || []).map((row) => String(row?.value || "").trim().toUpperCase())]
+        .filter(Boolean),
+    ),
+  ];
+
+  return values.map((value) => ({
+    value,
+    labelKey: knownSet.has(value)
+      ? `transfer_reason_${String(value || "").toLowerCase()}`
+      : null,
+    label: value,
+  }));
+};
+
+const loadStockTransferOutRows = async ({
+  filters,
+  hasTransferRefColumn,
+  hasTransferReasonColumn,
+  hasBillBookNoColumn,
+}) => {
+  const transferRefExpr = hasTransferRefColumn
+    ? "coalesce(sth.transfer_ref_no, vh.book_no)"
+    : "coalesce(vh.book_no, '')";
+  const transferReasonExpr = hasTransferReasonColumn
+    ? "upper(coalesce(sth.transfer_reason::text, ''))"
+    : "''";
+  const billBookExpr = hasBillBookNoColumn
+    ? "nullif(trim(sth.bill_book_no), '')"
+    : "coalesce(vh.book_no, '')";
+  const stockTypeExpr =
+    "case when upper(vl.line_kind::text) = 'ITEM' then 'RM' else upper(coalesce(si.item_type::text, '')) end";
+  const groupExpr = "coalesce(si.group_id, i.group_id)";
+  const subgroupExpr = "coalesce(si.subgroup_id, i.subgroup_id)";
+  const articleExpr = "coalesce(si.id, i.id)";
+
+  const grnAgg = knex("erp.grn_in_header as gih")
+    .join("erp.voucher_header as gvh", "gvh.id", "gih.voucher_id")
+    .leftJoin("erp.voucher_line as gvl", "gvl.voucher_header_id", "gvh.id")
+    .where("gvh.status", "APPROVED")
+    .groupBy("gih.against_stn_out_id")
+    .select("gih.against_stn_out_id")
+    .select(knex.raw("max(gih.voucher_id) as received_voucher_id"))
+    .select(
+      knex.raw(
+        "coalesce(sum(coalesce(nullif(trim(gvl.meta->>'rejected_qty'), '')::numeric, 0) + coalesce(nullif(trim(gvl.meta->>'rejected_qty_base'), '')::numeric, 0) + coalesce(nullif(trim(gvl.meta->>'rejected_qty_pairs'), '')::numeric, 0)), 0) as rejected_qty_total",
+      ),
+    )
+    .select(
+      knex.raw(
+        "coalesce(sum(coalesce(nullif(trim(gvl.meta->>'variance_qty'), '')::numeric, 0) + coalesce(nullif(trim(gvl.meta->>'variance_qty_base'), '')::numeric, 0) + coalesce(nullif(trim(gvl.meta->>'variance_qty_pairs'), '')::numeric, 0)), 0) as variance_qty_total",
+      ),
+    );
+
+  let query = knex("erp.voucher_header as vh")
+    .join("erp.stock_transfer_out_header as sth", "sth.voucher_id", "vh.id")
+    .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
+    .leftJoin(grnAgg.as("ga"), "ga.against_stn_out_id", "vh.id")
+    .leftJoin("erp.branches as sb", "sb.id", "vh.branch_id")
+    .leftJoin("erp.branches as db", "db.id", "sth.dest_branch_id")
+    .leftJoin("erp.skus as s", "s.id", "vl.sku_id")
+    .leftJoin("erp.variants as v", "v.id", "s.variant_id")
+    .leftJoin("erp.items as si", "si.id", "v.item_id")
+    .leftJoin("erp.items as i", "i.id", "vl.item_id")
+    .leftJoin("erp.uom as u", "u.id", "vl.uom_id")
+    .select(
+      "vh.id as voucher_id",
+      "vh.voucher_no",
+      knex.raw("coalesce(sth.dispatch_date, vh.voucher_date) as movement_date"),
+      "vh.branch_id as source_branch_id",
+      "sb.name as source_branch_name",
+      "sth.dest_branch_id as destination_branch_id",
+      "db.name as destination_branch_name",
+      "vh.book_no",
+      "vh.voucher_date",
+      "vl.id as voucher_line_id",
+      "vl.line_no",
+      "vl.line_kind",
+      "vl.item_id",
+      "vl.sku_id",
+      "vl.uom_id",
+      "vl.qty",
+      "vl.rate",
+      "vl.amount",
+      "vl.meta as line_meta",
+      "s.sku_code",
+      "si.name as sku_item_name",
+      "si.item_type as sku_item_type",
+      "si.base_uom_id as sku_base_uom_id",
+      "i.name as item_name",
+      "i.base_uom_id as item_base_uom_id",
+      "u.code as uom_code",
+      "u.name as uom_name",
+      "sth.status as transfer_workflow_status",
+      knex.raw("coalesce(ga.received_voucher_id, sth.received_voucher_id) as received_voucher_id"),
+      knex.raw("coalesce(ga.rejected_qty_total, 0) as rejected_qty_total"),
+      knex.raw("coalesce(ga.variance_qty_total, 0) as variance_qty_total"),
+      knex.raw(`${transferRefExpr} as transfer_ref_no`),
+      knex.raw(`${transferReasonExpr} as transfer_reason`),
+      knex.raw(`${billBookExpr} as bill_book_no`),
+      knex.raw(`${groupExpr} as group_id`),
+      knex.raw(`${subgroupExpr} as subgroup_id`),
+      knex.raw(`${articleExpr} as article_id`),
+      knex.raw(`${stockTypeExpr} as stock_type_resolved`),
+    )
+    .where({
+      "vh.voucher_type_code": "STN_OUT",
+      "vh.status": "APPROVED",
+    })
+    .whereRaw("coalesce(sth.dispatch_date, vh.voucher_date) between ? and ?", [
+      filters.from,
+      filters.to,
+    ]);
+
+  if (filters.sourceBranchIds.length) {
+    query = query.whereIn("vh.branch_id", filters.sourceBranchIds);
+  }
+  if (filters.destinationBranchIds.length) {
+    query = query.whereIn("sth.dest_branch_id", filters.destinationBranchIds);
+  }
+
+  query = query.whereRaw(`${stockTypeExpr} = ?`, [filters.stockType]);
+
+  applyWhereInRaw(query, groupExpr, filters.productGroupIds);
+  applyWhereInRaw(query, subgroupExpr, filters.productSubgroupIds);
+  if (filters.stockType !== STOCK_TYPES.rawMaterial) {
+    applyWhereInRaw(query, articleExpr, filters.articleIds);
+  }
+
+  if (filters.stockItemIds.length) {
+    if (filters.stockType === STOCK_TYPES.rawMaterial) {
+      query = query.whereIn("vl.item_id", filters.stockItemIds);
+    } else {
+      query = query.whereIn("vl.sku_id", filters.stockItemIds);
+    }
+  }
+
+  if (hasTransferReasonColumn && filters.transferReasons.length) {
+    applyWhereInRaw(query, transferReasonExpr, filters.transferReasons);
+  }
+
+  const rows = await query.orderBy("vh.voucher_no", "asc").orderBy("vl.line_no", "asc");
+
+  const mapped = (rows || [])
+    .map((row) => {
+      const meta = row?.line_meta && typeof row.line_meta === "object" ? row.line_meta : {};
+      const stockType = resolveTransferLineStockType(row, meta);
+      if (stockType !== filters.stockType) return null;
+      const lineStockStatus = resolveTransferLineFgStatus({ row, meta });
+      if (
+        !shouldIncludeTransferLineByStockStatus({
+          filters,
+          stockType,
+          lineStockStatus,
+        })
+      ) {
+        return null;
+      }
+
+      const transferStatus = deriveTransferOutStatus({
+        receivedVoucherId: row?.received_voucher_id,
+        workflowStatus: row?.transfer_workflow_status,
+        rejectedQtyTotal: row?.rejected_qty_total,
+        varianceQtyTotal: row?.variance_qty_total,
+      });
+      if (filters.transferStatus && transferStatus !== filters.transferStatus) {
+        return null;
+      }
+
+      const itemLabel = resolveTransferLineLabel(row);
+      const qtyOut = resolveTransferOutQty({ row, meta, stockType });
+      const rate = resolveTransferDisplayRate({ row, meta, stockType });
+      const amount = toAmount(row?.amount, 2);
+      return {
+        mode: TRANSFER_REPORT_MODES.out,
+        voucherId: Number(row?.voucher_id || 0) || null,
+        voucherNo: Number(row?.voucher_no || 0) || null,
+        movementDate: String(row?.movement_date || row?.voucher_date || ""),
+        refBillNo:
+          String(row?.transfer_ref_no || row?.bill_book_no || "").trim() || "-",
+        billNo: String(row?.bill_book_no || "").trim() || "-",
+        sourceBranchId: Number(row?.source_branch_id || 0) || null,
+        sourceBranchName: String(row?.source_branch_name || "").trim() || "-",
+        destinationBranchId: Number(row?.destination_branch_id || 0) || null,
+        destinationBranchName:
+          String(row?.destination_branch_name || "").trim() || "-",
+        transferReason: String(row?.transfer_reason || "").trim().toUpperCase(),
+        itemLabel,
+        unitLabel:
+          String(meta?.uom_code || row?.uom_code || row?.uom_name || "").trim() ||
+          "-",
+        qtyOut,
+        rate,
+        amount,
+        stockStatus: lineStockStatus,
+        transferStatus,
+      };
+    })
+    .filter(Boolean);
+
+  return sortStockTransferRows({ rows: mapped, filters });
+};
+
+const loadStockTransferInRows = async ({
+  filters,
+  hasTransferReasonColumn,
+  hasBillBookNoColumn,
+}) => {
+  const transferReasonExpr = hasTransferReasonColumn
+    ? "upper(coalesce(sth.transfer_reason::text, ''))"
+    : "''";
+  const billBookExpr = hasBillBookNoColumn
+    ? "nullif(trim(sth.bill_book_no), '')"
+    : "coalesce(stn.book_no, '')";
+  const stockTypeExpr =
+    "case when upper(vl.line_kind::text) = 'ITEM' then 'RM' else upper(coalesce(si.item_type::text, '')) end";
+  const groupExpr = "coalesce(si.group_id, i.group_id)";
+  const subgroupExpr = "coalesce(si.subgroup_id, i.subgroup_id)";
+  const articleExpr = "coalesce(si.id, i.id)";
+
+  let query = knex("erp.voucher_header as vh")
+    .join("erp.grn_in_header as gih", "gih.voucher_id", "vh.id")
+    .join("erp.stock_transfer_out_header as sth", "sth.voucher_id", "gih.against_stn_out_id")
+    .join("erp.voucher_header as stn", "stn.id", "sth.voucher_id")
+    .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
+    .leftJoin("erp.branches as sb", "sb.id", "stn.branch_id")
+    .leftJoin("erp.branches as db", "db.id", "sth.dest_branch_id")
+    .leftJoin("erp.skus as s", "s.id", "vl.sku_id")
+    .leftJoin("erp.variants as v", "v.id", "s.variant_id")
+    .leftJoin("erp.items as si", "si.id", "v.item_id")
+    .leftJoin("erp.items as i", "i.id", "vl.item_id")
+    .leftJoin("erp.uom as u", "u.id", "vl.uom_id")
+    .select(
+      "vh.id as voucher_id",
+      "vh.voucher_no",
+      knex.raw("coalesce(gih.received_date, vh.voucher_date) as movement_date"),
+      "stn.branch_id as source_branch_id",
+      "sb.name as source_branch_name",
+      "sth.dest_branch_id as destination_branch_id",
+      "db.name as destination_branch_name",
+      "stn.book_no",
+      "vh.voucher_date",
+      "vl.id as voucher_line_id",
+      "vl.line_no",
+      "vl.line_kind",
+      "vl.item_id",
+      "vl.sku_id",
+      "vl.uom_id",
+      "vl.qty",
+      "vl.rate",
+      "vl.amount",
+      "vl.meta as line_meta",
+      "s.sku_code",
+      "si.name as sku_item_name",
+      "si.item_type as sku_item_type",
+      "si.base_uom_id as sku_base_uom_id",
+      "i.name as item_name",
+      "i.base_uom_id as item_base_uom_id",
+      "u.code as uom_code",
+      "u.name as uom_name",
+      knex.raw(`${transferReasonExpr} as transfer_reason`),
+      knex.raw(`${billBookExpr} as bill_book_no`),
+      knex.raw(`${groupExpr} as group_id`),
+      knex.raw(`${subgroupExpr} as subgroup_id`),
+      knex.raw(`${articleExpr} as article_id`),
+      knex.raw(`${stockTypeExpr} as stock_type_resolved`),
+    )
+    .where({
+      "vh.voucher_type_code": "GRN_IN",
+      "vh.status": "APPROVED",
+      "stn.status": "APPROVED",
+    })
+    .whereRaw("coalesce(gih.received_date, vh.voucher_date) between ? and ?", [
+      filters.from,
+      filters.to,
+    ]);
+
+  if (filters.sourceBranchIds.length) {
+    query = query.whereIn("stn.branch_id", filters.sourceBranchIds);
+  }
+  if (filters.destinationBranchIds.length) {
+    query = query.whereIn("sth.dest_branch_id", filters.destinationBranchIds);
+  }
+
+  query = query.whereRaw(`${stockTypeExpr} = ?`, [filters.stockType]);
+
+  applyWhereInRaw(query, groupExpr, filters.productGroupIds);
+  applyWhereInRaw(query, subgroupExpr, filters.productSubgroupIds);
+  if (filters.stockType !== STOCK_TYPES.rawMaterial) {
+    applyWhereInRaw(query, articleExpr, filters.articleIds);
+  }
+
+  if (filters.stockItemIds.length) {
+    if (filters.stockType === STOCK_TYPES.rawMaterial) {
+      query = query.whereIn("vl.item_id", filters.stockItemIds);
+    } else {
+      query = query.whereIn("vl.sku_id", filters.stockItemIds);
+    }
+  }
+
+  if (hasTransferReasonColumn && filters.transferReasons.length) {
+    applyWhereInRaw(query, transferReasonExpr, filters.transferReasons);
+  }
+
+  const rows = await query.orderBy("vh.voucher_no", "asc").orderBy("vl.line_no", "asc");
+
+  const mappedRows = (rows || [])
+    .map((row) => {
+      const meta = row?.line_meta && typeof row.line_meta === "object" ? row.line_meta : {};
+      const stockType = resolveTransferLineStockType(row, meta);
+      if (stockType !== filters.stockType) return null;
+      const lineStockStatus = resolveTransferLineFgStatus({ row, meta });
+      if (
+        !shouldIncludeTransferLineByStockStatus({
+          filters,
+          stockType,
+          lineStockStatus,
+        })
+      ) {
+        return null;
+      }
+
+      const itemLabel = resolveTransferLineLabel(row);
+      const quantities = resolveTransferInQuantities({ row, meta, stockType });
+      const rate = resolveTransferDisplayRate({ row, meta, stockType });
+      return {
+        mode: TRANSFER_REPORT_MODES.in,
+        voucherId: Number(row?.voucher_id || 0) || null,
+        voucherNo: Number(row?.voucher_no || 0) || null,
+        movementDate: String(row?.movement_date || row?.voucher_date || ""),
+        billNo: String(row?.bill_book_no || "").trim() || "-",
+        sourceBranchId: Number(row?.source_branch_id || 0) || null,
+        sourceBranchName: String(row?.source_branch_name || "").trim() || "-",
+        destinationBranchId: Number(row?.destination_branch_id || 0) || null,
+        destinationBranchName:
+          String(row?.destination_branch_name || "").trim() || "-",
+        transferReason: String(row?.transfer_reason || "").trim().toUpperCase(),
+        itemLabel,
+        unitLabel:
+          String(meta?.uom_code || row?.uom_code || row?.uom_name || "").trim() ||
+          "-",
+        expectedQty: quantities.expectedQty,
+        receivedQty: quantities.receivedQty,
+        rejectedQty: quantities.rejectedQty,
+        varianceQty: quantities.varianceQty,
+        rate,
+        amount: toAmount(row?.amount, 2),
+        stockStatus: lineStockStatus,
+      };
+    })
+    .filter(Boolean);
+
+  const statusByVoucherId = new Map();
+  mappedRows.forEach((row) => {
+    const voucherId = Number(row?.voucherId || 0);
+    if (!voucherId) return;
+    const current = Boolean(statusByVoucherId.get(voucherId));
+    const next =
+      current ||
+      deriveTransferInStatus({
+        rejectedQty: row.rejectedQty,
+        varianceQty: row.varianceQty,
+      }) === TRANSFER_REPORT_STATUSES.partiallyApproved;
+    statusByVoucherId.set(voucherId, next);
+  });
+
+  const withStatus = mappedRows
+    .map((row) => {
+      const hasPartial = Boolean(statusByVoucherId.get(Number(row?.voucherId || 0)));
+      const transferStatus = hasPartial
+        ? TRANSFER_REPORT_STATUSES.partiallyApproved
+        : TRANSFER_REPORT_STATUSES.approved;
+      return {
+        ...row,
+        transferStatus,
+      };
+    })
+    .filter((row) => {
+      if (!filters.transferStatus) return true;
+      return row.transferStatus === filters.transferStatus;
+    });
+
+  return sortStockTransferRows({ rows: withStatus, filters });
+};
+
+const buildDefaultStockTransferReportData = ({
+  includeSourceBranchColumn = true,
+  includeDestinationBranchColumn = true,
+} = {}) => ({
+  rows: [],
+  summaryRows: [],
+  includeSourceBranchColumn: Boolean(includeSourceBranchColumn),
+  includeDestinationBranchColumn: Boolean(includeDestinationBranchColumn),
+  totals: {
+    rowCount: 0,
+    amount: 0,
+    pendingCount: 0,
+    partiallyApprovedCount: 0,
+    approvedCount: 0,
+    qtyOut: 0,
+    expectedQty: 0,
+    receivedQty: 0,
+    rejectedQty: 0,
+    varianceQty: 0,
+  },
+});
+
+const getInventoryStockTransferReportPageData = async ({ req, input = {} }) => {
+  const filters = parseStockTransferReportFilters({ req, input });
+
+  const [
+    hasTransferRefColumn,
+    hasTransferReasonColumn,
+    hasBillBookNoColumn,
+    branches,
+    productGroupsByType,
+    productSubgroupsByType,
+    articlesByType,
+    stockItemsByType,
+  ] = await Promise.all([
+    hasInventoryColumn("stock_transfer_out_header", "transfer_ref_no"),
+    hasInventoryColumn("stock_transfer_out_header", "transfer_reason"),
+    hasInventoryColumn("stock_transfer_out_header", "bill_book_no"),
+    loadBranchOptions(req),
+    loadProductGroupOptionsByType(),
+    loadProductSubgroupOptionsByType(),
+    loadStockMovementArticleOptionsByType(),
+    loadStockMovementItemsByType(),
+  ]);
+  const transferReasonOptions = await loadTransferReasonOptions({
+    hasTransferReasonColumn,
+  });
+
+  const productGroups = Array.isArray(productGroupsByType[filters.stockType])
+    ? productGroupsByType[filters.stockType]
+    : [];
+  const productSubgroups = Array.isArray(productSubgroupsByType[filters.stockType])
+    ? productSubgroupsByType[filters.stockType]
+    : [];
+  const articles =
+    filters.stockType === STOCK_TYPES.rawMaterial
+      ? []
+      : Array.isArray(articlesByType[filters.stockType])
+        ? articlesByType[filters.stockType]
+        : [];
+  const allStockItems = Array.isArray(stockItemsByType[filters.stockType])
+    ? stockItemsByType[filters.stockType]
+    : [];
+  const stockItems =
+    filters.stockType === STOCK_TYPES.rawMaterial || !filters.articleIds.length
+      ? allStockItems
+      : allStockItems.filter((item) =>
+          filters.articleIds.includes(Number(item.item_id || 0)),
+        );
+
+  const sanitizeSelectedIds = (selectedIds, allowedRows) => {
+    if (!Array.isArray(selectedIds) || !selectedIds.length) return [];
+    const allowed = new Set(
+      (allowedRows || [])
+        .map((row) => Number(row?.id || 0))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    );
+    return selectedIds.filter((id) => allowed.has(Number(id)));
+  };
+
+  const safeSourceBranchIds = sanitizeSelectedIds(filters.sourceBranchIds, branches);
+  if (safeSourceBranchIds.length !== filters.sourceBranchIds.length) {
+    filters.invalidFilterInput = true;
+  }
+  filters.sourceBranchIds = safeSourceBranchIds;
+
+  const safeDestinationBranchIds = sanitizeSelectedIds(
+    filters.destinationBranchIds,
+    branches,
+  );
+  if (safeDestinationBranchIds.length !== filters.destinationBranchIds.length) {
+    filters.invalidFilterInput = true;
+  }
+  filters.destinationBranchIds = safeDestinationBranchIds;
+
+  const safeProductGroupIds = sanitizeSelectedIds(
+    filters.productGroupIds,
+    productGroups,
+  );
+  if (safeProductGroupIds.length !== filters.productGroupIds.length) {
+    filters.invalidFilterInput = true;
+  }
+  filters.productGroupIds = safeProductGroupIds;
+
+  const safeProductSubgroupIds = sanitizeSelectedIds(
+    filters.productSubgroupIds,
+    productSubgroups,
+  );
+  if (safeProductSubgroupIds.length !== filters.productSubgroupIds.length) {
+    filters.invalidFilterInput = true;
+  }
+  filters.productSubgroupIds = safeProductSubgroupIds;
+
+  if (filters.stockType === STOCK_TYPES.rawMaterial) {
+    filters.articleIds = [];
+  } else {
+    const safeArticleIds = sanitizeSelectedIds(filters.articleIds, articles);
+    if (safeArticleIds.length !== filters.articleIds.length) {
+      filters.invalidFilterInput = true;
+    }
+    filters.articleIds = safeArticleIds;
+  }
+
+  const safeStockItemIds = sanitizeSelectedIds(filters.stockItemIds, stockItems);
+  if (safeStockItemIds.length !== filters.stockItemIds.length) {
+    filters.invalidFilterInput = true;
+  }
+  filters.stockItemIds = safeStockItemIds;
+
+  const allowedReasonSet = new Set(
+    (transferReasonOptions || [])
+      .map((entry) => String(entry?.value || "").trim().toUpperCase())
+      .filter(Boolean),
+  );
+  filters.transferReasons = (filters.transferReasons || []).filter((value) =>
+    allowedReasonSet.has(String(value || "").trim().toUpperCase()),
+  );
+
+  const options = {
+    sourceBranches: branches,
+    destinationBranches: branches,
+    productGroups,
+    productSubgroups,
+    articles,
+    stockItems,
+    productGroupsByType,
+    productSubgroupsByType,
+    articlesByType,
+    stockItemsByType,
+    stockTypes: [
+      { value: STOCK_TYPES.finished, labelKey: "finished" },
+      { value: STOCK_TYPES.semiFinished, labelKey: "semi_finished" },
+      { value: STOCK_TYPES.rawMaterial, labelKey: "raw_materials" },
+    ],
+    stockStatusOptions: [
+      { value: TRANSFER_STOCK_STATUS_FILTERS.all, labelKey: "all" },
+      { value: TRANSFER_STOCK_STATUS_FILTERS.packed, labelKey: "packed" },
+      { value: TRANSFER_STOCK_STATUS_FILTERS.loose, labelKey: "loose" },
+    ],
+    transferStatusOptions: [
+      { value: TRANSFER_REPORT_STATUSES.pending, labelKey: "pending" },
+      {
+        value: TRANSFER_REPORT_STATUSES.partiallyApproved,
+        labelKey: "partially_approved",
+      },
+      { value: TRANSFER_REPORT_STATUSES.approved, labelKey: "approved" },
+    ],
+    transferModes: [
+      { value: TRANSFER_REPORT_MODES.out, labelKey: "transfer_out" },
+      { value: TRANSFER_REPORT_MODES.in, labelKey: "transfer_in" },
+    ],
+    orderByOptions: [
+      { value: TRANSFER_REPORT_ORDER_BY_TYPES.branch, labelKey: "branch" },
+      {
+        value: TRANSFER_REPORT_ORDER_BY_TYPES.voucher,
+        labelKey: "voucher_no",
+      },
+      { value: TRANSFER_REPORT_ORDER_BY_TYPES.sku, labelKey: "sku" },
+    ],
+    reportTypeOptions: [
+      { value: VIEW_TYPES.details, labelKey: "details" },
+      { value: VIEW_TYPES.summary, labelKey: "summary" },
+    ],
+    transferReasonOptions,
+  };
+
+  const effectiveSourceBranchCount =
+    filters.sourceBranchIds.length || (options?.sourceBranches || []).length;
+  const effectiveDestinationBranchCount =
+    filters.destinationBranchIds.length ||
+    (options?.destinationBranches || []).length;
+  const includeSourceBranchColumn = effectiveSourceBranchCount !== 1;
+  const includeDestinationBranchColumn = effectiveDestinationBranchCount !== 1;
+
+  if (!filters.reportLoaded) {
+    return {
+      filters,
+      options,
+      reportData: buildDefaultStockTransferReportData({
+        includeSourceBranchColumn,
+        includeDestinationBranchColumn,
+      }),
+    };
+  }
+
+  const detailRows =
+    filters.mode === TRANSFER_REPORT_MODES.in
+      ? await loadStockTransferInRows({
+          filters,
+          hasTransferReasonColumn,
+          hasBillBookNoColumn,
+        })
+      : await loadStockTransferOutRows({
+          filters,
+          hasTransferRefColumn,
+          hasTransferReasonColumn,
+          hasBillBookNoColumn,
+        });
+
+  const summaryRows = buildStockTransferSummaryRows({ rows: detailRows, filters });
+  const totals = buildStockTransferTotals({ rows: detailRows, filters });
+
+  return {
+    filters,
+    options,
+    reportData: {
+      rows: detailRows,
+      summaryRows,
+      totals,
+      includeSourceBranchColumn,
+      includeDestinationBranchColumn,
     },
   };
 };
@@ -2870,4 +4165,5 @@ module.exports = {
   getInventoryStockBalancesReportPageData,
   getInventoryStockLedgerReportPageData,
   getInventoryStockMovementReportPageData,
+  getInventoryStockTransferReportPageData,
 };

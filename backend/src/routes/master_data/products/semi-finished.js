@@ -204,8 +204,7 @@ router.get(
       const [options, users] = await Promise.all([loadOptions(), loadUsers()]);
       const rows = canBrowse ? await loadRows(filters) : [];
       const pairUomError = !options.uoms?.length
-        ? res.locals.t("error_pair_uom_missing") ||
-          "PAIR UOM is missing. Run latest migration."
+        ? res.locals.t("error_pair_uom_missing") 
         : null;
       renderIndex(req, res, {
         rows,
@@ -284,8 +283,7 @@ router.post(
           users,
           error: pairBaseUnitValid
             ? res.locals.t("error_required_fields")
-            : res.locals.t("error_production_base_unit_pair") ||
-              "Finished and Semi-Finished articles must use PAIR as base unit.",
+            : res.locals.t("error_production_base_unit_pair") ,
           modalOpen: true,
           modalMode: "create",
           values,
@@ -426,8 +424,7 @@ router.post(
           users,
           error: pairBaseUnitValid
             ? res.locals.t("error_required_fields")
-            : res.locals.t("error_production_base_unit_pair") ||
-              "Finished and Semi-Finished articles must use PAIR as base unit.",
+            : res.locals.t("error_production_base_unit_pair") ,
           modalOpen: true,
           modalMode: "edit",
           values: { ...values, id },
@@ -527,8 +524,8 @@ router.post(
         return next(new HttpError(404, res.locals.t("error_not_found")));
       const nextIsActive = !current.is_active;
       const toggleLabel = nextIsActive
-        ? res.locals.t("activate") || "Activate"
-        : res.locals.t("deactivate") || "Deactivate";
+        ? res.locals.t("activate") 
+        : res.locals.t("deactivate") ;
 
       const approval = await handleScreenApproval({
         req,
@@ -623,8 +620,7 @@ router.post(
         if (String(deleteErr?.code || "") === "23503") {
           throw new HttpError(
             409,
-            res.locals.t("error_record_in_use") ||
-              "This record is being used in other ERP areas and cannot be deleted.",
+            res.locals.t("error_record_in_use") ,
           );
         }
         throw deleteErr;

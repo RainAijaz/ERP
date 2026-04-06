@@ -172,10 +172,30 @@ test.describe("Voucher/report permission policy", () => {
       await page.locator(`input[name="${reportScopeId}:can_view"]`).count(),
     ).toBeGreaterThan(0);
     expect(
-      await page.locator(`input[name="${reportScopeId}:can_navigate"]`).count(),
+      await page.locator(`input[name="${reportScopeId}:can_load"]`).count(),
+    ).toBeGreaterThan(0);
+    expect(
+      await page
+        .locator(`input[name="${reportScopeId}:can_view_details"]`)
+        .count(),
     ).toBeGreaterThan(0);
     expect(
       await page.locator(`input[name="${reportScopeId}:can_print"]`).count(),
+    ).toBeGreaterThan(0);
+    expect(
+      await page
+        .locator(`input[name="${reportScopeId}:can_export_excel_csv"]`)
+        .count(),
+    ).toBeGreaterThan(0);
+    expect(
+      await page
+        .locator(`input[name="${reportScopeId}:can_filter_all_branches"]`)
+        .count(),
+    ).toBeGreaterThan(0);
+    expect(
+      await page
+        .locator(`input[name="${reportScopeId}:can_view_cost_fields"]`)
+        .count(),
     ).toBeGreaterThan(0);
 
     await expect(
@@ -304,7 +324,7 @@ test.describe("Voucher/report permission policy", () => {
     );
   });
 
-  test("report user with view/list/download permissions can open sales report", async ({
+  test("report user with view/load/print/export permissions can open sales report", async ({
     page,
   }) => {
     test.skip(!ctx.ready, ctx.skipReason);
@@ -325,8 +345,12 @@ test.describe("Voucher/report permission policy", () => {
       scopeKey: "sales_report",
       permissions: {
         can_view: true,
-        can_navigate: true,
+        can_load: true,
+        can_view_details: true,
         can_print: true,
+        can_export_excel_csv: true,
+        can_filter_all_branches: true,
+        can_view_cost_fields: true,
       },
     });
 
@@ -366,8 +390,12 @@ test.describe("Voucher/report permission policy", () => {
       scopeKey: "sales_report",
       permissions: {
         can_view: false,
-        can_navigate: false,
+        can_load: false,
+        can_view_details: false,
         can_print: false,
+        can_export_excel_csv: false,
+        can_filter_all_branches: false,
+        can_view_cost_fields: false,
       },
     });
 

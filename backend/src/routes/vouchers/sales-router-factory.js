@@ -69,6 +69,8 @@ const createSalesVoucherRouter = ({
       try {
         const forceNew = String(req.query.new || "").trim() === "1";
         const forceView = String(req.query.view || "").trim() === "1";
+        const forceGatePassOpen =
+          String(req.query.open_gate_pass || "").trim() === "1";
         const requestedVoucherNo = parseVoucherNo(req.query.voucher_no);
         const canListHistory =
           typeof res.locals.can === "function" &&
@@ -136,6 +138,8 @@ const createSalesVoucherRouter = ({
         const allowCreate = canVoucherAction(res, scopeKey, "create");
         const allowEdit = canVoucherAction(res, scopeKey, "edit");
         const allowDelete = canVoucherAction(res, scopeKey, "hard_delete");
+        const allowPrintGatePass = canVoucherAction(res, scopeKey, "print");
+        const selectedVoucherNo = Number(selectedVoucher?.voucher_no || 0) || null;
 
         return res.render("base/layouts/main", {
           title: `${res.locals.t(titleKey)} - ${res.locals.t("sales")}`,
@@ -160,6 +164,9 @@ const createSalesVoucherRouter = ({
           allowCreate,
           allowEdit,
           allowDelete,
+          allowPrintGatePass,
+          autoOpenGatePass:
+            forceGatePassOpen && allowPrintGatePass && Boolean(selectedVoucherNo),
         });
       } catch (err) {
         console.error("Error in SalesVoucherPageService:", err);
@@ -214,12 +221,24 @@ const createSalesVoucherRouter = ({
 
       if (saved.queuedForApproval) {
         const msg = saved.permissionReroute
-          ? res.locals.t("approval_sent") ||
-            "Change submitted for Administrator approval."
+          ? res.locals.t("approval_sent") 
           : res.locals.t("approval_submitted");
         setNotice(res, msg, true);
       } else {
         setNotice(res, res.locals.t("saved_successfully"));
+      }
+
+      const savedVoucherNo = Number(saved?.voucherNo || 0) || null;
+      const canPrintGatePass = canVoucherAction(res, scopeKey, "print");
+      const shouldAutoOpenGatePass =
+        voucherTypeCode === "SALES_VOUCHER" &&
+        canPrintGatePass &&
+        Boolean(savedVoucherNo);
+
+      if (shouldAutoOpenGatePass) {
+        return res.redirect(
+          `${req.baseUrl}?voucher_no=${savedVoucherNo}&view=1&open_gate_pass=1`,
+        );
       }
 
       return res.redirect(`${req.baseUrl}?new=1`);
@@ -252,14 +271,13 @@ const createSalesVoucherRouter = ({
 
       if (saved.queuedForApproval) {
         const msg = saved.permissionReroute
-          ? res.locals.t("approval_sent") ||
-            "Change submitted for Administrator approval."
+          ? res.locals.t("approval_sent") 
           : res.locals.t("approval_submitted");
         setNotice(res, msg, true);
       } else {
         setNotice(
           res,
-          res.locals.t("deleted_successfully") || "Deleted successfully.",
+          res.locals.t("deleted_successfully") ,
         );
       }
 
@@ -277,6 +295,12 @@ const createSalesVoucherRouter = ({
     async (req, res, next) => {
       try {
         const voucherNo = parseVoucherNo(req.query.voucher_no);
+        const embedMode = String(req.query.embed || "").trim() === "1";
+        const downloadMode = String(req.query.download || "").trim() === "1";
+        const localeCode =
+          String(res.locals?.locale || "en").trim().toLowerCase() === "ur"
+            ? "ur"
+            : "en";
         if (!voucherNo) throw new Error("Invalid voucher no");
 
         const gatePass = await loadSalesGatePassDetails({
@@ -286,11 +310,20 @@ const createSalesVoucherRouter = ({
         });
         if (!gatePass) throw new Error("Gate pass data not found");
 
+        if (downloadMode) {
+          const filename = `sales-gate-pass-${voucherNo}.html`;
+          res.setHeader("Content-Type", "text/html; charset=utf-8");
+          res.setHeader("Content-Disposition", `attachment; filename=\"${filename}\"`);
+        }
+
         return res.render("vouchers/sales/gate-pass", {
           layout: false,
           t: res.locals.t,
           gatePass,
           voucherTypeCode,
+          locale: localeCode,
+          dir: localeCode === "ur" ? "rtl" : "ltr",
+          embedMode,
         });
       } catch (err) {
         console.error("Error in SalesGatePassService:", err);

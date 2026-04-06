@@ -30,6 +30,7 @@ const translations = {
     module: "Module",
     screen: "Screen",
     navigate: "Navigate",
+    navigation: "Navigation",
     voucher: "Voucher",
     report: "Report",
     view: "View",
@@ -105,6 +106,8 @@ const translations = {
     dashboard: "Dashboard",
     welcome: "Welcome back. Select a module from the navigation to begin.",
     branch: "Branch",
+    branch_changed_reload_confirm:
+      "Branch changed in another tab. Reload this page with the new branch context? Unsaved changes will be lost.",
     signed_in_as: "Signed in as",
     logout: "Logout",
     sign_in: "Sign in",
@@ -119,11 +122,13 @@ const translations = {
     // --- MODULES ---
     administration: "Administration",
     setup: "Setup",
+    security: "Security",
     branches: "Branches",
     users: "Users",
     roles: "Roles",
     permissions: "Permissions",
     approvals: "Approvals", // Renamed from "Pending Approvals" to be generic
+    pending_approvals: "Pending Approvals",
     audit_logs: "Activity Log",
     master_data: "Master Data",
     accounts_parties: "Accounts & Parties",
@@ -196,6 +201,8 @@ const translations = {
     select: "Select",
     load: "Load",
     voucher_no: "Voucher No",
+    transfer_out: "Transfer Out",
+    transfer_in: "Transfer In",
     stock_transfer: "Stock Transfer",
     stock_transfer_out: "Stock Transfer Out",
     stock_transfer_in: "Stock Transfer In",
@@ -205,6 +212,7 @@ const translations = {
     source_branch: "Source Branch",
     destination_branch: "Destination Branch",
     destination_branch_required: "Destination branch is required.",
+    bill_book_no_required: "Bill Book No is required.",
     transfer_reference_required: "Transfer reference is required.",
     select_transfer_reference: "Select Transfer Reference",
     transfer_reason: "Transfer Reason",
@@ -462,6 +470,42 @@ const translations = {
     step: "Step",
     color_rates: "Color Rates",
     avg_purchase_rate: "Avg Purchase Rate",
+    current_purchase_rate: "CURRENT RATE",
+    fixed_purchase_rate: "Standard Rate",
+    weighted_average_rate: "Weighted Avg Rate",
+    rate_difference: "Rate Difference",
+    variance_amount: "Variance (Amt)",
+    variance_percent: "Variance (%)",
+    high_variance: "High Variance",
+    high_variance_threshold: "High Variance Threshold",
+    rate_alert_legend: "Legend",
+    purchase_report_header_group_tooltip:
+      "Group label based on current Order By selection.",
+    purchase_report_header_voucher_no_tooltip:
+      "System voucher number for the purchase transaction.",
+    purchase_report_header_date_tooltip:
+      "Voucher posting date used in the selected filter range.",
+    purchase_report_header_bill_number_tooltip:
+      "Supplier bill/reference number entered on voucher.",
+    purchase_report_header_party_name_tooltip:
+      "Supplier linked with this purchase entry.",
+    purchase_report_header_raw_material_tooltip:
+      "Raw material item on the purchase line.",
+    purchase_report_header_quantity_tooltip:
+      "Purchased quantity for this line/group.",
+    purchase_report_header_standard_rate_tooltip:
+      "Standard (fixed) rate maintained in RM rate master.",
+    purchase_report_header_weighted_avg_rate_tooltip:
+      "Weighted average historical rate from RM rate master.",
+    purchase_report_header_current_rate_tooltip:
+      "Rate used in this voucher line.",
+    purchase_report_header_variance_amount_tooltip:
+      "Difference amount: CURRENT RATE - Standard Rate.",
+    purchase_report_header_variance_percent_tooltip:
+      "Difference percent against Standard Rate.",
+    purchase_report_header_amount_tooltip:
+      "Line/group amount after quantity x CURRENT RATE.",
+    purchase_report_header_branch_tooltip: "Branch where voucher is posted.",
     min_stock: "Min Stock",
     sizes_label: "Sizes",
     usage: "Usage In",
@@ -1004,6 +1048,25 @@ const translations = {
     profit_and_loss: "Profit and Loss Statement",
     profit_and_loss_purpose_tooltip:
       "Summarizes income and expense to show net profit/loss for the period.",
+    profit_derivation: "Profit Derivation",
+    profit_derivation_note:
+      "Formula and substituted values for selected filters.",
+    pl_gross_sales: "Gross Sales",
+    pl_sales_returns: "Sales Returns",
+    pl_discounts: "Discounts",
+    pl_net_sales: "Net Sales",
+    pl_opening_inventory: "Opening Inventory",
+    pl_purchases: "Purchases",
+    pl_direct_costs: "Direct Costs",
+    pl_closing_inventory: "Closing Inventory",
+    pl_cogs: "Cost of Goods Sold (COGS)",
+    pl_gross_profit: "Gross Profit",
+    pl_operating_expenses: "Operating Expenses",
+    pl_operating_profit_ebit: "Operating Profit (EBIT)",
+    pl_other_income: "Other Income",
+    pl_other_expenses: "Other Expenses",
+    pl_finance_cost: "Finance Cost",
+    pl_net_profit_before_tax: "Net Profit Before Tax",
     journal_voucher_register: "Journal Voucher Register",
     journal_voucher_register_purpose_tooltip:
       "Lists journal vouchers for adjustment and accrual audit review.",
@@ -1212,7 +1275,7 @@ const translations = {
     inventory_voucher: "Inventory Voucher",
     opening_stock_voucher: "Opening Stock Voucher",
     stock_count: "Stock Count",
-    stock_count_adjustment_voucher: "Stock Count Adjustment Voucher",
+    stock_count_adjustment_voucher: "Stock Count Voucher",
     stock_transfer: "Stock Transfer",
     reason_notes: "Reason Notes",
     system_stock_qty: "System Stock Qty",
@@ -1230,7 +1293,18 @@ const translations = {
       "Shows stock quantities only (without values) by selected filters.",
     stock_ledger_report: "Stock Ledger Report",
     stock_movement_report: "Stock Movement Report",
+    stock_transfer_report: "Stock Transfer Report",
+    stock_transfer_report_purpose_tooltip:
+      "Shows approved stock transfer in/out movement with branch, voucher, and SKU level filters.",
     pair_quantity: "Pair Quantity",
+    qty_out: "Qty Out",
+    transfer_status: "Transfer Status",
+    partially_approved: "Partially Approved",
+    ref_bill_no: "Ref/Bill No",
+    voucher_count: "Voucher Count",
+    mixed: "Mixed",
+    dispatch_date: "Dispatch Date",
+    received_date: "Received Date",
     stock_ledger_report_purpose_tooltip:
       "Shows stock movement ledger with opening, inward, outward, and closing balances for selected stock type and item.",
     stock_movement_report_purpose_tooltip:
@@ -1356,6 +1430,10 @@ const translations = {
     loose: "Loose",
     packed: "Packed",
     print_gate_pass: "Print Gate Pass",
+    thank_you_for_your_visit: "THANK YOU FOR YOUR VISIT",
+    prepared_by: "Prepared By",
+    checked_by: "Checked By",
+    approved_by: "Approved By",
     auto_translate: "Auto Translate",
     translate_to_urdu: "Translate to Urdu",
     translation_fetching: "Fetching translation...",
@@ -1492,14 +1570,29 @@ const translations = {
     permissions_tip_view:
       "Grants permission to open this module. Required for any other action.",
     permissions_tip_navigate:
-      "Allows listing existing records in this screen. Required to find a record for edit/deactivate actions.",
+      "Allows navigating through existing records..",
+    permissions_tip_load:
+      "Allows loading report data using the selected filters.",
+    permissions_tip_view_details:
+      "Allows opening voucher/invoice drill-down links from report rows.",
     permissions_tip_create: "Enables the Add New form to save new entries.",
     permissions_tip_edit:
       "Unlocks the ability to change data in existing records.",
     permissions_tip_deactivate: "Enables the option to deactivate records.",
     permissions_tip_delete: "Permanently removes records.",
     permissions_tip_approve: "Grants authority to finalize a record status.",
+    permissions_tip_print: "Enables report print output.",
     permissions_tip_download: "Enables the Download and Export buttons.",
+    permissions_tip_export_excel_csv:
+      "Allows exporting report output to Excel/CSV files.",
+    permissions_tip_filter_all_branches:
+      "Allows filtering reports across all branches instead of own branch only.",
+    permissions_tip_view_cost_fields:
+      "Allows viewing cost/rate sensitive columns in reports.",
+    view_details: "View Details",
+    export_excel_csv: "Export Excel/CSV",
+    filter_all_branches: "All Branch Filters",
+    view_cost_fields: "View Cost Fields",
     groups_description:
       "Manage groups used across products, parties, accounts, and departments.",
     product_groups_description: "Define RM/SFG/FG visibility groups.",
@@ -1679,6 +1772,7 @@ translations.ur = {
   module: "ماڈیول",
   screen: "اسکرین",
   navigate: "نیویگیٹ",
+  navigation: "نیویگیشن",
   voucher: "واؤچر",
   report: "رپورٹ",
   view: "دیکھیں",
@@ -1709,6 +1803,8 @@ translations.ur = {
   brand: "چاند ایوا",
   signed_in_as: "بطور داخل",
   branch: "برانچ",
+  branch_changed_reload_confirm:
+    "دوسرے ٹیب میں برانچ تبدیل ہو گئی ہے۔ کیا نئے برانچ کانٹیکسٹ کے ساتھ یہ صفحہ دوبارہ لوڈ کیا جائے؟ غیر محفوظ تبدیلیاں ضائع ہو جائیں گی۔",
   logout: "لاگ آؤٹ",
   language: "زبان",
   english: "انگریزی",
@@ -1716,6 +1812,7 @@ translations.ur = {
   administration: "انتظامیہ",
   permissions: "اجازتیں",
   approvals: "منظوری",
+  pending_approvals: "زیر التواء منظوری",
   master_data: "ماسٹر ڈیٹا",
   hr_payroll: "ایچ آر اور پے رول",
   financial: "مالیاتی",
@@ -1743,6 +1840,7 @@ translations.ur = {
   supplier: "سپلائر",
   select_supplier: "سپلائر منتخب کریں",
   bill_book_no: "بل بک نمبر",
+  bill_book_no_required: "بل بک نمبر لازمی ہے۔",
   reference_no: "ریفرنس نمبر",
   description: "تفصیل",
   reason: "وجہ",
@@ -1948,6 +2046,39 @@ translations.ur = {
   average_per_bucket: "فی بالٹی اوسط",
   average_per_bucket_help: "صرف غیر صفر بالٹیوں میں اوسط خالص خرچ؛",
   avg_purchase_rate: "اوسط خریداری کی شرح",
+  current_purchase_rate: "موجودہ شرح",
+  fixed_purchase_rate: "معیاری شرح",
+  weighted_average_rate: "وزنی اوسط شرح",
+  rate_difference: "شرح میں فرق",
+  variance_amount: "فرق (رقم)",
+  variance_percent: "فرق (%)",
+  high_variance: "زیادہ فرق",
+  high_variance_threshold: "زیادہ فرق کی حد",
+  rate_alert_legend: "لیجنڈ",
+  purchase_report_header_group_tooltip:
+    "موجودہ آرڈر بائی انتخاب کے مطابق گروپ لیبل۔",
+  purchase_report_header_voucher_no_tooltip:
+    "خریداری ٹرانزیکشن کا سسٹم ووچر نمبر۔",
+  purchase_report_header_date_tooltip:
+    "منتخب فلٹر رینج میں ووچر کی پوسٹنگ تاریخ۔",
+  purchase_report_header_bill_number_tooltip:
+    "ووچر میں درج سپلائر بل/حوالہ نمبر۔",
+  purchase_report_header_party_name_tooltip:
+    "اس خریداری اندراج سے منسلک سپلائر۔",
+  purchase_report_header_raw_material_tooltip: "خریداری لائن میں خام مال آئٹم۔",
+  purchase_report_header_quantity_tooltip: "اس لائن/گروپ کی خریدی گئی مقدار۔",
+  purchase_report_header_standard_rate_tooltip:
+    "آر ایم ریٹ ماسٹر میں محفوظ معیاری (فکسڈ) شرح۔",
+  purchase_report_header_weighted_avg_rate_tooltip:
+    "آر ایم ریٹ ماسٹر کی وزنی اوسط تاریخی شرح۔",
+  purchase_report_header_current_rate_tooltip:
+    "اس ووچر لائن میں استعمال ہونے والی شرح۔",
+  purchase_report_header_variance_amount_tooltip:
+    "فرق کی رقم: موجودہ شرح - معیاری شرح۔",
+  purchase_report_header_variance_percent_tooltip:
+    "معیاری شرح کے مقابلے میں فرق کا فیصد۔",
+  purchase_report_header_amount_tooltip: "لائن/گروپ رقم = مقدار x موجودہ شرح۔",
+  purchase_report_header_branch_tooltip: "وہ برانچ جہاں ووچر پوسٹ کیا گیا۔",
   back: "پیچھے",
   back_to_branches: "شاخوں پر واپس جائیں۔",
   back_to_list: "فہرست پر واپس جائیں۔",
@@ -2426,7 +2557,18 @@ translations.ur = {
   stock_balances_report: "اسٹاک بیلنسز رپورٹ",
   stock_ledger_report: "اسٹاک لیجر رپورٹ",
   stock_movement_report: "اسٹاک موومنٹ رپورٹ",
+  stock_transfer_report: "اسٹاک ٹرانسفر رپورٹ",
+  transfer_out: "ٹرانسفر آؤٹ",
+  transfer_in: "ٹرانسفر اِن",
   pair_quantity: "جوڑا مقدار",
+  qty_out: "آؤٹ مقدار",
+  transfer_status: "ٹرانسفر اسٹیٹس",
+  partially_approved: "جزوی منظور شدہ",
+  ref_bill_no: "ریفرنس/بل نمبر",
+  voucher_count: "واؤچر گنتی",
+  mixed: "مخلوط",
+  dispatch_date: "ڈسپیچ تاریخ",
+  received_date: "موصول تاریخ",
   stock_ledger_error_select_date_range:
     "اسٹاک لیجر رپورٹ لوڈ کرنے کے لئے درست تاریخ کی حد منتخب کریں۔",
   stock_ledger_error_select_stock_item:
@@ -2523,6 +2665,8 @@ translations.ur = {
   pair_discount: "جوڑی ڈسکاؤنٹ",
   pair_rate: "جوڑی کی شرح",
   pairs: "جوڑے",
+  unit_pair: "جوڑا",
+  unit_dozen: "درجن",
   parties: "پارٹیاں",
   parties_label: "پارٹیاں",
   party_code: "پارٹی کوڈ",
@@ -2561,8 +2705,22 @@ translations.ur = {
   permissions_tip_edit:
     "موجودہ ریکارڈز میں ڈیٹا کو تبدیل کرنے کی صلاحیت کو غیر مقفل کرتا ہے۔",
   permissions_tip_navigate:
-    "اس اسکرین میں موجودہ ریکارڈز کی فہرست بنانے کی اجازت دیتا ہے۔",
+    "موجودہ ریکارڈز میں نیویگیٹ کرنے کی اجازت دیتا ہے۔",
   permissions_tip_view: "اس ماڈیول کو کھولنے کی اجازت دیتا ہے۔",
+  permissions_tip_load: "فلٹرز کے ساتھ رپورٹ ڈیٹا لوڈ کرنے کی اجازت دیتا ہے۔",
+  permissions_tip_view_details:
+    "رپورٹ سے ووچر/انوائس تفصیل لنکس کھولنے کی اجازت دیتا ہے۔",
+  permissions_tip_print: "رپورٹ پرنٹ آؤٹ کی اجازت دیتا ہے۔",
+  permissions_tip_export_excel_csv:
+    "رپورٹ کو ایکسل/CSV میں ایکسپورٹ کرنے کی اجازت دیتا ہے۔",
+  permissions_tip_filter_all_branches:
+    "اپنی برانچ کے بجائے تمام برانچز پر فلٹر لگانے کی اجازت دیتا ہے۔",
+  permissions_tip_view_cost_fields:
+    "رپورٹس میں لاگت/ریٹ والے حساس کالم دیکھنے کی اجازت دیتا ہے۔",
+  view_details: "تفصیلی دیکھیں",
+  export_excel_csv: "ایکسپورٹ Excel/CSV",
+  filter_all_branches: "تمام برانچ فلٹر",
+  view_cost_fields: "لاگت کے فیلڈز دیکھیں",
   phone_1: "فون 1",
   phone_2: "فون 2",
   phone_number: "فون نمبر",
@@ -2586,6 +2744,10 @@ translations.ur = {
   previous_rate: "پچھلا ریٹ",
   primary_customer_name: "بنیادی گاہک کا نام",
   print_gate_pass: "گیٹ پاس پرنٹ کریں۔",
+  thank_you_for_your_visit: "آپ کی آمد کا شکریہ",
+  prepared_by: "تیار کرنے والا",
+  checked_by: "جانچنے والا",
+  approved_by: "منظور کرنے والا",
   proceed_change: "تبدیلی کے ساتھ آگے بڑھیں۔",
   product_group: "پروڈکٹ گروپ",
   product_groups: "پروڈکٹ گروپس",
@@ -2665,6 +2827,24 @@ translations.ur = {
   must_be_positive: "صفر سے بڑا ہونا ضروری ہے",
   products: "مصنوعات",
   profit_and_loss: "منافع اور نقصان کا بیان",
+  profit_derivation: "منافع کی تشریح",
+  profit_derivation_note: "منتخب فلٹرز کے مطابق فارمولا اور حسابی اقدار۔",
+  pl_gross_sales: "مجموعی فروخت",
+  pl_sales_returns: "سیلز واپسی",
+  pl_discounts: "ڈسکاؤنٹس",
+  pl_net_sales: "خالص فروخت",
+  pl_opening_inventory: "ابتدائی انوینٹری",
+  pl_purchases: "خریداریاں",
+  pl_direct_costs: "براہِ راست لاگت",
+  pl_closing_inventory: "اختتامی انوینٹری",
+  pl_cogs: "فروخت شدہ مال کی لاگت (COGS)",
+  pl_gross_profit: "مجموعی منافع",
+  pl_operating_expenses: "آپریٹنگ اخراجات",
+  pl_operating_profit_ebit: "آپریٹنگ منافع (EBIT)",
+  pl_other_income: "دیگر آمدن",
+  pl_other_expenses: "دیگر اخراجات",
+  pl_finance_cost: "مالی لاگت",
+  pl_net_profit_before_tax: "ٹیکس سے پہلے خالص منافع",
   profitability_analysis: "منافع بخش تجزیہ رپورٹ",
   purchase_invoice: "عام خریداری",
   purchase_order: "خریداری کا آرڈر",
@@ -2791,6 +2971,7 @@ translations.ur = {
   send_for_approval: "منظوری کے لیے بھیجیں۔",
   sent_qty: "مقدار بھیجی گئی۔",
   service_capability: "سروس",
+  security: "سیکیورٹی",
   setup: "سیٹ اپ",
   sfg_part_type: "SFG حصہ کی قسم",
   show: "دکھائیں۔",
@@ -2814,7 +2995,7 @@ translations.ur = {
   start_group: "گروپ",
   step: "قدم",
   stock_count: "اسٹاک شمار",
-  stock_count_adjustment_voucher: "اسٹاک کاؤنٹ ایڈجسٹمنٹ واؤچر",
+  stock_count_adjustment_voucher: "اسٹاک کاؤنٹ واؤچر",
   stock_transfer: "اسٹاک کی منتقلی",
   reason_notes: "وجہ کی تفصیل",
   system_stock_qty: "سسٹم اسٹاک مقدار",
@@ -3011,6 +3192,8 @@ translations.ur = {
     "Selected stock type, item aur date range ke mutabiq opening, inward, outward aur closing movement ledger dikhata hai.",
   stock_movement_report_purpose_tooltip:
     "Selected filters ke mutabiq opening, production, purchase, sale, adjustment aur closing stock movement dikhata hai.",
+  stock_transfer_report_purpose_tooltip:
+    "Approved stock transfer in/out movement ko branch, voucher aur SKU filters ke sath dikhata hai.",
   pending_returnables_purpose_tooltip:
     "Pending returnable cases jo abhi wapas nahi aaye unko dikhata hai.",
   overdue_returnables_purpose_tooltip:
@@ -3032,6 +3215,118 @@ translations.ur = {
   sales_discount_report_purpose_tooltip:
     "Discount impact ko voucher/customer level par monitor karta hai.",
 };
+
+Object.assign(translations.en, {
+  aging_days: "Aging Days",
+  articles: "Articles",
+  availability: "Availability",
+  availability_check: "Check Availability",
+  availability_ok: "Availability OK",
+  availability_short: "Availability Short",
+  available: "Available",
+  bom_error_lifecycle_requires_approved:
+    "Only approved BOM can be activated or deactivated.",
+  bom_error_sfg_consumed_stage_not_mapped:
+    "Selected consumed stage is not mapped in BOM routing.",
+  bom_error_sfg_consumed_stage_required:
+    "Consumed stage is required for SFG consumption.",
+  bom_error_stage_required_for_sfg: "Stage selection is required for SFG.",
+  bom_header_change_apply_clear_quantities:
+    "Apply header changes and clear dependent quantities?",
+  bom_hint_sfg_consumed_stage:
+    "Select the stage where this SFG will be consumed.",
+  check: "Check",
+  checking: "Checking",
+  close: "Close",
+  confirm_delete: "Confirm Delete",
+  convertible_from_better_grade: "Convertible From Better Grade",
+  deficit: "Deficit",
+  department_count: "Department Count",
+  effective_available: "Effective Available",
+  fill_required_fields_then_check_availability:
+    "Fill required fields and then check availability.",
+  final_stage_only: "Final Stage Only",
+  item: "Item",
+  lines: "Lines",
+  na: "N/A",
+  no_data_found: "No data found.",
+  no_previous_stage_requirement: "No previous-stage requirement for this row.",
+  no_sfg_required_for_this_stage: "No SFG required for this stage.",
+  opening_stock: "Opening Stock",
+  pending_departments: "Pending Departments",
+  planned: "Planned",
+  previous_stage: "Previous Stage",
+  product_subgroup: "Product Subgroup",
+  production_unit: "Production Unit",
+  required: "Required",
+  select_color: "Select Color",
+  select_size: "Select Size",
+  short: "Short",
+  source_production_voucher: "Source Production Voucher",
+  stage_scope: "Stage Scope",
+  total_deficit: "Total Deficit",
+  return_reason_wrong_size: "Wrong Size",
+  return_reason_missing_items: "Missing Items",
+  return_reason_customer_changed_mind: "Customer Changed Mind",
+  return_reason_quality_defect: "Quality Defect",
+});
+
+Object.assign(translations.ur, {
+  aging_days: "دنوں کی عمر",
+  articles: "آرٹیکلز",
+  availability: "دستیابی",
+  availability_check: "دستیابی چیک کریں",
+  availability_ok: "دستیابی درست",
+  availability_short: "دستیابی کم",
+  available: "دستیاب",
+  bom_error_lifecycle_requires_approved:
+    "صرف منظور شدہ بی او ایم کو فعال یا غیر فعال کیا جا سکتا ہے۔",
+  bom_error_sfg_consumed_stage_not_mapped:
+    "منتخب شدہ خرچ مرحلہ بی او ایم روٹنگ میں میپ نہیں ہے۔",
+  bom_error_sfg_consumed_stage_required:
+    "ایس ایف جی خرچ کے لئے consumed stage لازمی ہے۔",
+  bom_error_stage_required_for_sfg:
+    "ایس ایف جی کے لئے مرحلہ منتخب کرنا لازمی ہے۔",
+  bom_header_change_apply_clear_quantities:
+    "ہیڈر تبدیلیاں لاگو کر کے متعلقہ مقداریں صاف کی جائیں؟",
+  bom_hint_sfg_consumed_stage:
+    "وہ مرحلہ منتخب کریں جہاں یہ ایس ایف جی خرچ ہوگا۔",
+  check: "چیک",
+  checking: "چیک ہو رہا ہے",
+  close: "بند کریں",
+  confirm_delete: "حذف کی تصدیق",
+  convertible_from_better_grade: "بہتر گریڈ سے قابل تبدیل",
+  deficit: "کمی",
+  department_count: "شعبہ تعداد",
+  effective_available: "موثر دستیاب",
+  fill_required_fields_then_check_availability:
+    "ضروری فیلڈز پُر کریں پھر دستیابی چیک کریں۔",
+  final_stage_only: "صرف آخری مرحلہ",
+  item: "آئٹم",
+  lines: "لائنیں",
+  na: "لاگو نہیں",
+  no_data_found: "کوئی ڈیٹا نہیں ملا۔",
+  no_previous_stage_requirement: "اس لائن کے لئے پچھلے مرحلے کی ضرورت نہیں ہے۔",
+  no_sfg_required_for_this_stage:
+    "اس مرحلے کے لئے کوئی ایس ایف جی درکار نہیں ہے۔",
+  opening_stock: "ابتدائی اسٹاک",
+  pending_departments: "زیر التوا شعبے",
+  planned: "منصوبہ بند",
+  previous_stage: "پچھلا مرحلہ",
+  product_subgroup: "مصنوعہ ذیلی گروپ",
+  production_unit: "پیداواری یونٹ",
+  required: "درکار",
+  select_color: "رنگ منتخب کریں",
+  select_size: "سائز منتخب کریں",
+  short: "کم",
+  source_production_voucher: "سورس پروڈکشن واؤچر",
+  stage_scope: "مرحلہ دائرہ",
+  total_deficit: "کل کمی",
+  return_reason_wrong_size: "غلط سائز",
+  return_reason_missing_items: "اشیاء نامکمل",
+  return_reason_customer_changed_mind: "کسٹمر نے فیصلہ تبدیل کیا",
+  return_reason_quality_defect: "معیار میں خرابی",
+});
 
 const formatDateDisplay = (value, fallback = "-") => {
   if (value === null || value === undefined || value === "") return fallback;
@@ -3078,6 +3373,96 @@ const formatNumberDisplay = (value, options = {}) => {
   return trimTrailingZeros(String(rounded));
 };
 
+const STRICT_URDU_UI = String(process.env.STRICT_URDU_UI || "1").trim() !== "0";
+const URDU_MISSING_FALLBACK = "ترجمہ درکار";
+
+const hasOwn = (obj, key) =>
+  Boolean(obj) && Object.prototype.hasOwnProperty.call(obj, key);
+
+const normalizeDynamicToken = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+const RETURN_REASON_DYNAMIC_MAP = {
+  wrong_size: "return_reason_wrong_size",
+  wrong_item: "return_reason_wrong_item",
+  quality_defect: "return_reason_quality_defect",
+  quality_issue: "return_reason_quality_issue",
+  missing_items: "return_reason_missing_items",
+  customer_changed_mind: "return_reason_customer_changed_mind",
+  late_delivery: "return_reason_late_delivery",
+  other: "return_reason_other",
+  damaged: "return_reason_damaged",
+  excess_qty: "return_reason_excess_qty",
+  rate_dispute: "return_reason_rate_dispute",
+};
+
+const PRODUCTION_CATEGORY_DYNAMIC_MAP = {
+  fg: "production_category_finished",
+  finished: "production_category_finished",
+  finished_goods: "production_category_finished",
+  sfg: "production_category_semi_finished",
+  semi_finished: "production_category_semi_finished",
+  semifinished: "production_category_semi_finished",
+  semi_finished_goods: "production_category_semi_finished",
+  rm: "raw_material",
+  raw_material: "raw_material",
+  rawmaterial: "raw_material",
+  raw_materials: "raw_materials",
+};
+
+const resolveDynamicTranslationKey = (key) => {
+  const normalizedKey = String(key || "").trim();
+  if (normalizedKey.startsWith("return_reason_")) {
+    const suffix = normalizeDynamicToken(
+      normalizedKey.slice("return_reason_".length),
+    );
+    return RETURN_REASON_DYNAMIC_MAP[suffix] || `return_reason_${suffix}`;
+  }
+  if (normalizedKey.startsWith("production_category_")) {
+    const suffix = normalizeDynamicToken(
+      normalizedKey.slice("production_category_".length),
+    );
+    return PRODUCTION_CATEGORY_DYNAMIC_MAP[suffix] || normalizedKey;
+  }
+  return null;
+};
+
+const resolveKnownTranslation = (
+  locale,
+  key,
+  { strictUrdu = STRICT_URDU_UI } = {},
+) => {
+  const ur = translations.ur || {};
+  const en = translations.en || {};
+  if (locale === "ur") {
+    if (hasOwn(ur, key) && ur[key]) return ur[key];
+    if (!strictUrdu && hasOwn(en, key) && en[key]) return en[key];
+    return null;
+  }
+  if (hasOwn(en, key) && en[key]) return en[key];
+  if (hasOwn(ur, key) && ur[key]) return ur[key];
+  return null;
+};
+
+const resolveTranslation = (locale, key) => {
+  const normalizedKey = String(key || "").trim();
+  const direct = resolveKnownTranslation(locale, normalizedKey);
+  if (direct) return direct;
+
+  const dynamicKey = resolveDynamicTranslationKey(normalizedKey);
+  if (dynamicKey) {
+    const dynamicValue = resolveKnownTranslation(locale, dynamicKey);
+    if (dynamicValue) return dynamicValue;
+  }
+
+  if (locale === "ur") return URDU_MISSING_FALLBACK;
+  return normalizedKey || key;
+};
+
 module.exports = (req, res, next) => {
   const cookies = parseCookies(req);
   const requested =
@@ -3097,9 +3482,11 @@ module.exports = (req, res, next) => {
 
   req.locale = locale;
   res.locals.locale = locale;
-  res.locals.t = (key) =>
-    translations[locale][key] || translations.en[key] || key;
+  res.locals.t = (key) => resolveTranslation(locale, key);
   res.locals.formatDateDisplay = formatDateDisplay;
   res.locals.formatNumberDisplay = formatNumberDisplay;
   next();
 };
+
+module.exports.translations = translations;
+module.exports.resolveTranslation = resolveTranslation;

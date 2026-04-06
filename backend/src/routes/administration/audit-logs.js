@@ -30,7 +30,7 @@ const parseList = (value) => {
 
 const renderPage = (req, res, payload = {}) =>
   res.render("base/layouts/main", {
-    title: res.locals.t("audit_logs") || "Audit Logs",
+    title: res.locals.t("audit_logs") ,
     user: req.user,
     branchId: req.branchId,
     branchScope: req.branchScope,

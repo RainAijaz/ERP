@@ -19,6 +19,11 @@ const PURCHASE_TYPE_FILTERS = Object.freeze({
 
 const ALL_MULTI_FILTER_VALUE = "__ALL__";
 const SUPPLIER_CAPABILITY_CODES = Object.freeze(["MATERIAL", "REPAIR", "SERVICE"]);
+const PURCHASE_RATE_ALERT_PERCENT = (() => {
+  const value = Number(process.env.PURCHASE_RATE_ALERT_PERCENT || 10);
+  if (!Number.isFinite(value) || value <= 0) return 10;
+  return Number(value.toFixed(2));
+})();
 let partiesHasVendorCapabilitiesColumn;
 
 const toPositiveId = (value) => {
@@ -335,6 +340,20 @@ const getPurchaseReportRows = async ({ req, filters }) => {
     .join("erp.purchase_invoice_header_ext as pie", "pie.voucher_id", "vh.id")
     .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
     .join("erp.items as i", "i.id", "vl.item_id")
+    .leftJoin("erp.rm_purchase_rates as r", function joinRmRates() {
+      this.on("r.rm_item_id", "=", "vl.item_id")
+        .andOn(knex.raw("r.is_active = true"))
+        .andOn(
+          knex.raw(
+            "COALESCE(r.color_id::text, '0') = COALESCE(NULLIF(vl.meta->>'color_id', ''), NULLIF(vl.meta->>'rm_color_id', ''), '0')",
+          ),
+        )
+        .andOn(
+          knex.raw(
+            "COALESCE(r.size_id::text, '0') = COALESCE(NULLIF(vl.meta->>'size_id', ''), NULLIF(vl.meta->>'rm_size_id', ''), '0')",
+          ),
+        );
+    })
     .leftJoin("erp.parties as p", "p.id", "pie.supplier_party_id")
     .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
     .leftJoin("erp.accounts as a", "a.id", "pie.cash_paid_account_id")
@@ -360,6 +379,8 @@ const getPurchaseReportRows = async ({ req, filters }) => {
       "vl.qty",
       "vl.rate",
       "vl.amount",
+      knex.raw("COALESCE(r.purchase_rate, 0) as fixed_purchase_rate"),
+      knex.raw("COALESCE(r.avg_purchase_rate, 0) as weighted_average_rate"),
     )
     .where({
       "vh.voucher_type_code": "PI",
@@ -419,29 +440,57 @@ const getPurchaseReportRows = async ({ req, filters }) => {
   }
 
   const rows = await query;
-  return rows.map((row) => ({
-    voucher_id: Number(row.voucher_id),
-    voucher_no: Number(row.voucher_no),
-    voucher_date: toLocalDateOnly(row.voucher_date),
-    bill_number: row.bill_number || "",
-    remarks: row.remarks || "",
-    branch_id: Number(row.branch_id || 0) || null,
-    branch_name: row.branch_name || "",
-    supplier_party_id: Number(row.supplier_party_id || 0) || null,
-    supplier_name: row.supplier_name || "",
-    payment_type: String(row.payment_type || "").toUpperCase(),
-    cash_paid_account_id: Number(row.cash_paid_account_id || 0) || null,
-    cash_account_name: row.cash_account_name || "",
-    line_no: Number(row.line_no || 0) || 1,
-    item_id: Number(row.item_id || 0) || null,
-    item_code: row.item_code || "",
-    item_name: row.item_name || "",
-    group_id: Number(row.group_id || 0) || null,
-    subgroup_id: Number(row.subgroup_id || 0) || null,
-    qty: toQty(row.qty),
-    rate: toAmount(row.rate, 4),
-    amount: toAmount(row.amount, 2),
-  }));
+  return rows.map((row) => {
+    const currentPurchaseRate = toAmount(row.rate, 4);
+    const fixedPurchaseRate = toAmount(row.fixed_purchase_rate, 4);
+    const weightedAverageRate = toAmount(row.weighted_average_rate, 4);
+    const rateDifferenceAmount = toAmount(
+      currentPurchaseRate - fixedPurchaseRate,
+      4,
+    );
+    const absRateDifferenceAmount = toAmount(Math.abs(rateDifferenceAmount), 4);
+    const rateDifferencePercent =
+      fixedPurchaseRate > 0
+        ? toAmount((rateDifferenceAmount / fixedPurchaseRate) * 100, 2)
+        : 0;
+    const absRateDifferencePercent =
+      fixedPurchaseRate > 0
+        ? toAmount((absRateDifferenceAmount / fixedPurchaseRate) * 100, 2)
+        : 0;
+
+    return {
+      voucher_id: Number(row.voucher_id),
+      voucher_no: Number(row.voucher_no),
+      voucher_date: toLocalDateOnly(row.voucher_date),
+      bill_number: row.bill_number || "",
+      remarks: row.remarks || "",
+      branch_id: Number(row.branch_id || 0) || null,
+      branch_name: row.branch_name || "",
+      supplier_party_id: Number(row.supplier_party_id || 0) || null,
+      supplier_name: row.supplier_name || "",
+      payment_type: String(row.payment_type || "").toUpperCase(),
+      cash_paid_account_id: Number(row.cash_paid_account_id || 0) || null,
+      cash_account_name: row.cash_account_name || "",
+      line_no: Number(row.line_no || 0) || 1,
+      item_id: Number(row.item_id || 0) || null,
+      item_code: row.item_code || "",
+      item_name: row.item_name || "",
+      group_id: Number(row.group_id || 0) || null,
+      subgroup_id: Number(row.subgroup_id || 0) || null,
+      qty: toQty(row.qty),
+      rate: currentPurchaseRate,
+      fixed_purchase_rate: fixedPurchaseRate,
+      weighted_average_rate: weightedAverageRate,
+      rate_diff_amount: rateDifferenceAmount,
+      rate_diff_percent: rateDifferencePercent,
+      rate_diff_amount_abs: absRateDifferenceAmount,
+      rate_diff_percent_abs: absRateDifferencePercent,
+      is_rate_difference_high:
+        fixedPurchaseRate > 0 &&
+        absRateDifferencePercent >= PURCHASE_RATE_ALERT_PERCENT,
+      amount: toAmount(row.amount, 2),
+    };
+  });
 };
 
 const getGroupIdentity = (row, orderBy) => {
@@ -449,7 +498,7 @@ const getGroupIdentity = (row, orderBy) => {
     const key = `INV:${Number(row.voucher_id || 0)}`;
     return {
       key,
-      label: `#${Number(row.voucher_no || 0)} | ${row.voucher_date || "-"} | ${row.supplier_name || "-"}`,
+      label: `VR. NO. ${Number(row.voucher_no || 0)} | ${row.voucher_date || "-"} | ${row.supplier_name || "-"}`,
       voucher_no: Number(row.voucher_no || 0) || null,
       voucher_date: row.voucher_date || "",
       bill_number: row.bill_number || "",
@@ -510,6 +559,14 @@ const buildReportData = ({ rows, filters }) => {
         item_code: identity.item_code,
         total_qty: 0,
         total_amount: 0,
+        total_fixed_amount_basis: 0,
+        total_weighted_amount_basis: 0,
+        avg_rate: 0,
+        avg_fixed_purchase_rate: 0,
+        avg_weighted_average_rate: 0,
+        avg_variance_amount: 0,
+        avg_variance_percent: 0,
+        is_rate_difference_high: false,
         lines: [],
       };
       groups.push(group);
@@ -518,9 +575,49 @@ const buildReportData = ({ rows, filters }) => {
 
     group.total_qty = toQty(group.total_qty + row.qty);
     group.total_amount = toAmount(group.total_amount + row.amount);
+    group.total_fixed_amount_basis = toAmount(
+      group.total_fixed_amount_basis +
+        Number(row.qty || 0) * Number(row.fixed_purchase_rate || 0),
+      4,
+    );
+    group.total_weighted_amount_basis = toAmount(
+      group.total_weighted_amount_basis +
+        Number(row.qty || 0) * Number(row.weighted_average_rate || 0),
+      4,
+    );
     if (filters.reportType === REPORT_TYPES.details) {
       group.lines.push(row);
     }
+  });
+
+  groups.forEach((group) => {
+    group.avg_rate =
+      group.total_qty > 0 ? toAmount(group.total_amount / group.total_qty, 4) : 0;
+    group.avg_fixed_purchase_rate =
+      group.total_qty > 0
+        ? toAmount(group.total_fixed_amount_basis / group.total_qty, 4)
+        : 0;
+    group.avg_weighted_average_rate =
+      group.total_qty > 0
+        ? toAmount(group.total_weighted_amount_basis / group.total_qty, 4)
+        : 0;
+    group.avg_variance_amount = toAmount(
+      Number(group.avg_rate || 0) - Number(group.avg_fixed_purchase_rate || 0),
+      4,
+    );
+    group.avg_variance_percent =
+      Number(group.avg_fixed_purchase_rate || 0) > 0
+        ? toAmount(
+            (Number(group.avg_variance_amount || 0) /
+              Number(group.avg_fixed_purchase_rate || 0)) *
+              100,
+            2,
+          )
+        : 0;
+    group.is_rate_difference_high =
+      Number(group.avg_fixed_purchase_rate || 0) > 0 &&
+      Math.abs(Number(group.avg_variance_percent || 0)) >=
+        PURCHASE_RATE_ALERT_PERCENT;
   });
 
   const summaryRows = groups.map((group) => ({
@@ -533,10 +630,12 @@ const buildReportData = ({ rows, filters }) => {
     item_name: group.item_name,
     item_code: group.item_code,
     total_qty: toQty(group.total_qty),
-    avg_rate:
-      group.total_qty > 0
-        ? toAmount(group.total_amount / group.total_qty, 4)
-        : 0,
+    avg_rate: group.avg_rate,
+    avg_fixed_purchase_rate: group.avg_fixed_purchase_rate,
+    avg_weighted_average_rate: group.avg_weighted_average_rate,
+    avg_variance_amount: group.avg_variance_amount,
+    avg_variance_percent: group.avg_variance_percent,
+    is_rate_difference_high: group.is_rate_difference_high,
     total_amount: toAmount(group.total_amount),
   }));
 
@@ -546,12 +645,60 @@ const buildReportData = ({ rows, filters }) => {
   const grandTotalAmount = toAmount(
     groups.reduce((sum, group) => sum + Number(group.total_amount || 0), 0),
   );
+  const grandTotalFixedAmountBasis = toAmount(
+    groups.reduce(
+      (sum, group) => sum + Number(group.total_fixed_amount_basis || 0),
+      0,
+    ),
+    4,
+  );
+  const grandTotalWeightedAmountBasis = toAmount(
+    groups.reduce(
+      (sum, group) => sum + Number(group.total_weighted_amount_basis || 0),
+      0,
+    ),
+    4,
+  );
+  const grandAvgRate =
+    grandTotalQty > 0 ? toAmount(grandTotalAmount / grandTotalQty, 4) : 0;
+  const grandAvgFixedPurchaseRate =
+    grandTotalQty > 0
+      ? toAmount(grandTotalFixedAmountBasis / grandTotalQty, 4)
+      : 0;
+  const grandAvgWeightedAverageRate =
+    grandTotalQty > 0
+      ? toAmount(grandTotalWeightedAmountBasis / grandTotalQty, 4)
+      : 0;
+  const grandAvgVarianceAmount = toAmount(
+    Number(grandAvgRate || 0) - Number(grandAvgFixedPurchaseRate || 0),
+    4,
+  );
+  const grandAvgVariancePercent =
+    Number(grandAvgFixedPurchaseRate || 0) > 0
+      ? toAmount(
+          (Number(grandAvgVarianceAmount || 0) /
+            Number(grandAvgFixedPurchaseRate || 0)) *
+            100,
+          2,
+        )
+      : 0;
+  const isGrandRateDifferenceHigh =
+    Number(grandAvgFixedPurchaseRate || 0) > 0 &&
+    Math.abs(Number(grandAvgVariancePercent || 0)) >=
+      PURCHASE_RATE_ALERT_PERCENT;
 
   return {
     groups,
     summaryRows,
     grandTotalQty,
     grandTotalAmount,
+    grandAvgRate,
+    grandAvgFixedPurchaseRate,
+    grandAvgWeightedAverageRate,
+    grandAvgVarianceAmount,
+    grandAvgVariancePercent,
+    isGrandRateDifferenceHigh,
+    rateAlertPercent: PURCHASE_RATE_ALERT_PERCENT,
     rowCount: rows.length,
     groupCount: groups.length,
   };

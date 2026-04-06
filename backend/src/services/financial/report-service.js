@@ -34,6 +34,27 @@ const VOUCHER_TYPE_BY_FILTER = {
   journal: "JOURNAL_VOUCHER",
 };
 const BANK_LINE_STATUS_SET = new Set(["PENDING", "APPROVED", "REJECTED"]);
+const PL_INVENTORY_CATEGORIES = ["RM", "SFG", "FG"];
+const PL_PURCHASE_VOUCHER_CODES = ["PI", "PR"];
+const PL_PRODUCTION_DIRECT_COST_VOUCHER_CODES = [
+  "LABOUR_PROD",
+  "CONSUMP",
+  "LOSS",
+  "DCV",
+  "PROD_FG",
+  "PROD_SFG",
+];
+const PL_OTHER_EXPENSE_GROUP_CODES = [
+  "stock_adjustment_loss",
+  "abnormal_loss_expense",
+  "defected_return_expense",
+];
+const PL_FINANCE_COST_GROUP_CODES = ["bank_charges"];
+const PL_EXCLUDED_OTHER_INCOME_GROUP_CODES = [
+  "sales_revenue",
+  "sales_returns",
+  "sales_discounts",
+];
 
 const canDo = (req, scopeType, scopeKey, action) => {
   const check = req?.res?.locals?.can;
@@ -2132,17 +2153,334 @@ const getTrialBalance = async (filters) => {
   return mappedRows;
 };
 
-const getProfitAndLoss = async (filters) => {
+const applyBranchScope = (query, column, branchId) => {
+  const normalizedBranchId = Number(branchId || 0);
+  if (Number.isInteger(normalizedBranchId) && normalizedBranchId > 0) {
+    query.where(column, normalizedBranchId);
+  }
+  return query;
+};
+
+const getProfitLossSalesComponents = async (filters) => {
+  let lineQuery = knex("erp.voucher_line as vl")
+    .join("erp.voucher_header as vh", "vh.id", "vl.voucher_header_id")
+    .join("erp.sales_line as sl", "sl.voucher_line_id", "vl.id")
+    .select(
+      knex.raw(
+        `COALESCE(SUM(
+          CASE WHEN COALESCE(sl.sale_qty, 0) > 0
+            THEN COALESCE(sl.total_amount, 0) + COALESCE(sl.total_discount, 0)
+            ELSE 0
+          END
+        ), 0) as gross_sales`,
+      ),
+      knex.raw(
+        `COALESCE(SUM(
+          CASE WHEN COALESCE(sl.return_qty, 0) > 0
+            THEN COALESCE(sl.total_amount, 0)
+            ELSE 0
+          END
+        ), 0) as sales_returns`,
+      ),
+      knex.raw(
+        `COALESCE(SUM(
+          CASE WHEN COALESCE(sl.sale_qty, 0) > 0
+            THEN COALESCE(sl.total_discount, 0)
+            ELSE 0
+          END
+        ), 0) as line_discounts`,
+      ),
+    )
+    .where({
+      "vh.voucher_type_code": "SALES_VOUCHER",
+      "vh.status": "APPROVED",
+    });
+
+  lineQuery = buildDateFilter(lineQuery, "vh.voucher_date", filters.from, filters.to);
+  lineQuery = applyBranchScope(lineQuery, "vh.branch_id", filters.branchId);
+
+  let extraDiscountQuery = knex("erp.sales_header as sh")
+    .join("erp.voucher_header as vh", "vh.id", "sh.voucher_id")
+    .select(
+      knex.raw("COALESCE(SUM(COALESCE(sh.extra_discount, 0)), 0) as extra_discount"),
+    )
+    .where({
+      "vh.voucher_type_code": "SALES_VOUCHER",
+      "vh.status": "APPROVED",
+    });
+  extraDiscountQuery = buildDateFilter(
+    extraDiscountQuery,
+    "vh.voucher_date",
+    filters.from,
+    filters.to,
+  );
+  extraDiscountQuery = applyBranchScope(
+    extraDiscountQuery,
+    "vh.branch_id",
+    filters.branchId,
+  );
+
+  const [lineRow, extraDiscountRow] = await Promise.all([
+    lineQuery.first(),
+    extraDiscountQuery.first(),
+  ]);
+
+  const grossSales = roundMoney(lineRow?.gross_sales || 0);
+  const salesReturns = roundMoney(lineRow?.sales_returns || 0);
+  const discounts = roundMoney(
+    Number(lineRow?.line_discounts || 0) + Number(extraDiscountRow?.extra_discount || 0),
+  );
+
+  return {
+    grossSales,
+    salesReturns,
+    discounts,
+  };
+};
+
+const getProfitLossInventoryValue = async ({
+  filters,
+  dateOperator,
+  dateValue,
+  voucherTypeCodes = [],
+}) => {
+  let query = knex("erp.stock_ledger as sl")
+    .select(knex.raw("COALESCE(SUM(COALESCE(sl.value, 0)), 0) as total"))
+    .where({ "sl.stock_state": "ON_HAND" })
+    .whereIn("sl.category", PL_INVENTORY_CATEGORIES)
+    .where("sl.txn_date", dateOperator, dateValue);
+
+  query = applyBranchScope(query, "sl.branch_id", filters.branchId);
+
+  const normalizedVoucherCodes = (voucherTypeCodes || [])
+    .map((code) => String(code || "").trim().toUpperCase())
+    .filter(Boolean);
+
+  if (normalizedVoucherCodes.length) {
+    query = query
+      .join("erp.voucher_header as vh", "vh.id", "sl.voucher_header_id")
+      .whereIn("vh.voucher_type_code", normalizedVoucherCodes)
+      .andWhere("vh.status", "APPROVED");
+  }
+
+  const row = await query.first();
+  return roundMoney(row?.total || 0);
+};
+
+const getProfitLossPurchases = async (filters) => {
+  let query = knex("erp.stock_ledger as sl")
+    .join("erp.voucher_header as vh", "vh.id", "sl.voucher_header_id")
+    .select(knex.raw("COALESCE(SUM(COALESCE(sl.value, 0)), 0) as total"))
+    .where({ "sl.stock_state": "ON_HAND", "vh.status": "APPROVED" })
+    .whereIn("sl.category", PL_INVENTORY_CATEGORIES)
+    .whereIn("vh.voucher_type_code", PL_PURCHASE_VOUCHER_CODES);
+
+  query = buildDateFilter(query, "sl.txn_date", filters.from, filters.to);
+  query = applyBranchScope(query, "sl.branch_id", filters.branchId);
+
+  const row = await query.first();
+  return roundMoney(row?.total || 0);
+};
+
+const getGlMovementTotals = async ({
+  filters,
+  accountType = null,
+  voucherTypeCodes = [],
+  includeGroupCodes = [],
+  excludeGroupCodes = [],
+}) => {
   let query = knex("erp.gl_entry as ge")
-    .select("ag.account_type")
-    .sum({ debit: "ge.dr" })
-    .sum({ credit: "ge.cr" })
     .leftJoin("erp.accounts as a", "a.id", "ge.account_id")
     .leftJoin("erp.account_groups as ag", "ag.id", "a.subgroup_id")
-    .groupBy("ag.account_type");
+    .leftJoin("erp.gl_batch as gb", "gb.id", "ge.batch_id")
+    .leftJoin("erp.voucher_header as vh", "vh.id", "gb.source_voucher_id")
+    .select(
+      knex.raw("COALESCE(SUM(COALESCE(ge.dr, 0)), 0) as total_debit"),
+      knex.raw("COALESCE(SUM(COALESCE(ge.cr, 0)), 0) as total_credit"),
+    );
+
   query = buildDateFilter(query, "ge.entry_date", filters.from, filters.to);
-  if (filters.branchId) query = query.where("ge.branch_id", filters.branchId);
-  return query;
+  query = applyBranchScope(query, "ge.branch_id", filters.branchId);
+
+  if (accountType) {
+    query = query.where("ag.account_type", String(accountType || "").toUpperCase());
+  }
+
+  const normalizedVoucherCodes = (voucherTypeCodes || [])
+    .map((code) => String(code || "").trim().toUpperCase())
+    .filter(Boolean);
+  if (normalizedVoucherCodes.length) {
+    query = query
+      .whereIn("vh.voucher_type_code", normalizedVoucherCodes)
+      .andWhere("vh.status", "APPROVED");
+  } else {
+    query = query.where(function whereApprovedOrManual() {
+      this.whereNull("vh.id").orWhere("vh.status", "APPROVED");
+    });
+  }
+
+  const normalizedIncludeCodes = (includeGroupCodes || [])
+    .map((code) => String(code || "").trim().toLowerCase())
+    .filter(Boolean);
+  if (normalizedIncludeCodes.length) {
+    query = query.whereIn("ag.code", normalizedIncludeCodes);
+  }
+
+  const normalizedExcludeCodes = (excludeGroupCodes || [])
+    .map((code) => String(code || "").trim().toLowerCase())
+    .filter(Boolean);
+  if (normalizedExcludeCodes.length) {
+    query = query.where(function whereNotExcludedGroups() {
+      this.whereNull("ag.code").orWhereNotIn("ag.code", normalizedExcludeCodes);
+    });
+  }
+
+  const row = await query.first();
+  const totalDebit = roundMoney(row?.total_debit || 0);
+  const totalCredit = roundMoney(row?.total_credit || 0);
+  return {
+    totalDebit,
+    totalCredit,
+    expenseNet: roundMoney(totalDebit - totalCredit),
+    revenueNet: roundMoney(totalCredit - totalDebit),
+  };
+};
+
+const buildProfitLossRows = (components) => {
+  const line = (lineItemKey, amount, isTotal = false) => ({
+    line_item: lineItemKey,
+    amount: roundMoney(amount),
+    ...(isTotal ? { _row_type: "TOTAL" } : {}),
+  });
+
+  return [
+    line("pl_gross_sales", components.grossSales),
+    line("pl_sales_returns", components.salesReturns),
+    line("pl_discounts", components.discounts),
+    line("pl_net_sales", components.netSales, true),
+    line("pl_opening_inventory", components.openingInventory),
+    line("pl_purchases", components.purchases),
+    line("pl_direct_costs", components.directCosts),
+    line("pl_closing_inventory", components.closingInventory),
+    line("pl_cogs", components.cogs, true),
+    line("pl_gross_profit", components.grossProfit, true),
+    line("pl_operating_expenses", components.operatingExpenses),
+    line("pl_operating_profit_ebit", components.operatingProfit, true),
+    line("pl_other_income", components.otherIncome),
+    line("pl_other_expenses", components.otherExpenses),
+    line("pl_finance_cost", components.financeCost),
+    line("pl_net_profit_before_tax", components.netProfitBeforeTax, true),
+  ];
+};
+
+const getProfitAndLoss = async (filters) => {
+  const excludeFromDirectCosts = [
+    ...PL_OTHER_EXPENSE_GROUP_CODES,
+    ...PL_FINANCE_COST_GROUP_CODES,
+  ];
+  const [sales, openingInventory, purchases, closingInventory, totalExpense, directCostExpense, otherExpense, financeExpense, otherIncomeRevenue] =
+    await Promise.all([
+      getProfitLossSalesComponents(filters),
+      getProfitLossInventoryValue({
+        filters,
+        dateOperator: "<",
+        dateValue: filters.from,
+      }),
+      getProfitLossPurchases(filters),
+      getProfitLossInventoryValue({
+        filters,
+        dateOperator: "<=",
+        dateValue: filters.to,
+      }),
+      getGlMovementTotals({ filters, accountType: "EXPENSE" }),
+      getGlMovementTotals({
+        filters,
+        accountType: "EXPENSE",
+        voucherTypeCodes: PL_PRODUCTION_DIRECT_COST_VOUCHER_CODES,
+        excludeGroupCodes: excludeFromDirectCosts,
+      }),
+      getGlMovementTotals({
+        filters,
+        accountType: "EXPENSE",
+        includeGroupCodes: PL_OTHER_EXPENSE_GROUP_CODES,
+      }),
+      getGlMovementTotals({
+        filters,
+        accountType: "EXPENSE",
+        includeGroupCodes: PL_FINANCE_COST_GROUP_CODES,
+      }),
+      getGlMovementTotals({
+        filters,
+        accountType: "REVENUE",
+        excludeGroupCodes: PL_EXCLUDED_OTHER_INCOME_GROUP_CODES,
+      }),
+    ]);
+
+  const netSales = roundMoney(
+    Number(sales.grossSales || 0) -
+      Number(sales.salesReturns || 0) -
+      Number(sales.discounts || 0),
+  );
+  const directCosts = roundMoney(directCostExpense.expenseNet || 0);
+  const cogs = roundMoney(
+    Number(openingInventory || 0) +
+      Number(purchases || 0) +
+      Number(directCosts || 0) -
+      Number(closingInventory || 0),
+  );
+  const grossProfit = roundMoney(Number(netSales || 0) - Number(cogs || 0));
+  const otherExpenses = roundMoney(otherExpense.expenseNet || 0);
+  const financeCost = roundMoney(financeExpense.expenseNet || 0);
+  const operatingExpenses = roundMoney(
+    Number(totalExpense.expenseNet || 0) -
+      Number(directCosts || 0) -
+      Number(otherExpenses || 0) -
+      Number(financeCost || 0),
+  );
+  const operatingProfit = roundMoney(
+    Number(grossProfit || 0) - Number(operatingExpenses || 0),
+  );
+  const otherIncome = roundMoney(otherIncomeRevenue.revenueNet || 0);
+  const netProfitBeforeTax = roundMoney(
+    Number(operatingProfit || 0) +
+      Number(otherIncome || 0) -
+      Number(otherExpenses || 0) -
+      Number(financeCost || 0),
+  );
+
+  const components = {
+    grossSales: roundMoney(sales.grossSales || 0),
+    salesReturns: roundMoney(sales.salesReturns || 0),
+    discounts: roundMoney(sales.discounts || 0),
+    netSales,
+    openingInventory: roundMoney(openingInventory || 0),
+    purchases: roundMoney(purchases || 0),
+    directCosts,
+    closingInventory: roundMoney(closingInventory || 0),
+    cogs,
+    grossProfit,
+    operatingExpenses,
+    operatingProfit,
+    otherIncome,
+    otherExpenses,
+    financeCost,
+    netProfitBeforeTax,
+  };
+
+  return {
+    rows: buildProfitLossRows(components),
+    meta: {
+      profitAndLoss: components,
+      formulas: {
+        netSales: "gross_sales - sales_returns - discounts",
+        cogs: "opening_inventory + purchases + direct_costs - closing_inventory",
+        grossProfit: "net_sales - cogs",
+        operatingProfit: "gross_profit - operating_expenses",
+        netProfitBeforeTax:
+          "operating_profit + other_income - other_expenses - finance_cost",
+      },
+    },
+  };
 };
 
 const buildSalesVoucherDescriptionSummaryMap = async (voucherIds) => {
@@ -2509,8 +2847,15 @@ const getFinancialReport = async (
         titleKey: normalizedKey,
       };
     case "profitability_analysis":
-    case "profit_and_loss":
-      return { rows: await getProfitAndLoss(filters), titleKey: reportKey };
+    case "profit_and_loss": {
+      const payload = await getProfitAndLoss(filters);
+      return {
+        rows: payload.rows,
+        titleKey: normalizedKey,
+        filters,
+        meta: payload.meta || null,
+      };
+    }
     case "account_activity_ledger":
       return {
         rows: await getAccountActivityLedger(filters),
