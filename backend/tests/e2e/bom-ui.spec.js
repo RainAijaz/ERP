@@ -218,7 +218,7 @@ test.describe("BOM UI row editing flow", () => {
     }
 
     const approveBtn = page
-      .locator(`form[action$="/${firstBomId}/send-for-approval"] button`)
+      .locator('[data-bom-approve-now="1"], [data-bom-send-approval="1"]')
       .first();
     await expect(approveBtn).toBeVisible();
     await approveBtn.click();

@@ -30,7 +30,7 @@
         <select name="primary_role_id" required class="w-full rounded-lg border-slate-300 focus:ring-accent focus:border-accent">
           <option value=""><%= t('select_role') %></option>
           <% roles.forEach(r => { %>
-            <option value="<%= r.id %>" <%= user && user.primary_role_id == r.id ? 'selected' : '' %>><%= r.name %></option>
+            <option value="<%= r.id %>" data-role-name="<%= String(r.name || '').trim().toLowerCase() %>" <%= user && user.primary_role_id == r.id ? 'selected' : '' %>><%= r.name %></option>
           <% }) %>
         </select>
       </div>
@@ -44,8 +44,10 @@
         name="branch_ids"
         data-searchable-select="true"
         data-searchable-variant="unified"
+        data-all-multi-select="true"
         multiple
       >
+        <option value="__all__" <%= hasAllBranches ? 'selected' : '' %>><%= t('all') %> <%= t('branches') %></option>
         <% allBranches.forEach(b => { %>
           <option value="<%= b.id %>" <%= userBranches.includes(Number(b.id)) ? 'selected' : '' %>><%= b.name %></option>
         <% }) %>
@@ -63,3 +65,91 @@
   </form>
 </div>
 <%- include("../../base/partials/urdu-translate-utils") %>
+
+<script>
+  (function () {
+    const form = document.querySelector("form[action='/administration/users/save']");
+    if (!form) return;
+
+    const roleSelect = form.querySelector("select[name='primary_role_id']");
+    const branchSelect = form.querySelector("select[name='branch_ids']");
+    if (!(roleSelect instanceof HTMLSelectElement) || !(branchSelect instanceof HTMLSelectElement)) return;
+
+    const allOption = Array.from(branchSelect.options).find((opt) => String(opt.value || "").trim().toLowerCase() === "__all__");
+    if (!allOption) return;
+
+    const getSelectedSet = () =>
+      new Set(
+        Array.from(branchSelect.selectedOptions).map((opt) =>
+          String(opt.value || "").trim().toLowerCase(),
+        ),
+      );
+
+    const isAdminRoleSelected = () => {
+      const selected = roleSelect.options[roleSelect.selectedIndex];
+      const roleName = String(selected?.dataset?.roleName || selected?.textContent || "")
+        .trim()
+        .toLowerCase();
+      return roleName === "admin";
+    };
+
+    const applyAdminAllBranches = () => {
+      Array.from(branchSelect.options).forEach((opt) => {
+        opt.selected = opt === allOption;
+      });
+    };
+
+    let previousSelection = getSelectedSet();
+
+    const normalizeAllSelection = () => {
+      const allKey = "__all__";
+      const currentSelection = getSelectedSet();
+
+      if (isAdminRoleSelected()) {
+        applyAdminAllBranches();
+        previousSelection = getSelectedSet();
+        return;
+      }
+
+      const allSelected = allOption.selected;
+      const nonAllOptions = Array.from(branchSelect.options).filter(
+        (opt) => opt !== allOption,
+      );
+      const selectedNonAll = nonAllOptions.filter((opt) => opt.selected);
+      const changedValues = Array.from(
+        new Set([...currentSelection, ...previousSelection]),
+      ).filter((value) => currentSelection.has(value) !== previousSelection.has(value));
+      const nonAllChanged = changedValues.some((value) => value !== allKey);
+      const allChanged = changedValues.includes(allKey);
+
+      if (allSelected && allChanged) {
+        nonAllOptions.forEach((opt) => {
+          opt.selected = false;
+        });
+      } else if (allSelected && nonAllChanged) {
+        allOption.selected = false;
+      }
+
+      const hasSelectedNonAll = nonAllOptions.some((opt) => opt.selected);
+      if (!allOption.selected && !hasSelectedNonAll) {
+        allOption.selected = true;
+      }
+
+      previousSelection = getSelectedSet();
+    };
+
+    roleSelect.addEventListener("change", () => {
+      if (isAdminRoleSelected()) {
+        applyAdminAllBranches();
+      }
+      previousSelection = getSelectedSet();
+      branchSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+
+    branchSelect.addEventListener("change", () => {
+      normalizeAllSelection();
+    });
+
+    normalizeAllSelection();
+  })();
+</script>

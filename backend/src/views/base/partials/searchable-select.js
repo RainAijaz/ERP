@@ -18,6 +18,13 @@
   const isWithinModal = (select) => !!select.closest("[data-modal-form]");
   const isSearchableOptIn = (select) =>
     String(select?.dataset?.searchableSelect || "").toLowerCase() === "true";
+  const isSearchableOptOut = (select) =>
+    String(select?.dataset?.searchableSelect || "").toLowerCase() ===
+      "false" ||
+    String(select?.dataset?.searchableSkip || "").toLowerCase() === "true";
+  const isMasterDataPage =
+    typeof window !== "undefined" &&
+    /^\/master-data(\/|$)/.test(String(window.location?.pathname || ""));
   const isMultiSelectWrapper = (select) =>
     !!select.closest("[data-multi-select]");
   const unifiedVariantClass =
@@ -88,11 +95,16 @@
 
   const createSearchableSelect = (select) => {
     if (!select) return;
+    if (isSearchableOptOut(select) || isMultiSelectWrapper(select)) return;
     if (
-      (!isWithinModal(select) && !isSearchableOptIn(select)) ||
-      isMultiSelectWrapper(select)
+      select.classList.contains("hidden") ||
+      select.hidden ||
+      select.getAttribute("aria-hidden") === "true"
     )
       return;
+    const shouldEnhance =
+      isWithinModal(select) || isSearchableOptIn(select) || isMasterDataPage;
+    if (!shouldEnhance) return;
     if (select.dataset.searchableReady === "true") return;
 
     const isMulti = select.multiple;

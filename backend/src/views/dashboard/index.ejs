@@ -1,37 +1,183 @@
-<div class="mx-auto w-full max-w-6xl space-y-6">
-  <% const canViewApprovals = typeof can === "function" ? can("SCREEN", "administration.approvals", "view") : false; %>
+<%
+  const txt = (key, fallback) => {
+    const value = t(key);
+    return value && value !== key ? value : fallback;
+  };
+
+  const canViewApprovals = typeof can === "function" ? can("SCREEN", "administration.approvals", "view") : false;
+  const summary = dashboard?.summary || {};
+  const quickActions = Array.isArray(dashboard?.quickActions) ? dashboard.quickActions : [];
+  const recentApprovals = Array.isArray(dashboard?.recentApprovals) ? dashboard.recentApprovals : [];
+  const recentVouchers = Array.isArray(dashboard?.recentVouchers) ? dashboard.recentVouchers : [];
+  const recentActivity = Array.isArray(dashboard?.recentActivity) ? dashboard.recentActivity : [];
+  const generatedAt = dashboard?.generatedAt ? formatDateDisplay(dashboard.generatedAt, "") : "";
+
+  const quickActionMeta = {
+    quick_master_data: { label: txt("quick_master_data", "Master Data"), subtitle: txt("quick_master_data_hint", "Manage core entities") },
+    quick_approvals: { label: txt("quick_approvals", "Approvals"), subtitle: txt("quick_approvals_hint", "Review pending decisions") },
+    quick_vouchers: { label: txt("quick_vouchers", "Vouchers"), subtitle: txt("quick_vouchers_hint", "Create accounting entries") },
+    quick_reports: { label: txt("quick_reports", "Reports"), subtitle: txt("quick_reports_hint", "Analyze operational data") },
+    quick_users: { label: txt("quick_users", "Users"), subtitle: txt("quick_users_hint", "Manage access & roles") },
+    quick_stock: { label: txt("quick_stock", "Stock Ledger"), subtitle: txt("quick_stock_hint", "Trace inventory movements") },
+  };
+%>
+
+<div class="mx-auto w-full max-w-7xl space-y-6">
   <section class="rounded-3xl border border-slate-200 bg-white/95 p-8 shadow-xl">
-    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+    <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
       <div class="space-y-2">
         <h1 class="text-3xl font-display text-ink"><%= t("dashboard") %></h1>
         <p class="text-sm text-muted"><%= t("welcome") %></p>
       </div>
+      <div class="text-xs uppercase tracking-[0.2em] text-slate-500">
+        <%= txt("branch", "Branch") %>: <span class="font-semibold text-slate-700"><%= branchName || txt("all", "All") %></span>
+        <% if (generatedAt) { %>
+          <span class="ml-3"><%= txt("updated", "Updated") %>: <span class="font-semibold text-slate-700"><%= generatedAt %></span></span>
+        <% } %>
+      </div>
     </div>
-    <section class="grid gap-4 md:grid-cols-3">
+
+    <div class="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
       <% if (canViewApprovals) { %>
         <a href="/administration/approvals" class="group rounded-2xl border border-amber-100 bg-amber-50 p-5 transition hover:border-amber-200 hover:bg-amber-100/70">
-          <div class="flex items-start justify-between gap-3">
-            <div class="text-[11px] uppercase tracking-[0.3em] text-amber-700"><%= t("pending_approvals") %></div>
-            <svg class="h-6 w-6 text-amber-700 transition group-hover:scale-105" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </div>
-          <div class="mt-2 text-3xl font-semibold text-amber-900">0</div>
+          <div class="text-[11px] uppercase tracking-[0.3em] text-amber-700"><%= t("pending_approvals") %></div>
+          <div class="mt-2 text-3xl font-semibold text-amber-900"><%= Number(summary.pendingApprovals || 0) %></div>
         </a>
       <% } else { %>
         <div class="rounded-2xl border border-amber-100 bg-amber-50 p-5">
           <div class="text-[11px] uppercase tracking-[0.3em] text-amber-700"><%= t("pending_approvals") %></div>
-          <div class="mt-2 text-3xl font-semibold text-amber-900">0</div>
+          <div class="mt-2 text-3xl font-semibold text-amber-900"><%= Number(summary.pendingApprovals || 0) %></div>
         </div>
       <% } %>
       <div class="rounded-2xl border border-blue-100 bg-blue-50 p-5">
-        <div class="text-[11px] uppercase tracking-[0.3em] text-blue-700"><%= t("vouchers") %></div>
-        <div class="mt-2 text-3xl font-semibold text-blue-900">0</div>
+        <div class="text-[11px] uppercase tracking-[0.3em] text-blue-700"><%= txt("vouchers_today", "Vouchers Today") %></div>
+        <div class="mt-2 text-3xl font-semibold text-blue-900"><%= Number(summary.vouchersToday || 0) %></div>
+      </div>
+      <div class="rounded-2xl border border-indigo-100 bg-indigo-50 p-5">
+        <div class="text-[11px] uppercase tracking-[0.3em] text-indigo-700"><%= txt("vouchers_this_month", "Vouchers This Month") %></div>
+        <div class="mt-2 text-3xl font-semibold text-indigo-900"><%= Number(summary.vouchersThisMonth || 0) %></div>
       </div>
       <div class="rounded-2xl border border-emerald-100 bg-emerald-50 p-5">
-        <div class="text-[11px] uppercase tracking-[0.3em] text-emerald-700"><%= t("inventory") %></div>
-        <div class="mt-2 text-3xl font-semibold text-emerald-900">0</div>
+        <div class="text-[11px] uppercase tracking-[0.3em] text-emerald-700"><%= txt("inventory_movements_today", "Inventory Movements") %></div>
+        <div class="mt-2 text-3xl font-semibold text-emerald-900"><%= Number(summary.inventoryMovementsToday || 0) %></div>
+      </div>
+      <div class="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+        <div class="text-[11px] uppercase tracking-[0.3em] text-slate-600"><%= txt("active_users", "Active Users") %></div>
+        <div class="mt-2 text-3xl font-semibold text-slate-900"><%= Number(summary.activeUsers || 0) %>/<span class="text-xl"><%= Number(summary.totalUsers || 0) %></span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white/95 p-6 shadow-md">
+    <div class="mb-4 flex items-center justify-between">
+      <h2 class="text-lg font-semibold text-slate-800"><%= txt("quick_actions", "Quick Actions") %></h2>
+      <div class="text-xs uppercase tracking-[0.2em] text-slate-500"><%= txt("branches", "Branches") %>: <span class="font-semibold text-slate-700"><%= Number(summary.branchCount || 0) %></span></div>
+    </div>
+    <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+      <% if (!quickActions.length) { %>
+        <div class="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500"><%= txt("no_actions_available", "No quick actions available") %></div>
+      <% } %>
+      <% quickActions.forEach((action) => { const meta = quickActionMeta[action.key] || {}; %>
+        <a href="<%= action.href %>" class="group rounded-xl border border-slate-200 bg-white px-4 py-3 transition hover:border-slate-300 hover:bg-slate-50">
+          <div class="flex items-start gap-3">
+            <span class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600">
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="<%= action.icon %>" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </span>
+            <span>
+              <span class="block text-sm font-semibold text-slate-800"><%= meta.label || action.key %></span>
+              <span class="mt-0.5 block text-xs text-slate-500"><%= meta.subtitle || '' %></span>
+            </span>
+          </div>
+        </a>
+      <% }) %>
+    </div>
+  </section>
+
+  <section class="grid gap-6 xl:grid-cols-2">
+    <article class="rounded-2xl border border-slate-200 bg-white/95 shadow-md">
+      <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+        <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= txt("recent_vouchers", "Recent Vouchers") %></h3>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
+            <tr>
+              <th class="px-4 py-3 text-left"><%= txt("voucher_no", "Voucher No") %></th>
+              <th class="px-4 py-3 text-left"><%= txt("type", "Type") %></th>
+              <th class="px-4 py-3 text-left"><%= txt("branch", "Branch") %></th>
+              <th class="px-4 py-3 text-left"><%= txt("date", "Date") %></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <% if (!recentVouchers.length) { %>
+              <tr><td class="px-4 py-4 text-slate-500" colspan="4"><%= t("no_entries") %></td></tr>
+            <% } %>
+            <% recentVouchers.forEach((row) => { %>
+              <tr class="hover:bg-amber-50/40">
+                <td class="px-4 py-3 font-medium text-slate-800"><%= row.voucher_no || '-' %></td>
+                <td class="px-4 py-3 text-slate-600"><%= row.voucher_type_code || '-' %></td>
+                <td class="px-4 py-3 text-slate-600"><%= row.branch_name || '-' %></td>
+                <td class="px-4 py-3 text-slate-600"><%= formatDateDisplay(row.voucher_date, '-') %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="rounded-2xl border border-slate-200 bg-white/95 shadow-md">
+      <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+        <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= txt("recent_activity", "Recent Activity") %></h3>
+      </div>
+      <div class="px-5 py-3">
+        <% if (!recentActivity.length) { %>
+          <p class="py-2 text-sm text-slate-500"><%= t("no_entries") %></p>
+        <% } %>
+        <ul class="space-y-3">
+          <% recentActivity.forEach((row) => { %>
+            <li class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+              <div class="text-sm font-semibold text-slate-800"><%= row.action || '-' %> <span class="text-slate-500">• <%= row.entity_type || '-' %></span></div>
+              <div class="mt-1 text-xs text-slate-500"><%= row.username || txt("system", "System") %> • <%= formatDateDisplay(row.created_at, '-') %></div>
+            </li>
+          <% }) %>
+        </ul>
+      </div>
+    </article>
+  </section>
+
+  <% if (canViewApprovals) { %>
+    <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md">
+      <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+        <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= txt("pending_approvals", "Pending Approvals") %></h3>
+        <a href="/administration/approvals" class="text-xs font-semibold uppercase tracking-[0.18em] text-accent hover:text-accent/80"><%= txt("view_all", "View All") %></a>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
+            <tr>
+              <th class="px-4 py-3 text-left">ID</th>
+              <th class="px-4 py-3 text-left"><%= txt("entity", "Entity") %></th>
+              <th class="px-4 py-3 text-left"><%= txt("requested_by", "Requested By") %></th>
+              <th class="px-4 py-3 text-left"><%= txt("date", "Date") %></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <% if (!recentApprovals.length) { %>
+              <tr><td class="px-4 py-4 text-slate-500" colspan="4"><%= t("no_entries") %></td></tr>
+            <% } %>
+            <% recentApprovals.forEach((row) => { %>
+              <tr class="hover:bg-amber-50/40">
+                <td class="px-4 py-3 font-medium text-slate-800">#<%= row.id %></td>
+                <td class="px-4 py-3 text-slate-600"><%= row.entity_type || '-' %></td>
+                <td class="px-4 py-3 text-slate-600"><%= row.requested_by_name || '-' %></td>
+                <td class="px-4 py-3 text-slate-600"><%= formatDateDisplay(row.requested_at, '-') %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
       </div>
     </section>
-  </section>
+  <% } %>
 </div>

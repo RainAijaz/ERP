@@ -34,18 +34,36 @@ router.get(
             )
             .orderBy("u.id")
         : [];
+      const allActiveBranchNames = canNavigate
+        ? await knex("erp.branches")
+            .where({ is_active: true })
+            .orderBy("name")
+            .pluck("name")
+        : [];
+      const allBranchesLabel = allActiveBranchNames.join(", ");
+      const hydratedUsers = users.map((row) => {
+        const isAdminRole =
+          String(row.role_name || "")
+            .trim()
+            .toLowerCase() === "admin";
+        if (!isAdminRole) return row;
+        return {
+          ...row,
+          branch_names: allBranchesLabel || row.branch_names || "",
+        };
+      });
 
       if (req.accepts("html")) {
         res.render("base/layouts/main", {
           view: "../../administration/users/index",
           title: res.locals.t("users"),
-          users,
+          users: hydratedUsers,
           modalOpen: false,
           modalMode: null,
           modalValues: null,
         });
       } else {
-        res.json(users);
+        res.json(hydratedUsers);
       }
     } catch (err) {
       next(err);
@@ -77,11 +95,31 @@ router.get(
       const allBranches = await knex("erp.branches")
         .where({ is_active: true })
         .orderBy("name");
+      const roleNameById = new Map(
+        roles.map((role) => [Number(role.id), String(role.name || "")]),
+      );
+      const isAdminUser = Boolean(
+        user &&
+          String(roleNameById.get(Number(user.primary_role_id)) || "")
+            .trim()
+            .toLowerCase() === "admin",
+      );
+
+      if (isAdminUser) {
+        userBranches = allBranches.map((branch) => Number(branch.id));
+      }
+
+      const hasAllBranches =
+        allBranches.length > 0 &&
+        allBranches.every((branch) =>
+          userBranches.includes(Number(branch.id)),
+        );
 
       res.render("administration/users/form", {
         layout: false,
         user,
         userBranches,
+        hasAllBranches,
         roles,
         allBranches,
         title: userId ? res.locals.t("edit_user") : res.locals.t("add_user"),
@@ -181,6 +219,17 @@ router.post(
         (bid) => bid !== undefined && bid !== null && String(bid).trim() !== "",
       );
 
+      const wantsAllBranches = branches.some((bid) => {
+        const normalized = String(bid || "")
+          .trim()
+          .toLowerCase();
+        return normalized === "__all__" || normalized === "all";
+      });
+
+      let normalizedBranchIds = branches
+        .map((bid) => Number(bid))
+        .filter((bid) => Number.isInteger(bid) && bid > 0);
+
       const roleRow = await trx("erp.role_templates")
         .select("name")
         .where({ id: primary_role_id })
@@ -190,14 +239,26 @@ router.post(
         String(roleRow.name || "")
           .trim()
           .toLowerCase() === "admin";
-      if (isAdminRole) {
-        const allBranchIds = await trx("erp.branches").select("id");
-        branches = allBranchIds.map((b) => b.id);
+
+      if (isAdminRole || wantsAllBranches) {
+        const allBranchRows = await trx("erp.branches")
+          .select("id")
+          .where({ is_active: true });
+        normalizedBranchIds = allBranchRows.map((row) => Number(row.id));
       }
 
-      if (branches.length > 0) {
+      normalizedBranchIds = Array.from(new Set(normalizedBranchIds));
+
+      if (!isAdminRole && !normalizedBranchIds.length) {
+        throw new HttpError(400, "At least one branch is required");
+      }
+
+      if (normalizedBranchIds.length > 0) {
         await trx("erp.user_branch").insert(
-          branches.map((bid) => ({ user_id: targetId, branch_id: bid })),
+          normalizedBranchIds.map((bid) => ({
+            user_id: targetId,
+            branch_id: bid,
+          })),
         );
       }
 

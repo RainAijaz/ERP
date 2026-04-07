@@ -11,6 +11,15 @@
     { value: "active", label: t("active") },
     { value: "inactive", label: t("inactive") },
   ];
+  const displayColumns = [
+    { key: "bom_no", labelRaw: t("code") },
+    { key: "item_name", labelRaw: t("article_name") },
+    { key: "bom_stage", labelRaw: t("bom_stage") },
+    { key: "version_no", labelRaw: t("version") },
+    { key: "status", labelRaw: t("status") },
+    { key: "bom_lifecycle", labelRaw: t("bom_lifecycle") },
+    { key: "created_at", labelRaw: t("date"), sortType: "date" },
+  ];
 %>
 
 <div class="mx-auto w-full max-w-7xl space-y-6">
@@ -56,23 +65,13 @@
     </form>
 
     <div class="overflow-x-auto bg-white">
-      <table class="min-w-full text-sm">
+      <table class="min-w-full text-sm" data-table>
         <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
-          <tr>
-            <th class="px-4 py-3 text-left"><%= t("sr_no")  %></th>
-            <th class="px-4 py-3 text-left"><%= t("code")  %></th>
-            <th class="px-4 py-3 text-left"><%= t("article_name")  %></th>
-            <th class="px-4 py-3 text-left"><%= t("bom_stage")  %></th>
-            <th class="px-4 py-3 text-left"><%= t("version")  %></th>
-            <th class="px-4 py-3 text-left"><%= t("status") %></th>
-            <th class="px-4 py-3 text-left"><%= t("bom_lifecycle")  %></th>
-            <th class="px-4 py-3 text-left"><%= t("date") %></th>
-            <th class="px-4 py-3 text-right"><%= t("actions") %></th>
-          </tr>
+          <%- include("../../base/partials/table-header", { t, displayColumns, columnTooltips: {}, sortStartIndex: 1 }) %>
         </thead>
-        <tbody class="divide-y divide-slate-100">
+        <tbody class="divide-y divide-slate-100" data-table-body>
           <% if (!rows || rows.length === 0) { %>
-            <%- include("../../base/partials/table-empty", { t, colspan: 9 }) %>
+            <%- include("../../base/partials/table-empty", { t, colspan: displayColumns.length + 2 }) %>
           <% } %>
           <% (rows || []).forEach(function(row, idx) { %>
             <tr class="hover:bg-amber-50/40 odd:bg-white even:bg-slate-50/40">
@@ -98,7 +97,7 @@
                   <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">N/A</span>
                 <% } %>
               </td>
-              <td class="px-4 py-3 text-slate-700"><%= formatDateDisplay(row.created_at) %></td>
+              <td class="px-4 py-3 text-slate-700" data-sort-value="<%= row.created_at ? new Date(row.created_at).toISOString() : '' %>"><%= formatDateDisplay(row.created_at) %></td>
               <td class="px-4 py-3">
                 <div class="flex justify-end gap-2">
                   <a href="<%= basePath %>/<%= row.id %>" class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900" title="<%= t('view')  %>" aria-label="<%= t('view')  %>">
@@ -141,7 +140,7 @@
                   <% if (row.status === "APPROVED" && can("SCREEN", "master_data.bom", "create")) { %>
                     <form method="POST" action="<%= basePath %>/<%= row.id %>/create-new-version" class="inline">
                       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                      <button type="submit" class="inline-flex min-w-[8.5rem] items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-800" title="<%= t('bom_create_new_version')  %>">
+                      <button type="submit" class="inline-flex min-w-34 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-800" title="<%= t('bom_create_new_version')  %>">
                         <%= t("bom_revise")  %>
                       </button>
                     </form>
@@ -149,7 +148,7 @@
                   <% if (row.status === "DRAFT") { %>
                     <form method="POST" action="<%= basePath %>/<%= row.id %>/delete-draft" class="inline" onsubmit="return window.confirm(<%- JSON.stringify(t('confirm_delete') ) %>)">
                       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                      <button type="submit" class="inline-flex min-w-[8.5rem] items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">
+                      <button type="submit" class="inline-flex min-w-34 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100">
                         <%= t("delete_draft")  %>
                       </button>
                     </form>
@@ -157,7 +156,7 @@
                   <% if (row.status === "PENDING" && user?.isAdmin) { %>
                     <a
                       href="/administration/approvals?status=PENDING&entity_type=BOM&entity_id=<%= row.id %>"
-                      class="inline-flex min-w-[8.5rem] items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
+                      class="inline-flex min-w-34 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:text-slate-900"
                     >
                       <%= t("open_approval")  %>
                     </a>
@@ -169,6 +168,7 @@
         </tbody>
       </table>
     </div>
+    <%- include("../../base/partials/table-footer", { t }) %>
   </section>
 </div>
 

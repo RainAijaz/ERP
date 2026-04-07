@@ -1,4 +1,5 @@
 const express = require("express");
+const knex = require("../db/knex");
 const authRoutes = require("./administration/auth");
 const approvalRoutes = require("./administration/approvals");
 const administrationRoutes = require("./administration");
@@ -6,6 +7,7 @@ const voucherRoutes = require("./vouchers");
 const reportRoutes = require("./reports");
 const masterDataRoutes = require("./master_data");
 const hrPayrollRoutes = require("./hr-payroll");
+const { loadDashboardData } = require("../services/administration/dashboard-service");
 const { requirePermission } = require("../middleware/access/role-permissions");
 const { translateUrduWithFallback } = require("../utils/translate");
 const { registerApprovalStream, ackApprovalDecisions } = require("../utils/approval-events");
@@ -108,19 +110,31 @@ router.post("/translate", async (req, res) => {
   }
 });
 
-router.get("/", (req, res) => {
-  if (req.accepts("html")) {
-    return res.render("base/layouts/main", {
-      title: "Dashboard",
-      user: req.user,
-      branchId: req.branchId,
-      branchScope: req.branchScope,
-      csrfToken: res.locals.csrfToken,
-      view: "../../dashboard/index",
-      t: res.locals.t,
+router.get("/", async (req, res, next) => {
+  try {
+    const dashboard = await loadDashboardData({
+      knex,
+      req,
+      can: res.locals.can,
     });
+
+    if (req.accepts("html")) {
+      return res.render("base/layouts/main", {
+        title: "Dashboard",
+        user: req.user,
+        branchId: req.branchId,
+        branchScope: req.branchScope,
+        csrfToken: res.locals.csrfToken,
+        view: "../../dashboard/index",
+        t: res.locals.t,
+        dashboard,
+      });
+    }
+
+    res.json({ status: "ok", dashboard });
+  } catch (err) {
+    next(err);
   }
-  res.json({ status: "ok" });
 });
 
 module.exports = router;
