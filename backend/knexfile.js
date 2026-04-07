@@ -81,7 +81,8 @@ const createConnectionFromEnv = () => {
   };
 };
 
-const resolveConnection = () => process.env.DATABASE_URL || createConnectionFromEnv();
+const resolveConnection = () =>
+  process.env.DATABASE_URL || createConnectionFromEnv();
 
 const createKnexConfig = ({ connection }) => ({
   client: "pg",

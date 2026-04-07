@@ -1,16 +1,23 @@
 exports.up = async function up(knex) {
-  const hasTable = await knex.schema.hasTable("erp.account_posting_classes");
+  const hasTable = await knex.schema
+    .withSchema("erp")
+    .hasTable("account_posting_classes");
   if (!hasTable) {
-    await knex.schema.withSchema("erp").createTable("account_posting_classes", (table) => {
-      table.bigIncrements("id").primary();
-      table.text("code").notNullable().unique();
-      table.text("name").notNullable().unique();
-      table.text("name_ur");
-      table.boolean("is_system").notNullable().defaultTo(true);
-      table.boolean("is_active").notNullable().defaultTo(true);
-      table.timestamp("created_at", { useTz: true }).notNullable().defaultTo(knex.fn.now());
-      table.timestamp("updated_at", { useTz: true });
-    });
+    await knex.schema
+      .withSchema("erp")
+      .createTable("account_posting_classes", (table) => {
+        table.bigIncrements("id").primary();
+        table.text("code").notNullable().unique();
+        table.text("name").notNullable().unique();
+        table.text("name_ur");
+        table.boolean("is_system").notNullable().defaultTo(true);
+        table.boolean("is_active").notNullable().defaultTo(true);
+        table
+          .timestamp("created_at", { useTz: true })
+          .notNullable()
+          .defaultTo(knex.fn.now());
+        table.timestamp("updated_at", { useTz: true });
+      });
   }
 
   await knex.raw(`
@@ -24,9 +31,11 @@ exports.up = async function up(knex) {
       is_active = EXCLUDED.is_active
   `);
 
-  const hasColumn = await knex.schema.hasColumn("erp.accounts", "posting_class_id");
+  const hasColumn = await knex.schema
+    .withSchema("erp")
+    .hasColumn("accounts", "posting_class_id");
   if (!hasColumn) {
-    await knex.schema.alterTable("erp.accounts", (table) => {
+    await knex.schema.withSchema("erp").alterTable("accounts", (table) => {
       table.bigInteger("posting_class_id").nullable();
       table
         .foreign("posting_class_id")
@@ -34,7 +43,7 @@ exports.up = async function up(knex) {
         .inTable("erp.account_posting_classes")
         .onDelete("RESTRICT");
     });
-    await knex.schema.alterTable("erp.accounts", (table) => {
+    await knex.schema.withSchema("erp").alterTable("accounts", (table) => {
       table.index(["posting_class_id"], "idx_accounts_posting_class_id");
     });
   }
@@ -52,15 +61,19 @@ exports.up = async function up(knex) {
 };
 
 exports.down = async function down(knex) {
-  const hasColumn = await knex.schema.hasColumn("erp.accounts", "posting_class_id");
+  const hasColumn = await knex.schema
+    .withSchema("erp")
+    .hasColumn("accounts", "posting_class_id");
   if (hasColumn) {
-    await knex.schema.alterTable("erp.accounts", (table) => {
+    await knex.schema.withSchema("erp").alterTable("accounts", (table) => {
       table.dropIndex(["posting_class_id"], "idx_accounts_posting_class_id");
       table.dropColumn("posting_class_id");
     });
   }
 
-  const hasTable = await knex.schema.hasTable("erp.account_posting_classes");
+  const hasTable = await knex.schema
+    .withSchema("erp")
+    .hasTable("account_posting_classes");
   if (hasTable) {
     await knex.schema.withSchema("erp").dropTable("account_posting_classes");
   }
