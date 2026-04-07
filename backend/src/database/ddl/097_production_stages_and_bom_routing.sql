@@ -45,6 +45,25 @@ CREATE TABLE IF NOT EXISTS erp.bom_stage_routing (
 CREATE INDEX IF NOT EXISTS idx_bom_stage_routing_bom_seq
   ON erp.bom_stage_routing(bom_id, sequence_no);
 
+DO $$
+BEGIN
+  IF to_regclass('erp.bom_sfg_line') IS NOT NULL
+     AND to_regclass('erp.production_stages') IS NOT NULL
+     AND NOT EXISTS (
+       SELECT 1
+       FROM pg_constraint
+       WHERE conname = 'fk_bom_sfg_line_consumed_in_stage'
+         AND conrelid = 'erp.bom_sfg_line'::regclass
+     )
+  THEN
+    ALTER TABLE erp.bom_sfg_line
+      ADD CONSTRAINT fk_bom_sfg_line_consumed_in_stage
+      FOREIGN KEY (consumed_in_stage_id)
+      REFERENCES erp.production_stages(id)
+      ON DELETE RESTRICT;
+  END IF;
+END $$;
+
 ALTER TABLE IF EXISTS erp.dcv_header
   ADD COLUMN IF NOT EXISTS stage_id bigint REFERENCES erp.production_stages(id) ON DELETE RESTRICT;
 

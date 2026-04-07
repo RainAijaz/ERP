@@ -1036,6 +1036,11 @@ const collectNavItems = (nodes, items = []) => {
 const getNavScopes = () => collectNavItems(navConfig);
 
 const syncNavScopes = async (knex) => {
+  const hasPermissionScopeRegistry = await knex.schema
+    .withSchema("erp")
+    .hasTable("permission_scope_registry");
+  if (!hasPermissionScopeRegistry) return;
+
   const scopes = getNavScopes();
   if (!scopes.length) return;
   const insertRows = scopes.map((scope) => ({

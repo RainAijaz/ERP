@@ -76,13 +76,6 @@ CREATE TABLE IF NOT EXISTS erp.product_group_item_types (
   PRIMARY KEY (group_id, item_type)
 );
 
--- Mapping table for product sub-group applicability (RM/SFG/FG).
-CREATE TABLE IF NOT EXISTS erp.product_subgroup_item_types (
-  subgroup_id bigint NOT NULL REFERENCES erp.product_subgroups(id) ON DELETE CASCADE,
-  item_type   erp.item_type NOT NULL,
-  PRIMARY KEY (subgroup_id, item_type)
-);
-
 -- Product subgroup within a group 
 -- code is a stable snake_case key to prevent drift/typos across UI and backend.
 CREATE TABLE IF NOT EXISTS erp.product_subgroups (
@@ -101,6 +94,13 @@ CREATE TABLE IF NOT EXISTS erp.product_subgroups (
   UNIQUE (group_id, name),
 
   CHECK (code = lower(trim(code)) AND code ~ '^[a-z0-9_]{2,80}$')
+);
+
+-- Mapping table for product sub-group applicability (RM/SFG/FG).
+CREATE TABLE IF NOT EXISTS erp.product_subgroup_item_types (
+  subgroup_id bigint NOT NULL REFERENCES erp.product_subgroups(id) ON DELETE CASCADE,
+  item_type   erp.item_type NOT NULL,
+  PRIMARY KEY (subgroup_id, item_type)
 );
 
 -- Shoe category / audience segmentation (men, women, boys, girls, unisex).
@@ -306,7 +306,7 @@ CREATE TABLE IF NOT EXISTS erp.parties (
   approved_at    timestamptz,
 
   -- Maker-checker: approver cannot be the creator.
-  CHECK (approved_by IS NULL OR approved_by <> created_by),
+  CHECK (approved_by IS NULL OR approved_by <> created_by)
 
   -- Credit rules removed to allow credit for suppliers if needed.
 );

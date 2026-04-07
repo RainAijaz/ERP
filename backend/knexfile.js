@@ -69,6 +69,20 @@ const createPoolConfig = () => {
   };
 };
 
+const createConnectionFromEnv = () => {
+  const useSsl = String(process.env.DB_SSL || "false").toLowerCase() === "true";
+  return {
+    host: process.env.DB_HOST || "localhost",
+    port: +(process.env.DB_PORT || 5432),
+    database: process.env.DB_NAME || "erp",
+    user: process.env.DB_USER || "postgres",
+    password: process.env.DB_PASSWORD || "",
+    ssl: useSsl ? { rejectUnauthorized: false } : false,
+  };
+};
+
+const resolveConnection = () => process.env.DATABASE_URL || createConnectionFromEnv();
+
 const createKnexConfig = ({ connection }) => ({
   client: "pg",
   connection,
@@ -84,20 +98,14 @@ const createKnexConfig = ({ connection }) => ({
 
 module.exports = {
   development: createKnexConfig({
-    connection: {
-      host: process.env.DB_HOST || "localhost",
-      port: +(process.env.DB_PORT || 5432),
-      database: process.env.DB_NAME || "erp",
-      user: process.env.DB_USER || "postgres",
-      password: process.env.DB_PASSWORD || "",
-    },
+    connection: createConnectionFromEnv(),
   }),
 
   staging: createKnexConfig({
-    connection: process.env.DATABASE_URL,
+    connection: resolveConnection(),
   }),
 
   production: createKnexConfig({
-    connection: process.env.DATABASE_URL,
+    connection: resolveConnection(),
   }),
 };

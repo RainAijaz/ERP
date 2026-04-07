@@ -37,7 +37,7 @@ exports.up = async (knex) => {
         l.can_create,
         l.can_edit,
         l.can_delete,
-        l.can_,
+        l.can_print,
         l.can_approve,
         r.id AS scope_id
       FROM legacy l
