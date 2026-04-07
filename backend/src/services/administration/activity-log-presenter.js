@@ -48,6 +48,13 @@ const toText = (value, fallback = "-") => {
   return String(value);
 };
 
+const formatTimestamp = (value) => {
+  if (!value) return "-";
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return toText(value);
+  return dt.toLocaleString();
+};
+
 const toPlainObject = (value) => (value && typeof value === "object" && !Array.isArray(value) ? value : {});
 
 const parseVoucherNoFromSummary = (value) => {
@@ -166,6 +173,15 @@ const buildDetailsModel = ({ row, context, voucherNo, t, voucherHref, displayAct
   );
   const lineCount = Array.isArray(lineList) ? lineList.length : null;
 
+  const auditMetaRows = compactRows([
+    { label: t("date") , value: formatTimestamp(row?.created_at) },
+    { label: t("user") , value: toText(row?.user_name) },
+    { label: t("branch") , value: toText(firstDefined(row?.branch_name, row?.branch_code)) },
+    { label: t("entity_type") , value: toText(row?.entity_type) },
+    { label: t("entity_id") , value: toText(normalizeEntityIdLabel({ row, context, voucherNo })) },
+    { label: t("voucher_type") , value: toText(row?.voucher_type_code) },
+  ]);
+
   const voucherRows = compactRows([
     { label: t("entity") , value: normalizeEntityLabel({ row, t }) },
     { label: t("voucher_no") , value: toText(voucherNo) },
@@ -217,9 +233,10 @@ const buildDetailsModel = ({ row, context, voucherNo, t, voucherHref, displayAct
     voucherHref: voucherHref || null,
     voucherLinkLabel: voucherNo ? `${t("view_voucher") } #${voucherNo}` : null,
     sections: compactRows([
+      auditMetaRows.length ? { title: t("details") , rows: auditMetaRows } : null,
       overviewRows.length ? { title: t("overview") , rows: overviewRows } : null,
       voucherRows.length ? { title: t("voucher_summary") , rows: voucherRows } : null,
-      changedFieldRows.length ? { title: t("change_summary") , rows: changedFieldRows } : null,
+      changedFieldRows.length ? { title: t("changed_fields") , rows: changedFieldRows } : null,
       nonVoucherContextRows.length ? { title: t("context") , rows: nonVoucherContextRows } : null,
     ]),
     rawContext: context || null,

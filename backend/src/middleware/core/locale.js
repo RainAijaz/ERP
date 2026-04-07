@@ -103,6 +103,7 @@ const translations = {
       "Records are hidden because you don't have navigation access.",
     // --- BRAND & AUTH ---
     brand: "CHAND EVA",
+    erp_system_copyright: "ERP System \u00a9 2026",
     dashboard: "Dashboard",
     welcome: "Welcome back. Select a module from the navigation to begin.",
     branch: "Branch",
@@ -222,6 +223,8 @@ const translations = {
     transfer_reason_other: "Other",
     transporter_name: "Transporter Name",
     available_qty: "Available Qty",
+    qty: "Qty",
+    delivery_qty: "Delivery Qty",
     transfer_qty: "Transfer Qty",
     expected_qty: "Expected Qty",
     received_qty: "Received Qty",
@@ -518,6 +521,7 @@ const translations = {
     sizes_help: "Select one or more sizes used by this semi-finished item.",
     finished_description:
       "Maintain finished articles, categories, and SFG usage flags.",
+    finished_setup_note: "Set up sizes and variants for finished items.",
     semi_finished_description:
       "Maintain semi-finished items and their applicable sizes.",
     raw_materials_description:
@@ -1821,6 +1825,11 @@ translations.ur = {
   outward_returnable: "آؤٹ ورڈ اور ریٹرنیبل",
   sales: "سیلز",
   purchase_return: "خریداری ریٹرن",
+  purchase_return_voucher: "خریداری ریٹرن واؤچر",
+  stock_transfer_out: "اسٹاک ٹرانسفر آؤٹ",
+  stock_transfer_in: "اسٹاک ٹرانسفر اِن",
+  stock_transfer_out_voucher: "اسٹاک ٹرانسفر آؤٹ واؤچر",
+  stock_transfer_in_voucher: "اسٹاک ٹرانسفر اِن واؤچر",
   voucher_no: "واؤچر نمبر",
   prev: "پچھلا",
   next: "اگلا",
@@ -3442,7 +3451,6 @@ const resolveKnownTranslation = (
     return null;
   }
   if (hasOwn(en, key) && en[key]) return en[key];
-  if (hasOwn(ur, key) && ur[key]) return ur[key];
   return null;
 };
 
