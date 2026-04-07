@@ -9,7 +9,6 @@
   const recentApprovals = Array.isArray(dashboard?.recentApprovals) ? dashboard.recentApprovals : [];
   const recentVouchers = Array.isArray(dashboard?.recentVouchers) ? dashboard.recentVouchers : [];
   const recentActivity = Array.isArray(dashboard?.recentActivity) ? dashboard.recentActivity : [];
-  const generatedAt = dashboard?.generatedAt ? formatDateDisplay(dashboard.generatedAt, "") : "";
   const activeSessionWindowMinutes = Number(summary.activeSessionWindowMinutes || 15);
 
   const pendingApprovalsTooltip = txt("pending_approvals_dashboard_tooltip", "Branch specific: pending approvals for the selected branch.");
@@ -25,12 +24,6 @@
       <div class="space-y-2">
         <h1 class="text-3xl font-display text-ink"><%= t("dashboard") %></h1>
         <p class="text-sm text-muted"><%= t("welcome") %></p>
-      </div>
-      <div class="text-xs uppercase tracking-[0.2em] text-slate-500">
-        <%= txt("branch", "Branch") %>: <span class="font-semibold text-slate-700"><%= branchName || txt("all", "All") %></span>
-        <% if (generatedAt) { %>
-          <span class="ml-3"><%= txt("updated", "Updated") %>: <span class="font-semibold text-slate-700"><%= generatedAt %></span></span>
-        <% } %>
       </div>
     </div>
 

@@ -16,6 +16,14 @@ const { UI_NOTICE_COOKIE } = require("../core/ui-notice");
 const { insertActivityLog } = require("../../utils/audit-log");
 const { notifyPendingApprovalAdmins } = require("../../utils/approval-notifications");
 
+const resolveRequestBaseUrl = (req) => {
+  if (!req || typeof req.get !== "function") return null;
+  const host = String(req.get("host") || "").trim();
+  if (!host) return null;
+  const protocol = String(req.protocol || "http").trim() || "http";
+  return `${protocol}://${host}`;
+};
+
 const debugApproval = (...args) => {
   if (process.env.DEBUG_SCREEN_APPROVAL === "1") {
     console.log(...args);
@@ -179,6 +187,7 @@ const queueApproval = async ({ req, scopeKey, action, entityType, entityId, summ
       newValue,
       requestedByName: req.user?.username || null,
       branchId: req.branchId,
+      baseUrl: resolveRequestBaseUrl(req),
       t,
     }).catch((err) => {
       console.error("[screen-approval] admin email notify failed", {

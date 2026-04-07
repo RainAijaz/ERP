@@ -5,6 +5,14 @@ const { UI_NOTICE_COOKIE } = require("../core/ui-notice");
 const { insertActivityLog } = require("../../utils/audit-log");
 const { notifyPendingApprovalAdmins } = require("../../utils/approval-notifications");
 
+const resolveRequestBaseUrl = (req) => {
+  if (!req || typeof req.get !== "function") return null;
+  const host = String(req.get("host") || "").trim();
+  if (!host) return null;
+  const protocol = String(req.protocol || "http").trim() || "http";
+  return `${protocol}://${host}`;
+};
+
 // Routes actions through pending approval where configured.
 module.exports = async (req, res, next) => {
   if (!req.user) return next();
@@ -70,6 +78,7 @@ module.exports = async (req, res, next) => {
       newValue,
       requestedByName: req.user?.username || null,
       branchId,
+      baseUrl: resolveRequestBaseUrl(req),
       t: res.locals.t,
     }).catch((err) => {
       console.error("[approval-required] admin email notify failed", {
