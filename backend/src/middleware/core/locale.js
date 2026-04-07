@@ -1569,8 +1569,7 @@ const translations = {
       "You have access to view permissions, but you cannot edit them.",
     permissions_tip_view:
       "Grants permission to open this module. Required for any other action.",
-    permissions_tip_navigate:
-      "Allows navigating through existing records..",
+    permissions_tip_navigate: "Allows navigating through existing records..",
     permissions_tip_load:
       "Allows loading report data using the selected filters.",
     permissions_tip_view_details:
@@ -2704,8 +2703,7 @@ translations.ur = {
   permissions_tip_download: "ڈاؤن لوڈ اور ایکسپورٹ بٹن کو فعال کرتا ہے۔",
   permissions_tip_edit:
     "موجودہ ریکارڈز میں ڈیٹا کو تبدیل کرنے کی صلاحیت کو غیر مقفل کرتا ہے۔",
-  permissions_tip_navigate:
-    "موجودہ ریکارڈز میں نیویگیٹ کرنے کی اجازت دیتا ہے۔",
+  permissions_tip_navigate: "موجودہ ریکارڈز میں نیویگیٹ کرنے کی اجازت دیتا ہے۔",
   permissions_tip_view: "اس ماڈیول کو کھولنے کی اجازت دیتا ہے۔",
   permissions_tip_load: "فلٹرز کے ساتھ رپورٹ ڈیٹا لوڈ کرنے کی اجازت دیتا ہے۔",
   permissions_tip_view_details:

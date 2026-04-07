@@ -83,14 +83,14 @@ const formatQty = (value) => {
 };
 
 const buildSavedTotalsNotice = ({ res, saved, voucherTypeCode }) => {
-  const base = res.locals.t("saved_successfully") ;
+  const base = res.locals.t("saved_successfully");
   const totalPairs = Number(saved?.quantityTotals?.totalPairs || 0);
   const totalDozens = Number(saved?.quantityTotals?.totalDozens || 0);
   if (!Number.isFinite(totalPairs) || totalPairs <= 0) return base;
 
-  const totalLabel = res.locals.t("total") ;
-  const pairsLabel = res.locals.t("pairs") ;
-  const dozensLabel = res.locals.t("dozens") ;
+  const totalLabel = res.locals.t("total");
+  const pairsLabel = res.locals.t("pairs");
+  const dozensLabel = res.locals.t("dozens");
   return `${base} ${totalLabel}: ${pairsLabel} ${formatQty(totalPairs)}, ${dozensLabel} ${formatQty(totalDozens)}.`;
 };
 
@@ -343,12 +343,12 @@ const createProductionVoucherRouter = ({
 
       if (saved.queuedForApproval) {
         const msg = saved.permissionReroute
-          ? res.locals.t("approval_sent") 
+          ? res.locals.t("approval_sent")
           : res.locals.t("approval_submitted");
         const approvalReason = String(saved.approvalReason || "").trim();
         const hasShortageApprovalReroute =
           saved.shortageApprovalReroute === true;
-        const reasonLabel = res.locals.t("reason") ;
+        const reasonLabel = res.locals.t("reason");
         const approvalMessage = approvalReason
           ? `${msg} ${reasonLabel}: ${approvalReason}`
           : msg;
@@ -357,7 +357,7 @@ const createProductionVoucherRouter = ({
           return res.status(202).json({
             queuedForApproval: true,
             message: approvalMessage,
-            title: res.locals.t("approval_submitted") ,
+            title: res.locals.t("approval_submitted"),
           });
         }
         setNotice(res, approvalMessage, true);
@@ -404,14 +404,11 @@ const createProductionVoucherRouter = ({
 
       if (saved.queuedForApproval) {
         const msg = saved.permissionReroute
-          ? res.locals.t("approval_sent") 
+          ? res.locals.t("approval_sent")
           : res.locals.t("approval_submitted");
         setNotice(res, msg, true);
       } else {
-        setNotice(
-          res,
-          res.locals.t("deleted_successfully") ,
-        );
+        setNotice(res, res.locals.t("deleted_successfully"));
       }
 
       return res.redirect(`${req.baseUrl}?new=1`);

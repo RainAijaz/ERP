@@ -9,6 +9,153 @@ const { parseCookies, setCookie } = require("../utils/cookies");
 const PUBLIC_PATHS = ["/auth/login", "/auth/logout", "/health"];
 const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME || "erp_session";
 const SESSION_TTL_HOURS = Number(process.env.SESSION_TTL_HOURS || 12);
+const SESSION_TOUCH_INTERVAL_MS = Number(
+  process.env.SESSION_TOUCH_INTERVAL_MS || 60000,
+);
+const SESSION_CACHE_TTL_MS = Number(process.env.SESSION_CACHE_TTL_MS || 15000);
+const SESSION_CACHE_MAX_ENTRIES = Number(
+  process.env.SESSION_CACHE_MAX_ENTRIES || 10000,
+);
+const USER_CONTEXT_CACHE_TTL_MS = Number(
+  process.env.USER_CONTEXT_CACHE_TTL_MS || 120000,
+);
+const USER_CONTEXT_CACHE_MAX_ENTRIES = Number(
+  process.env.USER_CONTEXT_CACHE_MAX_ENTRIES || 5000,
+);
+const ROLE_PERMISSIONS_CACHE_TTL_MS = Number(
+  process.env.ROLE_PERMISSIONS_CACHE_TTL_MS || 300000,
+);
+const ROLE_PERMISSIONS_CACHE_MAX_ENTRIES = Number(
+  process.env.ROLE_PERMISSIONS_CACHE_MAX_ENTRIES || 200,
+);
+const sessionCache = new Map();
+const userContextCache = new Map();
+const rolePermissionsCache = new Map();
+
+const scryptAsync = (password, salt, keyLength) =>
+  new Promise((resolve, reject) => {
+    crypto.scrypt(password, salt, keyLength, (err, derivedKey) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve(derivedKey);
+    });
+  });
+
+const cloneSession = (session) => {
+  if (!session || typeof session !== "object") return null;
+  return {
+    id: session.id,
+    user_id: session.user_id,
+    last_seen_at: session.last_seen_at,
+    expires_at: session.expires_at,
+    is_revoked: Boolean(session.is_revoked),
+  };
+};
+
+const cloneRows = (rows = []) => rows.map((row) => ({ ...row }));
+
+const getCachedRolePermissions = (roleId) => {
+  const cacheKey = Number(roleId || 0);
+  if (!cacheKey) return null;
+  const cached = rolePermissionsCache.get(cacheKey);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    rolePermissionsCache.delete(cacheKey);
+    return null;
+  }
+  return cloneRows(cached.rows);
+};
+
+const setCachedRolePermissions = (roleId, rows) => {
+  const cacheKey = Number(roleId || 0);
+  if (!cacheKey) return;
+  rolePermissionsCache.set(cacheKey, {
+    rows: cloneRows(rows),
+    expiresAt: Date.now() + ROLE_PERMISSIONS_CACHE_TTL_MS,
+  });
+
+  if (rolePermissionsCache.size <= ROLE_PERMISSIONS_CACHE_MAX_ENTRIES) return;
+  const iterator = rolePermissionsCache.keys();
+  const firstKey = iterator.next()?.value;
+  if (firstKey) rolePermissionsCache.delete(firstKey);
+};
+
+const loadRolePermissionRowsCached = async (roleId) => {
+  const cached = getCachedRolePermissions(roleId);
+  if (cached) return cached;
+
+  const rows = await knex("erp.role_permissions")
+    .join(
+      "erp.permission_scope_registry",
+      "erp.permission_scope_registry.id",
+      "erp.role_permissions.scope_id",
+    )
+    .select(
+      "erp.role_permissions.scope_id",
+      "erp.permission_scope_registry.scope_type",
+      "erp.permission_scope_registry.scope_key",
+      "erp.role_permissions.can_navigate",
+      "erp.role_permissions.can_view",
+      "erp.role_permissions.can_load",
+      "erp.role_permissions.can_view_details",
+      "erp.role_permissions.can_create",
+      "erp.role_permissions.can_edit",
+      "erp.role_permissions.can_delete",
+      "erp.role_permissions.can_hard_delete",
+      "erp.role_permissions.can_print",
+      "erp.role_permissions.can_export_excel_csv",
+      "erp.role_permissions.can_filter_all_branches",
+      "erp.role_permissions.can_view_cost_fields",
+      "erp.role_permissions.can_approve",
+    )
+    .where({ role_id: roleId });
+
+  setCachedRolePermissions(roleId, rows);
+  return rows;
+};
+
+const getCachedSession = (tokenHash) => {
+  if (!tokenHash) return null;
+  const cached = sessionCache.get(tokenHash);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    sessionCache.delete(tokenHash);
+    return null;
+  }
+
+  const session = cloneSession(cached.session);
+  if (!session) {
+    sessionCache.delete(tokenHash);
+    return null;
+  }
+
+  if (new Date(session.expires_at).getTime() <= Date.now()) {
+    sessionCache.delete(tokenHash);
+    return null;
+  }
+
+  return session;
+};
+
+const setCachedSession = (tokenHash, session) => {
+  if (!tokenHash || !session) return;
+  sessionCache.set(tokenHash, {
+    session: cloneSession(session),
+    expiresAt: Date.now() + SESSION_CACHE_TTL_MS,
+  });
+
+  if (sessionCache.size <= SESSION_CACHE_MAX_ENTRIES) return;
+  const iterator = sessionCache.keys();
+  const firstKey = iterator.next()?.value;
+  if (firstKey) sessionCache.delete(firstKey);
+};
+
+const deleteCachedSession = (tokenHash) => {
+  if (!tokenHash) return;
+  sessionCache.delete(tokenHash);
+};
 
 const hashPassword = (
   password,
@@ -36,6 +183,29 @@ const verifyPassword = (password, stored) => {
     Buffer.from(hash, "hex"),
     Buffer.from(derived, "hex"),
   );
+};
+
+const verifyPasswordAsync = async (password, stored) => {
+  if (!stored) return false;
+
+  try {
+    if (
+      stored.startsWith("$2a$") ||
+      stored.startsWith("$2b$") ||
+      stored.startsWith("$2y$")
+    ) {
+      return await bcrypt.compare(password, stored);
+    }
+
+    const [salt, hash] = stored.split(":");
+    if (!salt || !hash) return false;
+    const expected = Buffer.from(hash, "hex");
+    const derived = await scryptAsync(password, salt, 64);
+    if (expected.length !== derived.length) return false;
+    return crypto.timingSafeEqual(expected, derived);
+  } catch (_err) {
+    return false;
+  }
 };
 
 const hashToken = (token) =>
@@ -82,14 +252,70 @@ const createSession = async ({ userId, ipAddress, userAgent }) => {
     })
     .returning(["id", "user_id", "last_seen_at", "expires_at"]);
 
+  setCachedSession(tokenHash, {
+    ...row,
+    is_revoked: false,
+  });
+
   return { token, session: row, tokenHash };
 };
 
 const revokeSession = async (tokenHash) => {
   if (!tokenHash) return;
+  deleteCachedSession(tokenHash);
   await knex("erp.user_sessions")
     .where({ token_hash: tokenHash })
     .update({ is_revoked: true, revoked_at: knex.fn.now() });
+};
+
+const cloneUserContext = (context) => {
+  if (!context || typeof context !== "object") return null;
+  const clonedPermissions = Object.fromEntries(
+    Object.entries(context.permissions || {}).map(([key, value]) => [
+      key,
+      { ...(value || {}) },
+    ]),
+  );
+
+  return {
+    ...context,
+    branchIds: Array.isArray(context.branchIds) ? [...context.branchIds] : [],
+    permissions: clonedPermissions,
+  };
+};
+
+const getCachedUserContext = (userId) => {
+  const cacheKey = Number(userId || 0);
+  if (!cacheKey) return null;
+  const cached = userContextCache.get(cacheKey);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    userContextCache.delete(cacheKey);
+    return null;
+  }
+  return cloneUserContext(cached.value);
+};
+
+const setCachedUserContext = (userId, context) => {
+  const cacheKey = Number(userId || 0);
+  if (!cacheKey || !context) return;
+  userContextCache.set(cacheKey, {
+    value: cloneUserContext(context),
+    expiresAt: Date.now() + USER_CONTEXT_CACHE_TTL_MS,
+  });
+
+  if (userContextCache.size <= USER_CONTEXT_CACHE_MAX_ENTRIES) return;
+  const iterator = userContextCache.keys();
+  const firstKey = iterator.next()?.value;
+  if (firstKey) userContextCache.delete(firstKey);
+};
+
+const loadUserContextCached = async (userId) => {
+  const cached = getCachedUserContext(userId);
+  if (cached) return cached;
+  const context = await loadUserContext(userId);
+  setCachedUserContext(userId, context);
+  return cloneUserContext(context);
 };
 
 const loadUserContext = async (userId) => {
@@ -106,59 +332,34 @@ const loadUserContext = async (userId) => {
     throw new HttpError(403, "User inactive");
   }
 
-  const role = await knex("erp.role_templates")
-    .select("id", "name")
-    .where({ id: user.primary_role_id })
-    .first();
-  const branchRows = await knex("erp.user_branch")
-    .select("branch_id")
-    .where({ user_id: userId });
+  const [role, branchRows, rolePermissionRows, overrideRows] =
+    await Promise.all([
+      knex("erp.role_templates")
+        .select("id", "name")
+        .where({ id: user.primary_role_id })
+        .first(),
+      knex("erp.user_branch").select("branch_id").where({ user_id: userId }),
+      loadRolePermissionRowsCached(user.primary_role_id),
+      knex("erp.user_permissions_override")
+        .select(
+          "scope_id",
+          "can_navigate",
+          "can_view",
+          "can_load",
+          "can_view_details",
+          "can_create",
+          "can_edit",
+          "can_delete",
+          "can_hard_delete",
+          "can_print",
+          "can_export_excel_csv",
+          "can_filter_all_branches",
+          "can_view_cost_fields",
+          "can_approve",
+        )
+        .where({ user_id: userId }),
+    ]);
   const branchIds = branchRows.map((row) => Number(row.branch_id));
-
-  const rolePermissionRows = await knex("erp.role_permissions")
-    .join(
-      "erp.permission_scope_registry",
-      "erp.permission_scope_registry.id",
-      "erp.role_permissions.scope_id",
-    )
-    .select(
-      "erp.role_permissions.scope_id",
-      "erp.permission_scope_registry.scope_type",
-      "erp.permission_scope_registry.scope_key",
-      "erp.role_permissions.can_navigate",
-      "erp.role_permissions.can_view",
-      "erp.role_permissions.can_load",
-      "erp.role_permissions.can_view_details",
-      "erp.role_permissions.can_create",
-      "erp.role_permissions.can_edit",
-      "erp.role_permissions.can_delete",
-      "erp.role_permissions.can_hard_delete",
-      "erp.role_permissions.can_print",
-      "erp.role_permissions.can_export_excel_csv",
-      "erp.role_permissions.can_filter_all_branches",
-      "erp.role_permissions.can_view_cost_fields",
-      "erp.role_permissions.can_approve",
-    )
-    .where({ role_id: user.primary_role_id });
-
-  const overrideRows = await knex("erp.user_permissions_override")
-    .select(
-      "scope_id",
-      "can_navigate",
-      "can_view",
-      "can_load",
-      "can_view_details",
-      "can_create",
-      "can_edit",
-      "can_delete",
-      "can_hard_delete",
-      "can_print",
-      "can_export_excel_csv",
-      "can_filter_all_branches",
-      "can_view_cost_fields",
-      "can_approve",
-    )
-    .where({ user_id: userId });
 
   const overridesByScope = overrideRows.reduce((acc, row) => {
     acc[row.scope_id] = row;
@@ -288,23 +489,50 @@ const auth = async (req, res, next) => {
 
   try {
     const tokenHash = hashToken(token);
-    const session = await knex("erp.user_sessions")
-      .select("id", "user_id", "last_seen_at", "expires_at", "is_revoked")
-      .where({ token_hash: tokenHash })
-      .first();
+    let session = getCachedSession(tokenHash);
+    if (!session) {
+      session = await knex("erp.user_sessions")
+        .select("id", "user_id", "last_seen_at", "expires_at", "is_revoked")
+        .where({ token_hash: tokenHash })
+        .first();
+      if (session) {
+        setCachedSession(tokenHash, session);
+      }
+    }
 
     if (!session || session.is_revoked) {
+      deleteCachedSession(tokenHash);
       throw new HttpError(401, "Invalid session");
     }
 
     if (new Date(session.expires_at).getTime() <= Date.now()) {
+      deleteCachedSession(tokenHash);
       await revokeSession(tokenHash);
       throw new HttpError(401, "Session expired");
     }
 
-    await knex("erp.user_sessions")
-      .where({ token_hash: tokenHash })
-      .update({ last_seen_at: knex.fn.now() });
+    const sessionLastSeenAtMs = new Date(session.last_seen_at).getTime();
+    if (
+      Number.isFinite(sessionLastSeenAtMs) &&
+      Date.now() - sessionLastSeenAtMs >= SESSION_TOUCH_INTERVAL_MS
+    ) {
+      knex("erp.user_sessions")
+        .where({ token_hash: tokenHash })
+        .update({ last_seen_at: knex.fn.now() })
+        .then(() => {
+          setCachedSession(tokenHash, {
+            ...session,
+            last_seen_at: new Date(),
+          });
+        })
+        .catch((touchErr) => {
+          console.error("Session last_seen update failed", {
+            session_id: session.id,
+            user_id: session.user_id,
+            error: touchErr?.message || touchErr,
+          });
+        });
+    }
 
     req.authSession = {
       id: session.id,
@@ -314,7 +542,7 @@ const auth = async (req, res, next) => {
       tokenHash,
     };
 
-    req.user = await loadUserContext(session.user_id);
+    req.user = await loadUserContextCached(session.user_id);
 
     // Fix: Make user available to all views
     res.locals.user = req.user;
@@ -396,6 +624,7 @@ const auth = async (req, res, next) => {
 
     next();
   } catch (err) {
+    deleteCachedSession(hashToken(token));
     setCookie(res, SESSION_COOKIE_NAME, "", {
       path: "/",
       httpOnly: true,
@@ -409,6 +638,7 @@ const auth = async (req, res, next) => {
 module.exports = auth;
 module.exports.hashPassword = hashPassword;
 module.exports.verifyPassword = verifyPassword;
+module.exports.verifyPasswordAsync = verifyPasswordAsync;
 module.exports.loadUserContext = loadUserContext;
 module.exports.createSession = createSession;
 module.exports.revokeSession = revokeSession;

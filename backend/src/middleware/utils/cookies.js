@@ -1,6 +1,10 @@
 const parseCookies = (req) => {
   const header = req.headers.cookie || "";
-  return header.split(";").reduce((acc, part) => {
+  if (req._parsedCookiesHeader === header && req._parsedCookies) {
+    return req._parsedCookies;
+  }
+
+  const parsed = header.split(";").reduce((acc, part) => {
     const [rawKey, ...rawValue] = part.trim().split("=");
     if (!rawKey) return acc;
     const key = decodeURIComponent(rawKey);
@@ -8,6 +12,10 @@ const parseCookies = (req) => {
     acc[key] = value;
     return acc;
   }, {});
+
+  req._parsedCookiesHeader = header;
+  req._parsedCookies = parsed;
+  return parsed;
 };
 
 const setCookie = (res, name, value, options = {}) => {
@@ -20,13 +28,17 @@ const setCookie = (res, name, value, options = {}) => {
   if (options.sameSite) parts.push(`SameSite=${options.sameSite}`);
 
   const header = res.getHeader("Set-Cookie");
+  const cookiePrefix = `${encodeURIComponent(name)}=`;
   if (!header) {
     res.setHeader("Set-Cookie", parts.join("; "));
     return;
   }
 
   const existing = Array.isArray(header) ? header : [header];
-  res.setHeader("Set-Cookie", [...existing, parts.join("; ")]);
+  const filtered = existing.filter(
+    (entry) => !String(entry || "").startsWith(cookiePrefix),
+  );
+  res.setHeader("Set-Cookie", [...filtered, parts.join("; ")]);
 };
 
 module.exports = {

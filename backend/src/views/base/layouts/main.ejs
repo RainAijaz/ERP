@@ -51,6 +51,9 @@
         const tabId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
         const currentBranchId = String(<%- JSON.stringify(branchId || "") %>).trim();
         const branchChangedPrompt = <%- JSON.stringify(String(t("branch_changed_reload_confirm") )) %>;
+        const branchChangedTitle = <%- JSON.stringify(String(t("confirm") || "Confirm") ) %>;
+        const branchChangedContinue = <%- JSON.stringify(String(t("continue") || "Continue") ) %>;
+        const branchChangedCancel = <%- JSON.stringify(String(t("cancel") || "Cancel") ) %>;
         let hasUnsavedChanges = false;
         let branchReloadStarted = false;
 
@@ -120,7 +123,7 @@
           });
         }
 
-        window.addEventListener("storage", (event) => {
+        window.addEventListener("storage", async (event) => {
           if (event.key !== BRANCH_SYNC_KEY) return;
           if (!event.newValue) return;
 
@@ -137,7 +140,17 @@
           if (!nextBranchId || nextBranchId === currentBranchId) return;
 
           if (hasUnsavedChanges) {
-            const shouldReload = window.confirm(branchChangedPrompt);
+            let shouldReload = false;
+            if (typeof window.showUiConfirmModal === "function") {
+              shouldReload = await window.showUiConfirmModal({
+                title: branchChangedTitle,
+                message: branchChangedPrompt,
+                confirmLabel: branchChangedContinue,
+                cancelLabel: branchChangedCancel,
+              });
+            } else {
+              shouldReload = window.confirm(branchChangedPrompt);
+            }
             if (!shouldReload) return;
           }
           navigateWithBranch(nextBranchId);
@@ -206,29 +219,99 @@
 
         const defaultTitle = <%- JSON.stringify(String(t("confirm_delete") || t("confirm") || "").trim() || "Confirm Delete") %>;
         const defaultMessage = <%- JSON.stringify(String(t("permanent_delete_message") || t("are_you_sure") || "").trim() || "This action permanently deletes the record.") %>;
+        const defaultYesLabel = String(yesBtn.textContent || "").trim() || "Continue";
+        const defaultNoLabel = String(noBtn.textContent || "").trim() || "Cancel";
         const csrfTokenValue = <%- JSON.stringify(csrfToken || "") %>;
         let pendingConfirmAction = null;
+        let pendingConfirmResolver = null;
 
-        const openConfirm = ({ title = defaultTitle, message = defaultMessage, onConfirm = null } = {}) => {
+        const openConfirm = ({
+          title = defaultTitle,
+          message = defaultMessage,
+          onConfirm = null,
+          confirmLabel = defaultYesLabel,
+          cancelLabel = defaultNoLabel,
+        } = {}) => {
           pendingConfirmAction = typeof onConfirm === "function" ? onConfirm : null;
           if (titleEl instanceof HTMLElement) titleEl.textContent = String(title || defaultTitle).trim() || defaultTitle;
           if (messageEl instanceof HTMLElement) messageEl.textContent = String(message || defaultMessage).trim() || defaultMessage;
+          yesBtn.textContent = String(confirmLabel || defaultYesLabel).trim() || defaultYesLabel;
+          noBtn.textContent = String(cancelLabel || defaultNoLabel).trim() || defaultNoLabel;
           modal.classList.remove("hidden");
           modal.classList.add("flex");
           window.requestAnimationFrame(() => yesBtn.focus());
         };
 
-        const closeConfirm = () => {
+        const closeConfirm = ({ confirmed = false } = {}) => {
+          const resolver = pendingConfirmResolver;
+          pendingConfirmResolver = null;
           pendingConfirmAction = null;
+          yesBtn.textContent = defaultYesLabel;
+          noBtn.textContent = defaultNoLabel;
           modal.classList.add("hidden");
           modal.classList.remove("flex");
+          if (typeof resolver === "function") resolver(Boolean(confirmed));
         };
 
         const confirmAndRun = () => {
           const action = pendingConfirmAction;
-          closeConfirm();
+          closeConfirm({ confirmed: true });
           if (typeof action === "function") action();
         };
+
+        const showUiConfirmModal = ({
+          title = defaultTitle,
+          message = defaultMessage,
+          confirmLabel = defaultYesLabel,
+          cancelLabel = defaultNoLabel,
+        } = {}) => new Promise((resolve) => {
+          pendingConfirmResolver = resolve;
+          openConfirm({
+            title,
+            message,
+            onConfirm: null,
+            confirmLabel,
+            cancelLabel,
+          });
+        });
+
+        window.showUiConfirmModal = showUiConfirmModal;
+
+        const forceCloseBlockingOverlays = () => {
+          const selectors = [
+            "[data-global-delete-confirm-modal]",
+            "[data-ui-error-modal]",
+            "#modal-shell",
+            "#modal-backdrop",
+            "[data-confirm-modal]",
+            "[data-gate-pass-modal]",
+            "[data-sales-order-picker-modal]",
+            "[data-grn-picker-modal]",
+            "[data-outward-picker-modal]",
+            "[data-sti-transfer-picker-modal]",
+          ];
+          selectors.forEach((selector) => {
+            document.querySelectorAll(selector).forEach((node) => {
+              if (!(node instanceof HTMLElement)) return;
+              node.classList.add("hidden");
+              node.classList.remove("flex");
+              if (node.hasAttribute("aria-hidden")) {
+                node.setAttribute("aria-hidden", "true");
+              }
+            });
+          });
+          document.body.classList.remove("overflow-hidden");
+          if (typeof window.closeAllSearchableSelectMenus === "function") {
+            window.closeAllSearchableSelectMenus();
+          }
+        };
+
+        window.erpCloseBlockingOverlays = forceCloseBlockingOverlays;
+        window.addEventListener("pageshow", (event) => {
+          if (event.persisted) {
+            forceCloseBlockingOverlays();
+          }
+        });
 
         const submitPostTo = (actionUrl) => {
           const action = String(actionUrl || "").trim();
@@ -288,12 +371,12 @@
         };
 
         yesBtn.addEventListener("click", confirmAndRun);
-        noBtn.addEventListener("click", closeConfirm);
+        noBtn.addEventListener("click", () => closeConfirm({ confirmed: false }));
         modal.addEventListener("click", (event) => {
-          if (event.target === modal) closeConfirm();
+          if (event.target === modal) closeConfirm({ confirmed: false });
         });
         document.addEventListener("keydown", (event) => {
-          if (event.key === "Escape" && modal.classList.contains("flex")) closeConfirm();
+          if (event.key === "Escape" && modal.classList.contains("flex")) closeConfirm({ confirmed: false });
         });
 
         document.addEventListener(

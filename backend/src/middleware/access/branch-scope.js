@@ -1,6 +1,40 @@
 const knex = require("../../db/knex");
 const { HttpError } = require("../errors/http-error");
 const { setCookie } = require("../utils/cookies");
+const { parseCookies } = require("../utils/cookies");
+
+const BRANCH_OPTIONS_CACHE_TTL_MS = Number(
+  process.env.BRANCH_OPTIONS_CACHE_TTL_MS || 60000,
+);
+const branchOptionsCache = new Map();
+
+const getBranchCacheKey = (isAdmin, branchIds = []) => {
+  if (isAdmin) return "admin:all";
+  return `user:${[...branchIds].sort((a, b) => a - b).join(",")}`;
+};
+
+const cloneRows = (rows = []) => rows.map((row) => ({ ...row }));
+
+const loadBranchRowsCached = async ({ isAdmin, branchIds }) => {
+  const cacheKey = getBranchCacheKey(isAdmin, branchIds);
+  const cached = branchOptionsCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cloneRows(cached.rows);
+  }
+
+  const branchRowsQuery = knex("erp.branches")
+    .select("id", "code", "name")
+    .orderBy("name", "asc");
+  const rows = isAdmin
+    ? await branchRowsQuery
+    : await branchRowsQuery.whereIn("id", branchIds);
+
+  branchOptionsCache.set(cacheKey, {
+    rows: cloneRows(rows),
+    expiresAt: Date.now() + BRANCH_OPTIONS_CACHE_TTL_MS,
+  });
+  return rows;
+};
 
 const toNumber = (value) => {
   if (value == null || value === "") return null;
@@ -44,20 +78,15 @@ module.exports = async (req, res, next) => {
     ...toNumberList(req.body?.branch_id),
   ];
   if (
-    submittedBranches.length
-    && !isAdmin
-    && submittedBranches.some((branchId) => !branchIds.includes(branchId))
+    submittedBranches.length &&
+    !isAdmin &&
+    submittedBranches.some((branchId) => !branchIds.includes(branchId))
   ) {
     return next(new HttpError(403, "Branch not assigned"));
   }
 
   try {
-    const branchRowsQuery = knex("erp.branches")
-      .select("id", "code", "name")
-      .orderBy("name", "asc");
-    const branchRows = isAdmin
-      ? await branchRowsQuery
-      : await branchRowsQuery.whereIn("id", branchIds);
+    const branchRows = await loadBranchRowsCached({ isAdmin, branchIds });
 
     if (isAdmin) {
       branchIds = branchRows.map((row) => Number(row.id));
@@ -97,12 +126,14 @@ module.exports = async (req, res, next) => {
     return qb.whereIn(column, branchIds);
   };
 
-  setCookie(res, "active_branch_id", String(activeBranch), {
-    path: "/",
-    sameSite: "Lax",
-    maxAge: 60 * 60 * 24 * 30,
-  });
+  const cookies = parseCookies(req);
+  if (String(cookies.active_branch_id || "") !== String(activeBranch || "")) {
+    setCookie(res, "active_branch_id", String(activeBranch), {
+      path: "/",
+      sameSite: "Lax",
+      maxAge: 60 * 60 * 24 * 30,
+    });
+  }
 
   next();
 };
-

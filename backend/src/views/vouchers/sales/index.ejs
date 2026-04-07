@@ -1871,14 +1871,27 @@
     loadVoucher(e.target?.value);
   });
   form.querySelector("[data-load-voucher]")?.addEventListener("click", () => loadVoucher(form.querySelector("[data-voucher-no-input]")?.value));
-  document.querySelector("[data-delete-voucher]")?.addEventListener("click", () => {
+  document.querySelector("[data-delete-voucher]")?.addEventListener("click", async () => {
     if (!canDeleteCurrentVoucher) {
       window.showVoucherError(actionNotAllowedMessage);
       return;
     }
     const deleteForm = document.querySelector("[data-delete-voucher-form]");
     if (!deleteForm) return;
-    if (!confirm("<%= t('are_you_sure') %>")) return;
+    let shouldDelete = false;
+    if (typeof window.showUiConfirmModal === "function") {
+      shouldDelete = await window.showUiConfirmModal({
+        title: "<%= t('confirm_delete') %>",
+        message: "<%= t('are_you_sure') %>",
+      });
+    } else {
+      shouldDelete = window.confirm("<%= t('are_you_sure') %>");
+    }
+    if (!shouldDelete) return;
+    if (typeof deleteForm.requestSubmit === "function") {
+      deleteForm.requestSubmit();
+      return;
+    }
     deleteForm.submit();
   });
   document.querySelector("[data-print-gate-pass]")?.addEventListener("click", () => {

@@ -249,7 +249,7 @@ const createPurchaseVoucherRouter = ({
 
       if (saved.queuedForApproval) {
         const msg = saved.permissionReroute
-          ? res.locals.t("approval_sent") 
+          ? res.locals.t("approval_sent")
           : res.locals.t("approval_submitted");
         setNotice(res, msg, true);
       } else {
@@ -286,14 +286,11 @@ const createPurchaseVoucherRouter = ({
 
       if (saved.queuedForApproval) {
         const msg = saved.permissionReroute
-          ? res.locals.t("approval_sent") 
+          ? res.locals.t("approval_sent")
           : res.locals.t("approval_submitted");
         setNotice(res, msg, true);
       } else {
-        setNotice(
-          res,
-          res.locals.t("deleted_successfully") ,
-        );
+        setNotice(res, res.locals.t("deleted_successfully"));
       }
 
       return res.redirect(req.baseUrl);

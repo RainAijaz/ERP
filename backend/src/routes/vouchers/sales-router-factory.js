@@ -139,7 +139,8 @@ const createSalesVoucherRouter = ({
         const allowEdit = canVoucherAction(res, scopeKey, "edit");
         const allowDelete = canVoucherAction(res, scopeKey, "hard_delete");
         const allowPrintGatePass = canVoucherAction(res, scopeKey, "print");
-        const selectedVoucherNo = Number(selectedVoucher?.voucher_no || 0) || null;
+        const selectedVoucherNo =
+          Number(selectedVoucher?.voucher_no || 0) || null;
 
         return res.render("base/layouts/main", {
           title: `${res.locals.t(titleKey)} - ${res.locals.t("sales")}`,
@@ -166,7 +167,9 @@ const createSalesVoucherRouter = ({
           allowDelete,
           allowPrintGatePass,
           autoOpenGatePass:
-            forceGatePassOpen && allowPrintGatePass && Boolean(selectedVoucherNo),
+            forceGatePassOpen &&
+            allowPrintGatePass &&
+            Boolean(selectedVoucherNo),
         });
       } catch (err) {
         console.error("Error in SalesVoucherPageService:", err);
@@ -221,7 +224,7 @@ const createSalesVoucherRouter = ({
 
       if (saved.queuedForApproval) {
         const msg = saved.permissionReroute
-          ? res.locals.t("approval_sent") 
+          ? res.locals.t("approval_sent")
           : res.locals.t("approval_submitted");
         setNotice(res, msg, true);
       } else {
@@ -271,14 +274,11 @@ const createSalesVoucherRouter = ({
 
       if (saved.queuedForApproval) {
         const msg = saved.permissionReroute
-          ? res.locals.t("approval_sent") 
+          ? res.locals.t("approval_sent")
           : res.locals.t("approval_submitted");
         setNotice(res, msg, true);
       } else {
-        setNotice(
-          res,
-          res.locals.t("deleted_successfully") ,
-        );
+        setNotice(res, res.locals.t("deleted_successfully"));
       }
 
       return res.redirect(req.baseUrl);
@@ -298,7 +298,9 @@ const createSalesVoucherRouter = ({
         const embedMode = String(req.query.embed || "").trim() === "1";
         const downloadMode = String(req.query.download || "").trim() === "1";
         const localeCode =
-          String(res.locals?.locale || "en").trim().toLowerCase() === "ur"
+          String(res.locals?.locale || "en")
+            .trim()
+            .toLowerCase() === "ur"
             ? "ur"
             : "en";
         if (!voucherNo) throw new Error("Invalid voucher no");
@@ -313,7 +315,10 @@ const createSalesVoucherRouter = ({
         if (downloadMode) {
           const filename = `sales-gate-pass-${voucherNo}.html`;
           res.setHeader("Content-Type", "text/html; charset=utf-8");
-          res.setHeader("Content-Disposition", `attachment; filename=\"${filename}\"`);
+          res.setHeader(
+            "Content-Disposition",
+            `attachment; filename=\"${filename}\"`,
+          );
         }
 
         return res.render("vouchers/sales/gate-pass", {

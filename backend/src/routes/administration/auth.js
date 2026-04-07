@@ -1,12 +1,18 @@
 const express = require("express");
 const knex = require("../../db/knex");
 const authMiddleware = require("../../middleware/core/auth");
-const { requireFields, normalizeFields } = require("../../middleware/utils/validation");
+const {
+  requireFields,
+  normalizeFields,
+} = require("../../middleware/utils/validation");
 const { HttpError } = require("../../middleware/errors/http-error");
 const { parseCookies, setCookie } = require("../../middleware/utils/cookies");
 const { UI_NOTICE_COOKIE } = require("../../middleware/core/ui-notice");
 
 const router = express.Router();
+const LAST_LOGIN_TOUCH_INTERVAL_MS = Number(
+  process.env.LAST_LOGIN_TOUCH_INTERVAL_MS || 60000,
+);
 
 router.get("/login", (req, res) => {
   if (req.user) {
@@ -30,7 +36,11 @@ router.post(
         .whereRaw("LOWER(username) = ?", [username.toLowerCase()])
         .first();
 
-      if (!user || !authMiddleware.verifyPassword(password, user.password_hash)) {
+      const isValidPassword = user
+        ? await authMiddleware.verifyPasswordAsync(password, user.password_hash)
+        : false;
+
+      if (!user || !isValidPassword) {
         if (req.accepts("html")) {
           return res.status(401).render("auth/login", {
             error: res.locals.t("incorrect_credentials"),
@@ -49,16 +59,27 @@ router.post(
       }
 
       const previousLoginAt = user.last_login_at;
+      const previousLoginAtMs = previousLoginAt
+        ? new Date(previousLoginAt).getTime()
+        : NaN;
+      const shouldTouchLastLogin =
+        !Number.isFinite(previousLoginAtMs) ||
+        Date.now() - previousLoginAtMs >= LAST_LOGIN_TOUCH_INTERVAL_MS;
 
-      await knex("erp.users")
-        .where({ id: user.id })
-        .update({ last_login_at: knex.fn.now() });
+      const [, createdSession] = await Promise.all([
+        shouldTouchLastLogin
+          ? knex("erp.users")
+              .where({ id: user.id })
+              .update({ last_login_at: knex.fn.now() })
+          : Promise.resolve(),
+        authMiddleware.createSession({
+          userId: user.id,
+          ipAddress: req.ip,
+          userAgent: req.get("user-agent"),
+        }),
+      ]);
 
-      const { token } = await authMiddleware.createSession({
-        userId: user.id,
-        ipAddress: req.ip,
-        userAgent: req.get("user-agent"),
-      });
+      const token = createdSession?.token;
 
       setCookie(res, authMiddleware.SESSION_COOKIE_NAME, token, {
         path: "/",
@@ -68,7 +89,7 @@ router.post(
         maxAge: Number(process.env.SESSION_TTL_HOURS || 12) * 60 * 60,
       });
 
-      if (previousLoginAt) {
+      if (previousLoginAt && shouldTouchLastLogin) {
         const counts = await knex("erp.approval_request")
           .select("status")
           .count("* as count")
@@ -79,19 +100,26 @@ router.post(
 
         const summary = counts.reduce(
           (acc, row) => {
-            if (row.status === "APPROVED") acc.approved = Number(row.count) || 0;
-            if (row.status === "REJECTED") acc.rejected = Number(row.count) || 0;
+            if (row.status === "APPROVED")
+              acc.approved = Number(row.count) || 0;
+            if (row.status === "REJECTED")
+              acc.rejected = Number(row.count) || 0;
             return acc;
           },
           { approved: 0, rejected: 0 },
         );
 
         if (summary.approved || summary.rejected) {
-          const template = res.locals.t("approval_updates") ;
+          const template = res.locals.t("approval_updates");
           const message = template
             .replace("{approved}", String(summary.approved))
             .replace("{rejected}", String(summary.rejected));
-          setCookie(res, UI_NOTICE_COOKIE, JSON.stringify({ message, sticky: true }), { path: "/", maxAge: 30, sameSite: "Lax" });
+          setCookie(
+            res,
+            UI_NOTICE_COOKIE,
+            JSON.stringify({ message, sticky: true }),
+            { path: "/", maxAge: 30, sameSite: "Lax" },
+          );
         }
       }
 
@@ -108,7 +136,7 @@ router.post(
       }
       next(err);
     }
-  }
+  },
 );
 
 router.post("/logout", (req, res, next) => {

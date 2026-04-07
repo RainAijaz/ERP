@@ -186,6 +186,27 @@
 		const canSave = <%- JSON.stringify(Boolean(canSaveVoucher)) %>;
 		const reasonRequiredMessage = <%- JSON.stringify(toFriendlyLabel("reason_required", "Reason is required.")) %>;
 		const reasonNotesRequiredMessage = <%- JSON.stringify(toFriendlyLabel("reason_notes_required", "Reason notes are required.")) %>;
+		const deleteConfirmMessage = <%- JSON.stringify(toFriendlyLabel("confirm_delete", "Are you sure?")) %>;
+		const atLeastOneValidLineMessage = <%- JSON.stringify(toFriendlyLabel("at_least_one_valid_line_required", "At least one valid line is required.")) %>;
+
+		const showUiMessage = (message) => {
+			const text = String(message || "").trim();
+			if (!text) return;
+			if (typeof window.showVoucherError === "function") {
+				window.showVoucherError(text);
+				return;
+			}
+			window.alert(text);
+		};
+
+		const confirmUi = async (message) => {
+			const text = String(message || "").trim();
+			if (!text) return true;
+			if (typeof window.showUiConfirmModal === "function") {
+				return window.showUiConfirmModal({ message: text });
+			}
+			return window.confirm(text);
+		};
 
 		const stockTypeValues = ["FG", "SFG", "RM"];
 		const PHYSICAL_COUNT_REASON_CODES = new Set(["PHYSICALCOUNT", "PHYSICALCOUNTCORRECTION"]);
@@ -915,9 +936,13 @@
 		}
 
 		if (deleteButton && deleteForm) {
-			deleteButton.addEventListener("click", () => {
-				const confirmMessage = "Delete this voucher?";
-				if (!window.confirm(confirmMessage)) return;
+			deleteButton.addEventListener("click", async () => {
+				const shouldDelete = await confirmUi(deleteConfirmMessage);
+				if (!shouldDelete) return;
+				if (typeof deleteForm.requestSubmit === "function") {
+					deleteForm.requestSubmit();
+					return;
+				}
 				deleteForm.submit();
 			});
 		}
@@ -951,13 +976,13 @@
 			const selectedReasonId = toInt(reasonSelect?.value);
 			if (!selectedReasonId) {
 				event.preventDefault();
-				window.alert(reasonRequiredMessage);
+				showUiMessage(reasonRequiredMessage);
 				reasonSelect?.focus();
 				return;
 			}
 			if (reasonNotes?.required && !String(reasonNotes.value || "").trim()) {
 				event.preventDefault();
-				window.alert(reasonNotesRequiredMessage);
+				showUiMessage(reasonNotesRequiredMessage);
 				reasonNotes.focus();
 				return;
 			}
@@ -1001,7 +1026,7 @@
 
 			if (!payloadLines.length) {
 				event.preventDefault();
-				window.alert("At least one valid line is required.");
+				showUiMessage(atLeastOneValidLineMessage);
 				return;
 			}
 

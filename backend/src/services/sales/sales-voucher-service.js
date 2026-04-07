@@ -2358,7 +2358,9 @@ const applySalesSkuStockOutTx = async ({
       skuId: Number(skuId),
       category,
     });
-    const shortageValue = roundCost2(Number(remainingPairs) * Number(fallbackUnitCost || 0));
+    const shortageValue = roundCost2(
+      Number(remainingPairs) * Number(fallbackUnitCost || 0),
+    );
     const baseBucket = rows.find((row) => row?.is_packed === false) || null;
     if (!baseBucket) {
       throw new HttpError(
@@ -2366,8 +2368,11 @@ const applySalesSkuStockOutTx = async ({
         `Sales stock posting failed: base stock bucket is missing for SKU ${Number(skuId)}`,
       );
     }
-    const nextQtyPairs = Number(baseBucket.qty_pairs || 0) - Number(remainingPairs);
-    const nextValue = roundCost2(Number(baseBucket.value || 0) - Number(shortageValue));
+    const nextQtyPairs =
+      Number(baseBucket.qty_pairs || 0) - Number(remainingPairs);
+    const nextValue = roundCost2(
+      Number(baseBucket.value || 0) - Number(shortageValue),
+    );
     const nextWac =
       nextQtyPairs !== 0
         ? roundUnitCost6(Math.abs(nextValue) / Math.abs(nextQtyPairs))
@@ -2388,7 +2393,9 @@ const applySalesSkuStockOutTx = async ({
         wac: nextWac,
         last_txn_at: trx.fn.now(),
       });
-    consumedValueTotal = roundCost2(consumedValueTotal + Number(shortageValue || 0));
+    consumedValueTotal = roundCost2(
+      consumedValueTotal + Number(shortageValue || 0),
+    );
     remainingPairs = 0;
   }
 

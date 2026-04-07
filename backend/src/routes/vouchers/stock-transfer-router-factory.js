@@ -54,7 +54,12 @@ const createStockTransferVoucherRouter = ({
   scopeKey,
   titleKey,
 }) => {
-  const normalizedMode = String(mode || "").trim().toLowerCase() === "in" ? "in" : "out";
+  const normalizedMode =
+    String(mode || "")
+      .trim()
+      .toLowerCase() === "in"
+      ? "in"
+      : "out";
   const router = express.Router();
 
   router.get(
@@ -85,7 +90,8 @@ const createStockTransferVoucherRouter = ({
 
         const latestVoucherNo = Number(stats.latestVoucherNo || 0);
         const latestActiveVoucherNo = Number(stats.latestActiveVoucherNo || 0);
-        const latestVisibleVoucherNo = latestActiveVoucherNo || latestVoucherNo || null;
+        const latestVisibleVoucherNo =
+          latestActiveVoucherNo || latestVoucherNo || null;
 
         const selectedNo =
           !canListHistory || forceNew
@@ -104,7 +110,9 @@ const createStockTransferVoucherRouter = ({
           req,
           voucherTypeCode,
           includeReceivedForVoucherId:
-            normalizedMode === "in" ? Number(selectedVoucher?.id || 0) || null : null,
+            normalizedMode === "in"
+              ? Number(selectedVoucher?.id || 0) || null
+              : null,
         });
 
         if (
@@ -122,10 +130,14 @@ const createStockTransferVoucherRouter = ({
             transfer_ref_no: selectedVoucher.transfer_ref_no || "",
             bill_book_no: selectedVoucher.bill_book_no || "",
             stock_type: selectedVoucher.stock_type || "FG",
-            source_branch_id: Number(selectedVoucher.source_branch_id || 0) || null,
+            source_branch_id:
+              Number(selectedVoucher.source_branch_id || 0) || null,
             source_branch_name: selectedVoucher.source_branch_name || "",
-            destination_branch_id: Number(selectedVoucher.destination_branch_id || req.branchId),
-            destination_branch_name: selectedVoucher.destination_branch_name || "",
+            destination_branch_id: Number(
+              selectedVoucher.destination_branch_id || req.branchId,
+            ),
+            destination_branch_name:
+              selectedVoucher.destination_branch_name || "",
             dispatch_date: selectedVoucher.voucher_date,
             status: "RECEIVED",
             lines: selectedVoucher.lines || [],
@@ -135,7 +147,12 @@ const createStockTransferVoucherRouter = ({
         const currentCursorNo = forceNew
           ? latestVoucherNo + 1
           : requestedVoucherNo ||
-            Number(selectedVoucher?.voucher_no || latestVisibleVoucherNo || latestVoucherNo || 0);
+            Number(
+              selectedVoucher?.voucher_no ||
+                latestVisibleVoucherNo ||
+                latestVoucherNo ||
+                0,
+            );
 
         const { prevVoucherNo, nextVoucherNo } = canListHistory
           ? await getStockTransferVoucherNeighbours({
@@ -248,16 +265,15 @@ const createStockTransferVoucherRouter = ({
         if (saved.queuedForApproval) {
           let msg;
           if (saved.negativeStockApprovalReroute === true) {
-            msg =
-              res.locals.t("approval_sent_negative_stock") ;
+            msg = res.locals.t("approval_sent_negative_stock");
             const approvalReason = String(saved.approvalReason || "").trim();
             if (approvalReason) {
-              const reasonLabel = res.locals.t("reason") ;
+              const reasonLabel = res.locals.t("reason");
               msg = `${msg} ${reasonLabel}: ${approvalReason}`;
             }
           } else {
             msg = saved.permissionReroute
-              ? res.locals.t("approval_sent") 
+              ? res.locals.t("approval_sent")
               : res.locals.t("approval_submitted");
           }
           setNotice(res, msg, true);
@@ -294,14 +310,11 @@ const createStockTransferVoucherRouter = ({
 
         if (saved.queuedForApproval) {
           const msg = saved.permissionReroute
-            ? res.locals.t("approval_sent") 
+            ? res.locals.t("approval_sent")
             : res.locals.t("approval_submitted");
           setNotice(res, msg, true);
         } else {
-          setNotice(
-            res,
-            res.locals.t("deleted_successfully") ,
-          );
+          setNotice(res, res.locals.t("deleted_successfully"));
         }
 
         return res.redirect(req.baseUrl);
