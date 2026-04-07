@@ -1,3 +1,8 @@
+const {
+  BASIC_INFO_ENTITY_TYPES,
+  SCREEN_ENTITY_TYPES,
+} = require("../../utils/approval-entity-map");
+
 const toCount = (row) => {
   const value = Number(row?.count || 0);
   return Number.isFinite(value) ? value : 0;
@@ -12,8 +17,18 @@ const getCan = (canFn, scopeType, scopeKey, action) => {
   }
 };
 
-const applyBranchScope = (req, qb, column = "branch_id") => {
-  if (!qb || typeof qb.whereIn !== "function") return qb;
+const toPositiveNumber = (value) => {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+};
+
+const applyActiveBranchScope = (req, qb, column = "branch_id") => {
+  if (!qb || typeof qb.where !== "function") return qb;
+  const activeBranchId = toPositiveNumber(req?.branchId);
+  if (activeBranchId > 0) {
+    qb.where(column, activeBranchId);
+    return qb;
+  }
   if (req && typeof req.applyBranchScope === "function") {
     req.applyBranchScope(qb, column);
   }
@@ -46,50 +61,19 @@ const safeRows = async (label, factory) => {
   }
 };
 
-const buildQuickActions = (canFn) => {
-  const actions = [
-    {
-      key: "quick_master_data",
-      href: "/master-data/basic-info/units",
-      icon: "M3 7h18M3 12h18M3 17h18",
-      allowed:
-        getCan(canFn, "MODULE", "master_data", "navigate") ||
-        getCan(canFn, "SCREEN", "master_data.basic_info.units", "navigate"),
-    },
-    {
-      key: "quick_approvals",
-      href: "/administration/approvals",
-      icon: "M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z",
-      allowed: getCan(canFn, "SCREEN", "administration.approvals", "view"),
-    },
-    {
-      key: "quick_vouchers",
-      href: "/vouchers/cash",
-      icon: "M4 7h16M4 12h16M4 17h10",
-      allowed: getCan(canFn, "MODULE", "financial", "navigate"),
-    },
-    {
-      key: "quick_reports",
-      href: "/reports/financial/accounts",
-      icon: "M6 20V10m6 10V4m6 16v-6",
-      allowed: getCan(canFn, "MODULE", "financial", "navigate"),
-    },
-    {
-      key: "quick_users",
-      href: "/administration/users",
-      icon: "M16 11c1.7 0 3-1.3 3-3s-1.3-3-3-3-3 1.3-3 3 1.3 3 3 3zM8 13c1.7 0 3-1.3 3-3S9.7 7 8 7s-3 1.3-3 3 1.3 3 3 3zM2 20c0-2.8 2.2-5 5-5M22 20c0-2.8-2.2-5-5-5",
-      allowed: getCan(canFn, "SCREEN", "administration.users", "navigate"),
-    },
-    {
-      key: "quick_stock",
-      href: "/reports/inventory/stock-ledger",
-      icon: "M4 6h16v12H4zM8 10h8",
-      allowed: getCan(canFn, "MODULE", "inventory", "navigate"),
-    },
-  ];
+const ACTIVE_SESSION_WINDOW_MINUTES = Math.max(
+  1,
+  Number(process.env.DASHBOARD_ACTIVE_SESSION_WINDOW_MINUTES || 15),
+);
 
-  return actions.filter((action) => action.allowed);
-};
+const MASTER_DATA_ENTITY_TYPES = Array.from(
+  new Set([
+    ...Object.values(BASIC_INFO_ENTITY_TYPES),
+    ...Object.entries(SCREEN_ENTITY_TYPES)
+      .filter(([scopeKey]) => String(scopeKey || "").startsWith("master_data."))
+      .map(([, entityType]) => entityType),
+  ]),
+);
 
 const loadDashboardData = async ({ knex, req, can }) => {
   const now = new Date();
@@ -97,16 +81,18 @@ const loadDashboardData = async ({ knex, req, can }) => {
   startOfDay.setHours(0, 0, 0, 0);
   const endOfDay = new Date(now);
   endOfDay.setHours(23, 59, 59, 999);
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const activeSessionCutoff = new Date(
+    now.getTime() - ACTIVE_SESSION_WINDOW_MINUTES * 60 * 1000,
+  );
+  const activeBranchId = toPositiveNumber(req?.branchId);
 
   const canViewApprovals = getCan(can, "SCREEN", "administration.approvals", "view");
 
   const [
     pendingApprovals,
     vouchersToday,
-    vouchersThisMonth,
-    inventoryMovementsToday,
-    activeSkus,
+    masterDataChangesToday,
+    totalLogsToday,
     activeUsers,
     totalUsers,
     recentApprovals,
@@ -115,42 +101,53 @@ const loadDashboardData = async ({ knex, req, can }) => {
   ] = await Promise.all([
     safeCount("pendingApprovals", () => {
       const qb = knex("erp.approval_request").where({ status: "PENDING" }).count("* as count").first();
-      return applyBranchScope(req, qb, "branch_id");
+      return applyActiveBranchScope(req, qb, "branch_id");
     }),
     safeCount("vouchersToday", () => {
       const qb = knex("erp.voucher_header")
         .whereBetween("voucher_date", [startOfDay, endOfDay])
         .count("* as count")
         .first();
-      return applyBranchScope(req, qb, "branch_id");
+      return applyActiveBranchScope(req, qb, "branch_id");
     }),
-    safeCount("vouchersThisMonth", () => {
-      const qb = knex("erp.voucher_header")
-        .where("voucher_date", ">=", startOfMonth)
+    safeCount("masterDataChangesToday", () => {
+      if (!MASTER_DATA_ENTITY_TYPES.length) return Promise.resolve({ count: 0 });
+      return knex("erp.activity_log")
+        .whereBetween("created_at", [startOfDay, endOfDay])
+        .whereIn("entity_type", MASTER_DATA_ENTITY_TYPES)
         .count("* as count")
         .first();
-      return applyBranchScope(req, qb, "branch_id");
     }),
-    safeCount("inventoryMovementsToday", () => {
-      const qb = knex("erp.stock_ledger")
-        .whereBetween("txn_date", [startOfDay, endOfDay])
+    safeCount("totalLogsToday", () => {
+      const qb = knex("erp.activity_log")
+        .whereBetween("created_at", [startOfDay, endOfDay])
         .count("* as count")
         .first();
-      return applyBranchScope(req, qb, "branch_id");
+      return applyActiveBranchScope(req, qb, "branch_id");
     }),
-    safeCount("activeSkus", () =>
-      knex("erp.skus")
-        .where({ is_active: true })
-        .count("* as count")
-        .first(),
-    ),
-    safeCount("activeUsers", () =>
+    safeCount("activeUsers", () => {
+      const qb = knex("erp.user_sessions as us")
+        .where({ "us.is_revoked": false })
+        .andWhere("us.expires_at", ">", now)
+        .andWhere("us.last_seen_at", ">=", activeSessionCutoff)
+        .countDistinct("us.user_id as count")
+        .first();
+
+      if (activeBranchId > 0) {
+        qb.join("erp.user_branch as ub", "ub.user_id", "us.user_id").where(
+          "ub.branch_id",
+          activeBranchId,
+        );
+      }
+
+      return qb;
+    }),
+    safeCount("totalUsers", () =>
       knex("erp.users")
         .where({ status: "Active" })
         .count("* as count")
         .first(),
     ),
-    safeCount("totalUsers", () => knex("erp.users").count("* as count").first()),
     canViewApprovals
       ? safeRows("recentApprovals", () => {
           const qb = knex("erp.approval_request as ar")
@@ -166,7 +163,7 @@ const loadDashboardData = async ({ knex, req, can }) => {
             .where({ "ar.status": "PENDING" })
             .orderBy("ar.requested_at", "desc")
             .limit(6);
-          return applyBranchScope(req, qb, "ar.branch_id");
+          return applyActiveBranchScope(req, qb, "ar.branch_id");
         })
       : Promise.resolve([]),
     safeRows("recentVouchers", () => {
@@ -182,7 +179,7 @@ const loadDashboardData = async ({ knex, req, can }) => {
         )
         .orderBy("vh.id", "desc")
         .limit(6);
-      return applyBranchScope(req, qb, "vh.branch_id");
+      return applyActiveBranchScope(req, qb, "vh.branch_id");
     }),
     safeRows("recentActivity", () => {
       const qb = knex("erp.activity_log as al")
@@ -190,7 +187,7 @@ const loadDashboardData = async ({ knex, req, can }) => {
         .select("al.action", "al.entity_type", "al.created_at", "u.username")
         .orderBy("al.created_at", "desc")
         .limit(8);
-      return applyBranchScope(req, qb, "al.branch_id");
+      return applyActiveBranchScope(req, qb, "al.branch_id");
     }),
   ]);
 
@@ -198,14 +195,12 @@ const loadDashboardData = async ({ knex, req, can }) => {
     summary: {
       pendingApprovals,
       vouchersToday,
-      vouchersThisMonth,
-      inventoryMovementsToday,
-      activeSkus,
+      masterDataChangesToday,
+      totalLogsToday,
       activeUsers,
       totalUsers,
-      branchCount: Array.isArray(req.branchScope) ? req.branchScope.length : 0,
+      activeSessionWindowMinutes: ACTIVE_SESSION_WINDOW_MINUTES,
     },
-    quickActions: buildQuickActions(can),
     recentApprovals,
     recentVouchers,
     recentActivity,

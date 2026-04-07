@@ -1275,10 +1275,22 @@
           clearMenuViewportConstraint(menu);
           const viewportTop = 12;
           const viewportBottom = window.innerHeight - 12;
+          const viewportLeft = 12;
           const viewportRight = window.innerWidth - 12;
           const forceScrollable = menu.dataset.forceScrollable === "1";
           const wrap = menu.closest("[data-submenu-wrap]");
           const wrapRect = wrap?.getBoundingClientRect();
+
+          if (menu.classList.contains("nav-dropdown")) {
+            const initialRect = menu.getBoundingClientRect();
+            if (initialRect.right > viewportRight) {
+              menu.style.left = "auto";
+              menu.style.right = "0";
+            } else if (initialRect.left < viewportLeft) {
+              menu.style.left = "0";
+              menu.style.right = "auto";
+            }
+          }
 
           if (menu.classList.contains("nav-submenu")) {
             const initialRect = menu.getBoundingClientRect();

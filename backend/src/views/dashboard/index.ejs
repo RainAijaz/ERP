@@ -6,20 +6,17 @@
 
   const canViewApprovals = typeof can === "function" ? can("SCREEN", "administration.approvals", "view") : false;
   const summary = dashboard?.summary || {};
-  const quickActions = Array.isArray(dashboard?.quickActions) ? dashboard.quickActions : [];
   const recentApprovals = Array.isArray(dashboard?.recentApprovals) ? dashboard.recentApprovals : [];
   const recentVouchers = Array.isArray(dashboard?.recentVouchers) ? dashboard.recentVouchers : [];
   const recentActivity = Array.isArray(dashboard?.recentActivity) ? dashboard.recentActivity : [];
   const generatedAt = dashboard?.generatedAt ? formatDateDisplay(dashboard.generatedAt, "") : "";
+  const activeSessionWindowMinutes = Number(summary.activeSessionWindowMinutes || 15);
 
-  const quickActionMeta = {
-    quick_master_data: { label: txt("quick_master_data", "Master Data"), subtitle: txt("quick_master_data_hint", "Manage core entities") },
-    quick_approvals: { label: txt("quick_approvals", "Approvals"), subtitle: txt("quick_approvals_hint", "Review pending decisions") },
-    quick_vouchers: { label: txt("quick_vouchers", "Vouchers"), subtitle: txt("quick_vouchers_hint", "Create accounting entries") },
-    quick_reports: { label: txt("quick_reports", "Reports"), subtitle: txt("quick_reports_hint", "Analyze operational data") },
-    quick_users: { label: txt("quick_users", "Users"), subtitle: txt("quick_users_hint", "Manage access & roles") },
-    quick_stock: { label: txt("quick_stock", "Stock Ledger"), subtitle: txt("quick_stock_hint", "Trace inventory movements") },
-  };
+  const pendingApprovalsTooltip = txt("pending_approvals_dashboard_tooltip", "Branch specific: pending approvals for the selected branch.");
+  const vouchersTodayTooltip = txt("vouchers_today_dashboard_tooltip", "Branch specific: vouchers posted today in the selected branch.");
+  const masterDataChangesTooltip = txt("master_data_changes_dashboard_tooltip", "Global: master data changes today across all branches.");
+  const totalLogsTodayTooltip = txt("total_logs_today_dashboard_tooltip", "Branch specific: total activity logs created today for the selected branch.");
+  const activeUsersTooltip = txt("active_users_dashboard_tooltip", "Branch specific: distinct active users with non-expired sessions seen in the last {minutes} minutes.").replace("{minutes}", String(activeSessionWindowMinutes));
 %>
 
 <div class="mx-auto w-full max-w-7xl space-y-6">
@@ -40,58 +37,50 @@
     <div class="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
       <% if (canViewApprovals) { %>
         <a href="/administration/approvals" class="group rounded-2xl border border-amber-100 bg-amber-50 p-5 transition hover:border-amber-200 hover:bg-amber-100/70">
-          <div class="text-[11px] uppercase tracking-[0.3em] text-amber-700"><%= t("pending_approvals") %></div>
+          <div class="flex items-center gap-1 text-[11px] uppercase tracking-[0.3em] text-amber-700">
+            <span><%= t("pending_approvals") %></span>
+            <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-amber-300 text-[10px] font-bold normal-case tracking-normal text-amber-700" title="<%= pendingApprovalsTooltip %>">i</span>
+          </div>
           <div class="mt-2 text-3xl font-semibold text-amber-900"><%= Number(summary.pendingApprovals || 0) %></div>
         </a>
       <% } else { %>
         <div class="rounded-2xl border border-amber-100 bg-amber-50 p-5">
-          <div class="text-[11px] uppercase tracking-[0.3em] text-amber-700"><%= t("pending_approvals") %></div>
+          <div class="flex items-center gap-1 text-[11px] uppercase tracking-[0.3em] text-amber-700">
+            <span><%= t("pending_approvals") %></span>
+            <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-amber-300 text-[10px] font-bold normal-case tracking-normal text-amber-700" title="<%= pendingApprovalsTooltip %>">i</span>
+          </div>
           <div class="mt-2 text-3xl font-semibold text-amber-900"><%= Number(summary.pendingApprovals || 0) %></div>
         </div>
       <% } %>
       <div class="rounded-2xl border border-blue-100 bg-blue-50 p-5">
-        <div class="text-[11px] uppercase tracking-[0.3em] text-blue-700"><%= txt("vouchers_today", "Vouchers Today") %></div>
+        <div class="flex items-center gap-1 text-[11px] uppercase tracking-[0.3em] text-blue-700">
+          <span><%= txt("vouchers_today", "Vouchers Today") %></span>
+          <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-blue-200 text-[10px] font-bold normal-case tracking-normal text-blue-700" title="<%= vouchersTodayTooltip %>">i</span>
+        </div>
         <div class="mt-2 text-3xl font-semibold text-blue-900"><%= Number(summary.vouchersToday || 0) %></div>
       </div>
       <div class="rounded-2xl border border-indigo-100 bg-indigo-50 p-5">
-        <div class="text-[11px] uppercase tracking-[0.3em] text-indigo-700"><%= txt("vouchers_this_month", "Vouchers This Month") %></div>
-        <div class="mt-2 text-3xl font-semibold text-indigo-900"><%= Number(summary.vouchersThisMonth || 0) %></div>
+        <div class="flex items-center gap-1 text-[11px] uppercase tracking-[0.3em] text-indigo-700">
+          <span><%= txt("md_changes_today", "MD Changes Today") %></span>
+          <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-indigo-200 text-[10px] font-bold normal-case tracking-normal text-indigo-700" title="<%= masterDataChangesTooltip %>">i</span>
+        </div>
+        <div class="mt-2 text-3xl font-semibold text-indigo-900"><%= Number(summary.masterDataChangesToday || 0) %></div>
       </div>
       <div class="rounded-2xl border border-emerald-100 bg-emerald-50 p-5">
-        <div class="text-[11px] uppercase tracking-[0.3em] text-emerald-700"><%= txt("inventory_movements_today", "Inventory Movements") %></div>
-        <div class="mt-2 text-3xl font-semibold text-emerald-900"><%= Number(summary.inventoryMovementsToday || 0) %></div>
+        <div class="flex items-center gap-1 text-[11px] uppercase tracking-[0.3em] text-emerald-700">
+          <span><%= txt("total_logs_today", "Total Logs Today") %></span>
+          <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-emerald-200 text-[10px] font-bold normal-case tracking-normal text-emerald-700" title="<%= totalLogsTodayTooltip %>">i</span>
+        </div>
+        <div class="mt-2 text-3xl font-semibold text-emerald-900"><%= Number(summary.totalLogsToday || 0) %></div>
       </div>
       <div class="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-        <div class="text-[11px] uppercase tracking-[0.3em] text-slate-600"><%= txt("active_users", "Active Users") %></div>
+        <div class="flex items-center gap-1 text-[11px] uppercase tracking-[0.3em] text-slate-600">
+          <span><%= txt("active_users", "Active Users") %></span>
+          <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] font-bold normal-case tracking-normal text-slate-700" title="<%= activeUsersTooltip %>">i</span>
+        </div>
         <div class="mt-2 text-3xl font-semibold text-slate-900"><%= Number(summary.activeUsers || 0) %>/<span class="text-xl"><%= Number(summary.totalUsers || 0) %></span></div>
+        <div class="mt-1 text-[11px] text-slate-500"><%= txt("active_users_window", "Seen in last {minutes}m").replace("{minutes}", String(activeSessionWindowMinutes)) %></div>
       </div>
-    </div>
-  </section>
-
-  <section class="rounded-2xl border border-slate-200 bg-white/95 p-6 shadow-md">
-    <div class="mb-4 flex items-center justify-between">
-      <h2 class="text-lg font-semibold text-slate-800"><%= txt("quick_actions", "Quick Actions") %></h2>
-      <div class="text-xs uppercase tracking-[0.2em] text-slate-500"><%= txt("branches", "Branches") %>: <span class="font-semibold text-slate-700"><%= Number(summary.branchCount || 0) %></span></div>
-    </div>
-    <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-      <% if (!quickActions.length) { %>
-        <div class="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-500"><%= txt("no_actions_available", "No quick actions available") %></div>
-      <% } %>
-      <% quickActions.forEach((action) => { const meta = quickActionMeta[action.key] || {}; %>
-        <a href="<%= action.href %>" class="group rounded-xl border border-slate-200 bg-white px-4 py-3 transition hover:border-slate-300 hover:bg-slate-50">
-          <div class="flex items-start gap-3">
-            <span class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-600">
-              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="<%= action.icon %>" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-            </span>
-            <span>
-              <span class="block text-sm font-semibold text-slate-800"><%= meta.label || action.key %></span>
-              <span class="mt-0.5 block text-xs text-slate-500"><%= meta.subtitle || '' %></span>
-            </span>
-          </div>
-        </a>
-      <% }) %>
     </div>
   </section>
 
