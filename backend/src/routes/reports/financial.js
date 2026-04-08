@@ -2,6 +2,11 @@ const express = require("express");
 const knex = require("../../db/knex");
 const { HttpError } = require("../../middleware/errors/http-error");
 const { getFinancialReport, getCommonFilters, updateBankVoucherLineStatus } = require("../../services/financial/report-service");
+const {
+  getUserAccountAccessMap,
+  filterAccountsByAccess,
+  canUserViewAccountDetails,
+} = require("../../services/administration/account-access-service");
 
 const router = express.Router();
 
@@ -24,6 +29,7 @@ const REPORT_KEYS = [
 ];
 
 const LEGACY_EXPENSE_REPORT_TYPES = new Set(["production_overhead", "non_production_expense", "accrued_expenses"]);
+const ACCOUNT_ACCESS_REPORT_KEYS = new Set(["account_activity_ledger", "cash_book"]);
 
 const resolveReportKey = (value, fallback = "profit_and_loss") => {
   const key = String(value || "").trim();
@@ -217,7 +223,37 @@ const renderFinancialReportPage = async (req, res, next, options = {}) => {
       throw new HttpError(403, res.locals.t("permission_denied"));
     }
 
-    const [report, accounts, branches, expenseFilterOptions] = await Promise.all([
+    let accountAccessMap = new Map();
+    const enforceAccountAccess =
+      ACCOUNT_ACCESS_REPORT_KEYS.has(resolvedKey) && !req.user?.isAdmin;
+    if (enforceAccountAccess) {
+      accountAccessMap = await getUserAccountAccessMap({
+        userId: req.user?.id,
+      });
+      if (filters.accountId && !accountAccessMap.has(Number(filters.accountId))) {
+        throw new HttpError(403, res.locals.t("permission_denied"));
+      }
+    }
+
+    const canOpenDetailsByPermission =
+      req.user?.isAdmin || res.locals.can("REPORT", resolvedKey, "view_details");
+    let canOpenDetailsForSelection = canOpenDetailsByPermission;
+    if (!canOpenDetailsByPermission && filters.reportMode === "details") {
+      filters.reportMode = "summary";
+    }
+    if (resolvedKey === "account_activity_ledger" && !req.user?.isAdmin) {
+      canOpenDetailsForSelection =
+        canOpenDetailsByPermission &&
+        canUserViewAccountDetails({
+          accessMap: accountAccessMap,
+          accountId: filters.accountId,
+        });
+      if (!canOpenDetailsForSelection) {
+        filters.reportMode = "summary";
+      }
+    }
+
+    const [report, rawAccounts, branches, expenseFilterOptions] = await Promise.all([
       getFinancialReport(resolvedKey, req, filters),
       getReportAccounts({ reportKey: resolvedKey, req, selectedBranchId: filters.branchId }),
       req.user?.isAdmin
@@ -229,6 +265,10 @@ const renderFinancialReportPage = async (req, res, next, options = {}) => {
           ? getExpenseTrendFilterOptions({ req, filters })
           : Promise.resolve({ departments: [], cashierAccounts: [], accountGroups: [], accounts: [] }),
     ]);
+
+    const accounts = enforceAccountAccess
+      ? filterAccountsByAccess({ accounts: rawAccounts, accessMap: accountAccessMap })
+      : rawAccounts;
 
     const reportTitleText = res.locals.t(report.titleKey || resolvedKey);
     const financialReportsText = res.locals.t("financial_reports");
@@ -247,6 +287,7 @@ const renderFinancialReportPage = async (req, res, next, options = {}) => {
       filters,
       branches,
       accounts,
+      canReportDetailsMode: canOpenDetailsForSelection,
       reportMeta: report.meta || null,
       expenseFilterOptions,
       reportPath: `${req.baseUrl}/${resolvedKey}`,

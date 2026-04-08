@@ -113,11 +113,20 @@ test.describe("BOM UI row editing flow", () => {
     await page.goto("/master-data/bom/new", { waitUntil: "domcontentloaded" });
 
     await selectOptionForced(page.locator('select[name="level"]'), "FINISHED");
-    await selectOptionForced(page.locator('select[name="item_id"]'), fixture.fgItemId);
-    await page.locator('input[name="output_qty"]').fill("1.5");
-    await selectOptionForced(page.locator('select[name="output_uom_id"]'), fixture.uomId);
     await selectOptionForced(
-      page.locator('[data-lines-body="stage_route"] tr').first().locator('[data-col="dept_id"]'),
+      page.locator('select[name="item_id"]'),
+      fixture.fgItemId,
+    );
+    await page.locator('input[name="output_qty"]').fill("1.5");
+    await selectOptionForced(
+      page.locator('select[name="output_uom_id"]'),
+      fixture.uomId,
+    );
+    await selectOptionForced(
+      page
+        .locator('[data-lines-body="stage_route"] tr')
+        .first()
+        .locator('[data-col="dept_id"]'),
       fixture.deptId,
     );
 
@@ -125,8 +134,14 @@ test.describe("BOM UI row editing flow", () => {
 
     const rmRow = page.locator('[data-lines-body="rm"] tr').first();
     await expect(rmRow).toBeVisible();
-    await selectOptionForced(rmRow.locator('[data-col="rm_item_id"]'), fixture.rmItemId);
-    await selectOptionForced(rmRow.locator('[data-col="dept_id"]'), fixture.deptId);
+    await selectOptionForced(
+      rmRow.locator('[data-col="rm_item_id"]'),
+      fixture.rmItemId,
+    );
+    await selectOptionForced(
+      rmRow.locator('[data-col="dept_id"]'),
+      fixture.deptId,
+    );
     await rmRow.locator('[data-add-after="rm"]').click();
     await page
       .locator('[data-lines-body="rm"] tr')
@@ -140,9 +155,13 @@ test.describe("BOM UI row editing flow", () => {
     if (hasSfgRows) {
       const sfgRow = sfgRows.first();
       await expect(sfgRow).toBeVisible();
-      await selectFirstNonEmptyOption(sfgRow.locator('[data-col="sfg_sku_id"]'));
+      await selectFirstNonEmptyOption(
+        sfgRow.locator('[data-col="sfg_sku_id"]'),
+      );
       await sfgRow.locator('[data-col="required_qty"]').fill("1");
-      await selectFirstNonEmptyOption(sfgRow.locator('[data-col="consumed_in_stage_id"]'));
+      await selectFirstNonEmptyOption(
+        sfgRow.locator('[data-col="consumed_in_stage_id"]'),
+      );
     }
 
     await pruneEmptyLabourRows(page);
@@ -153,9 +172,13 @@ test.describe("BOM UI row editing flow", () => {
       String(fixture.rmItemId),
     );
     if (hasSfgRows) {
-      await expect(sfgRows.first().locator('[data-col="sfg_sku_id"]')).not.toHaveValue("");
+      await expect(
+        sfgRows.first().locator('[data-col="sfg_sku_id"]'),
+      ).not.toHaveValue("");
     }
-    const labourSelectionRows = page.locator('[data-lines-body="labour_selection"] tr');
+    const labourSelectionRows = page.locator(
+      '[data-lines-body="labour_selection"] tr',
+    );
     const labourSelectionRowCount = await labourSelectionRows.count();
     expect(labourSelectionRowCount).toBeGreaterThan(0);
 
@@ -212,7 +235,9 @@ test.describe("BOM UI row editing flow", () => {
         .first();
       await persistedChip.click();
     }
-    const persistedQtyInput = page.locator('[data-sku-rule-row="true"] [data-sku-rule-col="required_qty"]').first();
+    const persistedQtyInput = page
+      .locator('[data-sku-rule-row="true"] [data-sku-rule-col="required_qty"]')
+      .first();
     if (persistedSkuRuleQty) {
       await expect(persistedQtyInput).toHaveValue(persistedSkuRuleQty);
     }

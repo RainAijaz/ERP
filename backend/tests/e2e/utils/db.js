@@ -51,6 +51,70 @@ const getBranch = async () => {
   return row || null;
 };
 
+const getBranchScopedAccounts = async ({ branchId, limit = 10, excludeIds = [] } = {}) => {
+  const normalizedBranchId = Number(branchId || 0) || null;
+  if (!normalizedBranchId) return [];
+  const excluded = Array.from(
+    new Set((excludeIds || []).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)),
+  );
+  let query = knex("erp.accounts as a")
+    .join("erp.account_branch as ab", "ab.account_id", "a.id")
+    .distinct("a.id", "a.code", "a.name")
+    .where({ "a.is_active": true, "ab.branch_id": normalizedBranchId })
+    .orderBy("a.name", "asc")
+    .limit(Math.max(1, Number(limit || 10)));
+  if (excluded.length) {
+    query = query.whereNotIn("a.id", excluded);
+  }
+  return query;
+};
+
+const replaceUserAccountAccess = async ({ userId, rows = [], createdBy = null } = {}) => {
+  const normalizedUserId = Number(userId || 0);
+  if (!Number.isInteger(normalizedUserId) || normalizedUserId <= 0) return;
+  const hasTable = await knex.schema
+    .withSchema("erp")
+    .hasTable("user_account_access");
+  if (!hasTable) return;
+
+  const normalizedRows = (Array.isArray(rows) ? rows : [])
+    .map((row) => ({
+      accountId: Number(row?.accountId || 0),
+      canViewSummary: Boolean(row?.canViewSummary),
+      canViewDetails: Boolean(row?.canViewDetails),
+    }))
+    .filter((row) => Number.isInteger(row.accountId) && row.accountId > 0)
+    .map((row) => ({
+      accountId: row.accountId,
+      canViewDetails: row.canViewDetails,
+      canViewSummary: row.canViewDetails || row.canViewSummary,
+    }));
+
+  await knex.transaction(async (trx) => {
+    await trx("erp.user_account_access").where({ user_id: normalizedUserId }).del();
+    if (!normalizedRows.length) return;
+    await trx("erp.user_account_access").insert(
+      normalizedRows.map((row) => ({
+        user_id: normalizedUserId,
+        account_id: row.accountId,
+        can_view_summary: row.canViewSummary,
+        can_view_details: row.canViewSummary ? row.canViewDetails : false,
+        created_by: Number(createdBy || 0) || null,
+      })),
+    );
+  });
+};
+
+const clearUserAccountAccess = async ({ userId } = {}) => {
+  const normalizedUserId = Number(userId || 0);
+  if (!Number.isInteger(normalizedUserId) || normalizedUserId <= 0) return;
+  const hasTable = await knex.schema
+    .withSchema("erp")
+    .hasTable("user_account_access");
+  if (!hasTable) return;
+  await knex("erp.user_account_access").where({ user_id: normalizedUserId }).del();
+};
+
 const getApprovalEditFixtureData = async () => {
   const [branches, subgroup, city, partyGroup] = await Promise.all([
     knex("erp.branches").select("id").orderBy("id", "asc").limit(2),
@@ -1240,6 +1304,7 @@ const closeDb = async () => knex.destroy();
 module.exports = {
   getLinkedSize,
   getBranch,
+  getBranchScopedAccounts,
   getApprovalEditFixtureData,
   getUserByUsername,
   getTwoDistinctUsers,
@@ -1266,6 +1331,8 @@ module.exports = {
   getApprovalPolicy,
   upsertApprovalPolicy,
   deleteApprovalPolicy,
+  replaceUserAccountAccess,
+  clearUserAccountAccess,
   createBomUiFixture,
   createBomNegativeFixture,
   getBomSnapshot,

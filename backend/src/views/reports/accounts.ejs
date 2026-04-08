@@ -72,6 +72,7 @@
     return [...nonBranch, ...branchCols];
   })();
   const showReportMode = (isAccountActivityLedger || isVoucherRegister || isCashBook) && !isDepartmentBreakdown;
+  const detailsModeAllowed = typeof canReportDetailsMode === 'boolean' ? canReportDetailsMode : true;
   const emptyMessage = isAccountActivityLedger && !ledgerLoaded
     ? t('select_account_name')
     : t('no_entries');
@@ -460,14 +461,17 @@
           <span class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('report_type') %></span>
           <div class="mt-2 flex items-center gap-4">
             <label class="inline-flex items-center gap-1.5 text-sm text-slate-700">
-              <input type="radio" name="report_mode" value="details" <%= filters.reportMode !== 'summary' ? 'checked' : '' %>>
+              <input type="radio" name="report_mode" value="details" <%= filters.reportMode !== 'summary' ? 'checked' : '' %> <%= detailsModeAllowed ? '' : 'disabled' %>>
               <span><%= t('details') %></span>
             </label>
             <label class="inline-flex items-center gap-1.5 text-sm text-slate-700">
-              <input type="radio" name="report_mode" value="summary" <%= filters.reportMode === 'summary' ? 'checked' : '' %>>
+              <input type="radio" name="report_mode" value="summary" <%= filters.reportMode === 'summary' || !detailsModeAllowed ? 'checked' : '' %>>
               <span><%= t('summary') %></span>
             </label>
           </div>
+          <% if (!detailsModeAllowed && isAccountActivityLedger) { %>
+            <p class="mt-1 text-xs font-semibold text-amber-700"><%= t('account_details_access_limited') %></p>
+          <% } %>
         </div>
       <% } %>
 

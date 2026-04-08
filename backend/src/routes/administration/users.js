@@ -100,9 +100,9 @@ router.get(
       );
       const isAdminUser = Boolean(
         user &&
-          String(roleNameById.get(Number(user.primary_role_id)) || "")
-            .trim()
-            .toLowerCase() === "admin",
+        String(roleNameById.get(Number(user.primary_role_id)) || "")
+          .trim()
+          .toLowerCase() === "admin",
       );
 
       if (isAdminUser) {
@@ -111,9 +111,7 @@ router.get(
 
       const hasAllBranches =
         allBranches.length > 0 &&
-        allBranches.every((branch) =>
-          userBranches.includes(Number(branch.id)),
-        );
+        allBranches.every((branch) => userBranches.includes(Number(branch.id)));
 
       res.render("administration/users/form", {
         layout: false,
@@ -328,10 +326,7 @@ router.post(
         await trx("erp.users").where({ id: req.params.id }).del();
       } catch (deleteErr) {
         if (String(deleteErr?.code || "") === "23503") {
-          throw new HttpError(
-            409,
-            res.locals.t("error_record_in_use") ,
-          );
+          throw new HttpError(409, res.locals.t("error_record_in_use"));
         }
         throw deleteErr;
       }

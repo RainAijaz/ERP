@@ -7,10 +7,15 @@ const voucherRoutes = require("./vouchers");
 const reportRoutes = require("./reports");
 const masterDataRoutes = require("./master_data");
 const hrPayrollRoutes = require("./hr-payroll");
-const { loadDashboardData } = require("../services/administration/dashboard-service");
+const {
+  loadDashboardData,
+} = require("../services/administration/dashboard-service");
 const { requirePermission } = require("../middleware/access/role-permissions");
 const { translateUrduWithFallback } = require("../utils/translate");
-const { registerApprovalStream, ackApprovalDecisions } = require("../utils/approval-events");
+const {
+  registerApprovalStream,
+  ackApprovalDecisions,
+} = require("../utils/approval-events");
 
 const router = express.Router();
 
@@ -50,9 +55,13 @@ router.get("/whoami", (req, res) => {
   });
 });
 
-router.get("/test-permission", requirePermission("MODULE", "administration", "navigate"), (req, res) => {
-  res.json({ ok: true, permission: "MODULE:administration:navigate" });
-});
+router.get(
+  "/test-permission",
+  requirePermission("MODULE", "administration", "navigate"),
+  (req, res) => {
+    res.json({ ok: true, permission: "MODULE:administration:navigate" });
+  },
+);
 
 router.post("/translate", async (req, res) => {
   if (!req.user) {
@@ -60,7 +69,8 @@ router.post("/translate", async (req, res) => {
   }
 
   const text = typeof req.body.text === "string" ? req.body.text.trim() : "";
-  const mode = typeof req.body.mode === "string" ? req.body.mode.trim() : "translate";
+  const mode =
+    typeof req.body.mode === "string" ? req.body.mode.trim() : "translate";
   if (!text) {
     return res.json({ translated: "" });
   }
@@ -82,11 +92,22 @@ router.post("/translate", async (req, res) => {
   };
 
   try {
-    const translatePromise = translateUrduWithFallback({ text, mode, logger: routeLogger });
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error("Translation request timed out")), 12000);
+    const translatePromise = translateUrduWithFallback({
+      text,
+      mode,
+      logger: routeLogger,
     });
-    const { translated, provider, azure_error: azureError } = await Promise.race([translatePromise, timeoutPromise]);
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(
+        () => reject(new Error("Translation request timed out")),
+        12000,
+      );
+    });
+    const {
+      translated,
+      provider,
+      azure_error: azureError,
+    } = await Promise.race([translatePromise, timeoutPromise]);
     console.log("[translate-route] success", {
       request_id: requestId,
       mode,
@@ -106,7 +127,9 @@ router.post("/translate", async (req, res) => {
       error: err?.message || err,
       stack: err?.stack || null,
     });
-    return res.status(502).json({ error: "Translation unavailable", detail: err.message });
+    return res
+      .status(502)
+      .json({ error: "Translation unavailable", detail: err.message });
   }
 });
 

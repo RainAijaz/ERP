@@ -45,17 +45,24 @@ const resolveBaseUrl = (explicitBaseUrl) => {
 };
 
 const getActiveAdminEmails = async (knex) => {
-  const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+  const isValidEmail = (value) =>
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
   const adminRows = await knex("erp.users")
-    .join("erp.role_templates", "erp.role_templates.id", "erp.users.primary_role_id")
+    .join(
+      "erp.role_templates",
+      "erp.role_templates.id",
+      "erp.users.primary_role_id",
+    )
     .select("erp.users.email")
-    .whereRaw("lower(trim(erp.role_templates.name)) in ('admin', 'administrator')")
+    .whereRaw(
+      "lower(trim(erp.role_templates.name)) in ('admin', 'administrator')",
+    )
     .andWhereRaw("lower(trim(erp.users.status)) = 'active'")
     .whereNotNull("erp.users.email");
   return Array.from(
     new Set(
       adminRows
-    .map((row) => String(row.email || "").trim())
+        .map((row) => String(row.email || "").trim())
         .filter((email) => email && isValidEmail(email)),
     ),
   );
@@ -88,7 +95,9 @@ const notifyPendingApprovalAdmins = async ({
   const approvalsPath = approvalRequestId
     ? `/administration/approvals?request_id=${encodeURIComponent(String(approvalRequestId))}`
     : "/administration/approvals";
-  const approvalsUrl = resolvedBaseUrl ? `${resolvedBaseUrl}${approvalsPath}` : approvalsPath;
+  const approvalsUrl = resolvedBaseUrl
+    ? `${resolvedBaseUrl}${approvalsPath}`
+    : approvalsPath;
   const websiteUrl = resolvedBaseUrl || approvalsUrl;
 
   const subject = `${(t && t("approval_pending_subject")) || "ERP approval pending"}: ${entityType || "UNKNOWN"}`;
@@ -104,7 +113,8 @@ const notifyPendingApprovalAdmins = async ({
   const newValueLabel = (t && t("new_value")) || "New Value";
   const websiteLabel = (t && t("website")) || "Website";
   const loginLabel = (t && t("login")) || "Login";
-  const viewPendingLabel = (t && t("view_pending_approval")) || "View pending approval";
+  const viewPendingLabel =
+    (t && t("view_pending_approval")) || "View pending approval";
 
   const text = [
     `${detailTitle}:`,

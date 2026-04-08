@@ -19,10 +19,14 @@ const login = async (page, prefix) => {
   await page.goto("/auth/login", { waitUntil: "domcontentloaded" });
   await page.locator('input[name="username"]').fill(username);
   await page.locator('input[name="password"]').fill(password);
-  await page.locator('form[action="/auth/login"] button[type="submit"]').click();
+  await page
+    .locator('form[action="/auth/login"] button[type="submit"]')
+    .click();
 
   await expect(page).not.toHaveURL(/\/auth\/login/i);
-  await expect(page.locator('form[action="/auth/logout"] button[type="submit"]')).toBeVisible();
+  await expect(
+    page.locator('form[action="/auth/logout"] button[type="submit"]'),
+  ).toBeVisible();
 };
 
 module.exports = { getCredentials, login };

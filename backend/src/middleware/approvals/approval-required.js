@@ -3,7 +3,9 @@ const { HttpError } = require("../errors/http-error");
 const { setCookie } = require("../utils/cookies");
 const { UI_NOTICE_COOKIE } = require("../core/ui-notice");
 const { insertActivityLog } = require("../../utils/audit-log");
-const { notifyPendingApprovalAdmins } = require("../../utils/approval-notifications");
+const {
+  notifyPendingApprovalAdmins,
+} = require("../../utils/approval-notifications");
 
 const resolveRequestBaseUrl = (req) => {
   if (!req || typeof req.get !== "function") return null;
@@ -31,7 +33,9 @@ module.exports = async (req, res, next) => {
   } = request;
 
   if (!branchId || !requestType || !entityType || !entityId) {
-    return next(new HttpError(400, "Approval request is missing required fields"));
+    return next(
+      new HttpError(400, "Approval request is missing required fields"),
+    );
   }
 
   try {
@@ -100,7 +104,8 @@ module.exports = async (req, res, next) => {
         res,
         UI_NOTICE_COOKIE,
         JSON.stringify({
-          message: res.locals.t("approval_sent") || res.locals.t("approval_submitted"),
+          message:
+            res.locals.t("approval_sent") || res.locals.t("approval_submitted"),
           autoClose: true,
         }),
         { path: "/", maxAge: 30, sameSite: "Lax" },
@@ -119,4 +124,3 @@ module.exports = async (req, res, next) => {
     next(err);
   }
 };
-

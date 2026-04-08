@@ -86,7 +86,12 @@ const loadDashboardData = async ({ knex, req, can }) => {
   );
   const activeBranchId = toPositiveNumber(req?.branchId);
 
-  const canViewApprovals = getCan(can, "SCREEN", "administration.approvals", "view");
+  const canViewApprovals = getCan(
+    can,
+    "SCREEN",
+    "administration.approvals",
+    "view",
+  );
 
   const [
     pendingApprovals,
@@ -100,7 +105,10 @@ const loadDashboardData = async ({ knex, req, can }) => {
     recentActivity,
   ] = await Promise.all([
     safeCount("pendingApprovals", () => {
-      const qb = knex("erp.approval_request").where({ status: "PENDING" }).count("* as count").first();
+      const qb = knex("erp.approval_request")
+        .where({ status: "PENDING" })
+        .count("* as count")
+        .first();
       return applyActiveBranchScope(req, qb, "branch_id");
     }),
     safeCount("vouchersToday", () => {
@@ -111,7 +119,8 @@ const loadDashboardData = async ({ knex, req, can }) => {
       return applyActiveBranchScope(req, qb, "branch_id");
     }),
     safeCount("masterDataChangesToday", () => {
-      if (!MASTER_DATA_ENTITY_TYPES.length) return Promise.resolve({ count: 0 });
+      if (!MASTER_DATA_ENTITY_TYPES.length)
+        return Promise.resolve({ count: 0 });
       return knex("erp.activity_log")
         .whereBetween("created_at", [startOfDay, endOfDay])
         .whereIn("entity_type", MASTER_DATA_ENTITY_TYPES)
@@ -143,10 +152,7 @@ const loadDashboardData = async ({ knex, req, can }) => {
       return qb;
     }),
     safeCount("totalUsers", () =>
-      knex("erp.users")
-        .where({ status: "Active" })
-        .count("* as count")
-        .first(),
+      knex("erp.users").where({ status: "Active" }).count("* as count").first(),
     ),
     canViewApprovals
       ? safeRows("recentApprovals", () => {

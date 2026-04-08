@@ -19,8 +19,7 @@
   const isSearchableOptIn = (select) =>
     String(select?.dataset?.searchableSelect || "").toLowerCase() === "true";
   const isSearchableOptOut = (select) =>
-    String(select?.dataset?.searchableSelect || "").toLowerCase() ===
-      "false" ||
+    String(select?.dataset?.searchableSelect || "").toLowerCase() === "false" ||
     String(select?.dataset?.searchableSkip || "").toLowerCase() === "true";
   const isMasterDataPage =
     typeof window !== "undefined" &&

@@ -12,6 +12,11 @@ const {
 } = require("../../utils/scope-action-policy");
 const { parseCookies, setCookie } = require("../../middleware/utils/cookies");
 const { queueAuditLog } = require("../../utils/audit-log");
+const {
+  getAssignableAccountsForUser,
+  getUserAccountAccessRows,
+  upsertUserAccountAccessRows,
+} = require("../../services/administration/account-access-service");
 const router = express.Router();
 
 const FLASH_COOKIE = "permissions_flash";
@@ -39,6 +44,45 @@ const writeFlash = (res, path, payload) => {
     maxAge: 60,
     sameSite: "Lax",
   });
+};
+
+const toBool = (value, fallback = false) => {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  const raw = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (!raw) return fallback;
+  return ["1", "true", "yes", "on"].includes(raw);
+};
+
+const parseAccountAccessPayload = (value) => {
+  if (!value) return [];
+  let parsed = [];
+  if (Array.isArray(value)) parsed = value;
+  else if (typeof value === "string") {
+    try {
+      const maybeArray = JSON.parse(value);
+      parsed = Array.isArray(maybeArray) ? maybeArray : [];
+    } catch (err) {
+      parsed = [];
+    }
+  }
+
+  const uniqueRows = new Map();
+  parsed.forEach((entry) => {
+    const accountId = Number(entry?.accountId || 0);
+    if (!Number.isInteger(accountId) || accountId <= 0) return;
+    const canViewDetails = toBool(entry?.canViewDetails, true);
+    const canViewSummary = canViewDetails || toBool(entry?.canViewSummary, true);
+    uniqueRows.set(accountId, {
+      accountId,
+      canViewSummary,
+      canViewDetails: canViewSummary ? canViewDetails : false,
+    });
+  });
+
+  return Array.from(uniqueRows.values());
 };
 
 // -------------------------------------------------------------------------
@@ -252,6 +296,17 @@ router.get(
 
       walk(navConfig);
 
+      let accountAccessRows = [];
+      let accountAccessAccounts = [];
+      if (isUserMode && target_id && canBrowsePermissions) {
+        accountAccessRows = await getUserAccountAccessRows({
+          userId: target_id,
+        });
+        accountAccessAccounts = await getAssignableAccountsForUser({
+          userId: target_id,
+        });
+      }
+
       res.render("base/layouts/main", {
         view: "../../administration/permissions/index",
         title: res.locals.t("manage_permissions"),
@@ -266,6 +321,8 @@ router.get(
         modalMode: null,
         modalValues: null,
         permissions: target_id && canBrowsePermissions ? permissionsMap : {}, // Send empty object if no target or no browse access
+        accountAccessRows,
+        accountAccessAccounts,
       });
     } catch (err) {
       next(err);
@@ -523,6 +580,75 @@ router.post(
         );
       }
       next(err);
+    }
+  },
+);
+
+router.post(
+  "/account-access",
+  requirePermission("SCREEN", "administration.permissions", "edit"),
+  async (req, res, next) => {
+    const trx = await knex.transaction();
+    let committed = false;
+    try {
+      const targetId = Number(req.body?.target_id || 0);
+      if (!Number.isInteger(targetId) || targetId <= 0) {
+        throw new Error("Target ID is required");
+      }
+
+      const targetUser = await trx("erp.users")
+        .select("id")
+        .where({ id: targetId })
+        .first();
+      if (!targetUser) {
+        writeFlash(res, req.baseUrl, {
+          type: "error",
+          message: res.locals.t("user_not_found"),
+        });
+        return res.redirect("/administration/permissions?type=user");
+      }
+
+      const rows = parseAccountAccessPayload(req.body?.rows_json);
+      const result = await upsertUserAccountAccessRows({
+        db: trx,
+        userId: targetId,
+        actorUserId: req.user?.id || null,
+        rows,
+      });
+
+      queueAuditLog(req, {
+        entityType: "ACCOUNT_ACCESS",
+        entityId: String(targetId),
+        action: "UPDATE",
+        context: {
+          user_id: targetId,
+          upserted: Number(result?.upserted || 0),
+          deleted: Number(result?.deleted || 0),
+        },
+      });
+
+      await trx.commit();
+      committed = true;
+
+      writeFlash(res, req.baseUrl, {
+        type: "success",
+        message: res.locals.t("account_access_saved"),
+      });
+      return res.redirect(
+        `/administration/permissions?type=user&target_id=${targetId}`,
+      );
+    } catch (err) {
+      if (!committed) {
+        await trx.rollback();
+        writeFlash(res, req.baseUrl, {
+          type: "error",
+          message: res.locals.t("account_access_save_failed"),
+        });
+        return res.redirect(
+          `/administration/permissions?type=user&target_id=${req.body?.target_id || ""}`,
+        );
+      }
+      return next(err);
     }
   },
 );

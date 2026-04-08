@@ -1500,6 +1500,14 @@ const translations = {
     bom_error_variant_value_invalid_json: "Invalid variant value payload.",
     add_branch: "Add Branch",
     manage_permissions: "Manage Permissions",
+    account_access: "Account Access",
+    account_access_subtitle:
+      "Control which accounts each user can view in account activity.",
+    account_details_access_limited:
+      "Details are not allowed for the selected account. Summary is available.",
+    account_access_saved: "Account access saved.",
+    account_access_save_failed: "Failed to save account access.",
+    user_not_found: "User not found.",
     edit_role: "Edit Role",
     field_required: "This field is required.",
     error_branch_code_exists: "Branch code already exists.",
@@ -2623,6 +2631,14 @@ translations.ur = {
   loose: "ڈھیلا",
   manage_company_locations: "برانچ کے مقامات اور دستیابی کا نظم کریں۔",
   manage_permissions: "اجازتوں کا نظم کریں۔",
+  account_access: "اکاؤنٹ رسائی",
+  account_access_subtitle:
+    "طے کریں کہ ہر صارف اکاؤنٹ ایکٹیویٹی میں کون سے اکاؤنٹس دیکھ سکتا ہے۔",
+  account_details_access_limited:
+    "منتخب اکاؤنٹ کے لیے تفصیلی ویو دستیاب نہیں۔ خلاصہ دستیاب ہے۔",
+  account_access_saved: "اکاؤنٹ رسائی محفوظ ہو گئی۔",
+  account_access_save_failed: "اکاؤنٹ رسائی محفوظ نہیں ہو سکی۔",
+  user_not_found: "صارف نہیں ملا۔",
   material_capability: "مواد",
   min_stock: "کم از کم اسٹاک",
   modules: "ماڈیولز",
