@@ -617,8 +617,8 @@ router.post(
       });
 
       queueAuditLog(req, {
-        entityType: "ACCOUNT_ACCESS",
-        entityId: String(targetId),
+        entityType: "ACCOUNT",
+        entityId: `account_access:${targetId}`,
         action: "UPDATE",
         context: {
           user_id: targetId,
