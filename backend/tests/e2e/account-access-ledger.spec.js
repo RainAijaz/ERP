@@ -11,7 +11,8 @@ const {
   closeDb,
 } = require("./utils/db");
 
-const LIMITED_USER = process.env.E2E_ACCOUNT_ACCESS_USER || "e2e_account_access";
+const LIMITED_USER =
+  process.env.E2E_ACCOUNT_ACCESS_USER || "e2e_account_access";
 const LIMITED_PASS = process.env.E2E_ACCOUNT_ACCESS_PASS || "Salesman@123";
 
 const fixture = {
@@ -95,9 +96,12 @@ test.describe.serial("Account activity ledger account access", () => {
     );
 
     await login(page, "E2E_ACCOUNT_ACCESS");
-    const response = await page.goto("/reports/financial/account_activity_ledger", {
-      waitUntil: "domcontentloaded",
-    });
+    const response = await page.goto(
+      "/reports/financial/account_activity_ledger",
+      {
+        waitUntil: "domcontentloaded",
+      },
+    );
     expect(response?.status()).toBe(200);
 
     const accountValues = await page
@@ -113,7 +117,9 @@ test.describe.serial("Account activity ledger account access", () => {
     expect(accountValues).not.toContain(fixture.blockedAccountId);
   });
 
-  test("forces summary mode when selected account has no details access", async ({ page }) => {
+  test("forces summary mode when selected account has no details access", async ({
+    page,
+  }) => {
     test.skip(
       !fixture.allowedSummaryAccountId,
       "Summary-only account fixture is not available.",

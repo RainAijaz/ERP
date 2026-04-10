@@ -53,6 +53,28 @@ const loadOptions = async () => {
 const loadUsers = async () =>
   knex("erp.users").select("id", "username").orderBy("username");
 
+const isActiveGroupForItemType = async (groupId, itemType) => {
+  if (!groupId) return false;
+  const row = await knex("erp.product_groups as g")
+    .join("erp.product_group_item_types as gt", "gt.group_id", "g.id")
+    .where("g.id", groupId)
+    .andWhere("g.is_active", true)
+    .andWhere("gt.item_type", itemType)
+    .first();
+  return Boolean(row);
+};
+
+const isActiveSubgroupForItemType = async (subgroupId, itemType) => {
+  if (!subgroupId) return false;
+  const row = await knex("erp.product_subgroups as s")
+    .join("erp.product_subgroup_item_types as st", "st.subgroup_id", "s.id")
+    .where("s.id", subgroupId)
+    .andWhere("s.is_active", true)
+    .andWhere("st.item_type", itemType)
+    .first();
+  return Boolean(row);
+};
+
 const loadRows = async (filters = {}) => {
   let query = knex("erp.items as i")
     .select(
@@ -237,7 +259,7 @@ router.get(
       const [options, users] = await Promise.all([loadOptions(), loadUsers()]);
       const rows = canBrowse ? await loadRows(filters) : [];
       const pairUomError = !options.uoms?.length
-        ? res.locals.t("error_pair_uom_missing") 
+        ? res.locals.t("error_pair_uom_missing")
         : null;
       renderIndex(req, res, {
         rows,
@@ -286,6 +308,7 @@ router.post(
         !name ||
         !values.name_ur ||
         !group_id ||
+        !subgroup_id ||
         !base_uom_id ||
         !product_type_id ||
         (uses_sfg && !sfg_part_type) ||
@@ -302,7 +325,28 @@ router.post(
           users,
           error: pairBaseUnitValid
             ? res.locals.t("error_required_fields")
-            : res.locals.t("error_production_base_unit_pair") ,
+            : res.locals.t("error_production_base_unit_pair"),
+          modalOpen: true,
+          modalMode: "create",
+          values,
+        });
+      }
+
+      const [groupValid, subgroupValid] = await Promise.all([
+        isActiveGroupForItemType(group_id, ITEM_TYPE),
+        isActiveSubgroupForItemType(subgroup_id, ITEM_TYPE),
+      ]);
+      if (!groupValid || !subgroupValid) {
+        const [rows, options, users] = await Promise.all([
+          loadRows(),
+          loadOptions(),
+          loadUsers(),
+        ]);
+        return renderIndex(req, res, {
+          rows,
+          ...options,
+          users,
+          error: res.locals.t("error_required_fields"),
           modalOpen: true,
           modalMode: "create",
           values,
@@ -444,6 +488,7 @@ router.post(
         !code ||
         !name ||
         !group_id ||
+        !subgroup_id ||
         !base_uom_id ||
         !product_type_id ||
         (uses_sfg && !sfg_part_type) ||
@@ -460,7 +505,28 @@ router.post(
           users,
           error: pairBaseUnitValid
             ? res.locals.t("error_required_fields")
-            : res.locals.t("error_production_base_unit_pair") ,
+            : res.locals.t("error_production_base_unit_pair"),
+          modalOpen: true,
+          modalMode: "edit",
+          values: { ...values, id },
+        });
+      }
+
+      const [groupValid, subgroupValid] = await Promise.all([
+        isActiveGroupForItemType(group_id, ITEM_TYPE),
+        isActiveSubgroupForItemType(subgroup_id, ITEM_TYPE),
+      ]);
+      if (!groupValid || !subgroupValid) {
+        const [rows, options, users] = await Promise.all([
+          loadRows(),
+          loadOptions(),
+          loadUsers(),
+        ]);
+        return renderIndex(req, res, {
+          rows,
+          ...options,
+          users,
+          error: res.locals.t("error_required_fields"),
           modalOpen: true,
           modalMode: "edit",
           values: { ...values, id },
@@ -584,8 +650,8 @@ router.post(
         return next(new HttpError(404, res.locals.t("error_not_found")));
       const nextIsActive = !current.is_active;
       const toggleLabel = nextIsActive
-        ? res.locals.t("activate") 
-        : res.locals.t("deactivate") ;
+        ? res.locals.t("activate")
+        : res.locals.t("deactivate");
 
       const approval = await handleScreenApproval({
         req,
@@ -673,10 +739,7 @@ router.post(
         await knex("erp.items").where({ id }).del();
       } catch (deleteErr) {
         if (String(deleteErr?.code || "") === "23503") {
-          throw new HttpError(
-            409,
-            res.locals.t("error_record_in_use") ,
-          );
+          throw new HttpError(409, res.locals.t("error_record_in_use"));
         }
         throw deleteErr;
       }

@@ -320,6 +320,7 @@
           form.method = "POST";
           form.action = action;
           form.style.display = "none";
+          form.dataset.globalDeleteConfirmed = "1";
           if (csrfTokenValue) {
             const csrfInput = document.createElement("input");
             csrfInput.type = "hidden";
@@ -404,6 +405,7 @@
 
             const explicitDeleteActionEl = target.closest("[data-delete-action]");
             if (explicitDeleteActionEl instanceof HTMLElement) {
+              if (explicitDeleteActionEl.hasAttribute("data-delete")) return;
               const action = String(explicitDeleteActionEl.getAttribute("data-delete-action") || "").trim();
               if (!action) return;
               const label = String(explicitDeleteActionEl.getAttribute("data-delete-label") || "").trim();
@@ -424,6 +426,7 @@
           (event) => {
             const form = event.target instanceof HTMLFormElement ? event.target : null;
             if (!form) return;
+            if (form.matches("[data-confirm-form]") || form.closest("[data-confirm-modal]")) return;
             if (form.dataset.globalDeleteConfirmed === "1") return;
             const action = String(form.getAttribute("action") || "").toLowerCase();
             const onsubmit = String(form.getAttribute("onsubmit") || "");

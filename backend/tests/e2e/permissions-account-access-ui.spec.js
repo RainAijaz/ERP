@@ -51,8 +51,13 @@ test.describe.serial("Permissions account access UI", () => {
     }
   });
 
-  test("new account row defaults summary/details to true and enforces toggle rules", async ({ page }) => {
-    test.skip(!fixture.userId || !fixture.accountId, "Missing fixture user/account for UI test.");
+  test("new account row defaults summary/details to true and enforces toggle rules", async ({
+    page,
+  }) => {
+    test.skip(
+      !fixture.userId || !fixture.accountId,
+      "Missing fixture user/account for UI test.",
+    );
 
     await login(page, "E2E_ADMIN");
     const response = await page.goto(
@@ -68,7 +73,11 @@ test.describe.serial("Permissions account access UI", () => {
     await addSelect.selectOption(String(fixture.accountId));
     await addButton.click();
 
-    const row = page.locator(`[data-account-access-row][data-account-id="${fixture.accountId}"]`).first();
+    const row = page
+      .locator(
+        `[data-account-access-row][data-account-id="${fixture.accountId}"]`,
+      )
+      .first();
     await expect(row).toBeVisible();
 
     const summaryToggle = row.locator("[data-account-summary]");
@@ -89,7 +98,11 @@ test.describe.serial("Permissions account access UI", () => {
       page.locator("[data-account-access-form] button[type='submit']").click(),
     ]);
 
-    const persistedRow = page.locator(`[data-account-access-row][data-account-id="${fixture.accountId}"]`).first();
+    const persistedRow = page
+      .locator(
+        `[data-account-access-row][data-account-id="${fixture.accountId}"]`,
+      )
+      .first();
     await expect(persistedRow.locator("[data-account-summary]")).toBeChecked();
     await expect(persistedRow.locator("[data-account-details]")).toBeChecked();
   });

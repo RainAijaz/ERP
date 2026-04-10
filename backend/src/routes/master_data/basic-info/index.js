@@ -295,7 +295,7 @@ const BASIC_INFO_PAGES = {
   },
   "product-subgroups": {
     titleKey: "product_subgroups",
-    description: "Define product sub-groups under a product group.",
+    description: "Define reusable product sub-groups for all product groups.",
     table: "erp.product_subgroups",
     translateMode: "transliterate",
     autoCodeFromName: true,
@@ -303,17 +303,8 @@ const BASIC_INFO_PAGES = {
       table: "erp.product_subgroup_item_types",
       key: "subgroup_id",
     },
-    joins: [
-      { table: { pg: "erp.product_groups" }, on: ["t.group_id", "pg.id"] },
-    ],
-    extraSelect: (locale) => [
-      locale === "ur"
-        ? knex.raw("COALESCE(pg.name_ur, pg.name) as group_name")
-        : "pg.name as group_name",
-    ],
     columns: [
       { key: "id", label: "ID" },
-      { key: "group_name", label: "Group" },
       { key: "code", label: "Code" },
       { key: "name", label: "Name" },
       { key: "name_ur", label: "Name (Urdu)" },
@@ -323,18 +314,6 @@ const BASIC_INFO_PAGES = {
       { key: "created_at", label: "Created At" },
     ],
     fields: [
-      {
-        name: "group_id",
-        label: "Group",
-        type: "select",
-        required: false,
-        optionsQuery: {
-          table: "erp.product_groups",
-          valueKey: "id",
-          labelKey: "name",
-          orderBy: "name",
-        },
-      },
       {
         name: "name",
         label: "Subgroup Name",
@@ -1004,6 +983,9 @@ const createHandler = (type) => async (req, res, next) => {
   }
 
   const values = buildValues(page, req.body);
+  if (type === "product-subgroups") {
+    values.group_id = null;
+  }
   if (!hasField(page, "code") && !page.autoCodeFromName) {
     delete values.code;
   }
@@ -1050,7 +1032,7 @@ const createHandler = (type) => async (req, res, next) => {
           res,
           page,
           values,
-          res.locals.t("bom_error_department_must_be_production") ,
+          res.locals.t("bom_error_department_must_be_production"),
           "create",
           basePath,
           type,
@@ -1272,6 +1254,9 @@ const updateHandler = (type) => async (req, res, next) => {
   }
 
   const values = buildValues(page, req.body);
+  if (type === "product-subgroups") {
+    values.group_id = null;
+  }
   if (!hasField(page, "code") && !page.autoCodeFromName) {
     delete values.code;
   }
@@ -1332,7 +1317,7 @@ const updateHandler = (type) => async (req, res, next) => {
           res,
           page,
           values,
-          res.locals.t("bom_error_department_must_be_production") ,
+          res.locals.t("bom_error_department_must_be_production"),
           "edit",
           basePath,
           type,
@@ -1709,10 +1694,7 @@ const deleteHandler = (type) => async (req, res, next) => {
       await knex(page.table).where({ id }).del();
     } catch (deleteErr) {
       if (String(deleteErr?.code || "") === "23503") {
-        throw new HttpError(
-          409,
-          res.locals.t("error_record_in_use") ,
-        );
+        throw new HttpError(409, res.locals.t("error_record_in_use"));
       }
       throw deleteErr;
     }

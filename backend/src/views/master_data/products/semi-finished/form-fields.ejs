@@ -10,7 +10,7 @@
 
 <div class="grid gap-4 lg:grid-cols-2">
   <label class="block text-sm font-semibold text-slate-600">
-    <span><%= t("sub_group") %></span>
+    <span><%= t("sub_group") %> <span class="text-rose-500">*</span></span>
     <select
       class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
       name="subgroup_id"
@@ -28,8 +28,8 @@
 
   <% const pairUom = (uoms && uoms[0]) ? uoms[0] : null; %>
   <label class="block text-sm font-semibold text-slate-600">
-    <span><%= t("group") %></span>
-    <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" name="group_id" data-field="group_id" required>
+    <span><%= t("group") %> <span class="text-rose-500">*</span></span>
+    <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" name="group_id" data-field="group_id" data-searchable-select="true" data-searchable-variant="unified" required>
       <option value=""><%= t("select") %> <%= t("group") %></option>
       <% groups.forEach(function(group) { %>
         <option value="<%= group.id %>"><%= locale === "ur" ? (group.name_ur || group.name) : group.name %></option>
@@ -37,8 +37,8 @@
     </select>
   </label>
   <label class="block text-sm font-semibold text-slate-600 lg:col-span-2">
-    <span><%= t("base_unit") %></span>
-    <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" name="base_uom_id" data-field="base_uom_id" required>
+    <span><%= t("base_unit") %> <span class="text-rose-500">*</span></span>
+    <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" name="base_uom_id" data-field="base_uom_id" data-searchable-select="true" data-searchable-variant="unified" required>
       <% if (pairUom) { %>
         <option value="<%= pairUom.id %>" selected><%= pairUom.code %></option>
       <% } else { %>

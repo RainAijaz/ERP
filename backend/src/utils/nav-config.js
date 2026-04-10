@@ -173,6 +173,7 @@ const navConfig = [
                 scopeKey: "master_data.basic_info.production_stages",
                 moduleGroup: "Master Data",
                 route: "/master-data/basic-info/production-stages",
+                hideInNavigation: true,
               },
             ],
           },

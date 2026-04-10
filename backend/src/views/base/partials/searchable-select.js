@@ -351,10 +351,34 @@
     const variant = String(select.dataset.searchableVariant || "")
       .trim()
       .toLowerCase();
+    const baseClassName = select.className
+      .replace("appearance-none", "")
+      .trim();
+    const hasExplicitWidthClass =
+      /\b(w-(?!full\b)[^\s]+|min-w-[^\s]+|max-w-[^\s]+)\b/.test(
+        baseClassName,
+      ) || /\bbasis-[^\s]+\b/.test(baseClassName);
+    const hasFlexGrowClass = /\bflex-1\b/.test(baseClassName);
+    const isTransparentInlineControl = /\bbg-transparent\b/.test(baseClassName);
+    const shouldUseCompactShell =
+      variant === "compact" ||
+      select.matches(
+        "[data-page-size], [data-status-filter], [data-rm-view]",
+      ) ||
+      Boolean(select.closest("[data-table-controls]"));
 
     const wrapper = document.createElement("div");
-    wrapper.className =
-      variant === "navbar" ? "relative group" : "relative w-full group";
+    if (variant === "navbar") {
+      wrapper.className = "relative group";
+    } else if (variant === "unified") {
+      wrapper.className = "relative w-full group";
+    } else if (hasFlexGrowClass) {
+      wrapper.className = "relative flex-1 group";
+    } else if (shouldUseCompactShell || hasExplicitWidthClass) {
+      wrapper.className = "relative group";
+    } else {
+      wrapper.className = "relative w-full group";
+    }
     wrapper.setAttribute("data-searchable-wrapper", "true");
 
     const input = document.createElement("input");
@@ -366,12 +390,37 @@
       input.style.maxWidth = "3.5rem";
     } else if (variant === "unified") {
       input.className = `${unifiedVariantClass} pr-10`;
+    } else if (shouldUseCompactShell) {
+      input.className = `${baseClassName} pr-7`;
+      if (!/\b(w-|min-w-|max-w-|flex-1|basis-)\b/.test(input.className)) {
+        input.className += " w-24";
+      }
+      if (!/\b(px-|pl-|pr-)\b/.test(input.className)) {
+        input.className += " px-0";
+      }
+      if (!/\bpy-[^\s]+\b/.test(input.className)) {
+        input.className += " py-0.5";
+      }
+      if (!/\bfocus:ring-[^\s]+\b/.test(input.className)) {
+        input.className += " focus:ring-0";
+      }
     } else {
-      input.className =
-        select.className.replace("appearance-none", "") + " pr-10";
-      if (!input.className.includes("border")) {
+      input.className = `${baseClassName} pr-10`;
+      if (!input.className.includes("border") && !isTransparentInlineControl) {
         input.className +=
-          " w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm text-slate-800 transition focus:border-black focus:bg-white focus:outline-none focus:ring-2 focus:ring-black/20";
+          " rounded-lg border border-slate-200 bg-slate-50/50 text-slate-800 transition focus:border-black focus:bg-white focus:outline-none focus:ring-2 focus:ring-black/20";
+        if (!/\b(w-|min-w-|max-w-|flex-1|basis-)\b/.test(input.className)) {
+          input.className += " w-full";
+        }
+        if (!/\b(px-|pl-|pr-)\b/.test(input.className)) {
+          input.className += " px-3";
+        }
+        if (!/\bpy-[^\s]+\b/.test(input.className)) {
+          input.className += " py-2.5";
+        }
+        if (!/\btext-(xs|sm|base|lg|xl|\[[^\]]+\])\b/.test(input.className)) {
+          input.className += " text-sm";
+        }
       }
     }
     input.placeholder = placeholderText;

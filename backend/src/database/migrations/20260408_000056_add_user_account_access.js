@@ -29,11 +29,20 @@ exports.up = async (knex) => {
     table.timestamp("created_at").notNullable().defaultTo(knex.fn.now());
     table.timestamp("updated_at").notNullable().defaultTo(knex.fn.now());
 
-    table.unique(["user_id", "account_id"], "uq_user_account_access_user_account");
+    table.unique(
+      ["user_id", "account_id"],
+      "uq_user_account_access_user_account",
+    );
     table.index(["user_id"], "idx_user_account_access_user");
     table.index(["account_id"], "idx_user_account_access_account");
-    table.index(["user_id", "can_view_summary"], "idx_user_account_access_summary");
-    table.index(["user_id", "can_view_details"], "idx_user_account_access_details");
+    table.index(
+      ["user_id", "can_view_summary"],
+      "idx_user_account_access_summary",
+    );
+    table.index(
+      ["user_id", "can_view_details"],
+      "idx_user_account_access_details",
+    );
   });
 };
 

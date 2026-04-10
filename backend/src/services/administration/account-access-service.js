@@ -37,7 +37,11 @@ const getUserBranchIds = async ({ db = knex, userId }) => {
     .filter((id) => Number.isInteger(id) && id > 0);
 };
 
-const getAccountBranchNames = async ({ db = knex, accountIds = [], branchIds = [] }) => {
+const getAccountBranchNames = async ({
+  db = knex,
+  accountIds = [],
+  branchIds = [],
+}) => {
   const normalizedAccountIds = Array.from(
     new Set(accountIds.map(toPositiveInt).filter(Boolean)),
   );
@@ -144,7 +148,8 @@ const upsertUserAccountAccessRows = async ({
 }) => {
   const resolvedUserId = toPositiveInt(userId);
   if (!resolvedUserId) return { upserted: 0, deleted: 0 };
-  if (!(await hasUserAccountAccessTable(db))) return { upserted: 0, deleted: 0 };
+  if (!(await hasUserAccountAccessTable(db)))
+    return { upserted: 0, deleted: 0 };
 
   const assignable = await getAssignableAccountsForUser({
     db,

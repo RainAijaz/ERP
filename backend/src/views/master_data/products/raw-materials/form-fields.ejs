@@ -32,7 +32,24 @@
     placeholder="<%= t('placeholder_raw_material_name_ur') %>" 
     required  />
 </label>
-    <div class="grid gap-4 md:col-span-2 md:grid-cols-3">
+    <div class="grid gap-4 md:col-span-2 md:grid-cols-4">
+      <label class="block">
+        <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500"><%= t("group") %> <span class="text-rose-500">*</span></span>
+        <select
+          class="w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm text-slate-800 transition focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-slate-100"
+          name="group_id"
+          data-field="group_id"
+          data-searchable-select="true"
+          data-searchable-variant="unified"
+          required
+        >
+          <option value=""><%= t("select") %>...</option>
+          <% groups.forEach(function(group) { %>
+            <option value="<%= group.id %>"><%= locale === "ur" ? (group.name_ur || group.name) : group.name %></option>
+          <% }) %>
+        </select>
+      </label>
+
       <label class="block">
         <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wider text-slate-500"><%= t("base_unit") %> <span class="text-rose-500">*</span></span>
         <select 

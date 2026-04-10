@@ -2471,7 +2471,10 @@ const toTokenListWithAll = (value) => {
 
 const parseStockTransferReportFilters = ({ req, input = {} }) => {
   const { today, defaultFrom } = getDefaultLedgerDateRange();
-  const parsedFrom = parseDateFilter(input.from_date || input.fromDate, defaultFrom);
+  const parsedFrom = parseDateFilter(
+    input.from_date || input.fromDate,
+    defaultFrom,
+  );
   const parsedTo = parseDateFilter(input.to_date || input.toDate, today);
   const stockType = normalizeStockType(input.stock_type || input.stockType);
 
@@ -2491,7 +2494,9 @@ const parseStockTransferReportFilters = ({ req, input = {} }) => {
     sourceBranchIds: normalizeScopedBranchFilter({
       req,
       value:
-        input.source_branch_ids || input.sourceBranchIds || input.source_branch_id,
+        input.source_branch_ids ||
+        input.sourceBranchIds ||
+        input.source_branch_id,
     }),
     destinationBranchIds: normalizeScopedBranchFilter({
       req,
@@ -2529,15 +2534,18 @@ const parseStockTransferReportFilters = ({ req, input = {} }) => {
     mode: normalizeTransferMode(input.mode),
     orderBy: normalizeTransferOrderBy(input.order_by || input.orderBy),
     reportType: normalizeTransferReportType(
-      input.report_type || input.reportType || input.view_filter || input.viewType,
+      input.report_type ||
+        input.reportType ||
+        input.view_filter ||
+        input.viewType,
     ),
     invalidFromDate: Boolean(parsedFrom.provided && !parsedFrom.valid),
     invalidToDate: Boolean(parsedTo.provided && !parsedTo.valid),
     invalidDateRange,
     invalidFilterInput: Boolean(
       (parsedFrom.provided && !parsedFrom.valid) ||
-        (parsedTo.provided && !parsedTo.valid) ||
-        invalidDateRange,
+      (parsedTo.provided && !parsedTo.valid) ||
+      invalidDateRange,
     ),
   };
 };
@@ -2568,14 +2576,18 @@ const resolveTransferLineStockType = (row, meta = {}) => {
   ) {
     return metaStockType;
   }
-  const lineKind = String(row?.line_kind || "").trim().toUpperCase();
+  const lineKind = String(row?.line_kind || "")
+    .trim()
+    .toUpperCase();
   if (lineKind === "ITEM") return STOCK_TYPES.rawMaterial;
   const skuType = normalizeStockType(row?.sku_item_type);
   return skuType || STOCK_TYPES.finished;
 };
 
 const resolveTransferLineLabel = (row) => {
-  const lineKind = String(row?.line_kind || "").trim().toUpperCase();
+  const lineKind = String(row?.line_kind || "")
+    .trim()
+    .toUpperCase();
   if (lineKind === "ITEM") {
     return String(row?.item_name || "").trim() || "-";
   }
@@ -2590,7 +2602,9 @@ const resolveTransferDisplayRate = ({ row, meta, stockType }) => {
   if (stockType === STOCK_TYPES.rawMaterial) return toAmount(rawRate, 4);
 
   const factorToBase = Number(toMetaNumber(meta, "uom_factor_to_base") || 0);
-  const unitCode = String(meta?.uom_code || row?.uom_code || row?.uom_name || "")
+  const unitCode = String(
+    meta?.uom_code || row?.uom_code || row?.uom_name || "",
+  )
     .trim()
     .toUpperCase();
   const isDozenUnit =
@@ -2612,7 +2626,9 @@ const resolveTransferDisplayRate = ({ row, meta, stockType }) => {
 
 const resolveTransferLineFgStatus = ({ row, meta }) => {
   const lineUomId = toPositiveInt(row?.uom_id);
-  const baseUomId = toPositiveInt(row?.sku_base_uom_id || row?.item_base_uom_id);
+  const baseUomId = toPositiveInt(
+    row?.sku_base_uom_id || row?.item_base_uom_id,
+  );
   if (lineUomId && baseUomId) {
     return lineUomId === baseUomId
       ? TRANSFER_STOCK_STATUS_FILTERS.loose
@@ -2793,7 +2809,8 @@ const sortStockTransferRows = ({ rows = [], filters }) => {
       );
       if (destinationCompare !== 0) return destinationCompare;
     } else if (filters.orderBy === TRANSFER_REPORT_ORDER_BY_TYPES.voucher) {
-      const voucherCompare = Number(a.voucherNo || 0) - Number(b.voucherNo || 0);
+      const voucherCompare =
+        Number(a.voucherNo || 0) - Number(b.voucherNo || 0);
       if (voucherCompare !== 0) return voucherCompare;
     } else {
       const itemCompare = compareText(a.itemLabel, b.itemLabel);
@@ -2830,7 +2847,8 @@ const buildStockTransferSummaryRows = ({ rows = [], filters }) => {
   const buildGroupLabel = (row) => {
     if (filters.orderBy === TRANSFER_REPORT_ORDER_BY_TYPES.branch) {
       const source = String(row.sourceBranchName || "-").trim() || "-";
-      const destination = String(row.destinationBranchName || "-").trim() || "-";
+      const destination =
+        String(row.destinationBranchName || "-").trim() || "-";
       return `${source} -> ${destination}`;
     }
     if (filters.orderBy === TRANSFER_REPORT_ORDER_BY_TYPES.voucher) {
@@ -2861,8 +2879,15 @@ const buildStockTransferSummaryRows = ({ rows = [], filters }) => {
     };
 
     existing.voucherCount.add(Number(row.voucherId || row.voucherNo || 0));
-    existing.statusSet.add(String(row.transferStatus || "").trim().toUpperCase());
-    existing.amount = toAmount(Number(existing.amount || 0) + Number(row.amount || 0), 2);
+    existing.statusSet.add(
+      String(row.transferStatus || "")
+        .trim()
+        .toUpperCase(),
+    );
+    existing.amount = toAmount(
+      Number(existing.amount || 0) + Number(row.amount || 0),
+      2,
+    );
 
     if (filters.mode === TRANSFER_REPORT_MODES.out) {
       existing.qtyOut = toQuantity(
@@ -2896,9 +2921,7 @@ const buildStockTransferSummaryRows = ({ rows = [], filters }) => {
       ...entry,
       voucherCount: entry.voucherCount.size,
       transferStatus:
-        entry.statusSet.size === 1
-          ? [...entry.statusSet][0]
-          : "MIXED",
+        entry.statusSet.size === 1 ? [...entry.statusSet][0] : "MIXED",
     }))
     .sort((a, b) => {
       const groupCompare = compareText(a.groupLabel, b.groupLabel);
@@ -2925,7 +2948,9 @@ const buildStockTransferTotals = ({ rows = [], filters }) => {
   };
 
   (rows || []).forEach((row) => {
-    const status = String(row.transferStatus || "").trim().toUpperCase();
+    const status = String(row.transferStatus || "")
+      .trim()
+      .toUpperCase();
     if (status === TRANSFER_REPORT_STATUSES.pending) totals.pendingCount += 1;
     if (status === TRANSFER_REPORT_STATUSES.partiallyApproved) {
       totals.partiallyApprovedCount += 1;
@@ -2976,8 +3001,14 @@ const loadTransferReasonOptions = async ({ hasTransferReasonColumn }) => {
   const knownSet = new Set(DEFAULT_TRANSFER_REASONS);
   const values = [
     ...new Set(
-      [...DEFAULT_TRANSFER_REASONS, ...(rows || []).map((row) => String(row?.value || "").trim().toUpperCase())]
-        .filter(Boolean),
+      [
+        ...DEFAULT_TRANSFER_REASONS,
+        ...(rows || []).map((row) =>
+          String(row?.value || "")
+            .trim()
+            .toUpperCase(),
+        ),
+      ].filter(Boolean),
     ),
   ];
 
@@ -3069,7 +3100,9 @@ const loadStockTransferOutRows = async ({
       "u.code as uom_code",
       "u.name as uom_name",
       "sth.status as transfer_workflow_status",
-      knex.raw("coalesce(ga.received_voucher_id, sth.received_voucher_id) as received_voucher_id"),
+      knex.raw(
+        "coalesce(ga.received_voucher_id, sth.received_voucher_id) as received_voucher_id",
+      ),
       knex.raw("coalesce(ga.rejected_qty_total, 0) as rejected_qty_total"),
       knex.raw("coalesce(ga.variance_qty_total, 0) as variance_qty_total"),
       knex.raw(`${transferRefExpr} as transfer_ref_no`),
@@ -3116,11 +3149,16 @@ const loadStockTransferOutRows = async ({
     applyWhereInRaw(query, transferReasonExpr, filters.transferReasons);
   }
 
-  const rows = await query.orderBy("vh.voucher_no", "asc").orderBy("vl.line_no", "asc");
+  const rows = await query
+    .orderBy("vh.voucher_no", "asc")
+    .orderBy("vl.line_no", "asc");
 
   const mapped = (rows || [])
     .map((row) => {
-      const meta = row?.line_meta && typeof row.line_meta === "object" ? row.line_meta : {};
+      const meta =
+        row?.line_meta && typeof row.line_meta === "object"
+          ? row.line_meta
+          : {};
       const stockType = resolveTransferLineStockType(row, meta);
       if (stockType !== filters.stockType) return null;
       const lineStockStatus = resolveTransferLineFgStatus({ row, meta });
@@ -3161,11 +3199,14 @@ const loadStockTransferOutRows = async ({
         destinationBranchId: Number(row?.destination_branch_id || 0) || null,
         destinationBranchName:
           String(row?.destination_branch_name || "").trim() || "-",
-        transferReason: String(row?.transfer_reason || "").trim().toUpperCase(),
+        transferReason: String(row?.transfer_reason || "")
+          .trim()
+          .toUpperCase(),
         itemLabel,
         unitLabel:
-          String(meta?.uom_code || row?.uom_code || row?.uom_name || "").trim() ||
-          "-",
+          String(
+            meta?.uom_code || row?.uom_code || row?.uom_name || "",
+          ).trim() || "-",
         qtyOut,
         rate,
         amount,
@@ -3197,7 +3238,11 @@ const loadStockTransferInRows = async ({
 
   let query = knex("erp.voucher_header as vh")
     .join("erp.grn_in_header as gih", "gih.voucher_id", "vh.id")
-    .join("erp.stock_transfer_out_header as sth", "sth.voucher_id", "gih.against_stn_out_id")
+    .join(
+      "erp.stock_transfer_out_header as sth",
+      "sth.voucher_id",
+      "gih.against_stn_out_id",
+    )
     .join("erp.voucher_header as stn", "stn.id", "sth.voucher_id")
     .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
     .leftJoin("erp.branches as sb", "sb.id", "stn.branch_id")
@@ -3279,11 +3324,16 @@ const loadStockTransferInRows = async ({
     applyWhereInRaw(query, transferReasonExpr, filters.transferReasons);
   }
 
-  const rows = await query.orderBy("vh.voucher_no", "asc").orderBy("vl.line_no", "asc");
+  const rows = await query
+    .orderBy("vh.voucher_no", "asc")
+    .orderBy("vl.line_no", "asc");
 
   const mappedRows = (rows || [])
     .map((row) => {
-      const meta = row?.line_meta && typeof row.line_meta === "object" ? row.line_meta : {};
+      const meta =
+        row?.line_meta && typeof row.line_meta === "object"
+          ? row.line_meta
+          : {};
       const stockType = resolveTransferLineStockType(row, meta);
       if (stockType !== filters.stockType) return null;
       const lineStockStatus = resolveTransferLineFgStatus({ row, meta });
@@ -3311,11 +3361,14 @@ const loadStockTransferInRows = async ({
         destinationBranchId: Number(row?.destination_branch_id || 0) || null,
         destinationBranchName:
           String(row?.destination_branch_name || "").trim() || "-",
-        transferReason: String(row?.transfer_reason || "").trim().toUpperCase(),
+        transferReason: String(row?.transfer_reason || "")
+          .trim()
+          .toUpperCase(),
         itemLabel,
         unitLabel:
-          String(meta?.uom_code || row?.uom_code || row?.uom_name || "").trim() ||
-          "-",
+          String(
+            meta?.uom_code || row?.uom_code || row?.uom_name || "",
+          ).trim() || "-",
         expectedQty: quantities.expectedQty,
         receivedQty: quantities.receivedQty,
         rejectedQty: quantities.rejectedQty,
@@ -3343,7 +3396,9 @@ const loadStockTransferInRows = async ({
 
   const withStatus = mappedRows
     .map((row) => {
-      const hasPartial = Boolean(statusByVoucherId.get(Number(row?.voucherId || 0)));
+      const hasPartial = Boolean(
+        statusByVoucherId.get(Number(row?.voucherId || 0)),
+      );
       const transferStatus = hasPartial
         ? TRANSFER_REPORT_STATUSES.partiallyApproved
         : TRANSFER_REPORT_STATUSES.approved;
@@ -3411,7 +3466,9 @@ const getInventoryStockTransferReportPageData = async ({ req, input = {} }) => {
   const productGroups = Array.isArray(productGroupsByType[filters.stockType])
     ? productGroupsByType[filters.stockType]
     : [];
-  const productSubgroups = Array.isArray(productSubgroupsByType[filters.stockType])
+  const productSubgroups = Array.isArray(
+    productSubgroupsByType[filters.stockType],
+  )
     ? productSubgroupsByType[filters.stockType]
     : [];
   const articles =
@@ -3440,7 +3497,10 @@ const getInventoryStockTransferReportPageData = async ({ req, input = {} }) => {
     return selectedIds.filter((id) => allowed.has(Number(id)));
   };
 
-  const safeSourceBranchIds = sanitizeSelectedIds(filters.sourceBranchIds, branches);
+  const safeSourceBranchIds = sanitizeSelectedIds(
+    filters.sourceBranchIds,
+    branches,
+  );
   if (safeSourceBranchIds.length !== filters.sourceBranchIds.length) {
     filters.invalidFilterInput = true;
   }
@@ -3483,7 +3543,10 @@ const getInventoryStockTransferReportPageData = async ({ req, input = {} }) => {
     filters.articleIds = safeArticleIds;
   }
 
-  const safeStockItemIds = sanitizeSelectedIds(filters.stockItemIds, stockItems);
+  const safeStockItemIds = sanitizeSelectedIds(
+    filters.stockItemIds,
+    stockItems,
+  );
   if (safeStockItemIds.length !== filters.stockItemIds.length) {
     filters.invalidFilterInput = true;
   }
@@ -3491,11 +3554,19 @@ const getInventoryStockTransferReportPageData = async ({ req, input = {} }) => {
 
   const allowedReasonSet = new Set(
     (transferReasonOptions || [])
-      .map((entry) => String(entry?.value || "").trim().toUpperCase())
+      .map((entry) =>
+        String(entry?.value || "")
+          .trim()
+          .toUpperCase(),
+      )
       .filter(Boolean),
   );
   filters.transferReasons = (filters.transferReasons || []).filter((value) =>
-    allowedReasonSet.has(String(value || "").trim().toUpperCase()),
+    allowedReasonSet.has(
+      String(value || "")
+        .trim()
+        .toUpperCase(),
+    ),
   );
 
   const options = {
@@ -3579,7 +3650,10 @@ const getInventoryStockTransferReportPageData = async ({ req, input = {} }) => {
           hasBillBookNoColumn,
         });
 
-  const summaryRows = buildStockTransferSummaryRows({ rows: detailRows, filters });
+  const summaryRows = buildStockTransferSummaryRows({
+    rows: detailRows,
+    filters,
+  });
   const totals = buildStockTransferTotals({ rows: detailRows, filters });
 
   return {

@@ -30,20 +30,18 @@ const parseNumber = (value) => {
 };
 
 const toFriendlySaveError = (err, t) => {
-  if (!err) return t("error_unable_save") ;
+  if (!err) return t("error_unable_save");
   const detail = String(err.detail || "").toLowerCase();
   const message = String(err.message || "").toLowerCase();
   if (String(err.code || "") === "23505") {
     if (detail.includes("(code)") || message.includes("code")) {
-      return t("error_duplicate_code") ;
+      return t("error_duplicate_code");
     }
     if (detail.includes("(name)") || message.includes("name")) {
-      return t("error_duplicate_name") ;
+      return t("error_duplicate_name");
     }
   }
-  return (
-    err.detail || err.message || t("error_unable_save") 
-  );
+  return err.detail || err.message || t("error_unable_save");
 };
 
 const toArray = (value) => {
@@ -78,14 +76,38 @@ const buildRateRows = ({ itemId, colorIds, sizeIds, rates, userId, now }) => {
   return rows;
 };
 
+const isActiveGroupForItemType = async (groupId, itemType) => {
+  if (!groupId) return false;
+  const row = await knex("erp.product_groups as g")
+    .join("erp.product_group_item_types as gt", "gt.group_id", "g.id")
+    .where("g.id", groupId)
+    .andWhere("g.is_active", true)
+    .andWhere("gt.item_type", itemType)
+    .first();
+  return Boolean(row);
+};
+
+const isActiveSubgroupForItemType = async (subgroupId, itemType) => {
+  if (!subgroupId) return false;
+  const row = await knex("erp.product_subgroups as s")
+    .join("erp.product_subgroup_item_types as st", "st.subgroup_id", "s.id")
+    .where("s.id", subgroupId)
+    .andWhere("s.is_active", true)
+    .andWhere("st.item_type", itemType)
+    .first();
+  return Boolean(row);
+};
+
 const loadOptions = async () => {
-  const [subgroups, uoms, colors, sizes] = await Promise.all([
+  const [groups, subgroups, uoms, colors, sizes] = await Promise.all([
+    knex("erp.product_groups as g")
+      .select("g.id", "g.name", "g.name_ur")
+      .join("erp.product_group_item_types as gt", "gt.group_id", "g.id")
+      .where("gt.item_type", ITEM_TYPE)
+      .andWhere("g.is_active", true)
+      .orderBy("g.name"),
     knex("erp.product_subgroups as sg")
-      .select(
-        knex.raw(
-          "DISTINCT ON (lower(sg.name)) sg.id, sg.name, sg.name_ur, sg.group_id",
-        ),
-      )
+      .select("sg.id", "sg.name", "sg.name_ur", "sg.group_id")
       .join(
         "erp.product_subgroup_item_types as sgt",
         "sgt.subgroup_id",
@@ -93,8 +115,7 @@ const loadOptions = async () => {
       )
       .where("sgt.item_type", ITEM_TYPE)
       .andWhere("sg.is_active", true)
-      .whereNotNull("sg.group_id")
-      .orderByRaw("lower(sg.name), sg.id"),
+      .orderBy("sg.name"),
     knex("erp.uom")
       .select("id", "code", "name", "name_ur")
       .where("is_active", true)
@@ -110,7 +131,7 @@ const loadOptions = async () => {
       .andWhere("s.is_active", true)
       .orderBy("s.name"),
   ]);
-  return { subgroups, uoms, colors, sizes };
+  return { groups, subgroups, uoms, colors, sizes };
 };
 
 // --- UPDATED: loadRows with Filter Logic ---
@@ -282,6 +303,7 @@ router.post(
 
     try {
       const name = (values.name || "").trim();
+      const group_id = values.group_id ? Number(values.group_id) : null;
       const subgroup_id = values.subgroup_id
         ? Number(values.subgroup_id)
         : null;
@@ -300,7 +322,7 @@ router.post(
         });
       }
 
-      if (!name || !subgroup_id || !base_uom_id) {
+      if (!name || !group_id || !subgroup_id || !base_uom_id) {
         const [rows, options, rateDetailsByItem, users] = await Promise.all([
           loadRows(),
           loadOptions(),
@@ -319,11 +341,11 @@ router.post(
         });
       }
 
-      const subgroupMatch = await knex("erp.product_subgroups")
-        .select("id", "group_id")
-        .where({ id: subgroup_id })
-        .first();
-      if (!subgroupMatch || !subgroupMatch.group_id) {
+      const [groupValid, subgroupValid] = await Promise.all([
+        isActiveGroupForItemType(group_id, ITEM_TYPE),
+        isActiveSubgroupForItemType(subgroup_id, ITEM_TYPE),
+      ]);
+      if (!groupValid || !subgroupValid) {
         const [rows, options, rateDetailsByItem, users] = await Promise.all([
           loadRows(),
           loadOptions(),
@@ -344,11 +366,9 @@ router.post(
 
       const group = await knex("erp.product_groups")
         .select("name")
-        .where({ id: subgroupMatch.group_id })
+        .where({ id: group_id })
         .first();
-      const code = toCode(
-        `${group ? group.name : subgroupMatch.group_id}_${name}`,
-      );
+      const code = toCode(`${group ? group.name : group_id}_${name}`);
       const rateRows = buildRateRows({
         itemId: null,
         colorIds,
@@ -396,7 +416,7 @@ router.post(
           code,
           name,
           name_ur: values.name_ur || null,
-          group_id: subgroupMatch.group_id,
+          group_id,
           subgroup_id,
           base_uom_id,
           min_stock_level: min_stock_level === null ? 0 : min_stock_level,
@@ -417,7 +437,7 @@ router.post(
             code,
             name,
             name_ur: values.name_ur || null,
-            group_id: subgroupMatch.group_id,
+            group_id,
             subgroup_id,
             base_uom_id,
             min_stock_level: min_stock_level === null ? 0 : min_stock_level,
@@ -486,6 +506,7 @@ router.post(
 
     try {
       const name = (values.name || "").trim();
+      const group_id = values.group_id ? Number(values.group_id) : null;
       const subgroup_id = values.subgroup_id
         ? Number(values.subgroup_id)
         : null;
@@ -505,7 +526,7 @@ router.post(
         });
       }
 
-      if (!name || !subgroup_id || !base_uom_id) {
+      if (!name || !group_id || !subgroup_id || !base_uom_id) {
         const [rows, options, rateDetailsByItem, users] = await Promise.all([
           loadRows(),
           loadOptions(),
@@ -524,11 +545,11 @@ router.post(
         });
       }
 
-      const subgroupMatch = await knex("erp.product_subgroups")
-        .select("id", "group_id")
-        .where({ id: subgroup_id })
-        .first();
-      if (!subgroupMatch || !subgroupMatch.group_id) {
+      const [groupValid, subgroupValid] = await Promise.all([
+        isActiveGroupForItemType(group_id, ITEM_TYPE),
+        isActiveSubgroupForItemType(subgroup_id, ITEM_TYPE),
+      ]);
+      if (!groupValid || !subgroupValid) {
         const [rows, options, rateDetailsByItem, users] = await Promise.all([
           loadRows(),
           loadOptions(),
@@ -549,11 +570,9 @@ router.post(
 
       const group = await knex("erp.product_groups")
         .select("name")
-        .where({ id: subgroupMatch.group_id })
+        .where({ id: group_id })
         .first();
-      const code = toCode(
-        `${group ? group.name : subgroupMatch.group_id}_${name}`,
-      );
+      const code = toCode(`${group ? group.name : group_id}_${name}`);
       const rateRows = buildRateRows({
         itemId: id,
         colorIds,
@@ -601,7 +620,7 @@ router.post(
           code,
           name,
           name_ur: values.name_ur || null,
-          group_id: subgroupMatch.group_id,
+          group_id,
           subgroup_id,
           base_uom_id,
           min_stock_level: min_stock_level === null ? 0 : min_stock_level,
@@ -621,7 +640,7 @@ router.post(
             code,
             name,
             name_ur: values.name_ur || null,
-            group_id: subgroupMatch.group_id,
+            group_id,
             subgroup_id,
             base_uom_id,
             min_stock_level: min_stock_level === null ? 0 : min_stock_level,
@@ -692,8 +711,8 @@ router.post(
         return next(new HttpError(404, res.locals.t("error_not_found")));
       const nextIsActive = !current.is_active;
       const toggleLabel = nextIsActive
-        ? res.locals.t("activate") 
-        : res.locals.t("deactivate") ;
+        ? res.locals.t("activate")
+        : res.locals.t("deactivate");
 
       const approval = await handleScreenApproval({
         req,
@@ -788,10 +807,7 @@ router.post(
         await knex("erp.items").where({ id }).del();
       } catch (deleteErr) {
         if (String(deleteErr?.code || "") === "23503") {
-          throw new HttpError(
-            409,
-            res.locals.t("error_record_in_use") ,
-          );
+          throw new HttpError(409, res.locals.t("error_record_in_use"));
         }
         throw deleteErr;
       }

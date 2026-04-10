@@ -51,11 +51,19 @@ const getBranch = async () => {
   return row || null;
 };
 
-const getBranchScopedAccounts = async ({ branchId, limit = 10, excludeIds = [] } = {}) => {
+const getBranchScopedAccounts = async ({
+  branchId,
+  limit = 10,
+  excludeIds = [],
+} = {}) => {
   const normalizedBranchId = Number(branchId || 0) || null;
   if (!normalizedBranchId) return [];
   const excluded = Array.from(
-    new Set((excludeIds || []).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)),
+    new Set(
+      (excludeIds || [])
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    ),
   );
   let query = knex("erp.accounts as a")
     .join("erp.account_branch as ab", "ab.account_id", "a.id")
@@ -69,7 +77,11 @@ const getBranchScopedAccounts = async ({ branchId, limit = 10, excludeIds = [] }
   return query;
 };
 
-const replaceUserAccountAccess = async ({ userId, rows = [], createdBy = null } = {}) => {
+const replaceUserAccountAccess = async ({
+  userId,
+  rows = [],
+  createdBy = null,
+} = {}) => {
   const normalizedUserId = Number(userId || 0);
   if (!Number.isInteger(normalizedUserId) || normalizedUserId <= 0) return;
   const hasTable = await knex.schema
@@ -91,7 +103,9 @@ const replaceUserAccountAccess = async ({ userId, rows = [], createdBy = null } 
     }));
 
   await knex.transaction(async (trx) => {
-    await trx("erp.user_account_access").where({ user_id: normalizedUserId }).del();
+    await trx("erp.user_account_access")
+      .where({ user_id: normalizedUserId })
+      .del();
     if (!normalizedRows.length) return;
     await trx("erp.user_account_access").insert(
       normalizedRows.map((row) => ({
@@ -112,7 +126,9 @@ const clearUserAccountAccess = async ({ userId } = {}) => {
     .withSchema("erp")
     .hasTable("user_account_access");
   if (!hasTable) return;
-  await knex("erp.user_account_access").where({ user_id: normalizedUserId }).del();
+  await knex("erp.user_account_access")
+    .where({ user_id: normalizedUserId })
+    .del();
 };
 
 const getApprovalEditFixtureData = async () => {

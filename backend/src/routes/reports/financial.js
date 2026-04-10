@@ -1,7 +1,11 @@
 const express = require("express");
 const knex = require("../../db/knex");
 const { HttpError } = require("../../middleware/errors/http-error");
-const { getFinancialReport, getCommonFilters, updateBankVoucherLineStatus } = require("../../services/financial/report-service");
+const {
+  getFinancialReport,
+  getCommonFilters,
+  updateBankVoucherLineStatus,
+} = require("../../services/financial/report-service");
 const {
   getUserAccountAccessMap,
   filterAccountsByAccess,
@@ -28,8 +32,15 @@ const REPORT_KEYS = [
   "payroll_wage_balance",
 ];
 
-const LEGACY_EXPENSE_REPORT_TYPES = new Set(["production_overhead", "non_production_expense", "accrued_expenses"]);
-const ACCOUNT_ACCESS_REPORT_KEYS = new Set(["account_activity_ledger", "cash_book"]);
+const LEGACY_EXPENSE_REPORT_TYPES = new Set([
+  "production_overhead",
+  "non_production_expense",
+  "accrued_expenses",
+]);
+const ACCOUNT_ACCESS_REPORT_KEYS = new Set([
+  "account_activity_ledger",
+  "cash_book",
+]);
 
 const resolveReportKey = (value, fallback = "profit_and_loss") => {
   const key = String(value || "").trim();
@@ -41,8 +52,14 @@ const normalizeFilterInput = (value) => {
   return value;
 };
 
-const getReportAccounts = async ({ reportKey, req, selectedBranchId = null }) => {
-  const normalized = String(reportKey || "").trim().toLowerCase();
+const getReportAccounts = async ({
+  reportKey,
+  req,
+  selectedBranchId = null,
+}) => {
+  const normalized = String(reportKey || "")
+    .trim()
+    .toLowerCase();
   if (normalized !== "account_activity_ledger" && normalized !== "cash_book") {
     return [];
   }
@@ -53,18 +70,28 @@ const getReportAccounts = async ({ reportKey, req, selectedBranchId = null }) =>
 
   if (normalized === "cash_book") {
     query = query
-      .join("erp.account_posting_classes as apc", "apc.id", "a.posting_class_id")
+      .join(
+        "erp.account_posting_classes as apc",
+        "apc.id",
+        "a.posting_class_id",
+      )
       .whereRaw("upper(COALESCE(apc.code, '')) = 'CASH'");
   }
 
   const branchScopeId = Number(selectedBranchId || 0) || null;
   if (branchScopeId) {
     query = query.whereExists(function whereAccountBranchMap() {
-      this.select(1).from("erp.account_branch as ab").whereRaw("ab.account_id = a.id").andWhere("ab.branch_id", branchScopeId);
+      this.select(1)
+        .from("erp.account_branch as ab")
+        .whereRaw("ab.account_id = a.id")
+        .andWhere("ab.branch_id", branchScopeId);
     });
   } else if (!req.user?.isAdmin) {
     query = query.whereExists(function whereAccountBranchMap() {
-      this.select(1).from("erp.account_branch as ab").whereRaw("ab.account_id = a.id").andWhere("ab.branch_id", req.branchId);
+      this.select(1)
+        .from("erp.account_branch as ab")
+        .whereRaw("ab.account_id = a.id")
+        .andWhere("ab.branch_id", req.branchId);
     });
   }
 
@@ -72,7 +99,9 @@ const getReportAccounts = async ({ reportKey, req, selectedBranchId = null }) =>
 };
 
 const getExpenseAnalysisFilterOptions = async ({ req, filters }) => {
-  const selectedBranchIds = Array.isArray(filters?.branchIds) ? filters.branchIds : [];
+  const selectedBranchIds = Array.isArray(filters?.branchIds)
+    ? filters.branchIds
+    : [];
   const departments = await knex("erp.departments as d")
     .select("d.id", "d.name")
     .where({ "d.is_active": true })
@@ -85,7 +114,9 @@ const getExpenseAnalysisFilterOptions = async ({ req, filters }) => {
     .andWhereRaw("upper(COALESCE(apc.code, '')) = 'CASH'");
 
   cashierQuery = cashierQuery.whereExists(function whereAccountBranchMap() {
-    this.select(1).from("erp.account_branch as ab").whereRaw("ab.account_id = a.id");
+    this.select(1)
+      .from("erp.account_branch as ab")
+      .whereRaw("ab.account_id = a.id");
     if (selectedBranchIds.length) {
       this.whereIn("ab.branch_id", selectedBranchIds);
     } else if (!req.user?.isAdmin) {
@@ -112,11 +143,14 @@ const getExpenseTrendFilterOptions = async ({ req, filters }) => {
     .where({ "a.is_active": true })
     .andWhere("ag.account_type", "EXPENSE");
 
-  if (selectedGroupId) accountsQuery = accountsQuery.where("ag.id", selectedGroupId);
+  if (selectedGroupId)
+    accountsQuery = accountsQuery.where("ag.id", selectedGroupId);
 
   if (branchScopeId || !req.user?.isAdmin) {
     accountsQuery = accountsQuery.whereExists(function whereAccountBranchMap() {
-      this.select(1).from("erp.account_branch as ab").whereRaw("ab.account_id = a.id");
+      this.select(1)
+        .from("erp.account_branch as ab")
+        .whereRaw("ab.account_id = a.id");
       if (branchScopeId) {
         this.andWhere("ab.branch_id", branchScopeId);
       } else {
@@ -136,8 +170,14 @@ router.get("/", async (req, res) => {
 
 router.post("/:reportKey/bank-line-status", async (req, res, next) => {
   try {
-    const resolvedKey = resolveReportKey(req.params.reportKey, "profit_and_loss");
-    if (resolvedKey !== "voucher_register" && resolvedKey !== "bank_transactions") {
+    const resolvedKey = resolveReportKey(
+      req.params.reportKey,
+      "profit_and_loss",
+    );
+    if (
+      resolvedKey !== "voucher_register" &&
+      resolvedKey !== "bank_transactions"
+    ) {
       throw new HttpError(404, res.locals.t("error_not_found"));
     }
 
@@ -149,7 +189,11 @@ router.post("/:reportKey/bank-line-status", async (req, res, next) => {
       throw new HttpError(403, res.locals.t("permission_denied"));
     }
 
-    const requestedVoucherType = String(req.body?.voucher_type || req.query?.voucher_type || "").trim().toLowerCase();
+    const requestedVoucherType = String(
+      req.body?.voucher_type || req.query?.voucher_type || "",
+    )
+      .trim()
+      .toLowerCase();
     if (requestedVoucherType && requestedVoucherType !== "bank") {
       throw new HttpError(400, res.locals.t("error_invalid_value"));
     }
@@ -162,9 +206,9 @@ router.post("/:reportKey/bank-line-status", async (req, res, next) => {
     });
 
     const message = result.queuedForApproval
-      ? (result.permissionReroute
-        ? (res.locals.t("approval_sent") )
-        : res.locals.t("approval_submitted"))
+      ? result.permissionReroute
+        ? res.locals.t("approval_sent")
+        : res.locals.t("approval_submitted")
       : res.locals.t("saved_successfully");
 
     return res.json({
@@ -187,13 +231,13 @@ router.post("/:reportKey/bank-line-status", async (req, res, next) => {
 });
 
 const renderFinancialReportPage = async (req, res, next, options = {}) => {
-  const {
-    inputSource = req.query,
-    allowLegacyRedirects = true,
-  } = options;
+  const { inputSource = req.query, allowLegacyRedirects = true } = options;
 
   try {
-    const resolvedKey = resolveReportKey(req.params.reportKey, "profit_and_loss");
+    const resolvedKey = resolveReportKey(
+      req.params.reportKey,
+      "profit_and_loss",
+    );
     const normalizedInput = normalizeFilterInput(inputSource);
     req.reportFilterInput = normalizedInput;
 
@@ -209,9 +253,13 @@ const renderFinancialReportPage = async (req, res, next, options = {}) => {
       if (req.user?.isAdmin) return true;
       if (resolvedKey === "expense_analysis") {
         const selectedType = String(filters?.reportType || "expense_analysis");
-        return res.locals.can("REPORT", "expense_analysis", "load") || res.locals.can("REPORT", selectedType, "load");
+        return (
+          res.locals.can("REPORT", "expense_analysis", "load") ||
+          res.locals.can("REPORT", selectedType, "load")
+        );
       }
-      if (resolvedKey !== "voucher_register") return res.locals.can("REPORT", resolvedKey, "load");
+      if (resolvedKey !== "voucher_register")
+        return res.locals.can("REPORT", resolvedKey, "load");
       return (
         res.locals.can("REPORT", "voucher_register", "load") ||
         res.locals.can("REPORT", "cash_voucher_register", "load") ||
@@ -230,13 +278,17 @@ const renderFinancialReportPage = async (req, res, next, options = {}) => {
       accountAccessMap = await getUserAccountAccessMap({
         userId: req.user?.id,
       });
-      if (filters.accountId && !accountAccessMap.has(Number(filters.accountId))) {
+      if (
+        filters.accountId &&
+        !accountAccessMap.has(Number(filters.accountId))
+      ) {
         throw new HttpError(403, res.locals.t("permission_denied"));
       }
     }
 
     const canOpenDetailsByPermission =
-      req.user?.isAdmin || res.locals.can("REPORT", resolvedKey, "view_details");
+      req.user?.isAdmin ||
+      res.locals.can("REPORT", resolvedKey, "view_details");
     let canOpenDetailsForSelection = canOpenDetailsByPermission;
     if (!canOpenDetailsByPermission && filters.reportMode === "details") {
       filters.reportMode = "summary";
@@ -253,21 +305,37 @@ const renderFinancialReportPage = async (req, res, next, options = {}) => {
       }
     }
 
-    const [report, rawAccounts, branches, expenseFilterOptions] = await Promise.all([
-      getFinancialReport(resolvedKey, req, filters),
-      getReportAccounts({ reportKey: resolvedKey, req, selectedBranchId: filters.branchId }),
-      req.user?.isAdmin
-        ? knex("erp.branches").select("id", "name").where({ is_active: true }).orderBy("name", "asc")
-        : Promise.resolve(req.branchOptions || []),
-      resolvedKey === "expense_analysis"
-        ? getExpenseAnalysisFilterOptions({ req, filters })
-        : resolvedKey === "expense_trends"
-          ? getExpenseTrendFilterOptions({ req, filters })
-          : Promise.resolve({ departments: [], cashierAccounts: [], accountGroups: [], accounts: [] }),
-    ]);
+    const [report, rawAccounts, branches, expenseFilterOptions] =
+      await Promise.all([
+        getFinancialReport(resolvedKey, req, filters),
+        getReportAccounts({
+          reportKey: resolvedKey,
+          req,
+          selectedBranchId: filters.branchId,
+        }),
+        req.user?.isAdmin
+          ? knex("erp.branches")
+              .select("id", "name")
+              .where({ is_active: true })
+              .orderBy("name", "asc")
+          : Promise.resolve(req.branchOptions || []),
+        resolvedKey === "expense_analysis"
+          ? getExpenseAnalysisFilterOptions({ req, filters })
+          : resolvedKey === "expense_trends"
+            ? getExpenseTrendFilterOptions({ req, filters })
+            : Promise.resolve({
+                departments: [],
+                cashierAccounts: [],
+                accountGroups: [],
+                accounts: [],
+              }),
+      ]);
 
     const accounts = enforceAccountAccess
-      ? filterAccountsByAccess({ accounts: rawAccounts, accessMap: accountAccessMap })
+      ? filterAccountsByAccess({
+          accounts: rawAccounts,
+          accessMap: accountAccessMap,
+        })
       : rawAccounts;
 
     const reportTitleText = res.locals.t(report.titleKey || resolvedKey);

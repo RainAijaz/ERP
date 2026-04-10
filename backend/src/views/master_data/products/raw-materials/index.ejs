@@ -40,7 +40,7 @@
         <%- include("../../../base/partials/table-controls", { t, showStatus: true, showFilters: true }) %>
         <label class="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-600 shadow-sm">
           <span><%= t("rates") %></span>
-          <select class="bg-transparent text-[10px] font-semibold text-slate-700 focus:outline-none" data-rm-view>
+          <select class="w-24 bg-transparent text-[10px] font-semibold text-slate-700 focus:outline-none" data-rm-view data-searchable-variant="compact">
             <option value="summary"><%= t("summary") %></option>
             <option value="expanded" selected><%= t("expanded") %></option>
           </select>
@@ -131,7 +131,7 @@
                 
                 <td class="px-3 py-3 whitespace-nowrap col-actions w-px">
                   <%- include("../../../base/partials/table-actions", { t, row, basePath, withMenu: true, editFields: [
-                    "name", "name_ur", "subgroup_id", "base_uom_id", "min_stock_level", "color_rate_pairs"
+                    "name", "name_ur", "group_id", "subgroup_id", "base_uom_id", "min_stock_level", "color_rate_pairs"
                   ], canEdit, canDelete, canHardDelete }) %>
                 </td>
               </tr>
@@ -292,7 +292,7 @@
     };
 
     const openForEdit = (button) => {
-      const fields = ["name", "name_ur", "subgroup_id", "base_uom_id", "min_stock_level"];
+      const fields = ["name", "name_ur", "group_id", "subgroup_id", "base_uom_id", "min_stock_level"];
       fields.forEach(f => {
          const input = modalForm.querySelector(`[name="${f}"]`);
          if(input) {

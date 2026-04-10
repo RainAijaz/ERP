@@ -30,6 +30,55 @@ const TRANSLATION_HTTP_TIMEOUT_MS = Number(
 );
 const translationCache = new Map();
 
+const LOCAL_TRANSLITERATION_DIGRAPHS = [
+  ["kh", "خ"],
+  ["gh", "غ"],
+  ["sh", "ش"],
+  ["ch", "چ"],
+  ["ph", "ف"],
+  ["bh", "بھ"],
+  ["dh", "دھ"],
+  ["th", "تھ"],
+  ["zh", "ژ"],
+  ["aa", "ا"],
+  ["ee", "ی"],
+  ["ii", "ی"],
+  ["oo", "و"],
+  ["ou", "او"],
+  ["ai", "ے"],
+  ["ay", "ے"],
+  ["au", "او"],
+];
+
+const LOCAL_TRANSLITERATION_SINGLE = {
+  a: "ا",
+  b: "ب",
+  c: "ک",
+  d: "د",
+  e: "ے",
+  f: "ف",
+  g: "گ",
+  h: "ہ",
+  i: "ی",
+  j: "ج",
+  k: "ک",
+  l: "ل",
+  m: "م",
+  n: "ن",
+  o: "و",
+  p: "پ",
+  q: "ق",
+  r: "ر",
+  s: "س",
+  t: "ت",
+  u: "و",
+  v: "و",
+  w: "و",
+  x: "کس",
+  y: "ی",
+  z: "ز",
+};
+
 const readEnvValue = (...keys) => {
   for (const key of keys) {
     const raw = process.env[key];
@@ -170,6 +219,19 @@ const writeCache = (mode, text, value) => {
   if (TRANSLATION_CACHE_TTL_MS <= 0) return;
   const key = `${mode}:${text}`;
   translationCache.set(key, { value, ts: Date.now() });
+};
+
+const transliterateToUrduLocal = (text) => {
+  const source = String(text || "").trim();
+  if (!source) return "";
+  if (!/[A-Za-z]/.test(source)) return source;
+
+  let output = source.toLowerCase();
+  LOCAL_TRANSLITERATION_DIGRAPHS.forEach(([latin, urdu]) => {
+    output = output.replaceAll(latin, urdu);
+  });
+  output = output.replace(/[a-z]/g, (char) => LOCAL_TRANSLITERATION_SINGLE[char] || char);
+  return output;
 };
 
 const transliterateToUrdu = async (text) => {
@@ -326,6 +388,22 @@ const translateUrduWithFallback = async ({
       azure_error: azureError,
       deepl_error: deeplError,
     });
+
+    if (resolvedMode === "transliterate") {
+      const localTransliteration = transliterateToUrduLocal(text);
+      if (localTransliteration) {
+        writeCache(resolvedMode, text, {
+          translated: localTransliteration,
+          provider: "local",
+        });
+        return {
+          translated: localTransliteration,
+          provider: "local",
+          azure_error: azureError,
+        };
+      }
+    }
+
     throw new Error(
       `Fallback unavailable. Azure error: ${azureError || "unknown"}. DeepL error: ${deeplError}`,
     );
@@ -335,6 +413,7 @@ const translateUrduWithFallback = async ({
 module.exports = {
   translateToUrdu,
   transliterateToUrdu,
+  transliterateToUrduLocal,
   azureTranslateToUrdu,
   translateUrduWithFallback,
 };

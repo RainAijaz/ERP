@@ -74,7 +74,8 @@ const parseAccountAccessPayload = (value) => {
     const accountId = Number(entry?.accountId || 0);
     if (!Number.isInteger(accountId) || accountId <= 0) return;
     const canViewDetails = toBool(entry?.canViewDetails, true);
-    const canViewSummary = canViewDetails || toBool(entry?.canViewSummary, true);
+    const canViewSummary =
+      canViewDetails || toBool(entry?.canViewSummary, true);
     uniqueRows.set(accountId, {
       accountId,
       canViewSummary,
