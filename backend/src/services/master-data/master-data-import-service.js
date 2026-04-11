@@ -26,6 +26,7 @@ const ENTITY_KEYS = Object.freeze({
   partyGroups: "party_groups",
   departments: "departments",
   uomConversions: "uom_conversions",
+  accountGroups: "account_groups",
   accounts: "accounts",
   parties: "parties",
   products: "products",
@@ -51,6 +52,12 @@ const TARGET_GROUPS = Object.freeze({
       ENTITY_KEYS.departments,
       ENTITY_KEYS.uomConversions,
     ],
+  },
+  account_groups: {
+    key: "account_groups",
+    labelKey: "account_groups",
+    descriptionKey: "import_target_account_groups_desc",
+    entityKeys: [ENTITY_KEYS.accountGroups],
   },
   accounts: {
     key: "accounts",
@@ -114,7 +121,11 @@ const parseCsv = (value) =>
 const normalizeItemTypes = (value, fallbackAll = false) => {
   const raw = Array.isArray(value) ? value : parseCsv(value);
   const normalized = raw
-    .map((entry) => String(entry || "").trim().toUpperCase())
+    .map((entry) =>
+      String(entry || "")
+        .trim()
+        .toUpperCase(),
+    )
     .filter((entry) => ITEM_TYPES.has(entry));
   const unique = [...new Set(normalized)];
   if (!unique.length && fallbackAll) {
@@ -128,6 +139,7 @@ const createPlanningContext = () => ({
     uom: new Set(),
     productGroup: new Set(),
     productSubgroup: new Set(),
+    accountGroup: new Set(),
     productSubgroupNameMap: new Map(),
     productSubgroupCodeMap: new Map(),
     productType: new Set(),
@@ -148,6 +160,27 @@ const hasStagedToken = (set, value) => {
   return set.has(token);
 };
 
+const toAccountGroupStageKey = (accountType, token) => {
+  const normalizedType = String(accountType || "")
+    .trim()
+    .toUpperCase();
+  const normalizedToken = trimString(token).toLowerCase();
+  if (!normalizedType || !normalizedToken) return "";
+  return `${normalizedType}:${normalizedToken}`;
+};
+
+const addStagedAccountGroupToken = (set, accountType, token) => {
+  const key = toAccountGroupStageKey(accountType, token);
+  if (!key || !(set instanceof Set)) return;
+  set.add(key);
+};
+
+const hasStagedAccountGroupToken = (set, accountType, token) => {
+  const key = toAccountGroupStageKey(accountType, token);
+  if (!key || !(set instanceof Set)) return false;
+  return set.has(key);
+};
+
 const registerStagedReference = (context, operation) => {
   if (!context?.staged || !operation?.data) return;
   switch (operation.entityKey) {
@@ -166,6 +199,18 @@ const registerStagedReference = (context, operation) => {
       addStagedToken(context.staged.productType, operation.data.code);
       addStagedToken(context.staged.productType, operation.data.name);
       break;
+    case ENTITY_KEYS.accountGroups:
+      addStagedAccountGroupToken(
+        context.staged.accountGroup,
+        operation.data.account_type,
+        operation.data.code,
+      );
+      addStagedAccountGroupToken(
+        context.staged.accountGroup,
+        operation.data.account_type,
+        operation.data.name,
+      );
+      break;
     case ENTITY_KEYS.cities:
       addStagedToken(context.staged.city, operation.data.name);
       break;
@@ -179,7 +224,11 @@ const registerStagedReference = (context, operation) => {
 
 const resolveSelectedTargetKeys = (selectedTargets) => {
   const requested = Array.isArray(selectedTargets)
-    ? selectedTargets.map((entry) => String(entry || "").trim().toLowerCase())
+    ? selectedTargets.map((entry) =>
+        String(entry || "")
+          .trim()
+          .toLowerCase(),
+      )
     : [];
   const defaults = Object.keys(TARGET_GROUPS);
   const resolved = (requested.length ? requested : defaults).filter(
@@ -260,7 +309,9 @@ const extractEntityRows = (workbookRows, entitySpec) => {
     if (
       Array.isArray(entitySpec.sheetMatchers) &&
       entitySpec.sheetMatchers.length &&
-      !entitySpec.sheetMatchers.some((matcher) => matcher.test(workbookRow.sheetName))
+      !entitySpec.sheetMatchers.some((matcher) =>
+        matcher.test(workbookRow.sheetName),
+      )
     ) {
       continue;
     }
@@ -307,9 +358,19 @@ const toNameCode = (value, fallback = "") => {
   return base || slugifyCode(fallback, 80) || "item";
 };
 
-const syncItemTypeMap = async ({ trx, table, keyColumn, ownerId, itemTypes }) => {
-  const deduped = [...new Set(itemTypes.filter((entry) => ITEM_TYPES.has(entry)))];
-  await trx(table).where({ [keyColumn]: ownerId }).del();
+const syncItemTypeMap = async ({
+  trx,
+  table,
+  keyColumn,
+  ownerId,
+  itemTypes,
+}) => {
+  const deduped = [
+    ...new Set(itemTypes.filter((entry) => ITEM_TYPES.has(entry))),
+  ];
+  await trx(table)
+    .where({ [keyColumn]: ownerId })
+    .del();
   if (!deduped.length) return;
   await trx(table).insert(
     deduped.map((itemType) => ({ [keyColumn]: ownerId, item_type: itemType })),
@@ -317,11 +378,18 @@ const syncItemTypeMap = async ({ trx, table, keyColumn, ownerId, itemTypes }) =>
 };
 
 const syncBranchMap = async ({ trx, table, keyColumn, ownerId, branchIds }) => {
-  const normalized = [...new Set(branchIds.map((entry) => Number(entry)).filter((id) => id > 0))];
-  await trx(table).where({ [keyColumn]: ownerId }).del();
+  const normalized = [
+    ...new Set(branchIds.map((entry) => Number(entry)).filter((id) => id > 0)),
+  ];
+  await trx(table)
+    .where({ [keyColumn]: ownerId })
+    .del();
   if (!normalized.length) return;
   await trx(table).insert(
-    normalized.map((branchId) => ({ [keyColumn]: ownerId, branch_id: branchId })),
+    normalized.map((branchId) => ({
+      [keyColumn]: ownerId,
+      branch_id: branchId,
+    })),
   );
 };
 
@@ -388,8 +456,52 @@ const resolvePartyGroupByToken = async (db, token) => {
     .first();
 };
 
+const resolveAccountGroupByToken = async (db, accountType, token) => {
+  const value = trimString(token);
+  const normalizedType = String(accountType || "")
+    .trim()
+    .toUpperCase();
+  if (!value || !normalizedType) return null;
+  return db("erp.account_groups")
+    .select("id", "account_type", "code", "name")
+    .where({ account_type: normalizedType })
+    .whereRaw("lower(code) = ? OR lower(name) = ?", [
+      value.toLowerCase(),
+      value.toLowerCase(),
+    ])
+    .first();
+};
+
+const generateAccountGroupCodeTx = async ({ db, accountType, name }) => {
+  const normalizedType = String(accountType || "")
+    .trim()
+    .toUpperCase();
+  let base = toNameCode(name, "account_group")
+    .toLowerCase()
+    .slice(0, 80);
+  if (base.length < 2) base = "account_group";
+  for (let i = 0; i < 500; i += 1) {
+    const suffix = i === 0 ? "" : `_${i + 1}`;
+    const maxBaseLength = Math.max(2, 80 - suffix.length);
+    const candidate = `${base.slice(0, maxBaseLength)}${suffix}`;
+    const exists = await db("erp.account_groups")
+      .select("id")
+      .where({ account_type: normalizedType })
+      .whereRaw("lower(code) = ?", [candidate.toLowerCase()])
+      .first();
+    if (!exists?.id) return candidate;
+  }
+  throw new Error(
+    `Unable to auto-generate account group code for '${name}' (${normalizedType}).`,
+  );
+};
+
 const resolveBranchIdsByTokens = async (db, tokens) => {
-  const unique = [...new Set(tokens.map((entry) => trimString(entry).toLowerCase()).filter(Boolean))];
+  const unique = [
+    ...new Set(
+      tokens.map((entry) => trimString(entry).toLowerCase()).filter(Boolean),
+    ),
+  ];
   if (!unique.length) return [];
   const rows = await db("erp.branches")
     .select("id", "code", "name")
@@ -477,7 +589,8 @@ const ENTITY_SPECS = Object.freeze({
       if (!name) return { error: "Size name is required." };
       const nameUr = trimString(row.raw.nameUr) || name;
       const itemTypes = normalizeItemTypes(row.raw.appliesTo, true);
-      if (!itemTypes.length) return { error: "At least one size item type is required." };
+      if (!itemTypes.length)
+        return { error: "At least one size item type is required." };
       const isActive = parseBoolean(row.raw.isActive, true);
       const existing = await db("erp.sizes")
         .select("id")
@@ -531,7 +644,12 @@ const ENTITY_SPECS = Object.freeze({
   [ENTITY_KEYS.colors]: {
     fieldAliases: {
       name: ["colors_color", "colors_name", "name"],
-      nameUr: ["color_urdu_name", "colors_name_urdu", "colors_name_ur", "name_ur"],
+      nameUr: [
+        "color_urdu_name",
+        "colors_name_urdu",
+        "colors_name_ur",
+        "name_ur",
+      ],
       isActive: ["colors_is_active", "is_active"],
     },
     async plan(row, db, actorId) {
@@ -584,7 +702,10 @@ const ENTITY_SPECS = Object.freeze({
       const name = trimString(row.raw.name);
       if (!name) return { error: "Grade name is required." };
       const nameUr = trimString(row.raw.nameUr) || name;
-      const gradeRank = Math.max(1, Number(parseNumber(row.raw.gradeRank, 1)) || 1);
+      const gradeRank = Math.max(
+        1,
+        Number(parseNumber(row.raw.gradeRank, 1)) || 1,
+      );
       const isActive = parseBoolean(row.raw.isActive, true);
       const existing = await db("erp.grades")
         .select("id")
@@ -663,7 +784,9 @@ const ENTITY_SPECS = Object.freeze({
           created_at: trx.fn.now(),
         });
       } else {
-        await trx("erp.packing_types").where({ id: op.data.id }).update(payload);
+        await trx("erp.packing_types")
+          .where({ id: op.data.id })
+          .update(payload);
       }
     },
   },
@@ -826,11 +949,7 @@ const ENTITY_SPECS = Object.freeze({
         }
         byName = await byNameQuery.first();
       }
-      if (
-        byCode?.id &&
-        byName?.id &&
-        Number(byCode.id) !== Number(byName.id)
-      ) {
+      if (byCode?.id && byName?.id && Number(byCode.id) !== Number(byName.id)) {
         return {
           error: `Product subgroup conflict: code '${code}' and name '${name}' map to different existing records.`,
         };
@@ -841,17 +960,15 @@ const ENTITY_SPECS = Object.freeze({
         : `new:${code.toLowerCase()}`;
       const stagedNameKey = name.toLowerCase();
       const stagedCodeKey = code.toLowerCase();
-      const existingNameOwner = context?.staged?.productSubgroupNameMap?.get(
-        stagedNameKey,
-      );
+      const existingNameOwner =
+        context?.staged?.productSubgroupNameMap?.get(stagedNameKey);
       if (existingNameOwner && existingNameOwner !== planIdentity) {
         return {
           error: `Duplicate product subgroup name in import: '${name}'.`,
         };
       }
-      const existingCodeOwner = context?.staged?.productSubgroupCodeMap?.get(
-        stagedCodeKey,
-      );
+      const existingCodeOwner =
+        context?.staged?.productSubgroupCodeMap?.get(stagedCodeKey);
       if (existingCodeOwner && existingCodeOwner !== planIdentity) {
         return {
           error: `Duplicate product subgroup code in import: '${code}'.`,
@@ -878,7 +995,10 @@ const ENTITY_SPECS = Object.freeze({
       let ownerId = op.data.id;
       let groupId = op.data.group_id;
       if (!groupId && op.data.group_token) {
-        const group = await resolveProductGroupByToken(trx, op.data.group_token);
+        const group = await resolveProductGroupByToken(
+          trx,
+          op.data.group_token,
+        );
         groupId = group?.id || null;
       }
       if (op.action === "create") {
@@ -965,7 +1085,9 @@ const ENTITY_SPECS = Object.freeze({
           created_at: trx.fn.now(),
         });
       } else {
-        await trx("erp.product_types").where({ id: op.data.id }).update(payload);
+        await trx("erp.product_types")
+          .where({ id: op.data.id })
+          .update(payload);
       }
     },
   },
@@ -1000,7 +1122,8 @@ const ENTITY_SPECS = Object.freeze({
       const maxPairDiscount = parseNumber(row.raw.maxPairDiscount, null);
       if (maxPairDiscount === null || maxPairDiscount < 0) {
         return {
-          error: "Sales discount policy requires a valid non-negative max pair discount.",
+          error:
+            "Sales discount policy requires a valid non-negative max pair discount.",
         };
       }
       const isActive = parseBoolean(row.raw.isActive, true);
@@ -1049,7 +1172,9 @@ const ENTITY_SPECS = Object.freeze({
           created_at: trx.fn.now(),
         });
       } else {
-        await trx("erp.sales_discount_policy").where({ id: op.data.id }).update(payload);
+        await trx("erp.sales_discount_policy")
+          .where({ id: op.data.id })
+          .update(payload);
       }
     },
   },
@@ -1063,7 +1188,9 @@ const ENTITY_SPECS = Object.freeze({
     async plan(row, db, actorId) {
       const name = trimString(row.raw.name);
       if (!name) return { error: "Party group name is required." };
-      const partyType = String(row.raw.partyType || "BOTH").trim().toUpperCase();
+      const partyType = String(row.raw.partyType || "BOTH")
+        .trim()
+        .toUpperCase();
       if (!PARTY_TYPES.has(partyType)) {
         return { error: `Invalid party group type: ${partyType || "(empty)"}` };
       }
@@ -1109,7 +1236,11 @@ const ENTITY_SPECS = Object.freeze({
     fieldAliases: {
       name: ["english_department_name", "department_name", "name"],
       nameUr: ["urdu_name_transliteration", "departments_name_urdu", "name_ur"],
-      isProduction: ["departments_production_dept", "is_production", "production_dept"],
+      isProduction: [
+        "departments_production_dept",
+        "is_production",
+        "production_dept",
+      ],
       isActive: ["departments_is_active", "is_active"],
     },
     async plan(row, db, actorId) {
@@ -1172,8 +1303,10 @@ const ENTITY_SPECS = Object.freeze({
         resolveUomByToken(db, fromToken),
         resolveUomByToken(db, toToken),
       ]);
-      const hasFrom = Boolean(fromUom?.id) || hasStagedToken(context?.staged?.uom, fromToken);
-      const hasTo = Boolean(toUom?.id) || hasStagedToken(context?.staged?.uom, toToken);
+      const hasFrom =
+        Boolean(fromUom?.id) || hasStagedToken(context?.staged?.uom, fromToken);
+      const hasTo =
+        Boolean(toUom?.id) || hasStagedToken(context?.staged?.uom, toToken);
       if (!hasFrom) return { error: `From unit not found: ${fromToken}` };
       if (!hasTo) return { error: `To unit not found: ${toToken}` };
       if (fromUom?.id && toUom?.id && Number(fromUom.id) === Number(toUom.id)) {
@@ -1241,7 +1374,101 @@ const ENTITY_SPECS = Object.freeze({
           created_at: trx.fn.now(),
         });
       } else {
-        await trx("erp.uom_conversions").where({ id: op.data.id }).update(payload);
+        await trx("erp.uom_conversions")
+          .where({ id: op.data.id })
+          .update(payload);
+      }
+    },
+  },
+  [ENTITY_KEYS.accountGroups]: {
+    sheetMatchers: [/account\s*groups?/i],
+    fieldAliases: {
+      code: ["account_groups_code", "account_group_code", "group_code", "code"],
+      name: ["account_groups_name", "account_group", "group_name", "name"],
+      nameUr: ["account_groups_name_urdu", "account_groups_name_ur", "name_ur"],
+      accountType: ["account_groups_account_type", "account_type", "type"],
+      isContra: ["account_groups_is_contra", "is_contra"],
+      isActive: ["account_groups_is_active", "is_active"],
+    },
+    async plan(row, db, actorId) {
+      const name = trimString(row.raw.name);
+      if (!name) return { skip: true };
+      const accountType = String(row.raw.accountType || "")
+        .trim()
+        .toUpperCase();
+      if (!ACCOUNT_TYPES.has(accountType)) {
+        return {
+          error: `Invalid account type for account group ${name}: ${accountType || "(empty)"}`,
+        };
+      }
+
+      const providedCode = trimString(row.raw.code)
+        .toLowerCase();
+      if (providedCode && !/^[a-z0-9_]{2,80}$/.test(providedCode)) {
+        return {
+          error: `Invalid account group code '${providedCode}' for ${name}. Use lowercase letters, numbers, and underscores only.`,
+        };
+      }
+      const finalCode =
+        providedCode ||
+        (await generateAccountGroupCodeTx({
+          db,
+          accountType,
+          name,
+        }));
+
+      const byCode = await db("erp.account_groups")
+        .select("id")
+        .where({ account_type: accountType })
+        .whereRaw("lower(code) = ?", [finalCode.toLowerCase()])
+        .first();
+      const byName = await db("erp.account_groups")
+        .select("id")
+        .where({ account_type: accountType })
+        .whereRaw("lower(name) = ?", [name.toLowerCase()])
+        .first();
+      if (byCode?.id && byName?.id && Number(byCode.id) !== Number(byName.id)) {
+        return {
+          error: `Account group conflict: code '${finalCode}' and name '${name}' map to different existing records under ${accountType}.`,
+        };
+      }
+      const existing = byCode || byName || null;
+
+      return {
+        action: existing ? "update" : "create",
+        data: {
+          id: existing?.id || null,
+          account_type: accountType,
+          code: finalCode,
+          name,
+          name_ur: trimString(row.raw.nameUr) || name,
+          is_contra: parseBoolean(row.raw.isContra, false),
+          is_active: parseBoolean(row.raw.isActive, true),
+          updated_by: actorId,
+        },
+      };
+    },
+    async apply(op, trx, actorId) {
+      const payload = {
+        account_type: op.data.account_type,
+        code: op.data.code,
+        name: op.data.name,
+        name_ur: op.data.name_ur,
+        is_contra: op.data.is_contra,
+        is_active: op.data.is_active,
+        updated_by: actorId,
+        updated_at: trx.fn.now(),
+      };
+      if (op.action === "create") {
+        await trx("erp.account_groups").insert({
+          ...payload,
+          created_by: actorId,
+          created_at: trx.fn.now(),
+        });
+      } else {
+        await trx("erp.account_groups")
+          .where({ id: op.data.id })
+          .update(payload);
       }
     },
   },
@@ -1253,14 +1480,18 @@ const ENTITY_SPECS = Object.freeze({
       nameUr: ["accounts_name_urdu", "accounts_name_ur", "name_ur"],
       accountType: ["accounts_account_type", "account_type"],
       subgroup: ["accounts_group", "account_group", "subgroup"],
-      subgroupCode: ["accounts_group_code", "account_group_code", "subgroup_code"],
+      subgroupCode: [
+        "accounts_group_code",
+        "account_group_code",
+        "subgroup_code",
+      ],
       postingClassCode: ["accounts_posting_class_code", "posting_class_code"],
       isContra: ["accounts_is_contra", "is_contra"],
       lockPosting: ["accounts_lock_posting", "lock_posting"],
       isActive: ["accounts_is_active", "is_active"],
       branchCodes: ["accounts_branch_codes", "branch_codes", "branches"],
     },
-    async plan(row, db, actorId) {
+    async plan(row, db, actorId, context) {
       const name = trimString(row.raw.name);
       if (!name) return { skip: true };
       const code = trimString(row.raw.code);
@@ -1268,7 +1499,9 @@ const ENTITY_SPECS = Object.freeze({
         .trim()
         .toUpperCase();
       if (!ACCOUNT_TYPES.has(accountType)) {
-        return { error: `Invalid account type for account ${name}: ${accountType || "(empty)"}` };
+        return {
+          error: `Invalid account type for account ${name}: ${accountType || "(empty)"}`,
+        };
       }
       const subgroupCode = trimString(row.raw.subgroupCode);
       const subgroupName = trimString(row.raw.subgroup);
@@ -1288,12 +1521,28 @@ const ENTITY_SPECS = Object.freeze({
           .whereRaw("lower(name) = ?", [subgroupName.toLowerCase()])
           .first();
       }
+      const subgroupStaged =
+        hasStagedAccountGroupToken(
+          context?.staged?.accountGroup,
+          accountType,
+          subgroupCode,
+        ) ||
+        hasStagedAccountGroupToken(
+          context?.staged?.accountGroup,
+          accountType,
+          subgroupName,
+        );
       if (!subgroup?.id) {
-        return {
-          error: `Account group not found for account ${name}: ${subgroupCode || subgroupName}`,
-        };
+        if (!subgroupStaged) {
+          return {
+            error: `Account group not found for account ${name}: ${subgroupCode || subgroupName}`,
+          };
+        }
       }
-      if (String(subgroup.account_type || "").toUpperCase() !== accountType) {
+      if (
+        subgroup?.id &&
+        String(subgroup.account_type || "").toUpperCase() !== accountType
+      ) {
         return {
           error: `Account group type mismatch for ${name}. Expected ${accountType}.`,
         };
@@ -1322,7 +1571,9 @@ const ENTITY_SPECS = Object.freeze({
         };
       }
 
-      const finalCode = code || (await generateUniqueCode({ name, knex: db, table: "erp.accounts" }));
+      const finalCode =
+        code ||
+        (await generateUniqueCode({ name, knex: db, table: "erp.accounts" }));
       const existing = await db("erp.accounts")
         .select("id")
         .whereRaw("lower(code) = ? OR lower(name) = ?", [
@@ -1339,7 +1590,9 @@ const ENTITY_SPECS = Object.freeze({
           name,
           name_ur: trimString(row.raw.nameUr) || name,
           account_type: accountType,
-          subgroup_id: subgroup.id,
+          subgroup_id: subgroup?.id || null,
+          subgroup_code_token: subgroupCode || null,
+          subgroup_name_token: subgroupName || null,
           posting_class_id: postingClassId,
           is_contra: parseBoolean(row.raw.isContra, false),
           lock_posting: parseBoolean(row.raw.lockPosting, false),
@@ -1351,11 +1604,35 @@ const ENTITY_SPECS = Object.freeze({
     },
     async apply(op, trx, actorId) {
       let accountId = op.data.id;
+      let subgroupId = op.data.subgroup_id;
+      if (!subgroupId && op.data.subgroup_code_token) {
+        const subgroup = await resolveAccountGroupByToken(
+          trx,
+          op.data.account_type,
+          op.data.subgroup_code_token,
+        );
+        subgroupId = subgroup?.id || null;
+      }
+      if (!subgroupId && op.data.subgroup_name_token) {
+        const subgroup = await resolveAccountGroupByToken(
+          trx,
+          op.data.account_type,
+          op.data.subgroup_name_token,
+        );
+        subgroupId = subgroup?.id || null;
+      }
+      if (!subgroupId) {
+        throw new Error(
+          `Account group not found while applying account import: ${
+            op.data.subgroup_code_token || op.data.subgroup_name_token || "(empty)"
+          }`,
+        );
+      }
       const payload = {
         code: op.data.code,
         name: op.data.name,
         name_ur: op.data.name_ur,
-        subgroup_id: op.data.subgroup_id,
+        subgroup_id: subgroupId,
         posting_class_id: op.data.posting_class_id,
         is_contra: op.data.is_contra,
         lock_posting: op.data.lock_posting,
@@ -1411,7 +1688,9 @@ const ENTITY_SPECS = Object.freeze({
         .trim()
         .toUpperCase();
       if (!PARTY_TYPES.has(partyType)) {
-        return { error: `Invalid party type for ${name}: ${partyType || "(empty)"}` };
+        return {
+          error: `Invalid party type for ${name}: ${partyType || "(empty)"}`,
+        };
       }
 
       const cityToken = trimString(row.raw.cityName);
@@ -1425,7 +1704,9 @@ const ENTITY_SPECS = Object.freeze({
       }
 
       const groupToken = trimString(row.raw.groupName);
-      const partyGroup = groupToken ? await resolvePartyGroupByToken(db, groupToken) : null;
+      const partyGroup = groupToken
+        ? await resolvePartyGroupByToken(db, groupToken)
+        : null;
       if (groupToken && !partyGroup?.id) {
         if (!hasStagedToken(context?.staged?.partyGroup, groupToken)) {
           return {
@@ -1442,11 +1723,14 @@ const ENTITY_SPECS = Object.freeze({
         };
       }
       if (!branchIds.length) {
-        return { error: `At least one valid branch code is required for party ${name}.` };
+        return {
+          error: `At least one valid branch code is required for party ${name}.`,
+        };
       }
 
       const code =
-        trimString(row.raw.code) || (await generateUniqueCode({ name, knex: db, table: "erp.parties" }));
+        trimString(row.raw.code) ||
+        (await generateUniqueCode({ name, knex: db, table: "erp.parties" }));
       const existing = await db("erp.parties")
         .select("id")
         .whereRaw("lower(code) = ? OR lower(name) = ?", [
@@ -1497,7 +1781,10 @@ const ENTITY_SPECS = Object.freeze({
       }
       let groupId = op.data.group_id;
       if (!groupId && op.data.group_token) {
-        const partyGroup = await resolvePartyGroupByToken(trx, op.data.group_token);
+        const partyGroup = await resolvePartyGroupByToken(
+          trx,
+          op.data.group_token,
+        );
         groupId = partyGroup?.id || null;
       }
       const payload = {
@@ -1563,11 +1850,15 @@ const ENTITY_SPECS = Object.freeze({
         .trim()
         .toUpperCase();
       if (!ITEM_TYPES.has(itemType)) {
-        return { error: `Invalid product item type for ${name}: ${itemType || "(empty)"}` };
+        return {
+          error: `Invalid product item type for ${name}: ${itemType || "(empty)"}`,
+        };
       }
 
       const groupToken = trimString(row.raw.groupName);
-      const group = groupToken ? await resolveProductGroupByToken(db, groupToken) : null;
+      const group = groupToken
+        ? await resolveProductGroupByToken(db, groupToken)
+        : null;
       if (!group?.id) {
         if (!hasStagedToken(context?.staged?.productGroup, groupToken)) {
           return {
@@ -1581,7 +1872,9 @@ const ENTITY_SPECS = Object.freeze({
       if (subgroupToken) {
         subgroup = await resolveProductSubgroupByToken(db, subgroupToken);
         if (!subgroup?.id) {
-          if (!hasStagedToken(context?.staged?.productSubgroup, subgroupToken)) {
+          if (
+            !hasStagedToken(context?.staged?.productSubgroup, subgroupToken)
+          ) {
             return {
               error: `Product subgroup not found for item ${name}: ${subgroupToken}`,
             };
@@ -1627,18 +1920,22 @@ const ENTITY_SPECS = Object.freeze({
         });
       } else {
         existingQuery = existingQuery.orWhere((builder) => {
-          builder.whereRaw("lower(name) = ?", [name.toLowerCase()]).andWhere({ item_type: itemType });
+          builder
+            .whereRaw("lower(name) = ?", [name.toLowerCase()])
+            .andWhere({ item_type: itemType });
         });
       }
       const existing = await existingQuery.first();
 
-      const usesSfg = itemType === "FG" ? parseBoolean(row.raw.usesSfg, false) : false;
+      const usesSfg =
+        itemType === "FG" ? parseBoolean(row.raw.usesSfg, false) : false;
       const sfgPartTypeRaw = String(row.raw.sfgPartType || "")
         .trim()
         .toUpperCase();
-      const sfgPartType = usesSfg && ["UPPER", "STEP"].includes(sfgPartTypeRaw)
-        ? sfgPartTypeRaw
-        : null;
+      const sfgPartType =
+        usesSfg && ["UPPER", "STEP"].includes(sfgPartTypeRaw)
+          ? sfgPartTypeRaw
+          : null;
 
       return {
         action: existing ? "update" : "create",
@@ -1667,7 +1964,10 @@ const ENTITY_SPECS = Object.freeze({
     async apply(op, trx, actorId) {
       let groupId = op.data.group_id;
       if (!groupId && op.data.group_token) {
-        const group = await resolveProductGroupByToken(trx, op.data.group_token);
+        const group = await resolveProductGroupByToken(
+          trx,
+          op.data.group_token,
+        );
         groupId = group?.id || null;
       }
       if (!groupId) {
@@ -1734,10 +2034,17 @@ const ENTITY_SPECS = Object.freeze({
   },
 });
 
-const planImportOperations = async ({ db, workbookRows, selectedTargetKeys, actorId }) => {
+const planImportOperations = async ({
+  db,
+  workbookRows,
+  selectedTargetKeys,
+  actorId,
+}) => {
   const entityKeys = [
     ...new Set(
-      selectedTargetKeys.flatMap((targetKey) => TARGET_GROUPS[targetKey].entityKeys),
+      selectedTargetKeys.flatMap(
+        (targetKey) => TARGET_GROUPS[targetKey].entityKeys,
+      ),
     ),
   ];
 
@@ -1822,12 +2129,25 @@ const planImportOperations = async ({ db, workbookRows, selectedTargetKeys, acto
 
   const orderedSummaries = Object.values(entitySummaries);
   const summary = {
-    entitiesPlanned: orderedSummaries.filter((entry) => entry.rowsPlanned > 0).length,
+    entitiesPlanned: orderedSummaries.filter((entry) => entry.rowsPlanned > 0)
+      .length,
     rowsRead: orderedSummaries.reduce((sum, entry) => sum + entry.rowsTotal, 0),
-    rowsPlanned: orderedSummaries.reduce((sum, entry) => sum + entry.rowsPlanned, 0),
-    createCount: orderedSummaries.reduce((sum, entry) => sum + entry.createCount, 0),
-    updateCount: orderedSummaries.reduce((sum, entry) => sum + entry.updateCount, 0),
-    skipCount: orderedSummaries.reduce((sum, entry) => sum + entry.skipCount, 0),
+    rowsPlanned: orderedSummaries.reduce(
+      (sum, entry) => sum + entry.rowsPlanned,
+      0,
+    ),
+    createCount: orderedSummaries.reduce(
+      (sum, entry) => sum + entry.createCount,
+      0,
+    ),
+    updateCount: orderedSummaries.reduce(
+      (sum, entry) => sum + entry.updateCount,
+      0,
+    ),
+    skipCount: orderedSummaries.reduce(
+      (sum, entry) => sum + entry.skipCount,
+      0,
+    ),
     errorCount: errors.length,
     warningCount: warnings.length,
   };
@@ -1841,7 +2161,12 @@ const planImportOperations = async ({ db, workbookRows, selectedTargetKeys, acto
   };
 };
 
-const analyzeWorkbookImport = async ({ db, workbookBuffer, selectedTargets, actorId }) => {
+const analyzeWorkbookImport = async ({
+  db,
+  workbookBuffer,
+  selectedTargets,
+  actorId,
+}) => {
   const selectedTargetKeys = resolveSelectedTargetKeys(selectedTargets);
   const workbookRows = buildWorkbookRows(workbookBuffer);
 

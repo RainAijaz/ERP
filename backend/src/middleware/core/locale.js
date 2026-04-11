@@ -161,6 +161,8 @@ const translations = {
     import_target_basic_master_data: "Basic Master Data",
     import_target_basic_master_data_desc:
       "Units, Sizes, Colors, Grades, Groups, Cities, Departments, and UOM conversions.",
+    import_target_account_groups_desc:
+      "Account groups import with account type, optional code, contra flag, and active status.",
     import_target_accounts_desc:
       "Chart of accounts import with branch mapping and posting class resolution.",
     import_target_parties_desc:
@@ -195,6 +197,7 @@ const translations = {
     import_entity_party_groups: "Party Groups",
     import_entity_departments: "Departments",
     import_entity_uom_conversions: "UOM Conversions",
+    import_entity_account_groups: "Account Groups",
     import_entity_accounts: "Accounts",
     import_entity_parties: "Parties",
     import_entity_products: "Products",
@@ -1894,6 +1897,8 @@ translations.ur = {
   import_target_basic_master_data: "بیسک ماسٹر ڈیٹا",
   import_target_basic_master_data_desc:
     "یونٹس، سائز، کلرز، گریڈز، گروپس، شہر، محکمے، اور UOM کنورژنز۔",
+  import_target_account_groups_desc:
+    "اکاؤنٹ گروپس امپورٹ بمع اکاؤنٹ ٹائپ، اختیاری کوڈ، کنٹرا فلیگ، اور فعال حیثیت۔",
   import_target_accounts_desc:
     "اکاؤنٹس چارٹ امپورٹ بمع برانچ میپنگ اور پوسٹنگ کلاس ریزولوشن۔",
   import_target_parties_desc:
@@ -1928,6 +1933,7 @@ translations.ur = {
   import_entity_party_groups: "پارٹی گروپس",
   import_entity_departments: "محکمے",
   import_entity_uom_conversions: "UOM کنورژنز",
+  import_entity_account_groups: "اکاؤنٹ گروپس",
   import_entity_accounts: "اکاؤنٹس",
   import_entity_parties: "پارٹیز",
   import_entity_products: "پروڈکٹس",

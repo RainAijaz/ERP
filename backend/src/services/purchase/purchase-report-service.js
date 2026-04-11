@@ -18,13 +18,11 @@ const PURCHASE_TYPE_FILTERS = Object.freeze({
 });
 
 const ALL_MULTI_FILTER_VALUE = "__ALL__";
-const SUPPLIER_CAPABILITY_CODES = Object.freeze(["MATERIAL", "REPAIR", "SERVICE"]);
 const PURCHASE_RATE_ALERT_PERCENT = (() => {
   const value = Number(process.env.PURCHASE_RATE_ALERT_PERCENT || 10);
   if (!Number.isFinite(value) || value <= 0) return 10;
   return Number(value.toFixed(2));
 })();
-let partiesHasVendorCapabilitiesColumn;
 
 const toPositiveId = (value) => {
   const id = Number(value || 0);
@@ -113,41 +111,6 @@ const toIdListWithAllFromSources = (...sources) => {
     else merged.push(source);
   });
   return toIdListWithAll(merged);
-};
-
-const toCapabilityListWithAll = (value) => {
-  const raw = Array.isArray(value)
-    ? value
-    : value && typeof value === "object"
-      ? Object.values(value)
-      : [value];
-  const tokens = raw
-    .flatMap((entry) => String(entry == null ? "" : entry).split(","))
-    .map((entry) => entry.trim().toUpperCase())
-    .filter(Boolean);
-  const hasAll = tokens.some(
-    (entry) =>
-      entry.toLowerCase() === String(ALL_MULTI_FILTER_VALUE).toLowerCase() ||
-      entry.toLowerCase() === "all",
-  );
-  if (hasAll) return [];
-  return [...new Set(tokens.filter((entry) => SUPPLIER_CAPABILITY_CODES.includes(entry)))];
-};
-
-const hasPartiesVendorCapabilitiesColumn = async () => {
-  if (typeof partiesHasVendorCapabilitiesColumn === "boolean") {
-    return partiesHasVendorCapabilitiesColumn;
-  }
-  try {
-    partiesHasVendorCapabilitiesColumn = await knex.schema
-      .withSchema("erp")
-      .hasColumn("parties", "vendor_capabilities");
-    return partiesHasVendorCapabilitiesColumn;
-  } catch (err) {
-    console.error("Error in PurchaseReportCapabilitiesSchemaService:", err);
-    partiesHasVendorCapabilitiesColumn = false;
-    return false;
-  }
 };
 
 const parseFilters = ({ req, input = {} }) => {
@@ -741,7 +704,6 @@ const parseSupplierBalanceFilters = ({ req, input = {} }) => {
   return {
     asOn,
     branchIds,
-    vendorCapabilities: toCapabilityListWithAll(input.vendor_capabilities),
     reportLoaded: toBoolean(input.load_report, false),
     invalidAsOnDate: Boolean(parsedAsOn.provided && !parsedAsOn.valid),
     invalidFilterInput: Boolean(parsedAsOn.provided && !parsedAsOn.valid),
@@ -1028,7 +990,6 @@ const getSupplierLedgerReportPageData = async ({ req, input = {} }) => {
 };
 
 const loadSupplierBalanceOptions = async ({ req }) => {
-  const hasVendorCapabilities = await hasPartiesVendorCapabilitiesColumn();
   const branches = req.user?.isAdmin
     ? await knex("erp.branches")
         .select("id", "name")
@@ -1041,15 +1002,11 @@ const loadSupplierBalanceOptions = async ({ req }) => {
 
   return {
     branches,
-    vendorCapabilities: hasVendorCapabilities
-      ? SUPPLIER_CAPABILITY_CODES.map((code) => ({ value: code, label: code }))
-      : [],
   };
 };
 
 const getSupplierBalanceRows = async ({ req, filters }) => {
   if (!filters.reportLoaded) return [];
-  const hasVendorCapabilities = await hasPartiesVendorCapabilitiesColumn();
 
   const scopedBranchIds = req.user?.isAdmin
     ? filters.branchIds
@@ -1076,9 +1033,6 @@ const getSupplierBalanceRows = async ({ req, filters }) => {
       "p.name",
       "p.name_ur",
       knex.raw("COALESCE(bal.amount, 0) as amount"),
-      ...(hasVendorCapabilities
-        ? [knex.raw("COALESCE(array_to_string(p.vendor_capabilities, ', '), '') as vendor_capabilities")]
-        : [knex.raw("'' as vendor_capabilities")]),
     )
     .where({ "p.is_active": true })
     .whereRaw("upper(coalesce(p.party_type::text, '')) in ('SUPPLIER','BOTH')")
@@ -1087,16 +1041,6 @@ const getSupplierBalanceRows = async ({ req, filters }) => {
   if (scopedBranchIds.length) {
     query = applyPartyBranchScope(query, scopedBranchIds);
   }
-  if (hasVendorCapabilities && Array.isArray(filters.vendorCapabilities) && filters.vendorCapabilities.length) {
-    query = query.whereRaw(
-      `EXISTS (
-        SELECT 1
-        FROM unnest(COALESCE(p.vendor_capabilities, ARRAY[]::text[])) AS cap(value)
-        WHERE upper(cap.value) = ANY (?::text[])
-      )`,
-      [filters.vendorCapabilities],
-    );
-  }
 
   const rows = await query;
   return rows.map((row) => ({
@@ -1104,7 +1048,6 @@ const getSupplierBalanceRows = async ({ req, filters }) => {
     supplier_code: row.code || "",
     supplier_name: row.name || "",
     supplier_name_ur: row.name_ur || "",
-    vendor_capabilities: row.vendor_capabilities || "",
     amount: toAmount(row.amount, 2),
   }));
 };

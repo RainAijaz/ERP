@@ -9,7 +9,6 @@ const RETURNABLE_VOUCHER_TYPES = {
 
 let approvalRequestHasVoucherTypeCodeColumn;
 let returnablePlaceholderItemId;
-let partiesHasVendorCapabilitiesColumn;
 let partiesHasNameUrColumn;
 let assetsHasNameColumn;
 let assetsHasNameUrColumn;
@@ -49,12 +48,6 @@ const normalizeCode = (value) =>
   String(value || "")
     .trim()
     .toUpperCase();
-const buildCapabilityMatchWhereSql = (alias = "p") =>
-  `EXISTS (
-    SELECT 1
-    FROM unnest(COALESCE(${alias}.vendor_capabilities, ARRAY[]::text[])) AS cap(value)
-    WHERE upper(cap.value) IN ('MATERIAL','SERVICE')
-  )`;
 const DEFAULT_RETURNABLE_REASONS = [
   { code: "REPAIR", name: "Repair", description: "Sent for repair" },
   { code: "CALIBRATION", name: "Calibration", description: "Calibration" },
@@ -155,21 +148,6 @@ const hasApprovalRequestVoucherTypeCodeColumnTx = async (trx) => {
     return approvalRequestHasVoucherTypeCodeColumn;
   } catch (err) {
     approvalRequestHasVoucherTypeCodeColumn = false;
-    return false;
-  }
-};
-
-const hasPartiesVendorCapabilitiesColumnTx = async (trx) => {
-  if (typeof partiesHasVendorCapabilitiesColumn === "boolean") {
-    return partiesHasVendorCapabilitiesColumn;
-  }
-  try {
-    partiesHasVendorCapabilitiesColumn = await trx.schema
-      .withSchema("erp")
-      .hasColumn("parties", "vendor_capabilities");
-    return partiesHasVendorCapabilitiesColumn;
-  } catch (err) {
-    partiesHasVendorCapabilitiesColumn = false;
     return false;
   }
 };
@@ -477,10 +455,6 @@ const ensurePartyExistsForBranchTx = async (trx, req, partyId) => {
     .where(function whereBranch() {
       this.where("pb.branch_id", req.branchId).orWhereNull("pb.branch_id");
     });
-
-  if (await hasPartiesVendorCapabilitiesColumnTx(trx)) {
-    query.whereRaw(buildCapabilityMatchWhereSql("p"));
-  }
 
   const party = await query.first();
   if (!party)
@@ -1044,13 +1018,11 @@ const loadReturnableVoucherOptions = async (req) => {
   await ensureReturnableRegistryDefaultsTx(knex);
   const isUrdu = String(req?.locale || "en").toLowerCase() === "ur";
   const [
-    hasVendorCapabilitiesColumn,
     hasPartiesNameUr,
     hasAssetsName,
     hasAssetsNameUr,
     hasAssetTypeNameUr,
   ] = await Promise.all([
-    hasPartiesVendorCapabilitiesColumnTx(knex),
     hasPartiesNameUrColumnTx(knex),
     hasAssetsNameColumnTx(knex),
     hasAssetsNameUrColumnTx(knex),
@@ -1095,10 +1067,6 @@ const loadReturnableVoucherOptions = async (req) => {
 
   if (isUrdu && hasPartiesNameUr) {
     vendorsQuery.groupBy("p.name_ur");
-  }
-
-  if (hasVendorCapabilitiesColumn) {
-    vendorsQuery.whereRaw(buildCapabilityMatchWhereSql("p"));
   }
 
   const [

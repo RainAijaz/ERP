@@ -17,9 +17,8 @@
 <% } %>
 <% page.fields.forEach(function(field) { %>
         <% const hideOnCreate = page.titleKey === "parties" && (field.name === "credit_allowed" || field.name === "credit_limit"); %>
-        <% const supplierOnly = page.titleKey === "parties" && field.name === "vendor_capabilities"; %>
         <% const supplierHiddenClass = ""; %>
-        <% const visibilityAttrs = [hideOnCreate ? 'data-hide-on-create="true"' : "", supplierOnly ? 'data-supplier-only="true"' : ""].filter(Boolean).join(" "); %>
+  <% const visibilityAttrs = [hideOnCreate ? 'data-hide-on-create="true"' : ""].filter(Boolean).join(" "); %>
         <% /* adminOnly is ignored for modal fields; all users see all fields except those hidden by other logic */ %>
         <% if (field.name === "code") { return; } %>
         <% if (field.type === "checkbox") { %>
@@ -47,7 +46,7 @@
                 </a>
               <% } %>
             </span>
-            <% if (field.helpText && !(page.titleKey === "parties" && field.name === "vendor_capabilities")) { %>
+            <% if (field.helpText) { %>
               <span class="mt-1 block text-xs font-normal text-slate-500"><%= t(field.helpText) %></span>
             <% } %>
             <select
@@ -70,7 +69,7 @@
         <% } else if (field.type === "textarea") { %>
           <label class="block text-sm font-semibold text-slate-600<%= supplierHiddenClass %>" <%- visibilityAttrs %>>
             <span><%= t(field.label) %></span>
-            <% if (field.helpText && field.name !== "vendor_capabilities") { %>
+            <% if (field.helpText) { %>
               <span class="mt-1 block text-xs font-normal text-slate-500"><%= t(field.helpText) %></span>
             <% } %>
             <textarea
@@ -86,7 +85,7 @@
         <% } else if (field.type === "number") { %>
           <label class="block text-sm font-semibold text-slate-600<%= supplierHiddenClass %>" <%- visibilityAttrs %>>
             <span><%= t(field.label) %></span>
-            <% if (field.helpText && field.name !== "vendor_capabilities") { %>
+            <% if (field.helpText) { %>
               <span class="mt-1 block text-xs font-normal text-slate-500"><%= t(field.helpText) %></span>
             <% } %>
             <input
@@ -103,7 +102,7 @@
         <% } else if (field.type === "multi-select") { %>
           <label class="block text-sm font-semibold text-slate-600<%= supplierHiddenClass %>" <%- visibilityAttrs %>>
             <span><%= t(field.label) %></span>
-            <% if (field.helpText && field.name !== "vendor_capabilities") { %>
+            <% if (field.helpText) { %>
               <span class="mt-1 block text-xs font-normal text-slate-500"><%= t(field.helpText) %></span>
             <% } %>
             <select

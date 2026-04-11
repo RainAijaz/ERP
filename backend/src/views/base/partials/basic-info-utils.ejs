@@ -951,8 +951,6 @@
         // Locate the party type and group selects inside the modal form.
         const partyType = modalForm.querySelector('[data-field="party_type"]');
         const groupSelect = modalForm.querySelector('[data-field="group_id"]');
-        const vendorCapabilitiesSelect = modalForm.querySelector('[data-field="vendor_capabilities"]');
-        const supplierOnlyFields = Array.from(modalForm.querySelectorAll("[data-supplier-only='true']"));
         // Cache the full list of group options for rebuilding on each change.
         const allGroupOptions = groupSelect ? Array.from(groupSelect.options) : [];
         const normalizePartyType = (rawValue) => {
@@ -976,23 +974,6 @@
             ? partyType.closest("[data-searchable-wrapper]")?.querySelector('input[type="text"]')
             : null;
           return normalizePartyType(searchableInput?.value);
-        };
-        const syncSupplierOnlyVisibility = () => {
-          const normalizedPartyType = resolvePartyType();
-          const isSupplier = normalizedPartyType === "SUPPLIER";
-          supplierOnlyFields.forEach((fieldWrap) => {
-            if (isSupplier) {
-              fieldWrap.classList.remove("hidden");
-            } else {
-              fieldWrap.classList.add("hidden");
-            }
-          });
-          if (!isSupplier && vendorCapabilitiesSelect?.multiple) {
-            Array.from(vendorCapabilitiesSelect.options).forEach((option) => {
-              option.selected = false;
-            });
-            vendorCapabilitiesSelect.dispatchEvent(new Event("change", { bubbles: true }));
-          }
         };
         const filterGroups = () => {
           if (!partyType || !groupSelect) return;
@@ -1025,7 +1006,6 @@
         };
         const handlePartyTypeChange = () => {
           filterGroups();
-          syncSupplierOnlyVisibility();
         };
         if (partyType) {
           partyType.addEventListener("change", handlePartyTypeChange);

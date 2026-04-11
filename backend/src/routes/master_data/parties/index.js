@@ -43,39 +43,6 @@ const normalizePartyType = (value) => {
 
 const isSupplierPartyType = (value) => normalizePartyType(value) === "SUPPLIER";
 
-const SUPPLIER_CAPABILITY_CODES = Object.freeze(["MATERIAL", "SERVICE"]);
-let partiesHasVendorCapabilitiesColumn;
-
-const hasVendorCapabilitiesColumn = async () => {
-  if (typeof partiesHasVendorCapabilitiesColumn === "boolean") {
-    return partiesHasVendorCapabilitiesColumn;
-  }
-  try {
-    partiesHasVendorCapabilitiesColumn = await knex.schema
-      .withSchema("erp")
-      .hasColumn("parties", "vendor_capabilities");
-    return partiesHasVendorCapabilitiesColumn;
-  } catch (err) {
-    console.error("Error in PartiesCapabilitiesColumnService:", err);
-    partiesHasVendorCapabilitiesColumn = false;
-    return false;
-  }
-};
-
-const normalizeVendorCapabilities = (value) => {
-  const raw = Array.isArray(value) ? value : value ? [value] : [];
-  const normalized = raw
-    .flatMap((entry) => String(entry || "").split(","))
-    .map((entry) =>
-      String(entry || "")
-        .trim()
-        .toUpperCase(),
-    )
-    .filter(Boolean)
-    .filter((entry) => SUPPLIER_CAPABILITY_CODES.includes(entry));
-  return [...new Set(normalized)];
-};
-
 const hasField = (page, name) =>
   page.fields.some((field) => field.name === name);
 
@@ -128,7 +95,6 @@ const page = {
     { key: "name", label: "party_name" },
     { key: "name_ur", label: "Name (Urdu)" },
     { key: "party_type", label: "party_type" },
-    { key: "vendor_capabilities", label: "vendor_capabilities" },
     { key: "group_name", label: "party_group" },
     { key: "branch_names", label: "branches" },
     { key: "city_name", label: "city" },
@@ -156,17 +122,6 @@ const page = {
         { value: "CUSTOMER", label: "Customer" },
         { value: "SUPPLIER", label: "Supplier" },
       ],
-    },
-    {
-      name: "vendor_capabilities",
-      label: "vendor_capabilities",
-      type: "multi-select",
-      required: false,
-      options: [
-        { value: "MATERIAL", label: "material_capability" },
-        { value: "SERVICE", label: "service_capability" },
-      ],
-      helpText: "vendor_capabilities_help",
     },
     {
       name: "group_id",
@@ -548,31 +503,6 @@ router.post(
     }
 
     try {
-      const hasVendorCapabilities = await hasVendorCapabilitiesColumn();
-      const normalizedCapabilities = normalizeVendorCapabilities(
-        values.vendor_capabilities,
-      );
-      if (isSupplierPartyType(values.party_type)) {
-        if (hasVendorCapabilities && !normalizedCapabilities.length) {
-          return renderIndexError(
-            req,
-            res,
-            values,
-            res.locals.t("error_select_vendor_capabilities"),
-            "create",
-            basePath,
-          );
-        }
-        values.vendor_capabilities = hasVendorCapabilities
-          ? normalizedCapabilities
-          : [];
-      } else {
-        values.vendor_capabilities = [];
-      }
-      if (!hasVendorCapabilities) {
-        delete values.vendor_capabilities;
-      }
-
       const branchIds = Array.isArray(values.branch_ids)
         ? values.branch_ids
         : [];
@@ -804,31 +734,6 @@ router.post(
     }
 
     try {
-      const hasVendorCapabilities = await hasVendorCapabilitiesColumn();
-      const normalizedCapabilities = normalizeVendorCapabilities(
-        values.vendor_capabilities,
-      );
-      if (isSupplierPartyType(values.party_type)) {
-        if (hasVendorCapabilities && !normalizedCapabilities.length) {
-          return renderIndexError(
-            req,
-            res,
-            values,
-            res.locals.t("error_select_vendor_capabilities"),
-            "edit",
-            basePath,
-          );
-        }
-        values.vendor_capabilities = hasVendorCapabilities
-          ? normalizedCapabilities
-          : [];
-      } else {
-        values.vendor_capabilities = [];
-      }
-      if (!hasVendorCapabilities) {
-        delete values.vendor_capabilities;
-      }
-
       const existing = await knex(page.table).where({ id }).first();
       if (!existing) {
         return renderIndexError(

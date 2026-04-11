@@ -4,9 +4,6 @@
   const selectedBranchIds = Array.isArray(filters?.branchIds)
     ? filters.branchIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
     : [];
-  const selectedVendorCapabilities = Array.isArray(filters?.vendorCapabilities)
-    ? filters.vendorCapabilities.map((code) => String(code || "").trim().toUpperCase()).filter(Boolean)
-    : [];
   const selectedAsOn = String(filters?.asOn || "");
   const formatNumber = (value, digits = 2) => {
     return formatNumberDisplay(value, { decimals: digits, fallback: "0" });
@@ -81,43 +78,6 @@
           </div>
         <% } %>
 
-        <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('vendor_capabilities') %></label>
-        <% if (options?.vendorCapabilities?.length) { %>
-          <div
-            class="relative"
-            data-multi-select
-            data-name="vendor_capabilities"
-            data-placeholder="<%= `${t('all')} ${t('vendor_capabilities')}` %>"
-            data-multi-all-value="__ALL__"
-            data-multi-auto-all="1"
-          >
-            <button type="button" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 pr-10 text-left text-sm text-slate-700" data-multi-trigger></button>
-            <span class="pointer-events-none absolute inset-y-0 right-3 inline-flex items-center text-slate-500">
-              <svg class="h-4 w-4" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                <path d="M6 8l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"></path>
-              </svg>
-            </span>
-            <div class="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-50 hidden rounded-xl border border-slate-200 bg-white p-2 shadow-xl" data-multi-panel>
-              <div class="max-h-52 overflow-auto pr-1" data-multi-options>
-                <label class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-                  <input type="checkbox" value="__ALL__" <%= selectedVendorCapabilities.length ? '' : 'checked' %>>
-                  <span><%= `${t('all')} ${t('vendor_capabilities')}` %></span>
-                </label>
-                <% (options.vendorCapabilities || []).forEach((capability) => { %>
-                  <label class="flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm text-slate-700 hover:bg-slate-50">
-                    <input type="checkbox" value="<%= capability.value %>" <%= selectedVendorCapabilities.includes(String(capability.value || '').toUpperCase()) ? 'checked' : '' %>>
-                    <span><%= t(String(capability.label || '').toLowerCase() + '_capability') %></span>
-                  </label>
-                <% }) %>
-              </div>
-            </div>
-            <input type="hidden" name="vendor_capabilities" value="<%= selectedVendorCapabilities.join(',') %>" data-multi-hidden>
-          </div>
-        <% } else { %>
-          <input type="text" readonly class="h-10 w-full rounded-xl border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700" value="<%= t('all') %>">
-          <input type="hidden" name="vendor_capabilities" value="">
-        <% } %>
-
         <div class="hidden lg:block"></div>
         <div class="flex gap-2">
           <button type="submit" class="inline-flex items-center rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= t('load') %></button>
@@ -158,7 +118,6 @@
               <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="__sr">SR.NO</th>
               <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="supplier_code"><%= t('code') %></th>
               <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="supplier_name"><%= t('party_name') %></th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="vendor_capabilities"><%= t('vendor_capabilities') %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="amount"><%= t('amount') %></th>
             </tr>
           </thead>
@@ -168,12 +127,11 @@
                 <td class="px-3 py-2" data-sort-value="<%= rowIndex + 1 %>"><%= rowIndex + 1 %></td>
                 <td class="px-3 py-2"><%= row.supplier_code || '-' %></td>
                 <td class="px-3 py-2"><%= resolveSupplierName(row) %></td>
-                <td class="px-3 py-2" data-sort-value="<%= row.vendor_capabilities || '' %>"><%= row.vendor_capabilities || '-' %></td>
                 <td class="px-3 py-2 text-right font-semibold" data-sort-value="<%= Number(row.amount || 0) %>"><%= formatNumber(row.amount, 2) %></td>
               </tr>
             <% }) %>
             <tr class="border-t border-slate-200 bg-slate-100">
-              <td colspan="4" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('total') %></td>
+              <td colspan="3" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('total') %></td>
               <td class="px-3 py-2 text-right font-semibold text-slate-900" data-sort-value="<%= Number(reportData?.totalAmount || 0) %>"><%= formatNumber(reportData?.totalAmount || 0, 2) %></td>
             </tr>
           </tbody>
