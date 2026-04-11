@@ -501,10 +501,16 @@ const resolveBranchIdsByTokens = async (db, tokens) => {
     ),
   ];
   if (!unique.length) return [];
+
+  const filtered = unique.filter(
+    (token) => !["all", "__all__", "any", "*"].includes(token),
+  );
+  if (!filtered.length) return [];
+
   const rows = await db("erp.branches")
     .select("id", "code", "name")
     .where((builder) => {
-      unique.forEach((token, index) => {
+      filtered.forEach((token, index) => {
         if (index === 0) {
           builder.whereRaw("lower(code) = ? OR lower(name) = ?", [
             token,
@@ -1379,10 +1385,16 @@ const ENTITY_SPECS = Object.freeze({
     },
   },
   [ENTITY_KEYS.accountGroups]: {
-    sheetMatchers: [/^account[\s_-]*groups?$/i],
+    sheetMatchers: [/^account[\s_-]*groups?$/i, /^sheet\d+$/i],
     fieldAliases: {
       code: ["account_groups_code", "account_group_code", "group_code", "code"],
-      name: ["account_groups_name", "account_group", "group_name", "name"],
+      name: [
+        "account_groups_name",
+        "account_groups_account_name",
+        "account_group",
+        "group_name",
+        "name",
+      ],
       nameUr: ["account_groups_name_urdu", "account_groups_name_ur", "name_ur"],
       accountType: ["account_groups_account_type", "account_type", "type"],
       isActive: ["account_groups_is_active", "is_active"],
@@ -1467,23 +1479,45 @@ const ENTITY_SPECS = Object.freeze({
     },
   },
   [ENTITY_KEYS.accounts]: {
-    sheetMatchers: [/^accounts?$/i, /^account[\s_-]*master$/i],
+    sheetMatchers: [/^accounts?$/i, /^account[\s_-]*master$/i, /^sheet\d+$/i],
     fieldAliases: {
       code: ["accounts_code", "account_code", "code"],
-      name: ["accounts_name", "account_name", "name"],
+      name: ["accounts_name", "accounts_account_name", "account_name", "name"],
       nameUr: ["accounts_name_urdu", "accounts_name_ur", "name_ur"],
       accountType: ["accounts_account_type", "account_type"],
-      subgroup: ["accounts_group", "account_group", "subgroup"],
+      subgroup: [
+        "accounts_group",
+        "accounts_account_group",
+        "accounts_group_name",
+        "account_group",
+        "account_group_name",
+        "subgroup",
+      ],
       subgroupCode: [
         "accounts_group_code",
         "account_group_code",
         "subgroup_code",
       ],
-      postingClassCode: ["accounts_posting_class_code", "posting_class_code"],
-      isContra: ["accounts_is_contra", "is_contra"],
+      postingClassCode: [
+        "accounts_posting_class_code",
+        "accounts_posting_class",
+        "accounts_posting_class_name",
+        "posting_class_code",
+      ],
+      isContra: [
+        "accounts_is_contra",
+        "accounts_contra_account",
+        "accounts_contra",
+        "is_contra",
+      ],
       lockPosting: ["accounts_lock_posting", "lock_posting"],
       isActive: ["accounts_is_active", "is_active"],
-      branchCodes: ["accounts_branch_codes", "branch_codes", "branches"],
+      branchCodes: [
+        "accounts_branch_codes",
+        "accounts_branches",
+        "branch_codes",
+        "branches",
+      ],
     },
     async plan(row, db, actorId, context) {
       const name = trimString(row.raw.name);
@@ -1559,7 +1593,13 @@ const ENTITY_SPECS = Object.freeze({
 
       const branchTokens = parseCsv(row.raw.branchCodes);
       const branchIds = await resolveBranchIdsByTokens(db, branchTokens);
-      if (branchTokens.length && branchIds.length !== branchTokens.length) {
+      const branchLookupTokens = branchTokens.filter(
+        (token) => !["all", "__all__", "any", "*"].includes(String(token || "").trim().toLowerCase()),
+      );
+      if (
+        branchLookupTokens.length &&
+        branchIds.length !== branchLookupTokens.length
+      ) {
         return {
           error: `One or more branch codes are invalid for account ${name}.`,
         };
