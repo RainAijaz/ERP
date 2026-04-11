@@ -192,19 +192,23 @@ const getAllowedBranchIds = (req) => {
 };
 
 const isAllBranchesToken = (value) => {
-  const normalized = String(value || "").trim().toLowerCase();
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
   return (
     normalized === ALL_BRANCH_OPTION_VALUE ||
     normalized === "all" ||
+    normalized === "all branches" ||
+    normalized === "all branch" ||
+    normalized === "all_branches" ||
+    normalized === "all-branches" ||
     normalized === "*"
   );
 };
 
 const normalizeBranchIdsForSave = async (req, selectedValues) => {
   const raw = Array.isArray(selectedValues)
-    ? selectedValues
-        .map((value) => String(value || "").trim())
-        .filter(Boolean)
+    ? selectedValues.map((value) => String(value || "").trim()).filter(Boolean)
     : [];
   const requestedAll = raw.some((value) => isAllBranchesToken(value));
 
@@ -299,7 +303,10 @@ const hydratePage = async (pageConfig, locale, req = null) => {
         allowedBranchSet ? allowedBranchSet.has(Number(opt.value)) : true,
       );
 
-    if (field.optionsQuery.table === "erp.branches" && field.name === "branch_ids") {
+    if (
+      field.optionsQuery.table === "erp.branches" &&
+      field.name === "branch_ids"
+    ) {
       options.unshift({
         value: ALL_BRANCH_OPTION_VALUE,
         label: "all",
@@ -1021,10 +1028,7 @@ router.post(
         await knex(page.table).where({ id }).del();
       } catch (deleteErr) {
         if (String(deleteErr?.code || "") === "23503") {
-          throw new HttpError(
-            409,
-            res.locals.t("error_record_in_use") ,
-          );
+          throw new HttpError(409, res.locals.t("error_record_in_use"));
         }
         throw deleteErr;
       }

@@ -494,6 +494,26 @@ const generateAccountGroupCodeTx = async ({ db, accountType, name }) => {
   );
 };
 
+const ALL_BRANCH_TOKENS = new Set([
+  "all",
+  "all branches",
+  "all branch",
+  "all_branches",
+  "all-branches",
+  "__all__",
+  "any",
+  "*",
+]);
+
+const normalizeBranchLookupTokens = (tokens) => [
+  ...new Set(
+    (Array.isArray(tokens) ? tokens : [])
+      .map((entry) => trimString(entry).toLowerCase())
+      .filter(Boolean)
+      .filter((token) => !ALL_BRANCH_TOKENS.has(token)),
+  ),
+];
+
 const resolveBranchIdsByTokens = async (db, tokens) => {
   const unique = [
     ...new Set(
@@ -502,9 +522,14 @@ const resolveBranchIdsByTokens = async (db, tokens) => {
   ];
   if (!unique.length) return [];
 
-  const filtered = unique.filter(
-    (token) => !["all", "__all__", "any", "*"].includes(token),
-  );
+  if (unique.some((token) => ALL_BRANCH_TOKENS.has(token))) {
+    const allRows = await db("erp.branches")
+      .select("id")
+      .where({ is_active: true });
+    return allRows.map((row) => Number(row.id)).filter((id) => id > 0);
+  }
+
+  const filtered = normalizeBranchLookupTokens(unique);
   if (!filtered.length) return [];
 
   const rows = await db("erp.branches")
@@ -1593,9 +1618,7 @@ const ENTITY_SPECS = Object.freeze({
 
       const branchTokens = parseCsv(row.raw.branchCodes);
       const branchIds = await resolveBranchIdsByTokens(db, branchTokens);
-      const branchLookupTokens = branchTokens.filter(
-        (token) => !["all", "__all__", "any", "*"].includes(String(token || "").trim().toLowerCase()),
-      );
+      const branchLookupTokens = normalizeBranchLookupTokens(branchTokens);
       if (
         branchLookupTokens.length &&
         branchIds.length !== branchLookupTokens.length
@@ -1753,7 +1776,11 @@ const ENTITY_SPECS = Object.freeze({
 
       const branchTokens = parseCsv(row.raw.branchCodes);
       const branchIds = await resolveBranchIdsByTokens(db, branchTokens);
-      if (branchTokens.length && branchIds.length !== branchTokens.length) {
+      const branchLookupTokens = normalizeBranchLookupTokens(branchTokens);
+      if (
+        branchLookupTokens.length &&
+        branchIds.length !== branchLookupTokens.length
+      ) {
         return {
           error: `One or more branch codes are invalid for party ${name}.`,
         };
