@@ -24,6 +24,7 @@ const router = express.Router();
 const hasField = (page, name) =>
   page.fields.some((field) => field.name === name);
 const ACCOUNT_TYPES = ["ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"];
+const ALL_BRANCH_OPTION_VALUE = "__all__";
 
 const page = {
   titleKey: "accounts",
@@ -190,6 +191,44 @@ const getAllowedBranchIds = (req) => {
     : [];
 };
 
+const isAllBranchesToken = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  return (
+    normalized === ALL_BRANCH_OPTION_VALUE ||
+    normalized === "all" ||
+    normalized === "*"
+  );
+};
+
+const normalizeBranchIdsForSave = async (req, selectedValues) => {
+  const raw = Array.isArray(selectedValues)
+    ? selectedValues
+        .map((value) => String(value || "").trim())
+        .filter(Boolean)
+    : [];
+  const requestedAll = raw.some((value) => isAllBranchesToken(value));
+
+  let branchIds = raw
+    .filter((value) => !isAllBranchesToken(value))
+    .map((value) => Number(value))
+    .filter((value) => Number.isInteger(value) && value > 0);
+
+  if (requestedAll) {
+    if (req?.user?.isAdmin) {
+      const allActiveBranches = await knex("erp.branches")
+        .select("id")
+        .where({ is_active: true });
+      branchIds = allActiveBranches
+        .map((row) => Number(row.id))
+        .filter((value) => Number.isInteger(value) && value > 0);
+    } else {
+      branchIds = getAllowedBranchIds(req);
+    }
+  }
+
+  return [...new Set(branchIds)].map((id) => String(id));
+};
+
 const getAccountGroupById = async (subgroupId) => {
   const id = Number(subgroupId || 0);
   if (!Number.isInteger(id) || id <= 0) return null;
@@ -241,26 +280,36 @@ const hydratePage = async (pageConfig, locale, req = null) => {
       field.optionsQuery.table === "erp.branches" && !req?.user?.isAdmin
         ? new Set(getAllowedBranchIds(req))
         : null;
+    const options = rows
+      .map((row) => {
+        const labelRaw = field.labelFormat
+          ? field.labelFormat(row, locale)
+          : row[field.optionsQuery.labelKey];
+        const labelUr =
+          !field.labelFormat && locale === "ur" && row.name_ur
+            ? row.name_ur
+            : null;
+        return {
+          value: row[field.optionsQuery.valueKey],
+          label: labelUr || labelRaw,
+          accountType: row.account_type || "",
+        };
+      })
+      .filter((opt) =>
+        allowedBranchSet ? allowedBranchSet.has(Number(opt.value)) : true,
+      );
+
+    if (field.optionsQuery.table === "erp.branches" && field.name === "branch_ids") {
+      options.unshift({
+        value: ALL_BRANCH_OPTION_VALUE,
+        label: "all",
+        accountType: "",
+      });
+    }
+
     fields.push({
       ...field,
-      options: rows
-        .map((row) => {
-          const labelRaw = field.labelFormat
-            ? field.labelFormat(row, locale)
-            : row[field.optionsQuery.labelKey];
-          const labelUr =
-            !field.labelFormat && locale === "ur" && row.name_ur
-              ? row.name_ur
-              : null;
-          return {
-            value: row[field.optionsQuery.valueKey],
-            label: labelUr || labelRaw,
-            accountType: row.account_type || "",
-          };
-        })
-        .filter((opt) =>
-          allowedBranchSet ? allowedBranchSet.has(Number(opt.value)) : true,
-        ),
+      options,
     });
   }
   return { ...pageConfig, fields };
@@ -512,12 +561,10 @@ router.post(
         values.posting_class_id = null;
       }
 
-      const branchIds = Array.isArray(values.branch_ids)
-        ? values.branch_ids
-        : [];
+      const branchIds = await normalizeBranchIdsForSave(req, values.branch_ids);
       if (!req.user?.isAdmin) {
         const allowed = new Set(getAllowedBranchIds(req).map(String));
-        const invalid = branchIds.map(String).some((id) => !allowed.has(id));
+        const invalid = branchIds.some((id) => !allowed.has(id));
         if (invalid) {
           return renderIndexError(
             req,
@@ -539,7 +586,7 @@ router.post(
           basePath,
         );
       }
-      values.branch_ids = branchIds.map(String);
+      values.branch_ids = branchIds;
       values.code = await generateUniqueCode({
         name: values.name,
         prefix: "account",
@@ -741,12 +788,10 @@ router.post(
           excludeId: id,
         });
       }
-      const branchIds = Array.isArray(values.branch_ids)
-        ? values.branch_ids
-        : [];
+      const branchIds = await normalizeBranchIdsForSave(req, values.branch_ids);
       if (!req.user?.isAdmin) {
         const allowed = new Set(getAllowedBranchIds(req).map(String));
-        const invalid = branchIds.map(String).some((id) => !allowed.has(id));
+        const invalid = branchIds.some((id) => !allowed.has(id));
         if (invalid) {
           return renderIndexError(
             req,
@@ -768,7 +813,7 @@ router.post(
           basePath,
         );
       }
-      values.branch_ids = branchIds.map(String);
+      values.branch_ids = branchIds;
       const codeValue = values.code || "";
       const nameValue = values.name || "";
       if (codeValue) {

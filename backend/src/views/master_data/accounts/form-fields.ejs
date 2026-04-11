@@ -10,7 +10,7 @@
     return "md:col-span-1";
   };
 %>
-<div class="<%= isAccountsPage ? 'grid grid-cols-1 gap-4 md:grid-cols-2' : 'space-y-4' %>">
+<div class="<%= isAccountsPage ? 'grid grid-cols-1 gap-x-4 gap-y-6 md:grid-cols-2' : 'space-y-4' %>">
 <% if (hasCodeColumn) { %>
   <label class="block text-sm font-semibold text-slate-600 <%= isAccountsPage ? 'md:col-span-1' : '' %>" data-hide-on-create="true">
     <span><%= t("code") %></span>
@@ -150,7 +150,9 @@
                 <%= field.required ? "data-required=\"true\"" : "" %>
               >
                 <% (field.options || []).forEach(function(option) { %>
-                  <option value="<%= option.value %>"><%= t(option.label) %></option>
+                  <option value="<%= option.value %>">
+                    <%= (isAccountsPage && field.name === "branch_ids" && String(option.value) === "__all__") ? (t("all") + " " + t("branches")) : t(option.label) %>
+                  </option>
                 <% }) %>
               </select>
             </div>
