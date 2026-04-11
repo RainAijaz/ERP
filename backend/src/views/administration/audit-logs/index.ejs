@@ -1,6 +1,6 @@
 <%
 	const groupedRows = (rows || []).reduce((acc, row) => {
-		const dateKey = new Date(row.created_at).toLocaleDateString();
+		const dateKey = row.display_date || "-";
 		if (!acc[dateKey]) acc[dateKey] = [];
 		acc[dateKey].push(row);
 		return acc;
@@ -78,7 +78,7 @@
 					</tr>
 					<% groupedRows[dateKey].forEach((row) => { %>
 						<tr class="hover:bg-amber-50/40">
-							<td class="px-6 py-4 text-slate-600"><%= new Date(row.created_at).toLocaleTimeString() %></td>
+							<td class="px-6 py-4 text-slate-600"><%= row.display_time || "-" %></td>
 							<td class="px-6 py-4 font-medium text-slate-900"><%= row.user_name || "-" %></td>
 							<td class="px-6 py-4 text-slate-600"><%= row.branch_name || row.branch_code || "-" %></td>
 							<td class="px-6 py-4 text-slate-600"><%= row.entity_label || row.entity_type || "-" %></td>

@@ -1,33 +1,33 @@
-<div class="bg-white px-4 pb-4 pt-5 sm:p-6 sm:pb-4">
-  <h3 class="text-lg font-semibold leading-6 text-slate-900 mb-4"><%= title %></h3>
-  <form action="/administration/users/save" method="POST" class="space-y-5" autocomplete="off" data-translate-mode="transliterate">
+<div class="bg-white px-6 py-5">
+  <h3 class="mb-4 text-lg font-semibold leading-6 text-slate-900"><%= title %></h3>
+  <form action="/administration/users/save" method="POST" class="space-y-5" autocomplete="off" data-modal-form data-translate-mode="transliterate">
     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
     <input type="hidden" name="id" value="<%= user ? user.id : '' %>">
     
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1"><%= t('name')  %> *</label>
-        <input type="text" name="name" value="<%= user ? user.name : '' %>" required autocomplete="off" class="w-full rounded-lg border-slate-300 focus:ring-accent focus:border-accent">
+        <label class="block text-sm font-semibold text-slate-600 mb-1"><%= t('name')  %> *</label>
+        <input type="text" name="name" value="<%= user ? user.name : '' %>" required autocomplete="off" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30">
       </div>
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1"><%= t('name_ur')  %></label>
-        <input type="text" name="name_ur" value="<%= user ? user.name_ur : '' %>" autocomplete="off" class="w-full rounded-lg border-slate-300 focus:ring-accent focus:border-accent">
+        <label class="block text-sm font-semibold text-slate-600 mb-1"><%= t('name_ur')  %></label>
+        <input type="text" name="name_ur" value="<%= user ? user.name_ur : '' %>" autocomplete="off" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30">
       </div>
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1"><%= t('username') %> *</label>
-        <input type="text" name="username" value="<%= user ? user.username : '' %>" required autocomplete="off" autocapitalize="off" spellcheck="false" class="w-full rounded-lg border-slate-300 focus:ring-accent focus:border-accent">
+        <label class="block text-sm font-semibold text-slate-600 mb-1"><%= t('username') %> *</label>
+        <input type="text" name="username" value="<%= user ? user.username : '' %>" required autocomplete="off" autocapitalize="off" spellcheck="false" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30">
       </div>
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1"><%= t('password') %> <%= user ? t('leave_blank_keep') : '*' %></label>
-        <input type="password" name="password" <%= user ? '' : 'required' %> autocomplete="new-password" autocapitalize="off" spellcheck="false" class="w-full rounded-lg border-slate-300 focus:ring-accent focus:border-accent">
+        <label class="block text-sm font-semibold text-slate-600 mb-1"><%= t('password') %> <%= user ? t('leave_blank_keep') : '*' %></label>
+        <input type="password" name="password" <%= user ? '' : 'required' %> autocomplete="new-password" autocapitalize="off" spellcheck="false" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30">
       </div>
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1"><%= t('email') %></label>
-        <input type="email" name="email" value="<%= user ? user.email : '' %>" class="w-full rounded-lg border-slate-300 focus:ring-accent focus:border-accent">
+        <label class="block text-sm font-semibold text-slate-600 mb-1"><%= t('email') %></label>
+        <input type="email" name="email" value="<%= user ? user.email : '' %>" class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30">
       </div>
       <div>
-        <label class="block text-sm font-medium text-slate-700 mb-1"><%= t('role') %> *</label>
-        <select name="primary_role_id" required class="w-full rounded-lg border-slate-300 focus:ring-accent focus:border-accent">
+        <label class="block text-sm font-semibold text-slate-600 mb-1"><%= t('role') %> *</label>
+        <select name="primary_role_id" required class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" data-searchable-select="true" data-searchable-variant="unified">
           <option value=""><%= t('select_role') %></option>
           <% roles.forEach(r => { %>
             <option value="<%= r.id %>" data-role-name="<%= String(r.name || '').trim().toLowerCase() %>" <%= user && user.primary_role_id == r.id ? 'selected' : '' %>><%= r.name %></option>

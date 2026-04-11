@@ -174,7 +174,9 @@ const resolveSingleAccountIdForGroup = ({
     ...(fallbackGroupCodes || []).map((code) => String(code || "").trim()),
   ].filter(Boolean);
   const preferredCode = String(
-    explicitPreferredCode || CONTROL_GROUP_PREFERRED_ACCOUNT_CODES[groupCode] || "",
+    explicitPreferredCode ||
+      CONTROL_GROUP_PREFERRED_ACCOUNT_CODES[groupCode] ||
+      "",
   )
     .trim()
     .toLowerCase();

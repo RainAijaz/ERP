@@ -1060,10 +1060,7 @@ router.post(
         await knex(page.table).where({ id }).del();
       } catch (deleteErr) {
         if (String(deleteErr?.code || "") === "23503") {
-          throw new HttpError(
-            409,
-            res.locals.t("error_record_in_use") ,
-          );
+          throw new HttpError(409, res.locals.t("error_record_in_use"));
         }
         throw deleteErr;
       }

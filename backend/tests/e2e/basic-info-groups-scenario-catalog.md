@@ -3,6 +3,7 @@
 Scope: Master Data -> Basic Information -> Groups pages.
 
 ## 1) Product Groups (`/master-data/basic-info/product-groups`)
+
 1. Page loads with HTTP 200.
 2. Add button is visible.
 3. Download and print buttons are visible.
@@ -25,6 +26,7 @@ Scope: Master Data -> Basic Information -> Groups pages.
 20. Hard delete removes record A.
 
 ## 2) Product Subgroups (`/master-data/basic-info/product-subgroups`)
+
 1. Page loads with HTTP 200.
 2. Add button is visible.
 3. Download and print buttons are visible.
@@ -47,6 +49,7 @@ Scope: Master Data -> Basic Information -> Groups pages.
 20. Hard delete removes record A.
 
 ## 3) Product Types (`/master-data/basic-info/product-types`)
+
 1. Page loads with HTTP 200.
 2. Add button is visible.
 3. Download and print buttons are visible.
@@ -69,6 +72,7 @@ Scope: Master Data -> Basic Information -> Groups pages.
 20. Hard delete removes record A.
 
 ## 4) Sales Discount Policies (`/master-data/basic-info/sales-discount-policies`)
+
 1. Page loads with HTTP 200.
 2. Add button is visible.
 3. Download and print buttons are visible.
@@ -91,6 +95,7 @@ Scope: Master Data -> Basic Information -> Groups pages.
 20. Hard delete removes record A.
 
 ## 5) Party Groups (`/master-data/basic-info/party-groups`)
+
 1. Page loads with HTTP 200.
 2. Add button is visible.
 3. Download and print buttons are visible.
@@ -113,13 +118,14 @@ Scope: Master Data -> Basic Information -> Groups pages.
 20. Hard delete removes record A.
 
 ## 6) Account Groups (`/master-data/basic-info/account-groups`)
+
 1. Page loads with HTTP 200.
 2. Add button is visible.
 3. Download and print buttons are visible.
 4. Create modal opens.
 5. Create modal closes with cancel.
 6. Empty required submit is blocked by form validation.
-7. Relevant controls render: account_type, name, name_ur, is_contra.
+7. Relevant controls render: account_type, name, name_ur.
 8. Create record A succeeds.
 9. Create record B succeeds.
 10. Edit modal pre-fills record A data.
@@ -135,6 +141,7 @@ Scope: Master Data -> Basic Information -> Groups pages.
 20. Hard delete removes record A.
 
 ## 7) Departments (`/master-data/basic-info/departments`)
+
 1. Page loads with HTTP 200.
 2. Add button is visible.
 3. Download and print buttons are visible.
@@ -157,6 +164,7 @@ Scope: Master Data -> Basic Information -> Groups pages.
 20. Hard delete removes record A.
 
 ## 8) Production Stages (`/master-data/basic-info/production-stages`)
+
 1. Page loads with HTTP 200.
 2. Add button is visible.
 3. Download and print buttons are visible.

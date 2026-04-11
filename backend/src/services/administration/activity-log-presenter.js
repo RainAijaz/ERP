@@ -31,6 +31,26 @@ const ACTION_STYLE = {
   CANCEL: "bg-orange-50 text-orange-700 ring-orange-200",
 };
 
+const ACTIVITY_LOG_REPORT_TIME_ZONE =
+  String(
+    process.env.ERP_REPORT_TIME_ZONE || process.env.TZ || "Asia/Karachi",
+  ).trim() || "Asia/Karachi";
+
+const DATE_FORMATTER = new Intl.DateTimeFormat("en-GB", {
+  timeZone: ACTIVITY_LOG_REPORT_TIME_ZONE,
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+});
+
+const TIME_FORMATTER = new Intl.DateTimeFormat("en-GB", {
+  timeZone: ACTIVITY_LOG_REPORT_TIME_ZONE,
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: true,
+});
+
 const parseContext = (value) => {
   if (!value) return null;
   if (typeof value === "object") return value;
@@ -55,11 +75,30 @@ const toText = (value, fallback = "-") => {
   return String(value);
 };
 
+const toDateObject = (value) => {
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return null;
+  return dt;
+};
+
+const formatDateLabel = (value) => {
+  const dt = toDateObject(value);
+  if (!dt) return "-";
+  return DATE_FORMATTER.format(dt).replace(/\//g, "-");
+};
+
+const formatTimeLabel = (value) => {
+  const dt = toDateObject(value);
+  if (!dt) return "-";
+  return TIME_FORMATTER.format(dt);
+};
+
 const formatTimestamp = (value) => {
   if (!value) return "-";
-  const dt = new Date(value);
-  if (Number.isNaN(dt.getTime())) return toText(value);
-  return dt.toLocaleString();
+  const datePart = formatDateLabel(value);
+  const timePart = formatTimeLabel(value);
+  if (datePart === "-" || timePart === "-") return toText(value);
+  return `${datePart} ${timePart}`;
 };
 
 const toPlainObject = (value) =>
@@ -332,6 +371,8 @@ const presentActivityRows = ({ rows = [], t }) =>
     return {
       ...row,
       context_json: context,
+      display_date: formatDateLabel(row.created_at),
+      display_time: formatTimeLabel(row.created_at),
       display_action: displayAction,
       action_class:
         ACTION_STYLE[String(row.action || "").toUpperCase()] ||

@@ -1,9 +1,18 @@
 <%
   const initialValues = (typeof modalValues !== "undefined" && modalValues) ? modalValues : {};
   const hasCodeColumn = Array.isArray(page.columns) && page.columns.some((column) => column.key === "code");
+  const isAccountsPage = page.titleKey === "accounts";
+  const getAccountsFieldSpanClass = (field) => {
+    if (!isAccountsPage) return "";
+    if (!field) return "md:col-span-1";
+    if (field.type === "checkbox" || field.type === "multi-checkbox") return "md:col-span-2";
+    if (field.name === "branch_ids") return "md:col-span-2";
+    return "md:col-span-1";
+  };
 %>
+<div class="<%= isAccountsPage ? 'grid grid-cols-1 gap-4 md:grid-cols-2' : 'space-y-4' %>">
 <% if (hasCodeColumn) { %>
-  <label class="block text-sm font-semibold text-slate-600" data-hide-on-create="true">
+  <label class="block text-sm font-semibold text-slate-600 <%= isAccountsPage ? 'md:col-span-1' : '' %>" data-hide-on-create="true">
     <span><%= t("code") %></span>
     <input
       class="mt-2 w-full rounded-xl border border-slate-200 bg-slate-100 px-4 py-3 text-sm text-slate-600 shadow-sm cursor-not-allowed"
@@ -20,7 +29,7 @@
         <% if (field.adminOnly && !isAdmin) { return; } %>
         <% if (field.name === "code") { return; } %>
         <% if (field.type === "checkbox") { %>
-          <label class="flex flex-1 items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>
+          <label class="flex items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600 <%= isAccountsPage ? getAccountsFieldSpanClass(field) : '' %>" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>
             <input class="mt-0.5 h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent/40" type="checkbox" name="<%= field.name %>" data-field="<%= field.name %>" />
             <span class="flex flex-col gap-1">
               <span><%= t(field.label) %></span>
@@ -35,7 +44,7 @@
             (page.titleKey === "parties" && field.name === "city_id") ? "/master-data/basic-info/cities" :
             (page.titleKey === "accounts" && field.name === "subgroup_id") ? "/master-data/basic-info/account-groups" :
             ""; %>
-          <label class="block text-sm font-semibold text-slate-600" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>
+          <label class="block text-sm font-semibold text-slate-600 <%= isAccountsPage ? getAccountsFieldSpanClass(field) : '' %>" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>
             <span class="flex items-center justify-between gap-2">
               <span><%= t(field.label) %></span>
               <% if (quickAddHref) { %>
@@ -52,6 +61,7 @@
               class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
               name="<%= field.name %>"
               data-field="<%= field.name %>"
+              data-searchable-select="true"
               data-searchable-variant="unified"
               <%= field.required ? "required" : "" %>
             >
@@ -81,13 +91,13 @@
             <% } %>
           </label>
         <% } else if (field.type === "textarea") { %>
-          <label class="block text-sm font-semibold text-slate-600" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>
+          <label class="block text-sm font-semibold text-slate-600 <%= isAccountsPage ? getAccountsFieldSpanClass(field) : '' %>" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>
             <span><%= t(field.label) %></span>
             <% if (field.helpText) { %>
               <span class="mt-1 block text-xs font-normal text-slate-500"><%= t(field.helpText) %></span>
             <% } %>
             <textarea
-              class="mt-2 w-full min-h-[96px] resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+              class="mt-2 w-full min-h-24 resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
               name="<%= field.name %>"
               data-field="<%= field.name %>"
               placeholder="<%= field.placeholder ? t(field.placeholder) : "" %>"
@@ -97,7 +107,7 @@
             ></textarea>
           </label>
         <% } else if (field.type === "number") { %>
-          <label class="block text-sm font-semibold text-slate-600" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>
+          <label class="block text-sm font-semibold text-slate-600 <%= isAccountsPage ? getAccountsFieldSpanClass(field) : '' %>" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>
             <span><%= t(field.label) %></span>
             <% if (field.helpText) { %>
               <span class="mt-1 block text-xs font-normal text-slate-500"><%= t(field.helpText) %></span>
@@ -114,7 +124,7 @@
             />
           </label>
         <% } else if (field.type === "multi-select") { %>
-          <label class="block text-sm font-semibold text-slate-600" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>
+          <label class="block text-sm font-semibold text-slate-600 <%= isAccountsPage ? getAccountsFieldSpanClass(field) : '' %>" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>
             <span><%= t(field.label) %></span>
             <% if (field.helpText) { %>
               <span class="mt-1 block text-xs font-normal text-slate-500"><%= t(field.helpText) %></span>
@@ -146,7 +156,7 @@
             </div>
           </label>
         <% } else if (field.type === "multi-checkbox") { %>
-          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>
+          <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600 <%= isAccountsPage ? getAccountsFieldSpanClass(field) : '' %>" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>
             <div class="flex flex-col gap-1">
               <span><%= t(field.label) %></span>
               <% if (field.helpText) { %>
@@ -170,7 +180,7 @@
             </div>
           </div>
         <% } else { %>
-          <label class="block text-sm font-semibold text-slate-600" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>
+          <label class="block text-sm font-semibold text-slate-600 <%= isAccountsPage ? getAccountsFieldSpanClass(field) : '' %>" <%= hideOnCreate ? "data-hide-on-create=\"true\"" : "" %>>
             <span><%= t(field.label) %></span>
             <% if (page.titleKey === "units" && field.name === "code") { %>
               <span class="mt-1 block text-xs font-normal text-slate-500"><%= t("help_unit_code") %></span>
@@ -193,4 +203,5 @@
           </label>
         <% } %>
       <% }) %>
-      
+    </div>
+

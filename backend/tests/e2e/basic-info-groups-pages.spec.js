@@ -12,7 +12,8 @@ const runtimeSupport = {
 };
 
 const ts = () => Date.now();
-const token = (prefix) => `${prefix}-${ts()}-${Math.floor(Math.random() * 10000)}`;
+const token = (prefix) =>
+  `${prefix}-${ts()}-${Math.floor(Math.random() * 10000)}`;
 
 const GROUP_PAGES = [
   {
@@ -143,19 +144,16 @@ const GROUP_PAGES = [
       accountType: "ASSET",
       name: token("E2E-AG"),
       nameUr: token("ایٹوپی اے جی"),
-      isContra: false,
     }),
     buildUpdate: () => ({
       accountType: "LIABILITY",
       name: token("E2E-AG-EDIT"),
       nameUr: token("ایٹوپی اے جی ایڈٹ"),
-      isContra: true,
     }),
     form: {
       selects: ["account_type"],
       nameField: "name",
       nameUrField: "name_ur",
-      singleCheckboxes: ["is_contra"],
       primarySearchField: "name",
       requiredFields: ["account_type", "name", "name_ur"],
       expectedSelectOptions: {
@@ -223,7 +221,8 @@ const getModal = (page) => page.locator("[data-modal]");
 const getModalForm = (page) => page.locator("[data-modal-form]");
 const getModalClose = (page) => page.locator("[data-modal-close]").first();
 const getConfirmModal = (page) => page.locator("[data-confirm-modal]");
-const getConfirmContinue = (page) => page.locator("[data-confirm-form] button[type='submit']").first();
+const getConfirmContinue = (page) =>
+  page.locator("[data-confirm-form] button[type='submit']").first();
 const getUiErrorModal = (page) => page.locator("[data-ui-error-modal]");
 
 async function selectFirstNonEmpty(select) {
@@ -231,22 +230,21 @@ async function selectFirstNonEmpty(select) {
 }
 
 async function selectNonEmptyByIndex(select, index = 0) {
-  const values = await select.locator("option").evaluateAll((opts) =>
-    opts
-      .map((opt) => String(opt.value || "").trim())
-      .filter((v) => v.length > 0),
-  );
+  const values = await select
+    .locator("option")
+    .evaluateAll((opts) =>
+      opts
+        .map((opt) => String(opt.value || "").trim())
+        .filter((v) => v.length > 0),
+    );
   if (!values.length) return null;
   const safeIndex = Math.max(0, Math.min(index, values.length - 1));
   const value = values[safeIndex];
-  await select.evaluate(
-    (el, val) => {
-      el.value = val;
-      el.dispatchEvent(new Event("input", { bubbles: true }));
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-    },
-    value,
-  );
+  await select.evaluate((el, val) => {
+    el.value = val;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  }, value);
   return value;
 }
 
@@ -254,23 +252,39 @@ async function fillCoreForm(page, cfg, payload) {
   const form = getModalForm(page);
   await expect(form).toBeVisible();
 
-  if (cfg.form.nameField && Object.prototype.hasOwnProperty.call(payload, "name")) {
-    await form.locator(`[data-field='${cfg.form.nameField}']`).fill(String(payload.name || ""));
+  if (
+    cfg.form.nameField &&
+    Object.prototype.hasOwnProperty.call(payload, "name")
+  ) {
+    await form
+      .locator(`[data-field='${cfg.form.nameField}']`)
+      .fill(String(payload.name || ""));
   }
-  if (cfg.form.nameUrField && Object.prototype.hasOwnProperty.call(payload, "nameUr")) {
-    await form.locator(`[data-field='${cfg.form.nameUrField}']`).fill(String(payload.nameUr || ""));
+  if (
+    cfg.form.nameUrField &&
+    Object.prototype.hasOwnProperty.call(payload, "nameUr")
+  ) {
+    await form
+      .locator(`[data-field='${cfg.form.nameUrField}']`)
+      .fill(String(payload.nameUr || ""));
   }
 
   if (cfg.form.selects?.length) {
     for (const field of cfg.form.selects) {
       const select = form.locator(`select[data-field='${field}']`).first();
       if (!(await select.count())) continue;
-      const hasExplicitValue = Object.prototype.hasOwnProperty.call(payload, field)
-        || Object.prototype.hasOwnProperty.call(payload, camel(field));
+      const hasExplicitValue =
+        Object.prototype.hasOwnProperty.call(payload, field) ||
+        Object.prototype.hasOwnProperty.call(payload, camel(field));
       if (!hasExplicitValue) continue;
 
       const value = payload[field] ?? payload[camel(field)] ?? null;
-      if (typeof value === "string" && value.length && value !== "first" && value !== "firstProduction") {
+      if (
+        typeof value === "string" &&
+        value.length &&
+        value !== "first" &&
+        value !== "firstProduction"
+      ) {
         if (value === "second") {
           await selectNonEmptyByIndex(select, 1);
           continue;
@@ -279,14 +293,11 @@ async function fillCoreForm(page, cfg, payload) {
           await selectNonEmptyByIndex(select, 2);
           continue;
         }
-        await select.evaluate(
-          (el, val) => {
-            el.value = val;
-            el.dispatchEvent(new Event("input", { bubbles: true }));
-            el.dispatchEvent(new Event("change", { bubbles: true }));
-          },
-          value,
-        );
+        await select.evaluate((el, val) => {
+          el.value = val;
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+        }, value);
         const selectedAfterSet = String(await select.inputValue()).trim();
         if (!selectedAfterSet) {
           await selectFirstNonEmpty(select);
@@ -301,7 +312,9 @@ async function fillCoreForm(page, cfg, payload) {
     for (const field of cfg.form.checkboxes) {
       const wanted = payload[field] || payload[camel(field)] || [];
       const targets = Array.isArray(wanted) ? wanted : [wanted];
-      const boxes = form.locator(`input[type='checkbox'][data-field='${field}'][data-multi='true']`);
+      const boxes = form.locator(
+        `input[type='checkbox'][data-field='${field}'][data-multi='true']`,
+      );
       const count = await boxes.count();
       for (let i = 0; i < count; i += 1) {
         const box = boxes.nth(i);
@@ -317,12 +330,15 @@ async function fillCoreForm(page, cfg, payload) {
 
   if (cfg.form.singleCheckboxes?.length) {
     for (const field of cfg.form.singleCheckboxes) {
-      const hasExplicitValue = Object.prototype.hasOwnProperty.call(payload, field)
-        || Object.prototype.hasOwnProperty.call(payload, camel(field));
+      const hasExplicitValue =
+        Object.prototype.hasOwnProperty.call(payload, field) ||
+        Object.prototype.hasOwnProperty.call(payload, camel(field));
       if (!hasExplicitValue) continue;
 
       const wanted = Boolean(payload[field] ?? payload[camel(field)]);
-      const box = form.locator(`input[type='checkbox'][data-field='${field}']`).first();
+      const box = form
+        .locator(`input[type='checkbox'][data-field='${field}']`)
+        .first();
       if (!(await box.count())) continue;
       const checked = await box.isChecked();
       if (wanted !== checked) {
@@ -367,9 +383,13 @@ async function submitModal(page) {
 
   const stillOpen = await modal.isVisible().catch(() => false);
   if (stillOpen) {
-    const invalidCount = await form.evaluate((f) => f.querySelectorAll(":invalid").length);
+    const invalidCount = await form.evaluate(
+      (f) => f.querySelectorAll(":invalid").length,
+    );
     if (invalidCount > 0) {
-      throw new Error(`Blocked by HTML validation (${invalidCount} invalid field(s)).`);
+      throw new Error(
+        `Blocked by HTML validation (${invalidCount} invalid field(s)).`,
+      );
     }
     const modalError = form.locator("[data-modal-error]").first();
     const hasModalError = await modalError.isVisible().catch(() => false);
@@ -401,7 +421,9 @@ async function findRowByText(page, value, { visibleOnly = false } = {}) {
   for (let i = 0; i < count; i += 1) {
     const row = rows.nth(i);
     if (visibleOnly) {
-      const hidden = await row.evaluate((el) => el.classList.contains("hidden")).catch(() => false);
+      const hidden = await row
+        .evaluate((el) => el.classList.contains("hidden"))
+        .catch(() => false);
       if (hidden) continue;
       const visible = await row.isVisible().catch(() => false);
       if (!visible) continue;
@@ -412,7 +434,11 @@ async function findRowByText(page, value, { visibleOnly = false } = {}) {
   return null;
 }
 
-async function waitForRowByText(page, value, { visibleOnly = true, shouldExist = true, timeout = 5000 } = {}) {
+async function waitForRowByText(
+  page,
+  value,
+  { visibleOnly = true, shouldExist = true, timeout = 5000 } = {},
+) {
   const start = Date.now();
   let lastVisibleRows = [];
 
@@ -426,7 +452,9 @@ async function waitForRowByText(page, value, { visibleOnly = true, shouldExist =
     for (let i = 0; i < count; i += 1) {
       const row = rowLocator.nth(i);
       if (visibleOnly) {
-        const hidden = await row.evaluate((el) => el.classList.contains("hidden")).catch(() => false);
+        const hidden = await row
+          .evaluate((el) => el.classList.contains("hidden"))
+          .catch(() => false);
         if (hidden) continue;
         const visible = await row.isVisible().catch(() => false);
         if (!visible) continue;
@@ -443,7 +471,11 @@ async function waitForRowByText(page, value, { visibleOnly = true, shouldExist =
 }
 
 async function extractRowRecordId(row) {
-  const actionAttrs = ["data-toggle-action", "data-edit-action", "data-delete-action"];
+  const actionAttrs = [
+    "data-toggle-action",
+    "data-edit-action",
+    "data-delete-action",
+  ];
   for (const selector of ["[data-toggle]", "[data-edit]", "[data-delete]"]) {
     const btn = row.locator(selector).first();
     if (!(await btn.count())) continue;
@@ -463,7 +495,9 @@ async function findRowByRecordId(page, recordId, { visibleOnly = false } = {}) {
   for (let i = 0; i < count; i += 1) {
     const row = rows.nth(i);
     if (visibleOnly) {
-      const hidden = await row.evaluate((el) => el.classList.contains("hidden")).catch(() => false);
+      const hidden = await row
+        .evaluate((el) => el.classList.contains("hidden"))
+        .catch(() => false);
       if (hidden) continue;
       const visible = await row.isVisible().catch(() => false);
       if (!visible) continue;
@@ -474,15 +508,27 @@ async function findRowByRecordId(page, recordId, { visibleOnly = false } = {}) {
   return null;
 }
 
-async function waitForRowByRecordId(page, recordId, { visibleOnly = true, shouldExist = true, timeout = 5000 } = {}) {
+async function waitForRowByRecordId(
+  page,
+  recordId,
+  { visibleOnly = true, shouldExist = true, timeout = 5000 } = {},
+) {
   await expect
-    .poll(async () => Boolean(await findRowByRecordId(page, recordId, { visibleOnly })), {
-      timeout,
-    })
+    .poll(
+      async () =>
+        Boolean(await findRowByRecordId(page, recordId, { visibleOnly })),
+      {
+        timeout,
+      },
+    )
     .toBe(shouldExist);
 }
 
-async function resolveExistingRowKey(page, candidates, { visibleOnly = true } = {}) {
+async function resolveExistingRowKey(
+  page,
+  candidates,
+  { visibleOnly = true } = {},
+) {
   for (const candidate of candidates) {
     const value = String(candidate || "").trim();
     if (!value) continue;
@@ -526,7 +572,10 @@ async function ensureNoUiErrorModal(page) {
 }
 
 async function getActorUserId() {
-  if (Number.isInteger(runtimeSupport.actorUserId) && runtimeSupport.actorUserId > 0) {
+  if (
+    Number.isInteger(runtimeSupport.actorUserId) &&
+    runtimeSupport.actorUserId > 0
+  ) {
     return runtimeSupport.actorUserId;
   }
   const row = await db("erp.users").select("id").orderBy("id", "asc").first();
@@ -563,8 +612,12 @@ async function ensureAvailableDiscountPolicyGroups(required = 2) {
     .select("id")
     .where({ is_active: true })
     .orderBy("id", "asc");
-  const usedRows = await db("erp.sales_discount_policy").select("product_group_id");
-  const usedSet = new Set(usedRows.map((row) => Number(row.product_group_id)).filter((id) => id > 0));
+  const usedRows = await db("erp.sales_discount_policy").select(
+    "product_group_id",
+  );
+  const usedSet = new Set(
+    usedRows.map((row) => Number(row.product_group_id)).filter((id) => id > 0),
+  );
 
   const available = groups
     .map((row) => Number(row.id))
@@ -605,7 +658,9 @@ async function ensureDepartmentsWithoutStage(required = 1) {
   const existingStages = await db("erp.production_stages")
     .select("dept_id")
     .whereNotNull("dept_id");
-  const occupiedDeptSet = new Set(existingStages.map((row) => Number(row.dept_id)).filter((id) => id > 0));
+  const occupiedDeptSet = new Set(
+    existingStages.map((row) => Number(row.dept_id)).filter((id) => id > 0),
+  );
 
   const available = departments
     .map((row) => Number(row.id))
@@ -623,13 +678,23 @@ async function ensureDepartmentsWithoutStage(required = 1) {
 test.describe("Basic Info Groups pages - CRUD and relevance scenarios", () => {
   test.afterAll(async () => {
     if (runtimeSupport.productGroupIds.length) {
-      await db("erp.sales_discount_policy").whereIn("product_group_id", runtimeSupport.productGroupIds).del();
-      await db("erp.product_group_item_types").whereIn("group_id", runtimeSupport.productGroupIds).del();
-      await db("erp.product_groups").whereIn("id", runtimeSupport.productGroupIds).del();
+      await db("erp.sales_discount_policy")
+        .whereIn("product_group_id", runtimeSupport.productGroupIds)
+        .del();
+      await db("erp.product_group_item_types")
+        .whereIn("group_id", runtimeSupport.productGroupIds)
+        .del();
+      await db("erp.product_groups")
+        .whereIn("id", runtimeSupport.productGroupIds)
+        .del();
     }
     if (runtimeSupport.departmentIds.length) {
-      await db("erp.production_stages").whereIn("dept_id", runtimeSupport.departmentIds).del();
-      await db("erp.departments").whereIn("id", runtimeSupport.departmentIds).del();
+      await db("erp.production_stages")
+        .whereIn("dept_id", runtimeSupport.departmentIds)
+        .del();
+      await db("erp.departments")
+        .whereIn("id", runtimeSupport.departmentIds)
+        .del();
     }
     await db.destroy();
   });
@@ -646,29 +711,38 @@ test.describe("Basic Info Groups pages - CRUD and relevance scenarios", () => {
       };
 
       if (cfg.key === "sales-discount-policies") {
-        preloaded.availableGroups = await ensureAvailableDiscountPolicyGroups(2);
+        preloaded.availableGroups =
+          await ensureAvailableDiscountPolicyGroups(2);
         test.skip(
-          !Array.isArray(preloaded.availableGroups) || preloaded.availableGroups.length < 2,
+          !Array.isArray(preloaded.availableGroups) ||
+            preloaded.availableGroups.length < 2,
           "Need at least two available product groups for unique policy scenarios.",
         );
         const groupRows = await db("erp.product_groups")
           .select("id", "name")
           .whereIn("id", preloaded.availableGroups);
-        const byId = new Map(groupRows.map((row) => [Number(row.id), String(row.name || "")]));
-        preloaded.groupNameA = byId.get(Number(preloaded.availableGroups[0])) || "";
-        preloaded.groupNameB = byId.get(Number(preloaded.availableGroups[1])) || "";
+        const byId = new Map(
+          groupRows.map((row) => [Number(row.id), String(row.name || "")]),
+        );
+        preloaded.groupNameA =
+          byId.get(Number(preloaded.availableGroups[0])) || "";
+        preloaded.groupNameB =
+          byId.get(Number(preloaded.availableGroups[1])) || "";
       }
 
       if (cfg.key === "production-stages") {
         preloaded.freeDeptIds = await ensureDepartmentsWithoutStage(2);
         test.skip(
-          !Array.isArray(preloaded.freeDeptIds) || preloaded.freeDeptIds.length < 2,
+          !Array.isArray(preloaded.freeDeptIds) ||
+            preloaded.freeDeptIds.length < 2,
           "Need two production departments without existing stages for create scenarios.",
         );
       }
 
       // 1 page loads
-      const response = await page.goto(cfg.url, { waitUntil: "domcontentloaded" });
+      const response = await page.goto(cfg.url, {
+        waitUntil: "domcontentloaded",
+      });
       expect(response?.status()).toBe(200);
 
       // 2 add visible
@@ -690,17 +764,30 @@ test.describe("Basic Info Groups pages - CRUD and relevance scenarios", () => {
       await getAddButton(page).click();
       const form = getModalForm(page);
       await form.locator("button[type='submit']").click();
-      const invalidCount = await form.evaluate((f) => f.querySelectorAll(":invalid").length);
+      const invalidCount = await form.evaluate(
+        (f) => f.querySelectorAll(":invalid").length,
+      );
       expect(invalidCount).toBeGreaterThan(0);
       await getModalClose(page).click();
 
       // 7 relevant controls render
       await getAddButton(page).click();
-      if (cfg.form.nameField) await expect(form.locator(`[data-field='${cfg.form.nameField}']`)).toBeVisible();
-      if (cfg.form.nameUrField) await expect(form.locator(`[data-field='${cfg.form.nameUrField}']`)).toBeVisible();
-      for (const s of cfg.form.selects || []) await expect(form.locator(`[data-field='${s}']`)).toBeVisible();
-      for (const c of cfg.form.checkboxes || []) await expect(form.locator(`[data-field='${c}'][data-multi='true']`).first()).toBeVisible();
-      for (const c of cfg.form.singleCheckboxes || []) await expect(form.locator(`[data-field='${c}']`)).toBeVisible();
+      if (cfg.form.nameField)
+        await expect(
+          form.locator(`[data-field='${cfg.form.nameField}']`),
+        ).toBeVisible();
+      if (cfg.form.nameUrField)
+        await expect(
+          form.locator(`[data-field='${cfg.form.nameUrField}']`),
+        ).toBeVisible();
+      for (const s of cfg.form.selects || [])
+        await expect(form.locator(`[data-field='${s}']`)).toBeVisible();
+      for (const c of cfg.form.checkboxes || [])
+        await expect(
+          form.locator(`[data-field='${c}'][data-multi='true']`).first(),
+        ).toBeVisible();
+      for (const c of cfg.form.singleCheckboxes || [])
+        await expect(form.locator(`[data-field='${c}']`)).toBeVisible();
       await getModalClose(page).click();
 
       const createA = cfg.buildCreate();
@@ -740,16 +827,19 @@ test.describe("Basic Info Groups pages - CRUD and relevance scenarios", () => {
       const searchInput = page.locator("[data-search-input]");
 
       // 10 edit prefill A
-      const rowKeyA = cfg.key === "sales-discount-policies"
-        ? preloaded.groupNameA
-        : (createA.name || "");
+      const rowKeyA =
+        cfg.key === "sales-discount-policies"
+          ? preloaded.groupNameA
+          : createA.name || "";
       if (rowKeyA) {
         await searchInput.fill(rowKeyA);
         const rowAForEdit = await findRowByText(page, rowKeyA);
         expect(rowAForEdit).toBeTruthy();
         await openEditForRow(rowAForEdit);
         if (cfg.form.nameField) {
-          await expect(form.locator(`[data-field='${cfg.form.nameField}']`)).toHaveValue(createA.name);
+          await expect(
+            form.locator(`[data-field='${cfg.form.nameField}']`),
+          ).toHaveValue(createA.name);
         }
       } else {
         await expect(page.locator("[data-edit]").first()).toBeVisible();
@@ -770,20 +860,30 @@ test.describe("Basic Info Groups pages - CRUD and relevance scenarios", () => {
 
       // 13 search miss
       await searchInput.fill("__NO_MATCH__");
-      const visibleRowsAfterMiss = await page.locator("[data-table-body] tr[data-row]:not(.hidden)").count();
+      const visibleRowsAfterMiss = await page
+        .locator("[data-table-body] tr[data-row]:not(.hidden)")
+        .count();
       expect(visibleRowsAfterMiss).toBe(0);
 
       // reset search
       await searchInput.fill("");
 
       // locate row for lifecycle actions (toggle/filter/reactivate)
-      const editedKey = updateA.name || createA.name || preloaded.groupNameA || "";
-      const lifecycleCandidates = cfg.key === "sales-discount-policies"
-        ? [preloaded.groupNameA, createA.name]
-        : [updateA.name, createA.name, preloaded.groupNameA];
-      const lifecycleKey = await resolveExistingRowKey(page, lifecycleCandidates, { visibleOnly: true });
+      const editedKey =
+        updateA.name || createA.name || preloaded.groupNameA || "";
+      const lifecycleCandidates =
+        cfg.key === "sales-discount-policies"
+          ? [preloaded.groupNameA, createA.name]
+          : [updateA.name, createA.name, preloaded.groupNameA];
+      const lifecycleKey = await resolveExistingRowKey(
+        page,
+        lifecycleCandidates,
+        { visibleOnly: true },
+      );
 
-      let rowA = lifecycleKey ? await findRowByText(page, lifecycleKey, { visibleOnly: true }) : null;
+      let rowA = lifecycleKey
+        ? await findRowByText(page, lifecycleKey, { visibleOnly: true })
+        : null;
       expect(rowA).toBeTruthy();
 
       // 14 toggle deactivate
@@ -795,7 +895,9 @@ test.describe("Basic Info Groups pages - CRUD and relevance scenarios", () => {
       // 15 inactive filter shows row
       await page.locator("[data-status-filter]").selectOption("inactive");
       await page.waitForTimeout(50);
-      const visibleRows = page.locator("[data-table-body] tr[data-row]:not(.hidden)");
+      const visibleRows = page.locator(
+        "[data-table-body] tr[data-row]:not(.hidden)",
+      );
       await expect(visibleRows.first()).toBeVisible();
       if (lifecycleKey) {
         rowA = await findRowByText(page, lifecycleKey, { visibleOnly: true });
@@ -810,8 +912,10 @@ test.describe("Basic Info Groups pages - CRUD and relevance scenarios", () => {
       await page.locator("[data-status-filter]").selectOption("inactive");
       await page.waitForTimeout(50);
       await expect(visibleRows.first()).toBeVisible();
-      const rowAInactive = (lifecycleKey && (await findRowByText(page, lifecycleKey, { visibleOnly: true })))
-        || visibleRows.first();
+      const rowAInactive =
+        (lifecycleKey &&
+          (await findRowByText(page, lifecycleKey, { visibleOnly: true }))) ||
+        visibleRows.first();
       expect(rowAInactive).toBeTruthy();
       await rowAInactive.locator("[data-toggle]").first().click();
       await expect(getConfirmModal(page)).toBeVisible();
@@ -822,10 +926,16 @@ test.describe("Basic Info Groups pages - CRUD and relevance scenarios", () => {
       // 18 page relevance checks
       if (cfg.form.expectedSelectOptions) {
         await getAddButton(page).click();
-        for (const [field, values] of Object.entries(cfg.form.expectedSelectOptions)) {
-          const options = await form.locator(`select[data-field='${field}'] option`).evaluateAll((opts) =>
-            opts.map((opt) => String(opt.value || "").trim()).filter((v) => v.length > 0),
-          );
+        for (const [field, values] of Object.entries(
+          cfg.form.expectedSelectOptions,
+        )) {
+          const options = await form
+            .locator(`select[data-field='${field}'] option`)
+            .evaluateAll((opts) =>
+              opts
+                .map((opt) => String(opt.value || "").trim())
+                .filter((v) => v.length > 0),
+            );
           for (const requiredValue of values) {
             expect(options).toContain(requiredValue);
           }
@@ -835,12 +945,23 @@ test.describe("Basic Info Groups pages - CRUD and relevance scenarios", () => {
         await getAddButton(page).click();
         const deptOptions = await form
           .locator("select[data-field='dept_id'] option")
-          .evaluateAll((opts) => opts.map((o) => ({ value: String(o.value || ""), label: String(o.textContent || "") })));
-        const nonEmptyDeptValues = deptOptions.filter((o) => o.value.trim().length > 0);
+          .evaluateAll((opts) =>
+            opts.map((o) => ({
+              value: String(o.value || ""),
+              label: String(o.textContent || ""),
+            })),
+          );
+        const nonEmptyDeptValues = deptOptions.filter(
+          (o) => o.value.trim().length > 0,
+        );
         expect(nonEmptyDeptValues.length).toBeGreaterThan(0);
-        const deptIds = nonEmptyDeptValues.map((o) => Number(o.value)).filter((id) => Number.isInteger(id) && id > 0);
+        const deptIds = nonEmptyDeptValues
+          .map((o) => Number(o.value))
+          .filter((id) => Number.isInteger(id) && id > 0);
         const dbDeptRows = deptIds.length
-          ? await db("erp.departments").select("id", "is_active", "is_production").whereIn("id", deptIds)
+          ? await db("erp.departments")
+              .select("id", "is_active", "is_production")
+              .whereIn("id", deptIds)
           : [];
         expect(dbDeptRows.length).toBe(deptIds.length);
         for (const dep of dbDeptRows) {
@@ -852,7 +973,9 @@ test.describe("Basic Info Groups pages - CRUD and relevance scenarios", () => {
         if (editedKey) {
           await searchInput.fill(editedKey);
         }
-        const rowForCode = editedKey ? await findRowByText(page, editedKey) : page.locator("[data-row]").first();
+        const rowForCode = editedKey
+          ? await findRowByText(page, editedKey)
+          : page.locator("[data-row]").first();
         expect(rowForCode).toBeTruthy();
         await openEditForRow(rowForCode);
         const codeField = form.locator("[data-field='code']").first();
@@ -868,9 +991,10 @@ test.describe("Basic Info Groups pages - CRUD and relevance scenarios", () => {
       }
 
       // 19 hard delete B
-      const bKey = cfg.key === "sales-discount-policies"
-        ? (preloaded.groupNameB || "")
-        : (createB.name || createB.maxPairDiscount || "");
+      const bKey =
+        cfg.key === "sales-discount-policies"
+          ? preloaded.groupNameB || ""
+          : createB.name || createB.maxPairDiscount || "";
       if (bKey) {
         await searchInput.fill(String(bKey));
       }
@@ -883,7 +1007,10 @@ test.describe("Basic Info Groups pages - CRUD and relevance scenarios", () => {
         await getConfirmContinue(page).click();
         await page.waitForLoadState("domcontentloaded");
       } else {
-        test.skip(true, `${cfg.key}: hard_delete permission/button unavailable for this user`);
+        test.skip(
+          true,
+          `${cfg.key}: hard_delete permission/button unavailable for this user`,
+        );
       }
 
       // 20 hard delete A
@@ -891,9 +1018,14 @@ test.describe("Basic Info Groups pages - CRUD and relevance scenarios", () => {
       if (aKey) {
         await searchInput.fill(String(aKey));
       }
-      let rowAFinal = aKey ? await findRowByText(page, String(aKey), { visibleOnly: true }) : null;
+      let rowAFinal = aKey
+        ? await findRowByText(page, String(aKey), { visibleOnly: true })
+        : null;
       expect(rowAFinal).toBeTruthy();
-      const hasDeleteA = await rowAFinal.locator("[data-delete]").first().count();
+      const hasDeleteA = await rowAFinal
+        .locator("[data-delete]")
+        .first()
+        .count();
       if (hasDeleteA) {
         await rowAFinal.locator("[data-delete]").first().click();
         await expect(getConfirmModal(page)).toBeVisible();

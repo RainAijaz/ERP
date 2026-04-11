@@ -555,7 +555,9 @@ const buildReportData = ({ rows, filters }) => {
 
   groups.forEach((group) => {
     group.avg_rate =
-      group.total_qty > 0 ? toAmount(group.total_amount / group.total_qty, 4) : 0;
+      group.total_qty > 0
+        ? toAmount(group.total_amount / group.total_qty, 4)
+        : 0;
     group.avg_fixed_purchase_rate =
       group.total_qty > 0
         ? toAmount(group.total_fixed_amount_basis / group.total_qty, 4)

@@ -187,7 +187,6 @@ CREATE TABLE IF NOT EXISTS erp.account_groups (
   code       text NOT NULL,               -- stable key (snake_case)
   name       text NOT NULL,
   name_ur    text,
-  is_contra  boolean NOT NULL DEFAULT false,
   is_active  boolean NOT NULL DEFAULT true,
   created_by bigint REFERENCES erp.users(id),
   created_at timestamptz NOT NULL DEFAULT now(),

@@ -1017,17 +1017,13 @@ const insertReceiptVoucherTx = async ({
 const loadReturnableVoucherOptions = async (req) => {
   await ensureReturnableRegistryDefaultsTx(knex);
   const isUrdu = String(req?.locale || "en").toLowerCase() === "ur";
-  const [
-    hasPartiesNameUr,
-    hasAssetsName,
-    hasAssetsNameUr,
-    hasAssetTypeNameUr,
-  ] = await Promise.all([
-    hasPartiesNameUrColumnTx(knex),
-    hasAssetsNameColumnTx(knex),
-    hasAssetsNameUrColumnTx(knex),
-    hasAssetTypeRegistryNameUrColumnTx(knex),
-  ]);
+  const [hasPartiesNameUr, hasAssetsName, hasAssetsNameUr, hasAssetTypeNameUr] =
+    await Promise.all([
+      hasPartiesNameUrColumnTx(knex),
+      hasAssetsNameColumnTx(knex),
+      hasAssetsNameUrColumnTx(knex),
+      hasAssetTypeRegistryNameUrColumnTx(knex),
+    ]);
 
   const vendorNameSelect =
     isUrdu && hasPartiesNameUr

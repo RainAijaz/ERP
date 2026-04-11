@@ -34,7 +34,7 @@ const routeChecks = {
   "/master-data/basic-info/uom-conversions": [
     { name: "from_uom", needle: "from_uom_id" },
     { name: "to_uom", needle: "to_uom_id" },
-    { name: "factor", needle: "data-field=\"factor\"" },
+    { name: "factor", needle: 'data-field="factor"' },
   ],
   "/master-data/basic-info/product-groups": [
     { name: "applies_to", needle: "item_types" },
@@ -45,7 +45,7 @@ const routeChecks = {
   ],
   "/master-data/basic-info/account-groups": [
     { name: "account_type", needle: "account_type" },
-    { name: "code", needle: "data-field=\"code\"" },
+    { name: "code", needle: 'data-field="code"' },
   ],
   "/master-data/basic-info/accounts": [
     { name: "account_group", needle: "subgroup_id" },
@@ -56,7 +56,7 @@ const routeChecks = {
     { name: "city", needle: "city_id" },
   ],
   "/master-data/basic-info/cities": [
-    { name: "name", needle: "data-field=\"name\"" },
+    { name: "name", needle: 'data-field="name"' },
   ],
 };
 
@@ -69,7 +69,7 @@ const extractCsrf = (html) => {
 
 const extractOptions = (html, name) => {
   const selectMatch = html.match(
-    new RegExp(`<select[^>]*name="${name}"[^>]*>([\\s\\S]*?)<\\/select>`, "i")
+    new RegExp(`<select[^>]*name="${name}"[^>]*>([\\s\\S]*?)<\\/select>`, "i"),
   );
   if (!selectMatch) return [];
   const optionsHtml = selectMatch[1];
@@ -370,7 +370,6 @@ const buildPostPayload = (route, html) => {
         name: `Test Account ${suffix}`,
         name_ur: `Test Account Urdu ${suffix}`,
         code: `test_account_${suffix}`,
-        is_contra: "on",
       }),
       negativeTests: [
         {
@@ -850,7 +849,7 @@ const findRowIdByFields = (html, fields) => {
   while ((match = buttonRegex.exec(html))) {
     const attrs = parseButtonAttributes(match[0]);
     const ok = fields.every(
-      (field) => attrs[`data-${field.name}`] === field.value
+      (field) => attrs[`data-${field.name}`] === field.value,
     );
     if (ok && attrs["data-id"]) {
       return attrs["data-id"];
@@ -865,7 +864,7 @@ const countEditMatches = (html, field, value, caseInsensitive) => {
   const flags = caseInsensitive ? "gi" : "g";
   const regex = new RegExp(
     `<button[^>]*data-edit[^>]*data-${field}="${safeValue}"`,
-    flags
+    flags,
   );
   const matches = html.match(regex);
   return matches ? matches.length : 0;
@@ -879,7 +878,7 @@ const countEditMatchesByFields = (html, fields) => {
   while ((match = buttonRegex.exec(html))) {
     const attrs = parseButtonAttributes(match[0]);
     const ok = fields.every(
-      (field) => attrs[`data-${field.name}`] === field.value
+      (field) => attrs[`data-${field.name}`] === field.value,
     );
     if (ok) count += 1;
   }
@@ -889,7 +888,7 @@ const countEditMatchesByFields = (html, fields) => {
 const run = async () => {
   if (!cookie) {
     console.warn(
-      "WARN: SESSION_COOKIE not set. If routes require auth, you may see 302/401."
+      "WARN: SESSION_COOKIE not set. If routes require auth, you may see 302/401.",
     );
   }
 
@@ -910,7 +909,9 @@ const run = async () => {
 
       if (!isOkStatus(res.status)) {
         fail += 1;
-        console.log(`ERR ${res.status} ${route} ${location ? `-> ${location}` : ""} (${ms}ms)`);
+        console.log(
+          `ERR ${res.status} ${route} ${location ? `-> ${location}` : ""} (${ms}ms)`,
+        );
         continue;
       }
 
@@ -923,7 +924,7 @@ const run = async () => {
         console.log(
           `WARN ${res.status} ${route} (${ms}ms) missing: ${missing
             .map((item) => item.name)
-            .join(", ")}`
+            .join(", ")}`,
         );
       } else {
         pass += 1;
@@ -972,19 +973,19 @@ const run = async () => {
         if (postPayload.keyFields && postPayload.keyFields.length) {
           const matchCount = countEditMatchesByFields(
             refreshHtml,
-            postPayload.keyFields
+            postPayload.keyFields,
           );
           console.log(
-            `CHECK INSERT ${route}: ${matchCount > 0 ? "FOUND" : "NOT FOUND"}`
+            `CHECK INSERT ${route}: ${matchCount > 0 ? "FOUND" : "NOT FOUND"}`,
           );
         } else if (postPayload.keyField && postPayload.keyValue) {
           const matchCount = countEditMatches(
             refreshHtml,
             postPayload.keyField,
-            postPayload.keyValue
+            postPayload.keyValue,
           );
           console.log(
-            `CHECK INSERT ${route}: ${matchCount > 0 ? "FOUND" : "NOT FOUND"}`
+            `CHECK INSERT ${route}: ${matchCount > 0 ? "FOUND" : "NOT FOUND"}`,
           );
         }
 
@@ -999,7 +1000,8 @@ const run = async () => {
               },
               body: testCase.payload.toString(),
             });
-            const invalidOk = invalidRes.status >= 200 && invalidRes.status < 400;
+            const invalidOk =
+              invalidRes.status >= 200 && invalidRes.status < 400;
             const invalidHtml = await (
               await fetch(url, {
                 method: "GET",
@@ -1010,15 +1012,17 @@ const run = async () => {
             const keyFields = testCase.keyFields || postPayload.keyFields;
             const keyField = testCase.keyField || postPayload.keyField;
             const keyValue = testCase.keyValue || postPayload.keyValue;
-            const invalidCount = keyFields && keyFields.length
-              ? countEditMatchesByFields(invalidHtml, keyFields)
-              : countEditMatches(
-                  invalidHtml,
-                  keyField,
-                  keyValue,
-                  testCase.caseInsensitive
-                );
-            const expectedMax = typeof testCase.expectMax === "number" ? testCase.expectMax : 0;
+            const invalidCount =
+              keyFields && keyFields.length
+                ? countEditMatchesByFields(invalidHtml, keyFields)
+                : countEditMatches(
+                    invalidHtml,
+                    keyField,
+                    keyValue,
+                    testCase.caseInsensitive,
+                  );
+            const expectedMax =
+              typeof testCase.expectMax === "number" ? testCase.expectMax : 0;
             if (invalidOk && invalidCount > expectedMax) {
               console.log(`NEGATIVE ERR ${route} (${testCase.label})`);
               fail += 1;
@@ -1029,7 +1033,9 @@ const run = async () => {
         }
 
         if (doCsrfTest) {
-          const csrfPayload = new URLSearchParams(postPayload.payload.toString());
+          const csrfPayload = new URLSearchParams(
+            postPayload.payload.toString(),
+          );
           csrfPayload.delete("_csrf");
           const csrfRes = await fetch(url, {
             method: "POST",
@@ -1049,27 +1055,9 @@ const run = async () => {
         }
 
         if (postPayload.keyFields && postPayload.keyFields.length) {
-          const targetId = findRowIdByFields(refreshHtml, postPayload.keyFields);
-          if (targetId) {
-            const delRes = await fetch(`${url}/${targetId}/delete`, {
-              method: "POST",
-              redirect: "manual",
-              headers: {
-                ...(cookie ? { Cookie: cookie } : {}),
-                "Content-Type": "application/x-www-form-urlencoded",
-              },
-              body: new URLSearchParams({ _csrf: postPayload.csrf }).toString(),
-            });
-            const delOk = delRes.status >= 200 && delRes.status < 400;
-            console.log(`DELETE ${delOk ? "OK" : "ERR"} ${delRes.status} ${route}`);
-          } else {
-            console.log(`DELETE SKIP ${route}: cannot locate row id`);
-          }
-        } else if (postPayload.keyField && postPayload.keyValue) {
-          const targetId = findRowIdByField(
+          const targetId = findRowIdByFields(
             refreshHtml,
-            postPayload.keyField,
-            postPayload.keyValue
+            postPayload.keyFields,
           );
           if (targetId) {
             const delRes = await fetch(`${url}/${targetId}/delete`, {
@@ -1082,7 +1070,32 @@ const run = async () => {
               body: new URLSearchParams({ _csrf: postPayload.csrf }).toString(),
             });
             const delOk = delRes.status >= 200 && delRes.status < 400;
-            console.log(`DELETE ${delOk ? "OK" : "ERR"} ${delRes.status} ${route}`);
+            console.log(
+              `DELETE ${delOk ? "OK" : "ERR"} ${delRes.status} ${route}`,
+            );
+          } else {
+            console.log(`DELETE SKIP ${route}: cannot locate row id`);
+          }
+        } else if (postPayload.keyField && postPayload.keyValue) {
+          const targetId = findRowIdByField(
+            refreshHtml,
+            postPayload.keyField,
+            postPayload.keyValue,
+          );
+          if (targetId) {
+            const delRes = await fetch(`${url}/${targetId}/delete`, {
+              method: "POST",
+              redirect: "manual",
+              headers: {
+                ...(cookie ? { Cookie: cookie } : {}),
+                "Content-Type": "application/x-www-form-urlencoded",
+              },
+              body: new URLSearchParams({ _csrf: postPayload.csrf }).toString(),
+            });
+            const delOk = delRes.status >= 200 && delRes.status < 400;
+            console.log(
+              `DELETE ${delOk ? "OK" : "ERR"} ${delRes.status} ${route}`,
+            );
           } else {
             console.log(`DELETE SKIP ${route}: cannot locate row id`);
           }

@@ -100,6 +100,10 @@
             />
           </label>
         <% } else if (field.type === "multi-select") { %>
+          <% const hasAllOption = (field.options || []).some(function(option) {
+               const value = String(option && option.value ? option.value : "").trim().toLowerCase();
+               return value === "all" || value === "__all__";
+             }); %>
           <label class="block text-sm font-semibold text-slate-600<%= supplierHiddenClass %>" <%- visibilityAttrs %>>
             <span><%= t(field.label) %></span>
             <% if (field.helpText) { %>
@@ -111,6 +115,7 @@
               data-field="<%= field.name %>"
               data-searchable-select="true"
               data-searchable-variant="unified"
+              <%= hasAllOption ? 'data-all-multi-select="true"' : "" %>
               multiple
               <%= field.required ? "data-required=\"true\"" : "" %>
             >

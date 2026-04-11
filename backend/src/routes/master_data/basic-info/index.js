@@ -477,13 +477,9 @@ const BASIC_INFO_PAGES = {
       { key: "code", label: "Code" },
       { key: "name", label: "Group Name" },
       { key: "name_ur", label: "Name (Urdu)" },
-      { key: "is_contra", label: "Contra", type: "boolean" },
       { key: "created_by_name", label: "Created By" },
       { key: "created_at", label: "Created At" },
     ],
-    defaults: {
-      is_contra: false,
-    },
     fields: [
       {
         name: "account_type",
@@ -513,12 +509,6 @@ const BASIC_INFO_PAGES = {
         helpText: "Urdu display name for reports and screens.",
         placeholder: "Urdu name",
         required: true,
-      },
-      {
-        name: "is_contra",
-        label: "Contra Account",
-        helpText: "Use for balances that offset their parent group.",
-        type: "checkbox",
       },
     ],
   },

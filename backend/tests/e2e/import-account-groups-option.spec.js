@@ -9,13 +9,12 @@ test.describe("Master data import targets", () => {
   test("shows account groups target option", async ({ page }) => {
     await page.goto("/master-data/import", { waitUntil: "domcontentloaded" });
 
-    const target = page.locator('input[name="targets"][value="account_groups"]');
+    const target = page.locator(
+      'input[name="targets"][value="account_groups"]',
+    );
     await expect(target).toBeVisible();
 
-    const targetLabel = page
-      .locator("label")
-      .filter({ has: target })
-      .first();
+    const targetLabel = page.locator("label").filter({ has: target }).first();
     await expect(targetLabel).toContainText(/Account Groups|اکاؤنٹ گروپس/i);
   });
 });

@@ -162,7 +162,7 @@ const translations = {
     import_target_basic_master_data_desc:
       "Units, Sizes, Colors, Grades, Groups, Cities, Departments, and UOM conversions.",
     import_target_account_groups_desc:
-      "Account groups import with account type, optional code, contra flag, and active status.",
+      "Account groups import with account type, optional code, and active status.",
     import_target_accounts_desc:
       "Chart of accounts import with branch mapping and posting class resolution.",
     import_target_parties_desc:
@@ -201,7 +201,8 @@ const translations = {
     import_entity_accounts: "Accounts",
     import_entity_parties: "Parties",
     import_entity_products: "Products",
-    import_file_too_large: "The selected file is too large. Maximum size is 20MB.",
+    import_file_too_large:
+      "The selected file is too large. Maximum size is 20MB.",
     import_file_required: "Please select an Excel file.",
     import_fix_errors_first:
       "Please resolve all dry-run validation errors before applying import.",
@@ -1898,7 +1899,7 @@ translations.ur = {
   import_target_basic_master_data_desc:
     "یونٹس، سائز، کلرز، گریڈز، گروپس، شہر، محکمے، اور UOM کنورژنز۔",
   import_target_account_groups_desc:
-    "اکاؤنٹ گروپس امپورٹ بمع اکاؤنٹ ٹائپ، اختیاری کوڈ، کنٹرا فلیگ، اور فعال حیثیت۔",
+    "اکاؤنٹ گروپس امپورٹ بمع اکاؤنٹ ٹائپ، اختیاری کوڈ، اور فعال حیثیت۔",
   import_target_accounts_desc:
     "اکاؤنٹس چارٹ امپورٹ بمع برانچ میپنگ اور پوسٹنگ کلاس ریزولوشن۔",
   import_target_parties_desc:

@@ -838,7 +838,6 @@
       rateType: form.querySelector('[data-field="rate_type"]'),
       rateValue: form.querySelector('[data-field="rate_value"]'),
     };
-    const labourMultiRoot = form.querySelector('[data-field-wrapper="labour_id"] [data-multi-select]');
     const fieldsByName = {
       labour_id: fields.labourId,
       dept_id: fields.deptId,
@@ -859,6 +858,8 @@
       debounceTimer: null,
       loading: false,
       lockedEditValues: {},
+      editSkuLabel: "",
+      editSkuValue: "",
     };
     const editLockedFields = new Set(["labour_id", "dept_id", "apply_on", "sku_id", "subgroup_id", "group_id", "article_type"]);
     const editVisibleFields = new Set(["sku_id", "rate_type", "rate_value"]);
@@ -879,6 +880,11 @@
     const normalizeApplyOn = () => String(fields.applyOn?.value || "").trim().toUpperCase();
     const getSelectedLabourIds = () => {
       if (!fields.labourId) return [];
+      if (fields.labourId instanceof HTMLSelectElement) {
+        return Array.from(fields.labourId.selectedOptions || [])
+          .map((option) => String(option.value || "").trim())
+          .filter((value) => value);
+      }
       const hiddenValues = String(fields.labourId.value || "")
         .split(",")
         .map((value) => value.trim())
@@ -1075,6 +1081,20 @@
       fields.skuId.dispatchEvent(new Event("change", { bubbles: true }));
     };
 
+    const syncSkuReadonlyText = (fallbackLabel = "") => {
+      const skuSelect = fieldsByName.sku_id;
+      if (!skuReadonlyText || !skuSelect) return;
+      const selectedOption = Array.from(skuSelect.selectedOptions || [])[0] || null;
+      const optionLabel = selectedOption && selectedOption.textContent ? selectedOption.textContent.trim() : "";
+      const label =
+        optionLabel ||
+        String(fallbackLabel || "").trim() ||
+        String(skuSelect.value || "").trim() ||
+        String(state.editSkuValue || "").trim() ||
+        tSelect;
+      skuReadonlyText.textContent = label;
+    };
+
     const syncSkuOptions = async ({ preserveSelection = true, selectedValues = [], selectedLabel = "" } = {}) => {
       const applyOn = String(fields.applyOn?.value || "").trim().toUpperCase();
       const articleType = String(fields.articleType?.value || "").trim().toUpperCase();
@@ -1107,6 +1127,9 @@
           return;
         }
         applySkuOptions(payload.options, targetSkus, selectedLabel);
+        if (modal.dataset.mode === "edit") {
+          syncSkuReadonlyText(selectedLabel || state.editSkuLabel);
+        }
       } catch (err) {
         resetSkuOptions();
       }
@@ -1156,11 +1179,30 @@
       Object.keys(fieldsByName).forEach((name) => {
         const wrapper = form.querySelector(`[data-field-wrapper="${name}"]`);
         if (!wrapper) return;
+        const controls = wrapper.querySelectorAll("[data-field]");
         if (!isEdit) {
           wrapper.classList.remove("hidden");
+          controls.forEach((ctrl) => {
+            ctrl.disabled = false;
+            if (ctrl.hasAttribute("data-required")) {
+              ctrl.setAttribute("required", "required");
+            }
+          });
           return;
         }
-        wrapper.classList.toggle("hidden", !editVisibleFields.has(name));
+        const shouldShow = editVisibleFields.has(name);
+        wrapper.classList.toggle("hidden", !shouldShow);
+        controls.forEach((ctrl) => {
+          if (shouldShow) {
+            ctrl.disabled = false;
+            if (ctrl.hasAttribute("data-required")) {
+              ctrl.setAttribute("required", "required");
+            }
+            return;
+          }
+          ctrl.disabled = false;
+          ctrl.removeAttribute("required");
+        });
       });
 
       const skuWrapper = form.querySelector('[data-field-wrapper="sku_id"]');
@@ -1175,9 +1217,7 @@
           skuWrapper.appendChild(skuReadonlyText);
         }
         if (isEdit) {
-          const selectedOption = skuSelect.options[skuSelect.selectedIndex];
-          const label = selectedOption && selectedOption.textContent ? selectedOption.textContent.trim() : "";
-          skuReadonlyText.textContent = label || String(skuSelect.value || "");
+          syncSkuReadonlyText(state.editSkuLabel);
           skuReadonlyText.classList.remove("hidden");
           skuSelect.classList.add("hidden");
           skuSelect.disabled = true;
@@ -1417,17 +1457,9 @@
       state.deptOptionsSeq += 1;
       state.skuOptionsSeq += 1;
       if (fields.labourId) {
-        if (fields.labourId.tagName === "SELECT") {
-          Array.from(fields.labourId.options || []).forEach((option) => {
-            option.selected = false;
-          });
-        } else {
-          fields.labourId.value = "";
-          labourMultiRoot?.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
-            checkbox.checked = false;
-          });
-          labourMultiRoot?.querySelector("[data-multi-trigger]")?.replaceChildren(document.createTextNode(tSelect));
-        }
+        Array.from(fields.labourId.options || []).forEach((option) => {
+          option.selected = false;
+        });
         fields.labourId.dispatchEvent(new Event("change", { bubbles: true }));
       }
       resetDepartmentOptions();
@@ -1551,6 +1583,11 @@
       if (modalMode === "edit") {
         editSkuValue = String(editBtn?.getAttribute("data-sku_id") || "").trim();
         editSkuLabel = String(editBtn?.getAttribute("data-sku_code") || "").trim();
+        state.editSkuLabel = editSkuLabel;
+        state.editSkuValue = editSkuValue;
+      } else {
+        state.editSkuLabel = "";
+        state.editSkuValue = "";
       }
       if (modalMode === "edit" && fields.applyOn) {
         fieldsByName.apply_on.value = "SKU";
