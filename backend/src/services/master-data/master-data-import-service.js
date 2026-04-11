@@ -476,9 +476,7 @@ const generateAccountGroupCodeTx = async ({ db, accountType, name }) => {
   const normalizedType = String(accountType || "")
     .trim()
     .toUpperCase();
-  let base = toNameCode(name, "account_group")
-    .toLowerCase()
-    .slice(0, 80);
+  let base = toNameCode(name, "account_group").toLowerCase().slice(0, 80);
   if (base.length < 2) base = "account_group";
   for (let i = 0; i < 500; i += 1) {
     const suffix = i === 0 ? "" : `_${i + 1}`;
@@ -1402,8 +1400,7 @@ const ENTITY_SPECS = Object.freeze({
         };
       }
 
-      const providedCode = trimString(row.raw.code)
-        .toLowerCase();
+      const providedCode = trimString(row.raw.code).toLowerCase();
       if (providedCode && !/^[a-z0-9_]{2,80}$/.test(providedCode)) {
         return {
           error: `Invalid account group code '${providedCode}' for ${name}. Use lowercase letters, numbers, and underscores only.`,
@@ -1624,7 +1621,9 @@ const ENTITY_SPECS = Object.freeze({
       if (!subgroupId) {
         throw new Error(
           `Account group not found while applying account import: ${
-            op.data.subgroup_code_token || op.data.subgroup_name_token || "(empty)"
+            op.data.subgroup_code_token ||
+            op.data.subgroup_name_token ||
+            "(empty)"
           }`,
         );
       }
@@ -2212,6 +2211,15 @@ const applyWorkbookImport = async ({
       if (!entitySpec || typeof entitySpec.apply !== "function") continue;
       await entitySpec.apply(operation, trx, actorId);
     }
+
+    await trx("erp.entity_type_registry")
+      .insert({
+        code: "MASTER_DATA_IMPORT",
+        name: "Master Data Import",
+        description: "Master data import audit activity",
+      })
+      .onConflict("code")
+      .ignore();
 
     await insertActivityLog(trx, {
       branch_id: branchId || null,

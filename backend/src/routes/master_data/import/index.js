@@ -1,7 +1,11 @@
 const express = require("express");
 const multer = require("multer");
-const { requirePermission } = require("../../../middleware/access/role-permissions");
-const { handleScreenApproval } = require("../../../middleware/approvals/screen-approval");
+const {
+  requirePermission,
+} = require("../../../middleware/access/role-permissions");
+const {
+  handleScreenApproval,
+} = require("../../../middleware/approvals/screen-approval");
 const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
 const { queueAuditLog } = require("../../../utils/audit-log");
 const { setCookie } = require("../../../middleware/utils/cookies");
@@ -30,7 +34,20 @@ const toArray = (value) => {
 };
 
 const parseSelectedTargets = (body) =>
-  resolveSelectedTargetKeys(toArray(body?.targets).map((entry) => String(entry || "").trim()));
+  resolveSelectedTargetKeys(
+    toArray(body?.targets).map((entry) => String(entry || "").trim()),
+  );
+
+const ensureMasterDataImportEntityType = async (db) => {
+  await db("erp.entity_type_registry")
+    .insert({
+      code: "MASTER_DATA_IMPORT",
+      name: "Master Data Import",
+      description: "Master data import audit activity",
+    })
+    .onConflict("code")
+    .ignore();
+};
 
 const buildErrorMessage = (res, err) => {
   if (err?.code === "LIMIT_FILE_SIZE") {
@@ -47,12 +64,14 @@ const buildErrorMessage = (res, err) => {
 };
 
 const renderPage = (req, res, data = {}) => {
-  const selectedTargetKeys = data.selectedTargetKeys || Object.keys(
-    SUPPORTED_IMPORT_TARGETS.reduce((acc, entry) => {
-      acc[entry.key] = true;
-      return acc;
-    }, {}),
-  );
+  const selectedTargetKeys =
+    data.selectedTargetKeys ||
+    Object.keys(
+      SUPPORTED_IMPORT_TARGETS.reduce((acc, entry) => {
+        acc[entry.key] = true;
+        return acc;
+      }, {}),
+    );
 
   return res.render("base/layouts/main", {
     title: res.locals.t("master_data_import") || "Master Data Import",
@@ -151,6 +170,8 @@ router.post(
     const originalName = req.file?.originalname || "";
 
     try {
+      await ensureMasterDataImportEntityType(knex);
+
       if (!req.file?.buffer) {
         return renderPage(req, res, {
           error:
@@ -185,10 +206,10 @@ router.post(
           req,
           scopeKey: "master_data.import",
           action: "create",
-          entityType: SCREEN_ENTITY_TYPES["master_data.import"] || "MASTER_DATA_IMPORT",
+          entityType:
+            SCREEN_ENTITY_TYPES["master_data.import"] || "MASTER_DATA_IMPORT",
           entityId: "NEW",
-          summary:
-            `${res.locals.t("master_data_import") || "Master Data Import"}: ${originalName || "Excel"}`,
+          summary: `${res.locals.t("master_data_import") || "Master Data Import"}: ${originalName || "Excel"}`,
           oldValue: null,
           newValue: {
             _action: "import_master_data",
@@ -213,7 +234,8 @@ router.post(
       });
 
       queueAuditLog(req, {
-        entityType: SCREEN_ENTITY_TYPES["master_data.import"] || "MASTER_DATA_IMPORT",
+        entityType:
+          SCREEN_ENTITY_TYPES["master_data.import"] || "MASTER_DATA_IMPORT",
         entityId: `IMPORT_${Date.now()}`,
         action: "CREATE",
         context: {

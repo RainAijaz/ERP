@@ -84,7 +84,8 @@ VALUES
   ('BRANCH',                'Branch',      'Administration: branches'),
   ('USER',                  'User',        'Administration: users'),
   ('ROLE',                  'Role',        'Administration: roles'),
-  ('PERMISSION',            'Permission',  'Administration: permissions')
+  ('PERMISSION',            'Permission',  'Administration: permissions'),
+  ('MASTER_DATA_IMPORT',    'Master Data Import', 'Master data import audit activity')
 ON CONFLICT (code) DO NOTHING;
 
 
