@@ -1292,6 +1292,7 @@
       document.addEventListener("DOMContentLoaded", initSearchableSelects);
     }
     window.initSearchableSelects = initSearchableSelects;
+    window.__globalSearchableSelectReady = true;
     window.initDataMultiSelects = initDataMultiSelects;
     document.addEventListener("DOMContentLoaded", () => {
       initDataMultiSelects(document);

@@ -1877,6 +1877,14 @@
 </script>
 <script>
   (function () {
+    if (
+      (typeof window !== "undefined" &&
+        window.__globalSearchableSelectReady === true) ||
+      typeof window.initSearchableSelects === "function"
+    ) {
+      return;
+    }
+
     const i18nSearch = '<%= t("search") %>';
     const i18nSelect = '<%= t("select") %>';
     const isWithinModal = (select) => !!select.closest("[data-modal-form]");
