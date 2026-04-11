@@ -224,6 +224,7 @@ CREATE TABLE IF NOT EXISTS erp.accounts (
   posting_class_id bigint REFERENCES erp.account_posting_classes(id) ON DELETE RESTRICT,
 
   is_active     boolean NOT NULL DEFAULT true,
+  is_contra     boolean NOT NULL DEFAULT false,
   lock_posting  boolean NOT NULL DEFAULT false, -- if true, app should block postings to this account
 
   created_by    bigint REFERENCES erp.users(id),

@@ -73,6 +73,7 @@ const page = {
     { key: "name_ur", label: "Name (Urdu)" },
     { key: "account_type", label: "account_type" },
     { key: "group_name", label: "account_group" },
+    { key: "is_contra", label: "contra_account", type: "boolean" },
     { key: "posting_class_name", label: "posting_class" },
     { key: "branch_names", label: "branches" },
     { key: "lock_posting", label: "lock_posting", type: "boolean" },
@@ -128,6 +129,12 @@ const page = {
       },
       labelFormat: (row, locale) =>
         `${String(row.code || "").toUpperCase()} - ${locale === "ur" && row.name_ur ? row.name_ur : row.name}`,
+    },
+    {
+      name: "is_contra",
+      label: "contra_account",
+      helpText: "tooltip_contra",
+      type: "checkbox",
     },
     {
       name: "branch_ids",

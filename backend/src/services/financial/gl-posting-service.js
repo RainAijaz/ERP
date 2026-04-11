@@ -65,6 +65,7 @@ const VOUCHERS_WITH_HEADER_BALANCING = new Set([
 const CONTROL_GROUP_CODES = {
   partyReceivable: "accounts_receivable_control",
   partyPayable: "accounts_payable_control",
+  payrollLiabilities: "payroll_liabilities",
   labourPayable: "wages_payable",
   employeePayable: "salaries_payable",
 };
@@ -165,39 +166,64 @@ const resolveSingleAccountIdForGroup = ({
   groupCode,
   voucherId,
   lineNo,
+  explicitPreferredCode = null,
+  fallbackGroupCodes = [],
 }) => {
-  const candidates = (accountsByGroup.get(groupCode) || []).filter(
-    (row) => Number.isInteger(Number(row.id || 0)) && Number(row.id) > 0,
-  );
-  if (!candidates.length) {
+  const groupCodesToSearch = [
+    groupCode,
+    ...(fallbackGroupCodes || []).map((code) => String(code || "").trim()),
+  ].filter(Boolean);
+  const preferredCode = String(
+    explicitPreferredCode || CONTROL_GROUP_PREFERRED_ACCOUNT_CODES[groupCode] || "",
+  )
+    .trim()
+    .toLowerCase();
+
+  let foundAnyCandidates = false;
+  for (const candidateGroupCode of groupCodesToSearch) {
+    const candidates = (accountsByGroup.get(candidateGroupCode) || []).filter(
+      (row) => Number.isInteger(Number(row.id || 0)) && Number(row.id) > 0,
+    );
+    if (!candidates.length) continue;
+    foundAnyCandidates = true;
+
+    if (preferredCode) {
+      const preferredMatches = candidates.filter(
+        (row) => String(row.code || "").toLowerCase() === preferredCode,
+      );
+      if (preferredMatches.length === 1) {
+        return Number(preferredMatches[0].id);
+      }
+      if (preferredMatches.length > 1) {
+        throw new Error(
+          `GL posting failed: voucher ${voucherId} line ${lineNo} has duplicate preferred control account code '${preferredCode}' in group '${candidateGroupCode}'`,
+        );
+      }
+      continue;
+    }
+
+    if (candidates.length > 1) {
+      throw new Error(
+        `GL posting failed: voucher ${voucherId} line ${lineNo} has multiple accounts in control account group '${candidateGroupCode}' for current branch`,
+      );
+    }
+    return Number(candidates[0].id);
+  }
+
+  if (!foundAnyCandidates) {
     throw new Error(
       `GL posting failed: voucher ${voucherId} line ${lineNo} requires control account group '${groupCode}' in current branch`,
     );
   }
-  const preferredCode = String(
-    CONTROL_GROUP_PREFERRED_ACCOUNT_CODES[groupCode] || "",
-  )
-    .trim()
-    .toLowerCase();
   if (preferredCode) {
-    const preferredMatches = candidates.filter(
-      (row) => String(row.code || "").toLowerCase() === preferredCode,
-    );
-    if (preferredMatches.length === 1) {
-      return Number(preferredMatches[0].id);
-    }
-    if (preferredMatches.length > 1) {
-      throw new Error(
-        `GL posting failed: voucher ${voucherId} line ${lineNo} has duplicate preferred control account code '${preferredCode}' in group '${groupCode}'`,
-      );
-    }
-  }
-  if (candidates.length > 1) {
+    const searchedGroups = groupCodesToSearch.join(", ");
     throw new Error(
-      `GL posting failed: voucher ${voucherId} line ${lineNo} has multiple accounts in control account group '${groupCode}' for current branch`,
+      `GL posting failed: voucher ${voucherId} line ${lineNo} requires control account code '${preferredCode}' in group(s) '${searchedGroups}'`,
     );
   }
-  return Number(candidates[0].id);
+  throw new Error(
+    `GL posting failed: voucher ${voucherId} line ${lineNo} could not resolve control account for group '${groupCode}'`,
+  );
 };
 
 const loadPurchaseItemTotalTx = async ({ trx, voucherId }) => {
@@ -811,7 +837,9 @@ const resolvePostingAccountForLineTx = async ({
     return {
       accountId: resolveSingleAccountIdForGroup({
         accountsByGroup: controlAccountsByGroup,
-        groupCode: CONTROL_GROUP_CODES.labourPayable,
+        groupCode: CONTROL_GROUP_CODES.payrollLiabilities,
+        fallbackGroupCodes: [CONTROL_GROUP_CODES.labourPayable],
+        explicitPreferredCode: "gl_wages_payable_control",
         voucherId,
         lineNo,
       }),
@@ -823,7 +851,9 @@ const resolvePostingAccountForLineTx = async ({
     return {
       accountId: resolveSingleAccountIdForGroup({
         accountsByGroup: controlAccountsByGroup,
-        groupCode: CONTROL_GROUP_CODES.employeePayable,
+        groupCode: CONTROL_GROUP_CODES.payrollLiabilities,
+        fallbackGroupCodes: [CONTROL_GROUP_CODES.employeePayable],
+        explicitPreferredCode: "gl_salaries_payable_control",
         voucherId,
         lineNo,
       }),

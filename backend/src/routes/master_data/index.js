@@ -12,6 +12,7 @@ const partiesRoutes = require("./parties");
 const bomRoutes = require("./bom");
 const returnableAssetsRoutes = require("./returnable-assets");
 const assetTypesRoutes = require("./asset-types");
+const importRoutes = require("./import");
 
 const router = express.Router();
 
@@ -97,6 +98,7 @@ router.use("/basic-info/accounts", accountsRoutes);
 router.use("/basic-info/parties", partiesRoutes);
 router.use("/basic-info/uom-conversions", uomConversionsRoutes);
 router.use("/basic-info", basicInfoRoutes);
+router.use("/import", importRoutes);
 router.use("/basic-information", (req, res, next) => {
   const suffix = req.originalUrl.replace(
     /^\/master-data\/basic-information/,

@@ -313,6 +313,21 @@ const navConfig = [
         ],
       },
       {
+        key: "data_import",
+        labelKey: "master_data_import",
+        type: "group",
+        children: [
+          {
+            key: "master_data_import",
+            labelKey: "master_data_import",
+            scopeType: "SCREEN",
+            scopeKey: "master_data.import",
+            moduleGroup: "Master Data",
+            route: "/master-data/import",
+          },
+        ],
+      },
+      {
         key: "bom",
         labelKey: "bom",
         type: "group",

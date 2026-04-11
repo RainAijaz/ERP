@@ -34,6 +34,7 @@ const SCREEN_ENTITY_TYPES = {
   "master_data.products.semi_finished": "ITEM",
   "master_data.products.finished": "ITEM",
   "master_data.products.skus": "SKU",
+  "master_data.import": "MASTER_DATA_IMPORT",
   "master_data.bom": "BOM",
   "hr_payroll.employees": "EMPLOYEE",
   "hr_payroll.labours": "LABOUR",

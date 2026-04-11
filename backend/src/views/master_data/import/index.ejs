@@ -1,0 +1,158 @@
+<div class="mx-auto w-full max-w-7xl space-y-6">
+  <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
+    <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+      <div class="space-y-1">
+        <h1 class="text-2xl font-display text-ink"><%= t("master_data_import") %></h1>
+        <p class="text-sm text-muted"><%= t("master_data_import_description") %></p>
+      </div>
+      <div class="rounded-full border border-amber-200 bg-amber-50 px-4 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">
+        <%= isAdminUser ? t("import_admin_mode") : t("import_non_admin_mode") %>
+      </div>
+    </div>
+  </section>
+
+  <%- include("../../base/partials/error-banner", { error, modalOpen: false }) %>
+
+  <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md">
+    <div class="border-b border-slate-200 px-5 py-4">
+      <h2 class="text-sm font-semibold uppercase tracking-[0.16em] text-slate-700"><%= t("import_upload_file") %></h2>
+    </div>
+
+    <div class="space-y-4 px-5 py-5">
+      <form action="/master-data/import/preview" method="post" enctype="multipart/form-data" class="space-y-4" data-import-form>
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+        <div class="grid gap-4 lg:grid-cols-2">
+          <div class="space-y-2">
+            <label class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("import_excel_file") %></label>
+            <input
+              type="file"
+              name="import_file"
+              accept=".xlsx,.xls"
+              class="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700"
+              required
+            />
+            <% if (lastFileName) { %>
+              <p class="text-xs text-slate-500"><%= t("import_last_file") %>: <span class="font-semibold text-slate-700"><%= lastFileName %></span></p>
+            <% } %>
+          </div>
+
+          <div class="space-y-2">
+            <label class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("import_targets") %></label>
+            <div class="rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div class="grid gap-2 sm:grid-cols-2">
+                <% supportedTargets.forEach((target) => { %>
+                  <% const checked = selectedTargetKeys.includes(target.key); %>
+                  <label class="flex cursor-pointer items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+                    <input
+                      type="checkbox"
+                      name="targets"
+                      value="<%= target.key %>"
+                      <%= checked ? "checked" : "" %>
+                      class="mt-0.5 h-4 w-4 rounded border-slate-300 text-slate-900"
+                    />
+                    <span>
+                      <span class="block font-semibold uppercase tracking-widest"><%= t(target.labelKey) %></span>
+                      <span class="mt-0.5 block text-[11px] text-slate-500"><%= t(target.descriptionKey) %></span>
+                    </span>
+                  </label>
+                <% }) %>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap gap-2">
+          <button type="submit" class="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700 transition hover:border-slate-400 hover:text-slate-900">
+            <%= t("import_dry_run") %>
+          </button>
+          <button type="submit" formaction="/master-data/import/apply" class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white transition hover:bg-slate-800" <%= isAdminUser ? "" : "title='" + t("import_non_admin_submit_notice") + "'" %>>
+            <%= isAdminUser ? t("import_apply_changes") : t("import_submit_for_approval") %>
+          </button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <% if (importResult) { %>
+    <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md">
+      <div class="border-b border-slate-200 px-5 py-4">
+        <h2 class="text-sm font-semibold uppercase tracking-[0.16em] text-slate-700"><%= t("import_preview_summary") %></h2>
+      </div>
+      <div class="grid gap-3 px-5 py-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+          <div class="text-[11px] uppercase tracking-[0.12em] text-slate-500"><%= t("import_rows_read") %></div>
+          <div class="mt-1 text-xl font-semibold text-slate-900"><%= importResult.summary.rowsRead %></div>
+        </div>
+        <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+          <div class="text-[11px] uppercase tracking-[0.12em] text-slate-500"><%= t("import_rows_planned") %></div>
+          <div class="mt-1 text-xl font-semibold text-slate-900"><%= importResult.summary.rowsPlanned %></div>
+        </div>
+        <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-3">
+          <div class="text-[11px] uppercase tracking-[0.12em] text-emerald-700"><%= t("import_create_update") %></div>
+          <div class="mt-1 text-xl font-semibold text-emerald-800"><%= importResult.summary.createCount + importResult.summary.updateCount %></div>
+        </div>
+        <div class="rounded-xl border <%= importResult.summary.errorCount > 0 ? "border-rose-200 bg-rose-50" : "border-amber-200 bg-amber-50" %> px-3 py-3">
+          <div class="text-[11px] uppercase tracking-[0.12em] <%= importResult.summary.errorCount > 0 ? "text-rose-700" : "text-amber-700" %>"><%= t("import_errors") %></div>
+          <div class="mt-1 text-xl font-semibold <%= importResult.summary.errorCount > 0 ? "text-rose-800" : "text-amber-800" %>"><%= importResult.summary.errorCount %></div>
+        </div>
+      </div>
+
+      <div class="overflow-x-auto border-t border-slate-200">
+        <table class="min-w-full text-sm">
+          <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
+            <tr>
+              <th class="px-4 py-3 text-left"><%= t("import_target") %></th>
+              <th class="px-4 py-3 text-left"><%= t("rows") %></th>
+              <th class="px-4 py-3 text-left"><%= t("import_create") %></th>
+              <th class="px-4 py-3 text-left"><%= t("import_update") %></th>
+              <th class="px-4 py-3 text-left"><%= t("import_skip") %></th>
+              <th class="px-4 py-3 text-left"><%= t("import_errors") %></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <% (importResult.entitySummaries || []).forEach((entry) => { %>
+              <tr>
+                <td class="px-4 py-3 font-medium text-slate-700"><%= t("import_entity_" + entry.entityKey) %></td>
+                <td class="px-4 py-3 text-slate-700"><%= entry.rowsTotal %></td>
+                <td class="px-4 py-3 text-emerald-700"><%= entry.createCount %></td>
+                <td class="px-4 py-3 text-blue-700"><%= entry.updateCount %></td>
+                <td class="px-4 py-3 text-amber-700"><%= entry.skipCount %></td>
+                <td class="px-4 py-3 text-rose-700"><%= entry.errorCount %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <% if ((importResult.errors || []).length) { %>
+      <section class="rounded-2xl border border-rose-200 bg-rose-50/60 shadow-md">
+        <div class="border-b border-rose-200 px-5 py-4">
+          <h2 class="text-sm font-semibold uppercase tracking-[0.16em] text-rose-700"><%= t("import_validation_errors") %></h2>
+        </div>
+        <div class="max-h-72 overflow-auto px-5 py-3">
+          <table class="min-w-full text-xs">
+            <thead class="text-[11px] uppercase tracking-widest text-rose-700">
+              <tr>
+                <th class="px-2 py-2 text-left"><%= t("import_target") %></th>
+                <th class="px-2 py-2 text-left"><%= t("sheet") %></th>
+                <th class="px-2 py-2 text-left"><%= t("rows") %></th>
+                <th class="px-2 py-2 text-left"><%= t("error") %></th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-rose-100 text-rose-900">
+              <% importResult.errors.forEach((entry) => { %>
+                <tr>
+                  <td class="px-2 py-2"><%= t("import_entity_" + entry.entityKey) %></td>
+                  <td class="px-2 py-2"><%= entry.sheetName || "-" %></td>
+                  <td class="px-2 py-2"><%= entry.rowNumber || "-" %></td>
+                  <td class="px-2 py-2"><%= entry.message %></td>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    <% } %>
+  <% } %>
+</div>
