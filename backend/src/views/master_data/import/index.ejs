@@ -19,7 +19,7 @@
     </div>
 
     <div class="space-y-4 px-5 py-5">
-      <form action="/master-data/import/preview" method="post" enctype="multipart/form-data" class="space-y-4" data-import-form>
+      <form action="/master-data/import/preview?_csrf=<%= encodeURIComponent(csrfToken) %>" method="post" enctype="multipart/form-data" class="space-y-4" data-import-form>
         <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
         <div class="grid gap-4 lg:grid-cols-2">
           <div class="space-y-2">
@@ -65,7 +65,7 @@
           <button type="submit" class="rounded-full border border-slate-300 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700 transition hover:border-slate-400 hover:text-slate-900">
             <%= t("import_dry_run") %>
           </button>
-          <button type="submit" formaction="/master-data/import/apply" class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white transition hover:bg-slate-800" <%= isAdminUser ? "" : "title='" + t("import_non_admin_submit_notice") + "'" %>>
+          <button type="submit" formaction="/master-data/import/apply?_csrf=<%= encodeURIComponent(csrfToken) %>" class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white transition hover:bg-slate-800" <%= isAdminUser ? "" : "title='" + t("import_non_admin_submit_notice") + "'" %>>
             <%= isAdminUser ? t("import_apply_changes") : t("import_submit_for_approval") %>
           </button>
         </div>
