@@ -128,6 +128,8 @@ const createPlanningContext = () => ({
     uom: new Set(),
     productGroup: new Set(),
     productSubgroup: new Set(),
+    productSubgroupNameMap: new Map(),
+    productSubgroupCodeMap: new Map(),
     productType: new Set(),
     city: new Set(),
     partyGroup: new Set(),
@@ -808,13 +810,55 @@ const ENTITY_SPECS = Object.freeze({
       const code = trimString(row.raw.code) || toNameCode(name, "subgroup");
       const itemTypes = normalizeItemTypes(row.raw.appliesTo, true);
       const isActive = parseBoolean(row.raw.isActive, true);
-      const existing = await db("erp.product_subgroups")
+      const byCode = await db("erp.product_subgroups")
         .select("id")
-        .whereRaw("lower(code) = ? OR lower(name) = ?", [
-          code.toLowerCase(),
-          name.toLowerCase(),
-        ])
+        .whereRaw("lower(code) = ?", [code.toLowerCase()])
         .first();
+      let byName = null;
+      if (!(groupToken && !groupId)) {
+        const byNameQuery = db("erp.product_subgroups")
+          .select("id")
+          .whereRaw("lower(name) = ?", [name.toLowerCase()]);
+        if (Number.isInteger(Number(groupId)) && Number(groupId) > 0) {
+          byNameQuery.andWhere({ group_id: Number(groupId) });
+        } else {
+          byNameQuery.whereNull("group_id");
+        }
+        byName = await byNameQuery.first();
+      }
+      if (
+        byCode?.id &&
+        byName?.id &&
+        Number(byCode.id) !== Number(byName.id)
+      ) {
+        return {
+          error: `Product subgroup conflict: code '${code}' and name '${name}' map to different existing records.`,
+        };
+      }
+      const existing = byCode || byName || null;
+      const planIdentity = existing?.id
+        ? `id:${Number(existing.id)}`
+        : `new:${code.toLowerCase()}`;
+      const stagedNameKey = name.toLowerCase();
+      const stagedCodeKey = code.toLowerCase();
+      const existingNameOwner = context?.staged?.productSubgroupNameMap?.get(
+        stagedNameKey,
+      );
+      if (existingNameOwner && existingNameOwner !== planIdentity) {
+        return {
+          error: `Duplicate product subgroup name in import: '${name}'.`,
+        };
+      }
+      const existingCodeOwner = context?.staged?.productSubgroupCodeMap?.get(
+        stagedCodeKey,
+      );
+      if (existingCodeOwner && existingCodeOwner !== planIdentity) {
+        return {
+          error: `Duplicate product subgroup code in import: '${code}'.`,
+        };
+      }
+      context?.staged?.productSubgroupNameMap?.set(stagedNameKey, planIdentity);
+      context?.staged?.productSubgroupCodeMap?.set(stagedCodeKey, planIdentity);
       return {
         action: existing ? "update" : "create",
         data: {
