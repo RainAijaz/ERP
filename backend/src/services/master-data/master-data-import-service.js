@@ -1379,13 +1379,12 @@ const ENTITY_SPECS = Object.freeze({
     },
   },
   [ENTITY_KEYS.accountGroups]: {
-    sheetMatchers: [/account\s*groups?/i],
+    sheetMatchers: [/^account[\s_-]*groups?$/i],
     fieldAliases: {
       code: ["account_groups_code", "account_group_code", "group_code", "code"],
       name: ["account_groups_name", "account_group", "group_name", "name"],
       nameUr: ["account_groups_name_urdu", "account_groups_name_ur", "name_ur"],
       accountType: ["account_groups_account_type", "account_type", "type"],
-      isContra: ["account_groups_is_contra", "is_contra"],
       isActive: ["account_groups_is_active", "is_active"],
     },
     async plan(row, db, actorId) {
@@ -1439,7 +1438,6 @@ const ENTITY_SPECS = Object.freeze({
           code: finalCode,
           name,
           name_ur: trimString(row.raw.nameUr) || name,
-          is_contra: parseBoolean(row.raw.isContra, false),
           is_active: parseBoolean(row.raw.isActive, true),
           updated_by: actorId,
         },
@@ -1451,7 +1449,6 @@ const ENTITY_SPECS = Object.freeze({
         code: op.data.code,
         name: op.data.name,
         name_ur: op.data.name_ur,
-        is_contra: op.data.is_contra,
         is_active: op.data.is_active,
         updated_by: actorId,
         updated_at: trx.fn.now(),
@@ -1470,7 +1467,7 @@ const ENTITY_SPECS = Object.freeze({
     },
   },
   [ENTITY_KEYS.accounts]: {
-    sheetMatchers: [/accounts?/i],
+    sheetMatchers: [/^accounts?$/i, /^account[\s_-]*master$/i],
     fieldAliases: {
       code: ["accounts_code", "account_code", "code"],
       name: ["accounts_name", "account_name", "name"],
