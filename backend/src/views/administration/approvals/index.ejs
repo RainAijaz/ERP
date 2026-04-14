@@ -1,18 +1,21 @@
 <%
-  const escapeAttr = (value) =>
-    String(value)
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#39;");
-  const jsonAttr = (value) => escapeAttr(JSON.stringify(value ?? null));
   const getAction = (row) => {
-    if (row?.new_value?._action) return row.new_value._action;
-    if (row?.new_value && row?.entity_id === "NEW") return "create";
-    if (!row?.new_value && row?.old_value) return "delete";
+    const explicitAction = String(row?.action || "").trim().toLowerCase();
+    if (explicitAction === "create" || explicitAction === "update" || explicitAction === "delete") {
+      return explicitAction;
+    }
+    const summaryText = String(row?.summary || "").trim().toLowerCase();
+    if (summaryText.includes("delete")) return "delete";
+    if (summaryText.includes("create") || summaryText.includes("add")) return "create";
+    if (String(row?.entity_id || "").trim().toUpperCase() === "NEW") return "create";
     return "update";
   };
+  const currentPage = Number(paging?.currentPage || 1);
+  const totalPages = Number(paging?.totalPages || 1);
+  const hasPrevPage = currentPage > 1;
+  const hasNextPage = currentPage < totalPages;
+  const prevPageHref = `${basePath}?status=${encodeURIComponent(currentStatus)}&page=${currentPage - 1}`;
+  const nextPageHref = `${basePath}?status=${encodeURIComponent(currentStatus)}&page=${currentPage + 1}`;
   const canApproveRequests = Boolean(
     user &&
       user.isAdmin &&
@@ -35,7 +38,8 @@
   </div>
 
   <div class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-    <table class="w-full text-sm text-left">
+    <div class="overflow-x-auto">
+    <table class="min-w-[980px] w-full text-sm text-left">
       <thead class="bg-slate-50 text-xs font-semibold uppercase text-slate-500">
         <tr>
           <th class="px-6 py-3"><%= t("date") %></th>
@@ -73,8 +77,6 @@
                 data-approval-id="<%= row.id %>"
                 data-action="<%= actionType %>"
                 data-status="<%= row.status %>"
-                data-old="<%= jsonAttr(row.old_value) %>"
-                data-new="<%= jsonAttr(row.new_value) %>"
               >
                 <%= t("view")  %>
               </button>
@@ -110,6 +112,24 @@
         <% }) %>
       </tbody>
     </table>
+    </div>
+    <div class="flex items-center justify-between border-t border-slate-200 px-4 py-3">
+      <p class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+        <%= t("page") %> <%= currentPage %> <%= t("of") %> <%= totalPages %>
+      </p>
+      <div class="flex items-center gap-2">
+        <% if (hasPrevPage) { %>
+          <a href="<%= prevPageHref %>" class="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition hover:border-slate-300 hover:text-slate-900"><%= t("prev") %></a>
+        <% } else { %>
+          <span class="cursor-not-allowed rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400"><%= t("prev") %></span>
+        <% } %>
+        <% if (hasNextPage) { %>
+          <a href="<%= nextPageHref %>" class="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-700 transition hover:border-slate-300 hover:text-slate-900"><%= t("next") %></a>
+        <% } else { %>
+          <span class="cursor-not-allowed rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.12em] text-slate-400"><%= t("next") %></span>
+        <% } %>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -183,7 +203,7 @@
       selectTarget: "<%= t('select_target_to_preview_impact')  %>",
       none: "<%= t('none')  %>",
     };
-    const debugPreview = true;
+    const debugPreview = false;
     let currentModalState = null;
     let editMode = false;
     let bodyScrollLocked = false;
@@ -199,22 +219,6 @@
       if (!locked && bodyScrollLocked) {
         body.classList.remove("overflow-hidden");
         bodyScrollLocked = false;
-      }
-    };
-
-    const decodeHtml = (raw) => {
-      if (!raw) return "";
-      const textarea = document.createElement("textarea");
-      textarea.innerHTML = raw;
-      return textarea.value;
-    };
-
-    const safeParse = (raw) => {
-      if (!raw) return null;
-      try {
-        return JSON.parse(decodeHtml(raw));
-      } catch (err) {
-        return decodeHtml(raw);
       }
     };
 
@@ -940,9 +944,20 @@
     const open = async (payload) => {
       if (!modal) return;
       const { action, oldValue, newValue, id, status } = payload;
-      const bulkMode = getBulkMode(newValue) || getBulkMode(oldValue);
+      const normalizedOldValue = oldValue && typeof oldValue === "object" ? oldValue : {};
+      const normalizedNewValue = newValue && typeof newValue === "object" ? newValue : {};
+      const hasOldValue = Object.keys(normalizedOldValue).length > 0;
+      const hasNewValue = Object.keys(normalizedNewValue).length > 0;
+      const bulkMode = getBulkMode(normalizedNewValue) || getBulkMode(normalizedOldValue);
       const forceSingleMode = (action === "update" || action === "create") && isHrBulkMode(bulkMode);
-      currentModalState = { action, oldValue, newValue, id, status, forceSingleMode };
+      currentModalState = {
+        action,
+        oldValue: normalizedOldValue,
+        newValue: normalizedNewValue,
+        id,
+        status,
+        forceSingleMode,
+      };
       editMode = false;
       const isUpdate = action === "update";
       const useSplitLayout = isUpdate && !forceSingleMode;
@@ -960,10 +975,10 @@
 
       const fillFallback = () => {
         if (useSplitLayout) {
-          injectFallback(beforeBox, oldValue);
-          injectFallback(afterBox, newValue);
+          injectFallback(beforeBox, normalizedOldValue);
+          injectFallback(afterBox, normalizedNewValue);
         } else {
-          const single = action === "delete" ? oldValue : newValue;
+          const single = action === "delete" ? normalizedOldValue : normalizedNewValue;
           injectFallback(singleBox, single);
         }
       };
@@ -972,15 +987,15 @@
         if (useSplitLayout) {
           const beforeOk = await loadPreview(id, "old", beforeBox);
           if (!beforeOk) {
-            injectFallback(beforeBox, oldValue);
-          } else {
-            forceHydrateWith(beforeBox, oldValue, "update");
+            injectFallback(beforeBox, normalizedOldValue);
+          } else if (hasOldValue) {
+            forceHydrateWith(beforeBox, normalizedOldValue, "update");
           }
           const afterOk = await loadPreview(id, "new", afterBox);
           if (!afterOk) {
-            injectFallback(afterBox, newValue);
-          } else {
-            forceHydrateWith(afterBox, newValue, "update");
+            injectFallback(afterBox, normalizedNewValue);
+          } else if (hasNewValue) {
+            forceHydrateWith(afterBox, normalizedNewValue, "update");
           }
           const panel = afterBox.querySelector("[data-approval-preview]") || beforeBox.querySelector("[data-approval-preview]");
           const previewType = panel?.getAttribute("data-preview-type") || "";
@@ -989,11 +1004,12 @@
           const side = action === "delete" ? "old" : "new";
           const singleOk = await loadPreview(id, side, singleBox);
           if (!singleOk) {
-            const single = action === "delete" ? oldValue : newValue;
+            const single = action === "delete" ? normalizedOldValue : normalizedNewValue;
             injectFallback(singleBox, single);
           } else {
-            const single = action === "delete" ? oldValue : newValue;
-            forceHydrateWith(singleBox, single, action);
+            const single = action === "delete" ? normalizedOldValue : normalizedNewValue;
+            const hasSingle = action === "delete" ? hasOldValue : hasNewValue;
+            if (hasSingle) forceHydrateWith(singleBox, single, action);
           }
           const panel = singleBox.querySelector("[data-approval-preview]");
           const previewType = panel?.getAttribute("data-preview-type") || "";
@@ -1032,10 +1048,8 @@
       if (!btn) return;
       const action = btn.getAttribute("data-action");
       const status = btn.getAttribute("data-status");
-      const oldValue = safeParse(btn.getAttribute("data-old"));
-      const newValue = safeParse(btn.getAttribute("data-new"));
       const id = btn.getAttribute("data-approval-id");
-      open({ action, oldValue, newValue, id, status });
+      open({ action, oldValue: null, newValue: null, id, status });
     });
   })();
 </script>

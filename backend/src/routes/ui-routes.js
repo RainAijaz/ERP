@@ -143,7 +143,7 @@ router.get("/", async (req, res, next) => {
 
     if (req.accepts("html")) {
       return res.render("base/layouts/main", {
-        title: "Dashboard",
+        title: res.locals.t("dashboard"),
         user: req.user,
         branchId: req.branchId,
         branchScope: req.branchScope,

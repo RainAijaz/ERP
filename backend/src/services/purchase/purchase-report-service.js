@@ -16,6 +16,11 @@ const PURCHASE_TYPE_FILTERS = Object.freeze({
   cash: "cash",
   credit: "credit",
 });
+const PURCHASE_CATEGORY_FILTERS = Object.freeze({
+  all: "all",
+  rawMaterial: "raw_material",
+  asset: "asset",
+});
 
 const ALL_MULTI_FILTER_VALUE = "__ALL__";
 const PURCHASE_RATE_ALERT_PERCENT = (() => {
@@ -85,6 +90,20 @@ const resolvePurchaseTypeFilter = (
   return fallback;
 };
 
+const resolvePurchaseCategoryFilter = (
+  value,
+  fallback = PURCHASE_CATEGORY_FILTERS.all,
+) => {
+  const key = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (key === PURCHASE_CATEGORY_FILTERS.asset) return PURCHASE_CATEGORY_FILTERS.asset;
+  if (key === PURCHASE_CATEGORY_FILTERS.rawMaterial)
+    return PURCHASE_CATEGORY_FILTERS.rawMaterial;
+  if (key === PURCHASE_CATEGORY_FILTERS.all) return PURCHASE_CATEGORY_FILTERS.all;
+  return fallback;
+};
+
 const toIdListWithAll = (value) => {
   const raw = Array.isArray(value)
     ? value
@@ -111,6 +130,41 @@ const toIdListWithAllFromSources = (...sources) => {
     else merged.push(source);
   });
   return toIdListWithAll(merged);
+};
+
+let purchaseInvoiceHeaderHasPurchaseCategoryColumn;
+let assetColumnSupport;
+
+const hasColumn = async (tableName, columnName) => {
+  try {
+    return await knex.schema.withSchema("erp").hasColumn(tableName, columnName);
+  } catch (err) {
+    return false;
+  }
+};
+
+const hasPurchaseInvoiceCategoryColumn = async () => {
+  if (typeof purchaseInvoiceHeaderHasPurchaseCategoryColumn === "boolean") {
+    return purchaseInvoiceHeaderHasPurchaseCategoryColumn;
+  }
+  purchaseInvoiceHeaderHasPurchaseCategoryColumn = await hasColumn(
+    "purchase_invoice_header_ext",
+    "purchase_category",
+  );
+  return purchaseInvoiceHeaderHasPurchaseCategoryColumn;
+};
+
+const getAssetColumnSupport = async () => {
+  if (assetColumnSupport) return assetColumnSupport;
+  const [hasName, hasNameUr] = await Promise.all([
+    hasColumn("assets", "name"),
+    hasColumn("assets", "name_ur"),
+  ]);
+  assetColumnSupport = {
+    name: hasName,
+    name_ur: hasNameUr,
+  };
+  return assetColumnSupport;
 };
 
 const parseFilters = ({ req, input = {} }) => {
@@ -145,6 +199,10 @@ const parseFilters = ({ req, input = {} }) => {
     input.purchase_type,
     PURCHASE_TYPE_FILTERS.all,
   );
+  const purchaseCategory = resolvePurchaseCategoryFilter(
+    input.purchase_category,
+    PURCHASE_CATEGORY_FILTERS.all,
+  );
   const cashAccountId =
     purchaseType === PURCHASE_TYPE_FILTERS.cash
       ? toPositiveId(input.cash_paid_account_id)
@@ -165,6 +223,7 @@ const parseFilters = ({ req, input = {} }) => {
     orderBy,
     reportType,
     purchaseType,
+    purchaseCategory,
     cashAccountId,
     groupIds,
     subgroupIds,
@@ -299,114 +358,221 @@ const loadReportFilterOptions = async ({ req, filters }) => {
 const getPurchaseReportRows = async ({ req, filters }) => {
   if (!filters.reportLoaded) return [];
 
-  let query = knex("erp.voucher_header as vh")
-    .join("erp.purchase_invoice_header_ext as pie", "pie.voucher_id", "vh.id")
-    .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
-    .join("erp.items as i", "i.id", "vl.item_id")
-    .leftJoin("erp.rm_purchase_rates as r", function joinRmRates() {
-      this.on("r.rm_item_id", "=", "vl.item_id")
-        .andOn(knex.raw("r.is_active = true"))
-        .andOn(
-          knex.raw(
-            "COALESCE(r.color_id::text, '0') = COALESCE(NULLIF(vl.meta->>'color_id', ''), NULLIF(vl.meta->>'rm_color_id', ''), '0')",
-          ),
-        )
-        .andOn(
-          knex.raw(
-            "COALESCE(r.size_id::text, '0') = COALESCE(NULLIF(vl.meta->>'size_id', ''), NULLIF(vl.meta->>'rm_size_id', ''), '0')",
-          ),
-        );
-    })
-    .leftJoin("erp.parties as p", "p.id", "pie.supplier_party_id")
-    .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
-    .leftJoin("erp.accounts as a", "a.id", "pie.cash_paid_account_id")
-    .select(
-      "vh.id as voucher_id",
-      "vh.voucher_no",
-      "vh.voucher_date",
-      "vh.book_no as bill_number",
-      knex.raw("COALESCE(NULLIF(vh.remarks, ''), '') as remarks"),
-      "vh.branch_id",
-      "b.name as branch_name",
-      "pie.supplier_party_id",
-      "p.name as supplier_name",
-      "pie.payment_type",
-      "pie.cash_paid_account_id",
-      "a.name as cash_account_name",
-      "vl.line_no",
-      "vl.item_id",
-      "i.code as item_code",
-      "i.name as item_name",
-      "i.group_id",
-      "i.subgroup_id",
-      "vl.qty",
-      "vl.rate",
-      "vl.amount",
-      knex.raw("COALESCE(r.purchase_rate, 0) as fixed_purchase_rate"),
-      knex.raw("COALESCE(r.avg_purchase_rate, 0) as weighted_average_rate"),
-    )
-    .where({
-      "vh.voucher_type_code": "PI",
-      "vh.status": "APPROVED",
-      "vl.line_kind": "ITEM",
-    })
-    .whereRaw("upper(coalesce(i.item_type::text, '')) = 'RM'")
-    .where("vh.voucher_date", ">=", filters.from)
-    .where("vh.voucher_date", "<=", filters.to);
+  const supportsPurchaseCategory = await hasPurchaseInvoiceCategoryColumn();
+  const includeRawMaterialRows =
+    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.asset;
+  const includeAssetRows =
+    supportsPurchaseCategory &&
+    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.rawMaterial;
 
-  if (req.user?.isAdmin) {
-    if (filters.branchIds.length) {
-      query = query.whereIn("vh.branch_id", filters.branchIds);
+  const applyCommonFilters = (query) => {
+    let next = query
+      .where({
+        "vh.voucher_type_code": "PI",
+        "vh.status": "APPROVED",
+      })
+      .where("vh.voucher_date", ">=", filters.from)
+      .where("vh.voucher_date", "<=", filters.to);
+
+    if (req.user?.isAdmin) {
+      if (filters.branchIds.length) {
+        next = next.whereIn("vh.branch_id", filters.branchIds);
+      }
+    } else {
+      next = next.where("vh.branch_id", req.branchId);
     }
-  } else {
-    query = query.where("vh.branch_id", req.branchId);
-  }
 
-  if (filters.partyIds.length)
-    query = query.whereIn("pie.supplier_party_id", filters.partyIds);
-  if (filters.rawMaterialIds.length)
-    query = query.whereIn("vl.item_id", filters.rawMaterialIds);
-  if (Array.isArray(filters.groupIds) && filters.groupIds.length)
-    query = query.whereIn("i.group_id", filters.groupIds);
-  if (Array.isArray(filters.subgroupIds) && filters.subgroupIds.length)
-    query = query.whereIn("i.subgroup_id", filters.subgroupIds);
+    if (filters.partyIds.length) {
+      next = next.whereIn("pie.supplier_party_id", filters.partyIds);
+    }
 
-  if (filters.purchaseType === PURCHASE_TYPE_FILTERS.cash) {
-    query = query.whereRaw(
-      "upper(coalesce(pie.payment_type::text, '')) = 'CASH'",
-    );
-    if (filters.cashAccountId)
-      query = query.andWhere("pie.cash_paid_account_id", filters.cashAccountId);
-  } else if (filters.purchaseType === PURCHASE_TYPE_FILTERS.credit) {
-    query = query.whereRaw(
-      "upper(coalesce(pie.payment_type::text, '')) = 'CREDIT'",
-    );
-  }
+    if (filters.purchaseType === PURCHASE_TYPE_FILTERS.cash) {
+      next = next.whereRaw(
+        "upper(coalesce(pie.payment_type::text, '')) = 'CASH'",
+      );
+      if (filters.cashAccountId) {
+        next = next.andWhere("pie.cash_paid_account_id", filters.cashAccountId);
+      }
+    } else if (filters.purchaseType === PURCHASE_TYPE_FILTERS.credit) {
+      next = next.whereRaw(
+        "upper(coalesce(pie.payment_type::text, '')) = 'CREDIT'",
+      );
+    }
 
-  if (filters.orderBy === REPORT_ORDER_TYPES.party) {
-    query = query
-      .orderByRaw("coalesce(p.name, '') asc")
-      .orderBy("vh.voucher_date", "asc")
-      .orderBy("vh.voucher_no", "asc")
-      .orderBy("vl.line_no", "asc");
-  } else if (filters.orderBy === REPORT_ORDER_TYPES.invoice) {
-    query = query
-      .orderBy("vh.voucher_date", "asc")
-      .orderBy("vh.voucher_no", "asc")
-      .orderBy("vl.line_no", "asc");
-  } else {
-    query = query
-      .orderByRaw("coalesce(i.name, '') asc")
-      .orderBy("vh.voucher_date", "asc")
-      .orderBy("vh.voucher_no", "asc")
-      .orderBy("vl.line_no", "asc");
-  }
+    return next;
+  };
 
-  const rows = await query;
-  return rows.map((row) => {
+  const locale = String(req?.locale || "en").toLowerCase();
+  const rawMaterialRowsPromise = includeRawMaterialRows
+    ? (() => {
+        let query = knex("erp.voucher_header as vh")
+          .join(
+            "erp.purchase_invoice_header_ext as pie",
+            "pie.voucher_id",
+            "vh.id",
+          )
+          .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
+          .join("erp.items as i", "i.id", "vl.item_id")
+          .leftJoin("erp.rm_purchase_rates as r", function joinRmRates() {
+            this.on("r.rm_item_id", "=", "vl.item_id")
+              .andOn(knex.raw("r.is_active = true"))
+              .andOn(
+                knex.raw(
+                  "COALESCE(r.color_id::text, '0') = COALESCE(NULLIF(vl.meta->>'color_id', ''), NULLIF(vl.meta->>'rm_color_id', ''), '0')",
+                ),
+              )
+              .andOn(
+                knex.raw(
+                  "COALESCE(r.size_id::text, '0') = COALESCE(NULLIF(vl.meta->>'size_id', ''), NULLIF(vl.meta->>'rm_size_id', ''), '0')",
+                ),
+              );
+          })
+          .leftJoin("erp.parties as p", "p.id", "pie.supplier_party_id")
+          .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
+          .leftJoin("erp.accounts as a", "a.id", "pie.cash_paid_account_id")
+          .select(
+            "vh.id as voucher_id",
+            "vh.voucher_no",
+            "vh.voucher_date",
+            "vh.book_no as bill_number",
+            knex.raw("COALESCE(NULLIF(vh.remarks, ''), '') as remarks"),
+            "vh.branch_id",
+            "b.name as branch_name",
+            "pie.supplier_party_id",
+            "p.name as supplier_name",
+            "pie.payment_type",
+            "pie.cash_paid_account_id",
+            "a.name as cash_account_name",
+            "vl.line_no",
+            "vl.item_id",
+            "i.code as item_code",
+            "i.name as item_name",
+            "i.group_id",
+            "i.subgroup_id",
+            "vl.qty",
+            "vl.rate",
+            "vl.amount",
+            knex.raw("COALESCE(r.purchase_rate, 0) as fixed_purchase_rate"),
+            knex.raw("COALESCE(r.avg_purchase_rate, 0) as weighted_average_rate"),
+            knex.raw("NULL::bigint as asset_id"),
+            knex.raw("NULL::text as asset_name"),
+            knex.raw("'RAW_MATERIAL'::text as purchase_category"),
+          )
+          .where({
+            "vl.line_kind": "ITEM",
+          })
+          .whereRaw("upper(coalesce(i.item_type::text, '')) = 'RM'");
+
+        query = applyCommonFilters(query);
+        if (supportsPurchaseCategory) {
+          query = query.whereRaw(
+            "upper(coalesce(pie.purchase_category::text, 'RAW_MATERIAL')) = 'RAW_MATERIAL'",
+          );
+        }
+        if (filters.rawMaterialIds.length) {
+          query = query.whereIn("vl.item_id", filters.rawMaterialIds);
+        }
+        if (Array.isArray(filters.groupIds) && filters.groupIds.length) {
+          query = query.whereIn("i.group_id", filters.groupIds);
+        }
+        if (Array.isArray(filters.subgroupIds) && filters.subgroupIds.length) {
+          query = query.whereIn("i.subgroup_id", filters.subgroupIds);
+        }
+        return query;
+      })()
+    : Promise.resolve([]);
+
+  const assetRowsPromise = includeAssetRows
+    ? (async () => {
+        const assetColumns = await getAssetColumnSupport();
+        const assetNameExpr =
+          locale === "ur" && assetColumns.name_ur
+            ? "COALESCE(a2.name_ur, a2.name, a2.description, a2.asset_code, '-')"
+            : assetColumns.name
+              ? "COALESCE(a2.name, a2.description, a2.asset_code, '-')"
+              : "COALESCE(a2.description, a2.asset_code, '-')";
+
+        let query = knex("erp.voucher_header as vh")
+          .join(
+            "erp.purchase_invoice_header_ext as pie",
+            "pie.voucher_id",
+            "vh.id",
+          )
+          .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
+          .leftJoin("erp.parties as p", "p.id", "pie.supplier_party_id")
+          .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
+          .leftJoin("erp.accounts as a", "a.id", "pie.cash_paid_account_id")
+          .leftJoin("erp.assets as a2", function joinAssets() {
+            this.on(
+              "a2.id",
+              "=",
+              knex.raw(
+                "CASE WHEN coalesce(vl.meta->>'asset_id', '') ~ '^[0-9]+$' THEN (vl.meta->>'asset_id')::bigint ELSE NULL END",
+              ),
+            );
+          })
+          .select(
+            "vh.id as voucher_id",
+            "vh.voucher_no",
+            "vh.voucher_date",
+            "vh.book_no as bill_number",
+            knex.raw("COALESCE(NULLIF(vh.remarks, ''), '') as remarks"),
+            "vh.branch_id",
+            "b.name as branch_name",
+            "pie.supplier_party_id",
+            "p.name as supplier_name",
+            "pie.payment_type",
+            "pie.cash_paid_account_id",
+            "a.name as cash_account_name",
+            "vl.line_no",
+            knex.raw("NULL::bigint as item_id"),
+            knex.raw("''::text as item_code"),
+            knex.raw(`${assetNameExpr} as item_name`),
+            knex.raw("NULL::bigint as group_id"),
+            knex.raw("NULL::bigint as subgroup_id"),
+            "vl.qty",
+            "vl.rate",
+            "vl.amount",
+            "vl.rate as fixed_purchase_rate",
+            "vl.rate as weighted_average_rate",
+            knex.raw(
+              "CASE WHEN coalesce(vl.meta->>'asset_id', '') ~ '^[0-9]+$' THEN (vl.meta->>'asset_id')::bigint ELSE NULL END as asset_id",
+            ),
+            knex.raw(`${assetNameExpr} as asset_name`),
+            knex.raw("'ASSET'::text as purchase_category"),
+          )
+          .where({
+            "vl.line_kind": "ACCOUNT",
+          });
+
+        query = applyCommonFilters(query);
+        query = query.whereRaw(
+          "upper(coalesce(pie.purchase_category::text, 'RAW_MATERIAL')) = 'ASSET'",
+        );
+        return query;
+      })()
+    : Promise.resolve([]);
+
+  const [rawMaterialRows, assetRows] = await Promise.all([
+    rawMaterialRowsPromise,
+    assetRowsPromise,
+  ]);
+
+  const mappedRows = [...rawMaterialRows, ...assetRows].map((row) => {
+    const purchaseCategory =
+      String(row.purchase_category || "RAW_MATERIAL").trim().toUpperCase() ===
+      "ASSET"
+        ? "ASSET"
+        : "RAW_MATERIAL";
     const currentPurchaseRate = toAmount(row.rate, 4);
-    const fixedPurchaseRate = toAmount(row.fixed_purchase_rate, 4);
-    const weightedAverageRate = toAmount(row.weighted_average_rate, 4);
+    const fixedPurchaseRate =
+      purchaseCategory === "ASSET"
+        ? currentPurchaseRate
+        : toAmount(row.fixed_purchase_rate, 4);
+    const weightedAverageRate =
+      purchaseCategory === "ASSET"
+        ? currentPurchaseRate
+        : toAmount(row.weighted_average_rate, 4);
     const rateDifferenceAmount = toAmount(
       currentPurchaseRate - fixedPurchaseRate,
       4,
@@ -432,14 +598,35 @@ const getPurchaseReportRows = async ({ req, filters }) => {
       supplier_party_id: Number(row.supplier_party_id || 0) || null,
       supplier_name: row.supplier_name || "",
       payment_type: String(row.payment_type || "").toUpperCase(),
+      purchase_category: purchaseCategory,
       cash_paid_account_id: Number(row.cash_paid_account_id || 0) || null,
       cash_account_name: row.cash_account_name || "",
       line_no: Number(row.line_no || 0) || 1,
-      item_id: Number(row.item_id || 0) || null,
+      item_id:
+        purchaseCategory === "RAW_MATERIAL"
+          ? Number(row.item_id || 0) || null
+          : null,
       item_code: row.item_code || "",
-      item_name: row.item_name || "",
-      group_id: Number(row.group_id || 0) || null,
-      subgroup_id: Number(row.subgroup_id || 0) || null,
+      item_name:
+        purchaseCategory === "ASSET"
+          ? row.asset_name || row.item_name || ""
+          : row.item_name || "",
+      entity_id:
+        purchaseCategory === "ASSET"
+          ? Number(row.asset_id || 0) || null
+          : Number(row.item_id || 0) || null,
+      entity_name:
+        purchaseCategory === "ASSET"
+          ? row.asset_name || row.item_name || ""
+          : row.item_name || "",
+      group_id:
+        purchaseCategory === "RAW_MATERIAL"
+          ? Number(row.group_id || 0) || null
+          : null,
+      subgroup_id:
+        purchaseCategory === "RAW_MATERIAL"
+          ? Number(row.subgroup_id || 0) || null
+          : null,
       qty: toQty(row.qty),
       rate: currentPurchaseRate,
       fixed_purchase_rate: fixedPurchaseRate,
@@ -453,6 +640,42 @@ const getPurchaseReportRows = async ({ req, filters }) => {
         absRateDifferencePercent >= PURCHASE_RATE_ALERT_PERCENT,
       amount: toAmount(row.amount, 2),
     };
+  });
+
+  const compareText = (a, b) =>
+    String(a || "").localeCompare(String(b || ""), undefined, {
+      sensitivity: "base",
+    });
+  const compareDate = (a, b) =>
+    String(a?.voucher_date || "").localeCompare(String(b?.voucher_date || ""));
+  const compareVoucher = (a, b) =>
+    Number(a?.voucher_no || 0) - Number(b?.voucher_no || 0);
+  const compareLine = (a, b) => Number(a?.line_no || 0) - Number(b?.line_no || 0);
+
+  return mappedRows.sort((left, right) => {
+    if (filters.orderBy === REPORT_ORDER_TYPES.party) {
+      const partyCmp = compareText(left?.supplier_name, right?.supplier_name);
+      if (partyCmp !== 0) return partyCmp;
+      const dateCmp = compareDate(left, right);
+      if (dateCmp !== 0) return dateCmp;
+      const voucherCmp = compareVoucher(left, right);
+      if (voucherCmp !== 0) return voucherCmp;
+      return compareLine(left, right);
+    }
+    if (filters.orderBy === REPORT_ORDER_TYPES.invoice) {
+      const dateCmp = compareDate(left, right);
+      if (dateCmp !== 0) return dateCmp;
+      const voucherCmp = compareVoucher(left, right);
+      if (voucherCmp !== 0) return voucherCmp;
+      return compareLine(left, right);
+    }
+    const entityCmp = compareText(left?.entity_name, right?.entity_name);
+    if (entityCmp !== 0) return entityCmp;
+    const dateCmp = compareDate(left, right);
+    if (dateCmp !== 0) return dateCmp;
+    const voucherCmp = compareVoucher(left, right);
+    if (voucherCmp !== 0) return voucherCmp;
+    return compareLine(left, right);
   });
 };
 
@@ -473,8 +696,8 @@ const getGroupIdentity = (row, orderBy) => {
   }
 
   if (orderBy === REPORT_ORDER_TYPES.product) {
-    const key = `RM:${Number(row.item_id || 0)}`;
-    const label = String(row.item_name || "").trim() || "-";
+    const key = `ITEM:${String(row.purchase_category || "RAW_MATERIAL")}:${Number(row.entity_id || 0)}`;
+    const label = String(row.entity_name || row.item_name || "").trim() || "-";
     return {
       key,
       label,
@@ -483,7 +706,7 @@ const getGroupIdentity = (row, orderBy) => {
       bill_number: "",
       remarks: "",
       supplier_name: "",
-      item_name: row.item_name || "",
+      item_name: row.entity_name || row.item_name || "",
       item_code: row.item_code || "",
     };
   }

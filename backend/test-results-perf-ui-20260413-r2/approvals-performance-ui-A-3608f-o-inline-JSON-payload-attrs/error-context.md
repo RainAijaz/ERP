@@ -1,0 +1,497 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - checkbox "Menu" [ref=e5]
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - link "CHAND EVA" [ref=e8] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e10]: ERP
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - generic [ref=e14]: Signed in as
+            - generic [ref=e15]: admin
+          - generic [ref=e16]:
+            - generic [ref=e17]: Branch
+            - generic [ref=e18]:
+              - generic [ref=e19]: Branch
+              - generic [ref=e20]:
+                - textbox "Search" [ref=e21]: "124"
+                - generic:
+                  - img
+                - combobox "Branch" [ref=e22]:
+                  - option "124" [selected]
+                  - option "207"
+          - button "Logout" [ref=e24] [cursor=pointer]
+          - generic [ref=e25]:
+            - generic [ref=e26]: Language
+            - link "English" [ref=e27] [cursor=pointer]:
+              - /url: "?lang=en"
+            - generic [ref=e28]: "|"
+            - link "Urdu" [ref=e29] [cursor=pointer]:
+              - /url: "?lang=ur"
+      - navigation [ref=e30]:
+        - button "Administration" [ref=e32] [cursor=pointer]:
+          - generic [ref=e33]: Administration
+          - img [ref=e34]
+        - button "Master Data" [ref=e37] [cursor=pointer]:
+          - generic [ref=e38]: Master Data
+          - img [ref=e39]
+        - button "HR & Payroll" [ref=e42] [cursor=pointer]:
+          - generic [ref=e43]: HR & Payroll
+          - img [ref=e44]
+        - button "Financial" [ref=e47] [cursor=pointer]:
+          - generic [ref=e48]: Financial
+          - img [ref=e49]
+        - button "Purchase" [ref=e52] [cursor=pointer]:
+          - generic [ref=e53]: Purchase
+          - img [ref=e54]
+        - button "Production" [ref=e57] [cursor=pointer]:
+          - generic [ref=e58]: Production
+          - img [ref=e59]
+        - button "Inventory" [ref=e62] [cursor=pointer]:
+          - generic [ref=e63]: Inventory
+          - img [ref=e64]
+        - button "Outward & Returnables" [ref=e67] [cursor=pointer]:
+          - generic [ref=e68]: Outward & Returnables
+          - img [ref=e69]
+        - button "Sales" [ref=e72] [cursor=pointer]:
+          - generic [ref=e73]: Sales
+          - img [ref=e74]
+  - main [ref=e76]:
+    - generic [ref=e77]:
+      - generic [ref=e78]:
+        - heading "Approvals" [level=1] [ref=e79]
+        - generic [ref=e80]:
+          - link "Pending" [ref=e81] [cursor=pointer]:
+            - /url: "?status=PENDING"
+          - link "Approved" [ref=e82] [cursor=pointer]:
+            - /url: "?status=APPROVED"
+          - link "Rejected" [ref=e83] [cursor=pointer]:
+            - /url: "?status=REJECTED"
+      - generic [ref=e84]:
+        - table [ref=e86]:
+          - rowgroup [ref=e87]:
+            - row "Date Requester Summary Details Status Actions" [ref=e88]:
+              - columnheader "Date" [ref=e89]
+              - columnheader "Requester" [ref=e90]
+              - columnheader "Summary" [ref=e91]
+              - columnheader "Details" [ref=e92]
+              - columnheader "Status" [ref=e93]
+              - columnheader "Actions" [ref=e94]
+          - rowgroup [ref=e95]:
+            - row "13/04/2026 manager1 Perf Pending Approval 30 View Pending Approve Reject" [ref=e96]:
+              - cell "13/04/2026" [ref=e97]
+              - cell "manager1" [ref=e98]
+              - cell "Perf Pending Approval 30" [ref=e99]
+              - cell "View" [ref=e100]:
+                - button "View" [active] [ref=e101] [cursor=pointer]
+              - cell "Pending" [ref=e102]:
+                - generic [ref=e103]: Pending
+              - cell "Approve Reject" [ref=e104]:
+                - generic [ref=e105]:
+                  - button "Approve" [ref=e107] [cursor=pointer]
+                  - button "Reject" [ref=e109] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 29 View Pending Approve Reject" [ref=e110]:
+              - cell "13/04/2026" [ref=e111]
+              - cell "manager1" [ref=e112]
+              - cell "Perf Pending Approval 29" [ref=e113]
+              - cell "View" [ref=e114]:
+                - button "View" [ref=e115] [cursor=pointer]
+              - cell "Pending" [ref=e116]:
+                - generic [ref=e117]: Pending
+              - cell "Approve Reject" [ref=e118]:
+                - generic [ref=e119]:
+                  - button "Approve" [ref=e121] [cursor=pointer]
+                  - button "Reject" [ref=e123] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 28 View Pending Approve Reject" [ref=e124]:
+              - cell "13/04/2026" [ref=e125]
+              - cell "manager1" [ref=e126]
+              - cell "Perf Pending Approval 28" [ref=e127]
+              - cell "View" [ref=e128]:
+                - button "View" [ref=e129] [cursor=pointer]
+              - cell "Pending" [ref=e130]:
+                - generic [ref=e131]: Pending
+              - cell "Approve Reject" [ref=e132]:
+                - generic [ref=e133]:
+                  - button "Approve" [ref=e135] [cursor=pointer]
+                  - button "Reject" [ref=e137] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 27 View Pending Approve Reject" [ref=e138]:
+              - cell "13/04/2026" [ref=e139]
+              - cell "manager1" [ref=e140]
+              - cell "Perf Pending Approval 27" [ref=e141]
+              - cell "View" [ref=e142]:
+                - button "View" [ref=e143] [cursor=pointer]
+              - cell "Pending" [ref=e144]:
+                - generic [ref=e145]: Pending
+              - cell "Approve Reject" [ref=e146]:
+                - generic [ref=e147]:
+                  - button "Approve" [ref=e149] [cursor=pointer]
+                  - button "Reject" [ref=e151] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 26 View Pending Approve Reject" [ref=e152]:
+              - cell "13/04/2026" [ref=e153]
+              - cell "manager1" [ref=e154]
+              - cell "Perf Pending Approval 26" [ref=e155]
+              - cell "View" [ref=e156]:
+                - button "View" [ref=e157] [cursor=pointer]
+              - cell "Pending" [ref=e158]:
+                - generic [ref=e159]: Pending
+              - cell "Approve Reject" [ref=e160]:
+                - generic [ref=e161]:
+                  - button "Approve" [ref=e163] [cursor=pointer]
+                  - button "Reject" [ref=e165] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 25 View Pending Approve Reject" [ref=e166]:
+              - cell "13/04/2026" [ref=e167]
+              - cell "manager1" [ref=e168]
+              - cell "Perf Pending Approval 25" [ref=e169]
+              - cell "View" [ref=e170]:
+                - button "View" [ref=e171] [cursor=pointer]
+              - cell "Pending" [ref=e172]:
+                - generic [ref=e173]: Pending
+              - cell "Approve Reject" [ref=e174]:
+                - generic [ref=e175]:
+                  - button "Approve" [ref=e177] [cursor=pointer]
+                  - button "Reject" [ref=e179] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 24 View Pending Approve Reject" [ref=e180]:
+              - cell "13/04/2026" [ref=e181]
+              - cell "manager1" [ref=e182]
+              - cell "Perf Pending Approval 24" [ref=e183]
+              - cell "View" [ref=e184]:
+                - button "View" [ref=e185] [cursor=pointer]
+              - cell "Pending" [ref=e186]:
+                - generic [ref=e187]: Pending
+              - cell "Approve Reject" [ref=e188]:
+                - generic [ref=e189]:
+                  - button "Approve" [ref=e191] [cursor=pointer]
+                  - button "Reject" [ref=e193] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 23 View Pending Approve Reject" [ref=e194]:
+              - cell "13/04/2026" [ref=e195]
+              - cell "manager1" [ref=e196]
+              - cell "Perf Pending Approval 23" [ref=e197]
+              - cell "View" [ref=e198]:
+                - button "View" [ref=e199] [cursor=pointer]
+              - cell "Pending" [ref=e200]:
+                - generic [ref=e201]: Pending
+              - cell "Approve Reject" [ref=e202]:
+                - generic [ref=e203]:
+                  - button "Approve" [ref=e205] [cursor=pointer]
+                  - button "Reject" [ref=e207] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 22 View Pending Approve Reject" [ref=e208]:
+              - cell "13/04/2026" [ref=e209]
+              - cell "manager1" [ref=e210]
+              - cell "Perf Pending Approval 22" [ref=e211]
+              - cell "View" [ref=e212]:
+                - button "View" [ref=e213] [cursor=pointer]
+              - cell "Pending" [ref=e214]:
+                - generic [ref=e215]: Pending
+              - cell "Approve Reject" [ref=e216]:
+                - generic [ref=e217]:
+                  - button "Approve" [ref=e219] [cursor=pointer]
+                  - button "Reject" [ref=e221] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 21 View Pending Approve Reject" [ref=e222]:
+              - cell "13/04/2026" [ref=e223]
+              - cell "manager1" [ref=e224]
+              - cell "Perf Pending Approval 21" [ref=e225]
+              - cell "View" [ref=e226]:
+                - button "View" [ref=e227] [cursor=pointer]
+              - cell "Pending" [ref=e228]:
+                - generic [ref=e229]: Pending
+              - cell "Approve Reject" [ref=e230]:
+                - generic [ref=e231]:
+                  - button "Approve" [ref=e233] [cursor=pointer]
+                  - button "Reject" [ref=e235] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 20 View Pending Approve Reject" [ref=e236]:
+              - cell "13/04/2026" [ref=e237]
+              - cell "manager1" [ref=e238]
+              - cell "Perf Pending Approval 20" [ref=e239]
+              - cell "View" [ref=e240]:
+                - button "View" [ref=e241] [cursor=pointer]
+              - cell "Pending" [ref=e242]:
+                - generic [ref=e243]: Pending
+              - cell "Approve Reject" [ref=e244]:
+                - generic [ref=e245]:
+                  - button "Approve" [ref=e247] [cursor=pointer]
+                  - button "Reject" [ref=e249] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 19 View Pending Approve Reject" [ref=e250]:
+              - cell "13/04/2026" [ref=e251]
+              - cell "manager1" [ref=e252]
+              - cell "Perf Pending Approval 19" [ref=e253]
+              - cell "View" [ref=e254]:
+                - button "View" [ref=e255] [cursor=pointer]
+              - cell "Pending" [ref=e256]:
+                - generic [ref=e257]: Pending
+              - cell "Approve Reject" [ref=e258]:
+                - generic [ref=e259]:
+                  - button "Approve" [ref=e261] [cursor=pointer]
+                  - button "Reject" [ref=e263] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 18 View Pending Approve Reject" [ref=e264]:
+              - cell "13/04/2026" [ref=e265]
+              - cell "manager1" [ref=e266]
+              - cell "Perf Pending Approval 18" [ref=e267]
+              - cell "View" [ref=e268]:
+                - button "View" [ref=e269] [cursor=pointer]
+              - cell "Pending" [ref=e270]:
+                - generic [ref=e271]: Pending
+              - cell "Approve Reject" [ref=e272]:
+                - generic [ref=e273]:
+                  - button "Approve" [ref=e275] [cursor=pointer]
+                  - button "Reject" [ref=e277] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 17 View Pending Approve Reject" [ref=e278]:
+              - cell "13/04/2026" [ref=e279]
+              - cell "manager1" [ref=e280]
+              - cell "Perf Pending Approval 17" [ref=e281]
+              - cell "View" [ref=e282]:
+                - button "View" [ref=e283] [cursor=pointer]
+              - cell "Pending" [ref=e284]:
+                - generic [ref=e285]: Pending
+              - cell "Approve Reject" [ref=e286]:
+                - generic [ref=e287]:
+                  - button "Approve" [ref=e289] [cursor=pointer]
+                  - button "Reject" [ref=e291] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 16 View Pending Approve Reject" [ref=e292]:
+              - cell "13/04/2026" [ref=e293]
+              - cell "manager1" [ref=e294]
+              - cell "Perf Pending Approval 16" [ref=e295]
+              - cell "View" [ref=e296]:
+                - button "View" [ref=e297] [cursor=pointer]
+              - cell "Pending" [ref=e298]:
+                - generic [ref=e299]: Pending
+              - cell "Approve Reject" [ref=e300]:
+                - generic [ref=e301]:
+                  - button "Approve" [ref=e303] [cursor=pointer]
+                  - button "Reject" [ref=e305] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 15 View Pending Approve Reject" [ref=e306]:
+              - cell "13/04/2026" [ref=e307]
+              - cell "manager1" [ref=e308]
+              - cell "Perf Pending Approval 15" [ref=e309]
+              - cell "View" [ref=e310]:
+                - button "View" [ref=e311] [cursor=pointer]
+              - cell "Pending" [ref=e312]:
+                - generic [ref=e313]: Pending
+              - cell "Approve Reject" [ref=e314]:
+                - generic [ref=e315]:
+                  - button "Approve" [ref=e317] [cursor=pointer]
+                  - button "Reject" [ref=e319] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 14 View Pending Approve Reject" [ref=e320]:
+              - cell "13/04/2026" [ref=e321]
+              - cell "manager1" [ref=e322]
+              - cell "Perf Pending Approval 14" [ref=e323]
+              - cell "View" [ref=e324]:
+                - button "View" [ref=e325] [cursor=pointer]
+              - cell "Pending" [ref=e326]:
+                - generic [ref=e327]: Pending
+              - cell "Approve Reject" [ref=e328]:
+                - generic [ref=e329]:
+                  - button "Approve" [ref=e331] [cursor=pointer]
+                  - button "Reject" [ref=e333] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 13 View Pending Approve Reject" [ref=e334]:
+              - cell "13/04/2026" [ref=e335]
+              - cell "manager1" [ref=e336]
+              - cell "Perf Pending Approval 13" [ref=e337]
+              - cell "View" [ref=e338]:
+                - button "View" [ref=e339] [cursor=pointer]
+              - cell "Pending" [ref=e340]:
+                - generic [ref=e341]: Pending
+              - cell "Approve Reject" [ref=e342]:
+                - generic [ref=e343]:
+                  - button "Approve" [ref=e345] [cursor=pointer]
+                  - button "Reject" [ref=e347] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 12 View Pending Approve Reject" [ref=e348]:
+              - cell "13/04/2026" [ref=e349]
+              - cell "manager1" [ref=e350]
+              - cell "Perf Pending Approval 12" [ref=e351]
+              - cell "View" [ref=e352]:
+                - button "View" [ref=e353] [cursor=pointer]
+              - cell "Pending" [ref=e354]:
+                - generic [ref=e355]: Pending
+              - cell "Approve Reject" [ref=e356]:
+                - generic [ref=e357]:
+                  - button "Approve" [ref=e359] [cursor=pointer]
+                  - button "Reject" [ref=e361] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 11 View Pending Approve Reject" [ref=e362]:
+              - cell "13/04/2026" [ref=e363]
+              - cell "manager1" [ref=e364]
+              - cell "Perf Pending Approval 11" [ref=e365]
+              - cell "View" [ref=e366]:
+                - button "View" [ref=e367] [cursor=pointer]
+              - cell "Pending" [ref=e368]:
+                - generic [ref=e369]: Pending
+              - cell "Approve Reject" [ref=e370]:
+                - generic [ref=e371]:
+                  - button "Approve" [ref=e373] [cursor=pointer]
+                  - button "Reject" [ref=e375] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 10 View Pending Approve Reject" [ref=e376]:
+              - cell "13/04/2026" [ref=e377]
+              - cell "manager1" [ref=e378]
+              - cell "Perf Pending Approval 10" [ref=e379]
+              - cell "View" [ref=e380]:
+                - button "View" [ref=e381] [cursor=pointer]
+              - cell "Pending" [ref=e382]:
+                - generic [ref=e383]: Pending
+              - cell "Approve Reject" [ref=e384]:
+                - generic [ref=e385]:
+                  - button "Approve" [ref=e387] [cursor=pointer]
+                  - button "Reject" [ref=e389] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 9 View Pending Approve Reject" [ref=e390]:
+              - cell "13/04/2026" [ref=e391]
+              - cell "manager1" [ref=e392]
+              - cell "Perf Pending Approval 9" [ref=e393]
+              - cell "View" [ref=e394]:
+                - button "View" [ref=e395] [cursor=pointer]
+              - cell "Pending" [ref=e396]:
+                - generic [ref=e397]: Pending
+              - cell "Approve Reject" [ref=e398]:
+                - generic [ref=e399]:
+                  - button "Approve" [ref=e401] [cursor=pointer]
+                  - button "Reject" [ref=e403] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 8 View Pending Approve Reject" [ref=e404]:
+              - cell "13/04/2026" [ref=e405]
+              - cell "manager1" [ref=e406]
+              - cell "Perf Pending Approval 8" [ref=e407]
+              - cell "View" [ref=e408]:
+                - button "View" [ref=e409] [cursor=pointer]
+              - cell "Pending" [ref=e410]:
+                - generic [ref=e411]: Pending
+              - cell "Approve Reject" [ref=e412]:
+                - generic [ref=e413]:
+                  - button "Approve" [ref=e415] [cursor=pointer]
+                  - button "Reject" [ref=e417] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 7 View Pending Approve Reject" [ref=e418]:
+              - cell "13/04/2026" [ref=e419]
+              - cell "manager1" [ref=e420]
+              - cell "Perf Pending Approval 7" [ref=e421]
+              - cell "View" [ref=e422]:
+                - button "View" [ref=e423] [cursor=pointer]
+              - cell "Pending" [ref=e424]:
+                - generic [ref=e425]: Pending
+              - cell "Approve Reject" [ref=e426]:
+                - generic [ref=e427]:
+                  - button "Approve" [ref=e429] [cursor=pointer]
+                  - button "Reject" [ref=e431] [cursor=pointer]
+            - row "13/04/2026 manager1 Perf Pending Approval 6 View Pending Approve Reject" [ref=e432]:
+              - cell "13/04/2026" [ref=e433]
+              - cell "manager1" [ref=e434]
+              - cell "Perf Pending Approval 6" [ref=e435]
+              - cell "View" [ref=e436]:
+                - button "View" [ref=e437] [cursor=pointer]
+              - cell "Pending" [ref=e438]:
+                - generic [ref=e439]: Pending
+              - cell "Approve Reject" [ref=e440]:
+                - generic [ref=e441]:
+                  - button "Approve" [ref=e443] [cursor=pointer]
+                  - button "Reject" [ref=e445] [cursor=pointer]
+        - generic [ref=e446]:
+          - paragraph [ref=e447]: Page 1 of 5
+          - generic [ref=e448]:
+            - generic [ref=e449]: Prev
+            - link "Next" [ref=e450] [cursor=pointer]:
+              - /url: /administration/approvals?status=PENDING&page=2
+    - generic [ref=e452]:
+      - generic [ref=e453]:
+        - generic [ref=e454]:
+          - generic [ref=e455]: Details
+          - paragraph [ref=e456]: Create
+        - generic [ref=e457]:
+          - button "Edit" [ref=e458] [cursor=pointer]
+          - button [ref=e459] [cursor=pointer]:
+            - img [ref=e460]
+      - generic [ref=e463]:
+        - generic [ref=e464]: Details
+        - generic [ref=e466]:
+          - generic [ref=e467]:
+            - generic [ref=e468]: Create
+            - generic [ref=e469]: Accounts
+          - generic [ref=e471]:
+            - generic [ref=e472]:
+              - text: Account Name
+              - textbox "Account Name" [disabled] [ref=e473]:
+                - /placeholder: Cash Main, Bank Alfalah
+            - generic [ref=e474]:
+              - text: Name (Urdu)
+              - textbox "Name (Urdu)" [disabled] [ref=e475]:
+                - /placeholder: Urdu name
+            - generic [ref=e476]:
+              - generic [ref=e478]: Account Type
+              - combobox "Account Type" [disabled] [ref=e479]:
+                - option "Select" [selected]
+                - option "ASSET"
+                - option "LIABILITY"
+                - option "EQUITY"
+                - option "REVENUE"
+                - option "EXPENSE"
+            - generic [ref=e480]:
+              - generic [ref=e481]:
+                - generic [ref=e482]: Account Group
+                - link "+ Add Account Group" [ref=e483] [cursor=pointer]:
+                  - /url: /master-data/basic-info/account-groups
+              - combobox "Account Group + Add Account Group" [disabled] [ref=e484]:
+                - option "Select" [selected]
+                - option "ASSET - Accounts Receivable (AR Control)"
+                - option "ASSET - Bank"
+                - option "ASSET - Bank Clearing / Undeposited Funds"
+                - option "ASSET - Cash with Salesman"
+                - option "ASSET - E2E-AG-1774610242629-7362"
+                - option "ASSET - Inventory â€“ Finished Goods"
+                - option "ASSET - Inventory â€“ Raw Materials"
+                - option "ASSET - Inventory â€“ Semi-Finished"
+                - option "ASSET - Inventory â€“ Transit"
+                - option "ASSET - Office Cash (Cash-in-Hand)"
+                - option "ASSET - Production Clearing (WIP/Clearing)"
+                - option "LIABILITY - Accounts Payable (AP Control)"
+                - option "LIABILITY - Accrued Expenses Payable"
+                - option "LIABILITY - Advances from Customers"
+                - option "LIABILITY - Commission Payable"
+                - option "LIABILITY - E2E-AG-EDIT-1774610242629-520"
+                - option "LIABILITY - Salaries Payable (Employees)"
+                - option "LIABILITY - Tax Payable / Output Tax"
+                - option "LIABILITY - Wages Payable (Labour)"
+                - option "EQUITY - Opening Balance Equity"
+                - option "EQUITY - Owner Capital"
+                - option "EQUITY - Owner Drawings (Withdrawals)"
+                - option "EQUITY - Retained Earnings"
+                - option "REVENUE - Other Income"
+                - option "REVENUE - Sales Discounts"
+                - option "REVENUE - Sales Returns"
+                - option "REVENUE - Sales Revenue"
+                - option "REVENUE - Stock Adjustment Gain"
+                - option "EXPENSE - Abnormal Loss Expense"
+                - option "EXPENSE - Bank Fees / Charges Expense"
+                - option "EXPENSE - COGS â€“ Finished Goods"
+                - option "EXPENSE - Commission Expense"
+                - option "EXPENSE - Defected Return Expense"
+                - option "EXPENSE - Electricity / Utilities Expense"
+                - option "EXPENSE - Fuel Expense"
+                - option "EXPENSE - Rent Expense"
+                - option "EXPENSE - Salary Expense"
+                - option "EXPENSE - Stock Adjustment Loss"
+                - option "EXPENSE - Wages Expense"
+            - generic [ref=e485]:
+              - generic [ref=e487]: Posting Class
+              - generic [ref=e488]: Optional classification used for posting behavior (for example, Bank). Leave blank for normal accounts.
+              - combobox "Posting Class Optional classification used for posting behavior (for example, Bank). Leave blank for normal accounts." [disabled] [ref=e489]:
+                - option "NONE" [selected]
+                - option "BANK - Bank"
+                - option "CASH - Cash"
+            - generic [ref=e490]:
+              - checkbox "Contra Account Offsets the balance of its parent group." [disabled] [ref=e491]
+              - generic [ref=e492]:
+                - generic [ref=e493]: Contra Account
+                - generic [ref=e494]: Offsets the balance of its parent group.
+            - generic [ref=e495]:
+              - text: Branches
+              - generic [ref=e496]:
+                - button "Branches All Branches" [disabled]:
+                  - generic: Select
+                  - img
+                - listbox [disabled] [ref=e497]:
+                  - option "All Branches" [ref=e498]
+            - generic [ref=e499]:
+              - checkbox "Lock Posting Prevent vouchers from posting to this account." [disabled] [ref=e500]
+              - generic [ref=e501]:
+                - generic [ref=e502]: Lock Posting
+                - generic [ref=e503]: Prevent vouchers from posting to this account.
+    - generic [ref=e504]: ERP System © 2026
+```

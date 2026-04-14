@@ -1,7 +1,13 @@
+<%
+  const isUrduLocale = String(locale || "en").trim().toLowerCase() === "ur";
+  const signedInName = isUrduLocale
+    ? user?.name_ur || user?.name || user?.username || "-"
+    : user?.name || user?.username || "-";
+%>
 <div class="flex flex-wrap items-center gap-3 text-xs text-muted">
   <div class="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 shadow-sm">
     <span class="text-[10px] uppercase tracking-[0.2em] text-muted"><%= t("signed_in_as") %></span>
-    <span class="font-semibold text-slate-800"><%= user?.username || "User" %></span>
+    <span class="font-semibold text-slate-800"><%= signedInName %></span>
   </div>
   <form method="get" action="/" class="flex items-center">
     <label for="branch-select" class="sr-only"><%= t("branch") %></label>

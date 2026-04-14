@@ -10,12 +10,18 @@
     <!-- Head includes meta, title, and global styles/scripts -->
     <%- include("../partials/head", { title }) %>
     <style>
+      .erp-wide-content .max-w-7xl {
+        max-width: 96rem;
+      }
+
       body.voucher-page main > .mx-auto {
         width: 100%;
         max-width: none !important;
       }
     </style>
   </head>
+  <% const __layoutPath = typeof currentPath === "string" ? currentPath : ""; %>
+  <% const __isWideContentRoute = __layoutPath.startsWith("/master-data") || __layoutPath.startsWith("/hr-payroll"); %>
   <body class="<%= locale === 'ur' ? 'font-urdu' : 'font-sans' %> min-h-screen overflow-x-hidden bg-linear-to-br from-amber-50 via-slate-50 to-amber-50 text-ink">
     <script>
       (function () {
@@ -51,9 +57,9 @@
         const tabId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
         const currentBranchId = String(<%- JSON.stringify(branchId || "") %>).trim();
         const branchChangedPrompt = <%- JSON.stringify(String(t("branch_changed_reload_confirm") )) %>;
-        const branchChangedTitle = <%- JSON.stringify(String(t("confirm") || "Confirm") ) %>;
-        const branchChangedContinue = <%- JSON.stringify(String(t("continue") || "Continue") ) %>;
-        const branchChangedCancel = <%- JSON.stringify(String(t("cancel") || "Cancel") ) %>;
+        const branchChangedTitle = <%- JSON.stringify(String(t("confirm")) ) %>;
+        const branchChangedContinue = <%- JSON.stringify(String(t("continue")) ) %>;
+        const branchChangedCancel = <%- JSON.stringify(String(t("cancel")) ) %>;
         let hasUnsavedChanges = false;
         let branchReloadStarted = false;
 
@@ -188,7 +194,7 @@
         </div>
       </header>
       <!-- MAIN CONTENT: Page-specific content and footer -->
-      <main class="w-full flex-1 px-4 pb-10 pt-6 lg:px-8 lg:pt-8">
+      <main class="w-full flex-1 px-4 pb-10 pt-6 lg:px-8 lg:pt-8 <%= __isWideContentRoute ? 'erp-wide-content' : '' %>">
         <%- include(view) %>
         <%- include("../partials/footer") %>
       </main>

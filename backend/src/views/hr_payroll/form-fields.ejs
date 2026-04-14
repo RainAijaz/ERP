@@ -67,7 +67,7 @@
       <% } %>
     </label>
   <% } else if (field.type === "multi-select") { %>
-    <% const shouldUseSearchableMulti = field.name === "labour_id" || field.name === "employee_id"; %>
+    <% const shouldUseSearchableMulti = field.name === "labour_id" || field.name === "employee_id" || field.name === "branch_ids"; %>
     <% const hasAllOption = (field.options || []).some(function(option) {
          const value = String(option && option.value ? option.value : "").trim().toLowerCase();
          return value === "all" || value === "__all__";
@@ -79,6 +79,7 @@
         name="<%= field.name %>"
         data-field="<%= field.name %>"
         <%= shouldUseSearchableMulti ? 'data-searchable-select="true" data-searchable-variant="unified"' : "" %>
+        <%= field.name === "branch_ids" ? 'data-searchable-multi-search="inline"' : "" %>
         <%= hasAllOption ? 'data-all-multi-select="true"' : "" %>
         multiple
         <%= field.required ? "data-required='true'" : "" %>

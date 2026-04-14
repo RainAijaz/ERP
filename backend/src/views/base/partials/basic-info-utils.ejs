@@ -588,9 +588,9 @@
         const indicator = btn.querySelector("[data-sort-indicator]");
         if (!indicator) return;
         if (Number(btn.dataset.sortIndex) === sortIndex) {
-          indicator.textContent = sortDir === "asc" ? "^" : "v";
+          indicator.textContent = sortDir === "asc" ? "▲" : "▼";
         } else {
-          indicator.textContent = "-";
+          indicator.textContent = "↕";
         }
       });
     };
@@ -1441,6 +1441,10 @@
       const menu = wrap.querySelector("[data-multi-menu]");
       const placeholder = wrap.querySelector("[data-multi-placeholder]");
       if (!select || !tags || !trigger || !menu || !placeholder) return;
+      const keepMenuOpenOnSelect =
+        String(wrap.dataset.multiKeepOpen || "").trim() === "1" ||
+        String(wrap.dataset.multiKeepOpen || "").toLowerCase() === "true" ||
+        String(select.name || "").trim() === "branch_ids";
 
       const closeMenu = () => {
         menu.classList.add("hidden");
@@ -1523,6 +1527,10 @@
             select.dispatchEvent(new Event("change", { bubbles: true }));
             updateTags();
             renderMenu();
+            if (keepMenuOpenOnSelect) {
+              searchInput.focus();
+              return;
+            }
             closeMenu();
           });
           optionsWrapper.appendChild(option);

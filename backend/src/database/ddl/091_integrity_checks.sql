@@ -940,7 +940,18 @@ $do$;
 -- H) PURCHASE ENFORCEMENT
 -- =============================================================================
 
--- H1) purchase_invoice_header_ext must attach to PI, and po_voucher_id (if set) must attach to PO
+-- H1) purchase GRN/PI/PR header extensions must attach to their voucher types
+CREATE OR REPLACE FUNCTION erp.trg_purchase_grn_header_ext_validate()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $fn$
+BEGIN
+  PERFORM erp.assert_voucher_type_code(NEW.voucher_id, 'GRN');
+  RETURN NEW;
+END;
+$fn$;
+
+-- purchase_invoice_header_ext must attach to PI, and po_voucher_id (if set) must attach to PO
 CREATE OR REPLACE FUNCTION erp.trg_purchase_invoice_header_ext_validate()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -956,7 +967,7 @@ BEGIN
 END;
 $fn$;
 
--- Purchase return header ext must attach to PR
+-- purchase_return_header_ext must attach to PR
 CREATE OR REPLACE FUNCTION erp.trg_purchase_return_header_ext_validate()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -968,6 +979,13 @@ END;
 $fn$;
 DO $do$
 BEGIN
+  IF to_regclass('erp.purchase_grn_header_ext') IS NOT NULL THEN
+    EXECUTE 'DROP TRIGGER IF EXISTS trg_purchase_grn_header_ext_validate ON erp.purchase_grn_header_ext';
+    EXECUTE 'CREATE TRIGGER trg_purchase_grn_header_ext_validate
+             BEFORE INSERT OR UPDATE ON erp.purchase_grn_header_ext
+             FOR EACH ROW EXECUTE FUNCTION erp.trg_purchase_grn_header_ext_validate()';
+  END IF;
+
   IF to_regclass('erp.purchase_invoice_header_ext') IS NOT NULL THEN
     EXECUTE 'DROP TRIGGER IF EXISTS trg_purchase_invoice_header_ext_validate ON erp.purchase_invoice_header_ext';
     EXECUTE 'CREATE TRIGGER trg_purchase_invoice_header_ext_validate
@@ -984,19 +1002,94 @@ BEGIN
 END
 $do$;
 
--- H2) Purchase voucher lines enforcement (PO/PI/PR must be ITEM RM lines with qty > 0)
+-- H2) Purchase voucher lines enforcement with purchase_category-aware rules:
+--   RAW_MATERIAL -> ITEM lines with RM item_id + qty>0
+--   ASSET        -> ACCOUNT lines with fixed_assets account + qty>0 (+ rate>0 except GRN)
 -- Implemented as a trigger on voucher_line (covers all inserts/updates).
 CREATE OR REPLACE FUNCTION erp.trg_purchase_lines_require_rm_item()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $$
-DECLARE v_vt text;
+DECLARE
+  v_vt text;
+  v_category text := 'RAW_MATERIAL';
 BEGIN
   SELECT vh.voucher_type_code INTO v_vt
   FROM erp.voucher_header vh
   WHERE vh.id = NEW.voucher_header_id;
 
-  IF v_vt IN ('PO','PI','PR') THEN
+  IF v_vt IN ('PO','PI','PR','GRN') THEN
+    IF v_vt = 'PI' THEN
+      BEGIN
+        SELECT ph.purchase_category INTO v_category
+        FROM erp.purchase_invoice_header_ext ph
+        WHERE ph.voucher_id = NEW.voucher_header_id;
+      EXCEPTION WHEN undefined_column OR undefined_table THEN
+        v_category := 'RAW_MATERIAL';
+      END;
+    ELSIF v_vt = 'PR' THEN
+      BEGIN
+        SELECT ph.purchase_category INTO v_category
+        FROM erp.purchase_return_header_ext ph
+        WHERE ph.voucher_id = NEW.voucher_header_id;
+      EXCEPTION WHEN undefined_column OR undefined_table THEN
+        v_category := 'RAW_MATERIAL';
+      END;
+    ELSIF v_vt = 'GRN' THEN
+      BEGIN
+        SELECT gh.purchase_category INTO v_category
+        FROM erp.purchase_grn_header_ext gh
+        WHERE gh.voucher_id = NEW.voucher_header_id;
+      EXCEPTION WHEN undefined_column OR undefined_table THEN
+        v_category := 'RAW_MATERIAL';
+      END;
+    ELSE
+      v_category := 'RAW_MATERIAL';
+    END IF;
+
+    -- During approval replay, header extension update can happen after line inserts in the same tx.
+    -- In that transition window, treat ACCOUNT purchase lines as ASSET lines.
+    IF v_vt IN ('PI','PR','GRN') AND NEW.line_kind = 'ACCOUNT' THEN
+      v_category := 'ASSET';
+    END IF;
+    v_category := upper(coalesce(v_category, 'RAW_MATERIAL'));
+
+    IF v_category = 'ASSET' THEN
+      IF NEW.line_kind <> 'ACCOUNT' THEN
+        RAISE EXCEPTION 'Voucher % (%): only ACCOUNT lines allowed for ASSET purchase category.', NEW.voucher_header_id, v_vt;
+      END IF;
+
+      IF NEW.account_id IS NULL THEN
+        RAISE EXCEPTION 'Voucher % (%): account_id is required for ASSET purchase lines.', NEW.voucher_header_id, v_vt;
+      END IF;
+
+      IF NEW.item_id IS NOT NULL THEN
+        RAISE EXCEPTION 'Voucher % (%): item_id must be NULL for ASSET purchase lines.', NEW.voucher_header_id, v_vt;
+      END IF;
+
+      IF COALESCE(NEW.meta->>'asset_id', '') !~ '^[0-9]+$' THEN
+        RAISE EXCEPTION 'Voucher % (%): asset_id is required in voucher_line.meta for ASSET purchase lines.', NEW.voucher_header_id, v_vt;
+      END IF;
+
+      PERFORM 1
+      FROM erp.accounts a
+      JOIN erp.account_groups ag ON ag.id = a.subgroup_id
+      WHERE a.id = NEW.account_id
+        AND lower(coalesce(ag.code, '')) = 'fixed_assets';
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'Voucher % (%): account_id % must belong to fixed_assets group for ASSET purchase lines.',
+          NEW.voucher_header_id, v_vt, NEW.account_id;
+      END IF;
+
+      IF NEW.qty <= 0 THEN
+        RAISE EXCEPTION 'Voucher % (%): qty must be > 0 for ASSET purchase lines.', NEW.voucher_header_id, v_vt;
+      END IF;
+      IF v_vt <> 'GRN' AND COALESCE(NEW.rate, 0) <= 0 THEN
+        RAISE EXCEPTION 'Voucher % (%): rate must be > 0 for ASSET purchase lines.', NEW.voucher_header_id, v_vt;
+      END IF;
+      RETURN NEW;
+    END IF;
+
     IF NEW.line_kind <> 'ITEM' THEN
       RAISE EXCEPTION 'Voucher % (%): only ITEM lines allowed for purchase vouchers.', NEW.voucher_header_id, v_vt;
     END IF;
@@ -1034,6 +1127,8 @@ DECLARE
   v_supplier   bigint;
   v_total      numeric(18,2);
   v_has_po     boolean;
+  v_purchase_category text := 'RAW_MATERIAL';
+  v_has_purchase_category_col boolean;
   v_policy_hit boolean;
   v_has_group_col boolean;
   v_group_col_name text;
@@ -1047,14 +1142,35 @@ BEGIN
     RETURN;
   END IF;
 
-  -- Read supplier + whether PO is linked
-  SELECT ph.supplier_party_id, (ph.po_voucher_id IS NOT NULL)
-    INTO v_supplier, v_has_po
-  FROM erp.purchase_invoice_header_ext ph
-  WHERE ph.voucher_id = p_pi_voucher_id;
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema='erp'
+      AND table_name='purchase_invoice_header_ext'
+      AND column_name='purchase_category'
+  ) INTO v_has_purchase_category_col;
+
+  -- Read supplier + whether PO is linked (+ purchase_category when schema supports it)
+  IF v_has_purchase_category_col THEN
+    SELECT ph.supplier_party_id,
+           (ph.po_voucher_id IS NOT NULL),
+           upper(coalesce(ph.purchase_category, 'RAW_MATERIAL'))
+      INTO v_supplier, v_has_po, v_purchase_category
+    FROM erp.purchase_invoice_header_ext ph
+    WHERE ph.voucher_id = p_pi_voucher_id;
+  ELSE
+    SELECT ph.supplier_party_id, (ph.po_voucher_id IS NOT NULL)
+      INTO v_supplier, v_has_po
+    FROM erp.purchase_invoice_header_ext ph
+    WHERE ph.voucher_id = p_pi_voucher_id;
+  END IF;
 
   -- If header not present yet in the transaction, skip for now (will be checked at COMMIT via triggers)
   IF v_supplier IS NULL THEN
+    RETURN;
+  END IF;
+
+  -- PO policy is for raw-material procurement; skip ASSET category.
+  IF v_purchase_category = 'ASSET' THEN
     RETURN;
   END IF;
 

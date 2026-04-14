@@ -185,9 +185,6 @@
   filters: typeof filters !== 'undefined' ? filters : {}  // <--- ADD THIS LINE
 }) %>
 <%- include("../../../base/partials/basic-info-utils", { t, page: { titleKey: "raw_materials" }, basePath, modalOpen, modalMode }) %>
-<script><%- include("../../../base/partials/searchable-select.js") %></script>
-<script><%- include("../../../base/partials/voucher-row-enter-navigation.js") %></script>
-
 <script>
   (function () {
     const modal = document.querySelector("[data-modal]");

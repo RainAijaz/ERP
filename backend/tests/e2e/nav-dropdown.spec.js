@@ -23,16 +23,19 @@ test.describe("Navigation dropdowns", () => {
     );
     await financialToggle.click();
 
-    const reportsToggle = page.locator(
-      '[data-submenu-toggle="financial-reports"]',
-    );
-    test.skip(
-      (await reportsToggle.count()) === 0,
-      "Financial reports nav toggle is not present.",
-    );
+    const reportsToggle = page
+      .locator("button")
+      .filter({ hasText: /^Reports$/i })
+      .first();
+    test.skip((await reportsToggle.count()) === 0, "Reports nav toggle is not present.");
     await reportsToggle.click();
 
-    const menu = page.locator('[data-submenu="financial-reports"]');
+    const menu = page
+      .locator('[data-submenu]:not(.hidden)')
+      .filter({
+        has: page.locator('a[href="/reports/financial/cash_book"]'),
+      })
+      .first();
     await expect(menu).toBeVisible();
     await page.waitForTimeout(100);
 

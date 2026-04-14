@@ -206,6 +206,6 @@ const reportPurposeTooltip = (() => {
   </section>
 </div>
 <script><%- include("../../base/partials/date-range-picker.js") %></script>
-<script><%- include("../../base/partials/searchable-select.js") %></script>
+
 <script>(function(){ if (typeof window.initSearchableSelects === "function") window.initSearchableSelects(); const form = document.querySelector("[data-sales-discount-report-filter-form]"); if (form && typeof window.initReportDateRangePicker === "function") window.initReportDateRangePicker({ root: form, invalidDateRangeMessage: <%- JSON.stringify(t("invalid_date_range")) %>, selectDateRangeText: <%- JSON.stringify(t("select_date_range")) %> }); })();</script>
 

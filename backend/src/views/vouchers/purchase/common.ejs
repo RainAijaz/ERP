@@ -33,6 +33,7 @@
   };
 
   const isGrn = voucherTypeCode === "GRN";
+  const selectedPurchaseCategory = String(selectedVoucher?.purchase_category || "RAW_MATERIAL").toUpperCase() === "ASSET" ? "ASSET" : "RAW_MATERIAL";
 %>
 
 <style>
@@ -92,6 +93,16 @@
           </div>
         </div>
 
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel("type") %></label>
+          <div class="lg:col-span-4">
+            <select name="purchase_category" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-purchase-category data-searchable-select="true" data-searchable-variant="unified">
+              <option value="RAW_MATERIAL" <%= selectedPurchaseCategory === "RAW_MATERIAL" ? "selected" : "" %>><%= t("raw_material") %></option>
+              <option value="ASSET" <%= selectedPurchaseCategory === "ASSET" ? "selected" : "" %>><%= t("asset") %></option>
+            </select>
+          </div>
+        </div>
+
         <% if (voucherTypeCode === "PI") { %>
           <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
             <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel("date") %></label>
@@ -132,8 +143,8 @@
                 <% }) %>
               </select>
             </div>
-            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= toFriendlyLabel("grn_reference") %></label>
-            <div class="lg:col-span-4">
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3" data-grn-reference-label><%= toFriendlyLabel("grn_reference") %></label>
+            <div class="lg:col-span-4" data-grn-reference-wrap>
               <div class="flex items-center gap-2">
                 <input type="hidden" name="grn_reference_voucher_no" value="<%= selectedVoucher?.grn_reference_voucher_no || '' %>" data-grn-reference>
                 <input type="text" readonly class="h-10 w-full rounded-xl border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700" data-grn-reference-display placeholder="<%= t('auto_select_open_grn') %>">
@@ -253,10 +264,10 @@
             </colgroup>
             <thead class="bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
               <tr>
-                <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel("raw_material") %></th>
-                <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel("color") %></th>
-                <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel("size") %></th>
-                <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel("unit") %></th>
+                <th class="border-b border-slate-200 px-2 py-2 text-left" data-line-head-item><%= toFriendlyLabel("raw_material") %></th>
+                <th class="border-b border-slate-200 px-2 py-2 text-left" data-line-head-type><%= toFriendlyLabel("color") %></th>
+                <th class="border-b border-slate-200 px-2 py-2 text-left" data-line-head-size><%= toFriendlyLabel("size") %></th>
+                <th class="border-b border-slate-200 px-2 py-2 text-left" data-line-head-uom><%= toFriendlyLabel("unit") %></th>
                 <th class="border-b border-slate-200 px-2 py-2 text-right"><%= toFriendlyLabel("quantity") %></th>
                 <% if (!isGrn) { %>
                   <th class="border-b border-slate-200 px-2 py-2 text-right"><%= toFriendlyLabel("rate") %></th>
@@ -344,14 +355,13 @@
     </div>
   </section>
 </div>
-
-<script><%- include("../../base/partials/searchable-select.js") %></script>
 <script>
   (function () {
     const form = document.querySelector("[data-purchase-voucher-form]");
     if (!form) return;
 
     const rawMaterials = <%- JSON.stringify(options.rawMaterials || []) %>;
+    const assets = <%- JSON.stringify(options.assets || []) %>;
     const colors = <%- JSON.stringify(options.colors || []) %>;
     const sizes = <%- JSON.stringify(options.sizes || []) %>;
     const rawMaterialColorPolicyByItem = <%- JSON.stringify(options.rawMaterialColorPolicyByItem || {}) %>;
@@ -367,6 +377,14 @@
     const isGrn = voucherTypeCode === "GRN";
     const isGeneralPurchase = voucherTypeCode === "PI";
     const isPurchaseReturn = voucherTypeCode === "PR";
+    const defaultPurchaseCategory = "<%= selectedPurchaseCategory %>";
+    const normalizePurchaseCategory = (value) =>
+      String(value || "RAW_MATERIAL").toUpperCase() === "ASSET"
+        ? "ASSET"
+        : "RAW_MATERIAL";
+    const getPurchaseCategory = () =>
+      normalizePurchaseCategory(purchaseCategorySelect?.value || defaultPurchaseCategory);
+    const isAssetPurchase = () => getPurchaseCategory() === "ASSET";
     const requiredMessage = (label) =>
       window.VoucherValidation?.requiredMessage?.(label)
       || `<%= t("error_required_fields") %>: ${String(label || "").trim()}`;
@@ -385,6 +403,7 @@
     const grnAllocJsonInput = form.querySelector("[data-grn-alloc-json]");
     
     const supplierSelect = form.querySelector("[data-supplier-select]");
+    const purchaseCategorySelect = form.querySelector("[data-purchase-category]");
     const paymentTypeSelect = form.querySelector("[data-payment-type]");
     const paymentTypeSegment = form.querySelector("[data-payment-type-segment]");
     const paymentTypeOptions = paymentTypeSegment ? Array.from(paymentTypeSegment.querySelectorAll("[data-payment-type-option]")) : [];
@@ -393,6 +412,8 @@
     const cashAccountSelect = form.querySelector("[data-cash-account]");
     const grnReferenceInput = form.querySelector("[data-grn-reference]");
     const grnReferenceDisplayInput = form.querySelector("[data-grn-reference-display]");
+    const grnReferenceLabel = form.querySelector("[data-grn-reference-label]");
+    const grnReferenceWrap = form.querySelector("[data-grn-reference-wrap]");
     const openGrnPickerButton = form.querySelector("[data-open-grn-picker]");
     const grnPickerModal = document.querySelector("[data-grn-picker-modal]");
     const grnPickerSupplierInput = grnPickerModal?.querySelector("[data-grn-picker-supplier]");
@@ -403,14 +424,32 @@
     const voucherDateInput = form.querySelector('input[name="voucher_date"]');
     const referenceNoInput = form.querySelector('input[name="reference_no"]');
     const grnPickerSelectedLineIds = new Set();
+    const lineHeadItem = form.querySelector("[data-line-head-item]");
+    const lineHeadType = form.querySelector("[data-line-head-type]");
+    const lineHeadSize = form.querySelector("[data-line-head-size]");
+    const lineHeadUom = form.querySelector("[data-line-head-uom]");
 
     const uomByItemId = new Map(rawMaterials.map((item) => [Number(item.id), { id: Number(item.base_uom_id || 0), name: item.base_uom_name || "" }]));
+    const assetById = new Map(
+      (assets || []).map((asset) => [
+        Number(asset.id),
+        {
+          id: Number(asset.id),
+          name: asset.name || "",
+          asset_type_code: String(asset.asset_type_code || "").toUpperCase(),
+          asset_type_name: asset.asset_type_name || "",
+        },
+      ]),
+    );
     const colorNameById = new Map(colors.map((color) => [Number(color.id), color.name || ""]));
     const sizeNameById = new Map(sizes.map((size) => [Number(size.id), size.name || ""]));
     
     const itemRows = Array.isArray(selectedVoucher?.lines) && selectedVoucher.lines.length
       ? selectedVoucher.lines.map((line) => ({
           item_id: Number(line.item_id || 0) || null,
+          asset_id: Number(line.asset_id || 0) || null,
+          asset_type_code: String(line.asset_type_code || "").toUpperCase(),
+          asset_type_name: String(line.asset_type_name || ""),
           color_id: Number(line.color_id || 0) || null,
           size_id: Number(line.size_id || 0) || null,
           uom_id: Number(line.uom_id || 0) || null,
@@ -419,7 +458,19 @@
           amount: Number(line.amount || 0),
           grn_source_line_id: null,
         }))
-      : [{ item_id: null, color_id: null, size_id: null, uom_id: null, qty: 0, rate: 0, amount: 0, grn_source_line_id: null }];
+      : [{
+          item_id: null,
+          asset_id: null,
+          asset_type_code: "",
+          asset_type_name: "",
+          color_id: null,
+          size_id: null,
+          uom_id: null,
+          qty: 0,
+          rate: 0,
+          amount: 0,
+          grn_source_line_id: null,
+        }];
 
     const rowsState = itemRows;
     let pendingFocusRowIndex = null;
@@ -452,9 +503,14 @@
       }
     };
 
-    const rowFieldOrder = isGrn
-      ? ["item", "color", "size", "qty"]
-      : ["item", "color", "size", "qty", "rate"];
+    const getRowFieldOrder = () => {
+      if (isAssetPurchase()) {
+        return isGrn ? ["item", "qty"] : ["item", "qty", "rate"];
+      }
+      return isGrn
+        ? ["item", "color", "size", "qty"]
+        : ["item", "color", "size", "qty", "rate"];
+    };
 
     const resolveRowFieldKey = (element) => {
       if (!element) return "";
@@ -518,6 +574,7 @@
       const currentFieldKey = resolveRowFieldKey(currentEl);
       if (!currentFieldKey) return false;
 
+      const rowFieldOrder = getRowFieldOrder();
       const index = rowFieldOrder.indexOf(currentFieldKey);
       if (index < 0) return false;
 
@@ -713,6 +770,19 @@
 
     const renderRows = () => {
       linesBody.innerHTML = "";
+      const assetMode = isAssetPurchase();
+      if (lineHeadItem) {
+        lineHeadItem.textContent = assetMode
+          ? "<%= toFriendlyLabel('asset_name') %>"
+          : "<%= toFriendlyLabel('raw_material') %>";
+      }
+      if (lineHeadType) {
+        lineHeadType.textContent = assetMode
+          ? "<%= toFriendlyLabel('asset_type') %>"
+          : "<%= toFriendlyLabel('color') %>";
+      }
+      if (lineHeadSize) lineHeadSize.classList.toggle("hidden", assetMode);
+      if (lineHeadUom) lineHeadUom.classList.toggle("hidden", assetMode);
       rowsState.forEach((row, index) => {
         recalculateRow(row);
         const tr = document.createElement("tr");
@@ -726,49 +796,92 @@
         itemSelect.dataset.rowField = "item";
         itemSelect.dataset.searchableSelect = "true";
         itemSelect.dataset.searchableVariant = "unified";
-        itemSelect.appendChild(makeOption("", "<%= toFriendlyLabel('select_raw_material') %>", !row.item_id));
-        rawMaterials.forEach((item) => {
-          itemSelect.appendChild(makeOption(item.id, item.name, Number(row.item_id || 0) === Number(item.id)));
-        });
+        const selectedEntityId = assetMode
+          ? Number(row.asset_id || 0)
+          : Number(row.item_id || 0);
+        itemSelect.appendChild(
+          makeOption(
+            "",
+            assetMode
+              ? "<%= toFriendlyLabel('asset_name') %>"
+              : "<%= toFriendlyLabel('select_raw_material') %>",
+            !selectedEntityId,
+          ),
+        );
+        if (assetMode) {
+          assets.forEach((asset) => {
+            itemSelect.appendChild(
+              makeOption(
+                asset.id,
+                asset.name,
+                Number(row.asset_id || 0) === Number(asset.id),
+              ),
+            );
+          });
+        } else {
+          rawMaterials.forEach((item) => {
+            itemSelect.appendChild(
+              makeOption(
+                item.id,
+                item.name,
+                Number(row.item_id || 0) === Number(item.id),
+              ),
+            );
+          });
+        }
         itemSelect.addEventListener("change", () => {
-          row.item_id = Number(itemSelect.value || 0) || null;
           row.grn_source_line_id = null;
-          const uom = uomByItemId.get(Number(row.item_id || 0));
-          row.uom_id = uom?.id || null;
-
-          const colorPolicy = getColorPolicyForItem(row.item_id);
-          if (!row.item_id) {
+          if (assetMode) {
+            row.asset_id = Number(itemSelect.value || 0) || null;
+            row.item_id = null;
             row.color_id = null;
-          } else if (colorPolicy?.hasAnyRate) {
-            const allowedColorIds = new Set((colorPolicy.colors || []).map((entry) => Number(entry.id)));
-            const requiresColor = allowedColorIds.size > 0 && !colorPolicy.hasColorless;
-            if (row.color_id && !allowedColorIds.has(Number(row.color_id))) {
-              row.color_id = null;
-            }
-            if (!row.color_id && requiresColor) {
-              const firstAllowed = (colorPolicy.colors || [])[0];
-              row.color_id = firstAllowed ? Number(firstAllowed.id) : null;
-            }
-          }
-
-          const sizePolicy = getSizePolicyForItem(row.item_id);
-          if (!row.item_id) {
             row.size_id = null;
-          } else if (sizePolicy?.hasAnyRate) {
-            const allowedSizeIds = new Set((sizePolicy.sizes || []).map((entry) => Number(entry.id)));
-            const requiresSize = allowedSizeIds.size > 0 && !sizePolicy.hasSizeless;
-            if (row.size_id && !allowedSizeIds.has(Number(row.size_id))) {
-              row.size_id = null;
-            }
-            if (!row.size_id && requiresSize) {
-              const firstAllowedSize = (sizePolicy.sizes || [])[0];
-              row.size_id = firstAllowedSize ? Number(firstAllowedSize.id) : null;
-            }
-          }
+            row.uom_id = null;
+            const selectedAsset = assetById.get(Number(row.asset_id || 0));
+            row.asset_type_code = String(selectedAsset?.asset_type_code || "");
+            row.asset_type_name = String(selectedAsset?.asset_type_name || "");
+          } else {
+            row.item_id = Number(itemSelect.value || 0) || null;
+            row.asset_id = null;
+            row.asset_type_code = "";
+            row.asset_type_name = "";
+            const uom = uomByItemId.get(Number(row.item_id || 0));
+            row.uom_id = uom?.id || null;
 
-          if (!isGrn) {
-            row.rate = resolveAutoRateForRow(row);
-            recalculateRow(row);
+            const colorPolicy = getColorPolicyForItem(row.item_id);
+            if (!row.item_id) {
+              row.color_id = null;
+            } else if (colorPolicy?.hasAnyRate) {
+              const allowedColorIds = new Set((colorPolicy.colors || []).map((entry) => Number(entry.id)));
+              const requiresColor = allowedColorIds.size > 0 && !colorPolicy.hasColorless;
+              if (row.color_id && !allowedColorIds.has(Number(row.color_id))) {
+                row.color_id = null;
+              }
+              if (!row.color_id && requiresColor) {
+                const firstAllowed = (colorPolicy.colors || [])[0];
+                row.color_id = firstAllowed ? Number(firstAllowed.id) : null;
+              }
+            }
+
+            const sizePolicy = getSizePolicyForItem(row.item_id);
+            if (!row.item_id) {
+              row.size_id = null;
+            } else if (sizePolicy?.hasAnyRate) {
+              const allowedSizeIds = new Set((sizePolicy.sizes || []).map((entry) => Number(entry.id)));
+              const requiresSize = allowedSizeIds.size > 0 && !sizePolicy.hasSizeless;
+              if (row.size_id && !allowedSizeIds.has(Number(row.size_id))) {
+                row.size_id = null;
+              }
+              if (!row.size_id && requiresSize) {
+                const firstAllowedSize = (sizePolicy.sizes || [])[0];
+                row.size_id = firstAllowedSize ? Number(firstAllowedSize.id) : null;
+              }
+            }
+
+            if (!isGrn) {
+              row.rate = resolveAutoRateForRow(row);
+              recalculateRow(row);
+            }
           }
 
           renderRows(); 
@@ -778,140 +891,165 @@
 
         const colorTd = document.createElement("td");
         colorTd.className = "px-1.5 py-1";
-        const colorSelect = document.createElement("select");
-        colorSelect.className = "h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs";
-        colorSelect.dataset.rowField = "color";
-        colorSelect.dataset.searchableSelect = "true";
-        colorSelect.dataset.searchableVariant = "unified";
-        const selectedItemId = Number(row.item_id || 0);
-        const colorPolicy = getColorPolicyForItem(selectedItemId);
-        const hasSelectedItem = selectedItemId > 0;
-        let allowedColors = [];
-        let allowNone = true;
-        let disableColorSelect = false;
-
-        if (!hasSelectedItem) {
-          disableColorSelect = true;
-        } else if (colorPolicy?.hasAnyRate) {
-          allowedColors = colorPolicy.colors || [];
-          allowNone = colorPolicy.hasColorless || allowedColors.length === 0;
-          disableColorSelect = allowedColors.length === 0;
-
-          const allowedSet = new Set(allowedColors.map((entry) => Number(entry.id)));
-          if (row.color_id && !allowedSet.has(Number(row.color_id))) {
-            row.color_id = null;
-          }
-          if (!row.color_id && !allowNone && allowedColors.length) {
-            row.color_id = Number(allowedColors[0].id);
-          }
+        if (assetMode) {
+          const assetTypeInput = document.createElement("input");
+          assetTypeInput.type = "text";
+          assetTypeInput.readOnly = true;
+          assetTypeInput.className = "h-8 w-full rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs text-slate-700";
+          const selectedAsset = assetById.get(Number(row.asset_id || 0));
+          row.asset_type_code = String(selectedAsset?.asset_type_code || row.asset_type_code || "");
+          row.asset_type_name = String(selectedAsset?.asset_type_name || row.asset_type_name || "");
+          assetTypeInput.value = row.asset_type_name || row.asset_type_code || "";
+          colorTd.appendChild(assetTypeInput);
         } else {
-          allowedColors = colors;
-          allowNone = true;
-          disableColorSelect = false;
-        }
+          const colorSelect = document.createElement("select");
+          colorSelect.className = "h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs";
+          colorSelect.dataset.rowField = "color";
+          colorSelect.dataset.searchableSelect = "true";
+          colorSelect.dataset.searchableVariant = "unified";
+          const selectedItemId = Number(row.item_id || 0);
+          const colorPolicy = getColorPolicyForItem(selectedItemId);
+          const hasSelectedItem = selectedItemId > 0;
+          let allowedColors = [];
+          let allowNone = true;
+          let disableColorSelect = false;
 
-        if (allowNone) {
-          colorSelect.appendChild(makeOption("", "<%= toFriendlyLabel('none') %>", !row.color_id));
-        }
+          if (!hasSelectedItem) {
+            disableColorSelect = true;
+          } else if (colorPolicy?.hasAnyRate) {
+            allowedColors = colorPolicy.colors || [];
+            allowNone = colorPolicy.hasColorless || allowedColors.length === 0;
+            disableColorSelect = allowedColors.length === 0;
 
-        allowedColors.forEach((color) => {
-          colorSelect.appendChild(makeOption(color.id, color.name, Number(row.color_id || 0) === Number(color.id)));
-        });
-
-        if (row.color_id) {
-          const existsInAllowed = allowedColors.some((entry) => Number(entry.id) === Number(row.color_id));
-          if (!existsInAllowed) {
-            const fallbackColorName = colorNameById.get(Number(row.color_id)) || `#${Number(row.color_id)}`;
-            colorSelect.appendChild(makeOption(row.color_id, fallbackColorName, true));
+            const allowedSet = new Set(allowedColors.map((entry) => Number(entry.id)));
+            if (row.color_id && !allowedSet.has(Number(row.color_id))) {
+              row.color_id = null;
+            }
+            if (!row.color_id && !allowNone && allowedColors.length) {
+              row.color_id = Number(allowedColors[0].id);
+            }
+          } else {
+            allowedColors = colors;
+            allowNone = true;
+            disableColorSelect = false;
           }
-        }
 
-        if (disableColorSelect) {
-          colorSelect.disabled = true;
-          colorSelect.classList.add("bg-slate-100");
-        } else {
-          colorSelect.disabled = false;
-          colorSelect.classList.remove("bg-slate-100");
-        }
-
-        colorSelect.addEventListener("change", () => {
-          row.color_id = Number(colorSelect.value || 0) || null;
-          row.grn_source_line_id = null;
-          if (!isGrn) {
-            row.rate = resolveAutoRateForRow(row);
-            recalculateRow(row);
+          if (allowNone) {
+            colorSelect.appendChild(makeOption("", "<%= toFriendlyLabel('none') %>", !row.color_id));
           }
-          renderRows();
-        });
-        colorTd.appendChild(colorSelect);
+
+          allowedColors.forEach((color) => {
+            colorSelect.appendChild(makeOption(color.id, color.name, Number(row.color_id || 0) === Number(color.id)));
+          });
+
+          if (row.color_id) {
+            const existsInAllowed = allowedColors.some((entry) => Number(entry.id) === Number(row.color_id));
+            if (!existsInAllowed) {
+              const fallbackColorName = colorNameById.get(Number(row.color_id)) || `#${Number(row.color_id)}`;
+              colorSelect.appendChild(makeOption(row.color_id, fallbackColorName, true));
+            }
+          }
+
+          if (disableColorSelect) {
+            colorSelect.disabled = true;
+            colorSelect.classList.add("bg-slate-100");
+          } else {
+            colorSelect.disabled = false;
+            colorSelect.classList.remove("bg-slate-100");
+          }
+
+          colorSelect.addEventListener("change", () => {
+            row.color_id = Number(colorSelect.value || 0) || null;
+            row.grn_source_line_id = null;
+            if (!isGrn) {
+              row.rate = resolveAutoRateForRow(row);
+              recalculateRow(row);
+            }
+            renderRows();
+          });
+          colorTd.appendChild(colorSelect);
+        }
         tr.appendChild(colorTd);
 
         const sizeTd = document.createElement("td");
         sizeTd.className = "px-1.5 py-1";
-        const sizeSelect = document.createElement("select");
-        sizeSelect.className = "h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs";
-        sizeSelect.dataset.rowField = "size";
-        sizeSelect.dataset.searchableSelect = "true";
-        sizeSelect.dataset.searchableVariant = "unified";
-        const sizePolicy = getSizePolicyForItem(selectedItemId);
-        let allowedSizes = [];
-        let allowSizeNone = true;
-        let disableSizeSelect = false;
-
-        if (!hasSelectedItem) {
-          disableSizeSelect = true;
-        } else if (sizePolicy?.hasAnyRate) {
-          allowedSizes = sizePolicy.sizes || [];
-          allowSizeNone = sizePolicy.hasSizeless || allowedSizes.length === 0;
-          disableSizeSelect = allowedSizes.length === 0;
-
-          const allowedSet = new Set(allowedSizes.map((entry) => Number(entry.id)));
-          if (row.size_id && !allowedSet.has(Number(row.size_id))) {
-            row.size_id = null;
-          }
-          if (!row.size_id && !allowSizeNone && allowedSizes.length) {
-            row.size_id = Number(allowedSizes[0].id);
-          }
+        if (assetMode) {
+          sizeTd.classList.add("hidden");
+          const placeholder = document.createElement("input");
+          placeholder.type = "text";
+          placeholder.readOnly = true;
+          placeholder.className = "h-8 w-full rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs text-slate-600";
+          placeholder.value = "";
+          sizeTd.appendChild(placeholder);
+          row.size_id = null;
         } else {
-          allowedSizes = sizes;
-          allowSizeNone = true;
-          disableSizeSelect = false;
-        }
+          const sizeSelect = document.createElement("select");
+          sizeSelect.className = "h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs";
+          sizeSelect.dataset.rowField = "size";
+          sizeSelect.dataset.searchableSelect = "true";
+          sizeSelect.dataset.searchableVariant = "unified";
+          const selectedItemId = Number(row.item_id || 0);
+          const sizePolicy = getSizePolicyForItem(selectedItemId);
+          const hasSelectedItem = selectedItemId > 0;
+          let allowedSizes = [];
+          let allowSizeNone = true;
+          let disableSizeSelect = false;
 
-        if (allowSizeNone) {
-          sizeSelect.appendChild(makeOption("", "<%= toFriendlyLabel('none') %>", !row.size_id));
-        }
+          if (!hasSelectedItem) {
+            disableSizeSelect = true;
+          } else if (sizePolicy?.hasAnyRate) {
+            allowedSizes = sizePolicy.sizes || [];
+            allowSizeNone = sizePolicy.hasSizeless || allowedSizes.length === 0;
+            disableSizeSelect = allowedSizes.length === 0;
 
-        allowedSizes.forEach((size) => {
-          sizeSelect.appendChild(makeOption(size.id, size.name, Number(row.size_id || 0) === Number(size.id)));
-        });
-
-        if (row.size_id) {
-          const existsInAllowed = allowedSizes.some((entry) => Number(entry.id) === Number(row.size_id));
-          if (!existsInAllowed) {
-            const fallbackSizeName = sizeNameById.get(Number(row.size_id)) || `#${Number(row.size_id)}`;
-            sizeSelect.appendChild(makeOption(row.size_id, fallbackSizeName, true));
+            const allowedSet = new Set(allowedSizes.map((entry) => Number(entry.id)));
+            if (row.size_id && !allowedSet.has(Number(row.size_id))) {
+              row.size_id = null;
+            }
+            if (!row.size_id && !allowSizeNone && allowedSizes.length) {
+              row.size_id = Number(allowedSizes[0].id);
+            }
+          } else {
+            allowedSizes = sizes;
+            allowSizeNone = true;
+            disableSizeSelect = false;
           }
-        }
 
-        if (disableSizeSelect) {
-          sizeSelect.disabled = true;
-          sizeSelect.classList.add("bg-slate-100");
-        } else {
-          sizeSelect.disabled = false;
-          sizeSelect.classList.remove("bg-slate-100");
-        }
-
-        sizeSelect.addEventListener("change", () => {
-          row.size_id = Number(sizeSelect.value || 0) || null;
-          row.grn_source_line_id = null;
-          if (!isGrn) {
-            row.rate = resolveAutoRateForRow(row);
-            recalculateRow(row);
+          if (allowSizeNone) {
+            sizeSelect.appendChild(makeOption("", "<%= toFriendlyLabel('none') %>", !row.size_id));
           }
-          renderRows();
-        });
-        sizeTd.appendChild(sizeSelect);
+
+          allowedSizes.forEach((size) => {
+            sizeSelect.appendChild(makeOption(size.id, size.name, Number(row.size_id || 0) === Number(size.id)));
+          });
+
+          if (row.size_id) {
+            const existsInAllowed = allowedSizes.some((entry) => Number(entry.id) === Number(row.size_id));
+            if (!existsInAllowed) {
+              const fallbackSizeName = sizeNameById.get(Number(row.size_id)) || `#${Number(row.size_id)}`;
+              sizeSelect.appendChild(makeOption(row.size_id, fallbackSizeName, true));
+            }
+          }
+
+          if (disableSizeSelect) {
+            sizeSelect.disabled = true;
+            sizeSelect.classList.add("bg-slate-100");
+          } else {
+            sizeSelect.disabled = false;
+            sizeSelect.classList.remove("bg-slate-100");
+          }
+
+          sizeSelect.addEventListener("change", () => {
+            row.size_id = Number(sizeSelect.value || 0) || null;
+            row.grn_source_line_id = null;
+            if (!isGrn) {
+              row.rate = resolveAutoRateForRow(row);
+              recalculateRow(row);
+            }
+            renderRows();
+          });
+          sizeTd.appendChild(sizeSelect);
+        }
         tr.appendChild(sizeTd);
 
         const uomTd = document.createElement("td");
@@ -920,9 +1058,15 @@
         uomInput.type = "text";
         uomInput.readOnly = true;
         uomInput.className = "h-8 w-full rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs text-slate-600";
-        const currentUom = uomByItemId.get(Number(row.item_id || 0));
-        uomInput.value = currentUom?.name || "";
-        row.uom_id = currentUom?.id || null;
+        if (assetMode) {
+          uomTd.classList.add("hidden");
+          uomInput.value = "";
+          row.uom_id = null;
+        } else {
+          const currentUom = uomByItemId.get(Number(row.item_id || 0));
+          uomInput.value = currentUom?.name || "";
+          row.uom_id = currentUom?.id || null;
+        }
         uomTd.appendChild(uomInput);
         tr.appendChild(uomTd);
 
@@ -1042,7 +1186,9 @@
     };
 
     const isGrnReferencedRowMode = () =>
-      isGeneralPurchase && Number(grnReferenceInput?.value || 0) > 0;
+      isGeneralPurchase &&
+      !isAssetPurchase() &&
+      Number(grnReferenceInput?.value || 0) > 0;
 
     const updateRowInsertionUi = () => {
       if (!addRowButton) return;
@@ -1069,9 +1215,11 @@
     const updatePaymentModeUi = () => {
       if (!isGeneralPurchase || !paymentTypeSelect) return;
       const paymentType = String(paymentTypeSelect.value || "CREDIT").toUpperCase();
+      const assetMode = isAssetPurchase();
       syncPaymentTypeSegmentUi();
       const isCash = paymentType === "CASH";
-      const hasGrnRef = Number(grnReferenceInput?.value || 0) > 0;
+      const hasGrnRef =
+        !assetMode && Number(grnReferenceInput?.value || 0) > 0;
       if (cashAccountLabel) {
         cashAccountLabel.classList.toggle("hidden", !isCash);
       }
@@ -1082,8 +1230,19 @@
         cashAccountSelect.disabled = !isCash;
         if (!isCash) cashAccountSelect.value = "";
       }
+      if (grnReferenceLabel) {
+        grnReferenceLabel.classList.toggle("hidden", assetMode);
+      }
+      if (grnReferenceWrap) {
+        grnReferenceWrap.classList.toggle("hidden", assetMode);
+      }
+      if (assetMode && grnReferenceInput) {
+        grnReferenceInput.value = "";
+        if (grnReferenceDisplayInput) grnReferenceDisplayInput.value = "";
+        if (grnAllocJsonInput) grnAllocJsonInput.value = "";
+      }
       if (supplierSelect) {
-        supplierSelect.required = !isCash || hasGrnRef;
+        supplierSelect.required = assetMode ? true : (!isCash || hasGrnRef);
       }
       if (referenceNoInput) {
         // If GRN is selected, bill number can be derived server-side from GRN.
@@ -1124,7 +1283,7 @@
     };
 
     const applyReferenceNoFromGrn = (header, fallbackVoucherNo = null) => {
-      if (!isGeneralPurchase || !referenceNoInput) return;
+      if (!isGeneralPurchase || isAssetPurchase() || !referenceNoInput) return;
       let grnReferenceNo = String(header?.reference_no || "").trim();
       if (!grnReferenceNo && fallbackVoucherNo) {
         grnReferenceNo = findGrnReferenceNoByVoucherNo(fallbackVoucherNo);
@@ -1135,6 +1294,13 @@
 
     const setGrnReferenceValue = (voucherNo, { clearAllocations = false } = {}) => {
       if (!isGeneralPurchase || !grnReferenceInput) return;
+      if (isAssetPurchase()) {
+        grnReferenceInput.value = "";
+        if (grnReferenceDisplayInput) grnReferenceDisplayInput.value = "";
+        if (clearAllocations && grnAllocJsonInput) grnAllocJsonInput.value = "";
+        updatePaymentModeUi();
+        return;
+      }
       const refNo = Number(voucherNo || 0);
       if (!Number.isInteger(refNo) || refNo <= 0) {
         grnReferenceInput.value = "";
@@ -1155,6 +1321,10 @@
 
     const syncGrnReferenceWithSupplier = () => {
       if (!isGeneralPurchase) return;
+      if (isAssetPurchase()) {
+        setGrnReferenceValue(null, { clearAllocations: true });
+        return;
+      }
       const supplierId = getSelectedSupplierId();
       const refNo = Number(grnReferenceInput?.value || 0);
       if (!Number.isInteger(refNo) || refNo <= 0) {
@@ -1218,6 +1388,7 @@
     };
 
     const getScopedGrnLinesForModal = () => {
+      if (isAssetPurchase()) return [];
       const supplierId = getSelectedSupplierId();
       if (!supplierId) return [];
       return (openGrnLines || [])
@@ -1270,7 +1441,7 @@
     };
 
     const openGrnPickerModalView = () => {
-      if (!isGeneralPurchase || !grnPickerModal) return;
+      if (!isGeneralPurchase || isAssetPurchase() || !grnPickerModal) return;
       const supplierId = getSelectedSupplierId();
       if (!supplierId) {
         window.showVoucherError("<%= t('select_supplier') %>");
@@ -1312,7 +1483,19 @@
       if (isGrnReferencedRowMode()) {
         return false;
       }
-      rowsState.push({ item_id: null, color_id: null, size_id: null, uom_id: null, qty: 0, rate: 0, amount: 0, grn_source_line_id: null });
+      rowsState.push({
+        item_id: null,
+        asset_id: null,
+        asset_type_code: "",
+        asset_type_name: "",
+        color_id: null,
+        size_id: null,
+        uom_id: null,
+        qty: 0,
+        rate: 0,
+        amount: 0,
+        grn_source_line_id: null,
+      });
       if (focusNewRow) {
         pendingFocusRowIndex = rowsState.length - 1;
       }
@@ -1396,6 +1579,7 @@
     };
 
     const moveToNextRowField = ({ rowIndex, rowElement, fieldKey }) => {
+      const rowFieldOrder = getRowFieldOrder();
       const currentIndex = rowFieldOrder.indexOf(fieldKey);
       const nextKeys = currentIndex >= 0 ? rowFieldOrder.slice(currentIndex + 1) : [];
       setTimeout(() => {
@@ -1447,7 +1631,7 @@
         if (isLastRow) {
           appendBlankRow({ focusNewRow: true });
         } else if (rowElement?.nextElementSibling) {
-          focusAnyRowField(rowElement.nextElementSibling, [rowFieldOrder[0]], { openSearchable: true });
+          focusAnyRowField(rowElement.nextElementSibling, [getRowFieldOrder()[0]], { openSearchable: true });
         }
         return;
       }
@@ -1554,6 +1738,31 @@
         paymentTypeSelect.dispatchEvent(new Event("change", { bubbles: true }));
       });
     });
+    purchaseCategorySelect?.addEventListener("change", () => {
+      const category = getPurchaseCategory();
+      if (category === "ASSET") {
+        setGrnReferenceValue(null, { clearAllocations: true });
+      }
+      rowsState.forEach((row) => {
+        if (category === "ASSET") {
+          row.item_id = null;
+          row.color_id = null;
+          row.size_id = null;
+          row.uom_id = null;
+          if (!row.asset_id) {
+            row.asset_type_code = "";
+            row.asset_type_name = "";
+          }
+        } else {
+          row.asset_id = null;
+          row.asset_type_code = "";
+          row.asset_type_name = "";
+        }
+      });
+      updatePaymentModeUi();
+      syncGrnReferenceWithSupplier();
+      renderRows();
+    });
     paymentTypeSelect?.addEventListener("change", updatePaymentModeUi);
     supplierSelect?.addEventListener("change", syncGrnReferenceWithSupplier);
     openGrnPickerButton?.addEventListener("click", openGrnPickerModalView);
@@ -1616,6 +1825,9 @@
         const uom = uomByItemId.get(Number(line.item_id || 0));
         const row = {
           item_id: Number(line.item_id || 0) || null,
+          asset_id: null,
+          asset_type_code: "",
+          asset_type_name: "",
           color_id: Number(line.color_id || 0) || null,
           size_id: Number(line.size_id || 0) || null,
           uom_id: Number(uom?.id || 0) || null,
@@ -1649,7 +1861,11 @@
         return;
       }
 
-      const hasGrnRefOnSubmit = isGeneralPurchase && Number(grnReferenceInput?.value || 0) > 0;
+      const assetMode = isAssetPurchase();
+      const hasGrnRefOnSubmit =
+        isGeneralPurchase &&
+        !assetMode &&
+        Number(grnReferenceInput?.value || 0) > 0;
       if (!String(referenceNoInput?.value || "").trim() && hasGrnRefOnSubmit) {
         const selectedRefNo = Number(grnReferenceInput?.value || 0);
         applyReferenceNoFromGrn(findGrnHeaderByVoucherNo(selectedRefNo), selectedRefNo);
@@ -1665,7 +1881,8 @@
       if (isGeneralPurchase) {
         const paymentType = String(paymentTypeSelect?.value || "CREDIT").toUpperCase();
         const hasGrnRef = Number(grnReferenceInput?.value || 0) > 0;
-        const supplierRequired = paymentType !== "CASH" || hasGrnRef;
+        const supplierRequired =
+          assetMode || paymentType !== "CASH" || hasGrnRef;
         if (supplierRequired && !supplierId) {
           event.preventDefault();
           window.showVoucherError(requiredMessage("<%= t('supplier') %>"));
@@ -1695,16 +1912,29 @@
       }
 
       const payloadLines = rowsState
-        .map((row) => ({
-          item_id: Number(row.item_id || 0) || null,
-          color_id: Number(row.color_id || 0) || null,
-          size_id: Number(row.size_id || 0) || null,
-          uom_id: Number(row.uom_id || 0) || null,
-          qty: Number(row.qty || 0),
-          rate: isGrn ? 0 : Number(row.rate || 0),
-          amount: isGrn ? 0 : Number(row.amount || 0),
-        }))
-        .filter((row) => row.item_id && row.qty > 0 && (isGrn || row.rate > 0));
+        .map((row) => (
+          assetMode
+            ? {
+                asset_id: Number(row.asset_id || 0) || null,
+                qty: Number(row.qty || 0),
+                rate: isGrn ? 0 : Number(row.rate || 0),
+                amount: isGrn ? 0 : Number(row.amount || 0),
+              }
+            : {
+                item_id: Number(row.item_id || 0) || null,
+                color_id: Number(row.color_id || 0) || null,
+                size_id: Number(row.size_id || 0) || null,
+                uom_id: Number(row.uom_id || 0) || null,
+                qty: Number(row.qty || 0),
+                rate: isGrn ? 0 : Number(row.rate || 0),
+                amount: isGrn ? 0 : Number(row.amount || 0),
+              }
+        ))
+        .filter((row) =>
+          assetMode
+            ? row.asset_id && row.qty > 0 && (isGrn || row.rate > 0)
+            : row.item_id && row.qty > 0 && (isGrn || row.rate > 0),
+        );
 
       if (!payloadLines.length) {
         event.preventDefault();
@@ -1716,7 +1946,7 @@
       if (isGeneralPurchase) {
         const grnReferenceNo = Number(grnReferenceInput?.value || 0);
         grnAllocJsonInput.value =
-          Number.isInteger(grnReferenceNo) && grnReferenceNo > 0
+          !assetMode && Number.isInteger(grnReferenceNo) && grnReferenceNo > 0
             ? buildGrnAllocationsPayload(grnReferenceNo)
             : "";
       } else {

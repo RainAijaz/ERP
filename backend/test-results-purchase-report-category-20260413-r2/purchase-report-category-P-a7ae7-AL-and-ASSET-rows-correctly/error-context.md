@@ -1,0 +1,210 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - checkbox "Menu" [ref=e5]
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - link "CHAND EVA" [ref=e8] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e10]: ERP
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - generic [ref=e14]: Signed in as
+            - generic [ref=e15]: admin
+          - generic [ref=e16]:
+            - generic [ref=e17]: Branch
+            - generic [ref=e18]:
+              - generic [ref=e19]: Branch
+              - generic [ref=e20]:
+                - textbox "Search" [ref=e21]: "124"
+                - generic:
+                  - img
+                - combobox "Branch" [ref=e22]:
+                  - option "124" [selected]
+                  - option "207"
+          - button "Logout" [ref=e24] [cursor=pointer]
+          - generic [ref=e25]:
+            - generic [ref=e26]: Language
+            - link "English" [ref=e27] [cursor=pointer]:
+              - /url: "?lang=en"
+            - generic [ref=e28]: "|"
+            - link "Urdu" [ref=e29] [cursor=pointer]:
+              - /url: "?lang=ur"
+      - navigation [ref=e30]:
+        - button "Administration" [ref=e32] [cursor=pointer]:
+          - generic [ref=e33]: Administration
+          - img [ref=e34]
+        - button "Master Data" [ref=e37] [cursor=pointer]:
+          - generic [ref=e38]: Master Data
+          - img [ref=e39]
+        - button "HR & Payroll" [ref=e42] [cursor=pointer]:
+          - generic [ref=e43]: HR & Payroll
+          - img [ref=e44]
+        - button "Financial" [ref=e47] [cursor=pointer]:
+          - generic [ref=e48]: Financial
+          - img [ref=e49]
+        - button "Purchase" [ref=e52] [cursor=pointer]:
+          - generic [ref=e53]: Purchase
+          - img [ref=e54]
+        - button "Production" [ref=e57] [cursor=pointer]:
+          - generic [ref=e58]: Production
+          - img [ref=e59]
+        - button "Inventory" [ref=e62] [cursor=pointer]:
+          - generic [ref=e63]: Inventory
+          - img [ref=e64]
+        - button "Outward & Returnables" [ref=e67] [cursor=pointer]:
+          - generic [ref=e68]: Outward & Returnables
+          - img [ref=e69]
+        - button "Sales" [ref=e72] [cursor=pointer]:
+          - generic [ref=e73]: Sales
+          - img [ref=e74]
+  - main [ref=e76]:
+    - generic [ref=e77]:
+      - generic [ref=e78]:
+        - generic [ref=e80]:
+          - heading "Dashboard" [level=1] [ref=e81]
+          - paragraph [ref=e82]: Welcome back. Select a module from the navigation to begin.
+        - generic [ref=e83]:
+          - link "Pending Approvals i 74" [ref=e84] [cursor=pointer]:
+            - /url: /administration/approvals
+            - generic [ref=e85]:
+              - generic [ref=e86]: Pending Approvals
+              - 'generic "Branch specific: pending approvals for the selected branch." [ref=e87]': i
+            - generic [ref=e88]: "74"
+          - generic [ref=e89]:
+            - generic [ref=e90]:
+              - generic [ref=e91]: Vouchers Today
+              - 'generic "Branch specific: vouchers posted today in the selected branch." [ref=e92]': i
+            - generic [ref=e93]: "5"
+          - generic [ref=e94]:
+            - generic [ref=e95]:
+              - generic [ref=e96]: MD Changes Today
+              - 'generic "Global: master data changes today across all branches." [ref=e97]': i
+            - generic [ref=e98]: "1"
+          - generic [ref=e99]:
+            - generic [ref=e100]:
+              - generic [ref=e101]: Total Logs Today
+              - 'generic "Branch specific: total activity logs created today for the selected branch." [ref=e102]': i
+            - generic [ref=e103]: "6"
+          - generic [ref=e104]:
+            - generic [ref=e105]:
+              - generic [ref=e106]: Active Users
+              - 'generic "Branch specific: distinct active users with non-expired sessions seen in the last 15 minutes." [ref=e107]': i
+            - generic [ref=e108]: 1/132
+            - generic [ref=e109]: Seen in last 15m
+      - generic [ref=e110]:
+        - article [ref=e111]:
+          - heading "Recent Vouchers" [level=3] [ref=e113]
+          - table [ref=e115]:
+            - rowgroup [ref=e116]:
+              - row "Voucher No Type Branch Date" [ref=e117]:
+                - columnheader "Voucher No" [ref=e118]
+                - columnheader "Type" [ref=e119]
+                - columnheader "Branch" [ref=e120]
+                - columnheader "Date" [ref=e121]
+            - rowgroup [ref=e122]:
+              - row "14 PI 124 13-04-2026" [ref=e123]:
+                - cell "14" [ref=e124]
+                - cell "PI" [ref=e125]
+                - cell "124" [ref=e126]
+                - cell "13-04-2026" [ref=e127]
+              - row "13 PI 124 13-04-2026" [ref=e128]:
+                - cell "13" [ref=e129]
+                - cell "PI" [ref=e130]
+                - cell "124" [ref=e131]
+                - cell "13-04-2026" [ref=e132]
+              - row "12 PI 124 13-04-2026" [ref=e133]:
+                - cell "12" [ref=e134]
+                - cell "PI" [ref=e135]
+                - cell "124" [ref=e136]
+                - cell "13-04-2026" [ref=e137]
+              - row "11 PI 124 13-04-2026" [ref=e138]:
+                - cell "11" [ref=e139]
+                - cell "PI" [ref=e140]
+                - cell "124" [ref=e141]
+                - cell "13-04-2026" [ref=e142]
+              - row "20 GRN 124 13-04-2026" [ref=e143]:
+                - cell "20" [ref=e144]
+                - cell "GRN" [ref=e145]
+                - cell "124" [ref=e146]
+                - cell "13-04-2026" [ref=e147]
+              - row "18 RDV 124 11-04-2026" [ref=e148]:
+                - cell "18" [ref=e149]
+                - cell "RDV" [ref=e150]
+                - cell "124" [ref=e151]
+                - cell "11-04-2026" [ref=e152]
+        - article [ref=e153]:
+          - heading "Recent Activity" [level=3] [ref=e155]
+          - list [ref=e157]:
+            - listitem [ref=e158]:
+              - generic [ref=e159]: CREATE • VOUCHER
+              - generic [ref=e160]: admin • 13-04-2026
+            - listitem [ref=e161]:
+              - generic [ref=e162]: CREATE • VOUCHER
+              - generic [ref=e163]: admin • 13-04-2026
+            - listitem [ref=e164]:
+              - generic [ref=e165]: CREATE • VOUCHER
+              - generic [ref=e166]: admin • 13-04-2026
+            - listitem [ref=e167]:
+              - generic [ref=e168]: CREATE • VOUCHER
+              - generic [ref=e169]: admin • 13-04-2026
+            - listitem [ref=e170]:
+              - generic [ref=e171]: CREATE • VOUCHER
+              - generic [ref=e172]: admin • 13-04-2026
+            - listitem [ref=e173]:
+              - generic [ref=e174]: APPROVE • PARTY
+              - generic [ref=e175]: admin • 13-04-2026
+            - listitem [ref=e176]:
+              - generic [ref=e177]: UPDATE • LABOUR
+              - generic [ref=e178]: admin • 11-04-2026
+            - listitem [ref=e179]:
+              - generic [ref=e180]: SUBMIT • PARTY
+              - generic [ref=e181]: e2e_ap_ops_1775897980021 • 11-04-2026
+      - generic [ref=e182]:
+        - generic [ref=e183]:
+          - heading "Pending Approvals" [level=3] [ref=e184]
+          - link "View All" [ref=e185] [cursor=pointer]:
+            - /url: /administration/approvals
+        - table [ref=e187]:
+          - rowgroup [ref=e188]:
+            - row "ID Entity Requested By Date" [ref=e189]:
+              - columnheader "ID" [ref=e190]
+              - columnheader "Entity" [ref=e191]
+              - columnheader "Requested By" [ref=e192]
+              - columnheader "Date" [ref=e193]
+          - rowgroup [ref=e194]:
+            - row "#2877 VOUCHER e2e_rdv_limited 11-04-2026" [ref=e195]:
+              - cell "#2877" [ref=e196]
+              - cell "VOUCHER" [ref=e197]
+              - cell "e2e_rdv_limited" [ref=e198]
+              - cell "11-04-2026" [ref=e199]
+            - row "#2852 VOUCHER e2e_inventory_neg_operator 03-04-2026" [ref=e200]:
+              - cell "#2852" [ref=e201]
+              - cell "VOUCHER" [ref=e202]
+              - cell "e2e_inventory_neg_operator" [ref=e203]
+              - cell "03-04-2026" [ref=e204]
+            - row "#2851 VOUCHER e2e_inventory_neg_operator 03-04-2026" [ref=e205]:
+              - cell "#2851" [ref=e206]
+              - cell "VOUCHER" [ref=e207]
+              - cell "e2e_inventory_neg_operator" [ref=e208]
+              - cell "03-04-2026" [ref=e209]
+            - row "#2850 VOUCHER e2e_fin_creator 31-03-2026" [ref=e210]:
+              - cell "#2850" [ref=e211]
+              - cell "VOUCHER" [ref=e212]
+              - cell "e2e_fin_creator" [ref=e213]
+              - cell "31-03-2026" [ref=e214]
+            - row "#2849 VOUCHER e2e_fin_creator 31-03-2026" [ref=e215]:
+              - cell "#2849" [ref=e216]
+              - cell "VOUCHER" [ref=e217]
+              - cell "e2e_fin_creator" [ref=e218]
+              - cell "31-03-2026" [ref=e219]
+            - row "#2848 VOUCHER e2e_fin_creator 31-03-2026" [ref=e220]:
+              - cell "#2848" [ref=e221]
+              - cell "VOUCHER" [ref=e222]
+              - cell "e2e_fin_creator" [ref=e223]
+              - cell "31-03-2026" [ref=e224]
+    - generic [ref=e225]: ERP System © 2026
+```

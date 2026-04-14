@@ -4,7 +4,7 @@
     <% const sortType = (column.key.includes("date") || column.key.includes("time")) ? "date" : (column.sortType || "text"); %>
     <th class="px-4 py-3 text-left whitespace-nowrap <%= column.cellClass || "" %>">
       <button
-        class="group inline-flex items-center gap-1 text-left text-xs font-semibold uppercase tracking-[0.1em] text-slate-500 transition hover:text-slate-700 cursor-pointer whitespace-nowrap"
+        class="group inline-flex items-center gap-1 text-left text-xs font-semibold uppercase tracking-widest text-slate-500 transition hover:text-slate-700 cursor-pointer whitespace-nowrap"
         type="button"
         data-sort-key="<%= column.key %>"
         data-sort-index="<%= (sortStartIndex || 1) + idx %>"
@@ -12,7 +12,7 @@
         <%= columnTooltips && columnTooltips[column.key] ? "title=\"" + columnTooltips[column.key] + "\"" : "" %>
       >
         <span><%= column.labelRaw || t(column.label) %></span>
-        <span class="text-[10px] opacity-60" data-sort-indicator>-</span>
+        <span class="text-[10px] opacity-60" data-sort-indicator>↕</span>
       </button>
     </th>
   <% }) %>

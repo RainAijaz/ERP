@@ -43,7 +43,8 @@ const SCREEN_ENTITY_TYPES = {
   "hr_payroll.labour_rates": "LABOUR",
 };
 
-const getBasicInfoEntityType = (type) => BASIC_INFO_ENTITY_TYPES[type] || "GENERIC";
+const getBasicInfoEntityType = (type) =>
+  BASIC_INFO_ENTITY_TYPES[type] || "GENERIC";
 
 module.exports = {
   BASIC_INFO_ENTITY_TYPES,

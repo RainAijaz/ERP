@@ -100,6 +100,8 @@ const stripMeta = (value = {}) => {
   delete clone.branch_ids;
   delete clone._summary;
   delete clone._action;
+  delete clone._scope_key;
+  delete clone._approval_action;
   delete clone.rates;
   delete clone.usage_ids;
   return clone;

@@ -9,6 +9,10 @@ const PURCHASE_VOUCHER_TYPES = {
   generalPurchase: "PI",
   purchaseReturn: "PR",
 };
+const PURCHASE_CATEGORIES = {
+  rawMaterial: "RAW_MATERIAL",
+  asset: "ASSET",
+};
 const SALES_VOUCHER_TYPES = {
   salesOrder: "SALES_ORDER",
   salesVoucher: "SALES_VOUCHER",
@@ -19,6 +23,7 @@ const PURCHASE_PAYMENT_TYPES = {
 };
 const PURCHASE_ACCOUNT_GROUP_CODES = {
   inventoryRm: "inventory_rm",
+  fixedAssets: "fixed_assets",
 };
 const SALES_ACCOUNT_GROUP_CODES = {
   salesRevenue: "sales_revenue",
@@ -106,6 +111,15 @@ const normalizePurchasePaymentType = (value) => {
   return text === PURCHASE_PAYMENT_TYPES.cash
     ? PURCHASE_PAYMENT_TYPES.cash
     : PURCHASE_PAYMENT_TYPES.credit;
+};
+
+const normalizePurchaseCategory = (value) => {
+  const text = String(value || PURCHASE_CATEGORIES.rawMaterial)
+    .trim()
+    .toUpperCase();
+  return text === PURCHASE_CATEGORIES.asset
+    ? PURCHASE_CATEGORIES.asset
+    : PURCHASE_CATEGORIES.rawMaterial;
 };
 
 const normalizeSalesPaymentType = (value) => {
@@ -252,6 +266,50 @@ const loadPurchaseItemTotalTx = async ({ trx, voucherId }) => {
   );
 };
 
+const loadPurchaseAccountLineTotalsTx = async ({ trx, voucherId }) => {
+  const rows = await trx("erp.voucher_line")
+    .select("line_no", "account_id", "amount", "qty", "rate")
+    .where({ voucher_header_id: voucherId, line_kind: "ACCOUNT" })
+    .orderBy("line_no", "asc");
+  if (!rows.length) {
+    throw new Error(
+      `GL posting failed: voucher ${voucherId} has no ACCOUNT lines for asset purchase`,
+    );
+  }
+
+  const totalsByAccountId = new Map();
+  rows.forEach((line) => {
+    const accountId = Number(line.account_id || 0);
+    const lineNo = Number(line.line_no || 0) || "?";
+    if (!Number.isInteger(accountId) || accountId <= 0) {
+      throw new Error(
+        `GL posting failed: voucher ${voucherId} line ${lineNo} has invalid account reference`,
+      );
+    }
+    const amount = normalizeAmount(line.amount || 0);
+    const qty = Number(line.qty || 0);
+    const rate = Number(line.rate || 0);
+    const resolvedAmount =
+      amount > 0
+        ? amount
+        : qty > 0 && rate > 0
+          ? normalizeAmount(qty * rate)
+          : 0;
+    if (resolvedAmount <= 0) {
+      throw new Error(
+        `GL posting failed: voucher ${voucherId} line ${lineNo} has invalid amount`,
+      );
+    }
+    const current = normalizeAmount(totalsByAccountId.get(accountId) || 0);
+    totalsByAccountId.set(accountId, normalizeAmount(current + resolvedAmount));
+  });
+
+  return [...totalsByAccountId.entries()].map(([accountId, amount]) => ({
+    accountId: Number(accountId),
+    amount: normalizeAmount(amount),
+  }));
+};
+
 const loadPartyTypeByIdTx = async ({ trx, partyId }) => {
   const normalizedPartyId = Number(partyId || 0);
   if (!Number.isInteger(normalizedPartyId) || normalizedPartyId <= 0)
@@ -314,37 +372,87 @@ const ensureCashOrBankAccountTx = async ({
 };
 
 const buildGeneralPurchaseEntriesTx = async ({ trx, header, voucherId }) => {
-  const extension = await trx("erp.purchase_invoice_header_ext")
-    .select("supplier_party_id", "payment_type", "cash_paid_account_id")
-    .where({ voucher_id: voucherId })
-    .first();
+  let extension;
+  try {
+    extension = await trx("erp.purchase_invoice_header_ext")
+      .select(
+        "supplier_party_id",
+        "payment_type",
+        "cash_paid_account_id",
+        "purchase_category",
+      )
+      .where({ voucher_id: voucherId })
+      .first();
+  } catch (err) {
+    const isMissingCategoryColumn =
+      String(err?.code || "").trim() === "42703" &&
+      String(err?.message || "")
+        .toLowerCase()
+        .includes("purchase_category");
+    if (!isMissingCategoryColumn) throw err;
+    extension = await trx("erp.purchase_invoice_header_ext")
+      .select("supplier_party_id", "payment_type", "cash_paid_account_id")
+      .where({ voucher_id: voucherId })
+      .first();
+  }
   if (!extension)
     throw new Error(
       `GL posting failed: voucher ${voucherId} missing purchase invoice extension`,
     );
 
   const paymentType = normalizePurchasePaymentType(extension.payment_type);
+  const purchaseCategory = normalizePurchaseCategory(
+    extension.purchase_category,
+  );
   const supplierPartyId = Number(extension.supplier_party_id || 0);
-  const totalAmount = await loadPurchaseItemTotalTx({ trx, voucherId });
-  if (totalAmount <= 0) return [];
+  let totalAmount = 0;
+  const entries = [];
+  let accountsByGroup = null;
 
-  const accountsByGroup = await loadAccountsByGroupTx({
-    trx,
-    branchId: Number(header.branch_id),
-    groupCodes: [
-      PURCHASE_ACCOUNT_GROUP_CODES.inventoryRm,
-      CONTROL_GROUP_CODES.partyPayable,
-    ],
-  });
-  const inventoryRmAccountId = resolveSingleAccountIdForGroup({
-    accountsByGroup,
-    groupCode: PURCHASE_ACCOUNT_GROUP_CODES.inventoryRm,
-    voucherId,
-    lineNo: 0,
-  });
-
-  const entries = [
-    {
+  if (purchaseCategory === PURCHASE_CATEGORIES.asset) {
+    const accountTotals = await loadPurchaseAccountLineTotalsTx({
+      trx,
+      voucherId,
+    });
+    totalAmount = normalizeAmount(
+      accountTotals.reduce((sum, row) => sum + normalizeAmount(row.amount), 0),
+    );
+    if (totalAmount <= 0) return [];
+    accountTotals.forEach((row) => {
+      entries.push({
+        branch_id: Number(header.branch_id),
+        entry_date: header.voucher_date,
+        account_id: Number(row.accountId),
+        dept_id: null,
+        party_id: null,
+        dr: normalizeAmount(row.amount),
+        cr: 0,
+        narration: toNarration({}, header.remarks),
+      });
+    });
+    accountsByGroup = await loadAccountsByGroupTx({
+      trx,
+      branchId: Number(header.branch_id),
+      groupCodes: [CONTROL_GROUP_CODES.partyPayable],
+    });
+  } else {
+    totalAmount = await loadPurchaseItemTotalTx({ trx, voucherId });
+    if (totalAmount <= 0) return [];
+    accountsByGroup = await loadAccountsByGroupTx({
+      trx,
+      branchId: Number(header.branch_id),
+      groupCodes: [
+        PURCHASE_ACCOUNT_GROUP_CODES.inventoryRm,
+        CONTROL_GROUP_CODES.partyPayable,
+      ],
+    });
+    const inventoryRmAccountId = resolveSingleAccountIdForGroup({
+      accountsByGroup,
+      groupCode: PURCHASE_ACCOUNT_GROUP_CODES.inventoryRm,
+      voucherId,
+      lineNo: 0,
+    });
+    entries.push({
       branch_id: Number(header.branch_id),
       entry_date: header.voucher_date,
       account_id: Number(inventoryRmAccountId),
@@ -353,8 +461,8 @@ const buildGeneralPurchaseEntriesTx = async ({ trx, header, voucherId }) => {
       dr: totalAmount,
       cr: 0,
       narration: toNarration({}, header.remarks),
-    },
-  ];
+    });
+  }
 
   if (paymentType === PURCHASE_PAYMENT_TYPES.cash) {
     const cashAccountId = await ensureCashOrBankAccountTx({
@@ -411,15 +519,32 @@ const buildGeneralPurchaseEntriesTx = async ({ trx, header, voucherId }) => {
 };
 
 const buildPurchaseReturnEntriesTx = async ({ trx, header, voucherId }) => {
-  const extension = await trx("erp.purchase_return_header_ext")
-    .select("supplier_party_id")
-    .where({ voucher_id: voucherId })
-    .first();
+  let extension;
+  try {
+    extension = await trx("erp.purchase_return_header_ext")
+      .select("supplier_party_id", "purchase_category")
+      .where({ voucher_id: voucherId })
+      .first();
+  } catch (err) {
+    const isMissingCategoryColumn =
+      String(err?.code || "").trim() === "42703" &&
+      String(err?.message || "")
+        .toLowerCase()
+        .includes("purchase_category");
+    if (!isMissingCategoryColumn) throw err;
+    extension = await trx("erp.purchase_return_header_ext")
+      .select("supplier_party_id")
+      .where({ voucher_id: voucherId })
+      .first();
+  }
   if (!extension)
     throw new Error(
       `GL posting failed: voucher ${voucherId} missing purchase return extension`,
     );
 
+  const purchaseCategory = normalizePurchaseCategory(
+    extension.purchase_category,
+  );
   const supplierPartyId = Number(extension.supplier_party_id || 0);
   if (!Number.isInteger(supplierPartyId) || supplierPartyId <= 0) {
     throw new Error(
@@ -436,22 +561,31 @@ const buildPurchaseReturnEntriesTx = async ({ trx, header, voucherId }) => {
     );
   }
 
-  const totalAmount = await loadPurchaseItemTotalTx({ trx, voucherId });
+  let totalAmount = 0;
+  let debitAccountLines = [];
+  if (purchaseCategory === PURCHASE_CATEGORIES.asset) {
+    debitAccountLines = await loadPurchaseAccountLineTotalsTx({ trx, voucherId });
+    totalAmount = normalizeAmount(
+      debitAccountLines.reduce(
+        (sum, row) => sum + normalizeAmount(row.amount),
+        0,
+      ),
+    );
+  } else {
+    totalAmount = await loadPurchaseItemTotalTx({ trx, voucherId });
+  }
   if (totalAmount <= 0) return [];
 
   const accountsByGroup = await loadAccountsByGroupTx({
     trx,
     branchId: Number(header.branch_id),
-    groupCodes: [
-      PURCHASE_ACCOUNT_GROUP_CODES.inventoryRm,
-      CONTROL_GROUP_CODES.partyPayable,
-    ],
-  });
-  const inventoryRmAccountId = resolveSingleAccountIdForGroup({
-    accountsByGroup,
-    groupCode: PURCHASE_ACCOUNT_GROUP_CODES.inventoryRm,
-    voucherId,
-    lineNo: 0,
+    groupCodes:
+      purchaseCategory === PURCHASE_CATEGORIES.asset
+        ? [CONTROL_GROUP_CODES.partyPayable]
+        : [
+            PURCHASE_ACCOUNT_GROUP_CODES.inventoryRm,
+            CONTROL_GROUP_CODES.partyPayable,
+          ],
   });
   const apControlAccountId = resolveSingleAccountIdForGroup({
     accountsByGroup,
@@ -471,16 +605,36 @@ const buildPurchaseReturnEntriesTx = async ({ trx, header, voucherId }) => {
       cr: 0,
       narration: toNarration({}, header.remarks),
     },
-    {
-      branch_id: Number(header.branch_id),
-      entry_date: header.voucher_date,
-      account_id: Number(inventoryRmAccountId),
-      dept_id: null,
-      party_id: null,
-      dr: 0,
-      cr: totalAmount,
-      narration: toNarration({}, header.remarks),
-    },
+    ...(purchaseCategory === PURCHASE_CATEGORIES.asset
+      ? debitAccountLines.map((row) => ({
+          branch_id: Number(header.branch_id),
+          entry_date: header.voucher_date,
+          account_id: Number(row.accountId),
+          dept_id: null,
+          party_id: null,
+          dr: 0,
+          cr: normalizeAmount(row.amount),
+          narration: toNarration({}, header.remarks),
+        }))
+      : [
+          {
+            branch_id: Number(header.branch_id),
+            entry_date: header.voucher_date,
+            account_id: Number(
+              resolveSingleAccountIdForGroup({
+                accountsByGroup,
+                groupCode: PURCHASE_ACCOUNT_GROUP_CODES.inventoryRm,
+                voucherId,
+                lineNo: 0,
+              }),
+            ),
+            dept_id: null,
+            party_id: null,
+            dr: 0,
+            cr: totalAmount,
+            narration: toNarration({}, header.remarks),
+          },
+        ]),
   ];
 };
 

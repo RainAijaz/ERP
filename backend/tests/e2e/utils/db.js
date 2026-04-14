@@ -1,6 +1,9 @@
 const bcrypt = require("bcrypt");
 const knexConfig = require("../../../knexfile").development;
 const knex = require("knex")(knexConfig);
+const {
+  getActiveAdminEmails,
+} = require("../../../src/utils/approval-notifications");
 
 const logPool = (label, err) => {
   if (process.env.DEBUG_DB_POOL !== "1") return;
@@ -148,6 +151,24 @@ const getApprovalEditFixtureData = async () => {
     cityId: city?.id || null,
     partyGroupId: partyGroup?.id || null,
   };
+};
+
+const getFirstParty = async () => {
+  const row = await knex("erp.parties")
+    .select(
+      "id",
+      "code",
+      "name",
+      "name_ur",
+      "party_type",
+      "phone1",
+      "phone2",
+      "credit_allowed",
+      "credit_limit",
+    )
+    .orderBy("id", "asc")
+    .first();
+  return row || null;
 };
 
 const getUserByUsername = async (username) => {
@@ -451,6 +472,29 @@ const upsertUserWithPermissions = async ({
     return user?.id || null;
   });
 };
+
+const updateUserProfile = async ({
+  userId,
+  name,
+  nameUr,
+  email,
+  status,
+} = {}) => {
+  const normalizedUserId = Number(userId || 0);
+  if (!Number.isInteger(normalizedUserId) || normalizedUserId <= 0) return;
+
+  const payload = {};
+  if (typeof name !== "undefined") payload.name = name;
+  if (typeof nameUr !== "undefined") payload.name_ur = nameUr;
+  if (typeof email !== "undefined") payload.email = email;
+  if (typeof status !== "undefined") payload.status = status;
+  if (!Object.keys(payload).length) return;
+
+  await knex("erp.users").where({ id: normalizedUserId }).update(payload);
+};
+
+const getApprovalNotificationRecipientEmails = async () =>
+  getActiveAdminEmails(knex);
 
 const clearUserPermissionsOverride = async ({ userId, scopeKeys = [] }) => {
   if (!userId || !scopeKeys.length) return;
@@ -1322,6 +1366,7 @@ module.exports = {
   getBranch,
   getBranchScopedAccounts,
   getApprovalEditFixtureData,
+  getFirstParty,
   getUserByUsername,
   getTwoDistinctUsers,
   getVariantForSkuApproval,
@@ -1335,6 +1380,8 @@ module.exports = {
   getPurchaseAllocationCountByVoucher,
   setVariantSaleRate,
   upsertUserWithPermissions,
+  updateUserProfile,
+  getApprovalNotificationRecipientEmails,
   clearUserPermissionsOverride,
   setUserScreenPermission,
   setUserScopePermission,

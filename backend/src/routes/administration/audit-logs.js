@@ -6,6 +6,11 @@ const {
 const {
   presentActivityRows,
 } = require("../../services/administration/activity-log-presenter");
+const {
+  buildActivityAccessScope,
+  applyActivityAccessScope,
+  filterEntityTypeRowsByAccess,
+} = require("../../services/administration/activity-access-service");
 
 const router = express.Router();
 
@@ -95,6 +100,10 @@ router.get(
       const pageSizeRaw = Number(req.query.page_size) || 100;
       const pageSize = Math.min(500, Math.max(25, pageSizeRaw));
       const offset = (page - 1) * pageSize;
+      const activityAccessScope = buildActivityAccessScope({
+        can: res.locals.can,
+        user: req.user,
+      });
 
       const [users, entityTypes, actionTypes] = await Promise.all([
         knex("erp.users").select("id", "username").orderBy("username"),
@@ -126,6 +135,13 @@ router.get(
         .leftJoin("erp.users as u", "al.user_id", "u.id")
         .leftJoin("erp.branches as b", "al.branch_id", "b.id")
         .orderBy("al.created_at", "desc");
+
+      applyActivityAccessScope({
+        qb: baseQuery,
+        access: activityAccessScope,
+        userId: req.user?.id,
+        tableAlias: "al",
+      });
 
       if (req.applyBranchScope) {
         req.applyBranchScope(baseQuery, "al.branch_id");
@@ -203,11 +219,16 @@ router.get(
         t: res.locals.t,
       });
 
+      const visibleEntityTypes = filterEntityTypeRowsByAccess({
+        rows: entityTypes,
+        access: activityAccessScope,
+      });
+
       renderPage(req, res, {
         rows: presentedRows,
         users,
         branches: req.branchOptions || [],
-        entityTypes,
+        entityTypes: visibleEntityTypes,
         actionTypes,
         filters: {
           user_mode: userMode,

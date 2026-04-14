@@ -320,7 +320,7 @@ const loadUserContextCached = async (userId) => {
 
 const loadUserContext = async (userId) => {
   const user = await knex("erp.users")
-    .select("id", "username", "status", "primary_role_id")
+    .select("id", "name", "name_ur", "username", "status", "primary_role_id")
     .where({ id: userId })
     .first();
 
@@ -456,6 +456,8 @@ const loadUserContext = async (userId) => {
 
   return {
     id: user.id,
+    name: user.name || null,
+    name_ur: user.name_ur || null,
     username: user.username,
     status: user.status,
     primaryRoleId: user.primary_role_id,

@@ -1,21 +1,17 @@
 <%
-  const txt = (key, fallback) => {
-    const value = t(key);
-    return value && value !== key ? value : fallback;
-  };
-
   const canViewApprovals = typeof can === "function" ? can("SCREEN", "administration.approvals", "view") : false;
+  const canViewUsers = typeof can === "function" ? can("SCREEN", "administration.users", "view") : false;
   const summary = dashboard?.summary || {};
   const recentApprovals = Array.isArray(dashboard?.recentApprovals) ? dashboard.recentApprovals : [];
   const recentVouchers = Array.isArray(dashboard?.recentVouchers) ? dashboard.recentVouchers : [];
   const recentActivity = Array.isArray(dashboard?.recentActivity) ? dashboard.recentActivity : [];
   const activeSessionWindowMinutes = Number(summary.activeSessionWindowMinutes || 15);
 
-  const pendingApprovalsTooltip = txt("pending_approvals_dashboard_tooltip", "Branch specific: pending approvals for the selected branch.");
-  const vouchersTodayTooltip = txt("vouchers_today_dashboard_tooltip", "Branch specific: vouchers posted today in the selected branch.");
-  const masterDataChangesTooltip = txt("master_data_changes_dashboard_tooltip", "Global: master data changes today across all branches.");
-  const totalLogsTodayTooltip = txt("total_logs_today_dashboard_tooltip", "Branch specific: total activity logs created today for the selected branch.");
-  const activeUsersTooltip = txt("active_users_dashboard_tooltip", "Branch specific: distinct active users with non-expired sessions seen in the last {minutes} minutes.").replace("{minutes}", String(activeSessionWindowMinutes));
+  const pendingApprovalsTooltip = t("pending_approvals_dashboard_tooltip");
+  const vouchersTodayTooltip = t("vouchers_today_dashboard_tooltip");
+  const masterDataChangesTooltip = t("master_data_changes_dashboard_tooltip");
+  const totalLogsTodayTooltip = t("total_logs_today_dashboard_tooltip");
+  const activeUsersTooltip = t("active_users_dashboard_tooltip").replace("{minutes}", String(activeSessionWindowMinutes));
 %>
 
 <div class="mx-auto w-full max-w-7xl space-y-6">
@@ -47,49 +43,51 @@
       <% } %>
       <div class="rounded-2xl border border-blue-100 bg-blue-50 p-5">
         <div class="flex items-center gap-1 text-[11px] uppercase tracking-[0.3em] text-blue-700">
-          <span><%= txt("vouchers_today", "Vouchers Today") %></span>
+          <span><%= t("vouchers_today") %></span>
           <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-blue-200 text-[10px] font-bold normal-case tracking-normal text-blue-700" title="<%= vouchersTodayTooltip %>">i</span>
         </div>
         <div class="mt-2 text-3xl font-semibold text-blue-900"><%= Number(summary.vouchersToday || 0) %></div>
       </div>
       <div class="rounded-2xl border border-indigo-100 bg-indigo-50 p-5">
         <div class="flex items-center gap-1 text-[11px] uppercase tracking-[0.3em] text-indigo-700">
-          <span><%= txt("md_changes_today", "MD Changes Today") %></span>
+          <span><%= t("md_changes_today") %></span>
           <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-indigo-200 text-[10px] font-bold normal-case tracking-normal text-indigo-700" title="<%= masterDataChangesTooltip %>">i</span>
         </div>
         <div class="mt-2 text-3xl font-semibold text-indigo-900"><%= Number(summary.masterDataChangesToday || 0) %></div>
       </div>
       <div class="rounded-2xl border border-emerald-100 bg-emerald-50 p-5">
         <div class="flex items-center gap-1 text-[11px] uppercase tracking-[0.3em] text-emerald-700">
-          <span><%= txt("total_logs_today", "Total Logs Today") %></span>
+          <span><%= t("total_logs_today") %></span>
           <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-emerald-200 text-[10px] font-bold normal-case tracking-normal text-emerald-700" title="<%= totalLogsTodayTooltip %>">i</span>
         </div>
         <div class="mt-2 text-3xl font-semibold text-emerald-900"><%= Number(summary.totalLogsToday || 0) %></div>
       </div>
-      <div class="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-        <div class="flex items-center gap-1 text-[11px] uppercase tracking-[0.3em] text-slate-600">
-          <span><%= txt("active_users", "Active Users") %></span>
-          <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] font-bold normal-case tracking-normal text-slate-700" title="<%= activeUsersTooltip %>">i</span>
+      <% if (canViewUsers) { %>
+        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-5">
+          <div class="flex items-center gap-1 text-[11px] uppercase tracking-[0.3em] text-slate-600">
+            <span><%= t("active_users") %></span>
+            <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] font-bold normal-case tracking-normal text-slate-700" title="<%= activeUsersTooltip %>">i</span>
+          </div>
+          <div class="mt-2 text-3xl font-semibold text-slate-900"><%= Number(summary.activeUsers || 0) %>/<span class="text-xl"><%= Number(summary.totalUsers || 0) %></span></div>
+          <div class="mt-1 text-[11px] text-slate-500"><%= t("active_users_window").replace("{minutes}", String(activeSessionWindowMinutes)) %></div>
         </div>
-        <div class="mt-2 text-3xl font-semibold text-slate-900"><%= Number(summary.activeUsers || 0) %>/<span class="text-xl"><%= Number(summary.totalUsers || 0) %></span></div>
-        <div class="mt-1 text-[11px] text-slate-500"><%= txt("active_users_window", "Seen in last {minutes}m").replace("{minutes}", String(activeSessionWindowMinutes)) %></div>
-      </div>
+      <% } %>
     </div>
   </section>
 
   <section class="grid gap-6 xl:grid-cols-2">
     <article class="rounded-2xl border border-slate-200 bg-white/95 shadow-md">
       <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-        <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= txt("recent_vouchers", "Recent Vouchers") %></h3>
+        <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("recent_vouchers") %></h3>
       </div>
       <div class="overflow-x-auto">
         <table class="min-w-full text-sm">
           <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
             <tr>
-              <th class="px-4 py-3 text-left"><%= txt("voucher_no", "Voucher No") %></th>
-              <th class="px-4 py-3 text-left"><%= txt("type", "Type") %></th>
-              <th class="px-4 py-3 text-left"><%= txt("branch", "Branch") %></th>
-              <th class="px-4 py-3 text-left"><%= txt("date", "Date") %></th>
+              <th class="px-4 py-3 text-left"><%= t("voucher_no") %></th>
+              <th class="px-4 py-3 text-left"><%= t("type") %></th>
+              <th class="px-4 py-3 text-left"><%= t("branch") %></th>
+              <th class="px-4 py-3 text-left"><%= t("date") %></th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100">
@@ -111,7 +109,7 @@
 
     <article class="rounded-2xl border border-slate-200 bg-white/95 shadow-md">
       <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-        <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= txt("recent_activity", "Recent Activity") %></h3>
+        <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("recent_activity") %></h3>
       </div>
       <div class="px-5 py-3">
         <% if (!recentActivity.length) { %>
@@ -121,7 +119,7 @@
           <% recentActivity.forEach((row) => { %>
             <li class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
               <div class="text-sm font-semibold text-slate-800"><%= row.action || '-' %> <span class="text-slate-500">• <%= row.entity_type || '-' %></span></div>
-              <div class="mt-1 text-xs text-slate-500"><%= row.username || txt("system", "System") %> • <%= formatDateDisplay(row.created_at, '-') %></div>
+              <div class="mt-1 text-xs text-slate-500"><%= row.username || t("system") %> • <%= formatDateDisplay(row.created_at, '-') %></div>
             </li>
           <% }) %>
         </ul>
@@ -132,17 +130,17 @@
   <% if (canViewApprovals) { %>
     <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md">
       <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-        <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= txt("pending_approvals", "Pending Approvals") %></h3>
-        <a href="/administration/approvals" class="text-xs font-semibold uppercase tracking-[0.18em] text-accent hover:text-accent/80"><%= txt("view_all", "View All") %></a>
+        <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("pending_approvals") %></h3>
+        <a href="/administration/approvals" class="text-xs font-semibold uppercase tracking-[0.18em] text-accent hover:text-accent/80"><%= t("view_all") %></a>
       </div>
       <div class="overflow-x-auto">
         <table class="min-w-full text-sm">
           <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
             <tr>
               <th class="px-4 py-3 text-left">ID</th>
-              <th class="px-4 py-3 text-left"><%= txt("entity", "Entity") %></th>
-              <th class="px-4 py-3 text-left"><%= txt("requested_by", "Requested By") %></th>
-              <th class="px-4 py-3 text-left"><%= txt("date", "Date") %></th>
+              <th class="px-4 py-3 text-left"><%= t("entity") %></th>
+              <th class="px-4 py-3 text-left"><%= t("requested_by") %></th>
+              <th class="px-4 py-3 text-left"><%= t("date") %></th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100">

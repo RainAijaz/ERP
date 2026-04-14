@@ -22,18 +22,12 @@
         unitTotals[unitKey] = Number((Number(unitTotals[unitKey] || 0) + qty).toFixed(3));
       });
 
-      const unitPairLabel = String(t("unit_pair") || "Pair").trim();
-      const unitDozenLabel = String(t("unit_dozen") || "Dozen").trim();
-      const thankYouText =
-        t("thank_you_for_your_visit") === "thank_you_for_your_visit"
-          ? "THANK YOU FOR YOUR VISIT"
-          : t("thank_you_for_your_visit");
-      const preparedByText =
-        t("prepared_by") === "prepared_by" ? "Prepared By" : t("prepared_by");
-      const checkedByText =
-        t("checked_by") === "checked_by" ? "Checked By" : t("checked_by");
-      const approvedByText =
-        t("approved_by") === "approved_by" ? "Approved By" : t("approved_by");
+      const unitPairLabel = String(t("unit_pair")).trim();
+      const unitDozenLabel = String(t("unit_dozen")).trim();
+      const thankYouText = t("thank_you_for_your_visit");
+      const preparedByText = t("prepared_by");
+      const checkedByText = t("checked_by");
+      const approvedByText = t("approved_by");
 
       const summaryRows = [];
       if (Number(unitTotals.dozen || 0) > 0) {

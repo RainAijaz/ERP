@@ -2,6 +2,10 @@ const {
   BASIC_INFO_ENTITY_TYPES,
   SCREEN_ENTITY_TYPES,
 } = require("../../utils/approval-entity-map");
+const {
+  buildActivityAccessScope,
+  applyActivityAccessScope,
+} = require("./activity-access-service");
 
 const toCount = (row) => {
   const value = Number(row?.count || 0);
@@ -92,6 +96,11 @@ const loadDashboardData = async ({ knex, req, can }) => {
     "administration.approvals",
     "view",
   );
+  const canViewUsers = getCan(can, "SCREEN", "administration.users", "view");
+  const activityAccessScope = buildActivityAccessScope({
+    can,
+    user: req?.user,
+  });
 
   const [
     pendingApprovals,
@@ -121,39 +130,60 @@ const loadDashboardData = async ({ knex, req, can }) => {
     safeCount("masterDataChangesToday", () => {
       if (!MASTER_DATA_ENTITY_TYPES.length)
         return Promise.resolve({ count: 0 });
-      return knex("erp.activity_log")
-        .whereBetween("created_at", [startOfDay, endOfDay])
-        .whereIn("entity_type", MASTER_DATA_ENTITY_TYPES)
+      const qb = knex("erp.activity_log as al")
+        .whereBetween("al.created_at", [startOfDay, endOfDay])
+        .whereIn("al.entity_type", MASTER_DATA_ENTITY_TYPES)
         .count("* as count")
         .first();
-    }),
-    safeCount("totalLogsToday", () => {
-      const qb = knex("erp.activity_log")
-        .whereBetween("created_at", [startOfDay, endOfDay])
-        .count("* as count")
-        .first();
-      return applyActiveBranchScope(req, qb, "branch_id");
-    }),
-    safeCount("activeUsers", () => {
-      const qb = knex("erp.user_sessions as us")
-        .where({ "us.is_revoked": false })
-        .andWhere("us.expires_at", ">", now)
-        .andWhere("us.last_seen_at", ">=", activeSessionCutoff)
-        .countDistinct("us.user_id as count")
-        .first();
-
-      if (activeBranchId > 0) {
-        qb.join("erp.user_branch as ub", "ub.user_id", "us.user_id").where(
-          "ub.branch_id",
-          activeBranchId,
-        );
-      }
-
+      applyActivityAccessScope({
+        qb,
+        access: activityAccessScope,
+        userId: req?.user?.id,
+        tableAlias: "al",
+      });
       return qb;
     }),
-    safeCount("totalUsers", () =>
-      knex("erp.users").where({ status: "Active" }).count("* as count").first(),
-    ),
+    safeCount("totalLogsToday", () => {
+      const qb = knex("erp.activity_log as al")
+        .whereBetween("al.created_at", [startOfDay, endOfDay])
+        .count("* as count")
+        .first();
+      applyActiveBranchScope(req, qb, "al.branch_id");
+      applyActivityAccessScope({
+        qb,
+        access: activityAccessScope,
+        userId: req?.user?.id,
+        tableAlias: "al",
+      });
+      return qb;
+    }),
+    canViewUsers
+      ? safeCount("activeUsers", () => {
+          const qb = knex("erp.user_sessions as us")
+            .where({ "us.is_revoked": false })
+            .andWhere("us.expires_at", ">", now)
+            .andWhere("us.last_seen_at", ">=", activeSessionCutoff)
+            .countDistinct("us.user_id as count")
+            .first();
+
+          if (activeBranchId > 0) {
+            qb.join("erp.user_branch as ub", "ub.user_id", "us.user_id").where(
+              "ub.branch_id",
+              activeBranchId,
+            );
+          }
+
+          return qb;
+        })
+      : Promise.resolve({ count: 0 }),
+    canViewUsers
+      ? safeCount("totalUsers", () =>
+          knex("erp.users")
+            .where({ status: "Active" })
+            .count("* as count")
+            .first(),
+        )
+      : Promise.resolve({ count: 0 }),
     canViewApprovals
       ? safeRows("recentApprovals", () => {
           const qb = knex("erp.approval_request as ar")
@@ -188,12 +218,30 @@ const loadDashboardData = async ({ knex, req, can }) => {
       return applyActiveBranchScope(req, qb, "vh.branch_id");
     }),
     safeRows("recentActivity", () => {
+      const localizedUserNameColumn = String(req?.locale || "")
+        .trim()
+        .toLowerCase()
+        .startsWith("ur")
+        ? knex.raw("COALESCE(u.name_ur, u.name, u.username) as username")
+        : knex.raw("COALESCE(u.name, u.username) as username");
       const qb = knex("erp.activity_log as al")
         .leftJoin("erp.users as u", "u.id", "al.user_id")
-        .select("al.action", "al.entity_type", "al.created_at", "u.username")
+        .select(
+          "al.action",
+          "al.entity_type",
+          "al.created_at",
+          localizedUserNameColumn,
+        )
         .orderBy("al.created_at", "desc")
         .limit(8);
-      return applyActiveBranchScope(req, qb, "al.branch_id");
+      applyActiveBranchScope(req, qb, "al.branch_id");
+      applyActivityAccessScope({
+        qb,
+        access: activityAccessScope,
+        userId: req?.user?.id,
+        tableAlias: "al",
+      });
+      return qb;
     }),
   ]);
 

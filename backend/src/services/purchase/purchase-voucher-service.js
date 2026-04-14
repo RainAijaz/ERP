@@ -9,6 +9,12 @@ const PURCHASE_VOUCHER_TYPES = {
   generalPurchase: "PI",
   purchaseReturn: "PR",
 };
+const PURCHASE_CATEGORIES = {
+  rawMaterial: "RAW_MATERIAL",
+  asset: "ASSET",
+};
+const PURCHASE_ASSET_ACCOUNT_GROUP_CODE = "fixed_assets";
+const PURCHASE_ASSET_CONTROL_ACCOUNT_CODE = "gl_fixed_assets_control";
 
 const PURCHASE_RETURN_REASONS = [
   "DAMAGED",
@@ -27,6 +33,10 @@ let stockBalanceRmColorColumnSupport;
 let stockBalanceRmSizeColumnSupport;
 let stockLedgerColorColumnSupport;
 let stockLedgerSizeColumnSupport;
+let assetColumnSupport;
+let purchaseGrnHeaderCategoryColumnSupport;
+let purchaseInvoiceHeaderCategoryColumnSupport;
+let purchaseReturnHeaderCategoryColumnSupport;
 
 // RM stock identity in this project is branch + state + item + (color,size when schema supports it).
 const RM_BALANCE_CONFLICT_TARGET_SQL =
@@ -61,6 +71,15 @@ const normalizePaymentType = (value) => {
     .trim()
     .toUpperCase();
   return PURCHASE_PAYMENT_TYPES.includes(text) ? text : "CREDIT";
+};
+
+const normalizePurchaseCategory = (value) => {
+  const text = String(value || PURCHASE_CATEGORIES.rawMaterial)
+    .trim()
+    .toUpperCase();
+  return text === PURCHASE_CATEGORIES.asset
+    ? PURCHASE_CATEGORIES.asset
+    : PURCHASE_CATEGORIES.rawMaterial;
 };
 
 const normalizeReturnReason = (value) => {
@@ -161,6 +180,56 @@ const hasColumnTx = async (trx, schemaName, tableName, columnName) => {
   } catch (err) {
     return false;
   }
+};
+
+const hasPurchaseHeaderCategoryColumnTx = async ({ trx, tableName }) => {
+  if (tableName === "purchase_grn_header_ext") {
+    if (typeof purchaseGrnHeaderCategoryColumnSupport === "boolean") {
+      return purchaseGrnHeaderCategoryColumnSupport;
+    }
+    purchaseGrnHeaderCategoryColumnSupport = await hasColumnTx(
+      trx,
+      "erp",
+      "purchase_grn_header_ext",
+      "purchase_category",
+    );
+    return purchaseGrnHeaderCategoryColumnSupport;
+  }
+  if (tableName === "purchase_invoice_header_ext") {
+    if (typeof purchaseInvoiceHeaderCategoryColumnSupport === "boolean") {
+      return purchaseInvoiceHeaderCategoryColumnSupport;
+    }
+    purchaseInvoiceHeaderCategoryColumnSupport = await hasColumnTx(
+      trx,
+      "erp",
+      "purchase_invoice_header_ext",
+      "purchase_category",
+    );
+    return purchaseInvoiceHeaderCategoryColumnSupport;
+  }
+  if (tableName === "purchase_return_header_ext") {
+    if (typeof purchaseReturnHeaderCategoryColumnSupport === "boolean") {
+      return purchaseReturnHeaderCategoryColumnSupport;
+    }
+    purchaseReturnHeaderCategoryColumnSupport = await hasColumnTx(
+      trx,
+      "erp",
+      "purchase_return_header_ext",
+      "purchase_category",
+    );
+    return purchaseReturnHeaderCategoryColumnSupport;
+  }
+  return false;
+};
+
+const getAssetColumnSupportTx = async (trx) => {
+  if (assetColumnSupport) return assetColumnSupport;
+  const [hasName, hasNameUr] = await Promise.all([
+    hasColumnTx(trx, "erp", "assets", "name"),
+    hasColumnTx(trx, "erp", "assets", "name_ur"),
+  ]);
+  assetColumnSupport = { name: hasName, name_ur: hasNameUr };
+  return assetColumnSupport;
 };
 
 const hasStockBalanceRmTableTx = async (trx) => {
@@ -884,6 +953,71 @@ const applyPurchaseVoucherStockOutTx = async ({
 // Single entrypoint for purchase stock sync:
 // 1) rollback old ledger impact
 // 2) if approved, re-apply PI(IN) or PR(OUT)
+const loadPurchaseCategoryByVoucherTx = async ({
+  trx,
+  voucherId,
+  voucherTypeCode,
+}) => {
+  const normalizedVoucherTypeCode = String(voucherTypeCode || "")
+    .trim()
+    .toUpperCase();
+  if (normalizedVoucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase) {
+    const supportsCategoryColumn = await hasPurchaseHeaderCategoryColumnTx({
+      trx,
+      tableName: "purchase_invoice_header_ext",
+    });
+    const ext = await safeFirstMissingRelation(
+      trx("erp.purchase_invoice_header_ext")
+        .select(
+          ...(supportsCategoryColumn
+            ? ["purchase_category"]
+            : [trx.raw("NULL::text as purchase_category")]),
+        )
+        .where({ voucher_id: voucherId })
+        .first(),
+      "erp.purchase_invoice_header_ext",
+    );
+    return normalizePurchaseCategory(ext?.purchase_category);
+  }
+  if (normalizedVoucherTypeCode === PURCHASE_VOUCHER_TYPES.purchaseReturn) {
+    const supportsCategoryColumn = await hasPurchaseHeaderCategoryColumnTx({
+      trx,
+      tableName: "purchase_return_header_ext",
+    });
+    const ext = await safeFirstMissingRelation(
+      trx("erp.purchase_return_header_ext")
+        .select(
+          ...(supportsCategoryColumn
+            ? ["purchase_category"]
+            : [trx.raw("NULL::text as purchase_category")]),
+        )
+        .where({ voucher_id: voucherId })
+        .first(),
+      "erp.purchase_return_header_ext",
+    );
+    return normalizePurchaseCategory(ext?.purchase_category);
+  }
+  if (normalizedVoucherTypeCode === PURCHASE_VOUCHER_TYPES.goodsReceiptNote) {
+    const supportsCategoryColumn = await hasPurchaseHeaderCategoryColumnTx({
+      trx,
+      tableName: "purchase_grn_header_ext",
+    });
+    const ext = await safeFirstMissingRelation(
+      trx("erp.purchase_grn_header_ext")
+        .select(
+          ...(supportsCategoryColumn
+            ? ["purchase_category"]
+            : [trx.raw("NULL::text as purchase_category")]),
+        )
+        .where({ voucher_id: voucherId })
+        .first(),
+      "erp.purchase_grn_header_ext",
+    );
+    return normalizePurchaseCategory(ext?.purchase_category);
+  }
+  return PURCHASE_CATEGORIES.rawMaterial;
+};
+
 const syncPurchaseVoucherStockTx = async ({
   trx,
   voucherId,
@@ -906,6 +1040,14 @@ const syncPurchaseVoucherStockTx = async ({
     .where({ id: normalizedVoucherId })
     .first();
   if (!header) return;
+  const purchaseCategory = await loadPurchaseCategoryByVoucherTx({
+    trx,
+    voucherId: normalizedVoucherId,
+    voucherTypeCode: normalizedVoucherTypeCode,
+  });
+  if (purchaseCategory === PURCHASE_CATEGORIES.asset) {
+    return;
+  }
   const voucherLines = await loadPurchaseVoucherStockLinesTx({
     trx,
     voucherId: normalizedVoucherId,
@@ -1013,6 +1155,80 @@ const validateCashAccountTx = async ({ trx, req, cashPaidAccountId }) => {
   }
 
   return Number(account.id);
+};
+
+const resolveAssetPurchaseAccountIdTx = async ({ trx, req }) => {
+  const rows = await trx("erp.accounts as a")
+    .join("erp.account_groups as ag", "ag.id", "a.subgroup_id")
+    .select("a.id", "a.code")
+    .where({
+      "a.is_active": true,
+      "ag.is_active": true,
+    })
+    .whereRaw("lower(coalesce(ag.code, '')) = ?", [
+      PURCHASE_ASSET_ACCOUNT_GROUP_CODE,
+    ])
+    .whereExists(function branchAccess() {
+      this.select(1)
+        .from("erp.account_branch as ab")
+        .whereRaw("ab.account_id = a.id")
+        .andWhere("ab.branch_id", req.branchId);
+    })
+    .orderBy("a.id", "asc");
+
+  if (!rows.length) {
+    throw new HttpError(
+      400,
+      "Fixed asset posting account is not configured for current branch",
+    );
+  }
+  const preferredRow = rows.find(
+    (row) =>
+      String(row.code || "").trim().toLowerCase() ===
+      PURCHASE_ASSET_CONTROL_ACCOUNT_CODE,
+  );
+  if (preferredRow) {
+    return Number(preferredRow.id);
+  }
+  if (rows.length > 1) {
+    throw new HttpError(
+      400,
+      "Multiple fixed asset posting accounts are configured for current branch. Configure a single account or use gl_fixed_assets_control.",
+    );
+  }
+
+  return Number(rows[0].id);
+};
+
+const fetchAssetMapTx = async ({ trx, req, assetIds = [] }) => {
+  const normalized = [
+    ...new Set((assetIds || []).map((id) => toPositiveInt(id)).filter(Boolean)),
+  ];
+  if (!normalized.length) return new Map();
+
+  const assetColumns = await getAssetColumnSupportTx(trx);
+  const displayNameExpr =
+    String(req?.locale || "en").toLowerCase() === "ur" && assetColumns.name_ur
+      ? "COALESCE(a.name_ur, a.name, a.description, a.asset_code) as asset_name"
+      : assetColumns.name
+        ? "COALESCE(a.name, a.description, a.asset_code) as asset_name"
+        : "COALESCE(a.description, a.asset_code) as asset_name";
+
+  const rows = await trx("erp.assets as a")
+    .leftJoin("erp.asset_type_registry as atr", "atr.code", "a.asset_type_code")
+    .select(
+      "a.id",
+      "a.asset_type_code",
+      knex.raw(displayNameExpr),
+      "atr.name as asset_type_name",
+    )
+    .whereIn("a.id", normalized)
+    .where({ "a.is_active": true })
+    .where(function whereAssetScope() {
+      this.whereNull("a.home_branch_id").orWhere("a.home_branch_id", req.branchId);
+    });
+
+  return new Map(rows.map((row) => [Number(row.id), row]));
 };
 
 const validateColorIdsTx = async ({ trx, colorIds = [] }) => {
@@ -1139,11 +1355,69 @@ const fetchRawMaterialMapTx = async ({ trx, itemIds = [] }) => {
 
 const normalizeAndValidateLinesTx = async ({
   trx,
+  req,
   voucherTypeCode,
+  purchaseCategory = PURCHASE_CATEGORIES.rawMaterial,
   rawLines = [],
 }) => {
   const lines = Array.isArray(rawLines) ? rawLines : [];
   if (!lines.length) throw new HttpError(400, "Voucher lines are required");
+
+  const normalizedCategory = normalizePurchaseCategory(purchaseCategory);
+
+  if (normalizedCategory === PURCHASE_CATEGORIES.asset) {
+    const assetIds = lines
+      .map((line) => toPositiveInt(line?.asset_id || line?.assetId))
+      .filter(Boolean);
+    const assetMap = await fetchAssetMapTx({ trx, req, assetIds });
+    if (assetMap.size !== assetIds.length) {
+      throw new HttpError(400, "One or more selected assets are invalid");
+    }
+    const assetAccountId = await resolveAssetPurchaseAccountIdTx({ trx, req });
+
+    return lines.map((line, index) => {
+      const lineNo = index + 1;
+      const assetId = toPositiveInt(line?.asset_id || line?.assetId);
+      const asset = assetMap.get(Number(assetId));
+      if (!asset) throw new HttpError(400, `Line ${lineNo}: asset is invalid`);
+
+      const qty = toPositiveNumber(line?.qty, 3);
+      if (!qty) {
+        throw new HttpError(
+          400,
+          `Line ${lineNo}: quantity must be greater than zero`,
+        );
+      }
+
+      let rate = 0;
+      if (voucherTypeCode !== PURCHASE_VOUCHER_TYPES.goodsReceiptNote) {
+        rate = toPositiveNumber(line?.rate, 4);
+        if (!rate) {
+          throw new HttpError(
+            400,
+            `Line ${lineNo}: rate must be greater than zero`,
+          );
+        }
+      }
+
+      return {
+        line_no: lineNo,
+        line_kind: "ACCOUNT",
+        account_id: assetAccountId,
+        qty: Number(qty.toFixed(3)),
+        rate: Number(rate.toFixed(4)),
+        amount: Number((qty * rate).toFixed(2)),
+        meta: {
+          asset_id: Number(assetId),
+          asset_type_code: String(asset.asset_type_code || "").toUpperCase(),
+        },
+        asset_id: Number(assetId),
+        asset_name: asset.asset_name || "",
+        asset_type_code: String(asset.asset_type_code || "").toUpperCase(),
+        asset_type_name: asset.asset_type_name || "",
+      };
+    });
+  }
 
   const itemIds = lines
     .map((line) => toPositiveInt(line?.item_id || line?.itemId))
@@ -1681,14 +1955,14 @@ const insertVoucherLinesTx = async ({ trx, voucherId, lines }) => {
   const lineRows = lines.map((line) => ({
     voucher_header_id: voucherId,
     line_no: line.line_no,
-    line_kind: "ITEM",
-    item_id: line.item_id,
+    line_kind: line.line_kind || "ITEM",
+    item_id: line.item_id || null,
     sku_id: null,
-    account_id: null,
+    account_id: line.account_id || null,
     party_id: null,
     labour_id: null,
     employee_id: null,
-    uom_id: line.uom_id,
+    uom_id: line.uom_id || null,
     qty: line.qty,
     rate: line.rate,
     amount: line.amount,
@@ -1733,6 +2007,7 @@ const upsertHeaderExtensionTx = async ({
   trx,
   voucherId,
   voucherTypeCode,
+  purchaseCategory = PURCHASE_CATEGORIES.rawMaterial,
   supplierPartyId,
   referenceNo,
   description,
@@ -1741,58 +2016,99 @@ const upsertHeaderExtensionTx = async ({
   returnReason = null,
   grnReferenceVoucherNo = null,
 }) => {
+  const normalizedPurchaseCategory = normalizePurchaseCategory(purchaseCategory);
   if (voucherTypeCode === PURCHASE_VOUCHER_TYPES.goodsReceiptNote) {
+    const supportsCategoryColumn = await hasPurchaseHeaderCategoryColumnTx({
+      trx,
+      tableName: "purchase_grn_header_ext",
+    });
+    const insertPayload = {
+      voucher_id: voucherId,
+      supplier_party_id: supplierPartyId,
+      supplier_reference_no: referenceNo,
+      description,
+    };
+    if (supportsCategoryColumn) {
+      insertPayload.purchase_category = normalizedPurchaseCategory;
+    }
+    const mergePayload = {
+      supplier_party_id: supplierPartyId,
+      supplier_reference_no: referenceNo,
+      description,
+    };
+    if (supportsCategoryColumn) {
+      mergePayload.purchase_category = normalizedPurchaseCategory;
+    }
     await trx("erp.purchase_grn_header_ext")
-      .insert({
-        voucher_id: voucherId,
-        supplier_party_id: supplierPartyId,
-        supplier_reference_no: referenceNo,
-        description,
-      })
+      .insert(insertPayload)
       .onConflict("voucher_id")
-      .merge({
-        supplier_party_id: supplierPartyId,
-        supplier_reference_no: referenceNo,
-        description,
-      });
+      .merge(mergePayload);
     return;
   }
 
   if (voucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase) {
+    const supportsCategoryColumn = await hasPurchaseHeaderCategoryColumnTx({
+      trx,
+      tableName: "purchase_invoice_header_ext",
+    });
+    const normalizedGrnReferenceNo =
+      normalizedPurchaseCategory === PURCHASE_CATEGORIES.rawMaterial
+        ? grnReferenceVoucherNo
+        : null;
+    const insertPayload = {
+      voucher_id: voucherId,
+      supplier_party_id: supplierPartyId,
+      payment_type: paymentType,
+      cash_paid_account_id: cashPaidAccountId,
+      po_voucher_id: null,
+      notes: null,
+      grn_reference_voucher_no: normalizedGrnReferenceNo,
+    };
+    if (supportsCategoryColumn) {
+      insertPayload.purchase_category = normalizedPurchaseCategory;
+    }
+    const mergePayload = {
+      supplier_party_id: supplierPartyId,
+      payment_type: paymentType,
+      cash_paid_account_id: cashPaidAccountId,
+      po_voucher_id: null,
+      notes: null,
+      grn_reference_voucher_no: normalizedGrnReferenceNo,
+    };
+    if (supportsCategoryColumn) {
+      mergePayload.purchase_category = normalizedPurchaseCategory;
+    }
     await trx("erp.purchase_invoice_header_ext")
-      .insert({
-        voucher_id: voucherId,
-        supplier_party_id: supplierPartyId,
-        payment_type: paymentType,
-        cash_paid_account_id: cashPaidAccountId,
-        po_voucher_id: null,
-        notes: null,
-        grn_reference_voucher_no: grnReferenceVoucherNo,
-      })
+      .insert(insertPayload)
       .onConflict("voucher_id")
-      .merge({
-        supplier_party_id: supplierPartyId,
-        payment_type: paymentType,
-        cash_paid_account_id: cashPaidAccountId,
-        po_voucher_id: null,
-        notes: null,
-        grn_reference_voucher_no: grnReferenceVoucherNo,
-      });
+      .merge(mergePayload);
     return;
   }
 
   if (voucherTypeCode === PURCHASE_VOUCHER_TYPES.purchaseReturn) {
+    const supportsCategoryColumn = await hasPurchaseHeaderCategoryColumnTx({
+      trx,
+      tableName: "purchase_return_header_ext",
+    });
+    const insertPayload = {
+      voucher_id: voucherId,
+      supplier_party_id: supplierPartyId,
+      reason: returnReason,
+    };
+    if (supportsCategoryColumn) {
+      insertPayload.purchase_category = normalizedPurchaseCategory;
+    }
+    const mergePayload = {
+      supplier_party_id: supplierPartyId,
+      reason: returnReason,
+    };
+    if (supportsCategoryColumn) {
+      mergePayload.purchase_category = normalizedPurchaseCategory;
+    }
     await trx("erp.purchase_return_header_ext")
-      .insert({
-        voucher_id: voucherId,
-        supplier_party_id: supplierPartyId,
-        reason: returnReason,
-      })
+      .insert(insertPayload)
       .onConflict("voucher_id")
-      .merge({
-        supplier_party_id: supplierPartyId,
-        reason: returnReason,
-      });
+      .merge(mergePayload);
   }
 };
 
@@ -1868,6 +2184,7 @@ const validatePurchaseVoucherPayloadTx = async ({
 }) => {
   const voucherDate = toDateOnly(payload.voucher_date);
   if (!voucherDate) throw new HttpError(400, "Voucher date is required");
+  const purchaseCategory = normalizePurchaseCategory(payload.purchase_category);
 
   let supplierPartyId = null;
   let referenceNo = normalizeText(payload.reference_no, 120);
@@ -1877,7 +2194,9 @@ const validatePurchaseVoucherPayloadTx = async ({
   );
   const lines = await normalizeAndValidateLinesTx({
     trx,
+    req,
     voucherTypeCode,
+    purchaseCategory,
     rawLines: payload.lines || [],
   });
 
@@ -1908,7 +2227,9 @@ const validatePurchaseVoucherPayloadTx = async ({
 
     const rawSupplierPartyId = toPositiveInt(payload.supplier_party_id);
     const supplierRequired =
-      paymentType !== "CASH" || Boolean(grnReferenceVoucherNo);
+      purchaseCategory === PURCHASE_CATEGORIES.asset ||
+      paymentType !== "CASH" ||
+      Boolean(grnReferenceVoucherNo);
     if (supplierRequired) {
       const supplier = await validateSupplierTx({
         trx,
@@ -1925,7 +2246,11 @@ const validatePurchaseVoucherPayloadTx = async ({
       supplierPartyId = supplier.id;
     }
 
-    if (!grnReferenceVoucherNo) {
+    if (purchaseCategory === PURCHASE_CATEGORIES.asset) {
+      grnReferenceVoucherNo = null;
+      grnAllocationsPayload = null;
+      allocationByLineNo = new Map();
+    } else if (!grnReferenceVoucherNo) {
       grnAllocationsPayload = normalizeGrnAllocationsPayload(
         payload.grn_allocations,
       );
@@ -2005,6 +2330,7 @@ const validatePurchaseVoucherPayloadTx = async ({
 
   return {
     voucherDate,
+    purchaseCategory,
     supplierPartyId,
     referenceNo,
     description,
@@ -2065,16 +2391,11 @@ const createPurchaseVoucher = async ({
       })
       .returning(["id", "voucher_no", "status"]);
 
-    const insertedLines = await insertVoucherLinesTx({
-      trx,
-      voucherId: header.id,
-      lines: validated.lines,
-    });
-
     await upsertHeaderExtensionTx({
       trx,
       voucherId: header.id,
       voucherTypeCode,
+      purchaseCategory: validated.purchaseCategory,
       supplierPartyId: validated.supplierPartyId,
       referenceNo: validated.referenceNo,
       description: validated.description,
@@ -2084,7 +2405,16 @@ const createPurchaseVoucher = async ({
       grnReferenceVoucherNo: validated.grnReferenceVoucherNo,
     });
 
-    if (voucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase) {
+    const insertedLines = await insertVoucherLinesTx({
+      trx,
+      voucherId: header.id,
+      lines: validated.lines,
+    });
+
+    if (
+      voucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase &&
+      validated.purchaseCategory === PURCHASE_CATEGORIES.rawMaterial
+    ) {
       await insertPurchaseAllocationsTx({
         trx,
         insertedLines,
@@ -2113,6 +2443,7 @@ const createPurchaseVoucher = async ({
           voucher_type_code: voucherTypeCode,
           voucher_no: header.voucher_no,
           voucher_date: validated.voucherDate,
+          purchase_category: validated.purchaseCategory,
           reference_no: validated.referenceNo,
           description: validated.description,
           supplier_party_id: validated.supplierPartyId,
@@ -2209,6 +2540,7 @@ const updatePurchaseVoucher = async ({
       voucher_no: existing.voucher_no,
       voucher_type_code: voucherTypeCode,
       voucher_date: validated.voucherDate,
+      purchase_category: validated.purchaseCategory,
       reference_no: validated.referenceNo,
       description: validated.description,
       supplier_party_id: validated.supplierPartyId,
@@ -2264,19 +2596,11 @@ const updatePurchaseVoucher = async ({
       });
     }
 
-    await trx("erp.voucher_line")
-      .where({ voucher_header_id: existing.id })
-      .del();
-    const insertedLines = await insertVoucherLinesTx({
-      trx,
-      voucherId: existing.id,
-      lines: validated.lines,
-    });
-
     await upsertHeaderExtensionTx({
       trx,
       voucherId: existing.id,
       voucherTypeCode,
+      purchaseCategory: validated.purchaseCategory,
       supplierPartyId: validated.supplierPartyId,
       referenceNo: validated.referenceNo,
       description: validated.description,
@@ -2286,7 +2610,19 @@ const updatePurchaseVoucher = async ({
       grnReferenceVoucherNo: validated.grnReferenceVoucherNo,
     });
 
-    if (voucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase) {
+    await trx("erp.voucher_line")
+      .where({ voucher_header_id: existing.id })
+      .del();
+    const insertedLines = await insertVoucherLinesTx({
+      trx,
+      voucherId: existing.id,
+      lines: validated.lines,
+    });
+
+    if (
+      voucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase &&
+      validated.purchaseCategory === PURCHASE_CATEGORIES.rawMaterial
+    ) {
       await insertPurchaseAllocationsTx({
         trx,
         insertedLines,
@@ -2491,6 +2827,7 @@ const loadPurchaseVoucherOptions = async (req) => {
   const [
     suppliers,
     rawMaterials,
+    assets,
     colors,
     sizes,
     cashAccounts,
@@ -2511,6 +2848,33 @@ const loadPurchaseVoucherOptions = async (req) => {
       .where({ "i.is_active": true })
       .whereRaw("upper(coalesce(i.item_type::text, '')) = 'RM'")
       .orderBy("i.name", "asc"),
+    (async () => {
+      const assetColumns = await getAssetColumnSupportTx(knex);
+      const displayNameExpr =
+        String(req?.locale || "en").toLowerCase() === "ur" &&
+        assetColumns.name_ur
+          ? "COALESCE(a.name_ur, a.name, a.description, a.asset_code) as asset_name"
+          : assetColumns.name
+            ? "COALESCE(a.name, a.description, a.asset_code) as asset_name"
+            : "COALESCE(a.description, a.asset_code) as asset_name";
+      return knex("erp.assets as a")
+        .leftJoin(
+          "erp.asset_type_registry as atr",
+          "atr.code",
+          "a.asset_type_code",
+        )
+        .select(
+          "a.id",
+          "a.asset_type_code",
+          knex.raw(displayNameExpr),
+          "atr.name as asset_type_name",
+        )
+        .where({ "a.is_active": true })
+        .where(function whereAssetScope() {
+          this.whereNull("a.home_branch_id").orWhere("a.home_branch_id", req.branchId);
+        })
+        .orderBy("asset_name", "asc");
+    })(),
     knex("erp.colors as c")
       .select("c.id", "c.name")
       .where({ "c.is_active": true })
@@ -2727,6 +3091,12 @@ const loadPurchaseVoucherOptions = async (req) => {
   return {
     suppliers,
     rawMaterials,
+    assets: (assets || []).map((row) => ({
+      id: Number(row.id),
+      asset_type_code: String(row.asset_type_code || "").toUpperCase(),
+      asset_type_name: row.asset_type_name || "",
+      name: row.asset_name || "",
+    })),
     colors,
     sizes,
     rawMaterialColorPolicyByItem,
@@ -2832,6 +3202,8 @@ const loadPurchaseVoucherDetails = async ({
     .select(
       "vl.id",
       "vl.line_no",
+      "vl.line_kind",
+      "vl.account_id",
       "vl.item_id",
       "i.code as item_code",
       "i.name as item_name",
@@ -2841,6 +3213,10 @@ const loadPurchaseVoucherDetails = async ({
       "vl.qty",
       "vl.rate",
       "vl.amount",
+      knex.raw(
+        "CASE WHEN coalesce(vl.meta->>'asset_id', '') ~ '^[0-9]+$' THEN (vl.meta->>'asset_id')::int ELSE NULL END as asset_id",
+      ),
+      knex.raw("COALESCE(vl.meta->>'asset_type_code', '') as asset_type_code"),
       knex.raw(
         "CASE WHEN coalesce(vl.meta->>'color_id', '') ~ '^[0-9]+$' THEN (vl.meta->>'color_id')::int ELSE NULL END as color_id",
       ),
@@ -2875,6 +3251,12 @@ const loadPurchaseVoucherDetails = async ({
         ).map((row) => [Number(row.id), row.name]),
       )
     : new Map();
+  const assetIds = [
+    ...new Set(lines.map((line) => toPositiveInt(line.asset_id)).filter(Boolean)),
+  ];
+  const assetMap = assetIds.length
+    ? await fetchAssetMapTx({ trx: knex, req, assetIds })
+    : new Map();
 
   const details = {
     id: Number(header.id),
@@ -2883,6 +3265,7 @@ const loadPurchaseVoucherDetails = async ({
     status: String(header.status || "").toUpperCase(),
     reference_no: header.book_no || "",
     description: header.remarks || "",
+    purchase_category: PURCHASE_CATEGORIES.rawMaterial,
     supplier_party_id: null,
     payment_type: "CREDIT",
     cash_paid_account_id: null,
@@ -2892,9 +3275,24 @@ const loadPurchaseVoucherDetails = async ({
     lines: lines.map((line) => ({
       id: Number(line.id),
       line_no: Number(line.line_no),
-      item_id: Number(line.item_id),
+      line_kind: String(line.line_kind || "").toUpperCase(),
+      item_id: Number(line.item_id || 0) || null,
       item_name: line.item_name || "",
       item_code: line.item_code || "",
+      asset_id: toPositiveInt(line.asset_id),
+      asset_name: toPositiveInt(line.asset_id)
+        ? assetMap.get(Number(line.asset_id))?.asset_name || ""
+        : "",
+      asset_type_code: toPositiveInt(line.asset_id)
+        ? String(
+            assetMap.get(Number(line.asset_id))?.asset_type_code ||
+              line.asset_type_code ||
+              "",
+          ).toUpperCase()
+        : String(line.asset_type_code || "").toUpperCase(),
+      asset_type_name: toPositiveInt(line.asset_id)
+        ? assetMap.get(Number(line.asset_id))?.asset_type_name || ""
+        : "",
       uom_id: Number(line.uom_id || 0) || null,
       uom_name: line.uom_name || "",
       qty: Number(line.qty || 0),
@@ -2912,19 +3310,35 @@ const loadPurchaseVoucherDetails = async ({
   };
 
   if (voucherTypeCode === PURCHASE_VOUCHER_TYPES.goodsReceiptNote) {
+    const supportsCategoryColumn = await hasPurchaseHeaderCategoryColumnTx({
+      trx: knex,
+      tableName: "purchase_grn_header_ext",
+    });
     const ext = await safeFirstMissingRelation(
       knex("erp.purchase_grn_header_ext")
-        .select("supplier_party_id", "supplier_reference_no", "description")
+        .select(
+          "supplier_party_id",
+          "supplier_reference_no",
+          "description",
+          ...(supportsCategoryColumn
+            ? ["purchase_category"]
+            : [knex.raw("NULL::text as purchase_category")]),
+        )
         .where({ voucher_id: header.id })
         .first(),
       "erp.purchase_grn_header_ext",
     );
+    details.purchase_category = normalizePurchaseCategory(ext?.purchase_category);
     details.supplier_party_id = Number(ext?.supplier_party_id || 0) || null;
     if (!details.reference_no && ext?.supplier_reference_no)
       details.reference_no = ext.supplier_reference_no;
     if (!details.description && ext?.description)
       details.description = ext.description;
   } else if (voucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase) {
+    const supportsCategoryColumn = await hasPurchaseHeaderCategoryColumnTx({
+      trx: knex,
+      tableName: "purchase_invoice_header_ext",
+    });
     const ext = await safeFirstMissingRelation(
       knex("erp.purchase_invoice_header_ext")
         .select(
@@ -2932,11 +3346,15 @@ const loadPurchaseVoucherDetails = async ({
           "payment_type",
           "cash_paid_account_id",
           "grn_reference_voucher_no",
+          ...(supportsCategoryColumn
+            ? ["purchase_category"]
+            : [knex.raw("NULL::text as purchase_category")]),
         )
         .where({ voucher_id: header.id })
         .first(),
       "erp.purchase_invoice_header_ext",
     );
+    details.purchase_category = normalizePurchaseCategory(ext?.purchase_category);
     details.supplier_party_id = Number(ext?.supplier_party_id || 0) || null;
     details.payment_type = normalizePaymentType(ext?.payment_type || "CREDIT");
     details.cash_paid_account_id =
@@ -2953,13 +3371,24 @@ const loadPurchaseVoucherDetails = async ({
       details.grn_reference_no = grnMeta?.referenceNo || null;
     }
   } else if (voucherTypeCode === PURCHASE_VOUCHER_TYPES.purchaseReturn) {
+    const supportsCategoryColumn = await hasPurchaseHeaderCategoryColumnTx({
+      trx: knex,
+      tableName: "purchase_return_header_ext",
+    });
     const ext = await safeFirstMissingRelation(
       knex("erp.purchase_return_header_ext")
-        .select("supplier_party_id", "reason")
+        .select(
+          "supplier_party_id",
+          "reason",
+          ...(supportsCategoryColumn
+            ? ["purchase_category"]
+            : [knex.raw("NULL::text as purchase_category")]),
+        )
         .where({ voucher_id: header.id })
         .first(),
       "erp.purchase_return_header_ext",
     );
+    details.purchase_category = normalizePurchaseCategory(ext?.purchase_category);
     details.supplier_party_id = Number(ext?.supplier_party_id || 0) || null;
     details.return_reason = normalizeReturnReason(ext?.reason);
   }
@@ -3007,9 +3436,19 @@ const ensurePurchaseVoucherDerivedDataTx = async ({
 
   // PI requires GRN allocation derivation + stock sync.
   if (normalizedVoucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase) {
+    const supportsCategoryColumn = await hasPurchaseHeaderCategoryColumnTx({
+      trx,
+      tableName: "purchase_invoice_header_ext",
+    });
     const ext = await safeFirstMissingRelation(
       trx("erp.purchase_invoice_header_ext")
-        .select("supplier_party_id", "grn_reference_voucher_no")
+        .select(
+          "supplier_party_id",
+          "grn_reference_voucher_no",
+          ...(supportsCategoryColumn
+            ? ["purchase_category"]
+            : [trx.raw("NULL::text as purchase_category")]),
+        )
         .where({ voucher_id: voucherId })
         .first(),
       "erp.purchase_invoice_header_ext",
@@ -3021,7 +3460,11 @@ const ensurePurchaseVoucherDerivedDataTx = async ({
     }
 
     await deletePurchaseAllocationsByVoucherTx({ trx, voucherId });
-    if (ext?.supplier_party_id) {
+    const purchaseCategory = normalizePurchaseCategory(ext?.purchase_category);
+    if (
+      purchaseCategory === PURCHASE_CATEGORIES.rawMaterial &&
+      ext?.supplier_party_id
+    ) {
       const lines = await loadVoucherLinesForAllocationTx({ trx, voucherId });
       const preferredGrnVoucherNo = parseVoucherNo(
         ext.grn_reference_voucher_no,
@@ -3112,6 +3555,7 @@ const applyPurchaseVoucherUpdatePayloadTx = async ({
     trx,
     voucherId,
     voucherTypeCode,
+    purchaseCategory: validated.purchaseCategory,
     supplierPartyId: validated.supplierPartyId,
     referenceNo: validated.referenceNo,
     description: validated.description,
@@ -3131,8 +3575,10 @@ const applyPurchaseVoucherUpdatePayloadTx = async ({
 
 module.exports = {
   PURCHASE_VOUCHER_TYPES,
+  PURCHASE_CATEGORIES,
   PURCHASE_RETURN_REASONS,
   normalizePaymentType,
+  normalizePurchaseCategory,
   parseVoucherNo,
   createPurchaseVoucher,
   updatePurchaseVoucher,

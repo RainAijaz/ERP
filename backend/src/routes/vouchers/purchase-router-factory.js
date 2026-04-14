@@ -221,6 +221,7 @@ const createPurchaseVoucherRouter = ({
 
       const payload = {
         voucher_date: req.body?.voucher_date,
+        purchase_category: req.body?.purchase_category,
         supplier_party_id: req.body?.supplier_party_id,
         reference_no: req.body?.reference_no,
         description: req.body?.description,

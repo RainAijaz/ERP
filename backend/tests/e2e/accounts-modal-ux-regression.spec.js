@@ -8,10 +8,15 @@ test.describe("Accounts modal UX regressions", () => {
     const response = await page.goto("/master-data/accounts", {
       waitUntil: "domcontentloaded",
     });
-    test.skip(!response || response.status() >= 400, "Accounts page unavailable.");
+    test.skip(
+      !response || response.status() >= 400,
+      "Accounts page unavailable.",
+    );
   });
 
-  test("add modal supports vertical scrolling and clean searchable select rendering", async ({ page }) => {
+  test("add modal supports vertical scrolling and clean searchable select rendering", async ({
+    page,
+  }) => {
     await page.locator("[data-modal-open]").first().click();
 
     const modalShell = page.locator("#modal-shell");
@@ -52,9 +57,13 @@ test.describe("Accounts modal UX regressions", () => {
           "[data-searchable-wrapper] select[data-field='subgroup_id']",
         ).length,
         hiddenWrapped: Boolean(
-          form.querySelector("[data-searchable-wrapper] [data-account-group-source]"),
+          form.querySelector(
+            "[data-searchable-wrapper] [data-account-group-source]",
+          ),
         ),
-        hiddenSelectExists: Boolean(form.querySelector("[data-account-group-source]")),
+        hiddenSelectExists: Boolean(
+          form.querySelector("[data-account-group-source]"),
+        ),
       };
     });
 
@@ -62,14 +71,18 @@ test.describe("Accounts modal UX regressions", () => {
     expect(subgroupState.wrappers).toBe(1);
     expect(subgroupState.hiddenWrapped).toBeFalsy();
 
-    await page.locator("[data-modal-form] select[data-field='account_type']").selectOption("EXPENSE", { force: true });
+    await page
+      .locator("[data-modal-form] select[data-field='account_type']")
+      .selectOption("EXPENSE", { force: true });
 
     const filteredGroupCount = await page.evaluate(() => {
       const groupSelect = document.querySelector(
         "[data-modal-form] select[data-field='subgroup_id']",
       );
       if (!(groupSelect instanceof HTMLSelectElement)) return 0;
-      return Array.from(groupSelect.options).filter((opt) => String(opt.value || "").trim()).length;
+      return Array.from(groupSelect.options).filter((opt) =>
+        String(opt.value || "").trim(),
+      ).length;
     });
     expect(filteredGroupCount).toBeGreaterThan(0);
 
@@ -79,7 +92,11 @@ test.describe("Accounts modal UX regressions", () => {
       );
       if (!(branchSelect instanceof HTMLSelectElement)) return false;
       return Array.from(branchSelect.options).some((opt) =>
-        ["__all__", "all"].includes(String(opt.value || "").trim().toLowerCase()),
+        ["__all__", "all"].includes(
+          String(opt.value || "")
+            .trim()
+            .toLowerCase(),
+        ),
       );
     });
     expect(hasAllBranchesOption).toBeTruthy();
@@ -87,7 +104,10 @@ test.describe("Accounts modal UX regressions", () => {
 
   test("edit modal remains usable and not clipped at top", async ({ page }) => {
     const editButton = page.locator("[data-edit]").first();
-    test.skip((await editButton.count()) === 0, "No editable account rows available.");
+    test.skip(
+      (await editButton.count()) === 0,
+      "No editable account rows available.",
+    );
 
     await editButton.click();
     const modalShell = page.locator("#modal-shell");
@@ -101,7 +121,9 @@ test.describe("Accounts modal UX regressions", () => {
     expect(box.y).toBeGreaterThanOrEqual(0);
 
     const canReachFooter = await modalShell.evaluate((node) => {
-      const saveBtn = document.querySelector("[data-modal-form] button[type='submit']");
+      const saveBtn = document.querySelector(
+        "[data-modal-form] button[type='submit']",
+      );
       if (!(saveBtn instanceof HTMLElement)) return false;
       const shellRect = node.getBoundingClientRect();
       const buttonRect = saveBtn.getBoundingClientRect();

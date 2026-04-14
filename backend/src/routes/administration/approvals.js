@@ -1123,185 +1123,43 @@ router.get(
   async (req, res, next) => {
     try {
       const status = (req.query.status || "PENDING").toUpperCase();
+      const requestedPage = Number.parseInt(String(req.query.page || "1"), 10);
+      const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+      const pageSize = 25;
 
-      const rowsQuery = knex("erp.approval_request as ar")
-        .select("ar.*", "u.username as requester_name", "v.id as variant_id")
-        .leftJoin("erp.users as u", "ar.requested_by", "u.id")
-        // Left join variant to get SKU context if entity_type is SKU
-        .leftJoin("erp.variants as v", function () {
-          this.on("ar.entity_id", "=", knex.raw("CAST(v.id AS TEXT)")).andOn(
-            "ar.entity_type",
-            "=",
-            knex.raw("'SKU'"),
-          );
-        })
-        .where("ar.status", status)
-        .orderBy("ar.requested_at", "desc");
-
+      const baseQuery = knex("erp.approval_request as ar").where("ar.status", status);
       if (!req.user?.isAdmin) {
-        rowsQuery.andWhere("ar.requested_by", req.user.id);
+        baseQuery.andWhere("ar.requested_by", req.user.id);
       }
+
+      const totalRow = await baseQuery.clone().count({ count: "ar.id" }).first();
+      const totalRows = Number(totalRow?.count || 0);
+      const totalPages = Math.max(1, Math.ceil(totalRows / pageSize));
+      const currentPage = Math.min(page, totalPages);
+      const offset = (currentPage - 1) * pageSize;
+
+      const rowsQuery = baseQuery
+        .clone()
+        .select(
+          "ar.id",
+          "ar.entity_type",
+          "ar.entity_id",
+          "ar.request_type",
+          "ar.status",
+          "ar.summary",
+          "ar.requested_at",
+          "ar.decided_at",
+          "u.username as requester_name",
+        )
+        .leftJoin("erp.users as u", "ar.requested_by", "u.id")
+        .orderBy("ar.requested_at", "desc")
+        .limit(pageSize)
+        .offset(offset);
 
       const rows = await rowsQuery;
 
       for (const row of rows) {
         row.summary = normalizeVoucherApprovalSummary(row, res.locals.t);
-      }
-
-      const skuRows = rows.filter((row) => row.entity_type === "SKU");
-      if (skuRows.length) {
-        const newValueRows = skuRows
-          .map((row) => ({ row, values: safeJson(row.new_value) }))
-          .filter((entry) => entry.values);
-
-        const itemIds = new Set();
-        const sizeIds = new Set();
-        const gradeIds = new Set();
-        const colorIds = new Set();
-        const packingIds = new Set();
-
-        newValueRows.forEach(({ values }) => {
-          if (values.item_id) itemIds.add(Number(values.item_id));
-          if (values.size_id) sizeIds.add(Number(values.size_id));
-          if (values.grade_id) gradeIds.add(Number(values.grade_id));
-          if (values.color_id) colorIds.add(Number(values.color_id));
-          if (values.packing_type_id)
-            packingIds.add(Number(values.packing_type_id));
-        });
-
-        const variantIds = skuRows
-          .map((row) => Number(row.entity_id))
-          .filter((id) => Number.isFinite(id) && id > 0);
-
-        const [items, sizes, grades, colors, packings, variants] =
-          await Promise.all([
-            itemIds.size
-              ? knex("erp.items")
-                  .select("id", "name", "code")
-                  .whereIn("id", [...itemIds])
-              : Promise.resolve([]),
-            sizeIds.size
-              ? knex("erp.sizes")
-                  .select("id", "name")
-                  .whereIn("id", [...sizeIds])
-              : Promise.resolve([]),
-            gradeIds.size
-              ? knex("erp.grades")
-                  .select("id", "name")
-                  .whereIn("id", [...gradeIds])
-              : Promise.resolve([]),
-            colorIds.size
-              ? knex("erp.colors")
-                  .select("id", "name")
-                  .whereIn("id", [...colorIds])
-              : Promise.resolve([]),
-            packingIds.size
-              ? knex("erp.packing_types")
-                  .select("id", "name")
-                  .whereIn("id", [...packingIds])
-              : Promise.resolve([]),
-            variantIds.length
-              ? knex("erp.variants as v")
-                  .select(
-                    "v.id",
-                    "i.name as item_name",
-                    "s.name as size_name",
-                    "g.name as grade_name",
-                    "c.name as color_name",
-                    "p.name as packing_name",
-                    "k.sku_code",
-                  )
-                  .leftJoin("erp.items as i", "v.item_id", "i.id")
-                  .leftJoin("erp.sizes as s", "v.size_id", "s.id")
-                  .leftJoin("erp.grades as g", "v.grade_id", "g.id")
-                  .leftJoin("erp.colors as c", "v.color_id", "c.id")
-                  .leftJoin(
-                    "erp.packing_types as p",
-                    "v.packing_type_id",
-                    "p.id",
-                  )
-                  .leftJoin("erp.skus as k", "k.variant_id", "v.id")
-                  .whereIn("v.id", variantIds)
-              : Promise.resolve([]),
-          ]);
-
-        const itemMap = new Map(items.map((row) => [row.id, row.name]));
-        const sizeMap = new Map(sizes.map((row) => [row.id, row.name]));
-        const gradeMap = new Map(grades.map((row) => [row.id, row.name]));
-        const colorMap = new Map(colors.map((row) => [row.id, row.name]));
-        const packingMap = new Map(packings.map((row) => [row.id, row.name]));
-        const variantMap = new Map(
-          variants.map((row) => [
-            row.id,
-            buildSkuLabel({
-              skuCode: row.sku_code,
-              itemName: row.item_name,
-              sizeName: row.size_name,
-              packingName: row.packing_name,
-              gradeName: row.grade_name,
-              colorName: row.color_name,
-            }),
-          ]),
-        );
-
-        for (const row of skuRows) {
-          const values = safeJson(row.new_value);
-          const isNew = row.entity_id === "NEW";
-          let label = null;
-          if (values && values._summary) {
-            label = String(values._summary);
-          } else if (isNew && values) {
-            label = buildSkuLabel({
-              itemName: itemMap.get(Number(values.item_id)),
-              sizeName: sizeMap.get(Number(values.size_id)),
-              packingName: packingMap.get(Number(values.packing_type_id)),
-              gradeName: gradeMap.get(Number(values.grade_id)),
-              colorName: values.color_id
-                ? colorMap.get(Number(values.color_id))
-                : null,
-            });
-          } else if (!isNew) {
-            label = variantMap.get(Number(row.entity_id)) || null;
-            if (!label && Number.isFinite(Number(row.entity_id))) {
-              const fallback = await knex("erp.variants as v")
-                .select(
-                  "v.id",
-                  "i.name as item_name",
-                  "s.name as size_name",
-                  "g.name as grade_name",
-                  "c.name as color_name",
-                  "p.name as packing_name",
-                  "k.sku_code",
-                )
-                .leftJoin("erp.items as i", "v.item_id", "i.id")
-                .leftJoin("erp.sizes as s", "v.size_id", "s.id")
-                .leftJoin("erp.grades as g", "v.grade_id", "g.id")
-                .leftJoin("erp.colors as c", "v.color_id", "c.id")
-                .leftJoin("erp.packing_types as p", "v.packing_type_id", "p.id")
-                .leftJoin("erp.skus as k", "k.variant_id", "v.id")
-                .where("v.id", Number(row.entity_id))
-                .first();
-              if (fallback) {
-                label = buildSkuLabel({
-                  skuCode: fallback.sku_code,
-                  itemName: fallback.item_name,
-                  sizeName: fallback.size_name,
-                  packingName: fallback.packing_name,
-                  gradeName: fallback.grade_name,
-                  colorName: fallback.color_name,
-                });
-              }
-            }
-          }
-
-          if (label && row.summary) {
-            if (row.summary.startsWith("New Variant:")) {
-              row.summary = `New Variant: ${label}`;
-            } else if (!row.summary.includes(label)) {
-              row.summary = `${row.summary}: ${label}`;
-            }
-          }
-        }
       }
 
       renderPage(
@@ -1313,6 +1171,12 @@ router.get(
           rows,
           currentStatus: status,
           basePath: req.baseUrl,
+          paging: {
+            currentPage,
+            totalPages,
+            totalRows,
+            pageSize,
+          },
         },
       );
     } catch (err) {
@@ -1766,7 +1630,7 @@ router.post(
       } else if (err && err.message) {
         msg = err.message;
       }
-      setUiNotice(res, msg, { autoClose: true });
+      setUiNotice(res, msg, { autoClose: true, type: "error" });
       return res.redirect(`${req.baseUrl}?status=PENDING`);
     }
   },

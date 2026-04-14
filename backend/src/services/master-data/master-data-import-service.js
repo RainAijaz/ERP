@@ -137,6 +137,8 @@ const normalizeItemTypes = (value, fallbackAll = false) => {
 const createPlanningContext = () => ({
   staged: {
     uom: new Set(),
+    size: new Set(),
+    color: new Set(),
     productGroup: new Set(),
     productSubgroup: new Set(),
     accountGroup: new Set(),
@@ -190,6 +192,12 @@ const registerStagedReference = (context, operation) => {
       break;
     case ENTITY_KEYS.productGroups:
       addStagedToken(context.staged.productGroup, operation.data.name);
+      break;
+    case ENTITY_KEYS.sizes:
+      addStagedToken(context.staged.size, operation.data.name);
+      break;
+    case ENTITY_KEYS.colors:
+      addStagedToken(context.staged.color, operation.data.name);
       break;
     case ENTITY_KEYS.productSubgroups:
       addStagedToken(context.staged.productSubgroup, operation.data.code);
@@ -253,7 +261,22 @@ const buildWorkbookRows = (workbookBuffer) => {
       raw: false,
     });
 
-    const headerRow = Array.isArray(matrix[0]) ? matrix[0] : [];
+    let headerRowIndex = 0;
+    const firstRow = Array.isArray(matrix[0]) ? matrix[0] : [];
+    const firstHeaderCount = firstRow
+      .map((entry) => trimString(entry))
+      .filter(Boolean).length;
+    if (firstHeaderCount <= 1 && Array.isArray(matrix[1])) {
+      headerRowIndex = 1;
+    }
+    const sheetTitle =
+      headerRowIndex === 1
+        ? trimString(firstRow.find((entry) => trimString(entry)))
+        : "";
+
+    const headerRow = Array.isArray(matrix[headerRowIndex])
+      ? matrix[headerRowIndex]
+      : [];
     const headerMap = [];
     const collisionCounter = new Map();
 
@@ -268,7 +291,11 @@ const buildWorkbookRows = (workbookBuffer) => {
       headerMap[index] = seen ? `${normalized}_${seen + 1}` : normalized;
     });
 
-    for (let rowIndex = 1; rowIndex < matrix.length; rowIndex += 1) {
+    for (
+      let rowIndex = headerRowIndex + 1;
+      rowIndex < matrix.length;
+      rowIndex += 1
+    ) {
       const cells = Array.isArray(matrix[rowIndex]) ? matrix[rowIndex] : [];
       const values = {};
       let hasAnyValue = false;
@@ -282,6 +309,7 @@ const buildWorkbookRows = (workbookBuffer) => {
       if (!hasAnyValue) continue;
       rows.push({
         sheetName,
+        sheetTitle,
         rowNumber: rowIndex + 1,
         values,
       });
@@ -327,6 +355,7 @@ const extractEntityRows = (workbookRows, entitySpec) => {
     if (hasAnyValue) {
       extracted.push({
         sheetName: workbookRow.sheetName,
+        sheetTitle: workbookRow.sheetTitle || "",
         rowNumber: workbookRow.rowNumber,
         raw: payload,
       });
@@ -403,6 +432,29 @@ const resolveUomByToken = async (db, token) => {
       value.toLowerCase(),
     ])
     .first();
+};
+
+const resolveColorByToken = async (db, token) => {
+  const value = trimString(token);
+  if (!value) return null;
+  return db("erp.colors")
+    .select("id", "name")
+    .whereRaw("lower(name) = ?", [value.toLowerCase()])
+    .first();
+};
+
+const resolveSizeByToken = async (db, token, itemType = null) => {
+  const value = trimString(token);
+  if (!value) return null;
+  const query = db("erp.sizes as s")
+    .select("s.id", "s.name")
+    .whereRaw("lower(s.name) = ?", [value.toLowerCase()]);
+  if (itemType && ITEM_TYPES.has(String(itemType).toUpperCase())) {
+    query
+      .join("erp.size_item_types as sit", "sit.size_id", "s.id")
+      .andWhere("sit.item_type", String(itemType).toUpperCase());
+  }
+  return query.first();
 };
 
 const resolveProductGroupByToken = async (db, token) => {
@@ -1891,16 +1943,24 @@ const ENTITY_SPECS = Object.freeze({
     },
   },
   [ENTITY_KEYS.products]: {
-    sheetMatchers: [/products?/i, /items?/i],
+    sheetMatchers: [/products?/i, /items?/i, /^sheet\d+$/i],
     fieldAliases: {
       itemType: ["products_item_type", "item_type", "type"],
       code: ["products_code", "item_code", "code"],
       name: ["products_name", "item_name", "name"],
       nameUr: ["products_name_urdu", "products_name_ur", "name_ur"],
-      groupName: ["products_group", "group_name", "product_group"],
-      subgroupName: ["products_subgroup", "subgroup_name", "product_subgroup"],
+      groupName: ["products_group", "group_name", "product_group", "group"],
+      subgroupName: [
+        "products_subgroup",
+        "subgroup_name",
+        "product_subgroup",
+        "sub_group",
+      ],
       productType: ["products_product_type", "product_type"],
-      baseUom: ["products_base_uom", "base_uom", "uom"],
+      baseUom: ["products_base_uom", "base_uom", "uom", "unit"],
+      colorName: ["products_color", "color_name", "color", "colors"],
+      sizeName: ["products_size", "size_name", "size", "sizes"],
+      purchaseRate: ["products_rate", "rate", "purchase_rate"],
       minStockLevel: ["products_min_stock_level", "min_stock_level"],
       usesSfg: ["products_uses_sfg", "uses_sfg"],
       sfgPartType: ["products_sfg_part_type", "sfg_part_type"],
@@ -1909,9 +1969,13 @@ const ENTITY_SPECS = Object.freeze({
     async plan(row, db, actorId, context) {
       const name = trimString(row.raw.name);
       if (!name) return { skip: true };
-      const itemType = String(row.raw.itemType || "")
+      const itemTypeToken = String(row.raw.itemType || "")
         .trim()
         .toUpperCase();
+      const inferredRawMaterial = /raw\s*materials?/i.test(
+        `${row.sheetName || ""} ${row.sheetTitle || ""}`,
+      );
+      const itemType = itemTypeToken || (inferredRawMaterial ? "RM" : "");
       if (!ITEM_TYPES.has(itemType)) {
         return {
           error: `Invalid product item type for ${name}: ${itemType || "(empty)"}`,
@@ -1968,6 +2032,59 @@ const ENTITY_SPECS = Object.freeze({
         }
       }
 
+      const colorToken = trimString(row.raw.colorName);
+      const sizeToken = trimString(row.raw.sizeName);
+      const purchaseRateRaw = trimString(row.raw.purchaseRate);
+      const hasRmRateCells =
+        itemType === "RM" && Boolean(colorToken || sizeToken || purchaseRateRaw);
+
+      let color = null;
+      if (itemType === "RM" && colorToken) {
+        color = await resolveColorByToken(db, colorToken);
+        if (!color?.id && !hasStagedToken(context?.staged?.color, colorToken)) {
+          return {
+            error: `Color not found for item ${name}: ${colorToken}`,
+          };
+        }
+      }
+
+      let size = null;
+      if (itemType === "RM" && sizeToken) {
+        size = await resolveSizeByToken(db, sizeToken, "RM");
+        if (!size?.id && !hasStagedToken(context?.staged?.size, sizeToken)) {
+          return {
+            error: `Size not found for item ${name}: ${sizeToken}`,
+          };
+        }
+      }
+
+      const purchaseRate = parseNumber(row.raw.purchaseRate, null);
+      if (hasRmRateCells && purchaseRate === null) {
+        return {
+          error: `Purchase rate is required and must be numeric for item ${name} when using color/size/rate columns.`,
+        };
+      }
+      if (hasRmRateCells && purchaseRate < 0) {
+        return {
+          error: `Purchase rate cannot be negative for item ${name}.`,
+        };
+      }
+
+      const warningMessages = [];
+      if (!itemTypeToken && inferredRawMaterial) {
+        warningMessages.push(
+          "Item type was blank; inferred item_type=RM from sheet title.",
+        );
+      }
+      if (
+        itemType !== "RM" &&
+        Boolean(colorToken || sizeToken || purchaseRateRaw)
+      ) {
+        warningMessages.push(
+          "Color/size/rate columns are only applied to raw material (RM) items and were ignored for this row.",
+        );
+      }
+
       const code =
         trimString(row.raw.code) ||
         (await generateUniqueCode({ name, knex: db, table: "erp.items" }));
@@ -2018,10 +2135,17 @@ const ENTITY_SPECS = Object.freeze({
           base_uom_token: uomToken || null,
           uses_sfg: usesSfg,
           sfg_part_type: sfgPartType,
+          rm_rate_enabled: hasRmRateCells,
+          rm_color_id: color?.id || null,
+          rm_color_token: colorToken || null,
+          rm_size_id: size?.id || null,
+          rm_size_token: sizeToken || null,
+          rm_purchase_rate: purchaseRate,
           min_stock_level: parseNumber(row.raw.minStockLevel, 0) || 0,
           is_active: parseBoolean(row.raw.isActive, true),
           updated_by: actorId,
         },
+        warning: warningMessages.length ? warningMessages.join(" ") : null,
       };
     },
     async apply(op, trx, actorId) {
@@ -2084,14 +2208,54 @@ const ENTITY_SPECS = Object.freeze({
         updated_by: actorId,
         updated_at: trx.fn.now(),
       };
+      let itemId = op.data.id;
       if (op.action === "create") {
-        await trx("erp.items").insert({
+        const [created] = await trx("erp.items")
+          .insert({
           ...payload,
           created_by: actorId,
           created_at: trx.fn.now(),
-        });
+          })
+          .returning(["id"]);
+        itemId = created?.id;
       } else {
         await trx("erp.items").where({ id: op.data.id }).update(payload);
+        itemId = op.data.id;
+      }
+
+      if (
+        op.data.item_type === "RM" &&
+        op.data.rm_rate_enabled &&
+        itemId
+      ) {
+        let colorId = op.data.rm_color_id;
+        if (!colorId && op.data.rm_color_token) {
+          const color = await resolveColorByToken(trx, op.data.rm_color_token);
+          colorId = color?.id || null;
+        }
+
+        let sizeId = op.data.rm_size_id;
+        if (!sizeId && op.data.rm_size_token) {
+          const size = await resolveSizeByToken(trx, op.data.rm_size_token, "RM");
+          sizeId = size?.id || null;
+        }
+
+        await trx("erp.rm_purchase_rates")
+          .where({ rm_item_id: itemId })
+          .whereRaw("COALESCE(color_id, 0) = COALESCE(?, 0)", [colorId])
+          .whereRaw("COALESCE(size_id, 0) = COALESCE(?, 0)", [sizeId])
+          .del();
+
+        await trx("erp.rm_purchase_rates").insert({
+          rm_item_id: itemId,
+          color_id: colorId,
+          size_id: sizeId,
+          purchase_rate: op.data.rm_purchase_rate,
+          avg_purchase_rate: op.data.rm_purchase_rate,
+          is_active: true,
+          created_by: actorId,
+          created_at: trx.fn.now(),
+        });
       }
     },
   },

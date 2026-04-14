@@ -3361,6 +3361,10 @@ translations.ur = {
 };
 
 Object.assign(translations.en, {
+  active_users: "Active Users",
+  active_users_dashboard_tooltip:
+    "Branch specific: distinct active users with non-expired sessions seen in the last {minutes} minutes.",
+  active_users_window: "Seen in last {minutes}m",
   aging_days: "Aging Days",
   articles: "Articles",
   availability: "Availability",
@@ -3402,20 +3406,39 @@ Object.assign(translations.en, {
   previous_stage: "Previous Stage",
   product_subgroup: "Product Subgroup",
   production_unit: "Production Unit",
+  recent_activity: "Recent Activity",
   required: "Required",
   select_color: "Select Color",
   select_size: "Select Size",
   short: "Short",
   source_production_voucher: "Source Production Voucher",
   stage_scope: "Stage Scope",
+  system: "System",
+  total_logs_today: "Total Logs Today",
+  total_logs_today_dashboard_tooltip:
+    "Branch specific: total activity logs created today for the selected branch.",
   total_deficit: "Total Deficit",
+  type: "Type",
   return_reason_wrong_size: "Wrong Size",
   return_reason_missing_items: "Missing Items",
   return_reason_customer_changed_mind: "Customer Changed Mind",
   return_reason_quality_defect: "Quality Defect",
+  vouchers_today: "Vouchers Today",
+  vouchers_today_dashboard_tooltip:
+    "Branch specific: vouchers posted today in the selected branch.",
+  md_changes_today: "MD Changes Today",
+  master_data_changes_dashboard_tooltip:
+    "Global: master data changes today across all branches.",
+  pending_approvals_dashboard_tooltip:
+    "Branch specific: pending approvals for the selected branch.",
+  view_all: "View All",
 });
 
 Object.assign(translations.ur, {
+  active_users: "فعال صارفین",
+  active_users_dashboard_tooltip:
+    "برانچ کے لحاظ سے: گزشتہ {minutes} منٹ میں غیر میعاد ختم سیشن والے منفرد فعال صارفین۔",
+  active_users_window: "گزشتہ {minutes} منٹ میں فعال",
   aging_days: "دنوں کی عمر",
   articles: "آرٹیکلز",
   availability: "دستیابی",
@@ -3459,17 +3482,32 @@ Object.assign(translations.ur, {
   previous_stage: "پچھلا مرحلہ",
   product_subgroup: "مصنوعہ ذیلی گروپ",
   production_unit: "پیداواری یونٹ",
+  recent_activity: "حالیہ سرگرمی",
   required: "درکار",
   select_color: "رنگ منتخب کریں",
   select_size: "سائز منتخب کریں",
   short: "کم",
   source_production_voucher: "سورس پروڈکشن واؤچر",
   stage_scope: "مرحلہ دائرہ",
+  system: "سسٹم",
+  total_logs_today: "آج کے کل لاگز",
+  total_logs_today_dashboard_tooltip:
+    "برانچ کے لحاظ سے: منتخب برانچ میں آج بننے والے سرگرمی لاگز کی کل تعداد۔",
   total_deficit: "کل کمی",
+  type: "قسم",
   return_reason_wrong_size: "غلط سائز",
   return_reason_missing_items: "اشیاء نامکمل",
   return_reason_customer_changed_mind: "کسٹمر نے فیصلہ تبدیل کیا",
   return_reason_quality_defect: "معیار میں خرابی",
+  vouchers_today: "آج کے واؤچرز",
+  vouchers_today_dashboard_tooltip:
+    "برانچ کے لحاظ سے: منتخب برانچ میں آج پوسٹ ہونے والے واؤچرز۔",
+  md_changes_today: "آج کی ماسٹر ڈیٹا تبدیلیاں",
+  master_data_changes_dashboard_tooltip:
+    "عالمی: تمام برانچز میں آج کی ماسٹر ڈیٹا تبدیلیاں۔",
+  pending_approvals_dashboard_tooltip:
+    "برانچ کے لحاظ سے: منتخب برانچ کی زیر التواء منظوریاں۔",
+  view_all: "سب دیکھیں",
 });
 
 const formatDateDisplay = (value, fallback = "-") => {

@@ -47,6 +47,15 @@ const resolveBaseUrl = (explicitBaseUrl) => {
 const getActiveAdminEmails = async (knex) => {
   const isValidEmail = (value) =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || "").trim());
+  const normalizeEmails = (rows = []) =>
+    Array.from(
+      new Set(
+        rows
+          .map((row) => String(row?.email || "").trim())
+          .filter((email) => email && isValidEmail(email)),
+      ),
+    );
+
   const adminRows = await knex("erp.users")
     .join(
       "erp.role_templates",
@@ -59,13 +68,50 @@ const getActiveAdminEmails = async (knex) => {
     )
     .andWhereRaw("lower(trim(erp.users.status)) = 'active'")
     .whereNotNull("erp.users.email");
-  return Array.from(
-    new Set(
-      adminRows
-        .map((row) => String(row.email || "").trim())
-        .filter((email) => email && isValidEmail(email)),
-    ),
-  );
+
+  const scopeRow = await knex("erp.permission_scope_registry")
+    .select("id")
+    .where({
+      scope_type: "SCREEN",
+      scope_key: "administration.approvals",
+    })
+    .first();
+
+  if (!scopeRow?.id) {
+    return normalizeEmails(adminRows);
+  }
+
+  const rolePermissionRows = await knex("erp.users as u")
+    .join("erp.role_permissions as rp", "rp.role_id", "u.primary_role_id")
+    .select("u.email")
+    .where("rp.scope_id", scopeRow.id)
+    .andWhere((builder) => {
+      builder
+        .where("rp.can_approve", true)
+        .orWhere("rp.can_view", true)
+        .orWhere("rp.can_navigate", true);
+    })
+    .andWhereRaw("lower(trim(u.status)) = 'active'")
+    .whereNotNull("u.email");
+
+  const userOverrideRows = await knex("erp.users as u")
+    .join("erp.user_permissions_override as upo", "upo.user_id", "u.id")
+    .select("u.email")
+    .where("upo.scope_id", scopeRow.id)
+    .andWhere((builder) => {
+      builder
+        .where("upo.can_approve", true)
+        .orWhere("upo.can_view", true)
+        .orWhere("upo.can_navigate", true);
+    })
+    .andWhereRaw("lower(trim(u.status)) = 'active'")
+    .whereNotNull("u.email");
+
+  return normalizeEmails([
+    ...adminRows,
+    ...rolePermissionRows,
+    ...userOverrideRows,
+  ]);
 };
 
 const notifyPendingApprovalAdmins = async ({

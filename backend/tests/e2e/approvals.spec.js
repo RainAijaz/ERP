@@ -1,6 +1,6 @@
 const { test, expect } = require("@playwright/test");
 const { login } = require("./utils/auth");
-const { getBranch, getApprovalEditFixtureData, getTwoDistinctUsers, getVariantForSkuApproval, createApprovalRequest, deleteApprovalRequests, setVariantSaleRate, upsertUserWithPermissions, clearUserPermissionsOverride, closeDb } = require("./utils/db");
+const { getBranch, getApprovalEditFixtureData, getFirstParty, getTwoDistinctUsers, getVariantForSkuApproval, createApprovalRequest, deleteApprovalRequests, setVariantSaleRate, upsertUserWithPermissions, clearUserPermissionsOverride, closeDb } = require("./utils/db");
 
 // --- Helper Functions ---
 const compactJoin = (parts) =>
@@ -659,6 +659,75 @@ test.describe("Approvals page scenarios", () => {
   });
 
   test.describe("Error handling and Edge cases", () => {
+    test("party approval succeeds when request payload includes approval meta keys", async ({ page }) => {
+      const party = await getFirstParty();
+      test.skip(!party, "No party row found for metadata regression test.");
+
+      const suffix = Date.now();
+      const summary = `Edit Parties Meta ${suffix}`;
+      const requestId = await createApprovalRequest({
+        branch_id: ctx.branchId,
+        request_type: "MASTER_DATA_CHANGE",
+        entity_type: "PARTY",
+        entity_id: String(party.id),
+        summary,
+        new_value: {
+          _action: "update",
+          _scope_key: "master_data.parties",
+          _approval_action: "update",
+          phone2: `03${String(suffix).slice(-9)}`,
+        },
+        status: "PENDING",
+        requested_by: ctx.otherUser.id,
+        requested_at: new Date(),
+      });
+      createdApprovalIds.push(requestId);
+
+      await gotoApprovals(page, "PENDING");
+      const approveBtn = page.locator(`form[action$="/${requestId}/approve"] button`).first();
+      await expect(approveBtn).toBeVisible();
+      await Promise.all([page.waitForURL(/approvals/i, { timeout: 30000 }), approveBtn.click()]);
+
+      const toast = page.locator("[data-ui-notice-toast]").first();
+      await expect(toast).toBeVisible();
+      await expect(toast).toContainText(/approved/i);
+
+      await gotoApprovals(page, "APPROVED");
+      await expect(page.locator("tbody tr", { hasText: summary }).first()).toBeVisible();
+    });
+
+    test("approval apply SQL errors render red error toast with cross icon", async ({ page }) => {
+      const badField = `bad_col_${Date.now()}`;
+      const requestId = await createApprovalRequest({
+        branch_id: ctx.branchId,
+        request_type: "MASTER_DATA_CHANGE",
+        entity_type: "COLOR",
+        entity_id: "NEW",
+        summary: `Create Invalid Color ${Date.now()}`,
+        new_value: {
+          _action: "create",
+          name: `E2E Invalid Color ${Date.now()}`,
+          [badField]: "boom",
+        },
+        status: "PENDING",
+        requested_by: ctx.otherUser.id,
+        requested_at: new Date(),
+      });
+      createdApprovalIds.push(requestId);
+
+      await gotoApprovals(page, "PENDING");
+      const approveBtn = page.locator(`form[action$="/${requestId}/approve"] button`).first();
+      await expect(approveBtn).toBeVisible();
+      await Promise.all([page.waitForURL(/approvals/i, { timeout: 30000 }), approveBtn.click()]);
+
+      const toast = page.locator("[data-ui-notice-toast]").first();
+      await expect(toast).toBeVisible();
+      await expect(toast).toHaveAttribute("data-ui-notice-type", "error");
+      await expect(toast).toContainText(/does not exist|failed|error/i);
+      await expect(toast.locator(".border-rose-300").first()).toBeVisible();
+      await expect(toast.locator(".bg-rose-100").first()).toBeVisible();
+    });
+
     test("handles duplicate data error gracefully on approve", async ({ page }) => {
       const duplicateName = `Dupe Color ${Date.now()}`;
       const r1 = await createApprovalRequest({

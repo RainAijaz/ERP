@@ -73,7 +73,7 @@ test.describe("Returnables searchable selects", () => {
     test.skip(!response || response.status() !== 200, "Returnable dispatch page not accessible for admin.");
 
     await page.waitForSelector("[data-returnable-form]");
-    await page.waitForSelector('select[data-row-field="asset_id"]');
+    await page.waitForSelector('select[data-row-field="asset_id"]', { state: "attached" });
     await page.waitForTimeout(200);
 
     const state = await collectFormSelectState(page);
@@ -92,7 +92,7 @@ test.describe("Returnables searchable selects", () => {
     test.skip(!response || response.status() !== 200, "Returnable dispatch page not accessible for admin.");
 
     await page.waitForSelector("[data-returnable-form]");
-    await page.waitForSelector('[data-lines-body] tr select[data-row-field="asset_id"]');
+    await page.waitForSelector('[data-lines-body] tr select[data-row-field="asset_id"]', { state: "attached" });
 
     const requiredOptions = await page.evaluate(() => {
       const findFirstOption = (selector) => {
@@ -148,7 +148,7 @@ test.describe("Returnables searchable selects", () => {
     test.skip(!response || response.status() !== 200, "Returnable dispatch page not accessible for admin.");
 
     await page.waitForSelector("[data-returnable-form]");
-    await page.waitForSelector('[data-lines-body] tr select[data-row-field="asset_id"]');
+    await page.waitForSelector('[data-lines-body] tr select[data-row-field="asset_id"]', { state: "attached" });
 
     const reasonWrapper = page
       .locator("[data-searchable-wrapper]")

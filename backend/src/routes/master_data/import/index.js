@@ -74,7 +74,7 @@ const renderPage = (req, res, data = {}) => {
     );
 
   return res.render("base/layouts/main", {
-    title: res.locals.t("master_data_import") || "Master Data Import",
+    title: res.locals.t("master_data_import"),
     user: req.user,
     branchId: req.branchId,
     branchScope: req.branchScope,
@@ -209,7 +209,7 @@ router.post(
           entityType:
             SCREEN_ENTITY_TYPES["master_data.import"] || "MASTER_DATA_IMPORT",
           entityId: "NEW",
-          summary: `${res.locals.t("master_data_import") || "Master Data Import"}: ${originalName || "Excel"}`,
+          summary: `${res.locals.t("master_data_import")}: ${originalName || res.locals.t("import_excel_file")}`,
           oldValue: null,
           newValue: {
             _action: "import_master_data",

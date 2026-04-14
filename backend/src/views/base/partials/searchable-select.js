@@ -44,11 +44,27 @@
     return labelText ? `${i18nSearch} ${labelText}` : i18nSearch;
   };
   const searchableRegistry = new Set();
-  const closeSearchableMenus = ({ exceptWrapper = null } = {}) => {
+  const forEachSearchableEntry = (callback) => {
     searchableRegistry.forEach((entry) => {
       if (!entry || typeof entry !== "object") return;
+      const wrapper = entry.wrapper;
+      if (wrapper instanceof HTMLElement && !wrapper.isConnected) {
+        searchableRegistry.delete(entry);
+        return;
+      }
+      callback(entry);
+    });
+  };
+  const closeSearchableMenus = ({ exceptWrapper = null } = {}) => {
+    forEachSearchableEntry((entry) => {
       if (exceptWrapper && entry.wrapper === exceptWrapper) return;
       if (typeof entry.close === "function") entry.close();
+    });
+  };
+  const repositionOpenSearchableMenus = () => {
+    forEachSearchableEntry((entry) => {
+      if (typeof entry.isOpen === "function" && !entry.isOpen()) return;
+      if (typeof entry.reposition === "function") entry.reposition();
     });
   };
 
@@ -1037,27 +1053,10 @@
       }, 150);
     });
 
-    const modalForm = select.closest("[data-modal-form]");
-    const modalContent = modalForm
-      ? modalForm.querySelector("#modal-content")
-      : null;
     const handleViewportReposition = () => {
       if (menu.classList.contains("hidden")) return;
       positionMenu();
     };
-    if (modalContent) {
-      modalContent.addEventListener("scroll", handleViewportReposition, {
-        passive: true,
-      });
-    }
-
-    window.addEventListener("resize", handleViewportReposition, {
-      passive: true,
-    });
-    window.addEventListener("scroll", handleViewportReposition, {
-      passive: true,
-      capture: true,
-    });
 
     select.addEventListener("change", syncToInput);
     select.classList.add("sr-only");
@@ -1067,12 +1066,19 @@
     wrapper.appendChild(icon);
     wrapper.appendChild(menu);
     wrapper.appendChild(select);
-    searchableRegistry.add({ wrapper, close: closeMenu });
+    searchableRegistry.add({
+      wrapper,
+      close: closeMenu,
+      reposition: handleViewportReposition,
+      isOpen: () => !menu.classList.contains("hidden"),
+    });
     syncToInput();
   };
 
-  const initSearchableSelects = () => {
-    document.querySelectorAll("select").forEach((select) => {
+  const initSearchableSelects = (root = document) => {
+    const scope =
+      root && typeof root.querySelectorAll === "function" ? root : document;
+    scope.querySelectorAll("select").forEach((select) => {
       if (!select) return;
       if (select.dataset.searchableSkip === "true") return;
       if (select.dataset.searchableReady === "true") {
@@ -1267,6 +1273,15 @@
 
   if (typeof window !== "undefined") {
     if (!window.__searchableSelectGlobalListenersAttached) {
+      let rafScheduled = false;
+      const scheduleReposition = () => {
+        if (rafScheduled) return;
+        rafScheduled = true;
+        window.requestAnimationFrame(() => {
+          rafScheduled = false;
+          repositionOpenSearchableMenus();
+        });
+      };
       document.addEventListener("pointerdown", (event) => {
         const target = event.target;
         if (
@@ -1285,6 +1300,11 @@
       document.addEventListener("ui:error-modal-close", () =>
         closeSearchableMenus(),
       );
+      window.addEventListener("resize", scheduleReposition, { passive: true });
+      window.addEventListener("scroll", scheduleReposition, {
+        passive: true,
+        capture: true,
+      });
       window.__searchableSelectGlobalListenersAttached = true;
     }
     window.closeAllSearchableSelectMenus = () => closeSearchableMenus();

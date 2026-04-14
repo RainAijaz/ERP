@@ -2,6 +2,7 @@
   const orderBy = String(filters?.orderBy || "party").toLowerCase();
   const reportType = String(filters?.reportType || "details").toLowerCase();
   const purchaseType = String(filters?.purchaseType || "all").toLowerCase();
+  const purchaseCategory = String(filters?.purchaseCategory || "all").toLowerCase();
   const reportLoaded = Boolean(filters?.reportLoaded);
   const groups = Array.isArray(reportData?.groups) ? reportData.groups : [];
   const summaryRows = Array.isArray(reportData?.summaryRows) ? reportData.summaryRows : [];
@@ -24,6 +25,12 @@
   const branchAllSelected = !Array.isArray(filters?.branchIds) || filters.branchIds.length === 0;
   const groupAllSelected = !selectedGroupIds.length;
   const subgroupAllSelected = !selectedSubgroupIds.length;
+  const isAssetCategory = purchaseCategory === "asset";
+  const entityLabel = purchaseCategory === "asset"
+    ? t("asset")
+    : purchaseCategory === "raw_material"
+      ? t("raw_material")
+      : t("item");
   const dateRangeLabel = (() => {
     const value = typeof t === "function" ? t("date_range") : "";
     return value || "Date Range";
@@ -173,6 +180,26 @@
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("category") %></label>
+          <div class="sm:col-span-9">
+            <div class="flex flex-wrap gap-2 rounded-xl bg-white/60 p-1">
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= purchaseCategory === 'all' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="purchase_category" value="all" data-purchase-category-filter <%= purchaseCategory === "all" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t("all") %></span>
+              </label>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= purchaseCategory === 'raw_material' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="purchase_category" value="raw_material" data-purchase-category-filter <%= purchaseCategory === "raw_material" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t("raw_material") %></span>
+              </label>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= purchaseCategory === 'asset' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="purchase_category" value="asset" data-purchase-category-filter <%= purchaseCategory === "asset" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t("asset") %></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12 <%= isAssetCategory ? 'hidden' : '' %>" data-rm-filter-row>
           <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("raw_material") %></label>
           <div class="sm:col-span-9">
             <select name="raw_material_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
@@ -184,7 +211,7 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12 <%= isAssetCategory ? 'hidden' : '' %>" data-rm-filter-row>
           <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("group") %></label>
           <div class="sm:col-span-9">
             <select name="raw_material_group_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
@@ -196,7 +223,7 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12 <%= isAssetCategory ? 'hidden' : '' %>" data-rm-filter-row>
           <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("sub_group") %></label>
           <div class="sm:col-span-9">
             <select name="raw_material_subgroup_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
@@ -238,7 +265,7 @@
               </label>
               <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= orderBy === 'product' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
                 <input type="radio" name="order_by" value="product" <%= orderBy === "product" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
-                <span><%= t("raw_material") %></span>
+                <span data-order-by-product-label><%= entityLabel %></span>
               </label>
             </div>
           </div>
@@ -328,7 +355,7 @@
                   <th title="<%= headerTooltip('purchase_report_header_party_name_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_party_name_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("party_name") %></th>
                 <% } %>
                 <% if (orderBy !== "product") { %>
-                  <th title="<%= headerTooltip('purchase_report_header_raw_material_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_raw_material_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("raw_material") %></th>
+                  <th title="<%= headerTooltip('purchase_report_header_raw_material_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_raw_material_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= entityLabel %></th>
                 <% } %>
                 <th title="<%= headerTooltip('purchase_report_header_quantity_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_quantity_tooltip') %>" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("quantity") %></th>
                 <th title="<%= headerTooltip('purchase_report_header_standard_rate_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_standard_rate_tooltip') %>" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("fixed_purchase_rate") %></th>
@@ -497,7 +524,7 @@
     <% } %>
   </section>
 <script><%- include("../base/partials/date-range-picker.js") %></script>
-<script><%- include("../base/partials/searchable-select.js") %></script>
+
 <script>
   (function () {
     if (typeof window.initSearchableSelects === "function") {
@@ -557,6 +584,42 @@
       select.addEventListener("change", () => normalizeAllSelection(select, true));
     });
 
+    const purchaseCategoryInputs = Array.from(form.querySelectorAll('input[data-purchase-category-filter][name="purchase_category"]'));
+    const rawMaterialFilterRows = Array.from(form.querySelectorAll("[data-rm-filter-row]"));
+    const orderByProductLabel = form.querySelector("[data-order-by-product-label]");
+    const entityLabels = {
+      all: <%- JSON.stringify(t("item")) %>,
+      raw_material: <%- JSON.stringify(t("raw_material")) %>,
+      asset: <%- JSON.stringify(t("asset")) %>,
+    };
+    const resetSelectToAll = (select) => {
+      if (!select) return;
+      const options = Array.from(select.options || []);
+      const allOption = options.find((option) => option.value === allMultiValue);
+      if (!allOption) return;
+      options.forEach((option) => {
+        option.selected = option.value === allMultiValue;
+      });
+      normalizeAllSelection(select, false);
+    };
+    const syncPurchaseCategoryVisibility = () => {
+      const selectedCategory = String(
+        purchaseCategoryInputs.find((input) => input.checked)?.value || "all",
+      ).toLowerCase();
+      const showRawMaterialFilters = selectedCategory !== "asset";
+      rawMaterialFilterRows.forEach((row) => {
+        row.classList.toggle("hidden", !showRawMaterialFilters);
+        if (!showRawMaterialFilters) {
+          const select = row.querySelector("select[data-all-multi-select='true']");
+          resetSelectToAll(select);
+        }
+      });
+      if (orderByProductLabel) {
+        orderByProductLabel.textContent =
+          entityLabels[selectedCategory] || entityLabels.all;
+      }
+    };
+
     const purchaseTypeInputs = Array.from(form.querySelectorAll('input[data-purchase-type-filter][name="purchase_type"]'));
     const cashAccountWrap = form.querySelector("[data-cash-account-filter]");
     const cashAccountSelect = cashAccountWrap?.querySelector('select[name="cash_paid_account_id"]');
@@ -567,6 +630,11 @@
       if (cashAccountWrap) cashAccountWrap.classList.toggle("hidden", !show);
       if (!show && cashAccountSelect) cashAccountSelect.value = "";
     };
+
+    purchaseCategoryInputs.forEach((input) =>
+      input.addEventListener("change", syncPurchaseCategoryVisibility),
+    );
+    syncPurchaseCategoryVisibility();
 
     purchaseTypeInputs.forEach((input) => input.addEventListener("change", syncCashAccountVisibility));
     syncCashAccountVisibility();

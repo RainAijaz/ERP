@@ -92,6 +92,23 @@ CREATE TABLE IF NOT EXISTS erp.purchase_order_header_ext (
 CREATE INDEX IF NOT EXISTS idx_po_header_supplier
   ON erp.purchase_order_header_ext (supplier_party_id);
 
+-- -----------------------------------------------------------------------------
+-- Goods Receipt Note (GRN) header extension
+-- -----------------------------------------------------------------------------
+-- voucher_id must be a GRN voucher (enforced in integrity_checks.sql/backend).
+-- supplier_party_id must be SUPPLIER (enforced in integrity_checks.sql/backend).
+CREATE TABLE IF NOT EXISTS erp.purchase_grn_header_ext (
+  voucher_id             bigint PRIMARY KEY REFERENCES erp.voucher_header(id) ON DELETE CASCADE,
+  supplier_party_id      bigint NOT NULL REFERENCES erp.parties(id),
+  supplier_reference_no  varchar(120),
+  description            text,
+  purchase_category      text NOT NULL DEFAULT 'RAW_MATERIAL',
+  CHECK (purchase_category IN ('RAW_MATERIAL', 'ASSET'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_purchase_grn_header_supplier
+  ON erp.purchase_grn_header_ext (supplier_party_id);
+
 
 -- -----------------------------------------------------------------------------
 -- Purchase Invoice (PI) header extension
@@ -109,6 +126,7 @@ CREATE INDEX IF NOT EXISTS idx_po_header_supplier
 CREATE TABLE IF NOT EXISTS erp.purchase_invoice_header_ext (
   voucher_id           bigint PRIMARY KEY REFERENCES erp.voucher_header(id) ON DELETE CASCADE,
   supplier_party_id    bigint NOT NULL REFERENCES erp.parties(id),
+  purchase_category    text NOT NULL DEFAULT 'RAW_MATERIAL',
 
   payment_type         erp.payment_type NOT NULL DEFAULT 'CREDIT', -- CASH / CREDIT only
   cash_paid_account_id bigint REFERENCES erp.accounts(id),         -- required for CASH, NULL for CREDIT
@@ -120,7 +138,8 @@ CREATE TABLE IF NOT EXISTS erp.purchase_invoice_header_ext (
     (payment_type = 'CREDIT' AND cash_paid_account_id IS NULL)
     OR
     (payment_type = 'CASH'   AND cash_paid_account_id IS NOT NULL)
-  )
+  ),
+  CHECK (purchase_category IN ('RAW_MATERIAL', 'ASSET'))
 );
 
 -- Fast list/filter: PIs by supplier
@@ -136,7 +155,9 @@ CREATE INDEX IF NOT EXISTS idx_pi_header_supplier
 CREATE TABLE IF NOT EXISTS erp.purchase_return_header_ext (
   voucher_id        bigint PRIMARY KEY REFERENCES erp.voucher_header(id) ON DELETE CASCADE,
   supplier_party_id bigint NOT NULL REFERENCES erp.parties(id),
-  reason            erp.purchase_return_reason NOT NULL
+  reason            erp.purchase_return_reason NOT NULL,
+  purchase_category text NOT NULL DEFAULT 'RAW_MATERIAL',
+  CHECK (purchase_category IN ('RAW_MATERIAL', 'ASSET'))
 );
 
 

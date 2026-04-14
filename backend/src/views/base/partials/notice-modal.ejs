@@ -10,10 +10,11 @@
 <% const uiNoticeMessage = uiNotice && uiNotice.message ? uiNotice.message : null; %>
 <% const uiNoticeSticky = uiNotice && uiNotice.sticky === true; %>
 <% const uiNoticeAutoClose = uiNotice && uiNotice.autoClose; %>
+<% const uiNoticeType = uiNotice && uiNotice.type ? String(uiNotice.type).trim().toLowerCase() : ""; %>
 <% const debugUiNoticeFlag = typeof debugUiNotice !== "undefined" ? debugUiNotice : false; %>
 <% if (uiNoticeMessage) { %>
-  <% const isError = uiNoticeMessage && (/error|could not|failed|invalid|duplicate|not found|unable/i).test(uiNoticeMessage); %>
-  <div class="fixed right-4 top-4 z-50 hidden w-[92vw] max-w-sm" data-ui-notice-toast>
+  <% const isError = uiNoticeType === "error" || uiNoticeType === "danger" || (uiNoticeMessage && (/error|could not|failed|invalid|duplicate|not found|unable|does not exist|constraint|violat(e|ion)|exception|syntax/i).test(uiNoticeMessage)); %>
+  <div class="fixed right-4 top-4 z-50 hidden w-[92vw] max-w-sm" data-ui-notice-toast data-ui-notice-type="<%= isError ? 'error' : 'success' %>">
     <div class="flex items-start gap-3 rounded-2xl border <%= isError ? 'border-rose-300 bg-rose-50' : 'border-emerald-200 bg-white' %> p-4 shadow-xl">
       <div class="mt-0.5 rounded-full <%= isError ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700' %> p-2">
         <% if (isError) { %>
@@ -50,6 +51,7 @@
       if (<%= debugUiNoticeFlag ? "true" : "false" %>) {
         console.log("[UI NOTICE] render", {
           message: "<%= String(uiNoticeMessage || '').replace(/\"/g, '\\"') %>",
+          type: "<%= String(uiNoticeType || '').replace(/\"/g, '\\"') %>",
           sticky: <%= uiNoticeSticky ? "true" : "false" %>,
           autoClose: <%= uiNoticeAutoClose ? "true" : "false" %>
         });

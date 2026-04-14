@@ -1,0 +1,169 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - checkbox "Menu" [ref=e5]
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - link "CHAND EVA" [ref=e8] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e10]: ERP
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - generic [ref=e14]: Signed in as
+            - generic [ref=e15]: admin
+          - generic [ref=e16]:
+            - generic [ref=e17]: Branch
+            - generic [ref=e18]:
+              - generic [ref=e19]: Branch
+              - generic [ref=e20]:
+                - textbox "Search" [ref=e21]: "124"
+                - generic:
+                  - img
+                - combobox "Branch" [ref=e22]:
+                  - option "124" [selected]
+                  - option "207"
+          - button "Logout" [ref=e24] [cursor=pointer]
+          - generic [ref=e25]:
+            - generic [ref=e26]: Language
+            - link "English" [ref=e27] [cursor=pointer]:
+              - /url: "?lang=en"
+            - generic [ref=e28]: "|"
+            - link "Urdu" [ref=e29] [cursor=pointer]:
+              - /url: "?lang=ur"
+      - navigation [ref=e30]:
+        - button "Administration" [ref=e32] [cursor=pointer]:
+          - generic [ref=e33]: Administration
+          - img [ref=e34]
+        - button "Master Data" [ref=e37] [cursor=pointer]:
+          - generic [ref=e38]: Master Data
+          - img [ref=e39]
+        - button "HR & Payroll" [ref=e42] [cursor=pointer]:
+          - generic [ref=e43]: HR & Payroll
+          - img [ref=e44]
+        - button "Financial" [ref=e47] [cursor=pointer]:
+          - generic [ref=e48]: Financial
+          - img [ref=e49]
+        - button "Purchase" [ref=e52] [cursor=pointer]:
+          - generic [ref=e53]: Purchase
+          - img [ref=e54]
+        - button "Production" [ref=e57] [cursor=pointer]:
+          - generic [ref=e58]: Production
+          - img [ref=e59]
+        - button "Inventory" [ref=e62] [cursor=pointer]:
+          - generic [ref=e63]: Inventory
+          - img [ref=e64]
+        - button "Outward & Returnables" [ref=e67] [cursor=pointer]:
+          - generic [ref=e68]: Outward & Returnables
+          - img [ref=e69]
+        - button "Sales" [ref=e72] [cursor=pointer]:
+          - generic [ref=e73]: Sales
+          - img [ref=e74]
+  - main [ref=e76]:
+    - generic [ref=e77]:
+      - generic [ref=e80]:
+        - heading "Dispatch (Outward)" [level=1] [ref=e81]
+        - paragraph [ref=e82]: Outward & Returnables
+      - generic [ref=e84]:
+        - generic [ref=e85]:
+          - generic [ref=e86]:
+            - generic [ref=e87]: Voucher No
+            - textbox [ref=e89]: "19"
+            - generic [ref=e90]:
+              - link "Prev" [ref=e91] [cursor=pointer]:
+                - /url: /vouchers/returnable-dispatch?voucher_no=18&view=1
+              - link "Next" [ref=e92] [cursor=pointer]:
+                - /url: /vouchers/returnable-dispatch?new=1
+              - button "Load" [ref=e93] [cursor=pointer]
+              - generic [ref=e94]:
+                - button "Delete" [disabled] [ref=e95] [cursor=pointer]
+                - button "Print" [ref=e96] [cursor=pointer]
+          - generic [ref=e97]:
+            - generic [ref=e98]: Date
+            - textbox [ref=e100]: 2026-04-13
+            - generic [ref=e101]: Vendor
+            - generic [ref=e103]:
+              - textbox "Select Vendor" [ref=e104]
+              - generic:
+                - img
+              - combobox [ref=e105]:
+                - option "Select Vendor" [selected]
+                - option "AMEEN DYE MAKER"
+                - option "Hoorain Aijaz"
+                - option "PAPPU CRAIP"
+          - generic [ref=e106]:
+            - generic [ref=e107]: Reason
+            - generic [ref=e109]:
+              - textbox "Select Reason" [ref=e110]
+              - generic:
+                - img
+              - combobox [ref=e111]:
+                - option "Select Reason" [selected]
+                - option "Repair"
+                - option "Calibration"
+                - option "Sharpening"
+                - option "Refurbishment / Overhaul"
+                - option "Coating / Surface Treatment"
+                - option "Modification"
+                - option "Others"
+            - generic [ref=e112]: Expected Return Date
+            - textbox [ref=e114]
+          - generic [ref=e115]:
+            - generic [ref=e116]: Remarks
+            - textbox [ref=e118]
+        - table [ref=e121]:
+          - rowgroup [ref=e122]:
+            - row "Asset Name Item Type Description Quantity Condition At Dispatch Actions Sr.No" [ref=e123]:
+              - columnheader "Asset Name" [ref=e124]
+              - columnheader "Item Type" [ref=e125]
+              - columnheader "Description" [ref=e126]
+              - columnheader "Quantity" [ref=e127]
+              - columnheader "Condition At Dispatch" [ref=e128]
+              - columnheader "Actions" [ref=e129]
+              - columnheader "Sr.No" [ref=e130]
+          - rowgroup [ref=e131]:
+            - row "Asset Name Asset Name - 1 Select Condition Select Condition Delete 1" [ref=e132]:
+              - cell "Asset Name Asset Name" [ref=e133]:
+                - generic [ref=e134]:
+                  - textbox "Asset Name" [ref=e135]
+                  - generic:
+                    - img
+                  - combobox [ref=e136]:
+                    - option "Asset Name" [selected]
+                    - option "THREE COLOR MOULD"
+              - cell "-" [ref=e137]:
+                - generic [ref=e138]: "-"
+              - cell [ref=e139]:
+                - textbox [ref=e140]
+              - cell "1" [ref=e141]:
+                - spinbutton [ref=e142]: "1"
+              - cell "Select Condition Select Condition" [ref=e143]:
+                - generic [ref=e144]:
+                  - textbox "Select Condition" [ref=e145]
+                  - generic:
+                    - img
+                  - combobox [ref=e146]:
+                    - option "Select Condition" [selected]
+                    - option "Unused"
+                    - option "Fully Working"
+                    - option "Working, Minor Wear"
+                    - option "Damaged"
+                    - option "Non-Functional"
+                    - option "Missing Parts"
+                    - option "Rusted"
+              - cell "Delete" [ref=e147]:
+                - button "Delete" [ref=e148] [cursor=pointer]:
+                  - img [ref=e149]
+              - cell "1" [ref=e153]
+          - rowgroup [ref=e154]:
+            - row "Total Add Row" [ref=e155]:
+              - cell "Total" [ref=e156]
+              - cell "Add Row" [ref=e157]:
+                - button "Add Row" [ref=e158] [cursor=pointer]:
+                  - img [ref=e159]
+              - cell [ref=e160]
+        - button "Confirm" [ref=e162] [cursor=pointer]
+    - generic [ref=e163]: ERP System © 2026
+```

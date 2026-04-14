@@ -1,0 +1,237 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e2]:
+  - banner [ref=e3]:
+    - generic [ref=e4]:
+      - checkbox "Menu" [ref=e5]
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - link "CHAND EVA" [ref=e8] [cursor=pointer]:
+            - /url: /
+          - generic [ref=e10]: ERP
+        - generic [ref=e12]:
+          - generic [ref=e13]:
+            - generic [ref=e14]: Signed in as
+            - generic [ref=e15]: admin
+          - generic [ref=e16]:
+            - generic [ref=e17]: Branch
+            - generic [ref=e18]:
+              - generic [ref=e19]: Branch
+              - generic [ref=e20]:
+                - textbox "Search" [ref=e21]: "124"
+                - generic:
+                  - img
+                - combobox "Branch" [ref=e22]:
+                  - option "124" [selected]
+                  - option "207"
+          - button "Logout" [ref=e24] [cursor=pointer]
+          - generic [ref=e25]:
+            - generic [ref=e26]: Language
+            - link "English" [ref=e27] [cursor=pointer]:
+              - /url: "?lang=en"
+            - generic [ref=e28]: "|"
+            - link "Urdu" [ref=e29] [cursor=pointer]:
+              - /url: "?lang=ur"
+      - navigation [ref=e30]:
+        - button "Administration" [ref=e32] [cursor=pointer]:
+          - generic [ref=e33]: Administration
+          - img [ref=e34]
+        - button "Master Data" [ref=e37] [cursor=pointer]:
+          - generic [ref=e38]: Master Data
+          - img [ref=e39]
+        - button "HR & Payroll" [ref=e42] [cursor=pointer]:
+          - generic [ref=e43]: HR & Payroll
+          - img [ref=e44]
+        - generic [ref=e46]:
+          - button "Financial" [ref=e47] [cursor=pointer]:
+            - generic [ref=e48]: Financial
+            - img [ref=e49]
+          - generic [ref=e52]:
+            - button "Vouchers" [ref=e55] [cursor=pointer]:
+              - generic [ref=e56]: Vouchers
+              - img [ref=e57]
+            - generic [ref=e59]:
+              - button "Reports" [active] [ref=e61] [cursor=pointer]:
+                - generic [ref=e62]: Reports
+                - img [ref=e63]
+              - generic [ref=e65]:
+                - link "Cash Book" [ref=e66] [cursor=pointer]:
+                  - /url: /reports/financial/cash_book
+                - link "Voucher Register" [ref=e67] [cursor=pointer]:
+                  - /url: /reports/financial/voucher_register
+                - link "Expense Analysis Report" [ref=e68] [cursor=pointer]:
+                  - /url: /reports/financial/expense_analysis
+                - link "Expense Trends Report" [ref=e69] [cursor=pointer]:
+                  - /url: /reports/financial/expense_trends
+                - link "Profitability Analysis Report" [ref=e70] [cursor=pointer]:
+                  - /url: /reports/financial/profitability_analysis
+                - link "Profit and Loss Statement" [ref=e71] [cursor=pointer]:
+                  - /url: /reports/financial/profit_and_loss
+                - link "Account Activity Ledger" [ref=e72] [cursor=pointer]:
+                  - /url: /reports/financial/account_activity_ledger
+                - link "Trial Balance Summary" [ref=e73] [cursor=pointer]:
+                  - /url: /reports/financial/trial_balance
+                - link "Payroll & Wage Balance Report" [ref=e74] [cursor=pointer]:
+                  - /url: /reports/financial/payroll_wage_balance
+        - button "Purchase" [ref=e76] [cursor=pointer]:
+          - generic [ref=e77]: Purchase
+          - img [ref=e78]
+        - button "Production" [ref=e81] [cursor=pointer]:
+          - generic [ref=e82]: Production
+          - img [ref=e83]
+        - button "Inventory" [ref=e86] [cursor=pointer]:
+          - generic [ref=e87]: Inventory
+          - img [ref=e88]
+        - button "Outward & Returnables" [ref=e91] [cursor=pointer]:
+          - generic [ref=e92]: Outward & Returnables
+          - img [ref=e93]
+        - button "Sales" [ref=e96] [cursor=pointer]:
+          - generic [ref=e97]: Sales
+          - img [ref=e98]
+  - main [ref=e100]:
+    - generic [ref=e101]:
+      - generic [ref=e104]:
+        - heading "Cash Voucher" [level=1] [ref=e105]
+        - paragraph [ref=e106]: Financial
+      - generic [ref=e108]:
+        - generic [ref=e109]:
+          - generic [ref=e110]:
+            - generic [ref=e111]: Voucher No
+            - textbox [ref=e113]: "37"
+            - generic [ref=e114]:
+              - link "Prev" [ref=e115] [cursor=pointer]:
+                - /url: /vouchers/cash?voucher_no=36&view=1
+              - link "Next" [ref=e116] [cursor=pointer]:
+                - /url: /vouchers/cash?new=1
+              - button "Load" [ref=e117] [cursor=pointer]
+              - generic [ref=e118]:
+                - link "Gate Pass":
+                  - /url: "#"
+                - button "Delete" [disabled] [ref=e119] [cursor=pointer]
+                - button "Print" [ref=e120] [cursor=pointer]
+          - generic [ref=e121]:
+            - generic [ref=e122]: Date
+            - textbox [ref=e124]: 2026-04-13
+          - generic [ref=e125]:
+            - generic [ref=e126]: Cash Account
+            - textbox [ref=e128]: Code
+            - generic [ref=e130]:
+              - textbox "Select Account Name" [ref=e131]
+              - generic:
+                - img
+              - combobox [ref=e132]:
+                - option "Select Account Name" [selected]
+                - option "AHSAN - CASH IN HAND"
+                - option "HUMAIR - CASH IN HAND"
+          - generic [ref=e133]:
+            - generic [ref=e134]: Note
+            - textbox "Enter A Note" [ref=e136]
+        - table [ref=e139]:
+          - rowgroup [ref=e149]:
+            - row "Code Name Description Department Cash Receipt Cash Payment Actions Sr.No" [ref=e150]:
+              - columnheader "Code" [ref=e151]
+              - columnheader "Name" [ref=e152]
+              - columnheader "Description" [ref=e153]
+              - columnheader "Department" [ref=e154]
+              - columnheader "Cash Receipt" [ref=e155]
+              - columnheader "Cash Payment" [ref=e156]
+              - columnheader "Actions" [ref=e157]
+              - columnheader "Sr.No" [ref=e158]
+          - rowgroup [ref=e159]:
+            - row "Select Name Select Name Select Department N/A Delete 1" [ref=e160]:
+              - cell [ref=e161]:
+                - textbox "Code" [ref=e162]
+              - cell "Select Name Select Name" [ref=e163]:
+                - generic [ref=e164]:
+                  - textbox "Select Name" [ref=e165]
+                  - generic:
+                    - img
+                  - combobox [ref=e166]:
+                    - option "Select Name" [selected]
+                    - option "BILL BOOKS"
+                    - option "DRUM SALE"
+                    - option "E2E Account 1770370198944"
+                    - option "ELECTRICITY"
+                    - option "GL Advances from Customers"
+                    - option "GL AP Control"
+                    - option "GL AR Control"
+                    - option "GL Inventory RM Control"
+                    - option "GL Salaries Payable Control"
+                    - option "GL Sales Revenue"
+                    - option "GL Wages Payable Control"
+                    - option "MIS"
+                    - option "PENS"
+                    - option "POSTINGCLASSBANKTEST"
+                    - option "PRODUCTS DELIVERY"
+                    - option "PTCL BILL"
+                    - option "WATER"
+                    - option "AMEEN DYE MAKER"
+                    - option "E2E name 1770477509559_7"
+                    - option "E2E name 1770478855220_7"
+                    - option "E2E name 1771398105030_7"
+                    - option "E2E name 1771399190781_7"
+                    - option "E2E Party 1770368544483"
+                    - option "E2E Party Edited 1770477252408"
+                    - option "E2E Party Edited 1770478853363"
+                    - option "E2E Party Edited 1771398102994"
+                    - option "E2E Party Edited 1771399188180"
+                    - option "HAMZA TRADERS"
+                    - option "Hoorain Aijaz"
+                    - option "Hoorain Aijazzz"
+                    - option "KR EVA"
+                    - option "MALIK ASHRAF"
+                    - option "PAPPU CRAIP"
+                    - option "148 CC phase 4 dha"
+                    - option "E2E Labour 350371"
+                    - option "E2E Labour dcvneg1774887214327494"
+                    - option "E2E Labour dcvneg1774887293969226"
+                    - option "E2E Labour dcvneg177488746992928"
+                    - option "E2E Labour dcvneg1774887647268173"
+                    - option "E2E Labour dcvneg177488787642086"
+                    - option "E2E Labour dcvneg1774887912593621"
+                    - option "E2E Labour dcvneg1774974777561534"
+                    - option "E2E Labour dcvneg1774976916852216"
+                    - option "E2E Labour dcvneg1774977069141872"
+                    - option "E2E name 1770453355018"
+                    - option "E2E name 1770454038361"
+                    - option "E2E name 1770454404958"
+                    - option "E2E name 1770454635501"
+                    - option "GULSHER DC PROI"
+                    - option "AHSAN"
+                    - option "ALI HAYDERR"
+                    - option "BOOTA"
+                    - option "E2E Employee 350146"
+                    - option "E2E name 1770453352192"
+                    - option "E2E name 1770454036161"
+                    - option "E2E name 1770454402303"
+                    - option "E2E name 1770454632185"
+              - cell [ref=e167]:
+                - textbox [ref=e168]
+              - cell "Select Department N/A" [ref=e169]:
+                - generic [ref=e170]:
+                  - textbox "Select Department" [ref=e171]
+                  - generic:
+                    - img
+                  - combobox [disabled] [ref=e172]:
+                    - option "N/A" [selected]
+              - cell [ref=e173]:
+                - spinbutton [ref=e174]
+              - cell [ref=e175]:
+                - spinbutton [ref=e176]
+              - cell "Delete" [ref=e177]:
+                - button "Delete" [ref=e178] [cursor=pointer]:
+                  - img [ref=e179]
+              - cell "1" [ref=e183]
+          - rowgroup [ref=e184]:
+            - row "Total 0.00 0.00" [ref=e185]:
+              - cell "Total" [ref=e186]
+              - cell "0.00" [ref=e187]:
+                - textbox [ref=e188]: "0.00"
+              - cell "0.00" [ref=e189]:
+                - textbox [ref=e190]: "0.00"
+              - cell [ref=e191]
+              - cell [ref=e192]
+        - button "Confirm" [ref=e194] [cursor=pointer]
+    - generic [ref=e195]: ERP System © 2026
+```
