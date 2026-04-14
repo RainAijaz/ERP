@@ -8,3 +8,10 @@ coverage/
 playwright-report/
 test-results/
 .auth/
+test-results/
+test-results-*/
+playwright-report/
+playwright-report-*/
+.nyc_output/
+coverage/
+EOF
