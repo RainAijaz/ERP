@@ -524,6 +524,75 @@ const resolveAccountGroupByToken = async (db, accountType, token) => {
     .first();
 };
 
+const findExistingItemByUniqueScope = async (
+  db,
+  { itemType, groupId, code, name },
+) => {
+  const normalizedType = String(itemType || "")
+    .trim()
+    .toUpperCase();
+  const normalizedCode = trimString(code).toLowerCase();
+  const normalizedName = trimString(name).toLowerCase();
+
+  if (!ITEM_TYPES.has(normalizedType)) {
+    return { existing: null, conflict: null };
+  }
+
+  let byCode = null;
+  let byName = null;
+
+  if (normalizedType === "RM") {
+    const scopedGroupId = Number(groupId || 0);
+    if (!Number.isInteger(scopedGroupId) || scopedGroupId <= 0) {
+      return { existing: null, conflict: null };
+    }
+
+    if (normalizedCode) {
+      byCode = await db("erp.items")
+        .select("id")
+        .where({ item_type: "RM", group_id: scopedGroupId })
+        .whereRaw("lower(code) = ?", [normalizedCode])
+        .first();
+    }
+
+    if (normalizedName) {
+      byName = await db("erp.items")
+        .select("id")
+        .where({ item_type: "RM", group_id: scopedGroupId })
+        .whereRaw("lower(name) = ?", [normalizedName])
+        .first();
+    }
+  } else {
+    if (normalizedCode) {
+      byCode = await db("erp.items")
+        .select("id")
+        .whereRaw("item_type <> 'RM'")
+        .whereRaw("lower(code) = ?", [normalizedCode])
+        .first();
+    }
+
+    if (normalizedName) {
+      byName = await db("erp.items")
+        .select("id")
+        .whereRaw("item_type <> 'RM'")
+        .whereRaw("lower(name) = ?", [normalizedName])
+        .first();
+    }
+  }
+
+  if (byCode?.id && byName?.id && Number(byCode.id) !== Number(byName.id)) {
+    return {
+      existing: null,
+      conflict: `Item conflict for ${name}: code '${code}' and name '${name}' map to different existing records.`,
+    };
+  }
+
+  return {
+    existing: byCode || byName || null,
+    conflict: null,
+  };
+};
+
 const generateAccountGroupCodeTx = async ({ db, accountType, name }) => {
   const normalizedType = String(accountType || "")
     .trim()
@@ -2089,24 +2158,16 @@ const ENTITY_SPECS = Object.freeze({
       const code =
         trimString(row.raw.code) ||
         (await generateUniqueCode({ name, knex: db, table: "erp.items" }));
-      let existingQuery = db("erp.items")
-        .select("id")
-        .whereRaw("lower(code) = ?", [code.toLowerCase()])
-        .andWhere({ item_type: itemType });
-      if (itemType === "RM") {
-        existingQuery = existingQuery.orWhere((builder) => {
-          builder
-            .whereRaw("lower(name) = ?", [name.toLowerCase()])
-            .andWhere({ item_type: "RM", group_id: group?.id || 0 });
-        });
-      } else {
-        existingQuery = existingQuery.orWhere((builder) => {
-          builder
-            .whereRaw("lower(name) = ?", [name.toLowerCase()])
-            .andWhere({ item_type: itemType });
-        });
+
+      const { existing, conflict } = await findExistingItemByUniqueScope(db, {
+        itemType,
+        groupId: group?.id || null,
+        code,
+        name,
+      });
+      if (conflict) {
+        return { error: conflict };
       }
-      const existing = await existingQuery.first();
 
       const usesSfg =
         itemType === "FG" ? parseBoolean(row.raw.usesSfg, false) : false;
@@ -2209,19 +2270,40 @@ const ENTITY_SPECS = Object.freeze({
         updated_by: actorId,
         updated_at: trx.fn.now(),
       };
+      const { existing, conflict } = await findExistingItemByUniqueScope(trx, {
+        itemType: op.data.item_type,
+        groupId,
+        code: op.data.code,
+        name: op.data.name,
+      });
+      if (conflict) {
+        throw new Error(conflict);
+      }
+
       let itemId = op.data.id;
       if (op.action === "create") {
-        const [created] = await trx("erp.items")
-          .insert({
-            ...payload,
-            created_by: actorId,
-            created_at: trx.fn.now(),
-          })
-          .returning(["id"]);
-        itemId = created?.id;
+        if (existing?.id) {
+          await trx("erp.items").where({ id: existing.id }).update(payload);
+          itemId = existing.id;
+        } else {
+          const [created] = await trx("erp.items")
+            .insert({
+              ...payload,
+              created_by: actorId,
+              created_at: trx.fn.now(),
+            })
+            .returning(["id"]);
+          itemId = created?.id;
+        }
       } else {
-        await trx("erp.items").where({ id: op.data.id }).update(payload);
-        itemId = op.data.id;
+        const targetId = op.data.id || existing?.id || null;
+        if (!targetId) {
+          throw new Error(
+            `Unable to resolve existing item for update: ${op.data.code || op.data.name}`,
+          );
+        }
+        await trx("erp.items").where({ id: targetId }).update(payload);
+        itemId = targetId;
       }
 
       if (op.data.item_type === "RM" && op.data.rm_rate_enabled && itemId) {

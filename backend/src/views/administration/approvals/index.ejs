@@ -16,6 +16,8 @@
   const hasNextPage = currentPage < totalPages;
   const prevPageHref = `${basePath}?status=${encodeURIComponent(currentStatus)}&page=${currentPage - 1}`;
   const nextPageHref = `${basePath}?status=${encodeURIComponent(currentStatus)}&page=${currentPage + 1}`;
+  const countsByStatus = typeof statusCounts === "object" && statusCounts ? statusCounts : {};
+  const pendingCount = Number(countsByStatus.PENDING || 0);
   const canApproveRequests = Boolean(
     user &&
       user.isAdmin &&
@@ -25,13 +27,18 @@
 %>
 <div class="mx-auto w-full max-w-7xl space-y-6">
   <div class="flex items-center justify-between">
-    <h1 class="text-2xl font-display text-slate-800"><%= t("approvals") %></h1>
+    <div class="flex items-center gap-3">
+      <h1 class="text-2xl font-display text-slate-800"><%= t("approvals") %></h1>
+      <span class="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">
+        <%= t("pending") %>: <%= pendingCount %>
+      </span>
+    </div>
     
     <div class="flex gap-2">
       <% ["PENDING", "APPROVED", "REJECTED"].forEach(s => { %>
         <a href="?status=<%= s %>" 
            class="rounded-full px-4 py-1 text-xs font-bold transition <%= currentStatus === s ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 border border-slate-200' %>">
-           <%= t(s.toLowerCase()) %>
+           <%= t(s.toLowerCase()) %> (<%= Number(countsByStatus[s] || 0) %>)
         </a>
       <% }) %>
     </div>
