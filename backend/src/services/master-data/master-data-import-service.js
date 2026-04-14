@@ -2036,7 +2036,8 @@ const ENTITY_SPECS = Object.freeze({
       const sizeToken = trimString(row.raw.sizeName);
       const purchaseRateRaw = trimString(row.raw.purchaseRate);
       const hasRmRateCells =
-        itemType === "RM" && Boolean(colorToken || sizeToken || purchaseRateRaw);
+        itemType === "RM" &&
+        Boolean(colorToken || sizeToken || purchaseRateRaw);
 
       let color = null;
       if (itemType === "RM" && colorToken) {
@@ -2212,9 +2213,9 @@ const ENTITY_SPECS = Object.freeze({
       if (op.action === "create") {
         const [created] = await trx("erp.items")
           .insert({
-          ...payload,
-          created_by: actorId,
-          created_at: trx.fn.now(),
+            ...payload,
+            created_by: actorId,
+            created_at: trx.fn.now(),
           })
           .returning(["id"]);
         itemId = created?.id;
@@ -2223,11 +2224,7 @@ const ENTITY_SPECS = Object.freeze({
         itemId = op.data.id;
       }
 
-      if (
-        op.data.item_type === "RM" &&
-        op.data.rm_rate_enabled &&
-        itemId
-      ) {
+      if (op.data.item_type === "RM" && op.data.rm_rate_enabled && itemId) {
         let colorId = op.data.rm_color_id;
         if (!colorId && op.data.rm_color_token) {
           const color = await resolveColorByToken(trx, op.data.rm_color_token);
@@ -2236,7 +2233,11 @@ const ENTITY_SPECS = Object.freeze({
 
         let sizeId = op.data.rm_size_id;
         if (!sizeId && op.data.rm_size_token) {
-          const size = await resolveSizeByToken(trx, op.data.rm_size_token, "RM");
+          const size = await resolveSizeByToken(
+            trx,
+            op.data.rm_size_token,
+            "RM",
+          );
           sizeId = size?.id || null;
         }
 
