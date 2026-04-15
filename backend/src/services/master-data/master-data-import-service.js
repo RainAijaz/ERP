@@ -368,6 +368,175 @@ const resolveProductNameFallback = (rowValues) => {
   return "";
 };
 
+const resolveProductTypeFallback = (rowValues) => {
+  if (!rowValues || typeof rowValues !== "object") return "";
+
+  const exactAliases = [
+    "category",
+    "products_category",
+    "item_category",
+    "article_category",
+    "category_name",
+    "product_type_name",
+  ];
+
+  for (const alias of exactAliases) {
+    const value = trimString(rowValues[alias]);
+    if (value) return value;
+  }
+
+  return "";
+};
+
+const inferProductItemType = (row) => {
+  const combinedSheetText = `${row?.sheetName || ""} ${row?.sheetTitle || ""}`;
+
+  if (/(?:^|\b)(?:rm|raw\s*materials?)(?:\b|$)/i.test(combinedSheetText)) {
+    return "RM";
+  }
+
+  if (/(?:^|\b)(?:sfg|semi[\s_-]*finished)(?:\b|$)/i.test(combinedSheetText)) {
+    return "SFG";
+  }
+
+  if (/(?:^|\b)(?:fg|finished(?:\s*goods?)?)(?:\b|$)/i.test(combinedSheetText)) {
+    return "FG";
+  }
+
+  const usesSfgParsed = parseBoolean(row?.raw?.usesSfg, null);
+  const sfgPartTypeToken = trimString(row?.raw?.sfgPartType);
+  if (usesSfgParsed !== null || sfgPartTypeToken) {
+    return "FG";
+  }
+
+  return "";
+};
+
+const toCode = (value) =>
+  String(value || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80);
+
+const getLinkedSfgIds = async (trx, fgId) => {
+  const rows = await trx("erp.item_usage")
+    .select("sfg_item_id")
+    .where({ fg_item_id: fgId });
+  return rows
+    .map((row) => Number(row?.sfg_item_id))
+    .filter((id) => Number.isInteger(id) && id > 0);
+};
+
+const ensureSfgForFinished = async (trx, finishedItem, sfgPartType, userId) => {
+  const suffix = String(sfgPartType || "").toUpperCase() === "STEP" ? "STEP" : "UPPER";
+  const sfgName = `${finishedItem.name} - ${suffix}`;
+  const sfgCode = toCode(`${finishedItem.code}_${suffix}`);
+  const linked = await getLinkedSfgIds(trx, finishedItem.id);
+
+  const existingByCode = await trx("erp.items")
+    .select("id")
+    .where({ code: sfgCode, item_type: "SFG" })
+    .first();
+
+  if (linked.length) {
+    let primaryId = linked[0];
+    if (existingByCode?.id && Number(existingByCode.id) !== Number(primaryId)) {
+      await trx("erp.item_usage")
+        .where({ fg_item_id: finishedItem.id, sfg_item_id: primaryId })
+        .del();
+      await trx("erp.item_usage")
+        .insert({ fg_item_id: finishedItem.id, sfg_item_id: existingByCode.id })
+        .onConflict(["fg_item_id", "sfg_item_id"])
+        .ignore();
+      primaryId = Number(existingByCode.id);
+    }
+
+    await trx("erp.items")
+      .where({ id: primaryId })
+      .update({
+        code: sfgCode,
+        name: sfgName,
+        name_ur: finishedItem.name_ur || null,
+        group_id: finishedItem.group_id,
+        subgroup_id: finishedItem.subgroup_id || null,
+        product_type_id: finishedItem.product_type_id || null,
+        base_uom_id: finishedItem.base_uom_id,
+        updated_by: userId || null,
+        updated_at: trx.fn.now(),
+      });
+
+    if (linked.length > 1) {
+      const extras = linked.slice(1);
+      await trx("erp.item_usage")
+        .where({ fg_item_id: finishedItem.id })
+        .whereIn("sfg_item_id", extras)
+        .del();
+
+      const usedElsewhere = await trx("erp.item_usage")
+        .whereIn("sfg_item_id", extras)
+        .select("sfg_item_id")
+        .groupBy("sfg_item_id");
+      const usedSet = new Set(
+        usedElsewhere
+          .map((row) => Number(row?.sfg_item_id))
+          .filter((id) => Number.isInteger(id) && id > 0),
+      );
+      const deletable = extras.filter((sfgId) => !usedSet.has(Number(sfgId)));
+      if (deletable.length) {
+        await trx("erp.items").whereIn("id", deletable).del();
+      }
+    }
+    return;
+  }
+
+  if (existingByCode?.id) {
+    await trx("erp.items")
+      .where({ id: existingByCode.id })
+      .update({
+        name: sfgName,
+        name_ur: finishedItem.name_ur || null,
+        group_id: finishedItem.group_id,
+        subgroup_id: finishedItem.subgroup_id || null,
+        product_type_id: finishedItem.product_type_id || null,
+        base_uom_id: finishedItem.base_uom_id,
+        updated_by: userId || null,
+        updated_at: trx.fn.now(),
+      });
+
+    await trx("erp.item_usage")
+      .insert({ fg_item_id: finishedItem.id, sfg_item_id: existingByCode.id })
+      .onConflict(["fg_item_id", "sfg_item_id"])
+      .ignore();
+    return;
+  }
+
+  const [created] = await trx("erp.items")
+    .insert({
+      item_type: "SFG",
+      code: sfgCode,
+      name: sfgName,
+      name_ur: finishedItem.name_ur || null,
+      group_id: finishedItem.group_id,
+      subgroup_id: finishedItem.subgroup_id || null,
+      product_type_id: finishedItem.product_type_id || null,
+      base_uom_id: finishedItem.base_uom_id,
+      min_stock_level: 0,
+      is_active: true,
+      created_by: userId || null,
+      created_at: trx.fn.now(),
+    })
+    .returning(["id"]);
+
+  const sfgItemId = Number(created?.id || 0);
+  if (!sfgItemId) return;
+
+  await trx("erp.item_usage")
+    .insert({ fg_item_id: finishedItem.id, sfg_item_id: sfgItemId })
+    .onConflict(["fg_item_id", "sfg_item_id"])
+    .ignore();
+};
+
 const extractEntityRows = (workbookRows, entitySpec) => {
   const extracted = [];
   for (const workbookRow of workbookRows) {
@@ -2075,7 +2244,12 @@ const ENTITY_SPECS = Object.freeze({
         "product_subgroup",
         "sub_group",
       ],
-      productType: ["products_product_type", "product_type"],
+      productType: [
+        "products_product_type",
+        "product_type",
+        "products_category",
+        "category",
+      ],
       baseUom: ["products_base_uom", "base_uom", "uom", "unit"],
       colorName: ["products_color", "color_name", "color", "colors"],
       sizeName: ["products_size", "size_name", "size", "sizes"],
@@ -2087,15 +2261,14 @@ const ENTITY_SPECS = Object.freeze({
     },
     async plan(row, db, actorId, context) {
       const name =
-        trimString(row.raw.name) || resolveProductNameFallback(row?.values || {});
+        trimString(row.raw.name) ||
+        resolveProductNameFallback(row?.values || {});
       if (!name) return { skip: true };
       const itemTypeToken = String(row.raw.itemType || "")
         .trim()
         .toUpperCase();
-      const inferredRawMaterial = /raw\s*materials?/i.test(
-        `${row.sheetName || ""} ${row.sheetTitle || ""}`,
-      );
-      const itemType = itemTypeToken || (inferredRawMaterial ? "RM" : "");
+      const inferredItemType = inferProductItemType(row);
+      const itemType = itemTypeToken || inferredItemType;
       if (!ITEM_TYPES.has(itemType)) {
         return {
           error: `Invalid product item type for ${name}: ${itemType || "(empty)"}`,
@@ -2129,7 +2302,9 @@ const ENTITY_SPECS = Object.freeze({
         }
       }
 
-      const productTypeToken = trimString(row.raw.productType);
+      const productTypeToken =
+        trimString(row.raw.productType) ||
+        resolveProductTypeFallback(row?.values || {});
       let productType = null;
       if (productTypeToken) {
         productType = await resolveProductTypeByToken(db, productTypeToken);
@@ -2140,6 +2315,11 @@ const ENTITY_SPECS = Object.freeze({
             };
           }
         }
+      }
+      if (itemType === "FG" && !productTypeToken) {
+        return {
+          error: `Category is required for finished item ${name}.`,
+        };
       }
 
       const uomToken = trimString(row.raw.baseUom);
@@ -2192,9 +2372,9 @@ const ENTITY_SPECS = Object.freeze({
       }
 
       const warningMessages = [];
-      if (!itemTypeToken && inferredRawMaterial) {
+      if (!itemTypeToken && inferredItemType) {
         warningMessages.push(
-          "Item type was blank; inferred item_type=RM from sheet title.",
+          `Item type was blank; inferred item_type=${inferredItemType} from workbook context.`,
         );
       }
       if (
@@ -2229,6 +2409,11 @@ const ENTITY_SPECS = Object.freeze({
         usesSfg && ["UPPER", "STEP"].includes(sfgPartTypeRaw)
           ? sfgPartTypeRaw
           : null;
+      if (itemType === "FG" && usesSfg && !sfgPartType) {
+        return {
+          error: `SFG part type must be UPPER or STEP for finished item ${name} when Uses SFG is enabled.`,
+        };
+      }
 
       return {
         action: existing ? "update" : "create",
@@ -2390,6 +2575,24 @@ const ENTITY_SPECS = Object.freeze({
           created_by: actorId,
           created_at: trx.fn.now(),
         });
+      }
+
+      if (op.data.item_type === "FG" && op.data.uses_sfg && itemId) {
+        await ensureSfgForFinished(
+          trx,
+          {
+            id: itemId,
+            code: op.data.code,
+            name: op.data.name,
+            name_ur: op.data.name_ur,
+            group_id: groupId,
+            subgroup_id: subgroupId,
+            product_type_id: productTypeId,
+            base_uom_id: baseUomId,
+          },
+          op.data.sfg_part_type || "UPPER",
+          actorId || null,
+        );
       }
     },
   },

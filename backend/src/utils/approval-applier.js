@@ -183,6 +183,26 @@ const getLinkedSfgIds = async (trx, fgId) => {
   return rows.map((row) => row.sfg_item_id);
 };
 
+const deleteOwnedVariantsAndSkusByItemIds = async (trx, itemIds = []) => {
+  const normalizedItemIds = [...new Set(
+    toArray(itemIds)
+      .map((entry) => Number(entry))
+      .filter((entry) => Number.isInteger(entry) && entry > 0),
+  )];
+  if (!normalizedItemIds.length) return;
+
+  const variantRows = await trx("erp.variants")
+    .select("id")
+    .whereIn("item_id", normalizedItemIds);
+  const variantIds = variantRows
+    .map((row) => Number(row?.id))
+    .filter((entry) => Number.isInteger(entry) && entry > 0);
+  if (!variantIds.length) return;
+
+  await trx("erp.skus").whereIn("variant_id", variantIds).del();
+  await trx("erp.variants").whereIn("id", variantIds).del();
+};
+
 const ensureSfgForFinished = async (trx, finishedItem, sfgPartType, userId) => {
   const suffix = sfgPartType === "STEP" ? "STEP" : "UPPER";
   const sfgName = `${finishedItem.name} - ${suffix}`;
@@ -371,9 +391,12 @@ const applyItemChange = async (trx, request, userId) => {
         const usedElsewhere = await trx("erp.item_usage").whereIn("sfg_item_id", linked).select("sfg_item_id").groupBy("sfg_item_id");
         const usedSet = new Set(usedElsewhere.map((row) => row.sfg_item_id));
         const deletable = linked.filter((sfgId) => !usedSet.has(sfgId));
+        await deleteOwnedVariantsAndSkusByItemIds(trx, [Number(entityId), ...deletable]);
         if (deletable.length) {
           await trx("erp.items").whereIn("id", deletable).del();
         }
+      } else {
+        await deleteOwnedVariantsAndSkusByItemIds(trx, [Number(entityId)]);
       }
       await trx("erp.items")
         .where({ id: Number(entityId) })
@@ -384,6 +407,7 @@ const applyItemChange = async (trx, request, userId) => {
       await trx("erp.item_usage")
         .where({ sfg_item_id: Number(entityId) })
         .del();
+      await deleteOwnedVariantsAndSkusByItemIds(trx, [Number(entityId)]);
       await trx("erp.items")
         .where({ id: Number(entityId) })
         .del();
@@ -393,11 +417,13 @@ const applyItemChange = async (trx, request, userId) => {
       await trx("erp.rm_purchase_rates")
         .where({ rm_item_id: Number(entityId) })
         .del();
+      await deleteOwnedVariantsAndSkusByItemIds(trx, [Number(entityId)]);
       await trx("erp.items")
         .where({ id: Number(entityId) })
         .del();
       return true;
     }
+    await deleteOwnedVariantsAndSkusByItemIds(trx, [Number(entityId)]);
     await trx("erp.items")
       .where({ id: Number(entityId) })
       .del();

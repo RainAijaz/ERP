@@ -736,7 +736,48 @@ router.post(
       }
 
       try {
-        await knex("erp.items").where({ id }).del();
+        await knex.transaction(async (trx) => {
+          const linkedSfgIds = await getLinkedSfgIds(trx, id);
+
+          // Remove FG -> SFG mapping first so FK does not block FG delete.
+          await trx("erp.item_usage").where({ fg_item_id: id }).del();
+
+          const usedElsewhere = linkedSfgIds.length
+            ? await trx("erp.item_usage")
+                .whereIn("sfg_item_id", linkedSfgIds)
+                .select("sfg_item_id")
+                .groupBy("sfg_item_id")
+            : [];
+          const usedElsewhereSet = new Set(
+            usedElsewhere
+              .map((row) => Number(row?.sfg_item_id))
+              .filter((entry) => Number.isInteger(entry) && entry > 0),
+          );
+          const deletableLinkedSfgIds = linkedSfgIds.filter(
+            (sfgId) => !usedElsewhereSet.has(Number(sfgId)),
+          );
+
+          const itemIdsToDelete = [...new Set([id, ...deletableLinkedSfgIds])];
+          const variantRows = itemIdsToDelete.length
+            ? await trx("erp.variants")
+                .select("id")
+                .whereIn("item_id", itemIdsToDelete)
+            : [];
+          const variantIds = variantRows
+            .map((row) => Number(row?.id))
+            .filter((entry) => Number.isInteger(entry) && entry > 0);
+
+          if (variantIds.length) {
+            await trx("erp.skus").whereIn("variant_id", variantIds).del();
+            await trx("erp.variants").whereIn("id", variantIds).del();
+          }
+
+          if (deletableLinkedSfgIds.length) {
+            await trx("erp.items").whereIn("id", deletableLinkedSfgIds).del();
+          }
+
+          await trx("erp.items").where({ id }).del();
+        });
       } catch (deleteErr) {
         if (String(deleteErr?.code || "") === "23503") {
           throw new HttpError(409, res.locals.t("error_record_in_use"));
