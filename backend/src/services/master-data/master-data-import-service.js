@@ -331,6 +331,43 @@ const resolveFieldValue = (rowValues, aliases) => {
   return "";
 };
 
+const resolveProductNameFallback = (rowValues) => {
+  if (!rowValues || typeof rowValues !== "object") return "";
+
+  const exactAliases = [
+    "item_name_english",
+    "product_name",
+    "article_name",
+    "item_description",
+    "description",
+    "fg_name",
+    "finished_goods_name",
+    "finished_good_name",
+    "finished_goods",
+    "finished_good",
+  ];
+
+  for (const alias of exactAliases) {
+    const value = trimString(rowValues[alias]);
+    if (value) return value;
+  }
+
+  // Last-resort heuristic for legacy files that use custom item name columns.
+  for (const [key, rawValue] of Object.entries(rowValues)) {
+    const normalizedKey = normalizeHeader(key);
+    if (!normalizedKey) continue;
+    if (
+      /(item|product|article|fg|finished).*name/.test(normalizedKey) ||
+      /name.*(item|product|article|fg|finished)/.test(normalizedKey)
+    ) {
+      const value = trimString(rawValue);
+      if (value) return value;
+    }
+  }
+
+  return "";
+};
+
 const extractEntityRows = (workbookRows, entitySpec) => {
   const extracted = [];
   for (const workbookRow of workbookRows) {
@@ -357,6 +394,7 @@ const extractEntityRows = (workbookRows, entitySpec) => {
         sheetName: workbookRow.sheetName,
         sheetTitle: workbookRow.sheetTitle || "",
         rowNumber: workbookRow.rowNumber,
+        values: workbookRow.values,
         raw: payload,
       });
     }
@@ -2016,7 +2054,19 @@ const ENTITY_SPECS = Object.freeze({
     fieldAliases: {
       itemType: ["products_item_type", "item_type", "type"],
       code: ["products_code", "item_code", "code"],
-      name: ["products_name", "item_name", "name"],
+      name: [
+        "products_name",
+        "item_name",
+        "item_name_english",
+        "product_name",
+        "article_name",
+        "fg_name",
+        "finished_goods_name",
+        "finished_good_name",
+        "finished_goods",
+        "finished_good",
+        "name",
+      ],
       nameUr: ["products_name_urdu", "products_name_ur", "name_ur"],
       groupName: ["products_group", "group_name", "product_group", "group"],
       subgroupName: [
@@ -2036,7 +2086,8 @@ const ENTITY_SPECS = Object.freeze({
       isActive: ["products_is_active", "is_active"],
     },
     async plan(row, db, actorId, context) {
-      const name = trimString(row.raw.name);
+      const name =
+        trimString(row.raw.name) || resolveProductNameFallback(row?.values || {});
       if (!name) return { skip: true };
       const itemTypeToken = String(row.raw.itemType || "")
         .trim()

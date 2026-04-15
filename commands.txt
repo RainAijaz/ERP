@@ -1,0 +1,17 @@
+ssh root@217.216.58.158
+
+COMMANDS TO RUN SERVER WHEN MIGRATION NEEDED:
+ cd /home/erp/ERP/backend
+git pull --ff-only origin main
+git rev-parse --short HEAD
+npm ci --omit=dev
+npm run migrate
+systemctl restart erp-web
+systemctl is-active erp-web
+
+COMMANDS OTHERWISE:
+ cd /home/erp/ERP/backend
+git pull origin main
+npm ci --omit=dev
+systemctl restart erp-web
+systemctl is-active erp-web
