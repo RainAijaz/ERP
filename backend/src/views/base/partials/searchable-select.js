@@ -378,9 +378,7 @@
     const isTransparentInlineControl = /\bbg-transparent\b/.test(baseClassName);
     const shouldUseCompactShell =
       variant === "compact" ||
-      select.matches(
-        "[data-page-size], [data-status-filter], [data-rm-view]",
-      ) ||
+      select.matches("[data-page-size], [data-status-filter]") ||
       Boolean(select.closest("[data-table-controls]"));
 
     const wrapper = document.createElement("div");

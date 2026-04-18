@@ -2,7 +2,15 @@ const { test, expect } = require("@playwright/test");
 const createKnex = require("knex");
 const knexConfig = require("../../knexfile").development;
 const { login } = require("./utils/auth");
-const { getBranch, upsertUserWithPermissions, setUserScreenPermission, getApprovalPolicy, upsertApprovalPolicy, deleteApprovalPolicy, closeDb } = require("./utils/db");
+const {
+  getBranch,
+  upsertUserWithPermissions,
+  setUserScreenPermission,
+  getApprovalPolicy,
+  upsertApprovalPolicy,
+  deleteApprovalPolicy,
+  closeDb,
+} = require("./utils/db");
 
 const db = createKnex(knexConfig);
 
@@ -23,43 +31,54 @@ const HR_SCOPE_ENTITY = [
 ];
 
 const extractOptions = async (page, fieldName) => {
-  const select = page.locator(`[data-modal-form] [data-field="${fieldName}"]`).first();
+  const select = page
+    .locator(`[data-modal-form] [data-field="${fieldName}"]`)
+    .first();
   if (!(await select.count())) return [];
   return select.evaluate((el) =>
     Array.from(el.options || [])
-      .map((opt) => ({ value: String(opt.value || "").trim(), label: String(opt.textContent || "").trim() }))
+      .map((opt) => ({
+        value: String(opt.value || "").trim(),
+        label: String(opt.textContent || "").trim(),
+      }))
       .filter((opt) => opt.value),
   );
 };
 
 const setSelectValue = async (page, fieldName, value) => {
-  await page.locator(`[data-modal-form] [data-field="${fieldName}"]`).evaluate(
-    (el, val) => {
+  await page
+    .locator(`[data-modal-form] [data-field="${fieldName}"]`)
+    .evaluate((el, val) => {
       el.value = String(val);
       el.dispatchEvent(new Event("input", { bubbles: true }));
       el.dispatchEvent(new Event("change", { bubbles: true }));
-    },
-    value,
-  );
+    }, value);
 };
 
 const setFirstMultiSelect = async (page, fieldName) => {
-  await page.locator(`[data-modal-form] [data-field="${fieldName}"]`).evaluate((el) => {
-    const options = Array.from(el.options || []).filter((opt) => String(opt.value || "").trim());
-    if (!options.length) return;
-    options.forEach((opt, idx) => {
-      opt.selected = idx === 0;
+  await page
+    .locator(`[data-modal-form] [data-field="${fieldName}"]`)
+    .evaluate((el) => {
+      const options = Array.from(el.options || []).filter((opt) =>
+        String(opt.value || "").trim(),
+      );
+      if (!options.length) return;
+      options.forEach((opt, idx) => {
+        opt.selected = idx === 0;
+      });
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
     });
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-    el.dispatchEvent(new Event("change", { bubbles: true }));
-  });
 };
 
 const setMultiSelectValue = async (page, fieldName, value) => {
-  await page.locator(`[data-modal-form] [data-field="${fieldName}"]`).evaluate(
-    (el, val) => {
+  await page
+    .locator(`[data-modal-form] [data-field="${fieldName}"]`)
+    .evaluate((el, val) => {
       const options = Array.from(el.options || []);
-      const target = options.find((opt) => String(opt.value || "").trim() === String(val));
+      const target = options.find(
+        (opt) => String(opt.value || "").trim() === String(val),
+      );
       if (!target) return;
       options.forEach((opt) => {
         opt.selected = false;
@@ -67,9 +86,7 @@ const setMultiSelectValue = async (page, fieldName, value) => {
       target.selected = true;
       el.dispatchEvent(new Event("input", { bubbles: true }));
       el.dispatchEvent(new Event("change", { bubbles: true }));
-    },
-    value,
-  );
+    }, value);
 };
 
 test.describe("HR Payroll page-by-page scenarios", () => {
@@ -136,10 +153,14 @@ test.describe("HR Payroll page-by-page scenarios", () => {
   test.afterAll(async () => {
     try {
       if (ctx.createdIds.allowances.length) {
-        await db("erp.employee_allowance_rules").whereIn("id", ctx.createdIds.allowances).del();
+        await db("erp.employee_allowance_rules")
+          .whereIn("id", ctx.createdIds.allowances)
+          .del();
       }
       if (ctx.createdIds.commissions.length) {
-        await db("erp.employee_commission_rules").whereIn("id", ctx.createdIds.commissions).del();
+        await db("erp.employee_commission_rules")
+          .whereIn("id", ctx.createdIds.commissions)
+          .del();
       }
       if (ctx.createdIds.labours.length) {
         await db("erp.labours").whereIn("id", ctx.createdIds.labours).del();
@@ -182,14 +203,20 @@ test.describe("HR Payroll page-by-page scenarios", () => {
     }
   });
 
-  test("admin CRUD flows: employees, labours, commissions, allowances", async ({ page }) => {
+  test("admin CRUD flows: employees, labours, commissions, allowances", async ({
+    page,
+  }) => {
     await login(page, "E2E_ADMIN");
 
     for (const entry of HR_SCOPE_ENTITY) {
       for (const action of ["create", "edit", "delete"]) {
         const key = `SCREEN:${entry.scope}:${action}`;
         if (!ctx.policySnapshot.has(key)) {
-          const snapshot = await getApprovalPolicy({ entityType: "SCREEN", entityKey: entry.scope, action });
+          const snapshot = await getApprovalPolicy({
+            entityType: "SCREEN",
+            entityKey: entry.scope,
+            action,
+          });
           ctx.policySnapshot.set(key, snapshot || null);
         }
         await upsertApprovalPolicy({
@@ -205,18 +232,35 @@ test.describe("HR Payroll page-by-page scenarios", () => {
 
     await page.goto("/hr-payroll/employees", { waitUntil: "domcontentloaded" });
     await page.locator("[data-modal-open]").click();
-    await page.locator('[data-modal-form] [data-field="name"]').fill(`Emp ${token}`);
-    await page.locator('[data-modal-form] [data-field="cnic"]').fill(`352021234${String(Date.now()).slice(-4)}`);
-    await page.locator('[data-modal-form] [data-field="phone"]').fill(`03${String(Date.now()).slice(-9)}`);
-    await page.locator('[data-modal-form] [data-field="designation"]').fill("Sales Officer");
-    await page.locator('[data-modal-form] [data-field="basic_salary"]').fill("25000");
+    await page
+      .locator('[data-modal-form] [data-field="name"]')
+      .fill(`Emp ${token}`);
+    await page
+      .locator('[data-modal-form] [data-field="cnic"]')
+      .fill(`352021234${String(Date.now()).slice(-4)}`);
+    await page
+      .locator('[data-modal-form] [data-field="phone"]')
+      .fill(`03${String(Date.now()).slice(-9)}`);
+    await page
+      .locator('[data-modal-form] [data-field="designation"]')
+      .fill("Sales Officer");
+    await page
+      .locator('[data-modal-form] [data-field="basic_salary"]')
+      .fill("25000");
     const employeeDept = (await extractOptions(page, "department_id"))[0];
     const branchOptions = await extractOptions(page, "branch_ids");
     await setSelectValue(page, "department_id", employeeDept.value);
     await setSelectValue(page, "payroll_type", "MONTHLY");
     await setFirstMultiSelect(page, "branch_ids");
-    await Promise.all([page.waitForLoadState("domcontentloaded"), page.locator('[data-modal-form] button[type="submit"]').click()]);
-    let employeeRow = await db("erp.employees").select("id").whereRaw("lower(name)=lower(?)", [`Emp ${token}`]).orderBy("id", "desc").first();
+    await Promise.all([
+      page.waitForLoadState("domcontentloaded"),
+      page.locator('[data-modal-form] button[type="submit"]').click(),
+    ]);
+    let employeeRow = await db("erp.employees")
+      .select("id")
+      .whereRaw("lower(name)=lower(?)", [`Emp ${token}`])
+      .orderBy("id", "desc")
+      .first();
     if (!employeeRow?.id) {
       const [inserted] = await db("erp.employees")
         .insert({
@@ -246,83 +290,167 @@ test.describe("HR Payroll page-by-page scenarios", () => {
     ctx.createdIds.employees.push(Number(employeeRow.id));
 
     await page.goto("/hr-payroll/employees", { waitUntil: "domcontentloaded" });
-    const employeeEditBtn = page.locator(`[data-edit][data-id="${employeeRow.id}"]`).first();
+    const employeeEditBtn = page
+      .locator(`[data-edit][data-id="${employeeRow.id}"]`)
+      .first();
     await employeeEditBtn.click();
-    await page.locator('[data-modal-form] [data-field="name"]').fill(`Emp ${token} Updated`);
-    await Promise.all([page.waitForLoadState("domcontentloaded"), page.locator('[data-modal-form] button[type="submit"]').click()]);
-    const employeeUpdated = await db("erp.employees").select("name").where({ id: employeeRow.id }).first();
+    await page
+      .locator('[data-modal-form] [data-field="name"]')
+      .fill(`Emp ${token} Updated`);
+    await Promise.all([
+      page.waitForLoadState("domcontentloaded"),
+      page.locator('[data-modal-form] button[type="submit"]').click(),
+    ]);
+    const employeeUpdated = await db("erp.employees")
+      .select("name")
+      .where({ id: employeeRow.id })
+      .first();
     if ((employeeUpdated?.name || "") !== `Emp ${token} Updated`) {
-      test.info().annotations.push({ type: "warning", description: "Employee update did not persist expected name." });
+      test
+        .info()
+        .annotations.push({
+          type: "warning",
+          description: "Employee update did not persist expected name.",
+        });
     }
 
     await page.goto("/hr-payroll/employees", { waitUntil: "domcontentloaded" });
-    await page.locator(`[data-toggle][data-toggle-action$="/${employeeRow.id}/toggle"]`).first().click();
-    await Promise.all([page.waitForLoadState("domcontentloaded"), page.locator("[data-confirm-form] button[type='submit']").click()]);
-    const employeeToggled = await db("erp.employees").select("status").where({ id: employeeRow.id }).first();
+    await page
+      .locator(`[data-toggle][data-toggle-action$="/${employeeRow.id}/toggle"]`)
+      .first()
+      .click();
+    await Promise.all([
+      page.waitForLoadState("domcontentloaded"),
+      page.locator("[data-confirm-form] button[type='submit']").click(),
+    ]);
+    const employeeToggled = await db("erp.employees")
+      .select("status")
+      .where({ id: employeeRow.id })
+      .first();
     if (String(employeeToggled?.status || "").toLowerCase() !== "inactive") {
-      test.info().annotations.push({ type: "warning", description: "Employee toggle did not set inactive status." });
+      test
+        .info()
+        .annotations.push({
+          type: "warning",
+          description: "Employee toggle did not set inactive status.",
+        });
     }
 
     await page.goto("/hr-payroll/labours", { waitUntil: "domcontentloaded" });
     await page.locator("[data-modal-open]").click();
-    await page.locator('[data-modal-form] [data-field="name"]').fill(`Lab ${token}`);
-    await page.locator('[data-modal-form] [data-field="cnic"]').fill(`352021235${String(Date.now()).slice(-4)}`);
-    await page.locator('[data-modal-form] [data-field="phone"]').fill(`03${String(Date.now() + 1).slice(-9)}`);
+    await page
+      .locator('[data-modal-form] [data-field="name"]')
+      .fill(`Lab ${token}`);
+    await page
+      .locator('[data-modal-form] [data-field="cnic"]')
+      .fill(`352021235${String(Date.now()).slice(-4)}`);
+    await page
+      .locator('[data-modal-form] [data-field="phone"]')
+      .fill(`03${String(Date.now() + 1).slice(-9)}`);
     await setSelectValue(page, "production_category", "finished");
     await setFirstMultiSelect(page, "dept_ids");
     await setFirstMultiSelect(page, "branch_ids");
-    await Promise.all([page.waitForLoadState("domcontentloaded"), page.locator('[data-modal-form] button[type="submit"]').click()]);
-    const labourRow = await db("erp.labours").select("id").whereRaw("lower(name)=lower(?)", [`Lab ${token}`]).orderBy("id", "desc").first();
+    await Promise.all([
+      page.waitForLoadState("domcontentloaded"),
+      page.locator('[data-modal-form] button[type="submit"]').click(),
+    ]);
+    const labourRow = await db("erp.labours")
+      .select("id")
+      .whereRaw("lower(name)=lower(?)", [`Lab ${token}`])
+      .orderBy("id", "desc")
+      .first();
     if (labourRow?.id) {
       ctx.createdIds.labours.push(Number(labourRow.id));
     } else {
-      test.info().annotations.push({ type: "warning", description: "Labour create did not produce a DB row." });
+      test
+        .info()
+        .annotations.push({
+          type: "warning",
+          description: "Labour create did not produce a DB row.",
+        });
     }
 
-    await page.goto("/hr-payroll/employees/commissions", { waitUntil: "domcontentloaded" });
+    await page.goto("/hr-payroll/employees/commissions", {
+      waitUntil: "domcontentloaded",
+    });
     await page.locator("[data-modal-open]").click();
     const empOptions = await extractOptions(page, "employee_id");
     const skuOptions = await extractOptions(page, "sku_id");
-    test.skip(!empOptions.length || !skuOptions.length, "No employee or SKU options available for commission create.");
+    test.skip(
+      !empOptions.length || !skuOptions.length,
+      "No employee or SKU options available for commission create.",
+    );
     await setSelectValue(page, "employee_id", String(employeeRow.id));
     await setSelectValue(page, "apply_on", "SKU");
     await setSelectValue(page, "sku_id", skuOptions[0].value);
     await page.locator('[data-modal-form] [data-field="value"]').fill("8.25");
-    await Promise.all([page.waitForLoadState("domcontentloaded"), page.locator('[data-modal-form] button[type="submit"]').click()]);
+    await Promise.all([
+      page.waitForLoadState("domcontentloaded"),
+      page.locator('[data-modal-form] button[type="submit"]').click(),
+    ]);
     const commissionRow = await db("erp.employee_commission_rules")
       .select("id")
-      .where({ employee_id: Number(employeeRow.id), sku_id: Number(skuOptions[0].value), commission_basis: "FIXED_PER_UNIT" })
+      .where({
+        employee_id: Number(employeeRow.id),
+        sku_id: Number(skuOptions[0].value),
+        commission_basis: "FIXED_PER_UNIT",
+      })
       .orderBy("id", "desc")
       .first();
     if (commissionRow?.id) {
       ctx.createdIds.commissions.push(Number(commissionRow.id));
     } else {
-      test.info().annotations.push({ type: "warning", description: "Commission create did not produce a DB row." });
+      test
+        .info()
+        .annotations.push({
+          type: "warning",
+          description: "Commission create did not produce a DB row.",
+        });
     }
 
-    await page.goto("/hr-payroll/employees/allowances", { waitUntil: "domcontentloaded" });
+    await page.goto("/hr-payroll/employees/allowances", {
+      waitUntil: "domcontentloaded",
+    });
     await page.locator("[data-modal-open]").click();
     await setSelectValue(page, "employee_id", String(employeeRow.id));
-    await page.locator('[data-modal-form] [data-field="allowance_type"]').fill(`Allow ${token}`);
+    await page
+      .locator('[data-modal-form] [data-field="allowance_type"]')
+      .fill(`Allow ${token}`);
     await setSelectValue(page, "amount_type", "FIXED");
     await page.locator('[data-modal-form] [data-field="amount"]').fill("1500");
     await setSelectValue(page, "frequency", "MONTHLY");
-    await Promise.all([page.waitForLoadState("domcontentloaded"), page.locator('[data-modal-form] button[type="submit"]').click()]);
+    await Promise.all([
+      page.waitForLoadState("domcontentloaded"),
+      page.locator('[data-modal-form] button[type="submit"]').click(),
+    ]);
     const allowanceRow = await db("erp.employee_allowance_rules")
       .select("id")
-      .where({ employee_id: Number(employeeRow.id), allowance_type: `Allow ${token}` })
+      .where({
+        employee_id: Number(employeeRow.id),
+        allowance_type: `Allow ${token}`,
+      })
       .orderBy("id", "desc")
       .first();
     if (allowanceRow?.id) {
       ctx.createdIds.allowances.push(Number(allowanceRow.id));
     } else {
-      test.info().annotations.push({ type: "warning", description: "Allowance create did not produce a DB row." });
+      test
+        .info()
+        .annotations.push({
+          type: "warning",
+          description: "Allowance create did not produce a DB row.",
+        });
     }
   });
 
-  test("restricted user create actions are queued for approval", async ({ page }) => {
+  test("restricted user create actions are queued for approval", async ({
+    page,
+  }) => {
     test.skip(!ctx.manager?.id, "Manager user fixture missing.");
-    test.skip(!ctx.managerRoleName, "No non-admin role exists to validate restricted queue flow.");
+    test.skip(
+      !ctx.managerRoleName,
+      "No non-admin role exists to validate restricted queue flow.",
+    );
 
     for (const entry of HR_SCOPE_ENTITY) {
       for (const action of ["delete"]) {
@@ -336,9 +464,16 @@ test.describe("HR Payroll page-by-page scenarios", () => {
     }
 
     await login(page, "E2E_MANAGER");
+    await page.goto("/hr-payroll/employees", { waitUntil: "domcontentloaded" });
+    await expect(page.locator('[data-sort-key="basic_salary"]')).toHaveCount(0);
+
     let employeeId = Number(ctx.createdIds.employees[0] || 0);
     if (!employeeId) {
-      const dept = await db("erp.departments").select("id").where({ is_active: true }).orderBy("id", "asc").first();
+      const dept = await db("erp.departments")
+        .select("id")
+        .where({ is_active: true })
+        .orderBy("id", "asc")
+        .first();
       const [inserted] = await db("erp.employees")
         .insert({
           code: `emp_q_${Date.now()}`.slice(0, 80),
@@ -363,8 +498,14 @@ test.describe("HR Payroll page-by-page scenarios", () => {
     }
 
     await page.goto("/hr-payroll/employees", { waitUntil: "domcontentloaded" });
-    await page.locator(`[data-toggle][data-toggle-action$="/${employeeId}/toggle"]`).first().click();
-    await Promise.all([page.waitForLoadState("domcontentloaded"), page.locator("[data-confirm-form] button[type='submit']").click()]);
+    await page
+      .locator(`[data-toggle][data-toggle-action$="/${employeeId}/toggle"]`)
+      .first()
+      .click();
+    await Promise.all([
+      page.waitForLoadState("domcontentloaded"),
+      page.locator("[data-confirm-form] button[type='submit']").click(),
+    ]);
 
     const queuedEmployee = await db("erp.approval_request")
       .select("id", "status")
@@ -404,8 +545,14 @@ test.describe("HR Payroll page-by-page scenarios", () => {
     }
 
     await page.goto("/hr-payroll/labours", { waitUntil: "domcontentloaded" });
-    await page.locator(`[data-toggle][data-toggle-action$="/${labourId}/toggle"]`).first().click();
-    await Promise.all([page.waitForLoadState("domcontentloaded"), page.locator("[data-confirm-form] button[type='submit']").click()]);
+    await page
+      .locator(`[data-toggle][data-toggle-action$="/${labourId}/toggle"]`)
+      .first()
+      .click();
+    await Promise.all([
+      page.waitForLoadState("domcontentloaded"),
+      page.locator("[data-confirm-form] button[type='submit']").click(),
+    ]);
 
     const queuedLabour = await db("erp.approval_request")
       .select("id", "status")

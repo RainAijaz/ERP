@@ -48,6 +48,7 @@
           <% const displayColumns = page.columns.filter(function(column) {
                if (column.key === "id") return false;
                if (column.key === "code") return false;
+              if (column.adminOnly && !isAdmin) return false;
                if (column.key === "name_ur" && locale !== "ur") return false;
                if (column.key === "name" && locale === "ur") return false;
                return true;

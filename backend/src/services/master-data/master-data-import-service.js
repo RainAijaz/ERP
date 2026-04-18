@@ -399,7 +399,9 @@ const inferProductItemType = (row) => {
     return "SFG";
   }
 
-  if (/(?:^|\b)(?:fg|finished(?:\s*goods?)?)(?:\b|$)/i.test(combinedSheetText)) {
+  if (
+    /(?:^|\b)(?:fg|finished(?:\s*goods?)?)(?:\b|$)/i.test(combinedSheetText)
+  ) {
     return "FG";
   }
 
@@ -429,7 +431,8 @@ const getLinkedSfgIds = async (trx, fgId) => {
 };
 
 const ensureSfgForFinished = async (trx, finishedItem, sfgPartType, userId) => {
-  const suffix = String(sfgPartType || "").toUpperCase() === "STEP" ? "STEP" : "UPPER";
+  const suffix =
+    String(sfgPartType || "").toUpperCase() === "STEP" ? "STEP" : "UPPER";
   const sfgName = `${finishedItem.name} - ${suffix}`;
   const sfgCode = toCode(`${finishedItem.code}_${suffix}`);
   const linked = await getLinkedSfgIds(trx, finishedItem.id);
@@ -697,6 +700,29 @@ const resolveProductTypeByToken = async (db, token) => {
     .first();
 };
 
+const resolveItemByCode = async (db, token) => {
+  const value = trimString(token);
+  if (!value) return null;
+  return db("erp.items")
+    .select(
+      "id",
+      "item_type",
+      "code",
+      "name",
+      "name_ur",
+      "group_id",
+      "subgroup_id",
+      "product_type_id",
+      "base_uom_id",
+      "uses_sfg",
+      "sfg_part_type",
+      "min_stock_level",
+      "is_active",
+    )
+    .whereRaw("lower(code) = ?", [value.toLowerCase()])
+    .first();
+};
+
 const resolveCityByToken = async (db, token) => {
   const value = trimString(token);
   if (!value) return null;
@@ -745,6 +771,22 @@ const findExistingItemByUniqueScope = async (
     return { existing: null, conflict: null };
   }
 
+  const itemSelectColumns = [
+    "id",
+    "item_type",
+    "code",
+    "name",
+    "name_ur",
+    "group_id",
+    "subgroup_id",
+    "product_type_id",
+    "base_uom_id",
+    "uses_sfg",
+    "sfg_part_type",
+    "min_stock_level",
+    "is_active",
+  ];
+
   let byCode = null;
   let byName = null;
 
@@ -756,7 +798,7 @@ const findExistingItemByUniqueScope = async (
 
     if (normalizedCode) {
       byCode = await db("erp.items")
-        .select("id")
+        .select(itemSelectColumns)
         .where({ item_type: "RM", group_id: scopedGroupId })
         .whereRaw("lower(code) = ?", [normalizedCode])
         .first();
@@ -764,7 +806,7 @@ const findExistingItemByUniqueScope = async (
 
     if (normalizedName) {
       byName = await db("erp.items")
-        .select("id")
+        .select(itemSelectColumns)
         .where({ item_type: "RM", group_id: scopedGroupId })
         .whereRaw("lower(name) = ?", [normalizedName])
         .first();
@@ -772,7 +814,7 @@ const findExistingItemByUniqueScope = async (
   } else {
     if (normalizedCode) {
       byCode = await db("erp.items")
-        .select("id")
+        .select(itemSelectColumns)
         .whereRaw("item_type <> 'RM'")
         .whereRaw("lower(code) = ?", [normalizedCode])
         .first();
@@ -780,7 +822,7 @@ const findExistingItemByUniqueScope = async (
 
     if (normalizedName) {
       byName = await db("erp.items")
-        .select("id")
+        .select(itemSelectColumns)
         .whereRaw("item_type <> 'RM'")
         .whereRaw("lower(name) = ?", [normalizedName])
         .first();
@@ -2222,18 +2264,20 @@ const ENTITY_SPECS = Object.freeze({
     sheetMatchers: [/products?/i, /items?/i, /^sheet\d+$/i],
     fieldAliases: {
       itemType: ["products_item_type", "item_type", "type"],
-      code: ["products_code", "item_code", "code"],
+      code: ["products_code", "item_code", "sku_code", "sku", "code"],
       name: [
         "products_name",
         "item_name",
         "item_name_english",
         "product_name",
         "article_name",
+        "article",
         "fg_name",
         "finished_goods_name",
         "finished_good_name",
         "finished_goods",
         "finished_good",
+        "item",
         "name",
       ],
       nameUr: ["products_name_urdu", "products_name_ur", "name_ur"],
@@ -2260,25 +2304,58 @@ const ENTITY_SPECS = Object.freeze({
       isActive: ["products_is_active", "is_active"],
     },
     async plan(row, db, actorId, context) {
-      const name =
+      const codeToken = trimString(row.raw.code);
+      let existingByCode = null;
+      if (codeToken) {
+        existingByCode = await resolveItemByCode(db, codeToken);
+      }
+
+      let name =
         trimString(row.raw.name) ||
         resolveProductNameFallback(row?.values || {});
-      if (!name) return { skip: true };
+      if (!name && existingByCode?.id) {
+        name = trimString(existingByCode.name);
+      }
+      if (!name) {
+        if (codeToken) {
+          return {
+            error: `Item name is missing and code '${codeToken}' was not found in existing items.`,
+          };
+        }
+        return { skip: true };
+      }
+
       const itemTypeToken = String(row.raw.itemType || "")
         .trim()
         .toUpperCase();
       const inferredItemType = inferProductItemType(row);
-      const itemType = itemTypeToken || inferredItemType;
+      const existingItemType = String(existingByCode?.item_type || "")
+        .trim()
+        .toUpperCase();
+      const itemType = itemTypeToken || inferredItemType || existingItemType;
       if (!ITEM_TYPES.has(itemType)) {
         return {
           error: `Invalid product item type for ${name}: ${itemType || "(empty)"}`,
         };
       }
+      if (
+        codeToken &&
+        existingByCode?.id &&
+        existingItemType &&
+        existingItemType !== itemType
+      ) {
+        return {
+          error: `Item code '${codeToken}' belongs to item type ${existingItemType}, but row resolved as ${itemType}.`,
+        };
+      }
 
       const groupToken = trimString(row.raw.groupName);
-      const group = groupToken
+      let group = groupToken
         ? await resolveProductGroupByToken(db, groupToken)
         : null;
+      if (!group?.id && existingByCode?.id && !groupToken) {
+        group = { id: Number(existingByCode.group_id || 0) || null };
+      }
       if (!group?.id) {
         if (!hasStagedToken(context?.staged?.productGroup, groupToken)) {
           return {
@@ -2300,6 +2377,8 @@ const ENTITY_SPECS = Object.freeze({
             };
           }
         }
+      } else if (existingByCode?.id && existingByCode.subgroup_id) {
+        subgroup = { id: Number(existingByCode.subgroup_id) };
       }
 
       const productTypeToken =
@@ -2315,15 +2394,31 @@ const ENTITY_SPECS = Object.freeze({
             };
           }
         }
+      } else if (existingByCode?.id && existingByCode.product_type_id) {
+        productType = { id: Number(existingByCode.product_type_id) };
       }
-      if (itemType === "FG" && !productTypeToken) {
+      const isExistingCodeUpdate = Boolean(existingByCode?.id);
+      if (
+        itemType === "FG" &&
+        !productTypeToken &&
+        !productType?.id &&
+        !isExistingCodeUpdate
+      ) {
         return {
           error: `Category is required for finished item ${name}.`,
         };
       }
 
       const uomToken = trimString(row.raw.baseUom);
-      const uom = await resolveUomByToken(db, uomToken);
+      let uom = uomToken ? await resolveUomByToken(db, uomToken) : null;
+      if (
+        !uom?.id &&
+        existingByCode?.id &&
+        !uomToken &&
+        existingByCode.base_uom_id
+      ) {
+        uom = { id: Number(existingByCode.base_uom_id) };
+      }
       if (!uom?.id) {
         if (!hasStagedToken(context?.staged?.uom, uomToken)) {
           return {
@@ -2376,6 +2471,10 @@ const ENTITY_SPECS = Object.freeze({
         warningMessages.push(
           `Item type was blank; inferred item_type=${inferredItemType} from workbook context.`,
         );
+      } else if (!itemTypeToken && existingByCode?.id && existingItemType) {
+        warningMessages.push(
+          `Item type was blank; reused existing item_type=${existingItemType} from item code '${codeToken}'.`,
+        );
       }
       if (
         itemType !== "RM" &&
@@ -2387,33 +2486,66 @@ const ENTITY_SPECS = Object.freeze({
       }
 
       const code =
-        trimString(row.raw.code) ||
+        codeToken ||
         (await generateUniqueCode({ name, knex: db, table: "erp.items" }));
 
-      const { existing, conflict } = await findExistingItemByUniqueScope(db, {
-        itemType,
-        groupId: group?.id || null,
-        code,
-        name,
-      });
+      let existing = existingByCode;
+      let conflict = null;
+      if (!existing?.id) {
+        const lookup = await findExistingItemByUniqueScope(db, {
+          itemType,
+          groupId: group?.id || null,
+          code,
+          name,
+        });
+        existing = lookup.existing;
+        conflict = lookup.conflict;
+      }
       if (conflict) {
         return { error: conflict };
       }
 
       const usesSfg =
-        itemType === "FG" ? parseBoolean(row.raw.usesSfg, false) : false;
+        itemType === "FG"
+          ? parseBoolean(row.raw.usesSfg, Boolean(existing?.uses_sfg))
+          : false;
       const sfgPartTypeRaw = String(row.raw.sfgPartType || "")
         .trim()
         .toUpperCase();
-      const sfgPartType =
-        usesSfg && ["UPPER", "STEP"].includes(sfgPartTypeRaw)
+      const sfgPartType = usesSfg
+        ? ["UPPER", "STEP"].includes(sfgPartTypeRaw)
           ? sfgPartTypeRaw
-          : null;
-      if (itemType === "FG" && usesSfg && !sfgPartType) {
+          : ["UPPER", "STEP"].includes(
+                String(existing?.sfg_part_type || "")
+                  .trim()
+                  .toUpperCase(),
+              )
+            ? String(existing?.sfg_part_type || "")
+                .trim()
+                .toUpperCase()
+            : null
+        : null;
+      if (
+        itemType === "FG" &&
+        usesSfg &&
+        !sfgPartType &&
+        !isExistingCodeUpdate
+      ) {
         return {
           error: `SFG part type must be UPPER or STEP for finished item ${name} when Uses SFG is enabled.`,
         };
       }
+
+      const minStockLevel =
+        parseNumber(row.raw.minStockLevel, null) ??
+        parseNumber(existing?.min_stock_level, 0) ??
+        0;
+      const isActive = parseBoolean(
+        row.raw.isActive,
+        existing?.is_active === undefined || existing?.is_active === null
+          ? true
+          : Boolean(existing.is_active),
+      );
 
       return {
         action: existing ? "update" : "create",
@@ -2422,7 +2554,8 @@ const ENTITY_SPECS = Object.freeze({
           item_type: itemType,
           code,
           name,
-          name_ur: trimString(row.raw.nameUr) || name,
+          name_ur:
+            trimString(row.raw.nameUr) || trimString(existing?.name_ur) || name,
           group_id: group?.id || null,
           group_token: groupToken || null,
           subgroup_id: subgroup?.id || null,
@@ -2439,8 +2572,8 @@ const ENTITY_SPECS = Object.freeze({
           rm_size_id: size?.id || null,
           rm_size_token: sizeToken || null,
           rm_purchase_rate: purchaseRate,
-          min_stock_level: parseNumber(row.raw.minStockLevel, 0) || 0,
-          is_active: parseBoolean(row.raw.isActive, true),
+          min_stock_level: minStockLevel,
+          is_active: isActive,
           updated_by: actorId,
         },
         warning: warningMessages.length ? warningMessages.join(" ") : null,
