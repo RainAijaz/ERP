@@ -1563,7 +1563,11 @@ const translations = {
     manage_permissions: "Manage Permissions",
     account_access: "Account Access",
     account_access_subtitle:
-      "Control which accounts each user can view in account activity.",
+      "Control which accounts this user can't view in account activity.",
+    account_access_financial_reports_context:
+      "Financial -> Reports: Account Activity restrictions",
+    block_summary: "Block Summary",
+    block_view_details: "Block View Details",
     account_details_access_limited:
       "Details are not allowed for the selected account. Summary is available.",
     account_access_saved: "Account access saved.",
@@ -2754,7 +2758,11 @@ translations.ur = {
   manage_permissions: "اجازتوں کا نظم کریں۔",
   account_access: "اکاؤنٹ رسائی",
   account_access_subtitle:
-    "طے کریں کہ ہر صارف اکاؤنٹ ایکٹیویٹی میں کون سے اکاؤنٹس دیکھ سکتا ہے۔",
+    "طے کریں کہ یہ صارف اکاؤنٹ ایکٹیویٹی میں کون سے اکاؤنٹس نہیں دیکھ سکتا۔",
+  account_access_financial_reports_context:
+    "فنانشل -> رپورٹس: اکاؤنٹ ایکٹیویٹی پابندیاں",
+  block_summary: "خلاصہ بلاک کریں",
+  block_view_details: "تفصیلی ویو بلاک کریں",
   account_details_access_limited:
     "منتخب اکاؤنٹ کے لیے تفصیلی ویو دستیاب نہیں۔ خلاصہ دستیاب ہے۔",
   account_access_saved: "اکاؤنٹ رسائی محفوظ ہو گئی۔",

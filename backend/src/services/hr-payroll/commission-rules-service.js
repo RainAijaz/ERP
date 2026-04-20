@@ -132,7 +132,7 @@ const fetchExistingRules = async ({ db = knex, employeeId, commissionBasis = COM
   const basis = String(commissionBasis || "").trim().toUpperCase();
   if (!basis) return [];
 
-  return db("erp.employee_commission_rules")
+  return db("erp.employee_commission_rules as ecr")
     .select(
       "id",
       "apply_on",
@@ -140,7 +140,7 @@ const fetchExistingRules = async ({ db = knex, employeeId, commissionBasis = COM
       "subgroup_id",
       "group_id",
       "value",
-      db.raw(`COALESCE(NULLIF(to_jsonb(erp.employee_commission_rules)->>'rate_type', ''), 'PER_PAIR') as rate_type`),
+      db.raw(`COALESCE(NULLIF(to_jsonb(ecr)->>'rate_type', ''), 'PER_PAIR') as rate_type`),
       "status",
       "reverse_on_returns",
     )

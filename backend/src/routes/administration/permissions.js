@@ -73,13 +73,33 @@ const parseAccountAccessPayload = (value) => {
   parsed.forEach((entry) => {
     const accountId = Number(entry?.accountId || 0);
     if (!Number.isInteger(accountId) || accountId <= 0) return;
-    const canViewDetails = toBool(entry?.canViewDetails, true);
-    const canViewSummary =
-      canViewDetails || toBool(entry?.canViewSummary, true);
+
+    const hasBlockFlags =
+      Object.prototype.hasOwnProperty.call(entry || {}, "canBlockSummary") ||
+      Object.prototype.hasOwnProperty.call(entry || {}, "canBlockDetails");
+
+    let canViewSummary = true;
+    let canViewDetails = true;
+
+    if (hasBlockFlags) {
+      const canBlockDetails = toBool(entry?.canBlockDetails, true);
+      const canBlockSummary =
+        canBlockDetails || toBool(entry?.canBlockSummary, true);
+      canViewSummary = !canBlockSummary;
+      canViewDetails = canViewSummary ? !canBlockDetails : false;
+      if (canViewSummary && canViewDetails) return;
+    } else {
+      // Backward compatibility for existing payloads that still post canView* flags.
+      canViewDetails = toBool(entry?.canViewDetails, true);
+      canViewSummary =
+        canViewDetails || toBool(entry?.canViewSummary, true);
+      canViewDetails = canViewSummary ? canViewDetails : false;
+    }
+
     uniqueRows.set(accountId, {
       accountId,
       canViewSummary,
-      canViewDetails: canViewSummary ? canViewDetails : false,
+      canViewDetails,
     });
   });
 

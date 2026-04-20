@@ -388,6 +388,78 @@ const resolveProductTypeFallback = (rowValues) => {
   return "";
 };
 
+const mapProductItemTypeToken = (value) => {
+  const token = String(value || "")
+    .trim()
+    .toUpperCase();
+  if (!token) return "";
+
+  const collapsed = token
+    .replace(/[^A-Z0-9]+/g, " ")
+    .trim()
+    .replace(/\s+/g, " ");
+
+  if (
+    token === "RM" ||
+    /^(RAW|RM)\s*(MATERIAL|MATERIALS)?$/.test(collapsed) ||
+    /^R\s*\/?\s*M$/.test(collapsed)
+  ) {
+    return "RM";
+  }
+
+  if (
+    token === "SFG" ||
+    /^(SEMI|SEMI FINISHED|SEMI FINISHED GOODS|SEMI FINISHED GOOD|SFG)$/.test(
+      collapsed,
+    )
+  ) {
+    return "SFG";
+  }
+
+  if (
+    token === "FG" ||
+    /^(FINISHED|FINISHED GOODS|FINISHED GOOD|FG)$/.test(collapsed)
+  ) {
+    return "FG";
+  }
+
+  return "";
+};
+
+const resolveProductItemTypeFallback = (rowValues) => {
+  if (!rowValues || typeof rowValues !== "object") return "";
+
+  const exactAliases = [
+    "item_type",
+    "products_item_type",
+    "product_item_type",
+    "stock_type",
+    "article_type",
+    "sku_type",
+    "inventory_type",
+  ];
+
+  for (const alias of exactAliases) {
+    const parsed = mapProductItemTypeToken(rowValues[alias]);
+    if (parsed) return parsed;
+  }
+
+  for (const [key, rawValue] of Object.entries(rowValues)) {
+    const normalizedKey = normalizeHeader(key);
+    if (!normalizedKey) continue;
+    if (/product_type|category/.test(normalizedKey)) continue;
+    if (
+      /(item|article|stock|sku|inventory).*type/.test(normalizedKey) ||
+      /type.*(item|article|stock|sku|inventory)/.test(normalizedKey)
+    ) {
+      const parsed = mapProductItemTypeToken(rawValue);
+      if (parsed) return parsed;
+    }
+  }
+
+  return "";
+};
+
 const inferProductItemType = (row) => {
   const combinedSheetText = `${row?.sheetName || ""} ${row?.sheetTitle || ""}`;
 
@@ -2263,7 +2335,15 @@ const ENTITY_SPECS = Object.freeze({
   [ENTITY_KEYS.products]: {
     sheetMatchers: [/products?/i, /items?/i, /^sheet\d+$/i],
     fieldAliases: {
-      itemType: ["products_item_type", "item_type", "type"],
+      itemType: [
+        "products_item_type",
+        "item_type",
+        "article_type",
+        "stock_type",
+        "sku_type",
+        "inventory_type",
+        "type",
+      ],
       code: ["products_code", "item_code", "sku_code", "sku", "code"],
       name: [
         "products_name",
@@ -2325,14 +2405,14 @@ const ENTITY_SPECS = Object.freeze({
         return { skip: true };
       }
 
-      const itemTypeToken = String(row.raw.itemType || "")
-        .trim()
-        .toUpperCase();
+      const itemTypeToken = mapProductItemTypeToken(row.raw.itemType);
+      const fallbackItemType = resolveProductItemTypeFallback(row?.values || {});
       const inferredItemType = inferProductItemType(row);
       const existingItemType = String(existingByCode?.item_type || "")
         .trim()
         .toUpperCase();
-      const itemType = itemTypeToken || inferredItemType || existingItemType;
+      const itemType =
+        itemTypeToken || fallbackItemType || inferredItemType || existingItemType;
       if (!ITEM_TYPES.has(itemType)) {
         return {
           error: `Invalid product item type for ${name}: ${itemType || "(empty)"}`,
@@ -2467,7 +2547,11 @@ const ENTITY_SPECS = Object.freeze({
       }
 
       const warningMessages = [];
-      if (!itemTypeToken && inferredItemType) {
+      if (!itemTypeToken && fallbackItemType) {
+        warningMessages.push(
+          `Item type was blank; resolved item_type=${fallbackItemType} using item-type column heuristics.`,
+        );
+      } else if (!itemTypeToken && inferredItemType) {
         warningMessages.push(
           `Item type was blank; inferred item_type=${inferredItemType} from workbook context.`,
         );

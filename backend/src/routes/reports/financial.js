@@ -278,11 +278,11 @@ const renderFinancialReportPage = async (req, res, next, options = {}) => {
       accountAccessMap = await getUserAccountAccessMap({
         userId: req.user?.id,
       });
-      if (
-        filters.accountId &&
-        !accountAccessMap.has(Number(filters.accountId))
-      ) {
-        throw new HttpError(403, res.locals.t("permission_denied"));
+      if (filters.accountId) {
+        const restricted = accountAccessMap.get(Number(filters.accountId));
+        if (restricted && !restricted.canViewSummary) {
+          throw new HttpError(403, res.locals.t("permission_denied"));
+        }
       }
     }
 

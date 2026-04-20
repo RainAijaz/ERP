@@ -66,6 +66,8 @@ test.describe.serial("Permissions account access UI", () => {
     );
     expect(response?.status()).toBe(200);
 
+    await page.locator('.category-btn[data-cat="financial.reports"]').click();
+
     const addSelect = page.locator("[data-account-access-add]");
     const addButton = page.locator("[data-account-access-add-btn]");
     await expect(addSelect).toBeVisible();

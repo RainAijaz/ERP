@@ -110,6 +110,34 @@
   <% } %>
 <% }) %>
 
+<% if (page.scopeKey === "hr_payroll.commissions") { %>
+  <div class="hidden rounded-xl border border-slate-200 bg-slate-50/60 p-4" data-commission-bulk-panel>
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <div>
+        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-700"><%= t("affected_skus") %></div>
+        <div class="mt-1 text-xs text-slate-500" data-commission-bulk-summary><%= t("select_target_to_preview_impact") %></div>
+      </div>
+    </div>
+    <div class="mt-3 overflow-auto rounded-lg border border-slate-200 bg-white max-h-72">
+      <table class="min-w-full text-xs">
+        <thead class="bg-slate-100 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+          <tr>
+            <th class="px-2 py-1 text-left"><%= t("sku") %></th>
+            <th class="px-2 py-1 text-left"><%= t("article_name") %></th>
+            <th class="px-2 py-1 text-left"><%= t("previous_rate") %></th>
+            <th class="px-2 py-1 text-left"><%= t("new_rate") %></th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100" data-commission-bulk-body>
+          <tr>
+            <td class="px-2 py-2 text-slate-500" colspan="4"><%= t("no_entries") %></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+<% } %>
+
 <% if (page.scopeKey === "hr_payroll.labour_rates") { %>
   <div class="hidden rounded-xl border border-slate-200 bg-slate-50/60 p-4" data-labour-rate-bulk-panel>
     <div class="flex flex-wrap items-center justify-between gap-2">

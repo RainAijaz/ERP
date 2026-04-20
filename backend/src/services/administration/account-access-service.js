@@ -121,6 +121,12 @@ const getUserAccountAccessRows = async ({ db = knex, userId }) => {
       "a.name",
     )
     .where({ "uaa.user_id": resolvedUserId })
+    .andWhere(function whereRestrictedRows() {
+      this.where("uaa.can_view_summary", false).orWhere(
+        "uaa.can_view_details",
+        false,
+      );
+    })
     .orderBy("a.name", "asc");
 
   const branchIds = await getUserBranchIds({ db, userId: resolvedUserId });
@@ -219,7 +225,10 @@ const getUserAccountAccessMap = async ({ db = knex, userId }) => {
 
   const rows = await db("erp.user_account_access")
     .select("account_id", "can_view_summary", "can_view_details")
-    .where({ user_id: resolvedUserId, can_view_summary: true });
+    .where({ user_id: resolvedUserId })
+    .andWhere(function whereRestrictedRows() {
+      this.where("can_view_summary", false).orWhere("can_view_details", false);
+    });
 
   rows.forEach((row) => {
     const accountId = toPositiveInt(row.account_id);
@@ -234,15 +243,20 @@ const getUserAccountAccessMap = async ({ db = knex, userId }) => {
 };
 
 const filterAccountsByAccess = ({ accounts = [], accessMap = new Map() }) => {
-  if (!(accessMap instanceof Map) || accessMap.size === 0) return [];
-  return accounts.filter((row) => accessMap.has(Number(row.id)));
+  if (!(accessMap instanceof Map) || accessMap.size === 0) return accounts;
+  return accounts.filter((row) => {
+    const restriction = accessMap.get(Number(row.id));
+    if (!restriction) return true;
+    return Boolean(restriction.canViewSummary);
+  });
 };
 
 const canUserViewAccountDetails = ({ accessMap = new Map(), accountId }) => {
   const resolvedId = toPositiveInt(accountId);
   if (!resolvedId) return false;
   const row = accessMap.get(resolvedId);
-  return Boolean(row && row.canViewDetails);
+  if (!row) return true;
+  return Boolean(row.canViewSummary && row.canViewDetails);
 };
 
 module.exports = {

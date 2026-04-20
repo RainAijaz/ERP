@@ -112,5 +112,98 @@ test.describe("TMP Sales commission save", () => {
     expect(afterCount).toBeGreaterThanOrEqual(beforeCount);
     expect(await page.locator("[data-modal]").count()).toBeGreaterThan(0);
   });
+
+  test("bulk save works for GROUP apply-on", async ({ page }) => {
+    await login(page, "E2E_ADMIN");
+    await page.goto("/hr-payroll/employees/commissions", {
+      waitUntil: "domcontentloaded",
+    });
+
+    await page.locator("[data-modal-open]").click();
+    const form = page.locator("[data-modal-form]");
+    await expect(form).toBeVisible();
+
+    const employeeOptions = await getSelectOptions(page, "employee_id");
+    test.skip(!employeeOptions.length, "No employee options found.");
+    const employeeId = Number(employeeOptions[0].value);
+
+    await setSelectMulti(page, "employee_id", [String(employeeId)]);
+    await setSelectSingle(page, "apply_on", "GROUP");
+    await page.waitForTimeout(300);
+
+    const groupOptions = await getSelectOptions(page, "group_id");
+    test.skip(!groupOptions.length, "No product group options found.");
+    const groupId = Number(groupOptions[0].value);
+
+    const targetSkuRows = await db("erp.skus as s")
+      .join("erp.variants as v", "s.variant_id", "v.id")
+      .join("erp.items as i", "v.item_id", "i.id")
+      .select("s.id")
+      .where("i.group_id", groupId)
+      .andWhere("i.item_type", "FG");
+    const targetSkuIds = targetSkuRows
+      .map((row) => Number(row.id))
+      .filter((id) => Number.isInteger(id) && id > 0);
+    test.skip(!targetSkuIds.length, "No FG SKUs found for selected product group.");
+
+    await setSelectSingle(page, "group_id", String(groupId));
+    await setSelectSingle(page, "rate_type", "PER_DOZEN");
+
+    const targetRate = "73";
+    await page
+      .locator('[data-modal-form] [data-field="value"]')
+      .fill(targetRate);
+
+    const previewResponse = await page.waitForResponse(
+      (response) =>
+        response.url().includes("/bulk-preview") &&
+        response.request().method() === "GET",
+      { timeout: 15000 },
+    );
+    const previewStatus = previewResponse.status();
+    const previewBody = await previewResponse.text();
+    expect(
+      previewStatus,
+      `bulk-preview failed with status ${previewStatus}. Body: ${previewBody}`,
+    ).toBe(200);
+
+    const bulkRows = page.locator(
+      "[data-commission-bulk-body] [data-commission-row-rate]",
+    );
+    await expect(bulkRows.first()).toBeVisible({ timeout: 15000 });
+
+    const beforeMatchRow = await db("erp.employee_commission_rules")
+      .where({
+        employee_id: employeeId,
+        apply_on: "SKU",
+        commission_basis: "FIXED_PER_UNIT",
+        rate_type: "PER_DOZEN",
+        status: "active",
+      })
+      .whereIn("sku_id", targetSkuIds)
+      .where("value", Number(targetRate))
+      .count({ c: "*" })
+      .first();
+    const beforeMatchCount = Number(beforeMatchRow?.c || 0);
+
+    await form.locator('button[type="submit"]').click();
+    await page.waitForTimeout(2200);
+
+    const afterMatchRow = await db("erp.employee_commission_rules")
+      .where({
+        employee_id: employeeId,
+        apply_on: "SKU",
+        commission_basis: "FIXED_PER_UNIT",
+        rate_type: "PER_DOZEN",
+        status: "active",
+      })
+      .whereIn("sku_id", targetSkuIds)
+      .where("value", Number(targetRate))
+      .count({ c: "*" })
+      .first();
+    const afterMatchCount = Number(afterMatchRow?.c || 0);
+
+    expect(afterMatchCount).toBeGreaterThan(beforeMatchCount);
+  });
 });
 

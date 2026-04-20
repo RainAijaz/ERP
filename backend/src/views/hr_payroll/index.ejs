@@ -234,6 +234,10 @@
           });
         }
       });
+
+      if (typeof window.initSearchableSelects === "function") {
+        window.initSearchableSelects(form);
+      }
     };
 
     form.addEventListener("change", (e) => {
@@ -598,6 +602,16 @@
         .map((token) => token.trim())
         .filter(Boolean);
 
+    const getFirstMultiSelectValue = (selectEl) => {
+      if (!(selectEl instanceof HTMLSelectElement)) return "";
+      const selected = Array.from(selectEl.selectedOptions || [])
+        .map((option) => String(option.value || "").trim())
+        .filter(Boolean);
+      if (selected.length) return selected[0];
+      const direct = String(selectEl.value || "").trim();
+      return direct;
+    };
+
     const restoreMultiSelectFromSearchableText = (selectEl) => {
       if (!(selectEl instanceof HTMLSelectElement) || !selectEl.multiple) return;
       const selectedCount = Array.from(selectEl.selectedOptions || []).length;
@@ -699,7 +713,7 @@
 
         const payload = {
           _csrf: csrfToken,
-          employee_id: fields.employeeId?.value || "",
+          employee_id: getFirstMultiSelectValue(fields.employeeId),
           apply_on: normalizeApplyOn(),
           subgroup_id: fields.subgroupId?.value || null,
           group_id: fields.groupId?.value || null,

@@ -17,8 +17,8 @@ const LIMITED_PASS = process.env.E2E_ACCOUNT_ACCESS_PASS || "Salesman@123";
 
 const fixture = {
   userId: null,
-  allowedDetailsAccountId: null,
-  allowedSummaryAccountId: null,
+  unrestrictedAccountId: null,
+  detailsBlockedAccountId: null,
   blockedAccountId: null,
 };
 
@@ -56,20 +56,20 @@ test.describe.serial("Account activity ledger account access", () => {
 
     const accounts = await getBranchScopedAccounts({ branchId, limit: 4 });
     if (accounts.length >= 3) {
-      fixture.allowedDetailsAccountId = Number(accounts[0].id);
-      fixture.allowedSummaryAccountId = Number(accounts[1].id);
+      fixture.unrestrictedAccountId = Number(accounts[0].id);
+      fixture.detailsBlockedAccountId = Number(accounts[1].id);
       fixture.blockedAccountId = Number(accounts[2].id);
       await replaceUserAccountAccess({
         userId: fixture.userId,
         rows: [
           {
-            accountId: fixture.allowedDetailsAccountId,
+            accountId: fixture.detailsBlockedAccountId,
             canViewSummary: true,
-            canViewDetails: true,
+            canViewDetails: false,
           },
           {
-            accountId: fixture.allowedSummaryAccountId,
-            canViewSummary: true,
+            accountId: fixture.blockedAccountId,
+            canViewSummary: false,
             canViewDetails: false,
           },
         ],
@@ -87,10 +87,10 @@ test.describe.serial("Account activity ledger account access", () => {
     }
   });
 
-  test("shows only assigned accounts in dropdown", async ({ page }) => {
+  test("hides fully blocked accounts from dropdown", async ({ page }) => {
     test.skip(
-      !fixture.allowedDetailsAccountId ||
-        !fixture.allowedSummaryAccountId ||
+      !fixture.unrestrictedAccountId ||
+        !fixture.detailsBlockedAccountId ||
         !fixture.blockedAccountId,
       "Not enough branch-scoped accounts to run account-access test.",
     );
@@ -112,8 +112,8 @@ test.describe.serial("Account activity ledger account access", () => {
           .filter((id) => Number.isInteger(id) && id > 0),
       );
 
-    expect(accountValues).toContain(fixture.allowedDetailsAccountId);
-    expect(accountValues).toContain(fixture.allowedSummaryAccountId);
+    expect(accountValues).toContain(fixture.unrestrictedAccountId);
+    expect(accountValues).toContain(fixture.detailsBlockedAccountId);
     expect(accountValues).not.toContain(fixture.blockedAccountId);
   });
 
@@ -121,13 +121,13 @@ test.describe.serial("Account activity ledger account access", () => {
     page,
   }) => {
     test.skip(
-      !fixture.allowedSummaryAccountId,
+      !fixture.detailsBlockedAccountId,
       "Summary-only account fixture is not available.",
     );
 
     await login(page, "E2E_ACCOUNT_ACCESS");
     const response = await page.goto(
-      `/reports/financial/account_activity_ledger?account_id=${fixture.allowedSummaryAccountId}&report_mode=details&load_report=1`,
+      `/reports/financial/account_activity_ledger?account_id=${fixture.detailsBlockedAccountId}&report_mode=details&load_report=1`,
       { waitUntil: "domcontentloaded" },
     );
     expect(response?.status()).toBe(200);

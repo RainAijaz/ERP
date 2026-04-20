@@ -17,6 +17,8 @@ const LEDGER_NET_SQL = `(${LEDGER_CREDIT_SQL}) - (${LEDGER_DEBIT_SQL})`;
 const LABOUR_ENTITY_SQL = "CASE WHEN vh.voucher_type_code = 'DCV' THEN dcv.labour_id ELSE vl.labour_id END";
 const AUTO_PAYROLL_VOUCHER_TYPE = "PAYROLL_ACCRUAL";
 const AUTO_PAYROLL_DESCRIPTION = "Monthly salary accrual";
+const AUTO_PAYROLL_DAILY_DESCRIPTION =
+  "Daily salary accrual (excluding Sundays)";
 
 const toPositiveId = (value) => {
   const id = Number(value || 0);
@@ -59,6 +61,15 @@ const monthEndUtc = (value) =>
 const addMonthsUtc = (value, months) =>
   new Date(Date.UTC(value.getUTCFullYear(), value.getUTCMonth() + months, 1));
 
+const addDaysUtc = (value, days) =>
+  new Date(
+    Date.UTC(
+      value.getUTCFullYear(),
+      value.getUTCMonth(),
+      value.getUTCDate() + Number(days || 0),
+    ),
+  );
+
 const monthDiff = (fromDate, toDate) =>
   (toDate.getUTCFullYear() - fromDate.getUTCFullYear()) * 12 +
   (toDate.getUTCMonth() - fromDate.getUTCMonth());
@@ -77,6 +88,41 @@ const getLastAccrualMonthStartUtc = (asOnYmd) => {
     return monthStartUtc(asOnDate);
   }
   return addMonthsUtc(monthStartUtc(asOnDate), -1);
+};
+
+const countDaysExcludingSundays = ({ fromYmd, toYmdValue }) => {
+  const fromDate = toUtcDateFromYmd(fromYmd);
+  const toDate = toUtcDateFromYmd(toYmdValue);
+  if (!fromDate || !toDate) return 0;
+  if (toDate < fromDate) return 0;
+
+  const msInDay = 24 * 60 * 60 * 1000;
+  const totalDays = Math.floor((toDate.getTime() - fromDate.getTime()) / msInDay) + 1;
+  if (totalDays <= 0) return 0;
+
+  const fullWeeks = Math.floor(totalDays / 7);
+  const remainderDays = totalDays % 7;
+  let sundayCount = fullWeeks;
+  const startDow = fromDate.getUTCDay();
+
+  for (let dayIndex = 0; dayIndex < remainderDays; dayIndex += 1) {
+    if ((startDow + dayIndex) % 7 === 0) {
+      sundayCount += 1;
+    }
+  }
+
+  return Math.max(0, totalDays - sundayCount);
+};
+
+const countDailyAccrualDaysUpTo = ({ employmentStartYmd, asOnYmd }) => {
+  const startDate = toUtcDateFromYmd(employmentStartYmd);
+  const asOnDate = toUtcDateFromYmd(asOnYmd);
+  if (!startDate || !asOnDate) return 0;
+  if (asOnDate < startDate) return 0;
+  return countDaysExcludingSundays({
+    fromYmd: toYmd(startDate),
+    toYmdValue: toYmd(asOnDate),
+  });
 };
 
 const countMonthlyAccrualsUpTo = ({ employmentStartYmd, asOnYmd }) => {
@@ -128,16 +174,57 @@ const buildMonthlyAccrualRowsInRange = ({
   return rows;
 };
 
-const loadEmployeeMonthlyAmounts = async ({ entityIds = [] }) => {
+const buildDailyAccrualRowsInRange = ({
+  employmentStartYmd,
+  fromYmd,
+  toYmdValue,
+  dailyAmount,
+  idSeed = 0,
+}) => {
+  const rows = [];
+  const startDate = toUtcDateFromYmd(employmentStartYmd);
+  const fromDate = toUtcDateFromYmd(fromYmd);
+  const toDate = toUtcDateFromYmd(toYmdValue);
+  if (!startDate || !fromDate || !toDate) return rows;
+  if (dailyAmount <= 0) return rows;
+
+  let cursor = fromDate > startDate ? fromDate : startDate;
+  let index = 0;
+  while (cursor <= toDate) {
+    if (cursor.getUTCDay() !== 0) {
+      rows.push({
+        id: -1 * (idSeed * 100000 + index + 1),
+        voucher_id: null,
+        entry_date: toYmd(cursor),
+        voucher_no: null,
+        bill_number: "",
+        voucher_type: AUTO_PAYROLL_VOUCHER_TYPE,
+        description: AUTO_PAYROLL_DAILY_DESCRIPTION,
+        qty: 0,
+        debit: 0,
+        credit: toAmount(dailyAmount, 2),
+        branch_name: "",
+      });
+      index += 1;
+    }
+    cursor = addDaysUtc(cursor, 1);
+  }
+
+  return rows;
+};
+
+const loadEmployeeAccrualProfiles = async ({ entityIds = [] }) => {
   const normalizedIds = [...new Set((entityIds || []).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
   if (!normalizedIds.length) return new Map();
   const employeeRows = await knex("erp.employees as e")
-    .select("e.id", "e.basic_salary", "e.created_at")
+    .select("e.id", "e.basic_salary", "e.created_at", "e.payroll_type")
     .whereIn("e.id", normalizedIds)
-    .where("e.payroll_type", "MONTHLY")
+    .whereIn("e.payroll_type", ["MONTHLY", "DAILY"])
     .whereRaw("lower(trim(coalesce(e.status, ''))) = 'active'");
+
   const allowanceRows = await knex("erp.employee_allowance_rules as ar")
     .select("ar.employee_id")
+    .select(knex.raw("upper(coalesce(ar.frequency, '')) as frequency"))
     .sum({
       fixed_amount: knex.raw(
         "CASE WHEN ar.amount_type = 'FIXED' THEN COALESCE(ar.amount, 0) ELSE 0 END",
@@ -149,36 +236,76 @@ const loadEmployeeMonthlyAmounts = async ({ entityIds = [] }) => {
       ),
     })
     .whereIn("ar.employee_id", normalizedIds)
-    .whereRaw("upper(coalesce(ar.frequency, '')) = 'MONTHLY'")
+    .whereRaw("upper(coalesce(ar.frequency, '')) IN ('MONTHLY', 'DAILY')")
     .whereRaw("lower(trim(coalesce(ar.status, ''))) = 'active'")
-    .groupBy("ar.employee_id");
-  const allowanceMap = new Map(
-    (allowanceRows || []).map((row) => [
-      Number(row.employee_id || 0),
-      {
-        fixedAmount: Number(row.fixed_amount || 0),
-        percentAmount: Number(row.percent_amount || 0),
-      },
-    ]),
-  );
+    .groupBy("ar.employee_id")
+    .groupByRaw("upper(coalesce(ar.frequency, ''))");
+
+  const allowanceByEmployee = new Map();
+  (allowanceRows || []).forEach((row) => {
+    const employeeId = Number(row.employee_id || 0);
+    if (!employeeId) return;
+    const frequency = String(row.frequency || "")
+      .trim()
+      .toUpperCase();
+    if (frequency !== "MONTHLY" && frequency !== "DAILY") return;
+
+    const current = allowanceByEmployee.get(employeeId) || {
+      MONTHLY: { fixedAmount: 0, percentAmount: 0 },
+      DAILY: { fixedAmount: 0, percentAmount: 0 },
+    };
+
+    current[frequency] = {
+      fixedAmount: Number(row.fixed_amount || 0),
+      percentAmount: Number(row.percent_amount || 0),
+    };
+
+    allowanceByEmployee.set(employeeId, current);
+  });
+
   const result = new Map();
   (employeeRows || []).forEach((row) => {
     const employeeId = Number(row.id || 0);
     if (!employeeId) return;
+
+    const payrollType = String(row.payroll_type || "")
+      .trim()
+      .toUpperCase();
     const basicSalary = Number(row.basic_salary || 0);
-    const allowance = allowanceMap.get(employeeId) || {
+    const allowance = allowanceByEmployee.get(employeeId) || {
+      MONTHLY: { fixedAmount: 0, percentAmount: 0 },
+      DAILY: { fixedAmount: 0, percentAmount: 0 },
+    };
+
+    const monthlyAllowance = allowance.MONTHLY || {
       fixedAmount: 0,
       percentAmount: 0,
     };
+    const dailyAllowance = allowance.DAILY || {
+      fixedAmount: 0,
+      percentAmount: 0,
+    };
+
     const monthlyAmount = Number(
       (
         basicSalary +
-        Number(allowance.fixedAmount || 0) +
-        (basicSalary * Number(allowance.percentAmount || 0)) / 100
+        Number(monthlyAllowance.fixedAmount || 0) +
+        (basicSalary * Number(monthlyAllowance.percentAmount || 0)) / 100
       ).toFixed(2),
     );
+
+    const dailyAmount = Number(
+      (
+        basicSalary +
+        Number(dailyAllowance.fixedAmount || 0) +
+        (basicSalary * Number(dailyAllowance.percentAmount || 0)) / 100
+      ).toFixed(2),
+    );
+
     result.set(employeeId, {
+      payrollType,
       monthlyAmount: Number.isFinite(monthlyAmount) && monthlyAmount > 0 ? monthlyAmount : 0,
+      dailyAmount: Number.isFinite(dailyAmount) && dailyAmount > 0 ? dailyAmount : 0,
       employmentStartYmd:
         toLocalDateOnly(row.created_at || new Date()) || toLocalDateOnly(new Date()),
     });
@@ -494,31 +621,63 @@ const getLedgerRows = async ({ req, filters, options, kind }) => {
 
   let syntheticEmployeeRows = [];
   if (kind === "employee" && Number(filters.entityId || 0) > 0) {
-    const monthlyAmountMap = await loadEmployeeMonthlyAmounts({
+    const accrualProfileMap = await loadEmployeeAccrualProfiles({
       entityIds: [Number(filters.entityId)],
     });
-    const monthlyMeta = monthlyAmountMap.get(Number(filters.entityId));
-    if (monthlyMeta && Number(monthlyMeta.monthlyAmount || 0) > 0) {
+    const accrualMeta = accrualProfileMap.get(Number(filters.entityId));
+
+    if (
+      accrualMeta &&
+      accrualMeta.payrollType === "MONTHLY" &&
+      Number(accrualMeta.monthlyAmount || 0) > 0
+    ) {
       const fromDateUtc = toUtcDateFromYmd(filters.from);
       const openingAsOnDate = fromDateUtc
         ? toYmd(new Date(fromDateUtc.getTime() - 24 * 60 * 60 * 1000))
         : null;
       const openingAccrualCount = countMonthlyAccrualsUpTo({
-        employmentStartYmd: monthlyMeta.employmentStartYmd,
+        employmentStartYmd: accrualMeta.employmentStartYmd,
         asOnYmd: openingAsOnDate || filters.from,
       });
       if (openingAccrualCount > 0) {
         openingBalance = toAmount(
           openingBalance +
-            Number(monthlyMeta.monthlyAmount || 0) * Number(openingAccrualCount || 0),
+            Number(accrualMeta.monthlyAmount || 0) * Number(openingAccrualCount || 0),
           2,
         );
       }
       syntheticEmployeeRows = buildMonthlyAccrualRowsInRange({
-        employmentStartYmd: monthlyMeta.employmentStartYmd,
+        employmentStartYmd: accrualMeta.employmentStartYmd,
         fromYmd: filters.from,
         toYmdValue: filters.to,
-        monthlyAmount: Number(monthlyMeta.monthlyAmount || 0),
+        monthlyAmount: Number(accrualMeta.monthlyAmount || 0),
+        idSeed: Number(filters.entityId),
+      });
+    } else if (
+      accrualMeta &&
+      accrualMeta.payrollType === "DAILY" &&
+      Number(accrualMeta.dailyAmount || 0) > 0
+    ) {
+      const fromDateUtc = toUtcDateFromYmd(filters.from);
+      const openingAsOnDate = fromDateUtc
+        ? toYmd(new Date(fromDateUtc.getTime() - 24 * 60 * 60 * 1000))
+        : null;
+      const openingAccrualCount = countDailyAccrualDaysUpTo({
+        employmentStartYmd: accrualMeta.employmentStartYmd,
+        asOnYmd: openingAsOnDate || filters.from,
+      });
+      if (openingAccrualCount > 0) {
+        openingBalance = toAmount(
+          openingBalance +
+            Number(accrualMeta.dailyAmount || 0) * Number(openingAccrualCount || 0),
+          2,
+        );
+      }
+      syntheticEmployeeRows = buildDailyAccrualRowsInRange({
+        employmentStartYmd: accrualMeta.employmentStartYmd,
+        fromYmd: filters.from,
+        toYmdValue: filters.to,
+        dailyAmount: Number(accrualMeta.dailyAmount || 0),
         idSeed: Number(filters.entityId),
       });
     }
@@ -701,18 +860,29 @@ const getBalanceRows = async ({ req, filters, kind }) => {
     const employeeIds = rows
       .map((row) => Number(row.id || 0))
       .filter((id) => Number.isInteger(id) && id > 0);
-    const monthlyAmountMap = await loadEmployeeMonthlyAmounts({
+    const accrualProfileMap = await loadEmployeeAccrualProfiles({
       entityIds: employeeIds,
     });
     salaryAccrualAmountByEmployee = new Map(
-      [...monthlyAmountMap.entries()].map(([employeeId, meta]) => {
-        const count = countMonthlyAccrualsUpTo({
-          employmentStartYmd: meta.employmentStartYmd,
-          asOnYmd: filters.asOn,
-        });
+      [...accrualProfileMap.entries()].map(([employeeId, meta]) => {
+        let count = 0;
+        let perCycleAmount = 0;
+        if (meta.payrollType === "MONTHLY") {
+          count = countMonthlyAccrualsUpTo({
+            employmentStartYmd: meta.employmentStartYmd,
+            asOnYmd: filters.asOn,
+          });
+          perCycleAmount = Number(meta.monthlyAmount || 0);
+        } else if (meta.payrollType === "DAILY") {
+          count = countDailyAccrualDaysUpTo({
+            employmentStartYmd: meta.employmentStartYmd,
+            asOnYmd: filters.asOn,
+          });
+          perCycleAmount = Number(meta.dailyAmount || 0);
+        }
         return [
           Number(employeeId),
-          toAmount(Number(meta.monthlyAmount || 0) * Number(count || 0), 2),
+          toAmount(Number(perCycleAmount || 0) * Number(count || 0), 2),
         ];
       }),
     );
