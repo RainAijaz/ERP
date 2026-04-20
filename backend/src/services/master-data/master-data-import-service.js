@@ -86,11 +86,95 @@ const TARGET_GROUPS = Object.freeze({
   },
 });
 
+const TARGET_COLUMN_GUIDES = Object.freeze({
+  basic_master_data: Object.freeze({
+    requiredColumns: [
+      "Sheet specific",
+      "units/sizes/colors/grades/packing_types/cities/product_groups/departments: name",
+      "product_subgroups/product_types: code, name",
+      "uom_conversions: from_uom, to_uom, factor",
+      "party_groups: name, party_type",
+    ],
+    optionalColumns: [
+      "code",
+      "name_ur",
+      "is_active",
+      "item_types",
+      "is_production",
+    ],
+  }),
+  account_groups: Object.freeze({
+    requiredColumns: ["account_type", "name"],
+    optionalColumns: ["code", "name_ur", "is_active"],
+  }),
+  accounts: Object.freeze({
+    requiredColumns: ["name", "account_type", "account_group or account_group_code"],
+    optionalColumns: [
+      "code",
+      "name_ur",
+      "posting_class_code",
+      "is_contra",
+      "lock_posting",
+      "is_active",
+      "branch_codes",
+    ],
+  }),
+  parties: Object.freeze({
+    requiredColumns: ["name", "party_type", "city", "branch_codes"],
+    optionalColumns: [
+      "code",
+      "name_ur",
+      "party_group",
+      "phone1",
+      "phone2",
+      "address",
+      "credit_allowed",
+      "credit_limit",
+      "is_active",
+    ],
+  }),
+  products: Object.freeze({
+    requiredColumns: [
+      "name (or existing code for update)",
+      "item_type (RM/SFG/FG) for new rows",
+      "product_group for new rows",
+      "base_uom for new rows",
+    ],
+    optionalColumns: [
+      "code",
+      "name_ur",
+      "product_subgroup",
+      "product_type/category",
+      "uses_sfg",
+      "sfg_part_type",
+      "min_stock_level",
+      "is_active",
+      "color_name",
+      "size_name",
+      "purchase_rate (RM only)",
+    ],
+  }),
+  skus: Object.freeze({
+    requiredColumns: ["sku_code", "item_code or item_name"],
+    optionalColumns: [
+      "item_type",
+      "size_name",
+      "grade_name",
+      "color_name",
+      "packing_type",
+      "sale_rate",
+      "is_active",
+    ],
+  }),
+});
+
 const SUPPORTED_IMPORT_TARGETS = Object.freeze(
   Object.values(TARGET_GROUPS).map((entry) => ({
     key: entry.key,
     labelKey: entry.labelKey,
     descriptionKey: entry.descriptionKey,
+    requiredColumns: TARGET_COLUMN_GUIDES[entry.key]?.requiredColumns || [],
+    optionalColumns: TARGET_COLUMN_GUIDES[entry.key]?.optionalColumns || [],
   })),
 );
 
@@ -677,7 +761,19 @@ const makeEntitySummary = (entityKey, rowsTotal) => ({
   skipCount: 0,
   errorCount: 0,
   warningCount: 0,
+  skipReasonCounts: {},
 });
+
+const registerSkipReason = (summary, reason) => {
+  const message = trimString(reason);
+  if (!message || !summary) return;
+  const counts =
+    summary.skipReasonCounts && typeof summary.skipReasonCounts === "object"
+      ? summary.skipReasonCounts
+      : {};
+  counts[message] = Number(counts[message] || 0) + 1;
+  summary.skipReasonCounts = counts;
+};
 
 const toNameCode = (value, fallback = "") => {
   const base = slugifyCode(value, 80);
@@ -2497,7 +2593,11 @@ const ENTITY_SPECS = Object.freeze({
         !trimString(row.raw.groupName) &&
         !trimString(row.raw.baseUom);
       if (skuSheetWithoutProductColumns) {
-        return { skip: true };
+        return {
+          skip: true,
+          skipReason:
+            "Row looks like SKU/variant data and was ignored by Products target.",
+        };
       }
 
       const codeToken = trimString(row.raw.code);
@@ -2518,7 +2618,11 @@ const ENTITY_SPECS = Object.freeze({
             error: `Item name is missing and code '${codeToken}' was not found in existing items.`,
           };
         }
-        return { skip: true };
+        return {
+          skip: true,
+          skipReason:
+            "Row has no product name/code and was ignored as an empty product row.",
+        };
       }
 
       const itemTypeToken = mapProductItemTypeToken(row.raw.itemType);
@@ -2953,22 +3057,55 @@ const ENTITY_SPECS = Object.freeze({
         `${row?.sheetName || ""} ${row?.sheetTitle || ""}`,
       );
       const hasSkuSpecificShape = Boolean(
-        trimString(row?.values?.sku_code) ||
-          trimString(row?.values?.skus_code) ||
-          trimString(row?.values?.skus_item_code) ||
-          trimString(row?.values?.skus_item_name) ||
-          trimString(row?.values?.skus_sale_rate),
+        trimString(row.raw.skuCode) ||
+          trimString(row.raw.itemCode) ||
+          trimString(row.raw.itemName) ||
+          trimString(row.raw.sizeName) ||
+          trimString(row.raw.gradeName) ||
+          trimString(row.raw.colorName) ||
+          trimString(row.raw.packingTypeName) ||
+          trimString(row.raw.saleRate),
       );
       if (!explicitSkuSheet && !hasSkuSpecificShape) {
-        return { skip: true };
+        return {
+          skip: true,
+          skipReason:
+            "Row does not match SKU columns and was ignored by SKU target.",
+        };
       }
 
-      const skuCode = trimString(row.raw.skuCode);
-      if (!skuCode) return { skip: true };
-
-      const explicitItemType = mapProductItemTypeToken(row.raw.itemType);
       const itemCodeToken = trimString(row.raw.itemCode);
       const itemNameToken = trimString(row.raw.itemName);
+      const sizeToken = trimString(row.raw.sizeName);
+      const gradeToken = trimString(row.raw.gradeName);
+      const colorToken = trimString(row.raw.colorName);
+      const packingToken = trimString(row.raw.packingTypeName);
+      const saleRateToken = trimString(row.raw.saleRate);
+
+      const skuCode = trimString(row.raw.skuCode);
+      if (!skuCode) {
+        const hasAnySkuData = Boolean(
+          itemCodeToken ||
+            itemNameToken ||
+            sizeToken ||
+            gradeToken ||
+            colorToken ||
+            packingToken ||
+            saleRateToken,
+        );
+        if (hasAnySkuData) {
+          return {
+            error:
+              "sku_code is required for SKU import rows when other SKU columns have values.",
+          };
+        }
+        return {
+          skip: true,
+          skipReason: "Row is empty for SKU import columns.",
+        };
+      }
+
+      const explicitItemType = mapProductItemTypeToken(row.raw.itemType);
       const existingSku = await resolveSkuByCode(db, skuCode);
 
       let item = existingSku?.item_id
@@ -3037,11 +3174,6 @@ const ENTITY_SPECS = Object.freeze({
           error: `SKU ${skuCode} item type mismatch: row says ${explicitItemType}, item is ${itemType}.`,
         };
       }
-
-      const sizeToken = trimString(row.raw.sizeName);
-      const gradeToken = trimString(row.raw.gradeName);
-      const colorToken = trimString(row.raw.colorName);
-      const packingToken = trimString(row.raw.packingTypeName);
 
       let sizeId = Number(existingSku?.size_id || 0) || null;
       if (sizeToken) {
@@ -3301,6 +3433,10 @@ const planImportOperations = async ({
         const planned = await entitySpec.plan(row, db, actorId, context);
         if (planned?.skip) {
           summary.skipCount += 1;
+          registerSkipReason(
+            summary,
+            planned?.skipReason || "Row did not meet target import requirements.",
+          );
           continue;
         }
         if (planned?.error) {
@@ -3350,7 +3486,23 @@ const planImportOperations = async ({
     }
   }
 
-  const orderedSummaries = Object.values(entitySummaries);
+  const orderedSummaries = Object.values(entitySummaries).map((entry) => {
+    const skipReasons = Object.entries(entry.skipReasonCounts || {})
+      .map(([message, count]) => ({
+        message,
+        count,
+      }))
+      .sort((a, b) => {
+        if (Number(b.count) !== Number(a.count)) {
+          return Number(b.count) - Number(a.count);
+        }
+        return String(a.message).localeCompare(String(b.message));
+      });
+    return {
+      ...entry,
+      skipReasons,
+    };
+  });
   const summary = {
     entitiesPlanned: orderedSummaries.filter((entry) => entry.rowsPlanned > 0)
       .length,

@@ -213,6 +213,21 @@ test.describe("Voucher/report permission policy", () => {
     await expect(
       page.locator(`input[name="${reportScopeId}:can_approve"]`),
     ).toHaveCount(0);
+
+    const expectedSalesReportPaths = [
+      "sales.customer_reports.customer_balances_report",
+      "sales.customer_reports.customer_ledger_report",
+      "sales.customer_reports.customer_listings",
+      "sales.customer_reports.customer_contact_analysis",
+      "sales.sales_reports.sales_order_report",
+      "sales.sales_reports.sales_report",
+      "sales.sales_reports.sale_return_report",
+      "sales.sales_reports.sales_discount_report",
+    ];
+
+    for (const path of expectedSalesReportPaths) {
+      await expect(page.locator(`tr[data-path="${path}"]`)).toHaveCount(1);
+    }
   });
 
   test("voucher list permission hides previous vouchers when navigate is denied", async ({

@@ -53,6 +53,18 @@
                     <span>
                       <span class="block font-semibold uppercase tracking-widest"><%= t(target.labelKey) %></span>
                       <span class="mt-0.5 block text-[11px] text-slate-500"><%= t(target.descriptionKey) %></span>
+                      <% if ((target.requiredColumns || []).length) { %>
+                        <span class="mt-1 block text-[11px] text-slate-600">
+                          <span class="font-semibold text-slate-700"><%= t("import_required_columns") %>:</span>
+                          <%= target.requiredColumns.join(", ") %>
+                        </span>
+                      <% } %>
+                      <% if ((target.optionalColumns || []).length) { %>
+                        <span class="mt-1 block text-[11px] text-slate-500">
+                          <span class="font-semibold text-slate-600"><%= t("import_optional_columns") %>:</span>
+                          <%= target.optionalColumns.join(", ") %>
+                        </span>
+                      <% } %>
                     </span>
                   </label>
                 <% }) %>
@@ -106,6 +118,7 @@
               <th class="px-4 py-3 text-left"><%= t("import_create") %></th>
               <th class="px-4 py-3 text-left"><%= t("import_update") %></th>
               <th class="px-4 py-3 text-left"><%= t("import_skip") %></th>
+              <th class="px-4 py-3 text-left"><%= t("import_skip_reasons") %></th>
               <th class="px-4 py-3 text-left"><%= t("import_errors") %></th>
             </tr>
           </thead>
@@ -117,6 +130,18 @@
                 <td class="px-4 py-3 text-emerald-700"><%= entry.createCount %></td>
                 <td class="px-4 py-3 text-blue-700"><%= entry.updateCount %></td>
                 <td class="px-4 py-3 text-amber-700"><%= entry.skipCount %></td>
+                <td class="px-4 py-3 text-[11px] text-slate-700">
+                  <% if ((entry.skipReasons || []).length) { %>
+                    <% entry.skipReasons.slice(0, 3).forEach((reason) => { %>
+                      <div><span class="font-semibold text-slate-900"><%= reason.count %>x</span> <%= reason.message %></div>
+                    <% }) %>
+                    <% if ((entry.skipReasons || []).length > 3) { %>
+                      <div class="text-slate-500">+<%= entry.skipReasons.length - 3 %></div>
+                    <% } %>
+                  <% } else { %>
+                    <span class="text-slate-400">-</span>
+                  <% } %>
+                </td>
                 <td class="px-4 py-3 text-rose-700"><%= entry.errorCount %></td>
               </tr>
             <% }) %>

@@ -275,7 +275,6 @@ router.get(
       );
 
       const navRows = [];
-      const renderedConfigurableScopeIds = new Set();
       const walk = (nodes, parentPath = "", depth = 0) => {
         nodes.forEach((node) => {
           const path = parentPath ? `${parentPath}.${node.key}` : node.key;
@@ -289,22 +288,6 @@ router.get(
           const isConfigurableScope = Boolean(
             scope && node.scopeType && isPermissionMatrixScope(node.scopeType),
           );
-
-          // Avoid rendering the same underlying scope multiple times in matrix.
-          // Shared scope keys (e.g. grouped report permissions) otherwise look like
-          // permissions are auto-granted across sibling rows after save.
-          if (
-            isConfigurableScope &&
-            renderedConfigurableScopeIds.has(scope.id)
-          ) {
-            if (hasChildren) {
-              walk(node.children, path, depth + 1);
-            }
-            return;
-          }
-          if (isConfigurableScope) {
-            renderedConfigurableScopeIds.add(scope.id);
-          }
 
           navRows.push({
             key: node.key,
