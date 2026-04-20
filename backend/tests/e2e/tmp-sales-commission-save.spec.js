@@ -6,38 +6,45 @@ const { login } = require("./utils/auth");
 const db = createKnex(knexConfig);
 
 const getSelectOptions = async (page, fieldName) => {
-  const select = page.locator(`[data-modal-form] [data-field="${fieldName}"]`).first();
+  const select = page
+    .locator(`[data-modal-form] [data-field="${fieldName}"]`)
+    .first();
   if (!(await select.count())) return [];
   return select.evaluate((el) =>
     Array.from(el.options || [])
-      .map((opt) => ({ value: String(opt.value || "").trim(), label: String(opt.textContent || "").trim() }))
+      .map((opt) => ({
+        value: String(opt.value || "").trim(),
+        label: String(opt.textContent || "").trim(),
+      }))
       .filter((opt) => opt.value),
   );
 };
 
 const setSelectSingle = async (page, fieldName, value) => {
-  await page.locator(`[data-modal-form] [data-field="${fieldName}"]`).evaluate(
-    (el, val) => {
+  await page
+    .locator(`[data-modal-form] [data-field="${fieldName}"]`)
+    .evaluate((el, val) => {
       el.value = String(val || "");
       el.dispatchEvent(new Event("input", { bubbles: true }));
       el.dispatchEvent(new Event("change", { bubbles: true }));
-    },
-    value,
-  );
+    }, value);
 };
 
 const setSelectMulti = async (page, fieldName, values) => {
-  await page.locator(`[data-modal-form] [data-field="${fieldName}"]`).evaluate(
-    (el, vals) => {
-      const wanted = new Set((Array.isArray(vals) ? vals : []).map((v) => String(v || "").trim()).filter(Boolean));
+  await page
+    .locator(`[data-modal-form] [data-field="${fieldName}"]`)
+    .evaluate((el, vals) => {
+      const wanted = new Set(
+        (Array.isArray(vals) ? vals : [])
+          .map((v) => String(v || "").trim())
+          .filter(Boolean),
+      );
       Array.from(el.options || []).forEach((opt) => {
         opt.selected = wanted.has(String(opt.value || "").trim());
       });
       el.dispatchEvent(new Event("input", { bubbles: true }));
       el.dispatchEvent(new Event("change", { bubbles: true }));
-    },
-    values,
-  );
+    }, values);
 };
 
 test.describe("TMP Sales commission save", () => {
@@ -45,9 +52,13 @@ test.describe("TMP Sales commission save", () => {
     await db.destroy();
   });
 
-  test("create commission from modal with screenshot-like values", async ({ page }) => {
+  test("create commission from modal with screenshot-like values", async ({
+    page,
+  }) => {
     await login(page, "E2E_ADMIN");
-    await page.goto("/hr-payroll/employees/commissions", { waitUntil: "domcontentloaded" });
+    await page.goto("/hr-payroll/employees/commissions", {
+      waitUntil: "domcontentloaded",
+    });
 
     await page.locator("[data-modal-open]").click();
     await expect(page.locator("[data-modal-form]")).toBeVisible();
@@ -55,8 +66,8 @@ test.describe("TMP Sales commission save", () => {
     const employeeOptions = await getSelectOptions(page, "employee_id");
     expect(employeeOptions.length).toBeGreaterThan(0);
 
-    const preferredEmp = employeeOptions.filter(
-      (o) => /ahsan|boota/i.test(o.label),
+    const preferredEmp = employeeOptions.filter((o) =>
+      /ahsan|boota/i.test(o.label),
     );
     const selectedEmps = preferredEmp.length
       ? preferredEmp.slice(0, 2).map((o) => o.value)
@@ -70,7 +81,9 @@ test.describe("TMP Sales commission save", () => {
     expect(skuOptions.length).toBeGreaterThan(0);
 
     const preferredSkus = skuOptions.filter((o) =>
-      /W03 2\/5 CARTON PACKED A|W03 2\/5 THAILI PACKED A|W03 6\/9 CARTON PACKED A/i.test(o.label),
+      /W03 2\/5 CARTON PACKED A|W03 2\/5 THAILI PACKED A|W03 6\/9 CARTON PACKED A/i.test(
+        o.label,
+      ),
     );
     const selectedSkus = preferredSkus.length
       ? preferredSkus.slice(0, 3).map((o) => o.value)
@@ -144,7 +157,10 @@ test.describe("TMP Sales commission save", () => {
     const targetSkuIds = targetSkuRows
       .map((row) => Number(row.id))
       .filter((id) => Number.isInteger(id) && id > 0);
-    test.skip(!targetSkuIds.length, "No FG SKUs found for selected product group.");
+    test.skip(
+      !targetSkuIds.length,
+      "No FG SKUs found for selected product group.",
+    );
 
     await setSelectSingle(page, "group_id", String(groupId));
     await setSelectSingle(page, "rate_type", "PER_DOZEN");
@@ -206,4 +222,3 @@ test.describe("TMP Sales commission save", () => {
     expect(afterMatchCount).toBeGreaterThan(beforeMatchCount);
   });
 });
-

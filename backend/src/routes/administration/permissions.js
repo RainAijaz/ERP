@@ -91,8 +91,7 @@ const parseAccountAccessPayload = (value) => {
     } else {
       // Backward compatibility for existing payloads that still post canView* flags.
       canViewDetails = toBool(entry?.canViewDetails, true);
-      canViewSummary =
-        canViewDetails || toBool(entry?.canViewSummary, true);
+      canViewSummary = canViewDetails || toBool(entry?.canViewSummary, true);
       canViewDetails = canViewSummary ? canViewDetails : false;
     }
 
@@ -276,6 +275,7 @@ router.get(
       );
 
       const navRows = [];
+      const renderedConfigurableScopeIds = new Set();
       const walk = (nodes, parentPath = "", depth = 0) => {
         nodes.forEach((node) => {
           const path = parentPath ? `${parentPath}.${node.key}` : node.key;
@@ -285,6 +285,27 @@ router.get(
             node.scopeType && node.scopeKey
               ? scopeByKey.get(`${node.scopeType}:${node.scopeKey}`)
               : null;
+
+          const isConfigurableScope = Boolean(
+            scope && node.scopeType && isPermissionMatrixScope(node.scopeType),
+          );
+
+          // Avoid rendering the same underlying scope multiple times in matrix.
+          // Shared scope keys (e.g. grouped report permissions) otherwise look like
+          // permissions are auto-granted across sibling rows after save.
+          if (
+            isConfigurableScope &&
+            renderedConfigurableScopeIds.has(scope.id)
+          ) {
+            if (hasChildren) {
+              walk(node.children, path, depth + 1);
+            }
+            return;
+          }
+          if (isConfigurableScope) {
+            renderedConfigurableScopeIds.add(scope.id);
+          }
+
           navRows.push({
             key: node.key,
             path,
@@ -302,11 +323,7 @@ router.get(
             applicableActions: node.scopeType
               ? getApplicableActionKeys(node.scopeType)
               : [],
-            isConfigurableScope: Boolean(
-              scope &&
-              node.scopeType &&
-              isPermissionMatrixScope(node.scopeType),
-            ),
+            isConfigurableScope,
             missing: !!(node.scopeType && node.scopeKey && !scope),
           });
           if (hasChildren) {

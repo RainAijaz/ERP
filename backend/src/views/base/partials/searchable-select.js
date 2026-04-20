@@ -603,7 +603,6 @@
     let activeIndex = -1;
     let keyboardNavigatedMenu = false;
     let multiSearchValue = "";
-    let menuWasOpenOnPointerDown = false;
     const closeMenu = () => {
       menu.classList.add("hidden");
       keyboardNavigatedMenu = false;
@@ -854,19 +853,9 @@
         }, 0);
       }
     });
-    input.addEventListener("pointerdown", () => {
-      menuWasOpenOnPointerDown = !menu.classList.contains("hidden");
-    });
     input.addEventListener("click", () => {
       if (select.disabled) return;
       keyboardNavigatedMenu = false;
-      // Keep multiselect behavior intuitive: second click on the field closes.
-      if (isMulti && !useInlineMultiSearch && menuWasOpenOnPointerDown) {
-        menuWasOpenOnPointerDown = false;
-        closeMenu();
-        return;
-      }
-      menuWasOpenOnPointerDown = false;
       if (useInlineMultiSearch) {
         multiSearchValue = "";
         input.value = "";

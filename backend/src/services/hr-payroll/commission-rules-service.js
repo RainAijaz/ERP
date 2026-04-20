@@ -7,14 +7,27 @@ const APPLY_ON = {
   ALL: "ALL",
 };
 
-const PRECEDENCE = [APPLY_ON.SKU, APPLY_ON.SUBGROUP, APPLY_ON.GROUP, APPLY_ON.ALL];
+const PRECEDENCE = [
+  APPLY_ON.SKU,
+  APPLY_ON.SUBGROUP,
+  APPLY_ON.GROUP,
+  APPLY_ON.ALL,
+];
 const ALLOWED_SCOPE_FOR_BULK = new Set([APPLY_ON.SUBGROUP, APPLY_ON.GROUP]);
 const COMMISSION_BASIS_FIXED_PER_UNIT = "FIXED_PER_UNIT";
 const COMMISSION_RATE_TYPES = new Set(["PER_DOZEN", "PER_PAIR"]);
 
 const deriveValueTypeFromBasis = (commissionBasis) => {
-  if (commissionBasis === "NET_SALES_PERCENT" || commissionBasis === "GROSS_MARGIN_PERCENT") return "PERCENT";
-  if (commissionBasis === "FIXED_PER_UNIT" || commissionBasis === "FIXED_PER_INVOICE") return "FIXED";
+  if (
+    commissionBasis === "NET_SALES_PERCENT" ||
+    commissionBasis === "GROSS_MARGIN_PERCENT"
+  )
+    return "PERCENT";
+  if (
+    commissionBasis === "FIXED_PER_UNIT" ||
+    commissionBasis === "FIXED_PER_INVOICE"
+  )
+    return "FIXED";
   return null;
 };
 
@@ -41,45 +54,63 @@ const hasTwoDecimalsOrLess = (value) => {
 
 const normalizeBulkInput = ({ payload, t }) => {
   const employeeId = toPositiveIntOrNull(payload.employee_id);
-  if (!employeeId) throw new Error(t("error_required_fields") );
+  if (!employeeId) throw new Error(t("error_required_fields"));
 
-  const applyOn = String(payload.apply_on || "").trim().toUpperCase();
+  const applyOn = String(payload.apply_on || "")
+    .trim()
+    .toUpperCase();
   if (!ALLOWED_SCOPE_FOR_BULK.has(applyOn)) {
-    throw new Error(t("error_group_subgroup_only_for_bulk_commission") );
+    throw new Error(t("error_group_subgroup_only_for_bulk_commission"));
   }
 
   const commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT;
-  const rateType = String(payload.rate_type || "PER_PAIR").trim().toUpperCase();
+  const rateType = String(payload.rate_type || "PER_PAIR")
+    .trim()
+    .toUpperCase();
   if (!COMMISSION_RATE_TYPES.has(rateType)) {
-    throw new Error(t("error_invalid_rate_type") );
+    throw new Error(t("error_invalid_rate_type"));
   }
 
-  const subgroupId = applyOn === APPLY_ON.SUBGROUP ? toPositiveIntOrNull(payload.subgroup_id) : null;
-  const groupId = applyOn === APPLY_ON.GROUP ? toPositiveIntOrNull(payload.group_id) : null;
+  const subgroupId =
+    applyOn === APPLY_ON.SUBGROUP
+      ? toPositiveIntOrNull(payload.subgroup_id)
+      : null;
+  const groupId =
+    applyOn === APPLY_ON.GROUP ? toPositiveIntOrNull(payload.group_id) : null;
   if (applyOn === APPLY_ON.SUBGROUP && !subgroupId) {
-    throw new Error(t("error_select_subgroup") );
+    throw new Error(t("error_select_subgroup"));
   }
   if (applyOn === APPLY_ON.GROUP && !groupId) {
-    throw new Error(t("error_select_group") );
+    throw new Error(t("error_select_group"));
   }
 
-  const reverseOnReturns = payload.reverse_on_returns === true || payload.reverse_on_returns === "true" || payload.reverse_on_returns === "on";
-  const statusRaw = String(payload.status || "active").trim().toLowerCase();
+  const reverseOnReturns =
+    payload.reverse_on_returns === true ||
+    payload.reverse_on_returns === "true" ||
+    payload.reverse_on_returns === "on";
+  const statusRaw = String(payload.status || "active")
+    .trim()
+    .toLowerCase();
   if (statusRaw !== "active" && statusRaw !== "inactive") {
-    throw new Error(t("error_invalid_status") );
+    throw new Error(t("error_invalid_status"));
   }
 
   const valueType = deriveValueTypeFromBasis(commissionBasis);
-  if (!valueType) throw new Error(t("error_invalid_value_type") );
+  if (!valueType) throw new Error(t("error_invalid_value_type"));
 
   const rowsSource = Array.isArray(payload.rows) ? payload.rows : [];
   const rows = rowsSource.map((row) => {
     const skuId = toPositiveIntOrNull(row.sku_id);
     const rateRaw = row.new_rate;
     const money = toMoney(rateRaw);
-    if (!skuId) throw new Error(t("error_invalid_bulk_commission_payload") );
-    if (money === null || Number(money) < 0 || !hasTwoDecimalsOrLess(rateRaw) || Number(money) > 99999999.99) {
-      throw new Error(t("error_invalid_rate_value") );
+    if (!skuId) throw new Error(t("error_invalid_bulk_commission_payload"));
+    if (
+      money === null ||
+      Number(money) < 0 ||
+      !hasTwoDecimalsOrLess(rateRaw) ||
+      Number(money) > 99999999.99
+    ) {
+      throw new Error(t("error_invalid_rate_value"));
     }
     return {
       skuId,
@@ -88,7 +119,7 @@ const normalizeBulkInput = ({ payload, t }) => {
   });
 
   if (!rows.length) {
-    throw new Error(t("error_no_target_skus_found") );
+    throw new Error(t("error_no_target_skus_found"));
   }
 
   return {
@@ -119,17 +150,24 @@ const fetchTargetSkus = async ({ db = knex, applyOn, subgroupId, groupId }) => {
     .whereRaw("i.item_type = 'FG'")
     .orderBy("s.sku_code", "asc");
 
-  if (applyOn === APPLY_ON.SUBGROUP) query = query.andWhere("i.subgroup_id", subgroupId);
+  if (applyOn === APPLY_ON.SUBGROUP)
+    query = query.andWhere("i.subgroup_id", subgroupId);
   if (applyOn === APPLY_ON.GROUP) query = query.andWhere("i.group_id", groupId);
 
   return query;
 };
 
-const fetchExistingRules = async ({ db = knex, employeeId, commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT }) => {
+const fetchExistingRules = async ({
+  db = knex,
+  employeeId,
+  commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT,
+}) => {
   const employee = Number(employeeId || 0);
   if (!Number.isInteger(employee) || employee <= 0) return [];
 
-  const basis = String(commissionBasis || "").trim().toUpperCase();
+  const basis = String(commissionBasis || "")
+    .trim()
+    .toUpperCase();
   if (!basis) return [];
 
   return db("erp.employee_commission_rules as ecr")
@@ -140,7 +178,9 @@ const fetchExistingRules = async ({ db = knex, employeeId, commissionBasis = COM
       "subgroup_id",
       "group_id",
       "value",
-      db.raw(`COALESCE(NULLIF(to_jsonb(ecr)->>'rate_type', ''), 'PER_PAIR') as rate_type`),
+      db.raw(
+        `COALESCE(NULLIF(to_jsonb(ecr)->>'rate_type', ''), 'PER_PAIR') as rate_type`,
+      ),
       "status",
       "reverse_on_returns",
     )
@@ -155,15 +195,20 @@ const resolvePreviousForSku = ({ existingRules, sku }) => {
   for (const scope of PRECEDENCE) {
     const matched = existingRules.find((rule) => {
       if (String(rule.apply_on || "").toUpperCase() !== scope) return false;
-      if (scope === APPLY_ON.SKU) return Number(rule.sku_id) === Number(sku.sku_id);
-      if (scope === APPLY_ON.SUBGROUP) return Number(rule.subgroup_id) === Number(sku.subgroup_id || 0);
-      if (scope === APPLY_ON.GROUP) return Number(rule.group_id) === Number(sku.group_id || 0);
+      if (scope === APPLY_ON.SKU)
+        return Number(rule.sku_id) === Number(sku.sku_id);
+      if (scope === APPLY_ON.SUBGROUP)
+        return Number(rule.subgroup_id) === Number(sku.subgroup_id || 0);
+      if (scope === APPLY_ON.GROUP)
+        return Number(rule.group_id) === Number(sku.group_id || 0);
       return true;
     });
     if (matched) {
       return {
         previousRate: matched.value == null ? null : Number(matched.value),
-        previousRateType: String(matched.rate_type || "PER_PAIR").trim().toUpperCase(),
+        previousRateType: String(matched.rate_type || "PER_PAIR")
+          .trim()
+          .toUpperCase(),
         previousSource: scope,
         previousRuleId: Number(matched.id),
       };
@@ -186,7 +231,12 @@ const buildBulkPreviewRows = async ({
   commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT,
   baseRate,
 }) => {
-  const targetSkus = await fetchTargetSkus({ db, applyOn, subgroupId, groupId });
+  const targetSkus = await fetchTargetSkus({
+    db,
+    applyOn,
+    subgroupId,
+    groupId,
+  });
   if (!targetSkus.length) return [];
 
   const existingRules = await fetchExistingRules({

@@ -30,6 +30,7 @@ const ENTITY_KEYS = Object.freeze({
   accounts: "accounts",
   parties: "parties",
   products: "products",
+  skus: "skus",
 });
 
 const TARGET_GROUPS = Object.freeze({
@@ -76,6 +77,12 @@ const TARGET_GROUPS = Object.freeze({
     labelKey: "products",
     descriptionKey: "import_target_products_desc",
     entityKeys: [ENTITY_KEYS.products],
+  },
+  skus: {
+    key: "skus",
+    labelKey: "skus",
+    descriptionKey: "import_target_skus_desc",
+    entityKeys: [ENTITY_KEYS.skus],
   },
 });
 
@@ -139,6 +146,8 @@ const createPlanningContext = () => ({
     uom: new Set(),
     size: new Set(),
     color: new Set(),
+    grade: new Set(),
+    packingType: new Set(),
     productGroup: new Set(),
     productSubgroup: new Set(),
     accountGroup: new Set(),
@@ -198,6 +207,12 @@ const registerStagedReference = (context, operation) => {
       break;
     case ENTITY_KEYS.colors:
       addStagedToken(context.staged.color, operation.data.name);
+      break;
+    case ENTITY_KEYS.grades:
+      addStagedToken(context.staged.grade, operation.data.name);
+      break;
+    case ENTITY_KEYS.packingTypes:
+      addStagedToken(context.staged.packingType, operation.data.name);
       break;
     case ENTITY_KEYS.productSubgroups:
       addStagedToken(context.staged.productSubgroup, operation.data.code);
@@ -739,6 +754,24 @@ const resolveSizeByToken = async (db, token, itemType = null) => {
   return query.first();
 };
 
+const resolveGradeByToken = async (db, token) => {
+  const value = trimString(token);
+  if (!value) return null;
+  return db("erp.grades")
+    .select("id", "name")
+    .whereRaw("lower(name) = ?", [value.toLowerCase()])
+    .first();
+};
+
+const resolvePackingTypeByToken = async (db, token) => {
+  const value = trimString(token);
+  if (!value) return null;
+  return db("erp.packing_types")
+    .select("id", "name")
+    .whereRaw("lower(name) = ?", [value.toLowerCase()])
+    .first();
+};
+
 const resolveProductGroupByToken = async (db, token) => {
   const value = trimString(token);
   if (!value) return null;
@@ -792,6 +825,73 @@ const resolveItemByCode = async (db, token) => {
       "is_active",
     )
     .whereRaw("lower(code) = ?", [value.toLowerCase()])
+    .first();
+};
+
+const resolveItemByName = async (db, token, itemType = null) => {
+  const value = trimString(token);
+  if (!value) return null;
+  const query = db("erp.items")
+    .select(
+      "id",
+      "item_type",
+      "code",
+      "name",
+      "name_ur",
+      "group_id",
+      "subgroup_id",
+      "product_type_id",
+      "base_uom_id",
+      "uses_sfg",
+      "sfg_part_type",
+      "min_stock_level",
+      "is_active",
+    )
+    .whereRaw("lower(name) = ?", [value.toLowerCase()]);
+  if (itemType && ITEM_TYPES.has(String(itemType).toUpperCase())) {
+    query.andWhere("item_type", String(itemType).toUpperCase());
+  }
+  return query.first();
+};
+
+const resolveVariantByIdentity = async (
+  db,
+  { itemId, sizeId = null, gradeId = null, colorId = null, packingTypeId = null },
+) => {
+  const normalizedItemId = Number(itemId || 0);
+  if (!normalizedItemId) return null;
+  return db("erp.variants")
+    .select("id", "item_id", "size_id", "grade_id", "color_id", "packing_type_id")
+    .where({ item_id: normalizedItemId })
+    .whereRaw("COALESCE(size_id, 0) = COALESCE(?, 0)", [sizeId])
+    .whereRaw("COALESCE(grade_id, 0) = COALESCE(?, 0)", [gradeId])
+    .whereRaw("COALESCE(color_id, 0) = COALESCE(?, 0)", [colorId])
+    .whereRaw("COALESCE(packing_type_id, 0) = COALESCE(?, 0)", [packingTypeId])
+    .first();
+};
+
+const resolveSkuByCode = async (db, token) => {
+  const value = trimString(token);
+  if (!value) return null;
+  return db("erp.skus as s")
+    .join("erp.variants as v", "v.id", "s.variant_id")
+    .join("erp.items as i", "i.id", "v.item_id")
+    .select(
+      "s.id",
+      "s.sku_code",
+      "s.variant_id",
+      "s.is_active",
+      "v.item_id",
+      "v.size_id",
+      "v.grade_id",
+      "v.color_id",
+      "v.packing_type_id",
+      "v.sale_rate",
+      "i.item_type",
+      "i.code as item_code",
+      "i.name as item_name",
+    )
+    .whereRaw("lower(s.sku_code) = ?", [value.toLowerCase()])
     .first();
 };
 
@@ -2384,6 +2484,22 @@ const ENTITY_SPECS = Object.freeze({
       isActive: ["products_is_active", "is_active"],
     },
     async plan(row, db, actorId, context) {
+      const skuCodeToken = trimString(row?.values?.sku_code);
+      const hasVariantDimensionColumns =
+        trimString(row?.values?.grade_name) ||
+        trimString(row?.values?.packing_type) ||
+        trimString(row?.values?.packing_type_name) ||
+        trimString(row?.values?.size_name) ||
+        trimString(row?.values?.color_name);
+      const skuSheetWithoutProductColumns =
+        (skuCodeToken || hasVariantDimensionColumns) &&
+        !trimString(row.raw.itemType) &&
+        !trimString(row.raw.groupName) &&
+        !trimString(row.raw.baseUom);
+      if (skuSheetWithoutProductColumns) {
+        return { skip: true };
+      }
+
       const codeToken = trimString(row.raw.code);
       let existingByCode = null;
       if (codeToken) {
@@ -2810,6 +2926,332 @@ const ENTITY_SPECS = Object.freeze({
           op.data.sfg_part_type || "UPPER",
           actorId || null,
         );
+      }
+    },
+  },
+  [ENTITY_KEYS.skus]: {
+    sheetMatchers: [/skus?/i, /variants?/i, /^sheet\d+$/i],
+    fieldAliases: {
+      skuCode: ["skus_code", "sku_code", "sku", "code"],
+      itemType: ["skus_item_type", "item_type", "type"],
+      itemCode: ["skus_item_code", "item_code", "product_code", "article_code"],
+      itemName: ["skus_item_name", "item_name", "product_name", "article_name"],
+      sizeName: ["skus_size", "size_name", "size"],
+      gradeName: ["skus_grade", "grade_name", "grade"],
+      colorName: ["skus_color", "color_name", "color"],
+      packingTypeName: [
+        "skus_packing_type",
+        "packing_type_name",
+        "packing_type",
+        "packing",
+      ],
+      saleRate: ["skus_sale_rate", "sale_rate", "rate"],
+      isActive: ["skus_is_active", "is_active"],
+    },
+    async plan(row, db, actorId, context) {
+      const explicitSkuSheet = /skus?|variants?/i.test(
+        `${row?.sheetName || ""} ${row?.sheetTitle || ""}`,
+      );
+      const hasSkuSpecificShape = Boolean(
+        trimString(row?.values?.sku_code) ||
+          trimString(row?.values?.skus_code) ||
+          trimString(row?.values?.skus_item_code) ||
+          trimString(row?.values?.skus_item_name) ||
+          trimString(row?.values?.skus_sale_rate),
+      );
+      if (!explicitSkuSheet && !hasSkuSpecificShape) {
+        return { skip: true };
+      }
+
+      const skuCode = trimString(row.raw.skuCode);
+      if (!skuCode) return { skip: true };
+
+      const explicitItemType = mapProductItemTypeToken(row.raw.itemType);
+      const itemCodeToken = trimString(row.raw.itemCode);
+      const itemNameToken = trimString(row.raw.itemName);
+      const existingSku = await resolveSkuByCode(db, skuCode);
+
+      let item = existingSku?.item_id
+        ? {
+            id: Number(existingSku.item_id),
+            item_type: String(existingSku.item_type || "").toUpperCase(),
+            code: existingSku.item_code,
+            name: existingSku.item_name,
+          }
+        : null;
+
+      if (itemCodeToken) {
+        const byCode = await resolveItemByCode(db, itemCodeToken);
+        if (!byCode?.id && !item?.id) {
+          return {
+            error: `Item code not found for SKU ${skuCode}: ${itemCodeToken}`,
+          };
+        }
+        if (byCode?.id) {
+          if (item?.id && Number(item.id) !== Number(byCode.id)) {
+            return {
+              error: `SKU ${skuCode} is linked with a different item than item code ${itemCodeToken}.`,
+            };
+          }
+          item = byCode;
+        }
+      }
+
+      if (itemNameToken) {
+        const byName = await resolveItemByName(
+          db,
+          itemNameToken,
+          explicitItemType || null,
+        );
+        if (!byName?.id && !item?.id) {
+          return {
+            error: `Item name not found for SKU ${skuCode}: ${itemNameToken}`,
+          };
+        }
+        if (byName?.id) {
+          if (item?.id && Number(item.id) !== Number(byName.id)) {
+            return {
+              error: `SKU ${skuCode} item mismatch: provided name ${itemNameToken} maps to a different item.`,
+            };
+          }
+          item = byName;
+        }
+      }
+
+      if (!item?.id) {
+        return {
+          error: `Unable to resolve item for SKU ${skuCode}. Provide item_code or item_name.`,
+        };
+      }
+
+      const itemType = String(item.item_type || "")
+        .trim()
+        .toUpperCase();
+      if (!itemType || !ITEM_TYPES.has(itemType)) {
+        return {
+          error: `Invalid item type resolved for SKU ${skuCode}: ${itemType || "(empty)"}`,
+        };
+      }
+      if (explicitItemType && explicitItemType !== itemType) {
+        return {
+          error: `SKU ${skuCode} item type mismatch: row says ${explicitItemType}, item is ${itemType}.`,
+        };
+      }
+
+      const sizeToken = trimString(row.raw.sizeName);
+      const gradeToken = trimString(row.raw.gradeName);
+      const colorToken = trimString(row.raw.colorName);
+      const packingToken = trimString(row.raw.packingTypeName);
+
+      let sizeId = Number(existingSku?.size_id || 0) || null;
+      if (sizeToken) {
+        const size = await resolveSizeByToken(db, sizeToken, itemType);
+        if (!size?.id && !hasStagedToken(context?.staged?.size, sizeToken)) {
+          return { error: `Size not found for SKU ${skuCode}: ${sizeToken}` };
+        }
+        sizeId = size?.id || null;
+      }
+
+      let gradeId = Number(existingSku?.grade_id || 0) || null;
+      if (gradeToken) {
+        const grade = await resolveGradeByToken(db, gradeToken);
+        if (!grade?.id && !hasStagedToken(context?.staged?.grade, gradeToken)) {
+          return { error: `Grade not found for SKU ${skuCode}: ${gradeToken}` };
+        }
+        gradeId = grade?.id || null;
+      }
+
+      let colorId = Number(existingSku?.color_id || 0) || null;
+      if (colorToken) {
+        const color = await resolveColorByToken(db, colorToken);
+        if (!color?.id && !hasStagedToken(context?.staged?.color, colorToken)) {
+          return { error: `Color not found for SKU ${skuCode}: ${colorToken}` };
+        }
+        colorId = color?.id || null;
+      }
+
+      let packingTypeId = Number(existingSku?.packing_type_id || 0) || null;
+      if (packingToken) {
+        const packing = await resolvePackingTypeByToken(db, packingToken);
+        if (
+          !packing?.id &&
+          !hasStagedToken(context?.staged?.packingType, packingToken)
+        ) {
+          return {
+            error: `Packing type not found for SKU ${skuCode}: ${packingToken}`,
+          };
+        }
+        packingTypeId = packing?.id || null;
+      }
+
+      const variantByIdentity = await resolveVariantByIdentity(db, {
+        itemId: item.id,
+        sizeId,
+        gradeId,
+        colorId,
+        packingTypeId,
+      });
+
+      if (
+        existingSku?.variant_id &&
+        variantByIdentity?.id &&
+        Number(existingSku.variant_id) !== Number(variantByIdentity.id)
+      ) {
+        return {
+          error: `SKU ${skuCode} is already linked with a different variant identity.`,
+        };
+      }
+
+      const existingRate = parseNumber(existingSku?.sale_rate, null);
+      const saleRate = parseNumber(row.raw.saleRate, existingRate ?? 0);
+      if (saleRate === null) {
+        return { error: `Sale rate must be numeric for SKU ${skuCode}.` };
+      }
+      if (saleRate < 0) {
+        return { error: `Sale rate cannot be negative for SKU ${skuCode}.` };
+      }
+
+      const isActive = parseBoolean(
+        row.raw.isActive,
+        existingSku?.is_active === undefined || existingSku?.is_active === null
+          ? true
+          : Boolean(existingSku.is_active),
+      );
+
+      return {
+        action: existingSku?.id ? "update" : "create",
+        data: {
+          id: existingSku?.id || null,
+          variant_id: existingSku?.variant_id || variantByIdentity?.id || null,
+          sku_code: skuCode,
+          item_id: item.id,
+          item_type: itemType,
+          item_code: trimString(item.code) || itemCodeToken || null,
+          item_name: trimString(item.name) || itemNameToken || null,
+          size_id: sizeId,
+          size_token: sizeToken || null,
+          grade_id: gradeId,
+          grade_token: gradeToken || null,
+          color_id: colorId,
+          color_token: colorToken || null,
+          packing_type_id: packingTypeId,
+          packing_type_token: packingToken || null,
+          sale_rate: saleRate,
+          is_active: isActive,
+          updated_by: actorId,
+        },
+      };
+    },
+    async apply(op, trx, actorId) {
+      const itemId = Number(op.data.item_id || 0);
+      if (!itemId) {
+        throw new Error(
+          `Item is required while applying SKU import: ${op.data.sku_code || "(empty)"}`,
+        );
+      }
+
+      const item = await trx("erp.items")
+        .select("id", "item_type", "code", "name")
+        .where({ id: itemId })
+        .first();
+      if (!item?.id) {
+        throw new Error(
+          `Item not found while applying SKU import: ${op.data.item_code || op.data.item_name || itemId}`,
+        );
+      }
+
+      let sizeId = op.data.size_id;
+      if (!sizeId && op.data.size_token) {
+        const size = await resolveSizeByToken(
+          trx,
+          op.data.size_token,
+          item.item_type,
+        );
+        sizeId = size?.id || null;
+      }
+
+      let gradeId = op.data.grade_id;
+      if (!gradeId && op.data.grade_token) {
+        const grade = await resolveGradeByToken(trx, op.data.grade_token);
+        gradeId = grade?.id || null;
+      }
+
+      let colorId = op.data.color_id;
+      if (!colorId && op.data.color_token) {
+        const color = await resolveColorByToken(trx, op.data.color_token);
+        colorId = color?.id || null;
+      }
+
+      let packingTypeId = op.data.packing_type_id;
+      if (!packingTypeId && op.data.packing_type_token) {
+        const packing = await resolvePackingTypeByToken(
+          trx,
+          op.data.packing_type_token,
+        );
+        packingTypeId = packing?.id || null;
+      }
+
+      let variantId = op.data.variant_id;
+      if (!variantId) {
+        const existingVariant = await resolveVariantByIdentity(trx, {
+          itemId,
+          sizeId,
+          gradeId,
+          colorId,
+          packingTypeId,
+        });
+        if (existingVariant?.id) {
+          variantId = existingVariant.id;
+        } else {
+          const [createdVariant] = await trx("erp.variants")
+            .insert({
+              item_id: itemId,
+              size_id: sizeId,
+              grade_id: gradeId,
+              color_id: colorId,
+              packing_type_id: packingTypeId,
+              sale_rate: op.data.sale_rate,
+              is_active: op.data.is_active,
+              created_by: actorId,
+              created_at: trx.fn.now(),
+              updated_by: actorId,
+              updated_at: trx.fn.now(),
+            })
+            .returning(["id"]);
+          variantId = createdVariant?.id || null;
+        }
+      }
+
+      if (!variantId) {
+        throw new Error(
+          `Variant could not be resolved while applying SKU import: ${op.data.sku_code || "(empty)"}`,
+        );
+      }
+
+      await trx("erp.variants").where({ id: variantId }).update({
+        sale_rate: op.data.sale_rate,
+        is_active: op.data.is_active,
+        updated_by: actorId,
+        updated_at: trx.fn.now(),
+      });
+
+      let skuId = op.data.id;
+      if (!skuId) {
+        const existingSku = await resolveSkuByCode(trx, op.data.sku_code);
+        skuId = existingSku?.id || null;
+      }
+
+      if (skuId) {
+        await trx("erp.skus").where({ id: skuId }).update({
+          variant_id: variantId,
+          is_active: op.data.is_active,
+        });
+      } else {
+        await trx("erp.skus").insert({
+          variant_id: variantId,
+          sku_code: op.data.sku_code,
+          is_active: op.data.is_active,
+        });
       }
     },
   },

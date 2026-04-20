@@ -169,6 +169,8 @@ const translations = {
       "Customer/supplier party import with city, group, and branch mapping.",
     import_target_products_desc:
       "Item import for RM/SFG/FG with product-group, subgroup, and base-unit mapping.",
+    import_target_skus_desc:
+      "SKU import for FG/SFG variants with dimension matching and sale-rate updates.",
     import_dry_run: "Run Dry-Run",
     import_apply_changes: "Apply Import",
     import_submit_for_approval: "Submit For Approval",
@@ -201,6 +203,7 @@ const translations = {
     import_entity_accounts: "Accounts",
     import_entity_parties: "Parties",
     import_entity_products: "Products",
+    import_entity_skus: "SKUs",
     import_file_too_large:
       "The selected file is too large. Maximum size is 20MB.",
     import_file_required: "Please select an Excel file.",
@@ -1910,6 +1913,8 @@ translations.ur = {
     "پارٹیز (کسٹمر/سپلائر) امپورٹ بمع شہر، گروپ، اور برانچ میپنگ۔",
   import_target_products_desc:
     "RM/SFG/FG آئٹمز امپورٹ بمع پروڈکٹ گروپ، سب گروپ، اور بیس یونٹ میپنگ۔",
+  import_target_skus_desc:
+    "FG/SFG ویریئنٹس کے لیے SKU امپورٹ، ڈائمنشن میچنگ اور سیل ریٹ اپڈیٹس کے ساتھ۔",
   import_dry_run: "ڈرائی رن چلائیں",
   import_apply_changes: "امپورٹ لاگو کریں",
   import_submit_for_approval: "منظوری کے لیے جمع کریں",
@@ -1942,6 +1947,7 @@ translations.ur = {
   import_entity_accounts: "اکاؤنٹس",
   import_entity_parties: "پارٹیز",
   import_entity_products: "پروڈکٹس",
+  import_entity_skus: "ایس کے یوز",
   import_file_too_large: "منتخب فائل بہت بڑی ہے۔ زیادہ سے زیادہ حد 20MB ہے۔",
   import_file_required: "براہ کرم ایک ایکسل فائل منتخب کریں۔",
   import_fix_errors_first:

@@ -6,24 +6,37 @@ test.describe("Users modal searchable dropdown", () => {
     await login(page, "E2E_ADMIN");
     await page.goto("/administration/users", { waitUntil: "domcontentloaded" });
 
-    await page.getByRole("button", { name: /add user/i }).first().click();
+    await page
+      .getByRole("button", { name: /add user/i })
+      .first()
+      .click();
     const modal = page.locator("#modal-shell");
     await expect(modal).toBeVisible();
 
     const branchSelect = modal.locator('select[name="branch_ids"]');
-    await expect(branchSelect).toHaveAttribute("data-searchable-select", "true");
+    await expect(branchSelect).toHaveAttribute(
+      "data-searchable-select",
+      "true",
+    );
 
     const branchSearchInput = modal
       .locator('select[name="branch_ids"]')
-      .locator("xpath=ancestor::*[@data-searchable-wrapper][1]//input[@type='text']");
+      .locator(
+        "xpath=ancestor::*[@data-searchable-wrapper][1]//input[@type='text']",
+      );
     await expect(branchSearchInput).toBeVisible();
   });
 
-  test("multiselect searchable field toggles closed on second click", async ({ page }) => {
+  test("multiselect searchable field stays open on repeated clicks and option picks", async ({
+    page,
+  }) => {
     await login(page, "E2E_ADMIN");
     await page.goto("/administration/users", { waitUntil: "domcontentloaded" });
 
-    await page.getByRole("button", { name: /add user/i }).first().click();
+    await page
+      .getByRole("button", { name: /add user/i })
+      .first()
+      .click();
     const modal = page.locator("#modal-shell");
     await expect(modal).toBeVisible();
 
@@ -32,17 +45,33 @@ test.describe("Users modal searchable dropdown", () => {
       .locator("xpath=ancestor::*[@data-searchable-wrapper][1]");
     const branchSearchInput = branchWrapper.locator('input[type="text"]');
     const branchMenu = branchWrapper
-      .locator("xpath=.//div[contains(@class,'fixed') and contains(@class,'z-50')]")
+      .locator(
+        "xpath=.//div[contains(@class,'fixed') and contains(@class,'z-50')]",
+      )
       .first();
 
     await branchSearchInput.click();
     await expect(branchMenu).toBeVisible();
 
     await branchSearchInput.click();
+    await expect(branchMenu).toBeVisible();
+
+    const firstOption = branchMenu.locator("[data-searchable-option]").first();
+    await firstOption.click();
+    await expect(branchMenu).toBeVisible();
+
+    const selectedCount = await modal
+      .locator('select[name="branch_ids"] option:checked')
+      .count();
+    expect(selectedCount).toBeGreaterThan(0);
+
+    await page.mouse.click(1, 1);
     await expect(branchMenu).toBeHidden();
   });
 
-  test("sales commission employee multiselect also toggles closed on second click", async ({ page }) => {
+  test("sales commission employee multiselect stays open on repeated clicks", async ({
+    page,
+  }) => {
     await login(page, "E2E_ADMIN");
     const response = await page.goto("/hr-payroll/employees/commissions", {
       waitUntil: "domcontentloaded",
@@ -61,13 +90,18 @@ test.describe("Users modal searchable dropdown", () => {
       .locator("xpath=ancestor::*[@data-searchable-wrapper][1]");
     const employeeSearchInput = employeeWrapper.locator('input[type="text"]');
     const employeeMenu = employeeWrapper
-      .locator("xpath=.//div[contains(@class,'fixed') and contains(@class,'z-50')]")
+      .locator(
+        "xpath=.//div[contains(@class,'fixed') and contains(@class,'z-50')]",
+      )
       .first();
 
     await employeeSearchInput.click();
     await expect(employeeMenu).toBeVisible();
 
     await employeeSearchInput.click();
+    await expect(employeeMenu).toBeVisible();
+
+    await page.mouse.click(1, 1);
     await expect(employeeMenu).toBeHidden();
   });
 });

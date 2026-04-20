@@ -14,7 +14,8 @@ const RESOLVED_CREDIT_SQL = `CASE WHEN ${DEBIT_META_SQL} = 0 AND ${CREDIT_META_S
 const LEDGER_DEBIT_SQL = `${RESOLVED_CREDIT_SQL}`;
 const LEDGER_CREDIT_SQL = `${RESOLVED_DEBIT_SQL}`;
 const LEDGER_NET_SQL = `(${LEDGER_CREDIT_SQL}) - (${LEDGER_DEBIT_SQL})`;
-const LABOUR_ENTITY_SQL = "CASE WHEN vh.voucher_type_code = 'DCV' THEN dcv.labour_id ELSE vl.labour_id END";
+const LABOUR_ENTITY_SQL =
+  "CASE WHEN vh.voucher_type_code = 'DCV' THEN dcv.labour_id ELSE vl.labour_id END";
 const AUTO_PAYROLL_VOUCHER_TYPE = "PAYROLL_ACCRUAL";
 const AUTO_PAYROLL_DESCRIPTION = "Monthly salary accrual";
 const AUTO_PAYROLL_DAILY_DESCRIPTION =
@@ -97,7 +98,8 @@ const countDaysExcludingSundays = ({ fromYmd, toYmdValue }) => {
   if (toDate < fromDate) return 0;
 
   const msInDay = 24 * 60 * 60 * 1000;
-  const totalDays = Math.floor((toDate.getTime() - fromDate.getTime()) / msInDay) + 1;
+  const totalDays =
+    Math.floor((toDate.getTime() - fromDate.getTime()) / msInDay) + 1;
   if (totalDays <= 0) return 0;
 
   const fullWeeks = Math.floor(totalDays / 7);
@@ -128,7 +130,9 @@ const countDailyAccrualDaysUpTo = ({ employmentStartYmd, asOnYmd }) => {
 const countMonthlyAccrualsUpTo = ({ employmentStartYmd, asOnYmd }) => {
   const firstAccrualYmd = getFirstAccrualDateYmd(employmentStartYmd);
   if (!firstAccrualYmd || asOnYmd < firstAccrualYmd) return 0;
-  const firstAccrualMonthStart = monthStartUtc(toUtcDateFromYmd(firstAccrualYmd));
+  const firstAccrualMonthStart = monthStartUtc(
+    toUtcDateFromYmd(firstAccrualYmd),
+  );
   const lastAccrualMonthStart = getLastAccrualMonthStartUtc(asOnYmd);
   if (!firstAccrualMonthStart || !lastAccrualMonthStart) return 0;
   if (lastAccrualMonthStart < firstAccrualMonthStart) return 0;
@@ -145,7 +149,9 @@ const buildMonthlyAccrualRowsInRange = ({
   const rows = [];
   const firstAccrualYmd = getFirstAccrualDateYmd(employmentStartYmd);
   if (!firstAccrualYmd) return rows;
-  const firstAccrualMonthStart = monthStartUtc(toUtcDateFromYmd(firstAccrualYmd));
+  const firstAccrualMonthStart = monthStartUtc(
+    toUtcDateFromYmd(firstAccrualYmd),
+  );
   const lastAccrualMonthStart = getLastAccrualMonthStartUtc(toYmdValue);
   if (!firstAccrualMonthStart || !lastAccrualMonthStart) return rows;
   if (lastAccrualMonthStart < firstAccrualMonthStart) return rows;
@@ -214,7 +220,13 @@ const buildDailyAccrualRowsInRange = ({
 };
 
 const loadEmployeeAccrualProfiles = async ({ entityIds = [] }) => {
-  const normalizedIds = [...new Set((entityIds || []).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
+  const normalizedIds = [
+    ...new Set(
+      (entityIds || [])
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    ),
+  ];
   if (!normalizedIds.length) return new Map();
   const employeeRows = await knex("erp.employees as e")
     .select("e.id", "e.basic_salary", "e.created_at", "e.payroll_type")
@@ -304,10 +316,13 @@ const loadEmployeeAccrualProfiles = async ({ entityIds = [] }) => {
 
     result.set(employeeId, {
       payrollType,
-      monthlyAmount: Number.isFinite(monthlyAmount) && monthlyAmount > 0 ? monthlyAmount : 0,
-      dailyAmount: Number.isFinite(dailyAmount) && dailyAmount > 0 ? dailyAmount : 0,
+      monthlyAmount:
+        Number.isFinite(monthlyAmount) && monthlyAmount > 0 ? monthlyAmount : 0,
+      dailyAmount:
+        Number.isFinite(dailyAmount) && dailyAmount > 0 ? dailyAmount : 0,
       employmentStartYmd:
-        toLocalDateOnly(row.created_at || new Date()) || toLocalDateOnly(new Date()),
+        toLocalDateOnly(row.created_at || new Date()) ||
+        toLocalDateOnly(new Date()),
     });
   });
   return result;
@@ -320,9 +335,15 @@ const parseYmdStrict = (value) => {
   const y = Number(m[1]);
   const mm = Number(m[2]);
   const dd = Number(m[3]);
-  if (!Number.isInteger(y) || !Number.isInteger(mm) || !Number.isInteger(dd)) return null;
+  if (!Number.isInteger(y) || !Number.isInteger(mm) || !Number.isInteger(dd))
+    return null;
   const dt = new Date(Date.UTC(y, mm - 1, dd));
-  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mm - 1 || dt.getUTCDate() !== dd) return null;
+  if (
+    dt.getUTCFullYear() !== y ||
+    dt.getUTCMonth() !== mm - 1 ||
+    dt.getUTCDate() !== dd
+  )
+    return null;
   return `${m[1]}-${m[2]}-${m[3]}`;
 };
 
@@ -362,7 +383,9 @@ const parseEntityBalanceFilters = ({ req, input = {} }) => {
   const branchIdsFromInput = toIdList(input.branch_ids);
   const branchIds = req.user?.isAdmin
     ? branchIdsFromInput
-    : [Number(req.branchId || 0)].filter((id) => Number.isInteger(id) && id > 0);
+    : [Number(req.branchId || 0)].filter(
+        (id) => Number.isInteger(id) && id > 0,
+      );
 
   return {
     asOn,
@@ -394,12 +417,16 @@ const parseEntityLedgerFilters = ({ req, input = {} }) => {
 
   const branchIdsFromInput = toIdListWithAll(input.branch_ids);
   const ledgerView =
-    String(input.ledger_view || "summary").trim().toLowerCase() === "detail"
+    String(input.ledger_view || "summary")
+      .trim()
+      .toLowerCase() === "detail"
       ? "detail"
       : "summary";
   const branchIds = req.user?.isAdmin
     ? branchIdsFromInput
-    : [Number(req.branchId || 0)].filter((id) => Number.isInteger(id) && id > 0);
+    : [Number(req.branchId || 0)].filter(
+        (id) => Number.isInteger(id) && id > 0,
+      );
 
   return {
     from,
@@ -413,8 +440,8 @@ const parseEntityLedgerFilters = ({ req, input = {} }) => {
     invalidDateRange,
     invalidFilterInput: Boolean(
       (parsedFrom.provided && !parsedFrom.valid) ||
-        (parsedTo.provided && !parsedTo.valid) ||
-        invalidDateRange,
+      (parsedTo.provided && !parsedTo.valid) ||
+      invalidDateRange,
     ),
   };
 };
@@ -454,11 +481,17 @@ const getEntityConfig = (kind) => {
   return cfg;
 };
 
-const applyEntityVoucherScope = ({ query, cfg, entityId, includeEntitySelect = false }) => {
+const applyEntityVoucherScope = ({
+  query,
+  cfg,
+  entityId,
+  includeEntitySelect = false,
+}) => {
   if (cfg.lineKind !== "LABOUR") {
     return query
       .modify((qb) => {
-        if (includeEntitySelect) qb.select(`vl.${cfg.vlEntityCol} as entity_id`);
+        if (includeEntitySelect)
+          qb.select(`vl.${cfg.vlEntityCol} as entity_id`);
       })
       .where("vl.line_kind", cfg.lineKind)
       .modify((qb) => {
@@ -469,7 +502,8 @@ const applyEntityVoucherScope = ({ query, cfg, entityId, includeEntitySelect = f
   return query
     .leftJoin("erp.dcv_header as dcv", "dcv.voucher_id", "vh.id")
     .modify((qb) => {
-      if (includeEntitySelect) qb.select(knex.raw(`${LABOUR_ENTITY_SQL} as entity_id`));
+      if (includeEntitySelect)
+        qb.select(knex.raw(`${LABOUR_ENTITY_SQL} as entity_id`));
     })
     .where(function whereLabourRows() {
       this.where(function whereDirectLabourLine() {
@@ -481,7 +515,8 @@ const applyEntityVoucherScope = ({ query, cfg, entityId, includeEntitySelect = f
       });
     })
     .modify((qb) => {
-      if (entityId != null) qb.andWhereRaw(`${LABOUR_ENTITY_SQL} = ?`, [entityId]);
+      if (entityId != null)
+        qb.andWhereRaw(`${LABOUR_ENTITY_SQL} = ?`, [entityId]);
     });
 };
 
@@ -489,11 +524,19 @@ const loadLedgerOptions = async ({ req, filters, kind }) => {
   const cfg = getEntityConfig(kind);
   const scopedBranchIds = req.user?.isAdmin
     ? filters.branchIds
-    : [Number(req.branchId || 0)].filter((id) => Number.isInteger(id) && id > 0);
+    : [Number(req.branchId || 0)].filter(
+        (id) => Number.isInteger(id) && id > 0,
+      );
 
   const branches = req.user?.isAdmin
-    ? await knex("erp.branches").select("id", "name").where({ is_active: true }).orderBy("name", "asc")
-    : (req.branchOptions || []).map((row) => ({ id: Number(row.id), name: row.name }));
+    ? await knex("erp.branches")
+        .select("id", "name")
+        .where({ is_active: true })
+        .orderBy("name", "asc")
+    : (req.branchOptions || []).map((row) => ({
+        id: Number(row.id),
+        name: row.name,
+      }));
 
   let query = knex(`${cfg.table} as ${cfg.alias}`)
     .select(
@@ -520,7 +563,9 @@ const loadLedgerOptions = async ({ req, filters, kind }) => {
 
 const getLedgerRows = async ({ req, filters, options, kind }) => {
   const cfg = getEntityConfig(kind);
-  const includeBranchColumn = Boolean(req.user?.isAdmin && filters.branchIds.length !== 1);
+  const includeBranchColumn = Boolean(
+    req.user?.isAdmin && filters.branchIds.length !== 1,
+  );
 
   if (!filters.reportLoaded || !filters.entityId) {
     return {
@@ -534,17 +579,17 @@ const getLedgerRows = async ({ req, filters, options, kind }) => {
 
   const scopedBranchIds = req.user?.isAdmin
     ? filters.branchIds
-    : [Number(req.branchId || 0)].filter((id) => Number.isInteger(id) && id > 0);
+    : [Number(req.branchId || 0)].filter(
+        (id) => Number.isInteger(id) && id > 0,
+      );
 
-  const selectedEntity = (options.entities || []).find((row) => Number(row.id) === Number(filters.entityId));
+  const selectedEntity = (options.entities || []).find(
+    (row) => Number(row.id) === Number(filters.entityId),
+  );
 
   let openingQuery = knex("erp.voucher_line as vl")
     .join("erp.voucher_header as vh", "vh.id", "vl.voucher_header_id")
-    .select(
-      knex.raw(
-        `COALESCE(SUM(${LEDGER_NET_SQL}), 0) as opening_balance`,
-      ),
-    )
+    .select(knex.raw(`COALESCE(SUM(${LEDGER_NET_SQL}), 0) as opening_balance`))
     .andWhere("vh.status", "APPROVED")
     .modify((qb) => {
       if (scopedBranchIds.length) qb.whereIn("vh.branch_id", scopedBranchIds);
@@ -642,7 +687,8 @@ const getLedgerRows = async ({ req, filters, options, kind }) => {
       if (openingAccrualCount > 0) {
         openingBalance = toAmount(
           openingBalance +
-            Number(accrualMeta.monthlyAmount || 0) * Number(openingAccrualCount || 0),
+            Number(accrualMeta.monthlyAmount || 0) *
+              Number(openingAccrualCount || 0),
           2,
         );
       }
@@ -669,7 +715,8 @@ const getLedgerRows = async ({ req, filters, options, kind }) => {
       if (openingAccrualCount > 0) {
         openingBalance = toAmount(
           openingBalance +
-            Number(accrualMeta.dailyAmount || 0) * Number(openingAccrualCount || 0),
+            Number(accrualMeta.dailyAmount || 0) *
+              Number(openingAccrualCount || 0),
           2,
         );
       }
@@ -698,7 +745,11 @@ const getLedgerRows = async ({ req, filters, options, kind }) => {
       branch_name: row.branch_name || "",
     }))
     // Exclude non-financial rows (e.g. pair-only status rows with zero posting).
-    .filter((entry) => Math.abs(Number(entry.debit || 0)) > 0.0001 || Math.abs(Number(entry.credit || 0)) > 0.0001);
+    .filter(
+      (entry) =>
+        Math.abs(Number(entry.debit || 0)) > 0.0001 ||
+        Math.abs(Number(entry.credit || 0)) > 0.0001,
+    );
 
   syntheticEmployeeRows.forEach((entry) => {
     detailEntries.push({
@@ -725,7 +776,7 @@ const getLedgerRows = async ({ req, filters, options, kind }) => {
               ? `VID:${entry.voucher_id}`
               : entry.voucher_no
                 ? `V:${entry.entry_date || ""}:${entry.voucher_type}:${entry.voucher_no}`
-              : `G:${entry.id}`;
+                : `G:${entry.id}`;
             const current = grouped.get(key);
             if (!current) {
               grouped.set(key, { ...entry });
@@ -734,7 +785,8 @@ const getLedgerRows = async ({ req, filters, options, kind }) => {
             current.qty = toQty(current.qty + entry.qty, 3);
             current.debit = toAmount(current.debit + entry.debit, 2);
             current.credit = toAmount(current.credit + entry.credit, 2);
-            if (!current.description && entry.description) current.description = entry.description;
+            if (!current.description && entry.description)
+              current.description = entry.description;
           });
           return [...grouped.values()].sort((a, b) => {
             const dateA = String(a.entry_date || "");
@@ -789,7 +841,9 @@ const getLedgerRows = async ({ req, filters, options, kind }) => {
       qty: totalQty,
       debit: totalDebit,
       credit: totalCredit,
-      closingBalance: rows.length ? rows[rows.length - 1].balance : openingBalance,
+      closingBalance: rows.length
+        ? rows[rows.length - 1].balance
+        : openingBalance,
     },
     includeBranchColumn,
   };
@@ -797,8 +851,14 @@ const getLedgerRows = async ({ req, filters, options, kind }) => {
 
 const loadBalanceOptions = async ({ req }) => {
   const branches = req.user?.isAdmin
-    ? await knex("erp.branches").select("id", "name").where({ is_active: true }).orderBy("name", "asc")
-    : (req.branchOptions || []).map((row) => ({ id: Number(row.id), name: row.name }));
+    ? await knex("erp.branches")
+        .select("id", "name")
+        .where({ is_active: true })
+        .orderBy("name", "asc")
+    : (req.branchOptions || []).map((row) => ({
+        id: Number(row.id),
+        name: row.name,
+      }));
 
   return { branches };
 };
@@ -809,7 +869,9 @@ const getBalanceRows = async ({ req, filters, kind }) => {
 
   const scopedBranchIds = req.user?.isAdmin
     ? filters.branchIds
-    : [Number(req.branchId || 0)].filter((id) => Number.isInteger(id) && id > 0);
+    : [Number(req.branchId || 0)].filter(
+        (id) => Number.isInteger(id) && id > 0,
+      );
 
   let balanceSubquery = knex("erp.voucher_line as vl")
     .join("erp.voucher_header as vh", "vh.id", "vl.voucher_header_id")
@@ -903,14 +965,24 @@ const getBalanceRows = async ({ req, filters, kind }) => {
 const getLabourLedgerReportPageData = async ({ req, input = {} }) => {
   const filters = parseEntityLedgerFilters({ req, input });
   const options = await loadLedgerOptions({ req, filters, kind: "labour" });
-  const reportData = await getLedgerRows({ req, filters, options, kind: "labour" });
+  const reportData = await getLedgerRows({
+    req,
+    filters,
+    options,
+    kind: "labour",
+  });
   return { filters, options, reportData };
 };
 
 const getEmployeeLedgerReportPageData = async ({ req, input = {} }) => {
   const filters = parseEntityLedgerFilters({ req, input });
   const options = await loadLedgerOptions({ req, filters, kind: "employee" });
-  const reportData = await getLedgerRows({ req, filters, options, kind: "employee" });
+  const reportData = await getLedgerRows({
+    req,
+    filters,
+    options,
+    kind: "employee",
+  });
   return { filters, options, reportData };
 };
 
@@ -926,7 +998,10 @@ const getLabourBalancesReportPageData = async ({ req, input = {} }) => {
     options,
     reportData: {
       rows,
-      totalAmount: toAmount(rows.reduce((sum, row) => sum + Number(row.amount || 0), 0), 2),
+      totalAmount: toAmount(
+        rows.reduce((sum, row) => sum + Number(row.amount || 0), 0),
+        2,
+      ),
     },
   };
 };
@@ -943,7 +1018,10 @@ const getEmployeeBalancesReportPageData = async ({ req, input = {} }) => {
     options,
     reportData: {
       rows,
-      totalAmount: toAmount(rows.reduce((sum, row) => sum + Number(row.amount || 0), 0), 2),
+      totalAmount: toAmount(
+        rows.reduce((sum, row) => sum + Number(row.amount || 0), 0),
+        2,
+      ),
     },
   };
 };
