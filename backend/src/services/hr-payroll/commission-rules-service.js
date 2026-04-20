@@ -37,6 +37,21 @@ const toPositiveIntOrNull = (value) => {
   return parsed;
 };
 
+const toPositiveIntArray = (value) => {
+  const source = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(",")
+      : value == null
+        ? []
+        : [value];
+  return [
+    ...new Set(
+      source.map((entry) => toPositiveIntOrNull(entry)).filter(Boolean),
+    ),
+  ];
+};
+
 const toMoney = (value) => {
   if (value === null || value === undefined || value === "") return null;
   const numberValue = Number(value);
@@ -71,16 +86,22 @@ const normalizeBulkInput = ({ payload, t }) => {
     throw new Error(t("error_invalid_rate_type"));
   }
 
-  const subgroupId =
+  const subgroupIds =
     applyOn === APPLY_ON.SUBGROUP
-      ? toPositiveIntOrNull(payload.subgroup_id)
-      : null;
-  const groupId =
-    applyOn === APPLY_ON.GROUP ? toPositiveIntOrNull(payload.group_id) : null;
-  if (applyOn === APPLY_ON.SUBGROUP && !subgroupId) {
+      ? toPositiveIntArray(payload.subgroup_ids).length
+        ? toPositiveIntArray(payload.subgroup_ids)
+        : toPositiveIntArray(payload.subgroup_id)
+      : [];
+  const groupIds =
+    applyOn === APPLY_ON.GROUP
+      ? toPositiveIntArray(payload.group_ids).length
+        ? toPositiveIntArray(payload.group_ids)
+        : toPositiveIntArray(payload.group_id)
+      : [];
+  if (applyOn === APPLY_ON.SUBGROUP && !subgroupIds.length) {
     throw new Error(t("error_select_subgroup"));
   }
-  if (applyOn === APPLY_ON.GROUP && !groupId) {
+  if (applyOn === APPLY_ON.GROUP && !groupIds.length) {
     throw new Error(t("error_select_group"));
   }
 
@@ -125,8 +146,10 @@ const normalizeBulkInput = ({ payload, t }) => {
   return {
     employeeId,
     applyOn,
-    subgroupId,
-    groupId,
+    subgroupId: subgroupIds[0] || null,
+    subgroupIds,
+    groupId: groupIds[0] || null,
+    groupIds,
     commissionBasis,
     rateType,
     valueType,
@@ -136,7 +159,12 @@ const normalizeBulkInput = ({ payload, t }) => {
   };
 };
 
-const fetchTargetSkus = async ({ db = knex, applyOn, subgroupId, groupId }) => {
+const fetchTargetSkus = async ({
+  db = knex,
+  applyOn,
+  subgroupIds = [],
+  groupIds = [],
+}) => {
   let query = db("erp.skus as s")
     .join("erp.variants as v", "s.variant_id", "v.id")
     .join("erp.items as i", "v.item_id", "i.id")
@@ -150,9 +178,27 @@ const fetchTargetSkus = async ({ db = knex, applyOn, subgroupId, groupId }) => {
     .whereRaw("i.item_type = 'FG'")
     .orderBy("s.sku_code", "asc");
 
-  if (applyOn === APPLY_ON.SUBGROUP)
-    query = query.andWhere("i.subgroup_id", subgroupId);
-  if (applyOn === APPLY_ON.GROUP) query = query.andWhere("i.group_id", groupId);
+  const normalizedSubgroupIds = [
+    ...new Set(
+      (Array.isArray(subgroupIds) ? subgroupIds : [])
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    ),
+  ];
+  const normalizedGroupIds = [
+    ...new Set(
+      (Array.isArray(groupIds) ? groupIds : [])
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    ),
+  ];
+
+  if (applyOn === APPLY_ON.SUBGROUP && normalizedSubgroupIds.length) {
+    query = query.whereIn("i.subgroup_id", normalizedSubgroupIds);
+  }
+  if (applyOn === APPLY_ON.GROUP && normalizedGroupIds.length) {
+    query = query.whereIn("i.group_id", normalizedGroupIds);
+  }
 
   return query;
 };
@@ -227,15 +273,27 @@ const buildBulkPreviewRows = async ({
   employeeId,
   applyOn,
   subgroupId = null,
+  subgroupIds = null,
   groupId = null,
+  groupIds = null,
   commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT,
   baseRate,
 }) => {
+  const normalizedSubgroupIds = Array.isArray(subgroupIds)
+    ? subgroupIds
+    : subgroupId
+      ? [subgroupId]
+      : [];
+  const normalizedGroupIds = Array.isArray(groupIds)
+    ? groupIds
+    : groupId
+      ? [groupId]
+      : [];
   const targetSkus = await fetchTargetSkus({
     db,
     applyOn,
-    subgroupId,
-    groupId,
+    subgroupIds: normalizedSubgroupIds,
+    groupIds: normalizedGroupIds,
   });
   if (!targetSkus.length) return [];
 
@@ -253,6 +311,8 @@ const buildBulkPreviewRows = async ({
       sku_id: Number(sku.sku_id),
       sku_code: sku.sku_code,
       item_name: sku.item_name || "",
+      subgroup_id: Number(sku.subgroup_id || 0) || null,
+      group_id: Number(sku.group_id || 0) || null,
       previous_rate: previous.previousRate,
       previous_rate_type: previous.previousRateType,
       previous_source: previous.previousSource,

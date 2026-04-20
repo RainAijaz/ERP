@@ -22,7 +22,7 @@
     </label>
   <% } else if (field.type === "select") { %>
     <% const isMultipleSelect = field.multiple === true; %>
-    <% const shouldUseSearchableSelect = field.name === "employee_id" || field.name === "labour_id"; %>
+    <% const shouldUseSearchableSelect = isMultipleSelect || field.name === "employee_id" || field.name === "labour_id"; %>
     <% const hasAllOption = (field.options || []).some(function(option) {
          const value = String(option && option.value ? option.value : "").trim().toLowerCase();
          return value === "all" || value === "__all__";
@@ -34,6 +34,7 @@
         name="<%= field.name %>"
         data-field="<%= field.name %>"
         <%= shouldUseSearchableSelect ? 'data-searchable-select="true" data-searchable-variant="unified"' : "" %>
+        <%= isMultipleSelect ? 'data-searchable-multi-search="inline"' : "" %>
         <%= isMultipleSelect && hasAllOption ? 'data-all-multi-select="true"' : "" %>
         <%= isMultipleSelect ? "multiple" : "" %>
         <%= field.required ? "required data-required='true'" : "" %>

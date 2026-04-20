@@ -829,33 +829,39 @@
       positionMenu();
     };
 
+    let pointerFocusIntent = false;
+
+    input.addEventListener("pointerdown", () => {
+      pointerFocusIntent = true;
+    });
+
     input.addEventListener("focus", () => {
       if (select.disabled) return;
+      if (pointerFocusIntent) {
+        // Click-based open/close is handled in the click handler to avoid
+        // focus/click double toggles that make the menu feel glitchy.
+        return;
+      }
       keyboardNavigatedMenu = false;
       if (input.dataset.searchableSuppressOpenOnce === "1") {
         input.dataset.searchableSuppressOpenOnce = "0";
         return;
       }
-      if (useInlineMultiSearch) {
-        multiSearchValue = "";
-        input.value = "";
-      }
       input.select();
-      openMenu({ showAll: true });
-      if (isMulti && !useInlineMultiSearch) {
-        window.setTimeout(() => {
-          const multiSearchInput = menu.querySelector(
-            '[data-searchable-multi-search="true"]',
-          );
-          if (multiSearchInput instanceof HTMLInputElement) {
-            multiSearchInput.focus();
-          }
-        }, 0);
-      }
     });
     input.addEventListener("click", () => {
       if (select.disabled) return;
+      pointerFocusIntent = false;
       keyboardNavigatedMenu = false;
+      if (input.dataset.searchableSuppressOpenOnce === "1") {
+        input.dataset.searchableSuppressOpenOnce = "0";
+        return;
+      }
+      const isMenuOpen = !menu.classList.contains("hidden");
+      if (isMenuOpen) {
+        closeMenu();
+        return;
+      }
       if (useInlineMultiSearch) {
         multiSearchValue = "";
         input.value = "";
@@ -874,6 +880,7 @@
     });
     input.addEventListener("input", () => {
       if (select.disabled) return;
+      pointerFocusIntent = false;
       if (isMulti) {
         multiSearchValue = input.value || "";
       }
@@ -1025,6 +1032,7 @@
       advanceFocusToNextField();
     });
     input.addEventListener("blur", () => {
+      pointerFocusIntent = false;
       setTimeout(() => {
         const activeEl = document.activeElement;
         if (activeEl && wrapper.contains(activeEl)) return;

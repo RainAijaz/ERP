@@ -656,6 +656,7 @@ const labourRatesPage = {
       name: "subgroup_id",
       label: "product_subgroups",
       type: "select",
+      multiple: true,
       showWhen: { field: "apply_on", values: ["SUBGROUP"] },
       optionsResolver: async ({ knex, locale }) => {
         const labelExpr =
@@ -678,12 +679,23 @@ const labourRatesPage = {
       name: "group_id",
       label: "product_groups",
       type: "select",
+      multiple: true,
       showWhen: { field: "apply_on", values: ["GROUP"] },
-      optionsQuery: {
-        table: "erp.product_groups",
-        valueKey: "id",
-        labelKey: "name",
-        orderBy: "name",
+      optionsResolver: async ({ knex, locale }) => {
+        const labelExpr =
+          locale === "ur" ? "COALESCE(pg.name_ur, pg.name)" : "pg.name";
+        const rows = await knex("erp.product_groups as pg")
+          .distinct("pg.id as value")
+          .select(knex.raw(`${labelExpr} as label`))
+          .join(
+            "erp.product_group_item_types as pgit",
+            "pgit.group_id",
+            "pg.id",
+          )
+          .where("pg.is_active", true)
+          .whereIn("pgit.item_type", ["FG", "SFG"])
+          .orderByRaw(`${labelExpr} asc`);
+        return rows.map((row) => ({ value: row.value, label: row.label }));
       },
     },
     {
@@ -1083,7 +1095,9 @@ ratesRouter.get(
         skuId: normalized.skuId,
         skuIds: normalized.skuIds,
         subgroupId: normalized.subgroupId,
+        subgroupIds: normalized.subgroupIds,
         groupId: normalized.groupId,
+        groupIds: normalized.groupIds,
         articleType: normalized.articleType,
         rateType: normalized.rateType,
         baseRate: req.query.rate_value || null,
@@ -1149,7 +1163,9 @@ ratesRouter.post(
         skuId: normalized.skuId,
         skuIds: normalized.skuIds,
         subgroupId: normalized.subgroupId,
+        subgroupIds: normalized.subgroupIds,
         groupId: normalized.groupId,
+        groupIds: normalized.groupIds,
         articleType: normalized.articleType,
         rateType: normalized.rateType,
         baseRate: null,
@@ -1169,6 +1185,8 @@ ratesRouter.post(
           sku_code: row.sku_code || "",
           item_name: row.item_name || "",
           previous_rate: row.previous_rate ?? null,
+          subgroup_id: row.subgroup_id ?? null,
+          group_id: row.group_id ?? null,
           new_rate: nextRate ?? null,
         };
       });
@@ -1192,11 +1210,9 @@ ratesRouter.post(
           receivedRowsCount: normalized.rows.length,
           invalidSkuId: invalidSku ? Number(invalidSku.skuId) : null,
         });
-        return res
-          .status(400)
-          .json({
-            message: res.locals.t("error_invalid_bulk_labour_rate_payload"),
-          });
+        return res.status(400).json({
+          message: res.locals.t("error_invalid_bulk_labour_rate_payload"),
+        });
       }
 
       const approvalStart = Date.now();
@@ -1222,7 +1238,9 @@ ratesRouter.post(
           sku_id: normalized.skuId,
           sku_ids: normalized.skuIds,
           subgroup_id: normalized.subgroupId,
+          subgroup_ids: normalized.subgroupIds,
           group_id: normalized.groupId,
+          group_ids: normalized.groupIds,
           article_type: normalized.articleType,
           rate_type: normalized.rateType,
           status: normalized.status,
@@ -1260,6 +1278,20 @@ ratesRouter.post(
         traceId,
         elapsedMs: writeStart - startedAt,
       });
+      const expectedRowBySku = new Map(
+        expectedRows
+          .map((row) => [Number(row.sku_id), row])
+          .filter(([skuId]) => Number.isInteger(skuId) && skuId > 0),
+      );
+      const normalizedRowsForSave = normalized.rows.map((row) => {
+        const expectedRow = expectedRowBySku.get(Number(row.skuId));
+        return {
+          ...row,
+          subgroupId: row.subgroupId || expectedRow?.subgroup_id || null,
+          groupId: row.groupId || expectedRow?.group_id || null,
+        };
+      });
+
       const result = await knex.transaction(async (trx) => {
         await trx.raw("SET LOCAL lock_timeout = '5s'");
         await trx.raw("SET LOCAL statement_timeout = '15s'");
@@ -1273,7 +1305,7 @@ ratesRouter.post(
           groupId: normalized.groupId,
           rateType: normalized.rateType,
           status: normalized.status,
-          rows: normalized.rows,
+          rows: normalizedRowsForSave,
           debugLog: (stage, details = {}) =>
             logLabourRateSaveDebug(req, `bulk_upsert:service_${stage}`, {
               traceId,

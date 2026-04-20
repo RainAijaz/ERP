@@ -25,6 +25,8 @@
         { value: "active", label: t("active") },
         { value: "inactive", label: t("inactive") },
       ];
+  const defaultStatusOption = normalizedStatusOptions.find((option) => String(option.value || "").toLowerCase() === "active")
+    || normalizedStatusOptions[0];
   const selectedPageSizeValue = String(
     incomingSelectedPageSize !== undefined && incomingSelectedPageSize !== null
       ? incomingSelectedPageSize
@@ -33,7 +35,7 @@
   const selectedStatusValue = String(
     incomingSelectedStatus !== undefined && incomingSelectedStatus !== null
       ? incomingSelectedStatus
-      : normalizedStatusOptions[0].value
+      : defaultStatusOption.value
   ).toLowerCase();
 %>
 <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500" data-table-controls>

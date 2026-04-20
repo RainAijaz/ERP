@@ -2,8 +2,12 @@ const express = require("express");
 const knex = require("../../db/knex");
 const { createHrMasterRouter, hydratePage } = require("./master-router");
 const { toMoney, hasTwoDecimalsOrLess } = require("./validation");
-const { requirePermission } = require("../../middleware/access/role-permissions");
-const { handleScreenApproval } = require("../../middleware/approvals/screen-approval");
+const {
+  requirePermission,
+} = require("../../middleware/access/role-permissions");
+const {
+  handleScreenApproval,
+} = require("../../middleware/approvals/screen-approval");
 const { queueAuditLog } = require("../../utils/audit-log");
 const { setCookie } = require("../../middleware/utils/cookies");
 const {
@@ -54,9 +58,15 @@ const page = {
     { table: { pg: "erp.product_groups" }, on: ["t.group_id", "pg.id"] },
   ],
   extraSelect: (locale) => [
-    locale === "ur" ? knex.raw("COALESCE(e.name_ur, e.name) as employee_name") : "e.name as employee_name",
-    locale === "ur" ? knex.raw("COALESCE(sg.name_ur, sg.name) as subgroup_name") : "sg.name as subgroup_name",
-    locale === "ur" ? knex.raw("COALESCE(pg.name_ur, pg.name) as group_name") : "pg.name as group_name",
+    locale === "ur"
+      ? knex.raw("COALESCE(e.name_ur, e.name) as employee_name")
+      : "e.name as employee_name",
+    locale === "ur"
+      ? knex.raw("COALESCE(sg.name_ur, sg.name) as subgroup_name")
+      : "sg.name as subgroup_name",
+    locale === "ur"
+      ? knex.raw("COALESCE(pg.name_ur, pg.name) as group_name")
+      : "pg.name as group_name",
     "s.sku_code as sku_code",
     knex.raw(
       `CASE
@@ -66,7 +76,9 @@ const page = {
         ELSE 'ALL'
       END as selector_display`,
     ),
-    knex.raw("CASE WHEN lower(trim(t.status)) = 'active' THEN true ELSE false END as is_active"),
+    knex.raw(
+      "CASE WHEN lower(trim(t.status)) = 'active' THEN true ELSE false END as is_active",
+    ),
   ],
   columns: [
     { key: "id", label: "id" },
@@ -112,16 +124,21 @@ const page = {
         valueKey: "id",
         labelKey: "sku_code",
         select: ["s.id as id", "s.sku_code", "i.name as item_name"],
-        joins: [{ table: { v: "erp.variants" }, on: ["s.variant_id", "v.id"] }, { table: { i: "erp.items" }, on: ["v.item_id", "i.id"] }],
+        joins: [
+          { table: { v: "erp.variants" }, on: ["s.variant_id", "v.id"] },
+          { table: { i: "erp.items" }, on: ["v.item_id", "i.id"] },
+        ],
         whereRaw: "i.item_type = 'FG'",
         orderBy: "s.sku_code",
       },
-      labelFormat: (row) => `${row.sku_code}${row.item_name ? ` - ${row.item_name}` : ""}`,
+      labelFormat: (row) =>
+        `${row.sku_code}${row.item_name ? ` - ${row.item_name}` : ""}`,
     },
     {
       name: "subgroup_id",
       label: "product_subgroups",
       type: "select",
+      multiple: true,
       showWhen: { field: "apply_on", values: ["SUBGROUP"] },
       optionsQuery: {
         table: "erp.product_subgroups",
@@ -136,6 +153,7 @@ const page = {
       name: "group_id",
       label: "product_groups",
       type: "select",
+      multiple: true,
       showWhen: { field: "apply_on", values: ["GROUP"] },
       optionsQuery: {
         table: "erp.product_groups",
@@ -156,7 +174,14 @@ const page = {
         { value: "PER_PAIR", label: "rate_type_per_pair" },
       ],
     },
-    { name: "value", label: "rate_value", type: "number", min: 0, step: "0.01", required: true },
+    {
+      name: "value",
+      label: "rate_value",
+      type: "number",
+      min: 0,
+      step: "0.01",
+      required: true,
+    },
     {
       name: "status",
       label: "status",
@@ -167,20 +192,35 @@ const page = {
         { value: "inactive", label: "inactive" },
       ],
     },
-    { name: "reverse_on_returns", label: "reverse_on_returns", type: "checkbox" },
+    {
+      name: "reverse_on_returns",
+      label: "reverse_on_returns",
+      type: "checkbox",
+    },
   ],
   sanitizeValues: (values) => ({
     ...values,
-    rate_type: String(values.rate_type || "").trim().toUpperCase() || "PER_PAIR",
+    rate_type:
+      String(values.rate_type || "")
+        .trim()
+        .toUpperCase() || "PER_PAIR",
     value: values.value == null ? null : String(values.value).trim(),
-    status: String(values.status || "").trim().toLowerCase() === "inactive" ? "inactive" : "active",
+    status:
+      String(values.status || "")
+        .trim()
+        .toLowerCase() === "inactive"
+        ? "inactive"
+        : "active",
     commission_basis: COMMISSION_BASIS_FIXED_PER_UNIT,
     value_type: deriveValueTypeFromBasis(COMMISSION_BASIS_FIXED_PER_UNIT),
     reverse_on_returns: values.reverse_on_returns !== false,
   }),
   validateValues: async ({ values, req, isUpdate, id }) => {
     const normalizeSelection = (rawValue) => {
-      if (Array.isArray(rawValue)) return rawValue.map((entry) => String(entry || "").trim()).filter(Boolean);
+      if (Array.isArray(rawValue))
+        return rawValue
+          .map((entry) => String(entry || "").trim())
+          .filter(Boolean);
       if (rawValue && typeof rawValue === "object")
         return Object.values(rawValue)
           .map((entry) => String(entry || "").trim())
@@ -195,18 +235,35 @@ const page = {
     };
 
     const applyOn = new Set(["SKU", "SUBGROUP", "GROUP"]);
-    if (!applyOn.has(values.apply_on)) return req.res.locals.t("error_invalid_apply_on");
+    if (!applyOn.has(values.apply_on))
+      return req.res.locals.t("error_invalid_apply_on");
     if (!isUpdate && ALLOWED_SCOPE_FOR_BULK.has(values.apply_on)) {
       return req.res.locals.t("error_group_subgroup_only_for_bulk_commission");
     }
     values.commission_basis = COMMISSION_BASIS_FIXED_PER_UNIT;
-    const derivedValueType = deriveValueTypeFromBasis(COMMISSION_BASIS_FIXED_PER_UNIT);
+    const derivedValueType = deriveValueTypeFromBasis(
+      COMMISSION_BASIS_FIXED_PER_UNIT,
+    );
     if (!derivedValueType) return req.res.locals.t("error_invalid_value_type");
     values.value_type = derivedValueType;
-    if (!COMMISSION_RATE_TYPES.has(String(values.rate_type || "").trim().toUpperCase())) return req.res.locals.t("error_invalid_rate_type");
-    if (values.status !== "active" && values.status !== "inactive") return req.res.locals.t("error_invalid_status");
-    if (values.value == null || Number(values.value) < 0 || !hasTwoDecimalsOrLess(values.value)) return req.res.locals.t("error_invalid_rate_value");
-    if (Number(values.value) > 99999999.99) return req.res.locals.t("error_invalid_rate_value");
+    if (
+      !COMMISSION_RATE_TYPES.has(
+        String(values.rate_type || "")
+          .trim()
+          .toUpperCase(),
+      )
+    )
+      return req.res.locals.t("error_invalid_rate_type");
+    if (values.status !== "active" && values.status !== "inactive")
+      return req.res.locals.t("error_invalid_status");
+    if (
+      values.value == null ||
+      Number(values.value) < 0 ||
+      !hasTwoDecimalsOrLess(values.value)
+    )
+      return req.res.locals.t("error_invalid_rate_value");
+    if (Number(values.value) > 99999999.99)
+      return req.res.locals.t("error_invalid_rate_value");
 
     values.employee_id = firstSelection(values.employee_id);
     values.sku_id = firstSelection(values.sku_id);
@@ -214,9 +271,12 @@ const page = {
     values.group_id = firstSelection(values.group_id);
 
     if (!values.employee_id) return req.res.locals.t("error_required_fields");
-    if (values.apply_on === "SKU" && !values.sku_id) return req.res.locals.t("error_select_sku");
-    if (values.apply_on === "SUBGROUP" && !values.subgroup_id) return req.res.locals.t("error_select_subgroup");
-    if (values.apply_on === "GROUP" && !values.group_id) return req.res.locals.t("error_select_group");
+    if (values.apply_on === "SKU" && !values.sku_id)
+      return req.res.locals.t("error_select_sku");
+    if (values.apply_on === "SUBGROUP" && !values.subgroup_id)
+      return req.res.locals.t("error_select_subgroup");
+    if (values.apply_on === "GROUP" && !values.group_id)
+      return req.res.locals.t("error_select_group");
     if (values.apply_on !== "SKU") values.sku_id = null;
     if (values.apply_on !== "SUBGROUP") values.subgroup_id = null;
     if (values.apply_on !== "GROUP") values.group_id = null;
@@ -230,7 +290,9 @@ const page = {
         status: values.status,
       })
       .whereRaw("COALESCE(sku_id,0)=COALESCE(?,0)", [values.sku_id || 0])
-      .whereRaw("COALESCE(subgroup_id,0)=COALESCE(?,0)", [values.subgroup_id || 0])
+      .whereRaw("COALESCE(subgroup_id,0)=COALESCE(?,0)", [
+        values.subgroup_id || 0,
+      ])
       .whereRaw("COALESCE(group_id,0)=COALESCE(?,0)", [values.group_id || 0]);
     if (isUpdate && id) duplicateQ.andWhereNot({ id });
     const duplicate = await duplicateQ.first();
@@ -251,7 +313,8 @@ const logBulkPreviewDiagnostic = (level, message, payload = {}) => {
 };
 
 const normalizeSelectValues = (rawValue) => {
-  if (Array.isArray(rawValue)) return rawValue.map((entry) => String(entry || "").trim()).filter(Boolean);
+  if (Array.isArray(rawValue))
+    return rawValue.map((entry) => String(entry || "").trim()).filter(Boolean);
   if (rawValue && typeof rawValue === "object")
     return Object.values(rawValue)
       .map((entry) => String(entry || "").trim())
@@ -264,6 +327,16 @@ const normalizeNumericIds = (rawValue) =>
   Array.from(
     new Set(
       normalizeSelectValues(rawValue)
+        .map((entry) => Number(entry))
+        .filter((entry) => Number.isInteger(entry) && entry > 0),
+    ),
+  );
+
+const normalizeNumericIdsFromQuery = (...rawValues) =>
+  Array.from(
+    new Set(
+      rawValues
+        .flatMap((raw) => normalizeSelectValues(raw))
         .map((entry) => Number(entry))
         .filter((entry) => Number.isInteger(entry) && entry > 0),
     ),
@@ -296,18 +369,30 @@ const buildValues = (body = {}) =>
 
 const normalizeValidationError = (validationError) => {
   if (!validationError) return null;
-  if (typeof validationError === "string") return { message: validationError, fieldErrors: {} };
+  if (typeof validationError === "string")
+    return { message: validationError, fieldErrors: {} };
   if (typeof validationError === "object") {
     const message = validationError.message || "";
     const field = validationError.field || null;
-    const fieldErrors = validationError.fieldErrors && typeof validationError.fieldErrors === "object" ? validationError.fieldErrors : {};
+    const fieldErrors =
+      validationError.fieldErrors &&
+      typeof validationError.fieldErrors === "object"
+        ? validationError.fieldErrors
+        : {};
     if (field && message) fieldErrors[field] = message;
     return { message, fieldErrors };
   }
   return { message: String(validationError), fieldErrors: {} };
 };
 
-const renderIndexError = (req, res, values, error, modalMode, fieldErrors = {}) => {
+const renderIndexError = (
+  req,
+  res,
+  values,
+  error,
+  modalMode,
+  fieldErrors = {},
+) => {
   const payload = { values, error, modalMode, fieldErrors };
   setCookie(res, flashCookie, JSON.stringify(payload), {
     path: req.baseUrl,
@@ -317,334 +402,450 @@ const renderIndexError = (req, res, values, error, modalMode, fieldErrors = {}) 
   return res.redirect(req.baseUrl);
 };
 
-router.post("/", requirePermission("SCREEN", page.scopeKey, "create"), async (req, res, next) => {
-  const values = buildValues(req.body);
-  const sanitizedValues = page.sanitizeValues ? page.sanitizeValues(values, req) : values;
+router.post(
+  "/",
+  requirePermission("SCREEN", page.scopeKey, "create"),
+  async (req, res, next) => {
+    const values = buildValues(req.body);
+    const sanitizedValues = page.sanitizeValues
+      ? page.sanitizeValues(values, req)
+      : values;
 
-  try {
-    const missing = page.fields
-      .filter((field) => field.required)
-      .filter((field) => {
-        const value = sanitizedValues[field.name];
-        return value === null || value === undefined || value === "" || (Array.isArray(value) && !value.length);
-      });
-    if (missing.length) {
-      const missingMap = missing.reduce((acc, field) => {
-        acc[field.name] = res.locals.t("error_required_fields");
-        return acc;
-      }, {});
-      return renderIndexError(req, res, sanitizedValues, res.locals.t("error_required_fields"), "create", missingMap);
-    }
+    try {
+      const missing = page.fields
+        .filter((field) => field.required)
+        .filter((field) => {
+          const value = sanitizedValues[field.name];
+          return (
+            value === null ||
+            value === undefined ||
+            value === "" ||
+            (Array.isArray(value) && !value.length)
+          );
+        });
+      if (missing.length) {
+        const missingMap = missing.reduce((acc, field) => {
+          acc[field.name] = res.locals.t("error_required_fields");
+          return acc;
+        }, {});
+        return renderIndexError(
+          req,
+          res,
+          sanitizedValues,
+          res.locals.t("error_required_fields"),
+          "create",
+          missingMap,
+        );
+      }
 
-    if (String(sanitizedValues.apply_on || "").toUpperCase() !== "SKU") {
-      return next();
-    }
+      if (String(sanitizedValues.apply_on || "").toUpperCase() !== "SKU") {
+        return next();
+      }
 
-    const employeeIds = normalizeNumericIds(sanitizedValues.employee_id);
-    const skuIds = normalizeNumericIds(sanitizedValues.sku_id);
-    if (!employeeIds.length || !skuIds.length) {
-      const fieldErrors = {};
-      if (!employeeIds.length) fieldErrors.employee_id = res.locals.t("error_required_fields");
-      if (!skuIds.length) fieldErrors.sku_id = res.locals.t("error_select_sku");
-      return renderIndexError(req, res, sanitizedValues, res.locals.t("error_required_fields"), "create", fieldErrors);
-    }
+      const employeeIds = normalizeNumericIds(sanitizedValues.employee_id);
+      const skuIds = normalizeNumericIds(sanitizedValues.sku_id);
+      if (!employeeIds.length || !skuIds.length) {
+        const fieldErrors = {};
+        if (!employeeIds.length)
+          fieldErrors.employee_id = res.locals.t("error_required_fields");
+        if (!skuIds.length)
+          fieldErrors.sku_id = res.locals.t("error_select_sku");
+        return renderIndexError(
+          req,
+          res,
+          sanitizedValues,
+          res.locals.t("error_required_fields"),
+          "create",
+          fieldErrors,
+        );
+      }
 
-    const rowPlans = [];
-    for (const employeeId of employeeIds) {
-      for (const skuId of skuIds) {
-        const rowValues = {
-          ...sanitizedValues,
-          employee_id: employeeId,
-          apply_on: "SKU",
-          sku_id: skuId,
-          subgroup_id: null,
-          group_id: null,
-        };
-
-        const existingRows = await knex(page.table)
-          .select("id")
-          .where({
+      const rowPlans = [];
+      for (const employeeId of employeeIds) {
+        for (const skuId of skuIds) {
+          const rowValues = {
+            ...sanitizedValues,
             employee_id: employeeId,
             apply_on: "SKU",
             sku_id: skuId,
-            commission_basis: rowValues.commission_basis,
-            value_type: rowValues.value_type,
-          })
-          .orderBy("id", "desc");
-        const existing = existingRows[0] || null;
-        const duplicateIdsToDelete = existingRows.slice(1).map((row) => Number(row.id));
+            subgroup_id: null,
+            group_id: null,
+          };
 
-        if (page.validateValues) {
-          const valuesForValidation = { ...rowValues };
-          const validationError = await page.validateValues({
-            values: valuesForValidation,
-            req,
-            isUpdate: Boolean(existing),
-            id: existing?.id || null,
-            knex,
-          });
-          if (validationError) {
-            const normalized = normalizeValidationError(validationError);
-            return renderIndexError(req, res, sanitizedValues, normalized.message || validationError, "create", normalized.fieldErrors);
+          const existingRows = await knex(page.table)
+            .select("id")
+            .where({
+              employee_id: employeeId,
+              apply_on: "SKU",
+              sku_id: skuId,
+              commission_basis: rowValues.commission_basis,
+              value_type: rowValues.value_type,
+            })
+            .orderBy("id", "desc");
+          const existing = existingRows[0] || null;
+          const duplicateIdsToDelete = existingRows
+            .slice(1)
+            .map((row) => Number(row.id));
+
+          if (page.validateValues) {
+            const valuesForValidation = { ...rowValues };
+            const validationError = await page.validateValues({
+              values: valuesForValidation,
+              req,
+              isUpdate: Boolean(existing),
+              id: existing?.id || null,
+              knex,
+            });
+            if (validationError) {
+              const normalized = normalizeValidationError(validationError);
+              return renderIndexError(
+                req,
+                res,
+                sanitizedValues,
+                normalized.message || validationError,
+                "create",
+                normalized.fieldErrors,
+              );
+            }
+            rowValues.value = valuesForValidation.value;
+            rowValues.rate_type = valuesForValidation.rate_type;
+            rowValues.commission_basis = valuesForValidation.commission_basis;
+            rowValues.value_type = valuesForValidation.value_type;
+            rowValues.status = valuesForValidation.status;
+            rowValues.reverse_on_returns =
+              valuesForValidation.reverse_on_returns;
           }
-          rowValues.value = valuesForValidation.value;
-          rowValues.rate_type = valuesForValidation.rate_type;
-          rowValues.commission_basis = valuesForValidation.commission_basis;
-          rowValues.value_type = valuesForValidation.value_type;
-          rowValues.status = valuesForValidation.status;
-          rowValues.reverse_on_returns = valuesForValidation.reverse_on_returns;
+
+          rowPlans.push({
+            existingId: existing?.id || null,
+            duplicateIdsToDelete,
+            values: rowValues,
+          });
         }
-
-        rowPlans.push({
-          existingId: existing?.id || null,
-          duplicateIdsToDelete,
-          values: rowValues,
-        });
       }
-    }
 
-    const hasExistingRows = rowPlans.some((plan) => Boolean(plan.existingId));
-    const approvalPayload = {
-      mode: "SKU_MULTI_UPSERT",
-      employee_ids: employeeIds,
-      sku_ids: skuIds,
-      apply_on: "SKU",
-      status: sanitizedValues.status,
-      reverse_on_returns: sanitizedValues.reverse_on_returns !== false,
-      rate_type: sanitizedValues.rate_type,
-      commission_basis: sanitizedValues.commission_basis,
-      value_type: sanitizedValues.value_type,
-      value: sanitizedValues.value,
-      rows: rowPlans.map((plan) => ({
-        employee_id: plan.values.employee_id,
-        sku_id: plan.values.sku_id,
-        rate_type: plan.values.rate_type,
-        value: plan.values.value,
-      })),
+      const hasExistingRows = rowPlans.some((plan) => Boolean(plan.existingId));
+      const approvalPayload = {
+        mode: "SKU_MULTI_UPSERT",
+        employee_ids: employeeIds,
+        sku_ids: skuIds,
+        apply_on: "SKU",
+        status: sanitizedValues.status,
+        reverse_on_returns: sanitizedValues.reverse_on_returns !== false,
+        rate_type: sanitizedValues.rate_type,
+        commission_basis: sanitizedValues.commission_basis,
+        value_type: sanitizedValues.value_type,
+        value: sanitizedValues.value,
+        rows: rowPlans.map((plan) => ({
+          employee_id: plan.values.employee_id,
+          sku_id: plan.values.sku_id,
+          rate_type: plan.values.rate_type,
+          value: plan.values.value,
+        })),
+      };
+
+      const approval = await handleScreenApproval({
+        req,
+        scopeKey: page.scopeKey,
+        action: hasExistingRows ? "edit" : "create",
+        entityType: page.entityType,
+        entityId:
+          rowPlans.length === 1 ? rowPlans[0].existingId || "NEW" : "BULK",
+        summary: `${res.locals.t(hasExistingRows ? "edit" : "add")} ${res.locals.t(page.titleKey)}`,
+        oldValue: null,
+        newValue: approvalPayload,
+        t: res.locals.t,
+      });
+      if (approval.queued) {
+        return res.redirect(req.get("referer") || req.baseUrl);
+      }
+
+      let createdCount = 0;
+      let updatedCount = 0;
+      await knex.transaction(async (trx) => {
+        for (const plan of rowPlans) {
+          if (plan.duplicateIdsToDelete.length) {
+            await trx(page.table)
+              .whereIn("id", plan.duplicateIdsToDelete)
+              .del();
+          }
+          if (plan.existingId) {
+            await trx(page.table)
+              .where({ id: plan.existingId })
+              .update(plan.values);
+            updatedCount += 1;
+          } else {
+            await trx(page.table).insert(plan.values);
+            createdCount += 1;
+          }
+        }
+      });
+
+      queueAuditLog(req, {
+        entityType: page.entityType,
+        entityId:
+          rowPlans.length === 1 ? rowPlans[0].existingId || "NEW" : "BULK",
+        action: hasExistingRows ? "UPDATE" : "CREATE",
+        context: {
+          source: "commission-create-upsert",
+          mode: "SKU_MULTI_UPSERT",
+          created_count: createdCount,
+          updated_count: updatedCount,
+        },
+      });
+
+      return res.redirect(req.baseUrl);
+    } catch (err) {
+      console.error("Error in CommissionRulesService:", err);
+      return renderIndexError(
+        req,
+        res,
+        sanitizedValues,
+        err?.message || res.locals.t("generic_error"),
+        "create",
+      );
+    }
+  },
+);
+
+router.get(
+  "/bulk-preview",
+  requirePermission("SCREEN", page.scopeKey, "view"),
+  async (req, res) => {
+    const diagnostics = {
+      request_id: req.id || null,
+      user_id: req.user?.id || null,
+      username: req.user?.username || null,
+      method: req.method,
+      path: req.originalUrl || BULK_PREVIEW_PATH,
+      query: {
+        apply_on: req.query.apply_on || null,
+        employee_id: req.query.employee_id || null,
+        subgroup_id: req.query.subgroup_id || null,
+        subgroup_ids: req.query.subgroup_ids || null,
+        group_id: req.query.group_id || null,
+        group_ids: req.query.group_ids || null,
+        rate_type: req.query.rate_type || null,
+        value: req.query.value || null,
+      },
     };
 
-    const approval = await handleScreenApproval({
-      req,
-      scopeKey: page.scopeKey,
-      action: hasExistingRows ? "edit" : "create",
-      entityType: page.entityType,
-      entityId: rowPlans.length === 1 ? rowPlans[0].existingId || "NEW" : "BULK",
-      summary: `${res.locals.t(hasExistingRows ? "edit" : "add")} ${res.locals.t(page.titleKey)}`,
-      oldValue: null,
-      newValue: approvalPayload,
-      t: res.locals.t,
-    });
-    if (approval.queued) {
-      return res.redirect(req.get("referer") || req.baseUrl);
-    }
+    try {
+      const applyOn = String(req.query.apply_on || "")
+        .trim()
+        .toUpperCase();
+      const employeeId = Number(req.query.employee_id || 0) || null;
+      const subgroupIds = normalizeNumericIdsFromQuery(
+        req.query.subgroup_ids,
+        req.query.subgroup_id,
+      );
+      const groupIds = normalizeNumericIdsFromQuery(
+        req.query.group_ids,
+        req.query.group_id,
+      );
+      const baseRate = req.query.value;
 
-    let createdCount = 0;
-    let updatedCount = 0;
-    await knex.transaction(async (trx) => {
-      for (const plan of rowPlans) {
-        if (plan.duplicateIdsToDelete.length) {
-          await trx(page.table)
-            .whereIn("id", plan.duplicateIdsToDelete)
-            .del();
-        }
-        if (plan.existingId) {
-          await trx(page.table).where({ id: plan.existingId }).update(plan.values);
-          updatedCount += 1;
-        } else {
-          await trx(page.table).insert(plan.values);
-          createdCount += 1;
-        }
+      if (!ALLOWED_SCOPE_FOR_BULK.has(applyOn)) {
+        logBulkPreviewDiagnostic(
+          "warn",
+          "Validation failed: invalid apply_on",
+          {
+            ...diagnostics,
+            normalized_apply_on: applyOn,
+          },
+        );
+        return res
+          .status(400)
+          .json({
+            message: res.locals.t(
+              "error_group_subgroup_only_for_bulk_commission",
+            ),
+          });
       }
-    });
+      if (applyOn === "SUBGROUP" && !subgroupIds.length) {
+        logBulkPreviewDiagnostic(
+          "warn",
+          "Validation failed: subgroup_id missing for SUBGROUP mode",
+          {
+            ...diagnostics,
+            normalized_apply_on: applyOn,
+          },
+        );
+        return res
+          .status(400)
+          .json({ message: res.locals.t("error_select_subgroup") });
+      }
+      if (applyOn === "GROUP" && !groupIds.length) {
+        logBulkPreviewDiagnostic(
+          "warn",
+          "Validation failed: group_id missing for GROUP mode",
+          {
+            ...diagnostics,
+            normalized_apply_on: applyOn,
+          },
+        );
+        return res
+          .status(400)
+          .json({ message: res.locals.t("error_select_group") });
+      }
 
-    queueAuditLog(req, {
-      entityType: page.entityType,
-      entityId: rowPlans.length === 1 ? rowPlans[0].existingId || "NEW" : "BULK",
-      action: hasExistingRows ? "UPDATE" : "CREATE",
-      context: {
-        source: "commission-create-upsert",
-        mode: "SKU_MULTI_UPSERT",
-        created_count: createdCount,
-        updated_count: updatedCount,
-      },
-    });
-
-    return res.redirect(req.baseUrl);
-  } catch (err) {
-    console.error("Error in CommissionRulesService:", err);
-    return renderIndexError(req, res, sanitizedValues, err?.message || res.locals.t("generic_error"), "create");
-  }
-});
-
-router.get("/bulk-preview", requirePermission("SCREEN", page.scopeKey, "view"), async (req, res) => {
-  const diagnostics = {
-    request_id: req.id || null,
-    user_id: req.user?.id || null,
-    username: req.user?.username || null,
-    method: req.method,
-    path: req.originalUrl || BULK_PREVIEW_PATH,
-    query: {
-      apply_on: req.query.apply_on || null,
-      employee_id: req.query.employee_id || null,
-      subgroup_id: req.query.subgroup_id || null,
-      group_id: req.query.group_id || null,
-      rate_type: req.query.rate_type || null,
-      value: req.query.value || null,
-    },
-  };
-
-  try {
-    const applyOn = String(req.query.apply_on || "").trim().toUpperCase();
-    const employeeId = Number(req.query.employee_id || 0) || null;
-    const subgroupId = Number(req.query.subgroup_id || 0) || null;
-    const groupId = Number(req.query.group_id || 0) || null;
-    const baseRate = req.query.value;
-
-    if (!ALLOWED_SCOPE_FOR_BULK.has(applyOn)) {
-      logBulkPreviewDiagnostic("warn", "Validation failed: invalid apply_on", {
-        ...diagnostics,
-        normalized_apply_on: applyOn,
+      const rows = await buildBulkPreviewRows({
+        employeeId,
+        applyOn,
+        subgroupIds,
+        groupIds,
+        baseRate,
       });
-      return res.status(400).json({ message: res.locals.t("error_group_subgroup_only_for_bulk_commission") });
+
+      return res.json({ rows });
+    } catch (err) {
+      logBulkPreviewDiagnostic(
+        "error",
+        "Unhandled exception while building preview rows",
+        {
+          ...diagnostics,
+          error_message: err?.message || String(err),
+          error_code: err?.code || null,
+          error_stack: err?.stack || null,
+        },
+      );
+      return res.status(500).json({ message: res.locals.t("generic_error") });
     }
-    if (applyOn === "SUBGROUP" && !subgroupId) {
-      logBulkPreviewDiagnostic("warn", "Validation failed: subgroup_id missing for SUBGROUP mode", {
-        ...diagnostics,
-        normalized_apply_on: applyOn,
+  },
+);
+
+router.post(
+  "/bulk-upsert",
+  requirePermission("SCREEN", page.scopeKey, "create"),
+  async (req, res) => {
+    try {
+      const normalized = normalizeBulkInput({
+        payload: req.body || {},
+        t: res.locals.t,
       });
-      return res.status(400).json({ message: res.locals.t("error_select_subgroup") });
-    }
-    if (applyOn === "GROUP" && !groupId) {
-      logBulkPreviewDiagnostic("warn", "Validation failed: group_id missing for GROUP mode", {
-        ...diagnostics,
-        normalized_apply_on: applyOn,
-      });
-      return res.status(400).json({ message: res.locals.t("error_select_group") });
-    }
 
-    const rows = await buildBulkPreviewRows({
-      employeeId,
-      applyOn,
-      subgroupId,
-      groupId,
-      baseRate,
-    });
-
-    return res.json({ rows });
-  } catch (err) {
-    logBulkPreviewDiagnostic("error", "Unhandled exception while building preview rows", {
-      ...diagnostics,
-      error_message: err?.message || String(err),
-      error_code: err?.code || null,
-      error_stack: err?.stack || null,
-    });
-    return res.status(500).json({ message: res.locals.t("generic_error") });
-  }
-});
-
-router.post("/bulk-upsert", requirePermission("SCREEN", page.scopeKey, "create"), async (req, res) => {
-  try {
-    const normalized = normalizeBulkInput({ payload: req.body || {}, t: res.locals.t });
-
-    const expectedRows = await buildBulkPreviewRows({
-      employeeId: normalized.employeeId,
-      applyOn: normalized.applyOn,
-      subgroupId: normalized.subgroupId,
-      groupId: normalized.groupId,
-      commissionBasis: normalized.commissionBasis,
-      baseRate: null,
-    });
-    const requestedRateBySku = new Map(
-      normalized.rows
-        .map((row) => [Number(row.skuId), row.rate])
-        .filter(([skuId]) => Number.isInteger(skuId) && skuId > 0),
-    );
-    const queuedRows = expectedRows.map((row) => {
-      const skuId = Number(row.sku_id || 0);
-      const nextRate = requestedRateBySku.has(skuId) ? requestedRateBySku.get(skuId) : row.new_rate;
-      return {
-        sku_id: skuId,
-        sku_code: row.sku_code || "",
-        item_name: row.item_name || "",
-        previous_rate: row.previous_rate ?? null,
-        previous_rate_type: row.previous_rate_type || null,
-        new_rate: nextRate ?? null,
-      };
-    });
-    const allowedSkuIds = new Set(expectedRows.map((row) => Number(row.sku_id)));
-    const invalidSku = normalized.rows.find((row) => !allowedSkuIds.has(Number(row.skuId)));
-    if (invalidSku || normalized.rows.length !== expectedRows.length) {
-      return res.status(400).json({ message: res.locals.t("error_invalid_bulk_commission_payload") });
-    }
-
-    const approval = await handleScreenApproval({
-      req,
-      scopeKey: page.scopeKey,
-      action: "create",
-      entityType: page.entityType,
-      entityId: normalized.employeeId,
-      summary: `${res.locals.t("add")} ${res.locals.t(page.titleKey)}`,
-      oldValue: null,
-      newValue: {
-        mode: "BULK_COMMISSION_SKU_UPSERT",
-        apply_on: normalized.applyOn,
-        employee_id: normalized.employeeId,
-        rate_type: normalized.rateType,
-        reverse_on_returns: normalized.reverseOnReturns,
-        status: normalized.status,
-        rows: queuedRows,
-      },
-      t: res.locals.t,
-    });
-
-    if (approval.queued) {
-      const canViewApprovals = typeof res.locals.can === "function"
-        ? res.locals.can("SCREEN", "administration.approvals", "navigate")
-        : false;
-      return res.status(202).json({
-        queued: true,
-        approval_request_id: approval.requestId || null,
-        approvals_url: canViewApprovals ? "/administration/approvals" : null,
-        message: res.locals.t("approval_sent") || res.locals.t("approval_submitted") ,
-      });
-    }
-
-    const result = await knex.transaction(async (trx) => {
-      return applyBulkSkuRateUpsert({
-        trx,
+      const expectedRows = await buildBulkPreviewRows({
         employeeId: normalized.employeeId,
-        rateType: normalized.rateType,
-        valueType: normalized.valueType,
-        reverseOnReturns: normalized.reverseOnReturns,
-        status: normalized.status,
-        rows: normalized.rows,
+        applyOn: normalized.applyOn,
+        subgroupIds: normalized.subgroupIds,
+        groupIds: normalized.groupIds,
+        commissionBasis: normalized.commissionBasis,
+        baseRate: null,
       });
-    });
+      const requestedRateBySku = new Map(
+        normalized.rows
+          .map((row) => [Number(row.skuId), row.rate])
+          .filter(([skuId]) => Number.isInteger(skuId) && skuId > 0),
+      );
+      const queuedRows = expectedRows.map((row) => {
+        const skuId = Number(row.sku_id || 0);
+        const nextRate = requestedRateBySku.has(skuId)
+          ? requestedRateBySku.get(skuId)
+          : row.new_rate;
+        return {
+          sku_id: skuId,
+          sku_code: row.sku_code || "",
+          item_name: row.item_name || "",
+          previous_rate: row.previous_rate ?? null,
+          previous_rate_type: row.previous_rate_type || null,
+          subgroup_id: row.subgroup_id ?? null,
+          group_id: row.group_id ?? null,
+          new_rate: nextRate ?? null,
+        };
+      });
+      const allowedSkuIds = new Set(
+        expectedRows.map((row) => Number(row.sku_id)),
+      );
+      const invalidSku = normalized.rows.find(
+        (row) => !allowedSkuIds.has(Number(row.skuId)),
+      );
+      if (invalidSku || normalized.rows.length !== expectedRows.length) {
+        return res
+          .status(400)
+          .json({
+            message: res.locals.t("error_invalid_bulk_commission_payload"),
+          });
+      }
 
-    queueAuditLog(req, {
-      entityType: page.entityType,
-      entityId: normalized.employeeId,
-      action: "UPDATE",
-      context: {
-        source: "commission-bulk-upsert",
-        apply_on: normalized.applyOn,
+      const approval = await handleScreenApproval({
+        req,
+        scopeKey: page.scopeKey,
+        action: "create",
+        entityType: page.entityType,
+        entityId: normalized.employeeId,
+        summary: `${res.locals.t("add")} ${res.locals.t(page.titleKey)}`,
+        oldValue: null,
+        newValue: {
+          mode: "BULK_COMMISSION_SKU_UPSERT",
+          apply_on: normalized.applyOn,
+          employee_id: normalized.employeeId,
+          subgroup_id: normalized.subgroupId,
+          subgroup_ids: normalized.subgroupIds,
+          group_id: normalized.groupId,
+          group_ids: normalized.groupIds,
+          rate_type: normalized.rateType,
+          reverse_on_returns: normalized.reverseOnReturns,
+          status: normalized.status,
+          rows: queuedRows,
+        },
+        t: res.locals.t,
+      });
+
+      if (approval.queued) {
+        const canViewApprovals =
+          typeof res.locals.can === "function"
+            ? res.locals.can("SCREEN", "administration.approvals", "navigate")
+            : false;
+        return res.status(202).json({
+          queued: true,
+          approval_request_id: approval.requestId || null,
+          approvals_url: canViewApprovals ? "/administration/approvals" : null,
+          message:
+            res.locals.t("approval_sent") || res.locals.t("approval_submitted"),
+        });
+      }
+
+      const result = await knex.transaction(async (trx) => {
+        return applyBulkSkuRateUpsert({
+          trx,
+          employeeId: normalized.employeeId,
+          rateType: normalized.rateType,
+          valueType: normalized.valueType,
+          reverseOnReturns: normalized.reverseOnReturns,
+          status: normalized.status,
+          rows: normalized.rows,
+        });
+      });
+
+      queueAuditLog(req, {
+        entityType: page.entityType,
+        entityId: normalized.employeeId,
+        action: "UPDATE",
+        context: {
+          source: "commission-bulk-upsert",
+          apply_on: normalized.applyOn,
+          created: result.created,
+          updated: result.updated,
+          row_count: normalized.rows.length,
+        },
+      });
+
+      return res.json({
+        ok: true,
         created: result.created,
         updated: result.updated,
-        row_count: normalized.rows.length,
-      },
-    });
-
-    return res.json({
-      ok: true,
-      created: result.created,
-      updated: result.updated,
-      message: res.locals.t("success_bulk_commission_saved") || res.locals.t("saved") ,
-    });
-  } catch (err) {
-    console.error("Error in CommissionRulesService:", err);
-    return res.status(400).json({ message: err?.message || res.locals.t("generic_error") });
-  }
-});
+        message:
+          res.locals.t("success_bulk_commission_saved") ||
+          res.locals.t("saved"),
+      });
+    } catch (err) {
+      console.error("Error in CommissionRulesService:", err);
+      return res
+        .status(400)
+        .json({ message: err?.message || res.locals.t("generic_error") });
+    }
+  },
+);
 
 router.use("/", createHrMasterRouter(page));
 

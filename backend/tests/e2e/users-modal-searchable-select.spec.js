@@ -27,7 +27,7 @@ test.describe("Users modal searchable dropdown", () => {
     await expect(branchSearchInput).toBeVisible();
   });
 
-  test("multiselect searchable field stays open on repeated clicks and option picks", async ({
+  test("multiselect searchable field toggles open/close on repeated clicks and stays stable on option picks", async ({
     page,
   }) => {
     await login(page, "E2E_ADMIN");
@@ -54,6 +54,9 @@ test.describe("Users modal searchable dropdown", () => {
     await expect(branchMenu).toBeVisible();
 
     await branchSearchInput.click();
+    await expect(branchMenu).toBeHidden();
+
+    await branchSearchInput.click();
     await expect(branchMenu).toBeVisible();
 
     const firstOption = branchMenu.locator("[data-searchable-option]").first();
@@ -69,7 +72,7 @@ test.describe("Users modal searchable dropdown", () => {
     await expect(branchMenu).toBeHidden();
   });
 
-  test("sales commission employee multiselect stays open on repeated clicks", async ({
+  test("sales commission employee multiselect toggles open/close on repeated clicks", async ({
     page,
   }) => {
     await login(page, "E2E_ADMIN");
@@ -97,6 +100,9 @@ test.describe("Users modal searchable dropdown", () => {
 
     await employeeSearchInput.click();
     await expect(employeeMenu).toBeVisible();
+
+    await employeeSearchInput.click();
+    await expect(employeeMenu).toBeHidden();
 
     await employeeSearchInput.click();
     await expect(employeeMenu).toBeVisible();

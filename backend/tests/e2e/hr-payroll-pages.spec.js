@@ -247,9 +247,7 @@ test.describe("HR Payroll page-by-page scenarios", () => {
     await page
       .locator('[data-modal-form] [data-field="basic_salary"]')
       .fill("25000");
-    const employeeDept = (await extractOptions(page, "department_id"))[0];
     const branchOptions = await extractOptions(page, "branch_ids");
-    await setSelectValue(page, "department_id", employeeDept.value);
     await setSelectValue(page, "payroll_type", "MONTHLY");
     await setFirstMultiSelect(page, "branch_ids");
     await Promise.all([
@@ -268,7 +266,6 @@ test.describe("HR Payroll page-by-page scenarios", () => {
           name: `Emp ${token}`,
           cnic: `352021234${String(Date.now()).slice(-4)}`,
           phone: `03${String(Date.now()).slice(-9)}`,
-          department_id: Number(employeeDept.value),
           designation: "Sales Officer",
           payroll_type: "MONTHLY",
           basic_salary: 25000,
@@ -306,12 +303,10 @@ test.describe("HR Payroll page-by-page scenarios", () => {
       .where({ id: employeeRow.id })
       .first();
     if ((employeeUpdated?.name || "") !== `Emp ${token} Updated`) {
-      test
-        .info()
-        .annotations.push({
-          type: "warning",
-          description: "Employee update did not persist expected name.",
-        });
+      test.info().annotations.push({
+        type: "warning",
+        description: "Employee update did not persist expected name.",
+      });
     }
 
     await page.goto("/hr-payroll/employees", { waitUntil: "domcontentloaded" });
@@ -328,12 +323,10 @@ test.describe("HR Payroll page-by-page scenarios", () => {
       .where({ id: employeeRow.id })
       .first();
     if (String(employeeToggled?.status || "").toLowerCase() !== "inactive") {
-      test
-        .info()
-        .annotations.push({
-          type: "warning",
-          description: "Employee toggle did not set inactive status.",
-        });
+      test.info().annotations.push({
+        type: "warning",
+        description: "Employee toggle did not set inactive status.",
+      });
     }
 
     await page.goto("/hr-payroll/labours", { waitUntil: "domcontentloaded" });
@@ -362,12 +355,10 @@ test.describe("HR Payroll page-by-page scenarios", () => {
     if (labourRow?.id) {
       ctx.createdIds.labours.push(Number(labourRow.id));
     } else {
-      test
-        .info()
-        .annotations.push({
-          type: "warning",
-          description: "Labour create did not produce a DB row.",
-        });
+      test.info().annotations.push({
+        type: "warning",
+        description: "Labour create did not produce a DB row.",
+      });
     }
 
     await page.goto("/hr-payroll/employees/commissions", {
@@ -400,12 +391,10 @@ test.describe("HR Payroll page-by-page scenarios", () => {
     if (commissionRow?.id) {
       ctx.createdIds.commissions.push(Number(commissionRow.id));
     } else {
-      test
-        .info()
-        .annotations.push({
-          type: "warning",
-          description: "Commission create did not produce a DB row.",
-        });
+      test.info().annotations.push({
+        type: "warning",
+        description: "Commission create did not produce a DB row.",
+      });
     }
 
     await page.goto("/hr-payroll/employees/allowances", {
@@ -434,12 +423,10 @@ test.describe("HR Payroll page-by-page scenarios", () => {
     if (allowanceRow?.id) {
       ctx.createdIds.allowances.push(Number(allowanceRow.id));
     } else {
-      test
-        .info()
-        .annotations.push({
-          type: "warning",
-          description: "Allowance create did not produce a DB row.",
-        });
+      test.info().annotations.push({
+        type: "warning",
+        description: "Allowance create did not produce a DB row.",
+      });
     }
   });
 
@@ -467,37 +454,34 @@ test.describe("HR Payroll page-by-page scenarios", () => {
     await page.goto("/hr-payroll/employees", { waitUntil: "domcontentloaded" });
     await expect(page.locator('[data-sort-key="basic_salary"]')).toHaveCount(0);
 
-    let employeeId = Number(ctx.createdIds.employees[0] || 0);
-    if (!employeeId) {
-      const dept = await db("erp.departments")
-        .select("id")
-        .where({ is_active: true })
-        .orderBy("id", "asc")
-        .first();
-      const [inserted] = await db("erp.employees")
-        .insert({
-          code: `emp_q_${Date.now()}`.slice(0, 80),
-          name: `Queue Target Emp ${Date.now()}`,
-          cnic: `352021238${String(Date.now()).slice(-4)}`,
-          phone: `03${String(Date.now()).slice(-9)}`,
-          department_id: Number(dept?.id || 1),
-          designation: "Queue Target",
-          payroll_type: "MONTHLY",
-          basic_salary: 20000,
-          status: "active",
-        })
-        .returning(["id"]);
-      employeeId = Number(inserted?.id || inserted);
-      if (employeeId) ctx.createdIds.employees.push(employeeId);
-      if (employeeId && ctx.branchId) {
-        await db("erp.employee_branch")
-          .insert({ employee_id: employeeId, branch_id: ctx.branchId })
-          .onConflict(["employee_id", "branch_id"])
-          .ignore();
-      }
+    const queueEmployeeName = `Queue Target Emp ${Date.now()}`;
+    const [insertedEmployee] = await db("erp.employees")
+      .insert({
+        code: `emp_q_${Date.now()}`.slice(0, 80),
+        name: queueEmployeeName,
+        cnic: `352021238${String(Date.now()).slice(-4)}`,
+        phone: `03${String(Date.now()).slice(-9)}`,
+        designation: "Queue Target",
+        payroll_type: "MONTHLY",
+        basic_salary: 20000,
+        status: "active",
+      })
+      .returning(["id"]);
+    const employeeId = Number(insertedEmployee?.id || insertedEmployee);
+    if (employeeId) ctx.createdIds.employees.push(employeeId);
+    if (employeeId && ctx.branchId) {
+      await db("erp.employee_branch")
+        .insert({ employee_id: employeeId, branch_id: ctx.branchId })
+        .onConflict(["employee_id", "branch_id"])
+        .ignore();
     }
 
-    await page.goto("/hr-payroll/employees", { waitUntil: "domcontentloaded" });
+    await page.goto(
+      `/hr-payroll/employees?status=all&q=${encodeURIComponent(queueEmployeeName)}`,
+      {
+        waitUntil: "domcontentloaded",
+      },
+    );
     await page
       .locator(`[data-toggle][data-toggle-action$="/${employeeId}/toggle"]`)
       .first()

@@ -407,26 +407,44 @@
         .replace("{created}", String(created))
         .replace("{updated}", String(updated));
 
+    const clearSelectField = (field) => {
+      if (!(field instanceof HTMLSelectElement)) return;
+      if (field.multiple) {
+        Array.from(field.options || []).forEach((option) => {
+          option.selected = false;
+        });
+      } else {
+        field.value = "";
+      }
+      field.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+
+    const getSelectedValues = (field) => {
+      if (!(field instanceof HTMLSelectElement)) return [];
+      if (field.multiple) {
+        return Array.from(field.selectedOptions || [])
+          .map((option) => String(option.value || "").trim())
+          .filter(Boolean);
+      }
+      const value = String(field.value || "").trim();
+      return value ? [value] : [];
+    };
+
     const resetSelections = () => {
       if (fields.employeeId) {
-        fields.employeeId.value = "";
-        fields.employeeId.dispatchEvent(new Event("change", { bubbles: true }));
+        clearSelectField(fields.employeeId);
       }
       if (fields.applyOn) {
-        fields.applyOn.value = "";
-        fields.applyOn.dispatchEvent(new Event("change", { bubbles: true }));
+        clearSelectField(fields.applyOn);
       }
       if (fields.subgroupId) {
-        fields.subgroupId.value = "";
-        fields.subgroupId.dispatchEvent(new Event("change", { bubbles: true }));
+        clearSelectField(fields.subgroupId);
       }
       if (fields.groupId) {
-        fields.groupId.value = "";
-        fields.groupId.dispatchEvent(new Event("change", { bubbles: true }));
+        clearSelectField(fields.groupId);
       }
       if (fields.commissionBasis) {
-        fields.commissionBasis.value = "";
-        fields.commissionBasis.dispatchEvent(new Event("change", { bubbles: true }));
+        clearSelectField(fields.commissionBasis);
       }
       if (fields.rateType) {
         fields.rateType.value = "PER_PAIR";
@@ -517,21 +535,27 @@
       const applyOn = normalizeApplyOn();
       const employeeId = String(fields.employeeId?.value || "").trim();
       const commissionBasis = String(fields.commissionBasis?.value || "FIXED_PER_UNIT").trim();
-      const subgroupId = String(fields.subgroupId?.value || "").trim();
-      const groupId = String(fields.groupId?.value || "").trim();
+      const subgroupIds = getSelectedValues(fields.subgroupId);
+      const groupIds = getSelectedValues(fields.groupId);
       const rateType = String(fields.rateType?.value || "").trim();
 
       if (!applyOn) return null;
-      if (applyOn === "SUBGROUP" && !subgroupId) return null;
-      if (applyOn === "GROUP" && !groupId) return null;
+      if (applyOn === "SUBGROUP" && !subgroupIds.length) return null;
+      if (applyOn === "GROUP" && !groupIds.length) return null;
 
       const params = new URLSearchParams({
         apply_on: applyOn,
       });
       if (employeeId) params.set("employee_id", employeeId);
       if (commissionBasis) params.set("commission_basis", commissionBasis);
-      if (subgroupId) params.set("subgroup_id", subgroupId);
-      if (groupId) params.set("group_id", groupId);
+      if (subgroupIds.length) {
+        params.set("subgroup_ids", subgroupIds.join(","));
+        params.set("subgroup_id", subgroupIds[0]);
+      }
+      if (groupIds.length) {
+        params.set("group_ids", groupIds.join(","));
+        params.set("group_id", groupIds[0]);
+      }
       if (rateType) params.set("rate_type", rateType);
       return params;
     };
@@ -715,8 +739,8 @@
           _csrf: csrfToken,
           employee_id: getFirstMultiSelectValue(fields.employeeId),
           apply_on: normalizeApplyOn(),
-          subgroup_id: fields.subgroupId?.value || null,
-          group_id: fields.groupId?.value || null,
+          subgroup_ids: getSelectedValues(fields.subgroupId),
+          group_ids: getSelectedValues(fields.groupId),
           commission_basis: commissionBasis,
           rate_type: rateType,
           reverse_on_returns: Boolean(fields.reverseOnReturns?.checked),
@@ -726,6 +750,8 @@
             new_rate: row.new_rate,
           })),
         };
+        payload.subgroup_id = payload.subgroup_ids[0] || null;
+        payload.group_id = payload.group_ids[0] || null;
 
         if (!payload.employee_id) {
           showModalError(tRequiredFields);
@@ -892,12 +918,31 @@
     };
 
     const normalizeApplyOn = () => String(fields.applyOn?.value || "").trim().toUpperCase();
+    const clearSelectField = (field) => {
+      if (!(field instanceof HTMLSelectElement)) return;
+      if (field.multiple) {
+        Array.from(field.options || []).forEach((option) => {
+          option.selected = false;
+        });
+      } else {
+        field.value = "";
+      }
+      field.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+    const getSelectedValues = (field) => {
+      if (!(field instanceof HTMLSelectElement)) return [];
+      if (field.multiple) {
+        return Array.from(field.selectedOptions || [])
+          .map((option) => String(option.value || "").trim())
+          .filter((value) => value);
+      }
+      const value = String(field.value || "").trim();
+      return value ? [value] : [];
+    };
     const getSelectedLabourIds = () => {
       if (!fields.labourId) return [];
       if (fields.labourId instanceof HTMLSelectElement) {
-        return Array.from(fields.labourId.selectedOptions || [])
-          .map((option) => String(option.value || "").trim())
-          .filter((value) => value);
+        return getSelectedValues(fields.labourId);
       }
       const hiddenValues = String(fields.labourId.value || "")
         .split(",")
@@ -909,11 +954,10 @@
         .filter((value) => value);
     };
     const getSelectedSkuIds = () => {
-      if (!fields.skuId) return [];
-      return Array.from(fields.skuId.selectedOptions || [])
-        .map((option) => String(option.value || "").trim())
-        .filter((value) => value);
+      return getSelectedValues(fields.skuId);
     };
+    const getSelectedSubgroupIds = () => getSelectedValues(fields.subgroupId);
+    const getSelectedGroupIds = () => getSelectedValues(fields.groupId);
     const isBulkApplyOn = () => {
       const applyOn = normalizeApplyOn();
       return applyOn === "SUBGROUP" || applyOn === "GROUP";
@@ -1207,15 +1251,29 @@
         const shouldShow = editVisibleFields.has(name);
         wrapper.classList.toggle("hidden", !shouldShow);
         controls.forEach((ctrl) => {
+          const searchableInput = ctrl
+            .closest("[data-searchable-wrapper]")
+            ?.querySelector('input[type="text"]');
           if (shouldShow) {
             ctrl.disabled = false;
             if (ctrl.hasAttribute("data-required")) {
               ctrl.setAttribute("required", "required");
             }
+            if (searchableInput instanceof HTMLInputElement) {
+              searchableInput.disabled = false;
+              if (ctrl.hasAttribute("data-required")) {
+                searchableInput.setAttribute("required", "required");
+              } else {
+                searchableInput.removeAttribute("required");
+              }
+            }
             return;
           }
           ctrl.disabled = false;
           ctrl.removeAttribute("required");
+          if (searchableInput instanceof HTMLInputElement) {
+            searchableInput.removeAttribute("required");
+          }
         });
       });
 
@@ -1354,15 +1412,15 @@
       const deptId = String(fields.deptId?.value || "").trim();
       const applyOn = String(fields.applyOn?.value || "").trim().toUpperCase();
       const skuIds = getSelectedSkuIds();
-      const subgroupId = String(fields.subgroupId?.value || "").trim();
-      const groupId = String(fields.groupId?.value || "").trim();
+      const subgroupIds = getSelectedSubgroupIds();
+      const groupIds = getSelectedGroupIds();
       const articleType = String(fields.articleType?.value || "").trim();
       const rateType = String(fields.rateType?.value || "").trim();
 
       if (!labourIds.length || !deptId || !applyOn || !articleType || !rateType) return null;
       if (applyOn === "SKU" && !skuIds.length) return null;
-      if (applyOn === "SUBGROUP" && !subgroupId) return null;
-      if (applyOn === "GROUP" && !groupId) return null;
+      if (applyOn === "SUBGROUP" && !subgroupIds.length) return null;
+      if (applyOn === "GROUP" && !groupIds.length) return null;
 
       const params = new URLSearchParams({
         labour_ids: labourIds.join(","),
@@ -1375,8 +1433,14 @@
         params.set("sku_ids", skuIds.join(","));
         params.set("sku_id", skuIds[0]);
       }
-      if (subgroupId) params.set("subgroup_id", subgroupId);
-      if (groupId) params.set("group_id", groupId);
+      if (subgroupIds.length) {
+        params.set("subgroup_ids", subgroupIds.join(","));
+        params.set("subgroup_id", subgroupIds[0]);
+      }
+      if (groupIds.length) {
+        params.set("group_ids", groupIds.join(","));
+        params.set("group_id", groupIds[0]);
+      }
       return params;
     };
 
@@ -1406,11 +1470,11 @@
         clearRows(tSelectSku);
         return;
       }
-      if (applyOn === "SUBGROUP" && !fields.subgroupId?.value) {
+      if (applyOn === "SUBGROUP" && !getSelectedSubgroupIds().length) {
         clearRows(tSelectSubgroup);
         return;
       }
-      if (applyOn === "GROUP" && !fields.groupId?.value) {
+      if (applyOn === "GROUP" && !getSelectedGroupIds().length) {
         clearRows(tSelectGroup);
         return;
       }
@@ -1471,42 +1535,27 @@
       state.deptOptionsSeq += 1;
       state.skuOptionsSeq += 1;
       if (fields.labourId) {
-        Array.from(fields.labourId.options || []).forEach((option) => {
-          option.selected = false;
-        });
-        fields.labourId.dispatchEvent(new Event("change", { bubbles: true }));
+        clearSelectField(fields.labourId);
       }
       resetDepartmentOptions();
       resetSkuOptions();
       if (fields.articleType) {
-        fields.articleType.value = "";
-        fields.articleType.dispatchEvent(new Event("change", { bubbles: true }));
+        clearSelectField(fields.articleType);
       }
       if (fields.applyOn) {
-        fields.applyOn.value = "";
-        fields.applyOn.dispatchEvent(new Event("change", { bubbles: true }));
+        clearSelectField(fields.applyOn);
       }
       if (fields.skuId) {
-        if (fields.skuId.multiple) {
-          Array.from(fields.skuId.options || []).forEach((option) => {
-            option.selected = false;
-          });
-        } else {
-          fields.skuId.value = "";
-        }
-        fields.skuId.dispatchEvent(new Event("change", { bubbles: true }));
+        clearSelectField(fields.skuId);
       }
       if (fields.subgroupId) {
-        fields.subgroupId.value = "";
-        fields.subgroupId.dispatchEvent(new Event("change", { bubbles: true }));
+        clearSelectField(fields.subgroupId);
       }
       if (fields.groupId) {
-        fields.groupId.value = "";
-        fields.groupId.dispatchEvent(new Event("change", { bubbles: true }));
+        clearSelectField(fields.groupId);
       }
       if (fields.rateType) {
-        fields.rateType.value = "";
-        fields.rateType.dispatchEvent(new Event("change", { bubbles: true }));
+        clearSelectField(fields.rateType);
       }
       if (fields.rateValue) fields.rateValue.value = "";
       hideModalError();
@@ -1589,6 +1638,11 @@
       if (typeof window.initDataMultiSelects === "function") {
         window.initDataMultiSelects(form);
       }
+      if (fields.rateValue instanceof HTMLInputElement) {
+        // Keep decimal-rate edits valid even when browser defaults reset number-step constraints.
+        fields.rateValue.setAttribute("step", "0.01");
+        fields.rateValue.setAttribute("min", "0");
+      }
       const modalMode = event?.detail?.mode || modal.dataset.mode || "create";
       let editSkuValue = "";
       let editSkuLabel = "";
@@ -1655,8 +1709,8 @@
         const deptId = String(fields.deptId?.value || "").trim();
         const applyOn = String(fields.applyOn?.value || "").trim().toUpperCase();
         const skuIds = getSelectedSkuIds();
-        const subgroupId = String(fields.subgroupId?.value || "").trim();
-        const groupId = String(fields.groupId?.value || "").trim();
+        const subgroupIds = getSelectedSubgroupIds();
+        const groupIds = getSelectedGroupIds();
         const articleType = String(fields.articleType?.value || "").trim();
         const rateType = String(fields.rateType?.value || "").trim();
         if (!labourIds.length) {
@@ -1675,11 +1729,11 @@
           showModalError(tSelectSku);
           return;
         }
-        if (applyOn === "SUBGROUP" && !subgroupId) {
+        if (applyOn === "SUBGROUP" && !subgroupIds.length) {
           showModalError(tSelectSubgroup);
           return;
         }
-        if (applyOn === "GROUP" && !groupId) {
+        if (applyOn === "GROUP" && !groupIds.length) {
           showModalError(tSelectGroup);
           return;
         }
@@ -1703,12 +1757,16 @@
           apply_on: applyOn,
           sku_id: skuIds[0] || null,
           sku_ids: skuIds,
-          subgroup_id: subgroupId || null,
-          group_id: groupId || null,
+          subgroup_id: subgroupIds[0] || null,
+          subgroup_ids: subgroupIds,
+          group_id: groupIds[0] || null,
+          group_ids: groupIds,
           article_type: articleType,
           rate_type: rateType,
           rows: state.rows.map((row) => ({
             sku_id: row.sku_id,
+            subgroup_id: row.subgroup_id || null,
+            group_id: row.group_id || null,
             new_rate: row.new_rate,
           })),
         };

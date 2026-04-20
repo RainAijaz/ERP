@@ -48,7 +48,7 @@ const renderControlReport = async (req, res, next, inputSource = req.query) => {
     });
 
     return res.render("base/layouts/main", {
-      title: `${res.locals.t("pending_returnables") } - ${res.locals.t("reports")}`,
+      title: `${res.locals.t("pending_returnables")} - ${res.locals.t("reports")}`,
       user: req.user,
       branchId: req.branchId,
       branchScope: req.branchScope,
@@ -81,7 +81,7 @@ const renderVendorReport = async (req, res, next, inputSource = req.query) => {
     });
 
     return res.render("base/layouts/main", {
-      title: `${res.locals.t("overdue_returnables") } - ${res.locals.t("reports")}`,
+      title: `${res.locals.t("overdue_returnables")} - ${res.locals.t("reports")}`,
       user: req.user,
       branchId: req.branchId,
       branchScope: req.branchScope,

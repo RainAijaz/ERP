@@ -192,7 +192,9 @@ exports.up = async function up(knex) {
 exports.down = async function down(knex) {
   const trx = await knex.transaction();
   try {
-    const newScopeKeys = SPLIT_SCOPE_MAPPINGS.map((mapping) => mapping.newScopeKey);
+    const newScopeKeys = SPLIT_SCOPE_MAPPINGS.map(
+      (mapping) => mapping.newScopeKey,
+    );
     const scopeRows = await trx("erp.permission_scope_registry")
       .select("id")
       .where({ scope_type: REPORT_SCOPE_TYPE })
@@ -202,7 +204,9 @@ exports.down = async function down(knex) {
       .filter((id) => Number.isInteger(id) && id > 0);
 
     if (scopeIds.length) {
-      await trx("erp.user_permissions_override").whereIn("scope_id", scopeIds).del();
+      await trx("erp.user_permissions_override")
+        .whereIn("scope_id", scopeIds)
+        .del();
       await trx("erp.role_permissions").whereIn("scope_id", scopeIds).del();
       await trx("erp.permission_scope_registry")
         .where({ scope_type: REPORT_SCOPE_TYPE })

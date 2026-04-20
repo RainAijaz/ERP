@@ -782,24 +782,57 @@ const hydrateSkuRows = async (rows) => {
 };
 
 const enrichCommissionRowsFromScope = async (values, t) => {
+  const toPositiveIdList = (...rawValues) => [
+    ...new Set(
+      rawValues
+        .flatMap((raw) => {
+          if (Array.isArray(raw)) return raw;
+          const text = String(raw || "").trim();
+          return text ? text.split(",") : [];
+        })
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value > 0),
+    ),
+  ];
+
   const employeeId = Number(values?.employee_id || 0);
   const applyOn = String(values?.apply_on || "")
     .trim()
     .toUpperCase();
+  const subgroupIds = toPositiveIdList(
+    values?.subgroup_ids,
+    values?.subgroup_id,
+  );
+  const groupIds = toPositiveIdList(values?.group_ids, values?.group_id);
   if (!Number.isInteger(employeeId) || employeeId <= 0) return [];
   if (applyOn !== "SUBGROUP" && applyOn !== "GROUP") return [];
   return buildCommissionBulkPreviewRows({
     db: knex,
     employeeId,
     applyOn,
-    subgroupId: values?.subgroup_id ? Number(values.subgroup_id) : null,
-    groupId: values?.group_id ? Number(values.group_id) : null,
+    subgroupId: subgroupIds[0] || null,
+    subgroupIds,
+    groupId: groupIds[0] || null,
+    groupIds,
     baseRate: null,
     t,
   });
 };
 
 const enrichLabourRateRowsFromScope = async (values, t) => {
+  const toPositiveIdList = (...rawValues) => [
+    ...new Set(
+      rawValues
+        .flatMap((raw) => {
+          if (Array.isArray(raw)) return raw;
+          const text = String(raw || "").trim();
+          return text ? text.split(",") : [];
+        })
+        .map((value) => Number(value))
+        .filter((value) => Number.isInteger(value) && value > 0),
+    ),
+  ];
+
   const deptId = Number(values?.dept_id || 0);
   const applyOn = String(values?.apply_on || "")
     .trim()
@@ -811,6 +844,15 @@ const enrichLabourRateRowsFromScope = async (values, t) => {
     .trim()
     .toUpperCase();
   const labourRaw = String(values?.labour_id || "").trim();
+  const labourIdsSelected = toPositiveIdList(
+    values?.labour_ids,
+    values?.labour_id,
+  );
+  const subgroupIds = toPositiveIdList(
+    values?.subgroup_ids,
+    values?.subgroup_id,
+  );
+  const groupIds = toPositiveIdList(values?.group_ids, values?.group_id);
   if (!Number.isInteger(deptId) || deptId <= 0) return [];
   if (!labourRaw) return [];
   if (!rateType) return [];
@@ -818,7 +860,14 @@ const enrichLabourRateRowsFromScope = async (values, t) => {
   const labourSelection =
     labourRaw.toUpperCase() === ALL_LABOURS_VALUE
       ? { all: true, labourId: null, raw: ALL_LABOURS_VALUE }
-      : { all: false, labourId: Number(labourRaw || 0), raw: labourRaw };
+      : {
+          all: false,
+          labourId: labourIdsSelected[0] || Number(labourRaw || 0) || null,
+          labourIds: labourIdsSelected,
+          raw: labourIdsSelected.length
+            ? labourIdsSelected.join(",")
+            : labourRaw,
+        };
   const labourIds = await resolveLabourIds({
     db: knex,
     deptId,
@@ -831,8 +880,11 @@ const enrichLabourRateRowsFromScope = async (values, t) => {
     deptId,
     applyOn,
     skuId: values?.sku_id ? Number(values.sku_id) : null,
+    skuIds: toPositiveIdList(values?.sku_ids, values?.sku_id),
     subgroupId: values?.subgroup_id ? Number(values.subgroup_id) : null,
+    subgroupIds,
     groupId: values?.group_id ? Number(values.group_id) : null,
+    groupIds,
     articleType,
     rateType,
     baseRate: null,

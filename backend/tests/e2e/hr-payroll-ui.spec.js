@@ -2,7 +2,14 @@ const { test, expect } = require("@playwright/test");
 const createKnex = require("knex");
 const knexConfig = require("../../knexfile").development;
 const { login } = require("./utils/auth");
-const { createBomUiFixture, cleanupBomUiFixture, getApprovalPolicy, upsertApprovalPolicy, deleteApprovalPolicy, closeDb } = require("./utils/db");
+const {
+  createBomUiFixture,
+  cleanupBomUiFixture,
+  getApprovalPolicy,
+  upsertApprovalPolicy,
+  deleteApprovalPolicy,
+  closeDb,
+} = require("./utils/db");
 
 test.describe("HR Payroll labour rates modal", () => {
   test.describe.configure({ mode: "serial" });
@@ -31,7 +38,9 @@ test.describe("HR Payroll labour rates modal", () => {
       requiresApproval: false,
     });
 
-    const hasArticleTypeColumn = await db.schema.withSchema("erp").hasColumn("labour_rate_rules", "article_type");
+    const hasArticleTypeColumn = await db.schema
+      .withSchema("erp")
+      .hasColumn("labour_rate_rules", "article_type");
     const insertPayload = {
       applies_to_all_labours: false,
       labour_id: ctx.fixture.labourId,
@@ -48,7 +57,9 @@ test.describe("HR Payroll labour rates modal", () => {
       insertPayload.article_type = "BOTH";
     }
 
-    const [inserted] = await db("erp.labour_rate_rules").insert(insertPayload).returning(["id"]);
+    const [inserted] = await db("erp.labour_rate_rules")
+      .insert(insertPayload)
+      .returning(["id"]);
     ctx.ruleId = Number(inserted?.id || inserted);
   });
 
@@ -78,20 +89,30 @@ test.describe("HR Payroll labour rates modal", () => {
     }
   });
 
-  test("admin can edit labour rate in modal and persist rate", async ({ page }) => {
+  test("admin can edit labour rate in modal and persist rate", async ({
+    page,
+  }) => {
     test.skip(!ctx.ruleId, "Rule fixture was not created.");
 
     await login(page, "E2E_ADMIN");
-    await page.goto("/hr-payroll/labours/rates", { waitUntil: "domcontentloaded" });
+    await page.goto("/hr-payroll/labours/rates", {
+      waitUntil: "domcontentloaded",
+    });
 
-    const editBtn = page.locator(`[data-edit][data-id="${ctx.ruleId}"]`).first();
+    const editBtn = page
+      .locator(`[data-edit][data-id="${ctx.ruleId}"]`)
+      .first();
     await expect(editBtn).toBeVisible();
-    const expectedSkuCode = String((await editBtn.getAttribute("data-sku_code")) || "").trim();
+    const expectedSkuCode = String(
+      (await editBtn.getAttribute("data-sku_code")) || "",
+    ).trim();
     await editBtn.click();
 
     const modal = page.locator("[data-modal]");
     await expect(modal).toBeVisible();
-    const skuReadonly = page.locator('[data-modal-form] [data-sku-readonly="true"]');
+    const skuReadonly = page.locator(
+      '[data-modal-form] [data-sku-readonly="true"]',
+    );
     await expect(skuReadonly).toBeVisible();
     if (expectedSkuCode) {
       await expect(skuReadonly).toContainText(expectedSkuCode);
@@ -99,14 +120,26 @@ test.describe("HR Payroll labour rates modal", () => {
       await expect(skuReadonly).toHaveText(/\S+/);
     }
 
-    const rateInput = page.locator('[data-modal-form] [data-field="rate_value"]');
+    const rateInput = page.locator(
+      '[data-modal-form] [data-field="rate_value"]',
+    );
     await expect(rateInput).toBeVisible();
+    await expect(rateInput).toHaveAttribute("step", "0.01");
     await rateInput.fill("19.75");
 
     const submitBtn = page.locator('[data-modal-form] button[type="submit"]');
-    await Promise.all([page.waitForLoadState("domcontentloaded"), submitBtn.click()]);
+    await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.request().method() === "POST" &&
+          response.url().includes(`/hr-payroll/labours/rates/${ctx.ruleId}`),
+      ),
+      submitBtn.click(),
+    ]);
 
-    const updated = await db("erp.labour_rate_rules").where({ id: ctx.ruleId }).first("id", "rate_value", "sku_id", "apply_on");
+    const updated = await db("erp.labour_rate_rules")
+      .where({ id: ctx.ruleId })
+      .first("id", "rate_value", "sku_id", "apply_on");
     expect(updated).toBeTruthy();
     expect(Number(updated.rate_value)).toBe(19.75);
     expect(Number(updated.sku_id)).toBe(Number(ctx.fixture.sfgSkuId));

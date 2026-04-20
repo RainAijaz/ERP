@@ -339,7 +339,10 @@
     const i18nSearchInput = '<%= t("search") %>';
 
     const setModalBodyScrollLock = (locked) => {
-      if (typeof window !== "undefined" && typeof window.setBodyScrollLock === "function") {
+      if (
+        typeof window !== "undefined" &&
+        typeof window.setBodyScrollLock === "function"
+      ) {
         window.setBodyScrollLock(Boolean(locked));
         return;
       }
@@ -615,7 +618,7 @@
       const query = ((searchInput && searchInput.value) || "")
         .trim()
         .toLowerCase();
-      const status = (statusFilter && statusFilter.value) || "all";
+      const status = statusFilter ? statusFilter.value || "active" : "all";
       const accountTypeFilters = getFilterValues("[data-filter-account-type]");
       const accountGroupFilters = getFilterValues(
         "[data-filter-account-group]",

@@ -27,11 +27,24 @@ const collectFormSelectState = async (page) =>
       (el) => el.classList.contains("sr-only") || el.offsetParent !== null,
     );
     const missingOptIn = visibleOrWrapped
-      .filter((el) => String(el.dataset.searchableSelect || "").toLowerCase() !== "true")
-      .map((el) => el.getAttribute("name") || el.getAttribute("data-row-field") || "(unnamed)");
+      .filter(
+        (el) =>
+          String(el.dataset.searchableSelect || "").toLowerCase() !== "true",
+      )
+      .map(
+        (el) =>
+          el.getAttribute("name") ||
+          el.getAttribute("data-row-field") ||
+          "(unnamed)",
+      );
     const notReady = visibleOrWrapped
       .filter((el) => el.dataset.searchableReady !== "true")
-      .map((el) => el.getAttribute("name") || el.getAttribute("data-row-field") || "(unnamed)");
+      .map(
+        (el) =>
+          el.getAttribute("name") ||
+          el.getAttribute("data-row-field") ||
+          "(unnamed)",
+      );
 
     return {
       total: visibleOrWrapped.length,
@@ -65,15 +78,22 @@ test.describe("Returnables searchable selects", () => {
     // Keep shared knex connection open for subsequent Playwright files.
   });
 
-  test("dispatch voucher uses searchable-select for all dropdowns", async ({ page }) => {
+  test("dispatch voucher uses searchable-select for all dropdowns", async ({
+    page,
+  }) => {
     await login(page, "E2E_ADMIN");
     const response = await page.goto("/vouchers/returnable-dispatch?new=1", {
       waitUntil: "domcontentloaded",
     });
-    test.skip(!response || response.status() !== 200, "Returnable dispatch page not accessible for admin.");
+    test.skip(
+      !response || response.status() !== 200,
+      "Returnable dispatch page not accessible for admin.",
+    );
 
     await page.waitForSelector("[data-returnable-form]");
-    await page.waitForSelector('select[data-row-field="asset_id"]', { state: "attached" });
+    await page.waitForSelector('select[data-row-field="asset_id"]', {
+      state: "attached",
+    });
     await page.waitForTimeout(200);
 
     const state = await collectFormSelectState(page);
@@ -84,21 +104,31 @@ test.describe("Returnables searchable selects", () => {
     expect(state.notReady).toEqual([]);
   });
 
-  test("dispatch Enter flow remains stable on last row field", async ({ page }) => {
+  test("dispatch Enter flow remains stable on last row field", async ({
+    page,
+  }) => {
     await login(page, "E2E_ADMIN");
     const response = await page.goto("/vouchers/returnable-dispatch?new=1", {
       waitUntil: "domcontentloaded",
     });
-    test.skip(!response || response.status() !== 200, "Returnable dispatch page not accessible for admin.");
+    test.skip(
+      !response || response.status() !== 200,
+      "Returnable dispatch page not accessible for admin.",
+    );
 
     await page.waitForSelector("[data-returnable-form]");
-    await page.waitForSelector('[data-lines-body] tr select[data-row-field="asset_id"]', { state: "attached" });
+    await page.waitForSelector(
+      '[data-lines-body] tr select[data-row-field="asset_id"]',
+      { state: "attached" },
+    );
 
     const requiredOptions = await page.evaluate(() => {
       const findFirstOption = (selector) => {
         const select = document.querySelector(selector);
         if (!select) return null;
-        const option = Array.from(select.options).find((opt) => String(opt.value || "").trim().length > 0);
+        const option = Array.from(select.options).find(
+          (opt) => String(opt.value || "").trim().length > 0,
+        );
         if (!option) return null;
         return {
           value: String(option.value || ""),
@@ -107,20 +137,29 @@ test.describe("Returnables searchable selects", () => {
       };
       return {
         asset: findFirstOption('select[data-row-field="asset_id"]'),
-        condition: findFirstOption('select[data-row-field="condition_out_code"]'),
+        condition: findFirstOption(
+          'select[data-row-field="condition_out_code"]',
+        ),
       };
     });
 
-    test.skip(!requiredOptions?.asset || !requiredOptions?.condition, "Dispatch dropdown options not available.");
+    test.skip(
+      !requiredOptions?.asset || !requiredOptions?.condition,
+      "Dispatch dropdown options not available.",
+    );
 
     const firstRow = page.locator("[data-lines-body] tr").first();
-    const firstRowAssetInput = firstRow.locator("[data-searchable-wrapper] input").first();
+    const firstRowAssetInput = firstRow
+      .locator("[data-searchable-wrapper] input")
+      .first();
 
     await firstRowAssetInput.click();
     await page.keyboard.press("Enter");
     await page.keyboard.press("Enter");
 
-    const firstRowDescriptionInput = firstRow.locator('input[data-row-field="item_description"]');
+    const firstRowDescriptionInput = firstRow.locator(
+      'input[data-row-field="item_description"]',
+    );
     await firstRowDescriptionInput.click();
     await firstRowDescriptionInput.fill("E2E Returnable Dispatch");
     await firstRowDescriptionInput.press("Enter");
@@ -135,20 +174,28 @@ test.describe("Returnables searchable selects", () => {
     await firstRowConditionInput.press("Enter");
     await firstRowConditionInput.press("Enter");
     await firstRowConditionInput.press("Enter");
-    await expect(page.locator("[data-lines-body] tr")).toHaveCount(1);
+    await expect(page.locator("[data-lines-body] tr")).toHaveCount(2);
     const uiError = page.locator("[data-ui-error-modal]");
     await expect(uiError).toHaveCount(1);
   });
 
-  test("dispatch missing vendor shows error without page reload or open dropdowns", async ({ page }) => {
+  test("dispatch missing vendor shows error without page reload or open dropdowns", async ({
+    page,
+  }) => {
     await login(page, "E2E_ADMIN");
     const response = await page.goto("/vouchers/returnable-dispatch?new=1", {
       waitUntil: "domcontentloaded",
     });
-    test.skip(!response || response.status() !== 200, "Returnable dispatch page not accessible for admin.");
+    test.skip(
+      !response || response.status() !== 200,
+      "Returnable dispatch page not accessible for admin.",
+    );
 
     await page.waitForSelector("[data-returnable-form]");
-    await page.waitForSelector('[data-lines-body] tr select[data-row-field="asset_id"]', { state: "attached" });
+    await page.waitForSelector(
+      '[data-lines-body] tr select[data-row-field="asset_id"]',
+      { state: "attached" },
+    );
 
     const reasonWrapper = page
       .locator("[data-searchable-wrapper]")
@@ -157,7 +204,9 @@ test.describe("Returnables searchable selects", () => {
     await chooseFirstSearchableValue(reasonWrapper, "reason_code");
 
     const voucherDateInput = page.locator('input[name="voucher_date"]').first();
-    const expectedDateInput = page.locator('input[name="expected_return_date"]').first();
+    const expectedDateInput = page
+      .locator('input[name="expected_return_date"]')
+      .first();
     const voucherDateValue = await voucherDateInput.inputValue();
     const voucherDate = new Date(`${voucherDateValue}T00:00:00`);
     const expectedDate = new Date(voucherDate.getTime());
@@ -172,10 +221,14 @@ test.describe("Returnables searchable selects", () => {
     await chooseFirstSearchableValue(assetWrapper, "asset_id");
 
     const updatedFirstRow = page.locator("[data-lines-body] tr").first();
-    const qtyInput = updatedFirstRow.locator('input[data-row-field="qty"]').first();
+    const qtyInput = updatedFirstRow
+      .locator('input[data-row-field="qty"]')
+      .first();
     await qtyInput.fill("1");
 
-    const conditionWrapper = updatedFirstRow.locator("[data-searchable-wrapper]").nth(1);
+    const conditionWrapper = updatedFirstRow
+      .locator("[data-searchable-wrapper]")
+      .nth(1);
     await chooseFirstSearchableValue(conditionWrapper, "condition_out_code");
 
     const sentinel = `sentinel-${Date.now()}`;
@@ -188,9 +241,9 @@ test.describe("Returnables searchable selects", () => {
     await expect(page.locator("[data-ui-error-modal]")).toBeVisible();
 
     const postSubmitState = await page.evaluate(() => {
-      const openMenus = Array.from(document.querySelectorAll("[data-searchable-wrapper] div.z-50"))
-        .filter((node) => !node.classList.contains("hidden"))
-        .length;
+      const openMenus = Array.from(
+        document.querySelectorAll("[data-searchable-wrapper] div.z-50"),
+      ).filter((node) => !node.classList.contains("hidden")).length;
       return {
         sentinel: window.__voucherSubmitSentinel || null,
         openMenus,
@@ -201,12 +254,17 @@ test.describe("Returnables searchable selects", () => {
     expect(postSubmitState.openMenus).toBe(0);
   });
 
-  test("receipt voucher uses searchable-select for all dropdowns", async ({ page }) => {
+  test("receipt voucher uses searchable-select for all dropdowns", async ({
+    page,
+  }) => {
     await login(page, "E2E_ADMIN");
     const response = await page.goto("/vouchers/returnable-receipt?new=1", {
       waitUntil: "domcontentloaded",
     });
-    test.skip(!response || response.status() !== 200, "Returnable receipt page not accessible for admin.");
+    test.skip(
+      !response || response.status() !== 200,
+      "Returnable receipt page not accessible for admin.",
+    );
 
     await page.waitForSelector("[data-returnable-form]");
     await page.waitForTimeout(200);
@@ -219,36 +277,52 @@ test.describe("Returnables searchable selects", () => {
     expect(state.notReady).toEqual([]);
   });
 
-  test("receipt outward reference modal shows voucher date for open outward rows", async ({ page }) => {
+  test("receipt outward reference modal shows voucher date for open outward rows", async ({
+    page,
+  }) => {
     const branch = await getBranch();
     const openOutward = await getLatestOpenReturnableOutwardReference({
       branchId: Number(branch?.id || 0) || null,
     });
-    test.skip(!openOutward, "No open returnable outward reference with pending quantity found.");
+    test.skip(
+      !openOutward,
+      "No open returnable outward reference with pending quantity found.",
+    );
     const expectedDisplayDate = toDisplayDate(openOutward.voucher_date);
 
     await login(page, "E2E_ADMIN");
     const response = await page.goto("/vouchers/returnable-receipt?new=1", {
       waitUntil: "domcontentloaded",
     });
-    test.skip(!response || response.status() !== 200, "Returnable receipt page not accessible for admin.");
+    test.skip(
+      !response || response.status() !== 200,
+      "Returnable receipt page not accessible for admin.",
+    );
 
     await page.waitForSelector("[data-returnable-form]");
-    await page.locator('select[name="vendor_party_id"]').selectOption(String(openOutward.vendor_party_id));
+    await page
+      .locator('select[name="vendor_party_id"]')
+      .selectOption(String(openOutward.vendor_party_id));
     await page.locator("[data-outward-picker-open]").click();
-    await page.waitForSelector('[data-outward-picker-modal][aria-hidden="false"]');
+    await page.waitForSelector(
+      '[data-outward-picker-modal][aria-hidden="false"]',
+    );
 
     const matchingRow = page
       .locator("[data-outward-picker-body] tr")
       .filter({ hasText: String(openOutward.voucher_no) })
       .first();
     await expect(matchingRow).toBeVisible();
-    await expect(matchingRow.locator("td").nth(1)).toHaveText(expectedDisplayDate);
+    await expect(matchingRow.locator("td").nth(1)).toHaveText(
+      expectedDisplayDate,
+    );
 
     if (Number.isInteger(Number(openOutward.pending_qty || 0))) {
       const expectedQty = String(Number(openOutward.pending_qty || 0));
       await expect(matchingRow.locator("td").nth(3)).toHaveText(expectedQty);
-      await expect(matchingRow.locator('input[data-picker-field="receive_qty"]')).toHaveValue(expectedQty);
+      await expect(
+        matchingRow.locator('input[data-picker-field="receive_qty"]'),
+      ).toHaveValue(expectedQty);
     }
 
     await matchingRow.locator('input[data-picker-field="selected"]').check();
@@ -259,26 +333,39 @@ test.describe("Returnables searchable selects", () => {
     await expect(receiptRow.locator("[data-remove-row]")).toBeVisible();
   });
 
-  test("receipt outward reference modal shows specific error when multiple vouchers are selected", async ({ page }) => {
+  test("receipt outward reference modal shows specific error when multiple vouchers are selected", async ({
+    page,
+  }) => {
     test.setTimeout(60000);
     const branch = await getBranch();
     const outwards = await getTwoOpenReturnableOutwardReferencesForSameVendor({
       branchId: Number(branch?.id || 0) || null,
     });
-    test.skip(outwards.length < 2, "Need at least two open outward vouchers for the same vendor.");
+    test.skip(
+      outwards.length < 2,
+      "Need at least two open outward vouchers for the same vendor.",
+    );
 
     await login(page, "E2E_ADMIN");
     const response = await page.goto("/vouchers/returnable-receipt?new=1", {
       waitUntil: "domcontentloaded",
     });
-    test.skip(!response || response.status() !== 200, "Returnable receipt page not accessible for admin.");
+    test.skip(
+      !response || response.status() !== 200,
+      "Returnable receipt page not accessible for admin.",
+    );
 
     await page.waitForSelector("[data-returnable-form]");
-    await page.locator('select[name="vendor_party_id"]').selectOption(String(outwards[0].vendor_party_id));
+    await page
+      .locator('select[name="vendor_party_id"]')
+      .selectOption(String(outwards[0].vendor_party_id));
     await page.locator("[data-outward-picker-open]").click();
-    await page.waitForSelector('[data-outward-picker-modal][aria-hidden="false"]');
+    await page.waitForSelector(
+      '[data-outward-picker-modal][aria-hidden="false"]',
+    );
 
-    const expectedMessage = "Select outward reference lines from a single voucher.";
+    const expectedMessage =
+      "Select outward reference lines from a single voucher.";
     let dialogMessage = "";
     page.once("dialog", async (dialog) => {
       dialogMessage = dialog.message();
@@ -295,10 +382,13 @@ test.describe("Returnables searchable selects", () => {
 
     await page.evaluate(() => {
       const button = document.querySelector("[data-outward-picker-apply]");
-      if (!(button instanceof HTMLButtonElement)) throw new Error("Apply button not found");
+      if (!(button instanceof HTMLButtonElement))
+        throw new Error("Apply button not found");
       button.click();
     });
-    const uiError = page.locator("[data-ui-error-modal] [data-ui-error-message]");
+    const uiError = page.locator(
+      "[data-ui-error-modal] [data-ui-error-message]",
+    );
     const modalVisible = await uiError.isVisible().catch(() => false);
     if (modalVisible) return;
     const modalState = await page
