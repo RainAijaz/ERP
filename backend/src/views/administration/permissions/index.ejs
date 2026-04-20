@@ -1,7 +1,17 @@
-<% 
+<%
+  const isAccountAccessScopeRow = (row) =>
+    row && row.scopeType === 'REPORT' && row.scopeKey === 'account_activity_ledger';
+  const accountAccessScopeRow = navRows.find((row) => isAccountAccessScopeRow(row)) || null;
+  const accountAccessScopePath = accountAccessScopeRow ? accountAccessScopeRow.path : '';
+
   // EXTRACT SIDEBAR ITEMS:
-  // We want any row that is a "container" (has children) OR is a top-level module.
-  const sidebarRows = navRows.filter(r => r.hasChildren || r.depth === 0);
+  // Show container rows, top-level modules, and the account-activity report scope
+  // so account-access restrictions can be intentionally selected.
+  const sidebarRows = navRows.filter((row) =>
+    row.hasChildren ||
+    row.depth === 0 ||
+    isAccountAccessScopeRow(row),
+  );
 %>
 
 <div class="permissions-shell flex flex-col min-h-0 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -366,16 +376,15 @@
   // --- 1. SIDEBAR & VISIBILITY LOGIC ---
   let currentCategory = '';
   const collapsedPaths = new Set();
-  const ACCOUNT_ACCESS_SCOPE_PREFIX = 'financial.reports';
+  const ACCOUNT_ACCESS_SCOPE_PATH = '<%= accountAccessScopePath %>';
 
   function syncAccountAccessPanel(path) {
     const panel = document.getElementById('account-access-shell');
     if (!panel) return;
     const normalizedPath = String(path || '').trim();
     const shouldShow =
-      normalizedPath !== '' &&
-      normalizedPath !== 'all' &&
-      (normalizedPath === ACCOUNT_ACCESS_SCOPE_PREFIX || normalizedPath.startsWith(ACCOUNT_ACCESS_SCOPE_PREFIX + '.'));
+      ACCOUNT_ACCESS_SCOPE_PATH !== '' &&
+      normalizedPath === ACCOUNT_ACCESS_SCOPE_PATH;
     panel.classList.toggle('hidden', !shouldShow);
   }
 

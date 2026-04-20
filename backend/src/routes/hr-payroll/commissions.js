@@ -320,7 +320,11 @@ const normalizeSelectValues = (rawValue) => {
       .map((entry) => String(entry || "").trim())
       .filter(Boolean);
   const single = String(rawValue || "").trim();
-  return single ? [single] : [];
+  if (!single) return [];
+  return single
+    .split(",")
+    .map((entry) => String(entry || "").trim())
+    .filter(Boolean);
 };
 
 const normalizeNumericIds = (rawValue) =>
@@ -783,6 +787,7 @@ router.post(
           subgroup_ids: normalized.subgroupIds,
           group_id: normalized.groupId,
           group_ids: normalized.groupIds,
+          scope_rate: normalized.scopeRate,
           rate_type: normalized.rateType,
           reverse_on_returns: normalized.reverseOnReturns,
           status: normalized.status,
@@ -809,6 +814,10 @@ router.post(
         return applyBulkSkuRateUpsert({
           trx,
           employeeId: normalized.employeeId,
+          applyOn: normalized.applyOn,
+          subgroupIds: normalized.subgroupIds,
+          groupIds: normalized.groupIds,
+          scopeRate: normalized.scopeRate,
           rateType: normalized.rateType,
           valueType: normalized.valueType,
           reverseOnReturns: normalized.reverseOnReturns,
@@ -824,6 +833,7 @@ router.post(
         context: {
           source: "commission-bulk-upsert",
           apply_on: normalized.applyOn,
+          scope_rate: normalized.scopeRate,
           created: result.created,
           updated: result.updated,
           row_count: normalized.rows.length,

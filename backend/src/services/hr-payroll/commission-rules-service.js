@@ -143,6 +143,15 @@ const normalizeBulkInput = ({ payload, t }) => {
     throw new Error(t("error_no_target_skus_found"));
   }
 
+  const scopeRateRaw =
+    payload.scope_rate !== undefined && payload.scope_rate !== null
+      ? payload.scope_rate
+      : rows[0]?.rate;
+  const scopeRate = toMoney(scopeRateRaw);
+  if (scopeRate === null || scopeRate < 0 || scopeRate > 99999999.99) {
+    throw new Error(t("error_invalid_rate_value"));
+  }
+
   return {
     employeeId,
     applyOn,
@@ -153,10 +162,101 @@ const normalizeBulkInput = ({ payload, t }) => {
     commissionBasis,
     rateType,
     valueType,
+    scopeRate,
     reverseOnReturns,
     status: statusRaw,
     rows,
   };
+};
+
+const upsertBulkScopeRules = async ({
+  trx,
+  employeeId,
+  applyOn,
+  subgroupIds = [],
+  groupIds = [],
+  commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT,
+  rateType = "PER_PAIR",
+  valueType,
+  scopeRate,
+  reverseOnReturns,
+  status,
+}) => {
+  if (!ALLOWED_SCOPE_FOR_BULK.has(applyOn)) return { created: 0, updated: 0 };
+  if (scopeRate === null || scopeRate === undefined) return { created: 0, updated: 0 };
+
+  const selectorColumn = applyOn === APPLY_ON.SUBGROUP ? "subgroup_id" : "group_id";
+  const selectorIds = [
+    ...new Set(
+      (applyOn === APPLY_ON.SUBGROUP ? subgroupIds : groupIds)
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    ),
+  ];
+  if (!selectorIds.length) return { created: 0, updated: 0 };
+
+  const existing = await trx("erp.employee_commission_rules")
+    .select("id", selectorColumn)
+    .where({
+      employee_id: employeeId,
+      apply_on: applyOn,
+      commission_basis: commissionBasis,
+      value_type: valueType,
+    })
+    .whereRaw("COALESCE(sku_id, 0) = 0")
+    .whereIn(selectorColumn, selectorIds)
+    .orderBy("id", "desc");
+
+  const existingBySelector = new Map();
+  const duplicateIdsToDelete = [];
+  existing.forEach((row) => {
+    const key = Number(row[selectorColumn]);
+    if (!existingBySelector.has(key)) {
+      existingBySelector.set(key, Number(row.id));
+      return;
+    }
+    duplicateIdsToDelete.push(Number(row.id));
+  });
+
+  if (duplicateIdsToDelete.length) {
+    await trx("erp.employee_commission_rules")
+      .whereIn("id", duplicateIdsToDelete)
+      .del();
+  }
+
+  let updated = 0;
+  let created = 0;
+  for (const selectorId of selectorIds) {
+    const existingId = existingBySelector.get(selectorId);
+    const payload = {
+      value: scopeRate,
+      rate_type: rateType,
+      value_type: valueType,
+      reverse_on_returns: reverseOnReturns,
+      status,
+      apply_on: applyOn,
+      sku_id: null,
+      subgroup_id: applyOn === APPLY_ON.SUBGROUP ? selectorId : null,
+      group_id: applyOn === APPLY_ON.GROUP ? selectorId : null,
+    };
+
+    if (existingId) {
+      await trx("erp.employee_commission_rules")
+        .where({ id: existingId })
+        .update(payload);
+      updated += 1;
+      continue;
+    }
+
+    await trx("erp.employee_commission_rules").insert({
+      employee_id: employeeId,
+      commission_basis: commissionBasis,
+      ...payload,
+    });
+    created += 1;
+  }
+
+  return { created, updated };
 };
 
 const fetchTargetSkus = async ({
@@ -325,13 +425,31 @@ const buildBulkPreviewRows = async ({
 const applyBulkSkuRateUpsert = async ({
   trx,
   employeeId,
+  applyOn = APPLY_ON.SKU,
+  subgroupIds = [],
+  groupIds = [],
   commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT,
   rateType = "PER_PAIR",
   valueType,
+  scopeRate = null,
   reverseOnReturns,
   status,
   rows,
 }) => {
+  const scopeResult = await upsertBulkScopeRules({
+    trx,
+    employeeId,
+    applyOn,
+    subgroupIds,
+    groupIds,
+    commissionBasis,
+    rateType,
+    valueType,
+    scopeRate,
+    reverseOnReturns,
+    status,
+  });
+
   const skuIds = rows.map((row) => row.skuId);
   const existing = await trx("erp.employee_commission_rules")
     .select("id", "sku_id")
@@ -399,7 +517,10 @@ const applyBulkSkuRateUpsert = async ({
     created += 1;
   }
 
-  return { created, updated };
+  return {
+    created: created + Number(scopeResult.created || 0),
+    updated: updated + Number(scopeResult.updated || 0),
+  };
 };
 
 module.exports = {

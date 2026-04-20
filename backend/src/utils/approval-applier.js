@@ -1286,6 +1286,14 @@ const applyBulkCommissionApproval = async (trx, request) => {
   if (!employeeIds.length) return false;
   const status = normalizeStatus(payload.status, "active");
   const reverseOnReturns = toBoolean(payload.reverse_on_returns);
+  const applyOn = String(payload.apply_on || "SKU").trim().toUpperCase();
+  const subgroupIds = toArray(payload.subgroup_ids)
+    .map((entry) => toNullableInt(entry))
+    .filter((entry) => Number.isInteger(entry) && entry > 0);
+  const groupIds = toArray(payload.group_ids)
+    .map((entry) => toNullableInt(entry))
+    .filter((entry) => Number.isInteger(entry) && entry > 0);
+  const scopeRate = toMoneyOrNull(payload.scope_rate ?? payload.value);
   const rateTypeDefault = String(payload.rate_type || "PER_PAIR").trim().toUpperCase() || "PER_PAIR";
   const valueType = deriveValueTypeFromBasis(COMMISSION_BASIS_FIXED_PER_UNIT);
   const rows = toArray(payload.rows)
@@ -1310,9 +1318,13 @@ const applyBulkCommissionApproval = async (trx, request) => {
     await applyCommissionBulkSkuRateUpsert({
       trx,
       employeeId,
+      applyOn,
+      subgroupIds,
+      groupIds,
       commissionBasis: COMMISSION_BASIS_FIXED_PER_UNIT,
       rateType: rowRateType,
       valueType,
+      scopeRate,
       reverseOnReturns,
       status,
       rows: rowsForEmployee,

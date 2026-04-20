@@ -741,6 +741,7 @@
           apply_on: normalizeApplyOn(),
           subgroup_ids: getSelectedValues(fields.subgroupId),
           group_ids: getSelectedValues(fields.groupId),
+          scope_rate: String(fields.value?.value || state.rows[0]?.new_rate || "").trim(),
           commission_basis: commissionBasis,
           rate_type: rateType,
           reverse_on_returns: Boolean(fields.reverseOnReturns?.checked),
@@ -759,6 +760,10 @@
         }
         if (payload.apply_on !== "SUBGROUP" && payload.apply_on !== "GROUP") {
           showModalError(tInvalidApplyOn);
+          return;
+        }
+        if (!payload.scope_rate) {
+          showModalError(tRequiredFields);
           return;
         }
 
