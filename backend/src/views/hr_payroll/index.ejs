@@ -694,6 +694,11 @@
 
     document.addEventListener("modal:opened", () => {
       state.requestSeq += 1;
+      if (fields.value instanceof HTMLInputElement) {
+        // Keep decimal commission rates valid even if browser/default step gets reset.
+        fields.value.setAttribute("step", "0.01");
+        fields.value.setAttribute("min", "0");
+      }
       setPanelVisibility();
       schedulePreview();
     });
@@ -814,6 +819,10 @@
     );
 
     setPanelVisibility();
+    if (fields.value instanceof HTMLInputElement) {
+      fields.value.setAttribute("step", "0.01");
+      fields.value.setAttribute("min", "0");
+    }
     clearRows(tSelectTarget);
   })();
 </script>
