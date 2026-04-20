@@ -220,14 +220,14 @@ router.post(
 
 router.get(
   "/stock-transfer",
-  requirePermission("REPORT", "stock_item_activity", "load"),
+  requirePermission("REPORT", "stock_transfer_report", "load"),
   async (req, res, next) =>
     renderStockTransferReport(req, res, next, req.query),
 );
 
 router.post(
   "/stock-transfer",
-  requirePermission("REPORT", "stock_item_activity", "load"),
+  requirePermission("REPORT", "stock_transfer_report", "load"),
   async (req, res, next) => renderStockTransferReport(req, res, next, req.body),
 );
 

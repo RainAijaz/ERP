@@ -357,7 +357,7 @@ test.describe("Voucher/report permission policy", () => {
     await setScopePermission({
       userId: ctx.users.reportView.id,
       scopeType: "REPORT",
-      scopeKey: "sales_report",
+      scopeKey: "sales_discount_report",
       permissions: {
         can_view: true,
         can_load: true,
@@ -402,7 +402,7 @@ test.describe("Voucher/report permission policy", () => {
     await setScopePermission({
       userId: ctx.users.reportDeny.id,
       scopeType: "REPORT",
-      scopeKey: "sales_report",
+      scopeKey: "sales_discount_report",
       permissions: {
         can_view: false,
         can_load: false,
@@ -424,5 +424,74 @@ test.describe("Voucher/report permission policy", () => {
 
     expect([401, 403]).toContain(Number(response?.status() || 0));
     await expect(page.getByText(/permission denied|forbidden/i)).toBeVisible();
+  });
+
+  test("report permission rows save independently in user override mode", async ({
+    page,
+  }) => {
+    test.skip(!ctx.ready, ctx.skipReason);
+
+    await loginNoShellCheck(page, "E2E_ADMIN");
+    await page.goto(
+      `/administration/permissions?type=user&target_id=${ctx.users.reportView.id}`,
+      {
+        waitUntil: "domcontentloaded",
+      },
+    );
+
+    const salesReportsCategory = page.locator(
+      '.category-btn[data-cat="sales.sales_reports"]',
+    );
+    await expect(salesReportsCategory).toHaveCount(1);
+    await salesReportsCategory.click();
+
+    await page.evaluate(() => {
+      const setRowState = (rowPath, checked) => {
+        const row = document.querySelector(`tr[data-path="${rowPath}"]`);
+        if (!row) return;
+        const boxes = Array.from(
+          row.querySelectorAll("input.permission-action[type='checkbox']"),
+        );
+        boxes.forEach((box) => {
+          if (box.checked === checked) return;
+          box.checked = checked;
+          box.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+      };
+
+      setRowState("sales.sales_reports.sales_report", true);
+      setRowState("sales.sales_reports.sales_discount_report", false);
+    });
+
+    await page.getByRole("button", { name: /save changes/i }).click();
+    await page.waitForLoadState("domcontentloaded");
+
+    await salesReportsCategory.click();
+
+    const states = await page.evaluate(() => {
+      const getRowState = (rowPath) => {
+        const row = document.querySelector(`tr[data-path="${rowPath}"]`);
+        if (!row) return { total: 0, checked: 0 };
+        const boxes = Array.from(
+          row.querySelectorAll("input.permission-action[type='checkbox']"),
+        );
+        return {
+          total: boxes.length,
+          checked: boxes.filter((box) => box.checked).length,
+        };
+      };
+
+      return {
+        salesReport: getRowState("sales.sales_reports.sales_report"),
+        salesDiscountReport: getRowState(
+          "sales.sales_reports.sales_discount_report",
+        ),
+      };
+    });
+
+    expect(states.salesReport.total).toBeGreaterThan(0);
+    expect(states.salesDiscountReport.total).toBeGreaterThan(0);
+    expect(states.salesReport.checked).toBe(states.salesReport.total);
+    expect(states.salesDiscountReport.checked).toBe(0);
   });
 });

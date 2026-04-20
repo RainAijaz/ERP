@@ -17,7 +17,7 @@ const requireReturnablesVendorAccess = (req, res, next) => {
       new HttpError(403, "Permission denied", {
         required: {
           scopeType: "REPORT",
-          scopeKey: "overdue_returnables",
+          scopeKey: "overdue_returnables_report",
           action: "view",
         },
       }),
@@ -25,15 +25,15 @@ const requireReturnablesVendorAccess = (req, res, next) => {
   }
 
   const canViewVendorReport =
-    canCheck("REPORT", "overdue_returnables", "load") ||
-    canCheck("REPORT", "pending_returnables", "load");
+    canCheck("REPORT", "overdue_returnables_report", "load") ||
+    canCheck("REPORT", "overdue_returnables", "load");
 
   if (canViewVendorReport) return next();
   return next(
     new HttpError(403, "Permission denied", {
       required: {
         scopeType: "REPORT",
-        scopeKey: "overdue_returnables",
+        scopeKey: "overdue_returnables_report",
         action: "view",
       },
     }),

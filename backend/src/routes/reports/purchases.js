@@ -83,7 +83,7 @@ router.post(
 
 router.get(
   "/supplier-listings",
-  requirePermission("REPORT", "purchase_report", "load"),
+  requirePermission("REPORT", "supplier_listings_report", "load"),
   async (req, res, next) => {
     try {
       let query = knex("erp.parties as p")

@@ -244,56 +244,56 @@ router.post(
 
 router.get(
   "/planned-consumption",
-  requirePermission("REPORT", "production_report", "load"),
+  requirePermission("REPORT", "planned_consumption_report", "load"),
   async (req, res, next) =>
     renderPlannedConsumptionReport(req, res, next, req.query),
 );
 
 router.post(
   "/planned-consumption",
-  requirePermission("REPORT", "production_report", "load"),
+  requirePermission("REPORT", "planned_consumption_report", "load"),
   async (req, res, next) =>
     renderPlannedConsumptionReport(req, res, next, req.body),
 );
 
 router.get(
   "/department-wip",
-  requirePermission("REPORT", "production_report", "load"),
+  requirePermission("REPORT", "department_wip_report", "load"),
   async (req, res, next) =>
     renderProductionDepartmentWipReport(req, res, next, req.query),
 );
 
 router.post(
   "/department-wip",
-  requirePermission("REPORT", "production_report", "load"),
+  requirePermission("REPORT", "department_wip_report", "load"),
   async (req, res, next) =>
     renderProductionDepartmentWipReport(req, res, next, req.body),
 );
 
 router.get(
   "/department-wip-balances",
-  requirePermission("REPORT", "production_report", "load"),
+  requirePermission("REPORT", "department_wip_balances_report", "load"),
   async (req, res, next) =>
     renderProductionDepartmentWipBalancesReport(req, res, next, req.query),
 );
 
 router.post(
   "/department-wip-balances",
-  requirePermission("REPORT", "production_report", "load"),
+  requirePermission("REPORT", "department_wip_balances_report", "load"),
   async (req, res, next) =>
     renderProductionDepartmentWipBalancesReport(req, res, next, req.body),
 );
 
 router.get(
   "/department-wip-ledger",
-  requirePermission("REPORT", "production_report", "load"),
+  requirePermission("REPORT", "department_wip_ledger_report", "load"),
   async (req, res, next) =>
     renderProductionDepartmentWipLedgerReport(req, res, next, req.query),
 );
 
 router.post(
   "/department-wip-ledger",
-  requirePermission("REPORT", "production_report", "load"),
+  requirePermission("REPORT", "department_wip_ledger_report", "load"),
   async (req, res, next) =>
     renderProductionDepartmentWipLedgerReport(req, res, next, req.body),
 );
