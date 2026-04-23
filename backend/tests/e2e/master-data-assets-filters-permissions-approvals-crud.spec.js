@@ -132,6 +132,42 @@ const waitForQueuedApproval = async (userId, entityType, minId = 0) => {
   return latest;
 };
 
+const assertApprovalPreviewValue = async (
+  page,
+  approvalId,
+  fieldName,
+  expectedValue = null,
+) => {
+  await page.goto("/administration/approvals?status=PENDING", {
+    waitUntil: "domcontentloaded",
+  });
+  const viewBtn = page
+    .locator(`[data-approval-view][data-approval-id="${approvalId}"]`)
+    .first();
+  await expect(viewBtn).toBeVisible();
+  const previewWait = page.waitForResponse(
+    (res) =>
+      res.url().includes(`/administration/approvals/${approvalId}/preview`) &&
+      (res.status() === 200 || res.status() === 204),
+    { timeout: 10000 },
+  );
+  await viewBtn.click();
+  await previewWait.catch(() => {});
+
+  const modal = page.locator("[data-approval-detail-modal]");
+  await expect(modal).toBeVisible();
+  const panel = modal.locator("[data-approval-preview]").first();
+  await expect(panel).toBeVisible({ timeout: 10000 });
+  const field = panel.locator(`[data-field="${fieldName}"]`).first();
+  await expect(field).toBeVisible();
+  if (expectedValue !== null && typeof expectedValue !== "undefined") {
+    await expect(field).toHaveValue(expectedValue);
+  }
+
+  await modal.locator("[data-approval-detail-close]").first().click();
+  await expect(modal).toHaveClass(/hidden/);
+};
+
 const toAssetTypeCode = (seed) =>
   String(seed || "")
     .toUpperCase()
@@ -789,6 +825,24 @@ test.describe("Master Data Assets - filters, permissions, approvals, CRUD", () =
     expect(String(createPending.entity_id)).toBe("NEW");
     expect(String(createPending.new_value?.name || "")).toBe(createName);
 
+    await loginWithCredentials(
+      page,
+      process.env.E2E_ADMIN_USER,
+      process.env.E2E_ADMIN_PASS,
+    );
+    await assertApprovalPreviewValue(
+      page,
+      createPending.id,
+      "name",
+      createName,
+    );
+    await loginWithCredentials(
+      page,
+      ctx.operatorCredentials.username,
+      ctx.operatorCredentials.password,
+    );
+    await page.goto(ASSET_TYPES_PAGE.url, { waitUntil: "domcontentloaded" });
+
     const editName = `${ctx.token}-AT-QUEUE-EDIT`;
     const beforeRow = await db("erp.asset_type_registry")
       .select("code", "name", "is_active")
@@ -910,6 +964,24 @@ test.describe("Master Data Assets - filters, permissions, approvals, CRUD", () =
         createName,
       );
     }
+
+    await loginWithCredentials(
+      page,
+      process.env.E2E_ADMIN_USER,
+      process.env.E2E_ADMIN_PASS,
+    );
+    await assertApprovalPreviewValue(
+      page,
+      createPending.id,
+      "name",
+      ctx.support.assetsName ? createName : null,
+    );
+    await loginWithCredentials(
+      page,
+      ctx.operatorCredentials.username,
+      ctx.operatorCredentials.password,
+    );
+    await page.goto(ASSETS_PAGE.url, { waitUntil: "domcontentloaded" });
 
     const editName = `${ctx.token}-ASSET-QUEUE-EDIT`;
     const beforeRow = await db("erp.assets")

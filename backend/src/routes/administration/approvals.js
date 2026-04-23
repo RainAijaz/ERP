@@ -980,11 +980,33 @@ const buildPreviewPayload = async (req, res, request, side) => {
       locale,
       req,
     );
+    const hydratedFields = Array.isArray(hydrated?.fields) ? hydrated.fields : [];
+    const assetTypeField = hydratedFields.find(
+      (field) => field && field.name === "asset_type_code",
+    );
+    const branchField = hydratedFields.find(
+      (field) => field && field.name === "home_branch_id",
+    );
+    const options = {
+      assetTypes: Array.isArray(assetTypeField?.options)
+        ? assetTypeField.options.map((row) => ({
+            code: row?.value,
+            name: row?.label,
+          }))
+        : [],
+      branches: Array.isArray(branchField?.options)
+        ? branchField.options.map((row) => ({
+            id: row?.value,
+            name: row?.label,
+          }))
+        : [],
+    };
     return {
-      previewValues: values,
-      previewType: "parties",
+      ...basePayload,
+      previewType: "returnable-assets",
       previewTitle: res.locals.t("asset_master"),
       page: hydrated,
+      options,
       formPartial: "../../master_data/returnable-assets/form-fields.ejs",
     };
   }
@@ -996,8 +1018,8 @@ const buildPreviewPayload = async (req, res, request, side) => {
       req,
     );
     return {
-      previewValues: values,
-      previewType: "parties",
+      ...basePayload,
+      previewType: "asset-types",
       previewTitle: res.locals.t("asset_types"),
       page: hydrated,
       formPartial: "../../master_data/asset-types/form-fields.ejs",
