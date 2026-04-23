@@ -9,8 +9,8 @@
   }
 
   @page {
-    size: Letter;
-    margin: 10mm;
+    size: 79.5mm 297mm;
+    margin: 2mm;
   }
 
   html,
@@ -198,6 +198,11 @@
   @media print {
     body {
       background: #ffffff;
+      width: 79.5mm;
+      min-width: 79.5mm;
+      max-width: 79.5mm;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
     }
 
     .no-print {
@@ -205,8 +210,95 @@
     }
 
     .gp-sheet {
-      max-width: none;
+      width: calc(79.5mm - 4mm);
+      max-width: calc(79.5mm - 4mm);
+      margin: 0 auto;
       padding: 0;
+    }
+
+    .gp-grid {
+      grid-template-columns: 1fr;
+      gap: 4px;
+      margin-bottom: 4px;
+    }
+
+    .gp-card,
+    .gp-table-wrap {
+      border-radius: 0;
+      border: 1px solid #000000;
+      margin-bottom: 4px;
+      padding: 4px;
+    }
+
+    .gp-title {
+      font-size: 13px;
+      letter-spacing: 0.02em;
+      text-align: center;
+    }
+
+    .gp-subtitle {
+      margin-top: 2px;
+      font-size: 9px;
+      text-align: center;
+      color: #000000;
+    }
+
+    .gp-kv,
+    .gp-meta,
+    .gp-summary-row {
+      font-size: 9px;
+      gap: 2px 4px;
+      line-height: 1.2;
+    }
+
+    .gp-label,
+    .gp-summary-value {
+      color: #000000;
+    }
+
+    .gp-table {
+      font-size: 8.5px;
+    }
+
+    .gp-table th,
+    .gp-table td {
+      border: 1px solid #000000;
+      padding: 2px 3px;
+    }
+
+    .gp-table th {
+      background: #ffffff;
+      color: #000000;
+      font-size: 8px;
+      letter-spacing: 0.03em;
+    }
+
+    .gp-summary-card {
+      margin-bottom: 4px;
+    }
+
+    .gp-summary-row {
+      border-bottom: 1px dashed #000000;
+      padding-bottom: 2px;
+    }
+
+    .gp-thanks {
+      margin-top: 4px;
+      font-size: 10px;
+      letter-spacing: 0.02em;
+      color: #000000;
+    }
+
+    .gp-signature {
+      margin-top: 8px;
+      gap: 6px;
+    }
+
+    .gp-signature .line {
+      border-top: 1px solid #000000;
+      padding-top: 3px;
+      font-size: 8px;
+      color: #000000;
     }
 
     .gp-card,
