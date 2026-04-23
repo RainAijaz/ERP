@@ -6,6 +6,9 @@ const { syncVoucherGlPostingTx } = require("../financial/gl-posting-service");
 const {
   resolveNegativeStockApprovalRouting,
 } = require("./negative-stock-approval");
+const {
+  canBypassNegativeStockApprovalTx,
+} = require("./negative-stock-override-policy-service");
 
 // Opening Stock service: validates lines, enforces gatekeeper flow, and keeps stock/GL synchronized.
 const INVENTORY_VOUCHER_TYPES = {
@@ -305,6 +308,20 @@ const canDo = (req, scopeType, scopeKey, action) => {
 
 const canApproveVoucherAction = (req, scopeKey) =>
   req?.user?.isAdmin === true || canDo(req, "VOUCHER", scopeKey, "approve");
+
+const canUseNegativeStockOverrideTx = async ({
+  trx,
+  req,
+  voucherTypeCode,
+}) => {
+  if (!trx || !req?.user?.id) return false;
+  return canBypassNegativeStockApprovalTx({
+    trx,
+    voucherTypeCode,
+    userId: req.user.id,
+    roleId: req.user.role_id || req.user.primaryRoleId,
+  });
+};
 
 const requiresApprovalForAction = async (trx, voucherTypeCode, action) => {
   const policy = await trx("erp.approval_policy")
@@ -1910,9 +1927,15 @@ const updateOpeningStockVoucher = async ({
       voucherTypeCode,
       "edit",
     );
+    const negativeStockOverrideAllowed = await canUseNegativeStockOverrideTx({
+      trx,
+      req,
+      voucherTypeCode,
+    });
     const negativeStockRouting = resolveNegativeStockApprovalRouting({
       hasNegativeStockRisk: hasStockCountNegativeStockRisk(validated),
       canApproveVoucherAction: canApprove,
+      canBypassNegativeStockApproval: negativeStockOverrideAllowed,
       voucherTypeCode,
     });
     const queuedForApproval =
@@ -3610,9 +3633,15 @@ const createStockCountAdjustmentVoucher = async ({
       voucherTypeCode,
       "create",
     );
+    const negativeStockOverrideAllowed = await canUseNegativeStockOverrideTx({
+      trx,
+      req,
+      voucherTypeCode,
+    });
     const negativeStockRouting = resolveNegativeStockApprovalRouting({
       hasNegativeStockRisk: hasStockCountNegativeStockRisk(validated),
       canApproveVoucherAction: canApprove,
+      canBypassNegativeStockApproval: negativeStockOverrideAllowed,
       voucherTypeCode,
     });
     const queuedForApproval =
@@ -3769,9 +3798,15 @@ const updateStockCountAdjustmentVoucher = async ({
       voucherTypeCode,
       "edit",
     );
+    const negativeStockOverrideAllowed = await canUseNegativeStockOverrideTx({
+      trx,
+      req,
+      voucherTypeCode,
+    });
     const negativeStockRouting = resolveNegativeStockApprovalRouting({
       hasNegativeStockRisk: hasStockCountNegativeStockRisk(validated),
       canApproveVoucherAction: canApprove,
+      canBypassNegativeStockApproval: negativeStockOverrideAllowed,
       voucherTypeCode,
     });
     const queuedForApproval =

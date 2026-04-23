@@ -334,13 +334,13 @@
             <table class="w-full min-w-[980px] table-fixed text-xs">
               <thead class="bg-slate-50 uppercase tracking-[0.08em] text-slate-500">
                 <tr>
-                  <th class="border-b border-slate-200 px-2 py-2 text-center"><%= toFriendlyLabel("select") %></th>
                   <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel("voucher_no") %></th>
                   <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel("date") %></th>
                   <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel("raw_material") %></th>
                   <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel("color") %></th>
                   <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel("size") %></th>
                   <th class="border-b border-slate-200 px-2 py-2 text-right"><%= toFriendlyLabel("quantity") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-center"><%= toFriendlyLabel("select") %></th>
                 </tr>
               </thead>
               <tbody data-grn-picker-lines-body></tbody>
@@ -1426,15 +1426,15 @@
         const sizeText = String(row.size_name || "").trim() || "<%= toFriendlyLabel('none') %>";
         const voucherDate = toDateOnly(row.grn_voucher_date);
         tr.innerHTML = `
-          <td class="px-2 py-2 text-center">
-            <input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent" data-grn-picker-line-checkbox value="${lineId > 0 ? lineId : ""}" ${isChecked ? "checked" : ""} ${lineId > 0 ? "" : "disabled"}>
-          </td>
           <td class="px-2 py-2 text-slate-700">${String(row.grn_voucher_no || "-")}</td>
           <td class="px-2 py-2 text-slate-700">${formatDisplayDate(voucherDate, "-")}</td>
           <td class="px-2 py-2 text-slate-700">${String(row.item_name || "-")}</td>
           <td class="px-2 py-2 text-slate-700">${colorText}</td>
           <td class="px-2 py-2 text-slate-700">${sizeText}</td>
           <td class="px-2 py-2 text-right font-semibold text-slate-700">${formatDisplayNumber(row.open_qty || 0, 3, "0")}</td>
+          <td class="px-2 py-2 text-center">
+            <input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent" data-grn-picker-line-checkbox value="${lineId > 0 ? lineId : ""}" ${isChecked ? "checked" : ""} ${lineId > 0 ? "" : "disabled"}>
+          </td>
         `;
         grnPickerLinesBody.appendChild(tr);
       });

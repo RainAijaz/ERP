@@ -183,9 +183,11 @@ const upsertBulkScopeRules = async ({
   status,
 }) => {
   if (!ALLOWED_SCOPE_FOR_BULK.has(applyOn)) return { created: 0, updated: 0 };
-  if (scopeRate === null || scopeRate === undefined) return { created: 0, updated: 0 };
+  if (scopeRate === null || scopeRate === undefined)
+    return { created: 0, updated: 0 };
 
-  const selectorColumn = applyOn === APPLY_ON.SUBGROUP ? "subgroup_id" : "group_id";
+  const selectorColumn =
+    applyOn === APPLY_ON.SUBGROUP ? "subgroup_id" : "group_id";
   const selectorIds = [
     ...new Set(
       (applyOn === APPLY_ON.SUBGROUP ? subgroupIds : groupIds)

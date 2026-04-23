@@ -28,6 +28,7 @@ const page = {
   entityType: "EMPLOYEE",
   branchScoped: false,
   autoCodeFromName: false,
+  maxRows: 500,
   defaults: {
     reverse_on_returns: true,
     rate_type: "PER_PAIR",
@@ -658,13 +659,11 @@ router.get(
             normalized_apply_on: applyOn,
           },
         );
-        return res
-          .status(400)
-          .json({
-            message: res.locals.t(
-              "error_group_subgroup_only_for_bulk_commission",
-            ),
-          });
+        return res.status(400).json({
+          message: res.locals.t(
+            "error_group_subgroup_only_for_bulk_commission",
+          ),
+        });
       }
       if (applyOn === "SUBGROUP" && !subgroupIds.length) {
         logBulkPreviewDiagnostic(
@@ -764,11 +763,9 @@ router.post(
         (row) => !allowedSkuIds.has(Number(row.skuId)),
       );
       if (invalidSku || normalized.rows.length !== expectedRows.length) {
-        return res
-          .status(400)
-          .json({
-            message: res.locals.t("error_invalid_bulk_commission_payload"),
-          });
+        return res.status(400).json({
+          message: res.locals.t("error_invalid_bulk_commission_payload"),
+        });
       }
 
       const approval = await handleScreenApproval({

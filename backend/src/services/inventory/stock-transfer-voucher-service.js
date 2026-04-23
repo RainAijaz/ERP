@@ -6,6 +6,9 @@ const { syncVoucherGlPostingTx } = require("../financial/gl-posting-service");
 const {
   resolveNegativeStockApprovalRouting,
 } = require("./negative-stock-approval");
+const {
+  canBypassNegativeStockApprovalTx,
+} = require("./negative-stock-override-policy-service");
 
 const STOCK_TRANSFER_VOUCHER_TYPES = {
   out: "STN_OUT",
@@ -117,6 +120,20 @@ const canDo = (req, scopeType, scopeKey, action) => {
 
 const canApproveVoucherAction = (req, scopeKey) =>
   req?.user?.isAdmin === true || canDo(req, "VOUCHER", scopeKey, "approve");
+
+const canUseNegativeStockOverrideTx = async ({
+  trx,
+  req,
+  voucherTypeCode,
+}) => {
+  if (!trx || !req?.user?.id) return false;
+  return canBypassNegativeStockApprovalTx({
+    trx,
+    voucherTypeCode,
+    userId: req.user.id,
+    roleId: req.user.role_id || req.user.primaryRoleId,
+  });
+};
 
 const requiresApprovalForAction = async (trx, voucherTypeCode, action) => {
   const policy = await trx("erp.approval_policy")
@@ -3030,16 +3047,26 @@ const createStockTransferVoucher = async ({
       normalizedVoucherTypeCode,
       "create",
     );
+    const negativeStockOverrideAllowed =
+      normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out
+        ? await canUseNegativeStockOverrideTx({
+            trx,
+            req,
+            voucherTypeCode: normalizedVoucherTypeCode,
+          })
+        : false;
     const negativeStockRouting =
       normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out
         ? resolveNegativeStockApprovalRouting({
             hasNegativeStockRisk: hasTransferOutNegativeStockRisk(validated),
             canApproveVoucherAction: canApprove,
+            canBypassNegativeStockApproval: negativeStockOverrideAllowed,
             voucherTypeCode: normalizedVoucherTypeCode,
           })
         : resolveNegativeStockApprovalRouting({
             hasNegativeStockRisk: false,
             canApproveVoucherAction: canApprove,
+            canBypassNegativeStockApproval: false,
             voucherTypeCode: normalizedVoucherTypeCode,
           });
     const queuedForApproval =
@@ -3234,16 +3261,26 @@ const updateStockTransferVoucher = async ({
       normalizedVoucherTypeCode,
       "edit",
     );
+    const negativeStockOverrideAllowed =
+      normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out
+        ? await canUseNegativeStockOverrideTx({
+            trx,
+            req,
+            voucherTypeCode: normalizedVoucherTypeCode,
+          })
+        : false;
     const negativeStockRouting =
       normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out
         ? resolveNegativeStockApprovalRouting({
             hasNegativeStockRisk: hasTransferOutNegativeStockRisk(validated),
             canApproveVoucherAction: canApprove,
+            canBypassNegativeStockApproval: negativeStockOverrideAllowed,
             voucherTypeCode: normalizedVoucherTypeCode,
           })
         : resolveNegativeStockApprovalRouting({
             hasNegativeStockRisk: false,
             canApproveVoucherAction: canApprove,
+            canBypassNegativeStockApproval: false,
             voucherTypeCode: normalizedVoucherTypeCode,
           });
     const queuedForApproval =
@@ -3799,12 +3836,6 @@ const loadStockTransferVoucherOptions = async ({
     }
   });
 
-  const allowedBranchSet = new Set(
-    Array.isArray(req.branchScope) && req.branchScope.length
-      ? req.branchScope.map((id) => Number(id))
-      : (branchRows || []).map((row) => Number(row.id)),
-  );
-
   const baseUomIds = [
     ...new Set(
       [...(skus || []), ...(rmItems || [])]
@@ -3820,8 +3851,7 @@ const loadStockTransferVoucherOptions = async ({
   const destinationBranches = (branchRows || [])
     .filter(
       (row) =>
-        Number(row.id) !== Number(req.branchId) &&
-        (allowedBranchSet.size === 0 || allowedBranchSet.has(Number(row.id))),
+        Number(row.id) !== Number(req.branchId),
     )
     .map((row) => ({
       id: Number(row.id),

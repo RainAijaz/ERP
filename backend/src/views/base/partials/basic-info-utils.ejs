@@ -541,13 +541,28 @@
     let sortIndex = null;
     let sortDir = "asc";
     let sortType = "text";
+    let rowsCache = [];
+    let filterApplyTimer = null;
 
-    const getRows = () => Array.from(document.querySelectorAll("[data-row]"));
+    const getRows = () => rowsCache;
+
+    const buildRowSearchText = (row) =>
+      String(
+        row?.dataset?.search ||
+          `${row?.dataset?.code || ""} ${row?.dataset?.name || ""} ${row?.dataset?.nameUr || ""} ${row?.textContent || ""}`,
+      )
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
 
     const initializeRows = () => {
-      getRows().forEach((row, index) => {
+      rowsCache = Array.from(document.querySelectorAll("[data-row]"));
+      rowsCache.forEach((row, index) => {
         if (!row.dataset.origIndex) {
           row.dataset.origIndex = String(index);
+        }
+        if (!row.dataset.searchNormalized) {
+          row.dataset.searchNormalized = buildRowSearchText(row);
         }
       });
     };
@@ -674,10 +689,7 @@
       const rows = getRows();
       const sorted = sortRows(rows);
       const filtered = sorted.filter((row) => {
-        const searchText = String(
-          row.dataset.search ||
-            `${row.dataset.code || ""} ${row.dataset.name || ""} ${row.dataset.nameUr || ""} ${row.textContent || ""}`,
-        ).toLowerCase();
+        const searchText = row.dataset.searchNormalized || "";
         const matchesText = !query || searchText.includes(query);
         if (!matchesText) return false;
         if (status !== "all") {
@@ -844,6 +856,20 @@
       }
     };
 
+    const scheduleApplyFilters = ({ resetPage = false, delay = 0 } = {}) => {
+      if (resetPage) currentPage = 1;
+      if (filterApplyTimer) {
+        window.clearTimeout(filterApplyTimer);
+      }
+      filterApplyTimer = window.setTimeout(
+        () => {
+          filterApplyTimer = null;
+          applyFilters();
+        },
+        Math.max(0, Number(delay) || 0),
+      );
+    };
+
     const cleanText = (value) => (value || "").replace(/\s+/g, " ").trim();
 
     const downloadCsv = () => {
@@ -891,14 +917,12 @@
     }
     if (searchInput) {
       searchInput.addEventListener("input", () => {
-        currentPage = 1;
-        applyFilters();
+        scheduleApplyFilters({ resetPage: true, delay: 120 });
       });
     }
     if (statusFilter) {
       statusFilter.addEventListener("change", () => {
-        currentPage = 1;
-        applyFilters();
+        scheduleApplyFilters({ resetPage: true, delay: 0 });
       });
     }
     const hookFilter = (element) => {
@@ -999,22 +1023,21 @@
           pageSizeRaw === "all"
             ? Number.POSITIVE_INFINITY
             : Number(pageSizeRaw);
-        currentPage = 1;
-        applyFilters();
+        scheduleApplyFilters({ resetPage: true, delay: 0 });
       });
     }
     if (prevButton) {
       prevButton.addEventListener("click", () => {
         if (currentPage > 1) {
           currentPage -= 1;
-          applyFilters();
+          scheduleApplyFilters({ resetPage: false, delay: 0 });
         }
       });
     }
     if (nextButton) {
       nextButton.addEventListener("click", () => {
         currentPage += 1;
-        applyFilters();
+        scheduleApplyFilters({ resetPage: false, delay: 0 });
       });
     }
 
@@ -1092,8 +1115,7 @@
         sortDir = "asc";
       }
       updateSortIndicators();
-      currentPage = 1;
-      applyFilters();
+      scheduleApplyFilters({ resetPage: true, delay: 0 });
     };
 
     const table = document.querySelector("[data-table]");

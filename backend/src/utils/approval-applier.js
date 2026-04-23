@@ -20,7 +20,9 @@ const {
   resolveLabourIds,
   ALL_LABOURS_VALUE,
 } = require("../services/hr-payroll/labour-rates-service");
-const { applyItemLifecycleToggleTx } = require("../services/products/item-lifecycle-service");
+const {
+  applyItemLifecycleToggleTx,
+} = require("../services/products/item-lifecycle-service");
 const { generateUniqueCode } = require("./entity-code");
 
 // Mapping of basic info entity types to their DB tables
@@ -44,12 +46,19 @@ const BASIC_INFO_TABLES = {
 const ITEM_TYPE_MAPS = {
   SIZE: { table: "erp.size_item_types", key: "size_id" },
   PRODUCT_GROUP: { table: "erp.product_group_item_types", key: "group_id" },
-  PRODUCT_SUBGROUP: { table: "erp.product_subgroup_item_types", key: "subgroup_id" },
+  PRODUCT_SUBGROUP: {
+    table: "erp.product_subgroup_item_types",
+    key: "subgroup_id",
+  },
 };
 
 // Mapping of branch types to their DB tables
 const BRANCH_MAPS = {
-  ACCOUNT: { table: "erp.account_branch", key: "account_id", branchKey: "branch_id" },
+  ACCOUNT: {
+    table: "erp.account_branch",
+    key: "account_id",
+    branchKey: "branch_id",
+  },
   PARTY: { table: "erp.party_branch", key: "party_id", branchKey: "branch_id" },
 };
 
@@ -71,8 +80,10 @@ const loadColumnSupport = async (trx) => {
   if (columnSupportCachePromise) return columnSupportCachePromise;
   columnSupportCachePromise = (async () => {
     try {
-      const hasAssetColumn = (column) => trx.schema.withSchema("erp").hasColumn("assets", column);
-      const hasAssetTypeColumn = (column) => trx.schema.withSchema("erp").hasColumn("asset_type_registry", column);
+      const hasAssetColumn = (column) =>
+        trx.schema.withSchema("erp").hasColumn("assets", column);
+      const hasAssetTypeColumn = (column) =>
+        trx.schema.withSchema("erp").hasColumn("asset_type_registry", column);
       return {
         assets: {
           name: await hasAssetColumn("name"),
@@ -118,7 +129,8 @@ const toArray = (value) => {
 };
 
 const toNumberOr = (value, fallback = 0) => {
-  if (value === null || typeof value === "undefined" || value === "") return fallback;
+  if (value === null || typeof value === "undefined" || value === "")
+    return fallback;
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : fallback;
 };
@@ -126,8 +138,15 @@ const toNumberOr = (value, fallback = 0) => {
 const toBoolean = (value) => {
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return value === 1;
-  const normalized = String(value || "").trim().toLowerCase();
-  return normalized === "1" || normalized === "true" || normalized === "on" || normalized === "yes";
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  return (
+    normalized === "1" ||
+    normalized === "true" ||
+    normalized === "on" ||
+    normalized === "yes"
+  );
 };
 const toNullableInt = (value) => {
   if (value === null || value === undefined || value === "") return null;
@@ -141,7 +160,9 @@ const toMoneyOrNull = (value) => {
   return Number(n.toFixed(2));
 };
 const normalizeStatus = (value, fallback = "active") => {
-  const raw = String(value || fallback).trim().toLowerCase();
+  const raw = String(value || fallback)
+    .trim()
+    .toLowerCase();
   return raw === "inactive" ? "inactive" : "active";
 };
 
@@ -152,7 +173,8 @@ const toCode = (value) =>
     .replace(/^_+|_+$/g, "")
     .slice(0, 80);
 
-const normalizeSkuPart = (value) => (value || "").toString().trim().toUpperCase();
+const normalizeSkuPart = (value) =>
+  (value || "").toString().trim().toUpperCase();
 
 const buildSkuCode = (itemName, parts) => {
   const cleanParts = parts.filter(Boolean).map(normalizeSkuPart);
@@ -179,16 +201,20 @@ const ensureUniqueSku = async (trx, baseCode) => {
 };
 
 const getLinkedSfgIds = async (trx, fgId) => {
-  const rows = await trx("erp.item_usage").select("sfg_item_id").where({ fg_item_id: fgId });
+  const rows = await trx("erp.item_usage")
+    .select("sfg_item_id")
+    .where({ fg_item_id: fgId });
   return rows.map((row) => row.sfg_item_id);
 };
 
 const deleteOwnedVariantsAndSkusByItemIds = async (trx, itemIds = []) => {
-  const normalizedItemIds = [...new Set(
-    toArray(itemIds)
-      .map((entry) => Number(entry))
-      .filter((entry) => Number.isInteger(entry) && entry > 0),
-  )];
+  const normalizedItemIds = [
+    ...new Set(
+      toArray(itemIds)
+        .map((entry) => Number(entry))
+        .filter((entry) => Number.isInteger(entry) && entry > 0),
+    ),
+  ];
   if (!normalizedItemIds.length) return;
 
   const variantRows = await trx("erp.variants")
@@ -208,12 +234,20 @@ const ensureSfgForFinished = async (trx, finishedItem, sfgPartType, userId) => {
   const sfgName = `${finishedItem.name} - ${suffix}`;
   const sfgCode = toCode(`${finishedItem.code}_${suffix}`);
   const linked = await getLinkedSfgIds(trx, finishedItem.id);
-  const existingByCode = await trx("erp.items").select("id").where({ code: sfgCode, item_type: "SFG" }).first();
+  const existingByCode = await trx("erp.items")
+    .select("id")
+    .where({ code: sfgCode, item_type: "SFG" })
+    .first();
   if (linked.length) {
     let primaryId = linked[0];
     if (existingByCode && existingByCode.id !== primaryId) {
-      await trx("erp.item_usage").where({ fg_item_id: finishedItem.id, sfg_item_id: primaryId }).del();
-      await trx("erp.item_usage").insert({ fg_item_id: finishedItem.id, sfg_item_id: existingByCode.id }).onConflict(["fg_item_id", "sfg_item_id"]).ignore();
+      await trx("erp.item_usage")
+        .where({ fg_item_id: finishedItem.id, sfg_item_id: primaryId })
+        .del();
+      await trx("erp.item_usage")
+        .insert({ fg_item_id: finishedItem.id, sfg_item_id: existingByCode.id })
+        .onConflict(["fg_item_id", "sfg_item_id"])
+        .ignore();
       primaryId = existingByCode.id;
     }
     await trx("erp.items")
@@ -231,8 +265,14 @@ const ensureSfgForFinished = async (trx, finishedItem, sfgPartType, userId) => {
       });
     if (linked.length > 1) {
       const extras = linked.slice(1);
-      await trx("erp.item_usage").where({ fg_item_id: finishedItem.id }).whereIn("sfg_item_id", extras).del();
-      const usedElsewhere = await trx("erp.item_usage").whereIn("sfg_item_id", extras).select("sfg_item_id").groupBy("sfg_item_id");
+      await trx("erp.item_usage")
+        .where({ fg_item_id: finishedItem.id })
+        .whereIn("sfg_item_id", extras)
+        .del();
+      const usedElsewhere = await trx("erp.item_usage")
+        .whereIn("sfg_item_id", extras)
+        .select("sfg_item_id")
+        .groupBy("sfg_item_id");
       const usedSet = new Set(usedElsewhere.map((row) => row.sfg_item_id));
       const deletable = extras.filter((sfgId) => !usedSet.has(sfgId));
       if (deletable.length) {
@@ -255,7 +295,10 @@ const ensureSfgForFinished = async (trx, finishedItem, sfgPartType, userId) => {
         updated_by: userId,
         updated_at: trx.fn.now(),
       });
-    await trx("erp.item_usage").insert({ fg_item_id: finishedItem.id, sfg_item_id: existingByCode.id }).onConflict(["fg_item_id", "sfg_item_id"]).ignore();
+    await trx("erp.item_usage")
+      .insert({ fg_item_id: finishedItem.id, sfg_item_id: existingByCode.id })
+      .onConflict(["fg_item_id", "sfg_item_id"])
+      .ignore();
     return;
   }
 
@@ -276,7 +319,10 @@ const ensureSfgForFinished = async (trx, finishedItem, sfgPartType, userId) => {
     .returning("id");
   const sfgItemId = created.id || created;
 
-  await trx("erp.item_usage").insert({ fg_item_id: finishedItem.id, sfg_item_id: sfgItemId }).onConflict(["fg_item_id", "sfg_item_id"]).ignore();
+  await trx("erp.item_usage")
+    .insert({ fg_item_id: finishedItem.id, sfg_item_id: sfgItemId })
+    .onConflict(["fg_item_id", "sfg_item_id"])
+    .ignore();
 };
 
 const getNameById = async (trx, table, id) => {
@@ -327,7 +373,10 @@ const applySkuChange = async (trx, request, userId) => {
   }
 
   if (action === "create") {
-    const item = await trx("erp.items").select("id", "name", "name_ur", "code", "item_type").where({ id: newValue.item_id }).first();
+    const item = await trx("erp.items")
+      .select("id", "name", "name_ur", "code", "item_type")
+      .where({ id: newValue.item_id })
+      .first();
     if (!item) return false;
 
     const [variant] = await trx("erp.variants")
@@ -347,18 +396,31 @@ const applySkuChange = async (trx, request, userId) => {
     const sizeName = await getNameById(trx, "erp.sizes", newValue.size_id);
     const gradeName = await getNameById(trx, "erp.grades", newValue.grade_id);
     const colorName = await getNameById(trx, "erp.colors", newValue.color_id);
-    const packingName = await getNameById(trx, "erp.packing_types", newValue.packing_type_id);
+    const packingName = await getNameById(
+      trx,
+      "erp.packing_types",
+      newValue.packing_type_id,
+    );
 
     let baseSku = "";
     if (item.item_type === "SFG") {
       const { base, suffix } = parseSfgNameParts(item.name, item.code);
       baseSku = buildSkuCode(base, [sizeName, colorName, suffix]);
     } else {
-      baseSku = buildSkuCode(item.name, [sizeName, packingName, gradeName, colorName]);
+      baseSku = buildSkuCode(item.name, [
+        sizeName,
+        packingName,
+        gradeName,
+        colorName,
+      ]);
     }
 
     const sku_code = await ensureUniqueSku(trx, baseSku);
-    await trx("erp.skus").insert({ variant_id: variant.id || variant, sku_code, is_active: true });
+    await trx("erp.skus").insert({
+      variant_id: variant.id || variant,
+      sku_code,
+      is_active: true,
+    });
     return { applied: true, entityId: String(variant.id || variant) };
   }
 
@@ -369,11 +431,24 @@ const applyItemChange = async (trx, request, userId) => {
   const { entity_id: entityId, new_value: newValue } = request;
   if (!newValue && entityId === "NEW") return false;
 
-  const action = newValue?._action || (entityId === "NEW" ? "create" : "update");
+  const action =
+    newValue?._action || (entityId === "NEW" ? "create" : "update");
   const existing =
     entityId !== "NEW"
       ? await trx("erp.items")
-          .select("id", "item_type", "code", "name", "name_ur", "group_id", "subgroup_id", "product_type_id", "base_uom_id", "uses_sfg", "sfg_part_type")
+          .select(
+            "id",
+            "item_type",
+            "code",
+            "name",
+            "name_ur",
+            "group_id",
+            "subgroup_id",
+            "product_type_id",
+            "base_uom_id",
+            "uses_sfg",
+            "sfg_part_type",
+          )
           .where({ id: Number(entityId) })
           .first()
       : null;
@@ -388,10 +463,16 @@ const applyItemChange = async (trx, request, userId) => {
         .where({ fg_item_id: Number(entityId) })
         .del();
       if (linked.length) {
-        const usedElsewhere = await trx("erp.item_usage").whereIn("sfg_item_id", linked).select("sfg_item_id").groupBy("sfg_item_id");
+        const usedElsewhere = await trx("erp.item_usage")
+          .whereIn("sfg_item_id", linked)
+          .select("sfg_item_id")
+          .groupBy("sfg_item_id");
         const usedSet = new Set(usedElsewhere.map((row) => row.sfg_item_id));
         const deletable = linked.filter((sfgId) => !usedSet.has(sfgId));
-        await deleteOwnedVariantsAndSkusByItemIds(trx, [Number(entityId), ...deletable]);
+        await deleteOwnedVariantsAndSkusByItemIds(trx, [
+          Number(entityId),
+          ...deletable,
+        ]);
         if (deletable.length) {
           await trx("erp.items").whereIn("id", deletable).del();
         }
@@ -479,7 +560,9 @@ const applyItemChange = async (trx, request, userId) => {
     }
 
     if (itemType === "SFG") {
-      const usageIds = Array.isArray(newValue.usage_ids) ? newValue.usage_ids : [];
+      const usageIds = Array.isArray(newValue.usage_ids)
+        ? newValue.usage_ids
+        : [];
       if (usageIds.length) {
         await trx("erp.item_usage").insert(
           usageIds.map((fgId) => ({
@@ -491,8 +574,16 @@ const applyItemChange = async (trx, request, userId) => {
     }
 
     if (itemType === "FG" && newValue.uses_sfg) {
-      const itemRow = await trx("erp.items").select("*").where({ id: newId }).first();
-      await ensureSfgForFinished(trx, itemRow, newValue.sfg_part_type, userId || null);
+      const itemRow = await trx("erp.items")
+        .select("*")
+        .where({ id: newId })
+        .first();
+      await ensureSfgForFinished(
+        trx,
+        itemRow,
+        newValue.sfg_part_type,
+        userId || null,
+      );
     }
 
     return { applied: true, entityId: String(newId) };
@@ -505,14 +596,45 @@ const applyItemChange = async (trx, request, userId) => {
       .update({
         code: newValue.code || existing.code,
         name: newValue.name || existing.name,
-        name_ur: Object.prototype.hasOwnProperty.call(newValue, "name_ur") ? newValue.name_ur : existing.name_ur,
-        group_id: Object.prototype.hasOwnProperty.call(newValue, "group_id") ? newValue.group_id : existing.group_id,
-        subgroup_id: Object.prototype.hasOwnProperty.call(newValue, "subgroup_id") ? newValue.subgroup_id : existing.subgroup_id,
-        product_type_id: Object.prototype.hasOwnProperty.call(newValue, "product_type_id") ? newValue.product_type_id : existing.product_type_id,
-        base_uom_id: Object.prototype.hasOwnProperty.call(newValue, "base_uom_id") ? newValue.base_uom_id : existing.base_uom_id,
-        uses_sfg: Object.prototype.hasOwnProperty.call(newValue, "uses_sfg") ? newValue.uses_sfg : existing.uses_sfg,
-        sfg_part_type: Object.prototype.hasOwnProperty.call(newValue, "sfg_part_type") ? newValue.sfg_part_type : existing.sfg_part_type,
-        min_stock_level: Object.prototype.hasOwnProperty.call(newValue, "min_stock_level") ? newValue.min_stock_level : existing.min_stock_level,
+        name_ur: Object.prototype.hasOwnProperty.call(newValue, "name_ur")
+          ? newValue.name_ur
+          : existing.name_ur,
+        group_id: Object.prototype.hasOwnProperty.call(newValue, "group_id")
+          ? newValue.group_id
+          : existing.group_id,
+        subgroup_id: Object.prototype.hasOwnProperty.call(
+          newValue,
+          "subgroup_id",
+        )
+          ? newValue.subgroup_id
+          : existing.subgroup_id,
+        product_type_id: Object.prototype.hasOwnProperty.call(
+          newValue,
+          "product_type_id",
+        )
+          ? newValue.product_type_id
+          : existing.product_type_id,
+        base_uom_id: Object.prototype.hasOwnProperty.call(
+          newValue,
+          "base_uom_id",
+        )
+          ? newValue.base_uom_id
+          : existing.base_uom_id,
+        uses_sfg: Object.prototype.hasOwnProperty.call(newValue, "uses_sfg")
+          ? newValue.uses_sfg
+          : existing.uses_sfg,
+        sfg_part_type: Object.prototype.hasOwnProperty.call(
+          newValue,
+          "sfg_part_type",
+        )
+          ? newValue.sfg_part_type
+          : existing.sfg_part_type,
+        min_stock_level: Object.prototype.hasOwnProperty.call(
+          newValue,
+          "min_stock_level",
+        )
+          ? newValue.min_stock_level
+          : existing.min_stock_level,
         updated_by: userId || null,
         updated_at: trx.fn.now(),
       });
@@ -538,7 +660,9 @@ const applyItemChange = async (trx, request, userId) => {
     }
 
     if (itemType === "SFG") {
-      const usageIds = Array.isArray(newValue.usage_ids) ? newValue.usage_ids : [];
+      const usageIds = Array.isArray(newValue.usage_ids)
+        ? newValue.usage_ids
+        : [];
       await trx("erp.item_usage")
         .where({ sfg_item_id: Number(entityId) })
         .del();
@@ -558,7 +682,12 @@ const applyItemChange = async (trx, request, userId) => {
           .select("*")
           .where({ id: Number(entityId) })
           .first();
-        await ensureSfgForFinished(trx, itemRow, newValue.sfg_part_type || itemRow.sfg_part_type, userId || null);
+        await ensureSfgForFinished(
+          trx,
+          itemRow,
+          newValue.sfg_part_type || itemRow.sfg_part_type,
+          userId || null,
+        );
       } else {
         const linked = await getLinkedSfgIds(trx, Number(entityId));
         await trx("erp.item_usage")
@@ -582,7 +711,13 @@ const applyItemChange = async (trx, request, userId) => {
   return false;
 };
 
-const applyBasicInfoChange = async (trx, entityType, entityId, newValue, userId) => {
+const applyBasicInfoChange = async (
+  trx,
+  entityType,
+  entityId,
+  newValue,
+  userId,
+) => {
   const table = BASIC_INFO_TABLES[entityType];
   if (!table) return false;
 
@@ -608,7 +743,9 @@ const applyBasicInfoChange = async (trx, entityType, entityId, newValue, userId)
     if (entityType === "SIZE") {
       duplicate = await trx(table).where({ name: values.name }).first();
     } else if (entityType === "COLOR") {
-      duplicate = await trx(table).whereRaw("lower(name) = lower(?)", [values.name]).first();
+      duplicate = await trx(table)
+        .whereRaw("lower(name) = lower(?)", [values.name])
+        .first();
     }
     if (duplicate) {
       const err = new Error("DUPLICATE_NAME");
@@ -630,7 +767,12 @@ const applyBasicInfoChange = async (trx, entityType, entityId, newValue, userId)
       await trx(map.table)
         .where({ [map.key]: newId })
         .del();
-      await trx(map.table).insert(newValue.item_types.map((itemType) => ({ [map.key]: newId, item_type: itemType })));
+      await trx(map.table).insert(
+        newValue.item_types.map((itemType) => ({
+          [map.key]: newId,
+          item_type: itemType,
+        })),
+      );
     }
     return { applied: true, entityId: String(newId) };
   }
@@ -648,12 +790,23 @@ const applyBasicInfoChange = async (trx, entityType, entityId, newValue, userId)
     await trx(map.table)
       .where({ [map.key]: Number(entityId) })
       .del();
-    await trx(map.table).insert(newValue.item_types.map((itemType) => ({ [map.key]: Number(entityId), item_type: itemType })));
+    await trx(map.table).insert(
+      newValue.item_types.map((itemType) => ({
+        [map.key]: Number(entityId),
+        item_type: itemType,
+      })),
+    );
   }
   return true;
 };
 
-const applyAccountPartyChange = async (trx, entityType, entityId, newValue, userId) => {
+const applyAccountPartyChange = async (
+  trx,
+  entityType,
+  entityId,
+  newValue,
+  userId,
+) => {
   const isAccount = entityType === "ACCOUNT";
   const isParty = entityType === "PARTY";
   if (!isAccount && !isParty) return false;
@@ -671,11 +824,15 @@ const applyAccountPartyChange = async (trx, entityType, entityId, newValue, user
   }
 
   const values = stripMeta(newValue);
-  const branchIds = toArray(newValue?.branch_ids).map((branchId) => Number(branchId)).filter((branchId) => Number.isFinite(branchId));
+  const branchIds = toArray(newValue?.branch_ids)
+    .map((branchId) => Number(branchId))
+    .filter((branchId) => Number.isFinite(branchId));
   if (isParty) {
     const creditAllowed = toBoolean(values.credit_allowed);
     values.credit_allowed = creditAllowed;
-    values.credit_limit = creditAllowed ? toNumberOr(values.credit_limit, 0) : 0;
+    values.credit_limit = creditAllowed
+      ? toNumberOr(values.credit_limit, 0)
+      : 0;
   }
   const isCreate = !entityId || entityId === "NEW";
 
@@ -730,14 +887,20 @@ const applyAccountPartyChange = async (trx, entityType, entityId, newValue, user
 
 const applyAssetChange = async (trx, entityId, newValue, userId) => {
   const columnSupport = (await loadColumnSupport(trx)).assets;
-  const values = newValue && typeof newValue === "object" ? { ...newValue } : null;
-  const action = values?._action || (!values ? "delete" : (entityId === "NEW" ? "create" : "update"));
+  const values =
+    newValue && typeof newValue === "object" ? { ...newValue } : null;
+  const action =
+    values?._action ||
+    (!values ? "delete" : entityId === "NEW" ? "create" : "update");
 
   if (action === "delete") {
     const id = Number(entityId || 0);
     if (!Number.isInteger(id) || id <= 0) return false;
 
-    const used = await trx("erp.rgp_outward_line").select("voucher_line_id").where({ asset_id: id }).first();
+    const used = await trx("erp.rgp_outward_line")
+      .select("voucher_line_id")
+      .where({ asset_id: id })
+      .first();
     if (used) {
       await trx(ASSET_TABLE)
         .where({ id })
@@ -763,25 +926,25 @@ const applyAssetChange = async (trx, entityId, newValue, userId) => {
     "description",
     "is_active",
     ...(columnSupport.name ? ["name"] : [trx.raw("NULL::text as name")]),
-    ...(columnSupport.name_ur ? ["name_ur"] : [trx.raw("NULL::text as name_ur")]),
+    ...(columnSupport.name_ur
+      ? ["name_ur"]
+      : [trx.raw("NULL::text as name_ur")]),
   ];
   const existing = !isCreate
-    ? await trx(ASSET_TABLE)
-        .select(existingSelect)
-        .where({ id })
-        .first()
+    ? await trx(ASSET_TABLE).select(existingSelect).where({ id }).first()
     : null;
   if (!isCreate && !existing) return false;
 
   const payload = stripMeta(values || {});
-  const statusOnlyUpdate = !isCreate
-    && Object.prototype.hasOwnProperty.call(payload, "is_active")
-    && !Object.prototype.hasOwnProperty.call(payload, "asset_code")
-    && !Object.prototype.hasOwnProperty.call(payload, "name")
-    && !Object.prototype.hasOwnProperty.call(payload, "name_ur")
-    && !Object.prototype.hasOwnProperty.call(payload, "asset_type_code")
-    && !Object.prototype.hasOwnProperty.call(payload, "home_branch_id")
-    && !Object.prototype.hasOwnProperty.call(payload, "description");
+  const statusOnlyUpdate =
+    !isCreate &&
+    Object.prototype.hasOwnProperty.call(payload, "is_active") &&
+    !Object.prototype.hasOwnProperty.call(payload, "asset_code") &&
+    !Object.prototype.hasOwnProperty.call(payload, "name") &&
+    !Object.prototype.hasOwnProperty.call(payload, "name_ur") &&
+    !Object.prototype.hasOwnProperty.call(payload, "asset_type_code") &&
+    !Object.prototype.hasOwnProperty.call(payload, "home_branch_id") &&
+    !Object.prototype.hasOwnProperty.call(payload, "description");
   if (statusOnlyUpdate) {
     await trx(ASSET_TABLE)
       .where({ id })
@@ -793,7 +956,9 @@ const applyAssetChange = async (trx, entityId, newValue, userId) => {
     return true;
   }
 
-  let assetCode = String(payload.asset_code || existing?.asset_code || "").trim().toUpperCase();
+  let assetCode = String(payload.asset_code || existing?.asset_code || "")
+    .trim()
+    .toUpperCase();
   if (!assetCode) {
     const generatedCode = await generateUniqueCode({
       name: payload.name || existing?.name || "asset",
@@ -802,7 +967,9 @@ const applyAssetChange = async (trx, entityId, newValue, userId) => {
       exists: async (candidate) => {
         const duplicate = await trx(ASSET_TABLE)
           .select("id")
-          .whereRaw("lower(asset_code) = ?", [String(candidate || "").toLowerCase()])
+          .whereRaw("lower(asset_code) = ?", [
+            String(candidate || "").toLowerCase(),
+          ])
           .modify((query) => {
             if (!isCreate) query.whereNot({ id });
           })
@@ -824,24 +991,43 @@ const applyAssetChange = async (trx, entityId, newValue, userId) => {
     )
       .trim()
       .toUpperCase(),
-    home_branch_id: Object.prototype.hasOwnProperty.call(payload, "home_branch_id")
+    home_branch_id: Object.prototype.hasOwnProperty.call(
+      payload,
+      "home_branch_id",
+    )
       ? toNullableInt(payload.home_branch_id)
       : toNullableInt(existing?.home_branch_id),
-    description: String(payload.description || payload.name || existing?.description || "").trim() || null,
+    description:
+      String(
+        payload.description || payload.name || existing?.description || "",
+      ).trim() || null,
     is_active: Object.prototype.hasOwnProperty.call(payload, "is_active")
       ? toBoolean(payload.is_active)
-      : isCreate ? true : !!existing?.is_active,
+      : isCreate
+        ? true
+        : !!existing?.is_active,
   };
-  const normalizedName = String(payload.name || existing?.name || payload.description || existing?.description || "").trim();
+  const normalizedName = String(
+    payload.name ||
+      existing?.name ||
+      payload.description ||
+      existing?.description ||
+      "",
+  ).trim();
   if (columnSupport.name) normalized.name = normalizedName;
   if (columnSupport.name_ur) {
-    normalized.name_ur = String(payload.name_ur || existing?.name_ur || "").trim() || null;
+    normalized.name_ur =
+      String(payload.name_ur || existing?.name_ur || "").trim() || null;
   }
   if (!normalized.description) {
     normalized.description = normalizedName || null;
   }
 
-  if (!normalized.asset_code || !normalized.asset_type_code || !normalized.description) {
+  if (
+    !normalized.asset_code ||
+    !normalized.asset_type_code ||
+    !normalized.description
+  ) {
     return false;
   }
   if (columnSupport.name && !normalized.name) {
@@ -883,17 +1069,21 @@ const applyAssetChange = async (trx, entityId, newValue, userId) => {
   const updatePayload = { ...normalized };
   if (columnSupport.updated_by) updatePayload.updated_by = userId || null;
   if (columnSupport.updated_at) updatePayload.updated_at = trx.fn.now();
-  await trx(ASSET_TABLE)
-    .where({ id })
-    .update(updatePayload);
+  await trx(ASSET_TABLE).where({ id }).update(updatePayload);
   return true;
 };
 
 const applyAssetTypeChange = async (trx, entityId, newValue) => {
-  const supportsNameUr = (await loadColumnSupport(trx)).assetTypeRegistry.name_ur;
-  const values = newValue && typeof newValue === "object" ? { ...newValue } : null;
-  const action = values?._action || (!values ? "delete" : (entityId === "NEW" ? "create" : "update"));
-  const code = String(entityId || values?.code || "").trim().toUpperCase();
+  const supportsNameUr = (await loadColumnSupport(trx)).assetTypeRegistry
+    .name_ur;
+  const values =
+    newValue && typeof newValue === "object" ? { ...newValue } : null;
+  const action =
+    values?._action ||
+    (!values ? "delete" : entityId === "NEW" ? "create" : "update");
+  const code = String(entityId || values?.code || "")
+    .trim()
+    .toUpperCase();
 
   if (action === "delete") {
     if (!code) return false;
@@ -926,12 +1116,13 @@ const applyAssetTypeChange = async (trx, entityId, newValue) => {
   if (!isCreate && !existing) return false;
 
   const payload = stripMeta(values || {});
-  const statusOnlyUpdate = !isCreate
-    && Object.prototype.hasOwnProperty.call(payload, "is_active")
-    && !Object.prototype.hasOwnProperty.call(payload, "code")
-    && !Object.prototype.hasOwnProperty.call(payload, "name")
-    && !Object.prototype.hasOwnProperty.call(payload, "name_ur")
-    && !Object.prototype.hasOwnProperty.call(payload, "description");
+  const statusOnlyUpdate =
+    !isCreate &&
+    Object.prototype.hasOwnProperty.call(payload, "is_active") &&
+    !Object.prototype.hasOwnProperty.call(payload, "code") &&
+    !Object.prototype.hasOwnProperty.call(payload, "name") &&
+    !Object.prototype.hasOwnProperty.call(payload, "name_ur") &&
+    !Object.prototype.hasOwnProperty.call(payload, "description");
   if (statusOnlyUpdate) {
     await trx("erp.asset_type_registry")
       .whereRaw("upper(code) = ?", [code])
@@ -939,9 +1130,12 @@ const applyAssetTypeChange = async (trx, entityId, newValue) => {
     return true;
   }
 
-  let normalizedCode = String(payload.code || code || existing?.code || "").trim().toUpperCase();
+  let normalizedCode = String(payload.code || code || existing?.code || "")
+    .trim()
+    .toUpperCase();
   const name = String(payload.name || existing?.name || "").trim();
-  const nameUr = String(payload.name_ur || existing?.name_ur || "").trim() || null;
+  const nameUr =
+    String(payload.name_ur || existing?.name_ur || "").trim() || null;
   const description = String(payload.description || "").trim() || null;
   const isActive = Object.prototype.hasOwnProperty.call(payload, "is_active")
     ? toBoolean(payload.is_active)
@@ -1003,11 +1197,25 @@ const applyAssetTypeChange = async (trx, entityId, newValue) => {
   return true;
 };
 
-const upsertBranchMap = async (trx, mapTable, keyColumn, entityId, branchIds = []) => {
+const upsertBranchMap = async (
+  trx,
+  mapTable,
+  keyColumn,
+  entityId,
+  branchIds = [],
+) => {
   const entity = Number(entityId || 0);
   if (!Number.isInteger(entity) || entity <= 0) return;
-  const normalized = [...new Set(toArray(branchIds).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
-  await trx(mapTable).where({ [keyColumn]: entity }).del();
+  const normalized = [
+    ...new Set(
+      toArray(branchIds)
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    ),
+  ];
+  await trx(mapTable)
+    .where({ [keyColumn]: entity })
+    .del();
   if (!normalized.length) return;
   await trx(mapTable).insert(
     normalized.map((branchId) => ({
@@ -1020,7 +1228,13 @@ const upsertBranchMap = async (trx, mapTable, keyColumn, entityId, branchIds = [
 const upsertLabourDepartments = async (trx, labourId, deptIds = []) => {
   const labour = Number(labourId || 0);
   if (!Number.isInteger(labour) || labour <= 0) return;
-  const normalized = [...new Set(toArray(deptIds).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0))];
+  const normalized = [
+    ...new Set(
+      toArray(deptIds)
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    ),
+  ];
   await trx(LABOUR_DEPARTMENT_TABLE).where({ labour_id: labour }).del();
   if (!normalized.length) return;
   await trx(LABOUR_DEPARTMENT_TABLE).insert(
@@ -1040,18 +1254,45 @@ const inferHrTarget = ({ entityType, request, newValue, oldValue }) => {
     ...Object.keys(oldValue && typeof oldValue === "object" ? oldValue : {}),
   ]);
 
-  if (mode === "BULK_COMMISSION_SKU_UPSERT" || mode === "SKU_MULTI_UPSERT") return "bulk_commission";
+  if (mode === "BULK_COMMISSION_SKU_UPSERT" || mode === "SKU_MULTI_UPSERT")
+    return "bulk_commission";
   if (mode === "BULK_LABOUR_RATE_SKU_UPSERT") return "bulk_labour_rate";
   if (scopeKey === "hr_payroll.commissions") return "employee_commission_rule";
   if (scopeKey === "hr_payroll.allowances") return "employee_allowance_rule";
   if (scopeKey === "hr_payroll.labour_rates") return "labour_rate_rule";
   if (scopeKey === "hr_payroll.employees") return "employee_master";
   if (scopeKey === "hr_payroll.labours") return "labour_master";
-  if (keys.has("allowance_type") || keys.has("amount_type") || keys.has("frequency")) return "employee_allowance_rule";
-  if (keys.has("commission_basis") || keys.has("reverse_on_returns") || (keys.has("apply_on") && keys.has("value"))) return "employee_commission_rule";
-  if (keys.has("rate_type") || keys.has("rate_value") || keys.has("article_type")) return "labour_rate_rule";
-  if (keys.has("payroll_type") || keys.has("designation") || keys.has("department_id") || keys.has("basic_salary")) return "employee_master";
-  if (keys.has("production_category") || keys.has("dept_ids") || keys.has("dept_id")) return "labour_master";
+  if (
+    keys.has("allowance_type") ||
+    keys.has("amount_type") ||
+    keys.has("frequency")
+  )
+    return "employee_allowance_rule";
+  if (
+    keys.has("commission_basis") ||
+    keys.has("reverse_on_returns") ||
+    (keys.has("apply_on") && keys.has("value"))
+  )
+    return "employee_commission_rule";
+  if (
+    keys.has("rate_type") ||
+    keys.has("rate_value") ||
+    keys.has("article_type")
+  )
+    return "labour_rate_rule";
+  if (
+    keys.has("payroll_type") ||
+    keys.has("designation") ||
+    keys.has("department_id") ||
+    keys.has("basic_salary")
+  )
+    return "employee_master";
+  if (
+    keys.has("production_category") ||
+    keys.has("dept_ids") ||
+    keys.has("dept_id")
+  )
+    return "labour_master";
   if (summary.includes("commission")) return "employee_commission_rule";
   if (summary.includes("allowance")) return "employee_allowance_rule";
   if (summary.includes("labour rate")) return "labour_rate_rule";
@@ -1062,8 +1303,13 @@ const inferHrTarget = ({ entityType, request, newValue, oldValue }) => {
 
 const applyEmployeeMasterApproval = async (trx, request) => {
   const entityId = request?.entity_id;
-  const newValue = request?.new_value && typeof request.new_value === "object" ? request.new_value : null;
-  const action = newValue?._action || (!newValue ? "delete" : (entityId === "NEW" ? "create" : "update"));
+  const newValue =
+    request?.new_value && typeof request.new_value === "object"
+      ? request.new_value
+      : null;
+  const action =
+    newValue?._action ||
+    (!newValue ? "delete" : entityId === "NEW" ? "create" : "update");
 
   if (action === "delete") {
     const id = Number(entityId || 0);
@@ -1090,29 +1336,52 @@ const applyEmployeeMasterApproval = async (trx, request) => {
   if (action === "create") {
     const [created] = await trx(EMPLOYEE_TABLE).insert(row).returning(["id"]);
     const newId = created && typeof created === "object" ? created.id : created;
-    await upsertBranchMap(trx, EMPLOYEE_BRANCH_TABLE, "employee_id", newId, payload.branch_ids);
+    await upsertBranchMap(
+      trx,
+      EMPLOYEE_BRANCH_TABLE,
+      "employee_id",
+      newId,
+      payload.branch_ids,
+    );
     return { applied: true, entityId: String(newId) };
   }
 
   const id = Number(entityId || 0);
   if (!Number.isInteger(id) || id <= 0) return false;
 
-  if (!newValue || Object.keys(newValue).length === 1 && Object.prototype.hasOwnProperty.call(newValue, "status")) {
-    await trx(EMPLOYEE_TABLE).where({ id }).update({ status: normalizeStatus(newValue?.status, "inactive") });
+  if (
+    !newValue ||
+    (Object.keys(newValue).length === 1 &&
+      Object.prototype.hasOwnProperty.call(newValue, "status"))
+  ) {
+    await trx(EMPLOYEE_TABLE)
+      .where({ id })
+      .update({ status: normalizeStatus(newValue?.status, "inactive") });
     return true;
   }
 
   await trx(EMPLOYEE_TABLE).where({ id }).update(row);
   if (Object.prototype.hasOwnProperty.call(payload, "branch_ids")) {
-    await upsertBranchMap(trx, EMPLOYEE_BRANCH_TABLE, "employee_id", id, payload.branch_ids);
+    await upsertBranchMap(
+      trx,
+      EMPLOYEE_BRANCH_TABLE,
+      "employee_id",
+      id,
+      payload.branch_ids,
+    );
   }
   return true;
 };
 
 const applyLabourMasterApproval = async (trx, request) => {
   const entityId = request?.entity_id;
-  const newValue = request?.new_value && typeof request.new_value === "object" ? request.new_value : null;
-  const action = newValue?._action || (!newValue ? "delete" : (entityId === "NEW" ? "create" : "update"));
+  const newValue =
+    request?.new_value && typeof request.new_value === "object"
+      ? request.new_value
+      : null;
+  const action =
+    newValue?._action ||
+    (!newValue ? "delete" : entityId === "NEW" ? "create" : "update");
 
   if (action === "delete") {
     const id = Number(entityId || 0);
@@ -1124,8 +1393,11 @@ const applyLabourMasterApproval = async (trx, request) => {
   }
 
   const payload = newValue || {};
-  const deptIds = toArray(payload.dept_ids).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0);
-  const deptId = toNullableInt(payload.dept_id) || (deptIds.length ? deptIds[0] : null);
+  const deptIds = toArray(payload.dept_ids)
+    .map((id) => Number(id))
+    .filter((id) => Number.isInteger(id) && id > 0);
+  const deptId =
+    toNullableInt(payload.dept_id) || (deptIds.length ? deptIds[0] : null);
   const row = {
     code: payload.code || null,
     name: payload.name || null,
@@ -1140,7 +1412,13 @@ const applyLabourMasterApproval = async (trx, request) => {
   if (action === "create") {
     const [created] = await trx(LABOUR_TABLE).insert(row).returning(["id"]);
     const newId = created && typeof created === "object" ? created.id : created;
-    await upsertBranchMap(trx, LABOUR_BRANCH_TABLE, "labour_id", newId, payload.branch_ids);
+    await upsertBranchMap(
+      trx,
+      LABOUR_BRANCH_TABLE,
+      "labour_id",
+      newId,
+      payload.branch_ids,
+    );
     await upsertLabourDepartments(trx, newId, deptIds);
     return { applied: true, entityId: String(newId) };
   }
@@ -1148,14 +1426,26 @@ const applyLabourMasterApproval = async (trx, request) => {
   const id = Number(entityId || 0);
   if (!Number.isInteger(id) || id <= 0) return false;
 
-  if (!newValue || (Object.keys(newValue).length === 1 && Object.prototype.hasOwnProperty.call(newValue, "status"))) {
-    await trx(LABOUR_TABLE).where({ id }).update({ status: normalizeStatus(newValue?.status, "inactive") });
+  if (
+    !newValue ||
+    (Object.keys(newValue).length === 1 &&
+      Object.prototype.hasOwnProperty.call(newValue, "status"))
+  ) {
+    await trx(LABOUR_TABLE)
+      .where({ id })
+      .update({ status: normalizeStatus(newValue?.status, "inactive") });
     return true;
   }
 
   await trx(LABOUR_TABLE).where({ id }).update(row);
   if (Object.prototype.hasOwnProperty.call(payload, "branch_ids")) {
-    await upsertBranchMap(trx, LABOUR_BRANCH_TABLE, "labour_id", id, payload.branch_ids);
+    await upsertBranchMap(
+      trx,
+      LABOUR_BRANCH_TABLE,
+      "labour_id",
+      id,
+      payload.branch_ids,
+    );
   }
   if (Object.prototype.hasOwnProperty.call(payload, "dept_ids")) {
     await upsertLabourDepartments(trx, id, deptIds);
@@ -1165,8 +1455,13 @@ const applyLabourMasterApproval = async (trx, request) => {
 
 const applyEmployeeAllowanceApproval = async (trx, request) => {
   const entityId = request?.entity_id;
-  const payload = request?.new_value && typeof request.new_value === "object" ? request.new_value : null;
-  const action = payload?._action || (!payload ? "delete" : (entityId === "NEW" ? "create" : "update"));
+  const payload =
+    request?.new_value && typeof request.new_value === "object"
+      ? request.new_value
+      : null;
+  const action =
+    payload?._action ||
+    (!payload ? "delete" : entityId === "NEW" ? "create" : "update");
 
   if (action === "delete") {
     const id = Number(entityId || 0);
@@ -1186,7 +1481,9 @@ const applyEmployeeAllowanceApproval = async (trx, request) => {
   };
 
   if (action === "create") {
-    const [created] = await trx(EMPLOYEE_ALLOWANCE_TABLE).insert(row).returning(["id"]);
+    const [created] = await trx(EMPLOYEE_ALLOWANCE_TABLE)
+      .insert(row)
+      .returning(["id"]);
     const newId = created && typeof created === "object" ? created.id : created;
     return { applied: true, entityId: String(newId) };
   }
@@ -1199,8 +1496,13 @@ const applyEmployeeAllowanceApproval = async (trx, request) => {
 
 const applyEmployeeCommissionApproval = async (trx, request) => {
   const entityId = request?.entity_id;
-  const payload = request?.new_value && typeof request.new_value === "object" ? request.new_value : null;
-  const action = payload?._action || (!payload ? "delete" : (entityId === "NEW" ? "create" : "update"));
+  const payload =
+    request?.new_value && typeof request.new_value === "object"
+      ? request.new_value
+      : null;
+  const action =
+    payload?._action ||
+    (!payload ? "delete" : entityId === "NEW" ? "create" : "update");
 
   if (action === "delete") {
     const id = Number(entityId || 0);
@@ -1209,8 +1511,14 @@ const applyEmployeeCommissionApproval = async (trx, request) => {
     return true;
   }
 
-  const basis = String(payload.commission_basis || COMMISSION_BASIS_FIXED_PER_UNIT).trim().toUpperCase();
-  const valueType = deriveValueTypeFromBasis(basis) || deriveValueTypeFromBasis(COMMISSION_BASIS_FIXED_PER_UNIT);
+  const basis = String(
+    payload.commission_basis || COMMISSION_BASIS_FIXED_PER_UNIT,
+  )
+    .trim()
+    .toUpperCase();
+  const valueType =
+    deriveValueTypeFromBasis(basis) ||
+    deriveValueTypeFromBasis(COMMISSION_BASIS_FIXED_PER_UNIT);
   const row = {
     employee_id: toNullableInt(payload.employee_id),
     apply_on: payload.apply_on || null,
@@ -1219,14 +1527,19 @@ const applyEmployeeCommissionApproval = async (trx, request) => {
     group_id: toNullableInt(payload.group_id),
     commission_basis: basis,
     value_type: valueType,
-    rate_type: String(payload.rate_type || "PER_PAIR").trim().toUpperCase() || "PER_PAIR",
+    rate_type:
+      String(payload.rate_type || "PER_PAIR")
+        .trim()
+        .toUpperCase() || "PER_PAIR",
     value: toMoneyOrNull(payload.value),
     reverse_on_returns: toBoolean(payload.reverse_on_returns),
     status: normalizeStatus(payload.status, "active"),
   };
 
   if (action === "create") {
-    const [created] = await trx(EMPLOYEE_COMMISSION_TABLE).insert(row).returning(["id"]);
+    const [created] = await trx(EMPLOYEE_COMMISSION_TABLE)
+      .insert(row)
+      .returning(["id"]);
     const newId = created && typeof created === "object" ? created.id : created;
     return { applied: true, entityId: String(newId) };
   }
@@ -1239,8 +1552,13 @@ const applyEmployeeCommissionApproval = async (trx, request) => {
 
 const applyLabourRateApproval = async (trx, request) => {
   const entityId = request?.entity_id;
-  const payload = request?.new_value && typeof request.new_value === "object" ? request.new_value : null;
-  const action = payload?._action || (!payload ? "delete" : (entityId === "NEW" ? "create" : "update"));
+  const payload =
+    request?.new_value && typeof request.new_value === "object"
+      ? request.new_value
+      : null;
+  const action =
+    payload?._action ||
+    (!payload ? "delete" : entityId === "NEW" ? "create" : "update");
 
   if (action === "delete") {
     const id = Number(entityId || 0);
@@ -1249,14 +1567,17 @@ const applyLabourRateApproval = async (trx, request) => {
     return true;
   }
 
-  const applyOn = String(payload.apply_on || "SKU").trim().toUpperCase();
+  const applyOn = String(payload.apply_on || "SKU")
+    .trim()
+    .toUpperCase();
   const row = {
     applies_to_all_labours: false,
     labour_id: toNullableInt(payload.labour_id),
     dept_id: toNullableInt(payload.dept_id),
     apply_on: applyOn,
     sku_id: toNullableInt(payload.sku_id),
-    subgroup_id: applyOn === "SUBGROUP" ? toNullableInt(payload.subgroup_id) : null,
+    subgroup_id:
+      applyOn === "SUBGROUP" ? toNullableInt(payload.subgroup_id) : null,
     group_id: applyOn === "GROUP" ? toNullableInt(payload.group_id) : null,
     rate_type: payload.rate_type || null,
     rate_value: toMoneyOrNull(payload.rate_value),
@@ -1265,7 +1586,9 @@ const applyLabourRateApproval = async (trx, request) => {
   };
 
   if (action === "create") {
-    const [created] = await trx(LABOUR_RATE_TABLE).insert(row).returning(["id"]);
+    const [created] = await trx(LABOUR_RATE_TABLE)
+      .insert(row)
+      .returning(["id"]);
     const newId = created && typeof created === "object" ? created.id : created;
     return { applied: true, entityId: String(newId) };
   }
@@ -1277,16 +1600,26 @@ const applyLabourRateApproval = async (trx, request) => {
 };
 
 const applyBulkCommissionApproval = async (trx, request) => {
-  const payload = request?.new_value && typeof request.new_value === "object" ? request.new_value : {};
+  const payload =
+    request?.new_value && typeof request.new_value === "object"
+      ? request.new_value
+      : {};
   const employeeIdsRaw = toArray(payload.employee_ids)
     .map((entry) => toNullableInt(entry))
     .filter((entry) => Number.isInteger(entry) && entry > 0);
-  const fallbackEmployeeId = toNullableInt(payload.employee_id) || toNullableInt(request?.entity_id);
-  const employeeIds = employeeIdsRaw.length ? [...new Set(employeeIdsRaw)] : (fallbackEmployeeId ? [fallbackEmployeeId] : []);
+  const fallbackEmployeeId =
+    toNullableInt(payload.employee_id) || toNullableInt(request?.entity_id);
+  const employeeIds = employeeIdsRaw.length
+    ? [...new Set(employeeIdsRaw)]
+    : fallbackEmployeeId
+      ? [fallbackEmployeeId]
+      : [];
   if (!employeeIds.length) return false;
   const status = normalizeStatus(payload.status, "active");
   const reverseOnReturns = toBoolean(payload.reverse_on_returns);
-  const applyOn = String(payload.apply_on || "SKU").trim().toUpperCase();
+  const applyOn = String(payload.apply_on || "SKU")
+    .trim()
+    .toUpperCase();
   const subgroupIds = toArray(payload.subgroup_ids)
     .map((entry) => toNullableInt(entry))
     .filter((entry) => Number.isInteger(entry) && entry > 0);
@@ -1294,15 +1627,26 @@ const applyBulkCommissionApproval = async (trx, request) => {
     .map((entry) => toNullableInt(entry))
     .filter((entry) => Number.isInteger(entry) && entry > 0);
   const scopeRate = toMoneyOrNull(payload.scope_rate ?? payload.value);
-  const rateTypeDefault = String(payload.rate_type || "PER_PAIR").trim().toUpperCase() || "PER_PAIR";
+  const rateTypeDefault =
+    String(payload.rate_type || "PER_PAIR")
+      .trim()
+      .toUpperCase() || "PER_PAIR";
   const valueType = deriveValueTypeFromBasis(COMMISSION_BASIS_FIXED_PER_UNIT);
   const rows = toArray(payload.rows)
     .map((row) => {
       const data = row && typeof row === "object" ? row : {};
       const skuId = toNullableInt(data.sku_id || data.skuId);
-      const rate = toMoneyOrNull(Object.prototype.hasOwnProperty.call(data, "new_rate") ? data.new_rate : data.rate);
-      const employeeId = toNullableInt(data.employee_id || data.employeeId) || null;
-      const rateType = String(data.rate_type || rateTypeDefault).trim().toUpperCase() || rateTypeDefault;
+      const rate = toMoneyOrNull(
+        Object.prototype.hasOwnProperty.call(data, "new_rate")
+          ? data.new_rate
+          : data.rate,
+      );
+      const employeeId =
+        toNullableInt(data.employee_id || data.employeeId) || null;
+      const rateType =
+        String(data.rate_type || rateTypeDefault)
+          .trim()
+          .toUpperCase() || rateTypeDefault;
       if (!skuId || rate === null) return null;
       return { employeeId, skuId, rate, rateType };
     })
@@ -1314,7 +1658,11 @@ const applyBulkCommissionApproval = async (trx, request) => {
       .filter((row) => !row.employeeId || row.employeeId === employeeId)
       .map((row) => ({ skuId: row.skuId, rate: row.rate }));
     if (!rowsForEmployee.length) continue;
-    const rowRateType = rows.find((row) => (!row.employeeId || row.employeeId === employeeId) && row.rateType)?.rateType || rateTypeDefault;
+    const rowRateType =
+      rows.find(
+        (row) =>
+          (!row.employeeId || row.employeeId === employeeId) && row.rateType,
+      )?.rateType || rateTypeDefault;
     await applyCommissionBulkSkuRateUpsert({
       trx,
       employeeId,
@@ -1334,10 +1682,15 @@ const applyBulkCommissionApproval = async (trx, request) => {
 };
 
 const applyBulkLabourRateApproval = async (trx, request) => {
-  const payload = request?.new_value && typeof request.new_value === "object" ? request.new_value : {};
+  const payload =
+    request?.new_value && typeof request.new_value === "object"
+      ? request.new_value
+      : {};
   const deptId = toNullableInt(payload.dept_id);
   if (!deptId) return false;
-  const labourRaw = String(payload.labour_id || request?.entity_id || "").trim();
+  const labourRaw = String(
+    payload.labour_id || request?.entity_id || "",
+  ).trim();
   const labourSelection =
     labourRaw.toUpperCase() === ALL_LABOURS_VALUE
       ? { all: true, labourId: null, raw: ALL_LABOURS_VALUE }
@@ -1350,16 +1703,25 @@ const applyBulkLabourRateApproval = async (trx, request) => {
   });
   if (!Array.isArray(labourIds) || !labourIds.length) return false;
 
-  const applyOn = String(payload.apply_on || "SKU").trim().toUpperCase();
-  const subgroupId = applyOn === "SUBGROUP" ? toNullableInt(payload.subgroup_id) : null;
+  const applyOn = String(payload.apply_on || "SKU")
+    .trim()
+    .toUpperCase();
+  const subgroupId =
+    applyOn === "SUBGROUP" ? toNullableInt(payload.subgroup_id) : null;
   const groupId = applyOn === "GROUP" ? toNullableInt(payload.group_id) : null;
-  const rateType = String(payload.rate_type || "PER_DOZEN").trim().toUpperCase();
+  const rateType = String(payload.rate_type || "PER_DOZEN")
+    .trim()
+    .toUpperCase();
   const status = normalizeStatus(payload.status, "active");
   const rows = toArray(payload.rows)
     .map((row) => {
       const data = row && typeof row === "object" ? row : {};
       const skuId = toNullableInt(data.sku_id || data.skuId);
-      const rate = toMoneyOrNull(Object.prototype.hasOwnProperty.call(data, "new_rate") ? data.new_rate : data.rate);
+      const rate = toMoneyOrNull(
+        Object.prototype.hasOwnProperty.call(data, "new_rate")
+          ? data.new_rate
+          : data.rate,
+      );
       if (!skuId || rate === null) return null;
       return { skuId, rate };
     })
@@ -1382,22 +1744,39 @@ const applyBulkLabourRateApproval = async (trx, request) => {
 
 const applyHrApprovalChange = async (trx, request) => {
   const entityType = request?.entity_type;
-  const newValue = request?.new_value && typeof request.new_value === "object" ? request.new_value : null;
-  const oldValue = request?.old_value && typeof request.old_value === "object" ? request.old_value : null;
+  const newValue =
+    request?.new_value && typeof request.new_value === "object"
+      ? request.new_value
+      : null;
+  const oldValue =
+    request?.old_value && typeof request.old_value === "object"
+      ? request.old_value
+      : null;
   const target = inferHrTarget({ entityType, request, newValue, oldValue });
 
-  if (target === "bulk_commission") return applyBulkCommissionApproval(trx, request);
-  if (target === "bulk_labour_rate") return applyBulkLabourRateApproval(trx, request);
-  if (target === "employee_allowance_rule") return applyEmployeeAllowanceApproval(trx, request);
-  if (target === "employee_commission_rule") return applyEmployeeCommissionApproval(trx, request);
-  if (target === "labour_rate_rule") return applyLabourRateApproval(trx, request);
-  if (target === "employee_master") return applyEmployeeMasterApproval(trx, request);
-  if (target === "labour_master") return applyLabourMasterApproval(trx, request);
+  if (target === "bulk_commission")
+    return applyBulkCommissionApproval(trx, request);
+  if (target === "bulk_labour_rate")
+    return applyBulkLabourRateApproval(trx, request);
+  if (target === "employee_allowance_rule")
+    return applyEmployeeAllowanceApproval(trx, request);
+  if (target === "employee_commission_rule")
+    return applyEmployeeCommissionApproval(trx, request);
+  if (target === "labour_rate_rule")
+    return applyLabourRateApproval(trx, request);
+  if (target === "employee_master")
+    return applyEmployeeMasterApproval(trx, request);
+  if (target === "labour_master")
+    return applyLabourMasterApproval(trx, request);
   return false;
 };
 
 const applyMasterDataChange = async (trx, request, userId) => {
-  const { entity_type: entityType, entity_id: entityId, new_value: newValue } = request;
+  const {
+    entity_type: entityType,
+    entity_id: entityId,
+    new_value: newValue,
+  } = request;
   if (BASIC_INFO_TABLES[entityType]) {
     return applyBasicInfoChange(trx, entityType, entityId, newValue, userId);
   }

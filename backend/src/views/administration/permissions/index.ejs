@@ -145,6 +145,117 @@
           </div>
         <% } %>
 
+        <% if (isUserMode) { %>
+          <section id="account-access-shell" class="hidden flex-1 min-h-0 p-4 md:p-5 bg-slate-50/40">
+            <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm flex h-full min-h-0 flex-col">
+              <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 class="text-sm font-bold uppercase tracking-[0.08em] text-slate-800"><%= t('account_access') %></h2>
+                  <p class="text-xs text-slate-500"><%= t('account_access_subtitle') %></p>
+                </div>
+                <div class="flex items-center gap-2">
+                  <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-600"><%= t('account_access_financial_reports_context') %></span>
+                  <button
+                    type="button"
+                    data-account-access-save
+                    class="rounded-lg bg-accent px-4 py-2 text-xs font-bold uppercase tracking-[0.08em] text-white shadow-sm hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50"
+                    <%= !canEditPermissions ? 'disabled' : '' %>
+                  ><%= t('save_changes') %></button>
+                </div>
+              </div>
+
+              <div class="mt-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
+                <div class="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+                  <label class="block text-sm">
+                    <span class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('account_name') %></span>
+                    <select data-account-access-add data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" <%= !canEditPermissions ? 'disabled' : '' %>>
+                      <option value=""><%= t('select_account_name') %></option>
+                      <% (accountAccessAccounts || []).forEach((account) => { %>
+                        <option
+                          value="<%= account.id %>"
+                          data-code="<%= account.code %>"
+                          data-name="<%= account.name %>"
+                          data-branches="<%= (account.branchNames || []).join(', ') %>"
+                        ><%= account.name %></option>
+                      <% }) %>
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    data-account-access-add-btn
+                    class="h-10 w-10 rounded-lg border border-slate-300 bg-white text-slate-700 hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
+                    title="<%= t('add') %>"
+                    <%= !canEditPermissions ? 'disabled' : '' %>
+                  >
+                    <span class="sr-only"><%= t('add') %></span>
+                    <svg class="mx-auto h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              <div class="mt-3 flex items-center">
+                <div class="relative w-full max-w-md group">
+                  <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg class="h-4 w-4 text-slate-400 group-focus-within:text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+                  </div>
+                  <input
+                    type="text"
+                    data-account-access-row-search
+                    placeholder="<%= t('search_permissions') %>..."
+                    class="h-10 w-full rounded-lg border border-slate-200 bg-white pl-10 pr-3 text-sm focus:ring-2 focus:ring-accent"
+                  >
+                </div>
+              </div>
+
+              <div class="mt-3 flex-1 min-h-0 rounded-lg border border-slate-200 bg-white overflow-hidden">
+                <div class="h-full min-h-0 overflow-auto custom-scrollbar">
+                  <table class="w-full min-w-[620px] text-sm">
+                    <thead class="bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-600">
+                      <tr>
+                        <th class="px-3 py-2 text-left"><%= t('account_code') %></th>
+                        <th class="px-3 py-2 text-left"><%= t('account_name') %></th>
+                        <th class="px-3 py-2 text-left"><%= t('restriction_level') %></th>
+                        <th class="px-3 py-2 text-center"><%= t('actions') %></th>
+                      </tr>
+                    </thead>
+                    <tbody data-account-access-body>
+                      <% if (!accountAccessRows || !accountAccessRows.length) { %>
+                        <tr data-account-access-empty>
+                          <td colspan="4" class="px-3 py-6 text-center text-xs font-semibold text-slate-500"><%= t('no_records_found') %></td>
+                        </tr>
+                      <% } %>
+                      <% (accountAccessRows || []).forEach((row) => { %>
+                        <% const restrictionValue = row.canViewSummary ? 'summary' : 'details'; %>
+                        <% const branchesText = (row.branchNames || []).join(', '); %>
+                        <tr data-account-access-row data-account-id="<%= row.accountId %>" data-row-search="<%= ((row.code || '') + ' ' + (row.name || '') + ' ' + branchesText).toLowerCase() %>" class="border-t border-slate-100">
+                          <td class="px-3 py-2 font-semibold text-slate-700" data-account-code><%= row.code || '-' %></td>
+                          <td class="px-3 py-2 text-slate-700" data-account-name>
+                            <div class="font-medium"><%= row.name || '-' %></div>
+                            <% if (branchesText) { %>
+                              <div class="mt-0.5 text-[11px] text-slate-400"><%= branchesText %></div>
+                            <% } %>
+                          </td>
+                          <td class="px-3 py-2 text-slate-700">
+                            <select data-account-restriction class="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs font-semibold" <%= !canEditPermissions ? 'disabled' : '' %>>
+                              <option value="summary" <%= restrictionValue === 'summary' ? 'selected' : '' %>><%= t('account_access_restriction_summary') %></option>
+                              <option value="details" <%= restrictionValue === 'details' ? 'selected' : '' %>><%= t('account_access_restriction_details') %></option>
+                            </select>
+                          </td>
+                          <td class="px-3 py-2 text-center">
+                            <button type="button" class="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50" data-account-remove <%= !canEditPermissions ? 'disabled' : '' %>><%= t('delete') %></button>
+                          </td>
+                        </tr>
+                      <% }) %>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+        <% } %>
+
         <div id="permission-table-container" class="flex-1 min-h-0 overflow-x-auto overflow-y-auto bg-slate-50/30 relative custom-scrollbar hidden">
           <table class="w-full text-left border-collapse table-auto">
             <thead class="bg-white sticky top-0 z-20 shadow-sm ring-1 ring-slate-200">
@@ -274,94 +385,12 @@
         </div>
       </div>
     </form>
-
     <% if (isUserMode) { %>
-      <section id="account-access-shell" class="hidden shrink-0 border-t border-slate-200 bg-slate-50/40">
-        <div class="flex min-h-0">
-          <div class="w-72 shrink-0 border-r border-slate-200 bg-slate-50/80"></div>
-          <div class="flex-1 p-4">
-            <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 class="text-sm font-bold uppercase tracking-[0.08em] text-slate-800"><%= t('account_access') %></h2>
-                  <p class="text-xs text-slate-500"><%= t('account_access_subtitle') %></p>
-                </div>
-                <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-600"><%= t('account_access_financial_reports_context') %></span>
-              </div>
-
-              <form action="/administration/permissions/account-access" method="POST" class="mt-3 space-y-3" data-account-access-form>
-                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                <input type="hidden" name="target_id" value="<%= targetId %>">
-                <input type="hidden" name="rows_json" value="[]" data-account-access-json>
-
-                <div class="grid grid-cols-1 gap-3 xl:grid-cols-[19rem_1fr]">
-                  <div class="rounded-lg border border-slate-200 bg-slate-50/60 p-3">
-                    <label class="block text-sm">
-                      <span class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('account_name') %></span>
-                      <select data-account-access-add data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" <%= !canEditPermissions ? 'disabled' : '' %>>
-                        <option value=""><%= t('select_account_name') %></option>
-                        <% (accountAccessAccounts || []).forEach((account) => { %>
-                          <option
-                            value="<%= account.id %>"
-                            data-code="<%= account.code %>"
-                            data-name="<%= account.name %>"
-                            data-branches="<%= (account.branchNames || []).join(', ') %>"
-                          ><%= account.name %></option>
-                        <% }) %>
-                      </select>
-                    </label>
-                    <button type="button" class="mt-3 h-10 w-full rounded-lg border border-slate-300 bg-white px-4 text-xs font-bold uppercase tracking-[0.08em] text-slate-700 hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50" data-account-access-add-btn <%= !canEditPermissions ? 'disabled' : '' %>><%= t('add') %></button>
-                  </div>
-
-                  <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
-                    <div class="overflow-x-auto">
-                      <table class="w-full min-w-[640px] text-sm">
-                        <thead class="bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-600">
-                          <tr>
-                            <th class="px-3 py-2 text-left"><%= t('account_code') %></th>
-                            <th class="px-3 py-2 text-left"><%= t('account_name') %></th>
-                            <th class="px-3 py-2 text-left"><%= t('branches') %></th>
-                            <th class="px-3 py-2 text-center"><%= t('block_summary') %></th>
-                            <th class="px-3 py-2 text-center"><%= t('block_view_details') %></th>
-                            <th class="px-3 py-2 text-center"><%= t('actions') %></th>
-                          </tr>
-                        </thead>
-                        <tbody data-account-access-body>
-                          <% if (!accountAccessRows || !accountAccessRows.length) { %>
-                            <tr data-account-access-empty>
-                              <td colspan="6" class="px-3 py-6 text-center text-xs font-semibold text-slate-500"><%= t('no_records_found') %></td>
-                            </tr>
-                          <% } %>
-                          <% (accountAccessRows || []).forEach((row) => { %>
-                            <tr data-account-access-row data-account-id="<%= row.accountId %>" class="border-t border-slate-100">
-                              <td class="px-3 py-2 font-semibold text-slate-700" data-account-code><%= row.code || '-' %></td>
-                              <td class="px-3 py-2 text-slate-700" data-account-name><%= row.name || '-' %></td>
-                              <td class="px-3 py-2 text-slate-500" data-account-branches><%= (row.branchNames || []).join(', ') || '-' %></td>
-                              <td class="px-3 py-2 text-center">
-                                <input type="checkbox" data-account-summary class="h-4 w-4 rounded border-slate-300 text-accent" <%= !row.canViewSummary ? 'checked' : '' %> <%= !canEditPermissions ? 'disabled' : '' %>>
-                              </td>
-                              <td class="px-3 py-2 text-center">
-                                <input type="checkbox" data-account-details class="h-4 w-4 rounded border-slate-300 text-accent" <%= !row.canViewDetails ? 'checked' : '' %> <%= !canEditPermissions ? 'disabled' : '' %>>
-                              </td>
-                              <td class="px-3 py-2 text-center">
-                                <button type="button" class="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50" data-account-remove <%= !canEditPermissions ? 'disabled' : '' %>><%= t('delete') %></button>
-                              </td>
-                            </tr>
-                          <% }) %>
-                        </tbody>
-                      </table>
-                    </div>
-
-                    <div class="flex justify-end border-t border-slate-200 p-3">
-                      <button type="submit" class="rounded-lg bg-accent px-4 py-2 text-xs font-bold uppercase tracking-[0.08em] text-white shadow-sm hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-50" <%= !canEditPermissions ? 'disabled' : '' %>><%= t('save_changes') %></button>
-                    </div>
-                  </div>
-                </div>
-              </form>
-            </div>
-          </div>
-        </div>
-      </section>
+      <form action="/administration/permissions/account-access" method="POST" class="hidden" data-account-access-submit-form>
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="hidden" name="target_id" value="<%= targetId %>">
+        <input type="hidden" name="rows_json" value="[]" data-account-access-json>
+      </form>
     <% } %>
   <% } else { %>
     <div class="flex-1 flex flex-col items-center justify-center text-slate-400 bg-slate-50/50 m-4 border-2 border-dashed border-slate-200 rounded-xl">
@@ -392,26 +421,43 @@
     currentCategory = path;
     const btns = document.querySelectorAll('.category-btn');
     const searchInput = document.getElementById('permission-search');
+    const moduleEmptyState = document.getElementById('module-empty-state');
+    const permissionToolbar = document.getElementById('permission-toolbar');
+    const permissionTableContainer = document.getElementById('permission-table-container');
+    const permissionFooter = document.getElementById('permission-footer');
+    const normalizedPath = String(path || '').trim();
+    const isEmptySelection = !normalizedPath || normalizedPath === 'none';
+    const isAccountAccessSelection =
+      ACCOUNT_ACCESS_SCOPE_PATH !== '' &&
+      normalizedPath === ACCOUNT_ACCESS_SCOPE_PATH;
     
-    // Toggle UI Components (Show table only if category selected)
-    if (!path || path === '' || path === 'none') {
-        document.getElementById('module-empty-state').classList.remove('hidden');
-        document.getElementById('permission-toolbar').classList.add('hidden');
-        document.getElementById('permission-table-container').classList.add('hidden');
-        document.getElementById('permission-footer').classList.add('hidden');
+    // Toggle right-pane mode: empty, permission matrix, or account-access focused panel.
+    if (isEmptySelection) {
+        moduleEmptyState?.classList.remove('hidden');
+        permissionToolbar?.classList.add('hidden');
+        permissionTableContainer?.classList.add('hidden');
+        permissionFooter?.classList.add('hidden');
       syncAccountAccessPanel('');
         return;
+    }
+
+    moduleEmptyState?.classList.add('hidden');
+
+    if (isAccountAccessSelection) {
+        permissionToolbar?.classList.add('hidden');
+        permissionTableContainer?.classList.add('hidden');
+        permissionFooter?.classList.add('hidden');
+      syncAccountAccessPanel(normalizedPath);
     } else {
-        document.getElementById('module-empty-state').classList.add('hidden');
-        document.getElementById('permission-toolbar').classList.remove('hidden');
-        document.getElementById('permission-table-container').classList.remove('hidden');
-        document.getElementById('permission-footer').classList.remove('hidden');
-      syncAccountAccessPanel(path);
+        permissionToolbar?.classList.remove('hidden');
+        permissionTableContainer?.classList.remove('hidden');
+        permissionFooter?.classList.remove('hidden');
+      syncAccountAccessPanel('');
     }
 
     // Sidebar Active State
     btns.forEach(btn => {
-        if(btn.dataset.cat === path) {
+        if(btn.dataset.cat === normalizedPath) {
             btn.classList.add('bg-white', 'shadow-sm', 'text-accent', 'ring-1', 'ring-accent/30', 'border-l-4', 'border-l-accent');
             btn.classList.remove('text-slate-600', 'hover:bg-white', 'border-transparent');
         } else {
@@ -427,9 +473,9 @@
     // AUTO-EXPAND LOGIC:
     // If a specific module is clicked, we ensure its immediate children are visible.
     // We achieve this by removing the clicked path from 'collapsedPaths'.
-    if (path !== 'all') {
+    if (normalizedPath !== 'all') {
         // Uncollapse the container itself and its ancestors so nested groups show immediately.
-        const parts = path.split('.');
+      const parts = normalizedPath.split('.');
         parts.forEach((_, idx) => {
             const ancestor = parts.slice(0, idx + 1).join('.');
             collapsedPaths.delete(ancestor);
@@ -439,7 +485,7 @@
         const rows = document.querySelectorAll('.permission-row');
         rows.forEach(row => {
             const rowPath = row.getAttribute('data-path');
-            if (rowPath === path) {
+          if (rowPath === normalizedPath) {
                 collapsedPaths.delete(rowPath);
             }
         });
@@ -709,38 +755,40 @@
 </script>
 <script>
   (function () {
-    const form = document.querySelector('[data-account-access-form]');
-    if (!form) return;
+    const panel = document.getElementById('account-access-shell');
+    const submitForm = document.querySelector('[data-account-access-submit-form]');
+    if (!panel || !submitForm) return;
 
     if (typeof window.initSearchableSelects === 'function') {
-      window.initSearchableSelects();
+      window.initSearchableSelects(panel);
     }
 
-    const addSelect = form.querySelector('[data-account-access-add]');
-    const addButton = form.querySelector('[data-account-access-add-btn]');
-    const body = form.querySelector('[data-account-access-body]');
-    const jsonInput = form.querySelector('[data-account-access-json]');
+    const addSelect = panel.querySelector('[data-account-access-add]');
+    const addButton = panel.querySelector('[data-account-access-add-btn]');
+    const rowSearchInput = panel.querySelector('[data-account-access-row-search]');
+    const body = panel.querySelector('[data-account-access-body]');
+    const saveButton = panel.querySelector('[data-account-access-save]');
+    const jsonInput = submitForm.querySelector('[data-account-access-json]');
+    const isReadOnly = <%= canEditPermissions ? 'false' : 'true' %>;
 
-    const ensureToggleRules = (row) => {
-      const summaryInput = row.querySelector('[data-account-summary]');
-      const detailsInput = row.querySelector('[data-account-details]');
-      if (!(summaryInput instanceof HTMLInputElement) || !(detailsInput instanceof HTMLInputElement)) return;
+    if (!(body instanceof HTMLElement)) return;
 
-      detailsInput.addEventListener('change', () => {
-        if (detailsInput.checked) {
-          summaryInput.checked = true;
-        }
-      });
+    const escapeHtml = (value) =>
+      String(value || '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#39;');
 
-      summaryInput.addEventListener('change', () => {
-        if (!summaryInput.checked) {
-          detailsInput.checked = false;
-        }
-      });
+    const restrictionToFlags = (restrictionValue) => {
+      if (restrictionValue === 'details') {
+        return { canBlockSummary: true, canBlockDetails: true };
+      }
+      return { canBlockSummary: true, canBlockDetails: false };
     };
 
     const updateEmptyState = () => {
-      if (!body) return;
       const rows = body.querySelectorAll('[data-account-access-row]');
       const empty = body.querySelector('[data-account-access-empty]');
       if (rows.length > 0) {
@@ -750,8 +798,39 @@
       if (empty) return;
       const tr = document.createElement('tr');
       tr.setAttribute('data-account-access-empty', '1');
-      tr.innerHTML = `<td colspan="6" class="px-3 py-6 text-center text-xs font-semibold text-slate-500"><%= t('no_records_found') %></td>`;
+      tr.innerHTML = `<td colspan="4" class="px-3 py-6 text-center text-xs font-semibold text-slate-500"><%= t('no_records_found') %></td>`;
       body.appendChild(tr);
+    };
+
+    const updateSearchEmptyState = () => {
+      const rows = Array.from(body.querySelectorAll('[data-account-access-row]'));
+      const filterEmpty = body.querySelector('[data-account-access-filter-empty]');
+      if (!rows.length) {
+        filterEmpty?.remove();
+        return;
+      }
+      const visibleRows = rows.filter((row) => !row.classList.contains('hidden-by-account-search'));
+      if (visibleRows.length > 0) {
+        filterEmpty?.remove();
+        return;
+      }
+      if (filterEmpty) return;
+      const tr = document.createElement('tr');
+      tr.setAttribute('data-account-access-filter-empty', '1');
+      tr.innerHTML = `<td colspan="4" class="px-3 py-6 text-center text-xs font-semibold text-slate-500"><%= t('no_records_found') %></td>`;
+      body.appendChild(tr);
+    };
+
+    const applyRowSearch = () => {
+      const query = String(rowSearchInput?.value || '').trim().toLowerCase();
+      const rows = Array.from(body.querySelectorAll('[data-account-access-row]'));
+      rows.forEach((row) => {
+        const haystack = String(row.getAttribute('data-row-search') || '').toLowerCase();
+        const shouldShow = !query || haystack.includes(query);
+        row.classList.toggle('hidden-by-account-search', !shouldShow);
+        row.classList.toggle('hidden', !shouldShow);
+      });
+      updateSearchEmptyState();
     };
 
     const collectRows = () => {
@@ -760,61 +839,59 @@
         .map((row) => {
           const accountId = Number(row.getAttribute('data-account-id') || 0);
           if (!Number.isInteger(accountId) || accountId <= 0) return null;
-          const summaryInput = row.querySelector('[data-account-summary]');
-          const detailsInput = row.querySelector('[data-account-details]');
-          const canBlockDetails = Boolean(detailsInput instanceof HTMLInputElement && detailsInput.checked);
-          const canBlockSummary = canBlockDetails || Boolean(summaryInput instanceof HTMLInputElement && summaryInput.checked);
+          const restriction = row.querySelector('[data-account-restriction]');
+          const restrictionValue = String(restriction?.value || 'details').toLowerCase() === 'summary'
+            ? 'summary'
+            : 'details';
+          const flags = restrictionToFlags(restrictionValue);
           return {
             accountId,
-            canBlockSummary,
-            canBlockDetails: canBlockSummary ? canBlockDetails : false,
+            canBlockSummary: flags.canBlockSummary,
+            canBlockDetails: flags.canBlockDetails,
           };
         })
         .filter(Boolean);
     };
 
     const createRow = ({ accountId, code, name, branches }) => {
+      const safeCode = escapeHtml(code || '-');
+      const safeName = escapeHtml(name || '-');
+      const safeBranches = escapeHtml(branches || '');
+      const searchText = `${String(code || '')} ${String(name || '')} ${String(branches || '')}`.toLowerCase();
+      const safeSearchText = escapeHtml(searchText);
+      const disabledAttr = isReadOnly ? 'disabled' : '';
+
       const tr = document.createElement('tr');
       tr.className = 'border-t border-slate-100';
       tr.setAttribute('data-account-access-row', '1');
       tr.setAttribute('data-account-id', String(accountId));
+      tr.setAttribute('data-row-search', safeSearchText);
       tr.innerHTML = `
-        <td class="px-3 py-2 font-semibold text-slate-700" data-account-code>${code || '-'}</td>
-        <td class="px-3 py-2 text-slate-700" data-account-name>${name || '-'}</td>
-        <td class="px-3 py-2 text-slate-500" data-account-branches>${branches || '-'}</td>
-        <td class="px-3 py-2 text-center">
-          <input type="checkbox" data-account-summary class="h-4 w-4 rounded border-slate-300 text-accent" checked>
+        <td class="px-3 py-2 font-semibold text-slate-700" data-account-code>${safeCode}</td>
+        <td class="px-3 py-2 text-slate-700" data-account-name>
+          <div class="font-medium">${safeName}</div>
+          ${safeBranches ? `<div class="mt-0.5 text-[11px] text-slate-400">${safeBranches}</div>` : ''}
+        </td>
+        <td class="px-3 py-2 text-slate-700">
+          <select data-account-restriction class="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs font-semibold" ${disabledAttr}>
+            <option value="summary"><%= t('account_access_restriction_summary') %></option>
+            <option value="details" selected><%= t('account_access_restriction_details') %></option>
+          </select>
         </td>
         <td class="px-3 py-2 text-center">
-          <input type="checkbox" data-account-details class="h-4 w-4 rounded border-slate-300 text-accent" checked>
-        </td>
-        <td class="px-3 py-2 text-center">
-          <button type="button" class="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-rose-700 hover:bg-rose-100" data-account-remove><%= t('delete') %></button>
+          <button type="button" class="rounded-md border border-rose-200 bg-rose-50 px-2 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-50" data-account-remove ${disabledAttr}><%= t('delete') %></button>
         </td>
       `;
       body.appendChild(tr);
-      ensureToggleRules(tr);
       updateEmptyState();
+      applyRowSearch();
     };
 
-    Array.from(body.querySelectorAll('[data-account-access-row]')).forEach((row) => {
-      ensureToggleRules(row);
-    });
-    updateEmptyState();
-
-    body.addEventListener('click', (event) => {
-      const button = event.target.closest('[data-account-remove]');
-      if (!button) return;
-      const row = button.closest('[data-account-access-row]');
-      if (!row) return;
-      row.remove();
-      updateEmptyState();
-    });
-
-    addButton?.addEventListener('click', () => {
+    const addSelectedAccount = () => {
       if (!(addSelect instanceof HTMLSelectElement)) return;
       const accountId = Number(addSelect.value || 0);
       if (!Number.isInteger(accountId) || accountId <= 0) return;
+
       const exists = body.querySelector(`[data-account-access-row][data-account-id="${accountId}"]`);
       if (exists) return;
 
@@ -826,12 +903,37 @@
 
       addSelect.value = '';
       addSelect.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+
+    body.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-account-remove]');
+      if (!button) return;
+      const row = button.closest('[data-account-access-row]');
+      if (!row) return;
+      row.remove();
+      updateEmptyState();
+      applyRowSearch();
     });
 
-    form.addEventListener('submit', () => {
+    addButton?.addEventListener('click', addSelectedAccount);
+
+    addSelect?.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      addSelectedAccount();
+    });
+
+    rowSearchInput?.addEventListener('input', applyRowSearch);
+
+    saveButton?.addEventListener('click', () => {
       if (!(jsonInput instanceof HTMLInputElement)) return;
       jsonInput.value = JSON.stringify(collectRows());
+      if (typeof submitForm.requestSubmit === 'function') submitForm.requestSubmit();
+      else submitForm.submit();
     });
+
+    updateEmptyState();
+    applyRowSearch();
   })();
 </script>
 

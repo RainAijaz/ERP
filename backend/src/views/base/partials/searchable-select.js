@@ -3,6 +3,7 @@
   const i18nRequiredFields = '<%= t("error_required_fields") %>';
   const i18nSelect = '<%= t("select") %>';
   const i18nSelected = '<%= t("selected")  %>';
+  const i18nSearchResultsLimited = '<%= t("search_results_limited") %>';
 
   if (typeof window !== "undefined") {
     const existing = window.VoucherValidation || {};
@@ -618,6 +619,14 @@
     const hasAllMultiSelect =
       isMulti &&
       String(select.dataset.allMultiSelect || "").toLowerCase() === "true";
+    const configuredMaxOptions = Number.parseInt(
+      select.dataset.searchableMaxOptions || "",
+      10,
+    );
+    const maxRenderedOptions =
+      Number.isInteger(configuredMaxOptions) && configuredMaxOptions > 0
+        ? configuredMaxOptions
+        : 250;
     const getAllOption = () => {
       if (!hasAllMultiSelect) return null;
       return (
@@ -669,7 +678,11 @@
         input.value = labels.length ? labels.join(", ") : "";
       } else {
         const selected = select.options[select.selectedIndex];
-        input.value = selected ? selected.textContent.trim() : "";
+        const selectedLabel = selected ? selected.textContent.trim() : "";
+        const selectedValue = String(selected?.value || "").trim();
+        committedSelectionLabel = selectedLabel;
+        committedSelectionValue = selectedValue;
+        input.value = selectedLabel;
       }
     };
 
@@ -756,14 +769,18 @@
         menu.appendChild(searchWrap);
       }
       const filteredOptions = getFilteredOptions({ showAll });
+      const shouldLimitOptions = filteredOptions.length > maxRenderedOptions;
+      const visibleOptions = shouldLimitOptions
+        ? filteredOptions.slice(0, maxRenderedOptions)
+        : filteredOptions;
 
       if (!preserveActive) {
-        activeIndex = getDefaultActiveIndex(filteredOptions);
-      } else if (activeIndex >= filteredOptions.length) {
-        activeIndex = filteredOptions.length - 1;
+        activeIndex = getDefaultActiveIndex(visibleOptions);
+      } else if (activeIndex >= visibleOptions.length) {
+        activeIndex = visibleOptions.length - 1;
       }
 
-      filteredOptions.forEach((opt, index) => {
+      visibleOptions.forEach((opt, index) => {
         const label = opt.textContent.trim();
         const isActive = !isMulti && index === activeIndex;
         const stateClass = isActive
@@ -815,6 +832,16 @@
         menu.appendChild(btn);
       });
 
+      if (shouldLimitOptions) {
+        const limitedHint = document.createElement("div");
+        limitedHint.className =
+          "border-t border-slate-100 px-4 py-2 text-[11px] text-slate-500";
+        limitedHint.textContent = i18nSearchResultsLimited
+          .replace("{shown}", String(visibleOptions.length))
+          .replace("{total}", String(filteredOptions.length));
+        menu.appendChild(limitedHint);
+      }
+
       if (filteredOptions.length === 0) {
         const empty = document.createElement("div");
         empty.className =
@@ -823,13 +850,17 @@
         menu.appendChild(empty);
       }
 
-      lastRenderedOptionLabels = filteredOptions.map((opt) =>
+      lastRenderedOptionLabels = visibleOptions.map((opt) =>
         opt.textContent.trim(),
       );
       positionMenu();
     };
 
     let pointerFocusIntent = false;
+    let openedWithSelectionLabel = "";
+    let openedWithSelectionValue = "";
+    let committedSelectionLabel = "";
+    let committedSelectionValue = "";
 
     input.addEventListener("pointerdown", () => {
       pointerFocusIntent = true;
@@ -855,11 +886,17 @@
       keyboardNavigatedMenu = false;
       if (input.dataset.searchableSuppressOpenOnce === "1") {
         input.dataset.searchableSuppressOpenOnce = "0";
-        return;
+      }
+      if (!isMulti) {
+        const selectedOption = select.options[select.selectedIndex] || null;
+        openedWithSelectionLabel = String(selectedOption?.textContent || "")
+          .trim();
+        openedWithSelectionValue = String(select.value || "").trim();
+        input.value = "";
       }
       const isMenuOpen = !menu.classList.contains("hidden");
       if (isMenuOpen) {
-        closeMenu();
+        renderMenu({ showAll: true, preserveActive: true });
         return;
       }
       if (useInlineMultiSearch) {
@@ -1050,12 +1087,28 @@
               select.dispatchEvent(new Event("change", { bubbles: true }));
             }
           } else if (val === "") {
-            select.value = "";
-            select.dispatchEvent(new Event("change", { bubbles: true }));
+            // Preserve prior selected value when user only opens/clicks and does not pick a new option.
+            const selectedValue = String(select.value || "").trim();
+            const restoreValue =
+              committedSelectionValue || openedWithSelectionValue;
+            const restoreLabel =
+              committedSelectionLabel || openedWithSelectionLabel;
+            if (!selectedValue && restoreValue) {
+              select.value = restoreValue;
+              select.dispatchEvent(new Event("change", { bubbles: true }));
+              syncToInput();
+            } else if (selectedValue || restoreLabel) {
+              syncToInput();
+            } else {
+              select.value = "";
+              select.dispatchEvent(new Event("change", { bubbles: true }));
+            }
           } else {
             syncToInput();
           }
         }
+        openedWithSelectionLabel = "";
+        openedWithSelectionValue = "";
       }, 150);
     });
 

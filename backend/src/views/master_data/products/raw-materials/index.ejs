@@ -47,11 +47,8 @@
             { key: "name", label: "name" },
             { key: "sub_group", label: "sub_group" },
             { key: "unit", label: "base_unit" },
-            { key: "colors", label: "colors" },
-            { key: "sizes", label: "sizes_label" },
-            { key: "purchase_rates", label: "purchase_rate" },
-            { key: "avg_purchase_rates", label: "avg_purchase_rate" },
-            { key: "min_stock_level", label: "min_stock", sortType: "number", cellClass: "text-right" }
+            { key: "min_stock_level", label: "min_stock", sortType: "number", cellClass: "text-right" },
+            { key: "variants", label: "variants", cellClass: "text-center" }
           ]; %>
           <%- include("../../../base/partials/table-header", { t, displayColumns, columnTooltips: {}, sortStartIndex: 1 }) %>
         </thead>
@@ -62,32 +59,8 @@
             <% rows.forEach(function(row, idx) { %>
               <% const displayName = locale === "ur" ? (row.name_ur || row.name) : row.name; %>
               <% const displaySubgroup = locale === "ur" ? (row.subgroup_name_ur || row.subgroup_name) : row.subgroup_name; %>
-              
-              <% /* --- NEW LOGIC: Use rateDetails for perfect alignment --- */ %>
               <% const details = rateDetailsByItem && rateDetailsByItem[row.id] ? rateDetailsByItem[row.id] : []; %>
-              
-              <% const colorBadges = details.map(d => {
-                   const val = locale === "ur" ? (d.color_name_ur || d.color_name) : d.color_name;
-                   return val || t("none"); 
-                 }); %>
-                 
-              <% const sizeBadges = details.map(d => {
-                   const val = locale === "ur" ? (d.size_name_ur || d.size_name) : d.size_name;
-                   return val || t("none");
-                 }); %>
-
-              <% const rateBadges = details.map(d => d.purchase_rate ? Math.trunc(Number(d.purchase_rate)) : "0"); %>
-              <% const avgBadges = details.map(d => d.avg_purchase_rate ? Math.trunc(Number(d.avg_purchase_rate)) : "0"); %>
-
-              <% /* Helper to render badges with VISIBLE COMMAS for copy/export */ %>
-              <% const renderBadgeList = (items, bgClass, textClass) => { 
-                   if(!items.length) return "";
-                   return items.map(val => 
-                     `<span class="inline-flex items-center rounded-md ${bgClass} px-1.5 py-0.5 text-xs font-medium ${textClass} ring-1 ring-inset ring-${textClass}/10 whitespace-nowrap">${val}</span>`
-                   ).join("<span class='text-slate-300 mx-0.5 select-none'>,</span>");
-                 }; 
-              %>
-
+              <% const variantCount = details.length; %>
               <% const displayMinStock = row.min_stock_level === null || row.min_stock_level === undefined || row.min_stock_level === "" ? "" : Math.trunc(Number(row.min_stock_level)); %>
 
               <tr class="hover:bg-amber-50/40" data-row data-rm-parent data-id="<%= row.id %>" data-subgroup-id="<%= row.subgroup_id || "" %>" data-active="<%= row.is_active ? "true" : "false" %>" data-created-by="<%= row.created_by_name || "" %>" data-created-at="<%= row.created_at ? String(row.created_at).slice(0, 10) : "" %>">
@@ -95,37 +68,66 @@
                 <td class="px-3 py-3 text-slate-700 whitespace-normal max-w-[180px]"><%= displayName %></td>
                 <td class="px-3 py-3 text-slate-700 whitespace-normal max-w-[120px]"><%= displaySubgroup || "" %></td>
                 <td class="px-3 py-3 text-slate-700 truncate w-px whitespace-nowrap"><%= row.uom_code || "" %></td>
-                
-                <td class="px-3 py-3 text-slate-700 whitespace-normal">
-                  <div class="flex flex-wrap gap-1 leading-snug">
-                    <%- renderBadgeList(colorBadges, "bg-purple-50", "text-purple-700") %>
-                  </div>
-                </td>
-
-                <td class="px-3 py-3 text-slate-700 whitespace-normal">
-                  <div class="flex flex-wrap gap-1 leading-snug">
-                    <%- renderBadgeList(sizeBadges, "bg-blue-50", "text-blue-700") %>
-                  </div>
-                </td>
-
-                <td class="px-3 py-3 text-slate-700 whitespace-normal">
-                   <div class="flex flex-wrap gap-1 leading-snug">
-                    <%- renderBadgeList(rateBadges, "bg-emerald-50", "text-emerald-700") %>
-                  </div>
-                </td>
-                
-                <td class="px-3 py-3 text-slate-700 whitespace-normal">
-                   <div class="flex flex-wrap gap-1 leading-snug">
-                    <%- renderBadgeList(avgBadges, "bg-slate-50", "text-slate-600") %>
-                  </div>
-                </td>
-
                 <td class="px-3 py-3 text-slate-700 text-right"><%= displayMinStock %></td>
+                <td class="px-3 py-3 text-center">
+                  <% if (variantCount > 0) { %>
+                    <button
+                      type="button"
+                      data-rm-detail-toggle
+                      data-target-id="<%= row.id %>"
+                      aria-expanded="false"
+                      class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
+                    >
+                      <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-700"><%= variantCount %></span>
+                      <span><%= t("view") %></span>
+                      <svg data-rm-detail-icon class="h-3 w-3 transition-transform" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+                        <path d="M5 7.5l5 5 5-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                      </svg>
+                    </button>
+                  <% } else { %>
+                    <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-semibold text-slate-500">0</span>
+                  <% } %>
+                </td>
                 
                 <td class="px-3 py-3 whitespace-nowrap col-actions w-px">
                   <%- include("../../../base/partials/table-actions", { t, row, basePath, withMenu: true, editFields: [
                     "name", "name_ur", "group_id", "subgroup_id", "base_uom_id", "min_stock_level", "color_rate_pairs"
                   ], canEdit, canDelete, canHardDelete }) %>
+                </td>
+              </tr>
+              <tr class="hidden bg-slate-50/70" data-rm-detail-row data-parent-id="<%= row.id %>">
+                <td colspan="<%= displayColumns.length + 2 %>" class="px-3 pb-4 pt-0">
+                  <div class="rounded-xl border border-slate-200 bg-white shadow-sm">
+                    <div class="border-b border-slate-100 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                      <%= t("variants") %>
+                    </div>
+                    <% if (details.length) { %>
+                      <div class="overflow-x-auto">
+                        <table class="w-full text-xs">
+                          <thead class="bg-slate-50 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+                            <tr>
+                              <th class="px-4 py-2 text-left"><%= t("color") %></th>
+                              <th class="px-4 py-2 text-left"><%= t("size") %></th>
+                              <th class="px-4 py-2 text-right"><%= t("purchase_rate") %></th>
+                              <th class="px-4 py-2 text-right"><%= t("avg_purchase_rate") %></th>
+                            </tr>
+                          </thead>
+                          <tbody class="divide-y divide-slate-100 text-slate-700">
+                            <% details.forEach(function(detail) { %>
+                              <tr>
+                                <td class="px-4 py-2"><%= locale === "ur" ? (detail.color_name_ur || detail.color_name || t("none")) : (detail.color_name || t("none")) %></td>
+                                <td class="px-4 py-2"><%= locale === "ur" ? (detail.size_name_ur || detail.size_name || t("none")) : (detail.size_name || t("none")) %></td>
+                                <td class="px-4 py-2 text-right font-semibold"><%= detail.purchase_rate === null || detail.purchase_rate === undefined ? "-" : Math.trunc(Number(detail.purchase_rate)) %></td>
+                                <td class="px-4 py-2 text-right"><%= detail.avg_purchase_rate === null || detail.avg_purchase_rate === undefined ? "-" : Math.trunc(Number(detail.avg_purchase_rate)) %></td>
+                              </tr>
+                            <% }) %>
+                          </tbody>
+                        </table>
+                      </div>
+                    <% } else { %>
+                      <div class="px-4 py-4 text-xs text-slate-500"><%= t("no_records_found") %></div>
+                    <% } %>
+                  </div>
                 </td>
               </tr>
               
@@ -168,6 +170,64 @@
   (function () {
     const modal = document.querySelector("[data-modal]");
     const modalForm = document.querySelector("[data-modal-form]");
+    const tableBody = document.querySelector("[data-table-body]");
+
+    const syncDetailRows = () => {
+      if (!tableBody) return;
+      const detailRows = tableBody.querySelectorAll("[data-rm-detail-row]");
+      detailRows.forEach((detailRow) => {
+        const parentId = detailRow.getAttribute("data-parent-id");
+        const parentRow = tableBody.querySelector(`[data-rm-parent][data-id="${parentId}"]`);
+        if (!(parentRow instanceof HTMLElement) || parentRow.classList.contains("hidden")) {
+          detailRow.classList.add("hidden");
+          const toggleButton = tableBody.querySelector(`[data-rm-detail-toggle][data-target-id="${parentId}"]`);
+          if (toggleButton instanceof HTMLElement) {
+            toggleButton.setAttribute("aria-expanded", "false");
+            const icon = toggleButton.querySelector("[data-rm-detail-icon]");
+            icon?.classList.remove("rotate-180");
+          }
+        }
+      });
+    };
+
+    if (tableBody) {
+      tableBody.addEventListener("click", (event) => {
+        const toggleButton = event.target.closest("[data-rm-detail-toggle]");
+        if (!(toggleButton instanceof HTMLElement)) return;
+
+        const targetId = toggleButton.getAttribute("data-target-id");
+        if (!targetId) return;
+
+        const targetRow = tableBody.querySelector(`[data-rm-detail-row][data-parent-id="${targetId}"]`);
+        if (!(targetRow instanceof HTMLElement)) return;
+
+        const isExpanded = toggleButton.getAttribute("aria-expanded") === "true";
+
+        tableBody.querySelectorAll("[data-rm-detail-row]").forEach((row) => row.classList.add("hidden"));
+        tableBody.querySelectorAll("[data-rm-detail-toggle]").forEach((button) => {
+          button.setAttribute("aria-expanded", "false");
+          const icon = button.querySelector("[data-rm-detail-icon]");
+          icon?.classList.remove("rotate-180");
+        });
+
+        if (!isExpanded) {
+          targetRow.classList.remove("hidden");
+          toggleButton.setAttribute("aria-expanded", "true");
+          const icon = toggleButton.querySelector("[data-rm-detail-icon]");
+          icon?.classList.add("rotate-180");
+        }
+      });
+
+      const observer = new MutationObserver(() => syncDetailRows());
+      tableBody.querySelectorAll("[data-rm-parent]").forEach((row) => {
+        observer.observe(row, {
+          attributes: true,
+          attributeFilter: ["class"],
+        });
+      });
+      syncDetailRows();
+    }
+
     if (!modal || !modalForm) return;
 
     const modalError = modalForm.querySelector("[data-modal-error]");

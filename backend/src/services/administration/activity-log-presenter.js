@@ -1,3 +1,8 @@
+const {
+  resolveScopeMetaByKey,
+  resolveScopeMetaByPath,
+} = require("../../utils/activity-scope-resolver");
+
 const VOUCHER_ENTITY_LABELS = {
   CASH_VOUCHER: "cash_voucher",
   BANK_VOUCHER: "bank_voucher",
@@ -64,13 +69,14 @@ const parseContext = (value) => {
 const toText = (value, fallback = "-") => {
   if (value === null || typeof value === "undefined" || value === "")
     return fallback;
-  if (Array.isArray(value))
+  if (Array.isArray(value)) {
     return (
       value
         .map((entry) => toText(entry, ""))
         .filter(Boolean)
         .join(", ") || fallback
     );
+  }
   if (typeof value === "object") return fallback;
   return String(value);
 };
@@ -103,6 +109,57 @@ const formatTimestamp = (value) => {
 
 const toPlainObject = (value) =>
   value && typeof value === "object" && !Array.isArray(value) ? value : {};
+
+const compactRows = (rows = []) =>
+  rows.filter((row) => row && row.value !== "-" && row.value !== "");
+
+const firstDefined = (...values) => {
+  for (const value of values) {
+    if (value !== null && typeof value !== "undefined" && value !== "") {
+      return value;
+    }
+  }
+  return null;
+};
+
+const toDisplayLabelFromKey = (value) => {
+  const text = String(value || "").trim();
+  if (!text) return "-";
+  return text
+    .split(/[._\-\s]+/)
+    .filter(Boolean)
+    .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+    .join(" ");
+};
+
+const scopeKeyFromContext = (context) =>
+  firstDefined(
+    context?.scope_key,
+    context?.scopeKey,
+    context?.new_value?._scope_key,
+    context?.new_value?.scope_key,
+    context?.request_body?._scope_key,
+    context?.request_body?.scope_key,
+  );
+
+const scopeTypeFromContext = (context) =>
+  firstDefined(
+    context?.scope_type,
+    context?.scopeType,
+    context?.new_value?._scope_type,
+    context?.new_value?.scope_type,
+    context?.request_body?._scope_type,
+    context?.request_body?.scope_type,
+  );
+
+const translateNavLabel = ({ labelKey, t }) => {
+  if (!labelKey) return null;
+  const translated = typeof t === "function" ? t(labelKey) : null;
+  if (!translated || translated === labelKey) {
+    return toDisplayLabelFromKey(labelKey);
+  }
+  return translated;
+};
 
 const parseVoucherNoFromSummary = (value) => {
   const match = String(value || "").match(/#\s*(\d+)/);
@@ -146,10 +203,34 @@ const normalizeActionLabel = ({ row, context, t }) => {
   return action || "-";
 };
 
-const normalizeEntityLabel = ({ row, t }) => {
+const resolveEntityScopeMeta = ({ row, context }) => {
+  const byScope = resolveScopeMetaByKey({
+    scopeType: scopeTypeFromContext(context),
+    scopeKey: scopeKeyFromContext(context),
+  });
+  if (byScope) return byScope;
+
+  const byVoucherScope = resolveScopeMetaByKey({
+    scopeType: "VOUCHER",
+    scopeKey: row?.voucher_type_code,
+  });
+  if (byVoucherScope) return byVoucherScope;
+
+  return resolveScopeMetaByPath(context?.path);
+};
+
+const normalizeEntityLabel = ({ row, context, t }) => {
   if (!row) return "-";
-  if (String(row.entity_type || "").toUpperCase() !== "VOUCHER")
+
+  const scopeMeta = resolveEntityScopeMeta({ row, context });
+  if (scopeMeta?.labelKey) {
+    return translateNavLabel({ labelKey: scopeMeta.labelKey, t });
+  }
+
+  if (String(row.entity_type || "").toUpperCase() !== "VOUCHER") {
     return row.entity_type || "-";
+  }
+
   const code = String(row.voucher_type_code || "").toUpperCase();
   const key = VOUCHER_ENTITY_LABELS[code];
   if (!key) return row.voucher_type_code || row.entity_type || "-";
@@ -158,23 +239,14 @@ const normalizeEntityLabel = ({ row, t }) => {
 
 const normalizeEntityIdLabel = ({ row, context, voucherNo }) => {
   if (!row) return "-";
-  if (String(row.entity_type || "").toUpperCase() === "VOUCHER" && voucherNo)
+  if (String(row.entity_type || "").toUpperCase() === "VOUCHER" && voucherNo) {
     return String(voucherNo);
-  if (row.entity_id !== "NEW") return row.entity_id || "-";
-  if (row.action === "APPROVE" && context?.applied_entity_id)
-    return String(context.applied_entity_id);
-  return "Pending Create";
-};
-
-const compactRows = (rows = []) =>
-  rows.filter((row) => row && row.value !== "-" && row.value !== "");
-
-const firstDefined = (...values) => {
-  for (const value of values) {
-    if (value !== null && typeof value !== "undefined" && value !== "")
-      return value;
   }
-  return null;
+  if (row.entity_id !== "NEW") return row.entity_id || "-";
+  if (row.action === "APPROVE" && context?.applied_entity_id) {
+    return String(context.applied_entity_id);
+  }
+  return "Pending Create";
 };
 
 const parseLinesValue = (value) => {
@@ -212,6 +284,7 @@ const buildChangedFieldRows = ({ context }) => {
     .filter(
       (key) => !["lines", "lines_json", "permission_reroute"].includes(key),
     );
+
   return keys
     .filter(
       (key) => JSON.stringify(oldValue[key]) !== JSON.stringify(newValue[key]),
@@ -256,7 +329,7 @@ const buildDetailsModel = ({
   ]);
 
   const voucherRows = compactRows([
-    { label: t("entity"), value: normalizeEntityLabel({ row, t }) },
+    { label: t("entity"), value: normalizeEntityLabel({ row, context, t }) },
     { label: t("voucher_no"), value: toText(voucherNo) },
     {
       label: t("date"),
@@ -368,6 +441,7 @@ const presentActivityRows = ({ rows = [], t }) =>
     const voucherTypeCode = String(row.voucher_type_code || "").toUpperCase();
     const voucherHref = buildVoucherHref({ voucherTypeCode, voucherNo });
     const displayAction = normalizeActionLabel({ row, context, t });
+
     return {
       ...row,
       context_json: context,
@@ -377,7 +451,7 @@ const presentActivityRows = ({ rows = [], t }) =>
       action_class:
         ACTION_STYLE[String(row.action || "").toUpperCase()] ||
         "bg-slate-50 text-slate-600 ring-slate-200",
-      entity_label: normalizeEntityLabel({ row, t }),
+      entity_label: normalizeEntityLabel({ row, context, t }),
       entity_id_label: normalizeEntityIdLabel({ row, context, voucherNo }),
       voucher_no: voucherNo,
       entity_href: voucherHref,

@@ -695,6 +695,9 @@
         removeBtn.classList.toggle('opacity-40', rowLocked);
         removeBtn.classList.toggle('cursor-not-allowed', rowLocked);
       }
+      if (typeof window.initSearchableSelects === 'function') {
+        window.initSearchableSelects(tr);
+      }
     };
 
     const getEntityRefFromSeed = (seed = null) => {
@@ -732,6 +735,11 @@
     const refreshDepartmentOptions = (tr, keepCurrent = true, autoPickFirst = false) => {
       const deptSelect = tr.querySelector('[data-field="department_id"]');
       if (!deptSelect) return;
+      const syncSearchableState = () => {
+        if (typeof window.initSearchableSelects === 'function') {
+          window.initSearchableSelects(tr);
+        }
+      };
       const current = deptSelect.value;
       const ref = tr.querySelector('[data-field="entity_ref"]')?.value || '';
       const naOnly = isNaDepartmentEntityRef(ref);
@@ -744,11 +752,13 @@
         if (typeof deptSelect._voucherEnhancerRefresh === 'function') deptSelect._voucherEnhancerRefresh();
         deptSelect.disabled = true;
         deptSelect.classList.add('bg-slate-100', 'text-slate-500', 'cursor-not-allowed');
+        syncSearchableState();
         return;
       }
       if (keepCurrent && current && Array.from(deptSelect.options).some((opt) => opt.value === current)) {
         deptSelect.value = current;
         if (typeof deptSelect._voucherEnhancerRefresh === 'function') deptSelect._voucherEnhancerRefresh();
+        syncSearchableState();
         return;
       }
       if (autoPickFirst && doesEntityRequireDepartment(ref)) {
@@ -758,6 +768,7 @@
           if (typeof deptSelect._voucherEnhancerRefresh === 'function') deptSelect._voucherEnhancerRefresh();
         }
       }
+      syncSearchableState();
     };
 
     const recalcTotals = () => {

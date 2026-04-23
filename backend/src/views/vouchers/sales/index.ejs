@@ -491,6 +491,13 @@
     const x = n(v);
     return x > 0 ? displayNumber(x, 1, "") : "";
   };
+  const formatReceivedAmountForUi = (v) => {
+    const x = n(v);
+    if (!isSalesOrderVoucher && getPaymentType() === "CASH") {
+      return displayNumber(x, 1, "0.0");
+    }
+    return x > 0 ? displayNumber(x, 1, "") : "";
+  };
   const qtyDisplay = (v) => {
     const x = n(v);
     return x > 0 ? displayNumber(x, 1, "") : "";
@@ -1021,10 +1028,10 @@
     if (totalReturnsInput) totalReturnsInput.value = f1OrBlank(ret);
     finalInput.value = f1SignedOrBlank(final);
     if (!isSalesOrderVoucher && getPaymentType() === "CASH" && !canOverrideRateDiscount) {
-      receivedInput.value = f1OrBlank(Math.abs(final));
+      receivedInput.value = displayNumber(Math.abs(final), 1, "0.0");
     }
     if (receivedInput && document.activeElement !== receivedInput) {
-      receivedInput.value = f1OrBlank(receivedInput.value || 0);
+      receivedInput.value = formatReceivedAmountForUi(receivedInput.value || 0);
     }
     const linkedOrderId = Number(linkedOrderSelect?.value || 0) || 0;
     const fromSO = isFromSO();
@@ -1275,7 +1282,9 @@
       receivedInput.disabled = false;
       receivedInput.required = paymentType === "CASH";
       receivedInput.setAttribute("aria-required", paymentType === "CASH" ? "true" : "false");
-      if (!String(receivedInput.value || "").trim()) receivedInput.value = "";
+      if (!String(receivedInput.value || "").trim()) {
+        receivedInput.value = paymentType === "CASH" ? "0.0" : "";
+      }
     }
     if (isSalesOrderVoucher && receiveAccountSelect) {
       syncReceiveIntoAccountState({ salesOrderAdvanceEnabled });
@@ -1383,7 +1392,13 @@
     rows[i][f] = (f.includes("id") ? (Number(target.value || 0) || null) : target.value);
     if (f === "sku_id") {
       const sku = skuMap.get(Number(rows[i].sku_id || 0));
-      if (sku && n(rows[i].pair_rate) <= 0) rows[i].pair_rate = Number(n(sku.sale_rate).toFixed(1));
+      if (sku) {
+        // Always refresh the rate when article changes so stale rate from previous article is not reused.
+        rows[i].pair_rate = Number(n(sku.sale_rate).toFixed(1));
+      } else {
+        rows[i].pair_rate = 0;
+      }
+      rows[i].pair_discount = 0;
       rows[i].uom_id = getDefaultUomIdForSku(rows[i].sku_id, true);
     }
     if (f === "sales_order_line_id") {
@@ -1705,7 +1720,7 @@
     syncHeaderUi();
   });
   receivedInput?.addEventListener("blur", () => {
-    receivedInput.value = f1OrBlank(receivedInput.value || 0);
+    receivedInput.value = formatReceivedAmountForUi(receivedInput.value || 0);
     render();
     syncHeaderUi();
   });

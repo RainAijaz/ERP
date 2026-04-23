@@ -107,6 +107,7 @@
                 <thead class="bg-white text-xs font-semibold uppercase tracking-wider text-slate-400 border-b border-slate-100">
                   <tr>
                     <th class="px-6 py-2 w-16">#</th>
+                    <th class="px-6 py-2"><%= t("sku_code") %></th>
                     <th class="px-6 py-2"><%= t("size") %></th>
                     <% if (isFinishedView) { %>
                       <th class="px-6 py-2"><%= t("grade") %></th>
@@ -117,7 +118,6 @@
                       <th class="px-6 py-2 text-right"><%= t("pair_rate") %></th>
                       <th class="px-6 py-2 text-right text-indigo-600"><%= t("dozen_rate") %></th>
                     <% } %>
-                    <th class="px-6 py-2"><%= t("sku_code") %></th>
                     <th class="px-6 py-2 text-right"><%= t("actions") %></th>
                   </tr>
                 </thead>
@@ -126,6 +126,7 @@
                     <% const searchParts = isFinishedView ? [row.id, row.size_name, row.grade_name, row.color_name, row.packing_name, row.sku_code, row.sale_rate] : [row.id, row.size_name, row.color_name, row.sku_code]; %>
                     <tr class="hover:bg-slate-50/50 transition" data-row data-active="<%= row.is_active ? 'true' : 'false' %>" data-search="<%= searchParts.join(' ').toLowerCase() %>" data-item-type="<%= isFinishedView ? 'FG' : 'SFG' %>" data-subgroup-id="<%= row.subgroup_id || '' %>" data-created-by="<%= row.created_by_name || '' %>" data-created-at="<%= row.created_at ? String(row.created_at).slice(0, 10) : '' %>">
                       <td class="px-6 py-3 text-slate-400 text-xs"><%= row.id %></td>
+                      <td class="px-6 py-3 font-mono text-xs text-slate-500"><%= row.sku_code || "-" %></td>
                       <td class="px-6 py-3 font-medium text-slate-700"><%= locale === "ur" ? (row.size_name_ur || row.size_name) : row.size_name %></td>
                       <% if (isFinishedView) { %>
                         <td class="px-6 py-3 text-slate-600"><%= locale === "ur" ? (row.grade_name_ur || row.grade_name) : row.grade_name %></td>
@@ -144,8 +145,6 @@
                           <%= (row.sale_rate * 12).toFixed(0) %>
                         </td>
                       <% } %>
-
-                      <td class="px-6 py-3 font-mono text-xs text-slate-500"><%= row.sku_code || "-" %></td>
                       
                       <td class="px-6 py-3 text-right whitespace-nowrap text-sm font-medium">
                         <div class="flex items-center justify-end gap-2">

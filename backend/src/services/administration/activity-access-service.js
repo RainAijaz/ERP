@@ -3,6 +3,10 @@ const {
   BASIC_INFO_ENTITY_TYPES,
   SCREEN_ENTITY_TYPES,
 } = require("../../utils/approval-entity-map");
+const {
+  SCOPE_ITEMS,
+  normalizePath,
+} = require("../../utils/activity-scope-resolver");
 
 const DASHBOARD_AUDIT_SCOPE = {
   scopeType: "SCREEN",
@@ -88,6 +92,24 @@ Object.entries(ADMIN_ENTITY_SCOPE_MAP).forEach(([entityType, scopes]) => {
   });
 });
 
+const getScopeAction = (scopeType) => {
+  if (scopeType === "VOUCHER") return "navigate";
+  return "view";
+};
+
+const normalizeScopeKey = (scopeKey) =>
+  String(scopeKey || "")
+    .trim()
+    .toUpperCase();
+
+const buildLegacyFallbackEntityTypes = (allowedScopeKeySet) =>
+  Array.from(ENTITY_SCOPE_MAP.entries())
+    .filter(([, scopes]) => Array.isArray(scopes) && scopes.length === 1)
+    .filter(([, scopes]) =>
+      allowedScopeKeySet.has(normalizeScopeKey(scopes[0]?.scopeKey)),
+    )
+    .map(([entityType]) => entityType);
+
 const buildActivityAccessScope = ({ can, user }) => {
   const isAdmin = Boolean(user?.isAdmin);
   if (isAdmin) {
@@ -114,13 +136,41 @@ const buildActivityAccessScope = ({ can, user }) => {
       enforceOwnOnly: true,
       allowedEntityTypes: [],
       allowedVoucherTypeCodes: [],
+      allowedScopeKeys: [],
+      allowedRoutePrefixes: [],
+      fallbackEntityTypes: [],
     };
   }
+
+  const allowedScopes = SCOPE_ITEMS.filter((entry) =>
+    getCan(
+      can,
+      entry.scopeType,
+      entry.scopeKey,
+      getScopeAction(entry.scopeType),
+    ),
+  );
+
+  const allowedScopeKeys = Array.from(
+    new Set(
+      allowedScopes
+        .map((entry) => normalizeScopeKey(entry.scopeKey))
+        .filter(Boolean),
+    ),
+  );
+
+  const allowedScopeKeySet = new Set(allowedScopeKeys);
+
+  const allowedRoutePrefixes = Array.from(
+    new Set(
+      allowedScopes.map((entry) => normalizePath(entry.route)).filter(Boolean),
+    ),
+  );
 
   const allowedEntityTypes = Array.from(ENTITY_SCOPE_MAP.entries())
     .filter(([, scopes]) =>
       scopes.some((scope) =>
-        getCan(can, scope.scopeType, scope.scopeKey, "navigate"),
+        getCan(can, scope.scopeType, scope.scopeKey, "view"),
       ),
     )
     .map(([entityType]) => entityType);
@@ -135,6 +185,9 @@ const buildActivityAccessScope = ({ can, user }) => {
     enforceOwnOnly: false,
     allowedEntityTypes,
     allowedVoucherTypeCodes,
+    allowedScopeKeys,
+    allowedRoutePrefixes,
+    fallbackEntityTypes: buildLegacyFallbackEntityTypes(allowedScopeKeySet),
   };
 };
 
@@ -148,11 +201,16 @@ const applyActivityAccessScope = ({
   if (!access || access.isAdmin) return qb;
 
   const normalizedUserId = Number(userId || 0);
+  const safeTableAlias = /^[a-z_][a-z0-9_]*$/i.test(String(tableAlias || ""))
+    ? String(tableAlias)
+    : "al";
   const entityColumn = tableAlias ? `${tableAlias}.entity_type` : "entity_type";
   const userColumn = tableAlias ? `${tableAlias}.user_id` : "user_id";
   const voucherTypeColumn = tableAlias
     ? `${tableAlias}.voucher_type_code`
     : "voucher_type_code";
+  const scopeKeyExpr = `UPPER(COALESCE(${safeTableAlias}.context_json->>'scope_key', ${safeTableAlias}.context_json->'new_value'->>'_scope_key', ${safeTableAlias}.context_json->'request_body'->>'_scope_key', ''))`;
+  const pathExpr = `LOWER(COALESCE(${safeTableAlias}.context_json->>'path', ''))`;
 
   if (access.enforceOwnOnly) {
     if (normalizedUserId > 0) {
@@ -163,9 +221,29 @@ const applyActivityAccessScope = ({
     return qb;
   }
 
-  const nonVoucherEntityTypes = Array.from(
+  const allowedScopeKeys = Array.from(
     new Set(
-      (access.allowedEntityTypes || [])
+      (access.allowedScopeKeys || [])
+        .map((entry) =>
+          String(entry || "")
+            .trim()
+            .toUpperCase(),
+        )
+        .filter(Boolean),
+    ),
+  );
+
+  const allowedRoutePrefixes = Array.from(
+    new Set(
+      (access.allowedRoutePrefixes || [])
+        .map((entry) => normalizePath(entry))
+        .filter(Boolean),
+    ),
+  );
+
+  const fallbackEntityTypes = Array.from(
+    new Set(
+      (access.fallbackEntityTypes || [])
         .map((entry) =>
           String(entry || "")
             .trim()
@@ -187,7 +265,12 @@ const applyActivityAccessScope = ({
     ),
   );
 
-  if (!nonVoucherEntityTypes.length && !allowedVoucherTypeCodes.length) {
+  if (
+    !allowedScopeKeys.length &&
+    !allowedRoutePrefixes.length &&
+    !fallbackEntityTypes.length &&
+    !allowedVoucherTypeCodes.length
+  ) {
     qb.whereRaw("1=0");
     return qb;
   }
@@ -195,9 +278,41 @@ const applyActivityAccessScope = ({
   qb.where((visibility) => {
     let hasClause = false;
 
-    if (nonVoucherEntityTypes.length) {
-      visibility.whereIn(entityColumn, nonVoucherEntityTypes);
+    if (allowedScopeKeys.length) {
+      visibility.whereIn(qb.client.raw(scopeKeyExpr), allowedScopeKeys);
       hasClause = true;
+    }
+
+    if (allowedRoutePrefixes.length) {
+      const routeClause = (routeScope) => {
+        routeScope.where((routeChecks) => {
+          allowedRoutePrefixes.forEach((prefix, index) => {
+            const operator = index === 0 ? "whereRaw" : "orWhereRaw";
+            routeChecks[operator](`${pathExpr} = ?`, [prefix]);
+            routeChecks.orWhereRaw(`${pathExpr} LIKE ?`, [`${prefix}/%`]);
+            routeChecks.orWhereRaw(`${pathExpr} LIKE ?`, [`${prefix}?%`]);
+          });
+        });
+      };
+      if (hasClause) {
+        visibility.orWhere(routeClause);
+      } else {
+        visibility.where(routeClause);
+        hasClause = true;
+      }
+    }
+
+    if (fallbackEntityTypes.length) {
+      const fallbackClause = (fallbackScope) =>
+        fallbackScope
+          .whereIn(entityColumn, fallbackEntityTypes)
+          .andWhereRaw(`${scopeKeyExpr} = '' AND ${pathExpr} = ''`);
+      if (hasClause) {
+        visibility.orWhere(fallbackClause);
+      } else {
+        visibility.where(fallbackClause);
+        hasClause = true;
+      }
     }
 
     if (allowedVoucherTypeCodes.length) {
@@ -209,7 +324,12 @@ const applyActivityAccessScope = ({
         visibility.orWhere(voucherClause);
       } else {
         visibility.where(voucherClause);
+        hasClause = true;
       }
+    }
+
+    if (!hasClause) {
+      visibility.whereRaw("1=0");
     }
   });
 

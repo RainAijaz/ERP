@@ -26,6 +26,16 @@
   </section>
 
   <%- include("../base/partials/error-banner", { error, modalOpen }) %>
+  <% if (listScopeMessage) { %>
+    <div class="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 text-xs font-medium text-sky-800">
+      <%= listScopeMessage %>
+    </div>
+  <% } %>
+  <% if (rowsLimited) { %>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-800">
+      <%= t("list_truncated_notice").replace("{limit}", String(rowLimit || 0)) %>
+    </div>
+  <% } %>
   <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md overflow-hidden" data-print-area>
     <% const canEdit = can("SCREEN", page.scopeKey, "edit"); %>
     <% const canDelete = can("SCREEN", page.scopeKey, "delete"); %>

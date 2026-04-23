@@ -174,7 +174,7 @@ const getFirstParty = async () => {
 const getUserByUsername = async (username) => {
   if (!username) return null;
   const row = await knex("erp.users")
-    .select("id", "username")
+    .select("id", "username", "primary_role_id")
     .whereRaw("lower(username) = lower(?)", [username])
     .first();
   return row || null;
@@ -665,6 +665,125 @@ const deleteApprovalPolicy = async ({ entityType, entityKey, action }) => {
       action,
     })
     .del();
+};
+
+const hasInventoryNegativeStockOverrideTable = async () =>
+  knex.schema
+    .withSchema("erp")
+    .hasTable("inventory_negative_stock_override");
+
+const normalizeVoucherTypeCode = (value) =>
+  String(value || "")
+    .trim()
+    .toUpperCase();
+
+const normalizeSubjectType = (value) =>
+  String(value || "")
+    .trim()
+    .toUpperCase();
+
+const listInventoryNegativeStockOverrides = async ({ voucherTypeCode } = {}) => {
+  const hasTable = await hasInventoryNegativeStockOverrideTable();
+  if (!hasTable) return [];
+  let query = knex("erp.inventory_negative_stock_override")
+    .select(
+      "id",
+      "voucher_type_code",
+      "subject_type",
+      "subject_id",
+      "is_enabled",
+    )
+    .orderBy("id", "asc");
+  const normalizedVoucherTypeCode = normalizeVoucherTypeCode(voucherTypeCode);
+  if (normalizedVoucherTypeCode) {
+    query = query.where({ voucher_type_code: normalizedVoucherTypeCode });
+  }
+  return query;
+};
+
+const clearInventoryNegativeStockOverrides = async ({ voucherTypeCode } = {}) => {
+  const hasTable = await hasInventoryNegativeStockOverrideTable();
+  if (!hasTable) return;
+  const normalizedVoucherTypeCode = normalizeVoucherTypeCode(voucherTypeCode);
+  if (!normalizedVoucherTypeCode) {
+    await knex("erp.inventory_negative_stock_override").del();
+    return;
+  }
+  await knex("erp.inventory_negative_stock_override")
+    .where({ voucher_type_code: normalizedVoucherTypeCode })
+    .del();
+};
+
+const upsertInventoryNegativeStockOverride = async ({
+  voucherTypeCode,
+  subjectType,
+  subjectId,
+  isEnabled = true,
+  updatedBy = null,
+}) => {
+  const hasTable = await hasInventoryNegativeStockOverrideTable();
+  if (!hasTable) return;
+  const normalizedVoucherTypeCode = normalizeVoucherTypeCode(voucherTypeCode);
+  const normalizedSubjectType = normalizeSubjectType(subjectType);
+  const normalizedSubjectId = Number(subjectId || 0);
+  if (!normalizedVoucherTypeCode) return;
+  if (!["ROLE", "USER"].includes(normalizedSubjectType)) return;
+  if (!Number.isInteger(normalizedSubjectId) || normalizedSubjectId <= 0) return;
+
+  await knex("erp.inventory_negative_stock_override")
+    .insert({
+      voucher_type_code: normalizedVoucherTypeCode,
+      subject_type: normalizedSubjectType,
+      subject_id: normalizedSubjectId,
+      is_enabled: Boolean(isEnabled),
+      created_by: Number(updatedBy || 0) || null,
+      updated_by: Number(updatedBy || 0) || null,
+    })
+    .onConflict(["voucher_type_code", "subject_type", "subject_id"])
+    .merge({
+      is_enabled: Boolean(isEnabled),
+      updated_by: Number(updatedBy || 0) || null,
+      updated_at: knex.fn.now(),
+    });
+};
+
+const replaceInventoryNegativeStockOverrides = async ({
+  voucherTypeCode,
+  rows = [],
+  updatedBy = null,
+}) => {
+  const hasTable = await hasInventoryNegativeStockOverrideTable();
+  if (!hasTable) return;
+
+  const normalizedVoucherTypeCode = normalizeVoucherTypeCode(voucherTypeCode);
+  if (!normalizedVoucherTypeCode) return;
+
+  await knex.transaction(async (trx) => {
+    await trx("erp.inventory_negative_stock_override")
+      .where({ voucher_type_code: normalizedVoucherTypeCode })
+      .del();
+
+    const insertRows = (Array.isArray(rows) ? rows : [])
+      .map((row) => {
+        const subjectType = normalizeSubjectType(row?.subject_type);
+        const subjectId = Number(row?.subject_id || 0);
+        if (!["ROLE", "USER"].includes(subjectType)) return null;
+        if (!Number.isInteger(subjectId) || subjectId <= 0) return null;
+        return {
+          voucher_type_code: normalizedVoucherTypeCode,
+          subject_type: subjectType,
+          subject_id: subjectId,
+          is_enabled: row?.is_enabled !== false,
+          created_by: Number(updatedBy || 0) || null,
+          updated_by: Number(updatedBy || 0) || null,
+        };
+      })
+      .filter(Boolean);
+
+    if (insertRows.length) {
+      await trx("erp.inventory_negative_stock_override").insert(insertRows);
+    }
+  });
 };
 
 const createBomUiFixture = async (token) => {
@@ -1394,6 +1513,10 @@ module.exports = {
   getApprovalPolicy,
   upsertApprovalPolicy,
   deleteApprovalPolicy,
+  listInventoryNegativeStockOverrides,
+  clearInventoryNegativeStockOverrides,
+  upsertInventoryNegativeStockOverride,
+  replaceInventoryNegativeStockOverrides,
   replaceUserAccountAccess,
   clearUserAccountAccess,
   createBomUiFixture,

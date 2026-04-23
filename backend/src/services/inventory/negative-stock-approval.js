@@ -13,11 +13,13 @@ const buildNegativeStockApprovalReason = ({ voucherTypeCode }) => {
 const resolveNegativeStockApprovalRouting = ({
   hasNegativeStockRisk,
   canApproveVoucherAction,
+  canBypassNegativeStockApproval,
   voucherTypeCode,
 }) => {
   const negativeStockRisk = hasNegativeStockRisk === true;
   const canApprove = canApproveVoucherAction === true;
-  const queueForApproval = negativeStockRisk && !canApprove;
+  const hasBypass = canBypassNegativeStockApproval === true;
+  const queueForApproval = negativeStockRisk && !canApprove && !hasBypass;
 
   return {
     negativeStockRisk,

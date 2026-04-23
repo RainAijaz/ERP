@@ -40,6 +40,16 @@ const translations = {
     post: "Post",
     approval_settings: "Approval Settings",
     approval_rules: "Approval Rules",
+    inventory_negative_stock_overrides:
+      "Inventory Settings: Negative Stock Controlled Overrides",
+    inventory_negative_stock_overrides_help:
+      "Assign voucher-specific negative-stock bypass access to selected roles or users. This does not bypass create/edit/delete approval policies.",
+    search_role_overrides: "Search roles...",
+    search_user_overrides: "Search users...",
+    no_roles_available: "No active roles found.",
+    no_users_available: "No active users found.",
+    inventory_negative_stock_no_vouchers:
+      "No inventory voucher types are available for negative-stock override settings.",
     requires_approval: "Requires Approval",
     approval_submitted:
       "Approval request submitted. Changes will apply after approval.",
@@ -224,6 +234,8 @@ const translations = {
     status: "Status",
     type: "Type",
     search: "Search",
+    search_results_limited:
+      "Showing first {shown} of {total} results. Type more to narrow down.",
     all: "All",
     dozens: "Dozens",
     unit_pair: "Pair",
@@ -256,6 +268,8 @@ const translations = {
     to: "to",
     of: "of",
     entries: "entries",
+    list_truncated_notice:
+      "Showing latest {limit} rows for speed. Apply filters to narrow results.",
     download: "Download",
     print: "Print",
     enter: "Enter",
@@ -1572,6 +1586,9 @@ const translations = {
       "Control which accounts this user can't view in account activity.",
     account_access_financial_reports_context:
       "Financial -> Reports: Account Activity restrictions",
+    restriction_level: "Restriction Level",
+    account_access_restriction_summary: "Block Details Only",
+    account_access_restriction_details: "Block Summary + Details",
     block_summary: "Block Summary",
     block_view_details: "Block View Details",
     account_details_access_limited:
@@ -1862,6 +1879,16 @@ translations.ur = {
   approve: "منظور کریں",
   approval_settings: "منظوری کی ترتیبات",
   approval_rules: "منظوری کے قواعد",
+  inventory_negative_stock_overrides:
+    "انوینٹری سیٹنگز: نیگیٹو اسٹاک کنٹرولڈ اووررائیڈز",
+  inventory_negative_stock_overrides_help:
+    "منتخب رولز یا صارفین کو مخصوص واؤچر کے لیے نیگیٹو اسٹاک بائی پاس کی اجازت دیں۔ یہ create/edit/delete منظوری پالیسیز کو بائی پاس نہیں کرتا۔",
+  search_role_overrides: "رولز تلاش کریں...",
+  search_user_overrides: "صارفین تلاش کریں...",
+  no_roles_available: "کوئی فعال رول دستیاب نہیں۔",
+  no_users_available: "کوئی فعال صارف دستیاب نہیں۔",
+  inventory_negative_stock_no_vouchers:
+    "نیگیٹو اسٹاک اووررائیڈ سیٹنگز کے لیے کوئی انوینٹری واؤچر دستیاب نہیں۔",
   requires_approval: "منظوری درکار",
   approval_submitted:
     "منظوری کی درخواست جمع ہو گئی ہے۔ منظوری کے بعد تبدیلی لاگو ہوگی۔",
@@ -2773,6 +2800,9 @@ translations.ur = {
     "طے کریں کہ یہ صارف اکاؤنٹ ایکٹیویٹی میں کون سے اکاؤنٹس نہیں دیکھ سکتا۔",
   account_access_financial_reports_context:
     "فنانشل -> رپورٹس: اکاؤنٹ ایکٹیویٹی پابندیاں",
+  restriction_level: "پابندی کی سطح",
+  account_access_restriction_summary: "صرف تفصیلی ویو بلاک کریں",
+  account_access_restriction_details: "خلاصہ اور تفصیلی ویو بلاک کریں",
   block_summary: "خلاصہ بلاک کریں",
   block_view_details: "تفصیلی ویو بلاک کریں",
   account_details_access_limited:
@@ -3101,6 +3131,8 @@ translations.ur = {
   scope: "دائرہ کار",
   scope_missing: "رجسٹری میں اسکوپ غائب ہے۔",
   search: "تلاش کریں۔",
+  search_results_limited:
+    "صرف پہلے {shown} میں سے {total} نتائج دکھائے جا رہے ہیں۔ مزید محدود کرنے کے لیے مزید لکھیں۔",
   select_account_name: "اکاؤنٹ کا نام منتخب کریں۔",
   select_all: "سبھی کو منتخب کریں۔",
   select_article: "آرٹیکل منتخب کریں۔",
@@ -3141,6 +3173,8 @@ translations.ur = {
   show: "دکھائیں۔",
   show_raw_data: "خام ڈیٹا دکھائیں۔",
   showing: "دکھا رہا ہے۔",
+  list_truncated_notice:
+    "رفتار کے لیے تازہ ترین {limit} قطاریں دکھائی جا رہی ہیں۔ نتائج محدود کرنے کے لیے فلٹرز استعمال کریں۔",
   shown_rows_totals: "دکھائی گئی قطاروں کے لیے ٹوٹل",
   sign_in: "سائن ان کریں۔",
   single_grn_voucher_only: "ایک واحد واؤچر سے GRN لائنیں منتخب کریں۔",

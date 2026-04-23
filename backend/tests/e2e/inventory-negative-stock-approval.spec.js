@@ -8,6 +8,10 @@ const {
   getApprovalPolicy,
   upsertApprovalPolicy,
   deleteApprovalPolicy,
+  listInventoryNegativeStockOverrides,
+  clearInventoryNegativeStockOverrides,
+  upsertInventoryNegativeStockOverride,
+  replaceInventoryNegativeStockOverrides,
   findLatestApprovalRequest,
   getLatestVoucherHeader,
   closeDb,
@@ -89,6 +93,11 @@ const fillStockTransferOutForNegative = async (page) => {
     "Destination branch is required for stock transfer out test.",
   );
   await setSelectValue(destinationSelect, destinationValues[0]);
+
+  const billBookInput = page.locator("[data-bill-book-no]").first();
+  if (await billBookInput.count()) {
+    await billBookInput.fill(`E2E-BB-${Date.now()}`);
+  }
 
   const stockType = page.locator("[data-stock-type]");
   if (await stockType.count()) {
@@ -203,6 +212,9 @@ const fillStockCountForNegative = async (page) => {
 
   const nextQtyOut = (Number.isFinite(systemQty) ? Math.max(systemQty, 0) : 0) + 1;
   await qtyOutInput.fill(String(nextQtyOut));
+  // Stock-count page derives submission payload from internal rowsState on change/Enter.
+  await qtyOutInput.dispatchEvent("change");
+  await qtyOutInput.blur();
 };
 
 const expectApprovalFeedback = async (page) => {
@@ -231,9 +243,14 @@ test.describe("Inventory voucher negative-stock routing", () => {
     branchId: null,
     adminUserId: null,
     operatorUserId: null,
+    operatorRoleId: null,
     policySnapshots: {
       STN_OUT: null,
       STOCK_COUNT_ADJ: null,
+    },
+    overrideSnapshots: {
+      STN_OUT: [],
+      STOCK_COUNT_ADJ: [],
     },
   };
 
@@ -259,6 +276,9 @@ test.describe("Inventory voucher negative-stock routing", () => {
       state.skipReason = "Unable to provision operator user for inventory negative-stock tests.";
       return;
     }
+
+    const operatorUser = await getUserByUsername(OPERATOR_USER);
+    state.operatorRoleId = Number(operatorUser?.primary_role_id || 0) || null;
 
     await setUserScopePermission({
       userId: state.operatorUserId,
@@ -301,6 +321,19 @@ test.describe("Inventory voucher negative-stock routing", () => {
       action: "create",
     });
 
+    state.overrideSnapshots.STN_OUT = await listInventoryNegativeStockOverrides({
+      voucherTypeCode: "STN_OUT",
+    });
+    state.overrideSnapshots.STOCK_COUNT_ADJ =
+      await listInventoryNegativeStockOverrides({
+        voucherTypeCode: "STOCK_COUNT_ADJ",
+      });
+
+    await clearInventoryNegativeStockOverrides({ voucherTypeCode: "STN_OUT" });
+    await clearInventoryNegativeStockOverrides({
+      voucherTypeCode: "STOCK_COUNT_ADJ",
+    });
+
     // Keep create-policy disabled so this suite validates negative-stock reroute specifically.
     await upsertApprovalPolicy({
       entityType: "VOUCHER_TYPE",
@@ -338,6 +371,16 @@ test.describe("Inventory voucher negative-stock routing", () => {
 
     await restorePolicy("STN_OUT", state.policySnapshots.STN_OUT);
     await restorePolicy("STOCK_COUNT_ADJ", state.policySnapshots.STOCK_COUNT_ADJ);
+    await replaceInventoryNegativeStockOverrides({
+      voucherTypeCode: "STN_OUT",
+      rows: state.overrideSnapshots.STN_OUT,
+      updatedBy: state.adminUserId || state.operatorUserId,
+    });
+    await replaceInventoryNegativeStockOverrides({
+      voucherTypeCode: "STOCK_COUNT_ADJ",
+      rows: state.overrideSnapshots.STOCK_COUNT_ADJ,
+      updatedBy: state.adminUserId || state.operatorUserId,
+    });
     await closeDb();
   });
 
@@ -385,6 +428,8 @@ test.describe("Inventory voucher negative-stock routing", () => {
   });
 
   test("non-admin stock transfer out queues approval and shows shortage reason", async ({ page }) => {
+    await clearInventoryNegativeStockOverrides({ voucherTypeCode: "STN_OUT" });
+
     const beforeApproval = await findLatestApprovalRequest({
       requestedBy: state.operatorUserId,
       status: "PENDING",
@@ -446,6 +491,57 @@ test.describe("Inventory voucher negative-stock routing", () => {
       .toBe("PENDING");
   });
 
+  test("role override allows non-admin stock transfer out despite negative stock", async ({
+    page,
+  }) => {
+    test.skip(!state.operatorRoleId, "Operator role is required for role override test.");
+
+    await clearInventoryNegativeStockOverrides({ voucherTypeCode: "STN_OUT" });
+    await upsertInventoryNegativeStockOverride({
+      voucherTypeCode: "STN_OUT",
+      subjectType: "ROLE",
+      subjectId: state.operatorRoleId,
+      updatedBy: state.adminUserId || state.operatorUserId,
+    });
+
+    const beforeVoucher = await getLatestVoucherHeader({
+      voucherTypeCode: "STN_OUT",
+      createdBy: state.operatorUserId,
+      branchId: state.branchId,
+    });
+
+    await login(page, "E2E_INVENTORY_NEG_OPERATOR");
+    await fillStockTransferOutForNegative(page);
+    await submitVoucherForm(page);
+
+    await expect(page).toHaveURL(/\/vouchers\/stock-transfer-out\?new=1/i);
+    await expect(page.locator("[data-ui-error-modal]")).toBeHidden();
+
+    await expect
+      .poll(async () => {
+        const row = await getLatestVoucherHeader({
+          voucherTypeCode: "STN_OUT",
+          createdBy: state.operatorUserId,
+          branchId: state.branchId,
+        });
+        return Number(row?.id || 0);
+      })
+      .toBeGreaterThan(Number(beforeVoucher?.id || 0));
+
+    await expect
+      .poll(async () => {
+        const row = await getLatestVoucherHeader({
+          voucherTypeCode: "STN_OUT",
+          createdBy: state.operatorUserId,
+          branchId: state.branchId,
+        });
+        return String(row?.status || "").toUpperCase();
+      })
+      .toBe("APPROVED");
+
+    await clearInventoryNegativeStockOverrides({ voucherTypeCode: "STN_OUT" });
+  });
+
   test("admin can save stock count adjustment even when count would go negative", async ({ page }) => {
     test.skip(!state.adminUserId, "Missing E2E admin credentials.");
 
@@ -486,6 +582,10 @@ test.describe("Inventory voucher negative-stock routing", () => {
   });
 
   test("non-admin stock count adjustment queues approval and shows shortage reason", async ({ page }) => {
+    await clearInventoryNegativeStockOverrides({
+      voucherTypeCode: "STOCK_COUNT_ADJ",
+    });
+
     const beforeApproval = await findLatestApprovalRequest({
       requestedBy: state.operatorUserId,
       status: "PENDING",
@@ -545,5 +645,58 @@ test.describe("Inventory voucher negative-stock routing", () => {
         return String(row?.status || "").toUpperCase();
       })
       .toBe("PENDING");
+  });
+
+  test("user override allows non-admin stock count adjustment despite negative stock", async ({
+    page,
+  }) => {
+    await clearInventoryNegativeStockOverrides({
+      voucherTypeCode: "STOCK_COUNT_ADJ",
+    });
+    await upsertInventoryNegativeStockOverride({
+      voucherTypeCode: "STOCK_COUNT_ADJ",
+      subjectType: "USER",
+      subjectId: state.operatorUserId,
+      updatedBy: state.adminUserId || state.operatorUserId,
+    });
+
+    const beforeVoucher = await getLatestVoucherHeader({
+      voucherTypeCode: "STOCK_COUNT_ADJ",
+      createdBy: state.operatorUserId,
+      branchId: state.branchId,
+    });
+
+    await login(page, "E2E_INVENTORY_NEG_OPERATOR");
+    await fillStockCountForNegative(page);
+    await submitVoucherForm(page);
+
+    await expect(page).toHaveURL(/\/vouchers\/stock-count\?new=1/i);
+    await expect(page.locator("[data-ui-error-modal]")).toBeHidden();
+
+    await expect
+      .poll(async () => {
+        const row = await getLatestVoucherHeader({
+          voucherTypeCode: "STOCK_COUNT_ADJ",
+          createdBy: state.operatorUserId,
+          branchId: state.branchId,
+        });
+        return Number(row?.id || 0);
+      })
+      .toBeGreaterThan(Number(beforeVoucher?.id || 0));
+
+    await expect
+      .poll(async () => {
+        const row = await getLatestVoucherHeader({
+          voucherTypeCode: "STOCK_COUNT_ADJ",
+          createdBy: state.operatorUserId,
+          branchId: state.branchId,
+        });
+        return String(row?.status || "").toUpperCase();
+      })
+      .toBe("APPROVED");
+
+    await clearInventoryNegativeStockOverrides({
+      voucherTypeCode: "STOCK_COUNT_ADJ",
+    });
   });
 });
