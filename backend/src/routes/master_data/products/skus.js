@@ -74,7 +74,7 @@ const buildSfgComboKey = (itemId, sizeId, colorId) =>
   [itemId || 0, sizeId || 0, colorId || 0].join("|");
 
 const loadOptions = async (itemType = "FG") => {
-  const [items, sizes, grades, colors, packings, subgroups] = await Promise.all(
+  const [items, sizes, grades, colors, packings, groups, subgroups] = await Promise.all(
     [
       knex("erp.items")
         .select("id", "code", "name", "name_ur")
@@ -102,6 +102,13 @@ const loadOptions = async (itemType = "FG") => {
             .where("is_active", true)
             .orderBy("name")
         : Promise.resolve([]),
+      knex("erp.product_groups as g")
+        .distinct("g.id", "g.name", "g.name_ur")
+        .join("erp.items as i", "g.id", "i.group_id")
+        .join("erp.variants as v", "i.id", "v.item_id")
+        .where("g.is_active", true)
+        .andWhere("i.item_type", itemType)
+        .orderBy("g.name"),
       // UPDATED: Only fetch subgroups that have active SKUs/Variants
       knex("erp.product_subgroups as sg")
         .distinct("sg.id", "sg.name", "sg.name_ur")
@@ -112,7 +119,7 @@ const loadOptions = async (itemType = "FG") => {
         .orderBy("sg.name"),
     ],
   );
-  return { items, sizes, grades, colors, packings, subgroups };
+  return { items, sizes, grades, colors, packings, groups, subgroups };
 };
 
 const loadUsers = async () =>
@@ -210,6 +217,7 @@ const loadRows = async (filters = {}, itemType = "FG") => {
       "i.code as item_code",
       "i.name as item_name",
       "i.name_ur as item_name_ur",
+      "i.group_id",
       "i.subgroup_id",
       "s.name as size_name",
       "s.name_ur as size_name_ur",
@@ -258,6 +266,7 @@ const loadRows = async (filters = {}, itemType = "FG") => {
     });
   }
   if (filters.item_id) query.where("v.item_id", filters.item_id);
+  if (filters.group_id) query.where("i.group_id", filters.group_id);
   if (filters.subgroup_id) query.where("i.subgroup_id", filters.subgroup_id);
   if (filters.created_by) query.where("u.username", filters.created_by);
   if (filters.created_at_start)

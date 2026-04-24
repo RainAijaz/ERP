@@ -1,0 +1,88 @@
+<%
+  const currentFilters = typeof filters !== "undefined" && filters ? filters : {};
+  const selectedGroupId = currentFilters.group_id || "";
+  const selectedSubgroupId = currentFilters.subgroup_id || "";
+  const selectedCreatedBy = currentFilters.created_by || "";
+  const selectedCreatedAtStart = currentFilters.created_at_start || "";
+  const selectedCreatedAtEnd = currentFilters.created_at_end || "";
+%>
+
+<div class="space-y-2">
+  <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= t("product_groups") %></span>
+  <div class="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+    <select
+      name="group_id"
+      class="flex-1 min-w-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
+      data-filter-group
+      data-searchable-select="true"
+      data-searchable-variant="unified"
+    >
+      <option value=""><%= t("all") %></option>
+      <% (groups || []).forEach((group) => { %>
+        <option value="<%= group.id %>" <%= String(group.id) === String(selectedGroupId) ? "selected" : "" %>>
+          <%= locale === "ur" ? (group.name_ur || group.name) : group.name %>
+        </option>
+      <% }) %>
+    </select>
+  </div>
+</div>
+
+<div class="space-y-2">
+  <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= t("sub_group") %></span>
+  <div class="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+    <select
+      name="subgroup_id"
+      class="flex-1 min-w-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
+      data-filter-subgroup
+      data-searchable-select="true"
+      data-searchable-variant="unified"
+    >
+      <option value=""><%= t("all") %></option>
+      <% (subgroups || []).forEach((subgroup) => { %>
+        <option value="<%= subgroup.id %>" <%= String(subgroup.id) === String(selectedSubgroupId) ? "selected" : "" %>>
+          <%= locale === "ur" ? (subgroup.name_ur || subgroup.name) : subgroup.name %>
+        </option>
+      <% }) %>
+    </select>
+  </div>
+</div>
+
+<div class="space-y-2">
+  <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= t("created_by") %></span>
+  <div class="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5">
+    <select
+      name="created_by"
+      class="flex-1 min-w-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
+      data-filter-created-by
+      data-searchable-select="true"
+      data-searchable-variant="unified"
+    >
+      <option value=""><%= t("all") %></option>
+      <% (users || []).forEach((user) => { %>
+        <option value="<%= user.username %>" <%= String(user.username) === String(selectedCreatedBy) ? "selected" : "" %>>
+          <%= user.username %>
+        </option>
+      <% }) %>
+    </select>
+  </div>
+</div>
+
+<div class="space-y-2">
+  <span class="text-[10px] uppercase tracking-[0.2em] text-slate-400"><%= t("created_at") %></span>
+  <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+    <input
+      class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
+      type="date"
+      name="created_at_start"
+      data-filter-created-at-start
+      value="<%= selectedCreatedAtStart %>"
+    />
+    <input
+      class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700"
+      type="date"
+      name="created_at_end"
+      data-filter-created-at-end
+      value="<%= selectedCreatedAtEnd %>"
+    />
+  </div>
+</div>

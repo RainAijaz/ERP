@@ -221,7 +221,7 @@
 }) %>
 
 <%- include("../../../base/partials/confirm-modal", { t, csrfToken }) %>
-<%- include("../../../base/partials/filter-modal", { t, bodyPartial: "../../master_data/products/filters.ejs", users, subgroups, filters: typeof filters !== 'undefined' ? filters : {}, serverFilters: true }) %>
+<%- include("../../../base/partials/filter-modal", { t, bodyPartial: "../../master_data/products/skus/filter-fields.ejs", users, groups, subgroups, filters: typeof filters !== 'undefined' ? filters : {}, serverFilters: true }) %>
 <%- include("../../../base/partials/basic-info-utils", { t, page: { titleKey: "skus" }, basePath, modalOpen, modalMode }) %>
 
 <script>
