@@ -1804,6 +1804,36 @@
               "article_type",
               "article_type_mode",
             );
+            const fallbackSingleSelect = (
+              listKey,
+              selector,
+              valueParam,
+              modeParam = null,
+            ) => {
+              const list = filterPanel?.querySelector(
+                `[data-filter-list="${listKey}"]`,
+              );
+              if (list) return;
+              const input = filterPanel?.querySelector(selector);
+              const value = input ? String(input.value || "").trim() : "";
+              params.delete(valueParam);
+              if (modeParam) params.delete(modeParam);
+              if (!value) return;
+              params.set(valueParam, value);
+              if (modeParam) params.set(modeParam, "include");
+            };
+            fallbackSingleSelect(
+              "subgroup",
+              "[data-filter-subgroup], [name=\"subgroup_id\"]",
+              "subgroup_id",
+              "subgroup_mode",
+            );
+            fallbackSingleSelect(
+              "group",
+              "[data-filter-group], [name=\"group_id\"]",
+              "group_id",
+              "group_mode",
+            );
 
             const createdByValue = (
               filterCreatedBy && filterCreatedBy.value
@@ -1921,17 +1951,35 @@
       const firstSelect = list.querySelector(`[data-filter-${type}]`);
       const firstMode = list.querySelector(`[data-filter-${type}-mode]`);
       if (!firstSelect || !firstMode) return;
+      const resetClonedSelect = (el) => {
+        if (!(el instanceof HTMLSelectElement)) return;
+        el.classList.remove("sr-only");
+        delete el.dataset.searchableReady;
+        el.style.position = "";
+        el.style.width = "";
+        el.style.height = "";
+        el.style.padding = "";
+        el.style.margin = "";
+        el.style.overflow = "";
+        el.style.clip = "";
+        el.style.whiteSpace = "";
+        el.style.border = "";
+      };
       const wrapper = document.createElement("div");
       wrapper.className =
         "flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-1.5";
       const mode = firstMode.cloneNode(true);
       mode.value = "include";
+      mode.setAttribute("data-searchable-skip", "true");
+      resetClonedSelect(mode);
       const select = firstSelect.cloneNode(true);
       select.value = "";
+      select.setAttribute("data-searchable-skip", "true");
+      resetClonedSelect(select);
       const remove = document.createElement("button");
       remove.type = "button";
       remove.className =
-        "rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500";
+        "w-6 rounded-full border border-slate-200 px-2 py-0.5 text-[10px] font-semibold text-slate-500";
       remove.textContent = "x";
       remove.addEventListener("click", () => {
         wrapper.remove();

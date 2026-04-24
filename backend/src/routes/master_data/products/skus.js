@@ -54,6 +54,21 @@ const parseNumber = (value) => {
   const numberValue = Number(value);
   return Number.isNaN(numberValue) ? null : numberValue;
 };
+const toPositiveIntList = (value) => {
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => Number(entry))
+      .filter((entry) => Number.isInteger(entry) && entry > 0);
+  }
+  if (value && typeof value === "object") {
+    return Object.values(value)
+      .map((entry) => Number(entry))
+      .filter((entry) => Number.isInteger(entry) && entry > 0);
+  }
+  const parsed = Number(value);
+  if (Number.isInteger(parsed) && parsed > 0) return [parsed];
+  return [];
+};
 
 const setApprovalNotice = (res, message, options = {}) => {
   if (!message) return;
@@ -266,8 +281,22 @@ const loadRows = async (filters = {}, itemType = "FG") => {
     });
   }
   if (filters.item_id) query.where("v.item_id", filters.item_id);
-  if (filters.group_id) query.where("i.group_id", filters.group_id);
-  if (filters.subgroup_id) query.where("i.subgroup_id", filters.subgroup_id);
+  const groupIds = toPositiveIntList(filters.group_id);
+  const subgroupIds = toPositiveIntList(filters.subgroup_id);
+  if (groupIds.length) {
+    if (String(filters.group_mode || "").toLowerCase() === "exclude") {
+      query.whereNotIn("i.group_id", groupIds);
+    } else {
+      query.whereIn("i.group_id", groupIds);
+    }
+  }
+  if (subgroupIds.length) {
+    if (String(filters.subgroup_mode || "").toLowerCase() === "exclude") {
+      query.whereNotIn("i.subgroup_id", subgroupIds);
+    } else {
+      query.whereIn("i.subgroup_id", subgroupIds);
+    }
+  }
   if (filters.created_by) query.where("u.username", filters.created_by);
   if (filters.created_at_start)
     query.where("v.created_at", ">=", filters.created_at_start);
