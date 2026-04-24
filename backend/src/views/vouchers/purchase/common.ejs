@@ -1242,11 +1242,14 @@
         if (grnAllocJsonInput) grnAllocJsonInput.value = "";
       }
       if (supplierSelect) {
-        supplierSelect.required = assetMode ? true : (!isCash || hasGrnRef);
+        supplierSelect.required = !isCash || hasGrnRef;
       }
       if (referenceNoInput) {
         // If GRN is selected, bill number can be derived server-side from GRN.
         referenceNoInput.required = !hasGrnRef;
+      }
+      if (typeof window.initSearchableSelects === "function") {
+        window.initSearchableSelects(form);
       }
       updateRowInsertionUi();
     };
@@ -1881,8 +1884,7 @@
       if (isGeneralPurchase) {
         const paymentType = String(paymentTypeSelect?.value || "CREDIT").toUpperCase();
         const hasGrnRef = Number(grnReferenceInput?.value || 0) > 0;
-        const supplierRequired =
-          assetMode || paymentType !== "CASH" || hasGrnRef;
+        const supplierRequired = paymentType !== "CASH" || hasGrnRef;
         if (supplierRequired && !supplierId) {
           event.preventDefault();
           window.showVoucherError(requiredMessage("<%= t('supplier') %>"));

@@ -9,6 +9,9 @@ const {
   prepareSalesVoucherData,
   SALES_VOUCHER_CODE,
 } = require("../../services/sales/commission-service");
+const {
+  resolveVoucherApprovalRequiredTx,
+} = require("../../utils/voucher-approval-policy");
 
 const router = express.Router();
 
@@ -76,7 +79,7 @@ router.post("/", async (req, res, next) => {
 
   try {
     const voucherType = await knex("erp.voucher_type")
-      .select("code", "requires_approval")
+      .select("code")
       .where({ code: normalizedVoucherTypeCode })
       .first();
 
@@ -88,18 +91,11 @@ router.post("/", async (req, res, next) => {
       return next(new HttpError(403, permissionDeniedMessage(res)));
     }
 
-    const policy = await knex("erp.approval_policy")
-      .select("requires_approval")
-      .where({
-        entity_type: "VOUCHER_TYPE",
-        entity_key: voucherType.code,
-        action: "create",
-      })
-      .first();
-
-    const requiresApproval = policy
-      ? policy.requires_approval
-      : voucherType.requires_approval;
+    const requiresApproval = await resolveVoucherApprovalRequiredTx({
+      trx: knex,
+      voucherTypeCode: voucherType.code,
+      action: "create",
+    });
     const status = requiresApproval ? "PENDING" : "APPROVED";
 
     const result = await knex.transaction(async (trx) => {

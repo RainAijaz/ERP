@@ -13,16 +13,6 @@
     { key: 'delete', label: t('deactivate') || t('delete') },
     { key: 'hard_delete', label: t('permanent_delete') }
   ];
-  const inventoryOverrideRows = Array.isArray(inventoryNegativeStockVoucherRows) ? inventoryNegativeStockVoucherRows : [];
-  const safeRoleRows = Array.isArray(roleRows) ? roleRows : [];
-  const safeUserRows = Array.isArray(userRows) ? userRows : [];
-  const hasNegativeStockOverride = (voucherTypeCode, subjectType, subjectId) => {
-    const byVoucher = negativeStockOverrideMap && negativeStockOverrideMap[voucherTypeCode];
-    if (!byVoucher) return false;
-    const ids = byVoucher[subjectType];
-    if (!Array.isArray(ids)) return false;
-    return ids.includes(Number(subjectId));
-  };
 %>
 
 <div class="permissions-shell flex flex-col min-h-0 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -155,89 +145,6 @@
           </tbody>
         </table>
       </div>
-
-      <section class="shrink-0 border-t border-slate-200 bg-white px-4 py-4 md:px-6">
-        <div class="mb-3">
-          <h2 class="text-sm font-bold text-slate-800"><%= t('inventory_negative_stock_overrides') %></h2>
-          <p class="text-xs text-slate-500 mt-1"><%= t('inventory_negative_stock_overrides_help') %></p>
-        </div>
-
-        <% if (inventoryOverrideRows.length) { %>
-          <div class="grid grid-cols-1 gap-3 lg:grid-cols-2">
-            <% inventoryOverrideRows.forEach(voucher => { %>
-              <article class="rounded-xl border border-slate-200 bg-slate-50/40 p-3" data-neg-stock-card="<%= voucher.code %>">
-                <div class="flex items-center justify-between gap-2">
-                  <h3 class="text-xs font-bold uppercase tracking-wide text-slate-700"><%= voucher.name || voucher.code %></h3>
-                  <span class="text-[10px] font-mono text-slate-400"><%= voucher.code %></span>
-                </div>
-
-                <div class="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
-                  <div class="rounded-lg border border-slate-200 bg-white p-2">
-                    <div class="mb-2 flex items-center justify-between gap-2">
-                      <span class="text-[11px] font-bold text-slate-600"><%= t('role') %></span>
-                      <input
-                        type="text"
-                        class="w-36 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-700"
-                        placeholder="<%= t('search_role_overrides') %>"
-                        data-neg-stock-search="<%= voucher.code %>:ROLE"
-                      >
-                    </div>
-                    <div class="max-h-36 space-y-1 overflow-y-auto pr-1 custom-scrollbar" data-neg-stock-list="<%= voucher.code %>:ROLE">
-                      <% if (safeRoleRows.length) { %>
-                        <% safeRoleRows.forEach(roleRow => { %>
-                          <label class="flex items-center gap-2 rounded-md px-2 py-1 text-xs text-slate-700 hover:bg-slate-50" data-neg-stock-item data-neg-stock-searchable="<%= String(roleRow.name || '').toLowerCase() %>">
-                            <input
-                              type="checkbox"
-                              name="NEG_STOCK_OVERRIDE:<%= voucher.code %>:ROLE:<%= roleRow.id %>"
-                              <%= hasNegativeStockOverride(voucher.code, 'ROLE', roleRow.id) ? 'checked' : '' %>
-                              class="h-4 w-4 rounded text-accent focus:ring-accent"
-                            >
-                            <span class="truncate"><%= roleRow.name %></span>
-                          </label>
-                        <% }) %>
-                      <% } else { %>
-                        <p class="px-2 py-2 text-xs text-slate-400"><%= t('no_roles_available') %></p>
-                      <% } %>
-                    </div>
-                  </div>
-
-                  <div class="rounded-lg border border-slate-200 bg-white p-2">
-                    <div class="mb-2 flex items-center justify-between gap-2">
-                      <span class="text-[11px] font-bold text-slate-600"><%= t('users') %></span>
-                      <input
-                        type="text"
-                        class="w-36 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-700"
-                        placeholder="<%= t('search_user_overrides') %>"
-                        data-neg-stock-search="<%= voucher.code %>:USER"
-                      >
-                    </div>
-                    <div class="max-h-36 space-y-1 overflow-y-auto pr-1 custom-scrollbar" data-neg-stock-list="<%= voucher.code %>:USER">
-                      <% if (safeUserRows.length) { %>
-                        <% safeUserRows.forEach(userRow => { %>
-                          <% const userLabel = [userRow.username, userRow.name, userRow.role_name].filter(Boolean).join(' | '); %>
-                          <label class="flex items-center gap-2 rounded-md px-2 py-1 text-xs text-slate-700 hover:bg-slate-50" data-neg-stock-item data-neg-stock-searchable="<%= String(userLabel || '').toLowerCase() %>">
-                            <input
-                              type="checkbox"
-                              name="NEG_STOCK_OVERRIDE:<%= voucher.code %>:USER:<%= userRow.id %>"
-                              <%= hasNegativeStockOverride(voucher.code, 'USER', userRow.id) ? 'checked' : '' %>
-                              class="h-4 w-4 rounded text-accent focus:ring-accent"
-                            >
-                            <span class="truncate"><%= userLabel %></span>
-                          </label>
-                        <% }) %>
-                      <% } else { %>
-                        <p class="px-2 py-2 text-xs text-slate-400"><%= t('no_users_available') %></p>
-                      <% } %>
-                    </div>
-                  </div>
-                </div>
-              </article>
-            <% }) %>
-          </div>
-        <% } else { %>
-          <p class="text-xs text-slate-400"><%= t('inventory_negative_stock_no_vouchers') %></p>
-        <% } %>
-      </section>
 
       <div id="approval-footer" class="p-3 border-t border-slate-200 bg-white flex justify-between items-center shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.02)] z-20 shrink-0">
         <div class="text-xs text-slate-500"><%= t('requires_approval') %></div>
@@ -392,19 +299,6 @@
         if (r.getAttribute('data-has-children') === 'true') collapsedPaths.add(r.getAttribute('data-path'));
       });
       applyFilters();
-    });
-
-    document.querySelectorAll('[data-neg-stock-search]').forEach((input) => {
-      input.addEventListener('input', () => {
-        const key = input.getAttribute('data-neg-stock-search');
-        const list = document.querySelector(`[data-neg-stock-list="${key}"]`);
-        if (!list) return;
-        const needle = String(input.value || '').trim().toLowerCase();
-        list.querySelectorAll('[data-neg-stock-item]').forEach((item) => {
-          const hay = String(item.getAttribute('data-neg-stock-searchable') || '').toLowerCase();
-          item.classList.toggle('hidden', needle.length > 0 && !hay.includes(needle));
-        });
-      });
     });
 
     filterCategory('');

@@ -1688,13 +1688,32 @@ const applyBulkLabourRateApproval = async (trx, request) => {
       : {};
   const deptId = toNullableInt(payload.dept_id);
   if (!deptId) return false;
-  const labourRaw = String(
-    payload.labour_id || request?.entity_id || "",
-  ).trim();
+  const labourRaw = String(payload.labour_id || request?.entity_id || "").trim();
+  const labourIdsFromPayload = toArray(payload.labour_ids)
+    .map((entry) => toNullableInt(entry))
+    .filter((entry) => Number.isInteger(entry) && entry > 0);
+  const labourIdsFromRaw =
+    labourRaw.toUpperCase() === ALL_LABOURS_VALUE
+      ? []
+      : toArray(labourRaw)
+          .map((entry) => toNullableInt(entry))
+          .filter((entry) => Number.isInteger(entry) && entry > 0);
+  const labourIdsInput = [
+    ...new Set(
+      (labourIdsFromPayload.length ? labourIdsFromPayload : labourIdsFromRaw)
+        .map((entry) => Number(entry))
+        .filter((entry) => Number.isInteger(entry) && entry > 0),
+    ),
+  ];
   const labourSelection =
     labourRaw.toUpperCase() === ALL_LABOURS_VALUE
-      ? { all: true, labourId: null, raw: ALL_LABOURS_VALUE }
-      : { all: false, labourId: toNullableInt(labourRaw), raw: labourRaw };
+      ? { all: true, labourId: null, labourIds: [], raw: ALL_LABOURS_VALUE }
+      : {
+          all: false,
+          labourId: labourIdsInput[0] || null,
+          labourIds: labourIdsInput,
+          raw: labourIdsInput.join(",") || labourRaw,
+        };
   const labourIds = await resolveLabourIds({
     db: trx,
     deptId,

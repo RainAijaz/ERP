@@ -67,10 +67,6 @@ const {
   applyStockTransferVoucherUpdatePayloadTx,
   applyStockTransferVoucherDeletePayloadTx,
 } = require("../../services/inventory/stock-transfer-voucher-service");
-const {
-  INVENTORY_NEGATIVE_STOCK_OVERRIDE_SUBJECT_TYPES,
-  normalizeVoucherTypeCode,
-} = require("../../services/inventory/negative-stock-override-policy-service");
 const basicInfoRoutes = require("../master_data/basic-info");
 const uomConversionsRoutes = require("../master_data/basic-info/uom-conversions");
 const accountsRoutes = require("../master_data/accounts");
@@ -124,13 +120,6 @@ const ACTION_LABELS = {
   update: "edit",
   delete: "delete",
 };
-
-const NEGATIVE_STOCK_OVERRIDE_FIELD_PREFIX = "NEG_STOCK_OVERRIDE";
-const NEGATIVE_STOCK_OVERRIDE_TABLE = "inventory_negative_stock_override";
-const NEGATIVE_STOCK_OVERRIDE_VOUCHER_TYPE_CODES = new Set([
-  STOCK_TRANSFER_VOUCHER_TYPES.out,
-  INVENTORY_VOUCHER_TYPES.stockCountAdjustment,
-]);
 
 const applyVoucherApprovalChangeTx = async ({
   trx,
@@ -1477,11 +1466,7 @@ router.get(
   requirePermission("SCREEN", "administration.approval_settings", "navigate"),
   async (req, res, next) => {
     try {
-      const hasNegativeStockOverrideTable = await knex.schema
-        .withSchema("erp")
-        .hasTable(NEGATIVE_STOCK_OVERRIDE_TABLE);
-
-      const [voucherTypes, policyRows, roleRows, userRows, negativeStockOverrideRows] = await Promise.all([
+      const [voucherTypes, policyRows] = await Promise.all([
         knex("erp.voucher_type").select("code", "name").orderBy("name"),
         knex("erp.approval_policy").select(
           "entity_type",
@@ -1489,22 +1474,6 @@ router.get(
           "action",
           "requires_approval",
         ),
-        knex("erp.role_templates")
-          .select("id", "name")
-          .orderBy("name", "asc"),
-        knex("erp.users as u")
-          .leftJoin("erp.role_templates as rt", "rt.id", "u.primary_role_id")
-          .select("u.id", "u.username", "u.name", "rt.name as role_name")
-          .whereRaw("coalesce(lower(u.status), 'active') = 'active'")
-          .orderByRaw("lower(u.username) asc"),
-        hasNegativeStockOverrideTable
-          ? knex(`erp.${NEGATIVE_STOCK_OVERRIDE_TABLE}`).select(
-              "voucher_type_code",
-              "subject_type",
-              "subject_id",
-              "is_enabled",
-            )
-          : Promise.resolve([]),
       ]);
 
       const excludedScreens = new Set([
@@ -1544,50 +1513,6 @@ router.get(
 
       const voucherTypeMap = new Map(
         voucherTypes.map((vt) => [vt.code, vt.name]),
-      );
-
-      const inventoryNegativeStockVoucherRows = voucherTypes
-        .map((row) => ({
-          code: normalizeVoucherTypeCode(row.code),
-          name: String(row.name || row.code || "").trim(),
-        }))
-        .filter((row) =>
-          NEGATIVE_STOCK_OVERRIDE_VOUCHER_TYPE_CODES.has(String(row.code || "")),
-        );
-
-      const negativeStockOverrideMap = (negativeStockOverrideRows || []).reduce(
-        (acc, row) => {
-          const voucherTypeCode = normalizeVoucherTypeCode(row.voucher_type_code);
-          if (!NEGATIVE_STOCK_OVERRIDE_VOUCHER_TYPE_CODES.has(voucherTypeCode)) {
-            return acc;
-          }
-          if (row.is_enabled !== true) return acc;
-
-          const subjectType = String(row.subject_type || "")
-            .trim()
-            .toUpperCase();
-          const subjectId = Number(row.subject_id || 0);
-          if (!Number.isInteger(subjectId) || subjectId <= 0) return acc;
-          if (
-            subjectType !== INVENTORY_NEGATIVE_STOCK_OVERRIDE_SUBJECT_TYPES.role &&
-            subjectType !== INVENTORY_NEGATIVE_STOCK_OVERRIDE_SUBJECT_TYPES.user
-          ) {
-            return acc;
-          }
-
-          if (!acc[voucherTypeCode]) {
-            acc[voucherTypeCode] = {
-              ROLE: [],
-              USER: [],
-            };
-          }
-          const bucket =
-            acc[voucherTypeCode][subjectType] ||
-            (acc[voucherTypeCode][subjectType] = []);
-          if (!bucket.includes(subjectId)) bucket.push(subjectId);
-          return acc;
-        },
-        {},
       );
 
       const buildScreenRows = (nodes, parentPath = "", depth = 0) => {
@@ -1637,10 +1562,6 @@ router.get(
         {
           screenRows,
           policyMap,
-          inventoryNegativeStockVoucherRows,
-          roleRows,
-          userRows,
-          negativeStockOverrideMap,
         },
       );
     } catch (err) {
@@ -1657,58 +1578,13 @@ router.post(
     const trx = await knex.transaction();
     try {
       const { ...fields } = req.body;
-      const hasNegativeStockOverrideTable = await trx.schema
-        .withSchema("erp")
-        .hasTable(NEGATIVE_STOCK_OVERRIDE_TABLE);
 
       await trx("erp.approval_policy")
         .whereIn("entity_type", ["VOUCHER_TYPE", "SCREEN"])
         .del();
 
-      if (hasNegativeStockOverrideTable) {
-        await trx(`erp.${NEGATIVE_STOCK_OVERRIDE_TABLE}`).del();
-      }
-
       const policyInsertRows = [];
-      const overrideInsertRows = [];
-      const overrideDedupeSet = new Set();
       Object.keys(fields).forEach((key) => {
-        if (key.startsWith(`${NEGATIVE_STOCK_OVERRIDE_FIELD_PREFIX}:`)) {
-          const parts = key.split(":");
-          if (parts.length !== 4) return;
-          if (!hasNegativeStockOverrideTable) return;
-
-          const voucherTypeCode = normalizeVoucherTypeCode(parts[1]);
-          const subjectType = String(parts[2] || "")
-            .trim()
-            .toUpperCase();
-          const subjectId = Number(parts[3] || 0);
-          if (!NEGATIVE_STOCK_OVERRIDE_VOUCHER_TYPE_CODES.has(voucherTypeCode)) {
-            return;
-          }
-          if (
-            subjectType !== INVENTORY_NEGATIVE_STOCK_OVERRIDE_SUBJECT_TYPES.role &&
-            subjectType !== INVENTORY_NEGATIVE_STOCK_OVERRIDE_SUBJECT_TYPES.user
-          ) {
-            return;
-          }
-          if (!Number.isInteger(subjectId) || subjectId <= 0) return;
-
-          const dedupeKey = `${voucherTypeCode}:${subjectType}:${subjectId}`;
-          if (overrideDedupeSet.has(dedupeKey)) return;
-          overrideDedupeSet.add(dedupeKey);
-
-          overrideInsertRows.push({
-            voucher_type_code: voucherTypeCode,
-            subject_type: subjectType,
-            subject_id: subjectId,
-            is_enabled: true,
-            created_by: req.user?.id || null,
-            updated_by: req.user?.id || null,
-          });
-          return;
-        }
-
         if (!key.includes(":")) return;
         const [entityType, entityKey, action] = key.split(":");
         if (!entityType || !entityKey || !action) return;
@@ -1725,12 +1601,6 @@ router.post(
 
       if (policyInsertRows.length) {
         await trx("erp.approval_policy").insert(policyInsertRows);
-      }
-
-      if (hasNegativeStockOverrideTable && overrideInsertRows.length) {
-        await trx(`erp.${NEGATIVE_STOCK_OVERRIDE_TABLE}`).insert(
-          overrideInsertRows,
-        );
       }
 
       await trx.commit();

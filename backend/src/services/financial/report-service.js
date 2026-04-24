@@ -3,6 +3,9 @@ const { HttpError } = require("../../middleware/errors/http-error");
 const { insertActivityLog } = require("../../utils/audit-log");
 const { syncVoucherGlPostingTx } = require("./gl-posting-service");
 const { resolveReportType } = require("../../utils/report-filter-types");
+const {
+  resolveVoucherApprovalRequiredTx,
+} = require("../../utils/voucher-approval-policy");
 
 const ACCOUNT_FILTER_REPORTS = new Set([
   "account_activity_ledger",
@@ -542,12 +545,11 @@ const requiresApprovalForVoucherAction = async (
   voucherTypeCode,
   action,
 ) => {
-  const policy = await trx("erp.approval_policy")
-    .select("requires_approval")
-    .where({ entity_type: "VOUCHER_TYPE", entity_key: voucherTypeCode, action })
-    .first();
-  if (policy) return policy.requires_approval === true;
-  return false;
+  return resolveVoucherApprovalRequiredTx({
+    trx,
+    voucherTypeCode,
+    action,
+  });
 };
 
 const queueVoucherApprovalRequest = async ({

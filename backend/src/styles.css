@@ -14,6 +14,18 @@
   input[type="reset"] {
     cursor: pointer;
   }
+
+  input[readonly]:not(.cursor-pointer):not([data-readonly-clickable="true"]),
+  textarea[readonly]:not(.cursor-pointer):not([data-readonly-clickable="true"]),
+  input:disabled,
+  textarea:disabled,
+  select:disabled,
+  [aria-readonly="true"]:not(.cursor-pointer):not(
+      [data-readonly-clickable="true"]
+    ) {
+    cursor: default;
+    caret-color: transparent;
+  }
 }
 
 [dir="rtl"] .nav-dropdown {

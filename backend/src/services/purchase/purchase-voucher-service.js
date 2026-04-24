@@ -2,6 +2,9 @@ const knex = require("../../db/knex");
 const { HttpError } = require("../../middleware/errors/http-error");
 const { insertActivityLog, queueAuditLog } = require("../../utils/audit-log");
 const { toLocalDateOnly } = require("../../utils/date-only");
+const {
+  resolveVoucherApprovalRequiredTx,
+} = require("../../utils/voucher-approval-policy");
 const { syncVoucherGlPostingTx } = require("../financial/gl-posting-service");
 
 const PURCHASE_VOUCHER_TYPES = {
@@ -132,19 +135,11 @@ const canApproveVoucherAction = (req, scopeKey) =>
   req?.user?.isAdmin === true || canDo(req, "VOUCHER", scopeKey, "approve");
 
 const requiresApprovalForAction = async (trx, voucherTypeCode, action) => {
-  const policy = await trx("erp.approval_policy")
-    .select("requires_approval")
-    .where({ entity_type: "VOUCHER_TYPE", entity_key: voucherTypeCode, action })
-    .first();
-  if (policy) return policy.requires_approval === true;
-
-  if (action !== "create") return false;
-  const voucherType = await trx("erp.voucher_type")
-    .select("requires_approval")
-    .where({ code: voucherTypeCode })
-    .first();
-  if (!voucherType) throw new HttpError(400, "Invalid voucher type");
-  return voucherType.requires_approval === true;
+  return resolveVoucherApprovalRequiredTx({
+    trx,
+    voucherTypeCode,
+    action,
+  });
 };
 
 const hasApprovalRequestVoucherTypeCodeColumnTx = async (trx) => {
@@ -1184,8 +1179,9 @@ const resolveAssetPurchaseAccountIdTx = async ({ trx, req }) => {
   }
   const preferredRow = rows.find(
     (row) =>
-      String(row.code || "").trim().toLowerCase() ===
-      PURCHASE_ASSET_CONTROL_ACCOUNT_CODE,
+      String(row.code || "")
+        .trim()
+        .toLowerCase() === PURCHASE_ASSET_CONTROL_ACCOUNT_CODE,
   );
   if (preferredRow) {
     return Number(preferredRow.id);
@@ -1225,7 +1221,10 @@ const fetchAssetMapTx = async ({ trx, req, assetIds = [] }) => {
     .whereIn("a.id", normalized)
     .where({ "a.is_active": true })
     .where(function whereAssetScope() {
-      this.whereNull("a.home_branch_id").orWhere("a.home_branch_id", req.branchId);
+      this.whereNull("a.home_branch_id").orWhere(
+        "a.home_branch_id",
+        req.branchId,
+      );
     });
 
   return new Map(rows.map((row) => [Number(row.id), row]));
@@ -2016,7 +2015,8 @@ const upsertHeaderExtensionTx = async ({
   returnReason = null,
   grnReferenceVoucherNo = null,
 }) => {
-  const normalizedPurchaseCategory = normalizePurchaseCategory(purchaseCategory);
+  const normalizedPurchaseCategory =
+    normalizePurchaseCategory(purchaseCategory);
   if (voucherTypeCode === PURCHASE_VOUCHER_TYPES.goodsReceiptNote) {
     const supportsCategoryColumn = await hasPurchaseHeaderCategoryColumnTx({
       trx,
@@ -2227,9 +2227,7 @@ const validatePurchaseVoucherPayloadTx = async ({
 
     const rawSupplierPartyId = toPositiveInt(payload.supplier_party_id);
     const supplierRequired =
-      purchaseCategory === PURCHASE_CATEGORIES.asset ||
-      paymentType !== "CASH" ||
-      Boolean(grnReferenceVoucherNo);
+      paymentType !== "CASH" || Boolean(grnReferenceVoucherNo);
     if (supplierRequired) {
       const supplier = await validateSupplierTx({
         trx,
@@ -2871,7 +2869,10 @@ const loadPurchaseVoucherOptions = async (req) => {
         )
         .where({ "a.is_active": true })
         .where(function whereAssetScope() {
-          this.whereNull("a.home_branch_id").orWhere("a.home_branch_id", req.branchId);
+          this.whereNull("a.home_branch_id").orWhere(
+            "a.home_branch_id",
+            req.branchId,
+          );
         })
         .orderBy("asset_name", "asc");
     })(),
@@ -3252,7 +3253,9 @@ const loadPurchaseVoucherDetails = async ({
       )
     : new Map();
   const assetIds = [
-    ...new Set(lines.map((line) => toPositiveInt(line.asset_id)).filter(Boolean)),
+    ...new Set(
+      lines.map((line) => toPositiveInt(line.asset_id)).filter(Boolean),
+    ),
   ];
   const assetMap = assetIds.length
     ? await fetchAssetMapTx({ trx: knex, req, assetIds })
@@ -3328,7 +3331,9 @@ const loadPurchaseVoucherDetails = async ({
         .first(),
       "erp.purchase_grn_header_ext",
     );
-    details.purchase_category = normalizePurchaseCategory(ext?.purchase_category);
+    details.purchase_category = normalizePurchaseCategory(
+      ext?.purchase_category,
+    );
     details.supplier_party_id = Number(ext?.supplier_party_id || 0) || null;
     if (!details.reference_no && ext?.supplier_reference_no)
       details.reference_no = ext.supplier_reference_no;
@@ -3354,7 +3359,9 @@ const loadPurchaseVoucherDetails = async ({
         .first(),
       "erp.purchase_invoice_header_ext",
     );
-    details.purchase_category = normalizePurchaseCategory(ext?.purchase_category);
+    details.purchase_category = normalizePurchaseCategory(
+      ext?.purchase_category,
+    );
     details.supplier_party_id = Number(ext?.supplier_party_id || 0) || null;
     details.payment_type = normalizePaymentType(ext?.payment_type || "CREDIT");
     details.cash_paid_account_id =
@@ -3388,7 +3395,9 @@ const loadPurchaseVoucherDetails = async ({
         .first(),
       "erp.purchase_return_header_ext",
     );
-    details.purchase_category = normalizePurchaseCategory(ext?.purchase_category);
+    details.purchase_category = normalizePurchaseCategory(
+      ext?.purchase_category,
+    );
     details.supplier_party_id = Number(ext?.supplier_party_id || 0) || null;
     details.return_reason = normalizeReturnReason(ext?.reason);
   }

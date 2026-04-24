@@ -9,6 +9,7 @@ npm run migrate
 systemctl restart erp-web
 systemctl is-active erp-web
 
+
 COMMANDS OTHERWISE:
  cd /home/erp/ERP/backend
 git pull origin main

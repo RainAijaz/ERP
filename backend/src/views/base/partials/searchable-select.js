@@ -69,17 +69,8 @@
     });
   };
 
-  const syncExistingSearchableSelectState = (select) => {
-    if (!select || select.dataset.searchableReady !== "true") return;
-    const wrapper =
-      select.closest("[data-searchable-wrapper]") ||
-      (select.parentElement?.matches("[data-searchable-wrapper]")
-        ? select.parentElement
-        : null);
-    if (!(wrapper instanceof HTMLElement)) return;
-
-    const input = wrapper.querySelector('input[type="text"]');
-    if (!(input instanceof HTMLInputElement)) return;
+  const syncSearchableInputLockedState = ({ select, input }) => {
+    if (!(input instanceof HTMLInputElement) || !select) return;
 
     if (select.disabled) {
       input.readOnly = true;
@@ -107,6 +98,21 @@
     input.style.backgroundColor = "";
     input.style.color = "";
     input.style.caretColor = "";
+  };
+
+  const syncExistingSearchableSelectState = (select) => {
+    if (!select || select.dataset.searchableReady !== "true") return;
+    const wrapper =
+      select.closest("[data-searchable-wrapper]") ||
+      (select.parentElement?.matches("[data-searchable-wrapper]")
+        ? select.parentElement
+        : null);
+    if (!(wrapper instanceof HTMLElement)) return;
+
+    const input = wrapper.querySelector('input[type="text"]');
+    if (!(input instanceof HTMLInputElement)) return;
+
+    syncSearchableInputLockedState({ select, input });
   };
 
   const createSearchableSelect = (select) => {
@@ -446,16 +452,7 @@
       // Keep browser validation on the visible control, not the hidden original <select>.
       select.removeAttribute("required");
     }
-    if (select.disabled) {
-      input.readOnly = true;
-      input.classList.add("bg-slate-50", "text-slate-600");
-      input.classList.remove("cursor-text");
-      input.classList.add("cursor-not-allowed");
-      // Force disabled visual state even when base utility classes include bg-white.
-      input.style.backgroundColor = "rgb(248 250 252)";
-      input.style.color = "rgb(71 85 105)";
-      input.style.caretColor = "transparent";
-    }
+    syncSearchableInputLockedState({ select, input });
 
     const icon = document.createElement("div");
     icon.className =
@@ -889,8 +886,9 @@
       }
       if (!isMulti) {
         const selectedOption = select.options[select.selectedIndex] || null;
-        openedWithSelectionLabel = String(selectedOption?.textContent || "")
-          .trim();
+        openedWithSelectionLabel = String(
+          selectedOption?.textContent || "",
+        ).trim();
         openedWithSelectionValue = String(select.value || "").trim();
         input.value = "";
       }

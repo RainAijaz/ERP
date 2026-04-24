@@ -2,6 +2,9 @@ const knex = require("../../db/knex");
 const { HttpError } = require("../../middleware/errors/http-error");
 const { insertActivityLog, queueAuditLog } = require("../../utils/audit-log");
 const { toLocalDateOnlyOrRaw } = require("../../utils/date-only");
+const {
+  resolveVoucherApprovalRequiredTx,
+} = require("../../utils/voucher-approval-policy");
 const { translateUrduWithFallback } = require("../../utils/translate");
 const { syncVoucherGlPostingTx } = require("./gl-posting-service");
 
@@ -423,32 +426,12 @@ const getNextVoucherNo = async (trx, branchId, voucherTypeCode) => {
   return Number(latest?.value || 0) + 1;
 };
 
-const requiresApproval = async (trx, voucherTypeCode) => {
-  const policy = await trx("erp.approval_policy")
-    .select("requires_approval")
-    .where({
-      entity_type: "VOUCHER_TYPE",
-      entity_key: voucherTypeCode,
-      action: "create",
-    })
-    .first();
-  if (policy) return policy.requires_approval === true;
-  const voucherType = await trx("erp.voucher_type")
-    .select("requires_approval")
-    .where({ code: voucherTypeCode })
-    .first();
-  if (!voucherType) throw new HttpError(400, "Invalid voucher type");
-  return voucherType.requires_approval === true;
-};
-
 const requiresApprovalForAction = async (trx, voucherTypeCode, action) => {
-  const policy = await trx("erp.approval_policy")
-    .select("requires_approval")
-    .where({ entity_type: "VOUCHER_TYPE", entity_key: voucherTypeCode, action })
-    .first();
-  if (policy) return policy.requires_approval === true;
-  if (action === "create") return requiresApproval(trx, voucherTypeCode);
-  return false;
+  return resolveVoucherApprovalRequiredTx({
+    trx,
+    voucherTypeCode,
+    action,
+  });
 };
 
 const canDo = (req, scopeType, scopeKey, action) => {

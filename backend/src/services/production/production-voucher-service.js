@@ -2,6 +2,9 @@ const knex = require("../../db/knex");
 const { HttpError } = require("../../middleware/errors/http-error");
 const { insertActivityLog, queueAuditLog } = require("../../utils/audit-log");
 const { toLocalDateOnly } = require("../../utils/date-only");
+const {
+  resolveVoucherApprovalRequiredTx,
+} = require("../../utils/voucher-approval-policy");
 const { syncVoucherGlPostingTx } = require("../financial/gl-posting-service");
 
 const PRODUCTION_VOUCHER_TYPES = {
@@ -620,18 +623,11 @@ const canApproveVoucherAction = (req, scopeKey) =>
   req?.user?.isAdmin === true || canDo(req, "VOUCHER", scopeKey, "approve");
 
 const requiresApprovalForAction = async (trx, voucherTypeCode, action) => {
-  const policy = await trx("erp.approval_policy")
-    .select("requires_approval")
-    .where({ entity_type: "VOUCHER_TYPE", entity_key: voucherTypeCode, action })
-    .first();
-  if (policy) return policy.requires_approval === true;
-  if (action !== "create") return false;
-  const voucherType = await trx("erp.voucher_type")
-    .select("requires_approval")
-    .where({ code: voucherTypeCode })
-    .first();
-  if (!voucherType) throw new HttpError(400, "Invalid voucher type");
-  return voucherType.requires_approval === true;
+  return resolveVoucherApprovalRequiredTx({
+    trx,
+    voucherTypeCode,
+    action,
+  });
 };
 
 const hasApprovalRequestVoucherTypeCodeColumnTx = async (trx) => {
