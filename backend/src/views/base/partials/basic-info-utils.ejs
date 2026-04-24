@@ -534,7 +534,41 @@
       confirmModal.classList.remove("flex");
     };
 
-    let currentPage = 1;
+    const table = document.querySelector("[data-table]");
+    const serverPaginationEnabled =
+      table?.dataset?.serverPagination === "true";
+    const serverPageInitialRaw = Number.parseInt(
+      String(table?.dataset?.serverPage || "1"),
+      10,
+    );
+    const serverPageInitial =
+      Number.isInteger(serverPageInitialRaw) && serverPageInitialRaw > 0
+        ? serverPageInitialRaw
+        : 1;
+    const serverOffsetRaw = Number.parseInt(
+      String(table?.dataset?.serverOffset || "0"),
+      10,
+    );
+    const serverOffset =
+      Number.isInteger(serverOffsetRaw) && serverOffsetRaw >= 0
+        ? serverOffsetRaw
+        : 0;
+    const serverHasPrevPage = table?.dataset?.serverHasPrev === "true";
+    const serverHasNextPage = table?.dataset?.serverHasNext === "true";
+
+    const navigateServerPage = (nextPage) => {
+      const page = Number(nextPage);
+      if (!Number.isFinite(page) || page < 1) return;
+      const url = new URL(window.location.href);
+      if (page <= 1) {
+        url.searchParams.delete("list_page");
+      } else {
+        url.searchParams.set("list_page", String(Math.floor(page)));
+      }
+      window.location.assign(url.toString());
+    };
+
+    let currentPage = serverPaginationEnabled ? serverPageInitial : 1;
     let pageSizeRaw = (pageSizeSelect && pageSizeSelect.value) || "10";
     let pageSize =
       pageSizeRaw === "all" ? Number.POSITIVE_INFINITY : Number(pageSizeRaw);
@@ -800,7 +834,10 @@
       if (!Number.isFinite(pageSize)) {
         // 'All' selected: show all rows, avoid arithmetic with Infinity which yields NaN
         totalPages = 1;
-        currentPage = 1;
+        currentPage =
+          serverPaginationEnabled && !Number.isFinite(pageSize)
+            ? serverPageInitial
+            : 1;
         start = 0;
         end = filtered.length;
       } else {
@@ -827,18 +864,34 @@
         pageIndicator.textContent = String(currentPage);
       }
       if (prevButton) {
-        prevButton.disabled = currentPage <= 1;
-        prevButton.classList.toggle("opacity-40", currentPage <= 1);
+        const disablePrev =
+          serverPaginationEnabled && !Number.isFinite(pageSize)
+            ? !serverHasPrevPage
+            : currentPage <= 1;
+        prevButton.disabled = disablePrev;
+        prevButton.classList.toggle("opacity-40", disablePrev);
       }
       if (nextButton) {
-        nextButton.disabled = currentPage >= totalPages;
-        nextButton.classList.toggle("opacity-40", currentPage >= totalPages);
+        const disableNext =
+          serverPaginationEnabled && !Number.isFinite(pageSize)
+            ? !serverHasNextPage
+            : currentPage >= totalPages;
+        nextButton.disabled = disableNext;
+        nextButton.classList.toggle("opacity-40", disableNext);
       }
 
       const showing = document.querySelector("[data-showing-count]");
       if (showing) {
-        const startLabel = filtered.length === 0 ? 0 : start + 1;
-        const endLabel = Math.min(start + visibleRows.length, filtered.length);
+        const startLabel =
+          filtered.length === 0
+            ? 0
+            : serverPaginationEnabled && !Number.isFinite(pageSize)
+              ? serverOffset + 1
+              : start + 1;
+        const endLabel =
+          serverPaginationEnabled && !Number.isFinite(pageSize)
+            ? serverOffset + visibleRows.length
+            : Math.min(start + visibleRows.length, filtered.length);
         showing.textContent =
           i18n.showing +
           " " +
@@ -1028,6 +1081,11 @@
     }
     if (prevButton) {
       prevButton.addEventListener("click", () => {
+        if (serverPaginationEnabled && !Number.isFinite(pageSize)) {
+          if (!serverHasPrevPage) return;
+          navigateServerPage(serverPageInitial - 1);
+          return;
+        }
         if (currentPage > 1) {
           currentPage -= 1;
           scheduleApplyFilters({ resetPage: false, delay: 0 });
@@ -1036,6 +1094,11 @@
     }
     if (nextButton) {
       nextButton.addEventListener("click", () => {
+        if (serverPaginationEnabled && !Number.isFinite(pageSize)) {
+          if (!serverHasNextPage) return;
+          navigateServerPage(serverPageInitial + 1);
+          return;
+        }
         currentPage += 1;
         scheduleApplyFilters({ resetPage: false, delay: 0 });
       });
@@ -1118,7 +1181,6 @@
       scheduleApplyFilters({ resetPage: true, delay: 0 });
     };
 
-    const table = document.querySelector("[data-table]");
     if (table) {
       table.addEventListener("click", (event) => {
         const btn = event.target.closest("[data-sort-key]");

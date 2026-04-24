@@ -408,6 +408,10 @@ const fetchRows = (pageConfig, options = {}) => {
     selects.push(...extraSelect);
   }
   const limitedQuery = query.select(selects).orderBy("t.id", "desc");
+  const offsetRows = Number(options.offsetRows || 0);
+  if (Number.isInteger(offsetRows) && offsetRows > 0) {
+    limitedQuery.offset(offsetRows);
+  }
   const maxRows = Number(options.maxRows || 0);
   if (Number.isInteger(maxRows) && maxRows > 0) {
     return limitedQuery.limit(maxRows);
@@ -701,6 +705,14 @@ const createHrMasterRouter = (pageConfig) => {
           Number.isInteger(configuredMaxRows) && configuredMaxRows > 0
             ? configuredMaxRows
             : 0;
+        const listPageRaw = Number.parseInt(
+          String(req.query.list_page || "1"),
+          10,
+        );
+        const listPage =
+          Number.isInteger(listPageRaw) && listPageRaw > 0 ? listPageRaw : 1;
+        const listOffset =
+          effectiveMaxRows > 0 ? (listPage - 1) * effectiveMaxRows : 0;
         const fetchedRows =
           canBrowse && !missingRequiredFilters.length
             ? await fetchRows(hydrated, {
@@ -708,6 +720,7 @@ const createHrMasterRouter = (pageConfig) => {
                 allowedBranchIds,
                 locale: req.locale,
                 maxRows: effectiveMaxRows > 0 ? effectiveMaxRows + 1 : 0,
+                offsetRows: listOffset,
                 filters: {
                   primaryValues,
                   secondaryValues,
@@ -728,10 +741,12 @@ const createHrMasterRouter = (pageConfig) => {
                 },
               })
             : [];
-        const rowsLimited =
+        const hasNextPage =
           effectiveMaxRows > 0 && Array.isArray(fetchedRows)
             ? fetchedRows.length > effectiveMaxRows
             : false;
+        const hasPrevPage = effectiveMaxRows > 0 && listPage > 1;
+        const rowsLimited = effectiveMaxRows > 0 && (hasNextPage || hasPrevPage);
         const rows = rowsLimited
           ? fetchedRows.slice(0, effectiveMaxRows)
           : fetchedRows;
@@ -772,6 +787,10 @@ const createHrMasterRouter = (pageConfig) => {
           modalOpen,
           modalMode,
           rowsLimited,
+          hasPrevPage,
+          hasNextPage,
+          listPage,
+          listOffset,
           rowLimit: effectiveMaxRows,
           listScopeMessage,
           listScopeBlocked: missingRequiredFilters.length > 0,

@@ -202,6 +202,7 @@
           const wrapper = target.closest("[data-searchable-wrapper]");
           if (wrapper) {
             target.dataset.searchableSuppressOpenOnce = "0";
+            target.dataset.searchableProgrammaticOpen = "1";
             target.click();
           }
         }
@@ -245,6 +246,7 @@
           searchableInput.isConnected
         ) {
           searchableInput.focus();
+          searchableInput.dataset.searchableProgrammaticOpen = "1";
           searchableInput.click();
           return true;
         }
@@ -492,6 +494,7 @@
         ? labels.map((label) => String(label || "").trim()).filter(Boolean)
         : [];
       if (!normalizedLabels.length) return 0;
+      if (normalizedLabels.length > 80) return 0;
 
       const canvas = document.createElement("canvas");
       const context = canvas.getContext("2d");
@@ -606,6 +609,14 @@
       keyboardNavigatedMenu = false;
       if (isMulti) syncToInput();
     };
+    const primeSingleSelectSearchState = () => {
+      if (isMulti) return;
+      const selectedOption = select.options[select.selectedIndex] || null;
+      openedWithSelectionLabel = String(selectedOption?.textContent || "").trim();
+      openedWithSelectionValue = String(select.value || "").trim();
+      input.placeholder = openedWithSelectionLabel || placeholderText;
+      input.value = "";
+    };
     const openMenu = ({ showAll = false, preserveActive = false } = {}) => {
       if (select.disabled) return;
       closeSearchableMenus({ exceptWrapper: wrapper });
@@ -679,7 +690,18 @@
         const selectedValue = String(selected?.value || "").trim();
         committedSelectionLabel = selectedLabel;
         committedSelectionValue = selectedValue;
-        input.value = selectedLabel;
+        if (!selectedValue) {
+          if (input.required) {
+            input.value = selectedLabel;
+            input.placeholder = placeholderText;
+          } else {
+            input.value = "";
+            input.placeholder = selectedLabel || placeholderText;
+          }
+        } else {
+          input.value = selectedLabel;
+          input.placeholder = placeholderText;
+        }
       }
     };
 
@@ -854,6 +876,7 @@
     };
 
     let pointerFocusIntent = false;
+    let directPointerDownOnInput = false;
     let openedWithSelectionLabel = "";
     let openedWithSelectionValue = "";
     let committedSelectionLabel = "";
@@ -861,6 +884,7 @@
 
     input.addEventListener("pointerdown", () => {
       pointerFocusIntent = true;
+      directPointerDownOnInput = true;
     });
 
     input.addEventListener("focus", () => {
@@ -879,24 +903,32 @@
     });
     input.addEventListener("click", () => {
       if (select.disabled) return;
+      if (
+        directPointerDownOnInput !== true &&
+        input.dataset.searchableProgrammaticOpen !== "1"
+      ) {
+        return;
+      }
       pointerFocusIntent = false;
+      directPointerDownOnInput = false;
       keyboardNavigatedMenu = false;
       if (input.dataset.searchableSuppressOpenOnce === "1") {
         input.dataset.searchableSuppressOpenOnce = "0";
       }
-      if (!isMulti) {
-        const selectedOption = select.options[select.selectedIndex] || null;
-        openedWithSelectionLabel = String(
-          selectedOption?.textContent || "",
-        ).trim();
-        openedWithSelectionValue = String(select.value || "").trim();
-        input.value = "";
+      if (input.dataset.searchableProgrammaticOpen === "1") {
+        input.dataset.searchableProgrammaticOpen = "0";
       }
       const isMenuOpen = !menu.classList.contains("hidden");
       if (isMenuOpen) {
-        renderMenu({ showAll: true, preserveActive: true });
+        // Toggle-close when clicking the control again.
+        closeMenu();
+        if (!isMulti) {
+          syncToInput();
+          input.select();
+        }
         return;
       }
+      primeSingleSelectSearchState();
       if (useInlineMultiSearch) {
         multiSearchValue = "";
         input.value = "";
@@ -943,6 +975,7 @@
         if (!selectedValue) {
           e.preventDefault();
           e.stopPropagation();
+          primeSingleSelectSearchState();
           renderMenu({ showAll: true });
           menu.classList.remove("hidden");
           return;
@@ -965,6 +998,7 @@
 
         if (menu.classList.contains("hidden")) {
           keyboardNavigatedMenu = false;
+          primeSingleSelectSearchState();
           openMenu({ showAll: true });
           return;
         }
@@ -1068,6 +1102,7 @@
     });
     input.addEventListener("blur", () => {
       pointerFocusIntent = false;
+      directPointerDownOnInput = false;
       setTimeout(() => {
         const activeEl = document.activeElement;
         if (activeEl && wrapper.contains(activeEl)) return;

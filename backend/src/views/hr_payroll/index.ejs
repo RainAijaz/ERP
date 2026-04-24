@@ -34,6 +34,17 @@
   <% if (rowsLimited) { %>
     <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-800">
       <%= t("list_truncated_notice").replace("{limit}", String(rowLimit || 0)) %>
+      <span class="ml-2 inline-flex items-center gap-2">
+        #<%= Number(listPage || 1) %>
+        <% if (hasPrevPage) { %>
+          <span class="inline-block h-1 w-1 rounded-full bg-amber-300"></span>
+          <%= t("prev") %>
+        <% } %>
+        <% if (hasNextPage) { %>
+          <span class="inline-block h-1 w-1 rounded-full bg-amber-300"></span>
+          <%= t("next") %>
+        <% } %>
+      </span>
     </div>
   <% } %>
   <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md overflow-hidden" data-print-area>
@@ -53,7 +64,16 @@
       <%- include("../base/partials/filter-modal", { t, bodyPartial: "../../hr_payroll/filter-fields.ejs", serverFilters: true }) %>
     </form>
     <div class="overflow-x-auto bg-white">
-      <table class="min-w-full text-sm" data-table>
+      <table
+        class="min-w-full text-sm"
+        data-table
+        data-server-pagination="<%= rowsLimited || (Number(listPage || 1) > 1) ? "true" : "false" %>"
+        data-server-page="<%= Number(listPage || 1) %>"
+        data-server-limit="<%= Number(rowLimit || 0) %>"
+        data-server-offset="<%= Number(listOffset || 0) %>"
+        data-server-has-prev="<%= hasPrevPage ? "true" : "false" %>"
+        data-server-has-next="<%= hasNextPage ? "true" : "false" %>"
+      >
         <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
           <% const displayColumns = page.columns.filter(function(column) {
                if (column.key === "id") return false;
@@ -87,7 +107,7 @@
                 data-selector-id="<%= row.selector_id || '' %>"
                 data-article-type="<%= row.article_type || row.coverage_scope || 'BOTH' %>"
               >
-                <td class="px-4 py-3 text-slate-700"><%= idx + 1 %></td>
+                <td class="px-4 py-3 text-slate-700"><%= Number(listOffset || 0) + idx + 1 %></td>
                 <% displayColumns.forEach(function(column) { %>
                   <% const isRateAmountColumn = (page.scopeKey === "hr_payroll.labour_rates" && column.key === "rate_value") || (page.scopeKey === "hr_payroll.commissions" && column.key === "value"); %>
                   <% const isRateTypeColumn = column.key === "rate_type"; %>
@@ -266,6 +286,7 @@
     const scopeKey = "<%= page.scopeKey %>";
     const tPerDozen = "<%= t('rate_type_per_dozen')  %>";
     const tPerPair = "<%= t('rate_type_per_pair')  %>";
+    const tRate = "<%= t('rate') %>";
 
     const toNumber = (value) => {
       const parsed = Number(value);
@@ -293,6 +314,17 @@
 
     const applyRateView = () => {
       const targetType = normalizeRateType(rateViewSelect.value, "PER_DOZEN");
+      if (scopeKey === "hr_payroll.labour_rates") {
+        const rateHeaderLabel = document.querySelector(
+          'button[data-sort-key="rate_value"] > span:first-child',
+        );
+        if (rateHeaderLabel) {
+          rateHeaderLabel.textContent =
+            targetType === "PER_PAIR"
+              ? `${tPerPair} ${tRate}`
+              : `${tPerDozen} ${tRate}`;
+        }
+      }
       const rows = document.querySelectorAll("tr[data-row]");
       rows.forEach((row) => {
         const rateValueCell = row.querySelector("[data-rate-value-cell]");
