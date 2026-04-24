@@ -16,6 +16,64 @@ const { generateUniqueCode } = require("../../utils/entity-code");
 const { buildAuditChangeSet } = require("../../utils/audit-diff");
 
 const ACTIVE_OPTION_TABLES = new Set(["erp.branches", "erp.departments"]);
+const STATIC_OPTIONS_TABLES = new Set([
+  "erp.branches",
+  "erp.departments",
+  "erp.uom",
+  "erp.product_groups",
+  "erp.product_subgroups",
+  "erp.party_groups",
+  "erp.account_groups",
+]);
+const MASTER_OPTIONS_CACHE_TTL_MS = Number(
+  process.env.MASTER_OPTIONS_CACHE_TTL_MS || 300000,
+);
+const MASTER_OPTIONS_CACHE_MAX_ENTRIES = Number(
+  process.env.MASTER_OPTIONS_CACHE_MAX_ENTRIES || 500,
+);
+const masterOptionsCache = new Map();
+
+const cloneOptions = (options = []) => options.map((row) => ({ ...row }));
+const stableSerialize = (value) => {
+  if (Array.isArray(value)) return value.map(stableSerialize);
+  if (value && typeof value === "object") {
+    return Object.keys(value)
+      .sort()
+      .reduce((acc, key) => {
+        acc[key] = stableSerialize(value[key]);
+        return acc;
+      }, {});
+  }
+  return value;
+};
+const buildMasterOptionsCacheKey = ({ pageConfig, field, locale }) =>
+  JSON.stringify({
+    scopeKey: pageConfig?.scopeKey || "",
+    fieldName: field?.name || "",
+    locale: locale || "en",
+    optionsQuery: stableSerialize(field?.optionsQuery || {}),
+    hasLabelFormat: typeof field?.labelFormat === "function",
+  });
+const getCachedMasterOptions = (cacheKey) => {
+  if (!cacheKey) return null;
+  const cached = masterOptionsCache.get(cacheKey);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    masterOptionsCache.delete(cacheKey);
+    return null;
+  }
+  return cloneOptions(cached.options);
+};
+const setCachedMasterOptions = (cacheKey, options) => {
+  if (!cacheKey || !Array.isArray(options)) return;
+  masterOptionsCache.set(cacheKey, {
+    options: cloneOptions(options),
+    expiresAt: Date.now() + MASTER_OPTIONS_CACHE_TTL_MS,
+  });
+  if (masterOptionsCache.size <= MASTER_OPTIONS_CACHE_MAX_ENTRIES) return;
+  const firstKey = masterOptionsCache.keys().next()?.value;
+  if (firstKey) masterOptionsCache.delete(firstKey);
+};
 
 const hasField = (page, name) =>
   page.fields.some((field) => field.name === name);
@@ -165,55 +223,70 @@ const hydratePage = async (pageConfig, locale, req = null) => {
       if (!field.optionsQuery) {
         return field;
       }
+      const isStaticOptionTable = STATIC_OPTIONS_TABLES.has(
+        field.optionsQuery.table,
+      );
+      const cacheKey = isStaticOptionTable
+        ? buildMasterOptionsCacheKey({ pageConfig, field, locale })
+        : null;
+      let mappedOptions = cacheKey ? getCachedMasterOptions(cacheKey) : null;
+
+      if (!mappedOptions) {
       const selectFields = field.optionsQuery.select || [
         field.optionsQuery.valueKey,
         field.optionsQuery.labelKey,
       ];
-      let query = knex(field.optionsQuery.table).select(selectFields);
-      if (Array.isArray(field.optionsQuery.joins)) {
-        field.optionsQuery.joins.forEach((join) => {
-          query = query.leftJoin(join.table, join.on[0], join.on[1]);
+        let query = knex(field.optionsQuery.table).select(selectFields);
+        if (Array.isArray(field.optionsQuery.joins)) {
+          field.optionsQuery.joins.forEach((join) => {
+            query = query.leftJoin(join.table, join.on[0], join.on[1]);
+          });
+        }
+        if (
+          field.optionsQuery.activeOnly !== false &&
+          ACTIVE_OPTION_TABLES.has(field.optionsQuery.table)
+        ) {
+          query = query.where({ is_active: true });
+        }
+        if (field.optionsQuery.where) {
+          query = query.where(field.optionsQuery.where);
+        }
+        if (field.optionsQuery.whereRaw) {
+          if (Array.isArray(field.optionsQuery.whereRaw)) {
+            query = query.whereRaw(
+              field.optionsQuery.whereRaw[0],
+              field.optionsQuery.whereRaw.slice(1),
+            );
+          } else {
+            query = query.whereRaw(field.optionsQuery.whereRaw);
+          }
+        }
+        const rows = await query.orderBy(
+          field.optionsQuery.orderBy || field.optionsQuery.labelKey,
+        );
+        mappedOptions = rows.map((row) => {
+          const labelRaw = field.labelFormat
+            ? field.labelFormat(row, locale)
+            : row[field.optionsQuery.labelKey];
+          const labelUr =
+            !field.labelFormat && locale === "ur" && row.name_ur
+              ? row.name_ur
+              : null;
+          return {
+            value: row[field.optionsQuery.valueKey],
+            label: labelUr || labelRaw,
+          };
         });
-      }
-      if (
-        field.optionsQuery.activeOnly !== false &&
-        ACTIVE_OPTION_TABLES.has(field.optionsQuery.table)
-      ) {
-        query = query.where({ is_active: true });
-      }
-      if (field.optionsQuery.where) {
-        query = query.where(field.optionsQuery.where);
-      }
-      if (field.optionsQuery.whereRaw) {
-        if (Array.isArray(field.optionsQuery.whereRaw)) {
-          query = query.whereRaw(
-            field.optionsQuery.whereRaw[0],
-            field.optionsQuery.whereRaw.slice(1),
-          );
-        } else {
-          query = query.whereRaw(field.optionsQuery.whereRaw);
+        if (cacheKey) {
+          setCachedMasterOptions(cacheKey, mappedOptions);
         }
       }
-      const rows = await query.orderBy(
-        field.optionsQuery.orderBy || field.optionsQuery.labelKey,
-      );
+
       return {
         ...field,
         options: filterBranchOptionsByScope(
           field,
-          rows.map((row) => {
-            const labelRaw = field.labelFormat
-              ? field.labelFormat(row, locale)
-              : row[field.optionsQuery.labelKey];
-            const labelUr =
-              !field.labelFormat && locale === "ur" && row.name_ur
-                ? row.name_ur
-                : null;
-            return {
-              value: row[field.optionsQuery.valueKey],
-              label: labelUr || labelRaw,
-            };
-          }),
+          mappedOptions,
           req,
         ),
       };

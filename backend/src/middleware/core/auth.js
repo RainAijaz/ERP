@@ -10,7 +10,7 @@ const PUBLIC_PATHS = ["/auth/login", "/auth/logout", "/health"];
 const SESSION_COOKIE_NAME = process.env.SESSION_COOKIE_NAME || "erp_session";
 const SESSION_TTL_HOURS = Number(process.env.SESSION_TTL_HOURS || 12);
 const SESSION_TOUCH_INTERVAL_MS = Number(
-  process.env.SESSION_TOUCH_INTERVAL_MS || 60000,
+  process.env.SESSION_TOUCH_INTERVAL_MS || 300000,
 );
 const SESSION_CACHE_TTL_MS = Number(process.env.SESSION_CACHE_TTL_MS || 15000);
 const SESSION_CACHE_MAX_ENTRIES = Number(

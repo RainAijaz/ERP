@@ -4,7 +4,10 @@ const { setCookie } = require("../utils/cookies");
 const { parseCookies } = require("../utils/cookies");
 
 const BRANCH_OPTIONS_CACHE_TTL_MS = Number(
-  process.env.BRANCH_OPTIONS_CACHE_TTL_MS || 60000,
+  process.env.BRANCH_OPTIONS_CACHE_TTL_MS || 300000,
+);
+const BRANCH_OPTIONS_CACHE_MAX_ENTRIES = Number(
+  process.env.BRANCH_OPTIONS_CACHE_MAX_ENTRIES || 200,
 );
 const branchOptionsCache = new Map();
 
@@ -33,6 +36,10 @@ const loadBranchRowsCached = async ({ isAdmin, branchIds }) => {
     rows: cloneRows(rows),
     expiresAt: Date.now() + BRANCH_OPTIONS_CACHE_TTL_MS,
   });
+  if (branchOptionsCache.size > BRANCH_OPTIONS_CACHE_MAX_ENTRIES) {
+    const firstKey = branchOptionsCache.keys().next()?.value;
+    if (firstKey) branchOptionsCache.delete(firstKey);
+  }
   return rows;
 };
 
