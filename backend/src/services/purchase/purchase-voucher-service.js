@@ -3188,7 +3188,16 @@ const loadPurchaseVoucherDetails = async ({
   if (!targetNo) return null;
 
   const header = await knex("erp.voucher_header")
-    .select("id", "voucher_no", "voucher_date", "status", "book_no", "remarks")
+    .select(
+      "id",
+      "voucher_no",
+      "voucher_date",
+      "status",
+      "book_no",
+      "remarks",
+      "created_by",
+      "approved_by",
+    )
     .where({
       branch_id: req.branchId,
       voucher_type_code: voucherTypeCode,
@@ -3196,6 +3205,25 @@ const loadPurchaseVoucherDetails = async ({
     })
     .first();
   if (!header) return null;
+  const auditUserIds = [
+    ...new Set(
+      [toPositiveInt(header.created_by), toPositiveInt(header.approved_by)]
+        .filter(Boolean)
+        .map((id) => Number(id)),
+    ),
+  ];
+  const auditUserNameById = auditUserIds.length
+    ? new Map(
+        (
+          await knex("erp.users")
+            .select("id", "name", "username")
+            .whereIn("id", auditUserIds)
+        ).map((row) => [
+          Number(row.id),
+          String(row.name || row.username || "").trim(),
+        ]),
+      )
+    : new Map();
 
   const lines = await knex("erp.voucher_line as vl")
     .leftJoin("erp.items as i", "i.id", "vl.item_id")
@@ -3268,6 +3296,14 @@ const loadPurchaseVoucherDetails = async ({
     status: String(header.status || "").toUpperCase(),
     reference_no: header.book_no || "",
     description: header.remarks || "",
+    created_by_name:
+      String(
+        auditUserNameById.get(Number(header.created_by || 0)) || "",
+      ).trim() || "",
+    approved_by_name:
+      String(
+        auditUserNameById.get(Number(header.approved_by || 0)) || "",
+      ).trim() || "",
     purchase_category: PURCHASE_CATEGORIES.rawMaterial,
     supplier_party_id: null,
     payment_type: "CREDIT",

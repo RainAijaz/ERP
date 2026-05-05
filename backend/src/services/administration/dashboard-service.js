@@ -97,6 +97,7 @@ const loadDashboardData = async ({ knex, req, can }) => {
     "view",
   );
   const canViewUsers = getCan(can, "SCREEN", "administration.users", "view");
+  const canSeeActiveUsers = Boolean(req?.user?.isAdmin) && canViewUsers;
   const activityAccessScope = buildActivityAccessScope({
     can,
     user: req?.user,
@@ -157,7 +158,7 @@ const loadDashboardData = async ({ knex, req, can }) => {
       });
       return qb;
     }),
-    canViewUsers
+    canSeeActiveUsers
       ? safeCount("activeUsers", () => {
           const qb = knex("erp.user_sessions as us")
             .where({ "us.is_revoked": false })
@@ -176,11 +177,19 @@ const loadDashboardData = async ({ knex, req, can }) => {
           return qb;
         })
       : Promise.resolve({ count: 0 }),
-    canViewUsers
+    canSeeActiveUsers
       ? safeCount("totalUsers", () =>
-          knex("erp.users")
-            .where({ status: "Active" })
-            .count("* as count")
+          knex("erp.users as u")
+            .join("erp.user_branch as ub", "ub.user_id", "u.id")
+            .where({ "u.status": "Active" })
+            .modify((qb) => {
+              if (activeBranchId > 0) {
+                qb.where("ub.branch_id", activeBranchId);
+              } else if (req && typeof req.applyBranchScope === "function") {
+                req.applyBranchScope(qb, "ub.branch_id");
+              }
+            })
+            .countDistinct("u.id as count")
             .first(),
         )
       : Promise.resolve({ count: 0 }),

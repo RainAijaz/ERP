@@ -18,6 +18,8 @@
           { labelKey: "status", value: voucher?.status || "-" },
         ],
         metaInfo: [
+          { labelKey: "created_by", value: voucher?.created_by_name || "-" },
+          { labelKey: "approved_by", value: voucher?.approved_by_name || "-" },
           { labelKey: "remarks", value: voucher?.remarks_display || voucher?.remarks_raw || "-", full: true },
         ],
         columns: [
@@ -29,6 +31,11 @@
           { key: "credit", labelKey: "credit", align: "right" },
         ],
         rows: voucher?.lines || [],
+        signatures: [
+          { labelKey: "prepared_by", value: voucher?.created_by_name || "-" },
+          { labelKey: "checked_by", value: "-" },
+          { labelKey: "approved_by", value: voucher?.approved_by_name || "-" },
+        ],
         cellValue: (line, column, rowIndex) => {
           if (column.key === "sr_no") return rowIndex + 1;
           if (column.key === "debit") return formatNumberDisplay(line?.debit || 0, { decimals: 2, fallback: "0" });

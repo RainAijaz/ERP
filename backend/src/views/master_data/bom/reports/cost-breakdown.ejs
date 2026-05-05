@@ -1,0 +1,342 @@
+<%
+  const summaryRows = Array.isArray(reportData?.summaryRows) ? reportData.summaryRows : [];
+  const detailRows = Array.isArray(reportData?.detailRows) ? reportData.detailRows : [];
+  const reportLoaded = Boolean(filters?.reportLoaded);
+  const selectedItemIds = Array.isArray(filters?.itemIds)
+    ? filters.itemIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
+    : [];
+  const allMultiOptionValue = "__ALL__";
+  const selectedBranchIds = Array.isArray(filters?.branchIds)
+    ? filters.branchIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
+    : [];
+  const branchAllSelected = selectedBranchIds.length === 0;
+
+  const resolveText = (key, fallback) => {
+    const value = t(key);
+    return value && value !== key ? value : fallback;
+  };
+  const formatCost = (value) => formatNumberDisplay(value, { decimals: 4, fallback: "0" });
+  const valuationLabel = (value) => {
+    const v = String(value || "").toUpperCase();
+    if (v === "WAC_FALLBACK_PURCHASE") return "WAC -> Purchase Fallback";
+    if (v === "WAC_ONLY") return "WAC Only";
+    if (v === "PURCHASE_RATE") return "Purchase Rate Only";
+    return v || "-";
+  };
+  const explosionLabel = (value) => {
+    const v = String(value || "").toUpperCase();
+    if (v === "EXPLODED") return "Exploded (Lowest Level)";
+    return "Level 1 (Direct)";
+  };
+  const labourAggLabel = (value) => (String(value || "").toUpperCase() === "MAX" ? "MAX" : "AVG");
+  const componentBadge = (value) => {
+    const v = String(value || "").toUpperCase();
+    if (v === "RM") return "border-blue-200 bg-blue-50 text-blue-700";
+    if (v === "LABOUR") return "border-amber-200 bg-amber-50 text-amber-700";
+    return "border-emerald-200 bg-emerald-50 text-emerald-700";
+  };
+  const clampDepth = (value) => Math.min(Math.max(Number(value || 0), 0), 6);
+  const treeIndentStyle = (value) => `padding-left: ${clampDepth(value) * 18}px;`;
+  const treeLabel = (row) =>
+    row?.row_type === "BOM"
+      ? (row.item_name || row.component_label || "-")
+      : (row.component_label || "-");
+%>
+
+<div class="mx-auto w-full max-w-none space-y-4 px-2">
+  <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div class="flex items-center gap-2">
+      <h1 class="text-2xl font-display font-semibold tracking-tight text-ink">
+        <%= resolveText("bom_cost_breakdown_report", "BOM Cost Breakdown") %>
+      </h1>
+    </div>
+    <p class="mt-1 text-sm text-slate-600">
+      <%= resolveText("bom_cost_breakdown_report_description", "Analyze RM, labour, and SFG cost components for selected BOM items.") %>
+    </p>
+
+    <form method="post" action="<%= reportPath %>" class="mt-3 rounded-xl border border-slate-200 bg-slate-50/30 p-3 sm:p-4">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="load_report" value="1">
+
+      <div class="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= t("article_name") %></span>
+          <select name="item_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+            <% (options?.items || []).forEach((item) => { %>
+              <option value="<%= item.id %>" <%= selectedItemIds.includes(Number(item.id)) ? "selected" : "" %>><%= `${item.name || item.id}${item.code ? ` (${item.code})` : ""}` %></option>
+            <% }) %>
+          </select>
+        </label>
+
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= t("type") %></span>
+          <select name="level" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+            <% (options?.levels || []).forEach((row) => { %>
+              <% const value = String(row.value || "ALL"); %>
+              <option value="<%= value %>" <%= String(filters?.level || "ALL") === value ? "selected" : "" %>><%= value === "ALL" ? t("all") : (value === "FINISHED" ? t("finished") : t("semi_finished")) %></option>
+            <% }) %>
+          </select>
+        </label>
+
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= resolveText("valuation_mode", "Valuation Mode") %></span>
+          <select name="valuation_mode" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+            <% (options?.valuationModes || []).forEach((row) => { %>
+              <% const value = String(row.value || "WAC_FALLBACK_PURCHASE"); %>
+              <option value="<%= value %>" <%= String(filters?.valuationMode || "WAC_FALLBACK_PURCHASE") === value ? "selected" : "" %>><%= valuationLabel(value) %></option>
+            <% }) %>
+          </select>
+        </label>
+
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= resolveText("explosion_mode", "Explosion Mode") %></span>
+          <select name="explosion_mode" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+            <% (options?.explosionModes || []).forEach((row) => { %>
+              <% const value = String(row.value || "DIRECT"); %>
+              <option value="<%= value %>" <%= String(filters?.explosionMode || "DIRECT") === value ? "selected" : "" %>><%= explosionLabel(value) %></option>
+            <% }) %>
+          </select>
+        </label>
+
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= resolveText("labour_aggregation", "Labour Aggregation") %></span>
+          <select name="labour_aggregation" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+            <% (options?.labourAggregations || []).forEach((row) => { %>
+              <% const value = String(row.value || "AVG"); %>
+              <option value="<%= value %>" <%= String(filters?.labourAggregation || "AVG") === value ? "selected" : "" %>><%= labourAggLabel(value) %></option>
+            <% }) %>
+          </select>
+        </label>
+
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= resolveText("include_inactive", "Include Inactive") %></span>
+          <select name="include_inactive" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+            <option value="0" <%= filters?.includeInactive ? "" : "selected" %>><%= t("no") %></option>
+            <option value="1" <%= filters?.includeInactive ? "selected" : "" %>><%= t("yes") %></option>
+          </select>
+        </label>
+
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= user?.isAdmin ? t("branches") : t("branch") %></span>
+          <% if (user?.isAdmin) { %>
+            <select name="branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+              <option value="<%= allMultiOptionValue %>" <%= branchAllSelected ? "selected" : "" %>><%= t("all") %></option>
+              <% (options?.branches || []).forEach((row) => { %>
+                <option value="<%= row.id %>" <%= selectedBranchIds.includes(Number(row.id)) ? "selected" : "" %>><%= row.name %></option>
+              <% }) %>
+            </select>
+          <% } else { %>
+            <input type="text" readonly value="<%= (options?.branches || []).map((row) => row.name).join(', ') || branchId %>" class="h-10 w-full rounded-lg border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700">
+          <% } %>
+        </label>
+      </div>
+
+      <div class="mt-3 flex flex-wrap gap-2">
+        <button type="submit" class="inline-flex items-center rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= t("load") %></button>
+        <a href="<%= reportPath %>" class="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= t("cancel") %></a>
+      </div>
+    </form>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <% if (filters?.missingRequiredItem) { %>
+      <div class="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700"><%= resolveText("bom_report_article_required", "Please select at least one article to generate this ledger.") %></div>
+    <% } %>
+
+    <% if (!reportLoaded) { %>
+      <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= t("load_report_to_view") %></div>
+    <% } else if (!summaryRows.length) { %>
+      <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= t("no_entries") %></div>
+    <% } else { %>
+      <div class="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs"><span class="font-semibold"><%= t("entries") %></span>: <%= Number(reportData?.totals?.bomCount || 0) %></div>
+        <div class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs"><span class="font-semibold"><%= resolveText("explosion_mode", "Explosion Mode") %></span>: <%= explosionLabel(filters?.explosionMode || "DIRECT") %></div>
+        <div class="rounded-xl border border-blue-200 bg-blue-50 px-3 py-2 text-xs">RM: <%= formatCost(reportData?.totals?.rmCost || 0) %></div>
+        <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs">Labour: <%= formatCost(reportData?.totals?.labourCost || 0) %></div>
+        <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs">SFG: <%= formatCost(reportData?.totals?.sfgCost || 0) %></div>
+        <div class="rounded-xl border border-slate-300 bg-slate-100 px-3 py-2 text-xs"><span class="font-semibold"><%= t("total") %></span>: <%= formatCost(reportData?.totals?.totalCost || 0) %></div>
+      </div>
+
+      <div class="overflow-x-auto rounded-2xl border border-slate-200">
+        <table class="min-w-245 w-full text-sm">
+          <thead class="bg-slate-100 text-slate-700">
+            <tr>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]">#</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("code") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("article_name") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("bom_stage") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("version") %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]">RM</th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]">Labour</th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]">SFG</th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("total") %></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <% summaryRows.forEach((row, idx) => { %>
+              <tr class="bg-white odd:bg-slate-50/30">
+                <td class="px-3 py-2"><%= idx + 1 %></td>
+                <td class="px-3 py-2"><%= row.bom_no || "-" %></td>
+                <td class="px-3 py-2"><%= row.item_name || "-" %></td>
+                <td class="px-3 py-2"><%= t(String(row.level || "").toLowerCase()) || row.level || "-" %></td>
+                <td class="px-3 py-2">V<%= row.version_no || "-" %></td>
+                <td class="px-3 py-2 text-right"><%= formatCost(row.rm_cost || 0) %></td>
+                <td class="px-3 py-2 text-right"><%= formatCost(row.labour_cost || 0) %></td>
+                <td class="px-3 py-2 text-right"><%= formatCost(row.sfg_cost || 0) %></td>
+                <td class="px-3 py-2 text-right font-semibold"><%= formatCost(row.total_cost || 0) %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+        <table class="min-w-370 w-full text-sm" data-tree-grid="bom-cost-breakdown">
+          <thead class="bg-slate-100 text-slate-700">
+            <tr>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]">#</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("code") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= resolveText("node", "Node") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= resolveText("component", "Component") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= resolveText("name", "Name") %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= resolveText("qty", "Qty") %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= resolveText("rate", "Rate") %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= resolveText("cost", "Cost") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= resolveText("rate_source", "Rate Source") %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= resolveText("variance_vs_wac", "Variance vs WAC %") %></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <% detailRows.forEach((row, idx) => { %>
+              <% const rowId = row.node_id || `tree-row-${idx}`; %>
+              <% const parentId = row.parent_node_id || ""; %>
+              <% const hasChildren = Boolean(row.has_children); %>
+              <tr
+                class="bg-white odd:bg-slate-50/30"
+                data-tree-id="<%= rowId %>"
+                data-tree-parent-id="<%= parentId %>"
+                data-tree-depth="<%= Number(row.depth || 0) %>"
+                data-tree-has-children="<%= hasChildren ? '1' : '0' %>"
+              >
+                <td class="px-3 py-2"><%= idx + 1 %></td>
+                <td class="px-3 py-2"><%= row.bom_no || "-" %></td>
+                <td class="px-3 py-2">
+                  <div class="flex items-center gap-2" style="<%= treeIndentStyle(row.depth) %>">
+                    <button
+                      type="button"
+                      class="js-tree-toggle inline-flex h-5 w-5 items-center justify-center rounded border border-slate-300 text-[11px] font-semibold text-slate-600"
+                      data-tree-toggle="<%= rowId %>"
+                      <%= hasChildren ? "" : "disabled" %>
+                      title="<%= hasChildren ? resolveText('expand_row', 'Expand row') : resolveText('no_children', 'No children') %>"
+                      aria-label="<%= hasChildren ? resolveText('expand_row', 'Expand row') : resolveText('no_children', 'No children') %>"
+                    >+</button>
+                    <span class="font-medium text-slate-800"><%= treeLabel(row) %></span>
+                  </div>
+                </td>
+                <td class="px-3 py-2">
+                  <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] <%= componentBadge(row.component_type) %>"><%= row.component_type || "-" %></span>
+                </td>
+                <td class="px-3 py-2"><%= row.component_label || "-" %></td>
+                <td class="px-3 py-2 text-right"><%= row.qty === null || typeof row.qty === 'undefined' ? '-' : formatNumberDisplay(row.qty, { decimals: 3, fallback: "0" }) %></td>
+                <td class="px-3 py-2 text-right"><%= row.unit_rate === null || typeof row.unit_rate === 'undefined' ? '-' : formatCost(row.unit_rate || 0) %></td>
+                <td class="px-3 py-2 text-right font-semibold"><%= formatCost(row.line_cost || 0) %></td>
+                <td class="px-3 py-2"><%= row.rate_source || "-" %></td>
+                <td class="px-3 py-2 text-right <%= (Number(row.variance_pct || 0) <= -5) ? 'text-rose-700 font-semibold' : '' %>"><%= row.variance_pct === null || typeof row.variance_pct === 'undefined' ? '-' : formatNumberDisplay(row.variance_pct, { decimals: 2, fallback: "0" }) %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+      <%- include("../../../base/partials/table-footer", { t, rowCount: reportData?.totals?.rowCount || 0 }) %>
+    <% } %>
+  </section>
+</div>
+
+<script>
+  (function () {
+    if (typeof window.initSearchableSelects === "function") {
+      window.initSearchableSelects();
+    }
+
+    const table = document.querySelector('[data-tree-grid="bom-cost-breakdown"]');
+    if (!table) return;
+
+    const treeLabels = {
+      expand: <%- JSON.stringify(resolveText("expand_row", "Expand row")) %>,
+      collapse: <%- JSON.stringify(resolveText("collapse_row", "Collapse row")) %>,
+      noChildren: <%- JSON.stringify(resolveText("no_children", "No children")) %>,
+    };
+
+    const rows = Array.from(table.querySelectorAll('tbody tr[data-tree-id]'));
+    const rowById = new Map();
+    const childrenById = new Map();
+
+    rows.forEach((row) => {
+      const id = row.getAttribute('data-tree-id');
+      const parentId = row.getAttribute('data-tree-parent-id') || '';
+      rowById.set(id, row);
+      if (!parentId) return;
+      if (!childrenById.has(parentId)) childrenById.set(parentId, []);
+      childrenById.get(parentId).push(row);
+    });
+
+    const updateToggle = (row, expanded) => {
+      const toggle = row.querySelector('.js-tree-toggle');
+      if (!toggle) return;
+      const hasChildren = row.getAttribute('data-tree-has-children') === '1';
+      if (!hasChildren) {
+        toggle.classList.add('opacity-0');
+        toggle.setAttribute('disabled', 'disabled');
+        return;
+      }
+      toggle.textContent = expanded ? '-' : '+';
+      toggle.setAttribute('aria-label', expanded ? treeLabels.collapse : treeLabels.expand);
+      toggle.setAttribute('title', expanded ? treeLabels.collapse : treeLabels.expand);
+    };
+
+    const hideBranch = (rowId) => {
+      const children = childrenById.get(rowId) || [];
+      children.forEach((child) => {
+        child.classList.add('hidden');
+        hideBranch(child.getAttribute('data-tree-id'));
+      });
+    };
+
+    const showBranch = (rowId) => {
+      const children = childrenById.get(rowId) || [];
+      children.forEach((child) => {
+        child.classList.remove('hidden');
+        const childId = child.getAttribute('data-tree-id');
+        if (child.getAttribute('data-tree-state') === 'expanded') {
+          showBranch(childId);
+        }
+      });
+    };
+
+    rows.forEach((row) => {
+      const hasParent = Boolean(row.getAttribute('data-tree-parent-id'));
+      if (hasParent) row.classList.add('hidden');
+      row.setAttribute('data-tree-state', 'collapsed');
+      updateToggle(row, false);
+    });
+
+    table.addEventListener('click', (event) => {
+      const button = event.target.closest('.js-tree-toggle');
+      if (!button) return;
+      const rowId = button.getAttribute('data-tree-toggle');
+      if (!rowId) return;
+      const row = rowById.get(rowId);
+      if (!row) return;
+      const isExpanded = row.getAttribute('data-tree-state') === 'expanded';
+      if (isExpanded) {
+        row.setAttribute('data-tree-state', 'collapsed');
+        updateToggle(row, false);
+        hideBranch(rowId);
+        return;
+      }
+      row.setAttribute('data-tree-state', 'expanded');
+      updateToggle(row, true);
+      showBranch(rowId);
+    });
+  })();
+</script>

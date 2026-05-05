@@ -2863,8 +2863,12 @@ const getProductionPlannedConsumptionReportPageData = async ({
 }) => {
   const branchOptions = await loadBranchOptions(req);
   const selectedBranchIds = normalizeBranchFilter({ req, input });
-  const fromDate = toDateOnly(input?.from_date || input?.fromDate);
-  const toDate = toDateOnly(input?.to_date || input?.toDate);
+  const rawFromDate = String(input?.from_date || input?.fromDate || "").trim();
+  const rawToDate = String(input?.to_date || input?.toDate || "").trim();
+  const fromDate = toDateOnly(rawFromDate);
+  const toDate = toDateOnly(rawToDate);
+  const invalidDateFilterInput =
+    (Boolean(rawFromDate) && !fromDate) || (Boolean(rawToDate) && !toDate);
   const planKind = normalizePlanKind(input?.plan_kind || input?.planKind);
   const reportLoaded =
     String(input?.load_report || input?.loadReport || "").trim() === "1";
@@ -2899,6 +2903,13 @@ const getProductionPlannedConsumptionReportPageData = async ({
         },
       },
     };
+  }
+
+  if (invalidDateFilterInput) {
+    throw new HttpError(
+      400,
+      req?.res?.locals?.t?.("invalid_date_range") || "Invalid date range.",
+    );
   }
 
   if (fromDate && toDate && fromDate > toDate) {

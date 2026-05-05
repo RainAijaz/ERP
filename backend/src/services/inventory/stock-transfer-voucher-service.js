@@ -4004,7 +4004,16 @@ const loadStockTransferVoucherDetails = async ({
   }
 
   const header = await knex("erp.voucher_header")
-    .select("id", "voucher_no", "voucher_date", "status", "remarks", "book_no")
+    .select(
+      "id",
+      "voucher_no",
+      "voucher_date",
+      "status",
+      "remarks",
+      "book_no",
+      "created_by",
+      "approved_by",
+    )
     .where({
       branch_id: req.branchId,
       voucher_type_code: normalizedVoucherTypeCode,
@@ -4012,6 +4021,25 @@ const loadStockTransferVoucherDetails = async ({
     })
     .first();
   if (!header) return null;
+  const auditUserIds = [
+    ...new Set(
+      [toPositiveInt(header.created_by), toPositiveInt(header.approved_by)]
+        .filter(Boolean)
+        .map((id) => Number(id)),
+    ),
+  ];
+  const auditUserNameById = auditUserIds.length
+    ? new Map(
+        (
+          await knex("erp.users")
+            .select("id", "name", "username")
+            .whereIn("id", auditUserIds)
+        ).map((row) => [
+          Number(row.id),
+          String(row.name || row.username || "").trim(),
+        ]),
+      )
+    : new Map();
 
   if (normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out) {
     const hasTransferRef = await hasStockTransferOutTransferRefColumnTx(knex);
@@ -4053,6 +4081,14 @@ const loadStockTransferVoucherDetails = async ({
       voucher_no: Number(header.voucher_no),
       voucher_date: toDateOnly(header.voucher_date),
       status: String(header.status || "").toUpperCase(),
+      created_by_name:
+        String(
+          auditUserNameById.get(Number(header.created_by || 0)) || "",
+        ).trim() || "",
+      approved_by_name:
+        String(
+          auditUserNameById.get(Number(header.approved_by || 0)) || "",
+        ).trim() || "",
       voucher_type_code: normalizedVoucherTypeCode,
       stock_type:
         normalizeStockType(ext?.stock_type) ||
@@ -4140,6 +4176,14 @@ const loadStockTransferVoucherDetails = async ({
     voucher_no: Number(header.voucher_no),
     voucher_date: toDateOnly(header.voucher_date),
     status: String(header.status || "").toUpperCase(),
+    created_by_name:
+      String(
+        auditUserNameById.get(Number(header.created_by || 0)) || "",
+      ).trim() || "",
+    approved_by_name:
+      String(
+        auditUserNameById.get(Number(header.approved_by || 0)) || "",
+      ).trim() || "",
     voucher_type_code: normalizedVoucherTypeCode,
     stock_type:
       normalizeStockType(ext?.stock_type) ||

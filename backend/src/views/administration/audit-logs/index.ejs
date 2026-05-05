@@ -63,6 +63,7 @@
 					<th class="px-6 py-3"><%= t("entity")  %></th>
 					<th class="px-6 py-3"><%= t("sr_no")  %></th>
 					<th class="px-6 py-3"><%= t("action")  %></th>
+					<th class="px-6 py-3"><%= t("summary")  %></th>
 					<% if (canViewDetails) { %>
 						<th class="px-6 py-3"><%= t("details")  %></th>
 					<% } %>
@@ -70,11 +71,11 @@
 			</thead>
 			<tbody class="divide-y divide-slate-100">
 				<% if (!rows || rows.length === 0) { %>
-					<tr><td colspan="<%= canViewDetails ? 7 : 6 %>" class="p-6 text-center text-slate-400"><%= t("no_entries") %></td></tr>
+					<tr><td colspan="<%= canViewDetails ? 8 : 7 %>" class="p-6 text-center text-slate-400"><%= t("no_entries") %></td></tr>
 				<% } %>
 				<% Object.keys(groupedRows).forEach((dateKey) => { %>
 					<tr class="bg-slate-50">
-						<td class="px-6 py-3 text-xs font-semibold uppercase text-slate-500" colspan="<%= canViewDetails ? 7 : 6 %>"><%= dateKey %></td>
+						<td class="px-6 py-3 text-xs font-semibold uppercase text-slate-500" colspan="<%= canViewDetails ? 8 : 7 %>"><%= dateKey %></td>
 					</tr>
 					<% groupedRows[dateKey].forEach((row) => { %>
 						<tr class="hover:bg-amber-50/40">
@@ -94,6 +95,7 @@
 							<td class="px-6 py-4">
 								<span class="inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.2em] ring-1 <%= row.action_class || 'bg-slate-50 text-slate-600 ring-slate-200' %>"><%= row.display_action || row.action %></span>
 							</td>
+							<td class="px-6 py-4 text-slate-700"><%= row.summary || "-" %></td>
 							<% if (canViewDetails) { %>
 								<td class="px-6 py-4">
 									<button

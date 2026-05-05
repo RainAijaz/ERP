@@ -21,6 +21,8 @@
         metaInfo: [
           { labelKey: "source_branch", value: voucher?.source_branch_name || "-" },
           { labelKey: "destination_branch", value: voucher?.destination_branch_name || "-" },
+          { labelKey: "created_by", value: voucher?.created_by_name || "-" },
+          { labelKey: "approved_by", value: voucher?.approved_by_name || "-" },
           { labelKey: "remarks", value: voucher?.remarks || "-", full: true },
         ],
         columns: [
@@ -32,6 +34,11 @@
           { key: "qty", labelKey: "quantity", align: "right" },
         ],
         rows: voucher?.lines || [],
+        signatures: [
+          { labelKey: "prepared_by", value: voucher?.created_by_name || "-" },
+          { labelKey: "checked_by", value: "-" },
+          { labelKey: "approved_by", value: voucher?.approved_by_name || "-" },
+        ],
         cellValue: (line, column, rowIndex) => {
           if (column.key === "sr_no") return rowIndex + 1;
           if (column.key === "qty") return formatNumberDisplay(line?.qty || 0, { decimals: 3, fallback: "0" });

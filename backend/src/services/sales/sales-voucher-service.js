@@ -3558,7 +3558,16 @@ const loadSalesVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
   const targetNo = parseVoucherNo(voucherNo);
   if (!targetNo) return null;
   const header = await knex("erp.voucher_header")
-    .select("id", "voucher_no", "voucher_date", "status", "book_no", "remarks")
+    .select(
+      "id",
+      "voucher_no",
+      "voucher_date",
+      "status",
+      "book_no",
+      "remarks",
+      "created_by",
+      "approved_by",
+    )
     .where({
       branch_id: req.branchId,
       voucher_type_code: voucherTypeCode,
@@ -3566,6 +3575,25 @@ const loadSalesVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
     })
     .first();
   if (!header) return null;
+  const auditUserIds = [
+    ...new Set(
+      [toPositiveInt(header.created_by), toPositiveInt(header.approved_by)]
+        .filter(Boolean)
+        .map((id) => Number(id)),
+    ),
+  ];
+  const auditUserNameById = auditUserIds.length
+    ? new Map(
+        (
+          await knex("erp.users")
+            .select("id", "name", "username")
+            .whereIn("id", auditUserIds)
+        ).map((row) => [
+          Number(row.id),
+          String(row.name || row.username || "").trim(),
+        ]),
+      )
+    : new Map();
 
   const lines = await knex("erp.voucher_line as vl")
     .join("erp.skus as s", "s.id", "vl.sku_id")
@@ -3597,6 +3625,14 @@ const loadSalesVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
     book_no: header.book_no || "",
     reference_no: header.book_no || "",
     description: header.remarks || "",
+    created_by_name:
+      String(
+        auditUserNameById.get(Number(header.created_by || 0)) || "",
+      ).trim() || "",
+    approved_by_name:
+      String(
+        auditUserNameById.get(Number(header.approved_by || 0)) || "",
+      ).trim() || "",
     lines: lines.map((line) => {
       const meta = line.meta && typeof line.meta === "object" ? line.meta : {};
       return {
@@ -3660,6 +3696,18 @@ const loadSalesVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
     details.customer_party_id = Number(ext?.customer_party_id || 0) || null;
     details.customer_name = ext?.customer_name || "";
     details.customer_phone_number = ext?.customer_phone_number || "";
+    if (details.customer_party_id) {
+      const party = await knex("erp.parties")
+        .select("name", "phone1")
+        .where({ id: details.customer_party_id })
+        .first();
+      if (!String(details.customer_name || "").trim()) {
+        details.customer_name = String(party?.name || "").trim();
+      }
+      if (!String(details.customer_phone_number || "").trim()) {
+        details.customer_phone_number = String(party?.phone1 || "").trim();
+      }
+    }
     details.salesman_employee_id =
       Number(ext?.salesman_employee_id || 0) || null;
     details.sale_mode = normalizeSaleMode(ext?.sale_mode);
@@ -3788,6 +3836,8 @@ const loadSalesGatePassDetails = async ({
     customer_phone_number: details.customer_phone_number || "",
     remarks: details.description || "",
     delivery_method: details.delivery_method || "CUSTOMER_PICKUP",
+    created_by_name: details.created_by_name || "",
+    approved_by_name: details.approved_by_name || "",
     lines,
   };
 };

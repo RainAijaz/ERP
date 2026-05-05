@@ -32,21 +32,18 @@
   #bom-form [data-searchable-wrapper]:focus-within {
     z-index: 80;
   }
-  #bom-form [data-rm-view-toggle],
-  #bom-form [data-labour-view-toggle] {
+  #bom-form [data-rm-view-toggle] {
     border-color: #cbd5e1;
     background: #ffffff;
     color: #475569;
   }
-  #bom-form [data-rm-view-toggle][data-active="true"],
-  #bom-form [data-labour-view-toggle][data-active="true"] {
+  #bom-form [data-rm-view-toggle][data-active="true"] {
     border-color: #0f172a;
     background: #0f172a;
     color: #ffffff;
     box-shadow: 0 1px 2px rgba(15, 23, 42, 0.25);
   }
-  #bom-form [data-rm-view-toggle][data-active="false"],
-  #bom-form [data-labour-view-toggle][data-active="false"] {
+  #bom-form [data-rm-view-toggle][data-active="false"] {
     border-color: #cbd5e1;
     background: #ffffff;
     color: #475569;
@@ -56,7 +53,6 @@
   #bom-stage { order: 25; }
   #bom-sfg { order: 30; }
   #bom-rm { order: 40; }
-  #bom-labour { order: 50; }
   #bom-form [data-bom-save-wrap] { order: 60; }
 </style>
 
@@ -126,7 +122,7 @@
       </div>
       <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4" data-header-enter-row>
         <label class="block text-sm font-semibold text-slate-600">
-          <span><%= t("level")  %></span>
+          <span title="<%= t('bom_hint_level') %>"><%= t("level")  %></span>
           <select name="level" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" data-searchable-select="true" data-searchable-variant="unified" data-header-field="level" <%= isEditable ? "" : "disabled" %> required>
             <option value=""><%= t("select") %></option>
             <% (options?.levelOptions || []).forEach(function(levelOpt) { %>
@@ -151,7 +147,7 @@
           <% } %>
         </label>
         <label class="block text-sm font-semibold text-slate-600">
-          <span><%= t("bom_output_batch_size")  %></span>
+          <span title="<%= t('bom_hint_output_batch_size') %>"><%= t("bom_output_batch_size")  %></span>
           <input type="number" step="0.001" min="0.001" name="output_qty" value="<%= header.output_qty ?? 1 %>" data-no-stepper="true" data-header-field="output_qty" class="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-700 transition focus:border-black focus:outline-none focus:ring-2 focus:ring-black/20" <%= isEditable ? "" : "readonly" %> required>
         </label>
         <label class="block text-sm font-semibold text-slate-600">
@@ -212,8 +208,8 @@
             <tr>
               <th class="px-3 py-2 text-left"><%= t("sr_no")  %></th>
               <th class="px-3 py-2 text-left"><%= t("department")  %></th>
-              <th class="px-3 py-2 text-center"><%= t("bom_stage_mandatory_in_flow")  %></th>
-              <th class="px-3 py-2 text-center"><%= t("bom_stage_strict_sequence")  %></th>
+              <th class="px-3 py-2 text-center" title="<%= t('bom_hint_stage_mandatory_in_flow') %>"><%= t("bom_stage_mandatory_in_flow")  %></th>
+              <th class="px-3 py-2 text-center" title="<%= t('bom_hint_stage_strict_sequence') %>"><%= t("bom_stage_strict_sequence")  %></th>
               <th class="px-3 py-2 text-right"><%= t("actions")  %></th>
             </tr>
           </thead>
@@ -238,6 +234,7 @@
             type="button"
             data-rm-view-toggle="sku_rules"
             data-active="false"
+            title="<%= t('bom_hint_sku_rules_toggle') %>"
             class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
           >
             <%= t("bom_sku_rules")  %>
@@ -270,7 +267,7 @@
                 <th class="px-3 py-2 text-left" title="<%= t('bom_hint_base_unit')  %>"><%= t("base_unit")  %></th>
                 <th class="px-3 py-2 text-left" title="<%= t('bom_hint_consumption_department')  %>"><%= t("bom_rm_col_department")  %></th>
                 <th class="px-3 py-2 text-left"><%= t("bom_rules_col_qty")  %></th>
-                <th class="px-3 py-2 text-left"><%= t("normal_loss_pct")  %></th>
+                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_normal_loss_pct') %>"><%= t("normal_loss_pct")  %></th>
                 <th class="px-3 py-2 text-right" title="<%= t('bom_hint_actions')  %>"><%= t("bom_rm_col_actions")  %></th>
               </tr>
             </thead>
@@ -322,70 +319,8 @@
       </div>
     </section>
 
-    <section id="bom-labour" class="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm scroll-mt-24 space-y-4">
-      <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
-        <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("bom_tab_labour")  %></h2>
-        <div class="inline-flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            data-labour-view-toggle="selection"
-            data-active="true"
-            class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
-          >
-            <%= t("bom_labour_selection_title")  %>
-          </button>
-          <button
-            type="button"
-            data-labour-view-toggle="size_rules"
-            data-active="false"
-            class="rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] transition"
-          >
-            <%= t("bom_labour_size_rules_title")  %>
-          </button>
-        </div>
-      </div>
-      <section class="rounded-xl border border-slate-200 bg-white" data-labour-view="selection">
-        <div class="border-b border-slate-200 px-3 py-3">
-          <h3 class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"><%= t("bom_labour_selection_title")  %></h3>
-          <p class="mt-1 text-xs text-slate-500"><%= t("bom_labour_selection_hint")  %></p>
-        </div>
-        <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
-          <table class="min-w-full text-sm">
-            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
-              <tr>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_labour')  %>"><%= t("labours")  %></th>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_department')  %>"><%= t("department")  %></th>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_rate_type')  %>"><%= t("rate_type")  %></th>
-                <th class="px-3 py-2 text-right" title="<%= t('bom_hint_actions')  %>"><%= t("actions")  %></th>
-              </tr>
-            </thead>
-            <tbody data-lines-body="labour_selection"></tbody>
-          </table>
-        </div>
-      </section>
-      <section class="rounded-xl border border-slate-200 bg-white hidden" data-labour-view="size_rules">
-        <div class="border-b border-slate-200 px-3 py-3">
-          <div>
-            <h3 class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"><%= t("bom_labour_size_rules_title")  %></h3>
-            <p class="mt-1 text-xs text-slate-500"><%= t("bom_labour_size_rules_hint")  %></p>
-            <div class="mt-2 flex flex-wrap items-center gap-2" data-labour-rule-sku-sections></div>
-          </div>
-        </div>
-        <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
-          <table class="min-w-full text-sm">
-            <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
-              <tr>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_labour')  %>"><%= t("labours")  %></th>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_department')  %>"><%= t("department")  %></th>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_rate_value')  %>"><%= t("bom_labour_col_rate")  %></th>
-                <th class="px-3 py-2 text-left" title="<%= t('bom_hint_rate_type')  %>"><%= t("rate_type")  %></th>
-              </tr>
-            </thead>
-            <tbody data-lines-body="labour_rule"></tbody>
-          </table>
-        </div>
-      </section>
-    </section>
+    <!-- Labour rates layout removed; underlying logic retained intentionally. -->
+
 
     <% if (isEditable) { %>
       <div class="flex justify-center" data-bom-save-wrap>

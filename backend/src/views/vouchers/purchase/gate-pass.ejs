@@ -19,6 +19,8 @@
           { labelKey: "reference_no", value: voucher?.reference_no || "-" },
         ],
         metaInfo: [
+          { labelKey: "created_by", value: voucher?.created_by_name || "-" },
+          { labelKey: "approved_by", value: voucher?.approved_by_name || "-" },
           { labelKey: "description", value: voucher?.description || "-", full: true },
         ],
         columns: [
@@ -31,6 +33,11 @@
           { key: "amount", labelKey: "amount", align: "right" },
         ],
         rows: voucher?.lines || [],
+        signatures: [
+          { labelKey: "prepared_by", value: voucher?.created_by_name || "-" },
+          { labelKey: "checked_by", value: "-" },
+          { labelKey: "approved_by", value: voucher?.approved_by_name || "-" },
+        ],
         cellValue: (line, column, rowIndex) => {
           if (column.key === "sr_no") return rowIndex + 1;
           if (column.key === "uom") return line?.uom_code || line?.uom_name || "-";

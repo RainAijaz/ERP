@@ -55,6 +55,8 @@
         ],
         metaInfo: [
           { labelKey: "customer_name", value: gatePass?.customer_name || "-" },
+          { labelKey: "created_by", value: gatePass?.created_by_name || "-" },
+          { labelKey: "approved_by", value: gatePass?.approved_by_name || "-" },
           { labelKey: "remarks", value: gatePass?.remarks || "-", full: true },
         ],
         columns: [
@@ -68,9 +70,9 @@
         summaryRows,
         closingNoteText: thankYouText,
         signatures: [
-          { labelText: preparedByText },
-          { labelText: checkedByText },
-          { labelText: approvedByText },
+          { labelText: preparedByText, value: gatePass?.created_by_name || "-" },
+          { labelText: checkedByText, value: "-" },
+          { labelText: approvedByText, value: gatePass?.approved_by_name || "-" },
         ],
         cellValue: (line, column, rowIndex) => {
           if (column.key === "sr_no") return rowIndex + 1;

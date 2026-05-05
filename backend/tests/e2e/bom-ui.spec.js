@@ -26,45 +26,6 @@ const selectFirstNonEmptyOption = async (locator) => {
   return firstValue;
 };
 
-const pruneEmptyLabourRows = async (page) => {
-  const rows = page.locator('[data-lines-body="labour_selection"] tr');
-  let count = await rows.count();
-  for (let i = count - 1; i >= 0; i -= 1) {
-    count = await rows.count();
-    if (count <= 1) break;
-    const row = rows.nth(i);
-    const labourSelect = row.locator('[data-col="labour_id"]');
-    if (!(await labourSelect.count())) continue;
-    const labourId = String(await labourSelect.inputValue());
-    if (!labourId) {
-      const removeBtn = row.locator('[data-remove-row="labour_selection"]');
-      if (await removeBtn.count()) {
-        await removeBtn.click();
-      }
-    }
-  }
-};
-
-const fillEmptyLabourRows = async (page, fixture) => {
-  const rows = page.locator('[data-lines-body="labour_selection"] tr');
-  const count = await rows.count();
-  for (let i = 0; i < count; i += 1) {
-    const row = rows.nth(i);
-    const labourSelect = row.locator('[data-col="labour_id"]');
-    const deptSelect = row.locator('[data-col="dept_id"]');
-    if (!(await labourSelect.count()) || !(await deptSelect.count())) continue;
-    const labourId = String(await labourSelect.inputValue());
-    if (!labourId) {
-      await selectOptionForced(labourSelect, fixture.labourId);
-    }
-    const deptId = String(await deptSelect.inputValue());
-    if (!deptId) {
-      await selectOptionForced(deptSelect, fixture.deptId);
-    }
-    await selectOptionForced(row.locator('[data-col="rate_type"]'), "PER_PAIR");
-  }
-};
-
 const openRmView = async (page, view = "materials") => {
   const normalizedView = view === "size_rules" ? "sku_rules" : view;
   if (normalizedView !== "materials" && normalizedView !== "sku_rules") return;
@@ -105,7 +66,7 @@ test.describe("BOM UI row editing flow", () => {
     await login(page, "E2E_ADMIN");
   });
 
-  test("can edit RM/SFG/Labour/Rule rows and complete draft to approve to version flow", async ({
+  test("can edit RM/SFG/Rule rows and complete draft to approve to version flow", async ({
     page,
   }) => {
     const fixture = ctx.fixture;
@@ -164,10 +125,6 @@ test.describe("BOM UI row editing flow", () => {
       );
     }
 
-    await pruneEmptyLabourRows(page);
-
-    const hasRuleRows = false;
-
     await expect(rmRow.locator('[data-col="rm_item_id"]')).toHaveValue(
       String(fixture.rmItemId),
     );
@@ -176,11 +133,6 @@ test.describe("BOM UI row editing flow", () => {
         sfgRows.first().locator('[data-col="sfg_sku_id"]'),
       ).not.toHaveValue("");
     }
-    const labourSelectionRows = page.locator(
-      '[data-lines-body="labour_selection"] tr',
-    );
-    const labourSelectionRowCount = await labourSelectionRows.count();
-    expect(labourSelectionRowCount).toBeGreaterThan(0);
 
     await openRmView(page, "sku_rules");
     let persistedSkuRuleQty = null;
@@ -223,7 +175,6 @@ test.describe("BOM UI row editing flow", () => {
     expect(Number(draftSnapshot.header.output_qty)).toBeCloseTo(1.5, 3);
     expect(draftSnapshot.counts.rm).toBe(1);
     expect(draftSnapshot.counts.sfg).toBeGreaterThanOrEqual(0);
-    expect(draftSnapshot.counts.labour).toBeGreaterThanOrEqual(1);
     expect(draftSnapshot.counts.rule).toBe(0);
 
     // Regression check: SKU-rule qty must persist after save + reload.
@@ -261,5 +212,41 @@ test.describe("BOM UI row editing flow", () => {
       `form[action$="/${firstBomId}/create-new-version"] button`,
     );
     await expect(createVersionBtn).toHaveCount(1);
+  });
+
+  test("shows BOM header tooltips and hides labour layout", async ({
+    page,
+  }) => {
+    await page.goto("/master-data/bom/new", { waitUntil: "domcontentloaded" });
+
+    await expect(page.locator("#bom-labour")).toHaveCount(0);
+
+    await expect(
+      page.locator('label:has(select[name="level"]) span[title]').first(),
+    ).toHaveAttribute("title", /finished good|semi-finished/i);
+    await expect(
+      page.locator('label:has(input[name="output_qty"]) span[title]').first(),
+    ).toHaveAttribute("title", /standard yield|batch size/i);
+    await expect(
+      page
+        .locator("th[title]")
+        .filter({ hasText: /mandatory/i })
+        .first(),
+    ).toHaveAttribute("title", /cannot bypass/i);
+    await expect(
+      page
+        .locator("th[title]")
+        .filter({ hasText: /sequence/i })
+        .first(),
+    ).toHaveAttribute("title", /preceding stage/i);
+    await expect(
+      page.locator('[data-rm-view-toggle="sku_rules"]').first(),
+    ).toHaveAttribute("title", /variants/i);
+    await expect(
+      page
+        .locator("th[title]")
+        .filter({ hasText: /normal loss/i })
+        .first(),
+    ).toHaveAttribute("title", /percentage/i);
   });
 });

@@ -99,7 +99,8 @@
     <div class="gp-signature">
       <% signatures.forEach((item) => { %>
         <div class="line">
-          <%= safeCellValue(item.labelKey ? t(item.labelKey) : item.labelText) %>
+          <div class="gp-signature-value"><%= safeCellValue(item.value) %></div>
+          <div class="gp-signature-label"><%= safeCellValue(item.labelKey ? t(item.labelKey) : item.labelText) %></div>
         </div>
       <% }) %>
     </div>

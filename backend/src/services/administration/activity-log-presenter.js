@@ -249,6 +249,81 @@ const normalizeEntityIdLabel = ({ row, context, voucherNo }) => {
   return "Pending Create";
 };
 
+const resolveEntityNameFromContext = ({ context }) => {
+  const candidates = [
+    context?.entity_name,
+    context?.entity_label,
+    context?.name,
+    context?.item_name,
+    context?.sku_name,
+    context?.sku_code,
+    context?.article_name,
+    context?.new_value?.name,
+    context?.new_value?.item_name,
+    context?.new_value?.sku_name,
+    context?.new_value?.sku_code,
+    context?.new_value?.article_name,
+    context?.request_body?.name,
+    context?.request_body?.item_name,
+    context?.request_body?.sku_name,
+    context?.request_body?.sku_code,
+    context?.request_body?.article_name,
+  ];
+
+  for (const candidate of candidates) {
+    const text = toText(candidate, "").trim();
+    if (text) return text;
+  }
+  return null;
+};
+
+const buildActivitySummary = ({
+  row,
+  context,
+  t,
+  displayAction,
+  voucherNo,
+}) => {
+  const entityType = String(row?.entity_type || "").toUpperCase();
+  const branchLabel = toText(
+    firstDefined(row?.branch_name, row?.branch_code),
+    "",
+  ).trim();
+  const source = String(context?.source || "")
+    .trim()
+    .toLowerCase();
+  if (source === "approval-request-edit" && context?.approval_request_id) {
+    const approvalLabel = t("approval_request") || "Approval Request";
+    const requestId = String(context.approval_request_id);
+    const entityLabel = normalizeEntityLabel({ row, context, t });
+    const entityName = resolveEntityNameFromContext({ context });
+    const entityIdLabel = normalizeEntityIdLabel({
+      row,
+      context,
+      voucherNo: null,
+    });
+    const targetLabel = entityName || entityIdLabel || "-";
+    return `${displayAction} ${approvalLabel} #${requestId} - ${entityLabel} - ${targetLabel}`.trim();
+  }
+  if (entityType === "VOUCHER") {
+    const voucherLabel = voucherNo
+      ? `VR#${voucherNo}`
+      : t("voucher") || "Voucher";
+    const branchSuffix = branchLabel ? ` - ${branchLabel}` : "";
+    return `${displayAction} ${voucherLabel}${branchSuffix}`.trim();
+  }
+
+  const entityLabel = normalizeEntityLabel({ row, context, t });
+  const entityName = resolveEntityNameFromContext({ context });
+  const entityIdLabel = normalizeEntityIdLabel({
+    row,
+    context,
+    voucherNo: null,
+  });
+  const targetLabel = entityName || entityIdLabel || "-";
+  return `${displayAction} ${entityLabel} - ${targetLabel}`.trim();
+};
+
 const parseLinesValue = (value) => {
   if (Array.isArray(value)) return value;
   if (typeof value !== "string") return null;
@@ -441,6 +516,13 @@ const presentActivityRows = ({ rows = [], t }) =>
     const voucherTypeCode = String(row.voucher_type_code || "").toUpperCase();
     const voucherHref = buildVoucherHref({ voucherTypeCode, voucherNo });
     const displayAction = normalizeActionLabel({ row, context, t });
+    const summary = buildActivitySummary({
+      row,
+      context,
+      t,
+      displayAction,
+      voucherNo,
+    });
 
     return {
       ...row,
@@ -453,6 +535,7 @@ const presentActivityRows = ({ rows = [], t }) =>
         "bg-slate-50 text-slate-600 ring-slate-200",
       entity_label: normalizeEntityLabel({ row, context, t }),
       entity_id_label: normalizeEntityIdLabel({ row, context, voucherNo }),
+      summary,
       voucher_no: voucherNo,
       entity_href: voucherHref,
       details_model: buildDetailsModel({

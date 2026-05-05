@@ -221,6 +221,19 @@ router.post(
           t: res.locals.t,
           forceQueue: true,
         });
+        setCookie(
+          res,
+          UI_NOTICE_COOKIE,
+          JSON.stringify({
+            message:
+              res.locals.t("import_non_admin_submit_notice") ||
+              res.locals.t("approval_submitted") ||
+              "Import request submitted for approval.",
+            autoClose: true,
+            sticky: false,
+          }),
+          { path: "/", maxAge: 30, sameSite: "Lax" },
+        );
         return res.redirect("/master-data/import");
       }
 

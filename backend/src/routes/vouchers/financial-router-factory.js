@@ -364,6 +364,8 @@ const loadVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
   const isUrdu = String(req?.locale || "en").toLowerCase() === "ur";
 
   let headerQuery = knex("erp.voucher_header as vh")
+    .leftJoin("erp.users as cu", "cu.id", "vh.created_by")
+    .leftJoin("erp.users as au", "au.id", "vh.approved_by")
     .select(
       "vh.id",
       "vh.branch_id",
@@ -374,6 +376,12 @@ const loadVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
       "vh.status",
       "vh.remarks",
       "vh.created_at",
+      knex.raw(
+        "COALESCE(NULLIF(cu.name, ''), cu.username, '') as created_by_name",
+      ),
+      knex.raw(
+        "COALESCE(NULLIF(au.name, ''), au.username, '') as approved_by_name",
+      ),
     )
     .where({
       "vh.voucher_type_code": voucherTypeCode,

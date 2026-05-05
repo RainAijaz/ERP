@@ -159,7 +159,7 @@ const translations = {
     asset_types: "Asset Types",
     returnable_assets: "Returnable Assets",
     sales: "Sales",
-    master_data_import: "Master Data Import",
+    master_data_import: "Import Data",
     master_data_import_description:
       "Upload Excel sheets, run a dry-run validation, then apply changes safely in one transaction.",
     import_admin_mode: "Admin apply mode",
@@ -610,6 +610,11 @@ const translations = {
     bom: "BOM",
     bom_list: "BOM Register",
     bom_versions: "Versions",
+    bom_version_history_report: "BOM Version History",
+    bom_cost_breakdown_report: "BOM Cost Breakdown",
+    bom_lifecycle_status_report: "BOM Lifecycle Status",
+    bom_change_log_report: "BOM Change Log",
+    bom_approval_queue_aging_report: "BOM Approval Queue Aging",
     bom_approval: "Approval",
     delete_draft: "Delete",
     bom_description: "Manage global BOM drafts, approvals, and versions.",
@@ -620,8 +625,7 @@ const translations = {
     bom_output_qty: "Output Quantity",
     bom_output_batch_size: "Planned Output Qty",
     bom_output_uom: "Output Unit (UOM)",
-    bom_tab_rm:
-      "List Raw Material Used for This Article (Based on BOM Header Planned Output Qty)",
+    bom_tab_rm: "List Raw Material Used for This Article",
     bom_tab_sfg: "List Semi-Finished Products Used (If Any)",
     bom_tab_sfg_per_sku: "List Semi-Finished Products Used For Each SKU",
     bom_tab_labour: "List Labour Rates For This Article",
@@ -663,11 +667,23 @@ const translations = {
     bom_rm_col_department: "Consumption Department",
     bom_rm_col_actions: "Actions",
     bom_sku_variant_scope: "SKU Variant Scope",
+    bom_hint_level:
+      "Specify if this BOM produces a final Finished Good or a Semi-Finished component.",
+    bom_hint_output_batch_size:
+      "The standard yield quantity. All raw material calculations below will be proportionally based on this batch size.",
     bom_hint_material: "Select the raw material used in this BOM.",
     bom_hint_base_unit:
       "Base unit is picked from the selected material and is read-only.",
     bom_hint_consumption_department:
-      "Production department that consumes this material.",
+      "The specific production stage where this material is physically consumed from inventory.",
+    bom_hint_stage_mandatory_in_flow:
+      "If checked, production tracking cannot bypass this department.",
+    bom_hint_stage_strict_sequence:
+      "If checked, this stage cannot begin until the preceding stage is fully completed.",
+    bom_hint_normal_loss_pct:
+      "The expected percentage of material wasted during production. The system will automatically consume the required material quantity by this percentage to compensate.",
+    bom_hint_sku_rules_toggle:
+      "Define the material used based on the product's variants",
     bom_hint_actions: "Use plus/minus to add or remove rows.",
     bom_hint_size_rule_material: "Material to which this size rule applies.",
     bom_hint_size_rule_uom: "Unit for the size-specific quantity.",
@@ -690,7 +706,7 @@ const translations = {
     bom_hint_article_sku: "Finished article SKU this row applies to.",
     bom_hint_semi_finished: "Semi-finished SKU used in this BOM.",
     bom_hint_step_upper_sku:
-      "Select the semi-finished SKU used for this finished SKU.",
+      "Links this SFG to a specific variant of the parent item to ensure the correct components are pulled.",
     bom_hint_step_sku: "Select step SKU used for this finished SKU.",
     bom_hint_upper_sku: "Select upper SKU used for this finished SKU.",
     bom_hint_required_qty: "Required quantity for this line.",
@@ -1619,6 +1635,7 @@ const translations = {
     approval_pending_subject: "Pending Approval",
     approval_pending_details: "Your request is submitted and pending approval.",
     approval_request_id: "Approval Request ID",
+    approval_request: "Approval Request",
     audit_logs_description: "Track system activity and changes.",
     branch_name_ur: "Branch Name (Urdu)",
     name_ur: "Name (Urdu)",
@@ -1923,7 +1940,7 @@ translations.ur = {
   approvals: "منظوری",
   pending_approvals: "زیر التواء منظوری",
   master_data: "ماسٹر ڈیٹا",
-  master_data_import: "ماسٹر ڈیٹا امپورٹ",
+  master_data_import: "ڈیٹا امپورٹ",
   master_data_import_description:
     "ایکسل شیٹ اپ لوڈ کریں، پہلے ڈرائی رن سے غلطیاں دیکھیں، پھر محفوظ ٹرانزیکشن کے ساتھ امپورٹ لاگو کریں۔",
   import_admin_mode: "ایڈمن اپلائی موڈ",
@@ -2187,6 +2204,7 @@ translations.ur = {
   approval_rejected_detail:
     "آپ کی منظوری کی درخواست مسترد کر دی گئی: {summary}",
   approval_request_id: "منظوری کی درخواست ID",
+  approval_request: "منظوری کی درخواست",
   approval_request_not_found:
     "منظوری کی درخواست نہیں ملی یا پہلے ہی فیصلہ کیا گیا ہے۔",
   approval_request_updated: "منظوری کی درخواست کو اپ ڈیٹ کر دیا گیا۔",
@@ -2398,11 +2416,23 @@ translations.ur = {
   bom_rm_col_department: "استعمال کرنے والا ڈیپارٹمنٹ",
   bom_rm_col_actions: "اعمال",
   bom_sku_variant_scope: "SKU ویریئنٹ اسکوپ",
+  bom_hint_level:
+    "یہ بتائیں کہ یہ BOM تیار شدہ فائنل گڈ بناتا ہے یا نیم تیار جزو۔",
+  bom_hint_output_batch_size:
+    "معیاری پیداوار کی مقدار۔ نیچے تمام خام مال کی مقداریں اسی بیچ سائز کے مطابق تناسب سے ہوں گی۔",
   bom_hint_material: "?? BOM ??? ??????? ???? ???? ??? ??? ????? ?????",
   bom_hint_base_unit:
     "??? ???? ????? ??????? ?? ??? ?? ???? ?? ??? ??? ????? ???? ??? ?? ?????",
   bom_hint_consumption_department:
-    "??????? ????????? ?? ?? ??????? ?? ??????? ???? ???",
+    "وہ مخصوص پیداواری مرحلہ جہاں یہ مواد حقیقت میں انوینٹری سے خرچ ہوتا ہے۔",
+  bom_hint_stage_mandatory_in_flow:
+    "اگر منتخب ہو تو پروڈکشن ٹریکنگ اس شعبے کو بائی پاس نہیں کر سکتی۔",
+  bom_hint_stage_strict_sequence:
+    "اگر منتخب ہو تو یہ مرحلہ پچھلا مرحلہ مکمل ہونے سے پہلے شروع نہیں ہو سکتا۔",
+  bom_hint_normal_loss_pct:
+    "پیداوار میں ضائع ہونے والے مواد کی متوقع فیصد۔ سسٹم اسی فیصد کے مطابق اضافی مقدار خود کھپت کرے گا۔",
+  bom_hint_sku_rules_toggle:
+    "پروڈکٹ ویریئنٹس کے مطابق استعمال ہونے والا مواد متعین کریں۔",
   bom_hint_actions: "???/????? ?? ??? ???? ?? ??? ?????",
   bom_hint_size_rule_material: "?? ??????? ?? ?? ???? ??? ???? ?????",
   bom_hint_size_rule_uom: "???? ??? ????? ?? ??? ?????",
@@ -2423,7 +2453,7 @@ translations.ur = {
   bom_hint_article_sku: "?? ???? ?? ???? SKU ?? ???? ???? ???",
   bom_hint_semi_finished: "?? BOM ??? ??????? ???? ???? ??? ???? SKU?",
   bom_hint_step_upper_sku:
-    "?? ???? SKU ?? ??? ??????? ???? ???? ??? ???? SKU ????? ?????",
+    "اس SFG کو پیرنٹ آئٹم کے مخصوص ویریئنٹ سے جوڑتا ہے تاکہ درست اجزاء استعمال ہوں۔",
   bom_hint_step_sku: "?? ???? SKU ?? ??? Step SKU ????? ?????",
   bom_hint_upper_sku: "?? ???? SKU ?? ??? Upper SKU ????? ?????",
   bom_hint_required_qty: "?? ???? ?? ??? ????? ??????",
@@ -2456,13 +2486,17 @@ translations.ur = {
   bom_rule_replace_rm: "RM کو تبدیل کریں۔",
   bom_specific: "مخصوص",
   bom_tab_labour: "سائز اور ڈیپارٹمنٹ کے مطابق لیبر ریٹس",
-  bom_tab_rm:
-    "List Raw Material Used for This Article (Based on BOM Header Planned Output Qty)",
+  bom_tab_rm: "List Raw Material Used for This Article",
   bom_tab_sfg: "استعمال ہونے والی نیم تیار مصنوعات (اگر ہوں)",
   bom_tab_sfg_per_sku: "ہر SKU کے لیے استعمال ہونے والی نیم تیار مصنوعات",
   bom_tab_variant_rules: "متغیر قواعد",
   bom_version_created: "نیا ورژن بنایا گیا۔",
   bom_versions: "ورژنز",
+  bom_version_history_report: "بی او ایم ورژن ہسٹری",
+  bom_cost_breakdown_report: "بی او ایم لاگت کی تفصیل",
+  bom_lifecycle_status_report: "بی او ایم لائف سائیکل اسٹیٹس",
+  bom_change_log_report: "بی او ایم تبدیلی لاگ",
+  bom_approval_queue_aging_report: "بی او ایم منظوری قطار عمر",
   bom_versions_description:
     "آئٹم اور سطح کے لحاظ سے ورژن کی تاریخ اور حیثیت کو ٹریک کریں۔",
   book_number: "کتاب کا نمبر",
@@ -3436,7 +3470,7 @@ Object.assign(translations.en, {
   bom_header_change_apply_clear_quantities:
     "Apply header changes and clear dependent quantities?",
   bom_hint_sfg_consumed_stage:
-    "Select the stage where this SFG will be consumed.",
+    "The department where this sub-assembly is joined with the main product.",
   check: "Check",
   checking: "Checking",
   close: "Close",
@@ -3511,7 +3545,7 @@ Object.assign(translations.ur, {
   bom_header_change_apply_clear_quantities:
     "ہیڈر تبدیلیاں لاگو کر کے متعلقہ مقداریں صاف کی جائیں؟",
   bom_hint_sfg_consumed_stage:
-    "وہ مرحلہ منتخب کریں جہاں یہ ایس ایف جی خرچ ہوگا۔",
+    "وہ شعبہ جہاں یہ سب اسمبلی مین پروڈکٹ کے ساتھ جوڑی جاتی ہے۔",
   check: "چیک",
   checking: "چیک ہو رہا ہے",
   close: "بند کریں",

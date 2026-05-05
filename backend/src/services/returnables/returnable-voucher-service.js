@@ -1257,12 +1257,20 @@ const loadDispatchDetailsTx = async ({ trx, req, voucherNo }) => {
   const header = await trx("erp.voucher_header as vh")
     .join("erp.rgp_outward as ro", "ro.voucher_id", "vh.id")
     .join("erp.parties as p", "p.id", "ro.vendor_party_id")
+    .leftJoin("erp.users as cu", "cu.id", "vh.created_by")
+    .leftJoin("erp.users as au", "au.id", "vh.approved_by")
     .select(
       "vh.id",
       "vh.voucher_no",
       "vh.voucher_date",
       "vh.status",
       "vh.remarks",
+      knex.raw(
+        "COALESCE(NULLIF(cu.name, ''), cu.username, '') as created_by_name",
+      ),
+      knex.raw(
+        "COALESCE(NULLIF(au.name, ''), au.username, '') as approved_by_name",
+      ),
       "ro.vendor_party_id",
       "ro.reason_code",
       "ro.expected_return_date",
@@ -1336,12 +1344,20 @@ const loadReceiptDetailsTx = async ({ trx, req, voucherNo }) => {
     .join("erp.voucher_header as ovh", "ovh.id", "ri.rgp_out_voucher_id")
     .join("erp.rgp_outward as ro", "ro.voucher_id", "ovh.id")
     .join("erp.parties as p", "p.id", "ro.vendor_party_id")
+    .leftJoin("erp.users as cu", "cu.id", "vh.created_by")
+    .leftJoin("erp.users as au", "au.id", "vh.approved_by")
     .select(
       "vh.id",
       "vh.voucher_no",
       "vh.voucher_date",
       "vh.status",
       "vh.remarks",
+      knex.raw(
+        "COALESCE(NULLIF(cu.name, ''), cu.username, '') as created_by_name",
+      ),
+      knex.raw(
+        "COALESCE(NULLIF(au.name, ''), au.username, '') as approved_by_name",
+      ),
       "ri.rgp_out_voucher_id",
       "ri.return_date",
       "ovh.voucher_no as outward_reference_voucher_no",

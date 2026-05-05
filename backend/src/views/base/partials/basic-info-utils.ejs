@@ -481,6 +481,7 @@
       if (modalError && !preserveModalError) {
         modalError.textContent = "";
         modalError.hidden = true;
+        modalError.dataset.alertShown = "";
       }
       if (auditPanel && mode === "edit") {
         auditPanel.hidden = false;
@@ -517,6 +518,25 @@
       modal.classList.remove("flex");
       setModalBodyScrollLock(false);
       cleanModalPath();
+    };
+    const showModalErrorAlertIfAny = () => {
+      if (!modalError || modalError.hidden) return;
+      const message = String(modalError.textContent || "").trim();
+      if (!message || modalError.dataset.alertShown === "1") return;
+      modalError.dataset.alertShown = "1";
+      if (typeof window.showVoucherError === "function") {
+        window.showVoucherError(message);
+        return;
+      }
+      window.alert(message);
+    };
+    const setModalError = (message) => {
+      if (!modalError) return;
+      const text = String(message || "").trim();
+      modalError.textContent = text;
+      modalError.hidden = !text;
+      modalError.dataset.alertShown = "";
+      showModalErrorAlertIfAny();
     };
 
     const openConfirm = (title, message, action) => {
@@ -1434,10 +1454,7 @@
             );
             if (!selected.length) {
               event.preventDefault();
-              if (modalError) {
-                modalError.textContent = i18n.selectBranch;
-                modalError.hidden = false;
-              }
+              setModalError(i18n.selectBranch);
               return;
             }
           }
@@ -1449,10 +1466,7 @@
             const phone1Value = phone1.value.trim();
             if (!phone1Value) {
               event.preventDefault();
-              if (modalError) {
-                modalError.textContent = i18n.selectPhone;
-                modalError.hidden = false;
-              }
+              setModalError(i18n.selectPhone);
               return;
             }
           }
@@ -1471,10 +1485,7 @@
             });
             if (exists) {
               event.preventDefault();
-              if (modalError) {
-                modalError.textContent = i18n.unitCodeExists;
-                modalError.hidden = false;
-              }
+              setModalError(i18n.unitCodeExists);
               return;
             }
           }
@@ -1491,18 +1502,12 @@
           const factorValue = factorInput ? Number(factorInput.value) : 0;
           if (fromValue && toValue && fromValue === toValue) {
             event.preventDefault();
-            if (modalError) {
-              modalError.textContent = i18n.conversionSame;
-              modalError.hidden = false;
-            }
+            setModalError(i18n.conversionSame);
             return;
           }
           if (!factorValue || factorValue <= 0) {
             event.preventDefault();
-            if (modalError) {
-              modalError.textContent = i18n.conversionFactor;
-              modalError.hidden = false;
-            }
+            setModalError(i18n.conversionFactor);
             return;
           }
           const exists = getRows().some((row) => {
@@ -1515,24 +1520,22 @@
           });
           if (exists) {
             event.preventDefault();
-            if (modalError) {
-              modalError.textContent = i18n.conversionExists;
-              modalError.hidden = false;
-            }
+            setModalError(i18n.conversionExists);
           }
         }
 
-        // UNIVERSAL ERROR ALERT: Intercept the form submit to show alert on backend/DB error
-        // This runs after the above client-side validation, so only for actual submits
-        setTimeout(() => {
-          // Look for a server-side error message in the modal error element after submit
-          if (modalError && !modalError.hidden && modalError.textContent) {
-            // Show a JS alert for any error message (universal debug)
-            alert("Error: " + modalError.textContent);
-          }
-        }, 300);
       });
     }
+
+    if (modal && !modal.classList.contains("hidden")) {
+      showModalErrorAlertIfAny();
+    }
+    document.addEventListener("modal:opened", () => {
+      if (modalError) {
+        modalError.dataset.alertShown = "";
+      }
+      showModalErrorAlertIfAny();
+    });
 
     const initMultiSelect = (wrap) => {
       if (wrap.dataset.multiReady === "true") return;

@@ -1,0 +1,221 @@
+<%
+  const rows = Array.isArray(reportData?.rows) ? reportData.rows : [];
+  const reportLoaded = Boolean(filters?.reportLoaded);
+  const pagination = reportData?.pagination || {};
+  const currentPage = Number(pagination?.page || 1);
+  const currentLimit = Number(pagination?.limit || Number(filters?.limit || 50));
+  const totalPages = Number(pagination?.totalPages || 0);
+  const allMultiOptionValue = "__ALL__";
+  const selectedItemIds = Array.isArray(filters?.itemIds)
+    ? filters.itemIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
+    : [];
+  const itemAllSelected = selectedItemIds.length === 0;
+  const selectedChangedByIds = Array.isArray(filters?.changedByIds)
+    ? filters.changedByIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
+    : [];
+  const changedByAllSelected = selectedChangedByIds.length === 0;
+
+  const resolveText = (key, fallback) => {
+    const value = t(key);
+    return value && value !== key ? value : fallback;
+  };
+  const formatJson = (value) => {
+    if (!value) return "-";
+    try {
+      return JSON.stringify(value);
+    } catch (_) {
+      return String(value);
+    }
+  };
+  const sectionLabel = (value) => {
+    const v = String(value || "").toLowerCase();
+    if (v === "header") return resolveText("header", "Header");
+    if (v === "rm_lines") return resolveText("raw_materials", "Raw Materials");
+    if (v === "sfg_lines") return resolveText("semi_finished", "Semi Finished");
+    if (v === "labour_lines") return resolveText("labours", "Labours");
+    if (v === "variant_rules") return resolveText("variant_rules", "Variant Rules");
+    return v || "-";
+  };
+  const actionLabel = (value) => {
+    const v = String(value || "").toLowerCase();
+    if (!v) return "-";
+    if (v === "approve_draft") return resolveText("approve", "Approve");
+    if (v === "delete_draft") return resolveText("delete_draft", "Delete Draft");
+    if (v === "create_version_from") return resolveText("bom_create_new_version", "Create New Version");
+    if (v === "toggle_lifecycle") return resolveText("bom_lifecycle", "BOM Lifecycle");
+    return v;
+  };
+
+  const buildPageUrl = (targetPage) => {
+    const query = new URLSearchParams();
+    query.set("load_report", "1");
+    query.set("page", String(targetPage));
+    query.set("limit", String(currentLimit));
+    if (filters?.fromDate) query.set("from_date", String(filters.fromDate));
+    if (filters?.toDate) query.set("to_date", String(filters.toDate));
+    if (filters?.bomNo) query.set("bom_no", String(filters.bomNo));
+    if (filters?.section) query.set("section", String(filters.section));
+    if (filters?.changeType) query.set("change_type", String(filters.changeType));
+    if (filters?.orderBy) query.set("order_by", String(filters.orderBy));
+    selectedItemIds.forEach((id) => query.append("item_ids", String(id)));
+    selectedChangedByIds.forEach((id) => query.append("changed_by_ids", String(id)));
+    return `${reportPath}?${query.toString()}`;
+  };
+%>
+
+<div class="mx-auto w-full max-w-none space-y-4 px-2">
+  <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div class="flex items-center gap-2">
+      <h1 class="text-2xl font-display font-semibold tracking-tight text-ink">
+        <%= resolveText("bom_change_log_report", "BOM Change Log") %>
+      </h1>
+    </div>
+    <p class="mt-1 text-sm text-slate-600">
+      <%= resolveText("bom_change_log_report_description", "Audit who changed BOM headers, lines, overrides, and stage routes.") %>
+    </p>
+
+    <form method="post" action="<%= reportPath %>" class="mt-3 rounded-xl border border-slate-200 bg-slate-50/30 p-3 sm:p-4">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="load_report" value="1">
+      <input type="hidden" name="page" value="1">
+
+      <div class="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-3">
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= t("article_name") %></span>
+          <select name="item_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+            <option value="<%= allMultiOptionValue %>" <%= itemAllSelected ? "selected" : "" %>><%= t("all") %></option>
+            <% (options?.items || []).forEach((item) => { %>
+              <option value="<%= item.id %>" <%= selectedItemIds.includes(Number(item.id)) ? "selected" : "" %>><%= `${item.name || item.id}${item.code ? ` (${item.code})` : ""}` %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= resolveText("bom_no", "BOM No") %></span>
+          <input type="text" name="bom_no" value="<%= filters?.bomNo || '' %>" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" placeholder="<%= resolveText('search', 'Search') %>">
+        </label>
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= resolveText("section", "Section") %></span>
+          <select name="section" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+            <% (options?.sections || []).forEach((row) => { %>
+              <% const value = String(row.value || "ALL"); %>
+              <option value="<%= value %>" <%= String(filters?.section || "ALL") === value ? "selected" : "" %>><%= value === "ALL" ? t("all") : sectionLabel(value) %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= resolveText("change_type", "Change Type") %></span>
+          <select name="change_type" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+            <% (options?.changeTypes || []).forEach((row) => { %>
+              <% const value = String(row.value || "ALL"); %>
+              <option value="<%= value %>" <%= String(filters?.changeType || "ALL") === value ? "selected" : "" %>><%= value === "ALL" ? t("all") : (resolveText(value.toLowerCase(), value)) %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= resolveText("changed_by", "Changed By") %></span>
+          <select name="changed_by_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+            <option value="<%= allMultiOptionValue %>" <%= changedByAllSelected ? "selected" : "" %>><%= t("all") %></option>
+            <% (options?.changedByUsers || []).forEach((userRow) => { %>
+              <option value="<%= userRow.id %>" <%= selectedChangedByIds.includes(Number(userRow.id)) ? "selected" : "" %>><%= userRow.username || userRow.id %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= t("from_date") %></span>
+          <input type="date" name="from_date" value="<%= filters?.fromDate || '' %>" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+        </label>
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= t("to_date") %></span>
+          <input type="date" name="to_date" value="<%= filters?.toDate || '' %>" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+        </label>
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= resolveText("rows", "Rows") %></span>
+          <select name="limit" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+            <% (options?.limits || []).forEach((row) => { %>
+              <% const value = Number(row.value || 50); %>
+              <option value="<%= value %>" <%= Number(currentLimit) === value ? "selected" : "" %>><%= value %></option>
+            <% }) %>
+          </select>
+        </label>
+      </div>
+
+      <div class="mt-3 flex flex-wrap gap-2">
+        <button type="submit" class="inline-flex items-center rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= t("load") %></button>
+        <a href="<%= reportPath %>" class="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= t("cancel") %></a>
+      </div>
+    </form>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <% if (filters?.validationMessage) { %>
+      <div class="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"><%= filters.validationMessage %></div>
+    <% } %>
+    <% if (!reportLoaded) { %>
+      <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= t("load_report_to_view") %></div>
+    <% } else if (!rows.length) { %>
+      <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= t("no_entries") %></div>
+    <% } else { %>
+      <div class="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+        <div><span class="font-semibold"><%= t("total") %>:</span> <%= Number(reportData?.totals?.rowCount || 0) %> <%= t("entries") %></div>
+        <div><%= resolveText("page", "Page") %> <%= currentPage %> <%= resolveText("of", "of") %> <%= totalPages %></div>
+      </div>
+      <div class="overflow-x-auto rounded-2xl border border-slate-200">
+        <table class="min-w-370 w-full text-sm">
+          <thead class="bg-slate-100 text-slate-700">
+            <tr>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]">#</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= resolveText("changed_at", "Changed At") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("code") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("article_name") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("version") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= resolveText("section", "Section") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= resolveText("change_type", "Change Type") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= resolveText("changed_by", "Changed By") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= resolveText("action", "Action") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= resolveText("old_value", "Old Value") %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= resolveText("new_value", "New Value") %></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <% rows.forEach((row, index) => { %>
+              <tr class="bg-white odd:bg-slate-50/30 align-top">
+                <td class="px-3 py-2"><%= ((currentPage - 1) * currentLimit) + index + 1 %></td>
+                <td class="px-3 py-2"><%= formatDateDisplay(row.changed_at) %></td>
+                <td class="px-3 py-2"><%= row.bom_no || "-" %></td>
+                <td class="px-3 py-2"><%= row.item_name || "-" %></td>
+                <td class="px-3 py-2">V<%= row.version_no || "-" %></td>
+                <td class="px-3 py-2"><%= sectionLabel(row.section) %></td>
+                <td class="px-3 py-2"><%= resolveText(String(row.change_type || "").toLowerCase(), row.change_type || "-") %></td>
+                <td class="px-3 py-2"><%= row.changed_by_name || "-" %></td>
+                <td class="px-3 py-2"><%= actionLabel(row.request_action) %></td>
+                <td class="px-3 py-2">
+                  <pre class="max-w-80 overflow-auto whitespace-pre-wrap break-words rounded border border-slate-200 bg-slate-50 p-2 text-[11px] leading-snug text-slate-700"><%= formatJson(row.old_value) %></pre>
+                </td>
+                <td class="px-3 py-2">
+                  <pre class="max-w-80 overflow-auto whitespace-pre-wrap break-words rounded border border-slate-200 bg-slate-50 p-2 text-[11px] leading-snug text-slate-700"><%= formatJson(row.new_value) %></pre>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+      <div class="mt-3 flex items-center justify-end gap-2">
+        <a href="<%= pagination?.hasPrev ? buildPageUrl(currentPage - 1) : '#' %>" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 <%= pagination?.hasPrev ? '' : 'pointer-events-none opacity-40' %>">
+          <%= resolveText("previous", "Prev") %>
+        </a>
+        <a href="<%= pagination?.hasNext ? buildPageUrl(currentPage + 1) : '#' %>" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700 <%= pagination?.hasNext ? '' : 'pointer-events-none opacity-40' %>">
+          <%= resolveText("next", "Next") %>
+        </a>
+      </div>
+      <%- include("../../../base/partials/table-footer", { t, rowCount: reportData?.totals?.rowCount || 0 }) %>
+    <% } %>
+  </section>
+</div>
+
+<script>
+  (function () {
+    if (typeof window.initSearchableSelects === "function") {
+      window.initSearchableSelects();
+    }
+  })();
+</script>

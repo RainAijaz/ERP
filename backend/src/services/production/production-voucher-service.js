@@ -5903,6 +5903,8 @@ const loadProductionVoucherDetails = async ({
       "vh.remarks",
       "vh.book_no",
       "vh.voucher_type_code",
+      "vh.created_by",
+      "vh.approved_by",
     )
     .where({
       "vh.branch_id": req.branchId,
@@ -5911,6 +5913,25 @@ const loadProductionVoucherDetails = async ({
     })
     .first();
   if (!header) return null;
+  const auditUserIds = [
+    ...new Set(
+      [toPositiveInt(header.created_by), toPositiveInt(header.approved_by)]
+        .filter(Boolean)
+        .map((id) => Number(id)),
+    ),
+  ];
+  const auditUserNameById = auditUserIds.length
+    ? new Map(
+        (
+          await knex("erp.users")
+            .select("id", "name", "username")
+            .whereIn("id", auditUserIds)
+        ).map((row) => [
+          Number(row.id),
+          String(row.name || row.username || "").trim(),
+        ]),
+      )
+    : new Map();
   const supportsDcvStage = await hasDcvHeaderStageColumnTx(knex);
   const supportsProductionStage = await hasProductionLineStageColumnTx(knex);
   const supportsLossStage = await hasAbnormalLossStageColumnTx(knex);
@@ -6183,6 +6204,14 @@ const loadProductionVoucherDetails = async ({
     status: String(header.status || "").toUpperCase(),
     remarks: header.remarks || "",
     reference_no: header.book_no || "",
+    created_by_name:
+      String(
+        auditUserNameById.get(Number(header.created_by || 0)) || "",
+      ).trim() || "",
+    approved_by_name:
+      String(
+        auditUserNameById.get(Number(header.approved_by || 0)) || "",
+      ).trim() || "",
     voucher_type_code: voucherTypeCode,
     dept_id:
       voucherTypeCode === PRODUCTION_VOUCHER_TYPES.abnormalLoss

@@ -1,0 +1,48 @@
+<%
+  const resolveText = (key, fallback) => {
+    const value = t(key);
+    return value && value !== key ? value : fallback;
+  };
+  const reportTitle = resolveText("bom_reports", "BOM Reports");
+  const reportPurpose = resolveText(
+    "bom_reports_purpose_tooltip",
+    "Analyze BOM lifecycle, costing, approvals, and traceability with standardized report views.",
+  );
+%>
+
+<div class="mx-auto w-full max-w-none space-y-4 px-2">
+  <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div class="flex items-center gap-2">
+      <h1 class="text-2xl font-display font-semibold tracking-tight text-ink"><%= reportTitle %></h1>
+      <% if (reportPurpose) { %>
+        <span class="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-[10px] font-bold text-slate-600 cursor-help" title="<%= reportPurpose %>" aria-label="<%= reportPurpose %>">i</span>
+      <% } %>
+    </div>
+    <p class="mt-1 text-sm text-slate-600"><%= t("reports") %></p>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <a href="<%= versionHistoryPath %>" class="rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-accent/40 hover:shadow-sm">
+        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"><%= t("report") %></div>
+        <div class="mt-1 text-lg font-semibold text-slate-900"><%= resolveText("bom_version_history_report", "BOM Version History") %></div>
+      </a>
+      <a href="<%= costBreakdownPath %>" class="rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-accent/40 hover:shadow-sm">
+        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"><%= t("report") %></div>
+        <div class="mt-1 text-lg font-semibold text-slate-900"><%= resolveText("bom_cost_breakdown_report", "BOM Cost Breakdown") %></div>
+      </a>
+      <a href="<%= lifecycleStatusPath %>" class="rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-accent/40 hover:shadow-sm">
+        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"><%= t("report") %></div>
+        <div class="mt-1 text-lg font-semibold text-slate-900"><%= resolveText("bom_lifecycle_status_report", "BOM Lifecycle Status") %></div>
+      </a>
+      <a href="<%= changeLogPath %>" class="rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-accent/40 hover:shadow-sm">
+        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"><%= t("report") %></div>
+        <div class="mt-1 text-lg font-semibold text-slate-900"><%= resolveText("bom_change_log_report", "BOM Change Log") %></div>
+      </a>
+      <a href="<%= approvalAgingPath %>" class="rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-accent/40 hover:shadow-sm">
+        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"><%= t("report") %></div>
+        <div class="mt-1 text-lg font-semibold text-slate-900"><%= resolveText("bom_approval_queue_aging_report", "BOM Approval Queue Aging") %></div>
+      </a>
+    </div>
+  </section>
+</div>

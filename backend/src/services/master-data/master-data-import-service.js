@@ -199,7 +199,9 @@ const parseBoolean = (value, fallback = null) => {
 
 const parseNumber = (value, fallback = null) => {
   if (value === null || value === undefined || value === "") return fallback;
-  const parsed = Number(value);
+  const normalizedValue =
+    typeof value === "string" ? value.replace(/,/g, "").trim() : value;
+  const parsed = Number(normalizedValue);
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
@@ -3049,7 +3051,13 @@ const ENTITY_SPECS = Object.freeze({
         "packing_type",
         "packing",
       ],
-      saleRate: ["skus_sale_rate", "sale_rate", "rate"],
+      saleRate: [
+        "skus_sale_rate",
+        "sale_rate",
+        "pair_rate",
+        "default_rate",
+        "rate",
+      ],
       isActive: ["skus_is_active", "is_active"],
     },
     async plan(row, db, actorId, context) {
@@ -3235,10 +3243,12 @@ const ENTITY_SPECS = Object.freeze({
       }
 
       const existingRate = parseNumber(existingSku?.sale_rate, null);
-      const saleRate = parseNumber(row.raw.saleRate, existingRate ?? 0);
-      if (saleRate === null) {
+      const hasSaleRateToken = Boolean(saleRateToken);
+      const parsedSaleRate = parseNumber(row.raw.saleRate, null);
+      if (hasSaleRateToken && parsedSaleRate === null) {
         return { error: `Sale rate must be numeric for SKU ${skuCode}.` };
       }
+      const saleRate = hasSaleRateToken ? parsedSaleRate : existingRate ?? 0;
       if (saleRate < 0) {
         return { error: `Sale rate cannot be negative for SKU ${skuCode}.` };
       }
@@ -3249,6 +3259,32 @@ const ENTITY_SPECS = Object.freeze({
           ? true
           : Boolean(existingSku.is_active),
       );
+
+      if (existingSku?.id) {
+        const sameItem = Number(existingSku.item_id || 0) === Number(item.id || 0);
+        const sameSize = Number(existingSku.size_id || 0) === Number(sizeId || 0);
+        const sameGrade = Number(existingSku.grade_id || 0) === Number(gradeId || 0);
+        const sameColor = Number(existingSku.color_id || 0) === Number(colorId || 0);
+        const samePacking =
+          Number(existingSku.packing_type_id || 0) === Number(packingTypeId || 0);
+        const sameRate =
+          Math.abs(Number(existingRate ?? 0) - Number(saleRate || 0)) < 0.0001;
+        const sameStatus = Boolean(existingSku.is_active) === Boolean(isActive);
+        if (
+          sameItem &&
+          sameSize &&
+          sameGrade &&
+          sameColor &&
+          samePacking &&
+          sameRate &&
+          sameStatus
+        ) {
+          return {
+            skip: true,
+            skipReason: `No effective changes detected for SKU ${skuCode}.`,
+          };
+        }
+      }
 
       return {
         action: existingSku?.id ? "update" : "create",
