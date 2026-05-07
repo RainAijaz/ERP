@@ -90,6 +90,8 @@
             <%- include("../base/partials/table-empty", { t, colspan: displayColumns.length + 2 }) %>
           <% } else { %>
             <% rows.forEach(function(row, idx) { %>
+              <% const editFieldNames = page.fields.map(function(field) { return field.name; }); %>
+              <% if (page.scopeKey === "hr_payroll.labour_rates" && !editFieldNames.includes("sku_code")) { editFieldNames.push("sku_code"); } %>
               <tr
                 class="hover:bg-amber-50/40 odd:bg-white even:bg-slate-50/40"
                 data-row
@@ -160,7 +162,7 @@
                     t,
                     row,
                     basePath,
-                    editFields: page.fields.map(function(field) { return field.name; }),
+                    editFields: editFieldNames,
                     withMenu: true,
                     canEdit: (page.scopeKey === "hr_payroll.labour_rates") ? (canEdit && !!row.sku_id) : canEdit,
                     canDelete,
@@ -1639,6 +1641,24 @@
       if (target.matches("[data-field='rate_value']")) {
         applyHeaderRateToRows();
       }
+    });
+
+    form.addEventListener("keydown", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement)) return;
+      if (!target.hasAttribute("data-labour-rate-row-rate")) return;
+      if (event.key !== "Enter" && event.key !== "ArrowDown") return;
+
+      const inputs = Array.from(tbody.querySelectorAll("[data-labour-rate-row-rate]"));
+      if (!inputs.length) return;
+      const currentIndex = inputs.indexOf(target);
+      if (currentIndex < 0) return;
+      const next = inputs[currentIndex + 1] || null;
+      if (!next) return;
+
+      event.preventDefault();
+      next.focus();
+      next.select();
     });
 
     form.addEventListener(

@@ -26,6 +26,16 @@
     cursor: default;
     caret-color: transparent;
   }
+
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+
+  input[type="number"] {
+    appearance: textfield;
+  }
 }
 
 [dir="rtl"] .nav-dropdown {

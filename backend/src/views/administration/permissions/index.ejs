@@ -62,9 +62,8 @@
       </div>
     </div>
   <% } %>
-
-  <% if (targetId) { %>
     <% const canEditPermissions = can('SCREEN', 'administration.permissions', 'edit'); %>
+  <% if (targetId) { %>
     <form action="/administration/permissions/update" method="POST" class="flex-1 flex min-h-0 overflow-hidden">
       <input type="hidden" name="type" value="<%= isUserMode ? 'user' : 'role' %>">
       <input type="hidden" name="target_id" value="<%= targetId %>">

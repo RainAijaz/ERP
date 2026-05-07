@@ -1,5 +1,12 @@
 (function () {
-  const SKIP_DATE_TAGS = new Set(["SCRIPT", "STYLE", "TEXTAREA", "INPUT", "SELECT", "OPTION"]);
+  const SKIP_DATE_TAGS = new Set([
+    "SCRIPT",
+    "STYLE",
+    "TEXTAREA",
+    "INPUT",
+    "SELECT",
+    "OPTION",
+  ]);
   const ISO_DATE_PATTERN = /\b(\d{4})-(\d{2})-(\d{2})(?!\d)\b/g;
 
   const trimNumericString = (value) => {
@@ -14,15 +21,21 @@
   };
 
   const formatNumber = (value, options = {}) => {
-    const fallback = Object.prototype.hasOwnProperty.call(options, "fallback") ? options.fallback : "";
+    const fallback = Object.prototype.hasOwnProperty.call(options, "fallback")
+      ? options.fallback
+      : "";
     if (value === null || value === undefined || value === "") return fallback;
-    const decimals = Number.isInteger(options.decimals) && options.decimals >= 0 ? options.decimals : null;
+    const decimals =
+      Number.isInteger(options.decimals) && options.decimals >= 0
+        ? options.decimals
+        : null;
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) {
       const raw = String(value).trim();
       return raw || fallback;
     }
-    const rounded = decimals === null ? numeric : Number(numeric.toFixed(decimals));
+    const rounded =
+      decimals === null ? numeric : Number(numeric.toFixed(decimals));
     return trimNumericString(String(rounded));
   };
 
@@ -48,9 +61,23 @@
     if (nextValue !== input.value) input.value = nextValue;
   };
 
+  const isIntegerNumberInput = (input) => {
+    if (!(input instanceof HTMLInputElement) || input.type !== "number")
+      return false;
+    const stepAttr = input.getAttribute("step");
+    if (!stepAttr) return true;
+    if (String(stepAttr).toLowerCase() === "any") return false;
+    const stepValue = Number(stepAttr);
+    if (!Number.isFinite(stepValue)) return false;
+    return Number.isInteger(stepValue);
+  };
+
   const normalizeNumericInputs = (root) => {
-    const scope = root instanceof Element || root instanceof Document ? root : document;
-    scope.querySelectorAll('input[type="number"]').forEach(normalizeNumericInput);
+    const scope =
+      root instanceof Element || root instanceof Document ? root : document;
+    scope
+      .querySelectorAll('input[type="number"]')
+      .forEach(normalizeNumericInput);
   };
 
   const shouldSkipDateTextNode = (node) => {
@@ -66,7 +93,10 @@
     const original = String(node.nodeValue || "");
     if (!original || !ISO_DATE_PATTERN.test(original)) return;
     ISO_DATE_PATTERN.lastIndex = 0;
-    const nextValue = original.replace(ISO_DATE_PATTERN, (_match, yyyy, mm, dd) => dd + "-" + mm + "-" + yyyy);
+    const nextValue = original.replace(
+      ISO_DATE_PATTERN,
+      (_match, yyyy, mm, dd) => dd + "-" + mm + "-" + yyyy,
+    );
     if (nextValue !== original) node.nodeValue = nextValue;
   };
 
@@ -76,7 +106,10 @@
       normalizeDateTextNode(root);
       return;
     }
-    const scope = root instanceof Element || root instanceof Document ? root : document.body;
+    const scope =
+      root instanceof Element || root instanceof Document
+        ? root
+        : document.body;
     const walker = document.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
     const nodes = [];
     let current = walker.nextNode();
@@ -125,6 +158,18 @@
       if (target instanceof HTMLInputElement && target.type === "number") {
         target.dataset.erpUserEdited = "true";
       }
+    },
+    true,
+  );
+
+  document.addEventListener(
+    "keydown",
+    (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement)) return;
+      if (!isIntegerNumberInput(target)) return;
+      if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+      event.preventDefault();
     },
     true,
   );
