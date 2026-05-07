@@ -28,7 +28,6 @@ const page = {
   entityType: "EMPLOYEE",
   branchScoped: false,
   autoCodeFromName: false,
-  maxRows: 500,
   defaults: {
     reverse_on_returns: true,
     rate_type: "PER_PAIR",

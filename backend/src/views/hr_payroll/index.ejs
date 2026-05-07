@@ -31,22 +31,6 @@
       <%= listScopeMessage %>
     </div>
   <% } %>
-  <% if (rowsLimited) { %>
-    <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-800">
-      <%= t("list_truncated_notice").replace("{limit}", String(rowLimit || 0)) %>
-      <span class="ml-2 inline-flex items-center gap-2">
-        #<%= Number(listPage || 1) %>
-        <% if (hasPrevPage) { %>
-          <span class="inline-block h-1 w-1 rounded-full bg-amber-300"></span>
-          <%= t("prev") %>
-        <% } %>
-        <% if (hasNextPage) { %>
-          <span class="inline-block h-1 w-1 rounded-full bg-amber-300"></span>
-          <%= t("next") %>
-        <% } %>
-      </span>
-    </div>
-  <% } %>
   <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md overflow-hidden" data-print-area>
     <% const canEdit = can("SCREEN", page.scopeKey, "edit"); %>
     <% const canDelete = can("SCREEN", page.scopeKey, "delete"); %>

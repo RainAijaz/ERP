@@ -436,7 +436,6 @@ const labourRatesPage = {
   branchScoped: false,
   autoCodeFromName: false,
   defaults: {},
-  maxRows: 500,
   filterConfig: {
     primary: {
       key: "labour_id",

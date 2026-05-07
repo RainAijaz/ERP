@@ -1455,6 +1455,10 @@ const translations = {
     sales_order_report_purpose_tooltip:
       "Tracks sales orders, delivered quantity, and remaining pending quantity.",
     sales_report: "Sales Report",
+    // --- MISSING DESCRIPTIONS & UI STRINGS ---
+    labour_rates_description: "Manage size and department-wise labour rates for production items.",
+    editing_rates_title: "Editing Rates:",
+    editing_rates_description: "Update the Pair Sale Rate for existing variants below.",
     sales_report_purpose_tooltip:
       "Analyzes sales performance by voucher, party/account, and article.",
     sale_return_report: "Sale Return Report",
@@ -3297,6 +3301,9 @@ translations.ur = {
   uom_conversions: "UOM تبادلے۔",
   updated: "تازہ کاری",
   usage: "استعمال میں",
+  labour_rates_description: "پیداواری اشیاء کے لیے سائز اور محکمے کے لحاظ سے لیبر ریٹس کا انتظام کریں۔",
+  editing_rates_title: "نرخوں میں ترمیم:",
+  editing_rates_description: "نیچے موجودہ متغیرات کے لیے جوڑی کی فروخت کی شرح کو اپ ڈیٹ کریں۔",
   usage_help: "استعمال میں مدد",
   use_credentials: "جاری رکھنے کے لیے اپنے ERP اسناد کا استعمال کریں۔",
   user_inactive: "صارف غیر فعال ہے۔",
