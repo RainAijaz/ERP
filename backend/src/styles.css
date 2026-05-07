@@ -27,17 +27,21 @@
     caret-color: transparent;
   }
 
+  /* Disable number input spinners globally (all browsers). */
   input[type="number"]::-webkit-outer-spin-button,
   input[type="number"]::-webkit-inner-spin-button {
-    appearance: none;
-    margin: 0;
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    margin: 0 !important;
   }
 
   input[type="number"] {
-    appearance: textfield;
+    -moz-appearance: textfield !important;
+    appearance: textfield !important;
   }
 }
 
+/* RTL Support */
 [dir="rtl"] .nav-dropdown {
   left: auto !important;
   right: 0 !important;

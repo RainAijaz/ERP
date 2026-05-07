@@ -11,6 +11,48 @@ const {
   closeDb,
 } = require("./utils/db");
 
+const openRuleEditModal = async (page, ruleId, searchTerm = "") => {
+  const row = page.locator(`tr[data-row][data-rule-id="${ruleId}"]`).first();
+  if (!(await row.isVisible())) {
+    const searchInput = page.locator("[data-search-input]").first();
+    if (searchTerm && (await searchInput.count()) > 0) {
+      await searchInput.fill(searchTerm);
+    }
+  }
+  await expect(row).toHaveAttribute("data-filter-visible", "true");
+
+  const groupKey =
+    (await row.getAttribute("data-labour-name")) ||
+    (await row.getAttribute("data-labour-id")) ||
+    "";
+  if (groupKey) {
+    const header = page
+      .locator(`tr.group-header[data-group-key="${groupKey}"]`)
+      .first();
+    if ((await header.count()) > 0) {
+      const isOpen = (await header.getAttribute("data-group-open")) === "true";
+      if (!isOpen) {
+        await header.click();
+      }
+    }
+  }
+  await expect(row).toBeVisible();
+
+  const inlineEdit = row.locator("[data-edit]").first();
+  if (await inlineEdit.isVisible()) {
+    await inlineEdit.click();
+    return;
+  }
+
+  const menuBtn = row.locator("[data-row-menu]").first();
+  await expect(menuBtn).toBeVisible();
+  await menuBtn.click();
+
+  const menuEdit = row.locator("[data-row-menu-panel] [data-edit]").first();
+  await expect(menuEdit).toBeVisible();
+  await menuEdit.click();
+};
+
 test.describe("HR Payroll labour rates modal", () => {
   test.describe.configure({ mode: "serial" });
 
@@ -99,14 +141,13 @@ test.describe("HR Payroll labour rates modal", () => {
       waitUntil: "domcontentloaded",
     });
 
-    const editBtn = page
+    const rowEditButton = page
       .locator(`[data-edit][data-id="${ctx.ruleId}"]`)
       .first();
-    await expect(editBtn).toBeVisible();
     const expectedSkuCode = String(
-      (await editBtn.getAttribute("data-sku_code")) || "",
+      (await rowEditButton.getAttribute("data-sku_code")) || "",
     ).trim();
-    await editBtn.click();
+    await openRuleEditModal(page, ctx.ruleId, expectedSkuCode);
 
     const modal = page.locator("[data-modal]");
     await expect(modal).toBeVisible();
@@ -144,5 +185,32 @@ test.describe("HR Payroll labour rates modal", () => {
     expect(Number(updated.rate_value)).toBe(19.75);
     expect(Number(updated.sku_id)).toBe(Number(ctx.fixture.sfgSkuId));
     expect(String(updated.apply_on || "").toUpperCase()).toBe("GROUP");
+  });
+
+  test("labour rate input hides number spinners", async ({ page }) => {
+    test.skip(!ctx.ruleId, "Rule fixture was not created.");
+
+    await login(page, "E2E_ADMIN");
+    await page.goto("/hr-payroll/labours/rates", {
+      waitUntil: "domcontentloaded",
+    });
+
+    const rowEditButton = page
+      .locator(`[data-edit][data-id="${ctx.ruleId}"]`)
+      .first();
+    const expectedSkuCode = String(
+      (await rowEditButton.getAttribute("data-sku_code")) || "",
+    ).trim();
+    await openRuleEditModal(page, ctx.ruleId, expectedSkuCode);
+
+    const rateInput = page.locator(
+      '[data-modal-form] [data-field="rate_value"]',
+    );
+    await expect(rateInput).toBeVisible();
+
+    const appearance = await rateInput.evaluate(
+      (el) => getComputedStyle(el).appearance,
+    );
+    expect(["textfield", "none"].includes(appearance)).toBeTruthy();
   });
 });

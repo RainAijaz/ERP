@@ -57,7 +57,12 @@
     <div class="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/60 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
       <div class="text-sm font-semibold text-slate-700"><%= t("list") %> <%= t(page.titleKey) %></div>
       <div class="flex flex-wrap items-center gap-3">
-        <%- include("../base/partials/table-controls", { t, showStatus: page.scopeKey !== "hr_payroll.labour_rates", showFilters: true }) %>
+        <%- include("../base/partials/table-controls", {
+          t,
+          showStatus: page.scopeKey !== "hr_payroll.labour_rates",
+          showFilters: true,
+          selectedPageSize: page.scopeKey === "hr_payroll.labour_rates" ? "all" : undefined
+        }) %>
       </div>
     </div>
     <form method="GET" action="" data-filter-form>
@@ -73,6 +78,7 @@
         data-server-offset="<%= Number(listOffset || 0) %>"
         data-server-has-prev="<%= hasPrevPage ? "true" : "false" %>"
         data-server-has-next="<%= hasNextPage ? "true" : "false" %>"
+        data-server-total="<%= Number(rowCount || 0) %>"
       >
         <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
           <% const displayColumns = page.columns.filter(function(column) {
@@ -96,6 +102,7 @@
                 class="hover:bg-amber-50/40 odd:bg-white even:bg-slate-50/40"
                 data-row
                 data-active="<%= row.is_active ? "true" : "false" %>"
+                data-labour-name="<%= page.scopeKey === "hr_payroll.labour_rates" ? (row.labour_name || row.labour_id || "") : "" %>"
                 data-account-type="<%= row.payroll_type || row.apply_on || row.amount_type || row.rate_type || "" %>"
                 data-account-group="<%= row.department_name || row.commission_basis || row.frequency || "" %>"
                 data-branch="<%= row.branch_names || "" %>"
@@ -175,7 +182,7 @@
         </tbody>
       </table>
     </div>
-    <%- include("../base/partials/table-footer", { t }) %>
+    <%- include("../base/partials/table-footer", { t, rowCount }) %>
   </section>
 </div>
 

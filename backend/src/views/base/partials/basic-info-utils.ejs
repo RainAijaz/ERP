@@ -555,6 +555,8 @@
     };
 
     const table = document.querySelector("[data-table]");
+    const scopeKey = "<%= page.scopeKey %>";
+    const isLabourRates = scopeKey === "hr_payroll.labour_rates";
     const serverPaginationEnabled =
       table?.dataset?.serverPagination === "true";
     const serverPageInitialRaw = Number.parseInt(
@@ -575,6 +577,14 @@
         : 0;
     const serverHasPrevPage = table?.dataset?.serverHasPrev === "true";
     const serverHasNextPage = table?.dataset?.serverHasNext === "true";
+    const serverTotalRaw = Number.parseInt(
+      String(table?.dataset?.serverTotal || "0"),
+      10,
+    );
+    const serverTotal =
+      Number.isInteger(serverTotalRaw) && serverTotalRaw >= 0
+        ? serverTotalRaw
+        : 0;
 
     const navigateServerPage = (nextPage) => {
       const page = Number(nextPage);
@@ -590,6 +600,10 @@
 
     let currentPage = serverPaginationEnabled ? serverPageInitial : 1;
     let pageSizeRaw = (pageSizeSelect && pageSizeSelect.value) || "10";
+    if (isLabourRates && pageSizeSelect) {
+      pageSizeRaw = "all";
+      pageSizeSelect.value = "all";
+    }
     let pageSize =
       pageSizeRaw === "all" ? Number.POSITIVE_INFINITY : Number(pageSizeRaw);
     let sortIndex = null;
@@ -597,8 +611,141 @@
     let sortType = "text";
     let rowsCache = [];
     let filterApplyTimer = null;
+    let labourGroupOpenKey = "";
+    let labourGroupVisibleRows = [];
 
     const getRows = () => rowsCache;
+
+    const getLabourGroupKey = (row) => {
+      if (!row) return "";
+      const label = String(row.dataset.labourName || "").trim();
+      if (label) return label;
+      const fallback = String(row.dataset.labourId || "").trim();
+      return fallback || "<%= t("none") %>";
+    };
+
+    const removeLabourGroupHeaders = () => {
+      document.querySelectorAll("tr.group-header").forEach((row) => {
+        row.remove();
+      });
+    };
+
+    const buildLabourGroupHeader = ({
+      groupKey,
+      count,
+      colspan,
+      isOpen,
+    }) => {
+      const row = document.createElement("tr");
+      row.className =
+        "group group-header cursor-pointer bg-slate-50/80 text-slate-700 transition-colors hover:bg-slate-100 border-b border-slate-200";
+      row.dataset.groupKey = groupKey;
+      row.dataset.groupOpen = isOpen ? "true" : "false";
+
+      const cell = document.createElement("td");
+      cell.colSpan = colspan;
+      cell.className = "px-4 py-3";
+
+      const wrapper = document.createElement("div");
+      wrapper.className = "flex items-center justify-between gap-4";
+
+      const left = document.createElement("div");
+      left.className = "flex items-center gap-3";
+
+      const name = document.createElement("span");
+      name.className = "text-sm font-semibold text-slate-700";
+      name.textContent = groupKey;
+
+      const countBadge = document.createElement("span");
+      countBadge.className =
+        "rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500";
+      countBadge.textContent = `${count} <%= t("rates") %>`;
+
+      left.appendChild(name);
+      left.appendChild(countBadge);
+
+      const iconWrap = document.createElement("span");
+      iconWrap.className =
+        "inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition group-hover:border-slate-300";
+
+      const iconShell = document.createElement("span");
+      iconShell.className = "inline-flex";
+      iconShell.innerHTML =
+        '<svg class="h-4 w-4 transition-transform duration-200" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" data-labour-group-icon><path d="M6 8l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"></path></svg>';
+      const svg = iconShell.querySelector("svg");
+      if (svg && isOpen) svg.classList.add("rotate-180");
+
+      iconWrap.appendChild(iconShell);
+      wrapper.appendChild(left);
+      wrapper.appendChild(iconWrap);
+      cell.appendChild(wrapper);
+      row.appendChild(cell);
+      return row;
+    };
+
+    const getGroupRows = (header) => {
+      const rows = [];
+      let node = header.nextElementSibling;
+      while (node && !node.classList.contains("group-header")) {
+        if (node.matches("[data-row]")) rows.push(node);
+        node = node.nextElementSibling;
+      }
+      return rows;
+    };
+
+    const setGroupOpenState = (header, open) => {
+      if (!header) return;
+      header.dataset.groupOpen = open ? "true" : "false";
+      const icon = header.querySelector("[data-labour-group-icon]");
+      if (icon) icon.classList.toggle("rotate-180", open);
+      getGroupRows(header).forEach((row) => {
+        if (row.dataset.filterVisible !== "true") return;
+        row.classList.toggle("hidden", !open);
+      });
+    };
+
+    const applyLabourRatesGrouping = (visibleRows = []) => {
+      if (!tableBody) return;
+      removeLabourGroupHeaders();
+      labourGroupVisibleRows = Array.isArray(visibleRows)
+        ? visibleRows.slice()
+        : [];
+      if (!labourGroupVisibleRows.length) return;
+
+      const groupCounts = new Map();
+      labourGroupVisibleRows.forEach((row) => {
+        const key = getLabourGroupKey(row);
+        groupCounts.set(key, (groupCounts.get(key) || 0) + 1);
+      });
+
+      if (labourGroupOpenKey && !groupCounts.has(labourGroupOpenKey)) {
+        labourGroupOpenKey = "";
+      }
+
+      const colspan =
+        table?.querySelectorAll("thead th").length || 1;
+      let lastKey = null;
+      labourGroupVisibleRows.forEach((row) => {
+        const key = getLabourGroupKey(row);
+        if (key === lastKey) return;
+        lastKey = key;
+        const header = buildLabourGroupHeader({
+          groupKey: key,
+          count: groupCounts.get(key) || 0,
+          colspan,
+          isOpen: labourGroupOpenKey === key,
+        });
+        tableBody.insertBefore(header, row);
+      });
+
+      tableBody
+        .querySelectorAll("tr.group-header")
+        .forEach((header) => {
+          const key = header.dataset.groupKey || "";
+          const open = labourGroupOpenKey && key === labourGroupOpenKey;
+          setGroupOpenState(header, Boolean(open));
+        });
+    };
 
     const buildRowSearchText = (row) =>
       String(
@@ -741,6 +888,9 @@
       const branchModes = readFilterRows("branch");
       const cityModes = readFilterRows("city");
       const rows = getRows();
+      if (isLabourRates) {
+        removeLabourGroupHeaders();
+      }
       const sorted = sortRows(rows);
       const filtered = sorted.filter((row) => {
         const searchText = row.dataset.searchNormalized || "";
@@ -867,9 +1017,19 @@
         end = start + pageSize;
       }
 
-      rows.forEach((row) => row.classList.add("hidden"));
+      rows.forEach((row) => {
+        row.classList.add("hidden");
+        row.dataset.filterVisible = "false";
+      });
       const visibleRows = filtered.slice(start, end);
-      visibleRows.forEach((row) => row.classList.remove("hidden"));
+      visibleRows.forEach((row) => {
+        row.classList.remove("hidden");
+        row.dataset.filterVisible = "true";
+      });
+
+      if (isLabourRates) {
+        applyLabourRatesGrouping(visibleRows);
+      }
 
       // --- HIDE EMPTY GROUPS (SKU PAGE) ---
       document.querySelectorAll(".sku-group-block").forEach((group) => {
@@ -912,6 +1072,10 @@
           serverPaginationEnabled && !Number.isFinite(pageSize)
             ? serverOffset + visibleRows.length
             : Math.min(start + visibleRows.length, filtered.length);
+        const totalLabel =
+          serverPaginationEnabled && serverTotal > 0
+            ? serverTotal
+            : filtered.length;
         showing.textContent =
           i18n.showing +
           " " +
@@ -923,7 +1087,7 @@
           " " +
           i18n.of +
           " " +
-          filtered.length +
+          totalLabel +
           " " +
           i18n.entries;
       }
@@ -1210,6 +1374,19 @@
       });
     }
 
+    if (tableBody && isLabourRates) {
+      tableBody.addEventListener("click", (event) => {
+        const header = event.target.closest("tr.group-header");
+        if (!header) return;
+        event.preventDefault();
+        const key = String(header.dataset.groupKey || "").trim();
+        if (!key) return;
+        const isOpen = header.dataset.groupOpen === "true";
+        labourGroupOpenKey = isOpen ? "" : key;
+        applyLabourRatesGrouping(labourGroupVisibleRows);
+      });
+    }
+
     openButtons.forEach((btn) => {
       btn.addEventListener("click", () => openModal("create", { id: "" }));
     });
@@ -1247,6 +1424,16 @@
     }
 
     initializeRows();
+    if (isLabourRates && sortIndex === null) {
+      const labourSort = document.querySelector(
+        '[data-sort-key="labour_name"]',
+      );
+      if (labourSort) {
+        sortIndex = Number(labourSort.dataset.sortIndex);
+        sortDir = "asc";
+        sortType = labourSort.dataset.sortType || "text";
+      }
+    }
     updateSortIndicators();
     if (modalForm) {
       const pageKey = "<%= page.titleKey %>";

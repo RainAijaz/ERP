@@ -107,10 +107,11 @@ const findLabourDeptUsageMap = async ({ db, labourId, deptIds = [] }) => {
             .whereIn("dept_id", normalizedDeptIds)
         : Promise.resolve([]),
       hasLabourVoucherLine
-        ? db("erp.labour_voucher_line")
-            .distinct("dept_id")
-            .where({ labour_id: normalizedLabourId })
-            .whereIn("dept_id", normalizedDeptIds)
+        ? db("erp.labour_voucher_line as lvl")
+            .distinct("lvl.dept_id")
+            .join("erp.voucher_line as vl", "vl.id", "lvl.voucher_line_id")
+            .where({ "vl.labour_id": normalizedLabourId })
+            .whereIn("lvl.dept_id", normalizedDeptIds)
         : Promise.resolve([]),
       hasLabourRateRules
         ? db("erp.labour_rate_rules")

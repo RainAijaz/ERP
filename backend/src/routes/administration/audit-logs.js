@@ -14,6 +14,59 @@ const {
 
 const router = express.Router();
 
+const parseContextJson = (value) => {
+  if (!value) return null;
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(String(value));
+  } catch (_err) {
+    return null;
+  }
+};
+
+const getScopeKeyFromContext = (context) => {
+  const scopeKey =
+    context?.scope_key ||
+    context?.scopeKey ||
+    context?.new_value?._scope_key ||
+    context?.new_value?.scope_key ||
+    context?.old_value?._scope_key ||
+    context?.old_value?.scope_key ||
+    context?.request_body?._scope_key ||
+    context?.request_body?.scope_key ||
+    "";
+  return String(scopeKey || "").trim();
+};
+
+const hasEntityName = (context) => {
+  if (!context) return false;
+  const candidates = [
+    context.entity_name,
+    context.entity_label,
+    context.name,
+    context.item_name,
+    context.sku_name,
+    context.sku_code,
+    context.article_name,
+    context.new_value?.name,
+    context.new_value?.item_name,
+    context.new_value?.sku_name,
+    context.new_value?.sku_code,
+    context.new_value?.article_name,
+    context.old_value?.name,
+    context.old_value?.item_name,
+    context.old_value?.sku_name,
+    context.old_value?.sku_code,
+    context.old_value?.article_name,
+    context.request_body?.name,
+    context.request_body?.item_name,
+    context.request_body?.sku_name,
+    context.request_body?.sku_code,
+    context.request_body?.article_name,
+  ];
+  return candidates.some((value) => String(value || "").trim());
+};
+
 const ACTIVITY_LOG_REPORT_TIME_ZONE =
   String(
     process.env.ERP_REPORT_TIME_ZONE || process.env.TZ || "Asia/Karachi",
@@ -191,6 +244,99 @@ router.get(
           .count("* as total")
           .first(),
       ]);
+
+      const parsedRows = rows.map((row) => {
+        const context = parseContextJson(row.context_json) || {};
+        return { row, context };
+      });
+      const employeeIds = new Set();
+      const labourIds = new Set();
+      const labourRateRuleIds = new Set();
+      parsedRows.forEach(({ row, context }) => {
+        if (!context || hasEntityName(context)) return;
+        const entityId = Number(row?.entity_id || 0);
+        if (!Number.isInteger(entityId) || entityId <= 0) return;
+        const entityType = String(row?.entity_type || "").toUpperCase();
+        const scopeKey = getScopeKeyFromContext(context).toLowerCase();
+        if (entityType === "EMPLOYEE") {
+          employeeIds.add(entityId);
+          return;
+        }
+        if (entityType !== "LABOUR") return;
+        if (scopeKey === "hr_payroll.labour_rates") {
+          labourRateRuleIds.add(entityId);
+          return;
+        }
+        labourIds.add(entityId);
+      });
+
+      const [employeeRows, labourRateRows] = await Promise.all([
+        employeeIds.size
+          ? knex("erp.employees").select("id", "name").whereIn("id", [...employeeIds])
+          : Promise.resolve([]),
+        labourRateRuleIds.size
+          ? knex("erp.labour_rate_rules as lrr")
+              .select("lrr.id", "lrr.labour_id", "l.name as labour_name")
+              .leftJoin("erp.labours as l", "l.id", "lrr.labour_id")
+              .whereIn("lrr.id", [...labourRateRuleIds])
+          : Promise.resolve([]),
+      ]);
+
+      const labourRateById = new Map(
+        labourRateRows.map((row) => [Number(row.id), String(row.labour_name || "").trim()]),
+      );
+      const fallbackLabourIds = new Set(labourIds);
+      parsedRows.forEach(({ row, context }) => {
+        if (!context || hasEntityName(context)) return;
+        const entityType = String(row?.entity_type || "").toUpperCase();
+        if (entityType !== "LABOUR") return;
+        const scopeKey = getScopeKeyFromContext(context).toLowerCase();
+        if (scopeKey !== "hr_payroll.labour_rates") return;
+        const entityId = Number(row?.entity_id || 0);
+        if (!Number.isInteger(entityId) || entityId <= 0) return;
+        if (labourRateById.has(entityId)) return;
+        fallbackLabourIds.add(entityId);
+      });
+
+      const labourRows = fallbackLabourIds.size
+        ? await knex("erp.labours").select("id", "name").whereIn("id", [...fallbackLabourIds])
+        : [];
+      const employeeNameById = new Map(
+        employeeRows.map((row) => [Number(row.id), String(row.name || "").trim()]),
+      );
+      const labourNameById = new Map(
+        labourRows.map((row) => [Number(row.id), String(row.name || "").trim()]),
+      );
+
+      parsedRows.forEach(({ row, context }) => {
+        if (!context || hasEntityName(context)) {
+          row.context_json = context;
+          return;
+        }
+        const entityId = Number(row?.entity_id || 0);
+        if (!Number.isInteger(entityId) || entityId <= 0) {
+          row.context_json = context;
+          return;
+        }
+        const entityType = String(row?.entity_type || "").toUpperCase();
+        if (entityType === "EMPLOYEE") {
+          const name = employeeNameById.get(entityId);
+          if (name) context.entity_name = name;
+          row.context_json = context;
+          return;
+        }
+        if (entityType === "LABOUR") {
+          const scopeKey = getScopeKeyFromContext(context).toLowerCase();
+          if (scopeKey === "hr_payroll.labour_rates") {
+            const name = labourRateById.get(entityId) || labourNameById.get(entityId);
+            if (name) context.entity_name = name;
+          } else {
+            const name = labourNameById.get(entityId);
+            if (name) context.entity_name = name;
+          }
+        }
+        row.context_json = context;
+      });
       const total = Number(totalRow?.total || 0);
       const totalPages = Math.max(1, Math.ceil(total / pageSize));
       const hasNext = page < totalPages;

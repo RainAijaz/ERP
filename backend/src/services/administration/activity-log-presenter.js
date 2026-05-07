@@ -277,6 +277,17 @@ const resolveEntityNameFromContext = ({ context }) => {
   return null;
 };
 
+const appendEntityNameToSummary = (summary, entityName) => {
+  const baseSummary = String(summary || "").trim();
+  if (!baseSummary) return baseSummary;
+  const name = String(entityName || "").trim();
+  if (!name) return baseSummary;
+  const summaryLower = baseSummary.toLowerCase();
+  const nameLower = name.toLowerCase();
+  if (summaryLower.includes(nameLower)) return baseSummary;
+  return `${baseSummary} - ${name}`;
+};
+
 const buildActivitySummary = ({
   row,
   context,
@@ -284,6 +295,11 @@ const buildActivitySummary = ({
   displayAction,
   voucherNo,
 }) => {
+  const contextSummary = toText(context?.summary, "").trim();
+  if (contextSummary) {
+    const entityName = resolveEntityNameFromContext({ context });
+    return appendEntityNameToSummary(contextSummary, entityName);
+  }
   const entityType = String(row?.entity_type || "").toUpperCase();
   const branchLabel = toText(
     firstDefined(row?.branch_name, row?.branch_code),
@@ -378,6 +394,7 @@ const buildDetailsModel = ({
   t,
   voucherHref,
   displayAction,
+  summary,
 }) => {
   const requestBody = toPlainObject(context?.request_body);
   const newValue = toPlainObject(context?.new_value);
@@ -449,7 +466,7 @@ const buildDetailsModel = ({
     { label: t("action"), value: displayAction },
     { label: t("source"), value: toText(context?.source) },
     { label: t("request_type"), value: toText(context?.request_type) },
-    { label: t("summary"), value: toText(context?.summary) },
+    { label: t("summary"), value: toText(summary || context?.summary) },
     { label: t("method"), value: toText(context?.method) },
     { label: t("path"), value: toText(context?.path) },
   ]);
@@ -545,6 +562,7 @@ const presentActivityRows = ({ rows = [], t }) =>
         t,
         voucherHref,
         displayAction,
+        summary,
       }),
     };
   });

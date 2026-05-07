@@ -171,6 +171,10 @@ const logLabourRatesSaveDebug = (pageConfig, req, event, payload = {}) => {
 };
 const isHrValidationDebugEnabled = () =>
   process.env.DEBUG_HR_VALIDATION === "1";
+const resolveEntityNameForAudit = ({ values, existing }) => {
+  const name = String(values?.name || existing?.name || "").trim();
+  return name || null;
+};
 const summarizeValueForLog = (value) => {
   if (Array.isArray(value)) return { type: "array", count: value.length };
   if (value === null || value === undefined || value === "")
@@ -336,7 +340,7 @@ const applyAllowedBranchScopeToQuery = (
   return query;
 };
 
-const fetchRows = (pageConfig, options = {}) => {
+const buildBaseQuery = (pageConfig, options = {}) => {
   let query = knex({ t: pageConfig.table });
   if (pageConfig.joins) {
     pageConfig.joins.forEach((join) => {
@@ -468,6 +472,11 @@ const fetchRows = (pageConfig, options = {}) => {
     });
   }
 
+  return query;
+};
+
+const fetchRows = (pageConfig, options = {}) => {
+  const baseQuery = buildBaseQuery(pageConfig, options);
   const selects = ["t.*"];
   let extraSelect = pageConfig.extraSelect
     ? typeof pageConfig.extraSelect === "function"
@@ -480,7 +489,7 @@ const fetchRows = (pageConfig, options = {}) => {
   if (extraSelect.length) {
     selects.push(...extraSelect);
   }
-  const limitedQuery = query.select(selects).orderBy("t.id", "desc");
+  const limitedQuery = baseQuery.select(selects).orderBy("t.id", "desc");
   const offsetRows = Number(options.offsetRows || 0);
   if (Number.isInteger(offsetRows) && offsetRows > 0) {
     limitedQuery.offset(offsetRows);
@@ -490,6 +499,17 @@ const fetchRows = (pageConfig, options = {}) => {
     return limitedQuery.limit(maxRows);
   }
   return limitedQuery;
+};
+
+const fetchRowCount = async (pageConfig, options = {}) => {
+  const baseQuery = buildBaseQuery(pageConfig, options);
+  const rows = await baseQuery
+    .clone()
+    .clearSelect()
+    .clearOrder()
+    .countDistinct({ total: "t.id" });
+  const total = Number(rows?.[0]?.total || 0);
+  return Number.isFinite(total) ? total : 0;
 };
 
 const buildValues = (pageConfig, body) =>
@@ -823,6 +843,33 @@ const createHrMasterRouter = (pageConfig) => {
         const rows = rowsLimited
           ? fetchedRows.slice(0, effectiveMaxRows)
           : fetchedRows;
+        const rowCount = canBrowse && !missingRequiredFilters.length
+          ? rowsLimited
+            ? await fetchRowCount(hydrated, {
+                branchId: req.user?.isAdmin ? null : req.branchId,
+                allowedBranchIds,
+                locale: req.locale,
+                filters: {
+                  primaryValues,
+                  secondaryValues,
+                  branchValues,
+                  tertiaryValues,
+                  applyOnValues,
+                  subgroupValues,
+                  groupValues,
+                  articleTypeValues,
+                  applyOnMode,
+                  subgroupMode,
+                  groupMode,
+                  articleTypeMode,
+                  primaryMode,
+                  secondaryMode,
+                  branchMode,
+                  tertiaryMode,
+                },
+              })
+            : rows.length
+          : 0;
         const basePath = req.baseUrl;
         const defaults = { ...(hydrated.defaults || {}) };
         const listScopeMessage =
@@ -865,6 +912,7 @@ const createHrMasterRouter = (pageConfig) => {
           listPage,
           listOffset,
           rowLimit: effectiveMaxRows,
+          rowCount,
           listScopeMessage,
           listScopeBlocked: missingRequiredFilters.length > 0,
         });
@@ -1156,6 +1204,10 @@ const createHrMasterRouter = (pageConfig) => {
             entityType: pageConfig.entityType,
             entityId,
             action: "CREATE",
+            context: {
+              summary: `${res.locals.t("add")} ${res.locals.t(pageConfig.titleKey)}`,
+              entity_name: resolveEntityNameForAudit({ values: sanitizedValues }),
+            },
           });
         });
         logEmployeeDebug(pageConfig, req, "create:insert_success", {
@@ -1496,6 +1548,8 @@ const createHrMasterRouter = (pageConfig) => {
           action: "UPDATE",
           context: {
             source: "hr-master-update",
+            summary: `${res.locals.t("edit")} ${res.locals.t(pageConfig.titleKey)}`,
+            entity_name: resolveEntityNameForAudit({ values: sanitizedValues, existing }),
             ...changeSet,
           },
         });
@@ -1553,6 +1607,8 @@ const createHrMasterRouter = (pageConfig) => {
           (current.status || "").toLowerCase() === "active"
             ? "inactive"
             : "active";
+        const statusSummaryKey =
+          nextStatus === "active" ? "activate" : "deactivate";
         const approval = await handleScreenApproval({
           req,
           scopeKey: pageConfig.scopeKey,
@@ -1574,6 +1630,10 @@ const createHrMasterRouter = (pageConfig) => {
           entityType: pageConfig.entityType,
           entityId: id,
           action: "DELETE",
+          context: {
+            summary: `${res.locals.t(statusSummaryKey)} ${res.locals.t(pageConfig.titleKey)}`,
+            entity_name: resolveEntityNameForAudit({ existing: current }),
+          },
         });
         return res.redirect(basePath);
       } catch (err) {
@@ -1709,6 +1769,10 @@ const createHrMasterRouter = (pageConfig) => {
           entityType: pageConfig.entityType,
           entityId: id,
           action: "DELETE",
+          context: {
+            summary: `${res.locals.t("delete")} ${res.locals.t(pageConfig.titleKey)}`,
+            entity_name: resolveEntityNameForAudit({ existing }),
+          },
         });
         return res.redirect(basePath);
       } catch (err) {
