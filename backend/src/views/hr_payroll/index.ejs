@@ -1091,6 +1091,9 @@ const currentSeq = ++state.requestSeq;
       fields.deptId.innerHTML = `<option value="">${tSelect}</option>`;
       fields.deptId.value = "";
       fields.deptId.dispatchEvent(new Event("change", { bubbles: true }));
+      if (typeof window.initSearchableSelects === "function") {
+        window.initSearchableSelects(form);
+      }
     };
 
     const applyDepartmentOptions = (options, selectedValue = "") => {
@@ -1104,6 +1107,9 @@ const currentSeq = ++state.requestSeq;
         fields.deptId.value = String(selectedValue);
       } else {
         fields.deptId.value = "";
+      }
+      if (typeof window.initSearchableSelects === "function") {
+        window.initSearchableSelects(form);
       }
     };
 
@@ -1405,7 +1411,7 @@ const currentSeq = ++state.requestSeq;
       panel.classList.remove("hidden");
     };
 
-const loadingIcon = `<svg class="animate-spin inline -mt-0.5 mr-2 h-4 w-4 text-slate-500" style="animation: spin 1s linear infinite;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>`;
+    const loadingIcon = `<svg class="animate-spin inline -mt-0.5 mr-2 h-4 w-4 text-slate-500" style="animation: spin 1s linear infinite;" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>`;
 
     const renderEmpty = (message, isLoading = false) => {
       const icon = isLoading ? loadingIcon : "";
@@ -1413,16 +1419,7 @@ const loadingIcon = `<svg class="animate-spin inline -mt-0.5 mr-2 h-4 w-4 text-s
       tbody.innerHTML = `<tr><td class="px-2 py-6 text-center text-slate-500" colspan="4">${icon}${message || tNoEntries}</td></tr>`;
     };
 
-    const clearRows = (message = tSelectTarget, isLoading = false) => {
-      state.rows = [];
-      renderEmpty(message, isLoading);
-      
-      if (isLoading) {
-        summary.innerHTML = `${loadingIcon} ${message}`;
-      } else {
-        summary.textContent = "0";
-      }
-    };      
+    const renderRows = () => {
       tbody.innerHTML = state.rows
         .map((row, idx) => {
           const previous = row.previous_rate == null ? tNoPrevious : Number(row.previous_rate).toFixed(2);
@@ -1450,6 +1447,16 @@ const loadingIcon = `<svg class="animate-spin inline -mt-0.5 mr-2 h-4 w-4 text-s
       summary.textContent = String(state.rows.length);
     };
 
+    const clearRows = (message = tSelectTarget, isLoading = false) => {
+      state.rows = [];
+      renderEmpty(message, isLoading);
+      if (isLoading) {
+        summary.innerHTML = `${loadingIcon} ${message}`;
+      } else {
+        summary.textContent = "0";
+      }
+    };
+
     const applyHeaderRateToRows = () => {
       const headerRate = String(fields.rateValue?.value || "").trim();
       if (!state.rows.length) return;
@@ -1462,12 +1469,6 @@ const loadingIcon = `<svg class="animate-spin inline -mt-0.5 mr-2 h-4 w-4 text-s
       });
     };
 
-const clearRows = (message = tSelectTarget) => {
-      state.rows = [];
-      renderEmpty(message, false);
-      summary.textContent = "0";
-    };
-    
     const getPreviewQuery = () => {
       const labourIds = getSelectedLabourIds();
       const deptId = String(fields.deptId?.value || "").trim();
@@ -1554,7 +1555,7 @@ const clearRows = (message = tSelectTarget) => {
         return;
       }
 
-const currentSeq = ++state.requestSeq;
+      const currentSeq = ++state.requestSeq;
       state.loading = true;
       if (!state.rows.length) {
         renderEmpty(tLoading, true); // <-- Pass true to show the icon in the table

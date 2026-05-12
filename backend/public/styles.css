@@ -455,6 +455,9 @@
   .mx-auto {
     margin-inline: auto;
   }
+  .-mt-0\.5 {
+    margin-top: calc(var(--spacing) * -0.5);
+  }
   .mt-0\.5 {
     margin-top: calc(var(--spacing) * 0.5);
   }
@@ -484,6 +487,9 @@
   }
   .mr-1 {
     margin-right: calc(var(--spacing) * 1);
+  }
+  .mr-2 {
+    margin-right: calc(var(--spacing) * 2);
   }
   .mb-1 {
     margin-bottom: calc(var(--spacing) * 1);
