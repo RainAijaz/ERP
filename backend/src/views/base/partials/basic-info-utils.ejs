@@ -531,9 +531,7 @@
       modalError.dataset.alertShown = "1";
       if (typeof window.showVoucherError === "function") {
         window.showVoucherError(message);
-        return;
       }
-      window.alert(message);
     };
     const setModalError = (message) => {
       if (!modalError) return;
@@ -622,7 +620,7 @@
     let sortType = "text";
     let rowsCache = [];
     let filterApplyTimer = null;
-    let labourGroupOpenKey = "";
+    const labourGroupOpenKeys = new Set();
     let labourGroupVisibleRows = [];
 
     const getRows = () => rowsCache;
@@ -680,6 +678,7 @@
       const iconWrap = document.createElement("span");
       iconWrap.className =
         "inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 transition group-hover:border-slate-300";
+      iconWrap.setAttribute("data-labour-group-icon-wrap", "true");
 
       const iconShell = document.createElement("span");
       iconShell.className = "inline-flex";
@@ -731,9 +730,9 @@
         groupCounts.set(key, (groupCounts.get(key) || 0) + 1);
       });
 
-      if (labourGroupOpenKey && !groupCounts.has(labourGroupOpenKey)) {
-        labourGroupOpenKey = "";
-      }
+      Array.from(labourGroupOpenKeys).forEach((key) => {
+        if (!groupCounts.has(key)) labourGroupOpenKeys.delete(key);
+      });
 
       const colspan =
         table?.querySelectorAll("thead th").length || 1;
@@ -746,7 +745,7 @@
           groupKey: key,
           count: groupCounts.get(key) || 0,
           colspan,
-          isOpen: labourGroupOpenKey === key,
+          isOpen: labourGroupOpenKeys.has(key),
         });
         tableBody.insertBefore(header, row);
       });
@@ -755,8 +754,7 @@
         .querySelectorAll("tr.group-header")
         .forEach((header) => {
           const key = header.dataset.groupKey || "";
-          const open = labourGroupOpenKey && key === labourGroupOpenKey;
-          setGroupOpenState(header, Boolean(open));
+          setGroupOpenState(header, labourGroupOpenKeys.has(key));
         });
     };
 
@@ -1399,8 +1397,16 @@
         const key = String(header.dataset.groupKey || "").trim();
         if (!key) return;
         const isOpen = header.dataset.groupOpen === "true";
-        labourGroupOpenKey = isOpen ? "" : key;
-        applyLabourRatesGrouping(labourGroupVisibleRows);
+        const iconWrap = header.querySelector("[data-labour-group-icon-wrap]");
+        if (iconWrap && !isOpen) {
+          iconWrap.innerHTML =
+            '<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V2a10 10 0 00-10 10h2z"></path></svg>';
+        }
+        window.setTimeout(() => {
+          if (isOpen) labourGroupOpenKeys.delete(key);
+          else labourGroupOpenKeys.add(key);
+          applyLabourRatesGrouping(labourGroupVisibleRows);
+        }, 0);
       });
     }
 

@@ -2,6 +2,14 @@ const express = require("express");
 const knex = require("../../db/knex");
 const { createHrMasterRouter, hydratePage } = require("./master-router");
 const { toMoney, hasTwoDecimalsOrLess } = require("./validation");
+const getAllowedBranchIds = (req) => {
+  if (req?.user?.isAdmin) return [];
+  return Array.isArray(req?.branchScope)
+    ? req.branchScope
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0)
+    : [];
+};
 
 const page = {
   titleKey: "allowances",
@@ -64,12 +72,23 @@ const page = {
       label: "employees",
       type: "select",
       required: true,
-      optionsQuery: {
-        table: "erp.employees",
-        valueKey: "id",
-        labelKey: "name",
-        orderBy: "name",
-        where: { status: "active" },
+      optionsResolver: async ({ knex, locale, req }) => {
+        const labelExpr =
+          locale === "ur" ? "COALESCE(e.name_ur, e.name)" : "e.name";
+        const allowedBranchIds = getAllowedBranchIds(req);
+        let query = knex("erp.employees as e")
+          .select("e.id as value", knex.raw(`${labelExpr} as label`))
+          .whereRaw("lower(trim(e.status)) = 'active'");
+        if (allowedBranchIds.length) {
+          query = query.whereExists(function branchScope() {
+            this.select(1)
+              .from("erp.employee_branch as eb")
+              .whereRaw("eb.employee_id = e.id")
+              .whereIn("eb.branch_id", allowedBranchIds);
+          });
+        }
+        const rows = await query.orderByRaw(`${labelExpr} asc`);
+        return rows.map((row) => ({ value: row.value, label: row.label }));
       },
     },
     { name: "allowance_type", label: "allowance_type", required: true, placeholder: "placeholder_allowance_type" },
@@ -129,6 +148,15 @@ const page = {
     if (isUpdate && id) duplicateQ.andWhereNot({ id });
     const duplicate = await duplicateQ.first();
     if (duplicate) return req.res.locals.t("error_duplicate_allowance_rule");
+    const allowedBranchIds = getAllowedBranchIds(req);
+    if (allowedBranchIds.length) {
+      const inScope = await knex("erp.employee_branch as eb")
+        .select("eb.employee_id")
+        .where("eb.employee_id", Number(values.employee_id || 0))
+        .whereIn("eb.branch_id", allowedBranchIds)
+        .first();
+      if (!inScope) return req.res.locals.t("error_branch_out_of_scope");
+    }
 
     values.amount = toMoney(values.amount);
     return null;

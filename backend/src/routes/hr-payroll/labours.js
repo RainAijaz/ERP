@@ -49,6 +49,14 @@ const LABOUR_RATE_ARTICLE_TYPE_SQL = `
 `;
 
 const labourDeptTableSupport = new Map();
+const getAllowedBranchIds = (req) => {
+  if (req?.user?.isAdmin) return [];
+  return Array.isArray(req?.branchScope)
+    ? req.branchScope
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0)
+    : [];
+};
 const hasErpTable = async (db, tableName) => {
   const key = String(tableName || "")
     .trim()
@@ -385,6 +393,9 @@ const page = {
       const removedDeptIds = [...existingDeptIds].filter(
         (deptId) => !nextDeptIds.has(deptId),
       );
+      const addedDeptIds = [...nextDeptIds].filter(
+        (deptId) => !existingDeptIds.has(deptId),
+      );
       if (removedDeptIds.length) {
         const usageMap = await findLabourDeptUsageMap({
           db: knex,
@@ -395,6 +406,57 @@ const page = {
           usageMap.has(Number(deptId)),
         );
         if (blockedDeptIds.length) {
+          const rateOnlyBlockedDeptIds = blockedDeptIds.filter((deptId) => {
+            const usageSources = usageMap.get(Number(deptId));
+            if (!usageSources || !usageSources.size) return false;
+            return (
+              usageSources.size === 1 && usageSources.has("LABOUR_RATE_RULE")
+            );
+          });
+          const hasNonRateBlockedDept = blockedDeptIds.some(
+            (deptId) => !rateOnlyBlockedDeptIds.includes(deptId),
+          );
+
+          // If a removed department is only used by labour rates, allow move by
+          // shifting those rates to one newly selected department.
+          if (!hasNonRateBlockedDept && rateOnlyBlockedDeptIds.length) {
+            const targetDeptId = Number(
+              addedDeptIds[0] || values.dept_id || values.dept_ids?.[0] || 0,
+            );
+            if (Number.isInteger(targetDeptId) && targetDeptId > 0) {
+              await knex.transaction(async (trx) => {
+                await trx.raw(
+                  `
+                    DELETE FROM erp.labour_rate_rules src
+                    USING erp.labour_rate_rules dst
+                    WHERE src.labour_id = ?
+                      AND src.dept_id = ANY(?::bigint[])
+                      AND src.sku_id IS NOT NULL
+                      AND dst.labour_id = src.labour_id
+                      AND dst.dept_id = ?
+                      AND dst.sku_id = src.sku_id
+                  `,
+                  [labourId, rateOnlyBlockedDeptIds, targetDeptId],
+                );
+                await trx("erp.labour_rate_rules")
+                  .where({ labour_id: labourId })
+                  .whereIn("dept_id", rateOnlyBlockedDeptIds)
+                  .update({ dept_id: targetDeptId });
+              });
+            } else {
+              const msgTemplate = req.res.locals.t(
+                "error_labour_department_in_use",
+              );
+              const msg = String(
+                msgTemplate && msgTemplate !== "error_labour_department_in_use"
+                  ? msgTemplate
+                  : "Department mapping cannot be removed because it is already used in vouchers/rates/BOM.",
+              );
+              return `${msg} ${rateOnlyBlockedDeptIds.join(", ")}`;
+            }
+            return null;
+          }
+
           const deptRows = await knex("erp.departments")
             .select("id", "name")
             .whereIn("id", blockedDeptIds);
@@ -415,10 +477,7 @@ const page = {
               ? msgTemplate
               : "Department mapping cannot be removed because it is already used in vouchers/rates/BOM.",
           );
-          return {
-            field: "dept_ids",
-            message: `${msg} ${blockedDeptLabels.join(", ")}`,
-          };
+          return `${msg} ${blockedDeptLabels.join(", ")}`;
         }
       }
     }
@@ -434,6 +493,12 @@ const labourRatesPage = {
   scopeKey: "hr_payroll.labour_rates",
   entityType: "LABOUR",
   branchScoped: false,
+  branchFilter: {
+    mapTable: "erp.labour_branch",
+    mapKey: "labour_id",
+    entityKey: "labour_id",
+    branchKey: "branch_id",
+  },
   autoCodeFromName: false,
   defaults: {},
   filterConfig: {
@@ -442,13 +507,22 @@ const labourRatesPage = {
       label: "labours",
       valueType: "number",
       dbColumn: "t.labour_id",
-      optionsResolver: async ({ knex, locale }) => {
+      optionsResolver: async ({ knex, locale, req }) => {
         const labelExpr =
           locale === "ur" ? "COALESCE(l.name_ur, l.name)" : "l.name";
-        const rows = await knex("erp.labours as l")
+        const allowedBranchIds = getAllowedBranchIds(req);
+        let query = knex("erp.labours as l")
           .select("l.id as value", knex.raw(`${labelExpr} as label`))
-          .whereRaw("lower(trim(l.status)) = 'active'")
-          .orderByRaw(`${labelExpr} asc`);
+          .whereRaw("lower(trim(l.status)) = 'active'");
+        if (allowedBranchIds.length) {
+          query = query.whereExists(function branchScope() {
+            this.select(1)
+              .from("erp.labour_branch as lb")
+              .whereRaw("lb.labour_id = l.id")
+              .whereIn("lb.branch_id", allowedBranchIds);
+          });
+        }
+        const rows = await query.orderByRaw(`${labelExpr} asc`);
         return rows.map((row) => ({ value: row.value, label: row.label }));
       },
     },
@@ -461,6 +535,9 @@ const labourRatesPage = {
     },
   },
   applyExtraFilters: (query, { filters = {} } = {}) => {
+    // Zero-value rules are considered non-effective; hide them from list view.
+    query = query.whereRaw("COALESCE(t.rate_value, 0) > 0");
+
     const subgroupIds = Array.isArray(filters.subgroupValues)
       ? filters.subgroupValues
           .map((value) => Number(value))
@@ -496,7 +573,10 @@ const labourRatesPage = {
     if (subgroupIds.length) {
       const subgroupMatch = function subgroupMatch() {
         this.where(function skuSubgroupMatch() {
-          this.where("t.apply_on", "SKU").whereIn("i.subgroup_id", subgroupIds);
+          this.whereIn("t.apply_on", ["SKU", "ARTICLE"]).whereIn(
+            "i.subgroup_id",
+            subgroupIds,
+          );
         })
           .orWhere(function subgroupRuleMatch() {
             this.where("t.apply_on", "SUBGROUP").whereIn(
@@ -523,7 +603,10 @@ const labourRatesPage = {
     if (groupIds.length) {
       const groupMatch = function groupMatch() {
         this.where(function skuGroupMatch() {
-          this.where("t.apply_on", "SKU").whereIn("i.group_id", groupIds);
+          this.whereIn("t.apply_on", ["SKU", "ARTICLE"]).whereIn(
+            "i.group_id",
+            groupIds,
+          );
         })
           .orWhere(function subgroupGroupMatch() {
             this.where("t.apply_on", "SUBGROUP").whereIn(
@@ -600,13 +683,22 @@ const labourRatesPage = {
       label: "labours",
       type: "multi-select",
       required: true,
-      optionsResolver: async ({ knex, locale }) => {
+      optionsResolver: async ({ knex, locale, req }) => {
         const labelExpr =
           locale === "ur" ? "COALESCE(l.name_ur, l.name)" : "l.name";
-        const rows = await knex("erp.labours as l")
+        const allowedBranchIds = getAllowedBranchIds(req);
+        let query = knex("erp.labours as l")
           .select("l.id as value", knex.raw(`${labelExpr} as label`))
-          .whereRaw("lower(trim(l.status)) = 'active'")
-          .orderByRaw(`${labelExpr} asc`);
+          .whereRaw("lower(trim(l.status)) = 'active'");
+        if (allowedBranchIds.length) {
+          query = query.whereExists(function branchScope() {
+            this.select(1)
+              .from("erp.labour_branch as lb")
+              .whereRaw("lb.labour_id = l.id")
+              .whereIn("lb.branch_id", allowedBranchIds);
+          });
+        }
+        const rows = await query.orderByRaw(`${labelExpr} asc`);
         return rows.map((row) => ({ value: row.value, label: row.label }));
       },
     },
@@ -628,7 +720,7 @@ const labourRatesPage = {
       type: "select",
       required: true,
       options: [
-        { value: "SKU", label: "apply_on_sku" },
+        { value: "ARTICLE", label: "article" },
         { value: "SUBGROUP", label: "apply_on_subgroup" },
         { value: "GROUP", label: "apply_on_group" },
       ],
@@ -646,10 +738,10 @@ const labourRatesPage = {
     },
     {
       name: "sku_id",
-      label: "skus",
+      label: "articles",
       type: "select",
       multiple: true,
-      showWhen: { field: "apply_on", values: ["SKU"] },
+      showWhen: { field: "apply_on", values: ["ARTICLE"] },
       options: [],
     },
     {
@@ -714,14 +806,19 @@ const labourRatesPage = {
       type: "number",
       min: 0,
       step: "0.01",
-      required: true,
+      required: false,
     },
   ],
   sanitizeValues: (values) => ({
     ...values,
-    apply_on: String(values.apply_on || "")
-      .trim()
-      .toUpperCase(),
+    apply_on:
+      String(values.apply_on || "")
+        .trim()
+        .toUpperCase() === "ARTICLE"
+        ? "SKU"
+        : String(values.apply_on || "")
+            .trim()
+            .toUpperCase(),
     article_type:
       values.article_type == null
         ? null
@@ -762,7 +859,7 @@ const labourRatesPage = {
       }
     }
 
-    const applyOnSet = new Set(["SKU", "SUBGROUP", "GROUP"]);
+    const applyOnSet = new Set(["ARTICLE", "SKU", "SUBGROUP", "GROUP"]);
     const rateTypeSet = new Set(["PER_DOZEN", "PER_PAIR"]);
     if (!values.dept_id)
       return {
@@ -779,7 +876,7 @@ const labourRatesPage = {
         field: "apply_on",
         message: req.res.locals.t("error_invalid_apply_on"),
       };
-    if (values.apply_on === "SKU" && !values.sku_id)
+    if (values.apply_on === "ARTICLE" && !values.sku_id)
       return { field: "sku_id", message: req.res.locals.t("error_select_sku") };
     if (values.apply_on === "SUBGROUP" && !values.subgroup_id)
       return {
@@ -804,7 +901,7 @@ const labourRatesPage = {
       };
     }
 
-    if (!isUpdate && values.apply_on !== "SKU") {
+    if (!isUpdate && values.apply_on !== "ARTICLE") {
       values.sku_id = null;
     }
     if (values.apply_on !== "SUBGROUP") {
@@ -883,6 +980,7 @@ ratesRouter.get(
         : [Number(labourRaw)].filter(
             (value) => Number.isInteger(value) && value > 0,
           );
+      const allowedBranchIds = getAllowedBranchIds(req);
 
       if (!effectiveLabourIds.length) {
         return res
@@ -890,7 +988,7 @@ ratesRouter.get(
           .json({ message: res.locals.t("error_select_labour") });
       }
 
-      const labourDepartmentRows = await knex("erp.labours as l")
+      let labourDepartmentRowsQuery = knex("erp.labours as l")
         .leftJoin("erp.labour_department as ld", "ld.labour_id", "l.id")
         .select(
           "l.id as labour_id",
@@ -899,6 +997,17 @@ ratesRouter.get(
         )
         .whereIn("l.id", effectiveLabourIds)
         .whereRaw("lower(trim(l.status)) = 'active'");
+      if (allowedBranchIds.length) {
+        labourDepartmentRowsQuery = labourDepartmentRowsQuery.whereExists(
+          function branchScope() {
+            this.select(1)
+              .from("erp.labour_branch as lb")
+              .whereRaw("lb.labour_id = l.id")
+              .whereIn("lb.branch_id", allowedBranchIds);
+          },
+        );
+      }
+      const labourDepartmentRows = await labourDepartmentRowsQuery;
 
       const deptMapByLabour = new Map();
       effectiveLabourIds.forEach((id) => {
@@ -990,6 +1099,7 @@ ratesRouter.get(
         : [Number(labourRaw)].filter(
             (value) => Number.isInteger(value) && value > 0,
           );
+      const allowedBranchIds = getAllowedBranchIds(req);
       if (!labourIds.length) {
         return res
           .status(400)
@@ -1005,6 +1115,7 @@ ratesRouter.get(
           raw: labourIds.join(","),
         },
         t: res.locals.t,
+        allowedBranchIds,
       });
       if (!resolvedLabourIds.length) return res.json({ rows: [] });
 
@@ -1051,18 +1162,26 @@ ratesRouter.get(
         itemTypes = [ARTICLE_TYPE.SEMI_FINISHED];
 
       const term = String(req.query.q || "").trim();
-      let query = knex("erp.skus as s")
-        .distinct("s.id as value", "s.sku_code as label")
-        .join("erp.variants as v", "v.id", "s.variant_id")
-        .join("erp.items as i", "i.id", "v.item_id")
-        .where({ "s.is_active": true, "i.is_active": true })
+      const labelExpr =
+        req.locale === "ur"
+          ? "COALESCE(i.name_ur, i.name)"
+          : "COALESCE(i.name, i.name_ur)";
+      let query = knex("erp.items as i")
+        .distinct("i.id as value")
+        .select(knex.raw(`${labelExpr} as label`))
+        .where({ "i.is_active": true })
         .whereIn("i.item_type", itemTypes);
 
       if (term) {
-        query = query.whereILike("s.sku_code", `%${term}%`);
+        query = query.where(function whereTerm() {
+          this.whereILike("i.name", `%${term}%`).orWhereILike(
+            "i.name_ur",
+            `%${term}%`,
+          );
+        });
       }
 
-      const options = await query.orderBy("s.sku_code", "asc").limit(1500);
+      const options = await query.orderByRaw(`${labelExpr} asc`).limit(300);
       return res.json({ options });
     } catch (err) {
       console.error("Error in LabourRateRulesService:", err);
@@ -1086,12 +1205,15 @@ ratesRouter.get(
         deptId: normalized.deptId,
         labourSelection: normalized.labourSelection,
         t: res.locals.t,
+        allowedBranchIds: getAllowedBranchIds(req),
       });
 
       const rows = await buildBulkPreviewRows({
         labourIds,
         deptId: normalized.deptId,
         applyOn: normalized.applyOn,
+        articleId: normalized.articleId,
+        articleIds: normalized.articleIds,
         skuId: normalized.skuId,
         skuIds: normalized.skuIds,
         subgroupId: normalized.subgroupId,
@@ -1144,6 +1266,7 @@ ratesRouter.post(
         deptId: normalized.deptId,
         labourSelection: normalized.labourSelection,
         t: res.locals.t,
+        allowedBranchIds: getAllowedBranchIds(req),
       });
       logLabourRateSaveDebug(req, "bulk_upsert:labours_resolved", {
         traceId,
@@ -1160,6 +1283,8 @@ ratesRouter.post(
         labourIds,
         deptId: normalized.deptId,
         applyOn: normalized.applyOn,
+        articleId: normalized.articleId,
+        articleIds: normalized.articleIds,
         skuId: normalized.skuId,
         skuIds: normalized.skuIds,
         subgroupId: normalized.subgroupId,
@@ -1177,9 +1302,13 @@ ratesRouter.post(
       );
       const queuedRows = expectedRows.map((row) => {
         const skuId = Number(row.sku_id || 0);
-        const nextRate = requestedRateBySku.has(skuId)
+        const requestedRate = requestedRateBySku.has(skuId)
           ? requestedRateBySku.get(skuId)
           : row.new_rate;
+        const nextRate =
+          requestedRate === null || requestedRate === undefined
+            ? row.previous_rate ?? null
+            : requestedRate;
         return {
           sku_id: skuId,
           sku_code: row.sku_code || "",
@@ -1235,6 +1364,8 @@ ratesRouter.post(
           labour_id: normalized.labourSelection?.raw || null,
           dept_id: normalized.deptId,
           apply_on: normalized.applyOn,
+          article_id: normalized.articleId,
+          article_ids: normalized.articleIds,
           sku_id: normalized.skuId,
           sku_ids: normalized.skuIds,
           subgroup_id: normalized.subgroupId,
@@ -1283,14 +1414,26 @@ ratesRouter.post(
           .map((row) => [Number(row.sku_id), row])
           .filter(([skuId]) => Number.isInteger(skuId) && skuId > 0),
       );
-      const normalizedRowsForSave = normalized.rows.map((row) => {
-        const expectedRow = expectedRowBySku.get(Number(row.skuId));
-        return {
-          ...row,
-          subgroupId: row.subgroupId || expectedRow?.subgroup_id || null,
-          groupId: row.groupId || expectedRow?.group_id || null,
-        };
-      });
+      const queuedRowBySku = new Map(
+        queuedRows
+          .map((row) => [Number(row.sku_id), row])
+          .filter(([skuId]) => Number.isInteger(skuId) && skuId > 0),
+      );
+      const normalizedRowsForSave = normalized.rows
+        .map((row) => {
+          const queuedRow = queuedRowBySku.get(Number(row.skuId));
+          const expectedRow = expectedRowBySku.get(Number(row.skuId));
+          return {
+            ...row,
+            rate:
+              queuedRow && queuedRow.new_rate != null
+                ? Number(queuedRow.new_rate)
+                : null,
+            subgroupId: row.subgroupId || expectedRow?.subgroup_id || null,
+            groupId: row.groupId || expectedRow?.group_id || null,
+          };
+        })
+        .filter((row) => row.rate != null);
 
       const result = await knex.transaction(async (trx) => {
         await trx.raw("SET LOCAL lock_timeout = '5s'");

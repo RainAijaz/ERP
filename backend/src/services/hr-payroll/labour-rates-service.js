@@ -1,6 +1,7 @@
 const knex = require("../../db/knex");
 
 const APPLY_ON = {
+  ARTICLE: "ARTICLE",
   SKU: "SKU",
   SUBGROUP: "SUBGROUP",
   GROUP: "GROUP",
@@ -15,6 +16,7 @@ const ARTICLE_TYPE = {
 
 const ALL_LABOURS_VALUE = "ALL";
 const PRECEDENCE = [
+  APPLY_ON.ARTICLE,
   APPLY_ON.SKU,
   APPLY_ON.SUBGROUP,
   APPLY_ON.GROUP,
@@ -26,6 +28,16 @@ const ALLOWED_ARTICLE_TYPES = new Set([
   ARTICLE_TYPE.SEMI_FINISHED,
   ARTICLE_TYPE.BOTH,
 ]);
+const toPersistApplyOn = (applyOn) => {
+  const normalized = String(applyOn || "")
+    .trim()
+    .toUpperCase();
+  if (normalized === APPLY_ON.ARTICLE) return APPLY_ON.SKU;
+  if (normalized === APPLY_ON.SUBGROUP) return APPLY_ON.SUBGROUP;
+  if (normalized === APPLY_ON.GROUP) return APPLY_ON.GROUP;
+  if (normalized === APPLY_ON.FLAT) return APPLY_ON.FLAT;
+  return APPLY_ON.SKU;
+};
 
 const toPositiveIntOrNull = (value) => {
   const parsed = Number(value);
@@ -102,9 +114,10 @@ const normalizeApplyOn = (value) => {
   const raw = String(value || "")
     .trim()
     .toUpperCase();
+  if (raw === APPLY_ON.ARTICLE) return APPLY_ON.ARTICLE;
   if (raw === APPLY_ON.SUBGROUP) return APPLY_ON.SUBGROUP;
   if (raw === APPLY_ON.GROUP) return APPLY_ON.GROUP;
-  return APPLY_ON.SKU;
+  return APPLY_ON.ARTICLE;
 };
 
 const normalizeScopeInput = ({ payload, t }) => {
@@ -131,6 +144,13 @@ const normalizeScopeInput = ({ payload, t }) => {
   const applyOn = normalizeApplyOn(payload.apply_on);
   const skuIdsInput = toPositiveIntArray(payload.sku_ids);
   const skuIdFallback = toPositiveIntOrNull(payload.sku_id);
+  const articleIdsInput = toPositiveIntArray(payload.article_ids);
+  const articleIdFallback = toPositiveIntOrNull(payload.article_id);
+  const articleIds = articleIdsInput.length
+    ? articleIdsInput
+    : articleIdFallback
+      ? [articleIdFallback]
+      : [];
   const skuIds = skuIdsInput.length
     ? skuIdsInput
     : skuIdFallback
@@ -145,6 +165,8 @@ const normalizeScopeInput = ({ payload, t }) => {
     ? groupIdsInput
     : toPositiveIntArray(payload.group_id);
 
+  if (applyOn === APPLY_ON.ARTICLE && !articleIds.length)
+    throw new Error(t("error_select_target"));
   if (applyOn === APPLY_ON.SKU && !skuIds.length)
     throw new Error(t("error_select_sku"));
   if (applyOn === APPLY_ON.SUBGROUP && !subgroupIds.length)
@@ -171,6 +193,8 @@ const normalizeScopeInput = ({ payload, t }) => {
     labourSelection,
     deptId,
     applyOn,
+    articleId: applyOn === APPLY_ON.ARTICLE ? articleIds[0] || null : null,
+    articleIds: applyOn === APPLY_ON.ARTICLE ? articleIds : [],
     skuId: applyOn === APPLY_ON.SKU ? skuIds[0] || null : null,
     skuIds: applyOn === APPLY_ON.SKU ? skuIds : [],
     subgroupId: applyOn === APPLY_ON.SUBGROUP ? subgroupIds[0] || null : null,
@@ -192,13 +216,16 @@ const normalizeBulkInput = ({ payload, t }) => {
     const subgroupId = toPositiveIntOrNull(row.subgroup_id ?? row.subgroupId);
     const groupId = toPositiveIntOrNull(row.group_id ?? row.groupId);
     const rateRaw = row.new_rate;
-    const money = toMoney(rateRaw);
+    const hasExplicitRate =
+      !(rateRaw === null || rateRaw === undefined || String(rateRaw).trim() === "");
+    const money = hasExplicitRate ? toMoney(rateRaw) : null;
     if (!skuId) throw new Error(t("error_invalid_bulk_labour_rate_payload"));
     if (
-      money === null ||
-      Number(money) < 0 ||
-      !hasTwoDecimalsOrLess(rateRaw) ||
-      Number(money) > 99999999.99
+      hasExplicitRate &&
+      (money === null ||
+        Number(money) < 0 ||
+        !hasTwoDecimalsOrLess(rateRaw) ||
+        Number(money) > 99999999.99)
     ) {
       throw new Error(t("error_invalid_rate_value"));
     }
@@ -220,13 +247,39 @@ const normalizeBulkInput = ({ payload, t }) => {
   };
 };
 
-const resolveLabourIds = async ({ db = knex, deptId, labourSelection, t }) => {
+const resolveLabourIds = async ({
+  db = knex,
+  deptId,
+  labourSelection,
+  t,
+  allowedBranchIds = [],
+}) => {
   const dept = Number(deptId || 0);
   if (!Number.isInteger(dept) || dept <= 0)
     throw new Error(t("error_select_department"));
 
+  const allowedBranchList = Array.isArray(allowedBranchIds)
+    ? [
+        ...new Set(
+          allowedBranchIds
+            .map((id) => Number(id))
+            .filter((id) => Number.isInteger(id) && id > 0),
+        ),
+      ]
+    : [];
+  const applyBranchScope = (queryBuilder) => {
+    if (!allowedBranchList.length) return queryBuilder;
+    return queryBuilder.whereExists(function branchScope() {
+      this.select(1)
+        .from("erp.labour_branch as lb")
+        .whereRaw("lb.labour_id = l.id")
+        .whereIn("lb.branch_id", allowedBranchList);
+    });
+  };
+
   if (labourSelection?.all) {
-    const labourRows = await db("erp.labours as l")
+    const labourRows = await applyBranchScope(
+      db("erp.labours as l")
       .select("l.id")
       .whereRaw("lower(trim(l.status)) = 'active'")
       .andWhere(function whereDept() {
@@ -237,7 +290,8 @@ const resolveLabourIds = async ({ db = knex, deptId, labourSelection, t }) => {
             .andWhere("ld.dept_id", dept);
         });
       })
-      .orderBy("l.id", "asc");
+      .orderBy("l.id", "asc"),
+    );
 
     const unique = [
       ...new Set(
@@ -262,7 +316,8 @@ const resolveLabourIds = async ({ db = knex, deptId, labourSelection, t }) => {
   ];
   if (!selectedLabourIds.length) throw new Error(t("error_select_labour"));
 
-  const validRows = await db("erp.labours as l")
+  const validRows = await applyBranchScope(
+    db("erp.labours as l")
     .select("l.id")
     .whereIn("l.id", selectedLabourIds)
     .whereRaw("lower(trim(l.status)) = 'active'")
@@ -273,7 +328,8 @@ const resolveLabourIds = async ({ db = knex, deptId, labourSelection, t }) => {
           .whereRaw("ld.labour_id = l.id")
           .andWhere("ld.dept_id", dept);
       });
-    });
+    }),
+  );
   const validIdSet = new Set(
     (validRows || [])
       .map((row) => Number(row.id))
@@ -294,6 +350,8 @@ const resolveItemTypes = (articleType) => {
 const fetchTargetSkus = async ({
   db = knex,
   articleType,
+  articleId = null,
+  articleIds = [],
   applyOn = APPLY_ON.SKU,
   skuId = null,
   skuIds = [],
@@ -315,7 +373,20 @@ const fetchTargetSkus = async ({
     )
     .whereIn("i.item_type", resolveItemTypes(articleType));
 
-  if (applyOn === APPLY_ON.SKU) {
+  if (applyOn === APPLY_ON.ARTICLE) {
+    const requestedArticleIds = [
+      ...new Set(
+        (Array.isArray(articleIds) ? articleIds : [])
+          .map((id) => Number(id))
+          .filter((id) => Number.isInteger(id) && id > 0),
+      ),
+    ];
+    if (requestedArticleIds.length) {
+      query = query.whereIn("i.id", requestedArticleIds);
+    } else if (articleId) {
+      query = query.where("i.id", articleId);
+    }
+  } else if (applyOn === APPLY_ON.SKU) {
     const requestedSkuIds = [
       ...new Set(
         (Array.isArray(skuIds) ? skuIds : [])
@@ -397,7 +468,9 @@ const resolvePreviousForSku = ({ existingRules, sku }) => {
   for (const scope of PRECEDENCE) {
     const matched = existingRules.find((rule) => {
       if (String(rule.apply_on || "").toUpperCase() !== scope) return false;
-      if (scope === APPLY_ON.SKU)
+  if (scope === APPLY_ON.SKU)
+        return Number(rule.sku_id) === Number(sku.sku_id);
+      if (scope === APPLY_ON.ARTICLE)
         return Number(rule.sku_id) === Number(sku.sku_id);
       if (scope === APPLY_ON.SUBGROUP)
         return Number(rule.subgroup_id) === Number(sku.subgroup_id || 0);
@@ -426,6 +499,8 @@ const buildBulkPreviewRows = async ({
   labourIds,
   deptId,
   applyOn,
+  articleId,
+  articleIds,
   skuId,
   skuIds,
   subgroupId,
@@ -439,6 +514,8 @@ const buildBulkPreviewRows = async ({
   const targetSkus = await fetchTargetSkus({
     db,
     articleType,
+    articleId,
+    articleIds,
     applyOn,
     skuId,
     skuIds,
@@ -579,6 +656,7 @@ const applyBulkSkuRateUpsert = async ({
 
   let updated = 0;
   let created = 0;
+  const persistedApplyOn = toPersistApplyOn(applyOn);
 
   for (const labourId of labourList) {
     for (const row of rows) {
@@ -594,13 +672,13 @@ const applyBulkSkuRateUpsert = async ({
             status,
             rate_type: rateType,
             rate_value: row.rate,
-            apply_on: applyOn || APPLY_ON.SKU,
+            apply_on: persistedApplyOn,
             subgroup_id:
-              (applyOn || APPLY_ON.SKU) === APPLY_ON.SUBGROUP
+              persistedApplyOn === APPLY_ON.SUBGROUP
                 ? row.subgroupId || subgroupId || null
                 : null,
             group_id:
-              (applyOn || APPLY_ON.SKU) === APPLY_ON.GROUP
+              persistedApplyOn === APPLY_ON.GROUP
                 ? row.groupId || groupId || null
                 : null,
           });
@@ -614,14 +692,14 @@ const applyBulkSkuRateUpsert = async ({
           applies_to_all_labours: false,
           labour_id: labourId,
           dept_id: deptId,
-          apply_on: applyOn || APPLY_ON.SKU,
+          apply_on: persistedApplyOn,
           sku_id: row.skuId,
           subgroup_id:
-            (applyOn || APPLY_ON.SKU) === APPLY_ON.SUBGROUP
+            persistedApplyOn === APPLY_ON.SUBGROUP
               ? row.subgroupId || subgroupId || null
               : null,
           group_id:
-            (applyOn || APPLY_ON.SKU) === APPLY_ON.GROUP
+            persistedApplyOn === APPLY_ON.GROUP
               ? row.groupId || groupId || null
               : null,
           rate_type: rateType,

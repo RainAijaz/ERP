@@ -19,6 +19,27 @@ const {
 } = require("../../services/hr-payroll/commission-rules-service");
 const COMMISSION_BASIS_FIXED_PER_UNIT = "FIXED_PER_UNIT";
 const COMMISSION_RATE_TYPES = new Set(["PER_DOZEN", "PER_PAIR"]);
+const getAllowedBranchIds = (req) => {
+  if (req?.user?.isAdmin) return [];
+  return Array.isArray(req?.branchScope)
+    ? req.branchScope
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0)
+    : [];
+};
+const isEmployeeInScope = async ({ employeeId, req }) => {
+  const normalizedEmployeeId = Number(employeeId || 0);
+  if (!Number.isInteger(normalizedEmployeeId) || normalizedEmployeeId <= 0)
+    return false;
+  const allowedBranchIds = getAllowedBranchIds(req);
+  if (!allowedBranchIds.length) return true;
+  const row = await knex("erp.employee_branch as eb")
+    .select("eb.employee_id")
+    .where("eb.employee_id", normalizedEmployeeId)
+    .whereIn("eb.branch_id", allowedBranchIds)
+    .first();
+  return Boolean(row);
+};
 
 const page = {
   titleKey: "sales_commission",
@@ -27,6 +48,12 @@ const page = {
   scopeKey: "hr_payroll.commissions",
   entityType: "EMPLOYEE",
   branchScoped: false,
+  branchFilter: {
+    mapTable: "erp.employee_branch",
+    mapKey: "employee_id",
+    entityKey: "employee_id",
+    branchKey: "branch_id",
+  },
   autoCodeFromName: false,
   defaults: {
     reverse_on_returns: true,
@@ -94,12 +121,23 @@ const page = {
       type: "select",
       multiple: true,
       required: true,
-      optionsQuery: {
-        table: "erp.employees",
-        valueKey: "id",
-        labelKey: "name",
-        orderBy: "name",
-        where: { status: "active" },
+      optionsResolver: async ({ knex, locale, req }) => {
+        const labelExpr =
+          locale === "ur" ? "COALESCE(e.name_ur, e.name)" : "e.name";
+        const allowedBranchIds = getAllowedBranchIds(req);
+        let query = knex("erp.employees as e")
+          .select("e.id as value", knex.raw(`${labelExpr} as label`))
+          .whereRaw("lower(trim(e.status)) = 'active'");
+        if (allowedBranchIds.length) {
+          query = query.whereExists(function branchScope() {
+            this.select(1)
+              .from("erp.employee_branch as eb")
+              .whereRaw("eb.employee_id = e.id")
+              .whereIn("eb.branch_id", allowedBranchIds);
+          });
+        }
+        const rows = await query.orderByRaw(`${labelExpr} asc`);
+        return rows.map((row) => ({ value: row.value, label: row.label }));
       },
     },
     {
@@ -271,6 +309,12 @@ const page = {
     values.group_id = firstSelection(values.group_id);
 
     if (!values.employee_id) return req.res.locals.t("error_required_fields");
+    if (
+      values.employee_id &&
+      !(await isEmployeeInScope({ employeeId: values.employee_id, req }))
+    ) {
+      return req.res.locals.t("error_branch_out_of_scope");
+    }
     if (values.apply_on === "SKU" && !values.sku_id)
       return req.res.locals.t("error_select_sku");
     if (values.apply_on === "SUBGROUP" && !values.subgroup_id)
@@ -462,6 +506,18 @@ router.post(
           "create",
           fieldErrors,
         );
+      }
+      for (const employeeId of employeeIds) {
+        if (!(await isEmployeeInScope({ employeeId, req }))) {
+          return renderIndexError(
+            req,
+            res,
+            sanitizedValues,
+            res.locals.t("error_branch_out_of_scope"),
+            "create",
+            { employee_id: res.locals.t("error_branch_out_of_scope") },
+          );
+        }
       }
 
       const rowPlans = [];
@@ -690,6 +746,14 @@ router.get(
           .status(400)
           .json({ message: res.locals.t("error_select_group") });
       }
+      if (
+        employeeId &&
+        !(await isEmployeeInScope({ employeeId, req }))
+      ) {
+        return res
+          .status(403)
+          .json({ message: res.locals.t("error_branch_out_of_scope") });
+      }
 
       const rows = await buildBulkPreviewRows({
         employeeId,
@@ -725,6 +789,14 @@ router.post(
         payload: req.body || {},
         t: res.locals.t,
       });
+      if (
+        normalized.employeeId &&
+        !(await isEmployeeInScope({ employeeId: normalized.employeeId, req }))
+      ) {
+        return res
+          .status(403)
+          .json({ message: res.locals.t("error_branch_out_of_scope") });
+      }
 
       const expectedRows = await buildBulkPreviewRows({
         employeeId: normalized.employeeId,

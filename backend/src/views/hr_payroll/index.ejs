@@ -1013,7 +1013,9 @@ const currentSeq = ++state.requestSeq;
     const getSelectedGroupIds = () => getSelectedValues(fields.groupId);
     const isBulkApplyOn = () => {
       const applyOn = normalizeApplyOn();
-      return applyOn === "SUBGROUP" || applyOn === "GROUP";
+      return (
+        applyOn === "ARTICLE" || applyOn === "SUBGROUP" || applyOn === "GROUP"
+      );
     };
 
     const renderLabourScope = (rows) => {
@@ -1091,9 +1093,6 @@ const currentSeq = ++state.requestSeq;
       fields.deptId.innerHTML = `<option value="">${tSelect}</option>`;
       fields.deptId.value = "";
       fields.deptId.dispatchEvent(new Event("change", { bubbles: true }));
-      if (typeof window.initSearchableSelects === "function") {
-        window.initSearchableSelects(form);
-      }
     };
 
     const applyDepartmentOptions = (options, selectedValue = "") => {
@@ -1107,9 +1106,6 @@ const currentSeq = ++state.requestSeq;
         fields.deptId.value = String(selectedValue);
       } else {
         fields.deptId.value = "";
-      }
-      if (typeof window.initSearchableSelects === "function") {
-        window.initSearchableSelects(form);
       }
     };
 
@@ -1218,7 +1214,7 @@ const currentSeq = ++state.requestSeq;
       const requestSeq = ++state.skuOptionsSeq;
       const currentSkus = preserveSelection ? getSelectedSkuIds() : [];
       const targetSkus = Array.isArray(selectedValues) && selectedValues.length ? selectedValues : currentSkus;
-      if (applyOn !== "SKU") {
+      if (applyOn !== "ARTICLE") {
         resetSkuOptions();
         return;
       }
@@ -1480,7 +1476,7 @@ const currentSeq = ++state.requestSeq;
       const rateType = String(fields.rateType?.value || "").trim();
 
       if (!labourIds.length || !deptId || !applyOn || !articleType || !rateType) return null;
-      if (applyOn === "SKU" && !skuIds.length) return null;
+      if (applyOn === "ARTICLE" && !skuIds.length) return null;
       if (applyOn === "SUBGROUP" && !subgroupIds.length) return null;
       if (applyOn === "GROUP" && !groupIds.length) return null;
 
@@ -1491,6 +1487,10 @@ const currentSeq = ++state.requestSeq;
         article_type: articleType,
         rate_type: rateType,
       });
+      if (applyOn === "ARTICLE" && skuIds.length) {
+        params.set("article_ids", skuIds.join(","));
+        params.set("article_id", skuIds[0]);
+      }
       if (skuIds.length) {
         params.set("sku_ids", skuIds.join(","));
         params.set("sku_id", skuIds[0]);
@@ -1528,7 +1528,7 @@ const currentSeq = ++state.requestSeq;
         clearRows(tSelectTarget);
         return;
       }
-      if (applyOn === "SKU" && !getSelectedSkuIds().length) {
+      if (applyOn === "ARTICLE" && !getSelectedSkuIds().length) {
         clearRows(tSelectSku);
         return;
       }
@@ -1736,8 +1736,11 @@ const currentSeq = ++state.requestSeq;
         state.editSkuLabel = "";
         state.editSkuValue = "";
       }
-      if (modalMode === "edit" && fields.applyOn) {
-        fieldsByName.apply_on.value = "SKU";
+      if (modalMode === "edit" && fields.applyOn && editBtn) {
+        fieldsByName.apply_on.value =
+          String(editBtn.getAttribute("data-apply_on") || "ARTICLE")
+            .trim()
+            .toUpperCase() || "ARTICLE";
         fieldsByName.apply_on.dispatchEvent(new Event("change", { bubbles: true }));
       }
       applyEditLocks(modalMode);
@@ -1804,7 +1807,7 @@ const currentSeq = ++state.requestSeq;
           showModalError(tSelectTarget);
           return;
         }
-        if (applyOn === "SKU" && !skuIds.length) {
+        if (applyOn === "ARTICLE" && !skuIds.length) {
           showModalError(tSelectSku);
           return;
         }
@@ -1834,6 +1837,8 @@ const currentSeq = ++state.requestSeq;
           labour_ids: labourIds,
           dept_id: deptId,
           apply_on: applyOn,
+          article_id: skuIds[0] || null,
+          article_ids: skuIds,
           sku_id: skuIds[0] || null,
           sku_ids: skuIds,
           subgroup_id: subgroupIds[0] || null,
