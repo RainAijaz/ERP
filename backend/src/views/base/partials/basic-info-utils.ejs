@@ -2263,7 +2263,7 @@
       String(select?.dataset?.searchableSelect || "").toLowerCase() === "true";
     const isMultiSelectWrapper = (select) =>
       !!select.closest("[data-multi-select]");
-    const unifiedVariantClass =
+    const unifiedFallbackClass =
       "h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 transition focus:border-black focus:outline-none focus:ring-2 focus:ring-black/20";
 
     const makePlaceholder = (select) => {
@@ -2304,7 +2304,23 @@
         .trim()
         .toLowerCase();
       if (variant === "unified") {
-        input.className = `${unifiedVariantClass} pr-10`;
+        input.className = `${select.className.replace("appearance-none", "").trim() || unifiedFallbackClass} pr-10`;
+        if (!input.className.includes("border")) {
+          input.className +=
+            " rounded-xl border border-slate-300 bg-white text-slate-700 transition focus:border-black focus:outline-none focus:ring-2 focus:ring-black/20";
+          if (!/\b(w-|min-w-|max-w-|flex-1|basis-)\b/.test(input.className)) {
+            input.className += " w-full";
+          }
+          if (!/\b(px-|pl-|pr-)\b/.test(input.className)) {
+            input.className += " px-3";
+          }
+          if (!/\bpy-[^\s]+\b/.test(input.className)) {
+            input.className += " py-2.5";
+          }
+          if (!/\btext-(xs|sm|base|lg|xl|\[[^\]]+\])\b/.test(input.className)) {
+            input.className += " text-sm";
+          }
+        }
       } else {
         input.className =
           select.className.replace("appearance-none", "") + " pr-10";
@@ -2313,6 +2329,7 @@
             " w-full rounded-lg border border-slate-200 bg-slate-50/50 px-3 py-2.5 text-sm text-slate-800 transition focus:border-slate-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-slate-100";
         }
       }
+      input.setAttribute("data-searchable-control", "true");
 
       input.placeholder = placeholderText;
       input.autocomplete = "off";

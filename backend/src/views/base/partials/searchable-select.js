@@ -379,6 +379,50 @@
     const baseClassName = select.className
       .replace("appearance-none", "")
       .trim();
+    const isUnifiedVariant =
+      variant === "unified" ||
+      (baseClassName.includes("rounded-xl") &&
+        baseClassName.includes("border-slate-200"));
+    const unifiedFallbackClass =
+      "h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 transition focus:border-black focus:outline-none focus:ring-2 focus:ring-black/20";
+    const buildUnifiedMultiShellClass = () => {
+      const base = baseClassName || unifiedFallbackClass;
+      let className = `${base} flex w-full flex-wrap items-center gap-1`;
+      if (!/\b(px-|pl-|pr-)\b/.test(base)) {
+        className += " px-3";
+      }
+      if (!/\bpy-[^\s]+\b/.test(base)) {
+        className += " py-2.5";
+      }
+      if (!/\btext-(xs|sm|base|lg|xl|\[[^\]]+\])\b/.test(base)) {
+        className += " text-sm";
+      }
+      if (base.includes("focus:ring-2")) {
+        className += " focus-within:ring-2";
+      }
+      if (base.includes("focus:ring-accent/30")) {
+        className += " focus-within:ring-accent/30";
+      }
+      if (base.includes("focus:ring-black/20")) {
+        className += " focus-within:ring-black/20";
+      }
+      if (base.includes("focus:ring-slate-100")) {
+        className += " focus-within:ring-slate-100";
+      }
+      if (base.includes("focus:outline-none")) {
+        className += " focus-within:outline-none";
+      }
+      if (base.includes("focus:border-black")) {
+        className += " focus-within:border-black";
+      }
+      if (base.includes("focus:border-slate-400")) {
+        className += " focus-within:border-slate-400";
+      }
+      if (base.includes("focus:bg-white")) {
+        className += " focus-within:bg-white";
+      }
+      return className;
+    };
     const hasExplicitWidthClass =
       /\b(w-(?!full\b)[^\s]+|min-w-[^\s]+|max-w-[^\s]+)\b/.test(
         baseClassName,
@@ -406,13 +450,34 @@
 
     const input = document.createElement("input");
     input.type = "text";
-    if (variant === "navbar") {
+    let multiChipShell = null;
+    let multiChipsWrap = null;
+    if (isMulti) {
+      input.className =
+        "min-w-[8rem] flex-1 border-0 bg-transparent px-1 py-0 text-sm text-slate-700 focus:outline-none focus:ring-0";
+    } else if (variant === "navbar") {
       input.className = navbarVariantClass;
       input.style.width = "3.5rem";
       input.style.minWidth = "3rem";
       input.style.maxWidth = "3.5rem";
     } else if (variant === "unified") {
-      input.className = `${unifiedVariantClass} pr-10`;
+      input.className = `${baseClassName || unifiedFallbackClass} pr-10`;
+      if (!input.className.includes("border") && !isTransparentInlineControl) {
+        input.className +=
+          " rounded-xl border border-slate-300 bg-white text-slate-700 transition focus:border-black focus:outline-none focus:ring-2 focus:ring-black/20";
+        if (!/\b(w-|min-w-|max-w-|flex-1|basis-)\b/.test(input.className)) {
+          input.className += " w-full";
+        }
+        if (!/\b(px-|pl-|pr-)\b/.test(input.className)) {
+          input.className += " px-3";
+        }
+        if (!/\bpy-[^\s]+\b/.test(input.className)) {
+          input.className += " py-2.5";
+        }
+        if (!/\btext-(xs|sm|base|lg|xl|\[[^\]]+\])\b/.test(input.className)) {
+          input.className += " text-sm";
+        }
+      }
     } else if (shouldUseCompactShell) {
       input.className = `${baseClassName} pr-7`;
       if (!/\b(w-|min-w-|max-w-|flex-1|basis-)\b/.test(input.className)) {
@@ -446,12 +511,18 @@
         }
       }
     }
+    if (!isMulti) {
+      input.setAttribute("data-searchable-control", "true");
+    }
     input.placeholder = placeholderText;
     input.autocomplete = "off";
 
-    if (select.hasAttribute("required")) {
+    if (select.hasAttribute("required") && !isMulti) {
       input.required = true;
       // Keep browser validation on the visible control, not the hidden original <select>.
+      select.removeAttribute("required");
+    } else if (select.hasAttribute("required") && isMulti) {
+      // Multi-select required validation is handled by selected options, not text input.
       select.removeAttribute("required");
     }
     syncSearchableInputLockedState({ select, input });
@@ -516,7 +587,8 @@
       const effectiveOptionLabels = Array.isArray(optionLabels)
         ? optionLabels
         : lastRenderedOptionLabels;
-      const inputRect = input.getBoundingClientRect();
+      const menuAnchor = isMulti && multiChipShell ? multiChipShell : input;
+      const inputRect = menuAnchor.getBoundingClientRect();
       const boundaryRect = getBoundaryRect();
       const safeEdge = 8;
       const safeGap = 4;
@@ -679,11 +751,41 @@
     const syncToInput = () => {
       if (isMulti) {
         normalizeMultiSelectAll(null);
-        if (useInlineMultiSearch && !menu.classList.contains("hidden")) return;
-        const labels = Array.from(select.selectedOptions).map((opt) =>
-          opt.textContent.trim(),
+        if (!multiChipsWrap) return;
+        Array.from(
+          multiChipsWrap.querySelectorAll("[data-searchable-chip]"),
+        ).forEach((chip) => chip.remove());
+        const selected = Array.from(select.selectedOptions).filter(
+          (opt) => String(opt.value || "").trim(),
         );
-        input.value = labels.length ? labels.join(", ") : "";
+        selected.forEach((opt) => {
+          const chip = document.createElement("span");
+          chip.className =
+            "inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700";
+          chip.setAttribute("data-searchable-chip", "true");
+          chip.setAttribute("data-chip-value", String(opt.value || ""));
+          const chipLabel = document.createElement("span");
+          chipLabel.className = "max-w-[12rem] truncate";
+          chipLabel.textContent = opt.textContent.trim();
+          const chipRemove = document.createElement("button");
+          chipRemove.type = "button";
+          chipRemove.className =
+            "inline-flex h-4 w-4 items-center justify-center rounded-full text-slate-500 hover:bg-slate-200 hover:text-slate-700";
+          chipRemove.textContent = "x";
+          chipRemove.addEventListener("mousedown", (event) => {
+            event.preventDefault();
+            opt.selected = false;
+            normalizeMultiSelectAll(opt);
+            select.dispatchEvent(new Event("change", { bubbles: true }));
+            multiSearchValue = String(input.value || "");
+            renderMenu({ showAll: false, preserveActive: true });
+            input.focus();
+          });
+          chip.appendChild(chipLabel);
+          chip.appendChild(chipRemove);
+          multiChipsWrap.insertBefore(chip, input);
+        });
+        input.placeholder = selected.length ? "" : placeholderText;
       } else {
         const selected = select.options[select.selectedIndex];
         const selectedLabel = selected ? selected.textContent.trim() : "";
@@ -732,6 +834,7 @@
       return Array.from(select.options).filter((opt) => {
         const isEmptyOption = !opt.value;
         if (isEmptyOption && isMulti) return false;
+        if (isMulti && opt.selected) return false;
         const label = opt.textContent.trim();
         const isMatch = !filter || label.toLowerCase().includes(filter);
         const isExactMatch = !isMulti && input.value.trim() === label;
@@ -751,42 +854,6 @@
 
     const renderMenu = ({ showAll = false, preserveActive = false } = {}) => {
       menu.innerHTML = "";
-      if (isMulti && !useInlineMultiSearch) {
-        const searchWrap = document.createElement("div");
-        searchWrap.className = "sticky top-0 z-10 bg-white px-2 pt-2";
-        const searchInput = document.createElement("input");
-        searchInput.type = "search";
-        searchInput.className =
-          "h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 focus:border-black focus:bg-white focus:outline-none focus:ring-2 focus:ring-black/20";
-        searchInput.placeholder = i18nSearch;
-        searchInput.autocomplete = "off";
-        searchInput.value = String(multiSearchValue || "");
-        searchInput.setAttribute("data-searchable-multi-search", "true");
-        searchInput.addEventListener("input", () => {
-          multiSearchValue = searchInput.value || "";
-          renderMenu({ showAll: false, preserveActive: true });
-          menu.classList.remove("hidden");
-          const replacement = menu.querySelector(
-            '[data-searchable-multi-search="true"]',
-          );
-          if (replacement instanceof HTMLInputElement) {
-            replacement.focus();
-            const caretPos = replacement.value.length;
-            replacement.setSelectionRange(caretPos, caretPos);
-          }
-        });
-        searchInput.addEventListener("blur", () => {
-          window.setTimeout(() => {
-            const activeEl = document.activeElement;
-            if (activeEl && wrapper.contains(activeEl)) return;
-            menu.classList.add("hidden");
-            keyboardNavigatedMenu = false;
-            syncToInput();
-          }, 150);
-        });
-        searchWrap.appendChild(searchInput);
-        menu.appendChild(searchWrap);
-      }
       const filteredOptions = getFilteredOptions({ showAll });
       const shouldLimitOptions = filteredOptions.length > maxRenderedOptions;
       const visibleOptions = shouldLimitOptions
@@ -934,16 +1001,7 @@
         input.value = "";
       }
       openMenu({ showAll: true });
-      if (isMulti && !useInlineMultiSearch) {
-        window.setTimeout(() => {
-          const multiSearchInput = menu.querySelector(
-            '[data-searchable-multi-search="true"]',
-          );
-          if (multiSearchInput instanceof HTMLInputElement) {
-            multiSearchInput.focus();
-          }
-        }, 0);
-      }
+      if (isMulti) input.focus();
     });
     input.addEventListener("input", () => {
       if (select.disabled) return;
@@ -956,7 +1014,45 @@
     });
     input.addEventListener("keydown", (e) => {
       if (select.disabled) return;
-      if (isMulti) return;
+      if (isMulti) {
+        if (e.key === "Backspace" && String(input.value || "").trim() === "") {
+          const selected = Array.from(select.selectedOptions).filter((opt) =>
+            String(opt.value || "").trim(),
+          );
+          const last = selected[selected.length - 1];
+          if (last) {
+            e.preventDefault();
+            last.selected = false;
+            normalizeMultiSelectAll(last);
+            select.dispatchEvent(new Event("change", { bubbles: true }));
+            renderMenu({ showAll: false, preserveActive: true });
+          }
+          return;
+        }
+        if (e.key === "Escape") {
+          closeMenu();
+          return;
+        }
+        if (e.key === "ArrowDown" && menu.classList.contains("hidden")) {
+          e.preventDefault();
+          openMenu({ showAll: true });
+          return;
+        }
+        if (e.key === "Enter" && !menu.classList.contains("hidden")) {
+          e.preventDefault();
+          const filteredOptions = getFilteredOptions({ showAll: false });
+          const match = filteredOptions.find((opt) => !!opt.value) || null;
+          if (!match) return;
+          match.selected = true;
+          normalizeMultiSelectAll(match);
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+          multiSearchValue = "";
+          input.value = "";
+          renderMenu({ showAll: false, preserveActive: true });
+          return;
+        }
+        return;
+      }
       const isGridArrowNavContext = Boolean(
         input.closest('[data-grid-arrow-nav="true"]'),
       );
@@ -1154,7 +1250,64 @@
     select.classList.add("sr-only");
     select.dataset.searchableReady = "true";
     select.parentNode.insertBefore(wrapper, select);
-    wrapper.appendChild(input);
+    if (isMulti) {
+      multiChipShell = document.createElement("div");
+      multiChipShell.setAttribute("data-searchable-control", "true");
+      multiChipShell.className =
+        isUnifiedVariant
+          ? buildUnifiedMultiShellClass()
+          : "flex min-h-10 w-full flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-slate-50/50 px-2 py-1 text-sm text-slate-800 transition focus-within:border-black focus-within:bg-white focus-within:outline-none focus-within:ring-2 focus-within:ring-black/20";
+      const selectStyles = window.getComputedStyle(select);
+      const paddingTop = Number.parseFloat(selectStyles.paddingTop || "0");
+      const paddingBottom = Number.parseFloat(selectStyles.paddingBottom || "0");
+      const rawLineHeight = Number.parseFloat(selectStyles.lineHeight || "0");
+      const fontSize = Number.parseFloat(selectStyles.fontSize || "0");
+      const lineHeight = Number.isFinite(rawLineHeight) && rawLineHeight > 0
+        ? rawLineHeight
+        : fontSize > 0
+          ? fontSize * 1.25
+          : 0;
+      const borderTop = Number.parseFloat(selectStyles.borderTopWidth || "0");
+      const borderBottom = Number.parseFloat(selectStyles.borderBottomWidth || "0");
+      const derivedHeight =
+        paddingTop + paddingBottom + lineHeight + borderTop + borderBottom;
+      let measuredHeight = 0;
+      try {
+        const probe = document.createElement("input");
+        probe.type = "text";
+        probe.className = baseClassName || unifiedFallbackClass;
+        probe.style.position = "absolute";
+        probe.style.visibility = "hidden";
+        probe.style.pointerEvents = "none";
+        probe.style.top = "-9999px";
+        document.body.appendChild(probe);
+        measuredHeight = probe.getBoundingClientRect().height;
+        probe.remove();
+      } catch (err) {
+        measuredHeight = 0;
+      }
+      const resolvedHeight =
+        Number.isFinite(measuredHeight) && measuredHeight > 0
+          ? measuredHeight
+          : Number.isFinite(derivedHeight) && derivedHeight > 0
+            ? derivedHeight
+            : Number.parseFloat(selectStyles.height || "0");
+      if (Number.isFinite(resolvedHeight) && resolvedHeight > 0) {
+        multiChipShell.style.minHeight = `${Math.ceil(resolvedHeight)}px`;
+      }
+      multiChipsWrap = document.createElement("div");
+      multiChipsWrap.className = "flex w-full flex-wrap items-center gap-1 pr-8";
+      multiChipShell.addEventListener("mousedown", (event) => {
+        if (event.target instanceof HTMLElement && event.target.tagName === "BUTTON") return;
+        event.preventDefault();
+        input.focus();
+      });
+      multiChipsWrap.appendChild(input);
+      multiChipShell.appendChild(multiChipsWrap);
+      wrapper.appendChild(multiChipShell);
+    } else {
+      wrapper.appendChild(input);
+    }
     wrapper.appendChild(icon);
     wrapper.appendChild(menu);
     wrapper.appendChild(select);

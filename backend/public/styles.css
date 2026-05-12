@@ -344,6 +344,9 @@
   .top-0 {
     top: calc(var(--spacing) * 0);
   }
+  .top-1 {
+    top: calc(var(--spacing) * 1);
+  }
   .top-1\.5 {
     top: calc(var(--spacing) * 1.5);
   }
@@ -455,8 +458,14 @@
   .mx-auto {
     margin-inline: auto;
   }
+  .-mt-0 {
+    margin-top: calc(var(--spacing) * -0);
+  }
   .-mt-0\.5 {
     margin-top: calc(var(--spacing) * -0.5);
+  }
+  .mt-0 {
+    margin-top: calc(var(--spacing) * 0);
   }
   .mt-0\.5 {
     margin-top: calc(var(--spacing) * 0.5);
@@ -547,6 +556,9 @@
   }
   .table {
     display: table;
+  }
+  .h-1 {
+    height: calc(var(--spacing) * 1);
   }
   .h-1\.5 {
     height: calc(var(--spacing) * 1.5);
@@ -662,6 +674,9 @@
   .min-h-0 {
     min-height: calc(var(--spacing) * 0);
   }
+  .min-h-10 {
+    min-height: calc(var(--spacing) * 10);
+  }
   .min-h-24 {
     min-height: calc(var(--spacing) * 24);
   }
@@ -673,6 +688,9 @@
   }
   .min-h-screen {
     min-height: 100vh;
+  }
+  .w-1 {
+    width: calc(var(--spacing) * 1);
   }
   .w-1\.5 {
     width: calc(var(--spacing) * 1.5);
@@ -854,6 +872,9 @@
   .max-w-80 {
     max-width: calc(var(--spacing) * 80);
   }
+  .max-w-\[12rem\] {
+    max-width: 12rem;
+  }
   .max-w-\[14rem\] {
     max-width: 14rem;
   }
@@ -889,6 +910,9 @@
   }
   .min-w-48 {
     min-width: calc(var(--spacing) * 48);
+  }
+  .min-w-52 {
+    min-width: calc(var(--spacing) * 52);
   }
   .min-w-52\.5 {
     min-width: calc(var(--spacing) * 52.5);
@@ -1052,6 +1076,9 @@
   .flex-none {
     flex: none;
   }
+  .flex-shrink {
+    flex-shrink: 1;
+  }
   .flex-shrink-0 {
     flex-shrink: 0;
   }
@@ -1066,6 +1093,10 @@
   }
   .border-collapse {
     border-collapse: collapse;
+  }
+  .-translate-y-1 {
+    --tw-translate-y: calc(var(--spacing) * -1);
+    translate: var(--tw-translate-x) var(--tw-translate-y);
   }
   .-translate-y-1\/2 {
     --tw-translate-y: calc(calc(1/2 * 100%) * -1);
@@ -1184,6 +1215,13 @@
   }
   .gap-6 {
     gap: calc(var(--spacing) * 6);
+  }
+  .space-y-0 {
+    :where(& > :not(:last-child)) {
+      --tw-space-y-reverse: 0;
+      margin-block-start: calc(calc(var(--spacing) * 0) * var(--tw-space-y-reverse));
+      margin-block-end: calc(calc(var(--spacing) * 0) * calc(1 - var(--tw-space-y-reverse)));
+    }
   }
   .space-y-0\.5 {
     :where(& > :not(:last-child)) {
@@ -1482,6 +1520,9 @@
   .border-transparent {
     border-color: transparent;
   }
+  .border-white {
+    border-color: var(--color-white);
+  }
   .border-white\/10 {
     border-color: color-mix(in srgb, #fff 10%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
@@ -1535,6 +1576,9 @@
   }
   .bg-amber-100 {
     background-color: var(--color-amber-100);
+  }
+  .bg-amber-200 {
+    background-color: var(--color-amber-200);
   }
   .bg-amber-200\/50 {
     background-color: color-mix(in srgb, oklch(92.4% 0.12 95.746) 50%, transparent);
@@ -2190,6 +2234,9 @@
   .text-accent {
     color: #14526a;
   }
+  .text-amber-400 {
+    color: var(--color-amber-400);
+  }
   .text-amber-400\/80 {
     color: color-mix(in srgb, oklch(82.8% 0.189 84.429) 80%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
@@ -2465,11 +2512,20 @@
     --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color, currentcolor);
     box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
   }
+  .shadow-accent {
+    --tw-shadow-color: #14526a;
+    @supports (color: color-mix(in lab, red, red)) {
+      --tw-shadow-color: color-mix(in oklab, #14526a var(--tw-shadow-alpha), transparent);
+    }
+  }
   .shadow-accent\/20 {
     --tw-shadow-color: color-mix(in srgb, #14526a 20%, transparent);
     @supports (color: color-mix(in lab, red, red)) {
       --tw-shadow-color: color-mix(in oklab, color-mix(in oklab, #14526a 20%, transparent) var(--tw-shadow-alpha), transparent);
     }
+  }
+  .ring-accent {
+    --tw-ring-color: #14526a;
   }
   .ring-accent\/25 {
     --tw-ring-color: color-mix(in oklab, #14526a 25%, transparent);
@@ -2479,6 +2535,9 @@
   }
   .ring-amber-200 {
     --tw-ring-color: var(--color-amber-200);
+  }
+  .ring-black {
+    --tw-ring-color: var(--color-black);
   }
   .ring-black\/5 {
     --tw-ring-color: color-mix(in srgb, #000 5%, transparent);
@@ -2497,6 +2556,9 @@
   }
   .ring-emerald-200 {
     --tw-ring-color: var(--color-emerald-200);
+  }
+  .ring-green-600 {
+    --tw-ring-color: var(--color-green-600);
   }
   .ring-green-600\/20 {
     --tw-ring-color: color-mix(in srgb, oklch(62.7% 0.194 149.214) 20%, transparent);
@@ -2518,6 +2580,9 @@
   }
   .ring-slate-300 {
     --tw-ring-color: var(--color-slate-300);
+  }
+  .ring-slate-500 {
+    --tw-ring-color: var(--color-slate-500);
   }
   .ring-slate-500\/10 {
     --tw-ring-color: color-mix(in srgb, oklch(55.4% 0.046 257.417) 10%, transparent);
@@ -2808,6 +2873,51 @@
   .even\:bg-white {
     &:nth-child(even) {
       background-color: var(--color-white);
+    }
+  }
+  .focus-within\:border-black {
+    &:focus-within {
+      border-color: var(--color-black);
+    }
+  }
+  .focus-within\:border-slate-400 {
+    &:focus-within {
+      border-color: var(--color-slate-400);
+    }
+  }
+  .focus-within\:bg-white {
+    &:focus-within {
+      background-color: var(--color-white);
+    }
+  }
+  .focus-within\:ring-2 {
+    &:focus-within {
+      --tw-ring-shadow: var(--tw-ring-inset,) 0 0 0 calc(2px + var(--tw-ring-offset-width)) var(--tw-ring-color, currentcolor);
+      box-shadow: var(--tw-inset-shadow), var(--tw-inset-ring-shadow), var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow);
+    }
+  }
+  .focus-within\:ring-accent\/30 {
+    &:focus-within {
+      --tw-ring-color: color-mix(in oklab, #14526a 30%, transparent);
+    }
+  }
+  .focus-within\:ring-black\/20 {
+    &:focus-within {
+      --tw-ring-color: color-mix(in srgb, #000 20%, transparent);
+      @supports (color: color-mix(in lab, red, red)) {
+        --tw-ring-color: color-mix(in oklab, var(--color-black) 20%, transparent);
+      }
+    }
+  }
+  .focus-within\:ring-slate-100 {
+    &:focus-within {
+      --tw-ring-color: var(--color-slate-100);
+    }
+  }
+  .focus-within\:outline-none {
+    &:focus-within {
+      --tw-outline-style: none;
+      outline-style: none;
     }
   }
   .hover\:-translate-y-0\.5 {
@@ -3849,6 +3959,21 @@
   .xl\:grid-cols-\[1fr_auto_1fr\] {
     @media (width >= 80rem) {
       grid-template-columns: 1fr auto 1fr;
+    }
+  }
+  .\[data-modal-form\]\:visible {
+    &:is(data-modal-form) {
+      visibility: visible;
+    }
+  }
+  .\[data-searchable-control\=\"true\"\]\:visible {
+    &:is(data-searchable-control="true") {
+      visibility: visible;
+    }
+  }
+  .\[data-searchable-wrapper\]\:visible {
+    &:is(data-searchable-wrapper) {
+      visibility: visible;
     }
   }
 }
