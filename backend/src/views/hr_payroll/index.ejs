@@ -31,7 +31,12 @@
       <%= listScopeMessage %>
     </div>
   <% } %>
-  <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md overflow-hidden" data-print-area>
+  <section
+    class="rounded-2xl border border-slate-200 bg-white/95 shadow-md overflow-hidden"
+    data-print-area
+    data-scope-key="<%= page.scopeKey %>"
+    data-grouped-table-ready="<%= (page.scopeKey === 'hr_payroll.labour_rates' || page.scopeKey === 'hr_payroll.commissions') ? 'false' : 'true' %>"
+  >
     <% const canEdit = can("SCREEN", page.scopeKey, "edit"); %>
     <% const canDelete = can("SCREEN", page.scopeKey, "delete"); %>
     <% const canHardDelete = can("SCREEN", page.scopeKey, "hard_delete"); %>
@@ -83,10 +88,11 @@
               <% const editFieldNames = page.fields.map(function(field) { return field.name; }); %>
               <% if (page.scopeKey === "hr_payroll.labour_rates" && !editFieldNames.includes("sku_code")) { editFieldNames.push("sku_code"); } %>
               <tr
-                class="hover:bg-amber-50/40 odd:bg-white even:bg-slate-50/40"
+                class="hover:bg-amber-50/40 odd:bg-white even:bg-slate-50/40 <%= (page.scopeKey === 'hr_payroll.labour_rates' || page.scopeKey === 'hr_payroll.commissions') ? 'hidden' : '' %>"
                 data-row
                 data-active="<%= row.is_active ? "true" : "false" %>"
                 data-labour-name="<%= page.scopeKey === "hr_payroll.labour_rates" ? (row.labour_name || row.labour_id || "") : "" %>"
+                data-group-name="<%= page.scopeKey === "hr_payroll.labour_rates" ? (row.labour_name || row.labour_id || "") : (page.scopeKey === "hr_payroll.commissions" ? (row.employee_name || row.employee_id || "") : "") %>"
                 data-account-type="<%= row.payroll_type || row.apply_on || row.amount_type || row.rate_type || "" %>"
                 data-account-group="<%= row.department_name || row.commission_basis || row.frequency || "" %>"
                 data-branch="<%= row.branch_names || "" %>"

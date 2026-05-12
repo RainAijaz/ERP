@@ -175,6 +175,11 @@
     word-break: break-word;
     overflow-wrap: anywhere;
   }
+
+  [data-print-area][data-scope-key="hr_payroll.labour_rates"][data-grouped-table-ready="false"] tbody [data-row],
+  [data-print-area][data-scope-key="hr_payroll.commissions"][data-grouped-table-ready="false"] tbody [data-row] {
+    display: none;
+  }
 </style>
 
 <script>
@@ -557,6 +562,12 @@
     const table = document.querySelector("[data-table]");
     const scopeKey = "<%= page.scopeKey %>";
     const isLabourRates = scopeKey === "hr_payroll.labour_rates";
+    const isCommissions = scopeKey === "hr_payroll.commissions";
+    const isGroupedRatesTable = isLabourRates || isCommissions;
+    const printArea = document.querySelector("[data-print-area]");
+    if (printArea && isGroupedRatesTable) {
+      printArea.setAttribute("data-grouped-table-ready", "false");
+    }
     const serverPaginationEnabled =
       table?.dataset?.serverPagination === "true";
     const serverPageInitialRaw = Number.parseInt(
@@ -618,6 +629,8 @@
 
     const getLabourGroupKey = (row) => {
       if (!row) return "";
+      const explicit = String(row.dataset.groupName || "").trim();
+      if (explicit) return explicit;
       const label = String(row.dataset.labourName || "").trim();
       if (label) return label;
       const fallback = String(row.dataset.labourId || "").trim();
@@ -888,7 +901,7 @@
       const branchModes = readFilterRows("branch");
       const cityModes = readFilterRows("city");
       const rows = getRows();
-      if (isLabourRates) {
+      if (isGroupedRatesTable) {
         removeLabourGroupHeaders();
       }
       const sorted = sortRows(rows);
@@ -1027,8 +1040,12 @@
         row.dataset.filterVisible = "true";
       });
 
-      if (isLabourRates) {
+      if (isGroupedRatesTable) {
         applyLabourRatesGrouping(visibleRows);
+      }
+
+      if (printArea && isGroupedRatesTable) {
+        printArea.setAttribute("data-grouped-table-ready", "true");
       }
 
       // --- HIDE EMPTY GROUPS (SKU PAGE) ---
@@ -1374,7 +1391,7 @@
       });
     }
 
-    if (tableBody && isLabourRates) {
+    if (tableBody && isGroupedRatesTable) {
       tableBody.addEventListener("click", (event) => {
         const header = event.target.closest("tr.group-header");
         if (!header) return;
