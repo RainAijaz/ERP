@@ -239,9 +239,10 @@
           url.searchParams.has("page") ||
           url.searchParams.has("search") ||
           url.searchParams.has("status");
-        if (!isReportTarget && !likelyTableNav) return;
+        const isVoucherNav = url.pathname.includes("/vouchers/");
+        if (!isReportTarget && !likelyTableNav && !isVoucherNav) return;
         showLoading({
-          context: isReportTarget ? "report" : "table",
+          context: isReportTarget ? "report" : isVoucherNav ? "page" : "table",
           source: anchor,
         });
       },

@@ -151,7 +151,7 @@ test.describe("HR Payroll labour rates modal", () => {
 
     const modal = page.locator("[data-modal]");
     await expect(modal).toBeVisible();
-    const modalForm = page.locator('[data-modal-form]:visible');
+    const modalForm = page.locator("[data-modal-form]:visible");
     await expect(modalForm).toBeVisible();
     const skuWrapper = modalForm.locator('[data-field-wrapper="sku_id"]');
     if ((await skuWrapper.count()) > 0 && (await skuWrapper.isVisible())) {
@@ -198,7 +198,7 @@ test.describe("HR Payroll labour rates modal", () => {
 
     await page.getByRole("button", { name: "Add Labour Rates" }).click();
 
-    const modalForm = page.locator('[data-modal-form]:visible');
+    const modalForm = page.locator("[data-modal-form]:visible");
     await expect(modalForm).toBeVisible();
     const rateInput = modalForm.locator('[data-field="rate_value"]');
     await expect(rateInput).toBeVisible();
@@ -221,7 +221,7 @@ test.describe("HR Payroll labour rates modal", () => {
 
     await page.getByRole("button", { name: "Add Labour Rates" }).click();
 
-    const modalForm = page.locator('[data-modal-form]:visible');
+    const modalForm = page.locator("[data-modal-form]:visible");
     await expect(modalForm).toBeVisible();
 
     const labourSelect = modalForm.locator('select[data-field="labour_id"]');
@@ -230,10 +230,10 @@ test.describe("HR Payroll labour rates modal", () => {
     await expect(deptSelect).toHaveCount(1);
 
     const labourWrapper = labourSelect.locator(
-      'xpath=ancestor::*[@data-searchable-wrapper][1]',
+      "xpath=ancestor::*[@data-searchable-wrapper][1]",
     );
     const deptWrapper = deptSelect.locator(
-      'xpath=ancestor::*[@data-searchable-wrapper][1]',
+      "xpath=ancestor::*[@data-searchable-wrapper][1]",
     );
     await expect(labourWrapper).toBeVisible();
     await expect(deptWrapper).toBeVisible();
@@ -250,8 +250,8 @@ test.describe("HR Payroll labour rates modal", () => {
     const getKeyStyles = async (locator) =>
       locator.evaluate((el) => {
         const styles = getComputedStyle(el);
-          return {
-            height: el.getBoundingClientRect().height,
+        return {
+          height: el.getBoundingClientRect().height,
           borderRadius: styles.borderRadius,
           backgroundColor: styles.backgroundColor,
           boxShadow: styles.boxShadow,
@@ -261,7 +261,9 @@ test.describe("HR Payroll labour rates modal", () => {
     const baseStyles = await getKeyStyles(deptControl);
     const searchableStyles = await getKeyStyles(labourControl);
 
-    expect(Math.abs(baseStyles.height - searchableStyles.height)).toBeLessThanOrEqual(1);
+    expect(
+      Math.abs(baseStyles.height - searchableStyles.height),
+    ).toBeLessThanOrEqual(1);
     expect(searchableStyles.borderRadius).toBe(baseStyles.borderRadius);
     expect(searchableStyles.backgroundColor).toBe(baseStyles.backgroundColor);
     expect(searchableStyles.boxShadow).toBe(baseStyles.boxShadow);

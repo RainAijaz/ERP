@@ -684,7 +684,9 @@
     const primeSingleSelectSearchState = () => {
       if (isMulti) return;
       const selectedOption = select.options[select.selectedIndex] || null;
-      openedWithSelectionLabel = String(selectedOption?.textContent || "").trim();
+      openedWithSelectionLabel = String(
+        selectedOption?.textContent || "",
+      ).trim();
       openedWithSelectionValue = String(select.value || "").trim();
       input.placeholder = openedWithSelectionLabel || placeholderText;
       input.value = "";
@@ -755,8 +757,8 @@
         Array.from(
           multiChipsWrap.querySelectorAll("[data-searchable-chip]"),
         ).forEach((chip) => chip.remove());
-        const selected = Array.from(select.selectedOptions).filter(
-          (opt) => String(opt.value || "").trim(),
+        const selected = Array.from(select.selectedOptions).filter((opt) =>
+          String(opt.value || "").trim(),
         );
         selected.forEach((opt) => {
           const chip = document.createElement("span");
@@ -1253,22 +1255,26 @@
     if (isMulti) {
       multiChipShell = document.createElement("div");
       multiChipShell.setAttribute("data-searchable-control", "true");
-      multiChipShell.className =
-        isUnifiedVariant
-          ? buildUnifiedMultiShellClass()
-          : "flex min-h-10 w-full flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-slate-50/50 px-2 py-1 text-sm text-slate-800 transition focus-within:border-black focus-within:bg-white focus-within:outline-none focus-within:ring-2 focus-within:ring-black/20";
+      multiChipShell.className = isUnifiedVariant
+        ? buildUnifiedMultiShellClass()
+        : "flex min-h-10 w-full flex-wrap items-center gap-1 rounded-lg border border-slate-200 bg-slate-50/50 px-2 py-1 text-sm text-slate-800 transition focus-within:border-black focus-within:bg-white focus-within:outline-none focus-within:ring-2 focus-within:ring-black/20";
       const selectStyles = window.getComputedStyle(select);
       const paddingTop = Number.parseFloat(selectStyles.paddingTop || "0");
-      const paddingBottom = Number.parseFloat(selectStyles.paddingBottom || "0");
+      const paddingBottom = Number.parseFloat(
+        selectStyles.paddingBottom || "0",
+      );
       const rawLineHeight = Number.parseFloat(selectStyles.lineHeight || "0");
       const fontSize = Number.parseFloat(selectStyles.fontSize || "0");
-      const lineHeight = Number.isFinite(rawLineHeight) && rawLineHeight > 0
-        ? rawLineHeight
-        : fontSize > 0
-          ? fontSize * 1.25
-          : 0;
+      const lineHeight =
+        Number.isFinite(rawLineHeight) && rawLineHeight > 0
+          ? rawLineHeight
+          : fontSize > 0
+            ? fontSize * 1.25
+            : 0;
       const borderTop = Number.parseFloat(selectStyles.borderTopWidth || "0");
-      const borderBottom = Number.parseFloat(selectStyles.borderBottomWidth || "0");
+      const borderBottom = Number.parseFloat(
+        selectStyles.borderBottomWidth || "0",
+      );
       const derivedHeight =
         paddingTop + paddingBottom + lineHeight + borderTop + borderBottom;
       let measuredHeight = 0;
@@ -1296,9 +1302,14 @@
         multiChipShell.style.minHeight = `${Math.ceil(resolvedHeight)}px`;
       }
       multiChipsWrap = document.createElement("div");
-      multiChipsWrap.className = "flex w-full flex-wrap items-center gap-1 pr-8";
+      multiChipsWrap.className =
+        "flex w-full flex-wrap items-center gap-1 pr-8";
       multiChipShell.addEventListener("mousedown", (event) => {
-        if (event.target instanceof HTMLElement && event.target.tagName === "BUTTON") return;
+        if (
+          event.target instanceof HTMLElement &&
+          event.target.tagName === "BUTTON"
+        )
+          return;
         event.preventDefault();
         input.focus();
       });

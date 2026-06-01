@@ -1162,7 +1162,25 @@
       });
 
       if (typeof window.initSearchableSelects === "function") {
-        window.initSearchableSelects();
+        const rows = Array.from(linesBody.querySelectorAll("tr[data-row-index]"));
+        const BATCH = 10;
+        const firstEnd = Math.min(BATCH, rows.length);
+        for (let i = 0; i < firstEnd; i++) {
+          window.initSearchableSelects(rows[i]);
+        }
+        if (rows.length > firstEnd) {
+          let batchStart = firstEnd;
+          const runBatch = () => {
+            if (!rows[0]?.isConnected) return;
+            const end = Math.min(batchStart + BATCH, rows.length);
+            for (let i = batchStart; i < end; i++) {
+              window.initSearchableSelects(rows[i]);
+            }
+            batchStart = end;
+            if (batchStart < rows.length) requestAnimationFrame(runBatch);
+          };
+          requestAnimationFrame(runBatch);
+        }
       }
 
       if (pendingFocusFieldByRow && Number.isInteger(pendingFocusFieldByRow.rowIndex)) {
@@ -1645,6 +1663,7 @@
     const loadVoucherByNo = (voucherNo) => {
       const n = Number(voucherNo || 0);
       if (!Number.isInteger(n) || n <= 0) return;
+      if (typeof window.erpLoadingOverlay?.show === "function") window.erpLoadingOverlay.show({ context: "page" });
       window.location.href = `${"<%= basePath || '' %>"}?voucher_no=${n}&view=1`;
     };
 
