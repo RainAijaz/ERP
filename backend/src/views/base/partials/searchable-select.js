@@ -1565,7 +1565,25 @@
     }
     window.closeAllSearchableSelectMenus = () => closeSearchableMenus();
     if (!window.initSearchableSelects) {
-      document.addEventListener("DOMContentLoaded", initSearchableSelects);
+      document.addEventListener("DOMContentLoaded", () => {
+        const selects = Array.from(document.querySelectorAll("select"));
+        const BATCH = 20;
+        let i = 0;
+        const runBatch = () => {
+          const end = Math.min(i + BATCH, selects.length);
+          for (; i < end; i++) {
+            const sel = selects[i];
+            if (!sel || sel.dataset.searchableSkip === "true") continue;
+            if (sel.dataset.searchableReady === "true") {
+              syncExistingSearchableSelectState(sel);
+            } else {
+              createSearchableSelect(sel);
+            }
+          }
+          if (i < selects.length) requestAnimationFrame(runBatch);
+        };
+        requestAnimationFrame(runBatch);
+      });
     }
     window.initSearchableSelects = initSearchableSelects;
     window.__globalSearchableSelectReady = true;
