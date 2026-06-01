@@ -676,12 +676,29 @@
 				})
 				.join("");
 
-			if (typeof window.initSearchableSelects === "function") {
-				window.initSearchableSelects(form);
-			}
-
 			bindNavigator();
 			syncTotals();
+			if (typeof window.initSearchableSelects === "function") {
+				const rows = Array.from(linesBody.querySelectorAll("tr[data-row-index]"));
+				const BATCH = 10;
+				const firstEnd = Math.min(BATCH, rows.length);
+				for (let i = 0; i < firstEnd; i++) {
+					window.initSearchableSelects(rows[i]);
+				}
+				if (rows.length > firstEnd) {
+					let batchStart = firstEnd;
+					const runBatch = () => {
+						if (!rows[0]?.isConnected) return;
+						const end = Math.min(batchStart + BATCH, rows.length);
+						for (let i = batchStart; i < end; i++) {
+							window.initSearchableSelects(rows[i]);
+						}
+						batchStart = end;
+						if (batchStart < rows.length) requestAnimationFrame(runBatch);
+					};
+					requestAnimationFrame(runBatch);
+				}
+			}
 		};
 
 		const syncTotals = () => {
@@ -913,6 +930,7 @@
 			loadVoucherButton.addEventListener("click", () => {
 				const voucherNo = toInt(voucherNoInput?.value);
 				if (!voucherNo) return;
+				if (typeof window.erpLoadingOverlay?.show === "function") window.erpLoadingOverlay.show({ context: "page" });
 				window.location.href = `${basePath}?voucher_no=${voucherNo}&view=1`;
 			});
 		}
