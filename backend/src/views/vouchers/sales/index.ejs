@@ -190,7 +190,7 @@
             <tbody data-lines-body></tbody>
             <tfoot>
               <tr class="bg-slate-50">
-                <td class="border-t border-slate-200 px-2 py-2 text-xs font-semibold text-slate-700" colspan="<%= isSalesOrder ? 6 : 8 %>"><%= t("total") %></td>
+                <td class="border-t border-slate-200 px-2 py-2 text-xs font-semibold text-slate-700" colspan="2"><%= t("total") %></td><td class="border-t border-slate-200 px-2 py-2 text-right text-xs font-semibold text-slate-600 whitespace-nowrap" data-lines-qty-total></td><td class="border-t border-slate-200 px-2 py-2" colspan="<%= isSalesOrder ? 3 : 5 %>"></td>
                 <td class="border-t border-slate-200 px-2 py-2">
                   <input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="" data-lines-total>
                 </td>
@@ -346,6 +346,7 @@
   const linesJsonInput = form.querySelector("[data-lines-json]");
   const addRowButton = form.querySelector("[data-add-row]");
   const linesTotalInput = form.querySelector("[data-lines-total]");
+  const linesTotalQtyEl = form.querySelector("[data-lines-qty-total]");
   const headerSection = form.querySelector(".space-y-3.rounded-2xl");
   const saleModeSelect = form.querySelector("[data-sale-mode]");
   const paymentTypeSelect = form.querySelector("[data-payment-type]");
@@ -1014,10 +1015,19 @@
     if (window.initSearchableSelects) window.initSearchableSelects(form);
     autoSelectSingleOptionsIn(linesBody, { dispatchChange: true });
     let sales = 0; let ret = 0;
+    const unitQtyMap = new Map();
     rows.forEach((r) => {
       const x = normalize(r);
       if (x.sale_qty > 0) sales += n(x.total_amount);
       if (x.return_qty > 0) ret += n(x.total_amount);
+      const qty = Number(x.sale_qty || 0);
+      if (qty > 0) {
+        const label = getUnitLabelForRow(x);
+        const key = Number(x.uom_id || 0) || label;
+        const prev = unitQtyMap.get(key) || { label, qty: 0 };
+        prev.qty = Number((prev.qty + qty).toFixed(1));
+        unitQtyMap.set(key, prev);
+      }
     });
     sales = Number(sales.toFixed(1));
     ret = Number(ret.toFixed(1));
@@ -1103,6 +1113,11 @@
     }
     const lineTotal = Number((sales - ret).toFixed(1));
     if (linesTotalInput) linesTotalInput.value = f1OrBlank(Math.max(0, lineTotal));
+    if (linesTotalQtyEl) {
+      const parts = [];
+      unitQtyMap.forEach(({ label, qty }) => { if (qty > 0) parts.push(`${displayNumber(qty, 1, "0")} ${label}`); });
+      linesTotalQtyEl.textContent = parts.join(", ");
+    }
     syncReceiveIntoAccountState({
       salesOrderAdvanceEnabled: isSalesOrderVoucher ? isSalesOrderAdvanceReceiveEnabled() : false,
       forcedAccountId: shouldLockReceiveAccountToSalesOrder ? linkedOrderReceiveIntoAccountId : null,

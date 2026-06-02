@@ -126,7 +126,7 @@ const loadDashboardData = async ({ knex, req, can }) => {
     }),
     safeCount("vouchersToday", () => {
       const qb = knex("erp.voucher_header")
-        .whereBetween("voucher_date", [startOfDay, endOfDay])
+        .whereBetween("created_at", [startOfDay, endOfDay])
         .count("* as count")
         .first();
       return applyActiveBranchScope(req, qb, "branch_id");

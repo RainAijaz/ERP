@@ -676,10 +676,6 @@ const normalizeVoucherApprovalSummary = (row, t) => {
     return `${actionLabel} ${voucherTypeLabel}${lineLabel}`.trim();
   }
 
-  if (actionLabel === "ADD") {
-    return `${actionLabel} ${voucherTypeLabel}`;
-  }
-
   if (Number.isInteger(voucherNo) && voucherNo > 0) {
     return `${actionLabel} ${voucherTypeLabel} #${voucherNo}`;
   }
@@ -1089,6 +1085,68 @@ const buildPreviewPayload = async (req, res, request, side) => {
     };
   }
 
+  if (entityType === "VOUCHER") {
+    const voucherData = safeJson(side === "old" ? request.old_value : request.new_value) || {};
+    if (!voucherData || !Object.keys(voucherData).length) return null;
+
+    const lines = Array.isArray(voucherData.lines) ? voucherData.lines : [];
+    const headerAccountId = Number(voucherData.header_account_id || 0);
+    const departmentIds = [...new Set(lines.map((l) => Number(l.department_id || 0)).filter((id) => id > 0))];
+    const accountIds = [...new Set(lines.map((l) => Number(l.account_id || 0)).filter((id) => id > 0))];
+    const partyIds = [...new Set(lines.map((l) => Number(l.party_id || 0)).filter((id) => id > 0))];
+    const labourIds = [...new Set(lines.map((l) => Number(l.labour_id || 0)).filter((id) => id > 0))];
+    const employeeIds = [...new Set(lines.map((l) => Number(l.employee_id || 0)).filter((id) => id > 0))];
+    const allAccountIds = [...new Set([...(headerAccountId > 0 ? [headerAccountId] : []), ...accountIds])];
+
+    const [accountRows, partyRows, labourRows, employeeRows, deptRows] = await Promise.all([
+      allAccountIds.length ? knex("erp.accounts").select("id", "name").whereIn("id", allAccountIds) : [],
+      partyIds.length ? knex("erp.parties").select("id", "name").whereIn("id", partyIds) : [],
+      labourIds.length ? knex("erp.labours").select("id", "name").whereIn("id", labourIds) : [],
+      employeeIds.length ? knex("erp.employees").select("id", "name").whereIn("id", employeeIds) : [],
+      departmentIds.length ? knex("erp.departments").select("id", "name").whereIn("id", departmentIds) : [],
+    ]);
+
+    const nameMap = (rows) => new Map(rows.map((r) => [Number(r.id), r.name || ""]));
+    const accountNames = nameMap(accountRows);
+    const partyNames = nameMap(partyRows);
+    const labourNames = nameMap(labourRows);
+    const employeeNames = nameMap(employeeRows);
+    const deptNames = nameMap(deptRows);
+
+    const resolveEntityName = (line) => {
+      if (Number(line.account_id || 0) > 0) return accountNames.get(Number(line.account_id)) || `Acct #${line.account_id}`;
+      if (Number(line.party_id || 0) > 0) return partyNames.get(Number(line.party_id)) || `Party #${line.party_id}`;
+      if (Number(line.labour_id || 0) > 0) return labourNames.get(Number(line.labour_id)) || `Labour #${line.labour_id}`;
+      if (Number(line.employee_id || 0) > 0) return employeeNames.get(Number(line.employee_id)) || `Employee #${line.employee_id}`;
+      return "—";
+    };
+
+    const hydratedLines = lines.map((line, idx) => ({
+      ...line,
+      line_no: line.line_no || idx + 1,
+      entityName: resolveEntityName(line),
+      departmentName: Number(line.department_id || 0) > 0 ? (deptNames.get(Number(line.department_id)) || "") : "",
+    }));
+
+    const previewVoucher = {
+      ...voucherData,
+      headerAccountName: headerAccountId > 0 ? (accountNames.get(headerAccountId) || "") : "",
+      lines: hydratedLines,
+    };
+
+    const voucherTypeCode = String(voucherData.voucher_type_code || "").toUpperCase();
+    const voucherNo = Number(voucherData.voucher_no || 0);
+    const previewTitle = [voucherTypeCode.replace(/_/g, " "), voucherNo > 0 ? `#${voucherNo}` : ""].filter(Boolean).join(" ");
+
+    return {
+      ...basePayload,
+      previewType: "voucher",
+      previewTitle,
+      formPartial: "../../administration/approvals/voucher-preview.ejs",
+      previewVoucher,
+    };
+  }
+
   if (entityType === "ITEM") {
     const itemType = (
       values.item_type ||
@@ -1290,6 +1348,9 @@ router.get(
 );
 
 const VOUCHER_TYPE_URL_MAP = {
+  CASH_VOUCHER: "/vouchers/cash",
+  BANK_VOUCHER: "/vouchers/bank",
+  JOURNAL_VOUCHER: "/vouchers/journal",
   OPENING_STOCK: "/vouchers/inventory",
   STOCK_COUNT_ADJ: "/vouchers/stock-count",
 };

@@ -1,0 +1,70 @@
+<%
+  const fmt = (v) => {
+    const n = Number(v || 0);
+    return Number.isFinite(n) ? n.toFixed(2) : '0.00';
+  };
+  const vDate = previewVoucher.voucher_date
+    ? String(previewVoucher.voucher_date).slice(0, 10)
+    : '';
+  const lines = Array.isArray(previewVoucher.lines) ? previewVoucher.lines : [];
+  const totalDebit  = lines.reduce((s, l) => s + Number(l.debit  || 0), 0);
+  const totalCredit = lines.reduce((s, l) => s + Number(l.credit || 0), 0);
+%>
+<div class="space-y-3 text-xs">
+  <table class="w-full text-xs border-collapse">
+    <tbody>
+      <tr>
+        <td class="py-1 pr-3 font-semibold text-slate-500 w-32"><%= t('date') %></td>
+        <td class="py-1 text-slate-800"><%= vDate || '—' %></td>
+      </tr>
+      <% if (previewVoucher.headerAccountName) { %>
+      <tr>
+        <td class="py-1 pr-3 font-semibold text-slate-500"><%= t('cash_account') || 'Account' %></td>
+        <td class="py-1 text-slate-800"><%= previewVoucher.headerAccountName %></td>
+      </tr>
+      <% } %>
+      <% if (previewVoucher.remarks) { %>
+      <tr>
+        <td class="py-1 pr-3 font-semibold text-slate-500"><%= t('note') || 'Note' %></td>
+        <td class="py-1 text-slate-800"><%= previewVoucher.remarks %></td>
+      </tr>
+      <% } %>
+    </tbody>
+  </table>
+
+  <% if (lines.length) { %>
+  <div class="overflow-x-auto rounded-lg border border-slate-200">
+    <table class="w-full text-xs">
+      <thead>
+        <tr class="bg-slate-50 text-slate-500 uppercase tracking-wide text-[10px]">
+          <th class="px-2 py-1.5 text-left border-b border-slate-200">#</th>
+          <th class="px-2 py-1.5 text-left border-b border-slate-200"><%= t('name') %></th>
+          <th class="px-2 py-1.5 text-left border-b border-slate-200"><%= t('description') %></th>
+          <th class="px-2 py-1.5 text-left border-b border-slate-200"><%= t('department') %></th>
+          <th class="px-2 py-1.5 text-right border-b border-slate-200"><%= t('debit') || 'Debit' %></th>
+          <th class="px-2 py-1.5 text-right border-b border-slate-200"><%= t('credit') || 'Credit' %></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% lines.forEach((line, idx) => { %>
+        <tr class="<%= idx % 2 === 0 ? '' : 'bg-slate-50' %>">
+          <td class="px-2 py-1 text-slate-500"><%= line.line_no || (idx + 1) %></td>
+          <td class="px-2 py-1 font-medium text-slate-800"><%= line.entityName || '—' %></td>
+          <td class="px-2 py-1 text-slate-600"><%= line.description || '' %></td>
+          <td class="px-2 py-1 text-slate-600"><%= line.departmentName || '' %></td>
+          <td class="px-2 py-1 text-right font-mono text-slate-800"><%= Number(line.debit || 0) > 0 ? fmt(line.debit) : '' %></td>
+          <td class="px-2 py-1 text-right font-mono text-slate-800"><%= Number(line.credit || 0) > 0 ? fmt(line.credit) : '' %></td>
+        </tr>
+        <% }) %>
+      </tbody>
+      <tfoot>
+        <tr class="bg-slate-50 font-semibold">
+          <td class="px-2 py-1.5 border-t border-slate-200" colspan="4"><%= t('total') %></td>
+          <td class="px-2 py-1.5 border-t border-slate-200 text-right font-mono"><%= totalDebit > 0 ? fmt(totalDebit) : '' %></td>
+          <td class="px-2 py-1.5 border-t border-slate-200 text-right font-mono"><%= totalCredit > 0 ? fmt(totalCredit) : '' %></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  <% } %>
+</div>

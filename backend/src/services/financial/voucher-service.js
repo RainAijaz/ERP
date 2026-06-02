@@ -1122,7 +1122,7 @@ const createVoucher = async ({
         req,
         voucherId: header.id,
         voucherTypeCode,
-        summary: `ADD ${voucherTypeCode}`,
+        summary: `ADD ${voucherTypeCode} #${header.voucher_no}`,
         newValue: {
           action: "create",
           voucher_type_code: voucherTypeCode,

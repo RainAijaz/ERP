@@ -1060,10 +1060,6 @@
       const id = btn.getAttribute("data-approval-id");
       const entityType = String(btn.getAttribute("data-entity-type") || "").toUpperCase();
       const requestType = String(btn.getAttribute("data-request-type") || "").toUpperCase();
-      if (entityType === "VOUCHER" || requestType === "VOUCHER") {
-        window.open(`${previewBase}/${id}/view-voucher`, "_blank");
-        return;
-      }
       open({ action, oldValue: null, newValue: null, id, status });
     });
   })();
