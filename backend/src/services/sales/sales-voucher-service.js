@@ -1708,7 +1708,7 @@ const validateSalesPayloadTx = async ({
         .reduce((sum, line) => sum + Number(line.summary.line_total || 0), 0)
         .toFixed(2),
     );
-    const extraDiscount = toNonNegativeNumber(payload?.extra_discount || 0, 2);
+    const extraDiscount = toSignedNumber(payload?.extra_discount ?? 0, 2);
     if (extraDiscount === null)
       throw new HttpError(400, "Extra discount is invalid");
     const finalAmount = Number((totalSalesAmount - extraDiscount).toFixed(2));
@@ -1821,7 +1821,7 @@ const validateSalesPayloadTx = async ({
   let paymentDueDate =
     paymentType === "CREDIT" ? toDateOnly(payload?.payment_due_date) : null;
 
-  const extraDiscount = toNonNegativeNumber(payload?.extra_discount || 0, 2);
+  const extraDiscount = toSignedNumber(payload?.extra_discount ?? 0, 2);
   if (extraDiscount === null)
     throw new HttpError(400, "Extra discount is invalid");
   if (saleMode === "FROM_SO" && extraDiscount > 0) {

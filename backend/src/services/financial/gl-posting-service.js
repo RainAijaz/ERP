@@ -564,7 +564,10 @@ const buildPurchaseReturnEntriesTx = async ({ trx, header, voucherId }) => {
   let totalAmount = 0;
   let debitAccountLines = [];
   if (purchaseCategory === PURCHASE_CATEGORIES.asset) {
-    debitAccountLines = await loadPurchaseAccountLineTotalsTx({ trx, voucherId });
+    debitAccountLines = await loadPurchaseAccountLineTotalsTx({
+      trx,
+      voucherId,
+    });
     totalAmount = normalizeAmount(
       debitAccountLines.reduce(
         (sum, row) => sum + normalizeAmount(row.amount),
@@ -993,9 +996,9 @@ const resolvePostingAccountForLineTx = async ({
     return {
       accountId: resolveSingleAccountIdForGroup({
         accountsByGroup: controlAccountsByGroup,
-        groupCode: CONTROL_GROUP_CODES.payrollLiabilities,
-        fallbackGroupCodes: [CONTROL_GROUP_CODES.labourPayable],
-        explicitPreferredCode: "gl_wages_payable_control",
+        groupCode: CONTROL_GROUP_CODES.labourPayable,
+        fallbackGroupCodes: [CONTROL_GROUP_CODES.payrollLiabilities],
+        explicitPreferredCode: "wages_payable",
         voucherId,
         lineNo,
       }),
@@ -1007,8 +1010,11 @@ const resolvePostingAccountForLineTx = async ({
     return {
       accountId: resolveSingleAccountIdForGroup({
         accountsByGroup: controlAccountsByGroup,
-        groupCode: CONTROL_GROUP_CODES.payrollLiabilities,
-        fallbackGroupCodes: [CONTROL_GROUP_CODES.employeePayable],
+        groupCode: CONTROL_GROUP_CODES.labourPayable,
+        fallbackGroupCodes: [
+          CONTROL_GROUP_CODES.payrollLiabilities,
+          CONTROL_GROUP_CODES.employeePayable,
+        ],
         explicitPreferredCode: "gl_salaries_payable_control",
         voucherId,
         lineNo,

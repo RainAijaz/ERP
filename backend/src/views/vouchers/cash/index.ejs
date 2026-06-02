@@ -632,7 +632,7 @@
       attachSelectEnhancer(deptSelect);
       if (naOnly) {
         deptSelect.value = naDepartmentValue;
-        if (typeof deptSelect._voucherEnhancerRefresh === 'function') deptSelect._voucherEnhancerRefresh();
+        deptSelect.dispatchEvent(new Event('change', { bubbles: true }));
         deptSelect.disabled = true;
         deptSelect.classList.add('bg-slate-100', 'text-slate-500', 'cursor-not-allowed');
         syncSearchableState();
@@ -640,7 +640,7 @@
       }
       if (keepCurrent && current && Array.from(deptSelect.options).some((opt) => opt.value === current)) {
         deptSelect.value = current;
-        if (typeof deptSelect._voucherEnhancerRefresh === 'function') deptSelect._voucherEnhancerRefresh();
+        deptSelect.dispatchEvent(new Event('change', { bubbles: true }));
         syncSearchableState();
         return;
       }
@@ -648,7 +648,7 @@
         const firstValid = Array.from(deptSelect.options).find((opt) => String(opt.value || '').trim() !== '');
         if (firstValid) {
           deptSelect.value = firstValid.value;
-          if (typeof deptSelect._voucherEnhancerRefresh === 'function') deptSelect._voucherEnhancerRefresh();
+          deptSelect.dispatchEvent(new Event('change', { bubbles: true }));
         }
       }
       syncSearchableState();
@@ -863,7 +863,7 @@
         const deptValue = String(seed.department_id);
         if (Array.from(deptSelect.options).some((opt) => opt.value === deptValue)) {
           deptSelect.value = deptValue;
-          if (typeof deptSelect._voucherEnhancerRefresh === 'function') deptSelect._voucherEnhancerRefresh();
+          deptSelect.dispatchEvent(new Event('change', { bubbles: true }));
         }
       }
       updateCodeByEntity(tr);
