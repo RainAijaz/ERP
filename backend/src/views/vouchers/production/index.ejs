@@ -1191,16 +1191,21 @@
         for (let i = 0; i < firstEnd; i++) {
           window.initSearchableSelects(rows[i]);
         }
+        // Always init the last row synchronously so Enter-key append focus works
         if (rows.length > firstEnd) {
+          window.initSearchableSelects(rows[rows.length - 1]);
+        }
+        if (rows.length > firstEnd + 1) {
           let batchStart = firstEnd;
+          const lastIdx = rows.length - 1;
           const runBatch = () => {
             if (!rows[0]?.isConnected) return;
-            const end = Math.min(batchStart + BATCH, rows.length);
+            const end = Math.min(batchStart + BATCH, lastIdx);
             for (let i = batchStart; i < end; i++) {
               window.initSearchableSelects(rows[i]);
             }
             batchStart = end;
-            if (batchStart < rows.length) requestAnimationFrame(runBatch);
+            if (batchStart < lastIdx) requestAnimationFrame(runBatch);
           };
           requestAnimationFrame(runBatch);
         }

@@ -119,6 +119,9 @@ const loadDashboardData = async ({ knex, req, can }) => {
         .where({ status: "PENDING" })
         .count("* as count")
         .first();
+      if (!req.user?.isAdmin) {
+        qb.andWhere("requested_by", req.user.id);
+      }
       return applyActiveBranchScope(req, qb, "branch_id");
     }),
     safeCount("vouchersToday", () => {

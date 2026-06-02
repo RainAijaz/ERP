@@ -391,7 +391,7 @@
 			const table = document.querySelector("[data-report-table]");
 			if (!table) return;
 			const csv = Array.from(table.querySelectorAll("tr"))
-				.filter((tr) => !tr.classList.contains("hidden"))
+				.filter((tr) => tr.dataset.inFilter !== "false" && !tr.hidden)
 				.map((tr) => Array.from(tr.querySelectorAll("th,td"))
 					.map((cell) => `"${String(cell.textContent || "").replace(/\s+/g, " ").trim().replace(/"/g, '""')}"`)
 					.join(","))

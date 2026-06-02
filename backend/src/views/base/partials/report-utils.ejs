@@ -430,10 +430,12 @@
         const endIndex = pageSize === Number.POSITIVE_INFINITY ? totalRows : Math.min(totalRows, startIndex + pageSize);
 
         const visibleSet = new Set(filteredRows.slice(startIndex, endIndex));
+        const filteredSet = new Set(filteredRows);
 
         controlledRows.forEach((row) => {
           const show = visibleSet.has(row);
           row.dataset.active = show ? "true" : "false";
+          row.dataset.inFilter = filteredSet.has(row) ? "true" : "false";
           row.style.display = show ? "" : "none";
         });
 
@@ -516,7 +518,9 @@
           if (!title && index > 0) lines.push(csvEscape(`Table ${index + 1}`));
 
           Array.from(table.querySelectorAll("tr")).forEach((row) => {
-            if (!isVisibleRow(row)) return;
+            // Skip rows explicitly filtered out by search; include all pagination-hidden rows
+            if (row.dataset.inFilter === "false") return;
+            if (row.hidden) return;
             const cells = Array.from(row.querySelectorAll("th,td")).map((cell) =>
               csvEscape(String(cell.textContent || "").replace(/\s+/g, " ").trim()),
             );

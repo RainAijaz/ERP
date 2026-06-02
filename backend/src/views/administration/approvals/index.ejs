@@ -84,6 +84,8 @@
                 data-approval-id="<%= row.id %>"
                 data-action="<%= actionType %>"
                 data-status="<%= row.status %>"
+                data-entity-type="<%= row.entity_type %>"
+                data-request-type="<%= row.request_type %>"
               >
                 <%= t("view")  %>
               </button>
@@ -1056,6 +1058,12 @@
       const action = btn.getAttribute("data-action");
       const status = btn.getAttribute("data-status");
       const id = btn.getAttribute("data-approval-id");
+      const entityType = String(btn.getAttribute("data-entity-type") || "").toUpperCase();
+      const requestType = String(btn.getAttribute("data-request-type") || "").toUpperCase();
+      if (entityType === "VOUCHER" || requestType === "VOUCHER") {
+        window.open(`${previewBase}/${id}/view-voucher`, "_blank");
+        return;
+      }
       open({ action, oldValue: null, newValue: null, id, status });
     });
   })();

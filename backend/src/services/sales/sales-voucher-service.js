@@ -53,6 +53,13 @@ const toNonNegativeNumber = (value, decimals = 2) => {
   return Number(n.toFixed(decimals));
 };
 
+const toSignedNumber = (value, decimals = 2) => {
+  if (value === null || value === undefined || value === "") return 0;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Number(n.toFixed(decimals));
+};
+
 const toPositiveNumber = (value, decimals = 2) => {
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return null;
@@ -1065,8 +1072,8 @@ const normalizeSalesOrderLinesTx = async ({
       throw new HttpError(400, `Line ${lineNo}: rate override is not allowed`);
     }
 
-    const pairDiscount = toNonNegativeNumber(
-      line?.pair_discount || line?.pairDiscount || 0,
+    const pairDiscount = toSignedNumber(
+      line?.pair_discount ?? line?.pairDiscount ?? 0,
       2,
     );
     if (pairDiscount === null)
@@ -1548,12 +1555,12 @@ const normalizeSalesVoucherLinesTx = async ({
       }
 
       const autoPairDiscount = soSourceLine
-        ? toNonNegativeNumber(soSourceLine.pair_discount || 0, 2) || 0
+        ? toSignedNumber(soSourceLine.pair_discount ?? 0, 2) ?? 0
         : 0;
       const pairDiscountInput = soSourceLine
         ? autoPairDiscount
-        : toNonNegativeNumber(
-            line?.pair_discount || line?.pairDiscount || autoPairDiscount,
+        : toSignedNumber(
+            line?.pair_discount ?? line?.pairDiscount ?? autoPairDiscount,
             2,
           );
       const pairDiscount =

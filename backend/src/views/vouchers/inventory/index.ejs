@@ -474,7 +474,9 @@
 
 			next.qty = qty3(next.qty);
 			next.rate = rate4(next.rate);
-			next.amount = amount2(Number(next.qty || 0) * Number(next.rate || 0));
+			const selectedUomForAmount = getUomOptions(next, stockType).find((entry) => Number(entry.id || 0) === Number(next.uom_id || 0));
+			const factorForAmount = Number(selectedUomForAmount?.factor_to_base || 1) > 0 ? Number(selectedUomForAmount?.factor_to_base || 1) : 1;
+			next.amount = amount2(Number(next.qty || 0) * factorForAmount * Number(next.rate || 0));
 			return next;
 		};
 
@@ -578,127 +580,141 @@
 		};
 
 		const renderRows = () => {
-			// Full row render keeps table structure and searchable selects in sync after each change.
 			const stockType = currentStockType();
 			if (!rowsState.length) rowsState = [defaultRow(stockType)];
 
-			linesBody.innerHTML = rowsState
-				.map((row, index) => {
-					const normalized = applyDerivedDefaults(row, stockType);
-					rowsState[index] = normalized;
+			// ── Pre-compute shared options HTML once (not per row) ──────────────
+			// For FG/SFG: all SKU options are identical across rows; the selected
+			// value is applied via select.value after DOM insertion.
+			// For RM: rmItems are identical across rows; color/size/uom vary.
+			const sharedSkuOptionsHtml = stockType !== "RM"
+				? optionMarkup(
+					skuList
+						.filter((e) => String(e.item_type || "").toUpperCase() === stockType)
+						.map((e) => ({ id: e.id, label: String(e.sku_name || "").trim() })),
+					null,
+					<%- JSON.stringify(toFriendlyLabel("select_sku", "Select SKU")) %>,
+				  )
+				: "";
+			const sharedRmItemOptionsHtml = stockType === "RM"
+				? optionMarkup(
+					rmItems.map((e) => ({ id: e.id, label: String(e.name || "").trim() })),
+					null,
+					<%- JSON.stringify(toFriendlyLabel("select_raw_material", "Select Raw Material")) %>,
+				  )
+				: "";
 
-					const rowNoCell = `<td class="border-t border-slate-200 px-2 py-2 text-center text-xs font-semibold text-slate-500">${index + 1}</td>`;
-					const removeDisabled = !canSave || rowsState.length <= 1;
-					const actionCell = `
-						<td class="border-t border-slate-200 px-2 py-1 text-center">
-							<button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-300 bg-white p-2 text-rose-600 hover:border-rose-400 hover:text-rose-700 disabled:opacity-40" data-remove-row="${index}" aria-label="${<%- JSON.stringify(toFriendlyLabel("delete", "Delete")) %>}" title="${<%- JSON.stringify(toFriendlyLabel("delete", "Delete")) %>}" ${removeDisabled ? "disabled" : ""}>
-								<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8.75 5.5h6.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path><path d="M10 5.5V4.75A1.25 1.25 0 0 1 11.25 3.5h1.5A1.25 1.25 0 0 1 14 4.75v.75" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path><path d="M6.5 7.25h11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path><path d="M8 7.25l.75 11A1.75 1.75 0 0 0 10.5 20h3a1.75 1.75 0 0 0 1.75-1.75l.75-11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path><path d="M10.75 10.25v6.25M13.25 10.25v6.25" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path></svg>
-							</button>
-						</td>
-					`;
+			// ── Row HTML builder (uses pre-computed options, no per-row filtering) ─
+			const buildRowHtml = (normalized, index) => {
+				const rowNoCell = `<td class="border-t border-slate-200 px-2 py-2 text-center text-xs font-semibold text-slate-500">${index + 1}</td>`;
+				const removeDisabled = !canSave || rowsState.length <= 1;
+				const actionCell = `
+					<td class="border-t border-slate-200 px-2 py-1 text-center">
+						<button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-300 bg-white p-2 text-rose-600 hover:border-rose-400 hover:text-rose-700 disabled:opacity-40" data-remove-row="${index}" aria-label="${<%- JSON.stringify(toFriendlyLabel("delete", "Delete")) %>}" title="${<%- JSON.stringify(toFriendlyLabel("delete", "Delete")) %>}" ${removeDisabled ? "disabled" : ""}>
+							<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8.75 5.5h6.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path><path d="M10 5.5V4.75A1.25 1.25 0 0 1 11.25 3.5h1.5A1.25 1.25 0 0 1 14 4.75v.75" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path><path d="M6.5 7.25h11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path><path d="M8 7.25l.75 11A1.75 1.75 0 0 0 10.5 20h3a1.75 1.75 0 0 0 1.75-1.75l.75-11" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path><path d="M10.75 10.25v6.25M13.25 10.25v6.25" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path></svg>
+						</button>
+					</td>
+				`;
 
-					if (stockType === "RM") {
-						const colorState = rmColorOptions(normalized.item_id);
-						const sizeState = rmSizeOptions(normalized.item_id);
-						const itemSelect = `
-							<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="item_id" data-line-index="${index}" data-row-field="item_id" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>
-								${optionMarkup(
-									rmItems.map((entry) => ({
-										id: entry.id,
-										label: String(entry.name || "").trim(),
-									})),
-									normalized.item_id,
-									<%- JSON.stringify(toFriendlyLabel("select_raw_material", "Select Raw Material")) %>,
-								)}
-							</select>
-						`;
-						const colorSelect = `
-							<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="color_id" data-line-index="${index}" data-row-field="color_id" data-searchable-select="true" data-searchable-variant="unified" ${(canSave && !colorState.disabled) ? "" : "disabled"}>
-								${optionMarkup(colorState.entries, normalized.color_id, colorState.allowNone ? <%- JSON.stringify(toFriendlyLabel("none", "None")) %> : "")}
-							</select>
-						`;
-						const sizeSelect = `
-							<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="size_id" data-line-index="${index}" data-row-field="size_id" data-searchable-select="true" data-searchable-variant="unified" ${(canSave && !sizeState.disabled) ? "" : "disabled"}>
-								${optionMarkup(sizeState.entries, normalized.size_id, sizeState.allowNone ? <%- JSON.stringify(toFriendlyLabel("none", "None")) %> : "")}
-							</select>
-						`;
-						const uomSelect = `
-							<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="uom_id" data-line-index="${index}" data-row-field="uom_id" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>
-								${optionMarkup(getUomOptions(normalized, stockType), normalized.uom_id, <%- JSON.stringify(toFriendlyLabel("select_unit", "Select Unit")) %>)}
-							</select>
-						`;
-
-						return `
-							<tr data-line-index="${index}" data-row-index="${index}">
-								<td class="border-t border-slate-200 px-2 py-1">${itemSelect}</td>
-								<td class="border-t border-slate-200 px-2 py-1">${colorSelect}</td>
-								<td class="border-t border-slate-200 px-2 py-1">${sizeSelect}</td>
-								<td class="border-t border-slate-200 px-2 py-1">${uomSelect}</td>
-								<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty" data-row-field="qty" data-line-index="${index}" value="${normalized.qty}" ${canSave ? "" : "readonly"}></td>
-								<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.0001" class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2 text-right" data-field="rate" data-row-field="rate" data-line-index="${index}" value="${normalized.rate}" readonly></td>
-								<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="${normalized.amount.toFixed(2)}" data-amount-display="${index}"></td>
-								${actionCell}
-								${rowNoCell}
-							</tr>
-						`;
-					}
-
-					const skuRows = skuList.filter((entry) => String(entry.item_type || "").toUpperCase() === stockType);
-					const skuSelect = `
-						<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="sku_id" data-line-index="${index}" data-row-field="sku_id" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>
-							${optionMarkup(
-								skuRows.map((entry) => ({
-									id: entry.id,
-									label: String(entry.sku_name || "").trim(),
-								})),
-								normalized.sku_id,
-								<%- JSON.stringify(toFriendlyLabel("select_sku", "Select SKU")) %>,
-							)}
-						</select>
-					`;
-					const uomSelect = `
-						<select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="uom_id" data-line-index="${index}" data-row-field="uom_id" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>
-							${optionMarkup(getUomOptions(normalized, stockType), normalized.uom_id, <%- JSON.stringify(toFriendlyLabel("select_unit", "Select Unit")) %>)}
-						</select>
-					`;
-
+				if (stockType === "RM") {
+					const colorState = rmColorOptions(normalized.item_id);
+					const sizeState = rmSizeOptions(normalized.item_id);
+					// Color/size/uom options are per-row (depend on selected item)
+					const colorOptionsHtml = optionMarkup(colorState.entries, null, colorState.allowNone ? <%- JSON.stringify(toFriendlyLabel("none", "None")) %> : "");
+					const sizeOptionsHtml  = optionMarkup(sizeState.entries,  null, sizeState.allowNone  ? <%- JSON.stringify(toFriendlyLabel("none", "None")) %> : "");
+					const uomOptionsHtml   = optionMarkup(getUomOptions(normalized, stockType), null, <%- JSON.stringify(toFriendlyLabel("select_unit", "Select Unit")) %>);
 					return `
 						<tr data-line-index="${index}" data-row-index="${index}">
-							<td class="border-t border-slate-200 px-2 py-1">${skuSelect}</td>
-							<td class="border-t border-slate-200 px-2 py-1">${uomSelect}</td>
-							<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty" data-row-field="qty" data-line-index="${index}" value="${normalized.qty}" ${canSave ? "" : "readonly"}></td>
-							<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.0001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="rate" data-row-field="rate" data-line-index="${index}" value="${normalized.rate}" ${canSave ? "" : "readonly"}></td>
-							<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="${normalized.amount.toFixed(2)}" data-amount-display="${index}"></td>
-							${actionCell}
-							${rowNoCell}
+							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="item_id"  data-line-index="${index}" data-row-field="item_id"  data-searchable-select="true" data-searchable-variant="unified" data-select-val="${normalized.item_id  || ""}" ${canSave ? "" : "disabled"}>${sharedRmItemOptionsHtml}</select></td>
+							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="color_id" data-line-index="${index}" data-row-field="color_id" data-searchable-select="true" data-searchable-variant="unified" data-select-val="${normalized.color_id || ""}" ${(canSave && !colorState.disabled) ? "" : "disabled"}>${colorOptionsHtml}</select></td>
+							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="size_id"  data-line-index="${index}" data-row-field="size_id"  data-searchable-select="true" data-searchable-variant="unified" data-select-val="${normalized.size_id  || ""}" ${(canSave && !sizeState.disabled)  ? "" : "disabled"}>${sizeOptionsHtml}</select></td>
+							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="uom_id"  data-line-index="${index}" data-row-field="uom_id"  data-searchable-select="true" data-searchable-variant="unified" data-select-val="${normalized.uom_id  || ""}" ${canSave ? "" : "disabled"}>${uomOptionsHtml}</select></td>
+							<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001"  class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right"                  data-field="qty"  data-row-field="qty"  data-line-index="${index}" value="${normalized.qty}"              ${canSave ? "" : "readonly"}></td>
+							<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.0001" class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2 text-right"                 data-field="rate" data-row-field="rate" data-line-index="${index}" value="${normalized.rate}"             readonly></td>
+							<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly                class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="${normalized.amount.toFixed(2)}" data-amount-display="${index}"></td>
+							${actionCell}${rowNoCell}
 						</tr>
 					`;
-				})
-				.join("");
+				}
 
+				// FG / SFG
+				const uomOptionsHtml = optionMarkup(getUomOptions(normalized, stockType), null, <%- JSON.stringify(toFriendlyLabel("select_unit", "Select Unit")) %>);
+				return `
+					<tr data-line-index="${index}" data-row-index="${index}">
+						<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="sku_id" data-line-index="${index}" data-row-field="sku_id" data-searchable-select="true" data-searchable-variant="unified" data-select-val="${normalized.sku_id || ""}" ${canSave ? "" : "disabled"}>${sharedSkuOptionsHtml}</select></td>
+						<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="uom_id" data-line-index="${index}" data-row-field="uom_id" data-searchable-select="true" data-searchable-variant="unified" data-select-val="${normalized.uom_id || ""}" ${canSave ? "" : "disabled"}>${uomOptionsHtml}</select></td>
+						<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001"  class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty"  data-row-field="qty"  data-line-index="${index}" value="${normalized.qty}"              ${canSave ? "" : "readonly"}></td>
+						<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.0001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="rate" data-row-field="rate" data-line-index="${index}" value="${normalized.rate}"             ${canSave ? "" : "readonly"}></td>
+						<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="${normalized.amount.toFixed(2)}" data-amount-display="${index}"></td>
+						${actionCell}${rowNoCell}
+					</tr>
+				`;
+			};
+
+			// ── Chunk insertion helper ───────────────────────────────────────────
+			// Inserts rows [start, end) into `target` and immediately sets the
+			// correct select value + initializes searchable selects for those rows.
+			const insertAndInitRows = (start, end, insertTarget, position) => {
+				const html = [];
+				for (let i = start; i < end; i++) {
+					const normalized = applyDerivedDefaults(rowsState[i], stockType);
+					rowsState[i] = normalized;
+					html.push(buildRowHtml(normalized, i));
+				}
+				if (!html.length) return;
+				if (position === "beforebegin") {
+					insertTarget.insertAdjacentHTML("beforebegin", html.join(""));
+				} else {
+					linesBody.insertAdjacentHTML("beforeend", html.join(""));
+				}
+				for (let i = start; i < end; i++) {
+					const tr = linesBody.querySelector(`tr[data-row-index="${i}"]`);
+					if (!tr) continue;
+					tr.querySelectorAll("select[data-select-val]").forEach((sel) => {
+						const v = sel.dataset.selectVal;
+						if (v) sel.value = v;
+					});
+					if (typeof window.initSearchableSelects === "function") {
+						window.initSearchableSelects(tr);
+					}
+				}
+			};
+
+			// ── Clear + setup ────────────────────────────────────────────────────
+			linesBody.innerHTML = "";
 			bindNavigator();
 			syncTotals();
-			if (typeof window.initSearchableSelects === "function") {
-				const rows = Array.from(linesBody.querySelectorAll("tr[data-row-index]"));
-				const BATCH = 10;
-				const firstEnd = Math.min(BATCH, rows.length);
-				for (let i = 0; i < firstEnd; i++) {
-					window.initSearchableSelects(rows[i]);
-				}
-				if (rows.length > firstEnd) {
-					let batchStart = firstEnd;
-					const runBatch = () => {
-						if (!rows[0]?.isConnected) return;
-						const end = Math.min(batchStart + BATCH, rows.length);
-						for (let i = batchStart; i < end; i++) {
-							window.initSearchableSelects(rows[i]);
-						}
-						batchStart = end;
-						if (batchStart < rows.length) requestAnimationFrame(runBatch);
-					};
-					requestAnimationFrame(runBatch);
-				}
-			}
+
+			const total = rowsState.length;
+			const CHUNK = 5;
+			const firstEnd = Math.min(CHUNK, total);
+
+			// Sync: first chunk (visible immediately on load / small vouchers)
+			insertAndInitRows(0, firstEnd, null, "beforeend");
+
+			if (total <= firstEnd) return; // All rows done synchronously
+
+			const lastIndex = total - 1;
+
+			// Sync: last row (Enter-key append sets focus here via setTimeout(0))
+			insertAndInitRows(lastIndex, lastIndex + 1, null, "beforeend");
+
+			if (total <= firstEnd + 1) return; // Only 1 middle row or less
+
+			// Async: middle rows inserted BEFORE the last row to preserve order
+			let midOffset = firstEnd;
+			const lastRowEl = linesBody.querySelector(`tr[data-row-index="${lastIndex}"]`);
+			if (!lastRowEl) return;
+
+			const insertMiddle = () => {
+				if (!linesBody.isConnected || !lastRowEl.isConnected) return;
+				const end = Math.min(midOffset + CHUNK, lastIndex);
+				if (midOffset >= lastIndex) return;
+				insertAndInitRows(midOffset, end, lastRowEl, "beforebegin");
+				midOffset = end;
+				if (midOffset < lastIndex) requestAnimationFrame(insertMiddle);
+			};
+			requestAnimationFrame(insertMiddle);
 		};
 
 		const syncTotals = () => {
@@ -891,7 +907,9 @@
 			const row = rowsState[index];
 			if (!row) return;
 			row[field] = field === "qty" ? qty3(target.value) : rate4(target.value);
-			row.amount = amount2(Number(row.qty || 0) * Number(row.rate || 0));
+			const selectedUomForInput = getUomOptions(row, currentStockType()).find((entry) => Number(entry.id || 0) === Number(row.uom_id || 0));
+			const factorForInput = Number(selectedUomForInput?.factor_to_base || 1) > 0 ? Number(selectedUomForInput?.factor_to_base || 1) : 1;
+			row.amount = amount2(Number(row.qty || 0) * factorForInput * Number(row.rate || 0));
 			rowsState[index] = row;
 			syncAmountCell(index);
 			syncTotals();

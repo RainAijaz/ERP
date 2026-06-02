@@ -733,8 +733,7 @@
       next.return_reason_id = null;
     }
     if (next.return_qty <= 0) next.return_reason_id = null;
-    if (next.pair_discount < 0) next.pair_discount = 0;
-    if (next.pair_discount >= next.pair_rate && next.pair_rate > 0) next.pair_discount = Number(Math.max(0, next.pair_rate - 0.1).toFixed(1));
+    if (next.pair_discount >= next.pair_rate && next.pair_rate > 0) next.pair_discount = Number((next.pair_rate - 0.1).toFixed(1));
 
     const qty = next.sale_qty > 0 ? next.sale_qty : next.return_qty;
     const totalPairs = pairs(next, qty);

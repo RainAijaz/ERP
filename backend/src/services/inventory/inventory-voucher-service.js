@@ -1537,7 +1537,7 @@ const validatePayloadTx = async ({ trx, payload }) => {
         );
       }
 
-      const amount = roundCost2(Number(qty) * Number(rate));
+      const amount = roundCost2(Number(qty) * Number(factorToBase) * Number(rate));
 
       return {
         line_no: index + 1,
@@ -1653,7 +1653,7 @@ const validatePayloadTx = async ({ trx, payload }) => {
     // Status is always derived from selected unit so payload cannot force an inconsistent value.
     const rowStatus = derivedStatus;
 
-    const amount = roundCost2(Number(qty) * Number(rate));
+    const amount = roundCost2(Number(qty) * Number(factorToBase) * Number(rate));
 
     return {
       line_no: index + 1,

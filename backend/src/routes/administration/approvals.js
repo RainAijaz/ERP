@@ -1289,6 +1289,40 @@ router.get(
   },
 );
 
+const VOUCHER_TYPE_URL_MAP = {
+  OPENING_STOCK: "/vouchers/inventory",
+  STOCK_COUNT_ADJ: "/vouchers/stock-count",
+};
+
+router.get(
+  "/:id/view-voucher",
+  requirePermission("SCREEN", "administration.approvals", "navigate"),
+  async (req, res, next) => {
+    const id = Number(req.params.id);
+    if (!id) return next(new HttpError(400, res.locals.t("error_invalid_id")));
+    try {
+      const request = await knex("erp.approval_request").where({ id }).first();
+      if (!request)
+        return next(new HttpError(404, res.locals.t("approval_request_not_found")));
+
+      const newValue = safeJson(request.new_value) || {};
+      const voucherTypeCode = String(
+        newValue.voucher_type_code || request.voucher_type_code || "",
+      ).toUpperCase();
+      const voucherNo = Number(newValue.voucher_no || 0);
+
+      const voucherBasePath = VOUCHER_TYPE_URL_MAP[voucherTypeCode];
+      if (!voucherBasePath || !(voucherNo > 0)) {
+        return res.status(404).send("Voucher not found");
+      }
+
+      return res.redirect(`${voucherBasePath}?view=1&voucher_no=${voucherNo}`);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 router.get(
   "/:id/preview",
   requirePermission("SCREEN", "administration.approvals", "navigate"),

@@ -1737,13 +1737,7 @@ const validateTransferOutPayloadTx = async ({
       "Destination branch must be different from source branch",
     );
   }
-  if (
-    Array.isArray(req.branchScope) &&
-    req.branchScope.length &&
-    !req.branchScope.includes(Number(destinationBranchId))
-  ) {
-    throw new HttpError(403, "Destination branch is not in your branch scope");
-  }
+
 
   const transferReason = normalizeTransferReason(payload?.transfer_reason);
   const transporterName = normalizeText(payload?.transporter_name, 120);
