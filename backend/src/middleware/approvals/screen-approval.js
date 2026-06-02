@@ -102,13 +102,21 @@ const hasPermission = (user, scopeKey, action) => {
   return false;
 };
 
-const requiresApproval = async (scopeKey, action) => {
+const requiresApproval = async (scopeKey, action, fallbackScopeKey = null) => {
   try {
     const row = await knex("erp.approval_policy")
       .select("requires_approval")
       .where({ entity_type: "SCREEN", entity_key: scopeKey, action })
       .first();
-    return row?.requires_approval === true;
+    if (row != null) return row.requires_approval === true;
+    if (fallbackScopeKey) {
+      const fallbackRow = await knex("erp.approval_policy")
+        .select("requires_approval")
+        .where({ entity_type: "SCREEN", entity_key: fallbackScopeKey, action })
+        .first();
+      return fallbackRow?.requires_approval === true;
+    }
+    return false;
   } catch (err) {
     console.error("[screen-approval] policy lookup failed", {
       scopeKey,
@@ -248,6 +256,7 @@ const queueApproval = async ({
 const handleScreenApproval = async ({
   req,
   scopeKey,
+  approvalScopeKey,
   action,
   entityType,
   entityId,
@@ -284,7 +293,9 @@ const handleScreenApproval = async ({
   let approvalRequired = Boolean(forceQueue);
   try {
     if (!approvalRequired) {
-      approvalRequired = await requiresApproval(scopeKey, action);
+      const effectiveApprovalKey = approvalScopeKey || scopeKey;
+      const fallbackKey = approvalScopeKey ? scopeKey : null;
+      approvalRequired = await requiresApproval(effectiveApprovalKey, action, fallbackKey);
     }
     debugApproval("[screen-approval] requiresApproval result", {
       approvalRequired,

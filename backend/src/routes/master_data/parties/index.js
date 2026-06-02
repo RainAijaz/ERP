@@ -43,6 +43,13 @@ const normalizePartyType = (value) => {
 
 const isSupplierPartyType = (value) => normalizePartyType(value) === "SUPPLIER";
 
+const getPartyApprovalScopeKey = (partyType) => {
+  const t = normalizePartyType(partyType);
+  if (t === "CUSTOMER") return "master_data.parties.customer";
+  if (t === "SUPPLIER") return "master_data.parties.supplier";
+  return "master_data.parties";
+};
+
 const hasField = (page, name) =>
   page.fields.some((field) => field.name === name);
 
@@ -651,6 +658,7 @@ router.post(
       const approval = await handleScreenApproval({
         req,
         scopeKey: "master_data.parties",
+        approvalScopeKey: getPartyApprovalScopeKey(values.party_type),
         action: "create",
         entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
         entityId: "NEW",
@@ -894,6 +902,7 @@ router.post(
       const approval = await handleScreenApproval({
         req,
         scopeKey: "master_data.parties",
+        approvalScopeKey: getPartyApprovalScopeKey(values.party_type),
         action: "edit",
         entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
         entityId: id,
@@ -972,7 +981,7 @@ router.post(
 
     try {
       const current = await knex(page.table)
-        .select("is_active")
+        .select("is_active", "party_type")
         .where({ id })
         .first();
       if (!current) {
@@ -981,6 +990,7 @@ router.post(
       const approval = await handleScreenApproval({
         req,
         scopeKey: "master_data.parties",
+        approvalScopeKey: getPartyApprovalScopeKey(current.party_type),
         action: "delete",
         entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
         entityId: id,
@@ -1044,6 +1054,7 @@ router.post(
       const approval = await handleScreenApproval({
         req,
         scopeKey: "master_data.parties",
+        approvalScopeKey: getPartyApprovalScopeKey(existing.party_type),
         action: "delete",
         entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
         entityId: id,

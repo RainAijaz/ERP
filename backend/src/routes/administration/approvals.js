@@ -1697,6 +1697,39 @@ router.get(
 
       let screenRows = buildScreenRows(navConfig);
 
+      // Inject Customer / Supplier sub-rows under Parties
+      const partiesIdx = screenRows.findIndex((r) => r.scopeKey === "master_data.parties");
+      if (partiesIdx !== -1) {
+        const partiesRow = screenRows[partiesIdx];
+        screenRows[partiesIdx] = { ...partiesRow, hasChildren: true };
+        screenRows.splice(partiesIdx + 1, 0,
+          {
+            key: "parties.customer",
+            path: `${partiesRow.path}.customer`,
+            parentPath: partiesRow.path,
+            depth: partiesRow.depth + 1,
+            hasChildren: false,
+            scopeKey: "master_data.parties.customer",
+            scopeType: "SCREEN",
+            labelKey: "customers",
+            description: "customers",
+            voucherName: null,
+          },
+          {
+            key: "parties.supplier",
+            path: `${partiesRow.path}.supplier`,
+            parentPath: partiesRow.path,
+            depth: partiesRow.depth + 1,
+            hasChildren: false,
+            scopeKey: "master_data.parties.supplier",
+            scopeType: "SCREEN",
+            labelKey: "suppliers",
+            description: "suppliers",
+            voucherName: null,
+          },
+        );
+      }
+
       renderPage(
         req,
         res,
