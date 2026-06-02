@@ -1015,7 +1015,7 @@
           const refValue = `ACCOUNT:${Number(id || 0)}`;
           const selectedEntity = entityOptions.find((opt) => opt.value === refValue);
           if (String(selectedEntity?.postingClassCode || '') === 'cash') {
-            issues.push(`Row ${index + 1}: cash account is not allowed in cash voucher rows. Use Cash Transfer Voucher.`);
+            issues.push(`Row ${index + 1}: cash account is not allowed in cash voucher rows. Use Journal Voucher for cash-to-cash transfers.`);
           }
         }
         if (!hasAmount) {

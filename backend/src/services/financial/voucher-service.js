@@ -1009,8 +1009,8 @@ const enforceCashVoucherContraRule = async ({
   throw new HttpError(
     400,
     violatingLineNo > 0
-      ? `Line ${violatingLineNo}: cash account is not allowed in cash voucher rows. Use Cash Transfer Voucher.`
-      : "Cash account is not allowed in cash voucher rows. Use Cash Transfer Voucher.",
+      ? `Line ${violatingLineNo}: cash account is not allowed in cash voucher rows. Use Journal Voucher for cash-to-cash transfers.`
+      : "Cash account is not allowed in cash voucher rows. Use Journal Voucher for cash-to-cash transfers.",
   );
 };
 

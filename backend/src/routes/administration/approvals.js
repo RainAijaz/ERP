@@ -1150,35 +1150,39 @@ const buildPreviewPayload = async (req, res, request, side) => {
     const voucherNo = Number(voucherData.voucher_no || 0);
     const previewTitle = [voucherTypeCode.replace(/_/g, " "), voucherNo > 0 ? `#${voucherNo}` : ""].filter(Boolean).join(" ");
 
-    // Compute diff so the template can highlight changed lines/fields
-    const otherSideRaw = safeJson(side === "new" ? request.old_value : request.new_value) || {};
-    const otherLines = Array.isArray(otherSideRaw.lines) ? otherSideRaw.lines : [];
-    const otherByLineNo = new Map(otherLines.map((l, i) => [l.line_no ?? i + 1, l]));
-
+    // Compute diff for UPDATE actions only — highlight lines that changed vs the other side
+    const isUpdateAction = action === "update";
     const changedLineNos = new Set();
-    hydratedLines.forEach((line) => {
-      const other = otherByLineNo.get(line.line_no);
-      if (!other) { changedLineNos.add(line.line_no); return; }
-      const otherMeta = (other.meta && typeof other.meta === "object") ? other.meta : {};
-      const changed =
-        Number(line.account_id  || 0) !== Number(other.account_id  || 0) ||
-        Number(line.party_id    || 0) !== Number(other.party_id    || 0) ||
-        Number(line.labour_id   || 0) !== Number(other.labour_id   || 0) ||
-        Number(line.employee_id || 0) !== Number(other.employee_id || 0) ||
-        Number(line.debit  || 0) !== Number(other.debit  ?? otherMeta.debit  ?? 0) ||
-        Number(line.credit || 0) !== Number(other.credit ?? otherMeta.credit ?? 0) ||
-        (line.description || "") !== (other.description || otherMeta.description || "");
-      if (changed) changedLineNos.add(line.line_no);
-    });
-    if (otherLines.length !== hydratedLines.length) {
-      hydratedLines.forEach((l) => changedLineNos.add(l.line_no));
-    }
+    let changedHeader = false;
 
-    const changedHeader = action === "update" && (
-      String(voucherData.voucher_date  || "") !== String(otherSideRaw.voucher_date  || "") ||
-      Number(voucherData.header_account_id || 0) !== Number(otherSideRaw.header_account_id || 0) ||
-      String(voucherData.remarks || "") !== String(otherSideRaw.remarks || "")
-    );
+    if (isUpdateAction) {
+      const otherSideRaw = safeJson(side === "new" ? request.old_value : request.new_value) || {};
+      const otherLines = Array.isArray(otherSideRaw.lines) ? otherSideRaw.lines : [];
+      const otherByLineNo = new Map(otherLines.map((l, i) => [l.line_no ?? i + 1, l]));
+
+      hydratedLines.forEach((line) => {
+        const other = otherByLineNo.get(line.line_no);
+        if (!other) { changedLineNos.add(line.line_no); return; }
+        const otherMeta = (other.meta && typeof other.meta === "object") ? other.meta : {};
+        const changed =
+          Number(line.account_id  || 0) !== Number(other.account_id  || 0) ||
+          Number(line.party_id    || 0) !== Number(other.party_id    || 0) ||
+          Number(line.labour_id   || 0) !== Number(other.labour_id   || 0) ||
+          Number(line.employee_id || 0) !== Number(other.employee_id || 0) ||
+          Number(line.debit  || 0) !== Number(other.debit  ?? otherMeta.debit  ?? 0) ||
+          Number(line.credit || 0) !== Number(other.credit ?? otherMeta.credit ?? 0) ||
+          (line.description || "") !== (other.description || otherMeta.description || "");
+        if (changed) changedLineNos.add(line.line_no);
+      });
+      if (otherLines.length !== hydratedLines.length) {
+        hydratedLines.forEach((l) => changedLineNos.add(l.line_no));
+      }
+
+      changedHeader =
+        String(voucherData.voucher_date  || "") !== String(otherSideRaw.voucher_date  || "") ||
+        Number(voucherData.header_account_id || 0) !== Number(otherSideRaw.header_account_id || 0) ||
+        String(voucherData.remarks || "") !== String(otherSideRaw.remarks || "");
+    }
 
     return {
       ...basePayload,

@@ -23,6 +23,6 @@
   </div>
   <div class="space-y-5" data-preview-body>
     <%- include(formPartial, { fieldErrors: safeFieldErrors, formValues: safeFormValues, modalValues: (previewValues ?? {}) }) %>
-    <div class="hidden space-y-3" data-preview-fallback></div>
+    <% if (previewType !== 'voucher') { %><div class="hidden space-y-3" data-preview-fallback></div><% } %>
   </div>
 </div>
