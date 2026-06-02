@@ -121,8 +121,9 @@ const loadDashboardData = async ({ knex, req, can }) => {
         .first();
       if (!req.user?.isAdmin) {
         qb.andWhere("requested_by", req.user.id);
+        return applyActiveBranchScope(req, qb, "branch_id");
       }
-      return applyActiveBranchScope(req, qb, "branch_id");
+      return qb;
     }),
     safeCount("vouchersToday", () => {
       const qb = knex("erp.voucher_header")

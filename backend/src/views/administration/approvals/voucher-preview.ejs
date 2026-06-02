@@ -9,28 +9,40 @@
   const lines = Array.isArray(previewVoucher.lines) ? previewVoucher.lines : [];
   const totalDebit  = lines.reduce((s, l) => s + Number(l.debit  || 0), 0);
   const totalCredit = lines.reduce((s, l) => s + Number(l.credit || 0), 0);
+  const changedSet  = new Set(Array.isArray(changedLineNos) ? changedLineNos : []);
+  const highlightHeader = Boolean(changedHeader);
+  const rowClass = (line) => changedSet.has(line.line_no)
+    ? 'bg-amber-50 border-l-2 border-amber-400'
+    : '';
 %>
 <div class="space-y-3 text-xs">
   <table class="w-full text-xs border-collapse">
     <tbody>
-      <tr>
+      <tr class="<%= highlightHeader ? 'bg-amber-50' : '' %>">
         <td class="py-1 pr-3 font-semibold text-slate-500 w-32"><%= t('date') %></td>
         <td class="py-1 text-slate-800"><%= vDate || '—' %></td>
       </tr>
       <% if (previewVoucher.headerAccountName) { %>
-      <tr>
+      <tr class="<%= highlightHeader ? 'bg-amber-50' : '' %>">
         <td class="py-1 pr-3 font-semibold text-slate-500"><%= t('cash_account') || 'Account' %></td>
         <td class="py-1 text-slate-800"><%= previewVoucher.headerAccountName %></td>
       </tr>
       <% } %>
       <% if (previewVoucher.remarks) { %>
-      <tr>
+      <tr class="<%= highlightHeader ? 'bg-amber-50' : '' %>">
         <td class="py-1 pr-3 font-semibold text-slate-500"><%= t('note') || 'Note' %></td>
         <td class="py-1 text-slate-800"><%= previewVoucher.remarks %></td>
       </tr>
       <% } %>
     </tbody>
   </table>
+
+  <% if (changedSet.size > 0 || highlightHeader) { %>
+  <div class="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">
+    <svg class="h-3 w-3 shrink-0" viewBox="0 0 24 24" fill="none"><path d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    <%= t('changed') || 'Changed' %>
+  </div>
+  <% } %>
 
   <% if (lines.length) { %>
   <div class="overflow-x-auto rounded-lg border border-slate-200">
@@ -47,7 +59,7 @@
       </thead>
       <tbody>
         <% lines.forEach((line, idx) => { %>
-        <tr class="<%= idx % 2 === 0 ? '' : 'bg-slate-50' %>">
+        <tr class="<%= rowClass(line) || (idx % 2 === 0 ? '' : 'bg-slate-50') %>">
           <td class="px-2 py-1 text-slate-500"><%= line.line_no || (idx + 1) %></td>
           <td class="px-2 py-1 font-medium text-slate-800"><%= line.entityName || '—' %></td>
           <td class="px-2 py-1 text-slate-600"><%= line.description || '' %></td>

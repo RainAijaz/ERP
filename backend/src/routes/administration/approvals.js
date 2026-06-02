@@ -1091,7 +1091,9 @@ const buildPreviewPayload = async (req, res, request, side) => {
 
     const lines = Array.isArray(voucherData.lines) ? voucherData.lines : [];
     const headerAccountId = Number(voucherData.header_account_id || 0);
-    const departmentIds = [...new Set(lines.map((l) => Number(l.department_id || 0)).filter((id) => id > 0))];
+    const getLineMeta = (l) => (l.meta && typeof l.meta === "object" ? l.meta : {});
+    const getLineDeptId = (l) => Number(l.department_id || getLineMeta(l).department_id || 0);
+    const departmentIds = [...new Set(lines.map(getLineDeptId).filter((id) => id > 0))];
     const accountIds = [...new Set(lines.map((l) => Number(l.account_id || 0)).filter((id) => id > 0))];
     const partyIds = [...new Set(lines.map((l) => Number(l.party_id || 0)).filter((id) => id > 0))];
     const labourIds = [...new Set(lines.map((l) => Number(l.labour_id || 0)).filter((id) => id > 0))];
@@ -1121,12 +1123,22 @@ const buildPreviewPayload = async (req, res, request, side) => {
       return "—";
     };
 
-    const hydratedLines = lines.map((line, idx) => ({
-      ...line,
-      line_no: line.line_no || idx + 1,
-      entityName: resolveEntityName(line),
-      departmentName: Number(line.department_id || 0) > 0 ? (deptNames.get(Number(line.department_id)) || "") : "",
-    }));
+    const hydratedLines = lines.map((line, idx) => {
+      const meta = getLineMeta(line);
+      const deptId = getLineDeptId(line);
+      const debit  = line.debit  ?? meta.debit  ?? 0;
+      const credit = line.credit ?? meta.credit ?? 0;
+      const description = line.description || meta.description || "";
+      return {
+        ...line,
+        line_no: line.line_no || idx + 1,
+        debit,
+        credit,
+        description,
+        entityName: resolveEntityName(line),
+        departmentName: deptId > 0 ? (deptNames.get(deptId) || "") : "",
+      };
+    });
 
     const previewVoucher = {
       ...voucherData,
@@ -1138,12 +1150,44 @@ const buildPreviewPayload = async (req, res, request, side) => {
     const voucherNo = Number(voucherData.voucher_no || 0);
     const previewTitle = [voucherTypeCode.replace(/_/g, " "), voucherNo > 0 ? `#${voucherNo}` : ""].filter(Boolean).join(" ");
 
+    // Compute diff so the template can highlight changed lines/fields
+    const otherSideRaw = safeJson(side === "new" ? request.old_value : request.new_value) || {};
+    const otherLines = Array.isArray(otherSideRaw.lines) ? otherSideRaw.lines : [];
+    const otherByLineNo = new Map(otherLines.map((l, i) => [l.line_no ?? i + 1, l]));
+
+    const changedLineNos = new Set();
+    hydratedLines.forEach((line) => {
+      const other = otherByLineNo.get(line.line_no);
+      if (!other) { changedLineNos.add(line.line_no); return; }
+      const otherMeta = (other.meta && typeof other.meta === "object") ? other.meta : {};
+      const changed =
+        Number(line.account_id  || 0) !== Number(other.account_id  || 0) ||
+        Number(line.party_id    || 0) !== Number(other.party_id    || 0) ||
+        Number(line.labour_id   || 0) !== Number(other.labour_id   || 0) ||
+        Number(line.employee_id || 0) !== Number(other.employee_id || 0) ||
+        Number(line.debit  || 0) !== Number(other.debit  ?? otherMeta.debit  ?? 0) ||
+        Number(line.credit || 0) !== Number(other.credit ?? otherMeta.credit ?? 0) ||
+        (line.description || "") !== (other.description || otherMeta.description || "");
+      if (changed) changedLineNos.add(line.line_no);
+    });
+    if (otherLines.length !== hydratedLines.length) {
+      hydratedLines.forEach((l) => changedLineNos.add(l.line_no));
+    }
+
+    const changedHeader = action === "update" && (
+      String(voucherData.voucher_date  || "") !== String(otherSideRaw.voucher_date  || "") ||
+      Number(voucherData.header_account_id || 0) !== Number(otherSideRaw.header_account_id || 0) ||
+      String(voucherData.remarks || "") !== String(otherSideRaw.remarks || "")
+    );
+
     return {
       ...basePayload,
       previewType: "voucher",
       previewTitle,
       formPartial: "../../administration/approvals/voucher-preview.ejs",
       previewVoucher,
+      changedLineNos: [...changedLineNos],
+      changedHeader,
     };
   }
 
