@@ -607,6 +607,14 @@ const parseSummaryVoucherNo = (summary) => {
   return Number.isInteger(voucherNo) && voucherNo > 0 ? voucherNo : null;
 };
 
+const parseSummaryAction = (summary) => {
+  const firstWord = String(summary || "").trim().split(/\s+/)[0].toLowerCase();
+  if (firstWord === "add") return "create";
+  if (firstWord === "edit" || firstWord === "update") return "update";
+  if (firstWord === "delete") return "delete";
+  return "";
+};
+
 const getLocalizedLabel = (t, key, fallback) => {
   if (typeof t !== "function") return fallback;
   const translated = String(t(key) || "").trim();
@@ -644,9 +652,10 @@ const normalizeVoucherApprovalSummary = (row, t) => {
   const rowAction = String(row?.action || "")
     .trim()
     .toLowerCase();
+  const summaryAction = parseSummaryAction(row?.summary);
   const fallbackAction =
     oldValue && Object.keys(oldValue).length ? "update" : "create";
-  const effectiveAction = payloadAction || rowAction || fallbackAction;
+  const effectiveAction = payloadAction || rowAction || summaryAction || fallbackAction;
 
   const actionLabel =
     mapVoucherActionLabel(effectiveAction, t) ||
