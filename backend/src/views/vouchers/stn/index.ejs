@@ -1336,6 +1336,13 @@
         updateOutRow(rowIndex, key, target.value);
         return;
       }
+      if (target.matches('[data-out-input]')) {
+        const key = String(target.getAttribute('data-out-input') || '');
+        const rowIndex = Number(target.getAttribute('data-row-index') || -1);
+        if (rowIndex < 0) return;
+        updateOutRow(rowIndex, key, target.value);
+        return;
+      }
       if (target.matches('[data-in-input]')) {
         const rowIndex = Number(target.getAttribute('data-row-index') || -1);
         const key = String(target.getAttribute('data-in-input') || '');
@@ -1357,6 +1364,14 @@
         const key = String(target.getAttribute('data-out-input') || '');
         const rowIndex = Number(target.getAttribute('data-row-index') || -1);
         if (rowIndex < 0) return;
+        if (key === 'transfer_qty') {
+          const row = outRows[rowIndex];
+          if (!row) return;
+          const newQty = qty3(target.value);
+          outRows[rowIndex] = { ...row, transfer_qty: newQty, amount: amount2(newQty * Number(row.unit_cost || 0)) };
+          updateTotals();
+          return;
+        }
         updateOutRow(rowIndex, key, target.value);
         return;
       }
