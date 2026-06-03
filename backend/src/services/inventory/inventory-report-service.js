@@ -2670,11 +2670,13 @@ const resolveTransferOutQty = ({ row, meta, stockType }) => {
       3,
     );
   }
+  // row.qty = voucher_line.qty = user-facing unit qty (e.g. 2 dozen)
+  // transfer_qty_pairs = base pairs (e.g. 24) — wrong for display
   return toQuantity(
     pickFirstFiniteNumber(
-      toMetaNumber(meta, "transfer_qty_pairs"),
-      toMetaNumber(meta, "transfer_qty"),
       row?.qty,
+      toMetaNumber(meta, "transfer_qty"),
+      toMetaNumber(meta, "transfer_qty_pairs"),
     ),
     3,
   );
@@ -2722,35 +2724,37 @@ const resolveTransferInQuantities = ({ row, meta, stockType }) => {
     };
   }
 
+  // For FG/SFG: user-facing quantities come first (e.g. dozens).
+  // The _pairs variants are base units and should not be used for display.
   const expectedQty = toQuantity(
     pickFirstFiniteNumber(
-      toMetaNumber(meta, "expected_qty_pairs"),
       toMetaNumber(meta, "expected_qty"),
       row?.qty,
+      toMetaNumber(meta, "expected_qty_pairs"),
     ),
     3,
   );
   const receivedQty = toQuantity(
     pickFirstFiniteNumber(
-      toMetaNumber(meta, "received_qty_pairs"),
       toMetaNumber(meta, "received_qty"),
       row?.qty,
+      toMetaNumber(meta, "received_qty_pairs"),
     ),
     3,
   );
   const rejectedQty = toQuantity(
     pickFirstFiniteNumber(
-      toMetaNumber(meta, "rejected_qty_pairs"),
       toMetaNumber(meta, "rejected_qty"),
+      toMetaNumber(meta, "rejected_qty_pairs"),
       0,
     ),
     3,
   );
   const varianceQty = toQuantity(
     pickFirstFiniteNumber(
-      toMetaNumber(meta, "variance_qty_pairs"),
       toMetaNumber(meta, "variance_qty"),
       expectedQty - (receivedQty + rejectedQty),
+      toMetaNumber(meta, "variance_qty_pairs"),
     ),
     3,
   );

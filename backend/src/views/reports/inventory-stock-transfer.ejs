@@ -739,6 +739,78 @@
                 <% } %>
               </tr>
             <% }) %>
+            <%
+              // Accumulate grand unit-totals from all groups for the unit-split badge display
+              const grandUnitTotals = {
+                qtyOut: new Map(), expectedQty: new Map(), receivedQty: new Map(),
+                rejectedQty: new Map(), varianceQty: new Map(),
+              };
+              if (shouldSplitTotalsByUnit) {
+                detailGroups.forEach((group) => {
+                  ['qtyOut','expectedQty','receivedQty','rejectedQty','varianceQty'].forEach((field) => {
+                    if (!(group.unitTotals[field] instanceof Map)) return;
+                    group.unitTotals[field].forEach((value, unitLabel) => {
+                      grandUnitTotals[field].set(unitLabel, Number(grandUnitTotals[field].get(unitLabel) || 0) + Number(value || 0));
+                    });
+                  });
+                });
+              }
+            %>
+            <tr class="bg-slate-800 text-white" data-row data-active="true" data-report-grand-total>
+              <td colspan="<%= detailTotalLabelColspan %>" class="px-3 py-3 text-right">
+                <span class="inline-flex items-center rounded-full border border-white/10 bg-white/10 px-3 py-1 text-[11px] font-semibold tracking-[0.08em] text-white"><%= t('grand_total') %></span>
+              </td>
+              <% for (let gtIdx = detailTotalLabelColspan; gtIdx < detailColumns.length; gtIdx += 1) { const colKey = detailColumns[gtIdx]; %>
+                <% if (colKey === 'qtyOut') { %>
+                  <td class="px-3 py-3 text-right font-extrabold tabular-nums">
+                    <% const gtQtyOut = toUnitTotalEntries(grandUnitTotals.qtyOut); %>
+                    <% if (gtQtyOut.length) { %>
+                      <div class="flex flex-wrap justify-end gap-1.5">
+                        <% gtQtyOut.forEach((entry) => { %>
+                          <span class="rounded-md border border-white/20 bg-white/10 px-1.5 py-0.5 text-[10px] font-bold tracking-[0.04em]"><%= `${entry[0]}: ${formatQty(entry[1])}` %></span>
+                        <% }) %>
+                      </div>
+                    <% } else { %>
+                      <%= formatQty(totals.qtyOut || 0) %>
+                    <% } %>
+                  </td>
+                <% } else if (colKey === 'expectedQty') { %>
+                  <td class="px-3 py-3 text-right font-extrabold tabular-nums">
+                    <% const gtExpected = toUnitTotalEntries(grandUnitTotals.expectedQty); %>
+                    <% if (gtExpected.length) { %>
+                      <div class="flex flex-wrap justify-end gap-1.5">
+                        <% gtExpected.forEach((entry) => { %>
+                          <span class="rounded-md border border-white/20 bg-white/10 px-1.5 py-0.5 text-[10px] font-bold tracking-[0.04em]"><%= `${entry[0]}: ${formatQty(entry[1])}` %></span>
+                        <% }) %>
+                      </div>
+                    <% } else { %>
+                      <%= formatQty(totals.expectedQty || 0) %>
+                    <% } %>
+                  </td>
+                <% } else if (colKey === 'receivedQty') { %>
+                  <td class="px-3 py-3 text-right font-extrabold tabular-nums">
+                    <% const gtReceived = toUnitTotalEntries(grandUnitTotals.receivedQty); %>
+                    <% if (gtReceived.length) { %>
+                      <div class="flex flex-wrap justify-end gap-1.5">
+                        <% gtReceived.forEach((entry) => { %>
+                          <span class="rounded-md border border-white/20 bg-white/10 px-1.5 py-0.5 text-[10px] font-bold tracking-[0.04em]"><%= `${entry[0]}: ${formatQty(entry[1])}` %></span>
+                        <% }) %>
+                      </div>
+                    <% } else { %>
+                      <%= formatQty(totals.receivedQty || 0) %>
+                    <% } %>
+                  </td>
+                <% } else if (colKey === 'rejectedQty') { %>
+                  <td class="px-3 py-3 text-right font-extrabold tabular-nums"><%= formatQty(totals.rejectedQty || 0) %></td>
+                <% } else if (colKey === 'varianceQty') { %>
+                  <td class="px-3 py-3 text-right font-extrabold tabular-nums"><%= formatQty(totals.varianceQty || 0) %></td>
+                <% } else if (colKey === 'amount') { %>
+                  <td class="px-3 py-3 text-right font-black tabular-nums text-emerald-100"><%= formatAmount(totals.amount || 0) %></td>
+                <% } else { %>
+                  <td class="px-3 py-3"></td>
+                <% } %>
+              <% } %>
+            </tr>
           </tbody>
         </table>
       </div>

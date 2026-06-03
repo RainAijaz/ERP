@@ -297,26 +297,6 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("order_by") %></label>
-          <div class="sm:col-span-9">
-            <div class="flex flex-wrap gap-2 rounded-xl bg-white/60 p-1">
-              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedOrderBy === 'payment_account' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
-                <input type="radio" name="order_by" value="payment_account" <%= selectedOrderBy === "payment_account" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
-                <span><%= paymentAccountLabel %></span>
-              </label>
-              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedOrderBy === 'voucher' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
-                <input type="radio" name="order_by" value="voucher" <%= selectedOrderBy === "voucher" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
-                <span><%= invoiceLabel %></span>
-              </label>
-              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedOrderBy === 'article' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
-                <input type="radio" name="order_by" value="article" <%= selectedOrderBy === "article" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
-                <span><%= t("article") %></span>
-              </label>
-            </div>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
           <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= salesTypeLabel %></label>
           <div class="sm:col-span-9">
             <div class="flex flex-wrap gap-2 rounded-xl bg-white/60 p-1">
@@ -331,6 +311,26 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
               <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedSaleType === 'credit' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
                 <input type="radio" name="sale_type" value="credit" <%= selectedSaleType === "credit" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
                 <span><%= t("credit_sale") %></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("order_by") %></label>
+          <div class="sm:col-span-9">
+            <div class="flex flex-wrap gap-2 rounded-xl bg-white/60 p-1">
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedOrderBy === 'payment_account' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="order_by" value="payment_account" <%= selectedOrderBy === "payment_account" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= paymentAccountLabel %></span>
+              </label>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedOrderBy === 'voucher' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="order_by" value="voucher" <%= selectedOrderBy === "voucher" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= invoiceLabel %></span>
+              </label>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= selectedOrderBy === 'article' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="order_by" value="article" <%= selectedOrderBy === "article" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t("article") %></span>
               </label>
             </div>
           </div>
@@ -497,24 +497,36 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                 <tr class="bg-accent text-white" data-row data-active="true" data-report-group-total data-report-group-key="<%= group.key %>">
                   <% if (selectedOrderBy === "voucher") { %>
                     <td colspan="<%= detailTotalsLabelSpan %>" class="px-3 py-2"></td>
-                    <td class="px-3 py-2 text-right align-top">
-                      <div class="flex items-center justify-end gap-3 leading-tight">
-                        <span class="self-center text-[10px] font-extrabold uppercase tracking-[0.08em] text-white"><%= t("total") %></span>
-                        <div class="flex flex-col items-end gap-0.5">
-                          <% if (Number(group.total_packed_qty_input || 0) !== 0) { %>
-                          <span class="inline-flex items-baseline gap-1 text-[10px] font-extrabold uppercase tracking-[0.06em] text-white">
-                            <span class="text-white/90"><%= dozenShortLabel %>:</span>
-                            <span class="font-black tabular-nums text-white"><%= formatQty(group.total_packed_qty_input || 0) %></span>
-                          </span>
-                          <% } %>
-                          <% if (Number(group.total_loose_qty_input || 0) !== 0) { %>
-                          <span class="inline-flex items-baseline gap-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-100">
-                            <span class="text-slate-200"><%= pairsShortLabel %>:</span>
-                            <span class="tabular-nums text-white/90"><%= formatQty(group.total_loose_qty_input || 0) %></span>
-                          </span>
-                          <% } %>
+                    <td class="px-3 py-2 text-right align-middle">
+                      <%
+                        const grpHasPacked = Number(group.total_packed_qty_input || 0) !== 0;
+                        const grpHasLoose  = Number(group.total_loose_qty_input  || 0) !== 0;
+                        const grpSingleUnit = (grpHasPacked && !grpHasLoose) || (!grpHasPacked && grpHasLoose);
+                      %>
+                      <% if (grpSingleUnit) { %>
+                        <div class="flex items-baseline justify-end gap-1.5 leading-tight">
+                          <span class="text-[10px] font-extrabold uppercase tracking-[0.08em] text-white/70"><%= grpHasPacked ? dozenShortLabel : pairsShortLabel %>:</span>
+                          <span class="font-extrabold tabular-nums text-white"><%= formatQty(grpHasPacked ? (group.total_packed_qty_input || 0) : (group.total_loose_qty_input || 0)) %></span>
                         </div>
-                      </div>
+                      <% } else { %>
+                        <div class="flex items-center justify-end gap-3 leading-tight">
+                          <span class="self-center text-[10px] font-extrabold uppercase tracking-[0.08em] text-white"><%= t("total") %></span>
+                          <div class="flex flex-col items-end gap-0.5">
+                            <% if (grpHasPacked) { %>
+                            <span class="inline-flex items-baseline gap-1 text-[10px] font-extrabold uppercase tracking-[0.06em] text-white">
+                              <span class="text-white/90"><%= dozenShortLabel %>:</span>
+                              <span class="font-black tabular-nums text-white"><%= formatQty(group.total_packed_qty_input || 0) %></span>
+                            </span>
+                            <% } %>
+                            <% if (grpHasLoose) { %>
+                            <span class="inline-flex items-baseline gap-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-100">
+                              <span class="text-slate-200"><%= pairsShortLabel %>:</span>
+                              <span class="tabular-nums text-white/90"><%= formatQty(group.total_loose_qty_input || 0) %></span>
+                            </span>
+                            <% } %>
+                          </div>
+                        </div>
+                      <% } %>
                     </td>
                     <td class="px-3 py-2 text-right font-extrabold"></td>
                   <% } else { %>
@@ -555,7 +567,7 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                         <% if (Number(group.total_extra_discount || 0) > 0) { %>
                           <div class="flex flex-nowrap items-baseline gap-1 whitespace-nowrap leading-tight">
                             <span class="text-[9px] font-extrabold uppercase tracking-[0.08em] text-rose-700"><%= t("extra_discount") || "Extra Discount" %>:</span>
-                            <span class="text-[11px] font-extrabold tabular-nums text-rose-700">-<%= formatMoney(group.total_extra_discount || 0) %></span>
+                            <span class="text-[11px] font-extrabold tabular-nums text-rose-700"><%= formatMoney(group.total_extra_discount || 0) %></span>
                           </div>
                         <% } %>
                         <% if (Number(group.total_remaining_amount || 0) > 0) { %>
@@ -642,7 +654,7 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                   <% if (Number(totals.totalExtraDiscount || 0) > 0) { %>
                   <div class="flex flex-nowrap items-baseline justify-end gap-1 whitespace-nowrap">
                     <span class="text-[9px] font-extrabold uppercase tracking-[0.08em] text-rose-300"><%= t("extra_discount") || "Extra Discount" %> (<%= t("total") %>):</span>
-                    <span class="text-[11px] font-extrabold tabular-nums text-rose-300">-<%= formatMoney(totals.totalExtraDiscount || 0) %></span>
+                    <span class="text-[11px] font-extrabold tabular-nums text-rose-300"><%= formatMoney(totals.totalExtraDiscount || 0) %></span>
                   </div>
                   <% } %>
                 </td>
