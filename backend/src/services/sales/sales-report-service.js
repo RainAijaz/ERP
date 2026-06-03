@@ -1001,6 +1001,7 @@ const getSalesReportRows = async ({
       "p.name_ur as customer_name_ur",
       "sh.salesman_employee_id",
       "e.name as salesman_name",
+      "sh.extra_discount",
       "vl.line_no",
       "vl.qty",
       "vl.rate",
@@ -1194,6 +1195,7 @@ const getSalesReportRows = async ({
       gross_amount: grossAmount,
       discount_amount: discountAmount,
       net_amount: netAmount,
+      extra_discount: toAmount(row.extra_discount || 0, 2),
     };
   });
 
@@ -1251,6 +1253,7 @@ const getSalesReportGroupIdentity = (row, orderBy) => {
       payment_received_amount: toAmount(row.payment_received_amount || 0, 2),
       receive_account_name: row.receive_account_name || "",
       remaining_amount: toAmount(row.remaining_amount || 0, 2),
+      extra_discount: toAmount(row.extra_discount || 0, 2),
       item_label: "",
     };
   }
@@ -1350,6 +1353,7 @@ const buildSalesReportData = ({ rows, filters, req }) => {
         total_gross_amount: 0,
         total_discount_amount: 0,
         total_net_amount: 0,
+        total_extra_discount: toAmount(identity.extra_discount || 0, 2),
         lines: [],
         _voucherIds: new Set(),
         _customerKeys: new Set(),
@@ -1461,6 +1465,7 @@ const buildSalesReportData = ({ rows, filters, req }) => {
     total_gross_amount: toAmount(group.total_gross_amount, 2),
     total_discount_amount: toAmount(group.total_discount_amount, 2),
     total_net_amount: toAmount(group.total_net_amount, 2),
+    total_extra_discount: toAmount(group.total_extra_discount, 2),
   }));
 
   groups.forEach((group) => {
@@ -1526,6 +1531,14 @@ const buildSalesReportData = ({ rows, filters, req }) => {
               2,
             )
           : 0,
+      paymentReceived: toAmount(
+        groups.reduce((sum, g) => sum + Number(g.total_payment_received_amount || 0), 0),
+        2,
+      ),
+      totalExtraDiscount: toAmount(
+        groups.reduce((sum, g) => sum + Number(g.total_extra_discount || 0), 0),
+        2,
+      ),
     },
     rowCount: rows.length,
     groupCount: groups.length,

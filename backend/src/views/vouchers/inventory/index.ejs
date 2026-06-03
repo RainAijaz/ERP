@@ -473,6 +473,7 @@
 			}
 
 			next.qty = qty3(next.qty);
+			if (stockType === "SFG") next.rate = 0;
 			next.rate = rate4(next.rate);
 			const selectedUomForAmount = getUomOptions(next, stockType).find((entry) => Number(entry.id || 0) === Number(next.uom_id || 0));
 			const factorForAmount = Number(selectedUomForAmount?.factor_to_base || 1) > 0 ? Number(selectedUomForAmount?.factor_to_base || 1) : 1;
@@ -505,7 +506,11 @@
 			}
 			base.push(
 				{ key: "qty", label: <%- JSON.stringify(toFriendlyLabel("quantity", "Quantity")) %>, align: "text-right" },
-				{ key: "rate", label: <%- JSON.stringify(toFriendlyLabel("rate", "Rate")) %>, align: "text-right" },
+			);
+			if (stockType !== "SFG") {
+				base.push({ key: "rate", label: <%- JSON.stringify(toFriendlyLabel("rate", "Rate")) %>, align: "text-right" });
+			}
+			base.push(
 				{ key: "amount", label: <%- JSON.stringify(toFriendlyLabel("amount", "Amount")) %>, align: "text-right" },
 				{ key: "actions", label: <%- JSON.stringify(toFriendlyLabel("actions", "Actions")) %>, align: "text-center" },
 				{ key: "sr", label: <%- JSON.stringify(toFriendlyLabel("sr_no", "Sr #")) %>, align: "text-center" },
@@ -545,7 +550,8 @@
 		const renderFooter = (stockType) => {
 			if (!linesFooter) return;
 			const descriptorColspan = stockType === "RM" ? 4 : 2;
-			const totalColspan = stockType === "RM" ? 9 : 7;
+			const totalColspan = stockType === "RM" ? 9 : (stockType === "SFG" ? 6 : 7);
+			const showRateCol = stockType !== "SFG";
 			const addDisabled = canSave ? "" : "disabled";
 			const addButtonTitle = <%- JSON.stringify(toFriendlyLabel("add", "Add")) %>;
 
@@ -555,7 +561,7 @@
 					<td class="border-t border-slate-200 px-2 py-1.5">
 						<input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-qty aria-label="${escapeHtml(quantityLabel)}">
 					</td>
-					<td class="border-t border-slate-200 px-2 py-1.5"></td>
+					${showRateCol ? '<td class="border-t border-slate-200 px-2 py-1.5"></td>' : ''}
 					<td class="border-t border-slate-200 px-2 py-1.5">
 						<input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.00" data-total-amount aria-label="${escapeHtml(amountLabel)}">
 					</td>
@@ -644,7 +650,7 @@
 						<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="sku_id" data-line-index="${index}" data-row-field="sku_id" data-searchable-select="true" data-searchable-variant="unified" data-select-val="${normalized.sku_id || ""}" ${canSave ? "" : "disabled"}>${sharedSkuOptionsHtml}</select></td>
 						<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="uom_id" data-line-index="${index}" data-row-field="uom_id" data-searchable-select="true" data-searchable-variant="unified" data-select-val="${normalized.uom_id || ""}" ${canSave ? "" : "disabled"}>${uomOptionsHtml}</select></td>
 						<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001"  class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty"  data-row-field="qty"  data-line-index="${index}" value="${normalized.qty}"              ${canSave ? "" : "readonly"}></td>
-						<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.0001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="rate" data-row-field="rate" data-line-index="${index}" value="${normalized.rate}"             ${canSave ? "" : "readonly"}></td>
+						${stockType !== "SFG" ? `<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.0001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="rate" data-row-field="rate" data-line-index="${index}" value="${normalized.rate}" ${canSave ? "" : "readonly"}></td>` : ""}
 						<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="${normalized.amount.toFixed(2)}" data-amount-display="${index}"></td>
 						${actionCell}${rowNoCell}
 					</tr>
@@ -770,8 +776,8 @@
 			if (stockType === "RM") {
 				return ["item_id", "color_id", "size_id", "uom_id", "qty", "rate"];
 			}
-			if (stockType === "FG") {
-				return ["sku_id", "uom_id", "qty", "rate"];
+			if (stockType === "SFG") {
+				return ["sku_id", "uom_id", "qty"];
 			}
 			return ["sku_id", "uom_id", "qty", "rate"];
 		};

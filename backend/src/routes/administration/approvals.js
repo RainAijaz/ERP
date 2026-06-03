@@ -660,13 +660,10 @@ const normalizeVoucherApprovalSummary = (row, t) => {
   const actionLabel =
     mapVoucherActionLabel(effectiveAction, t) ||
     getLocalizedLabel(t, "action", "ACTION");
-  const voucherTypeCode = String(
-    newValue?.voucher_type_code || row?.entity_id || "",
-  )
-    .toUpperCase()
-    .includes("_VOUCHER")
-    ? String(newValue?.voucher_type_code || row?.entity_id || "").toUpperCase()
-    : parseSummaryVoucherTypeCode(row?.summary);
+  const rawTypeCode = String(newValue?.voucher_type_code || row?.voucher_type_code || "")
+    .trim()
+    .toUpperCase();
+  const voucherTypeCode = rawTypeCode || parseSummaryVoucherTypeCode(row?.summary);
 
   const voucherTypeLabel = voucherTypeCode
     ? voucherTypeCode.replace(/_/g, " ")
@@ -1096,6 +1093,58 @@ const buildPreviewPayload = async (req, res, request, side) => {
 
   if (entityType === "VOUCHER") {
     const voucherData = safeJson(side === "old" ? request.old_value : request.new_value) || {};
+    const payloadVtc = String(voucherData.voucher_type_code || "").trim().toUpperCase();
+
+    if (payloadVtc === STOCK_TRANSFER_VOUCHER_TYPES.out || payloadVtc === STOCK_TRANSFER_VOUCHER_TYPES.in) {
+      const stnLines = Array.isArray(voucherData.lines) ? voucherData.lines : [];
+      const skuIds = [...new Set(stnLines.map((l) => Number(l.sku_id || 0)).filter((id) => id > 0))];
+      const itemIds = [...new Set(stnLines.map((l) => Number(l.item_id || 0)).filter((id) => id > 0))];
+      const branchIds = [...new Set([
+        Number(voucherData.destination_branch_id || 0),
+        Number(voucherData.source_branch_id || 0),
+      ].filter((id) => id > 0))];
+
+      const [skuRows, itemRows, branchRows] = await Promise.all([
+        skuIds.length
+          ? knex("erp.skus as s")
+              .leftJoin("erp.variants as v", "s.variant_id", "v.id")
+              .leftJoin("erp.items as i", "v.item_id", "i.id")
+              .select("s.id", "i.name as item_name", "s.sku_code")
+              .whereIn("s.id", skuIds)
+          : Promise.resolve([]),
+        itemIds.length ? knex("erp.items").select("id", "name").whereIn("id", itemIds) : Promise.resolve([]),
+        branchIds.length ? knex("erp.branches").select("id", "name").whereIn("id", branchIds) : Promise.resolve([]),
+      ]);
+
+      const skuNameMap = new Map(skuRows.map((r) => [Number(r.id), r.item_name || r.sku_code || ""]));
+      const itemNameMap = new Map(itemRows.map((r) => [Number(r.id), r.name || ""]));
+      const branchNameMap = new Map(branchRows.map((r) => [Number(r.id), r.name || ""]));
+
+      const hydratedStnLines = stnLines.map((line, idx) => {
+        const skuId = Number(line.sku_id || 0);
+        const itemId = Number(line.item_id || 0);
+        const label = skuId
+          ? (skuNameMap.get(skuId) || `SKU #${skuId}`)
+          : (itemId ? (itemNameMap.get(itemId) || `Item #${itemId}`) : "—");
+        return { ...line, line_no: line.line_no || idx + 1, item_label: label };
+      });
+
+      const voucherNo = Number(voucherData.voucher_no || 0);
+      const previewTitle = [payloadVtc.replace(/_/g, " "), voucherNo > 0 ? `#${voucherNo}` : ""].filter(Boolean).join(" ");
+
+      return {
+        ...basePayload,
+        previewType: "stn-voucher",
+        previewTitle,
+        formPartial: "../../administration/approvals/stn-voucher-preview.ejs",
+        previewVoucher: {
+          ...voucherData,
+          destination_branch_name: branchNameMap.get(Number(voucherData.destination_branch_id || 0)) || String(voucherData.destination_branch_id || ""),
+          source_branch_name: branchNameMap.get(Number(voucherData.source_branch_id || 0)) || String(voucherData.source_branch_id || ""),
+          lines: hydratedStnLines,
+        },
+      };
+    }
     if (!voucherData || !Object.keys(voucherData).length) return null;
 
     const lines = Array.isArray(voucherData.lines) ? voucherData.lines : [];
@@ -1410,6 +1459,8 @@ const VOUCHER_TYPE_URL_MAP = {
   JOURNAL_VOUCHER: "/vouchers/journal",
   OPENING_STOCK: "/vouchers/inventory",
   STOCK_COUNT_ADJ: "/vouchers/stock-count",
+  STN_OUT: "/vouchers/stock-transfer-out",
+  STN_IN: "/vouchers/stock-transfer-in",
 };
 
 router.get(

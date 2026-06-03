@@ -38,6 +38,7 @@
         }
         searchableInput.focus();
         if (openSearchable && typeof searchableInput.click === "function") {
+          searchableInput.dataset.searchableProgrammaticOpen = "1";
           searchableInput.click();
         }
         return true;
@@ -430,6 +431,7 @@
 
         event.preventDefault();
         if (!linkedValue && hasSelectableOption) {
+          target.dataset.searchableProgrammaticOpen = "1";
           if (typeof target.click === "function") target.click();
           return true;
         }

@@ -16,6 +16,11 @@ const inferAction = (request) => {
     return request.new_value._action === "update" ? "update" : request.new_value._action;
   }
   if (request?.new_value && request?.entity_id === "NEW") return "create";
+  // Voucher approval requests store the intended action in new_value.action (without underscore prefix).
+  const payloadAction = String(request?.new_value?.action || "").trim().toLowerCase();
+  if (payloadAction === "create" || payloadAction === "update" || payloadAction === "delete") {
+    return payloadAction;
+  }
   if (!request?.new_value && request?.old_value) return "delete";
   return "update";
 };

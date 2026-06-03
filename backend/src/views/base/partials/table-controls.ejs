@@ -27,10 +27,13 @@
       ];
   const defaultStatusOption = normalizedStatusOptions.find((option) => String(option.value || "").toLowerCase() === "active")
     || normalizedStatusOptions[0];
+  const defaultPageSizeOption = normalizedPageSizeOptions.find(
+    (option) => String(option.value || "").toLowerCase() === "all"
+  ) || normalizedPageSizeOptions[0];
   const selectedPageSizeValue = String(
     incomingSelectedPageSize !== undefined && incomingSelectedPageSize !== null
       ? incomingSelectedPageSize
-      : normalizedPageSizeOptions[0].value
+      : defaultPageSizeOption.value
   ).toLowerCase();
   const selectedStatusValue = String(
     incomingSelectedStatus !== undefined && incomingSelectedStatus !== null
@@ -86,7 +89,7 @@
   <% if (filtersEnabled) { %>
     <button class="relative flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-600 shadow-sm transition hover:border-slate-300 hover:text-slate-800" type="button" data-filter-toggle>
       <span><%= t("filters") %></span>
-      <span class="absolute -right-1 -top-1 hidden h-4 min-w-[16px] items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-semibold text-white" data-filter-count></span>
+      <span class="absolute -right-1 -top-1 hidden h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 px-1 text-[9px] font-semibold text-white" data-filter-count></span>
     </button>
   <% } %>
 </div>

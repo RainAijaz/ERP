@@ -501,14 +501,18 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                       <div class="flex items-center justify-end gap-3 leading-tight">
                         <span class="self-center text-[10px] font-extrabold uppercase tracking-[0.08em] text-white"><%= t("total") %></span>
                         <div class="flex flex-col items-end gap-0.5">
+                          <% if (Number(group.total_packed_qty_input || 0) !== 0) { %>
                           <span class="inline-flex items-baseline gap-1 text-[10px] font-extrabold uppercase tracking-[0.06em] text-white">
                             <span class="text-white/90"><%= dozenShortLabel %>:</span>
                             <span class="font-black tabular-nums text-white"><%= formatQty(group.total_packed_qty_input || 0) %></span>
                           </span>
+                          <% } %>
+                          <% if (Number(group.total_loose_qty_input || 0) !== 0) { %>
                           <span class="inline-flex items-baseline gap-1 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-100">
                             <span class="text-slate-200"><%= pairsShortLabel %>:</span>
                             <span class="tabular-nums text-white/90"><%= formatQty(group.total_loose_qty_input || 0) %></span>
                           </span>
+                          <% } %>
                         </div>
                       </div>
                     </td>
@@ -517,14 +521,18 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                     <td colspan="<%= detailTotalsLabelSpan %>" class="px-3 py-2">
                       <div class="flex w-full flex-wrap items-center justify-center gap-x-5 gap-y-1 text-center">
                         <span class="text-xs font-extrabold uppercase tracking-[0.08em] text-white"><%= t("total") %></span>
+                        <% if (Number(group.total_packed_qty_input || 0) !== 0) { %>
                         <span class="inline-flex items-baseline gap-1 text-[10px] font-extrabold uppercase tracking-[0.06em] text-white">
                           <span class="text-white"><%= dozenShortLabel %>:</span>
                           <span class="font-black tabular-nums text-white"><%= formatQty(group.total_packed_qty_input || 0) %></span>
                         </span>
+                        <% } %>
+                        <% if (Number(group.total_loose_qty_input || 0) !== 0) { %>
                         <span class="inline-flex items-baseline gap-1 text-[10px] font-bold uppercase tracking-[0.06em] text-slate-100">
                           <span class="text-slate-200"><%= pairsShortLabel %>:</span>
                           <span class="tabular-nums text-white"><%= formatQty(group.total_loose_qty_input || 0) %></span>
                         </span>
+                        <% } %>
                       </div>
                     </td>
                     <td class="px-3 py-2 text-right font-extrabold"></td>
@@ -543,12 +551,20 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                 <% if (selectedOrderBy === "voucher") { %>
                   <tr class="bg-slate-200/50 text-slate-700" data-row data-active="true" data-report-group-credit-summary data-report-group-key="<%= group.key %>">
                     <td colspan="<%= detailColumnCount - (includeBranchColumn ? 2 : 1) %>" class="px-3 py-1.5">
-                      <% if (Number(group.total_remaining_amount || 0) > 0) { %>
-                        <div class="ml-auto flex max-w-full flex-nowrap items-center justify-end gap-1 text-[10px] font-semibold leading-tight">
-                          <span class="text-[9px] font-extrabold uppercase tracking-[0.08em] text-slate-700"><%= t("remaining_amount") %>:</span>
-                          <span class="text-[11px] font-extrabold tabular-nums text-amber-900"><%= formatMoney(group.total_remaining_amount || 0) %></span>
-                        </div>
-                      <% } %>
+                      <div class="ml-auto flex max-w-full flex-nowrap items-center justify-end gap-3">
+                        <% if (Number(group.total_extra_discount || 0) > 0) { %>
+                          <div class="flex flex-nowrap items-baseline gap-1 whitespace-nowrap leading-tight">
+                            <span class="text-[9px] font-extrabold uppercase tracking-[0.08em] text-rose-700"><%= t("extra_discount") || "Extra Discount" %>:</span>
+                            <span class="text-[11px] font-extrabold tabular-nums text-rose-700">-<%= formatMoney(group.total_extra_discount || 0) %></span>
+                          </div>
+                        <% } %>
+                        <% if (Number(group.total_remaining_amount || 0) > 0) { %>
+                          <div class="flex flex-nowrap items-baseline gap-1 whitespace-nowrap leading-tight">
+                            <span class="text-[9px] font-extrabold uppercase tracking-[0.08em] text-slate-700"><%= t("remaining_amount") %>:</span>
+                            <span class="text-[11px] font-extrabold tabular-nums text-amber-900"><%= formatMoney(group.total_remaining_amount || 0) %></span>
+                          </div>
+                        <% } %>
+                      </div>
                     </td>
                     <td class="px-3 py-1.5 text-right">
                       <div class="flex items-baseline justify-end gap-1 whitespace-nowrap leading-tight">
@@ -569,14 +585,18 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                   </td>
                   <td class="px-3 py-3 text-right align-middle">
                     <div class="flex flex-wrap items-center justify-end gap-x-4 gap-y-1.5 leading-tight">
+                      <% if (Number(totals.packedQty || 0) !== 0) { %>
                       <span class="inline-flex items-baseline gap-1 text-[11px] font-semibold tracking-[0.04em] text-white">
                         <span class="text-white/75"><%= dozenShortLabel %>:</span>
                         <span class="font-black tabular-nums text-white"><%= formatQty(totals.packedQty || 0) %></span>
                       </span>
+                      <% } %>
+                      <% if (Number(totals.looseQty || 0) !== 0) { %>
                       <span class="inline-flex items-baseline gap-1 text-[10px] font-medium tracking-[0.04em] text-slate-200">
                         <span class="text-slate-300"><%= pairsShortLabel %>:</span>
                         <span class="tabular-nums text-white/90"><%= formatQty(totals.looseQty || 0) %></span>
                       </span>
+                      <% } %>
                     </div>
                   </td>
                   <td class="px-3 py-3 text-right font-extrabold"></td>
@@ -593,14 +613,18 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                   </td>
                   <td class="px-3 py-3 text-right align-middle">
                     <div class="flex flex-wrap items-center justify-end gap-x-4 gap-y-1.5 leading-tight">
+                      <% if (Number(totals.packedQty || 0) !== 0) { %>
                       <span class="inline-flex items-baseline gap-1 text-[11px] font-semibold tracking-[0.04em] text-white">
                         <span class="text-white/75"><%= dozenShortLabel %>:</span>
                         <span class="font-black tabular-nums text-white"><%= formatQty(totals.packedQty || 0) %></span>
                       </span>
+                      <% } %>
+                      <% if (Number(totals.looseQty || 0) !== 0) { %>
                       <span class="inline-flex items-baseline gap-1 text-[10px] font-medium tracking-[0.04em] text-slate-200">
                         <span class="text-slate-300"><%= pairsShortLabel %>:</span>
                         <span class="tabular-nums text-white/90"><%= formatQty(totals.looseQty || 0) %></span>
                       </span>
+                      <% } %>
                     </div>
                   </td>
                   <td class="px-3 py-3 text-right font-extrabold"></td>
@@ -612,6 +636,27 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                   <% } %>
                 <% } %>
               </tr>
+              <% if (selectedOrderBy === "voucher" && Number(totals.paymentReceived || 0) > 0) { %>
+              <tr class="bg-slate-700 text-white" data-row data-active="true" data-report-grand-payment-received>
+                <td colspan="<%= detailColumnCount - (includeBranchColumn ? 2 : 1) %>" class="px-3 py-2">
+                  <% if (Number(totals.totalExtraDiscount || 0) > 0) { %>
+                  <div class="flex flex-nowrap items-baseline justify-end gap-1 whitespace-nowrap">
+                    <span class="text-[9px] font-extrabold uppercase tracking-[0.08em] text-rose-300"><%= t("extra_discount") || "Extra Discount" %> (<%= t("total") %>):</span>
+                    <span class="text-[11px] font-extrabold tabular-nums text-rose-300">-<%= formatMoney(totals.totalExtraDiscount || 0) %></span>
+                  </div>
+                  <% } %>
+                </td>
+                <td class="px-3 py-2 text-right">
+                  <div class="flex items-baseline justify-end gap-1 whitespace-nowrap">
+                    <span class="text-[9px] font-extrabold uppercase tracking-[0.08em] text-slate-300"><%= t("payment_received_amount") %> (<%= t("total") %>):</span>
+                    <span class="text-[11px] font-extrabold tabular-nums text-white"><%= formatMoney(totals.paymentReceived || 0) %></span>
+                  </div>
+                </td>
+                <% if (includeBranchColumn) { %>
+                  <td class="px-3 py-2"></td>
+                <% } %>
+              </tr>
+              <% } %>
             </tbody>
           </table>
         </div>

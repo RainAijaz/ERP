@@ -1,0 +1,93 @@
+<%
+  const fmt2 = (v) => { const n = Number(v || 0); return Number.isFinite(n) ? n.toFixed(2) : '0.00'; };
+  const fmt3 = (v) => { const n = Number(v || 0); return Number.isFinite(n) ? n.toFixed(3) : '0.000'; };
+  const vDate = previewVoucher.voucher_date ? String(previewVoucher.voucher_date).slice(0, 10) : '';
+  const lines = Array.isArray(previewVoucher.lines) ? previewVoucher.lines : [];
+  const totalAmount = lines.reduce((s, l) => s + Number(l.amount || 0), 0);
+  const totalQty = lines.reduce((s, l) => s + Number(l.qty || l.transfer_qty || 0), 0);
+  const isOut = String(previewVoucher.voucher_type_code || '').toUpperCase() === 'STN_OUT';
+%>
+<div class="space-y-3 text-xs">
+  <table class="w-full text-xs border-collapse">
+    <tbody>
+      <tr>
+        <td class="py-1 pr-3 font-semibold text-slate-500 w-36"><%= t('date') %></td>
+        <td class="py-1 text-slate-800"><%= vDate || '—' %></td>
+      </tr>
+      <% if (previewVoucher.stock_type) { %>
+      <tr>
+        <td class="py-1 pr-3 font-semibold text-slate-500"><%= t('stock_type') || 'Stock Type' %></td>
+        <td class="py-1 text-slate-800"><%= previewVoucher.stock_type %></td>
+      </tr>
+      <% } %>
+      <% if (isOut && previewVoucher.destination_branch_name) { %>
+      <tr>
+        <td class="py-1 pr-3 font-semibold text-slate-500"><%= t('destination_branch') || 'Destination Branch' %></td>
+        <td class="py-1 text-slate-800"><%= previewVoucher.destination_branch_name %></td>
+      </tr>
+      <% } %>
+      <% if (!isOut && previewVoucher.source_branch_name) { %>
+      <tr>
+        <td class="py-1 pr-3 font-semibold text-slate-500"><%= t('source_branch') || 'Source Branch' %></td>
+        <td class="py-1 text-slate-800"><%= previewVoucher.source_branch_name %></td>
+      </tr>
+      <% } %>
+      <% if (previewVoucher.transfer_ref_no) { %>
+      <tr>
+        <td class="py-1 pr-3 font-semibold text-slate-500"><%= t('transfer_ref_no') || 'Transfer Ref' %></td>
+        <td class="py-1 text-slate-800"><%= previewVoucher.transfer_ref_no %></td>
+      </tr>
+      <% } %>
+      <% if (previewVoucher.bill_book_no) { %>
+      <tr>
+        <td class="py-1 pr-3 font-semibold text-slate-500"><%= t('bill_book_no') || 'Bill Book No' %></td>
+        <td class="py-1 text-slate-800"><%= previewVoucher.bill_book_no %></td>
+      </tr>
+      <% } %>
+      <% if (previewVoucher.transfer_reason) { %>
+      <tr>
+        <td class="py-1 pr-3 font-semibold text-slate-500"><%= t('transfer_reason') || 'Reason' %></td>
+        <td class="py-1 text-slate-800"><%= previewVoucher.transfer_reason %></td>
+      </tr>
+      <% } %>
+      <% if (previewVoucher.remarks) { %>
+      <tr>
+        <td class="py-1 pr-3 font-semibold text-slate-500"><%= t('remarks') || 'Remarks' %></td>
+        <td class="py-1 text-slate-800"><%= previewVoucher.remarks %></td>
+      </tr>
+      <% } %>
+    </tbody>
+  </table>
+
+  <% if (lines.length) { %>
+  <div class="overflow-x-auto rounded-lg border border-slate-200">
+    <table class="w-full text-xs">
+      <thead>
+        <tr class="bg-slate-50 text-slate-500 uppercase tracking-wide text-[10px]">
+          <th class="px-2 py-1.5 text-left border-b border-slate-200">#</th>
+          <th class="px-2 py-1.5 text-left border-b border-slate-200"><%= t('item_name') || 'Item' %></th>
+          <th class="px-2 py-1.5 text-right border-b border-slate-200"><%= t('quantity') || 'Qty' %></th>
+          <th class="px-2 py-1.5 text-right border-b border-slate-200"><%= t('amount') || 'Amount' %></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% lines.forEach((line, idx) => { %>
+        <tr class="<%= idx % 2 === 0 ? '' : 'bg-slate-50' %>">
+          <td class="px-2 py-1 text-slate-500"><%= line.line_no || (idx + 1) %></td>
+          <td class="px-2 py-1 font-medium text-slate-800"><%= line.item_label || '—' %></td>
+          <td class="px-2 py-1 text-right font-mono text-slate-800"><%= fmt3(line.qty || line.transfer_qty || 0) %></td>
+          <td class="px-2 py-1 text-right font-mono text-slate-800"><%= Number(line.amount || 0) > 0 ? fmt2(line.amount) : '' %></td>
+        </tr>
+        <% }) %>
+      </tbody>
+      <tfoot>
+        <tr class="bg-slate-50 font-semibold">
+          <td class="px-2 py-1.5 border-t border-slate-200" colspan="2"><%= t('total') %></td>
+          <td class="px-2 py-1.5 border-t border-slate-200 text-right font-mono"><%= fmt3(totalQty) %></td>
+          <td class="px-2 py-1.5 border-t border-slate-200 text-right font-mono"><%= totalAmount > 0 ? fmt2(totalAmount) : '' %></td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  <% } %>
+</div>
