@@ -682,11 +682,15 @@ const normalizeVoucherApprovalSummary = (row, t) => {
     return `${actionLabel} ${voucherTypeLabel}${lineLabel}`.trim();
   }
 
+  const approvalReason = String(newValue?.approval_reason || "").trim();
+
   if (Number.isInteger(voucherNo) && voucherNo > 0) {
-    return `${actionLabel} ${voucherTypeLabel} #${voucherNo}`;
+    const base = `${actionLabel} ${voucherTypeLabel} #${voucherNo}`;
+    return approvalReason ? `${base} — ${approvalReason}` : base;
   }
 
-  return `${actionLabel} ${voucherTypeLabel}`;
+  const base = `${actionLabel} ${voucherTypeLabel}`;
+  return approvalReason ? `${base} — ${approvalReason}` : base;
 };
 
 const resolveApprovalRequestVoucherTypeCode = (request) => {

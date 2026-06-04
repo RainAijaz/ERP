@@ -11,7 +11,8 @@
     { key: 'create', label: t('create') },
     { key: 'edit', label: t('edit') },
     { key: 'delete', label: t('deactivate') || t('delete') },
-    { key: 'hard_delete', label: t('permanent_delete') }
+    { key: 'hard_delete', label: t('permanent_delete') },
+    { key: 'negative_stock', label: t('neg_stock') || 'Neg. Stock', voucherOnly: true },
   ];
 %>
 
@@ -132,7 +133,7 @@
                 </td>
                 <% actions.forEach(act => { %>
                   <td class="text-center border-r last:border-r-0">
-                    <% if (row.scopeKey) { %>
+                    <% if (row.scopeKey && (!act.voucherOnly || row.scopeType === 'VOUCHER')) { %>
                       <% const entityType = row.scopeType === "VOUCHER" ? "VOUCHER_TYPE" : "SCREEN"; %>
                       <input type="checkbox" name="<%= entityType %>:<%= row.scopeKey %>:<%= act.key %>" <%= policyMap?.[entityType]?.[row.scopeKey]?.[act.key] ? 'checked' : '' %> class="rounded text-accent focus:ring-accent w-4 h-4">
                     <% } else { %>

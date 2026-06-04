@@ -3035,10 +3035,15 @@ const createStockTransferVoucher = async ({
             voucherTypeCode: normalizedVoucherTypeCode,
           })
         : false;
+    const negativeStockPolicyRequired = await requiresApprovalForAction(
+      trx,
+      normalizedVoucherTypeCode,
+      "negative_stock",
+    );
     const negativeStockRouting =
       normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out
         ? resolveNegativeStockApprovalRouting({
-            hasNegativeStockRisk: hasTransferOutNegativeStockRisk(validated),
+            hasNegativeStockRisk: negativeStockPolicyRequired && hasTransferOutNegativeStockRisk(validated),
             canApproveVoucherAction: canApprove,
             canBypassNegativeStockApproval: negativeStockOverrideAllowed,
             voucherTypeCode: normalizedVoucherTypeCode,
@@ -3249,10 +3254,15 @@ const updateStockTransferVoucher = async ({
             voucherTypeCode: normalizedVoucherTypeCode,
           })
         : false;
+    const negativeStockPolicyRequiredForEdit = await requiresApprovalForAction(
+      trx,
+      normalizedVoucherTypeCode,
+      "negative_stock",
+    );
     const negativeStockRouting =
       normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out
         ? resolveNegativeStockApprovalRouting({
-            hasNegativeStockRisk: hasTransferOutNegativeStockRisk(validated),
+            hasNegativeStockRisk: negativeStockPolicyRequiredForEdit && hasTransferOutNegativeStockRisk(validated),
             canApproveVoucherAction: canApprove,
             canBypassNegativeStockApproval: negativeStockOverrideAllowed,
             voucherTypeCode: normalizedVoucherTypeCode,

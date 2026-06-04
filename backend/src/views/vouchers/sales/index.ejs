@@ -107,7 +107,12 @@
             <div class="lg:col-span-4" data-customer-select-container>
               <select name="customer_party_id" data-customer data-customer-select-wrap class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified"><option value=""><%= t("select_customer") %></option><% (options.customers || []).forEach((c) => { %><option value="<%= c.id %>" data-phone="<%= c.phone1 || '' %>" <%= Number(selectedVoucher?.customer_party_id || 0) === Number(c.id) ? "selected" : "" %>><%= c.name %></option><% }) %></select>
             </div>
-            <div class="hidden lg:col-span-4" data-customer-name-wrap><input type="text" name="customer_name" data-customer-name maxlength="160" placeholder="<%= t('customer_name') %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" value="<%= selectedVoucher?.customer_name || '' %>"></div>
+            <div class="hidden lg:col-span-4" data-customer-name-wrap>
+              <input type="text" name="customer_name" data-customer-name maxlength="160" placeholder="<%= t('customer_name') %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" value="<%= locale === 'ur' && selectedVoucher?.customer_name_ur ? selectedVoucher.customer_name_ur : (selectedVoucher?.customer_name || '') %>">
+              <% if (locale === 'ur' && selectedVoucher?.customer_name && selectedVoucher?.customer_name_ur) { %>
+              <p class="mt-0.5 px-1 text-[11px] text-slate-400 text-right"><%= selectedVoucher.customer_name %></p>
+              <% } %>
+            </div>
             <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= t("sales_order_link") %></label>
             <div class="lg:col-span-4">
               <div class="flex items-center gap-2">
@@ -190,7 +195,7 @@
             <tbody data-lines-body></tbody>
             <tfoot>
               <tr class="bg-slate-50">
-                <td class="border-t border-slate-200 px-2 py-2 text-xs font-semibold text-slate-700" colspan="2"><%= t("total") %></td><td class="border-t border-slate-200 px-2 py-2 text-right text-xs font-semibold text-slate-600 whitespace-nowrap" data-lines-qty-total></td><td class="border-t border-slate-200 px-2 py-2" colspan="<%= isSalesOrder ? 3 : 5 %>"></td>
+                <td class="border-t border-slate-200 px-2 py-2 text-xs font-semibold text-slate-700" colspan="2"><%= t("total") %></td><td class="border-t border-slate-200 px-2 py-2 text-right text-xs font-semibold text-slate-600 whitespace-nowrap" data-lines-qty-total></td><td class="border-t border-slate-200 px-2 py-2" colspan="<%= isSalesOrder ? 2 : 4 %>"></td><td class="border-t border-slate-200 px-2 py-1.5"><input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="" data-lines-discount-total aria-label="<%= t('total_discount') %>"></td>
                 <td class="border-t border-slate-200 px-2 py-2">
                   <input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="" data-lines-total>
                 </td>
@@ -211,6 +216,10 @@
           <div class="grid grid-cols-[minmax(0,1fr)_220px] items-center gap-3">
             <label class="text-sm font-semibold text-slate-700" data-total-sales-label><%= t("total_sales_amount") %></label>
             <input type="text" readonly class="h-9 w-full rounded-xl border border-slate-300 bg-slate-100 px-2 text-right text-sm font-semibold text-slate-700" value="" data-total-sales>
+          </div>
+          <div class="grid grid-cols-[minmax(0,1fr)_220px] items-center gap-3" data-total-discount-row>
+            <label class="text-sm font-semibold text-slate-700"><%= t("total_discount") %></label>
+            <input type="text" readonly class="h-9 w-full rounded-xl border border-slate-300 bg-slate-100 px-2 text-right text-sm font-semibold text-slate-700" value="" data-summary-discount>
           </div>
           <% if (!isSalesOrder) { %>
             <div class="grid grid-cols-[minmax(0,1fr)_220px] items-center gap-3" data-total-returns-row>
@@ -245,6 +254,16 @@
           <div class="hidden grid-cols-[minmax(0,1fr)_220px] items-center gap-3" data-remaining-row>
             <label class="text-sm font-semibold text-slate-700" data-remaining-label><%= t("remaining_amount") %></label>
             <input type="text" readonly class="h-9 w-full rounded-xl border border-slate-300 bg-slate-100 px-2 text-right text-sm font-semibold text-slate-700" value="" data-remaining>
+          </div>
+          <div class="border-t border-slate-200 pt-2">
+            <div class="grid grid-cols-[minmax(0,1fr)_220px] items-center gap-2 py-0.5" data-summary-salesman-row>
+              <label class="text-xs font-semibold text-slate-500"><%= t("salesman") %></label>
+              <span class="text-right text-xs font-semibold text-slate-700" data-summary-salesman></span>
+            </div>
+            <div class="grid grid-cols-[minmax(0,1fr)_220px] items-center gap-2 py-0.5" data-summary-account-row>
+              <label class="text-xs font-semibold text-slate-500"><%= t("receive_into_account") %></label>
+              <span class="text-right text-xs font-semibold text-slate-700" data-summary-account></span>
+            </div>
           </div>
         </div>
       </div>
@@ -332,6 +351,7 @@
 
   const isSalesOrderVoucher = <%= isSalesOrder ? "true" : "false" %>;
   const canOverrideRateDiscount = <%= canOverrideRateDiscount ? "true" : "false" %>;
+  const currentLocale = '<%- (locale || "en") %>';
   const canSaveVoucher = <%- JSON.stringify(Boolean(canSaveVoucher)) %>;
   const canDeleteCurrentVoucher = <%- JSON.stringify(Boolean(canDeleteCurrentVoucher)) %>;
   const canPrintGatePass = <%- JSON.stringify(Boolean(canPrintGatePass)) %>;
@@ -395,6 +415,10 @@
   const soTotalReceivedInput = form.querySelector("[data-so-total-received]");
   const totalReturnsRow = form.querySelector("[data-total-returns-row]");
   const extraDiscountRow = form.querySelector("[data-extra-discount-row]");
+  const summaryDiscountInput = form.querySelector("[data-summary-discount]");
+  const summaryDiscountRow = form.querySelector("[data-total-discount-row]");
+  const summarySalesmanEl = form.querySelector("[data-summary-salesman]");
+  const summaryAccountEl = form.querySelector("[data-summary-account]");
   const salesOrderPickerModal = document.querySelector("[data-sales-order-picker-modal]");
   const salesOrderPickerCustomerInput = salesOrderPickerModal?.querySelector("[data-sales-order-picker-customer]");
   const salesOrderPickerDateInput = salesOrderPickerModal?.querySelector("[data-sales-order-picker-date]");
@@ -965,70 +989,85 @@
     salesOrderPickerModal.setAttribute("aria-hidden", "false");
   };
 
-  const render = () => {
-    linesBody.innerHTML = "";
-    rows.forEach((row, index) => {
-      const r = normalize(row);
-      rows[index] = r;
-      const fromSO = isFromSO();
-      const source = fromSO ? orderLineMap.get(Number(r.sales_order_line_id || 0)) : null;
-      const articleOptions = fromSO
-        ? (() => {
-            const selectedId = Number(r.sales_order_line_id || 0);
-            const list = getPendingLinesForOrder();
-            if (selectedId && !list.some((x) => Number(x.sales_order_line_id) === selectedId) && source) list.unshift(source);
-            const opts = list.map((x) => `<option value="${x.sales_order_line_id}" ${Number(x.sales_order_line_id) === selectedId ? "selected" : ""}>SO #${Number(x.sales_order_voucher_no || 0)} / L${Number(x.sales_order_line_no || 0)} - ${String(x.sku_code || "")} (${displayNumber(x.open_qty || 0, 1, "0")})</option>`).join("");
-            return `<option value=""><%= t("sales_order_line") %></option>${opts}`;
-          })()
-        : (() => {
-            const opts = (skus || []).map((s) => `<option value="${s.id}" ${Number(s.id) === Number(r.sku_id || 0) ? "selected" : ""}>${String(s.sku_code || "")} - ${String(s.item_name || "")}</option>`).join("");
-            return `<option value=""><%= t("select_article") %></option>${opts}`;
-          })();
-      const reasonOpts = `<option value=""><%= t("select_reason") %></option>${(reasons || []).map((x) => `<option value="${x.id}" ${Number(x.id) === Number(r.return_reason_id || 0) ? "selected" : ""}>${String(x.description || x.code || "")}</option>`).join("")}`;
-      const reasonDisabled = isSalesOrderVoucher || fromSO || Number(r.return_qty || 0) <= 0;
-      const hasSaleQty = Number(r.sale_qty || 0) > 0;
-      const hasReturnQty = Number(r.return_qty || 0) > 0;
-      const lockSaleQty = !fromSO && hasReturnQty;
-      const lockReturnQty = !fromSO && hasSaleQty;
-      const canRate = canOverrideRateDiscount;
-      const canDiscount = !fromSO;
-      const tr = document.createElement("tr");
-      tr.dataset.i = String(index);
-      const unitOptions = getSkuUnitOptions(source ? source.sku_id : r.sku_id);
-      const unitOptionsHtml = unitOptions.length
-        ? unitOptions
-            .map((option) => {
-              const optionId = Number(option?.id || 0);
-              const selected = optionId > 0 && optionId === Number(r.uom_id || 0);
-              const label = String(option?.code || option?.name || "").trim();
-              return `<option value="${optionId}" ${selected ? "selected" : ""}>${label}</option>`;
-            })
-            .join("")
-        : `<option value="">${String(getUnitLabelForRow(r) || "<%= t('unit') %>")}</option>`;
-      const returnCells = isSalesOrderVoucher
-        ? ""
-        : `<td class="border-b border-slate-200 px-1.5 py-1"><input data-f="return_qty" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${fromSO || lockReturnQty ? "bg-slate-100" : "bg-white"}" value="${qtyDisplay(r.return_qty)}" ${fromSO ? "disabled" : ""} ${lockReturnQty ? "readonly" : ""}></td><td class="border-b border-slate-200 px-1.5 py-1"><select data-f="return_reason_id" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-xs ${reasonDisabled ? "bg-slate-100" : "bg-white"}" ${reasonDisabled ? "disabled" : ""} data-searchable-select="true" data-searchable-variant="unified">${reasonOpts}</select></td>`;
-      tr.innerHTML = `<td class="border-b border-slate-200 px-1.5 py-1"><select data-f="${fromSO ? "sales_order_line_id" : "sku_id"}" class="h-8 min-w-[18rem] w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-searchable-select="true" data-searchable-variant="unified">${articleOptions}</select></td><td class="border-b border-slate-200 px-1.5 py-1"><select data-f="uom_id" class="h-8 min-w-[7rem] w-full rounded-lg border border-slate-300 px-2 text-xs ${fromSO ? "bg-slate-100" : "bg-white"}" ${fromSO ? "disabled" : ""} data-searchable-select="true" data-searchable-variant="unified">${unitOptionsHtml}</select></td><td class="border-b border-slate-200 px-1.5 py-1"><input data-f="sale_qty" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${fromSO || lockSaleQty ? "bg-slate-100" : "bg-white"}" value="${qtyDisplay(r.sale_qty)}" ${fromSO || lockSaleQty ? "readonly" : ""}></td>${returnCells}<td class="border-b border-slate-200 px-1.5 py-1"><input data-f="pair_rate" class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.pair_rate)}" readonly></td><td class="border-b border-slate-200 px-1.5 py-1"><input data-f="pair_discount" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${canDiscount ? "bg-white" : "bg-slate-100"}" value="${f1SignedOrBlank(r.pair_discount)}" ${canDiscount ? "" : "readonly"}></td><td class="border-b border-slate-200 px-1.5 py-1"><input class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.total_discount)}" readonly></td><td class="border-b border-slate-200 px-1.5 py-1"><input class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.total_amount)}" readonly></td><td class="w-20 border-b border-slate-200 px-1.5 py-1 text-center"><button type="button" data-del class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white p-2 text-rose-600" aria-label="<%= t("delete") %>"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M9 7V5h6v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg></button></td><td class="border-b border-slate-200 px-1.5 py-1 text-center align-middle text-[11px] font-semibold text-slate-600" data-row-no>${index + 1}</td>`;
-      linesBody.appendChild(tr);
-    });
+  // Builds a single TR element for row at `index` (rows[index] must already be normalized).
+  const buildRowElement = (index) => {
+    const r = rows[index];
+    const fromSO = isFromSO();
+    const source = fromSO ? orderLineMap.get(Number(r.sales_order_line_id || 0)) : null;
+    const articleOptions = fromSO
+      ? (() => {
+          const selectedId = Number(r.sales_order_line_id || 0);
+          const list = getPendingLinesForOrder();
+          if (selectedId && !list.some((x) => Number(x.sales_order_line_id) === selectedId) && source) list.unshift(source);
+          const opts = list.map((x) => `<option value="${x.sales_order_line_id}" ${Number(x.sales_order_line_id) === selectedId ? "selected" : ""}>SO #${Number(x.sales_order_voucher_no || 0)} / L${Number(x.sales_order_line_no || 0)} - ${String(x.sku_code || "")} (${displayNumber(x.open_qty || 0, 1, "0")})</option>`).join("");
+          return `<option value=""><%= t("sales_order_line") %></option>${opts}`;
+        })()
+      : (() => {
+          const opts = (skus || []).map((s) => {
+            const label = (currentLocale === "ur" && String(s.item_name_ur || "").trim()) ? s.item_name_ur : (s.item_name || "");
+            return `<option value="${s.id}" ${Number(s.id) === Number(r.sku_id || 0) ? "selected" : ""}>${String(s.sku_code || "")} - ${label}</option>`;
+          }).join("");
+          return `<option value=""><%= t("select_article") %></option>${opts}`;
+        })();
+    const reasonOpts = `<option value=""><%= t("select_reason") %></option>${(reasons || []).map((x) => `<option value="${x.id}" ${Number(x.id) === Number(r.return_reason_id || 0) ? "selected" : ""}>${String(x.description || x.code || "")}</option>`).join("")}`;
+    const reasonDisabled = isSalesOrderVoucher || fromSO || Number(r.return_qty || 0) <= 0;
+    const hasSaleQty = Number(r.sale_qty || 0) > 0;
+    const hasReturnQty = Number(r.return_qty || 0) > 0;
+    const lockSaleQty = !fromSO && hasReturnQty;
+    const lockReturnQty = !fromSO && hasSaleQty;
+    const canDiscount = !fromSO;
+    const tr = document.createElement("tr");
+    tr.dataset.i = String(index);
+    const unitOptions = getSkuUnitOptions(source ? source.sku_id : r.sku_id);
+    const unitOptionsHtml = unitOptions.length
+      ? unitOptions
+          .map((option) => {
+            const optionId = Number(option?.id || 0);
+            const selected = optionId > 0 && optionId === Number(r.uom_id || 0);
+            const label = String(option?.code || option?.name || "").trim();
+            return `<option value="${optionId}" ${selected ? "selected" : ""}>${label}</option>`;
+          })
+          .join("")
+      : `<option value="">${String(getUnitLabelForRow(r) || "<%= t('unit') %>")}</option>`;
+    const returnCells = isSalesOrderVoucher
+      ? ""
+      : `<td class="border-b border-slate-200 px-1.5 py-1"><input data-f="return_qty" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${fromSO || lockReturnQty ? "bg-slate-100" : "bg-white"}" value="${qtyDisplay(r.return_qty)}" ${fromSO ? "disabled" : ""} ${lockReturnQty ? "readonly" : ""}></td><td class="border-b border-slate-200 px-1.5 py-1"><select data-f="return_reason_id" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-xs ${reasonDisabled ? "bg-slate-100" : "bg-white"}" ${reasonDisabled ? "disabled" : ""} data-searchable-select="true" data-searchable-variant="unified">${reasonOpts}</select></td>`;
+    tr.innerHTML = `<td class="border-b border-slate-200 px-1.5 py-1"><select data-f="${fromSO ? "sales_order_line_id" : "sku_id"}" class="h-8 min-w-[18rem] w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-searchable-select="true" data-searchable-variant="unified">${articleOptions}</select></td><td class="border-b border-slate-200 px-1.5 py-1"><select data-f="uom_id" class="h-8 min-w-[7rem] w-full rounded-lg border border-slate-300 px-2 text-xs ${fromSO ? "bg-slate-100" : "bg-white"}" ${fromSO ? "disabled" : ""} data-searchable-select="true" data-searchable-variant="unified">${unitOptionsHtml}</select></td><td class="border-b border-slate-200 px-1.5 py-1"><input data-f="sale_qty" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${fromSO || lockSaleQty ? "bg-slate-100" : "bg-white"}" value="${qtyDisplay(r.sale_qty)}" ${fromSO || lockSaleQty ? "readonly" : ""}></td>${returnCells}<td class="border-b border-slate-200 px-1.5 py-1"><input data-f="pair_rate" class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.pair_rate)}" readonly></td><td class="border-b border-slate-200 px-1.5 py-1"><input data-f="pair_discount" class="h-8 w-full rounded-lg border border-slate-300 px-2 text-right text-xs ${canDiscount ? "bg-white" : "bg-slate-100"}" value="${f1SignedOrBlank(r.pair_discount)}" ${canDiscount ? "" : "readonly"}></td><td class="border-b border-slate-200 px-1.5 py-1"><input data-f="total_discount" class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.total_discount)}" readonly></td><td class="border-b border-slate-200 px-1.5 py-1"><input data-f="total_amount" class="h-8 w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${f1OrBlank(r.total_amount)}" readonly></td><td class="w-20 border-b border-slate-200 px-1.5 py-1 text-center"><button type="button" data-del class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white p-2 text-rose-600" aria-label="<%= t("delete") %>"><svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M9 7V5h6v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg></button></td><td class="border-b border-slate-200 px-1.5 py-1 text-center align-middle text-[11px] font-semibold text-slate-600" data-row-no>${index + 1}</td>`;
+    return tr;
+  };
 
-    if (window.initSearchableSelects) window.initSearchableSelects(form);
-    autoSelectSingleOptionsIn(linesBody, { dispatchChange: true });
-    let sales = 0; let ret = 0;
+  // Recomputes totals/summary display from already-normalized rows[]. Cheap — no DOM table rebuild.
+  const recalcTotalsDisplay = () => {
+    let sales = 0; let ret = 0; let discountTotal = 0;
     const unitQtyMap = new Map();
     rows.forEach((r) => {
-      const x = normalize(r);
-      if (x.sale_qty > 0) sales += n(x.total_amount);
-      if (x.return_qty > 0) ret += n(x.total_amount);
-      const qty = Number(x.sale_qty || 0);
+      if (r.sale_qty > 0) { sales += n(r.total_amount); discountTotal += n(r.total_discount); }
+      if (r.return_qty > 0) ret += n(r.total_amount);
+      const qty = Number(r.sale_qty || 0);
       if (qty > 0) {
-        const label = getUnitLabelForRow(x);
-        const key = Number(x.uom_id || 0) || label;
+        const label = getUnitLabelForRow(r);
+        const key = Number(r.uom_id || 0) || label;
         const prev = unitQtyMap.get(key) || { label, qty: 0 };
         prev.qty = Number((prev.qty + qty).toFixed(1));
         unitQtyMap.set(key, prev);
       }
     });
+    discountTotal = Number(discountTotal.toFixed(1));
+    const linesDiscountTotalInput = form.querySelector("[data-lines-discount-total]");
+    if (linesDiscountTotalInput) linesDiscountTotalInput.value = discountTotal > 0 ? displayNumber(discountTotal, 1, "") : "";
+    if (summaryDiscountInput) summaryDiscountInput.value = discountTotal > 0 ? displayNumber(discountTotal, 1, "") : "";
+    if (summaryDiscountRow) summaryDiscountRow.classList.toggle("hidden", discountTotal <= 0);
+    if (summarySalesmanEl) {
+      const opt = salesmanSelect?.selectedOptions?.[0];
+      summarySalesmanEl.textContent = String(opt?.textContent || "").trim();
+    }
+    if (summaryAccountEl) {
+      const isCredit = getPaymentType() === "CREDIT";
+      const opt = isCredit ? null : receiveAccountSelect?.selectedOptions?.[0];
+      summaryAccountEl.textContent = isCredit ? "" : String(opt?.textContent || "").trim();
+      const accountRow = summaryAccountEl.closest("[data-summary-account-row]");
+      if (accountRow) accountRow.classList.toggle("hidden", isCredit || !String(summaryAccountEl.textContent).trim());
+    }
     sales = Number(sales.toFixed(1));
     ret = Number(ret.toFixed(1));
     const extra = Number(n(extraInput?.value || 0).toFixed(1));
@@ -1123,6 +1162,28 @@
       forcedAccountId: shouldLockReceiveAccountToSalesOrder ? linkedOrderReceiveIntoAccountId : null,
       lockAccount: shouldLockReceiveAccountToSalesOrder,
     });
+  };
+
+  const render = () => {
+    linesBody.innerHTML = "";
+    rows.forEach((row, index) => {
+      rows[index] = normalize(row);
+      linesBody.appendChild(buildRowElement(index));
+    });
+    if (window.initSearchableSelects) window.initSearchableSelects(form);
+    autoSelectSingleOptionsIn(linesBody, { dispatchChange: true });
+    recalcTotalsDisplay();
+  };
+
+  // Replaces only the changed row in the DOM — avoids reinitializing all rows' select widgets.
+  const updateSingleRow = (i) => {
+    const tr = linesBody.querySelector(`tr[data-i="${i}"]`);
+    if (!tr) { render(); return; }
+    const newTr = buildRowElement(i);
+    tr.replaceWith(newTr);
+    if (window.initSearchableSelects) window.initSearchableSelects(newTr);
+    autoSelectSingleOptionsIn(newTr, { dispatchChange: false });
+    recalcTotalsDisplay();
   };
 
   const syncHeaderUi = () => {
@@ -1284,7 +1345,15 @@
       extraInput.disabled = fromSO;
       extraInput.classList.toggle("bg-slate-100", fromSO);
       extraInput.classList.toggle("bg-white", !fromSO);
-      if (fromSO) extraInput.value = "";
+      // Save the entered discount when switching INTO fromSO (where it's not allowed),
+      // and restore it when switching BACK to DIRECT mode so it is not lost.
+      if (fromSO && extraInput.dataset.savedDiscount === undefined) {
+        extraInput.dataset.savedDiscount = extraInput.value;
+        extraInput.value = "";
+      } else if (!fromSO && extraInput.dataset.savedDiscount !== undefined) {
+        if (!extraInput.value) extraInput.value = extraInput.dataset.savedDiscount;
+        delete extraInput.dataset.savedDiscount;
+      }
     }
     if (receiveAccountSelect && !isSalesOrderVoucher) {
       syncReceiveIntoAccountState({
@@ -1431,7 +1500,32 @@
     if (f === "return_qty" && n(rows[i].return_qty) > 0) {
       rows[i].sale_qty = 0;
     }
-    render();
+    rows[i] = normalize(rows[i]);
+    // sku/order-line changes alter unit dropdown options → rebuild that row.
+    // All other changes (qty, discount, reason, uom) only need cell value + totals update.
+    if (f === "sku_id" || f === "sales_order_line_id") {
+      updateSingleRow(i);
+    } else {
+      const rowEl = linesBody.querySelector(`tr[data-i="${i}"]`);
+      if (rowEl) {
+        const r = rows[i];
+        const fields = { pair_rate: f1OrBlank(r.pair_rate), total_discount: f1OrBlank(r.total_discount), total_amount: f1OrBlank(r.total_amount), sale_qty: qtyDisplay(r.sale_qty), return_qty: qtyDisplay(r.return_qty) };
+        for (const [df, val] of Object.entries(fields)) {
+          const el = rowEl.querySelector(`[data-f="${df}"]`);
+          if (el) el.value = val;
+        }
+        const returnReasonSel = rowEl.querySelector('[data-f="return_reason_id"]');
+        if (returnReasonSel) {
+          const reasonDisabled = isSalesOrderVoucher || isFromSO() || r.return_qty <= 0;
+          returnReasonSel.value = String(r.return_reason_id || "");
+          returnReasonSel.disabled = reasonDisabled;
+          returnReasonSel.className = returnReasonSel.className.replace(/bg-\S+/, reasonDisabled ? "bg-slate-100" : "bg-white");
+        }
+        // Sync searchable-select visual wrappers for this row (fast — selects are already initialized).
+        if (window.initSearchableSelects) window.initSearchableSelects(rowEl);
+      }
+      recalcTotalsDisplay();
+    }
     if (pendingMove) {
       moveToNextRowField(pendingMove.rowIndex, pendingMove.fieldKey);
     }
@@ -1728,15 +1822,16 @@
   advanceReceiveSelect?.addEventListener("change", syncHeaderUi);
   linkedOrderSelect?.addEventListener("change", syncHeaderUi);
   customerSelect?.addEventListener("change", syncHeaderUi);
-  extraInput?.addEventListener("input", render);
-  receivedInput?.addEventListener("input", () => {
-    render();
-    syncHeaderUi();
+  extraInput?.addEventListener("input", recalcTotalsDisplay);
+  extraInput?.addEventListener("blur", () => {
+    const v = n(extraInput.value);
+    extraInput.value = v > 0 ? displayNumber(v, 1, "") : "";
+    recalcTotalsDisplay();
   });
+  receivedInput?.addEventListener("input", recalcTotalsDisplay);
   receivedInput?.addEventListener("blur", () => {
     receivedInput.value = formatReceivedAmountForUi(receivedInput.value || 0);
-    render();
-    syncHeaderUi();
+    recalcTotalsDisplay();
   });
   linkSalesOrderBtn?.addEventListener("click", () => {
     if (isSalesOrderVoucher) return;

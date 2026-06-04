@@ -485,35 +485,35 @@
 			// Voucher grid columns switch by selected stock type.
 			if (stockType === "RM") {
 				return [
-					{ key: "item", label: <%- JSON.stringify(toFriendlyLabel("raw_material", "Raw Material")) %>, align: "text-left" },
-					{ key: "color", label: <%- JSON.stringify(toFriendlyLabel("color", "Color")) %>, align: "text-left" },
-					{ key: "size", label: <%- JSON.stringify(toFriendlyLabel("size", "Size")) %>, align: "text-left" },
-					{ key: "uom", label: <%- JSON.stringify(toFriendlyLabel("unit", "Unit")) %>, align: "text-left" },
-					{ key: "qty", label: <%- JSON.stringify(toFriendlyLabel("quantity", "Quantity")) %>, align: "text-right" },
-					{ key: "rate", label: <%- JSON.stringify(toFriendlyLabel("rate", "Rate")) %>, align: "text-right" },
-					{ key: "amount", label: <%- JSON.stringify(toFriendlyLabel("amount", "Amount")) %>, align: "text-right" },
-					{ key: "actions", label: <%- JSON.stringify(toFriendlyLabel("actions", "Actions")) %>, align: "text-center" },
-					{ key: "sr", label: <%- JSON.stringify(toFriendlyLabel("sr_no", "Sr #")) %>, align: "text-center" },
+					{ key: "item",    label: <%- JSON.stringify(toFriendlyLabel("raw_material", "Raw Material")) %>, align: "text-left",   w: "w-52" },
+					{ key: "color",   label: <%- JSON.stringify(toFriendlyLabel("color", "Color")) %>,               align: "text-left",   w: "w-28" },
+					{ key: "size",    label: <%- JSON.stringify(toFriendlyLabel("size", "Size")) %>,                 align: "text-left",   w: "w-28" },
+					{ key: "uom",     label: <%- JSON.stringify(toFriendlyLabel("unit", "Unit")) %>,                 align: "text-left",   w: "w-24" },
+					{ key: "qty",     label: <%- JSON.stringify(toFriendlyLabel("quantity", "Quantity")) %>,         align: "text-right",  w: "w-24" },
+					{ key: "rate",    label: <%- JSON.stringify(toFriendlyLabel("rate", "Rate")) %>,                 align: "text-right",  w: "w-24" },
+					{ key: "amount",  label: <%- JSON.stringify(toFriendlyLabel("amount", "Amount")) %>,             align: "text-right",  w: "w-28" },
+					{ key: "actions", label: <%- JSON.stringify(toFriendlyLabel("actions", "Actions")) %>,           align: "text-center", w: "w-14" },
+					{ key: "sr",      label: <%- JSON.stringify(toFriendlyLabel("sr_no", "Sr #")) %>,                align: "text-center", w: "w-12" },
 				];
 			}
 
 			const base = [
-				{ key: "sku", label: <%- JSON.stringify(toFriendlyLabel("sku", "SKU")) %>, align: "text-left" },
-				{ key: "uom", label: <%- JSON.stringify(toFriendlyLabel("unit", "Unit")) %>, align: "text-left" },
+				{ key: "sku", label: <%- JSON.stringify(toFriendlyLabel("sku", "SKU")) %>, align: "text-left", w: "w-56" },
+				{ key: "uom", label: <%- JSON.stringify(toFriendlyLabel("unit", "Unit")) %>, align: "text-left", w: "w-28" },
 			];
 			if (stockType === "FG") {
 				// Status is intentionally hidden in UI for FG; it is derived from selected unit.
 			}
 			base.push(
-				{ key: "qty", label: <%- JSON.stringify(toFriendlyLabel("quantity", "Quantity")) %>, align: "text-right" },
+				{ key: "qty", label: <%- JSON.stringify(toFriendlyLabel("quantity", "Quantity")) %>, align: "text-right", w: "w-24" },
 			);
 			if (stockType !== "SFG") {
-				base.push({ key: "rate", label: <%- JSON.stringify(toFriendlyLabel("rate", "Rate")) %>, align: "text-right" });
+				base.push({ key: "rate", label: <%- JSON.stringify(toFriendlyLabel("rate", "Rate")) %>, align: "text-right", w: "w-24" });
 			}
 			base.push(
-				{ key: "amount", label: <%- JSON.stringify(toFriendlyLabel("amount", "Amount")) %>, align: "text-right" },
-				{ key: "actions", label: <%- JSON.stringify(toFriendlyLabel("actions", "Actions")) %>, align: "text-center" },
-				{ key: "sr", label: <%- JSON.stringify(toFriendlyLabel("sr_no", "Sr #")) %>, align: "text-center" },
+				{ key: "amount",  label: <%- JSON.stringify(toFriendlyLabel("amount", "Amount")) %>,  align: "text-right",  w: "w-28" },
+				{ key: "actions", label: <%- JSON.stringify(toFriendlyLabel("actions", "Actions")) %>, align: "text-center", w: "w-14" },
+				{ key: "sr",      label: <%- JSON.stringify(toFriendlyLabel("sr_no", "Sr #")) %>,      align: "text-center", w: "w-12" },
 			);
 			return base;
 		};
@@ -521,7 +521,7 @@
 		const renderHead = (stockType) => {
 			const columns = headerColumnsByType(stockType);
 			linesHeadRow.innerHTML = columns
-				.map((column) => `<th class="border-b border-slate-200 px-2 py-2 ${column.align}">${escapeHtml(column.label)}</th>`)
+				.map((column) => `<th class="border-b border-slate-200 px-2 py-2 ${column.align} ${column.w || ''}">${escapeHtml(column.label)}</th>`)
 				.join("");
 			renderFooter(stockType);
 		};

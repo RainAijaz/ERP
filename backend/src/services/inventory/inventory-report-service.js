@@ -3196,7 +3196,7 @@ const loadStockTransferOutRows = async ({
         voucherNo: Number(row?.voucher_no || 0) || null,
         movementDate: String(row?.movement_date || row?.voucher_date || ""),
         refBillNo:
-          String(row?.transfer_ref_no || row?.bill_book_no || "").trim() || "-",
+          String(row?.bill_book_no || row?.transfer_ref_no || "").trim() || "-",
         billNo: String(row?.bill_book_no || "").trim() || "-",
         sourceBranchId: Number(row?.source_branch_id || 0) || null,
         sourceBranchName: String(row?.source_branch_name || "").trim() || "-",
@@ -3221,6 +3221,140 @@ const loadStockTransferOutRows = async ({
     .filter(Boolean);
 
   return sortStockTransferRows({ rows: mapped, filters });
+};
+
+// Fetch STN_OUT vouchers destined for the selected branches that have not yet
+// been received (no matching GRN_IN). These are shown as "Pending" in IN mode.
+const loadStockTransferPendingForInRows = async ({
+  filters,
+  hasTransferReasonColumn,
+  hasBillBookNoColumn,
+}) => {
+  if (!filters.destinationBranchIds.length) return [];
+
+  const transferReasonExpr = hasTransferReasonColumn
+    ? "upper(coalesce(sth.transfer_reason::text, ''))"
+    : "''";
+  const billBookExpr = hasBillBookNoColumn
+    ? "nullif(trim(sth.bill_book_no), '')"
+    : "coalesce(vh.book_no, '')";
+  const stockTypeExpr =
+    "case when upper(vl.line_kind::text) = 'ITEM' then 'RM' else upper(coalesce(si.item_type::text, '')) end";
+  const groupExpr = "coalesce(si.group_id, i.group_id)";
+  const subgroupExpr = "coalesce(si.subgroup_id, i.subgroup_id)";
+  const articleExpr = "coalesce(si.id, i.id)";
+
+  let query = knex("erp.voucher_header as vh")
+    .join("erp.stock_transfer_out_header as sth", "sth.voucher_id", "vh.id")
+    .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
+    .leftJoin("erp.branches as sb", "sb.id", "vh.branch_id")
+    .leftJoin("erp.branches as db", "db.id", "sth.dest_branch_id")
+    .leftJoin("erp.skus as s", "s.id", "vl.sku_id")
+    .leftJoin("erp.variants as v", "v.id", "s.variant_id")
+    .leftJoin("erp.items as si", "si.id", "v.item_id")
+    .leftJoin("erp.items as i", "i.id", "vl.item_id")
+    .leftJoin("erp.uom as u", "u.id", "vl.uom_id")
+    .select(
+      "vh.id as voucher_id",
+      "vh.voucher_no",
+      knex.raw("coalesce(sth.dispatch_date, vh.voucher_date) as movement_date"),
+      "vh.branch_id as source_branch_id",
+      "sb.name as source_branch_name",
+      "sth.dest_branch_id as destination_branch_id",
+      "db.name as destination_branch_name",
+      "vh.book_no",
+      "vh.voucher_date",
+      "vl.id as voucher_line_id",
+      "vl.line_no",
+      "vl.line_kind",
+      "vl.item_id",
+      "vl.sku_id",
+      "vl.uom_id",
+      "vl.qty",
+      "vl.rate",
+      "vl.amount",
+      "vl.meta as line_meta",
+      "s.sku_code",
+      "si.name as sku_item_name",
+      "si.item_type as sku_item_type",
+      "si.base_uom_id as sku_base_uom_id",
+      "i.name as item_name",
+      "i.base_uom_id as item_base_uom_id",
+      "u.code as uom_code",
+      "u.name as uom_name",
+      knex.raw(`${transferReasonExpr} as transfer_reason`),
+      knex.raw(`${billBookExpr} as bill_book_no`),
+      knex.raw(`${groupExpr} as group_id`),
+      knex.raw(`${subgroupExpr} as subgroup_id`),
+      knex.raw(`${articleExpr} as article_id`),
+      knex.raw(`${stockTypeExpr} as stock_type_resolved`),
+    )
+    .where({
+      "vh.voucher_type_code": "STN_OUT",
+      "vh.status": "APPROVED",
+    })
+    .whereNull("sth.received_voucher_id")
+    .whereRaw("upper(coalesce(sth.status::text, '')) != 'RECEIVED'")
+    .whereIn("sth.dest_branch_id", filters.destinationBranchIds)
+    .whereRaw("coalesce(sth.dispatch_date, vh.voucher_date) between ? and ?", [
+      filters.from,
+      filters.to,
+    ]);
+
+  query = query.whereRaw(`${stockTypeExpr} = ?`, [filters.stockType]);
+  applyWhereInRaw(query, groupExpr, filters.productGroupIds);
+  applyWhereInRaw(query, subgroupExpr, filters.productSubgroupIds);
+  if (filters.stockType !== STOCK_TYPES.rawMaterial) {
+    applyWhereInRaw(query, articleExpr, filters.articleIds);
+  }
+  if (filters.stockItemIds.length) {
+    if (filters.stockType === STOCK_TYPES.rawMaterial) {
+      query = query.whereIn("vl.item_id", filters.stockItemIds);
+    } else {
+      query = query.whereIn("vl.sku_id", filters.stockItemIds);
+    }
+  }
+
+  const rows = await query;
+
+  return rows
+    .map((row) => {
+      const meta = row?.line_meta && typeof row.line_meta === "object" ? row.line_meta : {};
+      const stockType = resolveTransferLineStockType(row, meta);
+      if (stockType !== filters.stockType) return null;
+      const lineStockStatus = resolveTransferLineFgStatus({ row, meta });
+      if (!shouldIncludeTransferLineByStockStatus({ filters, stockType, lineStockStatus })) {
+        return null;
+      }
+
+      const itemLabel = resolveTransferLineLabel(row);
+      const expectedQty = resolveTransferOutQty({ row, meta, stockType });
+      const rate = resolveTransferDisplayRate({ row, meta, stockType });
+
+      return {
+        mode: TRANSFER_REPORT_MODES.in,
+        voucherId: Number(row?.voucher_id || 0) || null,
+        voucherNo: Number(row?.voucher_no || 0) || null,
+        movementDate: String(row?.movement_date || row?.voucher_date || ""),
+        billNo: String(row?.bill_book_no || "").trim() || "-",
+        sourceBranchId: Number(row?.source_branch_id || 0) || null,
+        sourceBranchName: String(row?.source_branch_name || "").trim() || "-",
+        destinationBranchId: Number(row?.destination_branch_id || 0) || null,
+        destinationBranchName: String(row?.destination_branch_name || "").trim() || "-",
+        transferReason: String(row?.transfer_reason || "").trim().toUpperCase(),
+        itemLabel,
+        unitLabel: String(meta?.uom_code || row?.uom_code || row?.uom_name || "").trim() || "-",
+        expectedQty,
+        receivedQty: 0,
+        rejectedQty: 0,
+        varianceQty: expectedQty,
+        rate,
+        amount: 0,
+        stockStatus: lineStockStatus,
+        transferStatus: TRANSFER_REPORT_STATUSES.pending,
+      };
+    })
+    .filter(Boolean);
 };
 
 const loadStockTransferInRows = async ({
@@ -3416,7 +3550,20 @@ const loadStockTransferInRows = async ({
       return row.transferStatus === filters.transferStatus;
     });
 
-  return sortStockTransferRows({ rows: withStatus, filters });
+  // Merge pending STN_OUT transfers (not yet received) into the IN report.
+  // Filter by transferStatus if set — skip pending rows when filter excludes them.
+  const showPending = !filters.transferStatus || filters.transferStatus === TRANSFER_REPORT_STATUSES.pending;
+  let allRows = withStatus;
+  if (showPending && filters.destinationBranchIds.length) {
+    const pendingRows = await loadStockTransferPendingForInRows({
+      filters,
+      hasTransferReasonColumn,
+      hasBillBookNoColumn,
+    });
+    allRows = [...withStatus, ...pendingRows];
+  }
+
+  return sortStockTransferRows({ rows: allRows, filters });
 };
 
 const buildDefaultStockTransferReportData = ({

@@ -5,6 +5,7 @@ const ACTION_ALIASES = {
   edit: ["edit", "update"],
   delete: ["delete", "deactivate"],
   hard_delete: ["hard_delete"],
+  negative_stock: ["negative_stock"],
 };
 
 const normalizeVoucherTypeCode = (value) =>

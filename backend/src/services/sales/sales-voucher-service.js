@@ -2,10 +2,14 @@ const knex = require("../../db/knex");
 const { HttpError } = require("../../middleware/errors/http-error");
 const { insertActivityLog, queueAuditLog } = require("../../utils/audit-log");
 const { toLocalDateOnly } = require("../../utils/date-only");
+const { translateUrduWithFallback } = require("../../utils/translate");
 const {
   resolveVoucherApprovalRequiredTx,
 } = require("../../utils/voucher-approval-policy");
 const { syncVoucherGlPostingTx } = require("../financial/gl-posting-service");
+const {
+  resolveNegativeStockApprovalRouting,
+} = require("../inventory/negative-stock-approval");
 const {
   evaluateSalesDiscountPolicy,
   loadActiveSalesDiscountPolicyMapTx,
@@ -453,6 +457,67 @@ const canDo = (req, scopeType, scopeKey, action) => {
 
 const canApproveVoucherAction = (req, scopeKey) =>
   req?.user?.isAdmin === true || canDo(req, "VOUCHER", scopeKey, "approve");
+
+// Detect if any sale lines in the validated payload would take stock below zero.
+// For EDIT mode, pass currentVoucherId so its existing committed pairs are added back
+// before comparing against the new quantities.
+const checkSalesNegativeStockRiskTx = async ({
+  trx,
+  branchId,
+  validated,
+  currentVoucherId = null,
+}) => {
+  const toPositiveIntLocal = (v) => {
+    const n = Number(v);
+    return Number.isInteger(n) && n > 0 ? n : null;
+  };
+
+  // Accumulate pairs to deduct per SKU (sale lines only, not returns)
+  const deductions = new Map();
+  (Array.isArray(validated?.lines) ? validated.lines : []).forEach((line) => {
+    const movementKind = String(line?.meta?.movement_kind || "SALE").toUpperCase();
+    if (movementKind === "RETURN") return;
+    const skuId = toPositiveIntLocal(line?.sku_id);
+    const pairs = Number(line?.meta?.total_pairs || 0);
+    if (!skuId || !(pairs > 0)) return;
+    deductions.set(skuId, (deductions.get(skuId) || 0) + pairs);
+  });
+  if (!deductions.size) return false;
+
+  const skuIds = [...deductions.keys()];
+
+  // Current stock balances
+  const stockRows = await trx("erp.stock_balance_sku")
+    .select("sku_id", trx.raw("sum(coalesce(qty_pairs, 0)) as total_qty"))
+    .where({ branch_id: Number(branchId), stock_state: "ON_HAND" })
+    .whereIn("sku_id", skuIds)
+    .groupBy("sku_id");
+  const stockMap = new Map(
+    stockRows.map((r) => [Number(r.sku_id), Number(r.total_qty || 0)]),
+  );
+
+  // For edit: add back the current voucher's committed pairs so we compare fairly
+  if (currentVoucherId) {
+    const existingLines = await trx("erp.voucher_line")
+      .select("sku_id", "meta")
+      .where({ voucher_header_id: currentVoucherId, line_kind: "SKU" })
+      .whereIn("sku_id", skuIds);
+    existingLines.forEach((line) => {
+      const meta = line?.meta && typeof line.meta === "object" ? line.meta : {};
+      if (String(meta?.movement_kind || "SALE").toUpperCase() === "RETURN") return;
+      const skuId = toPositiveIntLocal(line?.sku_id);
+      const pairs = Number(meta?.total_pairs || 0);
+      if (!skuId || !(pairs > 0)) return;
+      stockMap.set(skuId, (stockMap.get(skuId) || 0) + pairs);
+    });
+  }
+
+  for (const [skuId, deductPairs] of deductions) {
+    const available = stockMap.get(skuId) || 0;
+    if (available - deductPairs < -0.0005) return true;
+  }
+  return false;
+};
 
 const requiresApprovalForAction = async (trx, voucherTypeCode, action) => {
   return resolveVoucherApprovalRequiredTx({
@@ -2117,13 +2182,25 @@ const upsertSalesHeaderExtensionsTx = async ({
     return;
   }
 
+  const cashCustomerName = validated.customerPartyId ? null : (validated.customerName || null);
+  let cashCustomerNameUr = null;
+  if (cashCustomerName) {
+    try {
+      const result = await translateUrduWithFallback({ text: cashCustomerName, mode: "translate" });
+      cashCustomerNameUr = result?.translated || null;
+    } catch (err) {
+      // Translation failure is non-fatal — save without Urdu name
+    }
+  }
+
   await trx("erp.sales_header")
     .insert({
       voucher_id: voucherId,
       sale_mode: validated.saleMode,
       payment_type: validated.paymentType,
       customer_party_id: validated.customerPartyId,
-      customer_name: validated.customerPartyId ? null : validated.customerName,
+      customer_name: cashCustomerName,
+      customer_name_ur: cashCustomerNameUr,
       customer_phone_number: validated.customerPhoneNumber,
       salesman_employee_id: validated.salesmanEmployeeId,
       linked_sales_order_id: validated.linkedSalesOrderId,
@@ -2138,7 +2215,8 @@ const upsertSalesHeaderExtensionsTx = async ({
       sale_mode: validated.saleMode,
       payment_type: validated.paymentType,
       customer_party_id: validated.customerPartyId,
-      customer_name: validated.customerPartyId ? null : validated.customerName,
+      customer_name: cashCustomerName,
+      customer_name_ur: cashCustomerNameUr,
       customer_phone_number: validated.customerPhoneNumber,
       salesman_employee_id: validated.salesmanEmployeeId,
       linked_sales_order_id: validated.linkedSalesOrderId,
@@ -2825,6 +2903,8 @@ const toApprovalPayload = ({
   voucherNo,
   validated,
   permissionReroute = false,
+  negativeStockApprovalReroute = false,
+  approvalReason = null,
 }) => ({
   action,
   voucher_id: voucherId,
@@ -2850,6 +2930,8 @@ const toApprovalPayload = ({
   discount_policy: validated.discountPolicy || null,
   lines: validated.lines || [],
   permission_reroute: permissionReroute === true,
+  negative_stock_approval_reroute: negativeStockApprovalReroute === true,
+  approval_reason: approvalReason || null,
 });
 
 const saveSalesVoucherTx = async ({
@@ -2892,9 +2974,31 @@ const saveSalesVoucherTx = async ({
     validated,
     t: req?.res?.locals?.t,
   });
+
+  const negativeStockPolicyRequired = await requiresApprovalForAction(
+    trx,
+    voucherTypeCode,
+    "negative_stock",
+  );
+  let salesNegativeStockRisk = false;
+  if (negativeStockPolicyRequired) {
+    salesNegativeStockRisk = await checkSalesNegativeStockRiskTx({
+      trx,
+      branchId: req.branchId,
+      validated,
+      currentVoucherId: isCreate ? null : headerId,
+    });
+  }
+  const salesNegativeStockRouting = resolveNegativeStockApprovalRouting({
+    hasNegativeStockRisk: salesNegativeStockRisk,
+    canApproveVoucherAction: canApprove,
+    canBypassNegativeStockApproval: false,
+    voucherTypeCode,
+  });
+
   const queuedForApproval = isCreate
-    ? !canCreate || (policyRequiresApproval && !canApprove)
-    : !canEdit || (policyRequiresApproval && !canApprove);
+    ? !canCreate || (policyRequiresApproval && !canApprove) || salesNegativeStockRouting.queueForApproval
+    : !canEdit || (policyRequiresApproval && !canApprove) || salesNegativeStockRouting.queueForApproval;
 
   let voucherNo = null;
   let status = "APPROVED";
@@ -3005,6 +3109,8 @@ const saveSalesVoucherTx = async ({
           voucherNo,
           validated,
           permissionReroute: !canEdit,
+          negativeStockApprovalReroute: salesNegativeStockRouting.negativeStockApprovalReroute,
+          approvalReason: salesNegativeStockRouting.approvalReason,
         }),
       }),
     };
@@ -3048,6 +3154,8 @@ const saveSalesVoucherTx = async ({
         voucherNo,
         validated,
         permissionReroute: !canCreate,
+        negativeStockApprovalReroute: salesNegativeStockRouting.negativeStockApprovalReroute,
+        approvalReason: salesNegativeStockRouting.approvalReason,
       }),
     }),
   };
@@ -3311,6 +3419,7 @@ const loadSalesVoucherOptions = async (req, context = {}) => {
         "s.id",
         "s.sku_code",
         "i.name as item_name",
+        "i.name_ur as item_name_ur",
         "i.group_id",
         "i.base_uom_id",
         "u.code as base_uom_code",
@@ -3702,6 +3811,7 @@ const loadSalesVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
       .first();
     details.customer_party_id = Number(ext?.customer_party_id || 0) || null;
     details.customer_name = ext?.customer_name || "";
+    details.customer_name_ur = ext?.customer_name_ur || "";
     details.customer_phone_number = ext?.customer_phone_number || "";
     if (details.customer_party_id) {
       const party = await knex("erp.parties")

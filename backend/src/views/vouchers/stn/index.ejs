@@ -885,35 +885,35 @@
       const showCostAmount = shouldShowCostAmountColumns();
       if (activeStockType === 'RM') {
         const columns = [
-          { key: 'item', label: <%- JSON.stringify(toFriendlyLabel('raw_material', 'Raw Material')) %> },
-          { key: 'color', label: <%- JSON.stringify(toFriendlyLabel('color', 'Color')) %> },
-          { key: 'size', label: <%- JSON.stringify(toFriendlyLabel('size', 'Size')) %> },
-          { key: 'uom', label: <%- JSON.stringify(toFriendlyLabel('unit', 'Unit')) %> },
-          { key: 'available', label: <%- JSON.stringify(toFriendlyLabel('available_qty', 'Available Qty')) %>, align: 'text-right' },
-          { key: 'qty', label: <%- JSON.stringify(toFriendlyLabel('transfer_qty', 'Transfer Qty')) %>, align: 'text-right' },
-          { key: 'actions', label: <%- JSON.stringify(toFriendlyLabel('actions', 'Actions')) %>, align: 'text-center' },
-          { key: 'sr', label: <%- JSON.stringify(toFriendlyLabel('sr_no', 'Sr #')) %>, align: 'text-center' },
+          { key: 'item',      label: <%- JSON.stringify(toFriendlyLabel('raw_material', 'Raw Material')) %>,                           w: 'w-52' },
+          { key: 'color',     label: <%- JSON.stringify(toFriendlyLabel('color', 'Color')) %>,                                         w: 'w-28' },
+          { key: 'size',      label: <%- JSON.stringify(toFriendlyLabel('size', 'Size')) %>,                                           w: 'w-28' },
+          { key: 'uom',       label: <%- JSON.stringify(toFriendlyLabel('unit', 'Unit')) %>,                                           w: 'w-24' },
+          { key: 'available', label: <%- JSON.stringify(toFriendlyLabel('available_qty', 'Available Qty')) %>, align: 'text-right',    w: 'w-24' },
+          { key: 'qty',       label: <%- JSON.stringify(toFriendlyLabel('transfer_qty', 'Transfer Qty')) %>,   align: 'text-right',    w: 'w-24' },
+          { key: 'actions',   label: <%- JSON.stringify(toFriendlyLabel('actions', 'Actions')) %>,             align: 'text-center',   w: 'w-14' },
+          { key: 'sr',        label: <%- JSON.stringify(toFriendlyLabel('sr_no', 'Sr #')) %>,                  align: 'text-center',   w: 'w-12' },
         ];
         if (showCostAmount) {
           columns.splice(6, 0,
-            { key: 'cost', label: <%- JSON.stringify(toFriendlyLabel('unit_cost', 'Unit Cost')) %>, align: 'text-right' },
-            { key: 'amount', label: <%- JSON.stringify(toFriendlyLabel('amount', 'Amount')) %>, align: 'text-right' },
+            { key: 'cost',   label: <%- JSON.stringify(toFriendlyLabel('unit_cost', 'Unit Cost')) %>, align: 'text-right', w: 'w-24' },
+            { key: 'amount', label: <%- JSON.stringify(toFriendlyLabel('amount', 'Amount')) %>,       align: 'text-right', w: 'w-28' },
           );
         }
         return columns;
       }
       const columns = [
-        { key: 'item', label: <%- JSON.stringify(toFriendlyLabel('item_name', 'Item')) %> },
-        { key: 'uom', label: <%- JSON.stringify(toFriendlyLabel('unit', 'Unit')) %> },
-        { key: 'available', label: <%- JSON.stringify(toFriendlyLabel('available_qty', 'Available Qty')) %>, align: 'text-right' },
-        { key: 'qty', label: <%- JSON.stringify(toFriendlyLabel('transfer_qty', 'Transfer Qty')) %>, align: 'text-right' },
-        { key: 'actions', label: <%- JSON.stringify(toFriendlyLabel('actions', 'Actions')) %>, align: 'text-center' },
-        { key: 'sr', label: <%- JSON.stringify(toFriendlyLabel('sr_no', 'Sr #')) %>, align: 'text-center' },
+        { key: 'item',      label: <%- JSON.stringify(toFriendlyLabel('item_name', 'Item')) %>,                                       w: 'w-56' },
+        { key: 'uom',       label: <%- JSON.stringify(toFriendlyLabel('unit', 'Unit')) %>,                                            w: 'w-28' },
+        { key: 'available', label: <%- JSON.stringify(toFriendlyLabel('available_qty', 'Available Qty')) %>, align: 'text-right',    w: 'w-24' },
+        { key: 'qty',       label: <%- JSON.stringify(toFriendlyLabel('transfer_qty', 'Transfer Qty')) %>,   align: 'text-right',    w: 'w-24' },
+        { key: 'actions',   label: <%- JSON.stringify(toFriendlyLabel('actions', 'Actions')) %>,             align: 'text-center',   w: 'w-14' },
+        { key: 'sr',        label: <%- JSON.stringify(toFriendlyLabel('sr_no', 'Sr #')) %>,                  align: 'text-center',   w: 'w-12' },
       ];
       if (showCostAmount) {
         columns.splice(4, 0,
-          { key: 'cost', label: <%- JSON.stringify(toFriendlyLabel('unit_cost', 'Unit Cost')) %>, align: 'text-right' },
-          { key: 'amount', label: <%- JSON.stringify(toFriendlyLabel('amount', 'Amount')) %>, align: 'text-right' },
+          { key: 'cost',   label: <%- JSON.stringify(toFriendlyLabel('unit_cost', 'Unit Cost')) %>, align: 'text-right', w: 'w-24' },
+          { key: 'amount', label: <%- JSON.stringify(toFriendlyLabel('amount', 'Amount')) %>,       align: 'text-right', w: 'w-28' },
         );
       }
       return columns;
@@ -921,25 +921,25 @@
 
     const inHeadColumns = () => {
       const columns = [
-        { key: 'item', label: <%- JSON.stringify(toFriendlyLabel('item_name', 'Item')) %> },
+        { key: 'item',     label: <%- JSON.stringify(toFriendlyLabel('item_name', 'Item')) %>,                                       w: 'w-56' },
         ...(activeStockType === 'RM'
           ? [
-              { key: 'color', label: <%- JSON.stringify(toFriendlyLabel('color', 'Color')) %> },
-              { key: 'size', label: <%- JSON.stringify(toFriendlyLabel('size', 'Size')) %> },
+              { key: 'color', label: <%- JSON.stringify(toFriendlyLabel('color', 'Color')) %>, w: 'w-28' },
+              { key: 'size',  label: <%- JSON.stringify(toFriendlyLabel('size', 'Size')) %>,   w: 'w-28' },
             ]
           : []),
-        { key: 'uom', label: <%- JSON.stringify(toFriendlyLabel('unit', 'Unit')) %> },
-        { key: 'expected', label: <%- JSON.stringify(toFriendlyLabel('expected_qty', 'Expected Qty')) %>, align: 'text-right' },
-        { key: 'received', label: <%- JSON.stringify(toFriendlyLabel('received_qty', 'Received Qty')) %>, align: 'text-right' },
-        { key: 'rejected', label: <%- JSON.stringify(toFriendlyLabel('rejected_qty', 'Rejected Qty')) %>, align: 'text-right' },
-        { key: 'variance', label: <%- JSON.stringify(toFriendlyLabel('variance_qty', 'Variance Qty')) %>, align: 'text-right' },
-        { key: 'reason', label: <%- JSON.stringify(toFriendlyLabel('variance_reason', 'Variance Reason')) %> },
-        { key: 'sr', label: <%- JSON.stringify(toFriendlyLabel('sr_no', 'Sr #')) %>, align: 'text-center' },
+        { key: 'uom',      label: <%- JSON.stringify(toFriendlyLabel('unit', 'Unit')) %>,                                            w: 'w-24' },
+        { key: 'expected', label: <%- JSON.stringify(toFriendlyLabel('expected_qty', 'Expected Qty')) %>,  align: 'text-right',    w: 'w-24' },
+        { key: 'received', label: <%- JSON.stringify(toFriendlyLabel('received_qty', 'Received Qty')) %>,  align: 'text-right',    w: 'w-24' },
+        { key: 'rejected', label: <%- JSON.stringify(toFriendlyLabel('rejected_qty', 'Rejected Qty')) %>,  align: 'text-right',    w: 'w-24' },
+        { key: 'variance', label: <%- JSON.stringify(toFriendlyLabel('variance_qty', 'Variance Qty')) %>,  align: 'text-right',    w: 'w-24' },
+        { key: 'reason',   label: <%- JSON.stringify(toFriendlyLabel('variance_reason', 'Variance Reason')) %>,                     w: 'w-40' },
+        { key: 'sr',       label: <%- JSON.stringify(toFriendlyLabel('sr_no', 'Sr #')) %>,                 align: 'text-center',   w: 'w-12' },
       ];
       if (shouldShowCostAmountColumns()) {
         columns.splice(6, 0,
-          { key: 'cost', label: <%- JSON.stringify(toFriendlyLabel('unit_cost', 'Unit Cost')) %>, align: 'text-right' },
-          { key: 'amount', label: <%- JSON.stringify(toFriendlyLabel('amount', 'Amount')) %>, align: 'text-right' },
+          { key: 'cost',   label: <%- JSON.stringify(toFriendlyLabel('unit_cost', 'Unit Cost')) %>, align: 'text-right', w: 'w-24' },
+          { key: 'amount', label: <%- JSON.stringify(toFriendlyLabel('amount', 'Amount')) %>,       align: 'text-right', w: 'w-28' },
         );
       }
       return columns;
@@ -1042,7 +1042,7 @@
     const renderHead = () => {
       const cols = mode === 'out' ? outHeadColumns() : inHeadColumns();
       linesHeadRow.innerHTML = cols
-        .map((col) => `<th class="border-b border-slate-200 px-2 py-2 ${col.align || 'text-left'}">${escapeHtml(col.label)}</th>`)
+        .map((col) => `<th class="border-b border-slate-200 px-2 py-2 ${col.align || 'text-left'} ${col.w || ''}">${escapeHtml(col.label)}</th>`)
         .join('');
       renderFooter();
     };
@@ -1124,16 +1124,36 @@
             <td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${qty3(row.expected_qty).toFixed(3)}" readonly></td>
             <td class="border-t border-slate-200 px-2 py-1"><input type="number" step="0.001" min="0" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs" value="${qty3(row.received_qty).toFixed(3)}" data-in-input="received_qty" data-row-index="${rowIndex}" data-row-field="received" ${canSave ? '' : 'readonly'}></td>
             <td class="border-t border-slate-200 px-2 py-1"><input type="number" step="0.001" min="0" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right text-xs" value="${qty3(row.rejected_qty).toFixed(3)}" data-in-input="rejected_qty" data-row-index="${rowIndex}" data-row-field="rejected" ${canSave ? '' : 'readonly'}></td>
-            <td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs ${variance !== 0 ? 'text-amber-700' : ''}" value="${variance.toFixed(3)}" readonly></td>
+            <td class="border-t border-slate-200 px-2 py-1"><input type="text" data-in-display="variance_qty" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs ${variance !== 0 ? 'text-amber-700' : ''}" value="${variance.toFixed(3)}" readonly></td>
             ${showCostAmount
               ? `<td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${cost1(row.unit_cost).toFixed(1)}" readonly></td>
-            <td class="border-t border-slate-200 px-2 py-1"><input type="text" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${amount2(row.amount).toFixed(2)}" readonly></td>`
+            <td class="border-t border-slate-200 px-2 py-1"><input type="text" data-in-display="amount" class="w-full rounded-lg border border-slate-300 bg-slate-100 px-2 text-right text-xs" value="${amount2(row.amount).toFixed(2)}" readonly></td>`
               : ''}
             <td class="border-t border-slate-200 px-2 py-1"><input type="text" maxlength="250" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" value="${escapeHtml(row.variance_reason || '')}" data-in-input="variance_reason" data-row-index="${rowIndex}" data-row-field="reason" ${canSave ? '' : 'readonly'}></td>
             <td class="border-t border-slate-200 px-2 py-2 text-center text-xs font-semibold text-slate-500">${rowIndex + 1}</td>
           </tr>`;
         })
         .join('');
+      updateTotals();
+    };
+
+    // Updates only the computed display cells for a single in-row after qty change.
+    // Avoids rebuilding the entire table on every keystroke.
+    const updateInRowDisplay = (rowIndex) => {
+      const row = inRows[rowIndex];
+      if (!row) return;
+      const tr = linesBody.querySelector(`tr[data-row-index="${rowIndex}"]`);
+      if (!tr) return;
+      const variance = qty3(Number(row.expected_qty || 0) - (Number(row.received_qty || 0) + Number(row.rejected_qty || 0)));
+      row.variance_qty = variance;
+      row.amount = amount2(Number(row.received_qty || 0) * Number(row.unit_cost || 0));
+      const varianceInput = tr.querySelector('[data-in-display="variance_qty"]');
+      if (varianceInput) {
+        varianceInput.value = variance.toFixed(3);
+        varianceInput.classList.toggle('text-amber-700', variance !== 0);
+      }
+      const amountInput = tr.querySelector('[data-in-display="amount"]');
+      if (amountInput) amountInput.value = amount2(row.amount).toFixed(2);
       updateTotals();
     };
 
@@ -1351,9 +1371,11 @@
           inRows[rowIndex].variance_reason = String(target.value || '').trim();
           return;
         }
-        const focusState = captureActiveRowField();
-        renderRows();
-        restoreActiveRowField(focusState);
+        if (key === 'received_qty' || key === 'rejected_qty') {
+          inRows[rowIndex][key] = qty3(target.value);
+          updateInRowDisplay(rowIndex);
+          return;
+        }
       }
     });
 
@@ -1381,9 +1403,7 @@
         if (rowIndex < 0 || !inRows[rowIndex]) return;
         if (key === 'received_qty' || key === 'rejected_qty') {
           inRows[rowIndex][key] = qty3(target.value);
-          const focusState = captureActiveRowField();
-          renderRows();
-          restoreActiveRowField(focusState);
+          updateInRowDisplay(rowIndex);
           return;
         }
         if (key === 'variance_reason') {
