@@ -326,7 +326,12 @@
                     <th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("open_qty") %></th>
                     <th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("deliver_qty") %></th>
                     <th class="border-b border-slate-200 px-2 py-2 text-right"><%= t("pair_rate") %></th>
-                    <th class="border-b border-slate-200 px-2 py-2 text-center"><%= t("select") %></th>
+                    <th class="border-b border-slate-200 px-2 py-2 text-center">
+                      <label class="inline-flex items-center gap-1.5 cursor-pointer select-none">
+                        <input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent" data-sales-order-picker-select-all>
+                        <span><%= t("select") %></span>
+                      </label>
+                    </th>
                   </tr>
                 </thead>
                 <tbody data-sales-order-picker-lines-body></tbody>
@@ -423,6 +428,7 @@
   const salesOrderPickerCustomerInput = salesOrderPickerModal?.querySelector("[data-sales-order-picker-customer]");
   const salesOrderPickerDateInput = salesOrderPickerModal?.querySelector("[data-sales-order-picker-date]");
   const salesOrderPickerLinesBody = salesOrderPickerModal?.querySelector("[data-sales-order-picker-lines-body]");
+  const salesOrderPickerSelectAll = salesOrderPickerModal?.querySelector("[data-sales-order-picker-select-all]");
   const salesOrderPickerApplyButton = salesOrderPickerModal?.querySelector("[data-sales-order-picker-apply]");
   const salesOrderPickerCloseButtons = salesOrderPickerModal
     ? Array.from(salesOrderPickerModal.querySelectorAll("[data-sales-order-picker-close]"))
@@ -957,6 +963,17 @@
       `;
       salesOrderPickerLinesBody.appendChild(tr);
     });
+    syncPickerSelectAll();
+  };
+
+  const syncPickerSelectAll = () => {
+    if (!salesOrderPickerSelectAll) return;
+    const all = salesOrderPickerLinesBody
+      ? Array.from(salesOrderPickerLinesBody.querySelectorAll("[data-sales-order-picker-line-checkbox]:not(:disabled)"))
+      : [];
+    const checkedCount = all.filter((cb) => cb instanceof HTMLInputElement && cb.checked).length;
+    salesOrderPickerSelectAll.checked = all.length > 0 && checkedCount === all.length;
+    salesOrderPickerSelectAll.indeterminate = checkedCount > 0 && checkedCount < all.length;
   };
 
   const openSalesOrderPickerModalView = () => {
@@ -1863,6 +1880,7 @@
       } else {
         salesOrderPickerSelectedLineIds.delete(lineId);
       }
+      syncPickerSelectAll();
       return;
     }
 
@@ -1878,6 +1896,31 @@
         const checkbox = target.closest("tr")?.querySelector("[data-sales-order-picker-line-checkbox]");
         if (checkbox instanceof HTMLInputElement) checkbox.checked = true;
       }
+    }
+  });
+  salesOrderPickerSelectAll?.addEventListener("change", () => {
+    const checkboxes = salesOrderPickerLinesBody
+      ? Array.from(salesOrderPickerLinesBody.querySelectorAll("[data-sales-order-picker-line-checkbox]:not(:disabled)"))
+      : [];
+    if (salesOrderPickerSelectAll.checked) {
+      checkboxes.forEach((cb) => {
+        if (!(cb instanceof HTMLInputElement)) return;
+        const lineId = Number(cb.value || 0);
+        if (lineId <= 0) return;
+        cb.checked = true;
+        salesOrderPickerSelectedLineIds.add(lineId);
+        const openQty = Number(cb.dataset.openQty || 0);
+        if (!salesOrderPickerDeliverQtyMap.has(lineId)) {
+          salesOrderPickerDeliverQtyMap.set(lineId, Number(openQty.toFixed(1)));
+        }
+      });
+    } else {
+      checkboxes.forEach((cb) => {
+        if (!(cb instanceof HTMLInputElement)) return;
+        const lineId = Number(cb.value || 0);
+        cb.checked = false;
+        salesOrderPickerSelectedLineIds.delete(lineId);
+      });
     }
   });
   salesOrderPickerApplyButton?.addEventListener("click", () => {
