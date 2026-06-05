@@ -1817,6 +1817,21 @@ const applyMasterDataChange = async (trx, request, userId) => {
   if (entityType === "SKU") {
     return applySkuChange(trx, request, userId);
   }
+  if (entityType === "SKU_BULK_RATE_UPDATE") {
+    const variants = request.new_value?.variants;
+    if (!Array.isArray(variants) || !variants.length) return false;
+    for (const v of variants) {
+      const id = Number(v.id);
+      const rate = Number(v.new_rate);
+      if (!id || !Number.isFinite(rate)) continue;
+      await trx("erp.variants").where({ id }).update({
+        sale_rate: rate,
+        updated_by: userId || null,
+        updated_at: trx.fn.now(),
+      });
+    }
+    return true;
+  }
   if (entityType === "EMPLOYEE" || entityType === "LABOUR") {
     return applyHrApprovalChange(trx, request);
   }

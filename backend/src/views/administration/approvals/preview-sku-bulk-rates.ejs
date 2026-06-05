@@ -1,0 +1,38 @@
+<%
+  const variants = Array.isArray(previewValues?.variants) ? previewValues.variants : [];
+  const side = typeof previewSide !== 'undefined' ? previewSide : 'new';
+%>
+
+<div class="overflow-x-auto rounded-xl border border-slate-200">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+      <tr>
+        <th class="px-3 py-2 text-left"><%= t("sku") || "SKU" %></th>
+        <th class="px-3 py-2 text-left"><%= t("details") || "Details" %></th>
+        <th class="px-3 py-2 text-right"><%= t("rate") || "Rate" %></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      <% if (!variants.length) { %>
+        <tr>
+          <td colspan="3" class="px-3 py-4 text-center text-slate-400"><%= t("no_entries") %></td>
+        </tr>
+      <% } %>
+      <% variants.forEach(function(variant) {
+        const rawRate = side === 'old'
+          ? (variant.old_rate != null ? variant.old_rate : variant.new_rate)
+          : variant.new_rate;
+        const displayRate = rawRate != null && rawRate !== '' ? Number(rawRate).toFixed(2) : '-';
+        const hasChanged = variant.old_rate != null && variant.new_rate != null &&
+          Math.abs(Number(variant.old_rate) - Number(variant.new_rate)) >= 0.0001;
+        const rowClass = hasChanged && side === 'new' ? 'bg-emerald-50/50' : '';
+      %>
+        <tr class="hover:bg-slate-50 <%= rowClass %>">
+          <td class="px-3 py-2.5 font-mono text-xs text-slate-600"><%= variant.sku_code || ('#' + variant.id) %></td>
+          <td class="px-3 py-2.5 text-slate-700 text-xs"><%= variant.variant_label || '' %></td>
+          <td class="px-3 py-2.5 text-right font-semibold text-slate-800"><%= displayRate %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</div>

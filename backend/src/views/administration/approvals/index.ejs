@@ -936,6 +936,9 @@
       if (previewType === "skus") {
         modalPanel.classList.remove("max-w-6xl");
         modalPanel.classList.add("max-w-3xl");
+      } else if (previewType === "sku-bulk-rates") {
+        modalPanel.classList.remove("max-w-3xl");
+        modalPanel.classList.add("max-w-4xl");
       } else {
         modalPanel.classList.remove("max-w-3xl");
         modalPanel.classList.add("max-w-6xl");

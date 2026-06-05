@@ -1355,6 +1355,54 @@ const buildPreviewPayload = async (req, res, request, side) => {
     };
   }
 
+  if (entityType === "SKU_BULK_RATE_UPDATE") {
+    const newValue = safeJson(request.new_value) || {};
+    const rawVariants = Array.isArray(newValue.variants) ? newValue.variants : [];
+    const variantIds = rawVariants.map((v) => Number(v.id)).filter((id) => id > 0);
+    let enrichedVariants = rawVariants;
+    if (variantIds.length > 0) {
+      const dbRows = await knex("erp.variants as v")
+        .select(
+          "v.id",
+          "i.name as item_name",
+          knex.raw("COALESCE(sz.name, '') as size_name"),
+          knex.raw("COALESCE(gr.name, '') as grade_name"),
+          knex.raw("COALESCE(co.name, '') as color_name"),
+          knex.raw("COALESCE(pk.name, '') as packing_name"),
+          "s.sku_code",
+        )
+        .leftJoin("erp.items as i", "v.item_id", "i.id")
+        .leftJoin("erp.sizes as sz", "v.size_id", "sz.id")
+        .leftJoin("erp.grades as gr", "v.grade_id", "gr.id")
+        .leftJoin("erp.colors as co", "v.color_id", "co.id")
+        .leftJoin("erp.packing_types as pk", "v.packing_type_id", "pk.id")
+        .leftJoin("erp.skus as s", "s.variant_id", "v.id")
+        .whereIn("v.id", variantIds);
+      const dbMap = new Map(dbRows.map((row) => [Number(row.id), row]));
+      enrichedVariants = rawVariants.map((v) => {
+        const db = dbMap.get(Number(v.id)) || {};
+        const parts = [db.size_name, db.packing_name, db.grade_name, db.color_name].filter(Boolean);
+        return {
+          ...v,
+          sku_code: db.sku_code || `#${v.id}`,
+          item_name: db.item_name || "",
+          variant_label: parts.join(" "),
+        };
+      });
+    }
+    const itemName = enrichedVariants[0]?.item_name || newValue.item_name || res.locals.t("skus");
+    return {
+      ...basePayload,
+      previewAction: "update",
+      previewLabel: res.locals.t("edit"),
+      previewValues: { ...newValue, variants: enrichedVariants },
+      previewSide: side,
+      previewType: "sku-bulk-rates",
+      previewTitle: itemName,
+      formPartial: "../../administration/approvals/preview-sku-bulk-rates.ejs",
+    };
+  }
+
   return null;
 };
 

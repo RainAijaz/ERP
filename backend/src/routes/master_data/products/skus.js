@@ -10,6 +10,7 @@ const {
 } = require("../../../middleware/approvals/screen-approval");
 const { sendMail } = require("../../../utils/email");
 const { queueAuditLog } = require("../../../utils/audit-log");
+const { sendWhatsAppMessage } = require("../../../utils/whatsapp");
 const { setCookie } = require("../../../middleware/utils/cookies");
 const { UI_NOTICE_COOKIE } = require("../../../middleware/core/ui-notice");
 
@@ -864,6 +865,8 @@ router.post(
         throw new HttpError(403, res.locals.t("permission_denied"));
       }
 
+      const updatedItems = [];
+
       await knex.transaction(async (trx) => {
         let rateMap = new Map();
         let queuedCount = 0;
@@ -878,35 +881,66 @@ router.post(
           rateMap = new Map(rows.map((row) => [row.id, Number(row.sale_rate)]));
         }
 
-        for (let i = 0; i < ids.length; i++) {
-          const id = Number(ids[i]);
-          const rate = parseNumber(rates[i]);
-          if (!id || rate === null) {
-            continue;
-          }
-          if (approvalRequired) {
+        if (approvalRequired) {
+          const changedVariants = [];
+          for (let i = 0; i < ids.length; i++) {
+            const id = Number(ids[i]);
+            const rate = parseNumber(rates[i]);
+            if (!id || rate === null) continue;
             const currentRate = rateMap.get(id);
-            if (currentRate != null && Math.abs(currentRate - rate) < 0.0001) {
-              continue;
-            }
+            if (currentRate != null && Math.abs(currentRate - rate) < 0.0001) continue;
+            changedVariants.push({ id, old_rate: currentRate ?? null, new_rate: rate });
+          }
+          if (changedVariants.length > 0) {
+            const firstId = changedVariants[0].id;
+            const itemInfo = await trx("erp.variants as v")
+              .select("v.item_id", "i.name as item_name", "i.code as item_code")
+              .leftJoin("erp.items as i", "v.item_id", "i.id")
+              .where("v.id", firstId)
+              .first();
+            const itemLabel = itemInfo?.item_name || itemInfo?.item_code || "";
+            const summary = `${res.locals.t("edit")} ${res.locals.t("skus")}${itemLabel ? " - " + itemLabel : ""} (${changedVariants.length})`;
             await trx("erp.approval_request").insert({
               branch_id: req.branchId,
               request_type: "MASTER_DATA_CHANGE",
-              entity_type: "SKU",
-              entity_id: String(id),
-              summary: `${res.locals.t("edit")} ${res.locals.t("skus")}`,
-              new_value: { _action: "update", sale_rate: rate },
+              entity_type: "SKU_BULK_RATE_UPDATE",
+              entity_id: "BULK",
+              summary,
+              new_value: {
+                _action: "bulk_rate_update",
+                item_id: itemInfo?.item_id || null,
+                variants: changedVariants,
+              },
               status: "PENDING",
               requested_by: req.user.id,
               requested_at: trx.fn.now(),
             });
             queuedCount++;
-          } else {
+          }
+        } else {
+          const validIds = ids
+            .map(Number)
+            .filter((v) => !Number.isNaN(v) && v > 0);
+          const oldRateRows = validIds.length
+            ? await trx("erp.variants")
+                .select("id", "sale_rate")
+                .whereIn("id", validIds)
+            : [];
+          const oldRateMap = new Map(
+            oldRateRows.map((r) => [r.id, Number(r.sale_rate)]),
+          );
+
+          for (let i = 0; i < ids.length; i++) {
+            const id = Number(ids[i]);
+            const rate = parseNumber(rates[i]);
+            if (!id || rate === null) continue;
+            const oldRate = oldRateMap.has(id) ? oldRateMap.get(id) : null;
             await trx("erp.variants").where({ id }).update({
               sale_rate: rate,
               updated_at: trx.fn.now(),
               updated_by: req.user.id,
             });
+            updatedItems.push({ id, rate, oldRate });
             queueAuditLog(req, {
               entityType: "SKU",
               entityId: id,
@@ -923,6 +957,53 @@ router.post(
           );
         }
       });
+
+      if (!approvalRequired && updatedItems.length > 0) {
+        const chatId = process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID;
+        if (chatId) {
+          knex("erp.variants as v")
+            .select("v.id", "i.name as item_name", "k.sku_code")
+            .leftJoin("erp.items as i", "v.item_id", "i.id")
+            .leftJoin("erp.skus as k", "k.variant_id", "v.id")
+            .whereIn(
+              "v.id",
+              updatedItems.map((u) => u.id),
+            )
+            .then((details) => {
+              const detailMap = new Map(details.map((d) => [d.id, d]));
+              const username =
+                req.user?.username || req.user?.name || "Unknown";
+              const timeStr = new Date().toLocaleString("en-PK", {
+                timeZone: "Asia/Karachi",
+                day: "2-digit",
+                month: "short",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+                hour12: true,
+              });
+              const lines = updatedItems.map(({ id, rate, oldRate }) => {
+                const d = detailMap.get(id);
+                const sku = d?.sku_code || `#${id}`;
+                const name = d?.item_name || "-";
+                const newRateStr = `Rs. ${Number(rate).toLocaleString("en-PK")}`;
+                let change = "";
+                if (oldRate !== null && oldRate !== undefined) {
+                  const oldRateStr = `Rs. ${Number(oldRate).toLocaleString("en-PK")}`;
+                  if (rate > oldRate) change = `  ↑ (was ${oldRateStr})`;
+                  else if (rate < oldRate) change = `  ↓ (was ${oldRateStr})`;
+                }
+                return `• ${sku}  —  ${name}  →  ${newRateStr}${change}`;
+              });
+              const message = `*Rate Update Alert*\nBy: ${username}\nTime: ${timeStr}\n\n${lines.join("\n")}`;
+              sendWhatsAppMessage(chatId, message).catch(() => {});
+            })
+            .catch((err) => {
+              console.error("[WhatsApp] Rate notify fetch error:", err.message);
+            });
+        }
+      }
+
       const msg = approvalRequired
         ? res.locals.t("approval_submitted")
         : res.locals.t("saved_successfully");

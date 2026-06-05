@@ -25,6 +25,7 @@ const notFound = require("./middleware/errors/not-found");
 const errorHandler = require("./middleware/errors/error-handler");
 const knex = require("./db/knex");
 const { navConfig, syncNavScopes } = require("./utils/nav-config");
+const { initWhatsApp } = require("./utils/whatsapp");
 
 const app = express();
 
@@ -102,3 +103,7 @@ server.requestTimeout = Number(process.env.SERVER_REQUEST_TIMEOUT_MS || 120000);
 syncNavScopes(knex).catch((err) => {
   console.error("Failed to sync nav permission scopes:", err.message || err);
 });
+
+if (process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID) {
+  initWhatsApp();
+}
