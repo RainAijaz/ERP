@@ -222,7 +222,8 @@ const getCommonFilters = (req, reportKey = "") => {
     } else {
       if (
         normalizedReportKey === "expense_analysis" ||
-        normalizedReportKey === "expense_trends"
+        normalizedReportKey === "expense_trends" ||
+        normalizedReportKey === "cash_book"
       ) {
         branchId = null;
         branchIds = [];
@@ -464,10 +465,11 @@ const getCashBook = async (filters) => {
         knex.raw("to_char(ge.entry_date, 'YYYY-MM-DD') as entry_date"),
         "vh.voucher_type_code",
         "vh.voucher_no",
+        "vh.id as voucher_id",
         "a.name as cash_account",
         "b.name as branch_name",
         knex.raw(
-          "COALESCE(NULLIF(ge.narration, ''), NULLIF(vh.remarks, '')) as description",
+          "COALESCE(NULLIF(vh.remarks, ''), NULLIF(ge.narration, '')) as description",
         ),
         knex.raw("COALESCE(ge.dr, 0) as dr"),
         knex.raw("COALESCE(ge.cr, 0) as cr"),
@@ -495,27 +497,113 @@ const getCashBook = async (filters) => {
     rows = await detailsQuery;
   }
 
+  // For details mode, fetch supplementary data for SALES_VOUCHER entries:
+  // customer name and gross sale / return breakdown (returns may be separate rows).
+  const salesSupplementMap = new Map();
+  if (filters.reportMode === "details") {
+    const salesVoucherIds = [
+      ...new Set(
+        rows
+          .filter((r) => r.voucher_type_code === "SALES_VOUCHER" && r.voucher_id)
+          .map((r) => Number(r.voucher_id)),
+      ),
+    ];
+    if (salesVoucherIds.length) {
+      const salesData = await knex("erp.sales_header as sh")
+        .join("erp.parties as p", "p.id", "sh.customer_party_id")
+        .select(
+          "sh.voucher_id",
+          "p.name as customer_name",
+          knex.raw(`(
+            SELECT COALESCE(ABS(SUM(CASE WHEN vl.amount < 0 THEN vl.amount ELSE 0 END)), 0)
+            FROM erp.voucher_line vl
+            WHERE vl.voucher_header_id = sh.voucher_id AND vl.line_kind = 'SKU'
+          ) as return_amount`),
+          knex.raw(`(
+            SELECT STRING_AGG(DISTINCT rr.name, ', ')
+            FROM erp.voucher_line vl
+            JOIN erp.sales_line sl ON sl.voucher_line_id = vl.id
+            JOIN erp.return_reasons rr ON rr.id = sl.return_reason_id
+            WHERE vl.voucher_header_id = sh.voucher_id AND vl.line_kind = 'SKU'
+              AND vl.amount < 0
+          ) as return_reasons`),
+        )
+        .whereIn("sh.voucher_id", salesVoucherIds);
+      for (const sd of salesData) {
+        salesSupplementMap.set(Number(sd.voucher_id), sd);
+      }
+    }
+  }
+
   let running = openingBalance;
-  const detailRows = rows
-    .map((row) => {
-      const dr = Number(row.dr || 0);
-      const cr = Number(row.cr || 0);
+  const detailRows = [];
+  for (const row of rows) {
+    const dr = Number(row.dr || 0);
+    const cr = Number(row.cr || 0);
+    if (dr === 0 && cr === 0) continue;
+
+    const voucherTypeCode = String(row.voucher_type_code || "");
+    const isSalesVoucher =
+      filters.reportMode === "details" &&
+      voucherTypeCode === "SALES_VOUCHER" &&
+      row.voucher_id;
+    const salesSuppl = isSalesVoucher
+      ? salesSupplementMap.get(Number(row.voucher_id))
+      : null;
+    const returnAmount = salesSuppl ? Number(salesSuppl.return_amount || 0) : 0;
+    const customerName = salesSuppl?.customer_name || null;
+    const returnReasons = salesSuppl?.return_reasons || null;
+
+    if (isSalesVoucher && returnAmount > 0 && dr > 0) {
+      // The GL posts the net cash (dr = grossSale - extraDiscount - returnAmount).
+      // Reconstruct gross by adding the return back so the two rows net correctly.
+      const grossDr = Number((dr + returnAmount).toFixed(2));
+      running += grossDr;
+      const salePayload = {
+        entry_date: row.entry_date,
+        voucher_type_code: voucherTypeCode,
+        voucher_no: row.voucher_no,
+        cash_account: row.cash_account || null,
+        entity: customerName,
+        description: row.description || null,
+        dr: grossDr,
+        cr: 0,
+        running_balance: Number(running.toFixed(2)),
+      };
+      if (includeBranchColumn) salePayload.branch = row.branch_name || null;
+      detailRows.push(salePayload);
+
+      running -= returnAmount;
+      const returnPayload = {
+        entry_date: row.entry_date,
+        voucher_type_code: "SALES_RETURN",
+        voucher_no: row.voucher_no,
+        cash_account: row.cash_account || null,
+        entity: customerName,
+        description: returnReasons || null,
+        dr: 0,
+        cr: returnAmount,
+        running_balance: Number(running.toFixed(2)),
+      };
+      if (includeBranchColumn) returnPayload.branch = row.branch_name || null;
+      detailRows.push(returnPayload);
+    } else {
       running += dr - cr;
       const payload = {
         entry_date: row.entry_date,
-        voucher_type_code: row.voucher_type_code,
+        voucher_type_code: voucherTypeCode,
         voucher_no: row.voucher_no,
         cash_account: row.cash_account || null,
-        entity: row.entity || null,
+        entity: isSalesVoucher ? customerName : (row.entity || null),
         description: row.description || null,
         dr,
         cr,
         running_balance: Number(running.toFixed(2)),
       };
       if (includeBranchColumn) payload.branch = row.branch_name || null;
-      return payload;
-    })
-    .filter((row) => Number(row.dr || 0) !== 0 || Number(row.cr || 0) !== 0);
+      detailRows.push(payload);
+    }
+  }
 
   const totals = {
     dr: Number(

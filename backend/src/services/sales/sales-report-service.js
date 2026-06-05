@@ -2094,7 +2094,16 @@ const getCustomerBalanceRows = async ({ req, filters }) => {
     .orderBy("p.name", "asc");
 
   if (scopedBranchIds.length) {
-    query = applyPartyBranchScope(query, scopedBranchIds);
+    query = query.where(function () {
+      this.whereIn("p.branch_id", scopedBranchIds)
+        .orWhereExists(function () {
+          this.select(1)
+            .from("erp.party_branch as pb")
+            .whereRaw("pb.party_id = p.id")
+            .whereIn("pb.branch_id", scopedBranchIds);
+        })
+        .orWhereNotNull("bal.party_id");
+    });
   }
 
   const rows = await query;

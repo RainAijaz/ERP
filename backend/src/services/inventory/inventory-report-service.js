@@ -2390,7 +2390,7 @@ const normalizeTransferMode = (value) => {
 };
 
 const normalizeTransferStatus = (value) => {
-  const normalized = String(value || TRANSFER_REPORT_STATUSES.approved)
+  const normalized = String(value || "")
     .trim()
     .toUpperCase();
   if (normalized === TRANSFER_REPORT_STATUSES.pending) {
@@ -2399,7 +2399,10 @@ const normalizeTransferStatus = (value) => {
   if (normalized === TRANSFER_REPORT_STATUSES.partiallyApproved) {
     return TRANSFER_REPORT_STATUSES.partiallyApproved;
   }
-  return TRANSFER_REPORT_STATUSES.approved;
+  if (normalized === TRANSFER_REPORT_STATUSES.approved) {
+    return TRANSFER_REPORT_STATUSES.approved;
+  }
+  return null;
 };
 
 const normalizeTransferStockStatus = (value) => {
@@ -3742,6 +3745,7 @@ const getInventoryStockTransferReportPageData = async ({ req, input = {} }) => {
       { value: TRANSFER_STOCK_STATUS_FILTERS.loose, labelKey: "loose" },
     ],
     transferStatusOptions: [
+      { value: "", labelKey: "all" },
       { value: TRANSFER_REPORT_STATUSES.pending, labelKey: "pending" },
       {
         value: TRANSFER_REPORT_STATUSES.partiallyApproved,

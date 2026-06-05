@@ -187,6 +187,27 @@
 		const deleteConfirmMessage = <%- JSON.stringify(toFriendlyLabel("confirm_delete", "Are you sure?")) %>;
 		const atLeastOneValidLineMessage = <%- JSON.stringify(toFriendlyLabel("at_least_one_valid_line_required", "At least one valid line is required.")) %>;
 
+		const _t = {
+			raw_material: <%- JSON.stringify(t("raw_material")) %>,
+			color: <%- JSON.stringify(t("color")) %>,
+			size: <%- JSON.stringify(t("size")) %>,
+			unit: <%- JSON.stringify(t("unit")) %>,
+			system_qty: <%- JSON.stringify(t("system_qty")) %>,
+			counted_stock: <%- JSON.stringify(t("counted_stock")) %>,
+			qty_in: <%- JSON.stringify(t("qty_in")) %>,
+			qty_out: <%- JSON.stringify(t("qty_out")) %>,
+			difference_qty: <%- JSON.stringify(t("difference_qty")) %>,
+			rate: <%- JSON.stringify(t("rate")) %>,
+			pair_rate: <%- JSON.stringify(t("pair_rate")) %>,
+			amount_diff: <%- JSON.stringify(t("amount_diff")) %>,
+			actions: <%- JSON.stringify(t("actions")) %>,
+			sr_no: <%- JSON.stringify(t("sr_no")) %>,
+			sku: <%- JSON.stringify(t("sku")) %>,
+			total: <%- JSON.stringify(t("total")) %>,
+			add: <%- JSON.stringify(t("add")) %>,
+			units: <%- JSON.stringify(t("units")) %>,
+		};
+
 		const showUiMessage = (message) => {
 			const text = String(message || "").trim();
 			if (!text) return;
@@ -508,16 +529,17 @@
 
 		const renderHead = (stockType) => {
 			const usePhysicalCountField = isPhysicalCountReasonActive();
+			const COL_RIGHT = new Set(["system_qty", "counted_stock", "qty_in", "qty_out", "difference_qty", "rate", "pair_rate", "amount_diff"]);
 			const cols = stockType === "RM"
 				? usePhysicalCountField
-					? ["Raw Material", "Color", "Size", "Unit", "System Qty", "Counted Stock", "Difference Qty", "Rate", "Amount Diff", "Actions", "Sr #"]
-					: ["Raw Material", "Color", "Size", "Unit", "System Qty", "Qty In", "Qty Out", "Difference Qty", "Rate", "Amount Diff", "Actions", "Sr #"]
+					? ["raw_material", "color", "size", "unit", "system_qty", "counted_stock", "difference_qty", "rate", "amount_diff", "actions", "sr_no"]
+					: ["raw_material", "color", "size", "unit", "system_qty", "qty_in", "qty_out", "difference_qty", "rate", "amount_diff", "actions", "sr_no"]
 				: usePhysicalCountField
-					? ["SKU", "Unit", "System Qty", "Counted Stock", "Difference Qty", "Pair Rate", "Amount Diff", "Actions", "Sr #"]
-					: ["SKU", "Unit", "System Qty", "Qty In", "Qty Out", "Difference Qty", "Pair Rate", "Amount Diff", "Actions", "Sr #"];
-			linesHeadRow.innerHTML = cols.map((label, idx) => {
-				const rightAligned = ["System Qty", "Qty In", "Qty Out", "Counted Stock", "Difference Qty", "Rate", "Pair Rate", "Amount Diff"].includes(label);
-				const align = rightAligned ? "text-right" : idx >= cols.length - 2 ? "text-center" : "text-left";
+					? ["sku", "unit", "system_qty", "counted_stock", "difference_qty", "pair_rate", "amount_diff", "actions", "sr_no"]
+					: ["sku", "unit", "system_qty", "qty_in", "qty_out", "difference_qty", "pair_rate", "amount_diff", "actions", "sr_no"];
+			linesHeadRow.innerHTML = cols.map((key, idx) => {
+				const label = _t[key] || key;
+				const align = COL_RIGHT.has(key) ? "text-right" : idx >= cols.length - 2 ? "text-center" : "text-left";
 				return `<th class="border-b border-slate-200 px-2 py-2 ${align}">${label}</th>`;
 			}).join("");
 			renderFooter(stockType);
@@ -527,11 +549,11 @@
 			// Footer keeps adjustment totals visible while rows are edited.
 			const usePhysicalCountField = isPhysicalCountReasonActive();
 			const descriptorColspan = stockType === "RM" ? 4 : 2;
-			const addButtonTitle = "Add";
+			const addButtonTitle = _t.add;
 			if (usePhysicalCountField) {
 				linesFooter.innerHTML = `
 					<tr class="bg-slate-50">
-						<td colspan="${descriptorColspan}" class="border-t border-slate-200 px-2 py-2 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-700">Total</td>
+						<td colspan="${descriptorColspan}" class="border-t border-slate-200 px-2 py-2 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-700">${_t.total}</td>
 						<td class="border-t border-slate-200 px-2 py-1.5">
 							<input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-system-qty>
 						</td>
@@ -550,13 +572,13 @@
 								<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
 							</button>
 						</td>
-						<td class="border-t border-slate-200 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Units</td>
+						<td class="border-t border-slate-200 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${_t.units}</td>
 					</tr>
 				`;
 			} else {
 				linesFooter.innerHTML = `
 					<tr class="bg-slate-50">
-						<td colspan="${descriptorColspan}" class="border-t border-slate-200 px-2 py-2 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-700">Total</td>
+						<td colspan="${descriptorColspan}" class="border-t border-slate-200 px-2 py-2 text-right text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-700">${_t.total}</td>
 						<td class="border-t border-slate-200 px-2 py-1.5">
 							<input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-system-qty>
 						</td>
@@ -578,7 +600,7 @@
 								<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
 							</button>
 						</td>
-						<td class="border-t border-slate-200 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">Units</td>
+						<td class="border-t border-slate-200 px-2 py-1.5 text-center text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500">${_t.units}</td>
 					</tr>
 					<tr class="bg-slate-50 hidden" data-total-qty-by-unit-row>
 						<td colspan="${stockType === "RM" ? 12 : 10}" class="border-t border-slate-200 px-2 py-2">

@@ -1398,7 +1398,11 @@ const translations = {
     stock_transfer_report_purpose_tooltip:
       "Shows approved stock transfer in/out movement with branch, voucher, and SKU level filters.",
     pair_quantity: "Pair Quantity",
+    qty_in: "Qty In",
     qty_out: "Qty Out",
+    system_qty: "System Qty",
+    counted_stock: "Counted Stock",
+    amount_diff: "Amount Diff",
     transfer_status: "Transfer Status",
     partially_approved: "Partially Approved",
     ref_bill_no: "Ref/Bill No",
@@ -1434,6 +1438,7 @@ const translations = {
     returnables_vendor_condition_mismatch_cases: "Condition Mismatch Cases",
     returnables_vendor_risk_level: "Risk Level",
     sales_voucher: "Sales Voucher",
+    sales_return: "Sales Return",
     sales_order: "Sales Order",
     sales_voucher_description:
       "Record direct sales or deliveries against sales orders with cash/credit handling.",
@@ -3603,6 +3608,13 @@ Object.assign(translations.ur, {
   pending_approvals_dashboard_tooltip:
     "برانچ کے لحاظ سے: منتخب برانچ کی زیر التواء منظوریاں۔",
   view_all: "سب دیکھیں",
+  size: "سائز",
+  sizes: "سائز",
+  sales_return: "سیلز واپسی",
+  qty_in: "داخل مقدار",
+  system_qty: "سسٹم مقدار",
+  counted_stock: "شمار شدہ اسٹاک",
+  amount_diff: "رقم کا فرق",
 });
 
 const formatDateDisplay = (value, fallback = "-") => {

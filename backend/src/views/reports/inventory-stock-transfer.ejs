@@ -57,7 +57,7 @@
     stockType === "FG"
       ? String(filters?.stockStatus || "ALL").toUpperCase()
       : "ALL";
-  const transferStatus = String(filters?.transferStatus || "APPROVED").toUpperCase();
+  const transferStatus = String(filters?.transferStatus || "").toUpperCase();
   const rows = Array.isArray(reportData?.rows) ? reportData.rows : [];
   const summaryRows = Array.isArray(reportData?.summaryRows) ? reportData.summaryRows : [];
   const totals = reportData?.totals || {};
