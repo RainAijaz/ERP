@@ -1430,6 +1430,10 @@ const normalizeSalesVoucherLinesTx = async ({
 
   let linkedOrder = null;
   let pendingSoLineMap = new Map();
+  // When editing, SO lines already committed by this voucher may no longer appear
+  // as "open" if other deliveries have since consumed all remaining pairs. This map
+  // provides a fallback so users can re-save (or reduce) those lines without errors.
+  let committedSoLineFallbackMap = new Map();
   if (saleMode === "FROM_SO") {
     linkedOrder = await fetchLinkedSalesOrderHeaderTx({
       trx,
@@ -1445,7 +1449,75 @@ const normalizeSalesVoucherLinesTx = async ({
     pendingSoLineMap = new Map(
       pendingSoLines.map((line) => [Number(line.sales_order_line_id), line]),
     );
-    if (!pendingSoLineMap.size) {
+
+    if (excludeSalesVoucherId) {
+      // In edit mode, build a fallback from the existing voucher's committed lines.
+      // This covers SO lines that have zero open pairs (fully consumed by other
+      // deliveries) but were valid when this voucher was originally saved.
+      const existingLines = await trx("erp.voucher_line")
+        .select("sku_id", "uom_id", "qty", "meta")
+        .where({ voucher_header_id: excludeSalesVoucherId, line_kind: "SKU" })
+        .whereRaw("coalesce(meta->>'movement_kind', '') = 'SALE'")
+        .whereRaw("coalesce(meta->>'sales_order_line_id', '') ~ '^[0-9]+$'");
+
+      for (const el of existingLines) {
+        const elMeta =
+          el.meta && typeof el.meta === "object" ? el.meta : {};
+        const soLineId = toPositiveInt(elMeta.sales_order_line_id);
+        if (!soLineId || pendingSoLineMap.has(soLineId)) continue;
+
+        const baseUomId =
+          toPositiveInt(elMeta.base_uom_id) || toPositiveInt(el.uom_id);
+        const selectedUomId =
+          toPositiveInt(elMeta.uom_id) || toPositiveInt(el.uom_id) || null;
+        const explicitFactor = Number(elMeta.uom_factor_to_base || 0);
+        const fallbackStatus = normalizeRowStatus(elMeta.row_status);
+        const legacyFactor =
+          fallbackStatus === "PACKED" ? PAIRS_PER_PACKED_UNIT : 1;
+        const unitFactorToBase =
+          Number.isFinite(explicitFactor) && explicitFactor > 0
+            ? explicitFactor
+            : legacyFactor;
+        const isPacked = toBool(elMeta.is_packed) || fallbackStatus === "PACKED";
+        const rowStatus = isPacked ? "PACKED" : "LOOSE";
+        const committedPairs = Number(el.qty || 0);
+
+        const existing = committedSoLineFallbackMap.get(soLineId);
+        committedSoLineFallbackMap.set(soLineId, {
+          sales_order_id: linkedSalesOrderId,
+          sales_order_voucher_no: linkedOrder?.voucherNo || null,
+          sales_order_line_id: soLineId,
+          sales_order_line_no: toPositiveInt(elMeta.sales_order_line_no) || null,
+          sku_id: Number(el.sku_id),
+          sku_code: String(elMeta.sku_code || "").trim(),
+          item_name: String(elMeta.item_name || "").trim(),
+          uom_id: selectedUomId,
+          uom_code:
+            String(elMeta.uom_code || "")
+              .trim()
+              .toUpperCase() || null,
+          uom_name: String(elMeta.uom_name || "").trim() || null,
+          uom_factor_to_base: Number(unitFactorToBase.toFixed(6)),
+          row_status: rowStatus,
+          is_packed: isPacked,
+          // open_pairs = committed pairs so re-saving the same qty always passes;
+          // accumulated across multiple voucher lines for this SO line.
+          open_pairs: Number(
+            ((existing?.open_pairs || 0) + committedPairs).toFixed(3),
+          ),
+          ordered_pairs: committedPairs,
+          delivered_pairs: 0,
+          ordered_qty: 0,
+          delivered_qty: 0,
+          open_qty: 0,
+          pair_rate:
+            toPositiveNumber(elMeta.pair_rate, 2) || 0,
+          pair_discount: toNonNegativeNumber(elMeta.pair_discount, 2) || 0,
+        });
+      }
+    }
+
+    if (!pendingSoLineMap.size && !committedSoLineFallbackMap.size) {
       throw new HttpError(400, "Selected sales order has no pending lines");
     }
   }
@@ -1456,7 +1528,9 @@ const normalizeSalesVoucherLinesTx = async ({
         line?.sales_order_line_id || line?.salesOrderLineId,
       );
       if (saleMode === "FROM_SO" && sourceLineId) {
-        const source = pendingSoLineMap.get(Number(sourceLineId));
+        const source =
+          pendingSoLineMap.get(Number(sourceLineId)) ||
+          committedSoLineFallbackMap.get(Number(sourceLineId));
         if (source) return Number(source.sku_id);
       }
       return toPositiveInt(line?.sku_id || line?.skuId);
@@ -1489,7 +1563,8 @@ const normalizeSalesVoucherLinesTx = async ({
       );
       const soSourceLine =
         saleMode === "FROM_SO"
-          ? pendingSoLineMap.get(Number(sourceLineId || 0))
+          ? (pendingSoLineMap.get(Number(sourceLineId || 0)) ||
+              committedSoLineFallbackMap.get(Number(sourceLineId || 0)))
           : null;
       if (saleMode === "FROM_SO" && !soSourceLine) {
         throw new HttpError(
@@ -3360,7 +3435,7 @@ const loadSalesVoucherOptions = async (req, context = {}) => {
     .trim()
     .toUpperCase();
   let customerQuery = knex("erp.parties as p")
-    .select("p.id", "p.code", "p.name", "p.phone1")
+    .select("p.id", "p.code", "p.name", "p.name_ur", "p.phone1")
     .where({ "p.is_active": true })
     .whereRaw("upper(coalesce(p.party_type::text, '')) in ('CUSTOMER','BOTH')");
   customerQuery = customerQuery.where(function wherePartyScope() {
@@ -3723,6 +3798,7 @@ const loadSalesVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
       "vl.uom_id",
       "s.sku_code",
       "i.name as item_name",
+      "i.name_ur as item_name_ur",
       "vl.qty",
       "vl.rate",
       "vl.amount",
@@ -3763,6 +3839,7 @@ const loadSalesVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
         uom_factor_to_base: Number(meta.uom_factor_to_base || 0) || null,
         sku_code: String(line.sku_code || ""),
         item_name: String(line.item_name || ""),
+        item_name_ur: String(line.item_name_ur || ""),
         qty: Number(line.qty || 0),
         rate: Number(line.rate || 0),
         amount: Number(line.amount || 0),
@@ -3788,12 +3865,13 @@ const loadSalesVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
       .first();
     const party = ext?.customer_party_id
       ? await knex("erp.parties")
-          .select("name", "phone1")
+          .select("name", "name_ur", "phone1")
           .where({ id: ext.customer_party_id })
           .first()
       : null;
     details.customer_party_id = Number(ext?.customer_party_id || 0) || null;
     details.customer_name = String(party?.name || "").trim();
+    details.customer_name_ur = String(party?.name_ur || "").trim();
     details.customer_phone_number = String(party?.phone1 || "").trim();
     details.salesman_employee_id =
       Number(ext?.salesman_employee_id || 0) || null;
@@ -3815,11 +3893,14 @@ const loadSalesVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
     details.customer_phone_number = ext?.customer_phone_number || "";
     if (details.customer_party_id) {
       const party = await knex("erp.parties")
-        .select("name", "phone1")
+        .select("name", "name_ur", "phone1")
         .where({ id: details.customer_party_id })
         .first();
       if (!String(details.customer_name || "").trim()) {
         details.customer_name = String(party?.name || "").trim();
+      }
+      if (!String(details.customer_name_ur || "").trim()) {
+        details.customer_name_ur = String(party?.name_ur || "").trim();
       }
       if (!String(details.customer_phone_number || "").trim()) {
         details.customer_phone_number = String(party?.phone1 || "").trim();
@@ -3950,6 +4031,7 @@ const loadSalesGatePassDetails = async ({
     voucher_date: details.voucher_date,
     status: details.status || "",
     customer_name: details.customer_name || "",
+    customer_name_ur: details.customer_name_ur || "",
     customer_phone_number: details.customer_phone_number || "",
     remarks: details.description || "",
     delivery_method: details.delivery_method || "CUSTOMER_PICKUP",

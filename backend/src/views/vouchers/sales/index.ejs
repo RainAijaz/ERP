@@ -105,7 +105,7 @@
           <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
             <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t("customer_name") %></label>
             <div class="lg:col-span-4" data-customer-select-container>
-              <select name="customer_party_id" data-customer data-customer-select-wrap class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified"><option value=""><%= t("select_customer") %></option><% (options.customers || []).forEach((c) => { %><option value="<%= c.id %>" data-phone="<%= c.phone1 || '' %>" <%= Number(selectedVoucher?.customer_party_id || 0) === Number(c.id) ? "selected" : "" %>><%= c.name %></option><% }) %></select>
+              <select name="customer_party_id" data-customer data-customer-select-wrap class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified"><option value=""><%= t("select_customer") %></option><% (options.customers || []).forEach((c) => { %><option value="<%= c.id %>" data-phone="<%= c.phone1 || '' %>" <%= Number(selectedVoucher?.customer_party_id || 0) === Number(c.id) ? "selected" : "" %>><%= (locale === 'ur' && c.name_ur) ? c.name_ur : c.name %></option><% }) %></select>
             </div>
             <div class="hidden lg:col-span-4" data-customer-name-wrap>
               <input type="text" name="customer_name" data-customer-name maxlength="160" placeholder="<%= t('customer_name') %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" value="<%= locale === 'ur' && selectedVoucher?.customer_name_ur ? selectedVoucher.customer_name_ur : (selectedVoucher?.customer_name || '') %>">
@@ -168,7 +168,7 @@
         <% } else { %>
           <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
             <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t("customer_name") %></label>
-            <div class="lg:col-span-4"><select name="customer_party_id" data-customer class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified"><option value=""><%= t("select_customer") %></option><% (options.customers || []).forEach((c) => { %><option value="<%= c.id %>" data-phone="<%= c.phone1 || '' %>" <%= Number(selectedVoucher?.customer_party_id || 0) === Number(c.id) ? "selected" : "" %>><%= c.name %></option><% }) %></select></div>
+            <div class="lg:col-span-4"><select name="customer_party_id" data-customer class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified"><option value=""><%= t("select_customer") %></option><% (options.customers || []).forEach((c) => { %><option value="<%= c.id %>" data-phone="<%= c.phone1 || '' %>" <%= Number(selectedVoucher?.customer_party_id || 0) === Number(c.id) ? "selected" : "" %>><%= (locale === 'ur' && c.name_ur) ? c.name_ur : c.name %></option><% }) %></select></div>
             <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3"><%= t("salesman") %></label>
             <div class="lg:col-span-4"><select name="salesman_employee_id" data-salesman class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified" required><option value=""><%= t("select_salesman") %></option><% (options.salesmen || []).forEach((s) => { %><option value="<%= s.id %>" <%= Number(selectedVoucher?.salesman_employee_id || 0) === Number(s.id) ? "selected" : "" %>><%= s.name %></option><% }) %></select></div>
           </div>
@@ -485,6 +485,7 @@
       uom_id: Number(line?.uom_id || 0) || null,
       sku_code: String(line?.sku_code || sku?.sku_code || "").trim(),
       item_name: String(line?.item_name || sku?.item_name || "").trim(),
+      item_name_ur: String(line?.item_name_ur || sku?.item_name_ur || "").trim(),
       row_status: String(line?.row_status || "PACKED").toUpperCase(),
       uom_factor_to_base: Number(line?.uom_factor_to_base || 0) || null,
       open_qty: Number(line?.sale_qty || 0),
@@ -679,6 +680,7 @@
     total_discount: 0,
     total_amount: 0,
     item_name: "",
+    item_name_ur: "",
   });
 
   const rows = (Array.isArray(seedLines) && seedLines.length
@@ -696,6 +698,7 @@
         total_discount: Number(r.total_discount || 0),
         total_amount: Number(r.total_amount || 0),
         item_name: String(r.item_name || ""),
+        item_name_ur: String(r.item_name_ur || ""),
       }))
     : [emptyRow()]);
 
@@ -765,6 +768,7 @@
     next.total_discount = Number((totalPairs * next.pair_discount).toFixed(1));
     next.total_amount = Number((totalPairs * (next.pair_rate - next.pair_discount)).toFixed(1));
     next.item_name = String(next.item_name || skuMap.get(Number(next.sku_id || 0))?.item_name || "");
+    next.item_name_ur = String(next.item_name_ur || skuMap.get(Number(next.sku_id || 0))?.item_name_ur || "");
     return next;
   };
 
@@ -1968,6 +1972,7 @@
           total_discount: 0,
           total_amount: 0,
           item_name: "",
+          item_name_ur: "",
         });
       });
     if (!rows.length) rows.push(emptyRow());

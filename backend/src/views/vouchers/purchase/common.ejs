@@ -33,7 +33,8 @@
   };
 
   const isGrn = voucherTypeCode === "GRN";
-  const selectedPurchaseCategory = String(selectedVoucher?.purchase_category || "RAW_MATERIAL").toUpperCase() === "ASSET" ? "ASSET" : "RAW_MATERIAL";
+  const _rawCategory = String(selectedVoucher?.purchase_category || "RAW_MATERIAL").toUpperCase();
+  const selectedPurchaseCategory = _rawCategory === "ASSET" ? "ASSET" : _rawCategory === "CONSUMABLE" ? "CONSUMABLE" : "RAW_MATERIAL";
 %>
 
 <style>
@@ -99,6 +100,9 @@
             <select name="purchase_category" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-purchase-category data-searchable-select="true" data-searchable-variant="unified">
               <option value="RAW_MATERIAL" <%= selectedPurchaseCategory === "RAW_MATERIAL" ? "selected" : "" %>><%= t("raw_material") %></option>
               <option value="ASSET" <%= selectedPurchaseCategory === "ASSET" ? "selected" : "" %>><%= t("asset") %></option>
+              <% if (voucherTypeCode === "PI") { %>
+                <option value="CONSUMABLE" <%= selectedPurchaseCategory === "CONSUMABLE" ? "selected" : "" %>>Consumable / Indirect Material</option>
+              <% } %>
             </select>
           </div>
         </div>
@@ -139,7 +143,7 @@
               <select name="supplier_party_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-supplier-select data-searchable-select="true" data-searchable-variant="unified">
                 <option value=""><%= t("select_supplier") %></option>
                 <% (options.suppliers || []).forEach((supplier) => { %>
-                  <option value="<%= supplier.id %>" <%= Number(selectedVoucher?.supplier_party_id || 0) === Number(supplier.id) ? "selected" : "" %>><%= supplier.name %></option>
+                  <option value="<%= supplier.id %>" <%= Number(selectedVoucher?.supplier_party_id || 0) === Number(supplier.id) ? "selected" : "" %>><%= (locale === 'ur' && supplier.name_ur) ? supplier.name_ur : supplier.name %></option>
                 <% }) %>
               </select>
             </div>
@@ -182,7 +186,7 @@
               <select name="supplier_party_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-supplier-select data-searchable-select="true" data-searchable-variant="unified" required>
                 <option value=""><%= t("select_supplier") %></option>
                 <% (options.suppliers || []).forEach((supplier) => { %>
-                  <option value="<%= supplier.id %>" <%= Number(selectedVoucher?.supplier_party_id || 0) === Number(supplier.id) ? "selected" : "" %>><%= supplier.name %></option>
+                  <option value="<%= supplier.id %>" <%= Number(selectedVoucher?.supplier_party_id || 0) === Number(supplier.id) ? "selected" : "" %>><%= (locale === 'ur' && supplier.name_ur) ? supplier.name_ur : supplier.name %></option>
                 <% }) %>
               </select>
             </div>
@@ -220,7 +224,7 @@
               <select name="supplier_party_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-supplier-select data-searchable-select="true" data-searchable-variant="unified" required>
                 <option value=""><%= t("select_supplier") %></option>
                 <% (options.suppliers || []).forEach((supplier) => { %>
-                  <option value="<%= supplier.id %>" <%= Number(selectedVoucher?.supplier_party_id || 0) === Number(supplier.id) ? "selected" : "" %>><%= supplier.name %></option>
+                  <option value="<%= supplier.id %>" <%= Number(selectedVoucher?.supplier_party_id || 0) === Number(supplier.id) ? "selected" : "" %>><%= (locale === 'ur' && supplier.name_ur) ? supplier.name_ur : supplier.name %></option>
                 <% }) %>
               </select>
             </div>
@@ -360,8 +364,10 @@
     const form = document.querySelector("[data-purchase-voucher-form]");
     if (!form) return;
 
+    const currentLocale = '<%- (locale || "en") %>';
     const rawMaterials = <%- JSON.stringify(options.rawMaterials || []) %>;
     const assets = <%- JSON.stringify(options.assets || []) %>;
+    const expenseAccounts = <%- JSON.stringify(options.expenseAccounts || []) %>;
     const colors = <%- JSON.stringify(options.colors || []) %>;
     const sizes = <%- JSON.stringify(options.sizes || []) %>;
     const rawMaterialColorPolicyByItem = <%- JSON.stringify(options.rawMaterialColorPolicyByItem || {}) %>;
@@ -378,13 +384,16 @@
     const isGeneralPurchase = voucherTypeCode === "PI";
     const isPurchaseReturn = voucherTypeCode === "PR";
     const defaultPurchaseCategory = "<%= selectedPurchaseCategory %>";
-    const normalizePurchaseCategory = (value) =>
-      String(value || "RAW_MATERIAL").toUpperCase() === "ASSET"
-        ? "ASSET"
-        : "RAW_MATERIAL";
+    const normalizePurchaseCategory = (value) => {
+      const cat = String(value || "RAW_MATERIAL").toUpperCase();
+      if (cat === "ASSET") return "ASSET";
+      if (cat === "CONSUMABLE") return "CONSUMABLE";
+      return "RAW_MATERIAL";
+    };
     const getPurchaseCategory = () =>
       normalizePurchaseCategory(purchaseCategorySelect?.value || defaultPurchaseCategory);
     const isAssetPurchase = () => getPurchaseCategory() === "ASSET";
+    const isConsumablePurchase = () => getPurchaseCategory() === "CONSUMABLE";
     const requiredMessage = (label) =>
       window.VoucherValidation?.requiredMessage?.(label)
       || `<%= t("error_required_fields") %>: ${String(label || "").trim()}`;
@@ -441,6 +450,9 @@
         },
       ]),
     );
+    const accountById = new Map(
+      (expenseAccounts || []).map((acc) => [Number(acc.id), { id: Number(acc.id), name: acc.name || "" }]),
+    );
     const colorNameById = new Map(colors.map((color) => [Number(color.id), color.name || ""]));
     const sizeNameById = new Map(sizes.map((size) => [Number(size.id), size.name || ""]));
     
@@ -450,6 +462,8 @@
           asset_id: Number(line.asset_id || 0) || null,
           asset_type_code: String(line.asset_type_code || "").toUpperCase(),
           asset_type_name: String(line.asset_type_name || ""),
+          account_id: Number(line.account_id || 0) || null,
+          description: String(line.description || ""),
           color_id: Number(line.color_id || 0) || null,
           size_id: Number(line.size_id || 0) || null,
           uom_id: Number(line.uom_id || 0) || null,
@@ -463,6 +477,8 @@
           asset_id: null,
           asset_type_code: "",
           asset_type_name: "",
+          account_id: null,
+          description: "",
           color_id: null,
           size_id: null,
           uom_id: null,
@@ -506,6 +522,9 @@
     const getRowFieldOrder = () => {
       if (isAssetPurchase()) {
         return isGrn ? ["item", "qty"] : ["item", "qty", "rate"];
+      }
+      if (isConsumablePurchase()) {
+        return ["item", "description", "qty", "rate"];
       }
       return isGrn
         ? ["item", "color", "size", "qty"]
@@ -771,18 +790,23 @@
     const renderRows = () => {
       linesBody.innerHTML = "";
       const assetMode = isAssetPurchase();
+      const consumableMode = isConsumablePurchase();
       if (lineHeadItem) {
         lineHeadItem.textContent = assetMode
           ? "<%= toFriendlyLabel('asset_name') %>"
-          : "<%= toFriendlyLabel('raw_material') %>";
+          : consumableMode
+            ? "Expense Account"
+            : "<%= toFriendlyLabel('raw_material') %>";
       }
       if (lineHeadType) {
         lineHeadType.textContent = assetMode
           ? "<%= toFriendlyLabel('asset_type') %>"
-          : "<%= toFriendlyLabel('color') %>";
+          : consumableMode
+            ? "Description"
+            : "<%= toFriendlyLabel('color') %>";
       }
-      if (lineHeadSize) lineHeadSize.classList.toggle("hidden", assetMode);
-      if (lineHeadUom) lineHeadUom.classList.toggle("hidden", assetMode);
+      if (lineHeadSize) lineHeadSize.classList.toggle("hidden", assetMode || consumableMode);
+      if (lineHeadUom) lineHeadUom.classList.toggle("hidden", assetMode || consumableMode);
       rowsState.forEach((row, index) => {
         recalculateRow(row);
         const tr = document.createElement("tr");
@@ -798,13 +822,17 @@
         itemSelect.dataset.searchableVariant = "unified";
         const selectedEntityId = assetMode
           ? Number(row.asset_id || 0)
-          : Number(row.item_id || 0);
+          : consumableMode
+            ? Number(row.account_id || 0)
+            : Number(row.item_id || 0);
         itemSelect.appendChild(
           makeOption(
             "",
             assetMode
               ? "<%= toFriendlyLabel('asset_name') %>"
-              : "<%= toFriendlyLabel('select_raw_material') %>",
+              : consumableMode
+                ? "Select Expense Account"
+                : "<%= toFriendlyLabel('select_raw_material') %>",
             !selectedEntityId,
           ),
         );
@@ -818,12 +846,23 @@
               ),
             );
           });
+        } else if (consumableMode) {
+          expenseAccounts.forEach((acc) => {
+            itemSelect.appendChild(
+              makeOption(
+                acc.id,
+                acc.name,
+                Number(row.account_id || 0) === Number(acc.id),
+              ),
+            );
+          });
         } else {
           rawMaterials.forEach((item) => {
+            const itemLabel = (currentLocale === "ur" && String(item.name_ur || "").trim()) ? item.name_ur : item.name;
             itemSelect.appendChild(
               makeOption(
                 item.id,
-                item.name,
+                itemLabel,
                 Number(row.item_id || 0) === Number(item.id),
               ),
             );
@@ -834,15 +873,26 @@
           if (assetMode) {
             row.asset_id = Number(itemSelect.value || 0) || null;
             row.item_id = null;
+            row.account_id = null;
             row.color_id = null;
             row.size_id = null;
             row.uom_id = null;
             const selectedAsset = assetById.get(Number(row.asset_id || 0));
             row.asset_type_code = String(selectedAsset?.asset_type_code || "");
             row.asset_type_name = String(selectedAsset?.asset_type_name || "");
+          } else if (consumableMode) {
+            row.account_id = Number(itemSelect.value || 0) || null;
+            row.item_id = null;
+            row.asset_id = null;
+            row.asset_type_code = "";
+            row.asset_type_name = "";
+            row.color_id = null;
+            row.size_id = null;
+            row.uom_id = null;
           } else {
             row.item_id = Number(itemSelect.value || 0) || null;
             row.asset_id = null;
+            row.account_id = null;
             row.asset_type_code = "";
             row.asset_type_name = "";
             const uom = uomByItemId.get(Number(row.item_id || 0));
@@ -884,7 +934,7 @@
             }
           }
 
-          renderRows(); 
+          renderRows();
         });
         itemTd.appendChild(itemSelect);
         tr.appendChild(itemTd);
@@ -901,6 +951,16 @@
           row.asset_type_name = String(selectedAsset?.asset_type_name || row.asset_type_name || "");
           assetTypeInput.value = row.asset_type_name || row.asset_type_code || "";
           colorTd.appendChild(assetTypeInput);
+        } else if (consumableMode) {
+          const descInput = document.createElement("input");
+          descInput.type = "text";
+          descInput.maxLength = 500;
+          descInput.placeholder = "e.g. Cotton cleaning rags";
+          descInput.dataset.rowField = "description";
+          descInput.className = "h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs";
+          descInput.value = row.description || "";
+          descInput.addEventListener("input", () => { row.description = descInput.value; });
+          colorTd.appendChild(descInput);
         } else {
           const colorSelect = document.createElement("select");
           colorSelect.className = "h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs";
@@ -973,7 +1033,7 @@
 
         const sizeTd = document.createElement("td");
         sizeTd.className = "px-1.5 py-1";
-        if (assetMode) {
+        if (assetMode || consumableMode) {
           sizeTd.classList.add("hidden");
           const placeholder = document.createElement("input");
           placeholder.type = "text";
@@ -1058,7 +1118,7 @@
         uomInput.type = "text";
         uomInput.readOnly = true;
         uomInput.className = "h-8 w-full rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs text-slate-600";
-        if (assetMode) {
+        if (assetMode || consumableMode) {
           uomTd.classList.add("hidden");
           uomInput.value = "";
           row.uom_id = null;
@@ -1211,6 +1271,7 @@
     const isGrnReferencedRowMode = () =>
       isGeneralPurchase &&
       !isAssetPurchase() &&
+      !isConsumablePurchase() &&
       Number(grnReferenceInput?.value || 0) > 0;
 
     const updateRowInsertionUi = () => {
@@ -1239,10 +1300,12 @@
       if (!isGeneralPurchase || !paymentTypeSelect) return;
       const paymentType = String(paymentTypeSelect.value || "CREDIT").toUpperCase();
       const assetMode = isAssetPurchase();
+      const consumableMode = isConsumablePurchase();
       syncPaymentTypeSegmentUi();
       const isCash = paymentType === "CASH";
+      const hideGrnRef = assetMode || consumableMode;
       const hasGrnRef =
-        !assetMode && Number(grnReferenceInput?.value || 0) > 0;
+        !hideGrnRef && Number(grnReferenceInput?.value || 0) > 0;
       if (cashAccountLabel) {
         cashAccountLabel.classList.toggle("hidden", !isCash);
       }
@@ -1254,12 +1317,12 @@
         if (!isCash) cashAccountSelect.value = "";
       }
       if (grnReferenceLabel) {
-        grnReferenceLabel.classList.toggle("hidden", assetMode);
+        grnReferenceLabel.classList.toggle("hidden", hideGrnRef);
       }
       if (grnReferenceWrap) {
-        grnReferenceWrap.classList.toggle("hidden", assetMode);
+        grnReferenceWrap.classList.toggle("hidden", hideGrnRef);
       }
-      if (assetMode && grnReferenceInput) {
+      if (hideGrnRef && grnReferenceInput) {
         grnReferenceInput.value = "";
         if (grnReferenceDisplayInput) grnReferenceDisplayInput.value = "";
         if (grnAllocJsonInput) grnAllocJsonInput.value = "";
@@ -1454,7 +1517,7 @@
         tr.innerHTML = `
           <td class="px-2 py-2 text-slate-700">${String(row.grn_voucher_no || "-")}</td>
           <td class="px-2 py-2 text-slate-700">${formatDisplayDate(voucherDate, "-")}</td>
-          <td class="px-2 py-2 text-slate-700">${String(row.item_name || "-")}</td>
+          <td class="px-2 py-2 text-slate-700">${String((currentLocale === "ur" && row.item_name_ur) ? row.item_name_ur : (row.item_name || "-"))}</td>
           <td class="px-2 py-2 text-slate-700">${colorText}</td>
           <td class="px-2 py-2 text-slate-700">${sizeText}</td>
           <td class="px-2 py-2 text-right font-semibold text-slate-700">${formatDisplayNumber(row.open_qty || 0, 3, "0")}</td>
@@ -1767,12 +1830,14 @@
     });
     purchaseCategorySelect?.addEventListener("change", () => {
       const category = getPurchaseCategory();
-      if (category === "ASSET") {
+      if (category === "ASSET" || category === "CONSUMABLE") {
         setGrnReferenceValue(null, { clearAllocations: true });
       }
       rowsState.forEach((row) => {
         if (category === "ASSET") {
           row.item_id = null;
+          row.account_id = null;
+          row.description = "";
           row.color_id = null;
           row.size_id = null;
           row.uom_id = null;
@@ -1780,10 +1845,20 @@
             row.asset_type_code = "";
             row.asset_type_name = "";
           }
+        } else if (category === "CONSUMABLE") {
+          row.item_id = null;
+          row.asset_id = null;
+          row.asset_type_code = "";
+          row.asset_type_name = "";
+          row.color_id = null;
+          row.size_id = null;
+          row.uom_id = null;
         } else {
           row.asset_id = null;
           row.asset_type_code = "";
           row.asset_type_name = "";
+          row.account_id = null;
+          row.description = "";
         }
       });
       updatePaymentModeUi();
@@ -1889,9 +1964,11 @@
       }
 
       const assetMode = isAssetPurchase();
+      const consumableMode = isConsumablePurchase();
       const hasGrnRefOnSubmit =
         isGeneralPurchase &&
         !assetMode &&
+        !consumableMode &&
         Number(grnReferenceInput?.value || 0) > 0;
       if (!String(referenceNoInput?.value || "").trim() && hasGrnRefOnSubmit) {
         const selectedRefNo = Number(grnReferenceInput?.value || 0);
@@ -1938,29 +2015,39 @@
       }
 
       const payloadLines = rowsState
-        .map((row) => (
-          assetMode
-            ? {
-                asset_id: Number(row.asset_id || 0) || null,
-                qty: Number(row.qty || 0),
-                rate: isGrn ? 0 : Number(row.rate || 0),
-                amount: isGrn ? 0 : Number(row.amount || 0),
-              }
-            : {
-                item_id: Number(row.item_id || 0) || null,
-                color_id: Number(row.color_id || 0) || null,
-                size_id: Number(row.size_id || 0) || null,
-                uom_id: Number(row.uom_id || 0) || null,
-                qty: Number(row.qty || 0),
-                rate: isGrn ? 0 : Number(row.rate || 0),
-                amount: isGrn ? 0 : Number(row.amount || 0),
-              }
-        ))
-        .filter((row) =>
-          assetMode
-            ? row.asset_id && row.qty > 0 && (isGrn || row.rate > 0)
-            : row.item_id && row.qty > 0 && (isGrn || row.rate > 0),
-        );
+        .map((row) => {
+          if (assetMode) {
+            return {
+              asset_id: Number(row.asset_id || 0) || null,
+              qty: Number(row.qty || 0),
+              rate: isGrn ? 0 : Number(row.rate || 0),
+              amount: isGrn ? 0 : Number(row.amount || 0),
+            };
+          }
+          if (consumableMode) {
+            return {
+              account_id: Number(row.account_id || 0) || null,
+              description: String(row.description || "").trim(),
+              qty: Number(row.qty || 0),
+              rate: Number(row.rate || 0),
+              amount: Number(row.amount || 0),
+            };
+          }
+          return {
+            item_id: Number(row.item_id || 0) || null,
+            color_id: Number(row.color_id || 0) || null,
+            size_id: Number(row.size_id || 0) || null,
+            uom_id: Number(row.uom_id || 0) || null,
+            qty: Number(row.qty || 0),
+            rate: isGrn ? 0 : Number(row.rate || 0),
+            amount: isGrn ? 0 : Number(row.amount || 0),
+          };
+        })
+        .filter((row) => {
+          if (assetMode) return row.asset_id && row.qty > 0 && (isGrn || row.rate > 0);
+          if (consumableMode) return row.account_id && row.qty > 0 && row.rate > 0;
+          return row.item_id && row.qty > 0 && (isGrn || row.rate > 0);
+        });
 
       if (!payloadLines.length) {
         event.preventDefault();
@@ -1972,7 +2059,7 @@
       if (isGeneralPurchase) {
         const grnReferenceNo = Number(grnReferenceInput?.value || 0);
         grnAllocJsonInput.value =
-          !assetMode && Number.isInteger(grnReferenceNo) && grnReferenceNo > 0
+          !assetMode && !consumableMode && Number.isInteger(grnReferenceNo) && grnReferenceNo > 0
             ? buildGrnAllocationsPayload(grnReferenceNo)
             : "";
       } else {

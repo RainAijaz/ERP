@@ -1223,7 +1223,7 @@
       inRows = [];
     };
 
-    const applyInTransferSelection = (transfer, { syncSourceBranch = true } = {}) => {
+    const applyInTransferSelection = (transfer, { syncSourceBranch = true, syncDate = false } = {}) => {
       if (!transfer) {
         clearInTransferSelection();
         return;
@@ -1236,6 +1236,13 @@
       if (stnOutIdInput) stnOutIdInput.value = String(stnOutId);
       if (transferRefTextInput) {
         transferRefTextInput.value = String(transfer.transfer_ref_no || '').trim();
+      }
+      if (syncDate && voucherDateInput) {
+        const dispatchDate = normalizeDateInputValue(transfer.dispatch_date || transfer.voucher_date || '');
+        if (dispatchDate) {
+          voucherDateInput.value = dispatchDate;
+          voucherDateInput.dispatchEvent(new Event('change', { bubbles: true }));
+        }
       }
       if (sourceBranchSelect && syncSourceBranch) {
         const sourceId = Number(transfer.source_branch_id || 0) || null;
@@ -1518,7 +1525,7 @@
           window.alert(noPendingTransfersMessage);
           return;
         }
-        applyInTransferSelection(transfer);
+        applyInTransferSelection(transfer, { syncDate: true });
         renderRows();
         closeStiTransferPicker();
       });

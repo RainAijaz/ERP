@@ -139,7 +139,7 @@ CREATE TABLE IF NOT EXISTS erp.purchase_invoice_header_ext (
     OR
     (payment_type = 'CASH'   AND cash_paid_account_id IS NOT NULL)
   ),
-  CHECK (purchase_category IN ('RAW_MATERIAL', 'ASSET'))
+  CHECK (purchase_category IN ('RAW_MATERIAL', 'ASSET', 'CONSUMABLE'))
 );
 
 -- Fast list/filter: PIs by supplier

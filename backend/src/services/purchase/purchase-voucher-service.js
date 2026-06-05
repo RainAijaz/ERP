@@ -15,6 +15,7 @@ const PURCHASE_VOUCHER_TYPES = {
 const PURCHASE_CATEGORIES = {
   rawMaterial: "RAW_MATERIAL",
   asset: "ASSET",
+  consumable: "CONSUMABLE",
 };
 const PURCHASE_ASSET_ACCOUNT_GROUP_CODE = "fixed_assets";
 const PURCHASE_ASSET_CONTROL_ACCOUNT_CODE = "gl_fixed_assets_control";
@@ -80,9 +81,9 @@ const normalizePurchaseCategory = (value) => {
   const text = String(value || PURCHASE_CATEGORIES.rawMaterial)
     .trim()
     .toUpperCase();
-  return text === PURCHASE_CATEGORIES.asset
-    ? PURCHASE_CATEGORIES.asset
-    : PURCHASE_CATEGORIES.rawMaterial;
+  if (text === PURCHASE_CATEGORIES.asset) return PURCHASE_CATEGORIES.asset;
+  if (text === PURCHASE_CATEGORIES.consumable) return PURCHASE_CATEGORIES.consumable;
+  return PURCHASE_CATEGORIES.rawMaterial;
 };
 
 const normalizeReturnReason = (value) => {
@@ -1040,7 +1041,10 @@ const syncPurchaseVoucherStockTx = async ({
     voucherId: normalizedVoucherId,
     voucherTypeCode: normalizedVoucherTypeCode,
   });
-  if (purchaseCategory === PURCHASE_CATEGORIES.asset) {
+  if (
+    purchaseCategory === PURCHASE_CATEGORIES.asset ||
+    purchaseCategory === PURCHASE_CATEGORIES.consumable
+  ) {
     return;
   }
   const voucherLines = await loadPurchaseVoucherStockLinesTx({
@@ -1352,6 +1356,26 @@ const fetchRawMaterialMapTx = async ({ trx, itemIds = [] }) => {
   return new Map(rows.map((row) => [Number(row.id), row]));
 };
 
+const fetchExpenseAccountMapTx = async ({ trx, req, accountIds = [] }) => {
+  const normalized = [
+    ...new Set((accountIds || []).map((id) => toPositiveInt(id)).filter(Boolean)),
+  ];
+  if (!normalized.length) return new Map();
+
+  const rows = await trx("erp.accounts as a")
+    .select("a.id", "a.code", "a.name")
+    .where({ "a.is_active": true })
+    .whereIn("a.id", normalized)
+    .whereExists(function branchAccess() {
+      this.select(1)
+        .from("erp.account_branch as ab")
+        .whereRaw("ab.account_id = a.id")
+        .andWhere("ab.branch_id", req.branchId);
+    });
+
+  return new Map(rows.map((row) => [Number(row.id), row]));
+};
+
 const normalizeAndValidateLinesTx = async ({
   trx,
   req,
@@ -1414,6 +1438,42 @@ const normalizeAndValidateLinesTx = async ({
         asset_name: asset.asset_name || "",
         asset_type_code: String(asset.asset_type_code || "").toUpperCase(),
         asset_type_name: asset.asset_type_name || "",
+      };
+    });
+  }
+
+  if (normalizedCategory === PURCHASE_CATEGORIES.consumable) {
+    const accountIds = lines
+      .map((line) => toPositiveInt(line?.account_id || line?.accountId))
+      .filter(Boolean);
+    const accountMap = await fetchExpenseAccountMapTx({ trx, req, accountIds });
+    if (accountMap.size !== accountIds.length) {
+      throw new HttpError(400, "One or more selected expense accounts are invalid");
+    }
+
+    return lines.map((line, index) => {
+      const lineNo = index + 1;
+      const accountId = toPositiveInt(line?.account_id || line?.accountId);
+      if (!accountId) throw new HttpError(400, `Line ${lineNo}: expense account is required`);
+      const account = accountMap.get(Number(accountId));
+      if (!account) throw new HttpError(400, `Line ${lineNo}: expense account is invalid`);
+
+      const qty = toPositiveNumber(line?.qty, 3);
+      if (!qty) throw new HttpError(400, `Line ${lineNo}: quantity must be greater than zero`);
+
+      const rate = toPositiveNumber(line?.rate, 4);
+      if (!rate) throw new HttpError(400, `Line ${lineNo}: rate must be greater than zero`);
+
+      return {
+        line_no: lineNo,
+        line_kind: "ACCOUNT",
+        account_id: accountId,
+        qty: Number(qty.toFixed(3)),
+        rate: Number(rate.toFixed(4)),
+        amount: Number((qty * rate).toFixed(2)),
+        meta: {
+          description: normalizeText(line?.description, 500) || null,
+        },
       };
     });
   }
@@ -2244,7 +2304,10 @@ const validatePurchaseVoucherPayloadTx = async ({
       supplierPartyId = supplier.id;
     }
 
-    if (purchaseCategory === PURCHASE_CATEGORIES.asset) {
+    if (
+      purchaseCategory === PURCHASE_CATEGORIES.asset ||
+      purchaseCategory === PURCHASE_CATEGORIES.consumable
+    ) {
       grnReferenceVoucherNo = null;
       grnAllocationsPayload = null;
       allocationByLineNo = new Map();
@@ -2792,7 +2855,7 @@ const deletePurchaseVoucher = async ({
 
 const loadPurchaseVoucherOptions = async (req) => {
   let supplierQuery = knex("erp.parties as p")
-    .select("p.id", "p.code", "p.name")
+    .select("p.id", "p.code", "p.name", "p.name_ur")
     .where({ "p.is_active": true })
     .whereRaw("upper(coalesce(p.party_type::text, '')) in ('SUPPLIER','BOTH')");
   supplierQuery = supplierQuery.where(function wherePartyScope() {
@@ -2822,6 +2885,22 @@ const loadPurchaseVoucherOptions = async (req) => {
     })
     .whereRaw("lower(coalesce(apc.code, '')) in ('cash','bank')");
 
+  const expenseAccountQuery = knex("erp.accounts as a")
+    .leftJoin(
+      "erp.account_posting_classes as apc",
+      "apc.id",
+      "a.posting_class_id",
+    )
+    .select("a.id", "a.code", "a.name")
+    .where({ "a.is_active": true })
+    .whereExists(function branchAccess() {
+      this.select(1)
+        .from("erp.account_branch as ab")
+        .whereRaw("ab.account_id = a.id")
+        .andWhere("ab.branch_id", req.branchId);
+    })
+    .whereRaw("lower(coalesce(apc.code, '')) not in ('cash','bank')");
+
   const [
     suppliers,
     rawMaterials,
@@ -2829,6 +2908,7 @@ const loadPurchaseVoucherOptions = async (req) => {
     colors,
     sizes,
     cashAccounts,
+    expenseAccounts,
     openGrnPool,
     rmRateRows,
   ] = await Promise.all([
@@ -2839,6 +2919,7 @@ const loadPurchaseVoucherOptions = async (req) => {
         "i.id",
         "i.code",
         "i.name",
+        "i.name_ur",
         "i.base_uom_id",
         "u.code as base_uom_code",
         "u.name as base_uom_name",
@@ -2885,6 +2966,7 @@ const loadPurchaseVoucherOptions = async (req) => {
       .where({ "s.is_active": true })
       .orderBy("s.name", "asc"),
     cashAccountQuery.orderBy("a.name", "asc"),
+    expenseAccountQuery.orderBy("a.name", "asc"),
     knex.transaction(async (trx) =>
       loadOpenGrnPoolsTx({ trx, branchId: req.branchId }),
     ),
@@ -2998,6 +3080,9 @@ const loadPurchaseVoucherOptions = async (req) => {
   const rawMaterialNameById = new Map(
     (rawMaterials || []).map((row) => [Number(row.id), row.name || ""]),
   );
+  const rawMaterialNameUrById = new Map(
+    (rawMaterials || []).map((row) => [Number(row.id), row.name_ur || ""]),
+  );
   const colorLabelById = new Map(
     (colors || []).map((row) => [Number(row.id), row.name || ""]),
   );
@@ -3073,6 +3158,7 @@ const loadPurchaseVoucherOptions = async (req) => {
       item_name:
         rawMaterialNameById.get(Number(row.item_id)) ||
         `#${Number(row.item_id)}`,
+      item_name_ur: rawMaterialNameUrById.get(Number(row.item_id)) || "",
       color_id: toPositiveInt(row.color_id),
       color_name: toPositiveInt(row.color_id)
         ? colorLabelById.get(Number(row.color_id)) || ""
@@ -3104,6 +3190,7 @@ const loadPurchaseVoucherOptions = async (req) => {
     rawMaterialSizePolicyByItem,
     rawMaterialRatesByItem,
     cashAccounts,
+    expenseAccounts,
     purchaseReturnReasons: PURCHASE_RETURN_REASONS,
     openGrnHeaders,
     openGrnLines,
@@ -3228,14 +3315,17 @@ const loadPurchaseVoucherDetails = async ({
   const lines = await knex("erp.voucher_line as vl")
     .leftJoin("erp.items as i", "i.id", "vl.item_id")
     .leftJoin("erp.uom as u", "u.id", "vl.uom_id")
+    .leftJoin("erp.accounts as a", "a.id", "vl.account_id")
     .select(
       "vl.id",
       "vl.line_no",
       "vl.line_kind",
       "vl.account_id",
+      "a.name as account_name",
       "vl.item_id",
       "i.code as item_code",
       "i.name as item_name",
+      "i.name_ur as item_name_ur",
       "vl.uom_id",
       "u.code as uom_code",
       "u.name as uom_name",
@@ -3252,6 +3342,7 @@ const loadPurchaseVoucherDetails = async ({
       knex.raw(
         "CASE WHEN coalesce(vl.meta->>'size_id', '') ~ '^[0-9]+$' THEN (vl.meta->>'size_id')::int ELSE NULL END as size_id",
       ),
+      knex.raw("COALESCE(vl.meta->>'description', '') as consumable_description"),
     )
     .where({ "vl.voucher_header_id": header.id })
     .orderBy("vl.line_no", "asc");
@@ -3315,8 +3406,12 @@ const loadPurchaseVoucherDetails = async ({
       id: Number(line.id),
       line_no: Number(line.line_no),
       line_kind: String(line.line_kind || "").toUpperCase(),
+      account_id: Number(line.account_id || 0) || null,
+      account_name: line.account_name || "",
+      description: line.consumable_description || "",
       item_id: Number(line.item_id || 0) || null,
       item_name: line.item_name || "",
+      item_name_ur: line.item_name_ur || "",
       item_code: line.item_code || "",
       asset_id: toPositiveInt(line.asset_id),
       asset_name: toPositiveInt(line.asset_id)

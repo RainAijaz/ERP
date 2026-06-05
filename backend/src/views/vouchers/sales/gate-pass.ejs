@@ -54,7 +54,7 @@
           { labelKey: "status", value: gatePass?.status || "-" },
         ],
         metaInfo: [
-          { labelKey: "customer_name", value: gatePass?.customer_name || "-" },
+          { labelKey: "customer_name", value: (normalizedLocale === "ur" ? gatePass?.customer_name_ur : null) || gatePass?.customer_name || "-" },
           { labelKey: "created_by", value: gatePass?.created_by_name || "-" },
           { labelKey: "approved_by", value: gatePass?.approved_by_name || "-" },
           { labelKey: "remarks", value: gatePass?.remarks || "-", full: true },
@@ -80,6 +80,7 @@
             return String(line?.row_status || "").trim().toUpperCase() === "LOOSE" ? unitPairLabel : unitDozenLabel;
           }
           if (column.key === "sale_qty") return formatNumberDisplay(line?.sale_qty || 0, { decimals: 3, fallback: "0" });
+          if (column.key === "item_name") return (normalizedLocale === "ur" ? line?.item_name_ur : null) || line?.item_name || "-";
           return line?.[column.key] || "-";
         },
       };
