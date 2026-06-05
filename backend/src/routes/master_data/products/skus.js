@@ -960,6 +960,7 @@ router.post(
 
       if (!approvalRequired && updatedItems.length > 0) {
         const chatId = process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID;
+        console.log(`[WhatsApp] Rate change check: approvalRequired=${approvalRequired}, items=${updatedItems.length}, chatId="${chatId || "(not set)"}"`);
         if (chatId) {
           knex("erp.variants as v")
             .select("v.id", "i.name as item_name", "k.sku_code")

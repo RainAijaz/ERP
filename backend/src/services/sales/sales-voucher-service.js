@@ -931,14 +931,17 @@ const loadOpenSalesOrderLinesTx = async ({
     orderLinesQuery = orderLinesQuery.where("vh.id", linkedOrderId);
   }
 
+  // Join directly to the SO voucher_line via meta.sales_order_line_id so delivery
+  // tracking works even when sales_header.linked_sales_order_id was not set (e.g.
+  // old records or edge-case saves where the header field was missing).
   let deliveredPairsQuery = trx("erp.voucher_header as svh")
-    .join("erp.sales_header as sh", "sh.voucher_id", "svh.id")
     .join("erp.voucher_line as svl", "svl.voucher_header_id", "svh.id")
+    .joinRaw(
+      `join erp.voucher_line as sol on sol.id = (case when coalesce(svl.meta->>'sales_order_line_id', '') ~ '^[0-9]+$' then cast(svl.meta->>'sales_order_line_id' as bigint) else null end)`,
+    )
     .select(
-      "sh.linked_sales_order_id as sales_order_id",
-      trx.raw(
-        "cast(svl.meta->>'sales_order_line_id' as bigint) as sales_order_line_id",
-      ),
+      trx.raw("sol.voucher_header_id as sales_order_id"),
+      trx.raw("sol.id as sales_order_line_id"),
       trx.raw("sum(svl.qty) as delivered_pairs"),
     )
     .where({
@@ -947,13 +950,12 @@ const loadOpenSalesOrderLinesTx = async ({
       "svl.line_kind": "SKU",
     })
     .whereNot("svh.status", "REJECTED")
-    .whereNotNull("sh.linked_sales_order_id")
     .whereRaw("coalesce(svl.meta->>'movement_kind', '') = 'SALE'")
     .whereRaw("coalesce(svl.meta->>'sales_order_line_id', '') ~ '^[0-9]+$'");
   if (linkedOrderId) {
-    deliveredPairsQuery = deliveredPairsQuery.where(
-      "sh.linked_sales_order_id",
-      linkedOrderId,
+    deliveredPairsQuery = deliveredPairsQuery.whereRaw(
+      "sol.voucher_header_id = ?",
+      [linkedOrderId],
     );
   }
   if (excludedVoucherId) {
@@ -963,8 +965,8 @@ const loadOpenSalesOrderLinesTx = async ({
     );
   }
   deliveredPairsQuery = deliveredPairsQuery.groupBy(
-    "sh.linked_sales_order_id",
-    trx.raw("cast(svl.meta->>'sales_order_line_id' as bigint)"),
+    trx.raw("sol.voucher_header_id"),
+    trx.raw("sol.id"),
   );
 
   const [orderLines, deliveredRows] = await Promise.all([
@@ -1224,18 +1226,18 @@ const loadSalesOrderLineEditStateTx = async ({
     .orderBy("vl.line_no", "asc");
 
   let deliveredPairsQuery = trx("erp.voucher_header as svh")
-    .join("erp.sales_header as sh", "sh.voucher_id", "svh.id")
     .join("erp.voucher_line as svl", "svl.voucher_header_id", "svh.id")
+    .joinRaw(
+      `join erp.voucher_line as sol on sol.id = (case when coalesce(svl.meta->>'sales_order_line_id', '') ~ '^[0-9]+$' then cast(svl.meta->>'sales_order_line_id' as bigint) else null end) and sol.voucher_header_id = ?`,
+      [linkedOrderId],
+    )
     .select(
-      trx.raw(
-        "cast(svl.meta->>'sales_order_line_id' as bigint) as sales_order_line_id",
-      ),
+      trx.raw("sol.id as sales_order_line_id"),
       trx.raw("sum(svl.qty) as delivered_pairs"),
     )
     .where({
       "svh.branch_id": req.branchId,
       "svh.voucher_type_code": SALES_VOUCHER_TYPES.salesVoucher,
-      "sh.linked_sales_order_id": linkedOrderId,
       "svl.line_kind": "SKU",
     })
     .whereNot("svh.status", "REJECTED")
@@ -1249,9 +1251,7 @@ const loadSalesOrderLineEditStateTx = async ({
     );
   }
 
-  deliveredPairsQuery = deliveredPairsQuery.groupBy(
-    trx.raw("cast(svl.meta->>'sales_order_line_id' as bigint)"),
-  );
+  deliveredPairsQuery = deliveredPairsQuery.groupBy(trx.raw("sol.id"));
 
   const [orderLines, deliveredRows] = await Promise.all([
     orderLinesQuery,
