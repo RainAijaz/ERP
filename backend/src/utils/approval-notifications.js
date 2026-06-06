@@ -1,4 +1,4 @@
-const { sendMail } = require("./email");
+const { sendMailWithRetry } = require("./email");
 
 const escapeHtml = (value) =>
   String(value || "")
@@ -199,9 +199,9 @@ const notifyPendingApprovalAdmins = async ({
   `;
 
   try {
-    await sendMail({ to: emails, subject, text, html });
+    await sendMailWithRetry({ to: emails, subject, text, html });
   } catch (err) {
-    console.error("[approval-notifications] failed to notify admins", {
+    console.error("[approval-notifications] failed to notify admins after all retries", {
       approvalRequestId,
       entityType,
       error: err?.message || err,

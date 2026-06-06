@@ -92,4 +92,31 @@ const sendMail = async ({ to, subject, html, text }) => {
   return { sent: true, mode: transportContext.mode };
 };
 
-module.exports = { sendMail };
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// Retries sendMail up to maxAttempts times with increasing delays.
+// Throws on final failure so the caller can decide how to handle it.
+const sendMailWithRetry = async (
+  { to, subject, html, text },
+  { maxAttempts = 3, baseDelayMs = 5000 } = {},
+) => {
+  let lastErr;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await sendMail({ to, subject, html, text });
+    } catch (err) {
+      lastErr = err;
+      if (attempt < maxAttempts) {
+        const delay = baseDelayMs * attempt;
+        console.warn(
+          `[email] attempt ${attempt}/${maxAttempts} failed, retrying in ${delay}ms`,
+          err?.message,
+        );
+        await sleep(delay);
+      }
+    }
+  }
+  throw lastErr;
+};
+
+module.exports = { sendMail, sendMailWithRetry };
