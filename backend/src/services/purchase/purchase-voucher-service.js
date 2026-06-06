@@ -1351,7 +1351,7 @@ const fetchRawMaterialMapTx = async ({ trx, itemIds = [] }) => {
     )
     .whereIn("i.id", normalized)
     .where({ "i.is_active": true })
-    .whereRaw("upper(coalesce(i.item_type::text, '')) = 'RM'");
+    .whereRaw("upper(coalesce(i.item_type::text, '')) IN ('RM', 'SFG')");
 
   return new Map(rows.map((row) => [Number(row.id), row]));
 };
@@ -1483,7 +1483,7 @@ const normalizeAndValidateLinesTx = async ({
     .filter(Boolean);
   const itemMap = await fetchRawMaterialMapTx({ trx, itemIds });
   if (itemMap.size !== itemIds.length)
-    throw new HttpError(400, "One or more raw materials are invalid");
+    throw new HttpError(400, "One or more items are invalid");
 
   const colorIds = lines
     .map((line) => normalizeColorId(line?.color_id || line?.colorId))
@@ -1504,7 +1504,7 @@ const normalizeAndValidateLinesTx = async ({
     const itemId = toPositiveInt(line?.item_id || line?.itemId);
     const item = itemMap.get(Number(itemId));
     if (!item)
-      throw new HttpError(400, `Line ${lineNo}: raw material is invalid`);
+      throw new HttpError(400, `Line ${lineNo}: item is invalid`);
 
     const qty = toPositiveNumber(line?.qty, 3);
     if (!qty)
@@ -1564,11 +1564,11 @@ const normalizeAndValidateLinesTx = async ({
     const baseUomId = toPositiveInt(item.base_uom_id);
     const inputUomId = toPositiveInt(line?.uom_id || line?.uomId);
     if (!baseUomId)
-      throw new HttpError(400, `Line ${lineNo}: raw material has no base unit`);
+      throw new HttpError(400, `Line ${lineNo}: item has no base unit`);
     if (inputUomId && inputUomId !== baseUomId)
       throw new HttpError(
         400,
-        `Line ${lineNo}: unit must match raw material base unit`,
+        `Line ${lineNo}: unit must match item base unit`,
       );
 
     return {
@@ -2925,7 +2925,7 @@ const loadPurchaseVoucherOptions = async (req) => {
         "u.name as base_uom_name",
       )
       .where({ "i.is_active": true })
-      .whereRaw("upper(coalesce(i.item_type::text, '')) = 'RM'")
+      .whereRaw("upper(coalesce(i.item_type::text, '')) IN ('RM', 'SFG')")
       .orderBy("i.name", "asc"),
     (async () => {
       const assetColumns = await getAssetColumnSupportTx(knex);
@@ -2983,7 +2983,7 @@ const loadPurchaseVoucherOptions = async (req) => {
         "r.purchase_rate",
       )
       .where({ "r.is_active": true, "i.is_active": true })
-      .whereRaw("upper(coalesce(i.item_type::text, '')) = 'RM'")
+      .whereRaw("upper(coalesce(i.item_type::text, '')) IN ('RM', 'SFG')")
       .orderBy("r.rm_item_id", "asc"),
   ]);
 

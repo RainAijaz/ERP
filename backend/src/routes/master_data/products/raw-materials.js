@@ -606,6 +606,22 @@ router.post(
         avg_purchase_rate: row.avg_purchase_rate,
       }));
 
+      const [existingItem, existingRates] = await Promise.all([
+        knex("erp.items")
+          .select("code", "name", "name_ur", "group_id", "subgroup_id", "base_uom_id", "min_stock_level", "item_type")
+          .where({ id })
+          .first(),
+        knex("erp.rm_purchase_rates")
+          .select("color_id", "size_id", "purchase_rate", "avg_purchase_rate")
+          .where({ rm_item_id: id }),
+      ]);
+      const oldValue = existingItem
+        ? {
+            ...existingItem,
+            rates: existingRates || [],
+          }
+        : null;
+
       const approval = await handleScreenApproval({
         req,
         scopeKey: "master_data.products.raw_materials",
@@ -613,7 +629,7 @@ router.post(
         entityType: SCREEN_ENTITY_TYPES["master_data.products.raw_materials"],
         entityId: id,
         summary: `${res.locals.t("edit")} ${res.locals.t("raw_materials")}`,
-        oldValue: null,
+        oldValue,
         newValue: {
           _action: "update",
           item_type: ITEM_TYPE,

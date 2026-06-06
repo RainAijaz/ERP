@@ -313,7 +313,7 @@ const loadReportFilterOptions = async ({ req, filters }) => {
       knex("erp.items as i")
         .select("i.id", "i.code", "i.name", "i.group_id", "i.subgroup_id")
         .where({ "i.is_active": true })
-        .whereRaw("upper(coalesce(i.item_type::text, '')) = 'RM'")
+        .whereRaw("upper(coalesce(i.item_type::text, '')) IN ('RM', 'SFG')")
         .orderBy("i.name", "asc"),
       knex("erp.product_groups as g")
         .select("g.id", "g.name")
@@ -323,7 +323,7 @@ const loadReportFilterOptions = async ({ req, filters }) => {
             .from("erp.items as i")
             .whereRaw("i.group_id = g.id")
             .andWhere("i.is_active", true)
-            .andWhereRaw("upper(coalesce(i.item_type::text, '')) = 'RM'");
+            .andWhereRaw("upper(coalesce(i.item_type::text, '')) IN ('RM', 'SFG')");
         })
         .orderBy("g.name", "asc"),
       knex("erp.product_subgroups as sg")
@@ -339,7 +339,7 @@ const loadReportFilterOptions = async ({ req, filters }) => {
             .from("erp.items as i")
             .whereRaw("i.subgroup_id = sg.id")
             .andWhere("i.is_active", true)
-            .andWhereRaw("upper(coalesce(i.item_type::text, '')) = 'RM'");
+            .andWhereRaw("upper(coalesce(i.item_type::text, '')) IN ('RM', 'SFG')");
         })
         .orderBy("sg.name", "asc"),
       cashAccountsQuery.orderBy("a.name", "asc"),
@@ -461,7 +461,7 @@ const getPurchaseReportRows = async ({ req, filters }) => {
           .where({
             "vl.line_kind": "ITEM",
           })
-          .whereRaw("upper(coalesce(i.item_type::text, '')) = 'RM'");
+          .whereRaw("upper(coalesce(i.item_type::text, '')) IN ('RM', 'SFG')");
 
         query = applyCommonFilters(query);
         if (supportsPurchaseCategory) {
