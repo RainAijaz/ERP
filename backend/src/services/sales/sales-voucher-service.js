@@ -964,9 +964,8 @@ const loadOpenSalesOrderLinesTx = async ({
       excludedVoucherId,
     );
   }
-  deliveredPairsQuery = deliveredPairsQuery.groupBy(
-    trx.raw("sol.voucher_header_id"),
-    trx.raw("sol.id"),
+  deliveredPairsQuery = deliveredPairsQuery.groupByRaw(
+    "sol.voucher_header_id, sol.id",
   );
 
   const [orderLines, deliveredRows] = await Promise.all([
