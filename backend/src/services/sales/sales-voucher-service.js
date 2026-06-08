@@ -2245,6 +2245,7 @@ const upsertSalesHeaderExtensionsTx = async ({
         salesman_employee_id: validated.salesmanEmployeeId,
         payment_received_amount: validated.paymentReceivedAmount,
         receive_into_account_id: validated.receiveIntoAccountId,
+        extra_discount: validated.extraDiscount || 0,
       })
       .onConflict("voucher_id")
       .merge({
@@ -2252,6 +2253,7 @@ const upsertSalesHeaderExtensionsTx = async ({
         salesman_employee_id: validated.salesmanEmployeeId,
         payment_received_amount: validated.paymentReceivedAmount,
         receive_into_account_id: validated.receiveIntoAccountId,
+        extra_discount: validated.extraDiscount || 0,
       });
     return;
   }
@@ -3879,6 +3881,7 @@ const loadSalesVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
       Number(ext?.payment_received_amount || 0) > 0 ? "yes" : "no";
     details.receive_into_account_id =
       Number(ext?.receive_into_account_id || 0) || null;
+    details.extra_discount = Number(ext?.extra_discount || 0);
     details.delivery_method = "CUSTOMER_PICKUP";
     details.sale_mode = "DIRECT";
     details.payment_type = "CASH";

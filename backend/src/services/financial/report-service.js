@@ -2698,7 +2698,7 @@ const getAccountActivityLedger = async (filters) => {
   const openingBalance = Number(openingRow?.opening_balance || 0);
   const includeBranchColumn = !filters.branchId;
   const includeDetailsColumns = filters.reportMode === "details";
-  const createBoundaryRow = (voucherTypeCode, entryDate, balance) => {
+  const createBoundaryRow = (voucherTypeCode, entryDate, balance, dr = 0, cr = 0) => {
     const payload = {
       entry_date: entryDate || null,
       voucher_type_code: voucherTypeCode,
@@ -2709,8 +2709,8 @@ const getAccountActivityLedger = async (filters) => {
       payload.department = null;
     }
     if (includeBranchColumn) payload.branch = null;
-    payload.dr = 0;
-    payload.cr = 0;
+    payload.dr = Number(dr.toFixed(2));
+    payload.cr = Number(cr.toFixed(2));
     payload.running_balance = Number(balance.toFixed(2));
     return payload;
   };
@@ -2841,10 +2841,13 @@ const getAccountActivityLedger = async (filters) => {
     })
     .filter((row) => Number(row.dr || 0) !== 0 || Number(row.cr || 0) !== 0);
 
+  const totalDr = detailRows.reduce((sum, r) => sum + Number(r.dr || 0), 0);
+  const totalCr = detailRows.reduce((sum, r) => sum + Number(r.cr || 0), 0);
+
   return [
     createBoundaryRow("OPENING_BALANCE", filters.from, openingBalance),
     ...detailRows,
-    createBoundaryRow("CLOSING_BALANCE", filters.to, running),
+    createBoundaryRow("CLOSING_BALANCE", filters.to, running, totalDr, totalCr),
   ];
 };
 

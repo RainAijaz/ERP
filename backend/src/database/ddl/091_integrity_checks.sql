@@ -125,8 +125,8 @@ BEGIN
       USING ERRCODE = '23503';
   END IF;
 
-  IF v_type <> 'RM' THEN
-    RAISE EXCEPTION 'Invalid item_id=%. Expected item_type=RM, got %.', p_item_id, v_type
+  IF v_type NOT IN ('RM', 'SFG') THEN
+    RAISE EXCEPTION 'Invalid item_id=%. Expected item_type=RM or SFG, got %.', p_item_id, v_type
       USING ERRCODE = '22000';
   END IF;
 END;
