@@ -414,11 +414,19 @@
 		};
 
 		const resolveSystemSnapshot = (row, stockType, selectedUnit) => {
-			// System quantity/rate snapshots always come from current stock balances and are read-only in UI.
 			const factor = Number(selectedUnit?.factor_to_base || 1);
 			const safeFactor = factor > 0 ? factor : 1;
 
 			if (stockType === "RM") {
+				// Use the immutable snapshot captured at voucher save time when available.
+				if (row._snap_base != null) {
+					const key = `${Number(row.item_id || 0)}:${Number(row.color_id || 0)}:${Number(row.size_id || 0)}`;
+					const live = rmSnapshotByKey[key] || { wac: 0 };
+					return {
+						systemQty: qty3(row._snap_base / safeFactor),
+						systemWac: rate6(live.wac || 0),
+					};
+				}
 				const key = `${Number(row.item_id || 0)}:${Number(row.color_id || 0)}:${Number(row.size_id || 0)}`;
 				const snapshot = rmSnapshotByKey[key] || { qty: 0, wac: 0 };
 				const baseQty = qty3(snapshot.qty || 0);
@@ -432,6 +440,14 @@
 			// FG availability is unit-status aware and strictly bound to requested status bucket.
 			const requestedStatus = isBaseUnitOption(selectedUnit) ? "LOOSE" : "PACKED";
 			const fgResolved = resolveFgSnapshotByStatus({ sku, requestedStatus });
+			// Use the immutable snapshot captured at voucher save time when available.
+			if (row._snap_pairs != null) {
+				return {
+					systemQty: qty3(row._snap_pairs / safeFactor),
+					systemWac: rate6(stockType === "FG" ? fgResolved.wac : Number(sku?.system_wac || 0)),
+					rowStatus: stockType === "FG" ? fgResolved.rowStatus : null,
+				};
+			}
 			// Keep fractional pair balances to avoid collapsing valid stock to zero.
 			const pairs = stockType === "FG" ? Number(fgResolved.qtyPairs || 0) : Number(sku?.system_qty_pairs || 0);
 			return {
@@ -885,11 +901,19 @@
 
 			if (field === "sku_id") {
 				row.uom_id = null;
+				row._snap_base = null;
+				row._snap_pairs = null;
 			}
 			if (field === "item_id") {
 				row.uom_id = null;
 				row.color_id = null;
 				row.size_id = null;
+				row._snap_base = null;
+				row._snap_pairs = null;
+			}
+			if (field === "color_id" || field === "size_id") {
+				row._snap_base = null;
+				row._snap_pairs = null;
 			}
 
 			rowsState[index] = applyDerivedRow(row, stockType);
@@ -986,6 +1010,10 @@
 						difference_qty: qty3(line?.difference_qty),
 						rate: rate6(line?.rate),
 						amount: amount2(line?.amount),
+						// Frozen base-unit snapshots so system_qty always reflects the balance
+						// at voucher save time, not the live balance after stock movements.
+						_snap_base: line?.system_qty_snapshot != null ? Number(line.system_qty_snapshot) : null,
+						_snap_pairs: line?.system_qty_pairs_snapshot != null ? Number(line.system_qty_pairs_snapshot) : null,
 					}))
 				: [rowTemplate(stockType)];
 			if (!rowsState.length) rowsState = [rowTemplate(stockType)];

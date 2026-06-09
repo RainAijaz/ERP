@@ -690,6 +690,7 @@
       openedWithSelectionValue = String(select.value || "").trim();
       input.placeholder = openedWithSelectionLabel || placeholderText;
       input.value = "";
+      didSelectFromMenu = false;
     };
     const openMenu = ({ showAll = false, preserveActive = false } = {}) => {
       if (select.disabled) return;
@@ -905,6 +906,7 @@
             renderMenu({ preserveActive: true });
             input.focus();
           } else {
+            didSelectFromMenu = true;
             select.value = opt.value;
             select.dispatchEvent(new Event("change", { bubbles: true }));
             syncToInput();
@@ -950,6 +952,7 @@
     let openedWithSelectionValue = "";
     let committedSelectionLabel = "";
     let committedSelectionValue = "";
+    let didSelectFromMenu = false;
 
     input.addEventListener("pointerdown", () => {
       pointerFocusIntent = true;
@@ -1224,11 +1227,11 @@
               committedSelectionValue || openedWithSelectionValue;
             const restoreLabel =
               committedSelectionLabel || openedWithSelectionLabel;
-            if (!selectedValue && restoreValue) {
+            if (!selectedValue && restoreValue && !didSelectFromMenu) {
               select.value = restoreValue;
               select.dispatchEvent(new Event("change", { bubbles: true }));
               syncToInput();
-            } else if (selectedValue || restoreLabel) {
+            } else if (selectedValue || restoreLabel || didSelectFromMenu) {
               syncToInput();
             } else {
               select.value = "";
@@ -1240,6 +1243,7 @@
         }
         openedWithSelectionLabel = "";
         openedWithSelectionValue = "";
+        didSelectFromMenu = false;
       }, 150);
     });
 

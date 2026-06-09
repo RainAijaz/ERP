@@ -982,6 +982,7 @@ const getSalesReportRows = async ({
     .leftJoin("erp.employees as e", "e.id", "sh.salesman_employee_id")
     .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
     .leftJoin("erp.accounts as ra", "ra.id", "sh.receive_into_account_id")
+    .leftJoin("erp.sales_order_header as soh", "soh.voucher_id", "sh.linked_sales_order_id")
     .select(
       "vh.id as voucher_id",
       "vh.voucher_type_code",
@@ -997,8 +998,11 @@ const getSalesReportRows = async ({
       "ra.name as receive_account_name",
       "sh.customer_party_id",
       "sh.customer_name as walk_in_customer_name",
+      "sh.customer_phone_number as walk_in_customer_phone",
+      "sh.linked_sales_order_id",
       "p.name as customer_name_en",
       "p.name_ur as customer_name_ur",
+      "p.phone1 as customer_phone1",
       "sh.salesman_employee_id",
       "e.name as salesman_name",
       "sh.extra_discount",
@@ -1017,6 +1021,15 @@ const getSalesReportRows = async ({
       "sg.name as subgroup_name",
       "i.product_type_id",
       "pt.name as category_name",
+      knex.raw("COALESCE(soh.payment_received_amount, 0) as so_advance_amount"),
+      knex.raw(`COALESCE((
+        SELECT SUM(sh2.payment_received_amount)
+        FROM erp.sales_header sh2
+        JOIN erp.voucher_header vh2 ON vh2.id = sh2.voucher_id
+        WHERE sh2.linked_sales_order_id = sh.linked_sales_order_id
+          AND sh.linked_sales_order_id IS NOT NULL
+          AND upper(coalesce(vh2.status::text, '')) <> 'REJECTED'
+      ), 0) as order_linked_vouchers_received`),
     )
     .where("vh.voucher_type_code", "SALES_VOUCHER")
     .whereNot("vh.status", "REJECTED")
@@ -1173,6 +1186,10 @@ const getSalesReportRows = async ({
       customer_name_en: String(row.customer_name_en || "").trim(),
       customer_name_ur: String(row.customer_name_ur || "").trim(),
       walk_in_customer_name: String(row.walk_in_customer_name || "").trim(),
+      customer_phone: String(row.customer_phone1 || row.walk_in_customer_phone || "").trim(),
+      linked_sales_order_id: Number(row.linked_sales_order_id || 0) || null,
+      so_advance_amount: toAmount(row.so_advance_amount || 0, 2),
+      order_linked_vouchers_received: toAmount(row.order_linked_vouchers_received || 0, 2),
       salesman_employee_id: Number(row.salesman_employee_id || 0) || null,
       salesman_name: String(row.salesman_name || "").trim(),
       line_no: Number(row.line_no || 0) || 1,
@@ -1249,12 +1266,16 @@ const getSalesReportGroupIdentity = (row, orderBy) => {
       voucher_date: row.voucher_date || "",
       bill_number: row.bill_number || "",
       customer_label: resolveSalesReportCustomerLabel(row),
+      customer_phone: String(row.customer_phone || "").trim(),
       payment_type: row.payment_type || "",
       payment_received_amount: toAmount(row.payment_received_amount || 0, 2),
       receive_account_name: row.receive_account_name || "",
       remaining_amount: toAmount(row.remaining_amount || 0, 2),
       extra_discount: toAmount(row.extra_discount || 0, 2),
       item_label: "",
+      linked_sales_order_id: row.linked_sales_order_id || null,
+      so_advance_amount: toAmount(row.so_advance_amount || 0, 2),
+      order_linked_vouchers_received: toAmount(row.order_linked_vouchers_received || 0, 2),
     };
   }
 
@@ -1337,6 +1358,7 @@ const buildSalesReportData = ({ rows, filters, req }) => {
         voucher_date: identity.voucher_date,
         bill_number: identity.bill_number,
         customer_label: identity.customer_label,
+        customer_phone: identity.customer_phone || "",
         payment_type: identity.payment_type,
         payment_received_amount: identity.payment_received_amount,
         receive_account_name: identity.receive_account_name,
@@ -1347,6 +1369,9 @@ const buildSalesReportData = ({ rows, filters, req }) => {
         ),
         total_remaining_amount: toAmount(identity.remaining_amount, 2),
         item_label: identity.item_label,
+        linked_sales_order_id: identity.linked_sales_order_id || null,
+        so_advance_amount: toAmount(identity.so_advance_amount || 0, 2),
+        order_linked_vouchers_received: toAmount(identity.order_linked_vouchers_received || 0, 2),
         total_qty: 0,
         total_packed_qty_input: 0,
         total_loose_qty_input: 0,
@@ -1414,12 +1439,19 @@ const buildSalesReportData = ({ rows, filters, req }) => {
       const paymentType = String(group.payment_type || "").trim().toUpperCase();
       const paymentReceivedAmount = toAmount(group.payment_received_amount || 0, 2);
       group.total_payment_received_amount = paymentReceivedAmount;
+      // For FROM_SO vouchers, include SO advance + all linked voucher payments for the order
+      const effectiveTotalReceived = group.linked_sales_order_id
+        ? toAmount(
+            Number(group.so_advance_amount || 0) + Number(group.order_linked_vouchers_received || 0),
+            2,
+          )
+        : paymentReceivedAmount;
       group.remaining_amount =
         paymentType === "CREDIT"
           ? toAmount(
               Math.max(
                 0,
-                Number(group.total_net_amount || 0) - Number(paymentReceivedAmount || 0),
+                Number(group.total_net_amount || 0) - Number(effectiveTotalReceived || 0),
               ),
               2,
             )
@@ -1437,6 +1469,7 @@ const buildSalesReportData = ({ rows, filters, req }) => {
     voucher_date: group.voucher_date,
     bill_number: group.bill_number,
     customer_label: group.customer_label,
+    customer_phone: group.customer_phone || "",
     payment_type: group.payment_type,
     payment_received_amount: toAmount(group.payment_received_amount, 2),
     receive_account_name: group.receive_account_name,

@@ -314,7 +314,12 @@ const canUseNegativeStockOverrideTx = async ({
   req,
   voucherTypeCode,
 }) => {
-  return false;
+  const requiresApproval = await requiresApprovalForAction(
+    trx,
+    voucherTypeCode,
+    "negative_stock",
+  );
+  return !requiresApproval;
 };
 
 const requiresApprovalForAction = async (trx, voucherTypeCode, action) => {

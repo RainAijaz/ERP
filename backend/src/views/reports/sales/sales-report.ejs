@@ -429,6 +429,9 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                           <span class="rounded-md border border-white/15 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white">
                             <span class="mr-1 text-slate-200"><%= t("customer_name") %>:</span>
                             <span><%= group.customer_label || "-" %></span>
+                            <% if (group.customer_phone) { %>
+                              <span class="ml-2 text-slate-300">| <%= group.customer_phone %></span>
+                            <% } %>
                           </span>
                         </div>
                         <div class="min-w-0 flex flex-wrap items-center gap-2 lg:justify-end">
@@ -712,7 +715,12 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                     <td class="px-3 py-2 font-semibold text-slate-800"><%= row.voucher_no || "-" %></td>
                     <td class="px-3 py-2"><%= formatDate(row.voucher_date) %></td>
                     <td class="px-3 py-2"><%= row.bill_number || "-" %></td>
-                    <td class="px-3 py-2"><%= row.customer_label || "-" %></td>
+                    <td class="px-3 py-2">
+                      <div class="font-medium text-slate-800"><%= row.customer_label || "-" %></div>
+                      <% if (row.customer_phone) { %>
+                        <div class="text-xs text-slate-500 mt-0.5"><%= row.customer_phone %></div>
+                      <% } %>
+                    </td>
                     <td class="px-3 py-2"><%= row.receive_account_name || "-" %></td>
                     <td class="px-3 py-2">
                       <span class="inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold <%= paymentTypeTone(row.payment_type) %>"><%= paymentTypeLabel(row.payment_type) %></span>
