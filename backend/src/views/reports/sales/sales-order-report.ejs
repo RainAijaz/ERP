@@ -384,7 +384,7 @@
                   <% if (selectedReportType === "complete") { %>
                     <td class="px-3 py-2"><%= formatDate(row.close_date) %></td>
                   <% } %>
-                  <td class="px-3 py-2"><%= row.unit_name || '-' %></td>
+                  <td class="px-3 py-2"><%= String(row.row_status || '').trim().toUpperCase() === 'LOOSE' ? t('unit_pair') : t('unit_dozen') %></td>
                   <td class="px-3 py-2 text-right"><%= formatNumber(row.ordered_qty || 0, 3) %></td>
                   <td class="px-3 py-2 text-right"><%= formatNumber(row.delivered_qty || 0, 3) %></td>
                   <td class="px-3 py-2 text-right"><%= formatNumber(row.remaining_qty || 0, 3) %></td>

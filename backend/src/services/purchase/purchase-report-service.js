@@ -413,6 +413,7 @@ const getPurchaseReportRows = async ({ req, filters }) => {
           )
           .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
           .join("erp.items as i", "i.id", "vl.item_id")
+          .leftJoin("erp.uom as u", "u.id", "i.base_uom_id")
           .leftJoin("erp.rm_purchase_rates as r", function joinRmRates() {
             this.on("r.rm_item_id", "=", "vl.item_id")
               .andOn(knex.raw("r.is_active = true"))
@@ -447,6 +448,7 @@ const getPurchaseReportRows = async ({ req, filters }) => {
             "vl.item_id",
             "i.code as item_code",
             "i.name as item_name",
+            "u.code as uom_code",
             "i.group_id",
             "i.subgroup_id",
             "vl.qty",
@@ -607,6 +609,7 @@ const getPurchaseReportRows = async ({ req, filters }) => {
           ? Number(row.item_id || 0) || null
           : null,
       item_code: row.item_code || "",
+      uom_code: row.uom_code || "",
       item_name:
         purchaseCategory === "ASSET"
           ? row.asset_name || row.item_name || ""

@@ -2074,6 +2074,7 @@ const upsertHeaderExtensionTx = async ({
   cashPaidAccountId = null,
   returnReason = null,
   grnReferenceVoucherNo = null,
+  finalDiscount = 0,
 }) => {
   const normalizedPurchaseCategory =
     normalizePurchaseCategory(purchaseCategory);
@@ -2115,13 +2116,14 @@ const upsertHeaderExtensionTx = async ({
       normalizedPurchaseCategory === PURCHASE_CATEGORIES.rawMaterial
         ? grnReferenceVoucherNo
         : null;
+    const discountNote = finalDiscount > 0 ? String(Number(finalDiscount.toFixed(2))) : null;
     const insertPayload = {
       voucher_id: voucherId,
       supplier_party_id: supplierPartyId,
       payment_type: paymentType,
       cash_paid_account_id: cashPaidAccountId,
       po_voucher_id: null,
-      notes: null,
+      notes: discountNote,
       grn_reference_voucher_no: normalizedGrnReferenceNo,
     };
     if (supportsCategoryColumn) {
@@ -2132,7 +2134,7 @@ const upsertHeaderExtensionTx = async ({
       payment_type: paymentType,
       cash_paid_account_id: cashPaidAccountId,
       po_voucher_id: null,
-      notes: null,
+      notes: discountNote,
       grn_reference_voucher_no: normalizedGrnReferenceNo,
     };
     if (supportsCategoryColumn) {
@@ -2389,6 +2391,10 @@ const validatePurchaseVoucherPayloadTx = async ({
     supplierPartyId = supplier.id;
   }
 
+  const finalDiscount = voucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase
+    ? Math.max(Number(payload.final_discount || 0), 0)
+    : 0;
+
   return {
     voucherDate,
     purchaseCategory,
@@ -2402,6 +2408,7 @@ const validatePurchaseVoucherPayloadTx = async ({
     grnAllocationsPayload,
     lines,
     allocationByLineNo,
+    finalDiscount,
   };
 };
 
@@ -2464,6 +2471,7 @@ const createPurchaseVoucher = async ({
       cashPaidAccountId: validated.cashPaidAccountId,
       returnReason: validated.returnReason,
       grnReferenceVoucherNo: validated.grnReferenceVoucherNo,
+      finalDiscount: validated.finalDiscount,
     });
 
     const insertedLines = await insertVoucherLinesTx({
@@ -2669,6 +2677,7 @@ const updatePurchaseVoucher = async ({
       cashPaidAccountId: validated.cashPaidAccountId,
       returnReason: validated.returnReason,
       grnReferenceVoucherNo: validated.grnReferenceVoucherNo,
+      finalDiscount: validated.finalDiscount,
     });
 
     await trx("erp.voucher_line")
@@ -3399,6 +3408,7 @@ const loadPurchaseVoucherDetails = async ({
     supplier_party_id: null,
     payment_type: "CREDIT",
     cash_paid_account_id: null,
+    final_discount: 0,
     return_reason: null,
     grn_reference_voucher_no: null,
     grn_reference_no: null,
@@ -3482,6 +3492,7 @@ const loadPurchaseVoucherDetails = async ({
           "payment_type",
           "cash_paid_account_id",
           "grn_reference_voucher_no",
+          "notes",
           ...(supportsCategoryColumn
             ? ["purchase_category"]
             : [knex.raw("NULL::text as purchase_category")]),
@@ -3497,6 +3508,7 @@ const loadPurchaseVoucherDetails = async ({
     details.payment_type = normalizePaymentType(ext?.payment_type || "CREDIT");
     details.cash_paid_account_id =
       Number(ext?.cash_paid_account_id || 0) || null;
+    details.final_discount = Math.max(Number(ext?.notes || 0), 0);
     details.grn_reference_voucher_no = parseVoucherNo(
       ext?.grn_reference_voucher_no,
     );

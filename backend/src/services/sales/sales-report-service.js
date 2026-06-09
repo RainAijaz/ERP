@@ -552,7 +552,7 @@ const getSalesOrderReportRows = async ({ req, filters }) => {
         productName && skuCode
           ? `${productName} (${skuCode})`
           : productName || skuCode || "",
-      unit_name: row.unit_name || "",
+      row_status: rowStatus,
       color_name: row.color_name || "",
       ordered_qty: orderedQty,
       delivered_qty: deliveredQty,

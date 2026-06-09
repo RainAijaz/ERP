@@ -69,7 +69,7 @@
     });
     return set.size;
   };
-  const detailColumnCount = 12;
+  const detailColumnCount = 13;
   const detailTotalsLabelSpan = 4;
   const reportPurposeTooltip = (() => {
     const key = "purchase_reports_purpose_tooltip";
@@ -357,6 +357,7 @@
                 <% if (orderBy !== "product") { %>
                   <th title="<%= headerTooltip('purchase_report_header_raw_material_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_raw_material_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= entityLabel %></th>
                 <% } %>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("unit") %></th>
                 <th title="<%= headerTooltip('purchase_report_header_quantity_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_quantity_tooltip') %>" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("quantity") %></th>
                 <th title="<%= headerTooltip('purchase_report_header_standard_rate_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_standard_rate_tooltip') %>" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("fixed_purchase_rate") %></th>
                 <th title="<%= headerTooltip('purchase_report_header_weighted_avg_rate_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_weighted_avg_rate_tooltip') %>" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("weighted_average_rate") %></th>
@@ -395,6 +396,7 @@
                     <% if (orderBy !== "product") { %>
                       <td class="px-3 py-2"><%= line.item_name || "-" %></td>
                     <% } %>
+                    <td class="px-3 py-2"><%= line.uom_code || "-" %></td>
                     <td class="px-3 py-2 text-right font-semibold"><%= formatNumber(line.qty, 3) %></td>
                     <td class="px-3 py-2 text-right font-semibold"><%= formatNumber(line.fixed_purchase_rate, 4) %></td>
                     <td class="px-3 py-2 text-right font-semibold"><%= formatNumber(line.weighted_average_rate, 4) %></td>

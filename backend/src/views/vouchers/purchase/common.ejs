@@ -75,6 +75,9 @@
       <input type="hidden" name="voucher_id" value="<%= selectedVoucher?.id || '' %>">
       <input type="hidden" name="lines_json" value="[]" data-lines-json>
       <input type="hidden" name="grn_allocations_json" value="" data-grn-alloc-json>
+      <% if (voucherTypeCode === "PI") { %>
+        <input type="hidden" name="final_discount" value="<%= selectedVoucher?.final_discount || 0 %>" data-final-discount>
+      <% } %>
 
       <div class="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
         <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
@@ -306,6 +309,23 @@
         </div>
       </div>
 
+      <% if (voucherTypeCode === "PI") { %>
+        <div class="ml-auto w-full max-w-sm space-y-1 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm" data-discount-summary>
+          <div class="flex items-center justify-between">
+            <span class="text-slate-500 font-medium">Subtotal</span>
+            <span class="font-semibold text-slate-700" data-subtotal-display>0.00</span>
+          </div>
+          <div class="flex items-center justify-between gap-3">
+            <span class="text-slate-500 font-medium shrink-0">Discount (Amt)</span>
+            <input type="number" min="0" step="0.01" placeholder="0.00" class="h-8 w-36 rounded-lg border border-slate-300 bg-white px-2 text-right text-sm font-semibold text-slate-700 focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50" data-discount-input <%= canSaveVoucher ? '' : 'disabled' %>>
+          </div>
+          <div class="flex items-center justify-between border-t border-slate-200 pt-1">
+            <span class="font-semibold text-slate-700">Net Total</span>
+            <span class="text-base font-extrabold text-accent" data-net-total-display>0.00</span>
+          </div>
+        </div>
+      <% } %>
+
       <div class="flex items-center justify-center gap-2 pt-1">
         <button type="submit" class="rounded-xl bg-accent px-5 py-2 text-sm font-semibold uppercase tracking-[0.1em] text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40" <%= canSaveVoucher ? '' : 'disabled' %>><%= toFriendlyLabel("confirm") %></button>
       </div>
@@ -410,6 +430,10 @@
     const totalQtyInput = form.querySelector("[data-total-qty]");
     const linesJsonInput = form.querySelector("[data-lines-json]");
     const grnAllocJsonInput = form.querySelector("[data-grn-alloc-json]");
+    const finalDiscountInput = form.querySelector("[data-final-discount]");
+    const discountAmountInput = form.querySelector("[data-discount-input]");
+    const subtotalDisplay = form.querySelector("[data-subtotal-display]");
+    const netTotalDisplay = form.querySelector("[data-net-total-display]");
     
     const supplierSelect = form.querySelector("[data-supplier-select]");
     const purchaseCategorySelect = form.querySelector("[data-purchase-category]");
@@ -771,8 +795,14 @@
           const totalQty = rowsState.reduce((sum, row) => sum + Number(row.qty || 0), 0);
           totalQtyInput.value = formatDisplayNumber(totalQty, 3, "0");
       } else if (totalAmountInput) {
-          const totalAmount = rowsState.reduce((sum, row) => sum + Number(row.amount || 0), 0);
-          totalAmountInput.value = formatDisplayNumber(totalAmount, 2, "0");
+          const subtotal = rowsState.reduce((sum, row) => sum + Number(row.amount || 0), 0);
+          totalAmountInput.value = formatDisplayNumber(subtotal, 2, "0");
+          if (subtotalDisplay) subtotalDisplay.textContent = formatDisplayNumber(subtotal, 2, "0");
+          if (netTotalDisplay) {
+            const disc = Math.max(Number(discountAmountInput?.value || 0), 0);
+            const net = Math.max(subtotal - disc, 0);
+            netTotalDisplay.textContent = formatDisplayNumber(net, 2, "0");
+          }
       }
     };
 
@@ -2056,6 +2086,9 @@
       }
 
       linesJsonInput.value = JSON.stringify(payloadLines);
+      if (finalDiscountInput && discountAmountInput) {
+        finalDiscountInput.value = String(Math.max(Number(discountAmountInput.value || 0), 0));
+      }
       if (isGeneralPurchase) {
         const grnReferenceNo = Number(grnReferenceInput?.value || 0);
         grnAllocJsonInput.value =
@@ -2082,6 +2115,16 @@
       if (!confirm("<%= t('are_you_sure') %>")) return;
       deleteForm.submit();
     });
+
+    if (discountAmountInput && finalDiscountInput) {
+      const savedDiscount = Math.max(Number(finalDiscountInput.value || 0), 0);
+      if (savedDiscount > 0) discountAmountInput.value = formatDisplayNumber(savedDiscount, 2, "");
+      discountAmountInput.addEventListener("input", () => {
+        const disc = Math.max(Number(discountAmountInput.value || 0), 0);
+        finalDiscountInput.value = String(disc);
+        updateTotals();
+      });
+    }
 
     updatePaymentModeUi();
     syncGrnReferenceWithSupplier();

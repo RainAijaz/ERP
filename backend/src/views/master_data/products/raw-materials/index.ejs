@@ -433,3 +433,65 @@
     bindRateEnterNavigation();
   })();
 </script>
+<script>
+(function () {
+  const itemsData = <%- JSON.stringify((rows || []).map(function(row) {
+    return {
+      id: row.id,
+      name: locale === 'ur' ? (row.name_ur || row.name || '') : (row.name || ''),
+      subgroup_name: locale === 'ur' ? (row.subgroup_name_ur || row.subgroup_name || '') : (row.subgroup_name || ''),
+      uom_code: row.uom_code || '',
+      min_stock_level: (row.min_stock_level === null || row.min_stock_level === undefined || row.min_stock_level === '') ? '' : Math.trunc(Number(row.min_stock_level)),
+    };
+  })) %>;
+  const rateDetails = <%- JSON.stringify(rateDetailsByItem || {}) %>;
+
+  const downloadBtn = document.querySelector('[data-download-button]');
+  if (!downloadBtn) return;
+
+  // Replace button to strip the generic table-row download handler
+  const freshBtn = downloadBtn.cloneNode(true);
+  downloadBtn.parentNode.replaceChild(freshBtn, downloadBtn);
+
+  freshBtn.addEventListener('click', function () {
+    const q = function(v) { return '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""') + '"'; };
+    const headers = [
+      <%= JSON.stringify(t('name')) %>,
+      <%= JSON.stringify(t('sub_group')) %>,
+      <%= JSON.stringify(t('base_unit')) %>,
+      <%= JSON.stringify(t('min_stock')) %>,
+      <%= JSON.stringify(t('color')) %>,
+      <%= JSON.stringify(t('size')) %>,
+      <%= JSON.stringify(t('purchase_rate')) %>,
+      <%= JSON.stringify(t('avg_purchase_rate')) %>,
+    ].map(function(h) { return '"' + h.replace(/"/g, '""') + '"'; });
+
+    var csvRows = [headers.join(',')];
+
+    itemsData.forEach(function(item) {
+      var details = rateDetails[item.id] || [];
+      if (!details.length) {
+        csvRows.push([q(item.name), q(item.subgroup_name), q(item.uom_code), q(item.min_stock_level), q('-'), q('-'), q('-'), q('-')].join(','));
+        return;
+      }
+      details.forEach(function(detail) {
+        var colorName = '<%= locale %>' === 'ur' ? (detail.color_name_ur || detail.color_name || '') : (detail.color_name || '');
+        var sizeName  = '<%= locale %>' === 'ur' ? (detail.size_name_ur  || detail.size_name  || '') : (detail.size_name  || '');
+        var pRate = (detail.purchase_rate     !== null && detail.purchase_rate     !== undefined) ? Math.trunc(Number(detail.purchase_rate))     : '-';
+        var aRate = (detail.avg_purchase_rate !== null && detail.avg_purchase_rate !== undefined) ? Math.trunc(Number(detail.avg_purchase_rate)) : '-';
+        csvRows.push([q(item.name), q(item.subgroup_name), q(item.uom_code), q(item.min_stock_level), q(colorName), q(sizeName), q(pRate), q(aRate)].join(','));
+      });
+    });
+
+    var csvContent = '﻿' + csvRows.join('\r\n');
+    var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    var link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'raw_materials_export.csv';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(link.href);
+  });
+})();
+</script>
