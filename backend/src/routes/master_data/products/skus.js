@@ -10,7 +10,7 @@ const {
 } = require("../../../middleware/approvals/screen-approval");
 const { sendMail } = require("../../../utils/email");
 const { queueAuditLog } = require("../../../utils/audit-log");
-const { sendWhatsAppMessage } = require("../../../utils/whatsapp");
+const { sendSkuRateNotification } = require("../../../utils/sku-rate-notification");
 const { setCookie } = require("../../../middleware/utils/cookies");
 const { UI_NOTICE_COOKIE } = require("../../../middleware/core/ui-notice");
 
@@ -959,50 +959,16 @@ router.post(
       });
 
       if (!approvalRequired && updatedItems.length > 0) {
-        const chatId = process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID;
-        console.log(`[WhatsApp] Rate change check: approvalRequired=${approvalRequired}, items=${updatedItems.length}, chatId="${chatId || "(not set)"}"`);
-        if (chatId) {
-          knex("erp.variants as v")
-            .select("v.id", "i.name as item_name", "k.sku_code")
-            .leftJoin("erp.items as i", "v.item_id", "i.id")
-            .leftJoin("erp.skus as k", "k.variant_id", "v.id")
-            .whereIn(
-              "v.id",
-              updatedItems.map((u) => u.id),
-            )
-            .then((details) => {
-              const detailMap = new Map(details.map((d) => [d.id, d]));
-              const username =
-                req.user?.username || req.user?.name || "Unknown";
-              const timeStr = new Date().toLocaleString("en-PK", {
-                timeZone: "Asia/Karachi",
-                day: "2-digit",
-                month: "short",
-                year: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: true,
-              });
-              const lines = updatedItems.map(({ id, rate, oldRate }) => {
-                const d = detailMap.get(id);
-                const sku = d?.sku_code || `#${id}`;
-                const name = d?.item_name || "-";
-                const newRateStr = `Rs. ${Number(rate).toLocaleString("en-PK")}`;
-                let change = "";
-                if (oldRate !== null && oldRate !== undefined) {
-                  const oldRateStr = `Rs. ${Number(oldRate).toLocaleString("en-PK")}`;
-                  if (rate > oldRate) change = `  ↑ (was ${oldRateStr})`;
-                  else if (rate < oldRate) change = `  ↓ (was ${oldRateStr})`;
-                }
-                return `• ${sku}  —  ${name}  →  ${newRateStr}${change}`;
-              });
-              const message = `*Rate Update Alert*\nBy: ${username}\nTime: ${timeStr}\n\n${lines.join("\n")}`;
-              sendWhatsAppMessage(chatId, message).catch(() => {});
-            })
-            .catch((err) => {
-              console.error("[WhatsApp] Rate notify fetch error:", err.message);
-            });
-        }
+        await sendSkuRateNotification({
+          knex,
+          chatId: process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID,
+          updates: updatedItems.map(({ id, rate, oldRate }) => ({
+            id,
+            newRate: rate,
+            oldRate,
+          })),
+          user: req.user,
+        });
       }
 
       const msg = approvalRequired
@@ -1041,6 +1007,12 @@ router.post(
     const viewQuery = `?item_type=${itemType}`;
     const basePath = `${req.baseUrl}`;
     try {
+      const currentRateRow = await knex("erp.variants")
+        .select("sale_rate")
+        .where({ id })
+        .first();
+      const currentRate = currentRateRow ? Number(currentRateRow.sale_rate) : null;
+
       const approvalRequired = await shouldRequireApproval(
         req,
         "master_data.products.skus",
@@ -1071,7 +1043,8 @@ router.post(
           request_type: "MASTER_DATA_CHANGE",
           entity_type: "SKU",
           entity_id: String(id),
-          summary: `${res.locals.t("deactivate")} ${res.locals.t("skus")}`,
+          summary: `${res.locals.t("edit")} ${res.locals.t("skus")}`,
+          old_value: { _action: "update", sale_rate: currentRate },
           new_value: { _action: "update", sale_rate: req.body.sale_rate },
           status: "PENDING",
           requested_by: req.user.id,
@@ -1099,6 +1072,18 @@ router.post(
         entityType: "SKU",
         entityId: id,
         action: "UPDATE",
+      });
+      await sendSkuRateNotification({
+        knex,
+        chatId: process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID,
+        updates: [
+          {
+            id,
+            newRate: req.body.sale_rate,
+            oldRate: currentRate,
+          },
+        ],
+        user: req.user,
       });
       return res.redirect(basePath + viewQuery + "&success=true");
     } catch (e) {

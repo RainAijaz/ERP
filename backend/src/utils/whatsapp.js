@@ -1,5 +1,6 @@
 const { Client, LocalAuth } = require("whatsapp-web.js");
 const qrcode = require("qrcode-terminal");
+const qrcodeImage = require("qrcode");
 const path = require("path");
 
 let client = null;
@@ -7,6 +8,19 @@ let clientReady = false;
 let reconnectTimer = null;
 
 const SESSION_PATH = path.join(__dirname, "..", "..", ".wwebjs_auth");
+const QR_OUTPUT_FILE = path.join(__dirname, "..", "..", "public", "whatsapp-qr.png");
+
+const writeQrSnapshot = async (qr) => {
+  try {
+    await qrcodeImage.toFile(QR_OUTPUT_FILE, qr, {
+      margin: 1,
+      scale: 8,
+      errorCorrectionLevel: "M",
+    });
+  } catch (err) {
+    console.error("[WhatsApp] Failed to write QR snapshot:", err.message);
+  }
+};
 
 const scheduleReconnect = (delayMs = 15000) => {
   if (reconnectTimer) return;
@@ -31,6 +45,9 @@ const initWhatsApp = () => {
 
   client.on("qr", (qr) => {
     console.log("\n[WhatsApp] Scan this QR code in WhatsApp to connect:\n");
+    writeQrSnapshot(qr).catch((err) => {
+      console.error("[WhatsApp] Failed to write QR snapshot:", err.message);
+    });
     qrcode.generate(qr, { small: true });
   });
 
@@ -72,16 +89,20 @@ const initWhatsApp = () => {
 };
 
 const sendWhatsAppMessage = async (chatId, text) => {
-  if (!chatId || !String(chatId).trim()) return;
-  if (!clientReady || !client) {
-    console.warn("[WhatsApp] Client not ready — skipping rate notification");
+  if (!chatId || !String(chatId).trim()) {
+    console.warn("[WhatsApp] sendMessage called with no chatId");
     return;
   }
+  if (!clientReady || !client) {
+    console.warn("[WhatsApp] Client not ready (clientReady:", clientReady, ") — skipping rate notification to", chatId);
+    return;
+  }
+  console.log("[WhatsApp] Attempting to send rate notification to", chatId);
   try {
     await client.sendMessage(chatId, text);
-    console.log("[WhatsApp] Rate notification sent to group");
+    console.log("[WhatsApp] ✓ Rate notification sent successfully to group");
   } catch (err) {
-    console.error("[WhatsApp] Failed to send message:", err.message);
+    console.error("[WhatsApp] ✗ Failed to send message:", err.message);
   }
 };
 

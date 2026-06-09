@@ -5,6 +5,7 @@ const {
   requirePermission,
 } = require("../../middleware/access/role-permissions");
 const { applyMasterDataChange } = require("../../utils/approval-applier");
+const { sendSkuRateNotification } = require("../../utils/sku-rate-notification");
 const { navConfig, getNavScopes } = require("../../utils/nav-config");
 const {
   BASIC_INFO_ENTITY_TYPES,
@@ -90,7 +91,6 @@ const {
   buildBulkPreviewRows: buildLabourRateBulkPreviewRows,
 } = require("../../services/hr-payroll/labour-rates-service");
 const bomService = require("../../services/bom/service");
-const { sendWhatsAppMessage } = require("../../utils/whatsapp");
 
 const router = express.Router();
 
@@ -2012,49 +2012,34 @@ router.post(
           },
         });
       }
-      if (
-        requestSnapshot?.entity_type === "SKU_BULK_RATE_UPDATE" &&
-        process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID
-      ) {
-        const chatId = process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID;
+      if (requestSnapshot?.entity_type === "SKU_BULK_RATE_UPDATE") {
         const variants = requestSnapshot.new_value?.variants;
         if (Array.isArray(variants) && variants.length > 0) {
-          knex("erp.variants as v")
-            .select("v.id", "i.name as item_name", "k.sku_code")
-            .leftJoin("erp.items as i", "v.item_id", "i.id")
-            .leftJoin("erp.skus as k", "k.variant_id", "v.id")
-            .whereIn("v.id", variants.map((v) => Number(v.id)))
-            .then((details) => {
-              const detailMap = new Map(details.map((d) => [d.id, d]));
-              const username = req.user?.username || req.user?.name || "Unknown";
-              const timeStr = new Date().toLocaleString("en-PK", {
-                timeZone: "Asia/Karachi",
-                day: "2-digit",
-                month: "short",
-                year: "numeric",
-                hour: "2-digit",
-                minute: "2-digit",
-                hour12: true,
-              });
-              const lines = variants.map(({ id, old_rate, new_rate }) => {
-                const d = detailMap.get(Number(id));
-                const sku = d?.sku_code || `#${id}`;
-                const name = d?.item_name || "-";
-                const newRateStr = `Rs. ${Number(new_rate).toLocaleString("en-PK")}`;
-                let change = "";
-                if (old_rate !== null && old_rate !== undefined) {
-                  const oldRateStr = `Rs. ${Number(old_rate).toLocaleString("en-PK")}`;
-                  if (Number(new_rate) > Number(old_rate)) change = `  ↑ (was ${oldRateStr})`;
-                  else if (Number(new_rate) < Number(old_rate)) change = `  ↓ (was ${oldRateStr})`;
-                }
-                return `• ${sku}  —  ${name}  →  ${newRateStr}${change}`;
-              });
-              const message = `*Rate Update Alert*\nBy: ${username} (approved)\nTime: ${timeStr}\n\n${lines.join("\n")}`;
-              sendWhatsAppMessage(chatId, message).catch(() => {});
-            })
-            .catch((err) => {
-              console.error("[WhatsApp] Rate notify (approval) fetch error:", err.message);
-            });
+          await sendSkuRateNotification({
+            knex,
+            chatId: process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID,
+            updates: variants,
+            user: req.user,
+            approved: true,
+          });
+        }
+      }
+      if (requestSnapshot?.entity_type === "SKU") {
+        const singleRate = requestSnapshot.new_value?.sale_rate;
+        if (singleRate !== null && singleRate !== undefined) {
+          await sendSkuRateNotification({
+            knex,
+            chatId: process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID,
+            updates: [
+              {
+                id: Number(requestSnapshot.entity_id),
+                newRate: singleRate,
+                oldRate: requestSnapshot.old_value?.sale_rate ?? null,
+              },
+            ],
+            user: req.user,
+            approved: true,
+          });
         }
       }
 
