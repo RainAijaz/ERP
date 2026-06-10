@@ -909,6 +909,9 @@
             didSelectFromMenu = true;
             select.value = opt.value;
             select.dispatchEvent(new Event("change", { bubbles: true }));
+            if (variant === "navbar" && typeof window.__navigateWithBranch === "function") {
+              window.__navigateWithBranch(opt.value);
+            }
             syncToInput();
             menu.classList.add("hidden");
             input.dataset.searchableSuppressOpenOnce = "1";
@@ -1173,6 +1176,9 @@
       const valueChanged = previousValue !== nextValue;
       if (valueChanged) {
         select.dispatchEvent(new Event("change", { bubbles: true }));
+        if (variant === "navbar" && typeof window.__navigateWithBranch === "function") {
+          window.__navigateWithBranch(nextValue);
+        }
       }
       syncToInput();
       menu.classList.add("hidden");

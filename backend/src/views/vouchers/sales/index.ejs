@@ -235,6 +235,10 @@
             <label class="text-sm font-semibold text-slate-700"><%= t("sales_order_total_amount") %></label>
             <input type="text" readonly class="h-9 w-full rounded-xl border border-slate-300 bg-slate-100 px-2 text-right text-sm font-semibold text-slate-700" value="" data-so-order-total>
           </div>
+          <div class="hidden grid-cols-[minmax(0,1fr)_220px] items-center gap-3" data-so-extra-discount-row>
+            <label class="text-sm font-semibold text-slate-700"><%= t("extra_discount") %></label>
+            <input type="text" readonly class="h-9 w-full rounded-xl border border-slate-300 bg-slate-100 px-2 text-right text-sm font-semibold text-slate-700" value="" data-so-extra-discount>
+          </div>
           <div class="hidden grid-cols-[minmax(0,1fr)_220px] items-center gap-3" data-so-advance-row>
             <label class="text-sm font-semibold text-slate-700"><%= t("sales_order_previous_payments_received") %></label>
             <input type="text" readonly class="h-9 w-full rounded-xl border border-slate-300 bg-slate-100 px-2 text-right text-sm font-semibold text-slate-700" value="" data-so-advance>
@@ -411,6 +415,8 @@
   const finalLabel = form.querySelector("[data-final-label]");
   const soOrderTotalRow = form.querySelector("[data-so-order-total-row]");
   const soOrderTotalInput = form.querySelector("[data-so-order-total]");
+  const soExtraDiscountRow = form.querySelector("[data-so-extra-discount-row]");
+  const soExtraDiscountInput = form.querySelector("[data-so-extra-discount]");
   const remainingRow = form.querySelector("[data-remaining-row]");
   const remainingInput = form.querySelector("[data-remaining]");
   const remainingLabel = form.querySelector("[data-remaining-label]");
@@ -461,6 +467,7 @@
     sales_order_advance_amount: <%= Number(selectedVoucher?.linked_sales_order_advance_amount || 0) || 0 %>,
     previous_payments_received: <%= Number(selectedVoucher?.linked_sales_order_previous_payments_received || 0) || 0 %>,
     total_order_amount: <%= Number(selectedVoucher?.linked_sales_order_total_amount || 0) || 0 %>,
+    so_extra_discount: <%= Number(selectedVoucher?.linked_sales_order_extra_discount || 0) || 0 %>,
     payment_received_amount: <%= Number(selectedVoucher?.linked_sales_order_previous_payments_received || selectedVoucher?.linked_sales_order_payment_received_amount || 0) || 0 %>,
   };
 
@@ -1124,6 +1131,8 @@
     }
     const selectedOrder = fromSO && linkedOrderId > 0 ? orderMap.get(linkedOrderId) : null;
     const orderTotalAmount = Number(n(selectedOrder?.total_order_amount || 0).toFixed(1));
+    const soExtraDiscount = Number(n(selectedOrder?.so_extra_discount || 0).toFixed(1));
+    const orderNetAmount = Number((orderTotalAmount - soExtraDiscount).toFixed(1));
     const previousPaymentsReceived = Number(
       n(
         selectedOrder?.previous_payments_received
@@ -1141,7 +1150,7 @@
       ? Number((previousPaymentsReceived + currentReceivedAmount).toFixed(1))
       : currentReceivedAmount;
     const remaining = fromSO
-      ? Number((Math.max(0, orderTotalAmount - effectiveReceivedAmount)).toFixed(1))
+      ? Number((Math.max(0, orderNetAmount - effectiveReceivedAmount)).toFixed(1))
       : Number((Math.max(0, final - effectiveReceivedAmount)).toFixed(1));
     const dueDateRequired = !isSalesOrderVoucher
       && paymentType === "CREDIT"
@@ -1152,6 +1161,9 @@
     }
     if (soOrderTotalInput) {
       soOrderTotalInput.value = fromSO ? f1OrBlank(orderTotalAmount) : "";
+    }
+    if (soExtraDiscountInput) {
+      soExtraDiscountInput.value = (fromSO && soExtraDiscount > 0) ? f1OrBlank(soExtraDiscount) : "";
     }
     if (soAdvanceInput) {
       soAdvanceInput.value = fromSO ? f1OrBlank(previousPaymentsReceived) : "";
@@ -1317,6 +1329,11 @@
     if (soOrderTotalRow) {
       soOrderTotalRow.classList.add("grid");
       soOrderTotalRow.classList.toggle("hidden", !(fromSO && linkedOrderId > 0));
+    }
+    if (soExtraDiscountRow) {
+      const soExtraDiscountVal = Number(n(selectedOrder?.so_extra_discount || 0).toFixed(1));
+      soExtraDiscountRow.classList.add("grid");
+      soExtraDiscountRow.classList.toggle("hidden", !(fromSO && linkedOrderId > 0 && soExtraDiscountVal > 0));
     }
     if (soAdvanceRow) {
       soAdvanceRow.classList.add("grid");

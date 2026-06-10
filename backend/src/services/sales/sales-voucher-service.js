@@ -797,6 +797,7 @@ const loadSalesOrderReceivableSummaryMapTx = async ({
       .select(
         "vh.id as sales_order_id",
         "soh.payment_received_amount as sales_order_advance_amount",
+        "soh.extra_discount as extra_discount",
       )
       .whereIn("vh.id", normalizedIds)
       .where({
@@ -831,6 +832,7 @@ const loadSalesOrderReceivableSummaryMapTx = async ({
     const orderId = Number(row.sales_order_id || 0);
     const advanceAmount = Number(row.sales_order_advance_amount || 0);
     const totalOrderAmount = Number(totalByOrderId.get(orderId) || 0);
+    const soExtraDiscount = Number(row.extra_discount || 0);
     const linkedReceivedAmount = Number(
       linkedReceivedByOrderId.get(orderId) || 0,
     );
@@ -845,6 +847,7 @@ const loadSalesOrderReceivableSummaryMapTx = async ({
         Math.max(0, linkedReceivedAmount).toFixed(2),
       ),
       totalOrderAmount: Number(Math.max(0, totalOrderAmount).toFixed(2)),
+      soExtraDiscount: Number(Math.max(0, soExtraDiscount).toFixed(2)),
       previousPaymentsReceived,
     });
   });
@@ -3609,6 +3612,7 @@ const loadSalesVoucherOptions = async (req, context = {}) => {
       summary.linkedVouchersReceivedAmount || 0,
     );
     order.total_order_amount = Number(summary.totalOrderAmount || 0);
+    order.so_extra_discount = Number(summary.soExtraDiscount || 0);
     order.previous_payments_received = Number(
       summary.previousPaymentsReceived || 0,
     );
@@ -3646,6 +3650,11 @@ const loadSalesVoucherOptions = async (req, context = {}) => {
       total_order_amount: Number(
         selectedSummary?.totalOrderAmount ||
           selectedVoucher?.linked_sales_order_total_amount ||
+          0,
+      ),
+      so_extra_discount: Number(
+        selectedSummary?.soExtraDiscount ||
+          selectedVoucher?.linked_sales_order_extra_discount ||
           0,
       ),
       previous_payments_received: Number(
@@ -3996,6 +4005,9 @@ const loadSalesVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
         );
         details.linked_sales_order_total_amount = Number(
           receivableSummary.totalOrderAmount || 0,
+        );
+        details.linked_sales_order_extra_discount = Number(
+          receivableSummary.soExtraDiscount || 0,
         );
         details.linked_sales_order_receive_into_account_id =
           Number(linkedOrder.receive_into_account_id || 0) || null;
