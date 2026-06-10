@@ -6,6 +6,7 @@ const path = require("path");
 let client = null;
 let clientReady = false;
 let reconnectTimer = null;
+let reconnectAttempts = 0;
 
 const SESSION_PATH = path.join(__dirname, "..", "..", ".wwebjs_auth");
 const QR_OUTPUT_FILE = path.join(__dirname, "..", "..", "public", "whatsapp-qr.png");
@@ -22,9 +23,11 @@ const writeQrSnapshot = async (qr) => {
   }
 };
 
-const scheduleReconnect = (delayMs = 15000) => {
+const scheduleReconnect = (baseDelayMs = 15000) => {
   if (reconnectTimer) return;
-  console.log(`[WhatsApp] Reconnecting in ${delayMs / 1000}s...`);
+  reconnectAttempts += 1;
+  const delayMs = Math.min(baseDelayMs * reconnectAttempts, 300000);
+  console.log(`[WhatsApp] Reconnecting in ${Math.round(delayMs / 1000)}s... (attempt ${reconnectAttempts})`);
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
     client = null;
@@ -39,7 +42,20 @@ const initWhatsApp = () => {
     authStrategy: new LocalAuth({ dataPath: SESSION_PATH }),
     puppeteer: {
       headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--no-first-run",
+        "--no-zygote",
+        "--single-process",
+        "--disable-extensions",
+      ],
+    },
+    webVersionCache: {
+      type: "local",
+      path: path.join(__dirname, "..", "..", ".wwebjs_cache"),
     },
   });
 
@@ -53,6 +69,7 @@ const initWhatsApp = () => {
 
   client.on("ready", () => {
     clientReady = true;
+    reconnectAttempts = 0;
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
