@@ -84,6 +84,13 @@ app.use(csrf);
 app.use(uiNotice);
 app.use(uiFlash);
 
+app.use((req, res, next) => {
+  if (req.method === "POST" && req.user) {
+    console.log(`[DEBUG-POST] ${req.method} ${req.path} — user:${req.user?.username} body_keys:${Object.keys(req.body || {}).join(",")}`);
+  }
+  next();
+});
+
 app.use("/", uiRoutes);
 
 app.use(notFound);
