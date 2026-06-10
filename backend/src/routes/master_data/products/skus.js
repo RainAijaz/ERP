@@ -848,6 +848,8 @@ router.post(
     const ids = toArray(variant_ids);
     const rates = toArray(new_rates);
 
+    console.log(`[DEBUG-BULK] POST /bulk-update hit — ids:${ids.length} user:${req?.user?.username} isAdmin:${req?.user?.isAdmin}`);
+
     if (!ids.length) return res.redirect(basePath + viewQuery);
 
     try {
@@ -856,6 +858,7 @@ router.post(
         "master_data.products.skus",
         "delete",
       );
+      console.log(`[DEBUG-BULK] approvalRequired:${approvalRequired} isAdmin:${req?.user?.isAdmin}`);
       const allowed = hasPermission(
         req.user,
         "master_data.products.skus",
@@ -958,6 +961,7 @@ router.post(
         }
       });
 
+      console.log(`[DEBUG-BULK] updatedItems:${updatedItems.length} approvalRequired:${approvalRequired}`);
       if (!approvalRequired && updatedItems.length > 0) {
         await sendSkuRateNotification({
           knex,
@@ -1006,6 +1010,7 @@ router.post(
     const itemType = req.query.item_type === "SFG" ? "SFG" : "FG";
     const viewQuery = `?item_type=${itemType}`;
     const basePath = `${req.baseUrl}`;
+    console.log(`[DEBUG-SKU] POST /:id hit — id:${id} user:${req?.user?.username} isAdmin:${req?.user?.isAdmin}`);
     try {
       const currentRateRow = await knex("erp.variants")
         .select("sale_rate")
@@ -1023,6 +1028,7 @@ router.post(
         "master_data.products.skus",
         "delete",
       );
+      console.log(`[DEBUG-SKU] approvalRequired:${approvalRequired} isAdmin:${req?.user?.isAdmin}`);
       if (process.env.DEBUG_SKU_PERMS === "1") {
         console.log("[SKU PERM DEBUG]", {
           user: req.user?.username,
