@@ -959,6 +959,9 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
       dept_id: toNumberOrNull(line?.dept_id),
       required_qty: toNumberOrNull(line?.required_qty),
       uom_id: toNumberOrNull(line?.uom_id),
+      rm_color_id: toNumberOrNull(line?.rm_color_id),
+      rm_size_id: toNumberOrNull(line?.rm_size_id),
+      replacement_rm_item_id: toNumberOrNull(line?.replacement_rm_item_id),
     }))
     .filter(
       (line) =>
@@ -1062,7 +1065,11 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
 
   if (headerSkuSet.size && rmComboSet.size && enforceSkuRuleCompleteness) {
     const missingSkuRulePairs = [];
+    const skusWithAnyRule = new Set(
+      [...providedSkuRmCombos].map((key) => toNumberOrNull(key.split(":")[0])).filter(Boolean),
+    );
     [...headerSkuSet].forEach((skuId) => {
+      if (!skusWithAnyRule.has(skuId)) return;
       [...rmComboSet].forEach((rmComboKey) => {
         const skuRmKey = `${skuId}:${rmComboKey}`;
         if (!providedSkuRmCombos.has(skuRmKey)) {
@@ -1946,10 +1953,13 @@ const validateDraftReadyForApproval = async (
       if (!skuId || !rmItemId || !deptId || qty === null || qty < 0) return;
       providedPairSet.add(`${skuId}:${rmItemId}:${deptId}`);
     });
+    const skusWithAnyRule = new Set(
+      [...providedPairSet].map((key) => toNumberOrNull(key.split(":")[0])).filter(Boolean),
+    );
     const missingPairs = [];
     skuRows.forEach((sku) => {
       const skuId = toNumberOrNull(sku?.id);
-      if (!skuId) return;
+      if (!skuId || !skusWithAnyRule.has(skuId)) return;
       rmLines.forEach((rmLine) => {
         const rmItemId = toNumberOrNull(rmLine?.rm_item_id);
         const deptId = toNumberOrNull(rmLine?.dept_id);

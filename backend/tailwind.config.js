@@ -1,5 +1,6 @@
 module.exports = {
   content: ["./src/views/**/*.ejs", "./src/**/*.js"],
+  darkMode: "class",
   theme: {
     extend: {
       fontFamily: {
@@ -9,7 +10,7 @@ module.exports = {
       },
       colors: {
         ink: "#1c2430",
-        muted: "#5e6a7b",
+        muted: "#475569",
         accent: "#14526a",
       },
     },

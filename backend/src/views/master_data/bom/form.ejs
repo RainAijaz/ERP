@@ -332,6 +332,33 @@
   </form>
 </div>
 
+<div class="fixed inset-0 z-[95] hidden items-center justify-center bg-slate-900/40 p-4" data-bom-sku-warn-modal>
+  <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl" role="dialog" aria-modal="true" aria-labelledby="bom-sku-warn-title">
+    <div class="relative border-b border-slate-200 px-6 py-4">
+      <button type="button" data-bom-sku-warn-close class="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" aria-label="<%= tx('close', 'Close') %>">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
+      </button>
+      <div class="flex items-start gap-3 pr-10">
+        <div class="mt-0.5 inline-flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+          <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 8v5m0 3h.01M4.93 19h14.14c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.2 16c-.77 1.33.19 3 1.73 3z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <div>
+          <div class="text-sm font-semibold text-slate-700" id="bom-sku-warn-title"><%= tx("bom_sku_warn_title", "Incomplete SKU Rules") %></div>
+          <p class="mt-1 text-xs text-slate-500" data-bom-sku-warn-message></p>
+        </div>
+      </div>
+    </div>
+    <div class="space-y-2 border-t border-slate-200 px-6 py-5">
+      <button type="button" data-bom-sku-warn-confirm class="w-full rounded-xl bg-slate-900 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-slate-800">
+        <%= tx("bom_sku_warn_save_anyway", "Save Anyway") %>
+      </button>
+      <button type="button" data-bom-sku-warn-close class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800">
+        <%= tx("bom_sku_warn_review", "Review SKU Rules") %>
+      </button>
+    </div>
+  </div>
+</div>
+
 <div class="fixed inset-0 z-[95] hidden items-center justify-center bg-slate-900/40 p-4" data-bom-header-change-modal>
   <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl" role="dialog" aria-modal="true" aria-labelledby="bom-header-change-title">
     <div class="relative border-b border-slate-200 px-6 py-4">
@@ -389,6 +416,8 @@
       sku_override: <%- JSON.stringify(formState?.sku_overrides || []) %>,
       skuRuleOpenSkuId: "",
     };
+    // Expose state for E2E test instrumentation (no-op in production)
+    window.__bomState = state;
     const labels = {
       select: "<%= t('select')  %>",
       all: "<%= t('all')  %>",
@@ -1150,6 +1179,27 @@
         };
       }).filter((row) => row.baseline && row.effective);
     };
+    const getSkuCompletenessState = (skuId) => {
+      const rmLines = (state.rm || []).filter(
+        (row) => String(row?.rm_item_id || "").trim() && String(row?.dept_id || "").trim(),
+      );
+      if (!rmLines.length) return "na";
+      const qtySet = new Set(
+        (state.sku_override || [])
+          .filter((row) => {
+            if (String(row?.sku_id || "") !== String(skuId || "")) return false;
+            const qty = String(row?.override_qty ?? "").trim();
+            return qty !== "" && Number(qty) >= 0;
+          })
+          .map((row) => `${row.target_rm_item_id}:${row.dept_id}`),
+      );
+      const covered = rmLines.filter((line) => qtySet.has(`${line.rm_item_id}:${line.dept_id}`)).length;
+      if (covered === 0) return "empty";
+      if (covered === rmLines.length) return "full";
+      return "partial";
+    };
+    const hasPartialSkuRules = () =>
+      getHeaderSkuOptions().some((sku) => getSkuCompletenessState(String(sku.id)) === "partial");
     const ensureSkuRuleOpenSku = () => {
       const skuOptions = getHeaderSkuOptions();
       if (!skuOptions.length) {
@@ -1256,6 +1306,12 @@
           ? skuOptions.map((sku) => {
             const skuId = String(sku.id);
             const isActive = skuId === String(activeSku?.id || "");
+            const completeness = getSkuCompletenessState(skuId);
+            const badgeHtml = completeness === "full"
+              ? `<span class="ml-1.5 inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded-full ${isActive ? "bg-green-400 text-slate-900" : "bg-green-500 text-white"}" data-sku-chip-badge="full" title="<%= tx('bom_sku_badge_full', 'All rules complete') %>"><svg class="h-2 w-2" viewBox="0 0 10 10" fill="none"><path d="M2 5l2 2 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`
+              : completeness === "partial"
+              ? `<span class="ml-1.5 inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded-full ${isActive ? "bg-amber-400 text-slate-900" : "bg-amber-500 text-white"}" data-sku-chip-badge="partial" title="<%= tx('bom_sku_badge_partial', 'Partially filled — some materials missing') %>"><svg class="h-2 w-2" viewBox="0 0 10 10" fill="currentColor"><circle cx="5" cy="5" r="2.2"/></svg></span>`
+              : "";
             return `
               <button
                 type="button"
@@ -1263,7 +1319,7 @@
                 class="inline-flex items-center rounded-full border px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.08em] transition ${isActive ? "border-slate-800 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"}"
                 title="${esc(getSkuCodeLabel(sku))}"
               >
-                ${esc(getSkuCodeLabel(sku))}
+                ${esc(getSkuCodeLabel(sku))}${badgeHtml}
               </button>
             `;
           }).join("")
@@ -2031,6 +2087,7 @@
       });
       if (rmViewMode === "sku_rules") {
         renderSkuRules();
+        if (typeof window.initSearchableSelects === "function") window.initSearchableSelects(skuRulesBody);
       }
     };
     const setLabourViewMode = (mode) => {
@@ -2047,6 +2104,22 @@
         renderLabourRules();
         if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
       }
+    };
+
+    const refreshSkuChipBadges = () => {
+      if (!skuRuleChipsHost) return;
+      const activeSku = ensureSkuRuleOpenSku();
+      skuRuleChipsHost.querySelectorAll("[data-sku-rule-chip]").forEach((btn) => {
+        const skuId = String(btn.getAttribute("data-sku-rule-chip") || "");
+        const isActive = skuId === String(activeSku?.id || "");
+        btn.querySelectorAll("[data-sku-chip-badge]").forEach((b) => b.remove());
+        const completeness = getSkuCompletenessState(skuId);
+        if (completeness === "full") {
+          btn.insertAdjacentHTML("beforeend", `<span class="ml-1.5 inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded-full ${isActive ? "bg-green-400 text-slate-900" : "bg-green-500 text-white"}" data-sku-chip-badge="full" title="All rules complete"><svg class="h-2 w-2" viewBox="0 0 10 10" fill="none"><path d="M2 5l2 2 4-4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></span>`);
+        } else if (completeness === "partial") {
+          btn.insertAdjacentHTML("beforeend", `<span class="ml-1.5 inline-flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center rounded-full ${isActive ? "bg-amber-400 text-slate-900" : "bg-amber-500 text-white"}" data-sku-chip-badge="partial" title="Partially filled — some materials missing"><svg class="h-2 w-2" viewBox="0 0 10 10" fill="currentColor"><circle cx="5" cy="5" r="2.2"/></svg></span>`);
+        }
+      });
     };
 
     const renderAll = () => {
@@ -2550,6 +2623,24 @@
           }
         });
       }
+      if (skuRulesBody instanceof HTMLElement) {
+        skuRulesBody.addEventListener("change", (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          if (!target.matches('[data-sku-rule-col="required_qty"], [data-sku-rule-col="rm_color_id"], [data-sku-rule-col="rm_size_id"]')) return;
+          const row = target.closest("[data-sku-rule-row]");
+          if (row) applySkuRuleRowToOverrides(row);
+          refreshSkuChipBadges();
+        });
+        skuRulesBody.addEventListener("input", (event) => {
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          if (!target.matches('[data-sku-rule-col="required_qty"]')) return;
+          const row = target.closest("[data-sku-rule-row]");
+          if (row) applySkuRuleRowToOverrides(row);
+          refreshSkuChipBadges();
+        });
+      }
     };
 
     const collectRows = (type, mapFn) => {
@@ -2732,12 +2823,44 @@
       switchOutputQtyInput = bomForm.querySelector("[data-bom-switch-output-qty]");
       switchOutputUomInput = bomForm.querySelector("[data-bom-switch-output-uom-id]");
       saveDraftBtn = bomForm.querySelector("[data-bom-save-draft]");
+      const skuWarnModal = document.querySelector("[data-bom-sku-warn-modal]");
+      const skuWarnMessage = skuWarnModal?.querySelector("[data-bom-sku-warn-message]");
+      const showSkuWarnModal = (message, onConfirm) => {
+        if (!(skuWarnModal instanceof HTMLElement)) { onConfirm(); return; }
+        if (skuWarnMessage) skuWarnMessage.textContent = message;
+        skuWarnModal.classList.remove("hidden");
+        skuWarnModal.classList.add("flex");
+        const closeModal = () => {
+          skuWarnModal.classList.add("hidden");
+          skuWarnModal.classList.remove("flex");
+        };
+        const confirmBtn = skuWarnModal.querySelector("[data-bom-sku-warn-confirm]");
+        const closeBtns = Array.from(skuWarnModal.querySelectorAll("[data-bom-sku-warn-close]"));
+        const handleConfirm = () => { closeModal(); confirmBtn.removeEventListener("click", handleConfirm); onConfirm(); };
+        confirmBtn.addEventListener("click", handleConfirm);
+        closeBtns.forEach((btn) => btn.addEventListener("click", closeModal, { once: true }));
+      };
+      const doSaveDraft = () => {
+        clearSwitchAfterSaveIntent();
+        if (submitIntentInput) submitIntentInput.value = "";
+        allowBomSubmit = true;
+        bomForm.requestSubmit();
+      };
       if (saveDraftBtn instanceof HTMLButtonElement) {
         saveDraftBtn.addEventListener("click", () => {
-          clearSwitchAfterSaveIntent();
-          if (submitIntentInput) submitIntentInput.value = "";
-          allowBomSubmit = true;
-          bomForm.requestSubmit();
+          syncSkuRulesFromDom();
+          if (hasPartialSkuRules()) {
+            const partialSkus = getHeaderSkuOptions()
+              .filter((sku) => getSkuCompletenessState(String(sku.id)) === "partial")
+              .map((sku) => getSkuCodeLabel(sku))
+              .join(", ");
+            showSkuWarnModal(
+              `<%= tx("bom_sku_warn_message", "The following SKUs have quantity rules for some materials but not all") %>: ${partialSkus}. <%= tx("bom_sku_warn_message2", "Missing lines will default to 0 in production.") %>`,
+              doSaveDraft,
+            );
+            return;
+          }
+          doSaveDraft();
         });
       }
       bomForm.addEventListener(

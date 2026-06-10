@@ -1,4 +1,16 @@
 <meta charset="UTF-8" />
+<script>
+  /* Dark mode flash prevention — runs before any CSS or body paint. */
+  (function () {
+    try {
+      var saved = localStorage.getItem("erp-theme");
+      var prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+      if (saved === "dark" || (!saved && prefersDark)) {
+        document.documentElement.classList.add("dark");
+      }
+    } catch (e) {}
+  })();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title><%= title || "ERP" %></title>
 <link rel="icon" type="image/png" href="/favicon.png?v=20260411" />

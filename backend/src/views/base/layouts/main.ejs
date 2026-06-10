@@ -184,6 +184,20 @@
             <div class="flex flex-wrap items-center gap-3">
               <!-- Main navigation links -->
               <%- include("../partials/navbar") %>
+              <!-- Dark mode toggle -->
+              <button
+                id="theme-toggle"
+                type="button"
+                aria-label="Toggle dark mode"
+                class="rounded-full border border-slate-200 bg-white p-2 text-slate-600 shadow-sm transition hover:border-accent/40 hover:text-accent"
+              >
+                <svg data-sun class="hidden h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/>
+                </svg>
+                <svg data-moon class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+              </button>
               <!-- Mobile menu toggle -->
               <label for="nav-toggle" class="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 shadow-sm transition hover:border-accent/40 hover:text-accent lg:hidden">
                 <span>Menu</span>
@@ -1450,5 +1464,27 @@
     <%- include("../partials/report-utils") %>
     <!-- Urdu translation utilities for multilingual support -->
     <%- include("../partials/urdu-translate-utils") %>
+    <script>
+      (function () {
+        var btn = document.getElementById("theme-toggle");
+        if (!(btn instanceof HTMLElement)) return;
+
+        var syncIcons = function () {
+          var isDark = document.documentElement.classList.contains("dark");
+          var sun = btn.querySelector("[data-sun]");
+          var moon = btn.querySelector("[data-moon]");
+          if (sun instanceof HTMLElement) sun.classList.toggle("hidden", !isDark);
+          if (moon instanceof HTMLElement) moon.classList.toggle("hidden", isDark);
+        };
+
+        btn.addEventListener("click", function () {
+          var isDark = document.documentElement.classList.toggle("dark");
+          try { localStorage.setItem("erp-theme", isDark ? "dark" : "light"); } catch (e) {}
+          syncIcons();
+        });
+
+        syncIcons();
+      })();
+    </script>
   </body>
 </html>
