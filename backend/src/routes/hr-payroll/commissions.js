@@ -103,6 +103,7 @@ const page = {
         ELSE 'ALL'
       END as selector_display`,
     ),
+    "t.source_rule_id",
     knex.raw(
       "CASE WHEN lower(trim(t.status)) = 'active' THEN true ELSE false END as is_active",
     ),
@@ -878,6 +879,19 @@ router.post(
         });
       }
 
+      const skuSelectorMap = new Map(
+        expectedRows.map((row) => [
+          Number(row.sku_id),
+          { subgroupId: row.subgroup_id ?? null, groupId: row.group_id ?? null },
+        ]),
+      );
+      const enrichedRows = normalized.rows.map((row) => ({
+        skuId: row.skuId,
+        rate: row.rate,
+        subgroupId: skuSelectorMap.get(Number(row.skuId))?.subgroupId ?? null,
+        groupId: skuSelectorMap.get(Number(row.skuId))?.groupId ?? null,
+      }));
+
       const result = await knex.transaction(async (trx) => {
         return applyBulkSkuRateUpsert({
           trx,
@@ -890,7 +904,7 @@ router.post(
           valueType: normalized.valueType,
           reverseOnReturns: normalized.reverseOnReturns,
           status: normalized.status,
-          rows: normalized.rows,
+          rows: enrichedRows,
         });
       });
 

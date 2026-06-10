@@ -228,6 +228,7 @@ const upsertBulkScopeRules = async ({
 
   let updated = 0;
   let created = 0;
+  const selectorToRuleId = new Map();
   for (const selectorId of selectorIds) {
     const existingId = existingBySelector.get(selectorId);
     const payload = {
@@ -246,19 +247,20 @@ const upsertBulkScopeRules = async ({
       await trx("erp.employee_commission_rules")
         .where({ id: existingId })
         .update(payload);
+      selectorToRuleId.set(selectorId, existingId);
       updated += 1;
       continue;
     }
 
-    await trx("erp.employee_commission_rules").insert({
-      employee_id: employeeId,
-      commission_basis: commissionBasis,
-      ...payload,
-    });
+    const [insertedRow] = await trx("erp.employee_commission_rules")
+      .insert({ employee_id: employeeId, commission_basis: commissionBasis, ...payload })
+      .returning("id");
+    const newId = typeof insertedRow === "object" ? insertedRow.id : insertedRow;
+    selectorToRuleId.set(selectorId, Number(newId));
     created += 1;
   }
 
-  return { created, updated };
+  return { created, updated, selectorToRuleId };
 };
 
 const fetchTargetSkus = async ({
@@ -485,6 +487,11 @@ const applyBulkSkuRateUpsert = async ({
   let created = 0;
 
   for (const row of rows) {
+    const selectorId = applyOn === APPLY_ON.SUBGROUP
+      ? Number(row.subgroupId || 0) || null
+      : Number(row.groupId || 0) || null;
+    const sourceRuleId = (selectorId && scopeResult.selectorToRuleId?.get(selectorId)) || null;
+
     const existingId = existingBySku.get(Number(row.skuId));
     if (existingId) {
       await trx("erp.employee_commission_rules")
@@ -498,6 +505,7 @@ const applyBulkSkuRateUpsert = async ({
           apply_on: APPLY_ON.SKU,
           subgroup_id: null,
           group_id: null,
+          source_rule_id: sourceRuleId,
         });
       updated += 1;
       continue;
@@ -515,6 +523,7 @@ const applyBulkSkuRateUpsert = async ({
       reverse_on_returns: reverseOnReturns,
       value_type: valueType,
       status,
+      source_rule_id: sourceRuleId,
     });
     created += 1;
   }
