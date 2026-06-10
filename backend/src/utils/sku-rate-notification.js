@@ -37,7 +37,7 @@ const sendSkuRateNotification = async ({
 
   try {
     const details = await knex("erp.variants as v")
-      .select("v.id", "i.name as item_name", "k.sku_code")
+      .select("v.id", "i.name as item_name", "i.name_ur as item_name_ur", "k.sku_code")
       .leftJoin("erp.items as i", "v.item_id", "i.id")
       .leftJoin("erp.skus as k", "k.variant_id", "v.id")
       .whereIn(
@@ -46,7 +46,6 @@ const sendSkuRateNotification = async ({
       );
 
     const detailMap = new Map(details.map((row) => [Number(row.id), row]));
-    const username = user?.username || user?.name || "Unknown";
     const timeStr = new Date().toLocaleString("en-PK", {
       timeZone: "Asia/Karachi",
       day: "2-digit",
@@ -61,23 +60,34 @@ const sendSkuRateNotification = async ({
       const detail = detailMap.get(update.id);
       const sku = detail?.sku_code || `#${update.id}`;
       const name = detail?.item_name || "-";
+      const nameUr = detail?.item_name_ur || "";
       const newRateStr = formatRate(update.newRate);
       const oldRateStr = formatRate(update.oldRate);
-      let change = "";
 
-      if (oldRateStr && newRateStr) {
-        const oldNumeric = Number(update.oldRate);
-        const newNumeric = Number(update.newRate);
-        if (Number.isFinite(oldNumeric) && Number.isFinite(newNumeric)) {
-          if (newNumeric > oldNumeric) change = `  ↑ (was ${oldRateStr})`;
-          else if (newNumeric < oldNumeric) change = `  ↓ (was ${oldRateStr})`;
-        }
+      const oldNumeric = Number(update.oldRate);
+      const newNumeric = Number(update.newRate);
+      const bothValid =
+        Number.isFinite(oldNumeric) &&
+        Number.isFinite(newNumeric) &&
+        oldRateStr &&
+        newRateStr;
+
+      let rateLine;
+      let arrow = "";
+      if (bothValid) {
+        if (newNumeric > oldNumeric) arrow = " ↑";
+        else if (newNumeric < oldNumeric) arrow = " ↓";
+        rateLine = `  پہلے: ${oldRateStr}  ←  بعد: ${newRateStr || "-"}${arrow}`;
+      } else {
+        rateLine = `  ریٹ: ${newRateStr || "-"}`;
       }
 
-      return `• ${sku}  —  ${name}  →  ${newRateStr || "-"}${change}`;
+      const nameLine = nameUr ? `  ${name} | ${nameUr}` : `  ${name}`;
+      return `• *${sku}*\n${nameLine}\n${rateLine}`;
     });
 
-    const message = `*Rate Update Alert*\nBy: ${username}${approved ? " (approved)" : ""}\nTime: ${timeStr}\n\n${lines.join("\n")}`;
+    const header = approved ? "🔔 *ریٹ اپ ڈیٹ* _(منظور شدہ)_" : "🔔 *ریٹ اپ ڈیٹ*";
+    const message = `${header}\n📅 ${timeStr}\n\n${lines.join("\n\n")}`;
     await sendWhatsAppMessage(chatId, message);
   } catch (err) {
     console.error("[WhatsApp] SKU rate notify error:", err?.message || err);
