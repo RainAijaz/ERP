@@ -284,7 +284,7 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
           <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t("branches") : t("branch") %></label>
           <div class="sm:col-span-9">
             <% if (user?.isAdmin) { %>
-              <select name="branch_id" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified">
+              <select name="filter_branch_id" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified">
                 <option value=""><%= allLabel %></option>
                 <% branchOptions.forEach((branch) => { %>
                   <option value="<%= branch.id %>" <%= selectedBranchId === Number(branch.id) ? "selected" : "" %>><%= branch.name %></option>

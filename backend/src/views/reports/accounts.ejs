@@ -394,14 +394,14 @@
       <% } else { %>
         <label class="text-sm">
           <span class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= isExpenseTrends ? t('branches') : t('branch') %></span>
-          <select name="branch_id" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" <%= user?.isAdmin ? '' : 'disabled' %>>
+          <select name="filter_branch_id" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" <%= user?.isAdmin ? '' : 'disabled' %>>
             <option value=""><%= t('all_branches') %></option>
             <% (branches || []).forEach((b) => { %>
               <option value="<%= b.id %>" <%= Number(filters.branchId || 0) === Number(b.id) ? 'selected' : '' %>><%= b.name %></option>
             <% }) %>
           </select>
           <% if (!user?.isAdmin) { %>
-            <input type="hidden" name="branch_id" value="<%= filters.branchId || '' %>">
+            <input type="hidden" name="filter_branch_id" value="<%= filters.branchId || '' %>">
           <% } %>
         </label>
       <% } %>
@@ -1222,7 +1222,7 @@
         }
         const range = toBucketRange(bucket.bucketStart, trendGranularityMode);
         if (!range) return;
-        const branchId = String(form.querySelector('select[name="branch_id"]')?.value || '').trim();
+        const branchId = String(form.querySelector('select[name="filter_branch_id"]')?.value || '').trim();
         const breakdownPath = String(currentReportPath || '').replace(/expense_trends$/i, 'expense_analysis');
         const targetName = `expense_analysis_${Date.now()}`;
         const popup = window.open('', targetName);
@@ -1243,7 +1243,7 @@
           load_report: '1',
           breakdown_start: 'account',
         };
-        if (branchId) payload.branch_id = branchId;
+        if (branchId) payload.filter_branch_id = branchId;
         Object.entries(payload).forEach(([key, value]) => {
           const hidden = document.createElement('input');
           hidden.type = 'hidden';

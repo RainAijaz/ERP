@@ -307,12 +307,6 @@ const loadRows = async (filters = {}, itemType = "FG") => {
   query.orderBy("i.name", "asc");
   query.orderBy("v.id", "desc");
   const result = await query;
-  console.log(
-    `[SKU SERVER DEBUG] Filters:`,
-    filters,
-    `Returned rows:`,
-    result.length,
-  );
   return result;
 };
 
@@ -1172,7 +1166,6 @@ router.post(
     const itemType = req.query.item_type === "SFG" ? "SFG" : "FG";
     const viewQuery = `?item_type=${itemType}`;
     const basePath = `${req.baseUrl}`;
-    console.log(`[SKU DELETE] Request received for Variant ID: ${id}`);
     try {
       const approvalRequired = await shouldRequireApproval(
         req,
@@ -1230,7 +1223,6 @@ router.post(
         entityId: id,
         action: "DELETE",
       });
-      console.log(`[SKU DELETE] Successfully deleted Variant ID: ${id}`);
       return res.redirect(basePath + viewQuery);
     } catch (err) {
       console.error(`[SKU DELETE ERROR] Variant ID: ${id}`, err);

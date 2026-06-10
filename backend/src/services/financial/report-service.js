@@ -208,15 +208,14 @@ const getCommonFilters = (req, reportKey = "") => {
   let branchIds = [];
   const branchIdsFromQuery = toIdList(requestInput.branch_ids);
   if (req.user?.isAdmin) {
-    const hasBranchParam = Object.prototype.hasOwnProperty.call(
-      requestInput,
-      "branch_id",
-    );
+    const hasBranchParam =
+      Object.prototype.hasOwnProperty.call(requestInput, "filter_branch_id") ||
+      Object.prototype.hasOwnProperty.call(requestInput, "branch_id");
     if (branchIdsFromQuery.length) {
       branchIds = branchIdsFromQuery;
       branchId = branchIds.length === 1 ? branchIds[0] : null;
     } else if (hasBranchParam) {
-      const selected = Number(requestInput.branch_id || 0);
+      const selected = Number(requestInput.filter_branch_id ?? requestInput.branch_id ?? 0);
       branchId = Number.isInteger(selected) && selected > 0 ? selected : null;
       branchIds = branchId ? [branchId] : [];
     } else {

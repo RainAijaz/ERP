@@ -143,7 +143,7 @@ router.get(
       const entityTypeFilters = parseList(req.query.entity_type);
       const entityMode =
         req.query.entity_mode === "exclude" ? "exclude" : "include";
-      const branchIds = parseIds(req.query.branch_id);
+      const branchIds = parseIds(req.query.filter_branch_id ?? req.query.branch_id);
       const branchMode =
         req.query.branch_mode === "exclude" ? "exclude" : "include";
       const actionTypeFilters = parseList(req.query.action);

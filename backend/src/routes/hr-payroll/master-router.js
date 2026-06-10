@@ -693,7 +693,7 @@ const createHrMasterRouter = (pageConfig) => {
         const fieldErrors = flash?.fieldErrors || {};
         const primaryValues = parseList(req.query.primary_value);
         const secondaryValues = parseList(req.query.secondary_value);
-        const branchValues = parseList(req.query.branch_id).filter((value) => {
+        const branchValues = parseList(req.query.filter_branch_id ?? req.query.branch_id).filter((value) => {
           if (!allowedBranchSet) return true;
           return allowedBranchSet.has(Number(value));
         });

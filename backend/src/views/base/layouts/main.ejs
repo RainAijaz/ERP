@@ -108,6 +108,10 @@
           branchReloadStarted = true;
           const nextUrl = new URL(window.location.href);
           nextUrl.searchParams.set("branch_id", normalizedBranchId);
+          // If the page has a report filter branch, sync it so the report data also refreshes.
+          if (nextUrl.searchParams.has("filter_branch_id")) {
+            nextUrl.searchParams.set("filter_branch_id", normalizedBranchId);
+          }
           window.location.assign(nextUrl.toString());
         };
 
@@ -127,6 +131,7 @@
         if (branchSelect instanceof HTMLSelectElement) {
           branchSelect.addEventListener("change", () => {
             publishBranchSelection(branchSelect.value);
+            navigateWithBranch(branchSelect.value);
           });
         }
 

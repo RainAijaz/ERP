@@ -1446,8 +1446,9 @@ const normalizeAndValidateLinesTx = async ({
     const accountIds = lines
       .map((line) => toPositiveInt(line?.account_id || line?.accountId))
       .filter(Boolean);
-    const accountMap = await fetchExpenseAccountMapTx({ trx, req, accountIds });
-    if (accountMap.size !== accountIds.length) {
+    const uniqueAccountIds = [...new Set(accountIds)];
+    const accountMap = await fetchExpenseAccountMapTx({ trx, req, accountIds: uniqueAccountIds });
+    if (accountMap.size !== uniqueAccountIds.length) {
       throw new HttpError(400, "One or more selected expense accounts are invalid");
     }
 
@@ -1481,8 +1482,9 @@ const normalizeAndValidateLinesTx = async ({
   const itemIds = lines
     .map((line) => toPositiveInt(line?.item_id || line?.itemId))
     .filter(Boolean);
-  const itemMap = await fetchRawMaterialMapTx({ trx, itemIds });
-  if (itemMap.size !== itemIds.length)
+  const uniqueItemIds = [...new Set(itemIds)];
+  const itemMap = await fetchRawMaterialMapTx({ trx, itemIds: uniqueItemIds });
+  if (itemMap.size !== uniqueItemIds.length)
     throw new HttpError(400, "One or more items are invalid");
 
   const colorIds = lines

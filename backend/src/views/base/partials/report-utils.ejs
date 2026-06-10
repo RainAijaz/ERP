@@ -330,7 +330,7 @@
       }
 
       if (!canFilterAllBranches) {
-        document.querySelectorAll("select[name='branch_id'], select[name='branch_ids']").forEach((select) => {
+        document.querySelectorAll("select[name='branch_id'], select[name='filter_branch_id'], select[name='branch_ids']").forEach((select) => {
           if (!(select instanceof HTMLSelectElement)) return;
           Array.from(select.options || []).forEach((opt) => {
             const selected = Number(opt.value || 0) === activeBranchId;

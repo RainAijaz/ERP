@@ -126,7 +126,7 @@ const reportPurposeTooltip = (() => {
       <div class="lg:col-span-4">
         <label class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500"><%= user?.isAdmin ? t("branches") : t("branch") %></label>
         <% if (user?.isAdmin) { %>
-          <select name="branch_id" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700">
+          <select name="filter_branch_id" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700">
             <option value=""><%= t("all") %></option>
             <% branches.forEach((branch) => { %>
               <option value="<%= branch.id %>" <%= selectedBranchId === Number(branch.id) ? "selected" : "" %>><%= branch.name %></option>

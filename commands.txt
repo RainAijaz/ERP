@@ -16,3 +16,6 @@ git pull origin main
 npm ci --omit=dev
 systemctl restart erp-web
 systemctl is-active erp-web
+
+Chrome is installed at /root/.cache/puppeteer but the service runs as user erp which looks in /home/erp/.cache/puppeteer. Need to install Chrome for the erp user:
+

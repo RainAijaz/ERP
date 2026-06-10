@@ -775,7 +775,7 @@ const parseSalesReportFilters = ({ req, input = {} }) => {
   }
 
   const branchId = req.user?.isAdmin
-    ? toPositiveId(input.branch_id)
+    ? toPositiveId(input.filter_branch_id ?? input.branch_id)
     : Number(req.branchId || 0) || null;
 
   return {
@@ -3010,7 +3010,7 @@ const parseCustomerContactAnalysisFilters = ({ req, input = {} }) => {
   }
 
   const branchId = req.user?.isAdmin
-    ? toPositiveId(input.branch_id)
+    ? toPositiveId(input.filter_branch_id ?? input.branch_id)
     : Number(req.branchId || 0) || null;
 
   return {

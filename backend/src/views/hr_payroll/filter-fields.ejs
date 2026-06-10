@@ -231,7 +231,7 @@
             <option value="include" <%= branchMode === "include" ? "selected" : "" %>><%= t("include") %></option>
             <option value="exclude" <%= branchMode === "exclude" ? "selected" : "" %>><%= t("exclude") %></option>
           </select>
-          <select name="branch_id" class="flex-1 min-w-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer" data-filter-branch data-searchable-skip="true">
+          <select name="filter_branch_id" class="flex-1 min-w-0 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer" data-filter-branch data-searchable-skip="true">
             <option value=""><%= t("all_branches")  %></option>
             <% (branches || []).forEach((branch) => { %>
               <option value="<%= branch.id %>" <%= String(branch.id) === String(selectedId) ? "selected" : "" %>><%= branch.name %></option>

@@ -1935,17 +1935,6 @@ router.post(
             typeof applyResult === "object" && applyResult.entityId
               ? String(applyResult.entityId)
               : null;
-          console.log("[DEBUG][Approval] applyMasterDataChange result:", {
-            requestId: request.id,
-            entityType: request.entity_type,
-            entityId: request.entity_id,
-            summary: request.summary || null,
-            newValueKeys:
-              request.new_value && typeof request.new_value === "object"
-                ? Object.keys(request.new_value)
-                : [],
-            applyResult,
-          });
           if (!applied) {
             const err = new Error(res.locals.t("approval_apply_failed"));
             err.code = "APPROVAL_APPLY_FAILED";

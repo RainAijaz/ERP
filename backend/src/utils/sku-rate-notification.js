@@ -13,11 +13,7 @@ const sendSkuRateNotification = async ({
   user,
   approved = false,
 }) => {
-  console.log(`[WhatsApp] sendSkuRateNotification called — chatId="${chatId || "(empty)"}" updates=${Array.isArray(updates) ? updates.length : "not-array"}`);
-  if (!chatId || !String(chatId).trim()) {
-    console.warn("[WhatsApp] sendSkuRateNotification: chatId is empty, skipping");
-    return;
-  }
+  if (!chatId || !String(chatId).trim()) return;
 
   const normalizedUpdates = Array.isArray(updates)
     ? updates
@@ -29,11 +25,7 @@ const sendSkuRateNotification = async ({
         .filter((update) => Number.isInteger(update.id) && update.id > 0)
     : [];
 
-  console.log(`[WhatsApp] normalizedUpdates count: ${normalizedUpdates.length}`);
-  if (!normalizedUpdates.length) {
-    console.warn("[WhatsApp] sendSkuRateNotification: no valid updates, skipping");
-    return;
-  }
+  if (!normalizedUpdates.length) return;
 
   try {
     const details = await knex("erp.variants as v")
