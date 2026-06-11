@@ -93,10 +93,11 @@ const convertToBaseQty = ({ qty, fromUomId, baseUomId, conversionMap, t }) => {
   if (Number.isFinite(directFactor) && directFactor > 0) return numericQty * directFactor;
   const reverseFactor = conversionMap.get(`${Number(baseUomId)}:${Number(fromUomId)}`);
   if (Number.isFinite(reverseFactor) && reverseFactor > 0) return numericQty / reverseFactor;
-  throw new HttpError(400, t("error_invalid_value") );
+  throw new HttpError(400, t("error_invalid_value"));
 };
 
-const buildRuleMatchIndex = async (trx, salesmanEmployeeId) => {
+// Loads active commission rules for an employee filtered by commission_type.
+const buildRuleMatchIndex = async (trx, salesmanEmployeeId, commissionType) => {
   if (!salesmanEmployeeId) return [];
   return trx("erp.employee_commission_rules as ecr")
     .select(
@@ -111,7 +112,11 @@ const buildRuleMatchIndex = async (trx, salesmanEmployeeId) => {
       "reverse_on_returns",
       "value_type",
     )
-    .where({ "ecr.employee_id": salesmanEmployeeId, "ecr.status": "active" });
+    .where({
+      "ecr.employee_id": salesmanEmployeeId,
+      "ecr.status": "active",
+      "ecr.commission_type": commissionType,
+    });
 };
 
 const pickRuleByPrecedence = (rules, basis, context) => {
@@ -230,20 +235,20 @@ const applyInvoiceLevelCommissions = ({ lineBreakdowns, matchedRulesByLine, sale
   });
 };
 
-const enrichSalesVoucherLines = async ({ trx, lines, salesmanEmployeeId, t }) => {
+// Shared core: calculates commission for one employee's rules against a set of lines.
+// Lines must have sku_id, qty, uom_id, and meta with is_packed/sale_qty/return_qty/total_amount/gross_margin_amount.
+// Returns { totalCommission, lineBreakdowns } — lineBreakdowns is indexed by the original lines array position.
+const computeEmployeeCommissionOnLines = async ({ trx, rules, lines, t }) => {
+  if (!rules.length) return { totalCommission: 0, lineBreakdowns: [] };
+
   const skuLines = lines
     .map((line, idx) => ({ line, idx }))
     .filter(({ line }) => String(line.line_kind || "").toUpperCase() === "SKU" && Number(line.sku_id) > 0);
-  if (!salesmanEmployeeId || !skuLines.length) {
-    return {
-      lines,
-      totalCommission: 0,
-    };
-  }
+
+  if (!skuLines.length) return { totalCommission: 0, lineBreakdowns: [] };
 
   const skuIds = [...new Set(skuLines.map(({ line }) => Number(line.sku_id)))];
   const itemContextMap = await buildItemContext(trx, skuIds);
-  const rules = await buildRuleMatchIndex(trx, salesmanEmployeeId);
 
   const uomPairs = skuLines
     .map(({ line }) => {
@@ -257,14 +262,13 @@ const enrichSalesVoucherLines = async ({ trx, lines, salesmanEmployeeId, t }) =>
 
   const matchedRulesByLine = [];
   const lineBreakdowns = [];
-  let totalCommission = 0;
 
   for (const { line, idx } of skuLines) {
     const context = itemContextMap.get(Number(line.sku_id));
     if (!context) continue;
     const salesLine = resolveSalesLinePayload(line);
-    // Policy: pair/loose rows are excluded from salesman commission.
     if (!salesLine.is_packed) continue;
+
     const qtyForRule = toNumber(line.qty, 0);
     const qtyInBaseUnit = convertToBaseQty({
       qty: qtyForRule,
@@ -284,14 +288,15 @@ const enrichSalesVoucherLines = async ({ trx, lines, salesmanEmployeeId, t }) =>
       )
       .filter(Boolean);
 
+    if (!matchedRules.length) continue;
+
     matchedRulesByLine[idx] = matchedRules;
-    const breakdown = computeLineCommissionBreakdown({
+    lineBreakdowns[idx] = computeLineCommissionBreakdown({
       line,
       salesLine,
       matchedRules,
       qtyInPair: qtyInBaseUnit,
     });
-    lineBreakdowns[idx] = breakdown;
   }
 
   applyInvoiceLevelCommissions({
@@ -300,10 +305,31 @@ const enrichSalesVoucherLines = async ({ trx, lines, salesmanEmployeeId, t }) =>
     salesLines: lines.map((line) => resolveSalesLinePayload(line)),
   });
 
+  let totalCommission = 0;
+  lines.forEach((_, idx) => {
+    const bd = lineBreakdowns[idx];
+    if (!bd) return;
+    totalCommission = roundMoney(totalCommission + bd.lineTotal);
+  });
+
+  return { totalCommission, lineBreakdowns };
+};
+
+const enrichSalesVoucherLines = async ({ trx, lines, salesmanEmployeeId, t }) => {
+  const skuLines = lines
+    .map((line, idx) => ({ line, idx }))
+    .filter(({ line }) => String(line.line_kind || "").toUpperCase() === "SKU" && Number(line.sku_id) > 0);
+
+  if (!salesmanEmployeeId || !skuLines.length) {
+    return { lines, totalCommission: 0 };
+  }
+
+  const rules = await buildRuleMatchIndex(trx, salesmanEmployeeId, "SALESMAN_SALE");
+  const { totalCommission, lineBreakdowns } = await computeEmployeeCommissionOnLines({ trx, rules, lines, t });
+
   const enriched = lines.map((line, idx) => {
     const breakdown = lineBreakdowns[idx];
     if (!breakdown) return line;
-    totalCommission = roundMoney(totalCommission + breakdown.lineTotal);
     const currentMeta = line.meta && typeof line.meta === "object" ? line.meta : {};
     return {
       ...line,
@@ -317,10 +343,87 @@ const enrichSalesVoucherLines = async ({ trx, lines, salesmanEmployeeId, t }) =>
     };
   });
 
-  return {
-    lines: enriched,
-    totalCommission,
-  };
+  return { lines: enriched, totalCommission };
+};
+
+// Normalizes stock-transfer lines so they look like packed sales lines for commission calculation.
+// Transfer lines from erp.voucher_line have qty/rate/amount but no sale meta.
+const normalizeTransferLinesForCommission = (lines) =>
+  lines.map((line) => {
+    const meta = line.meta && typeof line.meta === "object" ? line.meta : {};
+    return {
+      ...line,
+      meta: {
+        ...meta,
+        row_status: "PACKED",
+        is_packed: true,
+        sale_qty: toNumber(line.qty, 0),
+        return_qty: 0,
+        total_amount: toNumber(line.amount || (toNumber(line.qty, 0) * toNumber(line.rate, 0)), 0),
+        gross_margin_amount: 0,
+      },
+    };
+  });
+
+// Computes BRANCH_SALE or TRANSFER ledger entries for all eligible employees at a branch.
+// For BRANCH_SALE: lines are sales voucher lines (already have packed meta).
+// For TRANSFER:    lines are stock-transfer SKU lines (caller must normalize first).
+const computeLedgerEntriesForBranch = async ({ trx, lines, branchId, commissionType, t }) => {
+  if (!branchId || !lines.length) return [];
+
+  const branchEmployees = await trx("erp.employee_branch")
+    .where({ branch_id: branchId })
+    .select("employee_id");
+
+  if (!branchEmployees.length) return [];
+
+  const entries = [];
+
+  for (const { employee_id } of branchEmployees) {
+    const rules = await buildRuleMatchIndex(trx, employee_id, commissionType);
+    if (!rules.length) continue;
+
+    const { totalCommission, lineBreakdowns } = await computeEmployeeCommissionOnLines({ trx, rules, lines, t });
+    if (totalCommission === 0) continue;
+
+    const linesDetail = lines
+      .map((line, idx) => {
+        const bd = lineBreakdowns[idx];
+        if (!bd || !bd.entries.length) return null;
+        return {
+          sku_id: line.sku_id,
+          line_no: line.line_no,
+          total_amount: bd.lineTotal,
+          entries: bd.entries,
+        };
+      })
+      .filter(Boolean);
+
+    entries.push({
+      employee_id: Number(employee_id),
+      commission_type: commissionType,
+      total_amount: totalCommission,
+      lines_detail: linesDetail,
+    });
+  }
+
+  return entries;
+};
+
+// Upserts commission ledger rows (one per employee+type per voucher).
+const writeCommissionLedgerTx = async (trx, voucherId, entries) => {
+  if (!entries.length) return;
+  const rows = entries.map((e) => ({
+    voucher_id: voucherId,
+    employee_id: e.employee_id,
+    commission_type: e.commission_type,
+    total_amount: e.total_amount,
+    lines_detail: JSON.stringify(e.lines_detail || []),
+  }));
+  await trx("erp.commission_ledger")
+    .insert(rows)
+    .onConflict(["voucher_id", "employee_id", "commission_type"])
+    .merge(["total_amount", "lines_detail"]);
 };
 
 const buildSalesLineRows = (lines = []) =>
@@ -361,5 +464,8 @@ const prepareSalesVoucherData = async ({ trx, voucherTypeCode, body, lines, t })
 
 module.exports = {
   prepareSalesVoucherData,
+  computeLedgerEntriesForBranch,
+  normalizeTransferLinesForCommission,
+  writeCommissionLedgerTx,
   SALES_VOUCHER_CODE,
 };

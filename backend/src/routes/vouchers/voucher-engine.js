@@ -7,6 +7,8 @@ const {
 } = require("../../middleware/access/role-permissions");
 const {
   prepareSalesVoucherData,
+  computeLedgerEntriesForBranch,
+  writeCommissionLedgerTx,
   SALES_VOUCHER_CODE,
 } = require("../../services/sales/commission-service");
 const {
@@ -162,6 +164,20 @@ router.post("/", async (req, res, next) => {
           if (salesLineRows.length) {
             await trx("erp.sales_line").insert(salesLineRows);
           }
+        }
+      }
+
+      // Branch Sale commission: employees at this branch with BRANCH_SALE rules earn on every sale.
+      if (String(voucherType.code || "").toUpperCase() === SALES_VOUCHER_CODE) {
+        const branchEntries = await computeLedgerEntriesForBranch({
+          trx,
+          lines: preparedSales.lines,
+          branchId: req.branchId,
+          commissionType: "BRANCH_SALE",
+          t: res.locals.t,
+        });
+        if (branchEntries.length) {
+          await writeCommissionLedgerTx(trx, header.id, branchEntries);
         }
       }
 

@@ -19,6 +19,7 @@ const {
 } = require("../../services/hr-payroll/commission-rules-service");
 const COMMISSION_BASIS_FIXED_PER_UNIT = "FIXED_PER_UNIT";
 const COMMISSION_RATE_TYPES = new Set(["PER_DOZEN", "PER_PAIR"]);
+const COMMISSION_TYPES = new Set(["SALESMAN_SALE", "BRANCH_SALE", "TRANSFER", "PARTY"]);
 const getAllowedBranchIds = (req) => {
   if (req?.user?.isAdmin) return [];
   return Array.isArray(req?.branchScope)
@@ -56,6 +57,7 @@ const page = {
   },
   autoCodeFromName: false,
   defaults: {
+    commission_type: "SALESMAN_SALE",
     reverse_on_returns: true,
     rate_type: "PER_PAIR",
     status: "active",
@@ -123,6 +125,7 @@ const page = {
   columns: [
     { key: "id", label: "id" },
     { key: "employee_name", label: "employees" },
+    { key: "commission_type", label: "commission_type" },
     { key: "sku_code", label: "skus" },
     { key: "value", label: "rate_value" },
     { key: "reverse_on_returns", label: "reverse_on_returns" },
@@ -152,6 +155,18 @@ const page = {
         const rows = await query.orderByRaw(`${labelExpr} asc`);
         return rows.map((row) => ({ value: row.value, label: row.label }));
       },
+    },
+    {
+      name: "commission_type",
+      label: "commission_type",
+      type: "select",
+      required: true,
+      options: [
+        { value: "SALESMAN_SALE", label: "commission_type_salesman_sale" },
+        { value: "BRANCH_SALE",   label: "commission_type_branch_sale" },
+        { value: "TRANSFER",      label: "commission_type_transfer" },
+        { value: "PARTY",         label: "commission_type_party" },
+      ],
     },
     {
       name: "apply_on",
@@ -251,6 +266,10 @@ const page = {
   ],
   sanitizeValues: (values) => ({
     ...values,
+    commission_type:
+      COMMISSION_TYPES.has(String(values.commission_type || "").trim().toUpperCase())
+        ? String(values.commission_type).trim().toUpperCase()
+        : "SALESMAN_SALE",
     rate_type:
       String(values.rate_type || "")
         .trim()
@@ -285,6 +304,8 @@ const page = {
       return list.length ? list[0] : null;
     };
 
+    if (!COMMISSION_TYPES.has(String(values.commission_type || "").trim().toUpperCase()))
+      return req.res.locals.t("error_invalid_commission_type");
     const applyOn = new Set(["SKU", "SUBGROUP", "GROUP"]);
     if (!applyOn.has(values.apply_on))
       return req.res.locals.t("error_invalid_apply_on");
@@ -341,6 +362,7 @@ const page = {
     const duplicateQ = knex("erp.employee_commission_rules")
       .where({
         employee_id: values.employee_id,
+        commission_type: values.commission_type,
         apply_on: values.apply_on,
         commission_basis: values.commission_basis,
         value_type: values.value_type,

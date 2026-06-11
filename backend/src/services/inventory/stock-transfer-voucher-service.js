@@ -9,6 +9,11 @@ const { syncVoucherGlPostingTx } = require("../financial/gl-posting-service");
 const {
   resolveNegativeStockApprovalRouting,
 } = require("./negative-stock-approval");
+const {
+  computeLedgerEntriesForBranch,
+  normalizeTransferLinesForCommission,
+  writeCommissionLedgerTx,
+} = require("../sales/commission-service");
 
 const STOCK_TRANSFER_VOUCHER_TYPES = {
   out: "STN_OUT",
@@ -2492,6 +2497,26 @@ const syncStockTransferOutVoucherTx = async ({ trx, voucherId }) => {
         voucherDate,
         allowNegativeSource: true,
       });
+    }
+  }
+
+  // Transfer commission: employees at the source branch with TRANSFER rules earn on transferred SKUs.
+  const skuLines = lines.filter((l) => String(l.line_kind || "").toUpperCase() === "SKU");
+  if (skuLines.length) {
+    try {
+      const normalizedLines = normalizeTransferLinesForCommission(skuLines);
+      const transferEntries = await computeLedgerEntriesForBranch({
+        trx,
+        lines: normalizedLines,
+        branchId: header.branch_id,
+        commissionType: "TRANSFER",
+        t: (key) => key,
+      });
+      if (transferEntries.length) {
+        await writeCommissionLedgerTx(trx, voucherId, transferEntries);
+      }
+    } catch (commissionErr) {
+      console.error("[transfer-commission] Failed to write transfer commission:", commissionErr?.message);
     }
   }
 };

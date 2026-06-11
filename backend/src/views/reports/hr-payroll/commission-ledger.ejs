@@ -1,0 +1,194 @@
+<%
+  const reportLoaded = Boolean(filters?.reportLoaded);
+  const rows = Array.isArray(reportData?.rows) ? reportData.rows : [];
+  const grandTotal = Number(reportData?.grandTotal || 0);
+  const employeeOptions = Array.isArray(options?.employees) ? options.employees : [];
+  const selectedFromDate = String(filters?.fromDate || "");
+  const selectedToDate   = String(filters?.toDate   || "");
+  const selectedEmpId    = filters?.employeeId ? Number(filters.employeeId) : null;
+  const selectedType     = String(filters?.commissionType || "");
+
+  const COMMISSION_TYPES = [
+    { value: "SALESMAN_SALE", labelKey: "commission_type_salesman_sale" },
+    { value: "BRANCH_SALE",   labelKey: "commission_type_branch_sale"   },
+    { value: "TRANSFER",      labelKey: "commission_type_transfer"      },
+    { value: "PARTY",         labelKey: "commission_type_party"         },
+  ];
+
+  const typeColors = {
+    SALESMAN_SALE: "border-blue-200 bg-blue-50 text-blue-700",
+    BRANCH_SALE:   "border-violet-200 bg-violet-50 text-violet-700",
+    TRANSFER:      "border-amber-200 bg-amber-50 text-amber-700",
+    PARTY:         "border-emerald-200 bg-emerald-50 text-emerald-700",
+  };
+
+  const formatDate = (value) => formatDateDisplay(value, "-");
+  const formatMoney = (value) => formatNumberDisplay(value, { decimals: 2, fallback: "0.00" });
+%>
+
+<div class="mx-auto w-full max-w-none space-y-4 px-2">
+
+  <%/* ── Filter card ─────────────────────────────────────────────── */%>
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <h1 class="text-xl font-display font-semibold tracking-tight text-ink sm:text-2xl">
+      <%= t("commission_ledger_report") %>
+    </h1>
+
+    <form method="post" action="<%= reportPath %>" class="mt-3 max-w-4xl rounded-xl border border-slate-200 bg-slate-50/30 p-3 sm:p-4">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="load_report" value="1">
+
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+
+        <%/* From date */%>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= t("from_date") %></label>
+          <input type="date" name="from_date" value="<%= selectedFromDate %>"
+            class="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-700">
+        </div>
+
+        <%/* To date */%>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= t("to_date") %></label>
+          <input type="date" name="to_date" value="<%= selectedToDate %>"
+            class="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-700">
+        </div>
+
+        <%/* Employee */%>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= t("employees") %></label>
+          <select name="employee_id" class="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-700">
+            <option value=""><%= t("all") %></option>
+            <% employeeOptions.forEach(function(emp) { %>
+              <option value="<%= emp.value %>" <%= Number(emp.value) === selectedEmpId ? "selected" : "" %>><%= emp.label %></option>
+            <% }); %>
+          </select>
+        </div>
+
+        <%/* Commission type */%>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= t("commission_type") %></label>
+          <select name="commission_type" class="h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-700">
+            <option value=""><%= t("all") %></option>
+            <% COMMISSION_TYPES.forEach(function(ct) { %>
+              <option value="<%= ct.value %>" <%= ct.value === selectedType ? "selected" : "" %>><%= t(ct.labelKey) %></option>
+            <% }); %>
+          </select>
+        </div>
+
+      </div>
+
+      <div class="mt-3 flex justify-end">
+        <button type="submit"
+          class="inline-flex h-9 items-center gap-1.5 rounded-lg bg-slate-900 px-4 text-xs font-semibold uppercase tracking-[0.1em] text-white shadow-sm transition hover:bg-slate-800">
+          <%= t("load_report") || "Load Report" %>
+        </button>
+      </div>
+    </form>
+  </section>
+
+  <%/* ── Results ─────────────────────────────────────────────────── */%>
+  <% if (reportLoaded) { %>
+  <section class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+
+    <% if (!rows.length) { %>
+      <div class="px-6 py-10 text-center text-sm text-slate-500"><%= t("no_records_found") || "No records found." %></div>
+    <% } else { %>
+
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
+            <tr>
+              <th class="px-4 py-3 text-left">#</th>
+              <th class="px-4 py-3 text-left"><%= t("date") %></th>
+              <th class="px-4 py-3 text-left"><%= t("voucher_no") || t("voucher") %></th>
+              <th class="px-4 py-3 text-left"><%= t("employees") %></th>
+              <th class="px-4 py-3 text-left"><%= t("commission_type") %></th>
+              <th class="px-4 py-3 text-right"><%= t("amount") %></th>
+              <th class="px-4 py-3 text-center w-10"></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <% rows.forEach(function(row, idx) {
+                 const ctColor = typeColors[row.commission_type] || "border-slate-200 bg-white text-slate-600";
+                 const ctLabel = t(`commission_type_${String(row.commission_type || "").toLowerCase()}`) || row.commission_type;
+                 const detailRowId = `cl-detail-${idx}`;
+                 const linesDetail = Array.isArray(row.lines_detail) ? row.lines_detail :
+                   (typeof row.lines_detail === "string" ? JSON.parse(row.lines_detail || "[]") : []);
+            %>
+            <tr class="odd:bg-slate-50 even:bg-white hover:bg-slate-100 transition-colors">
+              <td class="px-4 py-3 text-slate-500 tabular-nums"><%= idx + 1 %></td>
+              <td class="px-4 py-3 text-slate-700 whitespace-nowrap"><%= formatDate(row.voucher_date) %></td>
+              <td class="px-4 py-3 text-slate-700 whitespace-nowrap">
+                <span class="font-mono text-xs text-slate-500"><%= row.voucher_type_code %></span>
+                <span class="ml-1 font-semibold"><%= row.voucher_no %></span>
+              </td>
+              <td class="px-4 py-3 text-slate-700"><%= row.employee_name %></td>
+              <td class="px-4 py-3">
+                <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] <%= ctColor %>">
+                  <%= ctLabel %>
+                </span>
+              </td>
+              <td class="px-4 py-3 text-right font-semibold text-slate-800 tabular-nums"><%= formatMoney(row.total_amount) %></td>
+              <td class="px-4 py-3 text-center">
+                <% if (linesDetail.length) { %>
+                  <button type="button"
+                    class="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:border-indigo-300 hover:text-indigo-600"
+                    onclick="(function(btn){var row=document.getElementById('<%= detailRowId %>');var open=row.classList.toggle('hidden');btn.textContent=open?'+':'−';})(this)"
+                    title="<%= t('details') || 'Details' %>">+</button>
+                <% } %>
+              </td>
+            </tr>
+
+            <%/* Expandable detail rows */%>
+            <% if (linesDetail.length) { %>
+            <tr id="<%= detailRowId %>" class="hidden bg-indigo-50/40">
+              <td colspan="7" class="px-6 py-3">
+                <div class="overflow-x-auto rounded-lg border border-indigo-100">
+                  <table class="w-full text-xs">
+                    <thead class="bg-indigo-50 text-[10px] font-semibold uppercase tracking-wider text-indigo-600">
+                      <tr>
+                        <th class="px-3 py-2 text-left"><%= t("skus") || "SKU" %></th>
+                        <th class="px-3 py-2 text-left"><%= t("commission_basis") || "Basis" %></th>
+                        <th class="px-3 py-2 text-right"><%= t("rate_value") %></th>
+                        <th class="px-3 py-2 text-right"><%= t("amount") %></th>
+                      </tr>
+                    </thead>
+                    <tbody class="divide-y divide-indigo-50">
+                      <% linesDetail.forEach(function(line) {
+                           (line.entries || []).forEach(function(entry) { %>
+                      <tr>
+                        <td class="px-3 py-1.5 font-mono text-slate-500"><%= line.sku_id %></td>
+                        <td class="px-3 py-1.5 text-slate-600"><%= entry.basis %></td>
+                        <td class="px-3 py-1.5 text-right text-slate-600 tabular-nums"><%= entry.rate %></td>
+                        <td class="px-3 py-1.5 text-right font-semibold text-slate-800 tabular-nums"><%= formatMoney(entry.computed_amount) %></td>
+                      </tr>
+                      <% }); }); %>
+                    </tbody>
+                  </table>
+                </div>
+              </td>
+            </tr>
+            <% } %>
+
+            <% }); %>
+          </tbody>
+          <tfoot class="border-t-2 border-slate-200 bg-slate-50">
+            <tr>
+              <td colspan="5" class="px-4 py-3 text-xs font-semibold uppercase tracking-widest text-slate-500">
+                <%= t("total") %> (<%= rows.length %> <%= t("records") || "records" %>)
+              </td>
+              <td class="px-4 py-3 text-right text-sm font-bold text-slate-900 tabular-nums">
+                <%= formatMoney(grandTotal) %>
+              </td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+    <% } %>
+  </section>
+  <% } %>
+
+</div>

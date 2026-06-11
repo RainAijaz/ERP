@@ -6,6 +6,9 @@ const {
   getEmployeeLedgerReportPageData,
   getEmployeeBalancesReportPageData,
 } = require("../../services/hr-payroll/hr-payroll-report-service");
+const {
+  getCommissionLedgerReportPageData,
+} = require("../../services/hr-payroll/commission-ledger-report-service");
 
 const router = express.Router();
 
@@ -172,6 +175,38 @@ router.post(
       extraLocals: {
         employeeLedgerPath: `${req.baseUrl}/employee-ledger`,
       },
+    }),
+);
+
+router.get(
+  "/commission-ledger",
+  requirePermission("REPORT", "commission_ledger", "load"),
+  async (req, res, next) =>
+    renderPage({
+      req,
+      res,
+      next,
+      pageDataLoader: getCommissionLedgerReportPageData,
+      input: req.query,
+      titleKey: "commission_ledger_report",
+      view: "../../reports/hr-payroll/commission-ledger",
+      reportPath: `${req.baseUrl}/commission-ledger`,
+    }),
+);
+
+router.post(
+  "/commission-ledger",
+  requirePermission("REPORT", "commission_ledger", "load"),
+  async (req, res, next) =>
+    renderPage({
+      req,
+      res,
+      next,
+      pageDataLoader: getCommissionLedgerReportPageData,
+      input: req.body,
+      titleKey: "commission_ledger_report",
+      view: "../../reports/hr-payroll/commission-ledger",
+      reportPath: `${req.baseUrl}/commission-ledger`,
     }),
 );
 
