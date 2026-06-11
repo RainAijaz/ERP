@@ -59,6 +59,7 @@ const page = {
     reverse_on_returns: true,
     rate_type: "PER_PAIR",
     status: "active",
+    commission_type: "SALESMAN_SALE",
   },
   filterConfig: {
     primary: {
@@ -123,6 +124,7 @@ const page = {
   columns: [
     { key: "id", label: "id" },
     { key: "employee_name", label: "employees" },
+    { key: "commission_type", label: "commission_type" },
     { key: "sku_code", label: "skus" },
     { key: "value", label: "rate_value" },
     { key: "reverse_on_returns", label: "reverse_on_returns" },
@@ -152,6 +154,18 @@ const page = {
         const rows = await query.orderByRaw(`${labelExpr} asc`);
         return rows.map((row) => ({ value: row.value, label: row.label }));
       },
+    },
+    {
+      name: "commission_type",
+      label: "commission_type",
+      type: "select",
+      required: true,
+      options: [
+        { value: "SALESMAN_SALE", label: "commission_type_salesman_sale" },
+        { value: "BRANCH_SALE", label: "commission_type_branch_sale" },
+        { value: "TRANSFER", label: "commission_type_transfer" },
+        { value: "PARTY", label: "commission_type_party" },
+      ],
     },
     {
       name: "apply_on",
@@ -251,6 +265,10 @@ const page = {
   ],
   sanitizeValues: (values) => ({
     ...values,
+    commission_type:
+      String(values.commission_type || "")
+        .trim()
+        .toUpperCase() || "SALESMAN_SALE",
     rate_type:
       String(values.rate_type || "")
         .trim()
@@ -284,6 +302,10 @@ const page = {
       const list = normalizeSelection(rawValue);
       return list.length ? list[0] : null;
     };
+
+    const COMMISSION_TYPES = new Set(["SALESMAN_SALE", "BRANCH_SALE", "TRANSFER", "PARTY"]);
+    if (!COMMISSION_TYPES.has(values.commission_type))
+      return req.res.locals.t("error_invalid_commission_type");
 
     const applyOn = new Set(["SKU", "SUBGROUP", "GROUP"]);
     if (!applyOn.has(values.apply_on))
