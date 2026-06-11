@@ -526,126 +526,146 @@ const buildPurchaseReturnEntriesTx = async ({ trx, header, voucherId }) => {
   let extension;
   try {
     extension = await trx("erp.purchase_return_header_ext")
-      .select("supplier_party_id", "purchase_category")
+      .select("supplier_party_id", "purchase_category", "payment_type", "cash_paid_account_id")
       .where({ voucher_id: voucherId })
       .first();
   } catch (err) {
-    const isMissingCategoryColumn =
-      String(err?.code || "").trim() === "42703" &&
-      String(err?.message || "")
-        .toLowerCase()
-        .includes("purchase_category");
-    if (!isMissingCategoryColumn) throw err;
-    extension = await trx("erp.purchase_return_header_ext")
-      .select("supplier_party_id")
-      .where({ voucher_id: voucherId })
-      .first();
+    const code = String(err?.code || "").trim();
+    const msg = String(err?.message || "").toLowerCase();
+    const isMissingColumn = code === "42703" &&
+      (msg.includes("purchase_category") || msg.includes("payment_type") || msg.includes("cash_paid_account_id"));
+    if (!isMissingColumn) throw err;
+    try {
+      extension = await trx("erp.purchase_return_header_ext")
+        .select("supplier_party_id", "purchase_category")
+        .where({ voucher_id: voucherId })
+        .first();
+    } catch {
+      extension = await trx("erp.purchase_return_header_ext")
+        .select("supplier_party_id")
+        .where({ voucher_id: voucherId })
+        .first();
+    }
   }
   if (!extension)
     throw new Error(
       `GL posting failed: voucher ${voucherId} missing purchase return extension`,
     );
 
-  const purchaseCategory = normalizePurchaseCategory(
-    extension.purchase_category,
-  );
+  const purchaseCategory = normalizePurchaseCategory(extension.purchase_category);
+  const paymentType = normalizePurchasePaymentType(extension.payment_type);
   const supplierPartyId = Number(extension.supplier_party_id || 0);
-  if (!Number.isInteger(supplierPartyId) || supplierPartyId <= 0) {
-    throw new Error(
-      `GL posting failed: voucher ${voucherId} has invalid supplier`,
-    );
-  }
-  const partyType = await loadPartyTypeByIdTx({
-    trx,
-    partyId: supplierPartyId,
-  });
-  if (partyType !== "SUPPLIER" && partyType !== "BOTH") {
-    throw new Error(
-      `GL posting failed: voucher ${voucherId} supplier party type must be SUPPLIER/BOTH`,
-    );
-  }
 
   const isAccountLinePurchase =
     purchaseCategory === PURCHASE_CATEGORIES.asset ||
     purchaseCategory === PURCHASE_CATEGORIES.consumable;
 
   let totalAmount = 0;
-  let debitAccountLines = [];
+  let creditAccountLines = [];
   if (isAccountLinePurchase) {
-    debitAccountLines = await loadPurchaseAccountLineTotalsTx({
-      trx,
-      voucherId,
-    });
+    creditAccountLines = await loadPurchaseAccountLineTotalsTx({ trx, voucherId });
     totalAmount = normalizeAmount(
-      debitAccountLines.reduce(
-        (sum, row) => sum + normalizeAmount(row.amount),
-        0,
-      ),
+      creditAccountLines.reduce((sum, row) => sum + normalizeAmount(row.amount), 0),
     );
   } else {
     totalAmount = await loadPurchaseItemTotalTx({ trx, voucherId });
   }
   if (totalAmount <= 0) return [];
 
-  const accountsByGroup = await loadAccountsByGroupTx({
-    trx,
-    branchId: Number(header.branch_id),
-    groupCodes: isAccountLinePurchase
-      ? [CONTROL_GROUP_CODES.partyPayable]
-      : [
-          PURCHASE_ACCOUNT_GROUP_CODES.inventoryRm,
-          CONTROL_GROUP_CODES.partyPayable,
-        ],
-  });
-  const apControlAccountId = resolveSingleAccountIdForGroup({
-    accountsByGroup,
-    groupCode: CONTROL_GROUP_CODES.partyPayable,
-    voucherId,
-    lineNo: 0,
-  });
+  const entries = [];
 
-  return [
-    {
+  // CR side — reduce the asset/inventory/expense accounts (reversing the original purchase)
+  if (isAccountLinePurchase) {
+    creditAccountLines.forEach((row) => {
+      entries.push({
+        branch_id: Number(header.branch_id),
+        entry_date: header.voucher_date,
+        account_id: Number(row.accountId),
+        dept_id: null,
+        party_id: null,
+        dr: 0,
+        cr: normalizeAmount(row.amount),
+        narration: toNarration({}, header.remarks),
+      });
+    });
+  } else {
+    const accountsByGroup = await loadAccountsByGroupTx({
+      trx,
+      branchId: Number(header.branch_id),
+      groupCodes: [PURCHASE_ACCOUNT_GROUP_CODES.inventoryRm],
+    });
+    entries.push({
       branch_id: Number(header.branch_id),
       entry_date: header.voucher_date,
-      account_id: Number(apControlAccountId),
+      account_id: Number(
+        resolveSingleAccountIdForGroup({
+          accountsByGroup,
+          groupCode: PURCHASE_ACCOUNT_GROUP_CODES.inventoryRm,
+          voucherId,
+          lineNo: 0,
+        }),
+      ),
+      dept_id: null,
+      party_id: null,
+      dr: 0,
+      cr: totalAmount,
+      narration: toNarration({}, header.remarks),
+    });
+  }
+
+  // DR side — either cash received back (CASH) or AP balance reduced (CREDIT)
+  if (paymentType === PURCHASE_PAYMENT_TYPES.cash) {
+    const cashAccountId = await ensureCashOrBankAccountTx({
+      trx,
+      branchId: Number(header.branch_id),
+      voucherId,
+      accountId: extension.cash_paid_account_id,
+    });
+    entries.push({
+      branch_id: Number(header.branch_id),
+      entry_date: header.voucher_date,
+      account_id: Number(cashAccountId),
+      dept_id: null,
+      party_id: null,
+      dr: totalAmount,
+      cr: 0,
+      narration: toNarration({}, header.remarks),
+    });
+  } else {
+    if (!Number.isInteger(supplierPartyId) || supplierPartyId <= 0) {
+      throw new Error(`GL posting failed: voucher ${voucherId} has invalid supplier`);
+    }
+    const partyType = await loadPartyTypeByIdTx({ trx, partyId: supplierPartyId });
+    if (partyType !== "SUPPLIER" && partyType !== "BOTH") {
+      throw new Error(
+        `GL posting failed: voucher ${voucherId} supplier party type must be SUPPLIER/BOTH`,
+      );
+    }
+    const accountsByGroup = await loadAccountsByGroupTx({
+      trx,
+      branchId: Number(header.branch_id),
+      groupCodes: [CONTROL_GROUP_CODES.partyPayable],
+    });
+    entries.push({
+      branch_id: Number(header.branch_id),
+      entry_date: header.voucher_date,
+      account_id: Number(
+        resolveSingleAccountIdForGroup({
+          accountsByGroup,
+          groupCode: CONTROL_GROUP_CODES.partyPayable,
+          voucherId,
+          lineNo: 0,
+        }),
+      ),
       dept_id: null,
       party_id: supplierPartyId,
       dr: totalAmount,
       cr: 0,
       narration: toNarration({}, header.remarks),
-    },
-    ...(isAccountLinePurchase
-      ? debitAccountLines.map((row) => ({
-          branch_id: Number(header.branch_id),
-          entry_date: header.voucher_date,
-          account_id: Number(row.accountId),
-          dept_id: null,
-          party_id: null,
-          dr: 0,
-          cr: normalizeAmount(row.amount),
-          narration: toNarration({}, header.remarks),
-        }))
-      : [
-          {
-            branch_id: Number(header.branch_id),
-            entry_date: header.voucher_date,
-            account_id: Number(
-              resolveSingleAccountIdForGroup({
-                accountsByGroup,
-                groupCode: PURCHASE_ACCOUNT_GROUP_CODES.inventoryRm,
-                voucherId,
-                lineNo: 0,
-              }),
-            ),
-            dept_id: null,
-            party_id: null,
-            dr: 0,
-            cr: totalAmount,
-            narration: toNarration({}, header.remarks),
-          },
-        ]),
-  ];
+    });
+  }
+
+  return entries;
 };
 
 const loadSalesVoucherNetAmountTx = async ({ trx, voucherId }) => {

@@ -184,6 +184,25 @@
             </div>
           </div>
           <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel("payment_type") %></label>
+            <div class="lg:col-span-4">
+              <input type="hidden" name="payment_type" data-payment-type value="<%= String(selectedVoucher?.payment_type || 'CREDIT').toUpperCase() === 'CASH' ? 'CASH' : 'CREDIT' %>">
+              <div class="grid h-10 grid-cols-2 rounded-xl border border-slate-300 bg-white p-1" data-payment-type-segment>
+                <button type="button" class="rounded-lg text-xs font-semibold uppercase tracking-[0.08em] transition" data-payment-type-option="CREDIT"><%= t("credit_purchase") %></button>
+                <button type="button" class="rounded-lg text-xs font-semibold uppercase tracking-[0.08em] transition" data-payment-type-option="CASH"><%= t("cash_purchase") %></button>
+              </div>
+            </div>
+            <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3" data-cash-account-label><%= toFriendlyLabel("cash_paid_account") %></label>
+            <div class="lg:col-span-4" data-cash-account-wrap>
+              <select name="cash_paid_account_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-cash-account data-searchable-select="true" data-searchable-variant="unified">
+                <option value=""><%= t("select_account_name") %></option>
+                <% (options.cashAccounts || []).forEach((account) => { %>
+                  <option value="<%= account.id %>" <%= Number(selectedVoucher?.cash_paid_account_id || 0) === Number(account.id) ? "selected" : "" %>><%= account.name %></option>
+                <% }) %>
+              </select>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
             <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel("supplier") %></label>
             <div class="lg:col-span-4">
               <select name="supplier_party_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-supplier-select data-searchable-select="true" data-searchable-variant="unified" required>

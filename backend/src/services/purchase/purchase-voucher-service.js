@@ -41,6 +41,7 @@ let assetColumnSupport;
 let purchaseGrnHeaderCategoryColumnSupport;
 let purchaseInvoiceHeaderCategoryColumnSupport;
 let purchaseReturnHeaderCategoryColumnSupport;
+let purchaseReturnHeaderPaymentTypeColumnSupport;
 
 // RM stock identity in this project is branch + state + item + (color,size when schema supports it).
 const RM_BALANCE_CONFLICT_TARGET_SQL =
@@ -216,6 +217,15 @@ const hasPurchaseHeaderCategoryColumnTx = async ({ trx, tableName }) => {
     return purchaseReturnHeaderCategoryColumnSupport;
   }
   return false;
+};
+
+const hasPurchaseReturnPaymentTypeColumnTx = async (trx) => {
+  if (typeof purchaseReturnHeaderPaymentTypeColumnSupport === "boolean")
+    return purchaseReturnHeaderPaymentTypeColumnSupport;
+  purchaseReturnHeaderPaymentTypeColumnSupport = await hasColumnTx(
+    trx, "erp", "purchase_return_header_ext", "payment_type",
+  );
+  return purchaseReturnHeaderPaymentTypeColumnSupport;
 };
 
 const getAssetColumnSupportTx = async (trx) => {
@@ -2154,6 +2164,11 @@ const upsertHeaderExtensionTx = async ({
       trx,
       tableName: "purchase_return_header_ext",
     });
+    const supportsPaymentTypeColumn = await hasPurchaseReturnPaymentTypeColumnTx(trx);
+    const normalizedPaymentType = normalizePaymentType(paymentType);
+    const normalizedCashAccountId =
+      normalizedPaymentType === "CASH" ? (cashPaidAccountId || null) : null;
+
     const insertPayload = {
       voucher_id: voucherId,
       supplier_party_id: supplierPartyId,
@@ -2162,12 +2177,20 @@ const upsertHeaderExtensionTx = async ({
     if (supportsCategoryColumn) {
       insertPayload.purchase_category = normalizedPurchaseCategory;
     }
+    if (supportsPaymentTypeColumn) {
+      insertPayload.payment_type = normalizedPaymentType;
+      insertPayload.cash_paid_account_id = normalizedCashAccountId;
+    }
     const mergePayload = {
       supplier_party_id: supplierPartyId,
       reason: returnReason,
     };
     if (supportsCategoryColumn) {
       mergePayload.purchase_category = normalizedPurchaseCategory;
+    }
+    if (supportsPaymentTypeColumn) {
+      mergePayload.payment_type = normalizedPaymentType;
+      mergePayload.cash_paid_account_id = normalizedCashAccountId;
     }
     await trx("erp.purchase_return_header_ext")
       .insert(insertPayload)
@@ -2384,6 +2407,14 @@ const validatePurchaseVoucherPayloadTx = async ({
     returnReason = normalizeReturnReason(payload.return_reason);
     if (!returnReason)
       throw new HttpError(400, "Purchase return reason is required");
+    paymentType = normalizePaymentType(payload.payment_type);
+    if (paymentType === "CASH") {
+      cashPaidAccountId = await validateCashAccountTx({
+        trx,
+        req,
+        cashPaidAccountId: payload.cash_paid_account_id,
+      });
+    }
   } else if (voucherTypeCode === PURCHASE_VOUCHER_TYPES.goodsReceiptNote) {
     const supplier = await validateSupplierTx({
       trx,
@@ -3527,6 +3558,7 @@ const loadPurchaseVoucherDetails = async ({
       trx: knex,
       tableName: "purchase_return_header_ext",
     });
+    const supportsPaymentTypeColumn = await hasPurchaseReturnPaymentTypeColumnTx(knex);
     const ext = await safeFirstMissingRelation(
       knex("erp.purchase_return_header_ext")
         .select(
@@ -3535,16 +3567,22 @@ const loadPurchaseVoucherDetails = async ({
           ...(supportsCategoryColumn
             ? ["purchase_category"]
             : [knex.raw("NULL::text as purchase_category")]),
+          ...(supportsPaymentTypeColumn
+            ? ["payment_type", "cash_paid_account_id"]
+            : [
+                knex.raw("'CREDIT'::text as payment_type"),
+                knex.raw("NULL::bigint as cash_paid_account_id"),
+              ]),
         )
         .where({ voucher_id: header.id })
         .first(),
       "erp.purchase_return_header_ext",
     );
-    details.purchase_category = normalizePurchaseCategory(
-      ext?.purchase_category,
-    );
+    details.purchase_category = normalizePurchaseCategory(ext?.purchase_category);
     details.supplier_party_id = Number(ext?.supplier_party_id || 0) || null;
     details.return_reason = normalizeReturnReason(ext?.reason);
+    details.payment_type = normalizePaymentType(ext?.payment_type || "CREDIT");
+    details.cash_paid_account_id = Number(ext?.cash_paid_account_id || 0) || null;
   }
 
   return details;
