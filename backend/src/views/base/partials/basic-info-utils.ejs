@@ -919,19 +919,43 @@
         groups.forEach(({ rateType, rateAmount, rows: groupRows }, subKey) => {
           const subIsOpen = commissionSubGroupKeys.has(subKey);
 
-          // Extract scope info from any SUBGROUP/GROUP rule rows in this group
-          // (deduplicated by applyOn + selectorDisplay)
+          // Extract scope info to show "SUBGROUP: Ballman" etc. on the sub-header.
+          // Priority 1: SUBGROUP/GROUP rule rows within this group (have selector_display set)
+          // Priority 2: Item-level subgroup/group of SKU rows (sku_subgroup_name / sku_group_name)
           const scopeInfoSeen = new Set();
           const scopeInfoList = [];
+
+          // Priority 1: explicit scope rule rows
           groupRows.forEach((row) => {
             const ao = (row.dataset.applyOn || "").toUpperCase();
             if (ao !== "SUBGROUP" && ao !== "GROUP") return;
             const display = row.dataset.selectorDisplay || "";
+            if (!display) return;
             const key = ao + "||" + display;
             if (scopeInfoSeen.has(key)) return;
             scopeInfoSeen.add(key);
             scopeInfoList.push({ applyOn: ao, selectorDisplay: display });
           });
+
+          // Priority 2: if no explicit scope rows, infer from the SKUs' item subgroup/group
+          if (!scopeInfoList.length) {
+            const skuSubgroups = new Set();
+            const skuGroups = new Set();
+            groupRows.forEach((row) => {
+              const sg = row.dataset.skuSubgroupName || "";
+              const pg = row.dataset.skuGroupName || "";
+              if (sg) skuSubgroups.add(sg);
+              if (pg) skuGroups.add(pg);
+            });
+            if (skuSubgroups.size === 1) {
+              // All SKUs in the same subgroup — show it
+              scopeInfoList.push({ applyOn: "SUBGROUP", selectorDisplay: [...skuSubgroups][0] });
+            } else if (skuSubgroups.size === 0 && skuGroups.size === 1) {
+              // All SKUs in the same group — show group
+              scopeInfoList.push({ applyOn: "GROUP", selectorDisplay: [...skuGroups][0] });
+            }
+            // If SKUs span multiple subgroups, show nothing (rate info alone is displayed)
+          }
 
           groupRows.forEach((row) => {
             row.dataset.commissionSubGroup = subKey;

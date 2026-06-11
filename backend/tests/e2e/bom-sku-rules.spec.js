@@ -45,7 +45,6 @@ const addRmRow = async (page, { rmItemId, deptId }) => {
   await expect(rmRow).toBeVisible();
   await selectOptionForced(rmRow.locator('[data-col="rm_item_id"]'), rmItemId);
   await selectOptionForced(rmRow.locator('[data-col="dept_id"]'), deptId);
-  await rmRow.locator('[data-col="qty"]').fill("5");
 };
 
 const saveDraft = async (page) => {

@@ -104,3 +104,76 @@
     }
   }
 </style>
+
+<style id="dark-mode-styles">
+  html.dark { color-scheme: dark; }
+
+  html.dark body {
+    background: linear-gradient(to bottom right, #0c1422, #112035, #0c1422);
+    color: #e2e8f0;
+  }
+
+  /* Brand tokens */
+  html.dark .text-ink   { color: #e2e8f0; }
+  html.dark .text-muted { color: #94a3b8; }
+  html.dark .text-accent                     { color: #38bdf8; }
+  html.dark .hover\:text-accent:hover        { color: #7dd3fc; }
+  html.dark .hover\:text-accent\/80:hover    { color: rgb(125 211 252 / 0.8); }
+  html.dark .border-accent\/40               { border-color: rgb(56 189 248 / 0.4); }
+  html.dark .hover\:border-accent\/40:hover  { border-color: rgb(56 189 248 / 0.4); }
+  html.dark .bg-accent\/10                   { background-color: rgb(56 189 248 / 0.1); }
+  html.dark .hover\:bg-accent\/10:hover      { background-color: rgb(56 189 248 / 0.12); }
+
+  /* Surfaces */
+  html.dark .bg-white      { background-color: #162336; }
+  html.dark .bg-white\/90  { background-color: rgba(10, 17, 30, 0.96); }
+  html.dark .bg-slate-50   { background-color: #0e1a2b; }
+  html.dark .bg-slate-100  { background-color: #162336; }
+  html.dark .bg-slate-200  { background-color: #1e3148; }
+
+  /* Primary action buttons: dark bg → brand teal */
+  html.dark .bg-slate-900               { background-color: #14526a; }
+  html.dark .hover\:bg-slate-800:hover  { background-color: #0f3e51; }
+  html.dark .hover\:bg-slate-900:hover  { background-color: #0f3e51; }
+  html.dark .bg-slate-900\/40           { background-color: rgb(0 0 0 / 0.72); }
+
+  /* Text */
+  html.dark .text-slate-900 { color: #f1f5f9; }
+  html.dark .text-slate-800 { color: #e2e8f0; }
+  html.dark .text-slate-700 { color: #cbd5e1; }
+  html.dark .text-slate-600 { color: #94a3b8; }
+  html.dark .text-slate-500 { color: #94a3b8; }
+  html.dark .text-slate-400 { color: #64748b; }
+  html.dark .text-slate-300 { color: #374e67; }
+
+  /* Borders */
+  html.dark .border-slate-200 { border-color: #1e3148; }
+  html.dark .border-slate-300 { border-color: #2a4263; }
+  html.dark header            { border-color: #1a2d42; }
+
+  /* Semantic colours (toasts / approval badges) */
+  html.dark .bg-rose-50       { background-color: #2a0f12; }
+  html.dark .border-rose-300  { border-color: #9b1c1c; }
+  html.dark .text-rose-700    { color: #fda4af; }
+  html.dark .bg-rose-100      { background-color: #3b0d10; }
+  html.dark .border-emerald-200 { border-color: #065f46; }
+  html.dark .text-emerald-700 { color: #6ee7b7; }
+  html.dark .bg-emerald-100   { background-color: #064e3b; }
+
+  /* Form inputs */
+  html.dark input:not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  html.dark select,
+  html.dark textarea {
+    background-color: #0e1a2b;
+    border-color: #1e3148;
+    color: #e2e8f0;
+    color-scheme: dark;
+  }
+  html.dark input::placeholder,
+  html.dark textarea::placeholder { color: #4a6480; }
+
+  /* Shadows */
+  html.dark .shadow-sm { box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.5); }
+  html.dark .shadow-md { box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.4); }
+  html.dark .shadow-xl { box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.7), 0 8px 10px -6px rgb(0 0 0 / 0.5); }
+</style>

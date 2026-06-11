@@ -83,6 +83,11 @@ const page = {
     { table: { s: "erp.skus" }, on: ["t.sku_id", "s.id"] },
     { table: { sg: "erp.product_subgroups" }, on: ["t.subgroup_id", "sg.id"] },
     { table: { pg: "erp.product_groups" }, on: ["t.group_id", "pg.id"] },
+    // For SKU rows: follow sku → variant → item to get the item's subgroup/group
+    { table: { sv: "erp.variants" }, on: ["s.variant_id", "sv.id"] },
+    { table: { si: "erp.items" }, on: ["sv.item_id", "si.id"] },
+    { table: { ssg: "erp.product_subgroups" }, on: ["si.subgroup_id", "ssg.id"] },
+    { table: { spg: "erp.product_groups" }, on: ["si.group_id", "spg.id"] },
   ],
   extraSelect: (locale) => [
     locale === "ur"
@@ -104,6 +109,13 @@ const page = {
       END as selector_display`,
     ),
     "t.source_rule_id",
+    // Item-level subgroup/group for SKU rows (to show scope in 3-level display)
+    locale === "ur"
+      ? knex.raw("COALESCE(ssg.name_ur, ssg.name) as sku_subgroup_name")
+      : "ssg.name as sku_subgroup_name",
+    locale === "ur"
+      ? knex.raw("COALESCE(spg.name_ur, spg.name) as sku_group_name")
+      : "spg.name as sku_group_name",
     knex.raw(
       "CASE WHEN lower(trim(t.status)) = 'active' THEN true ELSE false END as is_active",
     ),
