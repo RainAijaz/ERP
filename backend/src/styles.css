@@ -133,6 +133,45 @@ html.dark .shadow     { box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.4), 0 1px 2px -1px
 html.dark .shadow-md  { box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.5), 0 2px 4px -2px rgb(0 0 0 / 0.4); }
 html.dark .shadow-xl  { box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.7), 0 8px 10px -6px rgb(0 0 0 / 0.5); }
 
+/* === Semi-transparent white panels (radio groups, filter wrappers) === */
+html.dark .bg-white\/60  { background-color: rgba(10, 18, 34, 0.85); }
+html.dark .bg-white\/70  { background-color: rgba(10, 18, 34, 0.92); }
+html.dark .bg-white\/80  { background-color: rgba(22, 35, 54, 0.95); }
+
+/* Slate opacity variants */
+html.dark .bg-slate-50\/30  { background-color: rgba(14, 26, 43, 0.5); }
+html.dark .bg-slate-50\/40  { background-color: rgba(14, 26, 43, 0.6); }
+html.dark .bg-slate-200\/50 { background-color: rgba(30, 49, 72, 0.6); }
+html.dark .border-slate-200\/80 { border-color: rgba(30, 49, 72, 0.8); }
+
+/* === Table zebra stripes === */
+html.dark .odd\:bg-slate-50:nth-child(odd)  { background-color: #0e1a2b; }
+html.dark .even\:bg-white:nth-child(even)   { background-color: #162336; }
+
+/* === Hover states === */
+html.dark .hover\:bg-slate-100:hover { background-color: #1e3040; }
+html.dark .hover\:bg-slate-50:hover  { background-color: #0f1c2e; }
+html.dark .hover\:bg-rose-100:hover  { background-color: #3b0d10; }
+html.dark .hover\:bg-amber-100:hover { background-color: #261600; }
+
+/* === Amber status rows / badges === */
+html.dark .bg-amber-50  { background-color: #1e1400; }
+html.dark .bg-amber-100 { background-color: #261b00; }
+html.dark .text-amber-700 { color: #fcd34d; }
+html.dark .text-amber-800 { color: #fbbf24; }
+html.dark .text-amber-900 { color: #f59e0b; }
+html.dark .text-sky-700   { color: #38bdf8; }
+
+/* === Table row dividers === */
+html.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) { border-color: #1a2d42; }
+html.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-color: #1e3148; }
+
+/* === Radio & checkbox accent === */
+html.dark input[type="radio"],
+html.dark input[type="checkbox"] {
+  accent-color: #38bdf8;
+}
+
 /* === RTL Support === */
 [dir="rtl"] .nav-dropdown {
   left: auto !important;
