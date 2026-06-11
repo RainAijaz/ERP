@@ -1350,7 +1350,7 @@
     };
 
     const updatePaymentModeUi = () => {
-      if (!isGeneralPurchase || !paymentTypeSelect) return;
+      if ((!isGeneralPurchase && !isPurchaseReturn) || !paymentTypeSelect) return;
       const paymentType = String(paymentTypeSelect.value || "CREDIT").toUpperCase();
       const assetMode = isAssetPurchase();
       const consumableMode = isConsumablePurchase();
@@ -1381,7 +1381,7 @@
         if (grnAllocJsonInput) grnAllocJsonInput.value = "";
       }
       if (supplierSelect) {
-        supplierSelect.required = !isCash || hasGrnRef;
+        supplierSelect.required = isPurchaseReturn ? true : (!isCash || hasGrnRef);
       }
       if (referenceNoInput) {
         // If GRN is selected, bill number can be derived server-side from GRN.
