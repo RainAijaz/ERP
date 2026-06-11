@@ -12,6 +12,7 @@ const PURCHASE_VOUCHER_TYPES = {
 const PURCHASE_CATEGORIES = {
   rawMaterial: "RAW_MATERIAL",
   asset: "ASSET",
+  consumable: "CONSUMABLE",
 };
 const SALES_VOUCHER_TYPES = {
   salesOrder: "SALES_ORDER",
@@ -117,9 +118,9 @@ const normalizePurchaseCategory = (value) => {
   const text = String(value || PURCHASE_CATEGORIES.rawMaterial)
     .trim()
     .toUpperCase();
-  return text === PURCHASE_CATEGORIES.asset
-    ? PURCHASE_CATEGORIES.asset
-    : PURCHASE_CATEGORIES.rawMaterial;
+  if (text === PURCHASE_CATEGORIES.asset) return PURCHASE_CATEGORIES.asset;
+  if (text === PURCHASE_CATEGORIES.consumable) return PURCHASE_CATEGORIES.consumable;
+  return PURCHASE_CATEGORIES.rawMaterial;
 };
 
 const normalizeSalesPaymentType = (value) => {
@@ -273,7 +274,7 @@ const loadPurchaseAccountLineTotalsTx = async ({ trx, voucherId }) => {
     .orderBy("line_no", "asc");
   if (!rows.length) {
     throw new Error(
-      `GL posting failed: voucher ${voucherId} has no ACCOUNT lines for asset purchase`,
+      `GL posting failed: voucher ${voucherId} has no ACCOUNT lines`,
     );
   }
 
@@ -409,7 +410,10 @@ const buildGeneralPurchaseEntriesTx = async ({ trx, header, voucherId }) => {
   const entries = [];
   let accountsByGroup = null;
 
-  if (purchaseCategory === PURCHASE_CATEGORIES.asset) {
+  if (
+    purchaseCategory === PURCHASE_CATEGORIES.asset ||
+    purchaseCategory === PURCHASE_CATEGORIES.consumable
+  ) {
     const accountTotals = await loadPurchaseAccountLineTotalsTx({
       trx,
       voucherId,
@@ -561,9 +565,13 @@ const buildPurchaseReturnEntriesTx = async ({ trx, header, voucherId }) => {
     );
   }
 
+  const isAccountLinePurchase =
+    purchaseCategory === PURCHASE_CATEGORIES.asset ||
+    purchaseCategory === PURCHASE_CATEGORIES.consumable;
+
   let totalAmount = 0;
   let debitAccountLines = [];
-  if (purchaseCategory === PURCHASE_CATEGORIES.asset) {
+  if (isAccountLinePurchase) {
     debitAccountLines = await loadPurchaseAccountLineTotalsTx({
       trx,
       voucherId,
@@ -582,13 +590,12 @@ const buildPurchaseReturnEntriesTx = async ({ trx, header, voucherId }) => {
   const accountsByGroup = await loadAccountsByGroupTx({
     trx,
     branchId: Number(header.branch_id),
-    groupCodes:
-      purchaseCategory === PURCHASE_CATEGORIES.asset
-        ? [CONTROL_GROUP_CODES.partyPayable]
-        : [
-            PURCHASE_ACCOUNT_GROUP_CODES.inventoryRm,
-            CONTROL_GROUP_CODES.partyPayable,
-          ],
+    groupCodes: isAccountLinePurchase
+      ? [CONTROL_GROUP_CODES.partyPayable]
+      : [
+          PURCHASE_ACCOUNT_GROUP_CODES.inventoryRm,
+          CONTROL_GROUP_CODES.partyPayable,
+        ],
   });
   const apControlAccountId = resolveSingleAccountIdForGroup({
     accountsByGroup,
@@ -608,7 +615,7 @@ const buildPurchaseReturnEntriesTx = async ({ trx, header, voucherId }) => {
       cr: 0,
       narration: toNarration({}, header.remarks),
     },
-    ...(purchaseCategory === PURCHASE_CATEGORIES.asset
+    ...(isAccountLinePurchase
       ? debitAccountLines.map((row) => ({
           branch_id: Number(header.branch_id),
           entry_date: header.voucher_date,
