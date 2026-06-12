@@ -2398,12 +2398,14 @@ const validatePurchaseVoucherPayloadTx = async ({
   if (!referenceNo) throw new HttpError(400, "Bill number is required");
 
   if (voucherTypeCode === PURCHASE_VOUCHER_TYPES.purchaseReturn) {
-    const supplier = await validateSupplierTx({
-      trx,
-      req,
-      supplierPartyId: payload.supplier_party_id,
-    });
-    supplierPartyId = supplier.id;
+    if (payload.supplier_party_id) {
+      const supplier = await validateSupplierTx({
+        trx,
+        req,
+        supplierPartyId: payload.supplier_party_id,
+      });
+      supplierPartyId = supplier.id;
+    }
     returnReason = normalizeReturnReason(payload.return_reason);
     if (!returnReason)
       throw new HttpError(400, "Purchase return reason is required");

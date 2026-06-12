@@ -205,7 +205,7 @@
           <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
             <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel("supplier") %></label>
             <div class="lg:col-span-4">
-              <select name="supplier_party_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-supplier-select data-searchable-select="true" data-searchable-variant="unified" required>
+              <select name="supplier_party_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-supplier-select data-searchable-select="true" data-searchable-variant="unified">
                 <option value=""><%= t("select_supplier") %></option>
                 <% (options.suppliers || []).forEach((supplier) => { %>
                   <option value="<%= supplier.id %>" <%= Number(selectedVoucher?.supplier_party_id || 0) === Number(supplier.id) ? "selected" : "" %>><%= (locale === 'ur' && supplier.name_ur) ? supplier.name_ur : supplier.name %></option>
@@ -1381,7 +1381,7 @@
         if (grnAllocJsonInput) grnAllocJsonInput.value = "";
       }
       if (supplierSelect) {
-        supplierSelect.required = isPurchaseReturn ? true : (!isCash || hasGrnRef);
+        supplierSelect.required = isPurchaseReturn ? false : (!isCash || hasGrnRef);
       }
       if (referenceNoInput) {
         // If GRN is selected, bill number can be derived server-side from GRN.
