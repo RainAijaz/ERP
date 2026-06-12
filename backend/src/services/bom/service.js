@@ -1903,6 +1903,7 @@ const validateDraftReadyForApproval = async (
     t,
     {
       enforceSkuRuleCompleteness: false,
+      enforceRmVariantIdentity: false,
       actorUserId: null,
     },
   );
