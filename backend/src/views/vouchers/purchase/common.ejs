@@ -97,6 +97,10 @@
           </div>
         </div>
 
+        <% if (voucherTypeCode === "PR") { %>
+          <%# For PR, category is derived from per-row line_type on the backend; always send MIXED %>
+          <input type="hidden" name="purchase_category" value="MIXED">
+        <% } else { %>
         <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
           <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel("type") %></label>
           <div class="lg:col-span-4">
@@ -109,6 +113,7 @@
             </select>
           </div>
         </div>
+        <% } %>
 
         <% if (voucherTypeCode === "PI") { %>
           <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
@@ -276,6 +281,17 @@
                 <col class="w-[14%]">
                 <col class="w-[10%]">
                 <col class="w-[10%]">
+              <% } else if (voucherTypeCode === "PR") { %>
+                <col class="w-[10%]">
+                <col class="w-[18%]">
+                <col class="w-[14%]">
+                <col class="w-[8%]">
+                <col class="w-[8%]">
+                <col class="w-[10%]">
+                <col class="w-[10%]">
+                <col class="w-[9%]">
+                <col class="w-[7%]">
+                <col class="w-[6%]">
               <% } else { %>
                 <col class="w-[16%]">
                 <col class="w-[14%]">
@@ -290,6 +306,18 @@
             </colgroup>
             <thead class="bg-slate-50 text-xs uppercase tracking-[0.12em] text-slate-500">
               <tr>
+                <% if (voucherTypeCode === "PR") { %>
+                  <th class="border-b border-slate-200 px-2 py-2 text-left">Type</th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-left" data-line-head-item>Item / Account</th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-left" data-line-head-type>Color / Desc</th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-left" data-line-head-size><%= toFriendlyLabel("size") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-left" data-line-head-uom><%= toFriendlyLabel("unit") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-right"><%= toFriendlyLabel("quantity") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-right"><%= toFriendlyLabel("rate") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-right"><%= toFriendlyLabel("amount") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-center"><%= toFriendlyLabel("actions") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-center"><%= toFriendlyLabel("sr_no") %></th>
+                <% } else { %>
                 <th class="border-b border-slate-200 px-2 py-2 text-left" data-line-head-item><%= toFriendlyLabel("raw_material") %></th>
                 <th class="border-b border-slate-200 px-2 py-2 text-left" data-line-head-type><%= toFriendlyLabel("color") %></th>
                 <th class="border-b border-slate-200 px-2 py-2 text-left" data-line-head-size><%= toFriendlyLabel("size") %></th>
@@ -301,12 +329,13 @@
                 <% } %>
                 <th class="border-b border-slate-200 px-2 py-2 text-center"><%= toFriendlyLabel("actions") %></th>
                 <th class="border-b border-slate-200 px-2 py-2 text-center"><%= toFriendlyLabel("sr_no") %></th>
+                <% } %>
               </tr>
             </thead>
             <tbody data-lines-body></tbody>
             <tfoot>
               <tr class="bg-slate-50">
-                <td class="border-t border-slate-200 px-2 py-2 text-xs font-semibold text-slate-700" colspan="<%= isGrn ? 4 : 6 %>"><%= toFriendlyLabel("total") %></td>
+                <td class="border-t border-slate-200 px-2 py-2 text-xs font-semibold text-slate-700" colspan="<%= isGrn ? 4 : voucherTypeCode === 'PR' ? 7 : 6 %>"><%= toFriendlyLabel("total") %></td>
                 <% if (isGrn) { %>
                    <td class="border-t border-slate-200 px-2 py-2">
                       <input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.000" data-total-qty>
@@ -505,6 +534,7 @@
     
     const itemRows = Array.isArray(selectedVoucher?.lines) && selectedVoucher.lines.length
       ? selectedVoucher.lines.map((line) => ({
+          line_type: String(line.line_type || "RAW_MATERIAL").toUpperCase(),
           item_id: Number(line.item_id || 0) || null,
           asset_id: Number(line.asset_id || 0) || null,
           asset_type_code: String(line.asset_type_code || "").toUpperCase(),
@@ -520,6 +550,7 @@
           grn_source_line_id: null,
         }))
       : [{
+          line_type: "RAW_MATERIAL",
           item_id: null,
           asset_id: null,
           asset_type_code: "",
@@ -566,7 +597,11 @@
       }
     };
 
-    const getRowFieldOrder = () => {
+    const getRowFieldOrder = (row) => {
+      if (isPurchaseReturn) {
+        if (row?.line_type === "CONSUMABLE") return ["line_type", "item", "description", "qty", "rate"];
+        return ["line_type", "item", "color", "size", "qty", "rate"];
+      }
       if (isAssetPurchase()) {
         return isGrn ? ["item", "qty"] : ["item", "qty", "rate"];
       }
@@ -640,7 +675,7 @@
       const currentFieldKey = resolveRowFieldKey(currentEl);
       if (!currentFieldKey) return false;
 
-      const rowFieldOrder = getRowFieldOrder();
+      const rowFieldOrder = getRowFieldOrder(rowsState[rowIndex]);
       const index = rowFieldOrder.indexOf(currentFieldKey);
       if (index < 0) return false;
 
@@ -844,52 +879,87 @@
       linesBody.innerHTML = "";
       const assetMode = isAssetPurchase();
       const consumableMode = isConsumablePurchase();
-      if (lineHeadItem) {
-        lineHeadItem.textContent = assetMode
-          ? "<%= toFriendlyLabel('asset_name') %>"
-          : consumableMode
-            ? "Expense Account"
-            : "<%= toFriendlyLabel('raw_material') %>";
+      // PR uses per-row line_type; skip global lineHead updates for it
+      // (headers are static in the PR-specific thead rendered server-side).
+      const prMixedMode = isPurchaseReturn;
+      if (!prMixedMode) {
+        if (lineHeadItem) {
+          lineHeadItem.textContent = assetMode
+            ? "<%= toFriendlyLabel('asset_name') %>"
+            : consumableMode
+              ? "Expense Account"
+              : "<%= toFriendlyLabel('raw_material') %>";
+        }
+        if (lineHeadType) {
+          lineHeadType.textContent = assetMode
+            ? "<%= toFriendlyLabel('asset_type') %>"
+            : consumableMode
+              ? "Description"
+              : "<%= toFriendlyLabel('color') %>";
+        }
+        if (lineHeadSize) lineHeadSize.classList.toggle("hidden", assetMode || consumableMode);
+        if (lineHeadUom) lineHeadUom.classList.toggle("hidden", assetMode || consumableMode);
       }
-      if (lineHeadType) {
-        lineHeadType.textContent = assetMode
-          ? "<%= toFriendlyLabel('asset_type') %>"
-          : consumableMode
-            ? "Description"
-            : "<%= toFriendlyLabel('color') %>";
-      }
-      if (lineHeadSize) lineHeadSize.classList.toggle("hidden", assetMode || consumableMode);
-      if (lineHeadUom) lineHeadUom.classList.toggle("hidden", assetMode || consumableMode);
       rowsState.forEach((row, index) => {
         recalculateRow(row);
         const tr = document.createElement("tr");
         tr.className = "border-b border-slate-100 align-middle";
         tr.setAttribute("data-row-index", String(index));
 
+        // Per-row effective modes (for PR mixed each row decides its own type)
+        const rowAssetMode = prMixedMode ? false : assetMode;
+        const rowConsumableMode = prMixedMode ? (row.line_type === "CONSUMABLE") : consumableMode;
+
+        // PR: Type dropdown column (Raw Material / Indirect Material)
+        if (prMixedMode) {
+          const typeTd = document.createElement("td");
+          typeTd.className = "px-1.5 py-1";
+          const typeSelect = document.createElement("select");
+          typeSelect.className = "h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs";
+          typeSelect.dataset.rowField = "line_type";
+          typeSelect.appendChild(makeOption("RAW_MATERIAL", "Raw Material", row.line_type !== "CONSUMABLE"));
+          typeSelect.appendChild(makeOption("CONSUMABLE", "Indirect Material", row.line_type === "CONSUMABLE"));
+          typeSelect.addEventListener("change", () => {
+            row.line_type = typeSelect.value;
+            row.item_id = null;
+            row.account_id = null;
+            row.color_id = null;
+            row.size_id = null;
+            row.uom_id = null;
+            row.description = "";
+            row.qty = 0;
+            row.rate = 0;
+            row.amount = 0;
+            renderRows();
+          });
+          typeTd.appendChild(typeSelect);
+          tr.appendChild(typeTd);
+        }
+
         const itemTd = document.createElement("td");
-        itemTd.className = "px-1.5 py-1"; 
+        itemTd.className = "px-1.5 py-1";
         const itemSelect = document.createElement("select");
         itemSelect.className = "h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs";
         itemSelect.dataset.rowField = "item";
         itemSelect.dataset.searchableSelect = "true";
         itemSelect.dataset.searchableVariant = "unified";
-        const selectedEntityId = assetMode
+        const selectedEntityId = rowAssetMode
           ? Number(row.asset_id || 0)
-          : consumableMode
+          : rowConsumableMode
             ? Number(row.account_id || 0)
             : Number(row.item_id || 0);
         itemSelect.appendChild(
           makeOption(
             "",
-            assetMode
+            rowAssetMode
               ? "<%= toFriendlyLabel('asset_name') %>"
-              : consumableMode
+              : rowConsumableMode
                 ? "Select Expense Account"
                 : "<%= toFriendlyLabel('select_raw_material') %>",
             !selectedEntityId,
           ),
         );
-        if (assetMode) {
+        if (rowAssetMode) {
           assets.forEach((asset) => {
             itemSelect.appendChild(
               makeOption(
@@ -899,7 +969,7 @@
               ),
             );
           });
-        } else if (consumableMode) {
+        } else if (rowConsumableMode) {
           expenseAccounts.forEach((acc) => {
             itemSelect.appendChild(
               makeOption(
@@ -923,7 +993,7 @@
         }
         itemSelect.addEventListener("change", () => {
           row.grn_source_line_id = null;
-          if (assetMode) {
+          if (rowAssetMode) {
             row.asset_id = Number(itemSelect.value || 0) || null;
             row.item_id = null;
             row.account_id = null;
@@ -933,7 +1003,7 @@
             const selectedAsset = assetById.get(Number(row.asset_id || 0));
             row.asset_type_code = String(selectedAsset?.asset_type_code || "");
             row.asset_type_name = String(selectedAsset?.asset_type_name || "");
-          } else if (consumableMode) {
+          } else if (rowConsumableMode) {
             row.account_id = Number(itemSelect.value || 0) || null;
             row.item_id = null;
             row.asset_id = null;
@@ -994,7 +1064,7 @@
 
         const colorTd = document.createElement("td");
         colorTd.className = "px-1.5 py-1";
-        if (assetMode) {
+        if (rowAssetMode) {
           const assetTypeInput = document.createElement("input");
           assetTypeInput.type = "text";
           assetTypeInput.readOnly = true;
@@ -1004,7 +1074,7 @@
           row.asset_type_name = String(selectedAsset?.asset_type_name || row.asset_type_name || "");
           assetTypeInput.value = row.asset_type_name || row.asset_type_code || "";
           colorTd.appendChild(assetTypeInput);
-        } else if (consumableMode) {
+        } else if (rowConsumableMode) {
           const descInput = document.createElement("input");
           descInput.type = "text";
           descInput.maxLength = 500;
@@ -1086,7 +1156,7 @@
 
         const sizeTd = document.createElement("td");
         sizeTd.className = "px-1.5 py-1";
-        if (assetMode || consumableMode) {
+        if (rowAssetMode || rowConsumableMode) {
           sizeTd.classList.add("hidden");
           const placeholder = document.createElement("input");
           placeholder.type = "text";
@@ -1171,7 +1241,7 @@
         uomInput.type = "text";
         uomInput.readOnly = true;
         uomInput.className = "h-8 w-full rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs text-slate-600";
-        if (assetMode || consumableMode) {
+        if (rowAssetMode || rowConsumableMode) {
           uomTd.classList.add("hidden");
           uomInput.value = "";
           row.uom_id = null;
@@ -1626,10 +1696,13 @@
         return false;
       }
       rowsState.push({
+        line_type: "RAW_MATERIAL",
         item_id: null,
         asset_id: null,
         asset_type_code: "",
         asset_type_name: "",
+        account_id: null,
+        description: "",
         color_id: null,
         size_id: null,
         uom_id: null,
@@ -1721,7 +1794,7 @@
     };
 
     const moveToNextRowField = ({ rowIndex, rowElement, fieldKey }) => {
-      const rowFieldOrder = getRowFieldOrder();
+      const rowFieldOrder = getRowFieldOrder(rowsState[rowIndex]);
       const currentIndex = rowFieldOrder.indexOf(fieldKey);
       const nextKeys = currentIndex >= 0 ? rowFieldOrder.slice(currentIndex + 1) : [];
       setTimeout(() => {
@@ -1773,7 +1846,7 @@
         if (isLastRow) {
           appendBlankRow({ focusNewRow: true });
         } else if (rowElement?.nextElementSibling) {
-          focusAnyRowField(rowElement.nextElementSibling, [getRowFieldOrder()[0]], { openSearchable: true });
+          focusAnyRowField(rowElement.nextElementSibling, [getRowFieldOrder(rowsState[rowIndex + 1])[0]], { openSearchable: true });
         }
         return;
       }
@@ -2069,6 +2142,30 @@
 
       const payloadLines = rowsState
         .map((row) => {
+          // PR mixed: each row carries its own line_type
+          if (isPurchaseReturn) {
+            const isConsumableRow = row.line_type === "CONSUMABLE";
+            if (isConsumableRow) {
+              return {
+                line_type: "CONSUMABLE",
+                account_id: Number(row.account_id || 0) || null,
+                description: String(row.description || "").trim(),
+                qty: Number(row.qty || 0),
+                rate: Number(row.rate || 0),
+                amount: Number(row.amount || 0),
+              };
+            }
+            return {
+              line_type: "RAW_MATERIAL",
+              item_id: Number(row.item_id || 0) || null,
+              color_id: Number(row.color_id || 0) || null,
+              size_id: Number(row.size_id || 0) || null,
+              uom_id: Number(row.uom_id || 0) || null,
+              qty: Number(row.qty || 0),
+              rate: Number(row.rate || 0),
+              amount: Number(row.amount || 0),
+            };
+          }
           if (assetMode) {
             return {
               asset_id: Number(row.asset_id || 0) || null,
@@ -2097,6 +2194,10 @@
           };
         })
         .filter((row) => {
+          if (isPurchaseReturn) {
+            if (row.line_type === "CONSUMABLE") return row.account_id && row.qty > 0 && row.rate > 0;
+            return row.item_id && row.qty > 0 && row.rate > 0;
+          }
           if (assetMode) return row.asset_id && row.qty > 0 && (isGrn || row.rate > 0);
           if (consumableMode) return row.account_id && row.qty > 0 && row.rate > 0;
           return row.item_id && row.qty > 0 && (isGrn || row.rate > 0);
