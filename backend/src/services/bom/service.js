@@ -1966,7 +1966,9 @@ const validateDraftReadyForApproval = async (
         const deptId = toNumberOrNull(rmLine?.dept_id);
         if (!rmItemId || !deptId) return;
         const pairKey = `${skuId}:${rmItemId}:${deptId}`;
-        if (!providedPairSet.has(pairKey)) {
+        const baseQty = toNumberOrNull(rmLine?.qty);
+        const hasValidBase = baseQty !== null && Number.isFinite(baseQty) && baseQty >= 0;
+        if (!providedPairSet.has(pairKey) && !hasValidBase) {
           missingPairs.push({ skuId, rmItemId, deptId });
         }
       });
