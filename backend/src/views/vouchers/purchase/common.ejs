@@ -2044,7 +2044,7 @@
           window.showVoucherError(requiredMessage("<%= t('supplier') %>"));
           return;
         }
-      } else if (!supplierId) {
+      } else if (!isPurchaseReturn && !supplierId) {
         event.preventDefault();
         window.showVoucherError(requiredMessage("<%= t('supplier') %>"));
         return;
