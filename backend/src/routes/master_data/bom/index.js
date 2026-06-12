@@ -458,9 +458,7 @@ router.post(
     } catch (err) {
       debugBom("approve-draft failed", { bomId, error: err?.message || err });
       if (err?.code === "BOM_VALIDATION") {
-        const formState = requestHasBomDraftPayload(req.body)
-          ? buildSubmittedFormState(req.body, bomId)
-          : current || (await bomService.getBomForForm(knex, bomId));
+        const formState = current || (await bomService.getBomForForm(knex, bomId));
         if (formState) {
           return await renderForm(req, res, {
             formMode: "edit",
@@ -599,9 +597,7 @@ router.post(
         error: err?.message || err,
       });
       if (err?.code === "BOM_VALIDATION") {
-        const formState = requestHasBomDraftPayload(req.body)
-          ? buildSubmittedFormState(req.body, bomId)
-          : current || (await bomService.getBomForForm(knex, bomId));
+        const formState = current || (await bomService.getBomForForm(knex, bomId));
         if (formState) {
           return await renderForm(req, res, {
             formMode: "edit",

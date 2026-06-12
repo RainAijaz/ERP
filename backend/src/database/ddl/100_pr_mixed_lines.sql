@@ -14,8 +14,11 @@
 SET search_path = erp;
 
 -- 1. Widen purchase_return_header_ext.purchase_category constraint
+--    Drop both the canonical name and the legacy short name that earlier migrations may have used.
 ALTER TABLE erp.purchase_return_header_ext
   DROP CONSTRAINT IF EXISTS purchase_return_header_ext_purchase_category_check;
+ALTER TABLE erp.purchase_return_header_ext
+  DROP CONSTRAINT IF EXISTS purchase_return_hdr_purchase_category_chk;
 
 ALTER TABLE erp.purchase_return_header_ext
   ADD CONSTRAINT purchase_return_header_ext_purchase_category_check
