@@ -505,17 +505,15 @@
         name: String(stage?.dept_name || departmentNameById.get(deptId) || deptId),
       });
     });
-    if (!stageDeptOptions.length) {
-      productionDepartments.forEach((department) => {
-        const deptId = String(department?.id || "").trim();
-        if (!deptId || seenStageDeptIds.has(deptId)) return;
-        seenStageDeptIds.add(deptId);
-        stageDeptOptions.push({
-          id: deptId,
-          name: String(department?.name || deptId),
-        });
+    productionDepartments.forEach((department) => {
+      const deptId = String(department?.id || "").trim();
+      if (!deptId || seenStageDeptIds.has(deptId)) return;
+      seenStageDeptIds.add(deptId);
+      stageDeptOptions.push({
+        id: deptId,
+        name: String(department?.name || deptId),
       });
-    }
+    });
     const labourDefaultsByItem = options.itemLabourDefaultsMap || {};
     const headerLevelToItemType = { FINISHED: "FG", SEMI_FINISHED: "SFG" };
     const headerItemSelect = document.querySelector('select[name="item_id"]');
@@ -575,7 +573,6 @@
       const normalizedDeptId = String(deptId || "").trim();
       if (!normalizedDeptId) return false;
       const mappedStageId = String(stageIdByDeptId.get(normalizedDeptId) || "").trim();
-      if (!mappedStageId) return false;
       if (!Array.isArray(state.stage_routes)) state.stage_routes = [];
       const alreadyExists = state.stage_routes.some(
         (line) => String(line?.dept_id || "").trim() === normalizedDeptId,
