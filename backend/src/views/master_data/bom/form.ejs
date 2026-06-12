@@ -2311,8 +2311,8 @@
         const selectedDeptId = String(stageControl.value || "").trim();
         if (selectedDeptId && Number.isFinite(stageRowIndex) && stageRowIndex === (state.stage_routes.length - 1)) {
           state.stage_routes.push(addDefaults.stage_route());
-          renderStageRoutes();
         }
+        renderStageRoutes();
         pruneDepartmentScopedRows();
         syncLabourLinesFromSelectionAndRates();
         renderRmWithSkuRules();
