@@ -1696,9 +1696,6 @@
       }
 
       state.labour_selection = defaults.labour_selection.map((row) => normalizeLabourSelectionRow(row));
-      ensureStageRoutesCoverDepartments(
-        state.labour_selection.map((row) => String(row?.dept_id || "").trim()).filter(Boolean),
-      );
       state.labourRuleRateMap = {};
       state.labourRuleLockedMap = {};
       Object.entries(defaults.labour_rate_map || {}).forEach(([key, value]) => {

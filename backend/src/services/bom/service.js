@@ -2031,14 +2031,10 @@ const validateDraftReadyForApproval = async (
       });
     }
   }
-  const labourDeptIds = toArray(form.labour_lines)
-    .map((line) => toNumberOrNull(line?.dept_id))
-    .filter(Boolean);
   const departmentsUsedInBom = [
-    ...new Set([
-      ...rmLines.map((line) => toNumberOrNull(line?.dept_id)).filter(Boolean),
-      ...labourDeptIds,
-    ]),
+    ...new Set(
+      rmLines.map((line) => toNumberOrNull(line?.dept_id)).filter(Boolean),
+    ),
   ];
   const [hasProductionStageTable, hasBomStageRoutingTable] = await Promise.all([
     tableExists(db, "erp.production_stages"),
