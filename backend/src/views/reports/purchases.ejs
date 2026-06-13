@@ -184,74 +184,6 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t("branches") : t("branch") %></label>
-          <div class="sm:col-span-9">
-            <% if (user?.isAdmin) { %>
-              <select name="branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
-                <option value="<%= allMultiOptionValue %>" <%= branchAllSelected ? "selected" : "" %>><%= t("all") %></option>
-                <% (options?.branches || []).forEach((branch) => { %>
-                  <option value="<%= branch.id %>" <%= (filters?.branchIds || []).includes(Number(branch.id)) ? "selected" : "" %>><%= branch.name %></option>
-                <% }) %>
-              </select>
-            <% } else { %>
-              <input type="text" readonly value="<%= (options?.branches || [])[0]?.name || branchId %>" class="h-10 w-full rounded-lg border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700">
-            <% } %>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("order_by") %></label>
-          <div class="sm:col-span-9">
-            <div class="flex flex-wrap gap-2 rounded-xl bg-white/60 p-1">
-              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= orderBy === 'party' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
-                <input type="radio" name="order_by" value="party" <%= orderBy === "party" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
-                <span><%= t("party_name") %></span>
-              </label>
-              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= orderBy === 'invoice' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
-                <input type="radio" name="order_by" value="invoice" <%= orderBy === "invoice" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
-                <span><%= t("voucher_no") %></span>
-              </label>
-              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= orderBy === 'product' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
-                <input type="radio" name="order_by" value="product" <%= orderBy === "product" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
-                <span data-order-by-product-label><%= entityLabel %></span>
-              </label>
-            </div>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("category") %></label>
-          <div class="sm:col-span-9">
-            <div class="flex flex-wrap gap-2 rounded-xl bg-white/60 p-1">
-              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= purchaseCategory === 'all' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
-                <input type="radio" name="purchase_category" value="all" data-purchase-category-filter <%= purchaseCategory === "all" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
-                <span><%= t("all") %></span>
-              </label>
-              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= purchaseCategory === 'raw_material' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
-                <input type="radio" name="purchase_category" value="raw_material" data-purchase-category-filter <%= purchaseCategory === "raw_material" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
-                <span><%= t("raw_material") %></span>
-              </label>
-              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= purchaseCategory === 'asset' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
-                <input type="radio" name="purchase_category" value="asset" data-purchase-category-filter <%= purchaseCategory === "asset" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
-                <span><%= t("asset") %></span>
-              </label>
-            </div>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12 <%= isAssetCategory ? 'hidden' : '' %>" data-rm-filter-row>
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("raw_material") %></label>
-          <div class="sm:col-span-9">
-            <select name="raw_material_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
-              <option value="<%= allMultiOptionValue %>" <%= rawMaterialAllSelected ? "selected" : "" %>><%= t("all") %></option>
-              <% (options?.rawMaterials || []).forEach((item) => { %>
-                <option value="<%= item.id %>" <%= (filters?.rawMaterialIds || []).includes(Number(item.id)) ? "selected" : "" %>><%= item.name %></option>
-              <% }) %>
-            </select>
-          </div>
-        </div>
-
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12 <%= isAssetCategory ? 'hidden' : '' %>" data-rm-filter-row>
           <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("group") %></label>
           <div class="sm:col-span-9">
@@ -276,17 +208,49 @@
           </div>
         </div>
 
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12 <%= isAssetCategory ? 'hidden' : '' %>" data-rm-filter-row>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("raw_material") %></label>
+          <div class="sm:col-span-9">
+            <select name="raw_material_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+              <option value="<%= allMultiOptionValue %>" <%= rawMaterialAllSelected ? "selected" : "" %>><%= t("all") %></option>
+              <% (options?.rawMaterials || []).forEach((item) => { %>
+                <option value="<%= item.id %>" <%= (filters?.rawMaterialIds || []).includes(Number(item.id)) ? "selected" : "" %>><%= item.name %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("report_type") %></label>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t("branches") : t("branch") %></label>
+          <div class="sm:col-span-9">
+            <% if (user?.isAdmin) { %>
+              <select name="branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+                <option value="<%= allMultiOptionValue %>" <%= branchAllSelected ? "selected" : "" %>><%= t("all") %></option>
+                <% (options?.branches || []).forEach((branch) => { %>
+                  <option value="<%= branch.id %>" <%= (filters?.branchIds || []).includes(Number(branch.id)) ? "selected" : "" %>><%= branch.name %></option>
+                <% }) %>
+              </select>
+            <% } else { %>
+              <input type="text" readonly value="<%= (options?.branches || [])[0]?.name || branchId %>" class="h-10 w-full rounded-lg border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700">
+            <% } %>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("category") %></label>
           <div class="sm:col-span-9">
             <div class="flex flex-wrap gap-2 rounded-xl bg-white/60 p-1">
-              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= reportType === 'details' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
-                <input type="radio" name="report_type" value="details" <%= reportType === "details" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
-                <span><%= t("details") %></span>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= purchaseCategory === 'all' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="purchase_category" value="all" data-purchase-category-filter <%= purchaseCategory === "all" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t("all") %></span>
               </label>
-              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= reportType === 'summary' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
-                <input type="radio" name="report_type" value="summary" <%= reportType === "summary" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
-                <span><%= t("summary") %></span>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= purchaseCategory === 'raw_material' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="purchase_category" value="raw_material" data-purchase-category-filter <%= purchaseCategory === "raw_material" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t("raw_material") %></span>
+              </label>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= purchaseCategory === 'asset' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="purchase_category" value="asset" data-purchase-category-filter <%= purchaseCategory === "asset" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t("asset") %></span>
               </label>
             </div>
           </div>
@@ -317,6 +281,42 @@
                   <option value="<%= account.id %>" <%= selectedCashAccountId === Number(account.id) ? "selected" : "" %>><%= account.name %></option>
                 <% }) %>
               </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("order_by") %></label>
+          <div class="sm:col-span-9">
+            <div class="flex flex-wrap gap-2 rounded-xl bg-white/60 p-1">
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= orderBy === 'party' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="order_by" value="party" <%= orderBy === "party" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t("party_name") %></span>
+              </label>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= orderBy === 'invoice' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="order_by" value="invoice" <%= orderBy === "invoice" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t("voucher_no") %></span>
+              </label>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= orderBy === 'product' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="order_by" value="product" <%= orderBy === "product" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span data-order-by-product-label><%= entityLabel %></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("report_type") %></label>
+          <div class="sm:col-span-9">
+            <div class="flex flex-wrap gap-2 rounded-xl bg-white/60 p-1">
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= reportType === 'details' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="report_type" value="details" <%= reportType === "details" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t("details") %></span>
+              </label>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= reportType === 'summary' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="report_type" value="summary" <%= reportType === "summary" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t("summary") %></span>
+              </label>
             </div>
           </div>
         </div>
