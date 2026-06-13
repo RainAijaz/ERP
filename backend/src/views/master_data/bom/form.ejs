@@ -74,17 +74,17 @@
             </button>
           </form>
         <% } %>
-        <% if (isEdit && isDraft) { %>
+        <% if (isDraft) { %>
           <button
             type="submit"
             form="bom-form"
-            formaction="<%= basePath %>/<%= header.id %>/<%= user?.isAdmin ? 'approve-draft' : 'send-for-approval' %>"
+            <% if (isEdit) { %>formaction="<%= basePath %>/<%= header.id %>/<%= user?.isAdmin ? 'approve-draft' : 'send-for-approval' %>"<% } %>
             formmethod="POST"
-            data-bom-approve-now="<%= user?.isAdmin ? '1' : '0' %>"
-            data-bom-send-approval="<%= user?.isAdmin ? '0' : '1' %>"
+            data-bom-approve-now="<%= (isEdit && user?.isAdmin) ? '1' : '0' %>"
+            data-bom-send-approval="<%= (!isEdit || !user?.isAdmin) ? '1' : '0' %>"
             class="inline-flex min-w-[8.5rem] items-center justify-center rounded-xl bg-accent px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white shadow-sm transition hover:brightness-95"
           >
-            <%= user?.isAdmin ? (t("approve") ) : (t("send_for_approval") ) %>
+            <%= (isEdit && user?.isAdmin) ? (t("approve")) : (t("send_for_approval")) %>
           </button>
         <% } %>
         <% if (isEdit && String(header.status || '').toUpperCase() === "PENDING" && user?.isAdmin) { %>

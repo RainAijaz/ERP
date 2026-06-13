@@ -356,6 +356,10 @@ const handleSaveDraft = async (req, res, next, bomId = null) => {
     if (result.queued) {
       return res.redirect(req.get("referer") || req.baseUrl);
     }
+    const submitIntent = toSingleText(req.body?.submit_intent);
+    if (submitIntent === "send_for_approval" && result.id) {
+      return res.redirect(307, `${req.baseUrl}/${result.id}/send-for-approval`);
+    }
     queueAuditLog(req, {
       entityType: BOM_ENTITY_TYPE,
       entityId: result.id,
