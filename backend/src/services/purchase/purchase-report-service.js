@@ -186,9 +186,24 @@ const parseFilters = ({ req, input = {} }) => {
   }
 
   const selectedBranchIds = toIdListWithAll(input.branch_ids);
-  const branchIds = req.user?.isAdmin
-    ? selectedBranchIds
-    : [Number(req.branchId || 0)].filter((id) => id > 0);
+  let branchIds;
+  if (req.user?.isAdmin) {
+    branchIds = selectedBranchIds;
+  } else {
+    const allowedBranchIds = (req.branchOptions || [])
+      .map((b) => Number(b.id || 0))
+      .filter((id) => id > 0);
+    const fallback = Number(req.branchId || 0);
+    const effectiveAllowed = allowedBranchIds.length
+      ? allowedBranchIds
+      : fallback > 0 ? [fallback] : [];
+    if (selectedBranchIds.length) {
+      branchIds = selectedBranchIds.filter((id) => effectiveAllowed.includes(id));
+      if (!branchIds.length) branchIds = effectiveAllowed;
+    } else {
+      branchIds = effectiveAllowed;
+    }
+  }
 
   const orderBy = resolveReportOrderType(
     input.order_by,
@@ -258,9 +273,7 @@ const applyPartyBranchScope = (query, branchIds = []) => {
 };
 
 const loadReportFilterOptions = async ({ req, filters }) => {
-  const branchScope = req.user?.isAdmin
-    ? filters.branchIds
-    : [Number(req.branchId || 0)].filter((id) => id > 0);
+  const branchScope = filters.branchIds;
 
   const branchesPromise = req.user?.isAdmin
     ? knex("erp.branches")
@@ -279,11 +292,8 @@ const loadReportFilterOptions = async ({ req, filters }) => {
     .where({ "p.is_active": true })
     .whereRaw("upper(coalesce(p.party_type::text, '')) in ('SUPPLIER','BOTH')");
 
-  if (!req.user?.isAdmin || branchScope.length) {
-    suppliersQuery = applyPartyBranchScope(
-      suppliersQuery,
-      branchScope.length ? branchScope : [Number(req.branchId || 0)],
-    );
+  if (branchScope.length) {
+    suppliersQuery = applyPartyBranchScope(suppliersQuery, branchScope);
   }
 
   let cashAccountsQuery = knex("erp.accounts as a")
@@ -292,16 +302,13 @@ const loadReportFilterOptions = async ({ req, filters }) => {
     .where({ "a.is_active": true })
     .whereRaw("lower(coalesce(apc.code, '')) in ('cash','bank')");
 
-  if (!req.user?.isAdmin || branchScope.length) {
-    const scopedBranches = branchScope.length
-      ? branchScope
-      : [Number(req.branchId || 0)];
+  if (branchScope.length) {
     cashAccountsQuery = cashAccountsQuery.whereExists(
       function whereAccountBranchScope() {
         this.select(1)
           .from("erp.account_branch as ab")
           .whereRaw("ab.account_id = a.id")
-          .whereIn("ab.branch_id", scopedBranches);
+          .whereIn("ab.branch_id", branchScope);
       },
     );
   }
@@ -374,12 +381,8 @@ const getPurchaseReportRows = async ({ req, filters }) => {
       .where("vh.voucher_date", ">=", filters.from)
       .where("vh.voucher_date", "<=", filters.to);
 
-    if (req.user?.isAdmin) {
-      if (filters.branchIds.length) {
-        next = next.whereIn("vh.branch_id", filters.branchIds);
-      }
-    } else {
-      next = next.where("vh.branch_id", req.branchId);
+    if (filters.branchIds.length) {
+      next = next.whereIn("vh.branch_id", filters.branchIds);
     }
 
     if (filters.partyIds.length) {

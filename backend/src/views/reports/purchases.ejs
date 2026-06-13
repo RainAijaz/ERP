@@ -72,10 +72,26 @@
   const isInvoiceOrder = orderBy === "invoice";
   const singleBranchSelected = !branchAllSelected && Array.isArray(filters?.branchIds) && filters.branchIds.length === 1;
   const hideBranchCol = singleBranchSelected;
+  const showTypeColumn = purchaseType === 'all';
+  const typeColCount = showTypeColumn ? 1 : 0;
+  // invoice: Party+Item[+Type]+Qty+Unit+Fixed+WAvg+Cur+VarAmt+VarPct+Amt[+Branch]
+  // non-invoice: VrNo+Date+BillNo+Party+Item[+Type]+Qty+Unit+Fixed+WAvg+Cur+VarAmt+VarPct+Amt[+Branch]
   const detailColumnCount = isInvoiceOrder
-    ? (hideBranchCol ? 9 : 10)
-    : (hideBranchCol ? 12 : 13);
-  const detailTotalsLabelSpan = isInvoiceOrder ? 1 : 4;
+    ? (10 + typeColCount + (hideBranchCol ? 0 : 1))
+    : (13 + typeColCount + (hideBranchCol ? 0 : 1));
+  const detailTotalsLabelSpan = isInvoiceOrder ? (2 + typeColCount) : (5 + typeColCount);
+  const paymentTypeLabel = (pt) => {
+    const v = String(pt || '').trim().toUpperCase();
+    if (v === 'CASH') return t('cash') || 'Cash';
+    if (v === 'CREDIT') return t('credit') || 'Credit';
+    return v || '-';
+  };
+  const paymentTypeTone = (pt) => {
+    const v = String(pt || '').trim().toUpperCase();
+    if (v === 'CASH') return 'border-emerald-300 bg-emerald-50 text-emerald-800';
+    if (v === 'CREDIT') return 'border-sky-300 bg-sky-50 text-sky-800';
+    return 'border-slate-300 bg-white text-slate-600';
+  };
   const reportPurposeTooltip = (() => {
     const key = "purchase_reports_purpose_tooltip";
     const value = t(key);
@@ -221,9 +237,9 @@
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t("branches") : t("branch") %></label>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= (options?.branches || []).length > 1 ? t("branches") : t("branch") %></label>
           <div class="sm:col-span-9">
-            <% if (user?.isAdmin) { %>
+            <% if ((options?.branches || []).length > 1) { %>
               <select name="branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
                 <option value="<%= allMultiOptionValue %>" <%= branchAllSelected ? "selected" : "" %>><%= t("all") %></option>
                 <% (options?.branches || []).forEach((branch) => { %>
@@ -348,21 +364,18 @@
 
       <% if (reportType === "details") { %>
         <div class="relative mt-3 overflow-x-auto rounded-2xl border border-slate-200">
-          <table class="min-w-[1520px] w-full text-sm tabular-nums" data-report-table>
+          <table class="min-w-[1680px] w-full text-sm tabular-nums" data-report-table>
             <thead class="bg-slate-100 text-slate-700">
               <tr>
-                <% if (orderBy !== "invoice") { %>
-                  <th title="<%= headerTooltip('purchase_report_header_voucher_no_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_voucher_no_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("voucher_no") %></th>
-                <% } %>
                 <% if (!isInvoiceOrder) { %>
+                  <th title="<%= headerTooltip('purchase_report_header_voucher_no_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_voucher_no_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("voucher_no") %></th>
                   <th title="<%= headerTooltip('purchase_report_header_date_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_date_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("date") %></th>
                   <th title="<%= headerTooltip('purchase_report_header_bill_number_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_bill_number_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("bill_number") %></th>
                 <% } %>
-                <% if (orderBy !== "party" && !isInvoiceOrder) { %>
-                  <th title="<%= headerTooltip('purchase_report_header_party_name_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_party_name_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("party_name") %></th>
-                <% } %>
-                <% if (orderBy !== "product") { %>
-                  <th title="<%= headerTooltip('purchase_report_header_raw_material_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_raw_material_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= entityLabel %></th>
+                <th title="<%= headerTooltip('purchase_report_header_party_name_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_party_name_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("party_name") %></th>
+                <th title="<%= headerTooltip('purchase_report_header_raw_material_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_raw_material_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= entityLabel %></th>
+                <% if (showTypeColumn) { %>
+                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("type") || "Type" %></th>
                 <% } %>
                 <th title="<%= headerTooltip('purchase_report_header_quantity_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_quantity_tooltip') %>" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("quantity") %></th>
                 <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("unit") %></th>
@@ -381,42 +394,51 @@
               <% groups.forEach((group) => { %>
                 <tr class="bg-slate-700 text-white">
                   <td colspan="<%= detailColumnCount %>" class="px-3 py-2">
-                    <div class="flex flex-wrap items-center gap-2">
-                      <% if (orderBy === "invoice") { %>
-                        <span class="rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white">VR. NO. <%= group.voucher_no || "-" %></span>
-                        <span class="rounded-md border border-white/30 bg-white/10 px-2 py-0.5 text-xs font-semibold text-white"><%= formatDate(group.voucher_date) %></span>
-                        <% if (group.bill_number) { %>
-                          <span class="rounded-md border border-white/30 bg-white/10 px-2 py-0.5 text-xs font-semibold text-white"><%= t("bill_number") %>: <%= group.bill_number %></span>
-                        <% } %>
-                        <span class="rounded-md border border-white/30 bg-white/10 px-2 py-0.5 text-xs font-semibold text-white"><%= group.supplier_name || "-" %></span>
-                        <% if (!hideBranchCol) { %>
-                          <span class="rounded-md border border-white/20 bg-white/5 px-2 py-0.5 text-xs font-semibold text-white/70"><%= group.lines?.[0]?.branch_name || "-" %></span>
-                        <% } %>
-                      <% } else { %>
+                    <% if (isInvoiceOrder) { %>
+                      <div class="flex flex-col gap-1.5 lg:flex-row lg:items-center lg:justify-between">
+                        <div class="flex flex-wrap items-center gap-2">
+                          <span class="rounded-md border border-white/30 bg-white/10 px-2 py-0.5 text-xs font-semibold text-white"><%= formatDate(group.voucher_date) %></span>
+                          <% if (group.bill_number) { %>
+                            <span class="rounded-md border border-white/30 bg-white/10 px-2 py-0.5 text-xs font-semibold text-white"><%= t("bill_number") %>: <%= group.bill_number %></span>
+                          <% } %>
+                          <span class="rounded-md border border-white/30 bg-white/10 px-2 py-0.5 text-xs font-semibold text-white"><%= group.supplier_name || "-" %></span>
+                          <% if (!hideBranchCol) { %>
+                            <span class="rounded-md border border-white/20 bg-white/5 px-2 py-0.5 text-xs font-semibold text-white/70"><%= group.lines?.[0]?.branch_name || "-" %></span>
+                          <% } %>
+                        </div>
+                        <div class="flex flex-wrap items-center gap-2 lg:justify-end">
+                          <% const groupPaymentType = group.lines?.[0]?.payment_type || ''; %>
+                          <% if (groupPaymentType) { %>
+                            <span class="inline-flex rounded-md border px-2 py-0.5 text-xs font-bold <%= paymentTypeTone(groupPaymentType) %>"><%= paymentTypeLabel(groupPaymentType) %></span>
+                          <% } %>
+                          <span class="rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white">VR. NO. <%= group.voucher_no || "-" %></span>
+                        </div>
+                      </div>
+                    <% } else { %>
+                      <div class="flex flex-wrap items-center gap-2">
                         <span class="rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white"><%= group.label %></span>
-                      <% } %>
-                    </div>
+                      </div>
+                    <% } %>
                   </td>
                 </tr>
                 <% (group.lines || []).forEach((line) => { %>
                   <tr class="bg-white odd:bg-slate-50 even:bg-white hover:bg-slate-100">
-                    <% if (orderBy !== "invoice") { %>
-                      <td class="px-3 py-2"><%= line.voucher_no %></td>
-                    <% } %>
                     <% if (!isInvoiceOrder) { %>
+                      <td class="px-3 py-2"><%= line.voucher_no %></td>
                       <td class="px-3 py-2"><%= formatDate(line.voucher_date) %></td>
                       <td class="px-3 py-2"><%= line.bill_number || "-" %></td>
                     <% } %>
-                    <% if (orderBy !== "party" && !isInvoiceOrder) { %>
-                      <td class="px-3 py-2"><%= line.supplier_name || "-" %></td>
-                    <% } %>
-                    <% if (orderBy !== "product") { %>
+                    <td class="px-3 py-2"><%= line.supplier_name || "-" %></td>
+                    <td class="px-3 py-2">
+                      <%= line.item_name || "-" %>
+                      <% const itemAttrs = [line.color_name, line.size_name].filter(Boolean); %>
+                      <% if (itemAttrs.length) { %>
+                        <span class="ml-1 text-xs text-slate-500">(<%= itemAttrs.join(" / ") %>)</span>
+                      <% } %>
+                    </td>
+                    <% if (showTypeColumn) { %>
                       <td class="px-3 py-2">
-                        <%= line.item_name || "-" %>
-                        <% const itemAttrs = [line.color_name, line.size_name].filter(Boolean); %>
-                        <% if (itemAttrs.length) { %>
-                          <span class="ml-1 text-xs text-slate-500">(<%= itemAttrs.join(" / ") %>)</span>
-                        <% } %>
+                        <span class="inline-flex rounded-md border px-2 py-0.5 text-[11px] font-bold <%= paymentTypeTone(line.payment_type) %>"><%= paymentTypeLabel(line.payment_type) %></span>
                       </td>
                     <% } %>
                     <td class="px-3 py-2 text-right font-semibold"><%= formatNumber(line.qty, 3) %></td>
