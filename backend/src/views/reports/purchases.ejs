@@ -185,6 +185,42 @@
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t("branches") : t("branch") %></label>
+          <div class="sm:col-span-9">
+            <% if (user?.isAdmin) { %>
+              <select name="branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+                <option value="<%= allMultiOptionValue %>" <%= branchAllSelected ? "selected" : "" %>><%= t("all") %></option>
+                <% (options?.branches || []).forEach((branch) => { %>
+                  <option value="<%= branch.id %>" <%= (filters?.branchIds || []).includes(Number(branch.id)) ? "selected" : "" %>><%= branch.name %></option>
+                <% }) %>
+              </select>
+            <% } else { %>
+              <input type="text" readonly value="<%= (options?.branches || [])[0]?.name || branchId %>" class="h-10 w-full rounded-lg border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700">
+            <% } %>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("order_by") %></label>
+          <div class="sm:col-span-9">
+            <div class="flex flex-wrap gap-2 rounded-xl bg-white/60 p-1">
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= orderBy === 'party' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="order_by" value="party" <%= orderBy === "party" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t("party_name") %></span>
+              </label>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= orderBy === 'invoice' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="order_by" value="invoice" <%= orderBy === "invoice" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span><%= t("voucher_no") %></span>
+              </label>
+              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= orderBy === 'product' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
+                <input type="radio" name="order_by" value="product" <%= orderBy === "product" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
+                <span data-order-by-product-label><%= entityLabel %></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
           <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("category") %></label>
           <div class="sm:col-span-9">
             <div class="flex flex-wrap gap-2 rounded-xl bg-white/60 p-1">
@@ -237,42 +273,6 @@
                 <option value="<%= subgroup.id %>" <%= selectedSubgroupIds.includes(Number(subgroup.id)) ? "selected" : "" %>><%= subgroup.name %></option>
               <% }) %>
             </select>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t("branches") : t("branch") %></label>
-          <div class="sm:col-span-9">
-            <% if (user?.isAdmin) { %>
-              <select name="branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
-                <option value="<%= allMultiOptionValue %>" <%= branchAllSelected ? "selected" : "" %>><%= t("all") %></option>
-                <% (options?.branches || []).forEach((branch) => { %>
-                  <option value="<%= branch.id %>" <%= (filters?.branchIds || []).includes(Number(branch.id)) ? "selected" : "" %>><%= branch.name %></option>
-                <% }) %>
-              </select>
-            <% } else { %>
-              <input type="text" readonly value="<%= (options?.branches || [])[0]?.name || branchId %>" class="h-10 w-full rounded-lg border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700">
-            <% } %>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("order_by") %></label>
-          <div class="sm:col-span-9">
-            <div class="flex flex-wrap gap-2 rounded-xl bg-white/60 p-1">
-              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= orderBy === 'party' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
-                <input type="radio" name="order_by" value="party" <%= orderBy === "party" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
-                <span><%= t("party_name") %></span>
-              </label>
-              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= orderBy === 'invoice' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
-                <input type="radio" name="order_by" value="invoice" <%= orderBy === "invoice" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
-                <span><%= t("voucher_no") %></span>
-              </label>
-              <label class="inline-flex cursor-pointer items-center gap-2 rounded-lg px-1 py-1 text-sm <%= orderBy === 'product' ? 'font-semibold text-accent' : 'font-medium text-slate-700 hover:text-accent' %>">
-                <input type="radio" name="order_by" value="product" <%= orderBy === "product" ? "checked" : "" %> class="h-4 w-4 text-accent focus:ring-accent">
-                <span data-order-by-product-label><%= entityLabel %></span>
-              </label>
-            </div>
           </div>
         </div>
 
@@ -559,10 +559,6 @@
 
 <script>
   (function () {
-    if (typeof window.initSearchableSelects === "function") {
-      window.initSearchableSelects();
-    }
-
     const form = document.querySelector("[data-purchase-report-filter-form]");
     if (!form) return;
 
@@ -698,6 +694,10 @@
       link.remove();
       URL.revokeObjectURL(link.href);
     });
+
+    if (typeof window.initSearchableSelects === "function") {
+      window.initSearchableSelects();
+    }
   })();
 </script>
 
