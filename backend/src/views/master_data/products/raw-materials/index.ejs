@@ -9,7 +9,7 @@
           <% const canCreate = can('SCREEN', 'master_data.products.raw_materials', 'create'); %>
           <% const canDownload = can('SCREEN', 'master_data.products.raw_materials', 'print'); %>
         <% if (canDownload) { %>
-          <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-download-button>
+          <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-rm-download-button>
             <%= t("download") %>
           </button>
           <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-print-button>
@@ -446,12 +446,8 @@
   })) %>;
   const rateDetails = <%- JSON.stringify(rateDetailsByItem || {}) %>;
 
-  const downloadBtn = document.querySelector('[data-download-button]');
-  if (!downloadBtn) return;
-
-  // Replace button to strip the generic table-row download handler
-  const freshBtn = downloadBtn.cloneNode(true);
-  downloadBtn.parentNode.replaceChild(freshBtn, downloadBtn);
+  const freshBtn = document.querySelector('[data-rm-download-button]');
+  if (!freshBtn) return;
 
   freshBtn.addEventListener('click', function () {
     var q = function(v) { return '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""') + '"'; };
