@@ -575,12 +575,16 @@
       const mappedStageId = String(stageIdByDeptId.get(normalizedDeptId) || "").trim();
       if (!mappedStageId) return false;
       if (!Array.isArray(state.stage_routes)) state.stage_routes = [];
-      const alreadyExists = state.stage_routes.some(
-        (line) => String(line?.dept_id || "").trim() === normalizedDeptId,
-      );
+      const alreadyExists = state.stage_routes.some((line) => {
+        const lineDeptId = String(line?.dept_id || "").trim();
+        if (lineDeptId) return lineDeptId === normalizedDeptId;
+        // Fallback: match via stage_id when dept_id not loaded (e.g. DB-loaded routes)
+        const lineStageId = String(line?.stage_id || "").trim();
+        return lineStageId && lineStageId === mappedStageId;
+      });
       if (alreadyExists) return false;
       const emptyRowIndex = state.stage_routes.findIndex(
-        (line) => !String(line?.dept_id || "").trim(),
+        (line) => !String(line?.dept_id || "").trim() && !String(line?.stage_id || "").trim(),
       );
       const nextRow = {
         dept_id: normalizedDeptId,
