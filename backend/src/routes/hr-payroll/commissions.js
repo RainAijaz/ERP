@@ -61,6 +61,7 @@ const page = {
     reverse_on_returns: true,
     rate_type: "PER_PAIR",
     status: "active",
+    commission_type: "SALESMAN_SALE",
   },
   filterConfig: {
     primary: {
