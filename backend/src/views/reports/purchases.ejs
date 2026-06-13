@@ -69,8 +69,13 @@
     });
     return set.size;
   };
-  const detailColumnCount = 13;
-  const detailTotalsLabelSpan = 4;
+  const isInvoiceOrder = orderBy === "invoice";
+  const singleBranchSelected = !branchAllSelected && Array.isArray(filters?.branchIds) && filters.branchIds.length === 1;
+  const hideBranchCol = singleBranchSelected;
+  const detailColumnCount = isInvoiceOrder
+    ? (hideBranchCol ? 9 : 10)
+    : (hideBranchCol ? 12 : 13);
+  const detailTotalsLabelSpan = isInvoiceOrder ? 1 : 4;
   const reportPurposeTooltip = (() => {
     const key = "purchase_reports_purpose_tooltip";
     const value = t(key);
@@ -349,23 +354,27 @@
                 <% if (orderBy !== "invoice") { %>
                   <th title="<%= headerTooltip('purchase_report_header_voucher_no_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_voucher_no_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("voucher_no") %></th>
                 <% } %>
-                <th title="<%= headerTooltip('purchase_report_header_date_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_date_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("date") %></th>
-                <th title="<%= headerTooltip('purchase_report_header_bill_number_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_bill_number_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("bill_number") %></th>
-                <% if (orderBy !== "party") { %>
+                <% if (!isInvoiceOrder) { %>
+                  <th title="<%= headerTooltip('purchase_report_header_date_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_date_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("date") %></th>
+                  <th title="<%= headerTooltip('purchase_report_header_bill_number_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_bill_number_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("bill_number") %></th>
+                <% } %>
+                <% if (orderBy !== "party" && !isInvoiceOrder) { %>
                   <th title="<%= headerTooltip('purchase_report_header_party_name_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_party_name_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("party_name") %></th>
                 <% } %>
                 <% if (orderBy !== "product") { %>
                   <th title="<%= headerTooltip('purchase_report_header_raw_material_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_raw_material_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= entityLabel %></th>
                 <% } %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("unit") %></th>
                 <th title="<%= headerTooltip('purchase_report_header_quantity_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_quantity_tooltip') %>" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("quantity") %></th>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("unit") %></th>
                 <th title="<%= headerTooltip('purchase_report_header_standard_rate_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_standard_rate_tooltip') %>" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("fixed_purchase_rate") %></th>
                 <th title="<%= headerTooltip('purchase_report_header_weighted_avg_rate_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_weighted_avg_rate_tooltip') %>" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("weighted_average_rate") %></th>
                 <th title="<%= headerTooltip('purchase_report_header_current_rate_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_current_rate_tooltip') %>" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("current_purchase_rate") %></th>
                 <th title="<%= headerTooltip('purchase_report_header_variance_amount_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_variance_amount_tooltip') %>" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("variance_amount") %></th>
                 <th title="<%= headerTooltip('purchase_report_header_variance_percent_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_variance_percent_tooltip') %>" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("variance_percent") %></th>
                 <th title="<%= headerTooltip('purchase_report_header_amount_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_amount_tooltip') %>" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("amount") %></th>
-                <th title="<%= headerTooltip('purchase_report_header_branch_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_branch_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("branch") %></th>
+                <% if (!hideBranchCol) { %>
+                  <th title="<%= headerTooltip('purchase_report_header_branch_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_branch_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("branch") %></th>
+                <% } %>
               </tr>
             </thead>
             <tbody>
@@ -376,7 +385,13 @@
                       <% if (orderBy === "invoice") { %>
                         <span class="rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white">VR. NO. <%= group.voucher_no || "-" %></span>
                         <span class="rounded-md border border-white/30 bg-white/10 px-2 py-0.5 text-xs font-semibold text-white"><%= formatDate(group.voucher_date) %></span>
+                        <% if (group.bill_number) { %>
+                          <span class="rounded-md border border-white/30 bg-white/10 px-2 py-0.5 text-xs font-semibold text-white"><%= t("bill_number") %>: <%= group.bill_number %></span>
+                        <% } %>
                         <span class="rounded-md border border-white/30 bg-white/10 px-2 py-0.5 text-xs font-semibold text-white"><%= group.supplier_name || "-" %></span>
+                        <% if (!hideBranchCol) { %>
+                          <span class="rounded-md border border-white/20 bg-white/5 px-2 py-0.5 text-xs font-semibold text-white/70"><%= group.lines?.[0]?.branch_name || "-" %></span>
+                        <% } %>
                       <% } else { %>
                         <span class="rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white"><%= group.label %></span>
                       <% } %>
@@ -388,16 +403,24 @@
                     <% if (orderBy !== "invoice") { %>
                       <td class="px-3 py-2"><%= line.voucher_no %></td>
                     <% } %>
-                    <td class="px-3 py-2"><%= formatDate(line.voucher_date) %></td>
-                    <td class="px-3 py-2"><%= line.bill_number || "-" %></td>
-                    <% if (orderBy !== "party") { %>
+                    <% if (!isInvoiceOrder) { %>
+                      <td class="px-3 py-2"><%= formatDate(line.voucher_date) %></td>
+                      <td class="px-3 py-2"><%= line.bill_number || "-" %></td>
+                    <% } %>
+                    <% if (orderBy !== "party" && !isInvoiceOrder) { %>
                       <td class="px-3 py-2"><%= line.supplier_name || "-" %></td>
                     <% } %>
                     <% if (orderBy !== "product") { %>
-                      <td class="px-3 py-2"><%= line.item_name || "-" %></td>
+                      <td class="px-3 py-2">
+                        <%= line.item_name || "-" %>
+                        <% const itemAttrs = [line.color_name, line.size_name].filter(Boolean); %>
+                        <% if (itemAttrs.length) { %>
+                          <span class="ml-1 text-xs text-slate-500">(<%= itemAttrs.join(" / ") %>)</span>
+                        <% } %>
+                      </td>
                     <% } %>
-                    <td class="px-3 py-2"><%= line.uom_code || "-" %></td>
                     <td class="px-3 py-2 text-right font-semibold"><%= formatNumber(line.qty, 3) %></td>
+                    <td class="px-3 py-2"><%= line.uom_code || "-" %></td>
                     <td class="px-3 py-2 text-right font-semibold"><%= formatNumber(line.fixed_purchase_rate, 4) %></td>
                     <td class="px-3 py-2 text-right font-semibold"><%= formatNumber(line.weighted_average_rate, 4) %></td>
                     <td class="px-3 py-2 text-right <%= line.is_rate_difference_high ? 'font-extrabold text-rose-700' : 'font-semibold' %>" title="<%= `${t('rate_difference')}: ${formatNumber(line.rate_diff_percent, 2)}% | ${t('high_variance_threshold')}: ${formatNumber(rateAlertPercent, 2)}%` %>">
@@ -411,12 +434,15 @@
                     <td class="px-3 py-2 text-right font-semibold <%= line.is_rate_difference_high ? 'text-rose-700' : '' %>"><%= formatNumber(line.rate_diff_amount, 4) %></td>
                     <td class="px-3 py-2 text-right font-semibold <%= line.is_rate_difference_high ? 'text-rose-700' : '' %>"><%= formatNumber(line.rate_diff_percent, 2) %>%</td>
                     <td class="px-3 py-2 text-right font-semibold"><%= formatNumber(line.amount, 2) %></td>
-                    <td class="px-3 py-2"><%= line.branch_name || "-" %></td>
+                    <% if (!hideBranchCol) { %>
+                      <td class="px-3 py-2"><%= line.branch_name || "-" %></td>
+                    <% } %>
                   </tr>
                 <% }) %>
                 <tr class="bg-accent text-white">
                   <td colspan="<%= detailTotalsLabelSpan %>" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("total") %></td>
                   <td class="px-3 py-2 text-right font-extrabold"><%= formatNumber(group.total_qty, 3) %></td>
+                  <td class="px-3 py-2"></td>
                   <td class="px-3 py-2 text-right font-semibold"><%= formatNumber(group.avg_fixed_purchase_rate, 4) %></td>
                   <td class="px-3 py-2 text-right font-semibold"><%= formatNumber(group.avg_weighted_average_rate, 4) %></td>
                   <td class="px-3 py-2 text-right font-semibold" title="<%= `${t('rate_difference')}: ${formatNumber(group.avg_variance_percent, 2)}% | ${t('high_variance_threshold')}: ${formatNumber(rateAlertPercent, 2)}%` %>">
@@ -430,12 +456,13 @@
                   <td class="px-3 py-2 text-right font-semibold"><%= formatNumber(group.avg_variance_amount, 4) %></td>
                   <td class="px-3 py-2 text-right font-semibold"><%= formatNumber(group.avg_variance_percent, 2) %>%</td>
                   <td class="px-3 py-2 text-right font-extrabold"><%= formatNumber(group.total_amount, 2) %></td>
-                  <td class="px-3 py-2"></td>
+                  <% if (!hideBranchCol) { %><td class="px-3 py-2"></td><% } %>
                 </tr>
               <% }) %>
               <tr class="bg-rose-700 text-white">
                 <td colspan="<%= detailTotalsLabelSpan %>" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
                 <td class="px-3 py-2 text-right font-extrabold"><%= formatNumber(grandTotalQty, 3) %></td>
+                <td class="px-3 py-2"></td>
                 <td class="px-3 py-2 text-right font-extrabold"><%= formatNumber(grandAvgFixedPurchaseRate, 4) %></td>
                 <td class="px-3 py-2 text-right font-extrabold"><%= formatNumber(grandAvgWeightedAverageRate, 4) %></td>
                 <td class="px-3 py-2 text-right font-extrabold" title="<%= `${t('rate_difference')}: ${formatNumber(grandAvgVariancePercent, 2)}% | ${t('high_variance_threshold')}: ${formatNumber(rateAlertPercent, 2)}%` %>">
@@ -449,7 +476,7 @@
                 <td class="px-3 py-2 text-right font-extrabold"><%= formatNumber(grandAvgVarianceAmount, 4) %></td>
                 <td class="px-3 py-2 text-right font-extrabold"><%= formatNumber(grandAvgVariancePercent, 2) %>%</td>
                 <td class="px-3 py-2 text-right font-extrabold"><%= formatNumber(grandTotalAmount, 2) %></td>
-                <td class="px-3 py-2"></td>
+                <% if (!hideBranchCol) { %><td class="px-3 py-2"></td><% } %>
               </tr>
             </tbody>
           </table>
@@ -477,6 +504,9 @@
                       <% if (orderBy === "invoice") { %>
                         <span class="rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white">VR. NO. <%= row.voucher_no || "-" %></span>
                         <span class="rounded-md border border-white/30 bg-white/10 px-2 py-0.5 text-xs font-semibold text-white"><%= formatDate(row.voucher_date) %></span>
+                        <% if (row.bill_number) { %>
+                          <span class="rounded-md border border-white/30 bg-white/10 px-2 py-0.5 text-xs font-semibold text-white"><%= t("bill_number") %>: <%= row.bill_number %></span>
+                        <% } %>
                         <span class="rounded-md border border-white/30 bg-white/10 px-2 py-0.5 text-xs font-semibold text-white"><%= row.supplier_name || "-" %></span>
                       <% } else { %>
                         <span class="rounded-md border border-white/40 bg-white/20 px-2 py-0.5 text-xs font-semibold text-white"><%= row.group_label || "-" %></span>
