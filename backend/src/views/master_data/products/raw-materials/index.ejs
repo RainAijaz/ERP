@@ -9,7 +9,7 @@
           <% const canCreate = can('SCREEN', 'master_data.products.raw_materials', 'create'); %>
           <% const canDownload = can('SCREEN', 'master_data.products.raw_materials', 'print'); %>
         <% if (canDownload) { %>
-          <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-rm-download-button>
+          <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" onclick="window.__rmDownloadCsv && window.__rmDownloadCsv()">
             <%= t("download") %>
           </button>
           <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-print-button>
@@ -446,10 +446,7 @@
   })) %>;
   const rateDetails = <%- JSON.stringify(rateDetailsByItem || {}) %>;
 
-  const freshBtn = document.querySelector('[data-rm-download-button]');
-  if (!freshBtn) return;
-
-  freshBtn.addEventListener('click', function () {
+  window.__rmDownloadCsv = function () {
     var q = function(v) { return '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""') + '"'; };
     var isUr = '<%= locale %>' === 'ur';
     var colorLabel = <%= JSON.stringify(t('color')) %>;
@@ -512,6 +509,6 @@
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(link.href);
-  });
+  };
 })();
 </script>
