@@ -77,18 +77,27 @@
               <%= row.summary %>
             </td>
             <td class="px-6 py-4">
-              <button
-                type="button"
-                class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
-                data-approval-view
-                data-approval-id="<%= row.id %>"
-                data-action="<%= actionType %>"
-                data-status="<%= row.status %>"
-                data-entity-type="<%= row.entity_type %>"
-                data-request-type="<%= row.request_type %>"
-              >
-                <%= t("view")  %>
-              </button>
+              <% if (row.entity_type === 'BOM' && row.entity_id && row.entity_id !== 'NEW') { %>
+                <a
+                  href="/master-data/bom/<%= row.entity_id %>"
+                  class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
+                >
+                  <%= t("view") %>
+                </a>
+              <% } else { %>
+                <button
+                  type="button"
+                  class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
+                  data-approval-view
+                  data-approval-id="<%= row.id %>"
+                  data-action="<%= actionType %>"
+                  data-status="<%= row.status %>"
+                  data-entity-type="<%= row.entity_type %>"
+                  data-request-type="<%= row.request_type %>"
+                >
+                  <%= t("view") %>
+                </button>
+              <% } %>
             </td>
             <td class="px-6 py-4">
                <%- include("../../base/partials/approval-badge", { status: row.status }) %>
