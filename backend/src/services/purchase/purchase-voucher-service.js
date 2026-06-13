@@ -1078,6 +1078,63 @@ const syncPurchaseVoucherStockTx = async ({
   const rmRateIdentities = buildRmRateIdentitiesFromLines(voucherLines);
 
   await ensurePurchaseStockInfraTx(trx);
+
+  // For PI: if stock_ledger already reflects the current lines (same items, qtys, and
+  // rates), there is nothing to repost — only non-stock fields like discount or
+  // description changed. Skip the rollback so that edits succeed even when the
+  // material has been partially or fully consumed downstream.
+  if (normalizedVoucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase) {
+    const hasLedgerSupport = await hasStockLedgerTableTx(trx);
+    if (hasLedgerSupport) {
+      const hasLedgerVariants = await hasStockLedgerVariantDimensionsTx(trx);
+      const ledgerCols = ["item_id", "qty", "unit_cost"];
+      if (hasLedgerVariants) ledgerCols.push("color_id", "size_id");
+      const existingLedgerRows = await trx("erp.stock_ledger")
+        .select(ledgerCols)
+        .where({ voucher_header_id: normalizedVoucherId, direction: 1 });
+      if (existingLedgerRows.length > 0) {
+        const existingMap = new Map();
+        for (const row of existingLedgerRows) {
+          const colorId = hasLedgerVariants ? Number(normalizeRmDimensionId(row.color_id) || 0) : 0;
+          const sizeId = hasLedgerVariants ? Number(normalizeRmDimensionId(row.size_id) || 0) : 0;
+          existingMap.set(`${Number(row.item_id)}:${colorId}:${sizeId}`, {
+            qty: roundQty3(Number(row.qty || 0)),
+            rate: roundUnitCost6(Number(row.unit_cost || 0)),
+          });
+        }
+        const newLineMap = new Map();
+        let hasNewItemLines = false;
+        for (const line of voucherLines) {
+          const itemId = toPositiveInt(line.item_id);
+          if (!itemId) continue;
+          const lineQty = roundQty3(Number(line.qty || 0));
+          if (lineQty <= 0) continue;
+          hasNewItemLines = true;
+          const colorId = Number(normalizeRmDimensionId(line.meta?.color_id || line.meta?.rm_color_id) || 0);
+          const sizeId = Number(normalizeRmDimensionId(line.meta?.size_id || line.meta?.rm_size_id) || 0);
+          newLineMap.set(`${itemId}:${colorId}:${sizeId}`, {
+            qty: lineQty,
+            rate: roundUnitCost6(Number(line.rate || 0)),
+          });
+        }
+        if (hasNewItemLines && existingMap.size === newLineMap.size) {
+          let allMatch = true;
+          for (const [key, existingEntry] of existingMap.entries()) {
+            const newEntry = newLineMap.get(key);
+            if (!newEntry || newEntry.qty !== existingEntry.qty || newEntry.rate !== existingEntry.rate) {
+              allMatch = false;
+              break;
+            }
+          }
+          if (allMatch) {
+            await syncRmWeightedAverageRatesTx({ trx, identities: rmRateIdentities });
+            return;
+          }
+        }
+      }
+    }
+  }
+
   await rollbackPurchaseStockLedgerByVoucherTx({
     trx,
     voucherId: normalizedVoucherId,
