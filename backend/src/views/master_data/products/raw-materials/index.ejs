@@ -9,9 +9,9 @@
           <% const canCreate = can('SCREEN', 'master_data.products.raw_materials', 'create'); %>
           <% const canDownload = can('SCREEN', 'master_data.products.raw_materials', 'print'); %>
         <% if (canDownload) { %>
-          <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" onclick="window.__rmDownloadCsv && window.__rmDownloadCsv()">
+          <a href="<%= basePath %>/download" class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800">
             <%= t("download") %>
-          </button>
+          </a>
           <button class="rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-print-button>
             <%= t("print") %>
           </button>
@@ -435,80 +435,6 @@
 </script>
 <script>
 (function () {
-  const itemsData = <%- JSON.stringify((rows || []).map(function(row) {
-    return {
-      id: row.id,
-      name: locale === 'ur' ? (row.name_ur || row.name || '') : (row.name || ''),
-      subgroup_name: locale === 'ur' ? (row.subgroup_name_ur || row.subgroup_name || '') : (row.subgroup_name || ''),
-      uom_code: row.uom_code || '',
-      min_stock_level: (row.min_stock_level === null || row.min_stock_level === undefined || row.min_stock_level === '') ? '' : Math.trunc(Number(row.min_stock_level)),
-    };
-  })) %>;
-  const rateDetails = <%- JSON.stringify(rateDetailsByItem || {}) %>;
 
-  window.__rmDownloadCsv = function () {
-    var q = function(v) { return '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""') + '"'; };
-    var isUr = '<%= locale %>' === 'ur';
-    var colorLabel = <%= JSON.stringify(t('color')) %>;
-    var sizeLabel  = <%= JSON.stringify(t('size')) %>;
-    var rateLabel  = <%= JSON.stringify(t('purchase_rate')) %>;
-    var avgLabel   = <%= JSON.stringify(t('avg_purchase_rate')) %>;
-
-    // find max variant count across all items
-    var maxVariants = 0;
-    itemsData.forEach(function(item) {
-      var len = (rateDetails[item.id] || []).length;
-      if (len > maxVariants) maxVariants = len;
-    });
-    if (maxVariants === 0) maxVariants = 1;
-
-    // build header row: fixed columns + N repeating variant groups
-    var fixedHeaders = [
-      <%= JSON.stringify(t('name')) %>,
-      <%= JSON.stringify(t('sub_group')) %>,
-      <%= JSON.stringify(t('base_unit')) %>,
-      <%= JSON.stringify(t('min_stock')) %>,
-    ].map(function(h) { return '"' + h.replace(/"/g, '""') + '"'; });
-
-    var variantHeaders = [];
-    for (var n = 1; n <= maxVariants; n++) {
-      variantHeaders.push(q(colorLabel + ' ' + n));
-      variantHeaders.push(q(sizeLabel  + ' ' + n));
-      variantHeaders.push(q(rateLabel  + ' ' + n));
-      variantHeaders.push(q(avgLabel   + ' ' + n));
-    }
-
-    var csvRows = [fixedHeaders.concat(variantHeaders).join(',')];
-
-    itemsData.forEach(function(item) {
-      var details = rateDetails[item.id] || [];
-      var cells = [q(item.name), q(item.subgroup_name), q(item.uom_code), q(item.min_stock_level)];
-
-      for (var i = 0; i < maxVariants; i++) {
-        var d = details[i];
-        if (d) {
-          var colorName = isUr ? (d.color_name_ur || d.color_name || '') : (d.color_name || '');
-          var sizeName  = isUr ? (d.size_name_ur  || d.size_name  || '') : (d.size_name  || '');
-          var pRate = (d.purchase_rate     !== null && d.purchase_rate     !== undefined) ? Math.trunc(Number(d.purchase_rate))     : '';
-          var aRate = (d.avg_purchase_rate !== null && d.avg_purchase_rate !== undefined) ? Math.trunc(Number(d.avg_purchase_rate)) : '';
-          cells.push(q(colorName), q(sizeName), q(pRate), q(aRate));
-        } else {
-          cells.push(q(''), q(''), q(''), q(''));
-        }
-      }
-
-      csvRows.push(cells.join(','));
-    });
-
-    var csvContent = '﻿' + csvRows.join('\r\n');
-    var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    var link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = 'raw_materials_export.csv';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(link.href);
-  };
 })();
 </script>

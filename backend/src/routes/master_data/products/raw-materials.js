@@ -294,6 +294,112 @@ router.get(
   },
 );
 
+router.get(
+  "/download",
+  requirePermission("SCREEN", "master_data.products.raw_materials", "print"),
+  async (req, res, next) => {
+    try {
+      const locale = String(req.locale || res.locals.locale || "en").toLowerCase();
+      const t = res.locals.t;
+      const [allItems, rateDetailsByItem] = await Promise.all([
+        knex("erp.items as i")
+          .leftJoin("erp.product_subgroups as sg", "sg.id", "i.subgroup_id")
+          .leftJoin("erp.uom as u", "u.id", "i.base_uom_id")
+          .select(
+            "i.id",
+            locale === "ur"
+              ? knex.raw("COALESCE(i.name_ur, i.name, '') as name")
+              : knex.raw("COALESCE(i.name, '') as name"),
+            locale === "ur"
+              ? knex.raw("COALESCE(sg.name_ur, sg.name, '') as subgroup_name")
+              : knex.raw("COALESCE(sg.name, '') as subgroup_name"),
+            "u.code as uom_code",
+            "i.min_stock_level",
+          )
+          .whereRaw("upper(coalesce(i.item_type::text,'')) IN ('RM','SFG')")
+          .where("i.is_active", true)
+          .orderBy("i.name", "asc"),
+        loadRateDetails(),
+      ]);
+
+      const maxVariants =
+        allItems.reduce((max, item) => {
+          const len = (rateDetailsByItem[item.id] || []).length;
+          return len > max ? len : max;
+        }, 0) || 1;
+
+      const q = (v) =>
+        '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
+      const colorLabel = t("color") || "Color";
+      const sizeLabel = t("size") || "Size";
+      const rateLabel = t("purchase_rate") || "Purchase Rate";
+      const avgLabel = t("avg_purchase_rate") || "Avg Purchase Rate";
+
+      const fixedHeaders = [
+        t("name") || "Name",
+        t("sub_group") || "Sub Group",
+        t("base_unit") || "Base Unit",
+        t("min_stock") || "Min Stock",
+      ].map(q);
+
+      const variantHeaders = [];
+      for (let n = 1; n <= maxVariants; n++) {
+        variantHeaders.push(
+          q(`${colorLabel} ${n}`),
+          q(`${sizeLabel} ${n}`),
+          q(`${rateLabel} ${n}`),
+          q(`${avgLabel} ${n}`),
+        );
+      }
+
+      const csvLines = [fixedHeaders.concat(variantHeaders).join(",")];
+
+      allItems.forEach((item) => {
+        const details = rateDetailsByItem[item.id] || [];
+        const cells = [
+          q(item.name),
+          q(item.subgroup_name),
+          q(item.uom_code),
+          q(Math.trunc(Number(item.min_stock_level || 0))),
+        ];
+        for (let i = 0; i < maxVariants; i++) {
+          const d = details[i];
+          if (d) {
+            const colorName =
+              locale === "ur"
+                ? d.color_name_ur || d.color_name || ""
+                : d.color_name || "";
+            const sizeName =
+              locale === "ur"
+                ? d.size_name_ur || d.size_name || ""
+                : d.size_name || "";
+            const pRate =
+              d.purchase_rate != null ? Math.trunc(Number(d.purchase_rate)) : "";
+            const aRate =
+              d.avg_purchase_rate != null
+                ? Math.trunc(Number(d.avg_purchase_rate))
+                : "";
+            cells.push(q(colorName), q(sizeName), q(pRate), q(aRate));
+          } else {
+            cells.push(q(""), q(""), q(""), q(""));
+          }
+        }
+        csvLines.push(cells.join(","));
+      });
+
+      const csv = "﻿" + csvLines.join("\r\n");
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        'attachment; filename="raw_materials_export.csv"',
+      );
+      return res.send(csv);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 router.post(
   "/",
   requirePermission("SCREEN", "master_data.products.raw_materials", "create"),
