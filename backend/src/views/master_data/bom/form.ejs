@@ -9,7 +9,7 @@
       ? options.itemOutputUomMap[String(selectedItemId)]
       : (options?.uoms || []);
   const isDraft = !header.status || header.status === "DRAFT";
-  const isEditable = !isEdit || isDraft;
+  const isEditable = !isEdit || isDraft || Boolean(user?.isAdmin);
   const submitPath = isEdit ? `${basePath}/${header.id}/save-draft` : `${basePath}/save-draft`;
   const tx = (key, fallback) => {
     const value = typeof t === "function" ? t(key) : "";
@@ -74,7 +74,8 @@
             </button>
           </form>
         <% } %>
-        <% if (isDraft) { %>
+        <% const isPendingAdmin = isEdit && Boolean(user?.isAdmin) && String(header.status || '').toUpperCase() === 'PENDING'; %>
+        <% if (isDraft || isPendingAdmin) { %>
           <button
             type="submit"
             form="bom-form"

@@ -101,6 +101,15 @@ const renderForm = async (req, res, params = {}) => {
   );
 };
 
+const resetBomFromPendingForAdmin = async (bomId, userId) => {
+  await knex("erp.approval_request")
+    .where({ entity_type: "BOM", entity_id: String(bomId), status: "PENDING" })
+    .update({ status: "REJECTED", decided_by: userId || null, decided_at: knex.fn.now() });
+  await knex("erp.bom_header")
+    .where({ id: bomId })
+    .update({ status: "DRAFT", approved_by: null, approved_at: null });
+};
+
 const queueOrSaveDraft = async ({ req, res, bomId, input }) => {
   const result = await bomService.saveBomDraft(knex, {
     input,
@@ -318,6 +327,9 @@ const handleSaveDraft = async (req, res, next, bomId = null) => {
         setUiNotice(res, res.locals.t("error_not_found"), { autoClose: true });
         return res.redirect(req.baseUrl);
       }
+      if (req.user?.isAdmin && current.header?.status === "PENDING") {
+        await resetBomFromPendingForAdmin(bomId, req.user?.id);
+      }
     }
     const parsed = bomService.parseBomFormPayload(req.body);
     const result = await queueOrSaveDraft({
@@ -420,6 +432,10 @@ router.post(
       if (!canAccessBomDraft(current, req.user)) {
         setUiNotice(res, res.locals.t("error_not_found"), { autoClose: true });
         return res.redirect(req.baseUrl);
+      }
+      if (current.header.status === "PENDING") {
+        await resetBomFromPendingForAdmin(bomId, req.user?.id);
+        current = await bomService.getBomForForm(knex, bomId);
       }
       if (current.header.status !== "DRAFT") {
         setUiNotice(res, res.locals.t("bom_error_approve_requires_draft"), {
@@ -651,41 +667,20 @@ router.post(
         return res.redirect(`${req.baseUrl}/${bomId}`);
       }
 
-      const approval = await handleScreenApproval({
-        req,
-        scopeKey: BOM_SCOPE,
-        action: "delete",
-        entityType: BOM_ENTITY_TYPE,
-        entityId: bomId,
-        summary: `${res.locals.t("delete")} ${res.locals.t("bom")} #${current.header?.bom_no || bomId}`,
-        oldValue: current,
-        newValue: bomService.buildDeleteDraftPayload({ bomId }),
+      await bomService.deleteDraftBom(knex, {
+        bomId,
+        userId: req.user?.id || null,
+        isAdmin: Boolean(req.user?.isAdmin),
         t: res.locals.t,
       });
-
-      if (!approval.queued) {
-        await bomService.deleteDraftBom(knex, {
-          bomId,
-          userId: req.user?.id || null,
-          isAdmin: Boolean(req.user?.isAdmin),
-          t: res.locals.t,
-        });
-        queueAuditLog(req, {
-          entityType: BOM_ENTITY_TYPE,
-          entityId: bomId,
-          action: "DELETE",
-        });
-        setUiNotice(
-          res,
-          res.locals.t("deleted_successfully") || res.locals.t("save_changes"),
-          { autoClose: true },
-        );
-        return res.redirect(req.baseUrl);
-      }
-
+      queueAuditLog(req, {
+        entityType: BOM_ENTITY_TYPE,
+        entityId: bomId,
+        action: "DELETE",
+      });
       setUiNotice(
         res,
-        res.locals.t("approval_submitted") || res.locals.t("approval_sent"),
+        res.locals.t("deleted_successfully") || res.locals.t("save_changes"),
         { autoClose: true },
       );
       return res.redirect(req.baseUrl);
