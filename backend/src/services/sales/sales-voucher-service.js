@@ -2121,6 +2121,7 @@ const validateSalesPayloadTx = async ({
           Math.max(
             0,
             Number(linkedOrderReceivableSummary.totalOrderAmount || 0) -
+              Number(linkedOrderReceivableSummary.soExtraDiscount || 0) -
               Number(
                 linkedOrderReceivableSummary.previousPaymentsReceived || 0,
               ),
