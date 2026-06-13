@@ -19,3 +19,4 @@ systemctl is-active erp-web
 
 Chrome is installed at /root/.cache/puppeteer but the service runs as user erp which looks in /home/erp/.cache/puppeteer. Need to install Chrome for the erp user:
 
+TO FIND ERRORS CRASHING THE SERVER - node src/app.js - root@vmi3209761:/home/erp/ERP/backend# node src/app.js
