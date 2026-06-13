@@ -385,6 +385,7 @@ const buildGeneralPurchaseEntriesTx = async ({ trx, header, voucherId }) => {
         "payment_type",
         "cash_paid_account_id",
         "purchase_category",
+        "notes",
       )
       .where({ voucher_id: voucherId })
       .first();
@@ -406,38 +407,24 @@ const buildGeneralPurchaseEntriesTx = async ({ trx, header, voucherId }) => {
     );
 
   const paymentType = normalizePurchasePaymentType(extension.payment_type);
-  const purchaseCategory = normalizePurchaseCategory(
-    extension.purchase_category,
-  );
+  const purchaseCategory = normalizePurchaseCategory(extension.purchase_category);
   const supplierPartyId = Number(extension.supplier_party_id || 0);
+
+  // Phase 1: load gross totals and resolve account IDs
   let totalAmount = 0;
-  const entries = [];
+  let accountTotals = [];
+  let inventoryRmAccountId = null;
   let accountsByGroup = null;
 
   if (
     purchaseCategory === PURCHASE_CATEGORIES.asset ||
     purchaseCategory === PURCHASE_CATEGORIES.consumable
   ) {
-    const accountTotals = await loadPurchaseAccountLineTotalsTx({
-      trx,
-      voucherId,
-    });
+    accountTotals = await loadPurchaseAccountLineTotalsTx({ trx, voucherId });
     totalAmount = normalizeAmount(
       accountTotals.reduce((sum, row) => sum + normalizeAmount(row.amount), 0),
     );
     if (totalAmount <= 0) return [];
-    accountTotals.forEach((row) => {
-      entries.push({
-        branch_id: Number(header.branch_id),
-        entry_date: header.voucher_date,
-        account_id: Number(row.accountId),
-        dept_id: null,
-        party_id: null,
-        dr: normalizeAmount(row.amount),
-        cr: 0,
-        narration: toNarration({}, header.remarks),
-      });
-    });
     accountsByGroup = await loadAccountsByGroupTx({
       trx,
       branchId: Number(header.branch_id),
@@ -454,24 +441,57 @@ const buildGeneralPurchaseEntriesTx = async ({ trx, header, voucherId }) => {
         CONTROL_GROUP_CODES.partyPayable,
       ],
     });
-    const inventoryRmAccountId = resolveSingleAccountIdForGroup({
+    inventoryRmAccountId = resolveSingleAccountIdForGroup({
       accountsByGroup,
       groupCode: PURCHASE_ACCOUNT_GROUP_CODES.inventoryRm,
       voucherId,
       lineNo: 0,
     });
+  }
+
+  // Phase 2: apply discount — net amount is what hits cash/AP and inventory
+  const finalDiscount = normalizeAmount(Math.max(Number(extension.notes || 0), 0));
+  const netAmount = normalizeAmount(Math.max(totalAmount - finalDiscount, 0));
+  const scaleFactor = totalAmount > 0 ? netAmount / totalAmount : 1;
+
+  // Phase 3: build DR entries (inventory / expense accounts) at net amount
+  const entries = [];
+  if (
+    purchaseCategory === PURCHASE_CATEGORIES.asset ||
+    purchaseCategory === PURCHASE_CATEGORIES.consumable
+  ) {
+    let allocatedDr = 0;
+    accountTotals.forEach((row, idx) => {
+      const isLast = idx === accountTotals.length - 1;
+      const lineAmount = isLast
+        ? normalizeAmount(netAmount - allocatedDr)
+        : normalizeAmount(normalizeAmount(row.amount) * scaleFactor);
+      allocatedDr += lineAmount;
+      entries.push({
+        branch_id: Number(header.branch_id),
+        entry_date: header.voucher_date,
+        account_id: Number(row.accountId),
+        dept_id: null,
+        party_id: null,
+        dr: lineAmount,
+        cr: 0,
+        narration: toNarration({}, header.remarks),
+      });
+    });
+  } else {
     entries.push({
       branch_id: Number(header.branch_id),
       entry_date: header.voucher_date,
       account_id: Number(inventoryRmAccountId),
       dept_id: null,
       party_id: null,
-      dr: totalAmount,
+      dr: netAmount,
       cr: 0,
       narration: toNarration({}, header.remarks),
     });
   }
 
+  // Phase 4: CR entry (cash paid or AP) at net amount
   if (paymentType === PURCHASE_PAYMENT_TYPES.cash) {
     const cashAccountId = await ensureCashOrBankAccountTx({
       trx,
@@ -486,7 +506,7 @@ const buildGeneralPurchaseEntriesTx = async ({ trx, header, voucherId }) => {
       dept_id: null,
       party_id: null,
       dr: 0,
-      cr: totalAmount,
+      cr: netAmount,
       narration: toNarration({}, header.remarks),
     });
     return entries;
@@ -497,10 +517,7 @@ const buildGeneralPurchaseEntriesTx = async ({ trx, header, voucherId }) => {
       `GL posting failed: voucher ${voucherId} has invalid supplier`,
     );
   }
-  const partyType = await loadPartyTypeByIdTx({
-    trx,
-    partyId: supplierPartyId,
-  });
+  const partyType = await loadPartyTypeByIdTx({ trx, partyId: supplierPartyId });
   if (partyType !== "SUPPLIER" && partyType !== "BOTH") {
     throw new Error(
       `GL posting failed: voucher ${voucherId} supplier party type must be SUPPLIER/BOTH`,
@@ -520,7 +537,7 @@ const buildGeneralPurchaseEntriesTx = async ({ trx, header, voucherId }) => {
     dept_id: null,
     party_id: supplierPartyId,
     dr: 0,
-    cr: totalAmount,
+    cr: netAmount,
     narration: toNarration({}, header.remarks),
   });
   return entries;
@@ -530,25 +547,32 @@ const buildPurchaseReturnEntriesTx = async ({ trx, header, voucherId }) => {
   let extension;
   try {
     extension = await trx("erp.purchase_return_header_ext")
-      .select("supplier_party_id", "purchase_category", "payment_type", "cash_paid_account_id")
+      .select("supplier_party_id", "purchase_category", "payment_type", "cash_paid_account_id", "notes")
       .where({ voucher_id: voucherId })
       .first();
   } catch (err) {
     const code = String(err?.code || "").trim();
     const msg = String(err?.message || "").toLowerCase();
     const isMissingColumn = code === "42703" &&
-      (msg.includes("purchase_category") || msg.includes("payment_type") || msg.includes("cash_paid_account_id"));
+      (msg.includes("purchase_category") || msg.includes("payment_type") || msg.includes("cash_paid_account_id") || msg.includes("notes"));
     if (!isMissingColumn) throw err;
     try {
       extension = await trx("erp.purchase_return_header_ext")
-        .select("supplier_party_id", "purchase_category")
+        .select("supplier_party_id", "purchase_category", "payment_type", "cash_paid_account_id")
         .where({ voucher_id: voucherId })
         .first();
     } catch {
-      extension = await trx("erp.purchase_return_header_ext")
-        .select("supplier_party_id")
-        .where({ voucher_id: voucherId })
-        .first();
+      try {
+        extension = await trx("erp.purchase_return_header_ext")
+          .select("supplier_party_id", "purchase_category")
+          .where({ voucher_id: voucherId })
+          .first();
+      } catch {
+        extension = await trx("erp.purchase_return_header_ext")
+          .select("supplier_party_id")
+          .where({ voucher_id: voucherId })
+          .first();
+      }
     }
   }
   if (!extension)
@@ -565,6 +589,7 @@ const buildPurchaseReturnEntriesTx = async ({ trx, header, voucherId }) => {
     purchaseCategory === PURCHASE_CATEGORIES.consumable;
   const isMixedPurchase = purchaseCategory === PURCHASE_CATEGORIES.mixed;
 
+  // Phase 1: load gross totals
   let totalAmount = 0;
   let creditAccountLines = [];
   let itemTotalAmount = 0;
@@ -596,11 +621,19 @@ const buildPurchaseReturnEntriesTx = async ({ trx, header, voucherId }) => {
   }
   if (totalAmount <= 0) return [];
 
+  // Phase 2: apply discount — net amount is what hits cash/AP and inventory
+  const finalDiscount = normalizeAmount(Math.max(Number(extension.notes || 0), 0));
+  const netAmount = normalizeAmount(Math.max(totalAmount - finalDiscount, 0));
+  const scaleFactor = totalAmount > 0 ? netAmount / totalAmount : 1;
+
+  // Phase 3: CR side — reduce inventory/expense accounts at net amount
   const entries = [];
 
-  // CR side — reduce the asset/inventory/expense accounts (reversing the original purchase)
   if (isMixedPurchase) {
-    if (itemTotalAmount > 0) {
+    const netItemAmount = normalizeAmount(itemTotalAmount * scaleFactor);
+    const netAccountTotal = normalizeAmount(netAmount - netItemAmount);
+
+    if (netItemAmount > 0) {
       const accountsByGroup = await loadAccountsByGroupTx({
         trx,
         branchId: Number(header.branch_id),
@@ -620,11 +653,17 @@ const buildPurchaseReturnEntriesTx = async ({ trx, header, voucherId }) => {
         dept_id: null,
         party_id: null,
         dr: 0,
-        cr: itemTotalAmount,
+        cr: netItemAmount,
         narration: toNarration({}, header.remarks),
       });
     }
-    creditAccountLines.forEach((row) => {
+    let allocatedCr = 0;
+    creditAccountLines.forEach((row, idx) => {
+      const isLast = idx === creditAccountLines.length - 1;
+      const lineAmount = isLast
+        ? normalizeAmount(netAccountTotal - allocatedCr)
+        : normalizeAmount(normalizeAmount(row.amount) * scaleFactor);
+      allocatedCr += lineAmount;
       entries.push({
         branch_id: Number(header.branch_id),
         entry_date: header.voucher_date,
@@ -632,12 +671,18 @@ const buildPurchaseReturnEntriesTx = async ({ trx, header, voucherId }) => {
         dept_id: null,
         party_id: null,
         dr: 0,
-        cr: normalizeAmount(row.amount),
+        cr: lineAmount,
         narration: toNarration({}, header.remarks),
       });
     });
   } else if (isAccountLinePurchase) {
-    creditAccountLines.forEach((row) => {
+    let allocatedCr = 0;
+    creditAccountLines.forEach((row, idx) => {
+      const isLast = idx === creditAccountLines.length - 1;
+      const lineAmount = isLast
+        ? normalizeAmount(netAmount - allocatedCr)
+        : normalizeAmount(normalizeAmount(row.amount) * scaleFactor);
+      allocatedCr += lineAmount;
       entries.push({
         branch_id: Number(header.branch_id),
         entry_date: header.voucher_date,
@@ -645,7 +690,7 @@ const buildPurchaseReturnEntriesTx = async ({ trx, header, voucherId }) => {
         dept_id: null,
         party_id: null,
         dr: 0,
-        cr: normalizeAmount(row.amount),
+        cr: lineAmount,
         narration: toNarration({}, header.remarks),
       });
     });
@@ -669,12 +714,12 @@ const buildPurchaseReturnEntriesTx = async ({ trx, header, voucherId }) => {
       dept_id: null,
       party_id: null,
       dr: 0,
-      cr: totalAmount,
+      cr: netAmount,
       narration: toNarration({}, header.remarks),
     });
   }
 
-  // DR side — either cash received back (CASH) or AP balance reduced (CREDIT)
+  // Phase 4: DR side — cash received back or AP balance reduced, at net amount
   if (paymentType === PURCHASE_PAYMENT_TYPES.cash) {
     const cashAccountId = await ensureCashOrBankAccountTx({
       trx,
@@ -688,7 +733,7 @@ const buildPurchaseReturnEntriesTx = async ({ trx, header, voucherId }) => {
       account_id: Number(cashAccountId),
       dept_id: null,
       party_id: null,
-      dr: totalAmount,
+      dr: netAmount,
       cr: 0,
       narration: toNarration({}, header.remarks),
     });
@@ -720,7 +765,7 @@ const buildPurchaseReturnEntriesTx = async ({ trx, header, voucherId }) => {
       ),
       dept_id: null,
       party_id: supplierPartyId,
-      dr: totalAmount,
+      dr: netAmount,
       cr: 0,
       narration: toNarration({}, header.remarks),
     });
