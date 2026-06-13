@@ -565,10 +565,6 @@ const buildPurchaseReturnEntriesTx = async ({ trx, header, voucherId }) => {
     purchaseCategory === PURCHASE_CATEGORIES.consumable;
   const isMixedPurchase = purchaseCategory === PURCHASE_CATEGORIES.mixed;
 
-  const isAccountLinePurchase =
-    purchaseCategory === PURCHASE_CATEGORIES.asset ||
-    purchaseCategory === PURCHASE_CATEGORIES.consumable;
-
   let totalAmount = 0;
   let creditAccountLines = [];
   let itemTotalAmount = 0;
