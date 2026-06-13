@@ -43,6 +43,7 @@ let purchaseGrnHeaderCategoryColumnSupport;
 let purchaseInvoiceHeaderCategoryColumnSupport;
 let purchaseReturnHeaderCategoryColumnSupport;
 let purchaseReturnHeaderPaymentTypeColumnSupport;
+let purchaseReturnHeaderNotesColumnSupport;
 
 // RM stock identity in this project is branch + state + item + (color,size when schema supports it).
 const RM_BALANCE_CONFLICT_TARGET_SQL =
@@ -228,6 +229,15 @@ const hasPurchaseReturnPaymentTypeColumnTx = async (trx) => {
     trx, "erp", "purchase_return_header_ext", "payment_type",
   );
   return purchaseReturnHeaderPaymentTypeColumnSupport;
+};
+
+const hasPurchaseReturnNotesColumnTx = async (trx) => {
+  if (typeof purchaseReturnHeaderNotesColumnSupport === "boolean")
+    return purchaseReturnHeaderNotesColumnSupport;
+  purchaseReturnHeaderNotesColumnSupport = await hasColumnTx(
+    trx, "erp", "purchase_return_header_ext", "notes",
+  );
+  return purchaseReturnHeaderNotesColumnSupport;
 };
 
 const getAssetColumnSupportTx = async (trx) => {
@@ -2215,9 +2225,11 @@ const upsertHeaderExtensionTx = async ({
       tableName: "purchase_return_header_ext",
     });
     const supportsPaymentTypeColumn = await hasPurchaseReturnPaymentTypeColumnTx(trx);
+    const supportsNotesColumn = await hasPurchaseReturnNotesColumnTx(trx);
     const normalizedPaymentType = normalizePaymentType(paymentType);
     const normalizedCashAccountId =
       normalizedPaymentType === "CASH" ? (cashPaidAccountId || null) : null;
+    const discountNote = finalDiscount > 0 ? String(Number(finalDiscount.toFixed(2))) : null;
 
     const insertPayload = {
       voucher_id: voucherId,
@@ -2231,6 +2243,9 @@ const upsertHeaderExtensionTx = async ({
       insertPayload.payment_type = normalizedPaymentType;
       insertPayload.cash_paid_account_id = normalizedCashAccountId;
     }
+    if (supportsNotesColumn) {
+      insertPayload.notes = discountNote;
+    }
     const mergePayload = {
       supplier_party_id: supplierPartyId,
       reason: returnReason,
@@ -2241,6 +2256,9 @@ const upsertHeaderExtensionTx = async ({
     if (supportsPaymentTypeColumn) {
       mergePayload.payment_type = normalizedPaymentType;
       mergePayload.cash_paid_account_id = normalizedCashAccountId;
+    }
+    if (supportsNotesColumn) {
+      mergePayload.notes = discountNote;
     }
     await trx("erp.purchase_return_header_ext")
       .insert(insertPayload)
@@ -2495,7 +2513,7 @@ const validatePurchaseVoucherPayloadTx = async ({
     supplierPartyId = supplier.id;
   }
 
-  const finalDiscount = voucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase
+  const finalDiscount = (voucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase || voucherTypeCode === PURCHASE_VOUCHER_TYPES.purchaseReturn)
     ? Math.max(Number(payload.final_discount || 0), 0)
     : 0;
 
@@ -3631,6 +3649,7 @@ const loadPurchaseVoucherDetails = async ({
       tableName: "purchase_return_header_ext",
     });
     const supportsPaymentTypeColumn = await hasPurchaseReturnPaymentTypeColumnTx(knex);
+    const supportsNotesColumn = await hasPurchaseReturnNotesColumnTx(knex);
     const ext = await safeFirstMissingRelation(
       knex("erp.purchase_return_header_ext")
         .select(
@@ -3645,6 +3664,9 @@ const loadPurchaseVoucherDetails = async ({
                 knex.raw("'CREDIT'::text as payment_type"),
                 knex.raw("NULL::bigint as cash_paid_account_id"),
               ]),
+          ...(supportsNotesColumn
+            ? ["notes"]
+            : [knex.raw("NULL::text as notes")]),
         )
         .where({ voucher_id: header.id })
         .first(),
@@ -3655,6 +3677,7 @@ const loadPurchaseVoucherDetails = async ({
     details.return_reason = normalizeReturnReason(ext?.reason);
     details.payment_type = normalizePaymentType(ext?.payment_type || "CREDIT");
     details.cash_paid_account_id = Number(ext?.cash_paid_account_id || 0) || null;
+    details.final_discount = Math.max(Number(ext?.notes || 0), 0);
   }
 
   return details;

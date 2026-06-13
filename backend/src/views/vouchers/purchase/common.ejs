@@ -75,7 +75,7 @@
       <input type="hidden" name="voucher_id" value="<%= selectedVoucher?.id || '' %>">
       <input type="hidden" name="lines_json" value="[]" data-lines-json>
       <input type="hidden" name="grn_allocations_json" value="" data-grn-alloc-json>
-      <% if (voucherTypeCode === "PI") { %>
+      <% if (voucherTypeCode === "PI" || voucherTypeCode === "PR") { %>
         <input type="hidden" name="final_discount" value="<%= selectedVoucher?.final_discount || 0 %>" data-final-discount>
       <% } %>
 
@@ -357,7 +357,7 @@
         </div>
       </div>
 
-      <% if (voucherTypeCode === "PI") { %>
+      <% if (voucherTypeCode === "PI" || voucherTypeCode === "PR") { %>
         <div class="ml-auto w-full max-w-sm overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm" data-discount-summary>
           <div class="divide-y divide-slate-100">
             <div class="flex items-center justify-between px-4 py-2.5">
