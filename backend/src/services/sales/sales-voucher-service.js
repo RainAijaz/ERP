@@ -3625,7 +3625,7 @@ const loadSalesVoucherOptions = async (req, context = {}) => {
     returnReasons,
     openSalesOrderLinesRaw,
   ] = await Promise.all([
-    customerQuery.orderBy("p.name", "asc"),
+    customerQuery.orderBy("name", "asc"),
     salesmenQuery.orderBy("e.name", "asc"),
     receiveAccountsQuery.orderBy("a.name", "asc"),
     knex("erp.skus as s")
