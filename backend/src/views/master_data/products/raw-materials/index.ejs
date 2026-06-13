@@ -454,33 +454,57 @@
   downloadBtn.parentNode.replaceChild(freshBtn, downloadBtn);
 
   freshBtn.addEventListener('click', function () {
-    const q = function(v) { return '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""') + '"'; };
-    const headers = [
+    var q = function(v) { return '"' + String(v === null || v === undefined ? '' : v).replace(/"/g, '""') + '"'; };
+    var isUr = '<%= locale %>' === 'ur';
+    var colorLabel = <%= JSON.stringify(t('color')) %>;
+    var sizeLabel  = <%= JSON.stringify(t('size')) %>;
+    var rateLabel  = <%= JSON.stringify(t('purchase_rate')) %>;
+    var avgLabel   = <%= JSON.stringify(t('avg_purchase_rate')) %>;
+
+    // find max variant count across all items
+    var maxVariants = 0;
+    itemsData.forEach(function(item) {
+      var len = (rateDetails[item.id] || []).length;
+      if (len > maxVariants) maxVariants = len;
+    });
+    if (maxVariants === 0) maxVariants = 1;
+
+    // build header row: fixed columns + N repeating variant groups
+    var fixedHeaders = [
       <%= JSON.stringify(t('name')) %>,
       <%= JSON.stringify(t('sub_group')) %>,
       <%= JSON.stringify(t('base_unit')) %>,
       <%= JSON.stringify(t('min_stock')) %>,
-      <%= JSON.stringify(t('color')) %>,
-      <%= JSON.stringify(t('size')) %>,
-      <%= JSON.stringify(t('purchase_rate')) %>,
-      <%= JSON.stringify(t('avg_purchase_rate')) %>,
     ].map(function(h) { return '"' + h.replace(/"/g, '""') + '"'; });
 
-    var csvRows = [headers.join(',')];
+    var variantHeaders = [];
+    for (var n = 1; n <= maxVariants; n++) {
+      variantHeaders.push(q(colorLabel + ' ' + n));
+      variantHeaders.push(q(sizeLabel  + ' ' + n));
+      variantHeaders.push(q(rateLabel  + ' ' + n));
+      variantHeaders.push(q(avgLabel   + ' ' + n));
+    }
+
+    var csvRows = [fixedHeaders.concat(variantHeaders).join(',')];
 
     itemsData.forEach(function(item) {
       var details = rateDetails[item.id] || [];
-      if (!details.length) {
-        csvRows.push([q(item.name), q(item.subgroup_name), q(item.uom_code), q(item.min_stock_level), q('-'), q('-'), q('-'), q('-')].join(','));
-        return;
+      var cells = [q(item.name), q(item.subgroup_name), q(item.uom_code), q(item.min_stock_level)];
+
+      for (var i = 0; i < maxVariants; i++) {
+        var d = details[i];
+        if (d) {
+          var colorName = isUr ? (d.color_name_ur || d.color_name || '') : (d.color_name || '');
+          var sizeName  = isUr ? (d.size_name_ur  || d.size_name  || '') : (d.size_name  || '');
+          var pRate = (d.purchase_rate     !== null && d.purchase_rate     !== undefined) ? Math.trunc(Number(d.purchase_rate))     : '';
+          var aRate = (d.avg_purchase_rate !== null && d.avg_purchase_rate !== undefined) ? Math.trunc(Number(d.avg_purchase_rate)) : '';
+          cells.push(q(colorName), q(sizeName), q(pRate), q(aRate));
+        } else {
+          cells.push(q(''), q(''), q(''), q(''));
+        }
       }
-      details.forEach(function(detail) {
-        var colorName = '<%= locale %>' === 'ur' ? (detail.color_name_ur || detail.color_name || '') : (detail.color_name || '');
-        var sizeName  = '<%= locale %>' === 'ur' ? (detail.size_name_ur  || detail.size_name  || '') : (detail.size_name  || '');
-        var pRate = (detail.purchase_rate     !== null && detail.purchase_rate     !== undefined) ? Math.trunc(Number(detail.purchase_rate))     : '-';
-        var aRate = (detail.avg_purchase_rate !== null && detail.avg_purchase_rate !== undefined) ? Math.trunc(Number(detail.avg_purchase_rate)) : '-';
-        csvRows.push([q(item.name), q(item.subgroup_name), q(item.uom_code), q(item.min_stock_level), q(colorName), q(sizeName), q(pRate), q(aRate)].join(','));
-      });
+
+      csvRows.push(cells.join(','));
     });
 
     var csvContent = '﻿' + csvRows.join('\r\n');
