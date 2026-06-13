@@ -431,6 +431,18 @@ const getPurchaseReportRows = async ({ req, filters }) => {
           .leftJoin("erp.parties as p", "p.id", "pie.supplier_party_id")
           .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
           .leftJoin("erp.accounts as a", "a.id", "pie.cash_paid_account_id")
+          .leftJoin(
+            "erp.colors as vc",
+            knex.raw(
+              "vc.id::text = COALESCE(NULLIF(vl.meta->>'color_id', ''), NULLIF(vl.meta->>'rm_color_id', ''))",
+            ),
+          )
+          .leftJoin(
+            "erp.sizes as vs",
+            knex.raw(
+              "vs.id::text = COALESCE(NULLIF(vl.meta->>'size_id', ''), NULLIF(vl.meta->>'rm_size_id', ''))",
+            ),
+          )
           .select(
             "vh.id as voucher_id",
             "vh.voucher_no",
@@ -448,6 +460,8 @@ const getPurchaseReportRows = async ({ req, filters }) => {
             "vl.item_id",
             "i.code as item_code",
             "i.name as item_name",
+            "vc.name as color_name",
+            "vs.name as size_name",
             "u.code as uom_code",
             "i.group_id",
             "i.subgroup_id",
@@ -530,6 +544,8 @@ const getPurchaseReportRows = async ({ req, filters }) => {
             knex.raw("NULL::bigint as item_id"),
             knex.raw("''::text as item_code"),
             knex.raw(`${assetNameExpr} as item_name`),
+            knex.raw("NULL::text as color_name"),
+            knex.raw("NULL::text as size_name"),
             knex.raw("NULL::bigint as group_id"),
             knex.raw("NULL::bigint as subgroup_id"),
             "vl.qty",
@@ -610,6 +626,8 @@ const getPurchaseReportRows = async ({ req, filters }) => {
           : null,
       item_code: row.item_code || "",
       uom_code: row.uom_code || "",
+      color_name: row.color_name || "",
+      size_name: row.size_name || "",
       item_name:
         purchaseCategory === "ASSET"
           ? row.asset_name || row.item_name || ""

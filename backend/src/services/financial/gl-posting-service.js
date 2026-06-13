@@ -13,6 +13,7 @@ const PURCHASE_CATEGORIES = {
   rawMaterial: "RAW_MATERIAL",
   asset: "ASSET",
   consumable: "CONSUMABLE",
+  mixed: "MIXED",
 };
 const SALES_VOUCHER_TYPES = {
   salesOrder: "SALES_ORDER",
@@ -70,6 +71,7 @@ const VOUCHERS_WITH_HEADER_BALANCING = new Set([
 ]);
 const CONTROL_GROUP_CODES = {
   partyReceivable: "accounts_receivable_control",
+  staffReceivable: "staff_receivable_control",
   partyPayable: "accounts_payable_control",
   payrollLiabilities: "payroll_liabilities",
   labourPayable: "wages_payable",
@@ -77,6 +79,7 @@ const CONTROL_GROUP_CODES = {
 };
 const CONTROL_GROUP_PREFERRED_ACCOUNT_CODES = {
   [CONTROL_GROUP_CODES.partyReceivable]: "gl_ar_control",
+  [CONTROL_GROUP_CODES.staffReceivable]: "gl_staff_receivable",
   [CONTROL_GROUP_CODES.partyPayable]: "gl_ap_control",
   [CONTROL_GROUP_CODES.labourPayable]: "gl_wages_payable_control",
   [CONTROL_GROUP_CODES.employeePayable]: "gl_salaries_payable_control",
@@ -120,6 +123,7 @@ const normalizePurchaseCategory = (value) => {
     .toUpperCase();
   if (text === PURCHASE_CATEGORIES.asset) return PURCHASE_CATEGORIES.asset;
   if (text === PURCHASE_CATEGORIES.consumable) return PURCHASE_CATEGORIES.consumable;
+  if (text === PURCHASE_CATEGORIES.mixed) return PURCHASE_CATEGORIES.mixed;
   return PURCHASE_CATEGORIES.rawMaterial;
 };
 
@@ -559,10 +563,30 @@ const buildPurchaseReturnEntriesTx = async ({ trx, header, voucherId }) => {
   const isAccountLinePurchase =
     purchaseCategory === PURCHASE_CATEGORIES.asset ||
     purchaseCategory === PURCHASE_CATEGORIES.consumable;
+  const isMixedPurchase = purchaseCategory === PURCHASE_CATEGORIES.mixed;
 
   let totalAmount = 0;
   let creditAccountLines = [];
-  if (isAccountLinePurchase) {
+  let itemTotalAmount = 0;
+
+  if (isMixedPurchase) {
+    const hasItemLine = await trx("erp.voucher_line")
+      .where({ voucher_header_id: voucherId, line_kind: "ITEM" })
+      .first();
+    if (hasItemLine) {
+      itemTotalAmount = await loadPurchaseItemTotalTx({ trx, voucherId });
+    }
+    const hasAccountLine = await trx("erp.voucher_line")
+      .where({ voucher_header_id: voucherId, line_kind: "ACCOUNT" })
+      .first();
+    if (hasAccountLine) {
+      creditAccountLines = await loadPurchaseAccountLineTotalsTx({ trx, voucherId });
+    }
+    totalAmount = normalizeAmount(
+      itemTotalAmount +
+        normalizeAmount(creditAccountLines.reduce((s, r) => s + normalizeAmount(r.amount), 0)),
+    );
+  } else if (isAccountLinePurchase) {
     creditAccountLines = await loadPurchaseAccountLineTotalsTx({ trx, voucherId });
     totalAmount = normalizeAmount(
       creditAccountLines.reduce((sum, row) => sum + normalizeAmount(row.amount), 0),
@@ -575,7 +599,44 @@ const buildPurchaseReturnEntriesTx = async ({ trx, header, voucherId }) => {
   const entries = [];
 
   // CR side — reduce the asset/inventory/expense accounts (reversing the original purchase)
-  if (isAccountLinePurchase) {
+  if (isMixedPurchase) {
+    if (itemTotalAmount > 0) {
+      const accountsByGroup = await loadAccountsByGroupTx({
+        trx,
+        branchId: Number(header.branch_id),
+        groupCodes: [PURCHASE_ACCOUNT_GROUP_CODES.inventoryRm],
+      });
+      entries.push({
+        branch_id: Number(header.branch_id),
+        entry_date: header.voucher_date,
+        account_id: Number(
+          resolveSingleAccountIdForGroup({
+            accountsByGroup,
+            groupCode: PURCHASE_ACCOUNT_GROUP_CODES.inventoryRm,
+            voucherId,
+            lineNo: 0,
+          }),
+        ),
+        dept_id: null,
+        party_id: null,
+        dr: 0,
+        cr: itemTotalAmount,
+        narration: toNarration({}, header.remarks),
+      });
+    }
+    creditAccountLines.forEach((row) => {
+      entries.push({
+        branch_id: Number(header.branch_id),
+        entry_date: header.voucher_date,
+        account_id: Number(row.accountId),
+        dept_id: null,
+        party_id: null,
+        dr: 0,
+        cr: normalizeAmount(row.amount),
+        narration: toNarration({}, header.remarks),
+      });
+    });
+  } else if (isAccountLinePurchase) {
     creditAccountLines.forEach((row) => {
       entries.push({
         branch_id: Number(header.branch_id),
@@ -758,6 +819,8 @@ const buildSalesVoucherEntriesTx = async ({ trx, header, voucherId }) => {
       "sale_mode",
       "payment_type",
       "customer_party_id",
+      "buyer_employee_id",
+      "buyer_labour_id",
       "receive_into_account_id",
       "payment_received_amount",
       "extra_discount",
@@ -774,6 +837,9 @@ const buildSalesVoucherEntriesTx = async ({ trx, header, voucherId }) => {
     .trim()
     .toUpperCase();
   const customerPartyId = Number(extension.customer_party_id || 0) || null;
+  const buyerEmployeeId = Number(extension.buyer_employee_id || 0) || null;
+  const buyerLabourId   = Number(extension.buyer_labour_id   || 0) || null;
+  const isStaffBuyer    = !customerPartyId && (buyerEmployeeId || buyerLabourId);
   const lineNetAmount = await loadSalesVoucherNetAmountTx({ trx, voucherId });
   const extraDiscount = normalizeAmount(extension.extra_discount || 0);
   const netSaleAmount = normalizeAmount(lineNetAmount - extraDiscount);
@@ -789,6 +855,7 @@ const buildSalesVoucherEntriesTx = async ({ trx, header, voucherId }) => {
     groupCodes: [
       SALES_ACCOUNT_GROUP_CODES.salesRevenue,
       CONTROL_GROUP_CODES.partyReceivable,
+      CONTROL_GROUP_CODES.staffReceivable,
     ],
   });
   const salesRevenueAccountId = resolveSingleAccountIdForGroup({
@@ -878,36 +945,48 @@ const buildSalesVoucherEntriesTx = async ({ trx, header, voucherId }) => {
     },
   ];
 
-  if (
-    !Number.isInteger(Number(customerPartyId || 0)) ||
-    Number(customerPartyId) <= 0
-  ) {
+  if (!customerPartyId && !buyerEmployeeId && !buyerLabourId) {
     throw new Error(
-      `GL posting failed: voucher ${voucherId} credit sale requires customer`,
-    );
-  }
-  const partyType = await loadPartyTypeByIdTx({
-    trx,
-    partyId: Number(customerPartyId),
-  });
-  if (partyType !== "CUSTOMER" && partyType !== "BOTH") {
-    throw new Error(
-      `GL posting failed: voucher ${voucherId} customer party type must be CUSTOMER/BOTH`,
+      `GL posting failed: voucher ${voucherId} credit sale requires a buyer`,
     );
   }
 
-  const arControlAccountId = resolveSingleAccountIdForGroup({
-    accountsByGroup,
-    groupCode: CONTROL_GROUP_CODES.partyReceivable,
-    voucherId,
-    lineNo: 0,
-  });
+  let arControlAccountId;
+  let arPartyId = null;
+
+  if (isStaffBuyer) {
+    arControlAccountId = resolveSingleAccountIdForGroup({
+      accountsByGroup,
+      groupCode: CONTROL_GROUP_CODES.staffReceivable,
+      fallbackGroupCodes: [CONTROL_GROUP_CODES.partyReceivable],
+      voucherId,
+      lineNo: 0,
+    });
+  } else {
+    const partyType = await loadPartyTypeByIdTx({
+      trx,
+      partyId: Number(customerPartyId),
+    });
+    if (partyType !== "CUSTOMER" && partyType !== "BOTH") {
+      throw new Error(
+        `GL posting failed: voucher ${voucherId} customer party type must be CUSTOMER/BOTH`,
+      );
+    }
+    arControlAccountId = resolveSingleAccountIdForGroup({
+      accountsByGroup,
+      groupCode: CONTROL_GROUP_CODES.partyReceivable,
+      voucherId,
+      lineNo: 0,
+    });
+    arPartyId = Number(customerPartyId);
+  }
+
   entries.push({
     branch_id: Number(header.branch_id),
     entry_date: header.voucher_date,
     account_id: Number(arControlAccountId),
     dept_id: null,
-    party_id: Number(customerPartyId),
+    party_id: arPartyId,
     dr: netSaleAmount,
     cr: 0,
     narration: toNarration({}, header.remarks),
@@ -941,7 +1020,7 @@ const buildSalesVoucherEntriesTx = async ({ trx, header, voucherId }) => {
         entry_date: header.voucher_date,
         account_id: Number(arControlAccountId),
         dept_id: null,
-        party_id: Number(customerPartyId),
+        party_id: arPartyId,
         dr: 0,
         cr: paymentReceivedAmount,
         narration: toNarration({}, header.remarks),

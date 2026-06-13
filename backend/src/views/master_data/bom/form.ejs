@@ -573,7 +573,6 @@
       const normalizedDeptId = String(deptId || "").trim();
       if (!normalizedDeptId) return false;
       const mappedStageId = String(stageIdByDeptId.get(normalizedDeptId) || "").trim();
-      if (!mappedStageId) return false;
       if (!Array.isArray(state.stage_routes)) state.stage_routes = [];
       const alreadyExists = state.stage_routes.some((line) => {
         const lineDeptId = String(line?.dept_id || "").trim();
@@ -2318,6 +2317,7 @@
           state.stage_routes.push(addDefaults.stage_route());
         }
         renderStageRoutes();
+        pruneDepartmentScopedRows();
         syncLabourLinesFromSelectionAndRates();
         renderRmWithSkuRules();
         renderLabourSections();

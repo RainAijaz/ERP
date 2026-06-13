@@ -16,6 +16,7 @@ const PURCHASE_CATEGORIES = {
   rawMaterial: "RAW_MATERIAL",
   asset: "ASSET",
   consumable: "CONSUMABLE",
+  mixed: "MIXED",
 };
 const PURCHASE_ASSET_ACCOUNT_GROUP_CODE = "fixed_assets";
 const PURCHASE_ASSET_CONTROL_ACCOUNT_CODE = "gl_fixed_assets_control";
@@ -84,6 +85,7 @@ const normalizePurchaseCategory = (value) => {
     .toUpperCase();
   if (text === PURCHASE_CATEGORIES.asset) return PURCHASE_CATEGORIES.asset;
   if (text === PURCHASE_CATEGORIES.consumable) return PURCHASE_CATEGORIES.consumable;
+  if (text === PURCHASE_CATEGORIES.mixed) return PURCHASE_CATEGORIES.mixed;
   return PURCHASE_CATEGORIES.rawMaterial;
 };
 
@@ -1057,6 +1059,8 @@ const syncPurchaseVoucherStockTx = async ({
   ) {
     return;
   }
+  // MIXED: stock sync proceeds — loadPurchaseVoucherStockLinesTx filters to
+  // line_kind='ITEM' only, so consumable ACCOUNT lines are naturally skipped.
   const voucherLines = await loadPurchaseVoucherStockLinesTx({
     trx,
     voucherId: normalizedVoucherId,
@@ -1600,6 +1604,52 @@ const normalizeAndValidateLinesTx = async ({
       size_id: sizeId || null,
     };
   });
+};
+
+// For PR vouchers with mixed line types (RAW_MATERIAL + CONSUMABLE in same voucher).
+// Each element in rawLines must have a `line_type` field: "RAW_MATERIAL" or "CONSUMABLE".
+const normalizeAndValidateMixedPrLinesTx = async ({ trx, req, rawLines }) => {
+  const lines = Array.isArray(rawLines) ? rawLines : [];
+  if (!lines.length) throw new HttpError(400, "Voucher lines are required");
+
+  const rmRawLines = [];
+  const consumableRawLines = [];
+  lines.forEach((line) => {
+    const lt = String(line?.line_type || "RAW_MATERIAL").trim().toUpperCase();
+    if (lt === "CONSUMABLE") consumableRawLines.push(line);
+    else rmRawLines.push(line);
+  });
+
+  let nextLineNo = 1;
+  const result = [];
+
+  if (rmRawLines.length) {
+    const rmLines = await normalizeAndValidateLinesTx({
+      trx,
+      req,
+      voucherTypeCode: PURCHASE_VOUCHER_TYPES.purchaseReturn,
+      purchaseCategory: PURCHASE_CATEGORIES.rawMaterial,
+      rawLines: rmRawLines,
+    });
+    rmLines.forEach((line) => {
+      result.push({ ...line, line_no: nextLineNo++ });
+    });
+  }
+
+  if (consumableRawLines.length) {
+    const consumableLines = await normalizeAndValidateLinesTx({
+      trx,
+      req,
+      voucherTypeCode: PURCHASE_VOUCHER_TYPES.purchaseReturn,
+      purchaseCategory: PURCHASE_CATEGORIES.consumable,
+      rawLines: consumableRawLines,
+    });
+    consumableLines.forEach((line) => {
+      result.push({ ...line, line_no: nextLineNo++ });
+    });
+  }
+
+  return result;
 };
 
 const getNextVoucherNoTx = async (trx, branchId, voucherTypeCode) => {
@@ -2271,7 +2321,6 @@ const validatePurchaseVoucherPayloadTx = async ({
 }) => {
   const voucherDate = toDateOnly(payload.voucher_date);
   if (!voucherDate) throw new HttpError(400, "Voucher date is required");
-  const purchaseCategory = normalizePurchaseCategory(payload.purchase_category);
 
   let supplierPartyId = null;
   let referenceNo = normalizeText(payload.reference_no, 120);
@@ -2279,13 +2328,33 @@ const validatePurchaseVoucherPayloadTx = async ({
     payload.description || payload.remarks,
     1000,
   );
-  const lines = await normalizeAndValidateLinesTx({
-    trx,
-    req,
-    voucherTypeCode,
-    purchaseCategory,
-    rawLines: payload.lines || [],
-  });
+
+  // For PR: detect mixed lines (each line carries its own line_type field).
+  // If any line has line_type='CONSUMABLE' alongside RAW_MATERIAL lines → MIXED.
+  const rawPayloadLines = payload.lines || [];
+  const isPrMixed =
+    voucherTypeCode === PURCHASE_VOUCHER_TYPES.purchaseReturn &&
+    rawPayloadLines.some((l) =>
+      String(l?.line_type || "").trim().toUpperCase() === "CONSUMABLE",
+    );
+
+  const purchaseCategory = isPrMixed
+    ? PURCHASE_CATEGORIES.mixed
+    : normalizePurchaseCategory(payload.purchase_category);
+
+  const lines = isPrMixed
+    ? await normalizeAndValidateMixedPrLinesTx({
+        trx,
+        req,
+        rawLines: rawPayloadLines,
+      })
+    : await normalizeAndValidateLinesTx({
+        trx,
+        req,
+        voucherTypeCode,
+        purchaseCategory,
+        rawLines: rawPayloadLines,
+      });
 
   let paymentType = "CREDIT";
   let cashPaidAccountId = null;
@@ -3454,6 +3523,7 @@ const loadPurchaseVoucherDetails = async ({
       account_id: Number(line.account_id || 0) || null,
       account_name: line.account_name || "",
       description: line.consumable_description || "",
+      line_type: String(line.line_kind || "ITEM").toUpperCase() === "ACCOUNT" ? "CONSUMABLE" : "RAW_MATERIAL",
       item_id: Number(line.item_id || 0) || null,
       item_name: line.item_name || "",
       item_name_ur: line.item_name_ur || "",

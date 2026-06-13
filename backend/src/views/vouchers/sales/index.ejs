@@ -105,7 +105,11 @@
           <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
             <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t("customer_name") %></label>
             <div class="lg:col-span-4" data-customer-select-container>
-              <select name="customer_party_id" data-customer data-customer-select-wrap class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified"><option value=""><%= t("select_customer") %></option><% (options.customers || []).forEach((c) => { %><option value="<%= c.id %>" data-phone="<%= c.phone1 || '' %>" <%= Number(selectedVoucher?.customer_party_id || 0) === Number(c.id) ? "selected" : "" %>><%= (locale === 'ur' && c.name_ur) ? c.name_ur : c.name %></option><% }) %></select>
+              <input type="hidden" name="customer_party_id" data-buyer-party-id value="">
+              <input type="hidden" name="buyer_employee_id" data-buyer-employee-id value="">
+              <input type="hidden" name="buyer_labour_id" data-buyer-labour-id value="">
+              <input type="hidden" name="buyer_type" data-buyer-type-hidden value="PARTY">
+              <select data-customer data-customer-select-wrap class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified"><option value=""><%= t("select_customer") %></option><% (options.customers || []).forEach((c) => { %><% const _bv = (c.buyer_type || 'PARTY') + ':' + c.id; const _sel = (c.buyer_type === 'EMPLOYEE' && Number(selectedVoucher?.buyer_employee_id || 0) === Number(c.id)) || (c.buyer_type === 'LABOUR' && Number(selectedVoucher?.buyer_labour_id || 0) === Number(c.id)) || ((!c.buyer_type || c.buyer_type === 'PARTY') && Number(selectedVoucher?.customer_party_id || 0) === Number(c.id)); const _prefix = c.buyer_type === 'EMPLOYEE' ? '[Emp] ' : c.buyer_type === 'LABOUR' ? '[Lab] ' : ''; %><option value="<%= _bv %>" data-phone="<%= c.phone1 || '' %>" data-buyer-type="<%= c.buyer_type || 'PARTY' %>" <%= _sel ? "selected" : "" %>><%= _prefix %><%= (locale === 'ur' && c.name_ur) ? c.name_ur : c.name %></option><% }) %></select>
             </div>
             <div class="hidden lg:col-span-4" data-customer-name-wrap>
               <input type="text" name="customer_name" data-customer-name maxlength="160" placeholder="<%= t('customer_name') %>" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" value="<%= locale === 'ur' && selectedVoucher?.customer_name_ur ? selectedVoucher.customer_name_ur : (selectedVoucher?.customer_name || '') %>">
@@ -823,7 +827,18 @@
     select.dispatchEvent(new Event("change", { bubbles: true }));
   };
 
-  const getSelectedCustomerId = () => Number(customerSelect?.value || 0) || 0;
+  const getSelectedBuyer = () => {
+    const val = String(customerSelect?.value || "");
+    if (!val) return null;
+    const sep = val.indexOf(":");
+    if (sep < 0) return { type: "PARTY", id: Number(val) || 0 };
+    return { type: val.slice(0, sep), id: Number(val.slice(sep + 1)) || 0 };
+  };
+  // Returns the party ID only (non-zero for PARTY buyers, 0 for EMPLOYEE/LABOUR)
+  const getSelectedCustomerId = () => {
+    const b = getSelectedBuyer();
+    return (b && b.type === "PARTY") ? (b.id || 0) : 0;
+  };
   const getVoucherDate = () => toDateOnly(voucherDateInput?.value || "");
 
   const getPendingLinesForOrder = () => {
@@ -1351,7 +1366,7 @@
       customerSelect.required = showCustomerSelect;
       customerSelect.disabled = !showCustomerSelect || lockCustomerToLinkedOrder;
       if (lockCustomerToLinkedOrder && Number(selectedOrder?.customer_party_id || 0) > 0) {
-        setSelectValueAndSync(customerSelect, String(selectedOrder.customer_party_id));
+        setSelectValueAndSync(customerSelect, "PARTY:" + Number(selectedOrder.customer_party_id));
       }
       if (!showCustomerSelect) customerSelect.value = "";
     }
@@ -1417,12 +1432,12 @@
 
     if (fromSO && linkedOrderId > 0) {
       const order = orderMap.get(linkedOrderId);
-      const selectedCustomerId = Number(customerSelect?.value || 0);
+      const selectedCustomerId = getSelectedCustomerId();
       if (!order || (selectedCustomerId > 0 && selectedCustomerId !== Number(order.customer_party_id || 0))) {
         linkedOrderSelect.value = "";
         rows.forEach((row) => { row.sales_order_line_id = null; });
       } else if (order && !selectedCustomerId) {
-        customerSelect.value = String(order.customer_party_id || "");
+        customerSelect.value = order.customer_party_id ? "PARTY:" + Number(order.customer_party_id) : "";
       }
       if (order && Number(order.salesman_employee_id || 0) > 0) {
         setSelectValueAndSync(salesmanSelect, String(order.salesman_employee_id || ""));
@@ -2010,7 +2025,7 @@
         setSelectValueAndSync(receiveAccountSelect, String(orderReceiveAccountId));
       }
     }
-    if (customerSelect) setSelectValueAndSync(customerSelect, String(order.customer_party_id || ""));
+    if (customerSelect) setSelectValueAndSync(customerSelect, order.customer_party_id ? "PARTY:" + Number(order.customer_party_id) : "");
     if (salesmanSelect && Number(order.salesman_employee_id || 0) > 0) {
       setSelectValueAndSync(salesmanSelect, String(order.salesman_employee_id || ""));
     }
@@ -2139,7 +2154,18 @@
 
     const fromSO = isFromSO();
     const paymentType = getPaymentType();
-    const customerId = Number(customerSelect?.value || 0) || null;
+    const selectedBuyer = getSelectedBuyer();
+    const customerId = selectedBuyer ? selectedBuyer.id : null;
+
+    // Populate hidden buyer fields before submit
+    const _bPartyInput = form.querySelector("[data-buyer-party-id]");
+    const _bEmpInput   = form.querySelector("[data-buyer-employee-id]");
+    const _bLabInput   = form.querySelector("[data-buyer-labour-id]");
+    const _bTypeInput  = form.querySelector("[data-buyer-type-hidden]");
+    if (_bPartyInput) _bPartyInput.value = (selectedBuyer?.type === "PARTY" && selectedBuyer.id) ? String(selectedBuyer.id) : "";
+    if (_bEmpInput)   _bEmpInput.value   = (selectedBuyer?.type === "EMPLOYEE" && selectedBuyer.id) ? String(selectedBuyer.id) : "";
+    if (_bLabInput)   _bLabInput.value   = (selectedBuyer?.type === "LABOUR" && selectedBuyer.id) ? String(selectedBuyer.id) : "";
+    if (_bTypeInput)  _bTypeInput.value  = selectedBuyer?.type || "PARTY";
     const customerName = String(customerNameInput?.value || "").trim();
     const phone = String(phoneInput?.value || "").trim();
     const salesmanId = Number(salesmanSelect?.value || 0) || null;
@@ -2149,6 +2175,8 @@
     const finalAmount = Number(n(finalInput?.value || 0).toFixed(1));
     const selectedOrder = fromSO && linkedOrderId ? orderMap.get(Number(linkedOrderId)) : null;
     const orderTotalAmount = Number(n(selectedOrder?.total_order_amount || 0).toFixed(1));
+    const soExtraDiscount = Number(n(selectedOrder?.so_extra_discount || 0).toFixed(1));
+    const orderNetAmount = Number((orderTotalAmount - soExtraDiscount).toFixed(1));
     const previousPaymentsReceived = Number(
       n(
         selectedOrder?.previous_payments_received
@@ -2161,19 +2189,20 @@
     const voucherDateValue = String(voucherDateInput?.value || "").trim();
     const dueDateValue = String(dueDateInput?.value || "").trim();
 
+    const isStaffBuyer = selectedBuyer?.type === "EMPLOYEE" || selectedBuyer?.type === "LABOUR";
     if (!billNo) { e.preventDefault(); window.showVoucherError(requiredMessage("<%= t('bill_number') %>")); return; }
     if (!salesmanId) { e.preventDefault(); window.showVoucherError(requiredMessage("<%= t('salesman') %>")); return; }
-    if (!isSalesOrderVoucher && paymentType === "CASH" && !phone) { e.preventDefault(); window.showVoucherError(requiredMessage("<%= t('phone_number') %>")); return; }
-    if (!isSalesOrderVoucher && paymentType === "CASH" && !isValidPhone(phone)) { e.preventDefault(); window.showVoucherError("<%= t('error_invalid_phone_number') %>"); return; }
+    if (!isSalesOrderVoucher && !isStaffBuyer && paymentType === "CASH" && !phone) { e.preventDefault(); window.showVoucherError(requiredMessage("<%= t('phone_number') %>")); return; }
+    if (!isSalesOrderVoucher && !isStaffBuyer && paymentType === "CASH" && !isValidPhone(phone)) { e.preventDefault(); window.showVoucherError("<%= t('error_invalid_phone_number') %>"); return; }
     if ((fromSO || paymentType === "CREDIT" || isSalesOrderVoucher) && !customerId) { e.preventDefault(); window.showVoucherError("<%= t('select_customer') %>"); return; }
-    if (!fromSO && !isSalesOrderVoucher && paymentType === "CASH" && !customerName) { e.preventDefault(); window.showVoucherError(requiredMessage("<%= t('customer_name') %>")); return; }
+    if (!fromSO && !isSalesOrderVoucher && !isStaffBuyer && paymentType === "CASH" && !customerName) { e.preventDefault(); window.showVoucherError(requiredMessage("<%= t('customer_name') %>")); return; }
     if (fromSO && !linkedOrderId) { e.preventDefault(); window.showVoucherError("<%= t('select_sales_order') %>"); return; }
     if (fromSO && paymentType !== "CREDIT") { e.preventDefault(); window.showVoucherError("<%= t('error_sales_order_requires_credit_sale') %>"); return; }
     const dueDateOutstanding = !isSalesOrderVoucher && paymentType === "CREDIT"
       ? Number(
           Math.max(
             0,
-            (fromSO && orderTotalAmount > 0 ? orderTotalAmount : finalAmount)
+            (fromSO && orderNetAmount > 0 ? orderNetAmount : finalAmount)
               - (fromSO ? previousPaymentsReceived : 0)
               - received,
           ).toFixed(1),
@@ -2191,7 +2220,7 @@
         ? Number(
             Math.max(
               0,
-              (orderTotalAmount > 0 ? orderTotalAmount : finalAmount) - previousPaymentsReceived,
+              (orderNetAmount > 0 ? orderNetAmount : finalAmount) - previousPaymentsReceived,
             ).toFixed(1),
           )
         : finalAmount;

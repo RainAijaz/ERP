@@ -568,6 +568,73 @@ const validateCustomerTx = async ({ trx, req, customerPartyId }) => {
     id: Number(customer.id),
     name: String(customer.name || "").trim(),
     phone1: normalizeText(customer.phone1, 30),
+    buyerType: "PARTY",
+  };
+};
+
+// Validates any buyer type: PARTY (customer), EMPLOYEE, or LABOUR.
+// Returns { id, name, phone1, buyerType, customerPartyId, buyerEmployeeId, buyerLabourId }
+const validateBuyerTx = async ({ trx, req, buyerType, buyerId }) => {
+  const normalizedId = toPositiveInt(buyerId);
+  if (!normalizedId) throw new HttpError(400, "Buyer is required");
+
+  const type = String(buyerType || "PARTY").toUpperCase();
+
+  if (type === "EMPLOYEE") {
+    const emp = await trx("erp.employees as e")
+      .select("e.id", "e.name", "e.phone")
+      .where({ "e.id": normalizedId })
+      .whereRaw("lower(coalesce(e.status, '')) = 'active'")
+      .whereExists(function branchAccess() {
+        this.select(1)
+          .from("erp.employee_branch as eb")
+          .whereRaw("eb.employee_id = e.id")
+          .andWhere("eb.branch_id", req.branchId);
+      })
+      .first();
+    if (!emp) throw new HttpError(400, "Employee buyer is invalid for current branch");
+    return {
+      id: Number(emp.id),
+      name: String(emp.name || "").trim(),
+      phone1: normalizeText(emp.phone, 30),
+      buyerType: "EMPLOYEE",
+      customerPartyId: null,
+      buyerEmployeeId: Number(emp.id),
+      buyerLabourId: null,
+    };
+  }
+
+  if (type === "LABOUR") {
+    const lab = await trx("erp.labours as l")
+      .select("l.id", "l.name", "l.phone")
+      .where({ "l.id": normalizedId })
+      .whereRaw("lower(coalesce(l.status, '')) = 'active'")
+      .whereExists(function branchAccess() {
+        this.select(1)
+          .from("erp.labour_branch as lb")
+          .whereRaw("lb.labour_id = l.id")
+          .andWhere("lb.branch_id", req.branchId);
+      })
+      .first();
+    if (!lab) throw new HttpError(400, "Labour buyer is invalid for current branch");
+    return {
+      id: Number(lab.id),
+      name: String(lab.name || "").trim(),
+      phone1: normalizeText(lab.phone, 30),
+      buyerType: "LABOUR",
+      customerPartyId: null,
+      buyerEmployeeId: null,
+      buyerLabourId: Number(lab.id),
+    };
+  }
+
+  // Default: PARTY
+  const customer = await validateCustomerTx({ trx, req, customerPartyId: normalizedId });
+  return {
+    ...customer,
+    customerPartyId: Number(customer.id),
+    buyerEmployeeId: null,
+    buyerLabourId: null,
   };
 };
 
@@ -1947,16 +2014,33 @@ const validateSalesPayloadTx = async ({
     allowRateDiscountOverride,
   });
 
-  let customerPartyId = toPositiveInt(payload?.customer_party_id);
   let salesmanEmployeeId = toPositiveInt(payload?.salesman_employee_id);
   if (normalizedLines.linkedOrder) {
-    customerPartyId = normalizedLines.linkedOrder.customerPartyId;
     salesmanEmployeeId = normalizedLines.linkedOrder.salesmanEmployeeId;
   }
-  const customer = customerPartyId
-    ? await validateCustomerTx({ trx, req, customerPartyId })
-    : null;
-  if (paymentType === "CREDIT" && !customer)
+
+  // Resolve buyer: FROM_SO locks to the party on the linked order.
+  let buyer = null;
+  if (normalizedLines.linkedOrder) {
+    buyer = await validateBuyerTx({
+      trx,
+      req,
+      buyerType: "PARTY",
+      buyerId: normalizedLines.linkedOrder.customerPartyId,
+    });
+  } else {
+    const rawBuyerType = String(payload?.buyer_type || "PARTY").toUpperCase();
+    const rawBuyerId =
+      rawBuyerType === "EMPLOYEE"
+        ? toPositiveInt(payload?.buyer_employee_id)
+        : rawBuyerType === "LABOUR"
+          ? toPositiveInt(payload?.buyer_labour_id)
+          : toPositiveInt(payload?.customer_party_id);
+    if (rawBuyerId) {
+      buyer = await validateBuyerTx({ trx, req, buyerType: rawBuyerType, buyerId: rawBuyerId });
+    }
+  }
+  if (paymentType === "CREDIT" && !buyer)
     throw new HttpError(400, "Customer is required for credit sale");
   if (!salesmanEmployeeId) throw new HttpError(400, "Salesman is required");
   const salesman = await validateSalesmanTx({ trx, req, salesmanEmployeeId });
@@ -2094,26 +2178,31 @@ const validateSalesPayloadTx = async ({
     );
   }
 
+  const isStaffBuyer = buyer && (buyer.buyerType === "EMPLOYEE" || buyer.buyerType === "LABOUR");
   const customerPhoneNumber = normalizeText(
-    payload?.customer_phone_number || customer?.phone1,
+    payload?.customer_phone_number || buyer?.phone1,
     30,
   );
-  if (!customerPhoneNumber)
-    throw new HttpError(400, "Phone number is required");
-  if (!isValidPhoneNumber(customerPhoneNumber)) {
-    throw new HttpError(400, "Phone number format is invalid");
+  if (!isStaffBuyer) {
+    if (!customerPhoneNumber)
+      throw new HttpError(400, "Phone number is required");
+    if (!isValidPhoneNumber(customerPhoneNumber)) {
+      throw new HttpError(400, "Phone number format is invalid");
+    }
+    if (!buyer && !normalizeText(payload?.customer_name, 160))
+      throw new HttpError(400, "Customer name is required for walk-in sale");
   }
-  if (!customer && !normalizeText(payload?.customer_name, 160))
-    throw new HttpError(400, "Customer name is required for walk-in sale");
 
   return {
     voucherDate,
     bookNo,
     referenceNo: normalizeText(payload?.reference_no, 120),
     remarks: normalizeText(payload?.description || payload?.remarks, 1000),
-    customerPartyId: customer?.id || null,
-    customerName: customer?.name || normalizeText(payload?.customer_name, 160),
-    customerPhoneNumber,
+    customerPartyId: buyer?.customerPartyId ?? (buyer?.buyerType === "PARTY" ? buyer?.id : null) ?? null,
+    buyerEmployeeId: buyer?.buyerEmployeeId || null,
+    buyerLabourId: buyer?.buyerLabourId || null,
+    customerName: buyer?.name || normalizeText(payload?.customer_name, 160),
+    customerPhoneNumber: customerPhoneNumber || null,
     salesmanEmployeeId: salesman.id,
     receiveIntoAccountId,
     paymentReceivedAmount: Number(paymentReceivedAmount.toFixed(2)),
@@ -2278,6 +2367,8 @@ const upsertSalesHeaderExtensionsTx = async ({
       sale_mode: validated.saleMode,
       payment_type: validated.paymentType,
       customer_party_id: validated.customerPartyId,
+      buyer_employee_id: validated.buyerEmployeeId || null,
+      buyer_labour_id: validated.buyerLabourId || null,
       customer_name: cashCustomerName,
       customer_name_ur: cashCustomerNameUr,
       customer_phone_number: validated.customerPhoneNumber,
@@ -2294,6 +2385,8 @@ const upsertSalesHeaderExtensionsTx = async ({
       sale_mode: validated.saleMode,
       payment_type: validated.paymentType,
       customer_party_id: validated.customerPartyId,
+      buyer_employee_id: validated.buyerEmployeeId || null,
+      buyer_labour_id: validated.buyerLabourId || null,
       customer_name: cashCustomerName,
       customer_name_ur: cashCustomerNameUr,
       customer_phone_number: validated.customerPhoneNumber,
@@ -3438,20 +3531,65 @@ const loadSalesVoucherOptions = async (req, context = {}) => {
   const voucherTypeCode = String(context?.voucherTypeCode || "")
     .trim()
     .toUpperCase();
-  let customerQuery = knex("erp.parties as p")
-    .select("p.id", "p.code", "p.name", "p.name_ur", "p.phone1")
+  let partyQuery = knex("erp.parties as p")
+    .select(
+      "p.id",
+      "p.code",
+      "p.name",
+      "p.name_ur",
+      "p.phone1",
+      knex.raw("'PARTY' as buyer_type"),
+    )
     .where({ "p.is_active": true })
-    .whereRaw("upper(coalesce(p.party_type::text, '')) in ('CUSTOMER','BOTH')");
-  customerQuery = customerQuery.where(function wherePartyScope() {
-    this.where("p.branch_id", req.branchId).orWhereExists(
-      function wherePartyBranchMap() {
-        this.select(1)
-          .from("erp.party_branch as pb")
-          .whereRaw("pb.party_id = p.id")
-          .andWhere("pb.branch_id", req.branchId);
-      },
-    );
-  });
+    .whereRaw("upper(coalesce(p.party_type::text, '')) in ('CUSTOMER','BOTH')")
+    .where(function wherePartyScope() {
+      this.where("p.branch_id", req.branchId).orWhereExists(
+        function wherePartyBranchMap() {
+          this.select(1)
+            .from("erp.party_branch as pb")
+            .whereRaw("pb.party_id = p.id")
+            .andWhere("pb.branch_id", req.branchId);
+        },
+      );
+    });
+
+  const employeeBuyerQuery = knex("erp.employees as e")
+    .select(
+      "e.id",
+      "e.code",
+      "e.name",
+      knex.raw("null as name_ur"),
+      "e.phone as phone1",
+      knex.raw("'EMPLOYEE' as buyer_type"),
+    )
+    .whereRaw("lower(coalesce(e.status, '')) = 'active'")
+    .whereExists(function branchAccess() {
+      this.select(1)
+        .from("erp.employee_branch as eb")
+        .whereRaw("eb.employee_id = e.id")
+        .andWhere("eb.branch_id", req.branchId);
+    });
+
+  const labourBuyerQuery = knex("erp.labours as l")
+    .select(
+      "l.id",
+      "l.code",
+      "l.name",
+      knex.raw("null as name_ur"),
+      "l.phone as phone1",
+      knex.raw("'LABOUR' as buyer_type"),
+    )
+    .whereRaw("lower(coalesce(l.status, '')) = 'active'")
+    .whereExists(function branchAccess() {
+      this.select(1)
+        .from("erp.labour_branch as lb")
+        .whereRaw("lb.labour_id = l.id")
+        .andWhere("lb.branch_id", req.branchId);
+    });
+
+  const customerQuery = partyQuery
+    .union(employeeBuyerQuery)
+    .union(labourBuyerQuery);
 
   const salesmenQuery = knex("erp.employees as e")
     .select("e.id", "e.code", "e.name")
@@ -3899,6 +4037,8 @@ const loadSalesVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
       .where({ voucher_id: header.id })
       .first();
     details.customer_party_id = Number(ext?.customer_party_id || 0) || null;
+    details.buyer_employee_id = Number(ext?.buyer_employee_id || 0) || null;
+    details.buyer_labour_id   = Number(ext?.buyer_labour_id   || 0) || null;
     details.customer_name = ext?.customer_name || "";
     details.customer_name_ur = ext?.customer_name_ur || "";
     details.customer_phone_number = ext?.customer_phone_number || "";
@@ -3916,6 +4056,24 @@ const loadSalesVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
       if (!String(details.customer_phone_number || "").trim()) {
         details.customer_phone_number = String(party?.phone1 || "").trim();
       }
+    } else if (details.buyer_employee_id) {
+      const emp = await knex("erp.employees")
+        .select("name", "phone")
+        .where({ id: details.buyer_employee_id })
+        .first();
+      if (!String(details.customer_name || "").trim())
+        details.customer_name = String(emp?.name || "").trim();
+      if (!String(details.customer_phone_number || "").trim())
+        details.customer_phone_number = String(emp?.phone || "").trim();
+    } else if (details.buyer_labour_id) {
+      const lab = await knex("erp.labours")
+        .select("name", "phone")
+        .where({ id: details.buyer_labour_id })
+        .first();
+      if (!String(details.customer_name || "").trim())
+        details.customer_name = String(lab?.name || "").trim();
+      if (!String(details.customer_phone_number || "").trim())
+        details.customer_phone_number = String(lab?.phone || "").trim();
     }
     details.salesman_employee_id =
       Number(ext?.salesman_employee_id || 0) || null;
