@@ -322,49 +322,35 @@ router.get(
         loadRateDetails(),
       ]);
 
-      const maxVariants =
-        allItems.reduce((max, item) => {
-          const len = (rateDetailsByItem[item.id] || []).length;
-          return len > max ? len : max;
-        }, 0) || 1;
-
       const q = (v) =>
         '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
-      const colorLabel = t("color") || "Color";
-      const sizeLabel = t("size") || "Size";
-      const rateLabel = t("purchase_rate") || "Purchase Rate";
-      const avgLabel = t("avg_purchase_rate") || "Avg Purchase Rate";
 
-      const fixedHeaders = [
+      const headers = [
         t("name") || "Name",
         t("sub_group") || "Sub Group",
         t("base_unit") || "Base Unit",
         t("min_stock") || "Min Stock",
+        t("color") || "Color",
+        t("size") || "Size",
+        t("purchase_rate") || "Purchase Rate",
+        t("avg_purchase_rate") || "Avg Purchase Rate",
       ].map(q);
 
-      const variantHeaders = [];
-      for (let n = 1; n <= maxVariants; n++) {
-        variantHeaders.push(
-          q(`${colorLabel} ${n}`),
-          q(`${sizeLabel} ${n}`),
-          q(`${rateLabel} ${n}`),
-          q(`${avgLabel} ${n}`),
-        );
-      }
-
-      const csvLines = [fixedHeaders.concat(variantHeaders).join(",")];
+      const csvLines = [headers.join(",")];
 
       allItems.forEach((item) => {
         const details = rateDetailsByItem[item.id] || [];
-        const cells = [
+        const fixedCells = [
           q(item.name),
           q(item.subgroup_name),
           q(item.uom_code),
           q(Math.trunc(Number(item.min_stock_level || 0))),
         ];
-        for (let i = 0; i < maxVariants; i++) {
-          const d = details[i];
-          if (d) {
+
+        if (details.length === 0) {
+          csvLines.push([...fixedCells, q(""), q(""), q(""), q("")].join(","));
+        } else {
+          details.forEach((d) => {
             const colorName =
               locale === "ur"
                 ? d.color_name_ur || d.color_name || ""
@@ -379,12 +365,11 @@ router.get(
               d.avg_purchase_rate != null
                 ? Math.trunc(Number(d.avg_purchase_rate))
                 : "";
-            cells.push(q(colorName), q(sizeName), q(pRate), q(aRate));
-          } else {
-            cells.push(q(""), q(""), q(""), q(""));
-          }
+            csvLines.push(
+              [...fixedCells, q(colorName), q(sizeName), q(pRate), q(aRate)].join(","),
+            );
+          });
         }
-        csvLines.push(cells.join(","));
       });
 
       const csv = "﻿" + csvLines.join("\r\n");
