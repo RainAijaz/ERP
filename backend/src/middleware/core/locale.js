@@ -155,6 +155,7 @@ const translations = {
     outward_returnable: "Outward & Returnables",
     assets: "Assets",
     asset: "Asset",
+    consumable: "Consumable / Indirect Material",
     asset_master: "Asset Master",
     asset_types: "Asset Types",
     returnable_assets: "Returnable Assets",
@@ -2245,6 +2246,7 @@ translations.ur = {
   article_type_sfg: "نیم تیار سامان (SFG)",
   as_on: "جیسا آن",
   asset: "اثاثہ",
+  consumable: "قابل استعمال / بالواسطہ مواد",
   asset_code: "اثاثہ کوڈ",
   asset_master: "اثاثہ ماسٹر",
   asset_master_description:

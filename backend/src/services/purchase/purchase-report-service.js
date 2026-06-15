@@ -20,6 +20,7 @@ const PURCHASE_CATEGORY_FILTERS = Object.freeze({
   all: "all",
   rawMaterial: "raw_material",
   asset: "asset",
+  consumable: "consumable",
 });
 
 const ALL_MULTI_FILTER_VALUE = "__ALL__";
@@ -100,6 +101,7 @@ const resolvePurchaseCategoryFilter = (
   if (key === PURCHASE_CATEGORY_FILTERS.asset) return PURCHASE_CATEGORY_FILTERS.asset;
   if (key === PURCHASE_CATEGORY_FILTERS.rawMaterial)
     return PURCHASE_CATEGORY_FILTERS.rawMaterial;
+  if (key === PURCHASE_CATEGORY_FILTERS.consumable) return PURCHASE_CATEGORY_FILTERS.consumable;
   if (key === PURCHASE_CATEGORY_FILTERS.all) return PURCHASE_CATEGORY_FILTERS.all;
   return fallback;
 };
@@ -367,10 +369,16 @@ const getPurchaseReportRows = async ({ req, filters }) => {
 
   const supportsPurchaseCategory = await hasPurchaseInvoiceCategoryColumn();
   const includeRawMaterialRows =
-    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.asset;
+    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.asset &&
+    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.consumable;
   const includeAssetRows =
     supportsPurchaseCategory &&
-    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.rawMaterial;
+    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.rawMaterial &&
+    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.consumable;
+  const includeConsumableRows =
+    supportsPurchaseCategory &&
+    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.rawMaterial &&
+    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.asset;
 
   const applyCommonFilters = (query) => {
     let next = query
@@ -574,24 +582,77 @@ const getPurchaseReportRows = async ({ req, filters }) => {
       })()
     : Promise.resolve([]);
 
-  const [rawMaterialRows, assetRows] = await Promise.all([
+  const consumableRowsPromise = includeConsumableRows
+    ? (() => {
+        let query = knex("erp.voucher_header as vh")
+          .join(
+            "erp.purchase_invoice_header_ext as pie",
+            "pie.voucher_id",
+            "vh.id",
+          )
+          .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
+          .leftJoin("erp.parties as p", "p.id", "pie.supplier_party_id")
+          .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
+          .leftJoin("erp.accounts as a", "a.id", "pie.cash_paid_account_id")
+          .leftJoin("erp.accounts as ea", "ea.id", "vl.account_id")
+          .select(
+            "vh.id as voucher_id",
+            "vh.voucher_no",
+            "vh.voucher_date",
+            "vh.book_no as bill_number",
+            knex.raw("COALESCE(NULLIF(vh.remarks, ''), '') as remarks"),
+            "vh.branch_id",
+            "b.name as branch_name",
+            "pie.supplier_party_id",
+            "p.name as supplier_name",
+            "pie.payment_type",
+            "pie.cash_paid_account_id",
+            "a.name as cash_account_name",
+            "vl.line_no",
+            knex.raw("NULL::bigint as item_id"),
+            knex.raw("''::text as item_code"),
+            knex.raw("COALESCE(ea.name, '-') as item_name"),
+            knex.raw("NULL::text as color_name"),
+            knex.raw("NULL::text as size_name"),
+            knex.raw("NULL::text as uom_code"),
+            knex.raw("NULL::bigint as group_id"),
+            knex.raw("NULL::bigint as subgroup_id"),
+            "vl.qty",
+            "vl.rate",
+            "vl.amount",
+            "vl.rate as fixed_purchase_rate",
+            "vl.rate as weighted_average_rate",
+            "vl.account_id as consumable_account_id",
+            knex.raw("COALESCE(ea.name, '-') as asset_name"),
+            knex.raw("NULL::bigint as asset_id"),
+            knex.raw("'CONSUMABLE'::text as purchase_category"),
+          )
+          .where({ "vl.line_kind": "ACCOUNT" });
+
+        query = applyCommonFilters(query);
+        query = query.whereRaw(
+          "upper(coalesce(pie.purchase_category::text, 'RAW_MATERIAL')) = 'CONSUMABLE'",
+        );
+        return query;
+      })()
+    : Promise.resolve([]);
+
+  const [rawMaterialRows, assetRows, consumableRows] = await Promise.all([
     rawMaterialRowsPromise,
     assetRowsPromise,
+    consumableRowsPromise,
   ]);
 
-  const mappedRows = [...rawMaterialRows, ...assetRows].map((row) => {
-    const purchaseCategory =
-      String(row.purchase_category || "RAW_MATERIAL").trim().toUpperCase() ===
-      "ASSET"
-        ? "ASSET"
-        : "RAW_MATERIAL";
+  const mappedRows = [...rawMaterialRows, ...assetRows, ...consumableRows].map((row) => {
+    const _cat = String(row.purchase_category || "RAW_MATERIAL").trim().toUpperCase();
+    const purchaseCategory = _cat === "ASSET" ? "ASSET" : _cat === "CONSUMABLE" ? "CONSUMABLE" : "RAW_MATERIAL";
     const currentPurchaseRate = toAmount(row.rate, 4);
     const fixedPurchaseRate =
-      purchaseCategory === "ASSET"
+      purchaseCategory === "ASSET" || purchaseCategory === "CONSUMABLE"
         ? currentPurchaseRate
         : toAmount(row.fixed_purchase_rate, 4);
     const weightedAverageRate =
-      purchaseCategory === "ASSET"
+      purchaseCategory === "ASSET" || purchaseCategory === "CONSUMABLE"
         ? currentPurchaseRate
         : toAmount(row.weighted_average_rate, 4);
     const rateDifferenceAmount = toAmount(
@@ -632,15 +693,17 @@ const getPurchaseReportRows = async ({ req, filters }) => {
       color_name: row.color_name || "",
       size_name: row.size_name || "",
       item_name:
-        purchaseCategory === "ASSET"
+        purchaseCategory === "ASSET" || purchaseCategory === "CONSUMABLE"
           ? row.asset_name || row.item_name || ""
           : row.item_name || "",
       entity_id:
         purchaseCategory === "ASSET"
           ? Number(row.asset_id || 0) || null
-          : Number(row.item_id || 0) || null,
+          : purchaseCategory === "CONSUMABLE"
+            ? Number(row.consumable_account_id || 0) || null
+            : Number(row.item_id || 0) || null,
       entity_name:
-        purchaseCategory === "ASSET"
+        purchaseCategory === "ASSET" || purchaseCategory === "CONSUMABLE"
           ? row.asset_name || row.item_name || ""
           : row.item_name || "",
       group_id:
