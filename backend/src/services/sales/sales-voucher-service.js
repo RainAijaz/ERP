@@ -1134,7 +1134,7 @@ const loadOpenSalesOrderLinesTx = async ({
           toPositiveNumber(meta.pair_rate, 2) ||
           toPositiveNumber(row.sale_rate, 2) ||
           0,
-        pair_discount: toNonNegativeNumber(meta.pair_discount, 2) || 0,
+        pair_discount: toSignedNumber(meta.pair_discount, 2) ?? 0,
       };
     })
     .filter(Boolean);
@@ -1351,7 +1351,7 @@ const loadSalesOrderLineEditStateTx = async ({
     const rowStatus = normalizeRowStatus(meta.row_status);
     const uomId = toPositiveInt(meta.uom_id) || toPositiveInt(row.uom_id);
     const uomFactorToBase = Number(meta.uom_factor_to_base || 0) || null;
-    const pairDiscount = toNonNegativeNumber(meta.pair_discount, 2) || 0;
+    const pairDiscount = toSignedNumber(meta.pair_discount, 2) ?? 0;
     return {
       sales_order_line_id: Number(row.sales_order_line_id || 0),
       line_no: Number(row.line_no || 0),
@@ -1581,7 +1581,7 @@ const normalizeSalesVoucherLinesTx = async ({
           open_qty: 0,
           pair_rate:
             toPositiveNumber(elMeta.pair_rate, 2) || 0,
-          pair_discount: toNonNegativeNumber(elMeta.pair_discount, 2) || 0,
+          pair_discount: toSignedNumber(elMeta.pair_discount, 2) ?? 0,
         });
       }
     }
