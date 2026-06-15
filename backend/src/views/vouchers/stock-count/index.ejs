@@ -546,6 +546,23 @@
 		const renderHead = (stockType) => {
 			const usePhysicalCountField = isPhysicalCountReasonActive();
 			const COL_RIGHT = new Set(["system_qty", "counted_stock", "qty_in", "qty_out", "difference_qty", "rate", "pair_rate", "amount_diff"]);
+			const COL_WIDTHS = {
+				sku: "w-52 min-w-[200px]",
+				raw_material: "w-44 min-w-[160px]",
+				color: "w-28 min-w-[100px]",
+				size: "w-28 min-w-[100px]",
+				unit: "w-24 min-w-[80px]",
+				system_qty: "w-24",
+				counted_stock: "w-24",
+				qty_in: "w-24",
+				qty_out: "w-24",
+				difference_qty: "w-24",
+				rate: "w-24",
+				pair_rate: "w-24",
+				amount_diff: "w-28",
+				actions: "w-14",
+				sr_no: "w-12",
+			};
 			const cols = stockType === "RM"
 				? usePhysicalCountField
 					? ["raw_material", "color", "size", "unit", "system_qty", "counted_stock", "difference_qty", "rate", "amount_diff", "actions", "sr_no"]
@@ -556,7 +573,8 @@
 			linesHeadRow.innerHTML = cols.map((key, idx) => {
 				const label = _t[key] || key;
 				const align = COL_RIGHT.has(key) ? "text-right" : idx >= cols.length - 2 ? "text-center" : "text-left";
-				return `<th class="border-b border-slate-200 px-2 py-2 ${align}">${label}</th>`;
+				const widthClass = COL_WIDTHS[key] || "";
+				return `<th class="border-b border-slate-200 px-2 py-2 ${align} ${widthClass}">${label}</th>`;
 			}).join("");
 			renderFooter(stockType);
 		};
