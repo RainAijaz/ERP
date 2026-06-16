@@ -519,7 +519,7 @@ const getCashBook = async (filters) => {
             WHERE vl.voucher_header_id = sh.voucher_id AND vl.line_kind = 'SKU'
           ) as return_amount`),
           knex.raw(`(
-            SELECT STRING_AGG(DISTINCT rr.name, ', ')
+            SELECT STRING_AGG(DISTINCT rr.description, ', ')
             FROM erp.voucher_line vl
             JOIN erp.sales_line sl ON sl.voucher_line_id = vl.id
             JOIN erp.return_reasons rr ON rr.id = sl.return_reason_id
