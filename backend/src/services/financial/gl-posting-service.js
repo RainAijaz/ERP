@@ -273,7 +273,7 @@ const loadPurchaseItemTotalTx = async ({ trx, voucherId }) => {
 
 const loadPurchaseAccountLineTotalsTx = async ({ trx, voucherId }) => {
   const rows = await trx("erp.voucher_line")
-    .select("line_no", "account_id", "amount", "qty", "rate")
+    .select("line_no", "account_id", "amount", "qty", "rate", "meta")
     .where({ voucher_header_id: voucherId, line_kind: "ACCOUNT" })
     .orderBy("line_no", "asc");
   if (!rows.length) {
@@ -282,7 +282,9 @@ const loadPurchaseAccountLineTotalsTx = async ({ trx, voucherId }) => {
     );
   }
 
-  const totalsByAccountId = new Map();
+  // Aggregate by (accountId, departmentId) so lines with different departments
+  // produce separate GL entries even when they share the same expense account.
+  const totalsMap = new Map();
   rows.forEach((line) => {
     const accountId = Number(line.account_id || 0);
     const lineNo = Number(line.line_no || 0) || "?";
@@ -305,13 +307,26 @@ const loadPurchaseAccountLineTotalsTx = async ({ trx, voucherId }) => {
         `GL posting failed: voucher ${voucherId} line ${lineNo} has invalid amount`,
       );
     }
-    const current = normalizeAmount(totalsByAccountId.get(accountId) || 0);
-    totalsByAccountId.set(accountId, normalizeAmount(current + resolvedAmount));
+    const meta = line.meta && typeof line.meta === "object" ? line.meta : {};
+    const deptIdRaw = meta.department_id;
+    const departmentId =
+      deptIdRaw !== null && deptIdRaw !== undefined && String(deptIdRaw).trim() !== ""
+        ? Number(deptIdRaw) || null
+        : null;
+
+    const compositeKey = `${accountId}:${departmentId ?? ""}`;
+    const current = totalsMap.get(compositeKey);
+    if (current) {
+      current.amount = normalizeAmount(current.amount + resolvedAmount);
+    } else {
+      totalsMap.set(compositeKey, { accountId, departmentId, amount: resolvedAmount });
+    }
   });
 
-  return [...totalsByAccountId.entries()].map(([accountId, amount]) => ({
-    accountId: Number(accountId),
-    amount: normalizeAmount(amount),
+  return [...totalsMap.values()].map((entry) => ({
+    accountId: Number(entry.accountId),
+    departmentId: entry.departmentId || null,
+    amount: normalizeAmount(entry.amount),
   }));
 };
 
@@ -471,7 +486,7 @@ const buildGeneralPurchaseEntriesTx = async ({ trx, header, voucherId }) => {
         branch_id: Number(header.branch_id),
         entry_date: header.voucher_date,
         account_id: Number(row.accountId),
-        dept_id: null,
+        dept_id: row.departmentId || null,
         party_id: null,
         dr: lineAmount,
         cr: 0,
@@ -668,7 +683,7 @@ const buildPurchaseReturnEntriesTx = async ({ trx, header, voucherId }) => {
         branch_id: Number(header.branch_id),
         entry_date: header.voucher_date,
         account_id: Number(row.accountId),
-        dept_id: null,
+        dept_id: row.departmentId || null,
         party_id: null,
         dr: 0,
         cr: lineAmount,
@@ -687,7 +702,7 @@ const buildPurchaseReturnEntriesTx = async ({ trx, header, voucherId }) => {
         branch_id: Number(header.branch_id),
         entry_date: header.voucher_date,
         account_id: Number(row.accountId),
-        dept_id: null,
+        dept_id: row.departmentId || null,
         party_id: null,
         dr: 0,
         cr: lineAmount,

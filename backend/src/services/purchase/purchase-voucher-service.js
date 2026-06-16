@@ -1533,6 +1533,19 @@ const normalizeAndValidateLinesTx = async ({
       throw new HttpError(400, "One or more selected expense accounts are invalid");
     }
 
+    const departmentIds = lines
+      .map((line) => toPositiveInt(line?.department_id || line?.departmentId))
+      .filter(Boolean);
+    const uniqueDepartmentIds = [...new Set(departmentIds)];
+    let validDepartmentIds = new Set();
+    if (uniqueDepartmentIds.length) {
+      const deptRows = await trx("erp.departments")
+        .select("id")
+        .whereIn("id", uniqueDepartmentIds)
+        .where({ is_active: true });
+      validDepartmentIds = new Set(deptRows.map((r) => Number(r.id)));
+    }
+
     return lines.map((line, index) => {
       const lineNo = index + 1;
       const accountId = toPositiveInt(line?.account_id || line?.accountId);
@@ -1546,6 +1559,11 @@ const normalizeAndValidateLinesTx = async ({
       const rate = toPositiveNumber(line?.rate, 4);
       if (!rate) throw new HttpError(400, `Line ${lineNo}: rate must be greater than zero`);
 
+      const departmentId = toPositiveInt(line?.department_id || line?.departmentId);
+      if (departmentId && !validDepartmentIds.has(departmentId)) {
+        throw new HttpError(400, `Line ${lineNo}: selected department is invalid`);
+      }
+
       return {
         line_no: lineNo,
         line_kind: "ACCOUNT",
@@ -1555,6 +1573,7 @@ const normalizeAndValidateLinesTx = async ({
         amount: Number((qty * rate).toFixed(2)),
         meta: {
           description: normalizeText(line?.description, 500) || null,
+          department_id: departmentId || null,
         },
       };
     });
@@ -3099,6 +3118,7 @@ const loadPurchaseVoucherOptions = async (req) => {
     expenseAccounts,
     openGrnPool,
     rmRateRows,
+    departments,
   ] = await Promise.all([
     supplierQuery.orderBy("p.name", "asc"),
     knex("erp.items as i")
@@ -3173,6 +3193,10 @@ const loadPurchaseVoucherOptions = async (req) => {
       .where({ "r.is_active": true, "i.is_active": true })
       .whereRaw("upper(coalesce(i.item_type::text, '')) IN ('RM', 'SFG')")
       .orderBy("r.rm_item_id", "asc"),
+    knex("erp.departments")
+      .select("id", "name", "name_ur")
+      .where({ is_active: true })
+      .orderBy("name", "asc"),
   ]);
 
   const masterColorNameById = new Map(
@@ -3379,6 +3403,7 @@ const loadPurchaseVoucherOptions = async (req) => {
     rawMaterialRatesByItem,
     cashAccounts,
     expenseAccounts,
+    departments,
     purchaseReturnReasons: PURCHASE_RETURN_REASONS,
     openGrnHeaders,
     openGrnLines,
@@ -3531,6 +3556,9 @@ const loadPurchaseVoucherDetails = async ({
         "CASE WHEN coalesce(vl.meta->>'size_id', '') ~ '^[0-9]+$' THEN (vl.meta->>'size_id')::int ELSE NULL END as size_id",
       ),
       knex.raw("COALESCE(vl.meta->>'description', '') as consumable_description"),
+      knex.raw(
+        "CASE WHEN coalesce(vl.meta->>'department_id', '') ~ '^[0-9]+$' THEN (vl.meta->>'department_id')::int ELSE NULL END as consumable_department_id",
+      ),
     )
     .where({ "vl.voucher_header_id": header.id })
     .orderBy("vl.line_no", "asc");
@@ -3598,6 +3626,7 @@ const loadPurchaseVoucherDetails = async ({
       account_id: Number(line.account_id || 0) || null,
       account_name: line.account_name || "",
       description: line.consumable_description || "",
+      department_id: toPositiveInt(line.consumable_department_id),
       line_type: String(line.line_kind || "ITEM").toUpperCase() === "ACCOUNT" ? "CONSUMABLE" : "RAW_MATERIAL",
       item_id: Number(line.item_id || 0) || null,
       item_name: line.item_name || "",
