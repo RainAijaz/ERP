@@ -110,13 +110,14 @@ const resetBomFromPendingForAdmin = async (bomId, userId) => {
     .update({ status: "DRAFT", approved_by: null, approved_at: null });
 };
 
-const queueOrSaveDraft = async ({ req, res, bomId, input }) => {
+const queueOrSaveDraft = async ({ req, res, bomId, input, allowPendingEdit = false }) => {
   const result = await bomService.saveBomDraft(knex, {
     input,
     bomId: bomId || null,
     userId: req.user?.id || null,
     requestId: null,
     t: res.locals.t,
+    allowPendingEdit,
   });
   debugBom("Draft action saved directly", { bomId: result.id });
   return { queued: false, id: result.id };
@@ -317,26 +318,26 @@ const handleSaveDraft = async (req, res, next, bomId = null) => {
   );
   let targetBomId = bomId || null;
   try {
+    let currentBom = null;
     if (bomId) {
-      const current = await bomService.getBomForForm(knex, bomId);
-      if (!current) {
+      currentBom = await bomService.getBomForForm(knex, bomId);
+      if (!currentBom) {
         setUiNotice(res, res.locals.t("error_not_found"), { autoClose: true });
         return res.redirect(req.baseUrl);
       }
-      if (!canAccessBomDraft(current, req.user)) {
+      if (!canAccessBomDraft(currentBom, req.user)) {
         setUiNotice(res, res.locals.t("error_not_found"), { autoClose: true });
         return res.redirect(req.baseUrl);
-      }
-      if (req.user?.isAdmin && current.header?.status === "PENDING") {
-        await resetBomFromPendingForAdmin(bomId, req.user?.id);
       }
     }
     const parsed = bomService.parseBomFormPayload(req.body);
+    const isPendingAdminSave = Boolean(req.user?.isAdmin && currentBom?.header?.status === "PENDING");
     const result = await queueOrSaveDraft({
       req,
       res,
       bomId,
       input: parsed,
+      allowPendingEdit: isPendingAdminSave,
     });
     targetBomId = result.id || targetBomId;
     if (

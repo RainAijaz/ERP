@@ -19,22 +19,36 @@
     const value = t(key);
     return value && value !== key ? value : fallback;
   };
-  const formatJson = (value) => {
-    if (!value) return "-";
-    try {
-      return JSON.stringify(value);
-    } catch (_) {
-      return String(value);
-    }
-  };
   const sectionLabel = (value) => {
     const v = String(value || "").toLowerCase();
     if (v === "header") return resolveText("header", "Header");
     if (v === "rm_lines") return resolveText("raw_materials", "Raw Materials");
     if (v === "sfg_lines") return resolveText("semi_finished", "Semi Finished");
     if (v === "labour_lines") return resolveText("labours", "Labours");
+    if (v === "stage_routes") return resolveText("production_stages", "Production Stages");
     if (v === "variant_rules") return resolveText("variant_rules", "Variant Rules");
     return v || "-";
+  };
+  const formatStageRouteValue = (value) => {
+    if (!value) return "-";
+    const deptName = String(value.dept_name || value.dept_id || "").trim();
+    const seqNo = value.sequence_no != null ? `Step ${value.sequence_no}` : null;
+    const flags = [];
+    if (value.is_required === false) flags.push("Optional");
+    if (value.enforce_sequence === false) flags.push("No Seq. Enforce");
+    const parts = [deptName, seqNo, flags.length ? `(${flags.join(", ")})` : null].filter(Boolean);
+    return parts.length ? parts.join(" · ") : (String(value.stage_id || "") || "-");
+  };
+  const formatChangeValue = (value, section) => {
+    if (!value) return "-";
+    if (String(section || "").toLowerCase() === "stage_routes") {
+      return formatStageRouteValue(value);
+    }
+    try {
+      return JSON.stringify(value);
+    } catch (_) {
+      return String(value);
+    }
   };
   const actionLabel = (value) => {
     const v = String(value || "").toLowerCase();
@@ -189,10 +203,10 @@
                 <td class="px-3 py-2"><%= row.changed_by_name || "-" %></td>
                 <td class="px-3 py-2"><%= actionLabel(row.request_action) %></td>
                 <td class="px-3 py-2">
-                  <pre class="max-w-80 overflow-auto whitespace-pre-wrap break-words rounded border border-slate-200 bg-slate-50 p-2 text-[11px] leading-snug text-slate-700"><%= formatJson(row.old_value) %></pre>
+                  <pre class="max-w-80 overflow-auto whitespace-pre-wrap break-words rounded border border-slate-200 bg-slate-50 p-2 text-[11px] leading-snug text-slate-700"><%= formatChangeValue(row.old_value, row.section) %></pre>
                 </td>
                 <td class="px-3 py-2">
-                  <pre class="max-w-80 overflow-auto whitespace-pre-wrap break-words rounded border border-slate-200 bg-slate-50 p-2 text-[11px] leading-snug text-slate-700"><%= formatJson(row.new_value) %></pre>
+                  <pre class="max-w-80 overflow-auto whitespace-pre-wrap break-words rounded border border-slate-200 bg-slate-50 p-2 text-[11px] leading-snug text-slate-700"><%= formatChangeValue(row.new_value, row.section) %></pre>
                 </td>
               </tr>
             <% }) %>

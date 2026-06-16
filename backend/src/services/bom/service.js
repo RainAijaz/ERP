@@ -1633,15 +1633,19 @@ const getBomSnapshot = async (db, bomId) => {
         .where({ bom_id: bomId })
         .orderBy("id", "asc"),
       hasBomStageRoutingTable
-        ? db("erp.bom_stage_routing")
+        ? db("erp.bom_stage_routing as bsr")
+            .leftJoin("erp.production_stages as ps", "ps.id", "bsr.stage_id")
+            .leftJoin("erp.departments as dept", "dept.id", "ps.dept_id")
             .select(
-              "stage_id",
-              "sequence_no",
-              "is_required",
-              "enforce_sequence",
+              "bsr.stage_id",
+              "bsr.sequence_no",
+              "bsr.is_required",
+              "bsr.enforce_sequence",
+              "ps.dept_id",
+              "dept.name as dept_name",
             )
-            .where({ bom_id: bomId })
-            .orderBy("sequence_no", "asc")
+            .where({ "bsr.bom_id": bomId })
+            .orderBy("bsr.sequence_no", "asc")
         : Promise.resolve([]),
       hasBomSkuOverrideTable
         ? db("erp.bom_sku_override_line")
@@ -2233,7 +2237,7 @@ const validateDraftReadyForApproval = async (
   return true;
 };
 
-const saveBomDraftTx = async (trx, { input, bomId, userId, requestId, t }) => {
+const saveBomDraftTx = async (trx, { input, bomId, userId, requestId, t, allowPendingEdit = false }) => {
   const normalized = await validateAndNormalizeInput(trx, input, t, {
     enforceSkuRuleCompleteness: false,
     enforceRmVariantIdentity: false,
@@ -2255,6 +2259,7 @@ const saveBomDraftTx = async (trx, { input, bomId, userId, requestId, t }) => {
   let targetId = existingId;
   let versionNo = 1;
   let bomNo = null;
+  let savedStatus = "DRAFT";
 
   if (!existingId) {
     await ensureNoExistingBomForItem(trx, {
@@ -2306,7 +2311,7 @@ const saveBomDraftTx = async (trx, { input, bomId, userId, requestId, t }) => {
         actions: ["approve_draft"],
       },
     );
-    if (pendingDecisionExists) {
+    if (pendingDecisionExists && !allowPendingEdit) {
       throw makeValidationError(
         t("bom_error_already_pending") ,
         [
@@ -2318,11 +2323,13 @@ const saveBomDraftTx = async (trx, { input, bomId, userId, requestId, t }) => {
         ],
       );
     }
-    if (current.status !== "DRAFT") {
+    const isPendingAdminEdit = allowPendingEdit && current.status === "PENDING";
+    if (current.status !== "DRAFT" && !isPendingAdminEdit) {
       throw makeValidationError(
         t("bom_error_only_draft_editable") ,
       );
     }
+    if (isPendingAdminEdit) savedStatus = "PENDING";
     versionNo = Number(current.version_no || 1);
     bomNo = current.bom_no;
     await trx("erp.bom_header").where({ id: existingId }).update({
@@ -2344,13 +2351,13 @@ const saveBomDraftTx = async (trx, { input, bomId, userId, requestId, t }) => {
     after,
   });
 
-  debugBom("saveBomDraftTx success", { targetId, versionNo, bomNo });
-  return { id: targetId, versionNo, bomNo, status: "DRAFT" };
+  debugBom("saveBomDraftTx success", { targetId, versionNo, bomNo, status: savedStatus });
+  return { id: targetId, versionNo, bomNo, status: savedStatus };
 };
 
 const saveBomDraft = async (knex, params) => {
   try {
-    return await knex.transaction((trx) => saveBomDraftTx(trx, params));
+    return await knex.transaction((trx) => saveBomDraftTx(trx, { allowPendingEdit: false, ...params }));
   } catch (err) {
     const isUniqueViolation = err?.code === "23505";
     const constraint = String(err?.constraint || "");
@@ -3692,16 +3699,18 @@ const getBomForForm = async (knex, id) => {
         .where({ bom_id: bomId })
         .orderBy("id", "asc"),
       hasBomStageRoutingTable
-        ? knex("erp.bom_stage_routing")
+        ? knex("erp.bom_stage_routing as bsr")
+            .leftJoin("erp.production_stages as ps", "ps.id", "bsr.stage_id")
             .select(
-              "id",
-              "stage_id",
-              "sequence_no",
-              "is_required",
-              "enforce_sequence",
+              "bsr.id",
+              "bsr.stage_id",
+              "bsr.sequence_no",
+              "bsr.is_required",
+              "bsr.enforce_sequence",
+              "ps.dept_id",
             )
-            .where({ bom_id: bomId })
-            .orderBy("sequence_no", "asc")
+            .where({ "bsr.bom_id": bomId })
+            .orderBy("bsr.sequence_no", "asc")
         : Promise.resolve([]),
       hasBomSkuOverrideTable
         ? knex("erp.bom_sku_override_line")

@@ -10,6 +10,7 @@ const keysBySection = {
   rm_lines: (row) => `${row.rm_item_id || 0}:${row.dept_id || 0}:${row.color_id || 0}:${row.size_id || 0}`,
   sfg_lines: (row) => `${row.fg_size_id || 0}:${row.sfg_sku_id || 0}`,
   labour_lines: (row) => `${row.dept_id || 0}:${row.labour_id || 0}:${row.size_scope || "ALL"}:${row.size_id || 0}:${row.rate_type || "PER_PAIR"}`,
+  stage_routes: (row) => String(row.stage_id || 0),
   variant_rules: (row) =>
     `${row.size_scope || "ALL"}:${row.size_id || 0}:${row.packing_scope || "ALL"}:${row.packing_type_id || 0}:${row.color_scope || "ALL"}:${row.color_id || 0}:${row.action_type || ""}:${row.material_scope || "ALL"}:${row.target_rm_item_id || 0}`,
 };
@@ -123,6 +124,15 @@ const insertBomChangeLog = async (db, { bomId, versionNo, requestId, changedBy, 
       section: "labour_lines",
       beforeRows: before?.labour_lines || [],
       afterRows: after?.labour_lines || [],
+    }),
+    ...buildChangeRows({
+      bomId,
+      versionNo,
+      requestId,
+      changedBy,
+      section: "stage_routes",
+      beforeRows: before?.stage_routes || [],
+      afterRows: after?.stage_routes || [],
     }),
     ...buildChangeRows({
       bomId,
