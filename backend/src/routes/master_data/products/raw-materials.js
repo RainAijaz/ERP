@@ -316,7 +316,7 @@ router.get(
             "u.code as uom_code",
             "i.min_stock_level",
           )
-          .whereRaw("upper(coalesce(i.item_type::text,'')) IN ('RM','SFG')")
+          .where("i.item_type", ITEM_TYPE)
           .where("i.is_active", true)
           .orderBy("i.name", "asc"),
         loadRateDetails(),
@@ -324,6 +324,13 @@ router.get(
 
       const q = (v) =>
         '"' + String(v == null ? "" : v).replace(/"/g, '""') + '"';
+      // Forces Excel to treat the cell as text, preventing auto-conversion of
+      // values like "4/6" into dates.
+      const qText = (v) => {
+        const s = String(v == null ? "" : v);
+        if (!s) return '""';
+        return '="' + s.replace(/"/g, '""') + '"';
+      };
 
       const headers = [
         t("name") || "Name",
@@ -348,7 +355,7 @@ router.get(
         ];
 
         if (details.length === 0) {
-          csvLines.push([...fixedCells, q(""), q(""), q(""), q("")].join(","));
+          csvLines.push([...fixedCells, qText(""), qText(""), q(""), q("")].join(","));
         } else {
           details.forEach((d) => {
             const colorName =
@@ -366,7 +373,7 @@ router.get(
                 ? Math.trunc(Number(d.avg_purchase_rate))
                 : "";
             csvLines.push(
-              [...fixedCells, q(colorName), q(sizeName), q(pRate), q(aRate)].join(","),
+              [...fixedCells, qText(colorName), qText(sizeName), q(pRate), q(aRate)].join(","),
             );
           });
         }
