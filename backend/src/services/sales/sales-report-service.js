@@ -1430,7 +1430,7 @@ const buildSalesReportData = ({ rows, filters, req }) => {
     group.effective_pair_discount =
       absGroupQty > 0
         ? toAmount(
-            Math.abs(Number(group.total_discount_amount || 0)) /
+            Number(group.total_discount_amount || 0) /
               Number(absGroupQty || 1),
             2,
           )
@@ -1550,11 +1550,9 @@ const buildSalesReportData = ({ rows, filters, req }) => {
       effectivePairDiscount:
         Math.abs(rows.reduce((sum, row) => sum + Number(row.qty || 0), 0) || 0) > 0
           ? toAmount(
-              Math.abs(
-                rows.reduce(
-                  (sum, row) => sum + Number(row.discount_amount || 0),
-                  0,
-                ),
+              rows.reduce(
+                (sum, row) => sum + Number(row.discount_amount || 0),
+                0,
               ) /
                 Number(
                   Math.abs(
