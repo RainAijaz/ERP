@@ -269,14 +269,20 @@ const computeEmployeeCommissionOnLines = async ({ trx, rules, lines, t }) => {
     const salesLine = resolveSalesLinePayload(line);
     if (!salesLine.is_packed) continue;
 
-    const qtyForRule = toNumber(line.qty, 0);
-    const qtyInBaseUnit = convertToBaseQty({
-      qty: qtyForRule,
-      fromUomId: Number(line.uom_id || context.base_uom_id || 0),
-      baseUomId: Number(context.base_uom_id || 0),
-      conversionMap,
-      t,
-    });
+    // Sales voucher SKU lines store qty in pairs (base units) but uom_id may be a
+    // non-base unit (e.g. dozen). Using line.qty with line.uom_id would double-convert
+    // (pairs → dozens → pairs × factor). Use meta.total_pairs when present; fall back
+    // to UOM conversion for other contexts (e.g. transfer lines) that lack that field.
+    const totalPairsFromMeta = line.meta?.total_pairs;
+    const qtyInBaseUnit = totalPairsFromMeta != null
+      ? toNumber(totalPairsFromMeta, 0)
+      : convertToBaseQty({
+          qty: toNumber(line.qty, 0),
+          fromUomId: Number(line.uom_id || context.base_uom_id || 0),
+          baseUomId: Number(context.base_uom_id || 0),
+          conversionMap,
+          t,
+        });
 
     const matchedRules = [BASIS.NET_SALES_PERCENT, BASIS.GROSS_MARGIN_PERCENT, BASIS.FIXED_PER_UNIT, BASIS.FIXED_PER_INVOICE]
       .map((basis) =>
