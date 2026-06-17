@@ -710,20 +710,6 @@
       Number.isInteger(configuredMaxOptions) && configuredMaxOptions > 0
         ? configuredMaxOptions
         : 250;
-    const labelCache = new WeakMap();
-    const getCachedLabel = (opt) => {
-      if (!labelCache.has(opt)) labelCache.set(opt, opt.textContent.trim());
-      return labelCache.get(opt);
-    };
-    let cachedOptionsArr = null;
-    let cachedOptionsLen = -1;
-    const getOptionsArray = () => {
-      if (cachedOptionsArr === null || select.options.length !== cachedOptionsLen) {
-        cachedOptionsArr = Array.from(select.options);
-        cachedOptionsLen = select.options.length;
-      }
-      return cachedOptionsArr;
-    };
     const getAllOption = () => {
       if (!hasAllMultiSelect) return null;
       return (
@@ -848,11 +834,11 @@
         }
       }
 
-      return getOptionsArray().filter((opt) => {
+      return Array.from(select.options).filter((opt) => {
         const isEmptyOption = !opt.value;
         if (isEmptyOption && isMulti) return false;
         if (isMulti && opt.selected) return false;
-        const label = getCachedLabel(opt);
+        const label = opt.textContent.trim();
         const isMatch = !filter || label.toLowerCase().includes(filter);
         const isExactMatch = !isMulti && input.value.trim() === label;
         return isMatch || isExactMatch;
@@ -884,7 +870,7 @@
       }
 
       visibleOptions.forEach((opt, index) => {
-        const label = getCachedLabel(opt);
+        const label = opt.textContent.trim();
         const isActive = !isMulti && index === activeIndex;
         const stateClass = isActive
           ? "bg-slate-100 text-slate-900 font-semibold"
@@ -957,7 +943,9 @@
         menu.appendChild(empty);
       }
 
-      lastRenderedOptionLabels = visibleOptions.map((opt) => getCachedLabel(opt));
+      lastRenderedOptionLabels = visibleOptions.map((opt) =>
+        opt.textContent.trim(),
+      );
       positionMenu();
     };
 
@@ -1230,8 +1218,8 @@
           syncToInput();
         } else {
           const val = input.value.trim().toLowerCase();
-          const match = getOptionsArray().find(
-            (opt) => opt.value && getCachedLabel(opt).toLowerCase() === val,
+          const match = Array.from(select.options).find(
+            (opt) => opt.value && opt.textContent.trim().toLowerCase() === val,
           );
           if (match) {
             if (select.value !== match.value) {
