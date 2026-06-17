@@ -688,7 +688,7 @@ const currentSeq = ++state.requestSeq;
 
     const schedulePreview = () => {
       if (state.debounceTimer) window.clearTimeout(state.debounceTimer);
-      state.debounceTimer = window.setTimeout(loadPreview, 200);
+      state.debounceTimer = window.setTimeout(loadPreview, 400);
     };
 
     const normalizeCommaList = (raw) =>

@@ -341,34 +341,43 @@ const fetchExistingRules = async ({
     });
 };
 
-const resolvePreviousForSku = ({ existingRules, sku }) => {
-  for (const scope of PRECEDENCE) {
-    const matched = existingRules.find((rule) => {
-      if (String(rule.apply_on || "").toUpperCase() !== scope) return false;
-      if (scope === APPLY_ON.SKU)
-        return Number(rule.sku_id) === Number(sku.sku_id);
-      if (scope === APPLY_ON.SUBGROUP)
-        return Number(rule.subgroup_id) === Number(sku.subgroup_id || 0);
-      if (scope === APPLY_ON.GROUP)
-        return Number(rule.group_id) === Number(sku.group_id || 0);
-      return true;
-    });
-    if (matched) {
-      return {
-        previousRate: matched.value == null ? null : Number(matched.value),
-        previousRateType: String(matched.rate_type || "PER_PAIR")
-          .trim()
-          .toUpperCase(),
-        previousSource: scope,
-        previousRuleId: Number(matched.id),
-      };
+const indexExistingRules = (existingRules) => {
+  const bySkuId = new Map();
+  const bySubgroupId = new Map();
+  const byGroupId = new Map();
+  let allRule = null;
+  for (const rule of existingRules) {
+    const scope = String(rule.apply_on || "").toUpperCase();
+    if (scope === APPLY_ON.SKU) {
+      const key = Number(rule.sku_id);
+      if (!bySkuId.has(key)) bySkuId.set(key, rule);
+    } else if (scope === APPLY_ON.SUBGROUP) {
+      const key = Number(rule.subgroup_id);
+      if (!bySubgroupId.has(key)) bySubgroupId.set(key, rule);
+    } else if (scope === APPLY_ON.GROUP) {
+      const key = Number(rule.group_id);
+      if (!byGroupId.has(key)) byGroupId.set(key, rule);
+    } else if (scope === APPLY_ON.ALL && !allRule) {
+      allRule = rule;
     }
   }
+  return { bySkuId, bySubgroupId, byGroupId, allRule };
+};
+
+const resolvePreviousForSkuIndexed = ({ index, sku }) => {
+  const matched =
+    index.bySkuId.get(Number(sku.sku_id)) ||
+    index.bySubgroupId.get(Number(sku.subgroup_id || 0)) ||
+    index.byGroupId.get(Number(sku.group_id || 0)) ||
+    index.allRule;
+  if (!matched) {
+    return { previousRate: null, previousRateType: null, previousSource: null, previousRuleId: null };
+  }
   return {
-    previousRate: null,
-    previousRateType: null,
-    previousSource: null,
-    previousRuleId: null,
+    previousRate: matched.value == null ? null : Number(matched.value),
+    previousRateType: String(matched.rate_type || "PER_PAIR").trim().toUpperCase(),
+    previousSource: String(matched.apply_on || "").toUpperCase(),
+    previousRuleId: Number(matched.id),
   };
 };
 
@@ -393,24 +402,22 @@ const buildBulkPreviewRows = async ({
     : groupId
       ? [groupId]
       : [];
-  const targetSkus = await fetchTargetSkus({
-    db,
-    applyOn,
-    subgroupIds: normalizedSubgroupIds,
-    groupIds: normalizedGroupIds,
-  });
+  const [targetSkus, existingRules] = await Promise.all([
+    fetchTargetSkus({
+      db,
+      applyOn,
+      subgroupIds: normalizedSubgroupIds,
+      groupIds: normalizedGroupIds,
+    }),
+    fetchExistingRules({ db, employeeId, commissionBasis }),
+  ]);
   if (!targetSkus.length) return [];
 
-  const existingRules = await fetchExistingRules({
-    db,
-    employeeId,
-    commissionBasis,
-  });
-
+  const index = indexExistingRules(existingRules);
   const defaultRate = toMoney(baseRate);
 
   return targetSkus.map((sku) => {
-    const previous = resolvePreviousForSku({ existingRules, sku });
+    const previous = resolvePreviousForSkuIndexed({ index, sku });
     return {
       sku_id: Number(sku.sku_id),
       sku_code: sku.sku_code,
