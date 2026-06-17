@@ -1245,6 +1245,8 @@
       paymentTypeSelect.value = "CREDIT";
     }
     const paymentType = getPaymentType();
+    const _syncBuyer = getSelectedBuyer();
+    const isStaffBuyerSync = _syncBuyer?.type === "EMPLOYEE" || _syncBuyer?.type === "LABOUR";
     syncPaymentTypeSegmentUi();
     syncAdvanceReceiveSegmentUi();
     const isCredit = paymentType === "CREDIT";
@@ -1321,11 +1323,11 @@
     if (customerNameWrap) customerNameWrap.classList.toggle("hidden", !showCustomerName);
     if (phoneLabel) {
       phoneLabel.classList.toggle("hidden", isSalesOrderVoucher);
-      phoneLabel.textContent = isCredit ? "<%= t('payment_due_date') %>" : "<%= t('phone_number') %>";
+      phoneLabel.textContent = (isCredit && !isStaffBuyerSync) ? "<%= t('payment_due_date') %>" : "<%= t('phone_number') %>";
     }
     if (phoneWrap) phoneWrap.classList.toggle("hidden", !showPhone);
     dueDateFields.forEach((el) => {
-      el.classList.toggle("hidden", isSalesOrderVoucher || !isCredit);
+      el.classList.toggle("hidden", isSalesOrderVoucher || !isCredit || isStaffBuyerSync);
     });
     receiveAccountFields.forEach((el) => {
       el.classList.toggle("hidden", !showReceiveIntoAccount);
@@ -2208,8 +2210,8 @@
           ).toFixed(1),
         )
       : 0;
-    if (!isSalesOrderVoucher && paymentType === "CREDIT" && dueDateOutstanding > 0 && !String(dueDateInput?.value || "").trim()) { e.preventDefault(); window.showVoucherError(requiredMessage("<%= t('payment_due_date') %>")); return; }
-    if (!isSalesOrderVoucher && paymentType === "CREDIT" && dueDateValue && voucherDateValue && dueDateValue <= voucherDateValue) { e.preventDefault(); window.showVoucherError("<%= t('error_due_date_must_be_after_voucher') %>"); return; }
+    if (!isSalesOrderVoucher && paymentType === "CREDIT" && !isStaffBuyer && dueDateOutstanding > 0 && !String(dueDateInput?.value || "").trim()) { e.preventDefault(); window.showVoucherError(requiredMessage("<%= t('payment_due_date') %>")); return; }
+    if (!isSalesOrderVoucher && paymentType === "CREDIT" && !isStaffBuyer && dueDateValue && voucherDateValue && dueDateValue <= voucherDateValue) { e.preventDefault(); window.showVoucherError("<%= t('error_due_date_must_be_after_voucher') %>"); return; }
     if (!isSalesOrderVoucher && paymentType === "CASH") {
       const cashSettlementAmount = Math.abs(finalAmount);
       if (cashSettlementAmount > 0 && received <= 0) { e.preventDefault(); window.showVoucherError("<%= t('error_cash_sale_no_advanced_amount') %>"); return; }

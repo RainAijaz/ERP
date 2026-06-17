@@ -820,6 +820,17 @@ const fetchLinkedSalesOrderHeaderTx = async ({
   };
 };
 
+let hasVoucherHeaderLinkedSoIdColumnPromise = null;
+const hasVoucherHeaderLinkedSoIdColumn = async () => {
+  if (!hasVoucherHeaderLinkedSoIdColumnPromise) {
+    hasVoucherHeaderLinkedSoIdColumnPromise = knex.schema
+      .withSchema("erp")
+      .hasColumn("voucher_header", "linked_sales_order_id")
+      .catch(() => false);
+  }
+  return hasVoucherHeaderLinkedSoIdColumnPromise;
+};
+
 const loadSalesOrderReceivableSummaryMapTx = async ({
   trx,
   req,
@@ -858,27 +869,49 @@ const loadSalesOrderReceivableSummaryMapTx = async ({
     );
   }
 
-  const [orderRows, totalRows, linkedReceivedRows] = await Promise.all([
-    trx("erp.voucher_header as vh")
-      .join("erp.sales_order_header as soh", "soh.voucher_id", "vh.id")
-      .select(
-        "vh.id as sales_order_id",
-        "soh.payment_received_amount as sales_order_advance_amount",
-        "soh.extra_discount as extra_discount",
-      )
-      .whereIn("vh.id", normalizedIds)
-      .where({
-        "vh.branch_id": req.branchId,
-        "vh.voucher_type_code": SALES_VOUCHER_TYPES.salesOrder,
-      }),
-    trx("erp.voucher_line as vl")
-      .select("vl.voucher_header_id as sales_order_id")
-      .sum({ total_order_amount: "vl.amount" })
-      .whereIn("vl.voucher_header_id", normalizedIds)
-      .where({ "vl.line_kind": "SKU" })
-      .groupBy("vl.voucher_header_id"),
-    linkedReceivedQuery,
-  ]);
+  const hasLinkedSoIdColumn = await hasVoucherHeaderLinkedSoIdColumn();
+  const cashLinkedQuery = hasLinkedSoIdColumn
+    ? trx("erp.voucher_header as cvh")
+        .join("erp.voucher_line as vl", "vl.voucher_header_id", "cvh.id")
+        .select(
+          "cvh.linked_sales_order_id as sales_order_id",
+          trx.raw(
+            "SUM(CASE WHEN COALESCE((vl.meta->>'credit')::numeric, 0) > 0 THEN vl.amount ELSE 0 END) as cash_received_amount",
+          ),
+        )
+        .whereIn("cvh.linked_sales_order_id", normalizedIds)
+        .where({
+          "cvh.branch_id": req.branchId,
+          "cvh.voucher_type_code": "CASH_VOUCHER",
+        })
+        .whereNot("cvh.status", "REJECTED")
+        .where("vl.line_kind", "PARTY")
+        .groupBy("cvh.linked_sales_order_id")
+    : Promise.resolve([]);
+
+  const [orderRows, totalRows, linkedReceivedRows, cashLinkedRows] =
+    await Promise.all([
+      trx("erp.voucher_header as vh")
+        .join("erp.sales_order_header as soh", "soh.voucher_id", "vh.id")
+        .select(
+          "vh.id as sales_order_id",
+          "soh.payment_received_amount as sales_order_advance_amount",
+          "soh.extra_discount as extra_discount",
+        )
+        .whereIn("vh.id", normalizedIds)
+        .where({
+          "vh.branch_id": req.branchId,
+          "vh.voucher_type_code": SALES_VOUCHER_TYPES.salesOrder,
+        }),
+      trx("erp.voucher_line as vl")
+        .select("vl.voucher_header_id as sales_order_id")
+        .sum({ total_order_amount: "vl.amount" })
+        .whereIn("vl.voucher_header_id", normalizedIds)
+        .where({ "vl.line_kind": "SKU" })
+        .groupBy("vl.voucher_header_id"),
+      linkedReceivedQuery,
+      cashLinkedQuery,
+    ]);
 
   const totalByOrderId = new Map(
     (totalRows || []).map((row) => [
@@ -894,6 +927,13 @@ const loadSalesOrderReceivableSummaryMapTx = async ({
     ]),
   );
 
+  const cashReceivedByOrderId = new Map(
+    (cashLinkedRows || []).map((row) => [
+      Number(row.sales_order_id),
+      Number(row.cash_received_amount || 0),
+    ]),
+  );
+
   const summaryMap = new Map();
   (orderRows || []).forEach((row) => {
     const orderId = Number(row.sales_order_id || 0);
@@ -903,15 +943,21 @@ const loadSalesOrderReceivableSummaryMapTx = async ({
     const linkedReceivedAmount = Number(
       linkedReceivedByOrderId.get(orderId) || 0,
     );
+    const cashReceivedAmount = Number(cashReceivedByOrderId.get(orderId) || 0);
     const previousPaymentsReceived = Number(
-      (Math.max(0, advanceAmount) + Math.max(0, linkedReceivedAmount)).toFixed(
-        2,
-      ),
+      (
+        Math.max(0, advanceAmount) +
+        Math.max(0, linkedReceivedAmount) +
+        Math.max(0, cashReceivedAmount)
+      ).toFixed(2),
     );
     summaryMap.set(orderId, {
       salesOrderAdvanceAmount: Number(Math.max(0, advanceAmount).toFixed(2)),
       linkedVouchersReceivedAmount: Number(
         Math.max(0, linkedReceivedAmount).toFixed(2),
+      ),
+      cashVoucherReceivedAmount: Number(
+        Math.max(0, cashReceivedAmount).toFixed(2),
       ),
       totalOrderAmount: Number(Math.max(0, totalOrderAmount).toFixed(2)),
       soExtraDiscount: Number(Math.max(0, soExtraDiscount).toFixed(2)),
@@ -2044,8 +2090,9 @@ const validateSalesPayloadTx = async ({
     throw new HttpError(400, "Customer is required for credit sale");
   if (!salesmanEmployeeId) throw new HttpError(400, "Salesman is required");
   const salesman = await validateSalesmanTx({ trx, req, salesmanEmployeeId });
+  const isStaffBuyer = buyer && (buyer.buyerType === "EMPLOYEE" || buyer.buyerType === "LABOUR");
   let paymentDueDate =
-    paymentType === "CREDIT" ? toDateOnly(payload?.payment_due_date) : null;
+    paymentType === "CREDIT" && !isStaffBuyer ? toDateOnly(payload?.payment_due_date) : null;
 
   const extraDiscount = toSignedNumber(payload?.extra_discount ?? 0, 2);
   if (extraDiscount === null)
@@ -2146,7 +2193,7 @@ const validateSalesPayloadTx = async ({
           Number(paymentReceivedAmount || 0),
       ).toFixed(2),
     );
-    if (remainingAfterCurrent > 0 && !paymentDueDate) {
+    if (remainingAfterCurrent > 0 && !paymentDueDate && !isStaffBuyer) {
       throw new HttpError(400, "Payment due date is required for credit sale");
     }
     if (paymentDueDate && paymentDueDate <= voucherDate) {
