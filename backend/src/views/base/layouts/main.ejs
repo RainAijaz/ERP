@@ -767,6 +767,10 @@
             });
 
             if (!response.ok) {
+              if (response.status === 401) {
+                window.location.assign("/auth/login");
+                return;
+              }
               const message = await extractErrorMessage(response);
               window.showVoucherError(message);
               return;
