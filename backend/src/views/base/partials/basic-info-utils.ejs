@@ -800,7 +800,7 @@
     };
 
     // scopeInfoList: [{ applyOn: "SUBGROUP"|"GROUP", selectorDisplay: "Nike" }, ...]
-    const buildCommissionSubHeader = ({ subKey, rateType, rateAmount, count, colspan, isOpen, scopeInfoList }) => {
+    const buildCommissionSubHeader = ({ subKey, commissionType, rateType, rateAmount, count, colspan, isOpen, scopeInfoList }) => {
       const tr = document.createElement("tr");
       tr.className = "commission-sub-header hidden cursor-pointer border-b border-slate-100 bg-indigo-50/50 hover:bg-indigo-100/60 transition-colors";
       tr.dataset.commissionSubKey = subKey;
@@ -821,6 +821,33 @@
         '" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.5">' +
         '<path d="M6 8l4 4 4-4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
       wrap.appendChild(iconWrap);
+
+      // Commission type badge
+      if (commissionType) {
+        const ctColorMap = {
+          SALESMAN_SALE: "border-blue-200 bg-blue-50 text-blue-700",
+          BRANCH_SALE: "border-violet-200 bg-violet-50 text-violet-700",
+          TRANSFER: "border-amber-200 bg-amber-50 text-amber-700",
+          PARTY: "border-emerald-200 bg-emerald-50 text-emerald-700",
+        };
+        const ctLabelMap = {
+          SALESMAN_SALE: "<%= t('commission_type_salesman_sale') || 'Salesman Sale' %>",
+          BRANCH_SALE: "<%= t('commission_type_branch_sale') || 'Branch Sale' %>",
+          TRANSFER: "<%= t('commission_type_transfer') || 'Transfer' %>",
+          PARTY: "<%= t('commission_type_party') || 'Party' %>",
+        };
+        const ctBadge = document.createElement("span");
+        ctBadge.className =
+          "inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] " +
+          (ctColorMap[commissionType] || "border-slate-200 bg-white text-slate-600");
+        ctBadge.textContent = ctLabelMap[commissionType] || commissionType;
+        wrap.appendChild(ctBadge);
+
+        const ctSep = document.createElement("span");
+        ctSep.className = "text-slate-300 text-xs font-light";
+        ctSep.textContent = "•";
+        wrap.appendChild(ctSep);
+      }
 
       // Scope badges: one per unique apply_on + selectorDisplay
       if (scopeInfoList && scopeInfoList.length) {
@@ -905,18 +932,19 @@
         const empRows = getGroupRows(empHeader).filter((r) => r.dataset.filterVisible === "true");
         if (!empRows.length) return;
 
-        // Build groups keyed by rate_type||value (within this employee)
+        // Build groups keyed by commission_type||rate_type||value (within this employee)
         const groups = new Map();
         empRows.forEach((row) => {
+          const commissionType = row.dataset.commissionType || "";
           const rateType = row.dataset.rateType || "";
           const rateAmount = row.dataset.rateAmount || "";
-          const subKey = empKey + "||" + rateType + "||" + rateAmount;
-          if (!groups.has(subKey)) groups.set(subKey, { rateType, rateAmount, rows: [] });
+          const subKey = empKey + "||" + commissionType + "||" + rateType + "||" + rateAmount;
+          if (!groups.has(subKey)) groups.set(subKey, { commissionType, rateType, rateAmount, rows: [] });
           groups.get(subKey).rows.push(row);
         });
 
         // Mark rows as children and insert sub-header before each group's first row
-        groups.forEach(({ rateType, rateAmount, rows: groupRows }, subKey) => {
+        groups.forEach(({ commissionType, rateType, rateAmount, rows: groupRows }, subKey) => {
           const subIsOpen = commissionSubGroupKeys.has(subKey);
 
           // Extract scope info to show "SUBGROUP: Ballman" etc. on the sub-header.
@@ -966,6 +994,7 @@
 
           const subHeader = buildCommissionSubHeader({
             subKey,
+            commissionType,
             rateType,
             rateAmount,
             count: groupRows.length,

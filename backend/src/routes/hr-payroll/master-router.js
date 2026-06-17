@@ -24,6 +24,7 @@ const STATIC_OPTIONS_TABLES = new Set([
   "erp.product_subgroups",
   "erp.party_groups",
   "erp.account_groups",
+  "erp.skus as s",
 ]);
 const MASTER_OPTIONS_CACHE_TTL_MS = Number(
   process.env.MASTER_OPTIONS_CACHE_TTL_MS || 300000,
