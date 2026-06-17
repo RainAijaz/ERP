@@ -2110,10 +2110,10 @@ const validateSalesPayloadTx = async ({
       extraDiscount
     ).toFixed(2),
   );
-  if (finalAmount < 0 && (paymentType !== "CASH" || saleMode === "FROM_SO")) {
+  if (finalAmount < 0 && (saleMode === "FROM_SO" || (paymentType !== "CASH" && paymentType !== "CREDIT"))) {
     throw new HttpError(
       400,
-      "Negative final amount is only allowed for direct cash refund settlement",
+      "Negative final amount is only allowed for direct cash or credit refund settlement",
     );
   }
   const discountPolicy =
@@ -2155,7 +2155,7 @@ const validateSalesPayloadTx = async ({
     }
   }
   if (paymentType === "CREDIT") {
-    let maxAllowedReceivedAmount = Number(finalAmount || 0);
+    let maxAllowedReceivedAmount = Math.max(0, Number(finalAmount || 0));
     if (saleMode === "FROM_SO" && normalizedLines.linkedOrder?.id) {
       linkedOrderReceivableSummary = await fetchSalesOrderReceivableSummaryTx({
         trx,
@@ -2226,7 +2226,6 @@ const validateSalesPayloadTx = async ({
     );
   }
 
-  const isStaffBuyer = buyer && (buyer.buyerType === "EMPLOYEE" || buyer.buyerType === "LABOUR");
   const customerPhoneNumber = normalizeText(
     payload?.customer_phone_number || buyer?.phone1,
     30,

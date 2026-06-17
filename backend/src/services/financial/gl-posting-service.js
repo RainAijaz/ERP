@@ -1012,12 +1012,7 @@ const buildSalesVoucherEntriesTx = async ({ trx, header, voucherId }) => {
     ];
   }
 
-  if (netSaleAmount < 0) {
-    throw new Error(
-      `GL posting failed: voucher ${voucherId} negative net amount is only supported for cash settlement`,
-    );
-  }
-
+  const absNetSaleAmount = Math.abs(netSaleAmount);
   const entries = [
     {
       branch_id: Number(header.branch_id),
@@ -1025,8 +1020,8 @@ const buildSalesVoucherEntriesTx = async ({ trx, header, voucherId }) => {
       account_id: Number(salesRevenueAccountId),
       dept_id: null,
       party_id: null,
-      dr: 0,
-      cr: netSaleAmount,
+      dr: netSaleAmount < 0 ? absNetSaleAmount : 0,
+      cr: netSaleAmount > 0 ? netSaleAmount : 0,
       narration: toNarration({}, header.remarks),
     },
   ];
@@ -1073,13 +1068,13 @@ const buildSalesVoucherEntriesTx = async ({ trx, header, voucherId }) => {
     account_id: Number(arControlAccountId),
     dept_id: null,
     party_id: arPartyId,
-    dr: netSaleAmount,
-    cr: 0,
+    dr: netSaleAmount > 0 ? netSaleAmount : 0,
+    cr: netSaleAmount < 0 ? absNetSaleAmount : 0,
     narration: toNarration({}, header.remarks),
   });
 
   if (paymentReceivedAmount > 0) {
-    if (saleMode !== "FROM_SO" && paymentReceivedAmount > netSaleAmount) {
+    if (saleMode !== "FROM_SO" && paymentReceivedAmount > absNetSaleAmount) {
       throw new Error(
         `GL posting failed: voucher ${voucherId} received amount exceeds net sale`,
       );

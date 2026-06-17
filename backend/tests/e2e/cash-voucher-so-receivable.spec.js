@@ -74,7 +74,7 @@ test.describe("Cash Voucher → SO receivable fix", () => {
     state.branchId = resolvedBranchId;
 
     // Seed data: sku, party, uom, voucher_no base
-    const [sku, party, uom, maxRow] = await Promise.all([
+    const [sku, party, employee, uom, maxRow] = await Promise.all([
       db("erp.skus as s")
         .join("erp.variants as v", "v.id", "s.variant_id")
         .select("s.id as sku_id", db.raw("COALESCE(v.sale_rate, 100) as sale_rate"))
@@ -86,6 +86,10 @@ test.describe("Cash Voucher → SO receivable fix", () => {
         .whereIn("party_type", ["CUSTOMER", "BOTH"])
         .orderBy("id", "asc")
         .first(),
+      db("erp.employees")
+        .select("id")
+        .orderBy("id", "asc")
+        .first(),
       db("erp.uom")
         .select("id")
         .where({ is_active: true })
@@ -94,9 +98,9 @@ test.describe("Cash Voucher → SO receivable fix", () => {
       db("erp.voucher_header").max("voucher_no as max").first(),
     ]);
 
-    if (!sku || !party) {
+    if (!sku || !party || !employee) {
       state.skipped = true;
-      state.skipReason = "No active SKU or customer party found in DB";
+      state.skipReason = "No active SKU, customer party, or employee found in DB";
       return;
     }
 
@@ -116,6 +120,8 @@ test.describe("Cash Voucher → SO receivable fix", () => {
             status: "APPROVED",
             voucher_no: soVoucherNo,
             created_by: adminUser.id,
+            approved_by: adminUser.id,
+            approved_at: trx.fn.now(),
           })
           .returning(["id"]);
         state.soId = Number(soHeader?.id || soHeader);
@@ -124,6 +130,7 @@ test.describe("Cash Voucher → SO receivable fix", () => {
         await trx("erp.sales_order_header").insert({
           voucher_id: state.soId,
           customer_party_id: state.customerPartyId,
+          salesman_employee_id: employee.id,
           payment_received_amount: 0,
         });
 
@@ -148,6 +155,8 @@ test.describe("Cash Voucher → SO receivable fix", () => {
             status: "APPROVED",
             voucher_no: cvVoucherNo,
             created_by: adminUser.id,
+            approved_by: adminUser.id,
+            approved_at: trx.fn.now(),
             linked_sales_order_id: state.soId,
           })
           .returning(["id"]);
