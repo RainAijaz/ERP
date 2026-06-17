@@ -23,6 +23,36 @@
     profitLossMeta &&
     typeof profitLossMeta === "object"
   );
+  const plDrilldownMap = (() => {
+    if (!isProfitAndLoss || !reportDataLoaded) return {};
+    const from = String(filters?.from || '').trim();
+    const to = String(filters?.to || '').trim();
+    if (!from || !to) return {};
+    const branchId = Number(filters?.branchId || 0) || null;
+    const bFin = branchId ? `&filter_branch_id=${branchId}` : '';
+    const bOther = branchId ? `&branch_id=${branchId}` : '';
+    const prevDay = (() => {
+      const m = from.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (!m) return from;
+      const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) - 1));
+      return `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+    })();
+    const qFin = `from_date=${from}&to_date=${to}&load_report=1${bFin}`;
+    return {
+      pl_gross_sales:        `/reports/sales/sales-report?from_date=${from}&to_date=${to}${bOther}`,
+      pl_sales_returns:      `/reports/sales/sale-return-report?from_date=${from}&to_date=${to}${bOther}`,
+      pl_discounts:          `/reports/sales/sales-discount-report?from_date=${from}&to_date=${to}${bOther}`,
+      pl_net_sales:          `/reports/sales/sales-report?from_date=${from}&to_date=${to}${bOther}`,
+      pl_opening_inventory:  `/reports/inventory/stock-amount?as_of_date=${prevDay}&load_report=1${bOther}`,
+      pl_purchases:          `/reports/purchases?from_date=${from}&to_date=${to}&load_report=1${bOther}`,
+      pl_direct_costs:       `/reports/financial/expense_analysis?${qFin}`,
+      pl_closing_inventory:  `/reports/inventory/stock-amount?as_of_date=${to}&load_report=1${bOther}`,
+      pl_operating_expenses: `/reports/financial/expense_analysis?${qFin}`,
+      pl_other_income:       `/reports/financial/account_activity_ledger?${qFin}`,
+      pl_other_expenses:     `/reports/financial/expense_analysis?${qFin}`,
+      pl_finance_cost:       `/reports/financial/expense_analysis?${qFin}`,
+    };
+  })();
   const expenseDepartments = Array.isArray(expenseFilterOptions?.departments) ? expenseFilterOptions.departments : [];
   const expenseCashierAccounts = Array.isArray(expenseFilterOptions?.cashierAccounts) ? expenseFilterOptions.cashierAccounts : [];
   const trendAccountGroups = Array.isArray(expenseFilterOptions?.accountGroups) ? expenseFilterOptions.accountGroups : [];
@@ -501,6 +531,7 @@
                 <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('line_item') %></th>
                 <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('description') %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('amount') %></th>
+                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]">Verify</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
@@ -511,6 +542,13 @@
                   <div class="mt-1 text-xs text-slate-500"><%= `${formatAmount(profitLossMeta.grossSales)} - ${formatAmount(profitLossMeta.salesReturns)} - ${formatAmount(profitLossMeta.discounts)}` %></div>
                 </td>
                 <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatAmount(profitLossMeta.netSales) %></td>
+                <td class="px-3 py-2 align-top">
+                  <div class="flex flex-wrap gap-1">
+                    <% if (plDrilldownMap.pl_gross_sales) { %><a href="<%= plDrilldownMap.pl_gross_sales %>" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:border-accent hover:text-accent whitespace-nowrap" title="Open Sales Report">Sales ↗</a><% } %>
+                    <% if (plDrilldownMap.pl_sales_returns) { %><a href="<%= plDrilldownMap.pl_sales_returns %>" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:border-accent hover:text-accent whitespace-nowrap" title="Open Sale Returns Report">Returns ↗</a><% } %>
+                    <% if (plDrilldownMap.pl_discounts) { %><a href="<%= plDrilldownMap.pl_discounts %>" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:border-accent hover:text-accent whitespace-nowrap" title="Open Sales Discount Report">Discounts ↗</a><% } %>
+                  </div>
+                </td>
               </tr>
               <tr class="odd:bg-slate-50/30">
                 <td class="px-3 py-2 font-semibold text-slate-800"><%= t('pl_cogs') %></td>
@@ -519,6 +557,14 @@
                   <div class="mt-1 text-xs text-slate-500"><%= `${formatAmount(profitLossMeta.openingInventory)} + ${formatAmount(profitLossMeta.purchases)} + ${formatAmount(profitLossMeta.directCosts)} - ${formatAmount(profitLossMeta.closingInventory)}` %></div>
                 </td>
                 <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatAmount(profitLossMeta.cogs) %></td>
+                <td class="px-3 py-2 align-top">
+                  <div class="flex flex-wrap gap-1">
+                    <% if (plDrilldownMap.pl_opening_inventory) { %><a href="<%= plDrilldownMap.pl_opening_inventory %>" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:border-accent hover:text-accent whitespace-nowrap" title="Stock value as of day before period start">Opening Inv ↗</a><% } %>
+                    <% if (plDrilldownMap.pl_purchases) { %><a href="<%= plDrilldownMap.pl_purchases %>" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:border-accent hover:text-accent whitespace-nowrap" title="Open Purchases Report">Purchases ↗</a><% } %>
+                    <% if (plDrilldownMap.pl_direct_costs) { %><a href="<%= plDrilldownMap.pl_direct_costs %>" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:border-accent hover:text-accent whitespace-nowrap" title="Expense Analysis (production vouchers contribute to Direct Costs in P&amp;L)">Direct Costs ↗</a><% } %>
+                    <% if (plDrilldownMap.pl_closing_inventory) { %><a href="<%= plDrilldownMap.pl_closing_inventory %>" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:border-accent hover:text-accent whitespace-nowrap" title="Stock value as of period end date">Closing Inv ↗</a><% } %>
+                  </div>
+                </td>
               </tr>
               <tr class="odd:bg-slate-50/30">
                 <td class="px-3 py-2 font-semibold text-slate-800"><%= t('pl_gross_profit') %></td>
@@ -527,6 +573,7 @@
                   <div class="mt-1 text-xs text-slate-500"><%= `${formatAmount(profitLossMeta.netSales)} - ${formatAmount(profitLossMeta.cogs)}` %></div>
                 </td>
                 <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatAmount(profitLossMeta.grossProfit) %></td>
+                <td class="px-3 py-2"></td>
               </tr>
               <tr class="odd:bg-slate-50/30">
                 <td class="px-3 py-2 font-semibold text-slate-800"><%= t('pl_operating_profit_ebit') %></td>
@@ -535,6 +582,9 @@
                   <div class="mt-1 text-xs text-slate-500"><%= `${formatAmount(profitLossMeta.grossProfit)} - ${formatAmount(profitLossMeta.operatingExpenses)}` %></div>
                 </td>
                 <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatAmount(profitLossMeta.operatingProfit) %></td>
+                <td class="px-3 py-2 align-top">
+                  <% if (plDrilldownMap.pl_operating_expenses) { %><a href="<%= plDrilldownMap.pl_operating_expenses %>" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:border-accent hover:text-accent whitespace-nowrap" title="Open Expense Analysis">Expenses ↗</a><% } %>
+                </td>
               </tr>
               <tr class="odd:bg-slate-50/30">
                 <td class="px-3 py-2 font-semibold text-slate-800"><%= t('pl_net_profit_before_tax') %></td>
@@ -543,6 +593,13 @@
                   <div class="mt-1 text-xs text-slate-500"><%= `${formatAmount(profitLossMeta.operatingProfit)} + ${formatAmount(profitLossMeta.otherIncome)} - ${formatAmount(profitLossMeta.otherExpenses)} - ${formatAmount(profitLossMeta.financeCost)}` %></div>
                 </td>
                 <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatAmount(profitLossMeta.netProfitBeforeTax) %></td>
+                <td class="px-3 py-2 align-top">
+                  <div class="flex flex-wrap gap-1">
+                    <% if (plDrilldownMap.pl_other_income) { %><a href="<%= plDrilldownMap.pl_other_income %>" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:border-accent hover:text-accent whitespace-nowrap" title="Account Activity Ledger (other revenue)">Other Income ↗</a><% } %>
+                    <% if (plDrilldownMap.pl_other_expenses) { %><a href="<%= plDrilldownMap.pl_other_expenses %>" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:border-accent hover:text-accent whitespace-nowrap" title="Open Expense Analysis">Other Exp ↗</a><% } %>
+                    <% if (plDrilldownMap.pl_finance_cost) { %><a href="<%= plDrilldownMap.pl_finance_cost %>" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:border-accent hover:text-accent whitespace-nowrap" title="Open Expense Analysis (bank charges group)">Finance ↗</a><% } %>
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -706,6 +763,9 @@
               <% tableCols.forEach((col) => { %>
                 <th class="sticky top-0 z-30 bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] shadow-[0_1px_0_0_rgba(148,163,184,0.45)] <%= isNumericCol(col) ? 'text-right' : 'text-left' %>"><%= prettyCol(col) %></th>
               <% }) %>
+              <% if (isProfitAndLoss) { %>
+                <th class="sticky top-0 z-30 bg-slate-100 px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em] shadow-[0_1px_0_0_rgba(148,163,184,0.45)]">Source</th>
+              <% } %>
             </tr>
           </thead>
           <tbody data-table-body>
@@ -785,6 +845,14 @@
                     <% } %>
                   <% } %>
                 <% }) %>
+                <% if (isProfitAndLoss) { %>
+                  <% const plDrillUrl = plDrilldownMap[String(row.line_item || '')] || null; %>
+                  <td class="px-3 py-2">
+                    <% if (plDrillUrl) { %>
+                      <a href="<%= plDrillUrl %>" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-600 hover:border-accent hover:text-accent whitespace-nowrap">View ↗</a>
+                    <% } %>
+                  </td>
+                <% } %>
               </tr>
             <% }) %>
           </tbody>
@@ -855,108 +923,9 @@
       window.initSearchableSelects();
     }
 
-    const initCheckboxMultiSelects = () => {
-      const roots = Array.from(document.querySelectorAll('[data-multi-select]'));
-      if (!roots.length) return;
-      let openRoot = null;
-      const closeAll = () => {
-        roots.forEach((root) => {
-          root.querySelector('[data-multi-panel]')?.classList.add('hidden');
-        });
-        openRoot = null;
-      };
-
-      roots.forEach((root) => {
-        const trigger = root.querySelector('[data-multi-trigger]');
-        const panel = root.querySelector('[data-multi-panel]');
-        const hidden = root.querySelector('[data-multi-hidden]');
-        const checkboxes = Array.from(root.querySelectorAll('input[type="checkbox"]'));
-        const allValue = String(root.dataset.multiAllValue || '').trim();
-        const autoAll = String(root.dataset.multiAutoAll || '').trim() === '1';
-        if (!trigger || !panel || !hidden) return;
-
-        const getAllCheckbox = () => {
-          if (!allValue) return null;
-          return checkboxes.find((cb) => String(cb.value || '').trim() === allValue) || null;
-        };
-
-        const normalizeSelection = (changedCheckbox) => {
-          const allCheckbox = getAllCheckbox();
-          if (!allCheckbox) return;
-
-          const nonAllCheckboxes = checkboxes.filter((cb) => cb !== allCheckbox);
-          if (changedCheckbox === allCheckbox && allCheckbox.checked) {
-            nonAllCheckboxes.forEach((cb) => {
-              cb.checked = false;
-            });
-            return;
-          }
-
-          if (changedCheckbox && changedCheckbox !== allCheckbox && changedCheckbox.checked) {
-            allCheckbox.checked = false;
-          }
-
-          const checkedNonAll = nonAllCheckboxes.filter((cb) => cb.checked);
-          if (!checkedNonAll.length && autoAll) {
-            allCheckbox.checked = true;
-            return;
-          }
-
-          if (checkedNonAll.length && allCheckbox.checked) {
-            allCheckbox.checked = false;
-          }
-        };
-
-        const refresh = () => {
-          const selected = checkboxes.filter((cb) => cb.checked);
-          const selectedValues = selected
-            .map((cb) => String(cb.value || '').trim())
-            .filter((value) => Boolean(value) && value !== allValue);
-          hidden.value = selectedValues.join(',');
-          if (!selectedValues.length) {
-            trigger.textContent = String(root.dataset.placeholder || allLabelText);
-            return;
-          }
-          if (selectedValues.length === 1) {
-            const selectedCheckbox = selected.find((cb) => String(cb.value || '').trim() === selectedValues[0]);
-            const label = selectedCheckbox?.closest('label')?.querySelector('span')?.textContent || selectedValues[0];
-            trigger.textContent = label;
-            return;
-          }
-          trigger.textContent = `${selectedValues.length} ${selectedSuffixText}`;
-        };
-
-        normalizeSelection(null);
-        refresh();
-        checkboxes.forEach((cb) => {
-          cb.addEventListener('change', () => {
-            normalizeSelection(cb);
-            refresh();
-          });
-        });
-
-        trigger.addEventListener('click', (event) => {
-          event.preventDefault();
-          const wasHidden = panel.classList.contains('hidden');
-          closeAll();
-          if (wasHidden) {
-            panel.classList.remove('hidden');
-            openRoot = root;
-          }
-        });
-      });
-
-      document.addEventListener('click', (event) => {
-        if (!openRoot) return;
-        if (openRoot.contains(event.target)) return;
-        closeAll();
-      });
-
-      document.addEventListener('keydown', (event) => {
-        if (event.key === 'Escape') closeAll();
-      });
-    };
-    initCheckboxMultiSelects();
+    if (typeof window.initDataMultiSelects === 'function') {
+      window.initDataMultiSelects(document);
+    }
 
     const stripFilterQueryFromUrl = () => {
       if (isExpenseAnalysis || isExpenseTrends) return;
