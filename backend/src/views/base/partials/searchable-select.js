@@ -560,25 +560,26 @@
 
     let lastRenderedOptionLabels = [];
 
+    const measureCanvas = document.createElement("canvas");
+    const measureCtx = measureCanvas.getContext("2d");
+    let cachedContextFont = null;
+
     const measureLabelWidth = (labels = []) => {
       const normalizedLabels = Array.isArray(labels)
         ? labels.map((label) => String(label || "").trim()).filter(Boolean)
         : [];
       if (!normalizedLabels.length) return 0;
       if (normalizedLabels.length > 80) return 0;
+      if (!measureCtx) return 0;
 
-      const canvas = document.createElement("canvas");
-      const context = canvas.getContext("2d");
-      if (!context) return 0;
-
-      const styles = window.getComputedStyle(input);
-      const fontWeight = styles.fontWeight || "400";
-      const fontSize = styles.fontSize || "14px";
-      const fontFamily = styles.fontFamily || "sans-serif";
-      context.font = `${fontWeight} ${fontSize} ${fontFamily}`;
+      if (!cachedContextFont) {
+        const styles = window.getComputedStyle(input);
+        cachedContextFont = `${styles.fontWeight || "400"} ${styles.fontSize || "14px"} ${styles.fontFamily || "sans-serif"}`;
+      }
+      measureCtx.font = cachedContextFont;
 
       return normalizedLabels.reduce((maxWidth, label) => {
-        const measured = Math.ceil(context.measureText(label).width);
+        const measured = Math.ceil(measureCtx.measureText(label).width);
         return Math.max(maxWidth, measured);
       }, 0);
     };
