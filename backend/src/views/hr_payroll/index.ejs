@@ -246,6 +246,7 @@
 
     const refreshConditionalFields = () => {
       const nodes = form.querySelectorAll("[data-show-when-field], [data-show-when-not-field]");
+      let needsSearchableInit = false;
       nodes.forEach((node) => {
         let shouldShow = true;
         const whenField = node.getAttribute("data-show-when-field");
@@ -270,7 +271,9 @@
 
         const controls = node.querySelectorAll("[data-field]");
         if (shouldShow) {
+          const wasHidden = node.classList.contains("hidden");
           node.classList.remove("hidden");
+          if (wasHidden) needsSearchableInit = true;
           controls.forEach((ctrl) => {
             ctrl.disabled = false;
             if (ctrl.hasAttribute("data-required")) ctrl.setAttribute("required", "required");
@@ -283,12 +286,12 @@
             if (ctrl.type === "checkbox") {
               if (ctrl.checked) {
                 ctrl.checked = false;
-                ctrl.dispatchEvent(new Event("change", { bubbles: true }));
+                ctrl.dispatchEvent(new Event("change", { bubbles: false }));
               }
             } else if (ctrl.tagName === "SELECT") {
               if (String(ctrl.value || "") !== "") {
                 ctrl.value = "";
-                ctrl.dispatchEvent(new Event("change", { bubbles: true }));
+                ctrl.dispatchEvent(new Event("change", { bubbles: false }));
               }
             } else if (String(ctrl.value || "") !== "") {
               ctrl.value = "";
@@ -297,7 +300,7 @@
         }
       });
 
-      if (typeof window.initSearchableSelects === "function") {
+      if (needsSearchableInit && typeof window.initSearchableSelects === "function") {
         window.initSearchableSelects(form);
       }
     };
