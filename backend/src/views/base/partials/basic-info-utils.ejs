@@ -831,10 +831,10 @@
           PARTY: "border-emerald-200 bg-emerald-50 text-emerald-700",
         };
         const ctLabelMap = {
-          SALESMAN_SALE: "<%= t('commission_type_salesman_sale') || 'Salesman Sale' %>",
-          BRANCH_SALE: "<%= t('commission_type_branch_sale') || 'Branch Sale' %>",
-          TRANSFER: "<%= t('commission_type_transfer') || 'Transfer' %>",
-          PARTY: "<%= t('commission_type_party') || 'Party' %>",
+          SALESMAN_SALE: "<%- t('commission_type_salesman_sale') || "Salesman's Sale" %>",
+          BRANCH_SALE: "<%- t('commission_type_branch_sale') || 'Branch Sale' %>",
+          TRANSFER: "<%- t('commission_type_transfer') || 'Transfer' %>",
+          PARTY: "<%- t('commission_type_party') || 'Party' %>",
         };
         const ctBadge = document.createElement("span");
         ctBadge.className =
