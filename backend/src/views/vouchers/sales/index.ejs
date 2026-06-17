@@ -2225,7 +2225,7 @@
               (orderNetAmount > 0 ? orderNetAmount : finalAmount) - previousPaymentsReceived,
             ).toFixed(1),
           )
-        : finalAmount;
+        : Math.max(0, finalAmount);
       if (received > maxAllowedCurrentReceived + 0.0001) {
         e.preventDefault();
         window.showVoucherError(fromSO ? "<%= t('error_current_payment_exceeds_receivable') %>" : "<%= t('error_advance_amount_exceeds_final') %>");
