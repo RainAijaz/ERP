@@ -884,6 +884,7 @@ const buildSalesVoucherEntriesTx = async ({ trx, header, voucherId }) => {
       "receive_into_account_id",
       "payment_received_amount",
       "extra_discount",
+      "linked_sales_order_id",
     )
     .where({ voucher_id: voucherId })
     .first();
@@ -902,7 +903,32 @@ const buildSalesVoucherEntriesTx = async ({ trx, header, voucherId }) => {
   const isStaffBuyer    = !customerPartyId && (buyerEmployeeId || buyerLabourId);
   const lineNetAmount = await loadSalesVoucherNetAmountTx({ trx, voucherId });
   const extraDiscount = normalizeAmount(extension.extra_discount || 0);
-  const netSaleAmount = normalizeAmount(lineNetAmount - extraDiscount);
+
+  // For FROM_SO vouchers, the SO's extra_discount is never copied to the voucher's
+  // own extra_discount (it's blocked on save). Apply it once — on the first approved
+  // FROM_SO voucher for that SO — so the AR and revenue are correctly reduced.
+  let soExtraDiscount = 0;
+  const linkedSalesOrderId = saleMode === "FROM_SO"
+    ? Number(extension.linked_sales_order_id || 0) || null
+    : null;
+  if (linkedSalesOrderId) {
+    const priorApproved = await trx("erp.sales_header as sh")
+      .join("erp.voucher_header as vh", "vh.id", "sh.voucher_id")
+      .where("sh.linked_sales_order_id", linkedSalesOrderId)
+      .whereNot("vh.id", voucherId)
+      .whereRaw("upper(coalesce(vh.status::text, '')) = 'APPROVED'")
+      .count("vh.id as cnt")
+      .first();
+    if (Number(priorApproved?.cnt || 0) === 0) {
+      const soExt = await trx("erp.sales_order_header")
+        .select("extra_discount")
+        .where({ voucher_id: linkedSalesOrderId })
+        .first();
+      soExtraDiscount = normalizeAmount(soExt?.extra_discount || 0);
+    }
+  }
+
+  const netSaleAmount = normalizeAmount(lineNetAmount - extraDiscount - soExtraDiscount);
   const paymentReceivedAmount = normalizeAmount(
     extension.payment_received_amount || 0,
   );
