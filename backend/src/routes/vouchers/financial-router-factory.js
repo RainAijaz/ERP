@@ -13,11 +13,13 @@ const {
 } = require("../../services/financial/voucher-service");
 
 let hasVoucherHeaderRemarksUrColumnPromise = null;
+let hasVoucherHeaderLinkedSoIdColumnPromise = null;
 
 const hasVoucherHeaderRemarksUrColumn = async () => {
   if (!hasVoucherHeaderRemarksUrColumnPromise) {
     hasVoucherHeaderRemarksUrColumnPromise = knex.schema
-      .hasColumn("erp.voucher_header", "remarks_ur")
+      .withSchema("erp")
+      .hasColumn("voucher_header", "remarks_ur")
       .catch(() => false);
   }
   return hasVoucherHeaderRemarksUrColumnPromise;
@@ -59,6 +61,16 @@ const actionDeniedMessage = (res) =>
   res.locals.t("error_action_not_allowed") ||
   res.locals.t("permission_denied") ||
   res.locals.t("generic_error");
+
+const hasVoucherHeaderLinkedSoIdColumn = async () => {
+  if (!hasVoucherHeaderLinkedSoIdColumnPromise) {
+    hasVoucherHeaderLinkedSoIdColumnPromise = knex.schema
+      .withSchema("erp")
+      .hasColumn("voucher_header", "linked_sales_order_id")
+      .catch(() => false);
+  }
+  return hasVoucherHeaderLinkedSoIdColumnPromise;
+};
 
 const loadOptions = async (req, voucherTypeCode) => {
   let accountsQuery = knex("erp.accounts as a")
@@ -159,7 +171,28 @@ const loadOptions = async (req, voucherTypeCode) => {
     return accounts;
   })();
 
-  return { accounts, headerAccounts, parties, labours, employees, departments };
+  let salesOrders = [];
+  if (normalizedVoucherTypeCode === "CASH_VOUCHER") {
+    salesOrders = await knex("erp.voucher_header as vh")
+      .join("erp.sales_order_header as soh", "soh.voucher_id", "vh.id")
+      .join("erp.parties as p", "p.id", "soh.customer_party_id")
+      .select(
+        "vh.id",
+        "vh.voucher_no",
+        "vh.voucher_date",
+        "soh.customer_party_id",
+        "p.name as customer_name",
+      )
+      .where({
+        "vh.voucher_type_code": "SALES_ORDER",
+        "vh.branch_id": req.branchId,
+      })
+      .whereNot("vh.status", "REJECTED")
+      .orderBy("vh.voucher_no", "desc")
+      .limit(500);
+  }
+
+  return { accounts, headerAccounts, parties, labours, employees, departments, salesOrders };
 };
 
 const loadRecent = async (req, voucherTypeCode) => {
@@ -360,7 +393,10 @@ const getVoucherNeighbours = async ({ req, voucherTypeCode, cursorNo }) => {
 const loadVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
   const targetNo = parseVoucherNo(voucherNo);
   if (!targetNo) return null;
-  const hasRemarksUrColumn = await hasVoucherHeaderRemarksUrColumn();
+  const [hasRemarksUrColumn, hasLinkedSoIdColumn] = await Promise.all([
+    hasVoucherHeaderRemarksUrColumn(),
+    hasVoucherHeaderLinkedSoIdColumn(),
+  ]);
   const isUrdu = String(req?.locale || "en").toLowerCase() === "ur";
 
   let headerQuery = knex("erp.voucher_header as vh")
@@ -389,6 +425,9 @@ const loadVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
     });
   if (hasRemarksUrColumn) {
     headerQuery = headerQuery.select("vh.remarks_ur");
+  }
+  if (hasLinkedSoIdColumn) {
+    headerQuery = headerQuery.select("vh.linked_sales_order_id");
   }
 
   headerQuery = headerQuery.where({ "vh.branch_id": req.branchId });
@@ -707,6 +746,8 @@ const createFinancialVoucherRouter = ({
       }
 
       const headerAccountId = Number(req.body?.header_account_id || 0) || null;
+      const linkedSalesOrderId =
+        Number(req.body?.linked_sales_order_id || 0) || null;
       const voucherDate = String(req.body?.voucher_date || "").trim();
       const remarks = String(req.body?.remarks || "").trim();
       const lines = toLines(req.body);
@@ -725,6 +766,7 @@ const createFinancialVoucherRouter = ({
             lines,
             scopeKey,
             headerAccountId,
+            linkedSalesOrderId,
           })
         : await createVoucher({
             req,
@@ -734,6 +776,7 @@ const createFinancialVoucherRouter = ({
             lines,
             scopeKey,
             headerAccountId,
+            linkedSalesOrderId,
           });
 
       if (saved.queuedForApproval) {

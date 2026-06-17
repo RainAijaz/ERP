@@ -132,6 +132,7 @@
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <input type="hidden" name="voucher_id" value="<%= selectedVoucher?.id || '' %>">
       <input type="hidden" name="header_account_id" value="<%= selectedHeaderAccountId %>" data-header-account-id>
+      <input type="hidden" name="linked_sales_order_id" value="<%= selectedVoucher?.linked_sales_order_id || '' %>" data-linked-so-id>
       <input type="hidden" name="lines_json" value="[]" data-lines-json>
 
       <div class="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-3">
@@ -172,6 +173,22 @@
             </select>
           </div>
         </div>
+
+        <% if ((options.salesOrders || []).length > 0 || selectedVoucher?.linked_sales_order_id) { %>
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t('sales_order') || 'Sales Order' %></label>
+          <div class="lg:col-span-10">
+            <select class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-linked-so-select data-searchable-select="true" data-searchable-variant="unified" <%= !canSaveVoucher ? 'disabled' : '' %>>
+              <option value="">— <%= t('optional') || 'Optional' %>: <%= t('link_to_sales_order') || 'Link to Sales Order' %> —</option>
+              <% (options.salesOrders || []).forEach((so) => { %>
+                <option value="<%= so.id %>" <%= Number(selectedVoucher?.linked_sales_order_id || 0) === Number(so.id) ? 'selected' : '' %>>
+                  SO #<%= so.voucher_no %> — <%= so.customer_name %>
+                </option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+        <% } %>
 
         <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
           <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= t('note') %></label>
@@ -266,6 +283,14 @@
     if (isViewMode && window.history && typeof window.history.replaceState === 'function') {
       const hash = window.location.hash || '';
       window.history.replaceState({}, document.title, `${window.location.pathname}${hash}`);
+    }
+
+    const linkedSoSelect = form.querySelector('[data-linked-so-select]');
+    const linkedSoIdInput = form.querySelector('[data-linked-so-id]');
+    if (linkedSoSelect && linkedSoIdInput) {
+      linkedSoSelect.addEventListener('change', () => {
+        linkedSoIdInput.value = linkedSoSelect.value || '';
+      });
     }
 
     const receiptKey = '<%= receiptKey %>';

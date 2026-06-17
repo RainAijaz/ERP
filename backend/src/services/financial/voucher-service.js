@@ -17,14 +17,26 @@ const AUTO_BANK_SETTLEMENT_PREFIX = "[AUTO_BANK_SETTLEMENT]";
 const URDU_REGEX = /[\u0600-\u06FF]/;
 
 let hasVoucherHeaderRemarksUrColumnPromise = null;
+let hasVoucherHeaderLinkedSoIdColumnPromise = null;
 
 const hasVoucherHeaderRemarksUrColumn = async () => {
   if (!hasVoucherHeaderRemarksUrColumnPromise) {
     hasVoucherHeaderRemarksUrColumnPromise = knex.schema
-      .hasColumn("erp.voucher_header", "remarks_ur")
+      .withSchema("erp")
+      .hasColumn("voucher_header", "remarks_ur")
       .catch(() => false);
   }
   return hasVoucherHeaderRemarksUrColumnPromise;
+};
+
+const hasVoucherHeaderLinkedSoIdColumn = async () => {
+  if (!hasVoucherHeaderLinkedSoIdColumnPromise) {
+    hasVoucherHeaderLinkedSoIdColumnPromise = knex.schema
+      .withSchema("erp")
+      .hasColumn("voucher_header", "linked_sales_order_id")
+      .catch(() => false);
+  }
+  return hasVoucherHeaderLinkedSoIdColumnPromise;
 };
 
 const normalizeNumber = (value, decimals = 2) => {
@@ -1022,13 +1034,17 @@ const createVoucher = async ({
   lines,
   scopeKey,
   headerAccountId = null,
+  linkedSalesOrderId = null,
 }) => {
   if (!req?.user?.id) throw new HttpError(401, "Not authenticated");
   if (!req.branchId) throw new HttpError(400, "Branch context is required");
 
   const canCreate = canDo(req, "VOUCHER", scopeKey, "create");
   const canApprove = canApproveVoucherAction(req, scopeKey);
-  const hasRemarksUrColumn = await hasVoucherHeaderRemarksUrColumn();
+  const [hasRemarksUrColumn, hasLinkedSoIdColumn] = await Promise.all([
+    hasVoucherHeaderRemarksUrColumn(),
+    hasVoucherHeaderLinkedSoIdColumn(),
+  ]);
   const urduText = await prepareUrduVoucherText({ remarks, lines });
 
   const result = await knex.transaction(async (trx) => {
@@ -1081,6 +1097,9 @@ const createVoucher = async ({
         approved_at: queuedForApproval ? null : trx.fn.now(),
         remarks: normalizeText(remarks, 1000),
         ...(hasRemarksUrColumn ? { remarks_ur: urduText.remarksUr } : {}),
+        ...(hasLinkedSoIdColumn
+          ? { linked_sales_order_id: linkedSalesOrderId || null }
+          : {}),
       })
       .returning(["id", "voucher_no", "status"]);
 
@@ -1176,6 +1195,7 @@ const updateVoucher = async ({
   lines,
   scopeKey,
   headerAccountId = null,
+  linkedSalesOrderId = null,
 }) => {
   if (!req?.user?.id) throw new HttpError(401, "Not authenticated");
   if (!req.branchId) throw new HttpError(400, "Branch context is required");
@@ -1187,7 +1207,10 @@ const updateVoucher = async ({
 
   const canEdit = canDo(req, "VOUCHER", scopeKey, "edit");
   const canApprove = canApproveVoucherAction(req, scopeKey);
-  const hasRemarksUrColumn = await hasVoucherHeaderRemarksUrColumn();
+  const [hasRemarksUrColumn, hasLinkedSoIdColumn] = await Promise.all([
+    hasVoucherHeaderRemarksUrColumn(),
+    hasVoucherHeaderLinkedSoIdColumn(),
+  ]);
   const urduText = await prepareUrduVoucherText({ remarks, lines });
 
   const result = await knex.transaction(async (trx) => {
@@ -1311,6 +1334,9 @@ const updateVoucher = async ({
         header_account_id: validHeaderAccountId,
         remarks: normalizeText(remarks, 1000),
         ...(hasRemarksUrColumn ? { remarks_ur: urduText.remarksUr } : {}),
+        ...(hasLinkedSoIdColumn
+          ? { linked_sales_order_id: linkedSalesOrderId || null }
+          : {}),
         status: "APPROVED",
         approved_by: req.user.id,
         approved_at: trx.fn.now(),
