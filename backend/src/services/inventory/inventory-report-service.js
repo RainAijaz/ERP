@@ -3233,7 +3233,6 @@ const loadStockTransferPendingForInRows = async ({
   hasTransferReasonColumn,
   hasBillBookNoColumn,
 }) => {
-  if (!filters.destinationBranchIds.length) return [];
 
   const transferReasonExpr = hasTransferReasonColumn
     ? "upper(coalesce(sth.transfer_reason::text, ''))"
@@ -3298,11 +3297,17 @@ const loadStockTransferPendingForInRows = async ({
     })
     .whereNull("sth.received_voucher_id")
     .whereRaw("upper(coalesce(sth.status::text, '')) != 'RECEIVED'")
-    .whereIn("sth.dest_branch_id", filters.destinationBranchIds)
     .whereRaw("coalesce(sth.dispatch_date, vh.voucher_date) between ? and ?", [
       filters.from,
       filters.to,
     ]);
+
+  if (filters.sourceBranchIds.length) {
+    query = query.whereIn("vh.branch_id", filters.sourceBranchIds);
+  }
+  if (filters.destinationBranchIds.length) {
+    query = query.whereIn("sth.dest_branch_id", filters.destinationBranchIds);
+  }
 
   query = query.whereRaw(`${stockTypeExpr} = ?`, [filters.stockType]);
   applyWhereInRaw(query, groupExpr, filters.productGroupIds);
@@ -3557,7 +3562,7 @@ const loadStockTransferInRows = async ({
   // Filter by transferStatus if set — skip pending rows when filter excludes them.
   const showPending = !filters.transferStatus || filters.transferStatus === TRANSFER_REPORT_STATUSES.pending;
   let allRows = withStatus;
-  if (showPending && filters.destinationBranchIds.length) {
+  if (showPending) {
     const pendingRows = await loadStockTransferPendingForInRows({
       filters,
       hasTransferReasonColumn,
