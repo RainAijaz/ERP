@@ -244,69 +244,85 @@
       return (input.value || "").toString();
     };
 
+    let _isRefreshing = false;
+    let _refreshScheduled = false;
+
     const refreshConditionalFields = () => {
-      const newlyVisible = [];
-      const nodes = form.querySelectorAll("[data-show-when-field], [data-show-when-not-field]");
-      nodes.forEach((node) => {
-        const wasHidden = node.classList.contains("hidden");
-        let shouldShow = true;
-        const whenField = node.getAttribute("data-show-when-field");
-        const whenValues = (node.getAttribute("data-show-when-values") || "")
-          .split(",")
-          .map((v) => v.trim())
-          .filter(Boolean);
-        if (whenField && whenValues.length) {
-          const current = getControllerValue(whenField);
-          shouldShow = whenValues.includes(current);
-        }
+      if (_isRefreshing) return;
+      _isRefreshing = true;
+      _refreshScheduled = false;
+      try {
+        const newlyVisible = [];
+        const nodes = form.querySelectorAll("[data-show-when-field], [data-show-when-not-field]");
+        nodes.forEach((node) => {
+          const wasHidden = node.classList.contains("hidden");
+          let shouldShow = true;
+          const whenField = node.getAttribute("data-show-when-field");
+          const whenValues = (node.getAttribute("data-show-when-values") || "")
+            .split(",")
+            .map((v) => v.trim())
+            .filter(Boolean);
+          if (whenField && whenValues.length) {
+            const current = getControllerValue(whenField);
+            shouldShow = whenValues.includes(current);
+          }
 
-        const whenNotField = node.getAttribute("data-show-when-not-field");
-        const whenNotValues = (node.getAttribute("data-show-when-not-values") || "")
-          .split(",")
-          .map((v) => v.trim())
-          .filter(Boolean);
-        if (whenNotField && whenNotValues.length) {
-          const current = getControllerValue(whenNotField);
-          if (whenNotValues.includes(current)) shouldShow = false;
-        }
+          const whenNotField = node.getAttribute("data-show-when-not-field");
+          const whenNotValues = (node.getAttribute("data-show-when-not-values") || "")
+            .split(",")
+            .map((v) => v.trim())
+            .filter(Boolean);
+          if (whenNotField && whenNotValues.length) {
+            const current = getControllerValue(whenNotField);
+            if (whenNotValues.includes(current)) shouldShow = false;
+          }
 
-        const controls = node.querySelectorAll("[data-field]");
-        if (shouldShow) {
-          node.classList.remove("hidden");
-          if (wasHidden) newlyVisible.push(node);
-          controls.forEach((ctrl) => {
-            ctrl.disabled = false;
-            if (ctrl.hasAttribute("data-required")) ctrl.setAttribute("required", "required");
-          });
-        } else {
-          node.classList.add("hidden");
-          controls.forEach((ctrl) => {
-            ctrl.disabled = true;
-            ctrl.removeAttribute("required");
-            if (ctrl.type === "checkbox") {
-              if (ctrl.checked) {
-                ctrl.checked = false;
-                ctrl.dispatchEvent(new Event("change", { bubbles: true }));
-              }
-            } else if (ctrl.tagName === "SELECT") {
-              if (String(ctrl.value || "") !== "") {
+          const controls = node.querySelectorAll("[data-field]");
+          if (shouldShow) {
+            node.classList.remove("hidden");
+            if (wasHidden) newlyVisible.push(node);
+            controls.forEach((ctrl) => {
+              ctrl.disabled = false;
+              if (ctrl.hasAttribute("data-required")) ctrl.setAttribute("required", "required");
+            });
+          } else {
+            node.classList.add("hidden");
+            controls.forEach((ctrl) => {
+              ctrl.disabled = true;
+              ctrl.removeAttribute("required");
+              if (ctrl.type === "checkbox") {
+                if (ctrl.checked) {
+                  ctrl.checked = false;
+                  ctrl.dispatchEvent(new Event("change", { bubbles: true }));
+                }
+              } else if (ctrl.tagName === "SELECT") {
+                if (String(ctrl.value || "") !== "") {
+                  ctrl.value = "";
+                  ctrl.dispatchEvent(new Event("change", { bubbles: true }));
+                }
+              } else if (String(ctrl.value || "") !== "") {
                 ctrl.value = "";
-                ctrl.dispatchEvent(new Event("change", { bubbles: true }));
               }
-            } else if (String(ctrl.value || "") !== "") {
-              ctrl.value = "";
-            }
-          });
-        }
-      });
+            });
+          }
+        });
 
-      if (newlyVisible.length && typeof window.initSearchableSelects === "function") {
-        newlyVisible.forEach((container) => window.initSearchableSelects(container));
+        if (newlyVisible.length && typeof window.initSearchableSelects === "function") {
+          newlyVisible.forEach((container) => window.initSearchableSelects(container));
+        }
+      } finally {
+        _isRefreshing = false;
       }
     };
 
+    const scheduleRefreshConditionalFields = () => {
+      if (_refreshScheduled) return;
+      _refreshScheduled = true;
+      setTimeout(refreshConditionalFields, 0);
+    };
+
     form.addEventListener("change", (e) => {
-      if (e.target && e.target.matches("[data-field]")) refreshConditionalFields();
+      if (e.target && e.target.matches("[data-field]")) scheduleRefreshConditionalFields();
     });
     document.addEventListener("modal:opened", refreshConditionalFields);
     setTimeout(refreshConditionalFields, 0);
