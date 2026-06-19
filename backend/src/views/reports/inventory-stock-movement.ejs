@@ -245,7 +245,7 @@
                   </div>
                   <div>
                     <div class="mb-1.5 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600" data-date-range-caption><%= t('select_date_range') %></div>
-                    <div class="grid grid-cols-1 gap-3 xl:grid-cols-[1fr_auto_1fr]">
+                    <div class="grid grid-cols-1 gap-3 lg:grid-cols-[1fr_auto_1fr]">
                       <div class="min-w-52.5 rounded-lg border border-slate-200 bg-slate-50/40 p-2">
                         <div class="mb-1 flex items-center justify-between gap-2"><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-prev>&larr;</button><div class="text-center text-xs font-semibold text-slate-700" data-date-range-month-1-label></div><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-next>&rarr;</button></div>
                         <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-500"><% weekdayShortLabels.forEach((weekdayLabel) => { %><span><%= weekdayLabel %></span><% }) %></div>
@@ -392,8 +392,8 @@
         </div>
         <div class="grid grid-cols-1 items-center gap-2 pt-1 sm:grid-cols-12">
           <div class="sm:col-start-4 sm:col-span-9 flex items-center gap-2">
-            <button type="submit" class="inline-flex items-center rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= t("load") %></button>
-            <a href="<%= reportPath %>" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= t("cancel") %></a>
+            <button type="submit" class="inline-flex items-center rounded-lg bg-accent px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= t("load") %></button>
+            <a href="<%= reportPath %>" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= t("cancel") %></a>
           </div>
         </div>
       </div>
@@ -402,8 +402,8 @@
 
   <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm" data-report-print-area>
     <div class="flex items-center justify-end gap-2" data-report-controls>
-      <button type="button" class="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700 disabled:opacity-40" data-print-report <%= reportLoaded && hasData ? "" : "disabled" %>><%= t("print") %></button>
-      <button type="button" class="inline-flex items-center rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm disabled:opacity-40" data-download-report <%= reportLoaded && hasData ? "" : "disabled" %>><%= t("download") %></button>
+      <button type="button" class="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-slate-700 disabled:opacity-40" data-print-report <%= reportLoaded && hasData ? "" : "disabled" %>><%= t("print") %></button>
+      <button type="button" class="inline-flex items-center rounded-xl bg-accent px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm disabled:opacity-40" data-download-report <%= reportLoaded && hasData ? "" : "disabled" %>><%= t("download") %></button>
     </div>
 
     <% if (reportLoaded) { %>

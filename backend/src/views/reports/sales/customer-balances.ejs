@@ -1,6 +1,6 @@
 ﻿<%
   const reportLoaded = Boolean(filters?.reportLoaded);
-  const rows = Array.isArray(reportData?.rows) ? reportData.rows : [];
+  const rows = Array.isArray(reportData?.rows) ? reportData.rows.filter((r) => Number(r.amount || 0) !== 0) : [];
   const selectedBranchIds = Array.isArray(filters?.branchIds)
     ? filters.branchIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
     : [];
@@ -94,8 +94,8 @@
 
         <div class="hidden lg:block"></div>
         <div class="flex gap-2">
-          <button type="submit" class="inline-flex items-center rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= t('load') %></button>
-          <a href="<%= reportPath %>" class="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= t('cancel') %></a>
+          <button type="submit" class="inline-flex items-center rounded-xl bg-accent px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= t('load') %></button>
+          <a href="<%= reportPath %>" class="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= t('cancel') %></a>
         </div>
       </div>
 

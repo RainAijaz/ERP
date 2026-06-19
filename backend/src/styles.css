@@ -231,3 +231,100 @@ html.dark input[type="checkbox"] {
   right: 100% !important;
   max-width: calc(100vw - 2rem);
 }
+
+/* ═══════════════════════════════════════════════════════════
+   MOBILE / TOUCH IMPROVEMENTS
+   pointer: coarse  → touch devices only, no desktop impact
+   max-width: 1023px → below lg breakpoint only
+   ═══════════════════════════════════════════════════════════ */
+
+@media (pointer: coarse) {
+  /* Searchable select menu items — 44px touch target */
+  [data-searchable-menu] button {
+    min-height: 2.75rem;
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
+  }
+
+  /* Searchable select chip remove buttons */
+  [data-searchable-chip-remove] {
+    min-width: 2rem;
+    min-height: 2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* Date range picker day buttons */
+  [data-date-range-month-1-grid] button,
+  [data-date-range-month-2-grid] button {
+    min-height: 2.5rem;
+    min-width: 2.5rem;
+  }
+
+  /* Date range prev/next month navigation buttons */
+  [data-date-range-month-1-prev],
+  [data-date-range-month-1-next],
+  [data-date-range-month-2-prev],
+  [data-date-range-month-2-next] {
+    min-height: 2.5rem;
+    min-width: 2.5rem;
+    padding: 0.375rem 0.625rem;
+  }
+
+  /* Apply / Cancel buttons inside date range panel */
+  [data-date-range-apply],
+  [data-date-range-cancel] {
+    min-height: 2.75rem;
+    padding-left: 1.25rem;
+    padding-right: 1.25rem;
+  }
+}
+
+@media (max-width: 1023px) {
+  /* Horizontal scroll shadow — tells mobile users the table is swipeable */
+  .overflow-x-auto:has(table) {
+    background:
+      linear-gradient(to right, white 30%, transparent) left center / 40px 100% no-repeat local,
+      linear-gradient(to left,  white 30%, transparent) right center / 40px 100% no-repeat local,
+      linear-gradient(to right, #e2e8f0, transparent)   left center / 12px 100% no-repeat scroll,
+      linear-gradient(to left,  #e2e8f0, transparent)   right center / 12px 100% no-repeat scroll;
+  }
+
+  /* Dark mode scroll shadow */
+  html.dark .overflow-x-auto:has(table) {
+    background:
+      linear-gradient(to right, #162336 30%, transparent) left center / 40px 100% no-repeat local,
+      linear-gradient(to left,  #162336 30%, transparent) right center / 40px 100% no-repeat local,
+      linear-gradient(to right, #1e3148, transparent)     left center / 12px 100% no-repeat scroll,
+      linear-gradient(to left,  #1e3148, transparent)     right center / 12px 100% no-repeat scroll;
+  }
+
+  /* Multi-select branch filter — bottom sheet on mobile */
+  [data-multi-select-panel] {
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: auto !important;
+    max-height: 60vh;
+    overflow-y: auto;
+    border-radius: 1rem 1rem 0 0;
+    border-left: none !important;
+    border-right: none !important;
+    border-bottom: none !important;
+    box-shadow: 0 -4px 20px rgb(0 0 0 / 0.15);
+    z-index: 9999;
+    padding: 1rem;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Dim backdrop when multi-select panel is open */
+  [data-multi-select-panel]:not(.hidden)::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    background: rgb(0 0 0 / 0.3);
+    z-index: -1;
+  }
+}

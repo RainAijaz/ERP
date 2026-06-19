@@ -596,7 +596,7 @@
       const minimumPreferredHeight = 160;
       const minimumFallbackHeight = 96;
       const viewportWidth = window.innerWidth;
-      const viewportHeight = window.innerHeight;
+      const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
       const configuredMenuMaxHeight = Number.parseInt(
         select.dataset.searchableMaxHeight || "",
         10,
@@ -896,7 +896,7 @@
         }
         btn.innerHTML = `<span class="block min-w-0 flex-1 whitespace-normal wrap-break-word leading-5">${label}</span><span class="mt-0.5 flex-none">${iconHtml}</span>`;
 
-        btn.addEventListener("mousedown", (e) => {
+        btn.addEventListener("pointerdown", (e) => {
           e.preventDefault();
           activeIndex = index;
           if (isMulti) {
@@ -1572,6 +1572,10 @@
         passive: true,
         capture: true,
       });
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", scheduleReposition, { passive: true });
+        window.visualViewport.addEventListener("scroll", scheduleReposition, { passive: true });
+      }
       window.__searchableSelectGlobalListenersAttached = true;
     }
     window.closeAllSearchableSelectMenus = () => closeSearchableMenus();

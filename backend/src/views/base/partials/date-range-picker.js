@@ -385,10 +385,12 @@
       if (!dateRangeWrap || dateRangePanel.classList.contains("hidden")) return;
       dateRangePanel.style.left = "0px";
       dateRangePanel.style.right = "auto";
+      dateRangePanel.style.top = "";
+      dateRangePanel.style.bottom = "";
       const panelRect = dateRangePanel.getBoundingClientRect();
       const wrapRect = dateRangeWrap.getBoundingClientRect();
-      const viewportWidth =
-        window.innerWidth || document.documentElement.clientWidth || 0;
+      const viewportWidth = window.innerWidth || document.documentElement.clientWidth || 0;
+      const viewportHeight = window.visualViewport ? window.visualViewport.height : (window.innerHeight || document.documentElement.clientHeight || 0);
       const edge = 8;
       let left = 0;
       if (wrapRect.left + panelRect.width > viewportWidth - edge) {
@@ -398,6 +400,14 @@
         left = edge - wrapRect.left;
       }
       dateRangePanel.style.left = `${Math.round(left)}px`;
+      // On mobile, if panel overflows viewport bottom, flip it upward
+      const panelBottom = wrapRect.bottom + panelRect.height + 4;
+      if (panelBottom > viewportHeight - edge) {
+        const upwardTop = wrapRect.top - panelRect.height - 4;
+        if (upwardTop >= edge) {
+          dateRangePanel.style.top = `${Math.round(upwardTop - wrapRect.top)}px`;
+        }
+      }
     };
 
     const openDateRangePanel = () => {
