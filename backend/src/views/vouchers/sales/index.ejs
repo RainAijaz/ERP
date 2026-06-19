@@ -1167,10 +1167,13 @@
     const remaining = fromSO
       ? Number((Math.max(0, orderNetAmount - effectiveReceivedAmount)).toFixed(1))
       : Number((Math.max(0, final - effectiveReceivedAmount)).toFixed(1));
+    const _recalcBuyer = getSelectedBuyer();
+    const isStaffBuyerRecalc = _recalcBuyer?.type === "EMPLOYEE" || _recalcBuyer?.type === "LABOUR";
     const dueDateRequired = !isSalesOrderVoucher
       && paymentType === "CREDIT"
+      && !isStaffBuyerRecalc
       && Number(remaining) > 0;
-    const dueDateVisible = !isSalesOrderVoucher && paymentType === "CREDIT";
+    const dueDateVisible = !isSalesOrderVoucher && paymentType === "CREDIT" && !isStaffBuyerRecalc;
     if (remainingInput) {
       remainingInput.value = fromSO ? f1(remaining) : f1OrBlank(remaining);
     }
@@ -1322,7 +1325,7 @@
     }
     if (customerNameWrap) customerNameWrap.classList.toggle("hidden", !showCustomerName);
     if (phoneLabel) {
-      phoneLabel.classList.toggle("hidden", isSalesOrderVoucher);
+      phoneLabel.classList.toggle("hidden", isSalesOrderVoucher || (isCredit && isStaffBuyerSync));
       phoneLabel.textContent = (isCredit && !isStaffBuyerSync) ? "<%= t('payment_due_date') %>" : "<%= t('phone_number') %>";
     }
     if (phoneWrap) phoneWrap.classList.toggle("hidden", !showPhone);
