@@ -704,6 +704,7 @@ const fetchSkuMapTx = async ({ trx, skuIds = [] }) => {
       "s.id",
       "s.sku_code",
       "v.sale_rate",
+      "v.rate_editable",
       "i.name as item_name",
       "i.item_type",
       "i.group_id",
@@ -1248,6 +1249,7 @@ const normalizeSalesOrderLinesTx = async ({
       throw new HttpError(400, `Line ${lineNo}: pair rate is required`);
     if (
       !allowRateDiscountOverride &&
+      !sku.rate_editable &&
       autoPairRate &&
       !approxEq(pairRate, autoPairRate)
     ) {
@@ -1800,6 +1802,7 @@ const normalizeSalesVoucherLinesTx = async ({
         throw new HttpError(400, `Line ${lineNo}: pair rate is required`);
       if (
         !allowRateDiscountOverride &&
+        !sku.rate_editable &&
         autoPairRate &&
         !approxEq(pairRate, autoPairRate)
       ) {
@@ -3689,6 +3692,7 @@ const loadSalesVoucherOptions = async (req, context = {}) => {
         "u.code as base_uom_code",
         "u.name as base_uom_name",
         "v.sale_rate",
+        "v.rate_editable",
         knex.raw(
           `(select max(sdp.max_pair_discount)
               from erp.sales_discount_policy as sdp

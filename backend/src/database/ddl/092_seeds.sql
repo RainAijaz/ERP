@@ -322,6 +322,7 @@ ON CONFLICT (scope_type, scope_key) DO NOTHING;
 INSERT INTO erp.permission_scope_registry (scope_type, scope_key, description, module_group)
 VALUES
   -- Master Data / BOM Reports
+  ('REPORT','master_data.bom.reports','BOM Reports', 'Master Data'),
   ('REPORT','bom_cost_margin','BOM Cost & Margin Register', 'Reports'),
   ('REPORT','bom_pending_approval','Pending BOM Approval & Change Log', 'Reports'),
   ('REPORT','bom_version_history','BOM Version History', 'Reports'),

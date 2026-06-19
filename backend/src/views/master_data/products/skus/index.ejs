@@ -148,6 +148,24 @@
                       
                       <td class="px-6 py-3 text-right whitespace-nowrap text-sm font-medium">
                         <div class="flex items-center justify-end gap-2">
+                          <% if (isFinishedView && canDelete) { %>
+                            <form method="POST" action="<%= basePath %>/<%= row.id %>/rate-editable-toggle<%= viewQuery %>" class="inline">
+                              <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                              <button
+                                type="submit"
+                                title="<%= row.rate_editable ? t('rate_editable_on') || 'Rate: Editable — click to fix' : t('rate_editable_off') || 'Rate: Fixed — click to allow editing' %>"
+                                class="inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide transition border <%= row.rate_editable ? 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-700' %>"
+                              >
+                                <% if (row.rate_editable) { %>
+                                  <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 15v-4m0 0V7m0 4h4m-4 0H8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+                                  <%= t('flexible') || 'Flexible' %>
+                                <% } else { %>
+                                  <svg class="h-3 w-3" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2" stroke="currentColor" stroke-width="1.8"/><path d="M8 11V7a4 4 0 018 0v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+                                  <%= t('fixed') || 'Fixed' %>
+                                <% } %>
+                              </button>
+                            </form>
+                          <% } %>
                           <% if (canDelete) { %>
                             <button
                               class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 cursor-pointer"

@@ -452,6 +452,8 @@ CREATE TABLE IF NOT EXISTS erp.variants (
 
   -- sale_rate is kept here for convenience; app/business rules decide when it is editable/used.
   sale_rate       numeric(18,2) NOT NULL DEFAULT 0,
+  -- when true, the rate field is left editable in sales/SO vouchers for any user (not just admins).
+  rate_editable   boolean NOT NULL DEFAULT false,
 
   is_active       boolean NOT NULL DEFAULT true,
 

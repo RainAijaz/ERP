@@ -230,6 +230,7 @@ const loadRows = async (filters = {}, itemType = "FG") => {
   let query = knex("erp.variants as v")
     .select(
       "v.*",
+      "v.rate_editable",
       "i.code as item_code",
       "i.name as item_name",
       "i.name_ur as item_name_ur",
@@ -1226,6 +1227,34 @@ router.post(
       return res.redirect(basePath + viewQuery);
     } catch (err) {
       console.error(`[SKU DELETE ERROR] Variant ID: ${id}`, err);
+      next(err);
+    }
+  },
+);
+
+router.post(
+  "/:id/rate-editable-toggle",
+  requirePermission("SCREEN", "master_data.products.skus", "edit"),
+  async (req, res, next) => {
+    const id = Number(req.params.id);
+    const itemType = req.query.item_type === "SFG" ? "SFG" : "FG";
+    const viewQuery = `?item_type=${itemType}`;
+    const basePath = `${req.baseUrl}`;
+    if (!id) return next(new HttpError(404, res.locals.t("error_not_found")));
+    try {
+      const current = await knex("erp.variants")
+        .select("rate_editable")
+        .where({ id })
+        .first();
+      if (!current) return next(new HttpError(404, res.locals.t("error_not_found")));
+      await knex("erp.variants").where({ id }).update({
+        rate_editable: !current.rate_editable,
+        updated_at: knex.fn.now(),
+        updated_by: req.user ? req.user.id : null,
+      });
+      queueAuditLog(req, { entityType: "SKU", entityId: id, action: "UPDATE" });
+      return res.redirect(basePath + viewQuery);
+    } catch (err) {
       next(err);
     }
   },

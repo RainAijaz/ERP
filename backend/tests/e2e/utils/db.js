@@ -384,6 +384,37 @@ const setVariantSaleRate = async (variantId, saleRate) => {
     .update({ sale_rate: saleRate });
 };
 
+const setVariantRateEditable = async (variantId, rateEditable) => {
+  if (!variantId) return;
+  await knex("erp.variants")
+    .where({ id: Number(variantId) })
+    .update({ rate_editable: Boolean(rateEditable) });
+};
+
+const getFirstFgVariantWithRate = async () => {
+  const row = await knex("erp.variants as v")
+    .join("erp.skus as s", "s.variant_id", "v.id")
+    .join("erp.items as i", "i.id", "v.item_id")
+    .select(
+      "v.id as variant_id",
+      "v.sale_rate",
+      "v.rate_editable",
+      "s.id as sku_id",
+      "s.sku_code",
+      "i.name as item_name",
+    )
+    .where({
+      "i.item_type": "FG",
+      "i.is_active": true,
+      "v.is_active": true,
+      "s.is_active": true,
+    })
+    .where("v.sale_rate", ">", 0)
+    .orderBy("v.id", "asc")
+    .first();
+  return row || null;
+};
+
 const upsertUserWithPermissions = async ({
   username,
   password,
@@ -1498,6 +1529,8 @@ module.exports = {
   getVoucherLineCount,
   getPurchaseAllocationCountByVoucher,
   setVariantSaleRate,
+  setVariantRateEditable,
+  getFirstFgVariantWithRate,
   upsertUserWithPermissions,
   updateUserProfile,
   getApprovalNotificationRecipientEmails,
