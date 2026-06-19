@@ -16,6 +16,7 @@ const PRECEDENCE = [
 const ALLOWED_SCOPE_FOR_BULK = new Set([APPLY_ON.SUBGROUP, APPLY_ON.GROUP]);
 const COMMISSION_BASIS_FIXED_PER_UNIT = "FIXED_PER_UNIT";
 const COMMISSION_RATE_TYPES = new Set(["PER_DOZEN", "PER_PAIR"]);
+const COMMISSION_TYPES = new Set(["SALESMAN_SALE", "BRANCH_SALE", "TRANSFER", "PARTY"]);
 
 const deriveValueTypeFromBasis = (commissionBasis) => {
   if (
@@ -77,6 +78,9 @@ const normalizeBulkInput = ({ payload, t }) => {
   if (!ALLOWED_SCOPE_FOR_BULK.has(applyOn)) {
     throw new Error(t("error_group_subgroup_only_for_bulk_commission"));
   }
+
+  const commissionTypeRaw = String(payload.commission_type || "SALESMAN_SALE").trim().toUpperCase();
+  const commissionType = COMMISSION_TYPES.has(commissionTypeRaw) ? commissionTypeRaw : "SALESMAN_SALE";
 
   const commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT;
   const rateType = String(payload.rate_type || "PER_PAIR")
@@ -155,6 +159,7 @@ const normalizeBulkInput = ({ payload, t }) => {
   return {
     employeeId,
     applyOn,
+    commissionType,
     subgroupId: subgroupIds[0] || null,
     subgroupIds,
     groupId: groupIds[0] || null,
@@ -173,6 +178,7 @@ const upsertBulkScopeRules = async ({
   trx,
   employeeId,
   applyOn,
+  commissionType = "SALESMAN_SALE",
   subgroupIds = [],
   groupIds = [],
   commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT,
@@ -202,6 +208,7 @@ const upsertBulkScopeRules = async ({
     .where({
       employee_id: employeeId,
       apply_on: applyOn,
+      commission_type: commissionType,
       commission_basis: commissionBasis,
       value_type: valueType,
     })
@@ -235,6 +242,7 @@ const upsertBulkScopeRules = async ({
       value: scopeRate,
       rate_type: rateType,
       value_type: valueType,
+      commission_type: commissionType,
       reverse_on_returns: reverseOnReturns,
       status,
       apply_on: applyOn,
@@ -437,6 +445,7 @@ const applyBulkSkuRateUpsert = async ({
   trx,
   employeeId,
   applyOn = APPLY_ON.SKU,
+  commissionType = "SALESMAN_SALE",
   subgroupIds = [],
   groupIds = [],
   commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT,
@@ -451,6 +460,7 @@ const applyBulkSkuRateUpsert = async ({
     trx,
     employeeId,
     applyOn,
+    commissionType,
     subgroupIds,
     groupIds,
     commissionBasis,
@@ -467,6 +477,7 @@ const applyBulkSkuRateUpsert = async ({
     .where({
       employee_id: employeeId,
       apply_on: APPLY_ON.SKU,
+      commission_type: commissionType,
       commission_basis: commissionBasis,
       value_type: valueType,
     })
@@ -507,6 +518,7 @@ const applyBulkSkuRateUpsert = async ({
           value: row.rate,
           rate_type: rateType,
           value_type: valueType,
+          commission_type: commissionType,
           reverse_on_returns: reverseOnReturns,
           status,
           apply_on: APPLY_ON.SKU,
@@ -524,6 +536,7 @@ const applyBulkSkuRateUpsert = async ({
       sku_id: row.skuId,
       subgroup_id: null,
       group_id: null,
+      commission_type: commissionType,
       commission_basis: commissionBasis,
       value: row.rate,
       rate_type: rateType,

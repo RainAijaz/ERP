@@ -574,6 +574,7 @@ router.post(
               employee_id: employeeId,
               apply_on: "SKU",
               sku_id: skuId,
+              commission_type: rowValues.commission_type,
               commission_basis: rowValues.commission_basis,
               value_type: rowValues.value_type,
             })
@@ -886,6 +887,7 @@ router.post(
         newValue: {
           mode: "BULK_COMMISSION_SKU_UPSERT",
           apply_on: normalized.applyOn,
+          commission_type: normalized.commissionType,
           employee_id: normalized.employeeId,
           subgroup_id: normalized.subgroupId,
           subgroup_ids: normalized.subgroupIds,
@@ -932,6 +934,7 @@ router.post(
           trx,
           employeeId: normalized.employeeId,
           applyOn: normalized.applyOn,
+          commissionType: normalized.commissionType,
           subgroupIds: normalized.subgroupIds,
           groupIds: normalized.groupIds,
           scopeRate: normalized.scopeRate,

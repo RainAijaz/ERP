@@ -245,8 +245,10 @@
     };
 
     const refreshConditionalFields = () => {
+      const newlyVisible = [];
       const nodes = form.querySelectorAll("[data-show-when-field], [data-show-when-not-field]");
       nodes.forEach((node) => {
+        const wasHidden = node.classList.contains("hidden");
         let shouldShow = true;
         const whenField = node.getAttribute("data-show-when-field");
         const whenValues = (node.getAttribute("data-show-when-values") || "")
@@ -271,6 +273,7 @@
         const controls = node.querySelectorAll("[data-field]");
         if (shouldShow) {
           node.classList.remove("hidden");
+          if (wasHidden) newlyVisible.push(node);
           controls.forEach((ctrl) => {
             ctrl.disabled = false;
             if (ctrl.hasAttribute("data-required")) ctrl.setAttribute("required", "required");
@@ -297,8 +300,8 @@
         }
       });
 
-      if (typeof window.initSearchableSelects === "function") {
-        window.initSearchableSelects(form);
+      if (newlyVisible.length && typeof window.initSearchableSelects === "function") {
+        newlyVisible.forEach((container) => window.initSearchableSelects(container));
       }
     };
 
@@ -415,6 +418,7 @@
 
     const fields = {
       employeeId: form.querySelector('[data-field="employee_id"]'),
+      commissionType: form.querySelector('[data-field="commission_type"]'),
       applyOn: form.querySelector('[data-field="apply_on"]'),
       subgroupId: form.querySelector('[data-field="subgroup_id"]'),
       groupId: form.querySelector('[data-field="group_id"]'),
@@ -815,6 +819,7 @@ const currentSeq = ++state.requestSeq;
         const payload = {
           _csrf: csrfToken,
           employee_id: getFirstMultiSelectValue(fields.employeeId),
+          commission_type: String(fields.commissionType?.value || "SALESMAN_SALE").trim().toUpperCase(),
           apply_on: normalizeApplyOn(),
           subgroup_ids: getSelectedValues(fields.subgroupId),
           group_ids: getSelectedValues(fields.groupId),
