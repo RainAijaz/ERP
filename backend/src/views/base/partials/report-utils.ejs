@@ -321,11 +321,13 @@
         });
       }
       if (!canOpenReportDetails) {
-        document.querySelectorAll("a[href*='/vouchers/']").forEach((link) => {
-          if (!(link instanceof HTMLAnchorElement)) return;
-          link.classList.add("pointer-events-none", "opacity-50");
-          link.setAttribute("aria-disabled", "true");
-          link.removeAttribute("href");
+        reportSections.forEach((section) => {
+          section.querySelectorAll("a[href*='/vouchers/']").forEach((link) => {
+            if (!(link instanceof HTMLAnchorElement)) return;
+            link.classList.add("pointer-events-none", "opacity-50");
+            link.setAttribute("aria-disabled", "true");
+            link.removeAttribute("href");
+          });
         });
       }
 
