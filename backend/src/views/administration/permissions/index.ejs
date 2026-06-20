@@ -81,6 +81,8 @@
           </button>
 
           <% const labelForRow = (row) => {
+             // For deduplicated shared-scope rows, prefer the DB scope description
+             if (row.scopeDescription && !row.hasChildren) return row.scopeDescription;
              if (!row.description) return row.scopeKey || row.key || t('unknown');
              return /^[a-z0-9_.]+$/.test(row.description) ? t(row.description) : row.description;
           }; %>
@@ -630,21 +632,50 @@
     });
   };
 
+  // Reverse map: when you uncheck X, auto-uncheck everything that requires X
+  const reverseDependencies = {};
+  Object.entries(dependencies).forEach(([action, requires]) => {
+    requires.forEach(req => {
+      if (!reverseDependencies[req]) reverseDependencies[req] = [];
+      if (!reverseDependencies[req].includes(action)) reverseDependencies[req].push(action);
+    });
+  });
+
+  function uncheckDependents(scopeId, uncheckedAction) {
+    const dependents = reverseDependencies[uncheckedAction] || [];
+    dependents.forEach(depAction => {
+      const name = `${scopeId}:${depAction}`;
+      const targets = getPermissionActionCheckboxesByName(name);
+      let anyUnchecked = false;
+      targets.forEach(target => {
+        if (!target.checked) return;
+        target.checked = false;
+        syncDuplicatePermissionCheckboxes(target);
+        anyUnchecked = true;
+      });
+      if (anyUnchecked) uncheckDependents(scopeId, depAction);
+    });
+  }
+
   function checkDependencies(sourceCheckbox) {
         syncDuplicatePermissionCheckboxes(sourceCheckbox);
-        if (!sourceCheckbox.checked) return;
-        
+
         const parts = sourceCheckbox.name.split(':');
         const scopeId = parts[0];
         const action = parts[1];
-        
+
+        if (!sourceCheckbox.checked) {
+          uncheckDependents(scopeId, action);
+          return;
+        }
+
         const required = dependencies[action];
         if (required) {
             required.forEach(reqAction => {
                 checkAndFlash(scopeId, reqAction);
             });
         }
-        
+
         // Always ensure View is checked if anything else is checked
         if (action !== 'can_view') checkAndFlash(scopeId, 'can_view');
   }

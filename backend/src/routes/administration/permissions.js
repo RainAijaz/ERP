@@ -274,7 +274,7 @@ router.get(
         ]),
       );
 
-      const navRows = [];
+      const navRowsAll = [];
       const walk = (nodes, parentPath = "", depth = 0) => {
         nodes.forEach((node) => {
           const path = parentPath ? `${parentPath}.${node.key}` : node.key;
@@ -289,7 +289,7 @@ router.get(
             scope && node.scopeType && isPermissionMatrixScope(node.scopeType),
           );
 
-          navRows.push({
+          navRowsAll.push({
             key: node.key,
             path,
             parentPath: parentPath || null,
@@ -300,6 +300,7 @@ router.get(
             description: node.labelKey,
             moduleGroup: node.moduleGroup || null,
             scopeId: scope ? scope.id : null,
+            scopeDescription: scope ? scope.description : null,
             rights: scope ? permissionsMap[scope.id] || {} : {},
             baseRights: scope ? basePermissionsMap[scope.id] || {} : {},
             overrideRights: scope ? overridePermissionsMap[scope.id] || {} : {},
@@ -316,6 +317,17 @@ router.get(
       };
 
       walk(navConfig);
+
+      // Deduplicate: when multiple nav nodes share the same scope (e.g. BOM report pages
+      // all sharing master_data.bom.reports), show only one row in the permissions matrix.
+      // Keep the first occurrence but label it with the scope description.
+      const seenScopeIds = new Set();
+      const navRows = navRowsAll.filter((row) => {
+        if (!row.scopeId || row.hasChildren) return true;
+        if (seenScopeIds.has(row.scopeId)) return false;
+        seenScopeIds.add(row.scopeId);
+        return true;
+      });
 
       let accountAccessRows = [];
       let accountAccessAccounts = [];
@@ -462,35 +474,38 @@ router.post(
         "can_view_cost_fields",
       ];
 
-      Object.values(insertMap).forEach((permRow) => {
-        const scopeType = String(permRow._scopeType || "").toUpperCase();
+      // Cascade only applies in role mode. In user mode the form explicitly encodes
+      // every action value (including revokes), and the cascade would override them.
+      if (!isUserMode) {
+        Object.values(insertMap).forEach((permRow) => {
+          const scopeType = String(permRow._scopeType || "").toUpperCase();
 
-        if (scopeType === "REPORT") {
-          const needsLoad = requireLoad.some((act) => permRow[act] === true);
-          const needsView = needsLoad || permRow.can_view === true;
-          if (needsLoad) {
-            permRow.can_load = true;
+          if (scopeType === "REPORT") {
+            const needsLoad = requireLoad.some((act) => permRow[act] === true);
+            const needsView = needsLoad || permRow.can_view === true;
+            if (needsLoad) {
+              permRow.can_load = true;
+            }
+            if (needsView) {
+              permRow.can_view = true;
+            }
+            return;
+          }
+
+          const needsNavigate = requireNavigate.some(
+            (act) => permRow[act] === true,
+          );
+          const needsView = requireView.some((act) => permRow[act] === true);
+
+          if (needsNavigate) {
+            permRow["can_navigate"] = true;
+            permRow["can_view"] = true;
           }
           if (needsView) {
-            permRow.can_view = true;
+            permRow["can_view"] = true;
           }
-          return;
-        }
-
-        // Check if any "advanced" action is true
-        const needsNavigate = requireNavigate.some(
-          (act) => permRow[act] === true,
-        );
-        const needsView = requireView.some((act) => permRow[act] === true);
-
-        if (needsNavigate) {
-          permRow["can_navigate"] = true;
-          permRow["can_view"] = true; // Navigate implies View usually
-        }
-        if (needsView) {
-          permRow["can_view"] = true;
-        }
-      });
+        });
+      }
 
       if (
         !isUserMode &&
