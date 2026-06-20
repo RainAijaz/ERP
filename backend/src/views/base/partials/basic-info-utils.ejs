@@ -1576,7 +1576,7 @@
     });
 
     const closeRowMenus = (except) => {
-      rowMenuPanels.forEach((panel) => {
+      document.querySelectorAll("[data-row-menu-panel]").forEach((panel) => {
         if (panel === except) return;
         panel.classList.add("hidden");
       });
@@ -1641,6 +1641,238 @@
       });
     }
 
+    // --- Commission row builder for lazy-loaded rows ---
+    let buildCommissionRow = null;
+    <% if (page.scopeKey === "hr_payroll.commissions") { %>
+    (function () {
+      const _tYes = "<%= t('yes') %>";
+      const _tNo  = "<%= t('no') %>";
+      const _tNone = "<%= t('none') %>";
+      const _tEdit = "<%= t('edit') %>";
+      const _tDeactivate = "<%= t('deactivate') %>";
+      const _tActivate   = "<%= t('activate') %>";
+      const _tPermanentDelete = "<%= t('permanent_delete') %>";
+      const _canEdit      = <%- can("SCREEN", page.scopeKey, "edit")        ? "true" : "false" %>;
+      const _canDelete    = <%- can("SCREEN", page.scopeKey, "delete")      ? "true" : "false" %>;
+      const _canHardDelete = <%- can("SCREEN", page.scopeKey, "hard_delete") ? "true" : "false" %>;
+      const _ctColorMap = {
+        salesman_sale: "border-blue-200 bg-blue-50 text-blue-700",
+        branch_sale:   "border-violet-200 bg-violet-50 text-violet-700",
+        transfer:      "border-amber-200 bg-amber-50 text-amber-700",
+        party:         "border-emerald-200 bg-emerald-50 text-emerald-700",
+      };
+      const _ctLabelMap = {
+        salesman_sale: "<%- t('commission_type_salesman_sale') || 'Salesman Sale' %>",
+        branch_sale:   "<%- t('commission_type_branch_sale')   || 'Branch Sale' %>",
+        transfer:      "<%- t('commission_type_transfer')       || 'Transfer' %>",
+        party:         "<%- t('commission_type_party')          || 'Party' %>",
+      };
+      const _editFieldNames = [
+        "employee_id","commission_type","apply_on","sku_id",
+        "subgroup_id","group_id","rate_type","value","status","reverse_on_returns",
+      ];
+
+      buildCommissionRow = function (row, empName, idx) {
+        const tr = document.createElement("tr");
+        tr.className = "hover:bg-amber-50/40 odd:bg-white even:bg-slate-50/40 hidden";
+        tr.setAttribute("data-row", "");
+        tr.dataset.active          = row.is_active ? "true" : "false";
+        tr.dataset.groupName       = empName;
+        tr.dataset.accountType     = row.apply_on || "";
+        tr.dataset.accountGroup    = row.commission_basis || "";
+        tr.dataset.rateType        = row.rate_type || "";
+        tr.dataset.rateAmount      = row.value != null ? String(row.value) : "";
+        tr.dataset.commissionBasis = row.commission_basis || "";
+        tr.dataset.ruleId          = row.id || "";
+        tr.dataset.applyOn         = row.apply_on || "";
+        tr.dataset.selectorDisplay = row.selector_display || "";
+        tr.dataset.sourceRuleId    = row.source_rule_id || "";
+        tr.dataset.skuSubgroupName = row.sku_subgroup_name || "";
+        tr.dataset.skuGroupName    = row.sku_group_name || "";
+        tr.dataset.commissionType  = row.commission_type || "";
+
+        // Sr No
+        const srTd = document.createElement("td");
+        srTd.className = "px-4 py-3 text-slate-700";
+        srTd.textContent = String(idx + 1);
+        tr.appendChild(srTd);
+
+        // employee_name
+        const nameTd = document.createElement("td");
+        nameTd.className = "px-4 py-3 text-slate-700";
+        nameTd.textContent = row.employee_name || empName || _tNone;
+        tr.appendChild(nameTd);
+
+        // commission_type badge
+        const ctTd = document.createElement("td");
+        ctTd.className = "px-4 py-3 text-slate-700";
+        const ctVal = String(row.commission_type || "").toLowerCase();
+        const ctSpan = document.createElement("span");
+        ctSpan.className = "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] " +
+          (_ctColorMap[ctVal] || "border-slate-200 bg-white text-slate-600");
+        ctSpan.textContent = _ctLabelMap[ctVal] || row.commission_type || "";
+        ctTd.appendChild(ctSpan);
+        tr.appendChild(ctTd);
+
+        // sku_code
+        const skuTd = document.createElement("td");
+        skuTd.className = "px-4 py-3 text-slate-700";
+        skuTd.textContent = (row.sku_code != null && row.sku_code !== "") ? row.sku_code : _tNone;
+        tr.appendChild(skuTd);
+
+        // value (rate)
+        const valTd = document.createElement("td");
+        valTd.className = "px-4 py-3 text-slate-700";
+        valTd.setAttribute("data-rate-value-cell", "");
+        valTd.textContent = (row.value != null && row.value !== "") ? String(row.value) : _tNone;
+        tr.appendChild(valTd);
+
+        // reverse_on_returns badge
+        const rorTd = document.createElement("td");
+        rorTd.className = "px-4 py-3 text-slate-700";
+        const rorSpan = document.createElement("span");
+        rorSpan.className = "inline-flex items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600";
+        rorSpan.textContent = row.reverse_on_returns ? _tYes : _tNo;
+        rorTd.appendChild(rorSpan);
+        tr.appendChild(rorTd);
+
+        // Actions cell
+        const actTd = document.createElement("td");
+        actTd.className = "px-4 py-3";
+
+        // Desktop actions
+        const actDesktop = document.createElement("div");
+        actDesktop.className = "hidden items-center gap-2 lg:flex";
+
+        const _makeEditData = (btn) => {
+          const data = {
+            id: btn.dataset.id,
+            action: basePath + "/" + btn.dataset.id,
+            created_at: "", created_by: "", updated_at: "", updated_by: "",
+          };
+          btn.getAttributeNames().forEach((attr) => {
+            if (!attr.startsWith("data-")) return;
+            const key = attr.slice(5).replace(/-+/g, "_");
+            data[key] = btn.getAttribute(attr);
+          });
+          return data;
+        };
+
+        if (_canEdit) {
+          const btn = document.createElement("button");
+          btn.className = "inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 cursor-pointer";
+          btn.type = "button";
+          btn.setAttribute("data-edit", "");
+          btn.dataset.id = String(row.id || "");
+          _editFieldNames.forEach((name) => {
+            btn.setAttribute("data-" + name, row[name] != null ? String(row[name]) : "");
+          });
+          btn.title = _tEdit;
+          btn.innerHTML = '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 20h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+          btn.addEventListener("click", () => openModal("edit", _makeEditData(btn)));
+          actDesktop.appendChild(btn);
+        }
+
+        if (_canDelete) {
+          const isActive = Boolean(row.is_active);
+          const btn = document.createElement("button");
+          btn.className = "inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 cursor-pointer";
+          btn.type = "button";
+          btn.setAttribute("data-toggle", "");
+          btn.dataset.toggleAction = basePath + "/" + row.id + "/toggle";
+          btn.dataset.toggleLabel  = isActive ? _tDeactivate : _tActivate;
+          btn.title = isActive ? _tDeactivate : _tActivate;
+          btn.innerHTML = isActive
+            ? '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 12h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>'
+            : '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+          btn.addEventListener("click", () => openConfirm(btn.dataset.toggleLabel || i18n.confirm, i18n.proceedChange, btn.dataset.toggleAction));
+          actDesktop.appendChild(btn);
+        }
+
+        if (_canHardDelete) {
+          const btn = document.createElement("button");
+          btn.className = "inline-flex items-center justify-center rounded-md border border-rose-200 bg-rose-50 p-2 text-rose-600 transition hover:border-rose-300 hover:text-rose-700 cursor-pointer";
+          btn.type = "button";
+          btn.setAttribute("data-delete", "");
+          btn.dataset.deleteAction = basePath + "/" + row.id + "/delete";
+          btn.title = _tPermanentDelete;
+          btn.innerHTML = '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M9 7V5h6v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M6 7l1 13h10l1-13" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+          btn.addEventListener("click", () => openConfirm(i18n.permanentDelete, i18n.permanentDeleteMessage, btn.dataset.deleteAction));
+          actDesktop.appendChild(btn);
+        }
+
+        actTd.appendChild(actDesktop);
+
+        // Mobile kebab menu
+        const mobileWrap = document.createElement("div");
+        mobileWrap.className = "relative lg:hidden";
+
+        const menuBtn = document.createElement("button");
+        menuBtn.className = "inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900";
+        menuBtn.type = "button";
+        menuBtn.setAttribute("data-row-menu", "");
+        menuBtn.setAttribute("aria-label", "Actions");
+        menuBtn.innerHTML = '<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 12h.01M12 12h.01M18 12h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+
+        const menuPanel = document.createElement("div");
+        menuPanel.className = "absolute right-0 z-20 mt-2 hidden w-40 rounded-xl border border-slate-200 bg-white p-2 shadow-lg";
+        menuPanel.setAttribute("data-row-menu-panel", "");
+
+        menuBtn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          const willOpen = menuPanel.classList.contains("hidden");
+          closeRowMenus();
+          if (willOpen) menuPanel.classList.remove("hidden");
+        });
+        menuPanel.addEventListener("click", (ev) => ev.stopPropagation());
+
+        if (_canEdit) {
+          const btn = document.createElement("button");
+          btn.className = "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 transition hover:bg-slate-100";
+          btn.type = "button";
+          btn.setAttribute("data-edit", "");
+          btn.dataset.id = String(row.id || "");
+          _editFieldNames.forEach((name) => {
+            btn.setAttribute("data-" + name, row[name] != null ? String(row[name]) : "");
+          });
+          btn.textContent = _tEdit;
+          btn.addEventListener("click", () => openModal("edit", _makeEditData(btn)));
+          menuPanel.appendChild(btn);
+        }
+
+        if (_canDelete) {
+          const isActive = Boolean(row.is_active);
+          const btn = document.createElement("button");
+          btn.className = "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 transition hover:bg-slate-100";
+          btn.type = "button";
+          btn.setAttribute("data-toggle", "");
+          btn.dataset.toggleAction = basePath + "/" + row.id + "/toggle";
+          btn.dataset.toggleLabel  = isActive ? _tDeactivate : _tActivate;
+          btn.textContent = isActive ? _tDeactivate : _tActivate;
+          btn.addEventListener("click", () => openConfirm(btn.dataset.toggleLabel || i18n.confirm, i18n.proceedChange, btn.dataset.toggleAction));
+          menuPanel.appendChild(btn);
+        }
+
+        if (_canHardDelete) {
+          const btn = document.createElement("button");
+          btn.className = "flex w-full items-center gap-2 rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.14em] text-rose-600 transition hover:bg-rose-50";
+          btn.type = "button";
+          btn.setAttribute("data-delete", "");
+          btn.dataset.deleteAction = basePath + "/" + row.id + "/delete";
+          btn.textContent = _tPermanentDelete;
+          btn.addEventListener("click", () => openConfirm(i18n.permanentDelete, i18n.permanentDeleteMessage, btn.dataset.deleteAction));
+          menuPanel.appendChild(btn);
+        }
+
+        mobileWrap.appendChild(menuBtn);
+        mobileWrap.appendChild(menuPanel);
+        actTd.appendChild(mobileWrap);
+        tr.appendChild(actTd);
+        return tr;
+      };
+    })();
+    <% } %>
+
     if (tableBody && isGroupedRatesTable) {
       tableBody.addEventListener("click", (event) => {
         const header = event.target.closest("tr.group-header");
@@ -1650,9 +1882,60 @@
         if (!key) return;
         const isOpen = header.dataset.groupOpen === "true";
         const iconWrap = header.querySelector("[data-labour-group-icon-wrap]");
+
+        const spinnerHtml = '<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V2a10 10 0 00-10 10h2z"></path></svg>';
+
+        // For commissions opening a not-yet-loaded employee: lazy-load first
+        if (isCommissions && !isOpen && typeof buildCommissionRow === "function") {
+          const placeholder = tableBody.querySelector('[data-row][data-lazy-loaded="false"][data-group-name="' + CSS.escape(key) + '"]');
+          if (placeholder) {
+            const employeeId = String(placeholder.dataset.employeeId || "").trim();
+            if (iconWrap) iconWrap.innerHTML = spinnerHtml;
+            fetch(basePath + "/employee-rules?employee_id=" + encodeURIComponent(employeeId), {
+              method: "GET",
+              headers: { Accept: "application/json" },
+              credentials: "same-origin",
+            })
+              .then(function (resp) { return resp.ok ? resp.json() : Promise.reject(resp.status); })
+              .then(function (data) {
+                const fetchedRows = Array.isArray(data.rows) ? data.rows : [];
+                const newRows = fetchedRows.map(function (row, idx) {
+                  return buildCommissionRow(row, key, idx);
+                });
+                newRows.forEach(function (newRow) { tableBody.insertBefore(newRow, placeholder); });
+                placeholder.remove();
+
+                // Re-init rows cache
+                rowsCache = Array.from(tableBody.querySelectorAll("[data-row]"));
+                rowsCache.forEach(function (row, index) {
+                  if (!row.dataset.origIndex) row.dataset.origIndex = String(index);
+                  if (!row.dataset.searchNormalized) row.dataset.searchNormalized = buildRowSearchText(row);
+                });
+
+                // Update labourGroupVisibleRows: swap placeholder for new rows
+                labourGroupVisibleRows = labourGroupVisibleRows.filter(function (r) { return r !== placeholder; });
+                newRows.forEach(function (row) {
+                  row.dataset.filterVisible = "true";
+                  labourGroupVisibleRows.push(row);
+                });
+
+                labourGroupOpenKeys.add(key);
+                applyLabourRatesGrouping(labourGroupVisibleRows);
+                applyCommissionSubGrouping();
+              })
+              .catch(function () {
+                // On error keep placeholder but mark loaded to avoid infinite retries
+                placeholder.dataset.lazyLoaded = "true";
+                labourGroupOpenKeys.add(key);
+                applyLabourRatesGrouping(labourGroupVisibleRows);
+                applyCommissionSubGrouping();
+              });
+            return;
+          }
+        }
+
         if (iconWrap && !isOpen) {
-          iconWrap.innerHTML =
-            '<svg class="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V2a10 10 0 00-10 10h2z"></path></svg>';
+          iconWrap.innerHTML = spinnerHtml;
         }
         window.setTimeout(() => {
           if (isOpen) labourGroupOpenKeys.delete(key);
