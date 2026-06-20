@@ -34,8 +34,8 @@
   <section
     class="rounded-2xl border border-slate-200 bg-white/95 shadow-md overflow-hidden"
     data-print-area
-    data-scope-key="<%= page.scopeKey === 'hr_payroll.commissions' ? 'hr_payroll.commissions_lazy' : page.scopeKey %>"
-    data-grouped-table-ready="<%= page.scopeKey === 'hr_payroll.labour_rates' ? 'false' : 'true' %>"
+    data-scope-key="<%= page.scopeKey %>"
+    data-grouped-table-ready="<%= (page.scopeKey === 'hr_payroll.labour_rates' || page.scopeKey === 'hr_payroll.commissions') ? 'false' : 'true' %>"
   >
     <% const canEdit = can("SCREEN", page.scopeKey, "edit"); %>
     <% const canDelete = can("SCREEN", page.scopeKey, "delete"); %>
@@ -86,30 +86,21 @@
             <% if (groupSummaryArr.length === 0) { %>
               <%- include("../base/partials/table-empty", { t, colspan: displayColumns.length + 2 }) %>
             <% } else { %>
+              <%/* One invisible placeholder row per employee so basic-info-utils.ejs builds the real group headers.
+                   Uses style="display:none" (not class="hidden") so applyFilters's classList.remove("hidden")
+                   does not accidentally expose the empty row. */%>
               <% groupSummaryArr.forEach(function(group) { %>
                 <tr
-                  class="cursor-pointer select-none bg-slate-50/80 text-slate-700 transition-colors hover:bg-slate-100/80 border-b border-slate-200"
+                  style="display:none"
                   data-row
                   data-active="true"
                   data-group-name="<%= group.employee_name || '' %>"
-                  data-commission-lazy-group
                   data-employee-id="<%= group.employee_id %>"
-                  data-employee-name="<%= group.employee_name || '' %>"
-                  data-rule-count="<%= group.rule_count %>"
-                  data-loaded="false"
-                  data-open="false"
+                  data-lazy-count="<%= group.rule_count %>"
+                  data-lazy-loaded="false"
                 >
-                  <td colspan="<%= displayColumns.length + 2 %>" class="px-4 py-3">
-                    <div class="flex items-center justify-between gap-4">
-                      <div class="flex items-center gap-3">
-                        <span class="text-sm font-semibold text-slate-700"><%= group.employee_name || "" %></span>
-                        <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
-                          <%= group.rule_count %> <%= t("rates") || "RATES" %>
-                        </span>
-                      </div>
-                      <span class="commission-group-chevron text-slate-400 text-xs transition-transform duration-200" style="display:inline-block">▼</span>
-                    </div>
-                  </td>
+                  <td><%= group.employee_name || '' %></td>
+                  <% for (var _pi = 1; _pi < displayColumns.length + 2; _pi++) { %><td></td><% } %>
                 </tr>
               <% }) %>
             <% } %>
@@ -2042,6 +2033,7 @@ const currentSeq = ++state.requestSeq;
     const canEdit = <%= canEdit ? 'true' : 'false' %>;
     const canDelete = <%= canDelete ? 'true' : 'false' %>;
     const canHardDelete = <%= canHardDelete ? 'true' : 'false' %>;
+    const colspan = <%= displayColumns.length + 2 %>;
     const tCommTypes = {
       SALESMAN_SALE: "<%- (t('commission_type_salesman_sale') || 'Salesman Sale').replace(/"/g, '&quot;') %>",
       BRANCH_SALE:   "<%- (t('commission_type_branch_sale') || 'Branch Sale').replace(/"/g, '&quot;') %>",
@@ -2101,7 +2093,7 @@ const currentSeq = ++state.requestSeq;
       const toggleBtn = canDelete
         ? `<button type="button" data-commission-lazy-toggle
               data-toggle-action="${basePath}/${esc(row.id)}/toggle"
-              data-row-active="${row.is_active ? 'true' : 'false'}"
+              data-row-active="${row.is_active ? "true" : "false"}"
               class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 cursor-pointer"
               title="${row.is_active ? '<%- (t("deactivate") || "Deactivate").replace(/"/g, "&quot;") %>' : '<%- (t("activate") || "Activate").replace(/"/g, "&quot;") %>'}">
               <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -2126,8 +2118,8 @@ const currentSeq = ++state.requestSeq;
         : "";
 
       return `<tr
-          class="hover:bg-amber-50/40 odd:bg-white even:bg-slate-50/40 commission-lazy-row"
-          data-row
+          class="hover:bg-amber-50/40 odd:bg-white even:bg-slate-50/40"
+          data-lazy-injected="true"
           data-active="${row.is_active ? "true" : "false"}"
           data-group-name="${esc(row.employee_name || "")}"
           data-commission-type="${esc(ct)}"
@@ -2160,59 +2152,27 @@ const currentSeq = ++state.requestSeq;
         </tr>`;
     };
 
-    const injectRows = (groupRow, rows) => {
-      const employeeName = groupRow.dataset.employeeName;
-      let insertAfter = groupRow;
-      rows.forEach((row, idx) => {
-        const tmp = document.createElement("table");
-        tmp.innerHTML = `<tbody>${renderRow(row, idx)}</tbody>`;
-        const el = tmp.querySelector("tr");
-        if (el) {
-          el.dataset.groupName = employeeName;
-          insertAfter.after(el);
-          insertAfter = el;
-        }
+    // Show or hide all injected rows belonging to a group
+    const toggleInjectedRows = (groupKey, show) => {
+      tableBody.querySelectorAll("[data-lazy-injected]").forEach((r) => {
+        if (r.dataset.groupName === groupKey) r.style.display = show ? "" : "none";
       });
-      groupRow.dataset.loaded = "true";
     };
 
-    const setGroupOpen = (groupRow, open) => {
-      const employeeName = groupRow.dataset.employeeName;
-      const chevron = groupRow.querySelector(".commission-group-chevron");
-      groupRow.dataset.open = open ? "true" : "false";
-      if (chevron) chevron.style.transform = open ? "rotate(180deg)" : "rotate(0deg)";
-      let next = groupRow.nextElementSibling;
-      while (next && next.classList.contains("commission-lazy-row")) {
-        if (next.dataset.groupName === employeeName) {
-          next.style.display = open ? "" : "none";
-        }
-        next = next.nextElementSibling;
-      }
-    };
+    // Fetch real rows and inject them after the placeholder row
+    const loadGroupRows = async (placeholder, header) => {
+      if (placeholder.dataset.lazyLoading === "true") return;
+      placeholder.dataset.lazyLoading = "true";
 
-    const handleGroupClick = async (groupRow) => {
-      const isOpen = groupRow.dataset.open === "true";
-      if (isOpen) {
-        setGroupOpen(groupRow, false);
-        return;
-      }
+      const employeeId = placeholder.dataset.employeeId;
+      const groupKey = placeholder.dataset.groupName;
 
-      const chevron = groupRow.querySelector(".commission-group-chevron");
-      if (groupRow.dataset.loaded === "true") {
-        setGroupOpen(groupRow, true);
-        return;
-      }
-
-      // Show loading indicator
-      groupRow.dataset.open = "true";
-      if (chevron) chevron.style.transform = "rotate(180deg)";
       const spinnerRow = document.createElement("tr");
-      spinnerRow.className = "commission-lazy-row";
-      spinnerRow.dataset.groupName = groupRow.dataset.employeeName;
-      spinnerRow.innerHTML = `<td colspan="7" class="px-4 py-4 text-center text-sm text-slate-400">${tLoading}</td>`;
-      groupRow.after(spinnerRow);
+      spinnerRow.dataset.lazyInjected = "true";
+      spinnerRow.dataset.groupName = groupKey;
+      spinnerRow.innerHTML = `<td colspan="${colspan}" class="px-4 py-4 text-center text-sm text-slate-400">${tLoading}</td>`;
+      placeholder.after(spinnerRow);
 
-      const employeeId = groupRow.dataset.employeeId;
       try {
         if (!rowCache[employeeId]) {
           const resp = await fetch(
@@ -2220,33 +2180,104 @@ const currentSeq = ++state.requestSeq;
             { headers: { Accept: "application/json" } },
           );
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-          const data = await resp.json();
-          rowCache[employeeId] = data.rows || [];
+          const json = await resp.json();
+          rowCache[employeeId] = json.rows || [];
         }
         spinnerRow.remove();
-        injectRows(groupRow, rowCache[employeeId]);
+        const rows = rowCache[employeeId];
+        let insertAfter = placeholder;
+        rows.forEach((row, idx) => {
+          const tmp = document.createElement("table");
+          tmp.innerHTML = `<tbody>${renderRow(row, idx)}</tbody>`;
+          const el = tmp.querySelector("tr");
+          if (el) { insertAfter.after(el); insertAfter = el; }
+        });
+        placeholder.dataset.lazyLoaded = "true";
+        delete placeholder.dataset.lazyLoading;
+        // If group was closed while loading, hide the injected rows immediately
+        if (header.dataset.groupOpen !== "true") {
+          toggleInjectedRows(groupKey, false);
+        }
+        // Update badge in the group header to show real count
+        const badge = header.querySelector(".rounded-full");
+        if (badge && placeholder.dataset.lazyCount) {
+          const parts = badge.textContent.trim().split(" ");
+          badge.textContent = placeholder.dataset.lazyCount + " " + parts.slice(1).join(" ");
+        }
       } catch (err) {
         console.error("[commission-lazy]", err);
-        spinnerRow.innerHTML = `<td colspan="7" class="px-4 py-4 text-center text-sm text-rose-500 cursor-pointer">${tError}</td>`;
-        groupRow.dataset.open = "false";
-        if (chevron) chevron.style.transform = "rotate(0deg)";
-        spinnerRow.addEventListener("click", () => {
-          spinnerRow.remove();
-          groupRow.dataset.open = "false";
-          handleGroupClick(groupRow);
-        }, { once: true });
+        delete placeholder.dataset.lazyLoading;
+        spinnerRow.innerHTML = `<td colspan="${colspan}" class="px-4 py-4 text-center text-sm text-rose-500 cursor-pointer">${tError}</td>`;
+        spinnerRow.addEventListener("click", () => { spinnerRow.remove(); loadGroupRows(placeholder, header); }, { once: true });
       }
     };
 
-    tableBody.addEventListener("click", async (event) => {
-      // Group header expand/collapse
-      const groupRow = event.target.closest("[data-commission-lazy-group]");
-      if (groupRow) {
-        await handleGroupClick(groupRow);
-        return;
+    // Wire up lazy-load behaviour on a group header built by basic-info-utils.ejs
+    const observedHeaders = new WeakSet();
+
+    const setupGroupHeader = (header) => {
+      if (observedHeaders.has(header)) return;
+      observedHeaders.add(header);
+
+      const groupKey = header.dataset.groupKey;
+
+      // Find the placeholder row for this group
+      const placeholder = Array.from(tableBody.querySelectorAll("[data-row][data-lazy-count]"))
+        .find((r) => r.dataset.groupName === groupKey);
+
+      // Update the "1 RATES" badge to the real count immediately
+      if (placeholder?.dataset.lazyCount) {
+        const badge = header.querySelector(".rounded-full");
+        if (badge) {
+          const parts = badge.textContent.trim().split(" ");
+          badge.textContent = placeholder.dataset.lazyCount + " " + parts.slice(1).join(" ");
+        }
       }
 
-      // Edit button on a lazy row
+      // If header was already open when re-created (search re-ran), restore visible injected rows
+      if (header.dataset.groupOpen === "true" && placeholder?.dataset.lazyLoaded === "true") {
+        toggleInjectedRows(groupKey, true);
+      }
+
+      // React to expand/collapse driven by basic-info-utils.ejs click handler
+      new MutationObserver(() => {
+        if (!placeholder) return;
+        const isOpen = header.dataset.groupOpen === "true";
+        if (isOpen) {
+          if (placeholder.dataset.lazyLoaded !== "true") {
+            loadGroupRows(placeholder, header);
+          } else {
+            toggleInjectedRows(groupKey, true);
+          }
+        } else {
+          toggleInjectedRows(groupKey, false);
+        }
+      }).observe(header, { attributes: true, attributeFilter: ["data-group-open"] });
+    };
+
+    // Watch for group-header rows added or removed by applyLabourRatesGrouping
+    new MutationObserver((mutations) => {
+      mutations.forEach((m) => {
+        m.addedNodes.forEach((node) => {
+          if (node.nodeType === 1 && node.classList?.contains("group-header")) {
+            setupGroupHeader(node);
+          }
+        });
+        // When a group header is removed (search filtered it out), hide its injected rows
+        m.removedNodes.forEach((node) => {
+          if (node.nodeType === 1 && node.classList?.contains("group-header")) {
+            const gk = node.dataset.groupKey;
+            if (gk) toggleInjectedRows(gk, false);
+          }
+        });
+      });
+    }).observe(tableBody, { childList: true });
+
+    // Handle any group headers already present (e.g. after applyFilters re-run)
+    tableBody.querySelectorAll(".group-header[data-group-key]").forEach(setupGroupHeader);
+
+    // Event delegation for edit / toggle / delete on lazily-injected rows
+    tableBody.addEventListener("click", async (event) => {
       const editBtn = event.target.closest("[data-commission-lazy-edit]");
       if (editBtn && proxyBtn) {
         event.preventDefault();
@@ -2257,47 +2288,29 @@ const currentSeq = ++state.requestSeq;
         return;
       }
 
-      // Toggle (activate/deactivate) on a lazy row
       const toggleBtn = event.target.closest("[data-commission-lazy-toggle]");
       if (toggleBtn) {
-        const toggleAction = toggleBtn.getAttribute("data-toggle-action");
-        if (!toggleAction) return;
+        const action = toggleBtn.dataset.toggleAction;
+        if (!action) return;
         try {
           toggleBtn.disabled = true;
-          const resp = await fetch(toggleAction, {
-            method: "POST",
-            headers: { "X-CSRF-Token": csrfToken, "Content-Type": "application/json" },
-          });
-          if (resp.ok) {
-            window.location.reload();
-          } else {
-            toggleBtn.disabled = false;
-          }
-        } catch {
-          toggleBtn.disabled = false;
-        }
+          const resp = await fetch(action, { method: "POST", headers: { "X-CSRF-Token": csrfToken } });
+          if (resp.ok) window.location.reload();
+          else toggleBtn.disabled = false;
+        } catch { toggleBtn.disabled = false; }
         return;
       }
 
-      // Hard delete on a lazy row
       const deleteBtn = event.target.closest("[data-commission-lazy-delete]");
       if (deleteBtn) {
-        const deleteAction = deleteBtn.getAttribute("data-delete-action");
-        if (!deleteAction) return;
+        const action = deleteBtn.dataset.deleteAction;
+        if (!action) return;
         try {
           deleteBtn.disabled = true;
-          const resp = await fetch(deleteAction, {
-            method: "POST",
-            headers: { "X-CSRF-Token": csrfToken, "Content-Type": "application/json" },
-          });
-          if (resp.ok) {
-            window.location.reload();
-          } else {
-            deleteBtn.disabled = false;
-          }
-        } catch {
-          deleteBtn.disabled = false;
-        }
+          const resp = await fetch(action, { method: "POST", headers: { "X-CSRF-Token": csrfToken } });
+          if (resp.ok) window.location.reload();
+          else deleteBtn.disabled = false;
+        } catch { deleteBtn.disabled = false; }
       }
     });
   })();
