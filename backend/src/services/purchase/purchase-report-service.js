@@ -371,12 +371,15 @@ const getPurchaseReportRows = async ({ req, filters }) => {
   const includeRawMaterialRows =
     filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.asset &&
     filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.consumable;
+  const hasItemFilter = filters.rawMaterialIds.length > 0;
   const includeAssetRows =
     supportsPurchaseCategory &&
+    !hasItemFilter &&
     filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.rawMaterial &&
     filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.consumable;
   const includeConsumableRows =
     supportsPurchaseCategory &&
+    !hasItemFilter &&
     filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.rawMaterial &&
     filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.asset;
 
