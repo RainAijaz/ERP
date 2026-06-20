@@ -48,7 +48,7 @@
             <%= t("print") %>
           </button>
         <% } %>
-          <% if (isFinishedView && canCreate) { %>
+          <% if (canCreate) { %>
             <button class="rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800" type="button" data-modal-open data-mode="create">
               <%= t("add") %> <%= t("skus") %>
             </button>
@@ -244,19 +244,21 @@
 
 <script>
   (function () {
+    const isFinishedGoodsView = <%= isFinishedView ? 'true' : 'false' %>;
+
     const modalForm = document.querySelector("[data-modal-form]");
     if (!modalForm) return;
-    
+
     // Elements
     const rateList = modalForm.querySelector("[data-sku-rate-list]");
     const emptyMsg = modalForm.querySelector("[data-rate-list-empty]");
     const itemSelect = modalForm.querySelector('select[name="item_id"]');
-    
+
     const createContainer = document.getElementById("create-mode-container");
     const editContainer = document.getElementById("edit-rates-container");
     const editList = document.getElementById("bulk-edit-list");
     const editTitle = document.getElementById("edit-rates-article-title");
-    
+
     let existingCombinationsSet = new Set();
 
     // 1. SMART ADD LOGIC (Matrix)
@@ -273,7 +275,7 @@
              select.dispatchEvent(new Event("change", { bubbles: true }));
            }
         });
-        
+
         try {
           const res = await fetch(`<%= basePath %>/config/${itemId}`);
           const config = await res.json();
@@ -287,7 +289,7 @@
                     opt.selected = true; opt.disabled = true;
                   }
                 });
-                select.dispatchEvent(new Event("change", { bubbles: true })); 
+                select.dispatchEvent(new Event("change", { bubbles: true }));
               }
             };
             lockOptions("size_ids", config.size_ids);
@@ -311,45 +313,73 @@
         return Array.from(select.options).filter(o => o.selected).map(o => ({ value: o.value, label: o.textContent.trim() }));
       };
       const buildKey = (s, g, c, p) => [s||0, g||0, c||0, p||0].join("|");
-      const buildLabel = (s, g, c, p) => [s, g, c, p].join(", ");
 
       const sizes = readSelected("size_ids");
-      const grades = readSelected("grade_ids");
       const colors = readSelected("color_ids");
-      const packings = readSelected("packing_type_ids");
-      
+
       rateList.innerHTML = "";
-      if (!sizes.length || !grades.length || !packings.length) {
-        if(emptyMsg) emptyMsg.style.display = "block";
-        return;
-      }
-      if(emptyMsg) emptyMsg.style.display = "none";
 
-      const colorList = colors.length ? colors : [{ value: "", label: "" }];
-      const packingList = packings; 
+      if (isFinishedGoodsView) {
+        const grades = readSelected("grade_ids");
+        const packings = readSelected("packing_type_ids");
+        if (!sizes.length || !grades.length || !packings.length) {
+          if (emptyMsg) emptyMsg.style.display = "block";
+          return;
+        }
+        if (emptyMsg) emptyMsg.style.display = "none";
 
-      sizes.forEach((size) => {
-        grades.forEach((grade) => {
-          colorList.forEach((color) => {
-            packingList.forEach((packing) => {
-              const key = buildKey(size.value, grade.value, color.value, packing.value);
-              if (existingCombinationsSet.has(key)) return; 
+        const colorList = colors.length ? colors : [{ value: "", label: "" }];
 
-              const label = buildLabel(size.label, grade.label, color.label, packing.label);
-              const row = document.createElement("div");
-              row.className = "group flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center shadow-sm";
-              row.innerHTML = `
-                <div class="flex-1 text-xs font-semibold text-slate-600">${label}</div>
-                <input type="hidden" name="combo_keys" value="${key}" />
-                <div class="flex w-full items-center gap-2 sm:w-auto">
-                  <input class="w-full sm:w-32 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:outline-none" type="number" min="0" step="0.01" name="combo_rates" placeholder="<%= t('pair_rate') %>" required />
-                  <button type="button" class="ml-1 rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-500" onclick="this.closest('.group').remove()"><svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
-                </div>`;
-              rateList.appendChild(row);
+        sizes.forEach((size) => {
+          grades.forEach((grade) => {
+            colorList.forEach((color) => {
+              packings.forEach((packing) => {
+                const key = buildKey(size.value, grade.value, color.value, packing.value);
+                if (existingCombinationsSet.has(key)) return;
+
+                const label = [size.label, grade.label, color.label, packing.label].join(", ");
+                const row = document.createElement("div");
+                row.className = "group flex flex-col gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 sm:flex-row sm:items-center shadow-sm";
+                row.innerHTML = `
+                  <div class="flex-1 text-xs font-semibold text-slate-600">${label}</div>
+                  <input type="hidden" name="combo_keys" value="${key}" />
+                  <div class="flex w-full items-center gap-2 sm:w-auto">
+                    <input class="w-full sm:w-32 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 focus:outline-none" type="number" min="0" step="0.01" name="combo_rates" placeholder="<%= t('pair_rate') %>" required />
+                    <button type="button" class="ml-1 rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-500" onclick="this.closest('.group').remove()"><svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
+                  </div>`;
+                rateList.appendChild(row);
+              });
             });
           });
         });
-      });
+      } else {
+        // SFG: sizes × colors only, no grade/packing, rate defaults to 0
+        if (!sizes.length) {
+          if (emptyMsg) emptyMsg.style.display = "block";
+          return;
+        }
+        if (emptyMsg) emptyMsg.style.display = "none";
+
+        const colorList = colors.length ? colors : [{ value: "", label: "" }];
+
+        sizes.forEach((size) => {
+          colorList.forEach((color) => {
+            const key = buildKey(size.value, 0, color.value, 0);
+            if (existingCombinationsSet.has(key)) return;
+
+            const label = [size.label, color.label].filter(x => x && x.trim()).join(", ");
+            const row = document.createElement("div");
+            row.className = "group flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm";
+            row.innerHTML = `
+              <div class="flex-1 text-xs font-semibold text-slate-600">${label}</div>
+              <input type="hidden" name="combo_keys" value="${key}" />
+              <input type="hidden" name="combo_rates" value="0" />
+              <button type="button" class="ml-1 rounded-lg p-2 text-slate-400 hover:bg-rose-50 hover:text-rose-500" onclick="this.closest('.group').remove()"><svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg></button>
+            `;
+            rateList.appendChild(row);
+          });
+        });
+      }
     };
 
     ["size_ids", "grade_ids", "color_ids", "packing_type_ids"].forEach(name => {

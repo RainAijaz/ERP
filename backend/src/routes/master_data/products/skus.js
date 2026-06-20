@@ -477,7 +477,11 @@ router.post(
       const comboKeys = toArray(values.combo_keys);
       const comboRates = toArray(values.combo_rates);
 
-      if (
+      if (itemType === "SFG") {
+        if (!item_id || !sizeIds.length) {
+          throw new Error(res.locals.t("error_required_fields"));
+        }
+      } else if (
         !item_id ||
         !sizeIds.length ||
         !gradeIds.length ||
@@ -519,262 +523,350 @@ router.post(
           .select("code", "name", "item_type")
           .where({ id: item_id })
           .first();
-        if (!item || item.item_type !== "FG") {
+        if (!item || item.item_type !== itemType) {
           throw new Error(res.locals.t("error_required_fields"));
         }
 
         const sizes = await trx("erp.sizes")
           .select("id", "name")
           .whereIn("id", sizeIds);
-        const grades = await trx("erp.grades")
-          .select("id", "name")
-          .whereIn("id", gradeIds);
         const colors = colorIds.length
           ? await trx("erp.colors").select("id", "name").whereIn("id", colorIds)
           : [];
-        const packings = packingIds.length
-          ? await trx("erp.packing_types")
-              .select("id", "name")
-              .whereIn("id", packingIds)
-          : [];
-
-        const linkedSfgRows = await trx("erp.item_usage")
-          .select("sfg_item_id")
-          .where({ fg_item_id: item_id });
-        const linkedSfgIds = linkedSfgRows.map((row) => row.sfg_item_id);
-        const linkedSfgItems = linkedSfgIds.length
-          ? await trx("erp.items")
-              .select("id", "name", "code")
-              .whereIn("id", linkedSfgIds)
-          : [];
-        const sfgNameMap = new Map(linkedSfgItems.map((x) => [x.id, x.name]));
-        const sfgCodeMap = new Map(linkedSfgItems.map((x) => [x.id, x.code]));
-
         const sizeMap = new Map(sizes.map((x) => [Number(x.id), x.name]));
-        const gradeMap = new Map(grades.map((x) => [Number(x.id), x.name]));
         const colorMap = new Map(colors.map((x) => [Number(x.id), x.name]));
-        const packingMap = new Map(packings.map((x) => [Number(x.id), x.name]));
-        const colorList = colorIds.length ? colorIds : [null];
-        const packingList = packingIds;
 
         let createdCount = 0;
         let pendingCount = 0;
 
-        const createdSfgCombos = new Set();
+        if (itemType === "SFG") {
+          // SFG: iterate sizes × colors, grade=null, packing=null, rate=0
+          const colorList = colorIds.length ? colorIds : [null];
 
-        for (const size_id of sizeIds) {
-          for (const grade_id of gradeIds) {
+          for (const size_id of sizeIds) {
             for (const color_id of colorList) {
-              for (const packing_type_id of packingList) {
-                const key = buildComboKey(
-                  size_id,
-                  grade_id,
-                  color_id,
-                  packing_type_id,
-                );
-                if (!rateMap.has(key)) continue;
+              const key = buildComboKey(size_id, 0, color_id, 0);
+              if (!rateMap.has(key)) continue;
 
-                const appliedRate = rateMap.get(key);
-                const existing = await trx("erp.variants")
-                  .where({
+              const existing = await trx("erp.variants")
+                .where({
+                  item_id,
+                  size_id,
+                  color_id,
+                  grade_id: null,
+                  packing_type_id: null,
+                })
+                .first();
+              if (existing) continue;
+
+              if (!approvalRequired) {
+                const { base, suffix } = parseSfgNameParts(item.name, item.code);
+                const [variant] = await trx("erp.variants")
+                  .insert({
                     item_id,
+                    size_id,
+                    grade_id: null,
+                    color_id,
+                    packing_type_id: null,
+                    sale_rate: 0,
+                    is_active: true,
+                    created_by: req.user.id,
+                    created_at: trx.fn.now(),
+                  })
+                  .returning("id");
+                const baseSku = buildSkuCode(base, [
+                  sizeMap.get(size_id),
+                  color_id ? colorMap.get(color_id) : null,
+                  suffix,
+                ]);
+                const sku_code = await ensureUniqueSku(trx, baseSku);
+                await trx("erp.skus").insert({
+                  variant_id: variant.id,
+                  sku_code,
+                  is_active: true,
+                });
+                queueAuditLog(req, {
+                  entityType: "SKU",
+                  entityId: variant.id || variant,
+                  action: "CREATE",
+                });
+                createdCount++;
+              } else {
+                const { base, suffix } = parseSfgNameParts(item.name, item.code);
+                const plannedSfg = {
+                  _action: "create",
+                  item_id,
+                  size_id,
+                  grade_id: null,
+                  color_id,
+                  packing_type_id: null,
+                  sale_rate: 0,
+                  _summary: buildSkuCode(base, [
+                    sizeMap.get(size_id),
+                    color_id ? colorMap.get(color_id) : null,
+                    suffix,
+                  ]),
+                };
+                await trx("erp.approval_request").insert({
+                  branch_id: req.branchId,
+                  request_type: "MASTER_DATA_CHANGE",
+                  entity_type: "SKU",
+                  entity_id: "NEW",
+                  summary: `New Variant: ${plannedSfg._summary}`,
+                  new_value: plannedSfg,
+                  status: "PENDING",
+                  requested_by: req.user.id,
+                  requested_at: trx.fn.now(),
+                });
+                queuedCount++;
+                pendingCount++;
+              }
+            }
+          }
+        } else {
+          // FG: iterate sizes × grades × colors × packings
+          const grades = await trx("erp.grades")
+            .select("id", "name")
+            .whereIn("id", gradeIds);
+          const packings = packingIds.length
+            ? await trx("erp.packing_types")
+                .select("id", "name")
+                .whereIn("id", packingIds)
+            : [];
+
+          const linkedSfgRows = await trx("erp.item_usage")
+            .select("sfg_item_id")
+            .where({ fg_item_id: item_id });
+          const linkedSfgIds = linkedSfgRows.map((row) => row.sfg_item_id);
+          const linkedSfgItems = linkedSfgIds.length
+            ? await trx("erp.items")
+                .select("id", "name", "code")
+                .whereIn("id", linkedSfgIds)
+            : [];
+          const sfgNameMap = new Map(linkedSfgItems.map((x) => [x.id, x.name]));
+          const sfgCodeMap = new Map(linkedSfgItems.map((x) => [x.id, x.code]));
+
+          const gradeMap = new Map(grades.map((x) => [Number(x.id), x.name]));
+          const packingMap = new Map(packings.map((x) => [Number(x.id), x.name]));
+          const colorList = colorIds.length ? colorIds : [null];
+          const packingList = packingIds;
+
+          const createdSfgCombos = new Set();
+
+          for (const size_id of sizeIds) {
+            for (const grade_id of gradeIds) {
+              for (const color_id of colorList) {
+                for (const packing_type_id of packingList) {
+                  const key = buildComboKey(
                     size_id,
                     grade_id,
                     color_id,
                     packing_type_id,
-                  })
-                  .first();
-                if (existing) continue;
+                  );
+                  if (!rateMap.has(key)) continue;
 
-                if (!approvalRequired) {
-                  const [variant] = await trx("erp.variants")
-                    .insert({
+                  const appliedRate = rateMap.get(key);
+                  const existing = await trx("erp.variants")
+                    .where({
+                      item_id,
+                      size_id,
+                      grade_id,
+                      color_id,
+                      packing_type_id,
+                    })
+                    .first();
+                  if (existing) continue;
+
+                  if (!approvalRequired) {
+                    const [variant] = await trx("erp.variants")
+                      .insert({
+                        item_id,
+                        size_id,
+                        grade_id,
+                        color_id,
+                        packing_type_id,
+                        sale_rate: appliedRate,
+                        is_active: true,
+                        created_by: req.user.id,
+                        created_at: trx.fn.now(),
+                      })
+                      .returning("id");
+
+                    const baseSku = buildSkuCode(item.name, [
+                      sizeMap.get(size_id),
+                      packingMap.get(packing_type_id),
+                      gradeMap.get(grade_id),
+                      color_id ? colorMap.get(color_id) : null,
+                    ]);
+                    const sku_code = await ensureUniqueSku(trx, baseSku);
+                    await trx("erp.skus").insert({
+                      variant_id: variant.id,
+                      sku_code,
+                      is_active: true,
+                    });
+                    queueAuditLog(req, {
+                      entityType: "SKU",
+                      entityId: variant.id || variant,
+                      action: "CREATE",
+                    });
+                    createdCount++;
+                  } else {
+                    if (process.env.DEBUG_SKU_APPROVAL === "1") {
+                      console.log("[SKU APPROVAL DEBUG] DB arrays:", {
+                        sizes,
+                        grades,
+                        colors,
+                        packings,
+                      });
+                      console.log("[SKU APPROVAL DEBUG] Map keys:", {
+                        sizeMap: Array.from(sizeMap.keys()),
+                        gradeMap: Array.from(gradeMap.keys()),
+                        colorMap: Array.from(colorMap.keys()),
+                        packingMap: Array.from(packingMap.keys()),
+                      });
+                    }
+                    if (process.env.DEBUG_SKU_APPROVAL === "1") {
+                      console.log("[SKU APPROVAL DEBUG] pending create", {
+                        item_id,
+                        size_id,
+                        grade_id,
+                        color_id,
+                        packing_type_id,
+                        item_name: item?.name,
+                        size_name: sizeMap.get(size_id),
+                        grade_name: gradeMap.get(grade_id),
+                        color_name: colorMap.get(color_id),
+                        packing_name: packingMap.get(packing_type_id),
+                      });
+                    }
+                    const plannedVariant = {
+                      _action: "create",
                       item_id,
                       size_id,
                       grade_id,
                       color_id,
                       packing_type_id,
                       sale_rate: appliedRate,
-                      is_active: true,
-                      created_by: req.user.id,
-                      created_at: trx.fn.now(),
-                    })
-                    .returning("id");
-
-                  const baseSku = buildSkuCode(item.name, [
-                    sizeMap.get(size_id),
-                    packingMap.get(packing_type_id),
-                    gradeMap.get(grade_id),
-                    color_id ? colorMap.get(color_id) : null,
-                  ]);
-                  const sku_code = await ensureUniqueSku(trx, baseSku);
-                  await trx("erp.skus").insert({
-                    variant_id: variant.id,
-                    sku_code,
-                    is_active: true,
-                  });
-                  queueAuditLog(req, {
-                    entityType: "SKU",
-                    entityId: variant.id || variant,
-                    action: "CREATE",
-                  });
-                  createdCount++;
-                } else {
-                  if (process.env.DEBUG_SKU_APPROVAL === "1") {
-                    console.log("[SKU APPROVAL DEBUG] DB arrays:", {
-                      sizes,
-                      grades,
-                      colors,
-                      packings,
+                      _summary: `${item.name} ${sizeMap.get(size_id)} ${packingMap.get(packing_type_id)} ${gradeMap.get(grade_id)}`,
+                    };
+                    await trx("erp.approval_request").insert({
+                      branch_id: req.branchId,
+                      request_type: "MASTER_DATA_CHANGE",
+                      entity_type: "SKU",
+                      entity_id: "NEW",
+                      summary: `New Variant: ${plannedVariant._summary}`,
+                      new_value: plannedVariant,
+                      status: "PENDING",
+                      requested_by: req.user.id,
+                      requested_at: trx.fn.now(),
                     });
-                    console.log("[SKU APPROVAL DEBUG] Map keys:", {
-                      sizeMap: Array.from(sizeMap.keys()),
-                      gradeMap: Array.from(gradeMap.keys()),
-                      colorMap: Array.from(colorMap.keys()),
-                      packingMap: Array.from(packingMap.keys()),
-                    });
+                    queuedCount++;
+                    pendingCount++;
                   }
-                  if (process.env.DEBUG_SKU_APPROVAL === "1") {
-                    console.log("[SKU APPROVAL DEBUG] pending create", {
-                      item_id,
-                      size_id,
-                      grade_id,
-                      color_id,
-                      packing_type_id,
-                      item_name: item?.name,
-                      size_name: sizeMap.get(size_id),
-                      grade_name: gradeMap.get(grade_id),
-                      color_name: colorMap.get(color_id),
-                      packing_name: packingMap.get(packing_type_id),
-                    });
-                  }
-                  const plannedVariant = {
-                    _action: "create",
-                    item_id,
-                    size_id,
-                    grade_id,
-                    color_id,
-                    packing_type_id,
-                    sale_rate: appliedRate,
-                    _summary: `${item.name} ${sizeMap.get(size_id)} ${packingMap.get(packing_type_id)} ${gradeMap.get(grade_id)}`,
-                  };
-                  await trx("erp.approval_request").insert({
-                    branch_id: req.branchId,
-                    request_type: "MASTER_DATA_CHANGE",
-                    entity_type: "SKU",
-                    entity_id: "NEW",
-                    summary: `New Variant: ${plannedVariant._summary}`,
-                    new_value: plannedVariant,
-                    status: "PENDING",
-                    requested_by: req.user.id,
-                    requested_at: trx.fn.now(),
-                  });
-                  queuedCount++;
-                  pendingCount++;
-                }
 
-                if (linkedSfgIds.length) {
-                  for (const sfgItemId of linkedSfgIds) {
-                    const sfgKey = [
-                      sfgItemId,
-                      size_id || 0,
-                      color_id || 0,
-                    ].join("|");
-                    if (createdSfgCombos.has(sfgKey)) continue;
-                    createdSfgCombos.add(sfgKey);
+                  if (linkedSfgIds.length) {
+                    for (const sfgItemId of linkedSfgIds) {
+                      const sfgKey = [
+                        sfgItemId,
+                        size_id || 0,
+                        color_id || 0,
+                      ].join("|");
+                      if (createdSfgCombos.has(sfgKey)) continue;
+                      createdSfgCombos.add(sfgKey);
 
-                    const existingSfg = await trx("erp.variants")
-                      .where({
-                        item_id: sfgItemId,
-                        size_id,
-                        color_id,
-                        grade_id: null,
-                        packing_type_id: null,
-                      })
-                      .first();
-                    if (existingSfg) continue;
+                      const existingSfg = await trx("erp.variants")
+                        .where({
+                          item_id: sfgItemId,
+                          size_id,
+                          color_id,
+                          grade_id: null,
+                          packing_type_id: null,
+                        })
+                        .first();
+                      if (existingSfg) continue;
 
-                    if (!approvalRequired) {
-                      const [sfgVariant] = await trx("erp.variants")
-                        .insert({
+                      if (!approvalRequired) {
+                        const [sfgVariant] = await trx("erp.variants")
+                          .insert({
+                            item_id: sfgItemId,
+                            size_id,
+                            grade_id: null,
+                            color_id,
+                            packing_type_id: null,
+                            sale_rate: 0,
+                            is_active: true,
+                            created_by: req.user.id,
+                            created_at: trx.fn.now(),
+                          })
+                          .returning("id");
+
+                        const sfgName = sfgNameMap.get(sfgItemId) || "SFG";
+                        const sfgCode = sfgCodeMap.get(sfgItemId) || "";
+                        const { base, suffix } = parseSfgNameParts(
+                          sfgName,
+                          sfgCode,
+                        );
+                        const baseSfgSku = buildSkuCode(base, [
+                          sizeMap.get(size_id),
+                          color_id ? colorMap.get(color_id) : null,
+                          suffix,
+                        ]);
+                        const sfgSkuCode = await ensureUniqueSku(trx, baseSfgSku);
+                        await trx("erp.skus").insert({
+                          variant_id: sfgVariant.id,
+                          sku_code: sfgSkuCode,
+                          is_active: true,
+                        });
+                        queueAuditLog(req, {
+                          entityType: "SKU",
+                          entityId: sfgVariant.id || sfgVariant,
+                          action: "CREATE",
+                        });
+                      } else {
+                        if (process.env.DEBUG_SKU_APPROVAL === "1") {
+                          console.log("[SKU APPROVAL DEBUG] pending SFG create", {
+                            item_id: sfgItemId,
+                            size_id,
+                            color_id,
+                            item_name: sfgNameMap.get(sfgItemId),
+                            item_code: sfgCodeMap.get(sfgItemId),
+                            size_name: sizeMap.get(size_id),
+                            color_name: colorMap.get(color_id),
+                          });
+                        }
+                        const sfgName = sfgNameMap.get(sfgItemId) || "SFG";
+                        const sfgCode = sfgCodeMap.get(sfgItemId) || "";
+                        const { base, suffix } = parseSfgNameParts(
+                          sfgName,
+                          sfgCode,
+                        );
+                        const plannedSfg = {
+                          _action: "create",
                           item_id: sfgItemId,
                           size_id,
                           grade_id: null,
                           color_id,
                           packing_type_id: null,
                           sale_rate: 0,
-                          is_active: true,
-                          created_by: req.user.id,
-                          created_at: trx.fn.now(),
-                        })
-                        .returning("id");
-
-                      const sfgName = sfgNameMap.get(sfgItemId) || "SFG";
-                      const sfgCode = sfgCodeMap.get(sfgItemId) || "";
-                      const { base, suffix } = parseSfgNameParts(
-                        sfgName,
-                        sfgCode,
-                      );
-                      const baseSfgSku = buildSkuCode(base, [
-                        sizeMap.get(size_id),
-                        color_id ? colorMap.get(color_id) : null,
-                        suffix,
-                      ]);
-                      const sfgSkuCode = await ensureUniqueSku(trx, baseSfgSku);
-                      await trx("erp.skus").insert({
-                        variant_id: sfgVariant.id,
-                        sku_code: sfgSkuCode,
-                        is_active: true,
-                      });
-                      queueAuditLog(req, {
-                        entityType: "SKU",
-                        entityId: sfgVariant.id || sfgVariant,
-                        action: "CREATE",
-                      });
-                    } else {
-                      if (process.env.DEBUG_SKU_APPROVAL === "1") {
-                        console.log("[SKU APPROVAL DEBUG] pending SFG create", {
-                          item_id: sfgItemId,
-                          size_id,
-                          color_id,
-                          item_name: sfgNameMap.get(sfgItemId),
-                          item_code: sfgCodeMap.get(sfgItemId),
-                          size_name: sizeMap.get(size_id),
-                          color_name: colorMap.get(color_id),
+                          _summary: buildSkuCode(base, [
+                            sizeMap.get(size_id),
+                            color_id ? colorMap.get(color_id) : null,
+                            suffix,
+                          ]),
+                        };
+                        await trx("erp.approval_request").insert({
+                          branch_id: req.branchId,
+                          request_type: "MASTER_DATA_CHANGE",
+                          entity_type: "SKU",
+                          entity_id: "NEW",
+                          summary: `New Variant: ${plannedSfg._summary}`,
+                          new_value: plannedSfg,
+                          status: "PENDING",
+                          requested_by: req.user.id,
+                          requested_at: trx.fn.now(),
                         });
+                        queuedCount++;
                       }
-                      const sfgName = sfgNameMap.get(sfgItemId) || "SFG";
-                      const sfgCode = sfgCodeMap.get(sfgItemId) || "";
-                      const { base, suffix } = parseSfgNameParts(
-                        sfgName,
-                        sfgCode,
-                      );
-                      const plannedSfg = {
-                        _action: "create",
-                        item_id: sfgItemId,
-                        size_id,
-                        grade_id: null,
-                        color_id,
-                        packing_type_id: null,
-                        sale_rate: 0,
-                        _summary: buildSkuCode(base, [
-                          sizeMap.get(size_id),
-                          color_id ? colorMap.get(color_id) : null,
-                          suffix,
-                        ]),
-                      };
-                      await trx("erp.approval_request").insert({
-                        branch_id: req.branchId,
-                        request_type: "MASTER_DATA_CHANGE",
-                        entity_type: "SKU",
-                        entity_id: "NEW",
-                        summary: `New Variant: ${plannedSfg._summary}`,
-                        new_value: plannedSfg,
-                        status: "PENDING",
-                        requested_by: req.user.id,
-                        requested_at: trx.fn.now(),
-                      });
-                      queuedCount++;
                     }
                   }
                 }
@@ -782,6 +874,7 @@ router.post(
             }
           }
         }
+
         createdCountTotal = createdCount;
         pendingCountTotal = pendingCount;
       });
