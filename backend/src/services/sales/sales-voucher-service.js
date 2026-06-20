@@ -1249,6 +1249,7 @@ const normalizeSalesOrderLinesTx = async ({
       throw new HttpError(400, `Line ${lineNo}: pair rate is required`);
     if (
       !sku.rate_editable &&
+      !allowRateDiscountOverride &&
       autoPairRate &&
       !approxEq(pairRate, autoPairRate)
     ) {
@@ -1801,6 +1802,7 @@ const normalizeSalesVoucherLinesTx = async ({
         throw new HttpError(400, `Line ${lineNo}: pair rate is required`);
       if (
         !sku.rate_editable &&
+        !allowRateDiscountOverride &&
         autoPairRate &&
         !approxEq(pairRate, autoPairRate)
       ) {

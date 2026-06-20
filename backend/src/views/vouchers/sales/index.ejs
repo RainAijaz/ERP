@@ -1060,7 +1060,7 @@
     const lockReturnQty = !fromSO && hasSaleQty;
     const canDiscount = !fromSO;
     const skuForRow = skuMap.get(Number(r.sku_id || 0));
-    const rateIsEditable = Boolean(skuForRow?.rate_editable);
+    const rateIsEditable = Boolean(skuForRow?.rate_editable) || canOverrideRateDiscount;
     const tr = document.createElement("tr");
     tr.dataset.i = String(index);
     const unitOptions = getSkuUnitOptions(source ? source.sku_id : r.sku_id);
