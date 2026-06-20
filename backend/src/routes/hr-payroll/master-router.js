@@ -807,34 +807,51 @@ const createHrMasterRouter = (pageConfig) => {
           Number.isInteger(listPageRaw) && listPageRaw > 0 ? listPageRaw : 1;
         const listOffset =
           effectiveMaxRows > 0 ? (listPage - 1) * effectiveMaxRows : 0;
-        const fetchedRows =
-          canBrowse && !missingRequiredFilters.length
+        const canFetch = canBrowse && !missingRequiredFilters.length;
+        const fetchFilters = {
+          primaryValues,
+          secondaryValues,
+          branchValues,
+          tertiaryValues,
+          applyOnValues,
+          subgroupValues,
+          groupValues,
+          articleTypeValues,
+          applyOnMode,
+          subgroupMode,
+          groupMode,
+          articleTypeMode,
+          primaryMode,
+          secondaryMode,
+          branchMode,
+          tertiaryMode,
+        };
+        let extraPageData = {};
+        let fetchedRows;
+        if (canFetch && typeof pageConfig.fetchPageData === "function") {
+          const fetchResult = await pageConfig.fetchPageData({
+            req,
+            hydrated,
+            allowedBranchIds,
+            locale: req.locale,
+            filters: fetchFilters,
+          });
+          fetchedRows = Array.isArray(fetchResult.rows) ? fetchResult.rows : [];
+          if (fetchResult.extra && typeof fetchResult.extra === "object") {
+            extraPageData = fetchResult.extra;
+          }
+        } else {
+          fetchedRows = canFetch
             ? await fetchRows(hydrated, {
                 branchId: req.user?.isAdmin ? null : req.branchId,
                 allowedBranchIds,
                 locale: req.locale,
                 maxRows: effectiveMaxRows > 0 ? effectiveMaxRows + 1 : 0,
                 offsetRows: listOffset,
-                filters: {
-                  primaryValues,
-                  secondaryValues,
-                  branchValues,
-                  tertiaryValues,
-                  applyOnValues,
-                  subgroupValues,
-                  groupValues,
-                  articleTypeValues,
-                  applyOnMode,
-                  subgroupMode,
-                  groupMode,
-                  articleTypeMode,
-                  primaryMode,
-                  secondaryMode,
-                  branchMode,
-                  tertiaryMode,
-                },
+                filters: fetchFilters,
               })
             : [];
+        }
         const hasNextPage =
           effectiveMaxRows > 0 && Array.isArray(fetchedRows)
             ? fetchedRows.length > effectiveMaxRows
@@ -879,6 +896,7 @@ const createHrMasterRouter = (pageConfig) => {
             ? res.locals.t(pageConfig.listScopeRequiredMessageKey)
             : null;
         return renderPage(req, res, hydrated, {
+          ...extraPageData,
           rows,
           branches: req.branchOptions || [],
           filterConfig,
@@ -1802,4 +1820,5 @@ module.exports = {
   createHrMasterRouter,
   hydratePage,
   renderInfoScreen,
+  fetchRows,
 };

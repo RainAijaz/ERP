@@ -739,7 +739,7 @@
       next.uom_id = Number(source.uom_id || 0) || null;
       next.uom_factor_to_base = Number(source.uom_factor_to_base || 0) || null;
       next.row_status = String(source.row_status || next.row_status || "PACKED").toUpperCase();
-      if (!canOverrideRateDiscount || next.pair_rate <= 0) next.pair_rate = Number(n(source.pair_rate).toFixed(1));
+      if (next.pair_rate <= 0) next.pair_rate = Number(n(source.pair_rate).toFixed(1));
       next.pair_discount = Number(n(source.pair_discount).toFixed(1));
     }
 
@@ -1060,7 +1060,7 @@
     const lockReturnQty = !fromSO && hasSaleQty;
     const canDiscount = !fromSO;
     const skuForRow = skuMap.get(Number(r.sku_id || 0));
-    const rateIsEditable = canOverrideRateDiscount || Boolean(skuForRow?.rate_editable);
+    const rateIsEditable = Boolean(skuForRow?.rate_editable);
     const tr = document.createElement("tr");
     tr.dataset.i = String(index);
     const unitOptions = getSkuUnitOptions(source ? source.sku_id : r.sku_id);

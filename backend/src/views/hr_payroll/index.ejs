@@ -34,8 +34,8 @@
   <section
     class="rounded-2xl border border-slate-200 bg-white/95 shadow-md overflow-hidden"
     data-print-area
-    data-scope-key="<%= page.scopeKey %>"
-    data-grouped-table-ready="<%= (page.scopeKey === 'hr_payroll.labour_rates' || page.scopeKey === 'hr_payroll.commissions') ? 'false' : 'true' %>"
+    data-scope-key="<%= page.scopeKey === 'hr_payroll.commissions' ? 'hr_payroll.commissions_lazy' : page.scopeKey %>"
+    data-grouped-table-ready="<%= page.scopeKey === 'hr_payroll.labour_rates' ? 'false' : 'true' %>"
   >
     <% const canEdit = can("SCREEN", page.scopeKey, "edit"); %>
     <% const canDelete = can("SCREEN", page.scopeKey, "delete"); %>
@@ -48,7 +48,7 @@
       <div class="flex flex-wrap items-center gap-3">
         <%- include("../base/partials/table-controls", {
           t,
-          showStatus: page.scopeKey !== "hr_payroll.labour_rates",
+          showStatus: page.scopeKey !== "hr_payroll.labour_rates" && page.scopeKey !== "hr_payroll.commissions",
           showFilters: true,
           selectedPageSize: page.scopeKey === "hr_payroll.labour_rates" ? "all" : undefined
         }) %>
@@ -81,14 +81,46 @@
           <%- include("../base/partials/table-header", { t, displayColumns, columnTooltips: {}, sortStartIndex: 1 }) %>
         </thead>
         <tbody class="divide-y divide-slate-100" data-table-body>
-          <% if (!rows || rows.length === 0) { %>
+          <% if (page.scopeKey === "hr_payroll.commissions") { %>
+            <% const groupSummaryArr = typeof groupSummary !== "undefined" ? groupSummary : []; %>
+            <% if (groupSummaryArr.length === 0) { %>
+              <%- include("../base/partials/table-empty", { t, colspan: displayColumns.length + 2 }) %>
+            <% } else { %>
+              <% groupSummaryArr.forEach(function(group) { %>
+                <tr
+                  class="cursor-pointer select-none bg-slate-50/80 text-slate-700 transition-colors hover:bg-slate-100/80 border-b border-slate-200"
+                  data-row
+                  data-active="true"
+                  data-group-name="<%= group.employee_name || '' %>"
+                  data-commission-lazy-group
+                  data-employee-id="<%= group.employee_id %>"
+                  data-employee-name="<%= group.employee_name || '' %>"
+                  data-rule-count="<%= group.rule_count %>"
+                  data-loaded="false"
+                  data-open="false"
+                >
+                  <td colspan="<%= displayColumns.length + 2 %>" class="px-4 py-3">
+                    <div class="flex items-center justify-between gap-4">
+                      <div class="flex items-center gap-3">
+                        <span class="text-sm font-semibold text-slate-700"><%= group.employee_name || "" %></span>
+                        <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+                          <%= group.rule_count %> <%= t("rates") || "RATES" %>
+                        </span>
+                      </div>
+                      <span class="commission-group-chevron text-slate-400 text-xs transition-transform duration-200" style="display:inline-block">▼</span>
+                    </div>
+                  </td>
+                </tr>
+              <% }) %>
+            <% } %>
+          <% } else if (!rows || rows.length === 0) { %>
             <%- include("../base/partials/table-empty", { t, colspan: displayColumns.length + 2 }) %>
           <% } else { %>
             <% rows.forEach(function(row, idx) { %>
               <% const editFieldNames = page.fields.map(function(field) { return field.name; }); %>
               <% if (page.scopeKey === "hr_payroll.labour_rates" && !editFieldNames.includes("sku_code")) { editFieldNames.push("sku_code"); } %>
               <tr
-                class="hover:bg-amber-50/40 odd:bg-white even:bg-slate-50/40 <%= (page.scopeKey === 'hr_payroll.labour_rates' || page.scopeKey === 'hr_payroll.commissions') ? 'hidden' : '' %>"
+                class="hover:bg-amber-50/40 odd:bg-white even:bg-slate-50/40 <%= page.scopeKey === 'hr_payroll.labour_rates' ? 'hidden' : '' %>"
                 data-row
                 data-active="<%= row.is_active ? "true" : "false" %>"
                 data-labour-name="<%= page.scopeKey === "hr_payroll.labour_rates" ? (row.labour_name || row.labour_id || "") : "" %>"
@@ -205,7 +237,7 @@
         </tbody>
       </table>
     </div>
-    <%- include("../base/partials/table-footer", { t, rowCount }) %>
+    <%- include("../base/partials/table-footer", { t, rowCount: page.scopeKey === "hr_payroll.commissions" ? (typeof groupSummary !== "undefined" ? groupSummary.length : 0) : rowCount }) %>
   </section>
 </div>
 
@@ -1972,6 +2004,302 @@ const currentSeq = ++state.requestSeq;
       setCollapsedState(skuToggle, skuBody, true);
     }
     clearRows(tSelectTarget);
+  })();
+</script>
+<% } %>
+<% if (page.scopeKey === "hr_payroll.commissions") { %>
+<button
+  type="button"
+  data-edit
+  data-commission-proxy-edit
+  style="position:absolute;width:0;height:0;overflow:hidden;pointer-events:none"
+  tabindex="-1"
+  aria-hidden="true"
+  data-id=""
+  data-employee_id=""
+  data-commission_type=""
+  data-apply_on=""
+  data-sku_id=""
+  data-subgroup_id=""
+  data-group_id=""
+  data-rate_type=""
+  data-value=""
+  data-status=""
+  data-reverse_on_returns=""
+></button>
+<script>
+  (function () {
+    const basePath = "<%= basePath %>";
+    const csrfToken = "<%= csrfToken %>";
+    const tAll = "<%- (t('all') || 'ALL').replace(/"/g, '&quot;') %>";
+    const tYes = "<%- (t('yes') || 'YES').replace(/"/g, '&quot;') %>";
+    const tNo = "<%- (t('no') || 'NO').replace(/"/g, '&quot;') %>";
+    const tNone = "<%- (t('none') || '-').replace(/"/g, '&quot;') %>";
+    const tLoading = "<%- (t('loading') || 'Loading…').replace(/"/g, '&quot;') %>";
+    const tError = "<%- (t('error_loading') || 'Failed to load. Click to retry.').replace(/"/g, '&quot;') %>";
+    const tEdit = "<%- (t('edit') || 'Edit').replace(/"/g, '&quot;') %>";
+    const tDelete = "<%- (t('delete') || 'Delete').replace(/"/g, '&quot;') %>";
+    const canEdit = <%= canEdit ? 'true' : 'false' %>;
+    const canDelete = <%= canDelete ? 'true' : 'false' %>;
+    const canHardDelete = <%= canHardDelete ? 'true' : 'false' %>;
+    const tCommTypes = {
+      SALESMAN_SALE: "<%- (t('commission_type_salesman_sale') || 'Salesman Sale').replace(/"/g, '&quot;') %>",
+      BRANCH_SALE:   "<%- (t('commission_type_branch_sale') || 'Branch Sale').replace(/"/g, '&quot;') %>",
+      TRANSFER:      "<%- (t('commission_type_transfer') || 'Transfer').replace(/"/g, '&quot;') %>",
+      PARTY:         "<%- (t('commission_type_party') || 'Party').replace(/"/g, '&quot;') %>",
+    };
+    const commTypeClass = {
+      SALESMAN_SALE: "border-blue-200 bg-blue-50 text-blue-700",
+      BRANCH_SALE:   "border-violet-200 bg-violet-50 text-violet-700",
+      TRANSFER:      "border-amber-200 bg-amber-50 text-amber-700",
+      PARTY:         "border-emerald-200 bg-emerald-50 text-emerald-700",
+    };
+
+    const esc = (s) =>
+      String(s == null ? "" : s)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+
+    const rowCache = {};
+    const proxyBtn = document.querySelector("[data-commission-proxy-edit]");
+    const tableBody = document.querySelector("[data-table-body]");
+    if (!tableBody) return;
+
+    const renderRow = (row, idx) => {
+      const ct = String(row.commission_type || "").toUpperCase();
+      const ctClass = commTypeClass[ct] || "border-slate-200 bg-white text-slate-600";
+      const ctLabel = tCommTypes[ct] || row.commission_type || "";
+      const selectorDisplay = row.selector_display || tAll;
+
+      const editAttrs = [
+        `data-id="${esc(row.id)}"`,
+        `data-employee_id="${esc(row.employee_id)}"`,
+        `data-commission_type="${esc(row.commission_type)}"`,
+        `data-apply_on="${esc(row.apply_on)}"`,
+        `data-sku_id="${esc(row.sku_id)}"`,
+        `data-subgroup_id="${esc(row.subgroup_id)}"`,
+        `data-group_id="${esc(row.group_id)}"`,
+        `data-rate_type="${esc(row.rate_type)}"`,
+        `data-value="${esc(row.value)}"`,
+        `data-status="${esc(row.status)}"`,
+        `data-reverse_on_returns="${esc(row.reverse_on_returns)}"`,
+      ].join(" ");
+
+      const editBtn = canEdit
+        ? `<button type="button" data-commission-lazy-edit ${editAttrs}
+              class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 cursor-pointer"
+              title="${tEdit}">
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M12 20h9" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+           </button>`
+        : "";
+
+      const toggleBtn = canDelete
+        ? `<button type="button" data-commission-lazy-toggle
+              data-toggle-action="${basePath}/${esc(row.id)}/toggle"
+              data-row-active="${row.is_active ? 'true' : 'false'}"
+              class="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 cursor-pointer"
+              title="${row.is_active ? '<%- (t("deactivate") || "Deactivate").replace(/"/g, "&quot;") %>' : '<%- (t("activate") || "Activate").replace(/"/g, "&quot;") %>'}">
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                ${row.is_active
+                  ? '<path d="M6 12h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />'
+                  : '<path d="M12 5v14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" /><path d="M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />'}
+              </svg>
+           </button>`
+        : "";
+
+      const deleteBtn = canHardDelete
+        ? `<button type="button" data-commission-lazy-delete
+              data-delete-action="${basePath}/${esc(row.id)}/delete"
+              class="inline-flex items-center justify-center rounded-md border border-rose-200 bg-rose-50 p-2 text-rose-600 transition hover:border-rose-300 hover:text-rose-700 cursor-pointer"
+              title="${tDelete}">
+              <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M4 7h16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                <path d="M9 7V5h6v2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+                <path d="M10 11v6M14 11v6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+              </svg>
+           </button>`
+        : "";
+
+      return `<tr
+          class="hover:bg-amber-50/40 odd:bg-white even:bg-slate-50/40 commission-lazy-row"
+          data-row
+          data-active="${row.is_active ? "true" : "false"}"
+          data-group-name="${esc(row.employee_name || "")}"
+          data-commission-type="${esc(ct)}"
+          data-rate-type="${esc(row.rate_type || "")}"
+          data-rate-amount="${esc(row.value ?? "")}"
+          data-commission-basis="${esc(row.commission_basis || "")}"
+          data-apply-on="${esc(row.apply_on || "")}"
+        >
+          <td class="px-4 py-3 text-slate-700">${idx + 1}</td>
+          <td class="px-4 py-3 text-slate-700">${esc(row.employee_name || tNone)}</td>
+          <td class="px-4 py-3">
+            <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] ${ctClass}">
+              ${esc(ctLabel)}
+            </span>
+          </td>
+          <td class="px-4 py-3 text-slate-700">${esc(selectorDisplay)}</td>
+          <td class="px-4 py-3 text-slate-700">${esc(row.value ?? tNone)}</td>
+          <td class="px-4 py-3">
+            <span class="inline-flex items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
+              ${row.reverse_on_returns ? tYes : tNo}
+            </span>
+          </td>
+          <td class="px-4 py-3">
+            <div class="hidden items-center gap-2 lg:flex">
+              ${editBtn}
+              ${toggleBtn}
+              ${deleteBtn}
+            </div>
+          </td>
+        </tr>`;
+    };
+
+    const injectRows = (groupRow, rows) => {
+      const employeeName = groupRow.dataset.employeeName;
+      let insertAfter = groupRow;
+      rows.forEach((row, idx) => {
+        const tmp = document.createElement("table");
+        tmp.innerHTML = `<tbody>${renderRow(row, idx)}</tbody>`;
+        const el = tmp.querySelector("tr");
+        if (el) {
+          el.dataset.groupName = employeeName;
+          insertAfter.after(el);
+          insertAfter = el;
+        }
+      });
+      groupRow.dataset.loaded = "true";
+    };
+
+    const setGroupOpen = (groupRow, open) => {
+      const employeeName = groupRow.dataset.employeeName;
+      const chevron = groupRow.querySelector(".commission-group-chevron");
+      groupRow.dataset.open = open ? "true" : "false";
+      if (chevron) chevron.style.transform = open ? "rotate(180deg)" : "rotate(0deg)";
+      let next = groupRow.nextElementSibling;
+      while (next && next.classList.contains("commission-lazy-row")) {
+        if (next.dataset.groupName === employeeName) {
+          next.style.display = open ? "" : "none";
+        }
+        next = next.nextElementSibling;
+      }
+    };
+
+    const handleGroupClick = async (groupRow) => {
+      const isOpen = groupRow.dataset.open === "true";
+      if (isOpen) {
+        setGroupOpen(groupRow, false);
+        return;
+      }
+
+      const chevron = groupRow.querySelector(".commission-group-chevron");
+      if (groupRow.dataset.loaded === "true") {
+        setGroupOpen(groupRow, true);
+        return;
+      }
+
+      // Show loading indicator
+      groupRow.dataset.open = "true";
+      if (chevron) chevron.style.transform = "rotate(180deg)";
+      const spinnerRow = document.createElement("tr");
+      spinnerRow.className = "commission-lazy-row";
+      spinnerRow.dataset.groupName = groupRow.dataset.employeeName;
+      spinnerRow.innerHTML = `<td colspan="7" class="px-4 py-4 text-center text-sm text-slate-400">${tLoading}</td>`;
+      groupRow.after(spinnerRow);
+
+      const employeeId = groupRow.dataset.employeeId;
+      try {
+        if (!rowCache[employeeId]) {
+          const resp = await fetch(
+            `${basePath}/employee-rules?employee_id=${encodeURIComponent(employeeId)}`,
+            { headers: { Accept: "application/json" } },
+          );
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          const data = await resp.json();
+          rowCache[employeeId] = data.rows || [];
+        }
+        spinnerRow.remove();
+        injectRows(groupRow, rowCache[employeeId]);
+      } catch (err) {
+        console.error("[commission-lazy]", err);
+        spinnerRow.innerHTML = `<td colspan="7" class="px-4 py-4 text-center text-sm text-rose-500 cursor-pointer">${tError}</td>`;
+        groupRow.dataset.open = "false";
+        if (chevron) chevron.style.transform = "rotate(0deg)";
+        spinnerRow.addEventListener("click", () => {
+          spinnerRow.remove();
+          groupRow.dataset.open = "false";
+          handleGroupClick(groupRow);
+        }, { once: true });
+      }
+    };
+
+    tableBody.addEventListener("click", async (event) => {
+      // Group header expand/collapse
+      const groupRow = event.target.closest("[data-commission-lazy-group]");
+      if (groupRow) {
+        await handleGroupClick(groupRow);
+        return;
+      }
+
+      // Edit button on a lazy row
+      const editBtn = event.target.closest("[data-commission-lazy-edit]");
+      if (editBtn && proxyBtn) {
+        event.preventDefault();
+        editBtn.getAttributeNames().forEach((attr) => {
+          if (attr.startsWith("data-")) proxyBtn.setAttribute(attr, editBtn.getAttribute(attr) ?? "");
+        });
+        proxyBtn.click();
+        return;
+      }
+
+      // Toggle (activate/deactivate) on a lazy row
+      const toggleBtn = event.target.closest("[data-commission-lazy-toggle]");
+      if (toggleBtn) {
+        const toggleAction = toggleBtn.getAttribute("data-toggle-action");
+        if (!toggleAction) return;
+        try {
+          toggleBtn.disabled = true;
+          const resp = await fetch(toggleAction, {
+            method: "POST",
+            headers: { "X-CSRF-Token": csrfToken, "Content-Type": "application/json" },
+          });
+          if (resp.ok) {
+            window.location.reload();
+          } else {
+            toggleBtn.disabled = false;
+          }
+        } catch {
+          toggleBtn.disabled = false;
+        }
+        return;
+      }
+
+      // Hard delete on a lazy row
+      const deleteBtn = event.target.closest("[data-commission-lazy-delete]");
+      if (deleteBtn) {
+        const deleteAction = deleteBtn.getAttribute("data-delete-action");
+        if (!deleteAction) return;
+        try {
+          deleteBtn.disabled = true;
+          const resp = await fetch(deleteAction, {
+            method: "POST",
+            headers: { "X-CSRF-Token": csrfToken, "Content-Type": "application/json" },
+          });
+          if (resp.ok) {
+            window.location.reload();
+          } else {
+            deleteBtn.disabled = false;
+          }
+        } catch {
+          deleteBtn.disabled = false;
+        }
+      }
+    });
   })();
 </script>
 <% } %>

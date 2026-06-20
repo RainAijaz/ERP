@@ -1,6 +1,6 @@
 const express = require("express");
 const knex = require("../../db/knex");
-const { createHrMasterRouter, hydratePage } = require("./master-router");
+const { createHrMasterRouter, hydratePage, fetchRows } = require("./master-router");
 const { toMoney, hasTwoDecimalsOrLess } = require("./validation");
 const {
   requirePermission,
@@ -123,6 +123,44 @@ const page = {
       "CASE WHEN lower(trim(t.status)) = 'active' THEN true ELSE false END as is_active",
     ),
   ],
+  fetchPageData: async ({ allowedBranchIds, locale, filters }) => {
+    const labelExpr =
+      locale === "ur" ? "COALESCE(e.name_ur, e.name)" : "e.name";
+    let query = knex("erp.employee_commission_rules as t")
+      .join("erp.employees as e", "t.employee_id", "e.id")
+      .select(
+        "e.id as employee_id",
+        knex.raw(`${labelExpr} as employee_name`),
+        knex.raw("COUNT(t.id)::int as rule_count"),
+      )
+      .groupBy("e.id", "e.name", "e.name_ur");
+
+    const { primaryValues, primaryMode } = filters;
+    if (primaryValues && primaryValues.length) {
+      const ids = primaryValues
+        .map(Number)
+        .filter((n) => Number.isInteger(n) && n > 0);
+      if (ids.length) {
+        if (primaryMode === "exclude") {
+          query = query.whereNotIn("t.employee_id", ids);
+        } else {
+          query = query.whereIn("t.employee_id", ids);
+        }
+      }
+    }
+
+    if (allowedBranchIds && allowedBranchIds.length) {
+      query = query.whereExists(function () {
+        this.select(1)
+          .from("erp.employee_branch as eb")
+          .whereRaw("eb.employee_id = t.employee_id")
+          .whereIn("eb.branch_id", allowedBranchIds);
+      });
+    }
+
+    const groupSummary = await query.orderByRaw(`${labelExpr} asc`);
+    return { rows: [], extra: { groupSummary } };
+  },
   columns: [
     { key: "id", label: "id" },
     { key: "employee_name", label: "employees" },
@@ -973,6 +1011,36 @@ router.post(
       return res
         .status(400)
         .json({ message: err?.message || res.locals.t("generic_error") });
+    }
+  },
+);
+
+router.get(
+  "/employee-rules",
+  requirePermission("SCREEN", page.scopeKey, "view"),
+  async (req, res, next) => {
+    try {
+      const employeeId = Number(req.query.employee_id);
+      if (!Number.isInteger(employeeId) || employeeId <= 0) {
+        return res.status(400).json({ error: "invalid_employee_id" });
+      }
+      if (!(await isEmployeeInScope({ employeeId, req }))) {
+        return res.status(403).json({ error: "not_in_scope" });
+      }
+      const allowedBranchIds = getAllowedBranchIds(req);
+      const rows = await fetchRows(page, {
+        branchId: req.user?.isAdmin ? null : req.branchId,
+        allowedBranchIds,
+        locale: req.locale || "en",
+        maxRows: 0,
+        filters: {
+          primaryValues: [employeeId],
+          primaryMode: "include",
+        },
+      });
+      return res.json({ rows });
+    } catch (err) {
+      return next(err);
     }
   },
 );
