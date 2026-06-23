@@ -192,13 +192,13 @@ const resolveSingleAccountIdForGroup = ({
     groupCode,
     ...(fallbackGroupCodes || []).map((code) => String(code || "").trim()),
   ].filter(Boolean);
-  const preferredCode = String(
-    explicitPreferredCode ||
-      CONTROL_GROUP_PREFERRED_ACCOUNT_CODES[groupCode] ||
-      "",
-  )
-    .trim()
-    .toLowerCase();
+
+  // When an explicit override is given it applies to every group in the search.
+  // Without an override, each group uses its OWN preferred code from the lookup
+  // table — this is critical for fallback groups, which must not inherit the
+  // primary group's code (e.g. accounts_receivable_control should resolve via
+  // gl_ar_control, not via gl_staff_receivable that belongs to the primary).
+  const explicitCode = String(explicitPreferredCode || "").trim().toLowerCase() || null;
 
   let foundAnyCandidates = false;
   for (const candidateGroupCode of groupCodesToSearch) {
@@ -208,17 +208,29 @@ const resolveSingleAccountIdForGroup = ({
     if (!candidates.length) continue;
     foundAnyCandidates = true;
 
-    if (preferredCode) {
+    // Use the explicit override if given; otherwise each group's own code.
+    const resolvedPreferredCode = explicitCode ||
+      String(CONTROL_GROUP_PREFERRED_ACCOUNT_CODES[candidateGroupCode] || "")
+        .trim()
+        .toLowerCase();
+
+    if (resolvedPreferredCode) {
       const preferredMatches = candidates.filter(
-        (row) => String(row.code || "").toLowerCase() === preferredCode,
+        (row) => String(row.code || "").toLowerCase() === resolvedPreferredCode,
       );
       if (preferredMatches.length === 1) {
         return Number(preferredMatches[0].id);
       }
       if (preferredMatches.length > 1) {
         throw new Error(
-          `GL posting failed: voucher ${voucherId} line ${lineNo} has duplicate preferred control account code '${preferredCode}' in group '${candidateGroupCode}'`,
+          `GL posting failed: voucher ${voucherId} line ${lineNo} has duplicate preferred control account code '${resolvedPreferredCode}' in group '${candidateGroupCode}'`,
         );
+      }
+      // Preferred code not found in this group — if there is exactly one
+      // account, use it (no ambiguity; the preferred code only disambiguates
+      // when multiple accounts are present).
+      if (candidates.length === 1) {
+        return Number(candidates[0].id);
       }
       continue;
     }
@@ -236,14 +248,9 @@ const resolveSingleAccountIdForGroup = ({
       `GL posting failed: voucher ${voucherId} line ${lineNo} requires control account group '${groupCode}' in current branch`,
     );
   }
-  if (preferredCode) {
-    const searchedGroups = groupCodesToSearch.join(", ");
-    throw new Error(
-      `GL posting failed: voucher ${voucherId} line ${lineNo} requires control account code '${preferredCode}' in group(s) '${searchedGroups}'`,
-    );
-  }
+  const searchedGroups = groupCodesToSearch.join(", ");
   throw new Error(
-    `GL posting failed: voucher ${voucherId} line ${lineNo} could not resolve control account for group '${groupCode}'`,
+    `GL posting failed: voucher ${voucherId} line ${lineNo} could not resolve control account in group(s) '${searchedGroups}'`,
   );
 };
 
