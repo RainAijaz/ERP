@@ -666,6 +666,65 @@ router.post(
         });
       }
 
+      // Block unit change if item is in an approved BOM and no conversion exists
+      const currentItem = await knex("erp.items")
+        .select("base_uom_id")
+        .where({ id })
+        .first();
+      if (
+        currentItem &&
+        Number(currentItem.base_uom_id) !== Number(base_uom_id)
+      ) {
+        const approvedBomUsage = await knex("erp.bom_rm_line as rl")
+          .join("erp.bom_header as bh", "bh.id", "rl.bom_id")
+          .where("rl.rm_item_id", id)
+          .andWhere("bh.status", "APPROVED")
+          .first();
+
+        if (approvedBomUsage) {
+          const oldUomId = Number(currentItem.base_uom_id);
+          const newUomId = Number(base_uom_id);
+          const conversion = await knex("erp.uom_conversions")
+            .where(function () {
+              this.where({
+                from_uom_id: oldUomId,
+                to_uom_id: newUomId,
+                is_active: true,
+              }).orWhere({
+                from_uom_id: newUomId,
+                to_uom_id: oldUomId,
+                is_active: true,
+              });
+            })
+            .first();
+
+          if (!conversion) {
+            const [oldUom, newUom] = await Promise.all([
+              knex("erp.uom").select("code").where({ id: oldUomId }).first(),
+              knex("erp.uom").select("code").where({ id: newUomId }).first(),
+            ]);
+            const oldCode = oldUom ? oldUom.code : `UOM ${oldUomId}`;
+            const newCode = newUom ? newUom.code : `UOM ${newUomId}`;
+            const [rows, options, rateDetailsByItem, users] = await Promise.all([
+              loadRows(),
+              loadOptions(),
+              loadRateDetails(),
+              loadUsers(),
+            ]);
+            return renderIndex(req, res, {
+              rows,
+              rateDetailsByItem,
+              ...options,
+              users,
+              error: `${res.locals.t("error_rm_uom_change_approved_bom")} (${oldCode} → ${newCode}). Add a conversion rule in Basic Info → UOM Conversions first.`,
+              modalOpen: true,
+              modalMode: "edit",
+              values: { ...values, id },
+            });
+          }
+        }
+      }
+
       const group = await knex("erp.product_groups")
         .select("name")
         .where({ id: group_id })

@@ -10,6 +10,11 @@ const {
 
 const router = express.Router();
 const BOM_REPORT_SCOPE = "master_data.bom.reports";
+const BOM_SCOPE_VERSION_HISTORY = "master_data.bom.reports.version_history";
+const BOM_SCOPE_COST_BREAKDOWN = "master_data.bom.reports.cost_breakdown";
+const BOM_SCOPE_LIFECYCLE_STATUS = "master_data.bom.reports.lifecycle_status";
+const BOM_SCOPE_CHANGE_LOG = "master_data.bom.reports.change_log";
+const BOM_SCOPE_APPROVAL_QUEUE_AGING = "master_data.bom.reports.approval_queue_aging";
 
 const translateWithFallback = (t, key, fallback) => {
   const value = typeof t === "function" ? t(key) : "";
@@ -228,64 +233,64 @@ const renderStub =
 
 router.get(
   "/version-history",
-  requirePermission("REPORT", BOM_REPORT_SCOPE, "load"),
+  requirePermission("REPORT", BOM_SCOPE_VERSION_HISTORY, "load"),
   async (req, res, next) => renderVersionHistoryReport(req, res, next, req.query),
 );
 
 router.post(
   "/version-history",
-  requirePermission("REPORT", BOM_REPORT_SCOPE, "load"),
+  requirePermission("REPORT", BOM_SCOPE_VERSION_HISTORY, "load"),
   async (req, res, next) => renderVersionHistoryReport(req, res, next, req.body),
 );
 
 router.get(
   "/cost-breakdown",
-  requirePermission("REPORT", BOM_REPORT_SCOPE, "load"),
+  requirePermission("REPORT", BOM_SCOPE_COST_BREAKDOWN, "load"),
   async (req, res, next) =>
     renderCostBreakdownReport(req, res, next, req.query),
 );
 
 router.post(
   "/cost-breakdown",
-  requirePermission("REPORT", BOM_REPORT_SCOPE, "load"),
+  requirePermission("REPORT", BOM_SCOPE_COST_BREAKDOWN, "load"),
   async (req, res, next) =>
     renderCostBreakdownReport(req, res, next, req.body),
 );
 
 router.get(
   "/lifecycle-status",
-  requirePermission("REPORT", BOM_REPORT_SCOPE, "load"),
+  requirePermission("REPORT", BOM_SCOPE_LIFECYCLE_STATUS, "load"),
   async (req, res, next) => renderLifecycleStatusReport(req, res, next, req.query),
 );
 
 router.post(
   "/lifecycle-status",
-  requirePermission("REPORT", BOM_REPORT_SCOPE, "load"),
+  requirePermission("REPORT", BOM_SCOPE_LIFECYCLE_STATUS, "load"),
   async (req, res, next) => renderLifecycleStatusReport(req, res, next, req.body),
 );
 
 router.get(
   "/change-log",
-  requirePermission("REPORT", BOM_REPORT_SCOPE, "load"),
+  requirePermission("REPORT", BOM_SCOPE_CHANGE_LOG, "load"),
   async (req, res, next) => renderChangeLogReport(req, res, next, req.query),
 );
 
 router.post(
   "/change-log",
-  requirePermission("REPORT", BOM_REPORT_SCOPE, "load"),
+  requirePermission("REPORT", BOM_SCOPE_CHANGE_LOG, "load"),
   async (req, res, next) => renderChangeLogReport(req, res, next, req.body),
 );
 
 router.get(
   "/approval-queue-aging",
-  requirePermission("REPORT", BOM_REPORT_SCOPE, "load"),
+  requirePermission("REPORT", BOM_SCOPE_APPROVAL_QUEUE_AGING, "load"),
   async (req, res, next) =>
     renderApprovalQueueAgingReport(req, res, next, req.query),
 );
 
 router.post(
   "/approval-queue-aging",
-  requirePermission("REPORT", BOM_REPORT_SCOPE, "load"),
+  requirePermission("REPORT", BOM_SCOPE_APPROVAL_QUEUE_AGING, "load"),
   async (req, res, next) =>
     renderApprovalQueueAgingReport(req, res, next, req.body),
 );
