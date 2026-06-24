@@ -766,7 +766,7 @@
 
     if (next.sku_id && !source && next.pair_rate <= 0) {
       const sku = skuMap.get(Number(next.sku_id));
-      if (sku) next.pair_rate = Number(n(sku.sale_rate).toFixed(1));
+      if (sku && !sku.rate_editable) next.pair_rate = Number(n(sku.sale_rate).toFixed(1));
     }
 
     if (next.sale_qty > 0) {
@@ -1488,6 +1488,7 @@
     "sale_qty",
     "return_qty",
     "return_reason_id",
+    "pair_rate",
     "pair_discount",
   ];
 
@@ -1536,8 +1537,7 @@
     if (f === "sku_id") {
       const sku = skuMap.get(Number(rows[i].sku_id || 0));
       if (sku) {
-        // Always refresh the rate when article changes so stale rate from previous article is not reused.
-        rows[i].pair_rate = Number(n(sku.sale_rate).toFixed(1));
+        rows[i].pair_rate = sku.rate_editable ? 0 : Number(n(sku.sale_rate).toFixed(1));
       } else {
         rows[i].pair_rate = 0;
       }

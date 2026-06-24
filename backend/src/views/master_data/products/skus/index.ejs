@@ -429,11 +429,15 @@
 
           editList.innerHTML = '<div class="text-center p-4 text-slate-400"><%= t("loading") %>...</div>';
           try {
-             const res = await fetch(`<%= basePath %>/item-variants/${itemId}`);
-             const variants = await res.json();
+             const apiRes = await fetch(`<%= basePath %>/item-variants/${itemId}`, { headers: { 'Accept': 'application/json' } });
+             if (!apiRes.ok) {
+               const errData = await apiRes.json().catch(() => null);
+               throw new Error(errData?.error || `Server error (${apiRes.status})`);
+             }
+             const variants = await apiRes.json();
              editList.innerHTML = "";
-             
-             if(variants.length === 0) {
+
+             if(!Array.isArray(variants) || variants.length === 0) {
                  editList.innerHTML = '<div class="text-center p-4 text-slate-400"><%= t("no_records_found") %></div>';
                  return;
              }
