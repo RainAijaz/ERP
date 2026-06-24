@@ -51,6 +51,55 @@ app.use(
     immutable: true,
   }),
 );
+
+// Serve QR with no-cache so browsers always fetch the latest image (QR codes expire in ~20s)
+app.get("/whatsapp-qr.png", (req, res) => {
+  const qrFile = path.join(__dirname, "..", "public", "whatsapp-qr.png");
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  res.set("Pragma", "no-cache");
+  res.sendFile(qrFile, (err) => {
+    if (err && !res.headersSent) res.status(404).send("QR not generated yet");
+  });
+});
+
+// Auto-refreshing QR scanner page — open this URL in a browser to link WhatsApp
+app.get("/whatsapp-qr", (req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>WhatsApp QR</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; padding: 40px; background: #f0f0f0; }
+    img { border: 4px solid #25d366; border-radius: 8px; max-width: 320px; }
+    p { color: #555; margin-top: 12px; }
+    #status { font-weight: bold; color: #25d366; }
+  </style>
+</head>
+<body>
+  <h2>Scan to connect WhatsApp</h2>
+  <img id="qr" src="/whatsapp-qr.png?t=${Date.now()}" alt="QR Code">
+  <p>QR refreshes every 15 seconds. Scan immediately after it updates.</p>
+  <p id="status">Waiting for QR...</p>
+  <script>
+    let count = 15;
+    const img = document.getElementById('qr');
+    const status = document.getElementById('status');
+    setInterval(() => {
+      count--;
+      status.textContent = 'Refreshing in ' + count + 's...';
+      if (count <= 0) {
+        count = 15;
+        img.src = '/whatsapp-qr.png?t=' + Date.now();
+        status.textContent = 'QR updated — scan now!';
+      }
+    }, 1000);
+  </script>
+</body>
+</html>`);
+});
+
 app.use(
   express.static(path.join(__dirname, "..", "public"), {
     maxAge: staticCacheMaxAge,
