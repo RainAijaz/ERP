@@ -1,6 +1,7 @@
 const express = require("express");
 const {
   requirePermission,
+  hasPermissionForRequirement,
 } = require("../../middleware/access/role-permissions");
 const {
   getCustomerListingsRows,
@@ -54,6 +55,7 @@ const renderSalesReportPage = async (
       reportTitle: salesReportTitle,
       downloadFileName: "sales-report.csv",
       returnReasonFilter: false,
+      canViewCostFields: req.user?.isAdmin || hasPermissionForRequirement(req, { scopeType: "REPORT", scopeKey: "sales_report", action: "can_view_cost_fields" }),
     });
   } catch (err) {
     console.error("Error in SalesReportsService:", err);
@@ -96,6 +98,7 @@ const renderSaleReturnReportPage = async (
       reportTitle: saleReturnReportTitle,
       downloadFileName: "sale-return-report.csv",
       returnReasonFilter: true,
+      canViewCostFields: req.user?.isAdmin || hasPermissionForRequirement(req, { scopeType: "REPORT", scopeKey: "sale_return_report", action: "can_view_cost_fields" }),
     });
   } catch (err) {
     console.error("Error in SalesReportsService:", err);

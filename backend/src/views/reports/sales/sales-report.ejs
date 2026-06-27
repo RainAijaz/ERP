@@ -20,6 +20,7 @@ const groups = Array.isArray(reportData?.groups) ? reportData.groups : [];
 const summaryRows = Array.isArray(reportData?.summaryRows) ? reportData.summaryRows : [];
 const totals = reportData?.totals || { qty: 0, packedQty: 0, looseQty: 0, grossAmount: 0, discountAmount: 0, netAmount: 0, effectivePairDiscount: 0 };
 const includeBranchColumn = Boolean(reportData?.includeBranchColumn);
+const canViewCostFields = Boolean(locals.canViewCostFields !== undefined ? locals.canViewCostFields : true);
 const hasData = selectedReportType === "summary" ? summaryRows.length > 0 : groups.length > 0;
 const customerOptions = Array.isArray(options?.customers) ? options.customers : [];
 const groupOptions = Array.isArray(options?.groups) ? options.groups : [];
@@ -99,7 +100,7 @@ const detailStaticColumnCount = 1
   + 1
   + (showReturnReasonFilter ? 1 : 0);
 const detailTotalsLabelSpan = detailStaticColumnCount;
-const detailMetricColumnCount = 5 + (selectedOrderBy === "voucher" ? 1 : 0);
+const detailMetricColumnCount = 1 + (canViewCostFields ? 4 + (selectedOrderBy === "voucher" ? 1 : 0) : 0);
 const detailColumnCount = detailStaticColumnCount + detailMetricColumnCount + (includeBranchColumn ? 1 : 0);
 const distinctCount = (rows, key) => { const values = new Set(); (rows || []).forEach((row) => { const value = row?.[key]; if (value !== null && value !== undefined && String(value).trim() !== "") values.add(String(value)); }); return values.size; };
 %>
@@ -403,6 +404,7 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                   <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= returnReasonLabel %></th>
                 <% } %>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("quantity") %></th>
+                <% if (canViewCostFields) { %>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= pairRateLabel %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("gross_amount") %></th>
                 <% if (selectedOrderBy === "voucher") { %>
@@ -410,6 +412,7 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                 <% } %>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= totalDiscountLabel %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("net_amount") %></th>
+                <% } %>
                 <% if (includeBranchColumn) { %>
                   <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("branch") %></th>
                 <% } %>
@@ -485,6 +488,7 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                         <span class="<%= Number(line.input_qty !== undefined ? line.input_qty : line.qty || 0) < 0 ? 'tabular-nums text-rose-700' : 'tabular-nums text-slate-900' %>"><%= formatQty(line.input_qty !== undefined ? line.input_qty : line.qty || 0) %></span>
                       </div>
                     </td>
+                    <% if (canViewCostFields) { %>
                     <td class="px-3 py-2 text-right"><%= formatMoney(line.rate || 0) %></td>
                     <td class="px-3 py-2 text-right"><%= formatMoney(line.gross_amount || 0) %></td>
                     <% if (selectedOrderBy === "voucher") { %>
@@ -492,6 +496,7 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                     <% } %>
                     <td class="px-3 py-2 text-right text-rose-700"><%= formatMoney(line.discount_amount || 0) %></td>
                     <td class="px-3 py-2 text-right font-semibold text-emerald-700"><%= formatMoney(line.net_amount || 0) %></td>
+                    <% } %>
                     <% if (includeBranchColumn) { %>
                       <td class="px-3 py-2"><%= line.branch_name || "-" %></td>
                     <% } %>
@@ -531,7 +536,7 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                         </div>
                       <% } %>
                     </td>
-                    <td class="px-3 py-2 text-right font-extrabold"></td>
+                    <% if (canViewCostFields) { %><td class="px-3 py-2 text-right font-extrabold"></td><% } %>
                   <% } else { %>
                     <td colspan="<%= detailTotalsLabelSpan %>" class="px-3 py-2">
                       <div class="flex w-full flex-wrap items-center justify-center gap-x-5 gap-y-1 text-center">
@@ -551,14 +556,16 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                       </div>
                     </td>
                     <td class="px-3 py-2 text-right font-extrabold"></td>
-                    <td class="px-3 py-2 text-right font-extrabold"></td>
+                    <% if (canViewCostFields) { %><td class="px-3 py-2 text-right font-extrabold"></td><% } %>
                   <% } %>
+                  <% if (canViewCostFields) { %>
                   <td class="px-3 py-2 text-right font-extrabold tabular-nums"><%= formatMoney(group.total_gross_amount || 0) %></td>
                   <% if (selectedOrderBy === "voucher") { %>
                     <td class="px-3 py-2 text-right font-extrabold tabular-nums"><%= formatMoney(group.effective_pair_discount || 0) %></td>
                   <% } %>
                   <td class="px-3 py-2 text-right font-extrabold tabular-nums"><%= formatMoney(group.total_discount_amount || 0) %></td>
                   <td class="px-3 py-2 text-right font-extrabold tabular-nums"><%= formatMoney(group.total_net_amount || 0) %></td>
+                  <% } %>
                   <% if (includeBranchColumn) { %>
                     <td class="px-3 py-2"></td>
                   <% } %>
@@ -614,11 +621,13 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                       <% } %>
                     </div>
                   </td>
+                  <% if (canViewCostFields) { %>
                   <td class="px-3 py-3 text-right font-extrabold"></td>
                   <td class="px-3 py-3 text-right font-extrabold tabular-nums text-white"><%= formatMoney(totals.grossAmount || 0) %></td>
                   <td class="px-3 py-3 text-right font-extrabold tabular-nums text-white"><%= formatMoney(totals.effectivePairDiscount || 0) %></td>
                   <td class="px-3 py-3 text-right font-extrabold tabular-nums text-white"><%= formatMoney(totals.discountAmount || 0) %></td>
                   <td class="px-3 py-3 text-right font-black tabular-nums text-emerald-100"><%= formatMoney(totals.netAmount || 0) %></td>
+                  <% } %>
                   <% if (includeBranchColumn) { %>
                     <td class="px-3 py-3"></td>
                   <% } %>
@@ -642,10 +651,12 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                       <% } %>
                     </div>
                   </td>
+                  <% if (canViewCostFields) { %>
                   <td class="px-3 py-3 text-right font-extrabold"></td>
                   <td class="px-3 py-3 text-right font-extrabold tabular-nums text-white"><%= formatMoney(totals.grossAmount || 0) %></td>
                   <td class="px-3 py-3 text-right font-extrabold tabular-nums text-white"><%= formatMoney(totals.discountAmount || 0) %></td>
                   <td class="px-3 py-3 text-right font-black tabular-nums text-emerald-100"><%= formatMoney(totals.netAmount || 0) %></td>
+                  <% } %>
                   <% if (includeBranchColumn) { %>
                     <td class="px-3 py-3"></td>
                   <% } %>
@@ -699,6 +710,7 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                   <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("items_label") %></th>
                 <% } %>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("quantity") %></th>
+                <% if (canViewCostFields) { %>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= pairRateLabel %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("gross_amount") %></th>
                 <% if (selectedOrderBy === "voucher") { %>
@@ -706,6 +718,7 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                 <% } %>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= totalDiscountLabel %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("net_amount") %></th>
+                <% } %>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100" data-table-body>
@@ -749,6 +762,7 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                       <span class="<%= Number(row.total_qty || 0) < 0 ? 'tabular-nums text-rose-700' : 'tabular-nums text-slate-900' %>"><%= formatQty(row.total_qty || 0) %></span>
                     </div>
                   </td>
+                  <% if (canViewCostFields) { %>
                   <td class="px-3 py-2 text-right"><%= formatMoney(row.avg_rate || 0) %></td>
                   <td class="px-3 py-2 text-right"><%= formatMoney(row.total_gross_amount || 0) %></td>
                   <% if (selectedOrderBy === "voucher") { %>
@@ -756,6 +770,7 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                   <% } %>
                   <td class="px-3 py-2 text-right text-rose-700"><%= formatMoney(row.total_discount_amount || 0) %></td>
                   <td class="px-3 py-2 text-right font-semibold text-emerald-700"><%= formatMoney(row.total_net_amount || 0) %></td>
+                  <% } %>
                 </tr>
               <% }) %>
               <tr class="bg-rose-700 text-white" data-row data-active="true" data-report-grand-total>
@@ -789,6 +804,7 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                   </td>
                 <% } %>
                 <td class="px-3 py-2 text-right font-extrabold"></td>
+                <% if (canViewCostFields) { %>
                 <td class="px-3 py-2"></td>
                 <td class="px-3 py-2 text-right font-extrabold"><%= formatMoney(totals.grossAmount || 0) %></td>
                 <% if (selectedOrderBy === "voucher") { %>
@@ -796,6 +812,7 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                 <% } %>
                 <td class="px-3 py-2 text-right font-extrabold"><%= formatMoney(totals.discountAmount || 0) %></td>
                 <td class="px-3 py-2 text-right font-extrabold"><%= formatMoney(totals.netAmount || 0) %></td>
+                <% } %>
               </tr>
             </tbody>
           </table>
