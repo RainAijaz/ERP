@@ -329,6 +329,7 @@
 		const deleteForm = document.querySelector("[data-delete-voucher-form]");
 		const productGroupRow = form.querySelector("[data-product-group-row]");
 		const productGroupSelect = form.querySelector("[data-product-group]");
+		const productGroupStatusSelect = form.querySelector("[data-product-group-status]");
 		const tableLoadingOverlay = form.querySelector("[data-table-loading-overlay]");
 
 		const skuList = Array.isArray(options.skus) ? options.skus : [];
@@ -372,11 +373,20 @@
 			if (!productGroupSelect) return;
 			const groups = getAvailableGroups(stockType);
 			const currentVal = productGroupSelect.value;
-			productGroupSelect.innerHTML = `<option value="">Select Product Group</option>` +
+			const allGroupsOption = stockType === "RM" ? `<option value="all">All Groups</option>` : "";
+			productGroupSelect.innerHTML = `<option value="">Select Product Group</option>` + allGroupsOption +
 				groups.map((g) => `<option value="${g.id}"${Number(currentVal) === g.id ? " selected" : ""}>${g.name}</option>`).join("");
 			if (typeof window.initSearchableSelects === "function") {
 				window.initSearchableSelects(productGroupSelect.closest("[data-product-group-row]") || form);
 			}
+		};
+
+		const syncStatusDropdownVisibility = () => {
+			if (!productGroupStatusSelect) return;
+			const isFg = currentStockType() === "FG";
+			const wrapper = productGroupStatusSelect.closest("div");
+			if (wrapper) wrapper.classList.toggle("hidden", !isFg);
+			if (!isFg) productGroupStatusSelect.value = "";
 		};
 
 		const syncProductGroupVisibility = () => {
@@ -384,6 +394,7 @@
 			const show = isPhysicalCountCorrectionActive() && !initialVoucher;
 			productGroupRow.classList.toggle("hidden", !show);
 			if (show) populateProductGroupOptions(currentStockType());
+			syncStatusDropdownVisibility();
 		};
 
 		const showTableLoading = () => {
@@ -1188,6 +1199,7 @@
 					productGroupSelect.value = "";
 					populateProductGroupOptions(currentStockType());
 				}
+				syncStatusDropdownVisibility();
 				rowsState = [rowTemplate(currentStockType())];
 				renderHead(currentStockType());
 				renderRows();
@@ -1210,12 +1222,15 @@
 			syncReasonSettings();
 		}
 
-		const productGroupStatusSelect = form.querySelector("[data-product-group-status]");
+		const getProductGroupValue = () => {
+			const raw = productGroupSelect?.value || "";
+			return raw === "all" ? "all" : Number(raw || 0);
+		};
 
 		if (productGroupSelect) {
 			productGroupSelect.addEventListener("change", () => {
-				const groupId = Number(productGroupSelect.value || 0);
-				if (!groupId) {
+				const groupId = getProductGroupValue();
+				if (!groupId && groupId !== "all") {
 					rowsState = [rowTemplate(currentStockType())];
 					renderRows();
 					return;
@@ -1226,8 +1241,8 @@
 
 		if (productGroupStatusSelect) {
 			productGroupStatusSelect.addEventListener("change", () => {
-				const groupId = Number(productGroupSelect?.value || 0);
-				if (!groupId) return;
+				const groupId = getProductGroupValue();
+				if (!groupId && groupId !== "all") return;
 				loadArticlesForGroup(groupId).catch((err) => console.error(err));
 			});
 		}

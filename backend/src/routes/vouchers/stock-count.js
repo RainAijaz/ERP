@@ -61,11 +61,12 @@ router.get(
   requirePermission("VOUCHER", scopeKey, "view"),
   async (req, res, next) => {
     try {
-      const groupId = Number(req.query.group_id || 0);
+      const groupIdParam = String(req.query.group_id || "").trim();
+      const groupId = groupIdParam === "all" ? "all" : Number(groupIdParam || 0);
       const stockType = String(req.query.stock_type || "").trim().toUpperCase();
       const date = String(req.query.date || "").trim();
       const status = String(req.query.status || "").trim().toUpperCase();
-      if (!groupId || !stockType) {
+      if ((!groupId && groupId !== "all") || !stockType) {
         return res.json({ articles: [], asOfDate: null });
       }
       const result = await loadStockCountGroupArticles({

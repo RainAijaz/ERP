@@ -4020,10 +4020,11 @@ const loadStockCountGroupArticles = async ({
   status,
 }) => {
   const normalizedBranchId = toPositiveInt(branchId);
-  const normalizedGroupId = toPositiveInt(groupId);
+  const isAllGroups = String(groupId || "").trim().toLowerCase() === "all";
+  const normalizedGroupId = isAllGroups ? null : toPositiveInt(groupId);
   const normalizedStockType = normalizeStockType(stockType);
 
-  if (!normalizedBranchId || !normalizedGroupId || !normalizedStockType) {
+  if (!normalizedBranchId || (!isAllGroups && !normalizedGroupId) || !normalizedStockType) {
     return { articles: [], asOfDate: null };
   }
 
@@ -4038,10 +4039,13 @@ const loadStockCountGroupArticles = async ({
       .where({
         "sb.branch_id": normalizedBranchId,
         "sb.stock_state": "ON_HAND",
-        "i.group_id": normalizedGroupId,
         "i.is_active": true,
       })
       .whereRaw("upper(coalesce(i.item_type::text, '')) = 'RM'");
+
+    if (!isAllGroups) {
+      query = query.where("i.group_id", normalizedGroupId);
+    }
 
     if (hasVariantDimensions) {
       query = query
