@@ -1636,6 +1636,7 @@ const loadTransferOutLinesTx = async ({ trx, voucherId }) => {
     .leftJoin("erp.sizes as vs", "vs.id", "v.size_id")
     .leftJoin("erp.packing_types as p", "p.id", "v.packing_type_id")
     .leftJoin("erp.grades as g", "g.id", "v.grade_id")
+    .leftJoin("erp.product_groups as pg", "pg.id", "si.group_id")
     .select(
       "vl.id",
       "vl.line_no",
@@ -1657,6 +1658,7 @@ const loadTransferOutLinesTx = async ({ trx, voucherId }) => {
       knex.raw("coalesce(sz.name, vs.name, '') as size_name"),
       "p.name as packing_name",
       "g.name as grade_name",
+      "pg.name as group_name",
     )
     .where({ "vl.voucher_header_id": voucherId })
     .orderBy("vl.line_no", "asc");
@@ -1679,6 +1681,7 @@ const loadTransferOutLinesTx = async ({ trx, voucherId }) => {
             color_name: line?.color_name,
             packing_name: line?.packing_name,
             grade_name: line?.grade_name,
+            group_name: line?.group_name,
           })
         : String(line?.item_name || "");
     return {
@@ -2683,6 +2686,7 @@ const loadTransferInLinesTx = async ({ trx, voucherId }) => {
     .leftJoin("erp.sizes as vs", "vs.id", "v.size_id")
     .leftJoin("erp.packing_types as p", "p.id", "v.packing_type_id")
     .leftJoin("erp.grades as g", "g.id", "v.grade_id")
+    .leftJoin("erp.product_groups as pg", "pg.id", "si.group_id")
     .select(
       "vl.id",
       "vl.line_no",
@@ -2704,6 +2708,7 @@ const loadTransferInLinesTx = async ({ trx, voucherId }) => {
       knex.raw("coalesce(sz.name, vs.name, '') as size_name"),
       "p.name as packing_name",
       "g.name as grade_name",
+      "pg.name as group_name",
     )
     .where({ "vl.voucher_header_id": voucherId })
     .orderBy("vl.line_no", "asc");
@@ -2726,6 +2731,7 @@ const loadTransferInLinesTx = async ({ trx, voucherId }) => {
             color_name: line?.color_name,
             packing_name: line?.packing_name,
             grade_name: line?.grade_name,
+            group_name: line?.group_name,
           })
         : String(line?.item_name || "");
     return {
@@ -3580,8 +3586,9 @@ const buildSkuDisplayName = (row) => {
     String(row?.packing_name || "").trim(),
     String(row?.grade_name || "").trim(),
   ].filter(Boolean);
-  if (parts.length) return parts.join(" ");
-  return String(row?.sku_code || `SKU ${row?.id || ""}`).trim();
+  const groupName = String(row?.group_name || "").trim();
+  const base = parts.length ? parts.join(" ") : String(row?.sku_code || `SKU ${row?.id || ""}`).trim();
+  return groupName ? `${base} (${groupName})` : base;
 };
 
 const loadPendingTransferInReferencesTx = async ({
@@ -3727,12 +3734,14 @@ const loadStockTransferVoucherOptions = async ({
       .leftJoin("erp.packing_types as p", "p.id", "v.packing_type_id")
       .leftJoin("erp.grades as g", "g.id", "v.grade_id")
       .leftJoin("erp.uom as u", "u.id", "i.base_uom_id")
+      .leftJoin("erp.product_groups as pg", "pg.id", "i.group_id")
       .select(
         "s.id",
         "s.sku_code",
         "v.sale_rate",
         "i.name as item_name",
         "i.item_type",
+        "pg.name as group_name",
         "sz.name as size_name",
         "c.name as color_name",
         "p.name as packing_name",

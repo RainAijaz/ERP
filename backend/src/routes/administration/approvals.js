@@ -762,11 +762,13 @@ const hydrateSkuRows = async (rows) => {
   const skuRows = await knex("erp.skus as s")
     .leftJoin("erp.variants as v", "s.variant_id", "v.id")
     .leftJoin("erp.items as i", "v.item_id", "i.id")
+    .leftJoin("erp.product_groups as pg", "pg.id", "i.group_id")
     .select(
       "s.id as sku_id",
       "s.variant_id",
       "s.sku_code",
       "i.name as item_name",
+      "pg.name as group_name",
     )
     .where(function whereSkuOrVariant() {
       this.whereIn("s.id", skuIds).orWhereIn("s.variant_id", skuIds);
@@ -784,6 +786,7 @@ const hydrateSkuRows = async (rows) => {
       ...row,
       sku_code: hydrated?.sku_code || row.sku_code || "",
       item_name: hydrated?.item_name || row.item_name || "",
+      group_name: hydrated?.group_name || row.group_name || "",
     };
   });
 };
@@ -1114,14 +1117,19 @@ const buildPreviewPayload = async (req, res, request, side) => {
           ? knex("erp.skus as s")
               .leftJoin("erp.variants as v", "s.variant_id", "v.id")
               .leftJoin("erp.items as i", "v.item_id", "i.id")
-              .select("s.id", "i.name as item_name", "s.sku_code")
+              .leftJoin("erp.product_groups as pg", "pg.id", "i.group_id")
+              .select("s.id", "i.name as item_name", "s.sku_code", "pg.name as group_name")
               .whereIn("s.id", skuIds)
           : Promise.resolve([]),
         itemIds.length ? knex("erp.items").select("id", "name").whereIn("id", itemIds) : Promise.resolve([]),
         branchIds.length ? knex("erp.branches").select("id", "name").whereIn("id", branchIds) : Promise.resolve([]),
       ]);
 
-      const skuNameMap = new Map(skuRows.map((r) => [Number(r.id), r.item_name || r.sku_code || ""]));
+      const skuNameMap = new Map(skuRows.map((r) => {
+        const base = r.item_name || r.sku_code || "";
+        const group = r.group_name ? ` (${r.group_name})` : "";
+        return [Number(r.id), `${base}${group}`];
+      }));
       const itemNameMap = new Map(itemRows.map((r) => [Number(r.id), r.name || ""]));
       const branchNameMap = new Map(branchRows.map((r) => [Number(r.id), r.name || ""]));
 
@@ -1371,6 +1379,7 @@ const buildPreviewPayload = async (req, res, request, side) => {
           knex.raw("COALESCE(co.name, '') as color_name"),
           knex.raw("COALESCE(pk.name, '') as packing_name"),
           "s.sku_code",
+          "pg.name as group_name",
         )
         .leftJoin("erp.items as i", "v.item_id", "i.id")
         .leftJoin("erp.sizes as sz", "v.size_id", "sz.id")
@@ -1378,15 +1387,17 @@ const buildPreviewPayload = async (req, res, request, side) => {
         .leftJoin("erp.colors as co", "v.color_id", "co.id")
         .leftJoin("erp.packing_types as pk", "v.packing_type_id", "pk.id")
         .leftJoin("erp.skus as s", "s.variant_id", "v.id")
+        .leftJoin("erp.product_groups as pg", "pg.id", "i.group_id")
         .whereIn("v.id", variantIds);
       const dbMap = new Map(dbRows.map((row) => [Number(row.id), row]));
       enrichedVariants = rawVariants.map((v) => {
         const db = dbMap.get(Number(v.id)) || {};
         const parts = [db.size_name, db.packing_name, db.grade_name, db.color_name].filter(Boolean);
+        const groupSuffix = db.group_name ? ` (${db.group_name})` : "";
         return {
           ...v,
           sku_code: db.sku_code || `#${v.id}`,
-          item_name: db.item_name || "",
+          item_name: `${db.item_name || ""}${groupSuffix}`,
           variant_label: parts.join(" "),
         };
       });

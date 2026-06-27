@@ -753,6 +753,7 @@ const loadSkuMapTx = async ({ trx, skuIds = [], itemTypes = [] }) => {
     .leftJoin("erp.colors as c", "c.id", "v.color_id")
     .leftJoin("erp.packing_types as pt", "pt.id", "v.packing_type_id")
     .leftJoin("erp.uom as u", "u.id", "i.base_uom_id")
+    .leftJoin("erp.product_groups as pg", "pg.id", "i.group_id")
     .select(
       "s.id",
       "s.sku_code",
@@ -770,6 +771,7 @@ const loadSkuMapTx = async ({ trx, skuIds = [], itemTypes = [] }) => {
       "sz.name as size_name",
       "c.name as color_name",
       "pt.name as packing_name",
+      "pg.name as group_name",
     )
     .whereIn("s.id", normalizedSkuIds)
     .where({ "s.is_active": true, "i.is_active": true });
@@ -788,9 +790,11 @@ const loadSkuMapTx = async ({ trx, skuIds = [], itemTypes = [] }) => {
 const buildSkuDisplayLabel = (row) => {
   const skuCode = String(row?.sku_code || "").trim();
   const itemName = String(row?.item_name || "").trim();
-  if (skuCode && itemName) return `${skuCode} - ${itemName}`;
-  if (skuCode) return skuCode;
-  if (itemName) return itemName;
+  const groupName = String(row?.group_name || "").trim();
+  const groupSuffix = groupName ? ` (${groupName})` : "";
+  if (skuCode && itemName) return `${skuCode} - ${itemName}${groupSuffix}`;
+  if (skuCode) return `${skuCode}${groupSuffix}`;
+  if (itemName) return `${itemName}${groupSuffix}`;
   return "Unknown SKU";
 };
 
@@ -803,7 +807,8 @@ const loadSkuDisplayMapTx = async ({ trx, skuIds = [] }) => {
   const rows = await trx("erp.skus as s")
     .join("erp.variants as v", "v.id", "s.variant_id")
     .join("erp.items as i", "i.id", "v.item_id")
-    .select("s.id as sku_id", "s.sku_code", "i.name as item_name")
+    .leftJoin("erp.product_groups as pg", "pg.id", "i.group_id")
+    .select("s.id as sku_id", "s.sku_code", "i.name as item_name", "pg.name as group_name")
     .whereIn("s.id", normalizedSkuIds);
   return new Map(rows.map((row) => [Number(row.sku_id), row]));
 };
@@ -6358,6 +6363,7 @@ const loadProductionVoucherOptions = async (
         .leftJoin("erp.sizes as sz", "sz.id", "v.size_id")
         .leftJoin("erp.colors as c", "c.id", "v.color_id")
         .leftJoin("erp.packing_types as pt", "pt.id", "v.packing_type_id")
+        .leftJoin("erp.product_groups as pg", "pg.id", "i.group_id")
         .select(
           "s.id",
           "s.sku_code",
@@ -6366,6 +6372,7 @@ const loadProductionVoucherOptions = async (
           "sz.name as size_name",
           "c.name as color_name",
           "pt.name as packing_name",
+          "pg.name as group_name",
         )
         .where({ "s.is_active": true, "i.is_active": true })
         .whereIn(knex.raw("upper(coalesce(i.item_type::text, ''))"), itemTypes)

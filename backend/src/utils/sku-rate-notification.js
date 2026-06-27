@@ -30,9 +30,10 @@ const sendSkuRateNotification = async ({
 
   try {
     const details = await knex("erp.variants as v")
-      .select("v.id", "i.name as item_name", "i.name_ur as item_name_ur", "k.sku_code")
+      .select("v.id", "i.name as item_name", "i.name_ur as item_name_ur", "k.sku_code", "pg.name as group_name")
       .leftJoin("erp.items as i", "v.item_id", "i.id")
       .leftJoin("erp.skus as k", "k.variant_id", "v.id")
+      .leftJoin("erp.product_groups as pg", "pg.id", "i.group_id")
       .whereIn(
         "v.id",
         normalizedUpdates.map((update) => update.id),
@@ -54,6 +55,7 @@ const sendSkuRateNotification = async ({
       const sku = detail?.sku_code || `#${update.id}`;
       const name = detail?.item_name || "-";
       const nameUr = detail?.item_name_ur || "";
+      const groupName = detail?.group_name || "";
       const newRateStr = formatRate(update.newRate);
       const oldRateStr = formatRate(update.oldRate);
 
@@ -75,7 +77,8 @@ const sendSkuRateNotification = async ({
         rateLine = `  ریٹ: ${newRateStr || "-"}`;
       }
 
-      const nameLine = nameUr ? `  ${name} | ${nameUr}` : `  ${name}`;
+      const groupSuffix = groupName ? ` (${groupName})` : "";
+      const nameLine = nameUr ? `  ${name} | ${nameUr}${groupSuffix}` : `  ${name}${groupSuffix}`;
       return `• *${sku}*\n${nameLine}\n${rateLine}`;
     });
 

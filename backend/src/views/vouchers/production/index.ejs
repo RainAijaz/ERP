@@ -858,7 +858,7 @@
       const base = [`<option value="">${<%- JSON.stringify(t("select_sku")) %>}</option>`];
       availableSkus.forEach((sku) => {
         const selected = Number(selectedSkuId || 0) === Number(sku.id || 0) ? "selected" : "";
-        base.push(`<option value="SKU:${sku.id}" ${selected}>${sku.sku_code} - ${sku.item_name || ""}</option>`);
+        base.push(`<option value="SKU:${sku.id}" ${selected}>${sku.sku_code} - ${sku.item_name || ""}${sku.group_name ? ` (${sku.group_name})` : ""}</option>`);
       });
       return base.join("");
     };
@@ -918,7 +918,7 @@
       }
 
       return [`<option value="">${primaryEntityPlaceholder}</option>`]
-        .concat((options.skus || []).map((sku) => `<option value="${sku.id}" ${Number(row.sku_id || 0) === Number(sku.id || 0) ? "selected" : ""}>${sku.sku_code} - ${sku.item_name || ""}</option>`))
+        .concat((options.skus || []).map((sku) => `<option value="${sku.id}" ${Number(row.sku_id || 0) === Number(sku.id || 0) ? "selected" : ""}>${sku.sku_code} - ${sku.item_name || ""}${sku.group_name ? ` (${sku.group_name})` : ""}</option>`))
         .join("");
     };
 
@@ -930,7 +930,7 @@
         const skuId = Number(sku?.id || 0) || null;
         if (!skuId) return;
         const selected = skuId === selectedSkuId ? "selected" : "";
-        base.push(`<option value="${skuId}" ${selected}>${sku.sku_code} - ${sku.item_name || ""}</option>`);
+        base.push(`<option value="${skuId}" ${selected}>${sku.sku_code} - ${sku.item_name || ""}${sku.group_name ? ` (${sku.group_name})` : ""}</option>`);
       });
       if (selectedSkuId && !sourceSkus.some((sku) => Number(sku?.id || 0) === selectedSkuId)) {
         base.push(`<option value="${selectedSkuId}" selected>#${selectedSkuId}</option>`);

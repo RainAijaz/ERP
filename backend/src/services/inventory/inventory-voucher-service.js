@@ -134,7 +134,7 @@ const normalizeReasonCode = (value) =>
     .replace(/[^a-z0-9]+/gi, "")
     .toUpperCase();
 
-// SKU dropdown label should be a complete business name: article first, then variant parts.
+// SKU dropdown label should be a complete business name: article first, then variant parts, then group.
 const buildSkuDisplayName = (row) => {
   const parts = [
     String(row?.item_name || "").trim(),
@@ -144,8 +144,9 @@ const buildSkuDisplayName = (row) => {
     String(row?.grade_name || "").trim(),
   ].filter(Boolean);
 
-  if (parts.length) return parts.join(" ");
-  return `SKU ${Number(row?.id || 0) || ""}`.trim();
+  const groupName = String(row?.group_name || "").trim();
+  const base = parts.length ? parts.join(" ") : `SKU ${Number(row?.id || 0) || ""}`.trim();
+  return groupName ? `${base} (${groupName})` : base;
 };
 
 // Default UOM policy: prefer non-base unit when available, otherwise use first valid option.
