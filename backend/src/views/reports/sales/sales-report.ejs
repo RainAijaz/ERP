@@ -570,7 +570,7 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                     <td class="px-3 py-2"></td>
                   <% } %>
                 </tr>
-                <% if (selectedOrderBy === "voucher") { %>
+                <% if (selectedOrderBy === "voucher" && canViewCostFields) { %>
                   <tr class="bg-slate-200/50 text-slate-700" data-row data-active="true" data-report-group-credit-summary data-report-group-key="<%= group.key %>">
                     <td colspan="<%= detailColumnCount - (includeBranchColumn ? 2 : 1) %>" class="px-3 py-1.5">
                       <div class="ml-auto flex max-w-full flex-nowrap items-center justify-end gap-3">
@@ -662,7 +662,7 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                   <% } %>
                 <% } %>
               </tr>
-              <% if (selectedOrderBy === "voucher" && Number(totals.paymentReceived || 0) > 0) { %>
+              <% if (selectedOrderBy === "voucher" && canViewCostFields && Number(totals.paymentReceived || 0) > 0) { %>
               <tr class="bg-slate-700 text-white" data-row data-active="true" data-report-grand-payment-received>
                 <td colspan="<%= detailColumnCount - (includeBranchColumn ? 2 : 1) %>" class="px-3 py-2">
                   <% if (Number(totals.totalExtraDiscount || 0) > 0) { %>
@@ -698,8 +698,10 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                   <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("customer_name") %></th>
                   <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("receive_into_account") %></th>
                   <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= salesTypeLabel %></th>
+                  <% if (canViewCostFields) { %>
                   <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("payment_received_amount") %></th>
                   <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("remaining_amount") %></th>
+                  <% } %>
                 <% } else if (selectedOrderBy === "article") { %>
                   <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("group") %></th>
                   <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("parties_label") %></th>
@@ -738,12 +740,14 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
                     <td class="px-3 py-2">
                       <span class="inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold <%= paymentTypeTone(row.payment_type) %>"><%= paymentTypeLabel(row.payment_type) %></span>
                     </td>
-                    <% if (String(row.payment_type || '').trim().toUpperCase() === 'CREDIT') { %>
-                      <td class="px-3 py-2 text-right font-semibold text-sky-700"><%= formatMoney(row.payment_received_amount || 0) %></td>
-                      <td class="px-3 py-2 text-right font-semibold <%= Number(row.remaining_amount || 0) > 0 ? 'text-amber-700' : 'text-emerald-700' %>"><%= formatMoney(row.remaining_amount || 0) %></td>
-                    <% } else { %>
-                      <td class="px-3 py-2 text-right text-slate-400">-</td>
-                      <td class="px-3 py-2 text-right text-slate-400">-</td>
+                    <% if (canViewCostFields) { %>
+                      <% if (String(row.payment_type || '').trim().toUpperCase() === 'CREDIT') { %>
+                        <td class="px-3 py-2 text-right font-semibold text-sky-700"><%= formatMoney(row.payment_received_amount || 0) %></td>
+                        <td class="px-3 py-2 text-right font-semibold <%= Number(row.remaining_amount || 0) > 0 ? 'text-amber-700' : 'text-emerald-700' %>"><%= formatMoney(row.remaining_amount || 0) %></td>
+                      <% } else { %>
+                        <td class="px-3 py-2 text-right text-slate-400">-</td>
+                        <td class="px-3 py-2 text-right text-slate-400">-</td>
+                      <% } %>
                     <% } %>
                   <% } else if (selectedOrderBy === "article") { %>
                     <td class="px-3 py-2 font-medium text-slate-800"><%= row.group_label || "-" %></td>
@@ -775,7 +779,7 @@ const distinctCount = (rows, key) => { const values = new Set(); (rows || []).fo
               <% }) %>
               <tr class="bg-rose-700 text-white" data-row data-active="true" data-report-grand-total>
                 <% if (selectedOrderBy === "voucher") { %>
-                  <td colspan="8" class="px-3 py-2">
+                  <td colspan="<%= canViewCostFields ? 8 : 6 %>" class="px-3 py-2">
                     <div class="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
                       <span class="text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></span>
                       <span class="inline-flex items-baseline gap-1 rounded-md border border-white/20 bg-white/10 px-2.5 py-1 text-[11px] font-extrabold uppercase tracking-[0.06em] text-white">
