@@ -343,7 +343,8 @@
 			if (!reasonSelect) return false;
 			const selected = reasonSelect.options[reasonSelect.selectedIndex];
 			const code = selected ? selected.getAttribute("data-reason-value") : "";
-			return normalizeReasonCode(code) === "PHYSICALCOUNTCORRECTION";
+			const normalized = normalizeReasonCode(code);
+			return normalized === "PHYSICALCOUNT" || normalized === "PHYSICALCOUNTCORRECTION";
 		};
 
 		const getAvailableGroups = (stockType) => {
