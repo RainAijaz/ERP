@@ -30,13 +30,20 @@ const flushPendingQueue = async () => {
   if (!clientReady || !client || !pendingQueue.length) return;
   console.log(`[WhatsApp] Flushing ${pendingQueue.length} queued message(s)...`);
   const toSend = pendingQueue.splice(0, pendingQueue.length);
-  for (const { chatId, text } of toSend) {
+  for (let i = 0; i < toSend.length; i++) {
+    if (!clientReady || !client) {
+      // Disconnected mid-flush — put all remaining messages back
+      const remaining = toSend.slice(i);
+      const canAdd = MAX_QUEUE - pendingQueue.length;
+      if (canAdd > 0) pendingQueue.unshift(...remaining.slice(0, canAdd));
+      break;
+    }
+    const { chatId, text } = toSend[i];
     try {
       await client.sendMessage(chatId, text);
       console.log("[WhatsApp] ✓ Queued message sent to", chatId);
     } catch (err) {
       console.error("[WhatsApp] ✗ Failed to send queued message:", err.message);
-      // Put back so it retries on the next reconnect
       if (pendingQueue.length < MAX_QUEUE) pendingQueue.unshift({ chatId, text });
     }
   }
