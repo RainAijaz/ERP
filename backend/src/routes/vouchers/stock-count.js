@@ -13,6 +13,7 @@ const {
   getOpeningStockVoucherSeriesStats,
   getOpeningStockVoucherNeighbours,
   loadStockCountAdjustmentVoucherDetails,
+  loadStockCountGroupArticles,
   parseVoucherNo,
   INVENTORY_VOUCHER_TYPES,
 } = require("../../services/inventory/inventory-voucher-service");
@@ -54,6 +55,31 @@ const canVoucherAction = (res, action) => {
 };
 
 const router = express.Router();
+
+router.get(
+  "/articles",
+  requirePermission("VOUCHER", scopeKey, "view"),
+  async (req, res, next) => {
+    try {
+      const groupId = Number(req.query.group_id || 0);
+      const stockType = String(req.query.stock_type || "").trim().toUpperCase();
+      const date = String(req.query.date || "").trim();
+      if (!groupId || !stockType) {
+        return res.json({ articles: [], asOfDate: null });
+      }
+      const result = await loadStockCountGroupArticles({
+        branchId: req.branchId,
+        groupId,
+        stockType,
+        asOfDate: date || null,
+      });
+      return res.json(result);
+    } catch (err) {
+      console.error("Error loading stock count articles:", err);
+      return next(err);
+    }
+  },
+);
 
 router.get(
   "/",

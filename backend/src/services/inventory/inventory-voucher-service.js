@@ -4009,6 +4009,137 @@ const deleteStockCountAdjustmentVoucher = async ({
   return result;
 };
 
+// Returns articles (SKUs or RM items) for a product group that have stock > 0
+// as of the given date. FG/SFG closing stock is computed from the stock ledger
+// with a date boundary; RM uses the current stock_balance_rm running total.
+const loadStockCountGroupArticles = async ({
+  branchId,
+  groupId,
+  stockType,
+  asOfDate,
+}) => {
+  const normalizedBranchId = toPositiveInt(branchId);
+  const normalizedGroupId = toPositiveInt(groupId);
+  const normalizedStockType = normalizeStockType(stockType);
+
+  if (!normalizedBranchId || !normalizedGroupId || !normalizedStockType) {
+    return { articles: [], asOfDate: null };
+  }
+
+  const dateFilter = toDateOnly(asOfDate) || toDateOnly(new Date());
+
+  if (normalizedStockType === "RM") {
+    const hasVariantDimensions = await hasStockBalanceRmVariantDimensionsTx(knex);
+
+    let query = knex("erp.items as i")
+      .join("erp.stock_balance_rm as sb", "sb.item_id", "i.id")
+      .select("i.id as item_id")
+      .where({
+        "sb.branch_id": normalizedBranchId,
+        "sb.stock_state": "ON_HAND",
+        "i.group_id": normalizedGroupId,
+        "i.is_active": true,
+      })
+      .whereRaw("upper(coalesce(i.item_type::text, '')) = 'RM'");
+
+    if (hasVariantDimensions) {
+      query = query
+        .select("sb.color_id", "sb.size_id")
+        .sum({ qty: knex.raw("COALESCE(sb.qty, 0)") })
+        .sum({ value: knex.raw("COALESCE(sb.value, 0)") })
+        .groupBy("i.id", "sb.color_id", "sb.size_id");
+    } else {
+      query = query
+        .select(knex.raw("NULL::bigint as color_id"))
+        .select(knex.raw("NULL::bigint as size_id"))
+        .sum({ qty: knex.raw("COALESCE(sb.qty, 0)") })
+        .sum({ value: knex.raw("COALESCE(sb.value, 0)") })
+        .groupBy("i.id");
+    }
+
+    const rows = await query;
+    const articles = rows
+      .map((row) => {
+        const qty = roundQty3(Number(row.qty || 0));
+        const value = roundCost2(Number(row.value || 0));
+        return {
+          item_id: Number(row.item_id),
+          color_id: toPositiveInt(row.color_id),
+          size_id: toPositiveInt(row.size_id),
+          system_qty_base: qty,
+          system_wac: computeNonNegativeWac(qty, value),
+        };
+      })
+      .filter((a) => a.system_qty_base > 0);
+
+    return { articles, asOfDate: null };
+  }
+
+  // FG / SFG: date-bounded closing balance from stock_ledger
+  const rows = await knex("erp.stock_ledger as sl")
+    .join("erp.voucher_line as vl", "vl.id", "sl.voucher_line_id")
+    .join("erp.voucher_header as vh", "vh.id", "vl.voucher_id")
+    .leftJoin("erp.sales_line as sln", "sln.voucher_line_id", "vl.id")
+    .leftJoin("erp.production_line as pl", "pl.voucher_line_id", "vl.id")
+    .join("erp.skus as s", "s.id", "sl.sku_id")
+    .join("erp.variants as v", "v.id", "s.variant_id")
+    .join("erp.items as i", "i.id", "v.item_id")
+    .select("sl.sku_id")
+    .select(knex.raw(`${FG_PACKED_FLAG_SQL} as is_packed`))
+    .select(
+      knex.raw(
+        "COALESCE(SUM(CASE WHEN sl.direction = 1 THEN COALESCE(sl.qty_pairs, 0) ELSE -COALESCE(sl.qty_pairs, 0) END), 0) as qty_pairs",
+      ),
+    )
+    .select(knex.raw("COALESCE(SUM(COALESCE(sl.value, 0)), 0) as value"))
+    .where({
+      "sl.branch_id": normalizedBranchId,
+      "sl.stock_state": "ON_HAND",
+      "sl.category": normalizedStockType,
+      "i.group_id": normalizedGroupId,
+    })
+    .where("vh.voucher_date", "<=", dateFilter)
+    .groupBy("sl.sku_id", knex.raw(FG_PACKED_FLAG_SQL));
+
+  const bySku = new Map();
+  rows.forEach((row) => {
+    const skuId = Number(row?.sku_id || 0);
+    if (!skuId) return;
+    const isPacked = isTruthyFlag(row?.is_packed);
+    const qtyPairs = roundQty3(Number(row?.qty_pairs || 0));
+    const value = roundCost2(Number(row?.value || 0));
+    const wac = computeNonNegativeWac(qtyPairs, value);
+
+    const current = bySku.get(skuId) || {
+      sku_id: skuId,
+      system_qty_pairs: 0,
+      system_loose_qty_pairs: 0,
+      system_packed_qty_pairs: 0,
+      system_loose_wac: 0,
+      system_packed_wac: 0,
+    };
+
+    if (isPacked) {
+      current.system_packed_qty_pairs = qtyPairs;
+      current.system_packed_wac = wac;
+    } else {
+      current.system_loose_qty_pairs = qtyPairs;
+      current.system_loose_wac = wac;
+    }
+
+    current.system_qty_pairs = roundQty3(
+      Number(current.system_loose_qty_pairs) +
+        Number(current.system_packed_qty_pairs),
+    );
+    bySku.set(skuId, current);
+  });
+
+  const articles = Array.from(bySku.values()).filter(
+    (a) => a.system_qty_pairs > 0,
+  );
+  return { articles, asOfDate: dateFilter };
+};
+
 const loadStockCountAdjustmentVoucherOptions = async (req) => {
   const baseOptions = await loadOpeningStockVoucherOptions(req);
 
@@ -4483,4 +4614,5 @@ module.exports = {
   ensureInventoryVoucherDerivedDataTx,
   applyInventoryVoucherUpdatePayloadTx,
   applyInventoryVoucherDeletePayloadTx,
+  loadStockCountGroupArticles,
 };

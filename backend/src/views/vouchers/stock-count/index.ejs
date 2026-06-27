@@ -155,7 +155,7 @@
 					</div>
 					<div class="lg:col-span-6 flex items-center gap-2 text-xs text-slate-500">
 						<svg class="h-4 w-4 text-amber-500 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"></path></svg>
-						<%= toFriendlyLabel("physical_count_correction_note", "All articles in this group will load. You must enter a quantity for every article (0 is valid).") %>
+						<%= toFriendlyLabel("physical_count_correction_note", "Only articles with stock as of the selected date will load. You must enter a quantity for every article (0 is valid).") %>
 					</div>
 				</div>
 
@@ -387,44 +387,57 @@
 			if (tableLoadingOverlay) tableLoadingOverlay.classList.add("hidden");
 		};
 
-		const loadArticlesForGroup = (groupId) => {
+		const loadArticlesForGroup = async (groupId) => {
 			const stockType = currentStockType();
+			const voucherDateInput = form.querySelector('[name="voucher_date"]');
+			const voucherDate = voucherDateInput ? voucherDateInput.value : "";
 			showTableLoading();
-			window.setTimeout(() => {
-				const gid = Number(groupId || 0);
+			try {
+				const url = `${basePath}/articles?group_id=${encodeURIComponent(groupId)}&stock_type=${encodeURIComponent(stockType)}&date=${encodeURIComponent(voucherDate)}`;
+				const resp = await fetch(url, { credentials: "same-origin" });
+				if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+				const data = await resp.json();
+				const articles = Array.isArray(data.articles) ? data.articles : [];
 				let newRows = [];
 				if (stockType === "RM") {
-					const rmItemIdsWithStock = new Set();
-					Object.entries(rmSnapshotByKey).forEach(([key, snap]) => {
-						if (Number(snap?.qty || 0) > 0) {
-							const itemId = Number(key.split(":")[0]);
-							if (itemId) rmItemIdsWithStock.add(itemId);
-						}
-					});
-					newRows = rmItems
-						.filter((item) => Number(item.group_id || 0) === gid && rmItemIdsWithStock.has(Number(item.id)))
-						.map((item) => ({
-							...rowTemplate(stockType),
-							item_id: item.id,
-							_auto_loaded: true,
-							_unfilled: true,
-							counted_stock_qty: null,
-						}));
+					newRows = articles.map((article) => ({
+						...rowTemplate(stockType),
+						item_id: article.item_id,
+						color_id: article.color_id || null,
+						size_id: article.size_id || null,
+						_auto_loaded: true,
+						_unfilled: true,
+						_snap_base: article.system_qty_base,
+						counted_stock_qty: null,
+					}));
 				} else {
-					newRows = skuList
-						.filter((sku) => Number(sku.group_id || 0) === gid && String(sku.item_type || "").toUpperCase() === stockType && Number(sku.system_qty_pairs || 0) > 0)
-						.map((sku) => ({
+					newRows = articles.map((article) => {
+						// Update skuMap in-place so resolveSystemSnapshot picks up date-specific WAC/bucket split.
+						const existing = skuMap.get(Number(article.sku_id));
+						if (existing) {
+							existing.system_qty_pairs = Number(article.system_qty_pairs || 0);
+							existing.system_loose_qty_pairs = Number(article.system_loose_qty_pairs || 0);
+							existing.system_packed_qty_pairs = Number(article.system_packed_qty_pairs || 0);
+							existing.system_loose_wac = Number(article.system_loose_wac || 0);
+							existing.system_packed_wac = Number(article.system_packed_wac || 0);
+						}
+						return {
 							...rowTemplate(stockType),
-							sku_id: sku.id,
+							sku_id: article.sku_id,
 							_auto_loaded: true,
 							_unfilled: true,
+							_snap_pairs: qty3(article.system_qty_pairs || 0),
 							counted_stock_qty: null,
-						}));
+						};
+					});
 				}
 				rowsState = newRows.length ? newRows : [rowTemplate(stockType)];
-				renderRows();
-				hideTableLoading();
-			}, 0);
+			} catch (err) {
+				console.error("Failed to load articles for group:", err);
+				rowsState = [rowTemplate(stockType)];
+			}
+			renderRows();
+			hideTableLoading();
 		};
 
 		const rowTemplate = (stockType) => ({
@@ -855,12 +868,37 @@
 							<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty_in" data-row-field="qty_in" data-line-index="${index}" value="${normalized.qty_in}" ${canSave ? "" : "readonly"}></td>
 							<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty_out" data-row-field="qty_out" data-line-index="${index}" value="${normalized.qty_out}" ${canSave ? "" : "readonly"}></td>
 						`;
-					return `
-						<tr data-line-index="${index}" data-row-index="${index}">
+					// Any row with a determined item uses static display — same reason as FG.
+					const rmItemIsSet = normalized.item_id !== null && normalized.item_id !== undefined;
+					const rmItemCellMarkup = rmItemIsSet
+						? (() => {
+							const item = rmMap.get(Number(normalized.item_id || 0));
+							const itemLabel = String(item?.name || `Item ${normalized.item_id || ""}`).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+							const colorEntry = colorState.entries.find((e) => Number(e.id) === Number(normalized.color_id || 0));
+							const colorLabel = String(colorEntry?.name || (normalized.color_id ? String(normalized.color_id) : "")).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+							const sizeEntry = sizeState.entries.find((e) => Number(e.id) === Number(normalized.size_id || 0));
+							const sizeLabel = String(sizeEntry?.name || (normalized.size_id ? String(normalized.size_id) : "")).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+							return `
+								<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-700 cursor-default" value="${itemLabel}"></td>
+								<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-500 cursor-default" value="${colorLabel}"></td>
+								<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-500 cursor-default" value="${sizeLabel}"></td>`;
+						})()
+						: `
 							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="item_id" data-row-field="item_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${optionMarkup(rmItems.map((entry) => ({ id: entry.id, label: entry.name })), normalized.item_id, "Select Raw Material")}</select></td>
 							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="color_id" data-row-field="color_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${(canSave && !colorState.disabled) ? "" : "disabled"}>${optionMarkup(colorState.entries, normalized.color_id, colorState.allowNone ? "None" : "")}</select></td>
-							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="size_id" data-row-field="size_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${(canSave && !sizeState.disabled) ? "" : "disabled"}>${optionMarkup(sizeState.entries, normalized.size_id, sizeState.allowNone ? "None" : "")}</select></td>
-							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="uom_id" data-row-field="uom_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${optionMarkup(getUomOptions(normalized, stockType), normalized.uom_id, "Select Unit")}</select></td>
+							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="size_id" data-row-field="size_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${(canSave && !sizeState.disabled) ? "" : "disabled"}>${optionMarkup(sizeState.entries, normalized.size_id, sizeState.allowNone ? "None" : "")}</select></td>`;
+					const rmUomCellMarkup = (rmItemIsSet && normalized.uom_id !== null && normalized.uom_id !== undefined)
+						? (() => {
+							const uomOptions = getUomOptions(normalized, stockType);
+							const selectedUnit = uomOptions.find((e) => Number(e.id || 0) === Number(normalized.uom_id || 0));
+							const uomLabel = String(selectedUnit?.name || selectedUnit?.code || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+							return `<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-500 cursor-default" value="${uomLabel}"></td>`;
+						})()
+						: `<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="uom_id" data-row-field="uom_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${optionMarkup(getUomOptions(normalized, stockType), normalized.uom_id, "Select Unit")}</select></td>`;
+					return `
+						<tr data-line-index="${index}" data-row-index="${index}">
+							${rmItemCellMarkup}
+							${rmUomCellMarkup}
 							<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly data-display-field="system_qty" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" value="${normalized.system_qty.toFixed(3)}"></td>
 							${qtyCellMarkup}
 							${diffCellMarkup}
@@ -880,10 +918,31 @@
 						<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty_in" data-row-field="qty_in" data-line-index="${index}" value="${normalized.qty_in}" ${canSave ? "" : "readonly"}></td>
 						<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty_out" data-row-field="qty_out" data-line-index="${index}" value="${normalized.qty_out}" ${canSave ? "" : "readonly"}></td>
 					`;
+				// Any row with a determined SKU uses static display — avoids generating hundreds
+				// of <option> elements per row (and running initSearchableSelects on each),
+				// which was the root cause of multi-minute freezes on vouchers with many lines.
+				// Only blank rows (sku_id == null) get the full searchable dropdown.
+				const skuIsSet = normalized.sku_id !== null && normalized.sku_id !== undefined;
+				const skuCellMarkup = skuIsSet
+					? (() => {
+						const sku = skuMap.get(Number(normalized.sku_id || 0));
+						const label = String(sku?.sku_name || `SKU ${normalized.sku_id || ""}`).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+						return `<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-700 cursor-default" value="${label}"></td>`;
+					})()
+					: `<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="sku_id" data-row-field="sku_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${optionMarkup(skuRows.map((entry) => ({ id: entry.id, label: entry.sku_name })), normalized.sku_id, "Select SKU")}</select></td>`;
+				const uomIsSet = normalized.uom_id !== null && normalized.uom_id !== undefined;
+				const fgUomCellMarkup = (skuIsSet && uomIsSet)
+					? (() => {
+						const uomOptions = getUomOptions(normalized, stockType);
+						const selectedUnit = uomOptions.find((e) => Number(e.id || 0) === Number(normalized.uom_id || 0));
+						const uomLabel = String(selectedUnit?.name || selectedUnit?.code || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+						return `<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-500 cursor-default" value="${uomLabel}"></td>`;
+					})()
+					: `<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="uom_id" data-row-field="uom_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${optionMarkup(getUomOptions(normalized, stockType), normalized.uom_id, "Select Unit")}</select></td>`;
 				return `
 					<tr data-line-index="${index}" data-row-index="${index}">
-						<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="sku_id" data-row-field="sku_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${optionMarkup(skuRows.map((entry) => ({ id: entry.id, label: entry.sku_name })), normalized.sku_id, "Select SKU")}</select></td>
-						<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="uom_id" data-row-field="uom_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${optionMarkup(getUomOptions(normalized, stockType), normalized.uom_id, "Select Unit")}</select></td>
+						${skuCellMarkup}
+						${fgUomCellMarkup}
 						<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly data-display-field="system_qty" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" value="${normalized.system_qty.toFixed(3)}"></td>
 						${qtyCellMarkup}
 						${diffCellMarkup}
@@ -1150,7 +1209,7 @@
 					renderRows();
 					return;
 				}
-				loadArticlesForGroup(groupId);
+				loadArticlesForGroup(groupId).catch((err) => console.error(err));
 			});
 		}
 
