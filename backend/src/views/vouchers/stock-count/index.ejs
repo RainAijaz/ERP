@@ -828,6 +828,8 @@
 			const usePhysicalCountField = isPhysicalCountReasonActive();
 			if (!rowsState.length) rowsState = [rowTemplate(stockType)];
 
+			const skuRows = skuList.filter((entry) => String(entry.item_type || "").toUpperCase() === stockType);
+
 			linesBody.innerHTML = rowsState.map((row, index) => {
 				const normalized = applyDerivedRow(row, stockType);
 				rowsState[index] = normalized;
@@ -870,7 +872,6 @@
 					`;
 				}
 
-				const skuRows = skuList.filter((entry) => String(entry.item_type || "").toUpperCase() === stockType);
 				const diffCellMarkup = `<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly data-display-field="difference_qty" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold" value="${normalized.difference_qty.toFixed(3)}"></td>`;
 				const isUnfilled = Boolean(normalized._auto_loaded && normalized._unfilled);
 				const qtyCellMarkup = usePhysicalCountField
@@ -895,7 +896,7 @@
 			}).join("");
 
 			if (typeof window.initSearchableSelects === "function") {
-				window.initSearchableSelects(form);
+				window.initSearchableSelects(linesBody);
 			}
 			bindNavigator();
 			syncTotals();
