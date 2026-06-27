@@ -2153,12 +2153,15 @@ const loadOpeningStockVoucherOptions = async (req) => {
       .leftJoin("erp.packing_types as p", "p.id", "v.packing_type_id")
       .leftJoin("erp.grades as g", "g.id", "v.grade_id")
       .leftJoin("erp.uom as u", "u.id", "i.base_uom_id")
+      .leftJoin("erp.product_groups as pg", "pg.id", "i.group_id")
       .select(
         "s.id",
         "s.sku_code",
         "v.sale_rate",
         "i.name as item_name",
         "i.item_type",
+        "i.group_id",
+        "pg.name as group_name",
         "sz.name as size_name",
         "c.name as color_name",
         "p.name as packing_name",
@@ -2176,10 +2179,13 @@ const loadOpeningStockVoucherOptions = async (req) => {
       .orderBy("s.sku_code", "asc"),
     knex("erp.items as i")
       .leftJoin("erp.uom as u", "u.id", "i.base_uom_id")
+      .leftJoin("erp.product_groups as pg", "pg.id", "i.group_id")
       .select(
         "i.id",
         "i.code",
         "i.name",
+        "i.group_id",
+        "pg.name as group_name",
         "i.base_uom_id",
         "u.code as base_uom_code",
         "u.name as base_uom_name",
