@@ -1358,13 +1358,15 @@ const getSupplierBalanceRows = async ({ req, filters }) => {
   }
 
   const rows = await query;
-  return rows.map((row) => ({
-    supplier_id: Number(row.id || 0) || null,
-    supplier_code: row.code || "",
-    supplier_name: row.name || "",
-    supplier_name_ur: row.name_ur || "",
-    amount: toAmount(row.amount, 2),
-  }));
+  return rows
+    .map((row) => ({
+      supplier_id: Number(row.id || 0) || null,
+      supplier_code: row.code || "",
+      supplier_name: row.name || "",
+      supplier_name_ur: row.name_ur || "",
+      amount: toAmount(row.amount, 2),
+    }))
+    .filter((row) => Number(row.amount) !== 0);
 };
 
 const getSupplierBalancesReportPageData = async ({ req, input = {} }) => {

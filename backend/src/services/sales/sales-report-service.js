@@ -2138,13 +2138,15 @@ const getCustomerBalanceRows = async ({ req, filters }) => {
   }
 
   const rows = await query;
-  return rows.map((row) => ({
-    customer_id: Number(row.id || 0) || null,
-    customer_code: row.code || "",
-    customer_name: row.name || "",
-    customer_name_ur: row.name_ur || "",
-    amount: toAmount(row.amount, 2),
-  }));
+  return rows
+    .map((row) => ({
+      customer_id: Number(row.id || 0) || null,
+      customer_code: row.code || "",
+      customer_name: row.name || "",
+      customer_name_ur: row.name_ur || "",
+      amount: toAmount(row.amount, 2),
+    }))
+    .filter((row) => Number(row.amount) !== 0);
 };
 
 const getCustomerBalancesReportPageData = async ({ req, input = {} }) => {
