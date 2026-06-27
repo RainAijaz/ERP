@@ -4139,14 +4139,14 @@ const loadStockCountGroupArticles = async ({
   let articles;
   if (normalizedStatus === "PACKED") {
     articles = Array.from(bySku.values())
-      .filter((a) => a.system_packed_qty_pairs > 0)
+      .filter((a) => a.system_packed_qty_pairs !== 0)
       .map((a) => ({ ...a, system_qty_pairs: a.system_packed_qty_pairs }));
   } else if (normalizedStatus === "LOOSE") {
     articles = Array.from(bySku.values())
-      .filter((a) => a.system_loose_qty_pairs > 0)
+      .filter((a) => a.system_loose_qty_pairs !== 0)
       .map((a) => ({ ...a, system_qty_pairs: a.system_loose_qty_pairs }));
   } else {
-    articles = Array.from(bySku.values()).filter((a) => a.system_qty_pairs > 0);
+    articles = Array.from(bySku.values()).filter((a) => a.system_qty_pairs !== 0);
   }
   return { articles, asOfDate: dateFilter };
 };
