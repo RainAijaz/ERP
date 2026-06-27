@@ -4077,8 +4077,8 @@ const loadStockCountGroupArticles = async ({
 
   // FG / SFG: date-bounded closing balance from stock_ledger
   const rows = await knex("erp.stock_ledger as sl")
+    .join("erp.voucher_header as vh", "vh.id", "sl.voucher_header_id")
     .join("erp.voucher_line as vl", "vl.id", "sl.voucher_line_id")
-    .join("erp.voucher_header as vh", "vh.id", "vl.voucher_id")
     .leftJoin("erp.sales_line as sln", "sln.voucher_line_id", "vl.id")
     .leftJoin("erp.production_line as pl", "pl.voucher_line_id", "vl.id")
     .join("erp.skus as s", "s.id", "sl.sku_id")
