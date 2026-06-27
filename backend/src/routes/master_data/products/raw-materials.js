@@ -723,6 +723,31 @@ router.post(
             });
           }
         }
+
+        // Block unit change if item has any stock on hand (stock qty has no uom_id stored,
+        // so changing base_uom without converting stock_ledger/balance would corrupt all numbers)
+        const stockBalance = await knex("erp.stock_balance_rm")
+          .where({ item_id: id })
+          .sum("qty as total_qty")
+          .first();
+        if (stockBalance && Number(stockBalance.total_qty) > 0) {
+          const [rows, options, rateDetailsByItem, users] = await Promise.all([
+            loadRows(),
+            loadOptions(),
+            loadRateDetails(),
+            loadUsers(),
+          ]);
+          return renderIndex(req, res, {
+            rows,
+            rateDetailsByItem,
+            ...options,
+            users,
+            error: `Cannot change the unit of measure while this item has stock on hand. Please zero out all stock first.`,
+            modalOpen: true,
+            modalMode: "edit",
+            values: { ...values, id },
+          });
+        }
       }
 
       const group = await knex("erp.product_groups")

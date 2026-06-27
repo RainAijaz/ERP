@@ -591,6 +591,25 @@ const applyItemChange = async (trx, request, userId) => {
 
   if (action === "update") {
     if (!existing) return false;
+
+    // Block RM unit change if item has stock on hand — stock quantities have no uom_id stored,
+    // so changing base_uom without converting would corrupt all historical numbers.
+    if (
+      itemType === "RM" &&
+      Object.prototype.hasOwnProperty.call(newValue, "base_uom_id") &&
+      Number(newValue.base_uom_id) !== Number(existing.base_uom_id)
+    ) {
+      const stockBalance = await trx("erp.stock_balance_rm")
+        .where({ item_id: Number(entityId) })
+        .sum("qty as total_qty")
+        .first();
+      if (stockBalance && Number(stockBalance.total_qty) > 0) {
+        throw new Error(
+          `Cannot change unit of measure for this item while it has stock on hand.`,
+        );
+      }
+    }
+
     await trx("erp.items")
       .where({ id: Number(entityId) })
       .update({
