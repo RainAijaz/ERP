@@ -4017,6 +4017,7 @@ const loadStockCountGroupArticles = async ({
   groupId,
   stockType,
   asOfDate,
+  status,
 }) => {
   const normalizedBranchId = toPositiveInt(branchId);
   const normalizedGroupId = toPositiveInt(groupId);
@@ -4134,9 +4135,19 @@ const loadStockCountGroupArticles = async ({
     bySku.set(skuId, current);
   });
 
-  const articles = Array.from(bySku.values()).filter(
-    (a) => a.system_qty_pairs > 0,
-  );
+  const normalizedStatus = String(status || "").trim().toUpperCase();
+  let articles;
+  if (normalizedStatus === "PACKED") {
+    articles = Array.from(bySku.values())
+      .filter((a) => a.system_packed_qty_pairs > 0)
+      .map((a) => ({ ...a, system_qty_pairs: a.system_packed_qty_pairs }));
+  } else if (normalizedStatus === "LOOSE") {
+    articles = Array.from(bySku.values())
+      .filter((a) => a.system_loose_qty_pairs > 0)
+      .map((a) => ({ ...a, system_qty_pairs: a.system_loose_qty_pairs }));
+  } else {
+    articles = Array.from(bySku.values()).filter((a) => a.system_qty_pairs > 0);
+  }
   return { articles, asOfDate: dateFilter };
 };
 

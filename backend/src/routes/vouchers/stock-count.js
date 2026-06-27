@@ -64,6 +64,7 @@ router.get(
       const groupId = Number(req.query.group_id || 0);
       const stockType = String(req.query.stock_type || "").trim().toUpperCase();
       const date = String(req.query.date || "").trim();
+      const status = String(req.query.status || "").trim().toUpperCase();
       if (!groupId || !stockType) {
         return res.json({ articles: [], asOfDate: null });
       }
@@ -72,6 +73,7 @@ router.get(
         groupId,
         stockType,
         asOfDate: date || null,
+        status: status || null,
       });
       return res.json(result);
     } catch (err) {

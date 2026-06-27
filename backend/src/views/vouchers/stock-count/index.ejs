@@ -153,6 +153,13 @@
 							<option value=""><%= toFriendlyLabel("select_product_group", "Select Product Group") %></option>
 						</select>
 					</div>
+					<div class="lg:col-span-3">
+						<select class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-product-group-status <%= canSaveVoucher ? '' : 'disabled' %>>
+							<option value=""><%= toFriendlyLabel("all_status", "All Status") %></option>
+							<option value="PACKED"><%= toFriendlyLabel("packed", "Packed") %></option>
+							<option value="LOOSE"><%= toFriendlyLabel("loose", "Loose") %></option>
+						</select>
+					</div>
 					<div class="lg:col-start-3 lg:col-span-10 flex items-start gap-2 text-xs text-slate-500">
 						<svg class="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"></path></svg>
 						<%= toFriendlyLabel("physical_count_correction_note", "Only articles with stock as of the selected date will load. You must enter a quantity for every article (0 is valid).") %>
@@ -393,7 +400,9 @@
 			const voucherDate = voucherDateInput ? voucherDateInput.value : "";
 			showTableLoading();
 			try {
-				const url = `${basePath}/articles?group_id=${encodeURIComponent(groupId)}&stock_type=${encodeURIComponent(stockType)}&date=${encodeURIComponent(voucherDate)}`;
+				const statusSelect = form.querySelector("[data-product-group-status]");
+				const statusFilter = statusSelect ? statusSelect.value : "";
+				const url = `${basePath}/articles?group_id=${encodeURIComponent(groupId)}&stock_type=${encodeURIComponent(stockType)}&date=${encodeURIComponent(voucherDate)}&status=${encodeURIComponent(statusFilter)}`;
 				const resp = await fetch(url, { credentials: "same-origin" });
 				if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 				const data = await resp.json();
@@ -1201,6 +1210,8 @@
 			syncReasonSettings();
 		}
 
+		const productGroupStatusSelect = form.querySelector("[data-product-group-status]");
+
 		if (productGroupSelect) {
 			productGroupSelect.addEventListener("change", () => {
 				const groupId = Number(productGroupSelect.value || 0);
@@ -1209,6 +1220,14 @@
 					renderRows();
 					return;
 				}
+				loadArticlesForGroup(groupId).catch((err) => console.error(err));
+			});
+		}
+
+		if (productGroupStatusSelect) {
+			productGroupStatusSelect.addEventListener("change", () => {
+				const groupId = Number(productGroupSelect?.value || 0);
+				if (!groupId) return;
 				loadArticlesForGroup(groupId).catch((err) => console.error(err));
 			});
 		}
