@@ -394,8 +394,15 @@
 				const gid = Number(groupId || 0);
 				let newRows = [];
 				if (stockType === "RM") {
+					const rmItemIdsWithStock = new Set();
+					Object.entries(rmSnapshotByKey).forEach(([key, snap]) => {
+						if (Number(snap?.qty || 0) > 0) {
+							const itemId = Number(key.split(":")[0]);
+							if (itemId) rmItemIdsWithStock.add(itemId);
+						}
+					});
 					newRows = rmItems
-						.filter((item) => Number(item.group_id || 0) === gid)
+						.filter((item) => Number(item.group_id || 0) === gid && rmItemIdsWithStock.has(Number(item.id)))
 						.map((item) => ({
 							...rowTemplate(stockType),
 							item_id: item.id,
@@ -405,7 +412,7 @@
 						}));
 				} else {
 					newRows = skuList
-						.filter((sku) => Number(sku.group_id || 0) === gid && String(sku.item_type || "").toUpperCase() === stockType)
+						.filter((sku) => Number(sku.group_id || 0) === gid && String(sku.item_type || "").toUpperCase() === stockType && Number(sku.system_qty_pairs || 0) > 0)
 						.map((sku) => ({
 							...rowTemplate(stockType),
 							sku_id: sku.id,
