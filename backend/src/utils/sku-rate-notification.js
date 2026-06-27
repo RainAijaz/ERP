@@ -1,6 +1,7 @@
 const { sendWhatsAppMessage } = require("./whatsapp");
 
 const formatRate = (value) => {
+  if (value == null) return null;
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) return null;
   return `Rs. ${numericValue.toLocaleString("en-PK")}`;

@@ -928,7 +928,8 @@ router.post(
   "/bulk-update",
   requirePermission("SCREEN", "master_data.products.skus", "edit"),
   async (req, res) => {
-    const { variant_ids, new_rates } = req.body;
+    const { variant_ids, new_rates, send_whatsapp } = req.body;
+    const shouldNotify = send_whatsapp === "1";
     const itemType = req.query.item_type === "SFG" ? "SFG" : "FG";
     const viewQuery = `?item_type=${itemType}`;
     const basePath = `${req.baseUrl}`;
@@ -966,7 +967,7 @@ router.post(
               "id",
               ids.map(Number).filter((v) => !Number.isNaN(v)),
             );
-          rateMap = new Map(rows.map((row) => [row.id, Number(row.sale_rate)]));
+          rateMap = new Map(rows.map((row) => [row.id, row.sale_rate != null ? Number(row.sale_rate) : null]));
         }
 
         if (approvalRequired) {
@@ -1015,7 +1016,7 @@ router.post(
                 .whereIn("id", validIds)
             : [];
           const oldRateMap = new Map(
-            oldRateRows.map((r) => [r.id, Number(r.sale_rate)]),
+            oldRateRows.map((r) => [r.id, r.sale_rate != null ? Number(r.sale_rate) : null]),
           );
 
           for (let i = 0; i < ids.length; i++) {
@@ -1046,7 +1047,7 @@ router.post(
         }
       });
 
-      if (!approvalRequired && updatedItems.length > 0) {
+      if (!approvalRequired && updatedItems.length > 0 && shouldNotify) {
         await sendSkuRateNotification({
           knex,
           chatId: process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID,
@@ -1099,7 +1100,7 @@ router.post(
         .select("sale_rate")
         .where({ id })
         .first();
-      const currentRate = currentRateRow ? Number(currentRateRow.sale_rate) : null;
+      const currentRate = currentRateRow?.sale_rate != null ? Number(currentRateRow.sale_rate) : null;
 
       const approvalRequired = await shouldRequireApproval(
         req,
@@ -1161,18 +1162,20 @@ router.post(
         entityId: id,
         action: "UPDATE",
       });
-      await sendSkuRateNotification({
-        knex,
-        chatId: process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID,
-        updates: [
-          {
-            id,
-            newRate: req.body.sale_rate,
-            oldRate: currentRate,
-          },
-        ],
-        user: req.user,
-      });
+      if (req.body.send_whatsapp !== "0") {
+        await sendSkuRateNotification({
+          knex,
+          chatId: process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID,
+          updates: [
+            {
+              id,
+              newRate: req.body.sale_rate,
+              oldRate: currentRate,
+            },
+          ],
+          user: req.user,
+        });
+      }
       return res.redirect(basePath + viewQuery + "&success=true");
     } catch (e) {
       next(e);
