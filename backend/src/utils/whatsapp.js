@@ -8,6 +8,9 @@ let clientReady = false;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
 
+const pendingQueue = [];
+const MAX_QUEUE = 200;
+
 const SESSION_PATH = path.join(__dirname, "..", "..", ".wwebjs_auth");
 const QR_OUTPUT_FILE = path.join(__dirname, "..", "..", "public", "whatsapp-qr.png");
 
@@ -20,6 +23,22 @@ const writeQrSnapshot = async (qr) => {
     });
   } catch (err) {
     console.error("[WhatsApp] Failed to write QR snapshot:", err.message);
+  }
+};
+
+const flushPendingQueue = async () => {
+  if (!clientReady || !client || !pendingQueue.length) return;
+  console.log(`[WhatsApp] Flushing ${pendingQueue.length} queued message(s)...`);
+  const toSend = pendingQueue.splice(0, pendingQueue.length);
+  for (const { chatId, text } of toSend) {
+    try {
+      await client.sendMessage(chatId, text);
+      console.log("[WhatsApp] ✓ Queued message sent to", chatId);
+    } catch (err) {
+      console.error("[WhatsApp] ✗ Failed to send queued message:", err.message);
+      // Put back so it retries on the next reconnect
+      if (pendingQueue.length < MAX_QUEUE) pendingQueue.unshift({ chatId, text });
+    }
   }
 };
 
@@ -75,6 +94,9 @@ const initWhatsApp = () => {
       reconnectTimer = null;
     }
     console.log("[WhatsApp] Client ready — rate change notifications active");
+    flushPendingQueue().catch((err) => {
+      console.error("[WhatsApp] Error flushing pending queue:", err.message);
+    });
   });
 
   client.on("auth_failure", (msg) => {
@@ -111,15 +133,23 @@ const sendWhatsAppMessage = async (chatId, text) => {
     return;
   }
   if (!clientReady || !client) {
-    console.warn("[WhatsApp] Client not ready (clientReady:", clientReady, ") — skipping rate notification to", chatId);
+    if (pendingQueue.length < MAX_QUEUE) {
+      pendingQueue.push({ chatId, text });
+      console.log(`[WhatsApp] Client not ready — message queued (queue size: ${pendingQueue.length})`);
+    } else {
+      console.warn("[WhatsApp] Queue full — dropping message to", chatId);
+    }
     return;
   }
-  console.log("[WhatsApp] Attempting to send rate notification to", chatId);
   try {
     await client.sendMessage(chatId, text);
     console.log("[WhatsApp] ✓ Rate notification sent successfully to group");
   } catch (err) {
     console.error("[WhatsApp] ✗ Failed to send message:", err.message);
+    if (pendingQueue.length < MAX_QUEUE) {
+      pendingQueue.push({ chatId, text });
+      console.log(`[WhatsApp] Message queued for retry on reconnect (queue size: ${pendingQueue.length})`);
+    }
   }
 };
 
