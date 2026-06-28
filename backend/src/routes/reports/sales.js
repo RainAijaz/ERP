@@ -56,6 +56,7 @@ const renderSalesReportPage = async (
       downloadFileName: "sales-report.csv",
       returnReasonFilter: false,
       canViewCostFields: req.user?.isAdmin || hasPermissionForRequirement(req, { scopeType: "REPORT", scopeKey: "sales_report", action: "can_view_cost_fields" }),
+      canViewPhone: req.user?.isAdmin,
     });
   } catch (err) {
     console.error("Error in SalesReportsService:", err);
@@ -99,6 +100,7 @@ const renderSaleReturnReportPage = async (
       downloadFileName: "sale-return-report.csv",
       returnReasonFilter: true,
       canViewCostFields: req.user?.isAdmin || hasPermissionForRequirement(req, { scopeType: "REPORT", scopeKey: "sale_return_report", action: "can_view_cost_fields" }),
+      canViewPhone: req.user?.isAdmin,
     });
   } catch (err) {
     console.error("Error in SalesReportsService:", err);
@@ -133,6 +135,7 @@ router.get(
         view: "../../reports/sales/customer-listings",
         t: res.locals.t,
         rows,
+        canViewPhone: req.user?.isAdmin,
       });
     } catch (err) {
       console.error("Error in SalesReportsService:", err);
@@ -166,6 +169,7 @@ router.get(
         options: pageData.options,
         reportData: pageData.reportData,
         reportPath: `${req.baseUrl}/customer-contact-analysis`,
+        canViewPhone: req.user?.isAdmin,
       });
     } catch (err) {
       console.error("Error in SalesReportsService:", err);
@@ -199,6 +203,7 @@ router.post(
         options: pageData.options,
         reportData: pageData.reportData,
         reportPath: `${req.baseUrl}/customer-contact-analysis`,
+        canViewPhone: req.user?.isAdmin,
       });
     } catch (err) {
       console.error("Error in SalesReportsService:", err);

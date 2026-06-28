@@ -190,7 +190,7 @@ const reportPurposeTooltip = (() => {
               <th class="px-4 py-3 text-left"><%= t("last_purchase_date") %></th>
               <th class="px-4 py-3 text-left"><%= t("product_groups") %></th>
               <th class="px-4 py-3 text-center"><%= t("details") %></th>
-              <th class="px-4 py-3 text-left"><%= t("phone_number") %></th>
+              <% if (canViewPhone) { %><th class="px-4 py-3 text-left"><%= t("phone_number") %></th><% } %>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100" data-contact-table-body>
@@ -219,14 +219,14 @@ const reportPurposeTooltip = (() => {
                     <span class="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600"><%= Array.isArray(row.invoices) ? row.invoices.length : 0 %></span>
                   </button>
                 </td>
-                <td class="px-4 py-3 font-semibold text-slate-900"><%= row.phone_number || "-" %></td>
+                <% if (canViewPhone) { %><td class="px-4 py-3 font-semibold text-slate-900"><%= row.phone_number || "-" %></td><% } %>
               </tr>
               <tr class="hidden bg-slate-50/70" data-contact-detail-row data-contact-key="<%= row.phone_key %>">
-                <td colspan="9" class="px-4 py-4">
+                <td colspan="<%= canViewPhone ? 9 : 8 %>" class="px-4 py-4">
                   <div class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
                     <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
                       <div class="text-sm font-semibold text-slate-800"><%= t("invoice") %> <%= t("details") %></div>
-                      <div class="text-xs font-medium text-slate-500"><%= row.phone_number || "-" %></div>
+                      <% if (canViewPhone) { %><div class="text-xs font-medium text-slate-500"><%= row.phone_number || "-" %></div><% } %>
                     </div>
                     <div class="overflow-x-auto rounded-xl border border-slate-200">
                       <table class="min-w-[960px] w-full text-xs">

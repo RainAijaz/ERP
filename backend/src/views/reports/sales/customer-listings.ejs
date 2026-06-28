@@ -30,7 +30,7 @@
             <th class="cursor-pointer px-4 py-3 text-left" data-sort-key="name"><%= t('party_name') %></th>
             <th class="cursor-pointer px-4 py-3 text-left" data-sort-key="group_name"><%= t('party_group') %></th>
             <th class="cursor-pointer px-4 py-3 text-left" data-sort-key="city_name"><%= t('city') %></th>
-            <th class="cursor-pointer px-4 py-3 text-left" data-sort-key="phone_primary"><%= t('phone_primary') %></th>
+            <% if (canViewPhone) { %><th class="cursor-pointer px-4 py-3 text-left" data-sort-key="phone_primary"><%= t('phone_primary') %></th><% } %>
             <th class="cursor-pointer px-4 py-3 text-left" data-sort-key="created_at"><%= t('created_at') %></th>
             <th class="cursor-pointer px-4 py-3 text-left" data-sort-key="branch_names"><%= t('branches') %></th>
           </tr>
@@ -38,7 +38,7 @@
         <tbody class="divide-y divide-slate-100" data-table-body>
           <% if (!rows || !rows.length) { %>
             <tr>
-              <td colspan="7" class="px-4 py-8 text-center text-sm text-slate-500"><%= t('no_entries') %></td>
+              <td colspan="<%= canViewPhone ? 7 : 6 %>" class="px-4 py-8 text-center text-sm text-slate-500"><%= t('no_entries') %></td>
             </tr>
           <% } else { %>
             <% rows.forEach((row, idx) => { %>
@@ -47,7 +47,7 @@
                 <td class="px-4 py-3 text-slate-700"><%= row.name || '-' %></td>
                 <td class="px-4 py-3 text-slate-700"><%= row.group_name || t('none') %></td>
                 <td class="px-4 py-3 text-slate-700"><%= row.city_name || t('none') %></td>
-                <td class="px-4 py-3 text-slate-700"><%= row.phone_primary || '-' %></td>
+                <% if (canViewPhone) { %><td class="px-4 py-3 text-slate-700"><%= row.phone_primary || '-' %></td><% } %>
                 <td class="px-4 py-3 text-slate-700" data-sort-value="<%= row.created_at ? new Date(row.created_at).toISOString() : '' %>"><%= formatDateDisplay(row.created_at, '') %></td>
                 <td class="px-4 py-3 text-slate-700"><%= row.branch_names || t('none') %></td>
               </tr>
