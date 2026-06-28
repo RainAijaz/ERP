@@ -237,10 +237,10 @@
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= (options?.branches || []).length > 1 ? t("branches") : t("branch") %></label>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t("branches") : t("branch") %></label>
           <div class="sm:col-span-9">
-            <% if ((options?.branches || []).length > 1) { %>
-              <select name="branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+            <% if (user?.isAdmin) { %>
+              <select name="branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
                 <option value="<%= allMultiOptionValue %>" <%= branchAllSelected ? "selected" : "" %>><%= t("all") %></option>
                 <% (options?.branches || []).forEach((branch) => { %>
                   <option value="<%= branch.id %>" <%= (filters?.branchIds || []).includes(Number(branch.id)) ? "selected" : "" %>><%= branch.name %></option>
@@ -633,9 +633,6 @@
 
     allMultiSelects.forEach((select) => {
       normalizeAllSelection(select);
-      setPrevSelectionState(select);
-      select.addEventListener("focus", () => setPrevSelectionState(select));
-      select.addEventListener("change", () => normalizeAllSelection(select, true));
     });
 
     const purchaseCategoryInputs = Array.from(form.querySelectorAll('input[data-purchase-category-filter][name="purchase_category"]'));
@@ -654,7 +651,7 @@
       options.forEach((option) => {
         option.selected = option.value === allMultiValue;
       });
-      normalizeAllSelection(select, false);
+      select.dispatchEvent(new Event("change", { bubbles: true }));
     };
     const syncPurchaseCategoryVisibility = () => {
       const selectedCategory = String(
