@@ -4052,15 +4052,17 @@ const loadStockCountGroupArticles = async ({
         .select("sb.color_id", "sb.size_id")
         .sum({ qty: knex.raw("COALESCE(sb.qty, 0)") })
         .sum({ value: knex.raw("COALESCE(sb.value, 0)") })
-        .groupBy("i.id", "sb.color_id", "sb.size_id");
+        .groupBy("i.id", "i.name", "sb.color_id", "sb.size_id");
     } else {
       query = query
         .select(knex.raw("NULL::bigint as color_id"))
         .select(knex.raw("NULL::bigint as size_id"))
         .sum({ qty: knex.raw("COALESCE(sb.qty, 0)") })
         .sum({ value: knex.raw("COALESCE(sb.value, 0)") })
-        .groupBy("i.id");
+        .groupBy("i.id", "i.name");
     }
+
+    query = query.orderBy("i.name", "asc");
 
     const rows = await query;
     const articles = rows
@@ -4089,7 +4091,7 @@ const loadStockCountGroupArticles = async ({
     .join("erp.skus as s", "s.id", "sl.sku_id")
     .join("erp.variants as v", "v.id", "s.variant_id")
     .join("erp.items as i", "i.id", "v.item_id")
-    .select("sl.sku_id")
+    .select("sl.sku_id", "s.sku_code")
     .select(knex.raw(`${FG_PACKED_FLAG_SQL} as is_packed`))
     .select(
       knex.raw(
@@ -4104,7 +4106,8 @@ const loadStockCountGroupArticles = async ({
       "i.group_id": normalizedGroupId,
     })
     .where("vh.voucher_date", "<=", dateFilter)
-    .groupBy("sl.sku_id", knex.raw(FG_PACKED_FLAG_SQL));
+    .groupBy("sl.sku_id", "s.sku_code", knex.raw(FG_PACKED_FLAG_SQL))
+    .orderBy("s.sku_code", "asc");
 
   const bySku = new Map();
   rows.forEach((row) => {
