@@ -446,7 +446,10 @@
 							sku_id: article.sku_id,
 							_auto_loaded: true,
 							_unfilled: true,
-							_snap_pairs: qty3(article.system_qty_pairs || 0),
+							// Don't freeze _snap_pairs for FG — resolveSystemSnapshot will use
+							// fgResolved.qtyPairs which correctly splits PACKED/LOOSE based on
+							// the selected unit (non-base → packed, base → loose).
+							_snap_pairs: null,
 							counted_stock_qty: null,
 						};
 					});
@@ -861,7 +864,18 @@
 			const usePhysicalCountField = isPhysicalCountReasonActive();
 			if (!rowsState.length) rowsState = [rowTemplate(stockType)];
 
-			const skuRows = skuList.filter((entry) => String(entry.item_type || "").toUpperCase() === stockType);
+			const selectedGroupVal = productGroupSelect?.value || "";
+			const selectedGroupId = selectedGroupVal === "all" ? "all" : Number(selectedGroupVal || 0);
+			const skuRows = skuList.filter((entry) => {
+				if (String(entry.item_type || "").toUpperCase() !== stockType) return false;
+				if (selectedGroupId && selectedGroupId !== "all") {
+					return Number(entry.group_id || 0) === selectedGroupId;
+				}
+				return true;
+			});
+			const availableRmItems = (selectedGroupId && selectedGroupId !== "all")
+				? rmItems.filter((entry) => Number(entry.group_id || 0) === selectedGroupId)
+				: rmItems;
 
 			linesBody.innerHTML = rowsState.map((row, index) => {
 				const normalized = applyDerivedRow(row, stockType);
@@ -904,7 +918,7 @@
 								<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-500 cursor-default" value="${sizeLabel}"></td>`;
 						})()
 						: `
-							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="item_id" data-row-field="item_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${optionMarkup(rmItems.map((entry) => ({ id: entry.id, label: entry.name })), normalized.item_id, "Select Raw Material")}</select></td>
+							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="item_id" data-row-field="item_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${optionMarkup(availableRmItems.map((entry) => ({ id: entry.id, label: entry.name })), normalized.item_id, "Select Raw Material")}</select></td>
 							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="color_id" data-row-field="color_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${(canSave && !colorState.disabled) ? "" : "disabled"}>${optionMarkup(colorState.entries, normalized.color_id, colorState.allowNone ? "None" : "")}</select></td>
 							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="size_id" data-row-field="size_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${(canSave && !sizeState.disabled) ? "" : "disabled"}>${optionMarkup(sizeState.entries, normalized.size_id, sizeState.allowNone ? "None" : "")}</select></td>`;
 					const rmUomCellMarkup = (rmItemIsSet && normalized.uom_id !== null && normalized.uom_id !== undefined)
@@ -1311,7 +1325,8 @@
 				return;
 			}
 			if (isPhysicalCountCorrectionActive() && !initialVoucher) {
-				if (!Number(productGroupSelect?.value || 0)) {
+				const groupVal = productGroupSelect?.value || "";
+				if (!groupVal || (groupVal !== "all" && !Number(groupVal))) {
 					event.preventDefault();
 					showUiMessage(_t.select_product_group_first);
 					productGroupSelect?.focus();
