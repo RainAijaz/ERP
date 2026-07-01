@@ -4033,30 +4033,18 @@ const loadStockCountGroupArticles = async ({
   if (normalizedStockType === "RM") {
     const hasVariantDimensions = await hasStockBalanceRmVariantDimensionsTx(knex);
 
-    let query;
-    if (isAllGroups) {
-      // LEFT JOIN so every active RM item appears even with no balance entry yet.
-      // Balance conditions go in the ON clause so null rows aren't filtered out.
-      query = knex("erp.items as i")
-        .leftJoin("erp.stock_balance_rm as sb", function () {
-          this.on("sb.item_id", "=", "i.id")
-            .andOnVal("sb.branch_id", normalizedBranchId)
-            .andOnVal("sb.stock_state", "ON_HAND");
-        })
-        .select("i.id as item_id")
-        .where("i.is_active", true)
-        .whereRaw("upper(coalesce(i.item_type::text, '')) = 'RM'");
-    } else {
-      query = knex("erp.items as i")
-        .join("erp.stock_balance_rm as sb", "sb.item_id", "i.id")
-        .select("i.id as item_id")
-        .where({
-          "sb.branch_id": normalizedBranchId,
-          "sb.stock_state": "ON_HAND",
-          "i.is_active": true,
-        })
-        .whereRaw("upper(coalesce(i.item_type::text, '')) = 'RM'")
-        .where("i.group_id", normalizedGroupId);
+    let query = knex("erp.items as i")
+      .join("erp.stock_balance_rm as sb", "sb.item_id", "i.id")
+      .select("i.id as item_id")
+      .where({
+        "sb.branch_id": normalizedBranchId,
+        "sb.stock_state": "ON_HAND",
+        "i.is_active": true,
+      })
+      .whereRaw("upper(coalesce(i.item_type::text, '')) = 'RM'");
+
+    if (!isAllGroups) {
+      query = query.where("i.group_id", normalizedGroupId);
     }
 
     if (hasVariantDimensions) {
