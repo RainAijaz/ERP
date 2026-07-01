@@ -967,7 +967,7 @@ router.post(
               "id",
               ids.map(Number).filter((v) => !Number.isNaN(v)),
             );
-          rateMap = new Map(rows.map((row) => [row.id, row.sale_rate != null ? Number(row.sale_rate) : null]));
+          rateMap = new Map(rows.map((row) => [Number(row.id), row.sale_rate != null ? Number(row.sale_rate) : null]));
         }
 
         if (approvalRequired) {
@@ -1016,7 +1016,7 @@ router.post(
                 .whereIn("id", validIds)
             : [];
           const oldRateMap = new Map(
-            oldRateRows.map((r) => [r.id, r.sale_rate != null ? Number(r.sale_rate) : null]),
+            oldRateRows.map((r) => [Number(r.id), r.sale_rate != null ? Number(r.sale_rate) : null]),
           );
 
           for (let i = 0; i < ids.length; i++) {
