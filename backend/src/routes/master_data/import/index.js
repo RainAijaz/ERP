@@ -17,6 +17,7 @@ const {
   applyWorkbookImport,
   resolveSelectedTargetKeys,
 } = require("../../../services/master-data/master-data-import-service");
+const { sendSkuRateNotification } = require("../../../utils/sku-rate-notification");
 
 const router = express.Router();
 
@@ -245,6 +246,25 @@ router.post(
         branchId: req.branchId || null,
         ipAddress: req.ip || null,
       });
+
+      const chatId = process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID;
+      if (chatId) {
+        const rateChanges = (applied.operations || [])
+          .filter(op => op.entityKey === "skus" && op.action === "update" && op.data?.variant_id)
+          .map(op => ({
+            id: op.data.variant_id,
+            oldRate: op.data.old_rate ?? null,
+            newRate: op.data.sale_rate,
+          }));
+        if (rateChanges.length > 0) {
+          await sendSkuRateNotification({
+            knex,
+            chatId,
+            updates: rateChanges,
+            user: req.user,
+          });
+        }
+      }
 
       queueAuditLog(req, {
         entityType:

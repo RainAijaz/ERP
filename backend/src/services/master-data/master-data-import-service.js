@@ -3305,6 +3305,7 @@ const ENTITY_SPECS = Object.freeze({
           packing_type_id: packingTypeId,
           packing_type_token: packingToken || null,
           sale_rate: saleRate,
+          old_rate: existingRate ?? null,
           is_active: isActive,
           updated_by: actorId,
         },
