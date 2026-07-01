@@ -4089,8 +4089,7 @@ const loadStockCountGroupArticles = async ({
           system_wac: computeNonNegativeWac(qty, value),
         };
       })
-      // For All Groups show every active RM; for a specific group only show items with stock.
-      .filter((a) => isAllGroups || a.system_qty_base > 0);
+      .filter((a) => a.system_qty_base > 0);
 
     return { articles, asOfDate: null };
   }
