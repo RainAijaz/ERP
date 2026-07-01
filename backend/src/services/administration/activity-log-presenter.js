@@ -351,6 +351,58 @@ const parseLinesValue = (value) => {
   }
 };
 
+const TRANSACTION_DETAIL_KEYS = [
+  "description",
+  "reference_no",
+  "delivery_method",
+  "sale_mode",
+  "buyer_type",
+  "extra_discount",
+  "advance_receive",
+  "payment_due_date",
+];
+
+const CONTEXT_NOISE_KEYS = new Set([
+  "source", "request_type", "summary", "method", "path", "status",
+  "status_code", "query", "scope_type", "scope_key",
+  "voucher_no", "voucher_date", "payment_type", "customer_name",
+  "total_amount", "payment_received_amount", "approval_request_id",
+  "applied_entity_id", "entity_name", "entity_label",
+  "request_body", "new_value", "old_value", "changed_fields",
+]);
+
+const buildTransactionDetailRows = ({ context }) => {
+  const requestBody = toPlainObject(context?.request_body);
+  const newValue = toPlainObject(context?.new_value);
+  return compactRows(
+    TRANSACTION_DETAIL_KEYS.map((key) => ({
+      label: toDisplayLabelFromKey(key),
+      value: toText(firstDefined(newValue?.[key], requestBody?.[key])),
+    }))
+  );
+};
+
+const buildLineItemsSection = ({ context }) => {
+  const requestBody = toPlainObject(context?.request_body);
+  const newValue = toPlainObject(context?.new_value);
+  const lineList = firstDefined(
+    Array.isArray(newValue?.lines) ? newValue.lines : null,
+    parseLinesValue(requestBody?.lines_json),
+    Array.isArray(requestBody?.lines) ? requestBody.lines : null,
+  );
+  if (!Array.isArray(lineList) || lineList.length === 0) return null;
+  const headers = ["#", "SKU", "Type", "Qty", "Rate", "Discount"];
+  const tableRows = lineList.slice(0, 40).map((item, idx) => [
+    String(idx + 1),
+    toText(firstDefined(item?.sku_id, item?.sku_code, item?.article_code)),
+    toText(firstDefined(item?.row_status, item?.uom_id, item?.uom)),
+    toText(firstDefined(item?.sale_qty, item?.purchase_qty, item?.qty, item?.quantity)),
+    toText(firstDefined(item?.pair_rate, item?.purchase_rate, item?.rate, item?.unit_price)),
+    toText(firstDefined(item?.pair_discount, item?.discount)),
+  ]);
+  return { type: "table", headers, tableRows };
+};
+
 const buildChangedFieldRows = ({ context }) => {
   const changed = Array.isArray(context?.changed_fields)
     ? context.changed_fields
@@ -464,42 +516,19 @@ const buildDetailsModel = ({
 
   const overviewRows = compactRows([
     { label: t("action"), value: displayAction },
-    { label: t("source"), value: toText(context?.source) },
-    { label: t("request_type"), value: toText(context?.request_type) },
     { label: t("summary"), value: toText(summary || context?.summary) },
-    { label: t("method"), value: toText(context?.method) },
-    { label: t("path"), value: toText(context?.path) },
   ]);
 
-  const changedFieldRows = buildChangedFieldRows({ context }).map((entry) => ({
-    label: String(entry.field || "").replace(/_/g, " "),
-    value: `${t("old_value")}: ${entry.oldValue} | ${t("new_value")}: ${entry.newValue}`,
-  }));
+  const changedFieldRows = buildChangedFieldRows({ context });
+
+  const transactionDetailRows = buildTransactionDetailRows({ context });
+  const lineItemsSection = buildLineItemsSection({ context });
 
   const nonVoucherContextRows = compactRows(
     Object.entries(toPlainObject(context))
-      .filter(
-        ([key]) =>
-          ![
-            "request_body",
-            "new_value",
-            "old_value",
-            "changed_fields",
-          ].includes(key),
-      )
-      .filter(
-        ([key]) =>
-          ![
-            "source",
-            "request_type",
-            "summary",
-            "method",
-            "path",
-            "status",
-          ].includes(key),
-      )
+      .filter(([key]) => !CONTEXT_NOISE_KEYS.has(key))
       .map(([key, value]) => ({
-        label: key.replace(/_/g, " "),
+        label: toDisplayLabelFromKey(key),
         value: toText(value),
       })),
   );
@@ -515,8 +544,22 @@ const buildDetailsModel = ({
       voucherRows.length
         ? { title: t("voucher_summary"), rows: voucherRows }
         : null,
+      transactionDetailRows.length
+        ? { title: t("transaction_details") || "Transaction Details", rows: transactionDetailRows }
+        : null,
       changedFieldRows.length
-        ? { title: t("changed_fields"), rows: changedFieldRows }
+        ? {
+            title: t("changed_fields"),
+            type: "changes",
+            rows: changedFieldRows.map((entry) => ({
+              label: toDisplayLabelFromKey(entry.field),
+              oldValue: entry.oldValue,
+              newValue: entry.newValue,
+            })),
+          }
+        : null,
+      lineItemsSection
+        ? { title: t("line_items") || "Line Items", ...lineItemsSection }
         : null,
       nonVoucherContextRows.length
         ? { title: t("context"), rows: nonVoucherContextRows }

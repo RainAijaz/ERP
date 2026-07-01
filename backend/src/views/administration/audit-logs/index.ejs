@@ -1,4 +1,4 @@
-<%
+﻿<%
 	const groupedRows = (rows || []).reduce((acc, row) => {
 		const dateKey = row.display_date || "-";
 		if (!acc[dateKey]) acc[dateKey] = [];
@@ -185,8 +185,101 @@
 			setBodyScrollLock(false);
 		};
 
-		const makeSection = (title, rows) => {
-			if (!rows || !rows.length) return null;
+		const makeSection = (section) => {
+			const title = section.title || "";
+			const type = section.type || "rows";
+
+			if (type === "table") {
+				const { headers = [], tableRows = [] } = section;
+				if (!tableRows.length) return null;
+				const card = document.createElement("div");
+				card.className = "rounded-xl border border-slate-200 bg-white p-4 overflow-x-auto";
+				const heading = document.createElement("div");
+				heading.className = "text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 mb-3";
+				heading.textContent = title;
+				card.appendChild(heading);
+				const table = document.createElement("table");
+				table.className = "min-w-full text-xs border-collapse";
+				if (headers.length) {
+					const thead = document.createElement("thead");
+					const tr = document.createElement("tr");
+					headers.forEach((h) => {
+						const th = document.createElement("th");
+						th.className = "border-b border-slate-200 bg-slate-50 px-3 py-2 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500";
+						th.textContent = h;
+						tr.appendChild(th);
+					});
+					thead.appendChild(tr);
+					table.appendChild(thead);
+				}
+				const tbody = document.createElement("tbody");
+				tableRows.forEach((cells) => {
+					const tr = document.createElement("tr");
+					tr.className = "hover:bg-slate-50";
+					cells.forEach((cell) => {
+						const td = document.createElement("td");
+						td.className = "border-b border-slate-100 px-3 py-1.5 text-slate-700";
+						td.textContent = (cell === "-" || cell === null || cell === undefined) ? "" : String(cell);
+						tr.appendChild(td);
+					});
+					tbody.appendChild(tr);
+				});
+				table.appendChild(tbody);
+				card.appendChild(table);
+				return card;
+			}
+
+			if (type === "changes") {
+				const { rows = [] } = section;
+				if (!rows.length) return null;
+				const card = document.createElement("div");
+				card.className = "rounded-xl border border-slate-200 bg-white p-4";
+				const heading = document.createElement("div");
+				heading.className = "text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500 mb-3";
+				heading.textContent = title;
+				card.appendChild(heading);
+				const list = document.createElement("div");
+				list.className = "space-y-3";
+				rows.forEach((row) => {
+					const block = document.createElement("div");
+					block.className = "rounded-lg border border-slate-100 bg-slate-50 px-3 py-2";
+					const fieldLabel = document.createElement("div");
+					fieldLabel.className = "mb-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-slate-500";
+					fieldLabel.textContent = row.label;
+					block.appendChild(fieldLabel);
+					const grid = document.createElement("div");
+					grid.className = "grid grid-cols-2 gap-2 text-xs";
+					const oldCol = document.createElement("div");
+					oldCol.className = "space-y-0.5";
+					const oldLbl = document.createElement("div");
+					oldLbl.className = "text-[9px] font-semibold uppercase tracking-[0.12em] text-rose-400";
+					oldLbl.textContent = "Before";
+					const oldVal = document.createElement("div");
+					oldVal.className = "break-words text-slate-600";
+					oldVal.textContent = row.oldValue || "-";
+					oldCol.appendChild(oldLbl);
+					oldCol.appendChild(oldVal);
+					const newCol = document.createElement("div");
+					newCol.className = "space-y-0.5";
+					const newLbl = document.createElement("div");
+					newLbl.className = "text-[9px] font-semibold uppercase tracking-[0.12em] text-emerald-500";
+					newLbl.textContent = "After";
+					const newVal = document.createElement("div");
+					newVal.className = "break-words font-medium text-slate-800";
+					newVal.textContent = row.newValue || "-";
+					newCol.appendChild(newLbl);
+					newCol.appendChild(newVal);
+					grid.appendChild(oldCol);
+					grid.appendChild(newCol);
+					block.appendChild(grid);
+					list.appendChild(block);
+				});
+				card.appendChild(list);
+				return card;
+			}
+
+			const { rows = [] } = section;
+			if (!rows.length) return null;
 			const card = document.createElement("div");
 			card.className = "rounded-xl border border-slate-200 bg-white p-4";
 			const heading = document.createElement("div");
@@ -199,7 +292,7 @@
 				const line = document.createElement("div");
 				line.className = "grid grid-cols-1 gap-2 text-xs sm:grid-cols-12 sm:gap-3";
 				const key = document.createElement("div");
-				key.className = "font-semibold text-slate-600 sm:col-span-4";
+				key.className = "font-semibold text-slate-600 sm:col-span-4 capitalize";
 				key.textContent = row.label;
 				const val = document.createElement("div");
 				val.className = "break-words text-slate-700 sm:col-span-8";
@@ -234,19 +327,18 @@
 			}
 			const sections = Array.isArray(model.sections) ? model.sections : [];
 			sections.forEach((section) => {
-				const rows = Array.isArray(section.rows) ? section.rows : [];
-				const card = makeSection(section.title || "", rows);
+				const card = makeSection(section);
 				if (card) content.appendChild(card);
 			});
 			if (model.rawContext && typeof model.rawContext === "object") {
 				const rawWrap = document.createElement("details");
-				rawWrap.className = "rounded-xl border border-slate-200 bg-slate-50 p-3";
+				rawWrap.className = "rounded-xl border border-slate-100 bg-slate-50/60 p-3";
 				const summary = document.createElement("summary");
-				summary.className = "cursor-pointer text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600";
-				summary.textContent = "<%= t('show_raw_data')  %>";
+				summary.className = "cursor-pointer text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400 hover:text-slate-600";
+				summary.textContent = "<%= t('technical_details') || 'Technical Details (Advanced)' %>";
 				rawWrap.appendChild(summary);
 				const pre = document.createElement("pre");
-				pre.className = "mt-3 whitespace-pre-wrap break-words rounded-lg bg-white p-3 text-[11px] text-slate-700";
+				pre.className = "mt-3 whitespace-pre-wrap break-words rounded-lg bg-white p-3 text-[10px] text-slate-500";
 				pre.textContent = JSON.stringify(model.rawContext, null, 2);
 				rawWrap.appendChild(pre);
 				content.appendChild(rawWrap);
