@@ -1413,8 +1413,49 @@
       document.body.removeChild(link);
     };
 
+    const showDownloadDropdown = (anchor, onExcel, onPdf) => {
+      document.querySelector("[data-dl-dropdown]")?.remove();
+
+      const menu = document.createElement("div");
+      menu.setAttribute("data-dl-dropdown", "");
+      const rect = anchor.getBoundingClientRect();
+      menu.style.cssText = `position:fixed;top:${rect.bottom + 4}px;left:${rect.left}px;z-index:9999;min-width:${rect.width}px;`;
+      menu.className = "rounded-lg border border-slate-200 bg-white shadow-lg overflow-hidden";
+
+      let outsideClick;
+      const makeBtn = (text, onClick) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = text;
+        btn.className = "block w-full px-5 py-2.5 text-left text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 hover:bg-slate-50 transition cursor-pointer";
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          menu.remove();
+          document.removeEventListener("click", outsideClick, true);
+          onClick();
+        });
+        return btn;
+      };
+
+      menu.appendChild(makeBtn("Excel", onExcel));
+      const pdfBtn = makeBtn("PDF", onPdf);
+      pdfBtn.classList.add("border-t", "border-slate-200");
+      menu.appendChild(pdfBtn);
+      document.body.appendChild(menu);
+
+      outsideClick = (e) => {
+        if (!menu.contains(e.target)) {
+          menu.remove();
+          document.removeEventListener("click", outsideClick, true);
+        }
+      };
+      setTimeout(() => document.addEventListener("click", outsideClick, true), 0);
+    };
+
     if (downloadButton) {
-      downloadButton.addEventListener("click", downloadCsv);
+      downloadButton.addEventListener("click", () =>
+        showDownloadDropdown(downloadButton, downloadCsv, () => window.print()),
+      );
     }
     if (printButton) {
       printButton.addEventListener("click", () => window.print());
