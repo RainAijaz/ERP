@@ -7,6 +7,7 @@ const {
   getPurchaseReportPageData,
   getSupplierBalancesReportPageData,
   getSupplierLedgerReportPageData,
+  getPendingGrnReportPageData,
 } = require("../../services/purchase/purchase-report-service");
 
 const router = express.Router();
@@ -245,6 +246,64 @@ router.post(
         options: pageData.options,
         reportData: pageData.reportData,
         reportPath: `${req.baseUrl}/supplier-balances`,
+      });
+    } catch (err) {
+      console.error("Error in PurchaseReportsService:", err);
+      return next(err);
+    }
+  },
+);
+
+router.get(
+  "/pending-grn",
+  requirePermission("REPORT", "pending_grn", "load"),
+  async (req, res, next) => {
+    try {
+      const pageData = await getPendingGrnReportPageData({
+        req,
+        input: req.query,
+      });
+      return res.render("base/layouts/main", {
+        title: `${res.locals.t("pending_grn_report")} - ${res.locals.t("reports")}`,
+        user: req.user,
+        branchId: req.branchId,
+        branchScope: req.branchScope,
+        csrfToken: res.locals.csrfToken,
+        view: "../../reports/purchases/pending-grn",
+        t: res.locals.t,
+        filters: pageData.filters,
+        options: pageData.options,
+        reportData: pageData.reportData,
+        reportPath: `${req.baseUrl}/pending-grn`,
+      });
+    } catch (err) {
+      console.error("Error in PurchaseReportsService:", err);
+      return next(err);
+    }
+  },
+);
+
+router.post(
+  "/pending-grn",
+  requirePermission("REPORT", "pending_grn", "load"),
+  async (req, res, next) => {
+    try {
+      const pageData = await getPendingGrnReportPageData({
+        req,
+        input: req.body,
+      });
+      return res.render("base/layouts/main", {
+        title: `${res.locals.t("pending_grn_report")} - ${res.locals.t("reports")}`,
+        user: req.user,
+        branchId: req.branchId,
+        branchScope: req.branchScope,
+        csrfToken: res.locals.csrfToken,
+        view: "../../reports/purchases/pending-grn",
+        t: res.locals.t,
+        filters: pageData.filters,
+        options: pageData.options,
+        reportData: pageData.reportData,
+        reportPath: `${req.baseUrl}/pending-grn`,
       });
     } catch (err) {
       console.error("Error in PurchaseReportsService:", err);

@@ -349,6 +349,7 @@ VALUES
   ('REPORT','supplier_ledger','Supplier Ledger Report', 'Purchase'),
   ('REPORT','purchase_report','Purchase Report', 'Purchase'),
   ('REPORT','purchase_return_report','Purchase Return Report', 'Purchase'),
+  ('REPORT','pending_grn','Pending GRN (Unbilled) Report', 'Purchase'),
 
   -- Production Reports
   ('REPORT','production_report','Production Report', 'Production'),

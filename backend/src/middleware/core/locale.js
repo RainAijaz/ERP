@@ -1320,6 +1320,15 @@ const translations = {
     purchase_reports: "Purchase Report",
     purchase_reports_purpose_tooltip:
       "Analyzes purchases by party, material, quantity, and amount.",
+    pending_grn_report: "Pending GRN (Unbilled)",
+    pending_grn_report_purpose_tooltip:
+      "Lists GRN lines across all suppliers/branches whose received quantity has not yet been fully billed via a General Purchase Voucher.",
+    pending_grn_report_quantity_only_note:
+      "This report shows quantities only. GRN lines are not priced yet, so no valuation total is shown.",
+    days_pending: "Days Pending",
+    billed_qty: "Billed Qty",
+    pending_qty: "Pending Qty",
+    grn_qty: "GRN Qty",
     abnormal_loss: "Abnormal Loss",
     abnormal_loss_voucher: "Abnormal Loss Voucher",
     finished_production_voucher: "Finished Production Voucher",
@@ -3573,6 +3582,15 @@ Object.assign(translations.en, {
 });
 
 Object.assign(translations.ur, {
+  pending_grn_report: "زیر التوا جی آر این (غیر بل شدہ)",
+  pending_grn_report_purpose_tooltip:
+    "تمام سپلائرز اور برانچز میں وہ جی آر این لائنیں جن کی موصولہ مقدار ابھی تک جنرل پرچیز واؤچر کے ذریعے مکمل طور پر بل نہیں ہوئی۔",
+  pending_grn_report_quantity_only_note:
+    "یہ رپورٹ صرف مقدار دکھاتی ہے۔ جی آر این لائنوں کی قیمت ابھی طے نہیں ہوئی، اس لیے کوئی مالیت کا ٹوٹل نہیں دکھایا جاتا۔",
+  days_pending: "زیر التوا دن",
+  billed_qty: "بل شدہ مقدار",
+  pending_qty: "زیر التوا مقدار",
+  grn_qty: "جی آر این مقدار",
   active_users: "فعال صارفین",
   active_users_dashboard_tooltip:
     "برانچ کے لحاظ سے: گزشتہ {minutes} منٹ میں غیر میعاد ختم سیشن والے منفرد فعال صارفین۔",

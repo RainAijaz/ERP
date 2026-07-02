@@ -72,6 +72,7 @@
       ["/reports/sales/", "sales_report"],
       ["/reports/purchases/supplier-ledger", "supplier_ledger"],
       ["/reports/purchases/supplier-balances", "supplier_balances"],
+      ["/reports/purchases/pending-grn", "pending_grn"],
       ["/reports/purchases/", "purchase_report"],
       ["/reports/production/consumption", "consumption_report"],
       ["/reports/production/", "production_report"],
@@ -124,6 +125,13 @@
         details: can("REPORT", "supplier_balances", "view_details"),
         filterAllBranches: can("REPORT", "supplier_balances", "filter_all_branches"),
         viewCostFields: can("REPORT", "supplier_balances", "view_cost_fields"),
+      },
+      pending_grn: {
+        print: can("REPORT", "pending_grn", "print"),
+        export: can("REPORT", "pending_grn", "export_excel_csv"),
+        details: can("REPORT", "pending_grn", "view_details"),
+        filterAllBranches: can("REPORT", "pending_grn", "filter_all_branches"),
+        viewCostFields: can("REPORT", "pending_grn", "view_cost_fields"),
       },
       production_report: {
         print: can("REPORT", "production_report", "print"),

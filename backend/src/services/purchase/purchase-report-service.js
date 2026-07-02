@@ -1389,9 +1389,343 @@ const getSupplierBalancesReportPageData = async ({ req, input = {} }) => {
   };
 };
 
+const parsePendingGrnFilters = ({ req, input = {} }) => {
+  const parsedFrom = parseDateFilter(input.from_date, "");
+  const parsedTo = parseDateFilter(input.to_date, "");
+  let from = parsedFrom.value;
+  let to = parsedTo.value;
+  let invalidDateRange = false;
+  if (from && to && from > to) {
+    from = "";
+    to = "";
+    invalidDateRange = true;
+  }
+
+  const selectedBranchIds = toIdListWithAll(input.branch_ids);
+  let branchIds;
+  if (req.user?.isAdmin) {
+    branchIds = selectedBranchIds;
+  } else {
+    const allowedBranchIds = (req.branchOptions || [])
+      .map((b) => Number(b.id || 0))
+      .filter((id) => id > 0);
+    const fallback = Number(req.branchId || 0);
+    const effectiveAllowed = allowedBranchIds.length
+      ? allowedBranchIds
+      : fallback > 0
+        ? [fallback]
+        : [];
+    if (selectedBranchIds.length) {
+      branchIds = selectedBranchIds.filter((id) =>
+        effectiveAllowed.includes(id),
+      );
+      if (!branchIds.length) branchIds = effectiveAllowed;
+    } else {
+      branchIds = effectiveAllowed;
+    }
+  }
+
+  return {
+    from,
+    to,
+    branchIds,
+    supplierIds: toIdListWithAll(input.party_ids),
+    purchaseCategory: resolvePurchaseCategoryFilter(
+      input.purchase_category,
+      PURCHASE_CATEGORY_FILTERS.all,
+    ),
+    reportLoaded: toBoolean(input.load_report, false),
+    invalidFromDate: Boolean(parsedFrom.provided && !parsedFrom.valid),
+    invalidToDate: Boolean(parsedTo.provided && !parsedTo.valid),
+    invalidDateRange,
+    invalidFilterInput: Boolean(
+      (parsedFrom.provided && !parsedFrom.valid) ||
+      (parsedTo.provided && !parsedTo.valid) ||
+      invalidDateRange,
+    ),
+  };
+};
+
+const loadPendingGrnReportOptions = async ({ req, filters }) => {
+  const branchScope = filters.branchIds;
+
+  const branchesPromise = req.user?.isAdmin
+    ? knex("erp.branches")
+        .select("id", "name")
+        .where({ is_active: true })
+        .orderBy("name", "asc")
+    : Promise.resolve(
+        (req.branchOptions || []).map((row) => ({
+          id: Number(row.id),
+          name: row.name,
+        })),
+      );
+
+  let suppliersQuery = knex("erp.parties as p")
+    .select("p.id", "p.code", "p.name", "p.name_ur")
+    .where({ "p.is_active": true })
+    .whereRaw("upper(coalesce(p.party_type::text, '')) in ('SUPPLIER','BOTH')");
+
+  if (branchScope.length) {
+    suppliersQuery = applyPartyBranchScope(suppliersQuery, branchScope);
+  }
+
+  const [branches, suppliers] = await Promise.all([
+    branchesPromise,
+    suppliersQuery.orderBy("p.name", "asc"),
+  ]);
+
+  return { branches, suppliers };
+};
+
+const daysBetweenYmd = (fromYmd, toYmd) => {
+  const from = String(fromYmd || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const to = String(toYmd || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!from || !to) return 0;
+  const fromUtc = Date.UTC(Number(from[1]), Number(from[2]) - 1, Number(from[3]));
+  const toUtc = Date.UTC(Number(to[1]), Number(to[2]) - 1, Number(to[3]));
+  return Math.max(0, Math.round((toUtc - fromUtc) / 86400000));
+};
+
+const getPendingGrnReportRows = async ({ req, filters }) => {
+  if (!filters.reportLoaded) return [];
+
+  const includeRawMaterialRows =
+    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.asset;
+  const includeAssetRows =
+    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.rawMaterial;
+
+  const applyCommonGrnFilters = (query) => {
+    let next = query.where({
+      "vh.voucher_type_code": "GRN",
+      "vh.status": "APPROVED",
+    });
+    if (filters.from) {
+      next = next.where("vh.voucher_date", ">=", filters.from);
+    }
+    if (filters.to) {
+      next = next.where("vh.voucher_date", "<=", filters.to);
+    }
+    if (filters.branchIds.length) {
+      next = next.whereIn("vh.branch_id", filters.branchIds);
+    }
+    if (filters.supplierIds.length) {
+      next = next.whereIn("ghe.supplier_party_id", filters.supplierIds);
+    }
+    return next;
+  };
+
+  const rawMaterialRowsPromise = includeRawMaterialRows
+    ? (() => {
+        let query = knex("erp.voucher_header as vh")
+          .join("erp.purchase_grn_header_ext as ghe", "ghe.voucher_id", "vh.id")
+          .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
+          .join("erp.items as i", "i.id", "vl.item_id")
+          .leftJoin("erp.uom as u", "u.id", "i.base_uom_id")
+          .leftJoin("erp.parties as p", "p.id", "ghe.supplier_party_id")
+          .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
+          .leftJoin(
+            "erp.colors as vc",
+            knex.raw(
+              "vc.id::text = COALESCE(NULLIF(vl.meta->>'color_id', ''), NULLIF(vl.meta->>'rm_color_id', ''))",
+            ),
+          )
+          .leftJoin(
+            "erp.sizes as vs",
+            knex.raw(
+              "vs.id::text = COALESCE(NULLIF(vl.meta->>'size_id', ''), NULLIF(vl.meta->>'rm_size_id', ''))",
+            ),
+          )
+          .select(
+            "vh.id as grn_voucher_id",
+            "vh.voucher_no as grn_voucher_no",
+            "vh.voucher_date",
+            "vh.book_no",
+            "vh.branch_id",
+            "b.name as branch_name",
+            "ghe.supplier_party_id",
+            "p.code as supplier_code",
+            "p.name as supplier_name",
+            "p.name_ur as supplier_name_ur",
+            knex.raw(
+              "COALESCE(NULLIF(ghe.supplier_reference_no, ''), NULLIF(vh.book_no, ''), NULL) as grn_reference_no",
+            ),
+            "vl.id as grn_line_id",
+            "vl.line_no as grn_line_no",
+            "vl.item_id",
+            "i.code as item_code",
+            "i.name as item_name",
+            "i.name_ur as item_name_ur",
+            "u.code as uom_code",
+            "vl.qty",
+            "vc.name as color_name",
+            "vs.name as size_name",
+            knex.raw("'RAW_MATERIAL'::text as purchase_category"),
+          )
+          .where({ "vl.line_kind": "ITEM" })
+          .whereRaw("upper(coalesce(i.item_type::text, '')) IN ('RM', 'SFG')")
+          .andWhere("ghe.purchase_category", "RAW_MATERIAL");
+
+        return applyCommonGrnFilters(query);
+      })()
+    : Promise.resolve([]);
+
+  const assetRowsPromise = includeAssetRows
+    ? (async () => {
+        const assetColumns = await getAssetColumnSupport();
+        const locale = String(req?.locale || "en").toLowerCase();
+        const assetNameExpr =
+          locale === "ur" && assetColumns.name_ur
+            ? "COALESCE(a2.name_ur, a2.name, a2.description, a2.asset_code, '-')"
+            : assetColumns.name
+              ? "COALESCE(a2.name, a2.description, a2.asset_code, '-')"
+              : "COALESCE(a2.description, a2.asset_code, '-')";
+
+        let query = knex("erp.voucher_header as vh")
+          .join("erp.purchase_grn_header_ext as ghe", "ghe.voucher_id", "vh.id")
+          .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
+          .leftJoin("erp.parties as p", "p.id", "ghe.supplier_party_id")
+          .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
+          .leftJoin("erp.assets as a2", function joinAssets() {
+            this.on(
+              "a2.id",
+              "=",
+              knex.raw(
+                "CASE WHEN coalesce(vl.meta->>'asset_id', '') ~ '^[0-9]+$' THEN (vl.meta->>'asset_id')::bigint ELSE NULL END",
+              ),
+            );
+          })
+          .select(
+            "vh.id as grn_voucher_id",
+            "vh.voucher_no as grn_voucher_no",
+            "vh.voucher_date",
+            "vh.book_no",
+            "vh.branch_id",
+            "b.name as branch_name",
+            "ghe.supplier_party_id",
+            "p.code as supplier_code",
+            "p.name as supplier_name",
+            "p.name_ur as supplier_name_ur",
+            knex.raw(
+              "COALESCE(NULLIF(ghe.supplier_reference_no, ''), NULLIF(vh.book_no, ''), NULL) as grn_reference_no",
+            ),
+            "vl.id as grn_line_id",
+            "vl.line_no as grn_line_no",
+            knex.raw("NULL::bigint as item_id"),
+            knex.raw("COALESCE(a2.asset_code, '') as item_code"),
+            knex.raw(`${assetNameExpr} as item_name`),
+            knex.raw("NULL::text as item_name_ur"),
+            knex.raw("NULL::text as uom_code"),
+            "vl.qty",
+            knex.raw("NULL::text as color_name"),
+            knex.raw("NULL::text as size_name"),
+            knex.raw("'ASSET'::text as purchase_category"),
+          )
+          .where({ "vl.line_kind": "ACCOUNT" })
+          .whereRaw("coalesce(vl.meta->>'asset_id', '') ~ '^[0-9]+$'")
+          .andWhere("ghe.purchase_category", "ASSET");
+
+        return applyCommonGrnFilters(query);
+      })()
+    : Promise.resolve([]);
+
+  const [rawMaterialRows, assetRows] = await Promise.all([
+    rawMaterialRowsPromise,
+    assetRowsPromise,
+  ]);
+  const grnLines = [...rawMaterialRows, ...assetRows];
+  if (!grnLines.length) return [];
+
+  const grnLineIds = grnLines.map((line) => Number(line.grn_line_id));
+  const allocationRows = await knex("erp.purchase_grn_invoice_alloc as a")
+    .join("erp.voucher_line as pl", "pl.id", "a.purchase_voucher_line_id")
+    .join("erp.voucher_header as pvh", "pvh.id", "pl.voucher_header_id")
+    .select("a.grn_voucher_line_id")
+    .sum({ qty_allocated: "a.qty_allocated" })
+    .whereIn("a.grn_voucher_line_id", grnLineIds)
+    .where("pvh.voucher_type_code", "PI")
+    .whereNot("pvh.status", "REJECTED")
+    .groupBy("a.grn_voucher_line_id");
+
+  const allocatedByLineId = new Map(
+    allocationRows.map((row) => [
+      Number(row.grn_voucher_line_id),
+      Number(row.qty_allocated || 0),
+    ]),
+  );
+
+  const today = toLocalDateOnly(new Date());
+
+  return grnLines
+    .map((line) => {
+      const qty = Number(line.qty || 0);
+      const allocated = Number(
+        allocatedByLineId.get(Number(line.grn_line_id)) || 0,
+      );
+      const openQty = Number((qty - allocated).toFixed(3));
+      const voucherDate = toLocalDateOnly(line.voucher_date);
+      return {
+        grn_voucher_id: Number(line.grn_voucher_id),
+        grn_voucher_no: Number(line.grn_voucher_no),
+        grn_voucher_date: voucherDate,
+        branch_id: Number(line.branch_id),
+        branch_name: line.branch_name || "",
+        supplier_party_id: Number(line.supplier_party_id || 0) || null,
+        supplier_code: line.supplier_code || "",
+        supplier_name: line.supplier_name || "",
+        supplier_name_ur: line.supplier_name_ur || "",
+        grn_reference_no: line.grn_reference_no || "",
+        grn_line_id: Number(line.grn_line_id),
+        grn_line_no: Number(line.grn_line_no),
+        item_id: line.item_id ? Number(line.item_id) : null,
+        item_code: line.item_code || "",
+        item_name: line.item_name || "",
+        item_name_ur: line.item_name_ur || "",
+        color_name: line.color_name || "",
+        size_name: line.size_name || "",
+        uom_code: line.uom_code || "",
+        purchase_category: line.purchase_category,
+        qty: toQty(qty),
+        allocated_qty: toQty(allocated),
+        open_qty: openQty,
+        days_pending: daysBetweenYmd(voucherDate, today),
+      };
+    })
+    .filter((row) => row.open_qty > 0.0005)
+    .sort((a, b) => {
+      if (a.grn_voucher_date !== b.grn_voucher_date)
+        return a.grn_voucher_date.localeCompare(b.grn_voucher_date);
+      if (a.grn_voucher_no !== b.grn_voucher_no)
+        return a.grn_voucher_no - b.grn_voucher_no;
+      return a.grn_line_no - b.grn_line_no;
+    });
+};
+
+const getPendingGrnReportPageData = async ({ req, input = {} }) => {
+  const filters = parsePendingGrnFilters({ req, input });
+  const [options, rows] = await Promise.all([
+    loadPendingGrnReportOptions({ req, filters }),
+    getPendingGrnReportRows({ req, filters }),
+  ]);
+
+  return {
+    filters,
+    options,
+    reportData: {
+      rows,
+      totalOpenQty: toQty(
+        rows.reduce((sum, row) => sum + Number(row.open_qty || 0), 0),
+      ),
+      rowCount: rows.length,
+      grnVoucherCount: new Set(rows.map((row) => row.grn_voucher_id)).size,
+    },
+  };
+};
+
 module.exports = {
   PURCHASE_TYPE_FILTERS,
   getPurchaseReportPageData,
   getSupplierBalancesReportPageData,
   getSupplierLedgerReportPageData,
+  getPendingGrnReportPageData,
 };
