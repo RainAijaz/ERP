@@ -405,17 +405,6 @@ const validateLines = async ({
       "Voucher must contain at least one non-zero debit or credit line",
     );
   }
-  // Cash voucher must be single-direction only: either receipt or payment.
-  if (
-    voucherTypeCode === VOUCHER_TYPES.cash &&
-    totalDebit > 0 &&
-    totalCredit > 0
-  ) {
-    throw new HttpError(
-      400,
-      "Cash voucher must be single-direction: use either receipt or payment",
-    );
-  }
   // Strict balancing is required for Journal vouchers.
   if (
     voucherTypeCode === VOUCHER_TYPES.journal &&
@@ -973,59 +962,6 @@ const ensureHeaderAccount = async ({
   return normalizedHeaderAccountId;
 };
 
-const enforceCashVoucherContraRule = async ({
-  trx,
-  req,
-  voucherTypeCode,
-  lines = [],
-}) => {
-  if (voucherTypeCode !== VOUCHER_TYPES.cash) return;
-  const accountIds = [
-    ...new Set(
-      (lines || [])
-        .filter(
-          (line) => String(line.line_kind || "").toUpperCase() === "ACCOUNT",
-        )
-        .map((line) => Number(line.account_id || 0))
-        .filter((id) => Number.isInteger(id) && id > 0),
-    ),
-  ];
-  if (!accountIds.length) return;
-
-  const cashRows = await trx("erp.accounts as a")
-    .leftJoin(
-      "erp.account_posting_classes as apc",
-      "apc.id",
-      "a.posting_class_id",
-    )
-    .select("a.id")
-    .whereIn("a.id", accountIds)
-    .where({ "a.is_active": true })
-    .whereExists(function branchAccess() {
-      this.select(1)
-        .from("erp.account_branch as ab")
-        .whereRaw("ab.account_id = a.id")
-        .andWhere("ab.branch_id", req.branchId);
-    })
-    .whereRaw("upper(COALESCE(apc.code, '')) = 'CASH'");
-
-  const cashAccountIdSet = new Set(cashRows.map((row) => Number(row.id)));
-  if (!cashAccountIdSet.size) return;
-
-  const violatingLine = (lines || []).find(
-    (line) =>
-      String(line.line_kind || "").toUpperCase() === "ACCOUNT" &&
-      cashAccountIdSet.has(Number(line.account_id || 0)),
-  );
-  const violatingLineNo = Number(violatingLine?.line_no || 0) || 0;
-  throw new HttpError(
-    400,
-    violatingLineNo > 0
-      ? `Line ${violatingLineNo}: cash account is not allowed in cash voucher rows. Use Journal Voucher for cash-to-cash transfers.`
-      : "Cash account is not allowed in cash voucher rows. Use Journal Voucher for cash-to-cash transfers.",
-  );
-};
-
 const createVoucher = async ({
   req,
   voucherTypeCode,
@@ -1064,12 +1000,6 @@ const createVoucher = async ({
       req,
       voucherTypeCode,
       headerAccountId,
-    });
-    await enforceCashVoucherContraRule({
-      trx,
-      req,
-      voucherTypeCode,
-      lines: linesWithUrdu,
     });
     const voucherNo = await getNextVoucherNo(
       trx,
@@ -1230,12 +1160,6 @@ const updateVoucher = async ({
       req,
       voucherTypeCode,
       headerAccountId,
-    });
-    await enforceCashVoucherContraRule({
-      trx,
-      req,
-      voucherTypeCode,
-      lines: linesWithUrdu,
     });
     let headerQuery = trx("erp.voucher_header")
       .select(

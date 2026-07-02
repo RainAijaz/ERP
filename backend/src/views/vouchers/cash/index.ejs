@@ -299,7 +299,6 @@
     const selectDepartmentLabel = <%- JSON.stringify(t('select') + ' ' + t('department')) %>;
     const notApplicableDepartmentLabel = <%- JSON.stringify(t('not_applicable') ) %>;
     const naDepartmentValue = '__NA__';
-    const singleDirectionError = <%- JSON.stringify(t('error_cash_voucher_single_direction')) %>;
 
     const body = form.querySelector('[data-lines-body]');
     const jsonInput = form.querySelector('[data-lines-json]');
@@ -584,7 +583,6 @@
         if (!row.value.startsWith('ACCOUNT:')) return true;
         const accountId = Number(String(row.value).split(':')[1] || 0);
         if (selectedRef && row.value === selectedRef) return true;
-        if (voucherTypeCode === 'CASH_VOUCHER' && String(row.postingClassCode || '') === 'cash') return false;
         return !(selectedHeaderAccountId > 0 && accountId === selectedHeaderAccountId);
       });
       return [`<option value="">${selectNameLabel}</option>`].concat(options.map((row) => `<option value="${row.value}">${row.name}</option>`)).join('');
@@ -694,48 +692,6 @@
 
       totalReceiptEl.value = receipt.toFixed(2);
       totalPaymentEl.value = payment.toFixed(2);
-      applyCashDirectionLock();
-    };
-
-    const getCashDirection = () => {
-      if (voucherTypeCode !== 'CASH_VOUCHER') return null;
-      const rows = Array.from(body.querySelectorAll('tr'));
-      let hasReceipt = false;
-      let hasPayment = false;
-      rows.forEach((tr) => {
-        const receiptVal = parseNum(tr.querySelector(`[data-field="${receiptKey}"]`)?.value || 0);
-        const paymentVal = parseNum(tr.querySelector(`[data-field="${paymentKey}"]`)?.value || 0);
-        if (receiptVal > 0) hasReceipt = true;
-        if (paymentVal > 0) hasPayment = true;
-      });
-      if (hasReceipt && hasPayment) return 'mixed';
-      if (hasReceipt) return 'receipt';
-      if (hasPayment) return 'payment';
-      return null;
-    };
-
-    const applyCashDirectionLock = () => {
-      if (voucherTypeCode !== 'CASH_VOUCHER') return;
-      const direction = getCashDirection();
-      const rows = Array.from(body.querySelectorAll('tr'));
-      rows.forEach((tr) => {
-        const receiptInput = tr.querySelector(`[data-field="${receiptKey}"]`);
-        const paymentInput = tr.querySelector(`[data-field="${paymentKey}"]`);
-        if (!receiptInput || !paymentInput) return;
-
-        receiptInput.classList.remove('bg-slate-50', 'cursor-not-allowed');
-        paymentInput.classList.remove('bg-slate-50', 'cursor-not-allowed');
-        receiptInput.disabled = false;
-        paymentInput.disabled = false;
-
-        if (direction === 'receipt') {
-          paymentInput.disabled = true;
-          paymentInput.classList.add('bg-slate-50', 'cursor-not-allowed');
-        } else if (direction === 'payment') {
-          receiptInput.disabled = true;
-          receiptInput.classList.add('bg-slate-50', 'cursor-not-allowed');
-        }
-      });
     };
 
     const onAmountInput = (tr, changedKey) => {
@@ -753,20 +709,6 @@
         receiptInput.value = '';
       }
 
-      if (voucherTypeCode === 'CASH_VOUCHER') {
-        const activeDirection = changedKey === receiptKey ? 'receipt' : 'payment';
-        const activeVal = activeDirection === 'receipt' ? parseNum(receiptInput.value || 0) : parseNum(paymentInput.value || 0);
-        if (activeVal > 0) {
-          const rows = Array.from(body.querySelectorAll('tr'));
-          rows.forEach((row) => {
-            if (row === tr) return;
-            const oppositeFieldKey = activeDirection === 'receipt' ? paymentKey : receiptKey;
-            const oppositeInput = row.querySelector(`[data-field="${oppositeFieldKey}"]`);
-            if (!oppositeInput) return;
-            if (parseNum(oppositeInput.value || 0) > 0) oppositeInput.value = '';
-          });
-        }
-      }
       recalcTotals();
     };
 
@@ -1036,13 +978,6 @@
         if (kind === 'ACCOUNT' && selectedHeaderAccountId > 0 && Number(id || 0) === selectedHeaderAccountId) {
           issues.push(`Row ${index + 1}: line account cannot be same as selected cash/bank account.`);
         }
-        if (voucherTypeCode === 'CASH_VOUCHER' && kind === 'ACCOUNT') {
-          const refValue = `ACCOUNT:${Number(id || 0)}`;
-          const selectedEntity = entityOptions.find((opt) => opt.value === refValue);
-          if (String(selectedEntity?.postingClassCode || '') === 'cash') {
-            issues.push(`Row ${index + 1}: cash account is not allowed in cash voucher rows. Use Journal Voucher for cash-to-cash transfers.`);
-          }
-        }
         if (!hasAmount) {
           issues.push(`Row ${index + 1}: <%= t(receiptLabelKey) %>/<%= t(paymentLabelKey) %> is required.`);
         } else if (receiptVal > 0 && paymentVal > 0) {
@@ -1066,13 +1001,6 @@
         event.preventDefault();
         showError(requiredMessage('<%= t("voucher_lines") %>'));
         return;
-      }
-      if (voucherTypeCode === 'CASH_VOUCHER') {
-        const totalReceipt = rows.reduce((sum, row) => sum + Number(row[receiptKey] || 0), 0);
-        const totalPayment = rows.reduce((sum, row) => sum + Number(row[paymentKey] || 0), 0);
-        if (totalReceipt > 0 && totalPayment > 0) {
-          issues.push(singleDirectionError || 'Cash voucher must be single-direction: use either receipt or payment');
-        }
       }
       if (issues.length) {
         event.preventDefault();
