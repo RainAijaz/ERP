@@ -41,6 +41,8 @@
 
   const showArticleFilter = stockType !== "RM";
   const showSfgUnitFilter = stockType === "SFG";
+  const showTransferSplit = stockType === "FG" || stockType === "SFG";
+  const showPurchaseColumn = !showTransferSplit;
   const stockItemLabel =
     stockType === "RM"
       ? tt("raw_material", "Raw Material")
@@ -78,6 +80,8 @@
     purchaseQty: 0,
     saleQty: 0,
     transferQty: 0,
+    transferInQty: 0,
+    transferOutQty: 0,
     adjustmentQty: 0,
     closingQty: 0,
   };
@@ -133,6 +137,8 @@
         purchaseQty: 0,
         saleQty: 0,
         transferQty: 0,
+        transferInQty: 0,
+        transferOutQty: 0,
         adjustmentQty: 0,
         closingQty: 0,
       };
@@ -142,6 +148,8 @@
       existing.purchaseQty += Number(row?.purchaseQty || 0);
       existing.saleQty += Number(row?.saleQty || 0);
       existing.transferQty += Number(row?.transferQty || 0);
+      existing.transferInQty += Number(row?.transferInQty || 0);
+      existing.transferOutQty += Number(row?.transferOutQty || 0);
       existing.adjustmentQty += Number(row?.adjustmentQty || 0);
       existing.closingQty += Number(row?.closingQty || 0);
       grouped.set(key, existing);
@@ -162,6 +170,8 @@
           purchaseQty: Number(group.purchaseQty.toFixed(3)),
           saleQty: Number(group.saleQty.toFixed(3)),
           transferQty: Number(group.transferQty.toFixed(3)),
+          transferInQty: Number(group.transferInQty.toFixed(3)),
+          transferOutQty: Number(group.transferOutQty.toFixed(3)),
           adjustmentQty: Number(group.adjustmentQty.toFixed(3)),
           closingQty: Number(group.closingQty.toFixed(3)),
           rows: (group.rows || []).slice().sort((a, b) =>
@@ -410,9 +420,16 @@
       <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-7">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-slate-600"><%= `${tt("opening", "Opening")}${qtySuffix}` %></div><div class="mt-1 text-base font-semibold text-slate-900"><%= formatQty(getTotalQty("openingQty", "openingQtyConverted")) %></div></div>
         <div class="rounded-xl border border-cyan-200 bg-cyan-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-cyan-700"><%= `${tt("production", "Production")}${qtySuffix}` %></div><div class="mt-1 text-base font-semibold text-cyan-900"><%= formatQty(getTotalQty("productionQty", "productionQtyConverted")) %></div></div>
-        <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-emerald-700"><%= `${tt("purchase", "Purchase")}${qtySuffix}` %></div><div class="mt-1 text-base font-semibold text-emerald-900"><%= formatQty(getTotalQty("purchaseQty", "purchaseQtyConverted")) %></div></div>
+        <% if (showPurchaseColumn) { %>
+          <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-emerald-700"><%= `${tt("purchase", "Purchase")}${qtySuffix}` %></div><div class="mt-1 text-base font-semibold text-emerald-900"><%= formatQty(getTotalQty("purchaseQty", "purchaseQtyConverted")) %></div></div>
+        <% } %>
         <div class="rounded-xl border border-amber-200 bg-amber-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-amber-700"><%= `${tt("sale", "Sale")}${qtySuffix}` %></div><div class="mt-1 text-base font-semibold text-amber-900"><%= formatQty(Math.abs(getTotalQty("saleQty", "saleQtyConverted"))) %></div></div>
-        <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-indigo-700"><%= `${tt("transfer", "Transfer")}${qtySuffix}` %></div><div class="mt-1 text-base font-semibold text-indigo-900"><%= formatQty(getTotalQty("transferQty", "transferQtyConverted")) %></div></div>
+        <% if (showTransferSplit) { %>
+          <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-indigo-700"><%= `${tt("transfer_in", "Transfer In")}${qtySuffix}` %></div><div class="mt-1 text-base font-semibold text-indigo-900"><%= formatQty(getTotalQty("transferInQty", "transferInQtyConverted")) %></div></div>
+          <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-indigo-700"><%= `${tt("transfer_out", "Transfer Out")}${qtySuffix}` %></div><div class="mt-1 text-base font-semibold text-indigo-900"><%= formatQty(Math.abs(getTotalQty("transferOutQty", "transferOutQtyConverted"))) %></div></div>
+        <% } else { %>
+          <div class="rounded-xl border border-indigo-200 bg-indigo-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-indigo-700"><%= `${tt("transfer", "Transfer")}${qtySuffix}` %></div><div class="mt-1 text-base font-semibold text-indigo-900"><%= formatQty(getTotalQty("transferQty", "transferQtyConverted")) %></div></div>
+        <% } %>
         <div class="rounded-xl border border-fuchsia-200 bg-fuchsia-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-fuchsia-700"><%= `${tt("adjustment", "Adjustment")}${qtySuffix}` %></div><div class="mt-1 text-base font-semibold text-fuchsia-900"><%= formatQty(getTotalQty("adjustmentQty", "adjustmentQtyConverted")) %></div></div>
         <div class="rounded-xl border border-slate-300 bg-slate-100 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-slate-700"><%= `${tt("closing", "Closing")}${qtySuffix}` %></div><div class="mt-1 text-base font-semibold text-slate-900"><%= formatQty(getTotalQty("closingQty", "closingQtyConverted")) %></div></div>
       </div>
@@ -442,9 +459,16 @@
               <% } %>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("opening", "Opening")}${qtySuffix}` %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("production", "Production")}${qtySuffix}` %></th>
-              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("purchase", "Purchase")}${qtySuffix}` %></th>
+              <% if (showPurchaseColumn) { %>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("purchase", "Purchase")}${qtySuffix}` %></th>
+              <% } %>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("sale", "Sale")}${qtySuffix}` %></th>
-              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("transfer", "Transfer")}${qtySuffix}` %></th>
+              <% if (showTransferSplit) { %>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("transfer_in", "Transfer In")}${qtySuffix}` %></th>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("transfer_out", "Transfer Out")}${qtySuffix}` %></th>
+              <% } else { %>
+                <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("transfer", "Transfer")}${qtySuffix}` %></th>
+              <% } %>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("adjustment", "Adjustment")}${qtySuffix}` %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("closing", "Closing")}${qtySuffix}` %></th>
               <% if (includeBranchColumn) { %>
@@ -485,9 +509,16 @@
                     <% } %>
                     <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "openingQty")) %></td>
                     <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "productionQty")) %></td>
-                    <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "purchaseQty")) %></td>
+                    <% if (showPurchaseColumn) { %>
+                      <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "purchaseQty")) %></td>
+                    <% } %>
                     <td class="px-3 py-2 text-right font-semibold"><%= formatQty(Math.abs(getQty(row, "saleQty"))) %></td>
-                    <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "transferQty")) %></td>
+                    <% if (showTransferSplit) { %>
+                      <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "transferInQty")) %></td>
+                      <td class="px-3 py-2 text-right font-semibold"><%= formatQty(Math.abs(getQty(row, "transferOutQty"))) %></td>
+                    <% } else { %>
+                      <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "transferQty")) %></td>
+                    <% } %>
                     <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "adjustmentQty")) %></td>
                     <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "closingQty")) %></td>
                     <% if (includeBranchColumn) { %>
@@ -499,9 +530,16 @@
                   <td colspan="<%= movementDescriptorColspan %>" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("total") %></td>
                   <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getGroupQty(group, "openingQty")) %></td>
                   <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getGroupQty(group, "productionQty")) %></td>
-                  <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getGroupQty(group, "purchaseQty")) %></td>
+                  <% if (showPurchaseColumn) { %>
+                    <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getGroupQty(group, "purchaseQty")) %></td>
+                  <% } %>
                   <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(Math.abs(getGroupQty(group, "saleQty"))) %></td>
-                  <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getGroupQty(group, "transferQty")) %></td>
+                  <% if (showTransferSplit) { %>
+                    <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getGroupQty(group, "transferInQty")) %></td>
+                    <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(Math.abs(getGroupQty(group, "transferOutQty"))) %></td>
+                  <% } else { %>
+                    <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getGroupQty(group, "transferQty")) %></td>
+                  <% } %>
                   <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getGroupQty(group, "adjustmentQty")) %></td>
                   <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getGroupQty(group, "closingQty")) %></td>
                   <% if (includeBranchColumn) { %>
@@ -527,9 +565,16 @@
                     <% } %>
                   <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "openingQty")) %></td>
                   <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "productionQty")) %></td>
-                  <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "purchaseQty")) %></td>
+                  <% if (showPurchaseColumn) { %>
+                    <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "purchaseQty")) %></td>
+                  <% } %>
                   <td class="px-3 py-2 text-right font-semibold"><%= formatQty(Math.abs(getQty(row, "saleQty"))) %></td>
-                  <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "transferQty")) %></td>
+                  <% if (showTransferSplit) { %>
+                    <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "transferInQty")) %></td>
+                    <td class="px-3 py-2 text-right font-semibold"><%= formatQty(Math.abs(getQty(row, "transferOutQty"))) %></td>
+                  <% } else { %>
+                    <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "transferQty")) %></td>
+                  <% } %>
                   <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "adjustmentQty")) %></td>
                   <td class="px-3 py-2 text-right font-semibold"><%= formatQty(getQty(row, "closingQty")) %></td>
                   <% if (includeBranchColumn) { %>
@@ -542,9 +587,16 @@
               <td colspan="<%= movementDescriptorColspan %>" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t("grand_total") %></td>
               <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getTotalQty("openingQty", "openingQtyConverted")) %></td>
               <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getTotalQty("productionQty", "productionQtyConverted")) %></td>
-              <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getTotalQty("purchaseQty", "purchaseQtyConverted")) %></td>
+              <% if (showPurchaseColumn) { %>
+                <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getTotalQty("purchaseQty", "purchaseQtyConverted")) %></td>
+              <% } %>
               <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(Math.abs(getTotalQty("saleQty", "saleQtyConverted"))) %></td>
-              <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getTotalQty("transferQty", "transferQtyConverted")) %></td>
+              <% if (showTransferSplit) { %>
+                <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getTotalQty("transferInQty", "transferInQtyConverted")) %></td>
+                <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(Math.abs(getTotalQty("transferOutQty", "transferOutQtyConverted"))) %></td>
+              <% } else { %>
+                <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getTotalQty("transferQty", "transferQtyConverted")) %></td>
+              <% } %>
               <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getTotalQty("adjustmentQty", "adjustmentQtyConverted")) %></td>
               <td class="px-3 py-2 text-right font-extrabold"><%= formatQty(getTotalQty("closingQty", "closingQtyConverted")) %></td>
               <% if (includeBranchColumn) { %>

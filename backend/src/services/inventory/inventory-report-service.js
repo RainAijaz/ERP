@@ -1530,6 +1530,8 @@ const buildDefaultStockMovementReportData = ({
     purchaseQty: 0,
     saleQty: 0,
     transferQty: 0,
+    transferInQty: 0,
+    transferOutQty: 0,
     adjustmentQty: 0,
     closingQty: 0,
     openingQtyConverted: (conversionUnits || []).reduce((acc, unit) => {
@@ -1553,6 +1555,16 @@ const buildDefaultStockMovementReportData = ({
       return acc;
     }, {}),
     transferQtyConverted: (conversionUnits || []).reduce((acc, unit) => {
+      const unitId = toPositiveInt(unit?.id);
+      if (unitId) acc[unitId] = 0;
+      return acc;
+    }, {}),
+    transferInQtyConverted: (conversionUnits || []).reduce((acc, unit) => {
+      const unitId = toPositiveInt(unit?.id);
+      if (unitId) acc[unitId] = 0;
+      return acc;
+    }, {}),
+    transferOutQtyConverted: (conversionUnits || []).reduce((acc, unit) => {
       const unitId = toPositiveInt(unit?.id);
       if (unitId) acc[unitId] = 0;
       return acc;
@@ -1619,6 +1631,8 @@ const buildStockMovementSummaryRows = ({
       purchaseQty: 0,
       saleQty: 0,
       transferQty: 0,
+      transferInQty: 0,
+      transferOutQty: 0,
       adjustmentQty: 0,
       closingQty: 0,
       convertedQuantities: {
@@ -1627,6 +1641,8 @@ const buildStockMovementSummaryRows = ({
         purchaseQty: {},
         saleQty: {},
         transferQty: {},
+        transferInQty: {},
+        transferOutQty: {},
         adjustmentQty: {},
         closingQty: {},
       },
@@ -1652,6 +1668,14 @@ const buildStockMovementSummaryRows = ({
       Number(existing.transferQty || 0) + Number(row?.transferQty || 0),
       3,
     );
+    existing.transferInQty = toQuantity(
+      Number(existing.transferInQty || 0) + Number(row?.transferInQty || 0),
+      3,
+    );
+    existing.transferOutQty = toQuantity(
+      Number(existing.transferOutQty || 0) + Number(row?.transferOutQty || 0),
+      3,
+    );
     existing.adjustmentQty = toQuantity(
       Number(existing.adjustmentQty || 0) + Number(row?.adjustmentQty || 0),
       3,
@@ -1667,6 +1691,8 @@ const buildStockMovementSummaryRows = ({
       "purchaseQty",
       "saleQty",
       "transferQty",
+      "transferInQty",
+      "transferOutQty",
       "adjustmentQty",
       "closingQty",
     ].forEach((metricKey) => {
@@ -1954,6 +1980,18 @@ const loadStockMovementRows = async ({
     )
     .select(
       knex.raw(
+        `COALESCE(SUM(CASE WHEN sl.txn_date >= ? AND sl.txn_date <= ? AND ${transferClause.sql} AND sl.direction = 1 THEN ${signedQtySql} ELSE 0 END), 0) as transfer_in_qty`,
+        [filters.from, filters.to, ...transferClause.bindings],
+      ),
+    )
+    .select(
+      knex.raw(
+        `COALESCE(SUM(CASE WHEN sl.txn_date >= ? AND sl.txn_date <= ? AND ${transferClause.sql} AND sl.direction = -1 THEN ${signedQtySql} ELSE 0 END), 0) as transfer_out_qty`,
+        [filters.from, filters.to, ...transferClause.bindings],
+      ),
+    )
+    .select(
+      knex.raw(
         `COALESCE(SUM(CASE WHEN sl.txn_date >= ? AND sl.txn_date <= ? AND ${adjustmentClause.sql} THEN ${signedQtySql} ELSE 0 END), 0) as adjustment_qty`,
         [filters.from, filters.to, ...adjustmentClause.bindings],
       ),
@@ -1993,6 +2031,14 @@ const loadStockMovementRows = async ({
         Number(row?.transfer_qty || 0) * Number(selectedUnitFactor),
         3,
       );
+      const transferInQty = toQuantity(
+        Number(row?.transfer_in_qty || 0) * Number(selectedUnitFactor),
+        3,
+      );
+      const transferOutQty = toQuantity(
+        Number(row?.transfer_out_qty || 0) * Number(selectedUnitFactor),
+        3,
+      );
       const adjustmentQty = toQuantity(
         Number(row?.adjustment_qty || 0) * Number(selectedUnitFactor),
         3,
@@ -2008,6 +2054,8 @@ const loadStockMovementRows = async ({
         purchaseQty,
         saleQty,
         transferQty,
+        transferInQty,
+        transferOutQty,
         adjustmentQty,
         closingQty,
       ].some((value) => hasNonZeroQuantity(value));
@@ -2019,6 +2067,8 @@ const loadStockMovementRows = async ({
         purchaseQty: {},
         saleQty: {},
         transferQty: {},
+        transferInQty: {},
+        transferOutQty: {},
         adjustmentQty: {},
         closingQty: {},
       };
@@ -2039,6 +2089,8 @@ const loadStockMovementRows = async ({
           convertedQuantities.purchaseQty[targetUomId] = 0;
           convertedQuantities.saleQty[targetUomId] = 0;
           convertedQuantities.transferQty[targetUomId] = 0;
+          convertedQuantities.transferInQty[targetUomId] = 0;
+          convertedQuantities.transferOutQty[targetUomId] = 0;
           convertedQuantities.adjustmentQty[targetUomId] = 0;
           convertedQuantities.closingQty[targetUomId] = 0;
           return;
@@ -2062,6 +2114,14 @@ const loadStockMovementRows = async ({
         );
         convertedQuantities.transferQty[targetUomId] = toQuantity(
           transferQty * factor,
+          3,
+        );
+        convertedQuantities.transferInQty[targetUomId] = toQuantity(
+          transferInQty * factor,
+          3,
+        );
+        convertedQuantities.transferOutQty[targetUomId] = toQuantity(
+          transferOutQty * factor,
           3,
         );
         convertedQuantities.adjustmentQty[targetUomId] = toQuantity(
@@ -2098,6 +2158,8 @@ const loadStockMovementRows = async ({
         purchaseQty,
         saleQty,
         transferQty,
+        transferInQty,
+        transferOutQty,
         adjustmentQty,
         closingQty,
         convertedQuantities,
@@ -2311,6 +2373,20 @@ const getInventoryStockMovementReportPageData = async ({ req, input = {} }) => {
       ),
       3,
     ),
+    transferInQty: toQuantity(
+      totalSourceRows.reduce(
+        (sum, row) => sum + Number(row.transferInQty || 0),
+        0,
+      ),
+      3,
+    ),
+    transferOutQty: toQuantity(
+      totalSourceRows.reduce(
+        (sum, row) => sum + Number(row.transferOutQty || 0),
+        0,
+      ),
+      3,
+    ),
     adjustmentQty: toQuantity(
       totalSourceRows.reduce(
         (sum, row) => sum + Number(row.adjustmentQty || 0),
@@ -2349,6 +2425,16 @@ const getInventoryStockMovementReportPageData = async ({ req, input = {} }) => {
       totalSourceRows,
       conversionUnits,
       "transferQty",
+    ),
+    transferInQtyConverted: sumMovementConvertedQuantities(
+      totalSourceRows,
+      conversionUnits,
+      "transferInQty",
+    ),
+    transferOutQtyConverted: sumMovementConvertedQuantities(
+      totalSourceRows,
+      conversionUnits,
+      "transferOutQty",
     ),
     adjustmentQtyConverted: sumMovementConvertedQuantities(
       totalSourceRows,
