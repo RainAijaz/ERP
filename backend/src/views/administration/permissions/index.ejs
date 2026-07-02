@@ -407,6 +407,7 @@
   let currentCategory = '';
   const collapsedPaths = new Set();
   const ACCOUNT_ACCESS_SCOPE_PATH = '<%= accountAccessScopePath %>';
+  const IS_USER_MODE = <%= isUserMode ? 'true' : 'false' %>;
 
   function syncAccountAccessPanel(path) {
     const panel = document.getElementById('account-access-shell');
@@ -429,6 +430,7 @@
     const normalizedPath = String(path || '').trim();
     const isEmptySelection = !normalizedPath || normalizedPath === 'none';
     const isAccountAccessSelection =
+      IS_USER_MODE &&
       ACCOUNT_ACCESS_SCOPE_PATH !== '' &&
       normalizedPath === ACCOUNT_ACCESS_SCOPE_PATH;
     
