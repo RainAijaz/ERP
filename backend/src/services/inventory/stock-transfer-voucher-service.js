@@ -14,6 +14,9 @@ const {
   normalizeTransferLinesForCommission,
   writeCommissionLedgerTx,
 } = require("../sales/commission-service");
+const {
+  buildStockShortfallMessageTx,
+} = require("../../utils/stock-rollback-diagnostics");
 
 const STOCK_TRANSFER_VOUCHER_TYPES = {
   out: "STN_OUT",
@@ -691,6 +694,7 @@ const rollbackInventoryStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
     "stock_state",
     "item_id",
     "sku_id",
+    "voucher_line_id",
     "direction",
     "qty",
     "qty_pairs",
@@ -742,15 +746,43 @@ const rollbackInventoryStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
       const target = await targetQuery.first();
       const qty = roundQty3(Number(row?.qty || 0));
       const value = roundCost2(Math.abs(Number(row?.value || 0)));
+      const availableQty = Number(target?.qty || 0);
+      const availableValue = Number(target?.value || 0);
+
+      if (direction === 1 && (availableQty < qty || availableValue < value - 0.05)) {
+        const rmItem = await trx("erp.items")
+          .select("code", "name")
+          .where({ id: identity.itemId })
+          .first();
+        const subjectLabel = rmItem
+          ? `${rmItem.name} (${rmItem.code})`
+          : `RM item #${identity.itemId}`;
+        const message = await buildStockShortfallMessageTx({
+          trx,
+          category: "RM",
+          branchId: identity.branchId,
+          stockState,
+          itemId: identity.itemId,
+          colorId: identity.colorId,
+          sizeId: identity.sizeId,
+          afterLedgerId: row?.id,
+          shortfallQty: availableQty < qty ? roundQty3(qty - availableQty) : 0.001,
+          availableQty,
+          subjectLabel,
+          metric: availableQty < qty ? "qty" : "value",
+        });
+        throw new HttpError(400, message);
+      }
+
       const nextQty =
         direction === -1
-          ? roundQty3(Number(target?.qty || 0) + qty)
-          : roundQty3(Number(target?.qty || 0) - qty);
+          ? roundQty3(availableQty + qty)
+          : roundQty3(Math.max(availableQty - qty, 0));
       const normalizedQty = Math.abs(nextQty) <= 0.0005 ? 0 : nextQty;
       const nextValueRaw =
         direction === -1
-          ? roundCost2(Number(target?.value || 0) + value)
-          : roundCost2(Number(target?.value || 0) - value);
+          ? roundCost2(availableValue + value)
+          : roundCost2(Math.max(availableValue - value, 0));
       const normalizedValue = normalizedQty === 0 ? 0 : nextValueRaw;
       const normalizedWac =
         normalizedQty !== 0
@@ -778,12 +810,30 @@ const rollbackInventoryStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
     const value = roundCost2(Math.abs(Number(row?.value || 0)));
     if (!branchId || !skuId || !Number.isInteger(qtyPairs) || qtyPairs <= 0)
       continue;
+
+    // The ledger row itself doesn't record which bucket (loose/packed) it
+    // moved, so re-derive it from the originating voucher line's row_status,
+    // the same way the forward-posting logic (moveSkuStockPairsTx) does.
+    let usePackedBucket = false;
+    if (category === "FG") {
+      const voucherLineId = toPositiveInt(row?.voucher_line_id);
+      const line = voucherLineId
+        ? await trx("erp.voucher_line")
+            .select("meta")
+            .where({ id: voucherLineId })
+            .first()
+        : null;
+      const meta = line?.meta && typeof line.meta === "object" ? line.meta : {};
+      usePackedBucket = normalizeRowStatus(meta.row_status) === "PACKED";
+    }
+
     await ensureSkuBalanceSeedTx({
       trx,
       branchId,
       stockState,
       category,
       skuId,
+      isPacked: usePackedBucket,
     });
     const existing = await trx("erp.stock_balance_sku")
       .select("qty_pairs", "value")
@@ -791,19 +841,46 @@ const rollbackInventoryStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
         branch_id: branchId,
         stock_state: stockState,
         category,
-        is_packed: false,
+        is_packed: usePackedBucket,
         sku_id: skuId,
       })
       .first()
       .forUpdate();
+    const availableQtyPairs = Number(existing?.qty_pairs || 0);
+    const availableValue = Number(existing?.value || 0);
+
+    if (direction === 1 && (availableQtyPairs < qtyPairs || availableValue < value - 0.05)) {
+      const skuRow = await trx("erp.skus")
+        .select("sku_code")
+        .where({ id: skuId })
+        .first();
+      const subjectLabel = skuRow?.sku_code
+        ? `SKU ${skuRow.sku_code}`
+        : `SKU #${skuId}`;
+      const message = await buildStockShortfallMessageTx({
+        trx,
+        category,
+        branchId,
+        stockState,
+        skuId,
+        afterLedgerId: row?.id,
+        shortfallQty:
+          availableQtyPairs < qtyPairs ? qtyPairs - availableQtyPairs : 1,
+        availableQty: availableQtyPairs,
+        subjectLabel,
+        metric: availableQtyPairs < qtyPairs ? "qty" : "value",
+      });
+      throw new HttpError(400, message);
+    }
+
     const nextQtyPairs =
       direction === -1
-        ? Number(existing?.qty_pairs || 0) + qtyPairs
-        : Number(existing?.qty_pairs || 0) - qtyPairs;
+        ? availableQtyPairs + qtyPairs
+        : Math.max(availableQtyPairs - qtyPairs, 0);
     const nextValue =
       direction === -1
-        ? roundCost2(Number(existing?.value || 0) + value)
-        : roundCost2(Number(existing?.value || 0) - value);
+        ? roundCost2(availableValue + value)
+        : Math.max(roundCost2(availableValue - value), 0);
     const normalizedQtyPairs = Number(nextQtyPairs || 0);
     const normalizedValue =
       normalizedQtyPairs === 0 ? 0 : Number(nextValue || 0);
@@ -816,7 +893,7 @@ const rollbackInventoryStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
         branch_id: branchId,
         stock_state: stockState,
         category,
-        is_packed: false,
+        is_packed: usePackedBucket,
         sku_id: skuId,
       })
       .update({

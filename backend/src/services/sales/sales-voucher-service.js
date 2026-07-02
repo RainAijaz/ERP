@@ -11,6 +11,9 @@ const {
   resolveNegativeStockApprovalRouting,
 } = require("../inventory/negative-stock-approval");
 const {
+  buildStockShortfallMessageTx,
+} = require("../../utils/stock-rollback-diagnostics");
+const {
   evaluateSalesDiscountPolicy,
   loadActiveSalesDiscountPolicyMapTx,
 } = require("./sales-discount-policy-service");
@@ -2873,17 +2876,28 @@ const removeSalesSkuFromLedgerTx = async ({ trx, row }) => {
     .forUpdate();
   const availableQtyPairs = Number(target?.qty_pairs || 0);
   const availableValue = Number(target?.value || 0);
-  if (availableQtyPairs < qtyPairs) {
-    throw new HttpError(
-      400,
-      `Stock rollback failed: ${category} qty underflow for SKU ${Number(skuId)}`,
-    );
-  }
-  if (availableValue < value - 0.05) {
-    throw new HttpError(
-      400,
-      `Stock rollback failed: ${category} value underflow for SKU ${Number(skuId)}`,
-    );
+  if (availableQtyPairs < qtyPairs || availableValue < value - 0.05) {
+    const skuRow = await trx("erp.skus")
+      .select("sku_code")
+      .where({ id: Number(skuId) })
+      .first();
+    const subjectLabel = skuRow?.sku_code
+      ? `SKU ${skuRow.sku_code}`
+      : `SKU #${Number(skuId)}`;
+    const message = await buildStockShortfallMessageTx({
+      trx,
+      category,
+      branchId,
+      stockState,
+      skuId: Number(skuId),
+      afterLedgerId: row?.id,
+      shortfallQty:
+        availableQtyPairs < qtyPairs ? qtyPairs - availableQtyPairs : 1,
+      availableQty: availableQtyPairs,
+      subjectLabel,
+      metric: availableQtyPairs < qtyPairs ? "qty" : "value",
+    });
+    throw new HttpError(400, message);
   }
 
   const nextQtyPairs = Math.max(availableQtyPairs - qtyPairs, 0);

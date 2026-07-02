@@ -6,6 +6,9 @@ const {
   resolveVoucherApprovalRequiredTx,
 } = require("../../utils/voucher-approval-policy");
 const { syncVoucherGlPostingTx } = require("../financial/gl-posting-service");
+const {
+  buildStockShortfallMessageTx,
+} = require("../../utils/stock-rollback-diagnostics");
 
 const PURCHASE_VOUCHER_TYPES = {
   goodsReceiptNote: "GRN",
@@ -675,17 +678,29 @@ const removeRmStockFromLedgerTx = async ({ trx, row }) => {
   const existing = await existingQuery.first();
   const availableQty = Number(existing?.qty || 0);
   const availableValue = Number(existing?.value || 0);
-  if (availableQty < qty) {
-    throw new HttpError(
-      400,
-      `Stock rollback failed: RM qty underflow for item ${itemId}`,
-    );
-  }
-  if (availableValue < value - 0.05) {
-    throw new HttpError(
-      400,
-      `Stock rollback failed: RM value underflow for item ${itemId}`,
-    );
+  if (availableQty < qty || availableValue < value - 0.05) {
+    const rmItem = await trx("erp.items")
+      .select("code", "name")
+      .where({ id: itemId })
+      .first();
+    const subjectLabel = rmItem
+      ? `${rmItem.name} (${rmItem.code})`
+      : `RM item #${itemId}`;
+    const message = await buildStockShortfallMessageTx({
+      trx,
+      category: "RM",
+      branchId,
+      stockState,
+      itemId,
+      colorId,
+      sizeId,
+      afterLedgerId: row?.id,
+      shortfallQty: availableQty < qty ? roundQty3(qty - availableQty) : 0.001,
+      availableQty,
+      subjectLabel,
+      metric: availableQty < qty ? "qty" : "value",
+    });
+    throw new HttpError(400, message);
   }
   const nextQty = Math.max(roundQty3(availableQty - qty), 0);
   const nextValue =
