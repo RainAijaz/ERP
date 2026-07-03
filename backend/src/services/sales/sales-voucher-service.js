@@ -2499,6 +2499,7 @@ const insertSalesStockLedgerTx = async ({
   qtyPairs,
   unitCost,
   value,
+  isPacked = null,
 }) => {
   await trx("erp.stock_ledger").insert({
     branch_id: Number(branchId),
@@ -2516,6 +2517,7 @@ const insertSalesStockLedgerTx = async ({
     qty_pairs: Number(qtyPairs),
     unit_cost: roundUnitCost6(unitCost),
     value: roundCost2(value),
+    is_packed: isPacked === null || isPacked === undefined ? null : Boolean(isPacked),
   });
 };
 
@@ -2616,8 +2618,15 @@ const applySalesSkuStockOutTx = async ({
     .orderBy("qty_pairs", "desc")
     .forUpdate();
 
+  // Tracked separately per bucket (packed vs loose) so the resulting
+  // ledger row(s) reflect which bucket the stock was actually drawn from,
+  // instead of collapsing a cross-bucket sale into a single misleading tag.
+  const consumedByBucket = {
+    true: { pairs: 0, value: 0 },
+    false: { pairs: 0, value: 0 },
+  };
+
   let remainingPairs = Number(normalizedQtyPairsOut);
-  let consumedValueTotal = 0;
   for (const row of rows) {
     const rowQtyPairs = Number(row?.qty_pairs || 0);
     if (remainingPairs <= 0 || rowQtyPairs <= 0) continue;
@@ -2635,6 +2644,7 @@ const applySalesSkuStockOutTx = async ({
       nextQtyPairs > 0 ? Math.max(roundCost2(nextValueRaw), 0) : 0;
     const nextWac =
       nextQtyPairs > 0 ? roundUnitCost6(nextValue / nextQtyPairs) : 0;
+    const bucketKey = row.is_packed === true ? "true" : "false";
 
     await trx("erp.stock_balance_sku")
       .where({
@@ -2653,7 +2663,10 @@ const applySalesSkuStockOutTx = async ({
         last_txn_at: trx.fn.now(),
       });
 
-    consumedValueTotal = roundCost2(consumedValueTotal + consumedValue);
+    consumedByBucket[bucketKey].pairs += consumePairs;
+    consumedByBucket[bucketKey].value = roundCost2(
+      consumedByBucket[bucketKey].value + consumedValue,
+    );
     remainingPairs -= consumePairs;
   }
 
@@ -2699,29 +2712,31 @@ const applySalesSkuStockOutTx = async ({
         wac: nextWac,
         last_txn_at: trx.fn.now(),
       });
-    consumedValueTotal = roundCost2(
-      consumedValueTotal + Number(shortageValue || 0),
+    consumedByBucket.false.pairs += Number(remainingPairs);
+    consumedByBucket.false.value = roundCost2(
+      consumedByBucket.false.value + Number(shortageValue || 0),
     );
     remainingPairs = 0;
   }
 
-  const avgUnitCost =
-    normalizedQtyPairsOut > 0
-      ? roundUnitCost6(consumedValueTotal / normalizedQtyPairsOut)
-      : 0;
-  await insertSalesStockLedgerTx({
-    trx,
-    branchId,
-    skuId,
-    category,
-    voucherId,
-    voucherLineId,
-    txnDate: voucherDate,
-    direction: -1,
-    qtyPairs: normalizedQtyPairsOut,
-    unitCost: avgUnitCost,
-    value: -consumedValueTotal,
-  });
+  for (const [bucketKey, consumed] of Object.entries(consumedByBucket)) {
+    if (consumed.pairs <= 0) continue;
+    const bucketUnitCost = roundUnitCost6(consumed.value / consumed.pairs);
+    await insertSalesStockLedgerTx({
+      trx,
+      branchId,
+      skuId,
+      category,
+      voucherId,
+      voucherLineId,
+      txnDate: voucherDate,
+      direction: -1,
+      qtyPairs: consumed.pairs,
+      unitCost: bucketUnitCost,
+      value: -consumed.value,
+      isPacked: bucketKey === "true",
+    });
+  }
 };
 
 const applySalesSkuStockInTx = async ({
@@ -2816,17 +2831,27 @@ const addBackSalesSkuFromLedgerTx = async ({ trx, row }) => {
   if (!Number.isInteger(qtyPairs) || qtyPairs <= 0) return;
 
   await ensureSkuBalanceSeedTx({ trx, branchId, skuId, category });
-  const target = await trx("erp.stock_balance_sku")
+  // Prefer the bucket the ledger row actually recorded (post is_packed
+  // column); older rows fall back to whichever bucket sorts first, since
+  // we have no per-row record of which one was originally drawn from.
+  const targetIsPacked =
+    row?.is_packed === null || row?.is_packed === undefined
+      ? null
+      : row.is_packed === true;
+  const targetQuery = trx("erp.stock_balance_sku")
     .select("is_packed", "qty_pairs", "value")
     .where({
       branch_id: Number(branchId),
       stock_state: stockState,
       category,
       sku_id: Number(skuId),
-    })
-    .orderBy("is_packed", "asc")
-    .first()
-    .forUpdate();
+    });
+  if (targetIsPacked !== null) {
+    targetQuery.andWhere({ is_packed: targetIsPacked });
+  } else {
+    targetQuery.orderBy("is_packed", "asc");
+  }
+  const target = await targetQuery.first().forUpdate();
   if (!target) return;
 
   const nextQtyPairs = Number(target.qty_pairs || 0) + Number(qtyPairs || 0);
@@ -2936,6 +2961,7 @@ const rollbackSalesStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
       "direction",
       "qty_pairs",
       "value",
+      "is_packed",
     )
     .where({ voucher_header_id: normalizedVoucherId })
     .whereIn("category", ["FG", "SFG"])

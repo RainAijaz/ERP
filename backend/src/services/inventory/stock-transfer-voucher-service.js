@@ -47,6 +47,7 @@ const RM_BALANCE_CONFLICT_TARGET_SQL =
   "(branch_id, stock_state, item_id, COALESCE(color_id, 0), COALESCE(size_id, 0))";
 const FG_PACKED_FLAG_SQL = `
 CASE
+  WHEN sl.is_packed IS NOT NULL THEN sl.is_packed
   WHEN sln.is_packed IS NOT NULL THEN sln.is_packed
   WHEN pl.is_packed IS NOT NULL THEN pl.is_packed
   WHEN upper(trim(coalesce(vl.meta->>'status', vl.meta->>'row_status', ''))) = 'PACKED' THEN true
@@ -659,6 +660,7 @@ const insertSkuStockLedgerTx = async ({
   qtyPairs,
   unitCost,
   value,
+  isPacked = null,
 }) => {
   await trx("erp.stock_ledger").insert({
     branch_id: Number(branchId),
@@ -678,6 +680,7 @@ const insertSkuStockLedgerTx = async ({
     qty_pairs: Number(qtyPairs || 0),
     unit_cost: roundUnitCost6(unitCost),
     value: roundCost2(value),
+    is_packed: isPacked === null || isPacked === undefined ? null : Boolean(isPacked),
   });
 };
 
@@ -694,6 +697,7 @@ const rollbackInventoryStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
     "stock_state",
     "item_id",
     "sku_id",
+    "is_packed",
     "voucher_line_id",
     "direction",
     "qty",
@@ -811,20 +815,27 @@ const rollbackInventoryStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
     if (!branchId || !skuId || !Number.isInteger(qtyPairs) || qtyPairs <= 0)
       continue;
 
-    // The ledger row itself doesn't record which bucket (loose/packed) it
-    // moved, so re-derive it from the originating voucher line's row_status,
-    // the same way the forward-posting logic (moveSkuStockPairsTx) does.
+    // Older ledger rows (pre is_packed column) don't record which bucket
+    // (loose/packed) they moved, so re-derive it from the originating
+    // voucher line's row_status, the same way the forward-posting logic
+    // (moveSkuStockPairsTx) does. Newer rows carry their own bucket directly,
+    // which is required for sales that split across both buckets.
     let usePackedBucket = false;
     if (category === "FG") {
-      const voucherLineId = toPositiveInt(row?.voucher_line_id);
-      const line = voucherLineId
-        ? await trx("erp.voucher_line")
-            .select("meta")
-            .where({ id: voucherLineId })
-            .first()
-        : null;
-      const meta = line?.meta && typeof line.meta === "object" ? line.meta : {};
-      usePackedBucket = normalizeRowStatus(meta.row_status) === "PACKED";
+      if (row?.is_packed !== null && row?.is_packed !== undefined) {
+        usePackedBucket = row.is_packed === true;
+      } else {
+        const voucherLineId = toPositiveInt(row?.voucher_line_id);
+        const line = voucherLineId
+          ? await trx("erp.voucher_line")
+              .select("meta")
+              .where({ id: voucherLineId })
+              .first()
+          : null;
+        const meta =
+          line?.meta && typeof line.meta === "object" ? line.meta : {};
+        usePackedBucket = normalizeRowStatus(meta.row_status) === "PACKED";
+      }
     }
 
     await ensureSkuBalanceSeedTx({
@@ -1224,6 +1235,7 @@ const moveSkuStockPairsTx = async ({
     qtyPairs: normalizedQtyPairs,
     unitCost: normalizedUnitCostBase,
     value,
+    isPacked: usePackedBucket,
   });
   await insertSkuStockLedgerTx({
     trx,
@@ -1238,6 +1250,7 @@ const moveSkuStockPairsTx = async ({
     qtyPairs: normalizedQtyPairs,
     unitCost: normalizedUnitCostBase,
     value,
+    isPacked: usePackedBucket,
   });
 };
 
@@ -2739,6 +2752,7 @@ const consumeInTransitRemainderTx = async ({
     qtyPairs: remainderPairs,
     unitCost: unitCostBase,
     value: remainderValue,
+    isPacked: usePackedBucket,
   });
 };
 

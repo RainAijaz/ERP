@@ -62,6 +62,7 @@ const MOVEMENT_VOUCHER_CODES = Object.freeze({
 
 const FG_PACKED_FLAG_SQL = `
 CASE
+  WHEN sl.is_packed IS NOT NULL THEN sl.is_packed
   WHEN sln.is_packed IS NOT NULL THEN sln.is_packed
   WHEN pl.is_packed IS NOT NULL THEN pl.is_packed
   WHEN upper(trim(coalesce(vl.meta->>'status', vl.meta->>'row_status', ''))) = 'PACKED' THEN true
@@ -3167,7 +3168,7 @@ const loadStockTransferOutRows = async ({
     .select(
       "vh.id as voucher_id",
       "vh.voucher_no",
-      knex.raw("coalesce(sth.dispatch_date, vh.voucher_date) as movement_date"),
+      knex.raw("vh.voucher_date as movement_date"),
       "vh.branch_id as source_branch_id",
       "sb.name as source_branch_name",
       "sth.dest_branch_id as destination_branch_id",
@@ -3210,10 +3211,7 @@ const loadStockTransferOutRows = async ({
       "vh.voucher_type_code": "STN_OUT",
       "vh.status": "APPROVED",
     })
-    .whereRaw("coalesce(sth.dispatch_date, vh.voucher_date) between ? and ?", [
-      filters.from,
-      filters.to,
-    ]);
+    .whereRaw("vh.voucher_date between ? and ?", [filters.from, filters.to]);
 
   if (filters.sourceBranchIds.length) {
     query = query.whereIn("vh.branch_id", filters.sourceBranchIds);
@@ -3345,7 +3343,7 @@ const loadStockTransferPendingForInRows = async ({
     .select(
       "vh.id as voucher_id",
       "vh.voucher_no",
-      knex.raw("coalesce(sth.dispatch_date, vh.voucher_date) as movement_date"),
+      knex.raw("vh.voucher_date as movement_date"),
       "vh.branch_id as source_branch_id",
       "sb.name as source_branch_name",
       "sth.dest_branch_id as destination_branch_id",
@@ -3383,10 +3381,7 @@ const loadStockTransferPendingForInRows = async ({
     })
     .whereNull("sth.received_voucher_id")
     .whereRaw("upper(coalesce(sth.status::text, '')) != 'RECEIVED'")
-    .whereRaw("coalesce(sth.dispatch_date, vh.voucher_date) between ? and ?", [
-      filters.from,
-      filters.to,
-    ]);
+    .whereRaw("vh.voucher_date between ? and ?", [filters.from, filters.to]);
 
   if (filters.sourceBranchIds.length) {
     query = query.whereIn("vh.branch_id", filters.sourceBranchIds);
@@ -3487,7 +3482,7 @@ const loadStockTransferInRows = async ({
     .select(
       "vh.id as voucher_id",
       "vh.voucher_no",
-      knex.raw("coalesce(gih.received_date, vh.voucher_date) as movement_date"),
+      knex.raw("vh.voucher_date as movement_date"),
       "stn.branch_id as source_branch_id",
       "sb.name as source_branch_name",
       "sth.dest_branch_id as destination_branch_id",
@@ -3524,10 +3519,7 @@ const loadStockTransferInRows = async ({
       "vh.status": "APPROVED",
       "stn.status": "APPROVED",
     })
-    .whereRaw("coalesce(gih.received_date, vh.voucher_date) between ? and ?", [
-      filters.from,
-      filters.to,
-    ]);
+    .whereRaw("vh.voucher_date between ? and ?", [filters.from, filters.to]);
 
   if (filters.sourceBranchIds.length) {
     query = query.whereIn("stn.branch_id", filters.sourceBranchIds);
