@@ -221,6 +221,8 @@
 		const reasonNotesRequiredMessage = <%- JSON.stringify(toFriendlyLabel("reason_notes_required", "Reason notes are required.")) %>;
 		const deleteConfirmMessage = <%- JSON.stringify(toFriendlyLabel("confirm_delete", "Are you sure?")) %>;
 		const atLeastOneValidLineMessage = <%- JSON.stringify(toFriendlyLabel("at_least_one_valid_line_required", "At least one valid line is required.")) %>;
+		const articlesMissingAddedMessage = <%- JSON.stringify(toFriendlyLabel("articles_missing_added", "Some articles with stock were not in the list and have been added below. Please enter their counted quantity before confirming.")) %>;
+		const reconcileArticlesFailedMessage = <%- JSON.stringify(toFriendlyLabel("reconcile_articles_failed", "Unable to verify the article list before saving. Please check your connection and try again.")) %>;
 
 		const _t = {
 			raw_material: <%- JSON.stringify(t("raw_material")) %>,
@@ -405,55 +407,65 @@
 			if (tableLoadingOverlay) tableLoadingOverlay.classList.add("hidden");
 		};
 
-		const loadArticlesForGroup = async (groupId) => {
-			const stockType = currentStockType();
+		const buildArticlesUrl = (groupId, stockType) => {
 			const voucherDateInput = form.querySelector('[name="voucher_date"]');
 			const voucherDate = voucherDateInput ? voucherDateInput.value : "";
+			const statusSelect = form.querySelector("[data-product-group-status]");
+			const statusFilter = statusSelect ? statusSelect.value : "";
+			return `${basePath}/articles?group_id=${encodeURIComponent(groupId)}&stock_type=${encodeURIComponent(stockType)}&date=${encodeURIComponent(voucherDate)}&status=${encodeURIComponent(statusFilter)}`;
+		};
+
+		// Shared by the initial group auto-load and the pre-save reconciliation check
+		// so a "missing article" row always looks and behaves like an auto-loaded one.
+		const articleToRow = (article, stockType) => {
+			if (stockType === "RM") {
+				return {
+					...rowTemplate(stockType),
+					item_id: article.item_id,
+					color_id: article.color_id || null,
+					size_id: article.size_id || null,
+					_auto_loaded: true,
+					_unfilled: true,
+					_snap_base: article.system_qty_base,
+					counted_stock_qty: null,
+				};
+			}
+			// Update skuMap in-place so resolveSystemSnapshot picks up date-specific WAC/bucket split.
+			const existing = skuMap.get(Number(article.sku_id));
+			if (existing) {
+				existing.system_qty_pairs = Number(article.system_qty_pairs || 0);
+				existing.system_loose_qty_pairs = Number(article.system_loose_qty_pairs || 0);
+				existing.system_packed_qty_pairs = Number(article.system_packed_qty_pairs || 0);
+				existing.system_loose_wac = Number(article.system_loose_wac || 0);
+				existing.system_packed_wac = Number(article.system_packed_wac || 0);
+			}
+			return {
+				...rowTemplate(stockType),
+				sku_id: article.sku_id,
+				_auto_loaded: true,
+				_unfilled: true,
+				// Don't freeze _snap_pairs for FG — resolveSystemSnapshot will use
+				// fgResolved.qtyPairs which correctly splits PACKED/LOOSE based on
+				// the selected unit (non-base → packed, base → loose).
+				_snap_pairs: null,
+				counted_stock_qty: null,
+			};
+		};
+
+		const articleIdentityKey = (source, stockType) => stockType === "RM"
+			? `${toInt(source.item_id) || 0}|${toInt(source.color_id) || 0}|${toInt(source.size_id) || 0}`
+			: `${toInt(source.sku_id) || 0}`;
+
+		const loadArticlesForGroup = async (groupId) => {
+			const stockType = currentStockType();
 			showTableLoading();
 			try {
-				const statusSelect = form.querySelector("[data-product-group-status]");
-				const statusFilter = statusSelect ? statusSelect.value : "";
-				const url = `${basePath}/articles?group_id=${encodeURIComponent(groupId)}&stock_type=${encodeURIComponent(stockType)}&date=${encodeURIComponent(voucherDate)}&status=${encodeURIComponent(statusFilter)}`;
+				const url = buildArticlesUrl(groupId, stockType);
 				const resp = await fetch(url, { credentials: "same-origin" });
 				if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
 				const data = await resp.json();
 				const articles = Array.isArray(data.articles) ? data.articles : [];
-				let newRows = [];
-				if (stockType === "RM") {
-					newRows = articles.map((article) => ({
-						...rowTemplate(stockType),
-						item_id: article.item_id,
-						color_id: article.color_id || null,
-						size_id: article.size_id || null,
-						_auto_loaded: true,
-						_unfilled: true,
-						_snap_base: article.system_qty_base,
-						counted_stock_qty: null,
-					}));
-				} else {
-					newRows = articles.map((article) => {
-						// Update skuMap in-place so resolveSystemSnapshot picks up date-specific WAC/bucket split.
-						const existing = skuMap.get(Number(article.sku_id));
-						if (existing) {
-							existing.system_qty_pairs = Number(article.system_qty_pairs || 0);
-							existing.system_loose_qty_pairs = Number(article.system_loose_qty_pairs || 0);
-							existing.system_packed_qty_pairs = Number(article.system_packed_qty_pairs || 0);
-							existing.system_loose_wac = Number(article.system_loose_wac || 0);
-							existing.system_packed_wac = Number(article.system_packed_wac || 0);
-						}
-						return {
-							...rowTemplate(stockType),
-							sku_id: article.sku_id,
-							_auto_loaded: true,
-							_unfilled: true,
-							// Don't freeze _snap_pairs for FG — resolveSystemSnapshot will use
-							// fgResolved.qtyPairs which correctly splits PACKED/LOOSE based on
-							// the selected unit (non-base → packed, base → loose).
-							_snap_pairs: null,
-							counted_stock_qty: null,
-						};
-					});
-				}
+				const newRows = articles.map((article) => articleToRow(article, stockType));
 				rowsState = newRows.length ? newRows : [rowTemplate(stockType)];
 			} catch (err) {
 				console.error("Failed to load articles for group:", err);
@@ -461,6 +473,33 @@
 			}
 			renderRows();
 			hideTableLoading();
+		};
+
+		// Pre-save safety net: re-fetch the authoritative article list for the
+		// selected group/status/date and append any article with stock that
+		// isn't represented by a row yet (e.g. stock appeared after the page
+		// loaded, or a manually-added row was skipped). Returns how many were
+		// appended so the caller can decide whether to block the save.
+		const reconcileMissingArticles = async () => {
+			const stockType = currentStockType();
+			const groupVal = productGroupSelect?.value || "";
+			if (!groupVal) return { appended: 0 };
+			const url = buildArticlesUrl(groupVal, stockType);
+			const resp = await fetch(url, { credentials: "same-origin" });
+			if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+			const data = await resp.json();
+			const articles = Array.isArray(data.articles) ? data.articles : [];
+			const existingKeys = new Set(
+				rowsState
+					.filter((row) => (stockType === "RM" ? toInt(row.item_id) : toInt(row.sku_id)))
+					.map((row) => articleIdentityKey(row, stockType)),
+			);
+			const missingArticles = articles.filter((article) => !existingKeys.has(articleIdentityKey(article, stockType)));
+			if (!missingArticles.length) return { appended: 0 };
+			const missingRows = missingArticles.map((article) => articleToRow(article, stockType));
+			rowsState = [...rowsState, ...missingRows];
+			renderRows();
+			return { appended: missingRows.length };
 		};
 
 		const rowTemplate = (stockType) => ({
@@ -647,8 +686,8 @@
 			next.system_qty = qty3(snapshot.systemQty || 0);
 			// Difference is derived from either split quantities (in/out) or counted stock based on reason code.
 			if (usePhysicalCountField) {
-				if (next._auto_loaded && next._unfilled) {
-					// Auto-loaded row not yet filled by user — keep blank, no difference computed.
+				if (next._unfilled) {
+					// Row not yet filled by user (auto-loaded or newly added) — keep blank, no difference computed.
 					next.counted_stock_qty = null;
 					next.physical_qty = 0;
 					next.difference_qty = 0;
@@ -876,6 +915,8 @@
 			const availableRmItems = (selectedGroupId && selectedGroupId !== "all")
 				? rmItems.filter((entry) => Number(entry.group_id || 0) === selectedGroupId)
 				: rmItems;
+			// A SKU already picked on another row must not be offered again — no duplicate articles in one voucher.
+			const usedSkuIds = new Set(rowsState.map((r) => toInt(r.sku_id)).filter(Boolean));
 
 			linesBody.innerHTML = rowsState.map((row, index) => {
 				const normalized = applyDerivedRow(row, stockType);
@@ -895,7 +936,7 @@
 					const colorState = getRmColorState(normalized.item_id);
 					const sizeState = getRmSizeState(normalized.item_id);
 					const diffCellMarkup = `<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly data-display-field="difference_qty" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold" value="${normalized.difference_qty.toFixed(3)}"></td>`;
-					const isUnfilled = Boolean(normalized._auto_loaded && normalized._unfilled);
+					const isUnfilled = Boolean(normalized._unfilled);
 					const qtyCellMarkup = usePhysicalCountField
 						? `<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border ${isUnfilled ? "border-amber-400 bg-amber-50" : "border-slate-300 bg-white"} px-2 text-right" data-field="counted_stock_qty" data-row-field="counted_stock_qty" data-line-index="${index}" value="${isUnfilled ? "" : qty3(normalized.counted_stock_qty).toFixed(3)}" ${isUnfilled ? 'placeholder="Enter qty" data-unfilled-required' : ""} ${canSave ? "" : "readonly"}></td>`
 						: `
@@ -945,7 +986,7 @@
 				}
 
 				const diffCellMarkup = `<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly data-display-field="difference_qty" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold" value="${normalized.difference_qty.toFixed(3)}"></td>`;
-				const isUnfilled = Boolean(normalized._auto_loaded && normalized._unfilled);
+				const isUnfilled = Boolean(normalized._unfilled);
 				const qtyCellMarkup = usePhysicalCountField
 					? `<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border ${isUnfilled ? "border-amber-400 bg-amber-50" : "border-slate-300 bg-white"} px-2 text-right" data-field="counted_stock_qty" data-row-field="counted_stock_qty" data-line-index="${index}" value="${isUnfilled ? "" : qty3(normalized.counted_stock_qty).toFixed(3)}" ${isUnfilled ? 'placeholder="Enter qty" data-unfilled-required' : ""} ${canSave ? "" : "readonly"}></td>`
 					: `
@@ -963,7 +1004,7 @@
 						const label = String(sku?.sku_name || `SKU ${normalized.sku_id || ""}`).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 						return `<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-700 cursor-default" value="${label}"></td>`;
 					})()
-					: `<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="sku_id" data-row-field="sku_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${optionMarkup(skuRows.map((entry) => ({ id: entry.id, label: entry.sku_name })), normalized.sku_id, "Select SKU")}</select></td>`;
+					: `<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="sku_id" data-row-field="sku_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${optionMarkup(skuRows.filter((entry) => !usedSkuIds.has(Number(entry.id))).map((entry) => ({ id: entry.id, label: entry.sku_name })), normalized.sku_id, "Select SKU")}</select></td>`;
 				const uomIsSet = normalized.uom_id !== null && normalized.uom_id !== undefined;
 				const fgUomCellMarkup = (skuIsSet && uomIsSet)
 					? (() => {
@@ -1094,7 +1135,7 @@
 			if (fieldKey === "qty_out") row.qty_out = qty3(rawValue);
 			if (fieldKey === "counted_stock_qty") {
 				row.counted_stock_qty = qty3(rawValue);
-				if (row._auto_loaded && row._unfilled) {
+				if (row._unfilled) {
 					row._unfilled = false;
 					const rowEl = linesBody.querySelector(`tr[data-line-index="${lineIndex}"]`);
 					const countedInput = rowEl?.querySelector('[data-row-field="counted_stock_qty"]');
@@ -1113,11 +1154,41 @@
 		};
 
 		linesBody.addEventListener("keydown", (event) => {
-			if (event.key !== "Enter") return;
 			const target = event.target;
 			if (!(target instanceof HTMLElement)) return;
 			const lineIndex = Number(target.getAttribute("data-line-index") || -1);
 			const fieldKey = String(target.getAttribute("data-row-field") || "").trim();
+
+			if (
+				(event.key === "ArrowDown" || event.key === "ArrowUp")
+				&& target instanceof HTMLInputElement
+				&& target.type === "number"
+			) {
+				if (lineIndex < 0 || !fieldKey) return;
+				// Arrows must never step the number value; they move between rows instead.
+				event.preventDefault();
+				if (fieldKey === "qty_in" || fieldKey === "qty_out" || fieldKey === "counted_stock_qty") {
+					commitNumericFieldImmediately({ lineIndex, fieldKey, rawValue: target.value });
+				}
+				const nextLineIndex = event.key === "ArrowDown" ? lineIndex + 1 : lineIndex - 1;
+				if (nextLineIndex < 0 || nextLineIndex >= rowsState.length) return;
+				pendingEnterFocus = { lineIndex: String(nextLineIndex), fieldKey: String(fieldKey) };
+				// Blurring fires "change" when the value was edited; updateRowField then
+				// re-renders and restores focus from pendingEnterFocus. If no change event
+				// fired, pendingEnterFocus is still set and we move focus manually.
+				target.blur();
+				if (pendingEnterFocus) {
+					pendingEnterFocus = null;
+					const nextInput = linesBody.querySelector(`[data-line-index="${nextLineIndex}"][data-row-field="${fieldKey}"]`);
+					if (nextInput instanceof HTMLInputElement) {
+						nextInput.focus();
+						nextInput.select();
+					}
+				}
+				return;
+			}
+
+			if (event.key !== "Enter") return;
 			if (lineIndex < 0 || !fieldKey) return;
 			if (fieldKey === "qty_in" || fieldKey === "qty_out" || fieldKey === "counted_stock_qty") {
 				commitNumericFieldImmediately({ lineIndex, fieldKey, rawValue: target.value });
@@ -1132,6 +1203,26 @@
 				fieldKey: String(nextFieldKey),
 			};
 		}, true);
+
+		// The browser default for a focused number input is to spin the value on
+		// mouse wheel instead of scrolling. Block that and scroll the page manually.
+		linesBody.addEventListener("wheel", (event) => {
+			const target = event.target;
+			if (!(target instanceof HTMLInputElement) || target.type !== "number") return;
+			if (document.activeElement !== target) return;
+			event.preventDefault();
+			const scale = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? window.innerHeight : 1;
+			let node = target.parentElement;
+			while (node && node !== document.documentElement) {
+				const style = window.getComputedStyle(node);
+				if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight) {
+					node.scrollBy({ top: event.deltaY * scale, left: event.deltaX * scale });
+					return;
+				}
+				node = node.parentElement;
+			}
+			window.scrollBy({ top: event.deltaY * scale, left: event.deltaX * scale });
+		}, { passive: false });
 
 		const updateRowField = ({ index, field, value }) => {
 			const row = rowsState[index];
@@ -1152,9 +1243,10 @@
 			}
 			if (field === "counted_stock_qty") {
 				row.counted_stock_qty = qty3(value);
-				if (row._auto_loaded) row._unfilled = false;
+				row._unfilled = false;
 			}
 
+			const articleJustPicked = (field === "sku_id" || field === "item_id") && Boolean(toInt(value));
 			if (field === "sku_id") {
 				row.uom_id = null;
 				row._snap_base = null;
@@ -1171,9 +1263,24 @@
 				row._snap_base = null;
 				row._snap_pairs = null;
 			}
+			if (articleJustPicked && isPhysicalCountReasonActive()) {
+				// A manually added row starts with counted_stock_qty null, same as an
+				// auto-loaded one — it must not silently default to 0 on submit.
+				row._unfilled = true;
+				row.counted_stock_qty = null;
+			}
 
 			rowsState[index] = applyDerivedRow(row, stockType);
 			renderRows();
+			if (articleJustPicked) {
+				// Unit (and, for RM, color/size) auto-resolves the instant the article is
+				// chosen, so the qty box is the very next thing to fill in — jump straight
+				// there instead of leaving focus stranded on a cell that just became static
+				// readonly text.
+				const qtyFieldKey = isPhysicalCountReasonActive() ? "counted_stock_qty" : "qty_in";
+				restoreActiveRowField({ lineIndex: String(index), fieldKey: qtyFieldKey });
+				return;
+			}
 			if (enterFocusState) {
 				restoreActiveRowField(enterFocusState);
 				return;
@@ -1309,45 +1416,10 @@
 			if (!rowsState.length) rowsState = [rowTemplate(stockType)];
 		};
 
-		form.addEventListener("submit", (event) => {
-			// Send only editable inputs; backend recomputes system snapshots and differences for integrity.
-			const selectedReasonId = toInt(reasonSelect?.value);
-			if (!selectedReasonId) {
-				event.preventDefault();
-				showUiMessage(reasonRequiredMessage);
-				reasonSelect?.focus();
-				return;
-			}
-			if (reasonNotes?.required && !String(reasonNotes.value || "").trim()) {
-				event.preventDefault();
-				showUiMessage(reasonNotesRequiredMessage);
-				reasonNotes.focus();
-				return;
-			}
-			if (isPhysicalCountCorrectionActive() && !initialVoucher) {
-				const groupVal = productGroupSelect?.value || "";
-				if (!groupVal || (groupVal !== "all" && !Number(groupVal))) {
-					event.preventDefault();
-					showUiMessage(_t.select_product_group_first);
-					productGroupSelect?.focus();
-					return;
-				}
-				const hasUnfilled = rowsState.some((r) => r._auto_loaded && r._unfilled);
-				if (hasUnfilled) {
-					event.preventDefault();
-					showUiMessage(_t.fill_all_quantities);
-					const firstUnfilledIndex = rowsState.findIndex((r) => r._auto_loaded && r._unfilled);
-					if (firstUnfilledIndex >= 0) {
-						const el = linesBody.querySelector(`[data-line-index="${firstUnfilledIndex}"][data-row-field="counted_stock_qty"]`);
-						if (el instanceof HTMLElement) el.focus();
-					}
-					return;
-				}
-			}
-
+		const buildPayloadLines = () => {
 			const stockType = currentStockType();
 			const usePhysicalCountField = isPhysicalCountReasonActive();
-			const payloadLines = rowsState
+			return rowsState
 				.map((row) => applyDerivedRow(row, stockType))
 				.filter((row) => stockType === "RM" ? toInt(row.item_id) : toInt(row.sku_id))
 				.map((row) => stockType === "RM"
@@ -1381,7 +1453,91 @@
 								qty_in: qty3(row.qty_in),
 								qty_out: qty3(row.qty_out),
 							}));
+		};
 
+		const focusFirstUnfilledRow = () => {
+			const firstUnfilledIndex = rowsState.findIndex((r) => r._unfilled);
+			if (firstUnfilledIndex < 0) return;
+			const el = linesBody.querySelector(`[data-line-index="${firstUnfilledIndex}"][data-row-field="counted_stock_qty"]`);
+			if (!(el instanceof HTMLElement)) return;
+			el.scrollIntoView({ block: "center" });
+			// showUiMessage's error modal schedules its own focus(close button) on the
+			// next animation frame; queue ours after so it wins the race instead of the
+			// field losing focus back to the modal a frame later.
+			window.requestAnimationFrame(() => window.requestAnimationFrame(() => el.focus()));
+		};
+
+		// Used once the submit event has already been prevented (the async
+		// reconciliation path below): builds the payload and, if valid, performs
+		// the actual save. form.submit() bypasses the 'submit' event entirely, so
+		// this never re-enters this handler.
+		const finalizeSubmit = () => {
+			const payloadLines = buildPayloadLines();
+			if (!payloadLines.length) {
+				showUiMessage(atLeastOneValidLineMessage);
+				return;
+			}
+			linesJsonInput.value = JSON.stringify(payloadLines);
+			form.submit();
+		};
+
+		let reconciling = false;
+		const reconcileThenSubmit = async () => {
+			if (reconciling) return;
+			reconciling = true;
+			showTableLoading();
+			let reconcileResult = { appended: 0 };
+			try {
+				reconcileResult = await reconcileMissingArticles();
+			} catch (err) {
+				console.error("Failed to reconcile stock count articles before save:", err);
+				hideTableLoading();
+				reconciling = false;
+				showUiMessage(reconcileArticlesFailedMessage);
+				return;
+			}
+			hideTableLoading();
+			reconciling = false;
+			if (rowsState.some((r) => r._unfilled)) {
+				showUiMessage(reconcileResult.appended > 0 ? articlesMissingAddedMessage : _t.fill_all_quantities);
+				focusFirstUnfilledRow();
+				return;
+			}
+			finalizeSubmit();
+		};
+
+		form.addEventListener("submit", (event) => {
+			// Send only editable inputs; backend recomputes system snapshots and differences for integrity.
+			const selectedReasonId = toInt(reasonSelect?.value);
+			if (!selectedReasonId) {
+				event.preventDefault();
+				showUiMessage(reasonRequiredMessage);
+				reasonSelect?.focus();
+				return;
+			}
+			if (reasonNotes?.required && !String(reasonNotes.value || "").trim()) {
+				event.preventDefault();
+				showUiMessage(reasonNotesRequiredMessage);
+				reasonNotes.focus();
+				return;
+			}
+			if (isPhysicalCountCorrectionActive() && !initialVoucher) {
+				const groupVal = productGroupSelect?.value || "";
+				if (!groupVal || (groupVal !== "all" && !Number(groupVal))) {
+					event.preventDefault();
+					showUiMessage(_t.select_product_group_first);
+					productGroupSelect?.focus();
+					return;
+				}
+				// Reconciliation needs a network round trip, so this path must go
+				// async: prevent the native submission now, and only actually save
+				// (via finalizeSubmit's form.submit()) once nothing is missing.
+				event.preventDefault();
+				reconcileThenSubmit();
+				return;
+			}
+
+			const payloadLines = buildPayloadLines();
 			if (!payloadLines.length) {
 				event.preventDefault();
 				showUiMessage(atLeastOneValidLineMessage);
