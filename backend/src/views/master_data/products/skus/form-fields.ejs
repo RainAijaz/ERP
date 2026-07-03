@@ -88,6 +88,7 @@
   <div id="bulk-edit-list" class="space-y-3 max-h-[60vh] overflow-y-auto pr-2">
     </div>
 
+  <% if (user?.isAdmin) { %>
   <label class="mt-4 flex cursor-pointer items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 hover:bg-slate-100 transition">
     <input type="checkbox" name="send_whatsapp" value="1" checked
            class="h-4 w-4 rounded border-slate-300 text-green-600 focus:ring-green-500">
@@ -100,4 +101,7 @@
       <path fill-rule="evenodd" d="M12 2C6.477 2 2 6.477 2 12c0 1.89.525 3.66 1.438 5.168L2 22l4.978-1.413A9.953 9.953 0 0012 22c5.523 0 10-4.477 10-10S17.523 2 12 2zm0 18a7.95 7.95 0 01-4.054-1.11l-.29-.173-3.006.854.854-2.939-.19-.302A7.96 7.96 0 014 12c0-4.411 3.589-8 8-8s8 3.589 8 8-3.589 8-8 8z" clip-rule="evenodd"/>
     </svg>
   </label>
+  <% } else { %>
+  <input type="hidden" name="send_whatsapp" value="1">
+  <% } %>
 </div>

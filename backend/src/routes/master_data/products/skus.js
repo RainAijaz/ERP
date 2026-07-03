@@ -940,7 +940,7 @@ router.post(
     if (!ids.length) return res.redirect(basePath + viewQuery);
 
     try {
-      const approvalRequired = await shouldRequireApproval(
+      let approvalRequired = await shouldRequireApproval(
         req,
         "master_data.products.skus",
         "delete",
@@ -951,7 +951,7 @@ router.post(
         "delete",
       );
       if (!allowed && !approvalRequired) {
-        throw new HttpError(403, res.locals.t("permission_denied"));
+        approvalRequired = true;
       }
 
       const updatedItems = [];
@@ -1102,7 +1102,7 @@ router.post(
         .first();
       const currentRate = currentRateRow?.sale_rate != null ? Number(currentRateRow.sale_rate) : null;
 
-      const approvalRequired = await shouldRequireApproval(
+      let approvalRequired = await shouldRequireApproval(
         req,
         "master_data.products.skus",
         "delete",
@@ -1123,7 +1123,7 @@ router.post(
         });
       }
       if (!allowed && !approvalRequired) {
-        throw new HttpError(403, res.locals.t("permission_denied"));
+        approvalRequired = true;
       }
 
       if (approvalRequired) {
