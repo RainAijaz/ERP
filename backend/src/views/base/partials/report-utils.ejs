@@ -604,6 +604,113 @@
       URL.revokeObjectURL(link.href);
     };
 
+    const loadPdfLibs = () => {
+      if (window.jspdf?.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+      if (window.__pdfLibsPromise) return window.__pdfLibsPromise;
+      const loadScript = (src) =>
+        new Promise((resolve, reject) => {
+          const script = document.createElement("script");
+          script.src = src;
+          script.async = true;
+          script.onload = resolve;
+          script.onerror = () => reject(new Error(`Failed to load ${src}`));
+          document.head.appendChild(script);
+        });
+      window.__pdfLibsPromise = loadScript("/vendor/jspdf.umd.min.js")
+        .then(() => loadScript("/vendor/jspdf.plugin.autotable.min.js"))
+        .then(() => {
+          if (!window.jspdf?.jsPDF) throw new Error("jsPDF loaded without jsPDF object");
+          return window.jspdf.jsPDF;
+        });
+      return window.__pdfLibsPromise;
+    };
+
+    const reportTitleText = () =>
+      String(
+        document.querySelector("h1, [data-report-title]")?.textContent || document.title || "Report",
+      )
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const exportTablesToPdf = (root, trigger, fallbackPrint) => {
+      const tables = Array.from(root.querySelectorAll("[data-report-table], table[data-table], table"));
+      if (!tables.length) {
+        fallbackPrint();
+        return;
+      }
+
+      loadPdfLibs()
+        .then((jsPDF) => {
+          const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+          const title = reportTitleText();
+          let cursorY = 0;
+          let renderedTables = 0;
+
+          tables.forEach((table) => {
+            const tableTitle = String(table.getAttribute("data-export-title") || "").trim();
+            const headers = Array.from(table.querySelectorAll("thead tr"))
+              .map((row) =>
+                Array.from(row.querySelectorAll("th,td")).map((cell) =>
+                  String(cell.textContent || "").replace(/\s+/g, " ").trim(),
+                ),
+              )
+              .filter((row) => row.length);
+            const body = Array.from(table.querySelectorAll("tbody tr"))
+              .filter((row) => row.dataset.inFilter !== "false" && !row.hidden)
+              .map((row) =>
+                Array.from(row.querySelectorAll("th,td")).map((cell) =>
+                  String(cell.textContent || "").replace(/\s+/g, " ").trim(),
+                ),
+              );
+            if (!headers.length && !body.length) return;
+
+            if (renderedTables > 0) doc.addPage();
+            renderedTables += 1;
+            doc.setFontSize(13);
+            doc.text(title, 28, 28);
+            doc.setFontSize(9);
+            doc.setTextColor(100);
+            doc.text(new Date().toLocaleString(), 28, 42);
+            cursorY = 52;
+            if (tableTitle) {
+              doc.setFontSize(10);
+              doc.setTextColor(30);
+              doc.text(tableTitle, 28, cursorY);
+              cursorY += 10;
+            }
+
+            doc.autoTable({
+              head: headers,
+              body,
+              startY: cursorY,
+              margin: { left: 28, right: 28 },
+              styles: { fontSize: 7, cellPadding: 3, overflow: "linebreak" },
+              headStyles: { fillColor: [30, 41, 59], textColor: 255 },
+              alternateRowStyles: { fillColor: [248, 250, 252] },
+              horizontalPageBreak: true,
+              horizontalPageBreakRepeat: 0,
+            });
+          });
+
+          const slug = path
+            .replace(/^\/reports\//, "")
+            .replace(/[^a-zA-Z0-9_-]+/g, "-")
+            .replace(/-+/g, "-")
+            .replace(/^-|-$/g, "");
+          const fallbackName = `${slug || "report"}.pdf`;
+          const downloadName = String(
+            trigger?.getAttribute("data-download-filename") || fallbackName,
+          )
+            .trim()
+            .replace(/\.csv$/i, ".pdf") || fallbackName;
+          doc.save(downloadName);
+        })
+        .catch((err) => {
+          console.error(err);
+          fallbackPrint();
+        });
+    };
+
     document.addEventListener(
       "click",
       (event) => {
@@ -638,13 +745,14 @@
         showDownloadDropdown(
           trigger,
           () => exportTablesToCsv(section, trigger),
-          () => {
-            clearPrintSelection();
-            section.setAttribute("data-report-print-active", "1");
-            document.body.classList.add("report-printing");
-            window.print();
-            window.setTimeout(clearPrintSelection, 1500);
-          },
+          () =>
+            exportTablesToPdf(section, trigger, () => {
+              clearPrintSelection();
+              section.setAttribute("data-report-print-active", "1");
+              document.body.classList.add("report-printing");
+              window.print();
+              window.setTimeout(clearPrintSelection, 1500);
+            }),
         );
       },
       true,

@@ -1376,30 +1376,39 @@
 
     const cleanText = (value) => (value || "").replace(/\s+/g, " ").trim();
 
-    const downloadCsv = () => {
+    const buildExportTable = () => {
       // Export only the currently visible rows (respects filters).
       const headers = Array.from(document.querySelectorAll("thead th"))
         .map((th) => cleanText(th.textContent))
         .filter((label) => label && label.toLowerCase() !== "actions");
       const rows = getRows().filter((row) => !row.classList.contains("hidden"));
-      const csvRows = [headers.join(",")];
-      rows.forEach((row) => {
-        const cells = Array.from(row.querySelectorAll("td"))
+      const body = rows.map((row) =>
+        Array.from(row.querySelectorAll("td"))
           .slice(0, headers.length)
-          .map((cell, idx) => {
-            let datasetValue =
+          .map((cell) => {
+            const datasetValue =
               cell.dataset.summaryRates || cell.dataset.summaryAvg || "";
-            let value = datasetValue || cell.textContent;
-            // If this is the Size column, format to prevent Excel date conversion
-            if (headers[idx] && headers[idx].toLowerCase().includes("size")) {
-              // If value matches N/N or N-N, prefix with S-
-              if (/^\d{1,2}[\/\-]\d{1,2}$/.test(value.trim())) {
-                value = `S-${value.trim()}`;
-              }
+            return cleanText(datasetValue || cell.textContent);
+          }),
+      );
+      return { headers, body };
+    };
+
+    const downloadCsv = () => {
+      const { headers, body } = buildExportTable();
+      const csvRows = [headers.join(",")];
+      body.forEach((cells) => {
+        const line = cells.map((value, idx) => {
+          // If this is the Size column, format to prevent Excel date conversion
+          if (headers[idx] && headers[idx].toLowerCase().includes("size")) {
+            // If value matches N/N or N-N, prefix with S-
+            if (/^\d{1,2}[\/\-]\d{1,2}$/.test(value.trim())) {
+              value = `S-${value.trim()}`;
             }
-            return `"${cleanText(value).replace(/"/g, '""')}"`;
-          });
-        csvRows.push(cells.join(","));
+          }
+          return `"${value.replace(/"/g, '""')}"`;
+        });
+        csvRows.push(line.join(","));
       });
 
       const csvContent = "\uFEFF" + csvRows.join("\r\n");
@@ -1411,6 +1420,59 @@
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+    };
+
+    const loadPdfLibs = () => {
+      if (window.jspdf?.jsPDF) return Promise.resolve(window.jspdf.jsPDF);
+      if (window.__pdfLibsPromise) return window.__pdfLibsPromise;
+      const loadScript = (src) =>
+        new Promise((resolve, reject) => {
+          const script = document.createElement("script");
+          script.src = src;
+          script.async = true;
+          script.onload = resolve;
+          script.onerror = () => reject(new Error(`Failed to load ${src}`));
+          document.head.appendChild(script);
+        });
+      window.__pdfLibsPromise = loadScript("/vendor/jspdf.umd.min.js")
+        .then(() => loadScript("/vendor/jspdf.plugin.autotable.min.js"))
+        .then(() => {
+          if (!window.jspdf?.jsPDF) throw new Error("jsPDF loaded without jsPDF object");
+          return window.jspdf.jsPDF;
+        });
+      return window.__pdfLibsPromise;
+    };
+
+    const downloadPdf = () => {
+      loadPdfLibs()
+        .then((jsPDF) => {
+          const { headers, body } = buildExportTable();
+          const orientation = headers.length > 6 ? "landscape" : "portrait";
+          const doc = new jsPDF({ orientation, unit: "pt", format: "a4" });
+          doc.setFontSize(13);
+          doc.text(pageTitle, 28, 32);
+          doc.setFontSize(9);
+          doc.setTextColor(100);
+          doc.text(new Date().toLocaleString(), 28, 46);
+          doc.autoTable({
+            head: [headers],
+            body,
+            startY: 58,
+            margin: { left: 28, right: 28 },
+            styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak" },
+            headStyles: { fillColor: [30, 41, 59], textColor: 255 },
+            alternateRowStyles: { fillColor: [248, 250, 252] },
+            horizontalPageBreak: true,
+            horizontalPageBreakRepeat: 0,
+          });
+          doc.save(
+            '<%= t(page.titleKey).replace(/\\s+/g, "_") %>_export.pdf',
+          );
+        })
+        .catch((err) => {
+          console.error(err);
+          window.print();
+        });
     };
 
     const showDownloadDropdown = (anchor, onExcel, onPdf) => {
@@ -1454,7 +1516,7 @@
 
     if (downloadButton) {
       downloadButton.addEventListener("click", () =>
-        showDownloadDropdown(downloadButton, downloadCsv, () => window.print()),
+        showDownloadDropdown(downloadButton, downloadCsv, downloadPdf),
       );
     }
     if (printButton) {
