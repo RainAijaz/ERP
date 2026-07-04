@@ -2491,10 +2491,25 @@ const upsertGrnInHeaderTx = async ({
     mergeColumns.push("received_at");
   }
 
-  await trx("erp.grn_in_header")
-    .insert(payload)
-    .onConflict("voucher_id")
-    .merge(mergeColumns);
+  try {
+    await trx("erp.grn_in_header")
+      .insert(payload)
+      .onConflict("voucher_id")
+      .merge(mergeColumns);
+  } catch (err) {
+    if (
+      String(err?.code || "") === "23505" &&
+      String(err?.constraint || "")
+        .toLowerCase()
+        .includes("against_stn_out_id")
+    ) {
+      throw new HttpError(
+        400,
+        "This transfer has already been received by another STI voucher. Undo/delete that voucher first, then retry.",
+      );
+    }
+    throw err;
+  }
 };
 
 const syncStockTransferOutVoucherTx = async ({ trx, voucherId }) => {
@@ -2903,7 +2918,12 @@ const syncStockTransferInVoucherTx = async ({ trx, voucherId }) => {
     });
 
   await rollbackInventoryStockLedgerByVoucherTx({ trx, voucherId });
-  if (String(header.status || "").toUpperCase() !== "APPROVED") return;
+  if (String(header.status || "").toUpperCase() !== "APPROVED") {
+    // Rejected voucher no longer occupies the against_stn_out_id unique slot,
+    // so a fresh STI voucher can be raised against the same STN_OUT later.
+    await trx("erp.grn_in_header").where({ voucher_id: voucherId }).del();
+    return;
+  }
 
   const stnHeader = await trx("erp.voucher_header as vh")
     .join("erp.stock_transfer_out_header as sth", "sth.voucher_id", "vh.id")
