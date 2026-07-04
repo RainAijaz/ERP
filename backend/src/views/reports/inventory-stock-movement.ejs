@@ -373,6 +373,7 @@
               </select>
             <% } else { %>
               <input type="text" readonly value="<%= (options?.branches || [])[0]?.name || branchId %>" class="h-10 w-full rounded-lg border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700">
+              <input type="hidden" name="branch_ids" value="<%= branchId || '' %>">
             <% } %>
           </div>
         </div>
