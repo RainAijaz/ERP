@@ -489,6 +489,21 @@
     };
     closeBtns.forEach(btn => btn.addEventListener("click", resetFormState));
 
+    // Enter in Edit Rates must not submit the form; it moves focus to the next rate field.
+    // Saving only happens via the confirm button.
+    modalForm.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      if (!editContainer || editContainer.classList.contains("hidden")) return;
+      const target = e.target;
+      if (!target || target.tagName !== "INPUT") return;
+      e.preventDefault();
+      if (target.name === "new_rates") {
+        const inputs = Array.from(editList.querySelectorAll('input[name="new_rates"]'));
+        const next = inputs[inputs.indexOf(target) + 1];
+        if (next) next.focus();
+      }
+    });
+
     // 4. Submit Handler
     modalForm.addEventListener("submit", () => {
        const disabledOptions = modalForm.querySelectorAll("option:disabled");
