@@ -1349,6 +1349,15 @@ ratesRouter.post(
         traceId,
         elapsedMs: approvalStart - startedAt,
       });
+      const labourForSummary = normalized.labourSelection?.all
+        ? null
+        : await knex("erp.labours")
+            .select("name")
+            .where({ id: normalized.labourSelection?.labourId })
+            .first();
+      const labourSummaryLabel = normalized.labourSelection?.all
+        ? res.locals.t("all") || "All"
+        : labourForSummary?.name || "";
       const approval = await handleScreenApproval({
         req,
         scopeKey: labourRatesPage.scopeKey,
@@ -1357,7 +1366,7 @@ ratesRouter.post(
         entityId: normalized.labourSelection?.all
           ? "ALL"
           : normalized.labourSelection?.labourId || "NEW",
-        summary: `${res.locals.t("add")} ${res.locals.t(labourRatesPage.titleKey)}`,
+        summary: `${res.locals.t("add")} ${res.locals.t(labourRatesPage.titleKey)}${labourSummaryLabel ? " - " + labourSummaryLabel : ""} (${queuedRows.length})`,
         oldValue: null,
         newValue: {
           mode: "BULK_LABOUR_RATE_SKU_UPSERT",

@@ -686,7 +686,7 @@ router.post(
         entityType: page.entityType,
         entityId:
           rowPlans.length === 1 ? rowPlans[0].existingId || "NEW" : "BULK",
-        summary: `${res.locals.t(hasExistingRows ? "edit" : "add")} ${res.locals.t(page.titleKey)}`,
+        summary: `${res.locals.t(hasExistingRows ? "edit" : "add")} ${res.locals.t(page.titleKey)} (${employeeIds.length} ${res.locals.t("employees") || "employees"}, ${skuIds.length} ${res.locals.t("skus")})`,
         oldValue: null,
         newValue: approvalPayload,
         t: res.locals.t,
@@ -914,13 +914,17 @@ router.post(
         });
       }
 
+      const employeeForSummary = await knex("erp.employees")
+        .select("name")
+        .where({ id: normalized.employeeId })
+        .first();
       const approval = await handleScreenApproval({
         req,
         scopeKey: page.scopeKey,
         action: "create",
         entityType: page.entityType,
         entityId: normalized.employeeId,
-        summary: `${res.locals.t("add")} ${res.locals.t(page.titleKey)}`,
+        summary: `${res.locals.t("add")} ${res.locals.t(page.titleKey)}${employeeForSummary?.name ? " - " + employeeForSummary.name : ""} (${queuedRows.length})`,
         oldValue: null,
         newValue: {
           mode: "BULK_COMMISSION_SKU_UPSERT",

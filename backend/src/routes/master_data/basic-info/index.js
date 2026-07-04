@@ -44,6 +44,19 @@ const buildProductionStageCode = (deptId) => {
 const hasField = (page, name) =>
   page.fields.some((field) => field.name === name);
 
+const getEntityLabel = (...rows) => {
+  for (const row of rows) {
+    const label = row && (row.name || row.name_en || row.code || row.title);
+    if (label) return String(label);
+  }
+  return "";
+};
+
+const withLabel = (summary, ...rows) => {
+  const label = getEntityLabel(...rows);
+  return label ? `${summary} - ${label}` : summary;
+};
+
 // Page metadata drives form fields, table columns, and DB mapping.
 const BASIC_INFO_PAGES = {
   units: {
@@ -1112,7 +1125,10 @@ const createHandler = (type) => async (req, res, next) => {
         action: "create",
         entityType: getBasicInfoEntityType(type),
         entityId: "NEW",
-        summary: `${res.locals.t("create")} ${res.locals.t(page.titleKey)}`,
+        summary: withLabel(
+          `${res.locals.t("create")} ${res.locals.t(page.titleKey)}`,
+          values,
+        ),
         oldValue: null,
         newValue: values,
         t: res.locals.t,
@@ -1155,7 +1171,10 @@ const createHandler = (type) => async (req, res, next) => {
           action: "create",
           entityType: getBasicInfoEntityType(type),
           entityId: "NEW",
-          summary: `${res.locals.t("create")} ${res.locals.t(page.titleKey)}`,
+          summary: withLabel(
+            `${res.locals.t("create")} ${res.locals.t(page.titleKey)}`,
+            values,
+          ),
           oldValue: null,
           newValue: values,
           t: res.locals.t,
@@ -1195,7 +1214,10 @@ const createHandler = (type) => async (req, res, next) => {
           action: "create",
           entityType: getBasicInfoEntityType(type),
           entityId: "NEW",
-          summary: `${res.locals.t("create")} ${res.locals.t(page.titleKey)}`,
+          summary: withLabel(
+            `${res.locals.t("create")} ${res.locals.t(page.titleKey)}`,
+            values,
+          ),
           oldValue: null,
           newValue: values,
           t: res.locals.t,
@@ -1407,7 +1429,11 @@ const updateHandler = (type) => async (req, res, next) => {
         action: "edit",
         entityType: getBasicInfoEntityType(type),
         entityId: id,
-        summary: `${res.locals.t("edit")} ${res.locals.t(page.titleKey)}`,
+        summary: withLabel(
+          `${res.locals.t("edit")} ${res.locals.t(page.titleKey)}`,
+          values,
+          existingRow,
+        ),
         oldValue: existingRow,
         newValue: values,
         t: res.locals.t,
@@ -1474,7 +1500,11 @@ const updateHandler = (type) => async (req, res, next) => {
           action: "edit",
           entityType: getBasicInfoEntityType(type),
           entityId: id,
-          summary: `${res.locals.t("edit")} ${res.locals.t(page.titleKey)}`,
+          summary: withLabel(
+            `${res.locals.t("edit")} ${res.locals.t(page.titleKey)}`,
+            values,
+            existingRow,
+          ),
           oldValue: existingRow,
           newValue: values,
           t: res.locals.t,
@@ -1524,7 +1554,11 @@ const updateHandler = (type) => async (req, res, next) => {
           action: "edit",
           entityType: getBasicInfoEntityType(type),
           entityId: id,
-          summary: `${res.locals.t("edit")} ${res.locals.t(page.titleKey)}`,
+          summary: withLabel(
+            `${res.locals.t("edit")} ${res.locals.t(page.titleKey)}`,
+            values,
+            existingRow,
+          ),
           oldValue: existingRow,
           newValue: values,
           t: res.locals.t,
@@ -1580,17 +1614,17 @@ const toggleHandler = (type) => async (req, res, next) => {
   const basePath = `${req.baseUrl}${ROUTE_MAP[type]}`;
 
   try {
-    const current = await knex(page.table)
-      .select("is_active")
-      .where({ id })
-      .first();
+    const current = await knex(page.table).where({ id }).first();
     if (!current) {
       return next(new HttpError(404, "Record not found"));
     }
     const scopeKey =
       BASIC_INFO_SCOPE_KEYS[type] || `master_data.basic_info.${type}`;
     const entityType = getBasicInfoEntityType(type);
-    const summary = `${res.locals.t("deactivate")} ${res.locals.t(page.titleKey)}`;
+    const summary = withLabel(
+      `${res.locals.t("deactivate")} ${res.locals.t(page.titleKey)}`,
+      current,
+    );
     const approval = await handleScreenApproval({
       req,
       scopeKey,
@@ -1664,7 +1698,10 @@ const deleteHandler = (type) => async (req, res, next) => {
     const scopeKey =
       BASIC_INFO_SCOPE_KEYS[type] || `master_data.basic_info.${type}`;
     const entityType = getBasicInfoEntityType(type);
-    const summary = `${res.locals.t("delete")} ${res.locals.t(page.titleKey)}`;
+    const summary = withLabel(
+      `${res.locals.t("delete")} ${res.locals.t(page.titleKey)}`,
+      existing,
+    );
     const approval = await handleScreenApproval({
       req,
       scopeKey,

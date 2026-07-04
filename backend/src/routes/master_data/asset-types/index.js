@@ -30,6 +30,14 @@ const normalizeText = (value, max = 255) =>
     .trim()
     .slice(0, max);
 
+const withLabel = (summary, ...rows) => {
+  for (const row of rows) {
+    const label = row && (row.name || row.code);
+    if (label) return `${summary} - ${label}`;
+  }
+  return summary;
+};
+
 const getAssetTypeColumnSupport = async () => {
   if (assetTypeColumnSupport) return assetTypeColumnSupport;
   const hasNameUr = await knex.schema
@@ -179,7 +187,10 @@ router.post(
         action: "create",
         entityType: ENTITY_TYPE,
         entityId: "NEW",
-        summary: `${res.locals.t("create")} ${res.locals.t("asset_types")}`,
+        summary: withLabel(
+          `${res.locals.t("create")} ${res.locals.t("asset_types")}`,
+          values,
+        ),
         oldValue: null,
         newValue: values,
         t: res.locals.t,
@@ -235,7 +246,11 @@ router.post(
         action: "edit",
         entityType: ENTITY_TYPE,
         entityId: existing.code,
-        summary: `${res.locals.t("edit")} ${res.locals.t("asset_types")}`,
+        summary: withLabel(
+          `${res.locals.t("edit")} ${res.locals.t("asset_types")}`,
+          values,
+          existing,
+        ),
         oldValue: existing,
         newValue: values,
         t: res.locals.t,
@@ -282,7 +297,6 @@ router.post(
 
     try {
       const existing = await knex("erp.asset_type_registry")
-        .select("code", "is_active")
         .whereRaw("upper(code) = ?", [code])
         .first();
       if (!existing)
@@ -295,7 +309,10 @@ router.post(
         action: "delete",
         entityType: ENTITY_TYPE,
         entityId: existing.code,
-        summary: `${res.locals.t("deactivate")} ${res.locals.t("asset_types")}`,
+        summary: withLabel(
+          `${res.locals.t("deactivate")} ${res.locals.t("asset_types")}`,
+          existing,
+        ),
         oldValue: existing,
         newValue: { is_active: nextStatus },
         t: res.locals.t,
@@ -340,7 +357,10 @@ router.post(
         action: "delete",
         entityType: ENTITY_TYPE,
         entityId: existing.code,
-        summary: `${res.locals.t("delete")} ${res.locals.t("asset_types")}`,
+        summary: withLabel(
+          `${res.locals.t("delete")} ${res.locals.t("asset_types")}`,
+          existing,
+        ),
         oldValue: existing,
         newValue: { _action: "delete" },
         t: res.locals.t,

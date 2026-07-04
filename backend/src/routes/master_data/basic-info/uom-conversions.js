@@ -96,6 +96,18 @@ const normalizePayload = (body) => {
   return { from_uom_id, to_uom_id, factor };
 };
 
+// Builds a "FROM -> TO" label for the approval summary so admins can tell
+// conversions apart without opening the record.
+const getUomConversionLabel = async (fromUomId, toUomId) => {
+  const uoms = await knex("erp.uom")
+    .select("id", "code")
+    .whereIn("id", [fromUomId, toUomId].filter(Boolean));
+  const codeById = new Map(uoms.map((u) => [u.id, u.code]));
+  const fromCode = codeById.get(fromUomId) || "";
+  const toCode = codeById.get(toUomId) || "";
+  return fromCode && toCode ? `${fromCode} -> ${toCode}` : "";
+};
+
 const renderError = async (req, res, error, modalMode) => {
   const message = friendlyErrorMessage(error, res.locals.t);
   const shouldOpenModal = modalMode !== "delete";
@@ -135,13 +147,17 @@ router.post(
     }
 
     try {
+      const label = await getUomConversionLabel(
+        payload.from_uom_id,
+        payload.to_uom_id,
+      );
       const approval = await handleScreenApproval({
         req,
         scopeKey: "master_data.basic_info.uom_conversions",
         action: "create",
         entityType: getBasicInfoEntityType("uom-conversions"),
         entityId: "NEW",
-        summary: `${res.locals.t("create")} ${res.locals.t("uom_conversions")}`,
+        summary: `${res.locals.t("create")} ${res.locals.t("uom_conversions")}${label ? " - " + label : ""}`,
         oldValue: null,
         newValue: payload,
         t: res.locals.t,
@@ -190,13 +206,17 @@ router.post(
       if (!existing) {
         return renderError(req, res, res.locals.t("error_not_found"), "edit");
       }
+      const label = await getUomConversionLabel(
+        existing.from_uom_id,
+        existing.to_uom_id,
+      );
       const approval = await handleScreenApproval({
         req,
         scopeKey: "master_data.basic_info.uom_conversions",
         action: "edit",
         entityType: getBasicInfoEntityType("uom-conversions"),
         entityId: id,
-        summary: `${res.locals.t("edit")} ${res.locals.t("uom_conversions")}`,
+        summary: `${res.locals.t("edit")} ${res.locals.t("uom_conversions")}${label ? " - " + label : ""}`,
         oldValue: existing,
         newValue: payload,
         t: res.locals.t,
@@ -239,19 +259,22 @@ router.post(
 
     try {
       const current = await knex("erp.uom_conversions")
-        .select("is_active")
         .where({ id })
         .first();
       if (!current) {
         return next(new HttpError(404, res.locals.t("error_not_found")));
       }
+      const label = await getUomConversionLabel(
+        current.from_uom_id,
+        current.to_uom_id,
+      );
       const approval = await handleScreenApproval({
         req,
         scopeKey: "master_data.basic_info.uom_conversions",
         action: "delete",
         entityType: getBasicInfoEntityType("uom-conversions"),
         entityId: id,
-        summary: `${res.locals.t("deactivate")} ${res.locals.t("uom_conversions")}`,
+        summary: `${res.locals.t("deactivate")} ${res.locals.t("uom_conversions")}${label ? " - " + label : ""}`,
         oldValue: current,
         newValue: { is_active: !current.is_active },
         t: res.locals.t,
@@ -297,13 +320,17 @@ router.post(
       if (!existing) {
         return renderError(req, res, res.locals.t("error_not_found"), "delete");
       }
+      const label = await getUomConversionLabel(
+        existing.from_uom_id,
+        existing.to_uom_id,
+      );
       const approval = await handleScreenApproval({
         req,
         scopeKey: "master_data.basic_info.uom_conversions",
         action: "delete",
         entityType: getBasicInfoEntityType("uom-conversions"),
         entityId: id,
-        summary: `${res.locals.t("delete")} ${res.locals.t("uom_conversions")}`,
+        summary: `${res.locals.t("delete")} ${res.locals.t("uom_conversions")}${label ? " - " + label : ""}`,
         oldValue: existing,
         newValue: null,
         t: res.locals.t,

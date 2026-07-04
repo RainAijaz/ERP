@@ -24,6 +24,16 @@ const buildSkuCode = (itemName, parts) => {
   return [normalizeSkuPart(itemName), ...cleanParts].join(" ");
 };
 
+const getSkuLabel = async (db, variantId) => {
+  const row = await db("erp.variants as v")
+    .select("k.sku_code", "i.name as item_name", "i.code as item_code")
+    .leftJoin("erp.items as i", "v.item_id", "i.id")
+    .leftJoin("erp.skus as k", "k.variant_id", "v.id")
+    .where("v.id", variantId)
+    .first();
+  return row?.sku_code || row?.item_name || row?.item_code || "";
+};
+
 const parseSfgNameParts = (name, code) => {
   if (name && name.includes(" - ")) {
     const [base, ...rest] = name.split(" - ");
@@ -1131,12 +1141,13 @@ router.post(
       }
 
       if (approvalRequired) {
+        const skuLabel = await getSkuLabel(knex, id);
         await knex("erp.approval_request").insert({
           branch_id: req.branchId,
           request_type: "MASTER_DATA_CHANGE",
           entity_type: "SKU",
           entity_id: String(id),
-          summary: `${res.locals.t("edit")} ${res.locals.t("skus")}`,
+          summary: `${res.locals.t("edit")} ${res.locals.t("skus")}${skuLabel ? " - " + skuLabel : ""}`,
           old_value: { _action: "update", sale_rate: currentRate },
           new_value: { _action: "update", sale_rate: req.body.sale_rate },
           status: "PENDING",
@@ -1215,12 +1226,13 @@ router.post(
       }
 
       if (approvalRequired) {
+        const skuLabel = await getSkuLabel(knex, id);
         await knex("erp.approval_request").insert({
           branch_id: req.branchId,
           request_type: "MASTER_DATA_CHANGE",
           entity_type: "SKU",
           entity_id: String(id),
-          summary: `${res.locals.t("deactivate")} ${res.locals.t("skus")}`,
+          summary: `${res.locals.t("deactivate")} ${res.locals.t("skus")}${skuLabel ? " - " + skuLabel : ""}`,
           new_value: { _action: "toggle", is_active: !current.is_active },
           status: "PENDING",
           requested_by: req.user.id,
@@ -1283,12 +1295,13 @@ router.post(
       }
 
       if (approvalRequired) {
+        const skuLabel = await getSkuLabel(knex, id);
         await knex("erp.approval_request").insert({
           branch_id: req.branchId,
           request_type: "MASTER_DATA_CHANGE",
           entity_type: "SKU",
           entity_id: String(id),
-          summary: `${res.locals.t("delete")} ${res.locals.t("skus")}`,
+          summary: `${res.locals.t("delete")} ${res.locals.t("skus")}${skuLabel ? " - " + skuLabel : ""}`,
           new_value: { _action: "delete" },
           status: "PENDING",
           requested_by: req.user.id,

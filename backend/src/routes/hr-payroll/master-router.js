@@ -1167,7 +1167,10 @@ const createHrMasterRouter = (pageConfig) => {
           action: "create",
           entityType: pageConfig.entityType,
           entityId: "NEW",
-          summary: `${res.locals.t("create")} ${res.locals.t(pageConfig.titleKey)}`,
+          summary: (() => {
+            const label = resolveEntityNameForAudit({ values: sanitizedValues });
+            return `${res.locals.t("create")} ${res.locals.t(pageConfig.titleKey)}${label ? " - " + label : ""}`;
+          })(),
           oldValue: null,
           newValue: sanitizedValues,
           t: res.locals.t,
@@ -1501,7 +1504,13 @@ const createHrMasterRouter = (pageConfig) => {
           action: "edit",
           entityType: pageConfig.entityType,
           entityId: id,
-          summary: `${res.locals.t("edit")} ${res.locals.t(pageConfig.titleKey)}`,
+          summary: (() => {
+            const label = resolveEntityNameForAudit({
+              values: sanitizedValues,
+              existing,
+            });
+            return `${res.locals.t("edit")} ${res.locals.t(pageConfig.titleKey)}${label ? " - " + label : ""}`;
+          })(),
           oldValue: existing,
           newValue: sanitizedValues,
           t: res.locals.t,
@@ -1616,7 +1625,6 @@ const createHrMasterRouter = (pageConfig) => {
 
       try {
         const current = await knex(pageConfig.table)
-          .select("status")
           .where({ id })
           .first();
         if (!current) {
@@ -1634,7 +1642,10 @@ const createHrMasterRouter = (pageConfig) => {
           action: "delete",
           entityType: pageConfig.entityType,
           entityId: id,
-          summary: `${res.locals.t("deactivate")} ${res.locals.t(pageConfig.titleKey)}`,
+          summary: (() => {
+            const label = resolveEntityNameForAudit({ existing: current });
+            return `${res.locals.t(statusSummaryKey)} ${res.locals.t(pageConfig.titleKey)}${label ? " - " + label : ""}`;
+          })(),
           oldValue: current,
           newValue: { status: nextStatus },
           t: res.locals.t,
@@ -1717,7 +1728,10 @@ const createHrMasterRouter = (pageConfig) => {
           action: "delete",
           entityType: pageConfig.entityType,
           entityId: id,
-          summary: `${res.locals.t("delete")} ${res.locals.t(pageConfig.titleKey)}`,
+          summary: (() => {
+            const label = resolveEntityNameForAudit({ existing });
+            return `${res.locals.t("delete")} ${res.locals.t(pageConfig.titleKey)}${label ? " - " + label : ""}`;
+          })(),
           oldValue: existing,
           newValue: null,
           t: res.locals.t,

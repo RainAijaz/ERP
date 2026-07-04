@@ -27,6 +27,14 @@ const normalizeText = (value, max = 255) =>
     .trim()
     .slice(0, max);
 
+const withLabel = (summary, ...rows) => {
+  for (const row of rows) {
+    const label = row && (row.name || row.asset_code || row.code);
+    if (label) return `${summary} - ${label}`;
+  }
+  return summary;
+};
+
 const getAssetColumnSupport = async () => {
   if (assetColumnSupport) return assetColumnSupport;
   const hasColumn = async (column) =>
@@ -307,7 +315,10 @@ router.post(
         action: "create",
         entityType: ENTITY_TYPE,
         entityId: "NEW",
-        summary: `${res.locals.t("create")} ${res.locals.t("assets")}`,
+        summary: withLabel(
+          `${res.locals.t("create")} ${res.locals.t("assets")}`,
+          values,
+        ),
         oldValue: null,
         newValue: values,
         t: res.locals.t,
@@ -365,7 +376,11 @@ router.post(
         action: "edit",
         entityType: ENTITY_TYPE,
         entityId: id,
-        summary: `${res.locals.t("edit")} ${res.locals.t("assets")}`,
+        summary: withLabel(
+          `${res.locals.t("edit")} ${res.locals.t("assets")}`,
+          values,
+          existing,
+        ),
         oldValue: existing,
         newValue: values,
         t: res.locals.t,
@@ -408,10 +423,7 @@ router.post(
 
     try {
       const columns = await getAssetColumnSupport();
-      const existing = await knex("erp.assets")
-        .select("id", "is_active")
-        .where({ id })
-        .first();
+      const existing = await knex("erp.assets").where({ id }).first();
       if (!existing)
         return next(new HttpError(404, res.locals.t("error_not_found")));
 
@@ -422,7 +434,10 @@ router.post(
         action: "delete",
         entityType: ENTITY_TYPE,
         entityId: id,
-        summary: `${res.locals.t("deactivate")} ${res.locals.t("assets")}`,
+        summary: withLabel(
+          `${res.locals.t("deactivate")} ${res.locals.t("assets")}`,
+          existing,
+        ),
         oldValue: existing,
         newValue: { is_active: nextStatus },
         t: res.locals.t,
@@ -465,7 +480,10 @@ router.post(
         action: "delete",
         entityType: ENTITY_TYPE,
         entityId: id,
-        summary: `${res.locals.t("delete")} ${res.locals.t("assets")}`,
+        summary: withLabel(
+          `${res.locals.t("delete")} ${res.locals.t("assets")}`,
+          existing,
+        ),
         oldValue: existing,
         newValue: { _action: "delete" },
         t: res.locals.t,

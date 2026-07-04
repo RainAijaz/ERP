@@ -506,7 +506,7 @@ router.post(
         action: "create",
         entityType: SCREEN_ENTITY_TYPES["master_data.products.raw_materials"],
         entityId: "NEW",
-        summary: `${res.locals.t("create")} ${res.locals.t("raw_materials")}`,
+        summary: `${res.locals.t("create")} ${res.locals.t("raw_materials")}${name ? " - " + name : ""}`,
         oldValue: null,
         newValue: {
           _action: "create",
@@ -810,7 +810,7 @@ router.post(
         action: "edit",
         entityType: SCREEN_ENTITY_TYPES["master_data.products.raw_materials"],
         entityId: id,
-        summary: `${res.locals.t("edit")} ${res.locals.t("raw_materials")}`,
+        summary: `${res.locals.t("edit")} ${res.locals.t("raw_materials")}${name ? " - " + name : ""}`,
         oldValue,
         newValue: {
           _action: "update",
@@ -902,7 +902,7 @@ router.post(
 
     try {
       const current = await knex("erp.items")
-        .select("is_active")
+        .select("is_active", "name")
         .where({ id })
         .first();
       if (!current)
@@ -918,7 +918,7 @@ router.post(
         action: "delete",
         entityType: SCREEN_ENTITY_TYPES["master_data.products.raw_materials"],
         entityId: id,
-        summary: `${toggleLabel} ${res.locals.t("raw_materials")}`,
+        summary: `${toggleLabel} ${res.locals.t("raw_materials")}${current.name ? " - " + current.name : ""}`,
         oldValue: current,
         newValue: {
           _action: "toggle",
@@ -991,7 +991,7 @@ router.post(
         action: "delete",
         entityType: SCREEN_ENTITY_TYPES["master_data.products.raw_materials"],
         entityId: id,
-        summary: `${res.locals.t("delete")} ${res.locals.t("raw_materials")}`,
+        summary: `${res.locals.t("delete")} ${res.locals.t("raw_materials")}${existing.name ? " - " + existing.name : ""}`,
         oldValue: existing,
         newValue: { _action: "delete", item_type: ITEM_TYPE },
         t: res.locals.t,

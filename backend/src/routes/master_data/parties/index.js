@@ -26,6 +26,14 @@ const debugParties = (...args) => {
   }
 };
 
+const withLabel = (summary, ...rows) => {
+  for (const row of rows) {
+    const label = row && (row.name || row.code);
+    if (label) return `${summary} - ${label}`;
+  }
+  return summary;
+};
+
 const normalizeCredit = (value) => {
   if (value === null || value === undefined || value === "") return null;
   const numberValue = Number(value);
@@ -662,7 +670,10 @@ router.post(
         action: "create",
         entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
         entityId: "NEW",
-        summary: `${res.locals.t("create")} ${res.locals.t(page.titleKey)}`,
+        summary: withLabel(
+          `${res.locals.t("create")} ${res.locals.t(page.titleKey)}`,
+          values,
+        ),
         oldValue: null,
         newValue: values,
         t: res.locals.t,
@@ -906,7 +917,11 @@ router.post(
         action: "edit",
         entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
         entityId: id,
-        summary: `${res.locals.t("edit")} ${res.locals.t(page.titleKey)}`,
+        summary: withLabel(
+          `${res.locals.t("edit")} ${res.locals.t(page.titleKey)}`,
+          values,
+          existing,
+        ),
         oldValue: existing,
         newValue: values,
         t: res.locals.t,
@@ -980,10 +995,7 @@ router.post(
     const basePath = req.baseUrl;
 
     try {
-      const current = await knex(page.table)
-        .select("is_active", "party_type")
-        .where({ id })
-        .first();
+      const current = await knex(page.table).where({ id }).first();
       if (!current) {
         return next(new HttpError(404, res.locals.t("error_not_found")));
       }
@@ -994,7 +1006,10 @@ router.post(
         action: "delete",
         entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
         entityId: id,
-        summary: `${res.locals.t("deactivate")} ${res.locals.t(page.titleKey)}`,
+        summary: withLabel(
+          `${res.locals.t("deactivate")} ${res.locals.t(page.titleKey)}`,
+          current,
+        ),
         oldValue: current,
         newValue: { is_active: !current.is_active },
         t: res.locals.t,
@@ -1058,7 +1073,10 @@ router.post(
         action: "delete",
         entityType: SCREEN_ENTITY_TYPES["master_data.parties"],
         entityId: id,
-        summary: `${res.locals.t("delete")} ${res.locals.t(page.titleKey)}`,
+        summary: withLabel(
+          `${res.locals.t("delete")} ${res.locals.t(page.titleKey)}`,
+          existing,
+        ),
         oldValue: existing,
         newValue: null,
         t: res.locals.t,
