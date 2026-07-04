@@ -162,7 +162,7 @@
 					</div>
 					<div class="lg:col-start-3 lg:col-span-10 flex items-start gap-2 text-xs text-slate-500">
 						<svg class="h-4 w-4 text-amber-500 flex-shrink-0 mt-0.5" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.516 2.625H3.72c-1.347 0-2.189-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"></path></svg>
-						<%= toFriendlyLabel("physical_count_correction_note", "Only articles with stock as of the selected date will load. You must enter a quantity for every article (0 is valid).") %>
+						<%= toFriendlyLabel("physical_count_correction_note", "Add each SKU you counted. Any SKU in this group with stock as of the selected date that you haven't added will be added automatically when you save — enter a quantity for those too (0 is valid).") %>
 					</div>
 				</div>
 
@@ -415,8 +415,8 @@
 			return `${basePath}/articles?group_id=${encodeURIComponent(groupId)}&stock_type=${encodeURIComponent(stockType)}&date=${encodeURIComponent(voucherDate)}&status=${encodeURIComponent(statusFilter)}`;
 		};
 
-		// Shared by the initial group auto-load and the pre-save reconciliation check
-		// so a "missing article" row always looks and behaves like an auto-loaded one.
+		// Used by the pre-save reconciliation check so an auto-appended "missing
+		// article" row looks and behaves the same as a manually-added one.
 		const articleToRow = (article, stockType) => {
 			if (stockType === "RM") {
 				return {
@@ -455,25 +455,6 @@
 		const articleIdentityKey = (source, stockType) => stockType === "RM"
 			? `${toInt(source.item_id) || 0}|${toInt(source.color_id) || 0}|${toInt(source.size_id) || 0}`
 			: `${toInt(source.sku_id) || 0}`;
-
-		const loadArticlesForGroup = async (groupId) => {
-			const stockType = currentStockType();
-			showTableLoading();
-			try {
-				const url = buildArticlesUrl(groupId, stockType);
-				const resp = await fetch(url, { credentials: "same-origin" });
-				if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-				const data = await resp.json();
-				const articles = Array.isArray(data.articles) ? data.articles : [];
-				const newRows = articles.map((article) => articleToRow(article, stockType));
-				rowsState = newRows.length ? newRows : [rowTemplate(stockType)];
-			} catch (err) {
-				console.error("Failed to load articles for group:", err);
-				rowsState = [rowTemplate(stockType)];
-			}
-			renderRows();
-			hideTableLoading();
-		};
 
 		// Pre-save safety net: re-fetch the authoritative article list for the
 		// selected group/status/date and append any article with stock that
@@ -787,10 +768,9 @@
 		const renderFooter = (stockType) => {
 			// Footer keeps adjustment totals visible while rows are edited.
 			const usePhysicalCountField = isPhysicalCountReasonActive();
-			const isCorrection = isPhysicalCountCorrectionActive();
 			const descriptorColspan = stockType === "RM" ? 4 : 2;
 			const addButtonTitle = _t.add;
-			const addButtonMarkup = isCorrection ? "" : `
+			const addButtonMarkup = `
 				<button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-300 bg-white p-2 text-slate-700 disabled:opacity-40" data-add-row aria-label="${addButtonTitle}" title="${addButtonTitle}" ${canSave ? "" : "disabled"}>
 					<svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
 				</button>
@@ -928,7 +908,7 @@
 				const normalized = applyDerivedRow(row, stockType);
 				rowsState[index] = normalized;
 
-				const removeDisabled = !canSave || rowsState.length <= 1 || isPhysicalCountCorrectionActive() || Boolean(normalized._auto_loaded);
+				const removeDisabled = !canSave || rowsState.length <= 1 || Boolean(normalized._auto_loaded);
 				const actionCell = `
 					<td class="border-t border-slate-200 px-2 py-1 text-center">
 						<button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-white p-2 text-rose-600 disabled:opacity-40" data-remove-row="${index}" ${removeDisabled ? "disabled" : ""}>
@@ -1342,28 +1322,12 @@
 			syncReasonSettings();
 		}
 
-		const getProductGroupValue = () => {
-			const raw = productGroupSelect?.value || "";
-			return raw === "all" ? "all" : Number(raw || 0);
-		};
-
 		if (productGroupSelect) {
+			// Switching product group invalidates rows picked against the old group's
+			// SKU list — start the operator over on a blank row rather than mixing groups.
 			productGroupSelect.addEventListener("change", () => {
-				const groupId = getProductGroupValue();
-				if (!groupId && groupId !== "all") {
-					rowsState = [rowTemplate(currentStockType())];
-					renderRows();
-					return;
-				}
-				loadArticlesForGroup(groupId).catch((err) => console.error(err));
-			});
-		}
-
-		if (productGroupStatusSelect) {
-			productGroupStatusSelect.addEventListener("change", () => {
-				const groupId = getProductGroupValue();
-				if (!groupId && groupId !== "all") return;
-				loadArticlesForGroup(groupId).catch((err) => console.error(err));
+				rowsState = [rowTemplate(currentStockType())];
+				renderRows();
 			});
 		}
 
