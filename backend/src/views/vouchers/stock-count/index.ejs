@@ -905,16 +905,22 @@
 
 			const selectedGroupVal = productGroupSelect?.value || "";
 			const selectedGroupId = selectedGroupVal === "all" ? "all" : Number(selectedGroupVal || 0);
-			const skuRows = skuList.filter((entry) => {
+			// Correction vouchers are scoped to a single product group — until one is
+			// picked there is no valid article list to offer, so the dropdowns must
+			// stay empty rather than falling back to "every SKU/item in the system".
+			const groupRequiredButMissing = isPhysicalCountCorrectionActive() && !initialVoucher && !selectedGroupVal;
+			const skuRows = groupRequiredButMissing ? [] : skuList.filter((entry) => {
 				if (String(entry.item_type || "").toUpperCase() !== stockType) return false;
 				if (selectedGroupId && selectedGroupId !== "all") {
 					return Number(entry.group_id || 0) === selectedGroupId;
 				}
 				return true;
 			});
-			const availableRmItems = (selectedGroupId && selectedGroupId !== "all")
-				? rmItems.filter((entry) => Number(entry.group_id || 0) === selectedGroupId)
-				: rmItems;
+			const availableRmItems = groupRequiredButMissing
+				? []
+				: (selectedGroupId && selectedGroupId !== "all")
+					? rmItems.filter((entry) => Number(entry.group_id || 0) === selectedGroupId)
+					: rmItems;
 			// A SKU already picked on another row must not be offered again — no duplicate articles in one voucher.
 			const usedSkuIds = new Set(rowsState.map((r) => toInt(r.sku_id)).filter(Boolean));
 
@@ -959,17 +965,13 @@
 								<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-500 cursor-default" value="${sizeLabel}"></td>`;
 						})()
 						: `
-							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="item_id" data-row-field="item_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${optionMarkup(availableRmItems.map((entry) => ({ id: entry.id, label: entry.name })), normalized.item_id, "Select Raw Material")}</select></td>
+							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="item_id" data-row-field="item_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${(canSave && !groupRequiredButMissing) ? "" : "disabled"}>${optionMarkup(availableRmItems.map((entry) => ({ id: entry.id, label: entry.name })), normalized.item_id, groupRequiredButMissing ? "Select product group first" : "Select Raw Material")}</select></td>
 							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="color_id" data-row-field="color_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${(canSave && !colorState.disabled) ? "" : "disabled"}>${optionMarkup(colorState.entries, normalized.color_id, colorState.allowNone ? "None" : "")}</select></td>
 							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="size_id" data-row-field="size_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${(canSave && !sizeState.disabled) ? "" : "disabled"}>${optionMarkup(sizeState.entries, normalized.size_id, sizeState.allowNone ? "None" : "")}</select></td>`;
-					const rmUomCellMarkup = (rmItemIsSet && normalized.uom_id !== null && normalized.uom_id !== undefined)
-						? (() => {
-							const uomOptions = getUomOptions(normalized, stockType);
-							const selectedUnit = uomOptions.find((e) => Number(e.id || 0) === Number(normalized.uom_id || 0));
-							const uomLabel = String(selectedUnit?.name || selectedUnit?.code || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-							return `<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-500 cursor-default" value="${uomLabel}"></td>`;
-						})()
-						: `<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="uom_id" data-row-field="uom_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${optionMarkup(getUomOptions(normalized, stockType), normalized.uom_id, "Select Unit")}</select></td>`;
+					// Unit lists are short (a couple of entries per item), so keep this an
+					// editable select even after a default has been chosen — unlike the
+					// item dropdown, there's no perf reason to freeze it into static text.
+					const rmUomCellMarkup = `<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="uom_id" data-row-field="uom_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${(canSave && rmItemIsSet) ? "" : "disabled"}>${optionMarkup(getUomOptions(normalized, stockType), normalized.uom_id, "Select Unit")}</select></td>`;
 					return `
 						<tr data-line-index="${index}" data-row-index="${index}">
 							${rmItemCellMarkup}
@@ -1004,16 +1006,11 @@
 						const label = String(sku?.sku_name || `SKU ${normalized.sku_id || ""}`).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 						return `<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-700 cursor-default" value="${label}"></td>`;
 					})()
-					: `<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="sku_id" data-row-field="sku_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${optionMarkup(skuRows.filter((entry) => !usedSkuIds.has(Number(entry.id))).map((entry) => ({ id: entry.id, label: entry.sku_name })), normalized.sku_id, "Select SKU")}</select></td>`;
-				const uomIsSet = normalized.uom_id !== null && normalized.uom_id !== undefined;
-				const fgUomCellMarkup = (skuIsSet && uomIsSet)
-					? (() => {
-						const uomOptions = getUomOptions(normalized, stockType);
-						const selectedUnit = uomOptions.find((e) => Number(e.id || 0) === Number(normalized.uom_id || 0));
-						const uomLabel = String(selectedUnit?.name || selectedUnit?.code || "").replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-						return `<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-500 cursor-default" value="${uomLabel}"></td>`;
-					})()
-					: `<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="uom_id" data-row-field="uom_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${canSave ? "" : "disabled"}>${optionMarkup(getUomOptions(normalized, stockType), normalized.uom_id, "Select Unit")}</select></td>`;
+					: `<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="sku_id" data-row-field="sku_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${(canSave && !groupRequiredButMissing) ? "" : "disabled"}>${optionMarkup(skuRows.filter((entry) => !usedSkuIds.has(Number(entry.id))).map((entry) => ({ id: entry.id, label: entry.sku_name })), normalized.sku_id, groupRequiredButMissing ? "Select product group first" : "Select SKU")}</select></td>`;
+				// Unlike the SKU dropdown, a unit list only ever has a couple of entries
+				// per article, so there's no perf reason to freeze it into static text —
+				// keep it a real, editable select even after a default has been chosen.
+				const fgUomCellMarkup = `<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="uom_id" data-row-field="uom_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${(canSave && skuIsSet) ? "" : "disabled"}>${optionMarkup(getUomOptions(normalized, stockType), normalized.uom_id, "Select Unit")}</select></td>`;
 				return `
 					<tr data-line-index="${index}" data-row-index="${index}">
 						${skuCellMarkup}
@@ -1273,12 +1270,10 @@
 			rowsState[index] = applyDerivedRow(row, stockType);
 			renderRows();
 			if (articleJustPicked) {
-				// Unit (and, for RM, color/size) auto-resolves the instant the article is
-				// chosen, so the qty box is the very next thing to fill in — jump straight
-				// there instead of leaving focus stranded on a cell that just became static
-				// readonly text.
-				const qtyFieldKey = isPhysicalCountReasonActive() ? "counted_stock_qty" : "qty_in";
-				restoreActiveRowField({ lineIndex: String(index), fieldKey: qtyFieldKey });
+				// Unit is pre-filled with a sensible default the instant the article is
+				// chosen, but stays editable — jump focus there so the user can confirm
+				// or change it before moving on to qty.
+				restoreActiveRowField({ lineIndex: String(index), fieldKey: "uom_id" });
 				return;
 			}
 			if (enterFocusState) {
@@ -1332,10 +1327,14 @@
 				const selected = reasonSelect.options[reasonSelect.selectedIndex];
 				const required = selected && selected.getAttribute("data-requires-notes") === "1";
 				reasonNotes.required = Boolean(required);
-				const wasCorrection = isPhysicalCountCorrectionActive();
+				const isCorrection = isPhysicalCountCorrectionActive();
 				syncProductGroupVisibility();
-				if (!wasCorrection && productGroupSelect) productGroupSelect.value = "";
-				if (!isPhysicalCountCorrectionActive()) rowsState = [rowTemplate(currentStockType())];
+				if (!isCorrection && productGroupSelect) productGroupSelect.value = "";
+				// New vouchers start clean on every reason change — correction rows
+				// only make sense once a product group is chosen, so leftover rows
+				// from a previous reason must not carry over. Existing vouchers keep
+				// their loaded rows unless the reason is switched away from correction.
+				if (!initialVoucher || !isCorrection) rowsState = [rowTemplate(currentStockType())];
 				renderHead(currentStockType());
 				renderRows();
 			};
