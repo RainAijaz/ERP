@@ -60,7 +60,6 @@ const MOVEMENT_VOUCHER_CODES = Object.freeze({
   transfer: ["STN_OUT", "GRN_IN"],
 });
 const DEAD_STOCK_TYPE_FILTERS = Object.freeze({
-  all: "ALL",
   finished: STOCK_TYPES.finished,
   semiFinished: STOCK_TYPES.semiFinished,
 });
@@ -250,22 +249,18 @@ const getSkuCategoriesFromStockType = (stockType) => {
 };
 
 const normalizeDeadStockTypeFilter = (value) => {
-  const normalized = String(value || DEAD_STOCK_TYPE_FILTERS.all)
+  const normalized = String(value || DEAD_STOCK_TYPE_FILTERS.finished)
     .trim()
     .toUpperCase();
-  if (normalized === DEAD_STOCK_TYPE_FILTERS.finished)
-    return DEAD_STOCK_TYPE_FILTERS.finished;
   if (normalized === DEAD_STOCK_TYPE_FILTERS.semiFinished)
     return DEAD_STOCK_TYPE_FILTERS.semiFinished;
-  return DEAD_STOCK_TYPE_FILTERS.all;
+  return DEAD_STOCK_TYPE_FILTERS.finished;
 };
 
-const getDeadStockSkuCategories = (stockTypeFilter) => {
-  if (stockTypeFilter === DEAD_STOCK_TYPE_FILTERS.finished) return ["FG"];
-  if (stockTypeFilter === DEAD_STOCK_TYPE_FILTERS.semiFinished)
-    return ["SFG"];
-  return ["FG", "SFG"];
-};
+const getDeadStockSkuCategories = (stockTypeFilter) =>
+  stockTypeFilter === DEAD_STOCK_TYPE_FILTERS.semiFinished
+    ? ["SFG"]
+    : ["FG"];
 
 const normalizeDeadStockSortBy = (value) => {
   const normalized = String(value || DEAD_STOCK_SORT_TYPES.closingQtyDesc)
@@ -362,10 +357,17 @@ const parseDeadStockFilters = ({ req, input = {} }) => {
   const stockTypeFilter = normalizeDeadStockTypeFilter(
     input.stock_type_filter || input.stockTypeFilter,
   );
+  const stockStatus =
+    stockTypeFilter === DEAD_STOCK_TYPE_FILTERS.finished
+      ? normalizeStockStatus(input.stock_status || input.stockStatus)
+      : null;
   const rateType = normalizeRateType({
     value: input.rate_type || input.rateType || RATE_TYPES.sale,
     stockType: STOCK_TYPES.finished,
   });
+  const viewType = normalizeViewType(
+    input.view_filter || input.viewType || VIEW_TYPES.summary,
+  );
   const minClosingQty = Math.max(0, Number(input.min_closing_qty || 0) || 0);
   const deadStockOnly = toBoolean(
     input.dead_stock_only || input.deadStockOnly,
@@ -378,7 +380,10 @@ const parseDeadStockFilters = ({ req, input = {} }) => {
     from,
     to,
     stockTypeFilter,
+    stockStatus,
     rateType,
+    viewType,
+    unitId: toPositiveInt(input.unit_id || input.unitId),
     minClosingQty,
     deadStockOnly,
     sortBy,
@@ -2287,12 +2292,19 @@ const loadStockMovementRows = async ({
     .filter(Boolean);
 };
 
-const loadDeadStockClosingRows = async ({ filters }) => {
+const loadDeadStockClosingRows = async ({
+  filters,
+  selectedUnitId,
+  uomContext,
+}) => {
   const categories = getDeadStockSkuCategories(filters.stockTypeFilter);
   if (!categories.length) return [];
 
+  const isFinished =
+    filters.stockTypeFilter === DEAD_STOCK_TYPE_FILTERS.finished;
   const netQtyPairsSql =
     "SUM(CASE WHEN sl.direction = 1 THEN COALESCE(sl.qty_pairs, 0) ELSE -COALESCE(sl.qty_pairs, 0) END)";
+  const packedFlagSql = FG_PACKED_FLAG_SQL;
 
   let query = knex("erp.stock_ledger as sl")
     .join("erp.skus as s", "s.id", "sl.sku_id")
@@ -2301,19 +2313,32 @@ const loadDeadStockClosingRows = async ({ filters }) => {
     .leftJoin("erp.product_groups as pg", "pg.id", "i.group_id")
     .leftJoin("erp.product_subgroups as sg", "sg.id", "i.subgroup_id")
     .leftJoin("erp.uom as u", "u.id", "i.base_uom_id")
+    .leftJoin("erp.branches as b", "b.id", "sl.branch_id");
+
+  if (isFinished) {
+    query = query
+      .leftJoin("erp.voucher_line as vl", "vl.id", "sl.voucher_line_id")
+      .leftJoin("erp.sales_line as sln", "sln.voucher_line_id", "vl.id")
+      .leftJoin("erp.production_line as pl", "pl.voucher_line_id", "vl.id");
+  }
+
+  query = query
     .select(
+      "sl.branch_id",
+      localizedNameSelect("b", "branch_name", filters.locale),
       "sl.category",
       "s.id as sku_id",
       "s.sku_code",
       "i.id as article_id",
-      "i.name as article_name",
+      localizedNameSelect("i", "article_name", filters.locale),
       "i.group_id",
-      "pg.name as group_name",
+      localizedNameSelect("pg", "group_name", filters.locale),
       "i.subgroup_id",
-      "sg.name as subgroup_name",
+      localizedNameSelect("sg", "subgroup_name", filters.locale),
+      "i.base_uom_id",
       "v.sale_rate",
       "u.code as base_uom_code",
-      "u.name as base_uom_name",
+      localizedNameSelect("u", "base_uom_name", filters.locale),
     )
     .select(knex.raw(`${netQtyPairsSql} as qty_pairs`))
     .select(knex.raw("SUM(COALESCE(sl.value, 0)) as total_amount"))
@@ -2321,18 +2346,26 @@ const loadDeadStockClosingRows = async ({ filters }) => {
     .whereIn("sl.category", categories)
     .where("sl.txn_date", "<=", filters.to)
     .groupBy(
+      "sl.branch_id",
+      "b.name",
+      "b.name_ur",
       "sl.category",
       "s.id",
       "s.sku_code",
       "i.id",
       "i.name",
+      "i.name_ur",
       "i.group_id",
       "pg.name",
+      "pg.name_ur",
       "i.subgroup_id",
       "sg.name",
+      "sg.name_ur",
+      "i.base_uom_id",
       "v.sale_rate",
       "u.code",
       "u.name",
+      "u.name_ur",
     );
 
   if (filters.branchIds.length)
@@ -2341,20 +2374,37 @@ const loadDeadStockClosingRows = async ({ filters }) => {
     query = query.whereIn("i.group_id", filters.productGroupIds);
   if (filters.productSubgroupIds.length)
     query = query.whereIn("i.subgroup_id", filters.productSubgroupIds);
+  if (isFinished && filters.stockStatus) {
+    query =
+      filters.stockStatus === STOCK_STATUS_TYPES.loose
+        ? query.whereRaw(`${packedFlagSql} = false`)
+        : query.whereRaw(`${packedFlagSql} = true`);
+  }
 
   const rows = await query;
 
   return rows
     .map((row) => {
-      const closingQty = toQuantity(row?.qty_pairs, 3);
-      if (!hasNonZeroQuantity(closingQty)) return null;
+      const rawQtyPairs = toQuantity(row?.qty_pairs, 3);
+      if (!hasNonZeroQuantity(rawQtyPairs)) return null;
+
+      const baseUomId = toPositiveInt(row?.base_uom_id);
+      const conversionFactor = selectedUnitId
+        ? getConversionFactor({
+            graph: uomContext?.graph,
+            fromUomId: baseUomId,
+            toUomId: selectedUnitId,
+          }) || 0
+        : 1;
+      if (!(conversionFactor > 0)) return null;
+      const closingQty = toQuantity(rawQtyPairs * conversionFactor, 3);
 
       const stockType = String(row?.category || "")
         .trim()
         .toUpperCase();
       const costAmount = toAmount(row?.total_amount, 2);
-      const costRate = hasNonZeroQuantity(closingQty)
-        ? toAmount(costAmount / closingQty, 4)
+      const costRate = hasNonZeroQuantity(rawQtyPairs)
+        ? toAmount(costAmount / rawQtyPairs, 4)
         : 0;
       const saleRate =
         stockType === STOCK_TYPES.finished ? toAmount(row?.sale_rate, 4) : 0;
@@ -2363,10 +2413,12 @@ const loadDeadStockClosingRows = async ({ filters }) => {
         filters.rateType === RATE_TYPES.sale;
       const rate = useSaleRate ? saleRate : costRate;
       const closingValue = useSaleRate
-        ? toAmount(closingQty * rate, 2)
+        ? toAmount(rawQtyPairs * rate, 2)
         : costAmount;
 
       return {
+        branch_id: Number(row?.branch_id || 0) || null,
+        branch_name: String(row?.branch_name || "").trim(),
         sku_id: Number(row?.sku_id || 0) || null,
         sku_code: String(row?.sku_code || "").trim(),
         article_id: Number(row?.article_id || 0) || null,
@@ -2376,9 +2428,12 @@ const loadDeadStockClosingRows = async ({ filters }) => {
         subgroup_id: Number(row?.subgroup_id || 0) || null,
         subgroup_name: String(row?.subgroup_name || "").trim(),
         stock_type: stockType,
-        unit_label:
-          String(row?.base_uom_code || row?.base_uom_name || "").trim() ||
-          "-",
+        unit_label: getUnitLabel({
+          uomById: uomContext?.uomById,
+          unitId: selectedUnitId,
+          fallbackCode: row?.base_uom_code,
+          fallbackName: row?.base_uom_name,
+        }),
         rate,
         closingQty,
         closingValue,
@@ -2387,30 +2442,78 @@ const loadDeadStockClosingRows = async ({ filters }) => {
     .filter(Boolean);
 };
 
-const loadDeadStockSalesQtyRows = async ({ filters }) => {
+const buildDeadStockClosingSummaryRows = (detailRows) => {
+  const grouped = new Map();
+
+  (detailRows || []).forEach((row) => {
+    const key = String(row.sku_id);
+    const existing = grouped.get(key) || {
+      ...row,
+      branch_id: null,
+      branch_name: "",
+      closingQty: 0,
+      closingValue: 0,
+    };
+    existing.closingQty = toQuantity(
+      existing.closingQty + Number(row.closingQty || 0),
+      3,
+    );
+    existing.closingValue = toAmount(
+      existing.closingValue + Number(row.closingValue || 0),
+      2,
+    );
+    grouped.set(key, existing);
+  });
+
+  return [...grouped.values()].map((row) => ({
+    ...row,
+    rate: hasNonZeroQuantity(row.closingQty)
+      ? toAmount(row.closingValue / row.closingQty, 4)
+      : 0,
+  }));
+};
+
+const loadDeadStockSalesQtyRows = async ({
+  filters,
+  selectedUnitId,
+  uomContext,
+}) => {
   const categories = getDeadStockSkuCategories(filters.stockTypeFilter);
   if (!categories.length) return new Map();
 
   const saleCodes = getMovementVoucherCodeBuckets().sale;
   if (!saleCodes.length) return new Map();
 
+  const isFinished =
+    filters.stockTypeFilter === DEAD_STOCK_TYPE_FILTERS.finished;
+  const packedFlagSql = FG_PACKED_FLAG_SQL;
+
   let query = knex("erp.stock_ledger as sl")
     .join("erp.voucher_header as vh", "vh.id", "sl.voucher_header_id")
     .join("erp.skus as s", "s.id", "sl.sku_id")
     .join("erp.variants as v", "v.id", "s.variant_id")
-    .join("erp.items as i", "i.id", "v.item_id")
+    .join("erp.items as i", "i.id", "v.item_id");
+
+  if (isFinished) {
+    query = query
+      .leftJoin("erp.voucher_line as vl", "vl.id", "sl.voucher_line_id")
+      .leftJoin("erp.sales_line as sln", "sln.voucher_line_id", "vl.id")
+      .leftJoin("erp.production_line as pl", "pl.voucher_line_id", "vl.id");
+  }
+
+  query = query
     .where({ "sl.stock_state": "ON_HAND" })
     .whereIn("sl.category", categories)
     .whereIn("vh.voucher_type_code", saleCodes)
     .where("sl.txn_date", ">=", filters.from)
     .where("sl.txn_date", "<=", filters.to)
-    .select("sl.sku_id")
+    .select("sl.sku_id", "sl.branch_id", "i.base_uom_id")
     .select(
       knex.raw(
         "SUM(CASE WHEN sl.direction = 1 THEN COALESCE(sl.qty_pairs, 0) ELSE -COALESCE(sl.qty_pairs, 0) END) as signed_qty",
       ),
     )
-    .groupBy("sl.sku_id");
+    .groupBy("sl.sku_id", "sl.branch_id", "i.base_uom_id");
 
   if (filters.branchIds.length)
     query = query.whereIn("sl.branch_id", filters.branchIds);
@@ -2418,22 +2521,52 @@ const loadDeadStockSalesQtyRows = async ({ filters }) => {
     query = query.whereIn("i.group_id", filters.productGroupIds);
   if (filters.productSubgroupIds.length)
     query = query.whereIn("i.subgroup_id", filters.productSubgroupIds);
+  if (isFinished && filters.stockStatus) {
+    query =
+      filters.stockStatus === STOCK_STATUS_TYPES.loose
+        ? query.whereRaw(`${packedFlagSql} = false`)
+        : query.whereRaw(`${packedFlagSql} = true`);
+  }
 
   const rows = await query;
-  const salesQtyBySkuId = new Map();
+  const salesQtyByKey = new Map();
   rows.forEach((row) => {
     const skuId = Number(row?.sku_id || 0) || 0;
     if (!skuId) return;
-    salesQtyBySkuId.set(skuId, Math.abs(toQuantity(row?.signed_qty, 3)));
+    const branchId = Number(row?.branch_id || 0) || 0;
+    const baseUomId = toPositiveInt(row?.base_uom_id);
+    const conversionFactor = selectedUnitId
+      ? getConversionFactor({
+          graph: uomContext?.graph,
+          fromUomId: baseUomId,
+          toUomId: selectedUnitId,
+        }) || 0
+      : 1;
+    const rawQty = Math.abs(toQuantity(row?.signed_qty, 3));
+    const qty = conversionFactor > 0 ? toQuantity(rawQty * conversionFactor, 3) : 0;
+    salesQtyByKey.set(`${skuId}:${branchId}`, qty);
   });
-  return salesQtyBySkuId;
+  return salesQtyByKey;
 };
 
-const buildDeadStockRows = ({ closingRows, salesQtyBySkuId, filters }) => {
+const aggregateDeadStockSalesQtyMapBySku = (detailMap) => {
+  const bySku = new Map();
+  (detailMap || new Map()).forEach((qty, key) => {
+    const skuId = String(key).split(":")[0];
+    bySku.set(skuId, toQuantity((bySku.get(skuId) || 0) + Number(qty || 0), 3));
+  });
+  return bySku;
+};
+
+const buildDeadStockRows = ({ closingRows, salesQtyMap, filters }) => {
   const periodDays = Math.max(1, daysBetweenYmd(filters.from, filters.to) + 1);
+  const isDetails = filters.viewType === VIEW_TYPES.details;
 
   let rows = (closingRows || []).map((row) => {
-    const qtySold = toQuantity(salesQtyBySkuId.get(row.sku_id) || 0, 3);
+    const lookupKey = isDetails
+      ? `${row.sku_id}:${row.branch_id || 0}`
+      : String(row.sku_id);
+    const qtySold = toQuantity(salesQtyMap.get(lookupKey) || 0, 3);
     const avgDailySales = qtySold / periodDays;
     const turnoverRatio = hasNonZeroQuantity(row.closingQty)
       ? toAmount(qtySold / row.closingQty, 4)
@@ -2540,17 +2673,55 @@ const getInventoryDeadStockReportPageData = async ({ req, input = {} }) => {
   }
   filters.productSubgroupIds = safeProductSubgroupIds;
 
+  const unitOptions = await loadUnitOptions(filters.stockTypeFilter);
+  const isFinished =
+    filters.stockTypeFilter === DEAD_STOCK_TYPE_FILTERS.finished;
+
+  let selectedUnitId = null;
+  let selectedUnitLabel = "";
+  if (isFinished) {
+    if (filters.stockStatus === STOCK_STATUS_TYPES.packed) {
+      const dozenUnit = resolveDefaultSemifinishedUnit({ unitOptions });
+      selectedUnitId = dozenUnit ? Number(dozenUnit.id) : null;
+      selectedUnitLabel = dozenUnit
+        ? String(dozenUnit.code || dozenUnit.name || "").trim()
+        : "";
+    } else {
+      const pairUnit = (unitOptions || []).find((unit) => isPairUomOption(unit));
+      selectedUnitLabel = pairUnit
+        ? String(pairUnit.code || pairUnit.name || "").trim()
+        : "PAIR";
+    }
+  } else {
+    const selectedUnit = resolveSemifinishedUnitSelection({
+      filters: { stockType: STOCK_TYPES.semiFinished, unitId: filters.unitId },
+      unitOptions,
+    });
+    selectedUnitId = selectedUnit.unitId;
+    selectedUnitLabel = selectedUnit.unitLabel;
+  }
+  filters.unitId = selectedUnitId;
+  filters.unitLabel = selectedUnitLabel;
+
   const options = {
     branches,
     productGroups,
     productSubgroups,
+    unitOptions,
     stockTypeFilters: [
-      { value: DEAD_STOCK_TYPE_FILTERS.all, labelKey: "all" },
       { value: DEAD_STOCK_TYPE_FILTERS.finished, labelKey: "finished" },
       {
         value: DEAD_STOCK_TYPE_FILTERS.semiFinished,
         labelKey: "semi_finished",
       },
+    ],
+    stockStatuses: [
+      { value: STOCK_STATUS_TYPES.packed, labelKey: "packed" },
+      { value: STOCK_STATUS_TYPES.loose, labelKey: "loose" },
+    ],
+    viewFilters: [
+      { value: VIEW_TYPES.summary, labelKey: "summary" },
+      { value: VIEW_TYPES.details, labelKey: "details" },
     ],
     rateTypes: [
       { value: RATE_TYPES.sale, labelKey: "sale_rate_basis" },
@@ -2590,12 +2761,22 @@ const getInventoryDeadStockReportPageData = async ({ req, input = {} }) => {
     };
   }
 
-  const [closingRows, salesQtyBySkuId] = await Promise.all([
-    loadDeadStockClosingRows({ filters }),
-    loadDeadStockSalesQtyRows({ filters }),
+  const uomContext = await loadUomContext();
+
+  const [closingDetailRows, salesQtyDetailMap] = await Promise.all([
+    loadDeadStockClosingRows({ filters, selectedUnitId, uomContext }),
+    loadDeadStockSalesQtyRows({ filters, selectedUnitId, uomContext }),
   ]);
 
-  const rows = buildDeadStockRows({ closingRows, salesQtyBySkuId, filters });
+  const isDetails = filters.viewType === VIEW_TYPES.details;
+  const closingRows = isDetails
+    ? closingDetailRows
+    : buildDeadStockClosingSummaryRows(closingDetailRows);
+  const salesQtyMap = isDetails
+    ? salesQtyDetailMap
+    : aggregateDeadStockSalesQtyMapBySku(salesQtyDetailMap);
+
+  const rows = buildDeadStockRows({ closingRows, salesQtyMap, filters });
 
   const totals = rows.reduce(
     (acc, row) => {
