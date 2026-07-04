@@ -105,6 +105,10 @@
                       <span class="inline-flex items-center whitespace-nowrap rounded-full border <%= row[column.key] ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700" %> px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em]">
                         <%= row[column.key] ? t("active") : t("inactive") %>
                       </span>
+                    <% } else if (column.key === "policy_status") { %>
+                      <span class="inline-flex items-center whitespace-nowrap rounded-full border <%= row[column.key] === "Active" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-rose-200 bg-rose-50 text-rose-700" %> px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em]">
+                        <%= row[column.key] === "Active" ? t("active") : t("inactive") %>
+                      </span>
                     <% } else if (column.type === "boolean") { %>
                       <span class="inline-flex items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-600">
                         <%= row[column.key] ? t("yes") : t("no") %>

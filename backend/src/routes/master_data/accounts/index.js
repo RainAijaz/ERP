@@ -35,7 +35,7 @@ const ALL_BRANCH_OPTION_VALUE = "__all__";
 
 const page = {
   titleKey: "accounts",
-  description: "Maintain chart of accounts used in vouchers and reporting.",
+  description: "desc_accounts",
   table: "erp.accounts",
   translateMode: "transliterate",
   hasUpdatedFields: true,
@@ -75,10 +75,10 @@ const page = {
     ),
   ],
   columns: [
-    { key: "id", label: "ID" },
+    { key: "id", label: "id" },
     { key: "code", label: "code" },
     { key: "name", label: "account_name" },
-    { key: "name_ur", label: "Name (Urdu)" },
+    { key: "name_ur", label: "name_ur" },
     { key: "account_type", label: "account_type" },
     { key: "group_name", label: "account_group" },
     { key: "is_contra", label: "contra_account", type: "boolean" },
@@ -90,13 +90,13 @@ const page = {
     {
       name: "name",
       label: "account_name",
-      placeholder: "Cash Main, Bank Alfalah",
+      placeholder: "account_name_placeholder",
       required: true,
     },
     {
       name: "name_ur",
-      label: "Name (Urdu)",
-      placeholder: "Urdu name",
+      label: "name_ur",
+      placeholder: "urdu_name_placeholder",
       required: true,
     },
     {
@@ -104,7 +104,10 @@ const page = {
       label: "account_type",
       type: "select",
       required: true,
-      options: ACCOUNT_TYPES.map((type) => ({ value: type, label: type })),
+      options: ACCOUNT_TYPES.map((type) => ({
+        value: type,
+        label: type.toLowerCase(),
+      })),
     },
     {
       name: "subgroup_id",
@@ -159,7 +162,7 @@ const page = {
     {
       name: "lock_posting",
       label: "lock_posting",
-      helpText: "Prevent vouchers from posting to this account.",
+      helpText: "lock_posting_help",
       type: "checkbox",
     },
   ],

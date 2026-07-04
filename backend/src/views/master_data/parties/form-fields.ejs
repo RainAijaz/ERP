@@ -61,7 +61,7 @@
                 value="<%= option.value %>"
                 <%= field.name === "group_id" && option.partyType ? "data-party-type=\"" + option.partyType + "\"" : "" %>
               >
-                <%= t(option.label) %>
+                <%= field.optionsQuery ? option.label : t(option.label) %>
               </option>
             <% }) %>
             </select>
@@ -120,7 +120,7 @@
               <%= field.required ? "data-required=\"true\"" : "" %>
             >
               <% (field.options || []).forEach(function(option) { %>
-                <option value="<%= option.value %>"><%= t(option.label) %></option>
+                <option value="<%= option.value %>"><%= field.optionsQuery ? option.label : t(option.label) %></option>
               <% }) %>
             </select>
           </label>

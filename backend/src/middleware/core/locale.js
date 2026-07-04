@@ -1457,6 +1457,13 @@ const translations = {
     system_qty: "System Qty",
     counted_stock: "Counted Stock",
     amount_diff: "Amount Diff",
+    select_product_group_first: "Please select a product group before saving.",
+    fill_all_quantities:
+      "Please enter a counted quantity for every article. Enter 0 if none were found.",
+    articles_missing_added:
+      "Some articles with stock were not in the list and have been added below. Please enter their counted quantity before confirming.",
+    reconcile_articles_failed:
+      "Unable to verify the article list before saving. Please check your connection and try again.",
     transfer_status: "Transfer Status",
     partially_approved: "Partially Approved",
     ref_bill_no: "Ref/Bill No",
@@ -3724,6 +3731,206 @@ Object.assign(translations.ur, {
   system_qty: "سسٹم مقدار",
   counted_stock: "شمار شدہ اسٹاک",
   amount_diff: "رقم کا فرق",
+  select_product_group_first: "براہ کرم محفوظ کرنے سے پہلے پروڈکٹ گروپ منتخب کریں۔",
+  fill_all_quantities:
+    "براہ کرم ہر آرٹیکل کے لیے شمار شدہ مقدار درج کریں۔ اگر کچھ نہ ملے تو 0 درج کریں۔",
+  articles_missing_added:
+    "کچھ آرٹیکلز جن میں اسٹاک موجود تھا فہرست میں شامل نہیں تھے اور اب نیچے شامل کر دیے گئے ہیں۔ براہ کرم تصدیق سے پہلے ان کی شمار شدہ مقدار درج کریں۔",
+  reconcile_articles_failed:
+    "محفوظ کرنے سے پہلے آرٹیکل کی فہرست کی تصدیق نہیں ہو سکی۔ براہ کرم اپنا کنکشن چیک کریں اور دوبارہ کوشش کریں۔",
+});
+
+Object.assign(translations.en, {
+  applies_to: "Applies To",
+  max_pair_discount: "Max Discount Per Pair",
+  lock_posting_help: "Prevent vouchers from posting to this account.",
+  group_name: "Group Name",
+  group_type: "Group Type",
+  both: "Both",
+  product_type: "Product Type",
+  subgroup_name: "Subgroup Name",
+  production_department: "Production Department",
+  account_type_help:
+    "Select the main classification (Asset, Liability, Equity, Revenue, Expense).",
+  account_group_name_help: "Name of the account group.",
+  account_group_name_placeholder: "Cash & Bank, Trade Receivables",
+  urdu_name_help: "Urdu display name for reports and screens.",
+  urdu_name_placeholder: "Urdu name",
+  unit_name_placeholder: "Pieces, Dozen, Kilogram",
+  size_name_placeholder: "7/10, 40, 41",
+  color_name_placeholder: "Black, White, Mix",
+  grade_name_placeholder: "A, B, C",
+  grade_rank_placeholder: "1, 2, 3",
+  packing_type_placeholder: "Thaili, Box, Carton",
+  city_name_placeholder: "Lahore, Karachi",
+  product_group_name_placeholder: "EVA, PU, Footwear",
+  subgroup_name_placeholder: "Ballman, Ragzeen",
+  product_type_placeholder: "Slipper, Sandal, Pumpy",
+  party_group_name_placeholder: "Wholesale, Retail, Suppliers",
+  department_name_placeholder: "Cutting, Stitching, Accounts",
+  production_stage_placeholder: "Cutting, Stitching, Finishing",
+  party_name_placeholder: "Hamza Traders",
+  phone_placeholder: "0300-0000000",
+  address_placeholder: "Street, area, city",
+  credit_allowed_help: "Only allowed for customers. Requires a credit limit.",
+  account_name_placeholder: "Cash Main, Bank Alfalah",
+  liability: "Liability",
+  equity: "Equity",
+  revenue: "Revenue",
+  expense: "Expense",
+  below_required: "below required quantity",
+  bom_cascade_apply_success: "Cascaded BOM update applied successfully.",
+  bom_cascade_error_draft_exists:
+    "A draft already exists for this article. Resolve it before applying cascaded updates.",
+  bom_cascade_error_not_eligible:
+    "This BOM is not eligible for a cascaded update.",
+  bom_cascade_review_link: "Review",
+  bom_cascade_review_title: "Review dependent BOM updates",
+  bom_change_log_max_date_range:
+    "Date range cannot exceed 7 days for global change log search.",
+  bom_change_log_not_available:
+    "BOM change log is not available in this environment.",
+  bom_change_log_requires_date_range:
+    "Date range is required when article and BOM number are not selected.",
+  bom_copied_dependents_notice_prefix:
+    "These articles' BOMs were copied from this one — review whether they need a new version:",
+  cash: "Cash",
+  changed: "Changed",
+  error_loading: "Failed to load. Click to retry.",
+  error_select_target: "Please select a target.",
+  fixed: "Fixed",
+  flexible: "Flexible",
+  insufficient_stock: "Insufficient Stock",
+  items: "Items",
+  link_to_sales_order: "Link to Sales Order",
+  load_report: "Load Report",
+  neg_stock: "Neg. Stock",
+  optional: "Optional",
+  rate_editable_off: "Rate: Fixed — click to allow editing",
+  rate_editable_on: "Rate: Editable — click to fix",
+  records: "records",
+  send_whatsapp_notification: "Send WhatsApp Notification",
+  send_whatsapp_notification_hint: "Notify the sales group about this rate change",
+  shortage: "Shortage",
+  desc_units:
+    "Define the units of measure used across items, vouchers, and stock.",
+  desc_sizes: "Size labels used in variants (e.g., 7/10, 9/10).",
+  desc_colors: "Color options for raw materials and finished variants.",
+  desc_grades: "Quality grades for product variants.",
+  desc_packing_types: "Packaging types for packed stock and variant rules.",
+  desc_cities: "Maintain city master for party addresses and reporting.",
+  desc_product_groups:
+    "Product group visibility for raw, semi-finished, and finished items.",
+  desc_product_subgroups:
+    "Define reusable product sub-groups for all product groups.",
+  desc_product_types: "Define product types (e.g., Slipper, Sandal, Pumpy).",
+  desc_sales_discount_policies:
+    "Define the maximum allowed discount per pair for each product group.",
+  desc_party_groups:
+    "Organize customers and suppliers into reusable party groups.",
+  desc_account_groups:
+    "Define chart of account groups under standard account types.",
+  desc_departments:
+    "Department master for production and non-production cost centers.",
+  desc_production_stages:
+    "Define production stages and map each stage to a production department.",
+  desc_parties: "Manage customer and supplier master records.",
+  desc_accounts: "Maintain chart of accounts used in vouchers and reporting.",
+});
+
+Object.assign(translations.ur, {
+  applies_to: "لاگو ہوتا ہے",
+  max_pair_discount: "زیادہ سے زیادہ ڈسکاؤنٹ فی جوڑا",
+  lock_posting_help: "اس اکاؤنٹ میں واؤچرز پوسٹ ہونے سے روکیں۔",
+  group_name: "گروپ کا نام",
+  group_type: "گروپ کی قسم",
+  both: "دونوں",
+  product_type: "پروڈکٹ کی قسم",
+  subgroup_name: "ذیلی گروپ کا نام",
+  production_department: "پیداواری شعبہ",
+  account_type_help:
+    "بنیادی درجہ بندی منتخب کریں (اثاثہ، ذمہ داری، ایکویٹی، آمدنی، اخراجات)۔",
+  account_group_name_help: "اکاؤنٹ گروپ کا نام۔",
+  account_group_name_placeholder: "کیش اینڈ بینک، قابل وصول تجارتی رقوم",
+  urdu_name_help: "رپورٹس اور اسکرینز کے لیے اردو ڈسپلے نام۔",
+  urdu_name_placeholder: "اردو نام",
+  unit_name_placeholder: "پیس، درجن، کلوگرام",
+  size_name_placeholder: "7/10, 40, 41",
+  color_name_placeholder: "کالا، سفید، مکس",
+  grade_name_placeholder: "اے، بی، سی",
+  grade_rank_placeholder: "1, 2, 3",
+  packing_type_placeholder: "تھیلی، باکس، کارٹن",
+  city_name_placeholder: "لاہور، کراچی",
+  product_group_name_placeholder: "ای وی اے، پی یو، فٹ ویئر",
+  subgroup_name_placeholder: "بالمین، رگزین",
+  product_type_placeholder: "سلیپر، سینڈل، پمپی",
+  party_group_name_placeholder: "ہول سیل، ریٹیل، سپلائرز",
+  department_name_placeholder: "کٹنگ، سلائی، اکاؤنٹس",
+  production_stage_placeholder: "کٹنگ، سلائی، فنشنگ",
+  party_name_placeholder: "حمزہ ٹریڈرز",
+  phone_placeholder: "0300-0000000",
+  address_placeholder: "گلی، علاقہ، شہر",
+  credit_allowed_help: "صرف کسٹمرز کے لیے اجازت ہے۔ کریڈٹ لمٹ درکار ہے۔",
+  account_name_placeholder: "کیش مین، بینک الفلاح",
+  liability: "ذمہ داری",
+  equity: "ایکویٹی",
+  revenue: "آمدنی",
+  expense: "اخراجات",
+  below_required: "مطلوبہ مقدار سے کم",
+  bom_cascade_apply_success: "کاسکیڈڈ بی او ایم اپڈیٹ کامیابی سے لاگو ہو گئی۔",
+  bom_cascade_error_draft_exists:
+    "اس آرٹیکل کے لیے پہلے سے ایک ڈرافٹ موجود ہے۔ کاسکیڈڈ اپڈیٹس لاگو کرنے سے پہلے اسے حل کریں۔",
+  bom_cascade_error_not_eligible:
+    "یہ بی او ایم کاسکیڈڈ اپڈیٹ کے لیے اہل نہیں ہے۔",
+  bom_cascade_review_link: "جائزہ لیں",
+  bom_cascade_review_title: "منحصر بی او ایم اپڈیٹس کا جائزہ لیں",
+  bom_change_log_max_date_range:
+    "عالمی تبدیلی لاگ سرچ کے لیے تاریخ کی حد 7 دن سے زیادہ نہیں ہو سکتی۔",
+  bom_change_log_not_available:
+    "بی او ایم تبدیلی لاگ اس ماحول میں دستیاب نہیں ہے۔",
+  bom_change_log_requires_date_range:
+    "جب آرٹیکل اور بی او ایم نمبر منتخب نہ ہوں تو تاریخ کی حد لازمی ہے۔",
+  bom_copied_dependents_notice_prefix:
+    "یہ آرٹیکلز کے بی او ایم اسی سے کاپی کیے گئے تھے — جائزہ لیں کہ کیا انہیں نئے ورژن کی ضرورت ہے:",
+  cash: "نقد",
+  changed: "تبدیل شدہ",
+  error_loading: "لوڈ کرنے میں ناکام۔ دوبارہ کوشش کے لیے کلک کریں۔",
+  error_select_target: "براہ کرم ایک ہدف منتخب کریں۔",
+  fixed: "مقررہ",
+  flexible: "لچکدار",
+  insufficient_stock: "ناکافی اسٹاک",
+  items: "اشیاء",
+  link_to_sales_order: "سیلز آرڈر سے لنک کریں",
+  load_report: "رپورٹ لوڈ کریں",
+  neg_stock: "منفی اسٹاک",
+  optional: "اختیاری",
+  rate_editable_off: "ریٹ: مقررہ — تبدیل کرنے کی اجازت دینے کے لیے کلک کریں",
+  rate_editable_on: "ریٹ: قابل ترمیم — مقرر کرنے کے لیے کلک کریں",
+  records: "ریکارڈز",
+  send_whatsapp_notification: "واٹس ایپ اطلاع بھیجیں",
+  send_whatsapp_notification_hint: "اس ریٹ تبدیلی کے بارے میں سیلز گروپ کو مطلع کریں",
+  shortage: "کمی",
+  desc_units:
+    "وہ اکائیاں (یونٹس) بیان کریں جو آئٹمز، واؤچرز اور اسٹاک میں استعمال ہوتی ہیں۔",
+  desc_sizes: "ویریئنٹس میں استعمال ہونے والے سائز لیبل (مثلاً 7/10، 9/10)۔",
+  desc_colors: "خام مال اور تیار شدہ ویریئنٹس کے لیے رنگ کے اختیارات۔",
+  desc_grades: "پروڈکٹ ویریئنٹس کے لیے کوالٹی گریڈز۔",
+  desc_packing_types: "پیک شدہ اسٹاک اور ویریئنٹ قواعد کے لیے پیکنگ کی اقسام۔",
+  desc_cities: "پارٹی ایڈریسز اور رپورٹنگ کے لیے شہروں کی ماسٹر فہرست برقرار رکھیں۔",
+  desc_product_groups:
+    "خام، نیم تیار اور تیار شدہ اشیاء کے لیے پروڈکٹ گروپ کی نمائش۔",
+  desc_product_subgroups:
+    "تمام پروڈکٹ گروپس کے لیے قابل استعمال ذیلی گروپس بنائیں۔",
+  desc_product_types: "پروڈکٹ کی اقسام بیان کریں (مثلاً سلیپر، سینڈل، پمپی)۔",
+  desc_sales_discount_policies:
+    "ہر پروڈکٹ گروپ کے لیے فی جوڑا زیادہ سے زیادہ اجازت یافتہ ڈسکاؤنٹ بیان کریں۔",
+  desc_party_groups: "کسٹمرز اور سپلائرز کو قابل استعمال پارٹی گروپس میں منظم کریں۔",
+  desc_account_groups: "معیاری اکاؤنٹ اقسام کے تحت چارٹ آف اکاؤنٹ گروپس بیان کریں۔",
+  desc_departments: "پیداواری اور غیر پیداواری کاسٹ سینٹرز کے لیے شعبہ ماسٹر۔",
+  desc_production_stages:
+    "پیداواری مراحل بیان کریں اور ہر مرحلے کو ایک پیداواری شعبے سے منسلک کریں۔",
+  desc_parties: "کسٹمر اور سپلائر ماسٹر ریکارڈز کا انتظام کریں۔",
+  desc_accounts: "واؤچرز اور رپورٹنگ میں استعمال ہونے والا چارٹ آف اکاؤنٹس برقرار رکھیں۔",
 });
 
 const formatDateDisplay = (value, fallback = "-") => {

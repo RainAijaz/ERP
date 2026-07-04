@@ -4,6 +4,11 @@ const knex = require("../../db/knex");
 const { toLocalDateOnly } = require("../../utils/date-only");
 const { toBoolean } = require("../../utils/report-filter-types");
 
+const localizedNameSelect = (alias, as, locale) =>
+  locale === "ur"
+    ? knex.raw(`COALESCE(${alias}.name_ur, ${alias}.name) as ${as}`)
+    : `${alias}.name as ${as}`;
+
 const ALL_MULTI_FILTER_VALUE = "__ALL__";
 const STOCK_TYPES = Object.freeze({
   finished: "FG",
@@ -316,6 +321,7 @@ const parseFilters = ({ req, input = {}, includeRateTypeFilter = true }) => {
 
   return {
     reportLoaded: toBoolean(input.load_report || input.loadReport, false),
+    locale: String(req?.locale || "en").toLowerCase(),
     asOfDate: parsedAsOfDate.value,
     stockType,
     rateType,
@@ -732,21 +738,21 @@ const loadFgSfgDetailRows = async ({
     .leftJoin("erp.branches as b", "b.id", "sl.branch_id")
     .select(
       "sl.branch_id",
-      "b.name as branch_name",
+      localizedNameSelect("b", "branch_name", filters.locale),
       "sl.category",
       "s.id as sku_id",
       "s.sku_code",
       "i.id as article_id",
-      "i.name as article_name",
+      localizedNameSelect("i", "article_name", filters.locale),
       "i.group_id",
-      "pg.name as group_name",
+      localizedNameSelect("pg", "group_name", filters.locale),
       "i.subgroup_id",
-      "sg.name as subgroup_name",
+      localizedNameSelect("sg", "subgroup_name", filters.locale),
       knex.raw(`${packedFlagSql} as is_packed`),
       "i.base_uom_id",
       "v.sale_rate",
       "u.code as base_uom_code",
-      "u.name as base_uom_name",
+      localizedNameSelect("u", "base_uom_name", filters.locale),
     )
     .select(knex.raw(`${netQtyPairsSql} as qty_pairs`))
     .select(knex.raw("SUM(COALESCE(sl.value, 0)) as total_amount"))
@@ -756,20 +762,25 @@ const loadFgSfgDetailRows = async ({
     .groupBy(
       "sl.branch_id",
       "b.name",
+      "b.name_ur",
       "sl.category",
       "s.id",
       "s.sku_code",
       "i.id",
       "i.name",
+      "i.name_ur",
       "i.group_id",
       "pg.name",
+      "pg.name_ur",
       "i.subgroup_id",
       "sg.name",
+      "sg.name_ur",
       knex.raw(packedFlagSql),
       "i.base_uom_id",
       "v.sale_rate",
       "u.code",
       "u.name",
+      "u.name_ur",
     );
 
   if (filters.branchIds.length)
@@ -906,20 +917,20 @@ const loadRmDetailRows = async ({
     .leftJoin("erp.branches as b", "b.id", "sl.branch_id")
     .select(
       "sl.branch_id",
-      "b.name as branch_name",
+      localizedNameSelect("b", "branch_name", filters.locale),
       "sl.item_id",
-      "i.name as item_name",
+      localizedNameSelect("i", "item_name", filters.locale),
       "i.group_id",
-      "pg.name as group_name",
+      localizedNameSelect("pg", "group_name", filters.locale),
       "i.subgroup_id",
-      "sg.name as subgroup_name",
+      localizedNameSelect("sg", "subgroup_name", filters.locale),
       "sl.color_id",
-      "c.name as color_name",
+      localizedNameSelect("c", "color_name", filters.locale),
       "sl.size_id",
-      "sz.name as size_name",
+      localizedNameSelect("sz", "size_name", filters.locale),
       "i.base_uom_id",
       "u.code as base_uom_code",
-      "u.name as base_uom_name",
+      localizedNameSelect("u", "base_uom_name", filters.locale),
     )
     .select(knex.raw(`${netQtySql} as qty`))
     .select(knex.raw("SUM(COALESCE(sl.value, 0)) as total_amount"))
@@ -928,19 +939,26 @@ const loadRmDetailRows = async ({
     .groupBy(
       "sl.branch_id",
       "b.name",
+      "b.name_ur",
       "sl.item_id",
       "i.name",
+      "i.name_ur",
       "i.group_id",
       "pg.name",
+      "pg.name_ur",
       "i.subgroup_id",
       "sg.name",
+      "sg.name_ur",
       "sl.color_id",
       "c.name",
+      "c.name_ur",
       "sl.size_id",
       "sz.name",
+      "sz.name_ur",
       "i.base_uom_id",
       "u.code",
       "u.name",
+      "u.name_ur",
     );
 
   if (filters.branchIds.length)
@@ -1484,6 +1502,7 @@ const parseStockMovementFilters = ({ req, input = {} }) => {
 
   return {
     reportLoaded,
+    locale: String(req?.locale || "en").toLowerCase(),
     from,
     to,
     stockType,
@@ -1585,10 +1604,10 @@ const loadStockMovementArticleOptionsByType = async () => {
   };
 };
 
-const loadStockMovementItemsForType = async (stockType) => {
+const loadStockMovementItemsForType = async (stockType, locale = "en") => {
   if (stockType === STOCK_TYPES.rawMaterial) {
     const rows = await knex("erp.items as i")
-      .select("i.id", "i.name")
+      .select("i.id", localizedNameSelect("i", "name", locale))
       .where({ "i.is_active": true, "i.item_type": "RM" })
       .orderBy("i.name", "asc");
 
@@ -1605,7 +1624,12 @@ const loadStockMovementItemsForType = async (stockType) => {
   const rows = await knex("erp.skus as s")
     .join("erp.variants as v", "v.id", "s.variant_id")
     .join("erp.items as i", "i.id", "v.item_id")
-    .select("s.id", "s.sku_code", "i.id as item_id", "i.name as item_name")
+    .select(
+      "s.id",
+      "s.sku_code",
+      "i.id as item_id",
+      localizedNameSelect("i", "item_name", locale),
+    )
     .where({ "s.is_active": true, "i.is_active": true })
     .whereIn("i.item_type", skuCategories)
     .orderBy("i.name", "asc")
@@ -1625,11 +1649,11 @@ const loadStockMovementItemsForType = async (stockType) => {
   });
 };
 
-const loadStockMovementItemsByType = async () => {
+const loadStockMovementItemsByType = async (locale = "en") => {
   const [finished, semiFinished, rawMaterial] = await Promise.all([
-    loadStockMovementItemsForType(STOCK_TYPES.finished),
-    loadStockMovementItemsForType(STOCK_TYPES.semiFinished),
-    loadStockMovementItemsForType(STOCK_TYPES.rawMaterial),
+    loadStockMovementItemsForType(STOCK_TYPES.finished, locale),
+    loadStockMovementItemsForType(STOCK_TYPES.semiFinished, locale),
+    loadStockMovementItemsForType(STOCK_TYPES.rawMaterial, locale),
   ]);
 
   return {
@@ -1920,32 +1944,37 @@ const loadStockMovementRows = async ({
       .leftJoin("erp.uom as u", "u.id", "i.base_uom_id")
       .select(
         "sl.branch_id",
-        "b.name as branch_name",
+        localizedNameSelect("b", "branch_name", filters.locale),
         knex.raw("i.id as stock_item_id"),
-        knex.raw("i.name as stock_item_label"),
+        localizedNameSelect("i", "stock_item_label", filters.locale),
         knex.raw("NULL::text as sku_code"),
         knex.raw("NULL::bigint as article_id"),
         knex.raw("NULL::text as article_name"),
         "i.group_id",
-        "pg.name as group_name",
+        localizedNameSelect("pg", "group_name", filters.locale),
         "i.subgroup_id",
-        "sg.name as subgroup_name",
+        localizedNameSelect("sg", "subgroup_name", filters.locale),
         "i.base_uom_id",
         "u.code as base_uom_code",
-        "u.name as base_uom_name",
+        localizedNameSelect("u", "base_uom_name", filters.locale),
       )
       .groupBy(
         "sl.branch_id",
         "b.name",
+        "b.name_ur",
         "i.id",
         "i.name",
+        "i.name_ur",
         "i.group_id",
         "pg.name",
+        "pg.name_ur",
         "i.subgroup_id",
         "sg.name",
+        "sg.name_ur",
         "i.base_uom_id",
         "u.code",
         "u.name",
+        "u.name_ur",
       )
       .orderBy("i.name", "asc")
       .orderBy("b.name", "asc");
@@ -1956,11 +1985,18 @@ const loadStockMovementRows = async ({
         .leftJoin("erp.sizes as sz", "sz.id", "sl.size_id")
         .select(
           "sl.color_id",
-          "c.name as color_name",
+          localizedNameSelect("c", "color_name", filters.locale),
           "sl.size_id",
-          "sz.name as size_name",
+          localizedNameSelect("sz", "size_name", filters.locale),
         )
-        .groupBy("sl.color_id", "c.name", "sl.size_id", "sz.name")
+        .groupBy(
+          "sl.color_id",
+          "c.name",
+          "c.name_ur",
+          "sl.size_id",
+          "sz.name",
+          "sz.name_ur",
+        )
         .orderBy("c.name", "asc")
         .orderBy("sz.name", "asc");
     } else {
@@ -1986,34 +2022,39 @@ const loadStockMovementRows = async ({
       .whereIn("i.item_type", getItemTypesFromStockType(filters.stockType))
       .select(
         "sl.branch_id",
-        "b.name as branch_name",
+        localizedNameSelect("b", "branch_name", filters.locale),
         knex.raw("s.id as stock_item_id"),
         knex.raw("s.sku_code as stock_item_label"),
         "s.sku_code",
         "i.id as article_id",
-        "i.name as article_name",
+        localizedNameSelect("i", "article_name", filters.locale),
         "i.group_id",
-        "pg.name as group_name",
+        localizedNameSelect("pg", "group_name", filters.locale),
         "i.subgroup_id",
-        "sg.name as subgroup_name",
+        localizedNameSelect("sg", "subgroup_name", filters.locale),
         "i.base_uom_id",
         "u.code as base_uom_code",
-        "u.name as base_uom_name",
+        localizedNameSelect("u", "base_uom_name", filters.locale),
       )
       .groupBy(
         "sl.branch_id",
         "b.name",
+        "b.name_ur",
         "s.id",
         "s.sku_code",
         "i.id",
         "i.name",
+        "i.name_ur",
         "i.group_id",
         "pg.name",
+        "pg.name_ur",
         "i.subgroup_id",
         "sg.name",
+        "sg.name_ur",
         "i.base_uom_id",
         "u.code",
         "u.name",
+        "u.name_ur",
       )
       .orderBy(
         filters.orderBy === ORDER_BY_TYPES.article ? "i.name" : "s.sku_code",
@@ -2031,11 +2072,18 @@ const loadStockMovementRows = async ({
         .leftJoin("erp.sizes as sz", "sz.id", "v.size_id")
         .select(
           "v.color_id",
-          "c.name as color_name",
+          localizedNameSelect("c", "color_name", filters.locale),
           "v.size_id",
-          "sz.name as size_name",
+          localizedNameSelect("sz", "size_name", filters.locale),
         )
-        .groupBy("v.color_id", "c.name", "v.size_id", "sz.name")
+        .groupBy(
+          "v.color_id",
+          "c.name",
+          "c.name_ur",
+          "v.size_id",
+          "sz.name",
+          "sz.name_ur",
+        )
         .orderBy("c.name", "asc")
         .orderBy("sz.name", "asc");
     } else {
@@ -2837,7 +2885,7 @@ const getInventoryStockMovementReportPageData = async ({ req, input = {} }) => {
     loadProductGroupOptionsByType(),
     loadProductSubgroupOptionsByType(),
     loadStockMovementArticleOptionsByType(),
-    loadStockMovementItemsByType(),
+    loadStockMovementItemsByType(filters.locale),
     loadUnitOptions(filters.stockType),
   ]);
   const conversionUnits = resolvePackedConversionUnits({
@@ -3228,6 +3276,7 @@ const parseStockTransferReportFilters = ({ req, input = {} }) => {
 
   return {
     reportLoaded: toBoolean(input.load_report || input.loadReport, false),
+    locale: String(req?.locale || "en").toLowerCase(),
     from,
     to,
     sourceBranchIds: normalizeScopedBranchFilter({
@@ -3823,9 +3872,9 @@ const loadStockTransferOutRows = async ({
       "vh.voucher_no",
       knex.raw("vh.voucher_date as movement_date"),
       "vh.branch_id as source_branch_id",
-      "sb.name as source_branch_name",
+      localizedNameSelect("sb", "source_branch_name", filters.locale),
       "sth.dest_branch_id as destination_branch_id",
-      "db.name as destination_branch_name",
+      localizedNameSelect("db", "destination_branch_name", filters.locale),
       "vh.book_no",
       "vh.voucher_date",
       "vl.id as voucher_line_id",
@@ -3839,14 +3888,18 @@ const loadStockTransferOutRows = async ({
       "vl.amount",
       "vl.meta as line_meta",
       "s.sku_code",
-      "si.name as sku_item_name",
+      localizedNameSelect("si", "sku_item_name", filters.locale),
       "si.item_type as sku_item_type",
       "si.base_uom_id as sku_base_uom_id",
-      "i.name as item_name",
+      localizedNameSelect("i", "item_name", filters.locale),
       "i.base_uom_id as item_base_uom_id",
       "u.code as uom_code",
-      "u.name as uom_name",
-      knex.raw("coalesce(pg_si.name, pg_i.name) as group_name"),
+      localizedNameSelect("u", "uom_name", filters.locale),
+      knex.raw(
+        filters.locale === "ur"
+          ? "coalesce(pg_si.name_ur, pg_si.name, pg_i.name_ur, pg_i.name) as group_name"
+          : "coalesce(pg_si.name, pg_i.name) as group_name",
+      ),
       "sth.status as transfer_workflow_status",
       knex.raw(
         "coalesce(ga.received_voucher_id, sth.received_voucher_id) as received_voucher_id",
@@ -4001,9 +4054,9 @@ const loadStockTransferPendingForInRows = async ({
       "vh.voucher_no",
       knex.raw("vh.voucher_date as movement_date"),
       "vh.branch_id as source_branch_id",
-      "sb.name as source_branch_name",
+      localizedNameSelect("sb", "source_branch_name", filters.locale),
       "sth.dest_branch_id as destination_branch_id",
-      "db.name as destination_branch_name",
+      localizedNameSelect("db", "destination_branch_name", filters.locale),
       "vh.book_no",
       "vh.voucher_date",
       "vl.id as voucher_line_id",
@@ -4017,14 +4070,18 @@ const loadStockTransferPendingForInRows = async ({
       "vl.amount",
       "vl.meta as line_meta",
       "s.sku_code",
-      "si.name as sku_item_name",
+      localizedNameSelect("si", "sku_item_name", filters.locale),
       "si.item_type as sku_item_type",
       "si.base_uom_id as sku_base_uom_id",
-      "i.name as item_name",
+      localizedNameSelect("i", "item_name", filters.locale),
       "i.base_uom_id as item_base_uom_id",
       "u.code as uom_code",
-      "u.name as uom_name",
-      knex.raw("coalesce(pg_si.name, pg_i.name) as group_name"),
+      localizedNameSelect("u", "uom_name", filters.locale),
+      knex.raw(
+        filters.locale === "ur"
+          ? "coalesce(pg_si.name_ur, pg_si.name, pg_i.name_ur, pg_i.name) as group_name"
+          : "coalesce(pg_si.name, pg_i.name) as group_name",
+      ),
       knex.raw(`${transferReasonExpr} as transfer_reason`),
       knex.raw(`${billBookExpr} as bill_book_no`),
       knex.raw(`${groupExpr} as group_id`),
@@ -4143,9 +4200,9 @@ const loadStockTransferInRows = async ({
       "vh.voucher_no",
       knex.raw("vh.voucher_date as movement_date"),
       "stn.branch_id as source_branch_id",
-      "sb.name as source_branch_name",
+      localizedNameSelect("sb", "source_branch_name", filters.locale),
       "sth.dest_branch_id as destination_branch_id",
-      "db.name as destination_branch_name",
+      localizedNameSelect("db", "destination_branch_name", filters.locale),
       "stn.book_no",
       "vh.voucher_date",
       "vl.id as voucher_line_id",
@@ -4159,14 +4216,18 @@ const loadStockTransferInRows = async ({
       "vl.amount",
       "vl.meta as line_meta",
       "s.sku_code",
-      "si.name as sku_item_name",
+      localizedNameSelect("si", "sku_item_name", filters.locale),
       "si.item_type as sku_item_type",
       "si.base_uom_id as sku_base_uom_id",
-      "i.name as item_name",
+      localizedNameSelect("i", "item_name", filters.locale),
       "i.base_uom_id as item_base_uom_id",
       "u.code as uom_code",
-      "u.name as uom_name",
-      knex.raw("coalesce(pg_si.name, pg_i.name) as group_name"),
+      localizedNameSelect("u", "uom_name", filters.locale),
+      knex.raw(
+        filters.locale === "ur"
+          ? "coalesce(pg_si.name_ur, pg_si.name, pg_i.name_ur, pg_i.name) as group_name"
+          : "coalesce(pg_si.name, pg_i.name) as group_name",
+      ),
       knex.raw(`${transferReasonExpr} as transfer_reason`),
       knex.raw(`${billBookExpr} as bill_book_no`),
       knex.raw(`${groupExpr} as group_id`),
@@ -4354,7 +4415,7 @@ const getInventoryStockTransferReportPageData = async ({ req, input = {} }) => {
     loadProductGroupOptionsByType(),
     loadProductSubgroupOptionsByType(),
     loadStockMovementArticleOptionsByType(),
-    loadStockMovementItemsByType(),
+    loadStockMovementItemsByType(filters.locale),
   ]);
   const transferReasonOptions = await loadTransferReasonOptions({
     hasTransferReasonColumn,
@@ -4607,6 +4668,7 @@ const parseLedgerFilters = ({ req, input = {} }) => {
 
   return {
     reportLoaded,
+    locale: String(req?.locale || "en").toLowerCase(),
     from,
     to,
     stockType,
@@ -4627,10 +4689,10 @@ const parseLedgerFilters = ({ req, input = {} }) => {
   };
 };
 
-const loadLedgerStockItemsForType = async (stockType) => {
+const loadLedgerStockItemsForType = async (stockType, locale = "en") => {
   if (stockType === STOCK_TYPES.rawMaterial) {
     const rows = await knex("erp.items as i")
-      .select("i.id", "i.name")
+      .select("i.id", localizedNameSelect("i", "name", locale))
       .where({ "i.is_active": true, "i.item_type": "RM" })
       .orderBy("i.name", "asc");
 
@@ -4646,7 +4708,11 @@ const loadLedgerStockItemsForType = async (stockType) => {
   const rows = await knex("erp.skus as s")
     .join("erp.variants as v", "v.id", "s.variant_id")
     .join("erp.items as i", "i.id", "v.item_id")
-    .select("s.id", "s.sku_code", "i.name as item_name")
+    .select(
+      "s.id",
+      "s.sku_code",
+      localizedNameSelect("i", "item_name", locale),
+    )
     .where({ "s.is_active": true, "i.is_active": true })
     .whereIn("i.item_type", skuCategories)
     .orderBy("i.name", "asc")
@@ -4665,11 +4731,11 @@ const loadLedgerStockItemsForType = async (stockType) => {
   });
 };
 
-const loadLedgerStockItemsByType = async () => {
+const loadLedgerStockItemsByType = async (locale = "en") => {
   const [finished, semiFinished, rawMaterial] = await Promise.all([
-    loadLedgerStockItemsForType(STOCK_TYPES.finished),
-    loadLedgerStockItemsForType(STOCK_TYPES.semiFinished),
-    loadLedgerStockItemsForType(STOCK_TYPES.rawMaterial),
+    loadLedgerStockItemsForType(STOCK_TYPES.finished, locale),
+    loadLedgerStockItemsForType(STOCK_TYPES.semiFinished, locale),
+    loadLedgerStockItemsForType(STOCK_TYPES.rawMaterial, locale),
   ]);
 
   return {
@@ -4793,11 +4859,11 @@ const loadStockLedgerRows = async ({
       "sl.unit_cost",
       "sl.value",
       "sl.branch_id",
-      "b.name as branch_name",
+      localizedNameSelect("b", "branch_name", filters.locale),
       "vh.id as voucher_header_id",
       "vh.voucher_no",
       "vh.voucher_type_code",
-      "vt.name as voucher_type_name",
+      localizedNameSelect("vt", "voucher_type_name", filters.locale),
     )
     .select(knex.raw(`${qtyColumnSql} as movement_qty`))
     .whereBetween("sl.txn_date", [filters.from, filters.to]);
@@ -4809,11 +4875,11 @@ const loadStockLedgerRows = async ({
       .leftJoin("erp.sizes as sz", "sz.id", "sl.size_id")
       .leftJoin("erp.uom as u", "u.id", "i.base_uom_id")
       .select(
-        "i.name as item_name",
-        "c.name as color_name",
-        "sz.name as size_name",
+        localizedNameSelect("i", "item_name", filters.locale),
+        localizedNameSelect("c", "color_name", filters.locale),
+        localizedNameSelect("sz", "size_name", filters.locale),
         "u.code as unit_code",
-        "u.name as unit_name",
+        localizedNameSelect("u", "unit_name", filters.locale),
       );
   } else {
     txnQuery = txnQuery
@@ -4823,9 +4889,9 @@ const loadStockLedgerRows = async ({
       .leftJoin("erp.uom as u", "u.id", "i.base_uom_id")
       .select(
         "s.sku_code",
-        "i.name as item_name",
+        localizedNameSelect("i", "item_name", filters.locale),
         "u.code as unit_code",
-        "u.name as unit_name",
+        localizedNameSelect("u", "unit_name", filters.locale),
       )
       .select(knex.raw(`${packedFlagSql} as is_packed`));
   }
@@ -5005,7 +5071,7 @@ const getInventoryStockLedgerReportPageData = async ({ req, input = {} }) => {
 
   const [branches, stockItemsByType, unitOptions] = await Promise.all([
     loadBranchOptions(req),
-    loadLedgerStockItemsByType(),
+    loadLedgerStockItemsByType(filters.locale),
     loadUnitOptions(filters.stockType),
   ]);
   const conversionUnits = resolvePackedConversionUnits({

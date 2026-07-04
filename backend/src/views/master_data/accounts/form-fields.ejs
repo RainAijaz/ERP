@@ -72,7 +72,7 @@
                   data-account-type="<%= option.accountType || '' %>"
                   data-party-type="<%= option.partyType || '' %>"
                 >
-                  <%= t(option.label) %>
+                  <%= field.optionsQuery ? option.label : t(option.label) %>
                 </option>
               <% }) %>
             </select>
@@ -84,7 +84,7 @@
                     value="<%= option.value %>"
                     data-account-type="<%= option.accountType || '' %>"
                   >
-                    <%= t(option.label) %>
+                    <%= field.optionsQuery ? option.label : t(option.label) %>
                   </option>
                 <% }) %>
               </select>
@@ -151,7 +151,7 @@
               >
                 <% (field.options || []).forEach(function(option) { %>
                   <option value="<%= option.value %>">
-                    <%= (isAccountsPage && field.name === "branch_ids" && String(option.value) === "__all__") ? (t("all") + " " + t("branches")) : t(option.label) %>
+                    <%= (isAccountsPage && field.name === "branch_ids" && String(option.value) === "__all__") ? (t("all") + " " + t("branches")) : (field.optionsQuery ? option.label : t(option.label)) %>
                   </option>
                 <% }) %>
               </select>

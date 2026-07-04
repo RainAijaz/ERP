@@ -23,6 +23,11 @@ const PURCHASE_CATEGORY_FILTERS = Object.freeze({
   consumable: "consumable",
 });
 
+const localizedNameSelect = (alias, as, locale) =>
+  locale === "ur"
+    ? knex.raw(`COALESCE(${alias}.name_ur, ${alias}.name) as ${as}`)
+    : `${alias}.name as ${as}`;
+
 const ALL_MULTI_FILTER_VALUE = "__ALL__";
 const PURCHASE_RATE_ALERT_PERCENT = (() => {
   const value = Number(process.env.PURCHASE_RATE_ALERT_PERCENT || 10);
@@ -276,21 +281,23 @@ const applyPartyBranchScope = (query, branchIds = []) => {
 
 const loadReportFilterOptions = async ({ req, filters }) => {
   const branchScope = filters.branchIds;
+  const locale = String(req?.locale || "en").toLowerCase();
 
   const branchesPromise = req.user?.isAdmin
     ? knex("erp.branches")
-        .select("id", "name")
+        .select("id", localizedNameSelect("erp.branches", "name", locale))
         .where({ is_active: true })
         .orderBy("name", "asc")
     : Promise.resolve(
         (req.branchOptions || []).map((row) => ({
           id: Number(row.id),
-          name: row.name,
+          name:
+            locale === "ur" && row.name_ur ? row.name_ur : row.name,
         })),
       );
 
   let suppliersQuery = knex("erp.parties as p")
-    .select("p.id", "p.code", "p.name")
+    .select("p.id", "p.code", localizedNameSelect("p", "name", locale))
     .where({ "p.is_active": true })
     .whereRaw("upper(coalesce(p.party_type::text, '')) in ('SUPPLIER','BOTH')");
 
@@ -300,7 +307,7 @@ const loadReportFilterOptions = async ({ req, filters }) => {
 
   let cashAccountsQuery = knex("erp.accounts as a")
     .join("erp.account_posting_classes as apc", "apc.id", "a.posting_class_id")
-    .select("a.id", "a.code", "a.name")
+    .select("a.id", "a.code", localizedNameSelect("a", "name", locale))
     .where({ "a.is_active": true })
     .whereRaw("lower(coalesce(apc.code, '')) in ('cash','bank')");
 
@@ -320,12 +327,18 @@ const loadReportFilterOptions = async ({ req, filters }) => {
       branchesPromise,
       suppliersQuery.orderBy("p.name", "asc"),
       knex("erp.items as i")
-        .select("i.id", "i.code", "i.name", "i.group_id", "i.subgroup_id")
+        .select(
+          "i.id",
+          "i.code",
+          localizedNameSelect("i", "name", locale),
+          "i.group_id",
+          "i.subgroup_id",
+        )
         .where({ "i.is_active": true })
         .whereRaw("upper(coalesce(i.item_type::text, '')) IN ('RM', 'SFG')")
         .orderBy("i.name", "asc"),
       knex("erp.product_groups as g")
-        .select("g.id", "g.name")
+        .select("g.id", localizedNameSelect("g", "name", locale))
         .where({ "g.is_active": true })
         .whereExists(function whereGroupHasRawMaterial() {
           this.select(1)
@@ -336,7 +349,11 @@ const loadReportFilterOptions = async ({ req, filters }) => {
         })
         .orderBy("g.name", "asc"),
       knex("erp.product_subgroups as sg")
-        .select("sg.id", "sg.name", "sg.group_id")
+        .select(
+          "sg.id",
+          localizedNameSelect("sg", "name", locale),
+          "sg.group_id",
+        )
         .where({ "sg.is_active": true })
         .modify((qb) => {
           if (Array.isArray(filters.groupIds) && filters.groupIds.length) {
@@ -464,18 +481,18 @@ const getPurchaseReportRows = async ({ req, filters }) => {
             "vh.book_no as bill_number",
             knex.raw("COALESCE(NULLIF(vh.remarks, ''), '') as remarks"),
             "vh.branch_id",
-            "b.name as branch_name",
+            localizedNameSelect("b", "branch_name", locale),
             "pie.supplier_party_id",
-            "p.name as supplier_name",
+            localizedNameSelect("p", "supplier_name", locale),
             "pie.payment_type",
             "pie.cash_paid_account_id",
-            "a.name as cash_account_name",
+            localizedNameSelect("a", "cash_account_name", locale),
             "vl.line_no",
             "vl.item_id",
             "i.code as item_code",
-            "i.name as item_name",
-            "vc.name as color_name",
-            "vs.name as size_name",
+            localizedNameSelect("i", "item_name", locale),
+            localizedNameSelect("vc", "color_name", locale),
+            localizedNameSelect("vs", "size_name", locale),
             "u.code as uom_code",
             "i.group_id",
             "i.subgroup_id",
@@ -548,12 +565,12 @@ const getPurchaseReportRows = async ({ req, filters }) => {
             "vh.book_no as bill_number",
             knex.raw("COALESCE(NULLIF(vh.remarks, ''), '') as remarks"),
             "vh.branch_id",
-            "b.name as branch_name",
+            localizedNameSelect("b", "branch_name", locale),
             "pie.supplier_party_id",
-            "p.name as supplier_name",
+            localizedNameSelect("p", "supplier_name", locale),
             "pie.payment_type",
             "pie.cash_paid_account_id",
-            "a.name as cash_account_name",
+            localizedNameSelect("a", "cash_account_name", locale),
             "vl.line_no",
             knex.raw("NULL::bigint as item_id"),
             knex.raw("''::text as item_code"),
@@ -605,16 +622,20 @@ const getPurchaseReportRows = async ({ req, filters }) => {
             "vh.book_no as bill_number",
             knex.raw("COALESCE(NULLIF(vh.remarks, ''), '') as remarks"),
             "vh.branch_id",
-            "b.name as branch_name",
+            localizedNameSelect("b", "branch_name", locale),
             "pie.supplier_party_id",
-            "p.name as supplier_name",
+            localizedNameSelect("p", "supplier_name", locale),
             "pie.payment_type",
             "pie.cash_paid_account_id",
-            "a.name as cash_account_name",
+            localizedNameSelect("a", "cash_account_name", locale),
             "vl.line_no",
             knex.raw("NULL::bigint as item_id"),
             knex.raw("''::text as item_code"),
-            knex.raw("COALESCE(ea.name, '-') as item_name"),
+            knex.raw(
+              locale === "ur"
+                ? "COALESCE(ea.name_ur, ea.name, '-') as item_name"
+                : "COALESCE(ea.name, '-') as item_name",
+            ),
             knex.raw("NULL::text as color_name"),
             knex.raw("NULL::text as size_name"),
             knex.raw("NULL::text as uom_code"),
@@ -626,7 +647,11 @@ const getPurchaseReportRows = async ({ req, filters }) => {
             "vl.rate as fixed_purchase_rate",
             "vl.rate as weighted_average_rate",
             "vl.account_id as consumable_account_id",
-            knex.raw("COALESCE(ea.name, '-') as asset_name"),
+            knex.raw(
+              locale === "ur"
+                ? "COALESCE(ea.name_ur, ea.name, '-') as asset_name"
+                : "COALESCE(ea.name, '-') as asset_name",
+            ),
             knex.raw("NULL::bigint as asset_id"),
             knex.raw("'CONSUMABLE'::text as purchase_category"),
           )
@@ -1110,6 +1135,7 @@ const loadSupplierLedgerOptions = async ({ req, filters }) => {
 };
 
 const getSupplierLedgerRows = async ({ req, filters, options }) => {
+  const locale = String(req?.locale || "en").toLowerCase();
   const includeBranchColumn = Boolean(
     req.user?.isAdmin && filters.branchIds.length !== 1,
   );
@@ -1178,7 +1204,7 @@ const getSupplierLedgerRows = async ({ req, filters, options }) => {
       "vh.voucher_type_code",
       "vh.voucher_no",
       "vh.book_no as bill_number",
-      "b.name as branch_name",
+      localizedNameSelect("b", "branch_name", locale),
       knex.raw(
         "COALESCE(NULLIF(ge.narration, ''), NULLIF(vh.remarks, '')) as description",
       ),
@@ -1490,6 +1516,7 @@ const daysBetweenYmd = (fromYmd, toYmd) => {
 const getPendingGrnReportRows = async ({ req, filters }) => {
   if (!filters.reportLoaded) return [];
 
+  const locale = String(req?.locale || "en").toLowerCase();
   const includeRawMaterialRows =
     filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.asset;
   const includeAssetRows =
@@ -1542,7 +1569,7 @@ const getPendingGrnReportRows = async ({ req, filters }) => {
             "vh.voucher_date",
             "vh.book_no",
             "vh.branch_id",
-            "b.name as branch_name",
+            localizedNameSelect("b", "branch_name", locale),
             "ghe.supplier_party_id",
             "p.code as supplier_code",
             "p.name as supplier_name",
@@ -1558,8 +1585,8 @@ const getPendingGrnReportRows = async ({ req, filters }) => {
             "i.name_ur as item_name_ur",
             "u.code as uom_code",
             "vl.qty",
-            "vc.name as color_name",
-            "vs.name as size_name",
+            localizedNameSelect("vc", "color_name", locale),
+            localizedNameSelect("vs", "size_name", locale),
             knex.raw("'RAW_MATERIAL'::text as purchase_category"),
           )
           .where({ "vl.line_kind": "ITEM" })
@@ -1601,7 +1628,7 @@ const getPendingGrnReportRows = async ({ req, filters }) => {
             "vh.voucher_date",
             "vh.book_no",
             "vh.branch_id",
-            "b.name as branch_name",
+            localizedNameSelect("b", "branch_name", locale),
             "ghe.supplier_party_id",
             "p.code as supplier_code",
             "p.name as supplier_name",

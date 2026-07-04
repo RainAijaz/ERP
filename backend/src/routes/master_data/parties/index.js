@@ -63,7 +63,7 @@ const hasField = (page, name) =>
 
 const page = {
   titleKey: "parties",
-  description: "Manage customer and supplier master records.",
+  description: "desc_parties",
   table: "erp.parties",
   hasUpdatedFields: true,
   branchScoped: true,
@@ -105,10 +105,10 @@ const page = {
     ),
   ],
   columns: [
-    { key: "id", label: "ID" },
+    { key: "id", label: "id" },
     { key: "code", label: "code" },
     { key: "name", label: "party_name" },
-    { key: "name_ur", label: "Name (Urdu)" },
+    { key: "name_ur", label: "name_ur" },
     { key: "party_type", label: "party_type" },
     { key: "group_name", label: "party_group" },
     { key: "branch_names", label: "branches" },
@@ -119,13 +119,13 @@ const page = {
     {
       name: "name",
       label: "party_name",
-      placeholder: "Hamza Traders",
+      placeholder: "party_name_placeholder",
       required: true,
     },
     {
       name: "name_ur",
-      label: "Name (Urdu)",
-      placeholder: "Urdu name",
+      label: "name_ur",
+      placeholder: "urdu_name_placeholder",
       required: true,
     },
     {
@@ -134,8 +134,8 @@ const page = {
       type: "select",
       required: true,
       options: [
-        { value: "CUSTOMER", label: "Customer" },
-        { value: "SUPPLIER", label: "Supplier" },
+        { value: "CUSTOMER", label: "customer" },
+        { value: "SUPPLIER", label: "supplier" },
       ],
     },
     {
@@ -179,26 +179,26 @@ const page = {
     {
       name: "phone1",
       label: "phone_primary",
-      placeholder: "0300-0000000",
+      placeholder: "phone_placeholder",
       required: true,
     },
     {
       name: "phone2",
       label: "phone_secondary",
-      placeholder: "Optional",
+      placeholder: "optional",
       // adminOnly: true, // Only show in table for admin, not in modal
     },
     {
       name: "address",
       label: "address",
-      placeholder: "Street, area, city",
+      placeholder: "address_placeholder",
       type: "textarea",
     },
     {
       name: "credit_allowed",
       label: "credit_allowed",
       type: "checkbox",
-      helpText: "Only allowed for customers. Requires a credit limit.",
+      helpText: "credit_allowed_help",
     },
     {
       name: "credit_limit",
@@ -222,7 +222,7 @@ page.columns = (page.columns || [])
 if (!page.columns.some((column) => column.key === "created_at")) {
   page.columns.push({
     key: "created_at",
-    label: "Created At",
+    label: "created_at",
     cellClass: "col-export-only",
   });
 }

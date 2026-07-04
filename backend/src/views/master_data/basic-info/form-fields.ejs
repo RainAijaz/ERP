@@ -38,7 +38,7 @@
       <select class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30" name="<%= field.name %>" data-field="<%= field.name %>" <%= field.required ? "required" : "" %>>
         <option value=""><%= t("select_option") %></option>
         <% (field.options || []).forEach(function(option) { %>
-          <option value="<%= option.value %>"><%= option.label %></option>
+          <option value="<%= option.value %>"><%= field.optionsQuery ? option.label : t(option.label) %></option>
         <% }) %>
       </select>
     </label>
@@ -67,7 +67,7 @@
             <% (field.options || []).forEach(function(option) { %>
               <label class="flex items-center gap-2 rounded-lg px-2 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50">
                 <input class="h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent/40" type="checkbox" value="<%= option.value %>" />
-                <span><%= option.label %></span>
+                <span><%= field.optionsQuery ? option.label : t(option.label) %></span>
               </label>
             <% }) %>
           </div>
