@@ -1067,6 +1067,10 @@ router.post(
         basePath + viewQuery + "&success=true&msg=" + encodeURIComponent(msg),
       );
     } catch (err) {
+      console.error("[skus:bulk-update] failed", {
+        user: req.user?.username,
+        error: err?.message || err,
+      });
       const [rows, options, users] = await Promise.all([
         loadRows({}, itemType),
         loadOptions(itemType),

@@ -85,7 +85,8 @@ VALUES
   ('USER',                  'User',        'Administration: users'),
   ('ROLE',                  'Role',        'Administration: roles'),
   ('PERMISSION',            'Permission',  'Administration: permissions'),
-  ('MASTER_DATA_IMPORT',    'Master Data Import', 'Master data import audit activity')
+  ('MASTER_DATA_IMPORT',    'Master Data Import', 'Master data import audit activity'),
+  ('SKU_BULK_RATE_UPDATE',  'SKU Bulk Rate Update', 'Bulk sale-rate change for SKU variants queued for approval')
 ON CONFLICT (code) DO NOTHING;
 
 
