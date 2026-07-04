@@ -2678,13 +2678,15 @@ const resolveTransferLineLabel = (row) => {
   const lineKind = String(row?.line_kind || "")
     .trim()
     .toUpperCase();
+  const groupName = String(row?.group_name || "").trim();
+  const withGroup = (base) => (groupName ? `${base} (${groupName})` : base);
   if (lineKind === "ITEM") {
-    return String(row?.item_name || "").trim() || "-";
+    return withGroup(String(row?.item_name || "").trim() || "-");
   }
   const sku = String(row?.sku_code || "").trim();
   const item = String(row?.sku_item_name || row?.item_name || "").trim();
-  if (sku && item) return `${sku} - ${item}`;
-  return sku || item || "-";
+  if (sku && item) return withGroup(`${sku} - ${item}`);
+  return withGroup(sku || item || "-");
 };
 
 const resolveTransferDisplayRate = ({ row, meta, stockType }) => {
@@ -3165,6 +3167,8 @@ const loadStockTransferOutRows = async ({
     .leftJoin("erp.items as si", "si.id", "v.item_id")
     .leftJoin("erp.items as i", "i.id", "vl.item_id")
     .leftJoin("erp.uom as u", "u.id", "vl.uom_id")
+    .leftJoin("erp.product_groups as pg_si", "pg_si.id", "si.group_id")
+    .leftJoin("erp.product_groups as pg_i", "pg_i.id", "i.group_id")
     .select(
       "vh.id as voucher_id",
       "vh.voucher_no",
@@ -3193,6 +3197,7 @@ const loadStockTransferOutRows = async ({
       "i.base_uom_id as item_base_uom_id",
       "u.code as uom_code",
       "u.name as uom_name",
+      knex.raw("coalesce(pg_si.name, pg_i.name) as group_name"),
       "sth.status as transfer_workflow_status",
       knex.raw(
         "coalesce(ga.received_voucher_id, sth.received_voucher_id) as received_voucher_id",
@@ -3340,6 +3345,8 @@ const loadStockTransferPendingForInRows = async ({
     .leftJoin("erp.items as si", "si.id", "v.item_id")
     .leftJoin("erp.items as i", "i.id", "vl.item_id")
     .leftJoin("erp.uom as u", "u.id", "vl.uom_id")
+    .leftJoin("erp.product_groups as pg_si", "pg_si.id", "si.group_id")
+    .leftJoin("erp.product_groups as pg_i", "pg_i.id", "i.group_id")
     .select(
       "vh.id as voucher_id",
       "vh.voucher_no",
@@ -3368,6 +3375,7 @@ const loadStockTransferPendingForInRows = async ({
       "i.base_uom_id as item_base_uom_id",
       "u.code as uom_code",
       "u.name as uom_name",
+      knex.raw("coalesce(pg_si.name, pg_i.name) as group_name"),
       knex.raw(`${transferReasonExpr} as transfer_reason`),
       knex.raw(`${billBookExpr} as bill_book_no`),
       knex.raw(`${groupExpr} as group_id`),
@@ -3479,6 +3487,8 @@ const loadStockTransferInRows = async ({
     .leftJoin("erp.items as si", "si.id", "v.item_id")
     .leftJoin("erp.items as i", "i.id", "vl.item_id")
     .leftJoin("erp.uom as u", "u.id", "vl.uom_id")
+    .leftJoin("erp.product_groups as pg_si", "pg_si.id", "si.group_id")
+    .leftJoin("erp.product_groups as pg_i", "pg_i.id", "i.group_id")
     .select(
       "vh.id as voucher_id",
       "vh.voucher_no",
@@ -3507,6 +3517,7 @@ const loadStockTransferInRows = async ({
       "i.base_uom_id as item_base_uom_id",
       "u.code as uom_code",
       "u.name as uom_name",
+      knex.raw("coalesce(pg_si.name, pg_i.name) as group_name"),
       knex.raw(`${transferReasonExpr} as transfer_reason`),
       knex.raw(`${billBookExpr} as bill_book_no`),
       knex.raw(`${groupExpr} as group_id`),
