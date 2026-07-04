@@ -75,6 +75,18 @@ const toPositiveNumber = (value, decimals = 2) => {
 
 const roundCost2 = (value) => Number(Number(value || 0).toFixed(2));
 const roundUnitCost6 = (value) => Number(Number(value || 0).toFixed(6));
+// wac is a per-unit rate and must never be negative even when qty/value are
+// individually allowed to go negative for controlled negative-inventory sales
+// (see erp.stock_balance_sku CHECK (wac >= 0)) — mirrors computeNonNegativeWac
+// in inventory-voucher-service.js / stock-transfer-voucher-service.js.
+const computeNonNegativeWac = (qty, value) => {
+  const numericQty = Number(qty || 0);
+  const numericValue = Number(value || 0);
+  if (!Number.isFinite(numericQty) || Math.abs(numericQty) <= 0.0005) return 0;
+  if (!Number.isFinite(numericValue)) return 0;
+  const ratio = Math.abs(numericValue) / Math.abs(numericQty);
+  return Number.isFinite(ratio) ? roundUnitCost6(ratio) : 0;
+};
 const roundQty3 = (value) => Number(Number(value || 0).toFixed(3));
 
 const tableExistsTx = async (trx, tableName) => {
@@ -2521,7 +2533,13 @@ const insertSalesStockLedgerTx = async ({
   });
 };
 
-const ensureSkuBalanceSeedTx = async ({ trx, branchId, skuId, category }) => {
+const ensureSkuBalanceSeedTx = async ({
+  trx,
+  branchId,
+  skuId,
+  category,
+  isPacked = false,
+}) => {
   await trx("erp.stock_balance_sku")
     .insert({
       branch_id: Number(branchId),
@@ -2529,7 +2547,7 @@ const ensureSkuBalanceSeedTx = async ({ trx, branchId, skuId, category }) => {
       category: String(category || "")
         .trim()
         .toUpperCase(),
-      is_packed: false,
+      is_packed: Boolean(isPacked),
       sku_id: Number(skuId),
       qty_pairs: 0,
       value: 0,
@@ -2592,6 +2610,7 @@ const applySalesSkuStockOutTx = async ({
   voucherId,
   voucherLineId = null,
   voucherDate,
+  isPacked = null,
 }) => {
   const normalizedQtyPairsOut = Number(qtyPairsOut || 0);
   if (!Number.isInteger(normalizedQtyPairsOut) || normalizedQtyPairsOut <= 0) {
@@ -2603,6 +2622,12 @@ const applySalesSkuStockOutTx = async ({
     skuId,
     category,
   });
+  if (isPacked === true) {
+    // The loose bucket is always auto-seeded above; a packed sale also needs
+    // its own bucket to exist so the shortfall path below (and the ordering
+    // preference) can target it instead of silently falling through to loose.
+    await ensureSkuBalanceSeedTx({ trx, branchId, skuId, category, isPacked: true });
+  }
 
   const rows = await trx("erp.stock_balance_sku")
     .select("is_packed", "qty_pairs", "value", "wac")
@@ -2626,8 +2651,21 @@ const applySalesSkuStockOutTx = async ({
     false: { pairs: 0, value: 0 },
   };
 
+  // Draw first from the bucket matching how this sale was actually entered
+  // (DZN vs pairs). Without this, a packed sale would still consume from
+  // loose stock first purely because loose sorts first — draining loose to
+  // negative while the matching packed bucket sits untouched and positive.
+  const consumptionOrder =
+    isPacked === null
+      ? rows
+      : [...rows].sort((a, b) => {
+          const aMatch = (a?.is_packed === true) === isPacked ? 0 : 1;
+          const bMatch = (b?.is_packed === true) === isPacked ? 0 : 1;
+          return aMatch - bMatch;
+        });
+
   let remainingPairs = Number(normalizedQtyPairsOut);
-  for (const row of rows) {
+  for (const row of consumptionOrder) {
     const rowQtyPairs = Number(row?.qty_pairs || 0);
     if (remainingPairs <= 0 || rowQtyPairs <= 0) continue;
     const consumePairs = Math.min(rowQtyPairs, remainingPairs);
@@ -2642,8 +2680,7 @@ const applySalesSkuStockOutTx = async ({
     const nextQtyPairs = Math.max(Number(nextQtyPairsRaw || 0), 0);
     const nextValue =
       nextQtyPairs > 0 ? Math.max(roundCost2(nextValueRaw), 0) : 0;
-    const nextWac =
-      nextQtyPairs > 0 ? roundUnitCost6(nextValue / nextQtyPairs) : 0;
+    const nextWac = computeNonNegativeWac(nextQtyPairs, nextValue);
     const bucketKey = row.is_packed === true ? "true" : "false";
 
     await trx("erp.stock_balance_sku")
@@ -2680,22 +2717,28 @@ const applySalesSkuStockOutTx = async ({
     const shortageValue = roundCost2(
       Number(remainingPairs) * Number(fallbackUnitCost || 0),
     );
-    const baseBucket = rows.find((row) => row?.is_packed === false) || null;
+    // Oversell shortfall goes against the bucket this sale was actually
+    // entered against (packed/DZN vs loose/pairs), not hardcoded to loose —
+    // otherwise a packed sale with no prior packed row would permanently
+    // mis-tag its shortfall as loose stock going negative.
+    const shortfallIsPacked = isPacked === true;
+    const baseBucket =
+      rows.find((row) => (row?.is_packed === true) === shortfallIsPacked) ||
+      null;
+    const basePairs = Number(baseBucket?.qty_pairs || 0);
+    const baseValue = Number(baseBucket?.value || 0);
+    const nextQtyPairs = basePairs - Number(remainingPairs);
+    const nextValue = roundCost2(baseValue - Number(shortageValue));
+    const nextWac = computeNonNegativeWac(nextQtyPairs, nextValue);
     if (!baseBucket) {
-      throw new HttpError(
-        400,
-        `Sales stock posting failed: base stock bucket is missing for SKU ${Number(skuId)}`,
-      );
+      await ensureSkuBalanceSeedTx({
+        trx,
+        branchId,
+        skuId,
+        category,
+        isPacked: shortfallIsPacked,
+      });
     }
-    const nextQtyPairs =
-      Number(baseBucket.qty_pairs || 0) - Number(remainingPairs);
-    const nextValue = roundCost2(
-      Number(baseBucket.value || 0) - Number(shortageValue),
-    );
-    const nextWac =
-      nextQtyPairs !== 0
-        ? roundUnitCost6(Math.abs(nextValue) / Math.abs(nextQtyPairs))
-        : 0;
     await trx("erp.stock_balance_sku")
       .where({
         branch_id: Number(branchId),
@@ -2703,7 +2746,7 @@ const applySalesSkuStockOutTx = async ({
         category: String(category || "")
           .trim()
           .toUpperCase(),
-        is_packed: false,
+        is_packed: shortfallIsPacked,
         sku_id: Number(skuId),
       })
       .update({
@@ -2712,9 +2755,10 @@ const applySalesSkuStockOutTx = async ({
         wac: nextWac,
         last_txn_at: trx.fn.now(),
       });
-    consumedByBucket.false.pairs += Number(remainingPairs);
-    consumedByBucket.false.value = roundCost2(
-      consumedByBucket.false.value + Number(shortageValue || 0),
+    const bucketKey = shortfallIsPacked ? "true" : "false";
+    consumedByBucket[bucketKey].pairs += Number(remainingPairs);
+    consumedByBucket[bucketKey].value = roundCost2(
+      consumedByBucket[bucketKey].value + Number(shortageValue || 0),
     );
     remainingPairs = 0;
   }
@@ -2749,16 +2793,19 @@ const applySalesSkuStockInTx = async ({
   voucherId,
   voucherLineId = null,
   voucherDate,
+  isPacked = null,
 }) => {
   const normalizedQtyPairsIn = Number(qtyPairsIn || 0);
   if (!Number.isInteger(normalizedQtyPairsIn) || normalizedQtyPairsIn <= 0) {
     return;
   }
+  const effectiveIsPacked = isPacked === true;
   await ensureSkuBalanceSeedTx({
     trx,
     branchId,
     skuId,
     category,
+    isPacked: effectiveIsPacked,
   });
   const target = await trx("erp.stock_balance_sku")
     .select("qty_pairs", "value")
@@ -2768,7 +2815,7 @@ const applySalesSkuStockInTx = async ({
       category: String(category || "")
         .trim()
         .toUpperCase(),
-      is_packed: false,
+      is_packed: effectiveIsPacked,
       sku_id: Number(skuId),
     })
     .first()
@@ -2778,8 +2825,7 @@ const applySalesSkuStockInTx = async ({
   const nextValue = roundCost2(
     Number(target?.value || 0) + Number(valueIn || 0),
   );
-  const nextWac =
-    nextQtyPairs > 0 ? roundUnitCost6(nextValue / nextQtyPairs) : 0;
+  const nextWac = computeNonNegativeWac(nextQtyPairs, nextValue);
 
   await trx("erp.stock_balance_sku")
     .where({
@@ -2788,7 +2834,7 @@ const applySalesSkuStockInTx = async ({
       category: String(category || "")
         .trim()
         .toUpperCase(),
-      is_packed: false,
+      is_packed: effectiveIsPacked,
       sku_id: Number(skuId),
     })
     .update({
@@ -2814,6 +2860,7 @@ const applySalesSkuStockInTx = async ({
     qtyPairs: normalizedQtyPairsIn,
     unitCost,
     value: roundCost2(valueIn),
+    isPacked: effectiveIsPacked,
   });
 };
 
@@ -2856,8 +2903,7 @@ const addBackSalesSkuFromLedgerTx = async ({ trx, row }) => {
 
   const nextQtyPairs = Number(target.qty_pairs || 0) + Number(qtyPairs || 0);
   const nextValue = roundCost2(Number(target.value || 0) + value);
-  const nextWac =
-    nextQtyPairs > 0 ? roundUnitCost6(nextValue / nextQtyPairs) : 0;
+  const nextWac = computeNonNegativeWac(nextQtyPairs, nextValue);
 
   await trx("erp.stock_balance_sku")
     .where({
@@ -2888,20 +2934,30 @@ const removeSalesSkuFromLedgerTx = async ({ trx, row }) => {
   if (!branchId || !skuId || !category) return;
   if (!Number.isInteger(qtyPairs) || qtyPairs <= 0) return;
 
-  const target = await trx("erp.stock_balance_sku")
-    .select("qty_pairs", "value")
+  // Debit back from the same bucket the ledger row actually recorded (post
+  // is_packed column); older rows fall back to whichever bucket sorts first,
+  // mirroring addBackSalesSkuFromLedgerTx above.
+  const targetIsPacked =
+    row?.is_packed === null || row?.is_packed === undefined
+      ? null
+      : row.is_packed === true;
+  const targetQuery = trx("erp.stock_balance_sku")
+    .select("is_packed", "qty_pairs", "value")
     .where({
       branch_id: Number(branchId),
       stock_state: stockState,
       category,
-      is_packed: false,
       sku_id: Number(skuId),
-    })
-    .first()
-    .forUpdate();
+    });
+  if (targetIsPacked !== null) {
+    targetQuery.andWhere({ is_packed: targetIsPacked });
+  } else {
+    targetQuery.orderBy("is_packed", "asc");
+  }
+  const target = await targetQuery.first().forUpdate();
   const availableQtyPairs = Number(target?.qty_pairs || 0);
   const availableValue = Number(target?.value || 0);
-  if (availableQtyPairs < qtyPairs || availableValue < value - 0.05) {
+  if (!target || availableQtyPairs < qtyPairs || availableValue < value - 0.05) {
     const skuRow = await trx("erp.skus")
       .select("sku_code")
       .where({ id: Number(skuId) })
@@ -2928,15 +2984,14 @@ const removeSalesSkuFromLedgerTx = async ({ trx, row }) => {
   const nextQtyPairs = Math.max(availableQtyPairs - qtyPairs, 0);
   const nextValue =
     nextQtyPairs > 0 ? Math.max(roundCost2(availableValue - value), 0) : 0;
-  const nextWac =
-    nextQtyPairs > 0 ? roundUnitCost6(nextValue / nextQtyPairs) : 0;
+  const nextWac = computeNonNegativeWac(nextQtyPairs, nextValue);
 
   await trx("erp.stock_balance_sku")
     .where({
       branch_id: Number(branchId),
       stock_state: stockState,
       category,
-      is_packed: false,
+      is_packed: target.is_packed === true,
       sku_id: Number(skuId),
     })
     .update({
@@ -3036,6 +3091,10 @@ const syncSalesVoucherStockTx = async ({ trx, voucherId, voucherTypeCode }) => {
     const qtyPairsRaw = Number(line?.qty || meta?.total_pairs || 0);
     const qtyPairs = Math.round(Number(qtyPairsRaw || 0));
     if (!category || !skuId || qtyPairs <= 0) continue;
+    // How this line was actually entered (DZN/packed vs pairs/loose) —
+    // stock must be drawn from/credited to the matching bucket, not
+    // whichever bucket happens to sort first / have stock.
+    const isPackedLine = toBool(meta?.is_packed);
 
     const movementKind = String(meta?.movement_kind || "")
       .trim()
@@ -3054,6 +3113,7 @@ const syncSalesVoucherStockTx = async ({ trx, voucherId, voucherTypeCode }) => {
         voucherId: normalizedVoucherId,
         voucherLineId: Number(line.id),
         voucherDate: toDateOnly(header.voucher_date),
+        isPacked: isPackedLine,
       });
       continue;
     }
@@ -3075,6 +3135,7 @@ const syncSalesVoucherStockTx = async ({ trx, voucherId, voucherTypeCode }) => {
       voucherId: normalizedVoucherId,
       voucherLineId: Number(line.id),
       voucherDate: toDateOnly(header.voucher_date),
+      isPacked: isPackedLine,
     });
   }
 };
