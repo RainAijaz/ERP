@@ -1378,7 +1378,20 @@
 
     const buildExportTable = () => {
       // Export only the currently visible rows (respects filters).
-      const headers = Array.from(document.querySelectorAll("thead th"))
+      // Some pages (e.g. SKUs) render one <table>/<thead> per group inside
+      // [data-table-body], so we must only read the *first* header row -
+      // not every thead th in the document - or headers/columns get
+      // multiplied per group and desync from the actual row cells.
+      const tableBodyEl = document.querySelector("[data-table-body]");
+      const theadSource =
+        (tableBodyEl &&
+          (tableBodyEl.tagName === "TBODY"
+            ? tableBodyEl.closest("table")?.querySelector("thead")
+            : tableBodyEl.querySelector("table thead"))) ||
+        document.querySelector("thead");
+      const headers = Array.from(
+        theadSource ? theadSource.querySelectorAll("th") : [],
+      )
         .map((th) => cleanText(th.textContent))
         .filter((label) => label && label.toLowerCase() !== "actions");
       const rows = getRows().filter((row) => !row.classList.contains("hidden"));
