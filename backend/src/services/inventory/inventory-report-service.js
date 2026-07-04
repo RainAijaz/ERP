@@ -59,6 +59,16 @@ const MOVEMENT_VOUCHER_CODES = Object.freeze({
   sale: ["SALES_VOUCHER", "SALES_ORDER"],
   transfer: ["STN_OUT", "GRN_IN"],
 });
+const DEAD_STOCK_TYPE_FILTERS = Object.freeze({
+  all: "ALL",
+  finished: STOCK_TYPES.finished,
+  semiFinished: STOCK_TYPES.semiFinished,
+});
+const DEAD_STOCK_SORT_TYPES = Object.freeze({
+  closingQtyDesc: "CLOSING_QTY_DESC",
+  turnoverAsc: "TURNOVER_ASC",
+  stockValueDesc: "STOCK_VALUE_DESC",
+});
 
 const FG_PACKED_FLAG_SQL = `
 CASE
@@ -239,6 +249,56 @@ const getSkuCategoriesFromStockType = (stockType) => {
   return ["FG"];
 };
 
+const normalizeDeadStockTypeFilter = (value) => {
+  const normalized = String(value || DEAD_STOCK_TYPE_FILTERS.all)
+    .trim()
+    .toUpperCase();
+  if (normalized === DEAD_STOCK_TYPE_FILTERS.finished)
+    return DEAD_STOCK_TYPE_FILTERS.finished;
+  if (normalized === DEAD_STOCK_TYPE_FILTERS.semiFinished)
+    return DEAD_STOCK_TYPE_FILTERS.semiFinished;
+  return DEAD_STOCK_TYPE_FILTERS.all;
+};
+
+const getDeadStockSkuCategories = (stockTypeFilter) => {
+  if (stockTypeFilter === DEAD_STOCK_TYPE_FILTERS.finished) return ["FG"];
+  if (stockTypeFilter === DEAD_STOCK_TYPE_FILTERS.semiFinished)
+    return ["SFG"];
+  return ["FG", "SFG"];
+};
+
+const normalizeDeadStockSortBy = (value) => {
+  const normalized = String(value || DEAD_STOCK_SORT_TYPES.closingQtyDesc)
+    .trim()
+    .toUpperCase();
+  if (normalized === DEAD_STOCK_SORT_TYPES.turnoverAsc)
+    return DEAD_STOCK_SORT_TYPES.turnoverAsc;
+  if (normalized === DEAD_STOCK_SORT_TYPES.stockValueDesc)
+    return DEAD_STOCK_SORT_TYPES.stockValueDesc;
+  return DEAD_STOCK_SORT_TYPES.closingQtyDesc;
+};
+
+const getDefaultDeadStockDateRange = () => {
+  const now = new Date();
+  const fromDate = new Date(now);
+  fromDate.setMonth(fromDate.getMonth() - 6);
+  return {
+    today: toLocalDateOnly(now),
+    defaultFrom: toLocalDateOnly(fromDate),
+  };
+};
+
+const daysBetweenYmd = (fromYmd, toYmd) => {
+  const from = parseYmdStrict(fromYmd);
+  const to = parseYmdStrict(toYmd);
+  if (!from || !to) return 0;
+  const [fy, fm, fd] = from.split("-").map(Number);
+  const [ty, tm, td] = to.split("-").map(Number);
+  const fromMs = Date.UTC(fy, fm - 1, fd);
+  const toMs = Date.UTC(ty, tm - 1, td);
+  return Math.round((toMs - fromMs) / (24 * 60 * 60 * 1000));
+};
+
 const parseFilters = ({ req, input = {}, includeRateTypeFilter = true }) => {
   const today = toLocalDateOnly(new Date());
   const parsedAsOfDate = parseDateFilter(
@@ -278,6 +338,64 @@ const parseFilters = ({ req, input = {}, includeRateTypeFilter = true }) => {
     invalidAsOfDate: Boolean(parsedAsOfDate.provided && !parsedAsOfDate.valid),
     invalidFilterInput: Boolean(
       parsedAsOfDate.provided && !parsedAsOfDate.valid,
+    ),
+  };
+};
+
+const parseDeadStockFilters = ({ req, input = {} }) => {
+  const { today, defaultFrom } = getDefaultDeadStockDateRange();
+  const parsedFrom = parseDateFilter(
+    input.from_date || input.fromDate,
+    defaultFrom,
+  );
+  const parsedTo = parseDateFilter(input.to_date || input.toDate, today);
+
+  let from = parsedFrom.value;
+  let to = parsedTo.value;
+  let invalidDateRange = false;
+  if (from > to) {
+    from = defaultFrom;
+    to = today;
+    invalidDateRange = true;
+  }
+
+  const stockTypeFilter = normalizeDeadStockTypeFilter(
+    input.stock_type_filter || input.stockTypeFilter,
+  );
+  const rateType = normalizeRateType({
+    value: input.rate_type || input.rateType || RATE_TYPES.sale,
+    stockType: STOCK_TYPES.finished,
+  });
+  const minClosingQty = Math.max(0, Number(input.min_closing_qty || 0) || 0);
+  const deadStockOnly = toBoolean(
+    input.dead_stock_only || input.deadStockOnly,
+    false,
+  );
+  const sortBy = normalizeDeadStockSortBy(input.sort_by || input.sortBy);
+
+  return {
+    reportLoaded: toBoolean(input.load_report || input.loadReport, false),
+    from,
+    to,
+    stockTypeFilter,
+    rateType,
+    minClosingQty,
+    deadStockOnly,
+    sortBy,
+    branchIds: normalizeBranchFilter({ req, input }),
+    productGroupIds: toIdListWithAll(
+      input.product_group_ids || input.productGroupIds,
+    ),
+    productSubgroupIds: toIdListWithAll(
+      input.product_subgroup_ids || input.productSubgroupIds,
+    ),
+    invalidFromDate: Boolean(parsedFrom.provided && !parsedFrom.valid),
+    invalidToDate: Boolean(parsedTo.provided && !parsedTo.valid),
+    invalidDateRange,
+    invalidFilterInput: Boolean(
+      (parsedFrom.provided && !parsedFrom.valid) ||
+        (parsedTo.provided && !parsedTo.valid) ||
+        invalidDateRange,
     ),
   };
 };
@@ -2167,6 +2285,356 @@ const loadStockMovementRows = async ({
       };
     })
     .filter(Boolean);
+};
+
+const loadDeadStockClosingRows = async ({ filters }) => {
+  const categories = getDeadStockSkuCategories(filters.stockTypeFilter);
+  if (!categories.length) return [];
+
+  const netQtyPairsSql =
+    "SUM(CASE WHEN sl.direction = 1 THEN COALESCE(sl.qty_pairs, 0) ELSE -COALESCE(sl.qty_pairs, 0) END)";
+
+  let query = knex("erp.stock_ledger as sl")
+    .join("erp.skus as s", "s.id", "sl.sku_id")
+    .join("erp.variants as v", "v.id", "s.variant_id")
+    .join("erp.items as i", "i.id", "v.item_id")
+    .leftJoin("erp.product_groups as pg", "pg.id", "i.group_id")
+    .leftJoin("erp.product_subgroups as sg", "sg.id", "i.subgroup_id")
+    .leftJoin("erp.uom as u", "u.id", "i.base_uom_id")
+    .select(
+      "sl.category",
+      "s.id as sku_id",
+      "s.sku_code",
+      "i.id as article_id",
+      "i.name as article_name",
+      "i.group_id",
+      "pg.name as group_name",
+      "i.subgroup_id",
+      "sg.name as subgroup_name",
+      "v.sale_rate",
+      "u.code as base_uom_code",
+      "u.name as base_uom_name",
+    )
+    .select(knex.raw(`${netQtyPairsSql} as qty_pairs`))
+    .select(knex.raw("SUM(COALESCE(sl.value, 0)) as total_amount"))
+    .where({ "sl.stock_state": "ON_HAND" })
+    .whereIn("sl.category", categories)
+    .where("sl.txn_date", "<=", filters.to)
+    .groupBy(
+      "sl.category",
+      "s.id",
+      "s.sku_code",
+      "i.id",
+      "i.name",
+      "i.group_id",
+      "pg.name",
+      "i.subgroup_id",
+      "sg.name",
+      "v.sale_rate",
+      "u.code",
+      "u.name",
+    );
+
+  if (filters.branchIds.length)
+    query = query.whereIn("sl.branch_id", filters.branchIds);
+  if (filters.productGroupIds.length)
+    query = query.whereIn("i.group_id", filters.productGroupIds);
+  if (filters.productSubgroupIds.length)
+    query = query.whereIn("i.subgroup_id", filters.productSubgroupIds);
+
+  const rows = await query;
+
+  return rows
+    .map((row) => {
+      const closingQty = toQuantity(row?.qty_pairs, 3);
+      if (!hasNonZeroQuantity(closingQty)) return null;
+
+      const stockType = String(row?.category || "")
+        .trim()
+        .toUpperCase();
+      const costAmount = toAmount(row?.total_amount, 2);
+      const costRate = hasNonZeroQuantity(closingQty)
+        ? toAmount(costAmount / closingQty, 4)
+        : 0;
+      const saleRate =
+        stockType === STOCK_TYPES.finished ? toAmount(row?.sale_rate, 4) : 0;
+      const useSaleRate =
+        stockType === STOCK_TYPES.finished &&
+        filters.rateType === RATE_TYPES.sale;
+      const rate = useSaleRate ? saleRate : costRate;
+      const closingValue = useSaleRate
+        ? toAmount(closingQty * rate, 2)
+        : costAmount;
+
+      return {
+        sku_id: Number(row?.sku_id || 0) || null,
+        sku_code: String(row?.sku_code || "").trim(),
+        article_id: Number(row?.article_id || 0) || null,
+        article_name: String(row?.article_name || "").trim(),
+        group_id: Number(row?.group_id || 0) || null,
+        group_name: String(row?.group_name || "").trim(),
+        subgroup_id: Number(row?.subgroup_id || 0) || null,
+        subgroup_name: String(row?.subgroup_name || "").trim(),
+        stock_type: stockType,
+        unit_label:
+          String(row?.base_uom_code || row?.base_uom_name || "").trim() ||
+          "-",
+        rate,
+        closingQty,
+        closingValue,
+      };
+    })
+    .filter(Boolean);
+};
+
+const loadDeadStockSalesQtyRows = async ({ filters }) => {
+  const categories = getDeadStockSkuCategories(filters.stockTypeFilter);
+  if (!categories.length) return new Map();
+
+  const saleCodes = getMovementVoucherCodeBuckets().sale;
+  if (!saleCodes.length) return new Map();
+
+  let query = knex("erp.stock_ledger as sl")
+    .join("erp.voucher_header as vh", "vh.id", "sl.voucher_header_id")
+    .join("erp.skus as s", "s.id", "sl.sku_id")
+    .join("erp.variants as v", "v.id", "s.variant_id")
+    .join("erp.items as i", "i.id", "v.item_id")
+    .where({ "sl.stock_state": "ON_HAND" })
+    .whereIn("sl.category", categories)
+    .whereIn("vh.voucher_type_code", saleCodes)
+    .where("sl.txn_date", ">=", filters.from)
+    .where("sl.txn_date", "<=", filters.to)
+    .select("sl.sku_id")
+    .select(
+      knex.raw(
+        "SUM(CASE WHEN sl.direction = 1 THEN COALESCE(sl.qty_pairs, 0) ELSE -COALESCE(sl.qty_pairs, 0) END) as signed_qty",
+      ),
+    )
+    .groupBy("sl.sku_id");
+
+  if (filters.branchIds.length)
+    query = query.whereIn("sl.branch_id", filters.branchIds);
+  if (filters.productGroupIds.length)
+    query = query.whereIn("i.group_id", filters.productGroupIds);
+  if (filters.productSubgroupIds.length)
+    query = query.whereIn("i.subgroup_id", filters.productSubgroupIds);
+
+  const rows = await query;
+  const salesQtyBySkuId = new Map();
+  rows.forEach((row) => {
+    const skuId = Number(row?.sku_id || 0) || 0;
+    if (!skuId) return;
+    salesQtyBySkuId.set(skuId, Math.abs(toQuantity(row?.signed_qty, 3)));
+  });
+  return salesQtyBySkuId;
+};
+
+const buildDeadStockRows = ({ closingRows, salesQtyBySkuId, filters }) => {
+  const periodDays = Math.max(1, daysBetweenYmd(filters.from, filters.to) + 1);
+
+  let rows = (closingRows || []).map((row) => {
+    const qtySold = toQuantity(salesQtyBySkuId.get(row.sku_id) || 0, 3);
+    const avgDailySales = qtySold / periodDays;
+    const turnoverRatio = hasNonZeroQuantity(row.closingQty)
+      ? toAmount(qtySold / row.closingQty, 4)
+      : null;
+    const daysOfStockCover =
+      avgDailySales > 0 ? toQuantity(row.closingQty / avgDailySales, 1) : null;
+    const isDeadStock = !hasNonZeroQuantity(qtySold);
+
+    return {
+      ...row,
+      qtySold,
+      turnoverRatio,
+      daysOfStockCover,
+      isDeadStock,
+    };
+  });
+
+  if (filters.minClosingQty > 0) {
+    rows = rows.filter((row) => row.closingQty >= filters.minClosingQty);
+  }
+  if (filters.deadStockOnly) {
+    rows = rows.filter((row) => row.isDeadStock);
+  }
+
+  const sorters = {
+    [DEAD_STOCK_SORT_TYPES.closingQtyDesc]: (a, b) =>
+      b.closingQty - a.closingQty,
+    [DEAD_STOCK_SORT_TYPES.turnoverAsc]: (a, b) => {
+      const aValue = a.turnoverRatio === null ? -1 : a.turnoverRatio;
+      const bValue = b.turnoverRatio === null ? -1 : b.turnoverRatio;
+      return aValue - bValue;
+    },
+    [DEAD_STOCK_SORT_TYPES.stockValueDesc]: (a, b) =>
+      Number(b.closingValue || 0) - Number(a.closingValue || 0),
+  };
+  const sorter =
+    sorters[filters.sortBy] || sorters[DEAD_STOCK_SORT_TYPES.closingQtyDesc];
+
+  return rows.sort(sorter);
+};
+
+const loadDeadStockProductGroupOptions = async () => {
+  const [finished, semiFinished] = await Promise.all([
+    loadProductGroupOptions(STOCK_TYPES.finished),
+    loadProductGroupOptions(STOCK_TYPES.semiFinished),
+  ]);
+  const byId = new Map();
+  [...finished, ...semiFinished].forEach((row) => {
+    byId.set(Number(row.id), row);
+  });
+  return [...byId.values()].sort((a, b) =>
+    String(a.name || "").localeCompare(String(b.name || "")),
+  );
+};
+
+const loadDeadStockProductSubgroupOptions = async () => {
+  const [finished, semiFinished] = await Promise.all([
+    loadProductSubgroupOptions(STOCK_TYPES.finished),
+    loadProductSubgroupOptions(STOCK_TYPES.semiFinished),
+  ]);
+  const byId = new Map();
+  [...finished, ...semiFinished].forEach((row) => {
+    byId.set(Number(row.id), row);
+  });
+  return [...byId.values()].sort((a, b) =>
+    String(a.name || "").localeCompare(String(b.name || "")),
+  );
+};
+
+const getInventoryDeadStockReportPageData = async ({ req, input = {} }) => {
+  const filters = parseDeadStockFilters({ req, input });
+
+  const [branches, productGroups, productSubgroups] = await Promise.all([
+    loadBranchOptions(req),
+    loadDeadStockProductGroupOptions(),
+    loadDeadStockProductSubgroupOptions(),
+  ]);
+
+  const sanitizeSelectedIds = (selectedIds, allowedRows) => {
+    if (!Array.isArray(selectedIds) || !selectedIds.length) return [];
+    const allowed = new Set(
+      (allowedRows || [])
+        .map((row) => Number(row?.id || 0))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    );
+    return selectedIds.filter((id) => allowed.has(Number(id)));
+  };
+
+  const safeProductGroupIds = sanitizeSelectedIds(
+    filters.productGroupIds,
+    productGroups,
+  );
+  if (safeProductGroupIds.length !== filters.productGroupIds.length) {
+    filters.invalidFilterInput = true;
+  }
+  filters.productGroupIds = safeProductGroupIds;
+
+  const safeProductSubgroupIds = sanitizeSelectedIds(
+    filters.productSubgroupIds,
+    productSubgroups,
+  );
+  if (safeProductSubgroupIds.length !== filters.productSubgroupIds.length) {
+    filters.invalidFilterInput = true;
+  }
+  filters.productSubgroupIds = safeProductSubgroupIds;
+
+  const options = {
+    branches,
+    productGroups,
+    productSubgroups,
+    stockTypeFilters: [
+      { value: DEAD_STOCK_TYPE_FILTERS.all, labelKey: "all" },
+      { value: DEAD_STOCK_TYPE_FILTERS.finished, labelKey: "finished" },
+      {
+        value: DEAD_STOCK_TYPE_FILTERS.semiFinished,
+        labelKey: "semi_finished",
+      },
+    ],
+    rateTypes: [
+      { value: RATE_TYPES.sale, labelKey: "sale_rate_basis" },
+      { value: RATE_TYPES.cost, labelKey: "cost_rate_basis" },
+    ],
+    sortByOptions: [
+      {
+        value: DEAD_STOCK_SORT_TYPES.closingQtyDesc,
+        labelKey: "sort_closing_qty_desc",
+      },
+      {
+        value: DEAD_STOCK_SORT_TYPES.turnoverAsc,
+        labelKey: "sort_turnover_ratio_asc",
+      },
+      {
+        value: DEAD_STOCK_SORT_TYPES.stockValueDesc,
+        labelKey: "sort_stock_value_desc",
+      },
+    ],
+  };
+
+  if (!filters.reportLoaded) {
+    return {
+      filters,
+      options,
+      reportData: {
+        rows: [],
+        totals: {
+          totalSkus: 0,
+          totalClosingQty: 0,
+          totalClosingValue: 0,
+          totalQtySold: 0,
+          deadStockSkuCount: 0,
+          deadStockValue: 0,
+        },
+      },
+    };
+  }
+
+  const [closingRows, salesQtyBySkuId] = await Promise.all([
+    loadDeadStockClosingRows({ filters }),
+    loadDeadStockSalesQtyRows({ filters }),
+  ]);
+
+  const rows = buildDeadStockRows({ closingRows, salesQtyBySkuId, filters });
+
+  const totals = rows.reduce(
+    (acc, row) => {
+      acc.totalClosingQty = toQuantity(
+        acc.totalClosingQty + Number(row.closingQty || 0),
+        3,
+      );
+      acc.totalClosingValue = toAmount(
+        acc.totalClosingValue + Number(row.closingValue || 0),
+        2,
+      );
+      acc.totalQtySold = toQuantity(
+        acc.totalQtySold + Number(row.qtySold || 0),
+        3,
+      );
+      if (row.isDeadStock) {
+        acc.deadStockSkuCount += 1;
+        acc.deadStockValue = toAmount(
+          acc.deadStockValue + Number(row.closingValue || 0),
+          2,
+        );
+      }
+      return acc;
+    },
+    {
+      totalSkus: rows.length,
+      totalClosingQty: 0,
+      totalClosingValue: 0,
+      totalQtySold: 0,
+      deadStockSkuCount: 0,
+      deadStockValue: 0,
+    },
+  );
+
+  return {
+    filters,
+    options,
+    reportData: { rows, totals },
+  };
 };
 
 const getInventoryStockMovementReportPageData = async ({ req, input = {} }) => {
@@ -4489,4 +4957,5 @@ module.exports = {
   getInventoryStockLedgerReportPageData,
   getInventoryStockMovementReportPageData,
   getInventoryStockTransferReportPageData,
+  getInventoryDeadStockReportPageData,
 };

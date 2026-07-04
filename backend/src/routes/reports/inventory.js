@@ -1,6 +1,7 @@
 const express = require("express");
 const {
   requirePermission,
+  hasPermissionForRequirement,
 } = require("../../middleware/access/role-permissions");
 const {
   getInventoryStockAmountReportPageData,
@@ -8,6 +9,7 @@ const {
   getInventoryStockLedgerReportPageData,
   getInventoryStockMovementReportPageData,
   getInventoryStockTransferReportPageData,
+  getInventoryDeadStockReportPageData,
 } = require("../../services/inventory/inventory-report-service");
 
 const router = express.Router();
@@ -162,6 +164,42 @@ const renderStockTransferReport = async (req, res, next, input) => {
   }
 };
 
+const renderDeadStockReport = async (req, res, next, input) => {
+  try {
+    const pageData = await getInventoryDeadStockReportPageData({
+      req,
+      input,
+    });
+
+    return res.render("base/layouts/main", {
+      title: `${translate(res, "dead_stock_report", "Slow-Moving / Dead Stock Report")} - ${translate(res, "inventory_reports", "Inventory Reports")}`,
+      user: req.user,
+      branchId: req.branchId,
+      branchScope: req.branchScope,
+      csrfToken: res.locals.csrfToken,
+      view: "../../reports/inventory-dead-stock",
+      t: res.locals.t,
+      filters: pageData.filters,
+      options: pageData.options,
+      reportData: pageData.reportData,
+      reportPath: `${req.baseUrl}/dead-stock`,
+      canViewCostFields:
+        req.user?.isAdmin ||
+        hasPermissionForRequirement(req, {
+          scopeType: "REPORT",
+          scopeKey: "dead_stock_report",
+          action: "can_view_cost_fields",
+        }),
+    });
+  } catch (err) {
+    console.error("Error in InventoryDeadStockReportService:", err);
+    if (typeof req.flash === "function") {
+      req.flash("error", res.locals.t("generic_error"));
+    }
+    return next(err);
+  }
+};
+
 router.get(
   "/",
   requirePermission("REPORT", "stock_quantity", "load"),
@@ -229,6 +267,18 @@ router.post(
   "/stock-transfer",
   requirePermission("REPORT", "stock_transfer_report", "load"),
   async (req, res, next) => renderStockTransferReport(req, res, next, req.body),
+);
+
+router.get(
+  "/dead-stock",
+  requirePermission("REPORT", "dead_stock_report", "load"),
+  async (req, res, next) => renderDeadStockReport(req, res, next, req.query),
+);
+
+router.post(
+  "/dead-stock",
+  requirePermission("REPORT", "dead_stock_report", "load"),
+  async (req, res, next) => renderDeadStockReport(req, res, next, req.body),
 );
 
 module.exports = router;
