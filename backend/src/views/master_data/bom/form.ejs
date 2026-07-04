@@ -66,6 +66,16 @@
         <p class="text-sm text-muted"><%= t("bom_header_required_message")  %></p>
       </div>
       <div class="flex flex-wrap gap-2">
+        <% if (isEditable && (!isEdit || isDraft)) { %>
+          <button
+            type="button"
+            data-bom-copy-open
+            class="inline-flex min-w-[8.5rem] items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+            title="<%= tx('bom_copy_button_hint', 'Pre-fill this draft from another article\'s approved BOM') %>"
+          >
+            <%= tx("bom_copy_button", "Copy from approved BOM") %>
+          </button>
+        <% } %>
         <% if (isEdit && header.status === "APPROVED" && can('SCREEN', 'master_data.bom', 'create')) { %>
           <form method="POST" action="<%= basePath %>/<%= header.id %>/create-new-version">
             <input type="hidden" name="_csrf" value="<%= csrfToken %>">
@@ -113,6 +123,7 @@
     <input type="hidden" name="sfg_lines_json" value="<%- JSON.stringify(formState?.sfg_lines || []) %>" data-lines-json="sfg_lines">
     <input type="hidden" name="labour_lines_json" value="<%- JSON.stringify(formState?.labour_lines || []) %>" data-lines-json="labour_lines">
     <input type="hidden" name="stage_routes_json" value="<%- JSON.stringify(formState?.stage_routes || []) %>" data-lines-json="stage_routes">
+    <input type="hidden" name="copied_from_bom_id" value="<%= header.copied_from_bom_id || '' %>" data-bom-copied-from>
 
     <section id="bom-header" class="rounded-2xl border border-slate-200 bg-white/95 p-5 shadow-sm scroll-mt-24">
       <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
@@ -184,6 +195,12 @@
             <div class="mt-1 text-sm font-semibold text-slate-800"><%= formatDateDisplay(header.approved_at) %></div>
           </div>
         </div>
+        <% if (header.copied_from_bom_no) { %>
+          <div class="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+            <span class="font-semibold"><%= tx("bom_copied_from_badge", "Copied from") %>:</span>
+            <%= header.copied_from_bom_no %> (V<%= header.copied_from_version_no %>, <%= header.copied_from_item_name %>)
+          </div>
+        <% } %>
       <% } %>
     </section>
 
@@ -278,8 +295,21 @@
       </section>
       <section data-rm-view="sku_rules" class="hidden rounded-xl border border-slate-200 bg-white">
         <div class="border-b border-slate-200 px-3 py-3">
-          <h3 class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"><%= t("bom_sku_rules")  %></h3>
-          <p class="mt-1 text-xs text-slate-500"><%= t("bom_sku_rules_hint")  %></p>
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"><%= t("bom_sku_rules")  %></h3>
+              <p class="mt-1 text-xs text-slate-500"><%= t("bom_sku_rules_hint")  %></p>
+            </div>
+            <% if (isEditable) { %>
+              <button
+                type="button"
+                data-sku-copy-from-open
+                class="inline-flex items-center justify-center rounded-full border border-slate-300 bg-white px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+              >
+                <%= tx("bom_sku_copy_from_button", "Copy from another SKU") %>
+              </button>
+            <% } %>
+          </div>
           <div class="mt-2 flex flex-wrap items-center gap-2" data-sku-rule-chips></div>
         </div>
         <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
@@ -355,6 +385,106 @@
       </button>
       <button type="button" data-bom-sku-warn-close class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800">
         <%= tx("bom_sku_warn_review", "Review SKU Rules") %>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="fixed inset-0 z-[95] hidden items-center justify-center bg-slate-900/40 p-4" data-bom-copy-modal>
+  <div class="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl border border-slate-200 bg-white shadow-xl" role="dialog" aria-modal="true" aria-labelledby="bom-copy-title">
+    <div class="relative border-b border-slate-200 px-6 py-4">
+      <button type="button" data-bom-copy-close class="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" aria-label="<%= tx('close', 'Close') %>">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
+      </button>
+      <div class="pr-10">
+        <div class="text-sm font-semibold text-slate-700" id="bom-copy-title"><%= tx("bom_copy_title", "Copy from approved BOM") %></div>
+        <p class="mt-1 text-xs text-slate-500"><%= tx("bom_copy_subtitle", "Pick another article's approved BOM to pre-fill this draft. Labour is never copied.") %></p>
+      </div>
+    </div>
+    <div class="space-y-4 px-6 py-5" data-bom-copy-step="select">
+      <label class="block text-sm font-semibold text-slate-600">
+        <span><%= tx("bom_copy_source_label", "Copy from article") %></span>
+        <select data-bom-copy-source class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" data-searchable-select="true" data-searchable-variant="unified">
+          <option value=""><%= tx("bom_copy_source_loading", "Select article and level above first") %></option>
+        </select>
+      </label>
+      <div class="space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <label class="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" data-bom-copy-section="rm" checked class="h-4 w-4 rounded border-slate-300">
+          <span><%= tx("bom_copy_section_rm", "Raw materials") %></span>
+        </label>
+        <label class="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" data-bom-copy-section="sku_overrides" checked class="h-4 w-4 rounded border-slate-300">
+          <span><%= tx("bom_copy_section_sku_overrides", "SKU rules (per-SKU quantities, colors, sizes)") %></span>
+        </label>
+        <label class="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" data-bom-copy-section="stage_routes" checked class="h-4 w-4 rounded border-slate-300">
+          <span><%= tx("bom_copy_section_stage_routes", "Production stages") %></span>
+        </label>
+        <label class="flex items-center gap-2 text-sm text-slate-700">
+          <input type="checkbox" data-bom-copy-section="sfg" class="h-4 w-4 rounded border-slate-300">
+          <span><%= tx("bom_copy_section_sfg", "Semi-finished (SFG) lines") %></span>
+        </label>
+        <p class="text-xs text-amber-700"><%= tx("bom_copy_sfg_hint", "Off by default — semi-finished inputs usually differ between articles. Review carefully if you turn this on.") %></p>
+      </div>
+      <p class="hidden text-xs font-medium text-rose-600" data-bom-copy-error></p>
+    </div>
+    <div class="hidden space-y-3 px-6 py-5" data-bom-copy-step="result">
+      <div class="space-y-2 text-sm" data-bom-copy-report></div>
+    </div>
+    <div class="space-y-2 border-t border-slate-200 px-6 py-5" data-bom-copy-actions-select>
+      <button type="button" data-bom-copy-apply class="w-full rounded-xl bg-slate-900 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-slate-800">
+        <%= tx("bom_copy_apply", "Copy into this draft") %>
+      </button>
+      <button type="button" data-bom-copy-close class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800">
+        <%= tx("cancel", "Cancel") %>
+      </button>
+    </div>
+    <div class="hidden space-y-2 border-t border-slate-200 px-6 py-5" data-bom-copy-actions-result>
+      <button type="button" data-bom-copy-done class="w-full rounded-xl bg-slate-900 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-slate-800">
+        <%= tx("close", "Close") %>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="fixed inset-0 z-[95] hidden items-center justify-center bg-slate-900/40 p-4" data-sku-copy-modal>
+  <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl" role="dialog" aria-modal="true" aria-labelledby="sku-copy-title">
+    <div class="relative border-b border-slate-200 px-6 py-4">
+      <button type="button" data-sku-copy-close class="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" aria-label="<%= tx('close', 'Close') %>">
+        <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
+      </button>
+      <div class="pr-10">
+        <div class="text-sm font-semibold text-slate-700" id="sku-copy-title"><%= tx("bom_sku_copy_title", "Copy from another SKU") %></div>
+        <p class="mt-1 text-xs text-slate-500" data-sku-copy-target-line></p>
+      </div>
+    </div>
+    <div class="space-y-4 px-6 py-5">
+      <label class="block text-sm font-semibold text-slate-600">
+        <span><%= tx("bom_sku_copy_source_label", "Copy values from SKU") %></span>
+        <select data-sku-copy-source class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" data-searchable-select="true" data-searchable-variant="unified">
+          <option value=""><%= t("select") %></option>
+        </select>
+      </label>
+      <div class="hidden space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3" data-sku-copy-mode-wrap>
+        <p class="text-xs text-slate-500"><%= tx("bom_sku_copy_mode_hint", "This SKU already has some values.") %></p>
+        <label class="flex items-center gap-2 text-sm text-slate-700">
+          <input type="radio" name="sku_copy_mode" value="merge" checked data-sku-copy-mode class="h-4 w-4 border-slate-300">
+          <span><%= tx("bom_sku_copy_mode_merge", "Merge — fill only empty materials") %></span>
+        </label>
+        <label class="flex items-center gap-2 text-sm text-slate-700">
+          <input type="radio" name="sku_copy_mode" value="replace" data-sku-copy-mode class="h-4 w-4 border-slate-300">
+          <span><%= tx("bom_sku_copy_mode_replace", "Replace — overwrite everything with the source SKU's values") %></span>
+        </label>
+      </div>
+      <p class="hidden text-xs font-medium text-rose-600" data-sku-copy-error></p>
+    </div>
+    <div class="space-y-2 border-t border-slate-200 px-6 py-5">
+      <button type="button" data-sku-copy-apply class="w-full rounded-xl bg-slate-900 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-slate-800">
+        <%= tx("bom_sku_copy_apply", "Copy values") %>
+      </button>
+      <button type="button" data-sku-copy-close class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800">
+        <%= tx("cancel", "Cancel") %>
       </button>
     </div>
   </div>
@@ -2889,6 +3019,372 @@
         event.preventDefault();
       });
     }
+
+    const basePath = <%- JSON.stringify(basePath || "") %>;
+    const copiedFromBomIdInput = document.querySelector('[data-bom-copied-from]');
+    const copyModal = document.querySelector('[data-bom-copy-modal]');
+    const copyOpenBtn = document.querySelector('[data-bom-copy-open]');
+    const copySourceSelect = copyModal?.querySelector('[data-bom-copy-source]');
+    const copyStepSelectEl = copyModal?.querySelector('[data-bom-copy-step="select"]');
+    const copyStepResultEl = copyModal?.querySelector('[data-bom-copy-step="result"]');
+    const copyActionsSelectEl = copyModal?.querySelector('[data-bom-copy-actions-select]');
+    const copyActionsResultEl = copyModal?.querySelector('[data-bom-copy-actions-result]');
+    const copyErrorEl = copyModal?.querySelector('[data-bom-copy-error]');
+    const copyReportEl = copyModal?.querySelector('[data-bom-copy-report]');
+    const copyApplyBtn = copyModal?.querySelector('[data-bom-copy-apply]');
+    const copyDoneBtn = copyModal?.querySelector('[data-bom-copy-done]');
+
+    const copySectionLabels = {
+      rm: "<%= tx('bom_copy_section_rm', 'Raw materials') %>",
+      sku_overrides: "<%= tx('bom_copy_section_sku_overrides_short', 'SKU rules') %>",
+      stage_routes: "<%= tx('bom_copy_section_stage_routes', 'Production stages') %>",
+      sfg: "<%= tx('bom_copy_section_sfg_short', 'SFG lines') %>",
+    };
+    const copyRuntimeLabels = {
+      copiedOfTotal: "<%= tx('bom_copy_copied_of_total', 'copied') %>",
+      noneSkipped: "<%= tx('bom_copy_none_skipped', 'All lines copied') %>",
+      confirmReplaceTitle: "<%= tx('bom_copy_confirm_replace_title', 'Replace existing data?') %>",
+      confirmReplaceMessage: "<%= tx('bom_copy_confirm_replace_message', 'This section already has data in this draft. Copying will replace it.') %>",
+      confirmReplaceYes: "<%= tx('bom_copy_confirm_replace_yes', 'Replace') %>",
+      confirmReplaceNo: "<%= tx('cancel', 'Cancel') %>",
+      pickSourceFirst: "<%= tx('bom_copy_pick_source_first', 'Pick an article to copy from.') %>",
+      pickSectionFirst: "<%= tx('bom_copy_pick_section_first', 'Select at least one section to copy.') %>",
+      setHeaderFirst: "<%= tx('bom_copy_set_header_first', 'Choose this BOM\'s article and level first.') %>",
+      toastMessage: "<%= tx('bom_copy_toast_message', 'Copied — review the lines below and Save Draft.') %>",
+      loadFailed: "<%= tx('bom_copy_load_failed', 'Could not load approved BOMs to copy from.') %>",
+      applyFailed: "<%= tx('bom_copy_apply_failed', 'Could not copy from that BOM.') %>",
+      noSources: "<%= tx('bom_copy_no_sources', 'No other approved BOM at this level yet.') %>",
+      reportFromPrefix: "<%= tx('bom_copy_report_from_prefix', 'Copied from') %>",
+    };
+
+    const showBomCopyToast = (message) => {
+      document.querySelector('[data-bom-copy-toast]')?.remove();
+      const wrap = document.createElement("div");
+      wrap.setAttribute("data-bom-copy-toast", "true");
+      wrap.className = "fixed right-4 top-4 z-[220] w-[92vw] max-w-sm";
+      wrap.innerHTML = `
+        <div class="flex items-start gap-3 rounded-2xl border border-emerald-200 bg-white p-4 shadow-xl">
+          <div class="mt-0.5 rounded-full bg-emerald-100 p-2 text-emerald-700">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+          </div>
+          <div class="flex-1"><p class="text-sm text-slate-700"></p></div>
+          <button class="text-slate-400 hover:text-slate-600" type="button" aria-label="Close">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>`;
+      const messageEl = wrap.querySelector("p");
+      if (messageEl) messageEl.textContent = String(message || "");
+      wrap.querySelector("button")?.addEventListener("click", () => wrap.remove());
+      document.body.appendChild(wrap);
+      window.setTimeout(() => wrap.remove(), 6000);
+    };
+
+    const setCopyStep = (step) => {
+      if (copyStepSelectEl) copyStepSelectEl.classList.toggle("hidden", step !== "select");
+      if (copyStepResultEl) copyStepResultEl.classList.toggle("hidden", step !== "result");
+      if (copyActionsSelectEl) copyActionsSelectEl.classList.toggle("hidden", step !== "select");
+      if (copyActionsResultEl) copyActionsResultEl.classList.toggle("hidden", step !== "result");
+    };
+
+    const setCopyError = (message) => {
+      if (!copyErrorEl) return;
+      const text = String(message || "").trim();
+      copyErrorEl.textContent = text;
+      copyErrorEl.classList.toggle("hidden", !text);
+    };
+
+    const closeCopyModal = () => {
+      if (!(copyModal instanceof HTMLElement)) return;
+      copyModal.classList.add("hidden");
+      copyModal.classList.remove("flex");
+    };
+
+    const enforceCopySectionDependencies = () => {
+      const rmCheckbox = copyModal?.querySelector('[data-bom-copy-section="rm"]');
+      const skuCheckbox = copyModal?.querySelector('[data-bom-copy-section="sku_overrides"]');
+      const stageCheckbox = copyModal?.querySelector('[data-bom-copy-section="stage_routes"]');
+      const sfgCheckbox = copyModal?.querySelector('[data-bom-copy-section="sfg"]');
+      if (skuCheckbox instanceof HTMLInputElement && rmCheckbox instanceof HTMLInputElement) {
+        skuCheckbox.disabled = !rmCheckbox.checked;
+        if (!rmCheckbox.checked) skuCheckbox.checked = false;
+      }
+      if (sfgCheckbox instanceof HTMLInputElement && stageCheckbox instanceof HTMLInputElement) {
+        sfgCheckbox.disabled = !stageCheckbox.checked;
+        if (!stageCheckbox.checked) sfgCheckbox.checked = false;
+      }
+    };
+
+    const getSelectedCopySections = () =>
+      Array.from(copyModal?.querySelectorAll('[data-bom-copy-section]') || [])
+        .filter((input) => input instanceof HTMLInputElement && input.checked)
+        .map((input) => input.getAttribute("data-bom-copy-section"))
+        .filter(Boolean);
+
+    const loadCopySources = async () => {
+      if (!copySourceSelect) return;
+      const headerState = getHeaderState();
+      copySourceSelect.innerHTML = `<option value="">${labels.select}</option>`;
+      if (!headerState.level || !headerState.item_id) return;
+      try {
+        const params = new URLSearchParams({ level: headerState.level, exclude_item_id: headerState.item_id });
+        const res = await fetch(`${basePath}/copy-sources?${params.toString()}`);
+        const data = await res.json();
+        if (!res.ok || !data?.ok) throw new Error(data?.message || copyRuntimeLabels.loadFailed);
+        const sources = Array.isArray(data.sources) ? data.sources : [];
+        if (!sources.length) {
+          copySourceSelect.innerHTML = `<option value="">${esc(copyRuntimeLabels.noSources)}</option>`;
+        } else {
+          copySourceSelect.innerHTML = `<option value="">${labels.select}</option>` + sources.map((src) =>
+            `<option value="${esc(src.bom_id)}">${esc(src.item_name || src.item_code || src.bom_no)} (${esc(src.bom_no)} V${esc(src.version_no)})</option>`
+          ).join("");
+        }
+      } catch (err) {
+        setCopyError(err?.message || copyRuntimeLabels.loadFailed);
+      }
+      if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+    };
+
+    const openBomCopyModal = () => {
+      if (!(copyModal instanceof HTMLElement)) return;
+      const headerState = getHeaderState();
+      if (!headerState.level || !headerState.item_id) {
+        if (typeof window.showUiErrorModal === "function") {
+          window.showUiErrorModal(copyRuntimeLabels.setHeaderFirst, "<%= t('notice') %>");
+        }
+        return;
+      }
+      setCopyError("");
+      setCopyStep("select");
+      enforceCopySectionDependencies();
+      copyModal.classList.remove("hidden");
+      copyModal.classList.add("flex");
+      loadCopySources();
+    };
+
+    const renderCopyReport = (report, source) => {
+      if (!copyReportEl) return;
+      const blocks = [];
+      if (source) {
+        blocks.push(`<p class="text-slate-600">${esc(copyRuntimeLabels.reportFromPrefix)} ${esc(source.bom_no)} V${esc(source.version_no)} (${esc(source.item_name || "")})</p>`);
+      }
+      const sectionOrder = ["rm", "sku_overrides", "stage_routes", "sfg"];
+      const reportKeyBySection = { rm: "rm_lines", sku_overrides: "sku_overrides", stage_routes: "stage_routes", sfg: "sfg_lines" };
+      sectionOrder.forEach((sectionKey) => {
+        const sectionReport = report?.[reportKeyBySection[sectionKey]];
+        if (!sectionReport) return;
+        const skippedList = (sectionReport.skipped || []).map((entry) => `<li>${esc(entry.label)}</li>`).join("");
+        blocks.push(`
+          <div class="rounded-xl border border-slate-200 p-3">
+            <div class="font-semibold text-slate-700">${esc(copySectionLabels[sectionKey] || sectionKey)}: ${esc(sectionReport.copied)} / ${esc(sectionReport.total)} ${esc(copyRuntimeLabels.copiedOfTotal)}</div>
+            ${skippedList ? `<ul class="mt-2 list-disc space-y-1 pl-4 text-xs text-amber-700">${skippedList}</ul>` : `<p class="mt-1 text-xs text-emerald-700">${esc(copyRuntimeLabels.noneSkipped)}</p>`}
+          </div>
+        `);
+      });
+      copyReportEl.innerHTML = blocks.join("");
+    };
+
+    const applyBomCopy = async () => {
+      if (!copySourceSelect) return;
+      const sourceBomId = String(copySourceSelect.value || "").trim();
+      if (!sourceBomId) { setCopyError(copyRuntimeLabels.pickSourceFirst); return; }
+      const sections = getSelectedCopySections();
+      if (!sections.length) { setCopyError(copyRuntimeLabels.pickSectionFirst); return; }
+      setCopyError("");
+
+      syncStateFromDom();
+      const hasExistingData =
+        (sections.includes("rm") && (state.rm || []).some((row) => String(row?.rm_item_id || "").trim()))
+        || (sections.includes("sku_overrides") && (state.sku_override || []).length > 0)
+        || (sections.includes("stage_routes") && (state.stage_routes || []).some((row) => String(row?.dept_id || "").trim()))
+        || (sections.includes("sfg") && (state.sfg || []).some((row) => String(row?.sfg_sku_id || "").trim()));
+
+      if (hasExistingData && typeof window.showUiConfirmModal === "function") {
+        const confirmed = await window.showUiConfirmModal({
+          title: copyRuntimeLabels.confirmReplaceTitle,
+          message: copyRuntimeLabels.confirmReplaceMessage,
+          confirmLabel: copyRuntimeLabels.confirmReplaceYes,
+          cancelLabel: copyRuntimeLabels.confirmReplaceNo,
+        });
+        if (!confirmed) return;
+      }
+
+      const headerState = getHeaderState();
+      try {
+        const params = new URLSearchParams({
+          target_item_id: headerState.item_id,
+          target_level: headerState.level,
+          sections: sections.join(","),
+        });
+        const res = await fetch(`${basePath}/${sourceBomId}/copy-payload?${params.toString()}`);
+        const data = await res.json();
+        if (!res.ok || !data?.ok) throw new Error(data?.message || copyRuntimeLabels.applyFailed);
+
+        if (sections.includes("rm")) state.rm = (data.lines?.rm_lines || []).map((row) => ({ ...row }));
+        if (sections.includes("sku_overrides")) state.sku_override = (data.lines?.sku_overrides || []).map((row) => ({ ...row }));
+        if (sections.includes("stage_routes")) state.stage_routes = (data.lines?.stage_routes || []).map((row) => ({ ...row }));
+        if (sections.includes("sfg")) state.sfg = (data.lines?.sfg_lines || []).map((row) => ({ ...row }));
+
+        if (copiedFromBomIdInput) copiedFromBomIdInput.value = String(data.source?.bom_id || "");
+        state.skuRuleOpenSkuId = "";
+
+        renderAll();
+
+        renderCopyReport(data.report, data.source);
+        setCopyStep("result");
+      } catch (err) {
+        setCopyError(err?.message || copyRuntimeLabels.applyFailed);
+      }
+    };
+
+    copyOpenBtn?.addEventListener("click", openBomCopyModal);
+    Array.from(copyModal?.querySelectorAll("[data-bom-copy-close]") || []).forEach((btn) => btn.addEventListener("click", closeCopyModal));
+    Array.from(copyModal?.querySelectorAll("[data-bom-copy-section]") || []).forEach((input) => input.addEventListener("change", enforceCopySectionDependencies));
+    copyApplyBtn?.addEventListener("click", applyBomCopy);
+    copyDoneBtn?.addEventListener("click", () => {
+      closeCopyModal();
+      showBomCopyToast(copyRuntimeLabels.toastMessage);
+    });
+
+    const skuCopyModal = document.querySelector('[data-sku-copy-modal]');
+    const skuCopyOpenBtn = document.querySelector('[data-sku-copy-from-open]');
+    const skuCopySourceSelect = skuCopyModal?.querySelector('[data-sku-copy-source]');
+    const skuCopyTargetLine = skuCopyModal?.querySelector('[data-sku-copy-target-line]');
+    const skuCopyModeWrap = skuCopyModal?.querySelector('[data-sku-copy-mode-wrap]');
+    const skuCopyErrorEl = skuCopyModal?.querySelector('[data-sku-copy-error]');
+    const skuCopyApplyBtn = skuCopyModal?.querySelector('[data-sku-copy-apply]');
+
+    const skuCopyLabels = {
+      targetPrefix: "<%= tx('bom_sku_copy_target_prefix', 'Copy values into') %>",
+      pickSource: "<%= tx('bom_sku_copy_pick_source', 'Pick a SKU to copy from.') %>",
+      noOtherSkus: "<%= tx('bom_sku_copy_no_other_skus', 'No other SKUs for this article yet.') %>",
+      hasValues: "<%= tx('bom_sku_copy_has_values_suffix', 'has values') %>",
+      toastTemplate: "<%= tx('bom_sku_copy_toast_template', 'Copied values from {source} to {target}: {filled} material(s) updated') %>",
+      toastSkippedSuffix: "<%= tx('bom_sku_copy_toast_skipped_suffix', ', {skipped} left unchanged (already filled)') %>",
+    };
+
+    const setSkuCopyError = (message) => {
+      if (!skuCopyErrorEl) return;
+      const text = String(message || "").trim();
+      skuCopyErrorEl.textContent = text;
+      skuCopyErrorEl.classList.toggle("hidden", !text);
+    };
+
+    const skuOverrideValueCount = (skuId) =>
+      (state.sku_override || []).filter((row) => {
+        if (String(row?.sku_id || "") !== String(skuId || "")) return false;
+        return Boolean(
+          row.is_excluded
+          || String(row.override_qty ?? "").trim() !== ""
+          || String(row.replacement_rm_item_id || "").trim()
+          || String(row.rm_color_id || "").trim()
+          || String(row.rm_size_id || "").trim(),
+        );
+      }).length;
+
+    const closeSkuCopyModal = () => {
+      if (!(skuCopyModal instanceof HTMLElement)) return;
+      skuCopyModal.classList.add("hidden");
+      skuCopyModal.classList.remove("flex");
+    };
+
+    const openSkuCopyModal = () => {
+      if (!(skuCopyModal instanceof HTMLElement)) return;
+      const activeSku = ensureSkuRuleOpenSku();
+      if (!activeSku) return;
+      const skuOptions = getHeaderSkuOptions().filter((sku) => String(sku.id) !== String(activeSku.id));
+      if (skuCopyTargetLine) skuCopyTargetLine.textContent = `${skuCopyLabels.targetPrefix}: ${getSkuCodeLabel(activeSku)}`;
+      if (skuCopySourceSelect) {
+        if (!skuOptions.length) {
+          skuCopySourceSelect.innerHTML = `<option value="">${esc(skuCopyLabels.noOtherSkus)}</option>`;
+        } else {
+          const activeKey = [String(activeSku.size_id || ""), String(activeSku.color_id || "")].join("|");
+          const sorted = skuOptions.slice().sort((a, b) => {
+            const aMatch = [String(a.size_id || ""), String(a.color_id || "")].join("|") === activeKey ? 0 : 1;
+            const bMatch = [String(b.size_id || ""), String(b.color_id || "")].join("|") === activeKey ? 0 : 1;
+            if (aMatch !== bMatch) return aMatch - bMatch;
+            return getSkuCodeLabel(a).localeCompare(getSkuCodeLabel(b));
+          });
+          skuCopySourceSelect.innerHTML = `<option value="">${labels.select}</option>` + sorted.map((sku) => {
+            const count = skuOverrideValueCount(sku.id);
+            const suffix = count ? ` (${skuCopyLabels.hasValues})` : "";
+            return `<option value="${esc(sku.id)}">${esc(getSkuCodeLabel(sku))}${esc(suffix)}</option>`;
+          }).join("");
+        }
+      }
+      setSkuCopyError("");
+      if (skuCopyModeWrap) {
+        const hasExisting = skuOverrideValueCount(activeSku.id) > 0;
+        skuCopyModeWrap.classList.toggle("hidden", !hasExisting);
+        if (hasExisting) {
+          const mergeRadio = skuCopyModal.querySelector('[data-sku-copy-mode][value="merge"]');
+          if (mergeRadio instanceof HTMLInputElement) mergeRadio.checked = true;
+        }
+      }
+      skuCopyModal.classList.remove("hidden");
+      skuCopyModal.classList.add("flex");
+      if (typeof window.initSearchableSelects === "function") window.initSearchableSelects();
+    };
+
+    const applySkuCopy = () => {
+      const activeSku = ensureSkuRuleOpenSku();
+      if (!activeSku || !skuCopySourceSelect) return;
+      const sourceSkuId = String(skuCopySourceSelect.value || "").trim();
+      if (!sourceSkuId) { setSkuCopyError(skuCopyLabels.pickSource); return; }
+      const targetSkuId = String(activeSku.id);
+      const modeInput = skuCopyModal?.querySelector('[data-sku-copy-mode]:checked');
+      const mode = modeInput instanceof HTMLInputElement ? modeInput.value : "merge";
+
+      syncSkuRulesFromDom();
+
+      if (mode === "replace") {
+        state.sku_override = (state.sku_override || []).filter((row) => String(row?.sku_id || "") !== targetSkuId);
+      }
+
+      let filled = 0;
+      let skipped = 0;
+      const rmCombos = (state.rm || []).filter((row) => String(row?.rm_item_id || "").trim() && String(row?.dept_id || "").trim());
+      rmCombos.forEach((rmLine) => {
+        const srcOverride = findSkuOverride(sourceSkuId, rmLine.rm_item_id, rmLine.dept_id);
+        if (!srcOverride) return;
+        if (mode === "merge") {
+          const existingTarget = findSkuOverride(targetSkuId, rmLine.rm_item_id, rmLine.dept_id);
+          if (existingTarget) { skipped += 1; return; }
+        }
+        upsertSkuOverrideLine({
+          ...srcOverride,
+          sku_id: targetSkuId,
+          target_rm_item_id: String(rmLine.rm_item_id),
+          dept_id: String(rmLine.dept_id),
+        });
+        filled += 1;
+        const peerIds = getSkuVariantPeerIds(targetSkuId).filter((id) => String(id) !== sourceSkuId);
+        peerIds.forEach((peerId) => {
+          upsertSkuOverrideLine({
+            ...srcOverride,
+            sku_id: peerId,
+            target_rm_item_id: String(rmLine.rm_item_id),
+            dept_id: String(rmLine.dept_id),
+          });
+        });
+      });
+
+      renderSkuRules();
+      closeSkuCopyModal();
+
+      const sourceSku = getHeaderSkuOptions().find((sku) => String(sku.id) === sourceSkuId);
+      let toastMessage = skuCopyLabels.toastTemplate
+        .replace("{source}", getSkuCodeLabel(sourceSku) || sourceSkuId)
+        .replace("{target}", getSkuCodeLabel(activeSku))
+        .replace("{filled}", String(filled));
+      if (skipped) {
+        toastMessage += skuCopyLabels.toastSkippedSuffix.replace("{skipped}", String(skipped));
+      }
+      showBomCopyToast(toastMessage);
+    };
+
+    skuCopyOpenBtn?.addEventListener("click", openSkuCopyModal);
+    Array.from(skuCopyModal?.querySelectorAll("[data-sku-copy-close]") || []).forEach((btn) => btn.addEventListener("click", closeSkuCopyModal));
+    skuCopyApplyBtn?.addEventListener("click", applySkuCopy);
 
     initializeLabourStateFromExistingLines();
     ensureMinimumRows();

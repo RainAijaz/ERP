@@ -13,6 +13,7 @@ const keysBySection = {
   stage_routes: (row) => String(row.stage_id || 0),
   variant_rules: (row) =>
     `${row.size_scope || "ALL"}:${row.size_id || 0}:${row.packing_scope || "ALL"}:${row.packing_type_id || 0}:${row.color_scope || "ALL"}:${row.color_id || 0}:${row.action_type || ""}:${row.material_scope || "ALL"}:${row.target_rm_item_id || 0}`,
+  sku_overrides: (row) => `${row.sku_id || 0}:${row.target_rm_item_id || 0}:${row.dept_id || 0}`,
 };
 
 const buildChangeRows = ({ bomId, versionNo, requestId, changedBy, section, beforeRows, afterRows }) => {
@@ -143,6 +144,15 @@ const insertBomChangeLog = async (db, { bomId, versionNo, requestId, changedBy, 
       beforeRows: before?.variant_rules || [],
       afterRows: after?.variant_rules || [],
     }),
+    ...buildChangeRows({
+      bomId,
+      versionNo,
+      requestId,
+      changedBy,
+      section: "sku_overrides",
+      beforeRows: before?.sku_overrides || [],
+      afterRows: after?.sku_overrides || [],
+    }),
   );
 
   if (!rows.length) return;
@@ -151,4 +161,6 @@ const insertBomChangeLog = async (db, { bomId, versionNo, requestId, changedBy, 
 
 module.exports = {
   insertBomChangeLog,
+  keysBySection,
+  buildChangeRows,
 };

@@ -15,6 +15,7 @@ const LABOUR_RATE_RULE_PRECEDENCE = {
   FLAT: 4,
 };
 let bomLifecycleColumnSupportPromise = null;
+let bomCopiedFromColumnSupportPromise = null;
 
 const toArray = (value) => {
   if (!value) return [];
@@ -276,6 +277,21 @@ const hasBomLifecycleColumn = async (db) => {
   return bomLifecycleColumnSupportPromise;
 };
 
+const hasBomCopiedFromColumn = async (db) => {
+  if (bomCopiedFromColumnSupportPromise) return bomCopiedFromColumnSupportPromise;
+  bomCopiedFromColumnSupportPromise = (async () => {
+    try {
+      return await db.schema
+        .withSchema("erp")
+        .hasColumn("bom_header", "copied_from_bom_id");
+    } catch (err) {
+      bomCopiedFromColumnSupportPromise = null;
+      return false;
+    }
+  })();
+  return bomCopiedFromColumnSupportPromise;
+};
+
 const parseBomFormPayload = (body = {}) => {
   const rmRaw = parseJsonArray(body.rm_lines_json);
   const skuRaw = parseJsonArray(body.sku_rules_json);
@@ -289,6 +305,7 @@ const parseBomFormPayload = (body = {}) => {
       level: String(body.level || "").toUpperCase(),
       output_qty: toNumberOrNull(body.output_qty),
       output_uom_id: toNumberOrNull(body.output_uom_id),
+      copied_from_bom_id: toPositiveInt(body.copied_from_bom_id),
     },
     rm_lines: rmRaw
       .map((row) => ({
@@ -1274,12 +1291,31 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
 
   await validateRequiredRates(db, rmLines, t);
 
+  // Copy provenance is informational only: silently drop references that are
+  // not an APPROVED BOM at the same level (never block the save on it).
+  let copiedFromBomId = toPositiveInt(header.copied_from_bom_id);
+  if (copiedFromBomId) {
+    const copySourceRow = await db("erp.bom_header")
+      .select("id", "level", "status", "item_id")
+      .where({ id: copiedFromBomId })
+      .first();
+    if (
+      !copySourceRow ||
+      String(copySourceRow.status || "") !== "APPROVED" ||
+      String(copySourceRow.level || "").toUpperCase() !== level ||
+      toNumberOrNull(copySourceRow.item_id) === itemId
+    ) {
+      copiedFromBomId = null;
+    }
+  }
+
   return {
     header: {
       item_id: itemId,
       level,
       output_qty: outputQty,
       output_uom_id: outputUomId,
+      copied_from_bom_id: copiedFromBomId,
     },
     rm_lines: rmLines,
     sku_rules: skuRules,
@@ -2244,6 +2280,7 @@ const saveBomDraftTx = async (trx, { input, bomId, userId, requestId, t, allowPe
     actorUserId: userId || null,
   });
   const lifecycleSupported = await hasBomLifecycleColumn(trx);
+  const copiedFromSupported = await hasBomCopiedFromColumn(trx);
   const actorId = userId || null;
   const existingId = bomId ? Number(bomId) : null;
   const before = existingId ? await getBomSnapshot(trx, existingId) : null;
@@ -2289,6 +2326,9 @@ const saveBomDraftTx = async (trx, { input, bomId, userId, requestId, t, allowPe
       created_by: actorId,
     };
     if (lifecycleSupported) insertPayload.is_active = true;
+    if (copiedFromSupported)
+      insertPayload.copied_from_bom_id =
+        normalized.header.copied_from_bom_id || null;
     const inserted = await trx("erp.bom_header")
       .insert(insertPayload)
       .returning(["id", "version_no", "bom_no"]);
@@ -2332,12 +2372,16 @@ const saveBomDraftTx = async (trx, { input, bomId, userId, requestId, t, allowPe
     if (isPendingAdminEdit) savedStatus = "PENDING";
     versionNo = Number(current.version_no || 1);
     bomNo = current.bom_no;
-    await trx("erp.bom_header").where({ id: existingId }).update({
+    const updatePayload = {
       item_id: normalized.header.item_id,
       level: normalized.header.level,
       output_qty: normalized.header.output_qty,
       output_uom_id: normalized.header.output_uom_id,
-    });
+    };
+    if (copiedFromSupported)
+      updatePayload.copied_from_bom_id =
+        normalized.header.copied_from_bom_id || null;
+    await trx("erp.bom_header").where({ id: existingId }).update(updatePayload);
   }
 
   await replaceBomLines(trx, targetId, normalized);
@@ -3651,13 +3695,29 @@ const getBomForForm = async (knex, id) => {
     "i.code as item_code",
   ];
   if (lifecycleSupported) headerFields.splice(7, 0, "bh.is_active");
-  const header = await knex("erp.bom_header as bh")
+  const copiedFromSupported = await hasBomCopiedFromColumn(knex);
+  if (copiedFromSupported) {
+    headerFields.push(
+      "bh.copied_from_bom_id",
+      "src.bom_no as copied_from_bom_no",
+      "src.version_no as copied_from_version_no",
+      "si.name as copied_from_item_name",
+      "si.code as copied_from_item_code",
+    );
+  }
+  let headerQuery = knex("erp.bom_header as bh")
     .select(headerFields)
     .leftJoin("erp.items as i", "bh.item_id", "i.id")
-    .where("bh.id", bomId)
-    .first();
+    .where("bh.id", bomId);
+  if (copiedFromSupported) {
+    headerQuery = headerQuery
+      .leftJoin("erp.bom_header as src", "bh.copied_from_bom_id", "src.id")
+      .leftJoin("erp.items as si", "src.item_id", "si.id");
+  }
+  const header = await headerQuery.first();
   if (!header) return null;
   if (!lifecycleSupported) header.is_active = true;
+  if (!copiedFromSupported) header.copied_from_bom_id = null;
 
   const [rmLines, sfgLines, labourLines, stageRoutes, skuOverrides] =
     await Promise.all([
@@ -3948,6 +4008,9 @@ module.exports = {
   setBomPendingTx,
   resetPendingBomAfterRejectTx,
   buildApprovalSnapshot,
+  getBomSnapshot,
+  replaceBomLines,
+  hasBomCopiedFromColumn,
   buildApprovalPayload,
   buildApproveDraftPayload,
   buildDeleteDraftPayload,

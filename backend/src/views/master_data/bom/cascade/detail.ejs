@@ -1,0 +1,123 @@
+<%
+  const tx = (key, fallback) => {
+    const value = typeof t === "function" ? t(key) : "";
+    return value && value !== key ? value : fallback;
+  };
+  const esc = (value) =>
+    String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/"/g, "&quot;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+
+  const sectionMeta = [
+    { key: "rm_lines", label: tx("raw_materials", "Raw Materials"), inputName: "selected_rm_lines" },
+    { key: "sku_overrides", label: tx("bom_sku_rules", "SKU Rules"), inputName: "selected_sku_overrides" },
+    { key: "sfg_lines", label: tx("semi_finished", "Semi Finished"), inputName: "selected_sfg_lines" },
+    { key: "stage_routes", label: tx("production_stages", "Production Stages"), inputName: "selected_stage_routes" },
+  ];
+
+  const actionText = (entry) => {
+    if (entry.action === "add") return `${tx("bom_cascade_action_add", "Add")}: ${esc(entry.parentValueLabel || "")}`;
+    if (entry.action === "remove") return `${tx("bom_cascade_action_remove", "Remove")}: ${esc(entry.dependentValueLabel || "")}`;
+    return `${tx("bom_cascade_action_update", "Update")}: ${esc(entry.dependentValueLabel || "")} &rarr; ${esc(entry.parentValueLabel || "")}`;
+  };
+%>
+
+<div class="mx-auto w-full max-w-5xl space-y-6">
+  <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
+    <h1 class="text-2xl font-display text-ink"><%= tx("bom_cascade_review_title", "Review dependent BOM updates") %></h1>
+    <p class="mt-1 text-sm text-muted">
+      <span class="font-semibold text-ink"><%= dependentItem?.name || "" %></span>
+      &mdash; <%= tx("bom_cascade_based_on", "based on the new version of") %>
+      <span class="font-semibold text-ink"><%= parentHeader?.item_name || "" %></span>
+      (<%= parentHeader?.bom_no %> V<%= parentHeader?.version_no %>)
+    </p>
+    <p class="mt-2 text-xs text-amber-700 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+      <%= tx("bom_cascade_conflict_hint", "Conflicting lines (edited here AND changed on the parent) are never auto-applied - your own edit is always kept. Fix those manually afterward if you want the parent's new value.") %>
+    </p>
+  </section>
+
+  <form id="cascade-apply-form" method="POST" action="<%= basePath %>/<%= dependentBomId %>/apply" class="space-y-6">
+    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+    <input type="hidden" name="parent_bom_id" value="<%= parentBomId %>">
+    <% sectionMeta.forEach(function (meta) { %>
+      <input type="hidden" name="<%= meta.inputName %>" value="[]" data-cascade-selected-input="<%= meta.key %>">
+    <% }) %>
+
+    <% sectionMeta.forEach(function (meta) { %>
+      <% const section = plan.sections[meta.key]; %>
+      <% if (!section?.eligible) { return; } %>
+      <% const hasAny = (section.safe || []).length || (section.conflicts || []).length || (section.skipped || []).length; %>
+      <% if (!hasAny) { return; } %>
+      <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-sm">
+        <div class="border-b border-slate-200 px-5 py-3 text-sm font-semibold uppercase tracking-[0.12em] text-slate-600">
+          <%= meta.label %>
+        </div>
+        <div class="divide-y divide-slate-100">
+          <% (section.safe || []).forEach(function (entry) { %>
+            <label class="flex items-center gap-3 px-5 py-3 text-sm text-slate-700 hover:bg-slate-50">
+              <input
+                type="checkbox"
+                checked
+                data-cascade-row-key="<%= esc(entry.key) %>"
+                data-cascade-section="<%= meta.key %>"
+                class="h-4 w-4 rounded border-slate-300"
+              >
+              <span class="flex-1"><%- actionText(entry) %></span>
+              <span class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-700"><%= tx("bom_cascade_badge_safe", "Safe") %></span>
+            </label>
+          <% }) %>
+          <% (section.conflicts || []).forEach(function (entry) { %>
+            <div class="flex items-center gap-3 px-5 py-3 text-sm text-slate-500">
+              <span class="h-4 w-4"></span>
+              <span class="flex-1"><%- actionText(entry) %></span>
+              <span class="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-rose-700"><%= tx("bom_cascade_badge_conflict", "Conflict - kept as-is") %></span>
+            </div>
+          <% }) %>
+          <% (section.skipped || []).forEach(function (entry) { %>
+            <div class="flex items-center gap-3 px-5 py-3 text-xs text-slate-400">
+              <span class="h-4 w-4"></span>
+              <span class="flex-1"><%= tx("bom_cascade_skip_reason_" + entry.reason, entry.reason) %></span>
+              <span class="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= tx("bom_cascade_badge_skipped", "Skipped") %></span>
+            </div>
+          <% }) %>
+        </div>
+      </section>
+    <% }) %>
+
+    <% if (!plan.hasAnyApplicableChange) { %>
+      <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+        <%= tx("bom_cascade_nothing_to_apply", "Nothing is safe to auto-apply here right now.") %>
+      </div>
+    <% } else { %>
+      <div class="flex justify-center">
+        <button type="submit" class="rounded-xl bg-accent px-5 py-2.5 text-xs font-semibold uppercase tracking-[0.16em] text-white shadow-sm transition hover:brightness-95">
+          <%= tx("bom_cascade_apply_button", "Apply selected updates") %>
+        </button>
+      </div>
+    <% } %>
+  </form>
+</div>
+
+<script>
+  (function () {
+    const form = document.getElementById("cascade-apply-form");
+    if (!(form instanceof HTMLFormElement)) return;
+    form.addEventListener("submit", () => {
+      const bySection = {};
+      Array.from(form.querySelectorAll("[data-cascade-row-key]")).forEach((input) => {
+        if (!(input instanceof HTMLInputElement) || !input.checked) return;
+        const section = input.getAttribute("data-cascade-section");
+        if (!section) return;
+        if (!bySection[section]) bySection[section] = [];
+        bySection[section].push(input.getAttribute("data-cascade-row-key"));
+      });
+      Array.from(form.querySelectorAll("[data-cascade-selected-input]")).forEach((hidden) => {
+        if (!(hidden instanceof HTMLInputElement)) return;
+        const section = hidden.getAttribute("data-cascade-selected-input");
+        hidden.value = JSON.stringify(bySection[section] || []);
+      });
+    });
+  })();
+</script>

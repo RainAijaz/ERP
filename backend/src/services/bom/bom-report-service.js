@@ -23,6 +23,7 @@ const CHANGE_LOG_SECTIONS = [
   "sfg_lines",
   "labour_lines",
   "variant_rules",
+  "sku_overrides",
 ];
 const CHANGE_TYPES = ["ADDED", "UPDATED", "REMOVED"];
 

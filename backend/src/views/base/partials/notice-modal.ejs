@@ -11,6 +11,7 @@
 <% const uiNoticeSticky = uiNotice && uiNotice.sticky === true; %>
 <% const uiNoticeAutoClose = uiNotice && uiNotice.autoClose; %>
 <% const uiNoticeType = uiNotice && uiNotice.type ? String(uiNotice.type).trim().toLowerCase() : ""; %>
+<% const uiNoticeLink = uiNotice && uiNotice.link && uiNotice.link.href ? uiNotice.link : null; %>
 <% const debugUiNoticeFlag = typeof debugUiNotice !== "undefined" ? debugUiNotice : false; %>
 <% if (uiNoticeMessage) { %>
   <% const isError = uiNoticeType === "error" || uiNoticeType === "danger" || (uiNoticeMessage && (/error|could not|failed|invalid|duplicate|not found|unable|does not exist|constraint|violat(e|ion)|exception|syntax/i).test(uiNoticeMessage)); %>
@@ -30,6 +31,11 @@
       <div class="flex-1">
         <div class="text-xs font-semibold uppercase tracking-[0.18em] <%= isError ? 'text-rose-700' : 'text-emerald-700' %>"><%= isError ? (t("error_generic") ) : (t("notice") ) %></div>
         <p class="mt-1 text-sm <%= isError ? 'text-rose-700' : 'text-slate-700' %>"><%= uiNoticeMessage %></p>
+        <% if (uiNoticeLink) { %>
+          <a href="<%= uiNoticeLink.href %>" class="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-accent hover:text-accent/80">
+            <%= uiNoticeLink.label || t("view") %>
+          </a>
+        <% } %>
         <% if (uiNoticeSticky) { %>
           <button class="mt-1 text-[10px] uppercase tracking-[0.18em] text-slate-400 hover:text-slate-600" type="button" data-ui-notice-dismiss>
             <%= t("dismiss")  %>

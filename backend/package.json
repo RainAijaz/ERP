@@ -11,6 +11,8 @@
     "test:voucher-engine": "node src/scripts/test-voucher-engine.js",
     "test:hr-payroll": "node src/scripts/test-hr-payroll-routes.js",
     "test:bom": "node src/scripts/test-bom-routes.js",
+    "test:bom:copy": "node src/scripts/test-bom-copy.js",
+    "test:bom:cascade": "node src/scripts/test-bom-cascade.js",
     "test:bom:reports:db": "node src/scripts/test-bom-reports-db.js",
     "test:approval-audit": "node src/scripts/test-approval-audit-enhancements.js",
     "test:approval-translation-code-policy": "node src/scripts/test-approval-translation-code-policy.js",

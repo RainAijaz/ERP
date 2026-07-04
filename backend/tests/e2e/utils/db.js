@@ -4,6 +4,7 @@ const knex = require("knex")(knexConfig);
 const {
   getActiveAdminEmails,
 } = require("../../../src/utils/approval-notifications");
+const bomService = require("../../../src/services/bom/service");
 
 const logPool = (label, err) => {
   if (process.env.DEBUG_DB_POOL !== "1") return;
@@ -1509,6 +1510,809 @@ const cleanupBomUiFixture = async ({ fixture, bomIds = [] } = {}) => {
   });
 };
 
+// Fixture for BOM "copy from approved BOM" regression tests. Builds:
+//  - Article A: source, APPROVED FINISHED BOM with 1 RM line and TWO SKUs
+//    (skuA1, skuA2) sharing the identical size/color/packing variant - this
+//    engineers the "ambiguous same-variant source SKUs" scenario. It also
+//    carries an sku_override row referencing an RM item never added to this
+//    BOM's rm_lines ("orphaned" combo), used to prove the missing-rm-line
+//    check fires even when a copy request excludes the "rm" section.
+//  - Article B: target, no BOM yet, with ONE SKU sharing that same variant
+//    (unambiguous target for the missing-rm-line test).
+// Size/color/packing get distinct Urdu names so locale-handling can be
+// asserted on directly.
+const createBomCopyFixture = async (token) => {
+  const safeToken = String(token || Date.now())
+    .replace(/[^a-zA-Z0-9_]/g, "")
+    .slice(0, 32);
+  return knex.transaction(async (trx) => {
+    const users = await trx("erp.users")
+      .select("id")
+      .orderBy("id", "asc")
+      .limit(2);
+    if (!users.length) return null;
+    const creatorId = Number(users[0].id);
+    const approverId = Number(users[1]?.id || users[0].id);
+
+    const branch = await trx("erp.branches").select("id").orderBy("id", "asc").first();
+    if (!branch) return null;
+
+    const uom = await trx("erp.uom")
+      .select("id")
+      .where({ is_active: true })
+      .orderBy("id", "asc")
+      .first();
+    if (!uom) return null;
+
+    // FG/SFG items must use PAIR as their base UOM (DB-enforced, see
+    // 095_production_uom_pair_enforcement.sql); RM items and the BOM's own
+    // RM lines can use any active UOM.
+    const pairUom = await trx("erp.uom")
+      .select("id")
+      .whereRaw(
+        "is_active = true AND (UPPER(code) = 'PAIR' OR UPPER(name) = 'PAIR')",
+      )
+      .orderBy("id", "asc")
+      .first();
+    const productionUomId = Number(pairUom?.id || uom.id);
+
+    const dept = await trx("erp.departments")
+      .select("id")
+      .where({ is_active: true, is_production: true })
+      .orderBy("id", "asc")
+      .first();
+    if (!dept) return null;
+
+    const createdSupport = {};
+    let group = await trx("erp.product_groups")
+      .select("id")
+      .where({ is_active: true })
+      .orderBy("id", "asc")
+      .first();
+    if (!group) {
+      const [inserted] = await trx("erp.product_groups")
+        .insert({
+          name: `E2E Copy Group ${safeToken}`,
+          name_ur: `E2E Copy Group ${safeToken}`,
+          is_active: true,
+          created_by: creatorId,
+        })
+        .returning(["id"]);
+      group = { id: inserted?.id || inserted };
+      createdSupport.groupId = Number(group.id);
+      await trx("erp.product_group_item_types").insert([
+        { group_id: group.id, item_type: "RM" },
+        { group_id: group.id, item_type: "FG" },
+      ]);
+    }
+
+    const [sizeInserted] = await trx("erp.sizes")
+      .insert({
+        name: `E2E Copy Size ${safeToken}`,
+        name_ur: `اردو سائز ${safeToken}`,
+        is_active: true,
+        created_by: creatorId,
+      })
+      .returning(["id"]);
+    const sizeId = Number(sizeInserted?.id || sizeInserted);
+
+    const [colorInserted] = await trx("erp.colors")
+      .insert({
+        name: `E2E Copy Color ${safeToken}`,
+        name_ur: `اردو رنگ ${safeToken}`,
+        is_active: true,
+        created_by: creatorId,
+      })
+      .returning(["id"]);
+    const colorId = Number(colorInserted?.id || colorInserted);
+
+    const [packingInserted] = await trx("erp.packing_types")
+      .insert({
+        name: `E2E Copy Packing ${safeToken}`,
+        name_ur: `اردو پیکنگ ${safeToken}`,
+        is_active: true,
+        created_by: creatorId,
+      })
+      .returning(["id"]);
+    const packingTypeId = Number(packingInserted?.id || packingInserted);
+
+    // A second packing type for Article B's second SKU (same size/color,
+    // different packaging - the realistic Feature 2 "copy SKU values to a
+    // different packaging" scenario).
+    const [packing2Inserted] = await trx("erp.packing_types")
+      .insert({
+        name: `E2E Copy Packing2 ${safeToken}`,
+        name_ur: `اردو پیکنگ 2 ${safeToken}`,
+        is_active: true,
+        created_by: creatorId,
+      })
+      .returning(["id"]);
+    const packingType2Id = Number(packing2Inserted?.id || packing2Inserted);
+
+    let stage = await trx("erp.production_stages")
+      .select("id")
+      .where({ dept_id: dept.id, is_active: true })
+      .orderBy("id", "asc")
+      .first();
+    if (!stage) {
+      const stageCode = `E2E-CP-STAGE-${safeToken}`.slice(0, 80);
+      const stageName = `E2E Copy Stage ${safeToken}`.slice(0, 120);
+      const [stageInserted] = await trx("erp.production_stages")
+        .insert({
+          code: stageCode,
+          name: stageName,
+          name_ur: stageName,
+          dept_id: dept.id,
+          is_active: true,
+          created_by: creatorId,
+        })
+        .returning(["id"]);
+      stage = { id: stageInserted?.id || stageInserted };
+      createdSupport.productionStageId = Number(stage.id);
+    }
+    const stageId = Number(stage.id);
+
+    const [rmInserted] = await trx("erp.items")
+      .insert({
+        item_type: "RM",
+        code: `e2e_cprm_${safeToken}`.slice(0, 80),
+        name: `E2E Copy RM ${safeToken}`,
+        name_ur: `E2E Copy RM ${safeToken}`,
+        group_id: group.id,
+        base_uom_id: uom.id,
+        created_by: creatorId,
+      })
+      .returning(["id"]);
+    const rmItemId = Number(rmInserted?.id || rmInserted);
+    await trx("erp.rm_purchase_rates").insert({
+      rm_item_id: rmItemId,
+      color_id: null,
+      purchase_rate: 10,
+      avg_purchase_rate: 10,
+      is_active: true,
+      created_by: creatorId,
+    });
+
+    const [rmOrphanInserted] = await trx("erp.items")
+      .insert({
+        item_type: "RM",
+        code: `e2e_cporm_${safeToken}`.slice(0, 80),
+        name: `E2E Copy Orphan RM ${safeToken}`,
+        name_ur: `E2E Copy Orphan RM ${safeToken}`,
+        group_id: group.id,
+        base_uom_id: uom.id,
+        created_by: creatorId,
+      })
+      .returning(["id"]);
+    const rmOrphanItemId = Number(rmOrphanInserted?.id || rmOrphanInserted);
+    await trx("erp.rm_purchase_rates").insert({
+      rm_item_id: rmOrphanItemId,
+      color_id: null,
+      purchase_rate: 5,
+      avg_purchase_rate: 5,
+      is_active: true,
+      created_by: creatorId,
+    });
+
+    const [articleAInserted] = await trx("erp.items")
+      .insert({
+        item_type: "FG",
+        code: `e2e_cpa_${safeToken}`.slice(0, 80),
+        name: `E2E Copy Article A ${safeToken}`,
+        name_ur: `E2E Copy Article A ${safeToken}`,
+        group_id: group.id,
+        base_uom_id: productionUomId,
+        uses_sfg: false,
+        created_by: creatorId,
+      })
+      .returning(["id"]);
+    const articleAId = Number(articleAInserted?.id || articleAInserted);
+
+    // erp.variants enforces one row per unique (item_id, size_id, grade_id,
+    // color_id, packing_type_id) identity - so "two SKUs sharing the same
+    // variant identity" (the real-world case this fixture engineers) means
+    // two erp.skus rows on the SAME variant row, not two variant rows.
+    const [variantAInserted] = await trx("erp.variants")
+      .insert({
+        item_id: articleAId,
+        size_id: sizeId,
+        color_id: colorId,
+        packing_type_id: packingTypeId,
+        sale_rate: 100,
+        is_active: true,
+        created_by: creatorId,
+      })
+      .returning(["id"]);
+    const variantA1Id = Number(variantAInserted?.id || variantAInserted);
+    const variantA2Id = variantA1Id;
+    const [skuA1Inserted] = await trx("erp.skus")
+      .insert({
+        variant_id: variantA1Id,
+        sku_code: `E2E-CPA1-${safeToken}`.slice(0, 80),
+        is_active: true,
+      })
+      .returning(["id"]);
+    const skuA1Id = Number(skuA1Inserted?.id || skuA1Inserted);
+
+    const [skuA2Inserted] = await trx("erp.skus")
+      .insert({
+        variant_id: variantA2Id,
+        sku_code: `E2E-CPA2-${safeToken}`.slice(0, 80),
+        is_active: true,
+      })
+      .returning(["id"]);
+    const skuA2Id = Number(skuA2Inserted?.id || skuA2Inserted);
+
+    const [bomAInserted] = await trx("erp.bom_header")
+      .insert({
+        bom_no: `E2E-CPBOM-A-${safeToken}`.slice(0, 120),
+        item_id: articleAId,
+        level: "FINISHED",
+        output_qty: 1,
+        output_uom_id: productionUomId,
+        status: "APPROVED",
+        version_no: 1,
+        created_by: creatorId,
+        approved_by: approverId,
+        approved_at: trx.fn.now(),
+      })
+      .returning(["id"]);
+    const bomAId = Number(bomAInserted?.id || bomAInserted);
+
+    await trx("erp.bom_rm_line").insert({
+      bom_id: bomAId,
+      rm_item_id: rmItemId,
+      color_id: null,
+      size_id: null,
+      dept_id: dept.id,
+      qty: 10,
+      uom_id: uom.id,
+      normal_loss_pct: 0,
+    });
+
+    await trx("erp.bom_stage_routing").insert({
+      bom_id: bomAId,
+      stage_id: stageId,
+      sequence_no: 1,
+      is_required: true,
+      enforce_sequence: true,
+    });
+
+    await trx("erp.bom_sku_override_line").insert([
+      {
+        bom_id: bomAId,
+        sku_id: skuA1Id,
+        target_rm_item_id: rmItemId,
+        dept_id: dept.id,
+        is_excluded: false,
+        override_qty: 5,
+        override_uom_id: uom.id,
+      },
+      {
+        bom_id: bomAId,
+        sku_id: skuA2Id,
+        target_rm_item_id: rmItemId,
+        dept_id: dept.id,
+        is_excluded: false,
+        override_qty: 9,
+        override_uom_id: uom.id,
+      },
+      // Orphaned combo: target_rm_item_id is never added as a bom_rm_line on
+      // this BOM. Proves missing_rm_line still fires when a copy request
+      // only asks for sections=sku_overrides (excluding "rm").
+      {
+        bom_id: bomAId,
+        sku_id: skuA1Id,
+        target_rm_item_id: rmOrphanItemId,
+        dept_id: dept.id,
+        is_excluded: false,
+        override_qty: 3,
+        override_uom_id: uom.id,
+      },
+    ]);
+
+    const [articleBInserted] = await trx("erp.items")
+      .insert({
+        item_type: "FG",
+        code: `e2e_cpb_${safeToken}`.slice(0, 80),
+        name: `E2E Copy Article B ${safeToken}`,
+        name_ur: `E2E Copy Article B ${safeToken}`,
+        group_id: group.id,
+        base_uom_id: productionUomId,
+        uses_sfg: false,
+        created_by: creatorId,
+      })
+      .returning(["id"]);
+    const articleBId = Number(articleBInserted?.id || articleBInserted);
+
+    const [variantBInserted] = await trx("erp.variants")
+      .insert({
+        item_id: articleBId,
+        size_id: sizeId,
+        color_id: colorId,
+        packing_type_id: packingTypeId,
+        sale_rate: 100,
+        is_active: true,
+        created_by: creatorId,
+      })
+      .returning(["id"]);
+    const variantBId = Number(variantBInserted?.id || variantBInserted);
+    const [skuBInserted] = await trx("erp.skus")
+      .insert({
+        variant_id: variantBId,
+        sku_code: `E2E-CPB-${safeToken}`.slice(0, 80),
+        is_active: true,
+      })
+      .returning(["id"]);
+    const skuBId = Number(skuBInserted?.id || skuBInserted);
+
+    // A second SKU on Article B: same size/color, different packaging - the
+    // realistic target pair for the in-article "copy SKU values" feature.
+    const [variantB2Inserted] = await trx("erp.variants")
+      .insert({
+        item_id: articleBId,
+        size_id: sizeId,
+        color_id: colorId,
+        packing_type_id: packingType2Id,
+        sale_rate: 100,
+        is_active: true,
+        created_by: creatorId,
+      })
+      .returning(["id"]);
+    const variantB2Id = Number(variantB2Inserted?.id || variantB2Inserted);
+    const [skuB2Inserted] = await trx("erp.skus")
+      .insert({
+        variant_id: variantB2Id,
+        sku_code: `E2E-CPB2-${safeToken}`.slice(0, 80),
+        is_active: true,
+      })
+      .returning(["id"]);
+    const skuB2Id = Number(skuB2Inserted?.id || skuB2Inserted);
+
+    return {
+      token: safeToken,
+      createdSupport,
+      creatorId,
+      approverId,
+      branchId: Number(branch.id),
+      uomId: Number(uom.id),
+      productionUomId,
+      groupId: Number(group.id),
+      sizeId,
+      colorId,
+      packingTypeId,
+      deptId: Number(dept.id),
+      stageId,
+      packingType2Id,
+      rmItemId,
+      rmOrphanItemId,
+      articleAId,
+      bomAId,
+      skuA1Id,
+      skuA2Id,
+      variantA1Id,
+      variantA2Id,
+      articleBId,
+      skuBId,
+      variantBId,
+      skuB2Id,
+      variantB2Id,
+    };
+  });
+};
+
+// Seeds a DRAFT bom_header for Article B copied from Article A (with its own
+// RM line + a single SKU override matching skuA1's value exactly), then
+// wraps it in a PENDING approval_request the same shape saveBomDraft/
+// send-for-approval would produce, so the admin preview screen can be
+// exercised directly without driving the whole multi-step UI flow.
+const seedBomCopyPendingApproval = async (fixture) => {
+  const draftBomNo = `E2E-CPBOM-B-${fixture.token}`.slice(0, 120);
+  const [bomBInserted] = await knex("erp.bom_header")
+    .insert({
+      bom_no: draftBomNo,
+      item_id: fixture.articleBId,
+      level: "FINISHED",
+      output_qty: 1,
+      output_uom_id: fixture.productionUomId,
+      status: "DRAFT",
+      version_no: 1,
+      created_by: fixture.creatorId,
+      copied_from_bom_id: fixture.bomAId,
+    })
+    .returning(["id"]);
+  const bomBId = Number(bomBInserted?.id || bomBInserted);
+
+  await knex("erp.bom_rm_line").insert({
+    bom_id: bomBId,
+    rm_item_id: fixture.rmItemId,
+    color_id: null,
+    size_id: null,
+    dept_id: fixture.deptId,
+    qty: 5,
+    uom_id: fixture.uomId,
+    normal_loss_pct: 0,
+  });
+
+  await knex("erp.bom_sku_override_line").insert({
+    bom_id: bomBId,
+    sku_id: fixture.skuBId,
+    target_rm_item_id: fixture.rmItemId,
+    dept_id: fixture.deptId,
+    is_excluded: false,
+    // Matches skuA1's override_qty (5) exactly - if the ambiguous source-SKU
+    // fix were absent, this could be silently matched to skuA1 and shown as
+    // "Copied as-is" even though it's genuinely unresolvable (skuA1 and
+    // skuA2 share the same variant identity).
+    override_qty: 5,
+    override_uom_id: fixture.uomId,
+  });
+
+  const snapshot = await bomService.getBomSnapshot(knex, bomBId);
+  const payload = bomService.buildApproveDraftPayload({ bomId: bomBId, snapshot });
+
+  const [approvalInserted] = await knex("erp.approval_request")
+    .insert({
+      branch_id: fixture.branchId,
+      request_type: "MASTER_DATA_CHANGE",
+      entity_type: "BOM",
+      entity_id: String(bomBId),
+      summary: `Approve BOM #${draftBomNo}`,
+      old_value: null,
+      new_value: payload,
+      status: "PENDING",
+      requested_by: fixture.creatorId,
+    })
+    .returning(["id"]);
+  const approvalRequestId = Number(approvalInserted?.id || approvalInserted);
+
+  return { bomBId, approvalRequestId };
+};
+
+const cleanupBomCopyFixture = async (fixture, extraBomIds = []) => {
+  if (!fixture) return;
+  await knex.transaction(async (trx) => {
+    const bomIds = [
+      ...new Set(
+        [fixture.bomAId, ...extraBomIds].map((id) => Number(id)).filter(Boolean),
+      ),
+    ];
+    if (bomIds.length) {
+      await trx("erp.approval_request")
+        .where({ entity_type: "BOM" })
+        .whereIn(
+          "entity_id",
+          bomIds.map((id) => String(id)),
+        )
+        .del();
+      await trx("erp.bom_change_log").whereIn("bom_id", bomIds).del();
+      await trx("erp.bom_sku_override_line").whereIn("bom_id", bomIds).del();
+      await trx("erp.bom_stage_routing").whereIn("bom_id", bomIds).del();
+      await trx("erp.bom_rm_line").whereIn("bom_id", bomIds).del();
+      await trx("erp.bom_header").whereIn("id", bomIds).del();
+    }
+
+    const skuIds = [fixture.skuA1Id, fixture.skuA2Id, fixture.skuBId, fixture.skuB2Id]
+      .map((id) => Number(id))
+      .filter(Boolean);
+    if (skuIds.length) await trx("erp.skus").whereIn("id", skuIds).del();
+
+    const variantIds = [
+      fixture.variantA1Id,
+      fixture.variantA2Id,
+      fixture.variantBId,
+      fixture.variantB2Id,
+    ]
+      .map((id) => Number(id))
+      .filter(Boolean);
+    if (variantIds.length) await trx("erp.variants").whereIn("id", variantIds).del();
+
+    if (fixture.rmItemId)
+      await trx("erp.rm_purchase_rates").where({ rm_item_id: fixture.rmItemId }).del();
+    if (fixture.rmOrphanItemId)
+      await trx("erp.rm_purchase_rates")
+        .where({ rm_item_id: fixture.rmOrphanItemId })
+        .del();
+
+    const itemIds = [
+      fixture.articleAId,
+      fixture.articleBId,
+      fixture.rmItemId,
+      fixture.rmOrphanItemId,
+    ]
+      .map((id) => Number(id))
+      .filter(Boolean);
+    if (itemIds.length) await trx("erp.items").whereIn("id", itemIds).del();
+
+    if (fixture.createdSupport?.groupId) {
+      await trx("erp.product_group_item_types")
+        .where({ group_id: Number(fixture.createdSupport.groupId) })
+        .del();
+      await trx("erp.product_groups")
+        .where({ id: Number(fixture.createdSupport.groupId) })
+        .del();
+    }
+    if (fixture.createdSupport?.productionStageId) {
+      await trx("erp.production_stages")
+        .where({ id: Number(fixture.createdSupport.productionStageId) })
+        .del();
+    }
+    if (fixture.sizeId) await trx("erp.sizes").where({ id: fixture.sizeId }).del();
+    if (fixture.colorId) await trx("erp.colors").where({ id: fixture.colorId }).del();
+    if (fixture.packingTypeId)
+      await trx("erp.packing_types").where({ id: fixture.packingTypeId }).del();
+    if (fixture.packingType2Id)
+      await trx("erp.packing_types").where({ id: fixture.packingType2Id }).del();
+  });
+};
+
+// Deletes a single BOM draft (and its lines/change-log rows, via
+// ON DELETE CASCADE) immediately, so an article it was drafted for becomes
+// eligible again for the "/new" article dropdown within the same test file.
+const deleteBomHeaderById = async (bomId) => {
+  const id = Number(bomId || 0);
+  if (!id) return;
+  await knex("erp.approval_request")
+    .where({ entity_type: "BOM", entity_id: String(id) })
+    .del();
+  await knex("erp.bom_header").where({ id }).del();
+};
+
+// Builds a parent article (A, APPROVED v1) copied into a dependent article
+// (B, APPROVED v1, copied_from_bom_id = A's v1). B is then given an
+// independent local edit (simulating a real hand-edit + save + re-approve),
+// and A gets a new APPROVED v2 with: a safe change to a shared material
+// (distinct from B's edit value, so "conflict correctly left alone" and
+// "safe change correctly applied" are never indistinguishable), a change to
+// the SAME material B independently edited (a genuine conflict for B), and
+// a brand-new material + matching SKU override (a safe add). A third,
+// always-untouched material keeps every section "eligible" throughout (see
+// backend/src/scripts/test-bom-cascade.js for why a fully-edited section
+// with zero remaining 'copied' rows looks indistinguishable from "never
+// copied" - a documented v1 limitation of the cascade feature).
+const createBomCascadeFixture = async (token) => {
+  const safeToken = String(token || Date.now())
+    .replace(/[^a-zA-Z0-9_]/g, "")
+    .slice(0, 32);
+  return knex.transaction(async (trx) => {
+    const admin = await trx("erp.users").select("id").where({ username: "admin" }).first();
+    if (!admin) return null;
+    const uomRows = await trx("erp.uom").select("id").where({ is_active: true }).orderBy("id", "asc").limit(3);
+    if (uomRows.length < 3) return null;
+    const [uom, uom2, uom3] = uomRows;
+    const pairUom = await trx("erp.uom")
+      .select("id")
+      .whereRaw("is_active = true AND (UPPER(code) = 'PAIR' OR UPPER(name) = 'PAIR')")
+      .first();
+    const productionUomId = Number(pairUom?.id || uom.id);
+    const dept = await trx("erp.departments")
+      .select("id")
+      .where({ is_active: true, is_production: true })
+      .orderBy("id", "asc")
+      .first();
+    if (!dept) return null;
+
+    const createdSupport = {};
+    let group = await trx("erp.product_groups").select("id").where({ is_active: true }).orderBy("id", "asc").first();
+    if (!group) {
+      const [inserted] = await trx("erp.product_groups")
+        .insert({ name: `E2E Cascade Group ${safeToken}`, name_ur: `E2E Cascade Group ${safeToken}`, is_active: true, created_by: admin.id })
+        .returning(["id"]);
+      group = { id: inserted?.id || inserted };
+      createdSupport.groupId = Number(group.id);
+      await trx("erp.product_group_item_types").insert([
+        { group_id: group.id, item_type: "RM" },
+        { group_id: group.id, item_type: "FG" },
+      ]);
+    }
+    const size = await trx("erp.sizes").select("id").where({ is_active: true }).orderBy("id", "asc").first();
+    const color = await trx("erp.colors").select("id").where({ is_active: true }).orderBy("id", "asc").first();
+    const packing = await trx("erp.packing_types").select("id").where({ is_active: true }).orderBy("id", "asc").first();
+
+    const insertRmItem = async (suffix, rate) => {
+      const [inserted] = await trx("erp.items")
+        .insert({
+          item_type: "RM",
+          code: `e2e_casc_rm_${suffix}_${safeToken}`.slice(0, 80),
+          name: `E2E Cascade RM ${suffix} ${safeToken}`,
+          group_id: group.id,
+          base_uom_id: uom.id,
+          created_by: admin.id,
+        })
+        .returning(["id"]);
+      const id = Number(inserted?.id || inserted);
+      await trx("erp.rm_purchase_rates").insert({
+        rm_item_id: id,
+        color_id: null,
+        purchase_rate: rate,
+        avg_purchase_rate: rate,
+        is_active: true,
+        created_by: admin.id,
+      });
+      return id;
+    };
+    const rmShared = await insertRmItem("shared", 10);
+    const rmNew = await insertRmItem("new", 4);
+    const rmStable = await insertRmItem("stable", 2);
+
+    const insertArticle = async (suffix) => {
+      const [itemInserted] = await trx("erp.items")
+        .insert({
+          item_type: "FG",
+          code: `e2e_casc_${suffix}_${safeToken}`.slice(0, 80),
+          name: `E2E Cascade ${suffix} ${safeToken}`,
+          group_id: group.id,
+          base_uom_id: productionUomId,
+          uses_sfg: false,
+          created_by: admin.id,
+        })
+        .returning(["id"]);
+      const itemId = Number(itemInserted?.id || itemInserted);
+      const [variantInserted] = await trx("erp.variants")
+        .insert({
+          item_id: itemId,
+          size_id: size.id,
+          color_id: color.id,
+          packing_type_id: packing.id,
+          sale_rate: 100,
+          is_active: true,
+          created_by: admin.id,
+        })
+        .returning(["id"]);
+      const variantId = Number(variantInserted?.id || variantInserted);
+      const [skuInserted] = await trx("erp.skus")
+        .insert({ variant_id: variantId, sku_code: `E2E-CASC-${suffix}-${safeToken}`.slice(0, 80), is_active: true })
+        .returning(["id"]);
+      const skuId = Number(skuInserted?.id || skuInserted);
+      return { itemId, variantId, skuId };
+    };
+    const articleA = await insertArticle("A");
+    const articleB = await insertArticle("B");
+
+    const insertApprovedBom = async ({ itemId, bomNoSuffix, rmLines, skuOverrides, copiedFromBomId = null, versionNo = 1 }) => {
+      const [bomInserted] = await trx("erp.bom_header")
+        .insert({
+          bom_no: `E2E-CASCBOM-${bomNoSuffix}-${safeToken}`.slice(0, 120),
+          item_id: itemId,
+          level: "FINISHED",
+          output_qty: 1,
+          output_uom_id: productionUomId,
+          status: "APPROVED",
+          version_no: versionNo,
+          created_by: admin.id,
+          approved_by: admin.id,
+          approved_at: trx.fn.now(),
+          copied_from_bom_id: copiedFromBomId,
+        })
+        .returning(["id"]);
+      const bomId = Number(bomInserted?.id || bomInserted);
+      if (rmLines.length) {
+        await trx("erp.bom_rm_line").insert(rmLines.map((line) => ({ bom_id: bomId, color_id: null, size_id: null, ...line })));
+      }
+      if (skuOverrides.length) {
+        await trx("erp.bom_sku_override_line").insert(
+          skuOverrides.map((row) => ({ bom_id: bomId, is_excluded: false, override_uom_id: uom.id, ...row })),
+        );
+      }
+      return bomId;
+    };
+
+    const bomA1 = await insertApprovedBom({
+      itemId: articleA.itemId,
+      bomNoSuffix: "A1",
+      rmLines: [
+        { rm_item_id: rmShared, dept_id: dept.id, qty: 10, uom_id: uom.id, normal_loss_pct: 0 },
+        { rm_item_id: rmStable, dept_id: dept.id, qty: 1, uom_id: uom.id, normal_loss_pct: 0 },
+      ],
+      skuOverrides: [
+        { sku_id: articleA.skuId, target_rm_item_id: rmShared, dept_id: dept.id, override_qty: 5 },
+        { sku_id: articleA.skuId, target_rm_item_id: rmStable, dept_id: dept.id, override_qty: 1 },
+      ],
+    });
+    const bomB1 = await insertApprovedBom({
+      itemId: articleB.itemId,
+      bomNoSuffix: "B1",
+      rmLines: [
+        { rm_item_id: rmShared, dept_id: dept.id, qty: 5, uom_id: uom.id, normal_loss_pct: 0 },
+        { rm_item_id: rmStable, dept_id: dept.id, qty: 1, uom_id: uom.id, normal_loss_pct: 0 },
+      ],
+      skuOverrides: [
+        { sku_id: articleB.skuId, target_rm_item_id: rmShared, dept_id: dept.id, override_qty: 5 },
+        { sku_id: articleB.skuId, target_rm_item_id: rmStable, dept_id: dept.id, override_qty: 1 },
+      ],
+      copiedFromBomId: bomA1,
+    });
+
+    // Simulate "the maker independently edited B's copy" - distinct from
+    // whatever the parent later changes to, so the conflict is verifiable.
+    await trx("erp.bom_rm_line")
+      .where({ bom_id: bomB1, rm_item_id: rmShared, dept_id: dept.id })
+      .update({ uom_id: uom3.id });
+    await trx("erp.bom_sku_override_line")
+      .where({ bom_id: bomB1, sku_id: articleB.skuId, target_rm_item_id: rmShared, dept_id: dept.id })
+      .update({ override_qty: 99 });
+
+    const bomA2 = await insertApprovedBom({
+      itemId: articleA.itemId,
+      bomNoSuffix: "A2",
+      versionNo: 2,
+      rmLines: [
+        { rm_item_id: rmShared, dept_id: dept.id, qty: 10, uom_id: uom2.id, normal_loss_pct: 0 },
+        { rm_item_id: rmStable, dept_id: dept.id, qty: 1, uom_id: uom.id, normal_loss_pct: 0 },
+        { rm_item_id: rmNew, dept_id: dept.id, qty: 3, uom_id: uom.id, normal_loss_pct: 0 },
+      ],
+      skuOverrides: [
+        { sku_id: articleA.skuId, target_rm_item_id: rmShared, dept_id: dept.id, override_qty: 8 },
+        { sku_id: articleA.skuId, target_rm_item_id: rmStable, dept_id: dept.id, override_qty: 1 },
+        { sku_id: articleA.skuId, target_rm_item_id: rmNew, dept_id: dept.id, override_qty: 3 },
+      ],
+    });
+
+    return {
+      token: safeToken,
+      createdSupport,
+      admin,
+      dept: Number(dept.id),
+      rmShared,
+      rmNew,
+      rmStable,
+      articleA,
+      articleB,
+      bomA1,
+      bomA2,
+      bomB1,
+      createdItemIds: [articleA.itemId, articleB.itemId, rmShared, rmNew, rmStable],
+      createdSkuIds: [articleA.skuId, articleB.skuId],
+      createdVariantIds: [articleA.variantId, articleB.variantId],
+      createdBomIds: [bomA1, bomA2, bomB1],
+    };
+  });
+};
+
+// Full state (header including copied_from_bom_id + rm_lines + sku_overrides)
+// for a cascade-created draft, used to verify apply results at the DB level
+// (equivalent detail isn't exposed via the generic getBomSnapshot helper).
+const getBomCascadeState = async (bomId) => {
+  const id = Number(bomId || 0);
+  if (!id) return null;
+  const header = await knex("erp.bom_header")
+    .select("id", "status", "version_no", "copied_from_bom_id")
+    .where({ id })
+    .first();
+  if (!header) return null;
+  const rmLines = await knex("erp.bom_rm_line").where({ bom_id: id });
+  const skuOverrides = await knex("erp.bom_sku_override_line").where({ bom_id: id });
+  return { header, rmLines, skuOverrides };
+};
+
+const cleanupBomCascadeFixture = async (fixture, extraBomIds = []) => {
+  if (!fixture) return;
+  await knex.transaction(async (trx) => {
+    const bomIds = [...new Set([...(fixture.createdBomIds || []), ...extraBomIds].map((id) => Number(id)).filter(Boolean))];
+    if (bomIds.length) {
+      await trx("erp.approval_request")
+        .where({ entity_type: "BOM" })
+        .whereIn("entity_id", bomIds.map((id) => String(id)))
+        .del();
+      await trx("erp.bom_change_log").whereIn("bom_id", bomIds).del();
+      await trx("erp.bom_sku_override_line").whereIn("bom_id", bomIds).del();
+      await trx("erp.bom_stage_routing").whereIn("bom_id", bomIds).del();
+      await trx("erp.bom_rm_line").whereIn("bom_id", bomIds).del();
+      await trx("erp.bom_header").whereIn("id", bomIds).del();
+    }
+    if (fixture.createdSkuIds?.length) await trx("erp.skus").whereIn("id", fixture.createdSkuIds).del();
+    if (fixture.createdVariantIds?.length) await trx("erp.variants").whereIn("id", fixture.createdVariantIds).del();
+    if (fixture.rmShared) await trx("erp.rm_purchase_rates").where({ rm_item_id: fixture.rmShared }).del();
+    if (fixture.rmNew) await trx("erp.rm_purchase_rates").where({ rm_item_id: fixture.rmNew }).del();
+    if (fixture.rmStable) await trx("erp.rm_purchase_rates").where({ rm_item_id: fixture.rmStable }).del();
+    if (fixture.createdItemIds?.length) await trx("erp.items").whereIn("id", fixture.createdItemIds).del();
+    if (fixture.createdSupport?.groupId) {
+      await trx("erp.product_group_item_types").where({ group_id: Number(fixture.createdSupport.groupId) }).del();
+      await trx("erp.product_groups").where({ id: Number(fixture.createdSupport.groupId) }).del();
+    }
+  });
+};
+
 const closeDb = async () => knex.destroy();
 
 module.exports = {
@@ -1556,5 +2360,12 @@ module.exports = {
   createBomNegativeFixture,
   getBomSnapshot,
   cleanupBomUiFixture,
+  createBomCopyFixture,
+  seedBomCopyPendingApproval,
+  cleanupBomCopyFixture,
+  deleteBomHeaderById,
+  createBomCascadeFixture,
+  cleanupBomCascadeFixture,
+  getBomCascadeState,
   closeDb,
 };

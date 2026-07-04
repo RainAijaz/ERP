@@ -14,7 +14,9 @@ const {
 const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
 const { queueAuditLog } = require("../../../utils/audit-log");
 const bomService = require("../../../services/bom/service");
+const bomCopyService = require("../../../services/bom/copy-service");
 const bomReportsRoutes = require("./reports");
+const bomCascadeRoutes = require("./cascade");
 
 const router = express.Router();
 const BOM_SCOPE = "master_data.bom";
@@ -64,6 +66,7 @@ const buildEmptyFormState = () => ({
     output_uom_id: null,
     status: "DRAFT",
     version_no: 1,
+    copied_from_bom_id: null,
   },
   rm_lines: [],
   sfg_lines: [],
@@ -142,6 +145,7 @@ const buildSubmittedFormState = (reqBody = {}, bomId = null) => ({
     output_uom_id: reqBody.output_uom_id || "",
     status: "DRAFT",
     version_no: reqBody.version_no || 1,
+    copied_from_bom_id: reqBody.copied_from_bom_id || null,
   },
   rm_lines: safeJsonArray(reqBody.rm_lines_json),
   sfg_lines: safeJsonArray(reqBody.sfg_lines_json),
@@ -279,6 +283,60 @@ router.get(
 );
 
 router.use("/reports", bomReportsRoutes);
+router.use("/cascade", bomCascadeRoutes);
+
+router.get(
+  "/copy-sources",
+  requirePermission("SCREEN", BOM_SCOPE, "view"),
+  async (req, res) => {
+    try {
+      const level = String(req.query.level || "")
+        .trim()
+        .toUpperCase();
+      if (!["FINISHED", "SEMI_FINISHED"].includes(level)) {
+        return res
+          .status(400)
+          .json({ ok: false, message: res.locals.t("bom_error_level_required") });
+      }
+      const sources = await bomCopyService.listApprovedCopySources(knex, {
+        level,
+        excludeItemId: Number(req.query.exclude_item_id || 0) || null,
+      });
+      return res.json({ ok: true, sources });
+    } catch (err) {
+      debugBom("copy-sources failed", err?.message);
+      return res
+        .status(500)
+        .json({ ok: false, message: friendlyErrorMessage(err, res.locals.t) });
+    }
+  },
+);
+
+router.get(
+  "/:id/copy-payload",
+  requirePermission("SCREEN", BOM_SCOPE, "view"),
+  async (req, res) => {
+    try {
+      const payload = await bomCopyService.buildCopyPayload(knex, {
+        sourceBomId: Number(req.params.id || 0),
+        targetItemId: Number(req.query.target_item_id || 0),
+        targetLevel: String(req.query.target_level || ""),
+        sections: String(req.query.sections || ""),
+        t: res.locals.t,
+        locale: req.locale,
+      });
+      return res.json({ ok: true, ...payload });
+    } catch (err) {
+      if (err?.code === "BOM_COPY_INVALID") {
+        return res.status(400).json({ ok: false, message: err.message });
+      }
+      debugBom("copy-payload failed", err?.message);
+      return res
+        .status(500)
+        .json({ ok: false, message: friendlyErrorMessage(err, res.locals.t) });
+    }
+  },
+);
 
 router.get(
   "/:id",
@@ -474,7 +532,21 @@ router.post(
         entityId: bomId,
         action: "APPROVE",
       });
-      setUiNotice(res, res.locals.t("approval_approved"), { autoClose: true });
+      const { message: approvedNoticeMessage, hasDependents, reviewUrl } =
+        await bomCopyService.buildApprovedNoticeMessage(knex, {
+          itemId: current.header.item_id,
+          level: current.header.level,
+          excludeBomId: bomId,
+          baseMessage: res.locals.t("approval_approved"),
+          t: res.locals.t,
+        });
+      setUiNotice(
+        res,
+        approvedNoticeMessage,
+        hasDependents
+          ? { link: { href: reviewUrl, label: res.locals.t("bom_cascade_review_link") } }
+          : { autoClose: true },
+      );
       return res.redirect(`${req.baseUrl}/${bomId}`);
     } catch (err) {
       debugBom("approve-draft failed", { bomId, error: err?.message || err });
@@ -561,9 +633,21 @@ router.post(
           entityId: bomId,
           action: "APPROVE",
         });
-        setUiNotice(res, res.locals.t("approval_approved"), {
-          autoClose: true,
-        });
+        const { message: approvedNoticeMessage, hasDependents, reviewUrl } =
+          await bomCopyService.buildApprovedNoticeMessage(knex, {
+            itemId: current.header.item_id,
+            level: current.header.level,
+            excludeBomId: bomId,
+            baseMessage: res.locals.t("approval_approved"),
+            t: res.locals.t,
+          });
+        setUiNotice(
+          res,
+          approvedNoticeMessage,
+          hasDependents
+            ? { link: { href: reviewUrl, label: res.locals.t("bom_cascade_review_link") } }
+            : { autoClose: true },
+        );
         return res.redirect(`${req.baseUrl}/${bomId}`);
       }
 

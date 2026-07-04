@@ -91,6 +91,7 @@ const {
   buildBulkPreviewRows: buildLabourRateBulkPreviewRows,
 } = require("../../services/hr-payroll/labour-rates-service");
 const bomService = require("../../services/bom/service");
+const bomCopyService = require("../../services/bom/copy-service");
 
 const router = express.Router();
 
@@ -1415,6 +1416,45 @@ const buildPreviewPayload = async (req, res, request, side) => {
     };
   }
 
+  if (entityType === "BOM") {
+    const payload = safeJson(request.new_value) || {};
+    const bomAction = String(payload._action || "").toLowerCase();
+    const bomId = Number(payload.bom_id || request.entity_id || 0) || null;
+    const headerRow = bomId
+      ? await knex("erp.bom_header as bh")
+          .select("bh.bom_no", "bh.version_no", "i.name as item_name")
+          .leftJoin("erp.items as i", "bh.item_id", "i.id")
+          .where({ "bh.id": bomId })
+          .first()
+      : null;
+    const previewTitle = headerRow
+      ? `${headerRow.item_name || ""} — ${headerRow.bom_no}`.trim()
+      : res.locals.t("bom_header");
+
+    let bomSnapshot = null;
+    let bomComparison = null;
+    if (bomAction === "approve_draft" && payload.snapshot) {
+      bomSnapshot = await bomCopyService.hydrateBomSnapshotForPreview(
+        knex,
+        payload.snapshot,
+        locale,
+      );
+      bomComparison = bomId
+        ? await bomCopyService.buildCopyComparison(knex, { bomId, locale })
+        : null;
+    }
+
+    return {
+      ...basePayload,
+      previewType: "bom",
+      previewTitle,
+      formPartial: "../../administration/approvals/bom-preview.ejs",
+      bomAction,
+      bomSnapshot,
+      bomComparison,
+    };
+  }
+
   return null;
 };
 
@@ -2043,7 +2083,51 @@ router.post(
         }
       }
 
-      setUiNotice(res, res.locals.t("approval_approved"), { autoClose: true });
+      // Informational only: any failure here must not turn an approval that
+      // already committed into a reported failure, so it's fully isolated
+      // from the outer catch and falls back to the plain success message.
+      const approvedMessage = res.locals.t("approval_approved");
+      let approvedNoticeMessage = approvedMessage;
+      let hasDependents = false;
+      let reviewUrl = null;
+      try {
+        if (requestSnapshot?.entity_type === "BOM") {
+          const bomPayload = safeJson(requestSnapshot.new_value) || {};
+          if (String(bomPayload._action || "").toLowerCase() === "approve_draft") {
+            const approvedBomId = Number(
+              appliedEntityId || bomPayload.bom_id || requestSnapshot.entity_id || 0,
+            );
+            const headerRow = approvedBomId
+              ? await knex("erp.bom_header")
+                  .select("item_id", "level")
+                  .where({ id: approvedBomId })
+                  .first()
+              : null;
+            if (headerRow) {
+              ({ message: approvedNoticeMessage, hasDependents, reviewUrl } =
+                await bomCopyService.buildApprovedNoticeMessage(knex, {
+                  itemId: headerRow.item_id,
+                  level: headerRow.level,
+                  excludeBomId: approvedBomId,
+                  baseMessage: approvedMessage,
+                  t: res.locals.t,
+                }));
+            }
+          }
+        }
+      } catch (noticeErr) {
+        approvedNoticeMessage = approvedMessage;
+        hasDependents = false;
+        reviewUrl = null;
+      }
+
+      setUiNotice(
+        res,
+        approvedNoticeMessage,
+        hasDependents
+          ? { link: { href: reviewUrl, label: res.locals.t("bom_cascade_review_link") } }
+          : { autoClose: true },
+      );
       return res.redirect(`${req.baseUrl}?status=PENDING`);
     } catch (err) {
       console.error("[ERROR][Approval] Error in applyMasterDataChange:", err);

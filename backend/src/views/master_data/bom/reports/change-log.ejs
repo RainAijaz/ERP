@@ -27,6 +27,7 @@
     if (v === "labour_lines") return resolveText("labours", "Labours");
     if (v === "stage_routes") return resolveText("production_stages", "Production Stages");
     if (v === "variant_rules") return resolveText("variant_rules", "Variant Rules");
+    if (v === "sku_overrides") return resolveText("bom_sku_rules", "SKU Rules");
     return v || "-";
   };
   const formatStageRouteValue = (value) => {

@@ -1,0 +1,80 @@
+<%
+  const tx = (key, fallback) => {
+    const value = typeof t === "function" ? t(key) : "";
+    return value && value !== key ? value : fallback;
+  };
+  const rows = Array.isArray(candidates) ? candidates : [];
+%>
+
+<div class="mx-auto w-full max-w-5xl space-y-6">
+  <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
+    <h1 class="text-2xl font-display text-ink"><%= tx("bom_cascade_review_title", "Review dependent BOM updates") %></h1>
+    <p class="mt-1 text-sm text-muted">
+      <%= tx("bom_cascade_review_subtitle", "These articles copied their BOM from") %>
+      <span class="font-semibold text-ink"><%= parentItem?.name || "" %></span>.
+      <%= tx("bom_cascade_review_subtitle2", "Open one to review its specific changes before applying anything - nothing is updated automatically.") %>
+    </p>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-sm">
+    <% if (!rows.length) { %>
+      <div class="p-6 text-sm text-slate-500"><%= tx("bom_cascade_no_dependents", "No dependent articles found.") %></div>
+    <% } else { %>
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
+          <tr>
+            <th class="px-4 py-3 text-left"><%= tx("article_name", "Article") %></th>
+            <th class="px-4 py-3 text-center"><%= tx("bom_cascade_col_safe", "Safe to apply") %></th>
+            <th class="px-4 py-3 text-center"><%= tx("bom_cascade_col_conflicts", "Conflicts") %></th>
+            <th class="px-4 py-3 text-left"><%= tx("status", "Status") %></th>
+            <th class="px-4 py-3 text-right"><%= tx("actions", "Actions") %></th>
+          </tr>
+        </thead>
+        <tbody>
+          <% rows.forEach(function (row) { %>
+            <tr class="border-t border-slate-100">
+              <td class="px-4 py-3 font-medium text-slate-700"><%= row.item_name || row.item_code %></td>
+              <td class="px-4 py-3 text-center">
+                <% if (row.safeCount > 0) { %>
+                  <span class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700"><%= row.safeCount %></span>
+                <% } else { %>
+                  <span class="text-slate-400">-</span>
+                <% } %>
+              </td>
+              <td class="px-4 py-3 text-center">
+                <% if (row.conflictCount > 0) { %>
+                  <span class="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700"><%= row.conflictCount %></span>
+                <% } else { %>
+                  <span class="text-slate-400">-</span>
+                <% } %>
+              </td>
+              <td class="px-4 py-3 text-slate-600">
+                <% if (!row.dependentApprovedBomId) { %>
+                  <%= tx("bom_cascade_status_no_approved", "No approved BOM") %>
+                <% } else if (!row.eligible) { %>
+                  <%= tx("bom_cascade_status_not_eligible", "Not eligible") %>
+                <% } else if (row.hasActiveDraft) { %>
+                  <%= tx("bom_cascade_status_has_draft", "Draft already in progress - skipped") %>
+                <% } else if (row.upToDate) { %>
+                  <%= tx("bom_cascade_status_up_to_date", "Up to date") %>
+                <% } else { %>
+                  <%= tx("bom_cascade_status_ready", "Ready to review") %>
+                <% } %>
+              </td>
+              <td class="px-4 py-3 text-right">
+                <% if (row.dependentApprovedBomId && row.eligible && !row.hasActiveDraft && !row.upToDate) { %>
+                  <a
+                    href="<%= basePath %>/<%= row.dependentApprovedBomId %>?parent_bom_id=<%= parentBomId %>"
+                    class="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+                  >
+                    <%= tx("review", "Review") %>
+                  </a>
+                <% } %>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
+  </section>
+</div>

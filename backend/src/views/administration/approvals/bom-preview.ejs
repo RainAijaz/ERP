@@ -1,0 +1,79 @@
+<%
+  const resolveText = (key, fallback) => {
+    const value = typeof t === "function" ? t(key) : "";
+    return value && value !== key ? value : fallback;
+  };
+  const snapshot = (typeof bomSnapshot !== "undefined" && bomSnapshot) || null;
+  const comparison = (typeof bomComparison !== "undefined" && bomComparison) || null;
+  const action = typeof bomAction !== "undefined" ? String(bomAction || "") : "";
+
+  const originChip = (origin) => {
+    if (origin === "copied") {
+      return `<span class="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-emerald-700">${resolveText("bom_preview_origin_copied", "Copied as-is")}</span>`;
+    }
+    if (origin === "edited") {
+      return `<span class="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-amber-700">${resolveText("bom_preview_origin_edited", "Edited after copy")}</span>`;
+    }
+    return `<span class="inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-sky-700">${resolveText("bom_preview_origin_new", "New")}</span>`;
+  };
+
+  const sectionRows = (sectionKey) => {
+    if (comparison?.sections?.[sectionKey]) return comparison.sections[sectionKey].rows || [];
+    return (snapshot?.[sectionKey] || []).map((row) => ({ row, origin: null, label: row._label }));
+  };
+  const sectionRemovedCount = (sectionKey) => comparison?.sections?.[sectionKey]?.removedCount || 0;
+
+  const sectionMeta = [
+    { key: "rm_lines", label: resolveText("raw_materials", "Raw Materials") },
+    { key: "sku_overrides", label: resolveText("bom_sku_rules", "SKU Rules") },
+    { key: "sfg_lines", label: resolveText("semi_finished", "Semi Finished") },
+    { key: "stage_routes", label: resolveText("production_stages", "Production Stages") },
+  ];
+
+  const actionLabel = (value) => {
+    const v = String(value || "").toLowerCase();
+    if (v === "approve_draft") return resolveText("approve", "Approve");
+    if (v === "delete_draft") return resolveText("delete_draft", "Delete Draft");
+    if (v === "create_version_from") return resolveText("bom_create_new_version", "Create New Version");
+    if (v === "toggle_lifecycle") return resolveText("bom_lifecycle", "BOM Lifecycle");
+    if (v === "create") return resolveText("create", "Create");
+    return v || "-";
+  };
+%>
+
+<% if (!snapshot) { %>
+  <div class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+    <span class="font-semibold"><%= resolveText("action", "Action") %>:</span> <%= actionLabel(action) %>
+  </div>
+<% } else { %>
+  <% if (comparison?.source) { %>
+    <div class="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800">
+      <span class="font-semibold"><%= resolveText("bom_copied_from_badge", "Copied from") %>:</span>
+      <%= comparison.source.bom_no %> (V<%= comparison.source.version_no %>, <%= comparison.source.item_name %>)
+    </div>
+  <% } %>
+
+  <% sectionMeta.forEach(function (section) { %>
+    <% const rows = sectionRows(section.key); %>
+    <% const removedCount = sectionRemovedCount(section.key); %>
+    <% if (!rows.length && !removedCount) { return; } %>
+    <div class="rounded-xl border border-slate-200 bg-white">
+      <div class="border-b border-slate-200 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+        <%= section.label %>
+      </div>
+      <div class="max-h-56 space-y-1.5 overflow-y-auto px-3 py-2">
+        <% rows.forEach(function (entry) { %>
+          <div class="flex items-center justify-between gap-2 text-xs text-slate-700">
+            <span class="truncate"><%= entry.label || entry.row?._label || "-" %></span>
+            <% if (entry.origin) { %><%- originChip(entry.origin) %><% } %>
+          </div>
+        <% }) %>
+        <% if (removedCount) { %>
+          <div class="pt-1 text-[11px] text-slate-500">
+            <%= removedCount %> <%= resolveText("bom_preview_removed_from_source", "line(s) from the source were removed") %>
+          </div>
+        <% } %>
+      </div>
+    </div>
+  <% }) %>
+<% } %>
