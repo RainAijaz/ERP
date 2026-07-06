@@ -462,6 +462,7 @@ const ENTITY_CONFIG = Object.freeze({
     branchMapEntityCol: "labour_id",
     vlEntityCol: "labour_id",
     lineKind: "LABOUR",
+    buyerCol: "buyer_labour_id",
   },
   employee: {
     table: "erp.employees",
@@ -475,8 +476,39 @@ const ENTITY_CONFIG = Object.freeze({
     branchMapEntityCol: "employee_id",
     vlEntityCol: "employee_id",
     lineKind: "EMPLOYEE",
+    buyerCol: "buyer_employee_id",
   },
 });
+
+// Credit sales to an employee/labour buyer (sales_header.buyer_employee_id /
+// buyer_labour_id) never produce an EMPLOYEE/LABOUR voucher_line row — the sale's
+// article lines are all line_kind='SKU'. So these vouchers are invisible to the
+// voucher_line-based ledger/balance queries above unless we also pull them in
+// from the already-posted GL entries (reusing the posted numbers avoids
+// re-deriving the net-sale math, which has extra_discount/SO-discount/
+// payment-received adjustments baked in).
+const STAFF_RECEIVABLE_GROUP_CODES = [
+  "staff_receivable_control",
+  "accounts_receivable_control",
+];
+
+const buildStaffCreditSaleQuery = ({ cfg, scopedBranchIds }) => {
+  let q = knex("erp.gl_entry as ge")
+    .join("erp.gl_batch as gb", "gb.id", "ge.batch_id")
+    .join("erp.voucher_header as vh", "vh.id", "gb.source_voucher_id")
+    .join("erp.sales_header as sh", "sh.voucher_id", "vh.id")
+    .where("vh.voucher_type_code", "SALES_VOUCHER")
+    .andWhere("vh.status", "APPROVED")
+    .whereNotNull(`sh.${cfg.buyerCol}`)
+    .whereIn("ge.account_id", function inAccountGroup() {
+      this.select("a.id")
+        .from("erp.accounts as a")
+        .join("erp.account_groups as ag", "ag.id", "a.subgroup_id")
+        .whereIn("ag.code", STAFF_RECEIVABLE_GROUP_CODES);
+    });
+  if (scopedBranchIds.length) q = q.whereIn("vh.branch_id", scopedBranchIds);
+  return q;
+};
 
 const getEntityConfig = (kind) => {
   const cfg = ENTITY_CONFIG[kind];
@@ -606,6 +638,19 @@ const getLedgerRows = async ({ req, filters, options, kind }) => {
   });
   const openingRow = await openingQuery.first();
 
+  const staffOpeningQuery = buildStaffCreditSaleQuery({ cfg, scopedBranchIds })
+    .andWhere(`sh.${cfg.buyerCol}`, filters.entityId)
+    .modify((qb) => {
+      if (filters.from) qb.andWhere("vh.voucher_date", "<", filters.from);
+    })
+    .select(
+      knex.raw("COALESCE(SUM(ge.cr), 0) as cr"),
+      knex.raw("COALESCE(SUM(ge.dr), 0) as dr"),
+    );
+  const staffOpeningRow = await staffOpeningQuery.first();
+  const staffOpeningBalance =
+    Number(staffOpeningRow?.cr || 0) - Number(staffOpeningRow?.dr || 0);
+
   let detailsQuery = knex("erp.voucher_line as vl")
     .join("erp.voucher_header as vh", "vh.id", "vl.voucher_header_id")
     .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
@@ -665,7 +710,32 @@ const getLedgerRows = async ({ req, filters, options, kind }) => {
   });
 
   const rawRows = await detailsQuery;
-  let openingBalance = toAmount(openingRow?.opening_balance || 0, 2);
+  let openingBalance = toAmount(
+    Number(openingRow?.opening_balance || 0) + staffOpeningBalance,
+    2,
+  );
+
+  const staffDetailsQuery = buildStaffCreditSaleQuery({ cfg, scopedBranchIds })
+    .leftJoin("erp.branches as b2", "b2.id", "vh.branch_id")
+    .andWhere(`sh.${cfg.buyerCol}`, filters.entityId)
+    .andWhere("vh.voucher_date", ">=", filters.from)
+    .andWhere("vh.voucher_date", "<=", filters.to)
+    .select(
+      "ge.id as id",
+      knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"),
+      "vh.id as voucher_id",
+      "vh.voucher_type_code",
+      "vh.voucher_no",
+      "vh.book_no as bill_number",
+      "b2.name as branch_name",
+      knex.raw(
+        `COALESCE(NULLIF(vh.remarks, ''), CONCAT('Credit Sale #', vh.voucher_no::text)) as description`,
+      ),
+      knex.raw("0 as qty"),
+      "ge.dr",
+      "ge.cr",
+    );
+  const staffDetailRows = await staffDetailsQuery;
 
   let syntheticEmployeeRows = [];
   if (kind === "employee" && Number(filters.entityId || 0) > 0) {
@@ -768,6 +838,41 @@ const getLedgerRows = async ({ req, filters, options, kind }) => {
       credit: toAmount(entry.credit || 0, 2),
       branch_name: "",
     });
+  });
+
+  staffDetailRows.forEach((row) => {
+    detailEntries.push({
+      id: Number(row.id || 0),
+      voucher_id: Number(row.voucher_id || 0) || null,
+      entry_date: row.entry_date || null,
+      voucher_no: row.voucher_no || null,
+      bill_number: row.bill_number || "",
+      voucher_type: row.voucher_type_code || "",
+      description: row.description || "",
+      qty: 0,
+      debit: toAmount(row.dr, 2),
+      credit: toAmount(row.cr, 2),
+      branch_name: row.branch_name || "",
+    });
+  });
+
+  // Rows can arrive from three different sources (voucher_line query, synthetic
+  // payroll accrual rows, staff-credit-sale rows above) so re-sort chronologically
+  // before computing the running balance.
+  detailEntries.sort((a, b) => {
+    const dateA = String(a.entry_date || "");
+    const dateB = String(b.entry_date || "");
+    if (dateA !== dateB) return dateA.localeCompare(dateB);
+    const typeA = String(a.voucher_type || "");
+    const typeB = String(b.voucher_type || "");
+    if (typeA !== typeB) return typeA.localeCompare(typeB);
+    const voucherA = Number(a.voucher_no || 0);
+    const voucherB = Number(b.voucher_no || 0);
+    if (voucherA !== voucherB) return voucherA - voucherB;
+    const voucherIdA = Number(a.voucher_id || 0);
+    const voucherIdB = Number(b.voucher_id || 0);
+    if (voucherIdA !== voucherIdB) return voucherIdA - voucherIdB;
+    return Number(a.id || 0) - Number(b.id || 0);
   });
 
   const reportEntries =
@@ -920,6 +1025,22 @@ const getBalanceRows = async ({ req, filters, kind }) => {
   }
 
   const rows = await query;
+
+  const staffBalanceRows = await buildStaffCreditSaleQuery({
+    cfg,
+    scopedBranchIds,
+  })
+    .andWhere("vh.voucher_date", "<=", filters.asOn)
+    .groupBy(`sh.${cfg.buyerCol}`)
+    .select(`sh.${cfg.buyerCol} as entity_id`)
+    .sum({ amount: knex.raw("ge.cr - ge.dr") });
+  const staffBalanceByEntity = new Map(
+    staffBalanceRows.map((row) => [
+      Number(row.entity_id || 0),
+      Number(row.amount || 0),
+    ]),
+  );
+
   let salaryAccrualAmountByEmployee = new Map();
   if (kind === "employee" && rows.length) {
     const employeeIds = rows
@@ -959,7 +1080,8 @@ const getBalanceRows = async ({ req, filters, kind }) => {
     entity_name_ur: row.name_ur || "",
     amount: toAmount(
       Number(row.amount || 0) +
-        Number(salaryAccrualAmountByEmployee.get(Number(row.id || 0)) || 0),
+        Number(salaryAccrualAmountByEmployee.get(Number(row.id || 0)) || 0) +
+        Number(staffBalanceByEntity.get(Number(row.id || 0)) || 0),
       2,
     ),
   }));
