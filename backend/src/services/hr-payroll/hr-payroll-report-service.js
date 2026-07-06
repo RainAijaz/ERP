@@ -23,6 +23,12 @@ const AUTO_PAYROLL_VOUCHER_TYPE = "PAYROLL_ACCRUAL";
 const AUTO_PAYROLL_DESCRIPTION = "Monthly salary accrual";
 const AUTO_PAYROLL_DAILY_DESCRIPTION =
   "Daily salary accrual (excluding Sundays)";
+const COMMISSION_TYPE_DESCRIPTIONS = {
+  SALESMAN_SALE: "Sales Commission (Salesman's Sale)",
+  BRANCH_SALE: "Sales Commission (Branch Sale)",
+  TRANSFER: "Sales Commission (Transfer)",
+  PARTY: "Sales Commission (Party)",
+};
 
 const toPositiveId = (value) => {
   const id = Number(value || 0);
@@ -301,21 +307,23 @@ const loadEmployeeAccrualProfiles = async ({ entityIds = [] }) => {
       percentAmount: 0,
     };
 
-    const monthlyAmount = Number(
+    const monthlyAllowanceOnly = Number(
       (
-        basicSalary +
         Number(monthlyAllowance.fixedAmount || 0) +
         (basicSalary * Number(monthlyAllowance.percentAmount || 0)) / 100
       ).toFixed(2),
     );
-
-    const dailyAmount = Number(
+    const dailyAllowanceOnly = Number(
       (
-        basicSalary +
         Number(dailyAllowance.fixedAmount || 0) +
         (basicSalary * Number(dailyAllowance.percentAmount || 0)) / 100
       ).toFixed(2),
     );
+
+    const monthlyAmount = Number(
+      (basicSalary + monthlyAllowanceOnly).toFixed(2),
+    );
+    const dailyAmount = Number((basicSalary + dailyAllowanceOnly).toFixed(2));
 
     result.set(employeeId, {
       payrollType,
@@ -323,6 +331,16 @@ const loadEmployeeAccrualProfiles = async ({ entityIds = [] }) => {
         Number.isFinite(monthlyAmount) && monthlyAmount > 0 ? monthlyAmount : 0,
       dailyAmount:
         Number.isFinite(dailyAmount) && dailyAmount > 0 ? dailyAmount : 0,
+      monthlySalaryOnly: basicSalary > 0 ? basicSalary : 0,
+      dailySalaryOnly: basicSalary > 0 ? basicSalary : 0,
+      monthlyAllowanceOnly:
+        Number.isFinite(monthlyAllowanceOnly) && monthlyAllowanceOnly > 0
+          ? monthlyAllowanceOnly
+          : 0,
+      dailyAllowanceOnly:
+        Number.isFinite(dailyAllowanceOnly) && dailyAllowanceOnly > 0
+          ? dailyAllowanceOnly
+          : 0,
       employmentStartYmd:
         toLocalDateOnly(row.created_at || new Date()) ||
         toLocalDateOnly(new Date()),
@@ -390,9 +408,17 @@ const parseEntityBalanceFilters = ({ req, input = {} }) => {
         (id) => Number.isInteger(id) && id > 0,
       );
 
+  const viewMode =
+    String(input.view_mode || "summary")
+      .trim()
+      .toLowerCase() === "detail"
+      ? "detail"
+      : "summary";
+
   return {
     asOn,
     branchIds,
+    viewMode,
     reportLoaded: toBoolean(input.load_report, false),
     invalidAsOnDate: Boolean(parsedAsOn.provided && !parsedAsOn.valid),
     invalidFilterInput: Boolean(parsedAsOn.provided && !parsedAsOn.valid),
@@ -506,6 +532,17 @@ const buildStaffCreditSaleQuery = ({ cfg, scopedBranchIds }) => {
         .join("erp.account_groups as ag", "ag.id", "a.subgroup_id")
         .whereIn("ag.code", STAFF_RECEIVABLE_GROUP_CODES);
     });
+  if (scopedBranchIds.length) q = q.whereIn("vh.branch_id", scopedBranchIds);
+  return q;
+};
+
+// Sales commission is earned/posted separately from the EMPLOYEE voucher_line
+// ledger above (erp.commission_ledger, keyed by commission_type), so it needs
+// its own query to be folded into the employee payable balance and ledger.
+const buildCommissionQuery = ({ scopedBranchIds }) => {
+  let q = knex("erp.commission_ledger as cl")
+    .join("erp.voucher_header as vh", "vh.id", "cl.voucher_id")
+    .andWhere("vh.status", "APPROVED");
   if (scopedBranchIds.length) q = q.whereIn("vh.branch_id", scopedBranchIds);
   return q;
 };
@@ -651,6 +688,20 @@ const getLedgerRows = async ({ req, filters, options, kind }) => {
   const staffOpeningBalance =
     Number(staffOpeningRow?.cr || 0) - Number(staffOpeningRow?.dr || 0);
 
+  let commissionOpeningBalance = 0;
+  if (kind === "employee") {
+    const commissionOpeningRow = await buildCommissionQuery({
+      scopedBranchIds,
+    })
+      .andWhere("cl.employee_id", filters.entityId)
+      .modify((qb) => {
+        if (filters.from) qb.andWhere("vh.voucher_date", "<", filters.from);
+      })
+      .select(knex.raw("COALESCE(SUM(cl.total_amount), 0) as amount"))
+      .first();
+    commissionOpeningBalance = Number(commissionOpeningRow?.amount || 0);
+  }
+
   let detailsQuery = knex("erp.voucher_line as vl")
     .join("erp.voucher_header as vh", "vh.id", "vl.voucher_header_id")
     .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
@@ -711,7 +762,9 @@ const getLedgerRows = async ({ req, filters, options, kind }) => {
 
   const rawRows = await detailsQuery;
   let openingBalance = toAmount(
-    Number(openingRow?.opening_balance || 0) + staffOpeningBalance,
+    Number(openingRow?.opening_balance || 0) +
+      staffOpeningBalance +
+      commissionOpeningBalance,
     2,
   );
 
@@ -736,6 +789,26 @@ const getLedgerRows = async ({ req, filters, options, kind }) => {
       "ge.cr",
     );
   const staffDetailRows = await staffDetailsQuery;
+
+  let commissionDetailRows = [];
+  if (kind === "employee") {
+    commissionDetailRows = await buildCommissionQuery({ scopedBranchIds })
+      .leftJoin("erp.branches as b3", "b3.id", "vh.branch_id")
+      .andWhere("cl.employee_id", filters.entityId)
+      .andWhere("vh.voucher_date", ">=", filters.from)
+      .andWhere("vh.voucher_date", "<=", filters.to)
+      .select(
+        "cl.id as id",
+        knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"),
+        "vh.id as voucher_id",
+        "vh.voucher_type_code",
+        "vh.voucher_no",
+        "vh.book_no as bill_number",
+        "b3.name as branch_name",
+        "cl.commission_type",
+        "cl.total_amount",
+      );
+  }
 
   let syntheticEmployeeRows = [];
   if (kind === "employee" && Number(filters.entityId || 0) > 0) {
@@ -856,7 +929,26 @@ const getLedgerRows = async ({ req, filters, options, kind }) => {
     });
   });
 
-  // Rows can arrive from three different sources (voucher_line query, synthetic
+  commissionDetailRows.forEach((row) => {
+    const commissionType = String(row.commission_type || "");
+    detailEntries.push({
+      id: Number(row.id || 0),
+      voucher_id: Number(row.voucher_id || 0) || null,
+      entry_date: row.entry_date || null,
+      voucher_no: row.voucher_no || null,
+      bill_number: row.bill_number || "",
+      voucher_type: row.voucher_type_code || "",
+      description:
+        COMMISSION_TYPE_DESCRIPTIONS[commissionType] ||
+        `Sales Commission (${commissionType})`,
+      qty: 0,
+      debit: 0,
+      credit: toAmount(row.total_amount, 2),
+      branch_name: row.branch_name || "",
+    });
+  });
+
+  // Rows can arrive from four different sources (voucher_line query, synthetic
   // payroll accrual rows, staff-credit-sale rows above) so re-sort chronologically
   // before computing the running balance.
   detailEntries.sort((a, b) => {
@@ -983,7 +1075,11 @@ const getBalanceRows = async ({ req, filters, kind }) => {
 
   let balanceSubquery = knex("erp.voucher_line as vl")
     .join("erp.voucher_header as vh", "vh.id", "vl.voucher_header_id")
-    .sum({ amount: knex.raw(LEDGER_NET_SQL) })
+    .sum({
+      amount: knex.raw(LEDGER_NET_SQL),
+      credit_total: knex.raw(LEDGER_CREDIT_SQL),
+      debit_total: knex.raw(LEDGER_DEBIT_SQL),
+    })
     .andWhere("vh.status", "APPROVED")
     .where("vh.voucher_date", "<=", filters.asOn)
     .modify((qb) => {
@@ -1011,6 +1107,8 @@ const getBalanceRows = async ({ req, filters, kind }) => {
       `${cfg.alias}.${cfg.nameCol} as name`,
       `${cfg.alias}.${cfg.nameUrCol} as name_ur`,
       knex.raw("COALESCE(bal.amount, 0) as amount"),
+      knex.raw("COALESCE(bal.credit_total, 0) as payments_credit"),
+      knex.raw("COALESCE(bal.debit_total, 0) as payments_debit"),
     )
     .whereRaw(cfg.statusExpr)
     .orderBy(`${cfg.alias}.${cfg.nameCol}`, "asc");
@@ -1033,15 +1131,44 @@ const getBalanceRows = async ({ req, filters, kind }) => {
     .andWhere("vh.voucher_date", "<=", filters.asOn)
     .groupBy(`sh.${cfg.buyerCol}`)
     .select(`sh.${cfg.buyerCol} as entity_id`)
-    .sum({ amount: knex.raw("ge.cr - ge.dr") });
+    .sum({
+      amount: knex.raw("ge.cr - ge.dr"),
+      credit_total: "ge.cr",
+      debit_total: "ge.dr",
+    });
   const staffBalanceByEntity = new Map(
     staffBalanceRows.map((row) => [
       Number(row.entity_id || 0),
-      Number(row.amount || 0),
+      {
+        amount: Number(row.amount || 0),
+        credit: Number(row.credit_total || 0),
+        debit: Number(row.debit_total || 0),
+      },
     ]),
   );
 
+  let commissionByEmployee = new Map();
+  if (kind === "employee") {
+    const commissionRows = await buildCommissionQuery({ scopedBranchIds })
+      .andWhere("vh.voucher_date", "<=", filters.asOn)
+      .groupBy("cl.employee_id", "cl.commission_type")
+      .select("cl.employee_id as entity_id", "cl.commission_type")
+      .sum({ amount: "cl.total_amount" });
+    commissionRows.forEach((row) => {
+      const employeeId = Number(row.entity_id || 0);
+      if (!employeeId) return;
+      const list = commissionByEmployee.get(employeeId) || [];
+      list.push({
+        commissionType: row.commission_type,
+        amount: Number(row.amount || 0),
+      });
+      commissionByEmployee.set(employeeId, list);
+    });
+  }
+
   let salaryAccrualAmountByEmployee = new Map();
+  let salaryOnlyAmountByEmployee = new Map();
+  let allowanceOnlyAmountByEmployee = new Map();
   if (kind === "employee" && rows.length) {
     const employeeIds = rows
       .map((row) => Number(row.id || 0))
@@ -1049,42 +1176,138 @@ const getBalanceRows = async ({ req, filters, kind }) => {
     const accrualProfileMap = await loadEmployeeAccrualProfiles({
       entityIds: employeeIds,
     });
-    salaryAccrualAmountByEmployee = new Map(
-      [...accrualProfileMap.entries()].map(([employeeId, meta]) => {
-        let count = 0;
-        let perCycleAmount = 0;
-        if (meta.payrollType === "MONTHLY") {
-          count = countMonthlyAccrualsUpTo({
-            employmentStartYmd: meta.employmentStartYmd,
-            asOnYmd: filters.asOn,
-          });
-          perCycleAmount = Number(meta.monthlyAmount || 0);
-        } else if (meta.payrollType === "DAILY") {
-          count = countDailyAccrualDaysUpTo({
-            employmentStartYmd: meta.employmentStartYmd,
-            asOnYmd: filters.asOn,
-          });
-          perCycleAmount = Number(meta.dailyAmount || 0);
-        }
-        return [
-          Number(employeeId),
-          toAmount(Number(perCycleAmount || 0) * Number(count || 0), 2),
-        ];
-      }),
-    );
+    accrualProfileMap.forEach((meta, employeeId) => {
+      let count = 0;
+      let perCycleAmount = 0;
+      let perCycleSalary = 0;
+      let perCycleAllowance = 0;
+      if (meta.payrollType === "MONTHLY") {
+        count = countMonthlyAccrualsUpTo({
+          employmentStartYmd: meta.employmentStartYmd,
+          asOnYmd: filters.asOn,
+        });
+        perCycleAmount = Number(meta.monthlyAmount || 0);
+        perCycleSalary = Number(meta.monthlySalaryOnly || 0);
+        perCycleAllowance = Number(meta.monthlyAllowanceOnly || 0);
+      } else if (meta.payrollType === "DAILY") {
+        count = countDailyAccrualDaysUpTo({
+          employmentStartYmd: meta.employmentStartYmd,
+          asOnYmd: filters.asOn,
+        });
+        perCycleAmount = Number(meta.dailyAmount || 0);
+        perCycleSalary = Number(meta.dailySalaryOnly || 0);
+        perCycleAllowance = Number(meta.dailyAllowanceOnly || 0);
+      }
+      salaryAccrualAmountByEmployee.set(
+        Number(employeeId),
+        toAmount(Number(perCycleAmount || 0) * Number(count || 0), 2),
+      );
+      salaryOnlyAmountByEmployee.set(
+        Number(employeeId),
+        toAmount(Number(perCycleSalary || 0) * Number(count || 0), 2),
+      );
+      allowanceOnlyAmountByEmployee.set(
+        Number(employeeId),
+        toAmount(Number(perCycleAllowance || 0) * Number(count || 0), 2),
+      );
+    });
   }
-  return rows.map((row) => ({
-    entity_id: Number(row.id || 0) || null,
-    entity_code: row.code || "",
-    entity_name: row.name || "",
-    entity_name_ur: row.name_ur || "",
-    amount: toAmount(
+
+  const isDetailView = kind === "employee" && filters.viewMode === "detail";
+
+  return rows.map((row) => {
+    const employeeId = Number(row.id || 0) || null;
+    const staffInfo = staffBalanceByEntity.get(employeeId) || {
+      amount: 0,
+      credit: 0,
+      debit: 0,
+    };
+    const commissionEntries = commissionByEmployee.get(employeeId) || [];
+    const commissionTotal = commissionEntries.reduce(
+      (sum, entry) => sum + Number(entry.amount || 0),
+      0,
+    );
+
+    const amount = toAmount(
       Number(row.amount || 0) +
-        Number(salaryAccrualAmountByEmployee.get(Number(row.id || 0)) || 0) +
-        Number(staffBalanceByEntity.get(Number(row.id || 0)) || 0),
+        Number(salaryAccrualAmountByEmployee.get(employeeId) || 0) +
+        Number(staffInfo.amount || 0) +
+        commissionTotal,
       2,
-    ),
-  }));
+    );
+
+    const result = {
+      entity_id: employeeId,
+      entity_code: row.code || "",
+      entity_name: row.name || "",
+      entity_name_ur: row.name_ur || "",
+      amount,
+    };
+
+    if (isDetailView) {
+      const breakdown = [];
+      commissionEntries.forEach((entry) => {
+        const credit = toAmount(entry.amount, 2);
+        if (Math.abs(credit) < 0.005) return;
+        breakdown.push({
+          labelKey: `commission_type_${String(entry.commissionType || "").toLowerCase()}`,
+          debit: 0,
+          credit,
+        });
+      });
+
+      const paymentsCredit = toAmount(row.payments_credit, 2);
+      const paymentsDebit = toAmount(row.payments_debit, 2);
+      if (Math.abs(paymentsCredit) >= 0.005 || Math.abs(paymentsDebit) >= 0.005) {
+        breakdown.push({
+          labelKey: "employee_balance_payments_label",
+          debit: paymentsDebit,
+          credit: paymentsCredit,
+        });
+      }
+
+      const creditPurchaseCredit = toAmount(staffInfo.credit, 2);
+      const creditPurchaseDebit = toAmount(staffInfo.debit, 2);
+      if (
+        Math.abs(creditPurchaseCredit) >= 0.005 ||
+        Math.abs(creditPurchaseDebit) >= 0.005
+      ) {
+        breakdown.push({
+          labelKey: "employee_balance_credit_purchases_label",
+          debit: creditPurchaseDebit,
+          credit: creditPurchaseCredit,
+        });
+      }
+
+      const salaryAmount = toAmount(
+        salaryOnlyAmountByEmployee.get(employeeId) || 0,
+        2,
+      );
+      if (salaryAmount >= 0.005) {
+        breakdown.push({ labelKey: "basic_salary", debit: 0, credit: salaryAmount });
+      }
+
+      const allowanceAmount = toAmount(
+        allowanceOnlyAmountByEmployee.get(employeeId) || 0,
+        2,
+      );
+      if (allowanceAmount >= 0.005) {
+        breakdown.push({ labelKey: "allowances", debit: 0, credit: allowanceAmount });
+      }
+
+      result.breakdown = breakdown;
+      result.totalDebit = toAmount(
+        breakdown.reduce((sum, entry) => sum + Number(entry.debit || 0), 0),
+        2,
+      );
+      result.totalCredit = toAmount(
+        breakdown.reduce((sum, entry) => sum + Number(entry.credit || 0), 0),
+        2,
+      );
+    }
+
+    return result;
+  });
 };
 
 const getLabourLedgerReportPageData = async ({ req, input = {} }) => {

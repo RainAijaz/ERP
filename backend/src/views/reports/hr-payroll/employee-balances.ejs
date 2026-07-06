@@ -5,6 +5,8 @@
     ? filters.branchIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
     : [];
   const selectedAsOn = String(filters?.asOn || "");
+  const selectedViewMode = String(filters?.viewMode || "summary").toLowerCase() === "detail" ? "detail" : "summary";
+  const isDetailView = selectedViewMode === "detail";
   const formatNumber = (value, digits = 2) => {
     return formatNumberDisplay(value, { decimals: digits, fallback: "0" });
   };
@@ -26,6 +28,12 @@
     }
     return `${employeeLedgerPath}?${params.toString()}`;
   };
+  const grandTotalDebit = isDetailView
+    ? rows.reduce((sum, row) => sum + Number(row.totalDebit || 0), 0)
+    : 0;
+  const grandTotalCredit = isDetailView
+    ? rows.reduce((sum, row) => sum + Number(row.totalCredit || 0), 0)
+    : 0;
   const reportPurposeTooltip = (() => {
     const key = "employee_balances_report_purpose_tooltip";
     const value = t(key);
@@ -92,6 +100,18 @@
           </div>
         <% } %>
 
+        <label class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('report_type') %></label>
+        <div class="flex flex-wrap items-center gap-4">
+          <label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <input type="radio" name="view_mode" value="detail" class="h-4 w-4 border-slate-300 text-accent focus:ring-accent" <%= isDetailView ? 'checked' : '' %>>
+            <span><%= t('details') %></span>
+          </label>
+          <label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+            <input type="radio" name="view_mode" value="summary" class="h-4 w-4 border-slate-300 text-accent focus:ring-accent" <%= isDetailView ? '' : 'checked' %>>
+            <span><%= t('summary') %></span>
+          </label>
+        </div>
+
         <div class="hidden lg:block"></div>
         <div class="flex gap-2">
           <button type="submit" class="inline-flex items-center rounded-xl bg-accent px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= t('load') %></button>
@@ -126,6 +146,7 @@
       <div class="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= t('no_entries') %></div>
     <% } else { %>
       <div class="relative mt-4 overflow-x-auto rounded-2xl border border-slate-200">
+        <% if (!isDetailView) { %>
         <table class="min-w-[860px] w-full text-sm tabular-nums" data-table data-report-table>
           <thead class="bg-slate-100 text-slate-700">
             <tr>
@@ -157,6 +178,71 @@
             </tr>
           </tbody>
         </table>
+        <% } else { %>
+        <table class="min-w-[860px] w-full text-sm tabular-nums" data-table data-report-table>
+          <thead class="bg-slate-100 text-slate-700">
+            <tr>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]">SR.NO</th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('code') %></th>
+              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('employees') %> / <%= t('description') %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('debit') %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('credit') %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('balance') %></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100" data-table-body>
+            <% rows.forEach((row, rowIndex) => { %>
+              <% const ledgerHref = buildLedgerHref(row); %>
+              <% const breakdown = Array.isArray(row.breakdown) ? row.breakdown : []; %>
+              <tr class="bg-slate-50/70" data-row data-active="true">
+                <td class="px-3 py-2 font-semibold" colspan="6">
+                  <span class="mr-2 text-slate-500"><%= rowIndex + 1 %>.</span>
+                  <span class="mr-2 text-slate-500"><%= row.entity_code || '-' %></span>
+                  <% if (ledgerHref) { %>
+                    <a href="<%= ledgerHref %>" class="text-slate-800 underline decoration-slate-300 underline-offset-2 hover:text-accent"><%= resolveEntityName(row) %></a>
+                  <% } else { %>
+                    <%= resolveEntityName(row) %>
+                  <% } %>
+                </td>
+              </tr>
+              <% if (!breakdown.length) { %>
+                <tr class="bg-white odd:bg-slate-50/30" data-row data-active="true">
+                  <td class="px-3 py-2"></td>
+                  <td class="px-3 py-2"></td>
+                  <td class="px-3 py-2 text-slate-500"><%= t('no_entries') %></td>
+                  <td class="px-3 py-2 text-right">0.00</td>
+                  <td class="px-3 py-2 text-right">0.00</td>
+                  <td class="px-3 py-2 text-right">0.00</td>
+                </tr>
+              <% } %>
+              <% breakdown.forEach((entry) => { %>
+                <tr class="bg-white odd:bg-slate-50/30" data-row data-active="true">
+                  <td class="px-3 py-2"></td>
+                  <td class="px-3 py-2"></td>
+                  <td class="px-3 py-2 pl-6 text-slate-600"><%= t(entry.labelKey) %></td>
+                  <td class="px-3 py-2 text-right"><%= formatNumber(entry.debit, 2) %></td>
+                  <td class="px-3 py-2 text-right"><%= formatNumber(entry.credit, 2) %></td>
+                  <td class="px-3 py-2 text-right"></td>
+                </tr>
+              <% }) %>
+              <tr class="border-t border-slate-200 bg-slate-100">
+                <td class="px-3 py-2"></td>
+                <td class="px-3 py-2"></td>
+                <td class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('total') %></td>
+                <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatNumber(row.totalDebit, 2) %></td>
+                <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatNumber(row.totalCredit, 2) %></td>
+                <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatNumber(row.amount, 2) %></td>
+              </tr>
+            <% }) %>
+            <tr class="border-t-2 border-slate-300 bg-slate-200">
+              <td colspan="3" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('total') %></td>
+              <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatNumber(grandTotalDebit, 2) %></td>
+              <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatNumber(grandTotalCredit, 2) %></td>
+              <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatNumber(reportData?.totalAmount || 0, 2) %></td>
+            </tr>
+          </tbody>
+        </table>
+        <% } %>
       </div>
       <%- include("../../base/partials/table-footer", { t }) %>
     <% } %>

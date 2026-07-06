@@ -1315,6 +1315,8 @@ const translations = {
     employee_balances_report: "Employee Balances Report",
     employee_balances_report_purpose_tooltip:
       "Shows current payable/receivable balance by employee.",
+    employee_balance_payments_label: "Payments & Ledger Adjustments",
+    employee_balance_credit_purchases_label: "Staff Credit Purchases",
     commission_ledger_report: "Commission Ledger",
     report_not_configured_yet: "This report is not configured yet.",
     purchase_reports: "Purchase Report",
@@ -3338,6 +3340,8 @@ translations.ur = {
   labour_balances_report: "لیبر بیلنس رپورٹ",
   employee_ledger_report: "ملازم لیجر رپورٹ",
   employee_balances_report: "ملازم بیلنس رپورٹ",
+  employee_balance_payments_label: "ادائیگیاں اور لیجر ایڈجسٹمنٹس",
+  employee_balance_credit_purchases_label: "ملازم کریڈٹ خریداری",
   commission_ledger_report: "کمیشن لیجر",
   supplier_listings: "سپلائر کی فہرستیں",
   supplier_reports: "فراہم کنندہ کی رپورٹس",
