@@ -41,8 +41,14 @@ let stockCountLineTableSupport;
 
 const RM_BALANCE_CONFLICT_TARGET_SQL =
   "(branch_id, stock_state, item_id, COALESCE(color_id, 0), COALESCE(size_id, 0))";
+// Keep in sync with the identical constant in inventory-report-service.js --
+// stock_ledger.is_packed is the authoritative source (set at insert time) and
+// must be checked before falling back to sales_line/production_line/meta
+// inference, which is unreliable for rows that aren't a sale or production
+// posting (e.g. stock-count corrections, where sln/pl are always null).
 const FG_PACKED_FLAG_SQL = `
 CASE
+  WHEN sl.is_packed IS NOT NULL THEN sl.is_packed
   WHEN sln.is_packed IS NOT NULL THEN sln.is_packed
   WHEN pl.is_packed IS NOT NULL THEN pl.is_packed
   WHEN upper(trim(coalesce(vl.meta->>'status', vl.meta->>'row_status', ''))) = 'PACKED' THEN true
