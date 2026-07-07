@@ -1312,6 +1312,7 @@ const translations = {
     employee_ledger_report: "Employee Ledger Report",
     employee_ledger_report_purpose_tooltip:
       "Shows employee-wise transaction ledger with running balances.",
+    breakdown_by_category: "Breakdown by Category",
     employee_balances_report: "Employee Balances Report",
     employee_balances_report_purpose_tooltip:
       "Shows current payable/receivable balance by employee.",
@@ -3339,6 +3340,7 @@ translations.ur = {
   labour_ledger_report: "لیبر لیجر رپورٹ",
   labour_balances_report: "لیبر بیلنس رپورٹ",
   employee_ledger_report: "ملازم لیجر رپورٹ",
+  breakdown_by_category: "قسم کے لحاظ سے تفصیل",
   employee_balances_report: "ملازم بیلنس رپورٹ",
   employee_balance_payments_label: "ادائیگیاں اور لیجر ایڈجسٹمنٹس",
   employee_balance_credit_purchases_label: "ملازم کریڈٹ خریداری",

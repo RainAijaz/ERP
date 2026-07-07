@@ -17,6 +17,12 @@ const DIR_VERSION_SQL = "COALESCE(NULLIF(vl.meta->>'direction_version','')::int,
 const LEDGER_DEBIT_SQL = `CASE WHEN ${DIR_VERSION_SQL} = 2 THEN ${DEBIT_META_SQL} ELSE ${CREDIT_META_SQL} END`;
 const LEDGER_CREDIT_SQL = `CASE WHEN ${DIR_VERSION_SQL} = 2 THEN ${CREDIT_META_SQL} ELSE ${RESOLVED_DEBIT_SQL} END`;
 const LEDGER_NET_SQL = `(${LEDGER_CREDIT_SQL}) - (${LEDGER_DEBIT_SQL})`;
+// Salesman's Sale commission is posted as a plain EMPLOYEE voucher_line row on the
+// sale itself (never through erp.commission_ledger — see commission-service.js /
+// sales-voucher-service.js), tagged with this meta flag so reports can pull it out
+// of the generic ledger bucket and show it as its own commission-type row.
+const IS_SALES_COMMISSION_LINE_SQL =
+  "COALESCE((vl.meta->>'auto_sales_commission')::boolean, false)";
 const LABOUR_ENTITY_SQL =
   "CASE WHEN vh.voucher_type_code = 'DCV' THEN dcv.labour_id ELSE vl.labour_id END";
 const AUTO_PAYROLL_VOUCHER_TYPE = "PAYROLL_ACCRUAL";
@@ -738,6 +744,7 @@ const getLedgerRows = async ({ req, filters, options, kind }) => {
       knex.raw("COALESCE(vl.qty, 0) as qty"),
       knex.raw(`${LEDGER_DEBIT_SQL} as dr`),
       knex.raw(`${LEDGER_CREDIT_SQL} as cr`),
+      knex.raw(`${IS_SALES_COMMISSION_LINE_SQL} as is_sales_commission`),
       "vl.id",
       "vl.line_no",
     )
@@ -811,11 +818,12 @@ const getLedgerRows = async ({ req, filters, options, kind }) => {
   }
 
   let syntheticEmployeeRows = [];
+  let accrualMeta = null;
   if (kind === "employee" && Number(filters.entityId || 0) > 0) {
     const accrualProfileMap = await loadEmployeeAccrualProfiles({
       entityIds: [Number(filters.entityId)],
     });
-    const accrualMeta = accrualProfileMap.get(Number(filters.entityId));
+    accrualMeta = accrualProfileMap.get(Number(filters.entityId)) || null;
 
     if (
       accrualMeta &&
@@ -1032,6 +1040,137 @@ const getLedgerRows = async ({ req, filters, options, kind }) => {
     };
   });
 
+  // Category breakdown: the same debit/credit sources used above, re-sliced by
+  // category (commission by type / payments / staff credit purchases / salary /
+  // allowances) instead of chronologically — shown alongside the Summary view.
+  // Reuses the queries already run above; must reconcile to the same closing
+  // balance as the per-voucher `totals` below (verified in report-service tests).
+  let categoryBreakdown = null;
+  if (kind === "employee" && filters.ledgerView === "summary") {
+    const commissionByType = new Map();
+    commissionDetailRows.forEach((row) => {
+      const type = String(row.commission_type || "");
+      const current = commissionByType.get(type) || { credit: 0, debit: 0 };
+      current.credit = toAmount(current.credit + Number(row.total_amount || 0), 2);
+      commissionByType.set(type, current);
+    });
+
+    let paymentsCredit = 0;
+    let paymentsDebit = 0;
+    let salesCommissionCredit = 0;
+    let salesCommissionDebit = 0;
+    rawRows.forEach((row) => {
+      const debit = toAmount(row.dr, 2);
+      const credit = toAmount(row.cr, 2);
+      if (Math.abs(debit) < 0.0001 && Math.abs(credit) < 0.0001) return;
+      if (row.is_sales_commission) {
+        salesCommissionCredit = toAmount(salesCommissionCredit + credit, 2);
+        salesCommissionDebit = toAmount(salesCommissionDebit + debit, 2);
+      } else {
+        paymentsCredit = toAmount(paymentsCredit + credit, 2);
+        paymentsDebit = toAmount(paymentsDebit + debit, 2);
+      }
+    });
+    if (
+      Math.abs(salesCommissionCredit) >= 0.005 ||
+      Math.abs(salesCommissionDebit) >= 0.005
+    ) {
+      const current = commissionByType.get("SALESMAN_SALE") || {
+        credit: 0,
+        debit: 0,
+      };
+      current.credit = toAmount(current.credit + salesCommissionCredit, 2);
+      current.debit = toAmount(current.debit + salesCommissionDebit, 2);
+      commissionByType.set("SALESMAN_SALE", current);
+    }
+
+    let staffCreditPurchaseCredit = 0;
+    let staffCreditPurchaseDebit = 0;
+    staffDetailRows.forEach((row) => {
+      staffCreditPurchaseCredit = toAmount(
+        staffCreditPurchaseCredit + Number(row.cr || 0),
+        2,
+      );
+      staffCreditPurchaseDebit = toAmount(
+        staffCreditPurchaseDebit + Number(row.dr || 0),
+        2,
+      );
+    });
+
+    let salaryAmount = 0;
+    let allowanceAmount = 0;
+    if (accrualMeta) {
+      const periodCount = syntheticEmployeeRows.length;
+      const perCycleSalary =
+        accrualMeta.payrollType === "MONTHLY"
+          ? Number(accrualMeta.monthlySalaryOnly || 0)
+          : accrualMeta.payrollType === "DAILY"
+            ? Number(accrualMeta.dailySalaryOnly || 0)
+            : 0;
+      const perCycleAllowance =
+        accrualMeta.payrollType === "MONTHLY"
+          ? Number(accrualMeta.monthlyAllowanceOnly || 0)
+          : accrualMeta.payrollType === "DAILY"
+            ? Number(accrualMeta.dailyAllowanceOnly || 0)
+            : 0;
+      salaryAmount = toAmount(perCycleSalary * periodCount, 2);
+      allowanceAmount = toAmount(perCycleAllowance * periodCount, 2);
+    }
+
+    const breakdown = [];
+    commissionByType.forEach((value, type) => {
+      if (Math.abs(value.credit) < 0.005 && Math.abs(value.debit) < 0.005) return;
+      breakdown.push({
+        labelKey: `commission_type_${type.toLowerCase()}`,
+        debit: value.debit,
+        credit: value.credit,
+      });
+    });
+    if (Math.abs(paymentsCredit) >= 0.005 || Math.abs(paymentsDebit) >= 0.005) {
+      breakdown.push({
+        labelKey: "employee_balance_payments_label",
+        debit: paymentsDebit,
+        credit: paymentsCredit,
+      });
+    }
+    if (
+      Math.abs(staffCreditPurchaseCredit) >= 0.005 ||
+      Math.abs(staffCreditPurchaseDebit) >= 0.005
+    ) {
+      breakdown.push({
+        labelKey: "employee_balance_credit_purchases_label",
+        debit: staffCreditPurchaseDebit,
+        credit: staffCreditPurchaseCredit,
+      });
+    }
+    if (salaryAmount >= 0.005) {
+      breakdown.push({ labelKey: "basic_salary", debit: 0, credit: salaryAmount });
+    }
+    if (allowanceAmount >= 0.005) {
+      breakdown.push({ labelKey: "allowances", debit: 0, credit: allowanceAmount });
+    }
+
+    const totalDebitBreakdown = toAmount(
+      breakdown.reduce((sum, entry) => sum + Number(entry.debit || 0), 0),
+      2,
+    );
+    const totalCreditBreakdown = toAmount(
+      breakdown.reduce((sum, entry) => sum + Number(entry.credit || 0), 0),
+      2,
+    );
+
+    categoryBreakdown = {
+      openingBalance,
+      breakdown,
+      totalDebit: totalDebitBreakdown,
+      totalCredit: totalCreditBreakdown,
+      closingBalance: toAmount(
+        openingBalance + totalCreditBreakdown - totalDebitBreakdown,
+        2,
+      ),
+    };
+  }
+
   return {
     entity: selectedEntity || null,
     openingBalance,
@@ -1045,6 +1184,7 @@ const getLedgerRows = async ({ req, filters, options, kind }) => {
         ? rows[rows.length - 1].balance
         : openingBalance,
     },
+    categoryBreakdown,
     includeBranchColumn,
   };
 };
@@ -1079,6 +1219,12 @@ const getBalanceRows = async ({ req, filters, kind }) => {
       amount: knex.raw(LEDGER_NET_SQL),
       credit_total: knex.raw(LEDGER_CREDIT_SQL),
       debit_total: knex.raw(LEDGER_DEBIT_SQL),
+      sales_commission_credit: knex.raw(
+        `CASE WHEN ${IS_SALES_COMMISSION_LINE_SQL} THEN (${LEDGER_CREDIT_SQL}) ELSE 0 END`,
+      ),
+      sales_commission_debit: knex.raw(
+        `CASE WHEN ${IS_SALES_COMMISSION_LINE_SQL} THEN (${LEDGER_DEBIT_SQL}) ELSE 0 END`,
+      ),
     })
     .andWhere("vh.status", "APPROVED")
     .where("vh.voucher_date", "<=", filters.asOn)
@@ -1109,6 +1255,12 @@ const getBalanceRows = async ({ req, filters, kind }) => {
       knex.raw("COALESCE(bal.amount, 0) as amount"),
       knex.raw("COALESCE(bal.credit_total, 0) as payments_credit"),
       knex.raw("COALESCE(bal.debit_total, 0) as payments_debit"),
+      knex.raw(
+        "COALESCE(bal.sales_commission_credit, 0) as sales_commission_credit",
+      ),
+      knex.raw(
+        "COALESCE(bal.sales_commission_debit, 0) as sales_commission_debit",
+      ),
     )
     .whereRaw(cfg.statusExpr)
     .orderBy(`${cfg.alias}.${cfg.nameCol}`, "asc");
@@ -1245,19 +1397,43 @@ const getBalanceRows = async ({ req, filters, kind }) => {
     };
 
     if (isDetailView) {
-      const breakdown = [];
+      const commissionByType = new Map();
       commissionEntries.forEach((entry) => {
-        const credit = toAmount(entry.amount, 2);
-        if (Math.abs(credit) < 0.005) return;
-        breakdown.push({
-          labelKey: `commission_type_${String(entry.commissionType || "").toLowerCase()}`,
+        const type = String(entry.commissionType || "");
+        const current = commissionByType.get(type) || { credit: 0, debit: 0 };
+        current.credit = toAmount(current.credit + Number(entry.amount || 0), 2);
+        commissionByType.set(type, current);
+      });
+      const salesCommissionCredit = toAmount(row.sales_commission_credit, 2);
+      const salesCommissionDebit = toAmount(row.sales_commission_debit, 2);
+      if (
+        Math.abs(salesCommissionCredit) >= 0.005 ||
+        Math.abs(salesCommissionDebit) >= 0.005
+      ) {
+        const current = commissionByType.get("SALESMAN_SALE") || {
+          credit: 0,
           debit: 0,
-          credit,
+        };
+        current.credit = toAmount(current.credit + salesCommissionCredit, 2);
+        current.debit = toAmount(current.debit + salesCommissionDebit, 2);
+        commissionByType.set("SALESMAN_SALE", current);
+      }
+
+      const breakdown = [];
+      commissionByType.forEach((value, type) => {
+        if (Math.abs(value.credit) < 0.005 && Math.abs(value.debit) < 0.005) return;
+        breakdown.push({
+          labelKey: `commission_type_${type.toLowerCase()}`,
+          debit: value.debit,
+          credit: value.credit,
         });
       });
 
-      const paymentsCredit = toAmount(row.payments_credit, 2);
-      const paymentsDebit = toAmount(row.payments_debit, 2);
+      const paymentsCredit = toAmount(
+        row.payments_credit - salesCommissionCredit,
+        2,
+      );
+      const paymentsDebit = toAmount(row.payments_debit - salesCommissionDebit, 2);
       if (Math.abs(paymentsCredit) >= 0.005 || Math.abs(paymentsDebit) >= 0.005) {
         breakdown.push({
           labelKey: "employee_balance_payments_label",

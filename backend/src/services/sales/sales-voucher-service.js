@@ -19,6 +19,8 @@ const {
 } = require("./sales-discount-policy-service");
 const {
   prepareSalesVoucherData,
+  computeLedgerEntriesForBranch,
+  writeCommissionLedgerTx,
   SALES_VOUCHER_CODE,
 } = require("./commission-service");
 
@@ -3156,6 +3158,45 @@ const ensureSalesVoucherDerivedDataTx = async ({
     voucherId,
     voucherTypeCode: normalizedVoucherTypeCode,
   });
+  await writeBranchSaleCommissionTx({ trx, voucherId });
+};
+
+// Branch Sale commission: employees at this sale's branch with BRANCH_SALE rules earn
+// on every sale (mirrors Transfer commission wiring in stock-transfer-voucher-service.js).
+// Self-contained (re-loads branch + SKU lines from what was just persisted) so it can be
+// called from every place ensureSalesVoucherDerivedDataTx already runs — creation,
+// edit, and approval-apply — without changing any of those call sites. writeCommissionLedgerTx
+// upserts on (voucher_id, employee_id, commission_type), so re-running this on edit/approval
+// replay is safe. Wrapped in try/catch so a commission failure never blocks the sale itself.
+const writeBranchSaleCommissionTx = async ({ trx, voucherId }) => {
+  try {
+    const header = await trx("erp.voucher_header")
+      .select("branch_id")
+      .where({ id: voucherId })
+      .first();
+    if (!header?.branch_id) return;
+
+    const skuLines = await trx("erp.voucher_line")
+      .select("id", "line_kind", "sku_id", "qty", "uom_id", "meta", "line_no")
+      .where({ voucher_header_id: voucherId, line_kind: "SKU" });
+    if (!skuLines.length) return;
+
+    const branchEntries = await computeLedgerEntriesForBranch({
+      trx,
+      lines: skuLines,
+      branchId: Number(header.branch_id),
+      commissionType: "BRANCH_SALE",
+      t: (key) => key,
+    });
+    if (branchEntries.length) {
+      await writeCommissionLedgerTx(trx, voucherId, branchEntries);
+    }
+  } catch (commissionErr) {
+    console.error(
+      "[branch-sale-commission] Failed to write branch sale commission:",
+      commissionErr?.message,
+    );
+  }
 };
 
 const createApprovalRequest = async ({
