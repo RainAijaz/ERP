@@ -1,32 +1,27 @@
-// Read-only diagnostic: runs the Stock Balances Report's calculation and the
-// Stock Count Voucher article-list's calculation side by side, for the exact
-// same branch/group/status/date, to find why their totals disagree.
+// Read-only diagnostic: calls the ACTUAL Stock Balances Report function and
+// the ACTUAL Stock Count Voucher article-list function directly (not a
+// reimplementation of their SQL), for the same branch/group/status/date, and
+// compares them SKU by SKU in raw pairs (unit-conversion-proof) plus the
+// report's own converted display quantity.
 //
-// The two use different SQL under the hood:
-//   - Report (loadFgSfgDetailRows in inventory-report-service.js): filters on
-//     stock_ledger.txn_date, LEFT JOINs voucher_line.
-//   - Voucher article list (loadStockCountGroupArticles in
-//     inventory-voucher-service.js): filters on voucher_header.voucher_date
-//     (via a join), INNER JOINs voucher_line.
-// Either of those differences (txn_date vs voucher_date drifting apart, or a
-// stock_ledger row with a null/dangling voucher_line_id silently dropped by
-// the inner join) would produce exactly the kind of gap being investigated.
-// This script surfaces which one (if either) is actually happening, per SKU.
+// Why this replaced an earlier SQL-reimplementation version of this script:
+// that version found zero mismatch between its two hand-written queries, but
+// neither queries matched the real totals shown on screen (report=2055,
+// voucher=2010) -- meaning the hand-written SQL didn't faithfully reproduce
+// what the real report/voucher code do (most likely: unit conversion from
+// pairs to the display unit isn't a flat /12 for every SKU -- it goes through
+// a UOM conversion graph keyed by each item's own base_uom_id). Calling the
+// real functions sidesteps that risk entirely.
 //
 // Usage (from backend/):
-//   node src/scripts/diagnose-stock-count-vs-report-mismatch.js --branch-id=207 --group-name=EVA --as-on=2026-07-03 --status=PACKED
+//   node src/scripts/diagnose-stock-count-vs-report-mismatch.js --branch-id=2 --group-id=10 --as-on=2026-07-03 --status=PACKED
 const knex = require("../db/knex");
-
-const FG_PACKED_FLAG_SQL = `
-CASE
-  WHEN sln.is_packed IS NOT NULL THEN sln.is_packed
-  WHEN pl.is_packed IS NOT NULL THEN pl.is_packed
-  WHEN upper(trim(coalesce(vl.meta->>'status', vl.meta->>'row_status', ''))) = 'PACKED' THEN true
-  WHEN upper(trim(coalesce(vl.meta->>'status', vl.meta->>'row_status', ''))) = 'LOOSE' THEN false
-  WHEN lower(trim(coalesce(vl.meta->>'is_packed', ''))) IN ('true','t','1','yes') THEN true
-  WHEN lower(trim(coalesce(vl.meta->>'is_packed', ''))) IN ('false','f','0','no') THEN false
-  ELSE false
-END`;
+const {
+  getInventoryStockBalancesReportPageData,
+} = require("../services/inventory/inventory-report-service");
+const {
+  loadStockCountGroupArticles,
+} = require("../services/inventory/inventory-voucher-service");
 
 const getArg = (name) => {
   const arg = process.argv.find((a) => a.startsWith(`--${name}=`));
@@ -38,14 +33,14 @@ const roundQty3 = (v) => Math.round((Number(v || 0) + Number.EPSILON) * 1000) / 
 const run = async () => {
   const branchIdArg = getArg("branch-id");
   const branchName = getArg("branch-name");
-  const groupName = getArg("group-name");
   const groupIdArg = getArg("group-id");
+  const groupName = getArg("group-name");
   const asOn = getArg("as-on");
   const status = String(getArg("status") || "PACKED").toUpperCase();
 
-  if ((!branchIdArg && !branchName) || !asOn || (!groupName && !groupIdArg)) {
+  if ((!branchIdArg && !branchName) || !asOn || (!groupIdArg && !groupName)) {
     console.error(
-      "Usage: node diagnose-stock-count-vs-report-mismatch.js (--branch-id=<id> | --branch-name=<name>) --as-on=YYYY-MM-DD (--group-name=<name> | --group-id=<id>) [--status=PACKED|LOOSE]",
+      "Usage: node diagnose-stock-count-vs-report-mismatch.js (--branch-id=<id> | --branch-name=<name>) --as-on=YYYY-MM-DD (--group-id=<id> | --group-name=<name>) [--status=PACKED|LOOSE]",
     );
     process.exit(1);
   }
@@ -78,125 +73,90 @@ const run = async () => {
     console.log(`Resolved group "${groupName}" -> id ${groupId}`);
   }
 
-  const isPacked = status !== "LOOSE";
-  console.log(
-    `Comparing branch=${branchId} group=${groupId} status=${status} as_on=${asOn}\n`,
+  console.log(`Comparing branch=${branchId} group=${groupId} status=${status} as_on=${asOn}\n`);
+
+  const req = {
+    user: { isAdmin: true },
+    branchId,
+    branchOptions: [],
+    locale: "en",
+  };
+
+  // 1) The real Stock Balances Report, scoped exactly like the UI form.
+  const reportResult = await getInventoryStockBalancesReportPageData({
+    req,
+    input: {
+      load_report: "1",
+      as_of_date: asOn,
+      stock_type: "FINISHED",
+      stock_status: status,
+      product_group_ids: String(groupId),
+      branch_ids: String(branchId),
+      order_by: "SKU",
+      view_filter: "SUMMARY",
+    },
+  });
+  const reportRows = (reportResult?.reportData?.fgSfgDetailRows || []).filter(
+    (r) => Number(r.group_id) === groupId,
+  );
+  const reportPairTotal = roundQty3(
+    reportRows.reduce((sum, r) => sum + Number(r.pairQuantity || 0), 0),
+  );
+  const reportDisplayTotal = roundQty3(
+    reportRows.reduce((sum, r) => sum + Number(r.quantity || 0), 0),
   );
 
-  // Method A: report-style (txn_date, LEFT JOIN voucher_line)
-  const reportRows = await knex("erp.stock_ledger as sl")
-    .leftJoin("erp.voucher_line as vl", "vl.id", "sl.voucher_line_id")
-    .leftJoin("erp.sales_line as sln", "sln.voucher_line_id", "vl.id")
-    .leftJoin("erp.production_line as pl", "pl.voucher_line_id", "vl.id")
-    .join("erp.skus as s", "s.id", "sl.sku_id")
-    .join("erp.variants as v", "v.id", "s.variant_id")
-    .join("erp.items as i", "i.id", "v.item_id")
-    .select("sl.sku_id", "s.sku_code")
-    .select(
-      knex.raw(
-        "COALESCE(SUM(CASE WHEN sl.direction = 1 THEN COALESCE(sl.qty_pairs, 0) ELSE -COALESCE(sl.qty_pairs, 0) END), 0) as qty_pairs",
-      ),
-    )
-    .where({
-      "sl.branch_id": branchId,
-      "sl.stock_state": "ON_HAND",
-      "sl.category": "FG",
-      "i.group_id": groupId,
-    })
-    .whereRaw(`${FG_PACKED_FLAG_SQL} = ?`, [isPacked])
-    .where("sl.txn_date", "<=", asOn)
-    .groupBy("sl.sku_id", "s.sku_code")
-    .orderBy("s.sku_code", "asc");
-
-  // Method B: voucher-article-list-style (voucher_date via join, INNER JOIN voucher_line)
-  const voucherRows = await knex("erp.stock_ledger as sl")
-    .join("erp.voucher_header as vh", "vh.id", "sl.voucher_header_id")
-    .join("erp.voucher_line as vl", "vl.id", "sl.voucher_line_id")
-    .leftJoin("erp.sales_line as sln", "sln.voucher_line_id", "vl.id")
-    .leftJoin("erp.production_line as pl", "pl.voucher_line_id", "vl.id")
-    .join("erp.skus as s", "s.id", "sl.sku_id")
-    .join("erp.variants as v", "v.id", "s.variant_id")
-    .join("erp.items as i", "i.id", "v.item_id")
-    .select("sl.sku_id", "s.sku_code")
-    .select(
-      knex.raw(
-        "COALESCE(SUM(CASE WHEN sl.direction = 1 THEN COALESCE(sl.qty_pairs, 0) ELSE -COALESCE(sl.qty_pairs, 0) END), 0) as qty_pairs",
-      ),
-    )
-    .where({
-      "sl.branch_id": branchId,
-      "sl.stock_state": "ON_HAND",
-      "sl.category": "FG",
-      "i.group_id": groupId,
-    })
-    .whereRaw(`${FG_PACKED_FLAG_SQL} = ?`, [isPacked])
-    .where("vh.voucher_date", "<=", asOn)
-    .groupBy("sl.sku_id", "s.sku_code")
-    .orderBy("s.sku_code", "asc");
-
-  const reportBySku = new Map(
-    reportRows.map((r) => [Number(r.sku_id), roundQty3(r.qty_pairs)]),
-  );
-  const voucherBySku = new Map(
-    voucherRows.map((r) => [Number(r.sku_id), roundQty3(r.qty_pairs)]),
-  );
-  const skuCodeById = new Map(
-    [...reportRows, ...voucherRows].map((r) => [Number(r.sku_id), r.sku_code]),
+  // 2) The real voucher article-list endpoint (/vouchers/stock-count/articles).
+  const voucherResult = await loadStockCountGroupArticles({
+    branchId,
+    groupId,
+    stockType: "FG",
+    asOfDate: asOn,
+    status,
+  });
+  const voucherArticles = voucherResult?.articles || [];
+  const voucherPairTotal = roundQty3(
+    voucherArticles.reduce((sum, a) => sum + Number(a.system_qty_pairs || 0), 0),
   );
 
+  console.log(`REPORT   pairQuantity total: ${reportPairTotal} pairs  (report's own converted display total: ${reportDisplayTotal})`);
+  console.log(`VOUCHER  system_qty_pairs total: ${voucherPairTotal} pairs\n`);
+  console.log(`Difference in PAIRS (unit-conversion-proof): ${roundQty3(reportPairTotal - voucherPairTotal)}\n`);
+
+  const reportBySku = new Map(reportRows.map((r) => [Number(r.sku_id), r]));
+  const voucherBySku = new Map(voucherArticles.map((a) => [Number(a.sku_id), a]));
   const allSkuIds = new Set([...reportBySku.keys(), ...voucherBySku.keys()]);
-  const reportTotal = roundQty3([...reportBySku.values()].reduce((a, b) => a + b, 0));
-  const voucherTotal = roundQty3([...voucherBySku.values()].reduce((a, b) => a + b, 0));
-
-  console.log(`REPORT-style total (txn_date, LEFT JOIN):  ${reportTotal}`);
-  console.log(`VOUCHER-style total (voucher_date, INNER JOIN): ${voucherTotal}`);
-  console.log(`Difference: ${roundQty3(reportTotal - voucherTotal)}\n`);
 
   const mismatches = [];
   allSkuIds.forEach((skuId) => {
-    const r = reportBySku.get(skuId) || 0;
-    const v = voucherBySku.get(skuId) || 0;
-    if (Math.abs(r - v) >= 0.005) {
-      mismatches.push({ skuId, skuCode: skuCodeById.get(skuId), r, v, delta: roundQty3(r - v) });
+    const r = reportBySku.get(skuId);
+    const v = voucherBySku.get(skuId);
+    const rPairs = roundQty3(r?.pairQuantity || 0);
+    const vPairs = roundQty3(v?.system_qty_pairs || 0);
+    if (Math.abs(rPairs - vPairs) >= 0.005) {
+      mismatches.push({
+        skuId,
+        skuCode: r?.sku_code || "",
+        inReport: Boolean(r),
+        inVoucher: Boolean(v),
+        rPairs,
+        vPairs,
+        delta: roundQty3(rPairs - vPairs),
+      });
     }
   });
 
   if (!mismatches.length) {
-    console.log("No per-SKU mismatches found -- the two totals matched. (Unexpected if you saw a gap; double check branch/group/status/date match exactly what each screen shows.)");
-    await knex.destroy();
-    return;
-  }
-
-  console.log(`${mismatches.length} SKU(s) disagree between the two methods:\n`);
-  for (const m of mismatches) {
-    console.log(`SKU ${m.skuCode || m.skuId}: report=${m.r} voucher=${m.v} delta=${m.delta}`);
-
-    // For each mismatched SKU, show the raw contributing rows each method sees
-    // but the other doesn't, to pinpoint the exact cause.
-    const nullLineRows = await knex("erp.stock_ledger as sl")
-      .join("erp.voucher_header as vh", "vh.id", "sl.voucher_header_id")
-      .select("sl.id", "vh.voucher_no", "vh.voucher_type_code", "vh.voucher_date", "sl.txn_date", "sl.voucher_line_id", "sl.direction", "sl.qty_pairs")
-      .where({ "sl.branch_id": branchId, "sl.stock_state": "ON_HAND", "sl.category": "FG", "sl.sku_id": m.skuId })
-      .whereNull("sl.voucher_line_id")
-      .where("vh.voucher_date", "<=", asOn);
-    if (nullLineRows.length) {
-      console.log(`  -> ${nullLineRows.length} row(s) with NULL voucher_line_id (dropped by voucher's INNER JOIN, counted by report's LEFT JOIN):`);
-      nullLineRows.forEach((r) => console.log(`     ${JSON.stringify(r)}`));
-    }
-
-    const dateMismatchRows = await knex("erp.stock_ledger as sl")
-      .join("erp.voucher_header as vh", "vh.id", "sl.voucher_header_id")
-      .select("sl.id", "vh.voucher_no", "vh.voucher_type_code", "vh.voucher_date", "sl.txn_date", "sl.direction", "sl.qty_pairs")
-      .where({ "sl.branch_id": branchId, "sl.stock_state": "ON_HAND", "sl.category": "FG", "sl.sku_id": m.skuId })
-      .whereRaw("sl.txn_date != vh.voucher_date");
-    if (dateMismatchRows.length) {
-      console.log(`  -> ${dateMismatchRows.length} row(s) where txn_date != voucher_date (would land on different sides of an as-on cutoff):`);
-      dateMismatchRows.forEach((r) => console.log(`     ${JSON.stringify(r)}`));
-    }
-
-    if (!nullLineRows.length && !dateMismatchRows.length) {
-      console.log("  -> neither known cause found for this SKU -- needs a closer look at its full stock_ledger row list.");
-    }
+    console.log("No per-SKU pair-quantity mismatches -- the two real functions agree exactly.");
+  } else {
+    console.log(`${mismatches.length} SKU(s) disagree (in PAIRS, unit-conversion-proof):\n`);
+    mismatches
+      .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+      .forEach((m) => {
+        console.log(
+          `  SKU ${m.skuCode || m.skuId}: report=${m.rPairs} (${m.inReport ? "present" : "MISSING from report"}) voucher=${m.vPairs} (${m.inVoucher ? "present" : "MISSING from voucher"}) delta=${m.delta}`,
+        );
+      });
   }
 
   await knex.destroy();
