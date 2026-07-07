@@ -37,17 +37,19 @@
 // The simulated final balances are diffed against currently stored
 // stock_balance_sku rows to produce the correction set.
 //
-// stock_ledger.is_packed is only re-tagged on individual rows for the simple,
-// unambiguous case: exactly one physical row for a sales-OUT event -- just
-// flip that row's tag if it disagrees with the declared bucket. Events where
-// a buggy prior posting left TWO rows for one event (a real split that should
-// never have happened) are left as-is at the row level and listed separately
-// for manual review, since consolidating/deleting ledger rows is a materially
-// bigger, riskier change than this pass is meant to make. The stock_balance_sku
-// correction (the operationally important part -- available-stock checks,
-// WAC/COGS, stock-count comparisons) is applied regardless, since it's derived
-// from the total qty/value moved, not from how the stored rows happen to be
-// split.
+// stock_ledger.is_packed is retagged onto the declared bucket for every
+// physical row of a sales-OUT event. Usually that's a single row. When a
+// prior buggy version split one sale across both buckets as two rows, all of
+// those rows are retagged onto the declared bucket too (their qty/value are
+// left intact, so total movement is preserved) -- this keeps a later
+// edit/delete's rollback, which replays each ledger row by its own is_packed,
+// crediting stock back to the same single bucket this correction debited
+// rather than leaking qty into the other bucket. Such consolidated split
+// events are additionally logged to a review CSV purely as an audit trail;
+// no manual action is required. The stock_balance_sku correction (the
+// operationally important part -- available-stock checks, WAC/COGS,
+// stock-count comparisons) is applied regardless, derived from the total
+// qty/value moved rather than how the stored rows happen to be split.
 //
 // Usage (from backend/):
 //   node src/scripts/fix-sales-sku-bucket-routing.js            # dry run, prints + CSVs only
@@ -217,23 +219,25 @@ const simulateBucket = (history) => {
     bucket.qty = nextQty;
     bucket.value = nextQty > 0 ? Math.max(roundCost2(nextValueRaw), 0) : roundCost2(nextValueRaw);
 
-    // Only auto-retag the simple case: one physical row for this event --
-    // just flip that row's tag if it disagrees with the declared bucket. A
-    // buggy prior posting that left TWO rows for one event (a cross-bucket
-    // split that should never have happened under the declared-bucket-only
-    // rule) is left alone at the row level and reported for manual review
-    // instead of consolidating/deleting ledger rows.
-    if (event.rows.length === 1) {
-      const row = event.rows[0];
+    // Retag every physical row for this event onto the declared bucket --
+    // whether the event posted as a single row, or (under a prior buggy
+    // version) got split across both buckets as two rows. Consolidating all
+    // rows onto the declared bucket keeps a future edit/delete's rollback --
+    // which replays each ledger row by its own is_packed -- crediting stock
+    // back to the same single bucket this correction debited, instead of
+    // leaking qty into the other bucket. Row qty/value are NOT changed, only
+    // the is_packed tag, so the ledger's total movement is preserved.
+    for (const row of event.rows) {
       if (row.stored_is_packed !== declared) {
         safeRetags.push({ id: row.id, from_is_packed: row.stored_is_packed, to_is_packed: declared });
       }
-    } else {
+    }
+    if (event.rows.length > 1) {
       needsReview.push({
-        reason: "legacy-cross-bucket-split",
+        reason: "legacy-cross-bucket-split-consolidated",
         voucher_no: event.rows[0].voucher_no,
         voucher_date: event.rows[0].voucher_date,
-        note: `this sale's stock effect is split across ${event.rows.length} ledger rows from a prior buggy posting; stock_balance_sku has been corrected to the full amount in the declared bucket, but the individual ledger rows were left untouched -- review manually`,
+        note: `this sale posted ${event.rows.length} ledger rows split across buckets under a prior buggy version; all rows have been retagged onto the declared bucket (${declared ? "PACKED" : "LOOSE"}) and stock_balance_sku recomputed -- logged for audit, no manual action needed`,
       });
     }
   }
@@ -367,7 +371,7 @@ const run = async () => {
 
   console.log(`[fix-sales-sku-bucket-routing] balance rows to correct: ${balanceUpdates.length}`);
   console.log(`[fix-sales-sku-bucket-routing] ledger rows to re-tag: ${ledgerRetags.length}`);
-  console.log(`[fix-sales-sku-bucket-routing] events needing manual review: ${reviewRows.length}`);
+  console.log(`[fix-sales-sku-bucket-routing] legacy split events auto-consolidated (logged for audit): ${reviewRows.length}`);
   console.log(`[fix-sales-sku-bucket-routing] audit CSV: ${csvPath}`);
   if (reviewCsvPath) console.log(`[fix-sales-sku-bucket-routing] review CSV: ${reviewCsvPath}`);
   for (const r of auditRows) {
