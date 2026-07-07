@@ -1,7 +1,7 @@
 // Read-only audit: finds STOCK_COUNT_ADJ (Physical Count Correction) voucher
 // lines whose STORED "System Qty" snapshot disagrees with what a correct
-// point-in-time recomputation gives (as of the voucher's own date, excluding
-// only that voucher's own posted contribution).
+// point-in-time recomputation gives (as of the exact moment this voucher was
+// last saved, excluding only that voucher's own posted contribution).
 //
 // Why this is needed: a bug (fixed 2026-07-07 in inventory-voucher-service.js)
 // let editing a correction voucher compute "System Qty" against a baseline
@@ -12,6 +12,18 @@
 // the stock ledger, so the live stock balance for that item/SKU may still be
 // off by the same amount today. This script only reports drift; it does not
 // write anything.
+//
+// Precision note: "as of" boundaries use erp.voucher_header.created_at /
+// erp.activity_log timestamps (not voucher_date), so two vouchers dated the
+// same calendar day are still ordered correctly relative to each other --
+// voucher_date alone is too coarse and would flag same-day siblings as false
+// drift. The one residual gap: if an "other" contributing voucher was ITSELF
+// edited after this voucher's last save, its stock_ledger rows only reflect
+// its latest edit (editing deletes and reposts ledger rows, so intermediate
+// history isn't retained) -- there's no way to recover its exact state as of
+// an earlier timestamp from current data alone. This is rare but means a
+// flagged delta should still be sanity-checked against real context before
+// acting on it, especially for high-value lines.
 //
 // Usage (from backend/):
 //   node src/scripts/audit-stock-count-system-qty-drift.js
@@ -47,9 +59,8 @@ const fromDate = getArg("from-date");
 const toDate = getArg("to-date");
 // The self-pollution bug can only affect a voucher that was actually EDITED
 // after its first save (a fresh create has no prior effect to pollute with).
-// Default to edited-only to avoid false positives from same-day sibling
-// vouchers touching the same item/SKU, which the voucher_date-scoped
-// recompute below can't otherwise distinguish from genuine self-pollution.
+// Default to edited-only so the report stays focused on vouchers that could
+// actually have this bug.
 const includeUnedited = process.argv.includes("--include-unedited");
 
 const roundQty3 = (v) => Math.round((Number(v || 0) + Number.EPSILON) * 1000) / 1000;
@@ -67,14 +78,16 @@ const hasColumn = async (table, column) => {
 };
 
 // Mirrors loadRmSystemSnapshotByKeyTx's exclusion math, but point-in-time
-// (as of a given voucher date) rather than "live" -- ledger-sum based, same
-// technique already used for FG/SFG in the main service.
+// (as of the exact timestamp this voucher was last saved) rather than
+// "live" -- ledger-sum based, same technique already used for FG/SFG in the
+// main service. Timestamp (not voucher_date) so same-day vouchers are still
+// ordered correctly relative to each other.
 const computeTrueRmSystemQty = async ({
   branchId,
   itemId,
   colorId,
   sizeId,
-  asOfDate,
+  asOfTimestamp,
   excludeVoucherId,
   hasVariantDimensions,
 }) => {
@@ -91,7 +104,7 @@ const computeTrueRmSystemQty = async ({
       "sl.category": "RM",
       "sl.item_id": itemId,
     })
-    .andWhere("vh.voucher_date", "<=", asOfDate)
+    .andWhere("vh.created_at", "<=", asOfTimestamp)
     .andWhere("sl.voucher_header_id", "!=", excludeVoucherId);
   if (hasVariantDimensions) {
     query = query
@@ -112,7 +125,7 @@ const computeTrueFgSystemQtyPairs = async ({
   branchId,
   skuId,
   isPacked,
-  asOfDate,
+  asOfTimestamp,
   excludeVoucherId,
 }) => {
   const row = await knex("erp.stock_ledger as sl")
@@ -132,7 +145,7 @@ const computeTrueFgSystemQtyPairs = async ({
     })
     .whereIn("sl.category", ["FG", "SFG"])
     .whereRaw(`${FG_PACKED_FLAG_SQL} = ?`, [isPacked])
-    .andWhere("vh.voucher_date", "<=", asOfDate)
+    .andWhere("vh.created_at", "<=", asOfTimestamp)
     .andWhere("sl.voucher_header_id", "!=", excludeVoucherId)
     .first();
   return roundQty3(row?.qty_pairs || 0);
@@ -155,6 +168,7 @@ const run = async () => {
       "vh.id",
       "vh.voucher_no",
       "vh.branch_id",
+      "vh.created_at",
       knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as voucher_date"),
     )
     .where({ voucher_type_code: "STOCK_COUNT_ADJ", status: "APPROVED" })
@@ -185,6 +199,18 @@ const run = async () => {
   let checked = 0;
 
   for (const voucher of vouchers) {
+    const lastEditRow = await knex("erp.activity_log")
+      .select("created_at")
+      .where({
+        entity_type: "VOUCHER",
+        entity_id: String(voucher.id),
+        voucher_type_code: "STOCK_COUNT_ADJ",
+        action: "UPDATE",
+      })
+      .orderBy("created_at", "desc")
+      .first();
+    const asOfTimestamp = lastEditRow?.created_at || voucher.created_at;
+
     const lines = await knex("erp.voucher_line as vl")
       .leftJoin("erp.stock_count_line as scl", "scl.voucher_line_id", "vl.id")
       .select(
@@ -219,7 +245,7 @@ const run = async () => {
           itemId,
           colorId,
           sizeId,
-          asOfDate: voucher.voucher_date,
+          asOfTimestamp,
           excludeVoucherId: voucher.id,
           hasVariantDimensions: hasRmVariantDims,
         });
@@ -252,7 +278,7 @@ const run = async () => {
           branchId: Number(voucher.branch_id),
           skuId,
           isPacked,
-          asOfDate: voucher.voucher_date,
+          asOfTimestamp,
           excludeVoucherId: voucher.id,
         });
         const delta = roundQty3(stored - trueQtyPairs);
