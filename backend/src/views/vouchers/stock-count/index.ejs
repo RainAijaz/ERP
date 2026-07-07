@@ -245,6 +245,7 @@
 			units: <%- JSON.stringify(t("units")) %>,
 			select_product_group_first: <%- JSON.stringify(t("select_product_group_first") || "Please select a product group before saving.") %>,
 			fill_all_quantities: <%- JSON.stringify(t("fill_all_quantities") || "Please enter a counted quantity for every article. Enter 0 if none were found.") %>,
+			change_article: <%- JSON.stringify(t("change_article") || "Change article") %>,
 		};
 
 		const showUiMessage = (message) => {
@@ -946,9 +947,11 @@
 							<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty_in" data-row-field="qty_in" data-line-index="${index}" value="${normalized.qty_in}" ${canSave ? "" : "readonly"}></td>
 							<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty_out" data-row-field="qty_out" data-line-index="${index}" value="${normalized.qty_out}" ${canSave ? "" : "readonly"}></td>
 						`;
-					// Any row with a determined item uses static display — same reason as FG.
+					// Any row with a determined item uses static display by default — same
+					// reason as FG. A per-row "change" button lazily reopens the dropdowns.
 					const rmItemIsSet = normalized.item_id !== null && normalized.item_id !== undefined;
-					const rmItemCellMarkup = rmItemIsSet
+					const rmItemEditing = Boolean(normalized._editSku);
+					const rmItemCellMarkup = (rmItemIsSet && !rmItemEditing)
 						? (() => {
 							const item = rmMap.get(Number(normalized.item_id || 0));
 							const itemLabel = String(item?.name || `Item ${normalized.item_id || ""}`).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -956,8 +959,11 @@
 							const colorLabel = String(colorEntry?.name || (normalized.color_id ? String(normalized.color_id) : "")).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 							const sizeEntry = sizeState.entries.find((e) => Number(e.id) === Number(normalized.size_id || 0));
 							const sizeLabel = String(sizeEntry?.name || (normalized.size_id ? String(normalized.size_id) : "")).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+							const editButton = canSave
+								? `<button type="button" class="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-500 hover:text-slate-700" data-edit-sku="${index}" title="${_t.change_article}" aria-label="${_t.change_article}"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20h4L18.5 9.5a2.121 2.121 0 0 0-3-3L5 17v3z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg></button>`
+								: "";
 							return `
-								<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-700 cursor-default" value="${itemLabel}"></td>
+								<td class="border-t border-slate-200 px-2 py-1"><div class="flex items-center gap-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-700 cursor-default" value="${itemLabel}">${editButton}</div></td>
 								<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-500 cursor-default" value="${colorLabel}"></td>
 								<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-500 cursor-default" value="${sizeLabel}"></td>`;
 						})()
@@ -992,18 +998,23 @@
 						<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty_in" data-row-field="qty_in" data-line-index="${index}" value="${normalized.qty_in}" ${canSave ? "" : "readonly"}></td>
 						<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty_out" data-row-field="qty_out" data-line-index="${index}" value="${normalized.qty_out}" ${canSave ? "" : "readonly"}></td>
 					`;
-				// Any row with a determined SKU uses static display — avoids generating hundreds
-				// of <option> elements per row (and running initSearchableSelects on each),
-				// which was the root cause of multi-minute freezes on vouchers with many lines.
-				// Only blank rows (sku_id == null) get the full searchable dropdown.
+				// Any row with a determined SKU uses static display by default — avoids
+				// generating hundreds of <option> elements per row (and running
+				// initSearchableSelects on each), which was the root cause of multi-minute
+				// freezes on vouchers with many lines. A per-row "change" button lazily
+				// swaps just that one cell into an editable dropdown on demand.
 				const skuIsSet = normalized.sku_id !== null && normalized.sku_id !== undefined;
-				const skuCellMarkup = skuIsSet
+				const skuEditing = Boolean(normalized._editSku);
+				const skuCellMarkup = (skuIsSet && !skuEditing)
 					? (() => {
 						const sku = skuMap.get(Number(normalized.sku_id || 0));
 						const label = String(sku?.sku_name || `SKU ${normalized.sku_id || ""}`).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-						return `<td class="border-t border-slate-200 px-2 py-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-700 cursor-default" value="${label}"></td>`;
+						const editButton = canSave
+							? `<button type="button" class="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-500 hover:text-slate-700" data-edit-sku="${index}" title="${_t.change_article}" aria-label="${_t.change_article}"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20h4L18.5 9.5a2.121 2.121 0 0 0-3-3L5 17v3z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg></button>`
+							: "";
+						return `<td class="border-t border-slate-200 px-2 py-1"><div class="flex items-center gap-1"><input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-700 cursor-default" value="${label}">${editButton}</div></td>`;
 					})()
-					: `<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="sku_id" data-row-field="sku_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${(canSave && !groupRequiredButMissing) ? "" : "disabled"}>${optionMarkup(skuRows.filter((entry) => !usedSkuIds.has(Number(entry.id))).map((entry) => ({ id: entry.id, label: entry.sku_name })), normalized.sku_id, groupRequiredButMissing ? "Select product group first" : "Select SKU")}</select></td>`;
+					: `<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="sku_id" data-row-field="sku_id" data-line-index="${index}" data-searchable-select="true" data-searchable-variant="unified" ${(canSave && !groupRequiredButMissing) ? "" : "disabled"}>${optionMarkup(skuRows.filter((entry) => !usedSkuIds.has(Number(entry.id)) || Number(entry.id) === Number(normalized.sku_id || 0)).map((entry) => ({ id: entry.id, label: entry.sku_name })), normalized.sku_id, groupRequiredButMissing ? "Select product group first" : "Select SKU")}</select></td>`;
 				// Under Physical Count Correction, FG unit isn't a free per-row choice —
 				// it's forced to match the header's Packed/Loose filter (Packed → Dozen,
 				// Loose/All Status → Pair), so it's rendered as static text. Other FG
@@ -1251,6 +1262,7 @@
 				row.uom_id = null;
 				row._snap_base = null;
 				row._snap_pairs = null;
+				row._editSku = false;
 			}
 			if (field === "item_id") {
 				row.uom_id = null;
@@ -1258,6 +1270,7 @@
 				row.size_id = null;
 				row._snap_base = null;
 				row._snap_pairs = null;
+				row._editSku = false;
 			}
 			if (field === "color_id" || field === "size_id") {
 				row._snap_base = null;
@@ -1303,13 +1316,28 @@
 		});
 
 		linesBody.addEventListener("click", (event) => {
-			const button = event.target.closest("[data-remove-row]");
-			if (!button || !canSave) return;
-			const index = Number(button.getAttribute("data-remove-row") || -1);
-			if (!Number.isInteger(index) || index < 0) return;
-			rowsState.splice(index, 1);
-			if (!rowsState.length) rowsState = [rowTemplate(currentStockType())];
-			renderRows();
+			const removeButton = event.target.closest("[data-remove-row]");
+			if (removeButton) {
+				if (!canSave) return;
+				const index = Number(removeButton.getAttribute("data-remove-row") || -1);
+				if (!Number.isInteger(index) || index < 0) return;
+				rowsState.splice(index, 1);
+				if (!rowsState.length) rowsState = [rowTemplate(currentStockType())];
+				renderRows();
+				return;
+			}
+
+			const editButton = event.target.closest("[data-edit-sku]");
+			if (editButton) {
+				if (!canSave) return;
+				const index = Number(editButton.getAttribute("data-edit-sku") || -1);
+				if (!Number.isInteger(index) || index < 0 || !rowsState[index]) return;
+				rowsState[index]._editSku = true;
+				renderRows();
+				const stockType = currentStockType();
+				const fieldKey = stockType === "RM" ? "item_id" : "sku_id";
+				restoreActiveRowField({ lineIndex: String(index), fieldKey });
+			}
 		});
 
 		form.addEventListener("click", (event) => {

@@ -2435,6 +2435,7 @@ const loadSkuSystemSnapshotBySkuIdTx = async ({
   trx,
   branchId,
   skuIds = [],
+  asOfDate = null,
 }) => {
   const normalizedBranchId = toPositiveInt(branchId);
   if (!normalizedBranchId) return new Map();
@@ -2464,6 +2465,15 @@ const loadSkuSystemSnapshotBySkuIdTx = async ({
 
   if (normalizedSkuIds.length) {
     query = query.whereIn("sl.sku_id", normalizedSkuIds);
+  }
+
+  // Point-in-time balance: only count stock movements up to (and including)
+  // the voucher's own date, so re-dating a count changes what "system qty" means.
+  const dateFilter = toDateOnly(asOfDate);
+  if (dateFilter) {
+    query = query
+      .join("erp.voucher_header as vh", "vh.id", "sl.voucher_header_id")
+      .where("vh.voucher_date", "<=", dateFilter);
   }
 
   const rows = await query;
@@ -2974,7 +2984,12 @@ const validateStockCountAdjustmentPayloadTx = async ({ trx, req, payload }) => {
 
   const [skuMap, skuSnapshotBySkuId] = await Promise.all([
     fetchSkuMapTx({ trx, skuIds, expectedStockType: stockType }),
-    loadSkuSystemSnapshotBySkuIdTx({ trx, branchId: req.branchId, skuIds }),
+    loadSkuSystemSnapshotBySkuIdTx({
+      trx,
+      branchId: req.branchId,
+      skuIds,
+      asOfDate: voucherDate,
+    }),
   ]);
 
   const missingSku = skuIds.find((id) => !skuMap.has(Number(id)));
