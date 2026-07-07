@@ -2436,6 +2436,7 @@ const loadSkuSystemSnapshotBySkuIdTx = async ({
   branchId,
   skuIds = [],
   asOfDate = null,
+  excludeVoucherId = null,
 }) => {
   const normalizedBranchId = toPositiveInt(branchId);
   if (!normalizedBranchId) return new Map();
@@ -2465,6 +2466,17 @@ const loadSkuSystemSnapshotBySkuIdTx = async ({
 
   if (normalizedSkuIds.length) {
     query = query.whereIn("sl.sku_id", normalizedSkuIds);
+  }
+
+  // Editing a voucher must not let its own (not-yet-rolled-back) prior stock
+  // movement pollute the "system qty" baseline it's being diffed against.
+  const normalizedExcludeVoucherId = toPositiveInt(excludeVoucherId);
+  if (normalizedExcludeVoucherId) {
+    query = query.andWhere(
+      "sl.voucher_header_id",
+      "!=",
+      normalizedExcludeVoucherId,
+    );
   }
 
   // Point-in-time balance: only count stock movements up to (and including)
@@ -2605,7 +2617,12 @@ const resolveFgSnapshotByStatus = ({ snapshot, requestedStatus }) => {
   };
 };
 
-const loadRmSystemSnapshotByKeyTx = async ({ trx, branchId, itemIds = [] }) => {
+const loadRmSystemSnapshotByKeyTx = async ({
+  trx,
+  branchId,
+  itemIds = [],
+  excludeVoucherId = null,
+}) => {
   const normalizedBranchId = toPositiveInt(branchId);
   if (!normalizedBranchId) return new Map();
 
@@ -2657,6 +2674,58 @@ const loadRmSystemSnapshotByKeyTx = async ({ trx, branchId, itemIds = [] }) => {
     });
   });
 
+  // Editing a voucher must not let its own (not-yet-rolled-back) prior stock
+  // movement pollute the "system qty" baseline it's being diffed against.
+  // stock_balance_rm is a running total (unlike the FG/SFG ledger sum above),
+  // so subtract this voucher's own currently-posted contribution explicitly.
+  const normalizedExcludeVoucherId = toPositiveInt(excludeVoucherId);
+  if (normalizedExcludeVoucherId) {
+    let selfQuery = trx("erp.stock_ledger as sl")
+      .select("sl.item_id")
+      .sum({
+        signed_qty: trx.raw(
+          "CASE WHEN sl.direction = 1 THEN COALESCE(sl.qty, 0) ELSE -COALESCE(sl.qty, 0) END",
+        ),
+      })
+      .sum({
+        signed_value: trx.raw(
+          "CASE WHEN sl.direction = 1 THEN COALESCE(sl.value, 0) ELSE -COALESCE(sl.value, 0) END",
+        ),
+      })
+      .where({
+        "sl.branch_id": normalizedBranchId,
+        "sl.stock_state": "ON_HAND",
+        "sl.category": "RM",
+        "sl.voucher_header_id": normalizedExcludeVoucherId,
+      });
+    selfQuery = hasVariantDimensions
+      ? selfQuery
+          .select("sl.color_id", "sl.size_id")
+          .groupBy("sl.item_id", "sl.color_id", "sl.size_id")
+      : selfQuery.groupBy("sl.item_id");
+
+    const selfRows = await selfQuery;
+    selfRows.forEach((row) => {
+      const key = buildRmSnapshotKey({
+        itemId: row?.item_id,
+        colorId: hasVariantDimensions ? row?.color_id : null,
+        sizeId: hasVariantDimensions ? row?.size_id : null,
+      });
+      const current = byKey.get(key);
+      if (!current) return;
+      const nextQty = roundQty3(current.qty - Number(row?.signed_qty || 0));
+      const nextValue = roundCost2(
+        current.value - Number(row?.signed_value || 0),
+      );
+      byKey.set(key, {
+        ...current,
+        qty: nextQty,
+        value: nextValue,
+        wac: nextQty > 0 ? roundUnitCost6(nextValue / nextQty) : 0,
+      });
+    });
+  }
+
   return byKey;
 };
 
@@ -2698,7 +2767,12 @@ const resolveRmDisplayRate = ({
 };
 
 // Validate stock count adjustment payload and enrich each line with immutable snapshots.
-const validateStockCountAdjustmentPayloadTx = async ({ trx, req, payload }) => {
+const validateStockCountAdjustmentPayloadTx = async ({
+  trx,
+  req,
+  payload,
+  existingVoucherId = null,
+}) => {
   const voucherDate = toDateOnly(payload?.voucher_date);
   if (!voucherDate) throw new HttpError(400, "Voucher date is required");
 
@@ -2731,7 +2805,12 @@ const validateStockCountAdjustmentPayloadTx = async ({ trx, req, payload }) => {
     const [itemMap, rateRows, rmSnapshotByKey] = await Promise.all([
       fetchRmItemMapTx({ trx, itemIds }),
       fetchRmRateRowsByItemTx({ trx, itemIds }),
-      loadRmSystemSnapshotByKeyTx({ trx, branchId: req.branchId, itemIds }),
+      loadRmSystemSnapshotByKeyTx({
+        trx,
+        branchId: req.branchId,
+        itemIds,
+        excludeVoucherId: existingVoucherId,
+      }),
     ]);
 
     const missingItem = itemIds.find((id) => !itemMap.has(Number(id)));
@@ -2989,6 +3068,7 @@ const validateStockCountAdjustmentPayloadTx = async ({ trx, req, payload }) => {
       branchId: req.branchId,
       skuIds,
       asOfDate: voucherDate,
+      excludeVoucherId: existingVoucherId,
     }),
   ]);
 
@@ -3802,6 +3882,7 @@ const updateStockCountAdjustmentVoucher = async ({
       trx,
       req,
       payload: mergedPayload,
+      existingVoucherId: existing.id,
     });
 
     const policyRequiresApproval = await requiresApprovalForAction(
