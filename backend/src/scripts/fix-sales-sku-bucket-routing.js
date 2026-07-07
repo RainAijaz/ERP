@@ -1,37 +1,56 @@
 // One-off reconciliation for stock_balance_sku rows corrupted by the packed/loose
-// bucket-routing bug in sales-voucher-service.js (fixed alongside this script).
+// bucket-routing bug in sales-voucher-service.js. Packed and loose are distinct
+// physical stock (sealed carton/dozen vs individual pairs), not interchangeable
+// buckets of the same count: a sale entered as Dozen/packed must only ever
+// affect the packed bucket (going negative if it runs short), never loose, and
+// vice versa. Sales OUT draws/shortfalls used to ignore which unit the line was
+// actually entered against, picking whichever stock_balance_sku bucket sorted
+// first with stock instead -- and worse, even after that ordering was fixed,
+// briefly still spilled a shortfall into the OTHER bucket rather than going
+// negative on the declared one. Sales IN (return) credits were also hardcoded
+// onto the LOOSE bucket regardless of declared unit. All of that is now fixed
+// in sales-voucher-service.js: applySalesSkuStockOutTx/InTx only ever touch the
+// single bucket the line declared, full stop.
 //
-// Bug recap: applySalesSkuStockOutTx/InTx did not know which bucket (packed/DZN
-// vs loose/pairs) a sale line was actually entered against. It always drew from
-// whichever stock_balance_sku bucket sorted first with available stock, and any
-// oversell shortfall was hardcoded onto the LOOSE bucket — even for lines the
-// user entered in DZN mode. This can silently drive the loose bucket negative
-// while the correct (packed) bucket sits healthy and untouched, and can also
-// eventually trip the erp.stock_balance_sku wac>=0 CHECK constraint (a positive
-// qty_pairs sitting on top of a deeply negative value inherited from the
-// misroute) when that bucket's quantity later crosses back above zero — e.g.
-// on voucher delete.
+// This is a full chronological replay, not a row-by-row relabel, so that the
+// same declared-bucket-only rule can be applied consistently across the whole
+// history regardless of which buggy behavior produced any given row.
 //
-// Ground truth for "which bucket should this have used" is the voucher line's
-// own erp.voucher_line.meta->>'is_packed' flag, recorded at the time the sale
-// was entered (independent of which bucket the buggy code actually posted to).
-// This script:
-//   1. Finds erp.stock_ledger rows from SALES_VOUCHER postings (FG/SFG, with a
-//      still-existing voucher_line) whose stored is_packed disagrees with the
-//      line's recorded intent.
-//   2. For every (branch, stock_state, category, sku_id) bucket touched by any
-//      such row, recomputes BOTH the loose and packed running balances from
-//      scratch by replaying ALL erp.stock_ledger rows for that sku — using the
-//      corrected is_packed for sales rows, and the stored is_packed as-is for
-//      any other voucher type (production/purchase/transfer are not affected
-//      by this bug and are out of scope here).
-//   3. Diffs the recomputed balances against what's currently stored and queues
-//      an update, and queues an is_packed correction on the misrouted ledger
-//      rows themselves (so a future delete/edit of that voucher reverses into
-//      the correct bucket instead of re-creating the same corruption).
+// Ground truth for "which bucket a sale should draw from" is the voucher
+// line's own erp.voucher_line.meta->>'is_packed' flag, recorded at entry time
+// independent of which bucket the code actually posted to.
+//
+// For every (branch, category, sku_id) bucket that has ever had a SALES_VOUCHER
+// FG/SFG posting, this script replays the ENTIRE stock_ledger history for that
+// SKU in insertion order (id asc, which reflects true application order even
+// for backdated vouchers):
+//   - Non-sales rows (production/purchase/transfer/stock-count/etc.) are
+//     applied exactly as historically recorded -- out of scope, not touched.
+//   - SALES_VOUCHER IN (return) rows credit the declared bucket only.
+//   - SALES_VOUCHER OUT rows debit the declared bucket only, going negative if
+//     it runs short -- never touching the other bucket, matching the live
+//     code's (now-corrected) behavior.
+// A sale that a buggy prior version of the code split across both buckets in
+// one DB transaction is grouped by voucher_line_id and replayed as a single
+// event moving its full total qty into the declared bucket, since under the
+// current rule that split should never have happened.
+// The simulated final balances are diffed against currently stored
+// stock_balance_sku rows to produce the correction set.
+//
+// stock_ledger.is_packed is only re-tagged on individual rows for the simple,
+// unambiguous case: exactly one physical row for a sales-OUT event -- just
+// flip that row's tag if it disagrees with the declared bucket. Events where
+// a buggy prior posting left TWO rows for one event (a real split that should
+// never have happened) are left as-is at the row level and listed separately
+// for manual review, since consolidating/deleting ledger rows is a materially
+// bigger, riskier change than this pass is meant to make. The stock_balance_sku
+// correction (the operationally important part -- available-stock checks,
+// WAC/COGS, stock-count comparisons) is applied regardless, since it's derived
+// from the total qty/value moved, not from how the stored rows happen to be
+// split.
 //
 // Usage (from backend/):
-//   node src/scripts/fix-sales-sku-bucket-routing.js            # dry run, prints + CSV only
+//   node src/scripts/fix-sales-sku-bucket-routing.js            # dry run, prints + CSVs only
 //   node src/scripts/fix-sales-sku-bucket-routing.js --apply    # writes changes in one transaction
 const fs = require("fs");
 const path = require("path");
@@ -41,6 +60,7 @@ const APPLY = process.argv.includes("--apply");
 
 const roundCost2 = (value) => Number(Number(value || 0).toFixed(2));
 const roundUnitCost6 = (value) => Number(Number(value || 0).toFixed(6));
+const roundQty = (value) => Math.round(Number(value || 0));
 const computeNonNegativeWac = (qty, value) => {
   const numericQty = Number(qty || 0);
   const numericValue = Number(value || 0);
@@ -49,50 +69,36 @@ const computeNonNegativeWac = (qty, value) => {
   const ratio = Math.abs(numericValue) / Math.abs(numericQty);
   return Number.isFinite(ratio) ? roundUnitCost6(ratio) : 0;
 };
-const bucketKeyOf = ({ branch_id, stock_state, category, sku_id }) =>
-  `${branch_id}:${stock_state}:${category}:${sku_id}`;
+const resolveUnitCost = ({ qty = 0, value = 0, wac = 0 }) => {
+  const numericQty = Number(qty || 0);
+  const numericValue = Number(value || 0);
+  const numericWac = Number(wac || 0);
+  if (numericQty > 0 && numericValue > 0) return roundUnitCost6(numericValue / numericQty);
+  if (numericWac > 0) return roundUnitCost6(numericWac);
+  return 0;
+};
 
-// Ledger rows from SALES_VOUCHER postings whose stored is_packed disagrees
-// with the voucher line's own recorded entry mode.
-const loadMisroutedLedgerRows = () =>
+// Every (branch, category, sku_id) bucket that has ever had a SALES_VOUCHER
+// FG/SFG posting -- the full universe that needs re-simulating, not just rows
+// a (necessarily imperfect) heuristic flags as obviously wrong.
+const loadCandidateBuckets = () =>
   knex("erp.stock_ledger as sl")
     .join("erp.voucher_header as vh", "vh.id", "sl.voucher_header_id")
-    .join("erp.voucher_line as vl", "vl.id", "sl.voucher_line_id")
     .where("vh.voucher_type_code", "SALES_VOUCHER")
     .whereIn("sl.category", ["FG", "SFG"])
-    // sl.is_packed IS NULL means this row predates the packed/loose split
-    // entirely (column didn't exist yet) — that's missing metadata, not a
-    // misroute, and must NOT be "corrected" retroactively. Only rows where
-    // the code actually recorded an explicit bucket that disagrees with the
-    // line's own recorded intent are in scope.
-    .whereNotNull("sl.is_packed")
-    .whereRaw(
-      `sl.is_packed IS DISTINCT FROM COALESCE((vl.meta->>'is_packed')::boolean, false)`,
-    )
-    .select(
-      "sl.id",
-      "sl.branch_id",
-      "sl.stock_state",
-      "sl.category",
-      "sl.sku_id",
-      "sl.is_packed as stored_is_packed",
-      knex.raw(`COALESCE((vl.meta->>'is_packed')::boolean, false) as correct_is_packed`),
-      "vh.voucher_no",
-      "vh.voucher_type_code",
-      knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as voucher_date"),
-    );
+    .distinct("sl.branch_id", "sl.category", "sl.sku_id")
+    .select("sl.branch_id", "sl.category", "sl.sku_id");
 
-// Every ledger row for a given (branch, stock_state, category, sku) bucket,
-// annotated with the corrected is_packed for SALES_VOUCHER rows (falls back to
-// the stored value for every other voucher type, which this script does not
-// audit).
-const loadAllLedgerRowsForBucket = ({ branchId, stockState, category, skuId }) =>
+// Full ledger history for one SKU/branch/category bucket, oldest first (id
+// order = true application order, robust to backdated voucher_date), each
+// sales row carrying its own voucher_line's declared packed/loose intent.
+const loadBucketLedgerHistory = ({ branchId, category, skuId }) =>
   knex("erp.stock_ledger as sl")
     .join("erp.voucher_header as vh", "vh.id", "sl.voucher_header_id")
     .leftJoin("erp.voucher_line as vl", "vl.id", "sl.voucher_line_id")
     .where({
       "sl.branch_id": branchId,
-      "sl.stock_state": stockState,
+      "sl.stock_state": "ON_HAND",
       "sl.category": category,
       "sl.sku_id": skuId,
     })
@@ -101,85 +107,184 @@ const loadAllLedgerRowsForBucket = ({ branchId, stockState, category, skuId }) =
       "sl.direction",
       "sl.qty_pairs",
       "sl.value",
+      "sl.unit_cost",
       "sl.is_packed as stored_is_packed",
+      "sl.voucher_line_id",
       "vh.voucher_type_code",
-      knex.raw(`
-        CASE
-          -- Only reclassify rows the buggy code actually tagged with an
-          -- explicit (wrong) bucket. NULL means this row predates the
-          -- packed/loose split entirely and must be left as loose (its
-          -- current effective treatment), not reinterpreted retroactively.
-          WHEN vh.voucher_type_code = 'SALES_VOUCHER' AND vl.id IS NOT NULL AND sl.is_packed IS NOT NULL
-            THEN COALESCE((vl.meta->>'is_packed')::boolean, false)
-          ELSE COALESCE(sl.is_packed, false)
-        END as effective_is_packed
-      `),
-    );
+      "vh.voucher_no",
+      knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as voucher_date"),
+      knex.raw(
+        `CASE WHEN vl.id IS NOT NULL THEN (vl.meta->>'is_packed')::boolean ELSE NULL END as declared_is_packed`,
+      ),
+    )
+    .orderBy("sl.id", "asc");
+
+const groupIntoEvents = (history) => {
+  const events = [];
+  let i = 0;
+  while (i < history.length) {
+    const row = history[i];
+    const isSalesOut =
+      row.voucher_type_code === "SALES_VOUCHER" &&
+      Number(row.direction) === -1 &&
+      row.voucher_line_id != null &&
+      row.declared_is_packed !== null;
+    if (isSalesOut) {
+      const group = [row];
+      let j = i + 1;
+      while (
+        j < history.length &&
+        history[j].voucher_type_code === "SALES_VOUCHER" &&
+        Number(history[j].direction) === -1 &&
+        history[j].voucher_line_id === row.voucher_line_id
+      ) {
+        group.push(history[j]);
+        j += 1;
+      }
+      events.push({ kind: "SALES_OUT", rows: group, declaredIsPacked: Boolean(row.declared_is_packed) });
+      i = j;
+    } else {
+      events.push({ kind: "OTHER", rows: [row] });
+      i += 1;
+    }
+  }
+  return events;
+};
+
+// Replays one bucket's full history. Returns final simulated balances, the
+// list of ledger rows that can be safely retagged (unambiguous single-bucket
+// events), and a list of events that need a human look (oversold both
+// buckets combined, or a simulated split that doesn't match the stored row
+// shape).
+const simulateBucket = (history) => {
+  const events = groupIntoEvents(history);
+  const sim = { true: { qty: 0, value: 0 }, false: { qty: 0, value: 0 } };
+  let lastUnitCost = 0;
+  const safeRetags = [];
+  const needsReview = [];
+
+  for (const event of events) {
+    if (event.kind === "OTHER") {
+      const row = event.rows[0];
+      const direction = Number(row.direction) === -1 ? -1 : 1;
+      const isSalesIn =
+        row.voucher_type_code === "SALES_VOUCHER" &&
+        direction === 1 &&
+        row.declared_is_packed !== null;
+      // Sales returns always credit the declared bucket (never split by the
+      // live code); everything else keeps its own recorded/inferred bucket.
+      const flag = isSalesIn ? row.declared_is_packed === true : row.stored_is_packed === true;
+      const bucket = sim[String(flag)];
+      bucket.qty = roundQty(bucket.qty + direction * Number(row.qty_pairs || 0));
+      bucket.value = roundCost2(bucket.value + Number(row.value || 0));
+      if (Number(row.unit_cost || 0) > 0) lastUnitCost = Number(row.unit_cost);
+
+      if (isSalesIn) {
+        const currentFlagMatches = row.stored_is_packed === flag;
+        if (!currentFlagMatches) {
+          safeRetags.push({ id: row.id, from_is_packed: row.stored_is_packed, to_is_packed: flag });
+        }
+      }
+      continue;
+    }
+
+    // Declared-bucket-only: debit the SAME bucket the line was entered
+    // against, in full, going negative if it runs short. Never touch the
+    // other bucket -- packed and loose aren't interchangeable stock.
+    const declared = event.declaredIsPacked;
+    const totalQty = event.rows.reduce((sum, r) => sum + Number(r.qty_pairs || 0), 0);
+    const bucket = sim[String(declared)];
+    const availableQty = Number(bucket.qty || 0);
+    let consumedValue = 0;
+    if (availableQty > 0) {
+      const consume = Math.min(availableQty, totalQty);
+      const unitCost = resolveUnitCost({
+        qty: bucket.qty,
+        value: bucket.value,
+        wac: computeNonNegativeWac(bucket.qty, bucket.value),
+      });
+      consumedValue = roundCost2(consume * unitCost);
+      if (unitCost > 0) lastUnitCost = unitCost;
+    }
+    const remaining = totalQty - Math.max(availableQty, 0);
+    let shortageValue = 0;
+    if (remaining > 0) {
+      const fallbackUnitCost = lastUnitCost;
+      shortageValue = roundCost2(remaining * fallbackUnitCost);
+    }
+    const nextQty = roundQty(bucket.qty - totalQty);
+    const nextValueRaw = bucket.value - consumedValue - shortageValue;
+    bucket.qty = nextQty;
+    bucket.value = nextQty > 0 ? Math.max(roundCost2(nextValueRaw), 0) : roundCost2(nextValueRaw);
+
+    // Only auto-retag the simple case: one physical row for this event --
+    // just flip that row's tag if it disagrees with the declared bucket. A
+    // buggy prior posting that left TWO rows for one event (a cross-bucket
+    // split that should never have happened under the declared-bucket-only
+    // rule) is left alone at the row level and reported for manual review
+    // instead of consolidating/deleting ledger rows.
+    if (event.rows.length === 1) {
+      const row = event.rows[0];
+      if (row.stored_is_packed !== declared) {
+        safeRetags.push({ id: row.id, from_is_packed: row.stored_is_packed, to_is_packed: declared });
+      }
+    } else {
+      needsReview.push({
+        reason: "legacy-cross-bucket-split",
+        voucher_no: event.rows[0].voucher_no,
+        voucher_date: event.rows[0].voucher_date,
+        note: `this sale's stock effect is split across ${event.rows.length} ledger rows from a prior buggy posting; stock_balance_sku has been corrected to the full amount in the declared bucket, but the individual ledger rows were left untouched -- review manually`,
+      });
+    }
+  }
+
+  return { sim, safeRetags, needsReview };
+};
 
 const run = async () => {
   console.log(`[fix-sales-sku-bucket-routing] mode: ${APPLY ? "APPLY" : "DRY RUN"}`);
 
-  const misrouted = await loadMisroutedLedgerRows();
-  if (!misrouted.length) {
-    console.log("[fix-sales-sku-bucket-routing] no misrouted sales ledger rows found — nothing to do.");
-    return;
-  }
-  console.log(`[fix-sales-sku-bucket-routing] misrouted sales ledger rows: ${misrouted.length}`);
-
-  const bucketKeys = new Map();
-  for (const row of misrouted) {
-    const key = bucketKeyOf(row);
-    if (!bucketKeys.has(key)) {
-      bucketKeys.set(key, {
-        branchId: Number(row.branch_id),
-        stockState: row.stock_state,
-        category: row.category,
-        skuId: Number(row.sku_id),
-      });
-    }
-  }
-  console.log(`[fix-sales-sku-bucket-routing] affected sku buckets: ${bucketKeys.size}`);
-
-  const ledgerUpdates = misrouted.map((row) => ({
-    id: row.id,
-    from_is_packed: row.stored_is_packed,
-    to_is_packed: row.correct_is_packed,
-    voucher_no: row.voucher_no,
-    voucher_date: row.voucher_date,
-    sku_id: row.sku_id,
-    branch_id: row.branch_id,
-  }));
+  const buckets = await loadCandidateBuckets();
+  console.log(`[fix-sales-sku-bucket-routing] candidate sku buckets: ${buckets.length}`);
 
   const balanceUpdates = [];
   const auditRows = [];
+  const ledgerRetags = [];
+  const reviewRows = [];
 
-  for (const bucket of bucketKeys.values()) {
-    const ledgerRows = await loadAllLedgerRowsForBucket(bucket);
-    const totals = { true: { qty: 0, value: 0 }, false: { qty: 0, value: 0 } };
-    for (const row of ledgerRows) {
-      const bucketFlag = row.effective_is_packed === true ? "true" : "false";
-      const direction = Number(row.direction) === -1 ? -1 : 1;
-      totals[bucketFlag].qty += direction * Number(row.qty_pairs || 0);
-      totals[bucketFlag].value = roundCost2(totals[bucketFlag].value + Number(row.value || 0));
+  for (const bucket of buckets) {
+    const branchId = Number(bucket.branch_id);
+    const category = bucket.category;
+    const skuId = Number(bucket.sku_id);
+    const history = await loadBucketLedgerHistory({ branchId, category, skuId });
+    if (!history.length) continue;
+
+    const { sim, safeRetags, needsReview } = simulateBucket(history);
+
+    for (const retag of safeRetags) {
+      ledgerRetags.push({ ...retag, branch_id: branchId, sku_id: skuId });
+    }
+    for (const review of needsReview) {
+      reviewRows.push({ ...review, branch_id: branchId, sku_id: skuId });
     }
 
-    const skuRow = await knex("erp.skus").select("sku_code").where({ id: bucket.skuId }).first();
-    const subjectLabel = skuRow?.sku_code ? skuRow.sku_code : `SKU #${bucket.skuId}`;
+    const skuRow = await knex("erp.skus").select("sku_code").where({ id: skuId }).first();
+    const subjectLabel = skuRow?.sku_code ? skuRow.sku_code : `SKU #${skuId}`;
 
     for (const isPackedFlag of ["false", "true"]) {
       const isPacked = isPackedFlag === "true";
-      const correctQty = Math.round(totals[isPackedFlag].qty);
-      const correctValue = roundCost2(totals[isPackedFlag].value);
+      const correctQty = roundQty(sim[isPackedFlag].qty);
+      const correctValue = roundCost2(sim[isPackedFlag].value);
       const correctWac = computeNonNegativeWac(correctQty, correctValue);
 
       const current = await knex("erp.stock_balance_sku")
         .select("qty_pairs", "value", "wac")
         .where({
-          branch_id: bucket.branchId,
-          stock_state: bucket.stockState,
-          category: bucket.category,
+          branch_id: branchId,
+          stock_state: "ON_HAND",
+          category,
           is_packed: isPacked,
-          sku_id: bucket.skuId,
+          sku_id: skuId,
         })
         .first();
 
@@ -187,26 +292,25 @@ const run = async () => {
       const currentValue = Number(current?.value || 0);
       const currentWac = Number(current?.wac || 0);
 
-      // Skip true no-ops (nothing stored and nothing computed).
       if (!current && correctQty === 0 && correctValue === 0) continue;
       const qtyDiff = Math.abs(currentQty - correctQty);
       const valueDiff = Math.abs(currentValue - correctValue);
       if (qtyDiff < 1 && valueDiff < 0.01) continue;
 
       balanceUpdates.push({
-        branch_id: bucket.branchId,
-        stock_state: bucket.stockState,
-        category: bucket.category,
+        branch_id: branchId,
+        stock_state: "ON_HAND",
+        category,
         is_packed: isPacked,
-        sku_id: bucket.skuId,
+        sku_id: skuId,
         exists: Boolean(current),
         qty_pairs: correctQty,
         value: correctValue,
         wac: correctWac,
       });
       auditRows.push({
-        branch_id: bucket.branchId,
-        sku_id: bucket.skuId,
+        branch_id: branchId,
+        sku_id: skuId,
         sku_code: subjectLabel,
         is_packed: isPacked,
         old_qty_pairs: currentQty,
@@ -219,10 +323,14 @@ const run = async () => {
     }
   }
 
-  if (!balanceUpdates.length && !ledgerUpdates.length) {
+  if (!balanceUpdates.length && !ledgerRetags.length && !reviewRows.length) {
     console.log("[fix-sales-sku-bucket-routing] nothing to correct.");
+    await knex.destroy();
     return;
   }
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const suffix = APPLY ? "" : "-dryrun";
 
   const csvHeader =
     "branch_id,sku_id,sku_code,is_packed,old_qty_pairs,new_qty_pairs,old_value,new_value,old_wac,new_wac";
@@ -242,28 +350,41 @@ const run = async () => {
       ].join(","),
     )
     .join("\n");
-  const csvPath = path.resolve(
-    process.cwd(),
-    `sales-sku-bucket-fix-${new Date().toISOString().replace(/[:.]/g, "-")}${APPLY ? "" : "-dryrun"}.csv`,
-  );
+  const csvPath = path.resolve(process.cwd(), `sales-sku-bucket-fix-${stamp}${suffix}.csv`);
   fs.writeFileSync(csvPath, `${csvHeader}\n${csvBody}\n`, "utf8");
 
+  let reviewCsvPath = null;
+  if (reviewRows.length) {
+    const reviewHeader = "branch_id,sku_id,voucher_no,voucher_date,reason,note";
+    const reviewBody = reviewRows
+      .map((r) =>
+        [r.branch_id, r.sku_id, r.voucher_no, r.voucher_date, r.reason, `"${r.note.replace(/"/g, '""')}"`].join(","),
+      )
+      .join("\n");
+    reviewCsvPath = path.resolve(process.cwd(), `sales-sku-bucket-fix-review-${stamp}${suffix}.csv`);
+    fs.writeFileSync(reviewCsvPath, `${reviewHeader}\n${reviewBody}\n`, "utf8");
+  }
+
   console.log(`[fix-sales-sku-bucket-routing] balance rows to correct: ${balanceUpdates.length}`);
-  console.log(`[fix-sales-sku-bucket-routing] ledger rows to re-tag: ${ledgerUpdates.length}`);
+  console.log(`[fix-sales-sku-bucket-routing] ledger rows to re-tag: ${ledgerRetags.length}`);
+  console.log(`[fix-sales-sku-bucket-routing] events needing manual review: ${reviewRows.length}`);
   console.log(`[fix-sales-sku-bucket-routing] audit CSV: ${csvPath}`);
+  if (reviewCsvPath) console.log(`[fix-sales-sku-bucket-routing] review CSV: ${reviewCsvPath}`);
   for (const r of auditRows) {
     console.log(
       `  branch ${r.branch_id} ${r.sku_code} is_packed=${r.is_packed}: qty ${r.old_qty_pairs}->${r.new_qty_pairs}, value ${r.old_value.toFixed(2)}->${r.new_value.toFixed(2)}, wac ${r.old_wac.toFixed(2)}->${r.new_wac.toFixed(2)}`,
     );
   }
-  for (const r of ledgerUpdates) {
-    console.log(
-      `  ledger #${r.id} (SKU ${r.sku_id}, voucher #${r.voucher_no} ${r.voucher_date}): is_packed ${r.from_is_packed} -> ${r.to_is_packed}`,
-    );
+  for (const r of ledgerRetags) {
+    console.log(`  ledger #${r.id} (SKU ${r.sku_id}, branch ${r.branch_id}): is_packed ${r.from_is_packed} -> ${r.to_is_packed}`);
+  }
+  for (const r of reviewRows) {
+    console.log(`  REVIEW branch ${r.branch_id} SKU ${r.sku_id} voucher #${r.voucher_no} ${r.voucher_date}: ${r.note}`);
   }
 
   if (!APPLY) {
     console.log("[fix-sales-sku-bucket-routing] DRY RUN — no changes written. Re-run with --apply to commit.");
+    await knex.destroy();
     return;
   }
 
@@ -298,23 +419,23 @@ const run = async () => {
         });
       }
     }
-    for (const update of ledgerUpdates) {
-      await trx("erp.stock_ledger")
-        .where({ id: update.id })
-        .update({ is_packed: update.to_is_packed });
+    for (const retag of ledgerRetags) {
+      await trx("erp.stock_ledger").where({ id: retag.id }).update({ is_packed: retag.to_is_packed });
     }
   });
 
   console.log("[fix-sales-sku-bucket-routing] changes committed.");
+  await knex.destroy();
 };
 
 run()
   .then(async () => {
-    await knex.destroy();
     process.exit(0);
   })
   .catch(async (err) => {
     console.error("[fix-sales-sku-bucket-routing] failed:", err);
-    await knex.destroy();
+    try {
+      await knex.destroy();
+    } catch (e) {}
     process.exit(1);
   });
