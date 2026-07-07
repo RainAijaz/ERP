@@ -158,6 +158,18 @@ const getFgUnitCost = async ({ branchId, skuId, stockType, isPacked }) => {
   return toNumber(row?.wac, 0);
 };
 
+// stock_balance_rm.wac / stock_balance_sku.wac are computed as value/qty with
+// no upper bound (see computeNonNegativeWac in inventory-voucher-service.js)
+// -- if qty ever collapsed toward zero while value didn't, WAC can be stored
+// as an absurd outlier that has nothing to do with this bug. Treat any WAC
+// wildly out of line with the line's own sale rate as unreliable rather than
+// let it dominate a sum.
+const isReliableUnitCost = (unitCost, saleRate) => {
+  if (!(unitCost > 0)) return false;
+  if (saleRate > 0 && unitCost > saleRate * 20) return false;
+  return true;
+};
+
 const computeTrueFgSystemQtyPairs = async ({
   branchId,
   skuId,
@@ -295,6 +307,8 @@ const run = async () => {
             sizeId,
             hasVariantDimensions: hasRmVariantDims,
           });
+          const saleRate = toNumber(line.rate, 0);
+          const costReliable = isReliableUnitCost(unitCost, saleRate);
           drifted.push({
             voucher_id: voucher.id,
             voucher_no: voucher.voucher_no,
@@ -305,9 +319,10 @@ const run = async () => {
             stored_system_qty: stored,
             true_system_qty: trueQty,
             delta,
-            sale_rate: toNumber(line.rate, 0),
+            sale_rate: saleRate,
             unit_cost: unitCost,
-            est_cost_impact: roundQty3(delta * unitCost),
+            cost_reliable: costReliable,
+            est_cost_impact: costReliable ? roundQty3(delta * unitCost) : null,
           });
         }
         continue;
@@ -334,6 +349,8 @@ const run = async () => {
             stockType,
             isPacked,
           });
+          const saleRate = toNumber(line.rate, 0);
+          const costReliable = isReliableUnitCost(unitCost, saleRate);
           drifted.push({
             voucher_id: voucher.id,
             voucher_no: voucher.voucher_no,
@@ -344,9 +361,10 @@ const run = async () => {
             stored_system_qty: stored,
             true_system_qty: trueQtyPairs,
             delta,
-            sale_rate: toNumber(line.rate, 0),
+            sale_rate: saleRate,
             unit_cost: unitCost,
-            est_cost_impact: roundQty3(delta * unitCost),
+            cost_reliable: costReliable,
+            est_cost_impact: costReliable ? roundQty3(delta * unitCost) : null,
           });
         }
       }
@@ -363,7 +381,7 @@ const run = async () => {
   }
 
   const csvHeader =
-    "voucher_id,voucher_no,voucher_date,branch_id,stock_type,key,stored_system_qty,true_system_qty,delta,sale_rate,unit_cost,est_cost_impact";
+    "voucher_id,voucher_no,voucher_date,branch_id,stock_type,key,stored_system_qty,true_system_qty,delta,sale_rate,unit_cost,cost_reliable,est_cost_impact";
   const csvBody = drifted
     .map((r) =>
       [
@@ -378,7 +396,8 @@ const run = async () => {
         r.delta,
         r.sale_rate,
         r.unit_cost,
-        r.est_cost_impact,
+        r.cost_reliable,
+        r.est_cost_impact == null ? "" : r.est_cost_impact,
       ].join(","),
     )
     .join("\n");
@@ -388,16 +407,23 @@ const run = async () => {
   );
   fs.writeFileSync(csvPath, `${csvHeader}\n${csvBody}\n`, "utf8");
 
+  const reliableRows = drifted.filter((r) => r.cost_reliable);
+  const unreliableCount = drifted.length - reliableRows.length;
   const totalCostImpact = roundQty3(
-    drifted.reduce((sum, r) => sum + toNumber(r.est_cost_impact, 0), 0),
+    reliableRows.reduce((sum, r) => sum + toNumber(r.est_cost_impact, 0), 0),
   );
   console.log(
-    `[audit-stock-count-drift] total estimated COST impact (at unit cost, not sale rate): ${totalCostImpact.toFixed(2)}`,
+    `[audit-stock-count-drift] total estimated COST impact, reliable lines only (at unit cost, not sale rate): ${totalCostImpact.toFixed(2)}` +
+      (unreliableCount
+        ? ` (${unreliableCount} line(s) excluded -- unit_cost looked corrupted/out of line with sale_rate, see cost_reliable=false in CSV)`
+        : ""),
   );
   console.log(`[audit-stock-count-drift] report CSV: ${csvPath}`);
+  console.log("[audit-stock-count-drift] the QUANTITY delta (stored vs true) is the reliable finding -- cost figures are best-effort:");
   drifted.slice(0, 25).forEach((r) => {
+    const costLabel = r.cost_reliable ? r.est_cost_impact : "n/a (unreliable wac)";
     console.log(
-      `  voucher #${r.voucher_no} (${r.voucher_date}, branch ${r.branch_id}) ${r.stock_type} ${r.key}: stored=${r.stored_system_qty} true=${r.true_system_qty} delta=${r.delta} cost_impact=${r.est_cost_impact}`,
+      `  voucher #${r.voucher_no} (${r.voucher_date}, branch ${r.branch_id}) ${r.stock_type} ${r.key}: stored=${r.stored_system_qty} true=${r.true_system_qty} delta=${r.delta} cost_impact=${costLabel}`,
     );
   });
   if (drifted.length > 25) {
