@@ -121,6 +121,43 @@ const computeTrueRmSystemQty = async ({
   return roundQty3(row?.qty || 0);
 };
 
+// Current WAC (unit cost), for a defensible value-impact estimate -- vl.rate
+// on these lines is the SKU's SALE rate (see validateStockCountAdjustmentPayloadTx
+// in inventory-voucher-service.js), not cost, so using it would overstate
+// financial exposure by the retail markup.
+const getRmUnitCost = async ({ branchId, itemId, colorId, sizeId, hasVariantDimensions }) => {
+  let query = knex("erp.stock_balance_rm as sb")
+    .select("sb.wac")
+    .where({ "sb.branch_id": branchId, "sb.stock_state": "ON_HAND", "sb.item_id": itemId });
+  if (hasVariantDimensions) {
+    query = query
+      .andWhere((qb) => {
+        if (colorId) qb.where("sb.color_id", colorId);
+        else qb.whereNull("sb.color_id");
+      })
+      .andWhere((qb) => {
+        if (sizeId) qb.where("sb.size_id", sizeId);
+        else qb.whereNull("sb.size_id");
+      });
+  }
+  const row = await query.first();
+  return toNumber(row?.wac, 0);
+};
+
+const getFgUnitCost = async ({ branchId, skuId, stockType, isPacked }) => {
+  const row = await knex("erp.stock_balance_sku")
+    .select("wac")
+    .where({
+      branch_id: branchId,
+      stock_state: "ON_HAND",
+      category: stockType,
+      is_packed: isPacked,
+      sku_id: skuId,
+    })
+    .first();
+  return toNumber(row?.wac, 0);
+};
+
 const computeTrueFgSystemQtyPairs = async ({
   branchId,
   skuId,
@@ -251,6 +288,13 @@ const run = async () => {
         });
         const delta = roundQty3(stored - trueQty);
         if (Math.abs(delta) >= 0.005) {
+          const unitCost = await getRmUnitCost({
+            branchId: Number(voucher.branch_id),
+            itemId,
+            colorId,
+            sizeId,
+            hasVariantDimensions: hasRmVariantDims,
+          });
           drifted.push({
             voucher_id: voucher.id,
             voucher_no: voucher.voucher_no,
@@ -261,8 +305,9 @@ const run = async () => {
             stored_system_qty: stored,
             true_system_qty: trueQty,
             delta,
-            rate: toNumber(line.rate, 0),
-            est_value_impact: roundQty3(delta * toNumber(line.rate, 0)),
+            sale_rate: toNumber(line.rate, 0),
+            unit_cost: unitCost,
+            est_cost_impact: roundQty3(delta * unitCost),
           });
         }
         continue;
@@ -283,6 +328,12 @@ const run = async () => {
         });
         const delta = roundQty3(stored - trueQtyPairs);
         if (Math.abs(delta) >= 0.005) {
+          const unitCost = await getFgUnitCost({
+            branchId: Number(voucher.branch_id),
+            skuId,
+            stockType,
+            isPacked,
+          });
           drifted.push({
             voucher_id: voucher.id,
             voucher_no: voucher.voucher_no,
@@ -293,8 +344,9 @@ const run = async () => {
             stored_system_qty: stored,
             true_system_qty: trueQtyPairs,
             delta,
-            rate: toNumber(line.rate, 0),
-            est_value_impact: roundQty3(delta * toNumber(line.rate, 0)),
+            sale_rate: toNumber(line.rate, 0),
+            unit_cost: unitCost,
+            est_cost_impact: roundQty3(delta * unitCost),
           });
         }
       }
@@ -311,7 +363,7 @@ const run = async () => {
   }
 
   const csvHeader =
-    "voucher_id,voucher_no,voucher_date,branch_id,stock_type,key,stored_system_qty,true_system_qty,delta,rate,est_value_impact";
+    "voucher_id,voucher_no,voucher_date,branch_id,stock_type,key,stored_system_qty,true_system_qty,delta,sale_rate,unit_cost,est_cost_impact";
   const csvBody = drifted
     .map((r) =>
       [
@@ -324,8 +376,9 @@ const run = async () => {
         r.stored_system_qty,
         r.true_system_qty,
         r.delta,
-        r.rate,
-        r.est_value_impact,
+        r.sale_rate,
+        r.unit_cost,
+        r.est_cost_impact,
       ].join(","),
     )
     .join("\n");
@@ -335,14 +388,16 @@ const run = async () => {
   );
   fs.writeFileSync(csvPath, `${csvHeader}\n${csvBody}\n`, "utf8");
 
-  const totalValueImpact = roundQty3(
-    drifted.reduce((sum, r) => sum + toNumber(r.est_value_impact, 0), 0),
+  const totalCostImpact = roundQty3(
+    drifted.reduce((sum, r) => sum + toNumber(r.est_cost_impact, 0), 0),
   );
-  console.log(`[audit-stock-count-drift] total estimated value impact: ${totalValueImpact.toFixed(2)}`);
+  console.log(
+    `[audit-stock-count-drift] total estimated COST impact (at unit cost, not sale rate): ${totalCostImpact.toFixed(2)}`,
+  );
   console.log(`[audit-stock-count-drift] report CSV: ${csvPath}`);
   drifted.slice(0, 25).forEach((r) => {
     console.log(
-      `  voucher #${r.voucher_no} (${r.voucher_date}, branch ${r.branch_id}) ${r.stock_type} ${r.key}: stored=${r.stored_system_qty} true=${r.true_system_qty} delta=${r.delta}`,
+      `  voucher #${r.voucher_no} (${r.voucher_date}, branch ${r.branch_id}) ${r.stock_type} ${r.key}: stored=${r.stored_system_qty} true=${r.true_system_qty} delta=${r.delta} cost_impact=${r.est_cost_impact}`,
     );
   });
   if (drifted.length > 25) {
