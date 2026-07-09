@@ -1384,6 +1384,19 @@
         state.sku_override.push(nextLine);
       }
     };
+    // True when this SKU already has a meaningful value of its own for the given
+    // material/dept combo — used to protect it from being overwritten by another
+    // SKU's edit propagating across same-size peers.
+    const skuComboHasOwnValue = (sid, rmId, deptId) => {
+      const ov = findSkuOverride(sid, rmId, deptId);
+      return Boolean(ov && (
+        ov.is_excluded
+        || String(ov.override_qty ?? "").trim() !== ""
+        || String(ov.replacement_rm_item_id || "").trim()
+        || String(ov.rm_color_id || "").trim()
+        || String(ov.rm_size_id || "").trim()
+      ));
+    };
     const applySkuRuleRowToOverrides = (row) => {
       if (!(row instanceof HTMLElement)) return;
       const skuId = String(row.getAttribute("data-sku-id") || "");
@@ -1426,8 +1439,13 @@
         rm_size_id: sizeDiff ? selectedSizeId : null,
       };
       upsertSkuOverrideLine(nextLine);
+      // Seed same-size peers ONLY where they have no value of their own yet.
+      // A peer that already carries a value (a manually-written "master" SKU, or
+      // a sibling deliberately given a few differences) is never overwritten by
+      // an edit made on another SKU — auto-copy fills blanks, it does not cascade.
       const peerSkuIds = getSkuVariantPeerIds(skuId);
       peerSkuIds.forEach((peerSkuId) => {
+        if (skuComboHasOwnValue(peerSkuId, targetRmItemId, targetDeptId)) return;
         upsertSkuOverrideLine({
           ...nextLine,
           sku_id: peerSkuId,
