@@ -1384,19 +1384,23 @@
         state.sku_override.push(nextLine);
       }
     };
+    const lineHasValue = (line) => Boolean(line && (
+      line.is_excluded
+      || String(line.override_qty ?? "").trim() !== ""
+      || String(line.replacement_rm_item_id || "").trim()
+      || String(line.rm_color_id || "").trim()
+      || String(line.rm_size_id || "").trim()
+    ));
     // True when this SKU already has a meaningful value of its own for the given
     // material/dept combo — used to protect it from being overwritten by another
     // SKU's edit propagating across same-size peers.
-    const skuComboHasOwnValue = (sid, rmId, deptId) => {
-      const ov = findSkuOverride(sid, rmId, deptId);
-      return Boolean(ov && (
-        ov.is_excluded
-        || String(ov.override_qty ?? "").trim() !== ""
-        || String(ov.replacement_rm_item_id || "").trim()
-        || String(ov.rm_color_id || "").trim()
-        || String(ov.rm_size_id || "").trim()
-      ));
-    };
+    const skuComboHasOwnValue = (sid, rmId, deptId) =>
+      lineHasValue(findSkuOverride(sid, rmId, deptId));
+    // Session-only provenance for SKU-rule values: "custom" = typed by the user
+    // on this SKU, "auto" = seeded by copying from a same-size peer. NOT persisted
+    // (keyed sku_id:rm_item_id:dept_id), so a reopened BOM starts with no tags.
+    const skuValueOrigin = new Map();
+    const skuOriginKey = (sid, rmId, deptId) => `${sid}:${rmId}:${deptId}`;
     const applySkuRuleRowToOverrides = (row) => {
       if (!(row instanceof HTMLElement)) return;
       const skuId = String(row.getAttribute("data-sku-id") || "");
@@ -1438,6 +1442,11 @@
         rm_color_id: colorDiff ? selectedColorId : null,
         rm_size_id: sizeDiff ? selectedSizeId : null,
       };
+      // This edit is the user's own value for this SKU → tag it "custom".
+      const nextHasValue = lineHasValue(nextLine);
+      const selfKey = skuOriginKey(skuId, targetRmItemId, targetDeptId);
+      if (nextHasValue) skuValueOrigin.set(selfKey, "custom");
+      else skuValueOrigin.delete(selfKey);
       upsertSkuOverrideLine(nextLine);
       // Seed same-size peers ONLY where they have no value of their own yet.
       // A peer that already carries a value (a manually-written "master" SKU, or
@@ -1446,6 +1455,9 @@
       const peerSkuIds = getSkuVariantPeerIds(skuId);
       peerSkuIds.forEach((peerSkuId) => {
         if (skuComboHasOwnValue(peerSkuId, targetRmItemId, targetDeptId)) return;
+        const peerKey = skuOriginKey(peerSkuId, targetRmItemId, targetDeptId);
+        if (nextHasValue) skuValueOrigin.set(peerKey, "auto");
+        else skuValueOrigin.delete(peerKey);
         upsertSkuOverrideLine({
           ...nextLine,
           sku_id: peerSkuId,
@@ -1507,11 +1519,40 @@
               target_rm_item_id: String(rmLine.rm_item_id),
               dept_id: String(rmLine.dept_id),
             });
+            skuValueOrigin.set(
+              skuOriginKey(String(target.id), String(rmLine.rm_item_id), String(rmLine.dept_id)),
+              "auto",
+            );
           });
         });
       });
     };
     const skuDivergeHintPrefix = "<%= tx('bom_sku_diverge_hint', 'Differs across same-size variants — ') %>";
+    // Small "auto"/"custom" origin pill for a SKU-rule row (session-only provenance).
+    const skuOriginLabels = {
+      auto: "<%= tx('bom_sku_origin_auto', 'auto') %>",
+      autoTip: "<%= tx('bom_sku_origin_auto_tip', 'Auto-copied from a same-size SKU — review or edit for this variant') %>",
+      custom: "<%= tx('bom_sku_origin_custom', 'custom') %>",
+      customTip: "<%= tx('bom_sku_origin_custom_tip', 'Entered for this SKU — protected from auto-copy') %>",
+    };
+    const renderSkuOriginBadge = (origin) => {
+      if (origin === "auto") {
+        return `<span class="ml-2 inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 align-middle text-[9px] font-semibold uppercase tracking-wide text-amber-700" title="${esc(skuOriginLabels.autoTip)}">${esc(skuOriginLabels.auto)}</span>`;
+      }
+      if (origin === "custom") {
+        return `<span class="ml-2 inline-flex items-center rounded-full bg-slate-100 px-1.5 py-0.5 align-middle text-[9px] font-semibold uppercase tracking-wide text-slate-500" title="${esc(skuOriginLabels.customTip)}">${esc(skuOriginLabels.custom)}</span>`;
+      }
+      return "";
+    };
+    const refreshRowOriginBadge = (rowEl) => {
+      if (!(rowEl instanceof HTMLElement)) return;
+      const badge = rowEl.querySelector("[data-sku-origin-badge]");
+      if (!badge) return;
+      const sid = String(rowEl.getAttribute("data-sku-id") || "");
+      const rm = String(rowEl.getAttribute("data-target-rm-item-id") || "");
+      const dept = String(rowEl.getAttribute("data-target-dept-id") || "");
+      badge.innerHTML = renderSkuOriginBadge(skuValueOrigin.get(skuOriginKey(sid, rm, dept)));
+    };
     // For a material line, compare the effective qty/color/size across the active
     // SKU and its same-size variant peers (different packaging/grade). A cell is
     // "divergent" when two or more peers carry differing FILLED values — the odd
@@ -1594,6 +1635,7 @@
         const divergence = getSkuRowDivergence(rmLine, sku);
         const divCls = (on) => (on ? " bg-amber-50 ring-1 ring-inset ring-amber-300 rounded-lg" : "");
         const divTitle = (tip) => (tip ? ` title="${esc(skuDivergeHintPrefix + tip)}"` : "");
+        const originBadge = renderSkuOriginBadge(skuValueOrigin.get(skuOriginKey(sku.id, effective.targetRmItemId, effective.deptId)));
         const materialName = rmItemNameById.get(String(effective.effectiveRmItemId || "")) || effective.effectiveRmItemId;
         const deptName = departmentNameById.get(String(effective.deptId || "")) || "";
         const uomName = getUomName(effective.uomId);
@@ -1632,7 +1674,7 @@
             data-baseline-rm-color-id="${esc(baselineColor)}"
             data-baseline-rm-size-id="${esc(baselineSize)}"
           >
-            <td class="px-3 py-2 font-medium text-slate-700">${esc(materialName)}</td>
+            <td class="px-3 py-2 font-medium text-slate-700">${esc(materialName)}<span data-sku-origin-badge>${originBadge}</span></td>
             <td class="px-3 py-2 text-slate-600">${esc(deptName)}</td>
             <td class="px-3 py-2${divCls(divergence.color)}"${divTitle(divergence.colorTip)}>
               ${colorControl}
@@ -2885,7 +2927,7 @@
           if (!(target instanceof HTMLElement)) return;
           if (!target.matches('[data-sku-rule-col="required_qty"], [data-sku-rule-col="rm_color_id"], [data-sku-rule-col="rm_size_id"]')) return;
           const row = target.closest("[data-sku-rule-row]");
-          if (row) applySkuRuleRowToOverrides(row);
+          if (row) { applySkuRuleRowToOverrides(row); refreshRowOriginBadge(row); }
           refreshSkuChipBadges();
         });
         skuRulesBody.addEventListener("input", (event) => {
@@ -2893,7 +2935,7 @@
           if (!(target instanceof HTMLElement)) return;
           if (!target.matches('[data-sku-rule-col="required_qty"]')) return;
           const row = target.closest("[data-sku-rule-row]");
-          if (row) applySkuRuleRowToOverrides(row);
+          if (row) { applySkuRuleRowToOverrides(row); refreshRowOriginBadge(row); }
           refreshSkuChipBadges();
         });
       }
