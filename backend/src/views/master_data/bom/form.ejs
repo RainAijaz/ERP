@@ -310,8 +310,7 @@
               <h3 class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"><%= t("bom_sku_rules")  %></h3>
               <p class="mt-1 text-xs text-slate-500"><%= t("bom_sku_rules_hint")  %></p>
             </div>
-            <%# "Copy from another SKU" temporarily hidden per request (2026-07-09); flip to `isEditable` to restore. %>
-            <% if (false && isEditable) { %>
+            <% if (isEditable) { %>
               <button
                 type="button"
                 data-sku-copy-from-open
@@ -1401,6 +1400,14 @@
     // (keyed sku_id:rm_item_id:dept_id), so a reopened BOM starts with no tags.
     const skuValueOrigin = new Map();
     const skuOriginKey = (sid, rmId, deptId) => `${sid}:${rmId}:${deptId}`;
+    // Session "master" per size group: the SKU that drives auto-copy onto its
+    // same-size peers. The first SKU in a size to receive a value becomes master;
+    // editing it keeps refreshing every still-"auto" peer, but never a peer the
+    // user has made "custom". Editing a non-master SKU only changes that SKU.
+    const skuMasterBySize = new Map();
+    const skuSizeKey = (sid) => String(findHeaderSkuById(sid)?.size_id || "");
+    const skuHasAnyValue = (sid) =>
+      (state.sku_override || []).some((row) => String(row?.sku_id || "") === String(sid || "") && lineHasValue(row));
     const applySkuRuleRowToOverrides = (row) => {
       if (!(row instanceof HTMLElement)) return;
       const skuId = String(row.getAttribute("data-sku-id") || "");
@@ -1448,21 +1455,39 @@
       if (nextHasValue) skuValueOrigin.set(selfKey, "custom");
       else skuValueOrigin.delete(selfKey);
       upsertSkuOverrideLine(nextLine);
-      // Seed same-size peers ONLY where they have no value of their own yet.
-      // A peer that already carries a value (a manually-written "master" SKU, or
-      // a sibling deliberately given a few differences) is never overwritten by
-      // an edit made on another SKU — auto-copy fills blanks, it does not cascade.
-      const peerSkuIds = getSkuVariantPeerIds(skuId);
-      peerSkuIds.forEach((peerSkuId) => {
-        if (skuComboHasOwnValue(peerSkuId, targetRmItemId, targetDeptId)) return;
-        const peerKey = skuOriginKey(peerSkuId, targetRmItemId, targetDeptId);
-        if (nextHasValue) skuValueOrigin.set(peerKey, "auto");
-        else skuValueOrigin.delete(peerKey);
-        upsertSkuOverrideLine({
-          ...nextLine,
-          sku_id: peerSkuId,
+
+      // First SKU in a size to get a value becomes that size's "master".
+      const sizeKey = skuSizeKey(skuId);
+      if (sizeKey && nextHasValue && !skuMasterBySize.get(sizeKey)) {
+        skuMasterBySize.set(sizeKey, skuId);
+      }
+      const isMasterEdit = Boolean(sizeKey) && String(skuMasterBySize.get(sizeKey) || "") === skuId;
+
+      // Only the master drives auto-copy across its same-size peers. It refreshes
+      // peers that are still blank or "auto" (auto-copied, untouched), and never
+      // overwrites a peer the user has made "custom" (or an untagged value carried
+      // over from a previous session). Editing a non-master SKU changes only itself.
+      if (isMasterEdit) {
+        const peerSkuIds = getSkuVariantPeerIds(skuId);
+        peerSkuIds.forEach((peerSkuId) => {
+          const peerKey = skuOriginKey(peerSkuId, targetRmItemId, targetDeptId);
+          const peerOrigin = skuValueOrigin.get(peerKey);
+          const peerHasValue = skuComboHasOwnValue(peerSkuId, targetRmItemId, targetDeptId);
+          if (peerHasValue && peerOrigin !== "auto") return; // protect custom / carried-over
+          if (nextHasValue) skuValueOrigin.set(peerKey, "auto");
+          else skuValueOrigin.delete(peerKey);
+          upsertSkuOverrideLine({
+            ...nextLine,
+            sku_id: peerSkuId,
+          });
         });
-      });
+      }
+
+      // If the master was fully emptied, release it so the next filled SKU can
+      // take over as the driver for this size.
+      if (sizeKey && String(skuMasterBySize.get(sizeKey) || "") === skuId && !skuHasAnyValue(skuId)) {
+        skuMasterBySize.delete(sizeKey);
+      }
     };
     const syncSkuRulesFromDom = () => {
       const rows = Array.from(document.querySelectorAll("[data-sku-rule-row]"));
