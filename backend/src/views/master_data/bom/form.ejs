@@ -310,7 +310,8 @@
               <h3 class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"><%= t("bom_sku_rules")  %></h3>
               <p class="mt-1 text-xs text-slate-500"><%= t("bom_sku_rules_hint")  %></p>
             </div>
-            <% if (isEditable) { %>
+            <%# "Copy from another SKU" temporarily hidden per request (2026-07-09); flip to `isEditable` to restore. %>
+            <% if (false && isEditable) { %>
               <button
                 type="button"
                 data-sku-copy-from-open
