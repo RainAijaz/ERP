@@ -82,6 +82,7 @@
       ["/reports/inventory/stock-movement", "stock_item_activity"],
       ["/reports/inventory/stock-transfer", "stock_item_activity"],
       ["/reports/inventory/dead-stock", "dead_stock_report"],
+      ["/reports/inventory/stock-count-accuracy", "stock_count_accuracy"],
       ["/reports/hr-payroll/labour-ledger", "labour_ledger"],
       ["/reports/hr-payroll/labour-balances", "labour_balances"],
       ["/reports/hr-payroll/employee-ledger", "employee_ledger"],
@@ -182,6 +183,13 @@
         details: can("REPORT", "dead_stock_report", "view_details"),
         filterAllBranches: can("REPORT", "dead_stock_report", "filter_all_branches"),
         viewCostFields: can("REPORT", "dead_stock_report", "view_cost_fields"),
+      },
+      stock_count_accuracy: {
+        print: can("REPORT", "stock_count_accuracy", "print"),
+        export: can("REPORT", "stock_count_accuracy", "export_excel_csv"),
+        details: can("REPORT", "stock_count_accuracy", "view_details"),
+        filterAllBranches: can("REPORT", "stock_count_accuracy", "filter_all_branches"),
+        viewCostFields: can("REPORT", "stock_count_accuracy", "view_cost_fields"),
       },
       labour_ledger: {
         print: can("REPORT", "labour_ledger", "print"),

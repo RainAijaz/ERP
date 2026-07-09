@@ -10,6 +10,7 @@ const {
   getInventoryStockMovementReportPageData,
   getInventoryStockTransferReportPageData,
   getInventoryDeadStockReportPageData,
+  getInventoryStockCountAccuracyReportPageData,
 } = require("../../services/inventory/inventory-report-service");
 
 const router = express.Router();
@@ -200,6 +201,35 @@ const renderDeadStockReport = async (req, res, next, input) => {
   }
 };
 
+const renderStockCountAccuracyReport = async (req, res, next, input) => {
+  try {
+    const pageData = await getInventoryStockCountAccuracyReportPageData({
+      req,
+      input,
+    });
+
+    return res.render("base/layouts/main", {
+      title: `${translate(res, "stock_count_accuracy_report", "Stock Count Accuracy Report")} - ${translate(res, "inventory_reports", "Inventory Reports")}`,
+      user: req.user,
+      branchId: req.branchId,
+      branchScope: req.branchScope,
+      csrfToken: res.locals.csrfToken,
+      view: "../../reports/inventory-stock-count-accuracy",
+      t: res.locals.t,
+      filters: pageData.filters,
+      options: pageData.options,
+      reportData: pageData.reportData,
+      reportPath: `${req.baseUrl}/stock-count-accuracy`,
+    });
+  } catch (err) {
+    console.error("Error in InventoryStockCountAccuracyReportService:", err);
+    if (typeof req.flash === "function") {
+      req.flash("error", res.locals.t("generic_error"));
+    }
+    return next(err);
+  }
+};
+
 router.get(
   "/",
   requirePermission("REPORT", "stock_quantity", "load"),
@@ -279,6 +309,20 @@ router.post(
   "/dead-stock",
   requirePermission("REPORT", "dead_stock_report", "load"),
   async (req, res, next) => renderDeadStockReport(req, res, next, req.body),
+);
+
+router.get(
+  "/stock-count-accuracy",
+  requirePermission("REPORT", "stock_count_accuracy", "load"),
+  async (req, res, next) =>
+    renderStockCountAccuracyReport(req, res, next, req.query),
+);
+
+router.post(
+  "/stock-count-accuracy",
+  requirePermission("REPORT", "stock_count_accuracy", "load"),
+  async (req, res, next) =>
+    renderStockCountAccuracyReport(req, res, next, req.body),
 );
 
 module.exports = router;

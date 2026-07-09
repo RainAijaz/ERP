@@ -5194,6 +5194,342 @@ const getInventoryStockBalancesReportPageData = async ({ req, input = {} }) =>
     includeAmounts: false,
   });
 
+// =============================================================================
+// Stock Count Accuracy Report
+// -----------------------------------------------------------------------------
+// Trends how closely blind physical counts matched the system, over a chosen
+// period grain (week/month/year), split by category (FG/SFG/RM). Surfaces the
+// trade-off between total unit (dozen) difference and total cost difference so a
+// few expensive misses read differently from many cheap ones.
+//
+// Source: APPROVED STOCK_COUNT_ADJ vouchers with reason PHYSICAL_COUNT.
+//   - Counted-vs-expected qty: erp.stock_count_line (authoritative).
+//   - Point-in-time cost of the difference: erp.stock_ledger.value / unit_cost.
+// =============================================================================
+
+const STOCK_COUNT_ACCURACY_GRAINS = Object.freeze({
+  week: "week",
+  month: "month",
+  year: "year",
+});
+const STOCK_COUNT_ACCURACY_CATEGORY_ALL = "ALL";
+const STOCK_COUNT_VOUCHER_CODE = "STOCK_COUNT_ADJ";
+const PHYSICAL_COUNT_REASON_CODE = "PHYSICAL_COUNT";
+const PAIRS_PER_DOZEN = 12;
+
+const getDefaultStockCountAccuracyDateRange = () => {
+  const now = new Date();
+  const fromDate = new Date(now);
+  fromDate.setMonth(fromDate.getMonth() - 12);
+  return {
+    today: toLocalDateOnly(now),
+    defaultFrom: toLocalDateOnly(fromDate),
+  };
+};
+
+const normalizeStockCountAccuracyGrain = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  if (normalized === STOCK_COUNT_ACCURACY_GRAINS.week) return "week";
+  if (normalized === STOCK_COUNT_ACCURACY_GRAINS.year) return "year";
+  return "month";
+};
+
+const normalizeStockCountAccuracyCategory = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toUpperCase();
+  if (normalized === STOCK_TYPES.finished) return STOCK_TYPES.finished;
+  if (normalized === STOCK_TYPES.semiFinished) return STOCK_TYPES.semiFinished;
+  if (normalized === STOCK_TYPES.rawMaterial) return STOCK_TYPES.rawMaterial;
+  return STOCK_COUNT_ACCURACY_CATEGORY_ALL;
+};
+
+const clampPercent = (value) => {
+  const numeric = Number(value || 0);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.min(100, numeric));
+};
+
+const computeAccuracyPercent = (absDiff, systemBase) => {
+  const denominator = Math.abs(Number(systemBase || 0));
+  const numerator = Math.abs(Number(absDiff || 0));
+  if (denominator <= 0) return numerator > 0 ? 0 : 100;
+  return clampPercent(100 - (numerator / denominator) * 100);
+};
+
+const categoryLabelKey = (category) => {
+  if (category === STOCK_TYPES.finished) return "finished";
+  if (category === STOCK_TYPES.semiFinished) return "semi_finished";
+  if (category === STOCK_TYPES.rawMaterial) return "raw_materials";
+  return "all";
+};
+
+const parseStockCountAccuracyFilters = ({ req, input = {} }) => {
+  const { today, defaultFrom } = getDefaultStockCountAccuracyDateRange();
+  const parsedFrom = parseDateFilter(
+    input.from_date || input.fromDate,
+    defaultFrom,
+  );
+  const parsedTo = parseDateFilter(input.to_date || input.toDate, today);
+
+  let from = parsedFrom.value;
+  let to = parsedTo.value;
+  let invalidDateRange = false;
+  if (from > to) {
+    from = defaultFrom;
+    to = today;
+    invalidDateRange = true;
+  }
+
+  return {
+    reportLoaded: toBoolean(input.load_report || input.loadReport, false),
+    locale: String(req?.locale || "en").toLowerCase(),
+    from,
+    to,
+    periodGrain: normalizeStockCountAccuracyGrain(
+      input.period_grain || input.periodGrain,
+    ),
+    category: normalizeStockCountAccuracyCategory(
+      input.category_filter || input.categoryFilter,
+    ),
+    branchIds: normalizeBranchFilter({ req, input }),
+    invalidFromDate: Boolean(parsedFrom.provided && !parsedFrom.valid),
+    invalidToDate: Boolean(parsedTo.provided && !parsedTo.valid),
+    invalidDateRange,
+    invalidFilterInput: Boolean(
+      (parsedFrom.provided && !parsedFrom.valid) ||
+        (parsedTo.provided && !parsedTo.valid) ||
+        invalidDateRange,
+    ),
+  };
+};
+
+const formatStockCountAccuracyPeriodLabel = (periodStart, grain) => {
+  const text = String(periodStart || "").trim();
+  if (!text) return "-";
+  if (grain === "year") return text.slice(0, 4);
+  if (grain === "month") return text.slice(0, 7);
+  return `W/C ${text}`; // week: week-commencing date
+};
+
+const getInventoryStockCountAccuracyReportPageData = async ({
+  req,
+  input = {},
+}) => {
+  const filters = parseStockCountAccuracyFilters({ req, input });
+  const branches = await loadBranchOptions(req);
+
+  const options = {
+    branches,
+    periodGrains: [
+      { value: STOCK_COUNT_ACCURACY_GRAINS.week, labelKey: "weekly" },
+      { value: STOCK_COUNT_ACCURACY_GRAINS.month, labelKey: "monthly" },
+      { value: STOCK_COUNT_ACCURACY_GRAINS.year, labelKey: "yearly" },
+    ],
+    categoryFilters: [
+      { value: STOCK_COUNT_ACCURACY_CATEGORY_ALL, labelKey: "all" },
+      { value: STOCK_TYPES.finished, labelKey: "finished" },
+      { value: STOCK_TYPES.semiFinished, labelKey: "semi_finished" },
+      { value: STOCK_TYPES.rawMaterial, labelKey: "raw_materials" },
+    ],
+  };
+
+  const emptyTotals = {
+    linesCounted: 0,
+    costDifference: 0,
+    qtyAccuracyPct: 100,
+    costAccuracyPct: 100,
+  };
+  const emptyReport = {
+    rows: [],
+    chart: { labels: [], qtyAccuracy: [], costAccuracy: [], costDifference: [] },
+    totals: emptyTotals,
+  };
+
+  if (!filters.reportLoaded) {
+    return { filters, options, reportData: emptyReport };
+  }
+
+  const grain = filters.periodGrain; // whitelisted to week/month/year
+  const periodExpr = `date_trunc('${grain}', vh.voucher_date)`;
+
+  // System (expected) qty in base units: RM decimal qty, SFG/FG integer pairs.
+  const systemQtyBaseSql = `(CASE WHEN sch.item_type_scope = 'RM' THEN scl.system_qty_snapshot ELSE scl.system_qty_pairs_snapshot END)`;
+  const physicalBaseSql = `(CASE WHEN sch.item_type_scope = 'RM' THEN scl.physical_qty ELSE scl.physical_qty_pairs END)`;
+  const absDiffBaseSql = `ABS(${physicalBaseSql} - ${systemQtyBaseSql})`;
+  // Effective unit cost: point-in-time WAC from the posted ledger row when a
+  // difference was posted; else fall back to current WAC (matched/zero-diff
+  // lines contribute to the cost denominator only — an approximation).
+  const unitCostEffSql = `COALESCE(led.unit_cost, CASE WHEN sch.item_type_scope = 'RM' THEN rmw.wac ELSE skuw.wac END, 0)`;
+
+  const ledgerAgg = knex("erp.stock_ledger")
+    .select("voucher_line_id")
+    .select(knex.raw("SUM(ABS(value)) as abs_value"))
+    .select(knex.raw("MAX(unit_cost) as unit_cost"))
+    .whereNotNull("voucher_line_id")
+    .groupBy("voucher_line_id");
+
+  const rmWac = knex("erp.stock_balance_rm")
+    .select("branch_id", "item_id")
+    .select(knex.raw("AVG(wac) as wac"))
+    .groupBy("branch_id", "item_id");
+
+  const skuWac = knex("erp.stock_balance_sku")
+    .select("branch_id", "sku_id")
+    .select(knex.raw("AVG(wac) as wac"))
+    .groupBy("branch_id", "sku_id");
+
+  const raw = await knex({ vh: "erp.voucher_header" })
+    .join({ vl: "erp.voucher_line" }, "vl.voucher_header_id", "vh.id")
+    .join({ scl: "erp.stock_count_line" }, "scl.voucher_line_id", "vl.id")
+    .join({ sch: "erp.stock_count_header" }, "sch.voucher_id", "vh.id")
+    .join({ rc: "erp.reason_codes" }, "rc.id", "sch.reason_code_id")
+    .leftJoin(ledgerAgg.as("led"), "led.voucher_line_id", "vl.id")
+    .leftJoin(rmWac.as("rmw"), function joinRmWac() {
+      this.on("rmw.branch_id", "vh.branch_id").andOn("rmw.item_id", "vl.item_id");
+    })
+    .leftJoin(skuWac.as("skuw"), function joinSkuWac() {
+      this.on("skuw.branch_id", "vh.branch_id").andOn("skuw.sku_id", "vl.sku_id");
+    })
+    .where("vh.voucher_type_code", STOCK_COUNT_VOUCHER_CODE)
+    .where("vh.status", "APPROVED")
+    .where("rc.code", PHYSICAL_COUNT_REASON_CODE)
+    .whereBetween("vh.voucher_date", [filters.from, filters.to])
+    .modify((qb) => {
+      if (filters.branchIds.length) qb.whereIn("vh.branch_id", filters.branchIds);
+      if (filters.category !== STOCK_COUNT_ACCURACY_CATEGORY_ALL) {
+        qb.where("sch.item_type_scope", filters.category);
+      }
+    })
+    .select(
+      knex.raw(`to_char(${periodExpr}, 'YYYY-MM-DD') as period_start`),
+      knex.raw("sch.item_type_scope as category"),
+      knex.raw("COUNT(scl.voucher_line_id) as lines_counted"),
+      knex.raw(`SUM(ABS(${systemQtyBaseSql})) as sum_system_qty_base`),
+      knex.raw(`SUM(${absDiffBaseSql}) as sum_abs_diff_base`),
+      knex.raw("SUM(COALESCE(led.abs_value, 0)) as sum_cost_diff"),
+      knex.raw(
+        `SUM(ABS(${systemQtyBaseSql}) * (${unitCostEffSql})) as sum_system_cost`,
+      ),
+    )
+    .groupByRaw(`${periodExpr}, sch.item_type_scope`)
+    .orderByRaw(`${periodExpr} ASC, sch.item_type_scope ASC`);
+
+  const rows = [];
+  const periodOrder = [];
+  const periodAgg = new Map();
+  const grandTotals = {
+    linesCounted: 0,
+    sumSystemQtyBase: 0,
+    sumAbsDiffBase: 0,
+    costDifference: 0,
+    sumSystemCost: 0,
+  };
+
+  raw.forEach((entry) => {
+    const category = String(entry.category || "").toUpperCase();
+    const isPairBased =
+      category === STOCK_TYPES.finished ||
+      category === STOCK_TYPES.semiFinished;
+    const divisor = isPairBased ? PAIRS_PER_DOZEN : 1;
+
+    const linesCounted = Number(entry.lines_counted || 0);
+    const sumSystemQtyBase = Number(entry.sum_system_qty_base || 0);
+    const sumAbsDiffBase = Number(entry.sum_abs_diff_base || 0);
+    const costDifference = toAmount(entry.sum_cost_diff || 0, 2);
+    const sumSystemCost = Number(entry.sum_system_cost || 0);
+
+    const periodStart = String(entry.period_start || "");
+    const periodLabel = formatStockCountAccuracyPeriodLabel(periodStart, grain);
+
+    rows.push({
+      periodKey: periodStart,
+      periodLabel,
+      category,
+      categoryLabelKey: categoryLabelKey(category),
+      unitLabelKey: isPairBased ? "dozens" : "units",
+      linesCounted,
+      systemQtyDisplay: toQuantity(sumSystemQtyBase / divisor, 3),
+      unitDiffDisplay: toQuantity(sumAbsDiffBase / divisor, 3),
+      qtyAccuracyPct: toAmount(
+        computeAccuracyPercent(sumAbsDiffBase, sumSystemQtyBase),
+        2,
+      ),
+      costDifference,
+      costAccuracyPct: toAmount(
+        computeAccuracyPercent(costDifference, sumSystemCost),
+        2,
+      ),
+    });
+
+    if (!periodAgg.has(periodStart)) {
+      periodOrder.push(periodStart);
+      periodAgg.set(periodStart, {
+        periodLabel,
+        sumSystemQtyBase: 0,
+        sumAbsDiffBase: 0,
+        costDifference: 0,
+        sumSystemCost: 0,
+      });
+    }
+    const agg = periodAgg.get(periodStart);
+    agg.sumSystemQtyBase += sumSystemQtyBase;
+    agg.sumAbsDiffBase += sumAbsDiffBase;
+    agg.costDifference += costDifference;
+    agg.sumSystemCost += sumSystemCost;
+
+    grandTotals.linesCounted += linesCounted;
+    grandTotals.sumSystemQtyBase += sumSystemQtyBase;
+    grandTotals.sumAbsDiffBase += sumAbsDiffBase;
+    grandTotals.costDifference += costDifference;
+    grandTotals.sumSystemCost += sumSystemCost;
+  });
+
+  const chart = {
+    labels: [],
+    qtyAccuracy: [],
+    costAccuracy: [],
+    costDifference: [],
+  };
+  periodOrder.forEach((periodStart) => {
+    const agg = periodAgg.get(periodStart);
+    chart.labels.push(agg.periodLabel);
+    chart.qtyAccuracy.push(
+      toAmount(
+        computeAccuracyPercent(agg.sumAbsDiffBase, agg.sumSystemQtyBase),
+        2,
+      ),
+    );
+    chart.costAccuracy.push(
+      toAmount(computeAccuracyPercent(agg.costDifference, agg.sumSystemCost), 2),
+    );
+    chart.costDifference.push(toAmount(agg.costDifference, 2));
+  });
+
+  const totals = {
+    linesCounted: grandTotals.linesCounted,
+    costDifference: toAmount(grandTotals.costDifference, 2),
+    qtyAccuracyPct: toAmount(
+      computeAccuracyPercent(
+        grandTotals.sumAbsDiffBase,
+        grandTotals.sumSystemQtyBase,
+      ),
+      2,
+    ),
+    costAccuracyPct: toAmount(
+      computeAccuracyPercent(
+        grandTotals.costDifference,
+        grandTotals.sumSystemCost,
+      ),
+      2,
+    ),
+  };
+
+  return { filters, options, reportData: { rows, chart, totals } };
+};
+
 module.exports = {
   STOCK_TYPES,
   RATE_TYPES,
@@ -5205,4 +5541,5 @@ module.exports = {
   getInventoryStockMovementReportPageData,
   getInventoryStockTransferReportPageData,
   getInventoryDeadStockReportPageData,
+  getInventoryStockCountAccuracyReportPageData,
 };
