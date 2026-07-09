@@ -1313,6 +1313,7 @@
         const effective = applyRulesToRmLineForSku(rmLine, sku, overrideLine);
         return {
           sku,
+          rmLine,
           baseline,
           effective,
         };
@@ -1491,6 +1492,48 @@
         });
       });
     };
+    const skuDivergeHintPrefix = "<%= tx('bom_sku_diverge_hint', 'Differs across same-size variants — ') %>";
+    // For a material line, compare the effective qty/color/size across the active
+    // SKU and its same-size variant peers (different packaging/grade). A cell is
+    // "divergent" when two or more peers carry differing FILLED values — the odd
+    // manual edit worth spotting, since same-size peers otherwise auto-fill alike.
+    const getSkuRowDivergence = (rmLine, activeSku) => {
+      const empty = { qty: false, color: false, size: false, qtyTip: "", colorTip: "", sizeTip: "" };
+      if (!rmLine || !activeSku) return empty;
+      const groupSkus = [activeSku]
+        .concat(getSkuVariantPeerIds(activeSku.id).map(findHeaderSkuById).filter(Boolean));
+      if (groupSkus.length < 2) return empty;
+      const colorOptions = getRmColorsForItem(rmLine.rm_item_id);
+      const sizeOptions = getRmSizesForItem(rmLine.rm_item_id);
+      const nameFrom = (opts, id) => {
+        const hit = (opts || []).find((o) => String(o.id ?? o.value ?? "") === String(id || ""));
+        return hit ? String(hit.name ?? hit.label ?? hit.value ?? id) : String(id);
+      };
+      const qty = new Map();
+      const color = new Map();
+      const size = new Map();
+      groupSkus.forEach((sku) => {
+        const ov = findSkuOverride(sku.id, rmLine.rm_item_id, rmLine.dept_id);
+        const eff = applyRulesToRmLineForSku(rmLine, sku, ov);
+        if (!eff || eff.excluded) return;
+        const label = getSkuCodeLabel(sku);
+        if (eff.qtyIsExplicit) qty.set(String(Number(eff.qty)), label);
+        if (String(eff.rmColorId || "").trim()) color.set(String(eff.rmColorId), label);
+        if (String(eff.rmSizeId || "").trim()) size.set(String(eff.rmSizeId), label);
+      });
+      const tip = (map, render) => Array.from(map.entries())
+        .map(([val, label]) => `${label}: ${render(val)}`)
+        .join(" · ");
+      return {
+        qty: qty.size > 1,
+        color: color.size > 1,
+        size: size.size > 1,
+        qtyTip: qty.size > 1 ? tip(qty, (v) => v) : "",
+        colorTip: color.size > 1 ? tip(color, (v) => nameFrom(colorOptions, v)) : "",
+        sizeTip: size.size > 1 ? tip(size, (v) => nameFrom(sizeOptions, v)) : "",
+      };
+    };
+
     const renderSkuRules = () => {
       if (!(skuRulesBody instanceof HTMLElement)) return;
       const skuOptions = getHeaderSkuOptions();
@@ -1528,7 +1571,10 @@
         skuRulesBody.innerHTML = `<tr><td colspan="6" class="px-3 py-3 text-sm text-slate-500"><%= t("bom_no_material_lines_for_sku_rules")  %></td></tr>`;
         return;
       }
-      skuRulesBody.innerHTML = rows.map(({ sku, baseline, effective }, rowIndex) => {
+      skuRulesBody.innerHTML = rows.map(({ sku, rmLine, baseline, effective }, rowIndex) => {
+        const divergence = getSkuRowDivergence(rmLine, sku);
+        const divCls = (on) => (on ? " bg-amber-50 ring-1 ring-inset ring-amber-300 rounded-lg" : "");
+        const divTitle = (tip) => (tip ? ` title="${esc(skuDivergeHintPrefix + tip)}"` : "");
         const materialName = rmItemNameById.get(String(effective.effectiveRmItemId || "")) || effective.effectiveRmItemId;
         const deptName = departmentNameById.get(String(effective.deptId || "")) || "";
         const uomName = getUomName(effective.uomId);
@@ -1569,13 +1615,13 @@
           >
             <td class="px-3 py-2 font-medium text-slate-700">${esc(materialName)}</td>
             <td class="px-3 py-2 text-slate-600">${esc(deptName)}</td>
-            <td class="px-3 py-2">
+            <td class="px-3 py-2${divCls(divergence.color)}"${divTitle(divergence.colorTip)}>
               ${colorControl}
             </td>
-            <td class="px-3 py-2">
+            <td class="px-3 py-2${divCls(divergence.size)}"${divTitle(divergence.sizeTip)}>
               ${sizeControl}
             </td>
-            <td class="px-3 py-2">
+            <td class="px-3 py-2${divCls(divergence.qty)}"${divTitle(divergence.qtyTip)}>
               <input data-sku-rule-col="required_qty" data-no-stepper="true" type="number" min="0" step="0.001" value="${esc(qtyValue)}" ${editable && !effective.excluded ? "" : "readonly"} class="w-32 rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm ${effective.excluded ? "bg-slate-50 text-slate-500" : ""}">
             </td>
             <td class="px-3 py-2 text-slate-600">${esc(uomName)}</td>
