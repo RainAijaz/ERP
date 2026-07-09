@@ -59,19 +59,23 @@
 <div class="mx-auto w-full max-w-7xl space-y-6">
   <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
     <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-      <div class="space-y-1">
-        <h1 class="text-2xl font-display text-ink">
-          <%= isEdit ? (t("bom_edit_title") ) : (t("bom_new_title") ) %>
-        </h1>
-        <p class="text-sm text-muted"><%= t("bom_header_required_message")  %></p>
-      </div>
-      <div class="flex flex-wrap gap-2">
+      <div class="flex items-center gap-3">
         <a
           href="<%= basePath %>"
-          class="inline-flex min-w-[8.5rem] items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+          class="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-300 bg-white text-lg text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+          title="<%= tx("bom_back_to_register", "Back to register") %>"
+          aria-label="<%= tx("bom_back_to_register", "Back to register") %>"
         >
-          &larr; <%= tx("bom_back_to_register", "Back to register") %>
+          &larr;
         </a>
+        <div class="space-y-1">
+          <h1 class="text-2xl font-display text-ink">
+            <%= isEdit ? (t("bom_edit_title") ) : (t("bom_new_title") ) %>
+          </h1>
+          <p class="text-sm text-muted"><%= t("bom_header_required_message")  %></p>
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-2">
         <% if (isEditable && (!isEdit || isDraft)) { %>
           <button
             type="button"
@@ -1431,6 +1435,61 @@
     const syncSkuRulesFromDom = () => {
       const rows = Array.from(document.querySelectorAll("[data-sku-rule-row]"));
       rows.forEach((row) => applySkuRuleRowToOverrides(row));
+    };
+    // On save, mirror each size's already-filled SKU rules onto every SKU of the
+    // same size that still has NO rules at all. SKUs that already carry any value
+    // are left untouched so intentional per-SKU differences are never clobbered.
+    const fillEmptySameSizeSkusFromFilled = () => {
+      const skuOptions = getHeaderSkuOptions();
+      if (skuOptions.length < 2) return;
+      const rmCombos = (state.rm || []).filter(
+        (row) => String(row?.rm_item_id || "").trim() && String(row?.dept_id || "").trim(),
+      );
+      if (!rmCombos.length) return;
+      const skuHasAnyRuleValue = (skuId) =>
+        (state.sku_override || []).some((row) => {
+          if (String(row?.sku_id || "") !== String(skuId || "")) return false;
+          return Boolean(
+            row.is_excluded
+            || String(row.override_qty ?? "").trim() !== ""
+            || String(row.replacement_rm_item_id || "").trim()
+            || String(row.rm_color_id || "").trim()
+            || String(row.rm_size_id || "").trim(),
+          );
+        });
+      const bySize = new Map();
+      skuOptions.forEach((sku) => {
+        const sizeKey = String(sku.size_id || "");
+        if (!sizeKey) return;
+        if (!bySize.has(sizeKey)) bySize.set(sizeKey, []);
+        bySize.get(sizeKey).push(sku);
+      });
+      bySize.forEach((group) => {
+        if (group.length < 2) return;
+        const filled = group.filter((sku) => skuHasAnyRuleValue(sku.id));
+        const empty = group.filter((sku) => !skuHasAnyRuleValue(sku.id));
+        if (!filled.length || !empty.length) return;
+        // Prefer a fully-filled SKU as the source for the copy.
+        const source = filled
+          .slice()
+          .sort((a, b) => {
+            const af = getSkuCompletenessState(String(a.id)) === "full" ? 0 : 1;
+            const bf = getSkuCompletenessState(String(b.id)) === "full" ? 0 : 1;
+            return af - bf;
+          })[0];
+        empty.forEach((target) => {
+          rmCombos.forEach((rmLine) => {
+            const srcOverride = findSkuOverride(source.id, rmLine.rm_item_id, rmLine.dept_id);
+            if (!srcOverride) return;
+            upsertSkuOverrideLine({
+              ...srcOverride,
+              sku_id: String(target.id),
+              target_rm_item_id: String(rmLine.rm_item_id),
+              dept_id: String(rmLine.dept_id),
+            });
+          });
+        });
+      });
     };
     const renderSkuRules = () => {
       if (!(skuRulesBody instanceof HTMLElement)) return;
@@ -2926,6 +2985,8 @@
       allowBomSubmit = false;
       syncStateFromDom();
       syncSkuRulesFromDom();
+      // Auto-fill empty same-size SKUs from their filled sibling before serializing.
+      fillEmptySameSizeSkusFromFilled();
       if (hasClientDuplicateCombos()) {
         event.preventDefault();
         return;
