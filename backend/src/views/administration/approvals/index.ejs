@@ -80,6 +80,8 @@
               <% if (row.entity_type === 'BOM' && row.entity_id && row.entity_id !== 'NEW') { %>
                 <a
                   href="/master-data/bom/<%= row.entity_id %>"
+                  target="_blank"
+                  rel="noopener"
                   class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold uppercase tracking-[0.14em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800"
                 >
                   <%= t("view") %>

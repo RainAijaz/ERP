@@ -27,6 +27,34 @@ const debugBom = (...args) => {
   if (debugEnabled) console.log("[DEBUG][BOM][route]", ...args);
 };
 
+const BOM_TYPE_LABELS = { FINISHED: "FG", SEMI_FINISHED: "SFG" };
+
+// Builds a human-friendly BOM label for approval summaries, e.g. "Cotton Shirt (FG)"
+// instead of the opaque BOM number. Falls back to the BOM number when the article
+// name cannot be resolved.
+const buildBomArticleLabel = async (db, { header, bomId } = {}) => {
+  let hdr = header;
+  if (!hdr && bomId) {
+    hdr = await db("erp.bom_header")
+      .select("bom_no", "item_id", "level")
+      .where({ id: bomId })
+      .first();
+  }
+  if (!hdr) return bomId ? `#${bomId}` : "";
+  const itemId = Number(hdr.item_id || 0);
+  let name = "";
+  if (itemId) {
+    const item = await db("erp.items")
+      .select("name")
+      .where({ id: itemId })
+      .first();
+    name = item?.name || "";
+  }
+  const type = BOM_TYPE_LABELS[String(hdr.level || "").toUpperCase()] || "";
+  if (name) return type ? `${name} (${type})` : name;
+  return hdr.bom_no ? `#${hdr.bom_no}` : bomId ? `#${bomId}` : "";
+};
+
 const setUiNotice = (res, message, options = {}) => {
   if (!message) return;
   setCookie(res, UI_NOTICE_COOKIE, JSON.stringify({ message, ...options }), {
@@ -672,7 +700,7 @@ router.post(
         action: "approve",
         entityType: BOM_ENTITY_TYPE,
         entityId: bomId,
-        summary: `${res.locals.t("approve")} ${res.locals.t("bom")} #${current.header.bom_no}`,
+        summary: `${res.locals.t("approve")} ${res.locals.t("bom")} ${await buildBomArticleLabel(knex, { header: current.header })}`,
         oldValue: current,
         newValue: bomService.buildApproveDraftPayload({
           bomId,
@@ -792,7 +820,7 @@ router.post(
           action: "create",
           entityType: BOM_ENTITY_TYPE,
           entityId: sourceId,
-          summary: `${res.locals.t("bom_create_new_version")} #${sourceId}`,
+          summary: `${res.locals.t("bom_create_new_version")} ${await buildBomArticleLabel(knex, { bomId: sourceId })}`,
           oldValue: null,
           newValue: {
             schema_version: 1,
@@ -862,7 +890,7 @@ router.post(
         action: "delete",
         entityType: BOM_ENTITY_TYPE,
         entityId: bomId,
-        summary: `${actionLabel} ${res.locals.t("bom")} #${current.header?.bom_no || bomId}`,
+        summary: `${actionLabel} ${res.locals.t("bom")} ${await buildBomArticleLabel(knex, { header: current.header, bomId })}`,
         oldValue: {
           id: current.header?.id || bomId,
           is_active: current.header?.is_active !== false,

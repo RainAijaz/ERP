@@ -66,6 +66,12 @@
         <p class="text-sm text-muted"><%= t("bom_header_required_message")  %></p>
       </div>
       <div class="flex flex-wrap gap-2">
+        <a
+          href="<%= basePath %>"
+          class="inline-flex min-w-[8.5rem] items-center justify-center rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-slate-700 transition hover:border-slate-400 hover:text-slate-900"
+        >
+          &larr; <%= tx("bom_back_to_register", "Back to register") %>
+        </a>
         <% if (isEditable && (!isEdit || isDraft)) { %>
           <button
             type="button"
@@ -1234,18 +1240,15 @@
       const allSkus = getHeaderSkuOptions();
       const current = allSkus.find((row) => String(row.id) === String(skuId || ""));
       if (!current) return [];
-      const key = [
-        String(current.size_id || ""),
-        String(current.color_id || ""),
-        String(current.packing_type_id || ""),
-      ].join("|");
+      // Peers = every other SKU of the SAME SIZE, regardless of color, packaging
+      // or grade. A material line entered for one size auto-fills all variants of
+      // that size. (Cross-article copy/cascade still matches on full variant
+      // identity — that logic lives in copy-service.js, not here.)
+      const key = String(current.size_id || "");
+      if (!key) return []; // never group size-less SKUs together
       const peerIds = allSkus
         .filter((row) => String(row.id) !== String(current.id))
-        .filter((row) => [
-          String(row.size_id || ""),
-          String(row.color_id || ""),
-          String(row.packing_type_id || ""),
-        ].join("|") === key)
+        .filter((row) => String(row.size_id || "") === key)
         .map((row) => String(row.id || ""))
         .filter(Boolean);
       return peerIds;
