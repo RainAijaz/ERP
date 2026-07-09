@@ -24,11 +24,15 @@ const resolveText = (t, key, fallback) => {
 };
 
 // Variant identity used to match SKUs across articles (null-safe).
+// Color is intentionally excluded: this business does not treat colour as a
+// distinguishing variant, so a source SKU is matched to a target SKU on
+// size + grade + packing regardless of colour. If a target article genuinely
+// carries several colours per size/grade/packing, those collapse to one key
+// and are left unresolved ("multiple matches") rather than mis-assigned.
 const skuVariantKey = (sku) =>
   [
     toNumberOrNull(sku?.size_id) || 0,
     toNumberOrNull(sku?.grade_id) || 0,
-    toNumberOrNull(sku?.color_id) || 0,
     toNumberOrNull(sku?.packing_type_id) || 0,
   ].join("|");
 
@@ -225,7 +229,7 @@ const skipReasonLabel = (t, entry) => {
   const variant = entry.variant_label ? ` (${entry.variant_label})` : "";
   switch (entry.reason) {
     case "no_matching_sku":
-      return `${entry.sku_code}${variant}: ${resolveText(t, "bom_copy_skip_no_matching_sku", "this article has no SKU with the same size/grade/color/packaging")}`;
+      return `${entry.sku_code}${variant}: ${resolveText(t, "bom_copy_skip_no_matching_sku", "this article has no SKU with the same size/grade/packaging")}`;
     case "multiple_matching_skus":
       return `${entry.sku_code}${variant}: ${resolveText(t, "bom_copy_skip_multiple_matching_skus", "more than one SKU of this article matches — set values manually")}`;
     case "missing_rm_line":
@@ -769,8 +773,8 @@ const buildCopyComparison = async (knex, { bomId, locale = "en" }) => {
   });
 
   // sku_overrides: current SKUs belong to a different article than the
-  // source, so match by variant identity (size/grade/color/packing) rather
-  // than raw sku_id.
+  // source, so match by variant identity (size/grade/packing; colour ignored)
+  // rather than raw sku_id.
   const skuAttrMap = await loadSkuVariantAttrs(
     knex,
     [current.header.item_id, source.header.item_id],
@@ -783,7 +787,7 @@ const buildCopyComparison = async (knex, { bomId, locale = "en" }) => {
     ]),
   );
   // Group by variant key first so that a source article with two SKUs
-  // sharing the same size/grade/color/packing (a real, observed case) is not
+  // sharing the same size/grade/packing (a real, observed case) is not
   // silently collapsed to whichever one happens to sort last - ambiguous
   // keys are left unresolved rather than matched to the wrong SKU.
   const sourceSkusByVariantKeyGroup = new Map();

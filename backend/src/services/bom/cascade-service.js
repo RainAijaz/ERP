@@ -129,7 +129,7 @@ const buildVariantKeyMaps = (skuAttrRows) => {
 };
 
 // Translates a parent-article sku_id into the corresponding dependent-article
-// sku_id by variant identity (size/grade/color/packing) - mirrors
+// sku_id by variant identity (size/grade/packing; colour ignored) - mirrors
 // mapSkuOverridesToTarget's per-row resolution and reuses the same skip
 // vocabulary, since an ambiguous or absent match must never be guessed.
 const resolveDependentSkuOverrideTarget = (
