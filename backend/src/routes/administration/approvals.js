@@ -594,6 +594,42 @@ const safeJson = (value) => {
   }
 };
 
+const BOM_LEVEL_TYPE_LABELS = { FINISHED: "FG", SEMI_FINISHED: "SFG" };
+
+// Resolves "<article name> (FG|SFG)" labels for the BOM rows on an approvals
+// page in a single query, keyed by bom_header.id (== approval_request.entity_id
+// for BOM rows). Locale-aware so Urdu names surface when active.
+const buildBomApprovalLabelMap = async (rows, locale) => {
+  const labelById = new Map();
+  const bomIds = [
+    ...new Set(
+      (rows || [])
+        .filter((r) => r?.entity_type === "BOM")
+        .map((r) => Number(r.entity_id))
+        .filter((n) => Number.isFinite(n) && n > 0),
+    ),
+  ];
+  if (!bomIds.length) return labelById;
+  const useUr = locale === "ur";
+  const headers = await knex("erp.bom_header as bh")
+    .leftJoin("erp.items as i", "i.id", "bh.item_id")
+    .select(
+      "bh.id",
+      "bh.level",
+      useUr
+        ? knex.raw("COALESCE(i.name_ur, i.name) as item_name")
+        : "i.name as item_name",
+    )
+    .whereIn("bh.id", bomIds);
+  for (const h of headers) {
+    const name = String(h.item_name || "").trim();
+    if (!name) continue;
+    const type = BOM_LEVEL_TYPE_LABELS[String(h.level || "").toUpperCase()] || "";
+    labelById.set(Number(h.id), type ? `${name} (${type})` : name);
+  }
+  return labelById;
+};
+
 const parseSummaryVoucherTypeCode = (summary) => {
   const text = String(summary || "").toUpperCase();
   if (!text) return "";
@@ -1529,8 +1565,23 @@ router.get(
 
       const rows = await rowsQuery;
 
+      // Enrich BOM approval summaries with the article name + type (e.g.
+      // "Cotton Shirt (FG)") in place of the opaque BOM number. Done at render
+      // time so rows saved before this change also display correctly, no
+      // backfill needed.
+      const bomLabelById = await buildBomApprovalLabelMap(rows, req.locale);
+
       for (const row of rows) {
         row.summary = normalizeVoucherApprovalSummary(row, res.locals.t);
+        if (row.entity_type === "BOM") {
+          const label = bomLabelById.get(Number(row.entity_id));
+          const summaryText = String(row.summary || "");
+          // Replace the "#<bom_no>" token with the article label; leave
+          // already-enriched summaries (no token) untouched to avoid dupes.
+          if (label && /#\S+/.test(summaryText)) {
+            row.summary = summaryText.replace(/#\S+/, label);
+          }
+        }
       }
 
       renderPage(
