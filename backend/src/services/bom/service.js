@@ -16,6 +16,13 @@ const LABOUR_RATE_RULE_PRECEDENCE = {
 };
 let bomLifecycleColumnSupportPromise = null;
 let bomCopiedFromColumnSupportPromise = null;
+let bomSkuOverrideOriginColumnPromise = null;
+
+// Allowed provenance tags for a per-SKU rule value (see migration _000090).
+const normalizeSkuOverrideOrigin = (value) => {
+  const s = String(value || "").trim().toLowerCase();
+  return s === "master" || s === "auto" || s === "custom" ? s : null;
+};
 
 const toArray = (value) => {
   if (!value) return [];
@@ -292,6 +299,21 @@ const hasBomCopiedFromColumn = async (db) => {
   return bomCopiedFromColumnSupportPromise;
 };
 
+const hasBomSkuOverrideOriginColumn = async (db) => {
+  if (bomSkuOverrideOriginColumnPromise) return bomSkuOverrideOriginColumnPromise;
+  bomSkuOverrideOriginColumnPromise = (async () => {
+    try {
+      return await db.schema
+        .withSchema("erp")
+        .hasColumn("bom_sku_override_line", "origin");
+    } catch (err) {
+      bomSkuOverrideOriginColumnPromise = null;
+      return false;
+    }
+  })();
+  return bomSkuOverrideOriginColumnPromise;
+};
+
 const parseBomFormPayload = (body = {}) => {
   const rmRaw = parseJsonArray(body.rm_lines_json);
   const skuRaw = parseJsonArray(body.sku_rules_json);
@@ -328,6 +350,7 @@ const parseBomFormPayload = (body = {}) => {
         replacement_rm_item_id: toNumberOrNull(row.replacement_rm_item_id),
         required_qty: toNumberOrNull(row.required_qty),
         uom_id: toNumberOrNull(row.uom_id),
+        origin: normalizeSkuOverrideOrigin(row.origin),
       }))
       .filter(
         (row) =>
@@ -1486,6 +1509,8 @@ const replaceBomLines = async (trx, bomId, lines) => {
     trx,
     "erp.bom_sku_override_line",
   );
+  const originSupported =
+    hasBomSkuOverrideTable && (await hasBomSkuOverrideOriginColumn(trx));
   await trx("erp.bom_rm_line").where({ bom_id: bomId }).del();
   await trx("erp.bom_sfg_line").where({ bom_id: bomId }).del();
   await trx("erp.bom_labour_line").where({ bom_id: bomId }).del();
@@ -1564,6 +1589,7 @@ const replaceBomLines = async (trx, bomId, lines) => {
         rm_color_id: toNumberOrNull(line.rm_color_id),
         rm_size_id: toNumberOrNull(line.rm_size_id),
         notes: line.notes == null ? null : String(line.notes),
+        origin: normalizeSkuOverrideOrigin(line.origin),
       }))
       .filter((line) => line.sku_id && line.target_rm_item_id && line.dept_id);
 
@@ -1581,6 +1607,8 @@ const replaceBomLines = async (trx, bomId, lines) => {
           rm_color_id: line.rm_color_id || null,
           rm_size_id: line.rm_size_id || null,
           notes: line.notes || null,
+          // undefined omits the column when the DB hasn't been migrated yet.
+          origin: originSupported ? line.origin || null : undefined,
         })),
       );
     } else if (lines.sku_rules?.length) {
@@ -1597,6 +1625,7 @@ const replaceBomLines = async (trx, bomId, lines) => {
           rm_color_id: line.rm_color_id || null,
           rm_size_id: line.rm_size_id || null,
           notes: null,
+          origin: originSupported ? normalizeSkuOverrideOrigin(line.origin) : undefined,
         })),
       );
     }
@@ -1613,6 +1642,8 @@ const getBomSnapshot = async (db, bomId) => {
     db,
     "erp.bom_sku_override_line",
   );
+  const originSupported =
+    hasBomSkuOverrideTable && (await hasBomSkuOverrideOriginColumn(db));
   const headerFields = [
     "id",
     "bom_no",
@@ -1697,6 +1728,7 @@ const getBomSnapshot = async (db, bomId) => {
               "rm_size_id",
               "notes",
             )
+            .modify((q) => { if (originSupported) q.select("origin"); })
             .where({ bom_id: bomId })
             .orderBy("id", "asc")
         : Promise.resolve([]),
@@ -2637,6 +2669,8 @@ const createNewVersionFromApprovedTx = async (
     trx,
     "erp.bom_sku_override_line",
   );
+  const originSupported =
+    hasBomSkuOverrideTable && (await hasBomSkuOverrideOriginColumn(trx));
   const [rmLines, sfgLines, labourLines, stageRoutes, skuOverrides] =
     await Promise.all([
       trx("erp.bom_rm_line")
@@ -2695,6 +2729,7 @@ const createNewVersionFromApprovedTx = async (
               "rm_size_id",
               "notes",
             )
+            .modify((q) => { if (originSupported) q.select("origin"); })
             .where({ bom_id: sourceId })
             .orderBy("id", "asc")
         : Promise.resolve([]),
@@ -3678,6 +3713,8 @@ const getBomForForm = async (knex, id) => {
     knex,
     "erp.bom_sku_override_line",
   );
+  const originSupported =
+    hasBomSkuOverrideTable && (await hasBomSkuOverrideOriginColumn(knex));
   const headerFields = [
     "bh.id",
     "bh.bom_no",
@@ -3787,6 +3824,7 @@ const getBomForForm = async (knex, id) => {
               "rm_size_id",
               "notes",
             )
+            .modify((q) => { if (originSupported) q.select("origin"); })
             .where({ bom_id: bomId })
             .orderBy("id", "asc")
         : Promise.resolve([]),

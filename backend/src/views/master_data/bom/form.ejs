@@ -1396,18 +1396,29 @@
     const skuComboHasOwnValue = (sid, rmId, deptId) =>
       lineHasValue(findSkuOverride(sid, rmId, deptId));
     // Session-only provenance for SKU-rule values: "custom" = typed by the user
-    // on this SKU, "auto" = seeded by copying from a same-size peer. NOT persisted
-    // (keyed sku_id:rm_item_id:dept_id), so a reopened BOM starts with no tags.
+    // on this SKU, "auto" = copied from the size master, "master" = the driver SKU.
+    // PERSISTED via bom_sku_override_line.origin, so tags + master survive reload.
+    // Keyed sku_id:rm_item_id:dept_id.
     const skuValueOrigin = new Map();
     const skuOriginKey = (sid, rmId, deptId) => `${sid}:${rmId}:${deptId}`;
-    // Session "master" per size group: the SKU that drives auto-copy onto its
-    // same-size peers. The first SKU in a size to receive a value becomes master;
-    // editing it keeps refreshing every still-"auto" peer, but never a peer the
-    // user has made "custom". Editing a non-master SKU only changes that SKU.
+    // "master" per size group: the SKU that drives auto-copy onto its same-size
+    // peers. The first SKU in a size to receive a value becomes master; editing it
+    // keeps refreshing every still-"auto" peer, but never a peer the user has made
+    // "custom". Editing a non-master SKU only changes that SKU.
     const skuMasterBySize = new Map();
     const skuSizeKey = (sid) => String(findHeaderSkuById(sid)?.size_id || "");
     const skuHasAnyValue = (sid) =>
       (state.sku_override || []).some((row) => String(row?.sku_id || "") === String(sid || "") && lineHasValue(row));
+    // Rebuild the origin map + size masters from persisted rows (survives reload).
+    (state.sku_override || []).forEach((row) => {
+      const origin = String(row?.origin || "").trim();
+      if (origin !== "master" && origin !== "auto" && origin !== "custom") return;
+      skuValueOrigin.set(skuOriginKey(row.sku_id, row.target_rm_item_id, row.dept_id), origin);
+      if (origin === "master") {
+        const sizeKey = skuSizeKey(row.sku_id);
+        if (sizeKey && !skuMasterBySize.get(sizeKey)) skuMasterBySize.set(sizeKey, String(row.sku_id));
+      }
+    });
     const applySkuRuleRowToOverrides = (row) => {
       if (!(row instanceof HTMLElement)) return;
       const skuId = String(row.getAttribute("data-sku-id") || "");
@@ -1449,11 +1460,8 @@
         rm_color_id: colorDiff ? selectedColorId : null,
         rm_size_id: sizeDiff ? selectedSizeId : null,
       };
-      // This edit is the user's own value for this SKU → tag it "custom".
       const nextHasValue = lineHasValue(nextLine);
       const selfKey = skuOriginKey(skuId, targetRmItemId, targetDeptId);
-      if (nextHasValue) skuValueOrigin.set(selfKey, "custom");
-      else skuValueOrigin.delete(selfKey);
       upsertSkuOverrideLine(nextLine);
 
       // First SKU in a size to get a value becomes that size's "master".
@@ -1462,6 +1470,10 @@
         skuMasterBySize.set(sizeKey, skuId);
       }
       const isMasterEdit = Boolean(sizeKey) && String(skuMasterBySize.get(sizeKey) || "") === skuId;
+
+      // Tag this SKU's own value: "master" if it drives the size, else "custom".
+      if (nextHasValue) skuValueOrigin.set(selfKey, isMasterEdit ? "master" : "custom");
+      else skuValueOrigin.delete(selfKey);
 
       // Only the master drives auto-copy across its same-size peers. It refreshes
       // peers that are still blank or "auto" (auto-copied, untouched), and never
@@ -1553,14 +1565,19 @@
       });
     };
     const skuDivergeHintPrefix = "<%= tx('bom_sku_diverge_hint', 'Differs across same-size variants — ') %>";
-    // Small "auto"/"custom" origin pill for a SKU-rule row (session-only provenance).
+    // Small origin pill for a SKU-rule row (persisted provenance: master/auto/custom).
     const skuOriginLabels = {
+      master: "<%= tx('bom_sku_origin_master', 'master') %>",
+      masterTip: "<%= tx('bom_sku_origin_master_tip', 'Master for this size — editing it updates the auto-copied SKUs') %>",
       auto: "<%= tx('bom_sku_origin_auto', 'auto') %>",
-      autoTip: "<%= tx('bom_sku_origin_auto_tip', 'Auto-copied from a same-size SKU — review or edit for this variant') %>",
+      autoTip: "<%= tx('bom_sku_origin_auto_tip', 'Auto-copied from the master — follows it until you edit this SKU') %>",
       custom: "<%= tx('bom_sku_origin_custom', 'custom') %>",
-      customTip: "<%= tx('bom_sku_origin_custom_tip', 'Entered for this SKU — protected from auto-copy') %>",
+      customTip: "<%= tx('bom_sku_origin_custom_tip', 'Edited for this SKU — protected from auto-copy') %>",
     };
     const renderSkuOriginBadge = (origin) => {
+      if (origin === "master") {
+        return `<span class="ml-2 inline-flex items-center rounded-full bg-indigo-100 px-1.5 py-0.5 align-middle text-[9px] font-semibold uppercase tracking-wide text-indigo-700" title="${esc(skuOriginLabels.masterTip)}">${esc(skuOriginLabels.master)}</span>`;
+      }
       if (origin === "auto") {
         return `<span class="ml-2 inline-flex items-center rounded-full bg-amber-100 px-1.5 py-0.5 align-middle text-[9px] font-semibold uppercase tracking-wide text-amber-700" title="${esc(skuOriginLabels.autoTip)}">${esc(skuOriginLabels.auto)}</span>`;
       }
@@ -1757,6 +1774,7 @@
             replacement_rm_item_id: hasReplacement ? String(effective.effectiveRmItemId || "").trim() : "",
             required_qty: qty === null ? null : Number((Math.round(qty * 1000) / 1000).toFixed(3)),
             uom_id: String(effective.uomId || "").trim(),
+            origin: skuValueOrigin.get(skuOriginKey(sku.id, effective.targetRmItemId, effective.deptId)) || null,
           });
         });
       });
