@@ -12,6 +12,17 @@ const {
   deleteVoucher,
 } = require("../../services/financial/voucher-service");
 
+// Emit COALESCE(alias.name_ur, alias.name) as `as` for Urdu, plain name otherwise.
+// accounts/parties/labours/employees/departments all carry a name_ur column.
+const localizedNameSelect = (alias, as, locale) =>
+  String(locale || "").toLowerCase() === "ur"
+    ? knex.raw(`COALESCE(??, ??) as ??`, [
+        `${alias}.name_ur`,
+        `${alias}.name`,
+        as,
+      ])
+    : knex.raw(`?? as ??`, [`${alias}.name`, as]);
+
 let hasVoucherHeaderRemarksUrColumnPromise = null;
 let hasVoucherHeaderLinkedSoIdColumnPromise = null;
 
@@ -73,6 +84,7 @@ const hasVoucherHeaderLinkedSoIdColumn = async () => {
 };
 
 const loadOptions = async (req, voucherTypeCode) => {
+  const locale = String(req.locale || "").toLowerCase();
   let accountsQuery = knex("erp.accounts as a")
     .leftJoin(
       "erp.account_posting_classes as apc",
@@ -83,7 +95,7 @@ const loadOptions = async (req, voucherTypeCode) => {
     .select(
       "a.id",
       "a.code",
-      "a.name",
+      localizedNameSelect("a", "name", locale),
       "apc.code as posting_class_code",
       "apc.is_active as posting_class_active",
       "ag.account_type",
@@ -93,13 +105,13 @@ const loadOptions = async (req, voucherTypeCode) => {
       this.whereNull("a.posting_class_id").orWhere("apc.is_active", true);
     });
   let partiesQuery = knex("erp.parties as p")
-    .select("p.id", "p.code", "p.name")
+    .select("p.id", "p.code", localizedNameSelect("p", "name", locale))
     .where({ "p.is_active": true });
   let laboursQuery = knex("erp.labours as l")
     .select(
       "l.id",
       "l.code",
-      "l.name",
+      localizedNameSelect("l", "name", locale),
       "l.dept_id",
       knex.raw(
         `(SELECT COALESCE(string_agg(ld.dept_id::text, ',' ORDER BY ld.dept_id), '')
@@ -109,7 +121,12 @@ const loadOptions = async (req, voucherTypeCode) => {
     )
     .whereRaw("lower(l.status)='active'");
   let employeesQuery = knex("erp.employees as e")
-    .select("e.id", "e.code", "e.name", "e.department_id")
+    .select(
+      "e.id",
+      "e.code",
+      localizedNameSelect("e", "name", locale),
+      "e.department_id",
+    )
     .whereRaw("lower(e.status)='active'");
 
   accountsQuery = accountsQuery.whereExists(function whereAccountBranchMap() {
@@ -150,7 +167,7 @@ const loadOptions = async (req, voucherTypeCode) => {
       laboursQuery.orderBy("l.name", "asc"),
       employeesQuery.orderBy("e.name", "asc"),
       knex("erp.departments as d")
-        .select("d.id", "d.name")
+        .select("d.id", localizedNameSelect("d", "name", locale))
         .where({ is_active: true })
         .orderBy("d.name", "asc"),
     ]);
@@ -181,7 +198,7 @@ const loadOptions = async (req, voucherTypeCode) => {
         "vh.voucher_no",
         "vh.voucher_date",
         "soh.customer_party_id",
-        "p.name as customer_name",
+        localizedNameSelect("p", "customer_name", locale),
       )
       .where({
         "vh.voucher_type_code": "SALES_ORDER",
@@ -444,13 +461,13 @@ const loadVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
       "vl.labour_id",
       "vl.employee_id",
       "a.code as account_code",
-      "a.name as account_name",
+      localizedNameSelect("a", "account_name", req.locale),
       "p.code as party_code",
-      "p.name as party_name",
+      localizedNameSelect("p", "party_name", req.locale),
       "l.code as labour_code",
-      "l.name as labour_name",
+      localizedNameSelect("l", "labour_name", req.locale),
       "e.code as employee_code",
-      "e.name as employee_name",
+      localizedNameSelect("e", "employee_name", req.locale),
       "vl.reference_no",
       "vl.meta",
     )
@@ -486,7 +503,7 @@ const loadVoucherDetails = async ({ req, voucherTypeCode, voucherNo }) => {
         "vh.id",
         "vh.header_account_id",
         "ha.code as header_account_code",
-        "ha.name as header_account_name",
+        localizedNameSelect("ha", "header_account_name", req.locale),
       )
       .whereIn("vh.id", sourceVoucherIds);
     sourceHeaderAccountMap = new Map(
