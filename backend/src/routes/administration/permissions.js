@@ -14,8 +14,11 @@ const { parseCookies, setCookie } = require("../../middleware/utils/cookies");
 const { queueAuditLog } = require("../../utils/audit-log");
 const {
   getAssignableAccountsForUser,
+  getAssignableAccountsForRole,
   getUserAccountAccessRows,
   upsertUserAccountAccessRows,
+  getRoleAccountAccessRows,
+  upsertRoleAccountAccessRows,
 } = require("../../services/administration/account-access-service");
 const router = express.Router();
 
@@ -87,7 +90,9 @@ const parseAccountAccessPayload = (value) => {
         canBlockDetails || toBool(entry?.canBlockSummary, true);
       canViewSummary = !canBlockSummary;
       canViewDetails = canViewSummary ? !canBlockDetails : false;
-      if (canViewSummary && canViewDetails) return;
+      // NB: full-access (allow) rows are intentionally kept — at user level they
+      // act as an explicit override that lifts an inherited role restriction. The
+      // role upsert drops them since a role baseline only ever restricts.
     } else {
       // Backward compatibility for existing payloads that still post canView* flags.
       canViewDetails = toBool(entry?.canViewDetails, true);
@@ -331,13 +336,22 @@ router.get(
 
       let accountAccessRows = [];
       let accountAccessAccounts = [];
-      if (isUserMode && target_id && canBrowsePermissions) {
-        accountAccessRows = await getUserAccountAccessRows({
-          userId: target_id,
-        });
-        accountAccessAccounts = await getAssignableAccountsForUser({
-          userId: target_id,
-        });
+      if (target_id && canBrowsePermissions) {
+        if (isUserMode) {
+          accountAccessRows = await getUserAccountAccessRows({
+            userId: target_id,
+          });
+          accountAccessAccounts = await getAssignableAccountsForUser({
+            userId: target_id,
+          });
+        } else {
+          accountAccessRows = await getRoleAccountAccessRows({
+            roleId: target_id,
+          });
+          accountAccessAccounts = await getAssignableAccountsForRole({
+            roleId: target_id,
+          });
+        }
       }
 
       res.render("base/layouts/main", {
@@ -624,6 +638,8 @@ router.post(
   "/account-access",
   requirePermission("SCREEN", "administration.permissions", "edit"),
   async (req, res, next) => {
+    const isRoleMode = req.body?.type === "role";
+    const modeType = isRoleMode ? "role" : "user";
     const trx = await knex.transaction();
     let committed = false;
     try {
@@ -632,32 +648,62 @@ router.post(
         throw new Error("Target ID is required");
       }
 
-      const targetUser = await trx("erp.users")
-        .select("id")
-        .where({ id: targetId })
-        .first();
-      if (!targetUser) {
-        writeFlash(res, req.baseUrl, {
-          type: "error",
-          message: res.locals.t("user_not_found"),
-        });
-        return res.redirect("/administration/permissions?type=user");
-      }
-
       const rows = parseAccountAccessPayload(req.body?.rows_json);
-      const result = await upsertUserAccountAccessRows({
-        db: trx,
-        userId: targetId,
-        actorUserId: req.user?.id || null,
-        rows,
-      });
+      let result = { upserted: 0, deleted: 0 };
+
+      if (isRoleMode) {
+        const targetRole = await trx("erp.role_templates")
+          .select("id", "name")
+          .where({ id: targetId })
+          .first();
+        if (!targetRole) {
+          writeFlash(res, req.baseUrl, {
+            type: "error",
+            message: res.locals.t("account_access_save_failed"),
+          });
+          return res.redirect("/administration/permissions?type=role");
+        }
+        if (String(targetRole.name || "").toLowerCase() === "admin") {
+          writeFlash(res, req.baseUrl, {
+            type: "error",
+            message: "Admin role permissions cannot be modified.",
+          });
+          return res.redirect("/administration/permissions?type=role");
+        }
+
+        result = await upsertRoleAccountAccessRows({
+          db: trx,
+          roleId: targetId,
+          actorUserId: req.user?.id || null,
+          rows,
+        });
+      } else {
+        const targetUser = await trx("erp.users")
+          .select("id")
+          .where({ id: targetId })
+          .first();
+        if (!targetUser) {
+          writeFlash(res, req.baseUrl, {
+            type: "error",
+            message: res.locals.t("user_not_found"),
+          });
+          return res.redirect("/administration/permissions?type=user");
+        }
+
+        result = await upsertUserAccountAccessRows({
+          db: trx,
+          userId: targetId,
+          actorUserId: req.user?.id || null,
+          rows,
+        });
+      }
 
       queueAuditLog(req, {
         entityType: "ACCOUNT",
-        entityId: `account_access:${targetId}`,
+        entityId: `account_access:${modeType}:${targetId}`,
         action: "UPDATE",
         context: {
-          user_id: targetId,
+          [isRoleMode ? "role_id" : "user_id"]: targetId,
           upserted: Number(result?.upserted || 0),
           deleted: Number(result?.deleted || 0),
         },
@@ -671,7 +717,7 @@ router.post(
         message: res.locals.t("account_access_saved"),
       });
       return res.redirect(
-        `/administration/permissions?type=user&target_id=${targetId}`,
+        `/administration/permissions?type=${modeType}&target_id=${targetId}`,
       );
     } catch (err) {
       if (!committed) {
@@ -681,7 +727,7 @@ router.post(
           message: res.locals.t("account_access_save_failed"),
         });
         return res.redirect(
-          `/administration/permissions?type=user&target_id=${req.body?.target_id || ""}`,
+          `/administration/permissions?type=${modeType}&target_id=${req.body?.target_id || ""}`,
         );
       }
       return next(err);

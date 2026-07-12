@@ -1686,9 +1686,12 @@ const translations = {
     account_access: "Account Access",
     account_access_subtitle:
       "Control which accounts this user can't view in account activity.",
+    account_access_subtitle_role:
+      "Baseline account-activity restrictions for every user with this role. Individual users can override these.",
     account_access_financial_reports_context:
       "Financial -> Reports: Account Activity restrictions",
     restriction_level: "Restriction Level",
+    account_access_restriction_allow: "Allow (override role)",
     account_access_restriction_summary: "Block Details Only",
     account_access_restriction_details: "Block Summary + Details",
     block_summary: "Block Summary",
@@ -2928,9 +2931,12 @@ translations.ur = {
   account_access: "اکاؤنٹ رسائی",
   account_access_subtitle:
     "طے کریں کہ یہ صارف اکاؤنٹ ایکٹیویٹی میں کون سے اکاؤنٹس نہیں دیکھ سکتا۔",
+  account_access_subtitle_role:
+    "اس رول والے تمام صارفین کے لیے اکاؤنٹ ایکٹیویٹی کی بنیادی پابندیاں۔ انفرادی صارفین انہیں تبدیل کر سکتے ہیں۔",
   account_access_financial_reports_context:
     "فنانشل -> رپورٹس: اکاؤنٹ ایکٹیویٹی پابندیاں",
   restriction_level: "پابندی کی سطح",
+  account_access_restriction_allow: "اجازت دیں (رول پابندی ختم کریں)",
   account_access_restriction_summary: "صرف تفصیلی ویو بلاک کریں",
   account_access_restriction_details: "خلاصہ اور تفصیلی ویو بلاک کریں",
   block_summary: "خلاصہ بلاک کریں",

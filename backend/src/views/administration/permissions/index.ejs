@@ -146,13 +146,12 @@
           </div>
         <% } %>
 
-        <% if (isUserMode) { %>
-          <section id="account-access-shell" class="hidden flex-1 min-h-0 p-4 md:p-5 bg-slate-50/40">
+        <section id="account-access-shell" class="hidden flex-1 min-h-0 p-4 md:p-5 bg-slate-50/40">
             <div class="rounded-xl border border-slate-200 bg-white p-4 shadow-sm flex h-full min-h-0 flex-col">
               <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h2 class="text-sm font-bold uppercase tracking-[0.08em] text-slate-800"><%= t('account_access') %></h2>
-                  <p class="text-xs text-slate-500"><%= t('account_access_subtitle') %></p>
+                  <p class="text-xs text-slate-500"><%= isUserMode ? t('account_access_subtitle') : t('account_access_subtitle_role') %></p>
                 </div>
                 <div class="flex items-center gap-2">
                   <span class="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.08em] text-slate-600"><%= t('account_access_financial_reports_context') %></span>
@@ -228,7 +227,7 @@
                         </tr>
                       <% } %>
                       <% (accountAccessRows || []).forEach((row) => { %>
-                        <% const restrictionValue = row.canViewSummary ? 'summary' : 'details'; %>
+                        <% const restrictionValue = row.level || (row.canViewSummary ? (row.canViewDetails ? 'allow' : 'summary') : 'details'); %>
                         <% const branchesText = (row.branchNames || []).join(', '); %>
                         <tr data-account-access-row data-account-id="<%= row.accountId %>" data-row-search="<%= ((row.code || '') + ' ' + (row.name || '') + ' ' + branchesText).toLowerCase() %>" class="border-t border-slate-100">
                           <td class="px-3 py-2 font-semibold text-slate-700" data-account-code><%= row.code || '-' %></td>
@@ -240,6 +239,9 @@
                           </td>
                           <td class="px-3 py-2 text-slate-700">
                             <select data-account-restriction class="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs font-semibold" <%= !canEditPermissions ? 'disabled' : '' %>>
+                              <% if (isUserMode) { %>
+                                <option value="allow" <%= restrictionValue === 'allow' ? 'selected' : '' %>><%= t('account_access_restriction_allow') %></option>
+                              <% } %>
                               <option value="summary" <%= restrictionValue === 'summary' ? 'selected' : '' %>><%= t('account_access_restriction_summary') %></option>
                               <option value="details" <%= restrictionValue === 'details' ? 'selected' : '' %>><%= t('account_access_restriction_details') %></option>
                             </select>
@@ -255,7 +257,6 @@
               </div>
             </div>
           </section>
-        <% } %>
 
         <div id="permission-table-container" class="flex-1 min-h-0 overflow-x-auto overflow-y-auto bg-slate-50/30 relative custom-scrollbar hidden">
           <table class="w-full text-left border-collapse table-auto">
@@ -386,13 +387,12 @@
         </div>
       </div>
     </form>
-    <% if (isUserMode) { %>
       <form action="/administration/permissions/account-access" method="POST" class="hidden" data-account-access-submit-form>
         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <input type="hidden" name="type" value="<%= isUserMode ? 'user' : 'role' %>">
         <input type="hidden" name="target_id" value="<%= targetId %>">
         <input type="hidden" name="rows_json" value="[]" data-account-access-json>
       </form>
-    <% } %>
   <% } else { %>
     <div class="flex-1 flex flex-col items-center justify-center text-slate-400 bg-slate-50/50 m-4 border-2 border-dashed border-slate-200 rounded-xl">
       <div class="w-16 h-16 mb-4 rounded-full bg-slate-100 flex items-center justify-center text-3xl">👋</div>
@@ -430,7 +430,6 @@
     const normalizedPath = String(path || '').trim();
     const isEmptySelection = !normalizedPath || normalizedPath === 'none';
     const isAccountAccessSelection =
-      IS_USER_MODE &&
       ACCOUNT_ACCESS_SCOPE_PATH !== '' &&
       normalizedPath === ACCOUNT_ACCESS_SCOPE_PATH;
     
@@ -814,6 +813,10 @@
         .replaceAll("'", '&#39;');
 
     const restrictionToFlags = (restrictionValue) => {
+      if (restrictionValue === 'allow') {
+        // Explicit user override that lifts an inherited role restriction.
+        return { canBlockSummary: false, canBlockDetails: false };
+      }
       if (restrictionValue === 'details') {
         return { canBlockSummary: true, canBlockDetails: true };
       }
@@ -872,8 +875,9 @@
           const accountId = Number(row.getAttribute('data-account-id') || 0);
           if (!Number.isInteger(accountId) || accountId <= 0) return null;
           const restriction = row.querySelector('[data-account-restriction]');
-          const restrictionValue = String(restriction?.value || 'details').toLowerCase() === 'summary'
-            ? 'summary'
+          const rawValue = String(restriction?.value || 'details').toLowerCase();
+          const restrictionValue = ['allow', 'summary', 'details'].includes(rawValue)
+            ? rawValue
             : 'details';
           const flags = restrictionToFlags(restrictionValue);
           return {
@@ -906,6 +910,7 @@
         </td>
         <td class="px-3 py-2 text-slate-700">
           <select data-account-restriction class="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs font-semibold" ${disabledAttr}>
+            <% if (isUserMode) { %><option value="allow"><%= t('account_access_restriction_allow') %></option><% } %>
             <option value="summary"><%= t('account_access_restriction_summary') %></option>
             <option value="details" selected><%= t('account_access_restriction_details') %></option>
           </select>
