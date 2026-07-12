@@ -5338,13 +5338,18 @@ const getInventoryStockCountAccuracyReportPageData = async ({
 
   const emptyTotals = {
     linesCounted: 0,
-    costDifference: 0,
+    valueDifference: 0,
     qtyAccuracyPct: 100,
-    costAccuracyPct: 100,
+    valueAccuracyPct: 100,
   };
   const emptyReport = {
     rows: [],
-    chart: { labels: [], qtyAccuracy: [], costAccuracy: [], costDifference: [] },
+    chart: {
+      labels: [],
+      qtyAccuracy: [],
+      valueAccuracy: [],
+      valueDifference: [],
+    },
     totals: emptyTotals,
   };
 
@@ -5359,40 +5364,28 @@ const getInventoryStockCountAccuracyReportPageData = async ({
   const systemQtyBaseSql = `(CASE WHEN sch.item_type_scope = 'RM' THEN scl.system_qty_snapshot ELSE scl.system_qty_pairs_snapshot END)`;
   const physicalBaseSql = `(CASE WHEN sch.item_type_scope = 'RM' THEN scl.physical_qty ELSE scl.physical_qty_pairs END)`;
   const absDiffBaseSql = `ABS(${physicalBaseSql} - ${systemQtyBaseSql})`;
-  // Effective unit cost: point-in-time WAC from the posted ledger row when a
-  // difference was posted; else fall back to current WAC (matched/zero-diff
-  // lines contribute to the cost denominator only — an approximation).
-  const unitCostEffSql = `COALESCE(led.unit_cost, CASE WHEN sch.item_type_scope = 'RM' THEN rmw.wac ELSE skuw.wac END, 0)`;
+  // Value a unit at its market price, not WAC: FG/SFG use the SKU variant's
+  // selling price (sale_rate, per pair); RM has no selling price (it is never
+  // sold) so it falls back to its latest active purchase rate. Because price is
+  // master data that exists for every line — matched or not — the value
+  // denominator is exact and needs no ledger fallback.
+  const unitPriceSql = `(CASE WHEN sch.item_type_scope = 'RM' THEN COALESCE(rmp.purchase_rate, 0) ELSE COALESCE(v.sale_rate, 0) END)`;
 
-  const ledgerAgg = knex("erp.stock_ledger")
-    .select("voucher_line_id")
-    .select(knex.raw("SUM(ABS(value)) as abs_value"))
-    .select(knex.raw("MAX(unit_cost) as unit_cost"))
-    .whereNotNull("voucher_line_id")
-    .groupBy("voucher_line_id");
-
-  const rmWac = knex("erp.stock_balance_rm")
-    .select("branch_id", "item_id")
-    .select(knex.raw("AVG(wac) as wac"))
-    .groupBy("branch_id", "item_id");
-
-  const skuWac = knex("erp.stock_balance_sku")
-    .select("branch_id", "sku_id")
-    .select(knex.raw("AVG(wac) as wac"))
-    .groupBy("branch_id", "sku_id");
+  // Representative RM purchase rate per item (rates are color/size-specific).
+  const rmRate = knex("erp.rm_purchase_rates")
+    .select("rm_item_id")
+    .select(knex.raw("AVG(purchase_rate) as purchase_rate"))
+    .where("is_active", true)
+    .groupBy("rm_item_id");
 
   const raw = await knex({ vh: "erp.voucher_header" })
     .join({ vl: "erp.voucher_line" }, "vl.voucher_header_id", "vh.id")
     .join({ scl: "erp.stock_count_line" }, "scl.voucher_line_id", "vl.id")
     .join({ sch: "erp.stock_count_header" }, "sch.voucher_id", "vh.id")
     .join({ rc: "erp.reason_codes" }, "rc.id", "sch.reason_code_id")
-    .leftJoin(ledgerAgg.as("led"), "led.voucher_line_id", "vl.id")
-    .leftJoin(rmWac.as("rmw"), function joinRmWac() {
-      this.on("rmw.branch_id", "vh.branch_id").andOn("rmw.item_id", "vl.item_id");
-    })
-    .leftJoin(skuWac.as("skuw"), function joinSkuWac() {
-      this.on("skuw.branch_id", "vh.branch_id").andOn("skuw.sku_id", "vl.sku_id");
-    })
+    .leftJoin({ sk: "erp.skus" }, "sk.id", "vl.sku_id")
+    .leftJoin({ v: "erp.variants" }, "v.id", "sk.variant_id")
+    .leftJoin(rmRate.as("rmp"), "rmp.rm_item_id", "vl.item_id")
     .where("vh.voucher_type_code", STOCK_COUNT_VOUCHER_CODE)
     .where("vh.status", "APPROVED")
     .where("rc.code", PHYSICAL_COUNT_REASON_CODE)
@@ -5409,9 +5402,9 @@ const getInventoryStockCountAccuracyReportPageData = async ({
       knex.raw("COUNT(scl.voucher_line_id) as lines_counted"),
       knex.raw(`SUM(ABS(${systemQtyBaseSql})) as sum_system_qty_base`),
       knex.raw(`SUM(${absDiffBaseSql}) as sum_abs_diff_base`),
-      knex.raw("SUM(COALESCE(led.abs_value, 0)) as sum_cost_diff"),
+      knex.raw(`SUM(${absDiffBaseSql} * ${unitPriceSql}) as sum_value_diff`),
       knex.raw(
-        `SUM(ABS(${systemQtyBaseSql}) * (${unitCostEffSql})) as sum_system_cost`,
+        `SUM(ABS(${systemQtyBaseSql}) * ${unitPriceSql}) as sum_system_value`,
       ),
     )
     .groupByRaw(`${periodExpr}, sch.item_type_scope`)
@@ -5424,8 +5417,8 @@ const getInventoryStockCountAccuracyReportPageData = async ({
     linesCounted: 0,
     sumSystemQtyBase: 0,
     sumAbsDiffBase: 0,
-    costDifference: 0,
-    sumSystemCost: 0,
+    valueDifference: 0,
+    sumSystemValue: 0,
   };
 
   raw.forEach((entry) => {
@@ -5438,8 +5431,8 @@ const getInventoryStockCountAccuracyReportPageData = async ({
     const linesCounted = Number(entry.lines_counted || 0);
     const sumSystemQtyBase = Number(entry.sum_system_qty_base || 0);
     const sumAbsDiffBase = Number(entry.sum_abs_diff_base || 0);
-    const costDifference = toAmount(entry.sum_cost_diff || 0, 2);
-    const sumSystemCost = Number(entry.sum_system_cost || 0);
+    const valueDifference = toAmount(entry.sum_value_diff || 0, 2);
+    const sumSystemValue = Number(entry.sum_system_value || 0);
 
     const periodStart = String(entry.period_start || "");
     const periodLabel = formatStockCountAccuracyPeriodLabel(periodStart, grain);
@@ -5457,9 +5450,9 @@ const getInventoryStockCountAccuracyReportPageData = async ({
         computeAccuracyPercent(sumAbsDiffBase, sumSystemQtyBase),
         2,
       ),
-      costDifference,
-      costAccuracyPct: toAmount(
-        computeAccuracyPercent(costDifference, sumSystemCost),
+      valueDifference,
+      valueAccuracyPct: toAmount(
+        computeAccuracyPercent(valueDifference, sumSystemValue),
         2,
       ),
     });
@@ -5470,28 +5463,28 @@ const getInventoryStockCountAccuracyReportPageData = async ({
         periodLabel,
         sumSystemQtyBase: 0,
         sumAbsDiffBase: 0,
-        costDifference: 0,
-        sumSystemCost: 0,
+        valueDifference: 0,
+        sumSystemValue: 0,
       });
     }
     const agg = periodAgg.get(periodStart);
     agg.sumSystemQtyBase += sumSystemQtyBase;
     agg.sumAbsDiffBase += sumAbsDiffBase;
-    agg.costDifference += costDifference;
-    agg.sumSystemCost += sumSystemCost;
+    agg.valueDifference += valueDifference;
+    agg.sumSystemValue += sumSystemValue;
 
     grandTotals.linesCounted += linesCounted;
     grandTotals.sumSystemQtyBase += sumSystemQtyBase;
     grandTotals.sumAbsDiffBase += sumAbsDiffBase;
-    grandTotals.costDifference += costDifference;
-    grandTotals.sumSystemCost += sumSystemCost;
+    grandTotals.valueDifference += valueDifference;
+    grandTotals.sumSystemValue += sumSystemValue;
   });
 
   const chart = {
     labels: [],
     qtyAccuracy: [],
-    costAccuracy: [],
-    costDifference: [],
+    valueAccuracy: [],
+    valueDifference: [],
   };
   periodOrder.forEach((periodStart) => {
     const agg = periodAgg.get(periodStart);
@@ -5502,15 +5495,18 @@ const getInventoryStockCountAccuracyReportPageData = async ({
         2,
       ),
     );
-    chart.costAccuracy.push(
-      toAmount(computeAccuracyPercent(agg.costDifference, agg.sumSystemCost), 2),
+    chart.valueAccuracy.push(
+      toAmount(
+        computeAccuracyPercent(agg.valueDifference, agg.sumSystemValue),
+        2,
+      ),
     );
-    chart.costDifference.push(toAmount(agg.costDifference, 2));
+    chart.valueDifference.push(toAmount(agg.valueDifference, 2));
   });
 
   const totals = {
     linesCounted: grandTotals.linesCounted,
-    costDifference: toAmount(grandTotals.costDifference, 2),
+    valueDifference: toAmount(grandTotals.valueDifference, 2),
     qtyAccuracyPct: toAmount(
       computeAccuracyPercent(
         grandTotals.sumAbsDiffBase,
@@ -5518,10 +5514,10 @@ const getInventoryStockCountAccuracyReportPageData = async ({
       ),
       2,
     ),
-    costAccuracyPct: toAmount(
+    valueAccuracyPct: toAmount(
       computeAccuracyPercent(
-        grandTotals.costDifference,
-        grandTotals.sumSystemCost,
+        grandTotals.valueDifference,
+        grandTotals.sumSystemValue,
       ),
       2,
     ),

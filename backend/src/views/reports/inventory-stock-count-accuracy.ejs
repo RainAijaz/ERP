@@ -15,12 +15,12 @@
   const branchAllSelected = !selectedBranchIds.length;
 
   const rows = Array.isArray(reportData?.rows) ? reportData.rows : [];
-  const chart = reportData?.chart || { labels: [], qtyAccuracy: [], costAccuracy: [], costDifference: [] };
+  const chart = reportData?.chart || { labels: [], qtyAccuracy: [], valueAccuracy: [], valueDifference: [] };
   const totals = reportData?.totals || {
     linesCounted: 0,
-    costDifference: 0,
+    valueDifference: 0,
     qtyAccuracyPct: 100,
-    costAccuracyPct: 100,
+    valueAccuracyPct: 100,
   };
   const hasData = rows.length > 0;
 
@@ -168,8 +168,8 @@
       <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-slate-600"><%= tt("lines_counted", "Lines Counted") %></div><div class="mt-1 text-base font-semibold text-slate-900"><%= totals.linesCounted || 0 %></div></div>
         <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-emerald-700"><%= tt("quantity_accuracy", "Quantity Accuracy") %></div><div class="mt-1 text-base font-semibold text-emerald-900"><%= formatPct(totals.qtyAccuracyPct) %></div></div>
-        <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-emerald-700"><%= tt("cost_accuracy", "Cost Accuracy") %></div><div class="mt-1 text-base font-semibold text-emerald-900"><%= formatPct(totals.costAccuracyPct) %></div></div>
-        <div class="rounded-xl border border-rose-200 bg-rose-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-rose-700"><%= tt("total_cost_difference", "Total Cost Difference") %></div><div class="mt-1 text-base font-semibold text-rose-900"><%= formatMoney(totals.costDifference) %></div></div>
+        <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-emerald-700"><%= tt("value_accuracy", "Value Accuracy") %></div><div class="mt-1 text-base font-semibold text-emerald-900"><%= formatPct(totals.valueAccuracyPct) %></div></div>
+        <div class="rounded-xl border border-rose-200 bg-rose-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-rose-700"><%= tt("total_value_difference", "Total Value Difference") %></div><div class="mt-1 text-base font-semibold text-rose-900"><%= formatMoney(totals.valueDifference) %></div></div>
       </div>
     <% } %>
 
@@ -186,8 +186,8 @@
         </div>
         <div class="mt-2 flex flex-wrap items-center gap-4 text-[11px] font-semibold text-slate-600">
           <span class="inline-flex items-center gap-1.5"><span class="inline-block h-2.5 w-2.5 rounded-full" style="background:#0f766e;"></span><%= tt("quantity_accuracy", "Quantity Accuracy") %> (%)</span>
-          <span class="inline-flex items-center gap-1.5"><span class="inline-block h-2.5 w-2.5 rounded-full" style="background:#7c3aed;"></span><%= tt("cost_accuracy", "Cost Accuracy") %> (%)</span>
-          <span class="inline-flex items-center gap-1.5"><span class="inline-block h-2.5 w-3.5 rounded-sm" style="background:rgba(244,63,94,0.35);"></span><%= tt("total_cost_difference", "Total Cost Difference") %></span>
+          <span class="inline-flex items-center gap-1.5"><span class="inline-block h-2.5 w-2.5 rounded-full" style="background:#7c3aed;"></span><%= tt("value_accuracy", "Value Accuracy") %> (%)</span>
+          <span class="inline-flex items-center gap-1.5"><span class="inline-block h-2.5 w-3.5 rounded-sm" style="background:rgba(244,63,94,0.35);"></span><%= tt("total_value_difference", "Total Value Difference") %></span>
         </div>
       </div>
 
@@ -201,8 +201,8 @@
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("system_qty", "System Qty") %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("unit_difference", "Unit Difference") %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("quantity_accuracy", "Quantity Accuracy") %></th>
-              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("cost_difference", "Cost Difference") %></th>
-              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("cost_accuracy", "Cost Accuracy") %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("value_difference", "Value Difference") %></th>
+              <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("value_accuracy", "Value Accuracy") %></th>
             </tr>
           </thead>
           <tbody data-table-body>
@@ -213,8 +213,8 @@
                 <td class="px-3 py-2 text-right"><%= formatQty(row.systemQtyDisplay) %> <span class="text-[10px] text-slate-500"><%= unitLabel %></span></td>
                 <td class="px-3 py-2 text-right font-semibold"><%= formatQty(row.unitDiffDisplay) %> <span class="text-[10px] text-slate-500"><%= unitLabel %></span></td>
                 <td class="px-3 py-2 text-right"><span class="inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold <%= accuracyTone(row.qtyAccuracyPct) %>"><%= formatPct(row.qtyAccuracyPct) %></span></td>
-                <td class="px-3 py-2 text-right"><%= formatMoney(row.costDifference) %></td>
-                <td class="px-3 py-2 text-right"><span class="inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold <%= accuracyTone(row.costAccuracyPct) %>"><%= formatPct(row.costAccuracyPct) %></span></td>
+                <td class="px-3 py-2 text-right"><%= formatMoney(row.valueDifference) %></td>
+                <td class="px-3 py-2 text-right"><span class="inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold <%= accuracyTone(row.valueAccuracyPct) %>"><%= formatPct(row.valueAccuracyPct) %></span></td>
               </tr>
             <% }) %>
             <tr class="bg-slate-800 text-white" data-report-grand-total>
@@ -223,8 +223,8 @@
               <td class="px-3 py-2"></td>
               <td class="px-3 py-2"></td>
               <td class="px-3 py-2 text-right font-extrabold"><%= formatPct(totals.qtyAccuracyPct) %></td>
-              <td class="px-3 py-2 text-right font-extrabold"><%= formatMoney(totals.costDifference) %></td>
-              <td class="px-3 py-2 text-right font-extrabold"><%= formatPct(totals.costAccuracyPct) %></td>
+              <td class="px-3 py-2 text-right font-extrabold"><%= formatMoney(totals.valueDifference) %></td>
+              <td class="px-3 py-2 text-right font-extrabold"><%= formatPct(totals.valueAccuracyPct) %></td>
             </tr>
           </tbody>
         </table>
@@ -281,8 +281,8 @@
     if (!labels.length) return;
 
     const qtySeries = (chartData.qtyAccuracy || []).map((value) => Number(value || 0));
-    const costSeries = (chartData.costAccuracy || []).map((value) => Number(value || 0));
-    const costDiffSeries = (chartData.costDifference || []).map((value) => Number(value || 0));
+    const valueSeries = (chartData.valueAccuracy || []).map((value) => Number(value || 0));
+    const valueDiffSeries = (chartData.valueDifference || []).map((value) => Number(value || 0));
 
     const canvas = document.querySelector("[data-accuracy-chart]");
     const fallback = document.querySelector("[data-accuracy-chart-fallback]");
@@ -332,7 +332,7 @@
         `<rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff"></rect>` +
         grid +
         pathFor(qtySeries, "#0f766e", "") +
-        pathFor(costSeries, "#7c3aed", "5 4") +
+        pathFor(valueSeries, "#7c3aed", "5 4") +
         xLabels;
     };
 
@@ -379,9 +379,9 @@
           datasets: [
             {
               type: "bar",
-              label: <%- JSON.stringify(tt("total_cost_difference", "Total Cost Difference")) %>,
-              data: costDiffSeries,
-              yAxisID: "yCost",
+              label: <%- JSON.stringify(tt("total_value_difference", "Total Value Difference")) %>,
+              data: valueDiffSeries,
+              yAxisID: "yValue",
               backgroundColor: "rgba(244, 63, 94, 0.30)",
               borderColor: "rgba(244, 63, 94, 0.55)",
               borderWidth: 1,
@@ -404,8 +404,8 @@
             },
             {
               type: "line",
-              label: <%- JSON.stringify(tt("cost_accuracy", "Cost Accuracy") + " (%)") %>,
-              data: costSeries,
+              label: <%- JSON.stringify(tt("value_accuracy", "Value Accuracy") + " (%)") %>,
+              data: valueSeries,
               yAxisID: "yPct",
               borderColor: "#7c3aed",
               backgroundColor: "#7c3aed",
@@ -432,7 +432,7 @@
               title: { display: true, text: "%" },
               ticks: { callback: (value) => `${value}%` },
             },
-            yCost: {
+            yValue: {
               type: "linear",
               position: "right",
               beginAtZero: true,
