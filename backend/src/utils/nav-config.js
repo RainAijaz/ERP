@@ -1052,7 +1052,7 @@ const navConfig = [
           },
           {
             key: "customer_contact_analysis",
-            labelKey: "customer_contact_analysis",
+            labelKey: "customer_analysis",
             scopeType: "REPORT",
             scopeKey: "customer_contact_analysis",
             moduleGroup: "Sales",

@@ -1547,6 +1547,13 @@ const translations = {
     sale_return_report_purpose_tooltip:
       "Analyzes returned sales quantities and values by filters.",
     customer_contact_analysis: "Customer Contact Analysis",
+    customer_analysis: "Customer Analysis",
+    analyze_by: "Analyze By",
+    by_phone: "By Phone Number",
+    by_name: "By Name",
+    total_dozens: "Total Dozens",
+    days_since_last_order: "Days Since Last Order",
+    not_ordered_in_last_days: "Not Ordered In Last (Days)",
     customer_contact_analysis_purpose_tooltip:
       "Summarizes customer contact and billing behavior over selected dates.",
     sales_order_report: "Sales Order Report",
@@ -2665,6 +2672,13 @@ translations.ur = {
   customer_balance_information: "کسٹمر بیلنس کی معلومات",
   customer_balances_report: "کسٹمر بیلنس کی رپورٹ",
   customer_contact_analysis: "کسٹمر رابطہ تجزیہ",
+  customer_analysis: "کسٹمر تجزیہ",
+  analyze_by: "تجزیہ بذریعہ",
+  by_phone: "فون نمبر کے حساب سے",
+  by_name: "نام کے حساب سے",
+  total_dozens: "کل درجن",
+  days_since_last_order: "آخری آرڈر کو گزرے دن",
+  not_ordered_in_last_days: "پچھلے کتنے دنوں میں آرڈر نہیں کیا",
   customer_ledger_report: "کسٹمر لیجر رپورٹ",
   customer_listings: "گاہک کی فہرستیں",
   customer_name: "گاہک کا نام",
@@ -3595,6 +3609,13 @@ translations.ur = {
     "Selected date par customer receivable/payable balance dikhata hai.",
   customer_contact_analysis_purpose_tooltip:
     "Customer contact aur billing behavior ka summary analysis deta hai.",
+  customer_analysis: "Customer Analysis",
+  analyze_by: "Analyze By",
+  by_phone: "Phone Number Ke Hisaab Se",
+  by_name: "Naam Ke Hisaab Se",
+  total_dozens: "Total Dozens",
+  days_since_last_order: "Aakhri Order Ko Guzray Din",
+  not_ordered_in_last_days: "Pichhle Kitne Dino Mein Order Nahi Kiya",
   sales_order_report_purpose_tooltip:
     "Sales order, delivered quantity aur remaining pending quantity track karta hai.",
   sales_report_purpose_tooltip:

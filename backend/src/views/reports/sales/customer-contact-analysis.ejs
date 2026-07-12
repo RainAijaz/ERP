@@ -3,16 +3,19 @@ const reportLoaded = Boolean(filters?.reportLoaded);
 const selectedFrom = String(filters?.from || "");
 const selectedTo = String(filters?.to || "");
 const selectedBranchId = Number(filters?.branchId || 0) || null;
+const selectedGroupBy = String(filters?.groupBy || "phone") === "name" ? "name" : "phone";
+const selectedDormantDays = Number(filters?.dormantDays || 0) || 0;
 const rows = Array.isArray(reportData?.rows) ? reportData.rows : [];
 const totals = reportData?.totals || {
   contactCount: 0,
   voucherCount: 0,
   totalBillAmount: 0,
+  totalDozens: 0,
   highestBill: 0,
 };
 const branches = Array.isArray(options?.branches) ? options.branches : [];
 const hasData = rows.length > 0;
-const downloadName = "customer-contact-analysis.csv";
+const downloadName = "customer-analysis.csv";
 const dateRangeLabel = (() => {
   const v = typeof t === "function" ? t("date_range") : "";
   return v || "Date Range";
@@ -34,6 +37,12 @@ const formatMoney = (value) => {
         maximumFractionDigits: 2,
       })
     : "0.00";
+};
+const formatDozens = (value) => {
+  const num = Number(value || 0);
+  return Number.isFinite(num)
+    ? num.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })
+    : "0";
 };
 const formatDate = (value) => formatDateDisplay(value, "-");
 const paymentTypeLabel = (value) =>
@@ -72,7 +81,7 @@ const reportPurposeTooltip = (() => {
   <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
     <div class="flex flex-col gap-2">
       <div class="flex items-center gap-2">
-        <h1 class="text-xl font-display font-semibold tracking-tight text-ink sm:text-2xl"><%= t("customer_contact_analysis") %></h1>
+        <h1 class="text-xl font-display font-semibold tracking-tight text-ink sm:text-2xl"><%= t("customer_analysis") %></h1>
         <% if (reportPurposeTooltip) { %>
           <span class="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-[10px] font-bold text-slate-600 cursor-help" title="<%= reportPurposeTooltip %>" aria-label="<%= reportPurposeTooltip %>">i</span>
         <% } %>
@@ -86,7 +95,7 @@ const reportPurposeTooltip = (() => {
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <input type="hidden" name="load_report" value="1">
 
-      <div class="lg:col-span-8">
+      <div class="lg:col-span-6">
         <label class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500"><%= dateRangeLabel %></label>
         <div class="relative" data-date-range-wrap>
           <input type="text" readonly value="<%= `${selectedFrom} - ${selectedTo}` %>" data-date-range-input class="h-10 w-full cursor-pointer rounded-lg border border-slate-300 bg-white px-3 pr-10 text-sm text-slate-700">
@@ -123,7 +132,20 @@ const reportPurposeTooltip = (() => {
         <input type="hidden" name="to_date" value="<%= selectedTo %>" data-to-date-hidden>
       </div>
 
-      <div class="lg:col-span-4">
+      <div class="lg:col-span-2">
+        <label class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t("analyze_by") %></label>
+        <select name="group_by" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700">
+          <option value="phone" <%= selectedGroupBy === "phone" ? "selected" : "" %>><%= t("by_phone") %></option>
+          <option value="name" <%= selectedGroupBy === "name" ? "selected" : "" %>><%= t("by_name") %></option>
+        </select>
+      </div>
+
+      <div class="lg:col-span-2">
+        <label class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t("not_ordered_in_last_days") %></label>
+        <input type="number" name="dormant_days" min="0" step="1" value="<%= selectedDormantDays || '' %>" placeholder="0" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700">
+      </div>
+
+      <div class="lg:col-span-2">
         <label class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500"><%= user?.isAdmin ? t("branches") : t("branch") %></label>
         <% if (user?.isAdmin) { %>
           <select name="filter_branch_id" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700">
@@ -151,9 +173,9 @@ const reportPurposeTooltip = (() => {
         <button type="button" class="inline-flex items-center rounded-xl bg-accent px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm disabled:opacity-40" data-download-report <%= reportLoaded && hasData ? "" : "disabled" %>><%= t("download") %></button>
       </div>
       <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t("customer_contact_analysis") %></div>
+            <div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t("customer_analysis") %></div>
             <div class="mt-1 text-2xl font-display font-semibold text-slate-900"><%= totals.contactCount || 0 %></div>
           </div>
           <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
@@ -163,6 +185,10 @@ const reportPurposeTooltip = (() => {
           <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
             <div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t("total_bill_amount") %></div>
             <div class="mt-1 text-2xl font-display font-semibold text-slate-900"><%= formatMoney(totals.totalBillAmount || 0) %></div>
+          </div>
+          <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t("total_dozens") %></div>
+            <div class="mt-1 text-2xl font-display font-semibold text-slate-900"><%= formatDozens(totals.totalDozens || 0) %></div>
           </div>
           <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
             <div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t("highest_bill") %></div>
@@ -184,10 +210,13 @@ const reportPurposeTooltip = (() => {
             <tr>
               <th class="px-4 py-3 text-left">SR.NO</th>
               <th class="px-4 py-3 text-left"><%= t("primary_customer_name") %></th>
+              <th class="px-4 py-3 text-left"><%= t("branch") %></th>
               <th class="px-4 py-3 text-right"><%= t("total_bill_amount") %></th>
+              <th class="px-4 py-3 text-right"><%= t("total_dozens") %></th>
               <th class="px-4 py-3 text-right"><%= t("highest_bill") %></th>
               <th class="px-4 py-3 text-right"><%= t("bill_count") %></th>
               <th class="px-4 py-3 text-left"><%= t("last_purchase_date") %></th>
+              <th class="px-4 py-3 text-right"><%= t("days_since_last_order") %></th>
               <th class="px-4 py-3 text-left"><%= t("product_groups") %></th>
               <th class="px-4 py-3 text-center"><%= t("details") %></th>
               <% if (canViewPhone) { %><th class="px-4 py-3 text-left"><%= t("phone_number") %></th><% } %>
@@ -195,13 +224,16 @@ const reportPurposeTooltip = (() => {
           </thead>
           <tbody class="divide-y divide-slate-100" data-contact-table-body>
             <% rows.forEach((row, idx) => { %>
-              <tr class="bg-white hover:bg-slate-50" data-row data-active="true" data-contact-row data-contact-key="<%= row.phone_key %>">
+              <tr class="bg-white hover:bg-slate-50" data-row data-active="true" data-contact-row data-contact-key="<%= row.group_key %>">
                 <td class="px-4 py-3 text-slate-700"><%= idx + 1 %></td>
                 <td class="px-4 py-3 text-slate-700"><%= row.primary_customer_name || "-" %></td>
+                <td class="px-4 py-3 text-slate-700"><%= row.primary_branch_name || "-" %></td>
                 <td class="px-4 py-3 text-right font-semibold tabular-nums text-slate-900"><%= formatMoney(row.total_bill_amount || 0) %></td>
+                <td class="px-4 py-3 text-right font-semibold tabular-nums text-slate-700"><%= formatDozens(row.total_dozens || 0) %></td>
                 <td class="px-4 py-3 text-right font-semibold tabular-nums text-slate-700"><%= formatMoney(row.highest_bill || 0) %></td>
                 <td class="px-4 py-3 text-right font-semibold text-slate-700"><%= row.bill_count || 0 %></td>
                 <td class="px-4 py-3 text-slate-700"><%= formatDate(row.last_purchase_date) %></td>
+                <td class="px-4 py-3 text-right font-semibold tabular-nums text-slate-700"><%= row.days_since_last_order === null || row.days_since_last_order === undefined ? "-" : row.days_since_last_order %></td>
                 <td class="px-4 py-3 text-slate-700">
                   <div class="flex flex-wrap gap-1.5">
                     <% if (Array.isArray(row.product_groups_bought) && row.product_groups_bought.length) { %>
@@ -214,15 +246,15 @@ const reportPurposeTooltip = (() => {
                   </div>
                 </td>
                 <td class="px-4 py-3 text-center">
-                  <button type="button" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-700 shadow-sm" data-contact-toggle data-contact-key="<%= row.phone_key %>" aria-expanded="false">
+                  <button type="button" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-700 shadow-sm" data-contact-toggle data-contact-key="<%= row.group_key %>" aria-expanded="false">
                     <span><%= t("details") %></span>
                     <span class="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600"><%= Array.isArray(row.invoices) ? row.invoices.length : 0 %></span>
                   </button>
                 </td>
                 <% if (canViewPhone) { %><td class="px-4 py-3 font-semibold text-slate-900"><%= row.phone_number || "-" %></td><% } %>
               </tr>
-              <tr class="hidden bg-slate-50/70" data-contact-detail-row data-contact-key="<%= row.phone_key %>">
-                <td colspan="<%= canViewPhone ? 9 : 8 %>" class="px-4 py-4">
+              <tr class="hidden bg-slate-50/70" data-contact-detail-row data-contact-key="<%= row.group_key %>">
+                <td colspan="<%= canViewPhone ? 12 : 11 %>" class="px-4 py-4">
                   <div class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
                     <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
                       <div class="text-sm font-semibold text-slate-800"><%= t("invoice") %> <%= t("details") %></div>
@@ -240,6 +272,7 @@ const reportPurposeTooltip = (() => {
                             <th class="px-3 py-2 text-left"><%= t("sales_type") %></th>
                             <th class="px-3 py-2 text-left"><%= t("status") %></th>
                             <th class="px-3 py-2 text-right"><%= t("total_bill_amount") %></th>
+                            <th class="px-3 py-2 text-right"><%= t("total_dozens") %></th>
                             <th class="px-3 py-2 text-left"><%= t("product_groups") %></th>
                             <th class="px-3 py-2 text-center"><%= t("view") %></th>
                           </tr>
@@ -247,7 +280,7 @@ const reportPurposeTooltip = (() => {
                         <tbody class="divide-y divide-slate-100">
                           <% if (!Array.isArray(row.invoices) || !row.invoices.length) { %>
                             <tr>
-                              <td colspan="10" class="px-3 py-6 text-center text-slate-500"><%= t("no_entries") %></td>
+                              <td colspan="11" class="px-3 py-6 text-center text-slate-500"><%= t("no_entries") %></td>
                             </tr>
                           <% } else { %>
                             <% row.invoices.forEach((invoice) => { %>
@@ -264,6 +297,7 @@ const reportPurposeTooltip = (() => {
                                   <span class="inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold <%= voucherStatusTone(invoice.voucher_status) %>"><%= voucherStatusLabel(invoice.voucher_status) %></span>
                                 </td>
                                 <td class="px-3 py-2 text-right font-semibold tabular-nums text-slate-900"><%= formatMoney(invoice.bill_amount || 0) %></td>
+                                <td class="px-3 py-2 text-right font-semibold tabular-nums text-slate-700"><%= formatDozens(invoice.total_dozens || 0) %></td>
                                 <td class="px-3 py-2 text-slate-700">
                                   <% if (Array.isArray(invoice.product_groups) && invoice.product_groups.length) { %>
                                     <%= invoice.product_groups.join(", ") %>

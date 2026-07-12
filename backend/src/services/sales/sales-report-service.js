@@ -3013,10 +3013,21 @@ const parseCustomerContactAnalysisFilters = ({ req, input = {} }) => {
     ? toPositiveId(input.filter_branch_id ?? input.branch_id)
     : Number(req.branchId || 0) || null;
 
+  const groupBy =
+    String(input.group_by || "").trim().toLowerCase() === "name"
+      ? "name"
+      : "phone";
+
+  const dormantDaysRaw = Number.parseInt(input.dormant_days, 10);
+  const dormantDays =
+    Number.isFinite(dormantDaysRaw) && dormantDaysRaw > 0 ? dormantDaysRaw : 0;
+
   return {
     from,
     to,
     branchId,
+    groupBy,
+    dormantDays,
     reportLoaded: toBoolean(input.load_report, false),
     invalidFromDate: Boolean(parsedFrom.provided && !parsedFrom.valid),
     invalidToDate: Boolean(parsedTo.provided && !parsedTo.valid),
@@ -3105,6 +3116,7 @@ const getCustomerContactAnalysisPageData = async ({ req, input = {} }) => {
     .select(
       "vl.voucher_header_id as voucher_id",
       "vl.amount",
+      "vl.qty",
       "vl.meta",
       "pg.name as group_name",
     )
@@ -3135,15 +3147,23 @@ const getCustomerContactAnalysisPageData = async ({ req, input = {} }) => {
       sign * (meta.total_amount !== undefined ? meta.total_amount : line.amount || 0),
       2,
     );
+    // Quantity is normalized to pairs on the line (meta.total_pairs); "dozens"
+    // is simply pairs / 12 and is derived once at the row level below.
+    const linePairs = toQty(
+      sign * (meta.total_pairs !== undefined ? meta.total_pairs : line.qty || 0),
+      3,
+    );
     const groupName = String(line.group_name || "").trim();
 
     const existing = voucherLineSummary.get(voucherId) || {
       netAmount: 0,
+      netPairs: 0,
       groupSpend: new Map(),
       productGroups: new Set(),
     };
 
     existing.netAmount = toAmount(existing.netAmount + lineAmount, 2);
+    existing.netPairs = toQty(Number(existing.netPairs || 0) + linePairs, 3);
     if (groupName) {
       existing.productGroups.add(groupName);
       existing.groupSpend.set(
@@ -3165,19 +3185,34 @@ const getCustomerContactAnalysisPageData = async ({ req, input = {} }) => {
       String(row.party_phone1 || "").trim() ||
       String(row.party_phone2 || "").trim();
     const phoneKey = normalizePhoneForAnalysis(rawPhone);
-    if (!phoneKey) return;
 
     const lineSummary = voucherLineSummary.get(voucherId) || {
       netAmount: 0,
+      netPairs: 0,
       groupSpend: new Map(),
       productGroups: new Set(),
     };
     const voucherNetAmount = toAmount(lineSummary.netAmount || 0, 2);
+    const voucherNetPairs = toQty(lineSummary.netPairs || 0, 3);
     const partyName =
       String(row.customer_name_en || "").trim() ||
       String(row.customer_name_ur || "").trim();
     const displayName =
       partyName || String(row.walk_in_customer_name || "").trim() || "-";
+
+    // Top-level grouping key depends on the selected mode. Phone mode keeps the
+    // original behaviour (skip vouchers without any phone digits); name mode
+    // groups by the normalized customer name, which also surfaces walk-in sales
+    // that have no phone number recorded.
+    let groupKey;
+    if (filters.groupBy === "name") {
+      groupKey = normalizeContactNameForAnalysis(displayName);
+      if (!groupKey || displayName === "-") return;
+    } else {
+      groupKey = phoneKey;
+      if (!groupKey) return;
+    }
+
     const contactKey = row.customer_party_id
       ? `PTY:${Number(row.customer_party_id || 0)}`
       : `CASH:${normalizeContactNameForAnalysis(displayName) || "WALKIN"}:${phoneKey}`;
@@ -3192,19 +3227,22 @@ const getCustomerContactAnalysisPageData = async ({ req, input = {} }) => {
       .map(([groupName]) => String(groupName || "").trim())
       .filter(Boolean);
 
-    let contact = contactMap.get(phoneKey);
+    let contact = contactMap.get(groupKey);
     if (!contact) {
       contact = {
+        group_key: groupKey,
         phone_key: phoneKey,
         contacts: new Map(),
         voucher_count: 0,
         total_bill_amount: 0,
+        total_pairs: 0,
         highest_bill: null,
         last_purchase_date: "",
         product_group_spend: new Map(),
+        branch_count: new Map(),
         invoices: [],
       };
-      contactMap.set(phoneKey, contact);
+      contactMap.set(groupKey, contact);
     }
 
     let contactEntry = contact.contacts.get(contactKey);
@@ -3235,6 +3273,10 @@ const getCustomerContactAnalysisPageData = async ({ req, input = {} }) => {
       Number(contact.total_bill_amount || 0) + Number(voucherNetAmount || 0),
       2,
     );
+    contact.total_pairs = toQty(
+      Number(contact.total_pairs || 0) + Number(voucherNetPairs || 0),
+      3,
+    );
     if (
       contact.highest_bill === null ||
       Number(voucherNetAmount || 0) > Number(contact.highest_bill || 0)
@@ -3255,6 +3297,14 @@ const getCustomerContactAnalysisPageData = async ({ req, input = {} }) => {
       );
     });
 
+    const branchName = String(row.branch_name || "").trim();
+    if (branchName) {
+      contact.branch_count.set(
+        branchName,
+        Number(contact.branch_count.get(branchName) || 0) + 1,
+      );
+    }
+
     contact.invoices.push({
       voucher_id: voucherId,
       voucher_no: Number(row.voucher_no || 0) || null,
@@ -3265,12 +3315,22 @@ const getCustomerContactAnalysisPageData = async ({ req, input = {} }) => {
       payment_type: paymentType,
       voucher_status: String(row.voucher_status || "").trim().toUpperCase(),
       bill_amount: voucherNetAmount,
+      total_dozens: toQty(Number(voucherNetPairs || 0) / 12, 2),
       product_groups: orderedGroups,
       action_link: `/vouchers/sales?voucher_no=${Number(row.voucher_no || 0)}&view=1`,
     });
   });
 
-  const rows = [...contactMap.values()]
+  const now = new Date();
+  const todayMs = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const daysSincePurchase = (isoDate) => {
+    const parts = String(isoDate || "").split("-").map(Number);
+    if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return null;
+    const purchaseMs = Date.UTC(parts[0], parts[1] - 1, parts[2]);
+    return Math.max(0, Math.floor((todayMs - purchaseMs) / 86400000));
+  };
+
+  const allRows = [...contactMap.values()]
     .map((contact) => {
       const primaryContact = [...contact.contacts.values()].sort((a, b) => {
         const amountCompare =
@@ -3303,14 +3363,25 @@ const getCustomerContactAnalysisPageData = async ({ req, input = {} }) => {
         return Number(b.voucher_no || 0) - Number(a.voucher_no || 0);
       });
 
+      const primaryBranchName =
+        [...contact.branch_count.entries()].sort((a, b) => {
+          const countCompare = Number(b[1] || 0) - Number(a[1] || 0);
+          if (countCompare !== 0) return countCompare;
+          return String(a[0] || "").localeCompare(String(b[0] || ""));
+        })[0]?.[0] || "-";
+
       return {
+        group_key: contact.group_key,
         phone_key: contact.phone_key,
         phone_number: primaryContact.display_phone || contact.phone_key,
+        primary_branch_name: primaryBranchName,
         primary_customer_name: primaryContact.display_name || "-",
         total_bill_amount: toAmount(contact.total_bill_amount, 2),
+        total_dozens: toQty(Number(contact.total_pairs || 0) / 12, 2),
         highest_bill: toAmount(contact.highest_bill || 0, 2),
         bill_count: Number(contact.voucher_count || 0),
         last_purchase_date: contact.last_purchase_date || "",
+        days_since_last_order: daysSincePurchase(contact.last_purchase_date),
         product_groups_bought: productGroups,
         invoices,
       };
@@ -3326,6 +3397,18 @@ const getCustomerContactAnalysisPageData = async ({ req, input = {} }) => {
       );
     });
 
+  // "Not ordered in last N days" filter: keep only customers whose most recent
+  // purchase is at least N days old. Totals below reflect the filtered set so the
+  // KPI tiles match what's shown.
+  const rows =
+    filters.dormantDays > 0
+      ? allRows.filter(
+          (row) =>
+            row.days_since_last_order !== null &&
+            Number(row.days_since_last_order) >= filters.dormantDays,
+        )
+      : allRows;
+
   return {
     filters,
     options,
@@ -3339,6 +3422,10 @@ const getCustomerContactAnalysisPageData = async ({ req, input = {} }) => {
         ),
         totalBillAmount: toAmount(
           rows.reduce((sum, row) => sum + Number(row.total_bill_amount || 0), 0),
+          2,
+        ),
+        totalDozens: toQty(
+          rows.reduce((sum, row) => sum + Number(row.total_dozens || 0), 0),
           2,
         ),
         highestBill: toAmount(
