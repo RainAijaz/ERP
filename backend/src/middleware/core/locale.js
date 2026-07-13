@@ -1442,6 +1442,11 @@ const translations = {
     value_difference: "Value Difference",
     total_value_difference: "Total Value Difference",
     total_dozen_difference: "Total Dozen Difference",
+    difference_basis: "Difference Basis",
+    difference_basis_absolute: "Absolute (total mismatch)",
+    difference_basis_net: "Net (offsetting)",
+    difference_basis_tooltip:
+      "How over-counts and under-counts are added up. Absolute counts every miscount as an error so nothing cancels — this is true counting accuracy. Net lets over-counts and under-counts offset each other, matching the net adjustment on the count voucher's total row. Absolute is always greater than or equal to Net.",
     lines_counted: "Lines Counted",
     min_closing_qty: "Minimum Closing Qty",
     dead_stock_only: "Dead Stock Only",
@@ -3583,6 +3588,11 @@ translations.ur = {
   value_difference: "ویلیو کا فرق",
   total_value_difference: "کل ویلیو کا فرق",
   total_dozen_difference: "کل درجن فرق",
+  difference_basis: "فرق کی بنیاد",
+  difference_basis_absolute: "مطلق (کل عدم مطابقت)",
+  difference_basis_net: "خالص (باہمی تلافی)",
+  difference_basis_tooltip:
+    "زیادہ اور کم گنتی کو کیسے جوڑا جائے۔ مطلق میں ہر غلط گنتی کو خرابی شمار کیا جاتا ہے، کچھ منسوخ نہیں ہوتا — یہ اصل گنتی کی درستگی ہے۔ خالص میں زیادہ اور کم گنتی ایک دوسرے کو منسوخ کر دیتی ہیں، جو کاؤنٹ واؤچر کے ٹوٹل سے مطابقت رکھتا ہے۔ مطلق ہمیشہ خالص سے زیادہ یا برابر ہوتا ہے۔",
   lines_counted: "شمار شدہ لائنیں",
   min_closing_qty: "کم از کم کلوزنگ مقدار",
   dead_stock_only: "صرف ڈیڈ اسٹاک",

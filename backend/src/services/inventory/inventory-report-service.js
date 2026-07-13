@@ -5216,6 +5216,15 @@ const STOCK_COUNT_ACCURACY_CATEGORY_ALL = "ALL";
 const STOCK_COUNT_VOUCHER_CODE = "STOCK_COUNT_ADJ";
 const PHYSICAL_COUNT_REASON_CODE = "PHYSICAL_COUNT";
 const PAIRS_PER_DOZEN = 12;
+// How a line's difference (physical − system) is aggregated:
+//  - net (default): signed sum — over-counts and under-counts offset each other,
+//    matching the net adjustment shown on the count voucher's TOTAL row.
+//  - absolute: sum of |difference| — over- and under-counts BOTH count as error,
+//    nothing cancels. This is true counting accuracy.
+const STOCK_COUNT_ACCURACY_BASES = Object.freeze({
+  absolute: "absolute",
+  net: "net",
+});
 
 const getDefaultStockCountAccuracyDateRange = () => {
   const now = new Date();
@@ -5234,6 +5243,17 @@ const normalizeStockCountAccuracyGrain = (value) => {
   if (normalized === STOCK_COUNT_ACCURACY_GRAINS.week) return "week";
   if (normalized === STOCK_COUNT_ACCURACY_GRAINS.year) return "year";
   return "month";
+};
+
+const normalizeStockCountAccuracyBasis = (value) => {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  // Default is net (offsetting) so the report ties back to the count voucher's
+  // TOTAL row; absolute (total mismatch) is opt-in via the filter.
+  return normalized === STOCK_COUNT_ACCURACY_BASES.absolute
+    ? STOCK_COUNT_ACCURACY_BASES.absolute
+    : STOCK_COUNT_ACCURACY_BASES.net;
 };
 
 const normalizeStockCountAccuracyCategory = (value) => {
@@ -5294,6 +5314,9 @@ const parseStockCountAccuracyFilters = ({ req, input = {} }) => {
     category: normalizeStockCountAccuracyCategory(
       input.category_filter || input.categoryFilter,
     ),
+    valueBasis: normalizeStockCountAccuracyBasis(
+      input.value_basis || input.valueBasis,
+    ),
     branchIds: normalizeBranchFilter({ req, input }),
     invalidFromDate: Boolean(parsedFrom.provided && !parsedFrom.valid),
     invalidToDate: Boolean(parsedTo.provided && !parsedTo.valid),
@@ -5334,6 +5357,16 @@ const getInventoryStockCountAccuracyReportPageData = async ({
       { value: STOCK_TYPES.semiFinished, labelKey: "semi_finished" },
       { value: STOCK_TYPES.rawMaterial, labelKey: "raw_materials" },
     ],
+    differenceBases: [
+      {
+        value: STOCK_COUNT_ACCURACY_BASES.net,
+        labelKey: "difference_basis_net",
+      },
+      {
+        value: STOCK_COUNT_ACCURACY_BASES.absolute,
+        labelKey: "difference_basis_absolute",
+      },
+    ],
   };
 
   const emptyTotals = {
@@ -5363,7 +5396,8 @@ const getInventoryStockCountAccuracyReportPageData = async ({
   // System (expected) qty in base units: RM decimal qty, SFG/FG integer pairs.
   const systemQtyBaseSql = `(CASE WHEN sch.item_type_scope = 'RM' THEN scl.system_qty_snapshot ELSE scl.system_qty_pairs_snapshot END)`;
   const physicalBaseSql = `(CASE WHEN sch.item_type_scope = 'RM' THEN scl.physical_qty ELSE scl.physical_qty_pairs END)`;
-  const absDiffBaseSql = `ABS(${physicalBaseSql} - ${systemQtyBaseSql})`;
+  const signedDiffBaseSql = `(${physicalBaseSql} - ${systemQtyBaseSql})`;
+  const absDiffBaseSql = `ABS(${signedDiffBaseSql})`;
   // Value a unit at its market price, not WAC: FG/SFG use the SKU variant's
   // selling price (sale_rate, per pair); RM has no selling price (it is never
   // sold) so it falls back to its latest active purchase rate. Because price is
@@ -5402,7 +5436,11 @@ const getInventoryStockCountAccuracyReportPageData = async ({
       knex.raw("COUNT(scl.voucher_line_id) as lines_counted"),
       knex.raw(`SUM(ABS(${systemQtyBaseSql})) as sum_system_qty_base`),
       knex.raw(`SUM(${absDiffBaseSql}) as sum_abs_diff_base`),
-      knex.raw(`SUM(${absDiffBaseSql} * ${unitPriceSql}) as sum_value_diff`),
+      knex.raw(`SUM(${signedDiffBaseSql}) as sum_net_diff_base`),
+      knex.raw(`SUM(${absDiffBaseSql} * ${unitPriceSql}) as sum_abs_value_diff`),
+      knex.raw(
+        `SUM(${signedDiffBaseSql} * ${unitPriceSql}) as sum_net_value_diff`,
+      ),
       knex.raw(
         `SUM(ABS(${systemQtyBaseSql}) * ${unitPriceSql}) as sum_system_value`,
       ),
@@ -5410,13 +5448,19 @@ const getInventoryStockCountAccuracyReportPageData = async ({
     .groupByRaw(`${periodExpr}, sch.item_type_scope`)
     .orderByRaw(`${periodExpr} ASC, sch.item_type_scope ASC`);
 
+  // Net (default) sums the signed difference so over/under-counts offset,
+  // matching the count voucher's TOTAL row; absolute sums |difference| so both
+  // count as error. computeAccuracyPercent takes the magnitude of the numerator,
+  // so a signed net value still yields a sane 0-100% accuracy.
+  const useNet = filters.valueBasis === STOCK_COUNT_ACCURACY_BASES.net;
+
   const rows = [];
   const periodOrder = [];
   const periodAgg = new Map();
   const grandTotals = {
     linesCounted: 0,
     sumSystemQtyBase: 0,
-    sumAbsDiffBase: 0,
+    sumDiffBase: 0,
     valueDifference: 0,
     sumSystemValue: 0,
   };
@@ -5430,8 +5474,13 @@ const getInventoryStockCountAccuracyReportPageData = async ({
 
     const linesCounted = Number(entry.lines_counted || 0);
     const sumSystemQtyBase = Number(entry.sum_system_qty_base || 0);
-    const sumAbsDiffBase = Number(entry.sum_abs_diff_base || 0);
-    const valueDifference = toAmount(entry.sum_value_diff || 0, 2);
+    const sumDiffBase = Number(
+      (useNet ? entry.sum_net_diff_base : entry.sum_abs_diff_base) || 0,
+    );
+    const valueDifference = toAmount(
+      (useNet ? entry.sum_net_value_diff : entry.sum_abs_value_diff) || 0,
+      2,
+    );
     const sumSystemValue = Number(entry.sum_system_value || 0);
 
     const periodStart = String(entry.period_start || "");
@@ -5445,9 +5494,9 @@ const getInventoryStockCountAccuracyReportPageData = async ({
       unitLabelKey: isPairBased ? "dozens" : "units",
       linesCounted,
       systemQtyDisplay: toQuantity(sumSystemQtyBase / divisor, 3),
-      unitDiffDisplay: toQuantity(sumAbsDiffBase / divisor, 3),
+      unitDiffDisplay: toQuantity(sumDiffBase / divisor, 3),
       qtyAccuracyPct: toAmount(
-        computeAccuracyPercent(sumAbsDiffBase, sumSystemQtyBase),
+        computeAccuracyPercent(sumDiffBase, sumSystemQtyBase),
         2,
       ),
       valueDifference,
@@ -5462,20 +5511,20 @@ const getInventoryStockCountAccuracyReportPageData = async ({
       periodAgg.set(periodStart, {
         periodLabel,
         sumSystemQtyBase: 0,
-        sumAbsDiffBase: 0,
+        sumDiffBase: 0,
         valueDifference: 0,
         sumSystemValue: 0,
       });
     }
     const agg = periodAgg.get(periodStart);
     agg.sumSystemQtyBase += sumSystemQtyBase;
-    agg.sumAbsDiffBase += sumAbsDiffBase;
+    agg.sumDiffBase += sumDiffBase;
     agg.valueDifference += valueDifference;
     agg.sumSystemValue += sumSystemValue;
 
     grandTotals.linesCounted += linesCounted;
     grandTotals.sumSystemQtyBase += sumSystemQtyBase;
-    grandTotals.sumAbsDiffBase += sumAbsDiffBase;
+    grandTotals.sumDiffBase += sumDiffBase;
     grandTotals.valueDifference += valueDifference;
     grandTotals.sumSystemValue += sumSystemValue;
   });
@@ -5491,7 +5540,7 @@ const getInventoryStockCountAccuracyReportPageData = async ({
     chart.labels.push(agg.periodLabel);
     chart.qtyAccuracy.push(
       toAmount(
-        computeAccuracyPercent(agg.sumAbsDiffBase, agg.sumSystemQtyBase),
+        computeAccuracyPercent(agg.sumDiffBase, agg.sumSystemQtyBase),
         2,
       ),
     );
@@ -5509,7 +5558,7 @@ const getInventoryStockCountAccuracyReportPageData = async ({
     valueDifference: toAmount(grandTotals.valueDifference, 2),
     qtyAccuracyPct: toAmount(
       computeAccuracyPercent(
-        grandTotals.sumAbsDiffBase,
+        grandTotals.sumDiffBase,
         grandTotals.sumSystemQtyBase,
       ),
       2,

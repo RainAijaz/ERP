@@ -9,7 +9,18 @@
   const toDate = String(filters?.to || "");
   const periodGrain = String(filters?.periodGrain || "month").toLowerCase();
   const categoryFilter = String(filters?.category || "ALL").toUpperCase();
+  const valueBasis = String(filters?.valueBasis || "net").toLowerCase();
   const allMultiOptionValue = "__ALL__";
+
+  const differenceBasisTooltip = (() => {
+    const key = "difference_basis_tooltip";
+    const value = t(key);
+    return value && value !== key ? value : "";
+  })();
+  const basisLabel = tt(
+    valueBasis === "net" ? "difference_basis_net" : "difference_basis_absolute",
+    valueBasis === "net" ? "Net (offsetting)" : "Absolute (total mismatch)",
+  );
 
   const selectedBranchIds = Array.isArray(filters?.branchIds) ? filters.branchIds : [];
   const branchAllSelected = !selectedBranchIds.length;
@@ -132,6 +143,22 @@
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="flex items-center gap-1.5 text-sm font-semibold text-slate-700 sm:col-span-3">
+            <span><%= tt("difference_basis", "Difference Basis") %></span>
+            <% if (differenceBasisTooltip) { %>
+              <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 bg-white text-[9px] font-bold text-slate-600 cursor-help" title="<%= differenceBasisTooltip %>" aria-label="<%= differenceBasisTooltip %>">i</span>
+            <% } %>
+          </label>
+          <div class="sm:col-span-9">
+            <select name="value_basis" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+              <% (options?.differenceBases || []).forEach((option) => { %>
+                <option value="<%= option.value %>" <%= String(option.value || "").toLowerCase() === valueBasis ? "selected" : "" %>><%= t(option.labelKey) %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
           <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? tt("branches", "Branches") : tt("branch", "Branch") %></label>
           <div class="sm:col-span-9">
             <% if (user?.isAdmin) { %>
@@ -169,7 +196,7 @@
         <div class="rounded-xl border border-slate-200 bg-slate-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-slate-600"><%= tt("lines_counted", "Lines Counted") %></div><div class="mt-1 text-base font-semibold text-slate-900"><%= totals.linesCounted || 0 %></div></div>
         <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-emerald-700"><%= tt("quantity_accuracy", "Quantity Accuracy") %></div><div class="mt-1 text-base font-semibold text-emerald-900"><%= formatPct(totals.qtyAccuracyPct) %></div></div>
         <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-emerald-700"><%= tt("value_accuracy", "Value Accuracy") %></div><div class="mt-1 text-base font-semibold text-emerald-900"><%= formatPct(totals.valueAccuracyPct) %></div></div>
-        <div class="rounded-xl border border-rose-200 bg-rose-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-rose-700"><%= tt("total_value_difference", "Total Value Difference") %></div><div class="mt-1 text-base font-semibold text-rose-900"><%= formatMoney(totals.valueDifference) %></div></div>
+        <div class="rounded-xl border border-rose-200 bg-rose-50 p-2.5"><div class="text-[10px] uppercase font-semibold tracking-[0.08em] text-rose-700"><%= tt("total_value_difference", "Total Value Difference") %> <span class="normal-case text-rose-500">· <%= basisLabel %></span></div><div class="mt-1 text-base font-semibold text-rose-900"><%= formatMoney(totals.valueDifference) %></div></div>
       </div>
     <% } %>
 
