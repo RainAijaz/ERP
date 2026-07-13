@@ -20,6 +20,13 @@ const {
   getRoleAccountAccessRows,
   upsertRoleAccountAccessRows,
 } = require("../../services/administration/account-access-service");
+const {
+  getAssignableEntities,
+  getUserEntityAccessRows,
+  upsertUserEntityAccessRows,
+  getRoleEntityAccessRows,
+  upsertRoleEntityAccessRows,
+} = require("../../services/administration/entity-ledger-access-service");
 const router = express.Router();
 
 const FLASH_COOKIE = "permissions_flash";
@@ -72,10 +79,17 @@ const parseAccountAccessPayload = (value) => {
     }
   }
 
+  // Rows are keyed by "<entityType>:<entityId>" so accounts, employees, and
+  // labours coexist in one payload without id collisions. entityType defaults to
+  // 'account' for backward compatibility with older payloads.
   const uniqueRows = new Map();
   parsed.forEach((entry) => {
-    const accountId = Number(entry?.accountId || 0);
-    if (!Number.isInteger(accountId) || accountId <= 0) return;
+    const rawType = String(entry?.entityType || "account").toLowerCase();
+    const entityType = ["account", "employee", "labour"].includes(rawType)
+      ? rawType
+      : "account";
+    const entityId = Number(entry?.entityId ?? entry?.accountId ?? 0);
+    if (!Number.isInteger(entityId) || entityId <= 0) return;
 
     const hasBlockFlags =
       Object.prototype.hasOwnProperty.call(entry || {}, "canBlockSummary") ||
@@ -100,8 +114,10 @@ const parseAccountAccessPayload = (value) => {
       canViewDetails = canViewSummary ? canViewDetails : false;
     }
 
-    uniqueRows.set(accountId, {
-      accountId,
+    uniqueRows.set(`${entityType}:${entityId}`, {
+      entityType,
+      entityId,
+      accountId: entityId, // legacy alias consumed by the account service
       canViewSummary,
       canViewDetails,
     });
@@ -334,24 +350,58 @@ router.get(
         return true;
       });
 
+      // Account Activity Ledger uses per-account restrictions; the Employee and
+      // Labour Ledger reports use per-entity restrictions. The permissions panel
+      // presents all three in one combined picker + list, each row tagged with
+      // its entityType ('account' | 'employee' | 'labour').
       let accountAccessRows = [];
       let accountAccessAccounts = [];
+      let accountAccessEmployees = [];
+      let accountAccessLabours = [];
       if (target_id && canBrowsePermissions) {
+        const tagRows = (rows, entityType) =>
+          (rows || []).map((row) => ({ ...row, entityType }));
+
         if (isUserMode) {
-          accountAccessRows = await getUserAccountAccessRows({
-            userId: target_id,
-          });
+          const [accountRows, employeeRows, labourRows] = await Promise.all([
+            getUserAccountAccessRows({ userId: target_id }),
+            getUserEntityAccessRows({
+              userId: target_id,
+              entityType: "EMPLOYEE",
+            }),
+            getUserEntityAccessRows({ userId: target_id, entityType: "LABOUR" }),
+          ]);
+          accountAccessRows = [
+            ...tagRows(accountRows, "account"),
+            ...tagRows(employeeRows, "employee"),
+            ...tagRows(labourRows, "labour"),
+          ];
           accountAccessAccounts = await getAssignableAccountsForUser({
             userId: target_id,
           });
         } else {
-          accountAccessRows = await getRoleAccountAccessRows({
-            roleId: target_id,
-          });
+          const [accountRows, employeeRows, labourRows] = await Promise.all([
+            getRoleAccountAccessRows({ roleId: target_id }),
+            getRoleEntityAccessRows({
+              roleId: target_id,
+              entityType: "EMPLOYEE",
+            }),
+            getRoleEntityAccessRows({ roleId: target_id, entityType: "LABOUR" }),
+          ]);
+          accountAccessRows = [
+            ...tagRows(accountRows, "account"),
+            ...tagRows(employeeRows, "employee"),
+            ...tagRows(labourRows, "labour"),
+          ];
           accountAccessAccounts = await getAssignableAccountsForRole({
             roleId: target_id,
           });
         }
+
+        [accountAccessEmployees, accountAccessLabours] = await Promise.all([
+          getAssignableEntities({ entityType: "EMPLOYEE" }),
+          getAssignableEntities({ entityType: "LABOUR" }),
+        ]);
       }
 
       res.render("base/layouts/main", {
@@ -370,6 +420,8 @@ router.get(
         permissions: target_id && canBrowsePermissions ? permissionsMap : {}, // Send empty object if no target or no browse access
         accountAccessRows,
         accountAccessAccounts,
+        accountAccessEmployees,
+        accountAccessLabours,
       });
     } catch (err) {
       next(err);
@@ -648,8 +700,17 @@ router.post(
         throw new Error("Target ID is required");
       }
 
-      const rows = parseAccountAccessPayload(req.body?.rows_json);
+      const allRows = parseAccountAccessPayload(req.body?.rows_json);
+      const accountRows = allRows.filter((row) => row.entityType === "account");
+      const employeeRows = allRows.filter(
+        (row) => row.entityType === "employee",
+      );
+      const labourRows = allRows.filter((row) => row.entityType === "labour");
       let result = { upserted: 0, deleted: 0 };
+      const addResult = (partial) => {
+        result.upserted += Number(partial?.upserted || 0);
+        result.deleted += Number(partial?.deleted || 0);
+      };
 
       if (isRoleMode) {
         const targetRole = await trx("erp.role_templates")
@@ -671,12 +732,32 @@ router.post(
           return res.redirect("/administration/permissions?type=role");
         }
 
-        result = await upsertRoleAccountAccessRows({
-          db: trx,
-          roleId: targetId,
-          actorUserId: req.user?.id || null,
-          rows,
-        });
+        addResult(
+          await upsertRoleAccountAccessRows({
+            db: trx,
+            roleId: targetId,
+            actorUserId: req.user?.id || null,
+            rows: accountRows,
+          }),
+        );
+        addResult(
+          await upsertRoleEntityAccessRows({
+            db: trx,
+            roleId: targetId,
+            actorUserId: req.user?.id || null,
+            entityType: "EMPLOYEE",
+            rows: employeeRows,
+          }),
+        );
+        addResult(
+          await upsertRoleEntityAccessRows({
+            db: trx,
+            roleId: targetId,
+            actorUserId: req.user?.id || null,
+            entityType: "LABOUR",
+            rows: labourRows,
+          }),
+        );
       } else {
         const targetUser = await trx("erp.users")
           .select("id")
@@ -690,12 +771,32 @@ router.post(
           return res.redirect("/administration/permissions?type=user");
         }
 
-        result = await upsertUserAccountAccessRows({
-          db: trx,
-          userId: targetId,
-          actorUserId: req.user?.id || null,
-          rows,
-        });
+        addResult(
+          await upsertUserAccountAccessRows({
+            db: trx,
+            userId: targetId,
+            actorUserId: req.user?.id || null,
+            rows: accountRows,
+          }),
+        );
+        addResult(
+          await upsertUserEntityAccessRows({
+            db: trx,
+            userId: targetId,
+            actorUserId: req.user?.id || null,
+            entityType: "EMPLOYEE",
+            rows: employeeRows,
+          }),
+        );
+        addResult(
+          await upsertUserEntityAccessRows({
+            db: trx,
+            userId: targetId,
+            actorUserId: req.user?.id || null,
+            entityType: "LABOUR",
+            rows: labourRows,
+          }),
+        );
       }
 
       queueAuditLog(req, {

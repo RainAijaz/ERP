@@ -1706,11 +1706,17 @@ const translations = {
     account_access_subtitle_role:
       "Baseline account-activity restrictions for every user with this role. Individual users can override these.",
     account_access_financial_reports_context:
-      "Financial -> Reports: Account Activity restrictions",
+      "Account Activity, Employee & Labour Ledger restrictions",
     restriction_level: "Restriction Level",
     account_access_restriction_allow: "Allow (override role)",
     account_access_restriction_summary: "Block Details Only",
     account_access_restriction_details: "Block Summary + Details",
+    account: "Account",
+    employee: "Employee",
+    ledger_entity: "Account / Employee / Labour",
+    select_ledger_entity: "Select account, employee or labour",
+    entity_access_restriction_allow: "Allow (override role)",
+    entity_access_restriction_blocked: "Blocked (no ledger access)",
     block_summary: "Block Summary",
     block_view_details: "Block View Details",
     account_details_access_limited:
@@ -2963,11 +2969,17 @@ translations.ur = {
   account_access_subtitle_role:
     "اس رول والے تمام صارفین کے لیے اکاؤنٹ ایکٹیویٹی کی بنیادی پابندیاں۔ انفرادی صارفین انہیں تبدیل کر سکتے ہیں۔",
   account_access_financial_reports_context:
-    "فنانشل -> رپورٹس: اکاؤنٹ ایکٹیویٹی پابندیاں",
+    "اکاؤنٹ ایکٹیویٹی، ملازم اور لیبر لیجر پابندیاں",
   restriction_level: "پابندی کی سطح",
   account_access_restriction_allow: "اجازت دیں (رول پابندی ختم کریں)",
   account_access_restriction_summary: "صرف تفصیلی ویو بلاک کریں",
   account_access_restriction_details: "خلاصہ اور تفصیلی ویو بلاک کریں",
+  account: "اکاؤنٹ",
+  employee: "ملازم",
+  ledger_entity: "اکاؤنٹ / ملازم / لیبر",
+  select_ledger_entity: "اکاؤنٹ، ملازم یا لیبر منتخب کریں",
+  entity_access_restriction_allow: "اجازت دیں (رول پابندی ختم کریں)",
+  entity_access_restriction_blocked: "بلاک شدہ (لیجر تک رسائی نہیں)",
   block_summary: "خلاصہ بلاک کریں",
   block_view_details: "تفصیلی ویو بلاک کریں",
   account_details_access_limited:

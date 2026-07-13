@@ -3,6 +3,21 @@
 const knex = require("../../db/knex");
 const { toLocalDateOnly } = require("../../utils/date-only");
 const { toBoolean, toIdList } = require("../../utils/report-filter-types");
+const {
+  getUserEntityBlockedSet,
+} = require("../administration/entity-ledger-access-service");
+
+// Employee/Labour ledger access restrictions (per-entity), mirroring the
+// per-account restrictions on the Account Activity Ledger. Admins bypass; every
+// other user's view is scoped to the entities they're allowed to see. kind
+// ('employee' | 'labour') maps to the entity_type stored by the access service.
+const resolveBlockedEntityIds = async ({ req, kind }) => {
+  if (req?.user?.isAdmin) return new Set();
+  const userId = Number(req?.user?.id || 0);
+  if (!Number.isInteger(userId) || userId <= 0) return new Set();
+  const entityType = kind === "employee" ? "EMPLOYEE" : "LABOUR";
+  return getUserEntityBlockedSet({ userId, entityType });
+};
 
 const ALL_MULTI_FILTER_VALUE = "__ALL__";
 const DEBIT_META_SQL = "COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0)";
@@ -598,8 +613,12 @@ const applyEntityVoucherScope = ({
     });
 };
 
-const loadLedgerOptions = async ({ req, filters, kind }) => {
+const loadLedgerOptions = async ({ req, filters, kind, blockedEntityIds }) => {
   const cfg = getEntityConfig(kind);
+  const blocked =
+    blockedEntityIds instanceof Set
+      ? blockedEntityIds
+      : await resolveBlockedEntityIds({ req, kind });
   const scopedBranchIds = req.user?.isAdmin
     ? filters.branchIds
     : [Number(req.branchId || 0)].filter(
@@ -635,15 +654,40 @@ const loadLedgerOptions = async ({ req, filters, kind }) => {
     });
   }
 
-  const entities = await query;
+  const entities = (await query).filter(
+    (row) => !blocked.has(Number(row.id)),
+  );
   return { branches, entities };
 };
 
-const getLedgerRows = async ({ req, filters, options, kind }) => {
+const getLedgerRows = async ({
+  req,
+  filters,
+  options,
+  kind,
+  blockedEntityIds,
+}) => {
   const cfg = getEntityConfig(kind);
   const includeBranchColumn = Boolean(
     req.user?.isAdmin && filters.branchIds.length !== 1,
   );
+
+  const blocked =
+    blockedEntityIds instanceof Set
+      ? blockedEntityIds
+      : await resolveBlockedEntityIds({ req, kind });
+
+  // A restricted user cannot pull a blocked entity's ledger even by posting its
+  // id directly — treat it as if nothing was selected.
+  if (filters.entityId && blocked.has(Number(filters.entityId))) {
+    return {
+      entity: null,
+      openingBalance: 0,
+      rows: [],
+      totals: { qty: 0, debit: 0, credit: 0, closingBalance: 0 },
+      includeBranchColumn,
+    };
+  }
 
   if (!filters.reportLoaded || !filters.entityId) {
     return {
@@ -1274,7 +1318,10 @@ const getBalanceRows = async ({ req, filters, kind }) => {
     });
   }
 
-  const rows = await query;
+  // Drop entities this user isn't allowed to see, so the balances list stays
+  // consistent with the (restricted) ledger it links to. Admins bypass.
+  const blocked = await resolveBlockedEntityIds({ req, kind });
+  const rows = (await query).filter((row) => !blocked.has(Number(row.id)));
 
   const staffBalanceRows = await buildStaffCreditSaleQuery({
     cfg,
@@ -1488,24 +1535,41 @@ const getBalanceRows = async ({ req, filters, kind }) => {
 
 const getLabourLedgerReportPageData = async ({ req, input = {} }) => {
   const filters = parseEntityLedgerFilters({ req, input });
-  const options = await loadLedgerOptions({ req, filters, kind: "labour" });
+  const blockedEntityIds = await resolveBlockedEntityIds({ req, kind: "labour" });
+  const options = await loadLedgerOptions({
+    req,
+    filters,
+    kind: "labour",
+    blockedEntityIds,
+  });
   const reportData = await getLedgerRows({
     req,
     filters,
     options,
     kind: "labour",
+    blockedEntityIds,
   });
   return { filters, options, reportData };
 };
 
 const getEmployeeLedgerReportPageData = async ({ req, input = {} }) => {
   const filters = parseEntityLedgerFilters({ req, input });
-  const options = await loadLedgerOptions({ req, filters, kind: "employee" });
+  const blockedEntityIds = await resolveBlockedEntityIds({
+    req,
+    kind: "employee",
+  });
+  const options = await loadLedgerOptions({
+    req,
+    filters,
+    kind: "employee",
+    blockedEntityIds,
+  });
   const reportData = await getLedgerRows({
     req,
     filters,
     options,
     kind: "employee",
+    blockedEntityIds,
   });
   return { filters, options, reportData };
 };

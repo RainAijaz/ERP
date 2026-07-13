@@ -167,17 +167,48 @@
               <div class="mt-3 rounded-lg border border-slate-200 bg-slate-50/60 p-3">
                 <div class="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
                   <label class="block text-sm">
-                    <span class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('account_name') %></span>
+                    <span class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('ledger_entity') %></span>
                     <select data-account-access-add data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" <%= !canEditPermissions ? 'disabled' : '' %>>
-                      <option value=""><%= t('select_account_name') %></option>
-                      <% (accountAccessAccounts || []).forEach((account) => { %>
-                        <option
-                          value="<%= account.id %>"
-                          data-code="<%= account.code %>"
-                          data-name="<%= account.name %>"
-                          data-branches="<%= (account.branchNames || []).join(', ') %>"
-                        ><%= account.name %></option>
-                      <% }) %>
+                      <option value=""><%= t('select_ledger_entity') %></option>
+                      <% if ((accountAccessAccounts || []).length) { %>
+                        <optgroup label="<%= t('accounts') %>">
+                          <% accountAccessAccounts.forEach((account) => { %>
+                            <option
+                              value="<%= account.id %>"
+                              data-entity-type="account"
+                              data-code="<%= account.code %>"
+                              data-name="<%= account.name %>"
+                              data-branches="<%= (account.branchNames || []).join(', ') %>"
+                            >[<%= t('account') %>] <%= account.name %></option>
+                          <% }) %>
+                        </optgroup>
+                      <% } %>
+                      <% if ((accountAccessEmployees || []).length) { %>
+                        <optgroup label="<%= t('employees') %>">
+                          <% accountAccessEmployees.forEach((emp) => { %>
+                            <option
+                              value="<%= emp.id %>"
+                              data-entity-type="employee"
+                              data-code="<%= emp.code %>"
+                              data-name="<%= emp.name %>"
+                              data-branches=""
+                            >[<%= t('employee') %>] <%= emp.name %></option>
+                          <% }) %>
+                        </optgroup>
+                      <% } %>
+                      <% if ((accountAccessLabours || []).length) { %>
+                        <optgroup label="<%= t('labours') %>">
+                          <% accountAccessLabours.forEach((lab) => { %>
+                            <option
+                              value="<%= lab.id %>"
+                              data-entity-type="labour"
+                              data-code="<%= lab.code %>"
+                              data-name="<%= lab.name %>"
+                              data-branches=""
+                            >[<%= t('labour') %>] <%= lab.name %></option>
+                          <% }) %>
+                        </optgroup>
+                      <% } %>
                     </select>
                   </label>
                   <button
@@ -211,11 +242,12 @@
 
               <div class="mt-3 flex-1 min-h-0 rounded-lg border border-slate-200 bg-white overflow-hidden">
                 <div class="h-full min-h-0 overflow-auto custom-scrollbar">
-                  <table class="w-full min-w-[620px] text-sm">
+                  <table class="w-full min-w-[680px] text-sm">
                     <thead class="bg-slate-50 text-xs uppercase tracking-[0.08em] text-slate-600">
                       <tr>
+                        <th class="px-3 py-2 text-left"><%= t('type') %></th>
                         <th class="px-3 py-2 text-left"><%= t('account_code') %></th>
-                        <th class="px-3 py-2 text-left"><%= t('account_name') %></th>
+                        <th class="px-3 py-2 text-left"><%= t('name') %></th>
                         <th class="px-3 py-2 text-left"><%= t('restriction_level') %></th>
                         <th class="px-3 py-2 text-center"><%= t('actions') %></th>
                       </tr>
@@ -223,13 +255,20 @@
                     <tbody data-account-access-body>
                       <% if (!accountAccessRows || !accountAccessRows.length) { %>
                         <tr data-account-access-empty>
-                          <td colspan="4" class="px-3 py-6 text-center text-xs font-semibold text-slate-500"><%= t('no_records_found') %></td>
+                          <td colspan="5" class="px-3 py-6 text-center text-xs font-semibold text-slate-500"><%= t('no_records_found') %></td>
                         </tr>
                       <% } %>
                       <% (accountAccessRows || []).forEach((row) => { %>
-                        <% const restrictionValue = row.level || (row.canViewSummary ? (row.canViewDetails ? 'allow' : 'summary') : 'details'); %>
+                        <% const et = row.entityType || 'account'; %>
+                        <% const isAccountRow = et === 'account'; %>
+                        <% const typeLabel = isAccountRow ? t('account') : (et === 'employee' ? t('employee') : t('labour')); %>
+                        <% const badgeClass = isAccountRow ? 'bg-sky-50 text-sky-700 border-sky-200' : (et === 'employee' ? 'bg-violet-50 text-violet-700 border-violet-200' : 'bg-amber-50 text-amber-700 border-amber-200'); %>
+                        <% const restrictionValue = row.level || (row.canViewSummary ? (row.canViewDetails ? 'allow' : 'summary') : (isAccountRow ? 'details' : 'blocked')); %>
                         <% const branchesText = (row.branchNames || []).join(', '); %>
-                        <tr data-account-access-row data-account-id="<%= row.accountId %>" data-row-search="<%= ((row.code || '') + ' ' + (row.name || '') + ' ' + branchesText).toLowerCase() %>" class="border-t border-slate-100">
+                        <tr data-account-access-row data-entity-type="<%= et %>" data-account-id="<%= row.accountId %>" data-row-search="<%= (et + ' ' + typeLabel + ' ' + (row.code || '') + ' ' + (row.name || '') + ' ' + branchesText).toLowerCase() %>" class="border-t border-slate-100">
+                          <td class="px-3 py-2">
+                            <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] <%= badgeClass %>"><%= typeLabel %></span>
+                          </td>
                           <td class="px-3 py-2 font-semibold text-slate-700" data-account-code><%= row.code || '-' %></td>
                           <td class="px-3 py-2 text-slate-700" data-account-name>
                             <div class="font-medium"><%= row.name || '-' %></div>
@@ -239,11 +278,18 @@
                           </td>
                           <td class="px-3 py-2 text-slate-700">
                             <select data-account-restriction class="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs font-semibold" <%= !canEditPermissions ? 'disabled' : '' %>>
-                              <% if (isUserMode) { %>
-                                <option value="allow" <%= restrictionValue === 'allow' ? 'selected' : '' %>><%= t('account_access_restriction_allow') %></option>
+                              <% if (isAccountRow) { %>
+                                <% if (isUserMode) { %>
+                                  <option value="allow" <%= restrictionValue === 'allow' ? 'selected' : '' %>><%= t('account_access_restriction_allow') %></option>
+                                <% } %>
+                                <option value="summary" <%= restrictionValue === 'summary' ? 'selected' : '' %>><%= t('account_access_restriction_summary') %></option>
+                                <option value="details" <%= restrictionValue === 'details' ? 'selected' : '' %>><%= t('account_access_restriction_details') %></option>
+                              <% } else { %>
+                                <% if (isUserMode) { %>
+                                  <option value="allow" <%= restrictionValue === 'allow' ? 'selected' : '' %>><%= t('entity_access_restriction_allow') %></option>
+                                <% } %>
+                                <option value="blocked" <%= restrictionValue !== 'allow' ? 'selected' : '' %>><%= t('entity_access_restriction_blocked') %></option>
                               <% } %>
-                              <option value="summary" <%= restrictionValue === 'summary' ? 'selected' : '' %>><%= t('account_access_restriction_summary') %></option>
-                              <option value="details" <%= restrictionValue === 'details' ? 'selected' : '' %>><%= t('account_access_restriction_details') %></option>
                             </select>
                           </td>
                           <td class="px-3 py-2 text-center">
@@ -817,9 +863,11 @@
         // Explicit user override that lifts an inherited role restriction.
         return { canBlockSummary: false, canBlockDetails: false };
       }
-      if (restrictionValue === 'details') {
+      // 'details' (accounts) and 'blocked' (employees/labours) both block fully.
+      if (restrictionValue === 'details' || restrictionValue === 'blocked') {
         return { canBlockSummary: true, canBlockDetails: true };
       }
+      // 'summary' — accounts only: block details, keep summary.
       return { canBlockSummary: true, canBlockDetails: false };
     };
 
@@ -833,7 +881,7 @@
       if (empty) return;
       const tr = document.createElement('tr');
       tr.setAttribute('data-account-access-empty', '1');
-      tr.innerHTML = `<td colspan="4" class="px-3 py-6 text-center text-xs font-semibold text-slate-500"><%= t('no_records_found') %></td>`;
+      tr.innerHTML = `<td colspan="5" class="px-3 py-6 text-center text-xs font-semibold text-slate-500"><%= t('no_records_found') %></td>`;
       body.appendChild(tr);
     };
 
@@ -852,7 +900,7 @@
       if (filterEmpty) return;
       const tr = document.createElement('tr');
       tr.setAttribute('data-account-access-filter-empty', '1');
-      tr.innerHTML = `<td colspan="4" class="px-3 py-6 text-center text-xs font-semibold text-slate-500"><%= t('no_records_found') %></td>`;
+      tr.innerHTML = `<td colspan="5" class="px-3 py-6 text-center text-xs font-semibold text-slate-500"><%= t('no_records_found') %></td>`;
       body.appendChild(tr);
     };
 
@@ -872,16 +920,22 @@
       const rows = Array.from(body.querySelectorAll('[data-account-access-row]'));
       return rows
         .map((row) => {
-          const accountId = Number(row.getAttribute('data-account-id') || 0);
-          if (!Number.isInteger(accountId) || accountId <= 0) return null;
+          const entityId = Number(row.getAttribute('data-account-id') || 0);
+          if (!Number.isInteger(entityId) || entityId <= 0) return null;
+          const entityType = String(row.getAttribute('data-entity-type') || 'account').toLowerCase();
+          const isAccountRow = entityType === 'account';
           const restriction = row.querySelector('[data-account-restriction]');
-          const rawValue = String(restriction?.value || 'details').toLowerCase();
-          const restrictionValue = ['allow', 'summary', 'details'].includes(rawValue)
-            ? rawValue
-            : 'details';
+          const fallback = isAccountRow ? 'details' : 'blocked';
+          const rawValue = String(restriction?.value || fallback).toLowerCase();
+          const allowedValues = isAccountRow
+            ? ['allow', 'summary', 'details']
+            : ['allow', 'blocked'];
+          const restrictionValue = allowedValues.includes(rawValue) ? rawValue : fallback;
           const flags = restrictionToFlags(restrictionValue);
           return {
-            accountId,
+            entityType,
+            entityId,
+            accountId: entityId,
             canBlockSummary: flags.canBlockSummary,
             canBlockDetails: flags.canBlockDetails,
           };
@@ -889,20 +943,44 @@
         .filter(Boolean);
     };
 
-    const createRow = ({ accountId, code, name, branches }) => {
+    const ENTITY_META = {
+      account: { label: '<%= t('account') %>', badge: 'bg-sky-50 text-sky-700 border-sky-200' },
+      employee: { label: '<%= t('employee') %>', badge: 'bg-violet-50 text-violet-700 border-violet-200' },
+      labour: { label: '<%= t('labour') %>', badge: 'bg-amber-50 text-amber-700 border-amber-200' },
+    };
+
+    const restrictionOptionsHtml = (entityType) => {
+      if (entityType === 'account') {
+        return `
+          <% if (isUserMode) { %><option value="allow"><%= t('account_access_restriction_allow') %></option><% } %>
+          <option value="summary"><%= t('account_access_restriction_summary') %></option>
+          <option value="details" selected><%= t('account_access_restriction_details') %></option>`;
+      }
+      return `
+        <% if (isUserMode) { %><option value="allow"><%= t('entity_access_restriction_allow') %></option><% } %>
+        <option value="blocked" selected><%= t('entity_access_restriction_blocked') %></option>`;
+    };
+
+    const createRow = ({ entityType, accountId, code, name, branches }) => {
+      const type = ENTITY_META[entityType] ? entityType : 'account';
+      const meta = ENTITY_META[type];
       const safeCode = escapeHtml(code || '-');
       const safeName = escapeHtml(name || '-');
       const safeBranches = escapeHtml(branches || '');
-      const searchText = `${String(code || '')} ${String(name || '')} ${String(branches || '')}`.toLowerCase();
+      const searchText = `${type} ${meta.label} ${String(code || '')} ${String(name || '')} ${String(branches || '')}`.toLowerCase();
       const safeSearchText = escapeHtml(searchText);
       const disabledAttr = isReadOnly ? 'disabled' : '';
 
       const tr = document.createElement('tr');
       tr.className = 'border-t border-slate-100';
       tr.setAttribute('data-account-access-row', '1');
+      tr.setAttribute('data-entity-type', type);
       tr.setAttribute('data-account-id', String(accountId));
       tr.setAttribute('data-row-search', safeSearchText);
       tr.innerHTML = `
+        <td class="px-3 py-2">
+          <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.06em] ${meta.badge}">${escapeHtml(meta.label)}</span>
+        </td>
         <td class="px-3 py-2 font-semibold text-slate-700" data-account-code>${safeCode}</td>
         <td class="px-3 py-2 text-slate-700" data-account-name>
           <div class="font-medium">${safeName}</div>
@@ -910,9 +988,7 @@
         </td>
         <td class="px-3 py-2 text-slate-700">
           <select data-account-restriction class="h-8 w-full rounded-md border border-slate-300 bg-white px-2 text-xs font-semibold" ${disabledAttr}>
-            <% if (isUserMode) { %><option value="allow"><%= t('account_access_restriction_allow') %></option><% } %>
-            <option value="summary"><%= t('account_access_restriction_summary') %></option>
-            <option value="details" selected><%= t('account_access_restriction_details') %></option>
+            ${restrictionOptionsHtml(type)}
           </select>
         </td>
         <td class="px-3 py-2 text-center">
@@ -929,14 +1005,18 @@
       const accountId = Number(addSelect.value || 0);
       if (!Number.isInteger(accountId) || accountId <= 0) return;
 
-      const exists = body.querySelector(`[data-account-access-row][data-account-id="${accountId}"]`);
+      const selected = addSelect.options[addSelect.selectedIndex];
+      const entityType = String(selected?.getAttribute('data-entity-type') || 'account').toLowerCase();
+
+      const exists = body.querySelector(
+        `[data-account-access-row][data-entity-type="${entityType}"][data-account-id="${accountId}"]`,
+      );
       if (exists) return;
 
-      const selected = addSelect.options[addSelect.selectedIndex];
       const code = selected?.getAttribute('data-code') || '';
       const name = selected?.getAttribute('data-name') || selected?.textContent || '';
       const branches = selected?.getAttribute('data-branches') || '';
-      createRow({ accountId, code, name, branches });
+      createRow({ entityType, accountId, code, name, branches });
 
       addSelect.value = '';
       addSelect.dispatchEvent(new Event('change', { bubbles: true }));
