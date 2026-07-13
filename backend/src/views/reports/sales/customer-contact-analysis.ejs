@@ -5,6 +5,9 @@ const selectedTo = String(filters?.to || "");
 const selectedBranchId = Number(filters?.branchId || 0) || null;
 const selectedGroupBy = String(filters?.groupBy || "phone") === "name" ? "name" : "phone";
 const selectedDormantDays = Number(filters?.dormantDays || 0) || 0;
+const selectedMinBillAmount = Number(filters?.minBillAmount || 0) || 0;
+const selectedMaxBillAmount = Number(filters?.maxBillAmount || 0) || 0;
+const allLabel = typeof t === "function" ? t("all") : "All";
 const rows = Array.isArray(reportData?.rows) ? reportData.rows : [];
 const totals = reportData?.totals || {
   contactCount: 0,
@@ -91,77 +94,100 @@ const reportPurposeTooltip = (() => {
     <% if (filters?.invalidFilterInput) { %>
       <div class="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800"><%= t("date_filters_auto_corrected") %></div>
     <% } %>
-    <form method="post" action="<%= reportPath %>" class="mt-4 grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 lg:grid-cols-12" data-contact-analysis-form>
+    <form method="post" action="<%= reportPath %>" class="mt-4 max-w-6xl rounded-xl border border-slate-200 bg-slate-50/30 p-3 sm:p-4" data-contact-analysis-form>
       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
       <input type="hidden" name="load_report" value="1">
+      <div class="space-y-3">
 
-      <div class="lg:col-span-6">
-        <label class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500"><%= dateRangeLabel %></label>
-        <div class="relative" data-date-range-wrap>
-          <input type="text" readonly value="<%= `${selectedFrom} - ${selectedTo}` %>" data-date-range-input class="h-10 w-full cursor-pointer rounded-lg border border-slate-300 bg-white px-3 pr-10 text-sm text-slate-700">
-          <button type="button" class="absolute inset-y-0 right-2 inline-flex items-center text-slate-500 hover:text-slate-700" data-date-range-toggle aria-label="<%= t('open_date_range_picker') %>">
-            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
-          </button>
-          <div class="absolute left-0 z-50 mt-2 hidden max-h-[62vh] overflow-auto rounded-xl border border-slate-200 bg-white p-2.5 shadow-lg" style="width:min(700px,calc(100vw - 1rem));" data-date-range-panel>
-            <div class="grid grid-cols-1 gap-2 lg:grid-cols-[156px_1fr]">
-              <div class="space-y-1.5">
-                <div><div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('from_date') %></div><div class="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700" data-date-range-from-display>-</div></div>
-                <div><div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('to_date') %></div><div class="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700" data-date-range-to-display>-</div></div>
-              </div>
-              <div>
-                <div class="mb-1.5 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600" data-date-range-caption><%= t('select_date_range') %></div>
-                <div class="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_1fr]">
-                  <div class="min-w-[210px] rounded-lg border border-slate-200 bg-slate-50/40 p-2">
-                    <div class="mb-1 flex items-center justify-between gap-2"><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-prev>&larr;</button><div class="text-center text-xs font-semibold text-slate-700" data-date-range-month-1-label></div><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-next>&rarr;</button></div>
-                    <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-500"><% weekdayShortLabels.forEach((weekdayLabel) => { %><span><%= weekdayLabel %></span><% }) %></div>
-                    <div class="mt-1 grid grid-cols-7 gap-1" data-date-range-month-1-grid></div>
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= dateRangeLabel %></label>
+          <div class="sm:col-span-9">
+            <div class="relative" data-date-range-wrap>
+              <input type="text" readonly value="<%= `${selectedFrom} - ${selectedTo}` %>" data-date-range-input class="h-10 w-full cursor-pointer rounded-lg border border-slate-300 bg-white px-3 pr-10 text-sm text-slate-700">
+              <button type="button" class="absolute inset-y-0 right-2 inline-flex items-center text-slate-500 hover:text-slate-700" data-date-range-toggle aria-label="<%= t('open_date_range_picker') %>">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+              </button>
+              <div class="absolute left-0 z-50 mt-2 hidden max-h-[62vh] overflow-auto rounded-xl border border-slate-200 bg-white p-2.5 shadow-lg" style="width:min(700px,calc(100vw - 1rem));" data-date-range-panel>
+                <div class="grid grid-cols-1 gap-2 lg:grid-cols-[156px_1fr]">
+                  <div class="space-y-1.5">
+                    <div><div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('from_date') %></div><div class="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700" data-date-range-from-display>-</div></div>
+                    <div><div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('to_date') %></div><div class="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700" data-date-range-to-display>-</div></div>
                   </div>
-                  <div class="hidden sm:block w-px bg-slate-200 self-stretch"></div>
-                  <div class="min-w-[210px] rounded-lg border border-slate-200 bg-slate-50/40 p-2">
-                    <div class="mb-1 flex items-center justify-between gap-2"><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-2-prev>&larr;</button><div class="text-center text-xs font-semibold text-slate-700" data-date-range-month-2-label></div><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-2-next>&rarr;</button></div>
-                    <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-500"><% weekdayShortLabels.forEach((weekdayLabel) => { %><span><%= weekdayLabel %></span><% }) %></div>
-                    <div class="mt-1 grid grid-cols-7 gap-1" data-date-range-month-2-grid></div>
+                  <div>
+                    <div class="mb-1.5 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600" data-date-range-caption><%= t('select_date_range') %></div>
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_1fr]">
+                      <div class="min-w-[210px] rounded-lg border border-slate-200 bg-slate-50/40 p-2">
+                        <div class="mb-1 flex items-center justify-between gap-2"><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-prev>&larr;</button><div class="text-center text-xs font-semibold text-slate-700" data-date-range-month-1-label></div><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-next>&rarr;</button></div>
+                        <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-500"><% weekdayShortLabels.forEach((weekdayLabel) => { %><span><%= weekdayLabel %></span><% }) %></div>
+                        <div class="mt-1 grid grid-cols-7 gap-1" data-date-range-month-1-grid></div>
+                      </div>
+                      <div class="hidden sm:block w-px bg-slate-200 self-stretch"></div>
+                      <div class="min-w-[210px] rounded-lg border border-slate-200 bg-slate-50/40 p-2">
+                        <div class="mb-1 flex items-center justify-between gap-2"><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-2-prev>&larr;</button><div class="text-center text-xs font-semibold text-slate-700" data-date-range-month-2-label></div><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-2-next>&rarr;</button></div>
+                        <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-500"><% weekdayShortLabels.forEach((weekdayLabel) => { %><span><%= weekdayLabel %></span><% }) %></div>
+                        <div class="mt-1 grid grid-cols-7 gap-1" data-date-range-month-2-grid></div>
+                      </div>
+                    </div>
                   </div>
                 </div>
+                <div class="mt-1.5 flex items-center justify-end gap-2"><button type="button" class="rounded-lg border border-slate-300 bg-white px-3 py-1.25 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700" data-date-range-cancel><%= t('cancel') %></button><button type="button" class="rounded-lg bg-accent px-3 py-1.25 text-xs font-semibold uppercase tracking-[0.08em] text-white" data-date-range-apply><%= t('apply') %></button></div>
               </div>
             </div>
-            <div class="mt-1.5 flex items-center justify-end gap-2"><button type="button" class="rounded-lg border border-slate-300 bg-white px-3 py-1.25 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700" data-date-range-cancel><%= t('cancel') %></button><button type="button" class="rounded-lg bg-accent px-3 py-1.25 text-xs font-semibold uppercase tracking-[0.08em] text-white" data-date-range-apply><%= t('apply') %></button></div>
+            <input type="hidden" name="from_date" value="<%= selectedFrom %>" data-from-date-hidden>
+            <input type="hidden" name="to_date" value="<%= selectedTo %>" data-to-date-hidden>
           </div>
         </div>
-        <input type="hidden" name="from_date" value="<%= selectedFrom %>" data-from-date-hidden>
-        <input type="hidden" name="to_date" value="<%= selectedTo %>" data-to-date-hidden>
-      </div>
 
-      <div class="lg:col-span-2">
-        <label class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t("analyze_by") %></label>
-        <select name="group_by" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700">
-          <option value="phone" <%= selectedGroupBy === "phone" ? "selected" : "" %>><%= t("by_phone") %></option>
-          <option value="name" <%= selectedGroupBy === "name" ? "selected" : "" %>><%= t("by_name") %></option>
-        </select>
-      </div>
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("analyze_by") %></label>
+          <div class="sm:col-span-9">
+            <select name="group_by" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+              <option value="phone" <%= selectedGroupBy === "phone" ? "selected" : "" %>><%= t("by_phone") %></option>
+              <option value="name" <%= selectedGroupBy === "name" ? "selected" : "" %>><%= t("by_name") %></option>
+            </select>
+          </div>
+        </div>
 
-      <div class="lg:col-span-2">
-        <label class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t("not_ordered_in_last_days") %></label>
-        <input type="number" name="dormant_days" min="0" step="1" value="<%= selectedDormantDays || '' %>" placeholder="0" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700">
-      </div>
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t("branches") : t("branch") %></label>
+          <div class="sm:col-span-9">
+            <% if (user?.isAdmin) { %>
+              <select name="filter_branch_id" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified">
+                <option value=""><%= allLabel %></option>
+                <% branches.forEach((branch) => { %>
+                  <option value="<%= branch.id %>" <%= selectedBranchId === Number(branch.id) ? "selected" : "" %>><%= branch.name %></option>
+                <% }) %>
+              </select>
+            <% } else { %>
+              <input type="text" readonly class="h-10 w-full rounded-lg border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700" value="<%= branches[0]?.name || branchId || '-' %>">
+            <% } %>
+          </div>
+        </div>
 
-      <div class="lg:col-span-2">
-        <label class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-500"><%= user?.isAdmin ? t("branches") : t("branch") %></label>
-        <% if (user?.isAdmin) { %>
-          <select name="filter_branch_id" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm text-slate-700">
-            <option value=""><%= t("all") %></option>
-            <% branches.forEach((branch) => { %>
-              <option value="<%= branch.id %>" <%= selectedBranchId === Number(branch.id) ? "selected" : "" %>><%= branch.name %></option>
-            <% }) %>
-          </select>
-        <% } else { %>
-          <input type="text" readonly value="<%= branches[0]?.name || branchId || '-' %>" class="h-10 w-full rounded-lg border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700">
-        <% } %>
-      </div>
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("total_bill_amount_range") %></label>
+          <div class="sm:col-span-9">
+            <div class="flex flex-wrap items-center gap-2">
+              <input type="number" name="min_bill_amount" min="0" step="any" inputmode="decimal" value="<%= selectedMinBillAmount || '' %>" placeholder="<%= t('min_amount') %>" aria-label="<%= t('min_amount') %>" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm sm:w-40">
+              <span class="text-slate-400">&ndash;</span>
+              <input type="number" name="max_bill_amount" min="0" step="any" inputmode="decimal" value="<%= selectedMaxBillAmount || '' %>" placeholder="<%= t('max_amount') %>" aria-label="<%= t('max_amount') %>" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm sm:w-40">
+            </div>
+          </div>
+        </div>
 
-      <div class="lg:col-span-12 flex flex-wrap items-center gap-2">
-        <button type="submit" class="inline-flex items-center rounded-lg bg-accent px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= t("load") %></button>
-        <a href="<%= reportPath %>" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= t("cancel") %></a>
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("not_ordered_in_last_days") %></label>
+          <div class="sm:col-span-9">
+            <input type="number" name="dormant_days" min="0" step="1" inputmode="numeric" value="<%= selectedDormantDays || '' %>" placeholder="0" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm sm:w-40">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-center gap-2 pt-1 sm:grid-cols-12">
+          <div class="sm:col-start-4 sm:col-span-9 flex flex-wrap items-center gap-2">
+            <button type="submit" class="inline-flex items-center rounded-lg bg-accent px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= t("load") %></button>
+            <a href="<%= reportPath %>" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= t("cancel") %></a>
+          </div>
+        </div>
       </div>
     </form>
   </section>
@@ -211,12 +237,12 @@ const reportPurposeTooltip = (() => {
               <th class="px-4 py-3 text-left">SR.NO</th>
               <th class="px-4 py-3 text-left"><%= t("primary_customer_name") %></th>
               <th class="px-4 py-3 text-left"><%= t("branch") %></th>
-              <th class="px-4 py-3 text-right"><%= t("total_bill_amount") %></th>
-              <th class="px-4 py-3 text-right"><%= t("total_dozens") %></th>
-              <th class="px-4 py-3 text-right"><%= t("highest_bill") %></th>
-              <th class="px-4 py-3 text-right"><%= t("bill_count") %></th>
+              <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="total_bill_amount"><span><%= t("total_bill_amount") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
+              <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="total_dozens"><span><%= t("total_dozens") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
+              <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="highest_bill"><span><%= t("highest_bill") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
+              <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="bill_count"><span><%= t("bill_count") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
               <th class="px-4 py-3 text-left"><%= t("last_purchase_date") %></th>
-              <th class="px-4 py-3 text-right"><%= t("days_since_last_order") %></th>
+              <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="days_since_last_order"><span><%= t("days_since_last_order") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
               <th class="px-4 py-3 text-left"><%= t("product_groups") %></th>
               <th class="px-4 py-3 text-center"><%= t("details") %></th>
               <% if (canViewPhone) { %><th class="px-4 py-3 text-left"><%= t("phone_number") %></th><% } %>
@@ -224,8 +250,13 @@ const reportPurposeTooltip = (() => {
           </thead>
           <tbody class="divide-y divide-slate-100" data-contact-table-body>
             <% rows.forEach((row, idx) => { %>
-              <tr class="bg-white hover:bg-slate-50" data-row data-active="true" data-contact-row data-contact-key="<%= row.group_key %>">
-                <td class="px-4 py-3 text-slate-700"><%= idx + 1 %></td>
+              <tr class="bg-white hover:bg-slate-50" data-row data-active="true" data-contact-row data-contact-key="<%= row.group_key %>"
+                data-sort-total_bill_amount="<%= Number(row.total_bill_amount || 0) %>"
+                data-sort-total_dozens="<%= Number(row.total_dozens || 0) %>"
+                data-sort-highest_bill="<%= Number(row.highest_bill || 0) %>"
+                data-sort-bill_count="<%= Number(row.bill_count || 0) %>"
+                data-sort-days_since_last_order="<%= row.days_since_last_order === null || row.days_since_last_order === undefined ? '' : Number(row.days_since_last_order) %>">
+                <td class="px-4 py-3 text-slate-700" data-sr-cell><%= idx + 1 %></td>
                 <td class="px-4 py-3 text-slate-700"><%= row.primary_customer_name || "-" %></td>
                 <td class="px-4 py-3 text-slate-700"><%= row.primary_branch_name || "-" %></td>
                 <td class="px-4 py-3 text-right font-semibold tabular-nums text-slate-900"><%= formatMoney(row.total_bill_amount || 0) %></td>
@@ -349,7 +380,7 @@ const reportPurposeTooltip = (() => {
     const csv = [...headerRows, ...bodyRows]
       .map((tr) =>
         Array.from(tr.querySelectorAll("th,td"))
-          .map((cell) => `"${String(cell.textContent || "").replace(/\s+/g, " ").trim().replace(/"/g, '""')}"`)
+          .map((cell) => `"${String(cell.textContent || "").replace(/[↕↑↓]/g, "").replace(/\s+/g, " ").trim().replace(/"/g, '""')}"`)
           .join(","),
       )
       .join("\n");
@@ -396,6 +427,12 @@ const reportPurposeTooltip = (() => {
     const filteredRows = allRows.filter((row) => {
       if (!query) return true;
       return String(row.textContent || "").toLowerCase().includes(query);
+    });
+
+    // Renumber SR.NO to reflect the current sort/filter order (not the server order).
+    filteredRows.forEach((row, i) => {
+      const srCell = row.querySelector("[data-sr-cell]");
+      if (srCell) srCell.textContent = String(i + 1);
     });
 
     const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
@@ -447,6 +484,72 @@ const reportPurposeTooltip = (() => {
       const expanded = button.getAttribute("aria-expanded") === "true";
       button.setAttribute("aria-expanded", expanded ? "false" : "true");
       detailRow.classList.toggle("hidden", expanded);
+    });
+  });
+
+  // Client-side sorting of numeric columns. Reorders the main+detail row pairs in
+  // the DOM, then re-applies pagination (which also renumbers SR.NO).
+  const sortButtons = Array.from(document.querySelectorAll("[data-sort-btn]"));
+  const ARROW_NEUTRAL = "↕"; // ↕
+  const ARROW_ASC = "↑"; // ↑
+  const ARROW_DESC = "↓"; // ↓
+  let sortKey = null;
+  let sortDir = "desc";
+
+  const sortValue = (row, key) => {
+    const raw = row.getAttribute(`data-sort-${key}`);
+    if (raw === null || raw === "") return null;
+    const num = Number(raw);
+    return Number.isFinite(num) ? num : null;
+  };
+
+  const updateSortArrows = () => {
+    sortButtons.forEach((button) => {
+      const arrow = button.querySelector("[data-sort-arrow]");
+      if (!arrow) return;
+      const isActive = button.getAttribute("data-sort-key") === sortKey;
+      arrow.textContent = isActive ? (sortDir === "asc" ? ARROW_ASC : ARROW_DESC) : ARROW_NEUTRAL;
+      arrow.classList.toggle("text-slate-300", !isActive);
+      arrow.classList.toggle("text-accent", isActive);
+    });
+  };
+
+  const applySort = () => {
+    if (!sortKey) return;
+    const pairs = getMainRows().map((mainRow) => {
+      const key = mainRow.getAttribute("data-contact-key");
+      const detailRow = tableBody.querySelector(`tr[data-contact-detail-row][data-contact-key="${key}"]`);
+      return { mainRow, detailRow };
+    });
+    pairs.sort((a, b) => {
+      const av = sortValue(a.mainRow, sortKey);
+      const bv = sortValue(b.mainRow, sortKey);
+      // Rows with no value (e.g. never-ordered days) always sink to the bottom.
+      if (av === null && bv === null) return 0;
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      return sortDir === "asc" ? av - bv : bv - av;
+    });
+    pairs.forEach(({ mainRow, detailRow }) => {
+      tableBody.appendChild(mainRow);
+      if (detailRow) tableBody.appendChild(detailRow);
+    });
+  };
+
+  sortButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.getAttribute("data-sort-key");
+      if (!key) return;
+      if (sortKey === key) {
+        sortDir = sortDir === "asc" ? "desc" : "asc";
+      } else {
+        sortKey = key;
+        sortDir = "desc";
+      }
+      updateSortArrows();
+      applySort();
+      currentPage = 1;
+      applyTableState();
     });
   });
 

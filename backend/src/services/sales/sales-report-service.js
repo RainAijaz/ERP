@@ -3022,12 +3022,29 @@ const parseCustomerContactAnalysisFilters = ({ req, input = {} }) => {
   const dormantDays =
     Number.isFinite(dormantDaysRaw) && dormantDaysRaw > 0 ? dormantDaysRaw : 0;
 
+  const minBillAmountRaw = Number.parseFloat(input.min_bill_amount);
+  let minBillAmount =
+    Number.isFinite(minBillAmountRaw) && minBillAmountRaw > 0
+      ? minBillAmountRaw
+      : 0;
+  const maxBillAmountRaw = Number.parseFloat(input.max_bill_amount);
+  let maxBillAmount =
+    Number.isFinite(maxBillAmountRaw) && maxBillAmountRaw > 0
+      ? maxBillAmountRaw
+      : 0;
+  // If both bounds are provided but reversed, swap so the range still makes sense.
+  if (minBillAmount > 0 && maxBillAmount > 0 && minBillAmount > maxBillAmount) {
+    [minBillAmount, maxBillAmount] = [maxBillAmount, minBillAmount];
+  }
+
   return {
     from,
     to,
     branchId,
     groupBy,
     dormantDays,
+    minBillAmount,
+    maxBillAmount,
     reportLoaded: toBoolean(input.load_report, false),
     invalidFromDate: Boolean(parsedFrom.provided && !parsedFrom.valid),
     invalidToDate: Boolean(parsedTo.provided && !parsedTo.valid),
@@ -3397,17 +3414,36 @@ const getCustomerContactAnalysisPageData = async ({ req, input = {} }) => {
       );
     });
 
-  // "Not ordered in last N days" filter: keep only customers whose most recent
-  // purchase is at least N days old. Totals below reflect the filtered set so the
-  // KPI tiles match what's shown.
-  const rows =
-    filters.dormantDays > 0
-      ? allRows.filter(
-          (row) =>
-            row.days_since_last_order !== null &&
-            Number(row.days_since_last_order) >= filters.dormantDays,
-        )
-      : allRows;
+  // Post-grouping filters (dormancy + total bill amount range). Totals below
+  // reflect the filtered set so the KPI tiles match what's shown.
+  //  - "Not ordered in last N days": keep customers whose most recent purchase
+  //    is at least N days old.
+  //  - Total Bill Amount range: keep customers whose total spend is within the
+  //    selected [min, max] bounds (0 means that bound is unset).
+  const hasPostFilters =
+    filters.dormantDays > 0 ||
+    filters.minBillAmount > 0 ||
+    filters.maxBillAmount > 0;
+  const rows = hasPostFilters
+    ? allRows.filter((row) => {
+        if (filters.dormantDays > 0) {
+          if (
+            row.days_since_last_order === null ||
+            Number(row.days_since_last_order) < filters.dormantDays
+          ) {
+            return false;
+          }
+        }
+        const totalBillAmount = Number(row.total_bill_amount || 0);
+        if (filters.minBillAmount > 0 && totalBillAmount < filters.minBillAmount) {
+          return false;
+        }
+        if (filters.maxBillAmount > 0 && totalBillAmount > filters.maxBillAmount) {
+          return false;
+        }
+        return true;
+      })
+    : allRows;
 
   return {
     filters,
