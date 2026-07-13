@@ -1,86 +1,380 @@
 <%
-  const canViewApprovals = typeof can === "function" ? can("SCREEN", "administration.approvals", "view") : false;
-  const canViewUsers = typeof can === "function" ? can("SCREEN", "administration.users", "view") : false;
-  const showPendingApprovalsCard = Boolean(canViewApprovals);
-  const showActiveUsersCard = Boolean(user?.isAdmin) && Boolean(canViewUsers);
-  const summary = dashboard?.summary || {};
-  const recentApprovals = Array.isArray(dashboard?.recentApprovals) ? dashboard.recentApprovals : [];
-  const recentVouchers = Array.isArray(dashboard?.recentVouchers) ? dashboard.recentVouchers : [];
-  const recentActivity = Array.isArray(dashboard?.recentActivity) ? dashboard.recentActivity : [];
-  const activeSessionWindowMinutes = Number(summary.activeSessionWindowMinutes || 15);
-  const summaryCardCount = (showPendingApprovalsCard ? 1 : 0) + 3 + (showActiveUsersCard ? 1 : 0);
-  const xlSummaryGridColsClass =
-    summaryCardCount >= 5
-      ? "xl:grid-cols-5"
-      : summaryCardCount === 4
-        ? "xl:grid-cols-4"
-        : summaryCardCount === 3
-          ? "xl:grid-cols-3"
-          : summaryCardCount === 2
-            ? "xl:grid-cols-2"
-            : "xl:grid-cols-1";
+  // ============================================================
+  // Admin Home Dashboard
+  //   Section 1: Executive KPI cards
+  //   Section 2: Notifications & Alerts
+  //   (Section 4 recent activity retained below; charts/feed = later phases)
+  // ============================================================
+  const canFn = typeof can === "function" ? can : () => false;
+  const gate = (type, key, action = "view") => {
+    try { return Boolean(canFn(type, key, action)); } catch (_e) { return false; }
+  };
 
-  const pendingApprovalsTooltip = t("pending_approvals_dashboard_tooltip");
-  const vouchersTodayTooltip = t("vouchers_today_dashboard_tooltip");
-  const masterDataChangesTooltip = t("master_data_changes_dashboard_tooltip");
-  const totalLogsTodayTooltip = t("total_logs_today_dashboard_tooltip");
-  const activeUsersTooltip = t("active_users_dashboard_tooltip").replace("{minutes}", String(activeSessionWindowMinutes));
+  const isAdminUser =
+    typeof isAdmin !== "undefined" && isAdmin !== null
+      ? Boolean(isAdmin)
+      : Boolean(user && user.isAdmin);
+
+  const kpis = (metrics && metrics.kpis) || {};
+  const alerts = (metrics && metrics.alerts) || {};
+  const branchRows = (branchBreakdown && Array.isArray(branchBreakdown.rows)) ? branchBreakdown.rows : [];
+  const branchTotals = (branchBreakdown && branchBreakdown.totals) || null;
+  const useUr = String(typeof locale !== "undefined" ? locale : "").trim().toLowerCase().startsWith("ur");
+  const branchLabel = (r) => (useUr ? (r.name_ur || r.name) : r.name);
+  const money0 = (v) => formatNumberDisplay(v, { decimals: 0, fallback: "0" });
+  const activityUsers = (activityFilters && Array.isArray(activityFilters.users)) ? activityFilters.users : [];
+  const activityModules = (activityFilters && Array.isArray(activityFilters.modules)) ? activityFilters.modules : [];
+  const activityActions = (activityFilters && Array.isArray(activityFilters.actions)) ? activityFilters.actions : [];
+
+  const canSales = gate("REPORT", "sales_report");
+  const canCash = gate("REPORT", "cash_book");
+  const canCustomerBalances = gate("REPORT", "customer_balances") || canSales;
+  const canSupplierBalances = gate("REPORT", "supplier_balances");
+  const canInventory = gate("REPORT", "stock_quantity") || gate("REPORT", "stock_ledger");
+  const canProduction = gate("REPORT", "production_report");
+  const canPurchase = gate("REPORT", "purchase_report");
+  const canApprovals = gate("SCREEN", "administration.approvals");
+  const canFinancial = gate("REPORT", "profit_and_loss") || gate("REPORT", "expense_trends");
+
+  const NOT_TRACKED = t("not_tracked");
+  // Format a numeric metric; null/undefined => null (caller renders "Not tracked").
+  const fmt = (v) =>
+    v === null || v === undefined ? null : formatNumberDisplay(v, { decimals: 0, fallback: null });
+  const fmtPct = (v) => (v === null || v === undefined ? null : `${formatNumberDisplay(v, { decimals: 0 })}%`);
+  const fmtQty = (v) => (v === null || v === undefined ? null : formatNumberDisplay(v, { decimals: 1, fallback: null }));
+
+  // Tailwind tone presets (aligned with existing ERP card palette).
+  const TONES = {
+    emerald: { wrap: "border-emerald-100 bg-emerald-50 hover:border-emerald-200 hover:bg-emerald-100/70", label: "text-emerald-700", value: "text-emerald-900", chip: "bg-emerald-100 text-emerald-700" },
+    blue:    { wrap: "border-blue-100 bg-blue-50 hover:border-blue-200 hover:bg-blue-100/70",       label: "text-blue-700",    value: "text-blue-900",    chip: "bg-blue-100 text-blue-700" },
+    indigo:  { wrap: "border-indigo-100 bg-indigo-50 hover:border-indigo-200 hover:bg-indigo-100/70", label: "text-indigo-700",  value: "text-indigo-900",  chip: "bg-indigo-100 text-indigo-700" },
+    violet:  { wrap: "border-violet-100 bg-violet-50 hover:border-violet-200 hover:bg-violet-100/70", label: "text-violet-700",  value: "text-violet-900",  chip: "bg-violet-100 text-violet-700" },
+    amber:   { wrap: "border-amber-100 bg-amber-50 hover:border-amber-200 hover:bg-amber-100/70",   label: "text-amber-700",   value: "text-amber-900",   chip: "bg-amber-100 text-amber-700" },
+    rose:    { wrap: "border-rose-100 bg-rose-50 hover:border-rose-200 hover:bg-rose-100/70",       label: "text-rose-700",    value: "text-rose-900",    chip: "bg-rose-100 text-rose-700" },
+    cyan:    { wrap: "border-cyan-100 bg-cyan-50 hover:border-cyan-200 hover:bg-cyan-100/70",       label: "text-cyan-700",    value: "text-cyan-900",    chip: "bg-cyan-100 text-cyan-700" },
+    teal:    { wrap: "border-teal-100 bg-teal-50 hover:border-teal-200 hover:bg-teal-100/70",       label: "text-teal-700",    value: "text-teal-900",    chip: "bg-teal-100 text-teal-700" },
+    slate:   { wrap: "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-slate-100/70",   label: "text-slate-600",   value: "text-slate-900",   chip: "bg-slate-200 text-slate-700" },
+  };
+
+  // Inline heroicon-mini style SVGs (viewBox 0 0 20 20, currentColor).
+  const ICONS = {
+    cash: '<path d="M1 4.75A.75.75 0 011.75 4h16.5a.75.75 0 01.75.75v10.5a.75.75 0 01-.75.75H1.75a.75.75 0 01-.75-.75V4.75zM10 13a3 3 0 100-6 3 3 0 000 6z"/>',
+    trend: '<path fill-rule="evenodd" d="M15.28 5.72a.75.75 0 010 1.06l-4.5 4.5a.75.75 0 01-1.06 0L7.5 9.06l-3.72 3.72a.75.75 0 11-1.06-1.06l4.25-4.25a.75.75 0 011.06 0l2.22 2.22 3.97-3.97a.75.75 0 011.06 0z" clip-rule="evenodd"/><path d="M13 5.75A.75.75 0 0113.75 5h2.5a.75.75 0 01.75.75v2.5a.75.75 0 01-1.5 0V6.5h-1.75a.75.75 0 01-.75-.75z"/>',
+    wallet: '<path d="M2.5 4A1.5 1.5 0 001 5.5V6h18v-.5A1.5 1.5 0 0017.5 4h-15z"/><path fill-rule="evenodd" d="M19 8.5H1v6A1.5 1.5 0 002.5 16h15a1.5 1.5 0 001.5-1.5v-6zM3 13.25a.75.75 0 01.75-.75h4.5a.75.75 0 010 1.5h-4.5a.75.75 0 01-.75-.75z" clip-rule="evenodd"/>',
+    inbox: '<path fill-rule="evenodd" d="M1 11.27c0-.246.033-.492.099-.73l1.523-5.521A2.75 2.75 0 015.273 3h9.454a2.75 2.75 0 012.651 2.019l1.523 5.52c.066.239.099.485.099.732V15a2 2 0 01-2 2H3a2 2 0 01-2-2v-3.73zm3.068-5.852A1.25 1.25 0 015.273 4.5h9.454a1.25 1.25 0 011.205.918l1.523 5.52c.006.02.01.041.015.062H14a1 1 0 00-.86.49l-.606 1.02a1 1 0 01-.86.49H8.236a1 1 0 01-.894-.553l-.448-.894A1 1 0 006 12H2.53l.015-.062 1.523-5.52z" clip-rule="evenodd"/>',
+    users: '<path d="M10 8a3 3 0 100-6 3 3 0 000 6zM3.465 14.493a1.23 1.23 0 00.41 1.412A9.957 9.957 0 0010 18c2.31 0 4.438-.784 6.131-2.1.43-.333.604-.903.408-1.41a7.002 7.002 0 00-13.074.003z"/>',
+    truck: '<path d="M6.5 3A2.5 2.5 0 004 5.5v9A2.5 2.5 0 006.5 17h.5a2 2 0 104 0h1a2 2 0 104 0 2 2 0 001.5-1.937V11.5a2.5 2.5 0 00-.732-1.768l-2.5-2.5A2.5 2.5 0 0015.5 6.5H14V5.5A2.5 2.5 0 0011.5 3h-5z"/>',
+    gauge: '<path fill-rule="evenodd" d="M10 2a8 8 0 100 16 8 8 0 000-16zm.75 4a.75.75 0 00-1.5 0v4c0 .414.336.75.75.75h3a.75.75 0 000-1.5h-2.25V6z" clip-rule="evenodd"/>',
+    bolt: '<path fill-rule="evenodd" d="M11.983 1.907a.75.75 0 00-1.335-.68L4.601 12.79a.75.75 0 00.665 1.11h3.573l-1.588 5.362a.75.75 0 001.336.68l6.045-11.563a.75.75 0 00-.665-1.109H10.39l1.593-5.363z" clip-rule="evenodd"/>',
+    box: '<path d="M10 1.5l7.5 3.75v9.5L10 18.5 2.5 14.75v-9.5L10 1.5zM10 3.2L4.7 5.85 10 8.5l5.3-2.65L10 3.2z"/>',
+    doc: '<path fill-rule="evenodd" d="M4.5 2A1.5 1.5 0 003 3.5v13A1.5 1.5 0 004.5 18h11a1.5 1.5 0 001.5-1.5V7.62a1.5 1.5 0 00-.44-1.06l-3.62-3.62A1.5 1.5 0 0011.38 2H4.5zm2 7.25a.75.75 0 01.75-.75h5.5a.75.75 0 010 1.5h-5.5a.75.75 0 01-.75-.75zm.75 2.75a.75.75 0 000 1.5h5.5a.75.75 0 000-1.5h-5.5z" clip-rule="evenodd"/>',
+    warn: '<path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.515 2.625H3.72c-1.345 0-2.188-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>',
+    check: '<path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd"/>',
+  };
+
+  const svg = (name, cls) =>
+    `<svg viewBox="0 0 20 20" fill="currentColor" class="${cls}" aria-hidden="true">${ICONS[name] || ''}</svg>`;
+
+  // ---- KPI card definitions (only shown if permitted) --------------------
+  const kpiCards = [
+    { show: canSales,             href: "/reports/sales/sales-report",            label: t("todays_sales"),        value: fmt(kpis.todaysSales),     tone: "emerald", icon: "cash" },
+    { show: canSales,             href: "/reports/sales/sales-report",            label: t("monthly_revenue"),     value: fmt(kpis.monthlyRevenue),  tone: "blue",    icon: "trend" },
+    { show: canSales,             href: "/reports/sales/sales-report",            label: t("dozens_sold_today"),   value: fmtQty(kpis.dozensToday),  tone: "teal",    icon: "box", suffix: t("dzn") },
+    { show: canSales,             href: "/reports/sales/sales-report",            label: t("dozens_sold_week"),    value: fmtQty(kpis.dozensWeek),   tone: "cyan",    icon: "box", suffix: t("dzn") },
+    { show: canSales,             href: "/reports/sales/sales-report",            label: t("dozens_sold_month"),   value: fmtQty(kpis.dozensMonth),  tone: "violet",  icon: "box", suffix: t("dzn") },
+    { show: canCash,              href: "/reports/financial/cash_book",           label: t("cash_bank_balance"),   value: fmt(kpis.cashBank),        tone: "indigo",  icon: "wallet" },
+    { show: canCustomerBalances,  href: "/reports/sales/customer-balances",       label: t("accounts_receivable"), value: fmt(kpis.receivable),      tone: "cyan",    icon: "inbox" },
+    { show: canSupplierBalances,  href: "/reports/purchases/supplier-balances",   label: t("accounts_payable"),    value: fmt(kpis.payable),         tone: "amber",   icon: "users" },
+    { show: canSales,             href: "/reports/sales/sales-order-report",      label: t("orders_pending"),      value: fmt(kpis.ordersPending),   tone: "violet",  icon: "doc" },
+    { show: canProduction,        href: "/reports/production/production-report",  label: t("production_progress"), value: fmtPct(kpis.productionProgressPct), tone: "slate", icon: "gauge" },
+    { show: canInventory,         href: "/reports/inventory/stock-transfer",      label: t("dispatches_today"),    value: fmt(kpis.dispatchesToday), tone: "cyan",    icon: "truck" },
+    { show: canApprovals,         href: "#alerts-panel",                          label: t("critical_alerts"),     value: fmt(kpis.criticalAlerts),  tone: "rose",    icon: "bolt" },
+  ].filter((c) => c.show);
+
+  // ---- Alert definitions -------------------------------------------------
+  const alertItems = [
+    { show: canCustomerBalances, href: "/reports/sales/customer-balances",     label: t("overdue_customer_invoices"),        count: alerts.overdueReceivables,       tone: "rose",  icon: "warn" },
+    { show: canSupplierBalances, href: "/reports/purchases/supplier-balances", label: t("overdue_supplier_bills"),           count: alerts.overduePayables,          tone: "rose",  icon: "warn" },
+    { show: canInventory,        href: "/reports/inventory/stock-balances",    label: t("raw_materials_below_min"),          count: alerts.rawMaterialsBelowMin,     tone: "amber", icon: "box" },
+    { show: true,                href: "/hr-payroll",                          label: t("employees_absent_today"),           count: alerts.employeesAbsent,          tone: "slate", icon: "users" },
+    { show: canProduction,       href: "/reports/production/production-report", label: t("production_behind_schedule"),      count: alerts.productionBehindSchedule, tone: "slate", icon: "gauge" },
+    { show: canPurchase,         href: "/reports/purchases/pending-grn",       label: t("purchase_orders_awaiting_receipt"), count: alerts.poAwaitingReceipt,        tone: "blue",  icon: "inbox" },
+  ].filter((c) => c.show);
+
+  const fmtCount = (v) => (v === null || v === undefined ? null : formatNumberDisplay(v, { decimals: 0 }));
+
+  const approvals = alerts.pendingApprovals || null;
+  const approvalRows = approvals
+    ? [
+        { key: "purchase",  label: t("purchase_vouchers"),      count: approvals.buckets.purchase },
+        { key: "sales",     label: t("sales_vouchers"),         count: approvals.buckets.sales },
+        { key: "journal",   label: t("journal_vouchers"),       count: approvals.buckets.journal },
+        { key: "payment",   label: t("payment_vouchers"),       count: approvals.buckets.payment },
+        { key: "inventory", label: t("inventory_adjustments"),  count: approvals.buckets.inventory },
+        { key: "leave",     label: t("leave_requests"),         count: approvals.buckets.leave },
+      ]
+    : [];
+
+  const recentActivity = Array.isArray(dashboard?.recentActivity) ? dashboard.recentActivity : [];
+  const recentVouchers = Array.isArray(dashboard?.recentVouchers) ? dashboard.recentVouchers : [];
+
+  // ---- Section 3 analytics chart cards (permission-gated) ----------------
+  const chartDefs = [
+    { id: "salesTrend",           show: canSales,                                  title: t("monthly_sales_trend"),  href: "/reports/sales/sales-report" },
+    { id: "revenueVsExpenses",    show: canFinancial,                              title: t("revenue_vs_expenses"),  href: "/reports/financial/profit_and_loss" },
+    { id: "topProducts",          show: canSales,                                  title: t("top_selling_products"), href: "/reports/sales/sales-report" },
+    { id: "productionByStage",    show: canProduction,                             title: t("production_by_stage"),  href: "/reports/production/production-report" },
+    { id: "inventoryStatus",      show: canInventory,                              title: t("inventory_status"),     href: "/reports/inventory/stock-balances" },
+    { id: "receivablesVsPayables", show: canCustomerBalances || canSupplierBalances, title: t("receivables_vs_payables"), href: "/reports/sales/customer-balances" },
+  ].filter((c) => c.show);
+
+  const periodPresets = [
+    { key: "today", label: t("period_today") },
+    { key: "week",  label: t("period_week") },
+    { key: "month", label: t("period_month") },
+    { key: "year",  label: t("period_year") },
+    { key: "custom", label: t("period_custom") },
+  ];
+
+  // Strings the client-side chart renderer needs.
+  const chartI18n = {
+    loading: t("loading"),
+    noData: t("no_data_available"),
+    noAccess: t("not_tracked"),
+    available: t("inv_available"),
+    reserved: t("inv_reserved"),
+    lowStock: t("inv_low_stock"),
+    outOfStock: t("inv_out_of_stock"),
+    revenue: t("revenue"),
+    expense: t("expense"),
+    sales: t("todays_sales"),
+    receivable: t("accounts_receivable"),
+    payable: t("accounts_payable"),
+    production: t("production_by_stage"),
+    apply: t("apply"),
+  };
 %>
 
 <div class="mx-auto w-full max-w-7xl space-y-6">
+  <!-- ===== Header ===== -->
   <section class="rounded-3xl border border-slate-200 bg-white/95 p-8 shadow-xl">
     <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
       <div class="space-y-2">
         <h1 class="text-3xl font-display text-ink"><%= t("dashboard") %></h1>
         <p class="text-sm text-muted"><%= t("welcome") %></p>
       </div>
+      <% if (typeof branchName !== "undefined" && branchName) { %>
+        <span class="inline-flex items-center gap-2 self-start rounded-full border border-slate-200 bg-slate-50 px-4 py-1.5 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600">
+          <%= branchName %>
+        </span>
+      <% } %>
     </div>
 
-    <div class="mt-6 grid gap-4 sm:grid-cols-2 <%= xlSummaryGridColsClass %>">
-      <% if (showPendingApprovalsCard) { %>
-        <a href="/administration/approvals" class="group rounded-2xl border border-amber-100 bg-amber-50 p-5 transition hover:border-amber-200 hover:bg-amber-100/70">
-          <div class="flex items-center gap-1 text-[11px] uppercase tracking-[0.3em] text-amber-700">
-            <span><%= t("pending_approvals") %></span>
-            <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-amber-300 text-[10px] font-bold normal-case tracking-normal text-amber-700" title="<%= pendingApprovalsTooltip %>">i</span>
-          </div>
-          <div class="mt-2 text-3xl font-semibold text-amber-900"><%= Number(summary.pendingApprovals || 0) %></div>
-        </a>
-      <% } %>
-      <div class="rounded-2xl border border-blue-100 bg-blue-50 p-5">
-        <div class="flex items-center gap-1 text-[11px] uppercase tracking-[0.3em] text-blue-700">
-          <span><%= t("vouchers_today") %></span>
-          <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-blue-200 text-[10px] font-bold normal-case tracking-normal text-blue-700" title="<%= vouchersTodayTooltip %>">i</span>
-        </div>
-        <div class="mt-2 text-3xl font-semibold text-blue-900"><%= Number(summary.vouchersToday || 0) %></div>
+    <!-- ===== SECTION 1: Executive KPI cards (admin only) ===== -->
+    <% if (isAdminUser && kpiCards.length) { %>
+      <div class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <% kpiCards.forEach((card) => { const tn = TONES[card.tone]; %>
+          <a href="<%= card.href %>" class="group rounded-2xl border <%= tn.wrap %> p-5 transition">
+            <div class="flex items-start justify-between gap-3">
+              <div class="space-y-2">
+                <div class="text-[11px] font-semibold uppercase tracking-[0.24em] <%= tn.label %>"><%= card.label %></div>
+                <% if (card.value === null) { %>
+                  <div class="text-lg font-semibold text-slate-400"><%= NOT_TRACKED %></div>
+                <% } else { %>
+                  <div class="text-3xl font-semibold <%= tn.value %>"><%= card.value %><% if (card.suffix) { %><span class="ml-1 text-base font-medium <%= tn.label %>"><%= card.suffix %></span><% } %></div>
+                <% } %>
+              </div>
+              <span class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl <%= tn.chip %> transition group-hover:scale-105">
+                <%- svg(card.icon, "h-5 w-5") %>
+              </span>
+            </div>
+          </a>
+        <% }) %>
       </div>
-      <div class="rounded-2xl border border-indigo-100 bg-indigo-50 p-5">
-        <div class="flex items-center gap-1 text-[11px] uppercase tracking-[0.3em] text-indigo-700">
-          <span><%= t("md_changes_today") %></span>
-          <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-indigo-200 text-[10px] font-bold normal-case tracking-normal text-indigo-700" title="<%= masterDataChangesTooltip %>">i</span>
+    <% } %>
+
+    <!-- Lightweight summary for non-admin users -->
+    <% if (!isAdminUser) { const s = (dashboard && dashboard.summary) || {}; %>
+      <div class="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <% if (canApprovals) { %>
+          <a href="/administration/approvals" class="rounded-2xl border border-amber-100 bg-amber-50 p-5 transition hover:border-amber-200 hover:bg-amber-100/70">
+            <div class="text-[11px] uppercase tracking-[0.3em] text-amber-700"><%= t("pending_approvals") %></div>
+            <div class="mt-2 text-3xl font-semibold text-amber-900"><%= Number(s.pendingApprovals || 0) %></div>
+          </a>
+        <% } %>
+        <div class="rounded-2xl border border-blue-100 bg-blue-50 p-5">
+          <div class="text-[11px] uppercase tracking-[0.3em] text-blue-700"><%= t("vouchers_today") %></div>
+          <div class="mt-2 text-3xl font-semibold text-blue-900"><%= Number(s.vouchersToday || 0) %></div>
         </div>
-        <div class="mt-2 text-3xl font-semibold text-indigo-900"><%= Number(summary.masterDataChangesToday || 0) %></div>
+        <div class="rounded-2xl border border-indigo-100 bg-indigo-50 p-5">
+          <div class="text-[11px] uppercase tracking-[0.3em] text-indigo-700"><%= t("md_changes_today") %></div>
+          <div class="mt-2 text-3xl font-semibold text-indigo-900"><%= Number(s.masterDataChangesToday || 0) %></div>
+        </div>
+        <div class="rounded-2xl border border-emerald-100 bg-emerald-50 p-5">
+          <div class="text-[11px] uppercase tracking-[0.3em] text-emerald-700"><%= t("total_logs_today") %></div>
+          <div class="mt-2 text-3xl font-semibold text-emerald-900"><%= Number(s.totalLogsToday || 0) %></div>
+        </div>
       </div>
-      <div class="rounded-2xl border border-emerald-100 bg-emerald-50 p-5">
-        <div class="flex items-center gap-1 text-[11px] uppercase tracking-[0.3em] text-emerald-700">
-          <span><%= t("total_logs_today") %></span>
-          <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-emerald-200 text-[10px] font-bold normal-case tracking-normal text-emerald-700" title="<%= totalLogsTodayTooltip %>">i</span>
-        </div>
-        <div class="mt-2 text-3xl font-semibold text-emerald-900"><%= Number(summary.totalLogsToday || 0) %></div>
-      </div>
-      <% if (showActiveUsersCard) { %>
-        <div class="rounded-2xl border border-slate-200 bg-slate-50 p-5">
-          <div class="flex items-center gap-1 text-[11px] uppercase tracking-[0.3em] text-slate-600">
-            <span><%= t("active_users") %></span>
-            <span class="inline-flex h-4 w-4 items-center justify-center rounded-full border border-slate-300 text-[10px] font-bold normal-case tracking-normal text-slate-700" title="<%= activeUsersTooltip %>">i</span>
-          </div>
-          <div class="mt-2 text-3xl font-semibold text-slate-900"><%= Number(summary.activeUsers || 0) %>/<span class="text-xl"><%= Number(summary.totalUsers || 0) %></span></div>
-          <div class="mt-1 text-[11px] text-slate-500"><%= t("active_users_window").replace("{minutes}", String(activeSessionWindowMinutes)) %></div>
-        </div>
-      <% } %>
-    </div>
+    <% } %>
   </section>
 
-  <section class="grid gap-6 xl:grid-cols-2">
+  <!-- ===== SECTION 2: Notifications & Alerts (admin only) ===== -->
+  <% if (isAdminUser && (alertItems.length || approvals)) { %>
+    <section id="alerts-panel" class="rounded-2xl border border-slate-200 bg-white/95 shadow-md">
+      <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+        <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("alerts_needing_attention") %></h3>
+      </div>
+
+      <div class="grid gap-4 p-5 lg:grid-cols-2">
+        <!-- Actionable alerts -->
+        <div class="space-y-3">
+          <% if (!alertItems.length) { %>
+            <p class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500"><%= t("all_clear") %></p>
+          <% } %>
+          <% alertItems.forEach((item) => {
+               const tn = TONES[item.tone];
+               const c = fmtCount(item.count);
+               const isTracked = c !== null;
+               const isActive = isTracked && Number(item.count) > 0;
+          %>
+            <a href="<%= item.href %>" class="group flex items-center gap-3 rounded-xl border <%= isActive ? tn.wrap : 'border-slate-200 bg-white hover:bg-slate-50' %> px-4 py-3 transition">
+              <span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg <%= isActive ? tn.chip : 'bg-slate-100 text-slate-500' %>">
+                <%- svg(item.icon, "h-5 w-5") %>
+              </span>
+              <div class="min-w-0 flex-1">
+                <div class="truncate text-sm font-medium text-slate-800"><%= item.label %></div>
+                <% if (!isTracked) { %>
+                  <div class="text-xs text-slate-400"><%= NOT_TRACKED %></div>
+                <% } %>
+              </div>
+              <% if (isTracked) { %>
+                <span class="inline-flex min-w-[2rem] items-center justify-center rounded-full px-2 py-1 text-sm font-semibold <%= isActive ? tn.chip : 'bg-slate-100 text-slate-500' %>"><%= c %></span>
+              <% } %>
+              <span class="text-xs font-semibold uppercase tracking-[0.16em] text-accent"><%= t("view") %></span>
+            </a>
+          <% }) %>
+        </div>
+
+        <!-- Pending approvals breakdown -->
+        <% if (approvals) { %>
+          <div class="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+            <div class="flex items-center justify-between">
+              <div class="text-sm font-semibold text-slate-800"><%= t("pending_approvals") %></div>
+              <span class="inline-flex min-w-[2rem] items-center justify-center rounded-full bg-amber-100 px-2 py-1 text-sm font-semibold text-amber-700"><%= formatNumberDisplay(approvals.total, { decimals: 0 }) %></span>
+            </div>
+            <ul class="mt-3 divide-y divide-slate-200">
+              <% approvalRows.forEach((row) => { %>
+                <li class="flex items-center justify-between py-2 text-sm">
+                  <span class="text-slate-600"><%= row.label %></span>
+                  <span class="font-semibold <%= Number(row.count) > 0 ? 'text-slate-900' : 'text-slate-400' %>"><%= formatNumberDisplay(row.count, { decimals: 0 }) %></span>
+                </li>
+              <% }) %>
+            </ul>
+            <a href="/administration/approvals" class="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-amber-700">
+              <%- svg("check", "h-4 w-4") %>
+              <%= t("go_to_approval_center") %>
+            </a>
+          </div>
+        <% } %>
+      </div>
+    </section>
+  <% } %>
+
+  <!-- ===== Branch Performance (admin only, consolidated dashboard breakdown) ===== -->
+  <% if (isAdminUser && branchRows.length) { %>
+    <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md">
+      <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+        <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("branch_performance") %></h3>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm">
+          <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
+            <tr>
+              <th class="px-4 py-3 text-left"><%= t("branch") %></th>
+              <th class="px-4 py-3 text-right"><%= t("todays_sales") %></th>
+              <th class="px-4 py-3 text-right"><%= t("monthly_revenue") %></th>
+              <th class="px-4 py-3 text-right"><%= t("dozens_sold_month") %></th>
+              <th class="px-4 py-3 text-right"><%= t("accounts_receivable") %></th>
+              <th class="px-4 py-3 text-right"><%= t("accounts_payable") %></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <% branchRows.forEach((r) => { %>
+              <tr class="hover:bg-slate-50/70">
+                <td class="px-4 py-3 font-medium text-slate-800"><%= branchLabel(r) %></td>
+                <td class="px-4 py-3 text-right tabular-nums text-slate-700"><%= money0(r.todaySales) %></td>
+                <td class="px-4 py-3 text-right tabular-nums text-slate-700"><%= money0(r.monthRevenue) %></td>
+                <td class="px-4 py-3 text-right tabular-nums text-slate-700"><%= formatNumberDisplay(r.dozensMonth, { decimals: 1, fallback: "0" }) %></td>
+                <td class="px-4 py-3 text-right tabular-nums text-cyan-700"><%= money0(r.receivable) %></td>
+                <td class="px-4 py-3 text-right tabular-nums text-amber-700"><%= money0(r.payable) %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+          <% if (branchTotals) { %>
+            <tfoot class="border-t-2 border-slate-200 bg-slate-50 text-sm font-semibold text-slate-900">
+              <tr>
+                <td class="px-4 py-3 uppercase tracking-wide"><%= t("total") %></td>
+                <td class="px-4 py-3 text-right tabular-nums"><%= money0(branchTotals.todaySales) %></td>
+                <td class="px-4 py-3 text-right tabular-nums"><%= money0(branchTotals.monthRevenue) %></td>
+                <td class="px-4 py-3 text-right tabular-nums"><%= formatNumberDisplay(branchTotals.dozensMonth, { decimals: 1, fallback: "0" }) %></td>
+                <td class="px-4 py-3 text-right tabular-nums text-cyan-700"><%= money0(branchTotals.receivable) %></td>
+                <td class="px-4 py-3 text-right tabular-nums text-amber-700"><%= money0(branchTotals.payable) %></td>
+              </tr>
+            </tfoot>
+          <% } %>
+        </table>
+      </div>
+      <p class="px-5 py-3 text-xs text-slate-400"><%= t("branch_performance_note") %></p>
+    </section>
+  <% } %>
+
+  <!-- ===== SECTION 3: Business Analytics (admin only) ===== -->
+  <% if (isAdminUser && chartDefs.length) { %>
+    <section
+      class="rounded-2xl border border-slate-200 bg-white/95 shadow-md"
+      data-analytics
+      data-analytics-endpoint="/dashboard/analytics"
+      data-locale="<%= locale %>"
+      data-i18n='<%- JSON.stringify(chartI18n) %>'
+    >
+      <div class="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+        <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("business_analytics") %></h3>
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5" role="tablist" data-period-group>
+            <% periodPresets.forEach((p) => { %>
+              <button type="button" data-period="<%= p.key %>"
+                class="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:text-slate-900 data-[active=true]:bg-white data-[active=true]:text-slate-900 data-[active=true]:shadow-sm"
+                <%= p.key === "month" ? 'data-active="true"' : "" %>><%= p.label %></button>
+            <% }) %>
+          </div>
+          <div class="hidden items-center gap-2" data-custom-range>
+            <input type="date" data-from class="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700" />
+            <span class="text-slate-400">–</span>
+            <input type="date" data-to class="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700" />
+            <button type="button" data-apply class="rounded-md bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-900"><%= t("apply") %></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid gap-4 p-5 lg:grid-cols-2">
+        <% chartDefs.forEach((c) => { %>
+          <article class="rounded-xl border border-slate-200 bg-white p-4">
+            <div class="mb-3 flex items-center justify-between">
+              <h4 class="text-sm font-semibold text-slate-700"><%= c.title %></h4>
+              <a href="<%= c.href %>" class="text-xs font-semibold uppercase tracking-[0.16em] text-accent"><%= t("view") %></a>
+            </div>
+            <div class="relative" style="height: 260px;">
+              <canvas data-chart="<%= c.id %>" data-href="<%= c.href %>"></canvas>
+              <div data-chart-state="<%= c.id %>" class="absolute inset-0 flex items-center justify-center text-sm text-slate-400"><%= chartI18n.loading %></div>
+            </div>
+          </article>
+        <% }) %>
+      </div>
+    </section>
+  <% } %>
+
+  <!-- ===== Recent vouchers (shown to all users) ===== -->
+  <section class="grid gap-6 <%= isAdminUser ? '' : 'xl:grid-cols-2' %>">
     <article class="rounded-2xl border border-slate-200 bg-white/95 shadow-md">
       <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
         <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("recent_vouchers") %></h3>
@@ -112,57 +406,421 @@
       </div>
     </article>
 
-    <article class="rounded-2xl border border-slate-200 bg-white/95 shadow-md">
-      <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-        <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("recent_activity") %></h3>
-      </div>
-      <div class="px-5 py-3">
-        <% if (!recentActivity.length) { %>
-          <p class="py-2 text-sm text-slate-500"><%= t("no_entries") %></p>
-        <% } %>
-        <ul class="space-y-3">
-          <% recentActivity.forEach((row) => { %>
-            <li class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
-              <div class="text-sm font-semibold text-slate-800"><%= row.action || '-' %> <span class="text-slate-500">• <%= row.entity_type || '-' %></span></div>
-              <div class="mt-1 text-xs text-slate-500"><%= row.username || t("system") %> • <%= formatDateDisplay(row.created_at, '-') %></div>
-            </li>
-          <% }) %>
-        </ul>
-      </div>
-    </article>
+    <% if (!isAdminUser) { %>
+      <article class="rounded-2xl border border-slate-200 bg-white/95 shadow-md">
+        <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+          <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("recent_activity") %></h3>
+        </div>
+        <div class="px-5 py-3">
+          <% if (!recentActivity.length) { %>
+            <p class="py-2 text-sm text-slate-500"><%= t("no_entries") %></p>
+          <% } %>
+          <ul class="space-y-3">
+            <% recentActivity.forEach((row) => { %>
+              <li class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2">
+                <div class="text-sm font-semibold text-slate-800"><%= row.action || '-' %> <span class="text-slate-500">• <%= row.entity_type || '-' %></span></div>
+                <div class="mt-1 text-xs text-slate-500"><%= row.username || t("system") %> • <%= formatDateDisplay(row.created_at, '-') %></div>
+              </li>
+            <% }) %>
+          </ul>
+        </div>
+      </article>
+    <% } %>
   </section>
 
-  <% if (canViewApprovals) { %>
-    <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md">
-      <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-        <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("pending_approvals") %></h3>
-        <a href="/administration/approvals" class="text-xs font-semibold uppercase tracking-[0.18em] text-accent hover:text-accent/80"><%= t("view_all") %></a>
+  <!-- ===== SECTION 4: Recent Activity Feed (admin only) ===== -->
+  <% if (isAdminUser) { %>
+    <section
+      class="rounded-2xl border border-slate-200 bg-white/95 shadow-md"
+      data-activity-feed
+      data-activity-endpoint="/dashboard/activity"
+      data-i18n='<%- JSON.stringify({ loadMore: t("load_more"), noData: t("no_entries"), loading: t("loading"), viewRecord: t("view_record"), system: t("system"), allUsers: t("all_users"), allModules: t("all_modules"), allActions: t("all_actions") }) %>'
+    >
+      <div class="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+        <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("recent_activity") %></h3>
+        <div class="flex flex-wrap items-center gap-2">
+          <select data-filter-user class="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700">
+            <option value=""><%= t("all_users") %></option>
+            <% activityUsers.forEach((u) => { %><option value="<%= u.id %>"><%= u.name %></option><% }) %>
+          </select>
+          <select data-filter-module class="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700">
+            <option value=""><%= t("all_modules") %></option>
+            <% activityModules.forEach((m) => { %><option value="<%= m %>"><%= m %></option><% }) %>
+          </select>
+          <select data-filter-action class="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700">
+            <option value=""><%= t("all_actions") %></option>
+            <% activityActions.forEach((a) => { %><option value="<%= a %>"><%= a %></option><% }) %>
+          </select>
+          <input type="date" data-filter-from class="rounded-md border border-slate-200 px-2 py-1.5 text-xs text-slate-700" />
+          <input type="date" data-filter-to class="rounded-md border border-slate-200 px-2 py-1.5 text-xs text-slate-700" />
+          <button type="button" data-filter-reset class="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"><%= t("reset") %></button>
+        </div>
       </div>
-      <div class="overflow-x-auto">
-        <table class="min-w-full text-sm">
-          <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
-            <tr>
-              <th class="px-4 py-3 text-left">ID</th>
-              <th class="px-4 py-3 text-left"><%= t("entity") %></th>
-              <th class="px-4 py-3 text-left"><%= t("requested_by") %></th>
-              <th class="px-4 py-3 text-left"><%= t("date") %></th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100">
-            <% if (!recentApprovals.length) { %>
-              <tr><td class="px-4 py-4 text-slate-500" colspan="4"><%= t("no_entries") %></td></tr>
-            <% } %>
-            <% recentApprovals.forEach((row) => { %>
-              <tr class="hover:bg-amber-50/40">
-                <td class="px-4 py-3 font-medium text-slate-800">#<%= row.id %></td>
-                <td class="px-4 py-3 text-slate-600"><%= row.entity_type || '-' %></td>
-                <td class="px-4 py-3 text-slate-600"><%= row.requested_by_name || '-' %></td>
-                <td class="px-4 py-3 text-slate-600"><%= formatDateDisplay(row.requested_at, '-') %></td>
-              </tr>
-            <% }) %>
-          </tbody>
-        </table>
+
+      <div class="px-5 py-4">
+        <ul class="space-y-2" data-activity-list></ul>
+        <div class="py-6 text-center text-sm text-slate-400" data-activity-state><%= t("loading") %></div>
+        <div class="mt-2 flex justify-center" data-activity-more-wrap hidden>
+          <button type="button" data-activity-more class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"><%= t("load_more") %></button>
+        </div>
+        <div data-activity-sentinel></div>
       </div>
     </section>
   <% } %>
 </div>
+
+<!-- ===== Section 3 analytics: lazy Chart.js renderer ===== -->
+<script>
+  (function () {
+    const root = document.querySelector("[data-analytics]");
+    if (!root) return;
+
+    const endpoint = root.dataset.analyticsEndpoint || "/dashboard/analytics";
+    const locale = root.dataset.locale || "en";
+    let I18N = {};
+    try { I18N = JSON.parse(root.dataset.i18n || "{}"); } catch (_e) { I18N = {}; }
+
+    const PALETTE = {
+      emerald: "#059669", blue: "#2563eb", amber: "#d97706", rose: "#e11d48",
+      indigo: "#4f46e5", cyan: "#0891b2", violet: "#7c3aed", slate: "#94a3b8",
+    };
+    const alpha = (hex, a) => {
+      const n = parseInt(hex.slice(1), 16);
+      return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+    };
+    const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const nf = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+    const compact = (v) => {
+      const a = Math.abs(Number(v) || 0);
+      if (a >= 1e6) return (v / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M";
+      if (a >= 1e3) return (v / 1e3).toFixed(a >= 1e5 ? 0 : 1) + "K";
+      return nf.format(v);
+    };
+    const fmtBucket = (k) => {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(k)) { const p = k.split("-"); return `${+p[2]} ${MONTHS[+p[1] - 1]}`; }
+      if (/^\d{4}-\d{2}$/.test(k)) { const p = k.split("-"); return `${MONTHS[+p[1] - 1]} ${p[0].slice(2)}`; }
+      return k;
+    };
+
+    const charts = {};
+    let loaded = false;
+    let currentPeriod = "month";
+
+    const gridColor = "rgba(148, 163, 184, 0.18)";
+    const tickColor = "#64748b";
+
+    const loadChartJs = () => {
+      if (window.Chart) return Promise.resolve(window.Chart);
+      if (window.__erpChartJsPromise) return window.__erpChartJsPromise;
+      window.__erpChartJsPromise = new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = "/vendor/chart.umd.min.js";
+        s.async = true;
+        s.onload = () => (window.Chart ? resolve(window.Chart) : reject(new Error("Chart.js missing")));
+        s.onerror = () => reject(new Error("Failed to load Chart.js"));
+        document.head.appendChild(s);
+      });
+      return window.__erpChartJsPromise;
+    };
+
+    const canvasFor = (id) => root.querySelector(`[data-chart="${id}"]`);
+    const setState = (id, msg) => {
+      const el = root.querySelector(`[data-chart-state="${id}"]`);
+      if (!el) return;
+      if (msg) { el.textContent = msg; el.classList.remove("hidden"); }
+      else { el.classList.add("hidden"); }
+    };
+    const drill = (id) => {
+      const cv = canvasFor(id);
+      if (cv && cv.dataset.href) window.location.href = cv.dataset.href;
+    };
+    const destroy = (id) => { if (charts[id]) { charts[id].destroy(); delete charts[id]; } };
+
+    const commonOpts = (id, extra = {}) => Object.assign({
+      responsive: true,
+      maintainAspectRatio: false,
+      onClick: () => drill(id),
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (c) => {
+              const v = typeof c.raw === "number" ? c.raw : (c.parsed && typeof c.parsed === "object" ? (c.parsed.x ?? c.parsed.y) : c.parsed);
+              const lbl = c.dataset && c.dataset.label ? c.dataset.label + ": " : "";
+              return lbl + nf.format(Number(v) || 0);
+            },
+          },
+        },
+      },
+    }, extra);
+
+    const linearAxis = { grid: { color: gridColor, drawBorder: false }, ticks: { color: tickColor, font: { size: 11 }, callback: (v) => compact(v) } };
+    const catAxis = { grid: { display: false }, ticks: { color: tickColor, font: { size: 11 } } };
+
+    const RENDER = {
+      salesTrend(Chart, id, d) {
+        if (!d) return setState(id, I18N.noAccess);
+        const labels = (d.labels || []).map(fmtBucket);
+        destroy(id);
+        charts[id] = new Chart(canvasFor(id).getContext("2d"), {
+          type: "line",
+          data: { labels, datasets: [{ label: I18N.sales, data: d.values || [], borderColor: PALETTE.emerald, backgroundColor: alpha(PALETTE.emerald, 0.12), borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, tension: 0.3, fill: true }] },
+          options: commonOpts(id, { scales: { x: catAxis, y: linearAxis } }),
+        });
+        setState(id, null);
+      },
+      revenueVsExpenses(Chart, id, d) {
+        if (!d) return setState(id, I18N.noAccess);
+        const labels = (d.labels || []).map(fmtBucket);
+        destroy(id);
+        charts[id] = new Chart(canvasFor(id).getContext("2d"), {
+          type: "line",
+          data: { labels, datasets: [
+            { label: I18N.revenue, data: d.revenue || [], borderColor: PALETTE.emerald, backgroundColor: "transparent", borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, tension: 0.3 },
+            { label: I18N.expense, data: d.expense || [], borderColor: PALETTE.rose, backgroundColor: "transparent", borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, tension: 0.3 },
+          ] },
+          options: commonOpts(id, { plugins: { legend: { display: true, position: "bottom", labels: { boxWidth: 12, font: { size: 11 }, color: tickColor } } }, scales: { x: catAxis, y: linearAxis } }),
+        });
+        setState(id, null);
+      },
+      topProducts(Chart, id, d) {
+        if (!d) return setState(id, I18N.noAccess);
+        if (!d.labels || !d.labels.length) return setState(id, I18N.noData);
+        destroy(id);
+        charts[id] = new Chart(canvasFor(id).getContext("2d"), {
+          type: "bar",
+          data: { labels: d.labels, datasets: [{ label: I18N.sales, data: d.values || [], backgroundColor: alpha(PALETTE.blue, 0.85), borderColor: PALETTE.blue, borderWidth: 0, borderRadius: 4, barPercentage: 0.75, categoryPercentage: 0.8 }] },
+          options: commonOpts(id, { indexAxis: "y", scales: { x: linearAxis, y: catAxis } }),
+        });
+        setState(id, null);
+      },
+      productionByStage(Chart, id, d) {
+        if (!d) return setState(id, I18N.noAccess);
+        if (!d.labels || !d.labels.length) return setState(id, I18N.noData);
+        const labels = (locale && String(locale).startsWith("ur") && d.labels_ur) ? d.labels_ur : d.labels;
+        destroy(id);
+        charts[id] = new Chart(canvasFor(id).getContext("2d"), {
+          type: "bar",
+          data: { labels, datasets: [{ label: I18N.production, data: d.values || [], backgroundColor: alpha(PALETTE.indigo, 0.85), borderColor: PALETTE.indigo, borderWidth: 0, borderRadius: 4, barPercentage: 0.7, categoryPercentage: 0.8 }] },
+          options: commonOpts(id, { indexAxis: "y", scales: { x: linearAxis, y: catAxis } }),
+        });
+        setState(id, null);
+      },
+      inventoryStatus(Chart, id, d) {
+        if (!d) return setState(id, I18N.noAccess);
+        const vals = [d.available || 0, d.reserved || 0, d.lowStock || 0, d.outOfStock || 0];
+        if (vals.reduce((a, b) => a + b, 0) === 0) return setState(id, I18N.noData);
+        destroy(id);
+        charts[id] = new Chart(canvasFor(id).getContext("2d"), {
+          type: "doughnut",
+          data: { labels: [I18N.available, I18N.reserved, I18N.lowStock, I18N.outOfStock],
+            datasets: [{ data: vals, backgroundColor: [PALETTE.emerald, PALETTE.slate, PALETTE.amber, PALETTE.rose], borderColor: "#ffffff", borderWidth: 2 }] },
+          options: commonOpts(id, { cutout: "62%", plugins: { legend: { display: true, position: "right", labels: { boxWidth: 12, font: { size: 11 }, color: tickColor } }, tooltip: { callbacks: { label: (c) => `${c.label}: ${nf.format(c.parsed)}` } } } }),
+        });
+        setState(id, null);
+      },
+      receivablesVsPayables(Chart, id, d) {
+        if (!d) return setState(id, I18N.noAccess);
+        const labels = [], data = [], colors = [];
+        if (d.receivable !== null && d.receivable !== undefined) { labels.push(I18N.receivable); data.push(d.receivable); colors.push(PALETTE.cyan); }
+        if (d.payable !== null && d.payable !== undefined) { labels.push(I18N.payable); data.push(d.payable); colors.push(PALETTE.amber); }
+        if (!labels.length) return setState(id, I18N.noData);
+        destroy(id);
+        charts[id] = new Chart(canvasFor(id).getContext("2d"), {
+          type: "bar",
+          data: { labels, datasets: [{ data, backgroundColor: colors.map((c) => alpha(c, 0.85)), borderColor: colors, borderWidth: 0, borderRadius: 4, barPercentage: 0.5, categoryPercentage: 0.6 }] },
+          options: commonOpts(id, { scales: { x: catAxis, y: linearAxis } }),
+        });
+        setState(id, null);
+      },
+    };
+
+    let inFlight = null;
+    async function refresh(period, from, to) {
+      currentPeriod = period;
+      root.querySelectorAll("[data-chart]").forEach((cv) => setState(cv.dataset.chart, I18N.loading));
+      let Chart;
+      try { Chart = await loadChartJs(); } catch (_e) {
+        root.querySelectorAll("[data-chart]").forEach((cv) => setState(cv.dataset.chart, I18N.noData));
+        return;
+      }
+      const params = new URLSearchParams({ period });
+      if (period === "custom" && from && to) { params.set("from", from); params.set("to", to); }
+      const token = Symbol("req");
+      inFlight = token;
+      let payload;
+      try {
+        const resp = await fetch(`${endpoint}?${params.toString()}`, { headers: { Accept: "application/json" }, credentials: "same-origin" });
+        payload = await resp.json();
+      } catch (_e) {
+        root.querySelectorAll("[data-chart]").forEach((cv) => setState(cv.dataset.chart, I18N.noData));
+        return;
+      }
+      if (inFlight !== token) return; // a newer request superseded this one
+      const data = (payload && payload.charts) || {};
+      root.querySelectorAll("[data-chart]").forEach((cv) => {
+        const id = cv.dataset.chart;
+        if (RENDER[id]) { try { RENDER[id](Chart, id, data[id]); } catch (e) { setState(id, I18N.noData); } }
+      });
+    }
+
+    // Preset buttons
+    const group = root.querySelector("[data-period-group]");
+    const customRange = root.querySelector("[data-custom-range]");
+    group?.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button[data-period]");
+      if (!btn) return;
+      group.querySelectorAll("button[data-period]").forEach((b) => b.removeAttribute("data-active"));
+      btn.setAttribute("data-active", "true");
+      const period = btn.dataset.period;
+      if (period === "custom") { customRange.classList.remove("hidden"); customRange.classList.add("flex"); return; }
+      customRange.classList.add("hidden"); customRange.classList.remove("flex");
+      refresh(period);
+    });
+    root.querySelector("[data-apply]")?.addEventListener("click", () => {
+      const from = root.querySelector("[data-from]")?.value;
+      const to = root.querySelector("[data-to]")?.value;
+      if (from && to) refresh("custom", from, to);
+    });
+
+    // Lazy-load when the section scrolls into view.
+    const start = () => { if (loaded) return; loaded = true; refresh("month"); };
+    if ("IntersectionObserver" in window) {
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach((e) => { if (e.isIntersecting) { start(); io.disconnect(); } });
+      }, { rootMargin: "120px" });
+      io.observe(root);
+    } else {
+      start();
+    }
+  })();
+</script>
+
+<!-- ===== Section 4 activity feed: paginated, filterable, lazy ===== -->
+<script>
+  (function () {
+    const root = document.querySelector("[data-activity-feed]");
+    if (!root) return;
+
+    const endpoint = root.dataset.activityEndpoint || "/dashboard/activity";
+    let I18N = {};
+    try { I18N = JSON.parse(root.dataset.i18n || "{}"); } catch (_e) { I18N = {}; }
+
+    const list = root.querySelector("[data-activity-list]");
+    const stateEl = root.querySelector("[data-activity-state]");
+    const moreWrap = root.querySelector("[data-activity-more-wrap]");
+    const moreBtn = root.querySelector("[data-activity-more]");
+    const sentinel = root.querySelector("[data-activity-sentinel]");
+
+    const AVATAR_COLORS = ["#059669","#2563eb","#d97706","#e11d48","#4f46e5","#0891b2","#7c3aed"];
+    const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
+    const initials = (name) => {
+      const parts = String(name || "?").trim().split(/\s+/).filter(Boolean);
+      if (!parts.length) return "?";
+      return (parts[0][0] + (parts.length > 1 ? parts[parts.length - 1][0] : "")).toUpperCase();
+    };
+    const colorFor = (name) => {
+      let h = 0; const s = String(name || "");
+      for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+      return AVATAR_COLORS[h % AVATAR_COLORS.length];
+    };
+
+    let page = 0;
+    let loading = false;
+    let hasMore = true;
+    let started = false;
+
+    const getFilters = () => ({
+      user: root.querySelector("[data-filter-user]")?.value || "",
+      module: root.querySelector("[data-filter-module]")?.value || "",
+      action: root.querySelector("[data-filter-action]")?.value || "",
+      from: root.querySelector("[data-filter-from]")?.value || "",
+      to: root.querySelector("[data-filter-to]")?.value || "",
+    });
+
+    const renderItem = (it) => {
+      const li = document.createElement("li");
+      li.className = "flex items-start gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 transition hover:bg-slate-50";
+      const color = colorFor(it.user_name);
+      const view = it.href
+        ? `<a href="${esc(it.href)}" class="shrink-0 self-center rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-slate-50">${esc(I18N.viewRecord || "View Record")}</a>`
+        : "";
+      li.innerHTML =
+        `<span class="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white" style="background:${color}">${esc(initials(it.user_name))}</span>` +
+        `<div class="min-w-0 flex-1">` +
+          `<div class="flex flex-wrap items-center gap-2">` +
+            `<span class="text-sm font-semibold text-slate-800">${esc(it.user_name || I18N.system)}</span>` +
+            `<span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${esc(it.action_class || "bg-slate-50 text-slate-600 ring-slate-200")}">${esc(it.action)}</span>` +
+            `<span class="text-xs text-slate-400">• ${esc(it.module || "")}</span>` +
+          `</div>` +
+          `<div class="mt-0.5 truncate text-sm text-slate-600">${esc(it.summary || "")}</div>` +
+          `<div class="mt-1 text-xs text-slate-400">${esc(it.date || "")} · ${esc(it.time || "")}${it.reference && it.reference !== "-" ? " · #" + esc(it.reference) : ""}</div>` +
+        `</div>` +
+        view;
+      return li;
+    };
+
+    let inFlight = null;
+    async function load(reset) {
+      if (loading) return;
+      if (reset) { page = 0; hasMore = true; list.innerHTML = ""; }
+      if (!hasMore) return;
+      loading = true;
+      stateEl.hidden = false;
+      stateEl.textContent = I18N.loading || "Loading…";
+      moreWrap.hidden = true;
+
+      const params = new URLSearchParams(Object.assign({ page: String(page + 1) }, getFilters()));
+      const token = Symbol("req");
+      inFlight = token;
+      let payload;
+      try {
+        const resp = await fetch(`${endpoint}?${params.toString()}`, { headers: { Accept: "application/json" }, credentials: "same-origin" });
+        payload = await resp.json();
+      } catch (_e) {
+        loading = false; stateEl.hidden = false; stateEl.textContent = I18N.noData || "No data"; return;
+      }
+      if (inFlight !== token) { loading = false; return; }
+
+      const items = (payload && payload.items) || [];
+      page = payload.page || page + 1;
+      hasMore = Boolean(payload.hasMore);
+      const frag = document.createDocumentFragment();
+      items.forEach((it) => frag.appendChild(renderItem(it)));
+      list.appendChild(frag);
+
+      loading = false;
+      if (!list.children.length) { stateEl.hidden = false; stateEl.textContent = I18N.noData || "No data"; }
+      else { stateEl.hidden = true; }
+      moreWrap.hidden = !hasMore;
+    }
+
+    // Filters
+    ["[data-filter-user]", "[data-filter-module]", "[data-filter-action]", "[data-filter-from]", "[data-filter-to]"].forEach((sel) => {
+      root.querySelector(sel)?.addEventListener("change", () => load(true));
+    });
+    root.querySelector("[data-filter-reset]")?.addEventListener("click", () => {
+      ["[data-filter-user]", "[data-filter-module]", "[data-filter-action]", "[data-filter-from]", "[data-filter-to]"].forEach((sel) => {
+        const el = root.querySelector(sel); if (el) el.value = "";
+      });
+      load(true);
+    });
+    moreBtn?.addEventListener("click", () => load(false));
+
+    // Infinite scroll (sentinel) + lazy start when section enters view.
+    const start = () => { if (started) return; started = true; load(true); };
+    if ("IntersectionObserver" in window) {
+      const startIo = new IntersectionObserver((entries) => {
+        entries.forEach((e) => { if (e.isIntersecting) { start(); startIo.disconnect(); } });
+      }, { rootMargin: "160px" });
+      startIo.observe(root);
+      const moreIo = new IntersectionObserver((entries) => {
+        entries.forEach((e) => { if (e.isIntersecting && started && hasMore && !loading) load(false); });
+      }, { rootMargin: "200px" });
+      moreIo.observe(sentinel);
+    } else {
+      start();
+    }
+  })();
+</script>

@@ -10,6 +10,18 @@ const hrPayrollRoutes = require("./hr-payroll");
 const {
   loadDashboardData,
 } = require("../services/administration/dashboard-service");
+const {
+  loadDashboardMetrics,
+  loadBranchBreakdown,
+} = require("../services/administration/dashboard-metrics-service");
+const {
+  loadDashboardCharts,
+  resolveRange,
+} = require("../services/administration/dashboard-charts-service");
+const {
+  loadActivityFeed,
+  loadActivityFilterOptions,
+} = require("../services/administration/dashboard-activity-service");
 const { requirePermission } = require("../middleware/access/role-permissions");
 const { translateUrduWithFallback } = require("../utils/translate");
 const {
@@ -135,11 +147,29 @@ router.post("/translate", async (req, res) => {
 
 router.get("/", async (req, res, next) => {
   try {
-    const dashboard = await loadDashboardData({
-      knex,
-      req,
-      can: res.locals.can,
-    });
+    // The premium Admin Home dashboard (KPIs, alerts, analytics, activity feed)
+    // is admin-only; other users keep the lightweight summary dashboard.
+    const isAdmin = Boolean(req.user?.isAdmin);
+    const [dashboard, metrics, activityFilters, branchBreakdown] = await Promise.all([
+      loadDashboardData({
+        knex,
+        req,
+        can: res.locals.can,
+      }),
+      isAdmin
+        ? loadDashboardMetrics({
+            knex,
+            req,
+            can: res.locals.can,
+          })
+        : Promise.resolve(null),
+      isAdmin
+        ? loadActivityFilterOptions({ knex, req })
+        : Promise.resolve(null),
+      isAdmin
+        ? loadBranchBreakdown({ knex })
+        : Promise.resolve(null),
+    ]);
 
     if (req.accepts("html")) {
       return res.render("base/layouts/main", {
@@ -151,10 +181,62 @@ router.get("/", async (req, res, next) => {
         view: "../../dashboard/index",
         t: res.locals.t,
         dashboard,
+        metrics,
+        isAdmin,
+        activityFilters,
+        branchBreakdown,
       });
     }
 
-    res.json({ status: "ok", dashboard });
+    res.json({ status: "ok", dashboard, metrics });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Async analytics feed for the Admin Home dashboard charts (Section 3).
+router.get("/dashboard/analytics", async (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+  if (!req.user.isAdmin) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  try {
+    const range = resolveRange({
+      period: String(req.query.period || "month"),
+      from: req.query.from,
+      to: req.query.to,
+    });
+    const data = await loadDashboardCharts({
+      knex,
+      req,
+      can: res.locals.can,
+      from: range.from,
+      to: range.to,
+    });
+    res.json({ status: "ok", period: range.period, ...data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Paginated recent-activity feed for the Admin Home dashboard (Section 4).
+router.get("/dashboard/activity", async (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+  if (!req.user.isAdmin) {
+    return res.status(403).json({ error: "Forbidden" });
+  }
+  try {
+    const feed = await loadActivityFeed({
+      knex,
+      req,
+      t: res.locals.t,
+      query: req.query,
+    });
+    res.json({ status: "ok", ...feed });
   } catch (err) {
     next(err);
   }
