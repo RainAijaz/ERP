@@ -1952,8 +1952,11 @@ const validateDraftReadyForApproval = async (
     );
   }
 
-  // Re-validate persisted draft content with the same core validator used by draft save,
-  // so approval paths enforce RM variant identity (color/size) and other base integrity checks.
+  // Re-validate persisted draft content with the same core validator used by draft save.
+  // Draft save stays lenient (RM color/size can be left blank while composing), but at the
+  // point of completion (send-for-approval / approve) we enforce RM variant identity so a
+  // material that is purchased in size/color-specific variants cannot be finalized without
+  // one — otherwise it resolves to a zero/wrong rate in BOM costing.
   await validateAndNormalizeInput(
     db,
     {
@@ -1975,7 +1978,7 @@ const validateDraftReadyForApproval = async (
     t,
     {
       enforceSkuRuleCompleteness: false,
-      enforceRmVariantIdentity: false,
+      enforceRmVariantIdentity: true,
       actorUserId: null,
     },
   );
