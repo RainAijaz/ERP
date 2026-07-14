@@ -102,17 +102,20 @@
   const fmtCount = (v) => (v === null || v === undefined ? null : formatNumberDisplay(v, { decimals: 0 }));
 
   const approvals = alerts.pendingApprovals || null;
-  // Only rows with a non-zero count are shown; "other" catches master-data and
-  // any unmapped approvals so the rows reconcile to the total badge.
+  // Only rows with a non-zero count are shown; master-data and HR approvals get
+  // named buckets, and "other" catches any unmapped types so the rows reconcile
+  // to the total badge.
   const approvalRows = approvals
     ? [
-        { key: "purchase",  label: t("purchase_vouchers"),      count: approvals.buckets.purchase },
-        { key: "sales",     label: t("sales_vouchers"),         count: approvals.buckets.sales },
-        { key: "journal",   label: t("journal_vouchers"),       count: approvals.buckets.journal },
-        { key: "payment",   label: t("payment_vouchers"),       count: approvals.buckets.payment },
-        { key: "inventory", label: t("inventory_adjustments"),  count: approvals.buckets.inventory },
-        { key: "leave",     label: t("leave_requests"),         count: approvals.buckets.leave },
-        { key: "other",     label: t("other_approvals"),        count: approvals.buckets.other },
+        { key: "purchase",   label: t("purchase_vouchers"),      count: approvals.buckets.purchase },
+        { key: "sales",      label: t("sales_vouchers"),         count: approvals.buckets.sales },
+        { key: "journal",    label: t("journal_vouchers"),       count: approvals.buckets.journal },
+        { key: "payment",    label: t("payment_vouchers"),       count: approvals.buckets.payment },
+        { key: "inventory",  label: t("inventory_adjustments"),  count: approvals.buckets.inventory },
+        { key: "masterData", label: t("master_data_approvals"),  count: approvals.buckets.masterData },
+        { key: "hr",         label: t("hr_payroll_approvals"),   count: approvals.buckets.hr },
+        { key: "leave",      label: t("leave_requests"),         count: approvals.buckets.leave },
+        { key: "other",      label: t("other_approvals"),        count: approvals.buckets.other },
       ].filter((row) => Number(row.count) > 0)
     : [];
 

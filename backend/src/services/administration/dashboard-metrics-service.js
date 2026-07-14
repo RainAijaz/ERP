@@ -16,10 +16,28 @@
 //       * alerts.employeesAbsent — no attendance module
 //       * alerts.productionBehindSchedule — no production schedule/due date
 
+const {
+  BASIC_INFO_ENTITY_TYPES,
+  SCREEN_ENTITY_TYPES,
+} = require("../../utils/approval-entity-map");
+
 const toNumber = (value) => {
   const parsed = Number(value || 0);
   return Number.isFinite(parsed) ? parsed : 0;
 };
+
+// Entity types that represent master-data (basic info + master_data.* screens)
+// change approvals, so they can be surfaced as a named "Master Data" bucket
+// instead of being lumped into a generic "Other" catch-all.
+const MASTER_DATA_APPROVAL_TYPES = new Set([
+  ...Object.values(BASIC_INFO_ENTITY_TYPES),
+  ...Object.entries(SCREEN_ENTITY_TYPES)
+    .filter(([scopeKey]) => String(scopeKey || "").startsWith("master_data."))
+    .map(([, entityType]) => entityType),
+]);
+
+// HR / Payroll change approvals (employees, labours, commissions, rates …).
+const HR_APPROVAL_TYPES = new Set(["EMPLOYEE", "LABOUR"]);
 
 const getCan = (canFn, scopeType, scopeKey, action = "view") => {
   if (typeof canFn !== "function") return false;
@@ -287,6 +305,23 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
     return qb;
   };
 
+  // Pending non-VOUCHER approvals grouped by entity_type, so master-data and
+  // HR change approvals get their own named buckets rather than an opaque
+  // "Other" catch-all.
+  const pendingNonVoucherApprovalCounts = () => {
+    const qb = knex("erp.approval_request as ar")
+      .where("ar.status", "PENDING")
+      .andWhereNot("ar.entity_type", "VOUCHER")
+      .select("ar.entity_type as type")
+      .count("* as count")
+      .groupBy("ar.entity_type");
+    if (!req.user?.isAdmin) {
+      qb.andWhere("ar.requested_by", req.user.id);
+      applyBranchScope(req, qb, "ar.branch_id");
+    }
+    return qb;
+  };
+
   // --- Execute in parallel -------------------------------------------------
 
   const [
@@ -302,6 +337,7 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
     poAwaitingReceiptCount,
     approvalsTotalRow,
     voucherApprovalRows,
+    nonVoucherApprovalRows,
     dozensToday,
     dozensWeek,
     dozensMonth,
@@ -321,6 +357,7 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
     canPurchase ? safeCount("poAwaitingReceipt", poAwaitingReceipt) : Promise.resolve(null),
     canApprovals ? safeCount("pendingApprovalsTotal", pendingApprovalsTotalQuery) : Promise.resolve(0),
     canApprovals ? safeRows("pendingVoucherApprovals", pendingVoucherApprovalCounts) : Promise.resolve([]),
+    canApprovals ? safeRows("pendingNonVoucherApprovals", pendingNonVoucherApprovalCounts) : Promise.resolve([]),
     canSales ? safeValue("dozensToday", () => dozensSoldBetween(todayKey, todayKey)) : Promise.resolve(null),
     canSales ? safeValue("dozensWeek", () => dozensSoldBetween(startOfWeekKey, todayKey)) : Promise.resolve(null),
     canSales ? safeValue("dozensMonth", () => dozensSoldBetween(startOfMonthKey, todayKey)) : Promise.resolve(null),
@@ -349,17 +386,28 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
     payment: 0,
     inventory: 0,
     leave: 0, // no leave module yet -> always 0
-    other: 0, // master-data + unmapped voucher approvals (see below)
+    masterData: 0, // basic-info + master_data.* change approvals
+    hr: 0, // employee / labour change approvals
+    other: 0, // unmapped entity types (see below)
   };
   for (const row of voucherApprovalRows) {
     const bucket = CODE_BUCKET[String(row.code || "").toUpperCase()];
     if (bucket) approvalBuckets[bucket] += toNumber(row.count);
   }
+  // Fold non-voucher approvals into named buckets by entity_type.
+  for (const row of nonVoucherApprovalRows) {
+    const type = String(row.type || "").toUpperCase();
+    if (MASTER_DATA_APPROVAL_TYPES.has(type)) {
+      approvalBuckets.masterData += toNumber(row.count);
+    } else if (HR_APPROVAL_TYPES.has(type)) {
+      approvalBuckets.hr += toNumber(row.count);
+    }
+  }
   const pendingApprovalsTotal = toNumber(approvalsTotalRow);
 
-  // Whatever the total doesn't attribute to a known voucher bucket (master-data
-  // change approvals, or voucher codes outside CODE_BUCKET) lands in "other", so
-  // the displayed rows always reconcile to the total badge.
+  // Whatever the total doesn't attribute to a known bucket (voucher codes
+  // outside CODE_BUCKET, or unmapped entity types) lands in "other", so the
+  // displayed rows always reconcile to the total badge.
   const bucketedApprovals = Object.entries(approvalBuckets)
     .filter(([key]) => key !== "other")
     .reduce((sum, [, count]) => sum + toNumber(count), 0);
