@@ -1993,6 +1993,12 @@ const validateDraftReadyForApproval = async (
         output_uom_id: toNumberOrNull(form?.header?.output_uom_id),
       },
       rm_lines: toArray(form?.rm_lines),
+      // Pass the persisted SKU rules so the validator can treat a base-line
+      // color/size requirement as satisfied when the identity is pinned per-SKU
+      // (rm_color_id / rm_size_id). Without this the send-for-approval /
+      // approve path builds an empty coverage map and wrongly flags
+      // "Select size for this raw material" for SKU-pinned rows.
+      sku_rules: toArray(form?.sku_rules),
       sfg_lines: toArray(form?.sfg_lines),
       labour_lines: toArray(form?.labour_lines),
       stage_routes: toArray(form?.stage_routes),
