@@ -75,9 +75,9 @@
 
   // ---- KPI card definitions (only shown if permitted) --------------------
   const kpiCards = [
-    { show: canSales,             href: "/reports/sales/sales-report",            label: t("todays_sales"),        value: fmt(kpis.todaysSales),     tone: "emerald", icon: "cash" },
+    { show: canSales,             href: "/reports/sales/sales-report",            label: t("todays_sales"),        value: fmt(kpis.todaysSales),     tone: "emerald", icon: "cash", daily: true, labelAlt: t("yesterdays_sales"),       valueAlt: fmt(kpis.todaysSalesYesterday) },
     { show: canSales,             href: "/reports/sales/sales-report",            label: t("monthly_revenue"),     value: fmt(kpis.monthlyRevenue),  tone: "blue",    icon: "trend" },
-    { show: canSales,             href: "/reports/sales/sales-report",            label: t("dozens_sold_today"),   value: fmtQty(kpis.dozensToday),  tone: "teal",    icon: "box", suffix: t("dzn") },
+    { show: canSales,             href: "/reports/sales/sales-report",            label: t("dozens_sold_today"),   value: fmtQty(kpis.dozensToday),  tone: "teal",    icon: "box", suffix: t("dzn"), daily: true, labelAlt: t("dozens_sold_yesterday"), valueAlt: fmtQty(kpis.dozensYesterday) },
     { show: canSales,             href: "/reports/sales/sales-report",            label: t("dozens_sold_week"),    value: fmtQty(kpis.dozensWeek),   tone: "cyan",    icon: "box", suffix: t("dzn") },
     { show: canSales,             href: "/reports/sales/sales-report",            label: t("dozens_sold_month"),   value: fmtQty(kpis.dozensMonth),  tone: "violet",  icon: "box", suffix: t("dzn") },
     { show: canCash,              href: "/reports/financial/cash_book",           label: t("cash_bank_balance"),   value: fmt(kpis.cashBank),        tone: "indigo",  icon: "wallet" },
@@ -85,7 +85,7 @@
     { show: canSupplierBalances,  href: "/reports/purchases/supplier-balances",   label: t("accounts_payable"),    value: fmt(kpis.payable),         tone: "amber",   icon: "users" },
     { show: canSales,             href: "/reports/sales/sales-order-report",      label: t("orders_pending"),      value: fmt(kpis.ordersPending),   tone: "violet",  icon: "doc" },
     { show: canProduction,        href: "/reports/production/production-report",  label: t("production_progress"), value: fmtPct(kpis.productionProgressPct), tone: "slate", icon: "gauge" },
-    { show: canInventory,         href: "/reports/inventory/stock-transfer",      label: t("dispatches_today"),    value: fmt(kpis.dispatchesToday), tone: "cyan",    icon: "truck" },
+    { show: canInventory,         href: "/reports/inventory/stock-transfer",      label: t("dispatches_today"),    value: fmt(kpis.dispatchesToday), tone: "cyan",    icon: "truck", daily: true, labelAlt: t("dispatches_yesterday"),  valueAlt: fmt(kpis.dispatchesYesterday) },
     { show: canApprovals,         href: "#alerts-panel",                          label: t("critical_alerts"),     value: fmt(kpis.criticalAlerts),  tone: "rose",    icon: "bolt" },
   ].filter((c) => c.show);
 
@@ -102,6 +102,8 @@
   const fmtCount = (v) => (v === null || v === undefined ? null : formatNumberDisplay(v, { decimals: 0 }));
 
   const approvals = alerts.pendingApprovals || null;
+  // Only rows with a non-zero count are shown; "other" catches master-data and
+  // any unmapped approvals so the rows reconcile to the total badge.
   const approvalRows = approvals
     ? [
         { key: "purchase",  label: t("purchase_vouchers"),      count: approvals.buckets.purchase },
@@ -110,7 +112,8 @@
         { key: "payment",   label: t("payment_vouchers"),       count: approvals.buckets.payment },
         { key: "inventory", label: t("inventory_adjustments"),  count: approvals.buckets.inventory },
         { key: "leave",     label: t("leave_requests"),         count: approvals.buckets.leave },
-      ]
+        { key: "other",     label: t("other_approvals"),        count: approvals.buckets.other },
+      ].filter((row) => Number(row.count) > 0)
     : [];
 
   const recentActivity = Array.isArray(dashboard?.recentActivity) ? dashboard.recentActivity : [];
@@ -170,24 +173,40 @@
 
     <!-- ===== SECTION 1: Executive KPI cards (admin only) ===== -->
     <% if (isAdminUser && kpiCards.length) { %>
-      <div class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        <% kpiCards.forEach((card) => { const tn = TONES[card.tone]; %>
-          <a href="<%= card.href %>" class="group rounded-2xl border <%= tn.wrap %> p-5 transition">
-            <div class="flex items-start justify-between gap-3">
-              <div class="space-y-2">
-                <div class="text-[11px] font-semibold uppercase tracking-[0.24em] <%= tn.label %>"><%= card.label %></div>
-                <% if (card.value === null) { %>
-                  <div class="text-lg font-semibold text-slate-400"><%= NOT_TRACKED %></div>
-                <% } else { %>
-                  <div class="text-3xl font-semibold <%= tn.value %>"><%= card.value %><% if (card.suffix) { %><span class="ml-1 text-base font-medium <%= tn.label %>"><%= card.suffix %></span><% } %></div>
-                <% } %>
-              </div>
-              <span class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl <%= tn.chip %> transition group-hover:scale-105">
-                <%- svg(card.icon, "h-5 w-5") %>
-              </span>
+      <% const hasDailyKpi = kpiCards.some((c) => c.daily); %>
+      <div class="mt-6" data-kpi-scope>
+        <% if (hasDailyKpi) { %>
+          <div class="mb-3 flex justify-end">
+            <div class="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-xs font-semibold" role="group" aria-label="<%= t('today') %> / <%= t('yesterday') %>">
+              <button type="button" data-kpi-period="today" aria-pressed="true" class="rounded-md px-3 py-1.5 transition bg-white text-slate-800 shadow-sm"><%= t("today") %></button>
+              <button type="button" data-kpi-period="yesterday" aria-pressed="false" class="rounded-md px-3 py-1.5 transition text-slate-500 hover:text-slate-700"><%= t("yesterday") %></button>
             </div>
-          </a>
-        <% }) %>
+          </div>
+        <% } %>
+        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <% kpiCards.forEach((card) => { const tn = TONES[card.tone];
+               const todayLabel = card.label;
+               const yestLabel  = card.daily ? (card.labelAlt || card.label) : card.label;
+               const todayVal   = card.value === null ? NOT_TRACKED : card.value;
+               const yestVal    = card.daily ? ((card.valueAlt === null || card.valueAlt === undefined) ? NOT_TRACKED : card.valueAlt) : todayVal;
+          %>
+            <a href="<%= card.href %>" class="group rounded-2xl border <%= tn.wrap %> p-5 transition"<% if (card.daily) { %> data-kpi-daily<% } %>>
+              <div class="flex items-start justify-between gap-3">
+                <div class="space-y-2">
+                  <div class="text-[11px] font-semibold uppercase tracking-[0.24em] <%= tn.label %>"<% if (card.daily) { %> data-kpi-label data-today="<%= todayLabel %>" data-yest="<%= yestLabel %>"<% } %>><%= todayLabel %></div>
+                  <% if (card.value === null && !card.daily) { %>
+                    <div class="text-lg font-semibold text-slate-400"><%= NOT_TRACKED %></div>
+                  <% } else { %>
+                    <div class="text-3xl font-semibold <%= tn.value %>"><span<% if (card.daily) { %> data-kpi-value data-today="<%= todayVal %>" data-yest="<%= yestVal %>"<% } %>><%= todayVal %></span><% if (card.suffix) { %><span class="ml-1 text-base font-medium <%= tn.label %>"><%= card.suffix %></span><% } %></div>
+                  <% } %>
+                </div>
+                <span class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl <%= tn.chip %> transition group-hover:scale-105">
+                  <%- svg(card.icon, "h-5 w-5") %>
+                </span>
+              </div>
+            </a>
+          <% }) %>
+        </div>
       </div>
     <% } %>
 
@@ -260,14 +279,18 @@
               <div class="text-sm font-semibold text-slate-800 group-hover:text-amber-800"><%= t("pending_approvals") %></div>
               <span class="inline-flex min-w-[2rem] items-center justify-center rounded-full bg-amber-100 px-2 py-1 text-sm font-semibold text-amber-700"><%= formatNumberDisplay(approvals.total, { decimals: 0 }) %></span>
             </a>
-            <ul class="mt-3 divide-y divide-slate-200">
-              <% approvalRows.forEach((row) => { %>
-                <li class="flex items-center justify-between py-2 text-sm">
-                  <span class="text-slate-600"><%= row.label %></span>
-                  <span class="font-semibold <%= Number(row.count) > 0 ? 'text-slate-900' : 'text-slate-400' %>"><%= formatNumberDisplay(row.count, { decimals: 0 }) %></span>
-                </li>
-              <% }) %>
-            </ul>
+            <% if (approvalRows.length) { %>
+              <ul class="mt-3 divide-y divide-slate-200">
+                <% approvalRows.forEach((row) => { %>
+                  <li class="flex items-center justify-between py-2 text-sm">
+                    <span class="text-slate-600"><%= row.label %></span>
+                    <span class="font-semibold text-slate-900"><%= formatNumberDisplay(row.count, { decimals: 0 }) %></span>
+                  </li>
+                <% }) %>
+              </ul>
+            <% } else { %>
+              <p class="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500"><%= t("all_clear") %></p>
+            <% } %>
             <a href="/administration/approvals" class="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-amber-700">
               <%- svg("check", "h-4 w-4") %>
               <%= t("go_to_approval_center") %>
@@ -449,6 +472,34 @@
     </section>
   <% } %>
 </div>
+
+<!-- ===== Section 1 KPI Today/Yesterday toggle ===== -->
+<script>
+  (function () {
+    const scope = document.querySelector("[data-kpi-scope]");
+    if (!scope) return;
+    const btns = scope.querySelectorAll("[data-kpi-period]");
+    if (!btns.length) return;
+
+    const apply = (period) => {
+      const key = period === "yesterday" ? "yest" : "today";
+      scope.querySelectorAll("[data-kpi-value], [data-kpi-label]").forEach((el) => {
+        const v = el.getAttribute("data-" + key);
+        if (v !== null) el.textContent = v;
+      });
+      btns.forEach((b) => {
+        const active = b.getAttribute("data-kpi-period") === period;
+        b.setAttribute("aria-pressed", active ? "true" : "false");
+        b.classList.toggle("bg-white", active);
+        b.classList.toggle("text-slate-800", active);
+        b.classList.toggle("shadow-sm", active);
+        b.classList.toggle("text-slate-500", !active);
+      });
+    };
+
+    btns.forEach((b) => b.addEventListener("click", () => apply(b.getAttribute("data-kpi-period"))));
+  })();
+</script>
 
 <!-- ===== Section 3 analytics: lazy Chart.js renderer ===== -->
 <script>

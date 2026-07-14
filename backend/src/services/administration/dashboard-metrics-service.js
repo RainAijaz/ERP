@@ -80,6 +80,9 @@ const toDateKey = (date) => {
 const loadDashboardMetrics = async ({ knex, req, can }) => {
   const now = new Date();
   const todayKey = toDateKey(now);
+  const yesterdayKey = toDateKey(
+    new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1),
+  );
   const startOfMonthKey = toDateKey(new Date(now.getFullYear(), now.getMonth(), 1));
   // Week starts Monday.
   const weekOffset = (now.getDay() + 6) % 7;
@@ -201,10 +204,10 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
       .count("* as count")
       .first();
 
-  const dispatchesToday = () =>
+  const dispatchesOn = (dateKey) => () =>
     knex("erp.stock_transfer_out_header as h")
       .join("erp.voucher_header as vh", "vh.id", "h.voucher_id")
-      .where("vh.voucher_date", todayKey)
+      .where("vh.voucher_date", dateKey)
       .where("vh.status", "APPROVED")
       .modify((qb) => applyBranchScope(req, qb, "vh.branch_id"))
       .count("* as count")
@@ -302,6 +305,9 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
     dozensToday,
     dozensWeek,
     dozensMonth,
+    todaysSalesYesterday,
+    dispatchesYesterdayCount,
+    dozensYesterday,
   ] = await Promise.all([
     canSales ? safeValue("todaysSales", () => revenueBetween(todayKey, todayKey)) : Promise.resolve(null),
     canSales ? safeValue("monthlyRevenue", () => revenueBetween(startOfMonthKey, todayKey)) : Promise.resolve(null),
@@ -309,7 +315,7 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
     canCustomerBalances ? safeValue("receivable", () => partyBalanceTotal(["CUSTOMER", "BOTH"], "RECEIVABLE")) : Promise.resolve(null),
     canSupplierBalances ? safeValue("payable", () => partyBalanceTotal(["SUPPLIER", "BOTH"], "PAYABLE")) : Promise.resolve(null),
     canSales ? safeCount("ordersPending", ordersPending) : Promise.resolve(null),
-    canInventory ? safeCount("dispatchesToday", dispatchesToday) : Promise.resolve(null),
+    canInventory ? safeCount("dispatchesToday", dispatchesOn(todayKey)) : Promise.resolve(null),
     canInventory ? safeRows("rawMatBelowMin", rawMaterialsBelowMin) : Promise.resolve([]),
     canCustomerBalances ? safeCount("overdueReceivables", overdueReceivables) : Promise.resolve(null),
     canPurchase ? safeCount("poAwaitingReceipt", poAwaitingReceipt) : Promise.resolve(null),
@@ -318,6 +324,10 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
     canSales ? safeValue("dozensToday", () => dozensSoldBetween(todayKey, todayKey)) : Promise.resolve(null),
     canSales ? safeValue("dozensWeek", () => dozensSoldBetween(startOfWeekKey, todayKey)) : Promise.resolve(null),
     canSales ? safeValue("dozensMonth", () => dozensSoldBetween(startOfMonthKey, todayKey)) : Promise.resolve(null),
+    // Yesterday comparatives for the day-based KPIs (Today/Yesterday toggle).
+    canSales ? safeValue("todaysSalesYesterday", () => revenueBetween(yesterdayKey, yesterdayKey)) : Promise.resolve(null),
+    canInventory ? safeCount("dispatchesYesterday", dispatchesOn(yesterdayKey)) : Promise.resolve(null),
+    canSales ? safeValue("dozensYesterday", () => dozensSoldBetween(yesterdayKey, yesterdayKey)) : Promise.resolve(null),
   ]);
 
   const rawMaterialsBelowMinCount = rawMatBelowMinRows.length;
@@ -339,12 +349,21 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
     payment: 0,
     inventory: 0,
     leave: 0, // no leave module yet -> always 0
+    other: 0, // master-data + unmapped voucher approvals (see below)
   };
   for (const row of voucherApprovalRows) {
     const bucket = CODE_BUCKET[String(row.code || "").toUpperCase()];
     if (bucket) approvalBuckets[bucket] += toNumber(row.count);
   }
   const pendingApprovalsTotal = toNumber(approvalsTotalRow);
+
+  // Whatever the total doesn't attribute to a known voucher bucket (master-data
+  // change approvals, or voucher codes outside CODE_BUCKET) lands in "other", so
+  // the displayed rows always reconcile to the total badge.
+  const bucketedApprovals = Object.entries(approvalBuckets)
+    .filter(([key]) => key !== "other")
+    .reduce((sum, [, count]) => sum + toNumber(count), 0);
+  approvalBuckets.other = Math.max(0, pendingApprovalsTotal - bucketedApprovals);
 
   // Critical alerts = sum of actionable open items we can actually count.
   const criticalAlerts =
@@ -367,6 +386,10 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
       dozensToday: dozensToday === null ? null : Math.round(dozensToday * 10) / 10,
       dozensWeek: dozensWeek === null ? null : Math.round(dozensWeek * 10) / 10,
       dozensMonth: dozensMonth === null ? null : Math.round(dozensMonth * 10) / 10,
+      // Yesterday comparatives for the day-based KPIs (Today/Yesterday toggle).
+      todaysSalesYesterday,
+      dispatchesYesterday: dispatchesYesterdayCount,
+      dozensYesterday: dozensYesterday === null ? null : Math.round(dozensYesterday * 10) / 10,
     },
     alerts: {
       overdueReceivables: overdueReceivablesCount,
