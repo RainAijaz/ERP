@@ -22,9 +22,6 @@
   const useUr = String(typeof locale !== "undefined" ? locale : "").trim().toLowerCase().startsWith("ur");
   const branchLabel = (r) => (useUr ? (r.name_ur || r.name) : r.name);
   const money0 = (v) => formatNumberDisplay(v, { decimals: 0, fallback: "0" });
-  const activityUsers = (activityFilters && Array.isArray(activityFilters.users)) ? activityFilters.users : [];
-  const activityModules = (activityFilters && Array.isArray(activityFilters.modules)) ? activityFilters.modules : [];
-  const activityActions = (activityFilters && Array.isArray(activityFilters.actions)) ? activityFilters.actions : [];
 
   const canSales = gate("REPORT", "sales_report");
   const canCash = gate("REPORT", "cash_book");
@@ -70,6 +67,7 @@
     doc: '<path fill-rule="evenodd" d="M4.5 2A1.5 1.5 0 003 3.5v13A1.5 1.5 0 004.5 18h11a1.5 1.5 0 001.5-1.5V7.62a1.5 1.5 0 00-.44-1.06l-3.62-3.62A1.5 1.5 0 0011.38 2H4.5zm2 7.25a.75.75 0 01.75-.75h5.5a.75.75 0 010 1.5h-5.5a.75.75 0 01-.75-.75zm.75 2.75a.75.75 0 000 1.5h5.5a.75.75 0 000-1.5h-5.5z" clip-rule="evenodd"/>',
     warn: '<path fill-rule="evenodd" d="M8.485 2.495c.673-1.167 2.357-1.167 3.03 0l6.28 10.875c.673 1.167-.17 2.625-1.515 2.625H3.72c-1.345 0-2.188-1.458-1.515-2.625L8.485 2.495zM10 5a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 0110 5zm0 9a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"/>',
     check: '<path fill-rule="evenodd" d="M16.704 4.153a.75.75 0 01.143 1.052l-8 10.5a.75.75 0 01-1.127.075l-4.5-4.5a.75.75 0 011.06-1.06l3.894 3.893 7.48-9.817a.75.75 0 011.05-.143z" clip-rule="evenodd"/>',
+    "chevron-right": '<path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/>',
   };
 
   const svg = (name, cls) =>
@@ -258,10 +256,10 @@
         <!-- Pending approvals breakdown -->
         <% if (approvals) { %>
           <div class="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-            <div class="flex items-center justify-between">
-              <div class="text-sm font-semibold text-slate-800"><%= t("pending_approvals") %></div>
+            <a href="/administration/approvals" class="group flex items-center justify-between rounded-lg -m-1 p-1 transition hover:bg-amber-50">
+              <div class="text-sm font-semibold text-slate-800 group-hover:text-amber-800"><%= t("pending_approvals") %></div>
               <span class="inline-flex min-w-[2rem] items-center justify-center rounded-full bg-amber-100 px-2 py-1 text-sm font-semibold text-amber-700"><%= formatNumberDisplay(approvals.total, { decimals: 0 }) %></span>
-            </div>
+            </a>
             <ul class="mt-3 divide-y divide-slate-200">
               <% approvalRows.forEach((row) => { %>
                 <li class="flex items-center justify-between py-2 text-sm">
@@ -428,42 +426,25 @@
     <% } %>
   </section>
 
-  <!-- ===== SECTION 4: Recent Activity Feed (admin only) ===== -->
+  <!-- ===== SECTION 4: Latest activity (admin only) — one most-recent entry + View All ===== -->
   <% if (isAdminUser) { %>
     <section
       class="rounded-2xl border border-slate-200 bg-white/95 shadow-md"
       data-activity-feed
       data-activity-endpoint="/dashboard/activity"
-      data-i18n='<%- JSON.stringify({ loadMore: t("load_more"), noData: t("no_entries"), loading: t("loading"), viewRecord: t("view_record"), system: t("system"), allUsers: t("all_users"), allModules: t("all_modules"), allActions: t("all_actions") }) %>'
+      data-i18n='<%- JSON.stringify({ noData: t("no_entries"), loading: t("loading"), viewRecord: t("view_record"), system: t("system") }) %>'
     >
-      <div class="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+      <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
         <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("recent_activity") %></h3>
-        <div class="flex flex-wrap items-center gap-2">
-          <select data-filter-user class="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700">
-            <option value=""><%= t("all_users") %></option>
-            <% activityUsers.forEach((u) => { %><option value="<%= u.id %>"><%= u.name %></option><% }) %>
-          </select>
-          <select data-filter-module class="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700">
-            <option value=""><%= t("all_modules") %></option>
-            <% activityModules.forEach((m) => { %><option value="<%= m %>"><%= m %></option><% }) %>
-          </select>
-          <select data-filter-action class="rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs text-slate-700">
-            <option value=""><%= t("all_actions") %></option>
-            <% activityActions.forEach((a) => { %><option value="<%= a %>"><%= a %></option><% }) %>
-          </select>
-          <input type="date" data-filter-from class="rounded-md border border-slate-200 px-2 py-1.5 text-xs text-slate-700" />
-          <input type="date" data-filter-to class="rounded-md border border-slate-200 px-2 py-1.5 text-xs text-slate-700" />
-          <button type="button" data-filter-reset class="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"><%= t("reset") %></button>
-        </div>
+        <a href="/administration/audit-logs" class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-slate-50">
+          <%= t("view_all") %>
+          <%- svg("chevron-right", "h-3.5 w-3.5") %>
+        </a>
       </div>
 
       <div class="px-5 py-4">
         <ul class="space-y-2" data-activity-list></ul>
         <div class="py-6 text-center text-sm text-slate-400" data-activity-state><%= t("loading") %></div>
-        <div class="mt-2 flex justify-center" data-activity-more-wrap hidden>
-          <button type="button" data-activity-more class="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"><%= t("load_more") %></button>
-        </div>
-        <div data-activity-sentinel></div>
       </div>
     </section>
   <% } %>
@@ -697,7 +678,7 @@
   })();
 </script>
 
-<!-- ===== Section 4 activity feed: paginated, filterable, lazy ===== -->
+<!-- ===== Section 4 activity feed: latest entry only, lazy ===== -->
 <script>
   (function () {
     const root = document.querySelector("[data-activity-feed]");
@@ -709,9 +690,6 @@
 
     const list = root.querySelector("[data-activity-list]");
     const stateEl = root.querySelector("[data-activity-state]");
-    const moreWrap = root.querySelector("[data-activity-more-wrap]");
-    const moreBtn = root.querySelector("[data-activity-more]");
-    const sentinel = root.querySelector("[data-activity-sentinel]");
 
     const AVATAR_COLORS = ["#059669","#2563eb","#d97706","#e11d48","#4f46e5","#0891b2","#7c3aed"];
     const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m]));
@@ -726,18 +704,7 @@
       return AVATAR_COLORS[h % AVATAR_COLORS.length];
     };
 
-    let page = 0;
-    let loading = false;
-    let hasMore = true;
     let started = false;
-
-    const getFilters = () => ({
-      user: root.querySelector("[data-filter-user]")?.value || "",
-      module: root.querySelector("[data-filter-module]")?.value || "",
-      action: root.querySelector("[data-filter-action]")?.value || "",
-      from: root.querySelector("[data-filter-from]")?.value || "",
-      to: root.querySelector("[data-filter-to]")?.value || "",
-    });
 
     const renderItem = (it) => {
       const li = document.createElement("li");
@@ -761,64 +728,31 @@
       return li;
     };
 
-    let inFlight = null;
-    async function load(reset) {
-      if (loading) return;
-      if (reset) { page = 0; hasMore = true; list.innerHTML = ""; }
-      if (!hasMore) return;
-      loading = true;
+    async function load() {
       stateEl.hidden = false;
       stateEl.textContent = I18N.loading || "Loading…";
-      moreWrap.hidden = true;
-
-      const params = new URLSearchParams(Object.assign({ page: String(page + 1) }, getFilters()));
-      const token = Symbol("req");
-      inFlight = token;
       let payload;
       try {
-        const resp = await fetch(`${endpoint}?${params.toString()}`, { headers: { Accept: "application/json" }, credentials: "same-origin" });
+        const resp = await fetch(`${endpoint}?page=1&pageSize=1`, { headers: { Accept: "application/json" }, credentials: "same-origin" });
         payload = await resp.json();
       } catch (_e) {
-        loading = false; stateEl.hidden = false; stateEl.textContent = I18N.noData || "No data"; return;
+        stateEl.hidden = false; stateEl.textContent = I18N.noData || "No data"; return;
       }
-      if (inFlight !== token) { loading = false; return; }
 
       const items = (payload && payload.items) || [];
-      page = payload.page || page + 1;
-      hasMore = Boolean(payload.hasMore);
-      const frag = document.createDocumentFragment();
-      items.forEach((it) => frag.appendChild(renderItem(it)));
-      list.appendChild(frag);
-
-      loading = false;
-      if (!list.children.length) { stateEl.hidden = false; stateEl.textContent = I18N.noData || "No data"; }
-      else { stateEl.hidden = true; }
-      moreWrap.hidden = !hasMore;
+      list.innerHTML = "";
+      if (!items.length) { stateEl.hidden = false; stateEl.textContent = I18N.noData || "No entries"; return; }
+      list.appendChild(renderItem(items[0]));
+      stateEl.hidden = true;
     }
 
-    // Filters
-    ["[data-filter-user]", "[data-filter-module]", "[data-filter-action]", "[data-filter-from]", "[data-filter-to]"].forEach((sel) => {
-      root.querySelector(sel)?.addEventListener("change", () => load(true));
-    });
-    root.querySelector("[data-filter-reset]")?.addEventListener("click", () => {
-      ["[data-filter-user]", "[data-filter-module]", "[data-filter-action]", "[data-filter-from]", "[data-filter-to]"].forEach((sel) => {
-        const el = root.querySelector(sel); if (el) el.value = "";
-      });
-      load(true);
-    });
-    moreBtn?.addEventListener("click", () => load(false));
-
-    // Infinite scroll (sentinel) + lazy start when section enters view.
-    const start = () => { if (started) return; started = true; load(true); };
+    // Lazy start when the section enters view; render only the latest entry.
+    const start = () => { if (started) return; started = true; load(); };
     if ("IntersectionObserver" in window) {
-      const startIo = new IntersectionObserver((entries) => {
-        entries.forEach((e) => { if (e.isIntersecting) { start(); startIo.disconnect(); } });
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach((e) => { if (e.isIntersecting) { start(); io.disconnect(); } });
       }, { rootMargin: "160px" });
-      startIo.observe(root);
-      const moreIo = new IntersectionObserver((entries) => {
-        entries.forEach((e) => { if (e.isIntersecting && started && hasMore && !loading) load(false); });
-      }, { rootMargin: "200px" });
-      moreIo.observe(sentinel);
+      io.observe(root);
     } else {
       start();
     }
