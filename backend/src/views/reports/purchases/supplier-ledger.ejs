@@ -309,6 +309,25 @@
                   <td class="px-3 py-2"><%= row.branch_name || '-' %></td>
                 <% } %>
               </tr>
+
+              <% if (showLedgerNarrativeCols) { %>
+                <% (row.detail_lines || []).forEach((line) => { %>
+                  <tr class="bg-white text-xs text-slate-500" data-row data-active="true">
+                    <td class="px-3 py-1" colspan="5"></td>
+                    <td class="px-3 py-1 pl-8">
+                      ↳ <%= line.name %><% if (line.variant) { %> — <%= line.variant %><% } %>
+                      <span class="text-slate-400"> @ <%= formatNumber(line.rate || 0, 2) %> = <%= formatNumber(line.amount || 0, 2) %></span>
+                    </td>
+                    <td class="px-3 py-1 text-right"><%= formatNumber(line.qty || 0, 3) %><%= line.uom_code ? ' ' + line.uom_code : '' %></td>
+                    <td class="px-3 py-1"></td>
+                    <td class="px-3 py-1"></td>
+                    <td class="px-3 py-1"></td>
+                    <% if (includeBranchColumn) { %>
+                      <td class="px-3 py-1"></td>
+                    <% } %>
+                  </tr>
+                <% }) %>
+              <% } %>
             <% }) %>
 
             <tr class="border-t border-slate-200 bg-slate-100">

@@ -1134,6 +1134,79 @@ const loadSupplierLedgerOptions = async ({ req, filters }) => {
   };
 };
 
+const fetchSupplierLedgerDetailLines = async ({ voucherHeaderIds, locale }) => {
+  const ids = [...new Set(voucherHeaderIds.filter((id) => Number(id) > 0))];
+  if (!ids.length) return new Map();
+
+  const lineRows = await knex("erp.voucher_line as vl")
+    .leftJoin("erp.items as i", "i.id", "vl.item_id")
+    .leftJoin("erp.accounts as a", "a.id", "vl.account_id")
+    .leftJoin("erp.skus as sk", "sk.id", "vl.sku_id")
+    .leftJoin("erp.variants as vr", "vr.id", "sk.variant_id")
+    .leftJoin("erp.items as si", "si.id", "vr.item_id")
+    .leftJoin("erp.uom as u", "u.id", "vl.uom_id")
+    .leftJoin(
+      "erp.colors as vc",
+      knex.raw(
+        "vc.id::text = COALESCE(NULLIF(vl.meta->>'color_id', ''), NULLIF(vl.meta->>'rm_color_id', ''))",
+      ),
+    )
+    .leftJoin(
+      "erp.sizes as vs",
+      knex.raw(
+        "vs.id::text = COALESCE(NULLIF(vl.meta->>'size_id', ''), NULLIF(vl.meta->>'rm_size_id', ''))",
+      ),
+    )
+    .select(
+      "vl.voucher_header_id",
+      "vl.line_no",
+      "vl.line_kind",
+      localizedNameSelect("i", "item_name", locale),
+      localizedNameSelect("si", "sku_item_name", locale),
+      "sk.sku_code",
+      localizedNameSelect("a", "account_name", locale),
+      localizedNameSelect("vc", "color_name", locale),
+      localizedNameSelect("vs", "size_name", locale),
+      "u.code as uom_code",
+      "vl.qty",
+      "vl.rate",
+      "vl.amount",
+    )
+    .whereIn("vl.voucher_header_id", ids)
+    .whereIn("vl.line_kind", ["ITEM", "SKU", "ACCOUNT"])
+    .orderBy("vl.voucher_header_id", "asc")
+    .orderBy("vl.line_no", "asc");
+
+  const byVoucher = new Map();
+  lineRows.forEach((row) => {
+    const key = Number(row.voucher_header_id || 0);
+    if (!key) return;
+
+    let name = "";
+    if (row.line_kind === "ITEM") {
+      name = row.item_name || "";
+    } else if (row.line_kind === "SKU") {
+      name = [row.sku_item_name, row.sku_code].filter(Boolean).join(" ");
+    } else if (row.line_kind === "ACCOUNT") {
+      name = row.account_name || "";
+    }
+
+    const variant = [row.color_name, row.size_name].filter(Boolean).join(" / ");
+
+    if (!byVoucher.has(key)) byVoucher.set(key, []);
+    byVoucher.get(key).push({
+      name: name || "-",
+      variant,
+      uom_code: row.uom_code || "",
+      qty: toQty(row.qty, 3),
+      rate: toAmount(row.rate, 4),
+      amount: toAmount(row.amount, 2),
+    });
+  });
+
+  return byVoucher;
+};
+
 const getSupplierLedgerRows = async ({ req, filters, options }) => {
   const locale = String(req?.locale || "en").toLowerCase();
   const includeBranchColumn = Boolean(
@@ -1212,6 +1285,7 @@ const getSupplierLedgerRows = async ({ req, filters, options }) => {
       knex.raw("COALESCE(ge.dr, 0) as dr"),
       knex.raw("COALESCE(ge.cr, 0) as cr"),
       "ge.id",
+      "vh.id as voucher_header_id",
     )
     .where("ge.party_id", filters.partyId)
     .where(function whereApprovedOrManual() {
@@ -1231,6 +1305,7 @@ const getSupplierLedgerRows = async ({ req, filters, options }) => {
 
   const baseEntries = rawRows.map((row) => ({
     id: Number(row.id || 0),
+    voucher_header_id: Number(row.voucher_header_id || 0) || null,
     entry_date: row.entry_date || null,
     voucher_no: row.voucher_no || null,
     bill_number: row.bill_number || "",
@@ -1275,6 +1350,14 @@ const getSupplierLedgerRows = async ({ req, filters, options }) => {
         })()
       : baseEntries;
 
+  const detailLinesByVoucher =
+    filters.ledgerView === "detail"
+      ? await fetchSupplierLedgerDetailLines({
+          voucherHeaderIds: reportEntries.map((entry) => entry.voucher_header_id),
+          locale,
+        })
+      : new Map();
+
   let runningBalance = openingBalance;
   let totalQty = 0;
   let totalDebit = 0;
@@ -1298,6 +1381,9 @@ const getSupplierLedgerRows = async ({ req, filters, options }) => {
       credit: entry.credit,
       balance: runningBalance,
       branch_name: entry.branch_name,
+      detail_lines: entry.voucher_header_id
+        ? detailLinesByVoucher.get(entry.voucher_header_id) || []
+        : [],
     };
   });
 
