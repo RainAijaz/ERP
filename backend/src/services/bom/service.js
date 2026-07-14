@@ -602,6 +602,27 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
     if (sizeId) current.sizeIds.add(Number(sizeId));
   });
 
+  // A material line's color/size may be pinned per-SKU in SKU Rules
+  // (rm_color_id / rm_size_id) instead of on the base line. This is the normal
+  // case when an RM item has multiple color/size rate variants: the UI leaves
+  // the base line blank (labelled "SKU Rules") and defers the identity to the
+  // per-SKU override. Track which material+dept combos have their color/size
+  // supplied by SKU rules so the base-line requirement below is not falsely
+  // flagged for those rows. (See getReadonlyVariantMeta in bom/form.ejs.)
+  const skuRuleVariantCoverage = new Map();
+  toArray(input?.sku_rules).forEach((row) => {
+    const rmItemId = toNumberOrNull(row?.target_rm_item_id);
+    const deptId = toNumberOrNull(row?.dept_id);
+    if (!rmItemId || !deptId) return;
+    const key = `${rmItemId}:${deptId}`;
+    if (!skuRuleVariantCoverage.has(key)) {
+      skuRuleVariantCoverage.set(key, { hasColor: false, hasSize: false });
+    }
+    const entry = skuRuleVariantCoverage.get(key);
+    if (toNumberOrNull(row?.rm_color_id)) entry.hasColor = true;
+    if (toNumberOrNull(row?.rm_size_id)) entry.hasSize = true;
+  });
+
   rmLines.forEach((line, idx) => {
     const rowLabel = `${t("bom_error_row_prefix") } ${idx + 1}`;
     if (!line.rm_item_id || !line.dept_id) {
@@ -631,19 +652,22 @@ const validateAndNormalizeInput = async (db, input, t, options = {}) => {
       const variantReq = rmVariantRequirementMap.get(line.rm_item_id);
       const requiresColor = Boolean(variantReq?.colorIds?.size);
       const requiresSize = Boolean(variantReq?.sizeIds?.size);
-      if (requiresColor && !line.color_id) {
+      const skuCoverage = skuRuleVariantCoverage.get(
+        `${line.rm_item_id}:${line.dept_id}`,
+      );
+      if (requiresColor && !line.color_id && !skuCoverage?.hasColor) {
         details.push({
           field: "rm_lines_json",
           message: `${rowLabel}: ${
-            t("bom_error_rm_color_required") 
+            t("bom_error_rm_color_required")
           }`,
         });
       }
-      if (requiresSize && !line.size_id) {
+      if (requiresSize && !line.size_id && !skuCoverage?.hasSize) {
         details.push({
           field: "rm_lines_json",
           message: `${rowLabel}: ${
-            t("bom_error_rm_size_required") 
+            t("bom_error_rm_size_required")
           }`,
         });
       }
