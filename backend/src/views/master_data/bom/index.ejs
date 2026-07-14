@@ -192,10 +192,26 @@
     const searchInput = form.querySelector("[data-search-input]");
     if (!(searchInput instanceof HTMLInputElement)) return;
 
+    // Search runs server-side via a full-page reload. Without this, focus/caret
+    // are lost after each submit and typing feels broken. Restore both so the
+    // user can keep typing to refine the query.
+    if (searchInput.value) {
+      const caret = searchInput.value.length;
+      window.requestAnimationFrame(() => {
+        searchInput.focus({ preventScroll: true });
+        try {
+          searchInput.setSelectionRange(caret, caret);
+        } catch (err) {
+          /* setSelectionRange unsupported — focus alone is enough */
+        }
+      });
+    }
+
     let submitTimer = null;
     searchInput.addEventListener("input", () => {
       window.clearTimeout(submitTimer);
-      submitTimer = window.setTimeout(() => form.requestSubmit(), 350);
+      // Longer debounce than client-side pages: each submit is a full reload.
+      submitTimer = window.setTimeout(() => form.requestSubmit(), 500);
     });
     searchInput.addEventListener("keydown", (event) => {
       if (event.key !== "Enter") return;
