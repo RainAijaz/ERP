@@ -196,6 +196,18 @@
             <input type="text" name="remarks" maxlength="1000" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" placeholder="<%= t('enter_note') %>" value="<%= selectedRemarks %>">
           </div>
         </div>
+
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
+          <span class="text-sm font-semibold text-slate-700 lg:col-span-2"></span>
+          <div class="lg:col-span-10">
+            <input type="hidden" name="notify_payees_present" value="1">
+            <label class="inline-flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" name="notify_payees" value="1" checked class="h-4 w-4 rounded border-slate-300">
+              <span><%= t('notify_payees_on_approval') %></span>
+            </label>
+            <p class="mt-1 text-xs text-slate-500"><%= t('notify_payees_on_approval_hint') %></p>
+          </div>
+        </div>
         <% if (isDeletedVoucher) { %>
           <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800">
             <%= t('voucher_deleted_read_only') %>
