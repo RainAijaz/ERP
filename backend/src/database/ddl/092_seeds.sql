@@ -275,6 +275,7 @@ VALUES
   ('SCREEN','hr_payroll.labour_rates','Labour Rates', 'HR & Payroll'),
   ('SCREEN','hr_payroll.commissions','Sales Commissions', 'HR & Payroll'),
   ('SCREEN','hr_payroll.allowances','Allowances', 'HR & Payroll'),
+  ('SCREEN','hr_payroll.labour_allowances','Labour Allowances', 'HR & Payroll'),
 
   -- Financial
   ('SCREEN','financial.period_control','Audit Freeze / Period Control', 'Financial')

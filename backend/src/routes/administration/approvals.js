@@ -1069,6 +1069,7 @@ const buildPreviewPayload = async (req, res, request, side) => {
     "hr_payroll.commissions": hrCommissionsRoutes.preview?.page,
     "hr_payroll.allowances": hrAllowancesRoutes.preview?.page,
     "hr_payroll.labour_rates": hrLaboursRoutes.preview?.labourRatesPage,
+    "hr_payroll.labour_allowances": hrLaboursRoutes.preview?.labourAllowancesPage,
   };
   const hrPage = hrPreviewMap[hrScopeKey] || null;
   if (hrPage && typeof hrEmployeesRoutes.preview?.hydratePage === "function") {

@@ -41,6 +41,7 @@ const SCREEN_ENTITY_TYPES = {
   "hr_payroll.commissions": "EMPLOYEE",
   "hr_payroll.allowances": "EMPLOYEE",
   "hr_payroll.labour_rates": "LABOUR",
+  "hr_payroll.labour_allowances": "LABOUR",
 };
 
 const getBasicInfoEntityType = (type) =>

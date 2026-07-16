@@ -2,6 +2,7 @@ const express = require("express");
 const knex = require("../../db/knex");
 const { createHrMasterRouter, hydratePage } = require("./master-router");
 const { toMoney, hasTwoDecimalsOrLess } = require("./validation");
+
 const getAllowedBranchIds = (req) => {
   if (req?.user?.isAdmin) return [];
   return Array.isArray(req?.branchScope)
@@ -20,11 +21,11 @@ const normalizeAllowanceDate = (value) => {
 };
 
 const page = {
-  titleKey: "allowances",
-  descriptionKey: "allowances_description",
-  table: "erp.employee_allowance_rules",
-  scopeKey: "hr_payroll.allowances",
-  entityType: "EMPLOYEE",
+  titleKey: "labour_allowances",
+  descriptionKey: "labour_allowances_description",
+  table: "erp.labour_allowance_rules",
+  scopeKey: "hr_payroll.labour_allowances",
+  entityType: "LABOUR",
   branchScoped: false,
   autoCodeFromName: false,
   defaults: {
@@ -54,21 +55,25 @@ const page = {
     },
   },
   branchFilter: {
-    mapTable: "erp.employee_branch",
-    mapKey: "employee_id",
-    entityKey: "employee_id",
+    mapTable: "erp.labour_branch",
+    mapKey: "labour_id",
+    entityKey: "labour_id",
     branchKey: "branch_id",
   },
-  joins: [{ table: { e: "erp.employees" }, on: ["t.employee_id", "e.id"] }],
+  joins: [{ table: { l: "erp.labours" }, on: ["t.labour_id", "l.id"] }],
   extraSelect: (locale) => [
-    locale === "ur" ? knex.raw("COALESCE(e.name_ur, e.name) as employee_name") : "e.name as employee_name",
+    locale === "ur"
+      ? knex.raw("COALESCE(l.name_ur, l.name) as labour_name")
+      : "l.name as labour_name",
     knex.raw("to_char(t.effective_from, 'YYYY-MM-DD') as effective_from"),
     knex.raw("to_char(t.effective_to, 'YYYY-MM-DD') as effective_to"),
-    knex.raw("CASE WHEN lower(trim(t.status)) = 'active' THEN true ELSE false END as is_active"),
+    knex.raw(
+      "CASE WHEN lower(trim(t.status)) = 'active' THEN true ELSE false END as is_active",
+    ),
   ],
   columns: [
     { key: "id", label: "id" },
-    { key: "employee_name", label: "employees" },
+    { key: "labour_name", label: "labours" },
     { key: "allowance_type", label: "allowance_type" },
     { key: "amount_type", label: "amount_type" },
     { key: "amount", label: "amount" },
@@ -80,30 +85,35 @@ const page = {
   ],
   fields: [
     {
-      name: "employee_id",
-      label: "employees",
+      name: "labour_id",
+      label: "labours",
       type: "select",
       required: true,
       optionsResolver: async ({ knex, locale, req }) => {
         const labelExpr =
-          locale === "ur" ? "COALESCE(e.name_ur, e.name)" : "e.name";
+          locale === "ur" ? "COALESCE(l.name_ur, l.name)" : "l.name";
         const allowedBranchIds = getAllowedBranchIds(req);
-        let query = knex("erp.employees as e")
-          .select("e.id as value", knex.raw(`${labelExpr} as label`))
-          .whereRaw("lower(trim(e.status)) = 'active'");
+        let query = knex("erp.labours as l")
+          .select("l.id as value", knex.raw(`${labelExpr} as label`))
+          .whereRaw("lower(trim(l.status)) = 'active'");
         if (allowedBranchIds.length) {
           query = query.whereExists(function branchScope() {
             this.select(1)
-              .from("erp.employee_branch as eb")
-              .whereRaw("eb.employee_id = e.id")
-              .whereIn("eb.branch_id", allowedBranchIds);
+              .from("erp.labour_branch as lb")
+              .whereRaw("lb.labour_id = l.id")
+              .whereIn("lb.branch_id", allowedBranchIds);
           });
         }
         const rows = await query.orderByRaw(`${labelExpr} asc`);
         return rows.map((row) => ({ value: row.value, label: row.label }));
       },
     },
-    { name: "allowance_type", label: "allowance_type", required: true, placeholder: "placeholder_allowance_type" },
+    {
+      name: "allowance_type",
+      label: "allowance_type",
+      required: true,
+      placeholder: "placeholder_allowance_type",
+    },
     {
       name: "amount_type",
       label: "amount_type",
@@ -152,6 +162,7 @@ const page = {
     if (!amountTypes.has(values.amount_type)) return req.res.locals.t("error_invalid_amount_type");
     if (!frequencies.has(values.frequency)) return req.res.locals.t("error_invalid_frequency");
     if (values.status !== "active" && values.status !== "inactive") return req.res.locals.t("error_invalid_status");
+    if (!values.labour_id) return { field: "labour_id", message: req.res.locals.t("error_select_labour") };
     if (!values.allowance_type) return req.res.locals.t("error_required_fields");
     if (values.amount == null || Number(values.amount) < 0 || !hasTwoDecimalsOrLess(values.amount)) return req.res.locals.t("error_invalid_rate_value");
     if (Number(values.amount) > 99999999.99) return req.res.locals.t("error_invalid_rate_value");
@@ -160,20 +171,19 @@ const page = {
     if (values.effective_from && values.effective_to && values.effective_to < values.effective_from)
       return { field: "effective_to", message: req.res.locals.t("error_invalid_date_range") };
 
-    const duplicateQ = knex("erp.employee_allowance_rules")
-      .where({
-        employee_id: values.employee_id,
-      })
+    const duplicateQ = knex("erp.labour_allowance_rules")
+      .where({ labour_id: values.labour_id })
       .whereRaw("lower(allowance_type)=lower(?)", [values.allowance_type]);
     if (isUpdate && id) duplicateQ.andWhereNot({ id });
     const duplicate = await duplicateQ.first();
-    if (duplicate) return req.res.locals.t("error_duplicate_allowance_rule");
+    if (duplicate) return req.res.locals.t("error_duplicate_labour_allowance_rule");
+
     const allowedBranchIds = getAllowedBranchIds(req);
     if (allowedBranchIds.length) {
-      const inScope = await knex("erp.employee_branch as eb")
-        .select("eb.employee_id")
-        .where("eb.employee_id", Number(values.employee_id || 0))
-        .whereIn("eb.branch_id", allowedBranchIds)
+      const inScope = await knex("erp.labour_branch as lb")
+        .select("lb.labour_id")
+        .where("lb.labour_id", Number(values.labour_id || 0))
+        .whereIn("lb.branch_id", allowedBranchIds)
         .first();
       if (!inScope) return req.res.locals.t("error_branch_out_of_scope");
     }

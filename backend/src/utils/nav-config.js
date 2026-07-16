@@ -450,6 +450,14 @@ const navConfig = [
             moduleGroup: "HR & Payroll",
             route: "/hr-payroll/labours/rates",
           },
+          {
+            key: "labour_allowances",
+            labelKey: "labour_allowances",
+            scopeType: "SCREEN",
+            scopeKey: "hr_payroll.labour_allowances",
+            moduleGroup: "HR & Payroll",
+            route: "/hr-payroll/labours/allowances",
+          },
         ],
       },
       {

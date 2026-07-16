@@ -920,6 +920,9 @@ const translations = {
     sales_commission_description:
       "Sales commission rules will be configured here per employee and product scope.",
     allowances_description: "Employee allowance rules will be configured here.",
+    labour_allowances: "Labour Allowances",
+    labour_allowances_description:
+      "Configure allowances per labour, with an adjustable effective-date window.",
     hr_screen_description:
       "Manage HR and payroll setup using the same universal workflow and approvals.",
     hr_screen_planned_note:
@@ -1049,6 +1052,11 @@ const translations = {
     error_invalid_frequency: "Invalid frequency selected.",
     error_duplicate_allowance_rule:
       "Allowance type already exists for this employee.",
+    error_duplicate_labour_allowance_rule:
+      "Allowance type already exists for this labour.",
+    error_invalid_date: "Please enter a valid date.",
+    error_invalid_date_range:
+      "The effective-to date cannot be earlier than the effective-from date.",
     error_duplicate_labour_rate_rule:
       "A similar labour rate rule already exists.",
     placeholder_allowance_type: "House, Conveyance, Mobile",
@@ -2286,6 +2294,14 @@ translations.ur = {
   allowance_type: "الاؤنس کی قسم",
   allowances: "الاؤنسز",
   allowances_description: "ملازم الاؤنس کے قواعد یہاں ترتیب دیے جائیں گے۔",
+  labour_allowances: "لیبر الاؤنسز",
+  labour_allowances_description:
+    "ہر لیبر کے لیے الاؤنسز مرتب کریں، ایک قابلِ تنظیم مؤثر تاریخ کی مدت کے ساتھ۔",
+  error_duplicate_labour_allowance_rule:
+    "اس لیبر کے لیے الاؤنس کی قسم پہلے سے موجود ہے۔",
+  error_invalid_date: "براہِ کرم درست تاریخ درج کریں۔",
+  error_invalid_date_range:
+    "مؤثر تا کی تاریخ مؤثر از کی تاریخ سے پہلے نہیں ہو سکتی۔",
   amount_type: "رقم کی قسم",
   amount_type_fixed: "فکسڈ",
   amount_type_percent_basic: "بنیادی کا %",

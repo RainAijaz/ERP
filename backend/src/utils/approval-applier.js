@@ -72,6 +72,7 @@ const LABOUR_BRANCH_TABLE = "erp.labour_branch";
 const LABOUR_DEPARTMENT_TABLE = "erp.labour_department";
 const EMPLOYEE_COMMISSION_TABLE = "erp.employee_commission_rules";
 const EMPLOYEE_ALLOWANCE_TABLE = "erp.employee_allowance_rules";
+const LABOUR_ALLOWANCE_TABLE = "erp.labour_allowance_rules";
 const LABOUR_RATE_TABLE = "erp.labour_rate_rules";
 const COMMISSION_BASIS_FIXED_PER_UNIT = "FIXED_PER_UNIT";
 let columnSupportCachePromise = null;
@@ -158,6 +159,11 @@ const toMoneyOrNull = (value) => {
   const n = Number(value);
   if (!Number.isFinite(n)) return null;
   return Number(n.toFixed(2));
+};
+const toDateOrNull = (value) => {
+  const raw = String(value == null ? "" : value).trim();
+  if (!raw) return null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : null;
 };
 const normalizeStatus = (value, fallback = "active") => {
   const raw = String(value || fallback)
@@ -1277,6 +1283,7 @@ const inferHrTarget = ({ entityType, request, newValue, oldValue }) => {
     return "bulk_commission";
   if (mode === "BULK_LABOUR_RATE_SKU_UPSERT") return "bulk_labour_rate";
   if (scopeKey === "hr_payroll.commissions") return "employee_commission_rule";
+  if (scopeKey === "hr_payroll.labour_allowances") return "labour_allowance_rule";
   if (scopeKey === "hr_payroll.allowances") return "employee_allowance_rule";
   if (scopeKey === "hr_payroll.labour_rates") return "labour_rate_rule";
   if (scopeKey === "hr_payroll.employees") return "employee_master";
@@ -1286,7 +1293,9 @@ const inferHrTarget = ({ entityType, request, newValue, oldValue }) => {
     keys.has("amount_type") ||
     keys.has("frequency")
   )
-    return "employee_allowance_rule";
+    return keys.has("labour_id") || entityType === "LABOUR"
+      ? "labour_allowance_rule"
+      : "employee_allowance_rule";
   if (
     keys.has("commission_basis") ||
     keys.has("reverse_on_returns") ||
@@ -1495,6 +1504,8 @@ const applyEmployeeAllowanceApproval = async (trx, request) => {
     amount_type: payload.amount_type || null,
     amount: toMoneyOrNull(payload.amount),
     frequency: payload.frequency || null,
+    effective_from: toDateOrNull(payload.effective_from),
+    effective_to: toDateOrNull(payload.effective_to),
     taxable: toBoolean(payload.taxable),
     status: normalizeStatus(payload.status, "active"),
   };
@@ -1510,6 +1521,49 @@ const applyEmployeeAllowanceApproval = async (trx, request) => {
   const id = Number(entityId || 0);
   if (!Number.isInteger(id) || id <= 0) return false;
   await trx(EMPLOYEE_ALLOWANCE_TABLE).where({ id }).update(row);
+  return true;
+};
+
+const applyLabourAllowanceApproval = async (trx, request) => {
+  const entityId = request?.entity_id;
+  const payload =
+    request?.new_value && typeof request.new_value === "object"
+      ? request.new_value
+      : null;
+  const action =
+    payload?._action ||
+    (!payload ? "delete" : entityId === "NEW" ? "create" : "update");
+
+  if (action === "delete") {
+    const id = Number(entityId || 0);
+    if (!Number.isInteger(id) || id <= 0) return false;
+    await trx(LABOUR_ALLOWANCE_TABLE).where({ id }).del();
+    return true;
+  }
+
+  const row = {
+    labour_id: toNullableInt(payload.labour_id),
+    allowance_type: payload.allowance_type || null,
+    amount_type: payload.amount_type || null,
+    amount: toMoneyOrNull(payload.amount),
+    frequency: payload.frequency || null,
+    effective_from: toDateOrNull(payload.effective_from),
+    effective_to: toDateOrNull(payload.effective_to),
+    taxable: toBoolean(payload.taxable),
+    status: normalizeStatus(payload.status, "active"),
+  };
+
+  if (action === "create") {
+    const [created] = await trx(LABOUR_ALLOWANCE_TABLE)
+      .insert(row)
+      .returning(["id"]);
+    const newId = created && typeof created === "object" ? created.id : created;
+    return { applied: true, entityId: String(newId) };
+  }
+
+  const id = Number(entityId || 0);
+  if (!Number.isInteger(id) || id <= 0) return false;
+  await trx(LABOUR_ALLOWANCE_TABLE).where({ id }).update(row);
   return true;
 };
 
@@ -1798,6 +1852,8 @@ const applyHrApprovalChange = async (trx, request) => {
     return applyBulkLabourRateApproval(trx, request);
   if (target === "employee_allowance_rule")
     return applyEmployeeAllowanceApproval(trx, request);
+  if (target === "labour_allowance_rule")
+    return applyLabourAllowanceApproval(trx, request);
   if (target === "employee_commission_rule")
     return applyEmployeeCommissionApproval(trx, request);
   if (target === "labour_rate_rule")
