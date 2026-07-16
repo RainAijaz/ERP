@@ -316,6 +316,7 @@
             <tr>
               <th class="px-4 py-3 text-left"><%= t("branch") %></th>
               <th class="px-4 py-3 text-right"><%= t("todays_sales") %></th>
+              <th class="px-4 py-3 text-right"><%= t("yesterdays_sales") %></th>
               <th class="px-4 py-3 text-right"><%= t("monthly_revenue") %></th>
               <th class="px-4 py-3 text-right"><%= t("dozens_sold_month") %></th>
               <th class="px-4 py-3 text-right"><%= t("accounts_receivable") %></th>
@@ -327,6 +328,7 @@
               <tr class="hover:bg-slate-50/70">
                 <td class="px-4 py-3 font-medium text-slate-800"><%= branchLabel(r) %></td>
                 <td class="px-4 py-3 text-right tabular-nums text-slate-700"><%= money0(r.todaySales) %></td>
+                <td class="px-4 py-3 text-right tabular-nums text-slate-700"><%= money0(r.yesterdaySales) %></td>
                 <td class="px-4 py-3 text-right tabular-nums text-slate-700"><%= money0(r.monthRevenue) %></td>
                 <td class="px-4 py-3 text-right tabular-nums text-slate-700"><%= formatNumberDisplay(r.dozensMonth, { decimals: 1, fallback: "0" }) %></td>
                 <td class="px-4 py-3 text-right tabular-nums text-cyan-700"><%= money0(r.receivable) %></td>
@@ -339,6 +341,7 @@
               <tr>
                 <td class="px-4 py-3 uppercase tracking-wide"><%= t("total") %></td>
                 <td class="px-4 py-3 text-right tabular-nums"><%= money0(branchTotals.todaySales) %></td>
+                <td class="px-4 py-3 text-right tabular-nums"><%= money0(branchTotals.yesterdaySales) %></td>
                 <td class="px-4 py-3 text-right tabular-nums"><%= money0(branchTotals.monthRevenue) %></td>
                 <td class="px-4 py-3 text-right tabular-nums"><%= formatNumberDisplay(branchTotals.dozensMonth, { decimals: 1, fallback: "0" }) %></td>
                 <td class="px-4 py-3 text-right tabular-nums text-cyan-700"><%= money0(branchTotals.receivable) %></td>

@@ -459,7 +459,13 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
 const loadBranchBreakdown = async ({ knex }) => {
   const now = new Date();
   const todayKey = toDateKey(now);
+  const yesterdayKey = toDateKey(
+    new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1),
+  );
   const startOfMonthKey = toDateKey(new Date(now.getFullYear(), now.getMonth(), 1));
+  // On the 1st of the month yesterday falls in the prior month, so widen the
+  // revenue scan low bound to whichever key is earlier.
+  const revenueFromKey = yesterdayKey < startOfMonthKey ? yesterdayKey : startOfMonthKey;
 
   const approvedVoucherScope = (qb) => {
     qb.leftJoin("erp.gl_batch as gb", "gb.id", "ge.batch_id")
@@ -478,7 +484,7 @@ const loadBranchBreakdown = async ({ knex }) => {
         .join("erp.account_groups as ag", "ag.id", "a.subgroup_id")
         .modify(approvedVoucherScope)
         .where("ag.account_type", "REVENUE")
-        .andWhere("ge.entry_date", ">=", startOfMonthKey)
+        .andWhere("ge.entry_date", ">=", revenueFromKey)
         .andWhere("ge.entry_date", "<=", todayKey)
         .groupBy("ge.branch_id")
         .select("ge.branch_id")
@@ -489,7 +495,16 @@ const loadBranchBreakdown = async ({ knex }) => {
           ),
         )
         .select(
-          knex.raw("COALESCE(SUM(COALESCE(ge.cr,0)-COALESCE(ge.dr,0)),0) as month"),
+          knex.raw(
+            "COALESCE(SUM(CASE WHEN ge.entry_date = ? THEN COALESCE(ge.cr,0)-COALESCE(ge.dr,0) ELSE 0 END),0) as yesterday",
+            [yesterdayKey],
+          ),
+        )
+        .select(
+          knex.raw(
+            "COALESCE(SUM(CASE WHEN ge.entry_date >= ? THEN COALESCE(ge.cr,0)-COALESCE(ge.dr,0) ELSE 0 END),0) as month",
+            [startOfMonthKey],
+          ),
         ),
       // Dozens sold month-to-date, per branch.
       knex("erp.voucher_line as vl")
@@ -546,6 +561,7 @@ const loadBranchBreakdown = async ({ knex }) => {
         name: b.name,
         name_ur: b.name_ur || b.name,
         todaySales: 0,
+        yesterdaySales: 0,
         monthRevenue: 0,
         dozensMonth: 0,
         receivable: 0,
@@ -555,13 +571,14 @@ const loadBranchBreakdown = async ({ knex }) => {
     const ensure = (id) => {
       const key = Number(id);
       if (!byBranch.has(key)) {
-        byBranch.set(key, { branch_id: key, name: `#${key}`, name_ur: `#${key}`, todaySales: 0, monthRevenue: 0, dozensMonth: 0, receivable: 0, payable: 0 });
+        byBranch.set(key, { branch_id: key, name: `#${key}`, name_ur: `#${key}`, todaySales: 0, yesterdaySales: 0, monthRevenue: 0, dozensMonth: 0, receivable: 0, payable: 0 });
       }
       return byBranch.get(key);
     };
     for (const r of revenueRows) {
       const row = ensure(r.branch_id);
       row.todaySales = toNumber(r.today);
+      row.yesterdaySales = toNumber(r.yesterday);
       row.monthRevenue = toNumber(r.month);
     }
     for (const r of dozenRows) ensure(r.branch_id).dozensMonth = Math.round(toNumber(r.dozens) * 10) / 10;
@@ -572,13 +589,14 @@ const loadBranchBreakdown = async ({ knex }) => {
     const totals = rows.reduce(
       (acc, r) => {
         acc.todaySales += r.todaySales;
+        acc.yesterdaySales += r.yesterdaySales;
         acc.monthRevenue += r.monthRevenue;
         acc.dozensMonth += r.dozensMonth;
         acc.receivable += r.receivable;
         acc.payable += r.payable;
         return acc;
       },
-      { todaySales: 0, monthRevenue: 0, dozensMonth: 0, receivable: 0, payable: 0 },
+      { todaySales: 0, yesterdaySales: 0, monthRevenue: 0, dozensMonth: 0, receivable: 0, payable: 0 },
     );
     totals.dozensMonth = Math.round(totals.dozensMonth * 10) / 10;
     return { rows, totals };
