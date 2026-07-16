@@ -28,6 +28,12 @@ const {
   registerApprovalStream,
   ackApprovalDecisions,
 } = require("../utils/approval-events");
+const {
+  listNotifications,
+  markNotificationRead,
+  markAllNotificationsRead,
+  backfillPendingApprovalNotifications,
+} = require("../utils/in-app-notifications");
 
 const router = express.Router();
 
@@ -44,6 +50,14 @@ router.get("/events/approvals", (req, res) => {
     return res.status(401).end();
   }
   registerApprovalStream(req, res);
+  // Safety net: pick up any recent pending approvals that weren't delivered by
+  // an instant trigger (e.g. SKU screen inserts). Registered above first so the
+  // live push in notifyPendingApproval reaches this now-connected user.
+  backfillPendingApprovalNotifications(knex).catch((err) => {
+    console.error("[notifications] backfill on stream connect failed", {
+      error: err?.message || err,
+    });
+  });
 });
 
 router.post("/events/approvals/ack", (req, res) => {
@@ -52,6 +66,50 @@ router.post("/events/approvals/ack", (req, res) => {
   }
   ackApprovalDecisions(req.user.id);
   res.json({ ok: true });
+});
+
+// In-ERP notifications (bell + unread count). All keyed off req.user.id.
+router.get("/notifications", async (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+  try {
+    // Generate any missing notifications for recent pending approvals before
+    // listing, so paths without an instant trigger still surface here.
+    await backfillPendingApprovalNotifications(knex);
+    const data = await listNotifications(knex, req.user.id);
+    res.json({ ok: true, ...data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/notifications/:id/read", async (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return res.status(400).json({ error: "Invalid notification id" });
+  }
+  try {
+    await markNotificationRead(knex, req.user.id, id);
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/notifications/read-all", async (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+  try {
+    await markAllNotificationsRead(knex, req.user.id);
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
 });
 
 router.get("/whoami", (req, res) => {

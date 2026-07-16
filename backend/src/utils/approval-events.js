@@ -16,13 +16,19 @@ const sendEvent = (res, event, data) => {
   const payload = typeof data === "string" ? data : JSON.stringify(data);
   res.write(`event: ${event}\n`);
   res.write(`data: ${payload}\n\n`);
+  // Flush past the compression middleware so small SSE events reach the client
+  // immediately instead of sitting in the gzip buffer.
+  res.flush?.();
 };
 
 const registerApprovalStream = (req, res) => {
   res.status(200);
   res.setHeader("Content-Type", "text/event-stream");
-  res.setHeader("Cache-Control", "no-cache");
+  // no-transform tells the compression middleware to pass the stream through
+  // uncompressed; X-Accel-Buffering disables proxy buffering (e.g. nginx).
+  res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
   res.flushHeaders?.();
 
   const userId = req.user?.id;
@@ -46,6 +52,7 @@ const registerApprovalStream = (req, res) => {
   const keepAlive = setInterval(() => {
     if (res.writableEnded) return;
     res.write(": ping\n\n");
+    res.flush?.();
   }, 25000);
 
   req.on("close", () => {
@@ -58,6 +65,18 @@ const registerApprovalStream = (req, res) => {
       }
     }
   });
+};
+
+// Generic live push to a user's open SSE connections. Returns true if the
+// user had at least one live connection. Unlike notifyApprovalDecision this
+// does NOT queue for offline users — callers that need durability (e.g.
+// in-app notifications) persist to the DB and rehydrate on page load instead.
+const notifyUser = ({ userId, event, payload }) => {
+  if (!userId || !event) return false;
+  const set = connections.get(userId);
+  if (!set || set.size === 0) return false;
+  set.forEach((res) => sendEvent(res, event, payload));
+  return true;
 };
 
 const notifyApprovalDecision = ({ userId, payload }) => {
@@ -76,6 +95,7 @@ const notifyApprovalDecision = ({ userId, payload }) => {
 module.exports = {
   registerApprovalStream,
   notifyApprovalDecision,
+  notifyUser,
   ackApprovalDecisions: (userId) => {
     if (!userId) return;
     pendingEvents.delete(userId);

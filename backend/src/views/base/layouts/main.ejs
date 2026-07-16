@@ -184,6 +184,38 @@
             <div class="flex flex-wrap items-center gap-3">
               <!-- Main navigation links -->
               <%- include("../partials/navbar") %>
+              <!-- Notifications bell -->
+              <div class="relative" data-notif-root>
+                <button
+                  type="button"
+                  data-notif-toggle
+                  aria-label="<%= t('notifications') %>"
+                  aria-haspopup="true"
+                  aria-expanded="false"
+                  class="relative inline-flex items-center justify-center rounded-full border border-slate-200 bg-white p-1.5 text-slate-600 shadow-sm transition hover:border-accent/40 hover:text-accent"
+                >
+                  <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 0 0-4-5.7V5a2 2 0 1 0-4 0v.3A6 6 0 0 0 6 11v3.2a2 2 0 0 1-.6 1.4L4 17h5" />
+                    <path d="M9 17a3 3 0 0 0 6 0" />
+                  </svg>
+                  <span
+                    data-notif-badge
+                    class="absolute -right-1 -top-1 hidden min-w-[18px] rounded-full bg-rose-500 px-1 text-center text-[10px] font-semibold leading-[18px] text-white"
+                  ></span>
+                </button>
+                <div
+                  data-notif-panel
+                  class="absolute right-0 top-full z-50 mt-2 hidden w-80 max-w-[92vw] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl"
+                >
+                  <div class="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                    <span class="text-xs font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("notifications") %></span>
+                    <button type="button" data-notif-readall class="text-[10px] font-semibold uppercase tracking-[0.14em] text-accent hover:text-accent/80"><%= t("mark_all_read") %></button>
+                  </div>
+                  <div data-notif-list class="max-h-80 overflow-y-auto">
+                    <p data-notif-empty class="px-4 py-6 text-center text-xs text-slate-400"><%= t("no_notifications") %></p>
+                  </div>
+                </div>
+              </div>
               <!-- Dark mode toggle -->
               <button
                 id="theme-toggle"
@@ -843,6 +875,7 @@
         const csrfToken = "<%= csrfToken %>";
         const OWNER_KEY = "approval_live_owner_v1";
         const BROADCAST_KEY = "approval_live_event_v1";
+        const NOTIF_BROADCAST_KEY = "approval_live_notif_v1";
         const DISMISS_KEY = "approval_live_dismissed";
         const OWNER_TTL_MS = 45000;
         const OWNER_HEARTBEAT_MS = 12000;
@@ -918,6 +951,20 @@
               if (storageEnabled) {
                 localStorage.setItem(
                   BROADCAST_KEY,
+                  JSON.stringify({ tabId, ts: now(), payload }),
+                );
+              }
+            } catch (err) {
+              // ignore
+            }
+          });
+          source.addEventListener("notification", (event) => {
+            try {
+              const payload = JSON.parse(event.data);
+              window.erpNotifyBell?.onLive(payload);
+              if (storageEnabled) {
+                localStorage.setItem(
+                  NOTIF_BROADCAST_KEY,
                   JSON.stringify({ tabId, ts: now(), payload }),
                 );
               }
@@ -1029,6 +1076,13 @@
             renderToast(packet.payload);
             return;
           }
+          if (event.key === NOTIF_BROADCAST_KEY) {
+            const packet = safeJsonParse(event.newValue);
+            if (!packet || packet.tabId === tabId || !packet.payload) return;
+            // Other tabs update their bell (badge + list) but skip the toast.
+            window.erpNotifyBell?.onRemote(packet.payload);
+            return;
+          }
           if (event.key === OWNER_KEY && document.visibilityState !== "hidden") {
             tryClaimOwner();
           }
@@ -1131,6 +1185,210 @@
         if (window.location.pathname.startsWith("/administration/approvals")) {
           ackApproval();
         }
+      })();
+    </script>
+    <script>
+      (function () {
+        // Notifications bell: hydrate from the DB, live-update from the SSE
+        // stream (via window.erpNotifyBell), and let the user open / mark read.
+        const root = document.querySelector("[data-notif-root]");
+        if (!root) return;
+        const csrfToken = "<%= csrfToken %>";
+        const LABELS = {
+          newApproval: "<%= t('new_approval_request') %>",
+          open: "<%= t('open') %>",
+          empty: "<%= t('no_notifications') %>",
+        };
+        const toggleBtn = root.querySelector("[data-notif-toggle]");
+        const panel = root.querySelector("[data-notif-panel]");
+        const badge = root.querySelector("[data-notif-badge]");
+        const list = root.querySelector("[data-notif-list]");
+        const readAllBtn = root.querySelector("[data-notif-readall]");
+
+        const escapeHtml = (value) =>
+          String(value == null ? "" : value)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+
+        const displayTitle = (item) =>
+          item && item.type === "APPROVAL_PENDING"
+            ? LABELS.newApproval
+            : (item && item.title) || LABELS.newApproval;
+
+        const setBadge = (count) => {
+          const n = Number(count) || 0;
+          if (n > 0) {
+            badge.textContent = n > 99 ? "99+" : String(n);
+            badge.classList.remove("hidden");
+          } else {
+            badge.textContent = "";
+            badge.classList.add("hidden");
+          }
+        };
+
+        const post = (url) =>
+          fetch(url, {
+            method: "POST",
+            headers: {
+              "x-csrf-token": csrfToken,
+              "X-Requested-With": "XMLHttpRequest",
+            },
+            credentials: "same-origin",
+          }).catch(() => {});
+
+        const buildItem = (item) => {
+          const el = document.createElement("button");
+          el.type = "button";
+          el.setAttribute("data-notif-item", "");
+          el.setAttribute("data-id", String(item.id));
+          el.className =
+            "block w-full border-b border-slate-100 px-4 py-3 text-left transition hover:bg-slate-50 " +
+            (item.is_read ? "opacity-60" : "bg-accent/5");
+          el.innerHTML = `
+            <div class="flex items-start gap-2">
+              <span class="mt-1 h-2 w-2 flex-shrink-0 rounded-full ${
+                item.is_read ? "bg-transparent" : "bg-accent"
+              }"></span>
+              <div class="min-w-0">
+                <p class="truncate text-xs font-semibold text-slate-700">${escapeHtml(
+                  displayTitle(item),
+                )}</p>
+                <p class="mt-0.5 line-clamp-2 text-xs text-slate-500">${escapeHtml(
+                  item.body,
+                )}</p>
+              </div>
+            </div>`;
+          el.addEventListener("click", () => {
+            if (item.id) post("/notifications/" + item.id + "/read");
+            if (item.link) window.location.href = item.link;
+          });
+          return el;
+        };
+
+        const clearEmpty = () => {
+          const empty = list.querySelector("[data-notif-empty]");
+          if (empty) empty.remove();
+        };
+
+        const showEmptyIfNeeded = () => {
+          if (list.querySelector("[data-notif-item]")) return;
+          if (list.querySelector("[data-notif-empty]")) return;
+          const p = document.createElement("p");
+          p.setAttribute("data-notif-empty", "");
+          p.className = "px-4 py-6 text-center text-xs text-slate-400";
+          p.textContent = LABELS.empty;
+          list.appendChild(p);
+        };
+
+        const prependItem = (item) => {
+          if (!item || !item.id) return;
+          if (list.querySelector('[data-notif-item][data-id="' + item.id + '"]'))
+            return;
+          clearEmpty();
+          list.insertBefore(buildItem(item), list.firstChild);
+        };
+
+        const renderList = (items) => {
+          list.innerHTML = "";
+          (items || []).forEach((item) => list.appendChild(buildItem(item)));
+          showEmptyIfNeeded();
+        };
+
+        const refresh = () => {
+          fetch("/notifications", {
+            headers: { Accept: "application/json" },
+            credentials: "same-origin",
+          })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((data) => {
+              if (!data) return;
+              setBadge(data.unreadCount);
+              renderList(data.items);
+            })
+            .catch(() => {});
+        };
+
+        // ---- Live toast ----
+        const showToast = (payload) => {
+          const wrap = document.createElement("div");
+          wrap.className = "fixed right-4 top-4 z-[95] w-[92vw] max-w-sm";
+          wrap.setAttribute("data-notif-toast", "true");
+          wrap.innerHTML = `
+            <div class="flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
+              <div class="mt-0.5 rounded-full bg-accent/10 p-2 text-accent">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 0 0-4-5.7V5a2 2 0 1 0-4 0v.3A6 6 0 0 0 6 11v3.2a2 2 0 0 1-.6 1.4L4 17h5" />
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M9 17a3 3 0 0 0 6 0" />
+                </svg>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-xs font-semibold uppercase tracking-[0.16em] text-slate-700">${escapeHtml(
+                  displayTitle(payload),
+                )}</p>
+                <p class="mt-1 text-sm text-slate-700"></p>
+                ${
+                  payload.link
+                    ? `<a data-notif-open class="mt-2 inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-accent hover:text-accent/80" href="${escapeHtml(
+                        payload.link,
+                      )}">${escapeHtml(LABELS.open)} →</a>`
+                    : ""
+                }
+              </div>
+              <button type="button" data-notif-close class="text-slate-400 hover:text-slate-600" aria-label="Close">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>`;
+          wrap.querySelector("p.text-sm").textContent = payload.body || "";
+          const remove = () => wrap.remove();
+          wrap.querySelector("[data-notif-close]").addEventListener("click", remove);
+          wrap
+            .querySelector("[data-notif-open]")
+            ?.addEventListener("click", () => {
+              if (payload.id) post("/notifications/" + payload.id + "/read");
+            });
+          document.body.appendChild(wrap);
+          setTimeout(remove, 6000);
+        };
+
+        // ---- Panel open/close ----
+        const setOpen = (open) => {
+          panel.classList.toggle("hidden", !open);
+          toggleBtn.setAttribute("aria-expanded", open ? "true" : "false");
+        };
+        toggleBtn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          setOpen(panel.classList.contains("hidden"));
+        });
+        document.addEventListener("click", (e) => {
+          if (!root.contains(e.target)) setOpen(false);
+        });
+        document.addEventListener("keydown", (e) => {
+          if (e.key === "Escape") setOpen(false);
+        });
+        readAllBtn.addEventListener("click", () => {
+          post("/notifications/read-all").then(() => refresh());
+        });
+
+        // ---- Public hooks used by the SSE stream IIFE ----
+        window.erpNotifyBell = {
+          onLive: (payload) => {
+            prependItem({ ...payload, is_read: false });
+            setBadge(payload.unreadCount);
+            showToast(payload);
+          },
+          onRemote: (payload) => {
+            prependItem({ ...payload, is_read: false });
+            setBadge(payload.unreadCount);
+          },
+          refresh,
+        };
+
+        refresh();
       })();
     </script>
     <script>

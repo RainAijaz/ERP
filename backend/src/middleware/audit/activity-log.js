@@ -1,6 +1,9 @@
 const knex = require("../../db/knex");
 const { buildAuditContext } = require("../../utils/activity-log-context");
 const { insertActivityLog } = require("../../utils/audit-log");
+const {
+  notifyPendingApprovalPostCommit,
+} = require("../../utils/in-app-notifications");
 
 // Writes audit logs for sensitive events (rates, stock, vouchers, permissions).
 module.exports = (req, res, next) => {
@@ -21,6 +24,15 @@ module.exports = (req, res, next) => {
     } = req.auditContext;
 
     if (!entityType || !entityId || !action) return;
+
+    // If this audited action created a pending approval request, fan out an
+    // in-ERP notification to the approvers. Runs post-response (post-commit)
+    // so the request row is visible; the notifier self-guards on
+    // status='PENDING' and idempotency, so decisions / re-audits are no-ops.
+    const approvalRequestId = context?.approval_request_id;
+    if (approvalRequestId) {
+      notifyPendingApprovalPostCommit({ knex, approvalRequestId });
+    }
 
     try {
       await insertActivityLog(knex, {

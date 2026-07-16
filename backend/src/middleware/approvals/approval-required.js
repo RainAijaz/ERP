@@ -6,6 +6,9 @@ const { insertActivityLog } = require("../../utils/audit-log");
 const {
   notifyPendingApprovalAdmins,
 } = require("../../utils/approval-notifications");
+const {
+  notifyPendingApproval,
+} = require("../../utils/in-app-notifications");
 
 const resolveRequestBaseUrl = (req) => {
   if (!req || typeof req.get !== "function") return null;
@@ -86,6 +89,17 @@ module.exports = async (req, res, next) => {
       t: res.locals.t,
     }).catch((err) => {
       console.error("[approval-required] admin email notify failed", {
+        approvalRequestId: req.approvalRequestId,
+        entityType,
+        error: err?.message || err,
+      });
+    });
+
+    notifyPendingApproval({
+      knex,
+      approvalRequestId: req.approvalRequestId,
+    }).catch((err) => {
+      console.error("[approval-required] in-app notify failed", {
         approvalRequestId: req.approvalRequestId,
         entityType,
         error: err?.message || err,

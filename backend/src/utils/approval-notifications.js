@@ -114,6 +114,75 @@ const getActiveAdminEmails = async (knex) => {
   ]);
 };
 
+// Resolves the user IDs that should be notified about pending approvals.
+// Mirrors getActiveAdminEmails exactly (same admin-role + role_permissions +
+// user_permissions_override on 'administration.approvals' logic) but returns
+// numeric user IDs for in-app notifications instead of email addresses.
+const getActiveApprovalUserIds = async (knex) => {
+  const normalizeIds = (rows = []) =>
+    Array.from(
+      new Set(
+        rows
+          .map((row) => Number(row?.id))
+          .filter((id) => Number.isInteger(id) && id > 0),
+      ),
+    );
+
+  const adminRows = await knex("erp.users")
+    .join(
+      "erp.role_templates",
+      "erp.role_templates.id",
+      "erp.users.primary_role_id",
+    )
+    .select("erp.users.id")
+    .whereRaw(
+      "lower(trim(erp.role_templates.name)) in ('admin', 'administrator')",
+    )
+    .andWhereRaw("lower(trim(erp.users.status)) = 'active'");
+
+  const scopeRow = await knex("erp.permission_scope_registry")
+    .select("id")
+    .where({
+      scope_type: "SCREEN",
+      scope_key: "administration.approvals",
+    })
+    .first();
+
+  if (!scopeRow?.id) {
+    return normalizeIds(adminRows);
+  }
+
+  const rolePermissionRows = await knex("erp.users as u")
+    .join("erp.role_permissions as rp", "rp.role_id", "u.primary_role_id")
+    .select("u.id")
+    .where("rp.scope_id", scopeRow.id)
+    .andWhere((builder) => {
+      builder
+        .where("rp.can_approve", true)
+        .orWhere("rp.can_view", true)
+        .orWhere("rp.can_navigate", true);
+    })
+    .andWhereRaw("lower(trim(u.status)) = 'active'");
+
+  const userOverrideRows = await knex("erp.users as u")
+    .join("erp.user_permissions_override as upo", "upo.user_id", "u.id")
+    .select("u.id")
+    .where("upo.scope_id", scopeRow.id)
+    .andWhere((builder) => {
+      builder
+        .where("upo.can_approve", true)
+        .orWhere("upo.can_view", true)
+        .orWhere("upo.can_navigate", true);
+    })
+    .andWhereRaw("lower(trim(u.status)) = 'active'");
+
+  return normalizeIds([
+    ...adminRows,
+    ...rolePermissionRows,
+    ...userOverrideRows,
+  ]);
+};
+
 const notifyPendingApprovalAdmins = async ({
   knex,
   approvalRequestId,
@@ -211,5 +280,7 @@ const notifyPendingApprovalAdmins = async ({
 
 module.exports = {
   getActiveAdminEmails,
+  getActiveApprovalUserIds,
   notifyPendingApprovalAdmins,
+  resolveBaseUrl,
 };

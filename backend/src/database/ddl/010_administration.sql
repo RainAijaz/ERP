@@ -512,3 +512,46 @@ CREATE TABLE IF NOT EXISTS erp.approval_request (
   (status <> 'PENDING' AND decided_by IS NOT NULL AND decided_at IS NOT NULL)
   )
 );
+
+/* ============================================================================
+   erp.notification
+   ----------------------------------------------------------------------------
+   In-ERP notifications (bell + unread count). Fan-out: one row per recipient.
+   Currently produced when an approval request is created (type
+   'APPROVAL_PENDING'); the link deep-links to the pending request.
+   Live delivery is via SSE (see utils/approval-events.js); this table is the
+   durable layer that survives reloads / offline recipients.
+   ============================================================================ */
+
+CREATE TABLE IF NOT EXISTS erp.notification (
+  id                  bigserial PRIMARY KEY,
+
+  -- Recipient of the notification.
+  user_id             bigint NOT NULL REFERENCES erp.users(id) ON DELETE CASCADE,
+
+  -- Notification category, e.g. 'APPROVAL_PENDING'.
+  type                text NOT NULL,
+
+  -- Optional link back to the source approval request.
+  approval_request_id bigint REFERENCES erp.approval_request(id) ON DELETE CASCADE,
+  branch_id           bigint REFERENCES erp.branches(id) ON DELETE SET NULL,
+
+  title               text,
+  body                text,
+
+  -- Deep-link URL the client navigates to when the notification is opened.
+  link                text,
+
+  is_read             boolean NOT NULL DEFAULT false,
+  read_at             timestamptz,
+  created_at          timestamptz NOT NULL DEFAULT now()
+);
+
+-- Drives the unread-count and recent-list queries (per recipient).
+CREATE INDEX IF NOT EXISTS idx_notification_user_unread_created
+  ON erp.notification (user_id, is_read, created_at);
+
+-- Idempotent fan-out: at most one notification per (request, recipient).
+-- Multiple NULL approval_request_id rows remain allowed (NULLs are distinct).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_notification_request_user
+  ON erp.notification (approval_request_id, user_id);

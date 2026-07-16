@@ -1076,5 +1076,22 @@
       const requestType = String(btn.getAttribute("data-request-type") || "").toUpperCase();
       open({ action, oldValue: null, newValue: null, id, status });
     });
+
+    // Deep-link: when arrived via ?request_id=<id> (from an email or in-ERP
+    // notification), auto-open that request's modal. Falls back to the list if
+    // the request isn't on the current page/filter.
+    try {
+      const requestedId = new URLSearchParams(window.location.search).get(
+        "request_id",
+      );
+      if (requestedId) {
+        const target = document.querySelector(
+          '[data-approval-view][data-approval-id="' + requestedId + '"]',
+        );
+        if (target) target.click();
+      }
+    } catch (err) {
+      // ignore
+    }
   })();
 </script>
