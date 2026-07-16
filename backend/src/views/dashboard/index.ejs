@@ -97,6 +97,7 @@
     { show: true,                href: "/hr-payroll",                          label: t("employees_absent_today"),           count: alerts.employeesAbsent,          tone: "slate", icon: "users" },
     { show: canProduction,       href: "/reports/production/production-report", label: t("production_behind_schedule"),      count: alerts.productionBehindSchedule, tone: "slate", icon: "gauge" },
     { show: canPurchase,         href: "/reports/purchases/pending-grn",       label: t("purchase_orders_awaiting_receipt"), count: alerts.poAwaitingReceipt,        tone: "blue",  icon: "inbox" },
+    { show: isAdminUser,         href: "/administration/whatsapp-notifications", label: t("whatsapp_messages_not_sent"),     count: alerts.failedWhatsappNotifications, tone: "rose", icon: "warn" },
   ].filter((c) => c.show);
 
   const fmtCount = (v) => (v === null || v === undefined ? null : formatNumberDisplay(v, { decimals: 0 }));

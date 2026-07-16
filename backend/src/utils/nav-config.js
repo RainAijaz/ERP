@@ -66,6 +66,14 @@ const navConfig = [
             moduleGroup: "Administration",
             route: "/administration/audit-logs",
           },
+          {
+            key: "whatsapp_notifications",
+            labelKey: "whatsapp_notification_failures",
+            scopeType: "SCREEN",
+            scopeKey: "administration.whatsapp_notifications",
+            moduleGroup: "Administration",
+            route: "/administration/whatsapp-notifications",
+          },
         ],
       },
       {

@@ -1,0 +1,129 @@
+<%
+  const fmtDateTime = (value) => {
+    if (!value) return "-";
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return "-";
+    return d.toLocaleString("en-PK", {
+      timeZone: "Asia/Karachi",
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    });
+  };
+  const fmtAmount = (value) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? `Rs. ${n.toLocaleString("en-PK")}` : "-";
+  };
+  const kindLabel = (kind) => {
+    const k = String(kind || "").toUpperCase();
+    if (k === "SUPPLIER") return t("supplier");
+    if (k === "LABOUR") return t("labour");
+    if (k === "EMPLOYEE") return t("employee");
+    return kind || "-";
+  };
+  const reasonLabel = (reason) => {
+    const r = String(reason || "").toLowerCase();
+    if (r === "no_phone") return t("wa_reason_no_phone");
+    if (r === "invalid_phone") return t("wa_reason_invalid_phone");
+    if (r === "not_on_whatsapp") return t("wa_reason_not_on_whatsapp");
+    if (r === "client_unavailable") return t("wa_reason_client_unavailable");
+    return reason || "-";
+  };
+%>
+
+<div class="mx-auto w-full max-w-7xl space-y-6">
+  <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
+    <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div class="space-y-1">
+        <h1 class="text-2xl font-display text-ink"><%= t("whatsapp_notification_failures") %></h1>
+        <p class="text-sm text-muted"><%= t("whatsapp_notification_failures_description") %></p>
+      </div>
+      <div class="flex flex-wrap gap-2">
+        <a href="?status=FAILED" class="rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] transition <%= filters.status === 'FAILED' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-800' %>">
+          <%= t("wa_filter_failed") %>
+        </a>
+        <a href="?status=ALL" class="rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] transition <%= filters.status === 'ALL' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-800' %>">
+          <%= t("wa_filter_all") %>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <div class="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <table class="min-w-full text-left text-sm">
+      <thead class="bg-slate-50 text-xs font-semibold uppercase text-slate-500">
+        <tr>
+          <th class="px-4 py-3"><%= t("date") %></th>
+          <th class="px-4 py-3"><%= t("recipient") %></th>
+          <th class="px-4 py-3"><%= t("phone") %></th>
+          <th class="px-4 py-3 text-right"><%= t("amount") %></th>
+          <th class="px-4 py-3"><%= t("voucher") %></th>
+          <th class="px-4 py-3"><%= t("branch") %></th>
+          <th class="px-4 py-3"><%= t("status") %></th>
+          <th class="px-4 py-3"><%= t("reason") %></th>
+          <th class="px-4 py-3"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100">
+        <% if (!rows || !rows.length) { %>
+          <tr>
+            <td colspan="9" class="px-4 py-8 text-center text-sm text-slate-400"><%= t("no_data_available") %></td>
+          </tr>
+        <% } else { %>
+          <% rows.forEach((row) => { %>
+            <tr class="<%= row.status === 'FAILED' && !row.resolved_at ? 'bg-rose-50/40' : '' %>">
+              <td class="px-4 py-3 whitespace-nowrap text-slate-600"><%= fmtDateTime(row.created_at) %></td>
+              <td class="px-4 py-3">
+                <div class="font-semibold text-slate-800"><%= row.recipient_name || "-" %></div>
+                <div class="text-xs text-slate-400"><%= kindLabel(row.recipient_kind) %></div>
+              </td>
+              <td class="px-4 py-3 whitespace-nowrap text-slate-600"><%= row.phone_raw || "-" %></td>
+              <td class="px-4 py-3 text-right whitespace-nowrap text-slate-700"><%= fmtAmount(row.amount) %></td>
+              <td class="px-4 py-3 whitespace-nowrap text-slate-600">
+                <%= (row.voucher_type_code || "").replace(/_/g, " ") %><%= row.voucher_no ? ` #${row.voucher_no}` : "" %>
+              </td>
+              <td class="px-4 py-3 whitespace-nowrap text-slate-600"><%= row.branch_name || "-" %></td>
+              <td class="px-4 py-3 whitespace-nowrap">
+                <% if (row.status === 'SENT') { %>
+                  <span class="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700"><%= t("wa_status_sent") %></span>
+                <% } else if (row.resolved_at) { %>
+                  <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500"><%= t("wa_status_resolved") %></span>
+                <% } else { %>
+                  <span class="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700"><%= t("wa_status_failed") %></span>
+                <% } %>
+              </td>
+              <td class="px-4 py-3 text-slate-600"><%= row.status === 'FAILED' ? reasonLabel(row.failure_reason) : "-" %></td>
+              <td class="px-4 py-3 whitespace-nowrap text-right">
+                <% if (row.status === 'FAILED' && !row.resolved_at) { %>
+                  <form method="POST" action="<%= basePath %>/<%= row.id %>/resolve" class="inline">
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button type="submit" class="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-800">
+                      <%= t("wa_mark_handled") %>
+                    </button>
+                  </form>
+                <% } %>
+              </td>
+            </tr>
+          <% }); %>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+
+  <% if (pagination && pagination.totalPages > 1) { %>
+    <div class="flex items-center justify-between text-sm text-slate-500">
+      <span><%= t("page") %> <%= pagination.page %> / <%= pagination.totalPages %> — <%= pagination.total %></span>
+      <div class="flex gap-2">
+        <% if (pagination.hasPrev) { %>
+          <a href="<%= pagination.prevUrl %>" class="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-600 hover:border-slate-300"><%= t("previous") %></a>
+        <% } %>
+        <% if (pagination.hasNext) { %>
+          <a href="<%= pagination.nextUrl %>" class="rounded-full border border-slate-200 bg-white px-3 py-1 font-semibold text-slate-600 hover:border-slate-300"><%= t("next") %></a>
+        <% } %>
+      </div>
+    </div>
+  <% } %>
+</div>
