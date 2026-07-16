@@ -351,6 +351,7 @@ VALUES
   ('REPORT','purchase_report','Purchase Report', 'Purchase'),
   ('REPORT','purchase_return_report','Purchase Return Report', 'Purchase'),
   ('REPORT','pending_grn','Pending GRN (Unbilled) Report', 'Purchase'),
+  ('REPORT','supplier_analysis','Supplier Analysis Report', 'Purchase'),
 
   -- Production Reports
   ('REPORT','production_report','Production Report', 'Production'),

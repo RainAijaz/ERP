@@ -1835,10 +1835,454 @@ const getPendingGrnReportPageData = async ({ req, input = {} }) => {
   };
 };
 
+// ---------------------------------------------------------------------------
+// Supplier Analysis Report
+// Compares purchase rates for the same article (RM/SFG item + color + size)
+// across suppliers: flags the cheapest supplier and the money spent above it
+// (potential savings), ranks supplier spend, flags rates above the item's
+// weighted-average cost (WAC), and surfaces each supplier's most recent rate.
+// ---------------------------------------------------------------------------
+
+const SUPPLIER_ANALYSIS_GROUP_BY = Object.freeze({
+  article: "article",
+  supplier: "supplier",
+});
+
+// A supplier's average rate above WAC by more than this % is flagged.
+const SUPPLIER_ANALYSIS_WAC_TOLERANCE_PERCENT = 2;
+
+const parseSupplierAnalysisFilters = ({ req, input = {} }) => {
+  const now = new Date();
+  const fromDate = new Date(now);
+  // Purchases are less frequent than sales; default to a 6-month window so a
+  // typical article shows the multiple suppliers it was bought from.
+  fromDate.setMonth(fromDate.getMonth() - 6);
+  const today = toLocalDateOnly(now);
+  const defaultFrom = toLocalDateOnly(fromDate);
+
+  const parsedFrom = parseDateFilter(input.from_date, defaultFrom);
+  const parsedTo = parseDateFilter(input.to_date, today);
+  let from = parsedFrom.value;
+  let to = parsedTo.value;
+  let invalidDateRange = false;
+  if (from > to) {
+    from = defaultFrom;
+    to = today;
+    invalidDateRange = true;
+  }
+
+  // Branch scoping mirrors parseFilters(): admins pick freely, others are
+  // constrained to their allowed branches.
+  const selectedBranchIds = toIdListWithAll(input.branch_ids);
+  let branchIds;
+  if (req.user?.isAdmin) {
+    branchIds = selectedBranchIds;
+  } else {
+    const allowedBranchIds = (req.branchOptions || [])
+      .map((b) => Number(b.id || 0))
+      .filter((id) => id > 0);
+    const fallback = Number(req.branchId || 0);
+    const effectiveAllowed = allowedBranchIds.length
+      ? allowedBranchIds
+      : fallback > 0
+        ? [fallback]
+        : [];
+    if (selectedBranchIds.length) {
+      branchIds = selectedBranchIds.filter((id) =>
+        effectiveAllowed.includes(id),
+      );
+      if (!branchIds.length) branchIds = effectiveAllowed;
+    } else {
+      branchIds = effectiveAllowed;
+    }
+  }
+
+  const groupBy =
+    String(input.group_by || "").trim().toLowerCase() ===
+    SUPPLIER_ANALYSIS_GROUP_BY.supplier
+      ? SUPPLIER_ANALYSIS_GROUP_BY.supplier
+      : SUPPLIER_ANALYSIS_GROUP_BY.article;
+
+  const minSpreadRaw = Number.parseFloat(input.min_spread_pct);
+  const minSpreadPct =
+    Number.isFinite(minSpreadRaw) && minSpreadRaw > 0
+      ? Number(minSpreadRaw.toFixed(2))
+      : 0;
+
+  return {
+    from,
+    to,
+    branchIds,
+    groupBy,
+    minSpreadPct,
+    onlyMultiSupplier: toBoolean(input.only_multi_supplier, false),
+    partyIds: toIdListWithAll(input.party_ids),
+    rawMaterialIds: toIdListWithAll(input.raw_material_ids),
+    groupIds: toIdListWithAllFromSources(
+      input.raw_material_group_ids,
+      input.raw_material_group_id,
+    ),
+    subgroupIds: toIdListWithAllFromSources(
+      input.raw_material_subgroup_ids,
+      input.raw_material_subgroup_id,
+    ),
+    reportLoaded: toBoolean(input.load_report, false),
+    invalidFromDate: Boolean(parsedFrom.provided && !parsedFrom.valid),
+    invalidToDate: Boolean(parsedTo.provided && !parsedTo.valid),
+    invalidDateRange,
+    invalidFilterInput: Boolean(
+      (parsedFrom.provided && !parsedFrom.valid) ||
+        (parsedTo.provided && !parsedTo.valid) ||
+        invalidDateRange,
+    ),
+  };
+};
+
+const emptySupplierAnalysisTotals = () => ({
+  totalSpend: 0,
+  articleCount: 0,
+  multiSupplierArticleCount: 0,
+  totalPotentialSavings: 0,
+  supplierCount: 0,
+});
+
+const getSupplierAnalysisRows = async ({ req, filters }) => {
+  if (!filters.reportLoaded) {
+    return {
+      articleRows: [],
+      supplierRows: [],
+      totals: emptySupplierAnalysisTotals(),
+    };
+  }
+
+  const locale = String(req?.locale || "en").toLowerCase();
+  const scopedBranchIds = filters.branchIds;
+
+  // Base join reuses the shipped RM purchase-line shape (see getPurchaseReportRows):
+  // approved Purchase Invoice lines -> item -> supplier, with color/size read
+  // from voucher_line.meta and the item's weighted-average cost from
+  // rm_purchase_rates.
+  let query = knex("erp.voucher_header as vh")
+    .join("erp.purchase_invoice_header_ext as pie", "pie.voucher_id", "vh.id")
+    .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
+    .join("erp.items as i", "i.id", "vl.item_id")
+    .leftJoin("erp.uom as u", "u.id", "i.base_uom_id")
+    .leftJoin("erp.rm_purchase_rates as r", function joinRmRates() {
+      this.on("r.rm_item_id", "=", "vl.item_id")
+        .andOn(knex.raw("r.is_active = true"))
+        .andOn(
+          knex.raw(
+            "COALESCE(r.color_id::text, '0') = COALESCE(NULLIF(vl.meta->>'color_id', ''), NULLIF(vl.meta->>'rm_color_id', ''), '0')",
+          ),
+        )
+        .andOn(
+          knex.raw(
+            "COALESCE(r.size_id::text, '0') = COALESCE(NULLIF(vl.meta->>'size_id', ''), NULLIF(vl.meta->>'rm_size_id', ''), '0')",
+          ),
+        );
+    })
+    .leftJoin("erp.parties as p", "p.id", "pie.supplier_party_id")
+    .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
+    .leftJoin(
+      "erp.colors as vc",
+      knex.raw(
+        "vc.id::text = COALESCE(NULLIF(vl.meta->>'color_id', ''), NULLIF(vl.meta->>'rm_color_id', ''))",
+      ),
+    )
+    .leftJoin(
+      "erp.sizes as vs",
+      knex.raw(
+        "vs.id::text = COALESCE(NULLIF(vl.meta->>'size_id', ''), NULLIF(vl.meta->>'rm_size_id', ''))",
+      ),
+    )
+    .select(
+      "vh.id as voucher_id",
+      "vh.voucher_no",
+      "vh.voucher_date",
+      "vh.book_no as bill_number",
+      "vh.branch_id",
+      localizedNameSelect("b", "branch_name", locale),
+      "pie.supplier_party_id",
+      localizedNameSelect("p", "supplier_name", locale),
+      "vl.item_id",
+      "i.code as item_code",
+      localizedNameSelect("i", "item_name", locale),
+      "u.code as uom_code",
+      knex.raw(
+        "COALESCE(NULLIF(vl.meta->>'color_id', ''), NULLIF(vl.meta->>'rm_color_id', '')) as color_id",
+      ),
+      knex.raw(
+        "COALESCE(NULLIF(vl.meta->>'size_id', ''), NULLIF(vl.meta->>'rm_size_id', '')) as size_id",
+      ),
+      localizedNameSelect("vc", "color_name", locale),
+      localizedNameSelect("vs", "size_name", locale),
+      "vl.qty",
+      "vl.rate",
+      "vl.amount",
+      knex.raw("COALESCE(r.avg_purchase_rate, 0) as weighted_average_rate"),
+    )
+    .where({
+      "vl.line_kind": "ITEM",
+      "vh.voucher_type_code": "PI",
+      "vh.status": "APPROVED",
+    })
+    .whereRaw("upper(coalesce(i.item_type::text, '')) IN ('RM', 'SFG')")
+    .where("vh.voucher_date", ">=", filters.from)
+    .where("vh.voucher_date", "<=", filters.to);
+
+  if (scopedBranchIds.length) query = query.whereIn("vh.branch_id", scopedBranchIds);
+  if (filters.partyIds.length)
+    query = query.whereIn("pie.supplier_party_id", filters.partyIds);
+  if (filters.rawMaterialIds.length)
+    query = query.whereIn("vl.item_id", filters.rawMaterialIds);
+  if (filters.groupIds.length) query = query.whereIn("i.group_id", filters.groupIds);
+  if (filters.subgroupIds.length)
+    query = query.whereIn("i.subgroup_id", filters.subgroupIds);
+
+  const supportsPurchaseCategory = await hasPurchaseInvoiceCategoryColumn();
+  if (supportsPurchaseCategory) {
+    query = query.whereRaw(
+      "upper(coalesce(pie.purchase_category::text, 'RAW_MATERIAL')) = 'RAW_MATERIAL'",
+    );
+  }
+
+  const lines = await query;
+
+  // Pass 1: fold lines into article buckets (item + color + size), each holding
+  // per-supplier sub-aggregates; also build a supplier-level rollup in parallel.
+  const articleMap = new Map();
+  const supplierMap = new Map();
+
+  lines.forEach((line) => {
+    const itemId = Number(line.item_id || 0) || null;
+    if (!itemId) return;
+    const colorId = String(line.color_id || "0") || "0";
+    const sizeId = String(line.size_id || "0") || "0";
+    const supplierId = Number(line.supplier_party_id || 0) || 0;
+    const qty = toQty(line.qty);
+    const amount = toAmount(line.amount);
+    const rate = toAmount(line.rate, 4);
+    const wac = toAmount(line.weighted_average_rate, 4);
+    const voucherDate = toLocalDateOnly(line.voucher_date);
+    const voucherNo = Number(line.voucher_no || 0) || 0;
+
+    const articleKey = `${itemId}|${colorId}|${sizeId}`;
+    if (!articleMap.has(articleKey)) {
+      articleMap.set(articleKey, {
+        articleKey,
+        itemId,
+        itemCode: line.item_code || "",
+        itemName: line.item_name || "",
+        colorName: line.color_name || "",
+        sizeName: line.size_name || "",
+        uomCode: line.uom_code || "",
+        wac: 0,
+        suppliers: new Map(),
+      });
+    }
+    const article = articleMap.get(articleKey);
+    if (wac > article.wac) article.wac = wac;
+
+    if (!article.suppliers.has(supplierId)) {
+      article.suppliers.set(supplierId, {
+        supplierId,
+        supplierName: line.supplier_name || "",
+        totalQty: 0,
+        totalAmount: 0,
+        minRate: null,
+        maxRate: null,
+        lastRate: 0,
+        lastDate: "",
+        bills: new Set(),
+      });
+    }
+    const supAgg = article.suppliers.get(supplierId);
+    supAgg.totalQty = toQty(supAgg.totalQty + qty);
+    supAgg.totalAmount = toAmount(supAgg.totalAmount + amount);
+    supAgg.minRate = supAgg.minRate === null ? rate : Math.min(supAgg.minRate, rate);
+    supAgg.maxRate = supAgg.maxRate === null ? rate : Math.max(supAgg.maxRate, rate);
+    supAgg.bills.add(line.voucher_id);
+    // Most recent rate wins on date, voucher_no as tiebreak.
+    if (
+      voucherDate > supAgg.lastDate ||
+      (voucherDate === supAgg.lastDate && voucherNo >= (supAgg._lastNo || 0))
+    ) {
+      supAgg.lastDate = voucherDate;
+      supAgg.lastRate = rate;
+      supAgg._lastNo = voucherNo;
+    }
+
+    // Supplier-level rollup (across all articles).
+    if (!supplierMap.has(supplierId)) {
+      supplierMap.set(supplierId, {
+        supplierId,
+        supplierName: line.supplier_name || "",
+        totalSpend: 0,
+        bills: new Set(),
+        articles: new Set(),
+        premiumSum: 0,
+        premiumCount: 0,
+      });
+    }
+    const supRoll = supplierMap.get(supplierId);
+    supRoll.totalSpend = toAmount(supRoll.totalSpend + amount);
+    supRoll.bills.add(line.voucher_id);
+    supRoll.articles.add(articleKey);
+  });
+
+  // Pass 2: finalize each article (cheapest supplier, spread, savings, WAC flags)
+  // and feed each supplier's premium-vs-cheapest into the supplier rollup.
+  const tol = SUPPLIER_ANALYSIS_WAC_TOLERANCE_PERCENT / 100;
+  const articles = [];
+  articleMap.forEach((article) => {
+    const supplierList = Array.from(article.suppliers.values()).map((s) => {
+      const avgRate = s.totalQty > 0 ? toAmount(s.totalAmount / s.totalQty, 4) : 0;
+      return {
+        supplierId: s.supplierId,
+        supplierName: s.supplierName,
+        totalQty: s.totalQty,
+        totalAmount: s.totalAmount,
+        avgRate,
+        minRate: toAmount(s.minRate || 0, 4),
+        maxRate: toAmount(s.maxRate || 0, 4),
+        lastRate: toAmount(s.lastRate || 0, 4),
+        lastDate: s.lastDate || "",
+        billCount: s.bills.size,
+      };
+    });
+
+    const rated = supplierList.filter((s) => s.avgRate > 0);
+    const minAvg = rated.length ? Math.min(...rated.map((s) => s.avgRate)) : 0;
+    const maxAvg = rated.length ? Math.max(...rated.map((s) => s.avgRate)) : 0;
+    const cheapest =
+      rated.length
+        ? rated.reduce((best, s) => (s.avgRate < best.avgRate ? s : best))
+        : null;
+    const dearest =
+      rated.length
+        ? rated.reduce((worst, s) => (s.avgRate > worst.avgRate ? s : worst))
+        : null;
+
+    let potentialSavings = 0;
+    supplierList.forEach((s) => {
+      s.pctVsCheapest =
+        minAvg > 0 ? toAmount((s.avgRate / minAvg - 1) * 100, 2) : 0;
+      s.aboveWac = article.wac > 0 && s.avgRate > article.wac * (1 + tol);
+      if (minAvg > 0 && s.avgRate > minAvg) {
+        potentialSavings += s.totalQty * (s.avgRate - minAvg);
+      }
+      // Feed supplier-level premium (weighted equally per article they supply).
+      const roll = supplierMap.get(s.supplierId);
+      if (roll && minAvg > 0) {
+        roll.premiumSum += s.avgRate / minAvg - 1;
+        roll.premiumCount += 1;
+      }
+    });
+
+    supplierList.sort((a, b) => a.avgRate - b.avgRate);
+
+    const totalQty = toQty(
+      supplierList.reduce((sum, s) => sum + s.totalQty, 0),
+    );
+    const totalAmount = toAmount(
+      supplierList.reduce((sum, s) => sum + s.totalAmount, 0),
+    );
+
+    articles.push({
+      article_key: article.articleKey,
+      item_id: article.itemId,
+      item_code: article.itemCode,
+      item_name: article.itemName,
+      color_name: article.colorName,
+      size_name: article.sizeName,
+      uom_code: article.uomCode,
+      supplier_count: supplierList.length,
+      total_qty: totalQty,
+      total_amount: totalAmount,
+      avg_rate: totalQty > 0 ? toAmount(totalAmount / totalQty, 4) : 0,
+      min_rate: toAmount(minAvg, 4),
+      max_rate: toAmount(maxAvg, 4),
+      spread_pct: minAvg > 0 ? toAmount((maxAvg - minAvg) / minAvg * 100, 2) : 0,
+      wac_rate: toAmount(article.wac, 4),
+      cheapest_supplier_id: cheapest?.supplierId || null,
+      cheapest_supplier_name: cheapest?.supplierName || "",
+      cheapest_rate: cheapest ? cheapest.avgRate : 0,
+      dearest_supplier_name: dearest?.supplierName || "",
+      potential_savings: toAmount(potentialSavings),
+      suppliers: supplierList,
+    });
+  });
+
+  // Summary totals reflect the full dataset, independent of the display filters
+  // below (multi-supplier / min-spread only refine the article table).
+  const totals = {
+    totalSpend: toAmount(
+      articles.reduce((sum, a) => sum + Number(a.total_amount || 0), 0),
+    ),
+    articleCount: articles.length,
+    multiSupplierArticleCount: articles.filter((a) => a.supplier_count >= 2)
+      .length,
+    totalPotentialSavings: toAmount(
+      articles.reduce(
+        (sum, a) =>
+          sum + (a.supplier_count >= 2 ? Number(a.potential_savings || 0) : 0),
+        0,
+      ),
+    ),
+    supplierCount: supplierMap.size,
+  };
+
+  // Article-view display filters + ranking (biggest savings first).
+  let articleRows = articles;
+  if (filters.onlyMultiSupplier) {
+    articleRows = articleRows.filter((a) => a.supplier_count >= 2);
+  }
+  if (filters.minSpreadPct > 0) {
+    articleRows = articleRows.filter(
+      (a) => Number(a.spread_pct || 0) >= filters.minSpreadPct,
+    );
+  }
+  articleRows = articleRows
+    .slice()
+    .sort(
+      (a, b) =>
+        Number(b.potential_savings || 0) - Number(a.potential_savings || 0) ||
+        Number(b.total_amount || 0) - Number(a.total_amount || 0),
+    );
+
+  // Supplier-view rows (spend ranking + average price premium vs cheapest).
+  const supplierRows = Array.from(supplierMap.values())
+    .map((s) => ({
+      supplier_id: s.supplierId,
+      supplier_name: s.supplierName,
+      total_spend: toAmount(s.totalSpend),
+      bill_count: s.bills.size,
+      article_count: s.articles.size,
+      avg_premium_pct:
+        s.premiumCount > 0
+          ? toAmount((s.premiumSum / s.premiumCount) * 100, 2)
+          : 0,
+    }))
+    .sort((a, b) => Number(b.total_spend || 0) - Number(a.total_spend || 0));
+
+  return { articleRows, supplierRows, totals };
+};
+
+const getSupplierAnalysisReportPageData = async ({ req, input = {} }) => {
+  const filters = parseSupplierAnalysisFilters({ req, input });
+  const [options, reportData] = await Promise.all([
+    loadReportFilterOptions({ req, filters }),
+    getSupplierAnalysisRows({ req, filters }),
+  ]);
+
+  return { filters, options, reportData };
+};
+
 module.exports = {
   PURCHASE_TYPE_FILTERS,
   getPurchaseReportPageData,
   getSupplierBalancesReportPageData,
   getSupplierLedgerReportPageData,
   getPendingGrnReportPageData,
+  getSupplierAnalysisReportPageData,
 };

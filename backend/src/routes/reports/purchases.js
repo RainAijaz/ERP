@@ -8,6 +8,7 @@ const {
   getSupplierBalancesReportPageData,
   getSupplierLedgerReportPageData,
   getPendingGrnReportPageData,
+  getSupplierAnalysisReportPageData,
 } = require("../../services/purchase/purchase-report-service");
 
 const router = express.Router();
@@ -134,6 +135,44 @@ router.get(
       return next(err);
     }
   },
+);
+
+const renderSupplierAnalysisPage = async (req, res, next, inputSource) => {
+  try {
+    const pageData = await getSupplierAnalysisReportPageData({
+      req,
+      input: inputSource,
+    });
+    return res.render("base/layouts/main", {
+      title: `${res.locals.t("supplier_analysis")} - ${res.locals.t("reports")}`,
+      user: req.user,
+      branchId: req.branchId,
+      branchScope: req.branchScope,
+      csrfToken: res.locals.csrfToken,
+      view: "../../reports/purchases/supplier-analysis",
+      t: res.locals.t,
+      filters: pageData.filters,
+      options: pageData.options,
+      reportData: pageData.reportData,
+      reportPath: `${req.baseUrl}/supplier-analysis`,
+    });
+  } catch (err) {
+    console.error("Error in PurchaseReportsService:", err);
+    return next(err);
+  }
+};
+
+router.get(
+  "/supplier-analysis",
+  requirePermission("REPORT", "supplier_analysis", "load"),
+  async (req, res, next) =>
+    renderSupplierAnalysisPage(req, res, next, req.query),
+);
+
+router.post(
+  "/supplier-analysis",
+  requirePermission("REPORT", "supplier_analysis", "load"),
+  async (req, res, next) => renderSupplierAnalysisPage(req, res, next, req.body),
 );
 
 router.get(
