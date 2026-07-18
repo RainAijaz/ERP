@@ -2291,8 +2291,8 @@ const validateSalesPayloadTx = async ({
   };
 };
 
-const insertVoucherLinesTx = async ({ trx, voucherId, lines }) => {
-  const rows = (lines || []).map((line, index) => {
+const buildVoucherLineRows = ({ voucherId, lines }) =>
+  (lines || []).map((line, index) => {
     const lineKind = toLineKind(line?.line_kind, "SKU");
     const lineNo = Number(line?.line_no || index + 1);
     return {
@@ -2315,8 +2315,88 @@ const insertVoucherLinesTx = async ({ trx, voucherId, lines }) => {
       meta: line?.meta && typeof line.meta === "object" ? { ...line.meta } : {},
     };
   });
+
+const insertVoucherLinesTx = async ({ trx, voucherId, lines }) => {
+  const rows = buildVoucherLineRows({ voucherId, lines });
   if (!rows.length) return [];
   return trx("erp.voucher_line").insert(rows).returning(["id", "line_no"]);
+};
+
+// voucher_line has UNIQUE (voucher_header_id, line_no) and CHECK (line_no > 0),
+// so rows that keep their id must vacate their old line_no before the final
+// numbers are handed out. Negatives are rejected, hence a high park offset.
+const LINE_NO_PARK_OFFSET = 1000000;
+
+// Sales vouchers record which order line they fulfil by storing voucher_line.id
+// in meta.sales_order_line_id. Editing a sales order used to delete and reinsert
+// its lines, re-minting those ids and silently orphaning every existing delivery
+// -- the order then reads as fully open again on the dashboard, the pending
+// delivery list and the order report, inviting a double shipment. Reuse the
+// existing row (and therefore its id) whenever old and new agree on SKU
+// unambiguously. Returns the same [{id, line_no}] shape as insertVoucherLinesTx.
+const reconcileSalesOrderLinesTx = async ({ trx, voucherId, lines }) => {
+  const rows = buildVoucherLineRows({ voucherId, lines });
+  const existingRows = await trx("erp.voucher_line")
+    .select("id", "sku_id")
+    .where({ voucher_header_id: voucherId })
+    .orderBy("id");
+
+  const existingIdsBySku = new Map();
+  existingRows.forEach((row) => {
+    const sku = toPositiveInt(row.sku_id);
+    if (!sku) return;
+    if (!existingIdsBySku.has(sku)) existingIdsBySku.set(sku, []);
+    existingIdsBySku.get(sku).push(Number(row.id));
+  });
+
+  const newCountsBySku = new Map();
+  rows.forEach((row) => {
+    const sku = toPositiveInt(row.sku_id);
+    if (!sku) return;
+    newCountsBySku.set(sku, (newCountsBySku.get(sku) || 0) + 1);
+  });
+
+  // Reuse an id only when exactly one old line and exactly one new line carry
+  // the SKU. Anything ambiguous falls back to insert-new: that can still orphan
+  // a delivery, but it never re-attaches one to the wrong article.
+  const updates = [];
+  const inserts = [];
+  rows.forEach((row) => {
+    const sku = toPositiveInt(row.sku_id);
+    const candidates = sku ? existingIdsBySku.get(sku) || [] : [];
+    if (candidates.length === 1 && newCountsBySku.get(sku) === 1) {
+      updates.push({ id: candidates[0], row });
+      existingIdsBySku.delete(sku);
+    } else {
+      inserts.push(row);
+    }
+  });
+
+  const reusedIds = updates.map((entry) => entry.id);
+  const reusedIdSet = new Set(reusedIds);
+  const staleIds = existingRows
+    .map((row) => Number(row.id))
+    .filter((id) => !reusedIdSet.has(id));
+  if (staleIds.length) {
+    await trx("erp.voucher_line").whereIn("id", staleIds).del();
+  }
+  if (reusedIds.length) {
+    await trx("erp.voucher_line")
+      .whereIn("id", reusedIds)
+      .update({ line_no: trx.raw("line_no + ?", [LINE_NO_PARK_OFFSET]) });
+  }
+  for (const { id, row } of updates) {
+    await trx("erp.voucher_line")
+      .where({ id })
+      .update({ ...row, meta: JSON.stringify(row.meta) });
+  }
+  const insertedRows = inserts.length
+    ? await trx("erp.voucher_line").insert(inserts).returning(["id", "line_no"])
+    : [];
+  return [
+    ...updates.map(({ id, row }) => ({ id, line_no: row.line_no })),
+    ...insertedRows,
+  ];
 };
 
 const prepareSalesVoucherPostingLinesTx = async ({
@@ -3336,15 +3416,26 @@ const saveSalesVoucherTx = async ({
         approved_by: req.user.id,
         approved_at: trx.fn.now(),
       });
-      await trx("erp.voucher_line")
-        .where({ voucher_header_id: headerId })
-        .del();
+      if (voucherTypeCode !== SALES_VOUCHER_TYPES.salesOrder) {
+        await trx("erp.voucher_line")
+          .where({ voucher_header_id: headerId })
+          .del();
+      }
     }
-    const insertedLines = await insertVoucherLinesTx({
-      trx,
-      voucherId: headerId,
-      lines: postingPrepared.lines,
-    });
+    // Sales orders reconcile instead of delete+reinsert so that deliveries
+    // referencing voucher_line.id stay linked across an edit.
+    const insertedLines =
+      !isCreate && voucherTypeCode === SALES_VOUCHER_TYPES.salesOrder
+        ? await reconcileSalesOrderLinesTx({
+            trx,
+            voucherId: headerId,
+            lines: postingPrepared.lines,
+          })
+        : await insertVoucherLinesTx({
+            trx,
+            voucherId: headerId,
+            lines: postingPrepared.lines,
+          });
     await upsertSalesHeaderExtensionsTx({
       trx,
       voucherTypeCode,
@@ -4349,18 +4440,29 @@ const applySalesVoucherUpdatePayloadTx = async ({
     book_no: validated.bookNo,
     remarks: validated.remarks,
   });
-  await trx("erp.voucher_line").where({ voucher_header_id: voucherId }).del();
+  const isSalesOrder = voucherTypeCode === SALES_VOUCHER_TYPES.salesOrder;
+  if (!isSalesOrder) {
+    await trx("erp.voucher_line").where({ voucher_header_id: voucherId }).del();
+  }
   const postingPrepared = await prepareSalesVoucherPostingLinesTx({
     trx,
     voucherTypeCode,
     validated,
     t: req?.res?.locals?.t,
   });
-  const insertedLines = await insertVoucherLinesTx({
-    trx,
-    voucherId,
-    lines: postingPrepared.lines,
-  });
+  // Sales orders reconcile instead of delete+reinsert so that deliveries
+  // referencing voucher_line.id stay linked across an approved edit.
+  const insertedLines = isSalesOrder
+    ? await reconcileSalesOrderLinesTx({
+        trx,
+        voucherId,
+        lines: postingPrepared.lines,
+      })
+    : await insertVoucherLinesTx({
+        trx,
+        voucherId,
+        lines: postingPrepared.lines,
+      });
   await upsertSalesHeaderExtensionsTx({
     trx,
     voucherTypeCode,
