@@ -209,18 +209,42 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
 
   // --- Count KPI builders --------------------------------------------------
 
-  const ordersPending = () =>
-    knex("erp.sales_order_header as soh")
+  // An approved Sales Order stays "pending" until every ordered line is fully
+  // delivered. This mirrors the open-pairs definition the Sales Order screen
+  // uses (loadOpenSalesOrderLines in sales-voucher-service.js): delivery is
+  // tracked per line via the sales voucher's meta.sales_order_line_id, and a
+  // REJECTED sales voucher never counts as delivered.
+  //
+  // A plain "does any linked invoice exist" check is NOT equivalent — it hides
+  // partially delivered orders (invoiced in installments) the moment the first
+  // invoice is raised, and treats a rejected-only invoice as fulfilment.
+  const deliveredPairsForOrderLine = `
+    COALESCE((
+      SELECT SUM(svl.qty)
+        FROM erp.voucher_header AS svh
+        JOIN erp.voucher_line AS svl ON svl.voucher_header_id = svh.id
+       WHERE svh.voucher_type_code = 'SALES_VOUCHER'
+         AND svh.status <> 'REJECTED'
+         AND svl.line_kind = 'SKU'
+         AND COALESCE(svl.meta->>'movement_kind', '') = 'SALE'
+         AND COALESCE(svl.meta->>'sales_order_line_id', '') ~ '^[0-9]+$'
+         AND CAST(svl.meta->>'sales_order_line_id' AS bigint) = sol.id
+    ), 0)`;
+
+  const ordersPending = () => {
+    const openOrders = knex("erp.sales_order_header as soh")
       .join("erp.voucher_header as vh", "vh.id", "soh.voucher_id")
+      .join("erp.voucher_line as sol", "sol.voucher_header_id", "vh.id")
       .where("vh.status", "APPROVED")
-      .whereNotExists(function linkedInvoice() {
-        this.select(1)
-          .from("erp.sales_header as sh")
-          .whereRaw("sh.linked_sales_order_id = soh.voucher_id");
-      })
+      .where("sol.line_kind", "SKU")
       .modify((qb) => applyBranchScope(req, qb, "vh.branch_id"))
-      .count("* as count")
-      .first();
+      .groupBy("vh.id")
+      .havingRaw(
+        `SUM(sol.qty - LEAST(sol.qty, ${deliveredPairsForOrderLine})) > 0`,
+      )
+      .select("vh.id");
+    return knex.from(openOrders.as("open_orders")).count("* as count").first();
+  };
 
   const dispatchesOn = (dateKey) => () =>
     knex("erp.stock_transfer_out_header as h")
