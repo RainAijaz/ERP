@@ -695,6 +695,14 @@ const navConfig = [
             moduleGroup: "Purchase",
             route: "/reports/purchases/supplier-balances",
           },
+          {
+            key: "supplier_analysis",
+            labelKey: "supplier_analysis",
+            scopeType: "REPORT",
+            scopeKey: "supplier_analysis",
+            moduleGroup: "Purchase",
+            route: "/reports/purchases/supplier-analysis",
+          },
         ],
       },
       {

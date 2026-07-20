@@ -1,0 +1,540 @@
+<%
+const reportLoaded = Boolean(filters?.reportLoaded);
+const selectedFrom = String(filters?.from || "");
+const selectedTo = String(filters?.to || "");
+const selectedGroupBy = String(filters?.groupBy || "article") === "supplier" ? "supplier" : "article";
+const selectedBranchIds = Array.isArray(filters?.branchIds) ? filters.branchIds.map((id) => Number(id)) : [];
+const selectedPartyIds = Array.isArray(filters?.partyIds) ? filters.partyIds.map((id) => Number(id)) : [];
+const selectedItemIds = Array.isArray(filters?.rawMaterialIds) ? filters.rawMaterialIds.map((id) => Number(id)) : [];
+const selectedOnlyMulti = Boolean(filters?.onlyMultiSupplier);
+const selectedMinSpread = Number(filters?.minSpreadPct || 0) || 0;
+
+const allLabel = typeof t === "function" ? t("all") : "All";
+const branches = Array.isArray(options?.branches) ? options.branches : [];
+const suppliers = Array.isArray(options?.suppliers) ? options.suppliers : [];
+const items = Array.isArray(options?.rawMaterials) ? options.rawMaterials : [];
+
+const articleRows = Array.isArray(reportData?.articleRows) ? reportData.articleRows : [];
+const supplierRows = Array.isArray(reportData?.supplierRows) ? reportData.supplierRows : [];
+const totals = reportData?.totals || { totalSpend: 0, articleCount: 0, multiSupplierArticleCount: 0, totalPotentialSavings: 0, supplierCount: 0 };
+
+const activeRows = selectedGroupBy === "supplier" ? supplierRows : articleRows;
+const hasData = activeRows.length > 0;
+const downloadName = "supplier-analysis.csv";
+
+const dateRangeLabel = (() => { const v = typeof t === "function" ? t("date_range") : ""; return v || "Date Range"; })();
+const weekdayShortLabels = [
+  t("weekday_sun_short"), t("weekday_mon_short"), t("weekday_tue_short"),
+  t("weekday_wed_short"), t("weekday_thu_short"), t("weekday_fri_short"), t("weekday_sat_short"),
+];
+const formatMoney = (value) => {
+  const num = Number(value || 0);
+  return Number.isFinite(num) ? num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00";
+};
+const formatRate = (value) => {
+  const num = Number(value || 0);
+  return Number.isFinite(num) ? num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0.00";
+};
+const formatQty = (value) => {
+  const num = Number(value || 0);
+  return Number.isFinite(num) ? num.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 3 }) : "0";
+};
+const formatPct = (value) => {
+  const num = Number(value || 0);
+  if (!Number.isFinite(num)) return "0%";
+  return `${num.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 1 })}%`;
+};
+const formatDate = (value) => formatDateDisplay(value, "-");
+const articleLabel = (row) => {
+  const parts = [row.item_name || row.item_code || "-"];
+  const variant = [row.color_name, row.size_name].filter(Boolean).join(" / ");
+  return variant ? `${parts[0]} — ${variant}` : parts[0];
+};
+const reportPurposeTooltip = (() => {
+  const key = "supplier_analysis_purpose_tooltip";
+  const value = t(key);
+  return value && value !== key ? value : "";
+})();
+%>
+<div class="mx-auto w-full max-w-none space-y-6 px-2">
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+    <div class="flex flex-col gap-2">
+      <div class="flex items-center gap-2">
+        <h1 class="text-xl font-display font-semibold tracking-tight text-ink sm:text-2xl"><%= t("supplier_analysis") %></h1>
+        <% if (reportPurposeTooltip) { %>
+          <span class="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-[10px] font-bold text-slate-600 cursor-help" title="<%= reportPurposeTooltip %>" aria-label="<%= reportPurposeTooltip %>">i</span>
+        <% } %>
+      </div>
+      <p class="text-sm text-slate-500"><%= t("supplier_reports") %></p>
+    </div>
+    <% if (filters?.invalidFilterInput) { %>
+      <div class="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-800"><%= t("date_filters_auto_corrected") %></div>
+    <% } %>
+    <form method="post" action="<%= reportPath %>" class="mt-4 max-w-6xl rounded-xl border border-slate-200 bg-slate-50/30 p-3 sm:p-4" data-analysis-form>
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="load_report" value="1">
+      <div class="space-y-3">
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= dateRangeLabel %></label>
+          <div class="sm:col-span-9">
+            <div class="relative" data-date-range-wrap>
+              <input type="text" readonly value="<%= `${selectedFrom} - ${selectedTo}` %>" data-date-range-input class="h-10 w-full cursor-pointer rounded-lg border border-slate-300 bg-white px-3 pr-10 text-sm text-slate-700">
+              <button type="button" class="absolute inset-y-0 right-2 inline-flex items-center text-slate-500 hover:text-slate-700" data-date-range-toggle aria-label="<%= t('open_date_range_picker') %>">
+                <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+              </button>
+              <div class="absolute left-0 z-50 mt-2 hidden max-h-[62vh] overflow-auto rounded-xl border border-slate-200 bg-white p-2.5 shadow-lg" style="width:min(700px,calc(100vw - 1rem));" data-date-range-panel>
+                <div class="grid grid-cols-1 gap-2 lg:grid-cols-[156px_1fr]">
+                  <div class="space-y-1.5">
+                    <div><div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('from_date') %></div><div class="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700" data-date-range-from-display>-</div></div>
+                    <div><div class="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t('to_date') %></div><div class="mt-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700" data-date-range-to-display>-</div></div>
+                  </div>
+                  <div>
+                    <div class="mb-1.5 text-center text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600" data-date-range-caption><%= t('select_date_range') %></div>
+                    <div class="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_auto_1fr]">
+                      <div class="min-w-[210px] rounded-lg border border-slate-200 bg-slate-50/40 p-2">
+                        <div class="mb-1 flex items-center justify-between gap-2"><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-prev>&larr;</button><div class="text-center text-xs font-semibold text-slate-700" data-date-range-month-1-label></div><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-1-next>&rarr;</button></div>
+                        <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-500"><% weekdayShortLabels.forEach((weekdayLabel) => { %><span><%= weekdayLabel %></span><% }) %></div>
+                        <div class="mt-1 grid grid-cols-7 gap-1" data-date-range-month-1-grid></div>
+                      </div>
+                      <div class="hidden sm:block w-px bg-slate-200 self-stretch"></div>
+                      <div class="min-w-[210px] rounded-lg border border-slate-200 bg-slate-50/40 p-2">
+                        <div class="mb-1 flex items-center justify-between gap-2"><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-2-prev>&larr;</button><div class="text-center text-xs font-semibold text-slate-700" data-date-range-month-2-label></div><button type="button" class="rounded-md border border-slate-300 px-2 py-0.5 text-xs font-semibold text-slate-700" data-date-range-month-2-next>&rarr;</button></div>
+                        <div class="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-slate-500"><% weekdayShortLabels.forEach((weekdayLabel) => { %><span><%= weekdayLabel %></span><% }) %></div>
+                        <div class="mt-1 grid grid-cols-7 gap-1" data-date-range-month-2-grid></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div class="mt-1.5 flex items-center justify-end gap-2"><button type="button" class="rounded-lg border border-slate-300 bg-white px-3 py-1.25 text-xs font-semibold uppercase tracking-[0.08em] text-slate-700" data-date-range-cancel><%= t('cancel') %></button><button type="button" class="rounded-lg bg-accent px-3 py-1.25 text-xs font-semibold uppercase tracking-[0.08em] text-white" data-date-range-apply><%= t('apply') %></button></div>
+              </div>
+            </div>
+            <input type="hidden" name="from_date" value="<%= selectedFrom %>" data-from-date-hidden>
+            <input type="hidden" name="to_date" value="<%= selectedTo %>" data-to-date-hidden>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("analyze_by") %></label>
+          <div class="sm:col-span-9">
+            <select name="group_by" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+              <option value="article" <%= selectedGroupBy === "article" ? "selected" : "" %>><%= t("by_article") %></option>
+              <option value="supplier" <%= selectedGroupBy === "supplier" ? "selected" : "" %>><%= t("by_supplier") %></option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? t("branches") : t("branch") %></label>
+          <div class="sm:col-span-9">
+            <% if (user?.isAdmin) { %>
+              <select name="branch_ids" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified">
+                <option value=""><%= allLabel %></option>
+                <% branches.forEach((branch) => { %>
+                  <option value="<%= branch.id %>" <%= selectedBranchIds.includes(Number(branch.id)) ? "selected" : "" %>><%= branch.name %></option>
+                <% }) %>
+              </select>
+            <% } else { %>
+              <input type="text" readonly class="h-10 w-full rounded-lg border border-slate-300 bg-slate-100 px-3 text-sm text-slate-700" value="<%= branches[0]?.name || branchId || '-' %>">
+            <% } %>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("supplier") %></label>
+          <div class="sm:col-span-9">
+            <select name="party_ids" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified">
+              <option value=""><%= allLabel %></option>
+              <% suppliers.forEach((supplier) => { %>
+                <option value="<%= supplier.id %>" <%= selectedPartyIds.includes(Number(supplier.id)) ? "selected" : "" %>><%= supplier.name %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("article") %></label>
+          <div class="sm:col-span-9">
+            <select name="raw_material_ids" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm" data-searchable-select="true" data-searchable-variant="unified">
+              <option value=""><%= allLabel %></option>
+              <% items.forEach((item) => { %>
+                <option value="<%= item.id %>" <%= selectedItemIds.includes(Number(item.id)) ? "selected" : "" %>><%= item.name %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= t("min_price_spread_pct") %></label>
+          <div class="sm:col-span-9 flex flex-wrap items-center gap-4">
+            <input type="number" name="min_spread_pct" min="0" step="any" inputmode="decimal" value="<%= selectedMinSpread || '' %>" placeholder="0" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm sm:w-40">
+            <label class="inline-flex items-center gap-2 text-sm font-semibold text-slate-700">
+              <input type="checkbox" name="only_multi_supplier" value="1" <%= selectedOnlyMulti ? "checked" : "" %> class="h-4 w-4 rounded border-slate-300 text-accent">
+              <%= t("only_multi_supplier_articles") %>
+            </label>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 items-center gap-2 pt-1 sm:grid-cols-12">
+          <div class="sm:col-start-4 sm:col-span-9 flex flex-wrap items-center gap-2">
+            <button type="submit" class="inline-flex items-center rounded-lg bg-accent px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= t("load") %></button>
+            <a href="<%= reportPath %>" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= t("cancel") %></a>
+          </div>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md" data-analysis-area>
+    <div class="border-b border-slate-200 px-5 py-4">
+      <div class="mb-3 flex items-center justify-end gap-2" data-report-controls>
+        <button type="button" class="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-slate-700 disabled:opacity-40" data-print-report <%= reportLoaded && hasData ? "" : "disabled" %>><%= t("print") %></button>
+        <button type="button" class="inline-flex items-center rounded-xl bg-accent px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm disabled:opacity-40" data-download-report <%= reportLoaded && hasData ? "" : "disabled" %>><%= t("download") %></button>
+      </div>
+      <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
+          <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t("total_spend") %></div>
+            <div class="mt-1 text-2xl font-display font-semibold text-slate-900"><%= formatMoney(totals.totalSpend || 0) %></div>
+          </div>
+          <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t("articles_purchased") %></div>
+            <div class="mt-1 text-2xl font-display font-semibold text-slate-900"><%= totals.articleCount || 0 %></div>
+          </div>
+          <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t("multi_supplier_articles") %></div>
+            <div class="mt-1 text-2xl font-display font-semibold text-slate-900"><%= totals.multiSupplierArticleCount || 0 %></div>
+          </div>
+          <div class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-emerald-700"><%= t("potential_savings") %></div>
+            <div class="mt-1 text-2xl font-display font-semibold text-emerald-800"><%= formatMoney(totals.totalPotentialSavings || 0) %></div>
+          </div>
+          <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500"><%= t("num_suppliers") %></div>
+            <div class="mt-1 text-2xl font-display font-semibold text-slate-900"><%= totals.supplierCount || 0 %></div>
+          </div>
+        </div>
+        <div><%- include("../../base/partials/table-controls", { t, showStatus: false }) %></div>
+      </div>
+    </div>
+
+    <% if (!reportLoaded) { %>
+      <div class="px-5 py-10 text-center text-xl font-display text-slate-500"><%= t("load_report_to_view") %></div>
+    <% } else if (!hasData) { %>
+      <div class="px-5 py-10 text-center text-xl font-display text-slate-500"><%= t("no_entries") %></div>
+    <% } else if (selectedGroupBy === "supplier") { %>
+      <div class="overflow-x-auto">
+        <table class="min-w-[900px] w-full text-sm" data-analysis-table>
+          <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
+            <tr>
+              <th class="px-4 py-3 text-left">SR.NO</th>
+              <th class="px-4 py-3 text-left"><%= t("supplier") %></th>
+              <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="total_spend"><span><%= t("total_spend") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
+              <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="bill_count"><span><%= t("bill_count") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
+              <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="article_count"><span><%= t("articles_supplied") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
+              <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="avg_premium_pct"><span><%= t("rate_premium_vs_cheapest") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100" data-analysis-table-body>
+            <% supplierRows.forEach((row, idx) => { %>
+              <tr class="bg-white hover:bg-slate-50" data-row data-active="true" data-analysis-row
+                data-sort-total_spend="<%= Number(row.total_spend || 0) %>"
+                data-sort-bill_count="<%= Number(row.bill_count || 0) %>"
+                data-sort-article_count="<%= Number(row.article_count || 0) %>"
+                data-sort-avg_premium_pct="<%= Number(row.avg_premium_pct || 0) %>">
+                <td class="px-4 py-3 text-slate-700" data-sr-cell><%= idx + 1 %></td>
+                <td class="px-4 py-3 font-semibold text-slate-800"><%= row.supplier_name || "-" %></td>
+                <td class="px-4 py-3 text-right font-semibold tabular-nums text-slate-900"><%= formatMoney(row.total_spend || 0) %></td>
+                <td class="px-4 py-3 text-right font-semibold tabular-nums text-slate-700"><%= row.bill_count || 0 %></td>
+                <td class="px-4 py-3 text-right font-semibold tabular-nums text-slate-700"><%= row.article_count || 0 %></td>
+                <td class="px-4 py-3 text-right font-semibold tabular-nums <%= Number(row.avg_premium_pct || 0) > 0 ? 'text-rose-600' : 'text-emerald-600' %>"><%= formatPct(row.avg_premium_pct || 0) %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } else { %>
+      <div class="overflow-x-auto">
+        <table class="min-w-[1320px] w-full text-sm" data-analysis-table>
+          <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
+            <tr>
+              <th class="px-4 py-3 text-left">SR.NO</th>
+              <th class="px-4 py-3 text-left"><%= t("article") %></th>
+              <th class="px-4 py-3 text-left"><%= t("unit") %></th>
+              <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="supplier_count"><span><%= t("num_suppliers") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
+              <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="total_qty"><span><%= t("total_quantity") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
+              <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="total_amount"><span><%= t("total_spend") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
+              <th class="px-4 py-3 text-right"><%= t("min_rate") %></th>
+              <th class="px-4 py-3 text-right"><%= t("avg_rate") %></th>
+              <th class="px-4 py-3 text-right"><%= t("max_rate") %></th>
+              <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="spread_pct"><span><%= t("price_spread") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
+              <th class="px-4 py-3 text-left"><%= t("cheapest_supplier") %></th>
+              <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="potential_savings"><span><%= t("potential_savings") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
+              <th class="px-4 py-3 text-center"><%= t("details") %></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100" data-analysis-table-body>
+            <% articleRows.forEach((row, idx) => { %>
+              <% const isMulti = Number(row.supplier_count || 0) >= 2; %>
+              <tr class="hover:bg-slate-50 <%= isMulti ? 'bg-amber-50/40' : 'bg-white' %>" data-row data-active="true" data-analysis-row data-analysis-key="<%= row.article_key %>"
+                data-sort-supplier_count="<%= Number(row.supplier_count || 0) %>"
+                data-sort-total_qty="<%= Number(row.total_qty || 0) %>"
+                data-sort-total_amount="<%= Number(row.total_amount || 0) %>"
+                data-sort-spread_pct="<%= Number(row.spread_pct || 0) %>"
+                data-sort-potential_savings="<%= Number(row.potential_savings || 0) %>">
+                <td class="px-4 py-3 text-slate-700" data-sr-cell><%= idx + 1 %></td>
+                <td class="px-4 py-3 text-slate-800">
+                  <div class="font-semibold"><%= articleLabel(row) %></div>
+                  <% if (row.item_code) { %><div class="text-[11px] text-slate-400"><%= row.item_code %></div><% } %>
+                </td>
+                <td class="px-4 py-3 text-slate-600"><%= row.uom_code || "-" %></td>
+                <td class="px-4 py-3 text-right font-semibold tabular-nums <%= isMulti ? 'text-amber-700' : 'text-slate-700' %>"><%= row.supplier_count || 0 %></td>
+                <td class="px-4 py-3 text-right font-semibold tabular-nums text-slate-700"><%= formatQty(row.total_qty || 0) %></td>
+                <td class="px-4 py-3 text-right font-semibold tabular-nums text-slate-900"><%= formatMoney(row.total_amount || 0) %></td>
+                <td class="px-4 py-3 text-right tabular-nums text-emerald-700"><%= formatRate(row.min_rate || 0) %></td>
+                <td class="px-4 py-3 text-right tabular-nums text-slate-700"><%= formatRate(row.avg_rate || 0) %></td>
+                <td class="px-4 py-3 text-right tabular-nums text-rose-600"><%= formatRate(row.max_rate || 0) %></td>
+                <td class="px-4 py-3 text-right font-semibold tabular-nums <%= Number(row.spread_pct || 0) > 0 ? 'text-rose-600' : 'text-slate-500' %>"><%= formatPct(row.spread_pct || 0) %></td>
+                <td class="px-4 py-3 text-slate-700"><%= row.cheapest_supplier_name || "-" %></td>
+                <td class="px-4 py-3 text-right font-semibold tabular-nums <%= Number(row.potential_savings || 0) > 0 ? 'text-emerald-700' : 'text-slate-400' %>"><%= formatMoney(row.potential_savings || 0) %></td>
+                <td class="px-4 py-3 text-center">
+                  <button type="button" class="inline-flex items-center rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-700 shadow-sm" data-analysis-toggle data-analysis-key="<%= row.article_key %>" aria-expanded="false">
+                    <span><%= t("details") %></span>
+                    <span class="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600"><%= Array.isArray(row.suppliers) ? row.suppliers.length : 0 %></span>
+                  </button>
+                </td>
+              </tr>
+              <tr class="hidden bg-slate-50/70" data-analysis-detail-row data-analysis-key="<%= row.article_key %>">
+                <td colspan="13" class="px-4 py-4">
+                  <div class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                    <div class="mb-3 text-sm font-semibold text-slate-800"><%= t("supplier") %> <%= t("details") %> — <%= t("weighted_avg_cost") %>: <%= formatRate(row.wac_rate || 0) %></div>
+                    <div class="overflow-x-auto rounded-xl border border-slate-200">
+                      <table class="min-w-[960px] w-full text-xs">
+                        <thead class="bg-slate-50 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
+                          <tr>
+                            <th class="px-3 py-2 text-left"><%= t("supplier") %></th>
+                            <th class="px-3 py-2 text-right"><%= t("total_quantity") %></th>
+                            <th class="px-3 py-2 text-right"><%= t("total_spend") %></th>
+                            <th class="px-3 py-2 text-right"><%= t("avg_rate") %></th>
+                            <th class="px-3 py-2 text-right"><%= t("min_rate") %></th>
+                            <th class="px-3 py-2 text-right"><%= t("max_rate") %></th>
+                            <th class="px-3 py-2 text-right"><%= t("last_rate") %></th>
+                            <th class="px-3 py-2 text-left"><%= t("last_purchase_date") %></th>
+                            <th class="px-3 py-2 text-right"><%= t("vs_cheapest") %></th>
+                            <th class="px-3 py-2 text-right"><%= t("bill_count") %></th>
+                          </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100">
+                          <% (Array.isArray(row.suppliers) ? row.suppliers : []).forEach((sup) => { %>
+                            <% const isCheapest = Number(sup.supplierId) === Number(row.cheapest_supplier_id); %>
+                            <tr class="<%= isCheapest ? 'bg-emerald-50/60' : 'bg-white' %>">
+                              <td class="px-3 py-2 font-semibold text-slate-800">
+                                <%= sup.supplierName || "-" %>
+                                <% if (isCheapest) { %><span class="ml-1 inline-flex rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700"><%= t("cheapest_supplier") %></span><% } %>
+                                <% if (sup.aboveWac) { %><span class="ml-1 inline-flex rounded-md border border-rose-200 bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700" title="<%= t('above_wac_tooltip') %>"><%= t("above_wac") %></span><% } %>
+                              </td>
+                              <td class="px-3 py-2 text-right tabular-nums text-slate-700"><%= formatQty(sup.totalQty || 0) %></td>
+                              <td class="px-3 py-2 text-right tabular-nums text-slate-900"><%= formatMoney(sup.totalAmount || 0) %></td>
+                              <td class="px-3 py-2 text-right font-semibold tabular-nums text-slate-800"><%= formatRate(sup.avgRate || 0) %></td>
+                              <td class="px-3 py-2 text-right tabular-nums text-slate-600"><%= formatRate(sup.minRate || 0) %></td>
+                              <td class="px-3 py-2 text-right tabular-nums text-slate-600"><%= formatRate(sup.maxRate || 0) %></td>
+                              <td class="px-3 py-2 text-right tabular-nums text-slate-700"><%= formatRate(sup.lastRate || 0) %></td>
+                              <td class="px-3 py-2 text-slate-600"><%= formatDate(sup.lastDate) %></td>
+                              <td class="px-3 py-2 text-right font-semibold tabular-nums <%= Number(sup.pctVsCheapest || 0) > 0 ? 'text-rose-600' : 'text-emerald-600' %>"><%= formatPct(sup.pctVsCheapest || 0) %></td>
+                              <td class="px-3 py-2 text-right tabular-nums text-slate-600"><%= sup.billCount || 0 %></td>
+                            </tr>
+                          <% }) %>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+    <% } %>
+
+    <%- include("../../base/partials/table-footer", { t }) %>
+  </section>
+</div>
+
+<script><%- include("../../base/partials/date-range-picker.js") %></script>
+<script>
+(() => {
+  const form = document.querySelector("[data-analysis-form]");
+  if (form && typeof window.initReportDateRangePicker === "function") {
+    window.initReportDateRangePicker({
+      root: form,
+      invalidDateRangeMessage: <%- JSON.stringify(t("invalid_date_range")) %>,
+      selectDateRangeText: <%- JSON.stringify(t("select_date_range")) %>
+    });
+  }
+
+  document.querySelector("[data-print-report]")?.addEventListener("click", () => window.print());
+  document.querySelector("[data-download-report]")?.addEventListener("click", () => {
+    const table = document.querySelector("[data-analysis-table]");
+    if (!table) return;
+    const headerRows = Array.from(table.querySelectorAll("thead tr"));
+    const bodyRows = Array.from(table.querySelectorAll("tbody tr[data-analysis-row]"))
+      .filter((tr) => !tr.classList.contains("hidden"));
+    const csv = [...headerRows, ...bodyRows]
+      .map((tr) =>
+        Array.from(tr.querySelectorAll("th,td"))
+          .map((cell) => `"${String(cell.textContent || "").replace(/[↕↑↓]/g, "").replace(/\s+/g, " ").trim().replace(/"/g, '""')}"`)
+          .join(","),
+      )
+      .join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = <%- JSON.stringify(downloadName) %>;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(link.href);
+  });
+
+  const tableBody = document.querySelector("[data-analysis-table-body]");
+  const searchInput = document.querySelector("[data-search-input]");
+  const pageSizeSelect = document.querySelector("[data-page-size]");
+  const prevButton = document.querySelector("[data-prev-page]");
+  const nextButton = document.querySelector("[data-next-page]");
+  const pageIndicator = document.querySelector("[data-page-indicator]");
+  const showingCount = document.querySelector("[data-showing-count]");
+
+  if (!tableBody) return;
+
+  const getMainRows = () => Array.from(tableBody.querySelectorAll("tr[data-analysis-row]"));
+  let currentPage = 1;
+
+  const closeHiddenDetails = () => {
+    Array.from(tableBody.querySelectorAll("tr[data-analysis-detail-row]")).forEach((detailRow) => {
+      const key = detailRow.getAttribute("data-analysis-key");
+      const mainRow = tableBody.querySelector(`tr[data-analysis-row][data-analysis-key="${key}"]`);
+      if (!mainRow || mainRow.classList.contains("hidden")) {
+        detailRow.classList.add("hidden");
+        const toggle = document.querySelector(`[data-analysis-toggle][data-analysis-key="${key}"]`);
+        if (toggle) toggle.setAttribute("aria-expanded", "false");
+      }
+    });
+  };
+
+  const applyTableState = () => {
+    const pageSizeValue = pageSizeSelect?.value || "10";
+    const pageSize = pageSizeValue === "all" ? Number.MAX_SAFE_INTEGER : Math.max(1, Number(pageSizeValue || 10));
+    const query = String(searchInput?.value || "").trim().toLowerCase();
+    const allRows = getMainRows();
+    const filteredRows = allRows.filter((row) => {
+      if (!query) return true;
+      return String(row.textContent || "").toLowerCase().includes(query);
+    });
+
+    filteredRows.forEach((row, i) => {
+      const srCell = row.querySelector("[data-sr-cell]");
+      if (srCell) srCell.textContent = String(i + 1);
+    });
+
+    const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+    if (currentPage > totalPages) currentPage = totalPages;
+
+    allRows.forEach((row) => row.classList.add("hidden"));
+    const start = (currentPage - 1) * pageSize;
+    filteredRows.slice(start, start + pageSize).forEach((row) => row.classList.remove("hidden"));
+
+    closeHiddenDetails();
+
+    if (showingCount) {
+      const end = filteredRows.length ? Math.min(filteredRows.length, start + pageSize) : 0;
+      showingCount.textContent = `<%= t("showing") %> ${filteredRows.length ? start + 1 : 0}-${end} / ${filteredRows.length}`;
+    }
+    if (pageIndicator) pageIndicator.textContent = String(currentPage);
+    if (prevButton) prevButton.disabled = currentPage <= 1;
+    if (nextButton) nextButton.disabled = currentPage >= totalPages;
+  };
+
+  searchInput?.addEventListener("input", () => { currentPage = 1; applyTableState(); });
+  pageSizeSelect?.addEventListener("change", () => { currentPage = 1; applyTableState(); });
+  prevButton?.addEventListener("click", () => { if (currentPage <= 1) return; currentPage -= 1; applyTableState(); });
+  nextButton?.addEventListener("click", () => { currentPage += 1; applyTableState(); });
+
+  document.querySelectorAll("[data-analysis-toggle]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.getAttribute("data-analysis-key");
+      if (!key) return;
+      const mainRow = tableBody.querySelector(`tr[data-analysis-row][data-analysis-key="${key}"]`);
+      const detailRow = tableBody.querySelector(`tr[data-analysis-detail-row][data-analysis-key="${key}"]`);
+      if (!mainRow || !detailRow || mainRow.classList.contains("hidden")) return;
+      const expanded = button.getAttribute("aria-expanded") === "true";
+      button.setAttribute("aria-expanded", expanded ? "false" : "true");
+      detailRow.classList.toggle("hidden", expanded);
+    });
+  });
+
+  const sortButtons = Array.from(document.querySelectorAll("[data-sort-btn]"));
+  const ARROW_NEUTRAL = "↕";
+  const ARROW_ASC = "↑";
+  const ARROW_DESC = "↓";
+  let sortKey = null;
+  let sortDir = "desc";
+
+  const sortValue = (row, key) => {
+    const raw = row.getAttribute(`data-sort-${key}`);
+    if (raw === null || raw === "") return null;
+    const num = Number(raw);
+    return Number.isFinite(num) ? num : null;
+  };
+
+  const updateSortArrows = () => {
+    sortButtons.forEach((button) => {
+      const arrow = button.querySelector("[data-sort-arrow]");
+      if (!arrow) return;
+      const isActive = button.getAttribute("data-sort-key") === sortKey;
+      arrow.textContent = isActive ? (sortDir === "asc" ? ARROW_ASC : ARROW_DESC) : ARROW_NEUTRAL;
+      arrow.classList.toggle("text-slate-300", !isActive);
+      arrow.classList.toggle("text-accent", isActive);
+    });
+  };
+
+  const applySort = () => {
+    if (!sortKey) return;
+    const pairs = getMainRows().map((mainRow) => {
+      const key = mainRow.getAttribute("data-analysis-key");
+      const detailRow = key ? tableBody.querySelector(`tr[data-analysis-detail-row][data-analysis-key="${key}"]`) : null;
+      return { mainRow, detailRow };
+    });
+    pairs.sort((a, b) => {
+      const av = sortValue(a.mainRow, sortKey);
+      const bv = sortValue(b.mainRow, sortKey);
+      if (av === null && bv === null) return 0;
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      return sortDir === "asc" ? av - bv : bv - av;
+    });
+    pairs.forEach(({ mainRow, detailRow }) => {
+      tableBody.appendChild(mainRow);
+      if (detailRow) tableBody.appendChild(detailRow);
+    });
+  };
+
+  sortButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const key = button.getAttribute("data-sort-key");
+      if (!key) return;
+      if (sortKey === key) {
+        sortDir = sortDir === "asc" ? "desc" : "asc";
+      } else {
+        sortKey = key;
+        sortDir = "desc";
+      }
+      updateSortArrows();
+      applySort();
+      currentPage = 1;
+      applyTableState();
+    });
+  });
+
+  applyTableState();
+})();
+</script>
