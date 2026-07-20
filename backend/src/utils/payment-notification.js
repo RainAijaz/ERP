@@ -9,10 +9,37 @@
 // This is fire-and-observe: it must never throw into the approval flow, so the
 // whole thing is wrapped in try/catch and failures are logged, not raised.
 
-const { sendWhatsAppMessage, resolveWhatsAppChatId } = require("./whatsapp");
+const {
+  sendWhatsAppMessage,
+  resolveWhatsAppChatId,
+  saveWhatsAppContact,
+} = require("./whatsapp");
 const { normalizePkMobileToChatId } = require("./phone-format");
 
 const TARGET_VOUCHER_TYPES = new Set(["CASH_VOUCHER", "JOURNAL_VOUCHER"]);
+
+// Saved contacts get a suffix so an ERP-created contact is recognisable in the
+// phone book and doesn't get confused with a personal contact of the same name.
+const CONTACT_SUFFIX_BY_KIND = {
+  SUPPLIER: "(ERP Supplier)",
+  LABOUR: "(ERP Labour)",
+  EMPLOYEE: "(ERP Employee)",
+};
+
+// Failures that retrying can never fix — the master record needs a human to
+// correct it, so these are recorded FAILED and surface on the alerts page.
+// Anything else (WhatsApp down, transport/resolve error) is transient and gets
+// queued for automatic retry.
+const PERMANENT_REASONS = new Set([
+  "no_phone",
+  "invalid_phone",
+  "not_on_whatsapp",
+  "no_chat_id",
+]);
+const isRetryable = (reason) => !PERMANENT_REASONS.has(String(reason || ""));
+
+// First backoff step; the worker owns the rest of the schedule.
+const FIRST_RETRY_DELAY_MS = 60 * 1000;
 
 const toNumber = (value) => {
   const n = Number(value);
@@ -195,6 +222,7 @@ const sendVoucherPaymentNotifications = async ({ knex, voucherId }) => {
 
       const { chatId, normalized, reason } = normalizePkMobileToChatId(phoneRaw);
       if (!chatId) {
+        // Bad/missing number — permanent, never queued.
         logRows.push({
           ...baseRow,
           phone_normalized: null,
@@ -204,20 +232,8 @@ const sendVoucherPaymentNotifications = async ({ knex, voucherId }) => {
         continue;
       }
 
-      // The number looks valid — now confirm WhatsApp actually knows it, and let
-      // WhatsApp tell us how to address it. Skipping this would report a
-      // well-formed but non-WhatsApp number as delivered.
-      const resolved = await resolveWhatsAppChatId(normalized);
-      if (!resolved.ok) {
-        logRows.push({
-          ...baseRow,
-          phone_normalized: normalized,
-          status: "FAILED",
-          failure_reason: resolved.reason,
-        });
-        continue;
-      }
-
+      // Render the message up front so a transient failure can queue the exact
+      // text for a later retry rather than losing it.
       const message = buildMessage({
         name,
         total: entry.total,
@@ -225,21 +241,61 @@ const sendVoucherPaymentNotifications = async ({ knex, voucherId }) => {
         voucherDate: header.voucher_date,
       });
 
-      const result = await sendWhatsAppMessage(resolved.chatId, message);
+      // Queue a transient failure (WhatsApp down / transport error) so the
+      // worker re-sends it; record a permanent one as FAILED for a human.
+      const queueOrFail = (failureReason) => {
+        const retryable = isRetryable(failureReason);
+        logRows.push({
+          ...baseRow,
+          phone_normalized: normalized,
+          message_body: retryable ? message : null,
+          status: retryable ? "QUEUED" : "FAILED",
+          failure_reason: failureReason,
+          attempts: 1,
+          last_attempt_at: new Date(),
+          next_retry_at: retryable ? new Date(Date.now() + FIRST_RETRY_DELAY_MS) : null,
+        });
+      };
+
+      // The number looks valid — now confirm WhatsApp actually knows it, and let
+      // WhatsApp tell us how to address it. Skipping this would report a
+      // well-formed but non-WhatsApp number as delivered.
+      const resolved = await resolveWhatsAppChatId(normalized);
+      if (!resolved.ok) {
+        queueOrFail(resolved.reason);
+        continue;
+      }
+
+      // queue:false — the DB row above is the single owner of retries for
+      // payment notifications, so the in-memory buffer must not also hold a copy.
+      const result = await sendWhatsAppMessage(resolved.chatId, message, {
+        queue: false,
+      });
       if (result && result.ok) {
+        // First time we've successfully messaged this payee: save them as a
+        // contact so they appear by name rather than as an unknown number.
+        // Only on the first send, so a manually corrected contact name is not
+        // overwritten later. Never affects the SENT outcome.
+        const alreadyMessaged = await knex("erp.whatsapp_notification_log")
+          .where({ recipient_kind: entry.kind, recipient_id: entry.id, status: "SENT" })
+          .first();
+        if (!alreadyMessaged) {
+          await saveWhatsAppContact({
+            msisdn: normalized,
+            firstName: name,
+            lastName: CONTACT_SUFFIX_BY_KIND[entry.kind] || "",
+          }).catch(() => {});
+        }
         logRows.push({
           ...baseRow,
           phone_normalized: normalized,
           status: "SENT",
           failure_reason: null,
+          attempts: 1,
+          last_attempt_at: new Date(),
         });
       } else {
-        logRows.push({
-          ...baseRow,
-          phone_normalized: normalized,
-          status: "FAILED",
-          failure_reason: (result && result.reason) || "send_error",
-        });
+        queueOrFail((result && result.reason) || "send_error");
       }
     }
 
@@ -251,4 +307,9 @@ const sendVoucherPaymentNotifications = async ({ knex, voucherId }) => {
   }
 };
 
-module.exports = { sendVoucherPaymentNotifications };
+module.exports = {
+  sendVoucherPaymentNotifications,
+  PERMANENT_REASONS,
+  isRetryable,
+  CONTACT_SUFFIX_BY_KIND,
+};

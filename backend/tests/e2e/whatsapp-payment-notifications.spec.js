@@ -133,6 +133,15 @@ test.describe("WhatsApp payment notifications", () => {
           phone_raw: "03001234567", phone_normalized: "923001234567", amount: 1200,
           status: "SENT", failure_reason: null,
         },
+        {
+          // Awaiting automatic retry — must be visible but must NOT raise the alert.
+          voucher_type_code: "CASH_VOUCHER", voucher_no: 900004, branch_id: null,
+          recipient_kind: "SUPPLIER", recipient_id: 999004, recipient_name: `${TAG} QueuedSupplier`,
+          phone_raw: "03005551234", phone_normalized: "923005551234", amount: 2500,
+          status: "QUEUED", failure_reason: "client_unavailable",
+          message_body: "🔔 *ادائیگی کی اطلاع*", attempts: 2,
+          next_retry_at: new Date(Date.now() + 15 * 60 * 1000),
+        },
       ])
       .returning(["id"]);
     state.seededLogIds = rows.map((r) => Number(r.id || r));
@@ -225,12 +234,40 @@ test.describe("WhatsApp payment notifications", () => {
       page.locator("tr", { hasText: `${TAG} NoPhoneLabour` }),
     ).toContainText("No phone number on record");
 
-    // The ALL view additionally includes the SENT row (3 TAG rows total).
+    // The ALL view additionally includes the SENT and QUEUED rows (4 TAG rows).
     await page.goto("/administration/whatsapp-notifications?status=ALL", { waitUntil: "domcontentloaded" });
-    await expect(page.locator("tbody tr", { hasText: TAG })).toHaveCount(3);
+    await expect(page.locator("tbody tr", { hasText: TAG })).toHaveCount(4);
     await expect(
       page.locator("tr", { hasText: `${TAG} SentEmployee` }),
     ).toContainText("Sent");
+  });
+
+  // ── 2b. Queued (awaiting retry) rows are visible but not alarming ────────
+  test("queued rows show as waiting to retry and stay out of the failures view", async ({ page }) => {
+    await login(page, "E2E_ADMIN");
+
+    // Not in the default FAILED view — it hasn't failed, it's waiting.
+    await page.goto("/administration/whatsapp-notifications", { waitUntil: "domcontentloaded" });
+    await expect(page.locator("tbody tr", { hasText: `${TAG} QueuedSupplier` })).toHaveCount(0);
+
+    // Visible under the Queued filter, with its retry state.
+    await page.goto("/administration/whatsapp-notifications?status=QUEUED", { waitUntil: "domcontentloaded" });
+    const row = page.locator("tr", { hasText: `${TAG} QueuedSupplier` });
+    await expect(row).toBeVisible();
+    await expect(row).toContainText("Waiting to retry");
+    await expect(row).toContainText("2"); // attempt count
+  });
+
+  // ── 2c. A message awaiting retry must not raise the dashboard alert ──────
+  test("queued rows are excluded from the dashboard alert count", async () => {
+    // Mirrors the dashboard-metrics alert query.
+    const alertRows = await db("erp.whatsapp_notification_log")
+      .where("status", "FAILED")
+      .whereNull("resolved_at")
+      .whereIn("id", state.seededLogIds);
+    const names = alertRows.map((r) => r.recipient_name);
+    expect(names).not.toContain(`${TAG} QueuedSupplier`);
+    expect(names).toContain(`${TAG} NoPhoneLabour`); // permanent failures still alert
   });
 
   // ── 3. Dashboard shows the "messages not sent" alert linking to the page ─

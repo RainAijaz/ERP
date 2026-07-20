@@ -25,7 +25,11 @@ const notFound = require("./middleware/errors/not-found");
 const errorHandler = require("./middleware/errors/error-handler");
 const knex = require("./db/knex");
 const { navConfig, syncNavScopes } = require("./utils/nav-config");
-const { initWhatsApp } = require("./utils/whatsapp");
+const { initWhatsApp, onWhatsAppReady } = require("./utils/whatsapp");
+const {
+  startWhatsAppRetryWorker,
+  retryQueuedWhatsAppNotifications,
+} = require("./utils/payment-notification-retry");
 
 const app = express();
 
@@ -161,4 +165,16 @@ if (
   process.env.WHATSAPP_PAYMENT_NOTIFY_ENABLED !== "0"
 ) {
   initWhatsApp();
+}
+
+// Payment notifications that could not be delivered (WhatsApp down, transport
+// error) are queued in the DB. Sweep them periodically — which also picks up
+// anything left queued by a previous run — and flush immediately on reconnect.
+if (process.env.WHATSAPP_PAYMENT_NOTIFY_ENABLED !== "0") {
+  startWhatsAppRetryWorker({ knex });
+  onWhatsAppReady(() =>
+    retryQueuedWhatsAppNotifications({ knex }).catch((err) =>
+      console.error("[WhatsApp] retry-on-ready failed:", err?.message || err),
+    ),
+  );
 }
