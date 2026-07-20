@@ -3741,9 +3741,12 @@ const createStockCountAdjustmentVoucher = async ({
       canBypassNegativeStockApproval: negativeStockOverrideAllowed,
       voucherTypeCode,
     });
+    // Stock Count approval is done on the approvals page only: an approver
+    // saving here must still queue when policy requires approval — no
+    // self-approve via the voucher-page Confirm button.
     const queuedForApproval =
       !canCreate ||
-      (policyRequiresApproval && !canApprove) ||
+      policyRequiresApproval ||
       negativeStockRouting.queueForApproval;
 
     const [header] = await trx("erp.voucher_header")
@@ -3907,9 +3910,12 @@ const updateStockCountAdjustmentVoucher = async ({
       canBypassNegativeStockApproval: negativeStockOverrideAllowed,
       voucherTypeCode,
     });
+    // Stock Count approval is done on the approvals page only: an approver
+    // saving here must still queue when policy requires approval — no
+    // self-approve via the voucher-page Confirm button.
     const queuedForApproval =
       !canEdit ||
-      (policyRequiresApproval && !canApprove) ||
+      policyRequiresApproval ||
       negativeStockRouting.queueForApproval;
 
     if (queuedForApproval) {
@@ -4025,7 +4031,6 @@ const deleteStockCountAdjustmentVoucher = async ({
   if (!normalizedVoucherId) throw new HttpError(400, "Invalid voucher id");
 
   const canDelete = canDo(req, "VOUCHER", scopeKey, "hard_delete");
-  const canApprove = canApproveVoucherAction(req, scopeKey);
 
   const result = await knex.transaction(async (trx) => {
     const existing = await trx("erp.voucher_header")
@@ -4046,8 +4051,10 @@ const deleteStockCountAdjustmentVoucher = async ({
       voucherTypeCode,
       "delete",
     );
-    const queuedForApproval =
-      !canDelete || (policyRequiresApproval && !canApprove);
+    // Stock Count approval is done on the approvals page only: an approver
+    // saving here must still queue when policy requires approval — no
+    // self-approve via the voucher-page Confirm button.
+    const queuedForApproval = !canDelete || policyRequiresApproval;
 
     if (queuedForApproval) {
       const approvalRequestId = await createApprovalRequest({

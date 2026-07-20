@@ -2246,10 +2246,14 @@ router.post(
               : {};
           const action = String(payload.action || "").toLowerCase();
           const voucherId = Number(request.entity_id || 0);
-          if (!voucherId) {
-            throw new Error(res.locals.t("error_invalid_id"));
-          }
-          if (!action) {
+          // A pending "create" leaves a PENDING voucher header behind, so
+          // rejecting it must flip that header to REJECTED. "update"/"delete"
+          // requests never mutate the header while queued (the pending change
+          // lives only in the request), so the voucher keeps its prior status
+          // and only the request is rejected. Legacy action-less requests are
+          // treated as creates.
+          const rejectsHeader = action === "" || action === "create";
+          if (rejectsHeader && Number.isInteger(voucherId) && voucherId > 0) {
             await trx("erp.voucher_header")
               .where({ id: voucherId, status: "PENDING" })
               .update({
