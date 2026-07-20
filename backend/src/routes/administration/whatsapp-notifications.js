@@ -14,10 +14,10 @@ router.get(
   requirePermission(...SCOPE, "view"),
   async (req, res, next) => {
     try {
-      const status =
-        String(req.query.status || "FAILED").toUpperCase() === "ALL"
-          ? "ALL"
-          : "FAILED";
+      const requestedStatus = String(req.query.status || "FAILED").toUpperCase();
+      const status = ["ALL", "QUEUED", "FAILED"].includes(requestedStatus)
+        ? requestedStatus
+        : "FAILED";
       const includeResolved = String(req.query.resolved || "") === "1";
       const page = Math.max(1, Number(req.query.page) || 1);
       const pageSize = Math.min(500, Math.max(25, Number(req.query.page_size) || 100));
@@ -26,8 +26,13 @@ router.get(
       const baseQuery = knex("erp.whatsapp_notification_log as wl")
         .leftJoin("erp.branches as b", "b.id", "wl.branch_id")
         .modify((qb) => {
-          if (status === "FAILED") qb.where("wl.status", "FAILED");
-          if (status === "FAILED" && !includeResolved) qb.whereNull("wl.resolved_at");
+          if (status === "FAILED") {
+            qb.where("wl.status", "FAILED");
+            if (!includeResolved) qb.whereNull("wl.resolved_at");
+          } else if (status === "QUEUED") {
+            qb.where("wl.status", "QUEUED");
+          }
+          // "ALL" leaves every status visible (SENT / FAILED / QUEUED).
         });
 
       if (req.applyBranchScope) {
@@ -50,6 +55,8 @@ router.get(
             "wl.status",
             "wl.failure_reason",
             "wl.resolved_at",
+            "wl.attempts",
+            "wl.next_retry_at",
             "b.name as branch_name",
           )
           .orderBy("wl.created_at", "desc")
