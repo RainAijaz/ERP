@@ -28,6 +28,40 @@ const localizedNameSelect = (alias, as, locale) =>
     ? knex.raw(`COALESCE(${alias}.name_ur, ${alias}.name) as ${as}`)
     : `${alias}.name as ${as}`;
 
+// Color/size a purchase line was booked against, read from voucher_line.meta
+// (older vouchers used the rm_* key names). NULL when the line has no dimension.
+const LINE_COLOR_ID_SQL =
+  "CASE WHEN COALESCE(NULLIF(vl.meta->>'color_id', ''), NULLIF(vl.meta->>'rm_color_id', ''), '') ~ '^[0-9]+$' THEN COALESCE(NULLIF(vl.meta->>'color_id', ''), NULLIF(vl.meta->>'rm_color_id', ''))::bigint END";
+const LINE_SIZE_ID_SQL =
+  "CASE WHEN COALESCE(NULLIF(vl.meta->>'size_id', ''), NULLIF(vl.meta->>'rm_size_id', ''), '') ~ '^[0-9]+$' THEN COALESCE(NULLIF(vl.meta->>'size_id', ''), NULLIF(vl.meta->>'rm_size_id', ''))::bigint END";
+
+// Resolves the standard/weighted-average rate for an RM purchase line the same
+// way the purchase entry screen does (resolveAutoRateForRow in
+// views/vouchers/purchase/common.ejs): an exact color+size rate wins, but a
+// rate defined without a color and/or size still applies to a line that carries
+// one. A plain equality join reported 0 for those lines even though a rate is
+// defined. Exposes alias "r"; must be chained after the voucher_line join.
+const RM_PURCHASE_RATE_LATERAL_SQL = `
+  LEFT JOIN LATERAL (
+    SELECT rr.purchase_rate, rr.avg_purchase_rate
+    FROM erp.rm_purchase_rates rr
+    WHERE rr.rm_item_id = vl.item_id
+      AND rr.is_active = true
+      AND rr.purchase_rate > 0
+      AND (CASE WHEN ${LINE_COLOR_ID_SQL} IS NULL
+                THEN rr.color_id IS NULL
+                ELSE rr.color_id IS NULL OR rr.color_id = ${LINE_COLOR_ID_SQL} END)
+      AND (CASE WHEN ${LINE_SIZE_ID_SQL} IS NULL
+                THEN rr.size_id IS NULL
+                ELSE rr.size_id IS NULL OR rr.size_id = ${LINE_SIZE_ID_SQL} END)
+    ORDER BY
+      (CASE WHEN rr.color_id IS NOT NULL THEN 1 ELSE 0 END
+       + CASE WHEN rr.size_id IS NOT NULL THEN 1 ELSE 0 END) DESC,
+      rr.id DESC
+    LIMIT 1
+  ) r ON TRUE
+`;
+
 const ALL_MULTI_FILTER_VALUE = "__ALL__";
 const PURCHASE_RATE_ALERT_PERCENT = (() => {
   const value = Number(process.env.PURCHASE_RATE_ALERT_PERCENT || 10);
@@ -445,20 +479,7 @@ const getPurchaseReportRows = async ({ req, filters }) => {
           .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
           .join("erp.items as i", "i.id", "vl.item_id")
           .leftJoin("erp.uom as u", "u.id", "i.base_uom_id")
-          .leftJoin("erp.rm_purchase_rates as r", function joinRmRates() {
-            this.on("r.rm_item_id", "=", "vl.item_id")
-              .andOn(knex.raw("r.is_active = true"))
-              .andOn(
-                knex.raw(
-                  "COALESCE(r.color_id::text, '0') = COALESCE(NULLIF(vl.meta->>'color_id', ''), NULLIF(vl.meta->>'rm_color_id', ''), '0')",
-                ),
-              )
-              .andOn(
-                knex.raw(
-                  "COALESCE(r.size_id::text, '0') = COALESCE(NULLIF(vl.meta->>'size_id', ''), NULLIF(vl.meta->>'rm_size_id', ''), '0')",
-                ),
-              );
-          })
+          .joinRaw(RM_PURCHASE_RATE_LATERAL_SQL)
           .leftJoin("erp.parties as p", "p.id", "pie.supplier_party_id")
           .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
           .leftJoin("erp.accounts as a", "a.id", "pie.cash_paid_account_id")
@@ -1967,20 +1988,7 @@ const getSupplierAnalysisRows = async ({ req, filters }) => {
     .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
     .join("erp.items as i", "i.id", "vl.item_id")
     .leftJoin("erp.uom as u", "u.id", "i.base_uom_id")
-    .leftJoin("erp.rm_purchase_rates as r", function joinRmRates() {
-      this.on("r.rm_item_id", "=", "vl.item_id")
-        .andOn(knex.raw("r.is_active = true"))
-        .andOn(
-          knex.raw(
-            "COALESCE(r.color_id::text, '0') = COALESCE(NULLIF(vl.meta->>'color_id', ''), NULLIF(vl.meta->>'rm_color_id', ''), '0')",
-          ),
-        )
-        .andOn(
-          knex.raw(
-            "COALESCE(r.size_id::text, '0') = COALESCE(NULLIF(vl.meta->>'size_id', ''), NULLIF(vl.meta->>'rm_size_id', ''), '0')",
-          ),
-        );
-    })
+    .joinRaw(RM_PURCHASE_RATE_LATERAL_SQL)
     .leftJoin("erp.parties as p", "p.id", "pie.supplier_party_id")
     .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
     .leftJoin(
