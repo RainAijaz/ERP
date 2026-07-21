@@ -14,37 +14,21 @@ const path = require("path");
 // --- Stub ./whatsapp BEFORE the service requires it (no real sends) ---
 const waPath = require.resolve(path.join(__dirname, "..", "utils", "whatsapp.js"));
 const sent = [];
-const savedContacts = [];
-const inMemoryQueued = []; // anything the transport buffered itself (must stay empty)
-// Flip to simulate WhatsApp being disconnected.
-const transport = { offline: false };
-
 require.cache[waPath] = {
   id: waPath,
   filename: waPath,
   loaded: true,
   exports: {
     initWhatsApp: () => {},
-    onWhatsAppReady: () => {},
     // Stand in for WhatsApp's number lookup: 92300000000x is treated as a
     // well-formed number that is NOT registered on WhatsApp.
     resolveWhatsAppChatId: async (msisdn) => {
       const digits = String(msisdn || "").replace(/\D/g, "");
-      if (transport.offline) return { ok: false, reason: "client_unavailable" };
       if (digits.startsWith("9230000000")) return { ok: false, reason: "not_on_whatsapp" };
       return { ok: true, chatId: `${digits}@c.us` };
     },
-    sendWhatsAppMessage: async (chatId, text, { queue = true } = {}) => {
-      if (transport.offline) {
-        // Mirror the real module: it only buffers when queue !== false.
-        if (queue) inMemoryQueued.push({ chatId, text });
-        return { ok: false, queued: queue, reason: "client_unavailable" };
-      }
+    sendWhatsAppMessage: async (chatId, text) => {
       sent.push({ chatId, text });
-      return { ok: true };
-    },
-    saveWhatsAppContact: async ({ msisdn, firstName, lastName }) => {
-      savedContacts.push({ msisdn, firstName, lastName });
       return { ok: true };
     },
   },
@@ -52,9 +36,6 @@ require.cache[waPath] = {
 
 const knex = require("../db/knex");
 const { sendVoucherPaymentNotifications } = require("../utils/payment-notification");
-const {
-  retryQueuedWhatsAppNotifications,
-} = require("../utils/payment-notification-retry");
 
 let failures = 0;
 const check = (name, cond) => {
@@ -188,95 +169,7 @@ const created = { partyIds: [], labourIds: [], employeeIds: [], voucherId: null 
   check("Message lists both line descriptions", svMsg && svMsg.text.includes("Cloth purchase") && svMsg.text.includes("Buttons"));
   check("Message does NOT expose the voucher number", svMsg && !svMsg.text.includes(`#${voucherNo}`) && !svMsg.text.includes("واؤچر"));
 
-  // --- Contact saving: first message only ---
-  check("Contact saved for each newly-messaged payee (2)", savedContacts.length === 2);
-  const svContact = savedContacts.find((c) => c.msisdn === "923001112223");
-  check("Contact saved with the payee's name", svContact && svContact.firstName.includes("SupplierValid"));
-  check("Contact tagged by kind", svContact && svContact.lastName === "(ERP Supplier)");
-  check("No contact saved for failed sends", !savedContacts.some((c) => c.msisdn.startsWith("9230000000")));
-
-  // Re-running must NOT re-save contacts (they now have a prior SENT row).
-  savedContacts.length = 0;
-  sent.length = 0;
-  await sendVoucherPaymentNotifications({ knex, voucherId });
-  check("Second run re-sends but does NOT re-save contacts", sent.length === 2 && savedContacts.length === 0);
-
   if (svMsg) console.log("\n--- Sample message ---\n" + svMsg.text + "\n----------------------");
-  if (svContact) console.log(`--- Sample contact --- ${svContact.firstName} ${svContact.lastName}  (${svContact.msisdn})`);
-
-  // ============================================================
-  // Durable retry queue
-  // ============================================================
-  console.log("\n=== retry queue ===");
-
-  // Clear this voucher's log so the queue scenarios start clean.
-  await knex("erp.whatsapp_notification_log").where({ voucher_header_id: voucherId }).del();
-  sent.length = 0;
-  savedContacts.length = 0;
-  inMemoryQueued.length = 0;
-
-  // --- WhatsApp offline: transient failures must be QUEUED, not dropped ---
-  transport.offline = true;
-  await sendVoucherPaymentNotifications({ knex, voucherId });
-  transport.offline = false;
-
-  const afterOffline = await knex("erp.whatsapp_notification_log").where({ voucher_header_id: voucherId });
-  const queued = afterOffline.filter((r) => r.status === "QUEUED");
-  const permanent = afterOffline.filter((r) => r.status === "FAILED");
-
-  // 3 queue while offline: the two deliverable payees plus the not-on-WhatsApp
-  // one (offline masks the lookup, so it is transient until we can check again).
-  check("Offline: payees with good numbers are QUEUED, not dropped", queued.length === 3);
-  check("Queued rows carry the rendered message for retry", queued.every((r) => (r.message_body || "").includes("ادائیگی کی اطلاع")));
-  check("Queued rows have a future next_retry_at", queued.every((r) => r.next_retry_at && new Date(r.next_retry_at) > new Date(Date.now() - 1000)));
-  check("Nothing was SENT while offline", sent.length === 0);
-  check("No duplicate copy left in the in-memory transport queue", inMemoryQueued.length === 0);
-  check("Permanent failures (bad number) are NOT queued", permanent.length > 0 && permanent.every((r) => r.next_retry_at === null));
-
-  // --- WhatsApp back: the worker delivers the queued messages ---
-  await knex("erp.whatsapp_notification_log")
-    .where({ voucher_header_id: voucherId, status: "QUEUED" })
-    .update({ next_retry_at: new Date(Date.now() - 60000) }); // make them due now
-  const sweep = await retryQueuedWhatsAppNotifications({ knex });
-
-  const afterRetry = await knex("erp.whatsapp_notification_log").where({ voucher_header_id: voucherId });
-  check("Worker sent the queued messages once reconnected", sweep.sent === 2 && sent.length === 2);
-  check("Queued rows became SENT", afterRetry.filter((r) => r.status === "SENT").length === 2);
-  // Reconnecting lets us finally check the number: it is not a WhatsApp user,
-  // so the worker stops retrying it instead of looping for 24h.
-  check(
-    "Retry reclassifies not-on-WhatsApp as permanent",
-    afterRetry.some((r) => r.status === "FAILED" && r.failure_reason === "not_on_whatsapp"),
-  );
-  check("Delivered rows clear next_retry_at", afterRetry.filter((r) => r.status === "SENT").every((r) => r.next_retry_at === null));
-  check("Queued first message still saves the contact", savedContacts.length === 2);
-  check("Each queued message delivered exactly once (no duplicate)", new Set(sent.map((m) => m.chatId)).size === sent.length);
-
-  // --- Give-up: a row older than the retry window becomes a permanent failure ---
-  await knex("erp.whatsapp_notification_log").where({ voucher_header_id: voucherId }).del();
-  transport.offline = true;
-  await sendVoucherPaymentNotifications({ knex, voucherId });
-  transport.offline = false;
-  await knex("erp.whatsapp_notification_log")
-    .where({ voucher_header_id: voucherId, status: "QUEUED" })
-    .update({
-      created_at: new Date(Date.now() - 25 * 60 * 60 * 1000), // older than the 24h window
-      next_retry_at: new Date(Date.now() - 60000),
-    });
-  await retryQueuedWhatsAppNotifications({ knex });
-
-  const afterGiveUp = await knex("erp.whatsapp_notification_log").where({ voucher_header_id: voucherId });
-  const expired = afterGiveUp.filter((r) => r.failure_reason === "max_retries_exceeded");
-  check("After 24h the worker gives up and marks FAILED", expired.length === 3);
-  check("Given-up rows stop retrying (next_retry_at cleared)", expired.every((r) => r.status === "FAILED" && r.next_retry_at === null));
-
-  // Given-up rows must now be visible to the dashboard alert query.
-  const alertCount = await knex("erp.whatsapp_notification_log")
-    .where({ voucher_header_id: voucherId, status: "FAILED" })
-    .whereNull("resolved_at")
-    .count("* as c")
-    .first();
-  check("Given-up rows surface in the dashboard alert count", Number(alertCount.c) >= 2);
 })()
   .catch((e) => {
     console.error("Test error:", e);

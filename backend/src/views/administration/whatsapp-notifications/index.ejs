@@ -30,7 +30,6 @@
     if (r === "invalid_phone") return t("wa_reason_invalid_phone");
     if (r === "not_on_whatsapp") return t("wa_reason_not_on_whatsapp");
     if (r === "client_unavailable") return t("wa_reason_client_unavailable");
-    if (r === "max_retries_exceeded") return t("wa_reason_max_retries");
     return reason || "-";
   };
 %>
@@ -45,9 +44,6 @@
       <div class="flex flex-wrap gap-2">
         <a href="?status=FAILED" class="rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] transition <%= filters.status === 'FAILED' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-800' %>">
           <%= t("wa_filter_failed") %>
-        </a>
-        <a href="?status=QUEUED" class="rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] transition <%= filters.status === 'QUEUED' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-800' %>">
-          <%= t("wa_filter_queued") %>
         </a>
         <a href="?status=ALL" class="rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.2em] transition <%= filters.status === 'ALL' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:text-slate-800' %>">
           <%= t("wa_filter_all") %>
@@ -93,11 +89,6 @@
               <td class="px-4 py-3 whitespace-nowrap">
                 <% if (row.status === 'SENT') { %>
                   <span class="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700"><%= t("wa_status_sent") %></span>
-                <% } else if (row.status === 'QUEUED') { %>
-                  <span class="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700"><%= t("wa_status_queued") %></span>
-                  <div class="mt-1 text-[11px] text-slate-400">
-                    <%= t("wa_attempts") %>: <%= row.attempts || 0 %><% if (row.next_retry_at) { %> · <%= t("wa_next_retry") %> <%= fmtDateTime(row.next_retry_at) %><% } %>
-                  </div>
                 <% } else if (row.resolved_at) { %>
                   <span class="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500"><%= t("wa_status_resolved") %></span>
                 <% } else { %>
