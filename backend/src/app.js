@@ -153,12 +153,6 @@ syncNavScopes(knex).catch((err) => {
   console.error("Failed to sync nav permission scopes:", err.message || err);
 });
 
-// Initialize the WhatsApp client when either notification feature is active:
-// the SKU rate-change group notifier, or the per-person payment notifier
-// (enabled by default unless WHATSAPP_PAYMENT_NOTIFY_ENABLED=0).
-if (
-  process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID ||
-  process.env.WHATSAPP_PAYMENT_NOTIFY_ENABLED !== "0"
-) {
+if (process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID) {
   initWhatsApp();
 }

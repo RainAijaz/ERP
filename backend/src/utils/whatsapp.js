@@ -61,40 +61,23 @@ const scheduleReconnect = (baseDelayMs = 15000) => {
   }, delayMs);
 };
 
-// --no-zygote/--single-process keep Chrome's memory footprint down on the Linux
-// VPS, but on Windows they break Chrome's frame handling: the client dies during
-// startup with "Navigating frame was detached" and never reaches the QR step.
-// Keep them off Windows only, so the production (Linux) launch is unchanged.
-const buildPuppeteerArgs = () => {
-  const args = [
-    "--no-sandbox",
-    "--disable-setuid-sandbox",
-    "--disable-dev-shm-usage",
-    "--disable-gpu",
-    "--no-first-run",
-    "--disable-extensions",
-  ];
-  if (process.platform !== "win32") {
-    args.push("--no-zygote", "--single-process");
-  }
-  return args;
-};
-
 const initWhatsApp = () => {
   if (client) return;
-  // Escape hatch for tests/CI: keep the messaging feature enabled (so callers
-  // still record SENT/FAILED) but never launch the Puppeteer client, so no real
-  // messages can be delivered. sendWhatsAppMessage then reports client_unavailable.
-  if (process.env.WHATSAPP_CLIENT_DISABLED === "1") {
-    console.log("[WhatsApp] client disabled via WHATSAPP_CLIENT_DISABLED=1");
-    return;
-  }
 
   client = new Client({
     authStrategy: new LocalAuth({ dataPath: SESSION_PATH }),
     puppeteer: {
       headless: true,
-      args: buildPuppeteerArgs(),
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu",
+        "--no-first-run",
+        "--no-zygote",
+        "--single-process",
+        "--disable-extensions",
+      ],
     },
     webVersionCache: {
       type: "local",
@@ -151,55 +134,30 @@ const initWhatsApp = () => {
   });
 };
 
-// Returns a result object so callers that need to record delivery outcome can:
-//   { ok: true }                      — handed to WhatsApp successfully
-//   { ok: false, queued, reason }     — not delivered now (queued for retry or dropped)
-// Existing callers ignore the return value, so their behavior is unchanged.
 const sendWhatsAppMessage = async (chatId, text) => {
   if (!chatId || !String(chatId).trim()) {
     console.warn("[WhatsApp] sendMessage called with no chatId");
-    return { ok: false, queued: false, reason: "no_chat_id" };
+    return;
   }
   if (!clientReady || !client) {
     if (pendingQueue.length < MAX_QUEUE) {
       pendingQueue.push({ chatId, text });
       console.log(`[WhatsApp] Client not ready — message queued (queue size: ${pendingQueue.length})`);
-      return { ok: false, queued: true, reason: "client_unavailable" };
+    } else {
+      console.warn("[WhatsApp] Queue full — dropping message to", chatId);
     }
-    console.warn("[WhatsApp] Queue full — dropping message to", chatId);
-    return { ok: false, queued: false, reason: "queue_full" };
+    return;
   }
   try {
     await client.sendMessage(chatId, text);
-    console.log("[WhatsApp] ✓ Message sent successfully to", chatId);
-    return { ok: true };
+    console.log("[WhatsApp] ✓ Rate notification sent successfully to group");
   } catch (err) {
     console.error("[WhatsApp] ✗ Failed to send message:", err.message);
     if (pendingQueue.length < MAX_QUEUE) {
       pendingQueue.push({ chatId, text });
       console.log(`[WhatsApp] Message queued for retry on reconnect (queue size: ${pendingQueue.length})`);
-      return { ok: false, queued: true, reason: err.message || "send_error" };
     }
-    return { ok: false, queued: false, reason: err.message || "send_error" };
   }
 };
 
-// Ask WhatsApp whether a plain MSISDN (e.g. "923001234567") is actually a
-// registered user, and get the id to address it by. This matters because
-// sendMessage() can resolve without throwing for a number that is not on
-// WhatsApp — treating that as success would report a wrong number as delivered.
-// Returns { ok: true, chatId } or { ok: false, reason }.
-const resolveWhatsAppChatId = async (msisdn) => {
-  const digits = String(msisdn || "").replace(/\D/g, "");
-  if (!digits) return { ok: false, reason: "no_phone" };
-  if (!clientReady || !client) return { ok: false, reason: "client_unavailable" };
-  try {
-    const numberId = await client.getNumberId(digits);
-    if (!numberId) return { ok: false, reason: "not_on_whatsapp" };
-    return { ok: true, chatId: numberId._serialized };
-  } catch (err) {
-    return { ok: false, reason: err?.message || "resolve_error" };
-  }
-};
-
-module.exports = { initWhatsApp, sendWhatsAppMessage, resolveWhatsAppChatId };
+module.exports = { initWhatsApp, sendWhatsAppMessage };

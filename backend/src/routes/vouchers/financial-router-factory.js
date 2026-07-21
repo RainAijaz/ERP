@@ -768,13 +768,6 @@ const createFinancialVoucherRouter = ({
       const voucherDate = String(req.body?.voucher_date || "").trim();
       const remarks = String(req.body?.remarks || "").trim();
       const lines = toLines(req.body);
-      // Opt-in WhatsApp payee notification, default ON. A hidden marker field is
-      // always submitted so an unchecked checkbox (which sends nothing) is
-      // distinguishable from an older form that lacks the control entirely.
-      const notifyPayees =
-        String(req.body?.notify_payees_present || "") === "1"
-          ? String(req.body?.notify_payees || "") === "1"
-          : true;
       if (!voucherDate) {
         setNotice(res, res.locals.t("error_required_fields"), true);
         return res.redirect(req.baseUrl);
@@ -791,7 +784,6 @@ const createFinancialVoucherRouter = ({
             scopeKey,
             headerAccountId,
             linkedSalesOrderId,
-            notifyPayees,
           })
         : await createVoucher({
             req,
@@ -802,7 +794,6 @@ const createFinancialVoucherRouter = ({
             scopeKey,
             headerAccountId,
             linkedSalesOrderId,
-            notifyPayees,
           });
 
       if (saved.queuedForApproval) {
