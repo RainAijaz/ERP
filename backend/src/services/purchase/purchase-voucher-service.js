@@ -483,6 +483,330 @@ const insertRmStockLedgerTx = async ({
   await trx("erp.stock_ledger").insert(payload);
 };
 
+// ---------------------------------------------------------------------------
+// SFG SKU stock posting.
+// SFG items purchased from a supplier are variant/SKU-tracked (like production
+// output), NOT item-level like RM. Their stock must live in stock_balance_sku
+// and stock_ledger with category 'SFG', sku_id set, and integer qty_pairs — so
+// production and every SFG report (which read category='SFG') see them.
+// These mirror the proven helpers in inventory-voucher-service.js.
+// ---------------------------------------------------------------------------
+
+const wacFromQtyValue = (qty, value) => {
+  const q = Number(qty || 0);
+  if (!Number.isFinite(q) || Math.abs(q) <= 0.0005) return 0;
+  const ratio = Math.abs(Number(value || 0)) / Math.abs(q);
+  return Number.isFinite(ratio) ? roundUnitCost6(ratio) : 0;
+};
+
+// item_type for the given item ids, so posting can branch RM vs SFG.
+const loadItemTypeMapTx = async ({ trx, itemIds = [] }) => {
+  const normalized = [
+    ...new Set((itemIds || []).map((id) => toPositiveInt(id)).filter(Boolean)),
+  ];
+  if (!normalized.length) return new Map();
+  const rows = await trx("erp.items")
+    .select("id", "item_type")
+    .whereIn("id", normalized);
+  return new Map(
+    rows.map((row) => [
+      Number(row.id),
+      String(row.item_type || "").trim().toUpperCase(),
+    ]),
+  );
+};
+
+// Resolve the SFG SKU behind an (item, color, size) purchase line. Validation
+// already guarantees exactly one active variant+SKU exists for the combo.
+const resolveSfgSkuIdTx = async ({ trx, itemId, colorId = null, sizeId = null }) => {
+  const normalizedItemId = toPositiveInt(itemId);
+  if (!normalizedItemId) return null;
+  const normalizedColorId = toPositiveInt(colorId);
+  const normalizedSizeId = toPositiveInt(sizeId);
+  const row = await trx("erp.variants as v")
+    .join("erp.skus as k", "k.variant_id", "v.id")
+    .where("v.item_id", normalizedItemId)
+    .where("v.is_active", true)
+    .where("k.is_active", true)
+    .modify((q) => {
+      if (normalizedColorId) q.where("v.color_id", normalizedColorId);
+      else q.whereNull("v.color_id");
+      if (normalizedSizeId) q.where("v.size_id", normalizedSizeId);
+      else q.whereNull("v.size_id");
+    })
+    .select("k.id as sku_id")
+    .orderBy("k.id", "asc")
+    .first();
+  return row ? Number(row.sku_id) : null;
+};
+
+// SFG IN (PI): add whole pairs to stock_balance_sku at WAC and journal a
+// category='SFG' ledger row keyed by sku_id.
+const applySfgSkuStockInTx = async ({
+  trx,
+  branchId,
+  skuId,
+  qtyPairsIn,
+  valueIn = 0,
+  voucherId,
+  voucherLineId = null,
+  voucherDate,
+}) => {
+  const normalizedBranchId = toPositiveInt(branchId);
+  const normalizedSkuId = toPositiveInt(skuId);
+  const normalizedQtyPairsIn = Math.round(Number(qtyPairsIn || 0));
+  const normalizedValueIn = roundCost2(Number(valueIn || 0));
+  if (!normalizedBranchId || !normalizedSkuId || normalizedQtyPairsIn <= 0) {
+    return;
+  }
+
+  await trx("erp.stock_balance_sku")
+    .insert({
+      branch_id: normalizedBranchId,
+      stock_state: "ON_HAND",
+      category: "SFG",
+      is_packed: false,
+      sku_id: normalizedSkuId,
+      qty_pairs: 0,
+      value: 0,
+      wac: 0,
+      last_txn_at: trx.fn.now(),
+    })
+    .onConflict(["branch_id", "stock_state", "category", "is_packed", "sku_id"])
+    .ignore();
+
+  const row = await trx("erp.stock_balance_sku")
+    .select("qty_pairs", "value")
+    .where({
+      branch_id: normalizedBranchId,
+      stock_state: "ON_HAND",
+      category: "SFG",
+      is_packed: false,
+      sku_id: normalizedSkuId,
+    })
+    .first()
+    .forUpdate();
+
+  const nextQtyPairs = Number(row?.qty_pairs || 0) + normalizedQtyPairsIn;
+  const nextValue = roundCost2(Number(row?.value || 0) + normalizedValueIn);
+  const nextWac = wacFromQtyValue(nextQtyPairs, nextValue);
+
+  await trx("erp.stock_balance_sku")
+    .where({
+      branch_id: normalizedBranchId,
+      stock_state: "ON_HAND",
+      category: "SFG",
+      is_packed: false,
+      sku_id: normalizedSkuId,
+    })
+    .update({
+      qty_pairs: nextQtyPairs,
+      value: nextValue,
+      wac: nextWac,
+      last_txn_at: trx.fn.now(),
+    });
+
+  const unitCost =
+    normalizedQtyPairsIn > 0
+      ? roundUnitCost6(normalizedValueIn / normalizedQtyPairsIn)
+      : 0;
+  await trx("erp.stock_ledger").insert({
+    branch_id: normalizedBranchId,
+    category: "SFG",
+    stock_state: "ON_HAND",
+    item_id: null,
+    sku_id: normalizedSkuId,
+    voucher_header_id: Number(voucherId),
+    voucher_line_id: toPositiveInt(voucherLineId),
+    txn_date: voucherDate,
+    direction: 1,
+    qty: 0,
+    qty_pairs: normalizedQtyPairsIn,
+    unit_cost: unitCost,
+    value: normalizedValueIn,
+  });
+};
+
+// SFG OUT (PR): consume whole pairs at current WAC with negative-stock guard,
+// and journal a category='SFG' ledger row.
+const applySfgSkuStockOutTx = async ({
+  trx,
+  branchId,
+  skuId,
+  qtyPairsOut,
+  voucherId,
+  voucherLineId = null,
+  voucherDate,
+}) => {
+  const normalizedBranchId = toPositiveInt(branchId);
+  const normalizedSkuId = toPositiveInt(skuId);
+  const normalizedQtyPairsOut = Math.round(Number(qtyPairsOut || 0));
+  if (!normalizedBranchId || !normalizedSkuId || normalizedQtyPairsOut <= 0) {
+    return;
+  }
+
+  const balanceRow = await trx("erp.stock_balance_sku")
+    .select("qty_pairs", "value", "wac")
+    .where({
+      branch_id: normalizedBranchId,
+      stock_state: "ON_HAND",
+      category: "SFG",
+      is_packed: false,
+      sku_id: normalizedSkuId,
+    })
+    .first()
+    .forUpdate();
+
+  const availableQtyPairs = Number(balanceRow?.qty_pairs || 0);
+  const availableValue = Number(balanceRow?.value || 0);
+  if (availableQtyPairs < normalizedQtyPairsOut) {
+    throw new HttpError(
+      400,
+      `Purchase return quantity exceeds available stock for SKU ${normalizedSkuId}`,
+    );
+  }
+  const unitCost = resolveUnitCost({
+    qty: availableQtyPairs,
+    value: availableValue,
+    wac: balanceRow?.wac,
+  });
+  const consumedValue = roundCost2(normalizedQtyPairsOut * unitCost);
+  const nextQtyPairs = availableQtyPairs - normalizedQtyPairsOut;
+  const nextValueRaw = roundCost2(availableValue - consumedValue);
+  const nextValue = nextQtyPairs === 0 ? 0 : Math.max(nextValueRaw, 0);
+  const nextWac = wacFromQtyValue(nextQtyPairs, nextValue);
+
+  await trx("erp.stock_balance_sku")
+    .where({
+      branch_id: normalizedBranchId,
+      stock_state: "ON_HAND",
+      category: "SFG",
+      is_packed: false,
+      sku_id: normalizedSkuId,
+    })
+    .update({
+      qty_pairs: nextQtyPairs,
+      value: nextValue,
+      wac: nextWac,
+      last_txn_at: trx.fn.now(),
+    });
+
+  await trx("erp.stock_ledger").insert({
+    branch_id: normalizedBranchId,
+    category: "SFG",
+    stock_state: "ON_HAND",
+    item_id: null,
+    sku_id: normalizedSkuId,
+    voucher_header_id: Number(voucherId),
+    voucher_line_id: toPositiveInt(voucherLineId),
+    txn_date: voucherDate,
+    direction: -1,
+    qty: 0,
+    qty_pairs: normalizedQtyPairsOut,
+    unit_cost: unitCost,
+    value: -consumedValue,
+  });
+};
+
+// Rollback add-back for a reversed SFG OUT ledger row.
+const addBackSfgSkuStockFromLedgerTx = async ({ trx, row }) => {
+  const branchId = toPositiveInt(row?.branch_id);
+  const skuId = toPositiveInt(row?.sku_id);
+  const qtyPairs = Math.round(Number(row?.qty_pairs || 0));
+  const value = roundCost2(Math.abs(Number(row?.value || 0)));
+  if (!branchId || !skuId || qtyPairs <= 0) return;
+
+  await trx("erp.stock_balance_sku")
+    .insert({
+      branch_id: branchId,
+      stock_state: "ON_HAND",
+      category: "SFG",
+      is_packed: false,
+      sku_id: skuId,
+      qty_pairs: 0,
+      value: 0,
+      wac: 0,
+      last_txn_at: trx.fn.now(),
+    })
+    .onConflict(["branch_id", "stock_state", "category", "is_packed", "sku_id"])
+    .ignore();
+
+  const target = await trx("erp.stock_balance_sku")
+    .select("qty_pairs", "value")
+    .where({
+      branch_id: branchId,
+      stock_state: "ON_HAND",
+      category: "SFG",
+      is_packed: false,
+      sku_id: skuId,
+    })
+    .first()
+    .forUpdate();
+
+  const nextQtyPairs = Number(target?.qty_pairs || 0) + qtyPairs;
+  const nextValue = roundCost2(Number(target?.value || 0) + value);
+  const nextWac = wacFromQtyValue(nextQtyPairs, nextValue);
+
+  await trx("erp.stock_balance_sku")
+    .where({
+      branch_id: branchId,
+      stock_state: "ON_HAND",
+      category: "SFG",
+      is_packed: false,
+      sku_id: skuId,
+    })
+    .update({
+      qty_pairs: nextQtyPairs,
+      value: nextValue,
+      wac: nextWac,
+      last_txn_at: trx.fn.now(),
+    });
+};
+
+// Rollback removal for a reversed SFG IN ledger row.
+const removeSfgSkuStockFromLedgerTx = async ({ trx, row }) => {
+  const branchId = toPositiveInt(row?.branch_id);
+  const skuId = toPositiveInt(row?.sku_id);
+  const qtyPairs = Math.round(Number(row?.qty_pairs || 0));
+  const value = roundCost2(Math.abs(Number(row?.value || 0)));
+  if (!branchId || !skuId || qtyPairs <= 0) return;
+
+  const target = await trx("erp.stock_balance_sku")
+    .select("qty_pairs", "value")
+    .where({
+      branch_id: branchId,
+      stock_state: "ON_HAND",
+      category: "SFG",
+      is_packed: false,
+      sku_id: skuId,
+    })
+    .first()
+    .forUpdate();
+  if (!target) return;
+
+  // SFG SKU balances may legitimately be negative (controlled negative
+  // inventory), so reverse exactly — do NOT clamp — to restore the prior value.
+  const nextQtyPairs = Number(target.qty_pairs || 0) - qtyPairs;
+  const nextValueRaw = roundCost2(Number(target.value || 0) - value);
+  const nextValue = nextQtyPairs === 0 ? 0 : nextValueRaw;
+  const nextWac = wacFromQtyValue(nextQtyPairs, nextValue);
+
+  await trx("erp.stock_balance_sku")
+    .where({
+      branch_id: branchId,
+      stock_state: "ON_HAND",
+      category: "SFG",
+      is_packed: false,
+      sku_id: skuId,
+    })
+    .update({
+      qty_pairs: nextQtyPairs,
+      value: nextValue,
+      wac: nextWac,
+      last_txn_at: trx.fn.now(),
+    });
+};
+
 const loadPurchaseVoucherStockLinesTx = async ({ trx, voucherId }) =>
   trx("erp.voucher_line as vl")
     .select("vl.id", "vl.item_id", "vl.qty", "vl.rate", "vl.amount", "vl.meta")
@@ -733,8 +1057,10 @@ const rollbackPurchaseStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
     "category",
     "stock_state",
     "item_id",
+    "sku_id",
     "direction",
     "qty",
+    "qty_pairs",
     "value",
   ];
   if (hasVariantDimensions) {
@@ -751,6 +1077,23 @@ const rollbackPurchaseStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
       .trim()
       .toUpperCase();
     const direction = Number(row?.direction || 0);
+
+    if (category === "SFG" || category === "FG") {
+      // Reverse the SKU-level impact (SFG purchases / returns).
+      if (direction === -1) {
+        await addBackSfgSkuStockFromLedgerTx({ trx, row });
+        continue;
+      }
+      if (direction === 1) {
+        await removeSfgSkuStockFromLedgerTx({ trx, row });
+        continue;
+      }
+      throw new HttpError(
+        400,
+        `Unexpected stock ledger direction (${direction}) while rolling back voucher ${normalizedVoucherId}`,
+      );
+    }
+
     if (category !== "RM") continue;
     if (direction === -1) {
       await addBackRmStockFromLedgerTx({ trx, row });
@@ -786,6 +1129,10 @@ const applyPurchaseVoucherStockInTx = async ({
     await hasStockBalanceRmVariantDimensionsTx(trx);
   const supportsLedgerVariantDimensions =
     await hasStockLedgerVariantDimensionsTx(trx);
+  const itemTypeById = await loadItemTypeMapTx({
+    trx,
+    itemIds: rows.map((row) => row?.item_id),
+  });
 
   for (const row of rows) {
     const voucherLineId = toPositiveInt(row?.id);
@@ -799,6 +1146,37 @@ const applyPurchaseVoucherStockInTx = async ({
     const sizeId =
       normalizeRmDimensionId(row?.meta?.size_id) ||
       normalizeRmDimensionId(row?.meta?.rm_size_id);
+
+    const unitRate =
+      Number(row?.rate || 0) > 0
+        ? Number(row?.rate || 0)
+        : qtyIn > 0 && Number(row?.amount || 0) > 0
+          ? Number(row?.amount || 0) / qtyIn
+          : 0;
+
+    // SFG purchases are SKU-tracked: post whole pairs to stock_balance_sku +
+    // a category='SFG' ledger row, instead of RM item-level stock.
+    if (itemTypeById.get(itemId) === "SFG") {
+      const skuId = await resolveSfgSkuIdTx({ trx, itemId, colorId, sizeId });
+      if (!skuId) {
+        throw new HttpError(
+          400,
+          `No SKU (variant) found for semi-finished item ${itemId} with the selected color/size`,
+        );
+      }
+      await applySfgSkuStockInTx({
+        trx,
+        branchId,
+        skuId,
+        qtyPairsIn: Math.round(qtyIn),
+        valueIn: roundCost2(qtyIn * Number(unitRate || 0)),
+        voucherId,
+        voucherLineId,
+        voucherDate,
+      });
+      continue;
+    }
+
     if (
       (colorId || sizeId) &&
       (!supportsVariantDimensions || !supportsLedgerVariantDimensions)
@@ -832,12 +1210,6 @@ const applyPurchaseVoucherStockInTx = async ({
     });
     const existing = await existingQuery.first();
 
-    const unitRate =
-      Number(row?.rate || 0) > 0
-        ? Number(row?.rate || 0)
-        : qtyIn > 0 && Number(row?.amount || 0) > 0
-          ? Number(row?.amount || 0) / qtyIn
-          : 0;
     const valueIn = roundCost2(qtyIn * Number(unitRate || 0));
 
     const nextQty = roundQty3(Number(existing?.qty || 0) + qtyIn);
@@ -887,6 +1259,10 @@ const applyPurchaseVoucherStockOutTx = async ({
     await hasStockBalanceRmVariantDimensionsTx(trx);
   const supportsLedgerVariantDimensions =
     await hasStockLedgerVariantDimensionsTx(trx);
+  const itemTypeById = await loadItemTypeMapTx({
+    trx,
+    itemIds: rows.map((row) => row?.item_id),
+  });
 
   for (const row of rows) {
     const voucherLineId = toPositiveInt(row?.id);
@@ -900,6 +1276,28 @@ const applyPurchaseVoucherStockOutTx = async ({
     const sizeId =
       normalizeRmDimensionId(row?.meta?.size_id) ||
       normalizeRmDimensionId(row?.meta?.rm_size_id);
+
+    // SFG return: take whole pairs OUT of the SKU balance/ledger.
+    if (itemTypeById.get(itemId) === "SFG") {
+      const skuId = await resolveSfgSkuIdTx({ trx, itemId, colorId, sizeId });
+      if (!skuId) {
+        throw new HttpError(
+          400,
+          `No SKU (variant) found for semi-finished item ${itemId} with the selected color/size`,
+        );
+      }
+      await applySfgSkuStockOutTx({
+        trx,
+        branchId,
+        skuId,
+        qtyPairsOut: Math.round(qtyOut),
+        voucherId,
+        voucherLineId,
+        voucherDate,
+      });
+      continue;
+    }
+
     if (
       (colorId || sizeId) &&
       (!supportsVariantDimensions || !supportsLedgerVariantDimensions)
@@ -1098,21 +1496,40 @@ const syncPurchaseVoucherStockTx = async ({
   // rates), there is nothing to repost — only non-stock fields like discount or
   // description changed. Skip the rollback so that edits succeed even when the
   // material has been partially or fully consumed downstream.
-  if (normalizedVoucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase) {
+  // Only safe while the voucher stays APPROVED: on delete/reject (status flips
+  // away from APPROVED) the ledger impact MUST be rolled back, so never skip it.
+  if (
+    normalizedVoucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase &&
+    String(header.status || "").toUpperCase() === "APPROVED"
+  ) {
     const hasLedgerSupport = await hasStockLedgerTableTx(trx);
     if (hasLedgerSupport) {
       const hasLedgerVariants = await hasStockLedgerVariantDimensionsTx(trx);
-      const ledgerCols = ["item_id", "qty", "unit_cost"];
+      const ledgerCols = ["item_id", "sku_id", "qty", "qty_pairs", "unit_cost"];
       if (hasLedgerVariants) ledgerCols.push("color_id", "size_id");
       const existingLedgerRows = await trx("erp.stock_ledger")
         .select(ledgerCols)
         .where({ voucher_header_id: normalizedVoucherId, direction: 1 });
+      // Item types + SFG sku resolution so SFG (SKU-keyed) lines compare too.
+      const idempotencyItemTypeById = await loadItemTypeMapTx({
+        trx,
+        itemIds: voucherLines.map((line) => line?.item_id),
+      });
       if (existingLedgerRows.length > 0) {
         const existingMap = new Map();
         for (const row of existingLedgerRows) {
+          const skuId = toPositiveInt(row.sku_id);
+          if (skuId) {
+            // SFG/FG ledger row: keyed by sku, quantity is whole pairs.
+            existingMap.set(`SKU:${skuId}`, {
+              qty: Math.round(Number(row.qty_pairs || 0)),
+              rate: roundUnitCost6(Number(row.unit_cost || 0)),
+            });
+            continue;
+          }
           const colorId = hasLedgerVariants ? Number(normalizeRmDimensionId(row.color_id) || 0) : 0;
           const sizeId = hasLedgerVariants ? Number(normalizeRmDimensionId(row.size_id) || 0) : 0;
-          existingMap.set(`${Number(row.item_id)}:${colorId}:${sizeId}`, {
+          existingMap.set(`RM:${Number(row.item_id)}:${colorId}:${sizeId}`, {
             qty: roundQty3(Number(row.qty || 0)),
             rate: roundUnitCost6(Number(row.unit_cost || 0)),
           });
@@ -1127,7 +1544,22 @@ const syncPurchaseVoucherStockTx = async ({
           hasNewItemLines = true;
           const colorId = Number(normalizeRmDimensionId(line.meta?.color_id || line.meta?.rm_color_id) || 0);
           const sizeId = Number(normalizeRmDimensionId(line.meta?.size_id || line.meta?.rm_size_id) || 0);
-          newLineMap.set(`${itemId}:${colorId}:${sizeId}`, {
+          if (idempotencyItemTypeById.get(itemId) === "SFG") {
+            const skuId = await resolveSfgSkuIdTx({
+              trx,
+              itemId,
+              colorId: colorId || null,
+              sizeId: sizeId || null,
+            });
+            if (skuId) {
+              newLineMap.set(`SKU:${skuId}`, {
+                qty: Math.round(lineQty),
+                rate: roundUnitCost6(Number(line.rate || 0)),
+              });
+            }
+            continue;
+          }
+          newLineMap.set(`RM:${itemId}:${colorId}:${sizeId}`, {
             qty: lineQty,
             rate: roundUnitCost6(Number(line.rate || 0)),
           });
@@ -1452,6 +1884,36 @@ const fetchRawMaterialMapTx = async ({ trx, itemIds = [] }) => {
   return new Map(rows.map((row) => [Number(row.id), row]));
 };
 
+// Identity key for an SFG variant as it can be expressed on a purchase line,
+// which only carries color + size (SFG variants never use grade/packing).
+// NULL dimensions collapse to 0 so a "no color"/"no size" line matches a
+// colorless/sizeless variant exactly.
+const sfgVariantKey = (itemId, colorId, sizeId) =>
+  `${Number(itemId)}|${Number(colorId) || 0}|${Number(sizeId) || 0}`;
+
+// Set of every active SFG (item, color, size) combination that resolves to a
+// real, active SKU/variant. Used to reject purchase lines whose chosen
+// color/size does not correspond to an actual defined variant of the SFG.
+const fetchSfgVariantKeySetTx = async ({ trx, itemIds = [] }) => {
+  const normalized = [
+    ...new Set((itemIds || []).map((id) => toPositiveInt(id)).filter(Boolean)),
+  ];
+  if (!normalized.length) return new Set();
+
+  const rows = await trx("erp.variants as v")
+    .join("erp.items as i", "i.id", "v.item_id")
+    .join("erp.skus as k", "k.variant_id", "v.id")
+    .select("v.item_id", "v.color_id", "v.size_id")
+    .whereIn("v.item_id", normalized)
+    .whereRaw("upper(coalesce(i.item_type::text, '')) = 'SFG'")
+    .where("v.is_active", true)
+    .where("k.is_active", true);
+
+  return new Set(
+    rows.map((row) => sfgVariantKey(row.item_id, row.color_id, row.size_id)),
+  );
+};
+
 const fetchExpenseAccountMapTx = async ({ trx, req, accountIds = [] }) => {
   const normalized = [
     ...new Set((accountIds || []).map((id) => toPositiveInt(id)).filter(Boolean)),
@@ -1615,6 +2077,10 @@ const normalizeAndValidateLinesTx = async ({
     itemIds,
   });
   const rmSizePolicyByItem = await fetchRmSizePolicyByItemTx({ trx, itemIds });
+  const sfgVariantKeySet = await fetchSfgVariantKeySetTx({
+    trx,
+    itemIds: uniqueItemIds,
+  });
 
   return lines.map((line, index) => {
     const lineNo = index + 1;
@@ -1664,6 +2130,26 @@ const normalizeAndValidateLinesTx = async ({
         throw new HttpError(
           400,
           `Line ${lineNo}: size is required for selected raw material`,
+        );
+      }
+    }
+
+    // SFG items are variant/SKU-tracked: the chosen color/size must resolve to
+    // an actual defined SKU (variant) for this semi-finished item. This forces
+    // the user to pin down a real variant instead of an arbitrary combination.
+    if (String(item.item_type || "").toUpperCase() === "SFG") {
+      if (!sfgVariantKeySet.has(sfgVariantKey(itemId, colorId, sizeId))) {
+        throw new HttpError(
+          400,
+          `Line ${lineNo}: selected color/size does not match any defined SKU (variant) for this semi-finished item`,
+        );
+      }
+      // SFG stock is tracked in whole pairs (integer qty_pairs), so fractional
+      // quantities cannot be represented in the SKU ledger/balance.
+      if (Math.abs(qty - Math.round(qty)) > 0.0005) {
+        throw new HttpError(
+          400,
+          `Line ${lineNo}: semi-finished quantity must be a whole number of pairs`,
         );
       }
     }
@@ -3134,6 +3620,7 @@ const loadPurchaseVoucherOptions = async (req) => {
     openGrnPool,
     rmRateRows,
     departments,
+    sfgVariantRows,
   ] = await Promise.all([
     supplierQuery.orderBy("p.name", "asc"),
     knex("erp.items as i")
@@ -3143,6 +3630,7 @@ const loadPurchaseVoucherOptions = async (req) => {
         "i.code",
         "i.name",
         "i.name_ur",
+        "i.item_type",
         "i.base_uom_id",
         "u.code as base_uom_code",
         "u.name as base_uom_name",
@@ -3212,6 +3700,23 @@ const loadPurchaseVoucherOptions = async (req) => {
       .select("id", "name", "name_ur")
       .where({ is_active: true })
       .orderBy("name", "asc"),
+    // Active SFG variants (with an active SKU) so the form can constrain the
+    // color/size selectors of an SFG line to real, defined variants only.
+    knex("erp.variants as v")
+      .join("erp.items as i", "i.id", "v.item_id")
+      .join("erp.skus as k", "k.variant_id", "v.id")
+      .leftJoin("erp.colors as c", "c.id", "v.color_id")
+      .leftJoin("erp.sizes as s", "s.id", "v.size_id")
+      .select(
+        "v.item_id",
+        "v.color_id",
+        "c.name as color_name",
+        "v.size_id",
+        "s.name as size_name",
+      )
+      .whereRaw("upper(coalesce(i.item_type::text, '')) = 'SFG'")
+      .where({ "v.is_active": true, "k.is_active": true, "i.is_active": true })
+      .orderBy("v.item_id", "asc"),
   ]);
 
   const masterColorNameById = new Map(
@@ -3296,6 +3801,59 @@ const loadPurchaseVoucherOptions = async (req) => {
     );
   });
   Object.values(rawMaterialSizePolicyByItem).forEach((entry) => {
+    entry.sizes.sort((a, b) =>
+      String(a.name || "").localeCompare(String(b.name || "")),
+    );
+  });
+
+  // { [sfgItemId]: { combos: [{color_id, size_id}], colors: [{id,name}],
+  //   sizes: [{id,name}], hasColorless, hasSizeless } }
+  // Drives client-side constraint of SFG color/size selectors to real variants.
+  const sfgVariantsByItem = {};
+  (sfgVariantRows || []).forEach((row) => {
+    const itemId = Number(row.item_id);
+    if (!itemId) return;
+    const key = String(itemId);
+    if (!sfgVariantsByItem[key]) {
+      sfgVariantsByItem[key] = {
+        combos: [],
+        colors: [],
+        sizes: [],
+        hasColorless: false,
+        hasSizeless: false,
+      };
+    }
+    const entry = sfgVariantsByItem[key];
+    const colorId = toPositiveInt(row.color_id);
+    const sizeId = toPositiveInt(row.size_id);
+    entry.combos.push({ color_id: colorId || null, size_id: sizeId || null });
+    if (colorId) {
+      if (!entry.colors.some((c) => Number(c.id) === colorId)) {
+        entry.colors.push({
+          id: colorId,
+          name:
+            row.color_name || masterColorNameById.get(colorId) || String(colorId),
+        });
+      }
+    } else {
+      entry.hasColorless = true;
+    }
+    if (sizeId) {
+      if (!entry.sizes.some((s) => Number(s.id) === sizeId)) {
+        entry.sizes.push({
+          id: sizeId,
+          name:
+            row.size_name || masterSizeNameById.get(sizeId) || String(sizeId),
+        });
+      }
+    } else {
+      entry.hasSizeless = true;
+    }
+  });
+  Object.values(sfgVariantsByItem).forEach((entry) => {
+    entry.colors.sort((a, b) =>
+      String(a.name || "").localeCompare(String(b.name || "")),
+    );
     entry.sizes.sort((a, b) =>
       String(a.name || "").localeCompare(String(b.name || "")),
     );
@@ -3416,6 +3974,7 @@ const loadPurchaseVoucherOptions = async (req) => {
     rawMaterialColorPolicyByItem,
     rawMaterialSizePolicyByItem,
     rawMaterialRatesByItem,
+    sfgVariantsByItem,
     cashAccounts,
     expenseAccounts,
     departments,

@@ -2313,6 +2313,108 @@ const cleanupBomCascadeFixture = async (fixture, extraBomIds = []) => {
   });
 };
 
+// Fixture for SFG purchase-line variant validation. Finds a real, active SFG
+// item that already has an active variant + SKU and NO rm_purchase_rates (so the
+// rate-based color/size policy is skipped and the SFG-variant check is the rule
+// that fires). Also returns a "bogus" active color that is not part of any of
+// that item's variants, so (bogusColor, validSize) is guaranteed not to resolve
+// to a defined SKU. Returns null when the dev DB lacks suitable data.
+const getSfgPurchaseValidationFixture = async () => {
+  const variant = await knex("erp.variants as v")
+    .join("erp.items as i", "i.id", "v.item_id")
+    .join("erp.skus as k", "k.variant_id", "v.id")
+    .whereRaw("upper(coalesce(i.item_type::text, '')) = 'SFG'")
+    .where({ "v.is_active": true, "k.is_active": true, "i.is_active": true })
+    .whereNotExists(function noRmRates() {
+      this.select(1)
+        .from("erp.rm_purchase_rates as r")
+        .whereRaw("r.rm_item_id = v.item_id")
+        .andWhere("r.is_active", true);
+    })
+    .select(
+      "v.item_id as item_id",
+      "v.color_id as color_id",
+      "v.size_id as size_id",
+      "i.name as item_name",
+      "k.id as sku_id",
+    )
+    .orderBy("v.id", "asc")
+    .first();
+  if (!variant) return null;
+
+  const usedColorRows = await knex("erp.variants")
+    .where({ item_id: variant.item_id })
+    .whereNotNull("color_id")
+    .distinct("color_id");
+  const usedColorIds = usedColorRows
+    .map((r) => Number(r.color_id))
+    .filter(Boolean);
+
+  const bogusColor = await knex("erp.colors")
+    .where({ is_active: true })
+    .modify((q) => {
+      if (usedColorIds.length) q.whereNotIn("id", usedColorIds);
+    })
+    .select("id", "name")
+    .orderBy("id", "asc")
+    .first();
+
+  const usedSizeRows = await knex("erp.variants")
+    .where({ item_id: variant.item_id })
+    .whereNotNull("size_id")
+    .distinct("size_id");
+  const usedSizeIds = usedSizeRows.map((r) => Number(r.size_id)).filter(Boolean);
+
+  const bogusSize = await knex("erp.sizes")
+    .where({ is_active: true })
+    .modify((q) => {
+      if (usedSizeIds.length) q.whereNotIn("id", usedSizeIds);
+    })
+    .select("id", "name")
+    .orderBy("id", "asc")
+    .first();
+
+  return {
+    itemId: Number(variant.item_id),
+    itemName: variant.item_name || "",
+    skuId: variant.sku_id ? Number(variant.sku_id) : null,
+    validColorId: variant.color_id ? Number(variant.color_id) : null,
+    validSizeId: variant.size_id ? Number(variant.size_id) : null,
+    bogusColorId: bogusColor ? Number(bogusColor.id) : null,
+    bogusSizeId: bogusSize ? Number(bogusSize.id) : null,
+    variantColorIds: usedColorIds,
+    variantSizeIds: usedSizeIds,
+  };
+};
+
+// Sum of SFG SKU on-hand pairs for a given sku across branches (stock_balance_sku).
+const sumSfgSkuQtyPairs = async (skuId) => {
+  const normalizedSkuId = Number(skuId || 0);
+  if (!normalizedSkuId) return 0;
+  const row = await knex("erp.stock_balance_sku")
+    .where({ sku_id: normalizedSkuId, category: "SFG" })
+    .sum({ total: "qty_pairs" })
+    .first();
+  return Number(row?.total || 0);
+};
+
+// The category='SFG' IN ledger row (if any) for a sku on a specific voucher.
+const getSfgInLedgerRow = async ({ skuId, voucherHeaderId }) => {
+  const normalizedSkuId = Number(skuId || 0);
+  const normalizedVoucherId = Number(voucherHeaderId || 0);
+  if (!normalizedSkuId || !normalizedVoucherId) return null;
+  const row = await knex("erp.stock_ledger")
+    .where({
+      sku_id: normalizedSkuId,
+      voucher_header_id: normalizedVoucherId,
+      category: "SFG",
+      direction: 1,
+    })
+    .select("qty", "qty_pairs", "unit_cost", "value", "item_id")
+    .first();
+  return row || null;
+};
+
 const closeDb = async () => knex.destroy();
 
 module.exports = {
@@ -2367,5 +2469,8 @@ module.exports = {
   createBomCascadeFixture,
   cleanupBomCascadeFixture,
   getBomCascadeState,
+  getSfgPurchaseValidationFixture,
+  sumSfgSkuQtyPairs,
+  getSfgInLedgerRow,
   closeDb,
 };

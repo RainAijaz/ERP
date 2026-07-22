@@ -448,6 +448,13 @@
     const rawMaterialColorPolicyByItem = <%- JSON.stringify(options.rawMaterialColorPolicyByItem || {}) %>;
     const rawMaterialSizePolicyByItem = <%- JSON.stringify(options.rawMaterialSizePolicyByItem || {}) %>;
     const rawMaterialRatesByItem = <%- JSON.stringify(options.rawMaterialRatesByItem || {}) %>;
+    const sfgVariantsByItem = <%- JSON.stringify(options.sfgVariantsByItem || {}) %>;
+    const sfgItemIds = new Set(
+      (rawMaterials || [])
+        .filter((it) => String(it.item_type || "").toUpperCase() === "SFG")
+        .map((it) => Number(it.id)),
+    );
+    const isSfgItem = (itemId) => sfgItemIds.has(Number(itemId));
     const openGrnHeaders = <%- JSON.stringify(options.openGrnHeaders || []) %>;
     const openGrnLines = <%- JSON.stringify(options.openGrnLines || []) %>;
     const selectedVoucher = <%- JSON.stringify(selectedVoucher || null) %>;
@@ -770,8 +777,31 @@
       }
     };
 
+    // For SFG items the allowed color/size list comes from the item's real
+    // variants (SKUs), not from purchase-rate cards. We reuse the same policy
+    // shape ({hasAnyRate, hasColorless/hasSizeless, colors/sizes}) so the
+    // existing render/constrain code needs no changes. hasAnyRate=true forces
+    // the constrained path; the server does the final (color,size) combo check.
     const getColorPolicyForItem = (itemId) => {
       const key = String(Number(itemId || 0));
+      if (isSfgItem(itemId)) {
+        const sfg = sfgVariantsByItem?.[key];
+        if (!sfg || typeof sfg !== "object") {
+          // SFG with no defined variants: nothing valid to pick.
+          return { hasAnyRate: true, hasColorless: false, colors: [] };
+        }
+        const rowColors = Array.isArray(sfg.colors) ? sfg.colors : [];
+        return {
+          hasAnyRate: true,
+          hasColorless: sfg.hasColorless === true,
+          colors: rowColors
+            .map((entry) => ({
+              id: Number(entry?.id || 0),
+              name: String(entry?.name || "").trim(),
+            }))
+            .filter((entry) => entry.id > 0),
+        };
+      }
       const policy = rawMaterialColorPolicyByItem?.[key];
       if (!policy || typeof policy !== "object") return null;
       const rowColors = Array.isArray(policy.colors) ? policy.colors : [];
@@ -789,6 +819,23 @@
 
     const getSizePolicyForItem = (itemId) => {
       const key = String(Number(itemId || 0));
+      if (isSfgItem(itemId)) {
+        const sfg = sfgVariantsByItem?.[key];
+        if (!sfg || typeof sfg !== "object") {
+          return { hasAnyRate: true, hasSizeless: false, sizes: [] };
+        }
+        const rowSizes = Array.isArray(sfg.sizes) ? sfg.sizes : [];
+        return {
+          hasAnyRate: true,
+          hasSizeless: sfg.hasSizeless === true,
+          sizes: rowSizes
+            .map((entry) => ({
+              id: Number(entry?.id || 0),
+              name: String(entry?.name || "").trim(),
+            }))
+            .filter((entry) => entry.id > 0),
+        };
+      }
       const policy = rawMaterialSizePolicyByItem?.[key];
       if (!policy || typeof policy !== "object") return null;
       const rowSizes = Array.isArray(policy.sizes) ? policy.sizes : [];
