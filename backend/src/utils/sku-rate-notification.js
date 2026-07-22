@@ -13,6 +13,7 @@ const sendSkuRateNotification = async ({
   updates = [],
   user,
   approved = false,
+  isNew = false,
 }) => {
   if (!chatId || !String(chatId).trim()) return;
 
@@ -82,7 +83,12 @@ const sendSkuRateNotification = async ({
       return `• *${sku}*\n${nameLine}\n${rateLine}`;
     });
 
-    const header = approved ? "🔔 *ریٹ اپ ڈیٹ* _(منظور شدہ)_" : "🔔 *ریٹ اپ ڈیٹ*";
+    let header;
+    if (isNew) {
+      header = approved ? "🆕 *نیا آرٹیکل* _(منظور شدہ)_" : "🆕 *نیا آرٹیکل*";
+    } else {
+      header = approved ? "🔔 *ریٹ اپ ڈیٹ* _(منظور شدہ)_" : "🔔 *ریٹ اپ ڈیٹ*";
+    }
     const message = `${header}\n📅 ${timeStr}\n\n${lines.join("\n\n")}`;
     await sendWhatsAppMessage(chatId, message);
   } catch (err) {

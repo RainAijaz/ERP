@@ -2119,8 +2119,30 @@ router.post(
         }
       }
       if (requestSnapshot?.entity_type === "SKU") {
+        const isCreate =
+          String(requestSnapshot.entity_id).toUpperCase() === "NEW" ||
+          requestSnapshot.new_value?._action === "create";
         const singleRate = requestSnapshot.new_value?.sale_rate;
-        if (singleRate !== null && singleRate !== undefined) {
+        if (isCreate) {
+          // New article SKU: only notify when the admin opted in on approval and
+          // the variant was actually created (appliedEntityId, not the "NEW"
+          // placeholder) with a real rate. SFG variants queue with rate 0, so the
+          // > 0 guard excludes them without a separate FG check.
+          if (
+            req.body?.send_article_rate === "1" &&
+            appliedEntityId &&
+            Number(singleRate) > 0
+          ) {
+            await sendSkuRateNotification({
+              knex,
+              chatId: process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID,
+              updates: [{ id: Number(appliedEntityId), newRate: singleRate }],
+              user: req.user,
+              approved: true,
+              isNew: true,
+            });
+          }
+        } else if (singleRate !== null && singleRate !== undefined) {
           await sendSkuRateNotification({
             knex,
             chatId: process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID,

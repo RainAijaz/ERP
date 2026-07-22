@@ -385,6 +385,42 @@ const setVariantSaleRate = async (variantId, saleRate) => {
     .update({ sale_rate: saleRate });
 };
 
+// Find variants carrying a distinctive marker sale_rate. Used by the new-article
+// WhatsApp approval spec to locate the variant an approved SKU-create produced so
+// it can be cleaned up (there is no unique attribute tuple to match on).
+const findVariantsBySaleRate = async (saleRate) => {
+  const rows = await knex("erp.variants")
+    .select("id")
+    .where({ sale_rate: saleRate })
+    .orderBy("id", "asc");
+  return rows.map((row) => row.id);
+};
+
+// Insert a throwaway color and return its id. The new-article WhatsApp spec uses
+// this to guarantee a variant attribute tuple that ux_variants_identity has never
+// seen, so an approved SKU-create actually applies instead of colliding.
+const createThrowawayColor = async (name) => {
+  const [row] = await knex("erp.colors")
+    .insert({ name, name_ur: name, is_active: true })
+    .returning("id");
+  return row.id || row;
+};
+
+const deleteColorById = async (colorId) => {
+  const id = Number(colorId);
+  if (!Number.isInteger(id) || id <= 0) return;
+  await knex("erp.colors").where({ id }).del();
+};
+
+// Delete a variant and its dependent sku row (skus.variant_id is ON DELETE
+// RESTRICT, so the sku must go first). Safe no-op for a missing id.
+const deleteVariantCascadeById = async (variantId) => {
+  const id = Number(variantId);
+  if (!Number.isInteger(id) || id <= 0) return;
+  await knex("erp.skus").where({ variant_id: id }).del();
+  await knex("erp.variants").where({ id }).del();
+};
+
 const setVariantRateEditable = async (variantId, rateEditable) => {
   if (!variantId) return;
   await knex("erp.variants")
@@ -2333,6 +2369,10 @@ module.exports = {
   getVoucherLineCount,
   getPurchaseAllocationCountByVoucher,
   setVariantSaleRate,
+  findVariantsBySaleRate,
+  createThrowawayColor,
+  deleteColorById,
+  deleteVariantCascadeById,
   setVariantRateEditable,
   getFirstFgVariantWithRate,
   upsertUserWithPermissions,

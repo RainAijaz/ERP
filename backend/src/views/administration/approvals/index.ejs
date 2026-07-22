@@ -107,9 +107,11 @@
             <% if (canApproveRequests) { %>
               <td class="px-6 py-4 text-right">
                 <% if (row.status === 'PENDING') { %>
+                  <% const isNewSku = row.entity_type === 'SKU' && getAction(row) === 'create'; %>
                   <div class="flex justify-end gap-2">
-                    <form action="<%= basePath %>/<%= row.id %>/approve" method="POST" class="inline">
+                    <form action="<%= basePath %>/<%= row.id %>/approve" method="POST" class="inline"<%= isNewSku ? ' data-new-sku-approve' : '' %>>
                       <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                      <% if (isNewSku) { %><input type="hidden" name="send_article_rate" value="0"><% } %>
                       <button type="submit" class="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition">
                         <%= t("approve")  %>
                       </button>
@@ -1093,5 +1095,72 @@
     } catch (err) {
       // ignore
     }
+  })();
+</script>
+
+<div class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 p-4" data-new-sku-modal>
+  <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl">
+    <div class="border-b border-slate-200 px-6 py-4">
+      <div class="text-sm font-semibold text-slate-700"><%= t("send_new_article_rate_title") %></div>
+    </div>
+    <div class="px-6 py-5 text-sm text-slate-600">
+      <%= t("send_new_article_rate_body") %>
+    </div>
+    <div class="flex justify-end gap-2 border-t border-slate-200 px-6 py-4">
+      <button type="button" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" data-new-sku-cancel>
+        <%= t("cancel") %>
+      </button>
+      <button type="button" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100" data-new-sku-approve-only>
+        <%= t("approve_only") %>
+      </button>
+      <button type="button" class="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-emerald-700" data-new-sku-send>
+        <%= t("send_and_approve") %>
+      </button>
+    </div>
+  </div>
+</div>
+<script>
+  (function () {
+    const modal = document.querySelector("[data-new-sku-modal]");
+    if (!modal) return;
+    const sendBtn = modal.querySelector("[data-new-sku-send]");
+    const approveOnlyBtn = modal.querySelector("[data-new-sku-approve-only]");
+    const cancelBtn = modal.querySelector("[data-new-sku-cancel]");
+    let pendingForm = null;
+
+    const openModal = (form) => {
+      pendingForm = form;
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+    };
+    const closeModal = () => {
+      pendingForm = null;
+      modal.classList.add("hidden");
+      modal.classList.remove("flex");
+    };
+    const submitWith = (value) => {
+      if (!pendingForm) return;
+      const form = pendingForm;
+      const field = form.querySelector('input[name="send_article_rate"]');
+      if (field) field.value = value;
+      form.dataset.confirmed = "1";
+      closeModal();
+      form.submit();
+    };
+
+    document.querySelectorAll("form[data-new-sku-approve]").forEach((form) => {
+      form.addEventListener("submit", (event) => {
+        if (form.dataset.confirmed === "1") return; // already confirmed, let it through
+        event.preventDefault();
+        openModal(form);
+      });
+    });
+
+    if (sendBtn) sendBtn.addEventListener("click", () => submitWith("1"));
+    if (approveOnlyBtn) approveOnlyBtn.addEventListener("click", () => submitWith("0"));
+    if (cancelBtn) cancelBtn.addEventListener("click", closeModal);
+    modal.addEventListener("click", (event) => {
+      if (event.target === modal) closeModal();
+    });
   })();
 </script>

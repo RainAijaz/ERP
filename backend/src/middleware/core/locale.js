@@ -4034,6 +4034,11 @@ Object.assign(translations.en, {
   records: "records",
   send_whatsapp_notification: "Send WhatsApp Notification",
   send_whatsapp_notification_hint: "Notify the sales group about this rate change",
+  send_new_article_rate_title: "Send new-article rate?",
+  send_new_article_rate_body:
+    "Send the new article's rate message to the WhatsApp group?",
+  send_and_approve: "Send & Approve",
+  approve_only: "Approve only",
   notify_payees_on_approval: "Notify parties on approval (WhatsApp)",
   notify_payees_on_approval_hint:
     "When approved, WhatsApp each supplier, labour, or employee paid on this voucher.",
@@ -4220,6 +4225,11 @@ Object.assign(translations.ur, {
   records: "ریکارڈز",
   send_whatsapp_notification: "واٹس ایپ اطلاع بھیجیں",
   send_whatsapp_notification_hint: "اس ریٹ تبدیلی کے بارے میں سیلز گروپ کو مطلع کریں",
+  send_new_article_rate_title: "نیا آرٹیکل ریٹ بھیجیں؟",
+  send_new_article_rate_body:
+    "کیا نئے آرٹیکل کا ریٹ پیغام واٹس ایپ گروپ پر بھیجیں؟",
+  send_and_approve: "بھیجیں اور منظور کریں",
+  approve_only: "صرف منظور کریں",
   notify_payees_on_approval: "منظوری پر فریقین کو اطلاع دیں (واٹس ایپ)",
   notify_payees_on_approval_hint:
     "منظوری پر اس واؤچر میں ادائیگی پانے والے ہر سپلائر، لیبر یا ملازم کو واٹس ایپ پیغام بھیجا جائے گا۔",
