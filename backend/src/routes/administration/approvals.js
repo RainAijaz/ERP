@@ -2128,11 +2128,9 @@ router.post(
           // the variant was actually created (appliedEntityId, not the "NEW"
           // placeholder) with a real rate. SFG variants queue with rate 0, so the
           // > 0 guard excludes them without a separate FG check.
-          if (
-            req.body?.send_article_rate === "1" &&
-            appliedEntityId &&
-            Number(singleRate) > 0
-          ) {
+          const optedIn = req.body?.send_article_rate === "1";
+          const rate = Number(singleRate);
+          if (optedIn && appliedEntityId && rate > 0) {
             await sendSkuRateNotification({
               knex,
               chatId: process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID,
@@ -2141,6 +2139,10 @@ router.post(
               approved: true,
               isNew: true,
             });
+          } else {
+            console.log(
+              `[WhatsApp] new-article rate notify skipped: optedIn=${optedIn} appliedEntityId=${appliedEntityId} sale_rate=${singleRate}`,
+            );
           }
         } else if (singleRate !== null && singleRate !== undefined) {
           await sendSkuRateNotification({
