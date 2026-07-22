@@ -1100,20 +1100,23 @@
 
 <div class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 p-4" data-new-sku-modal>
   <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl">
-    <div class="border-b border-slate-200 px-6 py-4">
-      <div class="text-sm font-semibold text-slate-700"><%= t("send_new_article_rate_title") %></div>
+    <div class="flex items-start justify-between border-b border-slate-200 px-6 py-4">
+      <div>
+        <div class="text-sm font-semibold text-slate-700"><%= t("send_new_article_rate_title") %></div>
+        <p class="mt-1 text-xs text-slate-500"><%= t("send_new_article_rate_body") %></p>
+      </div>
+      <button type="button" class="text-slate-400 transition hover:text-slate-600" data-new-sku-cancel aria-label="<%= t("cancel") %>">
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+      </button>
     </div>
-    <div class="px-6 py-5 text-sm text-slate-600">
-      <%= t("send_new_article_rate_body") %>
-    </div>
-    <div class="flex justify-end gap-2 border-t border-slate-200 px-6 py-4">
+    <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-6 py-4">
       <button type="button" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" data-new-sku-cancel>
         <%= t("cancel") %>
       </button>
-      <button type="button" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100" data-new-sku-approve-only>
+      <button type="button" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-slate-700 transition hover:border-slate-300 hover:bg-slate-50" data-new-sku-approve-only>
         <%= t("approve_only") %>
       </button>
-      <button type="button" class="rounded-lg bg-accent px-3 py-1.5 text-xs font-bold text-white transition hover:opacity-90" data-new-sku-send>
+      <button type="button" class="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:opacity-90" data-new-sku-send>
         <%= t("send_and_approve") %>
       </button>
     </div>
@@ -1125,7 +1128,7 @@
     if (!modal) return;
     const sendBtn = modal.querySelector("[data-new-sku-send]");
     const approveOnlyBtn = modal.querySelector("[data-new-sku-approve-only]");
-    const cancelBtn = modal.querySelector("[data-new-sku-cancel]");
+    const cancelBtns = modal.querySelectorAll("[data-new-sku-cancel]");
     let pendingForm = null;
 
     const openModal = (form) => {
@@ -1158,7 +1161,7 @@
 
     if (sendBtn) sendBtn.addEventListener("click", () => submitWith("1"));
     if (approveOnlyBtn) approveOnlyBtn.addEventListener("click", () => submitWith("0"));
-    if (cancelBtn) cancelBtn.addEventListener("click", closeModal);
+    cancelBtns.forEach((btn) => btn.addEventListener("click", closeModal));
     modal.addEventListener("click", (event) => {
       if (event.target === modal) closeModal();
     });

@@ -166,7 +166,7 @@ test.describe("New-article SKU WhatsApp approval dialog", () => {
     await expect(row).toBeVisible();
 
     // Cancel closes the dialog and leaves the request pending.
-    await dialog.locator("[data-new-sku-cancel]").click();
+    await dialog.locator("[data-new-sku-cancel]").first().click();
     await expect(dialog).toBeHidden();
     await expect(rowFor(page, ctx.ids.createCancel)).toBeVisible();
   });
