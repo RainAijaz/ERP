@@ -74,9 +74,9 @@ const created = { partyIds: [], labourIds: [], employeeIds: [], voucherId: null 
     process.exit(1);
   }
 
-  const mkParty = async (name, partyType, phone1) => {
+  const mkParty = async (name, partyType, phone1, nameUr) => {
     const [row] = await knex("erp.parties")
-      .insert({ code: `${TAG}_${name}`, name: `${TAG} ${name}`, party_type: partyType, phone1, created_by: user.id })
+      .insert({ code: `${TAG}_${name}`, name: `${TAG} ${name}`, name_ur: nameUr || null, party_type: partyType, phone1, created_by: user.id })
       .returning(["id"]);
     const id = Number(row.id || row);
     created.partyIds.push(id);
@@ -96,7 +96,7 @@ const created = { partyIds: [], labourIds: [], employeeIds: [], voucherId: null 
   };
 
   // --- Seed master rows with known phones ---
-  const supplierValid = await mkParty("SupplierValid", "SUPPLIER", "0300-1112223"); // -> SENT (aggregated)
+  const supplierValid = await mkParty("SupplierValid", "SUPPLIER", "0300-1112223", "سپلائر"); // -> SENT (aggregated); has Urdu name
   const supplierNoPhone = await mkParty("SupplierNoPhone", "SUPPLIER", null); // -> FAILED no_phone
   const supplierNotOnWa = await mkParty("SupplierNotOnWa", "SUPPLIER", "0300-0000001"); // valid format, not a WhatsApp user
   const supplierCredit = await mkParty("SupplierCredit", "BOTH", "03004445556"); // credit only -> NO row
@@ -187,11 +187,13 @@ const created = { partyIds: [], labourIds: [], employeeIds: [], voucherId: null 
   check("Message states amount paid (6,500)", svMsg && svMsg.text.includes("6,500"));
   check("Message lists both line descriptions", svMsg && svMsg.text.includes("Cloth purchase") && svMsg.text.includes("Buttons"));
   check("Message does NOT expose the voucher number", svMsg && !svMsg.text.includes(`#${voucherNo}`) && !svMsg.text.includes("واؤچر"));
+  check("Message greeting shows Urdu name in brackets", svMsg && svMsg.text.includes("SupplierValid (سپلائر)"));
 
   // --- Contact saving: first message only ---
   check("Contact saved for each newly-messaged payee (2)", savedContacts.length === 2);
   const svContact = savedContacts.find((c) => c.msisdn === "923001112223");
   check("Contact saved with the payee's name", svContact && svContact.firstName.includes("SupplierValid"));
+  check("Contact name includes Urdu name in brackets", svContact && svContact.firstName.includes("(سپلائر)"));
   check("Contact tagged by kind", svContact && svContact.lastName === "(ERP Supplier)");
   check("No contact saved for failed sends", !savedContacts.some((c) => c.msisdn.startsWith("9230000000")));
 

@@ -273,10 +273,27 @@ const saveWhatsAppContact = async ({ msisdn, firstName, lastName = "" }) => {
   }
 };
 
+// Graceful teardown for process shutdown. The Puppeteer/Chrome child must be
+// destroyed explicitly — if the process is SIGKILLed with Chrome still running,
+// the orphan keeps a lock on the session profile and the NEXT start hangs in
+// initialize() and never fires "ready" (all messages then queue forever). Clear
+// the reconnect timer too so it can't relaunch a client mid-shutdown.
+const shutdownWhatsApp = async () => {
+  clientReady = false;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  const staleClient = client;
+  client = null;
+  await destroyClientQuietly(staleClient);
+};
+
 module.exports = {
   initWhatsApp,
   sendWhatsAppMessage,
   resolveWhatsAppChatId,
   saveWhatsAppContact,
   onWhatsAppReady,
+  shutdownWhatsApp,
 };

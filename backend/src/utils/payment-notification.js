@@ -49,6 +49,15 @@ const toNumber = (value) => {
 const getLineMeta = (line) =>
   line && line.meta && typeof line.meta === "object" ? line.meta : {};
 
+// Combine the English and Urdu names as "English (اردو)". When only one side
+// exists, use whichever is present; never emit an empty "()".
+const buildDisplayName = (name, nameUr) => {
+  const en = String(name || "").trim();
+  const ur = String(nameUr || "").trim();
+  if (en && ur) return `${en} (${ur})`;
+  return en || ur || "";
+};
+
 const formatAmount = (value) => `Rs. ${toNumber(value).toLocaleString("en-PK")}`;
 
 const formatVoucherDate = (voucherDate) => {
@@ -167,14 +176,18 @@ const sendVoucherPaymentNotifications = async ({ knex, voucherId }) => {
     const [partyRows, labourRows, employeeRows] = await Promise.all([
       partyIds.length
         ? knex("erp.parties")
-            .select("id", "name", "party_type", "phone1", "phone2")
+            .select("id", "name", "name_ur", "party_type", "phone1", "phone2")
             .whereIn("id", partyIds)
         : [],
       labourIds.length
-        ? knex("erp.labours").select("id", "name", "phone").whereIn("id", labourIds)
+        ? knex("erp.labours")
+            .select("id", "name", "name_ur", "phone")
+            .whereIn("id", labourIds)
         : [],
       employeeIds.length
-        ? knex("erp.employees").select("id", "name", "phone").whereIn("id", employeeIds)
+        ? knex("erp.employees")
+            .select("id", "name", "name_ur", "phone")
+            .whereIn("id", employeeIds)
         : [],
     ]);
 
@@ -186,6 +199,7 @@ const sendVoucherPaymentNotifications = async ({ knex, voucherId }) => {
 
     for (const entry of groups.values()) {
       let name = "";
+      let nameUr = "";
       let phoneRaw = "";
 
       if (entry.kind === "SUPPLIER") {
@@ -195,18 +209,26 @@ const sendVoucherPaymentNotifications = async ({ knex, voucherId }) => {
         const ptype = String(p.party_type || "").toUpperCase();
         if (ptype !== "SUPPLIER" && ptype !== "BOTH") continue;
         name = p.name || "";
+        nameUr = p.name_ur || "";
         phoneRaw = p.phone1 || p.phone2 || "";
       } else if (entry.kind === "LABOUR") {
         const l = labourById.get(entry.id);
         if (!l) continue;
         name = l.name || "";
+        nameUr = l.name_ur || "";
         phoneRaw = l.phone || "";
       } else if (entry.kind === "EMPLOYEE") {
         const e = employeeById.get(entry.id);
         if (!e) continue;
         name = e.name || "";
+        nameUr = e.name_ur || "";
         phoneRaw = e.phone || "";
       }
+
+      // Show the Urdu name in brackets after the English one, e.g.
+      // "Ahmed (احمد)" — used for the saved WhatsApp contact and the failures
+      // list. Falls back to the English name alone when no Urdu name is set.
+      const displayName = buildDisplayName(name, nameUr);
 
       const baseRow = {
         voucher_header_id: header.id,
@@ -215,7 +237,7 @@ const sendVoucherPaymentNotifications = async ({ knex, voucherId }) => {
         branch_id: header.branch_id || null,
         recipient_kind: entry.kind,
         recipient_id: entry.id,
-        recipient_name: name || null,
+        recipient_name: displayName || null,
         phone_raw: phoneRaw || null,
         amount: entry.total,
       };
@@ -235,7 +257,7 @@ const sendVoucherPaymentNotifications = async ({ knex, voucherId }) => {
       // Render the message up front so a transient failure can queue the exact
       // text for a later retry rather than losing it.
       const message = buildMessage({
-        name,
+        name: displayName,
         total: entry.total,
         details: entry.details,
         voucherDate: header.voucher_date,
@@ -282,7 +304,7 @@ const sendVoucherPaymentNotifications = async ({ knex, voucherId }) => {
         if (!alreadyMessaged) {
           await saveWhatsAppContact({
             msisdn: normalized,
-            firstName: name,
+            firstName: displayName,
             lastName: CONTACT_SUFFIX_BY_KIND[entry.kind] || "",
           }).catch(() => {});
         }

@@ -119,32 +119,53 @@ const processRow = async ({ knex, row }) => {
 };
 
 // Send every queued notification that is due. Never throws.
-const retryQueuedWhatsAppNotifications = async ({ knex }) => {
+//
+// `ignoreBackoff` is for outage recovery on reconnect: after a long WhatsApp
+// outage, every queued row carries a next_retry_at pushed hours into the future
+// (capped backoff), so a plain sweep would leave them sitting even though the
+// client is finally back. When set, we make the whole backlog due immediately
+// and drain it in batches, rather than waiting out each row's stale backoff.
+const retryQueuedWhatsAppNotifications = async ({ knex, ignoreBackoff = false }) => {
   const summary = { processed: 0, sent: 0, requeued: 0, failed: 0 };
   try {
-    const due = await knex("erp.whatsapp_notification_log")
-      .where({ status: "QUEUED" })
-      .andWhere((qb) =>
-        qb.whereNull("next_retry_at").orWhere("next_retry_at", "<=", new Date()),
-      )
-      .orderBy("created_at", "asc")
-      .limit(BATCH_SIZE);
+    if (ignoreBackoff) {
+      // Pull the whole backlog forward to "now"; the due-filter below then picks
+      // it up. Rows are re-scheduled to the future as each is claimed, so a
+      // failed send won't be re-attempted within this same run.
+      await knex("erp.whatsapp_notification_log")
+        .where({ status: "QUEUED" })
+        .update({ next_retry_at: new Date() });
+    }
 
-    for (const row of due) {
-      // Claim the row before sending so an overlapping tick can't double-send it.
-      const claimed = await knex("erp.whatsapp_notification_log")
-        .where({ id: row.id, status: "QUEUED" })
-        .update({ next_retry_at: new Date(Date.now() + backoffMsForAttempt((row.attempts || 0) + 1)) });
-      if (!claimed) continue;
+    // One batch normally; on reconnect, loop so a backlog larger than BATCH_SIZE
+    // is fully cleared. Capped so a persistently-requeuing set can't spin.
+    const maxBatches = ignoreBackoff ? 20 : 1;
+    for (let batch = 0; batch < maxBatches; batch++) {
+      const due = await knex("erp.whatsapp_notification_log")
+        .where({ status: "QUEUED" })
+        .andWhere((qb) =>
+          qb.whereNull("next_retry_at").orWhere("next_retry_at", "<=", new Date()),
+        )
+        .orderBy("created_at", "asc")
+        .limit(BATCH_SIZE);
+      if (!due.length) break;
 
-      summary.processed += 1;
-      try {
-        const outcome = await processRow({ knex, row });
-        if (outcome === "SENT") summary.sent += 1;
-        else if (outcome === "QUEUED") summary.requeued += 1;
-        else summary.failed += 1;
-      } catch (err) {
-        console.error("[WhatsApp] retry row error:", err?.message || err);
+      for (const row of due) {
+        // Claim the row before sending so an overlapping tick can't double-send it.
+        const claimed = await knex("erp.whatsapp_notification_log")
+          .where({ id: row.id, status: "QUEUED" })
+          .update({ next_retry_at: new Date(Date.now() + backoffMsForAttempt((row.attempts || 0) + 1)) });
+        if (!claimed) continue;
+
+        summary.processed += 1;
+        try {
+          const outcome = await processRow({ knex, row });
+          if (outcome === "SENT") summary.sent += 1;
+          else if (outcome === "QUEUED") summary.requeued += 1;
+          else summary.failed += 1;
+        } catch (err) {
+          console.error("[WhatsApp] retry row error:", err?.message || err);
+        }
       }
     }
 
