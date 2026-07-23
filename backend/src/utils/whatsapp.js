@@ -254,23 +254,66 @@ const resolveWhatsAppChatId = async (msisdn) => {
 // syncToAddressbook, the phone's address book) so they show up by name instead
 // of a bare number. Best-effort: never let a contact-save failure affect the
 // message outcome. Returns { ok } / { ok: false, reason }.
+// Read back what WhatsApp actually stored — saveOrEditAddressbookContact
+// resolves without error even when WhatsApp ignores the write, so a save that
+// "succeeded" may not have bound a name to the chat. Returns the stored name and
+// whether it's now a saved contact, or null if it couldn't be read.
+const readBackContact = async (digits) => {
+  try {
+    const contact = await client.getContactById(`${digits}@c.us`);
+    return {
+      name: (contact && (contact.name || contact.pushname)) || null,
+      isMyContact: !!(contact && contact.isMyContact),
+    };
+  } catch {
+    return null;
+  }
+};
+
 const saveWhatsAppContact = async ({ msisdn, firstName, lastName = "" }) => {
   const digits = String(msisdn || "").replace(/\D/g, "");
   if (!digits) return { ok: false, reason: "no_phone" };
   if (!clientReady || !client) return { ok: false, reason: "client_unavailable" };
-  try {
-    await client.saveOrEditAddressbookContact(
-      digits,
-      String(firstName || "").trim() || digits,
-      String(lastName || "").trim(),
-      SYNC_CONTACTS_TO_PHONE,
-    );
-    console.log("[WhatsApp] ✓ Saved contact", digits, firstName);
-    return { ok: true };
-  } catch (err) {
-    console.error("[WhatsApp] ✗ Failed to save contact:", err.message);
-    return { ok: false, reason: err.message || "save_contact_error" };
+
+  const first = String(firstName || "").trim() || digits;
+  const last = String(lastName || "").trim();
+
+  // WhatsApp's addressbook save is inconsistent about the number format: some
+  // accounts only bind the name when it's passed in E.164 (leading "+"), others
+  // want bare digits. Try bare digits first (the documented form); if the read
+  // back shows the contact still isn't saved, retry with the "+" form. We verify
+  // rather than trust the no-throw so the logs reflect what really happened.
+  const attempt = async (numberArg) => {
+    try {
+      await client.saveOrEditAddressbookContact(
+        numberArg,
+        first,
+        last,
+        SYNC_CONTACTS_TO_PHONE,
+      );
+    } catch (err) {
+      return { ok: false, reason: err.message || "save_contact_error" };
+    }
+    return { ok: true, verified: await readBackContact(digits) };
+  };
+
+  let res = await attempt(digits);
+  if (res.ok && !(res.verified && res.verified.isMyContact)) {
+    const retry = await attempt(`+${digits}`);
+    if (retry.ok) res = retry;
   }
+
+  if (!res.ok) {
+    console.error("[WhatsApp] ✗ Failed to save contact:", res.reason);
+    return res;
+  }
+  const bound = res.verified && res.verified.isMyContact;
+  const label = `${first} ${last}`.trim();
+  console.log(
+    `[WhatsApp] contact save ${digits} "${label}" — WhatsApp stored: ` +
+      `name=${(res.verified && res.verified.name) || "(none)"} isMyContact=${bound ? "yes" : "NO"}`,
+  );
+  return { ok: true, verified: res.verified };
 };
 
 // Graceful teardown for process shutdown. The Puppeteer/Chrome child must be
