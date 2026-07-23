@@ -6,6 +6,9 @@ const {
 } = require("../../middleware/access/role-permissions");
 const { applyMasterDataChange } = require("../../utils/approval-applier");
 const { sendSkuRateNotification } = require("../../utils/sku-rate-notification");
+const {
+  sendVoucherPaymentNotifications,
+} = require("../../utils/payment-notification");
 const { navConfig, getNavScopes } = require("../../utils/nav-config");
 const {
   BASIC_INFO_ENTITY_TYPES,
@@ -2116,8 +2119,32 @@ router.post(
         }
       }
       if (requestSnapshot?.entity_type === "SKU") {
+        const isCreate =
+          String(requestSnapshot.entity_id).toUpperCase() === "NEW" ||
+          requestSnapshot.new_value?._action === "create";
         const singleRate = requestSnapshot.new_value?.sale_rate;
-        if (singleRate !== null && singleRate !== undefined) {
+        if (isCreate) {
+          // New article SKU: only notify when the admin opted in on approval and
+          // the variant was actually created (appliedEntityId, not the "NEW"
+          // placeholder) with a real rate. SFG variants queue with rate 0, so the
+          // > 0 guard excludes them without a separate FG check.
+          const optedIn = req.body?.send_article_rate === "1";
+          const rate = Number(singleRate);
+          if (optedIn && appliedEntityId && rate > 0) {
+            await sendSkuRateNotification({
+              knex,
+              chatId: process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID,
+              updates: [{ id: Number(appliedEntityId), newRate: singleRate }],
+              user: req.user,
+              approved: true,
+              isNew: true,
+            });
+          } else {
+            console.log(
+              `[WhatsApp] new-article rate notify skipped: optedIn=${optedIn} appliedEntityId=${appliedEntityId} sale_rate=${singleRate}`,
+            );
+          }
+        } else if (singleRate !== null && singleRate !== undefined) {
           await sendSkuRateNotification({
             knex,
             chatId: process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID,
@@ -2132,6 +2159,21 @@ router.post(
             approved: true,
           });
         }
+      }
+
+      // Notify suppliers/labours/employees paid on an approved cash/journal
+      // voucher. Opt-in checkbox defaults ON (only skipped when explicitly set
+      // false); a global env flag can disable the feature entirely. The service
+      // re-validates voucher type/status and never throws.
+      if (
+        requestSnapshot?.entity_type === "VOUCHER" &&
+        process.env.WHATSAPP_PAYMENT_NOTIFY_ENABLED !== "0" &&
+        requestSnapshot?.new_value?.notify_payees !== false
+      ) {
+        const voucherId = appliedEntityId || requestSnapshot.entity_id;
+        await sendVoucherPaymentNotifications({ knex, voucherId }).catch((e) =>
+          console.error("[WhatsApp] payment notify error:", e?.message || e),
+        );
       }
 
       // Informational only: any failure here must not turn an approval that

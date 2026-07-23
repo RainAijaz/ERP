@@ -286,6 +286,15 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
       .havingRaw("COALESCE(SUM(sb.qty),0) < i.min_stock_level")
       .select("i.id");
 
+  // Unresolved WhatsApp payment-notification failures (bad phone / not delivered).
+  const failedWhatsappNotifications = () =>
+    knex("erp.whatsapp_notification_log")
+      .where("status", "FAILED")
+      .whereNull("resolved_at")
+      .modify((qb) => applyBranchScope(req, qb, "branch_id"))
+      .count("* as count")
+      .first();
+
   const overdueReceivables = () =>
     knex("erp.sales_header as sh")
       .join("erp.voucher_header as vh", "vh.id", "sh.voucher_id")
@@ -421,6 +430,7 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
     dozensYesterday,
     monthlyPurchase,
     overdueReturnablesCount,
+    failedWhatsappNotificationsCount,
   ] = await Promise.all([
     canSales ? safeValue("todaysSales", () => revenueBetween(todayKey, todayKey)) : Promise.resolve(null),
     canSales ? safeValue("monthlyRevenue", () => revenueBetween(startOfMonthKey, todayKey)) : Promise.resolve(null),
@@ -444,6 +454,7 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
     canSales ? safeValue("dozensYesterday", () => dozensSoldBetween(yesterdayKey, yesterdayKey)) : Promise.resolve(null),
     canPurchase ? safeValue("monthlyPurchase", () => purchaseBetween(startOfMonthKey, todayKey)) : Promise.resolve(null),
     canReturnables ? safeCount("overdueReturnables", overdueReturnables) : Promise.resolve(null),
+    safeCount("failedWhatsappNotifications", failedWhatsappNotifications),
   ]);
 
   const rawMaterialsBelowMinCount = rawMatBelowMinRows.length;
@@ -527,6 +538,7 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
       employeesAbsent: null, // no attendance module
       productionBehindSchedule: null, // no production schedule/due date
       poAwaitingReceipt: poAwaitingReceiptCount,
+      failedWhatsappNotifications: failedWhatsappNotificationsCount,
       pendingApprovals: canApprovals
         ? { total: pendingApprovalsTotal, buckets: approvalBuckets }
         : null,

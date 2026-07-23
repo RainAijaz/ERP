@@ -13,8 +13,14 @@ const sendSkuRateNotification = async ({
   updates = [],
   user,
   approved = false,
+  isNew = false,
 }) => {
-  if (!chatId || !String(chatId).trim()) return;
+  if (!chatId || !String(chatId).trim()) {
+    console.warn(
+      "[WhatsApp] SKU rate notify skipped: WHATSAPP_RATE_NOTIFY_CHAT_ID is not set",
+    );
+    return;
+  }
 
   const normalizedUpdates = Array.isArray(updates)
     ? updates
@@ -26,7 +32,13 @@ const sendSkuRateNotification = async ({
         .filter((update) => Number.isInteger(update.id) && update.id > 0)
     : [];
 
-  if (!normalizedUpdates.length) return;
+  if (!normalizedUpdates.length) {
+    console.warn(
+      "[WhatsApp] SKU rate notify skipped: no valid variant ids in",
+      JSON.stringify(updates),
+    );
+    return;
+  }
 
   try {
     const details = await knex("erp.variants as v")
@@ -82,9 +94,23 @@ const sendSkuRateNotification = async ({
       return `• *${sku}*\n${nameLine}\n${rateLine}`;
     });
 
-    const header = approved ? "🔔 *ریٹ اپ ڈیٹ* _(منظور شدہ)_" : "🔔 *ریٹ اپ ڈیٹ*";
+    let header;
+    if (isNew) {
+      header = approved ? "🆕 *نیا آرٹیکل* _(منظور شدہ)_" : "🆕 *نیا آرٹیکل*";
+    } else {
+      header = approved ? "🔔 *ریٹ اپ ڈیٹ* _(منظور شدہ)_" : "🔔 *ریٹ اپ ڈیٹ*";
+    }
     const message = `${header}\n📅 ${timeStr}\n\n${lines.join("\n\n")}`;
-    await sendWhatsAppMessage(chatId, message);
+    const result = await sendWhatsAppMessage(chatId, message);
+    if (result && result.ok) {
+      console.log(
+        `[WhatsApp] SKU rate notification delivered to ${chatId} (${normalizedUpdates.length} item(s), isNew=${isNew})`,
+      );
+    } else {
+      console.warn(
+        `[WhatsApp] SKU rate notification NOT delivered to ${chatId}: reason=${result?.reason || "unknown"} queued=${result?.queued === true}`,
+      );
+    }
   } catch (err) {
     console.error("[WhatsApp] SKU rate notify error:", err?.message || err);
   }

@@ -7,11 +7,28 @@ const {
 } = require("../../utils/voucher-approval-policy");
 const { translateUrduWithFallback } = require("../../utils/translate");
 const { syncVoucherGlPostingTx } = require("./gl-posting-service");
+const {
+  sendVoucherPaymentNotifications,
+} = require("../../utils/payment-notification");
 
 const VOUCHER_TYPES = {
   cash: "CASH_VOUCHER",
   bank: "BANK_VOUCHER",
   journal: "JOURNAL_VOUCHER",
+};
+
+// Vouchers created/edited by a user who can also approve are APPROVED immediately
+// (no maker-checker step), so the approval-endpoint hook never runs for them.
+// Fire the per-person WhatsApp payment notification here in that case. The
+// notifier re-validates type/status and never throws.
+const maybeNotifyPayeesPostCommit = ({ result, notifyPayees }) => {
+  if (!result || result.queuedForApproval) return;
+  if (String(result.status).toUpperCase() !== "APPROVED") return;
+  if (notifyPayees === false) return;
+  if (process.env.WHATSAPP_PAYMENT_NOTIFY_ENABLED === "0") return;
+  sendVoucherPaymentNotifications({ knex, voucherId: result.id }).catch((e) =>
+    console.error("[WhatsApp] payment notify error:", e?.message || e),
+  );
 };
 const AUTO_BANK_SETTLEMENT_PREFIX = "[AUTO_BANK_SETTLEMENT]";
 const URDU_REGEX = /[\u0600-\u06FF]/;
@@ -971,6 +988,7 @@ const createVoucher = async ({
   scopeKey,
   headerAccountId = null,
   linkedSalesOrderId = null,
+  notifyPayees = true,
 }) => {
   if (!req?.user?.id) throw new HttpError(401, "Not authenticated");
   if (!req.branchId) throw new HttpError(400, "Branch context is required");
@@ -1083,6 +1101,7 @@ const createVoucher = async ({
           total_credit: validated.totalCredit,
           header_account_id: validHeaderAccountId,
           permission_reroute: !canCreate,
+          notify_payees: notifyPayees !== false,
         },
       });
     }
@@ -1113,6 +1132,8 @@ const createVoucher = async ({
     },
   });
 
+  maybeNotifyPayeesPostCommit({ result, notifyPayees });
+
   return result;
 };
 
@@ -1126,6 +1147,7 @@ const updateVoucher = async ({
   scopeKey,
   headerAccountId = null,
   linkedSalesOrderId = null,
+  notifyPayees = true,
 }) => {
   if (!req?.user?.id) throw new HttpError(401, "Not authenticated");
   if (!req.branchId) throw new HttpError(400, "Branch context is required");
@@ -1219,6 +1241,7 @@ const updateVoucher = async ({
       total_credit: validated.totalCredit,
       header_account_id: validHeaderAccountId,
       permission_reroute: !canEdit,
+      notify_payees: notifyPayees !== false,
     };
 
     if (queuedForApproval) {
@@ -1324,6 +1347,8 @@ const updateVoucher = async ({
       updated: result.updated === true,
     },
   });
+
+  maybeNotifyPayeesPostCommit({ result, notifyPayees });
 
   return result;
 };

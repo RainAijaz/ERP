@@ -25,7 +25,16 @@ const notFound = require("./middleware/errors/not-found");
 const errorHandler = require("./middleware/errors/error-handler");
 const knex = require("./db/knex");
 const { navConfig, syncNavScopes } = require("./utils/nav-config");
-const { initWhatsApp } = require("./utils/whatsapp");
+const {
+  initWhatsApp,
+  onWhatsAppReady,
+  shutdownWhatsApp,
+} = require("./utils/whatsapp");
+const {
+  startWhatsAppRetryWorker,
+  stopWhatsAppRetryWorker,
+  retryQueuedWhatsAppNotifications,
+} = require("./utils/payment-notification-retry");
 
 const app = express();
 
@@ -153,6 +162,63 @@ syncNavScopes(knex).catch((err) => {
   console.error("Failed to sync nav permission scopes:", err.message || err);
 });
 
-if (process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID) {
+// Initialize the WhatsApp client when either notification feature is active:
+// the SKU rate-change group notifier, or the per-person payment notifier
+// (enabled by default unless WHATSAPP_PAYMENT_NOTIFY_ENABLED=0).
+if (
+  process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID ||
+  process.env.WHATSAPP_PAYMENT_NOTIFY_ENABLED !== "0"
+) {
   initWhatsApp();
 }
+
+// Payment notifications that could not be delivered (WhatsApp down, transport
+// error) are queued in the DB. Sweep them periodically — which also picks up
+// anything left queued by a previous run — and flush immediately on reconnect.
+if (process.env.WHATSAPP_PAYMENT_NOTIFY_ENABLED !== "0") {
+  startWhatsAppRetryWorker({ knex });
+  // On (re)connect, drain the whole backlog immediately — ignore each row's
+  // backoff so a long outage's queue isn't left waiting hours once WhatsApp is
+  // back. The periodic worker (above) still handles the steady-state schedule.
+  onWhatsAppReady(() =>
+    retryQueuedWhatsAppNotifications({ knex, ignoreBackoff: true }).catch((err) =>
+      console.error("[WhatsApp] retry-on-ready failed:", err?.message || err),
+    ),
+  );
+}
+
+// Graceful shutdown. Without this, `systemctl restart`/stop sends SIGTERM, but
+// the WhatsApp Puppeteer/Chrome child keeps the event loop alive, so systemd's
+// stop times out and SIGKILLs the process — orphaning Chrome, which locks the
+// WhatsApp session profile so the NEXT start hangs and never reaches "ready"
+// (every payment/rate message then queues forever). Tearing everything down
+// here lets the process exit well within systemd's TimeoutStopSec.
+let shuttingDown = false;
+const gracefulShutdown = async (signal) => {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[shutdown] ${signal} received — shutting down...`);
+
+  // Hard cap: exit even if a teardown step hangs, so systemd never has to SIGKILL.
+  const forceExit = setTimeout(() => {
+    console.error("[shutdown] teardown timed out — forcing exit");
+    process.exit(1);
+  }, Number(process.env.SHUTDOWN_TIMEOUT_MS || 15000));
+  forceExit.unref();
+
+  try {
+    stopWhatsAppRetryWorker();
+    await new Promise((resolve) => server.close(resolve));
+    await shutdownWhatsApp();
+    await knex.destroy();
+    clearTimeout(forceExit);
+    console.log("[shutdown] clean exit");
+    process.exit(0);
+  } catch (err) {
+    console.error("[shutdown] error during shutdown:", err?.message || err);
+    process.exit(1);
+  }
+};
+
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
