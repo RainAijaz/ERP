@@ -24,6 +24,7 @@ const {
   applyItemLifecycleToggleTx,
 } = require("../services/products/item-lifecycle-service");
 const { generateUniqueCode } = require("./entity-code");
+const { convertRmStockUom } = require("./rm-uom-stock-conversion");
 
 // Mapping of basic info entity types to their DB tables
 const BASIC_INFO_TABLES = {
@@ -592,23 +593,14 @@ const applyItemChange = async (trx, request, userId) => {
   if (action === "update") {
     if (!existing) return false;
 
-    // Block RM unit change if item has stock on hand — stock quantities have no uom_id stored,
-    // so changing base_uom without converting would corrupt all historical numbers.
-    if (
+    // RM base_uom change: stock quantities carry no uom_id, so a change
+    // reinterprets every stored number. Capture the old unit before the update
+    // so the stock can be re-expressed into the new unit below.
+    const rmUomChanged =
       itemType === "RM" &&
       Object.prototype.hasOwnProperty.call(newValue, "base_uom_id") &&
-      Number(newValue.base_uom_id) !== Number(existing.base_uom_id)
-    ) {
-      const stockBalance = await trx("erp.stock_balance_rm")
-        .where({ item_id: Number(entityId) })
-        .sum("qty as total_qty")
-        .first();
-      if (stockBalance && Number(stockBalance.total_qty) > 0) {
-        throw new Error(
-          `Cannot change unit of measure for this item while it has stock on hand.`,
-        );
-      }
-    }
+      Number(newValue.base_uom_id) !== Number(existing.base_uom_id);
+    const oldRmBaseUomId = Number(existing.base_uom_id);
 
     await trx("erp.items")
       .where({ id: Number(entityId) })
@@ -657,6 +649,29 @@ const applyItemChange = async (trx, request, userId) => {
         updated_by: userId || null,
         updated_at: trx.fn.now(),
       });
+
+    // Re-express existing stock into the new base unit. Only needed when the
+    // item actually has stock on hand; blocks (rolls back the approval) if no
+    // active conversion rule connects the two units.
+    if (rmUomChanged) {
+      const stockBalance = await trx("erp.stock_balance_rm")
+        .where({ item_id: Number(entityId) })
+        .sum("qty as total_qty")
+        .first();
+      if (stockBalance && Number(stockBalance.total_qty) > 0) {
+        const conv = await convertRmStockUom(
+          trx,
+          Number(entityId),
+          oldRmBaseUomId,
+          Number(newValue.base_uom_id),
+        );
+        if (!conv.converted) {
+          throw new Error(
+            "Cannot change unit of measure for this item while it has stock on hand: no active UOM conversion rule exists between the two units.",
+          );
+        }
+      }
+    }
 
     if (itemType === "RM") {
       await trx("erp.rm_purchase_rates")
