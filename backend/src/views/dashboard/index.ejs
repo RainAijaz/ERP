@@ -30,6 +30,7 @@
   const canInventory = gate("REPORT", "stock_quantity") || gate("REPORT", "stock_ledger");
   const canProduction = gate("REPORT", "production_report");
   const canPurchase = gate("REPORT", "purchase_report");
+  const canReturnables = gate("REPORT", "pending_returnables") || gate("REPORT", "overdue_returnables_report");
   const canApprovals = gate("SCREEN", "administration.approvals");
   const canFinancial = gate("REPORT", "profit_and_loss") || gate("REPORT", "expense_trends");
 
@@ -77,6 +78,7 @@
   const kpiCards = [
     { show: canSales,             href: "/reports/sales/sales-report",            label: t("todays_sales"),        value: fmt(kpis.todaysSales),     tone: "emerald", icon: "cash", daily: true, labelAlt: t("yesterdays_sales"),       valueAlt: fmt(kpis.todaysSalesYesterday) },
     { show: canSales,             href: "/reports/sales/sales-report",            label: t("monthly_revenue"),     value: fmt(kpis.monthlyRevenue),  tone: "blue",    icon: "trend" },
+    { show: canPurchase,          href: "/reports/purchases",                     label: t("monthly_purchase"),    value: fmt(kpis.monthlyPurchase), tone: "amber",   icon: "box" },
     { show: canSales,             href: "/reports/sales/sales-report",            label: t("dozens_sold_today"),   value: fmtQty(kpis.dozensToday),  tone: "teal",    icon: "box", suffix: t("dzn"), daily: true, labelAlt: t("dozens_sold_yesterday"), valueAlt: fmtQty(kpis.dozensYesterday) },
     { show: canSales,             href: "/reports/sales/sales-report",            label: t("dozens_sold_week"),    value: fmtQty(kpis.dozensWeek),   tone: "cyan",    icon: "box", suffix: t("dzn") },
     { show: canSales,             href: "/reports/sales/sales-report",            label: t("dozens_sold_month"),   value: fmtQty(kpis.dozensMonth),  tone: "violet",  icon: "box", suffix: t("dzn") },
@@ -86,6 +88,7 @@
     { show: canSales,             href: "/reports/sales/sales-order-report",      label: t("orders_pending"),      value: fmt(kpis.ordersPending),   tone: "violet",  icon: "doc" },
     { show: canProduction,        href: "/reports/production/production-report",  label: t("production_progress"), value: fmtPct(kpis.productionProgressPct), tone: "slate", icon: "gauge" },
     { show: canInventory,         href: "/reports/inventory/stock-transfer",      label: t("dispatches_today"),    value: fmt(kpis.dispatchesToday), tone: "cyan",    icon: "truck", daily: true, labelAlt: t("dispatches_yesterday"),  valueAlt: fmt(kpis.dispatchesYesterday) },
+    { show: canReturnables,       href: "/reports/returnables/vendor-performance", label: t("overdue_returnables"), value: fmt(kpis.overdueReturnables), tone: "rose",  icon: "warn" },
     { show: canApprovals,         href: "#alerts-panel",                          label: t("critical_alerts"),     value: fmt(kpis.criticalAlerts),  tone: "rose",    icon: "bolt" },
   ].filter((c) => c.show);
 
@@ -125,6 +128,7 @@
   // ---- Section 3 analytics chart cards (permission-gated) ----------------
   const chartDefs = [
     { id: "salesTrend",           show: canSales,                                  title: t("monthly_sales_trend"),  href: "/reports/sales/sales-report" },
+    { id: "salesVsPurchase",      show: canSales || canPurchase,                   title: t("sales_vs_purchase"),    href: "/reports/purchases" },
     { id: "revenueVsExpenses",    show: canFinancial,                              title: t("revenue_vs_expenses"),  href: "/reports/financial/profit_and_loss" },
     { id: "topProducts",          show: canSales,                                  title: t("top_selling_products"), href: "/reports/sales/sales-report" },
     { id: "productionByStage",    show: canProduction,                             title: t("production_by_stage"),  href: "/reports/production/production-report" },
@@ -152,6 +156,8 @@
     revenue: t("revenue"),
     expense: t("expense"),
     sales: t("todays_sales"),
+    salesLabel: t("sales"),
+    purchaseLabel: t("purchase"),
     receivable: t("accounts_receivable"),
     payable: t("accounts_payable"),
     production: t("production_by_stage"),
@@ -605,6 +611,22 @@
           type: "line",
           data: { labels, datasets: [{ label: I18N.sales, data: d.values || [], borderColor: PALETTE.emerald, backgroundColor: alpha(PALETTE.emerald, 0.12), borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, tension: 0.3, fill: true }] },
           options: commonOpts(id, { scales: { x: catAxis, y: linearAxis } }),
+        });
+        setState(id, null);
+      },
+      salesVsPurchase(Chart, id, d) {
+        if (!d) return setState(id, I18N.noAccess);
+        const labels = (d.labels || []).map(fmtBucket);
+        const sales = d.sales || [], purchase = d.purchase || [];
+        if (!sales.length && !purchase.length) return setState(id, I18N.noData);
+        const datasets = [];
+        if (sales.length) datasets.push({ label: I18N.salesLabel, data: sales, borderColor: PALETTE.emerald, backgroundColor: alpha(PALETTE.emerald, 0.10), borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, tension: 0.3, fill: true });
+        if (purchase.length) datasets.push({ label: I18N.purchaseLabel, data: purchase, borderColor: PALETTE.amber, backgroundColor: alpha(PALETTE.amber, 0.10), borderWidth: 2, pointRadius: 0, pointHoverRadius: 5, tension: 0.3, fill: true });
+        destroy(id);
+        charts[id] = new Chart(canvasFor(id).getContext("2d"), {
+          type: "line",
+          data: { labels, datasets },
+          options: commonOpts(id, { plugins: { legend: { display: true, position: "bottom", labels: { boxWidth: 12, font: { size: 11 }, color: tickColor } } }, scales: { x: catAxis, y: linearAxis } }),
         });
         setState(id, null);
       },

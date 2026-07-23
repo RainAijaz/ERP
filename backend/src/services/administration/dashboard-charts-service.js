@@ -84,6 +84,7 @@ const loadDashboardCharts = async ({ knex, req, can, from, to }) => {
   const bucketKeys = buildBucketKeys(fromKey, toKey, granularity);
 
   const canSales = getCan(can, "REPORT", "sales_report");
+  const canPurchase = getCan(can, "REPORT", "purchase_report");
   const canFinancial =
     getCan(can, "REPORT", "profit_and_loss") || getCan(can, "REPORT", "expense_trends");
   const canProduction = getCan(can, "REPORT", "production_report");
@@ -121,6 +122,43 @@ const loadDashboardCharts = async ({ knex, req, can, from, to }) => {
         .select(knex.raw(`to_char(vh.voucher_date, '${pgFmt}') as k`))
         .select(knex.raw("COALESCE(SUM(sl.total_amount),0) as v"));
       return { labels: bucketKeys, values: mapBuckets(rows) };
+    });
+
+  // ---- 1b) Sales vs Purchase (money in vs money out over time) ------------
+  // Sales = approved SALES_VOUCHER line net amount; Purchase = approved PI line
+  // amount. Each series is gated independently and returns [] when the viewer
+  // lacks the scope, so the renderer draws whichever series it has.
+  const salesVsPurchase = () =>
+    safe("salesVsPurchase", { labels: bucketKeys, sales: [], purchase: [] }, async () => {
+      const salesRowsP = canSales
+        ? knex("erp.sales_line as sl")
+            .join("erp.voucher_line as vl", "vl.id", "sl.voucher_line_id")
+            .join("erp.voucher_header as vh", "vh.id", "vl.voucher_header_id")
+            .where("vh.voucher_type_code", SALES_VOUCHER_CODE)
+            .where("vh.status", "APPROVED")
+            .whereBetween("vh.voucher_date", [fromKey, toKey])
+            .modify((qb) => applyBranchScope(req, qb, "vh.branch_id"))
+            .groupByRaw(`to_char(vh.voucher_date, '${pgFmt}')`)
+            .select(knex.raw(`to_char(vh.voucher_date, '${pgFmt}') as k`))
+            .select(knex.raw("COALESCE(SUM(sl.total_amount),0) as v"))
+        : Promise.resolve([]);
+      const purchaseRowsP = canPurchase
+        ? knex("erp.voucher_line as vl")
+            .join("erp.voucher_header as vh", "vh.id", "vl.voucher_header_id")
+            .where("vh.voucher_type_code", "PI")
+            .where("vh.status", "APPROVED")
+            .whereBetween("vh.voucher_date", [fromKey, toKey])
+            .modify((qb) => applyBranchScope(req, qb, "vh.branch_id"))
+            .groupByRaw(`to_char(vh.voucher_date, '${pgFmt}')`)
+            .select(knex.raw(`to_char(vh.voucher_date, '${pgFmt}') as k`))
+            .select(knex.raw("COALESCE(SUM(vl.amount),0) as v"))
+        : Promise.resolve([]);
+      const [salesRows, purchaseRows] = await Promise.all([salesRowsP, purchaseRowsP]);
+      return {
+        labels: bucketKeys,
+        sales: canSales ? mapBuckets(salesRows) : [],
+        purchase: canPurchase ? mapBuckets(purchaseRows) : [],
+      };
     });
 
   // ---- 2) Revenue vs Expenses (GL) ---------------------------------------
@@ -253,6 +291,7 @@ const loadDashboardCharts = async ({ knex, req, can, from, to }) => {
 
   const [
     salesTrendData,
+    salesVsPurchaseData,
     revenueVsExpensesData,
     productionByStageData,
     inventoryStatusData,
@@ -260,6 +299,7 @@ const loadDashboardCharts = async ({ knex, req, can, from, to }) => {
     receivablesVsPayablesData,
   ] = await Promise.all([
     canSales ? salesTrend() : Promise.resolve(null),
+    canSales || canPurchase ? salesVsPurchase() : Promise.resolve(null),
     canFinancial ? revenueVsExpenses() : Promise.resolve(null),
     canProduction ? productionByStage() : Promise.resolve(null),
     canInventory ? inventoryStatus() : Promise.resolve(null),
@@ -271,6 +311,7 @@ const loadDashboardCharts = async ({ knex, req, can, from, to }) => {
     range: { from: fromKey, to: toKey, granularity },
     charts: {
       salesTrend: salesTrendData,
+      salesVsPurchase: salesVsPurchaseData,
       revenueVsExpenses: revenueVsExpensesData,
       productionByStage: productionByStageData,
       inventoryStatus: inventoryStatusData,

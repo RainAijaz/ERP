@@ -118,6 +118,9 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
     getCan(can, "REPORT", "stock_quantity") || getCan(can, "REPORT", "stock_ledger");
   const canProduction = getCan(can, "REPORT", "production_report");
   const canPurchase = getCan(can, "REPORT", "purchase_report");
+  const canReturnables =
+    getCan(can, "REPORT", "pending_returnables") ||
+    getCan(can, "REPORT", "overdue_returnables_report");
   const canApprovals = getCan(can, "SCREEN", "administration.approvals");
 
   // Restrict GL to approved vouchers (or manual batches with no source voucher).
@@ -142,6 +145,22 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
       .select(
         knex.raw("COALESCE(SUM(COALESCE(ge.cr,0) - COALESCE(ge.dr,0)),0) as value"),
       )
+      .first();
+
+  // Total purchase value over a date range, sourced from approved Purchase
+  // Invoice (PI) lines. Both ITEM lines (RM/SFG/assets) and ACCOUNT lines
+  // (consumables) carry a real amount, so summing all lines gives gross
+  // procurement spend. GL EXPENSE is deliberately NOT used: raw-material
+  // purchases capitalise into inventory (an asset), so a GL-expense figure
+  // would badly undercount actual buying.
+  const purchaseBetween = (fromKey, toKey) =>
+    knex("erp.voucher_line as vl")
+      .join("erp.voucher_header as vh", "vh.id", "vl.voucher_header_id")
+      .where("vh.voucher_type_code", "PI")
+      .andWhere("vh.status", "APPROVED")
+      .whereBetween("vh.voucher_date", [fromKey, toKey])
+      .modify((qb) => applyBranchScope(req, qb, "vh.branch_id"))
+      .select(knex.raw("COALESCE(SUM(vl.amount),0) as value"))
       .first();
 
   // Net dozens sold (packed & loose) over a date range. Pairs live in
@@ -278,6 +297,38 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
       .count("* as count")
       .first();
 
+  // Overdue returnables: outward (RDV) lines still not fully returned whose
+  // expected return date has passed. Mirrors the OVERDUE definition used by the
+  // returnables report (pendingQty > 0 AND expected_return_date < today), and
+  // is intentionally all-time (not restricted to any voucher-date window), so it
+  // surfaces every currently-outstanding overdue line. Returned qty is netted
+  // per outward line from non-rejected inward (RRV) lines.
+  const overdueReturnables = () => {
+    const returnedSub = knex("erp.rgp_inward_line as ril")
+      .join("erp.rgp_inward as ri", "ri.voucher_id", "ril.rgp_in_voucher_id")
+      .join("erp.voucher_header as rvh", "rvh.id", "ri.voucher_id")
+      .whereNot("rvh.status", "REJECTED")
+      .groupBy("ril.rgp_out_voucher_line_id")
+      .select("ril.rgp_out_voucher_line_id")
+      .select(knex.raw("COALESCE(SUM(ril.returned_qty),0) as returned_qty"))
+      .as("ret");
+
+    const overdueLines = knex("erp.rgp_outward_line as rol")
+      .join("erp.voucher_line as ovl", "ovl.id", "rol.voucher_line_id")
+      .join("erp.voucher_header as ovh", "ovh.id", "ovl.voucher_header_id")
+      .join("erp.rgp_outward as ro", "ro.voucher_id", "ovh.id")
+      .leftJoin(returnedSub, "ret.rgp_out_voucher_line_id", "ovl.id")
+      .whereNot("ovh.status", "REJECTED")
+      .where("ovh.voucher_type_code", "RDV")
+      .whereNotNull("ro.expected_return_date")
+      .where("ro.expected_return_date", "<", todayKey)
+      .whereRaw("(rol.qty - COALESCE(ret.returned_qty,0)) > 0")
+      .modify((qb) => applyBranchScope(req, qb, "ovh.branch_id"))
+      .select("ovl.id");
+
+    return knex.from(overdueLines.as("od")).count("* as count").first();
+  };
+
   // A PO is "awaiting receipt" until a Purchase Invoice links back to it.
   // (GRN header has no PO link column; PI.po_voucher_id is the linkage.)
   const poAwaitingReceipt = () =>
@@ -368,6 +419,8 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
     todaysSalesYesterday,
     dispatchesYesterdayCount,
     dozensYesterday,
+    monthlyPurchase,
+    overdueReturnablesCount,
   ] = await Promise.all([
     canSales ? safeValue("todaysSales", () => revenueBetween(todayKey, todayKey)) : Promise.resolve(null),
     canSales ? safeValue("monthlyRevenue", () => revenueBetween(startOfMonthKey, todayKey)) : Promise.resolve(null),
@@ -389,6 +442,8 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
     canSales ? safeValue("todaysSalesYesterday", () => revenueBetween(yesterdayKey, yesterdayKey)) : Promise.resolve(null),
     canInventory ? safeCount("dispatchesYesterday", dispatchesOn(yesterdayKey)) : Promise.resolve(null),
     canSales ? safeValue("dozensYesterday", () => dozensSoldBetween(yesterdayKey, yesterdayKey)) : Promise.resolve(null),
+    canPurchase ? safeValue("monthlyPurchase", () => purchaseBetween(startOfMonthKey, todayKey)) : Promise.resolve(null),
+    canReturnables ? safeCount("overdueReturnables", overdueReturnables) : Promise.resolve(null),
   ]);
 
   const rawMaterialsBelowMinCount = rawMatBelowMinRows.length;
@@ -448,9 +503,11 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
     kpis: {
       todaysSales,
       monthlyRevenue,
+      monthlyPurchase,
       cashBank,
       receivable,
       payable,
+      overdueReturnables: overdueReturnablesCount,
       ordersPending: ordersPendingCount,
       productionProgressPct: null, // no plan target/completion tracking
       dispatchesToday: dispatchesTodayCount,
