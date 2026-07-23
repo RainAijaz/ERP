@@ -10,6 +10,10 @@ const {
 const { SCREEN_ENTITY_TYPES } = require("../../../utils/approval-entity-map");
 const { queueAuditLog } = require("../../../utils/audit-log");
 const {
+  getUomConversionMultiplier,
+  convertRmStockUom,
+} = require("../../../utils/rm-uom-stock-conversion");
+const {
   applyItemLifecycleToggleTx,
 } = require("../../../services/products/item-lifecycle-service");
 
@@ -724,29 +728,49 @@ router.post(
           }
         }
 
-        // Block unit change if item has any stock on hand (stock qty has no uom_id stored,
-        // so changing base_uom without converting stock_ledger/balance would corrupt all numbers)
+        // Stock qty carries no uom_id, so a base_uom change reinterprets every
+        // stored number. When the item has stock on hand we now auto-convert it
+        // (in the write path below / in approval-applier), but that is only
+        // possible when an active conversion rule connects the two units — so
+        // block here only if stock exists AND no such rule is available.
         const stockBalance = await knex("erp.stock_balance_rm")
           .where({ item_id: id })
           .sum("qty as total_qty")
           .first();
         if (stockBalance && Number(stockBalance.total_qty) > 0) {
-          const [rows, options, rateDetailsByItem, users] = await Promise.all([
-            loadRows(),
-            loadOptions(),
-            loadRateDetails(),
-            loadUsers(),
-          ]);
-          return renderIndex(req, res, {
-            rows,
-            rateDetailsByItem,
-            ...options,
-            users,
-            error: `Cannot change the unit of measure while this item has stock on hand. Please zero out all stock first.`,
-            modalOpen: true,
-            modalMode: "edit",
-            values: { ...values, id },
-          });
+          const multiplier = await getUomConversionMultiplier(
+            knex,
+            Number(currentItem.base_uom_id),
+            Number(base_uom_id),
+          );
+          if (multiplier === null) {
+            const oldUomId = Number(currentItem.base_uom_id);
+            const newUomId = Number(base_uom_id);
+            const [oldUom, newUom] = await Promise.all([
+              knex("erp.uom").select("code").where({ id: oldUomId }).first(),
+              knex("erp.uom").select("code").where({ id: newUomId }).first(),
+            ]);
+            const oldCode = oldUom ? oldUom.code : `UOM ${oldUomId}`;
+            const newCode = newUom ? newUom.code : `UOM ${newUomId}`;
+            const [rows, options, rateDetailsByItem, users] = await Promise.all([
+              loadRows(),
+              loadOptions(),
+              loadRateDetails(),
+              loadUsers(),
+            ]);
+            return renderIndex(req, res, {
+              rows,
+              rateDetailsByItem,
+              ...options,
+              users,
+              error: `Cannot change the unit of measure while this item has stock on hand: no active conversion rule exists between ${oldCode} and ${newCode}. Add one in Basic Info → UOM Conversions so existing stock can be converted automatically, or zero out all stock first.`,
+              modalOpen: true,
+              modalMode: "edit",
+              values: { ...values, id },
+            });
+          }
+          // A conversion rule exists — the stock will be re-expressed when the
+          // change is committed (direct path below, or approval-applier).
         }
       }
 
@@ -845,6 +869,25 @@ router.post(
             updated_by: req.user ? req.user.id : null,
             updated_at: trx.fn.now(),
           });
+        // Re-express existing stock into the new base unit when the UOM changed.
+        // The pre-check above already ensured a conversion rule exists, so this
+        // should succeed; the throw is a defensive rollback if it doesn't.
+        if (
+          existingItem &&
+          Number(existingItem.base_uom_id) !== Number(base_uom_id)
+        ) {
+          const conv = await convertRmStockUom(
+            trx,
+            id,
+            Number(existingItem.base_uom_id),
+            Number(base_uom_id),
+          );
+          if (!conv.converted) {
+            throw new Error(
+              "Cannot change the unit of measure: no active UOM conversion rule exists to convert existing stock.",
+            );
+          }
+        }
         await trx("erp.rm_purchase_rates").where({ rm_item_id: id }).del();
         const rateRows = buildRateRows({
           itemId: id,
