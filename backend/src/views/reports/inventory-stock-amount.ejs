@@ -33,9 +33,13 @@
   const branchAllSelected = !selectedBranchIds.length;
   const groupAllSelected = !selectedGroupIds.length;
   const subgroupAllSelected = !selectedSubgroupIds.length;
+  // Admins, and non-admins granted "All Branch Filters" for this report, get the
+  // multi-branch picker and a Branch column; everyone else is pinned to their
+  // own branch.
+  const canFilterAllBranches = Boolean(user?.isAdmin || filters?.canFilterAllBranches);
   // Show branch context even for single-branch filters to avoid detail view
   // collapsing into summary-like layout.
-  const includeBranchColumn = Boolean(user?.isAdmin);
+  const includeBranchColumn = canFilterAllBranches;
   const rateTypeOptions = Array.isArray(options?.rateTypes) ? options.rateTypes : [];
   const rateTypesByStockType = options?.rateTypesByStockType || {};
   const showRateTypeForCurrentStockType = showRateTypeFilter && rateTypeOptions.length > 0;
@@ -293,9 +297,9 @@
         </div>
 
         <div class="grid grid-cols-1 items-start gap-1.5 sm:grid-cols-12">
-          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= user?.isAdmin ? tt("branches", "Branches") : tt("branch", "Branch") %></label>
+          <label class="text-sm font-semibold text-slate-700 sm:col-span-3"><%= canFilterAllBranches ? tt("branches", "Branches") : tt("branch", "Branch") %></label>
           <div class="sm:col-span-9">
-            <% if (user?.isAdmin) { %>
+            <% if (canFilterAllBranches) { %>
               <select name="branch_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
                 <option value="<%= allMultiOptionValue %>" <%= branchAllSelected ? "selected" : "" %>><%= t("all") %></option>
                 <% (options?.branches || []).forEach((branch) => { %>
