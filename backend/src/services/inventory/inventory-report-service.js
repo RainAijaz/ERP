@@ -3,6 +3,19 @@
 const knex = require("../../db/knex");
 const { toLocalDateOnly } = require("../../utils/date-only");
 const { toBoolean } = require("../../utils/report-filter-types");
+const {
+  canAccessScope,
+} = require("../../middleware/access/role-permissions");
+
+// A non-admin may filter a report across every branch (ignoring their own
+// branch assignment) only when granted the report's `filter_all_branches`
+// permission. Admins always can. Callers pass the REPORT scope key that governs
+// the report being rendered (e.g. "stock_amount", "stock_quantity").
+const userCanFilterAllBranches = (req, scopeKey) => {
+  if (req?.user?.isAdmin) return true;
+  if (!scopeKey) return false;
+  return Boolean(canAccessScope(req, "REPORT", scopeKey, "filter_all_branches"));
+};
 
 const localizedNameSelect = (alias, as, locale) =>
   locale === "ur"
@@ -161,8 +174,8 @@ const toIdListWithAll = (value) => {
   ];
 };
 
-const getAllowedBranchIds = (req) => {
-  if (req?.user?.isAdmin) return [];
+const getAllowedBranchIds = (req, canAllBranches = false) => {
+  if (req?.user?.isAdmin || canAllBranches) return [];
   const scoped = Array.isArray(req?.branchScope)
     ? req.branchScope
         .map((entry) => Number(entry))
@@ -173,15 +186,19 @@ const getAllowedBranchIds = (req) => {
   return fallback ? [Number(fallback)] : [];
 };
 
-const normalizeBranchFilter = ({ req, input = {} }) => {
+const normalizeBranchFilter = ({ req, input = {}, canAllBranches = false }) => {
   const selected = toIdListWithAll(input.branch_ids || input.branchIds);
-  if (req?.user?.isAdmin) return selected;
+  if (req?.user?.isAdmin || canAllBranches) return selected;
 
   const allowed = getAllowedBranchIds(req);
   if (!allowed.length) return [];
   if (!selected.length) return allowed;
   const allowedSet = new Set(allowed);
-  return selected.filter((entry) => allowedSet.has(Number(entry)));
+  const filtered = selected.filter((entry) => allowedSet.has(Number(entry)));
+  // If a non-admin submits only out-of-scope branch ids, fall back to their
+  // allowed branches — never an empty list, which the report query would treat
+  // as "no branch filter" and leak every branch.
+  return filtered.length ? filtered : allowed;
 };
 
 const normalizeStockType = (value) => {
@@ -299,7 +316,12 @@ const daysBetweenYmd = (fromYmd, toYmd) => {
   return Math.round((toMs - fromMs) / (24 * 60 * 60 * 1000));
 };
 
-const parseFilters = ({ req, input = {}, includeRateTypeFilter = true }) => {
+const parseFilters = ({
+  req,
+  input = {},
+  includeRateTypeFilter = true,
+  canAllBranches = false,
+}) => {
   const today = toLocalDateOnly(new Date());
   const parsedAsOfDate = parseDateFilter(
     input.as_of_date || input.asOfDate,
@@ -329,7 +351,7 @@ const parseFilters = ({ req, input = {}, includeRateTypeFilter = true }) => {
     viewType,
     orderBy,
     unitId: toPositiveInt(input.unit_id || input.unitId),
-    branchIds: normalizeBranchFilter({ req, input }),
+    branchIds: normalizeBranchFilter({ req, input, canAllBranches }),
     productGroupIds: toIdListWithAll(
       input.product_group_ids || input.productGroupIds,
     ),
@@ -466,8 +488,8 @@ const resolveSemifinishedUnitSelection = ({ filters, unitOptions = [] }) => {
   };
 };
 
-const loadBranchOptions = async (req) => {
-  if (req?.user?.isAdmin) {
+const loadBranchOptions = async (req, canAllBranches = false) => {
+  if (req?.user?.isAdmin || canAllBranches) {
     return knex("erp.branches")
       .select("id", "name")
       .where({ is_active: true })
@@ -1266,16 +1288,22 @@ const getInventoryStockReportPageData = async ({
   req,
   input = {},
   includeAmounts = true,
+  scopeKey = null,
 }) => {
+  const canAllBranches = userCanFilterAllBranches(req, scopeKey);
   const filters = parseFilters({
     req,
     input,
     includeRateTypeFilter: includeAmounts,
+    canAllBranches,
   });
+  // Surfaced to the view so it renders the multi-branch picker (and branch
+  // column) for permitted non-admins, mirroring the admin experience.
+  filters.canFilterAllBranches = canAllBranches;
 
   const [branches, productGroups, productSubgroups, unitOptions] =
     await Promise.all([
-      loadBranchOptions(req),
+      loadBranchOptions(req, canAllBranches),
       loadProductGroupOptions(filters.stockType),
       loadProductSubgroupOptions(filters.stockType),
       loadUnitOptions(filters.stockType),
@@ -5185,6 +5213,7 @@ const getInventoryStockAmountReportPageData = async ({ req, input = {} }) =>
     req,
     input,
     includeAmounts: true,
+    scopeKey: "stock_amount",
   });
 
 const getInventoryStockBalancesReportPageData = async ({ req, input = {} }) =>
@@ -5192,6 +5221,9 @@ const getInventoryStockBalancesReportPageData = async ({ req, input = {} }) =>
     req,
     input,
     includeAmounts: false,
+    // Stock Balances is governed by the "stock_quantity" REPORT scope (see the
+    // route's requirePermission and report-utils.ejs path→scope mapping).
+    scopeKey: "stock_quantity",
   });
 
 // =============================================================================
