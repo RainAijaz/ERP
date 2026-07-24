@@ -5,6 +5,10 @@ const { toLocalDateOnly } = require("../../utils/date-only");
 const {
   resolveVoucherApprovalRequiredTx,
 } = require("../../utils/voucher-approval-policy");
+const {
+  findPendingVoucherApprovalTx,
+  resolvePendingVoucherApprovalsTx,
+} = require("../../utils/voucher-approval-sync");
 const { syncVoucherGlPostingTx } = require("../financial/gl-posting-service");
 const {
   buildStockShortfallMessageTx,
@@ -2863,15 +2867,38 @@ const createApprovalRequest = async ({
     new_value: newValue,
     requested_by: req.user.id,
   };
+  // De-dupe: a voucher must never accumulate more than one PENDING approval.
+  // Refresh an existing pending row in place instead of stacking a duplicate.
+  const existingPending = await findPendingVoucherApprovalTx(trx, voucherId);
+  const approvalUpdatePayload = {
+    summary,
+    old_value: oldValue,
+    new_value: newValue,
+    requested_by: req.user.id,
+    requested_at: trx.fn.now(),
+  };
+
   if (await hasApprovalRequestVoucherTypeCodeColumnTx(trx)) {
     approvalInsertPayload.voucher_type_code = voucherTypeCode;
+    approvalUpdatePayload.voucher_type_code = voucherTypeCode;
   }
+
+  const writeApprovalRow = async () => {
+    if (existingPending) {
+      await trx("erp.approval_request")
+        .where({ id: existingPending.id })
+        .update(approvalUpdatePayload);
+      return { id: existingPending.id };
+    }
+    const [inserted] = await trx("erp.approval_request")
+      .insert(approvalInsertPayload)
+      .returning(["id"]);
+    return inserted;
+  };
 
   let row;
   try {
-    [row] = await trx("erp.approval_request")
-      .insert(approvalInsertPayload)
-      .returning(["id"]);
+    row = await writeApprovalRow();
   } catch (err) {
     const isMissingVoucherTypeCol =
       String(err?.code || "").trim() === "42703" &&
@@ -2883,9 +2910,8 @@ const createApprovalRequest = async ({
     // Schema can be older on some environments; retry without optional column.
     approvalRequestHasVoucherTypeCodeColumn = false;
     delete approvalInsertPayload.voucher_type_code;
-    [row] = await trx("erp.approval_request")
-      .insert(approvalInsertPayload)
-      .returning(["id"]);
+    delete approvalUpdatePayload.voucher_type_code;
+    row = await writeApprovalRow();
   }
 
   await insertActivityLog(trx, {
@@ -3357,6 +3383,15 @@ const updatePurchaseVoucher = async ({
       approved_at: trx.fn.now(),
     });
 
+    // Confirmed directly on the voucher screen: resolve any lingering PENDING
+    // approval so it moves to the Approved tab instead of orphaning on Pending.
+    await resolvePendingVoucherApprovalsTx({
+      trx,
+      voucherId: existing.id,
+      decidedBy: req.user.id,
+      status: "APPROVED",
+    });
+
     if (voucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase) {
       await deletePurchaseAllocationsByVoucherTx({
         trx,
@@ -3532,6 +3567,15 @@ const deletePurchaseVoucher = async ({
       voucherId: existing.id,
       voucherTypeCode,
       approverId: req.user.id,
+    });
+
+    // Deleted directly: resolve any lingering PENDING approval to REJECTED so it
+    // leaves the Pending Approvals page.
+    await resolvePendingVoucherApprovalsTx({
+      trx,
+      voucherId: existing.id,
+      decidedBy: req.user.id,
+      status: "REJECTED",
     });
 
     return {

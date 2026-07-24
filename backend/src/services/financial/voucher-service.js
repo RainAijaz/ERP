@@ -10,6 +10,10 @@ const { syncVoucherGlPostingTx } = require("./gl-posting-service");
 const {
   sendVoucherPaymentNotifications,
 } = require("../../utils/payment-notification");
+const {
+  findPendingVoucherApprovalTx,
+  resolvePendingVoucherApprovalsTx,
+} = require("../../utils/voucher-approval-sync");
 
 const VOUCHER_TYPES = {
   cash: "CASH_VOUCHER",
@@ -865,18 +869,34 @@ const createApprovalRequest = async ({
   oldValue = null,
   newValue = null,
 }) => {
-  const [row] = await trx("erp.approval_request")
-    .insert({
-      branch_id: req.branchId,
-      request_type: "VOUCHER",
-      entity_type: "VOUCHER",
-      entity_id: String(voucherId),
+  // De-dupe: a voucher must never accumulate more than one PENDING approval.
+  // If one already exists (e.g. re-editing a still-pending voucher), refresh it
+  // in place instead of stacking a duplicate on the approvals page.
+  const existingPending = await findPendingVoucherApprovalTx(trx, voucherId);
+  let row;
+  if (existingPending) {
+    await trx("erp.approval_request").where({ id: existingPending.id }).update({
       summary,
       old_value: oldValue,
       new_value: newValue,
       requested_by: req.user.id,
-    })
-    .returning(["id"]);
+      requested_at: trx.fn.now(),
+    });
+    row = { id: existingPending.id };
+  } else {
+    [row] = await trx("erp.approval_request")
+      .insert({
+        branch_id: req.branchId,
+        request_type: "VOUCHER",
+        entity_type: "VOUCHER",
+        entity_id: String(voucherId),
+        summary,
+        old_value: oldValue,
+        new_value: newValue,
+        requested_by: req.user.id,
+      })
+      .returning(["id"]);
+  }
 
   await insertActivityLog(trx, {
     branch_id: req.branchId,
@@ -1289,6 +1309,15 @@ const updateVoucher = async ({
         approved_at: trx.fn.now(),
       });
 
+    // Confirmed directly on the voucher screen: resolve any lingering PENDING
+    // approval so it moves to the Approved tab instead of orphaning on Pending.
+    await resolvePendingVoucherApprovalsTx({
+      trx,
+      voucherId: existing.id,
+      decidedBy: req.user.id,
+      status: "APPROVED",
+    });
+
     await trx("erp.voucher_line")
       .where({ voucher_header_id: existing.id })
       .del();
@@ -1445,6 +1474,14 @@ const deleteVoucher = async ({ req, voucherId, voucherTypeCode, scopeKey }) => {
       status: "REJECTED",
       approved_by: req.user.id,
       approved_at: trx.fn.now(),
+    });
+    // Deleted directly on the voucher screen: resolve any lingering PENDING
+    // approval to REJECTED so it leaves the Pending Approvals page.
+    await resolvePendingVoucherApprovalsTx({
+      trx,
+      voucherId: existing.id,
+      decidedBy: req.user.id,
+      status: "REJECTED",
     });
     if (voucherTypeCode === VOUCHER_TYPES.bank) {
       await markBankVoucherLinesRejectedTx({ trx, voucherId: existing.id });

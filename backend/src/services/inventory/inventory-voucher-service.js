@@ -9,6 +9,10 @@ const { syncVoucherGlPostingTx } = require("../financial/gl-posting-service");
 const {
   resolveNegativeStockApprovalRouting,
 } = require("./negative-stock-approval");
+const {
+  findPendingVoucherApprovalTx,
+  resolvePendingVoucherApprovalsTx,
+} = require("../../utils/voucher-approval-sync");
 
 // Opening Stock service: validates lines, enforces gatekeeper flow, and keeps stock/GL synchronized.
 const INVENTORY_VOUCHER_TYPES = {
@@ -139,6 +143,19 @@ const normalizeReasonCode = (value) =>
   String(value || "")
     .replace(/[^a-z0-9]+/gi, "")
     .toUpperCase();
+
+// Physical Count Correction is the one reason that must always go through the
+// Approvals page while pending (segregation of duties). Every other reason lets
+// an approver self-approve directly from the voucher Confirm button.
+const isPhysicalCountReasonTx = async (trx, reasonCodeId) => {
+  const id = toPositiveInt(reasonCodeId);
+  if (!id) return false;
+  const row = await trx("erp.reason_codes")
+    .select("code")
+    .where({ id })
+    .first();
+  return PHYSICAL_COUNT_REASON_CODES.has(normalizeReasonCode(row?.code));
+};
 
 // SKU dropdown label should be a complete business name: article first, then variant parts, then group.
 const buildSkuDisplayName = (row) => {
@@ -1723,15 +1740,39 @@ const createApprovalRequest = async ({
     requested_by: req.user.id,
   };
 
+  // De-dupe: a voucher must never accumulate more than one PENDING approval.
+  // If one already exists (e.g. re-editing a still-pending Physical Count
+  // Correction), refresh it in place instead of stacking a duplicate.
+  const existingPending = await findPendingVoucherApprovalTx(trx, voucherId);
+  const approvalUpdatePayload = {
+    summary,
+    old_value: oldValue,
+    new_value: newValue,
+    requested_by: req.user.id,
+    requested_at: trx.fn.now(),
+  };
+
   if (await hasApprovalRequestVoucherTypeCodeColumnTx(trx)) {
     approvalInsertPayload.voucher_type_code = voucherTypeCode;
+    approvalUpdatePayload.voucher_type_code = voucherTypeCode;
   }
+
+  const writeApprovalRow = async () => {
+    if (existingPending) {
+      await trx("erp.approval_request")
+        .where({ id: existingPending.id })
+        .update(approvalUpdatePayload);
+      return { id: existingPending.id };
+    }
+    const [inserted] = await trx("erp.approval_request")
+      .insert(approvalInsertPayload)
+      .returning(["id"]);
+    return inserted;
+  };
 
   let row;
   try {
-    [row] = await trx("erp.approval_request")
-      .insert(approvalInsertPayload)
-      .returning(["id"]);
+    row = await writeApprovalRow();
   } catch (err) {
     const isMissingVoucherTypeCol =
       String(err?.code || "").trim() === "42703" &&
@@ -1742,9 +1783,8 @@ const createApprovalRequest = async ({
 
     approvalRequestHasVoucherTypeCodeColumn = false;
     delete approvalInsertPayload.voucher_type_code;
-    [row] = await trx("erp.approval_request")
-      .insert(approvalInsertPayload)
-      .returning(["id"]);
+    delete approvalUpdatePayload.voucher_type_code;
+    row = await writeApprovalRow();
   }
 
   await insertActivityLog(trx, {
@@ -1993,6 +2033,15 @@ const updateOpeningStockVoucher = async ({
     await syncVoucherGlPostingTx({ trx, voucherId: existing.id });
     await syncOpeningStockVoucherTx({ trx, voucherId: existing.id });
 
+    // Confirmed directly on the voucher screen: resolve any lingering PENDING
+    // approval so it moves to the Approved tab instead of orphaning on Pending.
+    await resolvePendingVoucherApprovalsTx({
+      trx,
+      voucherId: existing.id,
+      decidedBy: req.user.id,
+      status: "APPROVED",
+    });
+
     return {
       id: existing.id,
       voucherNo: existing.voucher_no,
@@ -2114,6 +2163,15 @@ const deleteOpeningStockVoucher = async ({
         deleted: false,
       };
     }
+
+    // Deleted directly: resolve any lingering PENDING approval to REJECTED so it
+    // leaves the Pending Approvals page.
+    await resolvePendingVoucherApprovalsTx({
+      trx,
+      voucherId: existing.id,
+      decidedBy: req.user.id,
+      status: "REJECTED",
+    });
 
     await applyInventoryVoucherDeletePayloadTx({
       trx,
@@ -3741,12 +3799,18 @@ const createStockCountAdjustmentVoucher = async ({
       canBypassNegativeStockApproval: negativeStockOverrideAllowed,
       voucherTypeCode,
     });
-    // Stock Count approval is done on the approvals page only: an approver
-    // saving here must still queue when policy requires approval — no
-    // self-approve via the voucher-page Confirm button.
+    // Physical Count Correction always goes through the Approvals page (never
+    // self-approved from the Confirm button). Every other reason lets an
+    // approver self-approve directly, like other voucher types.
+    const isPhysicalCount = await isPhysicalCountReasonTx(
+      trx,
+      validated.reasonCodeId,
+    );
     const queuedForApproval =
       !canCreate ||
-      policyRequiresApproval ||
+      (isPhysicalCount
+        ? policyRequiresApproval
+        : policyRequiresApproval && !canApprove) ||
       negativeStockRouting.queueForApproval;
 
     const [header] = await trx("erp.voucher_header")
@@ -3910,12 +3974,20 @@ const updateStockCountAdjustmentVoucher = async ({
       canBypassNegativeStockApproval: negativeStockOverrideAllowed,
       voucherTypeCode,
     });
-    // Stock Count approval is done on the approvals page only: an approver
-    // saving here must still queue when policy requires approval — no
-    // self-approve via the voucher-page Confirm button.
+    // Physical Count Correction stays on the Approvals page while PENDING — its
+    // Confirm just updates the existing pending approval (see createApprovalRequest
+    // de-dupe), it never creates a second one. Once approved, or for any other
+    // reason, an approver's Confirm applies the edit directly like other vouchers.
+    const isPhysicalCount = await isPhysicalCountReasonTx(
+      trx,
+      validated.reasonCodeId,
+    );
+    const keepInReviewQueue = isPhysicalCount && existing.status === "PENDING";
     const queuedForApproval =
       !canEdit ||
-      policyRequiresApproval ||
+      (keepInReviewQueue
+        ? policyRequiresApproval
+        : policyRequiresApproval && !canApprove) ||
       negativeStockRouting.queueForApproval;
 
     if (queuedForApproval) {
@@ -3989,6 +4061,16 @@ const updateStockCountAdjustmentVoucher = async ({
     await syncVoucherGlPostingTx({ trx, voucherId: existing.id });
     await syncStockCountAdjustmentVoucherTx({ trx, voucherId: existing.id });
 
+    // Confirmed directly on the voucher screen: resolve any lingering PENDING
+    // approval (e.g. a non-Physical-Count pending count) so it moves to the
+    // Approved tab instead of orphaning on Pending Approvals.
+    await resolvePendingVoucherApprovalsTx({
+      trx,
+      voucherId: existing.id,
+      decidedBy: req.user.id,
+      status: "APPROVED",
+    });
+
     return {
       id: existing.id,
       voucherNo: existing.voucher_no,
@@ -4031,14 +4113,16 @@ const deleteStockCountAdjustmentVoucher = async ({
   if (!normalizedVoucherId) throw new HttpError(400, "Invalid voucher id");
 
   const canDelete = canDo(req, "VOUCHER", scopeKey, "hard_delete");
+  const canApprove = canApproveVoucherAction(req, scopeKey);
 
   const result = await knex.transaction(async (trx) => {
-    const existing = await trx("erp.voucher_header")
-      .select("id", "voucher_no", "status")
+    const existing = await trx("erp.voucher_header as vh")
+      .leftJoin("erp.stock_count_header as sch", "sch.voucher_id", "vh.id")
+      .select("vh.id", "vh.voucher_no", "vh.status", "sch.reason_code_id")
       .where({
-        id: normalizedVoucherId,
-        branch_id: req.branchId,
-        voucher_type_code: voucherTypeCode,
+        "vh.id": normalizedVoucherId,
+        "vh.branch_id": req.branchId,
+        "vh.voucher_type_code": voucherTypeCode,
       })
       .first();
     if (!existing) throw new HttpError(404, "Voucher not found");
@@ -4051,10 +4135,17 @@ const deleteStockCountAdjustmentVoucher = async ({
       voucherTypeCode,
       "delete",
     );
-    // Stock Count approval is done on the approvals page only: an approver
-    // saving here must still queue when policy requires approval — no
-    // self-approve via the voucher-page Confirm button.
-    const queuedForApproval = !canDelete || policyRequiresApproval;
+    // Physical Count Correction deletes go through the Approvals page; other
+    // reasons let an approver self-approve the delete directly, like other vouchers.
+    const isPhysicalCount = await isPhysicalCountReasonTx(
+      trx,
+      existing.reason_code_id,
+    );
+    const queuedForApproval =
+      !canDelete ||
+      (isPhysicalCount
+        ? policyRequiresApproval
+        : policyRequiresApproval && !canApprove);
 
     if (queuedForApproval) {
       const approvalRequestId = await createApprovalRequest({
@@ -4083,6 +4174,15 @@ const deleteStockCountAdjustmentVoucher = async ({
         deleted: false,
       };
     }
+
+    // Deleted directly: resolve any lingering PENDING approval to REJECTED so it
+    // leaves the Pending Approvals page.
+    await resolvePendingVoucherApprovalsTx({
+      trx,
+      voucherId: existing.id,
+      decidedBy: req.user.id,
+      status: "REJECTED",
+    });
 
     await applyInventoryVoucherDeletePayloadTx({
       trx,

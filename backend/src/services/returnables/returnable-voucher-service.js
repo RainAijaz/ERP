@@ -4,6 +4,10 @@ const { insertActivityLog, queueAuditLog } = require("../../utils/audit-log");
 const {
   resolveVoucherApprovalRequiredTx,
 } = require("../../utils/voucher-approval-policy");
+const {
+  findPendingVoucherApprovalTx,
+  resolvePendingVoucherApprovalsTx,
+} = require("../../utils/voucher-approval-sync");
 
 const RETURNABLE_VOUCHER_TYPES = {
   dispatch: "RDV",
@@ -250,13 +254,38 @@ const createApprovalRequestTx = async ({
     new_value: newValue,
     requested_by: req.user.id,
   };
+  // De-dupe: a voucher must never accumulate more than one PENDING approval.
+  // Refresh an existing pending row in place instead of stacking a duplicate.
+  const existingPending = await findPendingVoucherApprovalTx(trx, entityId);
+  const updatePayload = {
+    summary,
+    old_value: oldValue,
+    new_value: newValue,
+    requested_by: req.user.id,
+    requested_at: trx.fn.now(),
+  };
+
   if (await hasApprovalRequestVoucherTypeCodeColumnTx(trx)) {
     payload.voucher_type_code = voucherTypeCode;
+    updatePayload.voucher_type_code = voucherTypeCode;
   }
+
+  const writeApprovalRow = async () => {
+    if (existingPending) {
+      await trx("erp.approval_request")
+        .where({ id: existingPending.id })
+        .update(updatePayload);
+      return { id: existingPending.id };
+    }
+    const [inserted] = await trx("erp.approval_request")
+      .insert(payload)
+      .returning(["id"]);
+    return inserted;
+  };
 
   let row;
   try {
-    [row] = await trx("erp.approval_request").insert(payload).returning(["id"]);
+    row = await writeApprovalRow();
   } catch (err) {
     const missingOptionalColumn =
       String(err?.code || "").trim() === "42703" &&
@@ -266,7 +295,8 @@ const createApprovalRequestTx = async ({
     if (!missingOptionalColumn) throw err;
     approvalRequestHasVoucherTypeCodeColumn = false;
     delete payload.voucher_type_code;
-    [row] = await trx("erp.approval_request").insert(payload).returning(["id"]);
+    delete updatePayload.voucher_type_code;
+    row = await writeApprovalRow();
   }
 
   await insertActivityLog(trx, {
@@ -1606,6 +1636,15 @@ const updateReturnableVoucher = async ({
       req,
     });
 
+    // Confirmed directly on the voucher screen: resolve any lingering PENDING
+    // approval so it moves to the Approved tab instead of orphaning on Pending.
+    await resolvePendingVoucherApprovalsTx({
+      trx,
+      voucherId: existing.id,
+      decidedBy: req.user.id,
+      status: "APPROVED",
+    });
+
     return {
       id: existing.id,
       voucherNo: Number(existing.voucher_no),
@@ -1716,6 +1755,15 @@ const deleteReturnableVoucher = async ({
       voucherId: existing.id,
       voucherTypeCode,
       approverId: req.user.id,
+    });
+
+    // Deleted directly: resolve any lingering PENDING approval to REJECTED so it
+    // leaves the Pending Approvals page.
+    await resolvePendingVoucherApprovalsTx({
+      trx,
+      voucherId: existing.id,
+      decidedBy: req.user.id,
+      status: "REJECTED",
     });
 
     return {

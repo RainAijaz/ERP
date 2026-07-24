@@ -247,6 +247,61 @@ const findLatestApprovalRequest = async ({
   return query.first();
 };
 
+// Count PENDING approval_request rows tied to a specific voucher. Used by the
+// voucher-approval-reconciliation spec to prove editing never duplicates and
+// confirming always clears the pending approval.
+const countPendingApprovalsForVoucher = async (voucherId) => {
+  const id = Number(voucherId || 0);
+  if (!id) return 0;
+  const row = await knex("erp.approval_request")
+    .where({ entity_type: "VOUCHER", entity_id: String(id), status: "PENDING" })
+    .count({ n: "id" })
+    .first();
+  return Number(row?.n || 0);
+};
+
+// All approval_request rows for a voucher (any status), oldest first.
+const getApprovalsForVoucher = async (voucherId) => {
+  const id = Number(voucherId || 0);
+  if (!id) return [];
+  return knex("erp.approval_request")
+    .select(
+      "id",
+      "status",
+      "requested_by",
+      "decided_by",
+      "decided_at",
+      "summary",
+    )
+    .where({ entity_type: "VOUCHER", entity_id: String(id) })
+    .orderBy("id", "asc");
+};
+
+const getReasonCodeIdByCode = async (code) => {
+  if (!code) return null;
+  const row = await knex("erp.reason_codes")
+    .select("id")
+    .whereRaw("upper(code) = upper(?)", [String(code)])
+    .first();
+  return row ? Number(row.id) : null;
+};
+
+const getVoucherHeaderById = async (voucherId) => {
+  const id = Number(voucherId || 0);
+  if (!id) return null;
+  return knex("erp.voucher_header")
+    .select(
+      "id",
+      "voucher_no",
+      "voucher_type_code",
+      "status",
+      "created_by",
+      "branch_id",
+    )
+    .where({ id })
+    .first();
+};
+
 const getLatestVoucherHeader = async ({
   voucherTypeCode,
   createdBy,
@@ -2465,6 +2520,10 @@ module.exports = {
   createApprovalRequest,
   deleteApprovalRequests,
   findLatestApprovalRequest,
+  countPendingApprovalsForVoucher,
+  getApprovalsForVoucher,
+  getReasonCodeIdByCode,
+  getVoucherHeaderById,
   getLatestVoucherHeader,
   getLatestOpenReturnableOutwardReference,
   getTwoOpenReturnableOutwardReferencesForSameVendor,
