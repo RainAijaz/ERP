@@ -14,7 +14,12 @@ const {
   resolveWhatsAppChatId,
   saveWhatsAppContact,
 } = require("./whatsapp");
-const { isRetryable, CONTACT_SUFFIX_BY_KIND } = require("./payment-notification");
+const {
+  isRetryable,
+  CONTACT_SUFFIX_BY_KIND,
+  SEND_SPACING_MS,
+  sleep,
+} = require("./payment-notification");
 
 // Delay before attempt N+1 (minutes); the last value repeats until the window closes.
 const BACKOFF_MINUTES = [1, 5, 15, 30, 60, 120, 240, 360];
@@ -86,6 +91,7 @@ const processRow = async ({ knex, row }) => {
 
   const result = await sendWhatsAppMessage(resolved.chatId, row.message_body, {
     queue: false,
+    confirmDelivery: true,
   });
   if (!result || !result.ok) {
     const reason = (result && result.reason) || "send_error";
@@ -137,6 +143,11 @@ const retryQueuedWhatsAppNotifications = async ({ knex, ignoreBackoff = false })
         .update({ next_retry_at: new Date() });
     }
 
+    // Counts rows we actually send this sweep so the spacing delay is applied
+    // between real WhatsApp calls (see SEND_SPACING_MS): draining a backlog with
+    // no pacing throttles getNumberId() the same way the initial send does.
+    let waTouchCount = 0;
+
     // One batch normally; on reconnect, loop so a backlog larger than BATCH_SIZE
     // is fully cleared. Capped so a persistently-requeuing set can't spin.
     const maxBatches = ignoreBackoff ? 20 : 1;
@@ -156,6 +167,10 @@ const retryQueuedWhatsAppNotifications = async ({ knex, ignoreBackoff = false })
           .where({ id: row.id, status: "QUEUED" })
           .update({ next_retry_at: new Date(Date.now() + backoffMsForAttempt((row.attempts || 0) + 1)) });
         if (!claimed) continue;
+
+        // Pace this send apart from the previous one (first is not delayed).
+        if (waTouchCount > 0) await sleep(SEND_SPACING_MS);
+        waTouchCount += 1;
 
         summary.processed += 1;
         try {

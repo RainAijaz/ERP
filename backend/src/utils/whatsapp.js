@@ -11,6 +11,21 @@ let reconnectAttempts = 0;
 const pendingQueue = [];
 const MAX_QUEUE = 200;
 
+const sleep = (ms) =>
+  ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
+
+// whatsapp-web.js MessageAck states.
+const ACK_ERROR = -1;
+const ACK_PENDING = 0; // sitting in this device's outbox; NOT yet transmitted
+const ACK_SERVER = 1; // has left this device and reached WhatsApp's servers
+
+// How long to wait for a just-sent message to leave the device before treating
+// it as undelivered. Generous on purpose (see waitForServerAck).
+const ACK_CONFIRM_TIMEOUT_MS = Math.max(
+  2000,
+  Number(process.env.WHATSAPP_ACK_TIMEOUT_MS ?? 15000),
+);
+
 // Callbacks fired once the client is connected. Lets other modules (e.g. the
 // durable payment-notification retry queue) flush on reconnect without this
 // file having to require knex — payment-notification.js already requires this
@@ -194,6 +209,49 @@ const initWhatsApp = () => {
   });
 };
 
+// client.sendMessage() resolves the moment WhatsApp Web ACCEPTS a message into
+// its local outbox — which is BEFORE the message is actually transmitted. Under
+// a burst of sends (a voucher paying many payees) WhatsApp silently keeps the
+// later messages stuck at ACK_PENDING: sendMessage never throws, so trusting it
+// would record a SENT that never reached anyone. Poll the message's ack until it
+// reaches at least ACK_SERVER (proof it left this device). If it never does
+// within the window, report it undelivered so the caller re-queues it.
+//
+// Trade-off: if a message DID leave but its ack is merely slow to read back, we
+// may re-queue and send it twice. The window is deliberately generous to make
+// that rare — a rare duplicate is far better than silently never delivering a
+// payment confirmation.
+const waitForServerAck = async (
+  message,
+  { timeoutMs = ACK_CONFIRM_TIMEOUT_MS, intervalMs = 1000 } = {},
+) => {
+  const id = message && message.id && message.id._serialized;
+  let ack = Number(message && message.ack);
+  const deadline = Date.now() + timeoutMs;
+
+  for (;;) {
+    if (Number.isFinite(ack)) {
+      if (ack >= ACK_SERVER) return { ok: true, ack };
+      if (ack === ACK_ERROR) return { ok: false, reason: "ack_error", ack };
+    }
+    if (!id || Date.now() >= deadline) {
+      return {
+        ok: false,
+        reason: "not_delivered",
+        ack: Number.isFinite(ack) ? ack : null,
+      };
+    }
+    await sleep(intervalMs);
+    try {
+      const fresh = await client.getMessageById(id);
+      if (fresh) ack = Number(fresh.ack);
+    } catch {
+      // getMessageById can throw transiently right after a send; keep polling
+      // until the deadline rather than giving up on the first miss.
+    }
+  }
+};
+
 // Returns a result object so callers that need to record delivery outcome can:
 //   { ok: true }                      — handed to WhatsApp successfully
 //   { ok: false, queued, reason }     — not delivered now (queued for retry or dropped)
@@ -203,7 +261,16 @@ const initWhatsApp = () => {
 // notifications pass queue:false because they own a DURABLE per-row retry queue
 // in erp.whatsapp_notification_log — buffering here as well would make both
 // retry the same message and deliver it twice.
-const sendWhatsAppMessage = async (chatId, text, { queue = true } = {}) => {
+//
+// `confirmDelivery` (default false) makes the send wait for a real server ack
+// before reporting success, closing the "false SENT" gap above. Only callers
+// that persist the outcome (payment notifications) need it; the fire-and-forget
+// rate-change notifier leaves it off so its behavior is unchanged.
+const sendWhatsAppMessage = async (
+  chatId,
+  text,
+  { queue = true, confirmDelivery = false } = {},
+) => {
   if (!chatId || !String(chatId).trim()) {
     console.warn("[WhatsApp] sendMessage called with no chatId");
     return { ok: false, queued: false, reason: "no_chat_id" };
@@ -218,7 +285,22 @@ const sendWhatsAppMessage = async (chatId, text, { queue = true } = {}) => {
     return { ok: false, queued: false, reason: queue ? "queue_full" : "client_unavailable" };
   }
   try {
-    await client.sendMessage(chatId, text);
+    const message = await client.sendMessage(chatId, text);
+
+    if (confirmDelivery) {
+      const acked = await waitForServerAck(message);
+      if (!acked.ok) {
+        console.warn(
+          `[WhatsApp] ✗ Message to ${chatId} not confirmed (ack=${acked.ack ?? "?"}, ${acked.reason}) — treating as undelivered`,
+        );
+        if (queue && pendingQueue.length < MAX_QUEUE) {
+          pendingQueue.push({ chatId, text });
+          return { ok: false, queued: true, reason: acked.reason || "not_delivered" };
+        }
+        return { ok: false, queued: false, reason: acked.reason || "not_delivered" };
+      }
+    }
+
     console.log("[WhatsApp] ✓ Message sent successfully to", chatId);
     return { ok: true };
   } catch (err) {
@@ -254,23 +336,66 @@ const resolveWhatsAppChatId = async (msisdn) => {
 // syncToAddressbook, the phone's address book) so they show up by name instead
 // of a bare number. Best-effort: never let a contact-save failure affect the
 // message outcome. Returns { ok } / { ok: false, reason }.
+// Read back what WhatsApp actually stored — saveOrEditAddressbookContact
+// resolves without error even when WhatsApp ignores the write, so a save that
+// "succeeded" may not have bound a name to the chat. Returns the stored name and
+// whether it's now a saved contact, or null if it couldn't be read.
+const readBackContact = async (digits) => {
+  try {
+    const contact = await client.getContactById(`${digits}@c.us`);
+    return {
+      name: (contact && (contact.name || contact.pushname)) || null,
+      isMyContact: !!(contact && contact.isMyContact),
+    };
+  } catch {
+    return null;
+  }
+};
+
 const saveWhatsAppContact = async ({ msisdn, firstName, lastName = "" }) => {
   const digits = String(msisdn || "").replace(/\D/g, "");
   if (!digits) return { ok: false, reason: "no_phone" };
   if (!clientReady || !client) return { ok: false, reason: "client_unavailable" };
-  try {
-    await client.saveOrEditAddressbookContact(
-      digits,
-      String(firstName || "").trim() || digits,
-      String(lastName || "").trim(),
-      SYNC_CONTACTS_TO_PHONE,
-    );
-    console.log("[WhatsApp] ✓ Saved contact", digits, firstName);
-    return { ok: true };
-  } catch (err) {
-    console.error("[WhatsApp] ✗ Failed to save contact:", err.message);
-    return { ok: false, reason: err.message || "save_contact_error" };
+
+  const first = String(firstName || "").trim() || digits;
+  const last = String(lastName || "").trim();
+
+  // WhatsApp's addressbook save is inconsistent about the number format: some
+  // accounts only bind the name when it's passed in E.164 (leading "+"), others
+  // want bare digits. Try bare digits first (the documented form); if the read
+  // back shows the contact still isn't saved, retry with the "+" form. We verify
+  // rather than trust the no-throw so the logs reflect what really happened.
+  const attempt = async (numberArg) => {
+    try {
+      await client.saveOrEditAddressbookContact(
+        numberArg,
+        first,
+        last,
+        SYNC_CONTACTS_TO_PHONE,
+      );
+    } catch (err) {
+      return { ok: false, reason: err.message || "save_contact_error" };
+    }
+    return { ok: true, verified: await readBackContact(digits) };
+  };
+
+  let res = await attempt(digits);
+  if (res.ok && !(res.verified && res.verified.isMyContact)) {
+    const retry = await attempt(`+${digits}`);
+    if (retry.ok) res = retry;
   }
+
+  if (!res.ok) {
+    console.error("[WhatsApp] ✗ Failed to save contact:", res.reason);
+    return res;
+  }
+  const bound = res.verified && res.verified.isMyContact;
+  const label = `${first} ${last}`.trim();
+  console.log(
+    `[WhatsApp] contact save ${digits} "${label}" — WhatsApp stored: ` +
+      `name=${(res.verified && res.verified.name) || "(none)"} isMyContact=${bound ? "yes" : "NO"}`,
+  );
+  return { ok: true, verified: res.verified };
 };
 
 // Graceful teardown for process shutdown. The Puppeteer/Chrome child must be

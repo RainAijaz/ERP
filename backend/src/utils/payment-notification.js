@@ -41,6 +41,21 @@ const isRetryable = (reason) => !PERMANENT_REASONS.has(String(reason || ""));
 // First backoff step; the worker owns the rest of the schedule.
 const FIRST_RETRY_DELAY_MS = 60 * 1000;
 
+const sleep = (ms) =>
+  ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
+
+// Pace the WhatsApp calls. resolveWhatsAppChatId() calls client.getNumberId(),
+// and WhatsApp throttles rapid sequential getNumberId()/sendMessage() calls:
+// after the first one or two, later calls spuriously resolve to null and get
+// recorded as "not_on_whatsapp" (a PERMANENT reason → never retried). That is
+// why a voucher with several payees only reached the first one or two people
+// even though the rest are on WhatsApp. Spacing each payee's resolve+send apart
+// keeps every lookup honest. The first payee is never delayed.
+const SEND_SPACING_MS = Math.max(
+  0,
+  Number(process.env.WHATSAPP_SEND_SPACING_MS ?? 1500),
+);
+
 const toNumber = (value) => {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
@@ -197,6 +212,11 @@ const sendVoucherPaymentNotifications = async ({ knex, voucherId }) => {
 
     const logRows = [];
 
+    // Counts payees for whom we actually reach the WhatsApp lookup, so the
+    // spacing delay is applied *between* real calls (skipped payees with a bad
+    // phone number never touch WhatsApp and must not consume a slot).
+    let waTouchCount = 0;
+
     for (const entry of groups.values()) {
       let name = "";
       let nameUr = "";
@@ -279,6 +299,11 @@ const sendVoucherPaymentNotifications = async ({ knex, voucherId }) => {
         });
       };
 
+      // Space this payee's WhatsApp calls apart from the previous payee's so a
+      // burst of lookups isn't throttled into false "not_on_whatsapp" misses.
+      if (waTouchCount > 0) await sleep(SEND_SPACING_MS);
+      waTouchCount += 1;
+
       // The number looks valid — now confirm WhatsApp actually knows it, and let
       // WhatsApp tell us how to address it. Skipping this would report a
       // well-formed but non-WhatsApp number as delivered.
@@ -290,8 +315,12 @@ const sendVoucherPaymentNotifications = async ({ knex, voucherId }) => {
 
       // queue:false — the DB row above is the single owner of retries for
       // payment notifications, so the in-memory buffer must not also hold a copy.
+      // confirmDelivery:true — wait for a real server ack before recording SENT,
+      // so a message WhatsApp accepted but silently never transmitted (the burst
+      // "false SENT") is re-queued for retry instead of reported as delivered.
       const result = await sendWhatsAppMessage(resolved.chatId, message, {
         queue: false,
+        confirmDelivery: true,
       });
       if (result && result.ok) {
         // First time we've successfully messaged this payee: save them as a
@@ -334,4 +363,6 @@ module.exports = {
   PERMANENT_REASONS,
   isRetryable,
   CONTACT_SUFFIX_BY_KIND,
+  SEND_SPACING_MS,
+  sleep,
 };
