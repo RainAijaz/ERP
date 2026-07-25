@@ -100,6 +100,29 @@ const computeNonNegativeWac = (qty, value) => {
   return Number.isFinite(ratio) ? roundUnitCost6(ratio) : 0;
 };
 
+// A stock-count adjustment values its found/lost quantity at the bucket's
+// weighted-average cost (WAC = value / qty, which has no upper bound). If a
+// bucket's qty ever collapsed toward zero while value did not -- or a prior
+// corrupt posting inflated its value -- the WAC becomes an absurd per-unit
+// outlier unrelated to the item's real cost. Multiplying a fresh count
+// difference by that outlier writes a wildly wrong in/out amount into the
+// ledger, which then re-inflates the very WAC the next count reads back: a
+// runaway feedback loop (the cause of stock-count "in amount" values in the
+// tens of millions for a few dozen units). When the WAC-derived cost is grossly
+// out of line with the line's own sale rate -- the only sane per-unit reference
+// available at post time -- fall back to the sale-rate-based cost instead.
+// Mirrors isReliableUnitCost in scripts/audit-stock-count-system-qty-drift.js.
+const STOCK_COUNT_WAC_SANITY_MULTIPLE = 20;
+const resolveStockCountUnitCost = ({ wacUnitCost, fallbackUnitCost }) => {
+  const wac = Number(wacUnitCost || 0);
+  const fallback = Number(fallbackUnitCost || 0);
+  if (!(wac > 0)) return roundUnitCost6(fallback);
+  if (fallback > 0 && wac > fallback * STOCK_COUNT_WAC_SANITY_MULTIPLE) {
+    return roundUnitCost6(fallback);
+  }
+  return roundUnitCost6(wac);
+};
+
 const isTruthyFlag = (value) => {
   if (value === true) return true;
   if (value === false || value === null || value === undefined) return false;
@@ -3560,14 +3583,17 @@ const syncStockCountAdjustmentVoucherTx = async ({ trx, voucherId }) => {
 
       const availableQty = Number(existing?.qty || 0);
       const availableValue = Number(existing?.value || 0);
-      const unitCost = roundUnitCost6(
+      const wacUnitCost =
         Number(existing?.wac || 0) > 0
           ? Number(existing.wac || 0)
           : Math.abs(availableQty) > 0
             ? Math.abs(Number(availableValue || 0)) /
               Math.abs(Number(availableQty || 1))
-            : fallbackUnitCost,
-      );
+            : 0;
+      const unitCost = resolveStockCountUnitCost({
+        wacUnitCost,
+        fallbackUnitCost,
+      });
 
       const direction = diffQtyBase > 0 ? 1 : -1;
       const movementQty = roundQty3(Math.abs(diffQtyBase));
@@ -3676,14 +3702,17 @@ const syncStockCountAdjustmentVoucherTx = async ({ trx, voucherId }) => {
     const availableValue = Number(bucketSnapshot?.value || 0);
     const movementPairs = Math.abs(Number(diffPairs || 0));
 
-    const unitCost = roundUnitCost6(
+    const wacUnitCost =
       Number(bucketSnapshot?.wac || 0) > 0
         ? Number(bucketSnapshot.wac || 0)
         : Math.abs(availableQtyPairs) > 0
           ? Math.abs(Number(availableValue || 0)) /
             Math.abs(Number(availableQtyPairs || 1))
-          : fallbackUnitCost,
-    );
+          : 0;
+    const unitCost = resolveStockCountUnitCost({
+      wacUnitCost,
+      fallbackUnitCost,
+    });
     const valueDelta = roundCost2(Number(diffPairs) * Number(unitCost));
     const nextQtyPairs = Number(availableQtyPairs) + Number(diffPairs);
     const provisionalValue = roundCost2(
