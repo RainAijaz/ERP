@@ -31,6 +31,8 @@ const resolveHrPayrollScopeFromSuffix = (suffix) => {
     return "hr_payroll.allowances";
   if (normalized.startsWith("/employees")) return "hr_payroll.employees";
   if (normalized.startsWith("/labours/rates")) return "hr_payroll.labour_rates";
+  if (normalized.startsWith("/labours/allowances"))
+    return "hr_payroll.labour_allowances";
   if (normalized.startsWith("/labours")) return "hr_payroll.labours";
   return null;
 };

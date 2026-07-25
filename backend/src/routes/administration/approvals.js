@@ -767,8 +767,31 @@ const resolveHrScopeKey = (request, values = {}) => {
     return "hr_payroll.commissions";
   if (mode === "BULK_LABOUR_RATE_SKU_UPSERT") return "hr_payroll.labour_rates";
 
+  // Shape check before the summary text: it works regardless of the locale the
+  // request was raised in, and it is the only way to tell an employee allowance
+  // from a labour one when both summaries read "... Allowances".
+  const allowancePayloads = [
+    safeJson(values),
+    safeJson(request?.new_value),
+    safeJson(request?.old_value),
+  ].filter(
+    (candidate) =>
+      candidate &&
+      typeof candidate === "object" &&
+      "allowance_type" in candidate,
+  );
+  for (const candidate of allowancePayloads) {
+    if ("labour_id" in candidate) return "hr_payroll.labour_allowances";
+    if ("employee_id" in candidate) return "hr_payroll.allowances";
+  }
+
   const summary = String(request?.summary || "").toLowerCase();
   if (summary.includes("commission")) return "hr_payroll.commissions";
+  // "Add Labour Allowances" also contains "allowance", so the labour variant
+  // must be tested first or it is mis-routed to the employee allowance screen
+  // (which would render an Employees dropdown for a labour_id payload).
+  if (summary.includes("labour allowance"))
+    return "hr_payroll.labour_allowances";
   if (summary.includes("allowance")) return "hr_payroll.allowances";
   if (summary.includes("labour rate")) return "hr_payroll.labour_rates";
   if (summary.includes("labour")) return "hr_payroll.labours";
@@ -1072,6 +1095,8 @@ const buildPreviewPayload = async (req, res, request, side) => {
     "hr_payroll.commissions": hrCommissionsRoutes.preview?.page,
     "hr_payroll.allowances": hrAllowancesRoutes.preview?.page,
     "hr_payroll.labour_rates": hrLaboursRoutes.preview?.labourRatesPage,
+    "hr_payroll.labour_allowances":
+      hrLaboursRoutes.preview?.labourAllowancesPage,
   };
   const hrPage = hrPreviewMap[hrScopeKey] || null;
   if (hrPage && typeof hrEmployeesRoutes.preview?.hydratePage === "function") {
@@ -2171,7 +2196,12 @@ router.post(
         requestSnapshot?.new_value?.notify_payees !== false
       ) {
         const voucherId = appliedEntityId || requestSnapshot.entity_id;
-        await sendVoucherPaymentNotifications({ knex, voucherId }).catch((e) =>
+        // Fire-and-observe (not awaited): the notifier paces itself across
+        // payees to avoid WhatsApp throttling, which for a many-payee voucher
+        // can take several seconds — that must never hold up the approval
+        // response. It re-validates state and never throws; failures are logged
+        // to erp.whatsapp_notification_log and surface on the dashboard alert.
+        sendVoucherPaymentNotifications({ knex, voucherId }).catch((e) =>
           console.error("[WhatsApp] payment notify error:", e?.message || e),
         );
       }

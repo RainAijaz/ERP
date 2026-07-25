@@ -24,6 +24,7 @@ const {
   buildBulkPreviewRows,
   applyBulkSkuRateUpsert,
 } = require("../../services/hr-payroll/labour-rates-service");
+const labourAllowancesRoutes = require("./labour-allowances");
 
 let hasLabourRateArticleTypeColumnPromise = null;
 const hasLabourRateArticleTypeColumn = async (db = knex) => {
@@ -1511,11 +1512,13 @@ ratesRouter.post(
 
 ratesRouter.use("/", createHrMasterRouter(labourRatesPage));
 router.use("/rates", ratesRouter);
+router.use("/allowances", labourAllowancesRoutes);
 router.use("/", createHrMasterRouter(page));
 
 router.preview = {
   page,
   labourRatesPage,
+  labourAllowancesPage: labourAllowancesRoutes.preview?.page,
   hydratePage,
 };
 
