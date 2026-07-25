@@ -6759,8 +6759,14 @@ const resolveDcvRateForSku = async ({
   }
   const rules = await rulesQuery.orderBy("r.id", "desc");
 
-  const matchesArticleType = (row) => {
+  const matchesArticleType = (row, scope) => {
     if (!hasArticleTypeColumn) return true;
+    // A SKU-scoped rule already pins one exact article, so its stored
+    // article_type is redundant and must never exclude it. Filtering SKU rules
+    // by article_type let a stale/mismatched value silently drop the correct
+    // per-article rate and fall through to a broader SUBGROUP/GROUP rule, which
+    // then showed the same wrong rate for every article.
+    if (scope === "SKU") return true;
     const articleType = String(row?.article_type || "")
       .trim()
       .toUpperCase();
@@ -6785,7 +6791,7 @@ const resolveDcvRateForSku = async ({
   for (const scope of ["SKU", "SUBGROUP", "GROUP"]) {
     matchedRule =
       (rules || []).find(
-        (row) => matchesArticleType(row) && matchesScope(row, scope),
+        (row) => matchesArticleType(row, scope) && matchesScope(row, scope),
       ) || null;
     if (matchedRule) break;
   }
