@@ -1,11 +1,13 @@
 exports.up = async (knex) => {
-  await knex.schema.withSchema("erp").alterTable("variants", (table) => {
-    table.boolean("rate_editable").notNullable().defaultTo(false);
-  });
+  await knex.raw(`
+    ALTER TABLE erp.variants
+    ADD COLUMN IF NOT EXISTS rate_editable boolean NOT NULL DEFAULT false
+  `);
 };
 
 exports.down = async (knex) => {
-  await knex.schema.withSchema("erp").alterTable("variants", (table) => {
-    table.dropColumn("rate_editable");
-  });
+  await knex.raw(`
+    ALTER TABLE erp.variants
+    DROP COLUMN IF EXISTS rate_editable
+  `);
 };
