@@ -30,11 +30,20 @@ const CONTACT_SUFFIX_BY_KIND = {
 // correct it, so these are recorded FAILED and surface on the alerts page.
 // Anything else (WhatsApp down, transport/resolve error) is transient and gets
 // queued for automatic retry.
+//
+// `ack_error` is WhatsApp reporting ack=-1, i.e. it rejected the send outright.
+// It belongs here because getNumberId() no longer proves a number is reachable:
+// since the "@lid" migration it returns an id even for numbers that cannot be
+// messaged, so an unreachable number now passes the lookup and only fails at ack
+// time. Verified live — four numbers returned ack=-1 on every attempt and on both
+// addressing forms, and none of them ever received a message. Retrying that just
+// re-sends to an unreachable number for 24h and hides it from the failures page.
 const PERMANENT_REASONS = new Set([
   "no_phone",
   "invalid_phone",
   "not_on_whatsapp",
   "no_chat_id",
+  "ack_error",
 ]);
 const isRetryable = (reason) => !PERMANENT_REASONS.has(String(reason || ""));
 

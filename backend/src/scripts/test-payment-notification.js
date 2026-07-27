@@ -40,6 +40,12 @@ require.cache[waPath] = {
         if (queue) inMemoryQueued.push({ chatId, text });
         return { ok: false, queued: queue, reason: "client_unavailable" };
       }
+      // 923119999xxx stands in for a number WhatsApp rejects outright (ack=-1).
+      // getNumberId resolves it happily — since the @lid migration it no longer
+      // proves reachability — so the failure only shows up at ack time.
+      if (chatId.startsWith("923119999")) {
+        return { ok: false, queued: false, reason: "ack_error" };
+      }
       sent.push({ chatId, text });
       return { ok: true };
     },
@@ -101,6 +107,7 @@ const created = { partyIds: [], labourIds: [], employeeIds: [], voucherId: null 
   const supplierNotOnWa = await mkParty("SupplierNotOnWa", "SUPPLIER", "0300-0000001"); // valid format, not a WhatsApp user
   const supplierCredit = await mkParty("SupplierCredit", "BOTH", "03004445556"); // credit only -> NO row
   const customer = await mkParty("Customer", "CUSTOMER", "03005556667"); // customer -> NO row
+  const supplierAckError = await mkParty("SupplierAckError", "SUPPLIER", "03119999999"); // resolves, but WhatsApp rejects the send
   const labour = await mkLabour("Labour", "021-7654321"); // landline -> FAILED invalid_phone
   const employee = await mkEmployee("Employee", "0321-9998887"); // -> SENT
 
@@ -142,6 +149,7 @@ const created = { partyIds: [], labourIds: [], employeeIds: [], voucherId: null 
     line(6, "LABOUR", labour, 900, 0, "Wages"),
     line(7, "EMPLOYEE", employee, 1200, 0, "Salary"),
     line(8, "PARTY", supplierNotOnWa, 400, 0, "Transport"),
+    line(9, "PARTY", supplierAckError, 650, 0, "Cartage"),
   ]);
 
   // --- Run the real notifier ---
@@ -176,9 +184,18 @@ const created = { partyIds: [], labourIds: [], employeeIds: [], voucherId: null 
     nowa && nowa.status === "FAILED" && nowa.failure_reason === "not_on_whatsapp");
   check("Non-WhatsApp number was NOT reported as sent", !sent.some((m) => m.chatId.startsWith("9230000000")));
 
+  // WhatsApp rejecting the send (ack=-1) is permanent: retrying only re-sends to
+  // an unreachable number for 24h and hides it from the failures page.
+  const acke = byName("SupplierAckError");
+  check("WhatsApp-rejected send -> FAILED/ack_error (not QUEUED)",
+    acke && acke.status === "FAILED" && acke.failure_reason === "ack_error");
+  check("ack_error is not scheduled for retry", acke && acke.next_retry_at === null);
+  check("ack_error payee was not counted as delivered", !sent.some((m) => m.chatId.startsWith("923119999")));
+  check("No contact saved for a WhatsApp-rejected send", !savedContacts.some((c) => c.msisdn.startsWith("923119999")));
+
   check("Customer NOT notified (skipped)", !byName("Customer"));
   check("SupplierCredit NOT notified (credit-only line skipped)", !byName("SupplierCredit"));
-  check("Exactly 5 log rows (2 SENT + 3 FAILED)", logs.length === 5);
+  check("Exactly 6 log rows (2 SENT + 4 FAILED)", logs.length === 6);
   check("Exactly 2 messages sent", sent.length === 2);
 
   const svMsg = sent.find((m) => m.chatId === "923001112223@c.us");
@@ -226,9 +243,10 @@ const created = { partyIds: [], labourIds: [], employeeIds: [], voucherId: null 
   const queued = afterOffline.filter((r) => r.status === "QUEUED");
   const permanent = afterOffline.filter((r) => r.status === "FAILED");
 
-  // 3 queue while offline: the two deliverable payees plus the not-on-WhatsApp
-  // one (offline masks the lookup, so it is transient until we can check again).
-  check("Offline: payees with good numbers are QUEUED, not dropped", queued.length === 3);
+  // 4 queue while offline: the two deliverable payees plus the not-on-WhatsApp and
+  // WhatsApp-rejected ones — offline masks both the lookup and the send, so they
+  // stay transient until we can actually check again.
+  check("Offline: payees with good numbers are QUEUED, not dropped", queued.length === 4);
   check("Queued rows carry the rendered message for retry", queued.every((r) => (r.message_body || "").includes("ادائیگی کی اطلاع")));
   check("Queued rows have a future next_retry_at", queued.every((r) => r.next_retry_at && new Date(r.next_retry_at) > new Date(Date.now() - 1000)));
   check("Nothing was SENT while offline", sent.length === 0);
@@ -269,7 +287,7 @@ const created = { partyIds: [], labourIds: [], employeeIds: [], voucherId: null 
 
   const afterGiveUp = await knex("erp.whatsapp_notification_log").where({ voucher_header_id: voucherId });
   const expired = afterGiveUp.filter((r) => r.failure_reason === "max_retries_exceeded");
-  check("After 24h the worker gives up and marks FAILED", expired.length === 3);
+  check("After 24h the worker gives up and marks FAILED", expired.length === 4);
   check("Given-up rows stop retrying (next_retry_at cleared)", expired.every((r) => r.status === "FAILED" && r.next_retry_at === null));
 
   // Given-up rows must now be visible to the dashboard alert query.

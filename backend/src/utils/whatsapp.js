@@ -11,20 +11,35 @@ let reconnectAttempts = 0;
 const pendingQueue = [];
 const MAX_QUEUE = 200;
 
-const sleep = (ms) =>
-  ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
-
 // whatsapp-web.js MessageAck states.
-const ACK_ERROR = -1;
-const ACK_PENDING = 0; // sitting in this device's outbox; NOT yet transmitted
+const ACK_ERROR = -1; // WhatsApp itself rejected the send
 const ACK_SERVER = 1; // has left this device and reached WhatsApp's servers
 
 // How long to wait for a just-sent message to leave the device before treating
-// it as undelivered. Generous on purpose (see waitForServerAck).
+// it as undelivered. Generous on purpose (see watchForAck).
 const ACK_CONFIRM_TIMEOUT_MS = Math.max(
   2000,
   Number(process.env.WHATSAPP_ACK_TIMEOUT_MS ?? 15000),
 );
+
+// Pending delivery-ack waiters, correlated by chat id + exact message body.
+//
+// There is deliberately no message id here. Verified against whatsapp-web.js
+// 1.34.7 on a live session: for the "@lid" chat ids that getNumberId() now
+// returns, `client.sendMessage()` resolves to **undefined**, and the message_create
+// / message_ack events carry `id._serialized === undefined`. So no message id is
+// obtainable, and getMessageById() cannot be used at all (it throws
+// "Cannot read properties of undefined (reading 'split')" on an undefined id).
+//
+// An id-based ack check therefore never confirmed anything: every message was
+// recorded not_delivered and re-sent on the next sweep even though it really
+// arrived. What message_ack DOES carry reliably is `to` (the chat id), `fromMe`,
+// and the exact `body`, so waiters match on those.
+//
+// Caveat: a re-send of byte-identical text to the same chat can be satisfied by
+// the earlier copy's ack. That still means that exact text reached that chat, so
+// it is accepted rather than papered over with a synthetic id.
+const ackWaiters = new Set();
 
 // Callbacks fired once the client is connected. Lets other modules (e.g. the
 // durable payment-notification retry queue) flush on reconnect without this
@@ -177,6 +192,17 @@ const initWhatsApp = () => {
     });
   });
 
+  // Delivery-state updates for messages we sent. watchForAck() parks a waiter
+  // before sending so it learns the new ack the moment WhatsApp reports it.
+  client.on("message_ack", (msg, ack) => {
+    if (!msg || msg.fromMe !== true) return;
+    const to = String(msg.to || "");
+    const body = String(msg.body || "");
+    ackWaiters.forEach((waiter) => {
+      if (waiter.chatId === to && waiter.body === body) waiter.notify(ack);
+    });
+  });
+
   client.on("auth_failure", (msg) => {
     console.error("[WhatsApp] Authentication failed:", msg);
     clientReady = false;
@@ -213,43 +239,71 @@ const initWhatsApp = () => {
 // its local outbox — which is BEFORE the message is actually transmitted. Under
 // a burst of sends (a voucher paying many payees) WhatsApp silently keeps the
 // later messages stuck at ACK_PENDING: sendMessage never throws, so trusting it
-// would record a SENT that never reached anyone. Poll the message's ack until it
-// reaches at least ACK_SERVER (proof it left this device). If it never does
-// within the window, report it undelivered so the caller re-queues it.
+// would record a SENT that never reached anyone. So wait for WhatsApp to report
+// the message reaching at least ACK_SERVER (proof it left this device); if it
+// never does within the window, report it undelivered so the caller re-queues.
 //
-// Trade-off: if a message DID leave but its ack is merely slow to read back, we
-// may re-queue and send it twice. The window is deliberately generous to make
-// that rare — a rare duplicate is far better than silently never delivering a
-// payment confirmation.
-const waitForServerAck = async (
-  message,
-  { timeoutMs = ACK_CONFIRM_TIMEOUT_MS, intervalMs = 1000 } = {},
-) => {
-  const id = message && message.id && message.id._serialized;
-  let ack = Number(message && message.ack);
-  const deadline = Date.now() + timeoutMs;
+// The waiter MUST be armed before sendMessage() is called: the first ack lands a
+// few hundred ms later, and since no message id is obtainable (see ackWaiters)
+// there is no way to look the message up after the fact.
+//
+// Trade-off: if a message DID leave but its ack never arrives, we may re-queue
+// and send it twice. A rare duplicate is far better than silently never
+// delivering a payment confirmation.
+const watchForAck = (chatId, body) => {
+  let latest = null;
+  let wake = null;
+  const waiter = {
+    chatId: String(chatId),
+    body: String(body),
+    notify: (ack) => {
+      latest = Number(ack);
+      if (wake) wake();
+    },
+  };
+  ackWaiters.add(waiter);
 
-  for (;;) {
-    if (Number.isFinite(ack)) {
-      if (ack >= ACK_SERVER) return { ok: true, ack };
-      if (ack === ACK_ERROR) return { ok: false, reason: "ack_error", ack };
-    }
-    if (!id || Date.now() >= deadline) {
-      return {
-        ok: false,
-        reason: "not_delivered",
-        ack: Number.isFinite(ack) ? ack : null,
-      };
-    }
-    await sleep(intervalMs);
+  const wait = async (message, { timeoutMs = ACK_CONFIRM_TIMEOUT_MS } = {}) => {
     try {
-      const fresh = await client.getMessageById(id);
-      if (fresh) ack = Number(fresh.ack);
-    } catch {
-      // getMessageById can throw transiently right after a send; keep polling
-      // until the deadline rather than giving up on the first miss.
+      // Some chat types DO return a Message with a usable ack already set.
+      const immediate = Number(message && message.ack);
+      if (Number.isFinite(immediate) && immediate >= ACK_SERVER) {
+        return { ok: true, ack: immediate, via: "immediate" };
+      }
+
+      const deadline = Date.now() + timeoutMs;
+      for (;;) {
+        if (Number.isFinite(latest)) {
+          if (latest >= ACK_SERVER) return { ok: true, ack: latest, via: "event" };
+          if (latest === ACK_ERROR) {
+            return { ok: false, reason: "ack_error", ack: latest, via: "event" };
+          }
+        }
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) {
+          return {
+            ok: false,
+            reason: "not_delivered",
+            ack: Number.isFinite(latest) ? latest : null,
+            via: "timeout",
+          };
+        }
+        // Sleep until the deadline, but wake immediately when an ack arrives.
+        await new Promise((resolve) => {
+          const timer = setTimeout(resolve, remaining);
+          wake = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+        });
+        wake = null;
+      }
+    } finally {
+      ackWaiters.delete(waiter);
     }
-  }
+  };
+
+  return { wait };
 };
 
 // Returns a result object so callers that need to record delivery outcome can:
@@ -285,13 +339,19 @@ const sendWhatsAppMessage = async (
     return { ok: false, queued: false, reason: queue ? "queue_full" : "client_unavailable" };
   }
   try {
+    // Armed before the send — the first ack can arrive within ~400ms, and there
+    // is no message id to look the message up by afterwards.
+    const ackWatch = confirmDelivery ? watchForAck(chatId, text) : null;
     const message = await client.sendMessage(chatId, text);
 
-    if (confirmDelivery) {
-      const acked = await waitForServerAck(message);
+    let ackNote = "";
+    if (ackWatch) {
+      const acked = await ackWatch.wait(message);
+      if (acked.ok) ackNote = ` (ack=${acked.ack} via ${acked.via})`;
       if (!acked.ok) {
         console.warn(
-          `[WhatsApp] ✗ Message to ${chatId} not confirmed (ack=${acked.ack ?? "?"}, ${acked.reason}) — treating as undelivered`,
+          `[WhatsApp] ✗ Message to ${chatId} not confirmed ` +
+            `(ack=${acked.ack ?? "?"}, ${acked.reason}, via=${acked.via}) — treating as undelivered`,
         );
         if (queue && pendingQueue.length < MAX_QUEUE) {
           pendingQueue.push({ chatId, text });
@@ -301,7 +361,9 @@ const sendWhatsAppMessage = async (
       }
     }
 
-    console.log("[WhatsApp] ✓ Message sent successfully to", chatId);
+    // Keep the "sent successfully to <chatId>" prefix intact — the live delivery
+    // suite matches on it to prove the resolved chat id was used.
+    console.log(`[WhatsApp] ✓ Message sent successfully to ${chatId}${ackNote}`);
     return { ok: true };
   } catch (err) {
     console.error("[WhatsApp] ✗ Failed to send message:", err.message);
