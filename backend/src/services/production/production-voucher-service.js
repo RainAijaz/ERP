@@ -6746,11 +6746,16 @@ const resolveDcvRateForSku = async ({
     .where({
       "r.labour_id": normalizedLabourId,
       "r.dept_id": normalizedDeptId,
-      "r.status": "active",
       "r.applies_to_all_labours": false,
     })
-    .whereIn(knex.raw("upper(coalesce(r.apply_on::text, ''))"), [
+    // Use the same status semantics as the Labour Rates listing/validation
+    // (lower(trim(...))). An exact "active" match silently dropped rules stored
+    // as 'ACTIVE'/' active ', which then fell through to a broader SUBGROUP/GROUP
+    // rate — the same wrong rate for every article.
+    .whereRaw("lower(trim(coalesce(r.status, ''))) = 'active'")
+    .whereIn(knex.raw("upper(trim(coalesce(r.apply_on::text, '')))"), [
       "SKU",
+      "ARTICLE",
       "SUBGROUP",
       "GROUP",
     ]);
@@ -6777,9 +6782,13 @@ const resolveDcvRateForSku = async ({
     const applyOn = String(row?.apply_on || "")
       .trim()
       .toUpperCase();
-    if (applyOn !== scope) return false;
-    if (scope === "SKU")
+    if (scope === "SKU") {
+      // ARTICLE is a legacy alias for a SKU-pinned rule; the Labour Rates
+      // listing treats ['SKU','ARTICLE'] identically, so the resolver must too.
+      if (applyOn !== "SKU" && applyOn !== "ARTICLE") return false;
       return Number(row?.sku_id || 0) === Number(normalizedSkuId);
+    }
+    if (applyOn !== scope) return false;
     if (scope === "SUBGROUP")
       return Number(row?.subgroup_id || 0) === Number(sku.subgroup_id || 0);
     if (scope === "GROUP")
