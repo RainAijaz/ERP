@@ -4540,4 +4540,9 @@ module.exports = {
   ensureStockTransferVoucherDerivedDataTx,
   applyStockTransferVoucherUpdatePayloadTx,
   applyStockTransferVoucherDeletePayloadTx,
+  // RM stock-state movement primitives. Shared with the returnable gate pass, which
+  // moves raw material between ON_HAND and WITH_THIRD_PARTY buckets. Exported rather
+  // than copied so the WAC/balance math has exactly one implementation.
+  buildRmStockIdentity,
+  moveRmStockTx,
 };

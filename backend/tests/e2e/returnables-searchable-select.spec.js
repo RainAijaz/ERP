@@ -372,9 +372,14 @@ test.describe("Returnables searchable selects", () => {
       await dialog.accept();
     });
     for (const row of outwards) {
+      // Match the voucher-no cell exactly: a whole-row hasText search also hits the
+      // date column, so e.g. "20" matches every row via "2026" and both iterations
+      // would tick the same checkbox.
       const matchingRow = page
         .locator("[data-outward-picker-body] tr")
-        .filter({ hasText: String(row.voucher_no) })
+        .filter({
+          has: page.locator(`td:first-child:text-is("${row.voucher_no}")`),
+        })
         .first();
       await expect(matchingRow).toBeVisible();
       await matchingRow.locator('input[data-picker-field="selected"]').check();
