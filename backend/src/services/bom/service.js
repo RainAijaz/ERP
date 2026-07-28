@@ -3346,13 +3346,19 @@ const loadFormOptions = async (knex, locale = "en", options = {}) => {
     const labourId = toNumberOrNull(rule?.labour_id);
     const deptId = toNumberOrNull(rule?.dept_id);
     if (!labourId || !deptId) return;
-    if (applyOn === "SKU") {
-      const skuId = toNumberOrNull(rule?.sku_id);
-      if (!skuId) return;
-      if (!labourRulesBySkuId.has(skuId)) labourRulesBySkuId.set(skuId, []);
-      labourRulesBySkuId.get(skuId).push(rule);
+    // A rule carrying a sku_id is pinned to that one article whatever its
+    // apply_on says: the Labour Rates bulk save stamps the scope the user
+    // picked (GROUP/SUBGROUP) onto every per-article row it writes. Bucketing
+    // those by apply_on made one article's rate a candidate for every article
+    // in the group.
+    const pinnedSkuId = toNumberOrNull(rule?.sku_id);
+    if (pinnedSkuId) {
+      if (!labourRulesBySkuId.has(pinnedSkuId))
+        labourRulesBySkuId.set(pinnedSkuId, []);
+      labourRulesBySkuId.get(pinnedSkuId).push(rule);
       return;
     }
+    if (applyOn === "SKU") return;
     if (applyOn === "SUBGROUP") {
       const subgroupId = toNumberOrNull(rule?.subgroup_id);
       if (!subgroupId) return;
@@ -3411,16 +3417,23 @@ const loadFormOptions = async (knex, locale = "en", options = {}) => {
 
       const bestRuleByCombo = new Map();
       candidates.forEach((rule) => {
-        if (!articleTypeMatches(rule?.article_type, itemType)) return;
+        // A sku-pinned rule already names one exact article, so its stored
+        // article_type is redundant and must never exclude it — a stale value
+        // would drop the per-article rate in favour of a broader one.
+        const isSkuPinned = Boolean(toNumberOrNull(rule?.sku_id));
+        if (!isSkuPinned && !articleTypeMatches(rule?.article_type, itemType))
+          return;
         const labourId = toNumberOrNull(rule?.labour_id);
         const deptId = toNumberOrNull(rule?.dept_id);
         const rateType = String(rule?.rate_type || "")
           .trim()
           .toUpperCase();
         const rateValue = toNumberOrNull(rule?.rate_value);
-        const applyOn = String(rule?.apply_on || "SKU")
-          .trim()
-          .toUpperCase();
+        const applyOn = isSkuPinned
+          ? "SKU"
+          : String(rule?.apply_on || "SKU")
+              .trim()
+              .toUpperCase();
         if (
           !labourId ||
           !deptId ||

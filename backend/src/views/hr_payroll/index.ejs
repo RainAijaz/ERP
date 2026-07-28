@@ -972,6 +972,8 @@ const currentSeq = ++state.requestSeq;
     const tSelectTarget = "<%= t('select_target_to_preview_impact') %>";
     const tAffected = "<%= t('affected_skus') %>";
     const tNoPrevious = "<%= t('none') %>";
+    const tPerDozen = "<%= t('rate_type_per_dozen') %>";
+    const tPerPair = "<%= t('rate_type_per_pair') %>";
     const tSaved = "<%= t('success_bulk_labour_rate_saved') %>";
     const tLoading = "<%= t('loading') %>";
     const tLoadFailed = "<%= t('load_failed') %>";
@@ -1492,10 +1494,23 @@ const currentSeq = ++state.requestSeq;
       tbody.innerHTML = `<tr><td class="px-2 py-6 text-center text-slate-500" colspan="4">${icon}${message || tNoEntries}</td></tr>`;
     };
 
+    // A stored rate can be in a different unit than the one being entered
+    // (e.g. an existing Per Pair rate while the form is on Per Dozen). Label
+    // it so the previous value cannot be read as the wrong unit.
+    const previousRateLabel = (row) => {
+      if (row.previous_rate == null) return tNoPrevious;
+      const value = Number(row.previous_rate).toFixed(2);
+      const stored = String(row.previous_rate_type || "").trim().toUpperCase();
+      const selected = String(fields.rateType?.value || "").trim().toUpperCase();
+      if (!stored || stored === selected) return value;
+      const unit = stored === "PER_DOZEN" ? tPerDozen : stored === "PER_PAIR" ? tPerPair : stored;
+      return `${value} <span class="text-[10px] text-slate-500">(${unit})</span>`;
+    };
+
     const renderRows = () => {
       tbody.innerHTML = state.rows
         .map((row, idx) => {
-          const previous = row.previous_rate == null ? tNoPrevious : Number(row.previous_rate).toFixed(2);
+          const previous = previousRateLabel(row);
           const newRate = row.new_rate == null ? "" : Number(row.new_rate).toFixed(2);
           return `
             <tr>
