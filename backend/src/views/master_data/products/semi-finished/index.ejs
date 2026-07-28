@@ -1,3 +1,16 @@
+<%
+  // created_at is a Date (timestamptz). The date filter compares this against an
+  // <input type="date"> value, so it must be a real local YYYY-MM-DD - stringifying
+  // the Date and slicing gives "Tue Jul 28", which Date.parse() reads as year 2001.
+  const toDateKey = (value) => {
+    if (!value) return "";
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return "";
+    const mm = String(dt.getMonth() + 1).padStart(2, "0");
+    const dd = String(dt.getDate()).padStart(2, "0");
+    return `${dt.getFullYear()}-${mm}-${dd}`;
+  };
+%>
 <div class="mx-auto w-full max-w-7xl space-y-6">
   <section class="rounded-3xl border border-slate-200 bg-white/95 p-6 shadow-lg">
     <div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -63,7 +76,7 @@
               <% row.fg_ids = row.usage_article_ids || ""; %>
               <% const usageNames = displayUsage ? displayUsage.split(",").map((value) => value.trim()).filter(Boolean) : []; %>
               <% const usageIds = row.usage_article_ids ? row.usage_article_ids.split(",").map((value) => value.trim()).filter(Boolean) : []; %>
-              <tr class="hover:bg-amber-50/40" data-row data-subgroup-id="<%= row.subgroup_id || "" %>" data-active="<%= row.is_active ? "true" : "false" %>" data-created-by="<%= row.created_by_name || "" %>" data-created-at="<%= row.created_at ? String(row.created_at).slice(0, 10) : "" %>">
+              <tr class="hover:bg-amber-50/40" data-row data-subgroup-id="<%= row.subgroup_id || "" %>" data-active="<%= row.is_active ? "true" : "false" %>" data-created-by="<%= row.created_by_name || "" %>" data-created-at="<%= toDateKey(row.created_at) %>">
                 <td class="px-4 py-3 text-slate-700"><%= idx + 1 %></td>
                                 <td class="px-4 py-3 text-slate-700"><%= displayName %></td>
                 <td class="px-4 py-3 text-slate-700"><%= displayGroup || "" %></td>
