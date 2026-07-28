@@ -15,13 +15,6 @@ const ARTICLE_TYPE = {
 };
 
 const ALL_LABOURS_VALUE = "ALL";
-const PRECEDENCE = [
-  APPLY_ON.ARTICLE,
-  APPLY_ON.SKU,
-  APPLY_ON.SUBGROUP,
-  APPLY_ON.GROUP,
-  APPLY_ON.FLAT,
-];
 const ALLOWED_RATE_TYPES = new Set(["PER_DOZEN", "PER_PAIR"]);
 const ALLOWED_ARTICLE_TYPES = new Set([
   ARTICLE_TYPE.FINISHED,
@@ -446,49 +439,78 @@ const fetchExistingRules = async ({ db = knex, labourIds, deptId }) => {
     : [];
   if (!labourList.length) return [];
 
-  return db("erp.labour_rate_rules")
-    .select(
-      "id",
-      "labour_id",
-      "apply_on",
-      "sku_id",
-      "subgroup_id",
-      "group_id",
-      "rate_value",
-    )
-    .where({
-      dept_id: dept,
-      status: "active",
-      applies_to_all_labours: false,
-    })
-    .whereIn("labour_id", labourList);
+  return (
+    db("erp.labour_rate_rules")
+      .select(
+        "id",
+        "labour_id",
+        "apply_on",
+        "sku_id",
+        "subgroup_id",
+        "group_id",
+        "rate_type",
+        "rate_value",
+      )
+      .where({
+        dept_id: dept,
+        applies_to_all_labours: false,
+      })
+      // Same status semantics as the listing and the DCV rate resolver
+      // (lower(trim(...))). An exact "active" match silently dropped rules
+      // stored as 'ACTIVE'/' active ', which then showed no previous rate at
+      // all for articles that do have one.
+      .whereRaw("lower(trim(coalesce(status, ''))) = 'active'")
+      .whereIn("labour_id", labourList)
+      // Newest rule first so a scope-wide fallback is deterministic.
+      .orderBy("id", "desc")
+  );
 };
 
+const buildPrevious = (rule, source) => ({
+  previousRate: rule.rate_value == null ? null : Number(rule.rate_value),
+  previousRateType: String(rule.rate_type || "").trim().toUpperCase() || null,
+  previousSource: source,
+  previousRuleId: Number(rule.id),
+});
+
 const resolvePreviousForSku = ({ existingRules, sku }) => {
-  for (const scope of PRECEDENCE) {
+  const targetSkuId = Number(sku.sku_id || 0);
+
+  // A rule that carries a sku_id is pinned to that one article, whatever its
+  // apply_on says. applyBulkSkuRateUpsert stamps the *scope the user picked*
+  // (GROUP/SUBGROUP) onto every per-article row it writes, so resolving by
+  // apply_on alone never matched an article to its own rule: it fell through
+  // to the SUBGROUP/GROUP branch, which matched the first sibling rule in the
+  // same group. Every row in the modal then showed that one rate — including
+  // articles that have no rate of their own.
+  const pinned = targetSkuId
+    ? existingRules.find((rule) => Number(rule.sku_id || 0) === targetSkuId)
+    : null;
+  if (pinned) return buildPrevious(pinned, APPLY_ON.SKU);
+
+  for (const scope of [APPLY_ON.SUBGROUP, APPLY_ON.GROUP, APPLY_ON.FLAT]) {
     const matched = existingRules.find((rule) => {
       if (String(rule.apply_on || "").toUpperCase() !== scope) return false;
-  if (scope === APPLY_ON.SKU)
-        return Number(rule.sku_id) === Number(sku.sku_id);
-      if (scope === APPLY_ON.ARTICLE)
-        return Number(rule.sku_id) === Number(sku.sku_id);
+      // Only a scope-wide rule (no article pinned) may stand in for an article
+      // that has no rate of its own.
+      if (Number(rule.sku_id || 0)) return false;
       if (scope === APPLY_ON.SUBGROUP)
-        return Number(rule.subgroup_id) === Number(sku.subgroup_id || 0);
+        return (
+          Number(sku.subgroup_id || 0) > 0 &&
+          Number(rule.subgroup_id || 0) === Number(sku.subgroup_id || 0)
+        );
       if (scope === APPLY_ON.GROUP)
-        return Number(rule.group_id) === Number(sku.group_id || 0);
+        return (
+          Number(sku.group_id || 0) > 0 &&
+          Number(rule.group_id || 0) === Number(sku.group_id || 0)
+        );
       return true;
     });
-    if (matched) {
-      return {
-        previousRate:
-          matched.rate_value == null ? null : Number(matched.rate_value),
-        previousSource: scope,
-        previousRuleId: Number(matched.id),
-      };
-    }
+    if (matched) return buildPrevious(matched, scope);
   }
   return {
     previousRate: null,
+    previousRateType: null,
     previousSource: null,
     previousRuleId: null,
   };
@@ -544,6 +566,7 @@ const buildBulkPreviewRows = async ({
       item_name: sku.item_name || "",
       item_type: sku.item_type || "",
       previous_rate: null,
+      previous_rate_type: null,
       previous_source: null,
       previous_rule_id: null,
       new_rate: defaultRate,
@@ -566,6 +589,7 @@ const buildBulkPreviewRows = async ({
       subgroup_id: Number(sku.subgroup_id || 0) || null,
       group_id: Number(sku.group_id || 0) || null,
       previous_rate: previous.previousRate,
+      previous_rate_type: previous.previousRateType,
       previous_source: previous.previousSource,
       previous_rule_id: previous.previousRuleId,
       new_rate: defaultRate,

@@ -6783,12 +6783,18 @@ const resolveDcvRateForSku = async ({
       .trim()
       .toUpperCase();
     if (scope === "SKU") {
-      // ARTICLE is a legacy alias for a SKU-pinned rule; the Labour Rates
-      // listing treats ['SKU','ARTICLE'] identically, so the resolver must too.
-      if (applyOn !== "SKU" && applyOn !== "ARTICLE") return false;
+      // Any rule carrying a sku_id is pinned to that one article, whatever its
+      // apply_on says. The Labour Rates bulk save stamps the scope the user
+      // picked (GROUP/SUBGROUP) onto every per-article row it writes, so
+      // requiring apply_on IN ('SKU','ARTICLE') here skipped those rules and
+      // fell through to the broader branch below — which then handed every
+      // article the same arbitrary sibling rate.
       return Number(row?.sku_id || 0) === Number(normalizedSkuId);
     }
     if (applyOn !== scope) return false;
+    // Only a scope-wide rule (no article pinned) may stand in for an article
+    // that has no rate of its own.
+    if (Number(row?.sku_id || 0)) return false;
     if (scope === "SUBGROUP")
       return Number(row?.subgroup_id || 0) === Number(sku.subgroup_id || 0);
     if (scope === "GROUP")
