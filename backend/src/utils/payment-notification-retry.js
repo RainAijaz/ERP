@@ -9,13 +9,10 @@
 // Unlike the in-memory buffer in whatsapp.js, this survives a server restart —
 // which matters because these are payment confirmations to real people.
 
-const {
-  sendWhatsAppMessage,
-  resolveWhatsAppChatId,
-  saveWhatsAppContact,
-} = require("./whatsapp");
+const { sendWhatsAppMessage, saveWhatsAppContact } = require("./whatsapp");
 const {
   isRetryable,
+  resolveChatIdForPayee,
   CONTACT_SUFFIX_BY_KIND,
   SEND_SPACING_MS,
   sleep,
@@ -80,9 +77,24 @@ const processRow = async ({ knex, row }) => {
     return "FAILED";
   };
 
+  const alreadyMessaged = await knex("erp.whatsapp_notification_log")
+    .where({
+      recipient_kind: row.recipient_kind,
+      recipient_id: row.recipient_id,
+      status: "SENT",
+    })
+    .first();
+
   // Re-resolve every time: the number may have joined WhatsApp since, and the
-  // @lid form can change, so a stored chat id must never be reused.
-  const resolved = await resolveWhatsAppChatId(row.phone_normalized);
+  // @lid form can change, so a stored chat id must never be reused. Saves the
+  // contact first when that is what makes an unmessaged number addressable —
+  // without it these rows retry against an unroutable id until the window closes.
+  const { resolved, contactSaved } = await resolveChatIdForPayee({
+    msisdn: row.phone_normalized,
+    displayName: row.recipient_name,
+    kind: row.recipient_kind,
+    alreadyMessaged,
+  });
   if (!resolved.ok) {
     return isRetryable(resolved.reason)
       ? reschedule(resolved.reason)
@@ -92,6 +104,7 @@ const processRow = async ({ knex, row }) => {
   const result = await sendWhatsAppMessage(resolved.chatId, row.message_body, {
     queue: false,
     confirmDelivery: true,
+    alternateChatIds: (resolved.chatIds || []).slice(1),
   });
   if (!result || !result.ok) {
     const reason = (result && result.reason) || "send_error";
@@ -99,14 +112,7 @@ const processRow = async ({ knex, row }) => {
   }
 
   // Delivered. Save the contact if this is our first successful message to them.
-  const alreadyMessaged = await knex("erp.whatsapp_notification_log")
-    .where({
-      recipient_kind: row.recipient_kind,
-      recipient_id: row.recipient_id,
-      status: "SENT",
-    })
-    .first();
-  if (!alreadyMessaged) {
+  if (!alreadyMessaged && !contactSaved) {
     await saveWhatsAppContact({
       msisdn: row.phone_normalized,
       firstName: row.recipient_name,

@@ -199,7 +199,7 @@ const initWhatsApp = () => {
     const to = String(msg.to || "");
     const body = String(msg.body || "");
     ackWaiters.forEach((waiter) => {
-      if (waiter.chatId === to && waiter.body === body) waiter.notify(ack);
+      if (waiter.matches(to) && waiter.body === body) waiter.notify(ack);
     });
   });
 
@@ -250,11 +250,22 @@ const initWhatsApp = () => {
 // Trade-off: if a message DID leave but its ack never arrives, we may re-queue
 // and send it twice. A rare duplicate is far better than silently never
 // delivering a payment confirmation.
-const watchForAck = (chatId, body) => {
+// `chatIds` is every id that identifies the SAME recipient — send to the "@c.us"
+// form and WhatsApp reports the ack under the "@lid" (confirmed live 2026-07-28:
+// a "@c.us" send timed out with no ack, and the -1 for it surfaced under the lid).
+// Matching only the id we addressed therefore always timed out, burning the full
+// 15s and then sending a duplicate to the next form. Accept the ack from any
+// equivalent id.
+const watchForAck = (chatIds, body) => {
   let latest = null;
   let wake = null;
+  const ids = new Set(
+    (Array.isArray(chatIds) ? chatIds : [chatIds])
+      .map((id) => String(id || "").trim())
+      .filter(Boolean),
+  );
   const waiter = {
-    chatId: String(chatId),
+    matches: (to) => ids.has(String(to)),
     body: String(body),
     notify: (ack) => {
       latest = Number(ack);
@@ -262,6 +273,12 @@ const watchForAck = (chatId, body) => {
     },
   };
   ackWaiters.add(waiter);
+
+  // Drop the waiter without waiting. Needed when sendMessage() throws: wait() is
+  // never reached, so its finally-block cleanup never runs and the waiter would
+  // sit in the Set forever — leaking, and able to satisfy a later byte-identical
+  // message to the same chat with a stale ack.
+  const cancel = () => ackWaiters.delete(waiter);
 
   const wait = async (message, { timeoutMs = ACK_CONFIRM_TIMEOUT_MS } = {}) => {
     try {
@@ -303,11 +320,38 @@ const watchForAck = (chatId, body) => {
     }
   };
 
-  return { wait };
+  return { wait, cancel };
+};
+
+// One send attempt against one specific chat id. `ackIds` are all ids that mean
+// this same recipient, since the ack can surface under any of them. Never throws.
+const attemptSend = async (chatId, text, confirmDelivery, ackIds) => {
+  // Armed before the send — the first ack can arrive within ~400ms, and there
+  // is no message id to look the message up by afterwards.
+  const ackWatch = confirmDelivery ? watchForAck(ackIds || [chatId], text) : null;
+  let message;
+  try {
+    message = await client.sendMessage(chatId, text);
+  } catch (err) {
+    if (ackWatch) ackWatch.cancel();
+    console.error(`[WhatsApp] ✗ Failed to send to ${chatId}:`, err.message);
+    return { ok: false, reason: err.message || "send_error" };
+  }
+
+  if (!ackWatch) return { ok: true, note: "" };
+
+  const acked = await ackWatch.wait(message);
+  if (acked.ok) return { ok: true, note: ` (ack=${acked.ack} via ${acked.via})` };
+
+  console.warn(
+    `[WhatsApp] ✗ Message to ${chatId} not confirmed ` +
+      `(ack=${acked.ack ?? "?"}, ${acked.reason}, via=${acked.via}) — treating as undelivered`,
+  );
+  return { ok: false, reason: acked.reason || "not_delivered" };
 };
 
 // Returns a result object so callers that need to record delivery outcome can:
-//   { ok: true }                      — handed to WhatsApp successfully
+//   { ok: true, chatId }              — handed to WhatsApp successfully
 //   { ok: false, queued, reason }     — not delivered now (queued for retry or dropped)
 // Existing callers ignore the return value, so their behavior is unchanged.
 //
@@ -320,10 +364,13 @@ const watchForAck = (chatId, body) => {
 // before reporting success, closing the "false SENT" gap above. Only callers
 // that persist the outcome (payment notifications) need it; the fire-and-forget
 // rate-change notifier leaves it off so its behavior is unchanged.
+//
+// `alternateChatIds` are other addressing forms for the SAME person, tried in
+// order only when the preferred one yields no delivery confirmation.
 const sendWhatsAppMessage = async (
   chatId,
   text,
-  { queue = true, confirmDelivery = false } = {},
+  { queue = true, confirmDelivery = false, alternateChatIds = [] } = {},
 ) => {
   if (!chatId || !String(chatId).trim()) {
     console.warn("[WhatsApp] sendMessage called with no chatId");
@@ -338,41 +385,99 @@ const sendWhatsAppMessage = async (
     if (queue) console.warn("[WhatsApp] Queue full — dropping message to", chatId);
     return { ok: false, queued: false, reason: queue ? "queue_full" : "client_unavailable" };
   }
+
+  // Try the preferred id, then any alternate addressing form for the same person
+  // (see resolveWhatsAppChatId: the "@lid" and "@c.us" forms of one number are
+  // not interchangeable, and which one WhatsApp Web can actually route to
+  // depends on what it already has cached locally). Only attempted when the
+  // first form produced no delivery confirmation, so a working send never
+  // becomes two messages.
+  const targets = [];
+  for (const id of [chatId, ...(Array.isArray(alternateChatIds) ? alternateChatIds : [])]) {
+    const trimmed = String(id || "").trim();
+    if (trimmed && !targets.includes(trimmed)) targets.push(trimmed);
+  }
+
+  let last = { ok: false, reason: "send_error" };
+  for (let i = 0; i < targets.length; i++) {
+    if (!clientReady || !client) break;
+    const target = targets[i];
+    last = await attemptSend(target, text, confirmDelivery, targets);
+    if (last.ok) {
+      // Keep the "sent successfully to <chatId>" prefix intact — the live delivery
+      // suite matches on it to prove the resolved chat id was used.
+      console.log(`[WhatsApp] ✓ Message sent successfully to ${target}${last.note || ""}`);
+      return { ok: true, chatId: target };
+    }
+    // ack=-1 is WhatsApp refusing this specific message, not a routing miss. The
+    // forms all resolve to the same underlying chat, so re-sending to another one
+    // would only deliver a duplicate if it worked — and the evidence is it doesn't.
+    if (last.reason === "ack_error") break;
+    if (i + 1 < targets.length) {
+      console.warn(
+        `[WhatsApp] retrying with alternate addressing form ${targets[i + 1]} ` +
+          `(${target} failed: ${last.reason})`,
+      );
+    }
+  }
+
+  if (queue && pendingQueue.length < MAX_QUEUE) {
+    pendingQueue.push({ chatId, text });
+    console.log(`[WhatsApp] Message queued for retry on reconnect (queue size: ${pendingQueue.length})`);
+    return { ok: false, queued: true, reason: last.reason || "send_error" };
+  }
+  return { ok: false, queued: false, reason: last.reason || "send_error" };
+};
+
+const serializeWid = (wid) => {
+  if (!wid) return null;
+  if (typeof wid === "string") return wid.trim() || null;
+  return wid._serialized || null;
+};
+
+// Force WhatsApp Web to learn BOTH identifiers for a user — the "@lid" and the
+// phone-number "@c.us" wid — and cache the mapping between them locally.
+//
+// This is the crux of the "only sends if I already have a conversation" bug.
+// Since WhatsApp's LID migration, getNumberId() hands back a "@lid" id. A "@lid"
+// is only routable when the local store already holds its phone-number binding,
+// which it does for anyone you have an existing chat with — and does NOT for a
+// number you have never messaged. Priming here creates that binding up front.
+// Best-effort: older whatsapp-web.js builds have no such API.
+const primeContactIds = async (userId) => {
+  if (!userId || typeof client.getContactLidAndPhone !== "function") return {};
   try {
-    // Armed before the send — the first ack can arrive within ~400ms, and there
-    // is no message id to look the message up by afterwards.
-    const ackWatch = confirmDelivery ? watchForAck(chatId, text) : null;
-    const message = await client.sendMessage(chatId, text);
-
-    let ackNote = "";
-    if (ackWatch) {
-      const acked = await ackWatch.wait(message);
-      if (acked.ok) ackNote = ` (ack=${acked.ack} via ${acked.via})`;
-      if (!acked.ok) {
-        console.warn(
-          `[WhatsApp] ✗ Message to ${chatId} not confirmed ` +
-            `(ack=${acked.ack ?? "?"}, ${acked.reason}, via=${acked.via}) — treating as undelivered`,
-        );
-        if (queue && pendingQueue.length < MAX_QUEUE) {
-          pendingQueue.push({ chatId, text });
-          return { ok: false, queued: true, reason: acked.reason || "not_delivered" };
-        }
-        return { ok: false, queued: false, reason: acked.reason || "not_delivered" };
-      }
-    }
-
-    // Keep the "sent successfully to <chatId>" prefix intact — the live delivery
-    // suite matches on it to prove the resolved chat id was used.
-    console.log(`[WhatsApp] ✓ Message sent successfully to ${chatId}${ackNote}`);
-    return { ok: true };
+    const pairs = await client.getContactLidAndPhone([userId]);
+    const pair = Array.isArray(pairs) ? pairs[0] : pairs;
+    return pair && typeof pair === "object" ? pair : {};
   } catch (err) {
-    console.error("[WhatsApp] ✗ Failed to send message:", err.message);
-    if (queue && pendingQueue.length < MAX_QUEUE) {
-      pendingQueue.push({ chatId, text });
-      console.log(`[WhatsApp] Message queued for retry on reconnect (queue size: ${pendingQueue.length})`);
-      return { ok: false, queued: true, reason: err.message || "send_error" };
-    }
-    return { ok: false, queued: false, reason: err.message || "send_error" };
+    console.warn("[WhatsApp] lid/phone priming failed for", userId, "-", err.message);
+    return {};
+  }
+};
+
+// Can WhatsApp Web actually materialise a chat for this id?
+// true = yes, false = definitively no, null = could not tell.
+//
+// Worth checking before sending, because client.sendMessage() does NOT throw
+// when it cannot: internally it does `getChat(id)` and, on a miss, bails with
+// `if (!chat) return null` — so the call resolves to undefined, no message is
+// ever created, no ack is ever emitted, and the send silently evaporates.
+// getChatById() runs that same lookup (and creates the chat when it can).
+//
+// FAIL OPEN on a throw. getChatById() has been observed on a live 1.34.7 session
+// throwing a minified internal error for every id, working numbers included —
+// so treating a throw as "unaddressable" would block sends that do work today.
+// A throw means "no information", and the send is attempted regardless.
+const canAddressChat = async (chatId) => {
+  if (!chatId) return false;
+  try {
+    return !!(await client.getChatById(chatId));
+  } catch (err) {
+    console.warn(
+      `[WhatsApp] chat lookup inconclusive for ${chatId} (${err.message}) — sending anyway`,
+    );
+    return null;
   }
 };
 
@@ -380,18 +485,142 @@ const sendWhatsAppMessage = async (
 // registered user, and get the id to address it by. This matters because
 // sendMessage() can resolve without throwing for a number that is not on
 // WhatsApp — treating that as success would report a wrong number as delivered.
-// Returns { ok: true, chatId } or { ok: false, reason }.
+//
+// Returns { ok: true, chatId, chatIds } or { ok: false, reason }. `chatIds` is
+// every addressing form worth trying, best first; sendWhatsAppMessage falls
+// through them if the preferred one produces no delivery ack.
 const resolveWhatsAppChatId = async (msisdn) => {
   const digits = String(msisdn || "").replace(/\D/g, "");
   if (!digits) return { ok: false, reason: "no_phone" };
   if (!clientReady || !client) return { ok: false, reason: "client_unavailable" };
   try {
+    // Still the existence gate: proves the number is a real WhatsApp account
+    // before we address it in any form.
     const numberId = await client.getNumberId(digits);
     if (!numberId) return { ok: false, reason: "not_on_whatsapp" };
-    return { ok: true, chatId: numberId._serialized };
+    const resolvedId = serializeWid(numberId);
+
+    const { lid, pn } = await primeContactIds(resolvedId || `${digits}@c.us`);
+
+    // Phone-number form first. WhatsApp Web can always build a chat from a "@c.us"
+    // wid (findOrCreateLatestChat), including for someone never messaged before;
+    // a "@lid" only works once its mapping is cached. The hand-built "@c.us" is a
+    // last resort and is safe here *only* because getNumberId() already proved the
+    // account exists — building one unchecked is what used to report wrong numbers
+    // as delivered.
+    const candidates = [];
+    const consider = (id) => {
+      const s = serializeWid(id);
+      if (s && !candidates.includes(s)) candidates.push(s);
+    };
+    consider(pn);
+    if (resolvedId && resolvedId.endsWith("@c.us")) consider(resolvedId);
+    consider(`${digits}@c.us`);
+    consider(resolvedId);
+    consider(lid);
+
+    // Stop at the first id WhatsApp can actually open a chat for; the untried
+    // remainder stays as fallbacks for the send ladder. Probing lazily matters:
+    // getChatById() *creates* the chat when it can, so probing every form would
+    // leave a stray empty conversation for each one.
+    let addressable = [];
+    let inconclusive = false;
+    for (let i = 0; i < candidates.length; i++) {
+      const verdict = await canAddressChat(candidates[i]);
+      if (verdict === null) inconclusive = true;
+      if (verdict) {
+        addressable = candidates.slice(i);
+        break;
+      }
+    }
+
+    // Give up only when every form was probed and cleanly rejected. If any probe
+    // was inconclusive we still try to send — the ack is the real arbiter, and
+    // refusing here would turn a working number into a queued no-op.
+    if (!addressable.length) {
+      if (!inconclusive) {
+        console.warn(
+          `[WhatsApp] ${digits} is on WhatsApp but no chat could be opened ` +
+            `(tried ${candidates.join(", ") || "nothing"})`,
+        );
+        // Transient, so the caller re-queues rather than marking the payee
+        // permanently failed.
+        return { ok: false, reason: "chat_unavailable" };
+      }
+      addressable = candidates;
+    }
+    if (!addressable.length) return { ok: false, reason: "no_chat_id" };
+
+    return { ok: true, chatId: addressable[0], chatIds: addressable };
   } catch (err) {
     return { ok: false, reason: err?.message || "resolve_error" };
   }
+};
+
+// Explain, for one number, exactly how this session can (or cannot) address it.
+// Answers "why does it only work for people I already chat with?" with evidence
+// rather than inference: whether a chat already existed, what getNumberId()
+// returns, whether the lid<->phone binding could be primed, and which addressing
+// forms WhatsApp will actually open a chat for. Read-only apart from the chat
+// materialisation getChatById() does. Sends nothing.
+const diagnoseWhatsAppNumber = async (msisdn) => {
+  const digits = String(msisdn || "").replace(/\D/g, "");
+  const out = { input: msisdn, digits };
+  if (!digits) return { ...out, error: "no_phone" };
+  if (!clientReady || !client) return { ...out, error: "client_unavailable" };
+
+  try {
+    const contact = await readBackContact(digits);
+    out.savedContact = contact ? contact.isMyContact : null;
+    out.contactName = contact ? contact.name : null;
+  } catch {
+    out.savedContact = null;
+  }
+
+  try {
+    const numberId = await client.getNumberId(digits);
+    out.getNumberId = serializeWid(numberId) || null;
+    out.isLid = !!(out.getNumberId && out.getNumberId.endsWith("@lid"));
+  } catch (err) {
+    out.getNumberId = `error: ${err.message}`;
+  }
+
+  const primed = await primeContactIds(out.getNumberId || `${digits}@c.us`);
+  out.primedPn = primed.pn || null;
+  out.primedLid = primed.lid || null;
+
+  // Does a conversation already exist? This is the variable the user observed.
+  // Must check BOTH wids: since the LID migration chats are keyed by "@lid", so
+  // looking only under the "@c.us" wid reports "no conversation" for every
+  // number, including ones with a live thread.
+  try {
+    const ids = [`${digits}@c.us`, out.primedLid, out.getNumberId].filter(
+      (id) => id && !String(id).startsWith("error:"),
+    );
+    out.chatAlreadyInStore = await client.pupPage.evaluate((chatIds) => {
+      const Chat = window.require("WAWebCollections").Chat;
+      const factory = window.require("WAWebWidFactory");
+      return chatIds.some((id) => {
+        try {
+          return !!Chat.get(factory.createWid(id));
+        } catch {
+          return false;
+        }
+      });
+    }, ids);
+  } catch (err) {
+    out.chatAlreadyInStore = `error: ${err.message}`;
+  }
+
+  out.addressable = {};
+  for (const form of [primed.pn, `${digits}@c.us`, out.getNumberId, primed.lid]) {
+    const id = serializeWid(form);
+    if (!id || id in out.addressable) continue;
+    out.addressable[id] = await canAddressChat(id);
+  }
+
+  out.resolved = await resolveWhatsAppChatId(digits);
+  return out;
 };
 
 // Save a payee into the linked account's WhatsApp contacts (and, with
@@ -481,6 +710,7 @@ module.exports = {
   sendWhatsAppMessage,
   resolveWhatsAppChatId,
   saveWhatsAppContact,
+  diagnoseWhatsAppNumber,
   onWhatsAppReady,
   shutdownWhatsApp,
 };

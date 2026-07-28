@@ -2187,13 +2187,15 @@ router.post(
       }
 
       // Notify suppliers/labours/employees paid on an approved cash/journal
-      // voucher. Opt-in checkbox defaults ON (only skipped when explicitly set
-      // false); a global env flag can disable the feature entirely. The service
-      // re-validates voucher type/status and never throws.
+      // voucher. Opt-in checkbox defaults OFF, so only an explicit true notifies
+      // — a snapshot predating the checkbox therefore stays silent rather than
+      // messaging payees nobody opted in for. A global env flag can disable the
+      // feature entirely. The service re-validates voucher type/status and never
+      // throws.
       if (
         requestSnapshot?.entity_type === "VOUCHER" &&
         process.env.WHATSAPP_PAYMENT_NOTIFY_ENABLED !== "0" &&
-        requestSnapshot?.new_value?.notify_payees !== false
+        requestSnapshot?.new_value?.notify_payees === true
       ) {
         const voucherId = appliedEntityId || requestSnapshot.entity_id;
         // Fire-and-observe (not awaited): the notifier paces itself across

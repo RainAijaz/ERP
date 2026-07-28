@@ -15,6 +15,11 @@ const path = require("path");
 const waPath = require.resolve(path.join(__dirname, "..", "utils", "whatsapp.js"));
 const sent = [];
 const savedContacts = [];
+// Every number ever saved as a contact, for the lifetime of the run. Separate
+// from `savedContacts`, which assertions clear between scenarios: on a real
+// session a saved contact stays saved, and that is precisely what keeps a
+// previously-unaddressable number addressable on later passes.
+const knownContacts = new Set();
 const inMemoryQueued = []; // anything the transport buffered itself (must stay empty)
 // Flip to simulate WhatsApp being disconnected.
 const transport = { offline: false };
@@ -28,11 +33,20 @@ require.cache[waPath] = {
     onWhatsAppReady: () => {},
     // Stand in for WhatsApp's number lookup: 92300000000x is treated as a
     // well-formed number that is NOT registered on WhatsApp.
+    //
+    // 923139999xxx models the "only works if a conversation already exists" bug:
+    // a real WhatsApp user we have never messaged, for whom WhatsApp Web holds no
+    // lid<->phone binding, so no chat can be opened and nothing can be sent.
+    // Saving them as a contact creates that binding — exactly as on a live
+    // session — so the lookup only starts succeeding once a contact exists.
     resolveWhatsAppChatId: async (msisdn) => {
       const digits = String(msisdn || "").replace(/\D/g, "");
       if (transport.offline) return { ok: false, reason: "client_unavailable" };
       if (digits.startsWith("9230000000")) return { ok: false, reason: "not_on_whatsapp" };
-      return { ok: true, chatId: `${digits}@c.us` };
+      if (digits.startsWith("923139999") && !knownContacts.has(digits)) {
+        return { ok: false, reason: "chat_unavailable" };
+      }
+      return { ok: true, chatId: `${digits}@c.us`, chatIds: [`${digits}@c.us`, `${digits}@lid`] };
     },
     sendWhatsAppMessage: async (chatId, text, { queue = true } = {}) => {
       if (transport.offline) {
@@ -51,6 +65,7 @@ require.cache[waPath] = {
     },
     saveWhatsAppContact: async ({ msisdn, firstName, lastName }) => {
       savedContacts.push({ msisdn, firstName, lastName });
+      knownContacts.add(String(msisdn || "").replace(/\D/g, ""));
       return { ok: true };
     },
   },
@@ -108,6 +123,7 @@ const created = { partyIds: [], labourIds: [], employeeIds: [], voucherId: null 
   const supplierCredit = await mkParty("SupplierCredit", "BOTH", "03004445556"); // credit only -> NO row
   const customer = await mkParty("Customer", "CUSTOMER", "03005556667"); // customer -> NO row
   const supplierAckError = await mkParty("SupplierAckError", "SUPPLIER", "03119999999"); // resolves, but WhatsApp rejects the send
+  const supplierNoChat = await mkParty("SupplierNoChat", "SUPPLIER", "03139999888"); // on WhatsApp, never messaged -> unaddressable until saved as a contact
   const labour = await mkLabour("Labour", "021-7654321"); // landline -> FAILED invalid_phone
   const employee = await mkEmployee("Employee", "0321-9998887"); // -> SENT
 
@@ -150,6 +166,7 @@ const created = { partyIds: [], labourIds: [], employeeIds: [], voucherId: null 
     line(7, "EMPLOYEE", employee, 1200, 0, "Salary"),
     line(8, "PARTY", supplierNotOnWa, 400, 0, "Transport"),
     line(9, "PARTY", supplierAckError, 650, 0, "Cartage"),
+    line(10, "PARTY", supplierNoChat, 750, 0, "Packing"),
   ]);
 
   // --- Run the real notifier ---
@@ -193,10 +210,22 @@ const created = { partyIds: [], labourIds: [], employeeIds: [], voucherId: null 
   check("ack_error payee was not counted as delivered", !sent.some((m) => m.chatId.startsWith("923119999")));
   check("No contact saved for a WhatsApp-rejected send", !savedContacts.some((c) => c.msisdn.startsWith("923119999")));
 
+  // The regression this guards: a payee we have never messaged used to be
+  // unaddressable forever, because the contact save that makes them addressable
+  // only ran AFTER a successful send. It must now be saved up front and delivered
+  // on the first pass, with no QUEUED row and no human intervention.
+  const nochat = byName("SupplierNoChat");
+  check("Never-messaged payee is delivered on the first pass", nochat && nochat.status === "SENT");
+  check("Never-messaged payee was not left QUEUED", nochat && nochat.status !== "QUEUED");
+  check("Never-messaged payee got a contact saved before sending",
+    savedContacts.some((c) => c.msisdn === "923139999888"));
+  check("Never-messaged payee really received the message",
+    sent.some((m) => m.chatId === "923139999888@c.us"));
+
   check("Customer NOT notified (skipped)", !byName("Customer"));
   check("SupplierCredit NOT notified (credit-only line skipped)", !byName("SupplierCredit"));
-  check("Exactly 6 log rows (2 SENT + 4 FAILED)", logs.length === 6);
-  check("Exactly 2 messages sent", sent.length === 2);
+  check("Exactly 7 log rows (3 SENT + 4 FAILED)", logs.length === 7);
+  check("Exactly 3 messages sent", sent.length === 3);
 
   const svMsg = sent.find((m) => m.chatId === "923001112223@c.us");
   check("SupplierValid message sent to correct chat id", !!svMsg);
@@ -207,7 +236,7 @@ const created = { partyIds: [], labourIds: [], employeeIds: [], voucherId: null 
   check("Message greeting shows Urdu name in brackets", svMsg && svMsg.text.includes("SupplierValid (سپلائر)"));
 
   // --- Contact saving: first message only ---
-  check("Contact saved for each newly-messaged payee (2)", savedContacts.length === 2);
+  check("Contact saved for each newly-messaged payee (3)", savedContacts.length === 3);
   const svContact = savedContacts.find((c) => c.msisdn === "923001112223");
   check("Contact saved with the payee's name", svContact && svContact.firstName.includes("SupplierValid"));
   check("Contact name includes Urdu name in brackets", svContact && svContact.firstName.includes("(سپلائر)"));
@@ -218,7 +247,7 @@ const created = { partyIds: [], labourIds: [], employeeIds: [], voucherId: null 
   savedContacts.length = 0;
   sent.length = 0;
   await sendVoucherPaymentNotifications({ knex, voucherId });
-  check("Second run re-sends but does NOT re-save contacts", sent.length === 2 && savedContacts.length === 0);
+  check("Second run re-sends but does NOT re-save contacts", sent.length === 3 && savedContacts.length === 0);
 
   if (svMsg) console.log("\n--- Sample message ---\n" + svMsg.text + "\n----------------------");
   if (svContact) console.log(`--- Sample contact --- ${svContact.firstName} ${svContact.lastName}  (${svContact.msisdn})`);
@@ -243,10 +272,10 @@ const created = { partyIds: [], labourIds: [], employeeIds: [], voucherId: null 
   const queued = afterOffline.filter((r) => r.status === "QUEUED");
   const permanent = afterOffline.filter((r) => r.status === "FAILED");
 
-  // 4 queue while offline: the two deliverable payees plus the not-on-WhatsApp and
-  // WhatsApp-rejected ones — offline masks both the lookup and the send, so they
-  // stay transient until we can actually check again.
-  check("Offline: payees with good numbers are QUEUED, not dropped", queued.length === 4);
+  // 5 queue while offline: the three deliverable payees plus the not-on-WhatsApp
+  // and WhatsApp-rejected ones — offline masks both the lookup and the send, so
+  // they stay transient until we can actually check again.
+  check("Offline: payees with good numbers are QUEUED, not dropped", queued.length === 5);
   check("Queued rows carry the rendered message for retry", queued.every((r) => (r.message_body || "").includes("ادائیگی کی اطلاع")));
   check("Queued rows have a future next_retry_at", queued.every((r) => r.next_retry_at && new Date(r.next_retry_at) > new Date(Date.now() - 1000)));
   check("Nothing was SENT while offline", sent.length === 0);
@@ -260,8 +289,8 @@ const created = { partyIds: [], labourIds: [], employeeIds: [], voucherId: null 
   const sweep = await retryQueuedWhatsAppNotifications({ knex });
 
   const afterRetry = await knex("erp.whatsapp_notification_log").where({ voucher_header_id: voucherId });
-  check("Worker sent the queued messages once reconnected", sweep.sent === 2 && sent.length === 2);
-  check("Queued rows became SENT", afterRetry.filter((r) => r.status === "SENT").length === 2);
+  check("Worker sent the queued messages once reconnected", sweep.sent === 3 && sent.length === 3);
+  check("Queued rows became SENT", afterRetry.filter((r) => r.status === "SENT").length === 3);
   // Reconnecting lets us finally check the number: it is not a WhatsApp user,
   // so the worker stops retrying it instead of looping for 24h.
   check(
@@ -269,7 +298,7 @@ const created = { partyIds: [], labourIds: [], employeeIds: [], voucherId: null 
     afterRetry.some((r) => r.status === "FAILED" && r.failure_reason === "not_on_whatsapp"),
   );
   check("Delivered rows clear next_retry_at", afterRetry.filter((r) => r.status === "SENT").every((r) => r.next_retry_at === null));
-  check("Queued first message still saves the contact", savedContacts.length === 2);
+  check("Queued first message still saves the contact", savedContacts.length === 3);
   check("Each queued message delivered exactly once (no duplicate)", new Set(sent.map((m) => m.chatId)).size === sent.length);
 
   // --- Give-up: a row older than the retry window becomes a permanent failure ---
@@ -287,7 +316,7 @@ const created = { partyIds: [], labourIds: [], employeeIds: [], voucherId: null 
 
   const afterGiveUp = await knex("erp.whatsapp_notification_log").where({ voucher_header_id: voucherId });
   const expired = afterGiveUp.filter((r) => r.failure_reason === "max_retries_exceeded");
-  check("After 24h the worker gives up and marks FAILED", expired.length === 4);
+  check("After 24h the worker gives up and marks FAILED", expired.length === 5);
   check("Given-up rows stop retrying (next_retry_at cleared)", expired.every((r) => r.status === "FAILED" && r.next_retry_at === null));
 
   // Given-up rows must now be visible to the dashboard alert query.

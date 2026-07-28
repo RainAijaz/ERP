@@ -28,7 +28,9 @@ const VOUCHER_TYPES = {
 const maybeNotifyPayeesPostCommit = ({ result, notifyPayees }) => {
   if (!result || result.queuedForApproval) return;
   if (String(result.status).toUpperCase() !== "APPROVED") return;
-  if (notifyPayees === false) return;
+  // Opt-in: only an explicit true notifies. Anything else (unticked box, caller
+  // that never passed the flag) stays silent.
+  if (notifyPayees !== true) return;
   if (process.env.WHATSAPP_PAYMENT_NOTIFY_ENABLED === "0") return;
   sendVoucherPaymentNotifications({ knex, voucherId: result.id }).catch((e) =>
     console.error("[WhatsApp] payment notify error:", e?.message || e),
@@ -1008,7 +1010,7 @@ const createVoucher = async ({
   scopeKey,
   headerAccountId = null,
   linkedSalesOrderId = null,
-  notifyPayees = true,
+  notifyPayees = false,
 }) => {
   if (!req?.user?.id) throw new HttpError(401, "Not authenticated");
   if (!req.branchId) throw new HttpError(400, "Branch context is required");
@@ -1121,7 +1123,7 @@ const createVoucher = async ({
           total_credit: validated.totalCredit,
           header_account_id: validHeaderAccountId,
           permission_reroute: !canCreate,
-          notify_payees: notifyPayees !== false,
+          notify_payees: notifyPayees === true,
         },
       });
     }
@@ -1167,7 +1169,7 @@ const updateVoucher = async ({
   scopeKey,
   headerAccountId = null,
   linkedSalesOrderId = null,
-  notifyPayees = true,
+  notifyPayees = false,
 }) => {
   if (!req?.user?.id) throw new HttpError(401, "Not authenticated");
   if (!req.branchId) throw new HttpError(400, "Branch context is required");
@@ -1261,7 +1263,7 @@ const updateVoucher = async ({
       total_credit: validated.totalCredit,
       header_account_id: validHeaderAccountId,
       permission_reroute: !canEdit,
-      notify_payees: notifyPayees !== false,
+      notify_payees: notifyPayees === true,
     };
 
     if (queuedForApproval) {
