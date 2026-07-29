@@ -218,6 +218,17 @@ const getVariantForSkuApproval = async () => {
   return row || null;
 };
 
+// Highest existing sku/variant id. Specs that seed synthetic approval rows use
+// this to pick sku_ids that can never collide with a real SKU, so the approval
+// preview's hydrateSkuRows() cannot overwrite the fixture's own labels.
+const getMaxSkuId = async () => {
+  const [skuRow, variantRow] = await Promise.all([
+    knex("erp.skus").max({ id: "id" }).first(),
+    knex("erp.variants").max({ id: "id" }).first(),
+  ]);
+  return Math.max(Number(skuRow?.id || 0), Number(variantRow?.id || 0));
+};
+
 const createApprovalRequest = async (payload) => {
   const [created] = await knex("erp.approval_request")
     .insert(payload)
@@ -2554,6 +2565,7 @@ module.exports = {
   getUserByUsername,
   getTwoDistinctUsers,
   getVariantForSkuApproval,
+  getMaxSkuId,
   createApprovalRequest,
   deleteApprovalRequests,
   findLatestApprovalRequest,

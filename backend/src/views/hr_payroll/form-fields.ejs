@@ -160,6 +160,10 @@
         <div class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-700"><%= t("affected_skus") %></div>
         <div class="mt-1 text-xs text-slate-500" data-labour-rate-bulk-summary><%= t("select_target_to_preview_impact") %></div>
       </div>
+      <label class="hidden cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600" data-labour-rate-changed-filter>
+        <input type="checkbox" data-approval-control data-labour-rate-changed-only class="h-3.5 w-3.5 rounded border-slate-300" />
+        <span><%= t("changed_only") %></span>
+      </label>
     </div>
     <div class="mt-3 overflow-auto rounded-lg border border-slate-200 bg-white max-h-72">
       <table class="min-w-full text-xs">

@@ -259,6 +259,10 @@
       noEntries: "<%= t('no_entries')  %>",
       selectTarget: "<%= t('select_target_to_preview_impact')  %>",
       none: "<%= t('none')  %>",
+      changed: "<%= t('changed')  %>",
+      newLabel: "<%= t('new')  %>",
+      changesOfTotal: "<%= t('rate_changes_of_total')  %>",
+      noRateChanges: "<%= t('no_rate_changes')  %>",
     };
     const debugPreview = false;
     let currentModalState = null;
@@ -516,6 +520,10 @@
       if (!panel) return;
       panel.querySelectorAll("input, select, textarea, button").forEach((el) => {
         if (el.hasAttribute("data-approval-view")) return;
+        // Read-only preview controls (e.g. the "Changed only" filter) stay usable.
+        // They must NOT reuse data-approval-view: a document-level click handler
+        // treats that attribute as "open an approval request".
+        if (el.hasAttribute("data-approval-control")) return;
         if (el.tagName === "BUTTON") {
           el.disabled = true;
           el.classList.add("pointer-events-none");
@@ -807,6 +815,63 @@
       return text || previewText.none;
     };
 
+    const resolvePreviousRate = (row) =>
+      row?.previous_rate ?? row?.previousRate ?? row?.old_rate ?? row?.current_rate ?? row?.rate_before ?? null;
+
+    const resolveNextRate = (row) => row?.new_rate ?? row?.newRate ?? row?.rate ?? row?.value ?? null;
+
+    const toRateNumber = (value) => {
+      if (value == null || value === "") return null;
+      const cast = Number(value);
+      return Number.isFinite(cast) ? cast : null;
+    };
+
+    // Bulk rate payloads carry every SKU in scope, including the ones the requester left alone,
+    // so the approver needs the untouched rows visually separated from the real edits.
+    const resolveRateChangeStatus = (previous, next) => {
+      const prev = toRateNumber(previous);
+      const nextValue = toRateNumber(next);
+      if (prev == null && nextValue == null) return "unchanged";
+      if (prev == null) return "new";
+      if (nextValue == null) return "cleared";
+      return Math.abs(prev - nextValue) < 0.005 ? "unchanged" : "changed";
+    };
+
+    // Plain 50-level tints on purpose: the /70 opacity variants are not in the
+    // prebuilt public/styles.css, so they would render as no background at all.
+    const rateChangeStyles = {
+      new: { row: "bg-emerald-50", rate: "font-semibold text-emerald-700", badge: "bg-emerald-100 text-emerald-700" },
+      changed: { row: "bg-amber-50", rate: "font-semibold text-amber-700", badge: "bg-amber-100 text-amber-700" },
+      cleared: { row: "bg-rose-50", rate: "font-semibold text-rose-700", badge: "bg-rose-100 text-rose-700" },
+      unchanged: { row: "", rate: "text-slate-400", badge: "" },
+    };
+
+    const buildRateChangeBadge = (status, previous, nextRate) => {
+      const style = rateChangeStyles[status] || rateChangeStyles.unchanged;
+      const base = `ml-1.5 rounded px-1.5 py-0.5 text-[10px] font-semibold ${style.badge}`;
+      if (status === "new") return `<span class="${base} uppercase">${previewText.newLabel}</span>`;
+      if (status === "cleared") return `<span class="${base} uppercase">${previewText.changed}</span>`;
+      if (status !== "changed") return "";
+      const prev = toRateNumber(previous);
+      const next = toRateNumber(nextRate);
+      if (prev == null || next == null) return `<span class="${base} uppercase">${previewText.changed}</span>`;
+      const delta = next - prev;
+      return `<span class="${base}">${delta > 0 ? "+" : "-"}${Math.abs(delta).toFixed(2)}</span>`;
+    };
+
+    const buildRateRowHtml = (entry) => {
+      const style = rateChangeStyles[entry.status] || rateChangeStyles.unchanged;
+      const tone = entry.status === "unchanged" ? "text-slate-400" : "text-slate-700";
+      return `
+              <tr class="${style.row}">
+                <td class="px-3 py-1.5 ${tone}">${resolveSkuText(entry.row)}</td>
+                <td class="px-3 py-1.5 ${tone}">${resolveArticleText(entry.row)}</td>
+                <td class="px-3 py-1.5 ${tone}">${toRateText(entry.previous)}</td>
+                <td class="px-3 py-1.5 ${style.rate}">${toRateText(entry.nextRate)}${buildRateChangeBadge(entry.status, entry.previous, entry.nextRate)}</td>
+              </tr>
+            `;
+    };
+
     const applyHrBulkPanels = (panel, values) => {
       if (!panel || !values || typeof values !== "object") return;
       const mode = String(values.mode || "").toUpperCase();
@@ -849,27 +914,53 @@
           .join("");
       }
 
-      if (mode === "BULK_LABOUR_RATE_SKU_UPSERT" && labourPanel && labourBody && labourSummary) {
+      if ((mode === "BULK_LABOUR_RATE_SKU_UPSERT" || mode === "BULK_LABOUR_RATE_COPY") && labourPanel && labourBody && labourSummary) {
         labourPanel.classList.remove("hidden");
-        labourSummary.textContent = rows.length ? String(rows.length) : previewText.noEntries;
+        const changedFilter = panel.querySelector("[data-labour-rate-changed-filter]");
+        const changedOnlyInput = panel.querySelector("[data-labour-rate-changed-only]");
+        const hideFilter = () => {
+          if (!changedFilter) return;
+          changedFilter.classList.add("hidden");
+          changedFilter.classList.remove("flex");
+        };
+
         if (!rows.length) {
+          hideFilter();
+          labourSummary.textContent = previewText.noEntries;
           labourBody.innerHTML = `<tr><td class="px-3 py-3 text-slate-500" colspan="4">${previewText.selectTarget}</td></tr>`;
           return;
         }
-        labourBody.innerHTML = rows
-          .map((row) => {
-            const previous = row?.previous_rate ?? row?.previousRate ?? row?.old_rate ?? row?.current_rate ?? row?.rate_before ?? null;
-            const nextRate = row?.new_rate ?? row?.newRate ?? row?.rate ?? row?.value ?? null;
-            return `
-              <tr>
-                <td class="px-3 py-1.5 text-slate-700">${resolveSkuText(row)}</td>
-                <td class="px-3 py-1.5 text-slate-700">${resolveArticleText(row)}</td>
-                <td class="px-3 py-1.5 text-slate-700">${toRateText(previous)}</td>
-                <td class="px-3 py-1.5 text-slate-700">${toRateText(nextRate)}</td>
-              </tr>
-            `;
-          })
-          .join("");
+
+        const entries = rows.map((row) => {
+          const previous = resolvePreviousRate(row);
+          const nextRate = resolveNextRate(row);
+          return { row, previous, nextRate, status: resolveRateChangeStatus(previous, nextRate) };
+        });
+        const changedEntries = entries.filter((entry) => entry.status !== "unchanged");
+
+        labourSummary.textContent = changedEntries.length
+          ? previewText.changesOfTotal
+              .replace("{changed}", String(changedEntries.length))
+              .replace("{total}", String(entries.length))
+          : previewText.noRateChanges.replace("{total}", String(entries.length));
+
+        const renderRateRows = () => {
+          const changedOnly = Boolean(changedOnlyInput && changedOnlyInput.checked && changedEntries.length);
+          labourBody.innerHTML = (changedOnly ? changedEntries : entries).map(buildRateRowHtml).join("");
+        };
+
+        if (changedFilter && changedOnlyInput && changedEntries.length) {
+          changedFilter.classList.remove("hidden");
+          changedFilter.classList.add("flex");
+          changedOnlyInput.checked = true;
+          changedOnlyInput.disabled = false;
+          changedOnlyInput.onchange = renderRateRows;
+        } else {
+          hideFilter();
+          if (changedOnlyInput) changedOnlyInput.checked = false;
+        }
+
+        renderRateRows();
       }
     };
 
