@@ -62,13 +62,22 @@ const fillDispatchVoucher = async (page) => {
   const firstRow = page.locator("[data-lines-body] tr").first();
   await expect(firstRow).toBeVisible();
 
-  const assetWrapper = firstRow.locator("[data-searchable-wrapper]").first();
-  await chooseFirstSearchableValue(assetWrapper, "asset_id");
+  // Target wrappers by the field they wrap, not by column position: a dispatch row
+  // also carries an entry-kind select (Asset / Raw Material) ahead of these.
+  const rowWrapperFor = (row, field) =>
+    row
+      .locator("[data-searchable-wrapper]")
+      .filter({ has: page.locator(`select[data-row-field="${field}"]`) })
+      .first();
+
+  await chooseFirstSearchableValue(rowWrapperFor(firstRow, "asset_id"), "asset_id");
 
   await page.waitForTimeout(100);
   const updatedFirstRow = page.locator("[data-lines-body] tr").first();
-  const conditionWrapper = updatedFirstRow.locator("[data-searchable-wrapper]").nth(1);
-  await chooseFirstSearchableValue(conditionWrapper, "condition_out_code");
+  await chooseFirstSearchableValue(
+    rowWrapperFor(updatedFirstRow, "condition_out_code"),
+    "condition_out_code",
+  );
 
   const qtyInput = updatedFirstRow.locator('input[data-row-field="qty"]').first();
   await qtyInput.fill("1");

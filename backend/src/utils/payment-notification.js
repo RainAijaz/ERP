@@ -65,6 +65,36 @@ const SEND_SPACING_MS = Math.max(
   Number(process.env.WHATSAPP_SEND_SPACING_MS ?? 1500),
 );
 
+// Resolve a payee's chat id, saving them as a WhatsApp contact first if that is
+// what it takes to make them addressable.
+//
+// Background: a number we have never messaged can pass the getNumberId() check
+// and still have no routable chat, because WhatsApp Web holds no "@lid" <-> phone
+// binding for it locally (that binding is a side effect of having a conversation).
+// Saving the contact creates it. The save used to run only AFTER a successful
+// send, which was a deadlock: no contact -> unaddressable -> no send -> still no
+// contact, forever. So on `chat_unavailable` we save and resolve once more.
+//
+// Only ever saves for a payee we have never successfully messaged, so a manually
+// corrected contact name is never overwritten. Returns
+// { resolved, contactSaved }.
+const resolveChatIdForPayee = async ({ msisdn, displayName, kind, alreadyMessaged }) => {
+  let resolved = await resolveWhatsAppChatId(msisdn);
+  if (resolved.ok || resolved.reason !== "chat_unavailable" || alreadyMessaged) {
+    return { resolved, contactSaved: false };
+  }
+
+  // Reached only when the number IS on WhatsApp, so this never writes a junk
+  // number into the linked phone's address book.
+  await saveWhatsAppContact({
+    msisdn,
+    firstName: displayName,
+    lastName: CONTACT_SUFFIX_BY_KIND[kind] || "",
+  }).catch(() => {});
+  resolved = await resolveWhatsAppChatId(msisdn);
+  return { resolved, contactSaved: true };
+};
+
 const toNumber = (value) => {
   const n = Number(value);
   return Number.isFinite(n) ? n : 0;
@@ -313,10 +343,21 @@ const sendVoucherPaymentNotifications = async ({ knex, voucherId }) => {
       if (waTouchCount > 0) await sleep(SEND_SPACING_MS);
       waTouchCount += 1;
 
+      // Have we ever got a message through to this payee? Decides whether we may
+      // save/refresh their WhatsApp contact (see resolveChatIdForPayee).
+      const alreadyMessaged = await knex("erp.whatsapp_notification_log")
+        .where({ recipient_kind: entry.kind, recipient_id: entry.id, status: "SENT" })
+        .first();
+
       // The number looks valid — now confirm WhatsApp actually knows it, and let
       // WhatsApp tell us how to address it. Skipping this would report a
       // well-formed but non-WhatsApp number as delivered.
-      const resolved = await resolveWhatsAppChatId(normalized);
+      const { resolved, contactSaved } = await resolveChatIdForPayee({
+        msisdn: normalized,
+        displayName,
+        kind: entry.kind,
+        alreadyMessaged,
+      });
       if (!resolved.ok) {
         queueOrFail(resolved.reason);
         continue;
@@ -327,19 +368,19 @@ const sendVoucherPaymentNotifications = async ({ knex, voucherId }) => {
       // confirmDelivery:true — wait for a real server ack before recording SENT,
       // so a message WhatsApp accepted but silently never transmitted (the burst
       // "false SENT") is re-queued for retry instead of reported as delivered.
+      // alternateChatIds — fall through to the other addressing form for this
+      // same number if the preferred one produces no ack.
       const result = await sendWhatsAppMessage(resolved.chatId, message, {
         queue: false,
         confirmDelivery: true,
+        alternateChatIds: (resolved.chatIds || []).slice(1),
       });
       if (result && result.ok) {
         // First time we've successfully messaged this payee: save them as a
         // contact so they appear by name rather than as an unknown number.
         // Only on the first send, so a manually corrected contact name is not
         // overwritten later. Never affects the SENT outcome.
-        const alreadyMessaged = await knex("erp.whatsapp_notification_log")
-          .where({ recipient_kind: entry.kind, recipient_id: entry.id, status: "SENT" })
-          .first();
-        if (!alreadyMessaged) {
+        if (!alreadyMessaged && !contactSaved) {
           await saveWhatsAppContact({
             msisdn: normalized,
             firstName: displayName,
@@ -369,6 +410,7 @@ const sendVoucherPaymentNotifications = async ({ knex, voucherId }) => {
 
 module.exports = {
   sendVoucherPaymentNotifications,
+  resolveChatIdForPayee,
   PERMANENT_REASONS,
   isRetryable,
   CONTACT_SUFFIX_BY_KIND,

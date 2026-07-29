@@ -8,6 +8,10 @@ const {
   findPendingVoucherApprovalTx,
   resolvePendingVoucherApprovalsTx,
 } = require("../../utils/voucher-approval-sync");
+const {
+  buildRmStockIdentity,
+  moveRmStockTx,
+} = require("../inventory/stock-transfer-voucher-service");
 
 const RETURNABLE_VOUCHER_TYPES = {
   dispatch: "RDV",
@@ -20,6 +24,7 @@ let partiesHasNameUrColumn;
 let assetsHasNameColumn;
 let assetsHasNameUrColumn;
 let assetTypeRegistryHasNameUrColumn;
+let stockBalanceRmHasDimensions;
 
 const toPositiveInt = (value) => {
   const parsed = Number(value || 0);
@@ -346,6 +351,101 @@ const ensureAssetIdsExistTx = async (trx, assetIds = [], branchId = null) => {
   return map;
 };
 
+// A dispatch line is either an ASSET (mould/tool, no stock effect) or a raw material
+// lent out, which moves stock from ON_HAND to WITH_THIRD_PARTY.
+const RETURNABLE_LINE_KINDS = { asset: "ASSET", rawMaterial: "RM" };
+
+const normalizeLineKind = (value) => {
+  const code = normalizeCode(value);
+  if (code === RETURNABLE_LINE_KINDS.rawMaterial) {
+    return RETURNABLE_LINE_KINDS.rawMaterial;
+  }
+  // Legacy payloads carry no kind at all and are always asset lines.
+  return RETURNABLE_LINE_KINDS.asset;
+};
+
+const normalizeDimensionId = (value) => toPositiveInt(value);
+
+// RM stock is bucketed by (item, color, size); a lent-out line must name the exact
+// bucket it leaves so the return puts it back in the same place.
+const buildRmBucketKey = ({ itemId, colorId, sizeId }) =>
+  `${Number(itemId || 0)}:${Number(colorId || 0)}:${Number(sizeId || 0)}`;
+
+const stockBalanceRmHasDimensionsTx = async (trx) => {
+  if (typeof stockBalanceRmHasDimensions === "boolean") {
+    return stockBalanceRmHasDimensions;
+  }
+  const row = await trx("information_schema.columns")
+    .select("column_name")
+    .where({
+      table_schema: "erp",
+      table_name: "stock_balance_rm",
+      column_name: "color_id",
+    })
+    .first();
+  stockBalanceRmHasDimensions = Boolean(row?.column_name);
+  return stockBalanceRmHasDimensions;
+};
+
+const loadRmOnHandBucketsTx = async (trx, branchId, bucketKeys = null) => {
+  const supportsDimensions = await stockBalanceRmHasDimensionsTx(trx);
+  const columns = [
+    "sb.item_id",
+    "sb.qty",
+    "sb.wac",
+    "i.code as item_code",
+    "i.name as item_name",
+    "i.base_uom_id",
+    "u.code as uom_code",
+  ];
+  if (supportsDimensions) {
+    columns.push(
+      "sb.color_id",
+      "sb.size_id",
+      "c.name as color_name",
+      "z.name as size_name",
+    );
+  }
+
+  const rows = await trx("erp.stock_balance_rm as sb")
+    .join("erp.items as i", "i.id", "sb.item_id")
+    .leftJoin("erp.uom as u", "u.id", "i.base_uom_id")
+    .modify((query) => {
+      if (!supportsDimensions) return;
+      query
+        .leftJoin("erp.colors as c", "c.id", "sb.color_id")
+        .leftJoin("erp.sizes as z", "z.id", "sb.size_id");
+    })
+    .select(columns)
+    .where("sb.branch_id", branchId)
+    .where("sb.stock_state", "ON_HAND")
+    .where("sb.qty", ">", 0)
+    .whereRaw("upper(coalesce(i.item_type::text, '')) = 'RM'");
+
+  const map = new Map();
+  rows.forEach((row) => {
+    const bucket = {
+      itemId: Number(row.item_id),
+      colorId: supportsDimensions ? normalizeDimensionId(row.color_id) : null,
+      sizeId: supportsDimensions ? normalizeDimensionId(row.size_id) : null,
+      qty: Number(row.qty || 0),
+      wac: Number(row.wac || 0),
+      itemCode: row.item_code || null,
+      itemName: row.item_name,
+      baseUomId: toPositiveInt(row.base_uom_id),
+      uomCode: row.uom_code || null,
+      colorName: row.color_name || null,
+      sizeName: row.size_name || null,
+    };
+    map.set(buildRmBucketKey(bucket), bucket);
+  });
+
+  if (!bucketKeys) return map;
+  return new Map(
+    [...map.entries()].filter(([key]) => bucketKeys.includes(key)),
+  );
+};
+
 const getSystemReturnableItemIdTx = async (trx, userId = null) => {
   if (
     Number.isInteger(returnablePlaceholderItemId) &&
@@ -614,13 +714,114 @@ const validateDispatchPayloadTx = async ({
 
   const assetMap = await ensureAssetIdsExistTx(
     trx,
-    rawLines.map((line) => line?.asset_id),
+    rawLines
+      .filter((line) => normalizeLineKind(line?.entry_kind) === "ASSET")
+      .map((line) => line?.asset_id),
     req.branchId,
   );
+
+  const hasRmLines = rawLines.some(
+    (line) =>
+      normalizeLineKind(line?.entry_kind) ===
+      RETURNABLE_LINE_KINDS.rawMaterial,
+  );
+  const rmBuckets = hasRmLines
+    ? await loadRmOnHandBucketsTx(trx, req.branchId)
+    : new Map();
+
+  // When editing, this voucher's own dispatch has already moved its material out of
+  // ON_HAND. Credit that back before checking availability, otherwise re-saving an
+  // unchanged voucher fails on stock the voucher itself is holding.
+  if (hasRmLines && existingVoucherId) {
+    const alreadyDispatched = await loadPostedRmLinesTx(trx, existingVoucherId);
+    alreadyDispatched.forEach((posted) => {
+      const key = buildRmBucketKey({
+        itemId: posted.item_id,
+        colorId: posted.color_id,
+        sizeId: posted.size_id,
+      });
+      const bucket = rmBuckets.get(key);
+      if (bucket) {
+        bucket.qty = Number((bucket.qty + posted.qty).toFixed(3));
+        return;
+      }
+      rmBuckets.set(key, {
+        itemId: posted.item_id,
+        colorId: posted.color_id,
+        sizeId: posted.size_id,
+        qty: posted.qty,
+        wac: posted.unit_cost,
+        itemCode: null,
+        itemName: posted.item_name,
+        baseUomId: posted.base_uom_id,
+        uomCode: null,
+        colorName: null,
+        sizeName: null,
+      });
+    });
+  }
+
+  // A single dispatch may lend out more than one line from the same RM bucket; the
+  // availability check has to see the running total, not each line in isolation.
+  const rmQtyClaimed = new Map();
 
   const lines = [];
   for (let index = 0; index < rawLines.length; index += 1) {
     const line = rawLines[index] || {};
+    const entryKind = normalizeLineKind(line.entry_kind);
+    const qty = toQty(line.qty);
+    if (!qty)
+      throw new HttpError(
+        400,
+        `Line ${index + 1}: quantity must be greater than zero`,
+      );
+
+    if (entryKind === RETURNABLE_LINE_KINDS.rawMaterial) {
+      const bucketKey = buildRmBucketKey({
+        itemId: toPositiveInt(line.item_id),
+        colorId: normalizeDimensionId(line.color_id),
+        sizeId: normalizeDimensionId(line.size_id),
+      });
+      const bucket = rmBuckets.get(bucketKey);
+      if (!bucket) {
+        throw new HttpError(
+          400,
+          `Line ${index + 1}: selected raw material has no stock in this branch`,
+        );
+      }
+
+      const claimed = Number(rmQtyClaimed.get(bucketKey) || 0) + qty;
+      if (claimed > bucket.qty + 0.0005) {
+        throw new HttpError(
+          400,
+          `Line ${index + 1}: only ${bucket.qty} available for ${bucket.itemName}`,
+        );
+      }
+      rmQtyClaimed.set(bucketKey, claimed);
+
+      lines.push({
+        line_no: index + 1,
+        entry_kind: RETURNABLE_LINE_KINDS.rawMaterial,
+        asset_id: null,
+        asset_name: null,
+        item_id: bucket.itemId,
+        color_id: bucket.colorId,
+        size_id: bucket.sizeId,
+        uom_id: bucket.baseUomId,
+        item_type_code: null,
+        item_description:
+          normalizeText(line.item_description, 500) || bucket.itemName,
+        serial_no: null,
+        qty,
+        // Lent-out material leaves at the bucket's current WAC and returns at the
+        // same cost, so a loan never revalues stock.
+        unit_cost: bucket.wac,
+        condition_out_code: null,
+        remarks: normalizeText(line.remarks, 500),
+      });
+      continue;
+    }
+
     const assetId = toPositiveInt(line.asset_id);
     const asset = assetMap.get(Number(assetId));
     if (!asset)
@@ -637,16 +838,15 @@ const validateDispatchPayloadTx = async ({
       line.condition_out_code,
       `Line ${index + 1}: condition`,
     );
-    const qty = toQty(line.qty);
-    if (!qty)
-      throw new HttpError(
-        400,
-        `Line ${index + 1}: quantity must be greater than zero`,
-      );
     lines.push({
       line_no: index + 1,
+      entry_kind: RETURNABLE_LINE_KINDS.asset,
       asset_id: asset.id,
       asset_name: asset.description,
+      item_id: null,
+      color_id: null,
+      size_id: null,
+      uom_id: null,
       item_type_code: itemTypeCode,
       item_description:
         normalizeText(line.item_description, 500) || asset.description,
@@ -654,6 +854,7 @@ const validateDispatchPayloadTx = async ({
         normalizeText(line.serial_no, 120) ||
         normalizeText(asset.asset_code, 120),
       qty,
+      unit_cost: 0,
       condition_out_code: conditionOutCode,
       remarks: normalizeText(line.remarks, 500),
     });
@@ -764,7 +965,11 @@ const validateReceiptPayloadTx = async ({
       "vl.id",
       "vl.line_no",
       "vl.item_id",
+      "vl.uom_id",
+      "vl.rate",
+      "vl.meta",
       "rol.asset_id",
+      "rol.item_id as rm_item_id",
       "a.description as asset_name",
       "a.asset_code",
       "rol.item_type_code",
@@ -810,12 +1015,16 @@ const validateReceiptPayloadTx = async ({
     }
     seenOutwardLineIds.add(outwardLineId);
 
-    const conditionInCode = await ensureRegistryCodeExistsTx(
-      trx,
-      "erp.rgp_condition_registry",
-      line.condition_in_code,
-      `Line ${index + 1}: condition`,
-    );
+    // Raw material has no "condition on return" — that only applies to assets.
+    const isRawMaterial = Boolean(toPositiveInt(outwardLine.rm_item_id));
+    const conditionInCode = isRawMaterial
+      ? null
+      : await ensureRegistryCodeExistsTx(
+          trx,
+          "erp.rgp_condition_registry",
+          line.condition_in_code,
+          `Line ${index + 1}: condition`,
+        );
     const returnedQty = toQty(line.returned_qty);
     if (!returnedQty)
       throw new HttpError(
@@ -835,7 +1044,20 @@ const validateReceiptPayloadTx = async ({
 
     lines.push({
       line_no: index + 1,
+      entry_kind: isRawMaterial
+        ? RETURNABLE_LINE_KINDS.rawMaterial
+        : RETURNABLE_LINE_KINDS.asset,
       item_id: Number(outwardLine.item_id),
+      uom_id: toPositiveInt(outwardLine.uom_id),
+      // Returned material re-enters stock at the cost it left at, so a loan is
+      // value-neutral even if the item's WAC moved while it was out.
+      unit_cost: isRawMaterial ? Number(outwardLine.rate || 0) : 0,
+      color_id: isRawMaterial
+        ? normalizeDimensionId(outwardLine.meta?.color_id)
+        : null,
+      size_id: isRawMaterial
+        ? normalizeDimensionId(outwardLine.meta?.size_id)
+        : null,
       asset_id: Number(outwardLine.asset_id || 0) || null,
       asset_name: outwardLine.asset_name || "",
       rgp_out_voucher_line_id: outwardLineId,
@@ -868,6 +1090,202 @@ const validateReceiptPayloadTx = async ({
   };
 };
 
+const THIRD_PARTY_STOCK_STATE = "WITH_THIRD_PARTY";
+
+// Lending raw material out is a stock-state reclass inside the same branch, not a
+// disposal: the value stays in inventory so the trial balance never moves, but every
+// stock report filters stock_state = 'ON_HAND' and therefore stops counting it as
+// usable. Returning it reverses the same move at the cost it left at.
+const moveReturnableRmLinesTx = async ({
+  trx,
+  branchId,
+  lines,
+  voucherId,
+  voucherDate,
+  toThirdParty,
+}) => {
+  const rmLines = (lines || []).filter(
+    (line) =>
+      normalizeLineKind(line.entry_kind) ===
+        RETURNABLE_LINE_KINDS.rawMaterial && toPositiveInt(line.item_id),
+  );
+  if (!rmLines.length) return;
+
+  for (const line of rmLines) {
+    const bucket = {
+      branchId,
+      itemId: Number(line.item_id),
+      colorId: normalizeDimensionId(line.color_id),
+      sizeId: normalizeDimensionId(line.size_id),
+    };
+    await moveRmStockTx({
+      trx,
+      fromIdentity: buildRmStockIdentity({
+        ...bucket,
+        stockState: toThirdParty ? "ON_HAND" : THIRD_PARTY_STOCK_STATE,
+      }),
+      toIdentity: buildRmStockIdentity({
+        ...bucket,
+        stockState: toThirdParty ? THIRD_PARTY_STOCK_STATE : "ON_HAND",
+      }),
+      qty: line.qty,
+      unitCostBase: line.unit_cost,
+      voucherId,
+      voucherLineId: line.voucher_line_id || null,
+      voucherDate,
+    });
+  }
+};
+
+// Reads back the RM lines already posted by a dispatch/receipt so its stock effect can
+// be reversed before the voucher is rewritten or removed.
+const loadPostedRmLinesTx = async (trx, voucherId) => {
+  const rows = await trx("erp.voucher_line as vl")
+    .join("erp.rgp_outward_line as rol", "rol.voucher_line_id", "vl.id")
+    .join("erp.items as i", "i.id", "rol.item_id")
+    .select(
+      "vl.id as voucher_line_id",
+      "vl.rate",
+      "vl.meta",
+      "rol.item_id",
+      "rol.qty",
+      "i.name as item_name",
+      "i.base_uom_id",
+    )
+    .where("vl.voucher_header_id", voucherId)
+    .whereNotNull("rol.item_id");
+
+  return rows.map((row) => ({
+    entry_kind: RETURNABLE_LINE_KINDS.rawMaterial,
+    voucher_line_id: Number(row.voucher_line_id),
+    item_id: Number(row.item_id),
+    color_id: normalizeDimensionId(row.meta?.color_id),
+    size_id: normalizeDimensionId(row.meta?.size_id),
+    qty: Number(row.qty || 0),
+    unit_cost: Number(row.rate || 0),
+    item_name: row.item_name,
+    base_uom_id: toPositiveInt(row.base_uom_id),
+  }));
+};
+
+// Shared by the direct-save and approval-apply paths so both write an identical row.
+// Asset lines keep the inactive placeholder item they always used; RM lines point at
+// the real item and carry the cost they left stock at, which is what the matching
+// receipt reads back to return them at the same value.
+const buildDispatchVoucherLineRow = ({
+  voucherHeaderId,
+  line,
+  placeholderItemId,
+}) => {
+  const isRawMaterial =
+    normalizeLineKind(line.entry_kind) === RETURNABLE_LINE_KINDS.rawMaterial;
+  const unitCost = isRawMaterial ? Number(line.unit_cost || 0) : 0;
+
+  return {
+    voucher_header_id: voucherHeaderId,
+    line_no: line.line_no,
+    line_kind: "ITEM",
+    item_id: isRawMaterial ? Number(line.item_id) : placeholderItemId,
+    sku_id: null,
+    account_id: null,
+    party_id: null,
+    labour_id: null,
+    employee_id: null,
+    uom_id: isRawMaterial ? line.uom_id || null : null,
+    qty: line.qty,
+    rate: unitCost,
+    amount: Number((Number(line.qty || 0) * unitCost).toFixed(2)),
+    reference_no: null,
+    meta: {
+      entry_kind: isRawMaterial
+        ? RETURNABLE_LINE_KINDS.rawMaterial
+        : RETURNABLE_LINE_KINDS.asset,
+      asset_id: line.asset_id,
+      asset_name: line.asset_name,
+      item_description: line.item_description,
+      serial_no: line.serial_no,
+      condition_out_code: line.condition_out_code,
+      returnable: true,
+      ...(isRawMaterial
+        ? {
+            item_id: Number(line.item_id),
+            color_id: line.color_id || null,
+            size_id: line.size_id || null,
+          }
+        : {}),
+    },
+  };
+};
+
+// Receipt lines have no rgp_outward_line row of their own, so their RM identity is
+// read back from the meta written at insert time.
+const loadPostedReceiptRmLinesTx = async (trx, voucherId) => {
+  const rows = await trx("erp.voucher_line")
+    .select("id as voucher_line_id", "item_id", "qty", "rate", "meta")
+    .where({ voucher_header_id: voucherId });
+
+  return rows
+    .filter(
+      (row) =>
+        normalizeLineKind(row.meta?.entry_kind) ===
+        RETURNABLE_LINE_KINDS.rawMaterial,
+    )
+    .map((row) => ({
+      entry_kind: RETURNABLE_LINE_KINDS.rawMaterial,
+      voucher_line_id: Number(row.voucher_line_id),
+      item_id: Number(row.item_id),
+      color_id: normalizeDimensionId(row.meta?.color_id),
+      size_id: normalizeDimensionId(row.meta?.size_id),
+      qty: Number(row.qty || 0),
+      unit_cost: Number(row.rate || 0),
+    }));
+};
+
+// Undoes a voucher's stock effect before it is rewritten or removed. A dispatch is
+// undone by bringing the material back on hand; a receipt by sending it back out.
+const reverseReturnableRmPostingTx = async ({
+  trx,
+  voucherId,
+  voucherTypeCode,
+  branchId,
+  voucherDate,
+}) => {
+  const isDispatch = voucherTypeCode === RETURNABLE_VOUCHER_TYPES.dispatch;
+  const lines = isDispatch
+    ? await loadPostedRmLinesTx(trx, voucherId)
+    : await loadPostedReceiptRmLinesTx(trx, voucherId);
+  if (!lines.length) return;
+
+  await moveReturnableRmLinesTx({
+    trx,
+    branchId,
+    lines,
+    voucherId,
+    voucherDate,
+    toThirdParty: !isDispatch,
+  });
+};
+
+const buildOutwardLineRow = (line, lineIdMap) => ({
+  voucher_line_id: lineIdMap.get(Number(line.line_no)),
+  asset_id: line.asset_id,
+  item_id: line.item_id || null,
+  item_type_code: line.item_type_code,
+  item_description: line.item_description,
+  serial_no: line.serial_no,
+  qty: line.qty,
+  condition_out_code: line.condition_out_code,
+  remarks: line.remarks,
+});
+
+// The stock move needs the voucher_line id for its ledger rows, which only exists
+// after the lines are inserted.
+const attachVoucherLineIds = (lines, lineIdMap) =>
+  lines.map((line) => ({
+    ...line,
+    voucher_line_id: lineIdMap.get(Number(line.line_no)) || null,
+  }));
+
 const insertDispatchVoucherTx = async ({
   trx,
   branchId,
@@ -898,30 +1316,13 @@ const insertDispatchVoucherTx = async ({
     })
     .returning(["id", "voucher_no", "status"]);
 
-  const voucherLineRows = validated.lines.map((line) => ({
-    voucher_header_id: header.id,
-    line_no: line.line_no,
-    line_kind: "ITEM",
-    item_id: placeholderItemId,
-    sku_id: null,
-    account_id: null,
-    party_id: null,
-    labour_id: null,
-    employee_id: null,
-    uom_id: null,
-    qty: line.qty,
-    rate: 0,
-    amount: 0,
-    reference_no: null,
-    meta: {
-      asset_id: line.asset_id,
-      asset_name: line.asset_name,
-      item_description: line.item_description,
-      serial_no: line.serial_no,
-      condition_out_code: line.condition_out_code,
-      returnable: true,
-    },
-  }));
+  const voucherLineRows = validated.lines.map((line) =>
+    buildDispatchVoucherLineRow({
+      voucherHeaderId: header.id,
+      line,
+      placeholderItemId,
+    }),
+  );
 
   const insertedVoucherLines = await trx("erp.voucher_line")
     .insert(voucherLineRows)
@@ -939,22 +1340,66 @@ const insertDispatchVoucherTx = async ({
   });
 
   await trx("erp.rgp_outward_line").insert(
-    validated.lines.map((line) => ({
-      voucher_line_id: lineIdMap.get(Number(line.line_no)),
-      asset_id: line.asset_id,
-      item_type_code: line.item_type_code,
-      item_description: line.item_description,
-      serial_no: line.serial_no,
-      qty: line.qty,
-      condition_out_code: line.condition_out_code,
-      remarks: line.remarks,
-    })),
+    validated.lines.map((line) => buildOutwardLineRow(line, lineIdMap)),
   );
+
+  if (approved) {
+    await moveReturnableRmLinesTx({
+      trx,
+      branchId,
+      lines: attachVoucherLineIds(validated.lines, lineIdMap),
+      voucherId: header.id,
+      voucherDate: validated.voucherDate,
+      toThirdParty: true,
+    });
+  }
 
   return {
     id: header.id,
     voucherNo: Number(header.voucher_no),
     status: header.status,
+  };
+};
+
+const buildReceiptVoucherLineRow = (voucherHeaderId, line) => {
+  const isRawMaterial =
+    normalizeLineKind(line.entry_kind) === RETURNABLE_LINE_KINDS.rawMaterial;
+  const unitCost = isRawMaterial ? Number(line.unit_cost || 0) : 0;
+
+  return {
+    voucher_header_id: voucherHeaderId,
+    line_no: line.line_no,
+    line_kind: "ITEM",
+    item_id: line.item_id,
+    sku_id: null,
+    account_id: null,
+    party_id: null,
+    labour_id: null,
+    employee_id: null,
+    uom_id: isRawMaterial ? line.uom_id || null : null,
+    qty: line.returned_qty,
+    rate: unitCost,
+    amount: Number((Number(line.returned_qty || 0) * unitCost).toFixed(2)),
+    reference_no: null,
+    meta: {
+      entry_kind: isRawMaterial
+        ? RETURNABLE_LINE_KINDS.rawMaterial
+        : RETURNABLE_LINE_KINDS.asset,
+      asset_id: line.asset_id,
+      asset_name: line.asset_name,
+      item_description: line.item_description,
+      rgp_out_voucher_line_id: line.rgp_out_voucher_line_id,
+      condition_in_code: line.condition_in_code,
+      short_excess_qty: line.short_excess_qty,
+      returnable: true,
+      ...(isRawMaterial
+        ? {
+            item_id: Number(line.item_id),
+            color_id: line.color_id || null,
+            size_id: line.size_id || null,
+          }
+        : {}),
+    },
   };
 };
 
@@ -987,32 +1432,15 @@ const insertReceiptVoucherTx = async ({
     })
     .returning(["id", "voucher_no", "status"]);
 
-  await trx("erp.voucher_line").insert(
-    validated.lines.map((line) => ({
-      voucher_header_id: header.id,
-      line_no: line.line_no,
-      line_kind: "ITEM",
-      item_id: line.item_id,
-      sku_id: null,
-      account_id: null,
-      party_id: null,
-      labour_id: null,
-      employee_id: null,
-      uom_id: null,
-      qty: line.returned_qty,
-      rate: 0,
-      amount: 0,
-      reference_no: null,
-      meta: {
-        asset_id: line.asset_id,
-        asset_name: line.asset_name,
-        item_description: line.item_description,
-        rgp_out_voucher_line_id: line.rgp_out_voucher_line_id,
-        condition_in_code: line.condition_in_code,
-        short_excess_qty: line.short_excess_qty,
-        returnable: true,
-      },
-    })),
+  const insertedReceiptLines = await trx("erp.voucher_line")
+    .insert(
+      validated.lines.map((line) =>
+        buildReceiptVoucherLineRow(header.id, line),
+      ),
+    )
+    .returning(["id", "line_no"]);
+  const receiptLineIdMap = new Map(
+    insertedReceiptLines.map((row) => [Number(row.line_no), Number(row.id)]),
   );
 
   await trx("erp.rgp_inward").insert({
@@ -1032,6 +1460,20 @@ const insertReceiptVoucherTx = async ({
   );
 
   await syncOutwardStatusTx(trx, validated.outwardVoucherId);
+
+  if (approved) {
+    await moveReturnableRmLinesTx({
+      trx,
+      branchId,
+      lines: attachVoucherLineIds(
+        validated.lines.map((line) => ({ ...line, qty: line.returned_qty })),
+        receiptLineIdMap,
+      ),
+      voucherId: header.id,
+      voucherDate: validated.returnDate,
+      toThirdParty: false,
+    });
+  }
 
   return {
     id: header.id,
@@ -1151,6 +1593,7 @@ const loadReturnableVoucherOptions = async (req) => {
       .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
       .join("erp.rgp_outward_line as rol", "rol.voucher_line_id", "vl.id")
       .leftJoin("erp.assets as a", "a.id", "rol.asset_id")
+      .leftJoin("erp.items as itm", "itm.id", "rol.item_id")
       .leftJoin(
         knex("erp.rgp_inward_line as ril")
           .join(
@@ -1176,6 +1619,8 @@ const loadReturnableVoucherOptions = async (req) => {
         "rol.asset_id",
         outwardAssetNameSelect,
         "a.asset_code as asset_code",
+        "rol.item_id",
+        "itm.name as rm_item_name",
         "rol.item_type_code",
         "rol.item_description",
         "rol.qty as sent_qty",
@@ -1193,12 +1638,30 @@ const loadReturnableVoucherOptions = async (req) => {
       .orderBy("vl.line_no", "asc"),
   ]);
 
+  // Only buckets that actually hold stock can be lent out, so the picker is driven by
+  // the ON_HAND balance rather than the raw-material master.
+  const rmStockBuckets = [...(await loadRmOnHandBucketsTx(knex, req.branchId))
+    .values()]
+    .map((bucket) => ({
+      item_id: bucket.itemId,
+      color_id: bucket.colorId,
+      size_id: bucket.sizeId,
+      item_code: bucket.itemCode,
+      name: bucket.itemName,
+      uom_code: bucket.uomCode,
+      color_name: bucket.colorName,
+      size_name: bucket.sizeName,
+      available_qty: bucket.qty,
+    }))
+    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+
   return {
     vendors,
     reasons,
     conditions,
     itemTypes,
     assets,
+    rmStockBuckets,
     openOutwards,
     openOutwardLines,
   };
@@ -1320,12 +1783,18 @@ const loadDispatchDetailsTx = async ({ trx, req, voucherNo }) => {
   const lines = await trx("erp.voucher_line as vl")
     .join("erp.rgp_outward_line as rol", "rol.voucher_line_id", "vl.id")
     .leftJoin("erp.assets as a", "a.id", "rol.asset_id")
+    .leftJoin("erp.items as itm", "itm.id", "rol.item_id")
+    .leftJoin("erp.uom as u", "u.id", "vl.uom_id")
     .select(
       "vl.id as voucher_line_id",
       "vl.line_no",
+      "vl.meta",
       "rol.asset_id",
       "a.asset_code",
       "a.description as asset_name",
+      "rol.item_id",
+      "itm.name as rm_item_name",
+      "u.code as uom_code",
       "rol.item_type_code",
       "rol.item_description",
       "rol.serial_no",
@@ -1362,6 +1831,10 @@ const loadDispatchDetailsTx = async ({ trx, req, voucherNo }) => {
       );
       return {
         ...line,
+        // Colour/size live in meta (the same convention purchases use for RM lines);
+        // surface them flat so the form can re-select the exact stock bucket.
+        color_id: normalizeDimensionId(line.meta?.color_id),
+        size_id: normalizeDimensionId(line.meta?.size_id),
         returned_qty: returnedQty,
         pending_qty: pendingQty,
       };
@@ -1408,12 +1881,15 @@ const loadReceiptDetailsTx = async ({ trx, req, voucherNo }) => {
     .join("erp.voucher_line as ovl", "ovl.id", "ril.rgp_out_voucher_line_id")
     .join("erp.rgp_outward_line as rol", "rol.voucher_line_id", "ovl.id")
     .leftJoin("erp.assets as a", "a.id", "rol.asset_id")
+    .leftJoin("erp.items as itm", "itm.id", "rol.item_id")
     .select(
       "ril.id",
       "ril.rgp_out_voucher_line_id",
       "rol.asset_id",
       "a.asset_code",
       "a.description as asset_name",
+      "rol.item_id",
+      "itm.name as rm_item_name",
       "ovl.line_no as outward_line_no",
       "rol.item_type_code",
       "rol.item_description",
@@ -1880,6 +2356,16 @@ const applyReturnableVoucherUpdatePayloadTx = async ({
       trx,
       approverId || req?.user?.id || null,
     );
+    // Undo the stock this voucher had lent out before its lines are replaced; the
+    // new lines post their own movement below.
+    await reverseReturnableRmPostingTx({
+      trx,
+      voucherId: normalizedVoucherId,
+      voucherTypeCode: RETURNABLE_VOUCHER_TYPES.dispatch,
+      branchId: req.branchId,
+      voucherDate: validated.voucherDate,
+    });
+
     await trx("erp.rgp_outward_line")
       .whereIn(
         "voucher_line_id",
@@ -1902,30 +2388,13 @@ const applyReturnableVoucherUpdatePayloadTx = async ({
 
     const insertedLines = await trx("erp.voucher_line")
       .insert(
-        validated.lines.map((line) => ({
-          voucher_header_id: normalizedVoucherId,
-          line_no: line.line_no,
-          line_kind: "ITEM",
-          item_id: placeholderItemId,
-          sku_id: null,
-          account_id: null,
-          party_id: null,
-          labour_id: null,
-          employee_id: null,
-          uom_id: null,
-          qty: line.qty,
-          rate: 0,
-          amount: 0,
-          reference_no: null,
-          meta: {
-            asset_id: line.asset_id,
-            asset_name: line.asset_name,
-            item_description: line.item_description,
-            serial_no: line.serial_no,
-            condition_out_code: line.condition_out_code,
-            returnable: true,
-          },
-        })),
+        validated.lines.map((line) =>
+          buildDispatchVoucherLineRow({
+            voucherHeaderId: normalizedVoucherId,
+            line,
+            placeholderItemId,
+          }),
+        ),
       )
       .returning(["id", "line_no"]);
     const lineIdMap = new Map(
@@ -1941,17 +2410,16 @@ const applyReturnableVoucherUpdatePayloadTx = async ({
       });
 
     await trx("erp.rgp_outward_line").insert(
-      validated.lines.map((line) => ({
-        voucher_line_id: lineIdMap.get(Number(line.line_no)),
-        asset_id: line.asset_id,
-        item_type_code: line.item_type_code,
-        item_description: line.item_description,
-        serial_no: line.serial_no,
-        qty: line.qty,
-        condition_out_code: line.condition_out_code,
-        remarks: line.remarks,
-      })),
+      validated.lines.map((line) => buildOutwardLineRow(line, lineIdMap)),
     );
+    await moveReturnableRmLinesTx({
+      trx,
+      branchId: req.branchId,
+      lines: attachVoucherLineIds(validated.lines, lineIdMap),
+      voucherId: normalizedVoucherId,
+      voucherDate: validated.voucherDate,
+      toThirdParty: true,
+    });
     await syncOutwardStatusTx(trx, normalizedVoucherId);
     return;
   }
@@ -1964,6 +2432,16 @@ const applyReturnableVoucherUpdatePayloadTx = async ({
   await trx("erp.rgp_inward_line")
     .where({ rgp_in_voucher_id: normalizedVoucherId })
     .del();
+
+  // Send back out whatever this receipt had returned, before its lines are replaced.
+  await reverseReturnableRmPostingTx({
+    trx,
+    voucherId: normalizedVoucherId,
+    voucherTypeCode: RETURNABLE_VOUCHER_TYPES.receipt,
+    branchId: req.branchId,
+    voucherDate: validated.returnDate,
+  });
+
   await trx("erp.voucher_line")
     .where({ voucher_header_id: normalizedVoucherId })
     .del();
@@ -1976,33 +2454,28 @@ const applyReturnableVoucherUpdatePayloadTx = async ({
     remarks: validated.remarks,
   });
 
-  await trx("erp.voucher_line").insert(
-    validated.lines.map((line) => ({
-      voucher_header_id: normalizedVoucherId,
-      line_no: line.line_no,
-      line_kind: "ITEM",
-      item_id: line.item_id,
-      sku_id: null,
-      account_id: null,
-      party_id: null,
-      labour_id: null,
-      employee_id: null,
-      uom_id: null,
-      qty: line.returned_qty,
-      rate: 0,
-      amount: 0,
-      reference_no: null,
-      meta: {
-        asset_id: line.asset_id,
-        asset_name: line.asset_name,
-        item_description: line.item_description,
-        rgp_out_voucher_line_id: line.rgp_out_voucher_line_id,
-        condition_in_code: line.condition_in_code,
-        short_excess_qty: line.short_excess_qty,
-        returnable: true,
-      },
-    })),
+  const insertedReceiptLines = await trx("erp.voucher_line")
+    .insert(
+      validated.lines.map((line) =>
+        buildReceiptVoucherLineRow(normalizedVoucherId, line),
+      ),
+    )
+    .returning(["id", "line_no"]);
+  const receiptLineIdMap = new Map(
+    insertedReceiptLines.map((row) => [Number(row.line_no), Number(row.id)]),
   );
+
+  await moveReturnableRmLinesTx({
+    trx,
+    branchId: req.branchId,
+    lines: attachVoucherLineIds(
+      validated.lines.map((line) => ({ ...line, qty: line.returned_qty })),
+      receiptLineIdMap,
+    ),
+    voucherId: normalizedVoucherId,
+    voucherDate: validated.returnDate,
+    toThirdParty: false,
+  });
 
   await trx("erp.rgp_inward")
     .where({ voucher_id: normalizedVoucherId })
@@ -2040,7 +2513,7 @@ const applyReturnableVoucherDeletePayloadTx = async ({
   if (!normalizedVoucherId) throw new Error("Invalid voucher id");
 
   const header = await trx("erp.voucher_header")
-    .select("id", "voucher_type_code", "status")
+    .select("id", "voucher_type_code", "status", "branch_id", "voucher_date")
     .where({ id: normalizedVoucherId })
     .first();
   if (!header) throw new Error("Voucher not found during delete apply");
@@ -2069,6 +2542,17 @@ const applyReturnableVoucherDeletePayloadTx = async ({
       .where({ voucher_id: normalizedVoucherId })
       .first();
     outwardVoucherIdToSync = Number(inward?.rgp_out_voucher_id || 0) || null;
+  }
+
+  // Deleting is a soft reject, so the stock it moved has to be moved back.
+  if (String(header.status || "").toUpperCase() === "APPROVED") {
+    await reverseReturnableRmPostingTx({
+      trx,
+      voucherId: normalizedVoucherId,
+      voucherTypeCode: resolvedType,
+      branchId: Number(header.branch_id),
+      voucherDate: toDateOnly(header.voucher_date),
+    });
   }
 
   await trx("erp.voucher_header").where({ id: normalizedVoucherId }).update({

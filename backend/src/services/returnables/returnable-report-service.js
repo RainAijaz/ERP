@@ -286,6 +286,7 @@ const loadControlRows = async ({ filters }) => {
     .join("erp.rgp_outward as ro", "ro.voucher_id", "ovh.id")
     .join("erp.parties as p", "p.id", "ro.vendor_party_id")
     .leftJoin("erp.assets as a", "a.id", "rol.asset_id")
+    .leftJoin("erp.items as itm", "itm.id", "rol.item_id")
     .leftJoin("erp.branches as b", "b.id", "ovh.branch_id")
     .leftJoin(returnAggSubQuery, "ret.rgp_out_voucher_line_id", "ovl.id")
     .select(
@@ -303,7 +304,8 @@ const loadControlRows = async ({ filters }) => {
       "rol.asset_id",
       knex.raw("COALESCE(a.asset_code, '') as asset_code"),
       knex.raw(
-        "COALESCE(a.name, a.description, rol.item_description, '') as asset_name",
+        // Raw-material lines have no asset, so the item name identifies them.
+        "COALESCE(a.name, a.description, itm.name, rol.item_description, '') as asset_name",
       ),
       "rol.item_description",
       "rol.qty as sent_qty",

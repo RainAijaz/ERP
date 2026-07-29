@@ -44,7 +44,16 @@
       ],
       cellValue: (line, column, rowIndex) => {
         if (column.key === "sr_no") return rowIndex + 1;
-        if (column.key === "qty") return formatNumberDisplay(line?.qty || 0, { decimals: 3, fallback: "0" });
+        if (column.key === "qty") {
+          const qty = formatNumberDisplay(line?.qty || 0, { decimals: 3, fallback: "0" });
+          // Raw material is measured, so the unit matters on the gate pass.
+          return line?.item_id && line?.uom_code ? `${qty} ${line.uom_code}` : qty;
+        }
+        // Raw-material lines have no asset and no asset type / dispatch condition.
+        if (column.key === "asset_name") {
+          return line?.asset_name || line?.rm_item_name || line?.item_description || "-";
+        }
+        if (column.key === "item_type_code" && line?.item_id) return t("raw_material");
         return line?.[column.key] || "-";
       },
     };
