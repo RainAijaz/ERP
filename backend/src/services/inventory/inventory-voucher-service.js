@@ -1766,13 +1766,18 @@ const createApprovalRequest = async ({
   // De-dupe: a voucher must never accumulate more than one PENDING approval.
   // If one already exists (e.g. re-editing a still-pending Physical Count
   // Correction), refresh it in place instead of stacking a duplicate.
+  //
+  // The maker is NOT rewritten on a refresh: whoever raised the request stays
+  // its requester. An approver correcting the pending voucher must not become
+  // the requester -- that misreports who asked for the change and, via the
+  // maker != checker CHECK, would lock that approver out of ever deciding it.
+  // old_value likewise keeps the state as at first submission, so the reviewer
+  // still sees the full original -> proposed diff after several edits.
   const existingPending = await findPendingVoucherApprovalTx(trx, voucherId);
   const approvalUpdatePayload = {
     summary,
-    old_value: oldValue,
+    old_value: existingPending?.old_value ?? oldValue,
     new_value: newValue,
-    requested_by: req.user.id,
-    requested_at: trx.fn.now(),
   };
 
   if (await hasApprovalRequestVoucherTypeCodeColumnTx(trx)) {
@@ -1823,6 +1828,10 @@ const createApprovalRequest = async ({
       summary,
       source: "inventory-voucher-service",
       new_value: newValue,
+      // approval_request has no "last edited by" column, so the audit trail is
+      // the only record that someone other than the maker touched the request.
+      refreshed_existing_request: Boolean(existingPending),
+      requested_by: existingPending?.requested_by ?? req.user.id,
     },
   });
 
@@ -4046,6 +4055,45 @@ const updateStockCountAdjustmentVoucher = async ({
         }),
       });
 
+      // A voucher that is still PENDING has never posted stock or GL (the
+      // create/approve paths are the only writers, and both flip the status),
+      // so the edit is written straight onto it as a DRAFT. Without this the
+      // change hid inside approval_request.new_value and the voucher screen
+      // kept showing the pre-edit numbers, which reads as "my edit did
+      // nothing, it just made another approval". Re-saving also re-runs the
+      // System Qty snapshot in validateStockCountAdjustmentPayloadTx, so a
+      // count sitting in the queue picks up stock movements booked since it
+      // was raised. Status/approved_* are untouched: only the Approvals page
+      // posts it.
+      // `!canEdit` means the save is a change REQUEST from someone without edit
+      // rights -- their values stay in the approval payload only.
+      const draftApplied = canEdit && existing.status === "PENDING";
+      if (draftApplied) {
+        await trx("erp.voucher_header").where({ id: existing.id }).update({
+          voucher_date: validated.voucherDate,
+          book_no: null,
+          remarks: validated.remarks,
+        });
+
+        await trx("erp.voucher_line")
+          .where({ voucher_header_id: existing.id })
+          .del();
+        await insertVoucherLinesTx({
+          trx,
+          voucherId: existing.id,
+          lines: validated.lines,
+        });
+
+        await upsertStockCountAdjustmentExtensionsTx({
+          trx,
+          voucherId: existing.id,
+          stockType: validated.stockType,
+          reasonCodeId: validated.reasonCodeId,
+          reasonNotes: validated.reasonNotes,
+          lines: validated.lines,
+        });
+      }
+
       return {
         id: existing.id,
         voucherNo: existing.voucher_no,
@@ -4057,6 +4105,7 @@ const updateStockCountAdjustmentVoucher = async ({
           negativeStockRouting.negativeStockApprovalReroute,
         approvalReason: negativeStockRouting.approvalReason,
         updated: false,
+        draftApplied,
       };
     }
 

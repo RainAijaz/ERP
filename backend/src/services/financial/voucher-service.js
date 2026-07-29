@@ -875,12 +875,13 @@ const createApprovalRequest = async ({
   const existingPending = await findPendingVoucherApprovalTx(trx, voucherId);
   let row;
   if (existingPending) {
+    // requested_by/_at are deliberately left alone: refreshing a request must
+    // not transfer authorship to whoever edited it (and, via the
+    // maker != checker CHECK, lock an approver out of deciding it).
     await trx("erp.approval_request").where({ id: existingPending.id }).update({
       summary,
       old_value: oldValue,
       new_value: newValue,
-      requested_by: req.user.id,
-      requested_at: trx.fn.now(),
     });
     row = { id: existingPending.id };
   } else {

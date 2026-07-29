@@ -216,10 +216,13 @@ router.post("/", async (req, res, next) => {
           const reasonLabel = res.locals.t("reason") ;
           msg = `${msg} ${reasonLabel}: ${approvalReason}`;
         }
+      } else if (saved.permissionReroute) {
+        msg = res.locals.t("approval_sent");
+      } else if (saved.draftApplied) {
+        // The voucher now carries the edited lines/counts; only posting waits.
+        msg = res.locals.t("pending_voucher_draft_saved");
       } else {
-        msg = saved.permissionReroute
-          ? res.locals.t("approval_sent") 
-          : res.locals.t("approval_submitted");
+        msg = res.locals.t("approval_submitted");
       }
       setNotice(res, msg, true);
     } else {

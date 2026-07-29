@@ -57,6 +57,8 @@ const translations = {
       "Change request sent for approval. It will be applied once reviewed.",
     approval_sent_negative_stock:
       "Insufficient stock would make inventory negative. Voucher has been submitted for Administrator approval.",
+    pending_voucher_draft_saved:
+      "Changes saved on the pending voucher. It still needs approval from the Approvals page before it posts.",
     notice: "Notice",
     approval_approved: "Approval request approved.",
     approval_rejected: "Approval request rejected.",
@@ -2065,6 +2067,8 @@ translations.ur = {
     "منظوری کی درخواست جمع ہو گئی ہے۔ منظوری کے بعد تبدیلی لاگو ہوگی۔",
   approval_sent:
     "تبدیلی کی درخواست منظوری کے لیے بھیج دی گئی ہے۔ منظوری کے بعد لاگو ہوگی۔",
+  pending_voucher_draft_saved:
+    "تبدیلیاں زیرِ التوا واؤچر پر محفوظ ہو گئی ہیں۔ پوسٹ ہونے کے لیے منظوری کے صفحے سے منظوری درکار ہے۔",
   notice: "اطلاع",
   approval_approved: "منظوری کی درخواست منظور ہو گئی ہے۔",
   approval_rejected: "منظوری کی درخواست مسترد کر دی گئی ہے۔",

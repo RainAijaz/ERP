@@ -257,12 +257,13 @@ const createApprovalRequestTx = async ({
   // De-dupe: a voucher must never accumulate more than one PENDING approval.
   // Refresh an existing pending row in place instead of stacking a duplicate.
   const existingPending = await findPendingVoucherApprovalTx(trx, entityId);
+  // requested_by/_at are deliberately left alone: refreshing a request must not
+  // transfer authorship to whoever edited it (and, via the maker != checker
+  // CHECK, lock an approver out of deciding it).
   const updatePayload = {
     summary,
     old_value: oldValue,
     new_value: newValue,
-    requested_by: req.user.id,
-    requested_at: trx.fn.now(),
   };
 
   if (await hasApprovalRequestVoucherTypeCodeColumnTx(trx)) {

@@ -272,6 +272,9 @@ const getApprovalsForVoucher = async (voucherId) => {
       "decided_by",
       "decided_at",
       "summary",
+      "requested_at",
+      "old_value",
+      "new_value",
     )
     .where({ entity_type: "VOUCHER", entity_id: String(id) })
     .orderBy("id", "asc");
@@ -410,6 +413,40 @@ const getTwoOpenReturnableOutwardReferencesForSameVendor = async ({
   }
 
   return [];
+};
+
+// Voucher lines joined to their stock-count extension row, so a test can see
+// both what was saved (qty) and the System Qty snapshot taken at save time.
+const getStockCountLinesForVoucher = async (voucherId) => {
+  const id = Number(voucherId || 0);
+  if (!id) return [];
+  return knex("erp.voucher_line as vl")
+    .leftJoin("erp.stock_count_line as scl", "scl.voucher_line_id", "vl.id")
+    .select(
+      "vl.id",
+      "vl.line_no",
+      "vl.sku_id",
+      "vl.qty",
+      "scl.system_qty_snapshot",
+      "scl.physical_qty",
+      // FG counts live in the *_pairs columns; the non-pairs ones stay 0 there.
+      "scl.system_qty_pairs_snapshot",
+      "scl.physical_qty_pairs",
+    )
+    .where("vl.voucher_header_id", id)
+    .orderBy("vl.line_no", "asc");
+};
+
+// Stock postings are the proof a voucher actually posted; a PENDING voucher
+// must have none.
+const countStockLedgerRowsForVoucher = async (voucherId) => {
+  const id = Number(voucherId || 0);
+  if (!id) return 0;
+  const row = await knex("erp.stock_ledger")
+    .where({ voucher_header_id: id })
+    .count({ count: "*" })
+    .first();
+  return Number(row?.count || 0);
 };
 
 const getVoucherLineCount = async (voucherId) => {
@@ -2528,6 +2565,8 @@ module.exports = {
   getLatestOpenReturnableOutwardReference,
   getTwoOpenReturnableOutwardReferencesForSameVendor,
   getVoucherLineCount,
+  getStockCountLinesForVoucher,
+  countStockLedgerRowsForVoucher,
   getPurchaseAllocationCountByVoucher,
   setVariantSaleRate,
   findVariantsBySaleRate,
