@@ -10,6 +10,37 @@
     if (String(row?.entity_id || "").trim().toUpperCase() === "NEW") return "create";
     return "update";
   };
+  // Approval timestamps are rendered in the reporting time zone so the date and
+  // time cells can never disagree across a midnight boundary (mirrors audit logs).
+  const APPROVAL_TIME_ZONE =
+    String(process.env.ERP_REPORT_TIME_ZONE || process.env.TZ || "Asia/Karachi").trim() ||
+    "Asia/Karachi";
+  const APPROVAL_DATE_FORMATTER = new Intl.DateTimeFormat("en-GB", {
+    timeZone: APPROVAL_TIME_ZONE,
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+  const APPROVAL_TIME_FORMATTER = new Intl.DateTimeFormat("en-GB", {
+    timeZone: APPROVAL_TIME_ZONE,
+    hour: "2-digit",
+    minute: "2-digit",
+    // hourCycle (not hour12) — en-GB + hour12 renders midnight/noon as "00:41 am".
+    hourCycle: "h12",
+  });
+  const toStamp = (value) => {
+    if (!value) return null;
+    const dt = new Date(value);
+    return Number.isNaN(dt.getTime()) ? null : dt;
+  };
+  const formatStampDate = (value) => {
+    const dt = toStamp(value);
+    return dt ? APPROVAL_DATE_FORMATTER.format(dt).replace(/\//g, "-") : "-";
+  };
+  const formatStampTime = (value) => {
+    const dt = toStamp(value);
+    return dt ? APPROVAL_TIME_FORMATTER.format(dt) : "-";
+  };
   const currentPage = Number(paging?.currentPage || 1);
   const totalPages = Number(paging?.totalPages || 1);
   const hasPrevPage = currentPage > 1;
@@ -50,6 +81,7 @@
       <thead class="bg-slate-50 text-xs font-semibold uppercase text-slate-500">
         <tr>
           <th class="px-6 py-3"><%= t("date") %></th>
+          <th class="px-6 py-3"><%= t("time") %></th>
           <th class="px-6 py-3"><%= t("requester") %></th>
           <th class="px-6 py-3"><%= t("summary") %></th>
           <th class="px-6 py-3"><%= t("details")  %></th>
@@ -61,14 +93,17 @@
       </thead>
       <tbody class="divide-y divide-slate-100">
         <% if (rows.length === 0) { %>
-           <tr><td colspan="<%= canApproveRequests ? 6 : 5 %>" class="p-6 text-center text-slate-400"><%= t("no_entries") %></td></tr>
+           <tr><td colspan="<%= canApproveRequests ? 7 : 6 %>" class="p-6 text-center text-slate-400"><%= t("no_entries") %></td></tr>
         <% } %>
         
         <% rows.forEach(row => { %>
           <% const actionType = getAction(row); %>
           <tr class="hover:bg-slate-50">
-            <td class="px-6 py-4 text-slate-600">
-              <%= new Date(row.requested_at).toLocaleDateString() %>
+            <td class="px-6 py-4 text-slate-600 whitespace-nowrap">
+              <%= formatStampDate(row.requested_at) %>
+            </td>
+            <td class="px-6 py-4 text-slate-600 whitespace-nowrap tabular-nums">
+              <%= formatStampTime(row.requested_at) %>
             </td>
             <td class="px-6 py-4 font-medium text-slate-900">
               <%= row.requester_name %>
@@ -124,8 +159,8 @@
                     </form>
                   </div>
                 <% } else { %>
-                   <span class="text-xs text-slate-400">
-                     <%= row.decided_at ? new Date(row.decided_at).toLocaleDateString() : '' %>
+                   <span class="text-xs text-slate-400 whitespace-nowrap">
+                     <%= row.decided_at ? `${formatStampDate(row.decided_at)} ${formatStampTime(row.decided_at)}` : '' %>
                    </span>
                 <% } %>
               </td>
