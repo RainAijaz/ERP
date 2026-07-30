@@ -21,6 +21,9 @@ const {
   ALL_LABOURS_VALUE,
 } = require("../services/hr-payroll/labour-rates-service");
 const {
+  applyCopy: applyLabourRateCopy,
+} = require("../services/hr-payroll/labour-rate-copy-service");
+const {
   applyItemLifecycleToggleTx,
 } = require("../services/products/item-lifecycle-service");
 const { generateUniqueCode } = require("./entity-code");
@@ -1296,6 +1299,7 @@ const inferHrTarget = ({ entityType, request, newValue, oldValue }) => {
 
   if (mode === "BULK_COMMISSION_SKU_UPSERT" || mode === "SKU_MULTI_UPSERT")
     return "bulk_commission";
+  if (mode === "BULK_LABOUR_RATE_COPY") return "bulk_labour_rate_copy";
   if (mode === "BULK_LABOUR_RATE_SKU_UPSERT") return "bulk_labour_rate";
   if (scopeKey === "hr_payroll.commissions") return "employee_commission_rule";
   if (scopeKey === "hr_payroll.labour_allowances") return "labour_allowance_rule";
@@ -1769,6 +1773,91 @@ const applyBulkCommissionApproval = async (trx, request) => {
   return { applied: true, entityId: String(employeeIds[0]) };
 };
 
+/**
+ * Applies a "Copy rates from another labour" request.
+ *
+ * Separate from applyBulkLabourRateApproval on purpose: that one writes through
+ * the per-pair loop in labour-rates-service, which would mean thousands of
+ * serial statements for a copy. This uses the chunked ON CONFLICT writer.
+ *
+ * The rows carry their own sku ids and rates — the source labour's rates are
+ * NOT re-read at apply time, so an approver commits exactly the numbers they
+ * reviewed even if the source has since changed.
+ */
+const applyLabourRateCopyApproval = async (trx, request) => {
+  const payload =
+    request?.new_value && typeof request.new_value === "object"
+      ? request.new_value
+      : {};
+  const deptId = toNullableInt(payload.dept_id);
+  if (!deptId) return false;
+
+  const requestedLabourIds = [
+    ...new Set(
+      toArray(payload.labour_ids)
+        .map((entry) => toNullableInt(entry))
+        .filter((entry) => Number.isInteger(entry) && entry > 0),
+    ),
+  ];
+  if (!requestedLabourIds.length) return false;
+
+  // Re-validated at apply time: a target may have been unassigned from the
+  // department or deactivated while the request sat in the queue.
+  // resolveLabourIds THROWS on an invalid target rather than returning empty,
+  // and an approver clicking Approve must not get an opaque crash — treat it
+  // as "nothing to apply" instead.
+  let labourIds = [];
+  try {
+    labourIds = await resolveLabourIds({
+      db: trx,
+      deptId,
+      labourSelection: {
+        all: false,
+        labourId: requestedLabourIds[0],
+        labourIds: requestedLabourIds,
+        raw: requestedLabourIds.join(","),
+      },
+      t: (key) => key,
+    });
+  } catch (err) {
+    return false;
+  }
+  if (!Array.isArray(labourIds) || !labourIds.length) return false;
+
+  const allowedLabourIds = new Set(labourIds.map((id) => Number(id)));
+  const rows = toArray(payload.rows)
+    .map((row) => {
+      const data = row && typeof row === "object" ? row : {};
+      const labourId = toNullableInt(data.labour_id ?? data.labourId);
+      const skuId = toNullableInt(data.sku_id ?? data.skuId);
+      const rate = toMoneyOrNull(
+        Object.prototype.hasOwnProperty.call(data, "new_rate")
+          ? data.new_rate
+          : data.rate,
+      );
+      if (!labourId || !skuId || rate === null) return null;
+      if (!allowedLabourIds.has(labourId)) return null;
+      return {
+        labour_id: labourId,
+        sku_id: skuId,
+        new_rate: rate,
+        rate_type: data.rate_type || payload.rate_type,
+      };
+    })
+    .filter(Boolean);
+  if (!rows.length) return false;
+
+  await applyLabourRateCopy({
+    trx,
+    deptId,
+    rows,
+    conflictMode: payload.conflict_mode,
+    status: normalizeStatus(payload.status, "active"),
+  });
+
+  return { applied: true, entityId: String(labourIds[0]) };
+};
+
 const applyBulkLabourRateApproval = async (trx, request) => {
   const payload =
     request?.new_value && typeof request.new_value === "object"
@@ -1802,12 +1891,21 @@ const applyBulkLabourRateApproval = async (trx, request) => {
           labourIds: labourIdsInput,
           raw: labourIdsInput.join(",") || labourRaw,
         };
-  const labourIds = await resolveLabourIds({
-    db: trx,
-    deptId,
-    labourSelection,
-    t: (key) => key,
-  });
+  // resolveLabourIds THROWS when a labour is no longer valid for the department
+  // (unassigned or deactivated while the request sat in the queue) instead of
+  // returning an empty list. Unguarded, that surfaces to the approver as an
+  // opaque "error_select_labour" crash on Approve rather than a no-op.
+  let labourIds = [];
+  try {
+    labourIds = await resolveLabourIds({
+      db: trx,
+      deptId,
+      labourSelection,
+      t: (key) => key,
+    });
+  } catch (err) {
+    return false;
+  }
   if (!Array.isArray(labourIds) || !labourIds.length) return false;
 
   const applyOn = String(payload.apply_on || "SKU")
@@ -1863,6 +1961,8 @@ const applyHrApprovalChange = async (trx, request) => {
 
   if (target === "bulk_commission")
     return applyBulkCommissionApproval(trx, request);
+  if (target === "bulk_labour_rate_copy")
+    return applyLabourRateCopyApproval(trx, request);
   if (target === "bulk_labour_rate")
     return applyBulkLabourRateApproval(trx, request);
   if (target === "employee_allowance_rule")

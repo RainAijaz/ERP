@@ -24,6 +24,7 @@ const {
   buildBulkPreviewRows,
   applyBulkSkuRateUpsert,
 } = require("../../services/hr-payroll/labour-rates-service");
+const copyService = require("../../services/hr-payroll/labour-rate-copy-service");
 const labourAllowancesRoutes = require("./labour-allowances");
 
 let hasLabourRateArticleTypeColumnPromise = null;
@@ -1503,6 +1504,264 @@ ratesRouter.post(
         elapsedMs: Date.now() - startedAt,
       });
       console.error("Error in LabourRateRulesService:", err);
+      return res
+        .status(400)
+        .json({ message: err?.message || res.locals.t("generic_error") });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Copy rates from another labour
+//
+// Separate from the bulk-upsert routes above: those write via the per-pair loop
+// in labour-rates-service, this one batches. The Add path is untouched.
+// ---------------------------------------------------------------------------
+
+const parseCopyRequest = (payload = {}) => ({
+  sourceLabourId: copyService.toPositiveIntOrNull(payload.source_labour_id),
+  deptId: copyService.toPositiveIntOrNull(payload.dept_id),
+  targetLabourIds: copyService.toPositiveIntArray(payload.target_labour_ids),
+  conflictMode: copyService.normalizeConflictMode(payload.conflict_mode),
+  filters: {
+    articleType: copyService.normalizeArticleTypeFilter(payload.article_type),
+    groupIds: copyService.toPositiveIntArray(payload.group_ids),
+    subgroupIds: copyService.toPositiveIntArray(payload.subgroup_ids),
+    skuIds: copyService.toPositiveIntArray(payload.sku_ids),
+  },
+});
+
+ratesRouter.get(
+  "/copy-source-departments",
+  requirePermission("SCREEN", labourRatesPage.scopeKey, "view"),
+  async (req, res) => {
+    try {
+      const sourceLabourId = copyService.toPositiveIntOrNull(
+        req.query.source_labour_id,
+      );
+      if (!sourceLabourId) {
+        return res
+          .status(400)
+          .json({ message: res.locals.t("error_select_labour") });
+      }
+      const departments = await copyService.fetchSourceDepartments({
+        sourceLabourId,
+        locale: res.locals.locale,
+      });
+      return res.json({ departments });
+    } catch (err) {
+      console.error("Error in LabourRateCopyService:", err);
+      return res
+        .status(400)
+        .json({ message: err?.message || res.locals.t("generic_error") });
+    }
+  },
+);
+
+ratesRouter.get(
+  "/copy-preview",
+  requirePermission("SCREEN", labourRatesPage.scopeKey, "view"),
+  async (req, res) => {
+    try {
+      const input = parseCopyRequest(req.query || {});
+      if (!input.sourceLabourId) {
+        return res
+          .status(400)
+          .json({ message: res.locals.t("error_select_labour") });
+      }
+      if (!input.deptId) {
+        return res
+          .status(400)
+          .json({ message: res.locals.t("error_select_department") });
+      }
+
+      const plan = await copyService.buildCopyPlan({
+        ...input,
+        allowedBranchIds: getAllowedBranchIds(req),
+        locale: res.locals.locale,
+      });
+      return res.json(plan);
+    } catch (err) {
+      console.error("Error in LabourRateCopyService:", err);
+      return res
+        .status(400)
+        .json({ message: err?.message || res.locals.t("generic_error") });
+    }
+  },
+);
+
+ratesRouter.post(
+  "/copy",
+  requirePermission("SCREEN", labourRatesPage.scopeKey, "create"),
+  async (req, res) => {
+    try {
+      const input = parseCopyRequest(req.body || {});
+      if (!input.sourceLabourId) {
+        return res
+          .status(400)
+          .json({ message: res.locals.t("error_select_labour") });
+      }
+      if (!input.deptId) {
+        return res
+          .status(400)
+          .json({ message: res.locals.t("error_select_department") });
+      }
+      if (!input.targetLabourIds.length) {
+        return res
+          .status(400)
+          .json({ message: res.locals.t("error_select_target_labour") });
+      }
+
+      // Rebuilt server-side on purpose: the client sends only the selection,
+      // never rows, so a stale or tampered payload cannot write something the
+      // preview never showed.
+      const plan = await copyService.buildCopyPlan({
+        ...input,
+        allowedBranchIds: getAllowedBranchIds(req),
+        locale: res.locals.locale,
+      });
+
+      if (plan.over_limit) {
+        return res.status(400).json({
+          message: (
+            res.locals.t("error_labour_rate_copy_too_large") ||
+            "Too many rates to copy at once (limit {limit}). Narrow the selection."
+          ).replace("{limit}", String(plan.limit)),
+        });
+      }
+      if (!plan.targets.length) {
+        return res
+          .status(400)
+          .json({ message: res.locals.t("error_select_target_labour") });
+      }
+      if (!plan.counts.writes) {
+        return res
+          .status(400)
+          .json({ message: res.locals.t("error_labour_rate_copy_nothing") });
+      }
+
+      const [sourceLabour, deptRow] = await Promise.all([
+        knex("erp.labours")
+          .select("name")
+          .where({ id: input.sourceLabourId })
+          .first(),
+        knex("erp.departments")
+          .select("name")
+          .where({ id: input.deptId })
+          .first(),
+      ]);
+      const sourceName = sourceLabour?.name || String(input.sourceLabourId);
+      const deptName = deptRow?.name || String(input.deptId);
+      const targetNames = plan.targets
+        .map((target) => target.labour_name)
+        .filter(Boolean);
+
+      // One request per rate type: the payload (and the applier) carry a single
+      // rate_type, and rates are never converted between PER_PAIR/PER_DOZEN.
+      const requests = [];
+      let created = 0;
+      let updated = 0;
+      let skipped = 0;
+
+      for (const rateType of plan.rate_types) {
+        const rows = copyService.buildWriteRows({ plan, rateType });
+        if (!rows.length) continue;
+
+        const approval = await handleScreenApproval({
+          req,
+          scopeKey: labourRatesPage.scopeKey,
+          action: "create",
+          entityType: labourRatesPage.entityType,
+          entityId: String(plan.targets[0].labour_id),
+          summary: `${res.locals.t("labour_rate_copy_title") || "Copy Labour Rates"} - ${sourceName} → ${targetNames.join(", ")} (${rows.length})`,
+          oldValue: null,
+          newValue: {
+            mode: "BULK_LABOUR_RATE_COPY",
+            source_labour_id: input.sourceLabourId,
+            source_labour_name: sourceName,
+            labour_ids: plan.targets.map((target) => target.labour_id),
+            target_labour_names: targetNames,
+            dept_id: input.deptId,
+            dept_name: deptName,
+            rate_type: rateType,
+            status: "active",
+            conflict_mode: plan.conflict_mode,
+            rows,
+          },
+          t: res.locals.t,
+        });
+
+        if (approval.queued) {
+          requests.push({
+            approval_request_id: approval.requestId || null,
+            rate_type: rateType,
+            row_count: rows.length,
+            queued: true,
+          });
+          continue;
+        }
+
+        const result = await knex.transaction(async (trx) => {
+          await trx.raw("SET LOCAL lock_timeout = '5s'");
+          await trx.raw("SET LOCAL statement_timeout = '15s'");
+          return copyService.applyCopy({
+            trx,
+            deptId: input.deptId,
+            rows,
+            conflictMode: plan.conflict_mode,
+          });
+        });
+        created += result.created;
+        updated += result.updated;
+        skipped += result.skipped;
+        requests.push({
+          approval_request_id: null,
+          rate_type: rateType,
+          row_count: rows.length,
+          queued: false,
+        });
+      }
+
+      const queued = requests.some((entry) => entry.queued);
+
+      queueAuditLog(req, {
+        entityType: labourRatesPage.entityType,
+        entityId: String(input.sourceLabourId),
+        action: "UPDATE",
+        context: {
+          source: "labour-rate-copy",
+          source_labour_id: input.sourceLabourId,
+          target_labour_ids: plan.targets.map((target) => target.labour_id),
+          dept_id: input.deptId,
+          conflict_mode: plan.conflict_mode,
+          rate_types: plan.rate_types,
+          queued,
+          created,
+          updated,
+          skipped,
+        },
+      });
+
+      const canViewApprovals =
+        typeof res.locals.can === "function"
+          ? res.locals.can("SCREEN", "administration.approvals", "navigate")
+          : false;
+
+      return res.status(queued ? 202 : 200).json({
+        queued,
+        requests,
+        created,
+        updated,
+        skipped,
+        blocked: plan.blocked_targets,
+        scope_wide_skipped: plan.scope_wide_skipped.length,
+        approvals_url: queued && canViewApprovals ? "/administration/approvals" : null,
+        message: queued
+          ? res.locals.t("approval_sent") || res.locals.t("approval_submitted")
+          : res.locals.t("success_bulk_labour_rate_saved"),
+      });
+    } catch (err) {
+      console.error("Error in LabourRateCopyService:", err);
       return res
         .status(400)
         .json({ message: err?.message || res.locals.t("generic_error") });
