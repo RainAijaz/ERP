@@ -459,6 +459,7 @@ const BASIC_INFO_PAGES = {
           { value: "CUSTOMER", label: "customer" },
           { value: "SUPPLIER", label: "supplier" },
           { value: "BOTH", label: "both" },
+          { value: "OTHER", label: "other_party" },
         ],
       },
       {

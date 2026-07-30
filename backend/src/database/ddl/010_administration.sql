@@ -119,10 +119,17 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
   -- Party type categorizes a party record.
-  -- NOTE: If your business requires BOTH (same party is customer + supplier),
-  -- add 'BOTH' here (or model roles differently). For now it is restricted to two.
-  CREATE TYPE erp.party_type AS ENUM ('CUSTOMER','SUPPLIER','BOTH');
+  -- BOTH = the same party is customer + supplier.
+  -- OTHER = neither: a party we neither buy from nor sell to, but still hand goods
+  -- to (returnable gate pass to a sister concern, neighbouring factory, employee).
+  -- Purchase/sales code filters on ('SUPPLIER','BOTH') / ('CUSTOMER','BOTH'), so
+  -- OTHER parties never surface in those screens or reports.
+  CREATE TYPE erp.party_type AS ENUM ('CUSTOMER','SUPPLIER','BOTH','OTHER');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- Databases created before returnable lending to non-suppliers only have the
+-- first three values; add the fourth without disturbing them.
+ALTER TYPE erp.party_type ADD VALUE IF NOT EXISTS 'OTHER';
 
 DO $$ BEGIN
   -- Payroll type defines how payroll is calculated/handled.

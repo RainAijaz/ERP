@@ -93,6 +93,13 @@ const PARTY_TYPE_TO_CONTROL_GROUP = {
   BOTH: CONTROL_GROUP_CODES.partyReceivable,
 };
 
+// A PARTY voucher line has to land on a receivable or payable control account, so
+// only these party types can appear on one. Derived from the map above rather than
+// listed again, so the save-time guard in voucher-service.js can never drift from
+// what posting actually accepts. Notably excludes OTHER, which by definition is a
+// party we neither buy from nor sell to and therefore owes and is owed nothing.
+const POSTABLE_PARTY_TYPES = Object.freeze(Object.keys(PARTY_TYPE_TO_CONTROL_GROUP));
+
 const normalizeAmount = (value) => {
   const num = Number(value);
   if (!Number.isFinite(num)) return 0;
@@ -1406,4 +1413,5 @@ module.exports = {
   syncVoucherGlPostingTx,
   syncVoucherGlPosting,
   deleteGlBatchByVoucherIdTx,
+  POSTABLE_PARTY_TYPES,
 };

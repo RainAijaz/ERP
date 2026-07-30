@@ -16,6 +16,8 @@
     "test:bom:cascade": "node src/scripts/test-bom-cascade.js",
     "test:bom:reports:db": "node src/scripts/test-bom-reports-db.js",
     "test:approval-audit": "node src/scripts/test-approval-audit-enhancements.js",
+    "test:other-party-type": "node src/scripts/test-other-party-type.js",
+    "test:e2e:other-party-type": "playwright test tests/e2e/other-party-type-visibility.spec.js",
     "test:approval-translation-code-policy": "node src/scripts/test-approval-translation-code-policy.js",
     "test:sku-rate-notification": "node src/scripts/test-sku-rate-notification.js",
     "test:payment-notification": "node src/scripts/test-payment-notification.js",

@@ -18,6 +18,13 @@ const RETURNABLE_VOUCHER_TYPES = {
   receipt: "RRV",
 };
 
+// Goods go out to whoever physically takes them, which is not always someone we
+// trade with: a repair vendor (SUPPLIER) or a sister concern / neighbouring
+// factory / employee (OTHER). Customers are excluded — handing stock to a
+// customer is a sale or a delivery, not a returnable loan.
+const RETURNABLE_PARTY_TYPES_SQL =
+  "upper(coalesce(p.party_type::text, '')) in ('SUPPLIER','OTHER')";
+
 let approvalRequestHasVoucherTypeCodeColumn;
 let returnablePlaceholderItemId;
 let partiesHasNameUrColumn;
@@ -571,21 +578,21 @@ const getSystemReturnableItemIdTx = async (trx, userId = null) => {
 
 const ensurePartyExistsForBranchTx = async (trx, req, partyId) => {
   const normalizedPartyId = toPositiveInt(partyId);
-  if (!normalizedPartyId) throw new HttpError(400, "Vendor is required");
+  if (!normalizedPartyId) throw new HttpError(400, "Sent To party is required");
 
   const query = trx("erp.parties as p")
     .leftJoin("erp.party_branch as pb", "pb.party_id", "p.id")
     .select("p.id", "p.name")
     .where("p.id", normalizedPartyId)
     .where("p.is_active", true)
-    .whereRaw("upper(coalesce(p.party_type::text, '')) = 'SUPPLIER'")
+    .whereRaw(RETURNABLE_PARTY_TYPES_SQL)
     .where(function whereBranch() {
       this.where("pb.branch_id", req.branchId).orWhereNull("pb.branch_id");
     });
 
   const party = await query.first();
   if (!party)
-    throw new HttpError(400, "Selected vendor is invalid for current branch");
+    throw new HttpError(400, "Selected party is invalid for current branch");
   return party;
 };
 
@@ -1523,7 +1530,7 @@ const loadReturnableVoucherOptions = async (req) => {
     .leftJoin("erp.party_branch as pb", "pb.party_id", "p.id")
     .select("p.id", vendorNameSelect)
     .where("p.is_active", true)
-    .whereRaw("upper(coalesce(p.party_type::text, '')) = 'SUPPLIER'")
+    .whereRaw(RETURNABLE_PARTY_TYPES_SQL)
     .where(function whereBranch() {
       this.where("pb.branch_id", req.branchId).orWhereNull("pb.branch_id");
     })
@@ -2568,6 +2575,7 @@ const applyReturnableVoucherDeletePayloadTx = async ({
 
 module.exports = {
   RETURNABLE_VOUCHER_TYPES,
+  RETURNABLE_PARTY_TYPES_SQL,
   parseVoucherNo,
   loadReturnableVoucherOptions,
   loadRecentReturnableVouchers,
