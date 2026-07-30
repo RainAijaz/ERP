@@ -633,6 +633,66 @@ const buildBomApprovalLabelMap = async (rows, locale) => {
   return labelById;
 };
 
+// Resolves "<item> <size> <packing> <grade> <color>" labels for the SKU rows on
+// an approvals page, keyed by variant id (== approval_request.entity_id for SKU
+// rows). Without it a queue of SKU edits reads as a wall of identical
+// "Edit SKUs" lines with nothing to tell them apart.
+//
+// One query for the whole page, mirroring buildBomApprovalLabelMap. The
+// original implementation issued six per render and was removed in 3b734bf
+// ("Improve UI and Navigation Speed"), which dropped the labels with it.
+const buildSkuApprovalLabelMap = async (rows, locale) => {
+  const labelById = new Map();
+  const variantIds = [
+    ...new Set(
+      (rows || [])
+        .filter((row) => row?.entity_type === "SKU")
+        .map((row) => Number(row.entity_id))
+        .filter((id) => Number.isFinite(id) && id > 0),
+    ),
+  ];
+  if (!variantIds.length) return labelById;
+
+  const useUr = locale === "ur";
+  const nameAs = (alias, out) =>
+    knex.raw(
+      useUr
+        ? `COALESCE(${alias}.name_ur, ${alias}.name) as ${out}`
+        : `${alias}.name as ${out}`,
+    );
+
+  const variants = await knex("erp.variants as v")
+    .leftJoin("erp.items as i", "i.id", "v.item_id")
+    .leftJoin("erp.sizes as s", "s.id", "v.size_id")
+    .leftJoin("erp.grades as g", "g.id", "v.grade_id")
+    .leftJoin("erp.colors as c", "c.id", "v.color_id")
+    .leftJoin("erp.packing_types as p", "p.id", "v.packing_type_id")
+    .leftJoin("erp.skus as k", "k.variant_id", "v.id")
+    .whereIn("v.id", variantIds)
+    .select(
+      "v.id",
+      "k.sku_code",
+      nameAs("i", "item_name"),
+      nameAs("s", "size_name"),
+      nameAs("g", "grade_name"),
+      nameAs("c", "color_name"),
+      nameAs("p", "packing_name"),
+    );
+
+  for (const row of variants) {
+    const label = buildSkuLabel({
+      skuCode: row.sku_code,
+      itemName: row.item_name,
+      sizeName: row.size_name,
+      packingName: row.packing_name,
+      gradeName: row.grade_name,
+      colorName: row.color_name,
+    });
+    if (label && label !== "-") labelById.set(Number(row.id), label);
+  }
+  return labelById;
+};
+
 const parseSummaryVoucherTypeCode = (summary) => {
   const text = String(summary || "").toUpperCase();
   if (!text) return "";
@@ -994,7 +1054,7 @@ const buildPreviewPayload = async (req, res, request, side) => {
 
     const page = basicInfoRoutes.preview.getPageConfig(basicInfoKey);
     if (!page) return null;
-    const hydrated = await basicInfoRoutes.preview.hydratePage(page, locale);
+    const hydrated = await basicInfoRoutes.preview.hydratePage(page, locale, req);
     return {
       ...basePayload,
       previewType: "basic-info",
@@ -1010,6 +1070,7 @@ const buildPreviewPayload = async (req, res, request, side) => {
     const hydrated = await accountsRoutes.preview.hydratePage(
       accountsRoutes.preview.page,
       locale,
+      req,
     );
     return {
       ...basePayload,
@@ -1025,6 +1086,7 @@ const buildPreviewPayload = async (req, res, request, side) => {
     const hydrated = await partiesRoutes.preview.hydratePage(
       partiesRoutes.preview.page,
       locale,
+      req,
     );
     return {
       ...basePayload,
@@ -1599,10 +1661,23 @@ router.get(
       // "Cotton Shirt (FG)") in place of the opaque BOM number. Done at render
       // time so rows saved before this change also display correctly, no
       // backfill needed.
-      const bomLabelById = await buildBomApprovalLabelMap(rows, req.locale);
+      const [bomLabelById, skuLabelById] = await Promise.all([
+        buildBomApprovalLabelMap(rows, req.locale),
+        buildSkuApprovalLabelMap(rows, req.locale),
+      ]);
 
       for (const row of rows) {
         row.summary = normalizeVoucherApprovalSummary(row, res.locals.t);
+        if (row.entity_type === "SKU") {
+          const label = skuLabelById.get(Number(row.entity_id));
+          const summaryText = String(row.summary || "");
+          // Append rather than replace: the summary ("Edit SKUs") carries the
+          // action, the label identifies which article. Guard against
+          // double-appending if a summary already embeds the label.
+          if (label && !summaryText.includes(label)) {
+            row.summary = `${summaryText} - ${label}`.trim();
+          }
+        }
         if (row.entity_type === "BOM") {
           const label = bomLabelById.get(Number(row.entity_id));
           const summaryText = String(row.summary || "");

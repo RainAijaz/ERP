@@ -11,6 +11,8 @@
     "test:voucher-engine": "node src/scripts/test-voucher-engine.js",
     "test:hr-payroll": "node src/scripts/test-hr-payroll-routes.js",
     "test:labour-rates": "node src/scripts/test-labour-rate-resolution.js",
+    "test:labour-rate-copy": "node src/scripts/test-labour-rate-copy.js",
+    "test:e2e:labour-rate-copy": "playwright test tests/e2e/labour-rate-copy.spec.js",
     "test:bom": "node src/scripts/test-bom-routes.js",
     "test:bom:copy": "node src/scripts/test-bom-copy.js",
     "test:bom:cascade": "node src/scripts/test-bom-cascade.js",

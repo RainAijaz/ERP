@@ -2554,7 +2554,23 @@ const getSfgInLedgerRow = async ({ skuId, voucherHeaderId }) => {
   return row || null;
 };
 
-const closeDb = async () => knex.destroy();
+// Releases the shared pool's connections, then re-arms it so a LATER spec in
+// the same Playwright worker can still query.
+//
+// This module exports one knex instance shared by every spec. Several specs
+// call closeDb() in their own afterAll, so a plain destroy() left whichever
+// spec ran next failing with "Unable to acquire a connection" (e.g. running
+// hr-payroll-pages and hr-payroll-ui together). Re-initialising the pool costs
+// nothing when nobody queries again — tarn opens connections lazily.
+const closeDb = async () => {
+  await knex.destroy();
+  try {
+    knex.client.initializePool(knexConfig);
+  } catch (err) {
+    // Older/newer knex without initializePool: the next spec would have failed
+    // anyway, so swallow and let it surface there rather than here.
+  }
+};
 
 module.exports = {
   getLinkedSize,

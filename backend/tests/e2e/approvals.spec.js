@@ -574,9 +574,11 @@ test.describe("Approvals page scenarios", () => {
     await row.getByRole("button", { name: /view/i }).click();
     const modal = page.locator("[data-approval-detail-modal]");
     await expect(modal).toBeVisible();
-    await expect(modal.getByText(/skus/i)).toBeVisible();
-    await expect(modal.getByText(/article/i)).toBeVisible();
-    await expect(modal.getByText(/rate/i)).toBeVisible();
+    await expect(modal.getByText(/skus/i).first()).toBeVisible();
+    await expect(modal.getByText(/article/i).first()).toBeVisible();
+    // The preview legitimately renders more than one rate field ("Rate",
+    // "sale rate"), so match the first rather than tripping strict mode.
+    await expect(modal.getByText(/rate/i).first()).toBeVisible();
   });
 
   test("modal closes via close button", async ({ page }) => {
@@ -842,7 +844,11 @@ test.describe("Approvals page scenarios", () => {
     await gotoApprovals(page, "APPROVED");
     const row = page.locator("tbody tr", { hasText: ctx.skuLabel }).first();
     await expect(row).toBeVisible();
-    await expect(row.locator("td").last()).toContainText(/\d{1,2}\/\d{1,2}\/\d{2,4}/);
+    // Dates render as DD-MM-YYYY (formatStampDate swaps "/" for "-"); accept
+    // either separator so the assertion tracks the displayed format.
+    await expect(row.locator("td").last()).toContainText(
+      /\d{1,2}[-/]\d{1,2}[-/]\d{2,4}/,
+    );
   });
 
   test("account approval: edit modal updates fields (including branches) then approve succeeds", async ({ page }) => {
@@ -1139,7 +1145,11 @@ test.describe("Approvals page scenarios", () => {
   });
 
   test.describe("Approval settings and source pages", () => {
-    const policyTargets = ["master_data.accounts", "master_data.parties", "master_data.products.finished", "master_data.products.semi_finished", "master_data.products.raw_materials", "master_data.products.skus", "master_data.basic_info"];
+    // basic-info screens gate on their LEAF scope (the sizes create calls
+    // handleScreenApproval with master_data.basic_info.sizes), so enabling only
+    // the parent left sizes ungated and the create went through with no
+    // approval toast.
+    const policyTargets = ["master_data.accounts", "master_data.parties", "master_data.products.finished", "master_data.products.semi_finished", "master_data.products.raw_materials", "master_data.products.skus", "master_data.basic_info", "master_data.basic_info.sizes"];
     const policyActions = ["create", "edit", "delete", "hard_delete"];
 
     test.beforeEach(async () => {
@@ -1179,6 +1189,10 @@ test.describe("Approvals page scenarios", () => {
       const name = `E2E Account ${Date.now()}`;
       await modal.locator('[data-field="name"]').fill(name);
       await modal.locator('[data-field="name_ur"]').fill(name);
+      // Account Group is filtered by Account Type (filterGroupsByType empties
+      // the list until a type is chosen), so the type must be picked first or
+      // the required group field stays empty and the form never submits.
+      await selectFirstNonEmpty(page, 'select[data-field="account_type"]');
       await selectFirstNonEmpty(page, 'select[data-field="subgroup_id"]');
       await selectFirstNonEmpty(page, 'select[data-field="branch_ids"]');
       await modal.locator('form[data-modal-form] button[type="submit"]').click();
@@ -1187,6 +1201,10 @@ test.describe("Approvals page scenarios", () => {
       await expect(toast).toBeVisible();
       await expect(toast).toContainText(/approval/i);
 
+      // The manager who submitted has no rights on administration.approvals,
+      // so switch to the approver before reading the queue — mirrors the real
+      // flow (submitter and reviewer are different people).
+      await login(page, "E2E_ADMIN");
       await gotoApprovals(page, "PENDING");
       await expect(page.locator("tbody tr", { hasText: "Create Accounts" }).first()).toBeVisible();
     });
@@ -1210,6 +1228,10 @@ test.describe("Approvals page scenarios", () => {
       await expect(toast).toBeVisible();
       await expect(toast).toContainText(/approval/i);
 
+      // The manager who submitted has no rights on administration.approvals,
+      // so switch to the approver before reading the queue — mirrors the real
+      // flow (submitter and reviewer are different people).
+      await login(page, "E2E_ADMIN");
       await gotoApprovals(page, "PENDING");
       await expect(page.locator("tbody tr", { hasText: "Create Parties" }).first()).toBeVisible();
     });
@@ -1235,6 +1257,10 @@ test.describe("Approvals page scenarios", () => {
       await expect(toast).toBeVisible();
       await expect(toast).toContainText(/approval/i);
 
+      // The manager who submitted has no rights on administration.approvals,
+      // so switch to the approver before reading the queue — mirrors the real
+      // flow (submitter and reviewer are different people).
+      await login(page, "E2E_ADMIN");
       await gotoApprovals(page, "PENDING");
       await expect(page.locator("tbody tr", { hasText: /Edit Parties|Update Parties/i }).first()).toBeVisible();
     });
@@ -1254,6 +1280,14 @@ test.describe("Approvals page scenarios", () => {
       // FIX: Select Group (Required)
       await selectFirstNonEmpty(page, 'select[name="group_id"]');
 
+      // Sub Group is required and its options are derived from the Group, so it
+      // has to be chosen after it — otherwise client validation silently blocks
+      // the submit and no toast is ever rendered.
+      // Scoped to the modal: the list page's filter bar also has a
+      // select[name="subgroup_id"], which trips Playwright strict mode.
+      await page.waitForTimeout(200);
+      await selectFirstNonEmpty(page, '#modal-shell select[name="subgroup_id"]');
+
       // FIX: Correct field name is 'base_uom_id', not 'uom_id'
       await selectFirstNonEmpty(page, 'select[name="base_uom_id"]');
 
@@ -1266,6 +1300,10 @@ test.describe("Approvals page scenarios", () => {
       await expect(toast).toBeVisible();
       await expect(toast).toContainText(/approval/i);
 
+      // The manager who submitted has no rights on administration.approvals,
+      // so switch to the approver before reading the queue — mirrors the real
+      // flow (submitter and reviewer are different people).
+      await login(page, "E2E_ADMIN");
       await gotoApprovals(page, "PENDING");
       await expect(page.locator("tbody tr", { hasText: "Create Finished Items" }).first()).toBeVisible();
     });
@@ -1299,6 +1337,10 @@ test.describe("Approvals page scenarios", () => {
       await expect(toast).toBeVisible();
       await expect(toast).toContainText(/approval/i);
 
+      // The manager who submitted has no rights on administration.approvals,
+      // so switch to the approver before reading the queue — mirrors the real
+      // flow (submitter and reviewer are different people).
+      await login(page, "E2E_ADMIN");
       await gotoApprovals(page, "PENDING");
       await expect(page.locator("tbody tr", { hasText: "Create Sizes" }).first()).toBeVisible();
     });

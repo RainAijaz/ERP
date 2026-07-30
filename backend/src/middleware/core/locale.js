@@ -1820,6 +1820,48 @@ const translations = {
     saved: "Saved",
     error_invalid_bulk_labour_rate_payload: "Invalid labour rate payload.",
     success_bulk_labour_rate_saved: "Bulk labour rates saved successfully.",
+    labour_rate_copy_button: "Copy rates from another labour",
+    labour_rate_copy_title: "Copy rates from another labour",
+    labour_rate_copy_subtitle:
+      "Copies one labour's article rates onto others. Existing rates are never touched unless you choose Overwrite.",
+    labour_rate_copy_source: "Copy FROM labour",
+    labour_rate_copy_targets: "Copy TO labour(s)",
+    labour_rate_copy_targets_col: "Targets",
+    labour_rate_copy_select_source_first: "Select a source labour first",
+    labour_rate_copy_no_departments: "This labour has no rates to copy.",
+    labour_rate_copy_no_rates: "This labour has no rates in that department.",
+    labour_rate_copy_nothing:
+      "Nothing to copy — every article already has this rate.",
+    labour_rate_copy_narrow: "Narrow what to copy (optional)",
+    labour_rate_copy_clear_filters: "Clear filters",
+    labour_rate_copy_pick_prompt:
+      "Pick a source labour, a department and at least one target.",
+    labour_rate_copy_will_copy:
+      "{articles} articles → {targets} labour(s) = {writes} rates",
+    labour_rate_copy_showing:
+      "Showing {shown} of {total} articles. All of them are copied.",
+    labour_rate_copy_conflict_hint:
+      "Articles the target already has a different rate for:",
+    labour_rate_copy_skip: "Skip them",
+    labour_rate_copy_overwrite: "Overwrite with the source rate",
+    labour_rate_copy_state_new: "new",
+    labour_rate_copy_state_conflict: "already has a rate",
+    labour_rate_copy_state_identical: "same rate",
+    labour_rate_copy_blocked: "Cannot receive this copy:",
+    labour_rate_copy_not_assigned: "not assigned to this department",
+    labour_rate_copy_inactive: "inactive",
+    labour_rate_copy_out_of_scope: "outside your branches",
+    labour_rate_copy_scope_wide:
+      "group/subgroup fallback rate(s) cannot be copied — add them manually.",
+    labour_rate_copy_two_requests:
+      "Mixed rate types — this creates one approval request per rate type.",
+    labour_rate_copy_apply: "Copy rates",
+    labour_rate_copy_applied: "Rates copied",
+    error_labour_rate_copy_nothing:
+      "Nothing to copy with the current selection.",
+    error_labour_rate_copy_too_large:
+      "Too many rates to copy at once (limit {limit}). Narrow the selection.",
+    error_select_target_labour: "Please select at least one target labour.",
     no_records_found: "No records found",
     uom_conversion_help:
       "Define how one unit converts into another (e.g., 1 BOX = 10 PCS).",
@@ -3454,6 +3496,46 @@ translations.ur = {
     "بڑی تعداد میں لیبر کی شرح کامیابی کے ساتھ بچ گئی۔",
   success_bulk_labour_rate_saved_counts:
     "تخلیق کیا گیا: {created}، اپ ڈیٹ کیا گیا: {updated}۔",
+  labour_rate_copy_button: "دوسرے لیبر سے ریٹ کاپی کریں",
+  labour_rate_copy_title: "دوسرے لیبر سے ریٹ کاپی کریں",
+  labour_rate_copy_subtitle:
+    "ایک لیبر کے آرٹیکل ریٹ دوسروں پر کاپی کرتا ہے۔ موجودہ ریٹ اُس وقت تک تبدیل نہیں ہوتے جب تک آپ اوور رائٹ نہ چنیں۔",
+  labour_rate_copy_source: "اس لیبر سے کاپی کریں",
+  labour_rate_copy_targets: "ان لیبر پر کاپی کریں",
+  labour_rate_copy_targets_col: "ہدف",
+  labour_rate_copy_select_source_first: "پہلے سورس لیبر منتخب کریں",
+  labour_rate_copy_no_departments: "اس لیبر کے پاس کاپی کرنے کے لیے ریٹ نہیں ہیں۔",
+  labour_rate_copy_no_rates: "اس شعبے میں اس لیبر کے کوئی ریٹ نہیں ہیں۔",
+  labour_rate_copy_nothing:
+    "کاپی کرنے کے لیے کچھ نہیں — ہر آرٹیکل پر یہی ریٹ پہلے سے موجود ہے۔",
+  labour_rate_copy_narrow: "کیا کاپی کرنا ہے، محدود کریں (اختیاری)",
+  labour_rate_copy_clear_filters: "فلٹر ہٹائیں",
+  labour_rate_copy_pick_prompt:
+    "سورس لیبر، شعبہ اور کم از کم ایک ہدف منتخب کریں۔",
+  labour_rate_copy_will_copy: "{articles} آرٹیکل → {targets} لیبر = {writes} ریٹ",
+  labour_rate_copy_showing:
+    "{total} میں سے {shown} آرٹیکل دکھائے جا رہے ہیں۔ تمام کاپی ہوں گے۔",
+  labour_rate_copy_conflict_hint:
+    "وہ آرٹیکل جن پر ہدف لیبر کا پہلے سے مختلف ریٹ موجود ہے:",
+  labour_rate_copy_skip: "انہیں چھوڑ دیں",
+  labour_rate_copy_overwrite: "سورس ریٹ سے تبدیل کر دیں",
+  labour_rate_copy_state_new: "نیا",
+  labour_rate_copy_state_conflict: "ریٹ پہلے سے موجود",
+  labour_rate_copy_state_identical: "یہی ریٹ",
+  labour_rate_copy_blocked: "یہ کاپی وصول نہیں کر سکتے:",
+  labour_rate_copy_not_assigned: "اس شعبے میں شامل نہیں",
+  labour_rate_copy_inactive: "غیر فعال",
+  labour_rate_copy_out_of_scope: "آپ کی برانچوں سے باہر",
+  labour_rate_copy_scope_wide:
+    "گروپ/سب گروپ کے عمومی ریٹ کاپی نہیں ہو سکتے — انہیں دستی طور پر شامل کریں۔",
+  labour_rate_copy_two_requests:
+    "مختلف ریٹ اقسام — ہر ریٹ قسم کے لیے الگ منظوری کی درخواست بنے گی۔",
+  labour_rate_copy_apply: "ریٹ کاپی کریں",
+  labour_rate_copy_applied: "ریٹ کاپی ہو گئے",
+  error_labour_rate_copy_nothing: "موجودہ انتخاب میں کاپی کرنے کے لیے کچھ نہیں۔",
+  error_labour_rate_copy_too_large:
+    "ایک ساتھ بہت زیادہ ریٹ ہیں (حد {limit})۔ انتخاب کم کریں۔",
+  error_select_target_labour: "کم از کم ایک ہدف لیبر منتخب کریں۔",
   summary: "خلاصہ",
   summary_row: "خلاصہ قطار",
   supplier_balance_information: "سپلائر بیلنس کی معلومات",

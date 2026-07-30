@@ -16,6 +16,11 @@
             <%= t("print") %>
           </button>
         <% } %>
+        <% if (canCreate && page.scopeKey === "hr_payroll.labour_rates") { %>
+          <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-lrc-open>
+            <%= (typeof t === "function" && t("labour_rate_copy_button") && t("labour_rate_copy_button") !== "labour_rate_copy_button") ? t("labour_rate_copy_button") : "Copy rates from another labour" %>
+          </button>
+        <% } %>
         <% if (canCreate) { %>
           <button class="cursor-pointer rounded-full bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white shadow-sm transition hover:bg-slate-800" type="button" data-modal-open style="color: #fff;">
             <%= t("add") %> <%= t(page.titleKey) %>
@@ -252,6 +257,639 @@
   bodyPartial: "../../hr_payroll/form-fields.ejs"
 }) %>
 
+
+<% if (page.scopeKey === "hr_payroll.labour_rates" && can("SCREEN", page.scopeKey, "create")) { %>
+<%
+  // Falls back to English when a locale key is missing, so nothing renders blank.
+  const lrcTx = function (key, fallback) {
+    const value = typeof t === "function" ? t(key) : "";
+    return value && value !== key ? value : fallback;
+  };
+  const lrcLabourField = (page.fields || []).find(function (field) { return field.name === "labour_id"; });
+  const lrcLabours = (lrcLabourField && lrcLabourField.options) || [];
+%>
+<div class="fixed inset-0 z-[95] hidden items-center justify-center bg-slate-900/40 p-4" data-lrc-modal>
+  <div class="flex max-h-[92vh] w-full max-w-4xl flex-col rounded-2xl border border-slate-200 bg-white shadow-xl" role="dialog" aria-modal="true" aria-labelledby="lrc-title">
+    <div class="relative border-b border-slate-200 px-6 py-4">
+      <button type="button" data-lrc-close class="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" aria-label="<%= lrcTx('close', 'Close') %>">✕</button>
+      <div class="text-sm font-semibold text-slate-700" id="lrc-title"><%= lrcTx("labour_rate_copy_title", "Copy rates from another labour") %></div>
+      <p class="mt-1 text-xs text-slate-500"><%= lrcTx("labour_rate_copy_subtitle", "Copies one labour's article rates onto others. Existing rates are never touched unless you choose Overwrite.") %></p>
+    </div>
+
+    <div class="flex-1 space-y-4 overflow-y-auto px-6 py-5" data-lrc-step="select">
+      <div class="grid gap-3 sm:grid-cols-3">
+        <label class="block text-xs font-semibold text-slate-600">
+          <span><%= lrcTx("labour_rate_copy_source", "Copy FROM labour") %></span>
+          <select data-lrc-source class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+            <option value=""><%= lrcTx("select", "Select") %></option>
+            <% lrcLabours.forEach(function (option) { %>
+              <option value="<%= option.value %>"><%= option.label %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label class="block text-xs font-semibold text-slate-600">
+          <span><%= lrcTx("departments", "Department") %></span>
+          <select data-lrc-dept class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700" disabled>
+            <option value=""><%= lrcTx("labour_rate_copy_select_source_first", "Select a source labour first") %></option>
+          </select>
+        </label>
+        <div class="block text-xs font-semibold text-slate-600">
+          <span><%= lrcTx("labour_rate_copy_targets", "Copy TO labour(s)") %></span>
+          <input type="search" data-lrc-target-search class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-normal text-slate-700" placeholder="<%= lrcTx('search', 'Search') %>" />
+          <select data-lrc-targets multiple size="5" class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-2 py-1 text-sm font-normal text-slate-700" disabled></select>
+        </div>
+      </div>
+
+      <p class="hidden rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" data-lrc-blocked></p>
+
+      <div class="rounded-xl border border-slate-200">
+        <button type="button" data-lrc-filters-toggle class="flex w-full items-center justify-between px-3 py-2 text-xs font-semibold uppercase tracking-[0.1em] text-slate-600" data-collapsed="true">
+          <span><%= lrcTx("labour_rate_copy_narrow", "Narrow what to copy (optional)") %></span>
+          <span data-lrc-filters-caret>▸</span>
+        </button>
+        <div class="hidden grid-cols-1 gap-3 border-t border-slate-200 px-3 py-3 sm:grid-cols-2" data-lrc-filters-body>
+          <div class="text-xs font-semibold text-slate-600">
+            <span><%= lrcTx("article_type", "Article type") %></span>
+            <div class="mt-1 flex flex-wrap gap-3 text-xs font-normal text-slate-700" data-lrc-article-types></div>
+          </div>
+          <label class="block text-xs font-semibold text-slate-600">
+            <span><%= lrcTx("product_groups", "Groups") %></span>
+            <select data-lrc-groups multiple size="3" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-normal text-slate-700"></select>
+          </label>
+          <label class="block text-xs font-semibold text-slate-600">
+            <span><%= lrcTx("product_subgroups", "Subgroups") %></span>
+            <select data-lrc-subgroups multiple size="3" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-normal text-slate-700"></select>
+          </label>
+          <label class="block text-xs font-semibold text-slate-600">
+            <span><%= lrcTx("articles", "Articles") %></span>
+            <select data-lrc-articles multiple size="3" class="mt-1 w-full rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs font-normal text-slate-700"></select>
+          </label>
+          <div class="sm:col-span-2">
+            <button type="button" data-lrc-filters-clear class="text-xs font-semibold text-slate-500 underline"><%= lrcTx("labour_rate_copy_clear_filters", "Clear filters") %></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="rounded-xl border border-slate-200">
+        <div class="border-b border-slate-200 px-3 py-2 text-xs font-semibold text-slate-600" data-lrc-summary><%= lrcTx("labour_rate_copy_pick_prompt", "Pick a source labour, a department and at least one target.") %></div>
+        <div class="max-h-72 overflow-auto">
+          <table class="min-w-full text-xs">
+            <thead class="bg-slate-100 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
+              <tr data-lrc-head></tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100" data-lrc-tbody></tbody>
+          </table>
+        </div>
+        <p class="hidden border-t border-slate-200 px-3 py-2 text-[11px] text-slate-500" data-lrc-truncated></p>
+      </div>
+
+      <div class="hidden space-y-2 rounded-xl border border-slate-200 bg-slate-50 p-3" data-lrc-conflict-wrap>
+        <p class="text-xs text-slate-600" data-lrc-conflict-hint></p>
+        <label class="flex items-center gap-2 text-xs text-slate-700">
+          <input type="radio" name="lrc_conflict" value="SKIP" checked data-lrc-conflict class="h-4 w-4 border-slate-300" />
+          <span><%= lrcTx("labour_rate_copy_skip", "Skip them") %></span>
+        </label>
+        <label class="flex items-center gap-2 text-xs text-slate-700">
+          <input type="radio" name="lrc_conflict" value="OVERWRITE" data-lrc-conflict class="h-4 w-4 border-slate-300" />
+          <span><%= lrcTx("labour_rate_copy_overwrite", "Overwrite with the source rate") %></span>
+        </label>
+      </div>
+
+      <p class="hidden rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-800" data-lrc-notes></p>
+      <p class="hidden text-xs font-medium text-rose-600" data-lrc-error></p>
+    </div>
+
+    <div class="hidden flex-1 space-y-3 overflow-y-auto px-6 py-5" data-lrc-step="result">
+      <div class="space-y-2 text-sm text-slate-700" data-lrc-result></div>
+    </div>
+
+    <div class="space-y-2 border-t border-slate-200 px-6 py-4" data-lrc-actions="select">
+      <button type="button" data-lrc-apply disabled class="w-full rounded-xl bg-slate-900 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40">
+        <%= lrcTx("labour_rate_copy_apply", "Copy rates") %>
+      </button>
+      <button type="button" data-lrc-close class="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800">
+        <%= lrcTx("cancel", "Cancel") %>
+      </button>
+    </div>
+    <div class="hidden space-y-2 border-t border-slate-200 px-6 py-4" data-lrc-actions="result">
+      <button type="button" data-lrc-done class="w-full rounded-xl bg-slate-900 px-4 py-3 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-slate-800">
+        <%= lrcTx("done", "Done") %>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const modal = document.querySelector("[data-lrc-modal]");
+    const openBtn = document.querySelector("[data-lrc-open]");
+    if (!modal || !openBtn) return;
+
+    const basePath = "<%= basePath %>";
+    const csrfToken = "<%= csrfToken %>";
+    const labours = <%- JSON.stringify(lrcLabours) %>;
+    const TXT = {
+      pickPrompt: "<%- lrcTx('labour_rate_copy_pick_prompt', 'Pick a source labour, a department and at least one target.').replace(/"/g, '&quot;') %>",
+      loading: "<%- lrcTx('loading', 'Loading…').replace(/"/g, '&quot;') %>",
+      noRates: "<%- lrcTx('labour_rate_copy_no_rates', 'This labour has no rates in that department.').replace(/"/g, '&quot;') %>",
+      nothing: "<%- lrcTx('labour_rate_copy_nothing', 'Nothing to copy — every article already has this rate.').replace(/"/g, '&quot;') %>",
+      networkError: "<%- lrcTx('error_network', 'Network error. Please try again.').replace(/"/g, '&quot;') %>",
+      loadFailed: "<%- lrcTx('error_loading', 'Failed to load.').replace(/"/g, '&quot;') %>",
+      sku: "<%- lrcTx('sku', 'SKU').replace(/"/g, '&quot;') %>",
+      article: "<%- lrcTx('article_name', 'Article').replace(/"/g, '&quot;') %>",
+      rate: "<%- lrcTx('rate', 'Rate').replace(/"/g, '&quot;') %>",
+      targets: "<%- lrcTx('labour_rate_copy_targets_col', 'Targets').replace(/"/g, '&quot;') %>",
+      newLabel: "<%- lrcTx('labour_rate_copy_state_new', 'new').replace(/"/g, '&quot;') %>",
+      conflictLabel: "<%- lrcTx('labour_rate_copy_state_conflict', 'already has a rate').replace(/"/g, '&quot;') %>",
+      identicalLabel: "<%- lrcTx('labour_rate_copy_state_identical', 'same rate').replace(/"/g, '&quot;') %>",
+      conflictHint: "<%- lrcTx('labour_rate_copy_conflict_hint', 'Articles the target already has a different rate for:').replace(/"/g, '&quot;') %>",
+      blocked: "<%- lrcTx('labour_rate_copy_blocked', 'Cannot receive this copy:').replace(/"/g, '&quot;') %>",
+      notAssigned: "<%- lrcTx('labour_rate_copy_not_assigned', 'not assigned to this department').replace(/"/g, '&quot;') %>",
+      inactive: "<%- lrcTx('labour_rate_copy_inactive', 'inactive').replace(/"/g, '&quot;') %>",
+      outOfScope: "<%- lrcTx('labour_rate_copy_out_of_scope', 'outside your branches').replace(/"/g, '&quot;') %>",
+      scopeWide: "<%- lrcTx('labour_rate_copy_scope_wide', 'group/subgroup fallback rate(s) cannot be copied — add them manually.').replace(/"/g, '&quot;') %>",
+      twoRequests: "<%- lrcTx('labour_rate_copy_two_requests', 'Mixed rate types — this creates one approval request per rate type.').replace(/"/g, '&quot;') %>",
+      showing: "<%- lrcTx('labour_rate_copy_showing', 'Showing {shown} of {total} articles. All of them are copied.').replace(/"/g, '&quot;') %>",
+      willCopy: "<%- lrcTx('labour_rate_copy_will_copy', '{articles} articles → {targets} labour(s) = {writes} rates').replace(/"/g, '&quot;') %>",
+      queued: "<%- lrcTx('approval_sent', 'Sent for approval').replace(/"/g, '&quot;') %>",
+      applied: "<%- lrcTx('labour_rate_copy_applied', 'Rates copied').replace(/"/g, '&quot;') %>",
+      select: "<%- lrcTx('select', 'Select').replace(/"/g, '&quot;') %>",
+      noneDept: "<%- lrcTx('labour_rate_copy_no_departments', 'This labour has no rates to copy.').replace(/"/g, '&quot;') %>",
+      tooLarge: "<%- lrcTx('error_labour_rate_copy_too_large', 'Too many rates to copy at once (limit {limit}). Narrow the selection.').replace(/"/g, '&quot;') %>",
+      viewApprovals: "<%- lrcTx('view_pending_approval', 'View pending approval').replace(/"/g, '&quot;') %>",
+    };
+    const RENDER_CAP = 200;
+
+    const el = (sel) => modal.querySelector(sel);
+    const sourceSel = el("[data-lrc-source]");
+    const deptSel = el("[data-lrc-dept]");
+    const targetSel = el("[data-lrc-targets]");
+    const targetSearch = el("[data-lrc-target-search]");
+    const groupSel = el("[data-lrc-groups]");
+    const subgroupSel = el("[data-lrc-subgroups]");
+    const articleSel = el("[data-lrc-articles]");
+    const articleTypeWrap = el("[data-lrc-article-types]");
+    const filtersToggle = el("[data-lrc-filters-toggle]");
+    const filtersBody = el("[data-lrc-filters-body]");
+    const filtersCaret = el("[data-lrc-filters-caret]");
+    const filtersClear = el("[data-lrc-filters-clear]");
+    const summary = el("[data-lrc-summary]");
+    const head = el("[data-lrc-head]");
+    const tbody = el("[data-lrc-tbody]");
+    const truncated = el("[data-lrc-truncated]");
+    const conflictWrap = el("[data-lrc-conflict-wrap]");
+    const conflictHint = el("[data-lrc-conflict-hint]");
+    const blockedBox = el("[data-lrc-blocked]");
+    const notesBox = el("[data-lrc-notes]");
+    const errorBox = el("[data-lrc-error]");
+    const applyBtn = el("[data-lrc-apply]");
+    const stepSelect = el('[data-lrc-step="select"]');
+    const stepResult = el('[data-lrc-step="result"]');
+    const actionsSelect = el('[data-lrc-actions="select"]');
+    const actionsResult = el('[data-lrc-actions="result"]');
+    const resultBox = el("[data-lrc-result]");
+
+    const state = {
+      plan: null,
+      loading: false,
+      debounce: null,
+      controller: null,
+      serverFiltered: false,
+      submitting: false,
+    };
+
+    const esc = (value) =>
+      String(value == null ? "" : value)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    const money = (value) => (value == null ? "—" : Number(value).toFixed(2));
+    const selectedValues = (select) =>
+      Array.from(select?.selectedOptions || []).map((opt) => Number(opt.value)).filter(Boolean);
+
+    const currentFilters = () => ({
+      articleType: (articleTypeWrap.querySelector("input:checked") || {}).value || "BOTH",
+      groupIds: selectedValues(groupSel),
+      subgroupIds: selectedValues(subgroupSel),
+      skuIds: selectedValues(articleSel),
+    });
+    const conflictMode = () =>
+      (modal.querySelector("[data-lrc-conflict]:checked") || {}).value || "SKIP";
+
+    const willWrite = (cellState, mode) =>
+      cellState === "NEW" || (cellState === "CONFLICT" && mode === "OVERWRITE");
+
+    const showError = (message) => {
+      if (!message) { errorBox.classList.add("hidden"); errorBox.textContent = ""; return; }
+      errorBox.textContent = message;
+      errorBox.classList.remove("hidden");
+    };
+
+    // ---- rendering -------------------------------------------------------
+    const passesFilters = (row, filters) => {
+      if (filters.articleType !== "BOTH" && row.item_type !== filters.articleType) return false;
+      if (filters.groupIds.length && !filters.groupIds.includes(row.group_id)) return false;
+      if (filters.subgroupIds.length && !filters.subgroupIds.includes(row.subgroup_id)) return false;
+      if (filters.skuIds.length && !filters.skuIds.includes(row.sku_id)) return false;
+      return true;
+    };
+
+    const render = () => {
+      const plan = state.plan;
+      if (!plan) return;
+      const filters = currentFilters();
+      const mode = conflictMode();
+      const targets = plan.targets || [];
+      const rows = (plan.rows || []).filter((row) => passesFilters(row, filters));
+
+      let writes = 0;
+      let conflicts = 0;
+      rows.forEach((row) => {
+        row.targets.forEach((cell) => {
+          if (cell.state === "CONFLICT") conflicts += 1;
+          if (willWrite(cell.state, mode)) writes += 1;
+        });
+      });
+
+      head.innerHTML =
+        '<th class="px-2 py-1 text-left">' + esc(TXT.sku) + "</th>" +
+        '<th class="px-2 py-1 text-left">' + esc(TXT.article) + "</th>" +
+        '<th class="px-2 py-1 text-left">' + esc(TXT.rate) + "</th>" +
+        (targets.length <= 3
+          ? targets.map((tg) => '<th class="px-2 py-1 text-left">' + esc(tg.labour_name) + "</th>").join("")
+          : '<th class="px-2 py-1 text-left">' + esc(TXT.targets) + "</th>");
+
+      const shown = rows.slice(0, RENDER_CAP);
+      if (!shown.length) {
+        tbody.innerHTML =
+          '<tr><td class="px-2 py-3 text-slate-500" colspan="' + (targets.length <= 3 ? targets.length + 3 : 4) + '">' +
+          esc(plan.counts.articles ? TXT.nothing : TXT.noRates) + "</td></tr>";
+      } else {
+        tbody.innerHTML = shown.map((row) => {
+          const cells = targets.length <= 3
+            ? row.targets.map((cell) => {
+                if (cell.state === "NEW")
+                  return '<td class="px-2 py-1 text-emerald-700">' + esc(TXT.newLabel) + "</td>";
+                if (cell.state === "CONFLICT")
+                  return '<td class="px-2 py-1 text-amber-700">' + money(cell.current_rate) + " ⚠</td>";
+                return '<td class="px-2 py-1 text-slate-400">' + money(cell.current_rate) + " =</td>";
+              }).join("")
+            : (function () {
+                const counts = { NEW: 0, CONFLICT: 0, IDENTICAL: 0 };
+                row.targets.forEach((cell) => { counts[cell.state] += 1; });
+                return '<td class="px-2 py-1 text-slate-600">' +
+                  counts.NEW + " " + esc(TXT.newLabel) + " · " +
+                  counts.CONFLICT + " ⚠ · " + counts.IDENTICAL + " =</td>";
+              })();
+          return "<tr>" +
+            '<td class="px-2 py-1 font-medium text-slate-700">' + esc(row.sku_code) + "</td>" +
+            '<td class="px-2 py-1 text-slate-600">' + esc(row.item_name) + "</td>" +
+            '<td class="px-2 py-1 text-slate-700">' + money(row.rate_value) +
+            ' <span class="text-[10px] text-slate-400">' + esc(row.rate_type === "PER_DOZEN" ? "/dz" : "/pr") + "</span></td>" +
+            cells + "</tr>";
+        }).join("");
+      }
+
+      if (rows.length > RENDER_CAP) {
+        truncated.textContent = TXT.showing
+          .replace("{shown}", String(RENDER_CAP))
+          .replace("{total}", String(rows.length));
+        truncated.classList.remove("hidden");
+      } else {
+        truncated.classList.add("hidden");
+      }
+
+      // Over the cap the server sends no rows at all, so say so plainly
+      // instead of showing an empty table that looks like "nothing to copy".
+      if (plan.over_limit) {
+        summary.textContent = TXT.tooLarge.replace("{limit}", String(plan.limit));
+        applyBtn.disabled = true;
+        return;
+      }
+
+      summary.textContent = TXT.willCopy
+        .replace("{articles}", String(rows.length))
+        .replace("{targets}", String(targets.length))
+        .replace("{writes}", String(writes));
+
+      if (conflicts) {
+        conflictHint.textContent = TXT.conflictHint + " " + conflicts;
+        conflictWrap.classList.remove("hidden");
+      } else {
+        conflictWrap.classList.add("hidden");
+      }
+
+      const notes = [];
+      const rateTypes = new Set(rows.map((row) => row.rate_type));
+      if (rateTypes.size > 1) notes.push(TXT.twoRequests);
+      if ((plan.scope_wide_skipped || []).length)
+        notes.push(plan.scope_wide_skipped.length + " " + TXT.scopeWide);
+      if (notes.length) {
+        notesBox.textContent = notes.join(" ");
+        notesBox.classList.remove("hidden");
+      } else {
+        notesBox.classList.add("hidden");
+      }
+
+      const blocked = plan.blocked_targets || [];
+      if (blocked.length) {
+        blockedBox.textContent = TXT.blocked + " " + blocked.map((entry) => {
+          const reason = entry.reason === "NOT_ASSIGNED" ? TXT.notAssigned
+            : entry.reason === "INACTIVE" ? TXT.inactive : TXT.outOfScope;
+          return (entry.labour_name || "#" + entry.labour_id) + " (" + reason + ")";
+        }).join(", ");
+        blockedBox.classList.remove("hidden");
+      } else {
+        blockedBox.classList.add("hidden");
+      }
+
+      applyBtn.disabled = state.submitting || !writes;
+    };
+
+    const renderFacets = () => {
+      const facets = (state.plan && state.plan.facets) || { groups: [], subgroups: [], articles: [], article_types: [] };
+      const keep = (select, values) => {
+        const chosen = new Set(values);
+        Array.from(select.options).forEach((opt) => { opt.selected = chosen.has(Number(opt.value)); });
+      };
+      const prevGroups = selectedValues(groupSel);
+      const prevSubgroups = selectedValues(subgroupSel);
+      const prevArticles = selectedValues(articleSel);
+
+      groupSel.innerHTML = facets.groups.map((entry) =>
+        '<option value="' + entry.value + '">' + esc(entry.label) + " (" + entry.count + ")</option>").join("");
+      subgroupSel.innerHTML = facets.subgroups.map((entry) =>
+        '<option value="' + entry.value + '">' + esc(entry.label) + " (" + entry.count + ")</option>").join("");
+      articleSel.innerHTML = facets.articles.map((entry) =>
+        '<option value="' + entry.value + '">' + esc(entry.label) + " — " + esc(entry.item_name) + "</option>").join("");
+      keep(groupSel, prevGroups);
+      keep(subgroupSel, prevSubgroups);
+      keep(articleSel, prevArticles);
+
+      const types = facets.article_types || [];
+      const current = (articleTypeWrap.querySelector("input:checked") || {}).value || "BOTH";
+      const options = [{ value: "BOTH", label: "<%= lrcTx('coverage_scope_both', 'Both') %>", count: null }].concat(
+        types.map((entry) => ({ value: entry.value, label: entry.value, count: entry.count })),
+      );
+      articleTypeWrap.innerHTML = options.map((option) =>
+        '<label class="flex items-center gap-1"><input type="radio" name="lrc_article_type" value="' + option.value + '"' +
+        (option.value === current ? " checked" : "") + ' class="h-3.5 w-3.5 border-slate-300" /><span>' +
+        esc(option.label) + (option.count == null ? "" : " (" + option.count + ")") + "</span></label>").join("");
+    };
+
+    // ---- data ------------------------------------------------------------
+    const loadDepartments = async () => {
+      const source = Number(sourceSel.value || 0);
+      deptSel.innerHTML = '<option value="">' + esc(TXT.loading) + "</option>";
+      deptSel.disabled = true;
+      if (!source) {
+        deptSel.innerHTML = '<option value="">' + esc(TXT.select) + "</option>";
+        return;
+      }
+      try {
+        const response = await fetch(basePath + "/copy-source-departments?source_labour_id=" + source, {
+          headers: { Accept: "application/json" }, credentials: "same-origin",
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) { showError(payload.message || TXT.loadFailed); return; }
+        const departments = payload.departments || [];
+        if (!departments.length) {
+          deptSel.innerHTML = '<option value="">' + esc(TXT.noneDept) + "</option>";
+          return;
+        }
+        deptSel.innerHTML = '<option value="">' + esc(TXT.select) + "</option>" +
+          departments.map((entry) =>
+            '<option value="' + entry.dept_id + '">' + esc(entry.dept_name) + " — " + entry.rule_count + "</option>").join("");
+        deptSel.disabled = false;
+        if (departments.length === 1) {
+          deptSel.value = String(departments[0].dept_id);
+          onScopeChange();
+        }
+      } catch (err) {
+        showError(TXT.networkError);
+      }
+    };
+
+    const buildQuery = () => {
+      const source = Number(sourceSel.value || 0);
+      const dept = Number(deptSel.value || 0);
+      const targets = selectedValues(targetSel);
+      if (!source || !dept || !targets.length) return null;
+      const params = new URLSearchParams();
+      params.set("source_labour_id", String(source));
+      params.set("dept_id", String(dept));
+      params.set("target_labour_ids", targets.join(","));
+      params.set("conflict_mode", conflictMode());
+      // Filters normally stay client-side. They are only sent when the
+      // unfiltered set came back over the limit and there is nothing local
+      // left to filter.
+      if (state.serverFiltered) {
+        const filters = currentFilters();
+        params.set("article_type", filters.articleType);
+        if (filters.groupIds.length) params.set("group_ids", filters.groupIds.join(","));
+        if (filters.subgroupIds.length) params.set("subgroup_ids", filters.subgroupIds.join(","));
+        if (filters.skuIds.length) params.set("sku_ids", filters.skuIds.join(","));
+      }
+      return params;
+    };
+
+    const loadPreview = async () => {
+      showError("");
+      const params = buildQuery();
+      if (!params) {
+        state.plan = null;
+        tbody.innerHTML = "";
+        head.innerHTML = "";
+        summary.textContent = TXT.pickPrompt;
+        conflictWrap.classList.add("hidden");
+        notesBox.classList.add("hidden");
+        blockedBox.classList.add("hidden");
+        truncated.classList.add("hidden");
+        applyBtn.disabled = true;
+        return;
+      }
+
+      if (state.controller) state.controller.abort();
+      const controller = new AbortController();
+      state.controller = controller;
+      state.loading = true;
+      summary.textContent = TXT.loading;
+
+      try {
+        const response = await fetch(basePath + "/copy-preview?" + params.toString(), {
+          headers: { Accept: "application/json" }, credentials: "same-origin", signal: controller.signal,
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (controller.signal.aborted) return;
+        state.loading = false;
+        if (response.status === 401) { window.location.href = "/auth/login"; return; }
+        if (!response.ok) { showError(payload.message || TXT.loadFailed); summary.textContent = TXT.loadFailed; return; }
+        state.plan = payload;
+        // Over the cap: the server sent no rows, so filtering has to happen
+        // server-side from here until the selection is small enough again.
+        state.serverFiltered = Boolean(payload.over_limit);
+        renderFacets();
+        render();
+      } catch (err) {
+        if (err && err.name === "AbortError") return;
+        state.loading = false;
+        showError(TXT.networkError);
+      }
+    };
+
+    const schedulePreview = () => {
+      if (state.debounce) window.clearTimeout(state.debounce);
+      state.debounce = window.setTimeout(loadPreview, 250);
+    };
+
+    const syncTargetOptions = () => {
+      const source = Number(sourceSel.value || 0);
+      const chosen = new Set(selectedValues(targetSel));
+      const term = String(targetSearch.value || "").trim().toLowerCase();
+      targetSel.innerHTML = labours
+        .filter((option) => Number(option.value) !== source)
+        .filter((option) => !term || String(option.label).toLowerCase().includes(term))
+        .map((option) =>
+          '<option value="' + option.value + '"' + (chosen.has(Number(option.value)) ? " selected" : "") + ">" +
+          esc(option.label) + "</option>").join("");
+      targetSel.disabled = !source;
+    };
+
+    const onScopeChange = () => { schedulePreview(); };
+
+    // ---- events ----------------------------------------------------------
+    sourceSel.addEventListener("change", () => {
+      syncTargetOptions();
+      loadDepartments();
+      schedulePreview();
+    });
+    deptSel.addEventListener("change", onScopeChange);
+    targetSel.addEventListener("change", onScopeChange);
+    targetSearch.addEventListener("input", syncTargetOptions);
+
+    // Filter and conflict changes re-render from memory — no network call.
+    [groupSel, subgroupSel, articleSel].forEach((select) => {
+      select.addEventListener("change", () => {
+        if (state.serverFiltered) schedulePreview();
+        else render();
+      });
+    });
+    articleTypeWrap.addEventListener("change", () => {
+      if (state.serverFiltered) schedulePreview();
+      else render();
+    });
+    modal.addEventListener("change", (event) => {
+      if (event.target && event.target.matches("[data-lrc-conflict]")) render();
+    });
+
+    filtersToggle.addEventListener("click", () => {
+      const collapsed = filtersToggle.dataset.collapsed === "true";
+      filtersToggle.dataset.collapsed = collapsed ? "false" : "true";
+      filtersBody.classList.toggle("hidden", !collapsed);
+      filtersBody.classList.toggle("grid", collapsed);
+      filtersCaret.textContent = collapsed ? "▾" : "▸";
+    });
+    filtersClear.addEventListener("click", () => {
+      [groupSel, subgroupSel, articleSel].forEach((select) => {
+        Array.from(select.options).forEach((opt) => { opt.selected = false; });
+      });
+      const both = articleTypeWrap.querySelector('input[value="BOTH"]');
+      if (both) both.checked = true;
+      if (state.serverFiltered) schedulePreview();
+      else render();
+    });
+
+    const setStep = (step) => {
+      stepSelect.classList.toggle("hidden", step !== "select");
+      stepResult.classList.toggle("hidden", step !== "result");
+      actionsSelect.classList.toggle("hidden", step !== "select");
+      actionsResult.classList.toggle("hidden", step !== "result");
+    };
+
+    const open = () => {
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+      setStep("select");
+      syncTargetOptions();
+    };
+    const close = () => {
+      modal.classList.add("hidden");
+      modal.classList.remove("flex");
+      if (state.controller) state.controller.abort();
+    };
+
+    openBtn.addEventListener("click", open);
+    modal.querySelectorAll("[data-lrc-close]").forEach((btn) => btn.addEventListener("click", close));
+    modal.addEventListener("click", (event) => { if (event.target === modal) close(); });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !modal.classList.contains("hidden")) close();
+    });
+    el("[data-lrc-done]").addEventListener("click", () => {
+      close();
+      window.location.reload();
+    });
+
+    applyBtn.addEventListener("click", async () => {
+      if (state.submitting) return;
+      const source = Number(sourceSel.value || 0);
+      const dept = Number(deptSel.value || 0);
+      const targets = selectedValues(targetSel);
+      if (!source || !dept || !targets.length) return;
+      const filters = currentFilters();
+
+      state.submitting = true;
+      applyBtn.disabled = true;
+      showError("");
+      try {
+        const response = await fetch(basePath + "/copy", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json", "CSRF-Token": csrfToken },
+          credentials: "same-origin",
+          body: JSON.stringify({
+            _csrf: csrfToken,
+            source_labour_id: source,
+            dept_id: dept,
+            target_labour_ids: targets,
+            conflict_mode: conflictMode(),
+            article_type: filters.articleType,
+            group_ids: filters.groupIds,
+            subgroup_ids: filters.subgroupIds,
+            sku_ids: filters.skuIds,
+          }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (response.status === 401) { window.location.href = "/auth/login"; return; }
+        if (!response.ok) { showError(payload.message || TXT.loadFailed); return; }
+
+        const lines = [];
+        lines.push('<div class="text-sm font-semibold text-slate-800">' +
+          esc(payload.queued ? TXT.queued : TXT.applied) + "</div>");
+        (payload.requests || []).forEach((entry) => {
+          lines.push('<div class="text-xs text-slate-600">' + esc(entry.rate_type) + ": " +
+            entry.row_count + "</div>");
+        });
+        if (!payload.queued) {
+          lines.push('<div class="text-xs text-slate-600">+' + (payload.created || 0) +
+            " / ~" + (payload.updated || 0) + "</div>");
+        }
+        if (payload.scope_wide_skipped) {
+          lines.push('<div class="text-xs text-amber-700">' + payload.scope_wide_skipped + " " + esc(TXT.scopeWide) + "</div>");
+        }
+        if (payload.approvals_url) {
+          lines.push('<a class="text-xs font-semibold text-sky-700 underline" href="' + payload.approvals_url + '">' +
+            esc(TXT.viewApprovals) + "</a>");
+        }
+        resultBox.innerHTML = lines.join("");
+        setStep("result");
+      } catch (err) {
+        showError(TXT.networkError);
+      } finally {
+        state.submitting = false;
+        applyBtn.disabled = false;
+      }
+    });
+  })();
+</script>
+<% } %>
 
 <%- include("../base/partials/confirm-modal", { t, csrfToken }) %>
 <%- include("../base/partials/basic-info-utils", { t, page, basePath, modalOpen, modalMode }) %>

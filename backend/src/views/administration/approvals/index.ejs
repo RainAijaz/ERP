@@ -324,8 +324,57 @@
       return String(value);
     };
 
+    // Master-data form partials disagree on how they render a multi-select:
+    // accounts emits the full [data-multi-select] widget, while parties (and
+    // others) emit a bare <select multiple> that relies on the searchable-select
+    // enhancer — which does not run inside this modal. Without this, those
+    // fields render as a raw list box the modal cannot drive, so branch edits
+    // in a party approval had no working control.
+    //
+    // Upgrade any bare multi-select into the structure initMultiSelects below
+    // already understands, instead of changing how those pages render.
+    const upgradeBareMultiSelects = (panel) => {
+      if (!panel) return;
+      panel.querySelectorAll("select[multiple][data-field]").forEach((select) => {
+        if (select.closest("[data-multi-select]")) return;
+
+        const wrap = document.createElement("div");
+        wrap.className = "mt-2 space-y-2";
+        wrap.setAttribute("data-multi-select", "");
+
+        const trigger = document.createElement("button");
+        trigger.type = "button";
+        trigger.className =
+          "flex w-full items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3 text-left text-sm text-slate-700 shadow-sm transition hover:border-slate-300 hover:text-slate-900 focus:outline-none focus:ring-2 focus:ring-accent/30";
+        trigger.setAttribute("data-multi-trigger", "");
+        const placeholder = document.createElement("span");
+        placeholder.setAttribute("data-multi-placeholder", "");
+        placeholder.textContent = "<%= t('select') %>";
+        trigger.appendChild(placeholder);
+
+        const tags = document.createElement("div");
+        tags.className = "flex flex-wrap gap-2";
+        tags.setAttribute("data-multi-tags", "");
+
+        const menu = document.createElement("div");
+        menu.className =
+          "hidden max-h-48 w-full overflow-auto rounded-xl border border-slate-200 bg-white p-2 shadow-md";
+        menu.setAttribute("data-multi-menu", "");
+
+        select.parentNode.insertBefore(wrap, select);
+        wrap.appendChild(trigger);
+        wrap.appendChild(tags);
+        wrap.appendChild(menu);
+        wrap.appendChild(select);
+        // Keep the native select in the DOM (it carries the value the save
+        // path reads) but out of sight, mirroring the accounts markup.
+        select.className = "sr-only";
+      });
+    };
+
     const initMultiSelects = (panel) => {
       if (!panel) return;
+      upgradeBareMultiSelects(panel);
       const wraps = panel.querySelectorAll("[data-multi-select]");
       wraps.forEach((wrap) => {
         if (wrap.dataset.multiReady === "true") return;
@@ -655,7 +704,7 @@
         values[key] = items;
       });
       const hrBulkMode = String(panel?.dataset?.hrBulkMode || "").trim().toUpperCase();
-      if (hrBulkMode === "BULK_COMMISSION_SKU_UPSERT" || hrBulkMode === "SKU_MULTI_UPSERT" || hrBulkMode === "BULK_LABOUR_RATE_SKU_UPSERT") {
+      if (hrBulkMode === "BULK_COMMISSION_SKU_UPSERT" || hrBulkMode === "SKU_MULTI_UPSERT" || hrBulkMode === "BULK_LABOUR_RATE_SKU_UPSERT" || hrBulkMode === "BULK_LABOUR_RATE_COPY") {
         let rows = [];
         try {
           rows = JSON.parse(panel?.dataset?.hrBulkRows || "[]");
@@ -1114,7 +1163,7 @@
     };
 
     const isHrBulkMode = (mode) =>
-      mode === "BULK_COMMISSION_SKU_UPSERT" || mode === "SKU_MULTI_UPSERT" || mode === "BULK_LABOUR_RATE_SKU_UPSERT";
+      mode === "BULK_COMMISSION_SKU_UPSERT" || mode === "SKU_MULTI_UPSERT" || mode === "BULK_LABOUR_RATE_SKU_UPSERT" || mode === "BULK_LABOUR_RATE_COPY";
 
     const open = async (payload) => {
       if (!modal) return;
