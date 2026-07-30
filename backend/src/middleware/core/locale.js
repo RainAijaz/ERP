@@ -505,8 +505,11 @@ const translations = {
     city: "City",
     customer: "Customer",
     supplier: "Supplier",
-    vendor_party: "Vendor",
-    select_vendor: "Select Vendor",
+    other_party: "Other",
+    // Returnable gate passes go to repair vendors and to parties we do not trade
+    // with at all, so this label is deliberately not "Vendor".
+    vendor_party: "Sent To",
+    select_vendor: "Select Party",
     vendor_capabilities: "Vendor Capabilities",
     vendor_capabilities_help:
       "Choose what this supplier can handle (Material, Repair, Service).",
@@ -3747,6 +3750,9 @@ translations.ur = {
     "Sale return quantity aur value analysis dikhata hai.",
   sales_discount_report_purpose_tooltip:
     "Discount impact ko voucher/customer level par monitor karta hai.",
+  other_party: "دیگر",
+  vendor_party: "وصول کنندہ",
+  select_vendor: "پارٹی منتخب کریں۔",
 };
 
 Object.assign(translations.en, {

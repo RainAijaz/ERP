@@ -136,6 +136,10 @@ const page = {
       options: [
         { value: "CUSTOMER", label: "customer" },
         { value: "SUPPLIER", label: "supplier" },
+        // Neither bought from nor sold to — used for returnable gate passes to
+        // sister concerns, neighbouring factories, employees. Deliberately absent
+        // from purchase/sales pickers, which filter on SUPPLIER/CUSTOMER + BOTH.
+        { value: "OTHER", label: "other_party" },
       ],
     },
     {

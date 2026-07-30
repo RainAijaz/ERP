@@ -10,7 +10,7 @@ const ACCOUNT_TYPES = new Set([
   "REVENUE",
   "EXPENSE",
 ]);
-const PARTY_TYPES = new Set(["CUSTOMER", "SUPPLIER", "BOTH"]);
+const PARTY_TYPES = new Set(["CUSTOMER", "SUPPLIER", "BOTH", "OTHER"]);
 
 const ENTITY_KEYS = Object.freeze({
   units: "units",

@@ -104,9 +104,16 @@ const loadOptions = async (req, voucherTypeCode) => {
     .andWhere(function allowMissingOrActivePostingClass() {
       this.whereNull("a.posting_class_id").orWhere("apc.is_active", true);
     });
+  // A PARTY line posts to a receivable/payable control account, and OTHER parties
+  // have neither — gl-posting-service maps only CUSTOMER/SUPPLIER/BOTH and would
+  // reject the voucher at posting time. Keep them out of the picker instead of
+  // letting the entry fail after the fact.
   let partiesQuery = knex("erp.parties as p")
     .select("p.id", "p.code", localizedNameSelect("p", "name", locale))
-    .where({ "p.is_active": true });
+    .where({ "p.is_active": true })
+    .whereRaw(
+      "upper(coalesce(p.party_type::text, '')) in ('CUSTOMER','SUPPLIER','BOTH')",
+    );
   let laboursQuery = knex("erp.labours as l")
     .select(
       "l.id",
@@ -209,7 +216,15 @@ const loadOptions = async (req, voucherTypeCode) => {
       .limit(500);
   }
 
-  return { accounts, headerAccounts, parties, labours, employees, departments, salesOrders };
+  return {
+    accounts,
+    headerAccounts,
+    parties,
+    labours,
+    employees,
+    departments,
+    salesOrders,
+  };
 };
 
 const loadRecent = async (req, voucherTypeCode) => {

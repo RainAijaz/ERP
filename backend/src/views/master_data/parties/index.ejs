@@ -107,7 +107,7 @@
                       </span>
                     <% } else if (column.key === "party_type" && row[column.key]) { %>
                       <span class="inline-flex items-center rounded-full border border-slate-200 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-slate-600">
-                        <%= t(row[column.key] === "CUSTOMER" ? "customer" : "supplier") %>
+                        <%= t({ CUSTOMER: "customer", SUPPLIER: "supplier", BOTH: "both", OTHER: "other_party" }[row[column.key]] || "supplier") %>
                       </span>
                     <% } else if (column.key === "credit_allowed") { %>
                       <span class="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-emerald-700">

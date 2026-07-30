@@ -6,7 +6,10 @@ const {
   resolveVoucherApprovalRequiredTx,
 } = require("../../utils/voucher-approval-policy");
 const { translateUrduWithFallback } = require("../../utils/translate");
-const { syncVoucherGlPostingTx } = require("./gl-posting-service");
+const {
+  syncVoucherGlPostingTx,
+  POSTABLE_PARTY_TYPES,
+} = require("./gl-posting-service");
 const {
   sendVoucherPaymentNotifications,
 } = require("../../utils/payment-notification");
@@ -230,6 +233,31 @@ const getAccountPostingClassMapTx = async ({ trx, req, accountIds = [] }) => {
   return map;
 };
 
+// Party lines are validated here for the same reason account lines are: so a bad
+// reference is a clean "Line 3: ..." message on save instead of an opaque failure
+// later, when GL posting runs inside this same transaction and rolls everything
+// back. This checks exactly what posting checks and nothing more — deliberately no
+// branch-scope test, which would newly reject vouchers that save fine today.
+const getPartyTypeMapTx = async ({ trx, partyIds = [] }) => {
+  const uniqueIds = [
+    ...new Set(
+      (partyIds || [])
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0),
+    ),
+  ];
+  if (!uniqueIds.length) return new Map();
+  const rows = await trx("erp.parties")
+    .select("id", "party_type")
+    .whereIn("id", uniqueIds);
+  return new Map(
+    rows.map((row) => [
+      Number(row.id),
+      String(row.party_type || "").toUpperCase(),
+    ]),
+  );
+};
+
 const validateLines = async ({
   trx,
   req,
@@ -245,13 +273,21 @@ const validateLines = async ({
     index,
     ref: toLineRef(line),
   }));
-  const accountPostingClassById = await getAccountPostingClassMapTx({
-    trx,
-    req,
-    accountIds: lineRefs
-      .filter(({ ref }) => ref.line_kind === "ACCOUNT")
-      .map(({ ref }) => Number(ref.account_id || 0)),
-  });
+  const [accountPostingClassById, partyTypeById] = await Promise.all([
+    getAccountPostingClassMapTx({
+      trx,
+      req,
+      accountIds: lineRefs
+        .filter(({ ref }) => ref.line_kind === "ACCOUNT")
+        .map(({ ref }) => Number(ref.account_id || 0)),
+    }),
+    getPartyTypeMapTx({
+      trx,
+      partyIds: lineRefs
+        .filter(({ ref }) => ref.line_kind === "PARTY")
+        .map(({ ref }) => Number(ref.party_id || 0)),
+    }),
+  ]);
 
   const normalized = lineRefs.map(({ line, index, ref }) => {
     if (
@@ -270,6 +306,19 @@ const validateLines = async ({
       line.description || line.narration || "",
       500,
     );
+    if (ref.line_kind === "PARTY") {
+      const partyType = partyTypeById.get(Number(ref.party_id || 0)) || null;
+      if (!partyType) {
+        throw new HttpError(400, `Line ${index + 1}: party does not exist`);
+      }
+      if (!POSTABLE_PARTY_TYPES.includes(partyType)) {
+        throw new HttpError(
+          400,
+          `Line ${index + 1}: this party cannot be used on a voucher line because it is neither a customer nor a supplier`,
+        );
+      }
+    }
+
     let departmentId = Number(line.department_id || line.dept_id || 0) || null;
     if (ref.line_kind !== "ACCOUNT") {
       departmentId = null;

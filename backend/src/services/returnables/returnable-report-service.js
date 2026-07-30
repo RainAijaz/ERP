@@ -3,6 +3,9 @@
 const knex = require("../../db/knex");
 const { toLocalDateOnly } = require("../../utils/date-only");
 const { toIdList, toBoolean } = require("../../utils/report-filter-types");
+// Shared with the voucher screen so the report filter can never list a party the
+// dispatch form refuses to accept.
+const { RETURNABLE_PARTY_TYPES_SQL } = require("./returnable-voucher-service");
 
 const STATUS_OPTIONS = Object.freeze([
   "PENDING",
@@ -169,7 +172,7 @@ const loadOptions = async ({ req, branchIds }) => {
   let vendorQuery = knex("erp.parties as p")
     .select("p.id", "p.name")
     .where("p.is_active", true)
-    .whereRaw("upper(coalesce(p.party_type::text, '')) = 'SUPPLIER'")
+    .whereRaw(RETURNABLE_PARTY_TYPES_SQL)
     .orderBy("p.name", "asc");
 
   if (!req.user?.isAdmin || branchIds.length) {
