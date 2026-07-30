@@ -14,7 +14,8 @@
  *     "Pending Approvals" page.
  *
  * DB constraints these helpers respect (010_administration.sql):
- *   - maker != checker: `decided_by <> requested_by`
+ *   - maker != checker: `decided_by <> requested_by`, except for WITHDRAWN,
+ *     which is by definition the maker closing their own request.
  *   - once decided, both `decided_by` and `decided_at` must be non-null.
  */
 
@@ -45,9 +46,11 @@ async function findPendingVoucherApprovalTx(trx, voucherId) {
  * screen. The row is UPDATED (not deleted) so it moves to the Approved/Rejected
  * tab of the approvals page with the confirmer recorded as the decider.
  *
- * The maker != checker DB rule means a user can never decide their own request,
- * so rows requested by the confirmer are intentionally left untouched (the
- * Approvals page enforces the same restriction).
+ * The maker != checker DB rule means a user can never *decide* their own
+ * request, so a user resolving their own voucher gets those rows closed as
+ * WITHDRAWN instead (the one status the maker may set on their own request --
+ * see 102_approval_withdraw.sql). Before WITHDRAWN existed these rows had to be
+ * skipped, which left them stranded on the Pending Approvals page forever.
  *
  * @returns {Promise<number>} number of rows resolved
  */
@@ -64,12 +67,14 @@ async function resolvePendingVoucherApprovalsTx({
   if (!Number.isInteger(decider) || decider <= 0) return 0;
   if (nextStatus !== "APPROVED" && nextStatus !== "REJECTED") return 0;
 
-  return trx("erp.approval_request")
-    .where({
+  const pendingForVoucher = () =>
+    trx("erp.approval_request").where({
       entity_type: "VOUCHER",
       entity_id: String(id),
       status: PENDING,
-    })
+    });
+
+  const decided = await pendingForVoucher()
     .andWhereNot("requested_by", decider)
     .update({
       status: nextStatus,
@@ -77,6 +82,17 @@ async function resolvePendingVoucherApprovalsTx({
       decided_at: trx.fn.now(),
       decision_notes: null,
     });
+
+  const withdrawn = await pendingForVoucher()
+    .andWhere("requested_by", decider)
+    .update({
+      status: "WITHDRAWN",
+      decided_by: decider,
+      decided_at: trx.fn.now(),
+      decision_notes: null,
+    });
+
+  return Number(decided || 0) + Number(withdrawn || 0);
 }
 
 module.exports = {

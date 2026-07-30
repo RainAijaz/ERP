@@ -9,6 +9,9 @@
     colorClass = "bg-emerald-100 text-emerald-700";
   } else if (s === "REJECTED") {
     colorClass = "bg-rose-100 text-rose-700";
+  } else if (s === "WITHDRAWN") {
+    // Neutral, not rose: the maker pulled it back, nobody rejected it.
+    colorClass = "bg-slate-100 text-slate-600";
   }
 %>
 <span class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium <%= colorClass %>">

@@ -64,10 +64,12 @@ EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
   -- Generic approval queue status (maker-checker).
-  -- PENDING  = waiting for checker decision
-  -- APPROVED = accepted by checker
-  -- REJECTED = rejected by checker
-  CREATE TYPE erp.approval_status AS ENUM ('PENDING','APPROVED','REJECTED');
+  -- PENDING   = waiting for checker decision
+  -- APPROVED  = accepted by checker
+  -- REJECTED  = rejected by checker
+  -- WITHDRAWN = pulled back by the maker before any decision (approval_request
+  --             only; voucher_header shares this type but never uses it)
+  CREATE TYPE erp.approval_status AS ENUM ('PENDING','APPROVED','REJECTED','WITHDRAWN');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
 DO $$ BEGIN
@@ -508,11 +510,17 @@ CREATE TABLE IF NOT EXISTS erp.approval_request (
   decision_notes text,
 
   -- Maker-checker rule: the requester cannot decide their own request.
-  CHECK (decided_by IS NULL OR decided_by <> requested_by),
+  -- Exception: WITHDRAWN is the maker pulling their own request back, so it
+  -- is recorded with decided_by = requested_by (see 102_approval_withdraw.sql).
+  CONSTRAINT approval_request_maker_checker_check CHECK (
+    decided_by IS NULL
+    OR status = 'WITHDRAWN'
+    OR decided_by <> requested_by
+  ),
 
   -- State consistency:
   -- - While PENDING: decided_by and decided_at must be NULL
-  -- - Once decided (APPROVED/REJECTED): decided_by must be present
+  -- - Once decided (APPROVED/REJECTED/WITHDRAWN): decided_by must be present
   CHECK (
     (status = 'PENDING' AND decided_by IS NULL AND decided_at IS NULL)
     OR

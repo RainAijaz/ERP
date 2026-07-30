@@ -4322,6 +4322,25 @@ Object.assign(translations.ur, {
   desc_accounts: "واؤچرز اور رپورٹنگ میں استعمال ہونے والا چارٹ آف اکاؤنٹس برقرار رکھیں۔",
 });
 
+// Withdrawing an own pending approval request (approvals page).
+Object.assign(translations.en, {
+  withdraw: "Withdraw",
+  withdrawn: "Withdrawn",
+  approval_withdrawn: "Approval request withdrawn.",
+  confirm_withdraw_title: "Withdraw Request",
+  confirm_withdraw_approval:
+    "This request will stop waiting for approval. Nothing is deleted, and you can submit it again.",
+});
+
+Object.assign(translations.ur, {
+  withdraw: "واپس لیں",
+  withdrawn: "واپس لی گئی",
+  approval_withdrawn: "منظوری کی درخواست واپس لے لی گئی ہے۔",
+  confirm_withdraw_title: "درخواست واپس لیں",
+  confirm_withdraw_approval:
+    "یہ درخواست منظوری کے انتظار میں نہیں رہے گی۔ کوئی ریکارڈ حذف نہیں ہوگا اور آپ دوبارہ جمع کرا سکتے ہیں۔",
+});
+
 const formatDateDisplay = (value, fallback = "-") => {
   if (value === null || value === undefined || value === "") return fallback;
   const text = String(value).trim();

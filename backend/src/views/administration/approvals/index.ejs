@@ -55,6 +55,16 @@
       typeof can === "function" &&
       can("SCREEN", "administration.approvals", "approve"),
   );
+  const currentUserId = Number(user && user.id ? user.id : 0);
+  // A requester can pull back their own pending request without an approver.
+  const canWithdrawRow = (row) =>
+    row.status === "PENDING" &&
+    currentUserId > 0 &&
+    Number(row.requested_by) === currentUserId;
+  // The actions column carries approve/reject for checkers, withdraw for
+  // makers, and the decision timestamp for closed rows -- so it is shown to
+  // everyone, not just approvers.
+  const showActionsColumn = canApproveRequests || rows.some(canWithdrawRow);
 %>
 <div class="mx-auto w-full max-w-7xl space-y-6">
   <div class="flex items-center justify-between">
@@ -66,7 +76,7 @@
     </div>
     
     <div class="flex gap-2">
-      <% ["PENDING", "APPROVED", "REJECTED"].forEach(s => { %>
+      <% ["PENDING", "APPROVED", "REJECTED", "WITHDRAWN"].forEach(s => { %>
         <a href="?status=<%= s %>" 
            class="rounded-full px-4 py-1 text-xs font-bold transition <%= currentStatus === s ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 border border-slate-200' %>">
            <%= t(s.toLowerCase()) %> (<%= Number(countsByStatus[s] || 0) %>)
@@ -86,14 +96,14 @@
           <th class="px-6 py-3"><%= t("summary") %></th>
           <th class="px-6 py-3"><%= t("details")  %></th>
           <th class="px-6 py-3"><%= t("status") %></th>
-          <% if (canApproveRequests) { %>
+          <% if (showActionsColumn) { %>
             <th class="px-6 py-3 text-right"><%= t("actions") %></th>
           <% } %>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100">
         <% if (rows.length === 0) { %>
-           <tr><td colspan="<%= canApproveRequests ? 7 : 6 %>" class="p-6 text-center text-slate-400"><%= t("no_entries") %></td></tr>
+           <tr><td colspan="<%= showActionsColumn ? 7 : 6 %>" class="p-6 text-center text-slate-400"><%= t("no_entries") %></td></tr>
         <% } %>
         
         <% rows.forEach(row => { %>
@@ -139,24 +149,38 @@
             <td class="px-6 py-4">
                <%- include("../../base/partials/approval-badge", { status: row.status }) %>
             </td>
-            <% if (canApproveRequests) { %>
+            <% if (showActionsColumn) { %>
               <td class="px-6 py-4 text-right">
                 <% if (row.status === 'PENDING') { %>
                   <% const isNewSku = row.entity_type === 'SKU' && getAction(row) === 'create'; %>
                   <div class="flex justify-end gap-2">
-                    <form action="<%= basePath %>/<%= row.id %>/approve" method="POST" class="inline"<%= isNewSku ? ' data-new-sku-approve' : '' %>>
-                      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                      <% if (isNewSku) { %><input type="hidden" name="send_article_rate" value="0"><% } %>
-                      <button type="submit" class="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition">
-                        <%= t("approve")  %>
-                      </button>
-                    </form>
-                    <form action="<%= basePath %>/<%= row.id %>/reject" method="POST" class="inline">
-                      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                      <button type="submit" class="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 transition">
-                        <%= t("reject")  %>
-                      </button>
-                    </form>
+                    <% if (canApproveRequests) { %>
+                      <form action="<%= basePath %>/<%= row.id %>/approve" method="POST" class="inline"<%= isNewSku ? ' data-new-sku-approve' : '' %>>
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <% if (isNewSku) { %><input type="hidden" name="send_article_rate" value="0"><% } %>
+                        <button type="submit" class="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition">
+                          <%= t("approve")  %>
+                        </button>
+                      </form>
+                      <form action="<%= basePath %>/<%= row.id %>/reject" method="POST" class="inline">
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <button type="submit" class="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 transition">
+                          <%= t("reject")  %>
+                        </button>
+                      </form>
+                    <% } %>
+                    <% if (canWithdrawRow(row)) { %>
+                      <%# data-confirm-form opts out of the layout's global %>
+                      <%# delete-confirm interceptor, which would title this %>
+                      <%# "Confirm Delete" and warn about permanent deletion. %>
+                      <%# The handler at the bottom of this file asks instead. %>
+                      <form action="<%= basePath %>/<%= row.id %>/withdraw" method="POST" class="inline" data-approval-withdraw data-confirm-form>
+                        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <button type="submit" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 hover:border-slate-300 hover:text-slate-800 transition">
+                          <%= t("withdraw")  %>
+                        </button>
+                      </form>
+                    <% } %>
                   </div>
                 <% } else { %>
                    <span class="text-xs text-slate-400 whitespace-nowrap">
@@ -1290,6 +1314,34 @@
     cancelBtns.forEach((btn) => btn.addEventListener("click", closeModal));
     modal.addEventListener("click", (event) => {
       if (event.target === modal) closeModal();
+    });
+  })();
+</script>
+<script>
+  // Withdraw confirmation. Uses the layout's shared confirm modal
+  // (window.showUiConfirmModal) rather than the global delete-confirm
+  // interceptor, so the copy says "withdraw", not "permanently deletes".
+  (function () {
+    const text = {
+      title: <%- JSON.stringify(t("confirm_withdraw_title")) %>,
+      message: <%- JSON.stringify(t("confirm_withdraw_approval")) %>,
+      confirmLabel: <%- JSON.stringify(t("withdraw")) %>,
+      cancelLabel: <%- JSON.stringify(t("cancel")) %>,
+    };
+
+    document.querySelectorAll("form[data-approval-withdraw]").forEach((form) => {
+      form.addEventListener("submit", async (event) => {
+        if (form.dataset.confirmed === "1") return; // already confirmed
+        event.preventDefault();
+        // No modal available (older layout): fall back to a native confirm.
+        const ask =
+          typeof window.showUiConfirmModal === "function"
+            ? window.showUiConfirmModal(text)
+            : Promise.resolve(window.confirm(text.message));
+        if (!(await ask)) return;
+        form.dataset.confirmed = "1";
+        form.submit();
+      });
     });
   })();
 </script>

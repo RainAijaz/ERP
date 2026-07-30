@@ -1549,6 +1549,7 @@ router.get(
         PENDING: 0,
         APPROVED: 0,
         REJECTED: 0,
+        WITHDRAWN: 0,
       };
       statusCountRows.forEach((row) => {
         const key = String(row?.status || "").toUpperCase();
@@ -1583,6 +1584,7 @@ router.get(
           "ar.status",
           "ar.summary",
           "ar.requested_at",
+          "ar.requested_by",
           "ar.decided_at",
           "u.username as requester_name",
         )
@@ -2271,6 +2273,121 @@ router.post(
 );
 
 // POST /:id/reject
+/**
+ * Undo the side effects a queued request left on the underlying entity.
+ *
+ * Shared by /:id/reject and /:id/withdraw: both close a PENDING request
+ * without applying it, so both owe the same cleanup. Keeping it in one place
+ * means a new entity type with pending state can't be handled by one path and
+ * forgotten by the other.
+ *
+ * @param {object} trx      knex transaction
+ * @param {object} request  the approval_request row being closed
+ * @param {number} userId   whoever is closing it (rejecter or withdrawer)
+ */
+async function unwindPendingApprovalRequestTx(trx, request, userId) {
+  if (request.entity_type === "BOM") {
+    await bomService.resetPendingBomAfterRejectTx(trx, request);
+  }
+
+  if (request.request_type === "VOUCHER" && request.entity_type === "VOUCHER") {
+    const payload =
+      request?.new_value && typeof request.new_value === "object"
+        ? request.new_value
+        : {};
+    const action = String(payload.action || "").toLowerCase();
+    const voucherId = Number(request.entity_id || 0);
+    // A pending "create" leaves a PENDING voucher header behind, so closing
+    // the request must flip that header to REJECTED. "update"/"delete"
+    // requests never mutate the header while queued (the pending change
+    // lives only in the request), so the voucher keeps its prior status
+    // and only the request is closed. Legacy action-less requests are
+    // treated as creates.
+    // A withdrawal lands the header on REJECTED too: the voucher screens
+    // already understand that status, and the approval_request row is what
+    // records that this was a withdrawal rather than a rejection.
+    const rejectsHeader = action === "" || action === "create";
+    if (rejectsHeader && Number.isInteger(voucherId) && voucherId > 0) {
+      await trx("erp.voucher_header")
+        .where({ id: voucherId, status: "PENDING" })
+        .update({
+          status: "REJECTED",
+          approved_by: userId,
+          approved_at: trx.fn.now(),
+        });
+    }
+  }
+}
+
+// POST /:id/withdraw - the requester pulls back their own pending request.
+// Deliberately gated on "navigate", not "approve": this is not a checker
+// decision, so it needs no approval rights and no new role grants. The row is
+// closed as WITHDRAWN (never deleted) so admins keep the full audit trail and
+// any pending state on the underlying entity is unwound exactly as a rejection
+// would unwind it.
+router.post(
+  "/:id/withdraw",
+  requirePermission("SCREEN", "administration.approvals", "navigate"),
+  async (req, res, next) => {
+    const id = Number(req.params.id);
+    if (!id) return next(new HttpError(400, res.locals.t("error_invalid_id")));
+    const userId = Number(req.user?.id || 0);
+    if (!userId)
+      return next(new HttpError(403, res.locals.t("permission_denied")));
+
+    try {
+      await knex.transaction(async (trx) => {
+        const request = await trx("erp.approval_request").where({ id }).first();
+        if (!request || request.status !== "PENDING") {
+          throw new Error(res.locals.t("approval_request_not_found"));
+        }
+        // Own requests only - admins included. Withdrawing someone else's
+        // request is a rejection, and that path records who decided it.
+        if (Number(request.requested_by) !== userId) {
+          throw new HttpError(403, res.locals.t("permission_denied"));
+        }
+
+        await unwindPendingApprovalRequestTx(trx, request, userId);
+
+        // decided_by = requested_by is legal only for WITHDRAWN
+        // (approval_request_maker_checker_check, 102_approval_withdraw.sql).
+        await trx("erp.approval_request").where({ id }).update({
+          status: "WITHDRAWN",
+          decided_by: userId,
+          decided_at: trx.fn.now(),
+        });
+
+        await insertActivityLog(trx, {
+          branch_id: request.branch_id,
+          user_id: userId,
+          entity_type: request.entity_type,
+          entity_id: request.entity_id,
+          voucher_type_code:
+            resolveApprovalRequestVoucherTypeCode(request) || null,
+          action: "CANCEL",
+          ip_address: req.ip,
+          context: {
+            source: "approval-withdraw",
+            approval_request_id: request.id,
+            requested_entity_id: request.entity_id,
+            decision: "WITHDRAWN",
+            request_type: request.request_type,
+            summary: request.summary || null,
+            old_value: request.old_value || null,
+            new_value: request.new_value || null,
+          },
+        });
+      });
+
+      // No notification: the requester is the one who did this.
+      setUiNotice(res, res.locals.t("approval_withdrawn"), { autoClose: true });
+      res.redirect(`${req.baseUrl}?status=PENDING`);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 router.post(
   "/:id/reject",
   requirePermission("SCREEN", "administration.approvals", "approve"),
@@ -2288,37 +2405,7 @@ router.post(
         }
         requestSnapshot = request;
 
-        if (request.entity_type === "BOM") {
-          await bomService.resetPendingBomAfterRejectTx(trx, request);
-        }
-
-        if (
-          request.request_type === "VOUCHER" &&
-          request.entity_type === "VOUCHER"
-        ) {
-          const payload =
-            request?.new_value && typeof request.new_value === "object"
-              ? request.new_value
-              : {};
-          const action = String(payload.action || "").toLowerCase();
-          const voucherId = Number(request.entity_id || 0);
-          // A pending "create" leaves a PENDING voucher header behind, so
-          // rejecting it must flip that header to REJECTED. "update"/"delete"
-          // requests never mutate the header while queued (the pending change
-          // lives only in the request), so the voucher keeps its prior status
-          // and only the request is rejected. Legacy action-less requests are
-          // treated as creates.
-          const rejectsHeader = action === "" || action === "create";
-          if (rejectsHeader && Number.isInteger(voucherId) && voucherId > 0) {
-            await trx("erp.voucher_header")
-              .where({ id: voucherId, status: "PENDING" })
-              .update({
-                status: "REJECTED",
-                approved_by: req.user.id,
-                approved_at: trx.fn.now(),
-              });
-          }
-        }
+        await unwindPendingApprovalRequestTx(trx, request, req.user.id);
 
         await trx("erp.approval_request").where({ id }).update({
           status: "REJECTED",
