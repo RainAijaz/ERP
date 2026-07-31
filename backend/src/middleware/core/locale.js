@@ -4202,6 +4202,31 @@ Object.assign(translations.en, {
   wa_filter_queued: "Queued",
   wa_filter_all: "All",
   wa_mark_handled: "Mark handled",
+  wa_reason_cooldown: "Paused — WhatsApp was refusing messages",
+  wa_reason_chat_unavailable: "Could not open a chat with this number",
+  wa_reason_cancelled: "Cancelled by user",
+  wa_reason_attempts_exhausted: "Gave up after repeated delivery attempts",
+  wa_reason_expired_unsent: "Too old to send",
+  wa_conn_connected: "WhatsApp is connected",
+  wa_conn_not_linked: "WhatsApp is not linked",
+  wa_conn_not_linked_hint:
+    "No messages can be sent until the session is linked again. Everything below stays queued until then — no delivery attempts are being used up.",
+  wa_conn_scan_qr: "Scan QR to link",
+  wa_conn_disabled: "WhatsApp sending is switched off",
+  wa_conn_disabled_hint:
+    "WHATSAPP_CLIENT_DISABLED is set on this server, so notifications are recorded but never sent.",
+  wa_conn_cooldown: "Sending paused to protect the account",
+  wa_conn_cooldown_hint:
+    "WhatsApp refused several messages in a row, so sending is paused until",
+  wa_queued_pending: "Notifications waiting to be sent",
+  wa_cancel_all: "Cancel all queued",
+  wa_cancel_all_hint:
+    "Stops these from ever being sent. Do this before re-linking WhatsApp if the queue is old — reconnecting sends the whole backlog at once.",
+  wa_cancel_retry: "Cancel",
+  wa_confirm_cancel_row:
+    "Stop retrying this notification? It will not be sent, and will be listed as cancelled.",
+  wa_confirm_cancel_all:
+    "Cancel every queued notification? None of them will be sent. This cannot be undone.",
   shortage: "Shortage",
   desc_units:
     "Define the units of measure used across items, vouchers, and stock.",
@@ -4401,6 +4426,31 @@ Object.assign(translations.ur, {
   wa_filter_failed: "ناکامیاں",
   wa_filter_all: "تمام",
   wa_mark_handled: "حل شدہ نشان زد کریں",
+  wa_reason_cooldown: "روک دیا گیا — واٹس ایپ پیغامات مسترد کر رہا تھا",
+  wa_reason_chat_unavailable: "اس نمبر کے ساتھ چیٹ نہیں کھل سکی",
+  wa_reason_cancelled: "صارف نے منسوخ کر دیا",
+  wa_reason_attempts_exhausted: "بار بار کوشش کے بعد بھیجنا بند کر دیا گیا",
+  wa_reason_expired_unsent: "بہت پرانا — اب نہیں بھیجا جائے گا",
+  wa_conn_connected: "واٹس ایپ منسلک ہے",
+  wa_conn_not_linked: "واٹس ایپ منسلک نہیں ہے",
+  wa_conn_not_linked_hint:
+    "جب تک سیشن دوبارہ منسلک نہیں ہوتا، کوئی پیغام نہیں بھیجا جا سکتا۔ نیچے دی گئی تمام اطلاعات قطار میں محفوظ رہیں گی — کوئی کوشش ضائع نہیں ہو رہی۔",
+  wa_conn_scan_qr: "منسلک کرنے کے لیے QR اسکین کریں",
+  wa_conn_disabled: "واٹس ایپ بھیجنا بند ہے",
+  wa_conn_disabled_hint:
+    "اس سرور پر WHATSAPP_CLIENT_DISABLED مقرر ہے، اس لیے اطلاعات ریکارڈ تو ہوتی ہیں مگر بھیجی نہیں جاتیں۔",
+  wa_conn_cooldown: "اکاؤنٹ کے تحفظ کے لیے بھیجنا روک دیا گیا",
+  wa_conn_cooldown_hint:
+    "واٹس ایپ نے مسلسل کئی پیغامات مسترد کیے، اس لیے بھیجنا اس وقت تک روکا گیا ہے:",
+  wa_queued_pending: "بھیجنے کے انتظار میں اطلاعات",
+  wa_cancel_all: "تمام قطار منسوخ کریں",
+  wa_cancel_all_hint:
+    "یہ اطلاعات کبھی نہیں بھیجی جائیں گی۔ اگر قطار پرانی ہے تو واٹس ایپ دوبارہ منسلک کرنے سے پہلے یہ کریں — منسلک ہوتے ہی پوری قطار ایک ساتھ بھیج دی جاتی ہے۔",
+  wa_cancel_retry: "منسوخ کریں",
+  wa_confirm_cancel_row:
+    "کیا اس اطلاع کی کوششیں روک دی جائیں؟ یہ نہیں بھیجی جائے گی اور منسوخ شدہ کے طور پر درج ہوگی۔",
+  wa_confirm_cancel_all:
+    "کیا قطار میں موجود تمام اطلاعات منسوخ کر دی جائیں؟ ان میں سے کوئی نہیں بھیجی جائے گی۔ یہ عمل واپس نہیں ہو سکتا۔",
   shortage: "کمی",
   desc_units:
     "وہ اکائیاں (یونٹس) بیان کریں جو آئٹمز، واؤچرز اور اسٹاک میں استعمال ہوتی ہیں۔",

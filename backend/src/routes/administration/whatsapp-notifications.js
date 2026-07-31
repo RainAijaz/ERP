@@ -3,10 +3,22 @@ const knex = require("../../db/knex");
 const {
   requirePermission,
 } = require("../../middleware/access/role-permissions");
+const { getWhatsAppStatus } = require("../../utils/whatsapp");
 
 const router = express.Router();
 
 const SCOPE = ["SCREEN", "administration.whatsapp_notifications"];
+
+// Cancelling stops the retry worker from ever picking the row up again: the
+// sweep selects on status='QUEUED', so flipping the status is what actually
+// takes it out. message_body is cleared too, so nothing can re-send it later.
+const CANCEL_PATCH = (knex) => ({
+  status: "FAILED",
+  failure_reason: "cancelled",
+  next_retry_at: null,
+  message_body: null,
+  resolved_at: knex.fn.now(),
+});
 
 // GET / — list WhatsApp payment-notification failures (default: unresolved only).
 router.get(
@@ -68,6 +80,17 @@ router.get(
       const total = Number(totalRow?.total || 0);
       const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
+      // How many rows the retry worker still owns, regardless of the current
+      // filter — so the "cancel all" control can state what it will affect even
+      // while you are looking at the FAILED tab.
+      const queuedRow = await knex("erp.whatsapp_notification_log")
+        .where({ status: "QUEUED" })
+        .modify((qb) => {
+          if (req.applyBranchScope) req.applyBranchScope(qb, "branch_id");
+        })
+        .count("* as total")
+        .first();
+
       const buildPageUrl = (targetPage) => {
         const params = new URLSearchParams();
         Object.entries(req.query || {}).forEach(([key, value]) => {
@@ -88,6 +111,11 @@ router.get(
         view: "../../administration/whatsapp-notifications/index",
         t: res.locals.t,
         rows,
+        // Connection state up front: a queue that is filling up because the
+        // session is unlinked looks identical to one failing per-recipient, and
+        // the page previously showed neither.
+        waStatus: getWhatsAppStatus(),
+        queuedCount: Number(queuedRow?.total || 0),
         filters: { status, resolved: includeResolved ? "1" : "" },
         pagination: {
           page,
@@ -121,6 +149,52 @@ router.post(
           .update({ resolved_at: knex.fn.now() });
       }
       return res.redirect(req.baseUrl);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// POST /:id/cancel — stop retrying one queued notification.
+router.post(
+  "/:id/cancel",
+  requirePermission(...SCOPE, "view"),
+  async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      if (Number.isInteger(id) && id > 0) {
+        const query = knex("erp.whatsapp_notification_log")
+          .where({ id, status: "QUEUED" });
+        if (req.applyBranchScope) req.applyBranchScope(query, "branch_id");
+        await query.update(CANCEL_PATCH(knex));
+      }
+      return res.redirect(`${req.baseUrl}?status=QUEUED`);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// POST /cancel-queued — stop retrying everything still queued.
+//
+// The escape hatch for a bad batch. Without it the only way to stop the worker
+// was UPDATE-ing the table by hand, which meant a WhatsApp outage could not be
+// contained by whoever was actually watching the screen. It also matters right
+// before re-linking a dropped session: onWhatsAppReady drains the whole backlog
+// at once, so a day-old queue would fire stale payment confirmations at real
+// payees the moment the QR is scanned.
+router.post(
+  "/cancel-queued",
+  requirePermission(...SCOPE, "view"),
+  async (req, res, next) => {
+    try {
+      const query = knex("erp.whatsapp_notification_log").where({ status: "QUEUED" });
+      if (req.applyBranchScope) req.applyBranchScope(query, "branch_id");
+      const cancelled = await query.update(CANCEL_PATCH(knex));
+      console.log(
+        `[WhatsApp] ${cancelled} queued notification(s) cancelled by user ${req.user?.id ?? "?"}`,
+      );
+      return res.redirect(`${req.baseUrl}?status=QUEUED`);
     } catch (err) {
       next(err);
     }

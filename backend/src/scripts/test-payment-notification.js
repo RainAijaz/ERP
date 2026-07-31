@@ -31,6 +31,11 @@ require.cache[waPath] = {
   exports: {
     initWhatsApp: () => {},
     onWhatsAppReady: () => {},
+    // The retry worker checks this before sweeping: with no session there is
+    // nothing to send through, so it must leave the queue completely alone
+    // rather than walking every row to write client_unavailable on it.
+    isWhatsAppReady: () => !transport.offline,
+    getWhatsAppStatus: () => ({ ready: !transport.offline, disabled: false, coolingDown: false }),
     // Stand in for WhatsApp's number lookup: 92300000000x is treated as a
     // well-formed number that is NOT registered on WhatsApp.
     //
@@ -60,6 +65,12 @@ require.cache[waPath] = {
       if (chatId.startsWith("923119999")) {
         return { ok: false, queued: false, reason: "ack_error" };
       }
+      // 923129999xxx never gets its delivery ack confirmed. Unlike ack_error this
+      // is retryable, so it is what exercises the attempt cap: without a cap the
+      // worker would keep re-sending to it for the whole retry window.
+      if (chatId.startsWith("923129999")) {
+        return { ok: false, queued: false, reason: "not_delivered" };
+      }
       sent.push({ chatId, text });
       return { ok: true };
     },
@@ -75,6 +86,7 @@ const knex = require("../db/knex");
 const { sendVoucherPaymentNotifications } = require("../utils/payment-notification");
 const {
   retryQueuedWhatsAppNotifications,
+  MAX_ATTEMPTS,
 } = require("../utils/payment-notification-retry");
 
 let failures = 0;
@@ -315,7 +327,7 @@ const created = { partyIds: [], labourIds: [], employeeIds: [], voucherId: null 
   await retryQueuedWhatsAppNotifications({ knex });
 
   const afterGiveUp = await knex("erp.whatsapp_notification_log").where({ voucher_header_id: voucherId });
-  const expired = afterGiveUp.filter((r) => r.failure_reason === "max_retries_exceeded");
+  const expired = afterGiveUp.filter((r) => r.failure_reason === "expired_unsent");
   check("After 24h the worker gives up and marks FAILED", expired.length === 5);
   check("Given-up rows stop retrying (next_retry_at cleared)", expired.every((r) => r.status === "FAILED" && r.next_retry_at === null));
 
@@ -326,6 +338,82 @@ const created = { partyIds: [], labourIds: [], employeeIds: [], voucherId: null 
     .count("* as c")
     .first();
   check("Given-up rows surface in the dashboard alert count", Number(alertCount.c) >= 2);
+
+  // ============================================================
+  // Outage must not consume the retry budget
+  // ============================================================
+  console.log("\n=== outage protection ===");
+
+  // An unlinked session used to cost a row one attempt per sweep. With a 60s
+  // worker that burned the whole budget within minutes and expired a day of real
+  // payment notifications without a single message having been attempted — the
+  // failure mode that filled the queue with rows reading "Attempts: 10".
+  await knex("erp.whatsapp_notification_log").where({ voucher_header_id: voucherId }).del();
+  sent.length = 0;
+  transport.offline = true;
+  await sendVoucherPaymentNotifications({ knex, voucherId });
+
+  const offlineRows = await knex("erp.whatsapp_notification_log")
+    .where({ voucher_header_id: voucherId, status: "QUEUED" });
+  check("Offline send does not spend an attempt", offlineRows.every((r) => Number(r.attempts) === 0));
+
+  // Make them due, then sweep repeatedly while still offline.
+  await knex("erp.whatsapp_notification_log")
+    .where({ voucher_header_id: voucherId, status: "QUEUED" })
+    .update({ next_retry_at: new Date(Date.now() - 60000) });
+  const offlineSweep = await retryQueuedWhatsAppNotifications({ knex });
+  await retryQueuedWhatsAppNotifications({ knex });
+  await retryQueuedWhatsAppNotifications({ knex });
+
+  const afterOfflineSweeps = await knex("erp.whatsapp_notification_log")
+    .where({ voucher_header_id: voucherId, status: "QUEUED" });
+  check("Offline sweep processes nothing", offlineSweep.processed === 0);
+  check("Offline sweeps leave the queue intact", afterOfflineSweeps.length === offlineRows.length);
+  check("Offline sweeps never spend an attempt", afterOfflineSweeps.every((r) => Number(r.attempts) === 0));
+  check("Nothing was sent while offline", sent.length === 0);
+
+  transport.offline = false;
+
+  // --- Attempt cap: a message that never confirms must not be re-sent forever ---
+  // This is the spam guard. Before the cap, a row like this was re-sent on every
+  // sweep for the whole 24h window — which is how one payee received seven copies
+  // of the same message.
+  await knex("erp.whatsapp_notification_log").where({ voucher_header_id: voucherId }).del();
+  sent.length = 0;
+
+  await knex("erp.whatsapp_notification_log").insert({
+    voucher_header_id: voucherId,
+    voucher_type_code: "CASH_VOUCHER",
+    branch_id: branch.id,
+    recipient_kind: "LABOUR",
+    recipient_id: created.labourIds[0],
+    recipient_name: "Cap Test",
+    phone_raw: "03129999001",
+    phone_normalized: "923129999001",
+    amount: 100,
+    status: "QUEUED",
+    message_body: "cap test",
+    attempts: 0,
+    next_retry_at: new Date(Date.now() - 60000),
+  });
+
+  let capSweeps = 0;
+  for (let i = 0; i < MAX_ATTEMPTS + 2; i++) {
+    await knex("erp.whatsapp_notification_log")
+      .where({ voucher_header_id: voucherId, status: "QUEUED" })
+      .update({ next_retry_at: new Date(Date.now() - 60000) });
+    const s = await retryQueuedWhatsAppNotifications({ knex });
+    if (s.processed === 0) break;
+    capSweeps += 1;
+  }
+
+  const capped = await knex("erp.whatsapp_notification_log")
+    .where({ voucher_header_id: voucherId })
+    .first();
+  check(`Stops retrying after ${MAX_ATTEMPTS} attempts`, Number(capped.attempts) === MAX_ATTEMPTS);
+  check("Capped row is FAILED/attempts_exhausted", capped.status === "FAILED" && capped.failure_reason === "attempts_exhausted");
+  check("Capped row stops being scheduled", capped.next_retry_at === null);
+  check("Cap is reached in exactly the budgeted sweeps", capSweeps === MAX_ATTEMPTS);
 })()
   .catch((e) => {
     console.error("Test error:", e);

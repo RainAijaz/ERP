@@ -8,6 +8,11 @@ let clientReady = false;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
 
+// Connection-state breadcrumbs for the admin page (see getWhatsAppStatus).
+let lastQrAt = null;
+let lastReadyAt = null;
+let lastDisconnectReason = null;
+
 const pendingQueue = [];
 const MAX_QUEUE = 200;
 
@@ -21,6 +26,67 @@ const ACK_CONFIRM_TIMEOUT_MS = Math.max(
   2000,
   Number(process.env.WHATSAPP_ACK_TIMEOUT_MS ?? 15000),
 );
+
+// Send circuit breaker.
+//
+// WhatsApp treats a burst of refused sends as spam behaviour, and the account
+// pays for it — up to having the linked device logged out. Before this, a bug
+// that made every send look undelivered could keep the retry worker re-sending
+// to the same unreachable numbers for 24h with nothing stopping it (exactly what
+// happened 2026-07-25: one line received seven copies).
+//
+// So: count CONSECUTIVE sends that WhatsApp itself refused or never confirmed
+// (ack_error / not_delivered). Past the limit, stop sending for a cooldown. Any
+// confirmed delivery proves we are healthy and resets the counter. Callers get
+// `cooldown`, which is retryable but — like client_unavailable — deliberately
+// does not consume a delivery attempt.
+const FAILURE_STREAK_LIMIT = Math.max(
+  1,
+  Number(process.env.WHATSAPP_FAILURE_STREAK_LIMIT ?? 5),
+);
+const COOLDOWN_MS =
+  Math.max(1, Number(process.env.WHATSAPP_COOLDOWN_MINUTES ?? 60)) * 60 * 1000;
+const BREAKER_REASONS = new Set(["ack_error", "not_delivered"]);
+
+let failureStreak = 0;
+let cooldownUntil = 0;
+
+const cooldownRemainingMs = () => Math.max(0, cooldownUntil - Date.now());
+const isCoolingDown = () => cooldownRemainingMs() > 0;
+
+// Called with the outcome of every attempt that actually reached WhatsApp.
+const recordSendOutcome = (reason) => {
+  if (!reason) {
+    failureStreak = 0;
+    cooldownUntil = 0;
+    return;
+  }
+  if (!BREAKER_REASONS.has(reason)) return; // transport blips aren't spam signals
+  failureStreak += 1;
+  if (failureStreak >= FAILURE_STREAK_LIMIT && !isCoolingDown()) {
+    cooldownUntil = Date.now() + COOLDOWN_MS;
+    console.error(
+      `[WhatsApp] Circuit breaker OPEN — ${failureStreak} consecutive refused sends. ` +
+        `Pausing all sends for ${Math.round(COOLDOWN_MS / 60000)} minute(s) to protect the account.`,
+    );
+  }
+};
+
+// Snapshot for the admin page. `disabled` distinguishes "switched off on purpose"
+// from "should be connected but isn't", which the failures page could not tell
+// apart — so an unlinked session looked identical to a blocked account.
+const getWhatsAppStatus = () => ({
+  ready: Boolean(clientReady && client),
+  disabled: String(process.env.WHATSAPP_CLIENT_DISABLED || "").trim() === "1",
+  coolingDown: isCoolingDown(),
+  cooldownUntil: isCoolingDown() ? new Date(cooldownUntil) : null,
+  failureStreak,
+  lastQrAt,
+  lastReadyAt,
+  lastDisconnectReason,
+});
+
+const isWhatsAppReady = () => Boolean(clientReady && client);
 
 // Pending delivery-ack waiters, correlated by chat id + exact message body.
 //
@@ -163,6 +229,7 @@ const initWhatsApp = () => {
   });
 
   client.on("qr", (qr) => {
+    lastQrAt = new Date();
     console.log("\n[WhatsApp] Scan this QR code in WhatsApp to connect:\n");
     writeQrSnapshot(qr).catch((err) => {
       console.error("[WhatsApp] Failed to write QR snapshot:", err.message);
@@ -172,6 +239,8 @@ const initWhatsApp = () => {
 
   client.on("ready", () => {
     clientReady = true;
+    lastReadyAt = new Date();
+    lastDisconnectReason = null;
     reconnectAttempts = 0;
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
@@ -206,6 +275,7 @@ const initWhatsApp = () => {
   client.on("auth_failure", (msg) => {
     console.error("[WhatsApp] Authentication failed:", msg);
     clientReady = false;
+    lastDisconnectReason = `auth_failure: ${msg}`;
     // Leave `client` set: scheduleReconnect takes ownership and destroys it, so
     // the browser holding the session profile is released before we re-init.
     scheduleReconnect(30000);
@@ -214,6 +284,7 @@ const initWhatsApp = () => {
   client.on("disconnected", (reason) => {
     console.warn("[WhatsApp] Disconnected:", reason);
     clientReady = false;
+    lastDisconnectReason = String(reason || "disconnected");
     if (reason === "LOGOUT") {
       const staleClient = client;
       client = null;
@@ -386,6 +457,17 @@ const sendWhatsAppMessage = async (
     return { ok: false, queued: false, reason: queue ? "queue_full" : "client_unavailable" };
   }
 
+  // Breaker open: WhatsApp has been refusing our sends, so stop hitting it. The
+  // durable queue holds these rows without spending an attempt on them.
+  if (isCoolingDown()) {
+    return {
+      ok: false,
+      queued: false,
+      reason: "cooldown",
+      cooldownUntil: new Date(cooldownUntil),
+    };
+  }
+
   // Try the preferred id, then any alternate addressing form for the same person
   // (see resolveWhatsAppChatId: the "@lid" and "@c.us" forms of one number are
   // not interchangeable, and which one WhatsApp Web can actually route to
@@ -400,9 +482,14 @@ const sendWhatsAppMessage = async (
 
   let last = { ok: false, reason: "send_error" };
   for (let i = 0; i < targets.length; i++) {
-    if (!clientReady || !client) break;
+    // Re-checked each lap: an ack=-1 mid-ladder can trip the breaker, and there
+    // is no point walking the remaining addressing forms once it is open.
+    if (!clientReady || !client || isCoolingDown()) break;
     const target = targets[i];
     last = await attemptSend(target, text, confirmDelivery, targets);
+    // Only a delivery-confirming send can clear or trip the breaker: without
+    // confirmDelivery an "ok" means nothing more than "handed to the outbox".
+    if (confirmDelivery) recordSendOutcome(last.ok ? null : last.reason);
     if (last.ok) {
       // Keep the "sent successfully to <chatId>" prefix intact — the live delivery
       // suite matches on it to prove the resolved chat id was used.
@@ -713,4 +800,6 @@ module.exports = {
   diagnoseWhatsAppNumber,
   onWhatsAppReady,
   shutdownWhatsApp,
+  isWhatsAppReady,
+  getWhatsAppStatus,
 };

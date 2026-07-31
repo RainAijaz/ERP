@@ -47,6 +47,14 @@ const PERMANENT_REASONS = new Set([
 ]);
 const isRetryable = (reason) => !PERMANENT_REASONS.has(String(reason || ""));
 
+// Retryable reasons that mean the send never reached WhatsApp at all: there is
+// no linked session, or the circuit breaker in whatsapp.js is open. These are
+// our own outages, so they must not consume the row's delivery-attempt budget —
+// otherwise a disconnect silently exhausts every payee's retries without one
+// message having been attempted, which is what filled the queue with rows
+// reading "Attempts: 10" while WhatsApp had never been contacted.
+const NON_ATTEMPT_REASONS = new Set(["client_unavailable", "cooldown", "queue_full"]);
+
 // First backoff step; the worker owns the rest of the schedule.
 const FIRST_RETRY_DELAY_MS = 60 * 1000;
 
@@ -324,16 +332,22 @@ const sendVoucherPaymentNotifications = async ({ knex, voucherId }) => {
 
       // Queue a transient failure (WhatsApp down / transport error) so the
       // worker re-sends it; record a permanent one as FAILED for a human.
+      //
+      // A NON_ATTEMPT_REASON means the send never reached WhatsApp — no session,
+      // or the circuit breaker is open. That is our fault, not the recipient's,
+      // so it is queued WITHOUT spending a delivery attempt; otherwise an outage
+      // would eat the whole budget before anyone had been messaged once.
       const queueOrFail = (failureReason) => {
         const retryable = isRetryable(failureReason);
+        const spentAttempt = !NON_ATTEMPT_REASONS.has(String(failureReason || ""));
         logRows.push({
           ...baseRow,
           phone_normalized: normalized,
           message_body: retryable ? message : null,
           status: retryable ? "QUEUED" : "FAILED",
           failure_reason: failureReason,
-          attempts: 1,
-          last_attempt_at: new Date(),
+          attempts: spentAttempt ? 1 : 0,
+          last_attempt_at: spentAttempt ? new Date() : null,
           next_retry_at: retryable ? new Date(Date.now() + FIRST_RETRY_DELAY_MS) : null,
         });
       };
@@ -412,6 +426,7 @@ module.exports = {
   sendVoucherPaymentNotifications,
   resolveChatIdForPayee,
   PERMANENT_REASONS,
+  NON_ATTEMPT_REASONS,
   isRetryable,
   CONTACT_SUFFIX_BY_KIND,
   SEND_SPACING_MS,

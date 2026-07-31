@@ -32,9 +32,18 @@
     if (r === "ack_error") return t("wa_reason_ack_error");
     if (r === "not_delivered") return t("wa_reason_not_delivered");
     if (r === "client_unavailable") return t("wa_reason_client_unavailable");
+    if (r === "cooldown") return t("wa_reason_cooldown");
+    if (r === "chat_unavailable") return t("wa_reason_chat_unavailable");
+    if (r === "cancelled") return t("wa_reason_cancelled");
+    if (r === "attempts_exhausted") return t("wa_reason_attempts_exhausted");
+    if (r === "expired_unsent") return t("wa_reason_expired_unsent");
+    // Legacy rows: this used to be written on window expiry, before the
+    // attempt cap and expired_unsent existed.
     if (r === "max_retries_exceeded") return t("wa_reason_max_retries");
     return reason || "-";
   };
+  const wa = waStatus || {};
+  const queued = Number(queuedCount || 0);
 %>
 
 <div class="mx-auto w-full max-w-7xl space-y-6">
@@ -57,6 +66,60 @@
       </div>
     </div>
   </section>
+
+  <%# Connection state. A queue filling up because nothing is linked looks
+      exactly like one failing per-recipient, so say which it is. %>
+  <% if (wa.disabled) { %>
+    <section class="rounded-2xl border border-slate-200 bg-slate-50 px-5 py-4">
+      <div class="text-sm font-semibold text-slate-700"><%= t("wa_conn_disabled") %></div>
+      <p class="mt-1 text-xs text-slate-500"><%= t("wa_conn_disabled_hint") %></p>
+    </section>
+  <% } else if (!wa.ready) { %>
+    <section class="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4">
+      <div class="text-sm font-semibold text-rose-800"><%= t("wa_conn_not_linked") %></div>
+      <p class="mt-1 text-xs text-rose-700">
+        <%= t("wa_conn_not_linked_hint") %>
+        <% if (wa.lastDisconnectReason) { %>
+          <span class="font-mono">(<%= wa.lastDisconnectReason %>)</span>
+        <% } %>
+      </p>
+      <a href="/whatsapp-qr" target="_blank" rel="noopener"
+         class="mt-3 inline-block rounded-full bg-rose-600 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.15em] text-white transition hover:bg-rose-700">
+        <%= t("wa_conn_scan_qr") %>
+      </a>
+    </section>
+  <% } else if (wa.coolingDown) { %>
+    <section class="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
+      <div class="text-sm font-semibold text-amber-900"><%= t("wa_conn_cooldown") %></div>
+      <p class="mt-1 text-xs text-amber-800">
+        <%= t("wa_conn_cooldown_hint") %> <%= fmtDateTime(wa.cooldownUntil) %>
+      </p>
+    </section>
+  <% } else { %>
+    <section class="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3">
+      <span class="text-sm font-semibold text-emerald-800"><%= t("wa_conn_connected") %></span>
+    </section>
+  <% } %>
+
+  <%# Escape hatch: stop the retry worker without database access. Especially
+      important before re-linking a dropped session, because reconnecting drains
+      the entire backlog at once. %>
+  <% if (queued > 0) { %>
+    <section class="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <div class="text-sm font-semibold text-slate-800">
+          <%= t("wa_queued_pending") %>: <%= queued %>
+        </div>
+        <p class="mt-1 text-xs text-slate-500"><%= t("wa_cancel_all_hint") %></p>
+      </div>
+      <form method="POST" action="<%= basePath %>/cancel-queued" data-confirm-form data-wa-cancel-all class="shrink-0">
+        <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+        <button type="submit" class="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.15em] text-rose-700 transition hover:border-rose-300 hover:bg-rose-100">
+          <%= t("wa_cancel_all") %>
+        </button>
+      </form>
+    </section>
+  <% } %>
 
   <div class="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
     <table class="min-w-full text-left text-sm">
@@ -106,13 +169,26 @@
                   <span class="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700"><%= t("wa_status_failed") %></span>
                 <% } %>
               </td>
-              <td class="px-4 py-3 text-slate-600"><%= row.status === 'FAILED' ? reasonLabel(row.failure_reason) : "-" %></td>
+              <%# Queued rows carry a reason too — it is why they are still
+                  waiting. Hiding it (this cell used to render "-" for anything
+                  not FAILED) is what made an unlinked session indistinguishable
+                  from a bad phone number. %>
+              <td class="px-4 py-3 text-slate-600">
+                <%= row.status === 'SENT' ? "-" : reasonLabel(row.failure_reason) %>
+              </td>
               <td class="px-4 py-3 whitespace-nowrap text-right">
                 <% if (row.status === 'FAILED' && !row.resolved_at) { %>
                   <form method="POST" action="<%= basePath %>/<%= row.id %>/resolve" class="inline">
                     <input type="hidden" name="_csrf" value="<%= csrfToken %>">
                     <button type="submit" class="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-slate-300 hover:text-slate-800">
                       <%= t("wa_mark_handled") %>
+                    </button>
+                  </form>
+                <% } else if (row.status === 'QUEUED') { %>
+                  <form method="POST" action="<%= basePath %>/<%= row.id %>/cancel" class="inline" data-confirm-form data-wa-cancel-row>
+                    <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                    <button type="submit" class="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-rose-300 hover:text-rose-700">
+                      <%= t("wa_cancel_retry") %>
                     </button>
                   </form>
                 <% } %>
@@ -138,3 +214,44 @@
     </div>
   <% } %>
 </div>
+
+<script>
+  // Cancel confirmation. data-confirm-form opts these out of the layout's global
+  // delete-confirm interceptor, which would otherwise warn about "permanently
+  // deleting the record" — nothing is deleted here, the row stays on the page as
+  // a cancelled entry; only the pending retry stops.
+  (function () {
+    const rowText = {
+      title: <%- JSON.stringify(t("wa_cancel_retry")) %>,
+      message: <%- JSON.stringify(t("wa_confirm_cancel_row")) %>,
+      confirmLabel: <%- JSON.stringify(t("wa_cancel_retry")) %>,
+      cancelLabel: <%- JSON.stringify(t("cancel")) %>,
+    };
+    const allText = {
+      title: <%- JSON.stringify(t("wa_cancel_all")) %>,
+      message: <%- JSON.stringify(t("wa_confirm_cancel_all")) %>,
+      confirmLabel: <%- JSON.stringify(t("wa_cancel_all")) %>,
+      cancelLabel: <%- JSON.stringify(t("cancel")) %>,
+    };
+
+    const wire = (selector, text) => {
+      document.querySelectorAll(selector).forEach((form) => {
+        form.addEventListener("submit", async (event) => {
+          if (form.dataset.confirmed === "1") return; // already confirmed
+          event.preventDefault();
+          // No modal available (older layout): fall back to a native confirm.
+          const ask =
+            typeof window.showUiConfirmModal === "function"
+              ? window.showUiConfirmModal(text)
+              : Promise.resolve(window.confirm(text.message));
+          if (!(await ask)) return;
+          form.dataset.confirmed = "1";
+          form.submit();
+        });
+      });
+    };
+
+    wire("form[data-wa-cancel-row]", rowText);
+    wire("form[data-wa-cancel-all]", allText);
+  })();
+</script>

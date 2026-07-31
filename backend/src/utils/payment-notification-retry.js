@@ -9,9 +9,14 @@
 // Unlike the in-memory buffer in whatsapp.js, this survives a server restart —
 // which matters because these are payment confirmations to real people.
 
-const { sendWhatsAppMessage, saveWhatsAppContact } = require("./whatsapp");
+const {
+  sendWhatsAppMessage,
+  saveWhatsAppContact,
+  isWhatsAppReady,
+} = require("./whatsapp");
 const {
   isRetryable,
+  NON_ATTEMPT_REASONS,
   resolveChatIdForPayee,
   CONTACT_SUFFIX_BY_KIND,
   SEND_SPACING_MS,
@@ -23,6 +28,16 @@ const BACKOFF_MINUTES = [1, 5, 15, 30, 60, 120, 240, 360];
 const RETRY_WINDOW_HOURS = Number(process.env.WHATSAPP_RETRY_WINDOW_HOURS || 24);
 const RETRY_INTERVAL_MS = Number(process.env.WHATSAPP_RETRY_INTERVAL_MS || 60000);
 const BATCH_SIZE = 50;
+
+// Hard cap on DELIVERY attempts — attempts where a send actually reached
+// WhatsApp. Repeatedly re-sending to a number WhatsApp keeps refusing is what
+// gets the sending account flagged, so give up early and show it on the
+// failures page for a human instead.
+const MAX_ATTEMPTS = Math.max(1, Number(process.env.WHATSAPP_MAX_ATTEMPTS ?? 3));
+
+// How long to hold a row when the blocker is on our side. Short and flat — the
+// sweep is skipped entirely while offline anyway, so this only paces the breaker.
+const HOLD_MS = 5 * 60 * 1000;
 
 const backoffMsForAttempt = (attempts) => {
   const idx = Math.min(
@@ -39,23 +54,49 @@ const isWindowExpired = (row) => {
 
 // Process one queued row. Returns the resulting status for logging/tests.
 const processRow = async ({ knex, row }) => {
-  const attempts = (Number(row.attempts) || 0) + 1;
+  const priorAttempts = Number(row.attempts) || 0;
+  const attempts = priorAttempts + 1;
   const now = new Date();
 
-  // Gave up: the retry window has closed. Becomes a permanent failure so it
-  // shows on the alerts page for a human.
+  // Gave up: the row is too old to be worth sending. A payment confirmation that
+  // shows up a day late is confusing rather than helpful, so it becomes a
+  // permanent failure and surfaces on the alerts page for a human.
   if (isWindowExpired(row)) {
     await knex("erp.whatsapp_notification_log").where({ id: row.id }).update({
       status: "FAILED",
-      failure_reason: "max_retries_exceeded",
+      failure_reason: "expired_unsent",
       next_retry_at: null,
       last_attempt_at: now,
-      attempts,
+      attempts: priorAttempts,
     });
     return "FAILED";
   }
 
+  // The blocker is on our side (no session / breaker open). Hold the row exactly
+  // as it is — no attempt spent, no backoff escalation.
+  const hold = async (failureReason) => {
+    await knex("erp.whatsapp_notification_log").where({ id: row.id }).update({
+      status: "QUEUED",
+      failure_reason: failureReason,
+      attempts: priorAttempts,
+      next_retry_at: new Date(Date.now() + HOLD_MS),
+    });
+    return "HELD";
+  };
+
   const reschedule = async (failureReason) => {
+    // The attempt budget is spent — stop. Retrying past this is what risks the
+    // sending account, and the row is now visible on the failures page.
+    if (attempts >= MAX_ATTEMPTS) {
+      await knex("erp.whatsapp_notification_log").where({ id: row.id }).update({
+        status: "FAILED",
+        failure_reason: "attempts_exhausted",
+        next_retry_at: null,
+        last_attempt_at: now,
+        attempts,
+      });
+      return "FAILED";
+    }
     await knex("erp.whatsapp_notification_log").where({ id: row.id }).update({
       status: "QUEUED",
       failure_reason: failureReason,
@@ -64,6 +105,13 @@ const processRow = async ({ knex, row }) => {
       next_retry_at: new Date(Date.now() + backoffMsForAttempt(attempts)),
     });
     return "QUEUED";
+  };
+
+  // Route a failure to the right bucket: our-fault reasons hold, recipient-fault
+  // reasons are permanent, everything else spends an attempt.
+  const handleFailure = (reason) => {
+    if (NON_ATTEMPT_REASONS.has(String(reason || ""))) return hold(reason);
+    return isRetryable(reason) ? reschedule(reason) : failPermanently(reason);
   };
 
   const failPermanently = async (failureReason) => {
@@ -95,11 +143,7 @@ const processRow = async ({ knex, row }) => {
     kind: row.recipient_kind,
     alreadyMessaged,
   });
-  if (!resolved.ok) {
-    return isRetryable(resolved.reason)
-      ? reschedule(resolved.reason)
-      : failPermanently(resolved.reason);
-  }
+  if (!resolved.ok) return handleFailure(resolved.reason);
 
   const result = await sendWhatsAppMessage(resolved.chatId, row.message_body, {
     queue: false,
@@ -107,8 +151,7 @@ const processRow = async ({ knex, row }) => {
     alternateChatIds: (resolved.chatIds || []).slice(1),
   });
   if (!result || !result.ok) {
-    const reason = (result && result.reason) || "send_error";
-    return isRetryable(reason) ? reschedule(reason) : failPermanently(reason);
+    return handleFailure((result && result.reason) || "send_error");
   }
 
   // Delivered. Save the contact if this is our first successful message to them.
@@ -138,8 +181,14 @@ const processRow = async ({ knex, row }) => {
 // client is finally back. When set, we make the whole backlog due immediately
 // and drain it in batches, rather than waiting out each row's stale backoff.
 const retryQueuedWhatsAppNotifications = async ({ knex, ignoreBackoff = false }) => {
-  const summary = { processed: 0, sent: 0, requeued: 0, failed: 0 };
+  const summary = { processed: 0, sent: 0, requeued: 0, failed: 0, held: 0 };
   try {
+    // Nothing to do without a session: every row would come straight back with
+    // client_unavailable. Skipping keeps the queue untouched — no attempts
+    // spent, no backoff escalation, no log noise — until WhatsApp is back, at
+    // which point the onWhatsAppReady hook drains it.
+    if (!isWhatsAppReady()) return summary;
+
     if (ignoreBackoff) {
       // Pull the whole backlog forward to "now"; the due-filter below then picks
       // it up. Rows are re-scheduled to the future as each is claimed, so a
@@ -157,7 +206,8 @@ const retryQueuedWhatsAppNotifications = async ({ knex, ignoreBackoff = false })
     // One batch normally; on reconnect, loop so a backlog larger than BATCH_SIZE
     // is fully cleared. Capped so a persistently-requeuing set can't spin.
     const maxBatches = ignoreBackoff ? 20 : 1;
-    for (let batch = 0; batch < maxBatches; batch++) {
+    let stop = false;
+    for (let batch = 0; batch < maxBatches && !stop; batch++) {
       const due = await knex("erp.whatsapp_notification_log")
         .where({ status: "QUEUED" })
         .andWhere((qb) =>
@@ -168,6 +218,10 @@ const retryQueuedWhatsAppNotifications = async ({ knex, ignoreBackoff = false })
       if (!due.length) break;
 
       for (const row of due) {
+        // A hold means the session dropped or the breaker opened mid-sweep, so
+        // every remaining row would hold too. Abandon the sweep instead of
+        // walking the whole backlog to write the same reason on each one.
+        if (stop) break;
         // Claim the row before sending so an overlapping tick can't double-send it.
         const claimed = await knex("erp.whatsapp_notification_log")
           .where({ id: row.id, status: "QUEUED" })
@@ -183,7 +237,10 @@ const retryQueuedWhatsAppNotifications = async ({ knex, ignoreBackoff = false })
           const outcome = await processRow({ knex, row });
           if (outcome === "SENT") summary.sent += 1;
           else if (outcome === "QUEUED") summary.requeued += 1;
-          else summary.failed += 1;
+          else if (outcome === "HELD") {
+            summary.held += 1;
+            stop = true;
+          } else summary.failed += 1;
         } catch (err) {
           console.error("[WhatsApp] retry row error:", err?.message || err);
         }
@@ -192,7 +249,8 @@ const retryQueuedWhatsAppNotifications = async ({ knex, ignoreBackoff = false })
 
     if (summary.processed) {
       console.log(
-        `[WhatsApp] retry sweep — processed:${summary.processed} sent:${summary.sent} requeued:${summary.requeued} failed:${summary.failed}`,
+        `[WhatsApp] retry sweep — processed:${summary.processed} sent:${summary.sent} ` +
+          `requeued:${summary.requeued} failed:${summary.failed} held:${summary.held}`,
       );
     }
   } catch (err) {
@@ -235,4 +293,5 @@ module.exports = {
   backoffMsForAttempt,
   BACKOFF_MINUTES,
   RETRY_WINDOW_HOURS,
+  MAX_ATTEMPTS,
 };
