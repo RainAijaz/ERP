@@ -131,7 +131,8 @@
     { id: "salesTrend",           show: canSales,                                  title: t("monthly_sales_trend"),  href: "/reports/sales/sales-report" },
     { id: "salesVsPurchase",      show: canSales || canPurchase,                   title: t("sales_vs_purchase"),    href: "/reports/purchases" },
     { id: "revenueVsExpenses",    show: canFinancial,                              title: t("revenue_vs_expenses"),  href: "/reports/financial/profit_and_loss" },
-    { id: "topProducts",          show: canSales,                                  title: t("top_selling_products"), href: "/reports/sales/sales-report" },
+    { id: "topProducts",          show: canSales,                                  title: t("top_selling_products"), href: "/reports/sales/sales-report",
+      measures: [{ key: "amount", label: t("amount") }, { key: "dozens", label: t("dozens") }] },
     { id: "productionByStage",    show: canProduction,                             title: t("production_by_stage"),  href: "/reports/production/production-report" },
     { id: "inventoryStatus",      show: canInventory,                              title: t("inventory_status"),     href: "/reports/inventory/stock-balances" },
     { id: "receivablesVsPayables", show: canCustomerBalances || canSupplierBalances, title: t("receivables_vs_payables"), href: "/reports/sales/customer-balances" },
@@ -163,15 +164,17 @@
     payable: t("accounts_payable"),
     production: t("production_by_stage"),
     apply: t("apply"),
+    amountLabel: t("amount"),
+    dozensLabel: t("dozens"),
   };
 %>
 
 <div class="mx-auto w-full max-w-7xl space-y-6">
   <!-- ===== Header ===== -->
-  <section class="rounded-3xl border border-slate-200 bg-white/95 p-8 shadow-xl">
+  <section class="rounded-3xl border border-slate-200 bg-white/95 p-4 shadow-xl sm:p-8">
     <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
       <div class="space-y-2">
-        <h1 class="text-3xl font-display text-ink"><%= t("dashboard") %></h1>
+        <h1 class="text-2xl font-display text-ink sm:text-3xl"><%= t("dashboard") %></h1>
         <p class="text-sm text-muted"><%= t("welcome") %></p>
       </div>
       <% if (typeof branchName !== "undefined" && branchName) { %>
@@ -193,24 +196,25 @@
             </div>
           </div>
         <% } %>
-        <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <!-- 2-up on phones: 14 full-width cards would otherwise be a very long scroll. -->
+        <div class="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
           <% kpiCards.forEach((card) => { const tn = TONES[card.tone];
                const todayLabel = card.label;
                const yestLabel  = card.daily ? (card.labelAlt || card.label) : card.label;
                const todayVal   = card.value === null ? NOT_TRACKED : card.value;
                const yestVal    = card.daily ? ((card.valueAlt === null || card.valueAlt === undefined) ? NOT_TRACKED : card.valueAlt) : todayVal;
           %>
-            <a href="<%= card.href %>" class="group rounded-2xl border <%= tn.wrap %> p-5 transition"<% if (card.daily) { %> data-kpi-daily<% } %>>
-              <div class="flex items-start justify-between gap-3">
-                <div class="space-y-2">
-                  <div class="text-[11px] font-semibold uppercase tracking-[0.24em] <%= tn.label %>"<% if (card.daily) { %> data-kpi-label data-today="<%= todayLabel %>" data-yest="<%= yestLabel %>"<% } %>><%= todayLabel %></div>
+            <a href="<%= card.href %>" class="group rounded-2xl border <%= tn.wrap %> p-3 transition sm:p-5"<% if (card.daily) { %> data-kpi-daily<% } %>>
+              <div class="flex items-start justify-between gap-2 sm:gap-3">
+                <div class="min-w-0 space-y-1 sm:space-y-2">
+                  <div class="text-[10px] font-semibold uppercase tracking-[0.14em] <%= tn.label %> sm:text-[11px] sm:tracking-[0.24em]"<% if (card.daily) { %> data-kpi-label data-today="<%= todayLabel %>" data-yest="<%= yestLabel %>"<% } %>><%= todayLabel %></div>
                   <% if (card.value === null && !card.daily) { %>
-                    <div class="text-lg font-semibold text-slate-400"><%= NOT_TRACKED %></div>
+                    <div class="text-base font-semibold text-slate-400 sm:text-lg"><%= NOT_TRACKED %></div>
                   <% } else { %>
-                    <div class="text-3xl font-semibold <%= tn.value %>"><span<% if (card.daily) { %> data-kpi-value data-today="<%= todayVal %>" data-yest="<%= yestVal %>"<% } %>><%= todayVal %></span><% if (card.suffix) { %><span class="ml-1 text-base font-medium <%= tn.label %>"><%= card.suffix %></span><% } %></div>
+                    <div class="text-xl font-semibold <%= tn.value %> sm:text-3xl"><span<% if (card.daily) { %> data-kpi-value data-today="<%= todayVal %>" data-yest="<%= yestVal %>"<% } %>><%= todayVal %></span><% if (card.suffix) { %><span class="ml-1 text-xs font-medium <%= tn.label %> sm:text-base"><%= card.suffix %></span><% } %></div>
                   <% } %>
                 </div>
-                <span class="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl <%= tn.chip %> transition group-hover:scale-105">
+                <span class="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl <%= tn.chip %> transition group-hover:scale-105 sm:inline-flex">
                   <%- svg(card.icon, "h-5 w-5") %>
                 </span>
               </div>
@@ -248,11 +252,19 @@
   <!-- ===== SECTION 2: Notifications & Alerts (admin only) ===== -->
   <% if (isAdminUser && (alertItems.length || approvals)) { %>
     <section id="alerts-panel" class="rounded-2xl border border-slate-200 bg-white/95 shadow-md">
-      <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-        <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("alerts_needing_attention") %></h3>
-      </div>
+      <details open data-mobile-collapsible>
+        <summary class="flex cursor-pointer list-none items-center justify-between gap-2 border-b border-slate-200 px-4 py-4 sm:px-5 lg:cursor-default">
+          <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("alerts_needing_attention") %></h3>
+          <span class="flex items-center gap-2">
+            <% const alertTotal = alertItems.reduce((n, i) => n + (Number(i.count) > 0 ? 1 : 0), 0); %>
+            <% if (alertTotal) { %>
+              <span class="inline-flex min-w-[1.5rem] items-center justify-center rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700"><%= alertTotal %></span>
+            <% } %>
+            <svg class="h-4 w-4 shrink-0 text-slate-400 transition-transform lg:hidden" data-collapse-chevron viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd"/></svg>
+          </span>
+        </summary>
 
-      <div class="grid gap-4 p-5 lg:grid-cols-2">
+      <div class="grid gap-4 p-4 sm:p-5 lg:grid-cols-2">
         <!-- Actionable alerts -->
         <div class="space-y-3">
           <% if (!alertItems.length) { %>
@@ -264,20 +276,22 @@
                const isTracked = c !== null;
                const isActive = isTracked && Number(item.count) > 0;
           %>
-            <a href="<%= item.href %>" class="group flex items-center gap-3 rounded-xl border <%= isActive ? tn.wrap : 'border-slate-200 bg-white hover:bg-slate-50' %> px-4 py-3 transition">
+            <a href="<%= item.href %>" class="group flex items-center gap-3 rounded-xl border <%= isActive ? tn.wrap : 'border-slate-200 bg-white hover:bg-slate-50' %> px-3 py-3 transition sm:px-4">
               <span class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg <%= isActive ? tn.chip : 'bg-slate-100 text-slate-500' %>">
                 <%- svg(item.icon, "h-5 w-5") %>
               </span>
               <div class="min-w-0 flex-1">
-                <div class="truncate text-sm font-medium text-slate-800"><%= item.label %></div>
+                <!-- Wraps to two lines rather than truncating: "Purchase Orders
+                     Awaiting Receipt" was unreadable as "Purchase Orders Awai…". -->
+                <div class="text-sm font-medium text-slate-800"><%= item.label %></div>
                 <% if (!isTracked) { %>
                   <div class="text-xs text-slate-400"><%= NOT_TRACKED %></div>
                 <% } %>
               </div>
               <% if (isTracked) { %>
-                <span class="inline-flex min-w-[2rem] items-center justify-center rounded-full px-2 py-1 text-sm font-semibold <%= isActive ? tn.chip : 'bg-slate-100 text-slate-500' %>"><%= c %></span>
+                <span class="inline-flex min-w-[2rem] shrink-0 items-center justify-center rounded-full px-2 py-1 text-sm font-semibold <%= isActive ? tn.chip : 'bg-slate-100 text-slate-500' %>"><%= c %></span>
               <% } %>
-              <span class="text-xs font-semibold uppercase tracking-[0.16em] text-accent"><%= t("view") %></span>
+              <span class="hidden shrink-0 text-xs font-semibold uppercase tracking-[0.16em] text-accent sm:inline"><%= t("view") %></span>
             </a>
           <% }) %>
         </div>
@@ -301,13 +315,14 @@
             <% } else { %>
               <p class="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-500"><%= t("all_clear") %></p>
             <% } %>
-            <a href="/administration/approvals" class="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-amber-700">
-              <%- svg("check", "h-4 w-4") %>
-              <%= t("go_to_approval_center") %>
+            <a href="/administration/approvals" class="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-amber-600 px-4 py-2.5 text-center text-sm font-semibold text-white transition hover:bg-amber-700">
+              <%- svg("check", "h-4 w-4 shrink-0") %>
+              <span class="min-w-0"><%= t("go_to_approval_center") %></span>
             </a>
           </div>
         <% } %>
       </div>
+      </details>
     </section>
   <% } %>
 
@@ -369,35 +384,47 @@
       data-analytics
       data-analytics-endpoint="/dashboard/analytics"
       data-locale="<%= locale %>"
-      data-i18n='<%- JSON.stringify(chartI18n) %>'
+      data-i18n='<%= JSON.stringify(chartI18n) %>'
     >
-      <div class="flex flex-col gap-3 border-b border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+      <div class="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
         <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("business_analytics") %></h3>
-        <div class="flex flex-wrap items-center gap-2">
-          <div class="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5" role="tablist" data-period-group>
+        <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+          <!-- flex-wrap (not inline-flex): five presets cannot fit one phone row. -->
+          <div class="flex flex-wrap gap-0.5 rounded-lg border border-slate-200 bg-slate-50 p-0.5" role="tablist" data-period-group>
             <% periodPresets.forEach((p) => { %>
               <button type="button" data-period="<%= p.key %>"
-                class="rounded-md px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:text-slate-900 data-[active=true]:bg-white data-[active=true]:text-slate-900 data-[active=true]:shadow-sm"
+                class="grow rounded-md px-2.5 py-1.5 text-xs font-semibold whitespace-nowrap text-slate-600 transition hover:text-slate-900 data-[active=true]:bg-white data-[active=true]:text-slate-900 data-[active=true]:shadow-sm sm:grow-0 sm:px-3"
                 <%= p.key === "month" ? 'data-active="true"' : "" %>><%= p.label %></button>
             <% }) %>
           </div>
-          <div class="hidden items-center gap-2" data-custom-range>
-            <input type="date" data-from class="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700" />
+          <div class="hidden flex-wrap items-center gap-2" data-custom-range>
+            <input type="date" data-from class="min-w-0 flex-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700 sm:flex-none" />
             <span class="text-slate-400">–</span>
-            <input type="date" data-to class="rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700" />
+            <input type="date" data-to class="min-w-0 flex-1 rounded-md border border-slate-200 px-2 py-1 text-xs text-slate-700 sm:flex-none" />
             <button type="button" data-apply class="rounded-md bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-slate-900"><%= t("apply") %></button>
           </div>
         </div>
       </div>
 
-      <div class="grid gap-4 p-5 lg:grid-cols-2">
+      <div class="grid gap-4 p-4 sm:p-5 lg:grid-cols-2">
         <% chartDefs.forEach((c) => { %>
           <article class="rounded-xl border border-slate-200 bg-white p-4">
-            <div class="mb-3 flex items-center justify-between">
+            <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h4 class="text-sm font-semibold text-slate-700"><%= c.title %></h4>
-              <a href="<%= c.href %>" class="text-xs font-semibold uppercase tracking-[0.16em] text-accent"><%= t("view") %></a>
+              <div class="flex items-center gap-2">
+                <% if (c.measures) { %>
+                  <div class="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5" role="group" data-measure-group="<%= c.id %>">
+                    <% c.measures.forEach((m, mi) => { %>
+                      <button type="button" data-measure="<%= m.key %>" aria-pressed="<%= mi === 0 ? 'true' : 'false' %>"
+                        class="rounded-md px-2.5 py-1 text-[11px] font-semibold text-slate-600 transition data-[active=true]:bg-white data-[active=true]:text-slate-900 data-[active=true]:shadow-sm"
+                        <%= mi === 0 ? 'data-active="true"' : "" %>><%= m.label %></button>
+                    <% }) %>
+                  </div>
+                <% } %>
+                <a href="<%= c.href %>" class="text-xs font-semibold uppercase tracking-[0.16em] text-accent"><%= t("view") %></a>
+              </div>
             </div>
-            <div class="relative" style="height: 260px;">
+            <div class="relative h-[240px] sm:h-[260px]"<% if (c.measures) { %> data-chart-swipe="<%= c.id %>"<% } %>>
               <canvas data-chart="<%= c.id %>" data-href="<%= c.href %>"></canvas>
               <div data-chart-state="<%= c.id %>" class="absolute inset-0 flex items-center justify-center text-sm text-slate-400"><%= chartI18n.loading %></div>
             </div>
@@ -408,9 +435,11 @@
   <% } %>
 
   <!-- ===== Recent vouchers (shown to all users) ===== -->
+  <!-- min-w-0 on the grid items: a grid track defaults to min-width:auto, so the
+       inner table's min-content width would stretch the card past the viewport. -->
   <section class="grid gap-6 <%= isAdminUser ? '' : 'xl:grid-cols-2' %>">
-    <article class="rounded-2xl border border-slate-200 bg-white/95 shadow-md">
-      <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+    <article class="min-w-0 rounded-2xl border border-slate-200 bg-white/95 shadow-md">
+      <div class="flex items-center justify-between border-b border-slate-200 px-4 py-4 sm:px-5">
         <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("recent_vouchers") %></h3>
       </div>
       <div class="overflow-x-auto">
@@ -441,7 +470,7 @@
     </article>
 
     <% if (!isAdminUser) { %>
-      <article class="rounded-2xl border border-slate-200 bg-white/95 shadow-md">
+      <article class="min-w-0 rounded-2xl border border-slate-200 bg-white/95 shadow-md">
         <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
           <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("recent_activity") %></h3>
         </div>
@@ -468,10 +497,13 @@
       class="rounded-2xl border border-slate-200 bg-white/95 shadow-md"
       data-activity-feed
       data-activity-endpoint="/dashboard/activity"
-      data-i18n='<%- JSON.stringify({ noData: t("no_entries"), loading: t("loading"), viewRecord: t("view_record"), system: t("system") }) %>'
+      data-i18n='<%= JSON.stringify({ noData: t("no_entries"), loading: t("loading"), viewRecord: t("view_record"), system: t("system") }) %>'
     >
-      <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-        <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("recent_activity") %></h3>
+      <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 px-5 py-4">
+        <div>
+          <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("recent_activity") %></h3>
+          <p class="mt-0.5 text-xs text-slate-400"><%= t("activity_per_user") %></p>
+        </div>
         <a href="/administration/audit-logs" class="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-accent transition hover:bg-slate-50">
           <%= t("view_all") %>
           <%- svg("chevron-right", "h-3.5 w-3.5") %>
@@ -485,6 +517,34 @@
     </section>
   <% } %>
 </div>
+
+<!-- ===== Collapse heavy panels on phones, always open from lg up ===== -->
+<script>
+  (function () {
+    const panels = document.querySelectorAll("details[data-mobile-collapsible]");
+    if (!panels.length) return;
+    const mq = window.matchMedia("(max-width: 1023px)");
+    // <details> open state cannot be driven by CSS, so mirror the breakpoint here.
+    const sync = () => panels.forEach((d) => { d.open = !mq.matches; });
+    sync();
+    if (typeof mq.addEventListener === "function") mq.addEventListener("change", sync);
+    else if (typeof mq.addListener === "function") mq.addListener(sync);
+    // Deep links such as the "Critical Alerts" KPI (href="#alerts-panel") must
+    // expand the panel they point at.
+    const openTarget = () => {
+      const id = String(window.location.hash || "").slice(1);
+      if (!id) return;
+      const el = document.getElementById(id);
+      el?.querySelector("details[data-mobile-collapsible]")?.setAttribute("open", "");
+    };
+    openTarget();
+    window.addEventListener("hashchange", openTarget);
+    panels.forEach((d) => {
+      const chevron = d.querySelector("[data-collapse-chevron]");
+      if (chevron) d.addEventListener("toggle", () => chevron.classList.toggle("rotate-180", d.open));
+    });
+  })();
+</script>
 
 <!-- ===== Section 1 KPI Today/Yesterday toggle ===== -->
 <script>
@@ -522,8 +582,20 @@
 
     const endpoint = root.dataset.analyticsEndpoint || "/dashboard/analytics";
     const locale = root.dataset.locale || "en";
-    let I18N = {};
-    try { I18N = JSON.parse(root.dataset.i18n || "{}"); } catch (_e) { I18N = {}; }
+    // Defaults guarantee readable labels even if the server-rendered JSON is ever
+    // malformed — an unescaped apostrophe in "Today's Sales" once broke this
+    // attribute and rendered the whole Inventory Status legend as "undefined".
+    const I18N_DEFAULTS = {
+      loading: "Loading…", noData: "No data available", noAccess: "Not tracked",
+      available: "Available", reserved: "Reserved", lowStock: "Low Stock", outOfStock: "Out of Stock",
+      revenue: "Revenue", expense: "Expense", sales: "Sales", salesLabel: "Sales",
+      purchaseLabel: "Purchase", receivable: "Receivable", payable: "Payable",
+      production: "Production", apply: "Apply", byAmount: "Amount", byDozens: "Dozens",
+    };
+    let I18N = Object.assign({}, I18N_DEFAULTS);
+    try {
+      I18N = Object.assign({}, I18N_DEFAULTS, JSON.parse(root.dataset.i18n || "{}"));
+    } catch (_e) { /* keep defaults */ }
 
     const PALETTE = {
       emerald: "#059669", blue: "#2563eb", amber: "#d97706", rose: "#e11d48",
@@ -535,6 +607,13 @@
     };
     const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     const nf = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+    const nf1 = new Intl.NumberFormat("en-US", { maximumFractionDigits: 1 });
+
+    // Per-chart measure state (e.g. Top Products: amount vs dozens), plus the
+    // last payload so flipping measure re-renders locally with no refetch.
+    const measures = {};
+    const lastData = {};
+    const measureFor = (id) => measures[id] || "amount";
     const compact = (v) => {
       const a = Math.abs(Number(v) || 0);
       if (a >= 1e6) return (v / 1e6).toFixed(a >= 1e7 ? 0 : 1) + "M";
@@ -550,6 +629,9 @@
     const charts = {};
     let loaded = false;
     let currentPeriod = "month";
+    let chartLib = null;
+    // Below lg the cards are ~270px wide; a side legend would eat half the plot.
+    const isNarrow = () => window.matchMedia("(max-width: 1023px)").matches;
 
     const gridColor = "rgba(148, 163, 184, 0.18)";
     const tickColor = "#64748b";
@@ -647,12 +729,26 @@
       },
       topProducts(Chart, id, d) {
         if (!d) return setState(id, I18N.noAccess);
-        if (!d.labels || !d.labels.length) return setState(id, I18N.noData);
+        // Amount and dozens are independently ranked top-10 lists, so each
+        // measure carries its own labels — never reuse one set for the other.
+        const byDozens = measureFor(id) === "dozens";
+        const src = byDozens ? (d.byDozens || { labels: [], values: [] }) : d;
+        if (!src.labels || !src.labels.length) return setState(id, I18N.noData);
+        const tone = byDozens ? PALETTE.emerald : PALETTE.blue;
         destroy(id);
         charts[id] = new Chart(canvasFor(id).getContext("2d"), {
           type: "bar",
-          data: { labels: d.labels, datasets: [{ label: I18N.sales, data: d.values || [], backgroundColor: alpha(PALETTE.blue, 0.85), borderColor: PALETTE.blue, borderWidth: 0, borderRadius: 4, barPercentage: 0.75, categoryPercentage: 0.8 }] },
-          options: commonOpts(id, { indexAxis: "y", scales: { x: linearAxis, y: catAxis } }),
+          data: { labels: src.labels, datasets: [{ label: byDozens ? I18N.dozensLabel : I18N.amountLabel, data: src.values || [], backgroundColor: alpha(tone, 0.85), borderColor: tone, borderWidth: 0, borderRadius: 4, barPercentage: 0.75, categoryPercentage: 0.8 }] },
+          options: commonOpts(id, {
+            indexAxis: "y",
+            scales: {
+              x: byDozens
+                ? Object.assign({}, linearAxis, { ticks: Object.assign({}, linearAxis.ticks, { callback: (v) => nf1.format(Number(v) || 0) }) })
+                : linearAxis,
+              y: catAxis,
+            },
+            plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => `${c.dataset.label}: ${(byDozens ? nf1 : nf).format(Number(c.raw) || 0)}` } } },
+          }),
         });
         setState(id, null);
       },
@@ -677,7 +773,7 @@
           type: "doughnut",
           data: { labels: [I18N.available, I18N.reserved, I18N.lowStock, I18N.outOfStock],
             datasets: [{ data: vals, backgroundColor: [PALETTE.emerald, PALETTE.slate, PALETTE.amber, PALETTE.rose], borderColor: "#ffffff", borderWidth: 2 }] },
-          options: commonOpts(id, { cutout: "62%", plugins: { legend: { display: true, position: "right", labels: { boxWidth: 12, font: { size: 11 }, color: tickColor } }, tooltip: { callbacks: { label: (c) => `${c.label}: ${nf.format(c.parsed)}` } } } }),
+          options: commonOpts(id, { cutout: "62%", plugins: { legend: { display: true, position: isNarrow() ? "bottom" : "right", labels: { boxWidth: 12, font: { size: 11 }, color: tickColor } }, tooltip: { callbacks: { label: (c) => `${c.label}: ${nf.format(c.parsed)}` } } } }),
         });
         setState(id, null);
       },
@@ -720,11 +816,66 @@
       }
       if (inFlight !== token) return; // a newer request superseded this one
       const data = (payload && payload.charts) || {};
+      chartLib = Chart;
       root.querySelectorAll("[data-chart]").forEach((cv) => {
         const id = cv.dataset.chart;
+        lastData[id] = data[id];
         if (RENDER[id]) { try { RENDER[id](Chart, id, data[id]); } catch (e) { setState(id, I18N.noData); } }
       });
     }
+
+    // Re-render a single chart from cached data (measure toggle / swipe).
+    const rerender = (id) => {
+      if (!chartLib || !RENDER[id]) return;
+      try { RENDER[id](chartLib, id, lastData[id]); } catch (e) { setState(id, I18N.noData); }
+    };
+
+    const setMeasure = (id, measure) => {
+      if (measureFor(id) === measure) return;
+      measures[id] = measure;
+      const group = root.querySelector(`[data-measure-group="${id}"]`);
+      group?.querySelectorAll("button[data-measure]").forEach((b) => {
+        const active = b.dataset.measure === measure;
+        b.toggleAttribute("data-active", active);
+        b.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+      rerender(id);
+    };
+
+    // Measure toggle buttons.
+    root.querySelectorAll("[data-measure-group]").forEach((group) => {
+      const id = group.dataset.measureGroup;
+      group.addEventListener("click", (ev) => {
+        const btn = ev.target.closest("button[data-measure]");
+        if (btn) setMeasure(id, btn.dataset.measure);
+      });
+    });
+
+    // Horizontal swipe over the plot flips measure on touch devices.
+    root.querySelectorAll("[data-chart-swipe]").forEach((box) => {
+      const id = box.dataset.chartSwipe;
+      const keys = Array.from(
+        root.querySelectorAll(`[data-measure-group="${id}"] button[data-measure]`),
+      ).map((b) => b.dataset.measure);
+      if (keys.length < 2) return;
+      let x0 = null, y0 = null;
+      box.addEventListener("touchstart", (ev) => {
+        if (ev.touches.length !== 1) { x0 = null; return; }
+        x0 = ev.touches[0].clientX;
+        y0 = ev.touches[0].clientY;
+      }, { passive: true });
+      box.addEventListener("touchend", (ev) => {
+        if (x0 === null) return;
+        const t = ev.changedTouches[0];
+        const dx = t.clientX - x0;
+        const dy = t.clientY - y0;
+        x0 = null;
+        // Ignore mostly-vertical drags so page scrolling still works.
+        if (Math.abs(dx) < 40 || Math.abs(dx) <= Math.abs(dy)) return;
+        const i = keys.indexOf(measureFor(id));
+        setMeasure(id, keys[(i + (dx < 0 ? 1 : keys.length - 1)) % keys.length]);
+      }, { passive: true });
+    });
 
     // Preset buttons
     const group = root.querySelector("[data-period-group]");
@@ -813,7 +964,8 @@
       stateEl.textContent = I18N.loading || "Loading…";
       let payload;
       try {
-        const resp = await fetch(`${endpoint}?page=1&pageSize=1`, { headers: { Accept: "application/json" }, credentials: "same-origin" });
+        // perUser=1 → the most recent action for each user, newest first.
+        const resp = await fetch(`${endpoint}?perUser=1&pageSize=25`, { headers: { Accept: "application/json" }, credentials: "same-origin" });
         payload = await resp.json();
       } catch (_e) {
         stateEl.hidden = false; stateEl.textContent = I18N.noData || "No data"; return;
@@ -822,7 +974,9 @@
       const items = (payload && payload.items) || [];
       list.innerHTML = "";
       if (!items.length) { stateEl.hidden = false; stateEl.textContent = I18N.noData || "No entries"; return; }
-      list.appendChild(renderItem(items[0]));
+      const frag = document.createDocumentFragment();
+      items.forEach((it) => frag.appendChild(renderItem(it)));
+      list.appendChild(frag);
       stateEl.hidden = true;
     }
 

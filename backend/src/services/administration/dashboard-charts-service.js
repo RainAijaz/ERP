@@ -234,26 +234,62 @@ const loadDashboardCharts = async ({ knex, req, can, from, to }) => {
     });
 
   // ---- 5) Top 10 Selling Products ----------------------------------------
+  // Two independent top-10 lists: one ranked by money, one by volume. They are
+  // separate queries because the ranking (and therefore which SKUs appear at
+  // all) differs per measure — a cheap high-volume article can top "dozens"
+  // while never entering the "amount" top 10.
   const topProducts = () =>
-    safe("topProducts", { labels: [], values: [] }, async () => {
-      const rows = await knex("erp.sales_line as sl")
-        .join("erp.voucher_line as vl", "vl.id", "sl.voucher_line_id")
-        .join("erp.voucher_header as vh", "vh.id", "vl.voucher_header_id")
-        .join("erp.skus as s", "s.id", "vl.sku_id")
-        .where("vh.voucher_type_code", SALES_VOUCHER_CODE)
-        .where("vh.status", "APPROVED")
-        .whereBetween("vh.voucher_date", [fromKey, toKey])
-        .modify((qb) => applyBranchScope(req, qb, "vh.branch_id"))
-        .groupBy("s.sku_code")
-        .select("s.sku_code")
-        .select(knex.raw("COALESCE(SUM(sl.total_amount),0) as v"))
-        .orderBy("v", "desc")
-        .limit(10);
-      return {
-        labels: rows.map((r) => r.sku_code),
-        values: rows.map((r) => toNumber(r.v)),
-      };
-    });
+    safe(
+      "topProducts",
+      { labels: [], values: [], byDozens: { labels: [], values: [] } },
+      async () => {
+        const amountRows = await knex("erp.sales_line as sl")
+          .join("erp.voucher_line as vl", "vl.id", "sl.voucher_line_id")
+          .join("erp.voucher_header as vh", "vh.id", "vl.voucher_header_id")
+          .join("erp.skus as s", "s.id", "vl.sku_id")
+          .where("vh.voucher_type_code", SALES_VOUCHER_CODE)
+          .where("vh.status", "APPROVED")
+          .whereBetween("vh.voucher_date", [fromKey, toKey])
+          .modify((qb) => applyBranchScope(req, qb, "vh.branch_id"))
+          .groupBy("s.sku_code")
+          .select("s.sku_code")
+          .select(knex.raw("COALESCE(SUM(sl.total_amount),0) as v"))
+          .orderBy("v", "desc")
+          .limit(10);
+
+        // Volume uses the canonical pairs expression (voucher_line.meta.total_pairs,
+        // falling back to vl.qty) and dozens = pairs / 12 — identical to the
+        // "Dozens Sold" KPI in dashboard-metrics-service.js, so the two reconcile.
+        // movement_kind filters out return lines.
+        const dozenRows = await knex("erp.voucher_line as vl")
+          .join("erp.voucher_header as vh", "vh.id", "vl.voucher_header_id")
+          .join("erp.skus as s", "s.id", "vl.sku_id")
+          .where("vh.voucher_type_code", SALES_VOUCHER_CODE)
+          .where("vh.status", "APPROVED")
+          .where("vl.line_kind", "SKU")
+          .whereRaw("COALESCE(vl.meta->>'movement_kind','SALE') = 'SALE'")
+          .whereBetween("vh.voucher_date", [fromKey, toKey])
+          .modify((qb) => applyBranchScope(req, qb, "vh.branch_id"))
+          .groupBy("s.sku_code")
+          .select("s.sku_code")
+          .select(
+            knex.raw(
+              "COALESCE(SUM(COALESCE((vl.meta->>'total_pairs')::numeric, vl.qty)),0) / 12.0 as v",
+            ),
+          )
+          .orderBy("v", "desc")
+          .limit(10);
+
+        return {
+          labels: amountRows.map((r) => r.sku_code),
+          values: amountRows.map((r) => toNumber(r.v)),
+          byDozens: {
+            labels: dozenRows.map((r) => r.sku_code),
+            values: dozenRows.map((r) => Math.round(toNumber(r.v) * 10) / 10),
+          },
+        };
+      },
+    );
 
   // ---- 6) Receivables vs Payables (bar, snapshot) -------------------------
   const partyBalanceTotal = async (partyTypes, direction) => {

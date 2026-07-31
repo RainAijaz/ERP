@@ -75,10 +75,11 @@
       </span>
     </div>
     
-    <div class="flex gap-2">
+    <!-- flex-wrap: four status pills overrun a phone viewport on one row. -->
+    <div class="flex flex-wrap gap-2">
       <% ["PENDING", "APPROVED", "REJECTED", "WITHDRAWN"].forEach(s => { %>
-        <a href="?status=<%= s %>" 
-           class="rounded-full px-4 py-1 text-xs font-bold transition <%= currentStatus === s ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 border border-slate-200' %>">
+        <a href="?status=<%= s %>"
+           class="whitespace-nowrap rounded-full px-3 py-1.5 text-xs font-bold transition sm:px-4 sm:py-1 <%= currentStatus === s ? 'bg-slate-800 text-white' : 'bg-white text-slate-600 border border-slate-200' %>">
            <%= t(s.toLowerCase()) %> (<%= Number(countsByStatus[s] || 0) %>)
         </a>
       <% }) %>

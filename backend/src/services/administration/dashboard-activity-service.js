@@ -40,6 +40,18 @@ const applyFeedFilters = (qb, filters) => {
   return qb;
 };
 
+const FEED_COLUMNS = [
+  "al.id",
+  "al.branch_id",
+  "al.user_id",
+  "al.entity_type",
+  "al.entity_id",
+  "al.voucher_type_code",
+  "al.action",
+  "al.created_at",
+  "al.context_json",
+];
+
 const loadActivityFeed = async ({ knex, req, t, query = {} }) => {
   const page = Math.max(1, toPositiveNumber(query.page) || 1);
   const pageSize = Math.min(
@@ -47,32 +59,48 @@ const loadActivityFeed = async ({ knex, req, t, query = {} }) => {
     toPositiveNumber(query.pageSize) || DEFAULT_PAGE_SIZE,
   );
   const offset = (page - 1) * pageSize;
+  // "Latest per user" mode: one row per user (their most recent action) rather
+  // than a flat newest-first feed, so a single busy user cannot crowd everyone
+  // else out. Rows with a null user_id collapse into one "System" entry.
+  const perUser = String(query.perUser || "") === "1";
 
   try {
-    const rows = await knex("erp.activity_log as al")
-      .leftJoin("erp.users as u", "u.id", "al.user_id")
-      .leftJoin("erp.branches as b", "b.id", "al.branch_id")
-      .select(
-        "al.id",
-        "al.branch_id",
-        "al.user_id",
-        "al.entity_type",
-        "al.entity_id",
-        "al.voucher_type_code",
-        "al.action",
-        "al.created_at",
-        "al.context_json",
-        localizedUserName(knex, req),
-        "b.name as branch_name",
-      )
-      .modify((qb) => applyFeedFilters(qb, query))
-      .modify((qb) => applyActiveBranchScope(req, qb, "al.branch_id"))
-      .orderBy("al.created_at", "desc")
-      .orderBy("al.id", "desc")
-      .limit(pageSize + 1) // one extra row signals hasMore
-      .offset(offset);
+    const baseQuery = () =>
+      knex("erp.activity_log as al")
+        .leftJoin("erp.users as u", "u.id", "al.user_id")
+        .leftJoin("erp.branches as b", "b.id", "al.branch_id")
+        .select(
+          ...FEED_COLUMNS,
+          localizedUserName(knex, req),
+          "b.name as branch_name",
+        )
+        .modify((qb) => applyFeedFilters(qb, query))
+        .modify((qb) => applyActiveBranchScope(req, qb, "al.branch_id"));
 
-    const hasMore = rows.length > pageSize;
+    let rows;
+    if (perUser) {
+      // DISTINCT ON requires ORDER BY to lead with the same expression, so the
+      // newest-first ordering the UI wants is applied afterwards in JS.
+      // Covered by idx_activity_log_user_created_at (user_id, created_at DESC).
+      rows = await baseQuery()
+        .distinctOn("al.user_id")
+        .orderBy("al.user_id", "asc")
+        .orderBy("al.created_at", "desc")
+        .orderBy("al.id", "desc")
+        .limit(pageSize);
+      rows.sort((a, b) => {
+        const diff = new Date(b.created_at) - new Date(a.created_at);
+        return diff !== 0 ? diff : Number(b.id) - Number(a.id);
+      });
+    } else {
+      rows = await baseQuery()
+        .orderBy("al.created_at", "desc")
+        .orderBy("al.id", "desc")
+        .limit(pageSize + 1) // one extra row signals hasMore
+        .offset(offset);
+    }
+
+    const hasMore = !perUser && rows.length > pageSize;
     const pageRows = hasMore ? rows.slice(0, pageSize) : rows;
     const items = presentActivityRows({ rows: pageRows, t }).map((row) => ({
       id: row.id,

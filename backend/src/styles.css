@@ -357,3 +357,234 @@ html.dark input[type="checkbox"] {
     z-index: -1;
   }
 }
+
+/* The mobile add-item bar is built unconditionally by the JS so it survives a
+   resize; it must stay hidden until the card breakpoint switches it on. */
+[data-mobile-add-bar] {
+  display: none;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   VOUCHER LINE ENTRY — stacked cards on phones
+   Driven by views/base/partials/voucher-mobile-lines.js, which stamps
+   [data-mobile-card] on the table and [data-mobile-label] / [data-mobile-role]
+   on each cell. Desktop layout is untouched.
+
+   `screen and` is REQUIRED: head.ejs prints the gate pass at A4 landscape via
+   `@media print` rules on [data-lines-table] th/td. A bare width query would
+   also match during printing and destroy that layout.
+   ═══════════════════════════════════════════════════════════ */
+
+@media screen and (max-width: 1023px) {
+  /* The wrapper no longer needs to scroll, and its scroll-shadow gradient
+     (set above) would otherwise paint over the cards. */
+  [data-mobile-lines-wrap] {
+    overflow-x: visible !important;
+    background: none !important;
+  }
+
+  /* Neutralise the table layout. min-w-[Npx] utilities survive display:block,
+     so the min-width reset has to be explicit. */
+  [data-mobile-card] {
+    display: block;
+    min-width: 0 !important;
+    width: 100%;
+    border-collapse: separate;
+  }
+
+  [data-mobile-card] thead {
+    display: none;
+  }
+
+  [data-mobile-card] tbody {
+    display: block;
+    counter-reset: erp-line;
+    padding: 0.75rem;
+  }
+
+  [data-mobile-card] tbody tr {
+    counter-increment: erp-line;
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.625rem 0.75rem;
+    padding: 2.25rem 0.75rem 0.875rem;
+    margin-bottom: 0.75rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.875rem;
+    background: #fff;
+    box-shadow: 0 1px 2px rgb(15 23 42 / 0.04);
+  }
+
+  [data-mobile-card] tbody tr:last-child {
+    margin-bottom: 0;
+  }
+
+  /* Card index badge, generated so it works even on views with no Sr No column. */
+  [data-mobile-card] tbody tr::before {
+    content: "#" counter(erp-line);
+    position: absolute;
+    top: 0.5rem;
+    inset-inline-start: 0.75rem;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: #94a3b8;
+  }
+
+  [data-mobile-card] tbody td {
+    display: block;
+    border: 0 !important;
+    padding: 0 !important;
+    background: none !important;
+    min-width: 0;
+  }
+
+  [data-mobile-card] tbody td::before {
+    content: attr(data-mobile-label);
+    display: block;
+    margin-bottom: 0.1875rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* Pickers and other wide controls get the full card width. */
+  [data-mobile-card] tbody td[data-mobile-span="full"] {
+    grid-column: 1 / -1;
+  }
+
+  /* Delete / row actions dock to the card's top-right corner. */
+  [data-mobile-card] tbody td[data-mobile-role="action"] {
+    position: absolute;
+    top: 0.3125rem;
+    inset-inline-end: 0.5rem;
+    display: block;
+  }
+
+  [data-mobile-card] tbody td[data-mobile-role="serial"],
+  [data-mobile-card] [data-mobile-role="empty"] {
+    display: none !important;
+  }
+
+  /* Totals row becomes a plain stacked block. */
+  [data-mobile-card] tfoot {
+    display: block;
+    padding: 0 0.75rem 0.75rem;
+  }
+
+  [data-mobile-card] tfoot tr {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem 0.75rem;
+    padding: 0.75rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.875rem;
+    background: #f8fafc;
+  }
+
+  [data-mobile-card] tfoot td {
+    display: block;
+    border: 0 !important;
+    padding: 0 !important;
+    min-width: 0;
+  }
+
+  [data-mobile-card] tfoot td::before {
+    content: attr(data-mobile-label);
+    display: block;
+    margin-bottom: 0.1875rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+  }
+
+  /* Sticky add-item bar; the in-table add button is hidden with the empty cells. */
+  [data-mobile-add-bar] {
+    position: sticky;
+    bottom: 0;
+    z-index: 30;
+    display: flex;
+    padding: 0.5rem 0;
+    background: linear-gradient(to top, rgb(248 250 252 / 0.98) 60%, transparent);
+  }
+
+  [data-mobile-card] tfoot td[data-mobile-label=""] {
+    align-self: end;
+  }
+
+  [data-mobile-add-bar][data-hidden] {
+    display: none;
+  }
+
+  [data-mobile-add-btn] {
+    flex: 1;
+    min-height: 2.75rem;
+    border-radius: 0.875rem;
+    border: 1px dashed #94a3b8;
+    background: #fff;
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #14526a;
+  }
+
+  [data-mobile-add-btn]:disabled {
+    opacity: 0.4;
+  }
+
+  /* Dark mode */
+  html.dark [data-mobile-card] tbody tr {
+    background: #162336;
+    border-color: #1e3148;
+  }
+  html.dark [data-mobile-card] tfoot tr {
+    background: #0e1a2b;
+    border-color: #1e3148;
+  }
+  html.dark [data-mobile-card] tbody td::before,
+  html.dark [data-mobile-card] tfoot td::before {
+    color: #94a3b8;
+  }
+  html.dark [data-mobile-add-bar] {
+    background: linear-gradient(to top, rgb(12 20 34 / 0.98) 60%, transparent);
+  }
+  html.dark [data-mobile-add-btn] {
+    background: #162336;
+    border-color: #2a4263;
+    color: #38bdf8;
+  }
+}
+
+@media (pointer: coarse) {
+  /* 44px targets, and font-size:16px so iOS does not zoom the page on focus —
+     the line inputs are text-xs (12px), which triggers auto-zoom. */
+  [data-lines-table] input:not([type="checkbox"]):not([type="radio"]),
+  [data-lines-table] select,
+  [data-lines-table] button[data-enhanced-select-trigger="1"] {
+    min-height: 2.75rem;
+    font-size: 16px;
+  }
+
+  [data-lines-table] button[data-del],
+  [data-lines-table] [data-remove-row] {
+    min-height: 2.5rem;
+    min-width: 2.5rem;
+  }
+
+  /* Searchable-select menu as a wide sheet rather than a narrow strip
+     anchored to a small cell. */
+  [data-searchable-menu] {
+    min-width: min(22rem, calc(100vw - 1.5rem)) !important;
+  }
+
+  [data-searchable-menu] input {
+    font-size: 16px;
+  }
+}

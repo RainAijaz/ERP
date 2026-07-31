@@ -4423,6 +4423,28 @@ Object.assign(translations.ur, {
     "یہ درخواست منظوری کے انتظار میں نہیں رہے گی۔ کوئی ریکارڈ حذف نہیں ہوگا اور آپ دوبارہ جمع کرا سکتے ہیں۔",
 });
 
+// Dashboard: Top Selling Products measure toggle, per-user activity feed, and
+// mobile line-entry helpers. NOTE: translations.ur is reassigned wholesale as
+// late as line 3680, so Urdu keys must live in a trailing Object.assign like
+// this one or they are silently discarded.
+Object.assign(translations.en, {
+  activity_per_user: "Latest per user",
+  add_item: "Add item",
+  line_items: "Line Items",
+  no_activity_yet: "No activity yet",
+  row: "Row",
+});
+
+Object.assign(translations.ur, {
+  // "dozens" was left untranslated by the machine-translation pass.
+  dozens: "درجن",
+  activity_per_user: "ہر صارف کی تازہ ترین سرگرمی",
+  add_item: "آئٹم شامل کریں",
+  line_items: "تفصیلی سطریں",
+  no_activity_yet: "ابھی تک کوئی سرگرمی نہیں",
+  row: "سطر",
+});
+
 const formatDateDisplay = (value, fallback = "-") => {
   if (value === null || value === undefined || value === "") return fallback;
   const text = String(value).trim();

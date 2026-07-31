@@ -20,7 +20,6 @@ const {
 } = require("../services/administration/dashboard-charts-service");
 const {
   loadActivityFeed,
-  loadActivityFilterOptions,
 } = require("../services/administration/dashboard-activity-service");
 const { requirePermission } = require("../middleware/access/role-permissions");
 const { translateUrduWithFallback } = require("../utils/translate");
@@ -208,7 +207,9 @@ router.get("/", async (req, res, next) => {
     // The premium Admin Home dashboard (KPIs, alerts, analytics, activity feed)
     // is admin-only; other users keep the lightweight summary dashboard.
     const isAdmin = Boolean(req.user?.isAdmin);
-    const [dashboard, metrics, activityFilters, branchBreakdown] = await Promise.all([
+    // The activity feed is hydrated client-side from /dashboard/activity, so the
+    // filter-option lists are deliberately not loaded here.
+    const [dashboard, metrics, branchBreakdown] = await Promise.all([
       loadDashboardData({
         knex,
         req,
@@ -220,9 +221,6 @@ router.get("/", async (req, res, next) => {
             req,
             can: res.locals.can,
           })
-        : Promise.resolve(null),
-      isAdmin
-        ? loadActivityFilterOptions({ knex, req })
         : Promise.resolve(null),
       isAdmin
         ? loadBranchBreakdown({ knex })
@@ -241,7 +239,6 @@ router.get("/", async (req, res, next) => {
         dashboard,
         metrics,
         isAdmin,
-        activityFilters,
         branchBreakdown,
       });
     }
