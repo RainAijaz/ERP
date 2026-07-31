@@ -40,6 +40,15 @@
       ? incomingSelectedStatus
       : defaultStatusOption.value
   ).toLowerCase();
+  // The name attribute must be emitted with the raw (dash) output tag. The escaping
+  // output tag turns the quotes into &#34;, and the browser then reads the whole
+  // `"rows"` literal - quotes included - as the field name, so the control submits
+  // `?%22rows%22=50` and the server never sees `rows` at all.
+  // Strip anything that is not a plain field-name character before emitting raw.
+  const nameAttr = (fieldName) => {
+    const safe = String(fieldName || "").replace(/[^A-Za-z0-9_.\-\[\]]/g, "");
+    return safe ? ` name="${safe}"` : "";
+  };
 %>
 <div class="flex flex-wrap items-center gap-3 text-xs text-slate-500" data-table-controls>
   <label class="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-1.5 shadow-sm">
@@ -48,7 +57,7 @@
       class="w-16 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
       data-page-size
       data-searchable-variant="compact"
-      <%= pageSizeFieldName ? `name="${pageSizeFieldName}"` : "" %>
+      <%- nameAttr(pageSizeFieldName) %>
     >
       <% normalizedPageSizeOptions.forEach(function(option) { %>
         <% const pageSizeValue = String(option.value).toLowerCase(); %>
@@ -64,7 +73,7 @@
         class="w-24 bg-transparent text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
         data-status-filter
         data-searchable-variant="compact"
-        <%= statusFieldName ? `name="${statusFieldName}"` : "" %>
+        <%- nameAttr(statusFieldName) %>
       >
         <% normalizedStatusOptions.forEach(function(option) { %>
           <% const statusValue = String(option.value).toLowerCase(); %>
@@ -83,7 +92,7 @@
       placeholder="<%= searchInputPlaceholder %>"
       value="<%= searchInputValue %>"
       data-search-input
-      <%= searchFieldName ? `name="${searchFieldName}"` : "" %>
+      <%- nameAttr(searchFieldName) %>
     />
   </label>
   <% if (filtersEnabled) { %>

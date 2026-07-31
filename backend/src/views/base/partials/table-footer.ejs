@@ -1,31 +1,70 @@
+<%
+  // Pages that page in the browser leave `serverPaging` undefined and keep the
+  // original markup, which basic-info-utils.ejs wires up. Pages that page on the
+  // server (see master_data/bom/index.ejs) pass { page, pageCount, from, to,
+  // total, pageUrl } and get real prev/next links instead of inert buttons.
+  const paging = typeof serverPaging !== "undefined" && serverPaging ? serverPaging : null;
+  const pagingPage = paging ? Number(paging.page || 1) : 1;
+  const pagingCount = paging ? Math.max(Number(paging.pageCount || 1), 1) : 1;
+  const buildPageUrl = paging && typeof paging.pageUrl === "function" ? paging.pageUrl : null;
+  const disabledClass = "pointer-events-none opacity-40";
+%>
 <div
   class="flex flex-col gap-3 border-t border-slate-200 px-5 py-3 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between"
 >
-  <span data-showing-count
-    ><%= t("showing") %> <%= Number(typeof rowCount !== 'undefined' ? rowCount :
-    0) %></span
-  >
-  <div class="flex items-center gap-2">
-    <button
-      class="rounded border border-slate-200 px-2 py-1 text-slate-500 cursor-pointer"
-      type="button"
-      data-prev-page
+  <% if (paging) { %>
+    <span data-showing-count>
+      <%= t("showing") %> <%= Number(paging.from || 0) %>-<%= Number(paging.to || 0) %>
+      <%= t("of") %> <%= Number(paging.total || 0) %>
+    </span>
+    <div class="flex items-center gap-2">
+      <a
+        class="rounded border border-slate-200 px-2 py-1 text-slate-500 cursor-pointer <%= pagingPage <= 1 ? disabledClass : "" %>"
+        href="<%= buildPageUrl ? buildPageUrl(Math.max(pagingPage - 1, 1)) : "#" %>"
+        <%= pagingPage <= 1 ? "aria-disabled=\"true\" tabindex=\"-1\"" : "" %>
+        data-prev-page
+      >
+        <%= t("prev") %>
+      </a>
+      <span class="rounded bg-slate-900 px-2 py-1 text-white" data-page-indicator>
+        <%= pagingPage %> / <%= pagingCount %>
+      </span>
+      <a
+        class="rounded border border-slate-200 px-2 py-1 text-slate-500 cursor-pointer <%= pagingPage >= pagingCount ? disabledClass : "" %>"
+        href="<%= buildPageUrl ? buildPageUrl(Math.min(pagingPage + 1, pagingCount)) : "#" %>"
+        <%= pagingPage >= pagingCount ? "aria-disabled=\"true\" tabindex=\"-1\"" : "" %>
+        data-next-page
+      >
+        <%= t("next") %>
+      </a>
+    </div>
+  <% } else { %>
+    <span data-showing-count
+      ><%= t("showing") %> <%= Number(typeof rowCount !== 'undefined' ? rowCount :
+      0) %></span
     >
-      <%= t("prev") %>
-    </button>
-    <button
-      class="rounded bg-slate-900 px-2 py-1 text-white cursor-pointer"
-      type="button"
-      data-page-indicator
-    >
-      1
-    </button>
-    <button
-      class="rounded border border-slate-200 px-2 py-1 text-slate-500 cursor-pointer"
-      type="button"
-      data-next-page
-    >
-      <%= t("next") %>
-    </button>
-  </div>
+    <div class="flex items-center gap-2">
+      <button
+        class="rounded border border-slate-200 px-2 py-1 text-slate-500 cursor-pointer"
+        type="button"
+        data-prev-page
+      >
+        <%= t("prev") %>
+      </button>
+      <button
+        class="rounded bg-slate-900 px-2 py-1 text-white cursor-pointer"
+        type="button"
+        data-page-indicator
+      >
+        1
+      </button>
+      <button
+        class="rounded border border-slate-200 px-2 py-1 text-slate-500 cursor-pointer"
+        type="button"
+        data-next-page
+      >
+        <%= t("next") %>
+      </button>
+    </div>
+  <% } %>
 </div>

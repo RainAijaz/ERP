@@ -6,6 +6,28 @@
   const selectedWorkflow = String(filters?.workflow || "all").toUpperCase();
   const selectedBomType = String(filters?.bom_type || "all").toUpperCase();
   const selectedRows = String(filters?.rows || "25").toLowerCase();
+  const activeSortKey = String(filters?.sort || "");
+  const activeSortDir = String(filters?.dir || "desc").toLowerCase() === "asc" ? "asc" : "desc";
+  const paging = (typeof pagination !== "undefined" && pagination)
+    ? pagination
+    : { page: 1, pageCount: 1, total: (rows || []).length, from: 0, to: 0 };
+  // Prev/Next are plain links so a page stays shareable and the browser Back
+  // button works. Everything except `page` is carried over verbatim.
+  const buildPageUrl = (targetPage) => {
+    const params = new URLSearchParams({
+      rows: selectedRows,
+      lifecycle: selectedLifecycle,
+      workflow: selectedWorkflow === "ALL" ? "all" : selectedWorkflow,
+      bom_type: selectedBomType === "ALL" ? "all" : selectedBomType,
+    });
+    if (filters?.q) params.set("q", String(filters.q));
+    if (activeSortKey) {
+      params.set("sort", activeSortKey);
+      params.set("dir", activeSortDir);
+    }
+    params.set("page", String(targetPage));
+    return `${basePath}?${params.toString()}`;
+  };
   const lifecycleStatusOptions = [
     { value: "all", label: t("all") },
     { value: "active", label: t("active") },
@@ -66,6 +88,9 @@
         }) %>
         <input type="hidden" name="workflow" value="<%= selectedWorkflow === "ALL" ? "all" : selectedWorkflow %>" data-bom-workflow-input>
         <input type="hidden" name="bom_type" value="<%= selectedBomType === "ALL" ? "all" : selectedBomType %>" data-bom-type-input>
+        <input type="hidden" name="sort" value="<%= activeSortKey %>" data-bom-sort-input>
+        <input type="hidden" name="dir" value="<%= activeSortDir %>" data-bom-dir-input>
+        <%/* No `page` field: changing search/rows/status/filters must land back on page 1. */%>
       </div>
     </form>
 
@@ -80,7 +105,7 @@
           <% } %>
           <% (rows || []).forEach(function(row, idx) { %>
             <tr class="hover:bg-amber-50/40 odd:bg-white even:bg-slate-50/40">
-              <td class="px-4 py-3 text-slate-700"><%= idx + 1 %></td>
+              <td class="px-4 py-3 text-slate-700"><%= Number(paging.from || 1) + idx %></td>
               <td class="px-4 py-3 text-slate-700"><%= row.bom_no %></td>
               <td class="px-4 py-3 text-slate-700"><%= row.item_name || "-" %></td>
               <td class="px-4 py-3 text-slate-700"><%= t((row.level || "").toLowerCase()) || row.level %></td>
@@ -173,11 +198,27 @@
         </tbody>
       </table>
     </div>
-    <%- include("../../base/partials/table-footer", { t }) %>
+    <%- include("../../base/partials/table-footer", {
+      t,
+      serverPaging: {
+        page: paging.page,
+        pageCount: paging.pageCount,
+        from: paging.from,
+        to: paging.to,
+        total: paging.total,
+        pageUrl: buildPageUrl,
+      },
+    }) %>
   </section>
 </div>
 
-<%- include("../../base/partials/filter-modal", { t, bodyPartial: "../../master_data/bom/filters.ejs", serverFilters: false }) %>
+<%- include("../../base/partials/filter-modal", {
+  t,
+  bodyPartial: "../../master_data/bom/filters.ejs",
+  serverFilters: false,
+  selectedWorkflow,
+  selectedBomType,
+}) %>
 
 <script>
   (() => {
@@ -220,6 +261,29 @@
       form.requestSubmit();
     });
 
+    // Sorting is server-side too, so the header buttons rendered by
+    // table-header.ejs (which are inert without basic-info-utils.ejs) have to
+    // resubmit the filter form instead of reordering the current page only.
+    const sortInput = form.querySelector("[data-bom-sort-input]");
+    const dirInput = form.querySelector("[data-bom-dir-input]");
+    const activeSortKey = sortInput?.value || "";
+    const activeSortDir = dirInput?.value === "asc" ? "asc" : "desc";
+    document.querySelectorAll("[data-sort-key]").forEach((button) => {
+      const key = button.getAttribute("data-sort-key") || "";
+      const indicator = button.querySelector("[data-sort-indicator]");
+      if (key === activeSortKey && indicator) {
+        indicator.textContent = activeSortDir === "asc" ? "↑" : "↓";
+        indicator.classList.remove("opacity-60");
+      }
+      button.addEventListener("click", () => {
+        if (!sortInput || !dirInput) return;
+        // Same column toggles direction; a new column starts ascending.
+        dirInput.value = key === activeSortKey && activeSortDir === "asc" ? "desc" : "asc";
+        sortInput.value = key;
+        form.requestSubmit();
+      });
+    });
+
     const filterToggle = form.querySelector("[data-filter-toggle]");
     const filterCount = form.querySelector("[data-filter-count]");
     const workflowInput = form.querySelector("[data-bom-workflow-input]");
@@ -253,10 +317,21 @@
       filterPanel.classList.remove("flex");
     };
 
+    // searchable-select.js keeps the real <select> in the DOM but renders a text
+    // input over it, and only refreshes that input on a "change" event. Setting
+    // .value alone would leave the visible control showing the previous filter.
+    const setPanelSelect = (select, value) => {
+      if (!select) return;
+      const next = value || "all";
+      if (select.value === next) return;
+      select.value = next;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+
     const openPanel = () => {
       if (!filterPanel || !panelWorkflow || !panelType) return;
-      panelWorkflow.value = workflowInput?.value || "all";
-      panelType.value = bomTypeInput?.value || "all";
+      setPanelSelect(panelWorkflow, workflowInput?.value);
+      setPanelSelect(panelType, bomTypeInput?.value);
       filterPanel.classList.remove("hidden");
       filterPanel.classList.add("flex");
     };
@@ -271,8 +346,8 @@
       form.requestSubmit();
     });
     panelClear?.addEventListener("click", () => {
-      if (panelWorkflow) panelWorkflow.value = "all";
-      if (panelType) panelType.value = "all";
+      setPanelSelect(panelWorkflow, "all");
+      setPanelSelect(panelType, "all");
       if (workflowInput) workflowInput.value = "all";
       if (bomTypeInput) bomTypeInput.value = "all";
       updateFilterCount();

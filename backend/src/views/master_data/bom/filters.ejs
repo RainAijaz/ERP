@@ -1,19 +1,36 @@
+<%
+  // Mirror the applied filters back into the modal. Without a server-rendered
+  // `selected`, reopening the panel always showed "All" even while a filter was
+  // active, which reads as the filter having been ignored.
+  const activeWorkflow = String(typeof selectedWorkflow !== "undefined" ? selectedWorkflow : "all").toUpperCase();
+  const activeBomType = String(typeof selectedBomType !== "undefined" ? selectedBomType : "all").toUpperCase();
+  const workflowOptions = [
+    { value: "all", label: t("all") },
+    { value: "DRAFT", label: t("draft") },
+    { value: "PENDING", label: t("pending") },
+    { value: "APPROVED", label: t("approved") },
+    { value: "REJECTED", label: t("rejected") },
+  ];
+  const bomTypeOptions = [
+    { value: "all", label: t("all") },
+    { value: "FINISHED", label: t("bom_type_finished_goods") },
+    { value: "SEMI_FINISHED", label: t("bom_type_semi_finished") },
+  ];
+%>
 <label class="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
   <span class="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500"><%= t("bom_stage")  %></span>
   <select class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700" data-bom-modal-workflow data-searchable-select="true" data-searchable-variant="unified">
-    <option value="all"><%= t("all") %></option>
-    <option value="DRAFT"><%= t("draft")  %></option>
-    <option value="PENDING"><%= t("pending")  %></option>
-    <option value="APPROVED"><%= t("approved")  %></option>
-    <option value="REJECTED"><%= t("rejected")  %></option>
+    <% workflowOptions.forEach(function(option) { %>
+      <option value="<%= option.value %>" <%= option.value.toUpperCase() === activeWorkflow ? "selected" : "" %>><%= option.label %></option>
+    <% }) %>
   </select>
 </label>
 
 <label class="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white px-4 py-3">
   <span class="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-500"><%= t("type")  %></span>
   <select class="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700" data-bom-modal-type data-searchable-select="true" data-searchable-variant="unified">
-    <option value="all"><%= t("all") %></option>
-    <option value="FINISHED"><%= t("bom_type_finished_goods")  %></option>
-    <option value="SEMI_FINISHED"><%= t("bom_type_semi_finished")  %></option>
+    <% bomTypeOptions.forEach(function(option) { %>
+      <option value="<%= option.value %>" <%= option.value.toUpperCase() === activeBomType ? "selected" : "" %>><%= option.label %></option>
+    <% }) %>
   </select>
 </label>

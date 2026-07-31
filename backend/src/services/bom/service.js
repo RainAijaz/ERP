@@ -3651,17 +3651,39 @@ const loadFormOptions = async (knex, locale = "en", options = {}) => {
   };
 };
 
-const listBoms = async (knex, filters = {}, options = {}) => {
-  const normalizeRowsFilter = (value) => {
-    const text = String(value || "25")
-      .trim()
-      .toLowerCase();
-    if (text === "all") return "all";
-    const parsed = Number.parseInt(text, 10);
-    if (!Number.isInteger(parsed) || parsed <= 0) return 25;
-    return [10, 25, 50].includes(parsed) ? parsed : 25;
-  };
+const BOM_LIST_PAGE_SIZES = [10, 25, 50];
+const BOM_LIST_DEFAULT_PAGE_SIZE = 25;
 
+// Whitelist of the sortable columns the register header exposes. Keys are the
+// `data-sort-key` values rendered by base/partials/table-header.ejs, so the
+// header buttons and this map stay in step.
+const BOM_LIST_SORT_COLUMNS = {
+  bom_no: "bh.bom_no",
+  item_name: "i.name",
+  bom_stage: "bh.level",
+  version_no: "bh.version_no",
+  status: "bh.status",
+  created_at: "bh.created_at",
+};
+
+const normalizeBomListRows = (value) => {
+  const text = String(value || BOM_LIST_DEFAULT_PAGE_SIZE)
+    .trim()
+    .toLowerCase();
+  if (text === "all") return "all";
+  const parsed = Number.parseInt(text, 10);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    return BOM_LIST_DEFAULT_PAGE_SIZE;
+  }
+  return BOM_LIST_PAGE_SIZES.includes(parsed)
+    ? parsed
+    : BOM_LIST_DEFAULT_PAGE_SIZE;
+};
+
+// Returns { rows, total, page, pageCount, pageSize, from, to } instead of a bare
+// row array: the register pages server-side, so the view needs the totals to
+// render "Showing 26-50 of 132" and to know whether Next is reachable.
+const listBoms = async (knex, filters = {}, options = {}) => {
   const lifecycleSupported = await hasBomLifecycleColumn(knex);
   const workflow = String(
     filters.workflow || filters.stage || "",
@@ -3673,80 +3695,134 @@ const listBoms = async (knex, filters = {}, options = {}) => {
     .trim()
     .toLowerCase();
   const q = String(filters.q || "").trim();
-  const rows = normalizeRowsFilter(filters.rows);
+  const rows = normalizeBomListRows(filters.rows);
   const viewerUserId = toPositiveInt(options.viewerUserId);
+  const sortKey = String(filters.sort || "")
+    .trim()
+    .toLowerCase();
+  const sortColumn = BOM_LIST_SORT_COLUMNS[sortKey] || null;
+  const sortDir =
+    String(filters.dir || "")
+      .trim()
+      .toLowerCase() === "asc"
+      ? "asc"
+      : "desc";
 
-  const query = knex("erp.bom_header as bh")
-    .select(
-      "bh.id",
-      "bh.bom_no",
-      "bh.level",
-      "bh.status",
-      lifecycleSupported
-        ? knex.raw(
-            "CASE WHEN bh.status = 'APPROVED' THEN bh.is_active ELSE NULL END as bom_is_active",
-          )
-        : knex.raw(
-            "CASE WHEN bh.status = 'APPROVED' THEN COALESCE(i.is_active, true) ELSE NULL END as bom_is_active",
-          ),
-      "bh.version_no",
-      "bh.output_qty",
-      "bh.created_at",
-      "bh.approved_at",
-      "i.code as item_code",
-      "i.name as item_name",
-      "i.is_active as item_is_active",
-      "u.username as created_by_name",
-      "au.username as approved_by_name",
-      knex.raw(
-        `(SELECT COUNT(1) FROM erp.approval_request ar
+  const applyFilters = (builder) => {
+    if (
+      workflow &&
+      ["DRAFT", "PENDING", "APPROVED", "REJECTED"].includes(workflow)
+    )
+      builder.where("bh.status", workflow);
+    if (level && BOM_LEVELS.has(level)) builder.where("bh.level", level);
+    if (lifecycle === "active") {
+      builder
+        .where("bh.status", "APPROVED")
+        .andWhere(lifecycleSupported ? "bh.is_active" : "i.is_active", true);
+    }
+    if (lifecycle === "inactive") {
+      builder
+        .where("bh.status", "APPROVED")
+        .andWhere(lifecycleSupported ? "bh.is_active" : "i.is_active", false);
+    }
+    if (q) {
+      builder.where((inner) => {
+        inner
+          .whereILike("bh.bom_no", `%${q}%`)
+          .orWhereILike("i.name", `%${q}%`)
+          .orWhereILike("i.code", `%${q}%`);
+      });
+    }
+    if (viewerUserId) {
+      builder.andWhere((inner) => {
+        inner
+          .whereNot("bh.status", "DRAFT")
+          .orWhere("bh.created_by", viewerUserId);
+      });
+    } else {
+      builder.whereNot("bh.status", "DRAFT");
+    }
+    return builder;
+  };
+
+  const countRow = await applyFilters(
+    knex("erp.bom_header as bh").leftJoin("erp.items as i", "bh.item_id", "i.id"),
+  )
+    .count({ total: "bh.id" })
+    .first();
+  const total = Number(countRow?.total || 0);
+
+  const pageSize = rows === "all" ? Math.max(total, 1) : rows;
+  const pageCount = total > 0 ? Math.ceil(total / pageSize) : 1;
+  const requestedPage = Number.parseInt(String(filters.page || "1"), 10);
+  const page = Math.min(
+    Math.max(Number.isInteger(requestedPage) ? requestedPage : 1, 1),
+    pageCount,
+  );
+  const offset = (page - 1) * pageSize;
+
+  const query = applyFilters(
+    knex("erp.bom_header as bh")
+      .select(
+        "bh.id",
+        "bh.bom_no",
+        "bh.level",
+        "bh.status",
+        lifecycleSupported
+          ? knex.raw(
+              "CASE WHEN bh.status = 'APPROVED' THEN bh.is_active ELSE NULL END as bom_is_active",
+            )
+          : knex.raw(
+              "CASE WHEN bh.status = 'APPROVED' THEN COALESCE(i.is_active, true) ELSE NULL END as bom_is_active",
+            ),
+        "bh.version_no",
+        "bh.output_qty",
+        "bh.created_at",
+        "bh.approved_at",
+        "i.code as item_code",
+        "i.name as item_name",
+        "i.is_active as item_is_active",
+        "u.username as created_by_name",
+        "au.username as approved_by_name",
+        knex.raw(
+          `(SELECT COUNT(1) FROM erp.approval_request ar
           WHERE ar.entity_type = 'BOM'
             AND ar.entity_id = bh.id::text
             AND ar.status = 'PENDING'
             AND COALESCE(ar.new_value ->> '_action', '') = 'approve_draft') AS pending_approval_count`,
-      ),
-    )
-    .leftJoin("erp.items as i", "bh.item_id", "i.id")
-    .leftJoin("erp.users as u", "bh.created_by", "u.id")
-    .leftJoin("erp.users as au", "bh.approved_by", "au.id")
-    .orderBy("bh.id", "desc");
+        ),
+      )
+      .leftJoin("erp.items as i", "bh.item_id", "i.id")
+      .leftJoin("erp.users as u", "bh.created_by", "u.id")
+      .leftJoin("erp.users as au", "bh.approved_by", "au.id"),
+  );
 
-  if (
-    workflow &&
-    ["DRAFT", "PENDING", "APPROVED", "REJECTED"].includes(workflow)
-  )
-    query.where("bh.status", workflow);
-  if (level && BOM_LEVELS.has(level)) query.where("bh.level", level);
-  if (lifecycle === "active") {
-    query
-      .where("bh.status", "APPROVED")
-      .andWhere(lifecycleSupported ? "bh.is_active" : "i.is_active", true);
+  if (sortColumn) query.orderBy(sortColumn, sortDir);
+  if (sortKey === "bom_lifecycle") {
+    // Lifecycle is a computed column; ordering has to repeat the CASE so
+    // non-approved BOMs (NULL) do not collapse into the active/inactive groups.
+    query.orderByRaw(
+      lifecycleSupported
+        ? `CASE WHEN bh.status = 'APPROVED' THEN bh.is_active ELSE NULL END ${sortDir} NULLS LAST`
+        : `CASE WHEN bh.status = 'APPROVED' THEN COALESCE(i.is_active, true) ELSE NULL END ${sortDir} NULLS LAST`,
+    );
   }
-  if (lifecycle === "inactive") {
-    query
-      .where("bh.status", "APPROVED")
-      .andWhere(lifecycleSupported ? "bh.is_active" : "i.is_active", false);
-  }
-  if (q) {
-    query.where((builder) => {
-      builder
-        .whereILike("bh.bom_no", `%${q}%`)
-        .orWhereILike("i.name", `%${q}%`)
-        .orWhereILike("i.code", `%${q}%`);
-    });
-  }
-  if (viewerUserId) {
-    query.andWhere((builder) => {
-      builder
-        .whereNot("bh.status", "DRAFT")
-        .orWhere("bh.created_by", viewerUserId);
-    });
-  } else {
-    query.whereNot("bh.status", "DRAFT");
-  }
-  if (rows !== "all") query.limit(rows);
+  // Always tie-break on id so paging cannot repeat or skip a row.
+  query.orderBy("bh.id", "desc");
 
-  return query;
+  if (rows !== "all") query.limit(pageSize).offset(offset);
+
+  const resultRows = await query;
+
+  return {
+    rows: resultRows,
+    total,
+    page,
+    pageCount,
+    pageSize: rows === "all" ? total : pageSize,
+    from: total === 0 ? 0 : offset + 1,
+    to: total === 0 ? 0 : offset + resultRows.length,
+  };
 };
 
 const getBomForForm = async (knex, id) => {

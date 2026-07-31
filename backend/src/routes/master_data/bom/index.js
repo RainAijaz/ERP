@@ -248,6 +248,14 @@ router.get(
         ? rawStatusLower
         : "";
 
+      const pageRaw = Number.parseInt(String(req.query.page || "1"), 10);
+      const sortRaw = String(req.query.sort || "")
+        .trim()
+        .toLowerCase();
+      const dirRaw = String(req.query.dir || "")
+        .trim()
+        .toLowerCase();
+
       const filters = {
         q: req.query.q || "",
         lifecycle: req.query.lifecycle || legacyLifecycleFromStatus || "all",
@@ -258,8 +266,11 @@ router.get(
           "all",
         bom_type: req.query.bom_type || req.query.level || "all",
         rows: rowsFilter,
+        page: Number.isInteger(pageRaw) && pageRaw > 0 ? pageRaw : 1,
+        sort: sortRaw,
+        dir: dirRaw === "asc" ? "asc" : "desc",
       };
-      const rows = await bomService.listBoms(knex, filters, {
+      const listing = await bomService.listBoms(knex, filters, {
         viewerUserId: req.user?.id || null,
       });
       return renderPage(
@@ -268,8 +279,18 @@ router.get(
         "../../master_data/bom/index",
         res.locals.t("bom_list"),
         {
-          rows: rows,
-          filters,
+          rows: listing.rows,
+          // listBoms clamps the requested page to the last page that actually
+          // has rows, so echo the clamped value back to the view.
+          filters: { ...filters, page: listing.page },
+          pagination: {
+            page: listing.page,
+            pageCount: listing.pageCount,
+            pageSize: listing.pageSize,
+            total: listing.total,
+            from: listing.from,
+            to: listing.to,
+          },
           basePath: req.baseUrl,
         },
       );
