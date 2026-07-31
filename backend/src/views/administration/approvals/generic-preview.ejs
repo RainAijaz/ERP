@@ -1,0 +1,175 @@
+<%
+  // Last-resort preview: renders an approval payload of ANY shape as readable
+  // label/value rows. Used when no entity-specific preview partial applies (a
+  // newly registered entity type, a payload missing the discriminator its
+  // screen preview needs, or a hydration failure). Without it the modal fell
+  // back to a bare "No entries", so an approver could not see what they were
+  // about to approve.
+  const resolveText = (key, fallback) => {
+    const value = typeof t === "function" ? t(key) : "";
+    return value && value !== key ? value : fallback;
+  };
+
+  // Bookkeeping the approver never needs to read.
+  const HIDDEN_KEYS = new Set([
+    "_action",
+    "_summary",
+    "_scope_key",
+    "_approval_action",
+    "_previewAction",
+    "created_at",
+    "created_by",
+    "updated_at",
+    "updated_by",
+  ]);
+
+  const humanize = (key) =>
+    String(key || "")
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (ch) => ch.toUpperCase())
+      .trim();
+
+  // Prefer a translated field label, falling back to a humanized key so an
+  // untranslated field still reads sensibly rather than showing a raw slug.
+  const fieldLabel = (key) => resolveText(key, humanize(key));
+
+  const isBlank = (value) =>
+    value === null || typeof value === "undefined" || value === "";
+
+  const scalarText = (value) => {
+    if (isBlank(value)) return "-";
+    if (typeof value === "boolean") return value ? resolveText("yes", "Yes") : resolveText("no", "No");
+    return String(value);
+  };
+
+  const isPlainObject = (value) =>
+    value && typeof value === "object" && !Array.isArray(value);
+
+  const entries = (value) =>
+    isPlainObject(value)
+      ? Object.keys(value)
+          .filter((key) => !HIDDEN_KEYS.has(key))
+          .map((key) => [key, value[key]])
+      : [];
+
+  const source = isPlainObject(modalValues) ? modalValues : {};
+  const allEntries = entries(source);
+
+  // Split so long line arrays (voucher lines, bulk rate rows) render as tables
+  // underneath the scalar header fields rather than as unreadable JSON blobs.
+  const scalarEntries = allEntries.filter(([, value]) => !Array.isArray(value) && !isPlainObject(value));
+  const objectEntries = allEntries.filter(([, value]) => isPlainObject(value));
+  const listEntries = allEntries.filter(([, value]) => Array.isArray(value) && value.length > 0);
+
+  // Union of keys across the rows, so a column is kept even when only some
+  // rows carry it.
+  const rowColumns = (rows) => {
+    const cols = [];
+    rows.forEach((row) => {
+      if (!isPlainObject(row)) return;
+      Object.keys(row).forEach((key) => {
+        if (HIDDEN_KEYS.has(key)) return;
+        if (isPlainObject(row[key]) || Array.isArray(row[key])) return;
+        if (!cols.includes(key)) cols.push(key);
+      });
+    });
+    return cols;
+  };
+
+  const MAX_ROWS = 100;
+%>
+
+<div class="space-y-4">
+  <div class="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+    <%= resolveText("approval_generic_preview_note", "Detailed form preview is not available for this request. The submitted values are shown below.") %>
+  </div>
+
+  <% if (!allEntries.length) { %>
+    <div class="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+      <%= resolveText("approval_preview_empty", "This request carries no stored values.") %>
+    </div>
+  <% } %>
+
+  <% if (scalarEntries.length) { %>
+    <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <dl class="divide-y divide-slate-100">
+        <% scalarEntries.forEach(function (entry) { %>
+          <div class="flex gap-3 px-3 py-2">
+            <dt class="w-2/5 shrink-0 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+              <%= fieldLabel(entry[0]) %>
+            </dt>
+            <dd class="min-w-0 flex-1 break-words text-xs text-slate-700">
+              <%= scalarText(entry[1]) %>
+            </dd>
+          </div>
+        <% }) %>
+      </dl>
+    </div>
+  <% } %>
+
+  <% objectEntries.forEach(function (entry) { %>
+    <% const nested = entries(entry[1]); %>
+    <% if (!nested.length) { return; } %>
+    <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div class="border-b border-slate-200 px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-slate-600">
+        <%= fieldLabel(entry[0]) %>
+      </div>
+      <dl class="divide-y divide-slate-100">
+        <% nested.forEach(function (pair) { %>
+          <div class="flex gap-3 px-3 py-2">
+            <dt class="w-2/5 shrink-0 text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500">
+              <%= fieldLabel(pair[0]) %>
+            </dt>
+            <dd class="min-w-0 flex-1 break-words text-xs text-slate-700">
+              <%= isPlainObject(pair[1]) || Array.isArray(pair[1]) ? JSON.stringify(pair[1]) : scalarText(pair[1]) %>
+            </dd>
+          </div>
+        <% }) %>
+      </dl>
+    </div>
+  <% }) %>
+
+  <% listEntries.forEach(function (entry) { %>
+    <% const rows = entry[1]; %>
+    <% const cols = rowColumns(rows); %>
+    <div class="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div class="flex items-center justify-between border-b border-slate-200 px-3 py-2">
+        <span class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600"><%= fieldLabel(entry[0]) %></span>
+        <span class="text-[10px] font-semibold text-slate-400"><%= rows.length %></span>
+      </div>
+      <% if (!cols.length) { %>
+        <ul class="max-h-56 space-y-1 overflow-y-auto px-3 py-2">
+          <% rows.slice(0, MAX_ROWS).forEach(function (row) { %>
+            <li class="break-words text-xs text-slate-700"><%= typeof row === "object" ? JSON.stringify(row) : scalarText(row) %></li>
+          <% }) %>
+        </ul>
+      <% } else { %>
+        <div class="max-h-64 overflow-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-50 text-[10px] uppercase tracking-[0.1em] text-slate-500">
+              <tr>
+                <% cols.forEach(function (col) { %>
+                  <th class="whitespace-nowrap px-3 py-1.5 font-semibold"><%= fieldLabel(col) %></th>
+                <% }) %>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
+              <% rows.slice(0, MAX_ROWS).forEach(function (row) { %>
+                <tr>
+                  <% cols.forEach(function (col) { %>
+                    <td class="px-3 py-1.5 text-slate-700"><%= scalarText(isPlainObject(row) ? row[col] : row) %></td>
+                  <% }) %>
+                </tr>
+              <% }) %>
+            </tbody>
+          </table>
+        </div>
+      <% } %>
+      <% if (rows.length > MAX_ROWS) { %>
+        <div class="border-t border-slate-200 px-3 py-1.5 text-[10px] text-slate-500">
+          <%= resolveText("approval_preview_rows_truncated", "Showing first {shown} of {total} rows.").replace("{shown}", MAX_ROWS).replace("{total}", rows.length) %>
+        </div>
+      <% } %>
+    </div>
+  <% }) %>
+</div>

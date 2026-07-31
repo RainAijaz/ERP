@@ -825,7 +825,11 @@ const resolveHrScopeKey = (request, values = {}) => {
   ).toUpperCase();
   if (mode === "BULK_COMMISSION_SKU_UPSERT" || mode === "SKU_MULTI_UPSERT")
     return "hr_payroll.commissions";
-  if (mode === "BULK_LABOUR_RATE_SKU_UPSERT") return "hr_payroll.labour_rates";
+  if (
+    mode === "BULK_LABOUR_RATE_SKU_UPSERT" ||
+    mode === "BULK_LABOUR_RATE_COPY"
+  )
+    return "hr_payroll.labour_rates";
 
   // Shape check before the summary text: it works regardless of the locale the
   // request was raised in, and it is the only way to tell an employee allowance
@@ -845,6 +849,23 @@ const resolveHrScopeKey = (request, values = {}) => {
     if ("employee_id" in candidate) return "hr_payroll.allowances";
   }
 
+  // Shape checks for the remaining screens, for the same reason as the
+  // allowance check above: summary text is written in the requester's locale,
+  // so an Urdu-raised request matches none of the English keywords below and
+  // used to fall through to "" -- which resolved no preview page at all and
+  // left the approver staring at an empty modal.
+  const shapeCandidates = [
+    safeJson(values),
+    safeJson(request?.new_value),
+    safeJson(request?.old_value),
+  ].filter((candidate) => candidate && typeof candidate === "object");
+  for (const candidate of shapeCandidates) {
+    if ("rate_type" in candidate || "labour_rate_rules" in candidate)
+      return "hr_payroll.labour_rates";
+    if ("commission_type" in candidate || "commission_rules" in candidate)
+      return "hr_payroll.commissions";
+  }
+
   const summary = String(request?.summary || "").toLowerCase();
   if (summary.includes("commission")) return "hr_payroll.commissions";
   // "Add Labour Allowances" also contains "allowance", so the labour variant
@@ -856,6 +877,13 @@ const resolveHrScopeKey = (request, values = {}) => {
   if (summary.includes("labour rate")) return "hr_payroll.labour_rates";
   if (summary.includes("labour")) return "hr_payroll.labours";
   if (summary.includes("employee")) return "hr_payroll.employees";
+
+  // Nothing identified the screen. Fall back on the entity type rather than
+  // giving up: the employee/labour master form is the right shape for every
+  // HR request, and showing it beats showing nothing.
+  const entityType = String(request?.entity_type || "").toUpperCase();
+  if (entityType === "LABOUR") return "hr_payroll.labours";
+  if (entityType === "EMPLOYEE") return "hr_payroll.employees";
   return "";
 };
 
@@ -1023,6 +1051,51 @@ const enrichLabourRateRowsFromScope = async (values, t) => {
     baseRate: null,
     t,
   });
+};
+
+// Rebuilds a voucher payload (same shape the approval request stores) from the
+// live voucher row, so a side whose snapshot is missing can still be shown.
+const loadVoucherSnapshot = async (entityId) => {
+  const voucherId = Number(entityId);
+  if (!Number.isInteger(voucherId) || voucherId <= 0) return null;
+  const header = await knex("erp.voucher_header")
+    .select(
+      "id",
+      "voucher_type_code",
+      "voucher_no",
+      "voucher_date",
+      "book_no",
+      "remarks",
+      "header_account_id",
+      "status",
+    )
+    .where({ id: voucherId })
+    .first();
+  if (!header) return null;
+  const lines = await knex("erp.voucher_line")
+    .select(
+      "line_no",
+      "line_kind",
+      "item_id",
+      "sku_id",
+      "account_id",
+      "party_id",
+      "labour_id",
+      "employee_id",
+      "uom_id",
+      "qty",
+      "rate",
+      "amount",
+      "reference_no",
+      "meta",
+    )
+    .where({ voucher_header_id: voucherId })
+    .orderBy("line_no");
+  return {
+    ...header,
+    reference_no: header.book_no || null,
+    lines,
+  };
 };
 
 const buildPreviewPayload = async (req, res, request, side) => {
@@ -1227,7 +1300,14 @@ const buildPreviewPayload = async (req, res, request, side) => {
   }
 
   if (entityType === "VOUCHER") {
-    const voucherData = safeJson(side === "old" ? request.old_value : request.new_value) || {};
+    let voucherData = safeJson(side === "old" ? request.old_value : request.new_value) || {};
+    // An edit request whose old_value snapshot was never stored leaves the
+    // "Before" pane with nothing to show. The voucher row itself is still the
+    // pre-change state, so read it back rather than rendering an empty pane.
+    if (!Object.keys(voucherData).length) {
+      const loaded = await loadVoucherSnapshot(request.entity_id);
+      if (loaded) voucherData = loaded;
+    }
     const payloadVtc = String(voucherData.voucher_type_code || "").trim().toUpperCase();
 
     if (payloadVtc === STOCK_TRANSFER_VOUCHER_TYPES.out || payloadVtc === STOCK_TRANSFER_VOUCHER_TYPES.in) {
@@ -1394,12 +1474,26 @@ const buildPreviewPayload = async (req, res, request, side) => {
   }
 
   if (entityType === "ITEM") {
-    const itemType = (
+    let itemType = String(
       values.item_type ||
-      request?.old_value?.item_type ||
-      request?.new_value?.item_type ||
-      ""
+        request?.old_value?.item_type ||
+        request?.new_value?.item_type ||
+        "",
     ).toUpperCase();
+    // Delete requests store only {_action:"delete"} in new_value, and older
+    // rows predate item_type being written into the payload at all. Read the
+    // discriminator off the item itself before giving up -- otherwise none of
+    // the three branches below match and the approver gets an empty modal.
+    if (!itemType) {
+      const itemId = Number(request.entity_id);
+      if (Number.isInteger(itemId) && itemId > 0) {
+        const item = await knex("erp.items")
+          .select("item_type")
+          .where({ id: itemId })
+          .first();
+        itemType = String(item?.item_type || "").toUpperCase();
+      }
+    }
     if (itemType === rawMaterialsRoutes.preview.ITEM_TYPE) {
       const options = await rawMaterialsRoutes.preview.loadOptions();
       return {
@@ -1582,6 +1676,53 @@ const buildPreviewPayload = async (req, res, request, side) => {
   }
 
   return null;
+};
+
+// Every entity type reaching this point has no bespoke preview -- either it is
+// newly registered, or its payload lacks the discriminator its screen preview
+// needs. Rendering the stored values generically is always better than the
+// empty modal the approver used to get.
+const buildGenericPreviewPayload = (req, res, request, side) => {
+  const action = inferAction(request);
+  const values = getPreviewValues(request, side);
+  const entityType = String(request?.entity_type || "").trim();
+  const entityLabel =
+    getLocalizedLabel(res.locals.t, entityType.toLowerCase(), "") ||
+    entityType.replace(/_/g, " ") ||
+    res.locals.t("details");
+  const entityId = String(request?.entity_id || "").trim();
+  const titleSuffix = entityId && entityId !== "NEW" ? ` #${entityId}` : "";
+
+  return {
+    previewAction: action,
+    previewLabel: res.locals.t(ACTION_LABELS[action] || action) || action,
+    previewValues: values && typeof values === "object" ? values : {},
+    locale: req.locale,
+    previewType: "generic",
+    previewTitle: `${entityLabel}${titleSuffix}`,
+    formPartial: "../../administration/approvals/generic-preview.ejs",
+  };
+};
+
+// Resolution must never leave the approver with nothing: a thrown hydration
+// error (a dropped option table, a payload the screen loader chokes on) is
+// downgraded to the generic view instead of bubbling up as a 500, which the
+// modal could only render as "No entries".
+const resolvePreviewPayload = async (req, res, request, side) => {
+  try {
+    const payload =
+      (await resolveApprovalPreview({ req, res, request, side })) ||
+      (await buildPreviewPayload(req, res, request, side));
+    if (payload) return payload;
+  } catch (err) {
+    console.error("[approvals:preview] falling back to generic preview", {
+      id: request?.id,
+      entityType: request?.entity_type,
+      side,
+      error: err?.message || err,
+    });
+  }
+  return buildGenericPreviewPayload(req, res, request, side);
 };
 
 // GET / - Dashboard
@@ -1777,10 +1918,10 @@ router.get(
         });
       }
 
-      // First try globally-registered preview providers.
-      const payload =
-        (await resolveApprovalPreview({ req, res, request, side })) ||
-        (await buildPreviewPayload(req, res, request, side));
+      // Registered providers first, then the per-entity builders, then a
+      // generic render of the raw payload -- so this always returns something
+      // the approver can read.
+      const payload = await resolvePreviewPayload(req, res, request, side);
       if (process.env.DEBUG_APPROVAL_PREVIEW === "1") {
         console.log("[APPROVAL PREVIEW DEBUG] payload", {
           id: request.id,

@@ -74,6 +74,12 @@ const translations = {
       "Approval request not found or already decided.",
     approval_apply_failed:
       "Approval applied, but change could not be executed.",
+    approval_preview_unavailable:
+      "Preview could not be loaded. Please refresh the page and try again.",
+    approval_generic_preview_note:
+      "Detailed form preview is not available for this request. The submitted values are shown below.",
+    approval_preview_empty: "This request carries no stored values.",
+    approval_preview_rows_truncated: "Showing first {shown} of {total} rows.",
     approval_updates:
       "Since your last login: {approved} approved, {rejected} rejected.",
     approval_approved_detail: "Your approval request was approved: {summary}",
@@ -2422,6 +2428,12 @@ translations.ur = {
   approval_request_updated: "منظوری کی درخواست کو اپ ڈیٹ کر دیا گیا۔",
   approval_request_updated_detail:
     "آپ کی زیر التواء منظوری کی درخواست کو اپ ڈیٹ کر دیا گیا: {summary}",
+  approval_preview_unavailable:
+    "پیش نظارہ لوڈ نہیں ہو سکا۔ براہ کرم صفحہ ریفریش کر کے دوبارہ کوشش کریں۔",
+  approval_generic_preview_note:
+    "اس درخواست کے لیے تفصیلی فارم پیش نظارہ دستیاب نہیں ہے۔ جمع کرائی گئی اقدار ذیل میں دکھائی گئی ہیں۔",
+  approval_preview_empty: "اس درخواست میں کوئی محفوظ اقدار نہیں ہیں۔",
+  approval_preview_rows_truncated: "کل {total} میں سے پہلی {shown} قطاریں دکھائی جا رہی ہیں۔",
   approval_updates:
     "آپ کے آخری لاگ ان کے بعد سے: {approved} منظور، {rejected} مسترد۔",
   approved: "منظور شدہ",

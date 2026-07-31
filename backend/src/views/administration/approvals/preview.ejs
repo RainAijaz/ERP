@@ -23,6 +23,8 @@
   </div>
   <div class="space-y-5" data-preview-body>
     <%- include(formPartial, { fieldErrors: safeFieldErrors, formValues: safeFormValues, modalValues: (previewValues ?? {}) }) %>
-    <% if (previewType !== 'voucher') { %><div class="hidden space-y-3" data-preview-fallback></div><% } %>
+    <%# The generic preview already renders the whole payload; adding the %>
+    <%# client-side raw-value fallback under it would just duplicate it. %>
+    <% if (previewType !== 'voucher' && previewType !== 'generic') { %><div class="hidden space-y-3" data-preview-fallback></div><% } %>
   </div>
 </div>

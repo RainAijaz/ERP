@@ -279,6 +279,8 @@
       approvalEditSaved: "<%= t('approval_request_updated')  %>",
       saveChanges: "<%= t('save_changes')  %>",
       saving: "<%= t('saving')  %>",
+      previewUnavailable: "<%= t('approval_preview_unavailable')  %>",
+      loading: "<%= t('loading')  %>",
     };
     const previewText = {
       noEntries: "<%= t('no_entries')  %>",
@@ -1123,7 +1125,20 @@
 
     const injectFallback = (container, values) => {
       const fields = buildFields(values);
-      renderFields(container, fields);
+      if (fields.length) {
+        renderFields(container, fields);
+        return;
+      }
+      // The server now always returns a readable preview, so reaching here
+      // means the request itself failed (offline, session expired). Say that
+      // instead of "no entries", which reads as "this request is empty" and
+      // used to be the only thing an approver ever saw when a preview broke.
+      if (!container) return;
+      container.innerHTML = "";
+      const box = document.createElement("div");
+      box.className = "rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-700";
+      box.textContent = labels.previewUnavailable;
+      container.appendChild(box);
     };
 
     const loadPreview = async (id, side, container) => {
@@ -1184,6 +1199,13 @@
         forceSingleMode,
       };
       editMode = false;
+      // Every pane is emptied up front. loadPreview only clears the pane it
+      // fetches into, so a pane hidden by the previous row's layout kept that
+      // row's markup and could flash back when a later row unhid it -- and
+      // getEditPanel() could bind Edit to that stale panel.
+      [beforeBox, afterBox, singleBox].forEach((box) => {
+        if (box) box.innerHTML = "";
+      });
       const isUpdate = action === "update";
       const useSplitLayout = isUpdate && !forceSingleMode;
       beforeWrap.classList.toggle("hidden", !useSplitLayout);
