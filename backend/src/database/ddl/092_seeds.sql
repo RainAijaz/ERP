@@ -86,7 +86,8 @@ VALUES
   ('ROLE',                  'Role',        'Administration: roles'),
   ('PERMISSION',            'Permission',  'Administration: permissions'),
   ('MASTER_DATA_IMPORT',    'Master Data Import', 'Master data import audit activity'),
-  ('SKU_BULK_RATE_UPDATE',  'SKU Bulk Rate Update', 'Bulk sale-rate change for SKU variants queued for approval')
+  ('SKU_BULK_RATE_UPDATE',  'SKU Bulk Rate Update', 'Bulk sale-rate change for SKU variants queued for approval'),
+  ('REPORT',                'Report',      'Report screen opened or run by a user')
 ON CONFLICT (code) DO NOTHING;
 
 
@@ -101,7 +102,8 @@ VALUES
   ('SUBMIT',  'Submit',  'Submitted for approval'),
   ('APPROVE', 'Approve', 'Approved by checker'),
   ('REJECT',  'Reject',  'Rejected by checker'),
-  ('CANCEL',  'Cancel',  'Cancelled/voided')
+  ('CANCEL',  'Cancel',  'Cancelled/voided'),
+  ('VIEW',    'View',    'Screen or report opened/loaded (read-only access)')
 ON CONFLICT (code) DO NOTHING;
 
 

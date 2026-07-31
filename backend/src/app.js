@@ -18,6 +18,7 @@ const approvalRequired = require("./middleware/approvals/approval-required");
 const rateChangeApproval = require("./middleware/approvals/rate-change-approval");
 const stockAdjustmentApproval = require("./middleware/approvals/stock-adjustment-approval");
 const activityLog = require("./middleware/audit/activity-log");
+const reportViewLog = require("./middleware/audit/report-view-log");
 const csrf = require("./middleware/security/csrf");
 const uiNotice = require("./middleware/core/ui-notice");
 const uiFlash = require("./middleware/core/ui-flash");
@@ -137,6 +138,8 @@ app.use(approvalRequired);
 app.use(rateChangeApproval);
 app.use(stockAdjustmentApproval);
 app.use(activityLog);
+// Read-only report access, which no write-path audit hook can see.
+app.use(reportViewLog);
 
 app.use(csrf);
 app.use(uiNotice);

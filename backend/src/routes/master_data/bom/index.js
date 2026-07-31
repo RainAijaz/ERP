@@ -141,6 +141,30 @@ const resetBomFromPendingForAdmin = async (bomId, userId) => {
     .update({ status: "DRAFT", approved_by: null, approved_at: null });
 };
 
+// Audit context for the one BOM path that mutates a queued request's subject
+// without going through the Approvals page. Returns undefined when no PENDING
+// request is found, so the row degrades to an ordinary BOM update rather than
+// claiming an approval was touched.
+const buildPendingBomApprovalContext = async (bomId, userId) => {
+  const id = Number(bomId || 0);
+  if (!Number.isInteger(id) || id <= 0) return undefined;
+  const request = await knex("erp.approval_request")
+    .select("id", "request_type", "summary", "requested_by")
+    .where({ entity_type: "BOM", entity_id: String(id), status: "PENDING" })
+    .orderBy("id", "asc")
+    .first();
+  if (!request) return undefined;
+  return {
+    source: "pending-approval-edit",
+    approval_request_id: request.id,
+    request_type: request.request_type || null,
+    request_status: "PENDING",
+    summary: request.summary || null,
+    original_requested_by: request.requested_by ?? null,
+    edited_by: userId ?? null,
+  };
+};
+
 const queueOrSaveDraft = async ({ req, res, bomId, input, allowPendingEdit = false }) => {
   const result = await bomService.saveBomDraft(knex, {
     input,
@@ -463,6 +487,13 @@ const handleSaveDraft = async (req, res, next, bomId = null) => {
       entityType: BOM_ENTITY_TYPE,
       entityId: result.id,
       action: bomId ? "UPDATE" : "CREATE",
+      // An admin saving a BOM that is sitting in the approval queue rewrites
+      // what the approver will see, while the request keeps naming the
+      // original maker. Tag the log row so the Activity Log reads
+      // "Pending Approval Updated" rather than a plain edit.
+      context: isPendingAdminSave
+        ? await buildPendingBomApprovalContext(result.id, req.user?.id)
+        : undefined,
     });
     setUiNotice(res, res.locals.t("draft_saved"), { autoClose: true });
     return res.redirect(`${req.baseUrl}/${result.id}`);

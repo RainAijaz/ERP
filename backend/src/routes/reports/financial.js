@@ -11,6 +11,9 @@ const {
   filterAccountsByAccess,
   canUserViewAccountDetails,
 } = require("../../services/administration/account-access-service");
+const {
+  markReportView,
+} = require("../../middleware/audit/report-view-log");
 
 const router = express.Router();
 
@@ -270,6 +273,12 @@ const renderFinancialReportPage = async (req, res, next, options = {}) => {
     if (!allowed) {
       throw new HttpError(403, res.locals.t("permission_denied"));
     }
+
+    // This router serves 15 report keys off one `/:reportKey` route and checks
+    // permissions here rather than via requirePermission, so the activity log
+    // has no other way to tell which report was opened. Declared after the
+    // permission gate: a denied request is not a view.
+    markReportView(req, resolvedKey);
 
     let accountAccessMap = new Map();
     const enforceAccountAccess =

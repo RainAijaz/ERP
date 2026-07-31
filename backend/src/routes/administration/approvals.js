@@ -22,6 +22,9 @@ const { setCookie } = require("../../middleware/utils/cookies");
 const { UI_NOTICE_COOKIE } = require("../../middleware/core/ui-notice");
 const { insertActivityLog } = require("../../utils/audit-log");
 const {
+  logPendingApprovalEditTx,
+} = require("../../utils/approval-activity-log");
+const {
   inferAction,
   parseEditedPayload,
   sanitizeEditedValues,
@@ -2000,22 +2003,16 @@ router.post(
           decision_notes: null,
         });
 
-        await insertActivityLog(trx, {
-          branch_id: request.branch_id,
-          user_id: req.user.id,
-          entity_type: request.entity_type,
-          entity_id: request.entity_id,
-          action: "UPDATE",
-          ip_address: req.ip,
-          context: {
-            source: "approval-request-edit",
-            approval_request_id: request.id,
-            request_status: request.status,
+        await logPendingApprovalEditTx({
+          db: trx,
+          req,
+          request,
+          changedFields,
+          newValue: sanitized.nextValue || null,
+          source: "approval-request-edit",
+          extraContext: {
             request_action: inferAction(request),
             editable_keys: getEditableKeys(request),
-            changed_fields: changedFields,
-            old_value: request.new_value || null,
-            new_value: sanitized.nextValue || null,
           },
         });
       });

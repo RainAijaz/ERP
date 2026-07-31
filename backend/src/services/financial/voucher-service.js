@@ -1,6 +1,9 @@
 const knex = require("../../db/knex");
 const { HttpError } = require("../../middleware/errors/http-error");
-const { insertActivityLog, queueAuditLog } = require("../../utils/audit-log");
+const { queueAuditLog } = require("../../utils/audit-log");
+const {
+  logVoucherApprovalWriteTx,
+} = require("../../utils/approval-activity-log");
 const { toLocalDateOnlyOrRaw } = require("../../utils/date-only");
 const {
   resolveVoucherApprovalRequiredTx,
@@ -950,20 +953,16 @@ const createApprovalRequest = async ({
       .returning(["id"]);
   }
 
-  await insertActivityLog(trx, {
-    branch_id: req.branchId,
-    user_id: req.user.id,
-    entity_type: "VOUCHER",
-    entity_id: String(voucherId),
-    voucher_type_code: voucherTypeCode,
-    action: "SUBMIT",
-    ip_address: req.ip,
-    context: {
-      approval_request_id: row?.id || null,
-      summary,
-      source: "financial-voucher-service",
-      new_value: newValue,
-    },
+  await logVoucherApprovalWriteTx({
+    trx,
+    req,
+    voucherId,
+    voucherTypeCode,
+    summary,
+    newValue,
+    approvalRequestId: row?.id || null,
+    existingPending,
+    source: "financial-voucher-service",
   });
 
   return row?.id || null;

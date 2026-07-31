@@ -175,6 +175,17 @@ const buildActivityAccessScope = ({ can, user }) => {
     )
     .map(([entityType]) => entityType);
 
+  // REPORT rows have no master-data table behind them, so they are absent from
+  // ENTITY_SCOPE_MAP: offer the entity-type filter to anyone who can reach at
+  // least one report. Which report views they actually see is still decided by
+  // the per-row scope_key check in applyActivityAccessScope.
+  const hasAnyReportScope = allowedScopes.some(
+    (entry) => entry.scopeType === "REPORT",
+  );
+  if (hasAnyReportScope) {
+    allowedEntityTypes.push("REPORT");
+  }
+
   const allowedVoucherTypeCodes = VOUCHER_SCOPE_KEYS.filter((scopeKey) =>
     getCan(can, "VOUCHER", scopeKey, "navigate"),
   ).map((scopeKey) => String(scopeKey || "").toUpperCase());

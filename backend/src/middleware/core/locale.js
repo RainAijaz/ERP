@@ -377,6 +377,11 @@ const translations = {
     action: "Action",
     submitted_for_approval: "Submitted For Approval",
     deletion_requested: "Deletion Requested",
+    // Activity Log: read-only report access and edits to a queued request.
+    viewed: "Opened",
+    loaded: "Loaded",
+    pending_approval_updated: "Pending Approval Updated",
+    report_filters: "Report Filters",
     entity: "Entity",
     entity_type: "Entity Type",
     voucher_summary: "Voucher Summary",
@@ -3500,6 +3505,10 @@ translations.ur = {
   amount_difference: "فرق رقم",
   sub_group: "ذیلی گروپ",
   submitted_for_approval: "منظوری کے لیے پیش کیا گیا۔",
+  viewed: "کھولا گیا",
+  loaded: "لوڈ کیا گیا",
+  pending_approval_updated: "زیر التوا منظوری میں ترمیم",
+  report_filters: "رپورٹ فلٹرز",
   subtotal: "ذیلی کل",
   success_bulk_commission_saved: "بلک کمیشن کامیابی سے محفوظ ہو گیا۔",
   success_bulk_commission_saved_counts:

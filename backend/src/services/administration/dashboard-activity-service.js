@@ -35,6 +35,14 @@ const applyFeedFilters = (qb, filters) => {
   const action = String(filters.action || "").trim().toUpperCase();
   if (action) qb.where("al.action", action);
 
+  // Report views outnumber every other kind of activity, so the unfiltered
+  // Home feed -- which exists to surface CHANGES -- hides them. They are still
+  // one click away here (filter by action VIEW or module REPORT) and always
+  // present in full on the Activity Log screen.
+  if (!action && moduleType.toUpperCase() !== "REPORT") {
+    qb.whereNot("al.action", "VIEW");
+  }
+
   if (isIsoDate(filters.from)) qb.where("al.created_at", ">=", `${filters.from} 00:00:00`);
   if (isIsoDate(filters.to)) qb.where("al.created_at", "<=", `${filters.to} 23:59:59`);
   return qb;

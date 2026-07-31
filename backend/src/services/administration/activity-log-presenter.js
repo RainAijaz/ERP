@@ -34,7 +34,25 @@ const ACTION_STYLE = {
   SUBMIT: "bg-cyan-50 text-cyan-700 ring-cyan-200",
   POST: "bg-indigo-50 text-indigo-700 ring-indigo-200",
   CANCEL: "bg-orange-50 text-orange-700 ring-orange-200",
+  VIEW: "bg-violet-50 text-violet-700 ring-violet-200",
 };
+
+const REPORT_ENTITY_TYPE = "REPORT";
+
+// Sources that mean "an already-pending approval request was changed", as
+// opposed to a fresh submission. Kept together so the summary and the action
+// label can never disagree about which is which.
+const PENDING_APPROVAL_EDIT_SOURCES = new Set([
+  "approval-request-edit",
+  "pending-approval-edit",
+]);
+
+const isPendingApprovalEdit = (context) =>
+  PENDING_APPROVAL_EDIT_SOURCES.has(
+    String(context?.source || "")
+      .trim()
+      .toLowerCase(),
+  ) && Boolean(context?.approval_request_id);
 
 const ACTIVITY_LOG_REPORT_TIME_ZONE =
   String(
@@ -53,7 +71,9 @@ const TIME_FORMATTER = new Intl.DateTimeFormat("en-GB", {
   hour: "2-digit",
   minute: "2-digit",
   second: "2-digit",
-  hour12: true,
+  // hourCycle, not hour12: with en-GB, `hour12: true` renders midnight and
+  // noon as "00:xx am/pm" instead of "12:xx".
+  hourCycle: "h12",
 });
 
 const parseContext = (value) => {
@@ -190,8 +210,16 @@ const buildVoucherHref = ({ voucherTypeCode, voucherNo }) => {
 
 const normalizeActionLabel = ({ row, context, t }) => {
   const action = String(row?.action || "").toUpperCase();
+  if (action === "VIEW") {
+    // "Opened" (menu click) vs "Loaded" (ran it with filters) -- the
+    // distinction is what tells a reviewer whether data was actually pulled.
+    return context?.access_mode === "load" ? t("loaded") : t("viewed");
+  }
   if (action === "CREATE") return t("created");
-  if (action === "UPDATE") return t("updated");
+  if (action === "UPDATE") {
+    if (isPendingApprovalEdit(context)) return t("pending_approval_updated");
+    return t("updated");
+  }
   if (action === "SUBMIT") return t("submitted_for_approval");
   if (action === "APPROVE") return t("approved");
   if (action === "REJECT") return t("rejected");
@@ -227,6 +255,18 @@ const normalizeEntityLabel = ({ row, context, t }) => {
     return translateNavLabel({ labelKey: scopeMeta.labelKey, t });
   }
 
+  // A report that has since been renamed or removed from nav-config still has
+  // to render: fall back to the label key stored with the row, then the scope
+  // key itself, so history never degrades to a bare "REPORT".
+  if (String(row.entity_type || "").toUpperCase() === REPORT_ENTITY_TYPE) {
+    return (
+      translateNavLabel({
+        labelKey: context?.report_label_key || row.entity_id,
+        t,
+      }) || t("report")
+    );
+  }
+
   if (String(row.entity_type || "").toUpperCase() !== "VOUCHER") {
     return row.entity_type || "-";
   }
@@ -239,6 +279,11 @@ const normalizeEntityLabel = ({ row, context, t }) => {
 
 const normalizeEntityIdLabel = ({ row, context, voucherNo }) => {
   if (!row) return "-";
+  // A report view has no record id; entity_id holds the scope key, which the
+  // entity column already shows as a human report name.
+  if (String(row.entity_type || "").toUpperCase() === REPORT_ENTITY_TYPE) {
+    return "-";
+  }
   if (String(row.entity_type || "").toUpperCase() === "VOUCHER" && voucherNo) {
     return String(voucherNo);
   }
@@ -296,19 +341,17 @@ const buildActivitySummary = ({
   voucherNo,
 }) => {
   const contextSummary = toText(context?.summary, "").trim();
-  if (contextSummary) {
-    const entityName = resolveEntityNameFromContext({ context });
-    return appendEntityNameToSummary(contextSummary, entityName);
-  }
   const entityType = String(row?.entity_type || "").toUpperCase();
   const branchLabel = toText(
     firstDefined(row?.branch_name, row?.branch_code),
     "",
   ).trim();
-  const source = String(context?.source || "")
-    .trim()
-    .toLowerCase();
-  if (source === "approval-request-edit" && context?.approval_request_id) {
+
+  // Checked before the plain context summary: a voucher re-submitted onto its
+  // own pending request carries the same summary as the first submission
+  // ("STOCK_COUNT_ADJ #12"), so without this the row would read exactly like
+  // the original and hide the fact that someone amended a queued request.
+  if (isPendingApprovalEdit(context)) {
     const approvalLabel = t("approval_request") || "Approval Request";
     const requestId = String(context.approval_request_id);
     const entityLabel = normalizeEntityLabel({ row, context, t });
@@ -316,11 +359,24 @@ const buildActivitySummary = ({
     const entityIdLabel = normalizeEntityIdLabel({
       row,
       context,
-      voucherNo: null,
+      voucherNo: voucherNo || null,
     });
-    const targetLabel = entityName || entityIdLabel || "-";
-    return `${displayAction} ${approvalLabel} #${requestId} - ${entityLabel} - ${targetLabel}`.trim();
+    const targetLabel =
+      contextSummary || entityName || entityIdLabel || "-";
+    return `${displayAction} - ${approvalLabel} #${requestId} - ${entityLabel} - ${targetLabel}`.trim();
   }
+
+  if (contextSummary) {
+    const entityName = resolveEntityNameFromContext({ context });
+    return appendEntityNameToSummary(contextSummary, entityName);
+  }
+
+  if (entityType === REPORT_ENTITY_TYPE) {
+    const reportLabel = normalizeEntityLabel({ row, context, t });
+    const branchSuffix = branchLabel ? ` - ${branchLabel}` : "";
+    return `${displayAction} ${reportLabel}${branchSuffix}`.trim();
+  }
+
   if (entityType === "VOUCHER") {
     const voucherLabel = voucherNo
       ? `VR#${voucherNo}`
@@ -369,7 +425,22 @@ const CONTEXT_NOISE_KEYS = new Set([
   "total_amount", "payment_received_amount", "approval_request_id",
   "applied_entity_id", "entity_name", "entity_label",
   "request_body", "new_value", "old_value", "changed_fields",
+  // Report-view keys: rendered by their own section or already shown as the
+  // entity/action, so repeating them in the raw context list is noise.
+  "filters", "report_label_key", "access_mode",
 ]);
+
+// The filters a report was actually run with -- the part that says whether
+// someone pulled one branch for one day or the whole company for a year.
+const buildReportFilterRows = ({ context }) => {
+  const filters = toPlainObject(context?.filters);
+  return compactRows(
+    Object.entries(filters).map(([key, value]) => ({
+      label: toDisplayLabelFromKey(key),
+      value: toText(value),
+    })),
+  );
+};
 
 const buildTransactionDetailRows = ({ context }) => {
   const requestBody = toPlainObject(context?.request_body);
@@ -523,6 +594,7 @@ const buildDetailsModel = ({
 
   const transactionDetailRows = buildTransactionDetailRows({ context });
   const lineItemsSection = buildLineItemsSection({ context });
+  const reportFilterRows = buildReportFilterRows({ context });
 
   const nonVoucherContextRows = compactRows(
     Object.entries(toPlainObject(context))
@@ -541,11 +613,17 @@ const buildDetailsModel = ({
         ? { title: t("details"), rows: auditMetaRows }
         : null,
       overviewRows.length ? { title: t("overview"), rows: overviewRows } : null,
-      voucherRows.length
+      // A report view has no voucher behind it: the "Entity" row alone would
+      // otherwise render an empty "Voucher Summary" card on every report view.
+      voucherRows.length &&
+      String(row?.entity_type || "").toUpperCase() !== REPORT_ENTITY_TYPE
         ? { title: t("voucher_summary"), rows: voucherRows }
         : null,
       transactionDetailRows.length
         ? { title: t("transaction_details") || "Transaction Details", rows: transactionDetailRows }
+        : null,
+      reportFilterRows.length
+        ? { title: t("report_filters") || "Report Filters", rows: reportFilterRows }
         : null,
       changedFieldRows.length
         ? {

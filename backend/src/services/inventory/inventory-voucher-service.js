@@ -1,6 +1,9 @@
 const knex = require("../../db/knex");
 const { HttpError } = require("../../middleware/errors/http-error");
-const { insertActivityLog, queueAuditLog } = require("../../utils/audit-log");
+const { queueAuditLog } = require("../../utils/audit-log");
+const {
+  logVoucherApprovalWriteTx,
+} = require("../../utils/approval-activity-log");
 const { toLocalDateOnly } = require("../../utils/date-only");
 const {
   resolveVoucherApprovalRequiredTx,
@@ -1815,24 +1818,16 @@ const createApprovalRequest = async ({
     row = await writeApprovalRow();
   }
 
-  await insertActivityLog(trx, {
-    branch_id: req.branchId,
-    user_id: req.user.id,
-    entity_type: "VOUCHER",
-    entity_id: String(voucherId),
-    voucher_type_code: voucherTypeCode,
-    action: "SUBMIT",
-    ip_address: req.ip,
-    context: {
-      approval_request_id: row?.id || null,
-      summary,
-      source: "inventory-voucher-service",
-      new_value: newValue,
-      // approval_request has no "last edited by" column, so the audit trail is
-      // the only record that someone other than the maker touched the request.
-      refreshed_existing_request: Boolean(existingPending),
-      requested_by: existingPending?.requested_by ?? req.user.id,
-    },
+  await logVoucherApprovalWriteTx({
+    trx,
+    req,
+    voucherId,
+    voucherTypeCode,
+    summary,
+    newValue,
+    approvalRequestId: row?.id || null,
+    existingPending,
+    source: "inventory-voucher-service",
   });
 
   return row?.id || null;
