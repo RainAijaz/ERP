@@ -17,6 +17,8 @@
   };
   const lifecycleBadgeClass = (isActive) =>
     isActive ? "border-blue-200 bg-blue-50 text-blue-700" : "border-slate-300 bg-slate-100 text-slate-600";
+  const bomPath = typeof bomBasePath === "string" && bomBasePath ? bomBasePath : "/master-data/bom";
+  const canOpenBom = typeof can === "function" ? can("SCREEN", "master_data.bom", "view") : false;
 %>
 
 <div class="mx-auto w-full max-w-none space-y-4 px-2">
@@ -121,7 +123,13 @@
             <% rows.forEach((row, index) => { %>
               <tr class="bg-white odd:bg-slate-50/30">
                 <td class="px-3 py-2"><%= index + 1 %></td>
-                <td class="px-3 py-2"><%= row.bom_no || "-" %></td>
+                <td class="px-3 py-2">
+                  <% if (canOpenBom && row.id && row.bom_no) { %>
+                    <a href="<%= bomPath %>/<%= row.id %>" target="_blank" rel="noopener noreferrer" class="font-semibold text-accent underline underline-offset-2 transition hover:text-accent/80" title="<%= t('view') %>"><%= row.bom_no %> ↗</a>
+                  <% } else { %>
+                    <%= row.bom_no || "-" %>
+                  <% } %>
+                </td>
                 <td class="px-3 py-2"><%= row.item_name || "-" %></td>
                 <td class="px-3 py-2"><%= t(String(row.level || "").toLowerCase()) || row.level || "-" %></td>
                 <td class="px-3 py-2">V<%= row.version_no || "-" %></td>

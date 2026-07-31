@@ -53,6 +53,7 @@ const renderVersionHistoryReport = async (req, res, next, inputSource) => {
         options: pageData.options,
         reportData: pageData.reportData,
         reportPath: `${req.baseUrl}/version-history`,
+        bomBasePath: req.baseUrl.replace(/\/reports$/, ""),
       },
     });
   } catch (err) {
