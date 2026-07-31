@@ -364,21 +364,27 @@
           });
         });
       } else {
-        // SFG: sizes × colors only, no grade/packing, rate defaults to 0
-        if (!sizes.length) {
+        // SFG: sizes × colors only, no grade/packing, rate defaults to 0.
+        // Both dimensions are optional — a shared part with no size and no color
+        // produces a single dimensionless variant (key 0|0|0|0). Because neither
+        // dimension is required, gate on the item instead so nothing is offered
+        // before an item is chosen.
+        if (!modalForm.querySelector('select[name="item_id"]')?.value) {
           if (emptyMsg) emptyMsg.style.display = "block";
           return;
         }
         if (emptyMsg) emptyMsg.style.display = "none";
 
         const colorList = colors.length ? colors : [{ value: "", label: "" }];
+        const sizeList = sizes.length ? sizes : [{ value: "", label: "" }];
 
-        sizes.forEach((size) => {
+        sizeList.forEach((size) => {
           colorList.forEach((color) => {
             const key = buildKey(size.value, 0, color.value, 0);
             if (existingCombinationsSet.has(key)) return;
 
-            const label = [size.label, color.label].filter(x => x && x.trim()).join(", ");
+            const label = [size.label, color.label].filter(x => x && x.trim()).join(", ")
+              || "<%= t('no_variant_dimensions') %>";
             const row = document.createElement("div");
             row.className = "group flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-3 shadow-sm";
             row.innerHTML = `

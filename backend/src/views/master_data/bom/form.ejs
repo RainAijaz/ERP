@@ -348,11 +348,12 @@
         <table class="min-w-full text-sm">
           <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.1em] text-slate-500">
             <tr>
-              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_article_sku')  %>"><%= t("article_sku")  %></th>
+              <th class="px-3 py-2 text-left" title="<%= t('bom_hint_article_sku')  %>"><%= t("size")  %></th>
               <th class="px-3 py-2 text-left" data-sfg-part-col-title title="<%= t('bom_hint_step_upper_sku')  %>"><span data-sfg-part-col-label><%= t("bom_sfg_col_step_upper_sku")  %></span></th>
               <th class="px-3 py-2 text-left" title="<%= t('bom_hint_step_quantity')  %>"><%= t("bom_sfg_col_step_qty")  %></th>
               <th class="px-3 py-2 text-left" title="<%= t('bom_hint_sfg_consumed_stage')  %>"><%= t("bom_sfg_col_consumed_stage")  %></th>
               <th class="px-3 py-2 text-left" title="<%= t('bom_hint_base_unit')  %>"><%= t("base_unit")  %></th>
+              <th class="px-3 py-2 text-right"><%= t("actions")  %></th>
             </tr>
           </thead>
           <tbody data-lines-body="sfg"></tbody>
@@ -1823,14 +1824,21 @@
         .filter(Boolean);
     };
 
+    const isGlobalSfgSku = (sku) => sku?.is_global_sfg === true || sku?.is_global_sfg === "true";
+    const getGlobalSfgSkus = () => (options.sfgSkus || []).filter(isGlobalSfgSku);
     const getRelevantSfgSkus = () => {
       const headerItemId = String(headerItemSelect?.value || "");
       const linkedSfgItemIds = Array.isArray(options.fgToSfgMap?.[headerItemId]) ? options.fgToSfgMap[headerItemId] : [];
-      if (linkedSfgItemIds.length) {
-        const itemIdSet = new Set(linkedSfgItemIds.map((id) => String(id)));
-        return (options.sfgSkus || []).filter((sku) => itemIdSet.has(String(sku.item_id || "")));
-      }
-      return [];
+      // Global SFGs are shared components available to every article. They carry no
+      // item_usage rows on purpose, so they never appear in fgToSfgMap and must be
+      // unioned in separately rather than looked up per article.
+      const globalSkus = getGlobalSfgSkus();
+      if (!linkedSfgItemIds.length) return globalSkus;
+      const itemIdSet = new Set(linkedSfgItemIds.map((id) => String(id)));
+      const linkedSkus = (options.sfgSkus || []).filter(
+        (sku) => itemIdSet.has(String(sku.item_id || "")) && !isGlobalSfgSku(sku),
+      );
+      return [...linkedSkus, ...globalSkus];
     };
     const getPlannedOutputQtyValue = () => {
       const raw = String(document.querySelector('input[name="output_qty"]')?.value || "").trim();
@@ -2213,43 +2221,81 @@
       const sfgOptions = getRelevantSfgSkus();
       const stageChoices = getSelectedStageChoicesForSfg();
       if (!fgSkuOptions.length) {
-        body.innerHTML = `<tr><td colspan="5" class="px-3 py-3 text-sm text-slate-500"><%= t("bom_no_sku_available")  %></td></tr>`;
+        body.innerHTML = `<tr><td colspan="6" class="px-3 py-3 text-sm text-slate-500"><%= t("bom_no_sku_available")  %></td></tr>`;
         return;
       }
-      const existingBySkuId = new Map((state.sfg || []).map((row) => [String(row?.fg_sku_id || ""), row]));
-      const existingBySizeId = new Map((state.sfg || []).map((row) => [String(row?.fg_size_id || ""), row]));
-      const nextSfg = fgSkuOptions.map((sku) => {
-        const bySku = existingBySkuId.get(String(sku.id || ""));
-        const bySize = existingBySizeId.get(String(sku.size_id || ""));
-        const existing = bySku || bySize || {};
-        const selectedSfgSkuId = String(existing?.sfg_sku_id || "");
-        const resolvedUomId = sfgSkuUomById.get(selectedSfgSkuId) || String(existing?.uom_id || "");
-        const existingQtyText = String(existing?.required_qty ?? "").trim();
+      // An article can consume more than one semi-finished input per size (e.g. an
+      // Upper AND a shared global part), so rows are NOT rebuilt one-per-SKU here.
+      // Rows are keyed by size because bom_sfg_line stores fg_size_id and has no
+      // fg_sku_id column: rendering per SKU would make colour variants of the same
+      // size collapse into each other on reload.
+      //
+      // Existing rows are preserved; a size with no rows at all gets one blank row
+      // so every size stays visible, and rows for sizes the article no longer has
+      // are dropped.
+      const orderedSizeIds = [];
+      const seenSizeIds = new Set();
+      fgSkuOptions.forEach((sku) => {
+        const sizeId = String(sku.size_id || "");
+        if (!sizeId || seenSizeIds.has(sizeId)) return;
+        seenSizeIds.add(sizeId);
+        orderedSizeIds.push(sizeId);
+      });
+
+      const rowsBySizeId = new Map();
+      (state.sfg || []).forEach((row) => {
+        const sizeId = String(row?.fg_size_id || "");
+        if (!seenSizeIds.has(sizeId)) return;
+        if (!rowsBySizeId.has(sizeId)) rowsBySizeId.set(sizeId, []);
+        rowsBySizeId.get(sizeId).push(row);
+      });
+
+      const normalizeSfgRow = (row, sizeId) => {
+        const selectedSfgSkuId = String(row?.sfg_sku_id || "");
+        const resolvedUomId = sfgSkuUomById.get(selectedSfgSkuId) || String(row?.uom_id || "");
+        const existingQtyText = String(row?.required_qty ?? "").trim();
         const defaultRequiredQty = selectedSfgSkuId ? getDefaultSfgRequiredQty(selectedSfgSkuId) : "";
         return {
-          fg_sku_id: String(sku.id || ""),
-          fg_size_id: String(sku.size_id || ""),
+          fg_sku_id: String(row?.fg_sku_id || findHeaderSkuBySizeId(sizeId)?.id || ""),
+          fg_size_id: String(sizeId),
           sfg_sku_id: selectedSfgSkuId,
           required_qty: existingQtyText || (suppressNextSfgQtyAutofill ? "" : defaultRequiredQty),
-          consumed_in_stage_id: String(existing?.consumed_in_stage_id || ""),
+          consumed_in_stage_id: String(row?.consumed_in_stage_id || ""),
           uom_id: String(resolvedUomId || ""),
         };
+      };
+
+      const nextSfg = [];
+      orderedSizeIds.forEach((sizeId) => {
+        const rowsForSize = rowsBySizeId.get(sizeId) || [];
+        if (!rowsForSize.length) {
+          nextSfg.push(normalizeSfgRow({}, sizeId));
+          return;
+        }
+        rowsForSize.forEach((row) => nextSfg.push(normalizeSfgRow(row, sizeId)));
       });
       state.sfg = nextSfg;
       suppressNextSfgQtyAutofill = false;
+      const sizeNameById = new Map(
+        (getHeaderSizeOptions() || []).map((size) => [String(size.id || ""), String(size.name || size.id || "")]),
+      );
       body.innerHTML = nextSfg
         .map((row, idx) => {
-          const mappedFgSku = findHeaderSkuById(row.fg_sku_id);
-          const fgSkuLabel = getSkuLabel(mappedFgSku) || mappedFgSku?.sku_code || row.fg_sku_id;
-          const fgSizeId = String(mappedFgSku?.size_id || row.fg_size_id || "");
+          const fgSizeId = String(row.fg_size_id || "");
+          // Several rows can share a size. Label only the first of each group so the
+          // rows below it read as belonging to the same size.
+          const isFirstOfSize = idx === 0 || String(nextSfg[idx - 1]?.fg_size_id || "") !== fgSizeId;
+          const sizeLabel = isFirstOfSize
+            ? (sizeNameById.get(fgSizeId) || getSkuLabel(findHeaderSkuBySizeId(fgSizeId)) || fgSizeId)
+            : "";
           const fixedUomId = resolveSfgUomId(row);
           const fixedUomName = getUomName(fixedUomId);
           return `
-          <tr data-row-index="${idx}" class="border-b border-slate-100">
+          <tr data-row-index="${idx}" class="${isFirstOfSize ? "border-t border-slate-200" : ""}">
             <td class="px-3 py-2">
               <input type="hidden" data-col="fg_sku_id" value="${esc(row.fg_sku_id)}">
               <input type="hidden" data-col="fg_size_id" value="${esc(fgSizeId)}">
-              <input type="text" value="${esc(fgSkuLabel)}" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm text-slate-700" readonly>
+              <input type="text" value="${esc(sizeLabel)}" class="w-full rounded-lg border ${isFirstOfSize ? "border-slate-200 bg-slate-50 text-slate-700" : "border-transparent bg-transparent"} px-2 py-1.5 text-sm" readonly>
             </td>
             <td class="px-3 py-2"><select data-col="sfg_sku_id" data-searchable-select="true" data-searchable-variant="unified" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "disabled"}><option value="">${labels.select}</option>${makeOptions(sfgOptions, row.sfg_sku_id, (r) => getSkuLabel(r) || r.item_name || r.id)}</select></td>
             <td class="px-3 py-2"><input data-col="required_qty" data-no-stepper="true" type="number" min="0.001" step="0.001" value="${esc(row.required_qty ?? "")}" class="w-full rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-sm" ${editable ? "" : "readonly"}></td>
@@ -2258,6 +2304,7 @@
               <input type="hidden" data-col="uom_id" value="${esc(fixedUomId)}">
               <input type="text" data-col-display="uom_id" value="${esc(fixedUomName)}" class="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-sm text-slate-600" readonly>
             </td>
+            <td class="px-3 py-2 text-right">${editable ? actionButtons("sfg") : ""}</td>
           </tr>`;
         })
         .join("");
@@ -2516,6 +2563,22 @@
       renderAll();
     };
 
+    // SFG rows are grouped by article size, so a row added from the "+" on a given
+    // row must inherit that row's size -- otherwise renderSfg would drop it (rows
+    // whose size is not one of the article's sizes are discarded).
+    const addSfgRowAfter = (index) => {
+      if (!editable) return;
+      syncStateFromDom();
+      if (!Array.isArray(state.sfg)) state.sfg = [];
+      const source = state.sfg[index] || {};
+      state.sfg.splice(index + 1, 0, {
+        ...addDefaults.sfg(),
+        fg_sku_id: String(source.fg_sku_id || ""),
+        fg_size_id: String(source.fg_size_id || ""),
+      });
+      renderAll();
+    };
+
     const ensureMinimumRows = () => {
       if (!editable) return;
       ["rm", "stage_route", "labour_selection"].forEach((type) => {
@@ -2535,7 +2598,12 @@
         if (type === "rule") return;
         const row = inlineAddBtn.closest("tr");
         const idx = Number(row?.getAttribute("data-row-index"));
-        if (Number.isFinite(idx)) addRow(type, idx + 1);
+        if (!Number.isFinite(idx)) return;
+        if (type === "sfg") {
+          addSfgRowAfter(idx);
+          return;
+        }
+        addRow(type, idx + 1);
         return;
       }
       const rmViewToggleBtn = event.target.closest("[data-rm-view-toggle]");
@@ -3046,7 +3114,11 @@
         const consumedInStageId = String(row?.consumed_in_stage_id || "").trim();
         const uomId = String(row?.uom_id || "").trim();
         if (!fgSizeId && !sfgSkuId && !requiredQty && !consumedInStageId) return;
-        const key = fgSizeId ? `size:${fgSizeId}:${sfgSkuId}` : `row:${index}`;
+        // Collapse only genuine duplicates (same size + same SFG SKU, which the
+        // bom_sfg_line unique constraint would reject anyway). Rows with no SFG SKU
+        // picked yet must stay distinct, otherwise a just-added blank row for a size
+        // that already has one would be merged away before the user can fill it in.
+        const key = fgSizeId && sfgSkuId ? `size:${fgSizeId}:${sfgSkuId}` : `row:${index}`;
         const score = (sfgSkuId ? 2 : 0) + (requiredQty ? 1 : 0) + (consumedInStageId ? 1 : 0);
         const existing = byKey.get(key);
         if (!existing || score >= existing.score) {

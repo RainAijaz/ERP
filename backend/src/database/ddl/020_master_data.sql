@@ -426,6 +426,22 @@ ALTER TABLE IF EXISTS erp.items
   ADD COLUMN IF NOT EXISTS updated_by bigint REFERENCES erp.users(id),
   ADD COLUMN IF NOT EXISTS updated_at timestamptz;
 
+-- Global SFG: a shared component used by every article, with no dimensions of
+-- its own. Carries NO item_usage rows (the flag replaces per-article linking)
+-- and its SKUs are created by hand instead of mirrored from a finished good.
+ALTER TABLE IF EXISTS erp.items
+  ADD COLUMN IF NOT EXISTS is_global_sfg boolean NOT NULL DEFAULT false;
+
+DO $$ BEGIN
+  ALTER TABLE erp.items
+    ADD CONSTRAINT items_is_global_sfg_requires_sfg
+    CHECK (is_global_sfg = false OR item_type = 'SFG');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+CREATE INDEX IF NOT EXISTS ix_items_is_global_sfg
+ON erp.items(is_global_sfg)
+WHERE is_global_sfg = true;
+
 -- Finished product usage of semi-finished items.
 CREATE TABLE IF NOT EXISTS erp.item_usage (
   fg_item_id  bigint NOT NULL REFERENCES erp.items(id) ON DELETE RESTRICT,

@@ -2977,6 +2977,7 @@ const loadFormOptions = async (knex, locale = "en", options = {}) => {
           : "i.name as item_name",
         "i.id as item_id",
         "i.base_uom_id as base_uom_id",
+        "i.is_global_sfg as is_global_sfg",
         "v.size_id as size_id",
         knex.raw(
           "EXISTS (SELECT 1 FROM erp.bom_header bh WHERE bh.item_id = i.id AND bh.status = 'APPROVED') as has_approved_bom",

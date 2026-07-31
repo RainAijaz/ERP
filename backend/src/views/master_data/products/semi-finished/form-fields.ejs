@@ -48,10 +48,27 @@
   </label>
 </div>
 
-<label class="block text-sm font-semibold text-slate-600">
+<div class="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3">
+  <label class="flex items-start gap-3 text-sm font-semibold text-slate-600">
+    <input
+      type="checkbox"
+      name="is_global_sfg"
+      data-field="is_global_sfg"
+      data-global-sfg-toggle
+      value="true"
+      class="mt-0.5 h-4 w-4 rounded border-slate-300"
+    />
+    <span>
+      <%= t("global_sfg") %>
+      <span class="mt-1 block text-xs font-normal text-slate-500"><%= t("global_sfg_help") %></span>
+    </span>
+  </label>
+</div>
+
+<label class="block text-sm font-semibold text-slate-600" data-usage-wrap>
   <span><%= t("usage") %></span>
   <select
-    class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+    class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
     name="fg_ids"
     data-field="fg_ids"
     data-searchable-select="true"
@@ -62,5 +79,5 @@
       <option value="<%= item.id %>"><%= locale === "ur" ? (item.name_ur || item.name) : item.name %></option>
     <% }) %>
   </select>
-  <p class="mt-1 text-xs text-slate-500"><%= t("usage_help") %></p>
+  <p class="mt-1 text-xs text-slate-500" data-usage-help><%= t("usage_help") %></p>
 </label>

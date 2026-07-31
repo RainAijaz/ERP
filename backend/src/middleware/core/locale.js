@@ -559,6 +559,11 @@ const translations = {
     uom_conversions: "UOM Conversions",
     finished: "Finished",
     semi_finished: "Semi-Finished",
+    global_sfg: "Global (shared by all articles)",
+    global_sfg_help:
+      "Available to every article, so it needs no usage links. Its SKUs are not generated from articles — create them on the SKUs screen. Size and colour are optional.",
+    global_sfg_usage_disabled:
+      "Not applicable: a global item is already available to every article.",
     raw_materials: "Raw Materials",
     semi_finished_goods: "Semi-Finished Goods",
     finished_goods: "Finished Goods",
@@ -1735,6 +1740,7 @@ const translations = {
     usage_help: "Usage Help",
     generated_combinations: "Generated Combinations",
     select_options_to_generate: "Select options to generate",
+    no_variant_dimensions: "No size / colour",
     edit_rates: "Edit Rates",
     packing: "Packing",
     sku: "SKU",
@@ -2282,6 +2288,7 @@ translations.ur = {
   ordered_qty: "آرڈر مقدار",
   delivered_qty: "ڈیلیور مقدار",
   remaining_qty: "بقایا مقدار",
+  available_qty: "دستیاب مقدار",
   sales_order_advance_received: "سیلز آرڈر کی ایڈوانس وصول شدہ رقم",
   sales_order_previous_payments_received:
     "اس آرڈر کے لیے پہلے سے وصول شدہ ادائیگیاں",
@@ -2985,6 +2992,11 @@ translations.ur = {
   general_purchase_voucher: "عام خریداری واؤچر",
   generated_combinations: "پیدا کردہ امتزاج",
   generic_error: "خرابی",
+  global_sfg: "گلوبل (تمام آرٹیکلز کے لیے مشترکہ)",
+  global_sfg_help:
+    "ہر آرٹیکل کے لیے دستیاب ہے، اس لیے اسے usage لنکس کی ضرورت نہیں۔ اس کے SKUs آرٹیکلز سے نہیں بنتے — انہیں SKUs اسکرین پر خود بنائیں۔ سائز اور رنگ اختیاری ہیں۔",
+  global_sfg_usage_disabled:
+    "لاگو نہیں: گلوبل آئٹم پہلے ہی ہر آرٹیکل کے لیے دستیاب ہے۔",
   goods_receipt_note: "سامان کی رسید کا نوٹ",
   goods_receipt_note_description:
     "جب ریٹس ابھی طے نہیں ہوئے ہیں تو ریکارڈ خام مال کی مقدار موصول ہوئی ہے۔",
@@ -3135,6 +3147,7 @@ translations.ur = {
     "ریکارڈز پوشیدہ ہیں کیونکہ آپ کو نیویگیشن تک رسائی نہیں ہے۔",
   no_new_combinations: "تمام منتخب کردہ امتزاج پہلے سے موجود ہیں۔",
   no_records_found: "کوئی ریکارڈ نہیں ملا",
+  no_variant_dimensions: "کوئی سائز / رنگ نہیں",
   non_production_expense: "غیر پیداواری اخراجات کا تجزیہ",
   note: "نوٹ",
   of: "کی",

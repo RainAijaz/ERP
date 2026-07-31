@@ -277,9 +277,19 @@ router.post(
         ? Number(values.min_stock_level)
         : 0;
 
-      const usageIds = normalizeUsageIds(values.fg_ids)
-        .map((id) => Number(id))
-        .filter((id) => Number.isFinite(id));
+      const is_global_sfg =
+        values.is_global_sfg === "true" || values.is_global_sfg === "on";
+
+      // A global SFG is available to every article, so usage links are meaningless
+      // for it -- and actively harmful: syncSfgVariantsFromFinished mirrors a linked
+      // FG's sizes/colours onto the SFG, which would generate one SKU per size per
+      // colour per article. Enforce emptiness server-side, not just by disabling the
+      // picker in the UI. On edit this also clears any links the item already had.
+      const usageIds = is_global_sfg
+        ? []
+        : normalizeUsageIds(values.fg_ids)
+            .map((id) => Number(id))
+            .filter((id) => Number.isFinite(id));
       const uniqueUsageIds = Array.from(new Set(usageIds));
 
       const pairBaseUnitValid = base_uom_id
@@ -351,6 +361,7 @@ router.post(
           subgroup_id: user_subgroup_id,
           base_uom_id,
           min_stock_level,
+          is_global_sfg,
           usage_ids: uniqueUsageIds,
         },
         t: res.locals.t,
@@ -372,6 +383,7 @@ router.post(
             subgroup_id: user_subgroup_id,
             base_uom_id,
             min_stock_level,
+            is_global_sfg,
             created_by: req.user ? req.user.id : null,
             created_at: trx.fn.now(),
           })
@@ -439,9 +451,19 @@ router.post(
         ? Number(values.min_stock_level)
         : 0;
 
-      const usageIds = normalizeUsageIds(values.fg_ids)
-        .map((id) => Number(id))
-        .filter((id) => Number.isFinite(id));
+      const is_global_sfg =
+        values.is_global_sfg === "true" || values.is_global_sfg === "on";
+
+      // A global SFG is available to every article, so usage links are meaningless
+      // for it -- and actively harmful: syncSfgVariantsFromFinished mirrors a linked
+      // FG's sizes/colours onto the SFG, which would generate one SKU per size per
+      // colour per article. Enforce emptiness server-side, not just by disabling the
+      // picker in the UI. On edit this also clears any links the item already had.
+      const usageIds = is_global_sfg
+        ? []
+        : normalizeUsageIds(values.fg_ids)
+            .map((id) => Number(id))
+            .filter((id) => Number.isFinite(id));
       const uniqueUsageIds = Array.from(new Set(usageIds));
 
       const pairBaseUnitValid = base_uom_id
@@ -513,6 +535,7 @@ router.post(
           subgroup_id: user_subgroup_id,
           base_uom_id,
           min_stock_level,
+          is_global_sfg,
           usage_ids: uniqueUsageIds,
         },
         t: res.locals.t,
@@ -533,6 +556,7 @@ router.post(
             subgroup_id: user_subgroup_id,
             base_uom_id,
             min_stock_level,
+            is_global_sfg,
             updated_by: req.user ? req.user.id : null,
             updated_at: trx.fn.now(),
           });

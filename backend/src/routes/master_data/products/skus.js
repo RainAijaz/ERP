@@ -155,11 +155,19 @@ const shouldRequireApproval = async (req, scopeKey, action) => {
   return requiresApproval(scopeKey, action);
 };
 
+// Mirrors each linked finished good's size/colour combinations onto its SFG items.
+// Runs on every load of the SFG SKU screen, so it must never touch a global SFG:
+// a global item is a shared component with dimensions of its own (often none), and
+// mirroring would generate one SKU per size per colour per article. Global items
+// carry no item_usage rows by design, so they are already excluded by the join --
+// the explicit filter is a guard against stale or hand-inserted links.
 const syncSfgVariantsFromFinished = async (userId) => {
   await knex.transaction(async (trx) => {
     const usageRows = await trx("erp.item_usage as iu")
       .select("iu.sfg_item_id", "v.size_id", "v.color_id")
       .join("erp.variants as v", "v.item_id", "iu.fg_item_id")
+      .join("erp.items as sfg", "sfg.id", "iu.sfg_item_id")
+      .where("sfg.is_global_sfg", false)
       .groupBy("iu.sfg_item_id", "v.size_id", "v.color_id");
 
     if (!usageRows.length) return;
@@ -488,7 +496,9 @@ router.post(
       const comboRates = toArray(values.combo_rates);
 
       if (itemType === "SFG") {
-        if (!item_id || !sizeIds.length) {
+        // Sizes are optional for SFG: a shared component (e.g. a global part used
+        // by every article) has no size of its own. Colors are already optional.
+        if (!item_id) {
           throw new Error(res.locals.t("error_required_fields"));
         }
       } else if (
@@ -537,9 +547,9 @@ router.post(
           throw new Error(res.locals.t("error_required_fields"));
         }
 
-        const sizes = await trx("erp.sizes")
-          .select("id", "name")
-          .whereIn("id", sizeIds);
+        const sizes = sizeIds.length
+          ? await trx("erp.sizes").select("id", "name").whereIn("id", sizeIds)
+          : [];
         const colors = colorIds.length
           ? await trx("erp.colors").select("id", "name").whereIn("id", colorIds)
           : [];
@@ -551,9 +561,12 @@ router.post(
 
         if (itemType === "SFG") {
           // SFG: iterate sizes × colors, grade=null, packing=null, rate=0
+          // Both dimensions fall back to [null] so a fully dimensionless SFG
+          // (a shared part with no size or color) yields exactly one variant.
           const colorList = colorIds.length ? colorIds : [null];
+          const sizeList = sizeIds.length ? sizeIds : [null];
 
-          for (const size_id of sizeIds) {
+          for (const size_id of sizeList) {
             for (const color_id of colorList) {
               const key = buildComboKey(size_id, 0, color_id, 0);
               if (!rateMap.has(key)) continue;
@@ -585,7 +598,7 @@ router.post(
                   })
                   .returning("id");
                 const baseSku = buildSkuCode(base, [
-                  sizeMap.get(size_id),
+                  size_id ? sizeMap.get(size_id) : null,
                   color_id ? colorMap.get(color_id) : null,
                   suffix,
                 ]);
@@ -612,7 +625,7 @@ router.post(
                   packing_type_id: null,
                   sale_rate: 0,
                   _summary: buildSkuCode(base, [
-                    sizeMap.get(size_id),
+                    size_id ? sizeMap.get(size_id) : null,
                     color_id ? colorMap.get(color_id) : null,
                     suffix,
                   ]),
@@ -644,9 +657,14 @@ router.post(
                 .whereIn("id", packingIds)
             : [];
 
-          const linkedSfgRows = await trx("erp.item_usage")
-            .select("sfg_item_id")
-            .where({ fg_item_id: item_id });
+          // Same rule as syncSfgVariantsFromFinished: creating an article SKU
+          // mirrors its dimensions onto linked SFGs, which must never include a
+          // global (shared, dimensionless) SFG.
+          const linkedSfgRows = await trx("erp.item_usage as iu")
+            .select("iu.sfg_item_id")
+            .join("erp.items as sfg", "sfg.id", "iu.sfg_item_id")
+            .where({ "iu.fg_item_id": item_id })
+            .andWhere("sfg.is_global_sfg", false);
           const linkedSfgIds = linkedSfgRows.map((row) => row.sfg_item_id);
           const linkedSfgItems = linkedSfgIds.length
             ? await trx("erp.items")

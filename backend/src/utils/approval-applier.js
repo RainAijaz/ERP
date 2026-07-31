@@ -458,6 +458,7 @@ const applyItemChange = async (trx, request, userId) => {
             "base_uom_id",
             "uses_sfg",
             "sfg_part_type",
+            "is_global_sfg",
           )
           .where({ id: Number(entityId) })
           .first()
@@ -545,6 +546,7 @@ const applyItemChange = async (trx, request, userId) => {
         base_uom_id: newValue.base_uom_id || null,
         uses_sfg: newValue.uses_sfg || false,
         sfg_part_type: newValue.sfg_part_type || null,
+        is_global_sfg: newValue.is_global_sfg || false,
         min_stock_level: newValue.min_stock_level ?? 0,
         created_by: userId || null,
         created_at: trx.fn.now(),
@@ -570,9 +572,13 @@ const applyItemChange = async (trx, request, userId) => {
     }
 
     if (itemType === "SFG") {
-      const usageIds = Array.isArray(newValue.usage_ids)
-        ? newValue.usage_ids
-        : [];
+      // A global SFG must carry no usage links: syncSfgVariantsFromFinished
+      // mirrors a linked article's sizes/colours onto the SFG, which would
+      // generate one SKU per size per colour per article.
+      const usageIds =
+        !newValue.is_global_sfg && Array.isArray(newValue.usage_ids)
+          ? newValue.usage_ids
+          : [];
       if (usageIds.length) {
         await trx("erp.item_usage").insert(
           usageIds.map((fgId) => ({
@@ -649,6 +655,12 @@ const applyItemChange = async (trx, request, userId) => {
         )
           ? newValue.sfg_part_type
           : existing.sfg_part_type,
+        is_global_sfg: Object.prototype.hasOwnProperty.call(
+          newValue,
+          "is_global_sfg",
+        )
+          ? newValue.is_global_sfg
+          : existing.is_global_sfg,
         min_stock_level: Object.prototype.hasOwnProperty.call(
           newValue,
           "min_stock_level",
@@ -703,9 +715,18 @@ const applyItemChange = async (trx, request, userId) => {
     }
 
     if (itemType === "SFG") {
-      const usageIds = Array.isArray(newValue.usage_ids)
-        ? newValue.usage_ids
-        : [];
+      // See the create branch: a global SFG must carry no usage links, so
+      // flipping an existing item to global also clears the ones it had.
+      const isGlobal = Object.prototype.hasOwnProperty.call(
+        newValue,
+        "is_global_sfg",
+      )
+        ? newValue.is_global_sfg
+        : existing.is_global_sfg;
+      const usageIds =
+        !isGlobal && Array.isArray(newValue.usage_ids)
+          ? newValue.usage_ids
+          : [];
       await trx("erp.item_usage")
         .where({ sfg_item_id: Number(entityId) })
         .del();

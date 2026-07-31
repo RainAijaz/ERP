@@ -301,6 +301,7 @@ const mapSfgLinesToTarget = async (
           "v.item_id",
           "v.size_id",
           "i.code as item_code",
+          "i.is_global_sfg",
         )
         .leftJoin("erp.variants as v", "s.variant_id", "v.id")
         .leftJoin("erp.items as i", "v.item_id", "i.id")
@@ -341,12 +342,26 @@ const mapSfgLinesToTarget = async (
       skipped.push({ label, line, reason: "fg_size_not_in_target" });
       return;
     }
-    if (!targetSfgItemIds.length) {
-      skipped.push({ label, line, reason: "no_sfg_link" });
-      return;
-    }
     if (!sourceSku) {
       skipped.push({ label, line, reason: "no_matching_sfg_sku" });
+      return;
+    }
+    // A global SFG is a shared component: the very same SKU serves every article,
+    // so it copies straight across. It deliberately has no item_usage rows, which
+    // means the per-article mapping below would find no candidate and drop it.
+    if (sourceSku.is_global_sfg === true) {
+      mapped.push({
+        fg_size_id: line.fg_size_id,
+        sfg_sku_id: sourceSku.id,
+        required_qty: line.required_qty,
+        uom_id: line.uom_id,
+        consumed_in_stage_id: line.consumed_in_stage_id,
+        ref_approved_bom_id: null,
+      });
+      return;
+    }
+    if (!targetSfgItemIds.length) {
+      skipped.push({ label, line, reason: "no_sfg_link" });
       return;
     }
     const sourceSuffix = suffixOf(sourceSku.item_code);

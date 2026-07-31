@@ -106,6 +106,7 @@
                     "subgroup_id",
                     "base_uom_id",
                     "min_stock_level",
+                    "is_global_sfg",
                     "fg_ids"
                   ], canEdit, canDelete, canHardDelete }) %>
                 </td>
@@ -157,9 +158,42 @@
       }
     };
 
+    // A global SFG is available to every article, so per-article usage links are
+    // meaningless for it -- and harmful, because the SFG variant sync mirrors a
+    // linked article's sizes/colours onto the SFG. Clear and lock the picker.
+    // The server enforces this too; this is only to make the rule visible.
+    const syncGlobalSfgState = () => {
+      const toggle = modalForm.querySelector("[data-global-sfg-toggle]");
+      const usageWrap = modalForm.querySelector("[data-usage-wrap]");
+      const usageSelect = modalForm.querySelector('[data-field="fg_ids"]');
+      if (!(toggle instanceof HTMLInputElement) || !usageWrap) return;
+
+      const isGlobal = toggle.checked;
+      usageWrap.classList.toggle("opacity-50", isGlobal);
+      if (usageSelect instanceof HTMLSelectElement) {
+        if (isGlobal) {
+          Array.from(usageSelect.options).forEach((o) => (o.selected = false));
+        }
+        usageSelect.disabled = isGlobal;
+        usageSelect.dispatchEvent(new Event("change", { bubbles: true }));
+      }
+      const help = usageWrap.querySelector("[data-usage-help]");
+      if (help) {
+        help.textContent = isGlobal
+          ? "<%= t('global_sfg_usage_disabled') %>"
+          : "<%= t('usage_help') %>";
+      }
+    };
+
+    modalForm.addEventListener("change", (event) => {
+      if (event.target.closest("[data-global-sfg-toggle]")) syncGlobalSfgState();
+    });
+
     document.addEventListener("modal:opened", (event) => {
       setDefaultBaseUom(event?.detail?.mode || "");
+      syncGlobalSfgState();
     });
     setDefaultBaseUom("create");
+    syncGlobalSfgState();
   })();
 </script>
