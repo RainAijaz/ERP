@@ -57,6 +57,8 @@ const translations = {
       "Change request sent for approval. It will be applied once reviewed.",
     approval_sent_negative_stock:
       "Insufficient stock would make inventory negative. Voucher has been submitted for Administrator approval.",
+    pending_voucher_draft_saved:
+      "Changes saved on the pending voucher. It still needs approval from the Approvals page before it posts.",
     notice: "Notice",
     approval_approved: "Approval request approved.",
     approval_rejected: "Approval request rejected.",
@@ -72,6 +74,12 @@ const translations = {
       "Approval request not found or already decided.",
     approval_apply_failed:
       "Approval applied, but change could not be executed.",
+    approval_preview_unavailable:
+      "Preview could not be loaded. Please refresh the page and try again.",
+    approval_generic_preview_note:
+      "Detailed form preview is not available for this request. The submitted values are shown below.",
+    approval_preview_empty: "This request carries no stored values.",
+    approval_preview_rows_truncated: "Showing first {shown} of {total} rows.",
     approval_updates:
       "Since your last login: {approved} approved, {rejected} rejected.",
     approval_approved_detail: "Your approval request was approved: {summary}",
@@ -369,6 +377,11 @@ const translations = {
     action: "Action",
     submitted_for_approval: "Submitted For Approval",
     deletion_requested: "Deletion Requested",
+    // Activity Log: read-only report access and edits to a queued request.
+    viewed: "Opened",
+    loaded: "Loaded",
+    pending_approval_updated: "Pending Approval Updated",
+    report_filters: "Report Filters",
     entity: "Entity",
     entity_type: "Entity Type",
     voucher_summary: "Voucher Summary",
@@ -546,6 +559,11 @@ const translations = {
     uom_conversions: "UOM Conversions",
     finished: "Finished",
     semi_finished: "Semi-Finished",
+    global_sfg: "Global (shared by all articles)",
+    global_sfg_help:
+      "Available to every article, so it needs no usage links. Its SKUs are not generated from articles — create them on the SKUs screen. Size and colour are optional.",
+    global_sfg_usage_disabled:
+      "Not applicable: a global item is already available to every article.",
     raw_materials: "Raw Materials",
     semi_finished_goods: "Semi-Finished Goods",
     finished_goods: "Finished Goods",
@@ -686,9 +704,9 @@ const translations = {
     bom_hint_consumption_department:
       "The specific production stage where this material is physically consumed from inventory.",
     bom_hint_stage_mandatory_in_flow:
-      "If checked, production tracking cannot bypass this department.",
+      "If checked, production tracking cannot bypass this department. If unchecked, the stage becomes optional — production can bypass it entirely, and it never gates any other stage.",
     bom_hint_stage_strict_sequence:
-      "If checked, this stage cannot begin until the preceding stage is fully completed.",
+      "If checked, this stage cannot begin until the preceding stage is fully completed. If unchecked, the stage can be done at any time / in parallel, but it still has to be done.",
     bom_hint_normal_loss_pct:
       "The expected percentage of material wasted during production. The system will automatically consume the required material quantity by this percentage to compensate.",
     bom_hint_sku_rules_toggle:
@@ -782,7 +800,7 @@ const translations = {
     level: "Level",
     bom_stage: "Stage",
     bom_workflow_stage: "Stage",
-    bom_stage_mandatory_in_flow: "Mandatory In Flow",
+    bom_stage_mandatory_in_flow: "Mandatory Stage",
     bom_stage_strict_sequence: "Follow Sequence",
     bom_type: "Type",
     bom_type_finished_goods: "Finished Goods BOM",
@@ -1722,6 +1740,7 @@ const translations = {
     usage_help: "Usage Help",
     generated_combinations: "Generated Combinations",
     select_options_to_generate: "Select options to generate",
+    no_variant_dimensions: "No size / colour",
     edit_rates: "Edit Rates",
     packing: "Packing",
     sku: "SKU",
@@ -2110,6 +2129,8 @@ translations.ur = {
     "منظوری کی درخواست جمع ہو گئی ہے۔ منظوری کے بعد تبدیلی لاگو ہوگی۔",
   approval_sent:
     "تبدیلی کی درخواست منظوری کے لیے بھیج دی گئی ہے۔ منظوری کے بعد لاگو ہوگی۔",
+  pending_voucher_draft_saved:
+    "تبدیلیاں زیرِ التوا واؤچر پر محفوظ ہو گئی ہیں۔ پوسٹ ہونے کے لیے منظوری کے صفحے سے منظوری درکار ہے۔",
   notice: "اطلاع",
   approval_approved: "منظوری کی درخواست منظور ہو گئی ہے۔",
   approval_rejected: "منظوری کی درخواست مسترد کر دی گئی ہے۔",
@@ -2267,6 +2288,7 @@ translations.ur = {
   ordered_qty: "آرڈر مقدار",
   delivered_qty: "ڈیلیور مقدار",
   remaining_qty: "بقایا مقدار",
+  available_qty: "دستیاب مقدار",
   sales_order_advance_received: "سیلز آرڈر کی ایڈوانس وصول شدہ رقم",
   sales_order_previous_payments_received:
     "اس آرڈر کے لیے پہلے سے وصول شدہ ادائیگیاں",
@@ -2418,6 +2440,12 @@ translations.ur = {
   approval_request_updated: "منظوری کی درخواست کو اپ ڈیٹ کر دیا گیا۔",
   approval_request_updated_detail:
     "آپ کی زیر التواء منظوری کی درخواست کو اپ ڈیٹ کر دیا گیا: {summary}",
+  approval_preview_unavailable:
+    "پیش نظارہ لوڈ نہیں ہو سکا۔ براہ کرم صفحہ ریفریش کر کے دوبارہ کوشش کریں۔",
+  approval_generic_preview_note:
+    "اس درخواست کے لیے تفصیلی فارم پیش نظارہ دستیاب نہیں ہے۔ جمع کرائی گئی اقدار ذیل میں دکھائی گئی ہیں۔",
+  approval_preview_empty: "اس درخواست میں کوئی محفوظ اقدار نہیں ہیں۔",
+  approval_preview_rows_truncated: "کل {total} میں سے پہلی {shown} قطاریں دکھائی جا رہی ہیں۔",
   approval_updates:
     "آپ کے آخری لاگ ان کے بعد سے: {approved} منظور، {rejected} مسترد۔",
   approved: "منظور شدہ",
@@ -2635,9 +2663,9 @@ translations.ur = {
   bom_hint_consumption_department:
     "وہ مخصوص پیداواری مرحلہ جہاں یہ مواد حقیقت میں انوینٹری سے خرچ ہوتا ہے۔",
   bom_hint_stage_mandatory_in_flow:
-    "اگر منتخب ہو تو پروڈکشن ٹریکنگ اس شعبے کو بائی پاس نہیں کر سکتی۔",
+    "اگر منتخب ہو تو پروڈکشن ٹریکنگ اس شعبے کو بائی پاس نہیں کر سکتی۔ اگر منتخب نہ ہو تو یہ مرحلہ اختیاری ہو جاتا ہے — پروڈکشن اسے مکمل طور پر چھوڑ سکتی ہے، اور یہ کسی دوسرے مرحلے کو نہیں روکتا۔",
   bom_hint_stage_strict_sequence:
-    "اگر منتخب ہو تو یہ مرحلہ پچھلا مرحلہ مکمل ہونے سے پہلے شروع نہیں ہو سکتا۔",
+    "اگر منتخب ہو تو یہ مرحلہ پچھلا مرحلہ مکمل ہونے سے پہلے شروع نہیں ہو سکتا۔ اگر منتخب نہ ہو تو یہ مرحلہ کسی بھی وقت یا ساتھ ساتھ کیا جا سکتا ہے، لیکن کرنا لازمی رہے گا۔",
   bom_hint_normal_loss_pct:
     "پیداوار میں ضائع ہونے والے مواد کی متوقع فیصد۔ سسٹم اسی فیصد کے مطابق اضافی مقدار خود کھپت کرے گا۔",
   bom_hint_sku_rules_toggle:
@@ -2964,6 +2992,11 @@ translations.ur = {
   general_purchase_voucher: "عام خریداری واؤچر",
   generated_combinations: "پیدا کردہ امتزاج",
   generic_error: "خرابی",
+  global_sfg: "گلوبل (تمام آرٹیکلز کے لیے مشترکہ)",
+  global_sfg_help:
+    "ہر آرٹیکل کے لیے دستیاب ہے، اس لیے اسے usage لنکس کی ضرورت نہیں۔ اس کے SKUs آرٹیکلز سے نہیں بنتے — انہیں SKUs اسکرین پر خود بنائیں۔ سائز اور رنگ اختیاری ہیں۔",
+  global_sfg_usage_disabled:
+    "لاگو نہیں: گلوبل آئٹم پہلے ہی ہر آرٹیکل کے لیے دستیاب ہے۔",
   goods_receipt_note: "سامان کی رسید کا نوٹ",
   goods_receipt_note_description:
     "جب ریٹس ابھی طے نہیں ہوئے ہیں تو ریکارڈ خام مال کی مقدار موصول ہوئی ہے۔",
@@ -3044,7 +3077,7 @@ translations.ur = {
   level: "سطح",
   bom_stage: "مرحلہ",
   bom_workflow_stage: "مرحلہ",
-  bom_stage_mandatory_in_flow: "فلو میں لازمی",
+  bom_stage_mandatory_in_flow: "لازمی مرحلہ",
   bom_stage_strict_sequence: "ترتیب لازمی",
   level_account: "اکاؤنٹ لیول",
   level_department: "ڈیپارٹمنٹ لیول",
@@ -3114,6 +3147,7 @@ translations.ur = {
     "ریکارڈز پوشیدہ ہیں کیونکہ آپ کو نیویگیشن تک رسائی نہیں ہے۔",
   no_new_combinations: "تمام منتخب کردہ امتزاج پہلے سے موجود ہیں۔",
   no_records_found: "کوئی ریکارڈ نہیں ملا",
+  no_variant_dimensions: "کوئی سائز / رنگ نہیں",
   non_production_expense: "غیر پیداواری اخراجات کا تجزیہ",
   note: "نوٹ",
   of: "کی",
@@ -3484,6 +3518,10 @@ translations.ur = {
   amount_difference: "فرق رقم",
   sub_group: "ذیلی گروپ",
   submitted_for_approval: "منظوری کے لیے پیش کیا گیا۔",
+  viewed: "کھولا گیا",
+  loaded: "لوڈ کیا گیا",
+  pending_approval_updated: "زیر التوا منظوری میں ترمیم",
+  report_filters: "رپورٹ فلٹرز",
   subtotal: "ذیلی کل",
   success_bulk_commission_saved: "بلک کمیشن کامیابی سے محفوظ ہو گیا۔",
   success_bulk_commission_saved_counts:
@@ -4127,6 +4165,9 @@ Object.assign(translations.en, {
     "These articles' BOMs were copied from this one — review whether they need a new version:",
   cash: "Cash",
   changed: "Changed",
+  changed_only: "Changed only",
+  rate_changes_of_total: "{changed} of {total} rates changing",
+  no_rate_changes: "No rate changes — all {total} SKUs keep their current rate",
   error_loading: "Failed to load. Click to retry.",
   error_select_target: "Please select a target.",
   fixed: "Fixed",
@@ -4174,6 +4215,31 @@ Object.assign(translations.en, {
   wa_filter_queued: "Queued",
   wa_filter_all: "All",
   wa_mark_handled: "Mark handled",
+  wa_reason_cooldown: "Paused — WhatsApp was refusing messages",
+  wa_reason_chat_unavailable: "Could not open a chat with this number",
+  wa_reason_cancelled: "Cancelled by user",
+  wa_reason_attempts_exhausted: "Gave up after repeated delivery attempts",
+  wa_reason_expired_unsent: "Too old to send",
+  wa_conn_connected: "WhatsApp is connected",
+  wa_conn_not_linked: "WhatsApp is not linked",
+  wa_conn_not_linked_hint:
+    "No messages can be sent until the session is linked again. Everything below stays queued until then — no delivery attempts are being used up.",
+  wa_conn_scan_qr: "Scan QR to link",
+  wa_conn_disabled: "WhatsApp sending is switched off",
+  wa_conn_disabled_hint:
+    "WHATSAPP_CLIENT_DISABLED is set on this server, so notifications are recorded but never sent.",
+  wa_conn_cooldown: "Sending paused to protect the account",
+  wa_conn_cooldown_hint:
+    "WhatsApp refused several messages in a row, so sending is paused until",
+  wa_queued_pending: "Notifications waiting to be sent",
+  wa_cancel_all: "Cancel all queued",
+  wa_cancel_all_hint:
+    "Stops these from ever being sent. Do this before re-linking WhatsApp if the queue is old — reconnecting sends the whole backlog at once.",
+  wa_cancel_retry: "Cancel",
+  wa_confirm_cancel_row:
+    "Stop retrying this notification? It will not be sent, and will be listed as cancelled.",
+  wa_confirm_cancel_all:
+    "Cancel every queued notification? None of them will be sent. This cannot be undone.",
   shortage: "Shortage",
   desc_units:
     "Define the units of measure used across items, vouchers, and stock.",
@@ -4322,6 +4388,10 @@ Object.assign(translations.ur, {
     "یہ آرٹیکلز کے بی او ایم اسی سے کاپی کیے گئے تھے — جائزہ لیں کہ کیا انہیں نئے ورژن کی ضرورت ہے:",
   cash: "نقد",
   changed: "تبدیل شدہ",
+  changed_only: "صرف تبدیل شدہ",
+  rate_changes_of_total: "{total} میں سے {changed} ریٹس تبدیل ہو رہے ہیں",
+  no_rate_changes:
+    "کوئی ریٹ تبدیل نہیں ہو رہا — تمام {total} SKUs کا موجودہ ریٹ برقرار رہے گا",
   error_loading: "لوڈ کرنے میں ناکام۔ دوبارہ کوشش کے لیے کلک کریں۔",
   error_select_target: "براہ کرم ایک ہدف منتخب کریں۔",
   fixed: "مقررہ",
@@ -4369,6 +4439,31 @@ Object.assign(translations.ur, {
   wa_filter_failed: "ناکامیاں",
   wa_filter_all: "تمام",
   wa_mark_handled: "حل شدہ نشان زد کریں",
+  wa_reason_cooldown: "روک دیا گیا — واٹس ایپ پیغامات مسترد کر رہا تھا",
+  wa_reason_chat_unavailable: "اس نمبر کے ساتھ چیٹ نہیں کھل سکی",
+  wa_reason_cancelled: "صارف نے منسوخ کر دیا",
+  wa_reason_attempts_exhausted: "بار بار کوشش کے بعد بھیجنا بند کر دیا گیا",
+  wa_reason_expired_unsent: "بہت پرانا — اب نہیں بھیجا جائے گا",
+  wa_conn_connected: "واٹس ایپ منسلک ہے",
+  wa_conn_not_linked: "واٹس ایپ منسلک نہیں ہے",
+  wa_conn_not_linked_hint:
+    "جب تک سیشن دوبارہ منسلک نہیں ہوتا، کوئی پیغام نہیں بھیجا جا سکتا۔ نیچے دی گئی تمام اطلاعات قطار میں محفوظ رہیں گی — کوئی کوشش ضائع نہیں ہو رہی۔",
+  wa_conn_scan_qr: "منسلک کرنے کے لیے QR اسکین کریں",
+  wa_conn_disabled: "واٹس ایپ بھیجنا بند ہے",
+  wa_conn_disabled_hint:
+    "اس سرور پر WHATSAPP_CLIENT_DISABLED مقرر ہے، اس لیے اطلاعات ریکارڈ تو ہوتی ہیں مگر بھیجی نہیں جاتیں۔",
+  wa_conn_cooldown: "اکاؤنٹ کے تحفظ کے لیے بھیجنا روک دیا گیا",
+  wa_conn_cooldown_hint:
+    "واٹس ایپ نے مسلسل کئی پیغامات مسترد کیے، اس لیے بھیجنا اس وقت تک روکا گیا ہے:",
+  wa_queued_pending: "بھیجنے کے انتظار میں اطلاعات",
+  wa_cancel_all: "تمام قطار منسوخ کریں",
+  wa_cancel_all_hint:
+    "یہ اطلاعات کبھی نہیں بھیجی جائیں گی۔ اگر قطار پرانی ہے تو واٹس ایپ دوبارہ منسلک کرنے سے پہلے یہ کریں — منسلک ہوتے ہی پوری قطار ایک ساتھ بھیج دی جاتی ہے۔",
+  wa_cancel_retry: "منسوخ کریں",
+  wa_confirm_cancel_row:
+    "کیا اس اطلاع کی کوششیں روک دی جائیں؟ یہ نہیں بھیجی جائے گی اور منسوخ شدہ کے طور پر درج ہوگی۔",
+  wa_confirm_cancel_all:
+    "کیا قطار میں موجود تمام اطلاعات منسوخ کر دی جائیں؟ ان میں سے کوئی نہیں بھیجی جائے گی۔ یہ عمل واپس نہیں ہو سکتا۔",
   shortage: "کمی",
   desc_units:
     "وہ اکائیاں (یونٹس) بیان کریں جو آئٹمز، واؤچرز اور اسٹاک میں استعمال ہوتی ہیں۔",
@@ -4391,6 +4486,47 @@ Object.assign(translations.ur, {
     "پیداواری مراحل بیان کریں اور ہر مرحلے کو ایک پیداواری شعبے سے منسلک کریں۔",
   desc_parties: "کسٹمر اور سپلائر ماسٹر ریکارڈز کا انتظام کریں۔",
   desc_accounts: "واؤچرز اور رپورٹنگ میں استعمال ہونے والا چارٹ آف اکاؤنٹس برقرار رکھیں۔",
+});
+
+// Withdrawing an own pending approval request (approvals page).
+Object.assign(translations.en, {
+  withdraw: "Withdraw",
+  withdrawn: "Withdrawn",
+  approval_withdrawn: "Approval request withdrawn.",
+  confirm_withdraw_title: "Withdraw Request",
+  confirm_withdraw_approval:
+    "This request will stop waiting for approval. Nothing is deleted, and you can submit it again.",
+});
+
+Object.assign(translations.ur, {
+  withdraw: "واپس لیں",
+  withdrawn: "واپس لی گئی",
+  approval_withdrawn: "منظوری کی درخواست واپس لے لی گئی ہے۔",
+  confirm_withdraw_title: "درخواست واپس لیں",
+  confirm_withdraw_approval:
+    "یہ درخواست منظوری کے انتظار میں نہیں رہے گی۔ کوئی ریکارڈ حذف نہیں ہوگا اور آپ دوبارہ جمع کرا سکتے ہیں۔",
+});
+
+// Dashboard: Top Selling Products measure toggle, per-user activity feed, and
+// mobile line-entry helpers. NOTE: translations.ur is reassigned wholesale as
+// late as line 3680, so Urdu keys must live in a trailing Object.assign like
+// this one or they are silently discarded.
+Object.assign(translations.en, {
+  activity_per_user: "Latest per user",
+  add_item: "Add item",
+  line_items: "Line Items",
+  no_activity_yet: "No activity yet",
+  row: "Row",
+});
+
+Object.assign(translations.ur, {
+  // "dozens" was left untranslated by the machine-translation pass.
+  dozens: "درجن",
+  activity_per_user: "ہر صارف کی تازہ ترین سرگرمی",
+  add_item: "آئٹم شامل کریں",
+  line_items: "تفصیلی سطریں",
+  no_activity_yet: "ابھی تک کوئی سرگرمی نہیں",
+  row: "سطر",
 });
 
 const formatDateDisplay = (value, fallback = "-") => {
