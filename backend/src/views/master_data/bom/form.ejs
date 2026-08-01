@@ -223,6 +223,10 @@
       <div class="mb-3 flex items-center justify-between">
         <h2 class="text-sm font-semibold uppercase tracking-[0.14em] text-slate-600"><%= t("production_stages")  %></h2>
       </div>
+      <div class="mb-3 space-y-1 text-xs text-slate-500">
+        <p><span class="font-semibold text-slate-600"><%= t("bom_stage_mandatory_in_flow") %>:</span> <%= t("bom_hint_stage_mandatory_in_flow") %></p>
+        <p><span class="font-semibold text-slate-600"><%= t("bom_stage_strict_sequence") %>:</span> <%= t("bom_hint_stage_strict_sequence") %></p>
+      </div>
       <div class="overflow-x-auto lg:overflow-visible overflow-y-visible" data-searchable-boundary>
         <table class="w-full table-fixed text-sm">
           <colgroup>

@@ -704,9 +704,9 @@ const translations = {
     bom_hint_consumption_department:
       "The specific production stage where this material is physically consumed from inventory.",
     bom_hint_stage_mandatory_in_flow:
-      "If checked, production tracking cannot bypass this department.",
+      "If checked, production tracking cannot bypass this department. If unchecked, the stage becomes optional — production can bypass it entirely, and it never gates any other stage.",
     bom_hint_stage_strict_sequence:
-      "If checked, this stage cannot begin until the preceding stage is fully completed.",
+      "If checked, this stage cannot begin until the preceding stage is fully completed. If unchecked, the stage can be done at any time / in parallel, but it still has to be done.",
     bom_hint_normal_loss_pct:
       "The expected percentage of material wasted during production. The system will automatically consume the required material quantity by this percentage to compensate.",
     bom_hint_sku_rules_toggle:
@@ -800,7 +800,7 @@ const translations = {
     level: "Level",
     bom_stage: "Stage",
     bom_workflow_stage: "Stage",
-    bom_stage_mandatory_in_flow: "Mandatory In Flow",
+    bom_stage_mandatory_in_flow: "Mandatory Stage",
     bom_stage_strict_sequence: "Follow Sequence",
     bom_type: "Type",
     bom_type_finished_goods: "Finished Goods BOM",
@@ -2663,9 +2663,9 @@ translations.ur = {
   bom_hint_consumption_department:
     "وہ مخصوص پیداواری مرحلہ جہاں یہ مواد حقیقت میں انوینٹری سے خرچ ہوتا ہے۔",
   bom_hint_stage_mandatory_in_flow:
-    "اگر منتخب ہو تو پروڈکشن ٹریکنگ اس شعبے کو بائی پاس نہیں کر سکتی۔",
+    "اگر منتخب ہو تو پروڈکشن ٹریکنگ اس شعبے کو بائی پاس نہیں کر سکتی۔ اگر منتخب نہ ہو تو یہ مرحلہ اختیاری ہو جاتا ہے — پروڈکشن اسے مکمل طور پر چھوڑ سکتی ہے، اور یہ کسی دوسرے مرحلے کو نہیں روکتا۔",
   bom_hint_stage_strict_sequence:
-    "اگر منتخب ہو تو یہ مرحلہ پچھلا مرحلہ مکمل ہونے سے پہلے شروع نہیں ہو سکتا۔",
+    "اگر منتخب ہو تو یہ مرحلہ پچھلا مرحلہ مکمل ہونے سے پہلے شروع نہیں ہو سکتا۔ اگر منتخب نہ ہو تو یہ مرحلہ کسی بھی وقت یا ساتھ ساتھ کیا جا سکتا ہے، لیکن کرنا لازمی رہے گا۔",
   bom_hint_normal_loss_pct:
     "پیداوار میں ضائع ہونے والے مواد کی متوقع فیصد۔ سسٹم اسی فیصد کے مطابق اضافی مقدار خود کھپت کرے گا۔",
   bom_hint_sku_rules_toggle:
@@ -3077,7 +3077,7 @@ translations.ur = {
   level: "سطح",
   bom_stage: "مرحلہ",
   bom_workflow_stage: "مرحلہ",
-  bom_stage_mandatory_in_flow: "فلو میں لازمی",
+  bom_stage_mandatory_in_flow: "لازمی مرحلہ",
   bom_stage_strict_sequence: "ترتیب لازمی",
   level_account: "اکاؤنٹ لیول",
   level_department: "ڈیپارٹمنٹ لیول",
