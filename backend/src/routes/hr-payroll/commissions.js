@@ -17,9 +17,29 @@ const {
   buildBulkPreviewRows,
   applyBulkSkuRateUpsert,
 } = require("../../services/hr-payroll/commission-rules-service");
+const {
+  COMPUTABLE_TYPES,
+  normalizeRecalcInput,
+  buildRecalcPlan,
+  applyRecalcPlan,
+  fetchActiveRulesForScope,
+} = require("../../services/hr-payroll/commission-recalc-service");
+// Registers the approvals preview renderer for RECALC_APPROVAL_MODE. Required
+// for its side effect — the registry is a module-level array populated at boot.
+require("../../utils/approval-previews/commission-recalc-preview-provider");
+const {
+  RECALC_APPROVAL_MODE,
+} = require("../../utils/commission-recalc-approval");
 const COMMISSION_BASIS_FIXED_PER_UNIT = "FIXED_PER_UNIT";
 const COMMISSION_RATE_TYPES = new Set(["PER_DOZEN", "PER_PAIR"]);
-const COMMISSION_TYPES = new Set(["SALESMAN_SALE", "BRANCH_SALE", "TRANSFER", "PARTY"]);
+const COMMISSION_TYPES = new Set([
+  "SALESMAN_SALE",
+  "BRANCH_SALE",
+  "TRANSFER",
+  "PARTY",
+  "PRODUCTION_FG",
+  "PRODUCTION_SFG",
+]);
 const getAllowedBranchIds = (req) => {
   if (req?.user?.isAdmin) return [];
   return Array.isArray(req?.branchScope)
@@ -201,10 +221,12 @@ const page = {
       type: "select",
       required: true,
       options: [
-        { value: "SALESMAN_SALE", label: "commission_type_salesman_sale" },
-        { value: "BRANCH_SALE",   label: "commission_type_branch_sale" },
-        { value: "TRANSFER",      label: "commission_type_transfer" },
-        { value: "PARTY",         label: "commission_type_party" },
+        { value: "SALESMAN_SALE",  label: "commission_type_salesman_sale" },
+        { value: "BRANCH_SALE",    label: "commission_type_branch_sale" },
+        { value: "TRANSFER",       label: "commission_type_transfer" },
+        { value: "PARTY",          label: "commission_type_party" },
+        { value: "PRODUCTION_FG",  label: "commission_type_production_fg" },
+        { value: "PRODUCTION_SFG", label: "commission_type_production_sfg" },
       ],
     },
     {
@@ -779,6 +801,16 @@ router.get(
         req.query.group_id,
       );
       const baseRate = req.query.value;
+      // Scopes which SKUs the grid lists (SFG for PRODUCTION_SFG, FG otherwise)
+      // and which existing rules count as the "previous rate".
+      const previewCommissionTypeRaw = String(req.query.commission_type || "")
+        .trim()
+        .toUpperCase();
+      const previewCommissionType = COMMISSION_TYPES.has(
+        previewCommissionTypeRaw,
+      )
+        ? previewCommissionTypeRaw
+        : "SALESMAN_SALE";
 
       if (!ALLOWED_SCOPE_FOR_BULK.has(applyOn)) {
         logBulkPreviewDiagnostic(
@@ -835,6 +867,7 @@ router.get(
         applyOn,
         subgroupIds,
         groupIds,
+        commissionType: previewCommissionType,
         baseRate,
       });
 
@@ -879,6 +912,7 @@ router.post(
         subgroupIds: normalized.subgroupIds,
         groupIds: normalized.groupIds,
         commissionBasis: normalized.commissionBasis,
+        commissionType: normalized.commissionType,
         baseRate: null,
       });
       const requestedRateBySku = new Map(
@@ -1045,6 +1079,245 @@ router.get(
       return res.json({ rows });
     } catch (err) {
       return next(err);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Recalculate commission for a past date range.
+//
+// Commission is denormalized at voucher time and rules are not effective-dated,
+// so correcting a rate today never reaches vouchers already posted. These routes
+// preview and apply a recomputation over an arbitrary range — arbitrary because
+// salary cycles here do not start on the 1st.
+// ---------------------------------------------------------------------------
+
+const buildRecalcInput = (req, source) => {
+  const payload = source || {};
+  return normalizeRecalcInput({
+    commission_types: payload.commission_types,
+    from_date: payload.from_date,
+    to_date: payload.to_date,
+    employee_id: payload.employee_id,
+    clear_orphans: payload.clear_orphans,
+    allowedBranchIds: getAllowedBranchIds(req),
+  });
+};
+
+// Feeds the guardrail panel: rules have no effective dates, so the only honest
+// thing the screen can do is show exactly which rules the recompute will use.
+router.get(
+  "/recalc-rules",
+  requirePermission("SCREEN", page.scopeKey, "view"),
+  async (req, res) => {
+    try {
+      const employeeId = Number(req.query.employee_id || 0) || null;
+      if (employeeId && !(await isEmployeeInScope({ employeeId, req }))) {
+        return res
+          .status(403)
+          .json({ message: res.locals.t("error_branch_out_of_scope") });
+      }
+      const commissionTypes = String(req.query.commission_types || "")
+        .split(",")
+        .map((entry) => entry.trim().toUpperCase())
+        .filter(Boolean);
+      const rules = await fetchActiveRulesForScope({
+        db: knex,
+        employeeId,
+        commissionTypes: commissionTypes.length ? commissionTypes : COMPUTABLE_TYPES,
+        locale: req.locale || "en",
+      });
+      return res.json({ rules });
+    } catch (err) {
+      console.error("[commission-recalc] rules lookup failed:", err);
+      return res.status(500).json({ message: res.locals.t("generic_error") });
+    }
+  },
+);
+
+router.get(
+  "/recalc-preview",
+  requirePermission("SCREEN", page.scopeKey, "view"),
+  async (req, res) => {
+    try {
+      const input = buildRecalcInput(req, req.query);
+      if (!input.fromDate || !input.toDate) {
+        return res
+          .status(400)
+          .json({ message: res.locals.t("error_recalc_date_range_required") });
+      }
+      if (input.employeeId && !(await isEmployeeInScope({ employeeId: input.employeeId, req }))) {
+        return res
+          .status(403)
+          .json({ message: res.locals.t("error_branch_out_of_scope") });
+      }
+
+      const plan = await buildRecalcPlan({
+        db: knex,
+        input,
+        locale: req.locale || "en",
+        t: res.locals.t,
+      });
+
+      // The write descriptors are re-derived at apply time; sending them to the
+      // browser would only bloat the response and invite tampering.
+      return res.json({
+        filters: {
+          commission_types: input.commissionTypes,
+          from_date: input.fromDate,
+          to_date: input.toDate,
+          employee_id: input.employeeId,
+          clear_orphans: input.clearOrphans,
+          date_range_corrected: input.dateRangeCorrected,
+        },
+        rows: plan.rows.map(({ write, ...row }) => row),
+        counts: plan.counts,
+        totals: plan.totals,
+        over_limit: plan.over_limit,
+        limit: plan.limit,
+      });
+    } catch (err) {
+      console.error("[commission-recalc] preview failed:", err);
+      return res.status(500).json({ message: res.locals.t("generic_error") });
+    }
+  },
+);
+
+router.post(
+  "/recalc",
+  requirePermission("SCREEN", page.scopeKey, "edit"),
+  async (req, res) => {
+    try {
+      const input = buildRecalcInput(req, req.body);
+      if (!input.fromDate || !input.toDate) {
+        return res
+          .status(400)
+          .json({ message: res.locals.t("error_recalc_date_range_required") });
+      }
+      if (input.employeeId && !(await isEmployeeInScope({ employeeId: input.employeeId, req }))) {
+        return res
+          .status(403)
+          .json({ message: res.locals.t("error_branch_out_of_scope") });
+      }
+
+      // Rebuilt server-side from the filter; any rows the client sent are ignored.
+      const plan = await buildRecalcPlan({
+        db: knex,
+        input,
+        locale: req.locale || "en",
+        t: res.locals.t,
+      });
+      const writes = plan.rows.filter((row) => row.will_write);
+
+      if (plan.over_limit) {
+        return res.status(400).json({
+          message: res.locals.t("error_recalc_over_limit"),
+          limit: plan.limit,
+          writes: writes.length,
+        });
+      }
+      if (!writes.length) {
+        return res
+          .status(400)
+          .json({ message: res.locals.t("error_recalc_nothing_to_write") });
+      }
+
+      const employeeIds = [...new Set(writes.map((row) => Number(row.employee_id)))];
+      const employeeNames = {};
+      writes.forEach((row) => {
+        employeeNames[row.employee_id] = row.employee_name;
+      });
+
+      const approval = await handleScreenApproval({
+        req,
+        res,
+        scopeKey: page.scopeKey,
+        action: "edit",
+        entityType: page.entityType,
+        entityId: String(employeeIds[0] || "NEW"),
+        summary: `${res.locals.t("recalculate_commission")} - ${input.fromDate} .. ${input.toDate} (${writes.length})`,
+        oldValue: null,
+        newValue: {
+          mode: RECALC_APPROVAL_MODE,
+          from_date: input.fromDate,
+          to_date: input.toDate,
+          commission_types: input.commissionTypes,
+          employee_id: input.employeeId,
+          clear_orphans: input.clearOrphans,
+          employee_names: employeeNames,
+          totals: plan.totals,
+          counts: plan.counts,
+          // Slim rows: enough for the approver to see exactly what they are
+          // committing, without carrying lines_detail or write descriptors.
+          rows: writes.map((row) => ({
+            v: row.voucher_id,
+            n: row.voucher_no,
+            d: row.voucher_date,
+            e: row.employee_id,
+            t: row.commission_type,
+            o: row.previous_rate,
+            w: row.new_rate,
+            s: row.status,
+          })),
+        },
+      });
+
+      if (approval?.queued) {
+        const canViewApprovals =
+          typeof res.locals.can === "function"
+            ? res.locals.can("SCREEN", "administration.approvals", "navigate")
+            : false;
+        return res.status(202).json({
+          queued: true,
+          approval_request_id: approval.requestId || null,
+          approvals_url: canViewApprovals ? "/administration/approvals" : null,
+          writes: writes.length,
+          message:
+            res.locals.t("approval_sent") || res.locals.t("approval_submitted"),
+        });
+      }
+
+      const provenance = {
+        at: new Date().toISOString(),
+        by: req.user?.id || null,
+        source: "commission-recalc-screen",
+        from_date: input.fromDate,
+        to_date: input.toDate,
+      };
+      const result = await knex.transaction((trx) =>
+        applyRecalcPlan({ trx, rows: plan.rows, provenance }),
+      );
+
+      queueAuditLog(req, {
+        entityType: page.entityType,
+        entityId: String(employeeIds[0] || ""),
+        action: "UPDATE",
+        context: {
+          source: "commission-recalc",
+          from_date: input.fromDate,
+          to_date: input.toDate,
+          commission_types: input.commissionTypes,
+          employee_id: input.employeeId,
+          clear_orphans: input.clearOrphans,
+          writes: writes.length,
+          totals: plan.totals,
+          ledger_rows: result.ledgerRows,
+          sales_vouchers: result.salesVouchers,
+        },
+      });
+
+      return res.json({
+        ok: true,
+        writes: writes.length,
+        totals: plan.totals,
+        result,
+        message: res.locals.t("success_commission_recalculated"),
+      });
+    } catch (err) {
+      console.error("[commission-recalc] apply failed:", err);
+      return res
+        .status(400)
+        .json({ message: err?.message || res.locals.t("generic_error") });
     }
   },
 );

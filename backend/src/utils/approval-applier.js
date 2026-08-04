@@ -26,6 +26,10 @@ const {
 const {
   applyItemLifecycleToggleTx,
 } = require("../services/products/item-lifecycle-service");
+const {
+  RECALC_APPROVAL_MODE,
+  applyCommissionRecalcApproval,
+} = require("./commission-recalc-approval");
 const { generateUniqueCode } = require("./entity-code");
 const { convertRmStockUom } = require("./rm-uom-stock-conversion");
 
@@ -1318,6 +1322,10 @@ const inferHrTarget = ({ entityType, request, newValue, oldValue }) => {
     ...Object.keys(oldValue && typeof oldValue === "object" ? oldValue : {}),
   ]);
 
+  // Must be tested before the scopeKey checks below: queueApproval always injects
+  // _scope_key, so hr_payroll.commissions would otherwise capture this and try to
+  // write a single rule row out of a recalculation payload.
+  if (mode === RECALC_APPROVAL_MODE) return "commission_recalc";
   if (mode === "BULK_COMMISSION_SKU_UPSERT" || mode === "SKU_MULTI_UPSERT")
     return "bulk_commission";
   if (mode === "BULK_LABOUR_RATE_COPY") return "bulk_labour_rate_copy";
@@ -1968,7 +1976,7 @@ const applyBulkLabourRateApproval = async (trx, request) => {
   return { applied: true, entityId: String(labourIds[0]) };
 };
 
-const applyHrApprovalChange = async (trx, request) => {
+const applyHrApprovalChange = async (trx, request, decidedBy = null) => {
   const entityType = request?.entity_type;
   const newValue =
     request?.new_value && typeof request.new_value === "object"
@@ -1980,6 +1988,8 @@ const applyHrApprovalChange = async (trx, request) => {
       : null;
   const target = inferHrTarget({ entityType, request, newValue, oldValue });
 
+  if (target === "commission_recalc")
+    return applyCommissionRecalcApproval(trx, request, decidedBy);
   if (target === "bulk_commission")
     return applyBulkCommissionApproval(trx, request);
   if (target === "bulk_labour_rate_copy")
@@ -2044,7 +2054,7 @@ const applyMasterDataChange = async (trx, request, userId) => {
     return true;
   }
   if (entityType === "EMPLOYEE" || entityType === "LABOUR") {
-    return applyHrApprovalChange(trx, request);
+    return applyHrApprovalChange(trx, request, userId);
   }
   return false;
 };

@@ -16,6 +16,11 @@ const { syncVoucherGlPostingTx } = require("../financial/gl-posting-service");
 const {
   buildStockShortfallMessageTx,
 } = require("../../utils/stock-rollback-diagnostics");
+const {
+  computeLedgerEntriesForBranch,
+  normalizeProductionLinesForCommission,
+  writeCommissionLedgerTx,
+} = require("../sales/commission-service");
 
 const PRODUCTION_VOUCHER_TYPES = {
   finishedProduction: "PROD_FG",
@@ -4378,6 +4383,65 @@ const createAutoChildVoucherTx = async ({
   };
 };
 
+// Production commission is earned where WIP becomes stock — the final required
+// stage in the BOM routing — so callers collect output there and hand it over once
+// the stock-in has actually happened. FG and SFG are deliberately separate types:
+// a single "PRODUCTION" type would pay twice on the same shoe, once when the SFG
+// is created and again when the FG is assembled from it.
+const PRODUCTION_COMMISSION_TYPE_BY_CATEGORY = {
+  FG: "PRODUCTION_FG",
+  SFG: "PRODUCTION_SFG",
+};
+
+// Cleared before every re-apply, mirroring the WIP/stock ledger rollbacks. An
+// upsert alone is not enough: an edit that drops a line (or drops the voucher's
+// output to nothing) must not leave the previous run's commission behind.
+const rollbackProductionCommissionByVoucherTx = async ({ trx, voucherId }) => {
+  const normalizedVoucherId = toPositiveInt(voucherId);
+  if (!normalizedVoucherId) return;
+  await trx("erp.commission_ledger")
+    .where({ voucher_id: normalizedVoucherId })
+    .whereIn(
+      "commission_type",
+      Object.values(PRODUCTION_COMMISSION_TYPE_BY_CATEGORY),
+    )
+    .del();
+};
+
+// Errors are deliberately NOT swallowed here. The equivalent swallow in the
+// stock-transfer path hid a 12x underpayment for months; production quantities
+// arrive already in pairs, so there is no UOM conversion left to fail and a throw
+// means a genuine bug worth surfacing while the voucher can still be rolled back.
+const writeProductionCommissionTx = async ({
+  trx,
+  voucherId,
+  branchId,
+  outputs = [],
+}) => {
+  const normalizedBranchId = toPositiveInt(branchId);
+  if (!outputs.length || !normalizedBranchId) return;
+
+  for (const [category, commissionType] of Object.entries(
+    PRODUCTION_COMMISSION_TYPE_BY_CATEGORY,
+  )) {
+    const categoryOutputs = outputs.filter(
+      (output) => String(output.category || "").toUpperCase() === category,
+    );
+    if (!categoryOutputs.length) continue;
+
+    const entries = await computeLedgerEntriesForBranch({
+      trx,
+      lines: normalizeProductionLinesForCommission(categoryOutputs),
+      branchId: normalizedBranchId,
+      commissionType,
+      t: (key) => key,
+    });
+    if (entries.length) {
+      await writeCommissionLedgerTx(trx, voucherId, entries);
+    }
+  }
+};
+
 const applyDcvToWipTx = async ({ trx, voucherId, branchId, voucherDate }) => {
   const header = await trx("erp.dcv_header")
     .select("dept_id", "stage_id")
@@ -4432,6 +4496,8 @@ const applyDcvToWipTx = async ({ trx, voucherId, branchId, voucherDate }) => {
     itemTypes: ["FG", "SFG"],
   });
   const bomProfileBySku = new Map();
+  // Output that reached stock this run, collected for the commission write below.
+  const commissionOutputs = [];
 
   for (const line of lines) {
     const skuId = Number(line.sku_id || 0);
@@ -4638,6 +4704,15 @@ const applyDcvToWipTx = async ({ trx, voucherId, branchId, voucherDate }) => {
           voucherDate,
           writeLedger: true,
         });
+
+        commissionOutputs.push({
+          sku_id: skuId,
+          line_no: lineNo || null,
+          qty: qtyPairs,
+          total_pairs: qtyPairs,
+          amount: transferCost,
+          category: stockCategory,
+        });
       }
     }
 
@@ -4654,6 +4729,13 @@ const applyDcvToWipTx = async ({ trx, voucherId, branchId, voucherDate }) => {
         });
     }
   }
+
+  await writeProductionCommissionTx({
+    trx,
+    voucherId,
+    branchId,
+    outputs: commissionOutputs,
+  });
 };
 
 const applyDcvToGeneratedVouchersTx = async ({
@@ -5101,6 +5183,10 @@ const applyProductionToGeneratedVouchersTx = async ({
     itemTypes: ["FG", "SFG"],
   });
   const consumptionLines = [];
+  // Output that reached stock this run, collected for the commission write below.
+  // SFG never posts stock on this path (only DCV's final required stage does), so
+  // everything gathered here is FG.
+  const commissionOutputs = [];
   let consumptionLineNo = 1;
 
   for (const line of productionLines) {
@@ -5192,6 +5278,15 @@ const applyProductionToGeneratedVouchersTx = async ({
         voucherDate,
         writeLedger: true,
       });
+
+      commissionOutputs.push({
+        sku_id: skuId,
+        line_no: Number(line.line_no || 0) || null,
+        qty: totalPairs,
+        total_pairs: totalPairs,
+        amount: Number(line.amount || 0),
+        category: "FG",
+      });
     }
 
     const shortfallPlan = await buildProductionShortfallTx({
@@ -5240,6 +5335,13 @@ const applyProductionToGeneratedVouchersTx = async ({
     })
     .onConflict("production_voucher_id")
     .merge(["consumption_voucher_id"]);
+
+  await writeProductionCommissionTx({
+    trx,
+    voucherId,
+    branchId,
+    outputs: commissionOutputs,
+  });
 };
 
 const ensureProductionVoucherDerivedDataTx = async ({
@@ -5284,6 +5386,18 @@ const ensureProductionVoucherDerivedDataTx = async ({
     trx,
     voucherId: normalizedVoucherId,
   });
+  if (
+    normalizedVoucherTypeCode ===
+      PRODUCTION_VOUCHER_TYPES.departmentCompletion ||
+    normalizedVoucherTypeCode === PRODUCTION_VOUCHER_TYPES.finishedProduction ||
+    normalizedVoucherTypeCode ===
+      PRODUCTION_VOUCHER_TYPES.semiFinishedProduction
+  ) {
+    await rollbackProductionCommissionByVoucherTx({
+      trx,
+      voucherId: normalizedVoucherId,
+    });
+  }
   if (
     normalizedVoucherTypeCode === PRODUCTION_VOUCHER_TYPES.abnormalLoss ||
     normalizedVoucherTypeCode ===

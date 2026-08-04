@@ -1,0 +1,103 @@
+<%
+  // Preview for COMMISSION_RECALC approval requests: an old -> new diff of the
+  // commission amounts the maker reviewed, rendered server-side.
+  //
+  // NOTE: this partial must contain at least one [data-field] element. The
+  // approvals modal checks for them and, finding none, appends the entire raw
+  // payload as <pre> blocks underneath whatever was rendered.
+  const values = (typeof modalValues === "object" && modalValues) || {};
+  const rows = Array.isArray(values.rows) ? values.rows : [];
+  const totals = values.totals || {};
+  const counts = values.counts || {};
+  const clearOrphans = Boolean(values.clear_orphans);
+
+  const money = (value) =>
+    typeof formatNumberDisplay === "function"
+      ? formatNumberDisplay(value, { decimals: 2, fallback: "0.00" })
+      : Number(value || 0).toFixed(2);
+
+  const statusTint = {
+    new: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    changed: "border-amber-200 bg-amber-50 text-amber-700",
+    cleared: "border-rose-200 bg-rose-50 text-rose-700",
+    unchanged: "border-slate-200 bg-slate-50 text-slate-600",
+  };
+%>
+
+<div class="space-y-4">
+  <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+    <%= t("commission_recalc_today_rates_warning") %>
+  </div>
+
+  <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div class="rounded-lg border border-slate-200 p-3">
+      <div class="text-xs uppercase tracking-wide text-slate-500"><%= t("from_date") %></div>
+      <div class="mt-1 font-medium" data-field="from_date"><%= values.from_date || "-" %></div>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-3">
+      <div class="text-xs uppercase tracking-wide text-slate-500"><%= t("to_date") %></div>
+      <div class="mt-1 font-medium" data-field="to_date"><%= values.to_date || "-" %></div>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-3">
+      <div class="text-xs uppercase tracking-wide text-slate-500"><%= t("commission_type") %></div>
+      <div class="mt-1 font-medium" data-field="commission_type"><%= values.commission_type || "-" %></div>
+    </div>
+    <div class="rounded-lg border border-slate-200 p-3">
+      <div class="text-xs uppercase tracking-wide text-slate-500"><%= t("total_change") %></div>
+      <div class="mt-1 font-semibold <%= Number(totals.delta || 0) < 0 ? 'text-rose-700' : 'text-emerald-700' %>">
+        <%= Number(totals.delta || 0) > 0 ? "+" : "" %><%= money(totals.delta) %>
+      </div>
+    </div>
+  </div>
+
+  <% if (clearOrphans) { %>
+    <div class="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900" data-field="clear_orphans">
+      <%= t("commission_recalc_clear_orphans_warning") %>
+    </div>
+  <% } %>
+
+  <div class="text-sm text-slate-600">
+    <%= t("rows") %>: <strong><%= rows.length %></strong>
+    <% if (counts.cleared) { %>
+      &middot; <%= t("commission_recalc_unmatched") %>: <strong><%= counts.cleared %></strong>
+    <% } %>
+  </div>
+
+  <div class="overflow-x-auto">
+    <table class="min-w-full text-sm">
+      <thead>
+        <tr class="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+          <th class="px-2 py-2"><%= t("date") %></th>
+          <th class="px-2 py-2"><%= t("voucher_no") %></th>
+          <th class="px-2 py-2"><%= t("employee") %></th>
+          <th class="px-2 py-2"><%= t("commission_type") %></th>
+          <th class="px-2 py-2 text-right"><%= t("previous_rate") %></th>
+          <th class="px-2 py-2 text-right"><%= t("new_rate") %></th>
+          <th class="px-2 py-2 text-right"><%= t("change") %></th>
+        </tr>
+      </thead>
+      <tbody>
+        <% rows.forEach((row) => { %>
+          <tr class="border-b border-slate-100">
+            <td class="px-2 py-1.5 whitespace-nowrap"><%= row.voucher_date %></td>
+            <td class="px-2 py-1.5">#<%= row.voucher_no %></td>
+            <td class="px-2 py-1.5"><%= row.employee_name %></td>
+            <td class="px-2 py-1.5">
+              <span class="inline-flex rounded border px-1.5 py-0.5 text-xs <%= statusTint[row.status] || statusTint.unchanged %>">
+                <%= t(`commission_type_${String(row.commission_type || "").toLowerCase()}`) %>
+              </span>
+            </td>
+            <td class="px-2 py-1.5 text-right tabular-nums"><%= row.previous_rate === null ? "-" : money(row.previous_rate) %></td>
+            <td class="px-2 py-1.5 text-right font-medium tabular-nums"><%= money(row.new_rate) %></td>
+            <td class="px-2 py-1.5 text-right tabular-nums <%= row.delta < 0 ? 'text-rose-700' : 'text-emerald-700' %>">
+              <%= row.delta > 0 ? "+" : "" %><%= money(row.delta) %>
+            </td>
+          </tr>
+        <% }); %>
+        <% if (!rows.length) { %>
+          <tr><td colspan="7" class="px-2 py-4 text-center text-slate-500"><%= t("no_entries") %></td></tr>
+        <% } %>
+      </tbody>
+    </table>
+  </div>
+</div>

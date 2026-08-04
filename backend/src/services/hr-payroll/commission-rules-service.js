@@ -16,7 +16,23 @@ const PRECEDENCE = [
 const ALLOWED_SCOPE_FOR_BULK = new Set([APPLY_ON.SUBGROUP, APPLY_ON.GROUP]);
 const COMMISSION_BASIS_FIXED_PER_UNIT = "FIXED_PER_UNIT";
 const COMMISSION_RATE_TYPES = new Set(["PER_DOZEN", "PER_PAIR"]);
-const COMMISSION_TYPES = new Set(["SALESMAN_SALE", "BRANCH_SALE", "TRANSFER", "PARTY"]);
+const COMMISSION_TYPES = new Set([
+  "SALESMAN_SALE",
+  "BRANCH_SALE",
+  "TRANSFER",
+  "PARTY",
+  "PRODUCTION_FG",
+  "PRODUCTION_SFG",
+]);
+
+// Which item type the bulk rate grid should list. Everything is sold as finished
+// goods, so FG is the default; only semi-finished production commission is set
+// against SFG SKUs.
+const TARGET_ITEM_TYPE_BY_COMMISSION_TYPE = { PRODUCTION_SFG: "SFG" };
+const resolveTargetItemType = (commissionType) =>
+  TARGET_ITEM_TYPE_BY_COMMISSION_TYPE[
+    String(commissionType || "").trim().toUpperCase()
+  ] || "FG";
 
 const deriveValueTypeFromBasis = (commissionBasis) => {
   if (
@@ -276,6 +292,7 @@ const fetchTargetSkus = async ({
   applyOn,
   subgroupIds = [],
   groupIds = [],
+  commissionType = "SALESMAN_SALE",
 }) => {
   let query = db("erp.skus as s")
     .join("erp.variants as v", "s.variant_id", "v.id")
@@ -287,7 +304,7 @@ const fetchTargetSkus = async ({
       "i.subgroup_id",
       "i.group_id",
     )
-    .whereRaw("i.item_type = 'FG'")
+    .where("i.item_type", resolveTargetItemType(commissionType))
     .orderBy("s.sku_code", "asc");
 
   const normalizedSubgroupIds = [
@@ -315,10 +332,14 @@ const fetchTargetSkus = async ({
   return query;
 };
 
+// commission_type is part of the filter: without it an employee holding rules of
+// more than one type (say SALESMAN_SALE and PRODUCTION_FG on the same basis) would
+// see whichever row happened to match first offered as the "previous rate".
 const fetchExistingRules = async ({
   db = knex,
   employeeId,
   commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT,
+  commissionType = "SALESMAN_SALE",
 }) => {
   const employee = Number(employeeId || 0);
   if (!Number.isInteger(employee) || employee <= 0) return [];
@@ -345,6 +366,9 @@ const fetchExistingRules = async ({
     .where({
       employee_id: employee,
       commission_basis: basis,
+      commission_type: String(commissionType || "SALESMAN_SALE")
+        .trim()
+        .toUpperCase(),
       status: "active",
     });
 };
@@ -398,6 +422,7 @@ const buildBulkPreviewRows = async ({
   groupId = null,
   groupIds = null,
   commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT,
+  commissionType = "SALESMAN_SALE",
   baseRate,
 }) => {
   const normalizedSubgroupIds = Array.isArray(subgroupIds)
@@ -416,8 +441,9 @@ const buildBulkPreviewRows = async ({
       applyOn,
       subgroupIds: normalizedSubgroupIds,
       groupIds: normalizedGroupIds,
+      commissionType,
     }),
-    fetchExistingRules({ db, employeeId, commissionBasis }),
+    fetchExistingRules({ db, employeeId, commissionBasis, commissionType }),
   ]);
   if (!targetSkus.length) return [];
 

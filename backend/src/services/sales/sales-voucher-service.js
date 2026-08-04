@@ -28,6 +28,7 @@ const {
   prepareSalesVoucherData,
   computeLedgerEntriesForBranch,
   writeCommissionLedgerTx,
+  buildAutoSalesCommissionLineRow,
   SALES_VOUCHER_CODE,
 } = require("./commission-service");
 
@@ -2451,24 +2452,17 @@ const prepareSalesVoucherPostingLinesTx = async ({
     Number(validated?.salesmanEmployeeId || 0) > 0 &&
     Math.abs(Number(totalCommission || 0)) > 0.0001
   ) {
-    const normalizedCommission = Number(Number(totalCommission).toFixed(2));
-    const normalizedAmount = Number(Math.abs(normalizedCommission).toFixed(2));
-    postingLines.push({
-      line_no: postingLines.length + 1,
-      line_kind: "EMPLOYEE",
-      employee_id: Number(validated.salesmanEmployeeId),
-      qty: 0,
-      rate: normalizedAmount,
-      amount: normalizedAmount,
-      reference_no: null,
-      meta: {
-        auto_sales_commission: true,
-        sales_commission: true,
-        debit: normalizedCommission > 0 ? normalizedAmount : 0,
-        credit: normalizedCommission < 0 ? normalizedAmount : 0,
+    // Shared with the retroactive recompute in commission-service so the storage
+    // convention (absolute amount/rate, direction in meta.debit/meta.credit) has
+    // exactly one definition.
+    postingLines.push(
+      buildAutoSalesCommissionLineRow({
+        salesmanEmployeeId: Number(validated.salesmanEmployeeId),
+        totalCommission,
+        lineNo: postingLines.length + 1,
         description: SALES_COMMISSION_LINE_DESCRIPTION,
-      },
-    });
+      }),
+    );
   }
 
   return {

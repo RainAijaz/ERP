@@ -1178,8 +1178,10 @@
       return String(value.mode || "").trim().toUpperCase();
     };
 
+    // COMMISSION_RECALC has no before/after pair (old_value is null) and renders
+    // its own server-side diff, so it wants the same single-pane wide layout.
     const isHrBulkMode = (mode) =>
-      mode === "BULK_COMMISSION_SKU_UPSERT" || mode === "SKU_MULTI_UPSERT" || mode === "BULK_LABOUR_RATE_SKU_UPSERT" || mode === "BULK_LABOUR_RATE_COPY";
+      mode === "BULK_COMMISSION_SKU_UPSERT" || mode === "SKU_MULTI_UPSERT" || mode === "BULK_LABOUR_RATE_SKU_UPSERT" || mode === "BULK_LABOUR_RATE_COPY" || mode === "COMMISSION_RECALC";
 
     const open = async (payload) => {
       if (!modal) return;

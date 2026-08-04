@@ -9,17 +9,21 @@
   const selectedType     = String(filters?.commissionType || "");
 
   const COMMISSION_TYPES = [
-    { value: "SALESMAN_SALE", labelKey: "commission_type_salesman_sale" },
-    { value: "BRANCH_SALE",   labelKey: "commission_type_branch_sale"   },
-    { value: "TRANSFER",      labelKey: "commission_type_transfer"      },
-    { value: "PARTY",         labelKey: "commission_type_party"         },
+    { value: "SALESMAN_SALE",  labelKey: "commission_type_salesman_sale"  },
+    { value: "BRANCH_SALE",    labelKey: "commission_type_branch_sale"    },
+    { value: "TRANSFER",       labelKey: "commission_type_transfer"       },
+    { value: "PARTY",          labelKey: "commission_type_party"          },
+    { value: "PRODUCTION_FG",  labelKey: "commission_type_production_fg"  },
+    { value: "PRODUCTION_SFG", labelKey: "commission_type_production_sfg" },
   ];
 
   const typeColors = {
-    SALESMAN_SALE: "border-blue-200 bg-blue-50 text-blue-700",
-    BRANCH_SALE:   "border-violet-200 bg-violet-50 text-violet-700",
-    TRANSFER:      "border-amber-200 bg-amber-50 text-amber-700",
-    PARTY:         "border-emerald-200 bg-emerald-50 text-emerald-700",
+    SALESMAN_SALE:  "border-blue-200 bg-blue-50 text-blue-700",
+    BRANCH_SALE:    "border-violet-200 bg-violet-50 text-violet-700",
+    TRANSFER:       "border-amber-200 bg-amber-50 text-amber-700",
+    PARTY:          "border-emerald-200 bg-emerald-50 text-emerald-700",
+    PRODUCTION_FG:  "border-sky-200 bg-sky-50 text-sky-700",
+    PRODUCTION_SFG: "border-teal-200 bg-teal-50 text-teal-700",
   };
 
   const formatDate = (value) => formatDateDisplay(value, "-");

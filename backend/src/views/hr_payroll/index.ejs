@@ -16,6 +16,11 @@
             <%= t("print") %>
           </button>
         <% } %>
+        <% if (can("SCREEN", page.scopeKey, "edit") && page.scopeKey === "hr_payroll.commissions") { %>
+          <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-recalc-open>
+            <%= t("recalculate_commission") %>
+          </button>
+        <% } %>
         <% if (canCreate && page.scopeKey === "hr_payroll.labour_rates") { %>
           <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-lrc-open>
             <%= (typeof t === "function" && t("labour_rate_copy_button") && t("labour_rate_copy_button") !== "labour_rate_copy_button") ? t("labour_rate_copy_button") : "Copy rates from another labour" %>
@@ -2692,12 +2697,16 @@ const currentSeq = ++state.requestSeq;
       BRANCH_SALE:   "<%- (t('commission_type_branch_sale') || 'Branch Sale').replace(/"/g, '&quot;') %>",
       TRANSFER:      "<%- (t('commission_type_transfer') || 'Transfer').replace(/"/g, '&quot;') %>",
       PARTY:         "<%- (t('commission_type_party') || 'Party').replace(/"/g, '&quot;') %>",
+      PRODUCTION_FG:  "<%- (t('commission_type_production_fg') || 'Production (FG)').replace(/"/g, '&quot;') %>",
+      PRODUCTION_SFG: "<%- (t('commission_type_production_sfg') || 'Production (SFG)').replace(/"/g, '&quot;') %>",
     };
     const commTypeClass = {
-      SALESMAN_SALE: "border-blue-200 bg-blue-50 text-blue-700",
-      BRANCH_SALE:   "border-violet-200 bg-violet-50 text-violet-700",
-      TRANSFER:      "border-amber-200 bg-amber-50 text-amber-700",
-      PARTY:         "border-emerald-200 bg-emerald-50 text-emerald-700",
+      SALESMAN_SALE:  "border-blue-200 bg-blue-50 text-blue-700",
+      BRANCH_SALE:    "border-violet-200 bg-violet-50 text-violet-700",
+      TRANSFER:       "border-amber-200 bg-amber-50 text-amber-700",
+      PARTY:          "border-emerald-200 bg-emerald-50 text-emerald-700",
+      PRODUCTION_FG:  "border-sky-200 bg-sky-50 text-sky-700",
+      PRODUCTION_SFG: "border-teal-200 bg-teal-50 text-teal-700",
     };
 
     const esc = (s) =>
@@ -2966,6 +2975,395 @@ const currentSeq = ++state.requestSeq;
         } catch { deleteBtn.disabled = false; }
       }
     });
+  })();
+</script>
+<% } %>
+<% if (page.scopeKey === "hr_payroll.commissions" && can("SCREEN", page.scopeKey, "edit")) { %>
+<%
+  // Recalculate Commission — rewrites stored commission for a past date range.
+  //
+  // Commission is denormalized at voucher time and rules carry no effective
+  // dates, so a rate corrected today never reaches vouchers already posted.
+  // The date range is deliberately free-form: salary cycles here do not start
+  // on the 1st.
+  const recalcEmployeeField = (page.fields || []).find(function (field) { return field.name === "employee_id"; });
+  const recalcEmployees = (recalcEmployeeField && recalcEmployeeField.options) || [];
+  const recalcTypes = [
+    { value: "SALESMAN_SALE", labelKey: "commission_type_salesman_sale" },
+    { value: "BRANCH_SALE", labelKey: "commission_type_branch_sale" },
+    { value: "TRANSFER", labelKey: "commission_type_transfer" },
+    { value: "PRODUCTION_FG", labelKey: "commission_type_production_fg" },
+    { value: "PRODUCTION_SFG", labelKey: "commission_type_production_sfg" },
+  ];
+%>
+<div class="fixed inset-0 z-[95] hidden items-center justify-center bg-slate-900/40 p-4" data-recalc-modal>
+  <div class="flex max-h-[92vh] w-full max-w-5xl flex-col rounded-2xl border border-slate-200 bg-white shadow-xl" role="dialog" aria-modal="true" aria-labelledby="recalc-title">
+    <div class="relative border-b border-slate-200 px-6 py-4">
+      <button type="button" data-recalc-close class="absolute right-4 top-4 inline-flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-700" aria-label="<%= t('close') %>">&#10005;</button>
+      <div class="text-sm font-semibold text-slate-700" id="recalc-title"><%= t("recalculate_commission") %></div>
+      <p class="mt-1 text-xs text-slate-500"><%= t("recalculate_commission_description") %></p>
+    </div>
+
+    <div class="flex-1 space-y-4 overflow-y-auto px-6 py-5">
+      <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+        <%= t("commission_recalc_today_rates_warning") %>
+      </div>
+
+      <div class="grid gap-3 sm:grid-cols-4">
+        <label class="block text-xs font-semibold text-slate-600">
+          <span><%= t("employees") %></span>
+          <select data-recalc-employee class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+            <option value=""><%= t("all") %></option>
+            <% recalcEmployees.forEach(function (option) { %>
+              <option value="<%= option.value %>"><%= option.label %></option>
+            <% }); %>
+          </select>
+        </label>
+        <label class="block text-xs font-semibold text-slate-600">
+          <span><%= t("from_date") %></span>
+          <input type="date" data-recalc-from class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+        </label>
+        <label class="block text-xs font-semibold text-slate-600">
+          <span><%= t("to_date") %></span>
+          <input type="date" data-recalc-to class="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm">
+        </label>
+        <div class="flex items-end">
+          <button type="button" data-recalc-preview class="w-full cursor-pointer rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-slate-800">
+            <%= t("run_preview") %>
+          </button>
+        </div>
+      </div>
+
+      <fieldset class="rounded-lg border border-slate-200 p-3">
+        <legend class="px-1 text-xs font-semibold text-slate-600"><%= t("commission_type") %></legend>
+        <div class="flex flex-wrap gap-3">
+          <% recalcTypes.forEach(function (type) { %>
+            <label class="inline-flex items-center gap-2 text-xs text-slate-700">
+              <input type="checkbox" data-recalc-type value="<%= type.value %>" checked>
+              <span><%= t(type.labelKey) %></span>
+            </label>
+          <% }); %>
+        </div>
+      </fieldset>
+
+      <details class="rounded-lg border border-slate-200 p-3">
+        <summary class="cursor-pointer text-xs font-semibold text-slate-600"><%= t("commission_recalc_rules_applied") %></summary>
+        <div class="mt-2 space-y-1 text-xs text-slate-600" data-recalc-rules><%= t("commission_recalc_no_rules") %></div>
+      </details>
+
+      <div class="hidden" data-recalc-results>
+        <div class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+          <div data-recalc-summary></div>
+          <label class="inline-flex items-center gap-2">
+            <input type="checkbox" data-recalc-changed-only checked>
+            <span><%= t("changed_only") %></span>
+          </label>
+        </div>
+
+        <div class="mt-3 hidden rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900" data-recalc-orphan-band>
+          <div data-recalc-orphan-text></div>
+          <label class="mt-2 inline-flex items-center gap-2 font-semibold">
+            <input type="checkbox" data-recalc-clear-orphans>
+            <span><%= t("clear_unmatched_commission") %></span>
+          </label>
+        </div>
+
+        <div class="mt-3 max-h-[38vh] overflow-auto rounded-lg border border-slate-200">
+          <table class="min-w-full text-xs">
+            <thead class="sticky top-0 bg-white">
+              <tr class="border-b border-slate-200 text-left uppercase tracking-wide text-slate-500">
+                <th class="px-2 py-2"><%= t("date") %></th>
+                <th class="px-2 py-2"><%= t("voucher_no") %></th>
+                <th class="px-2 py-2"><%= t("employees") %></th>
+                <th class="px-2 py-2"><%= t("commission_type") %></th>
+                <th class="px-2 py-2 text-right"><%= t("previous_rate") %></th>
+                <th class="px-2 py-2 text-right"><%= t("new_rate") %></th>
+                <th class="px-2 py-2 text-right"><%= t("change") %></th>
+              </tr>
+            </thead>
+            <tbody data-recalc-rows></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="hidden rounded-lg border border-rose-200 bg-rose-50 p-3 text-xs text-rose-800" data-recalc-error></div>
+      <div class="hidden rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800" data-recalc-success></div>
+    </div>
+
+    <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-6 py-4">
+      <button type="button" data-recalc-close class="cursor-pointer rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:bg-slate-50">
+        <%= t("cancel") %>
+      </button>
+      <button type="button" data-recalc-apply disabled class="cursor-pointer rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40">
+        <%= t("apply_changes") %>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const modal = document.querySelector("[data-recalc-modal]");
+    if (!modal) return;
+
+    const BASE = "/hr-payroll/employees/commissions";
+    const T = <%- JSON.stringify({
+      unmatchedHint: t("commission_recalc_unmatched_hint"),
+      noRules: t("commission_recalc_no_rules"),
+      rows: t("rows"),
+      totalChange: t("total_change"),
+      scanned: t("commission_recalc_scanned"),
+      confirmClear: t("commission_recalc_clear_orphans_warning"),
+      apply: t("apply_changes"),
+      cancel: t("cancel"),
+      title: t("recalculate_commission"),
+      dateRequired: t("error_recalc_date_range_required"),
+      overLimit: t("error_recalc_over_limit"),
+      genericError: t("generic_error"),
+    }) %>;
+
+    const el = (sel) => modal.querySelector(sel);
+    const employeeSel = el("[data-recalc-employee]");
+    const fromInput = el("[data-recalc-from]");
+    const toInput = el("[data-recalc-to]");
+    const rulesBox = el("[data-recalc-rules]");
+    const resultsBox = el("[data-recalc-results]");
+    const summaryBox = el("[data-recalc-summary]");
+    const rowsBody = el("[data-recalc-rows]");
+    const orphanBand = el("[data-recalc-orphan-band]");
+    const orphanText = el("[data-recalc-orphan-text]");
+    const clearOrphansBox = el("[data-recalc-clear-orphans]");
+    const changedOnlyBox = el("[data-recalc-changed-only]");
+    const errorBox = el("[data-recalc-error]");
+    const successBox = el("[data-recalc-success]");
+    const applyBtn = el("[data-recalc-apply]");
+
+    let lastRows = [];
+    let lastFilters = null;
+
+    const typeValues = () =>
+      Array.from(modal.querySelectorAll("[data-recalc-type]"))
+        .filter((box) => box.checked)
+        .map((box) => box.value);
+
+    const money = (value) =>
+      Number(value || 0).toLocaleString(undefined, {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      });
+
+    const show = (node, on) => node.classList.toggle("hidden", !on);
+    const setError = (message) => {
+      errorBox.textContent = message || "";
+      show(errorBox, Boolean(message));
+    };
+    const setSuccess = (message) => {
+      successBox.textContent = message || "";
+      show(successBox, Boolean(message));
+    };
+
+    const statusTint = {
+      new: "text-emerald-700",
+      changed: "text-amber-700",
+      cleared: "text-rose-700",
+      unchanged: "text-slate-500",
+    };
+
+    const renderRows = () => {
+      const visible = changedOnlyBox.checked
+        ? lastRows.filter((row) => row.status !== "unchanged")
+        : lastRows;
+      rowsBody.innerHTML = "";
+      visible.forEach((row) => {
+        const delta = Number(row.new_rate || 0) - Number(row.previous_rate || 0);
+        const tr = document.createElement("tr");
+        tr.className = "border-b border-slate-100";
+        const cells = [
+          row.voucher_date,
+          "#" + row.voucher_no,
+          row.employee_name,
+          row.commission_type,
+          row.previous_rate === null ? "-" : money(row.previous_rate),
+          money(row.new_rate),
+          (delta > 0 ? "+" : "") + money(delta),
+        ];
+        cells.forEach((text, index) => {
+          const td = document.createElement("td");
+          let cls = "px-2 py-1.5";
+          if (index >= 4) cls += " text-right tabular-nums";
+          if (index === 3) cls += " " + (statusTint[row.status] || "");
+          if (index === 6) cls += " " + (delta < 0 ? "text-rose-700" : "text-emerald-700");
+          td.className = cls;
+          td.textContent = text;
+          tr.appendChild(td);
+        });
+        rowsBody.appendChild(tr);
+      });
+    };
+
+    const loadRules = async () => {
+      const params = new URLSearchParams();
+      if (employeeSel.value) params.set("employee_id", employeeSel.value);
+      params.set("commission_types", typeValues().join(","));
+      try {
+        const res = await fetch(BASE + "/recalc-rules?" + params.toString(), {
+          headers: { Accept: "application/json" },
+        });
+        const data = await res.json();
+        const rules = (data && data.rules) || [];
+        rulesBox.innerHTML = "";
+        if (!rules.length) {
+          rulesBox.textContent = T.noRules;
+          return;
+        }
+        rules.forEach((rule) => {
+          const line = document.createElement("div");
+          line.textContent =
+            rule.employee_name +
+            " — " + rule.commission_type +
+            " / " + rule.commission_basis +
+            " / " + rule.apply_on +
+            " — " + money(rule.value) +
+            " (" + rule.rate_type + ")";
+          rulesBox.appendChild(line);
+        });
+      } catch (err) {
+        rulesBox.textContent = T.noRules;
+      }
+    };
+
+    const runPreview = async () => {
+      setError("");
+      setSuccess("");
+      applyBtn.disabled = true;
+      const types = typeValues();
+      if (!fromInput.value || !toInput.value || !types.length) {
+        setError(T.dateRequired);
+        return;
+      }
+      const params = new URLSearchParams();
+      params.set("from_date", fromInput.value);
+      params.set("to_date", toInput.value);
+      params.set("commission_types", types.join(","));
+      if (employeeSel.value) params.set("employee_id", employeeSel.value);
+      if (clearOrphansBox.checked) params.set("clear_orphans", "1");
+
+      try {
+        const res = await fetch(BASE + "/recalc-preview?" + params.toString(), {
+          headers: { Accept: "application/json" },
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setError((data && data.message) || T.genericError);
+          return;
+        }
+        lastRows = data.rows || [];
+        lastFilters = data.filters || null;
+        const counts = data.counts || {};
+        const totals = data.totals || {};
+
+        summaryBox.textContent =
+          T.scanned + ": " + (counts.scanned_vouchers || 0) +
+          " · " + T.rows + ": " + (counts.writes || 0) + "/" + (counts.rows || 0) +
+          " · " + T.totalChange + ": " +
+          (Number(totals.delta || 0) > 0 ? "+" : "") + money(totals.delta);
+
+        show(orphanBand, Boolean(counts.cleared));
+        if (counts.cleared) {
+          orphanText.textContent = T.unmatchedHint + " (" + counts.cleared + ")";
+        }
+
+        show(resultsBox, true);
+        renderRows();
+        applyBtn.disabled = !(counts.writes > 0) || Boolean(data.over_limit);
+        if (data.over_limit) setError(T.overLimit);
+      } catch (err) {
+        setError(String((err && err.message) || err));
+      }
+    };
+
+    const apply = async () => {
+      if (!lastFilters) return;
+      if (clearOrphansBox.checked) {
+        // Zeroing unmatched commission removes pay that may already have been
+        // issued, so it always needs an explicit acknowledgement.
+        const confirmed =
+          typeof window.showUiConfirmModal === "function"
+            ? await window.showUiConfirmModal({
+                title: T.title,
+                message: T.confirmClear,
+                confirmLabel: T.apply,
+                cancelLabel: T.cancel,
+              })
+            : window.confirm(T.confirmClear);
+        if (!confirmed) return;
+      }
+      setError("");
+      applyBtn.disabled = true;
+      try {
+        const res = await fetch(BASE + "/recalc", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            // The csrf middleware reads x-csrf-token (or _csrf in the body);
+            // "CSRF-Token" is not a name it looks at.
+            "x-csrf-token": "<%= csrfToken %>",
+          },
+          body: JSON.stringify({
+            _csrf: "<%= csrfToken %>",
+            from_date: lastFilters.from_date,
+            to_date: lastFilters.to_date,
+            commission_types: lastFilters.commission_types,
+            employee_id: lastFilters.employee_id || "",
+            clear_orphans: clearOrphansBox.checked ? "1" : "",
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok && res.status !== 202) {
+          setError((data && data.message) || T.genericError);
+          applyBtn.disabled = false;
+          return;
+        }
+        setSuccess((data && data.message) || "");
+        show(resultsBox, false);
+      } catch (err) {
+        setError(String((err && err.message) || err));
+        applyBtn.disabled = false;
+      }
+    };
+
+    const openModal = () => {
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+      setError("");
+      setSuccess("");
+      show(resultsBox, false);
+      applyBtn.disabled = true;
+      loadRules();
+    };
+    const closeModal = () => {
+      modal.classList.add("hidden");
+      modal.classList.remove("flex");
+    };
+
+    document.querySelectorAll("[data-recalc-open]").forEach((btn) =>
+      btn.addEventListener("click", openModal),
+    );
+    modal.querySelectorAll("[data-recalc-close]").forEach((btn) =>
+      btn.addEventListener("click", closeModal),
+    );
+    modal.addEventListener("click", (event) => {
+      if (event.target === modal) closeModal();
+    });
+    el("[data-recalc-preview]").addEventListener("click", runPreview);
+    applyBtn.addEventListener("click", apply);
+    changedOnlyBox.addEventListener("change", renderRows);
+    clearOrphansBox.addEventListener("change", runPreview);
+    employeeSel.addEventListener("change", loadRules);
+    modal.querySelectorAll("[data-recalc-type]").forEach((box) =>
+      box.addEventListener("change", loadRules),
+    );
   })();
 </script>
 <% } %>

@@ -2562,8 +2562,22 @@ const syncStockTransferOutVoucherTx = async ({ trx, voucherId }) => {
   if (!ext?.dest_branch_id)
     throw new HttpError(400, "Transfer destination branch is required");
 
+  // line_no/uom_id/amount are unused by the stock movement below, but the transfer
+  // commission step at the end of this function hands these rows to commission-service,
+  // which needs them to resolve pairs and to label the stored breakdown.
   const lines = await trx("erp.voucher_line")
-    .select("id", "line_kind", "item_id", "sku_id", "qty", "rate", "meta")
+    .select(
+      "id",
+      "line_no",
+      "line_kind",
+      "item_id",
+      "sku_id",
+      "uom_id",
+      "qty",
+      "rate",
+      "amount",
+      "meta",
+    )
     .where({ voucher_header_id: voucherId })
     .orderBy("line_no", "asc");
   const needsRm = lines.some(

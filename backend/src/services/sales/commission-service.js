@@ -357,15 +357,50 @@ const enrichSalesVoucherLines = async ({ trx, lines, salesmanEmployeeId, t }) =>
 const normalizeTransferLinesForCommission = (lines) =>
   lines.map((line) => {
     const meta = line.meta && typeof line.meta === "object" ? line.meta : {};
+    // Transfer lines store qty in the ENTERED unit (e.g. 2 dozen) and the pair count
+    // separately in meta.transfer_qty_pairs (24). Surface it as total_pairs so the
+    // commission math reads pairs directly instead of depending on line.uom_id — a
+    // caller that forgets to select uom_id would otherwise silently treat "2 dozen"
+    // as "2 pairs" (and a PER_DOZEN rule would then divide that by 12 again).
+    const transferQtyPairs = toNumber(meta.transfer_qty_pairs, 0);
     return {
       ...line,
       meta: {
         ...meta,
+        ...(transferQtyPairs > 0 ? { total_pairs: transferQtyPairs } : {}),
         row_status: "PACKED",
         is_packed: true,
         sale_qty: toNumber(line.qty, 0),
         return_qty: 0,
         total_amount: toNumber(line.amount || (toNumber(line.qty, 0) * toNumber(line.rate, 0)), 0),
+        gross_margin_amount: 0,
+      },
+    };
+  });
+
+// Normalizes production output so it looks like packed sales lines for commission
+// calculation. Callers pass the pair count that was actually posted into stock and
+// the value posted with it, so there is no UOM ambiguity here — production works in
+// pairs end to end. is_packed is forced because the flag is meaningless for
+// manufactured output but the shared calculator skips lines without it.
+const normalizeProductionLinesForCommission = (lines) =>
+  lines.map((line) => {
+    const meta = line.meta && typeof line.meta === "object" ? line.meta : {};
+    const totalPairs = toNumber(
+      meta.total_pairs ?? line.total_pairs ?? line.qty,
+      0,
+    );
+    return {
+      ...line,
+      line_kind: "SKU",
+      meta: {
+        ...meta,
+        total_pairs: totalPairs,
+        row_status: "PACKED",
+        is_packed: true,
+        sale_qty: totalPairs,
+        return_qty: 0,
+        total_amount: toNumber(line.amount, 0),
         gross_margin_amount: 0,
       },
     };
@@ -441,6 +476,228 @@ const buildSalesLineRows = (lines = []) =>
       payload: resolveSalesLinePayload(line),
     }));
 
+// ---------------------------------------------------------------------------
+// SALESMAN_SALE storage
+//
+// Unlike the other commission types, salesman commission is not kept in
+// erp.commission_ledger. It lives on the sale itself: each SKU line's
+// meta.commission breakdown, plus one auto-generated EMPLOYEE voucher_line that
+// is what the employee ledger and balances reports actually read.
+//
+// The EMPLOYEE row's storage convention (absolute amount/rate, direction carried
+// in meta.debit/meta.credit) is single-sourced here so the save path and the
+// retroactive recompute cannot drift apart.
+// ---------------------------------------------------------------------------
+
+const SALES_COMMISSION_LINE_DESCRIPTION = "Auto sales commission accrual";
+
+const buildAutoSalesCommissionLineRow = ({
+  salesmanEmployeeId,
+  totalCommission,
+  lineNo,
+  description = SALES_COMMISSION_LINE_DESCRIPTION,
+}) => {
+  const normalizedCommission = roundMoney(toNumber(totalCommission, 0));
+  const normalizedAmount = roundMoney(Math.abs(normalizedCommission));
+  return {
+    line_no: Number(lineNo),
+    line_kind: "EMPLOYEE",
+    employee_id: Number(salesmanEmployeeId),
+    qty: 0,
+    rate: normalizedAmount,
+    amount: normalizedAmount,
+    reference_no: null,
+    meta: {
+      auto_sales_commission: true,
+      sales_commission: true,
+      debit: normalizedCommission > 0 ? normalizedAmount : 0,
+      credit: normalizedCommission < 0 ? normalizedAmount : 0,
+      description,
+    },
+  };
+};
+
+const isAutoSalesCommissionLine = (line) => {
+  if (String(line?.line_kind || "").toUpperCase() !== "EMPLOYEE") return false;
+  const meta = line?.meta && typeof line.meta === "object" ? line.meta : {};
+  return meta.auto_sales_commission === true || meta.auto_sales_commission === "true";
+};
+
+// Recomputes a single approved sales voucher's salesman commission against
+// TODAY'S active rules, and returns a write descriptor rather than writing.
+// Read-only on purpose: the approvals queue puts time between plan and apply.
+//
+// Self-loading — everything enrichSalesVoucherLines needs is already persisted in
+// voucher_line.meta, and the salesman is on erp.sales_header. That is what makes a
+// retroactive recompute possible without the original request payload.
+const planSalesmanCommissionRecomputeTx = async ({ db, voucherId, t }) => {
+  const normalizedVoucherId = Number(voucherId);
+  if (!Number.isInteger(normalizedVoucherId) || normalizedVoucherId <= 0) return null;
+
+  const header = await db("erp.voucher_header")
+    .select("id", "voucher_type_code", "status")
+    .where({ id: normalizedVoucherId })
+    .first();
+  if (!header) return null;
+  if (String(header.voucher_type_code || "").toUpperCase() !== SALES_VOUCHER_CODE) return null;
+  if (String(header.status || "").toUpperCase() !== "APPROVED") return null;
+
+  const salesHeader = await db("erp.sales_header")
+    .select("salesman_employee_id")
+    .where({ voucher_id: normalizedVoucherId })
+    .first();
+  const salesmanEmployeeId = Number(salesHeader?.salesman_employee_id || 0);
+  if (!(salesmanEmployeeId > 0)) return null;
+
+  const allLines = await db("erp.voucher_line")
+    .select("id", "line_no", "line_kind", "sku_id", "employee_id", "uom_id", "qty", "rate", "amount", "meta")
+    .where({ voucher_header_id: normalizedVoucherId })
+    .orderBy("line_no", "asc");
+
+  const skuLines = allLines.filter(
+    (line) => String(line.line_kind || "").toUpperCase() === "SKU" && Number(line.sku_id) > 0,
+  );
+  if (!skuLines.length) return null;
+
+  const employeeLine = allLines.find(isAutoSalesCommissionLine) || null;
+
+  const { lines: enrichedLines, totalCommission } = await enrichSalesVoucherLines({
+    trx: db,
+    lines: skuLines,
+    salesmanEmployeeId,
+    t,
+  });
+
+  // enrichSalesVoucherLines only ADDS meta.commission. A line whose rule has since
+  // been deleted would keep its stale breakdown while the header total drops, so
+  // the drill-down would silently disagree with the employee ledger. Null means
+  // "delete the key".
+  const skuLineUpdates = [];
+  enrichedLines.forEach((enriched, index) => {
+    const original = skuLines[index];
+    const originalMeta =
+      original?.meta && typeof original.meta === "object" ? original.meta : {};
+    const nextCommission = enriched?.meta?.commission || null;
+    const hadCommission = originalMeta.commission != null;
+    if (!nextCommission && !hadCommission) return;
+    skuLineUpdates.push({
+      voucher_line_id: Number(original.id),
+      meta_commission: nextCommission,
+    });
+  });
+
+  const previousAmount = employeeLine
+    ? (() => {
+        const meta = employeeLine.meta && typeof employeeLine.meta === "object" ? employeeLine.meta : {};
+        const debit = toNumber(meta.debit, 0);
+        const credit = toNumber(meta.credit, 0);
+        // Mirrors RESOLVED_DEBIT_SQL in hr-payroll-report-service: when neither
+        // direction is set the reports fall back to the raw amount column.
+        if (debit === 0 && credit === 0) return toNumber(employeeLine.amount, 0);
+        return roundMoney(debit - credit);
+      })()
+    : null;
+
+  return {
+    voucher_id: normalizedVoucherId,
+    employee_id: salesmanEmployeeId,
+    previous_amount: previousAmount,
+    new_amount: roundMoney(toNumber(totalCommission, 0)),
+    write: {
+      voucher_id: normalizedVoucherId,
+      salesman_employee_id: salesmanEmployeeId,
+      total_commission: roundMoney(toNumber(totalCommission, 0)),
+      sku_line_updates: skuLineUpdates,
+      employee_line_id: employeeLine ? Number(employeeLine.id) : null,
+    },
+  };
+};
+
+// Executes a descriptor from planSalesmanCommissionRecomputeTx.
+//
+// Deliberately never touches qty/rate/amount/sku_id/line_no on a SKU line: sales
+// GL posting sums SKU line amounts only, so leaving them alone is what keeps a
+// commission rewrite GL-neutral.
+const applySalesmanCommissionWriteTx = async ({ trx, write, provenance = null }) => {
+  if (!write) return { skuLinesUpdated: 0, employeeLineAction: "none" };
+
+  let skuLinesUpdated = 0;
+  for (const update of write.sku_line_updates || []) {
+    // Re-read inside the transaction and merge: SKU meta carries uom_factor_to_base,
+    // discounts, sales_order_line_id and movement_kind that must survive.
+    const row = await trx("erp.voucher_line")
+      .select("meta")
+      .where({ id: update.voucher_line_id })
+      .first();
+    if (!row) continue;
+    const currentMeta = row.meta && typeof row.meta === "object" ? row.meta : {};
+    const nextMeta = { ...currentMeta };
+    if (update.meta_commission) {
+      nextMeta.commission = update.meta_commission;
+    } else {
+      delete nextMeta.commission;
+    }
+    await trx("erp.voucher_line").where({ id: update.voucher_line_id }).update({ meta: nextMeta });
+    skuLinesUpdated += 1;
+  }
+
+  const totalCommission = roundMoney(toNumber(write.total_commission, 0));
+  const built = buildAutoSalesCommissionLineRow({
+    salesmanEmployeeId: write.salesman_employee_id,
+    totalCommission,
+    lineNo: 0,
+  });
+  const metaPatch = {
+    ...built.meta,
+    ...(provenance ? { commission_recalc: provenance } : {}),
+  };
+
+  if (write.employee_line_id) {
+    const row = await trx("erp.voucher_line")
+      .select("meta")
+      .where({ id: write.employee_line_id })
+      .first();
+    const currentMeta = row?.meta && typeof row.meta === "object" ? row.meta : {};
+    // amount/rate move together with the meta directions. Zeroing only the meta
+    // would make the reports fall back to the stale amount column and re-credit it.
+    await trx("erp.voucher_line")
+      .where({ id: write.employee_line_id })
+      .update({
+        amount: built.amount,
+        rate: built.rate,
+        meta: { ...currentMeta, ...metaPatch },
+      });
+    return { skuLinesUpdated, employeeLineAction: "updated" };
+  }
+
+  // Nothing to insert for a zero result — an absent line and a zero line read the same.
+  if (Math.abs(totalCommission) < 0.005) {
+    return { skuLinesUpdated, employeeLineAction: "none" };
+  }
+
+  // Vouchers created through the generic voucher-engine route get SKU commission
+  // but never an EMPLOYEE line. Lock the header first so max(line_no)+1 cannot
+  // race a concurrent edit into a UNIQUE(voucher_header_id, line_no) violation.
+  await trx("erp.voucher_header").where({ id: write.voucher_id }).forUpdate().first();
+  const maxRow = await trx("erp.voucher_line")
+    .where({ voucher_header_id: write.voucher_id })
+    .max("line_no as max_line_no")
+    .first();
+  const nextLineNo = Number(maxRow?.max_line_no || 0) + 1;
+
+  await trx("erp.voucher_line").insert({
+    voucher_header_id: write.voucher_id,
+    line_no: nextLineNo,
+    line_kind: "EMPLOYEE",
+    employee_id: Number(write.salesman_employee_id),
+    qty: 0,
+    rate: built.rate,
+    amount: built.amount,
+    meta: metaPatch,
+  });
+  return { skuLinesUpdated, employeeLineAction: "inserted" };
+};
+
 const prepareSalesVoucherData = async ({ trx, voucherTypeCode, body, lines, t }) => {
   if (String(voucherTypeCode || "").toUpperCase() !== SALES_VOUCHER_CODE) {
     return {
@@ -472,6 +729,12 @@ module.exports = {
   prepareSalesVoucherData,
   computeLedgerEntriesForBranch,
   normalizeTransferLinesForCommission,
+  normalizeProductionLinesForCommission,
   writeCommissionLedgerTx,
+  buildAutoSalesCommissionLineRow,
+  isAutoSalesCommissionLine,
+  planSalesmanCommissionRecomputeTx,
+  applySalesmanCommissionWriteTx,
   SALES_VOUCHER_CODE,
+  SALES_COMMISSION_LINE_DESCRIPTION,
 };
