@@ -674,6 +674,9 @@
   .max-h-60 {
     max-height: calc(var(--spacing) * 60);
   }
+  .max-h-64 {
+    max-height: calc(var(--spacing) * 64);
+  }
   .max-h-72 {
     max-height: calc(var(--spacing) * 72);
   }
@@ -682,6 +685,9 @@
   }
   .max-h-\[26rem\] {
     max-height: 26rem;
+  }
+  .max-h-\[38vh\] {
+    max-height: 38vh;
   }
   .max-h-\[42vh\] {
     max-height: 42vh;
@@ -736,6 +742,9 @@
   }
   .w-2\.5 {
     width: calc(var(--spacing) * 2.5);
+  }
+  .w-2\/5 {
+    width: calc(2/5 * 100%);
   }
   .w-3 {
     width: calc(var(--spacing) * 3);
@@ -1607,6 +1616,9 @@
   }
   .border-teal-100 {
     border-color: var(--color-teal-100);
+  }
+  .border-teal-200 {
+    border-color: var(--color-teal-200);
   }
   .border-transparent {
     border-color: transparent;
@@ -2802,6 +2814,9 @@
       --tw-ring-color: color-mix(in oklab, var(--color-slate-500) 10%, transparent);
     }
   }
+  .ring-violet-200 {
+    --tw-ring-color: var(--color-violet-200);
+  }
   .outline {
     outline-style: var(--tw-outline-style);
     outline-width: 1px;
@@ -2888,6 +2903,9 @@
   }
   .\[approvals\:edit\] {
     approvals: edit;
+  }
+  .\[approvals\:preview\] {
+    approvals: preview;
   }
   .\[basic-info\:create\] {
     basic-info: create;
@@ -3474,6 +3492,13 @@
       }
     }
   }
+  .hover\:bg-rose-700 {
+    &:hover {
+      @media (hover: hover) {
+        background-color: var(--color-rose-700);
+      }
+    }
+  }
   .hover\:bg-slate-50 {
     &:hover {
       @media (hover: hover) {
@@ -3831,6 +3856,16 @@
   .disabled\:cursor-not-allowed {
     &:disabled {
       cursor: not-allowed;
+    }
+  }
+  .disabled\:bg-slate-100 {
+    &:disabled {
+      background-color: var(--color-slate-100);
+    }
+  }
+  .disabled\:text-slate-400 {
+    &:disabled {
+      color: var(--color-slate-400);
     }
   }
   .disabled\:opacity-40 {
@@ -5140,6 +5175,94 @@ html.dark input[type="radio"], html.dark input[type="checkbox"] {
   }
   [data-searchable-menu] input {
     font-size: 16px;
+  }
+}
+@media screen and (max-width: 1023px) {
+  [data-mobile-report-wrap] {
+    overflow-x: visible !important;
+    background: none !important;
+  }
+  [data-mobile-report-card] {
+    display: block;
+    min-width: 0 !important;
+    width: 100%;
+    border-collapse: separate;
+  }
+  [data-mobile-report-card] thead {
+    display: none;
+  }
+  [data-mobile-report-card] tbody, [data-mobile-report-card] tfoot {
+    display: block;
+  }
+  [data-mobile-report-card] tbody tr, [data-mobile-report-card] tfoot tr {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(7.5rem, 1fr));
+    gap: 0.5rem 0.75rem;
+    padding: 0.75rem;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  [data-mobile-report-card] tbody td, [data-mobile-report-card] tfoot td {
+    display: block;
+    border: 0 !important;
+    padding: 0 !important;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    text-align: start !important;
+  }
+  [data-mobile-report-card] td[data-mobile-role="field"]::before, [data-mobile-report-card] td[data-mobile-role="lead"]::before {
+    content: attr(data-mobile-label);
+    display: block;
+    margin-bottom: 0.125rem;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: inherit;
+    opacity: 0.6;
+  }
+  [data-mobile-report-card] td[data-mobile-role="lead"] {
+    grid-column: 1 / -1;
+    font-weight: 700;
+    font-size: 0.9375rem;
+  }
+  [data-mobile-report-card] td[data-mobile-span="full"] {
+    grid-column: 1 / -1;
+  }
+  [data-mobile-report-card] tr[data-mobile-row="band"] {
+    display: block;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 0;
+  }
+  [data-mobile-report-card] td[data-mobile-role="band"] {
+    display: block;
+  }
+  [data-mobile-report-card] td[data-mobile-role="title"] {
+    grid-column: 1 / -1;
+    font-weight: 800;
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    opacity: 0.85;
+  }
+  [data-mobile-report-card] tr[data-mobile-row="total"] {
+    font-weight: 700;
+  }
+  [data-mobile-report-card] td[data-mobile-role="empty"] {
+    display: none !important;
+  }
+  html.dark [data-mobile-report-card] tbody tr, html.dark [data-mobile-report-card] tfoot tr {
+    border-bottom-color: #1e3148;
+  }
+  [data-report-controls] > div, [data-table-controls] {
+    flex-wrap: wrap;
+  }
+  [data-table-controls] [data-search-input] {
+    width: 100%;
+    min-width: 6rem;
+  }
+  [data-table-controls] > label {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 }
 @property --tw-translate-x {

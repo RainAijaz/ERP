@@ -231,7 +231,7 @@ const reportPurposeTooltip = (() => {
       <div class="px-5 py-10 text-center text-xl font-display text-slate-500"><%= t("no_entries") %></div>
     <% } else { %>
       <div class="overflow-x-auto">
-        <table class="min-w-[1240px] w-full text-sm" data-contact-table>
+        <table class="min-w-[1240px] w-full text-sm" data-contact-table data-mobile-report>
           <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
             <tr>
               <th class="px-4 py-3 text-left">SR.NO</th>
@@ -292,7 +292,7 @@ const reportPurposeTooltip = (() => {
                       <% if (canViewPhone) { %><div class="text-xs font-medium text-slate-500"><%= row.phone_number || "-" %></div><% } %>
                     </div>
                     <div class="overflow-x-auto rounded-xl border border-slate-200">
-                      <table class="min-w-[960px] w-full text-xs">
+                      <table class="min-w-[960px] w-full text-xs" data-mobile-report>
                         <thead class="bg-slate-50 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
                           <tr>
                             <th class="px-3 py-2 text-left"><%= t("invoice") %></th>
