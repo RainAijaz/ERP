@@ -290,8 +290,8 @@
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100" data-table-body>
-              <% detailGroups.forEach((group) => { %>
-                <tr class="bg-slate-700 text-white" data-row data-active="true">
+              <% detailGroups.forEach((group, groupIndex) => { %>
+                <tr class="bg-slate-700 text-white" data-row data-active="true" data-report-group-header data-report-group-key="wip<%= groupIndex %>">
                   <td colspan="<%= detailColumnCount %>" class="px-3 py-1.5">
                     <div class="flex flex-wrap items-center gap-2">
                       <% if (selectedOrderBy === "sku") { %>
@@ -305,7 +305,7 @@
                   </td>
                 </tr>
                 <% (group.rows || []).forEach((row) => { %>
-                  <tr class="odd:bg-slate-50 even:bg-white hover:bg-slate-100" data-row data-active="true">
+                  <tr class="odd:bg-slate-50 even:bg-white hover:bg-slate-100" data-row data-active="true" data-report-group-line data-report-group-key="wip<%= groupIndex %>">
                     <td class="px-3 py-2"><%= row.department_name || "-" %></td>
                     <td class="px-3 py-2"><%= row.article_name || "-" %></td>
                     <td class="px-3 py-2"><%= row.sku_code || "-" %></td>
@@ -319,7 +319,7 @@
                     <% } %>
                   </tr>
                 <% }) %>
-                <tr class="bg-accent text-white" data-row data-active="true">
+                <tr class="bg-accent text-white" data-row data-active="true" data-report-group-total data-report-group-key="wip<%= groupIndex %>">
                   <td colspan="<%= detailTotalsLabelSpan %>" class="px-3 py-2">
                     <div class="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-[11px] font-extrabold uppercase tracking-[0.08em]">
                       <span><%= t("total") %></span>

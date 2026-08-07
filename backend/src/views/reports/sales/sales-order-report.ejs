@@ -351,7 +351,7 @@
           </thead>
           <tbody class="divide-y divide-slate-100" data-table-body>
             <% groups.forEach((group) => { %>
-              <tr class="bg-slate-700 text-white" data-row data-active="true">
+              <tr class="bg-slate-700 text-white" data-row data-active="true" data-report-group-header data-report-group-key="<%= group.key %>">
                 <td colspan="<%= detailColumnCount %>" class="px-3 py-2">
                   <div class="flex flex-wrap items-center gap-2">
                     <button type="button" class="inline-flex h-7 w-7 items-center justify-center rounded-md border border-white/30 bg-white/10 text-white" data-group-toggle="<%= group.key %>" aria-expanded="true">
@@ -367,7 +367,7 @@
                 </td>
               </tr>
               <% (group.lines || []).forEach((row) => { %>
-                <tr class="bg-white odd:bg-slate-50/30" data-group-line="<%= group.key %>" data-row data-active="true">
+                <tr class="bg-white odd:bg-slate-50/30" data-group-line="<%= group.key %>" data-row data-active="true" data-report-group-line data-report-group-key="<%= group.key %>">
                   <% if (selectedOrderBy === "party") { %>
                     <td class="px-3 py-2"><%= row.sales_order_no || '-' %></td>
                     <td class="px-3 py-2"><%= formatDate(row.sales_order_date) %></td>
@@ -394,7 +394,7 @@
                   <td class="px-3 py-2"><a class="text-accent hover:underline" href="<%= row.action_link %>"><%= t('view') %></a></td>
                 </tr>
               <% }) %>
-              <tr class="bg-accent text-white" data-group-line="<%= group.key %>">
+              <tr class="bg-accent text-white" data-group-line="<%= group.key %>" data-report-group-total data-report-group-key="<%= group.key %>">
                 <td colspan="<%= detailTotalsLabelSpan %>" class="px-3 py-2 text-right text-xs font-extrabold uppercase tracking-[0.08em]"><%= t('total') %></td>
                 <td class="px-3 py-2 text-right font-extrabold"><%= formatNumber(group.total_ordered_qty || 0, 3) %></td>
                 <td class="px-3 py-2 text-right font-extrabold"><%= formatNumber(group.total_delivered_qty || 0, 3) %></td>

@@ -408,8 +408,8 @@
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100" data-table-body>
-              <% groups.forEach((group) => { %>
-                <tr class="bg-slate-700 text-white" data-row data-active="true">
+              <% groups.forEach((group, groupIndex) => { %>
+                <tr class="bg-slate-700 text-white" data-row data-active="true" data-report-group-header data-report-group-key="pc<%= groupIndex %>">
                   <td colspan="<%= detailColumnCount %>" class="px-3 py-1.5">
                     <div class="flex flex-wrap items-center gap-2">
                       <% if (selectedOrderBy === "voucher") { %>
@@ -436,7 +436,7 @@
                   </td>
                 </tr>
                 <% (group.rows || []).forEach((row) => { %>
-                  <tr class="bg-white odd:bg-slate-50 even:bg-white hover:bg-slate-100" data-row data-active="true">
+                  <tr class="bg-white odd:bg-slate-50 even:bg-white hover:bg-slate-100" data-row data-active="true" data-report-group-line data-report-group-key="pc<%= groupIndex %>">
                     <td class="px-3 py-2"><%= formatDate(row.date) %></td>
                     <% if (showVoucherColumn) { %>
                       <td class="px-3 py-2"><%= row.voucher_no || "-" %></td>
@@ -468,7 +468,7 @@
                     <% } %>
                   </tr>
                 <% }) %>
-                <tr class="bg-accent text-white">
+                <tr class="bg-accent text-white" data-report-group-total data-report-group-key="pc<%= groupIndex %>">
                   <td colspan="<%= detailTotalsLabelSpan %>" class="px-3 py-2">
                     <div class="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-[11px] font-extrabold uppercase tracking-[0.08em]">
                       <span><%= t("total") %></span>

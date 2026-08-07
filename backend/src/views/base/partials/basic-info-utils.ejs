@@ -2881,6 +2881,11 @@
 
     applyFilters();
 
+    // Lets report-table-sort.js re-page after it reorders rows: this layer
+    // paginates off `data-orig-index`, so a sort that only moved DOM nodes
+    // would otherwise leave page 1 showing the pre-sort rows.
+    window.erpApplyTableFilters = () => applyFilters();
+
     const autoOpen = modal && modal.dataset.autoOpen === "true";
     // Re-open modal after server-side validation errors.
     const autoMode =
