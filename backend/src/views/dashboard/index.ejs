@@ -92,6 +92,19 @@
     { show: canApprovals,         href: "#alerts-panel",                          label: t("critical_alerts"),     value: fmt(kpis.criticalAlerts),  tone: "rose",    icon: "bolt" },
   ].filter((c) => c.show);
 
+  // ---- Order pipeline cards ----------------------------------------------
+  // Commitments, NOT revenue. Rendered as their own band below the KPI grid so
+  // a booked order can never be misread as a booked sale. A branch that writes
+  // many orders but has not dispatched them yet shows low Sales but high Orders
+  // Booked — which is the whole point of this section.
+  const pipelineCards = [
+    { show: canSales, href: "/reports/sales/sales-order-report", label: t("orders_booked_today"),       value: fmt(kpis.ordersBookedToday),    tone: "teal",    icon: "doc",    daily: true, labelAlt: t("orders_booked_yesterday"),     valueAlt: fmt(kpis.ordersBookedYesterday) },
+    { show: canSales, href: "/reports/sales/sales-order-report", label: t("orders_booked_month"),       value: fmt(kpis.ordersBookedMonth),    tone: "indigo",  icon: "trend" },
+    { show: canSales, href: "/reports/sales/sales-order-report", label: t("open_order_value"),          value: fmt(kpis.openOrderValue),       tone: "violet",  icon: "doc" },
+    { show: canSales, href: "/reports/sales/sales-order-report", label: t("advances_received_today"),   value: fmt(kpis.advancesToday),        tone: "emerald", icon: "wallet", daily: true, labelAlt: t("advances_received_yesterday"), valueAlt: fmt(kpis.advancesYesterday) },
+    { show: canSales, href: "/reports/sales/sales-order-report", label: t("advances_held_open_orders"), value: fmt(kpis.advancesOnOpenOrders), tone: "slate",   icon: "wallet" },
+  ].filter((c) => c.show);
+
   // ---- Alert definitions -------------------------------------------------
   const alertItems = [
     { show: canCustomerBalances, href: "/reports/sales/customer-balances",     label: t("overdue_customer_invoices"),        count: alerts.overdueReceivables,       tone: "rose",  icon: "warn" },
@@ -185,8 +198,8 @@
     </div>
 
     <!-- ===== SECTION 1: Executive KPI cards (admin only) ===== -->
-    <% if (isAdminUser && kpiCards.length) { %>
-      <% const hasDailyKpi = kpiCards.some((c) => c.daily); %>
+    <% if (isAdminUser && (kpiCards.length || pipelineCards.length)) { %>
+      <% const hasDailyKpi = kpiCards.some((c) => c.daily) || pipelineCards.some((c) => c.daily); %>
       <div class="mt-6" data-kpi-scope>
         <% if (hasDailyKpi) { %>
           <div class="mb-3 flex justify-end">
@@ -196,31 +209,20 @@
             </div>
           </div>
         <% } %>
-        <!-- 2-up on phones: 14 full-width cards would otherwise be a very long scroll. -->
-        <div class="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
-          <% kpiCards.forEach((card) => { const tn = TONES[card.tone];
-               const todayLabel = card.label;
-               const yestLabel  = card.daily ? (card.labelAlt || card.label) : card.label;
-               const todayVal   = card.value === null ? NOT_TRACKED : card.value;
-               const yestVal    = card.daily ? ((card.valueAlt === null || card.valueAlt === undefined) ? NOT_TRACKED : card.valueAlt) : todayVal;
-          %>
-            <a href="<%= card.href %>" class="group rounded-2xl border <%= tn.wrap %> p-3 transition sm:p-5"<% if (card.daily) { %> data-kpi-daily<% } %>>
-              <div class="flex items-start justify-between gap-2 sm:gap-3">
-                <div class="min-w-0 space-y-1 sm:space-y-2">
-                  <div class="text-[10px] font-semibold uppercase tracking-[0.14em] <%= tn.label %> sm:text-[11px] sm:tracking-[0.24em]"<% if (card.daily) { %> data-kpi-label data-today="<%= todayLabel %>" data-yest="<%= yestLabel %>"<% } %>><%= todayLabel %></div>
-                  <% if (card.value === null && !card.daily) { %>
-                    <div class="text-base font-semibold text-slate-400 sm:text-lg"><%= NOT_TRACKED %></div>
-                  <% } else { %>
-                    <div class="text-xl font-semibold <%= tn.value %> sm:text-3xl"><span<% if (card.daily) { %> data-kpi-value data-today="<%= todayVal %>" data-yest="<%= yestVal %>"<% } %>><%= todayVal %></span><% if (card.suffix) { %><span class="ml-1 text-xs font-medium <%= tn.label %> sm:text-base"><%= card.suffix %></span><% } %></div>
-                  <% } %>
-                </div>
-                <span class="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl <%= tn.chip %> transition group-hover:scale-105 sm:inline-flex">
-                  <%- svg(card.icon, "h-5 w-5") %>
-                </span>
-              </div>
-            </a>
-          <% }) %>
-        </div>
+        <%- include("../base/partials/kpi-card-grid", { cards: kpiCards, TONES, NOT_TRACKED, svg }) %>
+
+        <%# Order Pipeline — commitments, NOT revenue. Sits inside the same
+            [data-kpi-scope] so its daily cards join the Today/Yesterday toggle. %>
+        <% if (pipelineCards.length) { %>
+          <div class="mt-8">
+            <div class="mb-3 flex items-center gap-3">
+              <h3 class="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500"><%= t("order_pipeline") %></h3>
+              <span class="h-px flex-1 bg-slate-200"></span>
+            </div>
+            <%- include("../base/partials/kpi-card-grid", { cards: pipelineCards, TONES, NOT_TRACKED, svg }) %>
+            <p class="mt-3 text-xs text-slate-400"><%= t("order_pipeline_note") %></p>
+          </div>
+        <% } %>
       </div>
     <% } %>
 
@@ -334,25 +336,41 @@
       </div>
       <div class="overflow-x-auto">
         <table class="min-w-full text-sm">
+          <%# Two-tier header: Sales and Orders Booked each span their three date
+              columns, so a delivered-revenue figure can never be misread as an
+              order figure. `grp` marks the first cell of each column group. %>
+          <% const grp = "border-l border-slate-200"; %>
           <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
             <tr>
-              <th class="px-4 py-3 text-left"><%= t("branch") %></th>
-              <th class="px-4 py-3 text-right"><%= t("todays_sales") %></th>
-              <th class="px-4 py-3 text-right"><%= t("yesterdays_sales") %></th>
-              <th class="px-4 py-3 text-right"><%= t("monthly_revenue") %></th>
-              <th class="px-4 py-3 text-right"><%= t("dozens_sold_month") %></th>
-              <th class="px-4 py-3 text-right"><%= t("accounts_receivable") %></th>
-              <th class="px-4 py-3 text-right"><%= t("accounts_payable") %></th>
+              <th rowspan="2" class="px-4 py-3 text-left align-bottom"><%= t("branch") %></th>
+              <th colspan="3" class="px-4 py-2 text-center <%= grp %>"><%= t("sales_group") %></th>
+              <th colspan="3" class="px-4 py-2 text-center text-teal-700 <%= grp %>"><%= t("orders_booked") %></th>
+              <th rowspan="2" class="px-4 py-3 text-right align-bottom text-violet-700 <%= grp %>"><%= t("pending_order_value") %></th>
+              <th rowspan="2" class="px-4 py-3 text-right align-bottom <%= grp %>"><%= t("dozens_sold_month") %></th>
+              <th rowspan="2" class="px-4 py-3 text-right align-bottom"><%= t("accounts_receivable") %></th>
+              <th rowspan="2" class="px-4 py-3 text-right align-bottom"><%= t("accounts_payable") %></th>
+            </tr>
+            <tr>
+              <th class="px-4 pb-3 text-right font-medium normal-case tracking-normal <%= grp %>"><%= t("today") %></th>
+              <th class="px-4 pb-3 text-right font-medium normal-case tracking-normal"><%= t("yesterday") %></th>
+              <th class="px-4 pb-3 text-right font-medium normal-case tracking-normal"><%= t("month_to_date") %></th>
+              <th class="px-4 pb-3 text-right font-medium normal-case tracking-normal <%= grp %>"><%= t("today") %></th>
+              <th class="px-4 pb-3 text-right font-medium normal-case tracking-normal"><%= t("yesterday") %></th>
+              <th class="px-4 pb-3 text-right font-medium normal-case tracking-normal"><%= t("month_to_date") %></th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100">
             <% branchRows.forEach((r) => { %>
               <tr class="hover:bg-slate-50/70">
                 <td class="px-4 py-3 font-medium text-slate-800"><%= branchLabel(r) %></td>
-                <td class="px-4 py-3 text-right tabular-nums text-slate-700"><%= money0(r.todaySales) %></td>
+                <td class="px-4 py-3 text-right tabular-nums text-slate-700 <%= grp %>"><%= money0(r.todaySales) %></td>
                 <td class="px-4 py-3 text-right tabular-nums text-slate-700"><%= money0(r.yesterdaySales) %></td>
                 <td class="px-4 py-3 text-right tabular-nums text-slate-700"><%= money0(r.monthRevenue) %></td>
-                <td class="px-4 py-3 text-right tabular-nums text-slate-700"><%= formatNumberDisplay(r.dozensMonth, { decimals: 1, fallback: "0" }) %></td>
+                <td class="px-4 py-3 text-right tabular-nums text-teal-700 <%= grp %>"><%= money0(r.ordersBookedToday) %></td>
+                <td class="px-4 py-3 text-right tabular-nums text-teal-700"><%= money0(r.ordersBookedYesterday) %></td>
+                <td class="px-4 py-3 text-right tabular-nums text-teal-700"><%= money0(r.ordersBookedMonth) %></td>
+                <td class="px-4 py-3 text-right tabular-nums text-violet-700 <%= grp %>"><%= money0(r.pendingOrderValue) %></td>
+                <td class="px-4 py-3 text-right tabular-nums text-slate-700 <%= grp %>"><%= formatNumberDisplay(r.dozensMonth, { decimals: 1, fallback: "0" }) %></td>
                 <td class="px-4 py-3 text-right tabular-nums text-cyan-700"><%= money0(r.receivable) %></td>
                 <td class="px-4 py-3 text-right tabular-nums text-amber-700"><%= money0(r.payable) %></td>
               </tr>
@@ -362,10 +380,14 @@
             <tfoot class="border-t-2 border-slate-200 bg-slate-50 text-sm font-semibold text-slate-900">
               <tr>
                 <td class="px-4 py-3 uppercase tracking-wide"><%= t("total") %></td>
-                <td class="px-4 py-3 text-right tabular-nums"><%= money0(branchTotals.todaySales) %></td>
+                <td class="px-4 py-3 text-right tabular-nums <%= grp %>"><%= money0(branchTotals.todaySales) %></td>
                 <td class="px-4 py-3 text-right tabular-nums"><%= money0(branchTotals.yesterdaySales) %></td>
                 <td class="px-4 py-3 text-right tabular-nums"><%= money0(branchTotals.monthRevenue) %></td>
-                <td class="px-4 py-3 text-right tabular-nums"><%= formatNumberDisplay(branchTotals.dozensMonth, { decimals: 1, fallback: "0" }) %></td>
+                <td class="px-4 py-3 text-right tabular-nums text-teal-700 <%= grp %>"><%= money0(branchTotals.ordersBookedToday) %></td>
+                <td class="px-4 py-3 text-right tabular-nums text-teal-700"><%= money0(branchTotals.ordersBookedYesterday) %></td>
+                <td class="px-4 py-3 text-right tabular-nums text-teal-700"><%= money0(branchTotals.ordersBookedMonth) %></td>
+                <td class="px-4 py-3 text-right tabular-nums text-violet-700 <%= grp %>"><%= money0(branchTotals.pendingOrderValue) %></td>
+                <td class="px-4 py-3 text-right tabular-nums <%= grp %>"><%= formatNumberDisplay(branchTotals.dozensMonth, { decimals: 1, fallback: "0" }) %></td>
                 <td class="px-4 py-3 text-right tabular-nums text-cyan-700"><%= money0(branchTotals.receivable) %></td>
                 <td class="px-4 py-3 text-right tabular-nums text-amber-700"><%= money0(branchTotals.payable) %></td>
               </tr>

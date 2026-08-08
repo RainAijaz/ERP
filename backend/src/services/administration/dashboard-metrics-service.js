@@ -26,6 +26,51 @@ const toNumber = (value) => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+// erp.account_groups.code of the LIABILITY group credited when a Sales Order
+// carries an advance (see buildSalesOrderAdvanceEntriesTx in gl-posting-service).
+const ADVANCES_FROM_CUSTOMERS_GROUP_CODE = "advances_from_customers";
+
+// An approved Sales Order stays "pending" until every ordered line is fully
+// delivered. This mirrors the open-pairs definition the Sales Order screen
+// uses (loadOpenSalesOrderLines in sales-voucher-service.js): delivery is
+// tracked per line via the sales voucher's meta.sales_order_line_id, and a
+// REJECTED sales voucher never counts as delivered.
+//
+// A plain "does any linked invoice exist" check is NOT equivalent — it hides
+// partially delivered orders (invoiced in installments) the moment the first
+// invoice is raised, and treats a rejected-only invoice as fulfilment.
+//
+// Module-scoped on purpose: both loadDashboardMetrics and loadBranchBreakdown
+// build on it, and a second copy would silently drift out of sync.
+// Correlates against the alias `sol` — any query using it must alias its
+// sales-order voucher_line as `sol`.
+const DELIVERED_PAIRS_FOR_ORDER_LINE_SQL = `
+    COALESCE((
+      SELECT SUM(svl.qty)
+        FROM erp.voucher_header AS svh
+        JOIN erp.voucher_line AS svl ON svl.voucher_header_id = svh.id
+       WHERE svh.voucher_type_code = 'SALES_VOUCHER'
+         AND svh.status <> 'REJECTED'
+         AND svl.line_kind = 'SKU'
+         AND COALESCE(svl.meta->>'movement_kind', '') = 'SALE'
+         AND COALESCE(svl.meta->>'sales_order_line_id', '') ~ '^[0-9]+$'
+         AND CAST(svl.meta->>'sales_order_line_id' AS bigint) = sol.id
+    ), 0)`;
+
+// Still-undelivered pairs on a sales-order line. GREATEST(...,0) stops an
+// over-delivered line from subtracting from its siblings.
+const OPEN_PAIRS_FOR_ORDER_LINE_SQL = `GREATEST(sol.qty - LEAST(sol.qty, ${DELIVERED_PAIRS_FOR_ORDER_LINE_SQL}), 0)`;
+
+// Money value of the undelivered part of a sales-order line.
+//
+// Prorates voucher_line.amount rather than multiplying qty x rate: order lines
+// carry a per-pair discount (meta.pair_discount), so amount = qty*rate - discount
+// and a qty*rate calculation would overstate what the customer will actually be
+// invoiced. Proration also keeps this directly comparable to Orders Booked,
+// which sums the same amount column. A fully-open line yields exactly its
+// amount; a fully-delivered line yields 0. qty = 0 lines owe nothing.
+const OPEN_LINE_VALUE_SQL = `COALESCE(COALESCE(sol.amount,0) * ${OPEN_PAIRS_FOR_ORDER_LINE_SQL} / NULLIF(sol.qty,0), 0)`;
+
 // Entity types that represent master-data (basic info + master_data.* screens)
 // change approvals, so they can be surfaced as a named "Master Data" bucket
 // instead of being lumped into a generic "Other" catch-all.
@@ -163,6 +208,47 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
       .select(knex.raw("COALESCE(SUM(vl.amount),0) as value"))
       .first();
 
+  // Value of Sales Orders BOOKED in a date range, dated by the order's own
+  // voucher_date. Deliberately counts every approved order placed that day
+  // regardless of whether it was later delivered: this is a "was this branch
+  // working?" signal, and excluding same-day-delivered orders would erase the
+  // very activity it exists to show. Booked value is a commitment, NOT revenue
+  // -- it is never mixed into the REVENUE-sourced sales KPIs.
+  //
+  // Mirrors purchaseBetween: sums voucher_line.amount. Note sales_order_header
+  // .extra_discount lives on the header, so this is gross of extra discount
+  // (the same approximation purchaseBetween makes for PI).
+  const ordersBookedBetween = (fromKey, toKey) =>
+    knex("erp.voucher_line as vl")
+      .join("erp.voucher_header as vh", "vh.id", "vl.voucher_header_id")
+      .where("vh.voucher_type_code", "SALES_ORDER")
+      .andWhere("vh.status", "APPROVED")
+      .andWhere("vl.line_kind", "SKU")
+      .whereBetween("vh.voucher_date", [fromKey, toKey])
+      .modify((qb) => applyBranchScope(req, qb, "vh.branch_id"))
+      .select(knex.raw("COALESCE(SUM(vl.amount),0) as value"))
+      .first();
+
+  // Advances received from customers over a date range. Clone of revenueBetween
+  // pointed at the advances_from_customers LIABILITY group instead of REVENUE;
+  // a credit is the natural direction for a liability so the sign is unchanged.
+  //
+  // IMPORTANT: only a PERIOD figure is meaningful here. The sales voucher never
+  // debits this account back when the order is delivered, so its running balance
+  // grows forever -- see advancesOnOpenOrders() for the "still holding" figure.
+  const advancesReceivedBetween = (fromKey, toKey) =>
+    knex("erp.gl_entry as ge")
+      .join("erp.accounts as a", "a.id", "ge.account_id")
+      .join("erp.account_groups as ag", "ag.id", "a.subgroup_id")
+      .modify(approvedVoucherScope)
+      .where("ag.code", ADVANCES_FROM_CUSTOMERS_GROUP_CODE)
+      .whereBetween("ge.entry_date", [fromKey, toKey])
+      .modify((qb) => applyBranchScope(req, qb, "ge.branch_id"))
+      .select(
+        knex.raw("COALESCE(SUM(COALESCE(ge.cr,0) - COALESCE(ge.dr,0)),0) as value"),
+      )
+      .first();
+
   // Net dozens sold (packed & loose) over a date range. Pairs live in
   // voucher_line.meta.total_pairs; movement_kind defaults to SALE. Dozens = pairs/12.
   const dozensSoldBetween = (fromKey, toKey) =>
@@ -228,28 +314,6 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
 
   // --- Count KPI builders --------------------------------------------------
 
-  // An approved Sales Order stays "pending" until every ordered line is fully
-  // delivered. This mirrors the open-pairs definition the Sales Order screen
-  // uses (loadOpenSalesOrderLines in sales-voucher-service.js): delivery is
-  // tracked per line via the sales voucher's meta.sales_order_line_id, and a
-  // REJECTED sales voucher never counts as delivered.
-  //
-  // A plain "does any linked invoice exist" check is NOT equivalent — it hides
-  // partially delivered orders (invoiced in installments) the moment the first
-  // invoice is raised, and treats a rejected-only invoice as fulfilment.
-  const deliveredPairsForOrderLine = `
-    COALESCE((
-      SELECT SUM(svl.qty)
-        FROM erp.voucher_header AS svh
-        JOIN erp.voucher_line AS svl ON svl.voucher_header_id = svh.id
-       WHERE svh.voucher_type_code = 'SALES_VOUCHER'
-         AND svh.status <> 'REJECTED'
-         AND svl.line_kind = 'SKU'
-         AND COALESCE(svl.meta->>'movement_kind', '') = 'SALE'
-         AND COALESCE(svl.meta->>'sales_order_line_id', '') ~ '^[0-9]+$'
-         AND CAST(svl.meta->>'sales_order_line_id' AS bigint) = sol.id
-    ), 0)`;
-
   const ordersPending = () => {
     const openOrders = knex("erp.sales_order_header as soh")
       .join("erp.voucher_header as vh", "vh.id", "soh.voucher_id")
@@ -259,10 +323,73 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
       .modify((qb) => applyBranchScope(req, qb, "vh.branch_id"))
       .groupBy("vh.id")
       .havingRaw(
-        `SUM(sol.qty - LEAST(sol.qty, ${deliveredPairsForOrderLine})) > 0`,
+        `SUM(sol.qty - LEAST(sol.qty, ${DELIVERED_PAIRS_FOR_ORDER_LINE_SQL})) > 0`,
       )
       .select("vh.id");
     return knex.from(openOrders.as("open_orders")).count("* as count").first();
+  };
+
+  // Undelivered value of the same open orders ordersPending() counts.
+  //
+  // Kept as a sibling query rather than folded into ordersPending so the
+  // existing count cannot regress. It re-runs the correlated delivered-pairs
+  // subquery; if the dashboard ever gets slow, merge the two into one query
+  // returning both count and value.
+  const openOrderValue = () => {
+    const openOrders = knex("erp.sales_order_header as soh")
+      .join("erp.voucher_header as vh", "vh.id", "soh.voucher_id")
+      .join("erp.voucher_line as sol", "sol.voucher_header_id", "vh.id")
+      .where("vh.status", "APPROVED")
+      .where("sol.line_kind", "SKU")
+      .modify((qb) => applyBranchScope(req, qb, "vh.branch_id"))
+      .groupBy("vh.id")
+      .havingRaw(
+        `SUM(sol.qty - LEAST(sol.qty, ${DELIVERED_PAIRS_FOR_ORDER_LINE_SQL})) > 0`,
+      )
+      .select("vh.id")
+      .select(
+        knex.raw(
+          `COALESCE(SUM(${OPEN_LINE_VALUE_SQL}),0) as open_value`,
+        ),
+      );
+    return knex
+      .from(openOrders.as("open_orders"))
+      .select(
+        knex.raw("COALESCE(SUM(open_orders.open_value),0) as value"),
+      )
+      .first();
+  };
+
+  // Advance money still held against orders that are not yet fully delivered.
+  // Sourced from sales_order_header.payment_received_amount (NOT the GL), because
+  // the advances_from_customers account is never debited back on delivery and so
+  // its balance is a meaningless ever-growing total. Summed per ORDER -- the
+  // advance lives on the header, so summing across lines would multiply it.
+  const advancesOnOpenOrders = () => {
+    const openOrders = knex("erp.sales_order_header as soh")
+      .join("erp.voucher_header as vh", "vh.id", "soh.voucher_id")
+      .join("erp.voucher_line as sol", "sol.voucher_header_id", "vh.id")
+      .where("vh.status", "APPROVED")
+      .where("sol.line_kind", "SKU")
+      .modify((qb) => applyBranchScope(req, qb, "vh.branch_id"))
+      .groupBy("vh.id")
+      .havingRaw(
+        `SUM(sol.qty - LEAST(sol.qty, ${DELIVERED_PAIRS_FOR_ORDER_LINE_SQL})) > 0`,
+      )
+      .select("vh.id");
+    return knex
+      .from(openOrders.as("open_orders"))
+      .join(
+        "erp.sales_order_header as soh2",
+        "soh2.voucher_id",
+        "open_orders.id",
+      )
+      .select(
+        knex.raw(
+          "COALESCE(SUM(COALESCE(soh2.payment_received_amount,0)),0) as value",
+        ),
+      )
+      .first();
   };
 
   const dispatchesOn = (dateKey) => () =>
@@ -431,6 +558,13 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
     monthlyPurchase,
     overdueReturnablesCount,
     failedWhatsappNotificationsCount,
+    ordersBookedToday,
+    ordersBookedYesterday,
+    ordersBookedMonth,
+    openOrderValueTotal,
+    advancesToday,
+    advancesYesterday,
+    advancesOnOpenOrdersTotal,
   ] = await Promise.all([
     canSales ? safeValue("todaysSales", () => revenueBetween(todayKey, todayKey)) : Promise.resolve(null),
     canSales ? safeValue("monthlyRevenue", () => revenueBetween(startOfMonthKey, todayKey)) : Promise.resolve(null),
@@ -455,6 +589,14 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
     canPurchase ? safeValue("monthlyPurchase", () => purchaseBetween(startOfMonthKey, todayKey)) : Promise.resolve(null),
     canReturnables ? safeCount("overdueReturnables", overdueReturnables) : Promise.resolve(null),
     safeCount("failedWhatsappNotifications", failedWhatsappNotifications),
+    // Order pipeline: commitments, deliberately kept out of the revenue KPIs.
+    canSales ? safeValue("ordersBookedToday", () => ordersBookedBetween(todayKey, todayKey)) : Promise.resolve(null),
+    canSales ? safeValue("ordersBookedYesterday", () => ordersBookedBetween(yesterdayKey, yesterdayKey)) : Promise.resolve(null),
+    canSales ? safeValue("ordersBookedMonth", () => ordersBookedBetween(startOfMonthKey, todayKey)) : Promise.resolve(null),
+    canSales ? safeValue("openOrderValue", openOrderValue) : Promise.resolve(null),
+    canSales ? safeValue("advancesToday", () => advancesReceivedBetween(todayKey, todayKey)) : Promise.resolve(null),
+    canSales ? safeValue("advancesYesterday", () => advancesReceivedBetween(yesterdayKey, yesterdayKey)) : Promise.resolve(null),
+    canSales ? safeValue("advancesOnOpenOrders", advancesOnOpenOrders) : Promise.resolve(null),
   ]);
 
   const rawMaterialsBelowMinCount = rawMatBelowMinRows.length;
@@ -530,6 +672,15 @@ const loadDashboardMetrics = async ({ knex, req, can }) => {
       todaysSalesYesterday,
       dispatchesYesterday: dispatchesYesterdayCount,
       dozensYesterday: dozensYesterday === null ? null : Math.round(dozensYesterday * 10) / 10,
+      // Order pipeline — commitments, NOT revenue. Rendered in their own
+      // section so they can never be read as part of Sales/Monthly Revenue.
+      ordersBookedToday,
+      ordersBookedYesterday,
+      ordersBookedMonth,
+      openOrderValue: openOrderValueTotal,
+      advancesToday,
+      advancesYesterday,
+      advancesOnOpenOrders: advancesOnOpenOrdersTotal,
     },
     alerts: {
       overdueReceivables: overdueReceivablesCount,
@@ -569,7 +720,15 @@ const loadBranchBreakdown = async ({ knex }) => {
   };
 
   try {
-    const [branches, revenueRows, dozenRows, arRows, apRows] = await Promise.all([
+    const [
+      branches,
+      revenueRows,
+      dozenRows,
+      ordersBookedRows,
+      pendingOrderValueRows,
+      arRows,
+      apRows,
+    ] = await Promise.all([
       knex("erp.branches").select("id", "name", "name_ur").orderBy("name", "asc"),
       // Revenue: today + month-to-date, per branch.
       knex("erp.gl_entry as ge")
@@ -614,6 +773,63 @@ const loadBranchBreakdown = async ({ knex }) => {
             "COALESCE(SUM(COALESCE((vl.meta->>'total_pairs')::numeric, vl.qty)),0) / 12.0 as dozens",
           ),
         ),
+      // Sales Orders BOOKED per branch: today / yesterday / month-to-date.
+      // Same shape as the revenue scan above, but dated by the order's own
+      // voucher_date and counting every approved order regardless of whether it
+      // was later delivered — this is the "was this branch working?" signal that
+      // stops a branch with heavy order intake but slow dispatch reading as idle.
+      knex("erp.voucher_line as vl")
+        .join("erp.voucher_header as vh", "vh.id", "vl.voucher_header_id")
+        .where("vh.voucher_type_code", "SALES_ORDER")
+        .andWhere("vh.status", "APPROVED")
+        .andWhere("vl.line_kind", "SKU")
+        .andWhere("vh.voucher_date", ">=", revenueFromKey)
+        .andWhere("vh.voucher_date", "<=", todayKey)
+        .groupBy("vh.branch_id")
+        .select("vh.branch_id")
+        .select(
+          knex.raw(
+            "COALESCE(SUM(CASE WHEN vh.voucher_date = ? THEN vl.amount ELSE 0 END),0) as today",
+            [todayKey],
+          ),
+        )
+        .select(
+          knex.raw(
+            "COALESCE(SUM(CASE WHEN vh.voucher_date = ? THEN vl.amount ELSE 0 END),0) as yesterday",
+            [yesterdayKey],
+          ),
+        )
+        .select(
+          knex.raw(
+            "COALESCE(SUM(CASE WHEN vh.voucher_date >= ? THEN vl.amount ELSE 0 END),0) as month",
+            [startOfMonthKey],
+          ),
+        ),
+      // Pending (undelivered) order value per branch. Mirrors the openOrderValue
+      // KPI; branch_id is carried out of the per-order grouping so the outer
+      // query can total it per branch.
+      knex
+        .from(
+          knex("erp.sales_order_header as soh")
+            .join("erp.voucher_header as vh", "vh.id", "soh.voucher_id")
+            .join("erp.voucher_line as sol", "sol.voucher_header_id", "vh.id")
+            .where("vh.status", "APPROVED")
+            .andWhere("sol.line_kind", "SKU")
+            .groupBy("vh.id", "vh.branch_id")
+            .havingRaw(
+              `SUM(sol.qty - LEAST(sol.qty, ${DELIVERED_PAIRS_FOR_ORDER_LINE_SQL})) > 0`,
+            )
+            .select("vh.branch_id")
+            .select(
+              knex.raw(
+                `COALESCE(SUM(${OPEN_LINE_VALUE_SQL}),0) as open_value`,
+              ),
+            )
+            .as("oo"),
+        )
+        .groupBy("oo.branch_id")
+        .select("oo.branch_id")
+        .select(knex.raw("COALESCE(SUM(oo.open_value),0) as open_value")),
       // Receivable per branch: net each customer within the branch, keep only
       // those owing us (positive), so it aligns with the positive AR KPI.
       knex
@@ -657,6 +873,10 @@ const loadBranchBreakdown = async ({ knex }) => {
         yesterdaySales: 0,
         monthRevenue: 0,
         dozensMonth: 0,
+        ordersBookedToday: 0,
+        ordersBookedYesterday: 0,
+        ordersBookedMonth: 0,
+        pendingOrderValue: 0,
         receivable: 0,
         payable: 0,
       });
@@ -664,7 +884,7 @@ const loadBranchBreakdown = async ({ knex }) => {
     const ensure = (id) => {
       const key = Number(id);
       if (!byBranch.has(key)) {
-        byBranch.set(key, { branch_id: key, name: `#${key}`, name_ur: `#${key}`, todaySales: 0, yesterdaySales: 0, monthRevenue: 0, dozensMonth: 0, receivable: 0, payable: 0 });
+        byBranch.set(key, { branch_id: key, name: `#${key}`, name_ur: `#${key}`, todaySales: 0, yesterdaySales: 0, monthRevenue: 0, dozensMonth: 0, ordersBookedToday: 0, ordersBookedYesterday: 0, ordersBookedMonth: 0, pendingOrderValue: 0, receivable: 0, payable: 0 });
       }
       return byBranch.get(key);
     };
@@ -675,6 +895,13 @@ const loadBranchBreakdown = async ({ knex }) => {
       row.monthRevenue = toNumber(r.month);
     }
     for (const r of dozenRows) ensure(r.branch_id).dozensMonth = Math.round(toNumber(r.dozens) * 10) / 10;
+    for (const r of ordersBookedRows) {
+      const row = ensure(r.branch_id);
+      row.ordersBookedToday = toNumber(r.today);
+      row.ordersBookedYesterday = toNumber(r.yesterday);
+      row.ordersBookedMonth = toNumber(r.month);
+    }
+    for (const r of pendingOrderValueRows) ensure(r.branch_id).pendingOrderValue = toNumber(r.open_value);
     for (const r of arRows) ensure(r.branch_id).receivable = toNumber(r.bal);
     for (const r of apRows) ensure(r.branch_id).payable = toNumber(r.bal);
 
@@ -685,11 +912,15 @@ const loadBranchBreakdown = async ({ knex }) => {
         acc.yesterdaySales += r.yesterdaySales;
         acc.monthRevenue += r.monthRevenue;
         acc.dozensMonth += r.dozensMonth;
+        acc.ordersBookedToday += r.ordersBookedToday;
+        acc.ordersBookedYesterday += r.ordersBookedYesterday;
+        acc.ordersBookedMonth += r.ordersBookedMonth;
+        acc.pendingOrderValue += r.pendingOrderValue;
         acc.receivable += r.receivable;
         acc.payable += r.payable;
         return acc;
       },
-      { todaySales: 0, yesterdaySales: 0, monthRevenue: 0, dozensMonth: 0, receivable: 0, payable: 0 },
+      { todaySales: 0, yesterdaySales: 0, monthRevenue: 0, dozensMonth: 0, ordersBookedToday: 0, ordersBookedYesterday: 0, ordersBookedMonth: 0, pendingOrderValue: 0, receivable: 0, payable: 0 },
     );
     totals.dozensMonth = Math.round(totals.dozensMonth * 10) / 10;
     return { rows, totals };

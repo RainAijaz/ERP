@@ -1,0 +1,41 @@
+<%
+// Shared KPI tile grid — used by both the executive KPI band and the Order
+// Pipeline band on the admin dashboard.
+//
+// Required locals (EJS includes do NOT inherit the parent's `const`s, so the
+// caller must pass these explicitly):
+//   cards       - array of { href, label, value, tone, icon, suffix?,
+//                            daily?, labelAlt?, valueAlt? }
+//   TONES       - tone preset map
+//   NOT_TRACKED - localized "Not tracked" string
+//   svg         - (name, cls) => inline SVG string
+//
+// A `daily` card carries data-today/data-yest attributes that the Today/
+// Yesterday toggle script swaps. That script scopes itself to [data-kpi-scope],
+// so this grid must render inside that element to participate in the toggle.
+%>
+<!-- 2-up on phones: full-width cards would otherwise be a very long scroll. -->
+<div class="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+  <% cards.forEach((card) => { const tn = TONES[card.tone];
+       const todayLabel = card.label;
+       const yestLabel  = card.daily ? (card.labelAlt || card.label) : card.label;
+       const todayVal   = card.value === null ? NOT_TRACKED : card.value;
+       const yestVal    = card.daily ? ((card.valueAlt === null || card.valueAlt === undefined) ? NOT_TRACKED : card.valueAlt) : todayVal;
+  %>
+    <a href="<%= card.href %>" class="group rounded-2xl border <%= tn.wrap %> p-3 transition sm:p-5"<% if (card.daily) { %> data-kpi-daily<% } %>>
+      <div class="flex items-start justify-between gap-2 sm:gap-3">
+        <div class="min-w-0 space-y-1 sm:space-y-2">
+          <div class="text-[10px] font-semibold uppercase tracking-[0.14em] <%= tn.label %> sm:text-[11px] sm:tracking-[0.24em]"<% if (card.daily) { %> data-kpi-label data-today="<%= todayLabel %>" data-yest="<%= yestLabel %>"<% } %>><%= todayLabel %></div>
+          <% if (card.value === null && !card.daily) { %>
+            <div class="text-base font-semibold text-slate-400 sm:text-lg"><%= NOT_TRACKED %></div>
+          <% } else { %>
+            <div class="text-xl font-semibold <%= tn.value %> sm:text-3xl"><span<% if (card.daily) { %> data-kpi-value data-today="<%= todayVal %>" data-yest="<%= yestVal %>"<% } %>><%= todayVal %></span><% if (card.suffix) { %><span class="ml-1 text-xs font-medium <%= tn.label %> sm:text-base"><%= card.suffix %></span><% } %></div>
+          <% } %>
+        </div>
+        <span class="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl <%= tn.chip %> transition group-hover:scale-105 sm:inline-flex">
+          <%- svg(card.icon, "h-5 w-5") %>
+        </span>
+      </div>
+    </a>
+  <% }) %>
+</div>
