@@ -908,7 +908,10 @@
             input.focus();
           } else {
             didSelectFromMenu = true;
-            select.value = opt.value;
+            // Commit the exact option the user picked. `select.value = ...` selects
+            // the FIRST option carrying that value, which silently picks the wrong
+            // one when values repeat across optgroups.
+            opt.selected = true;
             select.dispatchEvent(new Event("change", { bubbles: true }));
             if (variant === "navbar" && typeof window.__navigateWithBranch === "function") {
               window.__navigateWithBranch(opt.value);
@@ -1171,10 +1174,12 @@
 
       e.preventDefault();
       const nextRowFieldMeta = getNextRowFieldMeta();
-      const previousValue = String(select.value || "");
+      const previousOption = select.options[select.selectedIndex] || null;
       const nextValue = String(match.value || "");
-      select.value = nextValue;
-      const valueChanged = previousValue !== nextValue;
+      // Identity, not value: duplicate values across optgroups otherwise commit the
+      // first matching option instead of the highlighted one.
+      match.selected = true;
+      const valueChanged = previousOption !== match;
       if (valueChanged) {
         select.dispatchEvent(new Event("change", { bubbles: true }));
         if (variant === "navbar" && typeof window.__navigateWithBranch === "function") {
@@ -1223,8 +1228,8 @@
             (opt) => opt.value && opt.textContent.trim().toLowerCase() === val,
           );
           if (match) {
-            if (select.value !== match.value) {
-              select.value = match.value;
+            if (select.options[select.selectedIndex] !== match) {
+              match.selected = true;
               select.dispatchEvent(new Event("change", { bubbles: true }));
             }
           } else if (val === "") {

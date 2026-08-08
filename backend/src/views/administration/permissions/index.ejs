@@ -174,8 +174,9 @@
                         <optgroup label="<%= t('accounts') %>">
                           <% accountAccessAccounts.forEach((account) => { %>
                             <option
-                              value="<%= account.id %>"
+                              value="account:<%= account.id %>"
                               data-entity-type="account"
+                              data-entity-id="<%= account.id %>"
                               data-code="<%= account.code %>"
                               data-name="<%= account.name %>"
                               data-branches="<%= (account.branchNames || []).join(', ') %>"
@@ -187,8 +188,9 @@
                         <optgroup label="<%= t('employees') %>">
                           <% accountAccessEmployees.forEach((emp) => { %>
                             <option
-                              value="<%= emp.id %>"
+                              value="employee:<%= emp.id %>"
                               data-entity-type="employee"
+                              data-entity-id="<%= emp.id %>"
                               data-code="<%= emp.code %>"
                               data-name="<%= emp.name %>"
                               data-branches=""
@@ -200,8 +202,9 @@
                         <optgroup label="<%= t('labours') %>">
                           <% accountAccessLabours.forEach((lab) => { %>
                             <option
-                              value="<%= lab.id %>"
+                              value="labour:<%= lab.id %>"
                               data-entity-type="labour"
+                              data-entity-id="<%= lab.id %>"
                               data-code="<%= lab.code %>"
                               data-name="<%= lab.name %>"
                               data-branches=""
@@ -867,8 +870,9 @@
       if (restrictionValue === 'details' || restrictionValue === 'blocked') {
         return { canBlockSummary: true, canBlockDetails: true };
       }
-      // 'summary' — accounts only: block details, keep summary.
-      return { canBlockSummary: true, canBlockDetails: false };
+      // 'summary' — accounts only: block details, keep summary. The two flags used to
+      // be the wrong way round here, so "Block Details Only" saved as a full block.
+      return { canBlockSummary: false, canBlockDetails: true };
     };
 
     const updateEmptyState = () => {
@@ -1002,11 +1006,21 @@
 
     const addSelectedAccount = () => {
       if (!(addSelect instanceof HTMLSelectElement)) return;
-      const accountId = Number(addSelect.value || 0);
+      // Option values are "<entityType>:<id>". Accounts, employees and labours all
+      // start their ids at 1, so a bare numeric value made `select.value = id` (used
+      // by the searchable-select layer) resolve to the FIRST option with that value —
+      // always the account — and employees/labours sharing an account id silently
+      // added the wrong row. Read the type and the id from the value itself.
+      const [rawType, rawId] = String(addSelect.value || '').split(':');
+      const accountId = Number(rawId || 0);
       if (!Number.isInteger(accountId) || accountId <= 0) return;
+      const entityType = ENTITY_META[String(rawType || '').toLowerCase()]
+        ? String(rawType).toLowerCase()
+        : 'account';
 
-      const selected = addSelect.options[addSelect.selectedIndex];
-      const entityType = String(selected?.getAttribute('data-entity-type') || 'account').toLowerCase();
+      const selected =
+        Array.from(addSelect.options).find((opt) => opt.value === addSelect.value) ||
+        addSelect.options[addSelect.selectedIndex];
 
       const exists = body.querySelector(
         `[data-account-access-row][data-entity-type="${entityType}"][data-account-id="${accountId}"]`,

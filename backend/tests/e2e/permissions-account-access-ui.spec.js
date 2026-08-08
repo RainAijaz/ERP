@@ -51,7 +51,7 @@ test.describe.serial("Permissions account access UI", () => {
     }
   });
 
-  test("new account row defaults summary/details to true and enforces toggle rules", async ({
+  test("a new account row defaults to the strictest level and persists an edited one", async ({
     page,
   }) => {
     test.skip(
@@ -60,52 +60,57 @@ test.describe.serial("Permissions account access UI", () => {
     );
 
     await login(page, "E2E_ADMIN");
-    const response = await page.goto(
-      `/administration/permissions?type=user&target_id=${fixture.userId}`,
-      { waitUntil: "domcontentloaded" },
-    );
-    expect(response?.status()).toBe(200);
+    const openPanel = async () => {
+      const response = await page.goto(
+        `/administration/permissions?type=user&target_id=${fixture.userId}`,
+        { waitUntil: "domcontentloaded" },
+      );
+      expect(response?.status()).toBe(200);
+      const scopePath = await page.evaluate(() =>
+        typeof ACCOUNT_ACCESS_SCOPE_PATH === "string"
+          ? ACCOUNT_ACCESS_SCOPE_PATH
+          : "",
+      );
+      expect(scopePath).not.toBe("");
+      await page.locator(`.category-btn[data-cat="${scopePath}"]`).click();
+      await expect(page.locator("#account-access-shell")).toBeVisible();
+    };
 
-    await page.locator('.category-btn[data-cat="financial.reports"]').click();
+    await openPanel();
 
     const addSelect = page.locator("[data-account-access-add]");
     const addButton = page.locator("[data-account-access-add-btn]");
-    await expect(addSelect).toBeVisible();
 
-    await addSelect.selectOption(String(fixture.accountId));
+    // Option values are namespaced per entity kind so employee/labour ids cannot
+    // resolve to an account that happens to share the id.
+    await addSelect.selectOption(`account:${fixture.accountId}`);
     await addButton.click();
 
     const row = page
       .locator(
-        `[data-account-access-row][data-account-id="${fixture.accountId}"]`,
+        `[data-account-access-row][data-entity-type="account"][data-account-id="${fixture.accountId}"]`,
       )
       .first();
-    await expect(row).toBeVisible();
+    await expect(row).toHaveCount(1);
 
-    const summaryToggle = row.locator("[data-account-summary]");
-    const detailsToggle = row.locator("[data-account-details]");
+    const restriction = row.locator("[data-account-restriction]");
+    await expect(restriction).toHaveValue("details");
 
-    await expect(summaryToggle).toBeChecked();
-    await expect(detailsToggle).toBeChecked();
-
-    await summaryToggle.uncheck();
-    await expect(detailsToggle).not.toBeChecked();
-
-    await detailsToggle.check();
-    await expect(summaryToggle).toBeChecked();
-    await expect(detailsToggle).toBeChecked();
+    await restriction.selectOption("summary");
 
     await Promise.all([
       page.waitForURL(/\/administration\/permissions\?type=user&target_id=/i),
-      page.locator("[data-account-access-form] button[type='submit']").click(),
+      page.locator("[data-account-access-save]").click(),
     ]);
 
+    await openPanel();
     const persistedRow = page
       .locator(
-        `[data-account-access-row][data-account-id="${fixture.accountId}"]`,
+        `[data-account-access-row][data-entity-type="account"][data-account-id="${fixture.accountId}"]`,
       )
       .first();
-    await expect(persistedRow.locator("[data-account-summary]")).toBeChecked();
-    await expect(persistedRow.locator("[data-account-details]")).toBeChecked();
+    await expect(
+      persistedRow.locator("[data-account-restriction]"),
+    ).toHaveValue("summary");
   });
 });

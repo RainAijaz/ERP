@@ -99,9 +99,12 @@ const parseAccountAccessPayload = (value) => {
     let canViewDetails = true;
 
     if (hasBlockFlags) {
-      const canBlockDetails = toBool(entry?.canBlockDetails, true);
-      const canBlockSummary =
-        canBlockDetails || toBool(entry?.canBlockSummary, true);
+      // Blocking the summary necessarily blocks the details behind it — not the other
+      // way round, which is what this implication used to say and which collapsed
+      // "Block Details Only" into a full block.
+      const canBlockSummary = toBool(entry?.canBlockSummary, true);
+      const canBlockDetails =
+        canBlockSummary || toBool(entry?.canBlockDetails, true);
       canViewSummary = !canBlockSummary;
       canViewDetails = canViewSummary ? !canBlockDetails : false;
       // NB: full-access (allow) rows are intentionally kept — at user level they
