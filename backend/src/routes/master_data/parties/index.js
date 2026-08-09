@@ -12,12 +12,19 @@ const {
   parseCookies,
   setCookie,
 } = require("../../../middleware/utils/cookies");
+const { UI_NOTICE_COOKIE } = require("../../../middleware/core/ui-notice");
 const {
   friendlyErrorMessage,
 } = require("../../../middleware/errors/friendly-error");
 const { queueAuditLog } = require("../../../utils/audit-log");
 const { generateUniqueCode } = require("../../../utils/entity-code");
 const { buildAuditChangeSet } = require("../../../utils/audit-diff");
+const {
+  postPartyOpeningBalance,
+} = require("../../../utils/party-opening-balance");
+const {
+  POSTABLE_PARTY_TYPES,
+} = require("../../../services/financial/gl-posting-service");
 
 const router = express.Router();
 const debugParties = (...args) => {
@@ -50,6 +57,59 @@ const normalizePartyType = (value) => {
 };
 
 const isSupplierPartyType = (value) => normalizePartyType(value) === "SUPPLIER";
+
+const setUiNotice = (res, message, options = {}) => {
+  if (!message) return;
+  setCookie(res, UI_NOTICE_COOKIE, JSON.stringify({ message, ...options }), {
+    path: "/",
+    maxAge: 30,
+    sameSite: "Lax",
+  });
+};
+
+// Opening balance inputs are NOT columns on erp.parties — they are lifted out of the
+// form body into a single `_opening_balance` meta key, which rides in the approval
+// payload and is stripped before the INSERT (see stripMeta in approval-applier.js).
+// Returns { ok: true, openingBalance } where openingBalance may be null (nothing to
+// post), or { ok: false, errorKey } when the input is unusable.
+const extractOpeningBalance = (body = {}, partyType) => {
+  const rawAmount = String(body.opening_balance ?? "").trim();
+  // Blank or zero is the normal case: no opening balance, no voucher.
+  if (!rawAmount) return { ok: true, openingBalance: null };
+
+  const amount = Number(rawAmount);
+  if (!Number.isFinite(amount) || amount < 0) {
+    return { ok: false, errorKey: "error_opening_balance_amount" };
+  }
+  if (amount === 0) return { ok: true, openingBalance: null };
+
+  // OTHER parties have no AR/AP control account to post against.
+  if (!POSTABLE_PARTY_TYPES.includes(normalizePartyType(partyType))) {
+    return { ok: false, errorKey: "error_opening_balance_party_type" };
+  }
+
+  const rawDate = String(body.opening_balance_date ?? "").trim();
+  if (!rawDate) return { ok: false, errorKey: "error_opening_balance_date" };
+  const asOfDate = new Date(`${rawDate}T00:00:00`);
+  if (Number.isNaN(asOfDate.getTime())) {
+    return { ok: false, errorKey: "error_opening_balance_date" };
+  }
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+  if (asOfDate > today) {
+    return { ok: false, errorKey: "error_opening_balance_future_date" };
+  }
+
+  const direction =
+    String(body.opening_balance_direction || "").trim().toUpperCase() === "CR"
+      ? "CR"
+      : "DR";
+
+  return {
+    ok: true,
+    openingBalance: { amount, direction, as_of_date: rawDate },
+  };
+};
 
 const getPartyApprovalScopeKey = (partyType) => {
   const t = normalizePartyType(partyType);
@@ -659,6 +719,25 @@ router.post(
         String,
       );
 
+      const openingBalanceResult = extractOpeningBalance(
+        req.body,
+        values.party_type,
+      );
+      if (!openingBalanceResult.ok) {
+        return renderIndexError(
+          req,
+          res,
+          values,
+          res.locals.t(openingBalanceResult.errorKey),
+          "create",
+          basePath,
+        );
+      }
+      // Carried in the approval payload so it survives the maker-checker queue.
+      if (openingBalanceResult.openingBalance) {
+        values._opening_balance = openingBalanceResult.openingBalance;
+      }
+
       debugParties("[parties:POST /] calling handleScreenApproval", {
         user: req.user && {
           id: req.user.id,
@@ -689,7 +768,12 @@ router.post(
         return res.redirect(req.get("referer") || basePath);
       }
 
-      const { branch_ids: branchIdsInsert = [], ...rest } = values;
+      const {
+        branch_ids: branchIdsInsert = [],
+        _opening_balance: openingBalance = null,
+        ...rest
+      } = values;
+      let createdPartyId = null;
       await knex.transaction(async (trx) => {
         const [row] = await trx(page.table)
           .insert({
@@ -698,6 +782,7 @@ router.post(
           })
           .returning("id");
         const partyId = row && row.id ? row.id : row;
+        createdPartyId = partyId;
         if (branchIdsInsert.length) {
           await trx(page.branchMap.table).insert(
             branchIdsInsert.map((branchId) => ({
@@ -712,6 +797,30 @@ router.post(
           action: "CREATE",
         });
       });
+
+      // Must run after the transaction commits: createVoucher opens its own.
+      if (openingBalance && createdPartyId) {
+        try {
+          await postPartyOpeningBalance({
+            partyId: createdPartyId,
+            partyType: rest.party_type,
+            branchId: rest.branch_id,
+            amount: openingBalance.amount,
+            direction: openingBalance.direction,
+            asOfDate: openingBalance.as_of_date,
+            req,
+          });
+        } catch (err) {
+          // The party IS created and committed at this point. Re-rendering the
+          // create form would invite a resubmit, so redirect as normal and carry
+          // the failure as a notice instead.
+          console.error("[parties:create:opening-balance]", { error: err });
+          setUiNotice(
+            res,
+            `${res.locals.t("error_opening_balance_post_failed")} ${friendlyErrorMessage(err, res.locals.t)}`,
+          );
+        }
+      }
       return res.redirect(basePath);
     } catch (err) {
       console.error("[parties:create]", { error: err });

@@ -124,6 +124,10 @@ const stripMeta = (value = {}) => {
   delete clone._approval_action;
   delete clone.rates;
   delete clone.usage_ids;
+  // Rides along in the party create payload so the amount survives the approval
+  // queue. Posted as a Journal Voucher by the approvals route AFTER this
+  // transaction commits — never here, since createVoucher opens its own.
+  delete clone._opening_balance;
   return clone;
 };
 

@@ -172,4 +172,89 @@
           </label>
         <% } %>
       <% }) %>
-      
+<% if (page.titleKey === "parties") { %>
+  <%
+    /* Opening balance is NOT a column on erp.parties — balances are always derived
+       from erp.gl_entry. These three inputs are lifted out of the body by the route
+       into an `_opening_balance` meta key and posted as a Journal Voucher once the
+       party exists. Rendered outside the page.fields loop so nothing tries to
+       persist them, and create-only because an existing party's balance is changed
+       by posting a voucher, not by editing the party. */
+  %>
+  <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3" data-hide-on-edit="true" data-opening-balance-group>
+    <div class="flex flex-col gap-1">
+      <span class="text-sm font-semibold text-slate-600"><%= t("opening_balance") %></span>
+      <span class="text-xs font-normal text-slate-500"><%= t("help_opening_balance") %></span>
+    </div>
+    <div class="mt-3 grid gap-3 sm:grid-cols-2">
+      <label class="block text-sm font-semibold text-slate-600">
+        <span><%= t("opening_balance_amount") %></span>
+        <input
+          class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+          type="number"
+          name="opening_balance"
+          data-field="opening_balance"
+          step="0.01"
+          min="0"
+          placeholder="0.00"
+        />
+      </label>
+      <label class="block text-sm font-semibold text-slate-600">
+        <span><%= t("opening_balance_direction") %></span>
+        <select
+          class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+          name="opening_balance_direction"
+          data-field="opening_balance_direction"
+        >
+          <option value="DR"><%= t("opening_balance_they_owe") %></option>
+          <option value="CR"><%= t("opening_balance_we_owe") %></option>
+        </select>
+      </label>
+      <label class="block text-sm font-semibold text-slate-600">
+        <span><%= t("opening_balance_date") %></span>
+        <input
+          class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 shadow-sm focus:outline-none focus:ring-2 focus:ring-accent/30"
+          type="date"
+          name="opening_balance_date"
+          data-field="opening_balance_date"
+        />
+      </label>
+    </div>
+  </div>
+  <script>
+    (function initPartyOpeningBalance() {
+      const bind = (root) => {
+        const group = root.querySelector("[data-opening-balance-group]");
+        const partyType = root.querySelector('[data-field="party_type"]');
+        if (!group || !partyType) return;
+        const direction = group.querySelector('[data-field="opening_balance_direction"]');
+        const amount = group.querySelector('[data-field="opening_balance"]');
+        const sync = () => {
+          // OTHER parties are neither bought from nor sold to, so they have no
+          // AR/AP control account to post an opening balance against.
+          const isOther = String(partyType.value || "").toUpperCase() === "OTHER";
+          group.classList.toggle("hidden", isOther);
+          group.querySelectorAll("[data-field]").forEach((control) => {
+            control.disabled = isOther;
+          });
+          if (isOther && amount) amount.value = "";
+          // Default the side to whichever way the balance normally runs; the user
+          // can still flip it for an advance or a credit note.
+          if (direction && !direction.dataset.touched) {
+            direction.value =
+              String(partyType.value || "").toUpperCase() === "SUPPLIER" ? "CR" : "DR";
+          }
+        };
+        if (direction) {
+          direction.addEventListener("change", () => {
+            direction.dataset.touched = "1";
+          });
+        }
+        partyType.addEventListener("change", sync);
+        sync();
+      };
+      document.querySelectorAll("form").forEach(bind);
+    })();
+  </script>
+<% } %>
+

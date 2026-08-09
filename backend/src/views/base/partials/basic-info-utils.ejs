@@ -451,8 +451,11 @@
           }
         }
       });
-      modalForm.querySelectorAll("[data-hide-on-create]").forEach((node) => {
-        const hideNode = mode === "create";
+      // Fields limited to one mode. Hiding also disables the controls, which is
+      // what actually keeps them out of the submitted body.
+      const applyModeVisibility = (selector, hiddenInMode) => {
+      modalForm.querySelectorAll(selector).forEach((node) => {
+        const hideNode = mode === hiddenInMode;
         if (hideNode) {
           node.classList.add("hidden");
         } else {
@@ -485,6 +488,9 @@
           }
         });
       });
+      };
+      applyModeVisibility("[data-hide-on-create]", "create");
+      applyModeVisibility("[data-hide-on-edit]", "edit");
       modalForm.querySelectorAll('[data-field="code"]').forEach((input) => {
         if (mode === "edit") {
           input.disabled = true;

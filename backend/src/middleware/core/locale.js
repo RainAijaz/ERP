@@ -1845,6 +1845,22 @@ const translations = {
     error_party_group_type: "Party type does not match selected group.",
     error_select_city: "Please select city.",
     error_select_phone: "Please enter at least one phone number.",
+    opening_balance: "Opening Balance",
+    opening_balance_amount: "Amount",
+    opening_balance_date: "As of Date",
+    opening_balance_direction: "Balance Type",
+    opening_balance_they_owe: "They owe us",
+    opening_balance_we_owe: "We owe them",
+    help_opening_balance:
+      "Optional. Records what this party already owes (or is owed) as a Journal Voucher dated below. Leave blank if there is no prior balance.",
+    error_opening_balance_amount: "Opening balance must be a positive amount.",
+    error_opening_balance_date: "Please select a valid opening balance date.",
+    error_opening_balance_future_date:
+      "Opening balance date cannot be in the future.",
+    error_opening_balance_party_type:
+      "An opening balance can only be set for a customer or a supplier.",
+    error_opening_balance_post_failed:
+      "The party was saved, but its opening balance could not be posted:",
     deleted_successfully: "Deleted successfully.",
     error_no_target_skus_found: "No target SKUs found for selected filters.",
     error_select_article_type: "Please select article type.",
@@ -3012,6 +3028,22 @@ translations.ur = {
   error_select_article_type: "براہ کرم مضمون کی قسم منتخب کریں۔",
   error_select_branch: "براہ کرم ایک برانچ منتخب کریں۔",
   error_select_city: "براہ کرم شہر کا انتخاب کریں۔",
+  opening_balance: "ابتدائی بیلنس",
+  opening_balance_amount: "رقم",
+  opening_balance_date: "تاریخ",
+  opening_balance_direction: "بیلنس کی قسم",
+  opening_balance_they_owe: "ہمارے لینے ہیں",
+  opening_balance_we_owe: "ہمارے دینے ہیں",
+  help_opening_balance:
+    "اختیاری۔ اس پارٹی کے پہلے سے واجب الادا یا واجب الوصول بیلنس کو نیچے دی گئی تاریخ کے جرنل واؤچر کے طور پر درج کرتا ہے۔ اگر کوئی پرانا بیلنس نہیں تو خالی چھوڑ دیں۔",
+  error_opening_balance_amount: "ابتدائی بیلنس مثبت رقم ہونی چاہیے۔",
+  error_opening_balance_date: "براہ کرم ابتدائی بیلنس کی درست تاریخ منتخب کریں۔",
+  error_opening_balance_future_date:
+    "ابتدائی بیلنس کی تاریخ مستقبل کی نہیں ہو سکتی۔",
+  error_opening_balance_party_type:
+    "ابتدائی بیلنس صرف کسٹمر یا سپلائر کے لیے مقرر کیا جا سکتا ہے۔",
+  error_opening_balance_post_failed:
+    "پارٹی محفوظ ہو گئی، لیکن اس کا ابتدائی بیلنس پوسٹ نہیں ہو سکا:",
   error_select_commission_basis: "براہ کرم کمیشن کی بنیاد پر انتخاب کریں۔",
   error_select_department: "براہ کرم ایک شعبہ منتخب کریں۔",
   error_labour_department_in_use:

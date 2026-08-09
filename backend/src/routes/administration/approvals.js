@@ -9,6 +9,9 @@ const { sendSkuRateNotification } = require("../../utils/sku-rate-notification")
 const {
   sendVoucherPaymentNotifications,
 } = require("../../utils/payment-notification");
+const {
+  postPartyOpeningBalance,
+} = require("../../utils/party-opening-balance");
 const { navConfig, getNavScopes } = require("../../utils/nav-config");
 const {
   BASIC_INFO_ENTITY_TYPES,
@@ -2398,6 +2401,41 @@ router.post(
             user: req.user,
             approved: true,
           });
+        }
+      }
+
+      // Post the opening balance a party was created with. Runs here, after the
+      // approve transaction has committed, because createVoucher opens its own
+      // transaction and cannot be nested inside applyMasterDataChange's.
+      // appliedEntityId is the real new party id — entity_id is still "NEW".
+      if (requestSnapshot?.entity_type === "PARTY" && appliedEntityId) {
+        const openingBalance = requestSnapshot.new_value?._opening_balance;
+        if (openingBalance?.amount) {
+          try {
+            const party = await knex("erp.parties")
+              .select("party_type", "branch_id")
+              .where({ id: Number(appliedEntityId) })
+              .first();
+            await postPartyOpeningBalance({
+              partyId: Number(appliedEntityId),
+              partyType: party?.party_type,
+              // The party's branch, NOT req.branchId — the approver may well be
+              // working in a different branch than the party belongs to.
+              branchId: party?.branch_id,
+              amount: openingBalance.amount,
+              direction: openingBalance.direction,
+              asOfDate: openingBalance.as_of_date,
+              req,
+            });
+          } catch (e) {
+            // The party was created and the approval IS approved. Surface the
+            // posting failure without making the approval look rejected.
+            console.error("[parties] opening balance post failed:", e);
+            setUiNotice(
+              res,
+              `${res.locals.t("error_opening_balance_post_failed")} ${e?.message || e}`,
+            );
+          }
         }
       }
 

@@ -564,11 +564,19 @@
         }
       });
 
+      const isCreatePreview = Boolean(payload && payload._previewAction === "create");
       panel.querySelectorAll("[data-hide-on-create]").forEach((node) => {
-        if (payload && payload._previewAction === "create") {
+        if (isCreatePreview) {
           node.classList.add("hidden");
         } else {
           node.classList.remove("hidden");
+        }
+      });
+      panel.querySelectorAll("[data-hide-on-edit]").forEach((node) => {
+        if (isCreatePreview) {
+          node.classList.remove("hidden");
+        } else {
+          node.classList.add("hidden");
         }
       });
 

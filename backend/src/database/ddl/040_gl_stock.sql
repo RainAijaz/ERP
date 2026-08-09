@@ -59,6 +59,12 @@ CREATE INDEX IF NOT EXISTS idx_gl_entry_account_date
 CREATE INDEX IF NOT EXISTS idx_gl_entry_branch_date
   ON erp.gl_entry(branch_id, entry_date);
 
+-- Party ledgers (customer/supplier) and every opening-balance sum filter on
+-- party_id + entry_date. Partial: only a minority of GL rows carry a party.
+CREATE INDEX IF NOT EXISTS idx_gl_entry_party_date
+  ON erp.gl_entry(party_id, entry_date)
+  WHERE party_id IS NOT NULL;
+
 -- =============================================================================
 -- Stock ledger (WAC stored; never selling rate)
 -- =============================================================================
