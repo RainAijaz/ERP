@@ -1446,13 +1446,18 @@ const buildSalesReportData = ({ rows, filters, req }) => {
             2,
           )
         : paymentReceivedAmount;
+      // Mirror the voucher screen: final amount = net lines - extra discount.
+      // FROM_SO vouchers cannot carry their own extra discount (rejected at entry),
+      // so this stays a no-op for them.
+      const finalAmount = toAmount(
+        Number(group.total_net_amount || 0) -
+          Number(group.total_extra_discount || 0),
+        2,
+      );
       group.remaining_amount =
         paymentType === "CREDIT"
           ? toAmount(
-              Math.max(
-                0,
-                Number(group.total_net_amount || 0) - Number(effectiveTotalReceived || 0),
-              ),
+              Math.max(0, finalAmount - Number(effectiveTotalReceived || 0)),
               2,
             )
           : 0;
