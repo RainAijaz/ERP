@@ -17,3 +17,8 @@ playwright-report-*/
 .nyc_output/
 coverage/
 EOF
+
+# Test suites - untracked so they never reach production.
+# Files remain on developer machines and stay recoverable from git history.
+tests/
+src/scripts/test-*.js
