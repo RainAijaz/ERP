@@ -22,6 +22,15 @@ const localizedNameSelect = (alias, as, locale) =>
     ? knex.raw(`COALESCE(${alias}.name_ur, ${alias}.name) as ${as}`)
     : `${alias}.name as ${as}`;
 
+// Same idea as localizedNameSelect for tables whose text lives in a column
+// other than "name" (e.g. return_reasons.description / description_ur).
+const localizedTextSelect = (alias, column, as, locale) =>
+  locale === "ur"
+    ? knex.raw(
+        `COALESCE(NULLIF(${alias}.${column}_ur, ''), ${alias}.${column}) as ${as}`,
+      )
+    : `${alias}.${column} as ${as}`;
+
 const ALL_MULTI_FILTER_VALUE = "__ALL__";
 const STOCK_TYPES = Object.freeze({
   finished: "FG",
@@ -4805,6 +4814,72 @@ const applyStockLedgerBaseFilters = ({
   return query;
 };
 
+// Two of the columns the ledger "Details" cell reads were added by later
+// migrations, so a DB that has not run them must not break the whole report.
+let stockLedgerDetailColumnSupportPromise = null;
+const loadStockLedgerDetailColumnSupport = () => {
+  if (!stockLedgerDetailColumnSupportPromise) {
+    const hasColumn = (table, column) =>
+      knex.schema
+        .withSchema("erp")
+        .hasColumn(table, column)
+        .catch(() => false);
+    stockLedgerDetailColumnSupportPromise = Promise.all([
+      hasColumn("voucher_header", "remarks_ur"),
+      hasColumn("purchase_return_header_ext", "notes"),
+    ])
+      .then(([remarksUr, purchaseReturnNotes]) => ({
+        remarksUr,
+        purchaseReturnNotes,
+      }))
+      .catch(() => ({ remarksUr: false, purchaseReturnNotes: false }));
+  }
+  return stockLedgerDetailColumnSupportPromise;
+};
+
+// Every stock-moving voucher type keeps its narrative somewhere different:
+// a reason code (stock count, abnormal loss, returnable dispatch), a reason
+// enum (purchase return), free-text notes (stock count, incoming transfer,
+// purchase invoice/return), a per-line return reason (sales return), or just
+// voucher_header.remarks. The Details cell shows whichever ones the row has,
+// reasons first, so the ledger explains WHY the stock moved.
+//
+// Segments are returned untranslated-but-tagged: { text } is DB text rendered
+// as-is, { key } is a translation key the view resolves (never call t() on a
+// DB-stored label).
+const buildStockLedgerDetailSegments = (row) => {
+  const segments = [];
+  const seen = new Set();
+
+  const pushText = (value) => {
+    const text = String(value || "").trim();
+    if (!text || seen.has(text)) return;
+    seen.add(text);
+    segments.push({ text });
+  };
+
+  const purchaseReturnReason = String(row?.purchase_return_reason || "")
+    .trim()
+    .toLowerCase();
+  if (purchaseReturnReason) {
+    segments.push({ key: `return_reason_${purchaseReturnReason}` });
+  }
+
+  pushText(row?.stock_count_reason);
+  pushText(row?.loss_reason);
+  pushText(row?.returnable_reason);
+  pushText(row?.sales_return_reason);
+
+  pushText(row?.stock_count_notes);
+  pushText(row?.transfer_receive_notes);
+  pushText(row?.purchase_invoice_notes);
+  pushText(row?.purchase_return_notes);
+
+  pushText(row?.voucher_remarks);
+
+  return segments;
+};
+
 const buildDefaultStockLedgerReportData = () => ({
   rows: [],
   totals: {
@@ -4873,6 +4948,8 @@ const loadStockLedgerRows = async ({
   );
   const openingValue = toAmount(openingRow?.opening_value, 2);
 
+  const detailColumnSupport = await loadStockLedgerDetailColumnSupport();
+
   let txnQuery = knex("erp.stock_ledger as sl")
     .join("erp.voucher_header as vh", "vh.id", "sl.voucher_header_id")
     .join("erp.voucher_type as vt", "vt.code", "vh.voucher_type_code")
@@ -4880,6 +4957,21 @@ const loadStockLedgerRows = async ({
     .leftJoin("erp.sales_line as sln", "sln.voucher_line_id", "vl.id")
     .leftJoin("erp.production_line as pl", "pl.voucher_line_id", "vl.id")
     .leftJoin("erp.branches as b", "b.id", "sl.branch_id")
+    // Voucher narrative sources for the Details cell (all 1:1 on voucher_id).
+    .leftJoin("erp.stock_count_header as sch", "sch.voucher_id", "vh.id")
+    .leftJoin("erp.reason_codes as scrc", "scrc.id", "sch.reason_code_id")
+    .leftJoin("erp.abnormal_loss_header as alh", "alh.voucher_id", "vh.id")
+    .leftJoin("erp.reason_codes as alrc", "alrc.id", "alh.reason_code_id")
+    .leftJoin("erp.grn_in_header as gih", "gih.voucher_id", "vh.id")
+    .leftJoin(
+      "erp.purchase_invoice_header_ext as pih",
+      "pih.voucher_id",
+      "vh.id",
+    )
+    .leftJoin("erp.purchase_return_header_ext as prh", "prh.voucher_id", "vh.id")
+    .leftJoin("erp.rgp_outward as rgo", "rgo.voucher_id", "vh.id")
+    .leftJoin("erp.rgp_reason_registry as rgr", "rgr.code", "rgo.reason_code")
+    .leftJoin("erp.return_reasons as srr", "srr.id", "sln.return_reason_id")
     .select(
       "sl.id",
       "sl.txn_date",
@@ -4892,9 +4984,33 @@ const loadStockLedgerRows = async ({
       "vh.voucher_no",
       "vh.voucher_type_code",
       localizedNameSelect("vt", "voucher_type_name", filters.locale),
+      "scrc.name as stock_count_reason",
+      "sch.notes as stock_count_notes",
+      "alrc.name as loss_reason",
+      "gih.notes as transfer_receive_notes",
+      "pih.notes as purchase_invoice_notes",
+      "prh.reason as purchase_return_reason",
+      "rgr.name as returnable_reason",
+      localizedTextSelect(
+        "srr",
+        "description",
+        "sales_return_reason",
+        filters.locale,
+      ),
+    )
+    .select(
+      detailColumnSupport.remarksUr && filters.locale === "ur"
+        ? knex.raw(
+            "COALESCE(NULLIF(vh.remarks_ur, ''), vh.remarks) as voucher_remarks",
+          )
+        : "vh.remarks as voucher_remarks",
     )
     .select(knex.raw(`${qtyColumnSql} as movement_qty`))
     .whereBetween("sl.txn_date", [filters.from, filters.to]);
+
+  if (detailColumnSupport.purchaseReturnNotes) {
+    txnQuery = txnQuery.select("prh.notes as purchase_return_notes");
+  }
 
   if (filters.stockType === STOCK_TYPES.rawMaterial) {
     txnQuery = txnQuery
@@ -5008,6 +5124,7 @@ const loadStockLedgerRows = async ({
       skuCode: String(row?.sku_code || "").trim(),
       colorName: String(row?.color_name || "").trim(),
       sizeName: String(row?.size_name || "").trim(),
+      detailSegments: buildStockLedgerDetailSegments(row),
       unitLabel:
         String(selectedUnitLabel || "").trim() ||
         String(row?.unit_code || row?.unit_name || "").trim() ||
