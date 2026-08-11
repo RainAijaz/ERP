@@ -2,6 +2,7 @@
 
 const knex = require("../../db/knex");
 const { toLocalDateOnly } = require("../../utils/date-only");
+const { normalizeConversionFactor } = require("../../utils/uom-conversion");
 const { toBoolean } = require("../../utils/report-filter-types");
 const {
   canAccessScope,
@@ -565,10 +566,14 @@ const buildUomGraph = (conversionRows) => {
   (conversionRows || []).forEach((row) => {
     const fromId = toPositiveInt(row?.from_uom_id);
     const toId = toPositiveInt(row?.to_uom_id);
-    const factor = Number(row?.factor || 0);
+    const factor = normalizeConversionFactor(Number(row?.factor || 0));
     if (!fromId || !toId || !(factor > 0)) return;
     addEdge(Number(fromId), Number(toId), factor);
-    addEdge(Number(toId), Number(fromId), 1 / factor);
+    addEdge(
+      Number(toId),
+      Number(fromId),
+      normalizeConversionFactor(1 / factor),
+    );
   });
 
   return graph;

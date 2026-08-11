@@ -5,6 +5,7 @@ const {
   logVoucherApprovalWriteTx,
 } = require("../../utils/approval-activity-log");
 const { toLocalDateOnly } = require("../../utils/date-only");
+const { normalizeConversionFactor } = require("../../utils/uom-conversion");
 const { translateUrduWithFallback } = require("../../utils/translate");
 const {
   resolveVoucherApprovalRequiredTx,
@@ -281,10 +282,14 @@ const buildUomGraph = (conversionRows = []) => {
   (conversionRows || []).forEach((row) => {
     const fromUomId = toPositiveInt(row?.from_uom_id);
     const toUomId = toPositiveInt(row?.to_uom_id);
-    const factor = Number(row?.factor || 0);
+    const factor = normalizeConversionFactor(Number(row?.factor || 0));
     if (!fromUomId || !toUomId || !(factor > 0)) return;
     addEdge(Number(fromUomId), Number(toUomId), factor);
-    addEdge(Number(toUomId), Number(fromUomId), 1 / factor);
+    addEdge(
+      Number(toUomId),
+      Number(fromUomId),
+      normalizeConversionFactor(1 / factor),
+    );
   });
 
   return graph;
