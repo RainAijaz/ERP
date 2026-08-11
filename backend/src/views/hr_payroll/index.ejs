@@ -1671,6 +1671,7 @@ const currentSeq = ++state.requestSeq;
       deptOptionsSeq: 0,
       skuOptionsSeq: 0,
       debounceTimer: null,
+      headerRateRepaintTimer: null,
       loading: false,
       lockedEditValues: {},
       editSkuLabel: "",
@@ -2188,16 +2189,34 @@ const currentSeq = ++state.requestSeq;
       }
     };
 
-    const applyHeaderRateToRows = () => {
+    // state.rows is what Save posts, so it has to track the header rate on every
+    // keystroke. Repainting the grid does not: with a few thousand affected
+    // articles, querySelectorAll + a .value write per row on each keystroke made
+    // typing a rate visibly lag. Update the data now, coalesce the DOM writes.
+    const syncHeaderRateInputs = () => {
+      const headerRate = String(fields.rateValue?.value || "").trim();
+      tbody.querySelectorAll("[data-labour-rate-row-rate]").forEach((input) => {
+        input.value = headerRate;
+      });
+    };
+
+    const applyHeaderRateToRows = ({ deferRepaint = false } = {}) => {
       const headerRate = String(fields.rateValue?.value || "").trim();
       if (!state.rows.length) return;
       state.rows.forEach((row) => {
         row.new_rate = headerRate;
       });
-      const inputs = tbody.querySelectorAll("[data-labour-rate-row-rate]");
-      inputs.forEach((input) => {
-        input.value = headerRate;
-      });
+      if (!deferRepaint) {
+        syncHeaderRateInputs();
+        return;
+      }
+      if (state.headerRateRepaintTimer) {
+        window.clearTimeout(state.headerRateRepaintTimer);
+      }
+      state.headerRateRepaintTimer = window.setTimeout(() => {
+        state.headerRateRepaintTimer = null;
+        syncHeaderRateInputs();
+      }, 120);
     };
 
     const getPreviewQuery = () => {
@@ -2373,11 +2392,16 @@ const currentSeq = ++state.requestSeq;
       if (target.hasAttribute("data-labour-rate-row-rate")) {
         const index = Number(target.getAttribute("data-labour-rate-row-index"));
         if (!Number.isInteger(index) || !state.rows[index]) return;
+        // A per-row edit outranks a header rate still waiting to be painted.
+        if (state.headerRateRepaintTimer) {
+          window.clearTimeout(state.headerRateRepaintTimer);
+          state.headerRateRepaintTimer = null;
+        }
         state.rows[index].new_rate = target.value;
         return;
       }
       if (target.matches("[data-field='rate_value']")) {
-        applyHeaderRateToRows();
+        applyHeaderRateToRows({ deferRepaint: true });
       }
     });
 

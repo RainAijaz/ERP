@@ -473,41 +473,63 @@ const buildPrevious = (rule, source) => ({
   previousRuleId: Number(rule.id),
 });
 
-const resolvePreviousForSku = ({ existingRules, sku }) => {
-  const targetSkuId = Number(sku.sku_id || 0);
+// Resolving each article with a linear scan over every rule made the preview
+// O(articles x rules): four full passes per article once nothing matched, so a
+// labour with a few thousand rates burned seconds of blocking CPU before the
+// modal could paint. Bucket the rules once up front instead — same precedence,
+// same "first match wins" (fetchExistingRules orders id DESC), but O(rules).
+// Mirrors indexExistingRules in commission-rules-service.js.
+const indexExistingRules = (existingRules) => {
+  const bySkuId = new Map();
+  const bySubgroupId = new Map();
+  const byGroupId = new Map();
+  let flatRule = null;
 
-  // A rule that carries a sku_id is pinned to that one article, whatever its
-  // apply_on says. applyBulkSkuRateUpsert stamps the *scope the user picked*
-  // (GROUP/SUBGROUP) onto every per-article row it writes, so resolving by
-  // apply_on alone never matched an article to its own rule: it fell through
-  // to the SUBGROUP/GROUP branch, which matched the first sibling rule in the
-  // same group. Every row in the modal then showed that one rate — including
-  // articles that have no rate of their own.
-  const pinned = targetSkuId
-    ? existingRules.find((rule) => Number(rule.sku_id || 0) === targetSkuId)
-    : null;
+  for (const rule of existingRules) {
+    // A rule that carries a sku_id is pinned to that one article, whatever its
+    // apply_on says. applyBulkSkuRateUpsert stamps the *scope the user picked*
+    // (GROUP/SUBGROUP) onto every per-article row it writes, so resolving by
+    // apply_on alone never matched an article to its own rule: it fell through
+    // to the SUBGROUP/GROUP branch, which matched the first sibling rule in the
+    // same group. Every row in the modal then showed that one rate — including
+    // articles that have no rate of their own. Pinned rules are therefore also
+    // barred from standing in for a whole subgroup/group below.
+    const pinnedSkuId = Number(rule.sku_id || 0);
+    if (pinnedSkuId > 0) {
+      if (!bySkuId.has(pinnedSkuId)) bySkuId.set(pinnedSkuId, rule);
+      continue;
+    }
+
+    const scope = String(rule.apply_on || "").toUpperCase();
+    if (scope === APPLY_ON.SUBGROUP) {
+      const key = Number(rule.subgroup_id || 0);
+      if (key > 0 && !bySubgroupId.has(key)) bySubgroupId.set(key, rule);
+    } else if (scope === APPLY_ON.GROUP) {
+      const key = Number(rule.group_id || 0);
+      if (key > 0 && !byGroupId.has(key)) byGroupId.set(key, rule);
+    } else if (scope === APPLY_ON.FLAT && !flatRule) {
+      flatRule = rule;
+    }
+  }
+
+  return { bySkuId, bySubgroupId, byGroupId, flatRule };
+};
+
+const resolvePreviousForSku = ({ ruleIndex, sku }) => {
+  const targetSkuId = Number(sku.sku_id || 0);
+  const pinned = targetSkuId ? ruleIndex.bySkuId.get(targetSkuId) : null;
   if (pinned) return buildPrevious(pinned, APPLY_ON.SKU);
 
-  for (const scope of [APPLY_ON.SUBGROUP, APPLY_ON.GROUP, APPLY_ON.FLAT]) {
-    const matched = existingRules.find((rule) => {
-      if (String(rule.apply_on || "").toUpperCase() !== scope) return false;
-      // Only a scope-wide rule (no article pinned) may stand in for an article
-      // that has no rate of its own.
-      if (Number(rule.sku_id || 0)) return false;
-      if (scope === APPLY_ON.SUBGROUP)
-        return (
-          Number(sku.subgroup_id || 0) > 0 &&
-          Number(rule.subgroup_id || 0) === Number(sku.subgroup_id || 0)
-        );
-      if (scope === APPLY_ON.GROUP)
-        return (
-          Number(sku.group_id || 0) > 0 &&
-          Number(rule.group_id || 0) === Number(sku.group_id || 0)
-        );
-      return true;
-    });
-    if (matched) return buildPrevious(matched, scope);
-  }
+  const subgroupId = Number(sku.subgroup_id || 0);
+  const bySubgroup = subgroupId > 0 ? ruleIndex.bySubgroupId.get(subgroupId) : null;
+  if (bySubgroup) return buildPrevious(bySubgroup, APPLY_ON.SUBGROUP);
+
+  const groupId = Number(sku.group_id || 0);
+  const byGroup = groupId > 0 ? ruleIndex.byGroupId.get(groupId) : null;
+  if (byGroup) return buildPrevious(byGroup, APPLY_ON.GROUP);
+
+  if (ruleIndex.flatRule) return buildPrevious(ruleIndex.flatRule, APPLY_ON.FLAT);
+
   return {
     previousRate: null,
     previousRateType: null,
@@ -578,9 +600,10 @@ const buildBulkPreviewRows = async ({
     labourIds: uniqueLabourIds,
     deptId,
   });
+  const ruleIndex = indexExistingRules(existingRules);
 
   return targetSkus.map((sku) => {
-    const previous = resolvePreviousForSku({ existingRules, sku });
+    const previous = resolvePreviousForSku({ ruleIndex, sku });
     return {
       sku_id: Number(sku.sku_id),
       sku_code: sku.sku_code,
