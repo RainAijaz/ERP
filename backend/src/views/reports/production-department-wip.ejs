@@ -276,16 +276,16 @@
           <table class="min-w-[1260px] w-full text-sm tabular-nums" data-table data-report-table>
             <thead class="bg-slate-100 text-slate-700">
               <tr>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="department_name"><%= t("department") %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="article_name"><%= articlesLabel %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="sku_code"><%= t("sku") %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="product_group_name"><%= t("product_group") %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="production_type"><%= t("production_type") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="department_name"><%= t("department") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="article_name"><%= articlesLabel %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="sku_code"><%= t("sku") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="product_group_name"><%= t("product_group") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="production_type"><%= t("production_type") %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="aging_days"><%= agingDaysLabel %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="pending_pairs"><%= pendingPairsLabel %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="pending_dozen"><%= pendingDozenLabel %></th>
                 <% if (includeBranchColumn) { %>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="branch_name"><%= t("branch") %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="branch_name"><%= t("branch") %></th>
                 <% } %>
               </tr>
             </thead>
@@ -348,14 +348,14 @@
           <table class="min-w-[960px] w-full text-sm tabular-nums" data-table data-report-table>
             <thead class="bg-slate-100 text-slate-700">
               <tr>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="department_name"><%= selectedOrderBy === "sku" ? t("sku") : t("department") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="department_name"><%= selectedOrderBy === "sku" ? t("sku") : t("department") %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="pending_articles"><%= selectedOrderBy === "sku" ? pendingDepartmentsLabel : pendingArticlesLabel %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="avg_aging_days"><%= avgAgingDaysLabel %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="max_aging_days"><%= maxAgingDaysLabel %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="pending_pairs"><%= pendingPairsLabel %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="pending_dozen"><%= pendingDozenLabel %></th>
                 <% if (includeBranchColumn) { %>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="branch_label"><%= t("branches") %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="branch_label"><%= t("branches") %></th>
                 <% } %>
               </tr>
             </thead>
@@ -378,7 +378,7 @@
                 <td class="px-3 py-2 text-right font-black tabular-nums text-emerald-100"><%= formatNumber(reportData?.totals?.pendingPairs || 0, 3) %></td>
                 <td class="px-3 py-2 text-right font-extrabold tabular-nums"><%= formatNumber(reportData?.totals?.pendingDozen || 0, 3) %></td>
                 <% if (includeBranchColumn) { %>
-                  <td class="px-3 py-2 text-left"><%= selectedOrderBy === "sku" ? Number(reportData?.totals?.skuCount || 0) : Number(reportData?.totals?.departmentCount || 0) %> <%= selectedOrderBy === "sku" ? t("sku") : t("departments") %></td>
+                  <td class="px-3 py-2 text-start"><%= selectedOrderBy === "sku" ? Number(reportData?.totals?.skuCount || 0) : Number(reportData?.totals?.departmentCount || 0) %> <%= selectedOrderBy === "sku" ? t("sku") : t("departments") %></td>
                 <% } %>
               </tr>
             </tbody>

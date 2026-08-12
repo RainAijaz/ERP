@@ -25,7 +25,7 @@ const getCommissionLedgerReportPageData = async ({ req, input = {} }) => {
   const allowedBranchIds = getAllowedBranchIds(req);
 
   // Employee options for filter dropdown
-  const nameExpr = locale === "ur" ? "COALESCE(e.name_ur, e.name)" : "e.name";
+  const nameExpr = locale === "ur" ? "COALESCE(NULLIF(e.name_ur, ''), e.name)" : "e.name";
   let empQuery = knex("erp.employees as e")
     .select("e.id as value", knex.raw(`${nameExpr} as label`))
     .whereRaw("lower(trim(e.status)) = 'active'")
@@ -44,7 +44,7 @@ const getCommissionLedgerReportPageData = async ({ req, input = {} }) => {
   let grandTotal = 0;
 
   if (reportLoaded) {
-    const labelExpr = locale === "ur" ? "COALESCE(e.name_ur, e.name)" : "e.name";
+    const labelExpr = locale === "ur" ? "COALESCE(NULLIF(e.name_ur, ''), e.name)" : "e.name";
     let query = knex("erp.commission_ledger as cl")
       .join("erp.voucher_header as vh", "cl.voucher_id", "vh.id")
       .join("erp.employees as e", "cl.employee_id", "e.id")

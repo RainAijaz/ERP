@@ -23,10 +23,19 @@ const PURCHASE_CATEGORY_FILTERS = Object.freeze({
   consumable: "consumable",
 });
 
+// NULLIF matters: name_ur is frequently an empty string rather than NULL, and a
+// bare COALESCE would then render a blank cell instead of the English name.
 const localizedNameSelect = (alias, as, locale) =>
   locale === "ur"
-    ? knex.raw(`COALESCE(${alias}.name_ur, ${alias}.name) as ${as}`)
+    ? knex.raw(
+        `COALESCE(NULLIF(${alias}.name_ur, ''), ${alias}.name) as ${as}`,
+      )
     : `${alias}.name as ${as}`;
+
+const localizedNameSql = (alias, locale) =>
+  locale === "ur"
+    ? `COALESCE(NULLIF(${alias}.name_ur, ''), ${alias}.name)`
+    : `${alias}.name`;
 
 // Color/size a purchase line was booked against, read from voucher_line.meta
 // (older vouchers used the rm_* key names). NULL when the line has no dimension.
@@ -1122,6 +1131,7 @@ const parseSupplierLedgerFilters = ({ req, input = {} }) => {
 };
 
 const loadSupplierLedgerOptions = async ({ req, filters }) => {
+  const locale = String(req?.locale || "en").toLowerCase();
   const scopedBranchIds = req.user?.isAdmin
     ? filters.branchIds
     : [Number(req.branchId || 0)].filter(
@@ -1130,9 +1140,9 @@ const loadSupplierLedgerOptions = async ({ req, filters }) => {
 
   const branches = req.user?.isAdmin
     ? await knex("erp.branches")
-        .select("id", "name")
+        .select("id", localizedNameSelect("branches", "name", locale))
         .where({ is_active: true })
-        .orderBy("name", "asc")
+        .orderByRaw(`${localizedNameSql("branches", locale)} asc`)
     : (req.branchOptions || []).map((row) => ({
         id: Number(row.id),
         name: row.name,
@@ -1438,11 +1448,12 @@ const getSupplierLedgerReportPageData = async ({ req, input = {} }) => {
 };
 
 const loadSupplierBalanceOptions = async ({ req }) => {
+  const locale = String(req?.locale || "en").toLowerCase();
   const branches = req.user?.isAdmin
     ? await knex("erp.branches")
-        .select("id", "name")
+        .select("id", localizedNameSelect("branches", "name", locale))
         .where({ is_active: true })
-        .orderBy("name", "asc")
+        .orderByRaw(`${localizedNameSql("branches", locale)} asc`)
     : (req.branchOptions || []).map((row) => ({
         id: Number(row.id),
         name: row.name,
@@ -1580,13 +1591,14 @@ const parsePendingGrnFilters = ({ req, input = {} }) => {
 };
 
 const loadPendingGrnReportOptions = async ({ req, filters }) => {
+  const locale = String(req?.locale || "en").toLowerCase();
   const branchScope = filters.branchIds;
 
   const branchesPromise = req.user?.isAdmin
     ? knex("erp.branches")
-        .select("id", "name")
+        .select("id", localizedNameSelect("branches", "name", locale))
         .where({ is_active: true })
-        .orderBy("name", "asc")
+        .orderByRaw(`${localizedNameSql("branches", locale)} asc`)
     : Promise.resolve(
         (req.branchOptions || []).map((row) => ({
           id: Number(row.id),

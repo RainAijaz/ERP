@@ -446,17 +446,17 @@
           <thead class="bg-slate-100 text-slate-700">
             <tr>
               <% if (stockType === "RM") { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("raw_material", "Raw Material") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("raw_material", "Raw Material") %></th>
               <% } else { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("article", "Article") %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("sku", "SKU") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("article", "Article") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("sku", "SKU") %></th>
               <% } %>
               <% if (showMovementColorSizeColumns) { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("color", "Color") %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("size", "Size") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("color", "Color") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("size", "Size") %></th>
               <% } %>
               <% if (showMovementUnitColumn) { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("unit", "Unit") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("unit", "Unit") %></th>
               <% } %>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("opening", "Opening")}${qtySuffix}` %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("production", "Production")}${qtySuffix}` %></th>
@@ -473,7 +473,7 @@
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("adjustment", "Adjustment")}${qtySuffix}` %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("closing", "Closing")}${qtySuffix}` %></th>
               <% if (includeBranchColumn) { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("branch", "Branch") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("branch", "Branch") %></th>
               <% } %>
             </tr>
           </thead>

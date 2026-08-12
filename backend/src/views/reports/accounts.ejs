@@ -528,10 +528,10 @@
           <table class="min-w-[980px] w-full text-sm tabular-nums" data-mobile-report>
             <thead class="bg-slate-100 text-slate-700">
               <tr>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('line_item') %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('description') %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('line_item') %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('description') %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('amount') %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]">Verify</th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]">Verify</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
@@ -688,7 +688,7 @@
             <table class="min-w-[860px] w-full text-sm tabular-nums" data-trend-drivers-table data-mobile-report>
               <thead class="bg-slate-100 text-slate-700">
                 <tr>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t('account_group') %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t('account_group') %></th>
                   <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('previous_period_total') %></th>
                   <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t('current_period_total') %></th>
                   <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]" title="<%= t('delta_tooltip') %>" aria-label="<%= t('delta_tooltip') %>"><%= t('delta') %></th>
@@ -761,10 +761,10 @@
           <thead class="bg-slate-100 text-slate-700">
             <tr>
               <% tableCols.forEach((col) => { %>
-                <th class="sticky top-0 z-30 bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] shadow-[0_1px_0_0_rgba(148,163,184,0.45)] <%= isNumericCol(col) ? 'text-right' : 'text-left' %>"><%= prettyCol(col) %></th>
+                <th class="sticky top-0 z-30 bg-slate-100 px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] shadow-[0_1px_0_0_rgba(148,163,184,0.45)] <%= isNumericCol(col) ? 'text-right' : 'text-start' %>"><%= prettyCol(col) %></th>
               <% }) %>
               <% if (isProfitAndLoss) { %>
-                <th class="sticky top-0 z-30 bg-slate-100 px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em] shadow-[0_1px_0_0_rgba(148,163,184,0.45)]">Source</th>
+                <th class="sticky top-0 z-30 bg-slate-100 px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em] shadow-[0_1px_0_0_rgba(148,163,184,0.45)]">Source</th>
               <% } %>
             </tr>
           </thead>
@@ -1615,16 +1615,16 @@
         table.innerHTML = `
           <thead class="bg-slate-100 text-slate-700">
             <tr>
-              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-left font-semibold uppercase tracking-[0.08em]"><%= t('date') %></th>
-              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-left font-semibold uppercase tracking-[0.08em]"><%= t('voucher_type') %></th>
-              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-left font-semibold uppercase tracking-[0.08em]"><%= t('voucher_no') %></th>
-              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-left font-semibold uppercase tracking-[0.08em]"><%= t('account_group') %></th>
-              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-left font-semibold uppercase tracking-[0.08em]"><%= t('account_name') %></th>
-              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-left font-semibold uppercase tracking-[0.08em]"><%= t('department') %></th>
-              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-left font-semibold uppercase tracking-[0.08em]"><%= t('description') %></th>
+              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-start font-semibold uppercase tracking-[0.08em]"><%= t('date') %></th>
+              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-start font-semibold uppercase tracking-[0.08em]"><%= t('voucher_type') %></th>
+              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-start font-semibold uppercase tracking-[0.08em]"><%= t('voucher_no') %></th>
+              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-start font-semibold uppercase tracking-[0.08em]"><%= t('account_group') %></th>
+              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-start font-semibold uppercase tracking-[0.08em]"><%= t('account_name') %></th>
+              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-start font-semibold uppercase tracking-[0.08em]"><%= t('department') %></th>
+              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-start font-semibold uppercase tracking-[0.08em]"><%= t('description') %></th>
               <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-right font-semibold uppercase tracking-[0.08em]"><%= t('amount') %></th>
-              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-left font-semibold uppercase tracking-[0.08em]"><%= t('created_by') %></th>
-              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-left font-semibold uppercase tracking-[0.08em]"><%= t('cashier') %></th>
+              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-start font-semibold uppercase tracking-[0.08em]"><%= t('created_by') %></th>
+              <th class="sticky top-0 z-10 bg-slate-100 px-2 py-2 text-start font-semibold uppercase tracking-[0.08em]"><%= t('cashier') %></th>
             </tr>
           </thead>
           <tbody>

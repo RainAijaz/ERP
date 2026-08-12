@@ -614,6 +614,11 @@ const applyEntityVoucherScope = ({
 };
 
 const loadLedgerOptions = async ({ req, filters, kind, blockedEntityIds }) => {
+  const locale = String(req?.locale || "en").toLowerCase();
+  const branchNameSql =
+    locale === "ur"
+      ? "COALESCE(NULLIF(branches.name_ur, ''), branches.name)"
+      : "branches.name";
   const cfg = getEntityConfig(kind);
   const blocked =
     blockedEntityIds instanceof Set
@@ -627,9 +632,9 @@ const loadLedgerOptions = async ({ req, filters, kind, blockedEntityIds }) => {
 
   const branches = req.user?.isAdmin
     ? await knex("erp.branches")
-        .select("id", "name")
+        .select("id", knex.raw(`${branchNameSql} as name`))
         .where({ is_active: true })
-        .orderBy("name", "asc")
+        .orderByRaw(`${branchNameSql} asc`)
     : (req.branchOptions || []).map((row) => ({
         id: Number(row.id),
         name: row.name,
@@ -667,6 +672,11 @@ const getLedgerRows = async ({
   kind,
   blockedEntityIds,
 }) => {
+  const locale = String(req?.locale || "en").toLowerCase();
+  const localizedName = (alias) =>
+    locale === "ur"
+      ? `COALESCE(NULLIF(${alias}.name_ur, ''), ${alias}.name)`
+      : `${alias}.name`;
   const cfg = getEntityConfig(kind);
   const includeBranchColumn = Boolean(
     req.user?.isAdmin && filters.branchIds.length !== 1,
@@ -766,7 +776,7 @@ const getLedgerRows = async ({
       "vh.voucher_type_code",
       "vh.voucher_no",
       "vh.book_no as bill_number",
-      "b.name as branch_name",
+      knex.raw(`${localizedName("b")} as branch_name`),
       knex.raw(`COALESCE(
         NULLIF(vl.meta->>'description',''),
         NULLIF(vh.remarks, ''),
@@ -775,12 +785,12 @@ const getLedgerRows = async ({
             CONCAT(
               'SKU ',
               COALESCE(s.sku_code, ''),
-              CASE WHEN COALESCE(i.name, '') = '' THEN '' ELSE CONCAT(' - ', i.name) END
+              CASE WHEN COALESCE(${localizedName("i")}, '') = '' THEN '' ELSE CONCAT(' - ', ${localizedName("i")}) END
             ),
             'SKU '
           )
-          WHEN vl.line_kind = 'LABOUR' THEN NULLIF(CONCAT('Labour ', COALESCE(l.name, '')), 'Labour ')
-          WHEN vl.line_kind = 'EMPLOYEE' THEN NULLIF(CONCAT('Employee ', COALESCE(e.name, '')), 'Employee ')
+          WHEN vl.line_kind = 'LABOUR' THEN NULLIF(CONCAT('Labour ', COALESCE(${localizedName("l")}, '')), 'Labour ')
+          WHEN vl.line_kind = 'EMPLOYEE' THEN NULLIF(CONCAT('Employee ', COALESCE(${localizedName("e")}, '')), 'Employee ')
           ELSE NULL
         END,
         CONCAT(vh.voucher_type_code, ' #', vh.voucher_no::text)
@@ -1234,11 +1244,16 @@ const getLedgerRows = async ({
 };
 
 const loadBalanceOptions = async ({ req }) => {
+  const locale = String(req?.locale || "en").toLowerCase();
+  const branchNameSql =
+    locale === "ur"
+      ? "COALESCE(NULLIF(branches.name_ur, ''), branches.name)"
+      : "branches.name";
   const branches = req.user?.isAdmin
     ? await knex("erp.branches")
-        .select("id", "name")
+        .select("id", knex.raw(`${branchNameSql} as name`))
         .where({ is_active: true })
-        .orderBy("name", "asc")
+        .orderByRaw(`${branchNameSql} asc`)
     : (req.branchOptions || []).map((row) => ({
         id: Number(row.id),
         name: row.name,

@@ -273,15 +273,15 @@
         <table class="min-w-300 w-full text-sm tabular-nums" data-report-table data-export-title="<%= tt('stock_ledger_report', 'Stock Ledger Report') %>">
           <thead class="bg-slate-100 text-slate-700">
             <tr>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("date", "Date") %></th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("voucher", "Voucher") %></th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("details", "Details") %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("date", "Date") %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("voucher", "Voucher") %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("details", "Details") %></th>
               <% if (showLedgerColorSizeColumns) { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("color", "Color") %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("size", "Size") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("color", "Color") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("size", "Size") %></th>
               <% } %>
               <% if (showLedgerUnitColumn) { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("units", "Units") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("units", "Units") %></th>
               <% } %>
               <% if (showBaseMovementColumns) { %>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("inward", "Inward") %></th>
@@ -300,7 +300,7 @@
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("out_amount", "Out Amount") %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("running_amount", "Running Amount") %></th>
               <% if (includeBranchColumn) { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("branch", "Branch") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("branch", "Branch") %></th>
               <% } %>
             </tr>
           </thead>

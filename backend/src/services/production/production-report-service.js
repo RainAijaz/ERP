@@ -4,6 +4,11 @@ const {
   PRODUCTION_VOUCHER_TYPES,
   loadBomProfileBySkuTx,
 } = require("./production-voucher-service");
+const {
+  localizedNameSelect,
+  localizedNameSql,
+  resolveLocale,
+} = require("../../utils/localized-name");
 
 const toPositiveInt = (value) => {
   const n = Number(value);
@@ -50,10 +55,11 @@ const getAllowedBranchIds = (req) => {
 
 const loadBranchOptions = async (req) => {
   const allowed = getAllowedBranchIds(req);
+  const locale = resolveLocale(req?.locale);
   let query = knex("erp.branches")
-    .select("id", "name")
+    .select("id", localizedNameSelect("branches", "name", locale))
     .where({ is_active: true })
-    .orderBy("name", "asc");
+    .orderByRaw(`${localizedNameSql("branches", locale)} asc`);
   if (!req?.user?.isAdmin && allowed.length) {
     query = query.whereIn("id", allowed);
   }
@@ -268,19 +274,20 @@ const hasTableColumn = async (tableName, columnName) => {
 };
 
 const getProductionControlReportPageData = async ({ req, input = {} }) => {
+  const locale = resolveLocale(req?.locale);
   const branchOptionsPromise = loadBranchOptions(req);
   const departmentsPromise = knex("erp.departments")
-    .select("id", "name")
+    .select("id", localizedNameSelect("departments", "name", locale))
     .where({ is_active: true, is_production: true })
-    .orderBy("name", "asc");
+    .orderByRaw(`${localizedNameSql("departments", locale)} asc`);
   const laboursPromise = knex("erp.labours")
-    .select("id", "name")
+    .select("id", localizedNameSelect("labours", "name", locale))
     .whereRaw("lower(coalesce(status, '')) = 'active'")
-    .orderBy("name", "asc");
+    .orderByRaw(`${localizedNameSql("labours", locale)} asc`);
   const productGroupsPromise = knex("erp.product_groups")
-    .select("id", "name")
+    .select("id", localizedNameSelect("product_groups", "name", locale))
     .where({ is_active: true })
-    .orderBy("name", "asc");
+    .orderByRaw(`${localizedNameSql("product_groups", locale)} asc`);
   const productSubgroupsPromise = knex("erp.product_subgroups as sg")
     .select("sg.id", "sg.name", "sg.group_id")
     .where({ "sg.is_active": true })
@@ -513,7 +520,7 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
       "vh.voucher_no",
       "vh.voucher_date",
       "vh.branch_id",
-      "b.name as branch_name",
+      localizedNameSelect("b", "branch_name", locale),
       "vh.remarks as header_remarks",
       "vl.id as line_id",
       "vl.line_no",
@@ -531,9 +538,9 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
       knex.raw(`${deptExpr} as effective_dept_id`),
       knex.raw(`${stageExpr} as effective_stage_id`),
       knex.raw(`${labourExpr} as effective_labour_id`),
-      "d.name as dept_name",
-      "l.name as labour_name",
-      "ps.name as stage_name",
+      localizedNameSelect("d", "dept_name", locale),
+      localizedNameSelect("l", "labour_name", locale),
+      localizedNameSelect("ps", "stage_name", locale),
       "ps.code as stage_code",
     )
     .where({
@@ -585,12 +592,12 @@ const getProductionControlReportPageData = async ({ req, input = {} }) => {
           "s.id as sku_id",
           "s.sku_code",
           "i.id as article_id",
-          "i.name as item_name",
+          localizedNameSelect("i", "item_name", locale),
           "i.item_type",
           "i.group_id",
           "i.subgroup_id",
-          "pg.name as group_name",
-          "sg.name as subgroup_name",
+          localizedNameSelect("pg", "group_name", locale),
+          localizedNameSelect("sg", "subgroup_name", locale),
         )
         .whereIn("s.id", allSkuIds)
     : Promise.resolve([]));
@@ -1073,11 +1080,12 @@ const getProductionDepartmentWipReportPageData = async ({
   req,
   input = {},
 }) => {
+  const locale = resolveLocale(req?.locale);
   const branchOptionsPromise = loadBranchOptions(req);
   const productGroupsPromise = knex("erp.product_groups")
-    .select("id", "name")
+    .select("id", localizedNameSelect("product_groups", "name", locale))
     .where({ is_active: true })
-    .orderBy("name", "asc");
+    .orderByRaw(`${localizedNameSql("product_groups", locale)} asc`);
   const productSubgroupsPromise = knex("erp.product_subgroups as sg")
     .select("sg.id", "sg.name", "sg.group_id")
     .where({ "sg.is_active": true })
@@ -1200,15 +1208,15 @@ const getProductionDepartmentWipReportPageData = async ({
       "wl.txn_date",
       "wl.direction",
       "wl.qty_pairs",
-      "b.name as branch_name",
+      localizedNameSelect("b", "branch_name", locale),
       "s.sku_code",
       "i.id as article_id",
-      "i.name as article_name",
+      localizedNameSelect("i", "article_name", locale),
       "i.item_type",
       "i.group_id",
       "i.subgroup_id",
-      "pg.name as group_name",
-      "sg.name as subgroup_name",
+      localizedNameSelect("pg", "group_name", locale),
+      localizedNameSelect("sg", "subgroup_name", locale),
     )
     .whereIn("i.item_type", ["FG", "SFG"])
     .where("wl.txn_date", "<=", asOfDate);
@@ -1391,7 +1399,7 @@ const getProductionDepartmentWipReportPageData = async ({
     ),
   ];
   const deptRows = deptIds.length
-    ? await knex("erp.departments").select("id", "name").whereIn("id", deptIds)
+    ? await knex("erp.departments").select("id", localizedNameSelect("departments", "name", locale)).whereIn("id", deptIds)
     : [];
   const deptNameById = new Map(
     deptRows.map((row) => [Number(row.id), String(row.name || "-")]),
@@ -1629,15 +1637,16 @@ const getProductionDepartmentWipBalancesReportPageData = async ({
   req,
   input = {},
 }) => {
+  const locale = resolveLocale(req?.locale);
   const branchOptionsPromise = loadBranchOptions(req);
   const departmentsPromise = knex("erp.departments")
-    .select("id", "name")
+    .select("id", localizedNameSelect("departments", "name", locale))
     .where({ is_active: true, is_production: true })
-    .orderBy("name", "asc");
+    .orderByRaw(`${localizedNameSql("departments", locale)} asc`);
   const skusPromise = knex("erp.skus as s")
     .join("erp.variants as v", "v.id", "s.variant_id")
     .join("erp.items as i", "i.id", "v.item_id")
-    .select("s.id", "s.sku_code", "i.name as article_name")
+    .select("s.id", "s.sku_code", localizedNameSelect("i", "article_name", locale))
     .where({ "s.is_active": true, "i.is_active": true })
     .whereIn("i.item_type", ["FG", "SFG"])
     .orderBy("s.sku_code", "asc");
@@ -1727,13 +1736,13 @@ const getProductionDepartmentWipBalancesReportPageData = async ({
       "wl.txn_date",
       "wl.direction",
       "wl.qty_pairs",
-      "d.name as department_name",
-      "b.name as branch_name",
+      localizedNameSelect("d", "department_name", locale),
+      localizedNameSelect("b", "branch_name", locale),
       "s.sku_code",
       "i.id as article_id",
-      "i.name as article_name",
+      localizedNameSelect("i", "article_name", locale),
       "i.item_type",
-      "pg.name as group_name",
+      localizedNameSelect("pg", "group_name", locale),
     )
     .whereIn("i.item_type", ["FG", "SFG"])
     .where("wl.txn_date", "<=", asOfDate);
@@ -2005,15 +2014,16 @@ const getProductionDepartmentWipLedgerReportPageData = async ({
   req,
   input = {},
 }) => {
+  const locale = resolveLocale(req?.locale);
   const branchOptionsPromise = loadBranchOptions(req);
   const departmentsPromise = knex("erp.departments")
-    .select("id", "name")
+    .select("id", localizedNameSelect("departments", "name", locale))
     .where({ is_active: true, is_production: true })
-    .orderBy("name", "asc");
+    .orderByRaw(`${localizedNameSql("departments", locale)} asc`);
   const skusPromise = knex("erp.skus as s")
     .join("erp.variants as v", "v.id", "s.variant_id")
     .join("erp.items as i", "i.id", "v.item_id")
-    .select("s.id", "s.sku_code", "i.name as article_name")
+    .select("s.id", "s.sku_code", localizedNameSelect("i", "article_name", locale))
     .where({ "s.is_active": true, "i.is_active": true })
     .whereIn("i.item_type", ["FG", "SFG"])
     .orderBy("s.sku_code", "asc");
@@ -2125,16 +2135,16 @@ const getProductionDepartmentWipLedgerReportPageData = async ({
       "vh.voucher_no",
       "vh.voucher_type_code",
       "vh.status as source_voucher_status",
-      "d.name as department_name",
-      "b.name as branch_name",
+      localizedNameSelect("d", "department_name", locale),
+      localizedNameSelect("b", "branch_name", locale),
       "s.sku_code",
       "i.id as article_id",
-      "i.name as article_name",
+      localizedNameSelect("i", "article_name", locale),
       "i.item_type",
       "i.group_id",
       "i.subgroup_id",
-      "pg.name as group_name",
-      "sg.name as subgroup_name",
+      localizedNameSelect("pg", "group_name", locale),
+      localizedNameSelect("sg", "subgroup_name", locale),
     )
     .whereIn("i.item_type", ["FG", "SFG"])
     .where("wl.dept_id", Number(validDepartmentId))
@@ -2391,6 +2401,7 @@ const getProductionDepartmentWipLedgerReportPageData = async ({
 };
 
 const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
+  const locale = resolveLocale(req?.locale);
   const selectedBranchIds = normalizeBranchFilter({ req, input });
   const { fromDate, toDate } = normalizeDateRange(input);
   const selectedDepartmentIds = normalizeIdList(
@@ -2419,9 +2430,9 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
 
   const branchOptionsPromise = loadBranchOptions(req);
   const departmentsPromise = knex("erp.departments")
-    .select("id", "name")
+    .select("id", localizedNameSelect("departments", "name", locale))
     .where({ is_active: true, is_production: true })
-    .orderBy("name", "asc");
+    .orderByRaw(`${localizedNameSql("departments", locale)} asc`);
   const productGroupsPromise = knex("erp.product_groups as pg")
     .select("pg.id", "pg.name")
     .where({ "pg.is_active": true })
@@ -2524,7 +2535,7 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
       "vh.voucher_no",
       "vh.voucher_date",
       "vh.branch_id",
-      "b.name as branch_name",
+      localizedNameSelect("b", "branch_name", locale),
       "vl.id as line_id",
       "vl.line_no",
       "vl.line_kind",
@@ -2616,11 +2627,11 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
             "s.id as sku_id",
             "s.sku_code",
             "i.id as item_id",
-            "i.name as item_name",
+            localizedNameSelect("i", "item_name", locale),
             "i.group_id",
             "i.subgroup_id",
-            "pg.name as group_name",
-            "sg.name as subgroup_name",
+            localizedNameSelect("pg", "group_name", locale),
+            localizedNameSelect("sg", "subgroup_name", locale),
           )
           .whereIn("s.id", allSkuIds)
       : Promise.resolve([]),
@@ -2633,8 +2644,8 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
             "i.name",
             "i.group_id",
             "i.subgroup_id",
-            "pg.name as group_name",
-            "sg.name as subgroup_name",
+            localizedNameSelect("pg", "group_name", locale),
+            localizedNameSelect("sg", "subgroup_name", locale),
           )
           .whereIn("i.id", itemIds)
       : Promise.resolve([]),
@@ -2643,7 +2654,7 @@ const getProductionConsumptionReportPageData = async ({ req, input = {} }) => {
       : Promise.resolve([]),
     departmentIdsFromRows.length
       ? knex("erp.departments")
-          .select("id", "name")
+          .select("id", localizedNameSelect("departments", "name", locale))
           .whereIn("id", departmentIdsFromRows)
       : Promise.resolve([]),
   ]);
@@ -2861,6 +2872,7 @@ const getProductionPlannedConsumptionReportPageData = async ({
   req,
   input = {},
 }) => {
+  const locale = resolveLocale(req?.locale);
   const branchOptions = await loadBranchOptions(req);
   const selectedBranchIds = normalizeBranchFilter({ req, input });
   const rawFromDate = String(input?.from_date || input?.fromDate || "").trim();
@@ -3004,7 +3016,7 @@ const getProductionPlannedConsumptionReportPageData = async ({
 
   const [itemRows, uomRows, availableRows] = await Promise.all([
     itemIds.length
-      ? knex("erp.items").select("id", "name").whereIn("id", itemIds)
+      ? knex("erp.items").select("id", localizedNameSelect("items", "name", locale)).whereIn("id", itemIds)
       : Promise.resolve([]),
     uomIds.length
       ? knex("erp.uom").select("id", "code").whereIn("id", uomIds)

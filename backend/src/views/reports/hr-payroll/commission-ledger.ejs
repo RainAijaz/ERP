@@ -103,11 +103,11 @@
         <table class="w-full text-sm" data-report-table>
           <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
             <tr>
-              <th class="px-4 py-3 text-left">#</th>
-              <th class="px-4 py-3 text-left"><%= t("date") %></th>
-              <th class="px-4 py-3 text-left"><%= t("voucher_no") || t("voucher") %></th>
-              <th class="px-4 py-3 text-left"><%= t("employees") %></th>
-              <th class="px-4 py-3 text-left"><%= t("commission_type") %></th>
+              <th class="px-4 py-3 text-start">#</th>
+              <th class="px-4 py-3 text-start"><%= t("date") %></th>
+              <th class="px-4 py-3 text-start"><%= t("voucher_no") || t("voucher") %></th>
+              <th class="px-4 py-3 text-start"><%= t("employees") %></th>
+              <th class="px-4 py-3 text-start"><%= t("commission_type") %></th>
               <th class="px-4 py-3 text-right"><%= t("amount") %></th>
               <th class="px-4 py-3 text-center w-10"></th>
             </tr>
@@ -152,8 +152,8 @@
                   <table class="w-full text-xs" data-mobile-report>
                     <thead class="bg-indigo-50 text-[10px] font-semibold uppercase tracking-wider text-indigo-600">
                       <tr>
-                        <th class="px-3 py-2 text-left"><%= t("skus") || "SKU" %></th>
-                        <th class="px-3 py-2 text-left"><%= t("commission_basis") || "Basis" %></th>
+                        <th class="px-3 py-2 text-start"><%= t("skus") || "SKU" %></th>
+                        <th class="px-3 py-2 text-start"><%= t("commission_basis") || "Basis" %></th>
                         <th class="px-3 py-2 text-right"><%= t("rate_value") %></th>
                         <th class="px-3 py-2 text-right"><%= t("amount") %></th>
                       </tr>

@@ -551,8 +551,8 @@
         <table class="min-w-230 w-full text-sm tabular-nums" data-table data-report-table data-export-title="<%= summaryExportTitle %>">
           <thead class="bg-slate-100 text-slate-700">
             <tr>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= summaryGroupLabel %></th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("unit", "Unit") %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= summaryGroupLabel %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("unit", "Unit") %></th>
               <% if (modeIsOut) { %>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("qty_out", "Qty Out") %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("amount", "Amount") %></th>
@@ -595,7 +595,7 @@
           <thead class="bg-slate-100 text-slate-700">
             <tr>
               <% detailColumns.forEach((columnKey) => { %>
-                <th class="px-3 py-2 <%= ['qtyOut','expectedQty','receivedQty','rejectedQty','varianceQty','rate','amount'].includes(columnKey) ? 'text-right' : 'text-left' %> text-xs font-semibold uppercase tracking-[0.08em]"><%= detailColumnLabels[columnKey] || columnKey %></th>
+                <th class="px-3 py-2 <%= ['qtyOut','expectedQty','receivedQty','rejectedQty','varianceQty','rate','amount'].includes(columnKey) ? 'text-right' : 'text-start' %> text-xs font-semibold uppercase tracking-[0.08em]"><%= detailColumnLabels[columnKey] || columnKey %></th>
               <% }) %>
             </tr>
           </thead>

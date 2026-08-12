@@ -26,13 +26,13 @@
       <table class="min-w-full text-sm" data-table data-report-table>
         <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
           <tr>
-            <th class="cursor-pointer px-4 py-3 text-left" data-sort-key="__sr">SR.NO</th>
-            <th class="cursor-pointer px-4 py-3 text-left" data-sort-key="name"><%= t('party_name') %></th>
-            <th class="cursor-pointer px-4 py-3 text-left" data-sort-key="group_name"><%= t('party_group') %></th>
-            <th class="cursor-pointer px-4 py-3 text-left" data-sort-key="city_name"><%= t('city') %></th>
-            <% if (canViewPhone) { %><th class="cursor-pointer px-4 py-3 text-left" data-sort-key="phone_primary"><%= t('phone_primary') %></th><% } %>
-            <th class="cursor-pointer px-4 py-3 text-left" data-sort-key="created_at"><%= t('created_at') %></th>
-            <th class="cursor-pointer px-4 py-3 text-left" data-sort-key="branch_names"><%= t('branches') %></th>
+            <th class="cursor-pointer px-4 py-3 text-start" data-sort-key="__sr">SR.NO</th>
+            <th class="cursor-pointer px-4 py-3 text-start" data-sort-key="name"><%= t('party_name') %></th>
+            <th class="cursor-pointer px-4 py-3 text-start" data-sort-key="group_name"><%= t('party_group') %></th>
+            <th class="cursor-pointer px-4 py-3 text-start" data-sort-key="city_name"><%= t('city') %></th>
+            <% if (canViewPhone) { %><th class="cursor-pointer px-4 py-3 text-start" data-sort-key="phone_primary"><%= t('phone_primary') %></th><% } %>
+            <th class="cursor-pointer px-4 py-3 text-start" data-sort-key="created_at"><%= t('created_at') %></th>
+            <th class="cursor-pointer px-4 py-3 text-start" data-sort-key="branch_names"><%= t('branches') %></th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100" data-table-body>

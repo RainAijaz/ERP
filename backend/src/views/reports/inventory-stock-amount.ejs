@@ -385,10 +385,10 @@
           <table class="min-w-[980px] w-full text-sm tabular-nums" data-report-table data-export-title="<%= `${tt(reportTitleKey, reportTitleFallback)} (${tt("details", "Details")})` %>">
             <thead class="bg-slate-100 text-slate-700">
               <tr>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("sku", "SKU") %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("article", "Article") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("sku", "SKU") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("article", "Article") %></th>
                 <% if (showFgUnitColumn) { %>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("units", "Units") %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("units", "Units") %></th>
                 <% } %>
                 <% if (showBaseQtyColumn) { %>
                   <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("quantity") %></th>
@@ -403,7 +403,7 @@
                   <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("total_amount", "Total Amount") %></th>
                 <% } %>
                 <% if (includeBranchColumn) { %>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("branch", "Branch") %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("branch", "Branch") %></th>
                 <% } %>
               </tr>
             </thead>
@@ -537,17 +537,17 @@
           <table class="min-w-[1080px] w-full text-sm tabular-nums" data-report-table data-export-title="<%= `${tt(reportTitleKey, reportTitleFallback)} - ${tt("raw_materials", "Raw Materials")} (${tt("details", "Details")})` %>">
             <thead class="bg-slate-100 text-slate-700">
               <tr>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("raw_material", "Raw Material") %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("color", "Color") %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("size", "Size") %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("units", "Units") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("raw_material", "Raw Material") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("color", "Color") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("size", "Size") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("units", "Units") %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("quantity") %></th>
                 <% if (includeAmounts) { %>
                   <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("rate") %></th>
                   <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("total_amount", "Total Amount") %></th>
                 <% } %>
                 <% if (includeBranchColumn) { %>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("branch", "Branch") %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("branch", "Branch") %></th>
                 <% } %>
               </tr>
             </thead>
@@ -645,9 +645,9 @@
           <table class="min-w-[920px] w-full text-sm tabular-nums" data-report-table data-export-title="<%= `${tt(reportTitleKey, reportTitleFallback)} (${tt("summary", "Summary")})` %>">
             <thead class="bg-slate-100 text-slate-700">
               <tr>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= selectedOrderBy === "ARTICLE" ? tt("article", "Article") : tt("sku", "SKU") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= selectedOrderBy === "ARTICLE" ? tt("article", "Article") : tt("sku", "SKU") %></th>
                 <% if (showFgUnitColumn) { %>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("units", "Units") %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("units", "Units") %></th>
                 <% } %>
                 <% if (showBaseQtyColumn) { %>
                   <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("quantity") %></th>
@@ -723,7 +723,7 @@
           <table class="min-w-[520px] w-full text-sm tabular-nums" data-report-table data-export-title="<%= `${tt(reportTitleKey, reportTitleFallback)} - ${tt("raw_materials", "Raw Materials")} (${tt("summary", "Summary")})` %>">
             <thead class="bg-slate-100 text-slate-700">
               <tr>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("raw_material", "Raw Material") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("raw_material", "Raw Material") %></th>
                 <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("quantity") %></th>
               </tr>
             </thead>

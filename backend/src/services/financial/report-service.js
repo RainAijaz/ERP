@@ -7,6 +7,35 @@ const {
   resolveVoucherApprovalRequiredTx,
 } = require("../../utils/voucher-approval-policy");
 
+// Every table these reports read names from (accounts, parties, labours,
+// employees, departments, branches, account_groups) carries a name_ur column,
+// but it is often blank -- so fall back to the English name rather than
+// rendering an empty cell.
+const localizedNameSql = (alias, locale) =>
+  locale === "ur"
+    ? `COALESCE(NULLIF(${alias}.name_ur, ''), ${alias}.name)`
+    : `${alias}.name`;
+
+// A voucher line points at exactly one of account/party/labour/employee, so the
+// original COALESCE picks whichever join matched. Keep that precedence, just
+// with each alias's Urdu name tried ahead of its English one.
+const localizedCoalesceNameSql = (aliases, locale) =>
+  `COALESCE(${aliases
+    .flatMap((alias) =>
+      locale === "ur"
+        ? [`NULLIF(${alias}.name_ur, '')`, `${alias}.name`]
+        : [`${alias}.name`],
+    )
+    .join(", ")}, NULL)`;
+
+const localizedNameSelect = (alias, as, locale) =>
+  locale === "ur"
+    ? knex.raw(`${localizedNameSql(alias, locale)} as ${as}`)
+    : `${alias}.name as ${as}`;
+
+const localizedCoalesceNameSelect = (aliases, as, locale) =>
+  knex.raw(`${localizedCoalesceNameSql(aliases, locale)} as ${as}`);
+
 const ACCOUNT_FILTER_REPORTS = new Set([
   "account_activity_ledger",
   "cash_book",
@@ -286,6 +315,7 @@ const getCommonFilters = (req, reportKey = "") => {
   return {
     from,
     to,
+    locale: String(req?.locale || "en").toLowerCase(),
     branchId,
     branchIds,
     accountId,
@@ -415,8 +445,8 @@ const getCashBook = async (filters) => {
         knex.raw("to_char(ge.entry_date, 'YYYY-MM-DD') as entry_date"),
         "vh.voucher_type_code",
         "vh.voucher_no",
-        "a.name as cash_account",
-        "b.name as branch_name",
+        localizedNameSelect("a", "cash_account", filters.locale),
+        localizedNameSelect("b", "branch_name", filters.locale),
         knex.raw(
           "COALESCE(MAX(NULLIF(vh.remarks,'')), MAX(NULLIF(ge.narration,''))) as description",
         ),
@@ -432,7 +462,9 @@ const getCashBook = async (filters) => {
         "vh.voucher_type_code",
         "vh.voucher_no",
         "a.name",
+        "a.name_ur",
         "b.name",
+        "b.name_ur",
       )
       .orderBy("ge.entry_date", "asc")
       .orderBy("vh.voucher_no", "asc");
@@ -465,8 +497,8 @@ const getCashBook = async (filters) => {
         "vh.voucher_type_code",
         "vh.voucher_no",
         "vh.id as voucher_id",
-        "a.name as cash_account",
-        "b.name as branch_name",
+        localizedNameSelect("a", "cash_account", filters.locale),
+        localizedNameSelect("b", "branch_name", filters.locale),
         knex.raw(
           "COALESCE(NULLIF(vh.remarks, ''), NULLIF(ge.narration, '')) as description",
         ),
@@ -512,7 +544,7 @@ const getCashBook = async (filters) => {
         .join("erp.parties as p", "p.id", "sh.customer_party_id")
         .select(
           "sh.voucher_id",
-          "p.name as customer_name",
+          localizedNameSelect("p", "customer_name", filters.locale),
           knex.raw(`(
             SELECT COALESCE(ABS(SUM(CASE WHEN vl.amount < 0 THEN vl.amount ELSE 0 END)), 0)
             FROM erp.voucher_line vl
@@ -859,9 +891,9 @@ const getVoucherRegister = async (filters) => {
       .select(
         knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"),
         "vh.voucher_no",
-        "b.name as branch_name",
+        localizedNameSelect("b", "branch_name", filters.locale),
         knex.raw("COALESCE(NULLIF(vh.remarks, ''), NULL) as note"),
-        "ah.name as cash_account",
+        localizedNameSelect("ah", "cash_account", filters.locale),
         knex.raw("COALESCE(NULLIF(u.name, ''), u.username) as created_by"),
         knex.raw(
           "COALESCE(SUM(COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0)), 0) as total_dr",
@@ -872,13 +904,17 @@ const getVoucherRegister = async (filters) => {
       )
       .where("vh.voucher_type_code", voucherTypeCode)
       .andWhere("vh.status", "APPROVED")
+      // Postgres will not infer functional dependency across the joined
+      // tables, so the _ur columns have to be grouped alongside their names.
       .groupBy(
         "vh.id",
         "vh.voucher_date",
         "vh.voucher_no",
         "b.name",
+        "b.name_ur",
         "vh.remarks",
         "ah.name",
+        "ah.name_ur",
         "u.name",
         "u.username",
       )
@@ -928,13 +964,15 @@ const getVoucherRegister = async (filters) => {
       .select(
         knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"),
         "vh.voucher_no",
-        "b.name as branch_name",
-        "ah.name as cash_account",
-        knex.raw(
-          "COALESCE(a.name, p.name, l.name, e.name, NULL) as against_account",
+        localizedNameSelect("b", "branch_name", filters.locale),
+        localizedNameSelect("ah", "cash_account", filters.locale),
+        localizedCoalesceNameSelect(
+          ["a", "p", "l", "e"],
+          "against_account",
+          filters.locale,
         ),
         knex.raw("NULLIF(vl.meta->>'description','') as description"),
-        "d.name as department",
+        localizedNameSelect("d", "department", filters.locale),
         knex.raw("COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0) as dr"),
         knex.raw("COALESCE(NULLIF(vl.meta->>'credit','')::numeric, 0) as cr"),
         "vl.line_no",
@@ -984,7 +1022,7 @@ const getVoucherRegister = async (filters) => {
       .select(
         knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"),
         "vh.voucher_no",
-        "b.name as branch_name",
+        localizedNameSelect("b", "branch_name", filters.locale),
         knex.raw("COALESCE(NULLIF(vh.remarks, ''), NULL) as note"),
         knex.raw("COALESCE(NULLIF(u.name, ''), u.username) as created_by"),
         knex.raw(
@@ -1001,6 +1039,7 @@ const getVoucherRegister = async (filters) => {
         "vh.voucher_date",
         "vh.voucher_no",
         "b.name",
+        "b.name_ur",
         "vh.remarks",
         "u.name",
         "u.username",
@@ -1050,12 +1089,14 @@ const getVoucherRegister = async (filters) => {
       .select(
         knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"),
         "vh.voucher_no",
-        "b.name as branch_name",
-        knex.raw(
-          "COALESCE(a.name, p.name, l.name, e.name, NULL) as account_name",
+        localizedNameSelect("b", "branch_name", filters.locale),
+        localizedCoalesceNameSelect(
+          ["a", "p", "l", "e"],
+          "account_name",
+          filters.locale,
         ),
         knex.raw("NULLIF(vl.meta->>'description','') as description"),
-        "d.name as department",
+        localizedNameSelect("d", "department", filters.locale),
         knex.raw("COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0) as dr"),
         knex.raw("COALESCE(NULLIF(vl.meta->>'credit','')::numeric, 0) as cr"),
         "vl.line_no",
@@ -1101,7 +1142,7 @@ const getVoucherRegister = async (filters) => {
         knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"),
         "vh.voucher_type_code",
         "vh.voucher_no",
-        "b.name as branch_name",
+        localizedNameSelect("b", "branch_name", filters.locale),
         knex.raw(
           "COALESCE(SUM(COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0)), 0) as dr",
         ),
@@ -1116,6 +1157,7 @@ const getVoucherRegister = async (filters) => {
         "vh.voucher_type_code",
         "vh.voucher_no",
         "b.name",
+        "b.name_ur",
       )
       .orderBy("vh.voucher_date", "asc")
       .orderBy("vh.voucher_no", "asc");
@@ -1197,7 +1239,7 @@ const getVoucherRegister = async (filters) => {
     .select(
       knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as entry_date"),
       "vh.voucher_no",
-      "b.name as branch_name",
+      localizedNameSelect("b", "branch_name", filters.locale),
       "vh.id as voucher_id",
       "vl.id as line_id",
       "vl.line_no",
@@ -1218,7 +1260,9 @@ const getVoucherRegister = async (filters) => {
     );
   }
   if (includeDepartmentInDetails) {
-    detailQuery = detailQuery.select("d.name as department");
+    detailQuery = detailQuery.select(
+      localizedNameSelect("d", "department", filters.locale),
+    );
   }
 
   if (includeBankStatus) {
@@ -1230,7 +1274,7 @@ const getVoucherRegister = async (filters) => {
   }
   if (includeBankAccountInBankDetails) {
     detailQuery = detailQuery.select(
-      knex.raw("COALESCE(bh.name, a.name, NULL) as bank_account"),
+      localizedCoalesceNameSelect(["bh", "a"], "bank_account", filters.locale),
     );
   }
   if (includeAgainstAccountInBankDetails) {
@@ -1242,8 +1286,8 @@ const getVoucherRegister = async (filters) => {
           upper(COALESCE(NULLIF(vl.meta->>'source_voucher_type_code',''), svh.voucher_type_code, '')) = 'CASH_VOUCHER' AND
           COALESCE(vl.account_id, 0) = COALESCE(vh.header_account_id, -1) AND
           COALESCE(svh.header_account_id, 0) > 0
-        THEN sa.name
-        ELSE COALESCE(a.name, p.name, l.name, e.name, NULL)
+        THEN ${localizedNameSql("sa", filters.locale)}
+        ELSE ${localizedCoalesceNameSql(["a", "p", "l", "e"], filters.locale)}
       END as counterparty
     `),
     );
@@ -1485,7 +1529,7 @@ const getExpenseTrendGroupTotals = async (filters, fromDate, toDate) => {
     .join("erp.account_groups as ag", "ag.id", "a.subgroup_id")
     .select(
       "ag.id as account_group_id",
-      "ag.name as account_group_name",
+      localizedNameSelect("ag", "account_group_name", filters.locale),
       knex.raw(`
         COALESCE(SUM(
           COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0) -
@@ -1496,7 +1540,7 @@ const getExpenseTrendGroupTotals = async (filters, fromDate, toDate) => {
     .where("ag.account_type", "EXPENSE")
     .where("vh.status", "APPROVED")
     .andWhere("vl.line_kind", "ACCOUNT")
-    .groupBy("ag.id", "ag.name");
+    .groupBy("ag.id", "ag.name", "ag.name_ur");
 
   query = buildDateFilter(query, "vh.voucher_date", fromDate, toDate);
   if (filters.branchId) query = query.where("vh.branch_id", filters.branchId);
@@ -1806,16 +1850,16 @@ const getExpenseBreakdownRows = async (filters, fromDate, toDate) => {
       "vh.voucher_no",
       "vh.voucher_type_code",
       "vh.header_account_id",
-      "ha.name as cashier_name",
+      localizedNameSelect("ha", "cashier_name", filters.locale),
       knex.raw(
         "COALESCE(NULLIF(u.name, ''), u.username, NULL) as created_by_name",
       ),
       "vl.id as line_id",
       "vl.line_no",
       "a.id as account_id",
-      "a.name as account_name",
+      localizedNameSelect("a", "account_name", filters.locale),
       "ag.id as account_group_id",
-      "ag.name as account_group_name",
+      localizedNameSelect("ag", "account_group_name", filters.locale),
       knex.raw("NULLIF(vl.meta->>'description', '') as narration"),
       knex.raw(`
         COALESCE(NULLIF(vl.meta->>'debit','')::numeric, 0) as dr
@@ -1824,8 +1868,8 @@ const getExpenseBreakdownRows = async (filters, fromDate, toDate) => {
         COALESCE(NULLIF(vl.meta->>'credit','')::numeric, 0) as cr
       `),
       knex.raw("NULLIF(vl.meta->>'department_id','')::bigint as department_id"),
-      "d.name as department_name",
-      knex.raw("COALESCE(p.name, l.name, e.name, NULL) as payee_name"),
+      localizedNameSelect("d", "department_name", filters.locale),
+      localizedCoalesceNameSelect(["p", "l", "e"], "payee_name", filters.locale),
     )
     .where("vh.status", "APPROVED")
     .andWhere("vl.line_kind", "ACCOUNT")
@@ -2145,13 +2189,16 @@ const getExpenseAnalysis = async (filters) => {
   }
 
   let query = knex("erp.gl_entry as ge")
-    .select("ag.name as account_group", "d.name as department")
+    .select(
+      localizedNameSelect("ag", "account_group", filters.locale),
+      localizedNameSelect("d", "department", filters.locale),
+    )
     .sum({ total_debit: "ge.dr" })
     .sum({ total_credit: "ge.cr" })
     .leftJoin("erp.accounts as a", "a.id", "ge.account_id")
     .leftJoin("erp.account_groups as ag", "ag.id", "a.subgroup_id")
     .leftJoin("erp.departments as d", "d.id", "ge.dept_id")
-    .groupBy("ag.name", "d.name")
+    .groupBy("ag.name", "ag.name_ur", "d.name", "d.name_ur")
     .orderBy("ag.name", "asc");
   query = buildDateFilter(query, "ge.entry_date", filters.from, filters.to);
   if (Array.isArray(filters.branchIds) && filters.branchIds.length)
@@ -2169,8 +2216,10 @@ const getTrialBalance = async (filters) => {
     .leftJoin("erp.branches as b", "b.id", "ge.branch_id")
     .select(
       "a.code as account_code",
-      "a.name as account_name",
-      ...(includeBranchColumn ? ["b.name as branch_name"] : []),
+      localizedNameSelect("a", "account_name", filters.locale),
+      ...(includeBranchColumn
+        ? [localizedNameSelect("b", "branch_name", filters.locale)]
+        : []),
       knex.raw(
         `COALESCE(SUM(CASE WHEN ge.entry_date < ? THEN COALESCE(ge.dr, 0) - COALESCE(ge.cr, 0) ELSE 0 END), 0) as opening_balance`,
         [filters.from],
@@ -2188,7 +2237,12 @@ const getTrialBalance = async (filters) => {
         [filters.to],
       ),
     )
-    .groupBy("a.code", "a.name", ...(includeBranchColumn ? ["b.name"] : []))
+    .groupBy(
+      "a.code",
+      "a.name",
+      "a.name_ur",
+      ...(includeBranchColumn ? ["b.name", "b.name_ur"] : []),
+    )
     .orderBy("a.code", "asc");
 
   if (filters.branchId) query = query.where("ge.branch_id", filters.branchId);
@@ -2572,7 +2626,10 @@ const getProfitAndLoss = async (filters) => {
   };
 };
 
-const buildSalesVoucherDescriptionSummaryMap = async (voucherIds) => {
+const buildSalesVoucherDescriptionSummaryMap = async (
+  voucherIds,
+  locale = "en",
+) => {
   const uniqueIds = [
     ...new Set(
       (voucherIds || [])
@@ -2608,7 +2665,7 @@ const buildSalesVoucherDescriptionSummaryMap = async (voucherIds) => {
       "vl.amount",
       "vl.meta",
       "s.sku_code",
-      "i.name as item_name",
+      localizedNameSelect("i", "item_name", locale),
     )
     .whereIn("vl.voucher_header_id", uniqueIds)
     .whereIn("vl.line_kind", ["ITEM", "SKU"])
@@ -2726,13 +2783,13 @@ const getAccountActivityLedger = async (filters) => {
         "vh.id as voucher_id",
         "vh.voucher_type_code",
         "vh.voucher_no",
-        "b.name as branch_name",
+        localizedNameSelect("b", "branch_name", filters.locale),
         knex.raw("COALESCE(ge.dr, 0) as dr"),
         knex.raw("COALESCE(ge.cr, 0) as cr"),
         knex.raw(
           "COALESCE(NULLIF(ge.narration, ''), NULLIF(vh.remarks, '')) as description",
         ),
-        "d.name as department",
+        localizedNameSelect("d", "department", filters.locale),
       )
       .where("ge.account_id", filters.accountId)
       .where(function whereApprovedOrManual() {
@@ -2760,7 +2817,7 @@ const getAccountActivityLedger = async (filters) => {
         knex.raw("to_char(ge.entry_date, 'YYYY-MM-DD') as entry_date"),
         "vh.voucher_type_code",
         "vh.voucher_no",
-        "b.name as branch_name",
+        localizedNameSelect("b", "branch_name", filters.locale),
         "ge.dr",
         "ge.cr",
       )
@@ -2797,7 +2854,10 @@ const getAccountActivityLedger = async (filters) => {
         ]
       : [];
   const salesVoucherSummaryByVoucherId = salesVoucherIds.length
-    ? await buildSalesVoucherDescriptionSummaryMap(salesVoucherIds)
+    ? await buildSalesVoucherDescriptionSummaryMap(
+        salesVoucherIds,
+        filters.locale,
+      )
     : new Map();
 
   let running = openingBalance;
@@ -2852,7 +2912,7 @@ const getAccountActivityLedger = async (filters) => {
 
 const getPayrollWageBalance = async (filters) => {
   let query = knex("erp.gl_entry as ge")
-    .select("a.name as account_name")
+    .select(localizedNameSelect("a", "account_name", filters.locale))
     .sum({ debit: "ge.dr" })
     .sum({ credit: "ge.cr" })
     .leftJoin("erp.accounts as a", "a.id", "ge.account_id")
@@ -2861,7 +2921,7 @@ const getPayrollWageBalance = async (filters) => {
         "lower(a.name) like '%salary%'",
       );
     })
-    .groupBy("a.name")
+    .groupBy("a.name", "a.name_ur")
     .orderBy("a.name", "asc");
   query = buildDateFilter(query, "ge.entry_date", filters.from, filters.to);
   if (filters.branchId) query = query.where("ge.branch_id", filters.branchId);
@@ -2974,5 +3034,7 @@ const getFinancialReport = async (
 module.exports = {
   getCommonFilters,
   getFinancialReport,
+  localizedNameSelect,
+  localizedNameSql,
   updateBankVoucherLineStatus,
 };

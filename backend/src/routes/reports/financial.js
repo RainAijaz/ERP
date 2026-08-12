@@ -4,6 +4,8 @@ const { HttpError } = require("../../middleware/errors/http-error");
 const {
   getFinancialReport,
   getCommonFilters,
+  localizedNameSelect,
+  localizedNameSql,
   updateBankVoucherLineStatus,
 } = require("../../services/financial/report-service");
 const {
@@ -67,8 +69,9 @@ const getReportAccounts = async ({
     return [];
   }
 
+  const locale = String(req?.locale || "en").toLowerCase();
   let query = knex("erp.accounts as a")
-    .select("a.id", "a.code", "a.name")
+    .select("a.id", "a.code", localizedNameSelect("a", "name", locale))
     .where({ "a.is_active": true });
 
   if (normalized === "cash_book") {
@@ -98,21 +101,22 @@ const getReportAccounts = async ({
     });
   }
 
-  return query.orderBy("a.name", "asc");
+  return query.orderByRaw(`${localizedNameSql("a", locale)} asc`);
 };
 
 const getExpenseAnalysisFilterOptions = async ({ req, filters }) => {
+  const locale = String(req?.locale || "en").toLowerCase();
   const selectedBranchIds = Array.isArray(filters?.branchIds)
     ? filters.branchIds
     : [];
   const departments = await knex("erp.departments as d")
-    .select("d.id", "d.name")
+    .select("d.id", localizedNameSelect("d", "name", locale))
     .where({ "d.is_active": true })
-    .orderBy("d.name", "asc");
+    .orderByRaw(`${localizedNameSql("d", locale)} asc`);
 
   let cashierQuery = knex("erp.accounts as a")
     .join("erp.account_posting_classes as apc", "apc.id", "a.posting_class_id")
-    .distinct("a.id", "a.code", "a.name")
+    .distinct("a.id", "a.code", localizedNameSelect("a", "name", locale))
     .where({ "a.is_active": true })
     .andWhereRaw("upper(COALESCE(apc.code, '')) = 'CASH'");
 
@@ -127,22 +131,30 @@ const getExpenseAnalysisFilterOptions = async ({ req, filters }) => {
     }
   });
 
-  const cashierAccounts = await cashierQuery.orderBy("a.name", "asc");
+  const cashierAccounts = await cashierQuery.orderByRaw(
+    `${localizedNameSql("a", locale)} asc`,
+  );
   return { departments, cashierAccounts };
 };
 
 const getExpenseTrendFilterOptions = async ({ req, filters }) => {
+  const locale = String(req?.locale || "en").toLowerCase();
   const selectedGroupId = Number(filters?.trendAccountGroupId || 0) || null;
   const branchScopeId = Number(filters?.branchId || 0) || null;
 
   const accountGroups = await knex("erp.account_groups as ag")
-    .select("ag.id", "ag.code", "ag.name")
+    .select("ag.id", "ag.code", localizedNameSelect("ag", "name", locale))
     .where("ag.account_type", "EXPENSE")
-    .orderBy("ag.name", "asc");
+    .orderByRaw(`${localizedNameSql("ag", locale)} asc`);
 
   let accountsQuery = knex("erp.accounts as a")
     .join("erp.account_groups as ag", "ag.id", "a.subgroup_id")
-    .distinct("a.id", "a.code", "a.name", "ag.id as account_group_id")
+    .distinct(
+      "a.id",
+      "a.code",
+      localizedNameSelect("a", "name", locale),
+      "ag.id as account_group_id",
+    )
     .where({ "a.is_active": true })
     .andWhere("ag.account_type", "EXPENSE");
 
@@ -162,7 +174,9 @@ const getExpenseTrendFilterOptions = async ({ req, filters }) => {
     });
   }
 
-  const accounts = await accountsQuery.orderBy("a.name", "asc");
+  const accounts = await accountsQuery.orderByRaw(
+    `${localizedNameSql("a", locale)} asc`,
+  );
   return { accountGroups, accounts };
 };
 

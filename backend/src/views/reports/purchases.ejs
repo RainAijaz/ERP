@@ -373,17 +373,17 @@
             <thead class="bg-slate-100 text-slate-700">
               <tr>
                 <% if (!isInvoiceOrder) { %>
-                  <th title="<%= headerTooltip('purchase_report_header_voucher_no_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_voucher_no_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("voucher_no") %></th>
-                  <th title="<%= headerTooltip('purchase_report_header_date_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_date_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("date") %></th>
-                  <th title="<%= headerTooltip('purchase_report_header_bill_number_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_bill_number_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("bill_number") %></th>
+                  <th title="<%= headerTooltip('purchase_report_header_voucher_no_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_voucher_no_tooltip') %>" class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("voucher_no") %></th>
+                  <th title="<%= headerTooltip('purchase_report_header_date_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_date_tooltip') %>" class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("date") %></th>
+                  <th title="<%= headerTooltip('purchase_report_header_bill_number_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_bill_number_tooltip') %>" class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("bill_number") %></th>
                 <% } %>
-                <th title="<%= headerTooltip('purchase_report_header_party_name_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_party_name_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("party_name") %></th>
-                <th title="<%= headerTooltip('purchase_report_header_raw_material_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_raw_material_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= entityLabel %></th>
+                <th title="<%= headerTooltip('purchase_report_header_party_name_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_party_name_tooltip') %>" class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("party_name") %></th>
+                <th title="<%= headerTooltip('purchase_report_header_raw_material_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_raw_material_tooltip') %>" class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= entityLabel %></th>
                 <% if (showTypeColumn) { %>
-                  <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("type") || "Type" %></th>
+                  <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("type") || "Type" %></th>
                 <% } %>
                 <th title="<%= headerTooltip('purchase_report_header_quantity_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_quantity_tooltip') %>" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("quantity") %></th>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("unit") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("unit") %></th>
                 <th title="<%= headerTooltip('purchase_report_header_standard_rate_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_standard_rate_tooltip') %>" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("fixed_purchase_rate") %></th>
                 <th title="<%= headerTooltip('purchase_report_header_weighted_avg_rate_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_weighted_avg_rate_tooltip') %>" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("weighted_average_rate") %></th>
                 <th title="<%= headerTooltip('purchase_report_header_current_rate_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_current_rate_tooltip') %>" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("current_purchase_rate") %></th>
@@ -391,7 +391,7 @@
                 <th title="<%= headerTooltip('purchase_report_header_variance_percent_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_variance_percent_tooltip') %>" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("variance_percent") %></th>
                 <th title="<%= headerTooltip('purchase_report_header_amount_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_amount_tooltip') %>" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("amount") %></th>
                 <% if (!hideBranchCol) { %>
-                  <th title="<%= headerTooltip('purchase_report_header_branch_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_branch_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("branch") %></th>
+                  <th title="<%= headerTooltip('purchase_report_header_branch_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_branch_tooltip') %>" class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("branch") %></th>
                 <% } %>
               </tr>
             </thead>
@@ -513,7 +513,7 @@
           <table class="min-w-[1320px] w-full text-sm tabular-nums" data-report-table>
             <thead class="bg-slate-100 text-slate-700">
               <tr>
-                <th title="<%= headerTooltip('purchase_report_header_group_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_group_tooltip') %>" class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= t("group") %></th>
+                <th title="<%= headerTooltip('purchase_report_header_group_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_group_tooltip') %>" class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= t("group") %></th>
                 <th title="<%= headerTooltip('purchase_report_header_quantity_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_quantity_tooltip') %>" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("quantity") %></th>
                 <th title="<%= headerTooltip('purchase_report_header_standard_rate_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_standard_rate_tooltip') %>" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("fixed_purchase_rate") %></th>
                 <th title="<%= headerTooltip('purchase_report_header_weighted_avg_rate_tooltip') %>" aria-label="<%= headerTooltip('purchase_report_header_weighted_avg_rate_tooltip') %>" class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= t("weighted_average_rate") %></th>

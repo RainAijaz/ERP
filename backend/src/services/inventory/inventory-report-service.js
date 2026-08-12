@@ -18,10 +18,19 @@ const userCanFilterAllBranches = (req, scopeKey) => {
   return Boolean(canAccessScope(req, "REPORT", scopeKey, "filter_all_branches"));
 };
 
+// NULLIF matters: name_ur is frequently an empty string rather than NULL, and a
+// bare COALESCE would then render a blank cell instead of the English name.
 const localizedNameSelect = (alias, as, locale) =>
   locale === "ur"
-    ? knex.raw(`COALESCE(${alias}.name_ur, ${alias}.name) as ${as}`)
+    ? knex.raw(
+        `COALESCE(NULLIF(${alias}.name_ur, ''), ${alias}.name) as ${as}`,
+      )
     : `${alias}.name as ${as}`;
+
+const localizedNameSql = (alias, locale) =>
+  locale === "ur"
+    ? `COALESCE(NULLIF(${alias}.name_ur, ''), ${alias}.name)`
+    : `${alias}.name`;
 
 // Same idea as localizedNameSelect for tables whose text lives in a column
 // other than "name" (e.g. return_reasons.description / description_ur).
@@ -499,11 +508,12 @@ const resolveSemifinishedUnitSelection = ({ filters, unitOptions = [] }) => {
 };
 
 const loadBranchOptions = async (req, canAllBranches = false) => {
+  const locale = String(req?.locale || "en").toLowerCase();
   if (req?.user?.isAdmin || canAllBranches) {
     return knex("erp.branches")
-      .select("id", "name")
+      .select("id", localizedNameSelect("branches", "name", locale))
       .where({ is_active: true })
-      .orderBy("name", "asc");
+      .orderByRaw(`${localizedNameSql("branches", locale)} asc`);
   }
 
   if (Array.isArray(req?.branchOptions) && req.branchOptions.length) {
@@ -519,9 +529,9 @@ const loadBranchOptions = async (req, canAllBranches = false) => {
   const allowed = getAllowedBranchIds(req);
   if (!allowed.length) return [];
   return knex("erp.branches")
-    .select("id", "name")
+    .select("id", localizedNameSelect("branches", "name", locale))
     .whereIn("id", allowed)
-    .orderBy("name", "asc");
+    .orderByRaw(`${localizedNameSql("branches", locale)} asc`);
 };
 
 const loadProductGroupOptions = async (stockType) => {

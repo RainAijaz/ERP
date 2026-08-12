@@ -227,8 +227,8 @@ const reportPurposeTooltip = (() => {
         <table class="min-w-[900px] w-full text-sm" data-analysis-table data-mobile-report>
           <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
             <tr>
-              <th class="px-4 py-3 text-left">SR.NO</th>
-              <th class="px-4 py-3 text-left"><%= t("supplier") %></th>
+              <th class="px-4 py-3 text-start">SR.NO</th>
+              <th class="px-4 py-3 text-start"><%= t("supplier") %></th>
               <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="total_spend"><span><%= t("total_spend") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
               <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="bill_count"><span><%= t("bill_count") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
               <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="article_count"><span><%= t("articles_supplied") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
@@ -258,9 +258,9 @@ const reportPurposeTooltip = (() => {
         <table class="min-w-[1320px] w-full text-sm" data-analysis-table data-mobile-report>
           <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
             <tr>
-              <th class="px-4 py-3 text-left">SR.NO</th>
-              <th class="px-4 py-3 text-left"><%= t("article") %></th>
-              <th class="px-4 py-3 text-left"><%= t("unit") %></th>
+              <th class="px-4 py-3 text-start">SR.NO</th>
+              <th class="px-4 py-3 text-start"><%= t("article") %></th>
+              <th class="px-4 py-3 text-start"><%= t("unit") %></th>
               <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="supplier_count"><span><%= t("num_suppliers") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
               <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="total_qty"><span><%= t("total_quantity") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
               <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="total_amount"><span><%= t("total_spend") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
@@ -268,7 +268,7 @@ const reportPurposeTooltip = (() => {
               <th class="px-4 py-3 text-right"><%= t("avg_rate") %></th>
               <th class="px-4 py-3 text-right"><%= t("max_rate") %></th>
               <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="spread_pct"><span><%= t("price_spread") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
-              <th class="px-4 py-3 text-left"><%= t("cheapest_supplier") %></th>
+              <th class="px-4 py-3 text-start"><%= t("cheapest_supplier") %></th>
               <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="potential_savings"><span><%= t("potential_savings") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
               <th class="px-4 py-3 text-center"><%= t("details") %></th>
             </tr>
@@ -312,14 +312,14 @@ const reportPurposeTooltip = (() => {
                       <table class="min-w-[960px] w-full text-xs" data-mobile-report>
                         <thead class="bg-slate-50 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
                           <tr>
-                            <th class="px-3 py-2 text-left"><%= t("supplier") %></th>
+                            <th class="px-3 py-2 text-start"><%= t("supplier") %></th>
                             <th class="px-3 py-2 text-right"><%= t("total_quantity") %></th>
                             <th class="px-3 py-2 text-right"><%= t("total_spend") %></th>
                             <th class="px-3 py-2 text-right"><%= t("avg_rate") %></th>
                             <th class="px-3 py-2 text-right"><%= t("min_rate") %></th>
                             <th class="px-3 py-2 text-right"><%= t("max_rate") %></th>
                             <th class="px-3 py-2 text-right"><%= t("last_rate") %></th>
-                            <th class="px-3 py-2 text-left"><%= t("last_purchase_date") %></th>
+                            <th class="px-3 py-2 text-start"><%= t("last_purchase_date") %></th>
                             <th class="px-3 py-2 text-right"><%= t("vs_cheapest") %></th>
                             <th class="px-3 py-2 text-right"><%= t("bill_count") %></th>
                           </tr>

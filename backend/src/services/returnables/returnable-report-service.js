@@ -3,6 +3,11 @@
 const knex = require("../../db/knex");
 const { toLocalDateOnly } = require("../../utils/date-only");
 const { toIdList, toBoolean } = require("../../utils/report-filter-types");
+const {
+  localizedNameSelect,
+  localizedNameSql,
+  resolveLocale,
+} = require("../../utils/localized-name");
 // Shared with the voucher screen so the report filter can never list a party the
 // dispatch form refuses to accept.
 const { RETURNABLE_PARTY_TYPES_SQL } = require("./returnable-voucher-service");
@@ -136,6 +141,7 @@ const parseCommonFilters = ({ req, input = {} }) => {
   return {
     from,
     to,
+    locale: resolveLocale(req?.locale),
     vendorIds: toIdListWithAll(input.vendor_ids),
     assetIds: toIdListWithAll(input.asset_ids),
     reasonCodes: toReasonCodeList(input.reason_codes),
@@ -157,11 +163,12 @@ const parseCommonFilters = ({ req, input = {} }) => {
 };
 
 const loadOptions = async ({ req, branchIds }) => {
+  const locale = resolveLocale(req?.locale);
   const branchesPromise = req.user?.isAdmin
     ? knex("erp.branches")
-        .select("id", "name")
+        .select("id", localizedNameSelect("branches", "name", locale))
         .where({ is_active: true })
-        .orderBy("name", "asc")
+        .orderByRaw(`${localizedNameSql("branches", locale)} asc`)
     : Promise.resolve(
         (req.branchOptions || []).map((row) => ({
           id: Number(row.id),
@@ -170,10 +177,10 @@ const loadOptions = async ({ req, branchIds }) => {
       );
 
   let vendorQuery = knex("erp.parties as p")
-    .select("p.id", "p.name")
+    .select("p.id", localizedNameSelect("p", "name", locale))
     .where("p.is_active", true)
     .whereRaw(RETURNABLE_PARTY_TYPES_SQL)
-    .orderBy("p.name", "asc");
+    .orderByRaw(`${localizedNameSql("p", locale)} asc`);
 
   if (!req.user?.isAdmin || branchIds.length) {
     const scopedBranchIds = branchIds.length
@@ -195,7 +202,9 @@ const loadOptions = async ({ req, branchIds }) => {
     .select(
       "id",
       "asset_code",
-      knex.raw("COALESCE(name, description) as asset_name"),
+      knex.raw(
+        `COALESCE(${localizedNameSql("assets", locale)}, description) as asset_name`,
+      ),
     )
     .where("is_active", true)
     .orderBy("asset_code", "asc");
@@ -297,18 +306,18 @@ const loadControlRows = async ({ filters }) => {
       "ovh.voucher_no as rdv_no",
       "ovh.voucher_date as rdv_date",
       "ovh.branch_id",
-      "b.name as branch_name",
+      localizedNameSelect("b", "branch_name", filters.locale),
       "ovl.id as outward_line_id",
       "ovl.line_no",
       "ro.vendor_party_id",
-      "p.name as vendor_name",
+      localizedNameSelect("p", "vendor_name", filters.locale),
       "ro.reason_code",
       "ro.expected_return_date",
       "rol.asset_id",
       knex.raw("COALESCE(a.asset_code, '') as asset_code"),
       knex.raw(
         // Raw-material lines have no asset, so the item name identifies them.
-        "COALESCE(a.name, a.description, itm.name, rol.item_description, '') as asset_name",
+        `COALESCE(${localizedNameSql("a", filters.locale)}, a.description, ${localizedNameSql("itm", filters.locale)}, rol.item_description, '') as asset_name`,
       ),
       "rol.item_description",
       "rol.qty as sent_qty",

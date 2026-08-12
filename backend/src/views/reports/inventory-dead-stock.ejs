@@ -306,11 +306,11 @@
         <table class="min-w-[1180px] w-full text-sm tabular-nums" data-report-table data-export-title="<%= tt('dead_stock_report', 'Slow-Moving / Dead Stock Report') %>">
           <thead class="bg-slate-100 text-slate-700">
             <tr>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("article", "Article") %></th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("sku", "SKU") %></th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("group", "Group") %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("article", "Article") %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("sku", "SKU") %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("group", "Group") %></th>
               <% if (isDetails) { %>
-                <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("branch", "Branch") %></th>
+                <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("branch", "Branch") %></th>
               <% } %>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("closing_qty", "Closing Qty")}${qtySuffix}` %></th>
               <% if (canViewValues) { %>
@@ -319,7 +319,7 @@
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em]"><%= `${tt("qty_sold_period", "Qty Sold (Period)")}${qtySuffix}` %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em] cursor-help" title="<%= ttTitle('turnover_ratio_tooltip') %>"><%= tt("turnover_ratio", "Turnover Ratio") %></th>
               <th class="px-3 py-2 text-right text-xs font-semibold uppercase tracking-[0.08em] cursor-help" title="<%= ttTitle('days_of_stock_cover_tooltip') %>"><%= tt("days_of_stock_cover", "Days of Stock Cover") %></th>
-              <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("status", "Status") %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]"><%= tt("status", "Status") %></th>
             </tr>
           </thead>
           <tbody data-table-body>

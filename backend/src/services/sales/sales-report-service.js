@@ -4,9 +4,23 @@ const knex = require("../../db/knex");
 const { toLocalDateOnly } = require("../../utils/date-only");
 const { toBoolean, toIdList } = require("../../utils/report-filter-types");
 const {
+  localizedNameSelect,
+  localizedNameSql,
+  resolveLocale,
+} = require("../../utils/localized-name");
+const {
   evaluateSalesDiscountPolicy,
   loadActiveSalesDiscountPolicyMapTx,
 } = require("./sales-discount-policy-service");
+
+// Party names are carried as an en/ur pair (both columns are consumed
+// downstream), so the locale choice happens where the label is built rather
+// than in SQL. Either side may be blank, hence the cross fallback.
+const preferLocalizedName = (locale, nameEn, nameUr) => {
+  const en = String(nameEn || "").trim();
+  const ur = String(nameUr || "").trim();
+  return resolveLocale(locale) === "ur" ? ur || en : en || ur;
+};
 
 const ALL_MULTI_FILTER_VALUE = "__ALL__";
 const SALES_ORDER_REPORT_ORDER_TYPES = Object.freeze({
@@ -340,6 +354,7 @@ const loadSalesOrderReportOptions = async ({ req, filters }) => {
 };
 
 const getSalesOrderReportRows = async ({ req, filters }) => {
+  const locale = resolveLocale(req?.locale);
   if (!filters.reportLoaded) {
     return {
       includeBranchColumn: Boolean(
@@ -374,7 +389,7 @@ const getSalesOrderReportRows = async ({ req, filters }) => {
       knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as sales_order_date"),
       "vh.status as voucher_status",
       "vh.branch_id",
-      "b.name as branch_name",
+      localizedNameSelect("b", "branch_name", locale),
       "soh.customer_party_id",
       "p.code as customer_code",
       "p.name as customer_name_en",
@@ -385,8 +400,8 @@ const getSalesOrderReportRows = async ({ req, filters }) => {
       "vl.meta as line_meta",
       "s.id as sku_id",
       "s.sku_code",
-      "i.name as product_name",
-      "u.name as unit_name",
+      localizedNameSelect("i", "product_name", locale),
+      localizedNameSelect("u", "unit_name", locale),
       knex.raw("''::text as color_name"),
     )
     .where({
@@ -589,12 +604,12 @@ const getSalesOrderReportRows = async ({ req, filters }) => {
   };
 };
 
-const getSalesOrderReportGroupIdentity = (row, orderBy) => {
+const getSalesOrderReportGroupIdentity = (row, orderBy, locale) => {
   if (orderBy === SALES_ORDER_REPORT_ORDER_TYPES.voucher) {
     const key = `SO:${Number(row.sales_order_id || 0)}`;
     return {
       key,
-      label: `VR. NO. ${Number(row.sales_order_no || 0) || "-"} | ${row.sales_order_date || "-"} | ${row.customer_name_en || row.customer_name_ur || "-"}`,
+      label: `VR. NO. ${Number(row.sales_order_no || 0) || "-"} | ${row.sales_order_date || "-"} | ${preferLocalizedName(locale, row.customer_name_en, row.customer_name_ur) || "-"}`,
       sales_order_no: row.sales_order_no || null,
       sales_order_date: row.sales_order_date || "",
       close_date: row.close_date || "",
@@ -621,7 +636,9 @@ const getSalesOrderReportGroupIdentity = (row, orderBy) => {
   const key = `PTY:${Number(row.customer_party_id || 0)}`;
   return {
     key,
-    label: row.customer_name_en || row.customer_name_ur || "-",
+    label:
+      preferLocalizedName(locale, row.customer_name_en, row.customer_name_ur) ||
+      "-",
     sales_order_no: null,
     sales_order_date: "",
     close_date: "",
@@ -631,7 +648,7 @@ const getSalesOrderReportGroupIdentity = (row, orderBy) => {
   };
 };
 
-const buildSalesOrderReportData = ({ reportRows, filters }) => {
+const buildSalesOrderReportData = ({ reportRows, filters, locale }) => {
   const rows = Array.isArray(reportRows?.rows) ? reportRows.rows : [];
   const includeBranchColumn = Boolean(reportRows?.includeBranchColumn);
   const baseTotals = reportRows?.totals || {
@@ -643,7 +660,11 @@ const buildSalesOrderReportData = ({ reportRows, filters }) => {
   const groupMap = new Map();
 
   rows.forEach((row) => {
-    const identity = getSalesOrderReportGroupIdentity(row, filters.orderBy);
+    const identity = getSalesOrderReportGroupIdentity(
+      row,
+      filters.orderBy,
+      locale,
+    );
     let group = groupMap.get(identity.key);
     if (!group) {
       group = {
@@ -746,7 +767,11 @@ const getSalesOrderReportPageData = async ({ req, input = {} }) => {
   const filters = parseSalesOrderReportFilters({ req, input });
   const options = await loadSalesOrderReportOptions({ req, filters });
   const reportRows = await getSalesOrderReportRows({ req, filters });
-  const reportData = buildSalesOrderReportData({ reportRows, filters });
+  const reportData = buildSalesOrderReportData({
+    reportRows,
+    filters,
+    locale: resolveLocale(req?.locale),
+  });
 
   return {
     filters,
@@ -955,6 +980,7 @@ const getSalesReportRows = async ({
   filters,
   movementKind = "SALE",
 }) => {
+  const locale = resolveLocale(req?.locale);
   if (!filters.reportLoaded) return [];
 
   const rawMovementKind = String(movementKind || "SALE").trim().toUpperCase();
@@ -991,11 +1017,11 @@ const getSalesReportRows = async ({
       "vh.book_no as bill_number",
       knex.raw("COALESCE(NULLIF(vh.remarks, ''), '') as remarks"),
       "vh.branch_id",
-      "b.name as branch_name",
+      localizedNameSelect("b", "branch_name", locale),
       "sh.payment_type",
       "sh.payment_received_amount",
       "sh.receive_into_account_id",
-      "ra.name as receive_account_name",
+      localizedNameSelect("ra", "receive_account_name", locale),
       "sh.customer_party_id",
       "sh.customer_name as walk_in_customer_name",
       "sh.customer_phone_number as walk_in_customer_phone",
@@ -1004,7 +1030,7 @@ const getSalesReportRows = async ({
       "p.name_ur as customer_name_ur",
       "p.phone1 as customer_phone1",
       "sh.salesman_employee_id",
-      "e.name as salesman_name",
+      localizedNameSelect("e", "salesman_name", locale),
       "sh.extra_discount",
       "vl.line_no",
       "vl.qty",
@@ -1014,13 +1040,13 @@ const getSalesReportRows = async ({
       "s.id as sku_id",
       "s.sku_code",
       "i.id as item_id",
-      "i.name as item_name",
+      localizedNameSelect("i", "item_name", locale),
       "i.group_id",
-      "pg.name as group_name",
+      localizedNameSelect("pg", "group_name", locale),
       "i.subgroup_id",
-      "sg.name as subgroup_name",
+      localizedNameSelect("sg", "subgroup_name", locale),
       "i.product_type_id",
-      "pt.name as category_name",
+      localizedNameSelect("pt", "category_name", locale),
       knex.raw("COALESCE(soh.payment_received_amount, 0) as so_advance_amount"),
       knex.raw(`COALESCE((
         SELECT SUM(sh2.payment_received_amount)
@@ -1243,19 +1269,18 @@ const getSalesReportRows = async ({
   }));
 };
 
-const resolveSalesReportCustomerLabel = (row) => {
+const resolveSalesReportCustomerLabel = (row, locale) => {
   if (!row) return "-";
   if (row.customer_party_id) {
     return (
-      String(row.customer_name_en || "").trim() ||
-      String(row.customer_name_ur || "").trim() ||
+      preferLocalizedName(locale, row.customer_name_en, row.customer_name_ur) ||
       "-"
     );
   }
   return String(row.walk_in_customer_name || "").trim() || "-";
 };
 
-const getSalesReportGroupIdentity = (row, orderBy) => {
+const getSalesReportGroupIdentity = (row, orderBy, locale) => {
   if (orderBy === SALES_ORDER_REPORT_ORDER_TYPES.voucher) {
     return {
       key: `V:${Number(row.voucher_id || 0) || 0}`,
@@ -1265,7 +1290,7 @@ const getSalesReportGroupIdentity = (row, orderBy) => {
       voucher_no: row.voucher_no,
       voucher_date: row.voucher_date || "",
       bill_number: row.bill_number || "",
-      customer_label: resolveSalesReportCustomerLabel(row),
+      customer_label: resolveSalesReportCustomerLabel(row, locale),
       customer_phone: String(row.customer_phone || "").trim(),
       payment_type: row.payment_type || "",
       payment_received_amount: toAmount(row.payment_received_amount || 0, 2),
@@ -1319,7 +1344,7 @@ const getSalesReportGroupIdentity = (row, orderBy) => {
     };
   }
 
-  const customerLabel = resolveSalesReportCustomerLabel(row);
+  const customerLabel = resolveSalesReportCustomerLabel(row, locale);
   const partyKey = row.customer_party_id
     ? `PTY:${Number(row.customer_party_id || 0)}`
     : `WALKIN:${customerLabel}`;
@@ -1342,11 +1367,12 @@ const getSalesReportGroupIdentity = (row, orderBy) => {
 
 const buildSalesReportData = ({ rows, filters, req }) => {
   const includeBranchColumn = Boolean(req.user?.isAdmin && !filters.branchId);
+  const locale = resolveLocale(req?.locale);
   const groups = [];
   const groupMap = new Map();
 
   rows.forEach((row) => {
-    const identity = getSalesReportGroupIdentity(row, filters.orderBy);
+    const identity = getSalesReportGroupIdentity(row, filters.orderBy, locale);
     let group = groupMap.get(identity.key);
     if (!group) {
       group = {
@@ -1416,7 +1442,9 @@ const buildSalesReportData = ({ rows, filters, req }) => {
     group._customerKeys.add(
       row.customer_party_id
         ? `PTY:${Number(row.customer_party_id || 0)}`
-        : `WALKIN:${resolveSalesReportCustomerLabel(row)}`,
+        : // Deliberately locale-free: this is a distinct-customer dedupe key, and
+          // the walk-in branch returns the typed name, which never translates.
+          `WALKIN:${resolveSalesReportCustomerLabel(row)}`,
     );
     group._articleKeys.add(String(row.sku_id || row.item_id || row.item_label || ""));
 
@@ -1650,6 +1678,7 @@ const loadCustomerLedgerOptions = async ({ req, filters }) => {
 };
 
 const getCustomerLedgerRows = async ({ req, filters, options }) => {
+  const locale = resolveLocale(req?.locale);
   const includeBranchColumn = Boolean(
     req.user?.isAdmin && filters.branchIds.length !== 1,
   );
@@ -1720,7 +1749,7 @@ const getCustomerLedgerRows = async ({ req, filters, options }) => {
       "vh.id as voucher_id",
       "vh.voucher_no",
       "vh.book_no as bill_number",
-      "b.name as branch_name",
+      localizedNameSelect("b", "branch_name", locale),
       knex.raw(
         "COALESCE(NULLIF(ge.narration, ''), NULLIF(vh.remarks, '')) as description",
       ),
@@ -1791,7 +1820,7 @@ const getCustomerLedgerRows = async ({ req, filters, options }) => {
         "vl.amount",
         "vl.meta",
         "s.sku_code",
-        "i.name as item_name",
+        localizedNameSelect("i", "item_name", locale),
       )
       .whereIn("vl.voucher_header_id", voucherIds)
       .whereIn("vl.line_kind", ["ITEM", "SKU"])
@@ -2329,6 +2358,7 @@ const emptySalesDiscountReportData = ({ includeBranchColumn = false } = {}) => (
 });
 
 const getSalesDiscountReportData = async ({ req, filters }) => {
+  const locale = resolveLocale(req?.locale);
   const includeBranchColumn = Boolean(
     req.user?.isAdmin && filters.branchIds.length !== 1,
   );
@@ -2354,7 +2384,7 @@ const getSalesDiscountReportData = async ({ req, filters }) => {
       knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as voucher_date"),
       "vh.status as voucher_status",
       "vh.branch_id",
-      "b.name as branch_name",
+      localizedNameSelect("b", "branch_name", locale),
       "sh.sale_mode",
       "sh.payment_type",
       "sh.customer_party_id",
@@ -2362,7 +2392,7 @@ const getSalesDiscountReportData = async ({ req, filters }) => {
       "p.name as customer_name_en",
       "p.name_ur as customer_name_ur",
       "sh.salesman_employee_id",
-      "e.name as salesman_name",
+      localizedNameSelect("e", "salesman_name", locale),
       "sh.extra_discount",
     )
     .where({
@@ -2406,9 +2436,9 @@ const getSalesDiscountReportData = async ({ req, filters }) => {
       "vl.amount",
       "vl.meta",
       "i.group_id",
-      "pg.name as group_name",
+      localizedNameSelect("pg", "group_name", locale),
       "s.sku_code",
-      "i.name as item_name",
+      localizedNameSelect("i", "item_name", locale),
     )
     .whereIn("vl.voucher_header_id", voucherIds)
     .where("vl.line_kind", "SKU")
@@ -3080,6 +3110,7 @@ const loadCustomerContactAnalysisOptions = async ({ req, filters }) => {
 };
 
 const getCustomerContactAnalysisPageData = async ({ req, input = {} }) => {
+  const locale = resolveLocale(req?.locale);
   const filters = parseCustomerContactAnalysisFilters({ req, input });
   const options = await loadCustomerContactAnalysisOptions({ req, filters });
 
@@ -3113,7 +3144,7 @@ const getCustomerContactAnalysisPageData = async ({ req, input = {} }) => {
       knex.raw("to_char(vh.voucher_date, 'YYYY-MM-DD') as voucher_date"),
       "vh.book_no as bill_number",
       "vh.branch_id",
-      "b.name as branch_name",
+      localizedNameSelect("b", "branch_name", locale),
       "vh.status as voucher_status",
       "sh.payment_type",
       "sh.customer_party_id",
@@ -3140,7 +3171,7 @@ const getCustomerContactAnalysisPageData = async ({ req, input = {} }) => {
       "vl.amount",
       "vl.qty",
       "vl.meta",
-      "pg.name as group_name",
+      localizedNameSelect("pg", "group_name", locale),
     )
     .where("vh.voucher_type_code", "SALES_VOUCHER")
     .whereNot("vh.status", "REJECTED")
@@ -3483,19 +3514,22 @@ const getCustomerContactAnalysisPageData = async ({ req, input = {} }) => {
 };
 
 const getCustomerListingsRows = async ({ req }) => {
+  const locale = resolveLocale(req?.locale);
   let query = knex("erp.parties as p")
     .leftJoin("erp.party_groups as pg", "pg.id", "p.group_id")
     .leftJoin("erp.cities as c", "c.id", "p.city_id")
     .select(
       "p.id",
-      "p.name",
-      knex.raw("COALESCE(pg.name, '') as group_name"),
-      knex.raw("COALESCE(c.name, p.city, '') as city_name"),
+      localizedNameSelect("p", "name", locale),
+      knex.raw(`COALESCE(${localizedNameSql("pg", locale)}, '') as group_name`),
+      knex.raw(
+        `COALESCE(${localizedNameSql("c", locale)}, p.city, '') as city_name`,
+      ),
       knex.raw(
         "COALESCE(NULLIF(p.phone1, ''), NULLIF(p.phone2, '')) as phone_primary",
       ),
       "p.created_at",
-      knex.raw(`(SELECT COALESCE(string_agg(b.name, ', ' ORDER BY b.name), '')
+      knex.raw(`(SELECT COALESCE(string_agg(${localizedNameSql("b", locale)}, ', ' ORDER BY ${localizedNameSql("b", locale)}), '')
         FROM erp.party_branch pb
         JOIN erp.branches b ON b.id = pb.branch_id
         WHERE pb.party_id = p.id) as branch_names`),

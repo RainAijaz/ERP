@@ -234,18 +234,18 @@ const reportPurposeTooltip = (() => {
         <table class="min-w-[1240px] w-full text-sm" data-contact-table data-mobile-report>
           <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
             <tr>
-              <th class="px-4 py-3 text-left">SR.NO</th>
-              <th class="px-4 py-3 text-left"><%= t("primary_customer_name") %></th>
-              <th class="px-4 py-3 text-left"><%= t("branch") %></th>
+              <th class="px-4 py-3 text-start">SR.NO</th>
+              <th class="px-4 py-3 text-start"><%= t("primary_customer_name") %></th>
+              <th class="px-4 py-3 text-start"><%= t("branch") %></th>
               <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="total_bill_amount"><span><%= t("total_bill_amount") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
               <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="total_dozens"><span><%= t("total_dozens") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
               <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="highest_bill"><span><%= t("highest_bill") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
               <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="bill_count"><span><%= t("bill_count") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
-              <th class="px-4 py-3 text-left"><%= t("last_purchase_date") %></th>
+              <th class="px-4 py-3 text-start"><%= t("last_purchase_date") %></th>
               <th class="px-4 py-3 text-right"><button type="button" class="group inline-flex w-full items-center justify-end gap-1 text-inherit" data-sort-btn data-sort-key="days_since_last_order"><span><%= t("days_since_last_order") %></span><span class="text-slate-300 group-hover:text-slate-500" data-sort-arrow aria-hidden="true">&#8597;</span></button></th>
-              <th class="px-4 py-3 text-left"><%= t("product_groups") %></th>
+              <th class="px-4 py-3 text-start"><%= t("product_groups") %></th>
               <th class="px-4 py-3 text-center"><%= t("details") %></th>
-              <% if (canViewPhone) { %><th class="px-4 py-3 text-left"><%= t("phone_number") %></th><% } %>
+              <% if (canViewPhone) { %><th class="px-4 py-3 text-start"><%= t("phone_number") %></th><% } %>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-100" data-contact-table-body>
@@ -295,16 +295,16 @@ const reportPurposeTooltip = (() => {
                       <table class="min-w-[960px] w-full text-xs" data-mobile-report>
                         <thead class="bg-slate-50 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">
                           <tr>
-                            <th class="px-3 py-2 text-left"><%= t("invoice") %></th>
-                            <th class="px-3 py-2 text-left"><%= t("date") %></th>
-                            <th class="px-3 py-2 text-left"><%= t("bill_number") %></th>
-                            <th class="px-3 py-2 text-left"><%= t("party_name") %></th>
-                            <th class="px-3 py-2 text-left"><%= t("branch") %></th>
-                            <th class="px-3 py-2 text-left"><%= t("sales_type") %></th>
-                            <th class="px-3 py-2 text-left"><%= t("status") %></th>
+                            <th class="px-3 py-2 text-start"><%= t("invoice") %></th>
+                            <th class="px-3 py-2 text-start"><%= t("date") %></th>
+                            <th class="px-3 py-2 text-start"><%= t("bill_number") %></th>
+                            <th class="px-3 py-2 text-start"><%= t("party_name") %></th>
+                            <th class="px-3 py-2 text-start"><%= t("branch") %></th>
+                            <th class="px-3 py-2 text-start"><%= t("sales_type") %></th>
+                            <th class="px-3 py-2 text-start"><%= t("status") %></th>
                             <th class="px-3 py-2 text-right"><%= t("total_bill_amount") %></th>
                             <th class="px-3 py-2 text-right"><%= t("total_dozens") %></th>
-                            <th class="px-3 py-2 text-left"><%= t("product_groups") %></th>
+                            <th class="px-3 py-2 text-start"><%= t("product_groups") %></th>
                             <th class="px-3 py-2 text-center"><%= t("view") %></th>
                           </tr>
                         </thead>
