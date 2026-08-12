@@ -21,7 +21,6 @@
   const branchTotals = (branchBreakdown && branchBreakdown.totals) || null;
   const useUr = String(typeof locale !== "undefined" ? locale : "").trim().toLowerCase().startsWith("ur");
   const branchLabel = (r) => (useUr ? (r.name_ur || r.name) : r.name);
-  const money0 = (v) => formatNumberDisplay(v, { decimals: 0, fallback: "0" });
 
   const canSales = gate("REPORT", "sales_report");
   const canCash = gate("REPORT", "cash_book");
@@ -330,72 +329,100 @@
 
   <!-- ===== Branch Performance (admin only, consolidated dashboard breakdown) ===== -->
   <% if (isAdminUser && branchRows.length) { %>
+    <%
+      // Eleven figures per row, several of them eight digits wide. Ungrouped,
+      // telling 1207004 from 12007004 means counting zeros, so this table (and
+      // only this table — formatNumberDisplay never groups) adds separators.
+      const branchNum = (v, decimals) => {
+        const n = Number(v);
+        if (!Number.isFinite(n)) return formatNumberDisplay(v, { decimals, fallback: "0" });
+        return n.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: decimals });
+      };
+      const cash = (v) => branchNum(v, 0);
+      const qty = (v) => branchNum(v, 1);
+
+      // Colour and weight are the only grouping devices left in the body: a rule
+      // between the three column bands, bold for the figure each band exists to
+      // report, muted for the ones that only give it context, and one accent
+      // (teal) reserved for orders so a commitment can never read as revenue.
+      // Logical properties throughout (border-s / text-end): under Urdu the page
+      // is dir="rtl", where a physical left-edge border would draw the band rule
+      // one column inside the band instead of on its leading edge.
+      const grp = "border-s border-slate-200";
+      const cell = "whitespace-nowrap px-3 py-2.5 text-end tabular-nums";
+      const footCell = "whitespace-nowrap px-3 py-3 text-end tabular-nums";
+      const soft = "text-slate-500";
+      const lead = "font-semibold text-slate-900";
+    %>
     <section class="rounded-2xl border border-slate-200 bg-white/95 shadow-md">
       <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
         <h3 class="text-sm font-semibold uppercase tracking-[0.18em] text-slate-700"><%= t("branch_performance") %></h3>
       </div>
       <div class="overflow-x-auto">
-        <table class="min-w-full text-sm">
-          <%# Two-tier header: Sales and Orders Booked each span their three date
-              columns, so a delivered-revenue figure can never be misread as an
-              order figure. `grp` marks the first cell of each column group. %>
-          <% const grp = "border-l border-slate-200"; %>
-          <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-widest text-slate-500">
-            <tr>
-              <th rowspan="2" class="px-4 py-3 text-left align-bottom"><%= t("branch") %></th>
-              <th colspan="3" class="px-4 py-2 text-center <%= grp %>"><%= t("sales_group") %></th>
-              <th colspan="3" class="px-4 py-2 text-center text-teal-700 <%= grp %>"><%= t("orders_booked") %></th>
-              <th rowspan="2" class="px-4 py-3 text-right align-bottom text-violet-700 <%= grp %>"><%= t("pending_order_value") %></th>
-              <th rowspan="2" class="px-4 py-3 text-right align-bottom <%= grp %>"><%= t("dozens_sold_month") %></th>
-              <th rowspan="2" class="px-4 py-3 text-right align-bottom"><%= t("accounts_receivable") %></th>
-              <th rowspan="2" class="px-4 py-3 text-right align-bottom"><%= t("accounts_payable") %></th>
+        <%# data-mobile-report opts into the stacked-card layer (report-mobile-tables.js):
+            eleven columns are a horizontal scroll with no exit on a phone. It builds
+            each card label from the two header rows, which is why the Branch caption
+            sits in the second row rather than in a rowspan — a short header row is
+            dropped, and every label would collapse to its group name. %>
+        <table class="min-w-full text-sm" data-mobile-report>
+          <thead class="bg-slate-50">
+            <tr class="text-xs font-semibold uppercase tracking-wide text-slate-400">
+              <th class="px-3 pt-3 pb-1"></th>
+              <th colspan="4" class="px-3 pt-3 pb-1 text-center <%= grp %>"><%= t("sales_group") %></th>
+              <th colspan="4" class="px-3 pt-3 pb-1 text-center text-teal-700 <%= grp %>"><%= t("orders_booked") %></th>
+              <th colspan="2" class="px-3 pt-3 pb-1 text-center <%= grp %>"><%= t("outstanding") %></th>
             </tr>
-            <tr>
-              <th class="px-4 pb-3 text-right font-medium normal-case tracking-normal <%= grp %>"><%= t("today") %></th>
-              <th class="px-4 pb-3 text-right font-medium normal-case tracking-normal"><%= t("yesterday") %></th>
-              <th class="px-4 pb-3 text-right font-medium normal-case tracking-normal"><%= t("month_to_date") %></th>
-              <th class="px-4 pb-3 text-right font-medium normal-case tracking-normal <%= grp %>"><%= t("today") %></th>
-              <th class="px-4 pb-3 text-right font-medium normal-case tracking-normal"><%= t("yesterday") %></th>
-              <th class="px-4 pb-3 text-right font-medium normal-case tracking-normal"><%= t("month_to_date") %></th>
+            <tr class="border-b border-slate-200 text-xs font-medium text-slate-500">
+              <th class="px-3 pb-2.5 text-start"><%= t("branch") %></th>
+              <th class="px-3 pb-2.5 text-end <%= grp %>"><%= t("today") %></th>
+              <th class="px-3 pb-2.5 text-end"><%= t("yesterday") %></th>
+              <th class="px-3 pb-2.5 text-end text-slate-700"><%= t("month_to_date") %></th>
+              <th class="px-3 pb-2.5 text-end" title="<%= t("dozens_sold_month") %>"><%= t("dozens") %></th>
+              <th class="px-3 pb-2.5 text-end <%= grp %>"><%= t("today") %></th>
+              <th class="px-3 pb-2.5 text-end"><%= t("yesterday") %></th>
+              <th class="px-3 pb-2.5 text-end text-slate-700"><%= t("month_to_date") %></th>
+              <th class="px-3 pb-2.5 text-end" title="<%= t("pending_order_value") %>"><%= t("pending") %></th>
+              <th class="px-3 pb-2.5 text-end text-slate-700 <%= grp %>"><%= t("receivable") %></th>
+              <th class="px-3 pb-2.5 text-end text-slate-700"><%= t("payable") %></th>
             </tr>
           </thead>
-          <tbody class="divide-y divide-slate-100">
+          <tbody>
             <% branchRows.forEach((r) => { %>
-              <tr class="hover:bg-slate-50/70">
-                <td class="px-4 py-3 font-medium text-slate-800"><%= branchLabel(r) %></td>
-                <td class="px-4 py-3 text-right tabular-nums text-slate-700 <%= grp %>"><%= money0(r.todaySales) %></td>
-                <td class="px-4 py-3 text-right tabular-nums text-slate-700"><%= money0(r.yesterdaySales) %></td>
-                <td class="px-4 py-3 text-right tabular-nums text-slate-700"><%= money0(r.monthRevenue) %></td>
-                <td class="px-4 py-3 text-right tabular-nums text-teal-700 <%= grp %>"><%= money0(r.ordersBookedToday) %></td>
-                <td class="px-4 py-3 text-right tabular-nums text-teal-700"><%= money0(r.ordersBookedYesterday) %></td>
-                <td class="px-4 py-3 text-right tabular-nums text-teal-700"><%= money0(r.ordersBookedMonth) %></td>
-                <td class="px-4 py-3 text-right tabular-nums text-violet-700 <%= grp %>"><%= money0(r.pendingOrderValue) %></td>
-                <td class="px-4 py-3 text-right tabular-nums text-slate-700 <%= grp %>"><%= formatNumberDisplay(r.dozensMonth, { decimals: 1, fallback: "0" }) %></td>
-                <td class="px-4 py-3 text-right tabular-nums text-cyan-700"><%= money0(r.receivable) %></td>
-                <td class="px-4 py-3 text-right tabular-nums text-amber-700"><%= money0(r.payable) %></td>
+              <tr class="bg-white transition-colors odd:bg-slate-50/30 hover:bg-slate-50">
+                <td class="whitespace-nowrap px-3 py-2.5 font-semibold text-slate-800"><%= branchLabel(r) %></td>
+                <td class="<%= cell %> <%= soft %> <%= grp %>"><%= cash(r.todaySales) %></td>
+                <td class="<%= cell %> <%= soft %>"><%= cash(r.yesterdaySales) %></td>
+                <td class="<%= cell %> <%= lead %>"><%= cash(r.monthRevenue) %></td>
+                <td class="<%= cell %> text-slate-700"><%= qty(r.dozensMonth) %></td>
+                <td class="<%= cell %> <%= soft %> <%= grp %>"><%= cash(r.ordersBookedToday) %></td>
+                <td class="<%= cell %> <%= soft %>"><%= cash(r.ordersBookedYesterday) %></td>
+                <td class="<%= cell %> font-semibold text-teal-700"><%= cash(r.ordersBookedMonth) %></td>
+                <td class="<%= cell %> text-teal-700"><%= cash(r.pendingOrderValue) %></td>
+                <td class="<%= cell %> <%= lead %> <%= grp %>"><%= cash(r.receivable) %></td>
+                <td class="<%= cell %> <%= lead %>"><%= cash(r.payable) %></td>
               </tr>
             <% }) %>
           </tbody>
           <% if (branchTotals) { %>
-            <tfoot class="border-t-2 border-slate-200 bg-slate-50 text-sm font-semibold text-slate-900">
-              <tr>
-                <td class="px-4 py-3 uppercase tracking-wide"><%= t("total") %></td>
-                <td class="px-4 py-3 text-right tabular-nums <%= grp %>"><%= money0(branchTotals.todaySales) %></td>
-                <td class="px-4 py-3 text-right tabular-nums"><%= money0(branchTotals.yesterdaySales) %></td>
-                <td class="px-4 py-3 text-right tabular-nums"><%= money0(branchTotals.monthRevenue) %></td>
-                <td class="px-4 py-3 text-right tabular-nums text-teal-700 <%= grp %>"><%= money0(branchTotals.ordersBookedToday) %></td>
-                <td class="px-4 py-3 text-right tabular-nums text-teal-700"><%= money0(branchTotals.ordersBookedYesterday) %></td>
-                <td class="px-4 py-3 text-right tabular-nums text-teal-700"><%= money0(branchTotals.ordersBookedMonth) %></td>
-                <td class="px-4 py-3 text-right tabular-nums text-violet-700 <%= grp %>"><%= money0(branchTotals.pendingOrderValue) %></td>
-                <td class="px-4 py-3 text-right tabular-nums <%= grp %>"><%= formatNumberDisplay(branchTotals.dozensMonth, { decimals: 1, fallback: "0" }) %></td>
-                <td class="px-4 py-3 text-right tabular-nums text-cyan-700"><%= money0(branchTotals.receivable) %></td>
-                <td class="px-4 py-3 text-right tabular-nums text-amber-700"><%= money0(branchTotals.payable) %></td>
+            <tfoot class="border-t border-slate-200 bg-slate-50 font-semibold text-slate-900">
+              <tr data-report-total>
+                <td class="whitespace-nowrap px-3 py-3 text-xs uppercase tracking-wide text-slate-500"><%= t("total") %></td>
+                <td class="<%= footCell %> <%= grp %>"><%= cash(branchTotals.todaySales) %></td>
+                <td class="<%= footCell %>"><%= cash(branchTotals.yesterdaySales) %></td>
+                <td class="<%= footCell %>"><%= cash(branchTotals.monthRevenue) %></td>
+                <td class="<%= footCell %>"><%= qty(branchTotals.dozensMonth) %></td>
+                <td class="<%= footCell %> <%= grp %>"><%= cash(branchTotals.ordersBookedToday) %></td>
+                <td class="<%= footCell %>"><%= cash(branchTotals.ordersBookedYesterday) %></td>
+                <td class="<%= footCell %> text-teal-700"><%= cash(branchTotals.ordersBookedMonth) %></td>
+                <td class="<%= footCell %> text-teal-700"><%= cash(branchTotals.pendingOrderValue) %></td>
+                <td class="<%= footCell %> <%= grp %>"><%= cash(branchTotals.receivable) %></td>
+                <td class="<%= footCell %>"><%= cash(branchTotals.payable) %></td>
               </tr>
             </tfoot>
           <% } %>
         </table>
       </div>
-      <p class="px-5 py-3 text-xs text-slate-400"><%= t("branch_performance_note") %></p>
+      <p class="border-t border-slate-200 px-5 py-3 text-xs text-slate-400"><%= t("branch_performance_note") %></p>
     </section>
   <% } %>
 

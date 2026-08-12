@@ -4191,6 +4191,11 @@ Object.assign(translations.en, {
   cash_bank_balance: "Cash & Bank Balance",
   accounts_receivable: "Accounts Receivable",
   accounts_payable: "Accounts Payable",
+  // Short forms for the Branch Performance grid, where the column already sits
+  // under an "Outstanding" group caption.
+  outstanding: "Outstanding",
+  receivable: "Receivable",
+  payable: "Payable",
   orders_pending: "Orders Pending",
   // --- Order pipeline (commitments, deliberately NOT revenue) ---
   order_pipeline: "Order Pipeline",
@@ -4415,6 +4420,9 @@ Object.assign(translations.ur, {
   not_tracked: "ٹریک نہیں",
   todays_sales: "آج کی فروخت",
   yesterdays_sales: "کل کی فروخت",
+  // `today` had no Urdu entry, so sanitizeUrduTranslations was serving the
+  // English word next to its translated "Yesterday" column.
+  today: "آج",
   yesterday: "گزشتہ کل",
   monthly_revenue: "ماہانہ آمدنی",
   monthly_purchase: "ماہانہ خریداری",
@@ -4429,6 +4437,9 @@ Object.assign(translations.ur, {
   cash_bank_balance: "نقد اور بینک بیلنس",
   accounts_receivable: "قابل وصول رقوم",
   accounts_payable: "قابل ادائیگی رقوم",
+  outstanding: "واجبات",
+  receivable: "قابل وصول",
+  payable: "قابل ادائیگی",
   orders_pending: "زیر التواء آرڈرز",
   // --- Order pipeline (commitments, deliberately NOT revenue) ---
   order_pipeline: "آرڈر پائپ لائن",
