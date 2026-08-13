@@ -1,3 +1,11 @@
+// SUPERSEDED -- DO NOT RUN. Use src/scripts/reorder-sfg-bom-stages.js instead.
+//
+// This script appends UPPER as the LAST stage. The current requirement is the
+// opposite: UPPER sits THIRD (after CUTTING and PRINTING) and "DC PROI" is last.
+// Running this now would fight that ordering and move stock creation back onto
+// UPPER. It was rehearsed locally but never applied to production, so there is
+// nothing here to undo. Kept only for reference.
+//
 // One-time data change, both edits in a single transaction:
 //   1. append the UPPER production stage as the LAST stage route of every
 //      APPROVED semi-finished (SFG) BOM;
