@@ -26,6 +26,7 @@
     "test:approval-withdraw": "node src/scripts/test-approval-withdraw-sync.js",
     "test:e2e:approval-withdraw": "playwright test tests/e2e/approval-withdraw.spec.js",
     "test:other-party-type": "node src/scripts/test-other-party-type.js",
+    "test:returnable-negative-stock": "node src/scripts/test-returnable-negative-stock.js",
     "test:e2e:other-party-type": "playwright test tests/e2e/other-party-type-visibility.spec.js",
     "test:approval-translation-code-policy": "node src/scripts/test-approval-translation-code-policy.js",
     "test:sku-rate-notification": "node src/scripts/test-sku-rate-notification.js",

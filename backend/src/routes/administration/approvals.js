@@ -1792,6 +1792,13 @@ router.get(
           "ar.request_type",
           "ar.status",
           "ar.summary",
+          // normalizeVoucherApprovalSummary rebuilds a voucher row's summary from the
+          // payload -- the voucher type, the action, and any approval_reason the
+          // service attached. Without these two it fell back to a bare
+          // "Add VOUCHER" and silently dropped every approval_reason written by the
+          // sales, inventory, stock-transfer, production and returnable services.
+          "ar.new_value",
+          "ar.old_value",
           "ar.requested_at",
           "ar.requested_by",
           "ar.decided_at",

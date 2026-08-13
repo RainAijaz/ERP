@@ -66,6 +66,14 @@ const toQty = (value) => {
   return Number(parsed.toFixed(3));
 };
 
+// toQty nulls out anything at or below zero, which is right for a line quantity but
+// wrong for reporting a balance: an empty or already-negative bucket is exactly what a
+// shortfall has to be able to state.
+const roundBalanceQty = (value) => {
+  const parsed = Number(value || 0);
+  return Number.isFinite(parsed) ? Number(parsed.toFixed(3)) : 0;
+};
+
 const normalizeCode = (value) =>
   String(value || "")
     .trim()
@@ -393,7 +401,16 @@ const stockBalanceRmHasDimensionsTx = async (trx) => {
   return stockBalanceRmHasDimensions;
 };
 
-const loadRmOnHandBucketsTx = async (trx, branchId, bucketKeys = null) => {
+// `includeEmpty` keeps buckets that have run down to zero or gone negative. The picker
+// and the availability check both need them: a bucket at 0 is still a legitimate
+// selection (it just routes the voucher through approval), and dropping it would hide
+// the real WAC and base UOM the line has to post at.
+const loadRmOnHandBucketsTx = async (
+  trx,
+  branchId,
+  bucketKeys = null,
+  { includeEmpty = false } = {},
+) => {
   const supportsDimensions = await stockBalanceRmHasDimensionsTx(trx);
   const columns = [
     "sb.item_id",
@@ -425,7 +442,10 @@ const loadRmOnHandBucketsTx = async (trx, branchId, bucketKeys = null) => {
     .select(columns)
     .where("sb.branch_id", branchId)
     .where("sb.stock_state", "ON_HAND")
-    .where("sb.qty", ">", 0)
+    .modify((query) => {
+      if (includeEmpty) return;
+      query.where("sb.qty", ">", 0);
+    })
     .whereRaw("upper(coalesce(i.item_type::text, '')) = 'RM'");
 
   const map = new Map();
@@ -449,6 +469,44 @@ const loadRmOnHandBucketsTx = async (trx, branchId, bucketKeys = null) => {
   if (!bucketKeys) return map;
   return new Map(
     [...map.entries()].filter(([key]) => bucketKeys.includes(key)),
+  );
+};
+
+// Every raw material is dispatchable, whether or not it currently holds stock, so the
+// master is the second source the picker draws on. The asset placeholder is a system
+// row that only exists to give asset lines an item_id -- it is never lendable itself.
+const loadRmMasterItemsTx = async (trx, itemIds = null) => {
+  const normalizedIds = Array.isArray(itemIds)
+    ? [...new Set(itemIds.map((id) => toPositiveInt(id)).filter(Boolean))]
+    : null;
+  if (normalizedIds && !normalizedIds.length) return new Map();
+
+  const rows = await trx("erp.items as i")
+    .leftJoin("erp.uom as u", "u.id", "i.base_uom_id")
+    .select("i.id", "i.code", "i.name", "i.base_uom_id", "u.code as uom_code")
+    .whereRaw("upper(coalesce(i.item_type::text, '')) = 'RM'")
+    .whereNot("i.code", "RETURNABLE_ASSET_ITEM")
+    .modify((query) => {
+      // An id list means "resolve what the user actually picked", so an item that was
+      // deactivated after selection still has to resolve rather than vanish.
+      if (normalizedIds) {
+        query.whereIn("i.id", normalizedIds);
+        return;
+      }
+      query.where("i.is_active", true);
+    });
+
+  return new Map(
+    rows.map((row) => [
+      Number(row.id),
+      {
+        itemId: Number(row.id),
+        itemCode: row.code || null,
+        itemName: row.name,
+        baseUomId: toPositiveInt(row.base_uom_id),
+        uomCode: row.uom_code || null,
+      },
+    ]),
   );
 };
 
@@ -658,16 +716,53 @@ const syncOutwardStatusTx = async (trx, outwardVoucherId) => {
     .update({ status: nextStatus });
 };
 
-const buildDispatchPayloadForApproval = (validated) => ({
-  action: "create",
-  voucher_type_code: RETURNABLE_VOUCHER_TYPES.dispatch,
-  voucher_date: validated.voucherDate,
-  vendor_party_id: validated.vendorPartyId,
-  reason_code: validated.reasonCode,
-  expected_return_date: validated.expectedReturnDate,
-  remarks: validated.remarks,
-  lines: validated.lines,
-});
+const describeRmShortfall = (shortfall) => {
+  const variant = [shortfall.color_name, shortfall.size_name]
+    .filter(Boolean)
+    .join("/");
+  const label = variant
+    ? `${shortfall.item_name} (${variant})`
+    : shortfall.item_name;
+  return `line ${shortfall.line_no} ${label} needs ${shortfall.short_qty} more than the ${shortfall.available_qty} on hand`;
+};
+
+// An approver reading the list sees one line per request, and a dispatch that would
+// drive stock negative looks identical to a routine one until the shortfall is spelled
+// out. This is that explanation.
+const buildNegativeStockReason = (shortfalls = []) => {
+  if (!shortfalls.length) return "";
+  return `approval required: dispatching more raw material than is in stock, which will drive stock negative - ${shortfalls
+    .map(describeRmShortfall)
+    .join("; ")}`;
+};
+
+const buildDispatchPayloadForApproval = (validated) => {
+  const shortfalls = validated.rmShortfalls || [];
+  return {
+    action: "create",
+    voucher_type_code: RETURNABLE_VOUCHER_TYPES.dispatch,
+    voucher_date: validated.voucherDate,
+    vendor_party_id: validated.vendorPartyId,
+    reason_code: validated.reasonCode,
+    expected_return_date: validated.expectedReturnDate,
+    remarks: validated.remarks,
+    lines: validated.lines,
+    // The approvals list rebuilds a voucher request's summary from the payload and
+    // discards the stored text, so the reason has to travel as approval_reason to
+    // survive onto the screen. The stored summary keeps it too, for anything reading
+    // approval_request directly.
+    ...(shortfalls.length
+      ? { approval_reason: buildNegativeStockReason(shortfalls) }
+      : {}),
+    // Carried so the approver can also see the shortfall itself in the preview.
+    negative_stock_lines: shortfalls,
+  };
+};
+
+const buildDispatchApprovalSummary = (baseSummary, validated) => {
+  const reason = buildNegativeStockReason(validated?.rmShortfalls || []);
+  return reason ? `${baseSummary} - ${reason}` : baseSummary;
+};
 
 const buildReceiptPayloadForApproval = (validated) => ({
   action: "create",
@@ -732,7 +827,23 @@ const validateDispatchPayloadTx = async ({
       RETURNABLE_LINE_KINDS.rawMaterial,
   );
   const rmBuckets = hasRmLines
-    ? await loadRmOnHandBucketsTx(trx, req.branchId)
+    ? await loadRmOnHandBucketsTx(trx, req.branchId, null, {
+        includeEmpty: true,
+      })
+    : new Map();
+  // Lines may name a raw material this branch has never held, which has no bucket row
+  // at all. The master supplies the name and base UOM those lines still need.
+  const rmMasterItems = hasRmLines
+    ? await loadRmMasterItemsTx(
+        trx,
+        rawLines
+          .filter(
+            (line) =>
+              normalizeLineKind(line?.entry_kind) ===
+              RETURNABLE_LINE_KINDS.rawMaterial,
+          )
+          .map((line) => line?.item_id),
+      )
     : new Map();
 
   // When editing, this voucher's own dispatch has already moved its material out of
@@ -770,6 +881,10 @@ const validateDispatchPayloadTx = async ({
   // A single dispatch may lend out more than one line from the same RM bucket; the
   // availability check has to see the running total, not each line in isolation.
   const rmQtyClaimed = new Map();
+  // Lending out more than the branch holds is allowed but never silent: each shortfall
+  // is recorded here so the save forces the voucher through approval and the approver
+  // sees exactly which line drives stock negative and by how much.
+  const rmShortfalls = [];
 
   const lines = [];
   for (let index = 0; index < rawLines.length; index += 1) {
@@ -789,39 +904,59 @@ const validateDispatchPayloadTx = async ({
         sizeId: normalizeDimensionId(line.size_id),
       });
       const bucket = rmBuckets.get(bucketKey);
-      if (!bucket) {
+      const masterItem = rmMasterItems.get(toPositiveInt(line.item_id));
+      if (!bucket && !masterItem) {
         throw new HttpError(
           400,
-          `Line ${index + 1}: selected raw material has no stock in this branch`,
+          `Line ${index + 1}: selected raw material is invalid`,
         );
       }
 
-      const claimed = Number(rmQtyClaimed.get(bucketKey) || 0) + qty;
-      if (claimed > bucket.qty + 0.0005) {
-        throw new HttpError(
-          400,
-          `Line ${index + 1}: only ${bucket.qty} available for ${bucket.itemName}`,
-        );
-      }
+      const availableQty = bucket ? Number(bucket.qty || 0) : 0;
+      const previouslyClaimed = Number(rmQtyClaimed.get(bucketKey) || 0);
+      const claimed = previouslyClaimed + qty;
       rmQtyClaimed.set(bucketKey, claimed);
+      // Only the part of THIS line that runs past what is on hand counts as short;
+      // earlier lines on the same bucket have already eaten into the balance.
+      const shortQty = roundBalanceQty(
+        Math.max(claimed - availableQty, 0) -
+          Math.max(previouslyClaimed - availableQty, 0),
+      );
+      const itemName = bucket?.itemName || masterItem?.itemName || "";
+      if (shortQty > 0.0005) {
+        rmShortfalls.push({
+          line_no: index + 1,
+          item_id: toPositiveInt(line.item_id),
+          item_name: itemName,
+          color_name: bucket?.colorName || null,
+          size_name: bucket?.sizeName || null,
+          requested_qty: qty,
+          // What was still left when this line ran, not the bucket total: with two
+          // lines on one bucket the second must not claim the stock the first
+          // already took ("needs 3 more than the 0 on hand", not "than the 4").
+          available_qty: roundBalanceQty(availableQty - previouslyClaimed),
+          short_qty: shortQty,
+        });
+      }
 
       lines.push({
         line_no: index + 1,
         entry_kind: RETURNABLE_LINE_KINDS.rawMaterial,
         asset_id: null,
         asset_name: null,
-        item_id: bucket.itemId,
-        color_id: bucket.colorId,
-        size_id: bucket.sizeId,
-        uom_id: bucket.baseUomId,
+        item_id: bucket?.itemId || masterItem.itemId,
+        color_id: bucket ? bucket.colorId : normalizeDimensionId(line.color_id),
+        size_id: bucket ? bucket.sizeId : normalizeDimensionId(line.size_id),
+        uom_id: bucket?.baseUomId || masterItem?.baseUomId || null,
         item_type_code: null,
-        item_description:
-          normalizeText(line.item_description, 500) || bucket.itemName,
+        item_description: normalizeText(line.item_description, 500) || itemName,
         serial_no: null,
         qty,
         // Lent-out material leaves at the bucket's current WAC and returns at the
-        // same cost, so a loan never revalues stock.
-        unit_cost: bucket.wac,
+        // same cost, so a loan never revalues stock. A bucket the branch has never
+        // held has no WAC to leave at, so it moves at zero and returns at zero --
+        // the qty goes negative but inventory value, and the trial balance, do not.
+        unit_cost: bucket ? bucket.wac : 0,
         condition_out_code: null,
         remarks: normalizeText(line.remarks, 500),
       });
@@ -887,6 +1022,7 @@ const validateDispatchPayloadTx = async ({
     expectedReturnDate,
     remarks,
     lines,
+    rmShortfalls,
   };
 };
 
@@ -1139,6 +1275,11 @@ const moveReturnableRmLinesTx = async ({
       voucherId,
       voucherLineId: line.voucher_line_id || null,
       voucherDate,
+      // Dispatching more than is on hand is a deliberate, approved outcome here, so the
+      // move must not be refused at posting time. The gate is upstream: any shortfall
+      // forces the voucher through approvals before it ever reaches this point. The
+      // return leg is left guarded -- material can only come back if it went out.
+      allowNegativeSource: toThirdParty,
     });
   }
 };
@@ -1644,22 +1785,51 @@ const loadReturnableVoucherOptions = async (req) => {
       .orderBy("vl.line_no", "asc"),
   ]);
 
-  // Only buckets that actually hold stock can be lent out, so the picker is driven by
-  // the ON_HAND balance rather than the raw-material master.
-  const rmStockBuckets = [...(await loadRmOnHandBucketsTx(knex, req.branchId))
-    .values()]
-    .map((bucket) => ({
-      item_id: bucket.itemId,
-      color_id: bucket.colorId,
-      size_id: bucket.sizeId,
-      item_code: bucket.itemCode,
-      name: bucket.itemName,
-      uom_code: bucket.uomCode,
-      color_name: bucket.colorName,
-      size_name: bucket.sizeName,
-      available_qty: bucket.qty,
-    }))
-    .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  // The picker lists the whole raw-material master, not only what is in stock: every
+  // (item, colour, size) bucket the branch holds, plus a plain entry for any active
+  // raw material with no bucket at all. Picking something the branch is short of is
+  // allowed -- it routes the voucher through approval instead of being hidden.
+  const [rmBucketMap, rmMasterMap] = await Promise.all([
+    loadRmOnHandBucketsTx(knex, req.branchId, null, { includeEmpty: true }),
+    loadRmMasterItemsTx(knex),
+  ]);
+  const rmBucketRows = [...rmBucketMap.values()].map((bucket) => ({
+    item_id: bucket.itemId,
+    color_id: bucket.colorId,
+    size_id: bucket.sizeId,
+    item_code: bucket.itemCode,
+    name: bucket.itemName,
+    uom_code: bucket.uomCode,
+    color_name: bucket.colorName,
+    size_name: bucket.sizeName,
+    available_qty: bucket.qty,
+  }));
+  // A dimensionless entry would duplicate an existing plain bucket, so only add the
+  // master row for items that have no dimensionless bucket of their own.
+  const itemsWithPlainBucket = new Set(
+    rmBucketRows
+      .filter((row) => !row.color_id && !row.size_id)
+      .map((row) => Number(row.item_id)),
+  );
+  const rmMasterRows = [...rmMasterMap.values()]
+    .filter((item) => !itemsWithPlainBucket.has(item.itemId))
+    .map((item) => ({
+      item_id: item.itemId,
+      color_id: null,
+      size_id: null,
+      item_code: item.itemCode,
+      name: item.itemName,
+      uom_code: item.uomCode,
+      color_name: null,
+      size_name: null,
+      available_qty: 0,
+    }));
+  const rmStockBuckets = [...rmBucketRows, ...rmMasterRows].sort(
+    (a, b) =>
+      String(a.name || "").localeCompare(String(b.name || "")) ||
+      String(a.color_name || "").localeCompare(String(b.color_name || "")) ||
+      String(a.size_name || "").localeCompare(String(b.size_name || "")),
+  );
 
   return {
     vendors,
@@ -1955,8 +2125,14 @@ const createReturnableVoucher = async ({
       voucherTypeCode,
       "create",
     );
+    // Driving stock negative is a data-integrity exception rather than a routine policy
+    // check, so it routes through approvals even for a user who could otherwise
+    // self-approve -- the point is that a second person sees the shortfall.
+    const hasNegativeStockLines = Boolean(validated.rmShortfalls?.length);
     const queuedForApproval =
-      !canCreate || (policyRequiresApproval && !canApprove);
+      !canCreate ||
+      hasNegativeStockLines ||
+      (policyRequiresApproval && !canApprove);
 
     if (queuedForApproval) {
       const approvalRequestId = await createApprovalRequestTx({
@@ -1964,7 +2140,7 @@ const createReturnableVoucher = async ({
         req,
         entityId: "NEW",
         voucherTypeCode,
-        summary: `ADD ${voucherTypeCode}`,
+        summary: buildDispatchApprovalSummary(`ADD ${voucherTypeCode}`, validated),
         newValue: {
           ...(voucherTypeCode === RETURNABLE_VOUCHER_TYPES.dispatch
             ? buildDispatchPayloadForApproval(validated)
@@ -2075,8 +2251,10 @@ const updateReturnableVoucher = async ({
       voucherTypeCode,
       "edit",
     );
+    // Same rule as create: an edit that pushes a bucket negative always gets a checker.
+    const hasNegativeStockLines = Boolean(validated.rmShortfalls?.length);
     const queuedForApproval =
-      !canEdit || (policyRequiresApproval && !canApprove);
+      !canEdit || hasNegativeStockLines || (policyRequiresApproval && !canApprove);
 
     const newValue = {
       ...(voucherTypeCode === RETURNABLE_VOUCHER_TYPES.dispatch
@@ -2094,7 +2272,10 @@ const updateReturnableVoucher = async ({
         req,
         entityId: existing.id,
         voucherTypeCode,
-        summary: `EDIT ${voucherTypeCode} #${existing.voucher_no}`,
+        summary: buildDispatchApprovalSummary(
+          `EDIT ${voucherTypeCode} #${existing.voucher_no}`,
+          validated,
+        ),
         oldValue: { status: existing.status },
         newValue,
       });

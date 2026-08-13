@@ -312,6 +312,8 @@ const translations = {
     transfer_reason_other: "Other",
     transporter_name: "Transporter Name",
     available_qty: "Available Qty",
+    rgp_negative_stock_needs_approval:
+      "Exceeds stock — needs approval, stock will go negative",
     qty: "Qty",
     delivery_qty: "Delivery Qty",
     transfer_qty: "Transfer Qty",
@@ -2353,6 +2355,8 @@ translations.ur = {
   delivered_qty: "ڈیلیور مقدار",
   remaining_qty: "بقایا مقدار",
   available_qty: "دستیاب مقدار",
+  rgp_negative_stock_needs_approval:
+    "اسٹاک سے زیادہ — منظوری درکار ہے، اسٹاک منفی ہو جائے گا",
   sales_order_advance_received: "سیلز آرڈر کی ایڈوانس وصول شدہ رقم",
   sales_order_previous_payments_received:
     "اس آرڈر کے لیے پہلے سے وصول شدہ ادائیگیاں",
