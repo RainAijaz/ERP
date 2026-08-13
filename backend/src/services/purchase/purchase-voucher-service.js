@@ -17,6 +17,10 @@ const {
   buildStockShortfallMessageTx,
 } = require("../../utils/stock-rollback-diagnostics");
 
+const {
+  resolveNegativeStockRoutingTx,
+} = require("../inventory/negative-stock-approval");
+
 const PURCHASE_VOUCHER_TYPES = {
   goodsReceiptNote: "GRN",
   generalPurchase: "PI",
@@ -666,12 +670,8 @@ const applySfgSkuStockOutTx = async ({
 
   const availableQtyPairs = Number(balanceRow?.qty_pairs || 0);
   const availableValue = Number(balanceRow?.value || 0);
-  if (availableQtyPairs < normalizedQtyPairsOut) {
-    throw new HttpError(
-      400,
-      `Purchase return quantity exceeds available stock for SKU ${normalizedSkuId}`,
-    );
-  }
+  // Shortfalls are measured during validation and routed by the voucher's Neg. Stock
+  // control; by the time the posting runs the outcome is already sanctioned.
   const unitCost = resolveUnitCost({
     qty: availableQtyPairs,
     value: availableValue,
@@ -1334,12 +1334,8 @@ const applyPurchaseVoucherStockOutTx = async ({
 
     const availableQty = Number(balanceRow?.qty || 0);
     const availableValue = Number(balanceRow?.value || 0);
-    if (availableQty < qtyOut) {
-      throw new HttpError(
-        400,
-        `Purchase return quantity exceeds available stock for item ${itemId}`,
-      );
-    }
+    // Shortfalls are measured during validation and routed by the voucher's Neg. Stock
+    // control; by the time the posting runs the outcome is already sanctioned.
     const unitCost = resolveUnitCost({
       qty: availableQty,
       value: availableValue,
@@ -1348,15 +1344,9 @@ const applyPurchaseVoucherStockOutTx = async ({
     const consumedValue = roundCost2(qtyOut * unitCost);
     const nextQtyRaw = availableQty - qtyOut;
     const nextValueRaw = availableValue - consumedValue;
-    if (nextQtyRaw < -0.0005 || nextValueRaw < -0.05) {
-      throw new HttpError(
-        400,
-        `Purchase return posting would make stock negative for item ${itemId}`,
-      );
-    }
-    const nextQty = Math.max(roundQty3(nextQtyRaw), 0);
-    const nextValue = nextQty > 0 ? Math.max(roundCost2(nextValueRaw), 0) : 0;
-    const nextWac = nextQty > 0 ? roundUnitCost6(nextValue / nextQty) : 0;
+    const nextQty = roundQty3(nextQtyRaw);
+    const nextValue = nextQty === 0 ? 0 : roundCost2(nextValueRaw);
+    const nextWac = nextQty > 0 ? roundUnitCost6(Math.max(nextValue, 0) / nextQty) : 0;
 
     const updateQuery = trx("erp.stock_balance_rm").update({
       qty: nextQty,
@@ -1454,6 +1444,278 @@ const loadPurchaseCategoryByVoucherTx = async ({
     return normalizePurchaseCategory(ext?.purchase_category);
   }
   return PURCHASE_CATEGORIES.rawMaterial;
+};
+
+// Reads the ON_HAND balance for whichever bucket a purchase line posts against. SFG
+// lines are SKU-keyed on the is_packed:false bucket, mirroring the posting helpers.
+const readPurchaseBucketBalanceTx = async ({
+  trx,
+  branchId,
+  itemId,
+  colorId,
+  sizeId,
+  isSfg,
+}) => {
+  if (isSfg) {
+    const skuId = await resolveSfgSkuIdTx({
+      trx,
+      itemId,
+      colorId: colorId || null,
+      sizeId: sizeId || null,
+    });
+    if (!skuId) return { key: `SFG:${itemId}:${colorId || 0}:${sizeId || 0}`, available: 0 };
+    const row = await trx("erp.stock_balance_sku")
+      .select("qty_pairs")
+      .where({
+        branch_id: Number(branchId),
+        stock_state: "ON_HAND",
+        category: "SFG",
+        is_packed: false,
+        sku_id: Number(skuId),
+      })
+      .first();
+    return { key: `SKU:${skuId}`, available: Number(row?.qty_pairs || 0) };
+  }
+
+  const supportsVariantDimensions =
+    await hasStockBalanceRmVariantDimensionsTx(trx);
+  const identity = buildRmStockIdentity({
+    branchId,
+    stockState: "ON_HAND",
+    itemId,
+    colorId,
+    sizeId,
+  });
+  const query = trx("erp.stock_balance_rm").select("qty");
+  applyRmStockIdentityWhere({ query, identity, supportsVariantDimensions });
+  const row = await query.first();
+  return {
+    key: `RM:${itemId}:${colorId || 0}:${sizeId || 0}`,
+    available: Number(row?.qty || 0),
+  };
+};
+
+// A Purchase Return sends stock back to the supplier. If the branch no longer holds it,
+// posting drives the bucket negative -- the condition the Neg. Stock control governs.
+// The running claim keeps two lines on one bucket from each seeing the full balance.
+const collectPurchaseReturnShortfallsTx = async ({
+  trx,
+  branchId,
+  validated,
+  excludeVoucherId = null,
+}) => {
+  const lines = Array.isArray(validated?.lines) ? validated.lines : [];
+  const itemLines = lines.filter(
+    (line) =>
+      String(line?.line_kind || "ITEM").toUpperCase() === "ITEM" &&
+      toPositiveInt(line?.item_id) &&
+      Number(line?.qty || 0) > 0,
+  );
+  if (!itemLines.length) return [];
+
+  const itemTypeById = await loadItemTypeMapTx({
+    trx,
+    itemIds: itemLines.map((line) => line.item_id),
+  });
+
+  // On edit the voucher's own posted quantity is still sitting in the ledger; add it
+  // back so re-saving an unchanged return does not look like a fresh shortfall.
+  const alreadyPosted = new Map();
+  if (toPositiveInt(excludeVoucherId)) {
+    const postedLines = await loadPurchaseVoucherStockLinesTx({
+      trx,
+      voucherId: Number(excludeVoucherId),
+    });
+    for (const line of postedLines) {
+      const itemId = toPositiveInt(line?.item_id);
+      if (!itemId) continue;
+      const colorId =
+        normalizeRmDimensionId(line?.meta?.color_id) ||
+        normalizeRmDimensionId(line?.meta?.rm_color_id);
+      const sizeId =
+        normalizeRmDimensionId(line?.meta?.size_id) ||
+        normalizeRmDimensionId(line?.meta?.rm_size_id);
+      const isSfg = itemTypeById.get(itemId) === "SFG";
+      const { key } = await readPurchaseBucketBalanceTx({
+        trx,
+        branchId,
+        itemId,
+        colorId,
+        sizeId,
+        isSfg,
+      });
+      alreadyPosted.set(key, (alreadyPosted.get(key) || 0) + Number(line.qty || 0));
+    }
+  }
+
+  const claimed = new Map();
+  const shortfalls = [];
+
+  for (const line of itemLines) {
+    const itemId = toPositiveInt(line.item_id);
+    const colorId =
+      normalizeRmDimensionId(line?.color_id) ||
+      normalizeRmDimensionId(line?.meta?.color_id);
+    const sizeId =
+      normalizeRmDimensionId(line?.size_id) ||
+      normalizeRmDimensionId(line?.meta?.size_id);
+    const isSfg = itemTypeById.get(itemId) === "SFG";
+    const { key, available } = await readPurchaseBucketBalanceTx({
+      trx,
+      branchId,
+      itemId,
+      colorId,
+      sizeId,
+      isSfg,
+    });
+    const effectiveAvailable = available + Number(alreadyPosted.get(key) || 0);
+
+    const qty = Number(line.qty || 0);
+    const previouslyClaimed = Number(claimed.get(key) || 0);
+    const totalClaimed = previouslyClaimed + qty;
+    claimed.set(key, totalClaimed);
+    const shortQty =
+      Math.max(totalClaimed - effectiveAvailable, 0) -
+      Math.max(previouslyClaimed - effectiveAvailable, 0);
+
+    if (shortQty > 0.0005) {
+      shortfalls.push({
+        line_no: line.line_no ?? null,
+        item_name: line.item_name || null,
+        short_qty: shortQty,
+        available_qty: Math.max(effectiveAvailable - previouslyClaimed, 0),
+      });
+    }
+  }
+
+  return shortfalls;
+};
+
+// Editing or deleting a Purchase Invoice pulls its received quantity back out. If the
+// material has since been consumed, that reversal is what drives stock negative.
+const collectPurchaseReversalShortfallsTx = async ({
+  trx,
+  branchId,
+  voucherId,
+}) => {
+  const normalizedVoucherId = toPositiveInt(voucherId);
+  if (!normalizedVoucherId) return [];
+  if (!(await hasStockLedgerTableTx(trx))) return [];
+
+  const hasLedgerVariants = await hasStockLedgerVariantDimensionsTx(trx);
+  const cols = ["item_id", "sku_id", "qty", "qty_pairs", "category", "stock_state"];
+  if (hasLedgerVariants) cols.push("color_id", "size_id");
+
+  const rows = await trx("erp.stock_ledger")
+    .select(cols)
+    .where({ voucher_header_id: normalizedVoucherId, direction: 1 });
+  if (!rows.length) return [];
+
+  const supportsVariantDimensions =
+    await hasStockBalanceRmVariantDimensionsTx(trx);
+  const buckets = new Map();
+
+  for (const row of rows) {
+    const stockState =
+      String(row?.stock_state || "ON_HAND").trim().toUpperCase() || "ON_HAND";
+    const skuId = toPositiveInt(row?.sku_id);
+    if (skuId) {
+      const key = `SKU:${skuId}:${stockState}`;
+      const entry = buckets.get(key) || {
+        kind: "SKU",
+        skuId,
+        stockState,
+        category: String(row?.category || "SFG").trim().toUpperCase(),
+        total: 0,
+      };
+      entry.total += Number(row?.qty_pairs || 0);
+      buckets.set(key, entry);
+      continue;
+    }
+    const itemId = toPositiveInt(row?.item_id);
+    if (!itemId) continue;
+    const colorId = hasLedgerVariants ? normalizeRmDimensionId(row?.color_id) : null;
+    const sizeId = hasLedgerVariants ? normalizeRmDimensionId(row?.size_id) : null;
+    const key = `RM:${itemId}:${colorId || 0}:${sizeId || 0}:${stockState}`;
+    const entry = buckets.get(key) || {
+      kind: "RM",
+      itemId,
+      colorId,
+      sizeId,
+      stockState,
+      total: 0,
+    };
+    entry.total = roundQty3(entry.total + Number(row?.qty || 0));
+    buckets.set(key, entry);
+  }
+
+  const shortfalls = [];
+  for (const entry of buckets.values()) {
+    if (!(entry.total > 0)) continue;
+    let available = 0;
+    if (entry.kind === "SKU") {
+      const balance = await trx("erp.stock_balance_sku")
+        .select("qty_pairs")
+        .where({
+          branch_id: Number(branchId),
+          stock_state: entry.stockState,
+          category: entry.category,
+          is_packed: false,
+          sku_id: Number(entry.skuId),
+        })
+        .first();
+      available = Number(balance?.qty_pairs || 0);
+    } else {
+      const identity = buildRmStockIdentity({
+        branchId,
+        stockState: entry.stockState,
+        itemId: entry.itemId,
+        colorId: entry.colorId,
+        sizeId: entry.sizeId,
+      });
+      const query = trx("erp.stock_balance_rm").select("qty");
+      applyRmStockIdentityWhere({ query, identity, supportsVariantDimensions });
+      const balance = await query.first();
+      available = Number(balance?.qty || 0);
+    }
+
+    if (available + 0.0005 < entry.total) {
+      shortfalls.push({
+        line_no: null,
+        short_qty: entry.total - available,
+        available_qty: available,
+      });
+    }
+  }
+
+  return shortfalls;
+};
+
+// PR posts stock out directly; PI/GRN only go short when an edit or delete reverses a
+// receipt whose material is already gone.
+const collectPurchaseNegativeStockShortfallsTx = async ({
+  trx,
+  req,
+  voucherTypeCode,
+  validated = null,
+  existingVoucherId = null,
+}) => {
+  const code = String(voucherTypeCode || "").trim().toUpperCase();
+  if (code === PURCHASE_VOUCHER_TYPES.purchaseReturn) {
+    if (!validated) return [];
+    return collectPurchaseReturnShortfallsTx({
+      trx,
+      branchId: req.branchId,
+      validated,
+      excludeVoucherId: existingVoucherId,
+    });
+  }
+  if (!toPositiveInt(existingVoucherId)) return [];
+  return collectPurchaseReversalShortfallsTx({
+    trx,
+    branchId: req.branchId,
+    voucherId: existingVoucherId,
+  });
 };
 
 const syncPurchaseVoucherStockTx = async ({
@@ -3166,8 +3428,22 @@ const createPurchaseVoucher = async ({
       voucherTypeCode,
       "create",
     );
+    const negativeStockRouting = await resolveNegativeStockRoutingTx({
+      trx,
+      voucherTypeCode,
+      canApproveVoucherAction: canApprove,
+      detectRisk: () =>
+        collectPurchaseNegativeStockShortfallsTx({
+          trx,
+          req,
+          voucherTypeCode,
+          validated,
+        }),
+    });
     const queuedForApproval =
-      !canCreate || (policyRequiresApproval && !canApprove);
+      !canCreate ||
+      (policyRequiresApproval && !canApprove) ||
+      negativeStockRouting.queueForApproval;
 
     const [header] = await trx("erp.voucher_header")
       .insert({
@@ -3248,6 +3524,9 @@ const createPurchaseVoucher = async ({
           grn_allocations: validated.grnAllocationsPayload || null,
           lines: validated.lines,
           permission_reroute: !canCreate,
+          negative_stock_approval_reroute:
+            negativeStockRouting.negativeStockApprovalReroute,
+          approval_reason: negativeStockRouting.approvalReason,
         },
       });
     }
@@ -3259,6 +3538,9 @@ const createPurchaseVoucher = async ({
       approvalRequestId,
       queuedForApproval,
       permissionReroute: !canCreate,
+      negativeStockApprovalReroute:
+        negativeStockRouting.negativeStockApprovalReroute,
+      approvalReason: negativeStockRouting.approvalReason,
     };
   });
 
@@ -3325,8 +3607,23 @@ const updatePurchaseVoucher = async ({
       voucherTypeCode,
       "edit",
     );
+    const negativeStockRouting = await resolveNegativeStockRoutingTx({
+      trx,
+      voucherTypeCode,
+      canApproveVoucherAction: canApprove,
+      detectRisk: () =>
+        collectPurchaseNegativeStockShortfallsTx({
+          trx,
+          req,
+          voucherTypeCode,
+          validated,
+          existingVoucherId: existing.id,
+        }),
+    });
     const queuedForApproval =
-      !canEdit || (policyRequiresApproval && !canApprove);
+      !canEdit ||
+      (policyRequiresApproval && !canApprove) ||
+      negativeStockRouting.queueForApproval;
 
     const updatePayload = {
       action: "update",
@@ -3345,6 +3642,9 @@ const updatePurchaseVoucher = async ({
       grn_allocations: validated.grnAllocationsPayload || null,
       lines: validated.lines,
       permission_reroute: !canEdit,
+      negative_stock_approval_reroute:
+        negativeStockRouting.negativeStockApprovalReroute,
+      approval_reason: negativeStockRouting.approvalReason,
     };
 
     if (queuedForApproval) {
@@ -3370,6 +3670,9 @@ const updatePurchaseVoucher = async ({
         approvalRequestId,
         queuedForApproval: true,
         permissionReroute: !canEdit,
+        negativeStockApprovalReroute:
+          negativeStockRouting.negativeStockApprovalReroute,
+        approvalReason: negativeStockRouting.approvalReason,
         updated: false,
       };
     }
@@ -3531,8 +3834,23 @@ const deletePurchaseVoucher = async ({
       voucherTypeCode,
       "delete",
     );
+    // A delete reverses whatever the voucher posted: for PI/GRN that pulls received
+    // material back out, which goes short once it has been consumed downstream.
+    const negativeStockRouting = await resolveNegativeStockRoutingTx({
+      trx,
+      voucherTypeCode,
+      canApproveVoucherAction: canApprove,
+      detectRisk: () =>
+        collectPurchaseReversalShortfallsTx({
+          trx,
+          branchId: req.branchId,
+          voucherId: existing.id,
+        }),
+    });
     const queuedForApproval =
-      !canDelete || (policyRequiresApproval && !canApprove);
+      !canDelete ||
+      (policyRequiresApproval && !canApprove) ||
+      negativeStockRouting.queueForApproval;
 
     if (queuedForApproval) {
       const approvalRequestId = await createApprovalRequest({
@@ -3548,6 +3866,9 @@ const deletePurchaseVoucher = async ({
           voucher_no: existing.voucher_no,
           voucher_type_code: voucherTypeCode,
           permission_reroute: !canDelete,
+          negative_stock_approval_reroute:
+            negativeStockRouting.negativeStockApprovalReroute,
+          approval_reason: negativeStockRouting.approvalReason,
         },
       });
 
@@ -3558,6 +3879,9 @@ const deletePurchaseVoucher = async ({
         approvalRequestId,
         queuedForApproval: true,
         permissionReroute: !canDelete,
+        negativeStockApprovalReroute:
+          negativeStockRouting.negativeStockApprovalReroute,
+        approvalReason: negativeStockRouting.approvalReason,
         deleted: false,
       };
     }

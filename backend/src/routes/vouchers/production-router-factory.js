@@ -342,12 +342,16 @@ const createProductionVoucherRouter = ({
           });
 
       if (saved.queuedForApproval) {
-        const msg = saved.permissionReroute
-          ? res.locals.t("approval_sent")
-          : res.locals.t("approval_submitted");
-        const approvalReason = String(saved.approvalReason || "").trim();
         const hasShortageApprovalReroute =
           saved.shortageApprovalReroute === true;
+        const msg =
+          saved.negativeStockApprovalReroute === true ||
+          hasShortageApprovalReroute
+            ? res.locals.t("approval_sent_negative_stock")
+            : saved.permissionReroute
+              ? res.locals.t("approval_sent")
+              : res.locals.t("approval_submitted");
+        const approvalReason = String(saved.approvalReason || "").trim();
         const reasonLabel = res.locals.t("reason");
         const approvalMessage = approvalReason
           ? `${msg} ${reasonLabel}: ${approvalReason}`

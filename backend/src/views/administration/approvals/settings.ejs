@@ -7,13 +7,20 @@
     }
     return /^[a-z0-9_]+$/.test(row.description) ? t(row.description) : row.description;
   };
+  const stockVouchers = new Set(typeof stockVoucherCodes !== 'undefined' ? stockVoucherCodes : []);
   const actions = [
     { key: 'create', label: t('create') },
     { key: 'edit', label: t('edit') },
     { key: 'delete', label: t('deactivate') || t('delete') },
     { key: 'hard_delete', label: t('permanent_delete') },
-    { key: 'negative_stock', label: t('neg_stock') || 'Neg. Stock', voucherOnly: true },
+    { key: 'negative_stock', label: t('neg_stock') || 'Neg. Stock', voucherOnly: true, stockOnly: true },
   ];
+  const actionApplies = (act, row) => {
+    if (!row.scopeKey) return false;
+    if (act.voucherOnly && row.scopeType !== 'VOUCHER') return false;
+    if (act.stockOnly && !stockVouchers.has(row.scopeKey)) return false;
+    return true;
+  };
 %>
 
 <div class="permissions-shell flex flex-col min-h-0 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
@@ -133,7 +140,7 @@
                 </td>
                 <% actions.forEach(act => { %>
                   <td class="text-center border-r last:border-r-0">
-                    <% if (row.scopeKey && (!act.voucherOnly || row.scopeType === 'VOUCHER')) { %>
+                    <% if (actionApplies(act, row)) { %>
                       <% const entityType = row.scopeType === "VOUCHER" ? "VOUCHER_TYPE" : "SCREEN"; %>
                       <input type="checkbox" name="<%= entityType %>:<%= row.scopeKey %>:<%= act.key %>" <%= policyMap?.[entityType]?.[row.scopeKey]?.[act.key] ? 'checked' : '' %> class="rounded text-accent focus:ring-accent w-4 h-4">
                     <% } else { %>

@@ -11,7 +11,7 @@ const {
 } = require("../../utils/voucher-approval-policy");
 const { syncVoucherGlPostingTx } = require("../financial/gl-posting-service");
 const {
-  resolveNegativeStockApprovalRouting,
+  resolveNegativeStockRoutingTx,
 } = require("./negative-stock-approval");
 const {
   findPendingVoucherApprovalTx,
@@ -363,19 +363,6 @@ const canDo = (req, scopeType, scopeKey, action) => {
 
 const canApproveVoucherAction = (req, scopeKey) =>
   req?.user?.isAdmin === true || canDo(req, "VOUCHER", scopeKey, "approve");
-
-const canUseNegativeStockOverrideTx = async ({
-  trx,
-  req,
-  voucherTypeCode,
-}) => {
-  const requiresApproval = await requiresApprovalForAction(
-    trx,
-    voucherTypeCode,
-    "negative_stock",
-  );
-  return !requiresApproval;
-};
 
 const requiresApprovalForAction = async (trx, voucherTypeCode, action) => {
   return resolveVoucherApprovalRequiredTx({
@@ -980,6 +967,113 @@ const removeSkuStockFromLedgerTx = async ({ trx, row }) => {
       wac: nextWac,
       last_txn_at: trx.fn.now(),
     });
+};
+
+// Opening stock only ever adds stock, so its negative-stock exposure is entirely on the
+// way out: editing or deleting one pulls back quantity that may already have been
+// consumed. Measure that by replaying the voucher's own +1 ledger rows against today's
+// balances, using the same bucket identity the rollback uses (RM identity, and the
+// is_packed:false SKU bucket) so the estimate can never disagree with the write.
+const collectInventoryReversalShortfallsTx = async ({ trx, voucherId }) => {
+  const normalizedVoucherId = toPositiveInt(voucherId);
+  if (!normalizedVoucherId) return [];
+  if (!(await hasStockLedgerTableTx(trx))) return [];
+
+  const hasVariantDimensions = await hasStockLedgerVariantDimensionsTx(trx);
+  const selectColumns = [
+    "branch_id",
+    "category",
+    "stock_state",
+    "item_id",
+    "sku_id",
+    "qty",
+    "qty_pairs",
+  ];
+  if (selectColumns && hasVariantDimensions) {
+    selectColumns.push("color_id", "size_id");
+  }
+
+  const rows = await trx("erp.stock_ledger")
+    .select(selectColumns)
+    .where({ voucher_header_id: normalizedVoucherId, direction: 1 });
+  if (!rows.length) return [];
+
+  // Two ledger rows can share a bucket; the reversal sees the total, not each row.
+  const buckets = new Map();
+  for (const row of rows) {
+    const category = String(row?.category || "").trim().toUpperCase();
+    const stockState =
+      String(row?.stock_state || "ON_HAND").trim().toUpperCase() || "ON_HAND";
+    if (category === "RM") {
+      const key = [
+        "RM",
+        row.branch_id,
+        stockState,
+        row.item_id,
+        normalizeRmDimensionId(row?.color_id) || 0,
+        normalizeRmDimensionId(row?.size_id) || 0,
+      ].join(":");
+      const entry = buckets.get(key) || { kind: "RM", row, stockState, total: 0 };
+      entry.total = roundQty3(entry.total + Number(row?.qty || 0));
+      buckets.set(key, entry);
+    } else if (category === "SFG" || category === "FG") {
+      const key = ["SKU", row.branch_id, stockState, category, row.sku_id].join(":");
+      const entry = buckets.get(key) || {
+        kind: "SKU",
+        row,
+        stockState,
+        category,
+        total: 0,
+      };
+      entry.total += Number(row?.qty_pairs || 0);
+      buckets.set(key, entry);
+    }
+  }
+
+  const supportsVariantDimensions =
+    await hasStockBalanceRmVariantDimensionsTx(trx);
+  const shortfalls = [];
+
+  for (const entry of buckets.values()) {
+    if (!(entry.total > 0)) continue;
+    let available = 0;
+
+    if (entry.kind === "RM") {
+      const identity = buildRmStockIdentity({
+        branchId: toPositiveInt(entry.row.branch_id),
+        stockState: entry.stockState,
+        itemId: toPositiveInt(entry.row.item_id),
+        colorId: normalizeRmDimensionId(entry.row?.color_id),
+        sizeId: normalizeRmDimensionId(entry.row?.size_id),
+      });
+      const query = trx("erp.stock_balance_rm").select("qty");
+      applyRmStockIdentityWhere({ query, identity, supportsVariantDimensions });
+      const balance = await query.first();
+      available = Number(balance?.qty || 0);
+    } else {
+      const balance = await trx("erp.stock_balance_sku")
+        .select("qty_pairs")
+        .where({
+          branch_id: toPositiveInt(entry.row.branch_id),
+          stock_state: entry.stockState,
+          category: entry.category,
+          is_packed: false,
+          sku_id: toPositiveInt(entry.row.sku_id),
+        })
+        .first();
+      available = Number(balance?.qty_pairs || 0);
+    }
+
+    if (available + 0.0005 < entry.total) {
+      shortfalls.push({
+        line_no: null,
+        short_qty: entry.total - available,
+        available_qty: available,
+      });
+    }
+  }
+
+  return shortfalls;
 };
 
 const rollbackInventoryStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
@@ -1995,16 +2089,12 @@ const updateOpeningStockVoucher = async ({
       voucherTypeCode,
       "edit",
     );
-    const negativeStockOverrideAllowed = await canUseNegativeStockOverrideTx({
+    const negativeStockRouting = await resolveNegativeStockRoutingTx({
       trx,
-      req,
       voucherTypeCode,
-    });
-    const negativeStockRouting = resolveNegativeStockApprovalRouting({
-      hasNegativeStockRisk: hasStockCountNegativeStockRisk(validated),
       canApproveVoucherAction: canApprove,
-      canBypassNegativeStockApproval: negativeStockOverrideAllowed,
-      voucherTypeCode,
+      detectRisk: () =>
+        collectInventoryReversalShortfallsTx({ trx, voucherId: existing.id }),
     });
     const queuedForApproval =
       !canEdit ||
@@ -2165,8 +2255,20 @@ const deleteOpeningStockVoucher = async ({
       voucherTypeCode,
       "delete",
     );
+    // Deleting an opening stock voucher pulls its quantity back out; if it has since
+    // been consumed the reversal drives the bucket negative, same as any other short
+    // posting, so it routes through the same control.
+    const negativeStockRouting = await resolveNegativeStockRoutingTx({
+      trx,
+      voucherTypeCode,
+      canApproveVoucherAction: canApprove,
+      detectRisk: () =>
+        collectInventoryReversalShortfallsTx({ trx, voucherId: existing.id }),
+    });
     const queuedForApproval =
-      !canDelete || (policyRequiresApproval && !canApprove);
+      !canDelete ||
+      (policyRequiresApproval && !canApprove) ||
+      negativeStockRouting.queueForApproval;
 
     if (queuedForApproval) {
       const approvalRequestId = await createApprovalRequest({
@@ -2182,6 +2284,9 @@ const deleteOpeningStockVoucher = async ({
           voucher_no: existing.voucher_no,
           voucher_type_code: voucherTypeCode,
           permission_reroute: !canDelete,
+          negative_stock_approval_reroute:
+            negativeStockRouting.negativeStockApprovalReroute,
+          approval_reason: negativeStockRouting.approvalReason,
         },
       });
 
@@ -2192,6 +2297,9 @@ const deleteOpeningStockVoucher = async ({
         approvalRequestId,
         queuedForApproval: true,
         permissionReroute: !canDelete,
+        negativeStockApprovalReroute:
+          negativeStockRouting.negativeStockApprovalReroute,
+        approvalReason: negativeStockRouting.approvalReason,
         deleted: false,
       };
     }
@@ -3763,14 +3871,27 @@ const syncStockCountAdjustmentVoucherTx = async ({ trx, voucherId }) => {
   }
 };
 
-const hasStockCountNegativeStockRisk = (validated) =>
-  (Array.isArray(validated?.lines) ? validated.lines : []).some((line) => {
-    const meta = line?.meta && typeof line.meta === "object" ? line.meta : {};
-    if (meta.negative_stock_risk === true) return true;
-    if (Number(meta.physical_qty || 0) < -0.0005) return true;
-    if (Number(meta.physical_qty_pairs || 0) < 0) return true;
-    return false;
-  });
+// One entry per line that lands below zero, so the approver sees which count drives
+// stock negative rather than a bare "this would go negative".
+const collectStockCountShortfalls = (validated) =>
+  (Array.isArray(validated?.lines) ? validated.lines : []).reduce(
+    (acc, line) => {
+      const meta = line?.meta && typeof line.meta === "object" ? line.meta : {};
+      const qty = Number(meta.physical_qty || 0);
+      const qtyPairs = Number(meta.physical_qty_pairs || 0);
+      const isShort =
+        meta.negative_stock_risk === true || qty < -0.0005 || qtyPairs < 0;
+      if (!isShort) return acc;
+      const shortQty = qty < -0.0005 ? Math.abs(qty) : Math.abs(qtyPairs);
+      acc.push({
+        line_no: line?.line_no ?? null,
+        short_qty: shortQty,
+        available_qty: 0,
+      });
+      return acc;
+    },
+    [],
+  );
 
 const toStockCountApprovalPayload = ({
   action,
@@ -3826,16 +3947,11 @@ const createStockCountAdjustmentVoucher = async ({
       voucherTypeCode,
       "create",
     );
-    const negativeStockOverrideAllowed = await canUseNegativeStockOverrideTx({
+    const negativeStockRouting = await resolveNegativeStockRoutingTx({
       trx,
-      req,
       voucherTypeCode,
-    });
-    const negativeStockRouting = resolveNegativeStockApprovalRouting({
-      hasNegativeStockRisk: hasStockCountNegativeStockRisk(validated),
       canApproveVoucherAction: canApprove,
-      canBypassNegativeStockApproval: negativeStockOverrideAllowed,
-      voucherTypeCode,
+      detectRisk: () => collectStockCountShortfalls(validated),
     });
     // Physical Count Correction always goes through the Approvals page (never
     // self-approved from the Confirm button). Every other reason lets an
@@ -4001,16 +4117,11 @@ const updateStockCountAdjustmentVoucher = async ({
       voucherTypeCode,
       "edit",
     );
-    const negativeStockOverrideAllowed = await canUseNegativeStockOverrideTx({
+    const negativeStockRouting = await resolveNegativeStockRoutingTx({
       trx,
-      req,
       voucherTypeCode,
-    });
-    const negativeStockRouting = resolveNegativeStockApprovalRouting({
-      hasNegativeStockRisk: hasStockCountNegativeStockRisk(validated),
       canApproveVoucherAction: canApprove,
-      canBypassNegativeStockApproval: negativeStockOverrideAllowed,
-      voucherTypeCode,
+      detectRisk: () => collectStockCountShortfalls(validated),
     });
     // Physical Count Correction stays on the Approvals page while PENDING — its
     // Confirm just updates the existing pending approval (see createApprovalRequest

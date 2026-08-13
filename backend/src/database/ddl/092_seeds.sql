@@ -159,8 +159,9 @@ VALUES
   ('SALES_VOUCHER',    'Sales Voucher',                          false, true,  true),
 
   -- RETURNABLES
-  ('RDV',              'Returnable Dispatch Voucher',            false, false, false),
-  ('RRV',              'Returnable Receipt Voucher',             false, false, false)
+  -- RDV/RRV move raw material between ON_HAND and WITH_THIRD_PARTY, so they do affect stock.
+  ('RDV',              'Returnable Dispatch Voucher',            false, true,  false),
+  ('RRV',              'Returnable Receipt Voucher',             false, true,  false)
 
 ON CONFLICT (code) DO UPDATE SET
   name              = EXCLUDED.name,

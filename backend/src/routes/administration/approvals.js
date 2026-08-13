@@ -319,8 +319,9 @@ const applyVoucherApprovalChangeTx = async ({
         voucherId,
         voucherTypeCode,
         actorUserId: approverId,
-        // Preserve admin operational override when approval application replays derived production posting.
-        allowNegativeRm: req?.user?.isAdmin === true,
+        // A request that reaches the applier has already been approved, so the shortage
+        // it was raised for is sanctioned -- never refuse the replay at posting time.
+        allowNegativeRm: true,
       });
     }
     if (
@@ -2078,7 +2079,9 @@ router.get(
   async (req, res, next) => {
     try {
       const [voucherTypes, policyRows] = await Promise.all([
-        knex("erp.voucher_type").select("code", "name").orderBy("name"),
+        knex("erp.voucher_type")
+          .select("code", "name", "affects_stock")
+          .orderBy("name"),
         knex("erp.approval_policy").select(
           "entity_type",
           "entity_key",
@@ -2125,6 +2128,12 @@ router.get(
       const voucherTypeMap = new Map(
         voucherTypes.map((vt) => [vt.code, vt.name]),
       );
+
+      // The Neg. Stock column only means something for vouchers that move stock;
+      // offering it on a cash or journal voucher is a checkbox that can never fire.
+      const stockVoucherCodes = voucherTypes
+        .filter((vt) => vt.affects_stock === true)
+        .map((vt) => vt.code);
 
       const buildScreenRows = (nodes, parentPath = "", depth = 0) => {
         let rows = [];
@@ -2206,6 +2215,7 @@ router.get(
         {
           screenRows,
           policyMap,
+          stockVoucherCodes,
         },
       );
     } catch (err) {

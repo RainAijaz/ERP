@@ -1,3 +1,6 @@
+const {
+  resolveNegativeStockRoutingTx,
+} = require("../inventory/negative-stock-approval");
 const knex = require("../../db/knex");
 const { HttpError } = require("../../middleware/errors/http-error");
 const { queueAuditLog } = require("../../utils/audit-log");
@@ -2125,13 +2128,18 @@ const createReturnableVoucher = async ({
       voucherTypeCode,
       "create",
     );
-    // Driving stock negative is a data-integrity exception rather than a routine policy
-    // check, so it routes through approvals even for a user who could otherwise
-    // self-approve -- the point is that a second person sees the shortfall.
-    const hasNegativeStockLines = Boolean(validated.rmShortfalls?.length);
+    // Lending out more than is on hand now routes through the voucher's Neg. Stock
+    // control like every other stock voucher, instead of forcing a checker regardless
+    // of the setting. A user who can approve this voucher still posts directly.
+    const negativeStockRouting = await resolveNegativeStockRoutingTx({
+      trx,
+      voucherTypeCode,
+      canApproveVoucherAction: canApprove,
+      detectRisk: () => validated.rmShortfalls || [],
+    });
     const queuedForApproval =
       !canCreate ||
-      hasNegativeStockLines ||
+      negativeStockRouting.queueForApproval ||
       (policyRequiresApproval && !canApprove);
 
     if (queuedForApproval) {
@@ -2156,6 +2164,9 @@ const createReturnableVoucher = async ({
         approvalRequestId,
         queuedForApproval: true,
         permissionReroute: !canCreate,
+        negativeStockApprovalReroute:
+          negativeStockRouting.negativeStockApprovalReroute,
+        approvalReason: negativeStockRouting.approvalReason,
       };
     }
 
@@ -2251,10 +2262,18 @@ const updateReturnableVoucher = async ({
       voucherTypeCode,
       "edit",
     );
-    // Same rule as create: an edit that pushes a bucket negative always gets a checker.
-    const hasNegativeStockLines = Boolean(validated.rmShortfalls?.length);
+    // Same rule as create: an edit that pushes a bucket negative follows the voucher's
+    // Neg. Stock control.
+    const negativeStockRouting = await resolveNegativeStockRoutingTx({
+      trx,
+      voucherTypeCode,
+      canApproveVoucherAction: canApprove,
+      detectRisk: () => validated.rmShortfalls || [],
+    });
     const queuedForApproval =
-      !canEdit || hasNegativeStockLines || (policyRequiresApproval && !canApprove);
+      !canEdit ||
+      negativeStockRouting.queueForApproval ||
+      (policyRequiresApproval && !canApprove);
 
     const newValue = {
       ...(voucherTypeCode === RETURNABLE_VOUCHER_TYPES.dispatch
@@ -2287,6 +2306,9 @@ const updateReturnableVoucher = async ({
         approvalRequestId,
         queuedForApproval: true,
         permissionReroute: !canEdit,
+        negativeStockApprovalReroute:
+          negativeStockRouting.negativeStockApprovalReroute,
+        approvalReason: negativeStockRouting.approvalReason,
         updated: false,
       };
     }

@@ -2081,10 +2081,12 @@ const validateDcvSfgAvailabilityTx = async ({
     .filter(Boolean);
 
   if (deficits.length) {
-    throw new HttpError(
+    const shortageError = new HttpError(
       400,
       `SFG stock is insufficient for selected stage. ${deficits.join("; ")}`,
     );
+    shortageError.code = RM_STOCK_SHORTAGE_ERROR_CODE;
+    throw shortageError;
   }
 };
 
@@ -3173,6 +3175,7 @@ const applySkuStockOutTx = async ({
   voucherLineId = null,
   voucherDate,
   writeLedger = true,
+  allowNegativeStock = false,
 }) => {
   const normalizedBranchId = toPositiveInt(branchId);
   const normalizedSkuId = toPositiveInt(skuId);
@@ -3211,11 +3214,15 @@ const applySkuStockOutTx = async ({
     (sum, row) => sum + Number(row?.qty_pairs || 0),
     0,
   );
-  if (totalAvailablePairs < normalizedQtyPairsOut) {
-    throw new HttpError(
+  // Shortfalls are routed by the voucher's Neg. Stock control, not refused here.
+  // The shortfall is drawn from the loose bucket so it lands in one place.
+  if (!allowNegativeStock && totalAvailablePairs < normalizedQtyPairsOut) {
+    const shortageError = new HttpError(
       400,
-      `${normalizedCategory} loss quantity exceeds available stock for SKU ${normalizedSkuId}`,
+      `${normalizedCategory} loss quantity exceeds available stock for SKU ${normalizedSkuId} (required ${normalizedQtyPairsOut}, available ${totalAvailablePairs})`,
     );
+    shortageError.code = RM_STOCK_SHORTAGE_ERROR_CODE;
+    throw shortageError;
   }
 
   // Tracked separately per bucket (packed vs loose) so the resulting
@@ -3243,7 +3250,10 @@ const applySkuStockOutTx = async ({
 
     const nextQtyPairsRaw = rowQtyPairs - consumePairs;
     const nextValueRaw = Number(row?.value || 0) - consumedValue;
-    if (nextQtyPairsRaw < 0 || nextValueRaw < -0.05) {
+    if (
+      !allowNegativeStock &&
+      (nextQtyPairsRaw < 0 || nextValueRaw < -0.05)
+    ) {
       throw new HttpError(
         400,
         `${normalizedCategory} loss posting would make stock negative for SKU ${normalizedSkuId}`,
@@ -3281,10 +3291,70 @@ const applySkuStockOutTx = async ({
   }
 
   if (remainingPairs > 0) {
-    throw new HttpError(
-      400,
-      `${normalizedCategory} loss posting failed due to stock split inconsistency for SKU ${normalizedSkuId}`,
+    if (!allowNegativeStock) {
+      throw new HttpError(
+        400,
+        `${normalizedCategory} loss posting failed due to stock split inconsistency for SKU ${normalizedSkuId}`,
+      );
+    }
+    // Nothing left on hand to draw from: take the balance of the line negative out
+    // of the loose bucket, mirroring how sales values a short posting.
+    const looseRow = rows.find((row) => row.is_packed !== true);
+    const shortUnitCost = resolveUnitCost({
+      qty: Number(looseRow?.qty_pairs || 0),
+      value: Number(looseRow?.value || 0),
+      wac: Number(looseRow?.wac || 0),
+    });
+    const shortValue = roundCost2(remainingPairs * shortUnitCost);
+    await trx("erp.stock_balance_sku")
+      .insert({
+        branch_id: normalizedBranchId,
+        stock_state: "ON_HAND",
+        category: normalizedCategory,
+        is_packed: false,
+        sku_id: normalizedSkuId,
+        qty_pairs: 0,
+        value: 0,
+        wac: 0,
+        last_txn_at: trx.fn.now(),
+      })
+      .onConflict([
+        "branch_id",
+        "stock_state",
+        "category",
+        "is_packed",
+        "sku_id",
+      ])
+      .ignore();
+    const current = await trx("erp.stock_balance_sku")
+      .select("qty_pairs", "value")
+      .where({
+        branch_id: normalizedBranchId,
+        stock_state: "ON_HAND",
+        category: normalizedCategory,
+        is_packed: false,
+        sku_id: normalizedSkuId,
+      })
+      .first();
+    await trx("erp.stock_balance_sku")
+      .where({
+        branch_id: normalizedBranchId,
+        stock_state: "ON_HAND",
+        category: normalizedCategory,
+        is_packed: false,
+        sku_id: normalizedSkuId,
+      })
+      .update({
+        qty_pairs: Number(current?.qty_pairs || 0) - remainingPairs,
+        value: roundCost2(Number(current?.value || 0) - shortValue),
+        last_txn_at: trx.fn.now(),
+      });
+    consumedByBucket.false.pairs += remainingPairs;
+    consumedByBucket.false.value = roundCost2(
+      consumedByBucket.false.value + shortValue,
     );
+    consumedValueTotal = roundCost2(consumedValueTotal + shortValue);
+    remainingPairs = 0;
   }
 
   if (writeLedger) {
@@ -4580,10 +4650,12 @@ const applyDcvToWipTx = async ({ trx, voucherId, branchId, voucherDate }) => {
         }
       }
       if (totalConsumedPairs < qtyPairs) {
-        throw new HttpError(
+        const shortageError = new HttpError(
           400,
           `Line ${lineNo}: stage flow blocked for SKU ${skuLabel}; previous stage WIP is insufficient`,
         );
+        shortageError.code = RM_STOCK_SHORTAGE_ERROR_CODE;
+        throw shortageError;
       }
       previousStageCost = Number(totalConsumedCost || 0);
     }
@@ -4605,6 +4677,7 @@ const applyDcvToWipTx = async ({ trx, voucherId, branchId, voucherDate }) => {
         voucherLineId: toPositiveInt(line.id),
         voucherDate,
         writeLedger: true,
+        allowNegativeStock: allowNegativeRm === true,
       });
       stageSfgConsumedCost = Number(
         (stageSfgConsumedCost + Number(consumedValue || 0)).toFixed(2),
@@ -4919,7 +4992,13 @@ const applyDcvToGeneratedVouchersTx = async ({
     .merge(["consumption_voucher_id"]);
 };
 
-const applyLossToWipTx = async ({ trx, voucherId, branchId, voucherDate }) => {
+const applyLossToWipTx = async ({
+  trx,
+  voucherId,
+  branchId,
+  voucherDate,
+  allowNegativeStock = false,
+}) => {
   const rows = await trx("erp.abnormal_loss_line as alln")
     .join("erp.voucher_line as vl", "vl.id", "alln.voucher_line_id")
     .leftJoin("erp.skus as s", "s.id", "vl.sku_id")
@@ -5016,6 +5095,7 @@ const applyLossToWipTx = async ({ trx, voucherId, branchId, voucherDate }) => {
         voucherLineId,
         voucherDate,
         writeLedger: true,
+        allowNegativeStock,
       });
       continue;
     }
@@ -5463,6 +5543,7 @@ const ensureProductionVoucherDerivedDataTx = async ({
       voucherId: normalizedVoucherId,
       branchId: Number(header.branch_id),
       voucherDate: toDateOnly(header.voucher_date),
+      allowNegativeStock: allowNegativeRm === true,
     });
     return;
   }
@@ -5571,8 +5652,15 @@ const saveProductionVoucherCoreTx = async ({
     permission_reroute: isCreate ? !canCreate : !canEdit,
   };
   const quantityTotals = computeLineQuantityTotals(validated.lines);
-  // Admins can confirm immediately even if RM goes negative; non-admin shortage is rerouted to approval.
-  const allowNegativeRmOnConfirm = req?.user?.isAdmin === true;
+  // The voucher's Neg. Stock control decides whether a shortage may post at all. With
+  // it off the voucher posts and stock goes negative; with it on a shortage is rerouted
+  // to approvals, except for a user who can approve this voucher themselves.
+  const negativeStockPolicyRequired = await requiresApprovalForAction(
+    trx,
+    voucherTypeCode,
+    "negative_stock",
+  );
+  const allowNegativeRmOnConfirm = !negativeStockPolicyRequired || canApprove;
 
   if (queuedForApproval) {
     if (!isCreate) {
@@ -5676,8 +5764,9 @@ const saveProductionVoucherCoreTx = async ({
       await syncVoucherGlPostingTx({ trx: postingTrx, voucherId: headerId });
     });
   } catch (err) {
-    if (isCreate && !allowNegativeRmOnConfirm && isRmStockShortageError(err)) {
-      // Non-admin create shortage path: leave voucher pending and queue a review request with shortage details.
+    if (!allowNegativeRmOnConfirm && isRmStockShortageError(err)) {
+      // Shortage path: leave the voucher pending and queue a review request carrying the
+      // shortage detail, so a checker sees exactly what would go negative.
       await trx("erp.voucher_header").where({ id: headerId }).update({
         status: "PENDING",
         approved_by: null,
@@ -5687,6 +5776,7 @@ const saveProductionVoucherCoreTx = async ({
       const approvalRequestPayload = {
         ...approvalPayload,
         approval_reason: String(err.message || "").trim(),
+        negative_stock_approval_reroute: true,
         allow_negative_rm_on_approval: true,
       };
 
@@ -5695,7 +5785,9 @@ const saveProductionVoucherCoreTx = async ({
         req,
         entityId: headerId,
         voucherTypeCode,
-        summary: `${voucherTypeCode} #${voucherNo}`,
+        summary: isCreate
+          ? `${voucherTypeCode} #${voucherNo}`
+          : `UPDATE ${voucherTypeCode} #${voucherNo}`,
         newValue: approvalRequestPayload,
       });
 
@@ -5707,6 +5799,7 @@ const saveProductionVoucherCoreTx = async ({
         approvalRequestId,
         permissionReroute: false,
         shortageApprovalReroute: true,
+        negativeStockApprovalReroute: true,
         approvalReason: String(err.message || "").trim(),
         quantityTotals,
       };
@@ -5722,6 +5815,7 @@ const saveProductionVoucherCoreTx = async ({
     approvalRequestId: null,
     permissionReroute: false,
     shortageApprovalReroute: false,
+    negativeStockApprovalReroute: false,
     approvalReason: null,
     quantityTotals,
   };
@@ -6023,8 +6117,9 @@ const applyProductionVoucherUpdatePayloadTx = async ({
     voucherId,
     voucherTypeCode,
     actorUserId: approverId || req?.user?.id || null,
-    // Admin approvers can apply DCV updates without blocking on RM shortage.
-    allowNegativeRm: req?.user?.isAdmin === true,
+    // Applying an approved update replays a sanctioned posting; the shortage decision
+    // was already taken when the request was approved.
+    allowNegativeRm: true,
   });
   await syncVoucherGlPostingTx({ trx, voucherId });
 };

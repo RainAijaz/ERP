@@ -16,7 +16,7 @@ const {
 } = require("../../utils/voucher-approval-sync");
 const { syncVoucherGlPostingTx } = require("../financial/gl-posting-service");
 const {
-  resolveNegativeStockApprovalRouting,
+  resolveNegativeStockRoutingTx,
 } = require("../inventory/negative-stock-approval");
 const {
   buildStockShortfallMessageTx,
@@ -491,7 +491,9 @@ const canApproveVoucherAction = (req, scopeKey) =>
 // Detect if any sale lines in the validated payload would take stock below zero.
 // For EDIT mode, pass currentVoucherId so its existing committed pairs are added back
 // before comparing against the new quantities.
-const checkSalesNegativeStockRiskTx = async ({
+// Returns one entry per SKU the branch is short of, so the approver reads which article
+// drives stock negative and by how much. An empty array means no risk.
+const collectSalesNegativeStockShortfallsTx = async ({
   trx,
   branchId,
   validated,
@@ -512,7 +514,7 @@ const checkSalesNegativeStockRiskTx = async ({
     if (!skuId || !(pairs > 0)) return;
     deductions.set(skuId, (deductions.get(skuId) || 0) + pairs);
   });
-  if (!deductions.size) return false;
+  if (!deductions.size) return [];
 
   const skuIds = [...deductions.keys()];
 
@@ -542,11 +544,76 @@ const checkSalesNegativeStockRiskTx = async ({
     });
   }
 
+  const skuCodeRows = await trx("erp.skus")
+    .select("id", "sku_code")
+    .whereIn("id", skuIds);
+  const skuCodeMap = new Map(
+    skuCodeRows.map((row) => [Number(row.id), row.sku_code]),
+  );
+
+  const shortfalls = [];
   for (const [skuId, deductPairs] of deductions) {
     const available = stockMap.get(skuId) || 0;
-    if (available - deductPairs < -0.0005) return true;
+    if (available - deductPairs < -0.0005) {
+      shortfalls.push({
+        line_no: null,
+        item_name: skuCodeMap.get(Number(skuId)) || `SKU ${skuId}`,
+        short_qty: deductPairs - available,
+        available_qty: available,
+      });
+    }
   }
-  return false;
+  return shortfalls;
+};
+
+// Deleting a sale gives stock back, so it is never short. Deleting a voucher that
+// carried RETURN lines takes that returned stock away again, and if it has already been
+// sold on the reversal drives the bucket negative.
+const collectSalesDeleteShortfallsTx = async ({ trx, branchId, voucherId }) => {
+  const lines = await trx("erp.voucher_line")
+    .select("sku_id", "meta")
+    .where({ voucher_header_id: Number(voucherId), line_kind: "SKU" });
+
+  const removals = new Map();
+  lines.forEach((line) => {
+    const meta = line?.meta && typeof line.meta === "object" ? line.meta : {};
+    if (String(meta?.movement_kind || "SALE").toUpperCase() !== "RETURN") return;
+    const skuId = Number(line?.sku_id);
+    const pairs = Number(meta?.total_pairs || 0);
+    if (!(skuId > 0) || !(pairs > 0)) return;
+    removals.set(skuId, (removals.get(skuId) || 0) + pairs);
+  });
+  if (!removals.size) return [];
+
+  const skuIds = [...removals.keys()];
+  const [stockRows, skuCodeRows] = await Promise.all([
+    trx("erp.stock_balance_sku")
+      .select("sku_id", trx.raw("sum(coalesce(qty_pairs, 0)) as total_qty"))
+      .where({ branch_id: Number(branchId), stock_state: "ON_HAND" })
+      .whereIn("sku_id", skuIds)
+      .groupBy("sku_id"),
+    trx("erp.skus").select("id", "sku_code").whereIn("id", skuIds),
+  ]);
+  const stockMap = new Map(
+    stockRows.map((r) => [Number(r.sku_id), Number(r.total_qty || 0)]),
+  );
+  const skuCodeMap = new Map(
+    skuCodeRows.map((row) => [Number(row.id), row.sku_code]),
+  );
+
+  const shortfalls = [];
+  for (const [skuId, removePairs] of removals) {
+    const available = stockMap.get(skuId) || 0;
+    if (available - removePairs < -0.0005) {
+      shortfalls.push({
+        line_no: null,
+        item_name: skuCodeMap.get(Number(skuId)) || `SKU ${skuId}`,
+        short_qty: removePairs - available,
+        available_qty: available,
+      });
+    }
+  }
+  return shortfalls;
 };
 
 const requiresApprovalForAction = async (trx, voucherTypeCode, action) => {
@@ -3366,25 +3433,17 @@ const saveSalesVoucherTx = async ({
     t: req?.res?.locals?.t,
   });
 
-  const negativeStockPolicyRequired = await requiresApprovalForAction(
+  const salesNegativeStockRouting = await resolveNegativeStockRoutingTx({
     trx,
     voucherTypeCode,
-    "negative_stock",
-  );
-  let salesNegativeStockRisk = false;
-  if (negativeStockPolicyRequired) {
-    salesNegativeStockRisk = await checkSalesNegativeStockRiskTx({
-      trx,
-      branchId: req.branchId,
-      validated,
-      currentVoucherId: isCreate ? null : headerId,
-    });
-  }
-  const salesNegativeStockRouting = resolveNegativeStockApprovalRouting({
-    hasNegativeStockRisk: salesNegativeStockRisk,
     canApproveVoucherAction: canApprove,
-    canBypassNegativeStockApproval: false,
-    voucherTypeCode,
+    detectRisk: () =>
+      collectSalesNegativeStockShortfallsTx({
+        trx,
+        branchId: req.branchId,
+        validated,
+        currentVoucherId: isCreate ? null : headerId,
+      }),
   });
 
   const queuedForApproval = isCreate
@@ -3669,8 +3728,21 @@ const deleteSalesVoucher = async ({
       voucherTypeCode,
       "delete",
     );
+    const negativeStockRouting = await resolveNegativeStockRoutingTx({
+      trx,
+      voucherTypeCode,
+      canApproveVoucherAction: canApprove,
+      detectRisk: () =>
+        collectSalesDeleteShortfallsTx({
+          trx,
+          branchId: req.branchId,
+          voucherId: existing.id,
+        }),
+    });
     const queuedForApproval =
-      !canDelete || (policyRequiresApproval && !canApprove);
+      !canDelete ||
+      (policyRequiresApproval && !canApprove) ||
+      negativeStockRouting.queueForApproval;
     if (!queuedForApproval) {
       await trx("erp.voucher_header").where({ id: existing.id }).update({
         status: "REJECTED",
@@ -3710,6 +3782,9 @@ const deleteSalesVoucher = async ({
         voucher_id: existing.id,
         voucher_no: existing.voucher_no,
         voucher_type_code: voucherTypeCode,
+        negative_stock_approval_reroute:
+          negativeStockRouting.negativeStockApprovalReroute,
+        approval_reason: negativeStockRouting.approvalReason,
       },
     });
     return {
@@ -3718,6 +3793,9 @@ const deleteSalesVoucher = async ({
       status: existing.status,
       queuedForApproval: true,
       approvalRequestId,
+      negativeStockApprovalReroute:
+        negativeStockRouting.negativeStockApprovalReroute,
+      approvalReason: negativeStockRouting.approvalReason,
     };
   });
 

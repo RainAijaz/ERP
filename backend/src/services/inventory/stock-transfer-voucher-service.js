@@ -15,7 +15,7 @@ const {
 } = require("../../utils/voucher-approval-sync");
 const { syncVoucherGlPostingTx } = require("../financial/gl-posting-service");
 const {
-  resolveNegativeStockApprovalRouting,
+  resolveNegativeStockRoutingTx,
 } = require("./negative-stock-approval");
 const {
   computeLedgerEntriesForBranch,
@@ -137,14 +137,6 @@ const canDo = (req, scopeType, scopeKey, action) => {
 
 const canApproveVoucherAction = (req, scopeKey) =>
   req?.user?.isAdmin === true || canDo(req, "VOUCHER", scopeKey, "approve");
-
-const canUseNegativeStockOverrideTx = async ({
-  trx,
-  req,
-  voucherTypeCode,
-}) => {
-  return false;
-};
 
 const requiresApprovalForAction = async (trx, voucherTypeCode, action) => {
   return resolveVoucherApprovalRequiredTx({
@@ -2171,6 +2163,82 @@ const validateTransferOutPayloadTx = async ({
   };
 };
 
+// A receipt draws the full dispatched quantity out of the destination IN_TRANSIT bucket:
+// the received part moves to ON_HAND and the remainder is written off. If that bucket is
+// short -- a partial receipt already cleared it, or the balances drifted -- posting would
+// take IN_TRANSIT negative. Measure it here so the save can route to approvals instead of
+// failing at posting time, and use a running claim so two lines on one bucket agree.
+const stampTransferInShortfallsTx = async ({ trx, branchId, lines = [] }) => {
+  const supportsVariants = await hasStockBalanceRmVariantDimensionsTx(trx);
+  const claimed = new Map();
+
+  for (const line of lines) {
+    const meta = line?.meta && typeof line.meta === "object" ? line.meta : {};
+    const isItem = String(line.line_kind || "").toUpperCase() === "ITEM";
+    const required = isItem
+      ? roundQty3(Number(meta.expected_qty_base || 0))
+      : Number(meta.expected_qty_pairs || 0);
+    if (!(required > 0)) continue;
+
+    let available = 0;
+    let bucketKey = "";
+
+    if (isItem) {
+      const identity = buildRmStockIdentity({
+        branchId,
+        stockState: "IN_TRANSIT",
+        itemId: line.item_id,
+        colorId: meta.color_id,
+        sizeId: meta.size_id,
+      });
+      bucketKey = `RM:${line.item_id}:${meta.color_id || 0}:${meta.size_id || 0}`;
+      const query = trx("erp.stock_balance_rm").select("qty");
+      applyRmStockIdentityWhere({
+        query,
+        identity,
+        supportsVariantDimensions: supportsVariants,
+      });
+      const row = await query.first();
+      available = Number(row?.qty || 0);
+    } else {
+      const category = String(meta.stock_type || "").toUpperCase();
+      const usePackedBucket =
+        category === "FG" ? normalizeRowStatus(meta.row_status) === "PACKED" : false;
+      bucketKey = `SKU:${line.sku_id}:${category}:${usePackedBucket}`;
+      const row = await trx("erp.stock_balance_sku")
+        .select("qty_pairs")
+        .where({
+          branch_id: Number(branchId),
+          stock_state: "IN_TRANSIT",
+          category,
+          is_packed: usePackedBucket,
+          sku_id: Number(line.sku_id),
+        })
+        .first();
+      available = Number(row?.qty_pairs || 0);
+    }
+
+    const previouslyClaimed = Number(claimed.get(bucketKey) || 0);
+    const totalClaimed = previouslyClaimed + required;
+    claimed.set(bucketKey, totalClaimed);
+    const shortage =
+      Math.max(totalClaimed - available, 0) -
+      Math.max(previouslyClaimed - available, 0);
+    const remainingAvailable = available - previouslyClaimed;
+
+    if (isItem) {
+      meta.in_transit_available_qty_base = roundQty3(remainingAvailable);
+      meta.in_transit_shortage_qty_base = roundQty3(Math.max(shortage, 0));
+    } else {
+      meta.in_transit_available_qty_pairs = remainingAvailable;
+      meta.in_transit_shortage_qty_pairs = Math.max(shortage, 0);
+    }
+    line.meta = meta;
+  }
+
+  return lines;
+};
+
 const validateTransferInPayloadTx = async ({
   trx,
   req,
@@ -2345,6 +2413,8 @@ const validateTransferInPayloadTx = async ({
       },
     };
   });
+
+  await stampTransferInShortfallsTx({ trx, branchId: req.branchId, lines });
 
   return {
     voucherDate,
@@ -2701,17 +2771,17 @@ const consumeInTransitRemainderTx = async ({
       sizeId: meta.size_id,
     });
     const remainderValue = roundCost2(remainderBase * unitCostBase);
+    // Shortfalls are measured during validation and routed to approvals there; by the
+    // time the write-off runs the outcome is already sanctioned, so never refuse it.
     const source = await ensureRmBalanceAvailableTx({
       trx,
       identity,
       qtyRequired: remainderBase,
       valueRequired: remainderValue,
       supportsVariantDimensions: supportsVariants,
+      allowNegativeSource: true,
     });
-    const nextQty = Math.max(
-      roundQty3(Number(source?.qty || 0) - remainderBase),
-      0,
-    );
+    const nextQty = roundQty3(Number(source?.qty || 0) - remainderBase);
     const nextValue =
       nextQty > 0
         ? Math.max(roundCost2(Number(source?.value || 0) - remainderValue), 0)
@@ -2777,9 +2847,6 @@ const consumeInTransitRemainderTx = async ({
     })
     .first()
     .forUpdate();
-  if (Number(source?.qty_pairs || 0) < remainderPairs) {
-    throw new HttpError(400, "Transfer in transit balance is insufficient");
-  }
   const remainderValue = roundCost2(
     Number(remainderPairs) * Number(unitCostBase || 0),
   );
@@ -3038,6 +3105,7 @@ const syncStockTransferInVoucherTx = async ({ trx, voucherId }) => {
           voucherId,
           voucherLineId: line.id,
           voucherDate,
+          allowNegativeSource: true,
         });
       }
       await consumeInTransitRemainderTx({
@@ -3069,6 +3137,7 @@ const syncStockTransferInVoucherTx = async ({ trx, voucherId }) => {
           voucherId,
           voucherLineId: line.id,
           voucherDate,
+          allowNegativeSource: true,
         });
       }
       await consumeInTransitRemainderTx({
@@ -3092,14 +3161,58 @@ const syncStockTransferInVoucherTx = async ({ trx, voucherId }) => {
     });
 };
 
-const hasTransferOutNegativeStockRisk = (validated) =>
-  (Array.isArray(validated?.lines) ? validated.lines : []).some((line) => {
-    const meta = line?.meta && typeof line.meta === "object" ? line.meta : {};
-    if (meta.negative_stock_risk === true) return true;
-    if (Number(meta.shortage_qty_base || 0) > 0.0005) return true;
-    if (Number(meta.shortage_qty_pairs || 0) > 0) return true;
-    return false;
-  });
+// One shortfall entry per short line, so the approver reads which row drives stock
+// negative and by how much instead of a bare "this would go negative".
+const collectTransferOutShortfalls = (validated) =>
+  (Array.isArray(validated?.lines) ? validated.lines : []).reduce(
+    (acc, line) => {
+      const meta = line?.meta && typeof line.meta === "object" ? line.meta : {};
+      const shortBase = Number(meta.shortage_qty_base || 0);
+      const shortPairs = Number(meta.shortage_qty_pairs || 0);
+      const isShort =
+        meta.negative_stock_risk === true ||
+        shortBase > 0.0005 ||
+        shortPairs > 0;
+      if (!isShort) return acc;
+      acc.push({
+        line_no: line?.line_no ?? null,
+        short_qty: shortBase > 0.0005 ? shortBase : shortPairs,
+        available_qty:
+          shortBase > 0.0005
+            ? Number(meta.available_qty_base || 0)
+            : Number(meta.available_qty_pairs || 0),
+      });
+      return acc;
+    },
+    [],
+  );
+
+// Receiving more than was dispatched drives the destination IN_TRANSIT bucket negative.
+const collectTransferInShortfalls = (validated) =>
+  (Array.isArray(validated?.lines) ? validated.lines : []).reduce(
+    (acc, line) => {
+      const meta = line?.meta && typeof line.meta === "object" ? line.meta : {};
+      const shortBase = Number(meta.in_transit_shortage_qty_base || 0);
+      const shortPairs = Number(meta.in_transit_shortage_qty_pairs || 0);
+      if (!(shortBase > 0.0005) && !(shortPairs > 0)) return acc;
+      acc.push({
+        line_no: line?.line_no ?? null,
+        short_qty: shortBase > 0.0005 ? shortBase : shortPairs,
+        available_qty:
+          shortBase > 0.0005
+            ? Number(meta.in_transit_available_qty_base || 0)
+            : Number(meta.in_transit_available_qty_pairs || 0),
+      });
+      return acc;
+    },
+    [],
+  );
+
+const collectTransferShortfalls = (voucherTypeCode, validated) =>
+  String(voucherTypeCode || "").trim().toUpperCase() ===
+  STOCK_TRANSFER_VOUCHER_TYPES.out
+    ? collectTransferOutShortfalls(validated)
+    : collectTransferInShortfalls(validated);
 
 const toApprovalPayload = ({
   action,
@@ -3218,33 +3331,13 @@ const createStockTransferVoucher = async ({
       normalizedVoucherTypeCode,
       "create",
     );
-    const negativeStockOverrideAllowed =
-      normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out
-        ? await canUseNegativeStockOverrideTx({
-            trx,
-            req,
-            voucherTypeCode: normalizedVoucherTypeCode,
-          })
-        : false;
-    const negativeStockPolicyRequired = await requiresApprovalForAction(
+    const negativeStockRouting = await resolveNegativeStockRoutingTx({
       trx,
-      normalizedVoucherTypeCode,
-      "negative_stock",
-    );
-    const negativeStockRouting =
-      normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out
-        ? resolveNegativeStockApprovalRouting({
-            hasNegativeStockRisk: negativeStockPolicyRequired && hasTransferOutNegativeStockRisk(validated),
-            canApproveVoucherAction: canApprove,
-            canBypassNegativeStockApproval: negativeStockOverrideAllowed,
-            voucherTypeCode: normalizedVoucherTypeCode,
-          })
-        : resolveNegativeStockApprovalRouting({
-            hasNegativeStockRisk: false,
-            canApproveVoucherAction: canApprove,
-            canBypassNegativeStockApproval: false,
-            voucherTypeCode: normalizedVoucherTypeCode,
-          });
+      voucherTypeCode: normalizedVoucherTypeCode,
+      canApproveVoucherAction: canApprove,
+      detectRisk: () =>
+        collectTransferShortfalls(normalizedVoucherTypeCode, validated),
+    });
     const queuedForApproval =
       !canCreate ||
       (policyRequiresApproval && !canApprove) ||
@@ -3437,33 +3530,13 @@ const updateStockTransferVoucher = async ({
       normalizedVoucherTypeCode,
       "edit",
     );
-    const negativeStockOverrideAllowed =
-      normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out
-        ? await canUseNegativeStockOverrideTx({
-            trx,
-            req,
-            voucherTypeCode: normalizedVoucherTypeCode,
-          })
-        : false;
-    const negativeStockPolicyRequiredForEdit = await requiresApprovalForAction(
+    const negativeStockRouting = await resolveNegativeStockRoutingTx({
       trx,
-      normalizedVoucherTypeCode,
-      "negative_stock",
-    );
-    const negativeStockRouting =
-      normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out
-        ? resolveNegativeStockApprovalRouting({
-            hasNegativeStockRisk: negativeStockPolicyRequiredForEdit && hasTransferOutNegativeStockRisk(validated),
-            canApproveVoucherAction: canApprove,
-            canBypassNegativeStockApproval: negativeStockOverrideAllowed,
-            voucherTypeCode: normalizedVoucherTypeCode,
-          })
-        : resolveNegativeStockApprovalRouting({
-            hasNegativeStockRisk: false,
-            canApproveVoucherAction: canApprove,
-            canBypassNegativeStockApproval: false,
-            voucherTypeCode: normalizedVoucherTypeCode,
-          });
+      voucherTypeCode: normalizedVoucherTypeCode,
+      canApproveVoucherAction: canApprove,
+      detectRisk: () =>
+        collectTransferShortfalls(normalizedVoucherTypeCode, validated),
+    });
     const queuedForApproval =
       !canEdit ||
       (policyRequiresApproval && !canApprove) ||
