@@ -1969,7 +1969,15 @@ const validateDraftReadyForApproval = async (
   if (!form || !form.header) {
     throw makeValidationError((t && t("error_not_found")) || "BOM not found.");
   }
-  if (String(form.header.status || "").toUpperCase() !== "DRAFT") {
+  // "approve" is an admin resolving a BOM in place from the BOM screen, so it
+  // also accepts a BOM still sitting PENDING in the approval queue; its request
+  // is closed as APPROVED afterwards (see resolvePendingBomApprovalsTx).
+  // Bouncing a PENDING BOM through DRAFT first is what used to strand those
+  // requests on the Rejected tab. send-for-approval still requires a DRAFT.
+  const currentStatus = String(form.header.status || "").toUpperCase();
+  const approvableStatuses =
+    intent === "approve" ? ["DRAFT", "PENDING"] : ["DRAFT"];
+  if (!approvableStatuses.includes(currentStatus)) {
     throw makeValidationError(
       (t && t("bom_error_approve_requires_draft")) ||
         "Only draft BOM can be approved.",
@@ -4053,6 +4061,69 @@ const resetPendingBomAfterRejectTx = async (trx, request) => {
   return true;
 };
 
+/**
+ * Close the PENDING approval_request rows for a BOM that was just approved
+ * directly on the BOM screen (an admin hitting "Approve" on a queued BOM).
+ *
+ * Mirrors resolvePendingVoucherApprovalsTx in utils/voucher-approval-sync.js:
+ * the row is UPDATED, never deleted, so it moves to the Approved tab of the
+ * approvals page with the approver recorded as the decider.
+ *
+ * The maker != checker CHECK in 010_administration.sql forbids
+ * decided_by = requested_by for anything but WITHDRAWN, so an admin approving
+ * a request they raised themselves closes it as WITHDRAWN instead.
+ *
+ * This path previously wrote REJECTED (and did so *before* approving), which
+ * left every directly-approved BOM showing as "Rejected" on the approvals page
+ * while the BOM itself was APPROVED and ACTIVE. Must run in the same
+ * transaction as approveBomDirectTx so the two can never disagree.
+ *
+ * @returns {Promise<number>} number of rows resolved
+ */
+const resolvePendingBomApprovalsTx = async (trx, { bomId, decidedBy } = {}) => {
+  const id = Number(bomId || 0);
+  const decider = Number(decidedBy || 0);
+  if (!Number.isInteger(id) || id <= 0) return 0;
+  if (!Number.isInteger(decider) || decider <= 0) return 0;
+
+  const pendingForBom = () =>
+    trx("erp.approval_request").where({
+      entity_type: "BOM",
+      entity_id: String(id),
+      status: "PENDING",
+    });
+
+  const approved = await pendingForBom()
+    .andWhereNot("requested_by", decider)
+    .update({
+      status: "APPROVED",
+      decided_by: decider,
+      decided_at: trx.fn.now(),
+    });
+
+  const withdrawn = await pendingForBom()
+    .andWhere("requested_by", decider)
+    .update({
+      status: "WITHDRAWN",
+      decided_by: decider,
+      decided_at: trx.fn.now(),
+    });
+
+  return Number(approved || 0) + Number(withdrawn || 0);
+};
+
+/** Earliest PENDING approval_request id for a BOM, or null. */
+const findPendingBomApprovalIdTx = async (trx, bomId) => {
+  const id = Number(bomId || 0);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const row = await trx("erp.approval_request")
+    .select("id")
+    .where({ entity_type: "BOM", entity_id: String(id), status: "PENDING" })
+    .orderBy("id", "asc")
+    .first();
+  return row?.id || null;
+};
+
 const applyApprovedBomChange = async (trx, request, approverUserId) => {
   const payload = parseApprovalPayload(request);
   if (!payload || typeof payload !== "object") return false;
@@ -4169,6 +4240,8 @@ module.exports = {
   setBomPending,
   setBomPendingTx,
   resetPendingBomAfterRejectTx,
+  resolvePendingBomApprovalsTx,
+  findPendingBomApprovalIdTx,
   buildApprovalSnapshot,
   getBomSnapshot,
   replaceBomLines,

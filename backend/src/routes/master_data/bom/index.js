@@ -132,14 +132,33 @@ const renderForm = async (req, res, params = {}) => {
   );
 };
 
-const resetBomFromPendingForAdmin = async (bomId, userId) => {
-  await knex("erp.approval_request")
-    .where({ entity_type: "BOM", entity_id: String(bomId), status: "PENDING" })
-    .update({ status: "REJECTED", decided_by: userId || null, decided_at: knex.fn.now() });
-  await knex("erp.bom_header")
-    .where({ id: bomId })
-    .update({ status: "DRAFT", approved_by: null, approved_at: null });
-};
+// Approve a BOM straight from the BOM screen and close whatever approval
+// request was queued for it, atomically.
+//
+// This used to be two un-transacted statements that flipped the queued request
+// to REJECTED and the BOM back to DRAFT *before* validating anything. That had
+// three failure modes: an approved BOM whose request read "Rejected" on the
+// approvals page, a validation error silently destroying the maker's request
+// and knocking the BOM out of PENDING, and a constraint violation whenever the
+// approver was also the requester.
+//
+// approveBomDirectTx already accepts a PENDING BOM, so there is no reason to
+// round-trip through DRAFT at all.
+const approveBomAndCloseRequest = async ({ bomId, userId, t }) =>
+  knex.transaction(async (trx) => {
+    const requestId = await bomService.findPendingBomApprovalIdTx(trx, bomId);
+    const result = await bomService.approveBomDirectTx(trx, {
+      bomId,
+      userId: userId || null,
+      requestId,
+      t,
+    });
+    await bomService.resolvePendingBomApprovalsTx(trx, {
+      bomId,
+      decidedBy: userId || null,
+    });
+    return result;
+  });
 
 // Audit context for the one BOM path that mutates a queued request's subject
 // without going through the Approvals page. Returns undefined when no PENDING
@@ -572,11 +591,11 @@ router.post(
         setUiNotice(res, res.locals.t("error_not_found"), { autoClose: true });
         return res.redirect(req.baseUrl);
       }
-      if (current.header.status === "PENDING") {
-        await resetBomFromPendingForAdmin(bomId, req.user?.id);
-        current = await bomService.getBomForForm(knex, bomId);
-      }
-      if (current.header.status !== "DRAFT") {
+      // A queued BOM stays PENDING right up to the approval itself, so a
+      // validation failure below leaves both the BOM and the maker's request
+      // exactly as they were.
+      const isPendingApproval = current.header.status === "PENDING";
+      if (current.header.status !== "DRAFT" && !isPendingApproval) {
         setUiNotice(res, res.locals.t("bom_error_approve_requires_draft"), {
           autoClose: true,
         });
@@ -590,6 +609,7 @@ router.post(
           res,
           bomId,
           input: parsed,
+          allowPendingEdit: isPendingApproval,
         });
         current = await bomService.getBomForForm(knex, bomId);
       }
@@ -601,10 +621,9 @@ router.post(
         intent: "approve",
       });
 
-      await bomService.approveBomDirect(knex, {
+      await approveBomAndCloseRequest({
         bomId,
         userId: req.user?.id || null,
-        requestId: null,
         t: res.locals.t,
       });
       queueAuditLog(req, {
@@ -702,10 +721,12 @@ router.post(
       });
 
       if (req.user?.isAdmin) {
-        await bomService.approveBomDirect(knex, {
+        // Same helper as /approve-draft: normally a no-op on the request table
+        // (this branch only runs on a DRAFT), but it guarantees a stale queued
+        // request for this BOM can never be left stranded on Pending.
+        await approveBomAndCloseRequest({
           bomId,
           userId: req.user?.id || null,
-          requestId: null,
           t: res.locals.t,
         });
         queueAuditLog(req, {
