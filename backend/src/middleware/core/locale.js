@@ -4329,6 +4329,21 @@ Object.assign(translations.en, {
   link_to_sales_order: "Link to Sales Order",
   load_report: "Load Report",
   neg_stock: "Neg. Stock",
+  approval_tip_create:
+    "Ticked: creating a record on this screen needs approval before it takes effect.",
+  approval_tip_edit:
+    "Ticked: editing an existing record needs approval before it takes effect.",
+  approval_tip_deactivate:
+    "Ticked: deactivating a record needs approval before it takes effect.",
+  approval_tip_permanent_delete:
+    "Ticked: permanently deleting a record needs approval before it takes effect.",
+  approval_tip_neg_stock:
+    "Ticked: a voucher that would push stock below zero is sent for approval instead of posting. Unticked, it posts and stock goes negative. Users who can approve this voucher are not stopped.",
+  approval_tip_na_group:
+    "This is a group. Set approval rules on the screens inside it.",
+  approval_tip_na_voucher_only: "Applies to vouchers only.",
+  approval_tip_na_stock_only:
+    "Applies only to vouchers that move stock.",
   optional: "Optional",
   rate_editable_off: "Rate: Fixed — click to allow editing",
   rate_editable_on: "Rate: Editable — click to fix",
@@ -4574,6 +4589,21 @@ Object.assign(translations.ur, {
   link_to_sales_order: "سیلز آرڈر سے لنک کریں",
   load_report: "رپورٹ لوڈ کریں",
   neg_stock: "منفی اسٹاک",
+  approval_tip_create:
+    "نشان لگانے پر: اس اسکرین میں نیا ریکارڈ بنانے کے لیے پہلے منظوری درکار ہوگی۔",
+  approval_tip_edit:
+    "نشان لگانے پر: موجودہ ریکارڈ میں ترمیم کے لیے پہلے منظوری درکار ہوگی۔",
+  approval_tip_deactivate:
+    "نشان لگانے پر: ریکارڈ غیر فعال کرنے کے لیے پہلے منظوری درکار ہوگی۔",
+  approval_tip_permanent_delete:
+    "نشان لگانے پر: ریکارڈ مستقل حذف کرنے کے لیے پہلے منظوری درکار ہوگی۔",
+  approval_tip_neg_stock:
+    "نشان لگانے پر: جو ووچر اسٹاک کو صفر سے نیچے لے جائے وہ پوسٹ ہونے کے بجائے منظوری کے لیے بھیجا جائے گا۔ نشان نہ ہو تو ووچر پوسٹ ہو جائے گا اور اسٹاک منفی ہو جائے گا۔ جو صارفین اس ووچر کی منظوری دے سکتے ہیں ان پر یہ لاگو نہیں ہوتا۔",
+  approval_tip_na_group:
+    "یہ ایک گروپ ہے۔ منظوری کے قواعد اس کے اندر موجود اسکرینز پر مقرر کریں۔",
+  approval_tip_na_voucher_only: "یہ صرف ووچرز پر لاگو ہوتا ہے۔",
+  approval_tip_na_stock_only:
+    "یہ صرف ان ووچرز پر لاگو ہوتا ہے جو اسٹاک کو متاثر کرتے ہیں۔",
   optional: "اختیاری",
   rate_editable_off: "ریٹ: مقررہ — تبدیل کرنے کی اجازت دینے کے لیے کلک کریں",
   rate_editable_on: "ریٹ: قابل ترمیم — مقرر کرنے کے لیے کلک کریں",

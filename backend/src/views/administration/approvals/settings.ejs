@@ -9,17 +9,24 @@
   };
   const stockVouchers = new Set(typeof stockVoucherCodes !== 'undefined' ? stockVoucherCodes : []);
   const actions = [
-    { key: 'create', label: t('create') },
-    { key: 'edit', label: t('edit') },
-    { key: 'delete', label: t('deactivate') || t('delete') },
-    { key: 'hard_delete', label: t('permanent_delete') },
-    { key: 'negative_stock', label: t('neg_stock') || 'Neg. Stock', voucherOnly: true, stockOnly: true },
+    { key: 'create', label: t('create'), tooltip: t('approval_tip_create') },
+    { key: 'edit', label: t('edit'), tooltip: t('approval_tip_edit') },
+    { key: 'delete', label: t('deactivate') || t('delete'), tooltip: t('approval_tip_deactivate') },
+    { key: 'hard_delete', label: t('permanent_delete'), tooltip: t('approval_tip_permanent_delete') },
+    { key: 'negative_stock', label: t('neg_stock') || 'Neg. Stock', tooltip: t('approval_tip_neg_stock'), voucherOnly: true, stockOnly: true },
   ];
   const actionApplies = (act, row) => {
     if (!row.scopeKey) return false;
     if (act.voucherOnly && row.scopeType !== 'VOUCHER') return false;
     if (act.stockOnly && !stockVouchers.has(row.scopeKey)) return false;
     return true;
+  };
+  // A blank "-" cell reads as broken unless it says why the action cannot be ruled here.
+  const notApplicableReason = (act, row) => {
+    if (!row.scopeKey) return t('approval_tip_na_group');
+    if (act.voucherOnly && row.scopeType !== 'VOUCHER') return t('approval_tip_na_voucher_only');
+    if (act.stockOnly && !stockVouchers.has(row.scopeKey)) return t('approval_tip_na_stock_only');
+    return '';
   };
 %>
 
@@ -104,7 +111,7 @@
                 <%= t('module') %> / <%= t('screen') %>
               </th>
               <% actions.forEach(act => { %>
-                <th class="py-3 border-b text-center w-24 group cursor-help hover:bg-slate-50 transition-colors">
+                <th class="py-3 border-b text-center w-24 group cursor-help hover:bg-slate-50 transition-colors" title="<%= act.tooltip %>" data-action-col="<%= act.key %>">
                   <div class="flex flex-col items-center gap-1">
                     <span class="text-[10px] font-bold uppercase text-slate-500 tracking-wide"><%= act.label %></span>
                   </div>
@@ -142,9 +149,9 @@
                   <td class="text-center border-r last:border-r-0">
                     <% if (actionApplies(act, row)) { %>
                       <% const entityType = row.scopeType === "VOUCHER" ? "VOUCHER_TYPE" : "SCREEN"; %>
-                      <input type="checkbox" name="<%= entityType %>:<%= row.scopeKey %>:<%= act.key %>" <%= policyMap?.[entityType]?.[row.scopeKey]?.[act.key] ? 'checked' : '' %> class="rounded text-accent focus:ring-accent w-4 h-4">
+                      <input type="checkbox" name="<%= entityType %>:<%= row.scopeKey %>:<%= act.key %>" <%= policyMap?.[entityType]?.[row.scopeKey]?.[act.key] ? 'checked' : '' %> class="rounded text-accent focus:ring-accent w-4 h-4" title="<%= act.label %> — <%= act.tooltip %>">
                     <% } else { %>
-                      <span class="text-xs text-slate-300">-</span>
+                      <span class="text-xs text-slate-300 cursor-help" title="<%= act.label %> — <%= notApplicableReason(act, row) %>">-</span>
                     <% } %>
                   </td>
                 <% }) %>
