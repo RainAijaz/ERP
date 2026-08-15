@@ -1637,9 +1637,14 @@ const getPendingGrnReportRows = async ({ req, filters }) => {
 
   const locale = String(req?.locale || "en").toLowerCase();
   const includeRawMaterialRows =
-    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.asset;
+    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.asset &&
+    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.consumable;
   const includeAssetRows =
-    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.rawMaterial;
+    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.rawMaterial &&
+    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.consumable;
+  const includeConsumableRows =
+    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.rawMaterial &&
+    filters.purchaseCategory !== PURCHASE_CATEGORY_FILTERS.asset;
 
   const applyCommonGrnFilters = (query) => {
     let next = query.where({
@@ -1775,11 +1780,56 @@ const getPendingGrnReportRows = async ({ req, filters }) => {
       })()
     : Promise.resolve([]);
 
-  const [rawMaterialRows, assetRows] = await Promise.all([
+  // Consumable GRN lines are ACCOUNT lines with no asset_id — the expense account
+  // is the identity, mirroring how the General Purchase matches them.
+  const consumableRowsPromise = includeConsumableRows
+    ? (() => {
+        const query = knex("erp.voucher_header as vh")
+          .join("erp.purchase_grn_header_ext as ghe", "ghe.voucher_id", "vh.id")
+          .join("erp.voucher_line as vl", "vl.voucher_header_id", "vh.id")
+          .leftJoin("erp.parties as p", "p.id", "ghe.supplier_party_id")
+          .leftJoin("erp.branches as b", "b.id", "vh.branch_id")
+          .leftJoin("erp.accounts as ac", "ac.id", "vl.account_id")
+          .select(
+            "vh.id as grn_voucher_id",
+            "vh.voucher_no as grn_voucher_no",
+            "vh.voucher_date",
+            "vh.book_no",
+            "vh.branch_id",
+            localizedNameSelect("b", "branch_name", locale),
+            "ghe.supplier_party_id",
+            "p.code as supplier_code",
+            "p.name as supplier_name",
+            "p.name_ur as supplier_name_ur",
+            knex.raw(
+              "COALESCE(NULLIF(ghe.supplier_reference_no, ''), NULLIF(vh.book_no, ''), NULL) as grn_reference_no",
+            ),
+            "vl.id as grn_line_id",
+            "vl.line_no as grn_line_no",
+            knex.raw("NULL::bigint as item_id"),
+            knex.raw("COALESCE(ac.code, '') as item_code"),
+            knex.raw("COALESCE(ac.name, '-') as item_name"),
+            knex.raw("NULL::text as item_name_ur"),
+            knex.raw("NULL::text as uom_code"),
+            "vl.qty",
+            knex.raw("NULL::text as color_name"),
+            knex.raw("NULL::text as size_name"),
+            knex.raw("'CONSUMABLE'::text as purchase_category"),
+          )
+          .where({ "vl.line_kind": "ACCOUNT" })
+          .whereRaw("coalesce(vl.meta->>'asset_id', '') !~ '^[0-9]+$'")
+          .andWhere("ghe.purchase_category", "CONSUMABLE");
+
+        return applyCommonGrnFilters(query);
+      })()
+    : Promise.resolve([]);
+
+  const [rawMaterialRows, assetRows, consumableRows] = await Promise.all([
     rawMaterialRowsPromise,
     assetRowsPromise,
+    consumableRowsPromise,
   ]);
-  const grnLines = [...rawMaterialRows, ...assetRows];
+  const grnLines = [...rawMaterialRows, ...assetRows, ...consumableRows];
   if (!grnLines.length) return [];
 
   const grnLineIds = grnLines.map((line) => Number(line.grn_line_id));

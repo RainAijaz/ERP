@@ -145,7 +145,8 @@ BEGIN
     IF NEW.qty <= 0 THEN
       RAISE EXCEPTION 'Voucher % (%): qty must be > 0 for CONSUMABLE purchase lines.', NEW.voucher_header_id, v_vt;
     END IF;
-    IF COALESCE(NEW.rate, 0) <= 0 THEN
+    -- A GRN records received quantity only; the General Purchase prices it later.
+    IF v_vt <> 'GRN' AND COALESCE(NEW.rate, 0) <= 0 THEN
       RAISE EXCEPTION 'Voucher % (%): rate must be > 0 for CONSUMABLE purchase lines.', NEW.voucher_header_id, v_vt;
     END IF;
     RETURN NEW;

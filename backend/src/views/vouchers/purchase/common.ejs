@@ -107,9 +107,7 @@
             <select name="purchase_category" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-purchase-category data-searchable-select="true" data-searchable-variant="unified">
               <option value="RAW_MATERIAL" <%= selectedPurchaseCategory === "RAW_MATERIAL" ? "selected" : "" %>><%= t("raw_material") %></option>
               <option value="ASSET" <%= selectedPurchaseCategory === "ASSET" ? "selected" : "" %>><%= t("asset") %></option>
-              <% if (voucherTypeCode === "PI") { %>
-                <option value="CONSUMABLE" <%= selectedPurchaseCategory === "CONSUMABLE" ? "selected" : "" %>>Consumable / Indirect Material</option>
-              <% } %>
+              <option value="CONSUMABLE" <%= selectedPurchaseCategory === "CONSUMABLE" ? "selected" : "" %>><%= t("consumable") %></option>
             </select>
           </div>
         </div>
@@ -414,9 +412,9 @@
                 <tr>
                   <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel("voucher_no") %></th>
                   <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel("date") %></th>
-                  <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel("raw_material") %></th>
-                  <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel("color") %></th>
-                  <th class="border-b border-slate-200 px-2 py-2 text-left"><%= toFriendlyLabel("size") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-left" data-grn-picker-head-item><%= toFriendlyLabel("raw_material") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-left" data-grn-picker-head-second><%= toFriendlyLabel("color") %></th>
+                  <th class="border-b border-slate-200 px-2 py-2 text-left" data-grn-picker-head-third><%= toFriendlyLabel("size") %></th>
                   <th class="border-b border-slate-200 px-2 py-2 text-right"><%= toFriendlyLabel("quantity") %></th>
                   <th class="border-b border-slate-200 px-2 py-2 text-center"><%= toFriendlyLabel("select") %></th>
                 </tr>
@@ -619,7 +617,9 @@
         return isGrn ? ["item", "qty"] : ["item", "qty", "rate"];
       }
       if (isConsumablePurchase()) {
-        return ["item", "description", "department", "qty", "rate"];
+        return isGrn
+          ? ["item", "description", "department", "qty"]
+          : ["item", "description", "department", "qty", "rate"];
       }
       return isGrn
         ? ["item", "color", "size", "qty"]
@@ -1471,10 +1471,7 @@
     };
 
     const isGrnReferencedRowMode = () =>
-      isGeneralPurchase &&
-      !isAssetPurchase() &&
-      !isConsumablePurchase() &&
-      Number(grnReferenceInput?.value || 0) > 0;
+      isGeneralPurchase && Number(grnReferenceInput?.value || 0) > 0;
 
     const updateRowInsertionUi = () => {
       if (!addRowButton) return;
@@ -1501,13 +1498,9 @@
     const updatePaymentModeUi = () => {
       if ((!isGeneralPurchase && !isPurchaseReturn) || !paymentTypeSelect) return;
       const paymentType = String(paymentTypeSelect.value || "CREDIT").toUpperCase();
-      const assetMode = isAssetPurchase();
-      const consumableMode = isConsumablePurchase();
       syncPaymentTypeSegmentUi();
       const isCash = paymentType === "CASH";
-      const hideGrnRef = assetMode || consumableMode;
-      const hasGrnRef =
-        !hideGrnRef && Number(grnReferenceInput?.value || 0) > 0;
+      const hasGrnRef = Number(grnReferenceInput?.value || 0) > 0;
       if (cashAccountLabel) {
         cashAccountLabel.classList.toggle("hidden", !isCash);
       }
@@ -1518,17 +1511,10 @@
         cashAccountSelect.disabled = !isCash;
         if (!isCash) cashAccountSelect.value = "";
       }
-      if (grnReferenceLabel) {
-        grnReferenceLabel.classList.toggle("hidden", hideGrnRef);
-      }
-      if (grnReferenceWrap) {
-        grnReferenceWrap.classList.toggle("hidden", hideGrnRef);
-      }
-      if (hideGrnRef && grnReferenceInput) {
-        grnReferenceInput.value = "";
-        if (grnReferenceDisplayInput) grnReferenceDisplayInput.value = "";
-        if (grnAllocJsonInput) grnAllocJsonInput.value = "";
-      }
+      // GRN reference applies to every purchase category: raw material matches on
+      // item variant, asset on asset, consumable on expense account.
+      if (grnReferenceLabel) grnReferenceLabel.classList.remove("hidden");
+      if (grnReferenceWrap) grnReferenceWrap.classList.remove("hidden");
       if (supplierSelect) {
         supplierSelect.required = isPurchaseReturn ? false : (!isCash || hasGrnRef);
       }
@@ -1574,7 +1560,7 @@
     };
 
     const applyReferenceNoFromGrn = (header, fallbackVoucherNo = null) => {
-      if (!isGeneralPurchase || isAssetPurchase() || !referenceNoInput) return;
+      if (!isGeneralPurchase || !referenceNoInput) return;
       let grnReferenceNo = String(header?.reference_no || "").trim();
       if (!grnReferenceNo && fallbackVoucherNo) {
         grnReferenceNo = findGrnReferenceNoByVoucherNo(fallbackVoucherNo);
@@ -1585,13 +1571,6 @@
 
     const setGrnReferenceValue = (voucherNo, { clearAllocations = false } = {}) => {
       if (!isGeneralPurchase || !grnReferenceInput) return;
-      if (isAssetPurchase()) {
-        grnReferenceInput.value = "";
-        if (grnReferenceDisplayInput) grnReferenceDisplayInput.value = "";
-        if (clearAllocations && grnAllocJsonInput) grnAllocJsonInput.value = "";
-        updatePaymentModeUi();
-        return;
-      }
       const refNo = Number(voucherNo || 0);
       if (!Number.isInteger(refNo) || refNo <= 0) {
         grnReferenceInput.value = "";
@@ -1612,10 +1591,6 @@
 
     const syncGrnReferenceWithSupplier = () => {
       if (!isGeneralPurchase) return;
-      if (isAssetPurchase()) {
-        setGrnReferenceValue(null, { clearAllocations: true });
-        return;
-      }
       const supplierId = getSelectedSupplierId();
       const refNo = Number(grnReferenceInput?.value || 0);
       if (!Number.isInteger(refNo) || refNo <= 0) {
@@ -1624,6 +1599,11 @@
       }
       const header = findGrnHeaderByVoucherNo(refNo);
       if (header && supplierId > 0 && Number(header.supplier_party_id || 0) !== supplierId) {
+        setGrnReferenceValue(null, { clearAllocations: true });
+        return;
+      }
+      // Switching purchase category invalidates a reference to a GRN of another one.
+      if (header && String(header.purchase_category || "") !== getPurchaseCategory()) {
         setGrnReferenceValue(null, { clearAllocations: true });
         return;
       }
@@ -1642,15 +1622,21 @@
     const getSelectedSupplierId = () => Number(supplierSelect?.value || 0) || 0;
     const getVoucherDate = () => toDateOnly(voucherDateInput?.value || "");
 
+    // Allocations are keyed by each row's position in the posted payload, so this
+    // must agree exactly with the submit-time filter — otherwise allocations would
+    // attach to the wrong voucher lines.
+    const isPostableRow = (row) => {
+      if (Number(row.qty || 0) <= 0) return false;
+      if (!isGrn && Number(row.rate || 0) <= 0) return false;
+      if (isAssetPurchase()) return Number(row.asset_id || 0) > 0;
+      if (isConsumablePurchase()) return Number(row.account_id || 0) > 0;
+      return Number(row.item_id || 0) > 0;
+    };
+
     const buildGrnAllocationsPayload = (grnReferenceNo) => {
       const refNo = Number(grnReferenceNo || 0);
       if (!Number.isInteger(refNo) || refNo <= 0) return "";
-      const postedRows = rowsState.filter(
-        (row) =>
-          Number(row.item_id || 0) > 0 &&
-          Number(row.qty || 0) > 0 &&
-          (isGrn || Number(row.rate || 0) > 0),
-      );
+      const postedRows = rowsState.filter(isPostableRow);
       const allocations = postedRows
         .map((row, index) => ({
           line_no: Number(index + 1),
@@ -1679,11 +1665,13 @@
     };
 
     const getScopedGrnLinesForModal = () => {
-      if (isAssetPurchase()) return [];
       const supplierId = getSelectedSupplierId();
       if (!supplierId) return [];
+      const category = getPurchaseCategory();
       return (openGrnLines || [])
         .filter((row) => Number(row.supplier_party_id || 0) === supplierId)
+        // A purchase can only draw from GRN lines of its own category.
+        .filter((row) => String(row.purchase_category || "") === category)
         .filter((row) => Number(row.open_qty || 0) > 0)
         .sort((a, b) => {
           const aDate = toDateOnly(a.grn_voucher_date);
@@ -1696,8 +1684,53 @@
         });
     };
 
+    // Picker rows are built with innerHTML and consumable lines carry free text the
+    // user typed on the GRN, so every text cell goes through this.
+    const escapeHtmlText = (value) =>
+      String(value === null || value === undefined ? "" : value).replace(
+        /[&<>"']/g,
+        (ch) =>
+          ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch],
+      );
+
+    // The picker's first three columns describe whatever the GRN line actually is.
+    const grnPickerColumnLabels = () => {
+      if (isAssetPurchase())
+        return ["<%= toFriendlyLabel('asset') %>", "<%= toFriendlyLabel('asset_type') %>", ""];
+      if (isConsumablePurchase())
+        return ["<%= toFriendlyLabel('account') %>", "Department", "<%= toFriendlyLabel('description') %>"];
+      return [
+        "<%= toFriendlyLabel('raw_material') %>",
+        "<%= toFriendlyLabel('color') %>",
+        "<%= toFriendlyLabel('size') %>",
+      ];
+    };
+
+    const grnPickerRowCells = (row) => {
+      const noneText = "<%= toFriendlyLabel('none') %>";
+      if (isAssetPurchase())
+        return [row.asset_type_name || row.asset_type_code || noneText, ""];
+      if (isConsumablePurchase())
+        return [row.department_name || noneText, row.description || ""];
+      return [
+        String(row.color_name || "").trim() || noneText,
+        String(row.size_name || "").trim() || noneText,
+      ];
+    };
+
+    const syncGrnPickerHeaders = () => {
+      const [first, second, third] = grnPickerColumnLabels();
+      const headItem = grnPickerModal?.querySelector("[data-grn-picker-head-item]");
+      const headSecond = grnPickerModal?.querySelector("[data-grn-picker-head-second]");
+      const headThird = grnPickerModal?.querySelector("[data-grn-picker-head-third]");
+      if (headItem) headItem.textContent = first;
+      if (headSecond) headSecond.textContent = second;
+      if (headThird) headThird.textContent = third;
+    };
+
     const renderGrnPickerLinesTable = (scopedLines) => {
       if (!grnPickerLinesBody) return;
+      syncGrnPickerHeaders();
       grnPickerLinesBody.innerHTML = "";
       const rows = scopedLines || [];
 
@@ -1713,15 +1746,14 @@
         const isChecked = lineId > 0 && grnPickerSelectedLineIds.has(lineId);
         const tr = document.createElement("tr");
         tr.className = "border-b border-slate-100";
-        const colorText = String(row.color_name || "").trim() || "<%= toFriendlyLabel('none') %>";
-        const sizeText = String(row.size_name || "").trim() || "<%= toFriendlyLabel('none') %>";
+        const [secondText, thirdText] = grnPickerRowCells(row);
         const voucherDate = toDateOnly(row.grn_voucher_date);
         tr.innerHTML = `
           <td class="px-2 py-2 text-slate-700">${String(row.grn_voucher_no || "-")}</td>
           <td class="px-2 py-2 text-slate-700">${formatDisplayDate(voucherDate, "-")}</td>
-          <td class="px-2 py-2 text-slate-700">${String((currentLocale === "ur" && row.item_name_ur) ? row.item_name_ur : (row.item_name || "-"))}</td>
-          <td class="px-2 py-2 text-slate-700">${colorText}</td>
-          <td class="px-2 py-2 text-slate-700">${sizeText}</td>
+          <td class="px-2 py-2 text-slate-700">${escapeHtmlText((currentLocale === "ur" && row.item_name_ur) ? row.item_name_ur : (row.item_name || "-"))}</td>
+          <td class="px-2 py-2 text-slate-700">${escapeHtmlText(secondText)}</td>
+          <td class="px-2 py-2 text-slate-700">${escapeHtmlText(thirdText)}</td>
           <td class="px-2 py-2 text-right font-semibold text-slate-700">${formatDisplayNumber(row.open_qty || 0, 3, "0")}</td>
           <td class="px-2 py-2 text-center">
             <input type="checkbox" class="h-4 w-4 rounded border-slate-300 text-accent focus:ring-accent" data-grn-picker-line-checkbox value="${lineId > 0 ? lineId : ""}" ${isChecked ? "checked" : ""} ${lineId > 0 ? "" : "disabled"}>
@@ -1732,7 +1764,7 @@
     };
 
     const openGrnPickerModalView = () => {
-      if (!isGeneralPurchase || isAssetPurchase() || !grnPickerModal) return;
+      if (!isGeneralPurchase || !grnPickerModal) return;
       const supplierId = getSelectedSupplierId();
       if (!supplierId) {
         window.showVoucherError("<%= t('select_supplier') %>");
@@ -2130,16 +2162,26 @@
 
       setGrnReferenceValue(selectedVoucherNo, { clearAllocations: false });
 
+      const assetMode = isAssetPurchase();
+      const consumableMode = isConsumablePurchase();
+
       rowsState.splice(0, rowsState.length);
       selectedLines.forEach((line) => {
-        const uom = uomByItemId.get(Number(line.item_id || 0));
+        const uom = assetMode || consumableMode
+          ? null
+          : uomByItemId.get(Number(line.item_id || 0));
         const row = {
-          item_id: Number(line.item_id || 0) || null,
-          asset_id: null,
-          asset_type_code: "",
-          asset_type_name: "",
-          color_id: Number(line.color_id || 0) || null,
-          size_id: Number(line.size_id || 0) || null,
+          item_id: assetMode || consumableMode ? null : Number(line.item_id || 0) || null,
+          asset_id: assetMode ? Number(line.asset_id || 0) || null : null,
+          asset_type_code: assetMode ? String(line.asset_type_code || "") : "",
+          asset_type_name: assetMode ? String(line.asset_type_name || "") : "",
+          account_id: consumableMode ? Number(line.account_id || 0) || null : null,
+          // Carry the GRN's own classification forward as the default; it stays
+          // editable on the purchase.
+          department_id: consumableMode ? Number(line.department_id || 0) || null : null,
+          description: consumableMode ? String(line.description || "") : "",
+          color_id: assetMode || consumableMode ? null : Number(line.color_id || 0) || null,
+          size_id: assetMode || consumableMode ? null : Number(line.size_id || 0) || null,
           uom_id: Number(uom?.id || 0) || null,
           qty: Number(Number(line.open_qty || 0).toFixed(3)),
           rate: 0,
@@ -2262,8 +2304,8 @@
               description: String(row.description || "").trim(),
               department_id: Number(row.department_id || 0) || null,
               qty: Number(row.qty || 0),
-              rate: Number(row.rate || 0),
-              amount: Number(row.amount || 0),
+              rate: isGrn ? 0 : Number(row.rate || 0),
+              amount: isGrn ? 0 : Number(row.amount || 0),
             };
           }
           return {
@@ -2282,7 +2324,7 @@
             return row.item_id && row.qty > 0 && row.rate > 0;
           }
           if (assetMode) return row.asset_id && row.qty > 0 && (isGrn || row.rate > 0);
-          if (consumableMode) return row.account_id && row.qty > 0 && row.rate > 0;
+          if (consumableMode) return row.account_id && row.qty > 0 && (isGrn || row.rate > 0);
           return row.item_id && row.qty > 0 && (isGrn || row.rate > 0);
         });
 

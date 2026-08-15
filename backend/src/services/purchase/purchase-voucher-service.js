@@ -2302,8 +2302,12 @@ const normalizeAndValidateLinesTx = async ({
       const qty = toPositiveNumber(line?.qty, 3);
       if (!qty) throw new HttpError(400, `Line ${lineNo}: quantity must be greater than zero`);
 
-      const rate = toPositiveNumber(line?.rate, 4);
-      if (!rate) throw new HttpError(400, `Line ${lineNo}: rate must be greater than zero`);
+      // A GRN records received quantity only; the General Purchase prices it later.
+      let rate = 0;
+      if (voucherTypeCode !== PURCHASE_VOUCHER_TYPES.goodsReceiptNote) {
+        rate = toPositiveNumber(line?.rate, 4);
+        if (!rate) throw new HttpError(400, `Line ${lineNo}: rate must be greater than zero`);
+      }
 
       const departmentId = toPositiveInt(line?.department_id || line?.departmentId);
       if (departmentId && !validDepartmentIds.has(departmentId)) {
@@ -2515,6 +2519,66 @@ const getNextVoucherNoTx = async (trx, branchId, voucherTypeCode) => {
     .first();
   return Number(latest?.value || 0) + 1;
 };
+// A GRN line and the General Purchase line that consumes it must describe the same
+// thing, but "the same thing" differs per category: raw material is an item variant,
+// an asset is a specific asset, a consumable is an expense account. Line kind plus
+// meta already encodes this, so the category is derived from the line itself rather
+// than trusting the header's purchase_category.
+const grnLineCategory = ({ line_kind: lineKind, asset_id: assetId }) =>
+  String(lineKind || "ITEM").toUpperCase() === "ITEM"
+    ? PURCHASE_CATEGORIES.rawMaterial
+    : toPositiveInt(assetId)
+      ? PURCHASE_CATEGORIES.asset
+      : PURCHASE_CATEGORIES.consumable;
+
+// Identity used to match a GRN line against a purchase line. Keys of different
+// categories can never collide, so a mismatched pairing simply finds no partner.
+const grnLineIdentityKey = (line) => {
+  switch (grnLineCategory(line)) {
+    case PURCHASE_CATEGORIES.asset:
+      return `AS:${toPositiveInt(line.asset_id) || 0}`;
+    case PURCHASE_CATEGORIES.consumable:
+      return `CN:${toPositiveInt(line.account_id) || 0}`;
+    default:
+      return `RM:${toPositiveInt(line.item_id) || 0}:${toPositiveInt(line.color_id) || 0}:${toPositiveInt(line.size_id) || 0}`;
+  }
+};
+
+// Purchase lines carry asset/account identity on the line itself, GRN pool rows carry
+// it alongside pool bookkeeping — both shapes expose the same fields, so one key
+// builder serves both sides of the match.
+const purchaseLineIdentityKey = (line) =>
+  grnLineIdentityKey({
+    line_kind: line.line_kind,
+    asset_id: line.asset_id ?? line.meta?.asset_id,
+    account_id: line.account_id,
+    item_id: line.item_id,
+    color_id: line.color_id,
+    size_id: line.size_id,
+  });
+
+// Auto-allocation matcher. Deliberately looser than the payload validator below:
+// a purchase line that leaves colour/size blank may draw from any variant of the
+// item, which is long-standing raw-material behaviour. Asset and consumable lines
+// have a single identity, so for them loose and strict matching coincide.
+const grnPoolMatchesPurchaseLine = (pool, line) => {
+  const category = grnLineCategory(pool);
+  if (category !== grnLineCategory({ line_kind: line.line_kind, asset_id: line.asset_id }))
+    return false;
+
+  if (category === PURCHASE_CATEGORIES.asset)
+    return toPositiveInt(pool.asset_id) === toPositiveInt(line.asset_id);
+  if (category === PURCHASE_CATEGORIES.consumable)
+    return toPositiveInt(pool.account_id) === toPositiveInt(line.account_id);
+
+  if (Number(pool.item_id) !== Number(line.item_id)) return false;
+  if (line.color_id && toPositiveInt(pool.color_id) !== toPositiveInt(line.color_id))
+    return false;
+  if (line.size_id && toPositiveInt(pool.size_id) !== toPositiveInt(line.size_id))
+    return false;
+  return true;
+};
+
 const loadOpenGrnPoolsTx = async ({
   trx,
   branchId,
@@ -2536,7 +2600,9 @@ const loadOpenGrnPoolsTx = async ({
         ),
         "vl.id as grn_line_id",
         "vl.line_no as grn_line_no",
+        "vl.line_kind",
         "vl.item_id",
+        "vl.account_id",
         "vl.qty",
         knex.raw(
           "CASE WHEN coalesce(vl.meta->>'color_id', '') ~ '^[0-9]+$' THEN (vl.meta->>'color_id')::int ELSE NULL END as color_id",
@@ -2544,13 +2610,21 @@ const loadOpenGrnPoolsTx = async ({
         knex.raw(
           "CASE WHEN coalesce(vl.meta->>'size_id', '') ~ '^[0-9]+$' THEN (vl.meta->>'size_id')::int ELSE NULL END as size_id",
         ),
+        knex.raw(
+          "CASE WHEN coalesce(vl.meta->>'asset_id', '') ~ '^[0-9]+$' THEN (vl.meta->>'asset_id')::int ELSE NULL END as asset_id",
+        ),
+        knex.raw(
+          "CASE WHEN coalesce(vl.meta->>'department_id', '') ~ '^[0-9]+$' THEN (vl.meta->>'department_id')::int ELSE NULL END as department_id",
+        ),
+        knex.raw("NULLIF(vl.meta->>'description', '') as line_description"),
       )
       .where({
         "vh.branch_id": branchId,
         "vh.voucher_type_code": PURCHASE_VOUCHER_TYPES.goodsReceiptNote,
         "vh.status": "APPROVED",
-        "vl.line_kind": "ITEM",
-      });
+      })
+      // ITEM = raw material, ACCOUNT = asset or consumable (distinguished by meta).
+      .whereIn("vl.line_kind", ["ITEM", "ACCOUNT"]);
 
     if (supplierPartyId) {
       grnLinesQuery = grnLinesQuery.andWhere(
@@ -2598,6 +2672,14 @@ const loadOpenGrnPoolsTx = async ({
           allocatedByLineId.get(Number(line.grn_line_id)) || 0,
         );
         const openQty = Number((qty - allocated).toFixed(3));
+        const identity = {
+          line_kind: String(line.line_kind || "ITEM").toUpperCase(),
+          item_id: toPositiveInt(line.item_id),
+          account_id: toPositiveInt(line.account_id),
+          asset_id: toPositiveInt(line.asset_id),
+          color_id: toPositiveInt(line.color_id),
+          size_id: toPositiveInt(line.size_id),
+        };
         return {
           grn_voucher_id: Number(line.grn_voucher_id),
           grn_voucher_no: Number(line.grn_voucher_no),
@@ -2606,9 +2688,11 @@ const loadOpenGrnPoolsTx = async ({
           grn_reference_no: normalizeText(line.grn_reference_no, 120),
           grn_line_id: Number(line.grn_line_id),
           grn_line_no: Number(line.grn_line_no),
-          item_id: Number(line.item_id),
-          color_id: toPositiveInt(line.color_id),
-          size_id: toPositiveInt(line.size_id),
+          ...identity,
+          department_id: toPositiveInt(line.department_id),
+          description: normalizeText(line.line_description, 500),
+          purchase_category: grnLineCategory(identity),
+          identity_key: grnLineIdentityKey(identity),
           open_qty: openQty,
         };
       })
@@ -2716,21 +2800,7 @@ const buildGrnAllocationPlanTx = async ({
 
     for (const pool of mutablePools) {
       if (remainingQty <= 0) break;
-      if (pool.item_id !== Number(line.item_id)) continue;
-      if (
-        line.color_id &&
-        pool.color_id &&
-        Number(pool.color_id) !== Number(line.color_id)
-      )
-        continue;
-      if (line.color_id && !pool.color_id) continue;
-      if (
-        line.size_id &&
-        pool.size_id &&
-        Number(pool.size_id) !== Number(line.size_id)
-      )
-        continue;
-      if (line.size_id && !pool.size_id) continue;
+      if (!grnPoolMatchesPurchaseLine(pool, line)) continue;
       if (pool.open_qty <= 0) continue;
 
       const qtyAllocated = Number(
@@ -2752,7 +2822,7 @@ const buildGrnAllocationPlanTx = async ({
     if (remainingQty > 0) {
       throw new HttpError(
         400,
-        `Line ${line.line_no}: insufficient unreferenced GRN quantity for ${line.item_name || "raw material"}`,
+        `Line ${line.line_no}: insufficient unreferenced GRN quantity for ${line.item_name || line.asset_name || "this line"}`,
       );
     }
 
@@ -2852,22 +2922,12 @@ const buildGrnAllocationPlanFromPayloadTx = async ({
         `GRN allocation references unavailable GRN line ${entry.grn_voucher_line_id}`,
       );
     }
-    if (Number(pool.item_id) !== Number(purchaseLine.item_id)) {
+    // The purchase row was populated from this GRN line, so the two must describe
+    // exactly the same item variant / asset / expense account.
+    if (pool.identity_key !== purchaseLineIdentityKey(purchaseLine)) {
       throw new HttpError(
         400,
-        `Line ${purchaseLine.line_no}: GRN line item does not match voucher line item`,
-      );
-    }
-    if (toPositiveInt(pool.color_id) !== toPositiveInt(purchaseLine.color_id)) {
-      throw new HttpError(
-        400,
-        `Line ${purchaseLine.line_no}: GRN line color does not match voucher line`,
-      );
-    }
-    if (toPositiveInt(pool.size_id) !== toPositiveInt(purchaseLine.size_id)) {
-      throw new HttpError(
-        400,
-        `Line ${purchaseLine.line_no}: GRN line size does not match voucher line`,
+        `Line ${purchaseLine.line_no}: GRN line does not match voucher line`,
       );
     }
 
@@ -3283,14 +3343,7 @@ const validatePurchaseVoucherPayloadTx = async ({
       supplierPartyId = supplier.id;
     }
 
-    if (
-      purchaseCategory === PURCHASE_CATEGORIES.asset ||
-      purchaseCategory === PURCHASE_CATEGORIES.consumable
-    ) {
-      grnReferenceVoucherNo = null;
-      grnAllocationsPayload = null;
-      allocationByLineNo = new Map();
-    } else if (!grnReferenceVoucherNo) {
+    if (!grnReferenceVoucherNo) {
       grnAllocationsPayload = normalizeGrnAllocationsPayload(
         payload.grn_allocations,
       );
@@ -3481,10 +3534,7 @@ const createPurchaseVoucher = async ({
       lines: validated.lines,
     });
 
-    if (
-      voucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase &&
-      validated.purchaseCategory === PURCHASE_CATEGORIES.rawMaterial
-    ) {
+    if (voucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase) {
       await insertPurchaseAllocationsTx({
         trx,
         insertedLines,
@@ -3726,10 +3776,7 @@ const updatePurchaseVoucher = async ({
       lines: validated.lines,
     });
 
-    if (
-      voucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase &&
-      validated.purchaseCategory === PURCHASE_CATEGORIES.rawMaterial
-    ) {
+    if (voucherTypeCode === PURCHASE_VOUCHER_TYPES.generalPurchase) {
       await insertPurchaseAllocationsTx({
         trx,
         insertedLines,
@@ -4242,6 +4289,36 @@ const loadPurchaseVoucherOptions = async (req) => {
   const sizeLabelById = new Map(
     (sizes || []).map((row) => [Number(row.id), row.name || ""]),
   );
+  const assetLabelById = new Map(
+    (assets || []).map((row) => [
+      Number(row.id),
+      {
+        name: row.asset_name || "",
+        type_name: row.asset_type_name || "",
+        type_code: String(row.asset_type_code || "").toUpperCase(),
+      },
+    ]),
+  );
+  const expenseAccountNameById = new Map(
+    (expenseAccounts || []).map((row) => [Number(row.id), row.name || ""]),
+  );
+  const departmentNameById = new Map(
+    (departments || []).map((row) => [Number(row.id), row.name || ""]),
+  );
+  // What a GRN pool row is "called" depends on its category — used for both the
+  // per-voucher summary line and the picker's primary column.
+  const grnPoolRowLabel = (row) => {
+    if (row.purchase_category === PURCHASE_CATEGORIES.asset)
+      return (
+        assetLabelById.get(Number(row.asset_id))?.name || `#${Number(row.asset_id)}`
+      );
+    if (row.purchase_category === PURCHASE_CATEGORIES.consumable)
+      return (
+        expenseAccountNameById.get(Number(row.account_id)) ||
+        `#${Number(row.account_id)}`
+      );
+    return rawMaterialNameById.get(Number(row.item_id)) || `#${Number(row.item_id)}`;
+  };
   const grnHeaderMap = new Map();
   openGrnPool.forEach((row) => {
     const key = Number(row.grn_voucher_id);
@@ -4250,16 +4327,18 @@ const loadPurchaseVoucherOptions = async (req) => {
       voucher_no: Number(row.grn_voucher_no),
       voucher_date: row.grn_voucher_date,
       supplier_party_id: Number(row.supplier_party_id),
+      grn_reference_no: row.grn_reference_no || "",
+      purchase_category: row.purchase_category,
       open_qty: 0,
-      item_open_qty_by_id: new Map(),
+      open_qty_by_label: new Map(),
     };
     const openQty = Number(row.open_qty || 0);
     current.open_qty = Number((current.open_qty + openQty).toFixed(3));
-    const itemId = Number(row.item_id || 0);
-    if (itemId > 0 && openQty > 0) {
-      const prevQty = Number(current.item_open_qty_by_id.get(itemId) || 0);
-      current.item_open_qty_by_id.set(
-        itemId,
+    if (openQty > 0) {
+      const label = grnPoolRowLabel(row);
+      const prevQty = Number(current.open_qty_by_label.get(label) || 0);
+      current.open_qty_by_label.set(
+        label,
         Number((prevQty + openQty).toFixed(3)),
       );
     }
@@ -4268,21 +4347,11 @@ const loadPurchaseVoucherOptions = async (req) => {
 
   const openGrnHeaders = [...grnHeaderMap.values()]
     .map((header) => {
-      const itemParts = [...header.item_open_qty_by_id.entries()]
-        .sort((a, b) => {
-          const nameA = String(
-            rawMaterialNameById.get(Number(a[0])) || "",
-          ).toLowerCase();
-          const nameB = String(
-            rawMaterialNameById.get(Number(b[0])) || "",
-          ).toLowerCase();
-          return nameA.localeCompare(nameB);
-        })
-        .map(([itemId, qty]) => {
-          const itemName =
-            rawMaterialNameById.get(Number(itemId)) || `#${Number(itemId)}`;
-          return `${itemName} ${Number(qty || 0).toFixed(3)}`;
-        });
+      const itemParts = [...header.open_qty_by_label.entries()]
+        .sort((a, b) =>
+          String(a[0]).toLowerCase().localeCompare(String(b[0]).toLowerCase()),
+        )
+        .map(([label, qty]) => `${label} ${Number(qty || 0).toFixed(3)}`);
       return {
         id: header.id,
         voucher_no: header.voucher_no,
@@ -4291,6 +4360,7 @@ const loadPurchaseVoucherOptions = async (req) => {
         supplier_name:
           supplierNameById.get(Number(header.supplier_party_id)) || "",
         reference_no: header.grn_reference_no || "",
+        purchase_category: header.purchase_category,
         open_qty: Number(header.open_qty || 0),
         items_summary: itemParts.join(", "),
       };
@@ -4307,11 +4377,24 @@ const loadPurchaseVoucherOptions = async (req) => {
       reference_no: row.grn_reference_no || "",
       grn_line_id: Number(row.grn_line_id),
       grn_line_no: Number(row.grn_line_no),
-      item_id: Number(row.item_id),
-      item_name:
-        rawMaterialNameById.get(Number(row.item_id)) ||
-        `#${Number(row.item_id)}`,
-      item_name_ur: rawMaterialNameUrById.get(Number(row.item_id)) || "",
+      purchase_category: row.purchase_category,
+      item_id: toPositiveInt(row.item_id),
+      item_name: grnPoolRowLabel(row),
+      item_name_ur:
+        row.purchase_category === PURCHASE_CATEGORIES.rawMaterial
+          ? rawMaterialNameUrById.get(Number(row.item_id)) || ""
+          : "",
+      asset_id: toPositiveInt(row.asset_id),
+      asset_type_code:
+        assetLabelById.get(Number(row.asset_id))?.type_code || "",
+      asset_type_name:
+        assetLabelById.get(Number(row.asset_id))?.type_name || "",
+      account_id: toPositiveInt(row.account_id),
+      department_id: toPositiveInt(row.department_id),
+      department_name: toPositiveInt(row.department_id)
+        ? departmentNameById.get(Number(row.department_id)) || ""
+        : "",
+      description: row.description || "",
       color_id: toPositiveInt(row.color_id),
       color_name: toPositiveInt(row.color_id)
         ? colorLabelById.get(Number(row.color_id)) || ""
@@ -4722,14 +4805,21 @@ const loadVoucherLinesForAllocationTx = async ({ trx, voucherId }) =>
       "vl.rate",
       "vl.amount",
       "i.name as item_name",
+      "vl.line_kind",
+      "vl.account_id",
       knex.raw(
         "CASE WHEN coalesce(vl.meta->>'color_id', '') ~ '^[0-9]+$' THEN (vl.meta->>'color_id')::int ELSE NULL END as color_id",
       ),
       knex.raw(
         "CASE WHEN coalesce(vl.meta->>'size_id', '') ~ '^[0-9]+$' THEN (vl.meta->>'size_id')::int ELSE NULL END as size_id",
       ),
+      knex.raw(
+        "CASE WHEN coalesce(vl.meta->>'asset_id', '') ~ '^[0-9]+$' THEN (vl.meta->>'asset_id')::int ELSE NULL END as asset_id",
+      ),
     )
-    .where({ "vl.voucher_header_id": voucherId, "vl.line_kind": "ITEM" })
+    .where({ "vl.voucher_header_id": voucherId })
+    // ITEM = raw material, ACCOUNT = asset or consumable.
+    .whereIn("vl.line_kind", ["ITEM", "ACCOUNT"])
     .orderBy("vl.line_no", "asc");
 
 const ensurePurchaseVoucherDerivedDataTx = async ({
@@ -4775,11 +4865,7 @@ const ensurePurchaseVoucherDerivedDataTx = async ({
     }
 
     await deletePurchaseAllocationsByVoucherTx({ trx, voucherId });
-    const purchaseCategory = normalizePurchaseCategory(ext?.purchase_category);
-    if (
-      purchaseCategory === PURCHASE_CATEGORIES.rawMaterial &&
-      ext?.supplier_party_id
-    ) {
+    if (ext?.supplier_party_id) {
       const lines = await loadVoucherLinesForAllocationTx({ trx, voucherId });
       const preferredGrnVoucherNo = parseVoucherNo(
         ext.grn_reference_voucher_no,
@@ -4792,7 +4878,10 @@ const ensurePurchaseVoucherDerivedDataTx = async ({
         }
         const normalizedLines = lines.map((line) => ({
           line_no: Number(line.line_no),
-          item_id: Number(line.item_id),
+          line_kind: String(line.line_kind || "ITEM").toUpperCase(),
+          item_id: toPositiveInt(line.item_id),
+          account_id: toPositiveInt(line.account_id),
+          asset_id: toPositiveInt(line.asset_id),
           qty: Number(line.qty || 0),
           rate: Number(line.rate || 0),
           amount: Number(line.amount || 0),
@@ -4802,6 +4891,7 @@ const ensurePurchaseVoucherDerivedDataTx = async ({
           meta: {
             color_id: toPositiveInt(line.color_id) || undefined,
             size_id: toPositiveInt(line.size_id) || undefined,
+            asset_id: toPositiveInt(line.asset_id) || undefined,
           },
           item_name: line.item_name || "",
         }));
