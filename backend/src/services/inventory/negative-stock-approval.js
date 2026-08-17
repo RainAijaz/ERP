@@ -10,6 +10,25 @@ const NEGATIVE_STOCK_POLICY_ACTION = "negative_stock";
 
 const roundShortQty = (value) => Number(Number(value || 0).toFixed(3));
 
+// Not every voucher draws from shelf stock, so a blanket "on hand" is simply wrong for
+// some of them: a GRN_IN consumes the goods-in-transit bucket that its STN_OUT filled,
+// never the receiving branch's shelf. Naming the right bucket is what makes the reason
+// mean something to the approver instead of reading as a contradiction (a receipt that
+// "makes stock negative"). Anything absent from this map draws from ordinary stock.
+const STOCK_BUCKET_LABELS = {
+  GRN_IN: "in transit",
+};
+const DEFAULT_STOCK_BUCKET_LABEL = "on hand";
+
+// A short voucher can be short on every one of its lines. Spelling out twenty of them
+// buries the point in a wall of text, and the approver has the full voucher one click
+// away in View, so list a few and count the rest.
+const MAX_LISTED_SHORTFALLS = 4;
+
+const resolveStockBucketLabel = (voucherTypeCode) =>
+  STOCK_BUCKET_LABELS[String(voucherTypeCode || "").trim().toUpperCase()] ||
+  DEFAULT_STOCK_BUCKET_LABEL;
+
 // The approvals list rebuilds VOUCHER summaries from the payload and discards the
 // stored summary, so the shortfall detail has to be readable on its own.
 const describeShortfall = (shortfall) => {
@@ -26,18 +45,24 @@ const describeShortfall = (shortfall) => {
     .join(" ")
     .trim();
   const subject = label || "a line";
-  return `${subject} needs ${roundShortQty(shortfall?.short_qty)} more than the ${roundShortQty(shortfall?.available_qty)} on hand`;
+  return `${subject} short by ${roundShortQty(shortfall?.short_qty)} (${roundShortQty(shortfall?.available_qty)} available)`;
 };
 
 const buildNegativeStockApprovalReason = ({
   voucherTypeCode,
   shortfalls = [],
 } = {}) => {
-  const code = String(voucherTypeCode || "").trim().toUpperCase();
-  const subject = code ? `${code} would make stock negative` : "Voucher would make stock negative";
+  const bucket = resolveStockBucketLabel(voucherTypeCode);
+  const subject = `Not enough stock ${bucket}`;
   const lines = Array.isArray(shortfalls) ? shortfalls.filter(Boolean) : [];
-  if (!lines.length) return `${subject}.`;
-  return `${subject} - ${lines.map(describeShortfall).join("; ")}`;
+  if (!lines.length) return `${subject} to post this voucher.`;
+
+  const listed = lines.slice(0, MAX_LISTED_SHORTFALLS);
+  const remaining = lines.length - listed.length;
+  const count = `${lines.length} ${lines.length === 1 ? "line is" : "lines are"} short`;
+  const detail = listed.map(describeShortfall).join("; ");
+  const more = remaining > 0 ? `; +${remaining} more` : "";
+  return `${subject} — ${count}: ${detail}${more}`;
 };
 
 const resolveNegativeStockApprovalRouting = ({

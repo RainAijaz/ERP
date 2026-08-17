@@ -1719,6 +1719,19 @@ const fetchTransferOutHeaderTx = async ({
   const row = await query.first();
   if (!row) return null;
 
+  // sth.status is stamped DISPATCHED the moment the STN_OUT is saved, but the stock only
+  // leaves the source and lands in the destination's IN_TRANSIT bucket once the voucher
+  // itself is APPROVED. Receiving against a still-pending dispatch therefore draws from an
+  // empty bucket: it drives IN_TRANSIT negative while the source branch still carries the
+  // goods, so the same stock is counted at both branches. Refuse it, and say why -- the
+  // caller's generic "Transfer reference is invalid" gives the receiver nothing to act on.
+  if (String(row.stn_header_status || "").toUpperCase() !== "APPROVED") {
+    throw new HttpError(
+      400,
+      "This transfer is still awaiting approval, so no stock has been dispatched yet. It can be received once the dispatch voucher is approved.",
+    );
+  }
+
   const status = String(row.status || "").toUpperCase();
   const linkedReceivedVoucherId = toPositiveInt(row.received_voucher_id);
   const canReuseReceived =
@@ -2328,8 +2341,19 @@ const validateTransferInPayloadTx = async ({
     const unitCost = roundUnitCost6(Number(stnLine?.rate || 0));
     const amount = roundCost2(Number(receivedQty) * Number(unitCost));
 
+    // Carried purely so a shortfall reads "Kids Sandal / Red / 8 short by 2" rather than
+    // "line 3 short by 2". SKU display names already fold in colour and size; RM lines
+    // keep them as separate columns, so join them here.
+    const itemLabel =
+      stockType === "RM"
+        ? [stnLine?.item_name, stnLine?.color_name, stnLine?.size_name]
+            .filter(Boolean)
+            .join(" / ")
+        : String(stnLine?.display_name || stnLine?.sku_item_name || "");
+
     const commonMeta = {
       stock_type: stockType,
+      item_label: itemLabel || null,
       stn_line_id: Number(stnLineId),
       stn_out_voucher_id: Number(stnHeader.voucher_id),
       expected_qty: Number(expectedQty),
@@ -3197,6 +3221,7 @@ const collectTransferInShortfalls = (validated) =>
       if (!(shortBase > 0.0005) && !(shortPairs > 0)) return acc;
       acc.push({
         line_no: line?.line_no ?? null,
+        item_name: meta.item_label || null,
         short_qty: shortBase > 0.0005 ? shortBase : shortPairs,
         available_qty:
           shortBase > 0.0005
@@ -3882,8 +3907,11 @@ const loadPendingTransferInReferencesTx = async ({
     .where({
       "vh.voucher_type_code": STOCK_TRANSFER_VOUCHER_TYPES.out,
       "sth.dest_branch_id": req.branchId,
+      // Only an APPROVED dispatch has actually moved stock into this branch's IN_TRANSIT
+      // bucket. Offering a PENDING one lets the receiver draw against nothing -- see the
+      // matching guard in fetchTransferOutHeaderTx.
+      "vh.status": "APPROVED",
     })
-    .whereNot("vh.status", "REJECTED")
     .where((builder) => {
       builder.where("sth.status", "DISPATCHED");
       if (includeReceivedForVoucherId) {
