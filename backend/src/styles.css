@@ -506,22 +506,20 @@ html.dark input[type="checkbox"] {
     color: #64748b;
   }
 
-  /* Sticky add-item bar; the in-table add button is hidden with the empty cells. */
+  /* Add-item bar, injected directly below the lines card; the in-table add
+     button is hidden with the empty cells.
+
+     Deliberately NOT position:sticky — `body` carries Tailwind's
+     `overflow-x-hidden`, which makes it the scroll container and silently
+     kills bottom-stickiness, so a "floating" bar just renders wherever it
+     was inserted. Sitting inline under the last line card is where the eye
+     looks for "add another" anyway. */
   [data-mobile-add-bar] {
-    position: sticky;
-    bottom: 0;
-    z-index: 30;
     display: flex;
-    padding: 0.5rem 0;
-    background: linear-gradient(to top, rgb(248 250 252 / 0.98) 60%, transparent);
   }
 
   [data-mobile-card] tfoot td[data-mobile-label=""] {
     align-self: end;
-  }
-
-  [data-mobile-add-bar][data-hidden] {
-    display: none;
   }
 
   [data-mobile-add-btn] {

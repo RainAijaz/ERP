@@ -190,13 +190,29 @@
    * Sticky "Add item" bar
    * ------------------------------------------------------------------ */
 
+  // The card that wraps the lines table — the bar has to land immediately after
+  // it. Appending to the form instead parks the button below the Confirm button,
+  // a screen or more away from the rows it appends to, which is the last place
+  // anyone looks for it.
+  var linesCard = function (table) {
+    var stop = table.closest("form") || table.parentElement;
+    var node = table;
+    var hops = 0;
+    while (node.parentElement && node.parentElement !== stop && hops < 4) {
+      node = node.parentElement;
+      hops += 1;
+    }
+    return node;
+  };
+
   var buildAddBar = function (table) {
     var addBtn = table.querySelector("[data-add-row]");
     if (!addBtn) return null;
 
-    var form = table.closest("form");
-    var host = form || table.parentElement;
-    if (!host || host.querySelector("[data-mobile-add-bar]")) return null;
+    var anchor = linesCard(table);
+    if (!anchor || !anchor.parentElement) return null;
+    var existing = anchor.nextElementSibling;
+    if (existing && existing.hasAttribute("data-mobile-add-bar")) return null;
 
     var bar = document.createElement("div");
     bar.setAttribute("data-mobile-add-bar", "");
@@ -210,15 +226,22 @@
       window.requestAnimationFrame(function () {
         var body = table.querySelector("[data-lines-body]") || table.tBodies[0];
         var last = body && body.rows[body.rows.length - 1];
-        if (last) last.scrollIntoView({ block: "center", behavior: "smooth" });
+        if (!last) return;
+        // A line card is often taller than the viewport, so centring it hides
+        // the article picker at the top — the one field you always fill first.
+        var tall = last.getBoundingClientRect().height > window.innerHeight * 0.7;
+        last.scrollIntoView({ block: tall ? "start" : "center", behavior: "smooth" });
       });
     });
     bar.appendChild(btn);
-    host.appendChild(bar);
+    anchor.insertAdjacentElement("afterend", bar);
 
+    // Mirror the view's own gating (consumption disables adding until a
+    // department is picked, read-only vouchers disable it outright). Grey it
+    // out rather than removing it — desktop shows a dimmed `+`, and a button
+    // that disappears reads as "this screen has no add", not "not yet".
     var syncDisabled = function () {
       btn.disabled = addBtn.disabled;
-      bar.toggleAttribute("data-hidden", addBtn.disabled);
     };
     syncDisabled();
     new MutationObserver(syncDisabled).observe(addBtn, {

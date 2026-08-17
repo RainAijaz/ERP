@@ -272,7 +272,13 @@
               <td class="border-t border-slate-200 px-2 py-2">
                 <input type="text" readonly class="h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-right font-semibold text-slate-700" value="0.00" data-total-payment>
               </td>
-              <td class="border-t border-slate-200 px-2 py-2" colspan="3"></td>
+              <td class="border-t border-slate-200 px-2 py-2"></td>
+              <td class="border-t border-slate-200 px-2 py-2 text-center">
+                <button type="button" class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white p-2 text-slate-600 transition hover:border-slate-300 hover:text-slate-900 disabled:opacity-40" data-add-row <%= canSaveVoucher ? '' : 'disabled' %> aria-label="<%= t('add_item') %>" title="<%= t('add_item') %>">
+                  <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
+                </button>
+              </td>
+              <td class="border-t border-slate-200 px-2 py-2"></td>
             </tr>
           </tfoot>
         </table>
@@ -1004,6 +1010,13 @@
     } else {
       renderRow();
     }
+
+    // Enter-in-the-amount-field also appends a row, but that is keyboard-only:
+    // on a phone it is unreachable, which left this screen single-line.
+    form.querySelector('[data-add-row]')?.addEventListener('click', () => {
+      if (!canSaveVoucher || isDeletedVoucher) return;
+      renderRow();
+    });
 
     form.addEventListener('submit', (event) => {
       if (!canSaveVoucher) {

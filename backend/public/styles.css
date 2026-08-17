@@ -419,9 +419,6 @@
   .left-10 {
     left: calc(var(--spacing) * 10);
   }
-  .isolate {
-    isolation: isolate;
-  }
   .z-10 {
     z-index: 10;
   }
@@ -5128,18 +5125,10 @@ html.dark input[type="radio"], html.dark input[type="checkbox"] {
     color: #64748b;
   }
   [data-mobile-add-bar] {
-    position: sticky;
-    bottom: 0;
-    z-index: 30;
     display: flex;
-    padding: 0.5rem 0;
-    background: linear-gradient(to top, rgb(248 250 252 / 0.98) 60%, transparent);
   }
   [data-mobile-card] tfoot td[data-mobile-label=""] {
     align-self: end;
-  }
-  [data-mobile-add-bar][data-hidden] {
-    display: none;
   }
   [data-mobile-add-btn] {
     flex: 1;
