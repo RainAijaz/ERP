@@ -21,6 +21,13 @@ const {
   resolveApprovalPreview,
 } = require("../../utils/approval-preview-registry");
 const { notifyApprovalDecision } = require("../../utils/approval-events");
+const {
+  notifyApprovalDecisionInApp,
+} = require("../../utils/in-app-notifications");
+const {
+  normalizeDecisionNote,
+  resolveDecisionNoteText,
+} = require("../../utils/approval-decision-notes");
 const { setCookie } = require("../../middleware/utils/cookies");
 const { UI_NOTICE_COOKIE } = require("../../middleware/core/ui-notice");
 const { insertActivityLog } = require("../../utils/audit-log");
@@ -1803,6 +1810,12 @@ router.get(
           "ar.requested_at",
           "ar.requested_by",
           "ar.decided_at",
+          // Why a rejected/withdrawn request was closed. Rendered under the
+          // summary, and NOT folded into it: normalizeVoucherApprovalSummary
+          // discards the stored summary for VOUCHER rows, and the BOM label
+          // pass below runs replace(/#\S+/) over it -- either would mangle an
+          // appended reason.
+          "ar.decision_notes",
           "u.username as requester_name",
         )
         .leftJoin("erp.users as u", "ar.requested_by", "u.id")
@@ -1823,6 +1836,12 @@ router.get(
 
       for (const row of rows) {
         row.summary = normalizeVoucherApprovalSummary(row, res.locals.t);
+        // Machine-written notes are stored as SYSTEM: sentinels, so resolve
+        // them to the viewer's language here rather than in the template.
+        row.decision_note_text = resolveDecisionNoteText(
+          row.decision_notes,
+          res.locals.t,
+        );
         if (row.entity_type === "SKU") {
           const label = skuLabelById.get(Number(row.entity_id));
           const summaryText = String(row.summary || "");
@@ -2587,6 +2606,27 @@ async function unwindPendingApprovalRequestTx(trx, request, userId) {
   }
 }
 
+/**
+ * Read the mandatory decision note off a reject/withdraw POST.
+ *
+ * Closing a request is the one place where the person deciding owes the other
+ * side an explanation, so a blank note is refused before any DB work happens
+ * and the request stays PENDING. The UI blocks empty submissions client-side;
+ * this is the backstop for a direct POST.
+ *
+ * HttpError(400) gives both audiences the right thing: a browser POST carries a
+ * referer, so the error handler redirects back to the approvals page with the
+ * message in the ui_error modal, while a headless POST gets a plain 400 body.
+ *
+ * @returns {string} the normalized note
+ * @throws  {HttpError} 400 when the note is missing or whitespace-only
+ */
+function readDecisionNote(req, res, requiredMessageKey) {
+  const note = normalizeDecisionNote(req.body?.decision_notes);
+  if (!note) throw new HttpError(400, res.locals.t(requiredMessageKey));
+  return note;
+}
+
 // POST /:id/withdraw - the requester pulls back their own pending request.
 // Deliberately gated on "navigate", not "approve": this is not a checker
 // decision, so it needs no approval rights and no new role grants. The row is
@@ -2604,6 +2644,7 @@ router.post(
       return next(new HttpError(403, res.locals.t("permission_denied")));
 
     try {
+      const reason = readDecisionNote(req, res, "withdraw_reason_required");
       await knex.transaction(async (trx) => {
         const request = await trx("erp.approval_request").where({ id }).first();
         if (!request || request.status !== "PENDING") {
@@ -2623,6 +2664,7 @@ router.post(
           status: "WITHDRAWN",
           decided_by: userId,
           decided_at: trx.fn.now(),
+          decision_notes: reason,
         });
 
         await insertActivityLog(trx, {
@@ -2639,6 +2681,7 @@ router.post(
             approval_request_id: request.id,
             requested_entity_id: request.entity_id,
             decision: "WITHDRAWN",
+            decision_notes: reason,
             request_type: request.request_type,
             summary: request.summary || null,
             old_value: request.old_value || null,
@@ -2665,6 +2708,7 @@ router.post(
       return next(new HttpError(403, res.locals.t("permission_denied")));
 
     try {
+      const reason = readDecisionNote(req, res, "reject_reason_required");
       let requestSnapshot = null;
       await knex.transaction(async (trx) => {
         const request = await trx("erp.approval_request").where({ id }).first();
@@ -2679,6 +2723,7 @@ router.post(
           status: "REJECTED",
           decided_by: req.user.id,
           decided_at: trx.fn.now(),
+          decision_notes: reason,
         });
 
         await insertActivityLog(trx, {
@@ -2695,6 +2740,7 @@ router.post(
             approval_request_id: request.id,
             requested_entity_id: request.entity_id,
             decision: "REJECTED",
+            decision_notes: reason,
             request_type: request.request_type,
             summary: request.summary || null,
             old_value: request.old_value || null,
@@ -2703,18 +2749,46 @@ router.post(
         });
       });
       if (requestSnapshot?.requested_by) {
+        // Deep-link to the request itself, not just the Rejected tab: the
+        // approvals page auto-opens the detail modal for ?request_id=, so the
+        // requester lands on the full reason rather than on a filtered list.
+        const link = `/administration/approvals?status=REJECTED&request_id=${encodeURIComponent(
+          String(requestSnapshot.id),
+        )}`;
+        // The reason rides inside `message` deliberately. The toast renderer
+        // assigns message via textContent, whereas payload.summary is
+        // interpolated into innerHTML -- so this keeps user-typed text off the
+        // unescaped path.
+        const message = res.locals
+          .t("approval_rejected_detail_with_reason")
+          .replace("{summary}", requestSnapshot.summary || "")
+          .replace("{reason}", reason);
+
         notifyApprovalDecision({
           userId: requestSnapshot.requested_by,
           payload: {
             status: "REJECTED",
             requestId: requestSnapshot.id,
             summary: requestSnapshot.summary || "",
-            link: "/administration/approvals?status=REJECTED",
-            message: res.locals
-              .t("approval_rejected_detail")
-              .replace("{summary}", requestSnapshot.summary || ""),
+            link,
+            message,
+            decisionNotes: reason,
             sticky: true,
           },
+        });
+
+        // The SSE push above is in-memory only: capped, wiped on restart, and
+        // acked away by any visit to this page. This is the durable copy, so a
+        // requester who was offline still finds out why. Fire-and-forget -- a
+        // notification failure must never fail the rejection itself.
+        notifyApprovalDecisionInApp({
+          knex,
+          approvalRequestId: requestSnapshot.id,
+          userId: requestSnapshot.requested_by,
+          branchId: requestSnapshot.branch_id || null,
+          title: res.locals.t("approval_rejected"),
+          body: message,
+          link,
         });
       }
       setUiNotice(res, res.locals.t("approval_rejected"), { autoClose: true });

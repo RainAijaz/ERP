@@ -121,6 +121,15 @@
             </td>
             <td class="px-6 py-4 text-slate-600">
               <%= row.summary %>
+              <%# Why the request was closed. Rendered under the summary rather %>
+              <%# than in its own column: a 7th column pushes this table past %>
+              <%# min-w-[980px] into horizontal scroll on the maker's screen. %>
+              <% if (row.decision_note_text && (row.status === 'REJECTED' || row.status === 'WITHDRAWN')) { %>
+                <p class="mt-1 rounded-lg border border-rose-200 bg-rose-50 px-2 py-1 text-xs text-rose-700">
+                  <span class="font-semibold"><%= row.status === 'WITHDRAWN' ? t("withdrawal_reason") : t("rejection_reason") %>:</span>
+                  <%= row.decision_note_text %>
+                </p>
+              <% } %>
             </td>
             <td class="px-6 py-4">
               <% if (row.entity_type === 'BOM' && row.entity_id && row.entity_id !== 'NEW') { %>
@@ -142,6 +151,8 @@
                   data-status="<%= row.status %>"
                   data-entity-type="<%= row.entity_type %>"
                   data-request-type="<%= row.request_type %>"
+                  data-decision-notes="<%= (row.status === 'REJECTED' || row.status === 'WITHDRAWN') ? (row.decision_note_text || '') : '' %>"
+                  data-decision-label="<%= row.status === 'WITHDRAWN' ? t("withdrawal_reason") : t("rejection_reason") %>"
                 >
                   <%= t("view") %>
                 </button>
@@ -163,20 +174,44 @@
                           <%= t("approve")  %>
                         </button>
                       </form>
-                      <form action="<%= basePath %>/<%= row.id %>/reject" method="POST" class="inline">
+                      <%# Rejecting requires a typed reason, so this form is %>
+                      <%# intercepted by the shared reason modal below, which %>
+                      <%# fills the hidden decision_notes input before submit. %>
+                      <%# data-confirm-form opts out of the layout's global %>
+                      <%# delete-confirm interceptor: it doesn't match this %>
+                      <%# action today, but it runs capture-phase on document %>
+                      <%# and calls stopImmediatePropagation(), so it would win %>
+                      <%# over the handler below if it ever did. %>
+                      <form action="<%= basePath %>/<%= row.id %>/reject" method="POST" class="inline"
+                            data-approval-reason-form data-confirm-form
+                            data-reason-title="<%= t("reject_request") %>"
+                            data-reason-label="<%= t("reject_reason") %>"
+                            data-reason-placeholder="<%= t("reject_reason_placeholder") %>"
+                            data-reason-error="<%= t("reject_reason_required") %>"
+                            data-reason-confirm="<%= t("reject_request") %>">
                         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <input type="hidden" name="decision_notes" value="">
                         <button type="submit" class="rounded-lg bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100 transition">
                           <%= t("reject")  %>
                         </button>
                       </form>
                     <% } %>
                     <% if (canWithdrawRow(row)) { %>
-                      <%# data-confirm-form opts out of the layout's global %>
-                      <%# delete-confirm interceptor, which would title this %>
-                      <%# "Confirm Delete" and warn about permanent deletion. %>
-                      <%# The handler at the bottom of this file asks instead. %>
-                      <form action="<%= basePath %>/<%= row.id %>/withdraw" method="POST" class="inline" data-approval-withdraw data-confirm-form>
+                      <%# Withdrawing also requires a reason, so it uses the %>
+                      <%# same modal as Reject (which replaced the old yes/no %>
+                      <%# confirm -- showUiConfirmModal has no input field). %>
+                      <%# data-confirm-form still opts out of the layout's %>
+                      <%# global delete-confirm interceptor, which would title %>
+                      <%# this "Confirm Delete" and warn about deletion. %>
+                      <form action="<%= basePath %>/<%= row.id %>/withdraw" method="POST" class="inline"
+                            data-approval-reason-form data-confirm-form
+                            data-reason-title="<%= t("withdraw_request") %>"
+                            data-reason-label="<%= t("withdraw_reason") %>"
+                            data-reason-placeholder="<%= t("withdraw_reason_placeholder") %>"
+                            data-reason-error="<%= t("withdraw_reason_required") %>"
+                            data-reason-confirm="<%= t("withdraw") %>">
                         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                        <input type="hidden" name="decision_notes" value="">
                         <button type="submit" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-600 hover:border-slate-300 hover:text-slate-800 transition">
                           <%= t("withdraw")  %>
                         </button>
@@ -239,6 +274,13 @@
         </button>
       </div>
     </div>
+    <%# Why the request was closed. Populated via textContent when the modal %>
+    <%# opens; the ?request_id= deep-link from the rejection notification %>
+    <%# lands the requester right here. %>
+    <div class="hidden border-b border-rose-200 bg-rose-50 px-6 py-3" data-approval-decision-note>
+      <div class="text-xs font-semibold uppercase tracking-[0.14em] text-rose-700" data-approval-decision-note-label></div>
+      <p class="mt-1 text-sm text-rose-800" data-approval-decision-note-text></p>
+    </div>
     <div class="grid gap-4 px-6 py-5 md:grid-cols-2 overflow-y-auto">
       <div data-approval-detail-before>
         <div class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500 mb-3"><%= t("before")  %></div>
@@ -269,6 +311,9 @@
     const beforeBox = document.querySelector("[data-approval-preview-before]");
     const afterBox = document.querySelector("[data-approval-preview-after]");
     const singleBox = document.querySelector("[data-approval-preview-single]");
+    const decisionNoteWrap = document.querySelector("[data-approval-decision-note]");
+    const decisionNoteTextEl = document.querySelector("[data-approval-decision-note-text]");
+    const decisionNoteLabelEl = document.querySelector("[data-approval-decision-note-label]");
     const subtitle = document.querySelector("[data-approval-detail-subtitle]");
     const previewBase = "<%= basePath %>";
     const csrfToken = "<%= csrfToken %>";
@@ -1193,7 +1238,18 @@
 
     const open = async (payload) => {
       if (!modal) return;
-      const { action, oldValue, newValue, id, status } = payload;
+      const { action, oldValue, newValue, id, status, decisionNotes, decisionLabel } = payload;
+
+      // Decision note banner. textContent, never innerHTML -- this is text a
+      // user typed. Hidden for rows that carry no note (anything still pending,
+      // and every approved row).
+      if (decisionNoteWrap) {
+        const noteText = String(decisionNotes || "").trim();
+        decisionNoteWrap.classList.toggle("hidden", !noteText);
+        if (decisionNoteTextEl) decisionNoteTextEl.textContent = noteText;
+        if (decisionNoteLabelEl) decisionNoteLabelEl.textContent = decisionLabel || "";
+      }
+
       const normalizedOldValue = oldValue && typeof oldValue === "object" ? oldValue : {};
       const normalizedNewValue = newValue && typeof newValue === "object" ? newValue : {};
       const hasOldValue = Object.keys(normalizedOldValue).length > 0;
@@ -1308,7 +1364,9 @@
       const id = btn.getAttribute("data-approval-id");
       const entityType = String(btn.getAttribute("data-entity-type") || "").toUpperCase();
       const requestType = String(btn.getAttribute("data-request-type") || "").toUpperCase();
-      open({ action, oldValue: null, newValue: null, id, status });
+      const decisionNotes = btn.getAttribute("data-decision-notes") || "";
+      const decisionLabel = btn.getAttribute("data-decision-label") || "";
+      open({ action, oldValue: null, newValue: null, id, status, decisionNotes, decisionLabel });
     });
 
     // Deep-link: when arrived via ?request_id=<id> (from an email or in-ERP
@@ -1399,31 +1457,104 @@
     });
   })();
 </script>
+<%# Shared "why?" modal for Reject and Withdraw. Both close a request, and %>
+<%# both owe the other side an explanation, so neither can be a one-click %>
+<%# action any more. The layout's showUiConfirmModal is yes/no only (it has %>
+<%# no input), hence a local modal built on the same submit-intercept pattern %>
+<%# as the new-SKU modal above. Copy comes from data-reason-* on the form, so %>
+<%# one modal serves both callers. %>
+<div class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 p-4" data-approval-reason-modal>
+  <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl">
+    <div class="flex items-start justify-between border-b border-slate-200 px-6 py-4">
+      <div class="text-sm font-semibold text-slate-700" data-approval-reason-title></div>
+      <button type="button" class="text-slate-400 transition hover:text-slate-600" data-approval-reason-cancel aria-label="<%= t("cancel") %>">
+        <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+      </button>
+    </div>
+    <div class="px-6 py-4">
+      <label class="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500" for="approval-reason-input" data-approval-reason-label></label>
+      <textarea
+        id="approval-reason-input"
+        rows="4"
+        maxlength="500"
+        class="mt-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 transition focus:border-slate-300"
+        data-approval-reason-input
+      ></textarea>
+      <p class="mt-2 hidden text-xs text-rose-700" data-approval-reason-error></p>
+    </div>
+    <div class="flex items-center justify-end gap-2 border-t border-slate-200 px-6 py-4">
+      <button type="button" class="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" data-approval-reason-cancel>
+        <%= t("cancel") %>
+      </button>
+      <button type="button" class="rounded-lg bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.14em] text-white transition hover:opacity-90" data-approval-reason-confirm></button>
+    </div>
+  </div>
+</div>
 <script>
-  // Withdraw confirmation. Uses the layout's shared confirm modal
-  // (window.showUiConfirmModal) rather than the global delete-confirm
-  // interceptor, so the copy says "withdraw", not "permanently deletes".
   (function () {
-    const text = {
-      title: <%- JSON.stringify(t("confirm_withdraw_title")) %>,
-      message: <%- JSON.stringify(t("confirm_withdraw_approval")) %>,
-      confirmLabel: <%- JSON.stringify(t("withdraw")) %>,
-      cancelLabel: <%- JSON.stringify(t("cancel")) %>,
+    const modal = document.querySelector("[data-approval-reason-modal]");
+    if (!modal) return;
+    const titleEl = modal.querySelector("[data-approval-reason-title]");
+    const labelEl = modal.querySelector("[data-approval-reason-label]");
+    const inputEl = modal.querySelector("[data-approval-reason-input]");
+    const errorEl = modal.querySelector("[data-approval-reason-error]");
+    const confirmBtn = modal.querySelector("[data-approval-reason-confirm]");
+    const cancelBtns = modal.querySelectorAll("[data-approval-reason-cancel]");
+    let pendingForm = null;
+
+    const openModal = (form) => {
+      pendingForm = form;
+      titleEl.textContent = form.dataset.reasonTitle || "";
+      labelEl.textContent = form.dataset.reasonLabel || "";
+      confirmBtn.textContent = form.dataset.reasonConfirm || "";
+      inputEl.placeholder = form.dataset.reasonPlaceholder || "";
+      inputEl.value = "";
+      errorEl.textContent = form.dataset.reasonError || "";
+      errorEl.classList.add("hidden");
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+      requestAnimationFrame(() => inputEl.focus());
     };
 
-    document.querySelectorAll("form[data-approval-withdraw]").forEach((form) => {
-      form.addEventListener("submit", async (event) => {
-        if (form.dataset.confirmed === "1") return; // already confirmed
+    const closeModal = () => {
+      pendingForm = null;
+      modal.classList.add("hidden");
+      modal.classList.remove("flex");
+    };
+
+    const submitWithReason = () => {
+      if (!pendingForm) return;
+      const reason = inputEl.value.trim();
+      // The server refuses a blank reason too (HTTP 400); this only saves the
+      // round-trip and keeps the typed text on screen.
+      if (!reason) {
+        errorEl.classList.remove("hidden");
+        inputEl.focus();
+        return;
+      }
+      const form = pendingForm;
+      const field = form.querySelector('input[name="decision_notes"]');
+      if (field) field.value = reason;
+      form.dataset.confirmed = "1";
+      closeModal();
+      form.submit();
+    };
+
+    document.querySelectorAll("form[data-approval-reason-form]").forEach((form) => {
+      form.addEventListener("submit", (event) => {
+        if (form.dataset.confirmed === "1") return; // already confirmed, let it through
         event.preventDefault();
-        // No modal available (older layout): fall back to a native confirm.
-        const ask =
-          typeof window.showUiConfirmModal === "function"
-            ? window.showUiConfirmModal(text)
-            : Promise.resolve(window.confirm(text.message));
-        if (!(await ask)) return;
-        form.dataset.confirmed = "1";
-        form.submit();
+        openModal(form);
       });
+    });
+
+    confirmBtn.addEventListener("click", submitWithReason);
+    cancelBtns.forEach((btn) => btn.addEventListener("click", closeModal));
+    modal.addEventListener("click", (event) => {
+      if (event.target === modal) closeModal();
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && pendingForm) closeModal();
     });
   })();
 </script>

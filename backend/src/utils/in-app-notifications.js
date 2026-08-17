@@ -9,6 +9,8 @@ const { getActiveApprovalUserIds } = require("./approval-notifications");
 const { notifyUser } = require("./approval-events");
 
 const NOTIFICATION_TYPE_APPROVAL_PENDING = "APPROVAL_PENDING";
+// A request the recipient RAISED has been decided (currently: rejected).
+const NOTIFICATION_TYPE_APPROVAL_DECISION = "APPROVAL_DECISION";
 
 // How many recent items the bell dropdown shows.
 const RECENT_LIMIT = 20;
@@ -67,9 +69,14 @@ const markAllNotificationsRead = async (knex, userId) => {
 const notifyPendingApproval = async ({ knex, approvalRequestId }) => {
   if (!approvalRequestId) return;
 
-  // Idempotency guard: skip if this request already produced notifications.
+  // Idempotency guard: skip if this request already produced a pending fan-out.
+  // Scoped to the PENDING type on purpose -- an APPROVAL_DECISION row for the
+  // same request must not be mistaken for "approvers were already told".
   const existing = await knex("erp.notification")
-    .where({ approval_request_id: approvalRequestId })
+    .where({
+      approval_request_id: approvalRequestId,
+      type: NOTIFICATION_TYPE_APPROVAL_PENDING,
+    })
     .first("id");
   if (existing) return;
 
@@ -146,6 +153,81 @@ const notifyPendingApproval = async ({ knex, approvalRequestId }) => {
   );
 };
 
+// Tell the REQUESTER their own request was decided, durably.
+//
+// The counterpart to notifyPendingApproval, pointing the other way: that one
+// fans out to approvers when a request arrives, this one notifies the single
+// maker when it closes. It exists because the SSE decision toast
+// (utils/approval-events.js) is in-memory only -- capped at 10 queued events,
+// dropped on restart, and acked away by any visit to the approvals page -- so
+// an offline requester currently never learns their request was rejected.
+//
+// Unlike notifyPendingApproval this takes its title/body from the caller: the
+// route has res.locals.t, so the recipient gets their own language instead of
+// the hardcoded English that function has to use.
+//
+// Fire-and-forget by design. A failed notification must never fail the
+// decision that triggered it, so nothing here throws into the caller.
+//
+// NOTE on uq_notification_request_user (approval_request_id, user_id): this is
+// collision-free only because the pending fan-out excludes the requester, so
+// (request, requester) has no row yet. If anyone ever notifies the requester on
+// submission too, the two row types become mutually exclusive and onConflict
+// would silently drop this one -- at that point the index must become
+// (approval_request_id, user_id, type).
+const notifyApprovalDecisionInApp = ({
+  knex,
+  approvalRequestId,
+  userId,
+  branchId = null,
+  title,
+  body,
+  link,
+}) => {
+  Promise.resolve()
+    .then(async () => {
+      const requestId = Number(approvalRequestId || 0);
+      const recipientId = Number(userId || 0);
+      if (!requestId || !recipientId) return;
+
+      const [inserted] = await knex("erp.notification")
+        .insert({
+          user_id: recipientId,
+          type: NOTIFICATION_TYPE_APPROVAL_DECISION,
+          approval_request_id: requestId,
+          branch_id: branchId || null,
+          title: title || null,
+          body: body || null,
+          link: link || null,
+        })
+        .onConflict(["approval_request_id", "user_id"])
+        .ignore()
+        .returning(["id", "user_id"]);
+      if (!inserted) return;
+
+      const unreadCount = await getUnreadCount(knex, inserted.user_id);
+      notifyUser({
+        userId: inserted.user_id,
+        event: "notification",
+        payload: {
+          id: inserted.id,
+          type: NOTIFICATION_TYPE_APPROVAL_DECISION,
+          title,
+          body,
+          link,
+          unreadCount,
+        },
+      });
+    })
+    .catch((err) => {
+      console.error("[in-app-notifications] decision notify failed", {
+        approvalRequestId,
+        userId,
+        error: err?.message || err,
+      });
+    });
+};
+
 // Fire-and-forget wrapper used post-commit (e.g. from the res.finish audit
 // hook). Never throws into the caller. notifyPendingApproval self-guards on
 // status='PENDING' and idempotency, so it is safe to call for any audited
@@ -190,6 +272,8 @@ const backfillPendingApprovalNotifications = async (knex) => {
 
 module.exports = {
   NOTIFICATION_TYPE_APPROVAL_PENDING,
+  NOTIFICATION_TYPE_APPROVAL_DECISION,
+  notifyApprovalDecisionInApp,
   notifyPendingApprovalPostCommit,
   backfillPendingApprovalNotifications,
   getUnreadCount,

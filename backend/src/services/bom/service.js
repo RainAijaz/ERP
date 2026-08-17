@@ -1,4 +1,7 @@
 const { insertBomChangeLog } = require("../../utils/bom-change-log");
+const {
+  SYSTEM_DECISION_NOTES,
+} = require("../../utils/approval-decision-notes");
 
 const debugEnabled = process.env.DEBUG_BOM === "1";
 const debugBom = (...args) => {
@@ -4101,12 +4104,16 @@ const resolvePendingBomApprovalsTx = async (trx, { bomId, decidedBy } = {}) => {
       decided_at: trx.fn.now(),
     });
 
+  // WITHDRAWN needs a decision note (see the decision_notes CHECK constraint in
+  // 010_administration.sql); nobody typed one here, so record the sentinel.
+  // APPROVED above is exempt from the constraint and stays note-less.
   const withdrawn = await pendingForBom()
     .andWhere("requested_by", decider)
     .update({
       status: "WITHDRAWN",
       decided_by: decider,
       decided_at: trx.fn.now(),
+      decision_notes: SYSTEM_DECISION_NOTES.SELF_RESOLVED,
     });
 
   return Number(approved || 0) + Number(withdrawn || 0);

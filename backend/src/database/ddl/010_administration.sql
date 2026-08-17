@@ -525,6 +525,25 @@ CREATE TABLE IF NOT EXISTS erp.approval_request (
     (status = 'PENDING' AND decided_by IS NULL AND decided_at IS NULL)
     OR
   (status <> 'PENDING' AND decided_by IS NOT NULL AND decided_at IS NOT NULL)
+  ),
+
+  -- Closing a request must say why: the requester is owed an explanation for a
+  -- rejection, and an admin reading the Withdrawn tab is owed one too. APPROVED
+  -- is deliberately exempt -- approvers clear queues in bulk and a forced note
+  -- there would only produce noise.
+  -- Paths that close a request with nobody at the keyboard (a voucher deleted
+  -- on its own screen, see utils/voucher-approval-sync.js) record a SYSTEM:
+  -- sentinel from utils/approval-decision-notes.js rather than NULL.
+  -- NAMED on purpose: the state-consistency CHECK above is unnamed, which is
+  -- why 102_approval_withdraw.sql has to hunt it via pg_get_constraintdef ILIKE.
+  -- Two traps in this predicate, do not "simplify" it:
+  --   - btrim(x) <> '' would NOT work: single-argument btrim strips spaces
+  --     ONLY, so a note of pure newlines or tabs sails through.
+  --   - COALESCE is load-bearing: `NULL ~ '...'` evaluates to NULL and a CHECK
+  --     passes on NULL, so without it a note-less rejection is accepted.
+  CONSTRAINT approval_request_decision_notes_check CHECK (
+    status NOT IN ('REJECTED','WITHDRAWN')
+    OR COALESCE(decision_notes, '') ~ '[^[:space:]]'
   )
 );
 

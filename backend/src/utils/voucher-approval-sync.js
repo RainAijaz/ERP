@@ -19,6 +19,11 @@
  *   - once decided, both `decided_by` and `decided_at` must be non-null.
  */
 
+const {
+  SYSTEM_DECISION_NOTES,
+  systemNoteForVoucherResolution,
+} = require("./approval-decision-notes");
+
 const PENDING = "PENDING";
 
 /**
@@ -74,13 +79,18 @@ async function resolvePendingVoucherApprovalsTx({
       status: PENDING,
     });
 
+  // Nobody typed a reason here -- the request is being closed as a side effect
+  // of what happened on the voucher screen -- so record a SYSTEM: sentinel
+  // instead of NULL. The requester sees a translated sentence rather than a
+  // blank "Rejection Reason", and the decision_notes CHECK constraint (which
+  // requires a note on REJECTED/WITHDRAWN) is satisfied.
   const decided = await pendingForVoucher()
     .andWhereNot("requested_by", decider)
     .update({
       status: nextStatus,
       decided_by: decider,
       decided_at: trx.fn.now(),
-      decision_notes: null,
+      decision_notes: systemNoteForVoucherResolution(nextStatus),
     });
 
   const withdrawn = await pendingForVoucher()
@@ -89,7 +99,7 @@ async function resolvePendingVoucherApprovalsTx({
       status: "WITHDRAWN",
       decided_by: decider,
       decided_at: trx.fn.now(),
-      decision_notes: null,
+      decision_notes: SYSTEM_DECISION_NOTES.SELF_RESOLVED,
     });
 
   return Number(decided || 0) + Number(withdrawn || 0);

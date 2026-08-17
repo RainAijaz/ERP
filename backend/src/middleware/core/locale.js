@@ -4732,6 +4732,58 @@ Object.assign(translations.ur, {
   row: "سطر",
 });
 
+// Approvals: the mandatory reason a checker types when rejecting a request (and
+// a maker types when withdrawing one), plus the surfaces that show it back to
+// the requester. Same trailing-Object.assign rule as the block above --
+// translations.ur is reassigned wholesale further up the file, so these must
+// stay at the tail. Urdu is not optional here: STRICT_URDU_UI defaults on, and
+// sanitizeUrduTranslations already ran long before this block exists, so a
+// missing key renders "ترجمہ درکار" rather than falling back to English.
+Object.assign(translations.en, {
+  reject_request: "Reject Request",
+  reject_reason: "Reason for rejection",
+  reject_reason_placeholder:
+    "Explain why this request is being rejected. The requester will see this.",
+  reject_reason_required: "Enter a reason before rejecting this request.",
+  rejection_reason: "Rejection Reason",
+  withdraw_request: "Withdraw Request",
+  withdraw_reason: "Reason for withdrawal",
+  withdraw_reason_placeholder:
+    "Explain why you are pulling this request back. Approvers will see this.",
+  withdraw_reason_required: "Enter a reason before withdrawing this request.",
+  withdrawal_reason: "Withdrawal Reason",
+  approval_rejected_detail_with_reason:
+    "Your approval request was rejected: {summary} — Reason: {reason}",
+  // System-generated decision notes (see utils/approval-decision-notes.js).
+  decision_note_voucher_deleted:
+    "Closed automatically: the voucher was deleted.",
+  decision_note_voucher_confirmed:
+    "Closed automatically: the voucher was confirmed.",
+  decision_note_self_resolved:
+    "Closed automatically: the requester resolved this themselves.",
+});
+
+Object.assign(translations.ur, {
+  reject_request: "درخواست مسترد کریں",
+  reject_reason: "مسترد کرنے کی وجہ",
+  reject_reason_placeholder:
+    "وضاحت کریں کہ یہ درخواست کیوں مسترد کی جا رہی ہے۔ درخواست دہندہ کو یہ نظر آئے گی۔",
+  reject_reason_required: "اس درخواست کو مسترد کرنے سے پہلے وجہ درج کریں۔",
+  rejection_reason: "مسترد کرنے کی وجہ",
+  withdraw_request: "درخواست واپس لیں",
+  withdraw_reason: "واپس لینے کی وجہ",
+  withdraw_reason_placeholder:
+    "وضاحت کریں کہ آپ یہ درخواست کیوں واپس لے رہے ہیں۔ منظوری دینے والوں کو یہ نظر آئے گی۔",
+  withdraw_reason_required: "اس درخواست کو واپس لینے سے پہلے وجہ درج کریں۔",
+  withdrawal_reason: "واپس لینے کی وجہ",
+  approval_rejected_detail_with_reason:
+    "آپ کی منظوری کی درخواست مسترد کر دی گئی: {summary} — وجہ: {reason}",
+  decision_note_voucher_deleted: "خود بخود بند: واؤچر حذف کر دیا گیا۔",
+  decision_note_voucher_confirmed: "خود بخود بند: واؤچر کی تصدیق ہو گئی۔",
+  decision_note_self_resolved:
+    "خود بخود بند: درخواست دہندہ نے خود اسے مکمل کر دیا۔",
+});
+
 const formatDateDisplay = (value, fallback = "-") => {
   if (value === null || value === undefined || value === "") return fallback;
   const text = String(value).trim();
