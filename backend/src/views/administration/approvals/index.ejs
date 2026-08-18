@@ -10,6 +10,37 @@
     if (String(row?.entity_id || "").trim().toUpperCase() === "NEW") return "create";
     return "update";
   };
+  const parseApprovalPayload = (value) => {
+    if (!value) return {};
+    if (typeof value === "object") return value;
+    try {
+      return JSON.parse(value) || {};
+    } catch (e) {
+      return {};
+    }
+  };
+  // Approving any of these messages the whole sales group, so Approve must be
+  // intercepted by the opt-in modal below. Three payload shapes qualify: a new
+  // SKU, a single SKU rate edit, and a bulk rate update. Keying the edit case
+  // off sale_rate (not getAction) matters -- a SKU deactivate also reports
+  // action "update" but carries only {_action:"toggle"}, and prompting for a
+  // request that can never notify would train approvers to click through.
+  const getRateNotify = (row) => {
+    const payload = parseApprovalPayload(row?.new_value);
+    if (row?.entity_type === "SKU_BULK_RATE_UPDATE") {
+      return Array.isArray(payload.variants) && payload.variants.length > 0;
+    }
+    if (row?.entity_type !== "SKU") return false;
+    if (getAction(row) === "create") return true;
+    return payload.sale_rate !== null && payload.sale_rate !== undefined;
+  };
+  // "" when the request predates the checkbox being carried through approvals.
+  const getRequesterChoice = (row) => {
+    const choice = parseApprovalPayload(row?.new_value).send_whatsapp;
+    if (choice === true) return "1";
+    if (choice === false) return "0";
+    return "";
+  };
   // Approval timestamps are rendered in the reporting time zone so the date and
   // time cells can never disagree across a midnight boundary (mirrors audit logs).
   const APPROVAL_TIME_ZONE =
@@ -165,11 +196,13 @@
               <td class="px-6 py-4 text-right">
                 <% if (row.status === 'PENDING') { %>
                   <% const isNewSku = row.entity_type === 'SKU' && getAction(row) === 'create'; %>
+                  <% const rateNotify = getRateNotify(row); %>
+                  <% const rateAttrs = rateNotify ? ` data-new-sku-approve data-sku-mode="${isNewSku ? 'new' : 'update'}" data-requester-choice="${getRequesterChoice(row)}"` : ''; %>
                   <div class="flex justify-end gap-2">
                     <% if (canApproveRequests) { %>
-                      <form action="<%= basePath %>/<%= row.id %>/approve" method="POST" class="inline"<%= isNewSku ? ' data-new-sku-approve' : '' %>>
+                      <form action="<%= basePath %>/<%= row.id %>/approve" method="POST" class="inline"<%- rateAttrs %>>
                         <input type="hidden" name="_csrf" value="<%= csrfToken %>">
-                        <% if (isNewSku) { %><input type="hidden" name="send_article_rate" value="0"><% } %>
+                        <% if (rateNotify) { %><input type="hidden" name="send_article_rate" value="0"><% } %>
                         <button type="submit" class="rounded-lg bg-emerald-50 px-3 py-1.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 transition">
                           <%= t("approve")  %>
                         </button>
@@ -1388,12 +1421,21 @@
   })();
 </script>
 
-<div class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 p-4" data-new-sku-modal>
+<%# Copy for both shapes lives on the modal so one dialog serves new articles %>
+<%# and rate edits; the JS swaps it from the form's data-sku-mode. %>
+<div class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-900/40 p-4" data-new-sku-modal
+     data-title-new="<%= t('send_new_article_rate_title') %>"
+     data-title-update="<%= t('send_rate_change_title') %>"
+     data-body-new="<%= t('send_new_article_rate_body') %>"
+     data-body-update="<%= t('send_rate_change_body') %>"
+     data-requester-yes="<%= t('requester_asked_to_send') %>"
+     data-requester-no="<%= t('requester_asked_not_to_send') %>">
   <div class="w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-xl">
     <div class="flex items-start justify-between border-b border-slate-200 px-6 py-4">
       <div>
-        <div class="text-sm font-semibold text-slate-700"><%= t("send_new_article_rate_title") %></div>
-        <p class="mt-1 text-xs text-slate-500"><%= t("send_new_article_rate_body") %></p>
+        <div class="text-sm font-semibold text-slate-700" data-new-sku-title><%= t("send_new_article_rate_title") %></div>
+        <p class="mt-1 text-xs text-slate-500" data-new-sku-body><%= t("send_new_article_rate_body") %></p>
+        <p class="mt-2 hidden text-xs font-semibold text-slate-600" data-new-sku-requester></p>
       </div>
       <button type="button" class="text-slate-400 transition hover:text-slate-600" data-new-sku-cancel aria-label="<%= t("cancel") %>">
         <svg class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
@@ -1419,10 +1461,40 @@
     const sendBtn = modal.querySelector("[data-new-sku-send]");
     const approveOnlyBtn = modal.querySelector("[data-new-sku-approve-only]");
     const cancelBtns = modal.querySelectorAll("[data-new-sku-cancel]");
+    const titleEl = modal.querySelector("[data-new-sku-title]");
+    const bodyEl = modal.querySelector("[data-new-sku-body]");
+    const requesterEl = modal.querySelector("[data-new-sku-requester]");
     let pendingForm = null;
 
     const openModal = (form) => {
       pendingForm = form;
+      const isNew = form.dataset.skuMode !== "update";
+      if (titleEl) {
+        titleEl.textContent = isNew
+          ? modal.dataset.titleNew
+          : modal.dataset.titleUpdate;
+      }
+      if (bodyEl) {
+        bodyEl.textContent = isNew
+          ? modal.dataset.bodyNew
+          : modal.dataset.bodyUpdate;
+      }
+      // What the requester ticked, when the request carries it. Shown as a hint
+      // only -- the approver still has to press one of the two buttons, so an
+      // older request with no stored choice simply shows nothing.
+      if (requesterEl) {
+        const choice = form.dataset.requesterChoice;
+        if (choice === "1" || choice === "0") {
+          requesterEl.textContent =
+            choice === "1"
+              ? modal.dataset.requesterYes
+              : modal.dataset.requesterNo;
+          requesterEl.classList.remove("hidden");
+        } else {
+          requesterEl.textContent = "";
+          requesterEl.classList.add("hidden");
+        }
+      }
       modal.classList.remove("hidden");
       modal.classList.add("flex");
     };

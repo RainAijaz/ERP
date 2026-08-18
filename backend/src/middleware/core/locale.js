@@ -4784,6 +4784,30 @@ Object.assign(translations.ur, {
     "خود بخود بند: درخواست دہندہ نے خود اسے مکمل کر دیا۔",
 });
 
+// Approving a SKU rate change messages the sales group. The confirm modal on
+// the approvals screen used to cover new articles only, so edits and bulk rate
+// updates sent silently -- these are the edit-side strings for that same modal,
+// plus the line telling the approver what the requester had ticked. Same
+// trailing-Object.assign rule as the blocks above.
+Object.assign(translations.en, {
+  send_rate_change_title: "Send rate change to WhatsApp?",
+  send_rate_change_body:
+    "Approving updates the rate either way. Choose whether the sales group is also notified.",
+  requester_asked_to_send: "The requester asked for a WhatsApp notification.",
+  requester_asked_not_to_send:
+    "The requester asked NOT to send a WhatsApp notification.",
+});
+
+Object.assign(translations.ur, {
+  send_rate_change_title: "ریٹ کی تبدیلی واٹس ایپ پر بھیجیں؟",
+  send_rate_change_body:
+    "منظوری سے ریٹ ہر صورت اپ ڈیٹ ہو جائے گا۔ منتخب کریں کہ سیلز گروپ کو بھی اطلاع دی جائے یا نہیں۔",
+  requester_asked_to_send:
+    "درخواست دہندہ نے واٹس ایپ اطلاع بھیجنے کا کہا تھا۔",
+  requester_asked_not_to_send:
+    "درخواست دہندہ نے واٹس ایپ اطلاع نہ بھیجنے کا کہا تھا۔",
+});
+
 const formatDateDisplay = (value, fallback = "-") => {
   if (value === null || value === undefined || value === "") return fallback;
   const text = String(value).trim();

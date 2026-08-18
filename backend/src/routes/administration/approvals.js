@@ -2385,9 +2385,16 @@ router.post(
           },
         });
       }
+      // Every rate approval -- new article, single edit, or bulk update --
+      // messages the whole sales group, so none of them may fire without the
+      // approver saying so. The approvals screen intercepts Approve with a
+      // Send / Approve-only modal that sets this field; a request that somehow
+      // arrives without it stays silent, which is the safe direction.
+      const rateNotifyOptIn = req.body?.send_article_rate === "1";
+
       if (requestSnapshot?.entity_type === "SKU_BULK_RATE_UPDATE") {
         const variants = requestSnapshot.new_value?.variants;
-        if (Array.isArray(variants) && variants.length > 0) {
+        if (rateNotifyOptIn && Array.isArray(variants) && variants.length > 0) {
           await sendSkuRateNotification({
             knex,
             chatId: process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID,
@@ -2395,6 +2402,10 @@ router.post(
             user: req.user,
             approved: true,
           });
+        } else if (!rateNotifyOptIn) {
+          console.log(
+            `[WhatsApp] bulk rate notify skipped: approver did not opt in (request ${requestSnapshot.id})`,
+          );
         }
       }
       if (requestSnapshot?.entity_type === "SKU") {
@@ -2407,7 +2418,7 @@ router.post(
           // the variant was actually created (appliedEntityId, not the "NEW"
           // placeholder) with a real rate. SFG variants queue with rate 0, so the
           // > 0 guard excludes them without a separate FG check.
-          const optedIn = req.body?.send_article_rate === "1";
+          const optedIn = rateNotifyOptIn;
           const rate = Number(singleRate);
           if (optedIn && appliedEntityId && rate > 0) {
             await sendSkuRateNotification({
@@ -2424,19 +2435,29 @@ router.post(
             );
           }
         } else if (singleRate !== null && singleRate !== undefined) {
-          await sendSkuRateNotification({
-            knex,
-            chatId: process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID,
-            updates: [
-              {
-                id: Number(requestSnapshot.entity_id),
-                newRate: singleRate,
-                oldRate: requestSnapshot.old_value?.sale_rate ?? null,
-              },
-            ],
-            user: req.user,
-            approved: true,
-          });
+          // A rate EDIT used to send here unconditionally -- no modal on the
+          // approvals screen, and the requester's own checkbox never made it
+          // into the payload, so nobody got a say. Now it needs the same
+          // explicit opt-in the create branch above has always had.
+          if (rateNotifyOptIn) {
+            await sendSkuRateNotification({
+              knex,
+              chatId: process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID,
+              updates: [
+                {
+                  id: Number(requestSnapshot.entity_id),
+                  newRate: singleRate,
+                  oldRate: requestSnapshot.old_value?.sale_rate ?? null,
+                },
+              ],
+              user: req.user,
+              approved: true,
+            });
+          } else {
+            console.log(
+              `[WhatsApp] rate-edit notify skipped: approver did not opt in (request ${requestSnapshot.id})`,
+            );
+          }
         }
       }
 

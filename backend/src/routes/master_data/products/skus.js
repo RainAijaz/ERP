@@ -1027,6 +1027,10 @@ router.post(
                 _action: "bulk_rate_update",
                 item_id: itemInfo?.item_id || null,
                 variants: changedVariants,
+                // See the single-SKU edit below: the requester's checkbox has to
+                // survive the trip through approvals, otherwise an explicit
+                // "don't notify" was silently discarded.
+                send_whatsapp: shouldNotify,
               },
               status: "PENDING",
               requested_by: req.user.id,
@@ -1167,7 +1171,16 @@ router.post(
           entity_id: String(id),
           summary: `${res.locals.t("edit")} ${res.locals.t("skus")}${skuLabel ? " - " + skuLabel : ""}`,
           old_value: { _action: "update", sale_rate: currentRate },
-          new_value: { _action: "update", sale_rate: req.body.sale_rate },
+          // Carry the requester's WhatsApp checkbox into the payload. Approving
+          // a rate change messages the sales group, and without this the choice
+          // made on the form was dropped the moment the edit needed approval.
+          // The approver still confirms on the approvals screen -- this only
+          // tells them what the requester asked for.
+          new_value: {
+            _action: "update",
+            sale_rate: req.body.sale_rate,
+            send_whatsapp: req.body.send_whatsapp === "1",
+          },
           status: "PENDING",
           requested_by: req.user.id,
           requested_at: knex.fn.now(),
@@ -1195,7 +1208,10 @@ router.post(
         entityId: id,
         action: "UPDATE",
       });
-      if (req.body.send_whatsapp !== "0") {
+      // `=== "1"`, matching /bulk-update. An unchecked checkbox posts no field
+      // at all, so the old `!== "0"` read undefined as consent and messaged the
+      // sales group even when the box had been deliberately cleared.
+      if (req.body.send_whatsapp === "1") {
         await sendSkuRateNotification({
           knex,
           chatId: process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID,
