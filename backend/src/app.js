@@ -30,6 +30,7 @@ const {
   initWhatsApp,
   onWhatsAppReady,
   shutdownWhatsApp,
+  getWhatsAppStatus,
 } = require("./utils/whatsapp");
 const {
   startWhatsAppRetryWorker,
@@ -72,39 +73,139 @@ app.get("/whatsapp-qr.png", (req, res) => {
   });
 });
 
-// Auto-refreshing QR scanner page — open this URL in a browser to link WhatsApp
+// Liveness for the QR page below. Deliberately a narrow subset of
+// getWhatsAppStatus(): this route is unauthenticated (same as the QR image it
+// describes), so failure streaks and disconnect reasons stay on the admin screen.
+app.get("/whatsapp-qr-status", (req, res) => {
+  const status = getWhatsAppStatus();
+  res.set("Cache-Control", "no-store");
+  res.json({
+    ready: status.ready,
+    disabled: status.disabled,
+    // Changes on every rotation; the page refetches the image when it moves.
+    lastQrAt: status.lastQrAt ? status.lastQrAt.toISOString() : null,
+  });
+});
+
+// QR scanner page — open this URL in a browser to link WhatsApp.
+//
+// WhatsApp rotates the pairing code roughly every 20s and whatsapp.js rewrites
+// the PNG on each `qr` event. This page used to refetch on a blind 15s timer,
+// which is unsynchronised with that rotation: the fetch landed at an arbitrary
+// point in the code's life and drifted backwards through it every cycle, so the
+// image on screen was routinely seconds from expiry and scans failed at random.
+// Instead, poll lastQrAt and refetch the moment the server actually rotates —
+// the displayed code is then never more than one poll interval old.
 app.get("/whatsapp-qr", (req, res) => {
   res.set("Cache-Control", "no-store");
   res.send(`<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>WhatsApp QR</title>
   <style>
-    body { font-family: sans-serif; text-align: center; padding: 40px; background: #f0f0f0; }
-    img { border: 4px solid #25d366; border-radius: 8px; max-width: 320px; }
-    p { color: #555; margin-top: 12px; }
-    #status { font-weight: bold; color: #25d366; }
+    body { font-family: sans-serif; text-align: center; padding: 40px; background: #f0f0f0; color: #333; }
+    #qr { border: 4px solid #25d366; border-radius: 8px; max-width: 320px; width: 100%; }
+    #qr.stale { opacity: 0.35; }
+    #frame { min-height: 320px; display: flex; align-items: center; justify-content: center; }
+    #status { font-weight: bold; margin-top: 12px; }
+    .ok { color: #25d366; }
+    .warn { color: #b45309; }
+    .err { color: #b91c1c; }
+    .hint { color: #555; font-size: 14px; }
+    #done { display: none; font-size: 18px; font-weight: bold; color: #25d366; }
   </style>
 </head>
 <body>
   <h2>Scan to connect WhatsApp</h2>
-  <img id="qr" src="/whatsapp-qr.png?t=${Date.now()}" alt="QR Code">
-  <p>QR refreshes every 15 seconds. Scan immediately after it updates.</p>
-  <p id="status">Waiting for QR...</p>
+  <div id="frame">
+    <img id="qr" alt="WhatsApp QR code" style="display:none">
+    <div id="done">✓ Connected — WhatsApp is linked.<br><span class="hint">You can close this page.</span></div>
+  </div>
+  <p id="status" class="hint">Checking status...</p>
+  <p class="hint">The code refreshes on its own the moment WhatsApp issues a new one. Just scan whatever is on screen.</p>
   <script>
-    let count = 15;
-    const img = document.getElementById('qr');
-    const status = document.getElementById('status');
-    setInterval(() => {
-      count--;
-      status.textContent = 'Refreshing in ' + count + 's...';
-      if (count <= 0) {
-        count = 15;
-        img.src = '/whatsapp-qr.png?t=' + Date.now();
-        status.textContent = 'QR updated — scan now!';
-      }
-    }, 1000);
+    (function () {
+      var POLL_MS = 2000;
+      var img = document.getElementById('qr');
+      var done = document.getElementById('done');
+      var status = document.getElementById('status');
+      var shownQrAt = null;   // lastQrAt of the code currently displayed
+      var shownAtLocal = 0;   // local clock when we displayed it, for the age readout
+      var timer = null;
+
+      var setStatus = function (text, cls) {
+        status.textContent = text;
+        status.className = cls || 'hint';
+      };
+
+      var show = function (lastQrAt) {
+        shownQrAt = lastQrAt;
+        shownAtLocal = Date.now();
+        img.classList.remove('stale');
+        // Cache-buster: the image path is fixed, only its contents change.
+        img.src = '/whatsapp-qr.png?t=' + encodeURIComponent(lastQrAt);
+        img.style.display = 'block';
+        done.style.display = 'none';
+      };
+
+      var tick = function () {
+        // Age is measured from when this browser displayed the code, so a clock
+        // skew between server and phone cannot make a live code look expired.
+        if (!shownQrAt || img.style.display === 'none') return;
+        var age = Math.round((Date.now() - shownAtLocal) / 1000);
+        if (age <= 20) {
+          // Inside WhatsApp's ~20s rotation window: this code is good.
+          img.classList.remove('stale');
+          setStatus('Code is ' + age + 's old — scan now.', 'ok');
+        } else if (age <= 35) {
+          // Rotation is only roughly 20s, so a few seconds over is normal and must
+          // not read as a fault. The code is probably spent though, so stop urging
+          // a scan and grey it out rather than claiming anything is wrong.
+          img.classList.add('stale');
+          setStatus('Waiting for the next code...', 'hint');
+        } else {
+          // Well past any plausible rotation: the client has stopped emitting,
+          // which is a failed session restore rather than an expired code. That is
+          // fixed by restarting the client, never by scanning harder.
+          img.classList.add('stale');
+          setStatus('No new code for ' + age + 's — the WhatsApp client looks stuck. Restart the server; re-scanning will not help.', 'warn');
+        }
+      };
+
+      var poll = function () {
+        fetch('/whatsapp-qr-status', { cache: 'no-store' })
+          .then(function (r) { return r.json(); })
+          .then(function (s) {
+            if (s.ready) {
+              img.style.display = 'none';
+              done.style.display = 'block';
+              setStatus('Linked successfully.', 'ok');
+              if (timer) { clearInterval(timer); timer = null; }
+              return;
+            }
+            if (s.disabled) {
+              setStatus('WhatsApp client is disabled on this server (WHATSAPP_CLIENT_DISABLED=1).', 'err');
+              return;
+            }
+            if (!s.lastQrAt) {
+              img.style.display = 'none';
+              setStatus('Waiting for WhatsApp to issue a code — this takes a few seconds after startup.', 'hint');
+              return;
+            }
+            if (s.lastQrAt !== shownQrAt) show(s.lastQrAt);
+            tick();
+          })
+          .catch(function () {
+            setStatus('Cannot reach the server — retrying...', 'err');
+          });
+      };
+
+      poll();
+      timer = setInterval(poll, POLL_MS);
+      setInterval(tick, 1000);
+    })();
   </script>
 </body>
 </html>`);

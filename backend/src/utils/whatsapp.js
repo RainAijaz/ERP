@@ -1,6 +1,7 @@
 const { Client, LocalAuth } = require("whatsapp-web.js");
 const qrcode = require("qrcode-terminal");
 const qrcodeImage = require("qrcode");
+const fs = require("fs");
 const path = require("path");
 
 let client = null;
@@ -137,6 +138,21 @@ const writeQrSnapshot = async (qr) => {
   }
 };
 
+// The snapshot is a checked-in file that nothing used to clean up, so /whatsapp-qr
+// served the last run's code — often weeks old — until the first live `qr` event
+// replaced it. Every such scan fails. Clear it whenever a code cannot be current:
+// on init (none emitted yet) and on ready (linked, so the pairing code is spent).
+// The page keys off lastQrAt, so an absent file reads as "waiting", never as stale.
+const clearQrSnapshot = () => {
+  try {
+    fs.unlinkSync(QR_OUTPUT_FILE);
+  } catch (err) {
+    if (err.code !== "ENOENT") {
+      console.error("[WhatsApp] Failed to clear QR snapshot:", err.message);
+    }
+  }
+};
+
 const flushPendingQueue = async () => {
   if (!clientReady || !client || !pendingQueue.length) return;
   console.log(`[WhatsApp] Flushing ${pendingQueue.length} queued message(s)...`);
@@ -216,6 +232,9 @@ const initWhatsApp = () => {
     return;
   }
 
+  lastQrAt = null;
+  clearQrSnapshot();
+
   client = new Client({
     authStrategy: new LocalAuth({ dataPath: SESSION_PATH }),
     puppeteer: {
@@ -242,6 +261,8 @@ const initWhatsApp = () => {
     lastReadyAt = new Date();
     lastDisconnectReason = null;
     reconnectAttempts = 0;
+    lastQrAt = null;
+    clearQrSnapshot();
     if (reconnectTimer) {
       clearTimeout(reconnectTimer);
       reconnectTimer = null;
