@@ -244,6 +244,8 @@
 
 		const skuMap = new Map(skuList.map((entry) => [Number(entry.id), entry]));
 		const rmMap = new Map(rmItems.map((entry) => [Number(entry.id), entry]));
+		const colorNameById = new Map((Array.isArray(options.colors) ? options.colors : []).map((entry) => [Number(entry.id), String(entry.name || "")]));
+		const sizeNameById = new Map((Array.isArray(options.sizes) ? options.sizes : []).map((entry) => [Number(entry.id), String(entry.name || "")]));
 
 		const rmColorPolicy = options.rawMaterialColorPolicyByItem || {};
 		const rmSizePolicy = options.rawMaterialSizePolicyByItem || {};
@@ -252,6 +254,7 @@
 		const quantityLabel = <%- JSON.stringify(toFriendlyLabel("quantity", "Quantity")) %>;
 		const amountLabel = <%- JSON.stringify(toFriendlyLabel("amount", "Amount")) %>;
 		const unitsLabel = <%- JSON.stringify(toFriendlyLabel("units", "Units")) %>;
+		const changeArticleLabel = <%- JSON.stringify(toFriendlyLabel("change_article", "Change Article")) %>;
 
 		const currentStockType = () => normalizeStockType(stockTypeSelect?.value);
 
@@ -272,6 +275,9 @@
 			qty: 0,
 			rate: 0,
 			amount: 0,
+			// Rows without an article show the (catalog-sized) picker; rows that
+			// already have one show static text until the user asks to change it.
+			_editSku: false,
 		});
 
 		const normalizeIncomingLine = (line, stockType) => ({
@@ -284,6 +290,15 @@
 			qty: qty3(line?.qty),
 			rate: rate4(line?.rate),
 			amount: amount2(line?.amount),
+			_editSku: false,
+			// Saved lines can point at an article that has since been deactivated and
+			// so is missing from the pickers; keep the name the server sent as a
+			// fallback label for the static cell.
+			_savedLabel: String(
+				stockType === "RM"
+					? line?.item_name || line?.item_code || ""
+					: line?.sku_item_name || line?.sku_code || "",
+			).trim(),
 		});
 
 		let rowsState = [];
@@ -547,6 +562,13 @@
 
 		const rmSizeOptions = (itemId) => getRmSizeState(itemId);
 
+		const rmDimensionLabel = (entries, nameById, id) => {
+			const normalizedId = toInt(id);
+			if (!normalizedId) return "";
+			const matched = (entries || []).find((entry) => Number(entry.id) === normalizedId);
+			return String(matched?.name || nameById.get(normalizedId) || normalizedId);
+		};
+
 		const renderFooter = (stockType) => {
 			if (!linesFooter) return;
 			const descriptorColspan = stockType === "RM" ? 4 : 2;
@@ -583,6 +605,65 @@
 			totalAmountInput = linesFooter.querySelector("[data-total-amount]");
 			totalQtyByUnitWrap = linesFooter.querySelector("[data-total-qty-by-unit]");
 			totalQtyByUnitRow = linesFooter.querySelector("[data-total-qty-by-unit-row]");
+		};
+
+		// Article cells are rendered as plain text once a row names an article.
+		// Rendering a full catalogue <select> in every row costs rows x articles
+		// <option> nodes (plus one searchable-select init each), which is what made
+		// large vouchers take tens of seconds to become usable. The pencil button
+		// swaps a single row back to the real picker on demand.
+		const staticCellHtml = (value, extraHtml = "") => `
+			<td class="border-t border-slate-200 px-2 py-1">
+				<div class="flex items-center gap-1">
+					<input type="text" readonly class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-xs text-slate-700 cursor-default" value="${escapeHtml(value)}" title="${escapeHtml(value)}">
+					${extraHtml}
+				</div>
+			</td>
+		`;
+
+		const staticArticleCells = (index, articleLabel, extraLabels = []) => {
+			const editButton = canSave
+				? `<button type="button" class="inline-flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-slate-300 bg-white text-slate-500 hover:border-slate-400 hover:text-slate-700" data-edit-sku="${index}" title="${escapeHtml(changeArticleLabel)}" aria-label="${escapeHtml(changeArticleLabel)}"><svg class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20h4L18.5 9.5a2.121 2.121 0 0 0-3-3L5 17v3z" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg></button>`
+				: "";
+			return [
+				staticCellHtml(articleLabel, editButton),
+				...extraLabels.map((label) => staticCellHtml(label)),
+			].join("");
+		};
+
+		// renderRows() rebuilds the whole grid, so remember which cell the user was
+		// in and put the caret back afterwards.
+		const captureActiveRowField = () => {
+			const active = document.activeElement;
+			if (!(active instanceof HTMLElement)) return null;
+			const direct = active.matches("[data-line-index][data-row-field]")
+				? active
+				: active.closest("[data-line-index][data-row-field]");
+			const field = direct instanceof HTMLElement
+				? direct
+				: active.closest("[data-searchable-wrapper]")?.querySelector("select[data-line-index][data-row-field]") || null;
+			if (!(field instanceof HTMLElement)) return null;
+			return {
+				lineIndex: String(field.getAttribute("data-line-index") || ""),
+				fieldKey: String(field.getAttribute("data-row-field") || ""),
+			};
+		};
+
+		const restoreActiveRowField = (state, attemptsLeft = 20) => {
+			if (!state || !state.lineIndex || !state.fieldKey) return;
+			const selector = `[data-line-index="${state.lineIndex}"][data-row-field="${state.fieldKey}"]`;
+			const field = linesBody.querySelector(selector);
+			if (!(field instanceof HTMLElement)) {
+				// Rows past the first chunk are inserted over later frames; wait for it.
+				if (attemptsLeft > 0) requestAnimationFrame(() => restoreActiveRowField(state, attemptsLeft - 1));
+				return;
+			}
+			if (window.VoucherRowEnterNavigation?.focusFieldElement) {
+				window.VoucherRowEnterNavigation.focusFieldElement(field, { openSearchable: false });
+				return;
+			}
+			field.focus();
+			if (field instanceof HTMLInputElement && typeof field.select === "function") field.select();
 		};
 
 		const renderRows = () => {
@@ -623,17 +704,32 @@
 				`;
 
 				if (stockType === "RM") {
-					const colorState = rmColorOptions(normalized.item_id);
-					const sizeState = rmSizeOptions(normalized.item_id);
-					// Color/size/uom options are per-row (depend on selected item)
-					const colorOptionsHtml = optionMarkup(colorState.entries, null, colorState.allowNone ? <%- JSON.stringify(toFriendlyLabel("none", "None")) %> : "");
-					const sizeOptionsHtml  = optionMarkup(sizeState.entries,  null, sizeState.allowNone  ? <%- JSON.stringify(toFriendlyLabel("none", "None")) %> : "");
-					const uomOptionsHtml   = optionMarkup(getUomOptions(normalized, stockType), null, <%- JSON.stringify(toFriendlyLabel("select_unit", "Select Unit")) %>);
-					return `
-						<tr data-line-index="${index}" data-row-index="${index}">
+					const uomOptionsHtml = optionMarkup(getUomOptions(normalized, stockType), null, <%- JSON.stringify(toFriendlyLabel("select_unit", "Select Unit")) %>);
+					// A row that already names a raw material shows it as text; only rows
+					// still being picked pay for the full item/colour/size dropdowns.
+					const rmItemCells = (toInt(normalized.item_id) && !normalized._editSku)
+						? staticArticleCells(
+							index,
+							rmMap.get(Number(normalized.item_id))?.name || normalized._savedLabel || `#${normalized.item_id}`,
+							[
+								rmDimensionLabel(rmColorOptions(normalized.item_id).entries, colorNameById, normalized.color_id),
+								rmDimensionLabel(rmSizeOptions(normalized.item_id).entries, sizeNameById, normalized.size_id),
+							],
+						)
+						: (() => {
+							const colorState = rmColorOptions(normalized.item_id);
+							const sizeState = rmSizeOptions(normalized.item_id);
+							// Color/size options are per-row (they depend on the selected item)
+							const colorOptionsHtml = optionMarkup(colorState.entries, null, colorState.allowNone ? <%- JSON.stringify(toFriendlyLabel("none", "None")) %> : "");
+							const sizeOptionsHtml  = optionMarkup(sizeState.entries,  null, sizeState.allowNone  ? <%- JSON.stringify(toFriendlyLabel("none", "None")) %> : "");
+							return `
 							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="item_id"  data-line-index="${index}" data-row-field="item_id"  data-searchable-select="true" data-searchable-variant="unified" data-select-val="${normalized.item_id  || ""}" ${canSave ? "" : "disabled"}>${sharedRmItemOptionsHtml}</select></td>
 							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="color_id" data-line-index="${index}" data-row-field="color_id" data-searchable-select="true" data-searchable-variant="unified" data-select-val="${normalized.color_id || ""}" ${(canSave && !colorState.disabled) ? "" : "disabled"}>${colorOptionsHtml}</select></td>
-							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="size_id"  data-line-index="${index}" data-row-field="size_id"  data-searchable-select="true" data-searchable-variant="unified" data-select-val="${normalized.size_id  || ""}" ${(canSave && !sizeState.disabled)  ? "" : "disabled"}>${sizeOptionsHtml}</select></td>
+							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="size_id"  data-line-index="${index}" data-row-field="size_id"  data-searchable-select="true" data-searchable-variant="unified" data-select-val="${normalized.size_id  || ""}" ${(canSave && !sizeState.disabled)  ? "" : "disabled"}>${sizeOptionsHtml}</select></td>`;
+						})();
+					return `
+						<tr data-line-index="${index}" data-row-index="${index}">
+							${rmItemCells}
 							<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="uom_id"  data-line-index="${index}" data-row-field="uom_id"  data-searchable-select="true" data-searchable-variant="unified" data-select-val="${normalized.uom_id  || ""}" ${canSave ? "" : "disabled"}>${uomOptionsHtml}</select></td>
 							<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001"  class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right"                  data-field="qty"  data-row-field="qty"  data-line-index="${index}" value="${normalized.qty}"              ${canSave ? "" : "readonly"}></td>
 							<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.0001" class="w-full rounded-lg border border-slate-300 bg-slate-50 px-2 text-right"                 data-field="rate" data-row-field="rate" data-line-index="${index}" value="${normalized.rate}"             readonly></td>
@@ -645,9 +741,12 @@
 
 				// FG / SFG
 				const uomOptionsHtml = optionMarkup(getUomOptions(normalized, stockType), null, <%- JSON.stringify(toFriendlyLabel("select_unit", "Select Unit")) %>);
+				const skuCell = (toInt(normalized.sku_id) && !normalized._editSku)
+					? staticArticleCells(index, skuMap.get(Number(normalized.sku_id))?.sku_name || normalized._savedLabel || `#${normalized.sku_id}`)
+					: `<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="sku_id" data-line-index="${index}" data-row-field="sku_id" data-searchable-select="true" data-searchable-variant="unified" data-select-val="${normalized.sku_id || ""}" ${canSave ? "" : "disabled"}>${sharedSkuOptionsHtml}</select></td>`;
 				return `
 					<tr data-line-index="${index}" data-row-index="${index}">
-						<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="sku_id" data-line-index="${index}" data-row-field="sku_id" data-searchable-select="true" data-searchable-variant="unified" data-select-val="${normalized.sku_id || ""}" ${canSave ? "" : "disabled"}>${sharedSkuOptionsHtml}</select></td>
+						${skuCell}
 						<td class="border-t border-slate-200 px-2 py-1"><select class="w-full rounded-lg border border-slate-300 bg-white px-2 text-xs" data-field="uom_id" data-line-index="${index}" data-row-field="uom_id" data-searchable-select="true" data-searchable-variant="unified" data-select-val="${normalized.uom_id || ""}" ${canSave ? "" : "disabled"}>${uomOptionsHtml}</select></td>
 						<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.001"  class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="qty"  data-row-field="qty"  data-line-index="${index}" value="${normalized.qty}"              ${canSave ? "" : "readonly"}></td>
 						${stockType !== "SFG" ? `<td class="border-t border-slate-200 px-2 py-1"><input type="number" min="0" step="0.0001" class="w-full rounded-lg border border-slate-300 bg-white px-2 text-right" data-field="rate" data-row-field="rate" data-line-index="${index}" value="${normalized.rate}" ${canSave ? "" : "readonly"}></td>` : ""}
@@ -692,7 +791,10 @@
 			syncTotals();
 
 			const total = rowsState.length;
-			const CHUNK = 5;
+			// Rows carry only their own unit list now that the article cell is static,
+			// so a frame can absorb far more of them than when each row rebuilt the
+			// whole catalogue.
+			const CHUNK = 40;
 			const firstEnd = Math.min(CHUNK, total);
 
 			// Sync: first chunk (visible immediately on load / small vouchers)
@@ -825,6 +927,7 @@
 			const row = rowsState[index];
 			if (!row) return;
 			const stockType = currentStockType();
+			const focusState = captureActiveRowField();
 
 			if (["sku_id", "item_id", "uom_id", "color_id", "size_id"].includes(field)) {
 				row[field] = toInt(value);
@@ -836,15 +939,18 @@
 				row.rate = rate4(value);
 			}
 
+			const articleJustPicked = (field === "sku_id" || field === "item_id") && Boolean(toInt(value));
 			if (field === "sku_id") {
 				row.uom_id = null;
 				row.rate = 0;
+				row._editSku = false;
 			}
 			if (field === "item_id") {
 				row.uom_id = null;
 				row.color_id = null;
 				row.size_id = null;
 				row.rate = 0;
+				row._editSku = false;
 			}
 			if (stockType === "RM" && (field === "color_id" || field === "size_id")) {
 				row.rate = 0;
@@ -860,6 +966,9 @@
 			}
 
 			renderRows();
+			// Picking an article collapses its cell to text, so send the caret on to
+			// the unit; otherwise stay where the user was.
+			restoreActiveRowField(articleJustPicked ? { lineIndex: String(index), fieldKey: "uom_id" } : focusState);
 		};
 
 		const collectPayloadLines = () => {
@@ -922,16 +1031,29 @@
 		});
 
 		linesBody.addEventListener("click", (event) => {
-			const button = event.target.closest("[data-remove-row]");
-			if (!button) return;
 			if (!canSave) return;
 
-			const index = Number(button.getAttribute("data-remove-row") || -1);
-			if (!Number.isInteger(index) || index < 0) return;
+			const removeButton = event.target.closest("[data-remove-row]");
+			if (removeButton) {
+				const index = Number(removeButton.getAttribute("data-remove-row") || -1);
+				if (!Number.isInteger(index) || index < 0) return;
 
-			rowsState.splice(index, 1);
-			if (!rowsState.length) rowsState = [defaultRow(currentStockType())];
-			renderRows();
+				rowsState.splice(index, 1);
+				if (!rowsState.length) rowsState = [defaultRow(currentStockType())];
+				renderRows();
+				return;
+			}
+
+			const editButton = event.target.closest("[data-edit-sku]");
+			if (editButton) {
+				const index = Number(editButton.getAttribute("data-edit-sku") || -1);
+				if (!Number.isInteger(index) || index < 0 || !rowsState[index]) return;
+
+				rowsState[index]._editSku = true;
+				renderRows();
+				const fieldKey = currentStockType() === "RM" ? "item_id" : "sku_id";
+				restoreActiveRowField({ lineIndex: String(index), fieldKey });
+			}
 		});
 
 		form.addEventListener("click", (event) => {

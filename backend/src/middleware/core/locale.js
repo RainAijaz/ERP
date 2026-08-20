@@ -4784,6 +4784,20 @@ Object.assign(translations.ur, {
     "خود بخود بند: درخواست دہندہ نے خود اسے مکمل کر دیا۔",
 });
 
+// Voucher line grids show a chosen article as plain text with a small pencil
+// button that swaps that one row back to the picker (see the opening stock and
+// stock count voucher views). Same trailing-Object.assign rule as the blocks
+// above -- translations.ur is reassigned wholesale further up the file.
+Object.assign(translations.en, {
+  change_article: "Change Article",
+  error_lines_required: "At least one valid line is required.",
+});
+
+Object.assign(translations.ur, {
+  change_article: "مضمون تبدیل کریں",
+  error_lines_required: "کم از کم ایک درست سطر درکار ہے۔",
+});
+
 // Approving a SKU rate change messages the sales group. The confirm modal on
 // the approvals screen used to cover new articles only, so edits and bulk rate
 // updates sent silently -- these are the edit-side strings for that same modal,

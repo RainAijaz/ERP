@@ -67,6 +67,13 @@ router.get(
       const requestedVoucherNo = parseVoucherNo(req.query.voucher_no);
       const canListHistory = canVoucherAction(res, "navigate");
 
+      // Redirect before loading anything: the bare URL is the menu link, so
+      // building the whole page here would throw away a full catalogue load on
+      // every visit and make the screen take twice as long to appear.
+      if ((!forceNew && !forceView) || (!canListHistory && !forceNew)) {
+        return res.redirect(`${req.baseUrl}?new=1`);
+      }
+
       const [options, rows, stats] = await Promise.all([
         loadOpeningStockVoucherOptions(req),
         canListHistory
@@ -74,14 +81,6 @@ router.get(
           : Promise.resolve([]),
         getOpeningStockVoucherSeriesStats({ req, voucherTypeCode }),
       ]);
-
-      if (!forceNew && !forceView) {
-        return res.redirect(`${req.baseUrl}?new=1`);
-      }
-
-      if (!canListHistory && !forceNew) {
-        return res.redirect(`${req.baseUrl}?new=1`);
-      }
 
       const latestVoucherNo = Number(stats.latestVoucherNo || 0);
       const latestActiveVoucherNo = Number(stats.latestActiveVoucherNo || 0);
