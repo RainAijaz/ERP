@@ -34,7 +34,7 @@ exports.up = async function up(knex) {
 
   await knex.raw(`
     INSERT INTO erp.permission_scope_registry (scope_type, scope_key, description, module_group)
-    VALUES ('SCREEN', 'administration.whatsapp_notifications', 'WhatsApp Notification Failures', 'Administration')
+    VALUES ('SCREEN', 'administration.whatsapp_notifications', 'WhatsApp Notification', 'Administration')
     ON CONFLICT (scope_type, scope_key) DO NOTHING
   `);
 };
