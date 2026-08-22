@@ -69,6 +69,17 @@ const toDateOnly = toLocalDateOnly;
 const roundQty3 = (value) => Number(Number(value || 0).toFixed(3));
 const roundCost2 = (value) => Number(Number(value || 0).toFixed(2));
 const roundUnitCost6 = (value) => Number(Number(value || 0).toFixed(6));
+
+// erp.stock_ledger.value is documented in the DDL as a SIGNED amount
+// (direction * qty * unit_cost): outward rows must be negative so that
+// SUM(value) over a slice of the ledger is a stock balance. Callers here pass a
+// gross positive amount, so derive the sign from `direction` in one place rather
+// than trusting each call site. Every reader (stock valuation, the P&L's
+// inventory figures, WAC recomputation) sums this column raw.
+const signedLedgerValue = (direction, value) => {
+  const magnitude = Math.abs(Number(value || 0));
+  return roundCost2(Number(direction) < 0 ? -magnitude : magnitude);
+};
 const computeNonNegativeWac = (qty, value) => {
   const numericQty = Number(qty || 0);
   const numericValue = Number(value || 0);
@@ -642,7 +653,7 @@ const insertRmStockLedgerTx = async ({
     qty: roundQty3(qty),
     qty_pairs: 0,
     unit_cost: roundUnitCost6(unitCost),
-    value: roundCost2(value),
+    value: signedLedgerValue(direction, value),
   };
   if (await hasStockLedgerVariantDimensionsTx(trx)) {
     payload.color_id = normalizeRmDimensionId(colorId);
@@ -683,7 +694,7 @@ const insertSkuStockLedgerTx = async ({
     qty: 0,
     qty_pairs: Number(qtyPairs || 0),
     unit_cost: roundUnitCost6(unitCost),
-    value: roundCost2(value),
+    value: signedLedgerValue(direction, value),
     is_packed: isPacked === null || isPacked === undefined ? null : Boolean(isPacked),
   });
 };

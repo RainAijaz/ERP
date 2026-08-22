@@ -592,14 +592,10 @@ const navConfig = [
             moduleGroup: "Financial",
             route: "/reports/financial/expense_trends",
           },
-          {
-            key: "profitability_analysis",
-            labelKey: "profitability_analysis",
-            scopeType: "REPORT",
-            scopeKey: "profitability_analysis",
-            moduleGroup: "Financial",
-            route: "/reports/financial/profitability_analysis",
-          },
+          // Profitability Analysis rendered exactly the same statement as
+          // Profit and Loss, so it is no longer a separate menu entry. Its route
+          // still resolves (it redirects) and its permission scope still grants
+          // access, so existing role grants and bookmarks keep working.
           {
             key: "profit_and_loss",
             labelKey: "profit_and_loss",

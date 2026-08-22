@@ -42,6 +42,11 @@ const LEGACY_EXPENSE_REPORT_TYPES = new Set([
   "non_production_expense",
   "accrued_expenses",
 ]);
+// "Profitability Analysis" and "Profit and Loss" were two menu entries, two
+// permission scopes and two tooltips rendering byte-identical output from the
+// same getProfitAndLoss() call. Serve one statement. The old URL and its
+// permission scope stay alive because roles are granted against them.
+const MERGED_INTO_PROFIT_AND_LOSS = new Set(["profitability_analysis"]);
 const ACCOUNT_ACCESS_REPORT_KEYS = new Set([
   "account_activity_ledger",
   "cash_book",
@@ -251,10 +256,18 @@ const renderFinancialReportPage = async (req, res, next, options = {}) => {
   const { inputSource = req.query, allowLegacyRedirects = true } = options;
 
   try {
-    const resolvedKey = resolveReportKey(
+    const requestedKey = resolveReportKey(
       req.params.reportKey,
       "profit_and_loss",
     );
+    if (allowLegacyRedirects && MERGED_INTO_PROFIT_AND_LOSS.has(requestedKey)) {
+      return res.redirect(`${req.baseUrl}/profit_and_loss`);
+    }
+    // A POST cannot be redirected without losing the filter body, so remap the
+    // key instead and render the canonical report in place.
+    const resolvedKey = MERGED_INTO_PROFIT_AND_LOSS.has(requestedKey)
+      ? "profit_and_loss"
+      : requestedKey;
     const normalizedInput = normalizeFilterInput(inputSource);
     req.reportFilterInput = normalizedInput;
 
@@ -273,6 +286,14 @@ const renderFinancialReportPage = async (req, res, next, options = {}) => {
         return (
           res.locals.can("REPORT", "expense_analysis", "load") ||
           res.locals.can("REPORT", selectedType, "load")
+        );
+      }
+      if (resolvedKey === "profit_and_loss") {
+        // Either scope opens the merged statement, so roles granted only the
+        // retired Profitability Analysis scope keep their access.
+        return (
+          res.locals.can("REPORT", "profit_and_loss", "load") ||
+          res.locals.can("REPORT", "profitability_analysis", "load")
         );
       }
       if (resolvedKey !== "voucher_register")
@@ -382,6 +403,9 @@ const renderFinancialReportPage = async (req, res, next, options = {}) => {
       reportMeta: report.meta || null,
       expenseFilterOptions,
       reportPath: `${req.baseUrl}/${resolvedKey}`,
+      canFilterAllBranches:
+        req.user?.isAdmin === true ||
+        res.locals.can("REPORT", resolvedKey, "filter_all_branches"),
     });
   } catch (err) {
     console.error("Error in FinancialReportsService:", err);

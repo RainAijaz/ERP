@@ -17,20 +17,34 @@
     String(reportKey || "") === "profit_and_loss" ||
     String(reportKey || "") === "profitability_analysis";
   const profitLossMeta = isProfitAndLoss ? (reportMeta?.profitAndLoss || null) : null;
+  // Keyed on the data itself rather than on reportDataLoaded: getFinancialReport
+  // already returns meta:null for every report until load_report is submitted,
+  // so the flag was a second, redundant gate that could only ever disagree.
   const hasProfitDerivation = Boolean(
     isProfitAndLoss &&
-    reportDataLoaded &&
     profitLossMeta &&
     typeof profitLossMeta === "object"
   );
   const plDrilldownMap = (() => {
-    if (!isProfitAndLoss || !reportDataLoaded) return {};
+    if (!isProfitAndLoss) return {};
     const from = String(filters?.from || '').trim();
     const to = String(filters?.to || '').trim();
     if (!from || !to) return {};
     const branchId = Number(filters?.branchId || 0) || null;
+    // Each target report parses a DIFFERENT branch parameter, and an
+    // unrecognised one silently means "all branches" for an admin -- which is
+    // how a branch-scoped P&L line used to drill into an all-branch total.
+    //   financial reports  -> filter_branch_id
+    //   sales reports      -> branch_id (filter_branch_id also accepted)
+    //   inventory/purchase -> branch_ids only
+    const branchIdList = (Array.isArray(filters?.branchIds) && filters.branchIds.length
+      ? filters.branchIds
+      : (branchId ? [branchId] : []))
+      .map((id) => Number(id))
+      .filter((id) => Number.isInteger(id) && id > 0);
     const bFin = branchId ? `&filter_branch_id=${branchId}` : '';
-    const bOther = branchId ? `&branch_id=${branchId}` : '';
+    const bSales = branchId ? `&branch_id=${branchId}` : '';
+    const bList = branchIdList.length ? `&branch_ids=${branchIdList.join(',')}` : '';
     const prevDay = (() => {
       const m = from.match(/^(\d{4})-(\d{2})-(\d{2})$/);
       if (!m) return from;
@@ -39,14 +53,14 @@
     })();
     const qFin = `from_date=${from}&to_date=${to}&load_report=1${bFin}`;
     return {
-      pl_gross_sales:        `/reports/sales/sales-report?from_date=${from}&to_date=${to}${bOther}`,
-      pl_sales_returns:      `/reports/sales/sale-return-report?from_date=${from}&to_date=${to}${bOther}`,
-      pl_discounts:          `/reports/sales/sales-discount-report?from_date=${from}&to_date=${to}${bOther}`,
-      pl_net_sales:          `/reports/sales/sales-report?from_date=${from}&to_date=${to}${bOther}`,
-      pl_opening_inventory:  `/reports/inventory/stock-amount?as_of_date=${prevDay}&load_report=1${bOther}`,
-      pl_purchases:          `/reports/purchases?from_date=${from}&to_date=${to}&load_report=1${bOther}`,
-      pl_direct_costs:       `/reports/financial/expense_analysis?${qFin}`,
-      pl_closing_inventory:  `/reports/inventory/stock-amount?as_of_date=${to}&load_report=1${bOther}`,
+      pl_gross_sales:        `/reports/sales/sales-report?from_date=${from}&to_date=${to}${bSales}`,
+      pl_sales_returns:      `/reports/sales/sale-return-report?from_date=${from}&to_date=${to}${bSales}`,
+      pl_discounts:          `/reports/sales/sales-discount-report?from_date=${from}&to_date=${to}${bSales}`,
+      pl_net_sales:          `/reports/sales/sales-report?from_date=${from}&to_date=${to}${bSales}`,
+      pl_cogs:               `/reports/sales/sales-report?from_date=${from}&to_date=${to}${bSales}`,
+      pl_opening_inventory:  `/reports/inventory/stock-amount?as_of_date=${prevDay}&load_report=1${bList}`,
+      pl_purchases:          `/reports/purchases?from_date=${from}&to_date=${to}&load_report=1${bList}`,
+      pl_closing_inventory:  `/reports/inventory/stock-amount?as_of_date=${to}&load_report=1${bList}`,
       pl_operating_expenses: `/reports/financial/expense_analysis?${qFin}`,
       pl_other_income:       `/reports/financial/account_activity_ledger?${qFin}`,
       pl_other_expenses:     `/reports/financial/expense_analysis?${qFin}`,
@@ -63,6 +77,11 @@
   const selectedDepartmentIds = Array.isArray(filters?.departmentIds)
     ? filters.departmentIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
     : [];
+  // Admins always qualify; a non-admin qualifies through this report's own
+  // `filter_all_branches` permission, which the service now honours too.
+  const canChooseBranch = typeof canFilterAllBranches !== "undefined"
+    ? Boolean(canFilterAllBranches)
+    : Boolean(user?.isAdmin);
   const breakdownStartFilter = String(filters?.breakdownStart || "department").trim().toLowerCase();
   const selectedCashierAccountId = Number(filters?.cashierAccountId || 0) || null;
   const selectedTrendAccountGroupId = Number(filters?.trendAccountGroupId || 0) || null;
@@ -196,6 +215,13 @@
     const num = Number(value);
     if (!Number.isFinite(num)) return String(value);
     return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  };
+  // A term that is SUBTRACTED in a derivation but is itself negative would read
+  // as "- -554,763.51". Flip it to "+ 554,763.51" so a stock-count gain reads as
+  // the gain it is.
+  const plSubtractedTerm = (value) => {
+    const num = Number(value || 0);
+    return num < 0 ? `+ ${formatAmount(Math.abs(num))}` : `- ${formatAmount(num)}`;
   };
   const isNumericCol = (col) => {
     const key = String(col || "").toLowerCase();
@@ -396,7 +422,7 @@
       <% if (isDepartmentBreakdown) { %>
         <label class="text-sm">
           <span class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= t('branches') %></span>
-          <% if (user?.isAdmin) { %>
+          <% if (canChooseBranch) { %>
             <div class="relative" data-multi-select data-name="branch_ids" data-placeholder="<%= t('all_branches') %>">
               <button type="button" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 pr-10 text-left text-sm text-slate-700" data-multi-trigger></button>
               <span class="pointer-events-none absolute inset-y-0 right-3 inline-flex items-center text-slate-500">
@@ -424,13 +450,13 @@
       <% } else { %>
         <label class="text-sm">
           <span class="mb-1 block text-xs font-semibold uppercase tracking-[0.08em] text-slate-700"><%= isExpenseTrends ? t('branches') : t('branch') %></span>
-          <select name="filter_branch_id" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" <%= user?.isAdmin ? '' : 'disabled' %>>
+          <select name="filter_branch_id" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" <%= canChooseBranch ? '' : 'disabled' %>>
             <option value=""><%= t('all_branches') %></option>
             <% (branches || []).forEach((b) => { %>
               <option value="<%= b.id %>" <%= Number(filters.branchId || 0) === Number(b.id) ? 'selected' : '' %>><%= b.name %></option>
             <% }) %>
           </select>
-          <% if (!user?.isAdmin) { %>
+          <% if (!canChooseBranch) { %>
             <input type="hidden" name="filter_branch_id" value="<%= filters.branchId || '' %>">
           <% } %>
         </label>
@@ -553,15 +579,15 @@
               <tr class="odd:bg-slate-50/30">
                 <td class="px-3 py-2 font-semibold text-slate-800"><%= t('pl_cogs') %></td>
                 <td class="px-3 py-2">
-                  <div class="text-xs font-semibold text-slate-600"><%= `${t('pl_cogs')} = ${t('pl_opening_inventory')} + ${t('pl_purchases')} + ${t('pl_direct_costs')} - ${t('pl_closing_inventory')}` %></div>
-                  <div class="mt-1 text-xs text-slate-500"><%= `${formatAmount(profitLossMeta.openingInventory)} + ${formatAmount(profitLossMeta.purchases)} + ${formatAmount(profitLossMeta.directCosts)} - ${formatAmount(profitLossMeta.closingInventory)}` %></div>
+                  <div class="text-xs font-semibold text-slate-600"><%= t('pl_cogs_basis') %></div>
+                  <div class="mt-1 text-xs text-slate-500"><%= `${t('pl_opening_inventory')} ${formatAmount(profitLossMeta.openingInventory)} · ${t('pl_purchases')} ${formatAmount(profitLossMeta.purchases)} · ${t('pl_closing_inventory')} ${formatAmount(profitLossMeta.closingInventory)}` %></div>
                 </td>
                 <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatAmount(profitLossMeta.cogs) %></td>
                 <td class="px-3 py-2 align-top">
                   <div class="flex flex-wrap gap-1">
                     <% if (plDrilldownMap.pl_opening_inventory) { %><a href="<%= plDrilldownMap.pl_opening_inventory %>" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:border-accent hover:text-accent whitespace-nowrap" title="Stock value as of day before period start">Opening Inv ↗</a><% } %>
                     <% if (plDrilldownMap.pl_purchases) { %><a href="<%= plDrilldownMap.pl_purchases %>" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:border-accent hover:text-accent whitespace-nowrap" title="Open Purchases Report">Purchases ↗</a><% } %>
-                    <% if (plDrilldownMap.pl_direct_costs) { %><a href="<%= plDrilldownMap.pl_direct_costs %>" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:border-accent hover:text-accent whitespace-nowrap" title="Expense Analysis (production vouchers contribute to Direct Costs in P&amp;L)">Direct Costs ↗</a><% } %>
+                    <% if (plDrilldownMap.pl_cogs) { %><a href="<%= plDrilldownMap.pl_cogs %>" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:border-accent hover:text-accent whitespace-nowrap" title="Sales Report (COGS is the stock issued against these sales)">Sales Cost ↗</a><% } %>
                     <% if (plDrilldownMap.pl_closing_inventory) { %><a href="<%= plDrilldownMap.pl_closing_inventory %>" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-0.5 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 hover:border-accent hover:text-accent whitespace-nowrap" title="Stock value as of period end date">Closing Inv ↗</a><% } %>
                   </div>
                 </td>
@@ -589,8 +615,8 @@
               <tr class="odd:bg-slate-50/30">
                 <td class="px-3 py-2 font-semibold text-slate-800"><%= t('pl_net_profit_before_tax') %></td>
                 <td class="px-3 py-2">
-                  <div class="text-xs font-semibold text-slate-600"><%= `${t('pl_net_profit_before_tax')} = ${t('pl_operating_profit_ebit')} + ${t('pl_other_income')} - ${t('pl_other_expenses')} - ${t('pl_finance_cost')}` %></div>
-                  <div class="mt-1 text-xs text-slate-500"><%= `${formatAmount(profitLossMeta.operatingProfit)} + ${formatAmount(profitLossMeta.otherIncome)} - ${formatAmount(profitLossMeta.otherExpenses)} - ${formatAmount(profitLossMeta.financeCost)}` %></div>
+                  <div class="text-xs font-semibold text-slate-600"><%= `${t('pl_net_profit_before_tax')} = ${t('pl_operating_profit_ebit')} + ${t('pl_other_income')} - ${t('pl_inventory_adjustments')} - ${t('pl_other_expenses')} - ${t('pl_finance_cost')}` %></div>
+                  <div class="mt-1 text-xs text-slate-500"><%= `${formatAmount(profitLossMeta.operatingProfit)} + ${formatAmount(profitLossMeta.otherIncome)} ${plSubtractedTerm(profitLossMeta.inventoryAdjustments)} ${plSubtractedTerm(profitLossMeta.otherExpenses)} ${plSubtractedTerm(profitLossMeta.financeCost)}` %></div>
                 </td>
                 <td class="px-3 py-2 text-right font-semibold text-slate-900"><%= formatAmount(profitLossMeta.netProfitBeforeTax) %></td>
                 <td class="px-3 py-2 align-top">

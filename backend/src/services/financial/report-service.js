@@ -68,14 +68,19 @@ const VOUCHER_TYPE_BY_FILTER = {
 const BANK_LINE_STATUS_SET = new Set(["PENDING", "APPROVED", "REJECTED"]);
 const PL_INVENTORY_CATEGORIES = ["RM", "SFG", "FG"];
 const PL_PURCHASE_VOUCHER_CODES = ["PI", "PR"];
-const PL_PRODUCTION_DIRECT_COST_VOUCHER_CODES = [
-  "LABOUR_PROD",
-  "CONSUMP",
-  "LOSS",
-  "DCV",
-  "PROD_FG",
-  "PROD_SFG",
-];
+// Cost of goods sold is measured where stock actually leaves against a sale.
+// It is NOT derived from a periodic opening + purchases - closing roll-forward:
+// erp.stock_ledger is perpetual, and inventory also moves for branch transfers,
+// production, opening-stock entries and count corrections. None of those are a
+// cost of sale, but a roll-forward silently books every one of them as one --
+// which is what made COGS go negative whenever a period contained them.
+const PL_COGS_VOUCHER_CODES = ["SALES_VOUCHER"];
+// Stock written off, or found, by an abnormal-loss voucher or a physical count
+// correction. These voucher types post no GL entries at all (see
+// SUPPORTED_POSTING_RULES in gl-posting-service.js), so the stock ledger is the
+// only record of them and they get their own P&L line rather than being
+// smuggled into COGS.
+const PL_INVENTORY_ADJUSTMENT_VOUCHER_CODES = ["STOCK_COUNT_ADJ", "LOSS"];
 const PL_OTHER_EXPENSE_GROUP_CODES = [
   "stock_adjustment_loss",
   "abnormal_loss_expense",
@@ -236,7 +241,13 @@ const getCommonFilters = (req, reportKey = "") => {
   let branchId = req.branchId;
   let branchIds = [];
   const branchIdsFromQuery = toIdList(requestInput.branch_ids);
-  if (req.user?.isAdmin) {
+  // The per-report `filter_all_branches` permission is what lets a non-admin
+  // widen past their own branch. It was granted and rendered but never read
+  // here, so holders stayed pinned to req.branchId on every financial report.
+  const canFilterAllBranches =
+    req.user?.isAdmin === true ||
+    canDo(req, "REPORT", normalizedReportKey, "filter_all_branches");
+  if (canFilterAllBranches) {
     const hasBranchParam =
       Object.prototype.hasOwnProperty.call(requestInput, "filter_branch_id") ||
       Object.prototype.hasOwnProperty.call(requestInput, "branch_id");
@@ -2296,8 +2307,21 @@ const getTrialBalance = async (filters) => {
   return mappedRows;
 };
 
-const applyBranchScope = (query, column, branchId) => {
-  const normalizedBranchId = Number(branchId || 0);
+// getCommonFilters resolves a multi-branch selection into `branchIds` and sets
+// `branchId` to null (it only holds a value when exactly one branch is chosen).
+// Reading `branchId` alone therefore silently widened a two-branch selection to
+// every branch, so scope on the list first and fall back to the single id.
+const applyBranchScope = (query, column, filters) => {
+  const branchIds = Array.isArray(filters?.branchIds)
+    ? filters.branchIds
+        .map((id) => Number(id))
+        .filter((id) => Number.isInteger(id) && id > 0)
+    : [];
+  if (branchIds.length) {
+    query.whereIn(column, branchIds);
+    return query;
+  }
+  const normalizedBranchId = Number(filters?.branchId || 0);
   if (Number.isInteger(normalizedBranchId) && normalizedBranchId > 0) {
     query.where(column, normalizedBranchId);
   }
@@ -2340,7 +2364,7 @@ const getProfitLossSalesComponents = async (filters) => {
     });
 
   lineQuery = buildDateFilter(lineQuery, "vh.voucher_date", filters.from, filters.to);
-  lineQuery = applyBranchScope(lineQuery, "vh.branch_id", filters.branchId);
+  lineQuery = applyBranchScope(lineQuery, "vh.branch_id", filters);
 
   let extraDiscountQuery = knex("erp.sales_header as sh")
     .join("erp.voucher_header as vh", "vh.id", "sh.voucher_id")
@@ -2360,18 +2384,65 @@ const getProfitLossSalesComponents = async (filters) => {
   extraDiscountQuery = applyBranchScope(
     extraDiscountQuery,
     "vh.branch_id",
-    filters.branchId,
+    filters,
   );
 
-  const [lineRow, extraDiscountRow] = await Promise.all([
+  // A FROM_SO voucher is barred from carrying its own extra discount
+  // (sales-voucher-service.js rejects it), so erp.sales_header.extra_discount is
+  // always 0 for those and the discount instead lives on the sales order. GL
+  // posting applies it once, on the first approved voucher drawn from that
+  // order; mirror that here or Net Sales overstates revenue against the GL by
+  // the whole order-level discount. "First" is the lowest approved voucher id
+  // for the order, which is stable to re-run unlike posting's "no other
+  // approved voucher exists yet" test.
+  const firstVoucherPerOrder = knex("erp.sales_header as sh")
+    .join("erp.voucher_header as vh", "vh.id", "sh.voucher_id")
+    .whereNotNull("sh.linked_sales_order_id")
+    .andWhere("vh.status", "APPROVED")
+    .groupBy("sh.linked_sales_order_id")
+    .select(
+      "sh.linked_sales_order_id as sales_order_id",
+      knex.raw("MIN(vh.id) as first_voucher_id"),
+    )
+    .as("first_voucher");
+
+  let orderDiscountQuery = knex
+    .from(firstVoucherPerOrder)
+    .join("erp.voucher_header as vh", "vh.id", "first_voucher.first_voucher_id")
+    .join(
+      "erp.sales_order_header as soh",
+      "soh.voucher_id",
+      "first_voucher.sales_order_id",
+    )
+    .select(
+      knex.raw(
+        "COALESCE(SUM(COALESCE(soh.extra_discount, 0)), 0) as order_extra_discount",
+      ),
+    );
+  orderDiscountQuery = buildDateFilter(
+    orderDiscountQuery,
+    "vh.voucher_date",
+    filters.from,
+    filters.to,
+  );
+  orderDiscountQuery = applyBranchScope(
+    orderDiscountQuery,
+    "vh.branch_id",
+    filters,
+  );
+
+  const [lineRow, extraDiscountRow, orderDiscountRow] = await Promise.all([
     lineQuery.first(),
     extraDiscountQuery.first(),
+    orderDiscountQuery.first(),
   ]);
 
   const grossSales = roundMoney(lineRow?.gross_sales || 0);
   const salesReturns = roundMoney(lineRow?.sales_returns || 0);
   const discounts = roundMoney(
-    Number(lineRow?.line_discounts || 0) + Number(extraDiscountRow?.extra_discount || 0),
+    Number(lineRow?.line_discounts || 0) +
+      Number(extraDiscountRow?.extra_discount || 0) +
+      Number(orderDiscountRow?.order_extra_discount || 0),
   );
 
   return {
@@ -2381,30 +2452,21 @@ const getProfitLossSalesComponents = async (filters) => {
   };
 };
 
-const getProfitLossInventoryValue = async ({
-  filters,
-  dateOperator,
-  dateValue,
-  voucherTypeCodes = [],
-}) => {
+// Value of stock owned as at a date. Deliberately spans every stock_state, not
+// just ON_HAND: goods dispatched on a branch transfer sit in IN_TRANSIT and
+// goods lent out sit in WITH_THIRD_PARTY, but both are still owned inventory.
+// Counting only ON_HAND made in-transit stock vanish from closing inventory.
+// The APPROVED filter is unconditional -- an unapproved voucher must never move
+// the reported inventory value.
+const getProfitLossInventoryValue = async ({ filters, dateOperator, dateValue }) => {
   let query = knex("erp.stock_ledger as sl")
+    .join("erp.voucher_header as vh", "vh.id", "sl.voucher_header_id")
     .select(knex.raw("COALESCE(SUM(COALESCE(sl.value, 0)), 0) as total"))
-    .where({ "sl.stock_state": "ON_HAND" })
+    .where("vh.status", "APPROVED")
     .whereIn("sl.category", PL_INVENTORY_CATEGORIES)
     .where("sl.txn_date", dateOperator, dateValue);
 
-  query = applyBranchScope(query, "sl.branch_id", filters.branchId);
-
-  const normalizedVoucherCodes = (voucherTypeCodes || [])
-    .map((code) => String(code || "").trim().toUpperCase())
-    .filter(Boolean);
-
-  if (normalizedVoucherCodes.length) {
-    query = query
-      .join("erp.voucher_header as vh", "vh.id", "sl.voucher_header_id")
-      .whereIn("vh.voucher_type_code", normalizedVoucherCodes)
-      .andWhere("vh.status", "APPROVED");
-  }
+  query = applyBranchScope(query, "sl.branch_id", filters);
 
   const row = await query.first();
   return roundMoney(row?.total || 0);
@@ -2419,16 +2481,42 @@ const getProfitLossPurchases = async (filters) => {
     .whereIn("vh.voucher_type_code", PL_PURCHASE_VOUCHER_CODES);
 
   query = buildDateFilter(query, "sl.txn_date", filters.from, filters.to);
-  query = applyBranchScope(query, "sl.branch_id", filters.branchId);
+  query = applyBranchScope(query, "sl.branch_id", filters);
 
   const row = await query.first();
   return roundMoney(row?.total || 0);
 };
 
+// Net cost of stock that LEFT inventory through the given voucher types, taken
+// straight from the perpetual ledger at the WAC actually charged.
+// erp.stock_ledger.value is signed (outward rows negative), so negating the sum
+// yields a positive cost; inward rows of the same type -- a sales return, a
+// count correction that finds stock -- net against it automatically.
+// Scoped on vh.voucher_date rather than sl.txn_date so cost lands in exactly
+// the same period as the revenue it is matched against.
+const getProfitLossLedgerCost = async ({ filters, voucherTypeCodes }) => {
+  const normalizedVoucherCodes = (voucherTypeCodes || [])
+    .map((code) => String(code || "").trim().toUpperCase())
+    .filter(Boolean);
+  if (!normalizedVoucherCodes.length) return 0;
+
+  let query = knex("erp.stock_ledger as sl")
+    .join("erp.voucher_header as vh", "vh.id", "sl.voucher_header_id")
+    .select(knex.raw("COALESCE(SUM(COALESCE(sl.value, 0)), 0) as total"))
+    .where("vh.status", "APPROVED")
+    .whereIn("sl.category", PL_INVENTORY_CATEGORIES)
+    .whereIn("vh.voucher_type_code", normalizedVoucherCodes);
+
+  query = buildDateFilter(query, "vh.voucher_date", filters.from, filters.to);
+  query = applyBranchScope(query, "sl.branch_id", filters);
+
+  const row = await query.first();
+  return roundMoney(-Number(row?.total || 0));
+};
+
 const getGlMovementTotals = async ({
   filters,
   accountType = null,
-  voucherTypeCodes = [],
   includeGroupCodes = [],
   excludeGroupCodes = [],
 }) => {
@@ -2443,24 +2531,17 @@ const getGlMovementTotals = async ({
     );
 
   query = buildDateFilter(query, "ge.entry_date", filters.from, filters.to);
-  query = applyBranchScope(query, "ge.branch_id", filters.branchId);
+  query = applyBranchScope(query, "ge.branch_id", filters);
 
   if (accountType) {
     query = query.where("ag.account_type", String(accountType || "").toUpperCase());
   }
 
-  const normalizedVoucherCodes = (voucherTypeCodes || [])
-    .map((code) => String(code || "").trim().toUpperCase())
-    .filter(Boolean);
-  if (normalizedVoucherCodes.length) {
-    query = query
-      .whereIn("vh.voucher_type_code", normalizedVoucherCodes)
-      .andWhere("vh.status", "APPROVED");
-  } else {
-    query = query.where(function whereApprovedOrManual() {
-      this.whereNull("vh.id").orWhere("vh.status", "APPROVED");
-    });
-  }
+  // A gl_entry with no source voucher is a manual entry and always counts;
+  // one that came from a voucher only counts once that voucher is approved.
+  query = query.where(function whereApprovedOrManual() {
+    this.whereNull("vh.id").orWhere("vh.status", "APPROVED");
+  });
 
   const normalizedIncludeCodes = (includeGroupCodes || [])
     .map((code) => String(code || "").trim().toLowerCase())
@@ -2496,6 +2577,9 @@ const buildProfitLossRows = (components) => {
     ...(isTotal ? { _row_type: "TOTAL" } : {}),
   });
 
+  // Opening inventory, purchases and closing inventory are shown because a P&L
+  // reader expects them, but they are context for the inventory position -- they
+  // are no longer the inputs COGS is computed from.
   return [
     line("pl_gross_sales", components.grossSales),
     line("pl_sales_returns", components.salesReturns),
@@ -2503,13 +2587,13 @@ const buildProfitLossRows = (components) => {
     line("pl_net_sales", components.netSales, true),
     line("pl_opening_inventory", components.openingInventory),
     line("pl_purchases", components.purchases),
-    line("pl_direct_costs", components.directCosts),
     line("pl_closing_inventory", components.closingInventory),
     line("pl_cogs", components.cogs, true),
     line("pl_gross_profit", components.grossProfit, true),
     line("pl_operating_expenses", components.operatingExpenses),
     line("pl_operating_profit_ebit", components.operatingProfit, true),
     line("pl_other_income", components.otherIncome),
+    line("pl_inventory_adjustments", components.inventoryAdjustments),
     line("pl_other_expenses", components.otherExpenses),
     line("pl_finance_cost", components.financeCost),
     line("pl_net_profit_before_tax", components.netProfitBeforeTax, true),
@@ -2517,66 +2601,69 @@ const buildProfitLossRows = (components) => {
 };
 
 const getProfitAndLoss = async (filters) => {
-  const excludeFromDirectCosts = [
-    ...PL_OTHER_EXPENSE_GROUP_CODES,
-    ...PL_FINANCE_COST_GROUP_CODES,
-  ];
-  const [sales, openingInventory, purchases, closingInventory, totalExpense, directCostExpense, otherExpense, financeExpense, otherIncomeRevenue] =
-    await Promise.all([
-      getProfitLossSalesComponents(filters),
-      getProfitLossInventoryValue({
-        filters,
-        dateOperator: "<",
-        dateValue: filters.from,
-      }),
-      getProfitLossPurchases(filters),
-      getProfitLossInventoryValue({
-        filters,
-        dateOperator: "<=",
-        dateValue: filters.to,
-      }),
-      getGlMovementTotals({ filters, accountType: "EXPENSE" }),
-      getGlMovementTotals({
-        filters,
-        accountType: "EXPENSE",
-        voucherTypeCodes: PL_PRODUCTION_DIRECT_COST_VOUCHER_CODES,
-        excludeGroupCodes: excludeFromDirectCosts,
-      }),
-      getGlMovementTotals({
-        filters,
-        accountType: "EXPENSE",
-        includeGroupCodes: PL_OTHER_EXPENSE_GROUP_CODES,
-      }),
-      getGlMovementTotals({
-        filters,
-        accountType: "EXPENSE",
-        includeGroupCodes: PL_FINANCE_COST_GROUP_CODES,
-      }),
-      getGlMovementTotals({
-        filters,
-        accountType: "REVENUE",
-        excludeGroupCodes: PL_EXCLUDED_OTHER_INCOME_GROUP_CODES,
-      }),
-    ]);
+  const [
+    sales,
+    openingInventory,
+    purchases,
+    closingInventory,
+    cogs,
+    inventoryAdjustments,
+    totalExpense,
+    otherExpense,
+    financeExpense,
+    otherIncomeRevenue,
+  ] = await Promise.all([
+    getProfitLossSalesComponents(filters),
+    getProfitLossInventoryValue({
+      filters,
+      dateOperator: "<",
+      dateValue: filters.from,
+    }),
+    getProfitLossPurchases(filters),
+    getProfitLossInventoryValue({
+      filters,
+      dateOperator: "<=",
+      dateValue: filters.to,
+    }),
+    getProfitLossLedgerCost({
+      filters,
+      voucherTypeCodes: PL_COGS_VOUCHER_CODES,
+    }),
+    getProfitLossLedgerCost({
+      filters,
+      voucherTypeCodes: PL_INVENTORY_ADJUSTMENT_VOUCHER_CODES,
+    }),
+    getGlMovementTotals({ filters, accountType: "EXPENSE" }),
+    getGlMovementTotals({
+      filters,
+      accountType: "EXPENSE",
+      includeGroupCodes: PL_OTHER_EXPENSE_GROUP_CODES,
+    }),
+    getGlMovementTotals({
+      filters,
+      accountType: "EXPENSE",
+      includeGroupCodes: PL_FINANCE_COST_GROUP_CODES,
+    }),
+    getGlMovementTotals({
+      filters,
+      accountType: "REVENUE",
+      excludeGroupCodes: PL_EXCLUDED_OTHER_INCOME_GROUP_CODES,
+    }),
+  ]);
 
   const netSales = roundMoney(
     Number(sales.grossSales || 0) -
       Number(sales.salesReturns || 0) -
       Number(sales.discounts || 0),
   );
-  const directCosts = roundMoney(directCostExpense.expenseNet || 0);
-  const cogs = roundMoney(
-    Number(openingInventory || 0) +
-      Number(purchases || 0) +
-      Number(directCosts || 0) -
-      Number(closingInventory || 0),
-  );
   const grossProfit = roundMoney(Number(netSales || 0) - Number(cogs || 0));
   const otherExpenses = roundMoney(otherExpense.expenseNet || 0);
   const financeCost = roundMoney(financeExpense.expenseNet || 0);
+  // No direct-cost term any more: production labour and consumption are already
+  // capitalised into the stock value that COGS is measured at, so adding a GL
+  // production figure on top would charge them twice.
   const operatingExpenses = roundMoney(
     Number(totalExpense.expenseNet || 0) -
-      Number(directCosts || 0) -
       Number(otherExpenses || 0) -
       Number(financeCost || 0),
   );
@@ -2587,6 +2674,7 @@ const getProfitAndLoss = async (filters) => {
   const netProfitBeforeTax = roundMoney(
     Number(operatingProfit || 0) +
       Number(otherIncome || 0) -
+      Number(inventoryAdjustments || 0) -
       Number(otherExpenses || 0) -
       Number(financeCost || 0),
   );
@@ -2598,13 +2686,13 @@ const getProfitAndLoss = async (filters) => {
     netSales,
     openingInventory: roundMoney(openingInventory || 0),
     purchases: roundMoney(purchases || 0),
-    directCosts,
     closingInventory: roundMoney(closingInventory || 0),
-    cogs,
+    cogs: roundMoney(cogs || 0),
     grossProfit,
     operatingExpenses,
     operatingProfit,
     otherIncome,
+    inventoryAdjustments: roundMoney(inventoryAdjustments || 0),
     otherExpenses,
     financeCost,
     netProfitBeforeTax,
@@ -2616,11 +2704,11 @@ const getProfitAndLoss = async (filters) => {
       profitAndLoss: components,
       formulas: {
         netSales: "gross_sales - sales_returns - discounts",
-        cogs: "opening_inventory + purchases + direct_costs - closing_inventory",
+        cogs: "cost of stock issued against approved sales (perpetual ledger)",
         grossProfit: "net_sales - cogs",
         operatingProfit: "gross_profit - operating_expenses",
         netProfitBeforeTax:
-          "operating_profit + other_income - other_expenses - finance_cost",
+          "operating_profit + other_income - inventory_adjustments - other_expenses - finance_cost",
       },
     },
   };
