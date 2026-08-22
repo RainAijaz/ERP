@@ -19,9 +19,6 @@ const {
   resolveNegativeStockRoutingTx,
 } = require("../inventory/negative-stock-approval");
 const {
-  buildStockShortfallMessageTx,
-} = require("../../utils/stock-rollback-diagnostics");
-const {
   evaluateSalesDiscountPolicy,
   loadActiveSalesDiscountPolicyMapTx,
 } = require("./sales-discount-policy-service");
@@ -2694,11 +2691,12 @@ const ensureSkuBalanceSeedTx = async ({
   skuId,
   category,
   isPacked = false,
+  stockState = "ON_HAND",
 }) => {
   await trx("erp.stock_balance_sku")
     .insert({
       branch_id: Number(branchId),
-      stock_state: "ON_HAND",
+      stock_state: stockState,
       category: String(category || "")
         .trim()
         .toUpperCase(),
@@ -3032,35 +3030,35 @@ const removeSalesSkuFromLedgerTx = async ({ trx, row }) => {
     targetQuery.orderBy("is_packed", "asc");
   }
   const target = await targetQuery.first().forUpdate();
+
+  // A rollback is not a stock consumption, so it carries no sufficiency check:
+  // it un-applies a credit this voucher provably posted (the ledger row is the
+  // proof) and must always be able to restore the balance to exactly what it
+  // was beforehand — including a negative balance. Packed and loose buckets
+  // legitimately run negative when goods move before a physical count catches
+  // up, which is why erp.stock_balance_sku carries no qty/value CHECK; its only
+  // constraint is wac >= 0, which computeNonNegativeWac always satisfies.
+  // Never clamp the result at zero: that would invent stock that was never
+  // received. Mirrors addBackSalesSkuFromLedgerTx, which reverses sale lines
+  // unclamped.
+  if (!target) {
+    await ensureSkuBalanceSeedTx({
+      trx,
+      branchId,
+      skuId,
+      category,
+      stockState,
+      isPacked: targetIsPacked === true,
+    });
+  }
+  const bucketIsPacked = target
+    ? target.is_packed === true
+    : targetIsPacked === true;
   const availableQtyPairs = Number(target?.qty_pairs || 0);
   const availableValue = Number(target?.value || 0);
-  if (!target || availableQtyPairs < qtyPairs || availableValue < value - 0.05) {
-    const skuRow = await trx("erp.skus")
-      .select("sku_code")
-      .where({ id: Number(skuId) })
-      .first();
-    const subjectLabel = skuRow?.sku_code
-      ? `SKU ${skuRow.sku_code}`
-      : `SKU #${Number(skuId)}`;
-    const message = await buildStockShortfallMessageTx({
-      trx,
-      category,
-      branchId,
-      stockState,
-      skuId: Number(skuId),
-      afterLedgerId: row?.id,
-      shortfallQty:
-        availableQtyPairs < qtyPairs ? qtyPairs - availableQtyPairs : 1,
-      availableQty: availableQtyPairs,
-      subjectLabel,
-      metric: availableQtyPairs < qtyPairs ? "qty" : "value",
-    });
-    throw new HttpError(400, message);
-  }
 
-  const nextQtyPairs = Math.max(availableQtyPairs - qtyPairs, 0);
-  const nextValue =
-    nextQtyPairs > 0 ? Math.max(roundCost2(availableValue - value), 0) : 0;
+  const nextQtyPairs = availableQtyPairs - qtyPairs;
+  const nextValue = roundCost2(availableValue - value);
   const nextWac = computeNonNegativeWac(nextQtyPairs, nextValue);
 
   await trx("erp.stock_balance_sku")
@@ -3068,7 +3066,7 @@ const removeSalesSkuFromLedgerTx = async ({ trx, row }) => {
       branch_id: Number(branchId),
       stock_state: stockState,
       category,
-      is_packed: target.is_packed === true,
+      is_packed: bucketIsPacked,
       sku_id: Number(skuId),
     })
     .update({

@@ -41,6 +41,7 @@
     "localize:urdu:db": "node src/scripts/backfill-urdu-core-seed-text.js",
     "clear:labour-rates": "node src/scripts/clear-labour-rates.js",
     "test:e2e": "playwright test",
+    "test:e2e:negative-bucket-rollback": "playwright test tests/e2e/sales-negative-bucket-rollback.spec.js",
     "test:e2e:safe": "node src/scripts/run-playwright-safe-output.js",
     "test:e2e:safe:list": "node src/scripts/run-playwright-safe-output.js --reporter=list",
     "test:e2e:bom": "playwright test tests/e2e/bom-ui.spec.js",
