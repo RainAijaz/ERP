@@ -443,8 +443,15 @@
             payload,
             name,
           );
+          // Create mode blanks every field, so a page-level default (e.g. the
+          // commission rule's Effective From = today) never reached the form.
+          // data-default-value is opt-in per field, so screens that do not set
+          // one keep the previous blank-on-create behaviour exactly.
           const defaultValue =
-            mode === "create" && name === "status" ? "active" : "";
+            mode === "create"
+              ? input.dataset.defaultValue ||
+                (name === "status" ? "active" : "")
+              : "";
           input.value = hasPayloadValue ? payload[name] || "" : defaultValue;
           if (input.tagName === "SELECT") {
             input.dispatchEvent(new Event("change", { bubbles: true }));

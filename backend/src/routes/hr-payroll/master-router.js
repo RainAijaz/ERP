@@ -470,6 +470,9 @@ const buildBaseQuery = (pageConfig, options = {}) => {
       knex,
       pageConfig,
       locale: options.locale || "en",
+      // Raw querystring, for list toggles that are not one of the three
+      // structured filter slots (e.g. the commission screen's "show past rates").
+      requestQuery: options.requestQuery || {},
     });
   }
 
@@ -673,6 +676,9 @@ const createHrMasterRouter = (pageConfig) => {
       view: "../../hr_payroll/index",
       t: res.locals.t,
       page: hydrated,
+      // Raw querystring, so a screen can render a link that toggles one of its
+      // own list options while preserving every filter already applied.
+      query: req.query || {},
       ...data,
     });
 
@@ -849,6 +855,7 @@ const createHrMasterRouter = (pageConfig) => {
                 maxRows: effectiveMaxRows > 0 ? effectiveMaxRows + 1 : 0,
                 offsetRows: listOffset,
                 filters: fetchFilters,
+                requestQuery: req.query || {},
               })
             : [];
         }
@@ -867,6 +874,7 @@ const createHrMasterRouter = (pageConfig) => {
                 branchId: req.user?.isAdmin ? null : req.branchId,
                 allowedBranchIds,
                 locale: req.locale,
+                requestQuery: req.query || {},
                 filters: {
                   primaryValues,
                   secondaryValues,

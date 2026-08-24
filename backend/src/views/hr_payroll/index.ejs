@@ -16,6 +16,23 @@
             <%= t("print") %>
           </button>
         <% } %>
+        <% if (page.scopeKey === "hr_payroll.commissions") { %>
+          <%
+            // Superseded rates are hidden by default (close-and-append keeps
+            // every rate ever set, so the list would grow without bound).
+            const showingPastRates = String(query && query.show_past_rates || "") === "1";
+            const pastRatesParams = new URLSearchParams(
+              Object.entries(query || {}).filter(function (entry) {
+                return entry[0] !== "show_past_rates" && entry[1] !== undefined && entry[1] !== null;
+              }).map(function (entry) { return [entry[0], String(entry[1])]; })
+            );
+            if (!showingPastRates) pastRatesParams.set("show_past_rates", "1");
+            const pastRatesHref = pastRatesParams.toString() ? ("?" + pastRatesParams.toString()) : "?";
+          %>
+          <a href="<%= pastRatesHref %>" class="cursor-pointer rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition <%= showingPastRates ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:text-slate-800' %>">
+            <%= t("show_past_rates") %>
+          </a>
+        <% } %>
         <% if (can("SCREEN", page.scopeKey, "edit") && page.scopeKey === "hr_payroll.commissions") { %>
           <button class="cursor-pointer rounded-full border border-slate-200 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-600 transition hover:border-slate-300 hover:text-slate-800" type="button" data-recalc-open>
             <%= t("recalculate_commission") %>
@@ -1094,6 +1111,8 @@
     const tUnableSave = "<%= t('error_unable_save') %>";
     const tRequiredFields = "<%= t('error_required_fields') %>";
     const tSelectCommissionBasis = "<%= t('error_select_commission_basis') %>";
+    const tEffectiveFromRequired = "<%= t('error_effective_from_required') %>";
+    const tInvalidDateRange = "<%= t('error_invalid_date_range') %>";
     const tSelectRateType = "<%= t('error_select_rate_type') %>";
     const tViewPendingApproval = "<%= t('view_pending_approval') %>";
     const tSaveSummaryTemplate = "<%= t('success_bulk_commission_saved_counts') %>";
@@ -1109,6 +1128,9 @@
       value: form.querySelector('[data-field="value"]'),
       reverseOnReturns: form.querySelector('[data-field="reverse_on_returns"]'),
       status: form.querySelector('[data-field="status"]'),
+      branchId: form.querySelector('[data-field="branch_id"]'),
+      effectiveFrom: form.querySelector('[data-field="effective_from"]'),
+      effectiveTo: form.querySelector('[data-field="effective_to"]'),
     };
 
     const state = {
@@ -1308,6 +1330,12 @@
       });
       if (employeeId) params.set("employee_id", employeeId);
       if (commissionBasis) params.set("commission_basis", commissionBasis);
+      // Both scope the "previous rate" column: it must show the rate in force at
+      // this branch on the day the new one starts, not just any existing row.
+      const previewBranchId = String(fields.branchId?.value || "").trim();
+      if (previewBranchId) params.set("branch_id", previewBranchId);
+      const previewEffectiveFrom = String(fields.effectiveFrom?.value || "").trim();
+      if (previewEffectiveFrom) params.set("effective_from", previewEffectiveFrom);
       if (subgroupIds.length) {
         params.set("subgroup_ids", subgroupIds.join(","));
         params.set("subgroup_id", subgroupIds[0]);
@@ -1445,7 +1473,7 @@ const currentSeq = ++state.requestSeq;
     form.addEventListener("change", (event) => {
       const target = event.target;
       if (!target) return;
-      if (target.matches("[data-field='employee_id'], [data-field='apply_on'], [data-field='subgroup_id'], [data-field='group_id'], [data-field='commission_basis'], [data-field='rate_type']")) {
+      if (target.matches("[data-field='employee_id'], [data-field='apply_on'], [data-field='subgroup_id'], [data-field='group_id'], [data-field='commission_basis'], [data-field='rate_type'], [data-field='branch_id'], [data-field='effective_from']")) {
         schedulePreview();
       }
     });
@@ -1510,6 +1538,9 @@ const currentSeq = ++state.requestSeq;
           rate_type: rateType,
           reverse_on_returns: Boolean(fields.reverseOnReturns?.checked),
           status: fields.status?.value || "active",
+          branch_id: String(fields.branchId?.value || "").trim() || null,
+          effective_from: String(fields.effectiveFrom?.value || "").trim(),
+          effective_to: String(fields.effectiveTo?.value || "").trim() || null,
           rows: state.rows.map((row) => ({
             sku_id: row.sku_id,
             new_rate: row.new_rate,
@@ -1528,6 +1559,14 @@ const currentSeq = ++state.requestSeq;
         }
         if (!payload.scope_rate) {
           showModalError(tRequiredFields);
+          return;
+        }
+        if (!payload.effective_from) {
+          showModalError(tEffectiveFromRequired);
+          return;
+        }
+        if (payload.effective_to && payload.effective_to < payload.effective_from) {
+          showModalError(tInvalidDateRange);
           return;
         }
 
@@ -3020,6 +3059,22 @@ const currentSeq = ++state.requestSeq;
     { value: "PRODUCTION_SFG", labelKey: "commission_type_production_sfg" },
   ];
 %>
+<!-- Backdated rate: the rule now applies from a past date, but commission was
+     denormalized onto vouchers when they were posted, so those still hold the
+     old figure. Offer the review rather than rewriting them silently. -->
+<div class="mx-auto mb-4 hidden max-w-6xl rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900" data-backdate-band>
+  <div class="font-semibold" data-backdate-title></div>
+  <div class="mt-1 text-xs" data-backdate-body></div>
+  <div class="mt-3 flex flex-wrap gap-2">
+    <button type="button" data-backdate-review class="cursor-pointer rounded-lg bg-amber-600 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-white transition hover:bg-amber-700">
+      <%= t("review_and_recalculate") %>
+    </button>
+    <button type="button" data-backdate-dismiss class="cursor-pointer rounded-lg border border-amber-300 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-amber-800 transition hover:bg-amber-100">
+      <%= t("not_now") %>
+    </button>
+  </div>
+</div>
+
 <div class="fixed inset-0 z-[95] hidden items-center justify-center bg-slate-900/40 p-4" data-recalc-modal>
   <div class="flex max-h-[92vh] w-full max-w-5xl flex-col rounded-2xl border border-slate-200 bg-white shadow-xl" role="dialog" aria-modal="true" aria-labelledby="recalc-title">
     <div class="relative border-b border-slate-200 px-6 py-4">
@@ -3374,12 +3429,74 @@ const currentSeq = ++state.requestSeq;
     document.querySelectorAll("[data-recalc-open]").forEach((btn) =>
       btn.addEventListener("click", openModal),
     );
+
+    // Entry point for the backdated-rate prompt: opens this same modal with the
+    // range, employee and commission type already filled in, then runs the
+    // preview so the approver lands straight on the old -> new diff. Nothing is
+    // written here -- Apply still routes through approvals exactly as before.
+    window.openCommissionRecalc = (opts) => {
+      const options = opts && typeof opts === "object" ? opts : {};
+      openModal();
+      if (options.from_date) fromInput.value = options.from_date;
+      if (options.to_date) toInput.value = options.to_date;
+      if (options.employee_id && employeeSel) {
+        employeeSel.value = String(options.employee_id);
+        loadRules();
+      }
+      if (options.commission_type) {
+        modal.querySelectorAll("[data-recalc-type]").forEach((box) => {
+          box.checked = box.value === options.commission_type;
+        });
+      }
+      runPreview();
+    };
     modal.querySelectorAll("[data-recalc-close]").forEach((btn) =>
       btn.addEventListener("click", closeModal),
     );
     modal.addEventListener("click", (event) => {
       if (event.target === modal) closeModal();
     });
+    // Backdate prompt wiring. Two sources feed it: the server-rendered notice
+    // after a single-rule save (which redirects), and the JSON `backdate` field
+    // returned by the bulk save (which does not).
+    (() => {
+      const band = document.querySelector("[data-backdate-band]");
+      if (!band) return;
+      const titleEl = band.querySelector("[data-backdate-title]");
+      const bodyEl = band.querySelector("[data-backdate-body]");
+      const tTitle = "<%= t('backdated_recalc_title') %>";
+      const tBody = "<%= t('backdated_recalc_body') %>";
+      let pending = null;
+
+      const hide = () => band.classList.add("hidden");
+
+      window.showCommissionBackdateNotice = (notice) => {
+        if (!notice || !notice.backdated) return;
+        pending = notice;
+        titleEl.textContent = tTitle;
+        bodyEl.textContent = tBody.replace(
+          "{count}",
+          String(notice.affected_vouchers || 0),
+        );
+        band.classList.remove("hidden");
+        band.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      };
+
+      band
+        .querySelector("[data-backdate-dismiss]")
+        .addEventListener("click", hide);
+      band.querySelector("[data-backdate-review]").addEventListener("click", () => {
+        hide();
+        if (pending && typeof window.openCommissionRecalc === "function") {
+          window.openCommissionRecalc(pending);
+        }
+      });
+
+      <% if (typeof commissionBackdateNotice !== "undefined" && commissionBackdateNotice) { %>
+      window.showCommissionBackdateNotice(<%- JSON.stringify(commissionBackdateNotice) %>);
+      <% } %>
+    })();
+
     el("[data-recalc-preview]").addEventListener("click", runPreview);
     applyBtn.addEventListener("click", apply);
     changedOnlyBox.addEventListener("change", renderRows);

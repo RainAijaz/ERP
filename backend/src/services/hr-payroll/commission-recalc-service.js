@@ -1,9 +1,14 @@
 // Retroactive commission recalculation.
 //
-// Commission is denormalized at voucher time using whatever rules were active
-// then, and rules are not effective-dated — so a rate corrected today never
-// reaches vouchers already posted. This service recomputes a date range against
-// TODAY'S active rules and reports an old -> new diff before anything is written.
+// Commission is denormalized at voucher time, so a rate corrected today never
+// reaches vouchers already posted. This service recomputes a date range and
+// reports an old -> new diff before anything is written.
+//
+// Rules ARE effective-dated (and branch-scoped), and resolution happens per
+// voucher against that voucher's own date and branch — so recomputing a range
+// that spans a rate change reproduces each period at its own rate rather than
+// flattening everything to the latest one. Backdating a rule's effective_from
+// is what makes a recompute of that period produce different numbers.
 //
 // It is the single implementation behind both the CLI backfill script and the
 // Recalculate modal on the Sales Commission screen.
@@ -237,6 +242,9 @@ const buildLedgerPlanRows = async ({ db, input, commissionType }) => {
       lines,
       branchId: Number(voucher.branch_id),
       commissionType,
+      // Each voucher resolves against its OWN date, so a range that spans a rate
+      // change recomputes each half at the rate that was in force then.
+      voucherDate: voucher.voucher_date,
       t: (key) => key,
     });
 
@@ -475,8 +483,9 @@ const applyRecalcPlan = async ({ trx, rows = [], provenance = null }) => {
   return result;
 };
 
-// Feeds the guardrail panel: because rules are not effective-dated, the only
-// honest thing the UI can do is show exactly which rules the recompute will use.
+// Feeds the guardrail panel: shows exactly which rules the recompute will use,
+// including each rule's branch and effective window so an approver can see why
+// a given voucher resolved to the rate it did.
 const fetchActiveRulesForScope = async ({
   db = knex,
   employeeId = null,
@@ -500,6 +509,10 @@ const fetchActiveRulesForScope = async ({
       "ecr.group_id",
       "ecr.value",
       db.raw(`COALESCE(NULLIF(to_jsonb(ecr)->>'rate_type', ''), 'PER_PAIR') as rate_type`),
+      db.raw(`to_jsonb(ecr)->>'branch_id' as branch_id`),
+      db.raw(`to_char((to_jsonb(ecr)->>'effective_from')::date, 'YYYY-MM-DD') as effective_from`),
+      db.raw(`to_char((to_jsonb(ecr)->>'effective_to')::date, 'YYYY-MM-DD') as effective_to`),
+      db.raw(`(SELECT b.name FROM erp.branches b WHERE b.id = (to_jsonb(ecr)->>'branch_id')::bigint) as branch_name`),
     )
     .whereIn("ecr.commission_type", types)
     .andWhere("ecr.status", "active")

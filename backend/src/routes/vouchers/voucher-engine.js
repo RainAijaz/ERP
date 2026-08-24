@@ -112,6 +112,8 @@ router.post("/", async (req, res, next) => {
         voucherTypeCode: voucherType.code,
         body: req.body || {},
         lines,
+        branchId: req.branchId,
+        voucherDate: voucher_date,
         t: res.locals.t,
       });
 
@@ -174,6 +176,7 @@ router.post("/", async (req, res, next) => {
           lines: preparedSales.lines,
           branchId: req.branchId,
           commissionType: "BRANCH_SALE",
+          voucherDate: voucher_date,
           t: res.locals.t,
         });
         if (branchEntries.length) {

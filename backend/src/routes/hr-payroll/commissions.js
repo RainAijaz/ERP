@@ -9,13 +9,16 @@ const {
   handleScreenApproval,
 } = require("../../middleware/approvals/screen-approval");
 const { queueAuditLog } = require("../../utils/audit-log");
-const { setCookie } = require("../../middleware/utils/cookies");
+const { setCookie, parseCookies } = require("../../middleware/utils/cookies");
 const {
   ALLOWED_SCOPE_FOR_BULK,
   deriveValueTypeFromBasis,
   normalizeBulkInput,
   buildBulkPreviewRows,
   applyBulkSkuRateUpsert,
+  supersedeCommissionRule,
+  normalizeRuleDate,
+  todayYmd,
 } = require("../../services/hr-payroll/commission-rules-service");
 const {
   COMPUTABLE_TYPES,
@@ -23,6 +26,7 @@ const {
   buildRecalcPlan,
   applyRecalcPlan,
   fetchActiveRulesForScope,
+  VOUCHER_TYPES_BY_COMMISSION_TYPE,
 } = require("../../services/hr-payroll/commission-recalc-service");
 // Registers the approvals preview renderer for RECALC_APPROVAL_MODE. Required
 // for its side effect — the registry is a module-level array populated at boot.
@@ -62,6 +66,45 @@ const isEmployeeInScope = async ({ employeeId, req }) => {
   return Boolean(row);
 };
 
+// A rule that starts in the past does NOT retro-fix vouchers already posted:
+// commission is denormalized at voucher time. Rather than silently rewriting
+// them, count what is affected so the screen can offer the Recalculate preview
+// with the range pre-filled. Returns null when nothing is backdated.
+const buildBackdateNotice = async ({
+  effectiveFrom,
+  employeeId,
+  commissionType,
+}) => {
+  const from = normalizeRuleDate(effectiveFrom);
+  const today = todayYmd();
+  if (!from || from >= today) return null;
+
+  const voucherTypeCodes =
+    VOUCHER_TYPES_BY_COMMISSION_TYPE[
+      String(commissionType || "SALESMAN_SALE").trim().toUpperCase()
+    ] || [];
+  if (!voucherTypeCodes.length) return null;
+
+  const row = await knex("erp.voucher_header")
+    .whereIn("voucher_type_code", voucherTypeCodes)
+    .andWhere("status", "APPROVED")
+    .andWhere("voucher_date", ">=", from)
+    .andWhere("voucher_date", "<=", today)
+    .count({ total: "*" })
+    .first();
+
+  const affected = Number(row?.total || 0);
+  if (!affected) return null;
+  return {
+    backdated: true,
+    from_date: from,
+    to_date: today,
+    employee_id: employeeId ? Number(employeeId) : null,
+    commission_type: commissionType,
+    affected_vouchers: affected,
+  };
+};
+
 const page = {
   titleKey: "sales_commission",
   descriptionKey: "sales_commission_description",
@@ -77,11 +120,11 @@ const page = {
   },
   autoCodeFromName: false,
   defaults: {
-    commission_type: "SALESMAN_SALE",
     reverse_on_returns: true,
     rate_type: "PER_PAIR",
     status: "active",
     commission_type: "SALESMAN_SALE",
+    effective_from: todayYmd(),
   },
   filterConfig: {
     primary: {
@@ -89,6 +132,12 @@ const page = {
       label: "employees",
       dbColumn: "t.employee_id",
       fieldName: "employee_id",
+    },
+    secondary: {
+      key: "branch_id",
+      label: "branch",
+      dbColumn: "t.branch_id",
+      fieldName: "branch_id",
     },
     tertiary: {
       key: "reverse_on_returns",
@@ -99,6 +148,15 @@ const page = {
         { value: "false", label: "no" },
       ],
     },
+  },
+  // Close-and-append keeps every rate ever set, so the list would grow without
+  // bound. Superseded rows are hidden unless the user asks for them.
+  applyExtraFilters: (query, { requestQuery = {} }) => {
+    const showPast = String(requestQuery.show_past_rates || "") === "1";
+    if (showPast) return query;
+    return query.whereRaw(
+      "(t.effective_to IS NULL OR t.effective_to >= CURRENT_DATE)",
+    );
   },
   hideBranchFilter: true,
   joins: [
@@ -111,6 +169,7 @@ const page = {
     { table: { si: "erp.items" }, on: ["sv.item_id", "si.id"] },
     { table: { ssg: "erp.product_subgroups" }, on: ["si.subgroup_id", "ssg.id"] },
     { table: { spg: "erp.product_groups" }, on: ["si.group_id", "spg.id"] },
+    { table: { br: "erp.branches" }, on: ["t.branch_id", "br.id"] },
   ],
   extraSelect: (locale) => [
     locale === "ur"
@@ -142,8 +201,23 @@ const page = {
     knex.raw(
       "CASE WHEN lower(trim(t.status)) = 'active' THEN true ELSE false END as is_active",
     ),
+    // NULL branch = every branch this employee is mapped to. The list must say
+    // so rather than render an empty cell that reads as missing data.
+    locale === "ur"
+      ? knex.raw("COALESCE(br.name_ur, br.name) as branch_name")
+      : knex.raw("br.name as branch_name"),
+    knex.raw("t.branch_id as branch_id"),
+    knex.raw("to_char(t.effective_from, 'YYYY-MM-DD') as effective_from"),
+    knex.raw("to_char(t.effective_to, 'YYYY-MM-DD') as effective_to"),
+    knex.raw(
+      `CASE
+        WHEN t.effective_to IS NOT NULL AND t.effective_to < CURRENT_DATE THEN false
+        WHEN t.effective_from > CURRENT_DATE THEN false
+        ELSE true
+      END as is_in_force`,
+    ),
   ],
-  fetchPageData: async ({ allowedBranchIds, locale, filters }) => {
+  fetchPageData: async ({ allowedBranchIds, locale, filters, req }) => {
     const labelExpr =
       locale === "ur" ? "COALESCE(e.name_ur, e.name)" : "e.name";
     let query = knex("erp.employee_commission_rules as t")
@@ -154,6 +228,14 @@ const page = {
         knex.raw("COUNT(t.id)::int as rule_count"),
       )
       .groupBy("e.id", "e.name", "e.name_ur");
+
+    // Count only what the expanded rows will show, or the badge drifts upward
+    // forever as close-and-append accumulates history.
+    if (String(req?.query?.show_past_rates || "") !== "1") {
+      query = query.whereRaw(
+        "(t.effective_to IS NULL OR t.effective_to >= CURRENT_DATE)",
+      );
+    }
 
     const { primaryValues, primaryMode } = filters;
     if (primaryValues && primaryValues.length) {
@@ -186,7 +268,10 @@ const page = {
     { key: "employee_name", label: "employees" },
     { key: "commission_type", label: "commission_type" },
     { key: "sku_code", label: "skus" },
+    { key: "branch_name", label: "branch" },
     { key: "value", label: "rate_value" },
+    { key: "effective_from", label: "effective_from" },
+    { key: "effective_to", label: "effective_to" },
     { key: "reverse_on_returns", label: "reverse_on_returns" },
   ],
   fields: [
@@ -292,6 +377,35 @@ const page = {
       },
     },
     {
+      // Blank = every branch this employee is mapped to. A branch-pinned rule
+      // outranks a blank one, which is how one salesman earns a different rate
+      // at different branches.
+      name: "branch_id",
+      label: "branch",
+      type: "select",
+      required: false,
+      placeholderLabel: "all_employee_branches",
+      optionsQuery: {
+        table: "erp.branches",
+        valueKey: "id",
+        labelKey: "name",
+        orderBy: "name",
+      },
+    },
+    {
+      name: "effective_from",
+      label: "effective_from",
+      type: "date",
+      required: true,
+    },
+    {
+      name: "effective_to",
+      label: "effective_to",
+      type: "date",
+      required: false,
+      hint: "effective_to_hint",
+    },
+    {
       name: "rate_type",
       label: "rate_type",
       type: "select",
@@ -345,6 +459,8 @@ const page = {
     commission_basis: COMMISSION_BASIS_FIXED_PER_UNIT,
     value_type: deriveValueTypeFromBasis(COMMISSION_BASIS_FIXED_PER_UNIT),
     reverse_on_returns: values.reverse_on_returns !== false,
+    effective_from: normalizeRuleDate(values.effective_from),
+    effective_to: normalizeRuleDate(values.effective_to),
   }),
   validateValues: async ({ values, req, isUpdate, id }) => {
     const normalizeSelection = (rawValue) => {
@@ -402,8 +518,52 @@ const page = {
     values.sku_id = firstSelection(values.sku_id);
     values.subgroup_id = firstSelection(values.subgroup_id);
     values.group_id = firstSelection(values.group_id);
+    values.branch_id = firstSelection(values.branch_id);
+
+    if (values.effective_from === undefined || values.effective_to === undefined)
+      return req.res.locals.t("error_invalid_date");
+    if (!values.effective_from)
+      return {
+        field: "effective_from",
+        message: req.res.locals.t("error_effective_from_required"),
+      };
+    if (
+      values.effective_to &&
+      values.effective_to < values.effective_from
+    )
+      return {
+        field: "effective_to",
+        message: req.res.locals.t("error_invalid_date_range"),
+      };
 
     if (!values.employee_id) return req.res.locals.t("error_required_fields");
+
+    // Blank branch = every branch this employee is mapped to; a named branch
+    // must be one the user is allowed to see AND one the employee works at,
+    // otherwise the rule could never fire.
+    if (values.branch_id) {
+      const allowedBranchIds = getAllowedBranchIds(req);
+      if (
+        allowedBranchIds.length &&
+        !allowedBranchIds.map(String).includes(String(values.branch_id))
+      )
+        return {
+          field: "branch_id",
+          message: req.res.locals.t("error_branch_out_of_scope"),
+        };
+      const mapped = await knex("erp.employee_branch")
+        .where({
+          employee_id: Number(values.employee_id || 0),
+          branch_id: Number(values.branch_id),
+        })
+        .first();
+      if (!mapped)
+        return {
+          field: "branch_id",
+          message: req.res.locals.t("error_employee_not_at_branch"),
+        };
+    }
+
     if (
       values.employee_id &&
       !(await isEmployeeInScope({ employeeId: values.employee_id, req }))
@@ -420,6 +580,10 @@ const page = {
     if (values.apply_on !== "SUBGROUP") values.subgroup_id = null;
     if (values.apply_on !== "GROUP") values.group_id = null;
 
+    // Two rules for the same key are no longer a duplicate — that is a rate
+    // change, and supersedeCommissionRule closes the old one at the new start
+    // date. The only genuine conflict left is two rules claiming the SAME start
+    // date for the same key, which would leave the resolver picking arbitrarily.
     const duplicateQ = knex("erp.employee_commission_rules")
       .where({
         employee_id: values.employee_id,
@@ -427,13 +591,14 @@ const page = {
         apply_on: values.apply_on,
         commission_basis: values.commission_basis,
         value_type: values.value_type,
-        status: values.status,
       })
+      .whereRaw("COALESCE(branch_id,0)=COALESCE(?,0)", [values.branch_id || 0])
       .whereRaw("COALESCE(sku_id,0)=COALESCE(?,0)", [values.sku_id || 0])
       .whereRaw("COALESCE(subgroup_id,0)=COALESCE(?,0)", [
         values.subgroup_id || 0,
       ])
-      .whereRaw("COALESCE(group_id,0)=COALESCE(?,0)", [values.group_id || 0]);
+      .whereRaw("COALESCE(group_id,0)=COALESCE(?,0)", [values.group_id || 0])
+      .whereRaw("effective_from = ?::date", [values.effective_from]);
     if (isUpdate && id) duplicateQ.andWhereNot({ id });
     const duplicate = await duplicateQ.first();
     if (duplicate) return req.res.locals.t("error_duplicate_commission_rule");
@@ -445,6 +610,7 @@ const page = {
 
 const router = express.Router();
 const flashCookie = `hr_${page.scopeKey.replace(/\./g, "_")}_flash`;
+const backdateCookie = `hr_${page.scopeKey.replace(/\./g, "_")}_backdate`;
 const BULK_PREVIEW_PATH = "/hr-payroll/employees/commissions/bulk-preview";
 
 const logBulkPreviewDiagnostic = (level, message, payload = {}) => {
@@ -628,6 +794,9 @@ router.post(
             group_id: null,
           };
 
+          // "Existing" now means only the row already starting on this exact
+          // date — anything else is an earlier period that supersede will close
+          // rather than overwrite, and must not be treated as a duplicate.
           const existingRows = await knex(page.table)
             .select("id")
             .where({
@@ -638,6 +807,10 @@ router.post(
               commission_basis: rowValues.commission_basis,
               value_type: rowValues.value_type,
             })
+            .whereRaw("COALESCE(branch_id,0) = COALESCE(?,0)", [
+              rowValues.branch_id || 0,
+            ])
+            .whereRaw("effective_from = ?::date", [rowValues.effective_from])
             .orderBy("id", "desc");
           const existing = existingRows[0] || null;
           const duplicateIdsToDelete = existingRows
@@ -687,6 +860,10 @@ router.post(
         employee_ids: employeeIds,
         sku_ids: skuIds,
         apply_on: "SKU",
+        commission_type: sanitizedValues.commission_type,
+        branch_id: sanitizedValues.branch_id || null,
+        effective_from: sanitizedValues.effective_from,
+        effective_to: sanitizedValues.effective_to || null,
         status: sanitizedValues.status,
         reverse_on_returns: sanitizedValues.reverse_on_returns !== false,
         rate_type: sanitizedValues.rate_type,
@@ -727,12 +904,31 @@ router.post(
               .del();
           }
           if (plan.existingId) {
+            // Same start date: this period's figure was wrong, correct it in
+            // place rather than stacking a second row on the same day.
             await trx(page.table)
               .where({ id: plan.existingId })
               .update(plan.values);
             updatedCount += 1;
           } else {
-            await trx(page.table).insert(plan.values);
+            await supersedeCommissionRule({
+              trx,
+              employeeId: Number(plan.values.employee_id),
+              commissionType: plan.values.commission_type,
+              applyOn: "SKU",
+              branchId: plan.values.branch_id || null,
+              skuId: Number(plan.values.sku_id),
+              effectiveFrom: plan.values.effective_from,
+              effectiveTo: plan.values.effective_to || null,
+              values: {
+                commission_basis: plan.values.commission_basis,
+                value_type: plan.values.value_type,
+                rate_type: plan.values.rate_type,
+                value: plan.values.value,
+                reverse_on_returns: plan.values.reverse_on_returns,
+                status: plan.values.status,
+              },
+            });
             createdCount += 1;
           }
         }
@@ -750,6 +946,19 @@ router.post(
           updated_count: updatedCount,
         },
       });
+
+      const backdate = await buildBackdateNotice({
+        effectiveFrom: sanitizedValues.effective_from,
+        employeeId: employeeIds[0],
+        commissionType: sanitizedValues.commission_type,
+      });
+      if (backdate) {
+        setCookie(res, backdateCookie, JSON.stringify(backdate), {
+          path: req.baseUrl,
+          maxAge: 120,
+          sameSite: "Lax",
+        });
+      }
 
       return res.redirect(req.baseUrl);
     } catch (err) {
@@ -801,6 +1010,11 @@ router.get(
         req.query.group_id,
       );
       const baseRate = req.query.value;
+      // "Previous rate" must be the rate in force at this branch on the date the
+      // new one starts, not whichever row happens to exist.
+      const previewBranchId = Number(req.query.branch_id || 0) || null;
+      const previewEffectiveFrom =
+        normalizeRuleDate(req.query.effective_from) || todayYmd();
       // Scopes which SKUs the grid lists (SFG for PRODUCTION_SFG, FG otherwise)
       // and which existing rules count as the "previous rate".
       const previewCommissionTypeRaw = String(req.query.commission_type || "")
@@ -868,6 +1082,8 @@ router.get(
         subgroupIds,
         groupIds,
         commissionType: previewCommissionType,
+        branchId: previewBranchId,
+        effectiveFrom: previewEffectiveFrom,
         baseRate,
       });
 
@@ -913,6 +1129,8 @@ router.post(
         groupIds: normalized.groupIds,
         commissionBasis: normalized.commissionBasis,
         commissionType: normalized.commissionType,
+        branchId: normalized.branchId,
+        effectiveFrom: normalized.effectiveFrom,
         baseRate: null,
       });
       const requestedRateBySku = new Map(
@@ -965,6 +1183,9 @@ router.post(
           apply_on: normalized.applyOn,
           commission_type: normalized.commissionType,
           employee_id: normalized.employeeId,
+          branch_id: normalized.branchId,
+          effective_from: normalized.effectiveFrom,
+          effective_to: normalized.effectiveTo,
           subgroup_id: normalized.subgroupId,
           subgroup_ids: normalized.subgroupIds,
           group_id: normalized.groupId,
@@ -1011,6 +1232,9 @@ router.post(
           employeeId: normalized.employeeId,
           applyOn: normalized.applyOn,
           commissionType: normalized.commissionType,
+          branchId: normalized.branchId,
+          effectiveFrom: normalized.effectiveFrom,
+          effectiveTo: normalized.effectiveTo,
           subgroupIds: normalized.subgroupIds,
           groupIds: normalized.groupIds,
           scopeRate: normalized.scopeRate,
@@ -1036,10 +1260,27 @@ router.post(
         },
       });
 
+      const backdate = await buildBackdateNotice({
+        effectiveFrom: normalized.effectiveFrom,
+        employeeId: normalized.employeeId,
+        commissionType: normalized.commissionType,
+      });
+      // Same cookie the single-rule save uses: the grid reloads to the list
+      // after a bulk save, and the middleware surfaces the notice there. One
+      // path for both rather than a second in-modal prompt.
+      if (backdate) {
+        setCookie(res, backdateCookie, JSON.stringify(backdate), {
+          path: req.baseUrl,
+          maxAge: 120,
+          sameSite: "Lax",
+        });
+      }
+
       return res.json({
         ok: true,
         created: result.created,
         updated: result.updated,
+        backdate,
         message:
           res.locals.t("success_bulk_commission_saved") ||
           res.locals.t("saved"),
@@ -1075,6 +1316,10 @@ router.get(
           primaryValues: [employeeId],
           primaryMode: "include",
         },
+        // The list body is a per-employee group summary; these are the rows the
+        // user actually reads when they expand one. Without the querystring the
+        // "Show past rates" toggle would flip the URL and change nothing.
+        requestQuery: req.query || {},
       });
       return res.json({ rows });
     } catch (err) {
@@ -1321,6 +1566,21 @@ router.post(
     }
   },
 );
+
+// Hands the backdate notice set by the create path to the screen exactly once,
+// so the "review N vouchers" prompt survives the post-save redirect.
+router.use((req, res, next) => {
+  res.locals.commissionBackdateNotice = null;
+  const raw = parseCookies(req)[backdateCookie];
+  if (!raw) return next();
+  try {
+    res.locals.commissionBackdateNotice = JSON.parse(raw);
+  } catch (err) {
+    res.locals.commissionBackdateNotice = null;
+  }
+  setCookie(res, backdateCookie, "", { path: req.baseUrl, maxAge: 0 });
+  return next();
+});
 
 router.use("/", createHrMasterRouter(page));
 

@@ -2480,6 +2480,7 @@ const prepareSalesVoucherPostingLinesTx = async ({
   trx,
   voucherTypeCode,
   validated,
+  branchId = null,
   t,
 }) => {
   const normalizedVoucherType = String(voucherTypeCode || "")
@@ -2504,6 +2505,8 @@ const prepareSalesVoucherPostingLinesTx = async ({
         salesman_employee_id: validated?.salesmanEmployeeId || null,
       },
       lines: postingLines,
+      branchId,
+      voucherDate: validated?.voucherDate || null,
       t,
     });
 
@@ -3244,7 +3247,10 @@ const ensureSalesVoucherDerivedDataTx = async ({
 const writeBranchSaleCommissionTx = async ({ trx, voucherId }) => {
   try {
     const header = await trx("erp.voucher_header")
-      .select("branch_id")
+      .select(
+        "branch_id",
+        trx.raw("to_char(voucher_date, 'YYYY-MM-DD') as voucher_date"),
+      )
       .where({ id: voucherId })
       .first();
     if (!header?.branch_id) return;
@@ -3259,6 +3265,7 @@ const writeBranchSaleCommissionTx = async ({ trx, voucherId }) => {
       lines: skuLines,
       branchId: Number(header.branch_id),
       commissionType: "BRANCH_SALE",
+      voucherDate: header.voucher_date || null,
       t: (key) => key,
     });
     if (branchEntries.length) {
@@ -3428,6 +3435,7 @@ const saveSalesVoucherTx = async ({
     trx,
     voucherTypeCode,
     validated,
+    branchId: req?.branchId || null,
     t: req?.res?.locals?.t,
   });
 
@@ -4565,6 +4573,7 @@ const applySalesVoucherUpdatePayloadTx = async ({
     trx,
     voucherTypeCode,
     validated,
+    branchId: req?.branchId || null,
     t: req?.res?.locals?.t,
   });
   // Sales orders reconcile instead of delete+reinsert so that deliveries

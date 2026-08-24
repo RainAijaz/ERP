@@ -9,6 +9,9 @@ const {
   toMoney,
   hasTwoDecimalsOrLess,
 } = require("./validation");
+const {
+  normalizeRuleDate,
+} = require("../../services/hr-payroll/commission-rules-service");
 const commissionsRoutes = require("./commissions");
 const allowancesRoutes = require("./allowances");
 
@@ -59,6 +62,12 @@ const page = {
     knex.raw(
       "CASE WHEN lower(trim(t.status)) = 'active' THEN true ELSE false END as is_active",
     ),
+    knex.raw(
+      "to_char(t.employment_start_date, 'YYYY-MM-DD') as employment_start_date",
+    ),
+    knex.raw(
+      "to_char(t.employment_end_date, 'YYYY-MM-DD') as employment_end_date",
+    ),
   ],
   columns: [
     { key: "id", label: "id" },
@@ -68,6 +77,8 @@ const page = {
     { key: "phone", label: "phone_number" },
     { key: "payroll_type", label: "payroll_type" },
     { key: "basic_salary", label: "basic_salary", adminOnly: true },
+    { key: "employment_start_date", label: "employment_start_date" },
+    { key: "employment_end_date", label: "employment_end_date" },
     { key: "branch_names", label: "branches" },
     { key: "status", label: "status" },
   ],
@@ -118,6 +129,22 @@ const page = {
       required: true,
     },
     {
+      // Salary accrues only inside this window. Start defaults to the day the
+      // record was created (the old implicit behaviour); leaving End blank means
+      // still employed.
+      name: "employment_start_date",
+      label: "employment_start_date",
+      type: "date",
+      required: true,
+    },
+    {
+      name: "employment_end_date",
+      label: "employment_end_date",
+      type: "date",
+      required: false,
+      hint: "employment_end_date_hint",
+    },
+    {
       name: "branch_ids",
       label: "branches",
       type: "multi-select",
@@ -147,6 +174,8 @@ const page = {
     phone: normalizePhone(values.phone),
     basic_salary:
       values.basic_salary == null ? null : String(values.basic_salary).trim(),
+    employment_start_date: normalizeRuleDate(values.employment_start_date),
+    employment_end_date: normalizeRuleDate(values.employment_end_date),
   }),
   validateValues: async ({ values, req, isUpdate, id }) => {
     const payrollTypes = new Set([
@@ -181,6 +210,24 @@ const page = {
       };
     if (values.status !== "active" && values.status !== "inactive")
       return req.res.locals.t("error_invalid_status");
+    if (
+      values.employment_start_date === undefined ||
+      values.employment_end_date === undefined
+    )
+      return req.res.locals.t("error_invalid_date");
+    if (!values.employment_start_date)
+      return {
+        field: "employment_start_date",
+        message: req.res.locals.t("error_required_fields"),
+      };
+    if (
+      values.employment_end_date &&
+      values.employment_end_date < values.employment_start_date
+    )
+      return {
+        field: "employment_end_date",
+        message: req.res.locals.t("error_invalid_date_range"),
+      };
     if (values.cnic && !isValidCnic(values.cnic))
       return { field: "cnic", message: req.res.locals.t("error_invalid_cnic") };
     if (values.phone && !isValidPhone(values.phone))

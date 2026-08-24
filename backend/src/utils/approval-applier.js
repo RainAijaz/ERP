@@ -14,6 +14,9 @@ const { applyApprovedBomChange } = require("../services/bom/service");
 const {
   applyBulkSkuRateUpsert: applyCommissionBulkSkuRateUpsert,
   deriveValueTypeFromBasis,
+  supersedeCommissionRule,
+  normalizeRuleDate,
+  todayYmd,
 } = require("../services/hr-payroll/commission-rules-service");
 const {
   applyBulkSkuRateUpsert: applyLabourBulkSkuRateUpsert,
@@ -1411,6 +1414,10 @@ const applyEmployeeMasterApproval = async (trx, request) => {
     payroll_type: payload.payroll_type || null,
     basic_salary: toMoneyOrNull(payload.basic_salary),
     status: normalizeStatus(payload.status, "active"),
+    // Salary accrual reads these; omitting them here would silently drop the
+    // dates on approve while the non-approval save path kept them.
+    employment_start_date: normalizeRuleDate(payload.employment_start_date) || null,
+    employment_end_date: normalizeRuleDate(payload.employment_end_date) || null,
   };
 
   if (action === "create") {
@@ -1644,12 +1651,23 @@ const applyEmployeeCommissionApproval = async (trx, request) => {
   const valueType =
     deriveValueTypeFromBasis(basis) ||
     deriveValueTypeFromBasis(COMMISSION_BASIS_FIXED_PER_UNIT);
+  const commissionType =
+    String(payload.commission_type || "SALESMAN_SALE")
+      .trim()
+      .toUpperCase() || "SALESMAN_SALE";
+  const applyOn = String(payload.apply_on || "").trim().toUpperCase() || null;
+  const branchId = toNullableInt(payload.branch_id);
+  const effectiveFrom = normalizeRuleDate(payload.effective_from) || todayYmd();
+  const effectiveTo = normalizeRuleDate(payload.effective_to) || null;
+
   const row = {
     employee_id: toNullableInt(payload.employee_id),
-    apply_on: payload.apply_on || null,
+    apply_on: applyOn,
     sku_id: toNullableInt(payload.sku_id),
     subgroup_id: toNullableInt(payload.subgroup_id),
     group_id: toNullableInt(payload.group_id),
+    branch_id: branchId,
+    commission_type: commissionType,
     commission_basis: basis,
     value_type: valueType,
     rate_type:
@@ -1659,18 +1677,68 @@ const applyEmployeeCommissionApproval = async (trx, request) => {
     value: toMoneyOrNull(payload.value),
     reverse_on_returns: toBoolean(payload.reverse_on_returns),
     status: normalizeStatus(payload.status, "active"),
+    effective_from: effectiveFrom,
+    effective_to: effectiveTo,
+  };
+
+  const supersedeValues = {
+    commission_basis: row.commission_basis,
+    value_type: row.value_type,
+    rate_type: row.rate_type,
+    value: row.value,
+    reverse_on_returns: row.reverse_on_returns,
+    status: row.status,
   };
 
   if (action === "create") {
-    const [created] = await trx(EMPLOYEE_COMMISSION_TABLE)
-      .insert(row)
-      .returning(["id"]);
-    const newId = created && typeof created === "object" ? created.id : created;
+    const newId = await supersedeCommissionRule({
+      trx,
+      employeeId: row.employee_id,
+      commissionType,
+      applyOn,
+      branchId,
+      skuId: row.sku_id,
+      subgroupId: row.subgroup_id,
+      groupId: row.group_id,
+      effectiveFrom,
+      effectiveTo,
+      values: supersedeValues,
+    });
     return { applied: true, entityId: String(newId) };
   }
 
   const id = Number(entityId || 0);
   if (!Number.isInteger(id) || id <= 0) return false;
+
+  // Moving the start date means "a new rate begins here" — the old period is
+  // closed and a new row opens (supersede). Leaving it put means "this period's
+  // figure was wrong" — correct the row in place, with no history row.
+  const existing = await trx(EMPLOYEE_COMMISSION_TABLE)
+    .select(
+      trx.raw("to_char(effective_from, 'YYYY-MM-DD') as effective_from"),
+    )
+    .where({ id })
+    .first();
+  const startMoved =
+    existing && String(existing.effective_from || "") !== effectiveFrom;
+
+  if (startMoved) {
+    await supersedeCommissionRule({
+      trx,
+      employeeId: row.employee_id,
+      commissionType,
+      applyOn,
+      branchId,
+      skuId: row.sku_id,
+      subgroupId: row.subgroup_id,
+      groupId: row.group_id,
+      effectiveFrom,
+      effectiveTo,
+      values: supersedeValues,
+    });
+    return true;
+  }
+
   await trx(EMPLOYEE_COMMISSION_TABLE).where({ id }).update(row);
   return true;
 };
@@ -1752,6 +1820,17 @@ const applyBulkCommissionApproval = async (trx, request) => {
     .map((entry) => toNullableInt(entry))
     .filter((entry) => Number.isInteger(entry) && entry > 0);
   const scopeRate = toMoneyOrNull(payload.scope_rate ?? payload.value);
+  // Previously never read here, so an approved PRODUCTION_FG / TRANSFER bulk save
+  // was written as SALESMAN_SALE. Harmless-looking before, but the supersede
+  // writer closes rows matching this key — getting it wrong would retire the
+  // wrong commission type's rates.
+  const commissionType =
+    String(payload.commission_type || "SALESMAN_SALE")
+      .trim()
+      .toUpperCase() || "SALESMAN_SALE";
+  const branchId = toNullableInt(payload.branch_id);
+  const effectiveFrom = normalizeRuleDate(payload.effective_from) || todayYmd();
+  const effectiveTo = normalizeRuleDate(payload.effective_to) || null;
   const rateTypeDefault =
     String(payload.rate_type || "PER_PAIR")
       .trim()
@@ -1792,6 +1871,10 @@ const applyBulkCommissionApproval = async (trx, request) => {
       trx,
       employeeId,
       applyOn,
+      commissionType,
+      branchId,
+      effectiveFrom,
+      effectiveTo,
       subgroupIds,
       groupIds,
       commissionBasis: COMMISSION_BASIS_FIXED_PER_UNIT,

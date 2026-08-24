@@ -2772,6 +2772,7 @@ const syncStockTransferOutVoucherTx = async ({ trx, voucherId }) => {
         lines: normalizedLines,
         branchId: header.branch_id,
         commissionType: "TRANSFER",
+        voucherDate,
         t: (key) => key,
       });
       if (transferEntries.length) {

@@ -146,9 +146,22 @@ const countDaysExcludingSundays = ({ fromYmd, toYmdValue }) => {
   return Math.max(0, totalDays - sundayCount);
 };
 
-const countDailyAccrualDaysUpTo = ({ employmentStartYmd, asOnYmd }) => {
+// Salary stops accruing the day employment ends. Every accrual helper clamps its
+// upper bound through this, so a leaver's past figures stay untouched while no
+// new period is generated after their last day.
+const capAtEmploymentEnd = (ymd, employmentEndYmd) => {
+  if (!employmentEndYmd) return ymd;
+  if (!ymd) return ymd;
+  return ymd > employmentEndYmd ? employmentEndYmd : ymd;
+};
+
+const countDailyAccrualDaysUpTo = ({
+  employmentStartYmd,
+  asOnYmd,
+  employmentEndYmd = null,
+}) => {
   const startDate = toUtcDateFromYmd(employmentStartYmd);
-  const asOnDate = toUtcDateFromYmd(asOnYmd);
+  const asOnDate = toUtcDateFromYmd(capAtEmploymentEnd(asOnYmd, employmentEndYmd));
   if (!startDate || !asOnDate) return 0;
   if (asOnDate < startDate) return 0;
   return countDaysExcludingSundays({
@@ -157,13 +170,18 @@ const countDailyAccrualDaysUpTo = ({ employmentStartYmd, asOnYmd }) => {
   });
 };
 
-const countMonthlyAccrualsUpTo = ({ employmentStartYmd, asOnYmd }) => {
+const countMonthlyAccrualsUpTo = ({
+  employmentStartYmd,
+  asOnYmd,
+  employmentEndYmd = null,
+}) => {
+  const cappedAsOn = capAtEmploymentEnd(asOnYmd, employmentEndYmd);
   const firstAccrualYmd = getFirstAccrualDateYmd(employmentStartYmd);
-  if (!firstAccrualYmd || asOnYmd < firstAccrualYmd) return 0;
+  if (!firstAccrualYmd || cappedAsOn < firstAccrualYmd) return 0;
   const firstAccrualMonthStart = monthStartUtc(
     toUtcDateFromYmd(firstAccrualYmd),
   );
-  const lastAccrualMonthStart = getLastAccrualMonthStartUtc(asOnYmd);
+  const lastAccrualMonthStart = getLastAccrualMonthStartUtc(cappedAsOn);
   if (!firstAccrualMonthStart || !lastAccrualMonthStart) return 0;
   if (lastAccrualMonthStart < firstAccrualMonthStart) return 0;
   return monthDiff(firstAccrualMonthStart, lastAccrualMonthStart) + 1;
@@ -174,15 +192,17 @@ const buildMonthlyAccrualRowsInRange = ({
   fromYmd,
   toYmdValue,
   monthlyAmount,
+  employmentEndYmd = null,
   idSeed = 0,
 }) => {
   const rows = [];
+  const cappedTo = capAtEmploymentEnd(toYmdValue, employmentEndYmd);
   const firstAccrualYmd = getFirstAccrualDateYmd(employmentStartYmd);
   if (!firstAccrualYmd) return rows;
   const firstAccrualMonthStart = monthStartUtc(
     toUtcDateFromYmd(firstAccrualYmd),
   );
-  const lastAccrualMonthStart = getLastAccrualMonthStartUtc(toYmdValue);
+  const lastAccrualMonthStart = getLastAccrualMonthStartUtc(cappedTo);
   if (!firstAccrualMonthStart || !lastAccrualMonthStart) return rows;
   if (lastAccrualMonthStart < firstAccrualMonthStart) return rows;
   let cursor = firstAccrualMonthStart;
@@ -215,12 +235,13 @@ const buildDailyAccrualRowsInRange = ({
   fromYmd,
   toYmdValue,
   dailyAmount,
+  employmentEndYmd = null,
   idSeed = 0,
 }) => {
   const rows = [];
   const startDate = toUtcDateFromYmd(employmentStartYmd);
   const fromDate = toUtcDateFromYmd(fromYmd);
-  const toDate = toUtcDateFromYmd(toYmdValue);
+  const toDate = toUtcDateFromYmd(capAtEmploymentEnd(toYmdValue, employmentEndYmd));
   if (!startDate || !fromDate || !toDate) return rows;
   if (dailyAmount <= 0) return rows;
 
@@ -258,11 +279,25 @@ const loadEmployeeAccrualProfiles = async ({ entityIds = [] }) => {
     ),
   ];
   if (!normalizedIds.length) return new Map();
+  // Deliberately NOT filtered on status='active'. That filter was applied at
+  // load time, so flipping a leaver to inactive erased their entire historical
+  // accrual retroactively — their past balances changed. The employment window
+  // is what ends accrual now; status only governs whether they can be picked in
+  // new transactions.
   const employeeRows = await knex("erp.employees as e")
-    .select("e.id", "e.basic_salary", "e.created_at", "e.payroll_type")
+    .select(
+      "e.id",
+      "e.basic_salary",
+      "e.created_at",
+      "e.payroll_type",
+      "e.employment_start_date",
+      "e.employment_end_date",
+    )
     .whereIn("e.id", normalizedIds)
     .whereIn("e.payroll_type", ["MONTHLY", "DAILY"])
-    .whereRaw("lower(trim(coalesce(e.status, ''))) = 'active'");
+    .whereRaw(
+      "(lower(trim(coalesce(e.status, ''))) = 'active' OR e.employment_end_date IS NOT NULL)",
+    );
 
   const allowanceRows = await knex("erp.employee_allowance_rules as ar")
     .select("ar.employee_id")
@@ -362,9 +397,14 @@ const loadEmployeeAccrualProfiles = async ({ entityIds = [] }) => {
         Number.isFinite(dailyAllowanceOnly) && dailyAllowanceOnly > 0
           ? dailyAllowanceOnly
           : 0,
+      // Falls back to created_at so rows predating the employment-window
+      // migration keep accruing exactly as they did before.
       employmentStartYmd:
-        toLocalDateOnly(row.created_at || new Date()) ||
+        toLocalDateOnly(row.employment_start_date || row.created_at || new Date()) ||
         toLocalDateOnly(new Date()),
+      employmentEndYmd: row.employment_end_date
+        ? toLocalDateOnly(row.employment_end_date)
+        : null,
     });
   });
   return result;
@@ -890,6 +930,7 @@ const getLedgerRows = async ({
         : null;
       const openingAccrualCount = countMonthlyAccrualsUpTo({
         employmentStartYmd: accrualMeta.employmentStartYmd,
+        employmentEndYmd: accrualMeta.employmentEndYmd,
         asOnYmd: openingAsOnDate || filters.from,
       });
       if (openingAccrualCount > 0) {
@@ -902,6 +943,7 @@ const getLedgerRows = async ({
       }
       syntheticEmployeeRows = buildMonthlyAccrualRowsInRange({
         employmentStartYmd: accrualMeta.employmentStartYmd,
+        employmentEndYmd: accrualMeta.employmentEndYmd,
         fromYmd: filters.from,
         toYmdValue: filters.to,
         monthlyAmount: Number(accrualMeta.monthlyAmount || 0),
@@ -918,6 +960,7 @@ const getLedgerRows = async ({
         : null;
       const openingAccrualCount = countDailyAccrualDaysUpTo({
         employmentStartYmd: accrualMeta.employmentStartYmd,
+        employmentEndYmd: accrualMeta.employmentEndYmd,
         asOnYmd: openingAsOnDate || filters.from,
       });
       if (openingAccrualCount > 0) {
@@ -930,6 +973,7 @@ const getLedgerRows = async ({
       }
       syntheticEmployeeRows = buildDailyAccrualRowsInRange({
         employmentStartYmd: accrualMeta.employmentStartYmd,
+        employmentEndYmd: accrualMeta.employmentEndYmd,
         fromYmd: filters.from,
         toYmdValue: filters.to,
         dailyAmount: Number(accrualMeta.dailyAmount || 0),
@@ -1398,6 +1442,7 @@ const getBalanceRows = async ({ req, filters, kind }) => {
       if (meta.payrollType === "MONTHLY") {
         count = countMonthlyAccrualsUpTo({
           employmentStartYmd: meta.employmentStartYmd,
+          employmentEndYmd: meta.employmentEndYmd,
           asOnYmd: filters.asOn,
         });
         perCycleAmount = Number(meta.monthlyAmount || 0);
@@ -1406,6 +1451,7 @@ const getBalanceRows = async ({ req, filters, kind }) => {
       } else if (meta.payrollType === "DAILY") {
         count = countDailyAccrualDaysUpTo({
           employmentStartYmd: meta.employmentStartYmd,
+          employmentEndYmd: meta.employmentEndYmd,
           asOnYmd: filters.asOn,
         });
         perCycleAmount = Number(meta.dailyAmount || 0);

@@ -69,6 +69,119 @@ const toPositiveIntArray = (value) => {
   ];
 };
 
+const todayYmd = () => {
+  const now = new Date();
+  return new Date(now.getTime() - now.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 10);
+};
+
+// Accepts "" / null (open-ended) and both Date and YYYY-MM-DD. Returns undefined
+// for a value that was supplied but is not a date, so callers can tell "not set"
+// apart from "set to rubbish" — the same contract normalizeAllowanceDate uses.
+const normalizeRuleDate = (value) => {
+  if (value === null || value === undefined || String(value).trim() === "")
+    return null;
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return undefined;
+    return new Date(value.getTime() - value.getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 10);
+  }
+  const raw = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    const parsed = new Date(`${raw}T00:00:00Z`);
+    if (Number.isNaN(parsed.getTime())) return undefined;
+    return raw;
+  }
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+  return new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000)
+    .toISOString()
+    .slice(0, 10);
+};
+
+const addDaysYmd = (ymd, days) => {
+  const parsed = new Date(`${ymd}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime())) return null;
+  parsed.setUTCDate(parsed.getUTCDate() + days);
+  return parsed.toISOString().slice(0, 10);
+};
+
+const toBranchKey = (branchId) =>
+  Number(branchId) > 0 ? Number(branchId) : null;
+
+// Closes whatever rate currently covers this key and inserts the new one, so a
+// rate change never destroys the rate it replaced.
+//
+//   before   Rs 5.00  from 2026-01-01  to (open)
+//   save     Rs 7.00  from 2026-08-01
+//   after    Rs 5.00  from 2026-01-01  to 2026-07-31
+//            Rs 7.00  from 2026-08-01  to (open)
+//
+// A July voucher therefore still recalculates at 5.00. This is the ONLY sanctioned
+// write path for a commission rule — the screen, the bulk grid and the approval
+// applier all funnel through it, because a caller that INSERTs directly would
+// leave two rows both claiming to be in force on the same day.
+const supersedeCommissionRule = async ({
+  trx,
+  employeeId,
+  commissionType,
+  applyOn,
+  branchId = null,
+  skuId = null,
+  subgroupId = null,
+  groupId = null,
+  effectiveFrom,
+  effectiveTo = null,
+  values = {},
+}) => {
+  const from = normalizeRuleDate(effectiveFrom) || todayYmd();
+  const to = normalizeRuleDate(effectiveTo) || null;
+  const branch = toBranchKey(branchId);
+
+  const scopeQuery = () =>
+    trx("erp.employee_commission_rules")
+      .where({
+        employee_id: employeeId,
+        commission_type: commissionType,
+        apply_on: applyOn,
+      })
+      .whereRaw("COALESCE(branch_id, 0) = ?", [branch || 0])
+      .whereRaw("COALESCE(sku_id, 0) = ?", [Number(skuId) || 0])
+      .whereRaw("COALESCE(subgroup_id, 0) = ?", [Number(subgroupId) || 0])
+      .whereRaw("COALESCE(group_id, 0) = ?", [Number(groupId) || 0]);
+
+  // Rows that start on or after the new row never had a chance to apply — the
+  // new rate supersedes them outright rather than leaving an unreachable island.
+  await scopeQuery().where("effective_from", ">=", from).del();
+
+  // The rate currently covering `from` is closed the day before it.
+  await scopeQuery()
+    .where("effective_from", "<", from)
+    .andWhere((builder) =>
+      builder.whereNull("effective_to").orWhere("effective_to", ">=", from),
+    )
+    .update({ effective_to: addDaysYmd(from, -1) });
+
+  const [inserted] = await trx("erp.employee_commission_rules")
+    .insert({
+      ...values,
+      employee_id: employeeId,
+      commission_type: commissionType,
+      apply_on: applyOn,
+      branch_id: branch,
+      sku_id: skuId || null,
+      subgroup_id: subgroupId || null,
+      group_id: groupId || null,
+      effective_from: from,
+      effective_to: to,
+    })
+    .returning("id");
+
+  return Number(typeof inserted === "object" ? inserted.id : inserted);
+};
+
 const toMoney = (value) => {
   if (value === null || value === undefined || value === "") return null;
   const numberValue = Number(value);
@@ -139,6 +252,16 @@ const normalizeBulkInput = ({ payload, t }) => {
   const valueType = deriveValueTypeFromBasis(commissionBasis);
   if (!valueType) throw new Error(t("error_invalid_value_type"));
 
+  // Blank branch = every branch this employee is mapped to.
+  const branchId = toPositiveIntOrNull(payload.branch_id);
+  const effectiveFrom = normalizeRuleDate(payload.effective_from);
+  const effectiveTo = normalizeRuleDate(payload.effective_to);
+  if (effectiveFrom === undefined || effectiveTo === undefined)
+    throw new Error(t("error_invalid_date"));
+  if (!effectiveFrom) throw new Error(t("error_effective_from_required"));
+  if (effectiveTo && effectiveTo < effectiveFrom)
+    throw new Error(t("error_invalid_date_range"));
+
   const rowsSource = Array.isArray(payload.rows) ? payload.rows : [];
   const rows = rowsSource.map((row) => {
     const skuId = toPositiveIntOrNull(row.sku_id);
@@ -176,6 +299,9 @@ const normalizeBulkInput = ({ payload, t }) => {
     employeeId,
     applyOn,
     commissionType,
+    branchId,
+    effectiveFrom,
+    effectiveTo,
     subgroupId: subgroupIds[0] || null,
     subgroupIds,
     groupId: groupIds[0] || null,
@@ -190,11 +316,21 @@ const normalizeBulkInput = ({ payload, t }) => {
   };
 };
 
+// Writes the group/subgroup-level "scope" rate that SKU rows fall back to.
+//
+// Every row goes through supersedeCommissionRule, so an existing rate is closed
+// at the new effective_from rather than overwritten in place. That is why this
+// no longer hunts for an existing id to UPDATE: within one (employee, type,
+// branch, selector) key there is exactly one row in force at a time, and the
+// helper is what guarantees it.
 const upsertBulkScopeRules = async ({
   trx,
   employeeId,
   applyOn,
   commissionType = "SALESMAN_SALE",
+  branchId = null,
+  effectiveFrom,
+  effectiveTo = null,
   subgroupIds = [],
   groupIds = [],
   commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT,
@@ -208,8 +344,6 @@ const upsertBulkScopeRules = async ({
   if (scopeRate === null || scopeRate === undefined)
     return { created: 0, updated: 0 };
 
-  const selectorColumn =
-    applyOn === APPLY_ON.SUBGROUP ? "subgroup_id" : "group_id";
   const selectorIds = [
     ...new Set(
       (applyOn === APPLY_ON.SUBGROUP ? subgroupIds : groupIds)
@@ -219,72 +353,33 @@ const upsertBulkScopeRules = async ({
   ];
   if (!selectorIds.length) return { created: 0, updated: 0 };
 
-  const existing = await trx("erp.employee_commission_rules")
-    .select("id", selectorColumn)
-    .where({
-      employee_id: employeeId,
-      apply_on: applyOn,
-      commission_type: commissionType,
-      commission_basis: commissionBasis,
-      value_type: valueType,
-    })
-    .whereRaw("COALESCE(sku_id, 0) = 0")
-    .whereIn(selectorColumn, selectorIds)
-    .orderBy("id", "desc");
-
-  const existingBySelector = new Map();
-  const duplicateIdsToDelete = [];
-  existing.forEach((row) => {
-    const key = Number(row[selectorColumn]);
-    if (!existingBySelector.has(key)) {
-      existingBySelector.set(key, Number(row.id));
-      return;
-    }
-    duplicateIdsToDelete.push(Number(row.id));
-  });
-
-  if (duplicateIdsToDelete.length) {
-    await trx("erp.employee_commission_rules")
-      .whereIn("id", duplicateIdsToDelete)
-      .del();
-  }
-
-  let updated = 0;
   let created = 0;
   const selectorToRuleId = new Map();
   for (const selectorId of selectorIds) {
-    const existingId = existingBySelector.get(selectorId);
-    const payload = {
-      value: scopeRate,
-      rate_type: rateType,
-      value_type: valueType,
-      commission_type: commissionType,
-      reverse_on_returns: reverseOnReturns,
-      status,
-      apply_on: applyOn,
-      sku_id: null,
-      subgroup_id: applyOn === APPLY_ON.SUBGROUP ? selectorId : null,
-      group_id: applyOn === APPLY_ON.GROUP ? selectorId : null,
-    };
-
-    if (existingId) {
-      await trx("erp.employee_commission_rules")
-        .where({ id: existingId })
-        .update(payload);
-      selectorToRuleId.set(selectorId, existingId);
-      updated += 1;
-      continue;
-    }
-
-    const [insertedRow] = await trx("erp.employee_commission_rules")
-      .insert({ employee_id: employeeId, commission_basis: commissionBasis, ...payload })
-      .returning("id");
-    const newId = typeof insertedRow === "object" ? insertedRow.id : insertedRow;
-    selectorToRuleId.set(selectorId, Number(newId));
+    const newId = await supersedeCommissionRule({
+      trx,
+      employeeId,
+      commissionType,
+      applyOn,
+      branchId,
+      subgroupId: applyOn === APPLY_ON.SUBGROUP ? selectorId : null,
+      groupId: applyOn === APPLY_ON.GROUP ? selectorId : null,
+      effectiveFrom,
+      effectiveTo,
+      values: {
+        commission_basis: commissionBasis,
+        value: scopeRate,
+        rate_type: rateType,
+        value_type: valueType,
+        reverse_on_returns: reverseOnReturns,
+        status,
+      },
+    });
+    selectorToRuleId.set(selectorId, newId);
     created += 1;
   }
 
-  return { created, updated, selectorToRuleId };
+  return { created, updated: 0, selectorToRuleId };
 };
 
 const fetchTargetSkus = async ({
@@ -340,6 +435,8 @@ const fetchExistingRules = async ({
   employeeId,
   commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT,
   commissionType = "SALESMAN_SALE",
+  branchId = null,
+  onDate = null,
 }) => {
   const employee = Number(employeeId || 0);
   if (!Number.isInteger(employee) || employee <= 0) return [];
@@ -348,6 +445,9 @@ const fetchExistingRules = async ({
     .trim()
     .toUpperCase();
   if (!basis) return [];
+
+  const effectiveDate = normalizeRuleDate(onDate) || todayYmd();
+  const branch = toBranchKey(branchId);
 
   return db("erp.employee_commission_rules as ecr")
     .select(
@@ -362,6 +462,7 @@ const fetchExistingRules = async ({
       ),
       "status",
       "reverse_on_returns",
+      "branch_id",
     )
     .where({
       employee_id: employee,
@@ -370,6 +471,21 @@ const fetchExistingRules = async ({
         .trim()
         .toUpperCase(),
       status: "active",
+    })
+    // "Previous rate" must mean the rate in force at the branch and on the date
+    // the new rule starts — not whatever row happens to exist. Without this the
+    // grid would offer a rate from a different branch as the thing being changed.
+    .whereRaw("effective_from <= ?::date", [effectiveDate])
+    .whereRaw("COALESCE(effective_to, ?::date) >= ?::date", [
+      effectiveDate,
+      effectiveDate,
+    ])
+    .modify((builder) => {
+      if (branch) {
+        builder.whereRaw("(branch_id IS NULL OR branch_id = ?)", [branch]);
+      } else {
+        builder.whereNull("branch_id");
+      }
     });
 };
 
@@ -378,7 +494,13 @@ const indexExistingRules = (existingRules) => {
   const bySubgroupId = new Map();
   const byGroupId = new Map();
   let allRule = null;
-  for (const rule of existingRules) {
+  // Each map keeps the FIRST rule it sees for a key, so branch-pinned rules must
+  // be visited first — otherwise a branch-wide rate would shadow the pinned one
+  // and the grid would show the wrong "previous rate".
+  const ordered = [...existingRules].sort(
+    (a, b) => (b.branch_id ? 1 : 0) - (a.branch_id ? 1 : 0),
+  );
+  for (const rule of ordered) {
     const scope = String(rule.apply_on || "").toUpperCase();
     if (scope === APPLY_ON.SKU) {
       const key = Number(rule.sku_id);
@@ -423,6 +545,8 @@ const buildBulkPreviewRows = async ({
   groupIds = null,
   commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT,
   commissionType = "SALESMAN_SALE",
+  branchId = null,
+  effectiveFrom = null,
   baseRate,
 }) => {
   const normalizedSubgroupIds = Array.isArray(subgroupIds)
@@ -443,7 +567,14 @@ const buildBulkPreviewRows = async ({
       groupIds: normalizedGroupIds,
       commissionType,
     }),
-    fetchExistingRules({ db, employeeId, commissionBasis, commissionType }),
+    fetchExistingRules({
+      db,
+      employeeId,
+      commissionBasis,
+      commissionType,
+      branchId,
+      onDate: effectiveFrom,
+    }),
   ]);
   if (!targetSkus.length) return [];
 
@@ -472,6 +603,9 @@ const applyBulkSkuRateUpsert = async ({
   employeeId,
   applyOn = APPLY_ON.SKU,
   commissionType = "SALESMAN_SALE",
+  branchId = null,
+  effectiveFrom,
+  effectiveTo = null,
   subgroupIds = [],
   groupIds = [],
   commissionBasis = COMMISSION_BASIS_FIXED_PER_UNIT,
@@ -487,6 +621,9 @@ const applyBulkSkuRateUpsert = async ({
     employeeId,
     applyOn,
     commissionType,
+    branchId,
+    effectiveFrom,
+    effectiveTo,
     subgroupIds,
     groupIds,
     commissionBasis,
@@ -497,37 +634,6 @@ const applyBulkSkuRateUpsert = async ({
     status,
   });
 
-  const skuIds = rows.map((row) => row.skuId);
-  const existing = await trx("erp.employee_commission_rules")
-    .select("id", "sku_id")
-    .where({
-      employee_id: employeeId,
-      apply_on: APPLY_ON.SKU,
-      commission_type: commissionType,
-      commission_basis: commissionBasis,
-      value_type: valueType,
-    })
-    .whereIn("sku_id", skuIds)
-    .orderBy("id", "desc");
-
-  const existingBySku = new Map();
-  const duplicateIdsToDelete = [];
-  existing.forEach((row) => {
-    const key = Number(row.sku_id);
-    if (!existingBySku.has(key)) {
-      existingBySku.set(key, Number(row.id));
-      return;
-    }
-    duplicateIdsToDelete.push(Number(row.id));
-  });
-
-  if (duplicateIdsToDelete.length) {
-    await trx("erp.employee_commission_rules")
-      .whereIn("id", duplicateIdsToDelete)
-      .del();
-  }
-
-  let updated = 0;
   let created = 0;
 
   for (const row of rows) {
@@ -536,47 +642,33 @@ const applyBulkSkuRateUpsert = async ({
       : Number(row.groupId || 0) || null;
     const sourceRuleId = (selectorId && scopeResult.selectorToRuleId?.get(selectorId)) || null;
 
-    const existingId = existingBySku.get(Number(row.skuId));
-    if (existingId) {
-      await trx("erp.employee_commission_rules")
-        .where({ id: existingId })
-        .update({
-          value: row.rate,
-          rate_type: rateType,
-          value_type: valueType,
-          commission_type: commissionType,
-          reverse_on_returns: reverseOnReturns,
-          status,
-          apply_on: APPLY_ON.SKU,
-          subgroup_id: null,
-          group_id: null,
-          source_rule_id: sourceRuleId,
-        });
-      updated += 1;
-      continue;
-    }
-
-    await trx("erp.employee_commission_rules").insert({
-      employee_id: employeeId,
-      apply_on: APPLY_ON.SKU,
-      sku_id: row.skuId,
-      subgroup_id: null,
-      group_id: null,
-      commission_type: commissionType,
-      commission_basis: commissionBasis,
-      value: row.rate,
-      rate_type: rateType,
-      reverse_on_returns: reverseOnReturns,
-      value_type: valueType,
-      status,
-      source_rule_id: sourceRuleId,
+    // supersedeCommissionRule closes the rate this one replaces instead of
+    // overwriting it, so historical rows survive and stay recalculable.
+    await supersedeCommissionRule({
+      trx,
+      employeeId,
+      commissionType,
+      applyOn: APPLY_ON.SKU,
+      branchId,
+      skuId: row.skuId,
+      effectiveFrom,
+      effectiveTo,
+      values: {
+        commission_basis: commissionBasis,
+        value: row.rate,
+        rate_type: rateType,
+        value_type: valueType,
+        reverse_on_returns: reverseOnReturns,
+        status,
+        source_rule_id: sourceRuleId,
+      },
     });
     created += 1;
   }
 
   return {
     created: created + Number(scopeResult.created || 0),
-    updated: updated + Number(scopeResult.updated || 0),
+    updated: Number(scopeResult.updated || 0),
   };
 };
 
@@ -587,6 +679,9 @@ module.exports = {
   normalizeBulkInput,
   buildBulkPreviewRows,
   applyBulkSkuRateUpsert,
+  supersedeCommissionRule,
+  normalizeRuleDate,
+  todayYmd,
   hasTwoDecimalsOrLess,
   toMoney,
 };

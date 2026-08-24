@@ -4486,6 +4486,7 @@ const writeProductionCommissionTx = async ({
   trx,
   voucherId,
   branchId,
+  voucherDate = null,
   outputs = [],
 }) => {
   const normalizedBranchId = toPositiveInt(branchId);
@@ -4504,6 +4505,7 @@ const writeProductionCommissionTx = async ({
       lines: normalizeProductionLinesForCommission(categoryOutputs),
       branchId: normalizedBranchId,
       commissionType,
+      voucherDate,
       t: (key) => key,
     });
     if (entries.length) {
@@ -4807,6 +4809,7 @@ const applyDcvToWipTx = async ({ trx, voucherId, branchId, voucherDate }) => {
     trx,
     voucherId,
     branchId,
+    voucherDate,
     outputs: commissionOutputs,
   });
 };
@@ -5420,6 +5423,7 @@ const applyProductionToGeneratedVouchersTx = async ({
     trx,
     voucherId,
     branchId,
+    voucherDate,
     outputs: commissionOutputs,
   });
 };

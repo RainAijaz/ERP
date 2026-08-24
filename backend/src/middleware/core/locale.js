@@ -4826,6 +4826,48 @@ Object.assign(translations.ur, {
     "درخواست دہندہ نے واٹس ایپ اطلاع نہ بھیجنے کا کہا تھا۔",
 });
 
+// Per-branch commission rates + effective dating, and the employment window on
+// employees. Same trailing-Object.assign rule as the blocks above: translations.ur
+// is reassigned wholesale further up, and sanitizeUrduTranslations has already
+// run by the time this executes -- so a key missing from the ur block renders
+// "ترجمہ درکار" rather than quietly falling back to English.
+Object.assign(translations.en, {
+  all_employee_branches: "All branches (this employee)",
+  show_past_rates: "Show past rates",
+  past_rate: "Past rate",
+  effective_to_hint: "Leave blank — applies until changed",
+  employment_start_date: "Start Date",
+  employment_end_date: "End Date",
+  employment_end_date_hint: "Leave blank if still employed",
+  error_effective_from_required: "Select the date this rate starts applying.",
+  error_employee_not_at_branch:
+    "This employee is not mapped to the selected branch.",
+  backdated_recalc_title: "This rate starts in the past",
+  backdated_recalc_body:
+    "{count} posted voucher(s) fall in this range. They still hold the old commission until you recalculate them.",
+  review_and_recalculate: "Review & recalculate",
+  not_now: "Not now",
+});
+
+Object.assign(translations.ur, {
+  all_employee_branches: "تمام برانچز (اسی ملازم کی)",
+  show_past_rates: "پچھلے ریٹ دکھائیں",
+  past_rate: "پچھلا ریٹ",
+  effective_to_hint: "خالی چھوڑ دیں — تبدیلی تک لاگو رہے گا",
+  employment_start_date: "ملازمت شروع ہونے کی تاریخ",
+  employment_end_date: "ملازمت ختم ہونے کی تاریخ",
+  employment_end_date_hint: "اگر ملازمت جاری ہے تو خالی چھوڑ دیں",
+  error_effective_from_required:
+    "وہ تاریخ منتخب کریں جس سے یہ ریٹ لاگو ہوگا۔",
+  error_employee_not_at_branch:
+    "یہ ملازم منتخب کردہ برانچ سے منسلک نہیں ہے۔",
+  backdated_recalc_title: "یہ ریٹ گزشتہ تاریخ سے شروع ہو رہا ہے",
+  backdated_recalc_body:
+    "اس مدت میں {count} واؤچر پوسٹ شدہ ہیں۔ دوبارہ حساب کرنے تک ان پر پرانا کمیشن ہی لاگو رہے گا۔",
+  review_and_recalculate: "جائزہ لیں اور دوبارہ حساب کریں",
+  not_now: "ابھی نہیں",
+});
+
 const formatDateDisplay = (value, fallback = "-") => {
   if (value === null || value === undefined || value === "") return fallback;
   const text = String(value).trim();

@@ -16,6 +16,29 @@ const toNumber = (value, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+// Local calendar date, not UTC: a voucher dated "today" in Karachi must not
+// resolve to yesterday's rate because the server clock crossed midnight in UTC.
+const todayYmd = () => {
+  const now = new Date();
+  const offsetMs = now.getTimezoneOffset() * 60 * 1000;
+  return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
+};
+
+const toDateOnly = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    const offsetMs = value.getTimezoneOffset() * 60 * 1000;
+    return new Date(value.getTime() - offsetMs).toISOString().slice(0, 10);
+  }
+  const raw = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const offsetMs = parsed.getTimezoneOffset() * 60 * 1000;
+  return new Date(parsed.getTime() - offsetMs).toISOString().slice(0, 10);
+};
+
 const resolveSalesHeaderPayload = (body = {}) => {
   const source = body.sales || body.sales_header || {};
   return {
@@ -96,16 +119,33 @@ const convertToBaseQty = ({ qty, fromUomId, baseUomId, conversionMap, t }) => {
   throw new HttpError(400, t("error_invalid_value"));
 };
 
-// Loads active commission rules for an employee filtered by commission_type.
-const buildRuleMatchIndex = async (trx, salesmanEmployeeId, commissionType) => {
+// Loads the commission rules in force for an employee on a given date, at a
+// given branch, filtered by commission_type.
+//
+// branchId null / onDate omitted degrade to "any branch" / "today" rather than
+// throwing, so a call site that was missed keeps behaving as it did before
+// rules gained a branch and an effective-date window.
+const buildRuleMatchIndex = async (
+  trx,
+  salesmanEmployeeId,
+  commissionType,
+  { branchId = null, onDate = null } = {},
+) => {
   if (!salesmanEmployeeId) return [];
-  return trx("erp.employee_commission_rules as ecr")
+  const effectiveDate = toDateOnly(onDate) || todayYmd();
+  const normalizedBranchId = Number(branchId) > 0 ? Number(branchId) : null;
+
+  const query = trx("erp.employee_commission_rules as ecr")
     .select(
       "id",
       "apply_on",
       "sku_id",
       "subgroup_id",
       "group_id",
+      // to_jsonb rather than a bare column, so this query still runs against a
+      // database where the branch/effective-date migration has not been applied
+      // yet -- deploying code ahead of the migration must not break posting.
+      trx.raw(`(to_jsonb(ecr)->>'branch_id')::bigint as branch_id`),
       "commission_basis",
       trx.raw(`COALESCE(NULLIF(to_jsonb(ecr)->>'rate_type', ''), 'PER_PAIR') as rate_type`),
       "value",
@@ -116,20 +156,58 @@ const buildRuleMatchIndex = async (trx, salesmanEmployeeId, commissionType) => {
       "ecr.employee_id": salesmanEmployeeId,
       "ecr.status": "active",
       "ecr.commission_type": commissionType,
-    });
+    })
+    // to_jsonb keeps this working against a database where the migration that
+    // adds the window has not run yet: a missing key reads as NULL, and a NULL
+    // effective_from is treated as "has always applied".
+    .whereRaw(
+      `COALESCE((to_jsonb(ecr)->>'effective_from')::date, ?::date) <= ?::date`,
+      [effectiveDate, effectiveDate],
+    )
+    .whereRaw(
+      `COALESCE((to_jsonb(ecr)->>'effective_to')::date, ?::date) >= ?::date`,
+      [effectiveDate, effectiveDate],
+    );
+
+  // A NULL branch_id means "every branch this employee is mapped to". That is
+  // exact rather than merely permissive: validateSalesmanTx already rejects a
+  // salesman who is not mapped to the voucher's branch, and the BRANCH_SALE /
+  // TRANSFER / PRODUCTION paths only ever iterate employees mapped to it.
+  if (normalizedBranchId) {
+    return query.whereRaw(
+      `((to_jsonb(ecr)->>'branch_id') IS NULL OR (to_jsonb(ecr)->>'branch_id')::bigint = ?)`,
+      [normalizedBranchId],
+    );
+  }
+  return query;
 };
 
+// Two-level precedence: a rule pinned to this branch beats every branch-wide
+// rule, and only then does the scope ladder apply. So a branch-specific GROUP
+// rate outranks a branch-wide SKU rate — "this branch pays differently, full
+// stop" is the whole point of pinning one.
+const BRANCH_PRECEDENCE = ["BRANCH", "ANY"];
+
 const pickRuleByPrecedence = (rules, basis, context) => {
-  for (const scope of PRECEDENCE) {
-    const matched = rules.find((rule) => {
-      if (String(rule.commission_basis) !== basis) return false;
-      if (String(rule.apply_on) !== scope) return false;
-      if (scope === "SKU") return Number(rule.sku_id) === Number(context.skuId);
-      if (scope === "SUBGROUP") return Number(rule.subgroup_id) === Number(context.subgroupId);
-      if (scope === "GROUP") return Number(rule.group_id) === Number(context.groupId);
-      return true;
-    });
-    if (matched) return { rule: matched, precedence: scope };
+  for (const branchScope of BRANCH_PRECEDENCE) {
+    for (const scope of PRECEDENCE) {
+      const matched = rules.find((rule) => {
+        if (String(rule.commission_basis) !== basis) return false;
+        if (String(rule.apply_on) !== scope) return false;
+        const ruleBranchId = Number(rule.branch_id) > 0 ? Number(rule.branch_id) : null;
+        if (branchScope === "BRANCH") {
+          if (!ruleBranchId) return false;
+          if (!context.branchId || ruleBranchId !== Number(context.branchId)) return false;
+        } else if (ruleBranchId) {
+          return false;
+        }
+        if (scope === "SKU") return Number(rule.sku_id) === Number(context.skuId);
+        if (scope === "SUBGROUP") return Number(rule.subgroup_id) === Number(context.subgroupId);
+        if (scope === "GROUP") return Number(rule.group_id) === Number(context.groupId);
+        return true;
+      });
+      if (matched) return { rule: matched, precedence: scope };
+    }
   }
   return null;
 };
@@ -238,7 +316,7 @@ const applyInvoiceLevelCommissions = ({ lineBreakdowns, matchedRulesByLine, sale
 // Shared core: calculates commission for one employee's rules against a set of lines.
 // Lines must have sku_id, qty, uom_id, and meta with is_packed/sale_qty/return_qty/total_amount/gross_margin_amount.
 // Returns { totalCommission, lineBreakdowns } — lineBreakdowns is indexed by the original lines array position.
-const computeEmployeeCommissionOnLines = async ({ trx, rules, lines, t }) => {
+const computeEmployeeCommissionOnLines = async ({ trx, rules, lines, branchId = null, t }) => {
   if (!rules.length) return { totalCommission: 0, lineBreakdowns: [] };
 
   const skuLines = lines
@@ -290,6 +368,7 @@ const computeEmployeeCommissionOnLines = async ({ trx, rules, lines, t }) => {
           skuId: Number(line.sku_id),
           subgroupId: Number(context.subgroup_id || 0),
           groupId: Number(context.group_id || 0),
+          branchId: Number(branchId) > 0 ? Number(branchId) : null,
         }),
       )
       .filter(Boolean);
@@ -321,7 +400,14 @@ const computeEmployeeCommissionOnLines = async ({ trx, rules, lines, t }) => {
   return { totalCommission, lineBreakdowns };
 };
 
-const enrichSalesVoucherLines = async ({ trx, lines, salesmanEmployeeId, t }) => {
+const enrichSalesVoucherLines = async ({
+  trx,
+  lines,
+  salesmanEmployeeId,
+  branchId = null,
+  voucherDate = null,
+  t,
+}) => {
   const skuLines = lines
     .map((line, idx) => ({ line, idx }))
     .filter(({ line }) => String(line.line_kind || "").toUpperCase() === "SKU" && Number(line.sku_id) > 0);
@@ -330,8 +416,11 @@ const enrichSalesVoucherLines = async ({ trx, lines, salesmanEmployeeId, t }) =>
     return { lines, totalCommission: 0 };
   }
 
-  const rules = await buildRuleMatchIndex(trx, salesmanEmployeeId, "SALESMAN_SALE");
-  const { totalCommission, lineBreakdowns } = await computeEmployeeCommissionOnLines({ trx, rules, lines, t });
+  const rules = await buildRuleMatchIndex(trx, salesmanEmployeeId, "SALESMAN_SALE", {
+    branchId,
+    onDate: voucherDate,
+  });
+  const { totalCommission, lineBreakdowns } = await computeEmployeeCommissionOnLines({ trx, rules, lines, branchId, t });
 
   const enriched = lines.map((line, idx) => {
     const breakdown = lineBreakdowns[idx];
@@ -409,7 +498,14 @@ const normalizeProductionLinesForCommission = (lines) =>
 // Computes BRANCH_SALE or TRANSFER ledger entries for all eligible employees at a branch.
 // For BRANCH_SALE: lines are sales voucher lines (already have packed meta).
 // For TRANSFER:    lines are stock-transfer SKU lines (caller must normalize first).
-const computeLedgerEntriesForBranch = async ({ trx, lines, branchId, commissionType, t }) => {
+const computeLedgerEntriesForBranch = async ({
+  trx,
+  lines,
+  branchId,
+  commissionType,
+  voucherDate = null,
+  t,
+}) => {
   if (!branchId || !lines.length) return [];
 
   const branchEmployees = await trx("erp.employee_branch")
@@ -421,10 +517,13 @@ const computeLedgerEntriesForBranch = async ({ trx, lines, branchId, commissionT
   const entries = [];
 
   for (const { employee_id } of branchEmployees) {
-    const rules = await buildRuleMatchIndex(trx, employee_id, commissionType);
+    const rules = await buildRuleMatchIndex(trx, employee_id, commissionType, {
+      branchId,
+      onDate: voucherDate,
+    });
     if (!rules.length) continue;
 
-    const { totalCommission, lineBreakdowns } = await computeEmployeeCommissionOnLines({ trx, rules, lines, t });
+    const { totalCommission, lineBreakdowns } = await computeEmployeeCommissionOnLines({ trx, rules, lines, branchId, t });
     if (totalCommission === 0) continue;
 
     const linesDetail = lines
@@ -535,7 +634,13 @@ const planSalesmanCommissionRecomputeTx = async ({ db, voucherId, t }) => {
   if (!Number.isInteger(normalizedVoucherId) || normalizedVoucherId <= 0) return null;
 
   const header = await db("erp.voucher_header")
-    .select("id", "voucher_type_code", "status")
+    .select(
+      "id",
+      "voucher_type_code",
+      "status",
+      "branch_id",
+      db.raw("to_char(voucher_date, 'YYYY-MM-DD') as voucher_date"),
+    )
     .where({ id: normalizedVoucherId })
     .first();
   if (!header) return null;
@@ -561,10 +666,14 @@ const planSalesmanCommissionRecomputeTx = async ({ db, voucherId, t }) => {
 
   const employeeLine = allLines.find(isAutoSalesCommissionLine) || null;
 
+  // Resolved against the voucher's OWN date and branch, so recalculating a past
+  // range applies the rate that was actually in force then rather than today's.
   const { lines: enrichedLines, totalCommission } = await enrichSalesVoucherLines({
     trx: db,
     lines: skuLines,
     salesmanEmployeeId,
+    branchId: Number(header.branch_id) || null,
+    voucherDate: header.voucher_date || null,
     t,
   });
 
@@ -698,7 +807,15 @@ const applySalesmanCommissionWriteTx = async ({ trx, write, provenance = null })
   return { skuLinesUpdated, employeeLineAction: "inserted" };
 };
 
-const prepareSalesVoucherData = async ({ trx, voucherTypeCode, body, lines, t }) => {
+const prepareSalesVoucherData = async ({
+  trx,
+  voucherTypeCode,
+  body,
+  lines,
+  branchId = null,
+  voucherDate = null,
+  t,
+}) => {
   if (String(voucherTypeCode || "").toUpperCase() !== SALES_VOUCHER_CODE) {
     return {
       lines,
@@ -713,6 +830,8 @@ const prepareSalesVoucherData = async ({ trx, voucherTypeCode, body, lines, t })
     trx,
     lines,
     salesmanEmployeeId: salesHeader.salesman_employee_id,
+    branchId,
+    voucherDate: voucherDate || body?.voucher_date || null,
     t,
   });
   const salesLines = buildSalesLineRows(enrichedResult.lines);
