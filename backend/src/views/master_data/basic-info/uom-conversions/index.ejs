@@ -69,7 +69,7 @@
                 <td class="px-4 py-3 text-slate-700"><%= row.to_code %> &mdash; <%= row.to_name %></td>
                 <td class="px-4 py-3 text-slate-700"><%= row.factor %></td>
                 <td class="px-4 py-3">
-                  <%- include("../../../base/partials/table-actions", { t, row, basePath, editFields: ["from_uom_id", "to_uom_id", "factor"], withMenu: false, canEdit, canDelete, canHardDelete }) %>
+                  <%- include("../../../base/partials/table-actions", { t, row, basePath, editFields: ["from_uom_id", "to_uom_id", "factor"], withMenu: true, canEdit, canDelete, canHardDelete }) %>
                 </td>
               </tr>
             <% }) %>

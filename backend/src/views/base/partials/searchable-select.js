@@ -4,6 +4,7 @@
   const i18nSelect = '<%= t("select") %>';
   const i18nSelected = '<%= t("selected")  %>';
   const i18nSearchResultsLimited = '<%= t("search_results_limited") %>';
+  const i18nRemove = '<%= t("remove") %>';
 
   if (typeof window !== "undefined") {
     const existing = window.VoucherValidation || {};
@@ -45,6 +46,10 @@
     return labelText ? `${i18nSearch} ${labelText}` : i18nSearch;
   };
   const searchableRegistry = new Set();
+  // Re-render hooks per initialised select. The edit modal writes option.selected
+  // directly (see basic-info-utils.ejs), which fires no change event, so without
+  // this the chips of a multi-select stay empty and the control looks unset.
+  const searchableValueSyncers = new WeakMap();
   const forEachSearchableEntry = (callback) => {
     searchableRegistry.forEach((entry) => {
       if (!entry || typeof entry !== "object") return;
@@ -113,6 +118,8 @@
     if (!(input instanceof HTMLInputElement)) return;
 
     syncSearchableInputLockedState({ select, input });
+    const syncValue = searchableValueSyncers.get(select);
+    if (typeof syncValue === "function") syncValue();
   };
 
   const createSearchableSelect = (select) => {
@@ -774,9 +781,10 @@
           const chipRemove = document.createElement("button");
           chipRemove.type = "button";
           chipRemove.className =
-            "inline-flex h-4 w-4 items-center justify-center rounded-full text-slate-500 hover:bg-slate-200 hover:text-slate-700";
+            "inline-flex h-6 w-6 flex-none items-center justify-center rounded-full text-sm leading-none text-slate-500 hover:bg-slate-200 hover:text-slate-700";
           chipRemove.textContent = "x";
-          chipRemove.addEventListener("mousedown", (event) => {
+          chipRemove.setAttribute("aria-label", i18nRemove);
+          chipRemove.addEventListener("pointerdown", (event) => {
             event.preventDefault();
             opt.selected = false;
             normalizeMultiSelectAll(opt);
@@ -838,7 +846,6 @@
       return Array.from(select.options).filter((opt) => {
         const isEmptyOption = !opt.value;
         if (isEmptyOption && isMulti) return false;
-        if (isMulti && opt.selected) return false;
         const label = opt.textContent.trim();
         const isMatch = !filter || label.toLowerCase().includes(filter);
         const isExactMatch = !isMulti && input.value.trim() === label;
@@ -1053,7 +1060,8 @@
         if (e.key === "Enter" && !menu.classList.contains("hidden")) {
           e.preventDefault();
           const filteredOptions = getFilteredOptions({ showAll: false });
-          const match = filteredOptions.find((opt) => !!opt.value) || null;
+          const match =
+            filteredOptions.find((opt) => !!opt.value && !opt.selected) || null;
           if (!match) return;
           match.selected = true;
           normalizeMultiSelectAll(match);
@@ -1344,7 +1352,22 @@
       reposition: handleViewportReposition,
       isOpen: () => !menu.classList.contains("hidden"),
     });
+    searchableValueSyncers.set(select, syncToInput);
     syncToInput();
+  };
+
+  // Redraws the visible state (chips / input text) of every already-initialised
+  // searchable select under `root` from its underlying <select>. Call it after
+  // setting option.selected programmatically.
+  const refreshSearchableSelects = (root = document) => {
+    const scope =
+      root && typeof root.querySelectorAll === "function" ? root : document;
+    scope
+      .querySelectorAll('select[data-searchable-ready="true"]')
+      .forEach((select) => {
+        const syncValue = searchableValueSyncers.get(select);
+        if (typeof syncValue === "function") syncValue();
+      });
   };
 
   const initSearchableSelects = (root = document) => {
@@ -1555,12 +1578,21 @@
         });
       };
       document.addEventListener("pointerdown", (event) => {
-        const target = event.target;
-        if (
-          target instanceof HTMLElement &&
-          target.closest("[data-searchable-wrapper]")
-        )
-          return;
+        // Read the wrapper off the event path, not off the live target. Picking an
+        // option re-renders the menu, so by the time this fires the button is
+        // already detached and closest() would report an outside click -- which is
+        // what used to slam the menu shut after every single pick.
+        const path =
+          typeof event.composedPath === "function" ? event.composedPath() : [];
+        const insideWrapper = path.length
+          ? path.some(
+              (node) =>
+                node instanceof HTMLElement &&
+                node.hasAttribute("data-searchable-wrapper"),
+            )
+          : event.target instanceof HTMLElement &&
+            !!event.target.closest("[data-searchable-wrapper]");
+        if (insideWrapper) return;
         closeSearchableMenus();
       });
       document.addEventListener("keydown", (event) => {
@@ -1606,6 +1638,7 @@
       });
     }
     window.initSearchableSelects = initSearchableSelects;
+    window.refreshSearchableSelects = refreshSearchableSelects;
     window.__globalSearchableSelectReady = true;
     window.initDataMultiSelects = initDataMultiSelects;
     document.addEventListener("DOMContentLoaded", () => {

@@ -538,6 +538,12 @@
         }
       }
       refreshMultiSelects();
+      // Options above are selected by property, which fires no change event, so the
+      // searchable widgets still show whatever they were last rendered with. Without
+      // this a populated multi-select (branches, departments) opens looking empty.
+      if (typeof window.refreshSearchableSelects === "function") {
+        window.refreshSearchableSelects(modalForm);
+      }
       document.dispatchEvent(
         new CustomEvent("modal:opened", { detail: { mode } }),
       );
