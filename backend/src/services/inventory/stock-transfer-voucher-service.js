@@ -149,6 +149,11 @@ const canDo = (req, scopeType, scopeKey, action) => {
 const canApproveVoucherAction = (req, scopeKey) =>
   req?.user?.isAdmin === true || canDo(req, "VOUCHER", scopeKey, "approve");
 
+// Admins may force an edit/delete of an already-approved voucher through even when
+// the stock it originally added has since moved on. Everyone else still gets the
+// shortfall error built by stock-rollback-diagnostics.
+const canForceStockRollback = (req) => req?.user?.isAdmin === true;
+
 const requiresApprovalForAction = async (trx, voucherTypeCode, action) => {
   return resolveVoucherApprovalRequiredTx({
     trx,
@@ -699,7 +704,16 @@ const insertSkuStockLedgerTx = async ({
   });
 };
 
-const rollbackInventoryStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
+// `allowNegative` is the admin override. Un-posting a voucher whose stock has since
+// been consumed would drive the branch balance below zero, so normally it refuses.
+// With the override we let it go negative on purpose rather than clamp at 0: clamping
+// silently drops the difference and leaves the cached balance out of step with the
+// ledger, which is the very drift this guard exists to catch.
+const rollbackInventoryStockLedgerByVoucherTx = async ({
+  trx,
+  voucherId,
+  allowNegative = false,
+}) => {
   const normalizedVoucherId = toPositiveInt(voucherId);
   if (!normalizedVoucherId) return;
   if (!(await hasStockLedgerTableTx(trx))) return;
@@ -768,7 +782,11 @@ const rollbackInventoryStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
       const availableQty = Number(target?.qty || 0);
       const availableValue = Number(target?.value || 0);
 
-      if (direction === 1 && (availableQty < qty || availableValue < value - 0.05)) {
+      if (
+        !allowNegative &&
+        direction === 1 &&
+        (availableQty < qty || availableValue < value - 0.05)
+      ) {
         const rmItem = await trx("erp.items")
           .select("code", "name")
           .where({ id: identity.itemId })
@@ -796,12 +814,20 @@ const rollbackInventoryStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
       const nextQty =
         direction === -1
           ? roundQty3(availableQty + qty)
-          : roundQty3(Math.max(availableQty - qty, 0));
+          : roundQty3(
+              allowNegative
+                ? availableQty - qty
+                : Math.max(availableQty - qty, 0),
+            );
       const normalizedQty = Math.abs(nextQty) <= 0.0005 ? 0 : nextQty;
       const nextValueRaw =
         direction === -1
           ? roundCost2(availableValue + value)
-          : roundCost2(Math.max(availableValue - value, 0));
+          : roundCost2(
+              allowNegative
+                ? availableValue - value
+                : Math.max(availableValue - value, 0),
+            );
       const normalizedValue = normalizedQty === 0 ? 0 : nextValueRaw;
       const normalizedWac =
         normalizedQty !== 0
@@ -875,7 +901,11 @@ const rollbackInventoryStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
     const availableQtyPairs = Number(existing?.qty_pairs || 0);
     const availableValue = Number(existing?.value || 0);
 
-    if (direction === 1 && (availableQtyPairs < qtyPairs || availableValue < value - 0.05)) {
+    if (
+      !allowNegative &&
+      direction === 1 &&
+      (availableQtyPairs < qtyPairs || availableValue < value - 0.05)
+    ) {
       const skuRow = await trx("erp.skus")
         .select("sku_code")
         .where({ id: skuId })
@@ -902,11 +932,15 @@ const rollbackInventoryStockLedgerByVoucherTx = async ({ trx, voucherId }) => {
     const nextQtyPairs =
       direction === -1
         ? availableQtyPairs + qtyPairs
-        : Math.max(availableQtyPairs - qtyPairs, 0);
+        : allowNegative
+          ? availableQtyPairs - qtyPairs
+          : Math.max(availableQtyPairs - qtyPairs, 0);
     const nextValue =
       direction === -1
         ? roundCost2(availableValue + value)
-        : Math.max(roundCost2(availableValue - value), 0);
+        : allowNegative
+          ? roundCost2(availableValue - value)
+          : Math.max(roundCost2(availableValue - value), 0);
     const normalizedQtyPairs = Number(nextQtyPairs || 0);
     const normalizedValue =
       normalizedQtyPairs === 0 ? 0 : Number(nextValue || 0);
@@ -2652,7 +2686,11 @@ const upsertGrnInHeaderTx = async ({
   }
 };
 
-const syncStockTransferOutVoucherTx = async ({ trx, voucherId }) => {
+const syncStockTransferOutVoucherTx = async ({
+  trx,
+  voucherId,
+  allowNegativeRollback = false,
+}) => {
   const header = await trx("erp.voucher_header")
     .select("id", "voucher_date", "branch_id", "status")
     .where({
@@ -2662,7 +2700,11 @@ const syncStockTransferOutVoucherTx = async ({ trx, voucherId }) => {
     .first();
   if (!header) return;
 
-  await rollbackInventoryStockLedgerByVoucherTx({ trx, voucherId });
+  await rollbackInventoryStockLedgerByVoucherTx({
+    trx,
+    voucherId,
+    allowNegative: allowNegativeRollback,
+  });
   if (String(header.status || "").toUpperCase() !== "APPROVED") return;
 
   const ext = await trx("erp.stock_transfer_out_header")
@@ -3039,7 +3081,11 @@ const loadTransferInLinesTx = async ({ trx, voucherId }) => {
   });
 };
 
-const syncStockTransferInVoucherTx = async ({ trx, voucherId }) => {
+const syncStockTransferInVoucherTx = async ({
+  trx,
+  voucherId,
+  allowNegativeRollback = false,
+}) => {
   const header = await trx("erp.voucher_header")
     .select("id", "voucher_date", "branch_id", "status")
     .where({
@@ -3054,7 +3100,11 @@ const syncStockTransferInVoucherTx = async ({ trx, voucherId }) => {
     .where({ voucher_id: voucherId })
     .first();
   if (!ext?.against_stn_out_id) {
-    await rollbackInventoryStockLedgerByVoucherTx({ trx, voucherId });
+    await rollbackInventoryStockLedgerByVoucherTx({
+      trx,
+      voucherId,
+      allowNegative: allowNegativeRollback,
+    });
     return;
   }
 
@@ -3069,7 +3119,11 @@ const syncStockTransferInVoucherTx = async ({ trx, voucherId }) => {
       received_at: null,
     });
 
-  await rollbackInventoryStockLedgerByVoucherTx({ trx, voucherId });
+  await rollbackInventoryStockLedgerByVoucherTx({
+    trx,
+    voucherId,
+    allowNegative: allowNegativeRollback,
+  });
   if (String(header.status || "").toUpperCase() !== "APPROVED") {
     // Rejected voucher no longer occupies the against_stn_out_id unique slot,
     // so a fresh STI voucher can be raised against the same STN_OUT later.
@@ -3285,16 +3339,25 @@ const syncVoucherDerivedDataTx = async ({
   trx,
   voucherId,
   voucherTypeCode,
+  allowNegativeRollback = false,
 }) => {
   const normalizedVoucherTypeCode = String(voucherTypeCode || "")
     .trim()
     .toUpperCase();
   if (normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.out) {
-    await syncStockTransferOutVoucherTx({ trx, voucherId });
+    await syncStockTransferOutVoucherTx({
+      trx,
+      voucherId,
+      allowNegativeRollback,
+    });
     return;
   }
   if (normalizedVoucherTypeCode === STOCK_TRANSFER_VOUCHER_TYPES.in) {
-    await syncStockTransferInVoucherTx({ trx, voucherId });
+    await syncStockTransferInVoucherTx({
+      trx,
+      voucherId,
+      allowNegativeRollback,
+    });
   }
 };
 
@@ -3675,6 +3738,7 @@ const updateStockTransferVoucher = async ({
       trx,
       voucherId: existing.id,
       voucherTypeCode: normalizedVoucherTypeCode,
+      allowNegativeRollback: canForceStockRollback(req),
     });
 
     return {
@@ -3711,6 +3775,7 @@ const applyStockTransferVoucherDeletePayloadTx = async ({
   voucherId,
   voucherTypeCode,
   approverId,
+  allowNegativeRollback = false,
 }) => {
   const normalizedVoucherId = toPositiveInt(voucherId);
   if (!normalizedVoucherId) throw new HttpError(400, "Invalid voucher id");
@@ -3746,6 +3811,7 @@ const applyStockTransferVoucherDeletePayloadTx = async ({
     trx,
     voucherId: normalizedVoucherId,
     voucherTypeCode: normalizedVoucherTypeCode,
+    allowNegativeRollback,
   });
 };
 
@@ -3828,6 +3894,7 @@ const deleteStockTransferVoucher = async ({
       voucherId: existing.id,
       voucherTypeCode: normalizedVoucherTypeCode,
       approverId: req.user.id,
+      allowNegativeRollback: canForceStockRollback(req),
     });
 
     // Deleted directly: resolve any lingering PENDING approval to REJECTED so it
@@ -4541,11 +4608,13 @@ const ensureStockTransferVoucherDerivedDataTx = async ({
   trx,
   voucherId,
   voucherTypeCode,
+  allowNegativeRollback = false,
 }) => {
   await syncVoucherDerivedDataTx({
     trx,
     voucherId,
     voucherTypeCode,
+    allowNegativeRollback,
   });
 };
 
@@ -4653,6 +4722,7 @@ const applyStockTransferVoucherUpdatePayloadTx = async ({
     trx,
     voucherId: existing.id,
     voucherTypeCode: normalizedVoucherTypeCode,
+    allowNegativeRollback: canForceStockRollback(approvalReq),
   });
 };
 
