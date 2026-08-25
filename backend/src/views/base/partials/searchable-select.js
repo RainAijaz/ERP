@@ -393,13 +393,27 @@
     const unifiedFallbackClass =
       "h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm text-slate-700 transition focus:border-black focus:outline-none focus:ring-2 focus:ring-black/20";
     const buildUnifiedMultiShellClass = () => {
-      const base = baseClassName || unifiedFallbackClass;
+      // Drop the caller's fixed height and horizontal padding. This shell
+      // wraps chips onto extra rows, so a hard h-* pins it to one line and
+      // every extra row renders outside the border; the inline min-height
+      // set further down keeps it flush with sibling single-line inputs
+      // instead. Chips carry their own inset too, so a full px-3 gutter
+      // pushes their labels out of line with the plain inputs stacked
+      // above them in the same column.
+      const droppedPrefixes = ["h-", "px-", "pl-", "pr-"];
+      const base = (baseClassName || unifiedFallbackClass)
+        .split(" ")
+        .filter(
+          (cls) =>
+            cls && !droppedPrefixes.some((prefix) => cls.startsWith(prefix)),
+        )
+        .join(" ");
       let className = `${base} flex w-full flex-wrap items-center gap-1`;
       if (!/\b(px-|pl-|pr-)\b/.test(base)) {
-        className += " px-3";
+        className += " px-2";
       }
       if (!/\bpy-[^\s]+\b/.test(base)) {
-        className += " py-2.5";
+        className += " py-1";
       }
       if (!/\btext-(xs|sm|base|lg|xl|\[[^\]]+\])\b/.test(base)) {
         className += " text-sm";
@@ -769,20 +783,32 @@
         const selected = Array.from(select.selectedOptions).filter((opt) =>
           String(opt.value || "").trim(),
         );
+        const allOption = getAllOption();
         selected.forEach((opt) => {
+          // The "All" option is the unset state rather than a real
+          // selection: clearing it only makes normalizeMultiSelectAll
+          // re-select it on the next sync, so a remove button on it is a
+          // dead control. Render it as quiet placeholder-style text.
+          const isAllSentinel = Boolean(allOption) && opt === allOption;
           const chip = document.createElement("span");
-          chip.className =
-            "inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700";
+          chip.className = isAllSentinel
+            ? "inline-flex items-center px-1 text-sm text-slate-500"
+            : "inline-flex items-center gap-1 rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs text-slate-700";
           chip.setAttribute("data-searchable-chip", "true");
           chip.setAttribute("data-chip-value", String(opt.value || ""));
           const chipLabel = document.createElement("span");
           chipLabel.className = "max-w-[12rem] truncate";
           chipLabel.textContent = opt.textContent.trim();
+          chip.appendChild(chipLabel);
+          if (isAllSentinel) {
+            multiChipsWrap.insertBefore(chip, input);
+            return;
+          }
           const chipRemove = document.createElement("button");
           chipRemove.type = "button";
           chipRemove.className =
-            "inline-flex h-6 w-6 flex-none items-center justify-center rounded-full text-sm leading-none text-slate-500 hover:bg-slate-200 hover:text-slate-700";
-          chipRemove.textContent = "x";
+            "inline-flex h-6 w-6 flex-none items-center justify-center rounded-full text-base leading-none text-slate-500 hover:bg-slate-200 hover:text-slate-700";
+          chipRemove.textContent = "×";
           chipRemove.setAttribute("aria-label", i18nRemove);
           chipRemove.addEventListener("pointerdown", (event) => {
             event.preventDefault();
@@ -793,7 +819,6 @@
             renderMenu({ showAll: false, preserveActive: true });
             input.focus();
           });
-          chip.appendChild(chipLabel);
           chip.appendChild(chipRemove);
           multiChipsWrap.insertBefore(chip, input);
         });
