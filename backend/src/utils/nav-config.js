@@ -354,6 +354,14 @@ const navConfig = [
             type: "group",
             children: [
               {
+                key: "bom_readiness_report",
+                labelKey: "bom_readiness_report",
+                scopeType: "REPORT",
+                scopeKey: "master_data.bom.reports.readiness",
+                moduleGroup: "Master Data",
+                route: "/master-data/bom/reports/readiness",
+              },
+              {
                 key: "bom_version_history_report",
                 labelKey: "bom_version_history_report",
                 scopeType: "REPORT",

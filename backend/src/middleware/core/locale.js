@@ -5002,6 +5002,72 @@ const resolveTranslation = (locale, key) => {
   return normalizedKey || key;
 };
 
+// BOM Readiness report. sanitizeUrduTranslations already ran far above, so it
+// will NOT backfill anything added down here -- every key needs an explicit
+// Urdu entry or the report silently renders English words inside an RTL page.
+Object.assign(translations.en, {
+  bom_readiness_report: "BOM Readiness",
+  bom_readiness_report_description:
+    "Find articles that cannot be produced yet - the FG recipe or the SFG part recipe is missing or unapproved.",
+  bom_readiness_report_tooltip:
+    "An article needs an approved FG BOM, plus an approved BOM for every semi-finished part it uses. This lists the pairs that are only half built.",
+  bom_readiness_issue: "Issue",
+  bom_readiness_checked: "Articles checked",
+  bom_readiness_problems: "Need attention",
+  bom_readiness_include_inactive: "Include inactive articles",
+  bom_readiness_sort_severity: "Most serious first",
+  bom_readiness_all_clear: "Every article checked is ready to produce.",
+  bom_readiness_state_missing: "Missing",
+  bom_readiness_uses_sfg: "Uses SFG",
+  bom_readiness_fg_bom: "FG BOM",
+  bom_readiness_sfg_part: "SFG part",
+  bom_readiness_sfg_bom: "SFG BOM",
+  bom_readiness_issue_all: "All",
+  bom_readiness_issue_problems: "Problems only",
+  bom_readiness_issue_fg_missing_sfg_ready: "SFG ready, FG not ready",
+  bom_readiness_issue_fg_bom_missing: "FG BOM missing",
+  bom_readiness_issue_sfg_bom_missing: "SFG BOM missing",
+  bom_readiness_issue_sfg_not_linked: "No SFG part linked",
+  bom_readiness_issue_fg_bom_not_approved: "FG BOM not approved",
+  bom_readiness_issue_sfg_bom_not_approved: "SFG BOM not approved",
+  bom_readiness_issue_sfg_orphan: "SFG not used by any article",
+  bom_readiness_issue_ready: "Ready",
+});
+
+Object.assign(translations.ur, {
+  bom_readiness_report: "بی او ایم تیاری",
+  bom_readiness_report_description:
+    "ایسے آرٹیکل تلاش کریں جو ابھی تیار نہیں ہو سکتے - ایف جی یا ایس ایف جی کی ریسیپی غائب یا غیر منظور شدہ ہے۔",
+  bom_readiness_report_tooltip:
+    "ہر آرٹیکل کے لیے منظور شدہ ایف جی بی او ایم اور ہر نیم تیار پرزے کا منظور شدہ بی او ایم ضروری ہے۔",
+  bom_readiness_issue: "مسئلہ",
+  bom_readiness_checked: "جانچے گئے آرٹیکل",
+  bom_readiness_problems: "توجہ درکار",
+  bom_readiness_include_inactive: "غیر فعال آرٹیکل شامل کریں",
+  bom_readiness_sort_severity: "سب سے سنگین پہلے",
+  bom_readiness_all_clear: "جانچے گئے تمام آرٹیکل تیار ہیں۔",
+  bom_readiness_state_missing: "غائب",
+  bom_readiness_uses_sfg: "ایس ایف جی استعمال",
+  bom_readiness_fg_bom: "ایف جی بی او ایم",
+  bom_readiness_sfg_part: "ایس ایف جی پرزہ",
+  bom_readiness_sfg_bom: "ایس ایف جی بی او ایم",
+  bom_readiness_issue_all: "تمام",
+  bom_readiness_issue_problems: "صرف مسائل",
+  bom_readiness_issue_fg_missing_sfg_ready:
+    "ایس ایف جی تیار، ایف جی تیار نہیں",
+  bom_readiness_issue_fg_bom_missing: "ایف جی بی او ایم غائب",
+  bom_readiness_issue_sfg_bom_missing: "ایس ایف جی بی او ایم غائب",
+  bom_readiness_issue_sfg_not_linked:
+    "کوئی ایس ایف جی پرزہ منسلک نہیں",
+  bom_readiness_issue_fg_bom_not_approved:
+    "ایف جی بی او ایم غیر منظور شدہ",
+  bom_readiness_issue_sfg_bom_not_approved:
+    "ایس ایف جی بی او ایم غیر منظور شدہ",
+  bom_readiness_issue_sfg_orphan:
+    "کسی آرٹیکل میں استعمال نہیں",
+  bom_readiness_issue_ready: "تیار",
+});
+
 module.exports = (req, res, next) => {
   const cookies = parseCookies(req);
   const requested =

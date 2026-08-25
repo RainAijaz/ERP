@@ -23,6 +23,10 @@
 
   <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
     <div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <a href="<%= readinessPath %>" class="rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-accent/40 hover:shadow-sm">
+        <div class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"><%= t("report") %></div>
+        <div class="mt-1 text-lg font-semibold text-slate-900"><%= resolveText("bom_readiness_report", "BOM Readiness") %></div>
+      </a>
       <a href="<%= versionHistoryPath %>" class="rounded-2xl border border-slate-200 bg-white p-4 transition hover:border-accent/40 hover:shadow-sm">
         <div class="text-xs font-semibold uppercase tracking-[0.12em] text-slate-500"><%= t("report") %></div>
         <div class="mt-1 text-lg font-semibold text-slate-900"><%= resolveText("bom_version_history_report", "BOM Version History") %></div>

@@ -7,6 +7,9 @@ const {
   getBomChangeLogReportPageData,
   getBomCostBreakdownReportPageData,
 } = require("../../../services/bom/bom-report-service");
+const {
+  getBomReadinessReportPageData,
+} = require("../../../services/bom/bom-readiness-service");
 
 const router = express.Router();
 const BOM_REPORT_SCOPE = "master_data.bom.reports";
@@ -15,6 +18,7 @@ const BOM_SCOPE_COST_BREAKDOWN = "master_data.bom.reports.cost_breakdown";
 const BOM_SCOPE_LIFECYCLE_STATUS = "master_data.bom.reports.lifecycle_status";
 const BOM_SCOPE_CHANGE_LOG = "master_data.bom.reports.change_log";
 const BOM_SCOPE_APPROVAL_QUEUE_AGING = "master_data.bom.reports.approval_queue_aging";
+const BOM_SCOPE_READINESS = "master_data.bom.reports.readiness";
 
 const translateWithFallback = (t, key, fallback) => {
   const value = typeof t === "function" ? t(key) : "";
@@ -177,6 +181,36 @@ const renderCostBreakdownReport = async (req, res, next, inputSource) => {
   }
 };
 
+const renderReadinessReport = async (req, res, next, inputSource) => {
+  try {
+    const pageData = await getBomReadinessReportPageData({
+      req,
+      input: inputSource,
+    });
+    const title = translateWithFallback(
+      res.locals.t,
+      "bom_readiness_report",
+      "BOM Readiness",
+    );
+    return renderBomReportsLayout(req, res, {
+      title: `${title} - ${res.locals.t("reports")}`,
+      view: "../../master_data/bom/reports/readiness",
+      locals: {
+        filters: pageData.filters,
+        options: pageData.options,
+        reportData: pageData.reportData,
+        reportPath: `${req.baseUrl}/readiness`,
+        // Lets each row deep-link to the BOM it is complaining about.
+        bomBasePath: req.baseUrl.replace(/\/reports$/, ""),
+      },
+    });
+  } catch (err) {
+    console.error("Error in BomReadinessReportService:", err);
+    if (typeof req.flash === "function")
+      req.flash("error", res.locals.t("generic_error"));
+    return next(err);
+  }
+};
 router.get(
   "/",
   requirePermission("REPORT", BOM_REPORT_SCOPE, "view"),
@@ -192,6 +226,7 @@ router.get(
         view: "../../master_data/bom/reports/index",
         locals: {
           reportsPath: req.baseUrl,
+          readinessPath: `${req.baseUrl}/readiness`,
           versionHistoryPath: `${req.baseUrl}/version-history`,
           costBreakdownPath: `${req.baseUrl}/cost-breakdown`,
           lifecycleStatusPath: `${req.baseUrl}/lifecycle-status`,
@@ -296,4 +331,15 @@ router.post(
     renderApprovalQueueAgingReport(req, res, next, req.body),
 );
 
+router.get(
+  "/readiness",
+  requirePermission("REPORT", BOM_SCOPE_READINESS, "load"),
+  async (req, res, next) => renderReadinessReport(req, res, next, req.query),
+);
+
+router.post(
+  "/readiness",
+  requirePermission("REPORT", BOM_SCOPE_READINESS, "load"),
+  async (req, res, next) => renderReadinessReport(req, res, next, req.body),
+);
 module.exports = router;

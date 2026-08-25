@@ -1,0 +1,230 @@
+<%
+  const rows = Array.isArray(reportData?.rows) ? reportData.rows : [];
+  const totals = reportData?.totals || {};
+  const issueCounts = totals.issueCounts || {};
+  const reportLoaded = Boolean(filters?.reportLoaded);
+  const allMultiOptionValue = "__ALL__";
+  const selectedItemIds = Array.isArray(filters?.itemIds)
+    ? filters.itemIds.map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0)
+    : [];
+  const itemAllSelected = selectedItemIds.length === 0;
+  const resolveText = (key, fallback) => {
+    const value = t(key);
+    return value && value !== key ? value : fallback;
+  };
+  const bomPath = typeof bomBasePath === "string" && bomBasePath ? bomBasePath : "/master-data/bom";
+  const canOpenBom = typeof can === "function" ? can("SCREEN", "master_data.bom", "view") : false;
+
+  const issueLabel = (code) => {
+    const key = `bom_readiness_issue_${String(code || "").toLowerCase()}`;
+    const fallbacks = {
+      FG_MISSING_SFG_READY: "SFG ready, FG not ready",
+      FG_BOM_MISSING: "FG BOM missing",
+      SFG_BOM_MISSING: "SFG BOM missing",
+      SFG_NOT_LINKED: "No SFG part linked",
+      FG_BOM_NOT_APPROVED: "FG BOM not approved",
+      SFG_BOM_NOT_APPROVED: "SFG BOM not approved",
+      SFG_ORPHAN: "SFG not used by any article",
+      READY: "Ready",
+      ALL: t("all"),
+      PROBLEMS: "Problems only",
+    };
+    return resolveText(key, fallbacks[code] || code);
+  };
+  // Blocking problems read rose, "in progress" reads amber, so the eye lands on
+  // the rows that cannot be produced at all.
+  const issueBadgeClass = (code) => {
+    const v = String(code || "").toUpperCase();
+    if (v === "READY") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    if (v === "SFG_ORPHAN") return "border-slate-300 bg-slate-100 text-slate-600";
+    if (v === "FG_BOM_NOT_APPROVED" || v === "SFG_BOM_NOT_APPROVED" || v === "SFG_NOT_LINKED")
+      return "border-amber-200 bg-amber-50 text-amber-700";
+    return "border-rose-200 bg-rose-50 text-rose-700";
+  };
+  const stateLabel = (state) => {
+    const v = String(state || "").toUpperCase();
+    if (!v) return "N/A";
+    if (v === "MISSING") return resolveText("bom_readiness_state_missing", "Missing");
+    if (v === "INACTIVE") return t("inactive");
+    return t(v.toLowerCase()) || v;
+  };
+  const statePillClass = (state) => {
+    const v = String(state || "").toUpperCase();
+    if (v === "APPROVED") return "border-emerald-200 bg-emerald-50 text-emerald-700";
+    if (v === "PENDING") return "border-blue-200 bg-blue-50 text-blue-700";
+    if (v === "DRAFT") return "border-amber-200 bg-amber-50 text-amber-700";
+    if (v === "INACTIVE") return "border-slate-300 bg-slate-100 text-slate-600";
+    if (v === "MISSING") return "border-rose-200 bg-rose-50 text-rose-700";
+    if (v === "REJECTED") return "border-rose-200 bg-rose-50 text-rose-700";
+    return "border-slate-200 bg-slate-50 text-slate-500";
+  };
+  const summaryTiles = [
+    { key: "scopeCount", label: resolveText("bom_readiness_checked", "Articles checked"), value: Number(totals.scopeCount || 0), cls: "border-slate-200 bg-slate-50" },
+    { key: "problemCount", label: resolveText("bom_readiness_problems", "Need attention"), value: Number(totals.problemCount || 0), cls: "border-rose-200 bg-rose-50" },
+    { key: "readyCount", label: issueLabel("READY"), value: Number(totals.readyCount || 0), cls: "border-emerald-200 bg-emerald-50" },
+    { key: "FG_MISSING_SFG_READY", label: issueLabel("FG_MISSING_SFG_READY"), value: Number(issueCounts.FG_MISSING_SFG_READY || 0), cls: "border-rose-200 bg-rose-50" },
+    { key: "FG_BOM_MISSING", label: issueLabel("FG_BOM_MISSING"), value: Number(issueCounts.FG_BOM_MISSING || 0), cls: "border-rose-200 bg-rose-50" },
+    { key: "SFG_BOM_MISSING", label: issueLabel("SFG_BOM_MISSING"), value: Number(issueCounts.SFG_BOM_MISSING || 0), cls: "border-rose-200 bg-rose-50" },
+    { key: "SFG_ORPHAN", label: issueLabel("SFG_ORPHAN"), value: Number(issueCounts.SFG_ORPHAN || 0), cls: "border-slate-200 bg-slate-50" },
+  ];
+
+  // Renders one BOM-status cell. Returned as markup so the FG and SFG columns
+  // cannot drift apart.
+  const renderBomCell = (state, bomNo, versionNo, bomId) => {
+    if (!state) return `<td class="px-3 py-2"><span class="text-slate-400">-</span></td>`;
+    const pill = `<span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${statePillClass(state)}">${stateLabel(state)}</span>`;
+    if (!bomNo) return `<td class="px-3 py-2">${pill}</td>`;
+    const caption = `${bomNo} V${versionNo}`;
+    const body = canOpenBom && bomId
+      ? `<a href="${bomPath}/${bomId}" target="_blank" rel="noopener noreferrer" class="underline underline-offset-2 hover:text-slate-700">${caption} &#8599;</a>`
+      : caption;
+    return `<td class="px-3 py-2">${pill}<div class="mt-0.5 text-[10px] text-slate-500">${body}</div></td>`;
+  };
+%>
+
+<div class="mx-auto w-full max-w-none space-y-4 px-2">
+  <section class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div class="flex items-center gap-2">
+      <h1 class="text-2xl font-display font-semibold tracking-tight text-ink">
+        <%= resolveText("bom_readiness_report", "BOM Readiness") %>
+      </h1>
+      <span class="inline-flex h-5 w-5 items-center justify-center rounded-full border border-slate-300 bg-white text-[10px] font-bold text-slate-600 cursor-help" title="<%= resolveText("bom_readiness_report_tooltip", "An article needs an approved FG BOM, plus an approved BOM for every semi-finished part it uses. This lists the pairs that are only half built.") %>" aria-label="i">i</span>
+    </div>
+    <p class="mt-1 text-sm text-slate-600">
+      <%= resolveText("bom_readiness_report_description", "Find articles that cannot be produced yet - the FG recipe or the SFG part recipe is missing or unapproved.") %>
+    </p>
+
+    <form method="post" action="<%= reportPath %>" class="mt-3 rounded-xl border border-slate-200 bg-slate-50/30 p-3 sm:p-4">
+      <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+      <input type="hidden" name="load_report" value="1">
+
+      <div class="grid grid-cols-1 gap-3 lg:grid-cols-2 xl:grid-cols-4">
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= t("article_name") %></span>
+          <select name="item_ids" multiple data-searchable-select="true" data-searchable-variant="unified" data-searchable-multi-search="inline" data-all-multi-select="true" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+            <option value="<%= allMultiOptionValue %>" <%= itemAllSelected ? "selected" : "" %>><%= t("all") %></option>
+            <% (options?.items || []).forEach((item) => { %>
+              <option value="<%= item.id %>" <%= selectedItemIds.includes(Number(item.id)) ? "selected" : "" %>><%= `${item.name || item.id}${item.code ? ` (${item.code})` : ""}` %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= resolveText("bom_readiness_issue", "Issue") %></span>
+          <select name="issue" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+            <% (options?.issues || []).forEach((row) => { %>
+              <% const value = String(row.value || "PROBLEMS"); %>
+              <option value="<%= value %>" <%= String(filters?.issue || "PROBLEMS") === value ? "selected" : "" %>><%= issueLabel(value) %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label class="flex flex-col gap-1.5">
+          <span class="text-xs font-semibold uppercase tracking-[0.08em] text-slate-600"><%= t("sort_by") || "Sort by" %></span>
+          <select name="order_by" data-searchable-select="true" data-searchable-variant="unified" class="h-10 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm">
+            <% (options?.orderBys || []).forEach((row) => { %>
+              <% const value = String(row.value || "severity"); %>
+              <option value="<%= value %>" <%= String(filters?.orderBy || "severity") === value ? "selected" : "" %>><%= value === "severity" ? resolveText("bom_readiness_sort_severity", "Most serious first") : t("article_name") %></option>
+            <% }) %>
+          </select>
+        </label>
+        <label class="flex items-center gap-2 self-end rounded-lg border border-slate-300 bg-white px-3 py-2.5">
+          <input type="checkbox" name="include_inactive" value="1" <%= filters?.includeInactive ? "checked" : "" %> class="h-4 w-4 rounded border-slate-300">
+          <span class="text-xs font-semibold text-slate-700"><%= resolveText("bom_readiness_include_inactive", "Include inactive articles") %></span>
+        </label>
+      </div>
+
+      <div class="mt-3 flex flex-wrap gap-2">
+        <button type="submit" class="inline-flex items-center rounded-xl bg-accent px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm"><%= t("load") %></button>
+        <a href="<%= reportPath %>" class="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-widest text-slate-700"><%= t("cancel") %></a>
+      </div>
+    </form>
+  </section>
+
+  <section class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm" data-report-print-area>
+    <div class="flex items-center justify-end gap-2" data-report-controls>
+      <button type="button" class="inline-flex items-center rounded-xl border border-slate-300 bg-white px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-slate-700 disabled:opacity-40" data-print-report <%= reportLoaded && rows.length ? "" : "disabled" %>><%= t("print") %></button>
+      <button type="button" class="inline-flex items-center rounded-xl bg-accent px-3 py-1.5 max-lg:py-2.5 text-xs font-semibold uppercase tracking-widest text-white shadow-sm disabled:opacity-40" data-download-report <%= reportLoaded && rows.length ? "" : "disabled" %>><%= t("download") %></button>
+    </div>
+
+    <% if (reportLoaded) { %>
+      <div class="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+        <% summaryTiles.forEach((tile) => { %>
+          <div class="rounded-xl border px-3 py-2 text-xs <%= tile.cls %>" data-readiness-tile="<%= tile.key %>">
+            <div class="font-semibold"><%= tile.value %></div>
+            <div class="mt-0.5 text-[10px] leading-tight text-slate-600"><%= tile.label %></div>
+          </div>
+        <% }) %>
+      </div>
+    <% } %>
+
+    <% if (!reportLoaded) { %>
+      <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-10 text-center text-2xl font-display text-slate-500"><%= t("load_report_to_view") %></div>
+    <% } else if (!rows.length) { %>
+      <div class="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-10 text-center text-2xl font-display text-emerald-700">
+        <%= Number(totals.scopeCount || 0) > 0 && String(filters?.issue) === "PROBLEMS"
+          ? resolveText("bom_readiness_all_clear", "Every article checked is ready to produce.")
+          : t("no_entries") %>
+      </div>
+    <% } else { %>
+      <div class="overflow-x-auto rounded-2xl border border-slate-200">
+        <table class="min-w-245 w-full text-sm" data-report-table>
+          <thead class="bg-slate-100 text-slate-700">
+            <tr>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="__sr">SR.NO</th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="issue"><%= resolveText("bom_readiness_issue", "Issue") %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="item_code"><%= t("code") %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="item_name"><%= t("article_name") %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="uses_sfg"><%= resolveText("bom_readiness_uses_sfg", "Uses SFG") %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="fg_bom_state"><%= resolveText("bom_readiness_fg_bom", "FG BOM") %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="sfg_item_code"><%= resolveText("bom_readiness_sfg_part", "SFG part") %></th>
+              <th class="px-3 py-2 text-start text-xs font-semibold uppercase tracking-[0.08em]" data-sort-key="sfg_bom_state"><%= resolveText("bom_readiness_sfg_bom", "SFG BOM") %></th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100">
+            <% rows.forEach((row, index) => { %>
+              <tr class="bg-white odd:bg-slate-50/30" data-readiness-row data-issue="<%= row.primary_issue %>" data-fg-state="<%= row.fg_bom_state || '' %>" data-sfg-state="<%= row.sfg_bom_state || '' %>" data-item-code="<%= row.item_code || '' %>">
+                <td class="px-3 py-2"><%= index + 1 %></td>
+                <td class="px-3 py-2">
+                  <span class="inline-flex items-center rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] <%= issueBadgeClass(row.primary_issue) %>"><%= issueLabel(row.primary_issue) %></span>
+                </td>
+                <td class="px-3 py-2"><%= row.item_code || "-" %></td>
+                <td class="px-3 py-2">
+                  <%= row.item_name || "-" %>
+                  <% if (row.row_kind === "SFG") { %>
+                    <span class="ms-1 rounded border border-slate-300 bg-slate-100 px-1 text-[9px] font-semibold uppercase text-slate-600">SFG</span>
+                  <% } %>
+                  <% if (row.item_is_active === false) { %>
+                    <span class="ms-1 rounded border border-slate-300 bg-slate-100 px-1 text-[9px] font-semibold uppercase text-slate-600"><%= t("inactive") %></span>
+                  <% } %>
+                </td>
+                <td class="px-3 py-2"><%= row.row_kind === "SFG" ? "-" : (row.uses_sfg ? t("yes") : t("no")) %></td>
+                <%- renderBomCell(row.fg_bom_state, row.fg_bom_no, row.fg_version_no, row.fg_bom_id) %>
+                <td class="px-3 py-2">
+                  <% if (row.sfg_item_code) { %>
+                    <%= row.sfg_item_code %>
+                    <% if (Number(row.sfg_linked_count || 0) > 1) { %>
+                      <span class="ms-1 text-[10px] text-slate-500">+<%= Number(row.sfg_linked_count) - 1 %></span>
+                    <% } %>
+                  <% } else { %>
+                    <span class="text-slate-400">-</span>
+                  <% } %>
+                </td>
+                <%- renderBomCell(row.sfg_bom_state, row.sfg_bom_no, row.sfg_version_no, row.sfg_bom_id) %>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+      <%- include("../../../base/partials/table-footer", { t, rowCount: totals.rowCount || 0, showPager: false }) %>
+    <% } %>
+  </section>
+</div>
+
+<%- include("../../../base/partials/report-utils") %>
+
+<script>
+  (function () {
+    if (typeof window.initSearchableSelects === "function") {
+      window.initSearchableSelects();
+    }
+  })();
+</script>
