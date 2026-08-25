@@ -290,9 +290,16 @@
       },
     }) %>;
 
+    // Compare on a path that always carries a trailing slash. A report whose
+    // form posts back to its bare mount point (the purchase report posts to
+    // req.baseUrl, so the result page is "/reports/purchases", not
+    // "/reports/purchases/") never matched its own "/reports/purchases/"
+    // prefix, so every permission below silently resolved to "denied" - which
+    // force-locked the branch filter to the navbar branch and disabled it.
     const resolveReportScopeKey = () => {
+      const candidate = path.endsWith("/") ? path : `${path}/`;
       for (const [prefix, scopeKey] of REPORT_SCOPE_BY_PATH) {
-        if (path.startsWith(prefix)) return scopeKey;
+        if (candidate.startsWith(prefix)) return scopeKey;
       }
       return null;
     };
