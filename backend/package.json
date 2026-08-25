@@ -25,6 +25,7 @@
     "test:report-view-activity": "node src/scripts/test-report-view-activity.js",
     "test:approval-withdraw": "node src/scripts/test-approval-withdraw-sync.js",
     "test:approval-reject-reason": "node src/scripts/test-approval-reject-reason.js",
+    "test:approval-reject-voucher-status": "node src/scripts/test-approval-reject-voucher-status.js",
     "test:e2e:approval-reject-reason": "playwright test tests/e2e/approval-rejection-reason.spec.js",
     "test:e2e:approval-withdraw": "playwright test tests/e2e/approval-withdraw.spec.js",
     "test:other-party-type": "node src/scripts/test-other-party-type.js",

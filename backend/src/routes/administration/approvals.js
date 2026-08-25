@@ -2704,24 +2704,53 @@ async function unwindPendingApprovalRequestTx(trx, request, userId) {
         : {};
     const action = String(payload.action || "").toLowerCase();
     const voucherId = Number(request.entity_id || 0);
-    // A pending "create" leaves a PENDING voucher header behind, so closing
-    // the request must flip that header to REJECTED. "update"/"delete"
-    // requests never mutate the header while queued (the pending change
-    // lives only in the request), so the voucher keeps its prior status
-    // and only the request is closed. Legacy action-less requests are
-    // treated as creates.
+    // A PENDING header has posted nothing: only the approve path writes stock
+    // and GL, and it flips the status as it does so. So once this request is
+    // closed, a header still sitting on PENDING is a zombie -- no request is
+    // left that could ever approve it -- and must be closed as REJECTED. The
+    // `status: "PENDING"` guard below is what protects an already posted
+    // voucher when a queued edit to it is rejected: that header is APPROVED,
+    // so it keeps its status and only the request closes.
+    //
+    // The action label alone cannot decide this. createApprovalRequest keeps
+    // one PENDING request per voucher and REWRITES it in place, so re-saving a
+    // queued Physical Count Correction relabels its original "create" request
+    // as "update" -- and a rejection then left the voucher reading "Pending"
+    // on the voucher screen forever. The approve path already ignores the
+    // label for exactly this reason (an "update" apply flips PENDING to
+    // APPROVED); reject has to match it.
+    //
+    // "delete" is the one action excluded: rejecting a deletion must never be
+    // what deletes the voucher.
+    //
     // A withdrawal lands the header on REJECTED too: the voucher screens
     // already understand that status, and the approval_request row is what
     // records that this was a withdrawal rather than a rejection.
-    const rejectsHeader = action === "" || action === "create";
+    const rejectsHeader = action !== "delete";
     if (rejectsHeader && Number.isInteger(voucherId) && voucherId > 0) {
-      await trx("erp.voucher_header")
-        .where({ id: voucherId, status: "PENDING" })
-        .update({
-          status: "REJECTED",
-          approved_by: userId,
-          approved_at: trx.fn.now(),
-        });
+      // Defensive: only close the header if this really was its last pending
+      // decision. The de-dupe makes a second PENDING row unreachable today,
+      // but voiding a voucher that another request still expects to approve
+      // would strand that request.
+      const otherPending = await trx("erp.approval_request")
+        .where({
+          request_type: "VOUCHER",
+          entity_type: "VOUCHER",
+          entity_id: String(request.entity_id),
+          status: "PENDING",
+        })
+        .whereNot({ id: request.id })
+        .first("id");
+
+      if (!otherPending) {
+        await trx("erp.voucher_header")
+          .where({ id: voucherId, status: "PENDING" })
+          .update({
+            status: "REJECTED",
+            approved_by: userId,
+            approved_at: trx.fn.now(),
+          });
+      }
     }
   }
 }
@@ -2920,3 +2949,7 @@ router.post(
 );
 
 module.exports = router;
+// Exported for src/scripts/test-approval-reject-voucher-status.js. Reject and
+// withdraw both delegate their cleanup here, so pinning this one function down
+// covers both paths without standing up an HTTP request.
+module.exports.unwindPendingApprovalRequestTx = unwindPendingApprovalRequestTx;
