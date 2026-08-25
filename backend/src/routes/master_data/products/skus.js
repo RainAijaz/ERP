@@ -538,6 +538,11 @@ router.post(
       let queuedCount = 0;
       let createdCountTotal = 0;
       let pendingCountTotal = 0;
+      // Every variant this submission wants to create, collected so the whole
+      // batch can be queued as ONE approval request. Queuing a row per variant
+      // meant a 40-SKU article arrived as 40 near-identical approvals, while a
+      // bulk rate EDIT of the same 40 arrived as one.
+      const plannedVariants = [];
       await knex.transaction(async (trx) => {
         const item = await trx("erp.items")
           .select("code", "name", "item_type")
@@ -630,17 +635,7 @@ router.post(
                     suffix,
                   ]),
                 };
-                await trx("erp.approval_request").insert({
-                  branch_id: req.branchId,
-                  request_type: "MASTER_DATA_CHANGE",
-                  entity_type: "SKU",
-                  entity_id: "NEW",
-                  summary: `New Variant: ${plannedSfg._summary}`,
-                  new_value: plannedSfg,
-                  status: "PENDING",
-                  requested_by: req.user.id,
-                  requested_at: trx.fn.now(),
-                });
+                plannedVariants.push(plannedSfg);
                 queuedCount++;
                 pendingCount++;
               }
@@ -777,17 +772,7 @@ router.post(
                       sale_rate: appliedRate,
                       _summary: `${item.name} ${sizeMap.get(size_id)} ${packingMap.get(packing_type_id)} ${gradeMap.get(grade_id)}`,
                     };
-                    await trx("erp.approval_request").insert({
-                      branch_id: req.branchId,
-                      request_type: "MASTER_DATA_CHANGE",
-                      entity_type: "SKU",
-                      entity_id: "NEW",
-                      summary: `New Variant: ${plannedVariant._summary}`,
-                      new_value: plannedVariant,
-                      status: "PENDING",
-                      requested_by: req.user.id,
-                      requested_at: trx.fn.now(),
-                    });
+                    plannedVariants.push(plannedVariant);
                     queuedCount++;
                     pendingCount++;
                   }
@@ -882,17 +867,7 @@ router.post(
                             suffix,
                           ]),
                         };
-                        await trx("erp.approval_request").insert({
-                          branch_id: req.branchId,
-                          request_type: "MASTER_DATA_CHANGE",
-                          entity_type: "SKU",
-                          entity_id: "NEW",
-                          summary: `New Variant: ${plannedSfg._summary}`,
-                          new_value: plannedSfg,
-                          status: "PENDING",
-                          requested_by: req.user.id,
-                          requested_at: trx.fn.now(),
-                        });
+                        plannedVariants.push(plannedSfg);
                         queuedCount++;
                       }
                     }
@@ -901,6 +876,31 @@ router.post(
               }
             }
           }
+        }
+
+        // One request for the whole submission, mirroring how a bulk rate edit
+        // is queued (SKU_BULK_RATE_UPDATE). The payload carries the article's
+        // own variants AND any linked-SFG mirrors, each with its own item_id,
+        // so the applier can create them all without re-deriving the matrix.
+        if (plannedVariants.length) {
+          const itemLabel = item.name || item.code || "";
+          await trx("erp.approval_request").insert({
+            branch_id: req.branchId,
+            request_type: "MASTER_DATA_CHANGE",
+            entity_type: "SKU_BULK_CREATE",
+            entity_id: "BULK",
+            summary: `${res.locals.t("add")} ${res.locals.t("skus")}${itemLabel ? " - " + itemLabel : ""} (${plannedVariants.length})`,
+            new_value: {
+              _action: "bulk_create",
+              item_id,
+              item_name: item.name,
+              item_type: itemType,
+              variants: plannedVariants,
+            },
+            status: "PENDING",
+            requested_by: req.user.id,
+            requested_at: trx.fn.now(),
+          });
         }
 
         createdCountTotal = createdCount;

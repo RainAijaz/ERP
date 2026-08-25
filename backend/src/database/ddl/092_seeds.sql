@@ -87,6 +87,7 @@ VALUES
   ('PERMISSION',            'Permission',  'Administration: permissions'),
   ('MASTER_DATA_IMPORT',    'Master Data Import', 'Master data import audit activity'),
   ('SKU_BULK_RATE_UPDATE',  'SKU Bulk Rate Update', 'Bulk sale-rate change for SKU variants queued for approval'),
+  ('SKU_BULK_CREATE',       'SKU Bulk Create', 'All SKU variants of one Add-SKUs submission queued for approval as one request'),
   ('REPORT',                'Report',      'Report screen opened or run by a user')
 ON CONFLICT (code) DO NOTHING;
 

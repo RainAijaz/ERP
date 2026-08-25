@@ -394,58 +394,93 @@ const applySkuChange = async (trx, request, userId) => {
   }
 
   if (action === "create") {
-    const item = await trx("erp.items")
-      .select("id", "name", "name_ur", "code", "item_type")
-      .where({ id: newValue.item_id })
-      .first();
-    if (!item) return false;
-
-    const [variant] = await trx("erp.variants")
-      .insert({
-        item_id: newValue.item_id,
-        size_id: newValue.size_id || null,
-        grade_id: newValue.grade_id || null,
-        color_id: newValue.color_id || null,
-        packing_type_id: newValue.packing_type_id || null,
-        sale_rate: newValue.sale_rate ?? 0,
-        is_active: newValue.is_active !== false,
-        created_by: userId || null,
-        created_at: trx.fn.now(),
-      })
-      .returning("id");
-
-    const sizeName = await getNameById(trx, "erp.sizes", newValue.size_id);
-    const gradeName = await getNameById(trx, "erp.grades", newValue.grade_id);
-    const colorName = await getNameById(trx, "erp.colors", newValue.color_id);
-    const packingName = await getNameById(
+    const created = await createVariantFromApprovalPayload(
       trx,
-      "erp.packing_types",
-      newValue.packing_type_id,
+      newValue,
+      userId,
     );
-
-    let baseSku = "";
-    if (item.item_type === "SFG") {
-      const { base, suffix } = parseSfgNameParts(item.name, item.code);
-      baseSku = buildSkuCode(base, [sizeName, colorName, suffix]);
-    } else {
-      baseSku = buildSkuCode(item.name, [
-        sizeName,
-        packingName,
-        gradeName,
-        colorName,
-      ]);
-    }
-
-    const sku_code = await ensureUniqueSku(trx, baseSku);
-    await trx("erp.skus").insert({
-      variant_id: variant.id || variant,
-      sku_code,
-      is_active: true,
-    });
-    return { applied: true, entityId: String(variant.id || variant) };
+    if (!created) return false;
+    return {
+      applied: true,
+      entityId: created.id ? String(created.id) : null,
+    };
   }
 
   return false;
+};
+
+// Creates one variant + its SKU code from an approved "create" payload. Shared
+// by the single-SKU request and the batched SKU_BULK_CREATE payload, which
+// carries an array of exactly these objects.
+//
+// Returns null when the item no longer exists (the caller reports the apply as
+// failed), and { id: null, skipped: true } when an identical variant already
+// exists -- someone can create it by hand while the request sits pending, and
+// approving must never double-insert.
+const createVariantFromApprovalPayload = async (trx, payload, userId) => {
+  if (!payload || !payload.item_id) return null;
+  const item = await trx("erp.items")
+    .select("id", "name", "name_ur", "code", "item_type")
+    .where({ id: payload.item_id })
+    .first();
+  if (!item) return null;
+
+  const existing = await trx("erp.variants")
+    .where({
+      item_id: payload.item_id,
+      size_id: payload.size_id || null,
+      grade_id: payload.grade_id || null,
+      color_id: payload.color_id || null,
+      packing_type_id: payload.packing_type_id || null,
+    })
+    .first();
+  if (existing) return { id: null, skipped: true };
+
+  const saleRate = payload.sale_rate ?? 0;
+  const [variant] = await trx("erp.variants")
+    .insert({
+      item_id: payload.item_id,
+      size_id: payload.size_id || null,
+      grade_id: payload.grade_id || null,
+      color_id: payload.color_id || null,
+      packing_type_id: payload.packing_type_id || null,
+      sale_rate: saleRate,
+      is_active: payload.is_active !== false,
+      created_by: userId || null,
+      created_at: trx.fn.now(),
+    })
+    .returning("id");
+
+  const sizeName = await getNameById(trx, "erp.sizes", payload.size_id);
+  const gradeName = await getNameById(trx, "erp.grades", payload.grade_id);
+  const colorName = await getNameById(trx, "erp.colors", payload.color_id);
+  const packingName = await getNameById(
+    trx,
+    "erp.packing_types",
+    payload.packing_type_id,
+  );
+
+  let baseSku = "";
+  if (item.item_type === "SFG") {
+    const { base, suffix } = parseSfgNameParts(item.name, item.code);
+    baseSku = buildSkuCode(base, [sizeName, colorName, suffix]);
+  } else {
+    baseSku = buildSkuCode(item.name, [
+      sizeName,
+      packingName,
+      gradeName,
+      colorName,
+    ]);
+  }
+
+  const sku_code = await ensureUniqueSku(trx, baseSku);
+  const variantId = variant.id || variant;
+  await trx("erp.skus").insert({
+    variant_id: variantId,
+    sku_code,
+    is_active: true,
+  });
+  return { id: Number(variantId), sku_code, sale_rate: Number(saleRate) };
 };
 
 const applyItemChange = async (trx, request, userId) => {
@@ -2124,6 +2159,36 @@ const applyMasterDataChange = async (trx, request, userId) => {
   }
   if (entityType === "SKU") {
     return applySkuChange(trx, request, userId);
+  }
+  if (entityType === "SKU_BULK_CREATE") {
+    // Every variant of one "Add SKUs" submission arrives in a single request,
+    // so approving it creates the whole batch. A variant that already exists is
+    // skipped rather than duplicated; the request still applies, otherwise the
+    // approver could never clear it.
+    const variants = Array.isArray(newValue?.variants) ? newValue.variants : [];
+    if (!variants.length) return false;
+    const createdVariants = [];
+    let unusable = 0;
+    for (const planned of variants) {
+      const created = await createVariantFromApprovalPayload(
+        trx,
+        planned,
+        userId,
+      );
+      if (created?.id) createdVariants.push(created);
+      else if (!created) unusable++;
+    }
+    // Nothing created and nothing skippable means the payload no longer points
+    // at anything real (the article was deleted while the request sat pending),
+    // which the approver must be told about rather than silently approving an
+    // empty batch.
+    if (!createdVariants.length && unusable) return false;
+    return {
+      applied: true,
+      entityId:
+        createdVariants.length === 1 ? String(createdVariants[0].id) : null,
+      createdVariants,
+    };
   }
   if (entityType === "SKU_BULK_RATE_UPDATE") {
     const variants = request.new_value?.variants;

@@ -1,0 +1,54 @@
+<%
+  // Every variant of one "Add SKUs" submission, listed in a single request.
+  // The rows do not exist yet, so "SKU" is the planned code the screen built and
+  // the ids were resolved to names by the preview builder.
+  const variants = Array.isArray(previewValues?.variants) ? previewValues.variants : [];
+  // A batch can mix the article with its linked SFGs, so the item column earns
+  // its place only when the rows do not all belong to one item (the panel header
+  // already names it).
+  const showItem = new Set(variants.map((v) => v.item_name || "")).size > 1;
+  // The planned code usually already spells out size/packing/grade, which made
+  // the details column an exact echo of it. Show it only where it says something
+  // the code does not.
+  const detailFor = (v) => {
+    const detail = String(v.variant_label || "").trim();
+    if (!detail) return "";
+    const code = String(v.sku_code || "").toLowerCase();
+    return code.includes(detail.toLowerCase()) ? "" : detail;
+  };
+  const showDetails = variants.some((v) => detailFor(v));
+  const columnCount = 3 + (showItem ? 1 : 0) + (showDetails ? 1 : 0);
+%>
+
+<div class="overflow-x-auto rounded-xl border border-slate-200">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-xs font-semibold uppercase tracking-[0.12em] text-slate-500">
+      <tr>
+        <th class="px-3 py-2 text-start w-10">#</th>
+        <th class="px-3 py-2 text-start"><%= t("sku") || "SKU" %></th>
+        <% if (showItem) { %><th class="px-3 py-2 text-start"><%= t("item") %></th><% } %>
+        <% if (showDetails) { %><th class="px-3 py-2 text-start"><%= t("details") || "Details" %></th><% } %>
+        <th class="px-3 py-2 text-end"><%= t("rate") || "Rate" %></th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-slate-100">
+      <% if (!variants.length) { %>
+        <tr>
+          <td colspan="<%= columnCount %>" class="px-3 py-4 text-center text-slate-400"><%= t("no_entries") %></td>
+        </tr>
+      <% } %>
+      <% variants.forEach(function (variant, index) {
+        const rate = variant.sale_rate;
+        const displayRate = rate != null && rate !== '' ? Number(rate).toFixed(2) : '-';
+      %>
+        <tr class="hover:bg-slate-50">
+          <td class="px-3 py-2.5 text-xs text-slate-400"><%= variant.row_no || (index + 1) %></td>
+          <td class="px-3 py-2.5 font-mono text-xs text-slate-600"><%= variant.sku_code || '-' %></td>
+          <% if (showItem) { %><td class="px-3 py-2.5 text-xs text-slate-700"><%= variant.item_name || '' %></td><% } %>
+          <% if (showDetails) { %><td class="px-3 py-2.5 text-xs text-slate-700"><%= detailFor(variant) %></td><% } %>
+          <td class="px-3 py-2.5 text-end font-semibold text-slate-800"><%= displayRate %></td>
+        </tr>
+      <% }) %>
+    </tbody>
+  </table>
+</div>

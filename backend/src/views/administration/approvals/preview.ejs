@@ -25,6 +25,9 @@
     <%- include(formPartial, { fieldErrors: safeFieldErrors, formValues: safeFormValues, modalValues: (previewValues ?? {}) }) %>
     <%# The generic preview already renders the whole payload; adding the %>
     <%# client-side raw-value fallback under it would just duplicate it. %>
-    <% if (previewType !== 'voucher' && previewType !== 'generic') { %><div class="hidden space-y-3" data-preview-fallback></div><% } %>
+    <%# sku-bulk-create is in the same boat: it renders a complete table and has %>
+    <%# no [data-field] inputs, so the fallback would read it as an empty preview %>
+    <%# and dump the whole planned-variant payload as raw JSON under the table. %>
+    <% if (previewType !== 'voucher' && previewType !== 'generic' && previewType !== 'sku-bulk-create') { %><div class="hidden space-y-3" data-preview-fallback></div><% } %>
   </div>
 </div>

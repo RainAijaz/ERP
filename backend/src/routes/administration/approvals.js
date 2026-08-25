@@ -270,6 +270,7 @@ const applyVoucherApprovalChangeTx = async ({
         voucherId,
         voucherTypeCode: existingVoucherTypeCode,
         approverId,
+        allowNegativeRollback: approvalReq?.user?.isAdmin === true,
       });
       return;
     }
@@ -369,6 +370,7 @@ const applyVoucherApprovalChangeTx = async ({
         trx,
         voucherId,
         voucherTypeCode,
+        allowNegativeRollback: approvalReq?.user?.isAdmin === true,
       });
     }
     await syncAutoBankSettlementForVoucherTx({
@@ -1599,6 +1601,69 @@ const buildPreviewPayload = async (req, res, request, side) => {
     };
   }
 
+  if (entityType === "SKU_BULK_CREATE") {
+    // One "Add SKUs" submission = one request carrying every planned variant.
+    // Nothing exists in erp.variants yet, so the row labels have to be rebuilt
+    // from the ids in the payload (the stored _summary is only the planned SKU
+    // code, and the batch can mix the article with its linked SFGs).
+    const newValue = safeJson(request.new_value) || {};
+    const rawVariants = Array.isArray(newValue.variants)
+      ? newValue.variants
+      : [];
+    const idsOf = (key) => [
+      ...new Set(
+        rawVariants
+          .map((variant) => Number(variant?.[key]))
+          .filter((id) => Number.isFinite(id) && id > 0),
+      ),
+    ];
+    const useUr = locale === "ur";
+    const nameColumns = useUr
+      ? ["id", knex.raw("COALESCE(name_ur, name) as name")]
+      : ["id", "name"];
+    const loadNames = async (table, ids) => {
+      if (!ids.length) return new Map();
+      const rows = await knex(table).select(nameColumns).whereIn("id", ids);
+      return new Map(rows.map((row) => [Number(row.id), row.name]));
+    };
+    const [itemMap, sizeMap, gradeMap, colorMap, packingMap] =
+      await Promise.all([
+        loadNames("erp.items", idsOf("item_id")),
+        loadNames("erp.sizes", idsOf("size_id")),
+        loadNames("erp.grades", idsOf("grade_id")),
+        loadNames("erp.colors", idsOf("color_id")),
+        loadNames("erp.packing_types", idsOf("packing_type_id")),
+      ]);
+    const enrichedVariants = rawVariants.map((variant, index) => {
+      const parts = [
+        sizeMap.get(Number(variant?.size_id)),
+        packingMap.get(Number(variant?.packing_type_id)),
+        gradeMap.get(Number(variant?.grade_id)),
+        colorMap.get(Number(variant?.color_id)),
+      ].filter(Boolean);
+      return {
+        ...variant,
+        row_no: index + 1,
+        sku_code: variant?._summary || "",
+        item_name: itemMap.get(Number(variant?.item_id)) || "",
+        variant_label: parts.join(" "),
+      };
+    });
+    const itemLabel =
+      itemMap.get(Number(newValue.item_id)) ||
+      newValue.item_name ||
+      res.locals.t("skus");
+    return {
+      ...basePayload,
+      previewAction: "create",
+      previewLabel: res.locals.t("add"),
+      previewValues: { ...newValue, variants: enrichedVariants },
+      previewType: "sku-bulk-create",
+      previewTitle: `${itemLabel} (${enrichedVariants.length})`,
+      formPartial: "../../administration/approvals/preview-sku-bulk-create.ejs",
+    };
+  }
+
   if (entityType === "SKU_BULK_RATE_UPDATE") {
     const newValue = safeJson(request.new_value) || {};
     const rawVariants = Array.isArray(newValue.variants) ? newValue.variants : [];
@@ -2298,6 +2363,10 @@ router.post(
     try {
       let requestSnapshot = null;
       let appliedEntityId = null;
+      // Variants created by a batched SKU_BULK_CREATE. Unlike a single create
+      // there is no one entity id to notify on, so the applier hands back the
+      // whole list.
+      let appliedCreatedVariants = [];
       await knex.transaction(async (trx) => {
         const request = await trx("erp.approval_request").where({ id }).first();
         if (!request || request.status !== "PENDING") {
@@ -2319,6 +2388,11 @@ router.post(
             typeof applyResult === "object" && applyResult.entityId
               ? String(applyResult.entityId)
               : null;
+          appliedCreatedVariants =
+            typeof applyResult === "object" &&
+            Array.isArray(applyResult.createdVariants)
+              ? applyResult.createdVariants
+              : [];
           if (!applied) {
             const err = new Error(res.locals.t("approval_apply_failed"));
             err.code = "APPROVAL_APPLY_FAILED";
@@ -2392,6 +2466,31 @@ router.post(
       // arrives without it stays silent, which is the safe direction.
       const rateNotifyOptIn = req.body?.send_article_rate === "1";
 
+      if (requestSnapshot?.entity_type === "SKU_BULK_CREATE") {
+        // Same opt-in rule as a single new article, applied to the batch: only
+        // variants that actually got created and carry a real rate are sent.
+        // SFG mirrors queue at rate 0, so the > 0 filter drops them.
+        const updates = appliedCreatedVariants
+          .filter((variant) => Number(variant?.sale_rate) > 0)
+          .map((variant) => ({
+            id: Number(variant.id),
+            newRate: variant.sale_rate,
+          }));
+        if (rateNotifyOptIn && updates.length > 0) {
+          await sendSkuRateNotification({
+            knex,
+            chatId: process.env.WHATSAPP_RATE_NOTIFY_CHAT_ID,
+            updates,
+            user: req.user,
+            approved: true,
+            isNew: true,
+          });
+        } else {
+          console.log(
+            `[WhatsApp] new-article batch rate notify skipped: optedIn=${rateNotifyOptIn} created=${updates.length} (request ${requestSnapshot.id})`,
+          );
+        }
+      }
       if (requestSnapshot?.entity_type === "SKU_BULK_RATE_UPDATE") {
         const variants = requestSnapshot.new_value?.variants;
         if (rateNotifyOptIn && Array.isArray(variants) && variants.length > 0) {

@@ -1,5 +1,9 @@
 <%
   const getAction = (row) => {
+    // A batched "Add SKUs" request is a create even though its entity_id reads
+    // "BULK" and its summary is localized (so the keyword sniffing below can't
+    // be relied on).
+    if (row?.entity_type === "SKU_BULK_CREATE") return "create";
     const explicitAction = String(row?.action || "").trim().toLowerCase();
     if (explicitAction === "create" || explicitAction === "update" || explicitAction === "delete") {
       return explicitAction;
@@ -29,6 +33,14 @@
     const payload = parseApprovalPayload(row?.new_value);
     if (row?.entity_type === "SKU_BULK_RATE_UPDATE") {
       return Array.isArray(payload.variants) && payload.variants.length > 0;
+    }
+    // A batch of new variants: only prompt when at least one carries a rate the
+    // group could be told about (linked-SFG mirrors queue at 0).
+    if (row?.entity_type === "SKU_BULK_CREATE") {
+      return (
+        Array.isArray(payload.variants) &&
+        payload.variants.some((variant) => Number(variant?.sale_rate) > 0)
+      );
     }
     if (row?.entity_type !== "SKU") return false;
     if (getAction(row) === "create") return true;
@@ -195,7 +207,7 @@
             <% if (showActionsColumn) { %>
               <td class="px-6 py-4 text-right">
                 <% if (row.status === 'PENDING') { %>
-                  <% const isNewSku = row.entity_type === 'SKU' && getAction(row) === 'create'; %>
+                  <% const isNewSku = (row.entity_type === 'SKU' || row.entity_type === 'SKU_BULK_CREATE') && getAction(row) === 'create'; %>
                   <% const rateNotify = getRateNotify(row); %>
                   <% const rateAttrs = rateNotify ? ` data-new-sku-approve data-sku-mode="${isNewSku ? 'new' : 'update'}" data-requester-choice="${getRequesterChoice(row)}"` : ''; %>
                   <div class="flex justify-end gap-2">
@@ -1250,7 +1262,7 @@
       if (previewType === "skus") {
         modalPanel.classList.remove("max-w-6xl");
         modalPanel.classList.add("max-w-3xl");
-      } else if (previewType === "sku-bulk-rates") {
+      } else if (previewType === "sku-bulk-rates" || previewType === "sku-bulk-create") {
         modalPanel.classList.remove("max-w-3xl");
         modalPanel.classList.add("max-w-4xl");
       } else {
