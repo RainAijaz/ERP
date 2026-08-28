@@ -1708,14 +1708,20 @@ const ENTITY_SPECS = Object.freeze({
   },
   [ENTITY_KEYS.productTypes]: {
     fieldAliases: {
-      name: ["product_types_product_type", "product_type", "name"],
+      name: [
+        "product_types_product_category",
+        "product_types_product_type",
+        "product_category",
+        "product_type",
+        "name",
+      ],
       nameUr: ["product_types_name_urdu", "product_types_name_ur", "name_ur"],
       code: ["product_types_code", "code"],
       isActive: ["product_types_is_active", "is_active"],
     },
     async plan(row, db, actorId) {
       const name = trimString(row.raw.name);
-      if (!name) return { error: "Product type name is required." };
+      if (!name) return { error: "Product category name is required." };
       const nameUr = trimString(row.raw.nameUr) || name;
       const code = trimString(row.raw.code) || toNameCode(name, "type");
       const isActive = parseBoolean(row.raw.isActive, true);
@@ -2567,7 +2573,9 @@ const ENTITY_SPECS = Object.freeze({
         "sub_group",
       ],
       productType: [
+        "products_product_category",
         "products_product_type",
+        "product_category",
         "product_type",
         "products_category",
         "category",
@@ -2692,7 +2700,7 @@ const ENTITY_SPECS = Object.freeze({
         if (!productType?.id) {
           if (!hasStagedToken(context?.staged?.productType, productTypeToken)) {
             return {
-              error: `Product type not found for item ${name}: ${productTypeToken}`,
+              error: `Product category not found for item ${name}: ${productTypeToken}`,
             };
           }
         }

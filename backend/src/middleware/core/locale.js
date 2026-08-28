@@ -217,7 +217,7 @@ const translations = {
     import_entity_cities: "Cities",
     import_entity_product_groups: "Product Groups",
     import_entity_product_subgroups: "Product Subgroups",
-    import_entity_product_types: "Product Types",
+    import_entity_product_types: "Product Categories",
     import_entity_sales_discount_policies: "Sales Discount Policies",
     import_entity_party_groups: "Party Groups",
     import_entity_departments: "Departments",
@@ -552,7 +552,7 @@ const translations = {
     product_groups: "Product Groups",
     product_group: "Product Group",
     product_subgroups: "Product Sub-Groups",
-    product_types: "Product Types",
+    product_types: "Product Categories",
     sales_discount_policies: "Sales Discount Policies",
     sizes: "Sizes",
     colors: "Colors",
@@ -2277,7 +2277,7 @@ translations.ur = {
   import_entity_cities: "شہر",
   import_entity_product_groups: "پروڈکٹ گروپس",
   import_entity_product_subgroups: "پروڈکٹ سب گروپس",
-  import_entity_product_types: "پروڈکٹ ٹائپس",
+  import_entity_product_types: "پروڈکٹ کے زمرے",
   import_entity_sales_discount_policies: "سیلز ڈسکاؤنٹ پالیسیاں",
   import_entity_party_groups: "پارٹی گروپس",
   import_entity_departments: "محکمے",
@@ -3372,7 +3372,7 @@ translations.ur = {
   product_groups_description: "RM/SFG/FG مرئیت گروپس کی وضاحت کریں۔",
   product_scope: "پروڈکٹ کا دائرہ کار",
   product_subgroups: "پروڈکٹ کے ذیلی گروپس",
-  product_types: "مصنوعات کی اقسام",
+  product_types: "مصنوعات کے زمرے",
   production_category: "پیداوار کا زمرہ",
   production_category_finished: "ختم",
   production_category_semi_finished: "نیم تیار",
@@ -4274,7 +4274,7 @@ Object.assign(translations.en, {
   group_name: "Group Name",
   group_type: "Group Type",
   both: "Both",
-  product_type: "Product Type",
+  product_type: "Product Category",
   subgroup_name: "Subgroup Name",
   production_department: "Production Department",
   account_type_help:
@@ -4425,7 +4425,7 @@ Object.assign(translations.en, {
     "Product group visibility for raw, semi-finished, and finished items.",
   desc_product_subgroups:
     "Define reusable product sub-groups for all product groups.",
-  desc_product_types: "Define product types (e.g., Slipper, Sandal, Pumpy).",
+  desc_product_types: "Define product categories (e.g., Slipper, Sandal, Pumpy).",
   desc_sales_discount_policies:
     "Define the maximum allowed discount per pair for each product group.",
   desc_party_groups:
@@ -4533,7 +4533,7 @@ Object.assign(translations.ur, {
   group_name: "گروپ کا نام",
   group_type: "گروپ کی قسم",
   both: "دونوں",
-  product_type: "پروڈکٹ کی قسم",
+  product_type: "پروڈکٹ کا زمرہ",
   subgroup_name: "ذیلی گروپ کا نام",
   production_department: "پیداواری شعبہ",
   account_type_help:
@@ -4685,7 +4685,7 @@ Object.assign(translations.ur, {
     "خام، نیم تیار اور تیار شدہ اشیاء کے لیے پروڈکٹ گروپ کی نمائش۔",
   desc_product_subgroups:
     "تمام پروڈکٹ گروپس کے لیے قابل استعمال ذیلی گروپس بنائیں۔",
-  desc_product_types: "پروڈکٹ کی اقسام بیان کریں (مثلاً سلیپر، سینڈل، پمپی)۔",
+  desc_product_types: "مصنوعات کے زمرے بیان کریں (مثلاً سلیپر، سینڈل، پمپی)۔",
   desc_sales_discount_policies:
     "ہر پروڈکٹ گروپ کے لیے فی جوڑا زیادہ سے زیادہ اجازت یافتہ ڈسکاؤنٹ بیان کریں۔",
   desc_party_groups: "کسٹمرز اور سپلائرز کو قابل استعمال پارٹی گروپس میں منظم کریں۔",
