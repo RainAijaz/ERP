@@ -1138,6 +1138,10 @@
       requestSeq: 0,
       debounceTimer: null,
       loading: false,
+      windowStart: -1,
+      windowEnd: -1,
+      rowHeight: 0,
+      scrollFrame: null,
     };
 
     const getErrorMessage = (payload, fallback) => {
@@ -1262,39 +1266,140 @@
       tbody.innerHTML = `<tr><td class="px-2 py-2 text-slate-500" colspan="4">${message || tNoEntries}</td></tr>`;
     };
 
+    // Same windowing as the labour-rate grid below: the scroller is max-h-72
+    // (~12 rows), but a group scope resolves to the whole catalogue. Painting
+    // every row cost ~0.7s per preview and made typing the header rate lag,
+    // because each row carries a number input. state.rows stays complete —
+    // Save posts from it, so windowing the DOM must never window the data.
+    const ROW_OVERSCAN = 8;
+    const FALLBACK_ROW_HEIGHT = 30;
+    const scroller = tbody.closest(".overflow-auto") || tbody.parentElement;
+
+    const rowHtml = (row, idx) => {
+      const previous = row.previous_rate == null ? tNoPrevious : Number(row.previous_rate).toFixed(2);
+      const newRate = row.new_rate == null ? "" : Number(row.new_rate).toFixed(2);
+      // whitespace-nowrap keeps every row the same height, which is what makes
+      // the spacer arithmetic exact. The scroller already scrolls sideways.
+      return `
+        <tr data-commission-row="${idx}">
+          <td class="px-2 py-1.5 text-slate-700 whitespace-nowrap">${row.sku_code || ""}</td>
+          <td class="px-2 py-1.5 text-slate-700 whitespace-nowrap">${row.item_name || ""}</td>
+          <td class="px-2 py-1.5 text-slate-700 whitespace-nowrap">${previous}</td>
+          <td class="px-2 py-1.5 text-slate-700">
+            <input
+              class="w-28 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-accent/30"
+              type="number"
+              min="0"
+              step="0.01"
+              data-commission-row-rate
+              data-commission-row-index="${idx}"
+              value="${newRate}"
+            />
+          </td>
+        </tr>
+      `;
+    };
+
+    const spacerHtml = (height) =>
+      height > 0 ? `<tr aria-hidden="true"><td colspan="4" style="height:${height}px;padding:0;border:0"></td></tr>` : "";
+
+    const measureRowHeight = () => {
+      const sample = tbody.querySelector("[data-commission-row]");
+      if (!sample) return;
+      const height = sample.getBoundingClientRect().height;
+      if (height > 0) state.rowHeight = height;
+    };
+
+    const visibleRange = () => {
+      const total = state.rows.length;
+      const rowHeight = state.rowHeight || FALLBACK_ROW_HEIGHT;
+      const viewport = scroller ? scroller.clientHeight || 0 : 0;
+      // clientHeight is 0 while the modal is still hidden. Render a small block
+      // rather than the whole list — the spacers keep the scrollbar honest and
+      // the first scroll repaints against a real viewport.
+      if (!viewport) return { start: 0, end: Math.min(total, 40) };
+      const scrollTop = scroller.scrollTop || 0;
+      const start = Math.max(0, Math.floor(scrollTop / rowHeight) - ROW_OVERSCAN);
+      const end = Math.min(total, Math.ceil((scrollTop + viewport) / rowHeight) + ROW_OVERSCAN);
+      return { start, end: Math.max(end, start) };
+    };
+
+    const paintWindow = ({ force = false } = {}) => {
+      const total = state.rows.length;
+      if (!total) return;
+      const { start, end } = visibleRange();
+      if (!force && start === state.windowStart && end === state.windowEnd) return;
+
+      // Re-rendering blows away the focused input, so put the caret back if the
+      // row the user was typing in is still on screen.
+      const active = document.activeElement;
+      const focusedIndex =
+        active instanceof HTMLInputElement && active.hasAttribute("data-commission-row-rate")
+          ? Number(active.getAttribute("data-commission-row-index"))
+          : null;
+      const selectionStart = focusedIndex == null ? null : active.selectionStart;
+      const selectionEnd = focusedIndex == null ? null : active.selectionEnd;
+
+      const rowHeight = state.rowHeight || FALLBACK_ROW_HEIGHT;
+      let html = spacerHtml(start * rowHeight);
+      for (let idx = start; idx < end; idx += 1) {
+        html += rowHtml(state.rows[idx], idx);
+      }
+      html += spacerHtml((total - end) * rowHeight);
+      tbody.innerHTML = html;
+      state.windowStart = start;
+      state.windowEnd = end;
+
+      if (focusedIndex != null && focusedIndex >= start && focusedIndex < end) {
+        const restored = tbody.querySelector(`[data-commission-row-index="${focusedIndex}"]`);
+        if (restored instanceof HTMLInputElement) {
+          restored.focus();
+          if (selectionStart != null && selectionEnd != null) {
+            try {
+              restored.setSelectionRange(selectionStart, selectionEnd);
+            } catch (err) {
+              /* number inputs reject setSelectionRange in some browsers */
+            }
+          }
+        }
+      }
+    };
+
     const renderRows = () => {
+      summary.textContent = String(state.rows.length);
+      state.windowStart = -1;
+      state.windowEnd = -1;
       if (!state.rows.length) {
         renderEmpty(tNoEntries);
         summary.textContent = "0";
         return;
       }
-      tbody.innerHTML = state.rows
-        .map((row, idx) => {
-          const previous = row.previous_rate == null ? tNoPrevious : Number(row.previous_rate).toFixed(2);
-          const newRate = row.new_rate == null ? "" : Number(row.new_rate).toFixed(2);
-          return `
-            <tr>
-              <td class="px-2 py-1.5 text-slate-700">${row.sku_code || ""}</td>
-              <td class="px-2 py-1.5 text-slate-700">${row.item_name || ""}</td>
-              <td class="px-2 py-1.5 text-slate-700">${previous}</td>
-              <td class="px-2 py-1.5 text-slate-700">
-                <input
-                  class="w-28 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-accent/30"
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  data-commission-row-rate
-                  data-commission-row-index="${idx}"
-                  value="${newRate}"
-                />
-              </td>
-            </tr>
-          `;
-        })
-        .join("");
-      summary.textContent = String(state.rows.length);
+      if (scroller) scroller.scrollTop = 0;
+      // First paint with the previous (or fallback) height, measure, then repaint
+      // so the spacers are exact from the very first frame.
+      paintWindow({ force: true });
+      const before = state.rowHeight;
+      measureRowHeight();
+      if (state.rowHeight !== before) paintWindow({ force: true });
     };
 
+    if (scroller) {
+      scroller.addEventListener(
+        "scroll",
+        () => {
+          if (!state.rows.length) return;
+          if (state.scrollFrame) return;
+          state.scrollFrame = window.requestAnimationFrame(() => {
+            state.scrollFrame = null;
+            paintWindow();
+          });
+        },
+        { passive: true },
+      );
+    }
+
+    // state.rows is what Save posts, so every row tracks the header rate. Only
+    // the windowed inputs are in the DOM, so the repaint is a handful of writes.
     const applyHeaderRateToRows = () => {
       const headerRate = String(fields.value?.value || "").trim();
       if (!state.rows.length) return;
@@ -1309,6 +1414,8 @@
 
     const clearRows = (message = tSelectTarget) => {
       state.rows = [];
+      state.windowStart = -1;
+      state.windowEnd = -1;
       renderEmpty(message);
       summary.textContent = "0";
     };
