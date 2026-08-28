@@ -4162,6 +4162,14 @@ const applyApprovedBomChange = async (trx, request, approverUserId) => {
     if (!bomId) return false;
     await validateDraftReadyForApproval(trx, {
       bomId,
+      // Send-for-approval parks the header on PENDING (setBomPendingTx), so by
+      // the time a checker clicks Approve on the approvals page the BOM is
+      // never a DRAFT any more. The default "send" intent only accepts DRAFT,
+      // which made every queued BOM fail here with "Only draft BOM can be
+      // approved." and left the request stuck on Pending forever. This is a
+      // checker decision, exactly like the BOM screen's own Approve button, so
+      // it uses the same intent -- which accepts DRAFT and PENDING alike.
+      intent: "approve",
       t: () => "",
       locale: "en",
     });
