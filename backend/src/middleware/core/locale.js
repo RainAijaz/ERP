@@ -1873,6 +1873,8 @@ const translations = {
     error_select_rate_type: "Please select rate type.",
     error_dcv_missing_labour_rate_for_sku:
       "Line {line}: Labour rate is missing for {sku}. Please add this Labour + Department + SKU in Labour Rates.",
+    dcv_no_rated_skus_for_labour:
+      "No rated articles for this labour + department",
     approval_pending_subject: "Pending Approval",
     approval_pending_details: "Your request is submitted and pending approval.",
     approval_request_id: "Approval Request ID",
@@ -3063,6 +3065,8 @@ translations.ur = {
   error_select_rate_type: "براہ کرم شرح کی قسم منتخب کریں۔",
   error_dcv_missing_labour_rate_for_sku:
     "Line {line}: {sku} ke liye labour rate missing hai. Labour + Department + SKU combination Labour Rates mein add karein.",
+  dcv_no_rated_skus_for_labour:
+    "اس لیبر + شعبہ کے لیے کوئی ریٹ والا مضمون نہیں",
   error_select_sku: "براہ کرم ایک مضمون (SKU) منتخب کریں۔",
   error_select_subgroup: "براہ کرم ایک پروڈکٹ ذیلی گروپ منتخب کریں۔",
   error_select_vendor_capabilities:

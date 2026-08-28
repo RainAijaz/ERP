@@ -7064,6 +7064,155 @@ const resolveDcvRateForSku = async ({
   };
 };
 
+// Which articles may a labour be booked against on a DCV?
+//
+// The DCV save path rejects any line whose Labour + Department + SKU has no
+// positive labour rate (error_dcv_missing_labour_rate_for_sku), so listing the
+// whole FG/SFG catalogue in the line dropdown just invited a save-time failure.
+// This resolves the rated set up-front, using the same scope semantics as
+// resolveDcvRateForSku: a rule pinned to a sku_id wins for that one article,
+// while a scope-wide rule (no sku_id) covers its whole SUBGROUP/GROUP.
+//
+// It deliberately does NOT push the sku match into SQL as one correlated
+// EXISTS: the "r.sku_id = s.id OR (subgroup/group match)" disjunction cannot
+// use an index, so Postgres degenerates to rules x skus per request. Reading
+// the labour's rules first (indexed on labour_id) and expanding only the
+// scope-wide ones keeps this cheap enough to run on every labour change.
+const loadDcvRatedSkuIdsForLabour = async ({ req, labourId, deptId }) => {
+  const normalizedLabourId = toPositiveInt(labourId);
+  const normalizedDeptId = toPositiveInt(deptId);
+  if (!normalizedLabourId) {
+    return { filtered: false, labour_id: null, dept_id: null, sku_ids: [] };
+  }
+
+  await knex.transaction(async (trx) => {
+    await validateLabourTx({
+      trx,
+      req,
+      labourId: normalizedLabourId,
+      allowNull: false,
+    });
+    if (normalizedDeptId) {
+      await validateDepartmentForLabourTx({
+        trx,
+        departmentId: normalizedDeptId,
+        labourId: normalizedLabourId,
+        requireProduction: true,
+      });
+    }
+  });
+
+  const hasArticleTypeColumn =
+    await hasLabourRateRulesArticleTypeColumnTx(knex);
+  let rulesQuery = knex("erp.labour_rate_rules as r")
+    .select("r.apply_on", "r.sku_id", "r.subgroup_id", "r.group_id")
+    .where({
+      "r.labour_id": normalizedLabourId,
+      "r.applies_to_all_labours": false,
+    })
+    .whereRaw("lower(trim(coalesce(r.status, ''))) = 'active'")
+    .whereIn(knex.raw("upper(trim(coalesce(r.apply_on::text, '')))"), [
+      "SKU",
+      "ARTICLE",
+      "SUBGROUP",
+      "GROUP",
+    ])
+    // A zero rate is rejected on save exactly like a missing one, so it must
+    // not put the article back in the dropdown.
+    .where("r.rate_value", ">", 0);
+  if (normalizedDeptId) {
+    rulesQuery = rulesQuery.andWhere("r.dept_id", normalizedDeptId);
+  }
+  if (hasArticleTypeColumn) {
+    rulesQuery = rulesQuery.select("r.article_type");
+  }
+  const rules = await rulesQuery;
+
+  const pinnedSkuIds = new Set();
+  // article_type ("FG" / "SFG" / "BOTH") only narrows scope-wide rules; a
+  // sku-pinned rule already names one article, so its stored value is ignored
+  // here for the same reason resolveDcvRateForSku ignores it.
+  const subgroupScopes = [];
+  const groupScopes = [];
+  (rules || []).forEach((row) => {
+    const skuId = toPositiveInt(row?.sku_id);
+    if (skuId) {
+      pinnedSkuIds.add(Number(skuId));
+      return;
+    }
+    const applyOn = String(row?.apply_on || "")
+      .trim()
+      .toUpperCase();
+    const articleType = hasArticleTypeColumn
+      ? String(row?.article_type || "")
+          .trim()
+          .toUpperCase()
+      : "";
+    const scope = {
+      article_type: articleType && articleType !== "BOTH" ? articleType : "",
+      subgroup_id: Number(row?.subgroup_id || 0),
+      group_id: Number(row?.group_id || 0),
+    };
+    if (applyOn === "SUBGROUP") subgroupScopes.push(scope);
+    else if (applyOn === "GROUP") groupScopes.push(scope);
+  });
+
+  const skuIds = new Set(pinnedSkuIds);
+  if (subgroupScopes.length || groupScopes.length) {
+    const subgroupIds = [
+      ...new Set(subgroupScopes.map((scope) => scope.subgroup_id)),
+    ];
+    const groupIds = [...new Set(groupScopes.map((scope) => scope.group_id))];
+    const scopedSkus = await knex("erp.skus as s")
+      .join("erp.variants as v", "v.id", "s.variant_id")
+      .join("erp.items as i", "i.id", "v.item_id")
+      .select("s.id", "i.item_type", "i.subgroup_id", "i.group_id")
+      .where({ "s.is_active": true, "i.is_active": true })
+      .whereIn(knex.raw("upper(coalesce(i.item_type::text, ''))"), [
+        "FG",
+        "SFG",
+      ])
+      .where(function scopeCandidates() {
+        if (subgroupIds.length) {
+          this.orWhereIn(knex.raw("coalesce(i.subgroup_id, 0)"), subgroupIds);
+        }
+        if (groupIds.length) {
+          this.orWhereIn(knex.raw("coalesce(i.group_id, 0)"), groupIds);
+        }
+      });
+
+    (scopedSkus || []).forEach((row) => {
+      const skuId = toPositiveInt(row?.id);
+      if (!skuId) return;
+      const itemType = String(row?.item_type || "")
+        .trim()
+        .toUpperCase();
+      const subgroupId = Number(row?.subgroup_id || 0);
+      const groupId = Number(row?.group_id || 0);
+      const matchesArticleType = (scope) =>
+        !scope.article_type || scope.article_type === itemType;
+      const covered =
+        subgroupScopes.some(
+          (scope) =>
+            Number(scope.subgroup_id) === subgroupId &&
+            matchesArticleType(scope),
+        ) ||
+        groupScopes.some(
+          (scope) =>
+            Number(scope.group_id) === groupId && matchesArticleType(scope),
+        );
+      if (covered) skuIds.add(Number(skuId));
+    });
+  }
+
+  return {
+    filtered: true,
+    labour_id: Number(normalizedLabourId),
+    dept_id: normalizedDeptId ? Number(normalizedDeptId) : null,
+    sku_ids: [...skuIds].sort((a, b) => a - b),
+  };
+};
+
 const resolveDcvAvailabilityForLine = async ({
   req,
   labourId,
@@ -7384,6 +7533,7 @@ module.exports = {
   deleteProductionVoucher,
   loadProductionVoucherOptions,
   resolveDcvRateForSku,
+  loadDcvRatedSkuIdsForLabour,
   resolveDcvAvailabilityForLine,
   loadRecentProductionVouchers,
   getProductionVoucherSeriesStats,

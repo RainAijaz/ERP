@@ -18,6 +18,7 @@ const {
   getProductionVoucherNeighbours,
   loadProductionVoucherDetails,
   resolveDcvRateForSku,
+  loadDcvRatedSkuIdsForLabour,
   resolveDcvAvailabilityForLine,
   parseVoucherNo,
 } = require("../../services/production/production-voucher-service");
@@ -260,6 +261,28 @@ const createProductionVoucherRouter = ({
         return res.json(result || { rate: 0, found: false });
       } catch (err) {
         console.error("Error in ProductionVoucherDcvRateService:", err);
+        const message = friendlyErrorMessage(err, res.locals.t);
+        const status = Number(err?.status || 500);
+        return res
+          .status(status)
+          .json({ error: message, requestId: req.id || null });
+      }
+    },
+  );
+
+  router.get(
+    "/dcv-rated-skus",
+    requirePermission("VOUCHER", scopeKey, "view"),
+    async (req, res) => {
+      try {
+        const result = await loadDcvRatedSkuIdsForLabour({
+          req,
+          labourId: req.query?.labour_id,
+          deptId: req.query?.dept_id,
+        });
+        return res.json(result || { filtered: false, sku_ids: [] });
+      } catch (err) {
+        console.error("Error in ProductionVoucherDcvRatedSkuService:", err);
         const message = friendlyErrorMessage(err, res.locals.t);
         const status = Number(err?.status || 500);
         return res

@@ -423,6 +423,7 @@
     const lossDepartmentHeaderSelect = form.querySelector("[data-loss-department-header]");
     const dcvRatePath = `${<%- JSON.stringify(basePath || "") %>}/dcv-rate`;
     const dcvAvailabilityPath = `${<%- JSON.stringify(basePath || "") %>}/dcv-availability`;
+    const dcvRatedSkusPath = `${<%- JSON.stringify(basePath || "") %>}/dcv-rated-skus`;
     const voucherDateInput = form.querySelector('[name="voucher_date"]');
     const voucherIdInput = form.querySelector('input[name="voucher_id"]');
     const dcvAvailabilityPanel = form.querySelector("[data-dcv-availability-panel]");
@@ -432,7 +433,13 @@
     const linesFooterCell = form.querySelector("[data-lines-footer-cell]");
     const rowsState = [];
     const dcvRateCache = new Map();
+    const dcvRatedSkuCache = new Map();
     const dcvAvailabilityTimers = new Map();
+    // null = unfiltered (no labour picked yet, or the lookup failed). A Set
+    // narrows the line dropdown to the articles this labour + department is
+    // actually rated for - the same articles the save path will accept.
+    let dcvRatedSkuIds = null;
+    let dcvLineRefreshSeq = 0;
 
     const toNum = (value, fallback = 0) => {
       const n = Number(value);
@@ -668,6 +675,95 @@
       const payload = await response.json().catch(() => ({}));
       dcvRateCache.set(key, payload || {});
       return payload || {};
+    };
+
+    const fetchDcvRatedSkuIds = ({ labourId, deptId }) => {
+      const key = `${Number(labourId || 0)}:${Number(deptId || 0)}`;
+      // Cache the promise, not the result: refreshing the department options
+      // fires its own change event, so two lookups for the same labour can be
+      // in flight before either one resolves.
+      if (dcvRatedSkuCache.has(key)) return dcvRatedSkuCache.get(key);
+      const params = new URLSearchParams({
+        labour_id: String(labourId || ""),
+        dept_id: String(deptId || ""),
+      });
+      const request = fetch(`${dcvRatedSkusPath}?${params.toString()}`, {
+        headers: { Accept: "application/json" },
+      })
+        .then(async (response) => {
+          if (!response.ok) {
+            const errorPayload = await response.json().catch(() => null);
+            throw new Error(errorPayload?.error || <%- JSON.stringify(t("generic_error")) %>);
+          }
+          const payload = await response.json().catch(() => null);
+          if (!payload || payload.filtered !== true) return null;
+          return new Set(
+            (payload.sku_ids || [])
+              .map((skuId) => Number(skuId))
+              .filter((skuId) => Number.isInteger(skuId) && skuId > 0),
+          );
+        })
+        .catch((err) => {
+          dcvRatedSkuCache.delete(key);
+          throw err;
+        });
+      dcvRatedSkuCache.set(key, request);
+      return request;
+    };
+
+    const refreshDcvRatedSkuFilter = async ({ clearUnrated = false } = {}) => {
+      if (!isDcv) return;
+      const labourId = toPositiveInt(dcvLabourSelect?.value);
+      const deptId = toPositiveInt(dcvDepartmentSelect?.value);
+      if (!labourId) {
+        if (dcvRatedSkuIds === null) return;
+        dcvRatedSkuIds = null;
+        syncAllRowsFromDom();
+        renderRows();
+        return;
+      }
+
+      let ratedSkuIds = null;
+      try {
+        ratedSkuIds = await fetchDcvRatedSkuIds({ labourId, deptId });
+      } catch (err) {
+        // Leave the dropdown unfiltered rather than hiding every article
+        // because one lookup failed.
+        showError(err?.message || <%- JSON.stringify(t("generic_error")) %>);
+        return;
+      }
+      if (!(ratedSkuIds instanceof Set)) return;
+
+      dcvRatedSkuIds = ratedSkuIds;
+      syncAllRowsFromDom();
+      if (clearUnrated && canSave) {
+        rowsState.forEach((row) => {
+          const skuId = toPositiveInt(row?.sku_id);
+          if (!skuId || dcvRatedSkuIds.has(Number(skuId))) return;
+          // This labour has no rate for the article, so the save would be
+          // rejected anyway - clear it instead of leaving a dead line behind.
+          row.sku_id = null;
+          row.rate = 0;
+          row.amount = 0;
+          row.availability_status = "NA";
+          row.availability_note = "";
+          row.availability_details = null;
+        });
+      }
+      renderRows();
+    };
+
+    // Labour and department both feed the rate lookup, and refreshing the
+    // department options re-fires this for the same edit. Sequence the chains
+    // so a superseded one stops before it writes rates into a re-rendered grid.
+    const refreshDcvLineDependencies = async ({ clearUnrated = false } = {}) => {
+      if (!isDcv) return;
+      const seq = ++dcvLineRefreshSeq;
+      await refreshDcvRatedSkuFilter({ clearUnrated });
+      if (seq !== dcvLineRefreshSeq || !canSave) return;
+      await applyDcvRatesForAllRows();
+      if (seq !== dcvLineRefreshSeq) return;
+      await refreshDcvAvailabilityForAllRows();
     };
 
     const rmItems = Array.isArray(options.rmItems) ? options.rmItems : [];
@@ -917,8 +1013,21 @@
         return base.join("");
       }
 
-      return [`<option value="">${primaryEntityPlaceholder}</option>`]
-        .concat((options.skus || []).map((sku) => `<option value="${sku.id}" ${Number(row.sku_id || 0) === Number(sku.id || 0) ? "selected" : ""}>${sku.sku_code} - ${sku.item_name || ""}${sku.group_name ? ` (${sku.group_name})` : ""}</option>`))
+      const selectedSkuId = Number(row.sku_id || 0) || null;
+      const visibleSkus = (options.skus || []).filter((sku) => {
+        const skuId = Number(sku?.id || 0) || null;
+        if (!skuId) return false;
+        if (!(dcvRatedSkuIds instanceof Set)) return true;
+        // Keep whatever the line already holds: an older voucher (or a rate
+        // deleted since) must not silently lose its article on edit.
+        return dcvRatedSkuIds.has(skuId) || skuId === selectedSkuId;
+      });
+      const placeholder =
+        dcvRatedSkuIds instanceof Set && !dcvRatedSkuIds.size
+          ? <%- JSON.stringify(t("dcv_no_rated_skus_for_labour")) %>
+          : primaryEntityPlaceholder;
+      return [`<option value="">${placeholder}</option>`]
+        .concat(visibleSkus.map((sku) => `<option value="${sku.id}" ${Number(row.sku_id || 0) === Number(sku.id || 0) ? "selected" : ""}>${sku.sku_code} - ${sku.item_name || ""}${sku.group_name ? ` (${sku.group_name})` : ""}</option>`))
         .join("");
     };
 
@@ -1730,23 +1839,22 @@
     };
     syncLossHeaderState();
     refreshDcvDepartmentOptions({ preserveSelection: true });
-    if (isDcv && canSave) {
+    if (isDcv) {
       window.setTimeout(() => {
-        applyDcvRatesForAllRows().then(() => refreshDcvAvailabilityForAllRows());
+        // An already-saved voucher keeps its lines, so never clear here.
+        refreshDcvLineDependencies({ clearUnrated: false });
       }, 0);
     }
 
     if (isDcv && dcvLabourSelect instanceof HTMLSelectElement) {
       dcvLabourSelect.addEventListener("change", async () => {
         refreshDcvDepartmentOptions({ preserveSelection: false });
-        await applyDcvRatesForAllRows();
-        await refreshDcvAvailabilityForAllRows();
+        await refreshDcvLineDependencies({ clearUnrated: true });
       });
     }
     if (isDcv && dcvDepartmentSelect instanceof HTMLSelectElement) {
       dcvDepartmentSelect.addEventListener("change", async () => {
-        await applyDcvRatesForAllRows();
-        await refreshDcvAvailabilityForAllRows();
+        await refreshDcvLineDependencies({ clearUnrated: true });
       });
     }
     if (isDcv && voucherDateInput instanceof HTMLInputElement) {
