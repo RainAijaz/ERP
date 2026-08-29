@@ -25,6 +25,16 @@ const {
 const {
   buildStockShortfallMessageTx,
 } = require("../../utils/stock-rollback-diagnostics");
+const {
+  WIP_ON_HAND,
+  WIP_IN_TRANSIT,
+  moveWipPairsTx,
+  getCurrentWipBalanceTx,
+  adjustWipBalanceTx,
+  insertWipLedgerTx,
+  resolveWipUnitCost,
+  rollbackWipLedgerBySourceVoucherTx,
+} = require("../production/wip-pool");
 
 const STOCK_TRANSFER_VOUCHER_TYPES = {
   out: "STN_OUT",
@@ -36,6 +46,7 @@ const STOCK_TYPE_SET = new Set(STOCK_TYPE_VALUES);
 const TRANSFER_REASON_VALUES = ["REBALANCING", "DEMAND", "RETURN", "OTHER"];
 
 let approvalRequestHasVoucherTypeCodeColumn;
+let stockTransferOutHasWipColumns;
 let stockBalanceRmTableSupport;
 let stockBalanceSkuTableSupport;
 let stockLedgerTableSupport;
@@ -294,6 +305,20 @@ const hasStockTransferOutTransferRefColumnTx = async (trx) => {
     "transfer_ref_no",
   );
   return stockTransferOutHasTransferRefColumn;
+};
+
+// is_wip_transfer + stage_id arrive together in 20260828_000112; treat them as one unit so a
+// half-migrated database can never post a WIP dispatch it cannot describe.
+const hasStockTransferOutWipColumnsTx = async (trx) => {
+  if (typeof stockTransferOutHasWipColumns === "boolean") {
+    return stockTransferOutHasWipColumns;
+  }
+  const [hasFlag, hasStage] = await Promise.all([
+    hasColumnTx(trx, "erp", "stock_transfer_out_header", "is_wip_transfer"),
+    hasColumnTx(trx, "erp", "stock_transfer_out_header", "stage_id"),
+  ]);
+  stockTransferOutHasWipColumns = Boolean(hasFlag && hasStage);
+  return stockTransferOutHasWipColumns;
 };
 
 const hasStockTransferOutStockTypeColumnTx = async (trx) => {
@@ -1893,8 +1918,117 @@ const loadTransferOutLinesTx = async ({ trx, voucherId }) => {
       transfer_qty_base: Number(meta.transfer_qty_base || 0),
       transfer_qty_pairs: Number(meta.transfer_qty_pairs || 0),
       unit_cost_base: Number(meta.unit_cost_base || 0),
+      is_wip: meta.is_wip === true,
+      stage_id: toPositiveInt(meta.stage_id),
+      stage_name: String(meta.stage_name || ""),
+      dept_id: toPositiveInt(meta.dept_id),
     };
   });
+};
+
+const resolveProductionStageTx = async ({ trx, stageId }) => {
+  const normalizedStageId = toPositiveInt(stageId);
+  if (!normalizedStageId)
+    throw new HttpError(400, "Production stage is required");
+  const stage = await trx("erp.production_stages as ps")
+    .join("erp.departments as d", "d.id", "ps.dept_id")
+    .select("ps.id", "ps.name", "ps.dept_id", "ps.is_active")
+    .where("ps.id", normalizedStageId)
+    .first();
+  if (!stage) throw new HttpError(400, "Production stage is invalid");
+  if (stage.is_active === false)
+    throw new HttpError(400, "Production stage is not active");
+  return {
+    stageId: Number(stage.id),
+    stageName: String(stage.name || ""),
+    deptId: Number(stage.dept_id),
+  };
+};
+
+// Work-in-process lines are deliberately simpler than stock lines: the pool is whole pairs at
+// one department, so there is no UOM conversion, no packed/loose split and no WAC lookup --
+// moveWipPairsTx derives cost from the source pool itself.
+//
+// Requirements are summed by SKU BEFORE the availability check. Checking per row would repeat
+// the known duplicate-line blind spot where two rows for the same SKU each look satisfiable
+// but together exceed the pool.
+const validateWipTransferLinesTx = async ({
+  trx,
+  req,
+  rawLines,
+  skuMap,
+  stage,
+}) => {
+  const requiredBySku = new Map();
+  const lines = rawLines.map((raw, index) => {
+    const lineNo = Number(index + 1);
+    const skuId = toPositiveInt(raw?.sku_id);
+    if (!skuId) throw new HttpError(400, `Line ${lineNo}: item is required`);
+    const sku = skuMap.get(Number(skuId));
+    if (!sku) throw new HttpError(400, `Line ${lineNo}: item is invalid`);
+
+    const rawQty = Number(raw?.transfer_qty ?? raw?.qty ?? 0);
+    const qtyPairs = Math.round(rawQty);
+    if (!(qtyPairs > 0) || Math.abs(rawQty - qtyPairs) > 0.0005) {
+      throw new HttpError(
+        400,
+        `Line ${lineNo}: work-in-process quantity must be a whole number of pairs`,
+      );
+    }
+
+    requiredBySku.set(
+      Number(skuId),
+      Number(requiredBySku.get(Number(skuId)) || 0) + qtyPairs,
+    );
+
+    return {
+      line_no: lineNo,
+      line_kind: "SKU",
+      item_id: null,
+      sku_id: Number(skuId),
+      uom_id: toPositiveInt(sku.base_uom_id),
+      qty: Number(qtyPairs),
+      rate: 0,
+      amount: 0,
+      meta: {
+        is_wip: true,
+        stock_type: String(sku.item_type || "").toUpperCase(),
+        stage_id: Number(stage.stageId),
+        stage_name: stage.stageName,
+        dept_id: Number(stage.deptId),
+        transfer_qty_pairs: Number(qtyPairs),
+      },
+    };
+  });
+
+  // Hard block, per the design decision: adjustWipBalanceTx clamps at zero rather than
+  // raising, so an unchecked over-dispatch would silently destroy the discrepancy.
+  for (const [skuId, requiredPairs] of requiredBySku.entries()) {
+    const pool = await getCurrentWipBalanceTx({
+      trx,
+      branchId: req.branchId,
+      skuId,
+      deptId: stage.deptId,
+      stockState: WIP_ON_HAND,
+    });
+    const availablePairs = Number(pool?.qty_pairs || 0);
+    if (availablePairs < requiredPairs) {
+      const sku = skuMap.get(Number(skuId));
+      const label = buildSkuDisplayName(sku) || `SKU #${skuId}`;
+      throw new HttpError(
+        400,
+        `${label} at ${stage.stageName}: requested ${requiredPairs} pair(s) but the work-in-process pool holds ${availablePairs}. Short by ${requiredPairs - availablePairs} pair(s).`,
+      );
+    }
+    lines
+      .filter((line) => Number(line.sku_id) === Number(skuId))
+      .forEach((line) => {
+        line.meta.available_qty_pairs = availablePairs;
+        line.meta.available_qty = availablePairs;
+      });
+  }
+
+  return lines;
 };
 
 const validateTransferOutPayloadTx = async ({
@@ -1910,6 +2044,20 @@ const validateTransferOutPayloadTx = async ({
 
   const stockType = normalizeStockType(payload?.stock_type);
   if (!stockType) throw new HttpError(400, "Stock type is required");
+
+  // Work-in-process is a MODE alongside the stock type, not a fourth value of it: the SKU
+  // keeps its real category and erp.stock_category is left untouched. Raw material is never
+  // work-in-process, so the combination is rejected rather than silently ignored.
+  const isWipTransfer =
+    payload?.is_wip_transfer === true ||
+    String(payload?.is_wip_transfer || "").toLowerCase() === "true" ||
+    String(payload?.is_wip_transfer || "") === "1";
+  if (isWipTransfer && stockType === "RM") {
+    throw new HttpError(
+      400,
+      "Raw material cannot be transferred as work-in-process",
+    );
+  }
 
   const destinationBranchId = toPositiveInt(payload?.destination_branch_id);
   if (!destinationBranchId)
@@ -1936,6 +2084,51 @@ const validateTransferOutPayloadTx = async ({
     userProvided: transferRefNoProvided === true,
     exceptVoucherId: currentVoucherId,
   });
+
+  if (isWipTransfer) {
+    const stage = await resolveProductionStageTx({
+      trx,
+      stageId: payload?.stage_id,
+    });
+    const wipSkuIds = [
+      ...new Set(
+        rawLines.map((line) => toPositiveInt(line?.sku_id)).filter(Boolean),
+      ),
+    ];
+    if (!wipSkuIds.length) throw new HttpError(400, "Item is required");
+    const wipSkuMap = await fetchSkuMapTx({
+      trx,
+      skuIds: wipSkuIds,
+      expectedStockType: stockType,
+    });
+    const missingWipSku = wipSkuIds.find((id) => !wipSkuMap.has(Number(id)));
+    if (missingWipSku)
+      throw new HttpError(400, "Invalid item in voucher lines");
+
+    const wipLines = await validateWipTransferLinesTx({
+      trx,
+      req,
+      rawLines,
+      skuMap: wipSkuMap,
+      stage,
+    });
+
+    return {
+      voucherDate,
+      stockType,
+      destinationBranchId,
+      transferRefNo: resolvedTransferRefNo,
+      transferReason,
+      transporterName,
+      billBookNo,
+      remarks,
+      lines: wipLines,
+      isWipTransfer: true,
+      stageId: stage.stageId,
+      stageName: stage.stageName,
+      stageDeptId: stage.deptId,
+    };
+  }
 
   await ensureInventoryStockInfraTx({
     trx,
@@ -2090,6 +2283,8 @@ const validateTransferOutPayloadTx = async ({
       billBookNo,
       remarks,
       lines,
+      isWipTransfer: false,
+      stageId: null,
     };
   }
 
@@ -2218,6 +2413,8 @@ const validateTransferOutPayloadTx = async ({
     billBookNo,
     remarks,
     lines,
+    isWipTransfer: false,
+    stageId: null,
   };
 };
 
@@ -2232,6 +2429,9 @@ const stampTransferInShortfallsTx = async ({ trx, branchId, lines = [] }) => {
 
   for (const line of lines) {
     const meta = line?.meta && typeof line.meta === "object" ? line.meta : {};
+    // WIP sits in wip_dept_balance, not stock_balance_sku, so probing stock here would
+    // report a phantom shortfall on every line and route the receipt to approvals.
+    if (meta.is_wip === true) continue;
     const isItem = String(line.line_kind || "").toUpperCase() === "ITEM";
     const required = isItem
       ? roundQty3(Number(meta.expected_qty_base || 0))
@@ -2411,6 +2611,16 @@ const validateTransferInPayloadTx = async ({
       uom_name: stnLine?.uom_name || null,
       uom_factor_to_base: Number(Number(factorToBase).toFixed(6)),
       unit_cost_base: Number(unitCostBase),
+      // A receipt against a WIP dispatch is itself a WIP movement. Without this the GRN
+      // would post to stock and quietly mint inventory that was never dispatched.
+      ...(stnLine?.is_wip === true
+        ? {
+            is_wip: true,
+            stage_id: Number(stnLine.stage_id) || null,
+            stage_name: String(stnLine.stage_name || ""),
+            dept_id: Number(stnLine.dept_id) || null,
+          }
+        : {}),
     };
 
     if (stockType === "RM") {
@@ -2594,6 +2804,8 @@ const upsertStockTransferOutHeaderTx = async ({
   transferReason,
   transporterName,
   billBookNo,
+  isWipTransfer = false,
+  stageId = null,
 }) => {
   const payload = {
     voucher_id: Number(voucherId),
@@ -2621,6 +2833,13 @@ const upsertStockTransferOutHeaderTx = async ({
   if (await hasStockTransferOutBillBookNoColumnTx(trx)) {
     payload.bill_book_no = billBookNo || null;
     mergeColumns.push("bill_book_no");
+  }
+  if (await hasStockTransferOutWipColumnsTx(trx)) {
+    // The table CHECK ties these together: a WIP dispatch must name its stage, and an
+    // ordinary stock dispatch must not carry one.
+    payload.is_wip_transfer = isWipTransfer === true;
+    payload.stage_id = isWipTransfer === true ? Number(stageId) || null : null;
+    mergeColumns.push("is_wip_transfer", "stage_id");
   }
 
   try {
@@ -2705,6 +2924,9 @@ const syncStockTransferOutVoucherTx = async ({
     voucherId,
     allowNegative: allowNegativeRollback,
   });
+  // WIP legs live in wip_dept_ledger, which the stock-ledger rollback above never sees.
+  // Without this a re-sync would replay the dispatch on top of itself.
+  await rollbackWipLedgerBySourceVoucherTx({ trx, voucherId });
   if (String(header.status || "").toUpperCase() !== "APPROVED") return;
 
   const ext = await trx("erp.stock_transfer_out_header")
@@ -2752,6 +2974,27 @@ const syncStockTransferOutVoucherTx = async ({
         : roundUnitCost6(
             Number(line.rate || 0) / Math.max(Number(factorToBase || 1), 1),
           );
+
+    if (meta.is_wip === true) {
+      // Deliberately NOT allowNegativeSource: adjustWipBalanceTx clamps at zero, so a pool
+      // drained between submission and approval would silently lose the difference. Failing
+      // the post with a readable shortfall is the intended behaviour.
+      await moveWipPairsTx({
+        trx,
+        fromBranchId: header.branch_id,
+        fromStockState: WIP_ON_HAND,
+        toBranchId: ext.dest_branch_id,
+        toStockState: WIP_IN_TRANSIT,
+        skuId: line.sku_id,
+        deptId: meta.dept_id,
+        qtyPairs: Number(meta.transfer_qty_pairs || 0),
+        voucherId,
+        txnDate: voucherDate,
+        skuLabel: String(meta.item_label || `SKU #${line.sku_id}`),
+        stageLabel: String(meta.stage_name || ""),
+      });
+      continue;
+    }
 
     if (lineKind === "ITEM") {
       const qtyBase = roundQty3(
@@ -3105,6 +3348,7 @@ const syncStockTransferInVoucherTx = async ({
       voucherId,
       allowNegative: allowNegativeRollback,
     });
+    await rollbackWipLedgerBySourceVoucherTx({ trx, voucherId });
     return;
   }
 
@@ -3124,6 +3368,9 @@ const syncStockTransferInVoucherTx = async ({
     voucherId,
     allowNegative: allowNegativeRollback,
   });
+  // WIP legs live in wip_dept_ledger, which the stock-ledger rollback above never sees.
+  // Without this a re-sync would replay the dispatch on top of itself.
+  await rollbackWipLedgerBySourceVoucherTx({ trx, voucherId });
   if (String(header.status || "").toUpperCase() !== "APPROVED") {
     // Rejected voucher no longer occupies the against_stn_out_id unique slot,
     // so a fresh STI voucher can be raised against the same STN_OUT later.
@@ -3165,6 +3412,69 @@ const syncStockTransferInVoucherTx = async ({
         : roundUnitCost6(
             Number(line.rate || 0) / Math.max(Number(factorToBase || 1), 1),
           );
+
+    if (meta.is_wip === true) {
+      const expectedPairs = Math.round(Number(meta.expected_qty || 0));
+      const receivedPairs = Math.round(Number(meta.received_qty || 0));
+      if (receivedPairs > 0) {
+        await moveWipPairsTx({
+          trx,
+          fromBranchId: header.branch_id,
+          fromStockState: WIP_IN_TRANSIT,
+          toBranchId: header.branch_id,
+          toStockState: WIP_ON_HAND,
+          skuId: line.sku_id,
+          deptId: meta.dept_id,
+          qtyPairs: receivedPairs,
+          voucherId,
+          txnDate: voucherDate,
+          skuLabel: String(meta.item_label || `SKU #${line.sku_id}`),
+          stageLabel: String(meta.stage_name || ""),
+          // The dispatch already moved these pairs into this bucket; a rounding drift must
+          // not block the receipt, and any real shortfall is written off just below.
+          allowNegativeSource: true,
+        });
+      }
+      // Whatever was dispatched but never received is written off out of IN_TRANSIT, so the
+      // bucket does not keep a phantom balance. validate*() already demanded a variance
+      // reason for it, exactly as it does for a short stock receipt.
+      const remainderPairs = expectedPairs - receivedPairs;
+      if (remainderPairs > 0) {
+        const transitPool = await getCurrentWipBalanceTx({
+          trx,
+          branchId: header.branch_id,
+          skuId: line.sku_id,
+          deptId: meta.dept_id,
+          stockState: WIP_IN_TRANSIT,
+        });
+        const writeOffCost = roundCost2(
+          resolveWipUnitCost(transitPool) * remainderPairs,
+        );
+        await adjustWipBalanceTx({
+          trx,
+          branchId: header.branch_id,
+          stockState: WIP_IN_TRANSIT,
+          skuId: line.sku_id,
+          deptId: meta.dept_id,
+          qtyDelta: -remainderPairs,
+          costDelta: -writeOffCost,
+          activityDate: voucherDate,
+        });
+        await insertWipLedgerTx({
+          trx,
+          branchId: header.branch_id,
+          stockState: WIP_IN_TRANSIT,
+          skuId: line.sku_id,
+          deptId: meta.dept_id,
+          txnDate: voucherDate,
+          direction: -1,
+          qtyPairs: remainderPairs,
+          costValue: writeOffCost,
+          sourceVoucherId: voucherId,
+        });
+      }
+      continue;
+    }
 
     if (lineKind === "ITEM") {
       const receivedBase = roundQty3(
@@ -3321,6 +3631,8 @@ const toApprovalPayload = ({
   voucher_type_code: voucherTypeCode,
   voucher_date: validated.voucherDate,
   stock_type: validated.stockType || null,
+  is_wip_transfer: validated.isWipTransfer === true,
+  stage_id: validated.stageId || null,
   destination_branch_id: validated.destinationBranchId || null,
   transfer_ref_no: validated.transferRefNo || null,
   transfer_reason: validated.transferReason || null,
@@ -3475,6 +3787,8 @@ const createStockTransferVoucher = async ({
         transferReason: validated.transferReason,
         transporterName: validated.transporterName,
         billBookNo: validated.billBookNo,
+        isWipTransfer: validated.isWipTransfer === true,
+        stageId: validated.stageId || null,
       });
     } else {
       await upsertGrnInHeaderTx({
@@ -3721,6 +4035,8 @@ const updateStockTransferVoucher = async ({
         transferReason: validated.transferReason,
         transporterName: validated.transporterName,
         billBookNo: validated.billBookNo,
+        isWipTransfer: validated.isWipTransfer === true,
+        stageId: validated.stageId || null,
       });
     } else {
       await upsertGrnInHeaderTx({
@@ -4230,6 +4546,21 @@ const loadStockTransferVoucherOptions = async ({
     baseUomIds,
   });
 
+  // Stage list for a work-in-process dispatch, plus this branch's whole on-hand WIP pool so
+  // the screen can show available pairs per (stage, sku) without a round trip per row. One
+  // branch's pool is small -- it only ever holds SKUs part-way through a routing.
+  const [productionStageRows, wipPoolRows] = await Promise.all([
+    knex("erp.production_stages as ps")
+      .join("erp.departments as d", "d.id", "ps.dept_id")
+      .select("ps.id", "ps.name", "ps.name_ur", "ps.dept_id")
+      .where("ps.is_active", true)
+      .orderBy("ps.name", "asc"),
+    knex("erp.wip_dept_balance")
+      .select("sku_id", "dept_id", "qty_pairs")
+      .where({ branch_id: Number(req.branchId), stock_state: "ON_HAND" })
+      .andWhere("qty_pairs", ">", 0),
+  ]);
+
   const destinationBranches = (branchRows || [])
     .filter(
       (row) =>
@@ -4260,6 +4591,17 @@ const loadStockTransferVoucherOptions = async ({
       { value: "SFG", labelKey: "semi_finished" },
       { value: "RM", labelKey: "raw_material" },
     ],
+    productionStages: (productionStageRows || []).map((row) => ({
+      id: Number(row.id),
+      name: String(row.name || ""),
+      name_ur: row.name_ur || null,
+      dept_id: Number(row.dept_id),
+    })),
+    wipPool: (wipPoolRows || []).map((row) => ({
+      sku_id: Number(row.sku_id),
+      dept_id: Number(row.dept_id),
+      qty_pairs: Number(row.qty_pairs || 0),
+    })),
     transferReasons: TRANSFER_REASON_VALUES.map((value) => ({
       value,
       labelKey: `transfer_reason_${String(value || "").toLowerCase()}`,
@@ -4444,6 +4786,7 @@ const loadStockTransferVoucherDetails = async ({
     const hasTransporter =
       await hasStockTransferOutTransporterNameColumnTx(knex);
     const hasBillBookNo = await hasStockTransferOutBillBookNoColumnTx(knex);
+    const hasWipColumns = await hasStockTransferOutWipColumnsTx(knex);
     const ext = await knex("erp.stock_transfer_out_header as sth")
       .leftJoin("erp.branches as db", "db.id", "sth.dest_branch_id")
       .select(
@@ -4464,6 +4807,12 @@ const loadStockTransferVoucherDetails = async ({
         hasBillBookNo
           ? "sth.bill_book_no"
           : knex.raw("NULL::text as bill_book_no"),
+        hasWipColumns
+          ? "sth.is_wip_transfer"
+          : knex.raw("false AS is_wip_transfer"),
+        hasWipColumns
+          ? "sth.stage_id"
+          : knex.raw("NULL::bigint as stage_id"),
       )
       .where({ "sth.voucher_id": header.id })
       .first();
@@ -4503,6 +4852,8 @@ const loadStockTransferVoucherDetails = async ({
       transfer_reason: normalizeTransferReason(ext?.transfer_reason),
       transporter_name: ext?.transporter_name || "",
       bill_book_no: normalizeText(ext?.bill_book_no, 120) || null,
+      is_wip_transfer: ext?.is_wip_transfer === true,
+      stage_id: toPositiveInt(ext?.stage_id),
       remarks: header.remarks || "",
       lines,
     };
@@ -4706,6 +5057,8 @@ const applyStockTransferVoucherUpdatePayloadTx = async ({
       transferReason: validated.transferReason,
       transporterName: validated.transporterName,
       billBookNo: validated.billBookNo,
+      isWipTransfer: validated.isWipTransfer === true,
+      stageId: validated.stageId || null,
     });
   } else {
     await upsertGrnInHeaderTx({

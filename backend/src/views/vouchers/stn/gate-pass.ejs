@@ -9,9 +9,14 @@
   </head>
   <body>
     <%
+      // A work-in-process dispatch is still a gate pass; it just needs to say which stage
+      // the pairs came off, or the gate has no way to tell half-made goods apart.
+      const isWipTransfer = voucher?.is_wip_transfer === true;
       const gatePassView = {
         titleKey: "gate_pass",
-        subtitleText: t(titleKey || "stock_transfer"),
+        subtitleText: isWipTransfer
+          ? t("work_in_process_transfer")
+          : t(titleKey || "stock_transfer"),
         topInfo: [
           { labelKey: "voucher_no", value: voucher?.voucher_no || "-" },
           { labelKey: "date", value: formatDateDisplay(voucher?.voucher_date, "") || "-" },
@@ -30,6 +35,9 @@
           { key: "sku_code", labelKey: "sku_code" },
           { key: "display_name", labelKey: "article_name" },
           { key: "stock_type", labelKey: "stock_type" },
+          ...(isWipTransfer
+            ? [{ key: "stage_name", labelKey: "production_stage" }]
+            : []),
           { key: "uom_code", labelKey: "uom" },
           { key: "qty", labelKey: "quantity", align: "right" },
         ],

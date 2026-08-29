@@ -177,6 +177,27 @@
           </div>
         </div>
 
+        <% if (currentMode === 'out') { %>
+        <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center" data-wip-row hidden>
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel('work_in_process', 'Work In Process') %></label>
+          <div class="lg:col-span-4">
+            <label class="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" name="is_wip_transfer" value="true" class="h-4 w-4" data-wip-toggle <%= selectedVoucher?.is_wip_transfer ? 'checked' : '' %> <%= !canSaveVoucher ? 'disabled' : '' %>>
+              <span><%= toFriendlyLabel('transfer_stage_output', 'Send part-finished pairs to another branch') %></span>
+            </label>
+          </div>
+          <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3" data-wip-stage-label hidden><%= toFriendlyLabel('production_stage', 'Production Stage') %></label>
+          <div class="lg:col-span-4" data-wip-stage-wrap hidden>
+            <select name="stage_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-wip-stage <%= !canSaveVoucher ? 'disabled' : '' %>>
+              <option value=""><%= toFriendlyLabel('select_stage', 'Select Stage') %></option>
+              <% (options.productionStages || []).forEach((stage) => { %>
+                <option value="<%= stage.id %>" data-dept-id="<%= stage.dept_id %>" <%= Number(selectedVoucher?.stage_id || 0) === Number(stage.id) ? 'selected' : '' %>><%= stage.name %></option>
+              <% }) %>
+            </select>
+          </div>
+        </div>
+        <% } %>
+
         <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center">
           <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= currentMode === 'out' ? toFriendlyLabel('bill_book_no', 'Bill Book No') : toFriendlyLabel('transfer_ref_no', 'Transfer Ref No') %></label>
           <div class="lg:col-span-4">
@@ -682,6 +703,36 @@
     let inRows = [];
     let activeStockType = normalizeStockType(stockTypeSelect?.value || initialVoucher?.stock_type || 'FG');
 
+    // Work-in-process dispatch. WIP is not a fourth stock type -- it is a mode layered on an
+    // FG/SFG dispatch, so the stock type select is left exactly as it was.
+    const wipRow = form.querySelector('[data-wip-row]');
+    const wipToggle = form.querySelector('[data-wip-toggle]');
+    const wipStageSelect = form.querySelector('[data-wip-stage]');
+    const wipStageLabel = form.querySelector('[data-wip-stage-label]');
+    const wipStageWrap = form.querySelector('[data-wip-stage-wrap]');
+    const wipPoolMap = new Map(
+      (Array.isArray(options.wipPool) ? options.wipPool : []).map((row) => [
+        `${Number(row.dept_id || 0)}:${Number(row.sku_id || 0)}`,
+        Number(row.qty_pairs || 0),
+      ]),
+    );
+    const isWipActive = () =>
+      Boolean(wipToggle && wipToggle.checked && activeStockType !== 'RM');
+    const selectedStageDeptId = () =>
+      Number(wipStageSelect?.selectedOptions?.[0]?.getAttribute('data-dept-id') || 0);
+    const wipAvailablePairs = (skuId) =>
+      Number(wipPoolMap.get(`${selectedStageDeptId()}:${Number(skuId || 0)}`) || 0);
+    const syncWipVisibility = () => {
+      if (!wipRow) return;
+      const eligible = activeStockType === 'FG' || activeStockType === 'SFG';
+      wipRow.hidden = !eligible;
+      if (!eligible && wipToggle) wipToggle.checked = false;
+      const on = isWipActive();
+      if (wipStageWrap) wipStageWrap.hidden = !on;
+      if (wipStageLabel) wipStageLabel.hidden = !on;
+      if (wipStageSelect) wipStageSelect.required = on;
+    };
+
     const applyOutDerived = (row) => {
       const next = { ...row };
       const stockType = activeStockType;
@@ -690,7 +741,14 @@
       const selectedUnit = unitOptions.find((entry) => Number(entry.id) === Number(next.uom_id || 0));
       const factorToBase = Number(selectedUnit?.factor_to_base || 0) || 1;
 
-      if (stockType === 'RM') {
+      if (isWipActive() && stockType !== 'RM') {
+        // Pairs only: the pool is whole pairs at one department, so lock the row to the base
+        // unit and let the server derive cost from the pool's own average.
+        const baseUnit = unitOptions.find((entry) => entry.is_base === true) || unitOptions[0];
+        if (baseUnit) next.uom_id = Number(baseUnit.id);
+        next.available_qty = wipAvailablePairs(next.sku_id);
+        next.unit_cost = 0;
+      } else if (stockType === 'RM') {
         const exactKey = stockMapKey(next.item_id, next.color_id, next.size_id);
         const fallbackKey = stockMapKey(next.item_id, null, null);
         const stock = sourceStock.rmMap?.[exactKey] || sourceStock.rmMap?.[fallbackKey] || {};
@@ -1458,10 +1516,30 @@
     if (stockTypeSelect) {
       stockTypeSelect.addEventListener('change', () => {
         activeStockType = normalizeStockType(stockTypeSelect.value);
+        syncWipVisibility();
         outRows = outRows.map((row) => applyOutDerived({ ...defaultOutRow(), transfer_qty: row.transfer_qty }));
         renderRows();
       });
     }
+
+    if (wipToggle) {
+      wipToggle.addEventListener('change', () => {
+        syncWipVisibility();
+        // Available quantity and unit come from a different source in each mode, so the rows
+        // are re-derived rather than carried across.
+        outRows = outRows.map((row) => applyOutDerived({ ...defaultOutRow(), transfer_qty: row.transfer_qty }));
+        renderRows();
+      });
+    }
+
+    if (wipStageSelect) {
+      wipStageSelect.addEventListener('change', () => {
+        outRows = outRows.map((row) => applyOutDerived(row));
+        renderRows();
+      });
+    }
+
+    syncWipVisibility();
 
     if (sourceBranchSelect && mode === 'in') {
       sourceBranchSelect.addEventListener('change', () => {

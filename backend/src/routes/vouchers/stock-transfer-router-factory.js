@@ -236,6 +236,11 @@ const createStockTransferVoucherRouter = ({
         const payload = {
           voucher_date: req.body?.voucher_date,
           stock_type: req.body?.stock_type,
+          // Work-in-process mode. This payload is an explicit allowlist, so a field that is not
+          // named here is dropped silently -- the dispatch then posts as an ordinary stock
+          // transfer with no error anywhere.
+          is_wip_transfer: req.body?.is_wip_transfer,
+          stage_id: req.body?.stage_id,
           destination_branch_id: req.body?.destination_branch_id,
           transfer_ref_no: req.body?.transfer_ref_no,
           bill_book_no: req.body?.bill_book_no,

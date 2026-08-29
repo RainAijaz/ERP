@@ -5099,5 +5099,27 @@ module.exports = (req, res, next) => {
   next();
 };
 
+// Cross-branch work-in-process transfer. STN_OUT gained a mode that moves half-made pairs
+// between branches, so the dispatch screen and its gate pass need to name the mode and the
+// production stage the pairs came off. Same trailing-Object.assign rule as the blocks above:
+// translations.ur is reassigned wholesale further up the file, so these must stay at the tail.
+// Urdu is mandatory here -- STRICT_URDU_UI is on by default, so a missing key renders
+// "ترجمہ درکار" rather than quietly falling back to English.
+Object.assign(translations.en, {
+  work_in_process: "Work In Process",
+  work_in_process_transfer: "Work In Process Transfer",
+  production_stage: "Production Stage",
+  transfer_stage_output: "Send part-finished pairs to another branch",
+});
+
+Object.assign(translations.ur, {
+  // select_stage predates this block and was only ever defined in English.
+  select_stage: "مرحلہ منتخب کریں",
+  work_in_process: "زیرِ تکمیل کام",
+  work_in_process_transfer: "زیرِ تکمیل کام کی منتقلی",
+  production_stage: "پیداواری مرحلہ",
+  transfer_stage_output: "نامکمل جوڑے دوسری برانچ بھیجیں",
+});
+
 module.exports.translations = translations;
 module.exports.resolveTranslation = resolveTranslation;

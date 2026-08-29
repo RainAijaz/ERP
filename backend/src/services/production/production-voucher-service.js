@@ -21,6 +21,13 @@ const {
   normalizeProductionLinesForCommission,
   writeCommissionLedgerTx,
 } = require("../sales/commission-service");
+const {
+  WIP_ON_HAND,
+  adjustWipBalanceTx,
+  insertWipLedgerTx,
+  getCurrentWipBalanceTx,
+  rollbackWipLedgerBySourceVoucherTx,
+} = require("./wip-pool");
 
 const PRODUCTION_VOUCHER_TYPES = {
   finishedProduction: "PROD_FG",
@@ -1701,6 +1708,7 @@ const validateDcvStageFlowTx = async ({
       .sum({ qty_pairs: trx.raw("COALESCE(wl.qty_pairs, 0)") })
       .where({
         "wl.branch_id": Number(req.branchId),
+        "wl.stock_state": WIP_ON_HAND,
         "wl.source_voucher_id": Number(normalizedVoucherId),
         "wl.direction": -1,
         "wl.dept_id": Number(normalizedDeptId),
@@ -1870,6 +1878,7 @@ const loadWipCompletedPairsByDeptForSkuTx = async ({
       ),
     })
     .where("wl.branch_id", normalizedBranchId)
+    .andWhere("wl.stock_state", WIP_ON_HAND)
     .andWhere("wl.sku_id", normalizedSkuId)
     .whereIn("wl.dept_id", normalizedDeptIds)
     .groupBy("wl.dept_id");
@@ -2331,6 +2340,7 @@ const validateLossLinesTx = async ({
           .select("qty_pairs")
           .where({
             branch_id: req.branchId,
+            stock_state: WIP_ON_HAND,
             sku_id: Number(skuId),
             dept_id: Number(deptId),
           })
@@ -2712,114 +2722,6 @@ const upsertVoucherExtensionsTx = async ({
     if (lossLineRows.length) {
       await trx("erp.abnormal_loss_line").insert(lossLineRows);
     }
-  }
-};
-
-const adjustWipBalanceTx = async ({
-  trx,
-  branchId,
-  skuId,
-  deptId,
-  qtyDelta = 0,
-  costDelta = 0,
-  activityDate = null,
-}) => {
-  const normalizedBranchId = toPositiveInt(branchId);
-  const normalizedSkuId = toPositiveInt(skuId);
-  const normalizedDeptId = toPositiveInt(deptId);
-  if (!normalizedBranchId || !normalizedSkuId || !normalizedDeptId) return;
-
-  await trx("erp.wip_dept_balance")
-    .insert({
-      branch_id: normalizedBranchId,
-      sku_id: normalizedSkuId,
-      dept_id: normalizedDeptId,
-      qty_pairs: 0,
-      cost_value: 0,
-      last_activity_date: activityDate || null,
-    })
-    .onConflict(["branch_id", "sku_id", "dept_id"])
-    .ignore();
-
-  await trx("erp.wip_dept_balance")
-    .where({
-      branch_id: normalizedBranchId,
-      sku_id: normalizedSkuId,
-      dept_id: normalizedDeptId,
-    })
-    .update({
-      qty_pairs: trx.raw("greatest(qty_pairs + ?, 0)", [Number(qtyDelta || 0)]),
-      cost_value: trx.raw("greatest(cost_value + ?, 0)", [
-        Number(costDelta || 0),
-      ]),
-      last_activity_date: activityDate || trx.raw("last_activity_date"),
-    });
-};
-
-const insertWipLedgerTx = async ({
-  trx,
-  branchId,
-  skuId,
-  deptId,
-  txnDate,
-  direction,
-  qtyPairs,
-  costValue,
-  sourceVoucherId,
-}) => {
-  const normalizedQtyPairs = Number(qtyPairs || 0);
-  if (!Number.isInteger(normalizedQtyPairs) || normalizedQtyPairs <= 0) return;
-  await trx("erp.wip_dept_ledger").insert({
-    branch_id: Number(branchId),
-    sku_id: Number(skuId),
-    dept_id: Number(deptId),
-    txn_date: txnDate,
-    direction: Number(direction),
-    qty_pairs: normalizedQtyPairs,
-    cost_value: Number(Number(costValue || 0).toFixed(2)),
-    source_voucher_id: Number(sourceVoucherId),
-  });
-};
-
-const rollbackWipLedgerBySourceVoucherTx = async ({ trx, voucherId }) => {
-  const normalizedVoucherId = toPositiveInt(voucherId);
-  if (!normalizedVoucherId) return;
-  const rows = await trx("erp.wip_dept_ledger")
-    .select(
-      "id",
-      "branch_id",
-      "sku_id",
-      "dept_id",
-      "direction",
-      "qty_pairs",
-      "cost_value",
-      "txn_date",
-    )
-    .where({ source_voucher_id: normalizedVoucherId })
-    .orderBy("id", "desc");
-
-  for (const row of rows) {
-    const direction = Number(row.direction || 0);
-    const qtyPairs = Number(row.qty_pairs || 0);
-    const costValue = Number(row.cost_value || 0);
-    if (!qtyPairs) continue;
-    const qtyDelta = direction === 1 ? -qtyPairs : qtyPairs;
-    const costDelta = direction === 1 ? -costValue : costValue;
-    await adjustWipBalanceTx({
-      trx,
-      branchId: row.branch_id,
-      skuId: row.sku_id,
-      deptId: row.dept_id,
-      qtyDelta,
-      costDelta,
-      activityDate: row.txn_date ? toDateOnly(row.txn_date) : null,
-    });
-  }
-
-  if (rows.length) {
-    await trx("erp.wip_dept_ledger")
-      .where({ source_voucher_id: normalizedVoucherId })
-      .del();
   }
 };
 
@@ -3866,16 +3768,6 @@ const deleteGeneratedChildVouchersTx = async ({ trx, productionVoucherId }) => {
   }
 };
 
-const getCurrentWipBalanceTx = async ({ trx, branchId, skuId, deptId }) =>
-  trx("erp.wip_dept_balance")
-    .select("qty_pairs", "cost_value")
-    .where({
-      branch_id: Number(branchId),
-      sku_id: Number(skuId),
-      dept_id: Number(deptId),
-    })
-    .first();
-
 const findBetterGradeSourcePoolsTx = async ({
   trx,
   branchId,
@@ -3922,6 +3814,7 @@ const findBetterGradeSourcePoolsTx = async ({
     )
     .where({
       "wb.branch_id": normalizedBranchId,
+      "wb.stock_state": WIP_ON_HAND,
       "wb.dept_id": normalizedDeptId,
       "v.item_id": Number(targetRow.item_id || 0),
     })
@@ -7332,6 +7225,7 @@ const resolveDcvAvailabilityForLine = async ({
         .sum({ qty_pairs: trx.raw("COALESCE(wl.qty_pairs, 0)") })
         .where({
           "wl.branch_id": Number(req.branchId),
+          "wl.stock_state": WIP_ON_HAND,
           "wl.source_voucher_id": Number(normalizedVoucherId),
           "wl.direction": -1,
           "wl.dept_id": Number(normalizedDept),

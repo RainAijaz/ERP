@@ -3872,6 +3872,7 @@ const loadStockTransferOutRows = async ({
   hasTransferRefColumn,
   hasTransferReasonColumn,
   hasBillBookNoColumn,
+  hasWipColumns = false,
 }) => {
   const transferRefExpr = hasTransferRefColumn
     ? "coalesce(sth.transfer_ref_no, vh.book_no)"
@@ -3926,6 +3927,14 @@ const loadStockTransferOutRows = async ({
       "vh.branch_id as source_branch_id",
       localizedNameSelect("sb", "source_branch_name", filters.locale),
       "sth.dest_branch_id as destination_branch_id",
+      hasWipColumns
+        ? "sth.is_wip_transfer"
+        : knex.raw("false as is_wip_transfer"),
+      hasWipColumns
+        ? knex.raw(
+            "(select ps.name from erp.production_stages ps where ps.id = sth.stage_id) as wip_stage_name",
+          )
+        : knex.raw("null::text as wip_stage_name"),
       localizedNameSelect("db", "destination_branch_name", filters.locale),
       "vh.book_no",
       "vh.voucher_date",
@@ -4060,6 +4069,10 @@ const loadStockTransferOutRows = async ({
         qtyOut,
         rate,
         amount,
+        // A work-in-process dispatch is an SFG/FG line like any other, so without this the
+        // report shows half-made pairs as ordinary finished stock.
+        isWipTransfer: row?.is_wip_transfer === true,
+        wipStageName: String(row?.wip_stage_name || "").trim(),
         stockStatus: lineStockStatus,
         transferStatus,
       };
@@ -4075,6 +4088,7 @@ const loadStockTransferPendingForInRows = async ({
   filters,
   hasTransferReasonColumn,
   hasBillBookNoColumn,
+  hasWipColumns = false,
 }) => {
 
   const transferReasonExpr = hasTransferReasonColumn
@@ -4108,6 +4122,14 @@ const loadStockTransferPendingForInRows = async ({
       "vh.branch_id as source_branch_id",
       localizedNameSelect("sb", "source_branch_name", filters.locale),
       "sth.dest_branch_id as destination_branch_id",
+      hasWipColumns
+        ? "sth.is_wip_transfer"
+        : knex.raw("false as is_wip_transfer"),
+      hasWipColumns
+        ? knex.raw(
+            "(select ps.name from erp.production_stages ps where ps.id = sth.stage_id) as wip_stage_name",
+          )
+        : knex.raw("null::text as wip_stage_name"),
       localizedNameSelect("db", "destination_branch_name", filters.locale),
       "vh.book_no",
       "vh.voucher_date",
@@ -4205,6 +4227,10 @@ const loadStockTransferPendingForInRows = async ({
         varianceQty: expectedQty,
         rate,
         amount: 0,
+        // A work-in-process dispatch is an SFG/FG line like any other, so without this the
+        // report shows half-made pairs as ordinary finished stock.
+        isWipTransfer: row?.is_wip_transfer === true,
+        wipStageName: String(row?.wip_stage_name || "").trim(),
         stockStatus: lineStockStatus,
         transferStatus: TRANSFER_REPORT_STATUSES.pending,
       };
@@ -4216,6 +4242,7 @@ const loadStockTransferInRows = async ({
   filters,
   hasTransferReasonColumn,
   hasBillBookNoColumn,
+  hasWipColumns = false,
 }) => {
   const transferReasonExpr = hasTransferReasonColumn
     ? "upper(coalesce(sth.transfer_reason::text, ''))"
@@ -4254,6 +4281,14 @@ const loadStockTransferInRows = async ({
       "stn.branch_id as source_branch_id",
       localizedNameSelect("sb", "source_branch_name", filters.locale),
       "sth.dest_branch_id as destination_branch_id",
+      hasWipColumns
+        ? "sth.is_wip_transfer"
+        : knex.raw("false as is_wip_transfer"),
+      hasWipColumns
+        ? knex.raw(
+            "(select ps.name from erp.production_stages ps where ps.id = sth.stage_id) as wip_stage_name",
+          )
+        : knex.raw("null::text as wip_stage_name"),
       localizedNameSelect("db", "destination_branch_name", filters.locale),
       "stn.book_no",
       "vh.voucher_date",
@@ -4372,6 +4407,10 @@ const loadStockTransferInRows = async ({
         varianceQty: quantities.varianceQty,
         rate,
         amount: toAmount(row?.amount, 2),
+        // A work-in-process dispatch is an SFG/FG line like any other, so without this the
+        // report shows half-made pairs as ordinary finished stock.
+        isWipTransfer: row?.is_wip_transfer === true,
+        wipStageName: String(row?.wip_stage_name || "").trim(),
         stockStatus: lineStockStatus,
       };
     })
@@ -4418,6 +4457,7 @@ const loadStockTransferInRows = async ({
       filters,
       hasTransferReasonColumn,
       hasBillBookNoColumn,
+      hasWipColumns,
     });
     allRows = [...withStatus, ...pendingRows];
   }
@@ -4454,6 +4494,7 @@ const getInventoryStockTransferReportPageData = async ({ req, input = {} }) => {
     hasTransferRefColumn,
     hasTransferReasonColumn,
     hasBillBookNoColumn,
+    hasWipColumns,
     branches,
     productGroupsByType,
     productSubgroupsByType,
@@ -4463,6 +4504,7 @@ const getInventoryStockTransferReportPageData = async ({ req, input = {} }) => {
     hasInventoryColumn("stock_transfer_out_header", "transfer_ref_no"),
     hasInventoryColumn("stock_transfer_out_header", "transfer_reason"),
     hasInventoryColumn("stock_transfer_out_header", "bill_book_no"),
+    hasInventoryColumn("stock_transfer_out_header", "is_wip_transfer"),
     loadBranchOptions(req),
     loadProductGroupOptionsByType(),
     loadProductSubgroupOptionsByType(),
@@ -4653,12 +4695,14 @@ const getInventoryStockTransferReportPageData = async ({ req, input = {} }) => {
           filters,
           hasTransferReasonColumn,
           hasBillBookNoColumn,
+          hasWipColumns,
         })
       : await loadStockTransferOutRows({
           filters,
           hasTransferRefColumn,
           hasTransferReasonColumn,
           hasBillBookNoColumn,
+          hasWipColumns,
         });
 
   const summaryRows = buildStockTransferSummaryRows({

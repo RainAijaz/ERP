@@ -1195,6 +1195,7 @@ const getProductionDepartmentWipReportPageData = async ({
   }
 
   let ledgerQuery = knex("erp.wip_dept_ledger as wl")
+    .where("wl.stock_state", "ON_HAND")
     .join("erp.skus as s", "s.id", "wl.sku_id")
     .join("erp.variants as v", "v.id", "s.variant_id")
     .join("erp.items as i", "i.id", "v.item_id")
@@ -1722,6 +1723,7 @@ const getProductionDepartmentWipBalancesReportPageData = async ({
   }
 
   let query = knex("erp.wip_dept_ledger as wl")
+    .where("wl.stock_state", "ON_HAND")
     .join("erp.departments as d", "d.id", "wl.dept_id")
     .join("erp.skus as s", "s.id", "wl.sku_id")
     .join("erp.variants as v", "v.id", "s.variant_id")
@@ -2131,6 +2133,7 @@ const getProductionDepartmentWipLedgerReportPageData = async ({
       "wl.txn_date",
       "wl.direction",
       "wl.qty_pairs",
+      "wl.stock_state",
       "wl.source_voucher_id",
       "vh.voucher_no",
       "vh.voucher_type_code",
