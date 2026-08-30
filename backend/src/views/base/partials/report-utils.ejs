@@ -66,9 +66,18 @@
 <script>
   (function () {
     const path = String(window.location.pathname || "");
-    if (!path.startsWith("/reports/")) return;
+    // BOM reports live under the master-data tree, not /reports/, so they were
+    // silently skipped by this whole partial and had no print/export at all.
+    const REPORT_PATH_ROOTS = ["/reports/", "/master-data/bom/reports/"];
+    if (!REPORT_PATH_ROOTS.some((root) => path.startsWith(root))) return;
 
     const REPORT_SCOPE_BY_PATH = [
+      ["/master-data/bom/reports/readiness", "master_data.bom.reports.readiness"],
+      ["/master-data/bom/reports/version-history", "master_data.bom.reports.version_history"],
+      ["/master-data/bom/reports/cost-breakdown", "master_data.bom.reports.cost_breakdown"],
+      ["/master-data/bom/reports/lifecycle-status", "master_data.bom.reports.lifecycle_status"],
+      ["/master-data/bom/reports/change-log", "master_data.bom.reports.change_log"],
+      ["/master-data/bom/reports/approval-queue-aging", "master_data.bom.reports.approval_queue_aging"],
       ["/reports/sales/", "sales_report"],
       ["/reports/purchases/supplier-ledger", "supplier_ledger"],
       ["/reports/purchases/supplier-balances", "supplier_balances"],
@@ -288,6 +297,20 @@
         filterAllBranches: can("REPORT", "payroll_wage_balance", "filter_all_branches"),
         viewCostFields: can("REPORT", "payroll_wage_balance", "view_cost_fields"),
       },
+      ...Object.fromEntries([
+        "master_data.bom.reports.readiness",
+        "master_data.bom.reports.version_history",
+        "master_data.bom.reports.cost_breakdown",
+        "master_data.bom.reports.lifecycle_status",
+        "master_data.bom.reports.change_log",
+        "master_data.bom.reports.approval_queue_aging",
+      ].map((scope) => [scope, {
+        print: can("REPORT", scope, "print"),
+        export: can("REPORT", scope, "export_excel_csv"),
+        details: can("REPORT", scope, "view_details"),
+        filterAllBranches: can("REPORT", scope, "filter_all_branches"),
+        viewCostFields: can("REPORT", scope, "view_cost_fields"),
+      }])),
     }) %>;
 
     // Compare on a path that always carries a trailing slash. A report whose
