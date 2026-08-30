@@ -4417,6 +4417,16 @@ Object.assign(translations.en, {
     "Stop retrying this notification? It will not be sent, and will be listed as cancelled.",
   wa_confirm_cancel_all:
     "Cancel every queued notification? None of them will be sent. This cannot be undone.",
+  wa_conn_reconnect_drains_pending:
+    "Warning: connecting also sends every waiting rate message to the group — those go out first, before the notifications above. Cancel them first if they should not go out now.",
+  wa_pending_group_messages: "Rate messages waiting to be sent",
+  wa_pending_group_hint:
+    "Rate-change and new-article messages for the group chat. These are held in memory, not in the log below, so cancelling queued notifications does not stop them — and a server restart clears them.",
+  wa_pending_dropped: "Lost because the waiting list was full",
+  wa_confirm_cancel_pending_row:
+    "Cancel this rate message? It will not be sent, and no record of it is kept.",
+  wa_confirm_cancel_pending_all:
+    "Cancel every waiting rate message? None of them will be sent, and no record is kept. This cannot be undone.",
   shortage: "Shortage",
   desc_units:
     "Define the units of measure used across items, vouchers, and stock.",
@@ -4677,6 +4687,16 @@ Object.assign(translations.ur, {
     "کیا اس اطلاع کی کوششیں روک دی جائیں؟ یہ نہیں بھیجی جائے گی اور منسوخ شدہ کے طور پر درج ہوگی۔",
   wa_confirm_cancel_all:
     "کیا قطار میں موجود تمام اطلاعات منسوخ کر دی جائیں؟ ان میں سے کوئی نہیں بھیجی جائے گی۔ یہ عمل واپس نہیں ہو سکتا۔",
+  wa_conn_reconnect_drains_pending:
+    "انتباہ: منسلک ہوتے ہی انتظار میں موجود تمام ریٹ پیغامات بھی گروپ میں بھیج دیے جائیں گے — اور یہ اوپر والی اطلاعات سے پہلے جاتے ہیں۔ اگر یہ اب نہیں جانے چاہئیں تو پہلے انہیں منسوخ کریں۔",
+  wa_pending_group_messages: "بھیجنے کے انتظار میں ریٹ پیغامات",
+  wa_pending_group_hint:
+    "گروپ چیٹ کے لیے ریٹ اپ ڈیٹ اور نئے آرٹیکل کے پیغامات۔ یہ صرف میموری میں محفوظ ہوتے ہیں، نیچے دیے گئے ریکارڈ میں نہیں — اس لیے قطار والی اطلاعات منسوخ کرنے سے یہ نہیں رکتے، اور سرور دوبارہ شروع ہونے پر ختم ہو جاتے ہیں۔",
+  wa_pending_dropped: "انتظار کی فہرست بھر جانے کی وجہ سے ضائع ہوئے",
+  wa_confirm_cancel_pending_row:
+    "کیا یہ ریٹ پیغام منسوخ کر دیا جائے؟ یہ نہیں بھیجا جائے گا اور اس کا کوئی ریکارڈ محفوظ نہیں رہے گا۔",
+  wa_confirm_cancel_pending_all:
+    "کیا انتظار میں موجود تمام ریٹ پیغامات منسوخ کر دیے جائیں؟ ان میں سے کوئی نہیں بھیجا جائے گا اور کوئی ریکارڈ محفوظ نہیں رہے گا۔ یہ عمل واپس نہیں ہو سکتا۔",
   shortage: "کمی",
   desc_units:
     "وہ اکائیاں (یونٹس) بیان کریں جو آئٹمز، واؤچرز اور اسٹاک میں استعمال ہوتی ہیں۔",

@@ -13,8 +13,72 @@ let lastQrAt = null;
 let lastReadyAt = null;
 let lastDisconnectReason = null;
 
+// The in-memory outbox for fire-and-forget sends — in practice the rate-change
+// and new-article broadcasts to the sales group. Payment notifications stay out
+// of it deliberately (they pass queue:false and own durable rows in
+// erp.whatsapp_notification_log), so this queue and that table never hold the
+// same message.
+//
+// Entries carry an id and a timestamp so the admin page can list them and drop
+// one — or all — before a reconnect flushes the backlog at the group. Nothing
+// persists this: a restart empties it, which is itself a valid escape hatch.
 const pendingQueue = [];
 const MAX_QUEUE = 200;
+let pendingSeq = 0;
+// Overflow past MAX_QUEUE is lost silently, and a long outage is exactly when
+// someone is on this page wondering what became of the missing broadcasts.
+let droppedCount = 0;
+
+// Ids cancelled from the admin page. A flush already in progress has spliced its
+// batch out of pendingQueue, so removing the entry there cannot stop it — the
+// loop consults these before every send instead. That is the case that matters
+// most: "Cancel all" pressed seconds after a reconnect, mid-blast.
+const cancelledPendingIds = new Set();
+let pendingCancelWatermark = 0;
+
+const isPendingCancelled = (entry) =>
+  entry.id <= pendingCancelWatermark || cancelledPendingIds.has(entry.id);
+
+// Returns false when the queue is full, so callers keep their existing
+// "dropping message" branch.
+const enqueuePending = (chatId, text) => {
+  if (pendingQueue.length >= MAX_QUEUE) {
+    droppedCount += 1;
+    return false;
+  }
+  pendingSeq += 1;
+  pendingQueue.push({ id: pendingSeq, chatId, text, queuedAt: new Date() });
+  return true;
+};
+
+const listPendingMessages = () =>
+  pendingQueue.map(({ id, chatId, text, queuedAt }) => ({
+    id,
+    chatId,
+    text,
+    queuedAt,
+  }));
+
+// Cancels by id even when the entry is no longer in the queue: an in-flight
+// flush is holding it, and the watermark/id set is how that copy gets stopped.
+const cancelPendingMessage = (id) => {
+  const target = Number(id);
+  if (!Number.isInteger(target) || target <= 0) return false;
+  cancelledPendingIds.add(target);
+  const index = pendingQueue.findIndex((entry) => entry.id === target);
+  if (index === -1) return false;
+  pendingQueue.splice(index, 1);
+  return true;
+};
+
+// Everything queued so far, including any batch a flush is midway through.
+const clearPendingMessages = () => {
+  pendingCancelWatermark = pendingSeq;
+  const cleared = pendingQueue.length;
+  pendingQueue.length = 0;
+  droppedCount = 0;
+  return cleared;
+};
 
 // whatsapp-web.js MessageAck states.
 const ACK_ERROR = -1; // WhatsApp itself rejected the send
@@ -84,6 +148,10 @@ const getWhatsAppStatus = () => ({
   lastQrAt,
   lastReadyAt,
   lastDisconnectReason,
+  // In-memory outbox (group broadcasts). Distinct from the durable queued-row
+  // count the page gets from the database.
+  pendingQueued: pendingQueue.length,
+  pendingDropped: droppedCount,
 });
 
 const isWhatsAppReady = () => Boolean(clientReady && client);
@@ -147,7 +215,17 @@ const flushPendingQueue = async () => {
       const remaining = toSend.slice(i);
       const canAdd = MAX_QUEUE - pendingQueue.length;
       if (canAdd > 0) pendingQueue.unshift(...remaining.slice(0, canAdd));
+      if (remaining.length > Math.max(canAdd, 0)) {
+        droppedCount += remaining.length - Math.max(canAdd, 0);
+      }
       break;
+    }
+    // Cancelled after this batch was spliced out — the whole point of the
+    // watermark. Without this check, cancelling during the reconnect blast
+    // would empty the queue while the messages already in hand still went out.
+    if (isPendingCancelled(toSend[i])) {
+      console.log("[WhatsApp] Skipping cancelled queued message to", toSend[i].chatId);
+      continue;
     }
     const { chatId, text } = toSend[i];
     try {
@@ -155,9 +233,14 @@ const flushPendingQueue = async () => {
       console.log("[WhatsApp] ✓ Queued message sent to", chatId);
     } catch (err) {
       console.error("[WhatsApp] ✗ Failed to send queued message:", err.message);
-      if (pendingQueue.length < MAX_QUEUE) pendingQueue.unshift({ chatId, text });
+      if (pendingQueue.length < MAX_QUEUE) pendingQueue.unshift(toSend[i]);
+      else droppedCount += 1;
     }
   }
+  // Safe to forget these now: anything cancelled was either skipped above or had
+  // already been spliced out of the queue. Keeping the set would leak ids for
+  // the life of the process.
+  cancelledPendingIds.clear();
 };
 
 // Tear down the browser before dropping the client reference. Without this an
@@ -448,8 +531,7 @@ const sendWhatsAppMessage = async (
     return { ok: false, queued: false, reason: "no_chat_id" };
   }
   if (!clientReady || !client) {
-    if (queue && pendingQueue.length < MAX_QUEUE) {
-      pendingQueue.push({ chatId, text });
+    if (queue && enqueuePending(chatId, text)) {
       console.log(`[WhatsApp] Client not ready — message queued (queue size: ${pendingQueue.length})`);
       return { ok: false, queued: true, reason: "client_unavailable" };
     }
@@ -508,8 +590,7 @@ const sendWhatsAppMessage = async (
     }
   }
 
-  if (queue && pendingQueue.length < MAX_QUEUE) {
-    pendingQueue.push({ chatId, text });
+  if (queue && enqueuePending(chatId, text)) {
     console.log(`[WhatsApp] Message queued for retry on reconnect (queue size: ${pendingQueue.length})`);
     return { ok: false, queued: true, reason: last.reason || "send_error" };
   }
@@ -802,4 +883,7 @@ module.exports = {
   shutdownWhatsApp,
   isWhatsAppReady,
   getWhatsAppStatus,
+  listPendingMessages,
+  cancelPendingMessage,
+  clearPendingMessages,
 };

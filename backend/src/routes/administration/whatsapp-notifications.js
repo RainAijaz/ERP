@@ -3,7 +3,12 @@ const knex = require("../../db/knex");
 const {
   requirePermission,
 } = require("../../middleware/access/role-permissions");
-const { getWhatsAppStatus } = require("../../utils/whatsapp");
+const {
+  getWhatsAppStatus,
+  listPendingMessages,
+  cancelPendingMessage,
+  clearPendingMessages,
+} = require("../../utils/whatsapp");
 
 const router = express.Router();
 
@@ -116,6 +121,12 @@ router.get(
         // the page previously showed neither.
         waStatus: getWhatsAppStatus(),
         queuedCount: Number(queuedRow?.total || 0),
+        // The OTHER queue. Rate-change and new-article broadcasts never get a
+        // row in whatsapp_notification_log — they buffer in memory inside
+        // whatsapp.js — so cancelling queued rows above left them untouched and
+        // invisible, still primed to fire at the group on the next reconnect.
+        // Not branch-scoped: there is one group chat, not one per branch.
+        pendingMessages: listPendingMessages(),
         filters: { status, resolved: includeResolved ? "1" : "" },
         pagination: {
           page,
@@ -195,6 +206,51 @@ router.post(
         `[WhatsApp] ${cancelled} queued notification(s) cancelled by user ${req.user?.id ?? "?"}`,
       );
       return res.redirect(`${req.baseUrl}?status=QUEUED`);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// POST /pending/:id/cancel — drop one buffered group broadcast.
+//
+// Separate from /:id/cancel because these are not database rows: they live in
+// the in-memory outbox and are addressed by a per-process sequence number, not
+// by a whatsapp_notification_log id. The two id spaces overlap, so the paths
+// must not.
+router.post(
+  "/pending/:id/cancel",
+  requirePermission(...SCOPE, "view"),
+  async (req, res, next) => {
+    try {
+      const removed = cancelPendingMessage(req.params.id);
+      console.log(
+        `[WhatsApp] pending message ${req.params.id} cancelled by user ` +
+          `${req.user?.id ?? "?"} — ${removed ? "removed" : "not in queue"}`,
+      );
+      return res.redirect(req.baseUrl);
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// POST /pending/cancel-all — empty the in-memory outbox.
+//
+// The counterpart to cancel-queued, and the missing half of "stop everything
+// before re-linking": reconnecting flushes this buffer at the sales group before
+// the durable retry sweep even starts, so clearing only the database left the
+// stale rate broadcasts to go out anyway.
+router.post(
+  "/pending/cancel-all",
+  requirePermission(...SCOPE, "view"),
+  async (req, res, next) => {
+    try {
+      const cleared = clearPendingMessages();
+      console.log(
+        `[WhatsApp] ${cleared} pending group message(s) cancelled by user ${req.user?.id ?? "?"}`,
+      );
+      return res.redirect(req.baseUrl);
     } catch (err) {
       next(err);
     }

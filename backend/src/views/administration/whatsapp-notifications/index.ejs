@@ -87,6 +87,13 @@
          class="mt-3 inline-block rounded-full bg-rose-600 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.15em] text-white transition hover:bg-rose-700">
         <%= t("wa_conn_scan_qr") %>
       </a>
+      <%# flushPendingQueue() runs on "ready" before the durable retry sweep, so
+          buffered group broadcasts are the FIRST thing a fresh link sends. %>
+      <% if (Number(wa.pendingQueued || 0) > 0) { %>
+        <p class="mt-3 text-xs font-semibold text-rose-900">
+          <%= t("wa_conn_reconnect_drains_pending") %> (<%= Number(wa.pendingQueued || 0) %>)
+        </p>
+      <% } %>
     </section>
   <% } else if (wa.coolingDown) { %>
     <section class="rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
@@ -98,6 +105,73 @@
   <% } else { %>
     <section class="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3">
       <span class="text-sm font-semibold text-emerald-800"><%= t("wa_conn_connected") %></span>
+    </section>
+  <% } %>
+
+  <%#
+    The OTHER queue. Rate-change and new-article broadcasts are fire-and-forget:
+    they buffer in memory inside whatsapp.js and never get a row in
+    whatsapp_notification_log, so nothing below this point describes them and
+    "Cancel all queued" never touched them. They are listed separately rather
+    than merged into the table because they are a different kind of thing — one
+    group chat, no payee, no voucher, and gone on a restart.
+  %>
+  <%
+    // Defensive like `wa` and `notice` above — a caller rendering this view
+    // without the key would otherwise throw at render time.
+    const pending =
+      typeof pendingMessages !== "undefined" && Array.isArray(pendingMessages)
+        ? pendingMessages
+        : [];
+    const pendingDropped = Number(wa.pendingDropped || 0);
+    const previewText = (value) =>
+      String(value || "").replace(/\s+/g, " ").trim().slice(0, 160);
+  %>
+  <% if (pending.length || pendingDropped > 0) { %>
+    <section class="space-y-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <div class="text-sm font-semibold text-slate-800">
+            <%= t("wa_pending_group_messages") %>: <%= pending.length %>
+          </div>
+          <p class="mt-1 text-xs text-slate-500"><%= t("wa_pending_group_hint") %></p>
+          <%# The cap is silent in the log and invisible everywhere else, so a
+              long outage quietly loses broadcasts past 200. Say how many. %>
+          <% if (pendingDropped > 0) { %>
+            <p class="mt-1 text-xs font-semibold text-amber-700">
+              <%= t("wa_pending_dropped") %>: <%= pendingDropped %>
+            </p>
+          <% } %>
+        </div>
+        <% if (pending.length) { %>
+          <form method="POST" action="<%= basePath %>/pending/cancel-all" data-confirm-form data-wa-cancel-pending-all class="shrink-0">
+            <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+            <button type="submit" class="rounded-full border border-rose-200 bg-rose-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.15em] text-rose-700 transition hover:border-rose-300 hover:bg-rose-100">
+              <%= t("wa_cancel_all") %>
+            </button>
+          </form>
+        <% } %>
+      </div>
+      <% if (pending.length) { %>
+        <ul class="divide-y divide-slate-100 rounded-2xl border border-slate-200">
+          <% pending.forEach((msg) => { %>
+            <li class="flex items-start justify-between gap-3 px-4 py-3">
+              <div class="min-w-0">
+                <div class="text-xs text-slate-400">
+                  <%= fmtDateTime(msg.queuedAt) %> · <span class="font-mono"><%= msg.chatId %></span>
+                </div>
+                <div class="mt-1 truncate text-sm text-slate-700"><%= previewText(msg.text) %></div>
+              </div>
+              <form method="POST" action="<%= basePath %>/pending/<%= msg.id %>/cancel" class="inline shrink-0" data-confirm-form data-wa-cancel-pending-row>
+                <input type="hidden" name="_csrf" value="<%= csrfToken %>">
+                <button type="submit" class="rounded-full border border-slate-200 bg-white px-3 py-1 text-[11px] font-semibold text-slate-600 transition hover:border-rose-300 hover:text-rose-700">
+                  <%= t("wa_cancel_retry") %>
+                </button>
+              </form>
+            </li>
+          <% }); %>
+        </ul>
+      <% } %>
     </section>
   <% } %>
 
@@ -251,7 +325,24 @@
       });
     };
 
+    // The in-memory outbox. Worth its own wording: unlike a cancelled row, a
+    // dropped broadcast leaves no trace anywhere afterwards.
+    const pendingRowText = {
+      title: <%- JSON.stringify(t("wa_cancel_retry")) %>,
+      message: <%- JSON.stringify(t("wa_confirm_cancel_pending_row")) %>,
+      confirmLabel: <%- JSON.stringify(t("wa_cancel_retry")) %>,
+      cancelLabel: <%- JSON.stringify(t("cancel")) %>,
+    };
+    const pendingAllText = {
+      title: <%- JSON.stringify(t("wa_cancel_all")) %>,
+      message: <%- JSON.stringify(t("wa_confirm_cancel_pending_all")) %>,
+      confirmLabel: <%- JSON.stringify(t("wa_cancel_all")) %>,
+      cancelLabel: <%- JSON.stringify(t("cancel")) %>,
+    };
+
     wire("form[data-wa-cancel-row]", rowText);
     wire("form[data-wa-cancel-all]", allText);
+    wire("form[data-wa-cancel-pending-row]", pendingRowText);
+    wire("form[data-wa-cancel-pending-all]", pendingAllText);
   })();
 </script>
