@@ -179,14 +179,14 @@
 
         <% if (currentMode === 'out') { %>
         <div class="grid grid-cols-1 gap-3 lg:grid-cols-12 lg:items-center" data-wip-row hidden>
-          <label class="text-sm font-semibold text-slate-700 lg:col-span-2"><%= toFriendlyLabel('work_in_process', 'Work In Process') %></label>
+          <label class="text-sm font-semibold text-slate-700 lg:col-start-7 lg:col-span-2 lg:text-right lg:pr-3"><%= toFriendlyLabel('work_in_process', 'Work In Process') %></label>
           <div class="lg:col-span-4">
-            <label class="flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" name="is_wip_transfer" value="true" class="h-4 w-4" data-wip-toggle <%= selectedVoucher?.is_wip_transfer ? 'checked' : '' %> <%= !canSaveVoucher ? 'disabled' : '' %>>
+            <label class="flex min-h-10 w-full cursor-pointer items-center gap-2 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-snug text-slate-700">
+              <input type="checkbox" name="is_wip_transfer" value="true" class="h-4 w-4 shrink-0" data-wip-toggle <%= selectedVoucher?.is_wip_transfer ? 'checked' : '' %> <%= !canSaveVoucher ? 'disabled' : '' %>>
               <span><%= toFriendlyLabel('transfer_stage_output', 'Send part-finished pairs to another branch') %></span>
             </label>
           </div>
-          <label class="text-sm font-semibold text-slate-700 lg:col-span-2 lg:text-right lg:pr-3" data-wip-stage-label hidden><%= toFriendlyLabel('production_stage', 'Production Stage') %></label>
+          <label class="text-sm font-semibold text-slate-700 lg:col-start-7 lg:col-span-2 lg:text-right lg:pr-3" data-wip-stage-label hidden><%= toFriendlyLabel('production_stage', 'Production Stage') %></label>
           <div class="lg:col-span-4" data-wip-stage-wrap hidden>
             <select name="stage_id" class="h-10 w-full rounded-xl border border-slate-300 bg-white px-3 text-sm" data-wip-stage <%= !canSaveVoucher ? 'disabled' : '' %>>
               <option value=""><%= toFriendlyLabel('select_stage', 'Select Stage') %></option>
@@ -742,11 +742,11 @@
       const factorToBase = Number(selectedUnit?.factor_to_base || 0) || 1;
 
       if (isWipActive() && stockType !== 'RM') {
-        // Pairs only: the pool is whole pairs at one department, so lock the row to the base
-        // unit and let the server derive cost from the pool's own average.
-        const baseUnit = unitOptions.find((entry) => entry.is_base === true) || unitOptions[0];
-        if (baseUnit) next.uom_id = Number(baseUnit.id);
-        next.available_qty = wipAvailablePairs(next.sku_id);
+        // The pool is stored as whole pairs at one department, but the floor counts in dozens,
+        // so the row keeps whatever unit was picked and only the pair count is derived from it.
+        // Cost is left at zero because the server takes it from the pool's own average.
+        const availablePairs = wipAvailablePairs(next.sku_id);
+        next.available_qty = factorToBase > 0 ? qty3(availablePairs / factorToBase) : 0;
         next.unit_cost = 0;
       } else if (stockType === 'RM') {
         const exactKey = stockMapKey(next.item_id, next.color_id, next.size_id);

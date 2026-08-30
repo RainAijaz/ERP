@@ -68,6 +68,10 @@ const ORDER_BY_TYPES = Object.freeze({
 const TRANSFER_REPORT_MODES = Object.freeze({
   out: "OUT",
   in: "IN",
+  // Dispatched and not yet received: the stock has left the source but has not landed at the
+  // destination, so it sits in the destination's IN_TRANSIT bucket and shows on no balance
+  // report. This mode is the only place it is visible.
+  inTransit: "IN_TRANSIT",
 });
 const TRANSFER_REPORT_ORDER_BY_TYPES = Object.freeze({
   branch: "BRANCH",
@@ -164,6 +168,18 @@ const parseDateFilter = (value, fallback) => {
   const parsed = parseYmdStrict(text);
   if (!parsed) return { value: fallback, provided: true, valid: false };
   return { value: parsed, provided: true, valid: true };
+};
+
+// Whole days between a stored date and today. Both ends are normalised to a local date-only
+// string first and then compared in UTC, so a timestamp's clock component cannot make an
+// in-transit dispatch look a day older or younger than it is.
+const daysSinceDate = (value) => {
+  const from = parseYmdStrict(toLocalDateOnly(value));
+  const today = parseYmdStrict(toLocalDateOnly(new Date()));
+  if (!from || !today) return 0;
+  const elapsedMs = Date.parse(`${today}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`);
+  if (!Number.isFinite(elapsedMs)) return 0;
+  return Math.max(0, Math.round(elapsedMs / 86400000));
 };
 
 const toIdListWithAll = (value) => {
@@ -3220,9 +3236,11 @@ const normalizeTransferMode = (value) => {
   const normalized = String(value || TRANSFER_REPORT_MODES.out)
     .trim()
     .toUpperCase();
-  return normalized === TRANSFER_REPORT_MODES.in
-    ? TRANSFER_REPORT_MODES.in
-    : TRANSFER_REPORT_MODES.out;
+  if (normalized === TRANSFER_REPORT_MODES.in) return TRANSFER_REPORT_MODES.in;
+  if (normalized === TRANSFER_REPORT_MODES.inTransit) {
+    return TRANSFER_REPORT_MODES.inTransit;
+  }
+  return TRANSFER_REPORT_MODES.out;
 };
 
 const normalizeTransferStatus = (value) => {
@@ -3735,7 +3753,9 @@ const buildStockTransferSummaryRows = ({ rows = [], filters }) => {
       2,
     );
 
-    if (filters.mode === TRANSFER_REPORT_MODES.out) {
+    // IN TRANSIT rows are OUT-shaped -- one dispatched quantity, nothing received yet -- so
+    // they accumulate through the same branch as OUT rather than the received/rejected set.
+    if (filters.mode !== TRANSFER_REPORT_MODES.in) {
       existing.qtyOut = toQuantity(
         Number(existing.qtyOut || 0) + Number(row.qtyOut || 0),
         3,
@@ -3803,7 +3823,7 @@ const buildStockTransferTotals = ({ rows = [], filters }) => {
     }
     if (status === TRANSFER_REPORT_STATUSES.approved) totals.approvedCount += 1;
 
-    if (filters.mode === TRANSFER_REPORT_MODES.out) {
+    if (filters.mode !== TRANSFER_REPORT_MODES.in) {
       totals.qtyOut = toQuantity(
         Number(totals.qtyOut || 0) + Number(row.qtyOut || 0),
         3,
@@ -4089,6 +4109,9 @@ const loadStockTransferPendingForInRows = async ({
   hasTransferReasonColumn,
   hasBillBookNoColumn,
   hasWipColumns = false,
+  // IN mode folds these rows in beside real receipts; IN TRANSIT mode shows nothing else, so
+  // the rows are stamped with whichever mode asked for them.
+  rowMode = TRANSFER_REPORT_MODES.in,
 }) => {
 
   const transferReasonExpr = hasTransferReasonColumn
@@ -4203,17 +4226,28 @@ const loadStockTransferPendingForInRows = async ({
       if (!shouldIncludeTransferLineByStockStatus({ filters, stockType, lineStockStatus })) {
         return null;
       }
+      // Everything here is by definition awaiting receipt, so a Transfer Status filter of
+      // anything but Pending selects none of it. IN mode applies the filter to the receipts it
+      // loads separately, so the guard belongs here rather than in the caller.
+      if (
+        filters.transferStatus &&
+        filters.transferStatus !== TRANSFER_REPORT_STATUSES.pending
+      ) {
+        return null;
+      }
 
       const itemLabel = resolveTransferLineLabel(row);
       const expectedQty = resolveTransferOutQty({ row, meta, stockType });
       const rate = resolveTransferDisplayRate({ row, meta, stockType });
+      const dispatchDate = String(row?.movement_date || row?.voucher_date || "");
 
       return {
-        mode: TRANSFER_REPORT_MODES.in,
+        mode: rowMode,
         voucherId: Number(row?.voucher_id || 0) || null,
         voucherNo: Number(row?.voucher_no || 0) || null,
-        movementDate: String(row?.movement_date || row?.voucher_date || ""),
+        movementDate: dispatchDate,
         billNo: String(row?.bill_book_no || "").trim() || "-",
+        refBillNo: String(row?.bill_book_no || "").trim() || "-",
         sourceBranchId: Number(row?.source_branch_id || 0) || null,
         sourceBranchName: String(row?.source_branch_name || "").trim() || "-",
         destinationBranchId: Number(row?.destination_branch_id || 0) || null,
@@ -4222,6 +4256,11 @@ const loadStockTransferPendingForInRows = async ({
         itemLabel,
         unitLabel: String(meta?.uom_code || row?.uom_code || row?.uom_name || "").trim() || "-",
         expectedQty,
+        // Nothing has been received, so the whole dispatched quantity is still in flight. It is
+        // published under qtyOut as well so the OUT-shaped totals, unit splits and summary rows
+        // that IN TRANSIT mode reuses all add it up without a parallel set of accumulators.
+        qtyOut: expectedQty,
+        daysInTransit: daysSinceDate(dispatchDate),
         receivedQty: 0,
         rejectedQty: 0,
         varianceQty: expectedQty,
@@ -4654,6 +4693,7 @@ const getInventoryStockTransferReportPageData = async ({ req, input = {} }) => {
     transferModes: [
       { value: TRANSFER_REPORT_MODES.out, labelKey: "transfer_out" },
       { value: TRANSFER_REPORT_MODES.in, labelKey: "transfer_in" },
+      { value: TRANSFER_REPORT_MODES.inTransit, labelKey: "in_transit" },
     ],
     orderByOptions: [
       { value: TRANSFER_REPORT_ORDER_BY_TYPES.branch, labelKey: "branch" },
@@ -4689,21 +4729,36 @@ const getInventoryStockTransferReportPageData = async ({ req, input = {} }) => {
     };
   }
 
-  const detailRows =
-    filters.mode === TRANSFER_REPORT_MODES.in
-      ? await loadStockTransferInRows({
-          filters,
-          hasTransferReasonColumn,
-          hasBillBookNoColumn,
-          hasWipColumns,
-        })
-      : await loadStockTransferOutRows({
-          filters,
-          hasTransferRefColumn,
-          hasTransferReasonColumn,
-          hasBillBookNoColumn,
-          hasWipColumns,
-        });
+  let detailRows;
+  if (filters.mode === TRANSFER_REPORT_MODES.in) {
+    detailRows = await loadStockTransferInRows({
+      filters,
+      hasTransferReasonColumn,
+      hasBillBookNoColumn,
+      hasWipColumns,
+    });
+  } else if (filters.mode === TRANSFER_REPORT_MODES.inTransit) {
+    // Same dispatched-but-unreceived set the IN report folds in as "Pending", shown on its own
+    // so the stock sitting in the destination's IN_TRANSIT bucket is visible somewhere.
+    detailRows = sortStockTransferRows({
+      rows: await loadStockTransferPendingForInRows({
+        filters,
+        hasTransferReasonColumn,
+        hasBillBookNoColumn,
+        hasWipColumns,
+        rowMode: TRANSFER_REPORT_MODES.inTransit,
+      }),
+      filters,
+    });
+  } else {
+    detailRows = await loadStockTransferOutRows({
+      filters,
+      hasTransferRefColumn,
+      hasTransferReasonColumn,
+      hasBillBookNoColumn,
+      hasWipColumns,
+    });
+  }
 
   const summaryRows = buildStockTransferSummaryRows({
     rows: detailRows,

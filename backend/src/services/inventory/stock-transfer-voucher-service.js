@@ -1945,9 +1945,12 @@ const resolveProductionStageTx = async ({ trx, stageId }) => {
   };
 };
 
-// Work-in-process lines are deliberately simpler than stock lines: the pool is whole pairs at
-// one department, so there is no UOM conversion, no packed/loose split and no WAC lookup --
-// moveWipPairsTx derives cost from the source pool itself.
+// Work-in-process lines are simpler than stock lines -- no packed/loose split and no WAC
+// lookup, because moveWipPairsTx derives cost from the source pool itself. They do carry a
+// UOM though: the pool is STORED as whole pairs, but the floor counts in dozens, so the line
+// keeps the entered unit and the pair count is derived from it. The whole-pairs rule then
+// applies to the CONVERTED figure -- 1.5 dozen is 18 pairs and passes, 0.1 dozen is 1.2 pairs
+// and does not.
 //
 // Requirements are summed by SKU BEFORE the availability check. Checking per row would repeat
 // the known duplicate-line blind spot where two rows for the same SKU each look satisfiable
@@ -1957,6 +1960,7 @@ const validateWipTransferLinesTx = async ({
   req,
   rawLines,
   skuMap,
+  unitOptionsByBase,
   stage,
 }) => {
   const requiredBySku = new Map();
@@ -1967,12 +1971,27 @@ const validateWipTransferLinesTx = async ({
     const sku = skuMap.get(Number(skuId));
     if (!sku) throw new HttpError(400, `Line ${lineNo}: item is invalid`);
 
+    const baseUomId = toPositiveInt(sku.base_uom_id);
+    const unitOptions = unitOptionsByBase.get(Number(baseUomId || 0)) || [];
+    const selectedUomId = toPositiveInt(raw?.uom_id) || baseUomId;
+    const selectedUnit = unitOptions.find(
+      (entry) => Number(entry.id) === Number(selectedUomId),
+    );
+    if (!selectedUnit)
+      throw new HttpError(400, `Line ${lineNo}: selected unit is invalid`);
+    const factorToBase = Number(selectedUnit.factor_to_base || 0);
+    if (!(factorToBase > 0))
+      throw new HttpError(400, `Line ${lineNo}: unit conversion is invalid`);
+
     const rawQty = Number(raw?.transfer_qty ?? raw?.qty ?? 0);
-    const qtyPairs = Math.round(rawQty);
-    if (!(qtyPairs > 0) || Math.abs(rawQty - qtyPairs) > 0.0005) {
+    if (!(rawQty > 0))
+      throw new HttpError(400, `Line ${lineNo}: transfer quantity is required`);
+    const qtyPairsRaw = Number(rawQty) * Number(factorToBase);
+    const qtyPairs = Math.round(qtyPairsRaw);
+    if (!(qtyPairs > 0) || Math.abs(qtyPairsRaw - qtyPairs) > 0.0005) {
       throw new HttpError(
         400,
-        `Line ${lineNo}: work-in-process quantity must be a whole number of pairs`,
+        `Line ${lineNo}: work-in-process quantity must convert to whole pairs`,
       );
     }
 
@@ -1986,8 +2005,8 @@ const validateWipTransferLinesTx = async ({
       line_kind: "SKU",
       item_id: null,
       sku_id: Number(skuId),
-      uom_id: toPositiveInt(sku.base_uom_id),
-      qty: Number(qtyPairs),
+      uom_id: Number(selectedUnit.id),
+      qty: Number(rawQty),
       rate: 0,
       amount: 0,
       meta: {
@@ -1996,6 +2015,10 @@ const validateWipTransferLinesTx = async ({
         stage_id: Number(stage.stageId),
         stage_name: stage.stageName,
         dept_id: Number(stage.deptId),
+        uom_id: Number(selectedUnit.id),
+        uom_code: selectedUnit.code || null,
+        uom_name: selectedUnit.name || null,
+        uom_factor_to_base: Number(Number(factorToBase).toFixed(6)),
         transfer_qty_pairs: Number(qtyPairs),
       },
     };
@@ -2023,8 +2046,11 @@ const validateWipTransferLinesTx = async ({
     lines
       .filter((line) => Number(line.sku_id) === Number(skuId))
       .forEach((line) => {
+        // available_qty is what the row displays, so it follows the row's own unit; the
+        // pair figure is kept beside it for the posting and diagnostic paths.
+        const lineFactor = Number(line.meta.uom_factor_to_base || 1) || 1;
         line.meta.available_qty_pairs = availablePairs;
-        line.meta.available_qty = availablePairs;
+        line.meta.available_qty = roundQty3(availablePairs / lineFactor);
       });
   }
 
@@ -2105,11 +2131,23 @@ const validateTransferOutPayloadTx = async ({
     if (missingWipSku)
       throw new HttpError(400, "Invalid item in voucher lines");
 
+    const wipUnitOptionsByBase = await loadUnitOptionsByBaseUomIdTx({
+      trx,
+      baseUomIds: [
+        ...new Set(
+          [...wipSkuMap.values()]
+            .map((entry) => toPositiveInt(entry?.base_uom_id))
+            .filter(Boolean),
+        ),
+      ],
+    });
+
     const wipLines = await validateWipTransferLinesTx({
       trx,
       req,
       rawLines,
       skuMap: wipSkuMap,
+      unitOptionsByBase: wipUnitOptionsByBase,
       stage,
     });
 
@@ -3414,8 +3452,10 @@ const syncStockTransferInVoucherTx = async ({
           );
 
     if (meta.is_wip === true) {
-      const expectedPairs = Math.round(Number(meta.expected_qty || 0));
-      const receivedPairs = Math.round(Number(meta.received_qty || 0));
+      // expected_qty/received_qty are in the unit the dispatch was entered in (dozens, say);
+      // the pool moves in pairs, so take the converted figures the line builder stamped.
+      const expectedPairs = Math.round(Number(meta.expected_qty_pairs || 0));
+      const receivedPairs = Math.round(Number(meta.received_qty_pairs || 0));
       if (receivedPairs > 0) {
         await moveWipPairsTx({
           trx,
