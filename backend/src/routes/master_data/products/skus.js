@@ -60,6 +60,16 @@ const toArray = (value) => {
   return [value];
 };
 
+// True when a save actually moves the rate. Rates are numeric(18,2), so the
+// epsilon only guards against float noise from the string round-trip; a null
+// previous rate (variant never priced) counts as a change.
+const rateHasChanged = (previousRate, nextRate) => {
+  if (nextRate === null || nextRate === undefined || Number.isNaN(Number(nextRate)))
+    return false;
+  if (previousRate === null || previousRate === undefined) return true;
+  return Math.abs(Number(previousRate) - Number(nextRate)) >= 0.0001;
+};
+
 const parseNumber = (value) => {
   if (value === null || value === undefined || value === "") return null;
   const numberValue = Number(value);
@@ -329,10 +339,37 @@ const loadRows = async (filters = {}, itemType = "FG") => {
   return result;
 };
 
+// "Recently repriced" for the SKU list = the last month to date. Downloading
+// the list as a PDF shades those rows so a printed rate sheet says at a glance
+// which rates are new; see views/base/partials/basic-info-utils.ejs.
+const RECENT_RATE_CHANGE_MONTHS = 1;
+
+const recentRateChangeCutoff = (now = new Date()) => {
+  const cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dayOfMonth = cutoff.getDate();
+  cutoff.setMonth(cutoff.getMonth() - RECENT_RATE_CHANGE_MONTHS);
+  // setMonth rolls into the following month when the target one is shorter
+  // (31 Mar - 1 month = 3 Mar), so pull back to the last day of the month meant.
+  if (cutoff.getDate() !== dayOfMonth) cutoff.setDate(0);
+  return cutoff;
+};
+
 const renderIndex = (req, res, payload) => {
   const basePath = `${req.baseUrl}`;
+  const rateChangeCutoff = recentRateChangeCutoff();
+  // rate_updated_at is NULL for a rate that has never moved (and for every row
+  // predating migration 000113), which reads as "not recent".
+  (Array.isArray(payload && payload.rows) ? payload.rows : []).forEach((row) => {
+    const changedAt = row.rate_updated_at ? new Date(row.rate_updated_at) : null;
+    row.rate_changed_recently =
+      !!changedAt && !Number.isNaN(changedAt.getTime()) && changedAt >= rateChangeCutoff;
+  });
   return res.render("base/layouts/main", {
     title: res.locals.t("skus"),
+    rateChangeCutoffLabel: `${res.locals.t("rate_changed_since")} ${rateChangeCutoff.toLocaleDateString(
+      "en-GB",
+      { day: "2-digit", month: "short", year: "numeric" },
+    )}`,
     user: req.user,
     branchId: req.branchId,
     branchScope: req.branchScope,
@@ -1056,11 +1093,19 @@ router.post(
             const rate = parseNumber(rates[i]);
             if (!id || rate === null) continue;
             const oldRate = oldRateMap.has(id) ? oldRateMap.get(id) : null;
-            await trx("erp.variants").where({ id }).update({
-              sale_rate: rate,
-              updated_at: trx.fn.now(),
-              updated_by: req.user.id,
-            });
+            await trx("erp.variants")
+              .where({ id })
+              .update({
+                sale_rate: rate,
+                updated_at: trx.fn.now(),
+                updated_by: req.user.id,
+                // The grid posts every variant of the article, not just the
+                // ones that were edited, so most of these updates rewrite the
+                // same rate. Only the changed ones count as a rate change.
+                ...(rateHasChanged(oldRate, rate)
+                  ? { rate_updated_at: trx.fn.now() }
+                  : {}),
+              });
             updatedItems.push({ id, rate, oldRate });
             queueAuditLog(req, {
               entityType: "SKU",
@@ -1198,11 +1243,20 @@ router.post(
         );
       }
 
-      await knex("erp.variants").where({ id }).update({
-        sale_rate: req.body.sale_rate,
-        updated_at: knex.fn.now(),
-        updated_by: req.user.id,
-      });
+      const nextRate = parseNumber(req.body.sale_rate);
+      await knex("erp.variants")
+        .where({ id })
+        .update({
+          sale_rate: req.body.sale_rate,
+          updated_at: knex.fn.now(),
+          updated_by: req.user.id,
+          // Only a real move of the rate stamps rate_updated_at: this form
+          // saves whether or not the rate was touched, and updated_at is also
+          // bumped by the toggles, so it cannot answer "was this repriced".
+          ...(rateHasChanged(currentRate, nextRate)
+            ? { rate_updated_at: knex.fn.now() }
+            : {}),
+        });
       queueAuditLog(req, {
         entityType: "SKU",
         entityId: id,

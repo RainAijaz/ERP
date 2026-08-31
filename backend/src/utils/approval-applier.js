@@ -352,6 +352,20 @@ const getNameById = async (trx, table, id) => {
   return row?.name || null;
 };
 
+// True when applying `nextRate` actually moves the variant's sale_rate. Feeds
+// erp.variants.rate_updated_at, which is what the SKU list highlights as a
+// recent reprice -- see migration 20260830_000113_variant_rate_updated_at.js.
+const variantRateChanges = async (trx, variantId, nextRate) => {
+  if (!variantId || !Number.isFinite(Number(nextRate))) return false;
+  const current = await trx("erp.variants")
+    .select("sale_rate")
+    .where({ id: variantId })
+    .first();
+  if (!current) return false;
+  if (current.sale_rate === null || current.sale_rate === undefined) return true;
+  return Math.abs(Number(current.sale_rate) - Number(nextRate)) >= 0.0001;
+};
+
 const applySkuChange = async (trx, request, userId) => {
   const { entity_id: entityId, new_value: newValue } = request;
   if (!newValue) return false;
@@ -383,12 +397,20 @@ const applySkuChange = async (trx, request, userId) => {
   }
 
   if (action === "update") {
+    const variantId = Number(entityId);
+    const nextRate = Number(newValue.sale_rate ?? 0);
     await trx("erp.variants")
-      .where({ id: Number(entityId) })
+      .where({ id: variantId })
       .update({
         sale_rate: newValue.sale_rate ?? 0,
         updated_by: userId || null,
         updated_at: trx.fn.now(),
+        // Stamped only when the approved rate differs from what is stored:
+        // approving a request whose rate was meanwhile applied by hand must not
+        // make the SKU look freshly repriced. See migration 000113.
+        ...((await variantRateChanges(trx, variantId, nextRate))
+          ? { rate_updated_at: trx.fn.now() }
+          : {}),
       });
     return true;
   }
@@ -2197,11 +2219,15 @@ const applyMasterDataChange = async (trx, request, userId) => {
       const id = Number(v.id);
       const rate = Number(v.new_rate);
       if (!id || !Number.isFinite(rate)) continue;
-      await trx("erp.variants").where({ id }).update({
-        sale_rate: rate,
-        updated_by: userId || null,
-        updated_at: trx.fn.now(),
-      });
+      const changed = await variantRateChanges(trx, id, rate);
+      await trx("erp.variants")
+        .where({ id })
+        .update({
+          sale_rate: rate,
+          updated_by: userId || null,
+          updated_at: trx.fn.now(),
+          ...(changed ? { rate_updated_at: trx.fn.now() } : {}),
+        });
     }
     return true;
   }

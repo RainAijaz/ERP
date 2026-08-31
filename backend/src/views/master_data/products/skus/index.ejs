@@ -22,6 +22,11 @@
     const dd = String(dt.getDate()).padStart(2, "0");
     return `${dt.getFullYear()}-${mm}-${dd}`;
   };
+  // Rows repriced inside the last month to date are shaded in the downloaded
+  // PDF (basic-info-utils.ejs reads these two attributes). Rates only exist on
+  // the finished view, so the semi-finished tab never flags anything.
+  const highlightRecentRates = isFinishedView && rows && rows.some(r => r.rate_changed_recently);
+  const rateChangeLegend = typeof rateChangeCutoffLabel !== "undefined" ? rateChangeCutoffLabel : "";
   const groupedRows = {};
   if (rows && rows.length) {
     rows.forEach(row => {
@@ -84,7 +89,7 @@
          <div class="p-8 text-center text-slate-400 italic"><%= t("no_entries") %></div>
       <% } else { %>
         
-        <div class="divide-y divide-slate-200" data-table-body>
+        <div class="divide-y divide-slate-200" data-table-body<% if (highlightRecentRates && rateChangeLegend) { %> data-export-highlight-label="<%= rateChangeLegend %>"<% } %>>
           <% Object.keys(groupedRows).forEach(groupKey => { 
              const [itemId, itemName, itemCode] = groupKey.split("___");
              const variants = groupedRows[groupKey];
@@ -135,7 +140,7 @@
                 <tbody class="divide-y divide-slate-50 bg-white">
                   <% variants.forEach((row, idx) => { %>
                     <% const searchParts = isFinishedView ? [row.id, row.size_name, row.grade_name, row.color_name, row.packing_name, row.sku_code, row.sale_rate] : [row.id, row.size_name, row.color_name, row.sku_code]; %>
-                    <tr class="hover:bg-slate-50/50 transition" data-row data-active="<%= row.is_active ? 'true' : 'false' %>" data-search="<%= searchParts.join(' ').toLowerCase() %>" data-item-type="<%= isFinishedView ? 'FG' : 'SFG' %>" data-subgroup-id="<%= row.subgroup_id || '' %>" data-created-by="<%= row.created_by_name || '' %>" data-created-at="<%= toDateKey(row.created_at) %>">
+                    <tr class="hover:bg-slate-50/50 transition" data-row data-active="<%= row.is_active ? 'true' : 'false' %>" data-search="<%= searchParts.join(' ').toLowerCase() %>" data-item-type="<%= isFinishedView ? 'FG' : 'SFG' %>" data-subgroup-id="<%= row.subgroup_id || '' %>" data-created-by="<%= row.created_by_name || '' %>" data-created-at="<%= toDateKey(row.created_at) %>"<% if (isFinishedView && row.rate_changed_recently) { %> data-export-highlight="1"<% } %>>
                       <td class="px-6 py-3 text-slate-400 text-xs"><%= row.id %></td>
                       <td class="px-6 py-3 font-mono text-xs text-slate-500"><%= row.sku_code || "-" %></td>
                       <td class="px-6 py-3 font-medium text-slate-700"><%= locale === "ur" ? (row.size_name_ur || row.size_name) : row.size_name %></td>

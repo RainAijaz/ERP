@@ -3405,12 +3405,36 @@ const ENTITY_SPECS = Object.freeze({
         );
       }
 
-      await trx("erp.variants").where({ id: variantId }).update({
-        sale_rate: op.data.sale_rate,
-        is_active: op.data.is_active,
-        updated_by: actorId,
-        updated_at: trx.fn.now(),
-      });
+      // An import rewrites sale_rate on every row it touches, unchanged ones
+      // included (and on the variant just created above), so rate_updated_at is
+      // stamped only where the imported rate actually differs. That column is
+      // what the SKU list flags as a recent reprice -- migration 000113.
+      const priorRateRow = await trx("erp.variants")
+        .select("sale_rate")
+        .where({ id: variantId })
+        .first();
+      const priorRate =
+        priorRateRow && priorRateRow.sale_rate !== null && priorRateRow.sale_rate !== undefined
+          ? Number(priorRateRow.sale_rate)
+          : null;
+      const importedRate =
+        op.data.sale_rate === null || op.data.sale_rate === undefined
+          ? null
+          : Number(op.data.sale_rate);
+      const rateChanged =
+        importedRate !== null &&
+        Number.isFinite(importedRate) &&
+        (priorRate === null || Math.abs(priorRate - importedRate) >= 0.0001);
+
+      await trx("erp.variants")
+        .where({ id: variantId })
+        .update({
+          sale_rate: op.data.sale_rate,
+          is_active: op.data.is_active,
+          updated_by: actorId,
+          updated_at: trx.fn.now(),
+          ...(rateChanged ? { rate_updated_at: trx.fn.now() } : {}),
+        });
 
       let skuId = op.data.id;
       if (!skuId) {

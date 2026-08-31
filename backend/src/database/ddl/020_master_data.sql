@@ -471,6 +471,12 @@ CREATE TABLE IF NOT EXISTS erp.variants (
   -- when true, the rate field is left editable in sales/SO vouchers for any user (not just admins).
   rate_editable   boolean NOT NULL DEFAULT false,
 
+  -- When sale_rate last actually changed. Deliberately NOT updated_at: that one
+  -- is bumped by the active/rate-editable toggles and by imports that rewrite an
+  -- unchanged rate, so it cannot answer "was this SKU repriced". NULL means the
+  -- rate has never moved since the variant was created (created_at covers that).
+  rate_updated_at timestamptz,
+
   is_active       boolean NOT NULL DEFAULT true,
 
   created_by      bigint REFERENCES erp.users(id),

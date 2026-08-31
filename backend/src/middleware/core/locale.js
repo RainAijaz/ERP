@@ -597,6 +597,9 @@ const translations = {
     high_variance: "High Variance",
     high_variance_threshold: "High Variance Threshold",
     rate_alert_legend: "Legend",
+    // Prefix for the SKU PDF legend; the cutoff date is appended by
+    // routes/master_data/products/skus.js.
+    rate_changed_since: "Shaded rows: rate changed since",
     purchase_report_header_group_tooltip:
       "Group label based on current Order By selection.",
     purchase_report_header_voucher_no_tooltip:
@@ -2568,6 +2571,7 @@ translations.ur = {
   high_variance: "زیادہ فرق",
   high_variance_threshold: "زیادہ فرق کی حد",
   rate_alert_legend: "لیجنڈ",
+  rate_changed_since: "رنگین قطاریں: اس تاریخ کے بعد ریٹ تبدیل ہوا",
   purchase_report_header_group_tooltip:
     "موجودہ آرڈر بائی انتخاب کے مطابق گروپ لیبل۔",
   purchase_report_header_voucher_no_tooltip:

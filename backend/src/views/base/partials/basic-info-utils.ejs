@@ -1423,7 +1423,19 @@
             return cleanText(datasetValue || cell.textContent);
           }),
       );
-      return { headers, body };
+      // Opt-in row shading for the PDF: a page marks rows worth calling out
+      // with data-export-highlight="1" and names the reason once, on any
+      // element, via data-export-highlight-label (the SKU list uses this for
+      // rates changed in the last month). Parallel to `body` by index, which is
+      // what autoTable's didParseCell hook is given.
+      const highlights = rows.map(
+        (row) => row.dataset.exportHighlight === "1",
+      );
+      const labelSource = document.querySelector("[data-export-highlight-label]");
+      const highlightLabel = labelSource
+        ? cleanText(labelSource.getAttribute("data-export-highlight-label"))
+        : "";
+      return { headers, body, highlights, highlightLabel };
     };
 
     const downloadCsv = () => {
@@ -1478,7 +1490,8 @@
     const downloadPdf = () => {
       loadPdfLibs()
         .then((jsPDF) => {
-          const { headers, body } = buildExportTable();
+          const { headers, body, highlights, highlightLabel } =
+            buildExportTable();
           const orientation = headers.length > 6 ? "landscape" : "portrait";
           const doc = new jsPDF({ orientation, unit: "pt", format: "a4" });
           doc.setFontSize(13);
@@ -1486,16 +1499,49 @@
           doc.setFontSize(9);
           doc.setTextColor(100);
           doc.text(new Date().toLocaleString(), 28, 46);
+
+          // Amber, dark enough to survive a greyscale print but light enough to
+          // keep the black row text readable.
+          const HIGHLIGHT_FILL = [253, 230, 138];
+          const HIGHLIGHT_TEXT = [120, 53, 15];
+          const highlightCount = highlights.filter(Boolean).length;
+          let tableStartY = 58;
+          // Nothing shaded means no legend: the swatch would be explaining a
+          // colour the reader cannot find anywhere on the page.
+          if (highlightCount > 0 && highlightLabel) {
+            doc.setFillColor.apply(doc, HIGHLIGHT_FILL);
+            doc.rect(28, 52, 14, 9, "F");
+            doc.setFontSize(8);
+            doc.setTextColor(100);
+            doc.text(
+              highlightLabel + " (" + highlightCount + ")",
+              47,
+              59.5,
+            );
+            doc.setFontSize(9);
+            tableStartY = 70;
+          }
+
           doc.autoTable({
             head: [headers],
             body,
-            startY: 58,
+            startY: tableStartY,
             margin: { left: 28, right: 28 },
             styles: { fontSize: 8, cellPadding: 4, overflow: "linebreak" },
             headStyles: { fillColor: [30, 41, 59], textColor: 255 },
             alternateRowStyles: { fillColor: [248, 250, 252] },
             horizontalPageBreak: true,
             horizontalPageBreakRepeat: 0,
+            // Runs after the row styles above are resolved, so this wins over
+            // alternateRowStyles instead of fighting it. data.row.index is the
+            // index into `body`, which `highlights` is built parallel to.
+            didParseCell: (data) => {
+              if (data.section !== "body") return;
+              if (!highlights[data.row.index]) return;
+              data.cell.styles.fillColor = HIGHLIGHT_FILL;
+              data.cell.styles.textColor = HIGHLIGHT_TEXT;
+              data.cell.styles.fontStyle = "bold";
+            },
           });
           doc.save(
             '<%= t(page.titleKey).replace(/\\s+/g, "_") %>_export.pdf',
