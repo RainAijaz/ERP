@@ -3,6 +3,10 @@
 const knex = require("../../db/knex");
 const { toLocalDateOnly } = require("../../utils/date-only");
 const {
+  localizedNarrativeSql,
+  supportsVoucherRemarksUr,
+} = require("../../utils/localized-name");
+const {
   REPORT_ORDER_TYPES,
   REPORT_TYPES,
   resolveReportOrderType,
@@ -1291,6 +1295,7 @@ const getSupplierLedgerRows = async ({ req, filters, options }) => {
     })
     .first();
 
+  const hasRemarksUr = await supportsVoucherRemarksUr();
   const qtyByVoucherSubquery = knex("erp.voucher_line as vl")
     .select("vl.voucher_header_id")
     .sum({ qty: knex.raw("COALESCE(vl.qty, 0)") })
@@ -1310,7 +1315,11 @@ const getSupplierLedgerRows = async ({ req, filters, options }) => {
       "vh.book_no as bill_number",
       localizedNameSelect("b", "branch_name", locale),
       knex.raw(
-        "COALESCE(NULLIF(ge.narration, ''), NULLIF(vh.remarks, '')) as description",
+        `${localizedNarrativeSql({
+          locale,
+          narrationExpr: "ge.narration",
+          hasRemarksUr,
+        })} as description`,
       ),
       knex.raw("COALESCE(vq.qty, 0) as qty"),
       knex.raw("COALESCE(ge.dr, 0) as dr"),

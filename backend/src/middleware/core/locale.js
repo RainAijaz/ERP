@@ -5153,5 +5153,22 @@ Object.assign(translations.ur, {
   transfer_stage_output: "نامکمل جوڑے دوسری برانچ بھیجیں",
 });
 
+// Ledger description labels. The party/account ledgers compose a sales line
+// into one sentence ("Article: X | Qty: ... | Line Total: ...") and the HR
+// ledgers fall back to a generated label; both used to be assembled from
+// English literals, so the Urdu column still read in English. Same
+// trailing-Object.assign rule as the blocks above, and Urdu is mandatory --
+// STRICT_URDU_UI is on by default, so a missing key renders the
+// "translation needed" marker instead of quietly falling back to English.
+Object.assign(translations.en, {
+  line_total: "Line Total",
+  ledger_more_lines: "more",
+});
+
+Object.assign(translations.ur, {
+  line_total: "لائن کل",
+  ledger_more_lines: "مزید",
+});
+
 module.exports.translations = translations;
 module.exports.resolveTranslation = resolveTranslation;

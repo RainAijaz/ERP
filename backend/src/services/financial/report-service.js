@@ -6,6 +6,11 @@ const { resolveReportType } = require("../../utils/report-filter-types");
 const {
   resolveVoucherApprovalRequiredTx,
 } = require("../../utils/voucher-approval-policy");
+const {
+  localizedNarrativeSql,
+  supportsVoucherRemarksUr,
+} = require("../../utils/localized-name");
+const { resolveTranslation } = require("../../middleware/core/locale");
 
 // Every table these reports read names from (accounts, parties, labours,
 // employees, departments, branches, account_groups) carries a name_ur column,
@@ -373,6 +378,7 @@ const baseLedger = ({ from, to, branchId, accountId }) => {
 };
 
 const getCashBook = async (filters) => {
+  const hasRemarksUr = await supportsVoucherRemarksUr();
   const includeBranchColumn = !filters.branchId;
   const selectedCashAccountId = Number(filters.accountId || 0) || null;
 
@@ -459,7 +465,12 @@ const getCashBook = async (filters) => {
         localizedNameSelect("a", "cash_account", filters.locale),
         localizedNameSelect("b", "branch_name", filters.locale),
         knex.raw(
-          "COALESCE(MAX(NULLIF(vh.remarks,'')), MAX(NULLIF(ge.narration,''))) as description",
+          `MAX(${localizedNarrativeSql({
+            locale: filters.locale,
+            narrationExpr: "ge.narration",
+            prefer: "remarks",
+            hasRemarksUr,
+          })}) as description`,
         ),
         knex.raw("COALESCE(SUM(COALESCE(ge.dr,0)), 0) as dr"),
         knex.raw("COALESCE(SUM(COALESCE(ge.cr,0)), 0) as cr"),
@@ -511,7 +522,12 @@ const getCashBook = async (filters) => {
         localizedNameSelect("a", "cash_account", filters.locale),
         localizedNameSelect("b", "branch_name", filters.locale),
         knex.raw(
-          "COALESCE(NULLIF(vh.remarks, ''), NULLIF(ge.narration, '')) as description",
+          `${localizedNarrativeSql({
+            locale: filters.locale,
+            narrationExpr: "ge.narration",
+            prefer: "remarks",
+            hasRemarksUr,
+          })} as description`,
         ),
         knex.raw("COALESCE(ge.dr, 0) as dr"),
         knex.raw("COALESCE(ge.cr, 0) as cr"),
@@ -2718,6 +2734,7 @@ const buildSalesVoucherDescriptionSummaryMap = async (
   voucherIds,
   locale = "en",
 ) => {
+  const t = (key) => resolveTranslation(locale, key);
   const uniqueIds = [
     ...new Set(
       (voucherIds || [])
@@ -2787,7 +2804,7 @@ const buildSalesVoucherDescriptionSummaryMap = async (
       meta.total_amount !== undefined
         ? Number(Math.abs(Number(meta.total_amount || 0)).toFixed(2))
         : Number(Math.abs(Number(line.amount || 0)).toFixed(2));
-    const lineText = `Article: ${name} | Qty: ${saleQty.toFixed(3)} | Pair Rate: ${pairRate.toFixed(2)} | Pair Discount: ${pairDiscount.toFixed(2)} | Line Total: ${lineTotal.toFixed(2)}`;
+    const lineText = `${t("article")}: ${name} | ${t("qty")}: ${saleQty.toFixed(3)} | ${t("pair_rate")}: ${pairRate.toFixed(2)} | ${t("pair_discount")}: ${pairDiscount.toFixed(2)} | ${t("line_total")}: ${lineTotal.toFixed(2)}`;
     const list = linesByVoucherId.get(voucherId) || [];
     list.push({
       text: lineText,
@@ -2804,7 +2821,7 @@ const buildSalesVoucherDescriptionSummaryMap = async (
     const extraDiscount = Number(extraDiscountByVoucherId.get(voucherId) || 0);
     if (extraDiscount > 0) {
       sorted.push({
-        text: `Extra Discount: ${extraDiscount.toFixed(2)}`,
+        text: `${t("extra_discount")}: ${extraDiscount.toFixed(2)}`,
         line_no: 999999,
       });
     }
@@ -2812,7 +2829,8 @@ const buildSalesVoucherDescriptionSummaryMap = async (
       .slice(0, 4)
       .map((line) => String(line.text || "").trim())
       .filter(Boolean);
-    const suffix = sorted.length > 4 ? ` +${sorted.length - 4} more` : "";
+    const suffix =
+      sorted.length > 4 ? ` +${sorted.length - 4} ${t("ledger_more_lines")}` : "";
     summaryByVoucherId.set(voucherId, `${compact.join("; ")}${suffix}`);
   });
 
@@ -2820,6 +2838,8 @@ const buildSalesVoucherDescriptionSummaryMap = async (
 };
 
 const getAccountActivityLedger = async (filters) => {
+  const hasRemarksUr = await supportsVoucherRemarksUr();
+  const t = (key) => resolveTranslation(filters.locale, key);
   if (!filters.accountId) return [];
 
   const openingRow = await knex("erp.gl_entry as ge")
@@ -2875,7 +2895,11 @@ const getAccountActivityLedger = async (filters) => {
         knex.raw("COALESCE(ge.dr, 0) as dr"),
         knex.raw("COALESCE(ge.cr, 0) as cr"),
         knex.raw(
-          "COALESCE(NULLIF(ge.narration, ''), NULLIF(vh.remarks, '')) as description",
+          `${localizedNarrativeSql({
+            locale: filters.locale,
+            narrationExpr: "ge.narration",
+            hasRemarksUr,
+          })} as description`,
         ),
         localizedNameSelect("d", "department", filters.locale),
       )
@@ -2964,7 +2988,7 @@ const getAccountActivityLedger = async (filters) => {
       if (filters.reportMode === "details") {
         let description = row.description || null;
         if (voucherTypeCode === "SALES_ORDER") {
-          description = "Advance Payment Received";
+          description = t("advance_receive");
         }
         if (voucherTypeCode === "SALES_VOUCHER" && voucherId) {
           const salesSummary = String(

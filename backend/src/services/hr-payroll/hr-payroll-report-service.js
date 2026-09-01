@@ -6,6 +6,12 @@ const { toBoolean, toIdList } = require("../../utils/report-filter-types");
 const {
   getUserEntityBlockedSet,
 } = require("../administration/entity-ledger-access-service");
+const {
+  localizedLineDescriptionSql,
+  localizedNarrativeSql,
+  supportsVoucherRemarksUr,
+} = require("../../utils/localized-name");
+const { resolveTranslation } = require("../../middleware/core/locale");
 
 // Employee/Labour ledger access restrictions (per-entity), mirroring the
 // per-account restrictions on the Account Activity Ledger. Admins bypass; every
@@ -717,6 +723,19 @@ const getLedgerRows = async ({
     locale === "ur"
       ? `COALESCE(NULLIF(${alias}.name_ur, ''), ${alias}.name)`
       : `${alias}.name`;
+  const hasRemarksUr = await supportsVoucherRemarksUr();
+  const lineDescription = localizedLineDescriptionSql(locale, "vl");
+  const voucherRemarks = localizedNarrativeSql({ locale, hasRemarksUr });
+  // These labels are built inside SQL, so they cannot go through the view's
+  // t(); resolve them here and inline them as quoted literals instead. The
+  // words come from the static dictionary, but escape anyway so a future
+  // translation carrying an apostrophe cannot break the statement.
+  const sqlLabel = (key) =>
+    `'${String(resolveTranslation(locale, key)).replace(/'/g, "''")} '`;
+  const skuLabel = sqlLabel("sku");
+  const labourLabel = sqlLabel("labour");
+  const employeeLabel = sqlLabel("employee");
+  const creditSaleLabel = `'${String(resolveTranslation(locale, "credit_sale")).replace(/'/g, "''")} #'`;
   const cfg = getEntityConfig(kind);
   const includeBranchColumn = Boolean(
     req.user?.isAdmin && filters.branchIds.length !== 1,
@@ -818,19 +837,19 @@ const getLedgerRows = async ({
       "vh.book_no as bill_number",
       knex.raw(`${localizedName("b")} as branch_name`),
       knex.raw(`COALESCE(
-        NULLIF(vl.meta->>'description',''),
-        NULLIF(vh.remarks, ''),
+        ${lineDescription},
+        ${voucherRemarks},
         CASE
           WHEN vl.line_kind = 'SKU' THEN NULLIF(
             CONCAT(
-              'SKU ',
+              ${skuLabel},
               COALESCE(s.sku_code, ''),
               CASE WHEN COALESCE(${localizedName("i")}, '') = '' THEN '' ELSE CONCAT(' - ', ${localizedName("i")}) END
             ),
-            'SKU '
+            ${skuLabel}
           )
-          WHEN vl.line_kind = 'LABOUR' THEN NULLIF(CONCAT('Labour ', COALESCE(${localizedName("l")}, '')), 'Labour ')
-          WHEN vl.line_kind = 'EMPLOYEE' THEN NULLIF(CONCAT('Employee ', COALESCE(${localizedName("e")}, '')), 'Employee ')
+          WHEN vl.line_kind = 'LABOUR' THEN NULLIF(CONCAT(${labourLabel}, COALESCE(${localizedName("l")}, '')), ${labourLabel})
+          WHEN vl.line_kind = 'EMPLOYEE' THEN NULLIF(CONCAT(${employeeLabel}, COALESCE(${localizedName("e")}, '')), ${employeeLabel})
           ELSE NULL
         END,
         CONCAT(vh.voucher_type_code, ' #', vh.voucher_no::text)
@@ -883,7 +902,7 @@ const getLedgerRows = async ({
       "vh.book_no as bill_number",
       "b2.name as branch_name",
       knex.raw(
-        `COALESCE(NULLIF(vh.remarks, ''), CONCAT('Credit Sale #', vh.voucher_no::text)) as description`,
+        `COALESCE(${voucherRemarks}, CONCAT(${creditSaleLabel}, vh.voucher_no::text)) as description`,
       ),
       knex.raw("0 as qty"),
       "ge.dr",

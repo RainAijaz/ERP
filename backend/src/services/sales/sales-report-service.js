@@ -6,8 +6,11 @@ const { toBoolean, toIdList } = require("../../utils/report-filter-types");
 const {
   localizedNameSelect,
   localizedNameSql,
+  localizedNarrativeSql,
   resolveLocale,
+  supportsVoucherRemarksUr,
 } = require("../../utils/localized-name");
+const { resolveTranslation } = require("../../middleware/core/locale");
 const {
   evaluateSalesDiscountPolicy,
   loadActiveSalesDiscountPolicyMapTx,
@@ -1679,6 +1682,8 @@ const loadCustomerLedgerOptions = async ({ req, filters }) => {
 
 const getCustomerLedgerRows = async ({ req, filters, options }) => {
   const locale = resolveLocale(req?.locale);
+  const t = (key) => resolveTranslation(locale, key);
+  const hasRemarksUr = await supportsVoucherRemarksUr();
   const includeBranchColumn = Boolean(
     req.user?.isAdmin && filters.branchIds.length !== 1,
   );
@@ -1751,7 +1756,11 @@ const getCustomerLedgerRows = async ({ req, filters, options }) => {
       "vh.book_no as bill_number",
       localizedNameSelect("b", "branch_name", locale),
       knex.raw(
-        "COALESCE(NULLIF(ge.narration, ''), NULLIF(vh.remarks, '')) as description",
+        `${localizedNarrativeSql({
+          locale,
+          narrationExpr: "ge.narration",
+          hasRemarksUr,
+        })} as description`,
       ),
       knex.raw("COALESCE(vq.qty, 0) as qty"),
       knex.raw("COALESCE(ge.dr, 0) as dr"),
@@ -1855,7 +1864,7 @@ const getCustomerLedgerRows = async ({ req, filters, options }) => {
         rawAmount > 0 ? rawAmount : fallbackAmount > 0 ? fallbackAmount : 1;
       const lineText =
         voucherType === "SALES_VOUCHER"
-          ? `Article: ${name} | Qty: ${saleQty.toFixed(3)} | Pair Rate: ${pairRate.toFixed(2)} | Pair Discount: ${pairDiscount.toFixed(2)} | Line Total: ${lineTotal.toFixed(2)}`
+          ? `${t("article")}: ${name} | ${t("qty")}: ${saleQty.toFixed(3)} | ${t("pair_rate")}: ${pairRate.toFixed(2)} | ${t("pair_discount")}: ${pairDiscount.toFixed(2)} | ${t("line_total")}: ${lineTotal.toFixed(2)}`
           : `${name} x ${qty.toFixed(3)} @ ${rate.toFixed(2)}`;
       const list = linesByVoucherId.get(voucherId) || [];
       list.push({
@@ -1880,7 +1889,7 @@ const getCustomerLedgerRows = async ({ req, filters, options }) => {
       );
       if (voucherType === "SALES_VOUCHER" && extraDiscount > 0) {
         sorted.push({
-          text: `Extra Discount: ${extraDiscount.toFixed(2)}`,
+          text: `${t("extra_discount")}: ${extraDiscount.toFixed(2)}`,
           qty: 0,
           rate: 0,
           weight: extraDiscount,
@@ -1889,7 +1898,10 @@ const getCustomerLedgerRows = async ({ req, filters, options }) => {
       }
       voucherLineDetailsByVoucherId.set(voucherId, sorted);
       const compact = sorted.slice(0, 4).map((line) => line.text);
-      const suffix = sorted.length > 4 ? ` +${sorted.length - 4} more` : "";
+      const suffix =
+        sorted.length > 4
+          ? ` +${sorted.length - 4} ${t("ledger_more_lines")}`
+          : "";
       voucherLineSummaryByVoucherId.set(
         voucherId,
         `${compact.join("; ")}${suffix}`,
@@ -1903,9 +1915,7 @@ const getCustomerLedgerRows = async ({ req, filters, options }) => {
     const baseDescription = String(row.description || "").trim();
     const voucherType = String(row.voucher_type_code || "").toUpperCase();
     const description =
-      voucherType === "SALES_ORDER"
-        ? "Advance Payment Received"
-        : baseDescription;
+      voucherType === "SALES_ORDER" ? t("advance_receive") : baseDescription;
 
     return {
       id: Number(row.id || 0),
@@ -1963,7 +1973,7 @@ const getCustomerLedgerRows = async ({ req, filters, options }) => {
       return [
         {
           ...entry,
-          description: "Advance Payment Received",
+          description: t("advance_receive"),
           qty: 0,
         },
       ];
@@ -2023,7 +2033,7 @@ const getCustomerLedgerRows = async ({ req, filters, options }) => {
             if (voucherType === "SALES_ORDER") {
               return {
                 ...entry,
-                description: "Advance Payment Received",
+                description: t("advance_receive"),
                 qty: 0,
               };
             }
